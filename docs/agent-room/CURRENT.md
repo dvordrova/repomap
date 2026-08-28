@@ -826,9 +826,15 @@ diagnostic-journal availability never changes the cube's semantic contract.
     activity currently selected by the user and the routes already joined to
     it. It never auto-selects or ranks a route. Start, ordered steps,
     exact/possible certainty, frontiers, an optional `exact_external_symbol`
-    endpoint, and at most two source actions come only from the existing
+    endpoint, and at most two source actions per route come only from the existing
     `ActivityEntrypointView`, `ActivityPathView`, and `IntegrationUsageView`;
     the existing authorized source router remains the only code-opening path.
+    The browser renders each ordered path node once and places the retained
+    relation and certainty on the connector to the next node. A possible
+    callback or other handoff is a prominent explicit uncertainty: available
+    facts do not prove an exact transfer. Exact external uses terminate in an
+    external-boundary callsite or an unordered callsite fan-out, never a claim
+    that dependency code ran or that a runtime outcome succeeded.
     This reframe adds no new analysis, model call, persisted view, or manifest
     authority. When the selected activity has no joined path, the panel is
     omitted; missing end-to-end authority remains an explicit frontier rather

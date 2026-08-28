@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>Repository Workbench</title>
+<title>Repomap · existing facts workbench</title>
 <style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
 </head>
 <body>
-<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="Repository Workbench" srcdoc="&lt;!doctype html&gt;
+<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="Repomap · existing facts workbench" srcdoc="&lt;!doctype html&gt;
 &lt;html lang=&quot;en&quot;&gt;
 &lt;head&gt;
 &lt;meta charset=&quot;utf-8&quot;&gt;
 &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
 &lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
 &lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
-&lt;title&gt;Repository Workbench&lt;/title&gt;
+&lt;title&gt;Repomap · existing facts workbench&lt;/title&gt;
 &lt;style&gt;:root {
   color-scheme: light dark;
   background-color: var(
@@ -1009,15 +1009,18 @@ html&gt;body{padding:0}&lt;/style&gt;
     }
     #repomap-workbench * { box-sizing: border-box; }
     #repomap-workbench .rf-shell { max-width: 1000px; margin: 0 auto; }
-    #repomap-workbench .rf-kicker { color: var(--rf-green); font-weight: 700; letter-spacing: .16em; text-transform: uppercase; font-size: 12px; }
-    #repomap-workbench h1 { margin: 8px 0 4px; font-size: clamp(28px, 5vw, 54px); line-height: 1; letter-spacing: -.045em; font-weight: 600; }
+    #repomap-workbench .rf-kicker { color: var(--rf-green); font-weight: 500; letter-spacing: .16em; text-transform: uppercase; font-size: 12px; }
+    #repomap-workbench h1 { margin: 8px 0 4px; font-size: clamp(28px, 5vw, 54px); line-height: 1; letter-spacing: -.045em; font-weight: 500; }
     #repomap-workbench .rf-subtitle { margin: 0; color: var(--rf-muted); max-width: 720px; }
     #repomap-workbench .rf-stats { display: flex; flex-wrap: wrap; gap: 16px; margin: 22px 0; padding: 13px 0; border-block: 1px solid var(--rf-line); color: var(--rf-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-    #repomap-workbench .rf-stats strong { color: var(--rf-ink); font-weight: 600; }
+    #repomap-workbench .rf-stats strong { color: var(--rf-ink); font-weight: 500; }
     #repomap-workbench .rf-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 20px 0 26px; }
     #repomap-workbench .rf-nav button,
     #repomap-workbench .rf-treatment button,
-    #repomap-workbench .rf-source {
+    #repomap-workbench .rf-source,
+    #repomap-workbench .rf-plan-trigger,
+    #repomap-workbench .rf-evidence-action,
+    #repomap-workbench .rf-destination-back {
       min-height: 42px;
       border: 1px solid var(--rf-line);
       background: var(--rf-surface);
@@ -1031,43 +1034,74 @@ html&gt;body{padding:0}&lt;/style&gt;
     #repomap-workbench .rf-treatment button[aria-pressed=&quot;true&quot;] { border-color: var(--rf-green); background: var(--rf-green-soft); color: var(--rf-green); }
     #repomap-workbench .rf-panel[hidden] { display: none; }
     #repomap-workbench .rf-panel-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-    #repomap-workbench .rf-panel-head h2 { margin: 0 0 4px; font-size: 24px; font-weight: 600; letter-spacing: -.025em; }
+    #repomap-workbench .rf-panel-head h2 { margin: 0 0 4px; font-size: 24px; font-weight: 500; letter-spacing: -.025em; }
     #repomap-workbench .rf-panel-head p { margin: 0; color: var(--rf-muted); }
     #repomap-workbench .rf-state { display: inline-flex; align-items: center; gap: 7px; color: var(--rf-green); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
     #repomap-workbench .rf-state::before { content: &quot;&quot;; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
     #repomap-workbench .rf-treatment { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }
     #repomap-workbench .rf-treatment button { min-height: 36px; padding: 7px 10px; font-size: 13px; }
-    #repomap-workbench .rf-stage { border-top: 1px solid var(--rf-line); padding: 18px 0; display: grid; grid-template-columns: 132px minmax(0, 1fr) auto; gap: 16px; align-items: start; }
-    #repomap-workbench .rf-stage:last-child { border-bottom: 1px solid var(--rf-line); }
-    #repomap-workbench .rf-stage-kind { color: var(--rf-muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .08em; }
-    #repomap-workbench .rf-stage h3 { margin: 0 0 5px; font-size: 17px; font-weight: 600; }
-    #repomap-workbench .rf-stage p { margin: 0; color: var(--rf-muted); }
+    #repomap-workbench .rf-trace { margin: 18px 0 0; padding: 0; list-style: none; }
+    #repomap-workbench .rf-trace-node { list-style: none; }
+    #repomap-workbench .rf-trace-edge { margin-left: 8px; padding: 8px 0 8px 28px; border-left: 2px solid var(--rf-green); color: var(--rf-muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #repomap-workbench .rf-trace-edge strong { color: var(--rf-green); font-weight: 500; text-transform: uppercase; }
+    #repomap-workbench .rf-trace-edge--possible { border-left-style: dashed; border-left-color: var(--rf-orange); color: var(--rf-orange); background: linear-gradient(90deg, var(--rf-orange-soft), transparent 58%); }
+    #repomap-workbench .rf-trace-edge--possible strong { color: var(--rf-orange); }
+    #repomap-workbench .rf-trace-node-body { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 5px 0; }
+    #repomap-workbench .rf-trace-marker { width: 18px; height: 18px; border: 2px solid var(--rf-green); border-radius: 50%; background: var(--rf-paper); }
+    #repomap-workbench .rf-trace-node--possible .rf-trace-marker { border-color: var(--rf-orange); box-shadow: inset 0 0 0 4px var(--rf-orange-soft); }
+    #repomap-workbench .rf-trace-node--boundary .rf-trace-marker { border-radius: 2px; background: var(--rf-green-soft); }
+    #repomap-workbench .rf-trace-copy h3 { margin: 0 0 3px; font-size: 17px; font-weight: 500; overflow-wrap: anywhere; }
+    #repomap-workbench .rf-trace-copy p { margin: 0; color: var(--rf-muted); }
+    #repomap-workbench .rf-trace-kind { display: inline-block; margin-top: 5px; color: var(--rf-green); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+    #repomap-workbench .rf-trace-note { margin: 5px 0 0; color: var(--rf-orange); }
     #repomap-workbench .rf-locator { margin-top: 8px; color: var(--rf-green); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
     #repomap-workbench .rf-confidence { color: var(--rf-green); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
     #repomap-workbench .rf-confidence.rf-frontier { color: var(--rf-orange); }
     #repomap-workbench .rf-frontier-box { margin-top: 16px; padding: 14px; background: var(--rf-orange-soft); color: var(--rf-ink); border-left: 3px solid var(--rf-orange); }
     #repomap-workbench .rf-frontier-box strong { display: block; margin-bottom: 4px; }
     #repomap-workbench .rf-source { margin-top: 10px; min-height: 34px; padding: 5px 9px; color: var(--rf-green); font-size: 12px; }
-    #repomap-workbench .rf-plan { display: grid; gap: 12px; counter-reset: plan; }
+    #repomap-workbench .rf-plan { display: grid; counter-reset: plan; }
     #repomap-workbench .rf-plan-step { counter-increment: plan; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; padding: 15px 0; border-top: 1px solid var(--rf-line); }
-    #repomap-workbench .rf-plan-step::before { content: counter(plan, decimal-leading-zero); color: var(--rf-green); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
-    #repomap-workbench .rf-plan-step h3 { margin: 0 0 4px; font-size: 17px; }
-    #repomap-workbench .rf-plan-step p { margin: 0; color: var(--rf-muted); }
+    #repomap-workbench .rf-plan-step::before { content: counter(plan, decimal-leading-zero); color: var(--rf-green); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; padding-top: 12px; }
+    #repomap-workbench .rf-plan-trigger { width: 100%; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; border: 0; padding: 10px 0; background: transparent; }
+    #repomap-workbench .rf-plan-copy { display: grid; gap: 4px; }
+    #repomap-workbench .rf-plan-title { font-size: 17px; font-weight: 500; }
+    #repomap-workbench .rf-plan-description { color: var(--rf-muted); }
+    #repomap-workbench .rf-plan-toggle { color: var(--rf-green); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #repomap-workbench .rf-evidence-list { margin-top: 8px; border-top: 1px solid var(--rf-line); }
+    #repomap-workbench .rf-evidence-list[hidden] { display: none; }
+    #repomap-workbench .rf-evidence { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--rf-line); }
+    #repomap-workbench .rf-evidence strong { font-weight: 500; }
+    #repomap-workbench .rf-evidence p { margin: 3px 0 0; color: var(--rf-muted); }
+    #repomap-workbench .rf-evidence-meta { color: var(--rf-green); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+    #repomap-workbench .rf-evidence-action { align-self: center; min-height: 42px; padding: 6px 9px; color: var(--rf-green); font-size: 12px; white-space: nowrap; }
+    #repomap-workbench .rf-plan-mode { margin: 0 0 14px; color: var(--rf-muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #repomap-workbench .rf-unknown-list { margin: 14px 0 0; padding: 0; list-style: none; }
+    #repomap-workbench .rf-unknown-list li { padding: 9px 0 9px 18px; border-top: 1px solid var(--rf-line); color: var(--rf-orange); position: relative; }
+    #repomap-workbench .rf-unknown-list li::before { content: &quot;!&quot;; position: absolute; left: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     #repomap-workbench .rf-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
     #repomap-workbench .rf-chip { display: inline-flex; padding: 3px 7px; background: var(--rf-green-soft); color: var(--rf-green); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
     #repomap-workbench .rf-chip.rf-unknown { background: var(--rf-orange-soft); color: var(--rf-orange); }
     #repomap-workbench .rf-operation { display: grid; grid-template-columns: minmax(160px, .8fr) minmax(0, 1.6fr) auto; gap: 16px; padding: 15px 0; border-top: 1px solid var(--rf-line); }
-    #repomap-workbench .rf-operation strong { font-size: 15px; }
+    #repomap-workbench .rf-operation strong { font-size: 15px; font-weight: 500; }
     #repomap-workbench .rf-operation p { margin: 3px 0 0; color: var(--rf-muted); }
     #repomap-workbench .rf-empty { color: var(--rf-orange); }
     #repomap-workbench .rf-rejected { color: var(--rf-red); border-color: var(--rf-red); }
     #repomap-workbench .rf-result-line { margin: -5px 0 18px; color: var(--rf-muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #repomap-workbench .rf-destination-page[hidden] { display: none; }
+    #repomap-workbench .rf-destination-back { margin-bottom: 18px; color: var(--rf-green); }
+    #repomap-workbench .rf-destination-route { display: block; margin: 12px 0; padding: 12px 0; border-block: 1px solid var(--rf-line); color: var(--rf-green); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+    #repomap-workbench .rf-destination-summary { max-width: 720px; color: var(--rf-muted); }
     @media (max-width: 700px) {
       #repomap-workbench { padding: 14px; }
       #repomap-workbench .rf-nav { grid-template-columns: 1fr; }
-      #repomap-workbench .rf-stage, #repomap-workbench .rf-operation { grid-template-columns: 1fr; gap: 7px; }
+      #repomap-workbench .rf-operation { grid-template-columns: 1fr; gap: 7px; }
       #repomap-workbench .rf-panel-head { align-items: start; flex-direction: column; }
       #repomap-workbench .rf-confidence { white-space: normal; }
+      #repomap-workbench .rf-trace-node-body { grid-template-columns: 18px minmax(0, 1fr); }
+      #repomap-workbench .rf-trace-node-body .rf-source { grid-column: 2; justify-self: start; }
+      #repomap-workbench .rf-plan-trigger, #repomap-workbench .rf-evidence { grid-template-columns: 1fr; }
+      #repomap-workbench .rf-evidence-action { justify-self: start; }
     }
   &lt;/style&gt;
 
@@ -1084,130 +1118,110 @@ html&gt;body{padding:0}&lt;/style&gt;
       &lt;span&gt;&lt;strong&gt;27&lt;/strong&gt; analyzed targets&lt;/span&gt;
     &lt;/div&gt;
 
-    &lt;nav class=&quot;rf-nav&quot; aria-label=&quot;Repository tasks&quot;&gt;
-      &lt;button type=&quot;button&quot; data-rf-tab=&quot;story&quot; aria-selected=&quot;true&quot;&gt;&lt;strong&gt;Follow execution&lt;/strong&gt;&lt;br&gt;&lt;span&gt;9 grounded edges&lt;/span&gt;&lt;/button&gt;
-      &lt;button type=&quot;button&quot; data-rf-tab=&quot;change&quot; aria-selected=&quot;false&quot;&gt;&lt;strong&gt;Plan a change&lt;/strong&gt;&lt;br&gt;&lt;span&gt;Partial plan + unknowns&lt;/span&gt;&lt;/button&gt;
-      &lt;button type=&quot;button&quot; data-rf-tab=&quot;integration&quot; aria-selected=&quot;false&quot;&gt;&lt;strong&gt;Inspect integration&lt;/strong&gt;&lt;br&gt;&lt;span&gt;64 exact bbolt uses&lt;/span&gt;&lt;/button&gt;
+    &lt;nav class=&quot;rf-nav&quot; aria-label=&quot;Repository tasks&quot; role=&quot;tablist&quot;&gt;
+      &lt;button type=&quot;button&quot; id=&quot;rf-tab-story&quot; role=&quot;tab&quot; tabindex=&quot;0&quot; data-rf-tab=&quot;story&quot; aria-controls=&quot;rf-panel-story&quot; aria-selected=&quot;true&quot;&gt;&lt;strong&gt;Follow execution&lt;/strong&gt;&lt;br&gt;&lt;span&gt;9 grounded edges&lt;/span&gt;&lt;/button&gt;
+      &lt;button type=&quot;button&quot; id=&quot;rf-tab-change&quot; role=&quot;tab&quot; tabindex=&quot;-1&quot; data-rf-tab=&quot;change&quot; aria-controls=&quot;rf-panel-change&quot; aria-selected=&quot;false&quot;&gt;&lt;strong&gt;Plan a change&lt;/strong&gt;&lt;br&gt;&lt;span&gt;Partial plan + unknowns&lt;/span&gt;&lt;/button&gt;
+      &lt;button type=&quot;button&quot; id=&quot;rf-tab-integration&quot; role=&quot;tab&quot; tabindex=&quot;-1&quot; data-rf-tab=&quot;integration&quot; aria-controls=&quot;rf-panel-integration&quot; aria-selected=&quot;false&quot;&gt;&lt;strong&gt;Inspect integration&lt;/strong&gt;&lt;br&gt;&lt;span&gt;64 exact bbolt uses&lt;/span&gt;&lt;/button&gt;
     &lt;/nav&gt;
 
-    &lt;section class=&quot;rf-panel&quot; data-rf-panel=&quot;story&quot;&gt;
+    &lt;section class=&quot;rf-panel&quot; id=&quot;rf-panel-story&quot; role=&quot;tabpanel&quot; aria-labelledby=&quot;rf-tab-story&quot; data-rf-panel=&quot;story&quot;&gt;
       &lt;div class=&quot;rf-panel-head&quot;&gt;
-        &lt;div&gt;&lt;h2&gt;From startEtcd to TLS key pair loading&lt;/h2&gt;&lt;p&gt;The same factual spine with deterministic, newcomer, and debugging copy.&lt;/p&gt;&lt;/div&gt;
-        &lt;span class=&quot;rf-state&quot;&gt;8 exact · 1 possible&lt;/span&gt;
+        &lt;div&gt;&lt;h2&gt;Possible startup path to an exact X509KeyPair callsite&lt;/h2&gt;&lt;p&gt;One callback handoff makes the route possible; the external symbol and local callsite remain exact.&lt;/p&gt;&lt;/div&gt;
+        &lt;span class=&quot;rf-state&quot;&gt;route possible · endpoint exact&lt;/span&gt;
       &lt;/div&gt;
-      &lt;div class=&quot;rf-treatment&quot; aria-label=&quot;Narrative treatment&quot;&gt;
-        &lt;button type=&quot;button&quot; data-rf-treatment=&quot;facts&quot; aria-pressed=&quot;true&quot;&gt;Facts only&lt;/button&gt;
-        &lt;button type=&quot;button&quot; data-rf-treatment=&quot;newcomer&quot; aria-pressed=&quot;false&quot;&gt;DeepSeek · newcomer&lt;/button&gt;
-        &lt;button type=&quot;button&quot; data-rf-treatment=&quot;debug&quot; aria-pressed=&quot;false&quot;&gt;DeepSeek · debugger&lt;/button&gt;
-      &lt;/div&gt;
-      &lt;p class=&quot;rf-result-line&quot;&gt;Both model variants: 9/9 edges · 0 invented bridges · 3/3 frontiers · 2 code jumps&lt;/p&gt;
+      &lt;p class=&quot;rf-result-line&quot;&gt;9 ordered edges · 8 exact · 1 possible callback · 0 invented bridges · 2 code jumps&lt;/p&gt;
       &lt;div data-rf-story aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
-      &lt;div class=&quot;rf-frontier-box&quot;&gt;&lt;strong&gt;Known frontier&lt;/strong&gt;The callback handoff is possible, 1,813 objects / 48 relations / 5,652 traversal targets were omitted by the source run, and execution inside crypto/tls is not represented.&lt;/div&gt;
+      &lt;div class=&quot;rf-frontier-box&quot;&gt;&lt;strong&gt;Known limits&lt;/strong&gt;The callback transfer is not exact, 1,813 objects / 48 relations / 5,652 traversal targets were omitted by the source run, and execution inside crypto/tls is not represented.&lt;/div&gt;
     &lt;/section&gt;
 
-    &lt;section class=&quot;rf-panel&quot; data-rf-panel=&quot;change&quot; hidden&gt;
+    &lt;section class=&quot;rf-panel&quot; id=&quot;rf-panel-change&quot; role=&quot;tabpanel&quot; aria-labelledby=&quot;rf-tab-change&quot; data-rf-panel=&quot;change&quot; hidden&gt;
       &lt;div class=&quot;rf-panel-head&quot;&gt;
-        &lt;div&gt;&lt;h2&gt;Change KV Put rejection under exhausted quota&lt;/h2&gt;&lt;p&gt;A useful starting plan, not a fabricated claim of complete impact.&lt;/p&gt;&lt;/div&gt;
+        &lt;div&gt;&lt;h2&gt;Change KV Put rejection under exhausted quota&lt;/h2&gt;&lt;p&gt;An ordered investigation plan. Adjacent evidence rows are not presented as a runtime call chain.&lt;/p&gt;&lt;/div&gt;
         &lt;span class=&quot;rf-state&quot;&gt;closed refs · partial&lt;/span&gt;
       &lt;/div&gt;
-      &lt;div class=&quot;rf-treatment&quot; aria-label=&quot;Plan treatment&quot;&gt;
-        &lt;button type=&quot;button&quot; data-rf-plan=&quot;facts&quot; aria-pressed=&quot;true&quot;&gt;D0 · retrieval&lt;/button&gt;
-        &lt;button type=&quot;button&quot; data-rf-plan=&quot;planner&quot; aria-pressed=&quot;false&quot;&gt;P1 · DeepSeek filler&lt;/button&gt;
-        &lt;button type=&quot;button&quot; data-rf-plan=&quot;critic&quot; aria-pressed=&quot;false&quot; class=&quot;rf-rejected&quot;&gt;P2 · critic added no value&lt;/button&gt;
-      &lt;/div&gt;
-      &lt;p class=&quot;rf-result-line&quot;&gt;All refs grounded · unsupported claims 0 · P1 stability 0.647 · P2 stability 0.500&lt;/p&gt;
+      &lt;p class=&quot;rf-plan-mode&quot;&gt;Evidence-first plan · every step expands in place · destinations reuse existing report pages or exact source&lt;/p&gt;
       &lt;div class=&quot;rf-plan&quot; data-rf-plan-body aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
-      &lt;div class=&quot;rf-frontier-box&quot;&gt;&lt;strong&gt;Continue in code&lt;/strong&gt;The saved facts do not contain the complete Put→quota path or exact test files and commands. Those remain explicit unknowns, not invented steps.&lt;/div&gt;
+      &lt;div class=&quot;rf-frontier-box&quot;&gt;&lt;strong&gt;Not represented in available facts&lt;/strong&gt;
+        &lt;ul class=&quot;rf-unknown-list&quot;&gt;
+          &lt;li&gt;No selected Put/quota activity entrypoint; no route is promoted into Follow execution.&lt;/li&gt;
+          &lt;li&gt;The complete Put→quota path, exact tests, and verification commands remain unknown.&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
     &lt;/section&gt;
 
-    &lt;section class=&quot;rf-panel&quot; data-rf-panel=&quot;integration&quot; hidden&gt;
+    &lt;section class=&quot;rf-panel&quot; id=&quot;rf-panel-integration&quot; role=&quot;tabpanel&quot; aria-labelledby=&quot;rf-tab-integration&quot; data-rf-panel=&quot;integration&quot; hidden&gt;
       &lt;div class=&quot;rf-panel-head&quot;&gt;
         &lt;div&gt;&lt;h2&gt;bbolt integration cockpit&lt;/h2&gt;&lt;p&gt;One stable grouping, then optional editorial and change-priority lenses.&lt;/p&gt;&lt;/div&gt;
         &lt;span class=&quot;rf-state&quot;&gt;64 exact uses&lt;/span&gt;
       &lt;/div&gt;
       &lt;div class=&quot;rf-treatment&quot; aria-label=&quot;Integration treatment&quot;&gt;
-        &lt;button type=&quot;button&quot; data-rf-integration=&quot;facts&quot; aria-pressed=&quot;true&quot;&gt;D0 · grouped facts&lt;/button&gt;
-        &lt;button type=&quot;button&quot; data-rf-integration=&quot;profile&quot; aria-pressed=&quot;false&quot;&gt;P1 · operational profile&lt;/button&gt;
-        &lt;button type=&quot;button&quot; data-rf-integration=&quot;risk&quot; aria-pressed=&quot;false&quot;&gt;P2 · change priority&lt;/button&gt;
+        &lt;button type=&quot;button&quot; data-rf-integration=&quot;facts&quot; aria-pressed=&quot;true&quot;&gt;Grouped facts&lt;/button&gt;
+        &lt;button type=&quot;button&quot; data-rf-integration=&quot;profile&quot; aria-pressed=&quot;false&quot;&gt;Operational profile&lt;/button&gt;
+        &lt;button type=&quot;button&quot; data-rf-integration=&quot;risk&quot; aria-pressed=&quot;false&quot;&gt;Change priority&lt;/button&gt;
       &lt;/div&gt;
       &lt;p class=&quot;rf-result-line&quot;&gt;4 importers · 56 relations · 23 callers · 64/64 locator and activity matches · 2 core areas&lt;/p&gt;
       &lt;div data-rf-integration-body aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
       &lt;div class=&quot;rf-frontier-box&quot;&gt;&lt;strong&gt;Reachability&lt;/strong&gt;All 23 routes are frontier because the source ProgramIndex is incomplete. The cockpit says “not represented in available facts” instead of implying a complete runtime path.&lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section class=&quot;rf-destination-page&quot; data-rf-destination-page aria-live=&quot;polite&quot; hidden&gt;
+      &lt;button type=&quot;button&quot; class=&quot;rf-destination-back&quot; data-rf-destination-back&gt;← Back&lt;/button&gt;
+      &lt;div class=&quot;rf-kicker&quot; data-rf-destination-kind&gt;&lt;/div&gt;
+      &lt;h2 data-rf-destination-title&gt;&lt;/h2&gt;
+      &lt;p class=&quot;rf-destination-summary&quot; data-rf-destination-summary&gt;&lt;/p&gt;
+      &lt;code class=&quot;rf-destination-route&quot; data-rf-destination-route&gt;&lt;/code&gt;
+      &lt;p class=&quot;rf-locator&quot; data-rf-destination-locator&gt;&lt;/p&gt;
     &lt;/section&gt;
   &lt;/main&gt;
 
   &lt;script&gt;
     (() =&gt; {
       const root = document.getElementById(&#x27;repomap-workbench&#x27;);
-      const storyLocators = [
-        &#x27;server/etcdmain/etcd.go:181&#x27;,
-        &#x27;server/embed/etcd.go:260&#x27;,
-        &#x27;server/etcdserver/server.go:423&#x27;,
-        &#x27;server/etcdserver/api/rafthttp/transport.go:139&#x27;,
-        &#x27;server/etcdserver/api/rafthttp/util.go:51&#x27;,
-        &#x27;client/pkg/transport/timeout_transport.go:28&#x27;,
-        &#x27;client/pkg/transport/transport.go:28&#x27;,
-        &#x27;client/pkg/transport/listener.go:591&#x27;,
-        &#x27;client/pkg/transport/listener.go:602&#x27;
+      const storyNodes = [
+        { name: &#x27;startEtcd&#x27;, locator: &#x27;server/etcdmain/etcd.go:180&#x27;, kind: &#x27;Selected entrypoint&#x27;, sourceLabel: &#x27;Open start&#x27; },
+        { name: &#x27;StartEtcd&#x27;, locator: &#x27;server/embed/etcd.go:110&#x27; },
+        { name: &#x27;NewServer&#x27;, locator: &#x27;server/etcdserver/server.go:294&#x27; },
+        { name: &#x27;rafthttp.Transport.Start&#x27;, locator: &#x27;server/etcdserver/api/rafthttp/transport.go:133&#x27; },
+        { name: &#x27;NewRoundTripper&#x27;, locator: &#x27;server/etcdserver/api/rafthttp/util.go:47&#x27; },
+        { name: &#x27;NewTimeoutTransport&#x27;, locator: &#x27;client/pkg/transport/timeout_transport.go:27&#x27; },
+        { name: &#x27;NewTransport&#x27;, locator: &#x27;client/pkg/transport/transport.go:27&#x27; },
+        { name: &#x27;ClientConfig&#x27;, locator: &#x27;client/pkg/transport/listener.go:562&#x27; },
+        { name: &#x27;ClientConfig$1&#x27;, locator: &#x27;client/pkg/transport/listener.go:591&#x27;, kind: &#x27;Callback body&#x27; },
+        { name: &#x27;crypto/tls.X509KeyPair&#x27;, locator: &#x27;client/pkg/transport/listener.go:602&#x27;, kind: &#x27;Exact external callsite&#x27;, sourceLabel: &#x27;Open exact callsite&#x27;, boundary: true }
       ];
-      const storyCertainty = [&#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;possible&#x27;, &#x27;exact&#x27;];
-      const storyVariants = {
-        facts: [
-          &#x27;startEtcd → StartEtcd&#x27;,
-          &#x27;StartEtcd → NewServer&#x27;,
-          &#x27;NewServer → rafthttp.Transport.Start&#x27;,
-          &#x27;Start → NewRoundTripper&#x27;,
-          &#x27;NewRoundTripper → NewTimeoutTransport&#x27;,
-          &#x27;NewTimeoutTransport → NewTransport&#x27;,
-          &#x27;NewTransport → ClientConfig&#x27;,
-          &#x27;ClientConfig → ClientConfig$1 callback&#x27;,
-          &#x27;ClientConfig$1 → crypto/tls.X509KeyPair&#x27;
-        ],
-        newcomer: [
-          &#x27;startEtcd calls StartEtcd synchronously.&#x27;,
-          &#x27;StartEtcd calls NewServer synchronously.&#x27;,
-          &#x27;NewServer calls the raft HTTP transport Start method.&#x27;,
-          &#x27;Start creates a new HTTP round tripper.&#x27;,
-          &#x27;NewRoundTripper creates a timeout-aware transport.&#x27;,
-          &#x27;NewTimeoutTransport delegates to NewTransport.&#x27;,
-          &#x27;NewTransport asks TLSInfo for its client configuration.&#x27;,
-          &#x27;ClientConfig may transfer control to its callback.&#x27;,
-          &#x27;The callback loads the TLS key pair through crypto/tls.&#x27;
-        ],
-        debug: [
-          &#x27;Confirm the startup handoff from startEtcd.&#x27;,
-          &#x27;Check the embedded-server boundary at StartEtcd.&#x27;,
-          &#x27;Inspect why NewServer starts the raft HTTP transport.&#x27;,
-          &#x27;Trace construction of the round tripper.&#x27;,
-          &#x27;Inspect timeout transport parameters.&#x27;,
-          &#x27;Continue into the base HTTP transport.&#x27;,
-          &#x27;Inspect the TLS ClientConfig call.&#x27;,
-          &#x27;Treat the callback transfer as possible, not exact.&#x27;,
-          &#x27;Stop at the exact external X509KeyPair callsite.&#x27;
-        ]
+      const storyEdges = [
+        { ref: &#x27;e1&#x27;, relation: &#x27;calls synchronously&#x27;, certainty: &#x27;exact&#x27; },
+        { ref: &#x27;e2&#x27;, relation: &#x27;calls synchronously&#x27;, certainty: &#x27;exact&#x27; },
+        { ref: &#x27;e3&#x27;, relation: &#x27;starts transport&#x27;, certainty: &#x27;exact&#x27; },
+        { ref: &#x27;e4&#x27;, relation: &#x27;creates round tripper&#x27;, certainty: &#x27;exact&#x27; },
+        { ref: &#x27;e5&#x27;, relation: &#x27;creates timeout transport&#x27;, certainty: &#x27;exact&#x27; },
+        { ref: &#x27;e6&#x27;, relation: &#x27;delegates to base transport&#x27;, certainty: &#x27;exact&#x27; },
+        { ref: &#x27;e7&#x27;, relation: &#x27;requests TLS client config&#x27;, certainty: &#x27;exact&#x27; },
+        { ref: &#x27;e8&#x27;, relation: &#x27;passes callback&#x27;, certainty: &#x27;possible&#x27;, note: &#x27;Available facts do not prove an exact callback transfer.&#x27; },
+        { ref: &#x27;e9&#x27;, relation: &#x27;invokes external symbol&#x27;, certainty: &#x27;exact&#x27; }
+      ];
+      const evidence = {
+        e01: { kind: &#x27;responsibility&#x27;, id: &#x27;core-0cc74b49641449f2&#x27;, label: &#x27;Storage quota enforcement&#x27;, confidence: &#x27;semantic&#x27;, locator: &#x27;server/storage/quota.go:54&#x27;, summary: &#x27;Owns quota availability checks and request-cost accounting around backend storage.&#x27;, action: &#x27;Open responsibility&#x27; },
+        e02: { kind: &#x27;responsibility&#x27;, id: &#x27;core-aabe546bef0f7ad3&#x27;, label: &#x27;Raft apply pipeline&#x27;, confidence: &#x27;semantic&#x27;, locator: &#x27;server/etcdserver/apply/quota.go:54&#x27;, summary: &#x27;Applies committed requests and carries quota-aware Put handling into the apply layer.&#x27;, action: &#x27;Open responsibility&#x27; },
+        e03: { kind: &#x27;responsibility&#x27;, id: &#x27;core-799810190ba0db70&#x27;, label: &#x27;V3 RPC services&#x27;, confidence: &#x27;semantic&#x27;, locator: &#x27;server/etcdserver/api/v3rpc/quota.go:93&#x27;, summary: &#x27;Exposes the client-facing v3 service boundary and constructs quota authority for requests.&#x27;, action: &#x27;Open responsibility&#x27; },
+        e04: { kind: &#x27;symbol&#x27;, label: &#x27;costPut&#x27;, confidence: &#x27;exact&#x27;, locator: &#x27;server/storage/quota.go:149&#x27;, action: &#x27;Open source&#x27; },
+        e05: { kind: &#x27;symbol&#x27;, label: &#x27;Put&#x27;, confidence: &#x27;partial&#x27;, locator: &#x27;server/etcdserver/apply/quota.go:36&#x27;, action: &#x27;Open source&#x27; },
+        e06: { kind: &#x27;symbol&#x27;, label: &#x27;newQuotaApplierV3&#x27;, confidence: &#x27;exact&#x27;, locator: &#x27;server/etcdserver/apply/quota.go:32&#x27;, action: &#x27;Open source&#x27; },
+        e07: { kind: &#x27;symbol&#x27;, label: &#x27;Put&#x27;, confidence: &#x27;partial&#x27;, locator: &#x27;server/etcdserver/api/v3rpc/quota.go:60&#x27;, action: &#x27;Open source&#x27; },
+        e08: { kind: &#x27;symbol&#x27;, label: &#x27;Available&#x27;, confidence: &#x27;exact&#x27;, locator: &#x27;server/storage/quota.go:50&#x27;, action: &#x27;Open source&#x27; },
+        e09: { kind: &#x27;symbol&#x27;, label: &#x27;newBackendQuota&#x27;, confidence: &#x27;exact&#x27;, locator: &#x27;server/etcdserver/api/v3rpc/quota.go:93&#x27;, action: &#x27;Open source&#x27; },
+        e10: { kind: &#x27;symbol&#x27;, label: &#x27;Put&#x27;, confidence: &#x27;partial&#x27;, locator: &#x27;server/etcdserver/txn/put.go:30&#x27;, action: &#x27;Open source&#x27; },
+        e11: { kind: &#x27;symbol&#x27;, label: &#x27;Put&#x27;, confidence: &#x27;exact&#x27;, locator: &#x27;server/storage/mvcc/kvstore_txn.go:180&#x27;, action: &#x27;Open source&#x27; },
+        e13: { kind: &#x27;symbol&#x27;, label: &#x27;Put&#x27;, confidence: &#x27;partial&#x27;, locator: &#x27;server/etcdserver/v3_server.go:295&#x27;, action: &#x27;Open source&#x27; }
       };
-      const plans = {
-        facts: [
-          [&#x27;Inspect the request-facing quota gate&#x27;, &#x27;Start with the saved RPC quota responsibility.&#x27;, [&#x27;e07&#x27;, &#x27;separate&#x27;, &#x27;partial&#x27;]],
-          [&#x27;Trace the quota-aware apply layer&#x27;, &#x27;Follow the known delegated write evidence without pretending the path is complete.&#x27;, [&#x27;e05&#x27;, &#x27;e02&#x27;, &#x27;connected&#x27;]],
-          [&#x27;Check storage availability and request cost&#x27;, &#x27;Review the local quota authority before changing behavior.&#x27;, [&#x27;e01&#x27;, &#x27;separate&#x27;]],
-          [&#x27;Verify RPC and gateway boundaries&#x27;, &#x27;Treat the two saved boundaries separately.&#x27;, [&#x27;e03&#x27;, &#x27;e15&#x27;, &#x27;partial&#x27;]],
-          [&#x27;Verify the persistence boundary&#x27;, &#x27;Inspect write-side and lease-sensitive transaction evidence.&#x27;, [&#x27;e10&#x27;, &#x27;e17&#x27;, &#x27;partial&#x27;]]
-        ],
-        planner: [
-          [&#x27;Locate the quota rejection point&#x27;, &#x27;Inspect storage quota enforcement and request-cost evidence.&#x27;, [&#x27;e01&#x27;, &#x27;e04&#x27;, &#x27;e08&#x27;]],
-          [&#x27;Inspect the apply pipeline&#x27;, &#x27;See where Put dispatch and quota checks meet.&#x27;, [&#x27;e02&#x27;, &#x27;e05&#x27;, &#x27;e06&#x27;]],
-          [&#x27;Inspect client-facing RPC handling&#x27;, &#x27;Find how quota errors are surfaced.&#x27;, [&#x27;e03&#x27;, &#x27;e07&#x27;, &#x27;e09&#x27;]],
-          [&#x27;Trace Put toward MVCC&#x27;, &#x27;Use the saved anchors as separate evidence; the full path is unresolved.&#x27;, [&#x27;e10&#x27;, &#x27;e11&#x27;, &#x27;e13&#x27;, &#x27;frontier&#x27;]],
-          [&#x27;Make the narrowest edit&#x27;, &#x27;Change the quota rejection logic at its grounded authority.&#x27;, [&#x27;e01&#x27;, &#x27;e04&#x27;]],
-          [&#x27;Verify the integration points&#x27;, &#x27;Check apply and RPC behavior, then choose tests after opening code.&#x27;, [&#x27;e02&#x27;, &#x27;e03&#x27;, &#x27;unknown&#x27;]]
-        ],
-        critic: [
-          [&#x27;No additional product value observed&#x27;, &#x27;The critic accepted grounded plans but removed and reordered zero steps.&#x27;, [&#x27;2 extra calls&#x27;, &#x27;no reduction&#x27;]],
-          [&#x27;Lower paraphrase stability&#x27;, &#x27;Anchor stability fell from 0.647 for P1 to 0.500 for P2.&#x27;, [&#x27;experiment result&#x27;, &#x27;frontier&#x27;]],
-          [&#x27;Decision&#x27;, &#x27;Keep the single constrained filler; do not ship a second critic call yet.&#x27;, [&#x27;rejected hypothesis&#x27;]]
-        ]
-      };
+      const changePlan = [
+        { title: &#x27;Locate the quota rejection point&#x27;, body: &#x27;Inspect storage quota enforcement and request-cost evidence.&#x27;, refs: [&#x27;e01&#x27;, &#x27;e04&#x27;, &#x27;e08&#x27;], mode: &#x27;separate anchors · partial&#x27; },
+        { title: &#x27;Inspect the apply pipeline&#x27;, body: &#x27;See where Put dispatch and quota checks meet.&#x27;, refs: [&#x27;e02&#x27;, &#x27;e05&#x27;, &#x27;e06&#x27;], mode: &#x27;separate anchors · partial&#x27; },
+        { title: &#x27;Inspect client-facing RPC handling&#x27;, body: &#x27;Find how quota errors are surfaced.&#x27;, refs: [&#x27;e03&#x27;, &#x27;e07&#x27;, &#x27;e09&#x27;], mode: &#x27;separate anchors · partial&#x27; },
+        { title: &#x27;Trace Put toward MVCC&#x27;, body: &#x27;The saved anchors do not establish a complete path.&#x27;, refs: [&#x27;e10&#x27;, &#x27;e11&#x27;, &#x27;e13&#x27;], mode: &#x27;separate anchors · frontier&#x27; },
+        { title: &#x27;Make the narrowest edit&#x27;, body: &#x27;Return to the grounded quota authority before changing behavior.&#x27;, refs: [&#x27;e01&#x27;, &#x27;e04&#x27;], mode: &#x27;separate anchors · partial&#x27; },
+        { title: &#x27;Verify known integration points&#x27;, body: &#x27;Inspect apply and RPC evidence; exact tests and commands remain unknown.&#x27;, refs: [&#x27;e02&#x27;, &#x27;e03&#x27;], mode: &#x27;separate anchors · unknown verification&#x27; }
+      ];
       const integrations = {
         facts: [
           [&#x27;Connection lifecycle · 7&#x27;, &#x27;Open/close across 3 callers.&#x27;, &#x27;server/storage/backend/backend.go&#x27;],
@@ -1238,29 +1252,89 @@ html&gt;body{padding:0}&lt;/style&gt;
         ]
       };
 
-      const openSource = (locator) =&gt; {
-        if (!locator || locator === &#x27;not represented&#x27;) return;
-        if (window.openai?.sendFollowUpMessage) {
-          window.openai.sendFollowUpMessage({
-            title: &#x27;Open repository source&#x27;,
-            prompt: `Open and inspect ${locator} in the etcd repository. Continue only from this evidence anchor and distinguish known facts from inference.`
-          });
-        }
+      const destinationPage = root.querySelector(&#x27;[data-rf-destination-page]&#x27;);
+      const destinationBack = root.querySelector(&#x27;[data-rf-destination-back]&#x27;);
+      let returnPanel = &#x27;story&#x27;;
+      let returnFocus = null;
+      const taskNames = { story: &#x27;execution path&#x27;, change: &#x27;change plan&#x27;, integration: &#x27;integration&#x27; };
+      const showDestination = ({ kind, title, summary, route, locator, from }) =&gt; {
+        returnFocus = root.contains(document.activeElement) ? document.activeElement : null;
+        returnPanel = from || root.querySelector(&#x27;[data-rf-tab][aria-selected=&quot;true&quot;]&#x27;)?.dataset.rfTab || &#x27;story&#x27;;
+        root.querySelectorAll(&#x27;[data-rf-panel]&#x27;).forEach(panel =&gt; { panel.hidden = true; });
+        destinationPage.hidden = false;
+        destinationBack.textContent = `← Back to ${taskNames[returnPanel]}`;
+        root.querySelector(&#x27;[data-rf-destination-kind]&#x27;).textContent = kind;
+        root.querySelector(&#x27;[data-rf-destination-title]&#x27;).textContent = title;
+        root.querySelector(&#x27;[data-rf-destination-summary]&#x27;).textContent = summary;
+        root.querySelector(&#x27;[data-rf-destination-route]&#x27;).textContent = route;
+        root.querySelector(&#x27;[data-rf-destination-locator]&#x27;).textContent = locator;
+        destinationBack.focus();
       };
-      const renderStory = (key) =&gt; {
-        root.querySelector(&#x27;[data-rf-story]&#x27;).innerHTML = storyVariants[key].map((title, index) =&gt; {
-          const certainty = storyCertainty[index];
-          const locator = storyLocators[index];
-          return `&lt;article class=&quot;rf-stage&quot;&gt;
-            &lt;div class=&quot;rf-stage-kind&quot;&gt;${String(index + 1).padStart(2, &#x27;0&#x27;)} · e${index + 1}&lt;/div&gt;
-            &lt;div&gt;&lt;h3&gt;${title}&lt;/h3&gt;&lt;div class=&quot;rf-locator&quot;&gt;${locator}&lt;/div&gt;&lt;button type=&quot;button&quot; class=&quot;rf-source&quot; data-rf-source=&quot;${locator}&quot;&gt;Open source&lt;/button&gt;&lt;/div&gt;
-            &lt;div class=&quot;rf-confidence ${certainty === &#x27;possible&#x27; ? &#x27;rf-frontier&#x27; : &#x27;&#x27;}&quot;&gt;${certainty}&lt;/div&gt;
+      const openSource = (locator, label = &#x27;Source anchor&#x27;) =&gt; {
+        if (!locator || locator === &#x27;not represented&#x27;) return;
+        showDestination({
+          kind: &#x27;Exact source destination&#x27;,
+          title: label,
+          summary: &#x27;The saved run can take the user to this exact file and line. No missing runtime edge is inferred from the anchor.&#x27;,
+          route: &#x27;repository source · exact locator&#x27;,
+          locator
+        });
+      };
+      const openEvidence = (ref) =&gt; {
+        const item = evidence[ref];
+        if (!item) return;
+        if (item.kind === &#x27;symbol&#x27;) {
+          openSource(item.locator, item.label);
+          return;
+        }
+        showDestination({
+          kind: &#x27;Existing responsibility destination&#x27;,
+          title: item.label,
+          summary: item.summary,
+          route: `#/program/responsibility/${item.id}`,
+          locator: item.locator,
+          from: &#x27;change&#x27;
+        });
+      };
+      const renderStory = () =&gt; {
+        root.querySelector(&#x27;[data-rf-story]&#x27;).innerHTML = `&lt;ol class=&quot;rf-trace&quot;&gt;${storyNodes.map((node, index) =&gt; {
+          const incoming = index ? storyEdges[index - 1] : null;
+          const incomingMarkup = incoming ? `&lt;div class=&quot;rf-trace-edge ${incoming.certainty === &#x27;possible&#x27; ? &#x27;rf-trace-edge--possible&#x27; : &#x27;&#x27;}&quot;&gt;
+            ${incoming.ref} · ${incoming.relation} · &lt;strong&gt;${incoming.certainty}&lt;/strong&gt;
+            ${incoming.note ? `&lt;p class=&quot;rf-trace-note&quot;&gt;${incoming.note}&lt;/p&gt;` : &#x27;&#x27;}
+          &lt;/div&gt;` : &#x27;&#x27;;
+          return `&lt;li class=&quot;rf-trace-node ${incoming?.certainty === &#x27;possible&#x27; ? &#x27;rf-trace-node--possible&#x27; : &#x27;&#x27;} ${node.boundary ? &#x27;rf-trace-node--boundary&#x27; : &#x27;&#x27;}&quot;&gt;
+            ${incomingMarkup}
+            &lt;div class=&quot;rf-trace-node-body&quot;&gt;
+              &lt;span class=&quot;rf-trace-marker&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
+              &lt;div class=&quot;rf-trace-copy&quot;&gt;&lt;h3&gt;${node.name}&lt;/h3&gt;&lt;p class=&quot;rf-locator&quot;&gt;${node.locator}&lt;/p&gt;${node.kind ? `&lt;span class=&quot;rf-trace-kind&quot;&gt;${node.kind}&lt;/span&gt;` : &#x27;&#x27;}&lt;/div&gt;
+              ${node.sourceLabel ? `&lt;button type=&quot;button&quot; class=&quot;rf-source&quot; data-rf-source=&quot;${node.locator}&quot;&gt;${node.sourceLabel}&lt;/button&gt;` : &#x27;&#x27;}
+            &lt;/div&gt;
+          &lt;/li&gt;`;
+        }).join(&#x27;&#x27;)}&lt;/ol&gt;`;
+      };
+      const renderPlan = () =&gt; {
+        root.querySelector(&#x27;[data-rf-plan-body]&#x27;).innerHTML = changePlan.map((step, index) =&gt; {
+          const expanded = index === 0;
+          const evidenceID = `rf-plan-evidence-${index}`;
+          return `&lt;article class=&quot;rf-plan-step&quot;&gt;
+            &lt;div&gt;
+              &lt;button type=&quot;button&quot; class=&quot;rf-plan-trigger&quot; data-rf-plan-step=&quot;${index}&quot; aria-expanded=&quot;${expanded}&quot; aria-controls=&quot;${evidenceID}&quot;&gt;
+                &lt;span class=&quot;rf-plan-copy&quot;&gt;&lt;span class=&quot;rf-plan-title&quot;&gt;${step.title}&lt;/span&gt;&lt;span class=&quot;rf-plan-description&quot;&gt;${step.body}&lt;/span&gt;&lt;span class=&quot;rf-chip ${step.mode.includes(&#x27;frontier&#x27;) || step.mode.includes(&#x27;unknown&#x27;) ? &#x27;rf-unknown&#x27; : &#x27;&#x27;}&quot;&gt;${step.mode}&lt;/span&gt;&lt;/span&gt;
+                &lt;span class=&quot;rf-plan-toggle&quot; aria-hidden=&quot;true&quot;&gt;${expanded ? &#x27;−&#x27; : &#x27;+&#x27;}&lt;/span&gt;
+              &lt;/button&gt;
+              &lt;div class=&quot;rf-evidence-list&quot; id=&quot;${evidenceID}&quot; ${expanded ? &#x27;&#x27; : &#x27;hidden&#x27;}&gt;
+                ${step.refs.map(ref =&gt; {
+                  const item = evidence[ref];
+                  return `&lt;div class=&quot;rf-evidence&quot;&gt;
+                    &lt;div&gt;&lt;span class=&quot;rf-evidence-meta&quot;&gt;${ref} · ${item.kind} · ${item.confidence}&lt;/span&gt;&lt;br&gt;&lt;strong&gt;${item.label}&lt;/strong&gt;&lt;p&gt;${item.locator}&lt;/p&gt;&lt;/div&gt;
+                    &lt;button type=&quot;button&quot; class=&quot;rf-evidence-action&quot; data-rf-evidence-action=&quot;${ref}&quot;&gt;${item.action}&lt;/button&gt;
+                  &lt;/div&gt;`;
+                }).join(&#x27;&#x27;)}
+              &lt;/div&gt;
+            &lt;/div&gt;
           &lt;/article&gt;`;
         }).join(&#x27;&#x27;);
-      };
-      const renderPlan = (key) =&gt; {
-        root.querySelector(&#x27;[data-rf-plan-body]&#x27;).innerHTML = plans[key].map(([title, body, chips]) =&gt; `
-          &lt;article class=&quot;rf-plan-step&quot;&gt;&lt;div&gt;&lt;h3&gt;${title}&lt;/h3&gt;&lt;p&gt;${body}&lt;/p&gt;&lt;div class=&quot;rf-chip-row&quot;&gt;${chips.map(c =&gt; `&lt;span class=&quot;rf-chip ${c === &#x27;unknown&#x27; || c === &#x27;frontier&#x27; || c === &#x27;rejected hypothesis&#x27; ? &#x27;rf-unknown&#x27; : &#x27;&#x27;}&quot;&gt;${c}&lt;/span&gt;`).join(&#x27;&#x27;)}&lt;/div&gt;&lt;/div&gt;&lt;/article&gt;`).join(&#x27;&#x27;);
       };
       const renderIntegration = (key) =&gt; {
         root.querySelector(&#x27;[data-rf-integration-body]&#x27;).innerHTML = integrations[key].map(([operation, caller, locator]) =&gt; `
@@ -1269,20 +1343,34 @@ html&gt;body{padding:0}&lt;/style&gt;
       root.addEventListener(&#x27;click&#x27;, (event) =&gt; {
         const tab = event.target.closest(&#x27;[data-rf-tab]&#x27;);
         if (tab) {
-          root.querySelectorAll(&#x27;[data-rf-tab]&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-selected&#x27;, String(b === tab)));
+          root.querySelectorAll(&#x27;[data-rf-tab]&#x27;).forEach(b =&gt; {
+            b.setAttribute(&#x27;aria-selected&#x27;, String(b === tab));
+            b.tabIndex = b === tab ? 0 : -1;
+          });
+          destinationPage.hidden = true;
+          returnFocus = null;
           root.querySelectorAll(&#x27;[data-rf-panel]&#x27;).forEach(p =&gt; { p.hidden = p.dataset.rfPanel !== tab.dataset.rfTab; });
           return;
         }
-        const treatment = event.target.closest(&#x27;[data-rf-treatment]&#x27;);
-        if (treatment) {
-          root.querySelectorAll(&#x27;[data-rf-treatment]&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String(b === treatment)));
-          renderStory(treatment.dataset.rfTreatment);
+        const back = event.target.closest(&#x27;[data-rf-destination-back]&#x27;);
+        if (back) {
+          destinationPage.hidden = true;
+          root.querySelectorAll(&#x27;[data-rf-panel]&#x27;).forEach(panel =&gt; { panel.hidden = panel.dataset.rfPanel !== returnPanel; });
+          if (returnFocus &amp;&amp; root.contains(returnFocus)) returnFocus.focus();
           return;
         }
-        const plan = event.target.closest(&#x27;[data-rf-plan]&#x27;);
-        if (plan) {
-          root.querySelectorAll(&#x27;[data-rf-plan]&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String(b === plan)));
-          renderPlan(plan.dataset.rfPlan);
+        const evidenceAction = event.target.closest(&#x27;[data-rf-evidence-action]&#x27;);
+        if (evidenceAction) {
+          openEvidence(evidenceAction.dataset.rfEvidenceAction);
+          return;
+        }
+        const planStep = event.target.closest(&#x27;[data-rf-plan-step]&#x27;);
+        if (planStep) {
+          const expanded = planStep.getAttribute(&#x27;aria-expanded&#x27;) === &#x27;true&#x27;;
+          planStep.setAttribute(&#x27;aria-expanded&#x27;, String(!expanded));
+          planStep.querySelector(&#x27;.rf-plan-toggle&#x27;).textContent = expanded ? &#x27;+&#x27; : &#x27;−&#x27;;
+          const evidenceList = root.querySelector(`#${planStep.getAttribute(&#x27;aria-controls&#x27;)}`);
+          evidenceList.hidden = expanded;
           return;
         }
         const integration = event.target.closest(&#x27;[data-rf-integration]&#x27;);
@@ -1292,10 +1380,22 @@ html&gt;body{padding:0}&lt;/style&gt;
           return;
         }
         const source = event.target.closest(&#x27;[data-rf-source]&#x27;);
-        if (source) openSource(source.dataset.rfSource);
+        if (source) openSource(source.dataset.rfSource, source.textContent.trim());
       });
-      renderStory(&#x27;facts&#x27;);
-      renderPlan(&#x27;facts&#x27;);
+      root.addEventListener(&#x27;keydown&#x27;, (event) =&gt; {
+        const tab = event.target.closest(&#x27;[data-rf-tab]&#x27;);
+        if (!tab || ![&#x27;ArrowLeft&#x27;, &#x27;ArrowRight&#x27;, &#x27;Home&#x27;, &#x27;End&#x27;].includes(event.key)) return;
+        const tabs = [...root.querySelectorAll(&#x27;[data-rf-tab]&#x27;)];
+        const index = tabs.indexOf(tab);
+        const next = event.key === &#x27;Home&#x27; ? tabs[0] :
+          event.key === &#x27;End&#x27; ? tabs[tabs.length - 1] :
+            tabs[(index + (event.key === &#x27;ArrowRight&#x27; ? 1 : -1) + tabs.length) % tabs.length];
+        event.preventDefault();
+        next.focus();
+        next.click();
+      });
+      renderStory();
+      renderPlan();
       renderIntegration(&#x27;facts&#x27;);
     })();
   &lt;/script&gt;

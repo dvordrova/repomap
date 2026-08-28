@@ -139,6 +139,11 @@ func TestOrientationClientReframesJoinedActivityPathsAsOptionalExecutionStory(t 
 		"outcome.use.authority === 'exact_external_symbol'",
 		"if (outcomeIndex === 0)",
 		"Follow execution",
+		"Possible callback handoff",
+		"Available facts do not prove an exact transfer",
+		"Observed exact external callsites from this caller",
+		"data-execution-node",
+		"data-execution-edge",
 		"not represented in available facts",
 	} {
 		if !strings.Contains(reportAppJS, required) {
@@ -149,7 +154,11 @@ func TestOrientationClientReframesJoinedActivityPathsAsOptionalExecutionStory(t 
 		".rm-execution-story__header",
 		".rm-execution-story__key--exact",
 		".rm-execution-story__key--possible",
-		".rm-execution-story-step--possible",
+		".rm-execution-story-node__body",
+		".rm-execution-story-connector--possible",
+		".rm-execution-story__boundary",
+		".rm-execution-story__outcomes--fanout",
+		".rm-execution-story .rm-source-action__location",
 		".rm-execution-story__not-represented",
 		".rm-execution-story-outcome__actions",
 	} {
@@ -161,6 +170,9 @@ func TestOrientationClientReframesJoinedActivityPathsAsOptionalExecutionStory(t 
 		if strings.Contains(reportAppJS, duplicateAuthority) {
 			t.Errorf("execution-story presentation introduced duplicate browser authority %q", duplicateAuthority)
 		}
+	}
+	if strings.Contains(reportAppJS, "External outcome") {
+		t.Error("execution-story presentation must not promote an exact external callsite into a runtime outcome")
 	}
 }
 

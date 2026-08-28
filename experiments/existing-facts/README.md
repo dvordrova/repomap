@@ -6,10 +6,12 @@ repomap again and do not inspect repository source beyond the locations already
 stored in those artifacts.
 
 Open `report.html` for the single product-facing prototype. It combines three
-stable, optional views:
+optional task views:
 
-- an ordered execution story with exact, possible, and frontier states;
-- a partial change plan with grounded start points and explicit unknowns;
+- a node-first execution spine with exact, possible, external-boundary, and
+  frontier states; redundant newcomer/debugger prose treatments are absent;
+- a partial change plan whose steps expand into grounded evidence and point
+  only to existing report destinations or exact source anchors;
 - an integration cockpit with grouped operations and a bounded inspection
   priority.
 
@@ -17,7 +19,10 @@ The subdirectories retain the prompts, closed-ref inputs, sanitized model
 responses, receipts, and scorecards used to audit the experiment. The
 timeboxed harness code and provider caches are deliberately not retained.
 
-Current decision: productize the stable task-view skeleton and one constrained
-LLM filler; do not add a second critic call until it demonstrates a measurable
-reduction or reranking benefit. Missing older-run artifacts must render the
-corresponding view as absent or partial, never fail the report.
+Current decision: productize the deterministic execution skeleton. Keep the
+change-plan and integration views as candidate skeletons until their new cube
+contracts are approved; the recorded single constrained plan filler is useful
+only as grounded starting points. Do not add audience-rewrite tabs or a second
+critic call until either produces task-specific information rather than new
+prose. Missing older-run artifacts must render the corresponding view as absent
+or partial, never fail the report.
