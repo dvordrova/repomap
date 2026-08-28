@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
+  "request_digest": "11261de5abe7d8afc859fd8bd0e0d07a94f0a33b2095eda7ac8deccb54926a37",
+  "steps": [
+    {
+      "ref": "s1",
+      "title": "Shape client configuration",
+      "purpose": "Translate application settings into a focused client configuration before construction."
+    },
+    {
+      "ref": "s2",
+      "title": "Build the local boundary",
+      "purpose": "Keep SDK construction behind a repository-owned wrapper that the application can depend on."
+    },
+    {
+      "ref": "s3",
+      "title": "Define the consumer contract",
+      "purpose": "Expose the smallest application-facing interface and call it from the real production operation."
+    },
+    {
+      "ref": "s4",
+      "title": "Wire the live service graph",
+      "purpose": "Construct the client at startup and pass the local boundary into the service that uses it."
+    },
+    {
+      "ref": "s5",
+      "title": "Prove the integration",
+      "purpose": "Follow the repository's existing unit or integration verification shape for observable behavior."
+    },
+    {
+      "ref": "s6",
+      "title": "Observe and contain failure",
+      "purpose": "Record client attempts and failures, then apply the repository's common timeout or retry policy."
+    }
+  ],
+  "examples": [
+    {
+      "ref": "e1",
+      "summary": "Complete integration-tested boundary with configuration, wiring, operations, and failure visibility."
+    },
+    {
+      "ref": "e2",
+      "summary": "Complete unit-tested boundary with an application interface, retries, metrics, and failure logging."
+    },
+    {
+      "ref": "e3",
+      "summary": "Production-reachable boundary that still lacks verification, observability, and a failure policy."
+    },
+    {
+      "ref": "e4",
+      "summary": "Complete unit-tested boundary with explicit configuration, timeout-aware retries, metrics, and logging."
+    }
+  ],
+  "sha256": "0dddc460a0076c0f36b301dcf1448fc3e5b539f0d56d162aecab7c8fba1a1e91"
+}
