@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "freeze_receipt_sha256": "934a4b8b7f316f44e6b83172dc8e56c6ed56dd7d8be36c5d9670c9a68fb25f8d",
+  "h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
+  "hypothesis": "required/common roles learned from two complete boundary instances predict the held-out instance's non-contract repository patterns",
+  "scope": "controlled_fixture_reducer_only",
+  "extraction_isolation": false,
+  "candidate_oracle_isolation": true,
+  "task_contract_status": "TASK_SUPPLIED_NOT_LEARNED",
+  "task_required_roles": [
+    "application_wiring",
+    "configuration",
+    "construction",
+    "consumer_boundary",
+    "local_wrapper",
+    "observability",
+    "production_operation",
+    "verification"
+  ],
+  "pattern_role_universe": [
+    "failure_policy"
+  ],
+  "folds": [
+    {
+      "held_out_instance_id": "h1-instance-7eed864117280bdf80506864",
+      "held_out_oracle_id": "kubernetes",
+      "held_out_name": "Kubernetes namespace client",
+      "training_instance_ids": [
+        "h1-instance-ac28c98a439448092c34e1d0",
+        "h1-instance-e6c59de5d19c88e2094aa1b8"
+      ],
+      "candidate_sha256": "7e1a097c3fb64453ab24743cf25c42402098a8620587acee8a3db3095103948e",
+      "task_contract_status": "TASK_SUPPLIED_NOT_LEARNED",
+      "task_contract_matched": 8,
+      "task_contract_total": 8,
+      "predicted_pattern_roles": [],
+      "held_out_pattern_roles": [
+        "failure_policy"
+      ],
+      "true_positive_roles": [],
+      "false_positive_roles": [],
+      "false_negative_roles": [
+        "failure_policy"
+      ],
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 1,
+      "exact_pattern_match": false,
+      "verdict": "FAIL"
+    },
+    {
+      "held_out_instance_id": "h1-instance-ac28c98a439448092c34e1d0",
+      "held_out_oracle_id": "clickhouse",
+      "held_out_name": "ClickHouse launch history",
+      "training_instance_ids": [
+        "h1-instance-7eed864117280bdf80506864",
+        "h1-instance-e6c59de5d19c88e2094aa1b8"
+      ],
+      "candidate_sha256": "7e83534a574d23f4626d376903c9034a8d07402cafbdd518b3190ff6a172fbd7",
+      "task_contract_status": "TASK_SUPPLIED_NOT_LEARNED",
+      "task_contract_matched": 8,
+      "task_contract_total": 8,
+      "predicted_pattern_roles": [
+        "failure_policy"
+      ],
+      "held_out_pattern_roles": [],
+      "true_positive_roles": [],
+      "false_positive_roles": [
+        "failure_policy"
+      ],
+      "false_negative_roles": [],
+      "true_positives": 0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "exact_pattern_match": false,
+      "verdict": "FAIL"
+    },
+    {
+      "held_out_instance_id": "h1-instance-e6c59de5d19c88e2094aa1b8",
+      "held_out_oracle_id": "vault",
+      "held_out_name": "Vault secret client",
+      "training_instance_ids": [
+        "h1-instance-7eed864117280bdf80506864",
+        "h1-instance-ac28c98a439448092c34e1d0"
+      ],
+      "candidate_sha256": "da42dcbc3bbc237f64c543f66dde2229c3d08c1faa068fa034f51617bc2cbffc",
+      "task_contract_status": "TASK_SUPPLIED_NOT_LEARNED",
+      "task_contract_matched": 8,
+      "task_contract_total": 8,
+      "predicted_pattern_roles": [],
+      "held_out_pattern_roles": [
+        "failure_policy"
+      ],
+      "true_positive_roles": [],
+      "false_positive_roles": [],
+      "false_negative_roles": [
+        "failure_policy"
+      ],
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 1,
+      "exact_pattern_match": false,
+      "verdict": "FAIL"
+    }
+  ],
+  "aggregate": {
+    "folds": 3,
+    "exact_pattern_matches": 0,
+    "task_contract_matched": 24,
+    "task_contract_total": 24,
+    "pattern_true_positives": 0,
+    "pattern_false_positives": 1,
+    "pattern_false_negatives": 2
+  },
+  "generalization_status": "NOT_ESTABLISHED",
+  "user_utility_status": "NOT_TESTED",
+  "production_readiness": "NOT_READY",
+  "verdict": "FAIL",
+  "sha256": "828dfd2f93ca54bb40e6e17d3c2109582642904976d6aa5fcfd3d9b9fc5e90ac"
+}
