@@ -942,25 +942,39 @@ const exactStorySourceActions = exactStory ? descendants(exactStory).filter((nod
   String(node.className).split(/\s+/).includes('rm-source-action')
 ) : [];
 check(exactStory && exactStory.textContent.includes('Deterministic program facts') &&
-  exactStory.textContent.includes('Exact route') && exactStory.textContent.includes('External outcome') &&
-  exactStory.textContent.includes('http-client.send'),
-  'Follow execution must reframe the already joined exact route and endpoint without model prose');
+  exactStory.textContent.includes('Exact route') &&
+  exactStory.textContent.includes('Exact path to an exact external callsite') &&
+  exactStory.textContent.includes('External boundary') &&
+  exactStory.textContent.includes('Exact external callsite') &&
+  exactStory.textContent.includes('http-client.send') &&
+  !exactStory.textContent.includes('External outcome'),
+  'Follow execution must present the joined exact route as a code boundary without a runtime outcome claim');
 check(exactStorySourceActions.length === 2 &&
   exactStorySourceActions[0].textContent.includes('Start here') &&
-  exactStorySourceActions[1].textContent.includes('Open exact endpoint'),
-  'one execution route must expose only its selected activity and one exact endpoint source action');
+  exactStorySourceActions[1].textContent.includes('Open exact callsite'),
+  'one execution route must expose only its selected activity and one exact callsite source action');
 
+const exactIntermediate = {
+  id: 'object:exact-intermediate', name: 'app/execution#prepareSend', kind: 'function'
+};
 const possibleCaller = {
   id: 'object:possible-caller', name: 'app/execution#sendPossibly', kind: 'function'
 };
+model.activityPaths.objectsByID[exactIntermediate.id] = exactIntermediate;
 model.activityPaths.objectsByID[possibleCaller.id] = possibleCaller;
 const possibleRoute = {
   id: 'route:possible', activityID: activity.id, callerID: possibleCaller.id,
-  status: 'possible', distance: 1, frontier: [],
-  steps: [{
-    fromID: activity.id, toID: possibleCaller.id, kind: 'passes_callback', authority: 'possible',
-    location: { path: 'app/execution.py', line: 24, column: 3 }
-  }],
+  status: 'possible', distance: 2, frontier: [],
+  steps: [
+    {
+      fromID: activity.id, toID: exactIntermediate.id, kind: 'calls', authority: 'exact',
+      location: { path: 'app/execution.py', line: 20, column: 3 }
+    },
+    {
+      fromID: exactIntermediate.id, toID: possibleCaller.id, kind: 'passes_callback', authority: 'possible',
+      location: { path: 'app/execution.py', line: 24, column: 3 }
+    }
+  ],
   outcomes: [directRoute.outcomes[0], {
     dependencyID: integration.id,
     use: {
@@ -974,13 +988,39 @@ const possibleStory = api.renderExecutionStory(activity, [possibleRoute]);
 const possibleSourceActions = descendants(possibleStory).filter((node) =>
   String(node.className).split(/\s+/).includes('rm-source-action')
 );
+const possibleNodes = descendants(possibleStory).filter((node) =>
+  node.getAttribute('data-execution-node') !== null
+);
+const possibleEdges = descendants(possibleStory).filter((node) =>
+  node.getAttribute('data-execution-edge') !== null
+);
+const possibleHandoff = possibleEdges.find((node) =>
+  String(node.className).split(/\s+/).includes('rm-execution-story-connector--possible')
+);
+const possibleEndpoints = descendants(possibleStory).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-execution-story-outcome')
+);
 check(possibleStory.textContent.includes('Possible route') &&
+  possibleNodes.length === 3 &&
+  possibleNodes.map((node) => node.getAttribute('data-execution-node')).join('|') ===
+    [activity.id, exactIntermediate.id, possibleCaller.id].join('|') &&
+  possibleEdges.map((node) => node.getAttribute('data-execution-edge')).join('|') === '1|2' &&
+  possibleEdges[0].textContent.includes('calls') && possibleEdges[0].textContent.includes('exact') &&
+  possibleHandoff && possibleHandoff.textContent.includes('Possible callback handoff') &&
+  possibleHandoff.textContent.includes('passes callback') &&
+  !possibleHandoff.textContent.includes('passes control to') &&
+  possibleHandoff.textContent.includes('Available facts do not prove an exact transfer.') &&
+  !possibleStory.textContent.includes('Start here →') &&
+  !possibleStory.textContent.includes('prepareSend →'),
+  'Follow execution must render each ordered path node once and put relation certainty on its incoming connector');
+check(possibleStory.textContent.includes('Observed exact external callsites from this caller') &&
+  possibleEndpoints.length === 2 &&
   descendants(possibleStory).some((node) =>
-    String(node.className).split(/\s+/).includes('rm-execution-story-step--possible')) &&
-  (possibleStory.textContent.match(/External outcome/g) || []).length === 2,
-  'Follow execution must keep a possible edge visibly distinct and retain every exact joined outcome');
+    String(node.className).split(/\s+/).includes('rm-execution-story__outcomes--fanout')) &&
+  !possibleStory.textContent.includes('External outcome'),
+  'multiple exact callsites must remain a terminal fan-out rather than a runtime outcome sequence');
 check(possibleSourceActions.length === 2,
-  'multiple exact outcomes on one route must not expand beyond the two-source-action cap');
+  'multiple exact callsites on one route must not expand beyond the two-source-action cap');
 
 const unresolvedRoute = {
   id: 'route:unresolved-endpoint', activityID: activity.id, callerID: activity.id,
@@ -1012,6 +1052,7 @@ check(api.renderExecutionStory(activity, []) === null &&
   noStoryHost.textContent.includes('Paths to selected integrations'),
   'an entrypoint without a joined path must omit Follow execution and preserve the existing empty-path page');
 model.activityPaths.routes = routesBeforeEmptyStory;
+delete model.activityPaths.objectsByID[exactIntermediate.id];
 delete model.activityPaths.objectsByID[possibleCaller.id];
 
 const coreClick = {

@@ -2481,13 +2481,15 @@
     var heading = element('header', 'rm-program-route-card__heading rm-execution-story-route__heading');
     var copy = element('div');
     appendText(copy, 'p', 'rm-eyebrow', 'Execution route ' + String(routeIndex + 1));
-    var outcomeLabel = exactOutcomes.length === 1 ? exactOutcomes[0].use.label :
-      (exactOutcomes.length ? String(exactOutcomes.length) + ' exact external outcomes' :
-        'endpoint not represented in available facts');
-    appendText(copy, 'h3', '', displayProgramObjectName(activity) + ' → ' + outcomeLabel);
+    var pathLabel = exactOutcomes.length ?
+      (route.status === 'possible' ? 'Possible path to ' : 'Exact path to ') +
+        (exactOutcomes.length === 1 ? 'an exact external callsite' :
+          String(exactOutcomes.length) + ' exact external callsites') :
+      (route.status === 'possible' ? 'Possible path' : 'Exact path') + ' with an external endpoint gap';
+    appendText(copy, 'h3', '', pathLabel);
     appendText(copy, 'p', 'rm-execution-story-route__facts', String(route.distance) +
-      (route.distance === 1 ? ' represented step' : ' represented steps') + ' · ' +
-      String(exactOutcomes.length) + (exactOutcomes.length === 1 ? ' exact endpoint' : ' exact endpoints') +
+      (route.distance === 1 ? ' ordered edge' : ' ordered edges') + ' · ' +
+      String(exactOutcomes.length) + (exactOutcomes.length === 1 ? ' exact callsite' : ' exact callsites') +
       (unresolvedOutcomes.length ? ' · ' + String(unresolvedOutcomes.length) +
         (unresolvedOutcomes.length === 1 ? ' endpoint gap' : ' endpoint gaps') : ''));
     heading.appendChild(copy);
@@ -2496,28 +2498,85 @@
       executionStoryStatusLabel(route.status));
     card.appendChild(heading);
 
-    var start = element('div', 'rm-execution-story__start');
-    appendText(start, 'span', 'rm-execution-story__anchor-label', 'Start');
-    start.appendChild(sourceAction(displayProgramObjectName(activity), activity.location, { compact: true }));
-    card.appendChild(start);
+    var timeline = element('ol', 'rm-execution-story__timeline');
+    var start = element('li', 'rm-execution-story-node rm-execution-story-node--start');
+    start.setAttribute('data-execution-node', activity.id);
+    var startBody = element('div', 'rm-execution-story-node__body');
+    appendText(startBody, 'span', 'rm-execution-story-node__ordinal', 'Start');
+    var startCopy = element('div', 'rm-execution-story-node__copy');
+    appendText(startCopy, 'p', 'rm-eyebrow', route.steps.length ? 'Entrypoint' : 'Entrypoint · retained caller');
+    startCopy.appendChild(sourceAction(displayProgramObjectName(activity), activity.location, { compact: true }));
+    startBody.appendChild(startCopy);
+    start.appendChild(startBody);
+    timeline.appendChild(start);
 
-    if (route.steps.length) {
-      var steps = element('ol', 'rm-program-route-steps rm-execution-story__steps');
-      route.steps.forEach(function (step, stepIndex) {
-        var from = state.model.activityPaths.objectsByID[step.fromID];
-        var to = state.model.activityPaths.objectsByID[step.toID];
-        var item = element('li', 'rm-execution-story-step rm-execution-story-step--' + step.authority);
-        appendText(item, 'span', 'rm-execution-story-step__ordinal', String(stepIndex + 1).padStart(2, '0'));
-        var stepCopy = element('div', 'rm-execution-story-step__copy');
-        appendText(stepCopy, 'strong', '', displayProgramObjectName(from) + ' → ' + displayProgramObjectName(to));
-        appendText(stepCopy, 'small', '', humanRelation(step.kind));
-        item.appendChild(stepCopy);
-        appendText(item, 'span', 'rm-resolution rm-resolution--' +
-          (step.authority === 'possible' ? 'alternatives' : 'exact') + ' rm-execution-story__edge',
-          step.authority);
-        steps.appendChild(item);
+    route.steps.forEach(function (step, stepIndex) {
+      var to = state.model.activityPaths.objectsByID[step.toID];
+      var item = element('li', 'rm-execution-story-node');
+      item.setAttribute('data-execution-node', step.toID);
+      var connector = element('div', 'rm-execution-story-connector rm-execution-story-connector--' +
+        step.authority);
+      connector.setAttribute('data-execution-edge', String(stepIndex + 1));
+      appendText(connector, 'span', 'rm-execution-story-connector__rail', '');
+      var connectorCopy = element('div', 'rm-execution-story-connector__copy');
+      if (step.authority === 'possible') {
+        appendText(connectorCopy, 'strong', '', step.kind === 'passes_callback' ?
+          'Possible callback handoff' : 'Possible handoff');
+        appendText(connectorCopy, 'small', '', (step.kind === 'passes_callback' ?
+          'passes callback' : humanRelation(step.kind)) +
+          ' · Available facts do not prove an exact transfer.');
+      } else {
+        appendText(connectorCopy, 'strong', '', humanRelation(step.kind));
+      }
+      connector.appendChild(connectorCopy);
+      appendText(connector, 'span', 'rm-resolution rm-resolution--' +
+        (step.authority === 'possible' ? 'alternatives' : 'exact') + ' rm-execution-story__edge',
+        step.authority);
+      item.appendChild(connector);
+      var nodeBody = element('div', 'rm-execution-story-node__body');
+      appendText(nodeBody, 'span', 'rm-execution-story-node__ordinal', String(stepIndex + 1).padStart(2, '0'));
+      var nodeCopy = element('div', 'rm-execution-story-node__copy');
+      appendText(nodeCopy, 'p', 'rm-eyebrow', stepIndex + 1 === route.steps.length ?
+        'Retained caller' : 'Program object');
+      appendText(nodeCopy, 'strong', '', displayProgramObjectName(to));
+      nodeBody.appendChild(nodeCopy);
+      item.appendChild(nodeBody);
+      timeline.appendChild(item);
+    });
+    card.appendChild(timeline);
+
+    if (exactOutcomes.length) {
+      var boundary = element('section', 'rm-execution-story__boundary');
+      appendText(boundary, 'p', 'rm-eyebrow', 'External boundary');
+      appendText(boundary, 'h4', '', exactOutcomes.length === 1 ? 'Exact external callsite' :
+        'Observed exact external callsites from this caller');
+      appendText(boundary, 'p', 'rm-execution-story__boundary-copy',
+        'These selected callsites bind exact external symbols. ' +
+        'Execution beyond this external boundary is not represented in available facts.');
+      var outcomes = element('ul', 'rm-integration-use-list rm-execution-story__outcomes' +
+        (exactOutcomes.length > 1 ? ' rm-execution-story__outcomes--fanout' : ''));
+      exactOutcomes.forEach(function (outcome, outcomeIndex) {
+        var integration = state.model.integrationsByID[outcome.dependencyID];
+        var outcomeItem = element('li', 'rm-integration-use-card rm-execution-story-outcome');
+        var outcomeCopy = element('div', 'rm-execution-story-outcome__copy');
+        appendText(outcomeCopy, 'p', 'rm-eyebrow', 'Exact external callsite');
+        appendText(outcomeCopy, 'strong', '', integration.name + ' · ' + outcome.use.label);
+        appendText(outcomeCopy, 'code', '', outcome.use.callee);
+        appendText(outcomeCopy, 'small', '', outcome.use.mechanism + ' · ' +
+          humanIntegrationAuthority(outcome.use.authority));
+        outcomeItem.appendChild(outcomeCopy);
+        var actions = element('div', 'rm-execution-story-outcome__actions');
+        if (outcomeIndex === 0) {
+          actions.appendChild(sourceAction('Open exact callsite', outcome.use.callsite, { compact: true }));
+        }
+        var link = element('a', 'rm-execution-story-outcome__link', 'Inspect integration →');
+        link.href = routeForIntegration(integration.id);
+        actions.appendChild(link);
+        outcomeItem.appendChild(actions);
+        outcomes.appendChild(outcomeItem);
       });
-      card.appendChild(steps);
+      boundary.appendChild(outcomes);
+      card.appendChild(boundary);
     }
 
     if (unresolvedOutcomes.length) {
@@ -2538,31 +2597,6 @@
       notRepresented.appendChild(reasons);
       card.appendChild(notRepresented);
     }
-
-    if (exactOutcomes.length) {
-      var outcomes = element('ol', 'rm-integration-use-list rm-execution-story__outcomes');
-      exactOutcomes.forEach(function (outcome, outcomeIndex) {
-        var integration = state.model.integrationsByID[outcome.dependencyID];
-        var item = element('li', 'rm-integration-use-card rm-execution-story-outcome');
-        var outcomeCopy = element('div', 'rm-execution-story-outcome__copy');
-        appendText(outcomeCopy, 'p', 'rm-eyebrow', 'External outcome');
-        appendText(outcomeCopy, 'strong', '', integration.name + ' · ' + outcome.use.label);
-        appendText(outcomeCopy, 'code', '', outcome.use.callee);
-        appendText(outcomeCopy, 'small', '', outcome.use.mechanism + ' · ' +
-          humanIntegrationAuthority(outcome.use.authority));
-        item.appendChild(outcomeCopy);
-        var actions = element('div', 'rm-execution-story-outcome__actions');
-        if (outcomeIndex === 0) {
-          actions.appendChild(sourceAction('Open exact endpoint', outcome.use.callsite, { compact: true }));
-        }
-        var link = element('a', 'rm-execution-story-outcome__link', 'Inspect integration →');
-        link.href = routeForIntegration(integration.id);
-        actions.appendChild(link);
-        item.appendChild(actions);
-        outcomes.appendChild(item);
-      });
-      card.appendChild(outcomes);
-    }
     return card;
   }
 
@@ -2574,7 +2608,7 @@
     appendText(copy, 'p', 'rm-eyebrow', 'Deterministic program facts');
     appendText(copy, 'h2', '', 'Follow execution');
     appendText(copy, 'p', 'rm-focus-section__intro',
-      'Ordered paths from this entrypoint to selected external operations. No missing bridge is inferred.');
+      'Ordered nodes and edge facts from this entrypoint. An exact external callsite marks a code boundary, not a runtime result.');
     header.appendChild(copy);
     var legend = element('div', 'rm-execution-story__legend');
     [['exact', 'Exact'], ['possible', 'Possible']].forEach(function (item) {
