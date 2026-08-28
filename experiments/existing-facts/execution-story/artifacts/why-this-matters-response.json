@@ -1,0 +1,35 @@
+{
+  "schema": "repomap.experiment.why-this-matters.v1",
+  "use_case": "investigate",
+  "value": {
+    "text": "This route helps trace how startEtcd wires configuration, bootstrap, and TLS transport, but coverage gaps may hide alternate paths.",
+    "support_refs": [
+      "s1",
+      "a1",
+      "b1",
+      "g1"
+    ]
+  },
+  "use_when": [
+    {
+      "text": "How does startEtcd connect configuration to Raft transport setup?",
+      "support_refs": [
+        "s1",
+        "a1"
+      ]
+    },
+    {
+      "text": "Where is the TLS key pair loaded during startup?",
+      "support_refs": [
+        "b1"
+      ]
+    }
+  ],
+  "limit": {
+    "text": "The route may be incomplete because the source run omitted many objects and relations, and the callback transfer is unproven.",
+    "support_refs": [
+      "g1",
+      "u1"
+    ]
+  }
+}
