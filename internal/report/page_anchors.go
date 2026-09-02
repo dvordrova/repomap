@@ -130,11 +130,9 @@ func factLabel(fact facts.Fact) string {
 }
 
 var negativeSentences = map[string]string{
-	facts.NegativeNoReadme:       "No README found",
-	facts.NegativeReadmeTooShort: "README is too short",
-	facts.NegativeNoTests:        "No test files found",
-	facts.NegativeNoDockerfile:   "No Dockerfile or docker-compose file found",
-	facts.NegativeNoCI:           "No CI configuration found",
+	facts.NegativeNoTests:      "No test files found",
+	facts.NegativeNoDockerfile: "No Dockerfile or docker-compose file found",
+	facts.NegativeNoCI:         "No CI configuration found",
 }
 
 // negativeSentence phrases a closed negative as one plain sentence.

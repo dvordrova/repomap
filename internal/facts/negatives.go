@@ -1,14 +1,9 @@
 package facts
 
 import (
-	"fmt"
 	"path"
 	"strings"
 )
-
-// ReadmeMinBytes is the size under which a README is reported as too short
-// to orient a newcomer.
-const ReadmeMinBytes = 200
 
 // addNegatives states what the repository lacks. Rows are repository-level
 // and only exist when a corpus was provided.
@@ -17,7 +12,6 @@ func (b *builder) addNegatives() {
 		return
 	}
 	paths := b.source.paths()
-	b.addReadmeNegative(paths)
 	if !hasAny(paths, isTestPath) {
 		b.addNegative(NegativeNoTests, "no test files", nil)
 	}
@@ -26,24 +20,6 @@ func (b *builder) addNegatives() {
 	}
 	if !hasAny(paths, isCIPath) {
 		b.addNegative(NegativeNoCI, "no CI configuration", nil)
-	}
-}
-
-func (b *builder) addReadmeNegative(paths []string) {
-	readme := ""
-	for _, filePath := range paths {
-		if !strings.Contains(filePath, "/") && strings.HasPrefix(strings.ToUpper(filePath), "README") {
-			readme = filePath
-			break
-		}
-	}
-	if readme == "" {
-		b.addNegative(NegativeNoReadme, "no README at the repository root", &Anchor{Path: "README.md", Line: 1})
-		return
-	}
-	file, ok := b.source.file(readme)
-	if ok && file.size < ReadmeMinBytes {
-		b.addNegative(NegativeReadmeTooShort, fmt.Sprintf("%s is %d bytes", readme, file.size), &Anchor{Path: readme, Line: 1})
 	}
 }
 

@@ -3,67 +3,285 @@
   "repository": "github.com/dvordrova/python-tutorial-game",
   "revision": "78714d34ee3e3df265ca030541ffebe1e54dbe2d",
   "facts": [
-    {"kind": "target", "language": "python", "root": "backend", "anchor": "backend/main.py:14"},
-    {"kind": "target", "language": "typescript", "root": "front", "anchor": "front/src/index.tsx:7"},
-
-    {"kind": "entrypoint", "anchor": "backend/main.py:14", "key": "main_guard", "note": "if __name__ == '__main__': uvicorn.run(...)"},
-    {"kind": "entrypoint", "anchor": "front/src/index.tsx:7", "key": "bound_object", "symbol": "root", "note": "ReactDOM.createRoot"},
-
-    {"kind": "http_route", "method": "GET", "path": "/api/levels", "symbol": "get_levels_info", "anchor": "backend/app/app.py:18"},
-    {"kind": "http_route", "method": "GET", "path": "/api/level/{level_id}", "symbol": "get_level", "anchor": "backend/app/app.py:59"},
-    {"kind": "http_route", "method": "POST", "path": "/api/level/run", "symbol": "run_level", "anchor": "backend/app/app.py:74"},
-
-    {"kind": "http_call", "method": "GET", "path": "/api/levels", "symbol": "getLevels", "resolution": "exact", "anchor": "front/src/service/http.ts:12"},
-    {"kind": "http_call", "method": "GET", "path": "/api/level/{param}", "symbol": "getLevel", "resolution": "possible", "anchor": "front/src/service/http.ts:21"},
-    {"kind": "http_call", "method": "POST", "path": "/api/level/run", "symbol": "runLevel", "resolution": "exact", "anchor": "front/src/service/http.ts:34"},
-
-    {"kind": "portal", "method": "GET", "path": "/api/levels", "resolution": "exact", "from": "front/src/service/http.ts:12", "to": "backend/app/app.py:18"},
-    {"kind": "portal", "method": "GET", "path": "/api/level/{level_id}", "resolution": "possible", "from": "front/src/service/http.ts:21", "to": "backend/app/app.py:59"},
-    {"kind": "portal", "method": "POST", "path": "/api/level/run", "resolution": "exact", "from": "front/src/service/http.ts:34", "to": "backend/app/app.py:74"},
-
-    {"kind": "config_read", "key": "APP_HOST", "value": "0.0.0.0", "anchor": "backend/app/settings.py:5"},
-    {"kind": "config_read", "key": "APP_PORT", "anchor": "backend/app/settings.py:6", "note": "default 8080 is a non-string literal the index does not retain"},
-    {"kind": "config_read", "key": "APP_DEBUG", "anchor": "backend/app/settings.py:7"},
-    {"kind": "config_read", "key": "APP_RELOAD", "anchor": "backend/app/settings.py:8"},
-
-    {"kind": "manifest", "file": "front/package.json", "name": "proxy", "value": "http://localhost:8080", "anchor": "front/package.json:52"},
-    {"kind": "manifest", "file": "front/package.json", "name": "scripts.start", "value": "react-scripts start", "anchor": "front/package.json:29"},
-    {"kind": "manifest", "file": "front/package.json", "name": "scripts.build", "value": "react-scripts build", "anchor": "front/package.json:30"},
-    {"kind": "manifest", "file": "front/package.json", "name": "scripts.test", "value": "react-scripts test", "anchor": "front/package.json:31"},
-    {"kind": "manifest", "file": "front/package.json", "name": "scripts.eject", "value": "react-scripts eject", "anchor": "front/package.json:32"},
-    {"kind": "manifest", "file": "backend/Pipfile", "name": "packages.fastapi", "value": "*", "anchor": "backend/Pipfile:10"},
-    {"kind": "manifest", "file": "backend/Pipfile", "name": "packages.uvicorn", "value": "*", "anchor": "backend/Pipfile:11"},
-    {"kind": "manifest", "file": "backend/Pipfile", "name": "packages.pydantic", "value": "*", "anchor": "backend/Pipfile:12"},
-    {"kind": "manifest", "file": "backend/Pipfile", "name": "requires.python_version", "value": "3.12", "anchor": "backend/Pipfile:15"},
-
-    {"kind": "dynamic_execution", "pattern": "exec", "symbol": "make_step", "anchor": "backend/app/field.py:98"},
-
-    {"kind": "todo", "anchor": "backend/app/app.py:77", "key": "TODO"},
-    {"kind": "todo", "anchor": "front/src/routes/index.tsx:23", "key": "TODO", "text": "add next pages"},
-
-    {"kind": "dead_module", "path": "front/src/utils/retry.ts", "anchor": "front/src/utils/retry.ts:1"},
-    {"kind": "dead_module", "path": "front/src/utils/instructions.ts", "anchor": "front/src/utils/instructions.ts:1"},
-    {"kind": "dead_module", "path": "front/src/utils/sleep.ts", "anchor": "front/src/utils/sleep.ts:1"},
-
-    {"kind": "negative", "name": "readme_too_short", "anchor": "README.md:1"},
-    {"kind": "negative", "name": "no_tests"},
-    {"kind": "negative", "name": "no_dockerfile"},
-    {"kind": "negative", "name": "no_ci"},
-
-    {"kind": "dependency", "key": "fastapi", "anchor": "backend/app/app.py:1"},
-    {"kind": "dependency", "key": "uvicorn", "anchor": "backend/main.py:3"},
-    {"kind": "dependency", "key": "axios", "anchor": "front/src/service/http.ts:1"},
-
-    {"kind": "import", "path": "backend/app/settings.py", "anchor": "backend/main.py:6"},
-    {"kind": "import", "path": "front/src/service/http.ts", "anchor": "front/src/pages/level.tsx:6"}
+    {
+      "kind": "target",
+      "language": "python",
+      "root": "backend",
+      "anchor": "backend/main.py:14"
+    },
+    {
+      "kind": "target",
+      "language": "typescript",
+      "root": "front",
+      "anchor": "front/src/index.tsx:7"
+    },
+    {
+      "kind": "entrypoint",
+      "anchor": "backend/main.py:14",
+      "key": "main_guard",
+      "note": "if __name__ == '__main__': uvicorn.run(...)"
+    },
+    {
+      "kind": "entrypoint",
+      "anchor": "front/src/index.tsx:7",
+      "key": "bound_object",
+      "symbol": "root",
+      "note": "ReactDOM.createRoot"
+    },
+    {
+      "kind": "http_route",
+      "method": "GET",
+      "path": "/api/levels",
+      "symbol": "get_levels_info",
+      "anchor": "backend/app/app.py:18"
+    },
+    {
+      "kind": "http_route",
+      "method": "GET",
+      "path": "/api/level/{level_id}",
+      "symbol": "get_level",
+      "anchor": "backend/app/app.py:59"
+    },
+    {
+      "kind": "http_route",
+      "method": "POST",
+      "path": "/api/level/run",
+      "symbol": "run_level",
+      "anchor": "backend/app/app.py:74"
+    },
+    {
+      "kind": "http_call",
+      "method": "GET",
+      "path": "/api/levels",
+      "symbol": "getLevels",
+      "resolution": "exact",
+      "anchor": "front/src/service/http.ts:12"
+    },
+    {
+      "kind": "http_call",
+      "method": "GET",
+      "path": "/api/level/{param}",
+      "symbol": "getLevel",
+      "resolution": "possible",
+      "anchor": "front/src/service/http.ts:21"
+    },
+    {
+      "kind": "http_call",
+      "method": "POST",
+      "path": "/api/level/run",
+      "symbol": "runLevel",
+      "resolution": "exact",
+      "anchor": "front/src/service/http.ts:34"
+    },
+    {
+      "kind": "portal",
+      "method": "GET",
+      "path": "/api/levels",
+      "resolution": "exact",
+      "from": "front/src/service/http.ts:12",
+      "to": "backend/app/app.py:18"
+    },
+    {
+      "kind": "portal",
+      "method": "GET",
+      "path": "/api/level/{level_id}",
+      "resolution": "possible",
+      "from": "front/src/service/http.ts:21",
+      "to": "backend/app/app.py:59"
+    },
+    {
+      "kind": "portal",
+      "method": "POST",
+      "path": "/api/level/run",
+      "resolution": "exact",
+      "from": "front/src/service/http.ts:34",
+      "to": "backend/app/app.py:74"
+    },
+    {
+      "kind": "config_read",
+      "key": "APP_HOST",
+      "value": "0.0.0.0",
+      "anchor": "backend/app/settings.py:5"
+    },
+    {
+      "kind": "config_read",
+      "key": "APP_PORT",
+      "anchor": "backend/app/settings.py:6",
+      "note": "default 8080 is a non-string literal the index does not retain"
+    },
+    {
+      "kind": "config_read",
+      "key": "APP_DEBUG",
+      "anchor": "backend/app/settings.py:7"
+    },
+    {
+      "kind": "config_read",
+      "key": "APP_RELOAD",
+      "anchor": "backend/app/settings.py:8"
+    },
+    {
+      "kind": "manifest",
+      "file": "front/package.json",
+      "name": "proxy",
+      "value": "http://localhost:8080",
+      "anchor": "front/package.json:52"
+    },
+    {
+      "kind": "manifest",
+      "file": "front/package.json",
+      "name": "scripts.start",
+      "value": "react-scripts start",
+      "anchor": "front/package.json:29"
+    },
+    {
+      "kind": "manifest",
+      "file": "front/package.json",
+      "name": "scripts.build",
+      "value": "react-scripts build",
+      "anchor": "front/package.json:30"
+    },
+    {
+      "kind": "manifest",
+      "file": "front/package.json",
+      "name": "scripts.test",
+      "value": "react-scripts test",
+      "anchor": "front/package.json:31"
+    },
+    {
+      "kind": "manifest",
+      "file": "front/package.json",
+      "name": "scripts.eject",
+      "value": "react-scripts eject",
+      "anchor": "front/package.json:32"
+    },
+    {
+      "kind": "manifest",
+      "file": "backend/Pipfile",
+      "name": "packages.fastapi",
+      "value": "*",
+      "anchor": "backend/Pipfile:10"
+    },
+    {
+      "kind": "manifest",
+      "file": "backend/Pipfile",
+      "name": "packages.uvicorn",
+      "value": "*",
+      "anchor": "backend/Pipfile:11"
+    },
+    {
+      "kind": "manifest",
+      "file": "backend/Pipfile",
+      "name": "packages.pydantic",
+      "value": "*",
+      "anchor": "backend/Pipfile:12"
+    },
+    {
+      "kind": "manifest",
+      "file": "backend/Pipfile",
+      "name": "requires.python_version",
+      "value": "3.12",
+      "anchor": "backend/Pipfile:15"
+    },
+    {
+      "kind": "dynamic_execution",
+      "pattern": "exec",
+      "symbol": "make_step",
+      "anchor": "backend/app/field.py:98"
+    },
+    {
+      "kind": "todo",
+      "anchor": "backend/app/app.py:77",
+      "key": "TODO"
+    },
+    {
+      "kind": "todo",
+      "anchor": "front/src/routes/index.tsx:23",
+      "key": "TODO",
+      "text": "add next pages"
+    },
+    {
+      "kind": "dead_module",
+      "path": "front/src/utils/retry.ts",
+      "anchor": "front/src/utils/retry.ts:1"
+    },
+    {
+      "kind": "dead_module",
+      "path": "front/src/utils/instructions.ts",
+      "anchor": "front/src/utils/instructions.ts:1"
+    },
+    {
+      "kind": "dead_module",
+      "path": "front/src/utils/sleep.ts",
+      "anchor": "front/src/utils/sleep.ts:1"
+    },
+    {
+      "kind": "negative",
+      "name": "no_tests"
+    },
+    {
+      "kind": "negative",
+      "name": "no_dockerfile"
+    },
+    {
+      "kind": "negative",
+      "name": "no_ci"
+    },
+    {
+      "kind": "dependency",
+      "key": "fastapi",
+      "anchor": "backend/app/app.py:1"
+    },
+    {
+      "kind": "dependency",
+      "key": "uvicorn",
+      "anchor": "backend/main.py:3"
+    },
+    {
+      "kind": "dependency",
+      "key": "axios",
+      "anchor": "front/src/service/http.ts:1"
+    },
+    {
+      "kind": "import",
+      "path": "backend/app/settings.py",
+      "anchor": "backend/main.py:6"
+    },
+    {
+      "kind": "import",
+      "path": "front/src/service/http.ts",
+      "anchor": "front/src/pages/level.tsx:6"
+    }
   ],
   "questions": {
     "what_is_this": "A browser game teaching Python: a React frontend (front/) sends user code to a FastAPI backend (backend/) that simulates robots on a field.",
-    "how_to_run": ["backend: python backend/main.py (uvicorn on APP_PORT, default 8080)", "front: npm start (react-scripts, proxy -> http://localhost:8080)"],
+    "how_to_run": [
+      "backend: python backend/main.py (uvicorn on APP_PORT, default 8080)",
+      "front: npm start (react-scripts, proxy -> http://localhost:8080)"
+    ],
     "frontend_backend_boundary": "front/src/service/http.ts calls /api/levels, /api/level/{id}, /api/level/run; backend/app/app.py serves them; port 8080 via backend/app/settings.py:6 and front/package.json:52 proxy",
     "dangerous": "backend/app/field.py:98 exec() runs user-submitted code; only guarded by a banned-word list in backend/app/utils.py:18",
-    "dead": ["front/src/utils/retry.ts", "front/src/utils/instructions.ts", "front/src/utils/sleep.ts"],
-    "missing": ["README is 22 bytes", "no tests", "no Dockerfile", "no CI"],
-    "main_flow": ["front/src/routes/index.tsx:20 route /level/:levelIdFromPath", "front/src/pages/level.tsx:20 getLevel", "front/src/service/http.ts:21 GET /api/level/{id}", "backend/app/app.py:60 get_level", "front/src/components/playground.tsx:60 handleClick", "front/src/components/playground.tsx:72 runLevel", "front/src/service/http.ts:34 POST /api/level/run", "backend/app/app.py:75 run_level", "backend/app/field.py:88 Field.make_step (exec at :98)", "front/src/components/simulation_field.tsx:138 animate", "front/src/components/simulation_field.tsx:177 drawRobotsBetweenSteps"]
+    "dead": [
+      "front/src/utils/retry.ts",
+      "front/src/utils/instructions.ts",
+      "front/src/utils/sleep.ts"
+    ],
+    "missing": [
+      "no tests",
+      "no Dockerfile",
+      "no CI"
+    ],
+    "main_flow": [
+      "front/src/routes/index.tsx:20 route /level/:levelIdFromPath",
+      "front/src/pages/level.tsx:20 getLevel",
+      "front/src/service/http.ts:21 GET /api/level/{id}",
+      "backend/app/app.py:60 get_level",
+      "front/src/components/playground.tsx:60 handleClick",
+      "front/src/components/playground.tsx:72 runLevel",
+      "front/src/service/http.ts:34 POST /api/level/run",
+      "backend/app/app.py:75 run_level",
+      "backend/app/field.py:88 Field.make_step (exec at :98)",
+      "front/src/components/simulation_field.tsx:138 animate",
+      "front/src/components/simulation_field.tsx:177 drawRobotsBetweenSteps"
+    ]
   }
 }

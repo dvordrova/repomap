@@ -293,14 +293,6 @@
       ]
     },
     {
-      "file": "internal/facts/negatives.go",
-      "category": "byte-bound",
-      "symbols": [
-        "ReadmeMinBytes"
-      ],
-      "note": "README size below which the report states the repository has no real README; it is the definition of that negative, not a resource ceiling."
-    },
-    {
       "file": "internal/facts/source.go",
       "category": "byte-bound",
       "symbols": [

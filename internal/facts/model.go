@@ -88,11 +88,9 @@ const (
 
 // Negative names are closed so the report can phrase them.
 const (
-	NegativeNoReadme       = "no_readme"
-	NegativeReadmeTooShort = "readme_too_short"
-	NegativeNoTests        = "no_tests"
-	NegativeNoDockerfile   = "no_dockerfile"
-	NegativeNoCI           = "no_ci"
+	NegativeNoTests      = "no_tests"
+	NegativeNoDockerfile = "no_dockerfile"
+	NegativeNoCI         = "no_ci"
 )
 
 // Anchor is an exact repository-relative source location.
