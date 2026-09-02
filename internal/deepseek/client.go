@@ -452,7 +452,10 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
-		return chatCompletion{}, isRetryableNetworkError(err), newProviderTransportError(
+		// A body that arrives too slowly hits the same per-attempt bound as a
+		// request that never answered, and is worth the same second attempt.
+		retry := isRetryableNetworkError(err) || retryableTimeout(ctx, err)
+		return chatCompletion{}, retry, newProviderTransportError(
 			providerNetworkFailureKind(err), 0, fmt.Errorf("read llm response: %w", err),
 		)
 	}

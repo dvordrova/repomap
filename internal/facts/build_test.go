@@ -289,8 +289,8 @@ func TestBuildTargetsAndEntrypoints(t *testing.T) {
 	if target.Root != "backend" || target.Language != "python" || target.Anchor.String() != "backend/main.py:14" {
 		t.Fatalf("target = %+v", target)
 	}
-	if target.ID != NewTargetID("python", "backend", "") {
-		t.Fatalf("target id %q is not derived from language/root/manifest", target.ID)
+	if target.ID != NewTargetID("python", "backend", "", target.ProgramTargetID) {
+		t.Fatalf("target id %q is not derived from its language, root, manifest and program target", target.ID)
 	}
 	entrypoint := requireFact(t, result, KindEntrypoint, "main guard", func(fact Fact) bool { return fact.Anchor.String() == "backend/main.py:14" })
 	if entrypoint.Symbol != "main" || entrypoint.Key != "main_guard" || entrypoint.TargetID != target.ID {

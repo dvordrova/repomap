@@ -202,7 +202,7 @@ func newTargetContext(input TargetInput) (*targetContext, error) {
 		}
 	}
 	result.target = Target{
-		ID:              NewTargetID(index.Target.Language, root, manifest),
+		ID:              NewTargetID(index.Target.Language, root, manifest, index.Target.ID),
 		ProgramTargetID: index.Target.ID,
 		Language:        index.Target.Language,
 		Name:            index.Target.Name,

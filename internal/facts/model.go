@@ -205,11 +205,18 @@ func WithOrdinal(id string, ordinal int) string {
 	return fmt.Sprintf("%s-%d", id, ordinal)
 }
 
-// NewTargetID derives a stable target id from its language, root and manifest.
-func NewTargetID(language, root, manifest string) string {
+// NewTargetID derives a stable target id.
+//
+// Language, root and manifest are not enough on their own: one directory can
+// hold two targets of the same language behind the same manifest — a library
+// and the module you run — and python-dotenv does. Those two collided, and a
+// collision failed the whole run rather than one target. The program target
+// id is a content hash of the target itself, so it separates them and stays
+// stable across runs of the same revision.
+func NewTargetID(language, root, manifest, programTargetID string) string {
 	hasher := sha256.New()
 	hasher.Write([]byte(idDomain))
-	for _, part := range []string{"target", language, root, manifest} {
+	for _, part := range []string{"target", language, root, manifest, programTargetID} {
 		hasher.Write([]byte(part))
 		hasher.Write([]byte{0})
 	}

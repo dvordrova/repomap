@@ -555,8 +555,8 @@ func newFixture(t *testing.T) *fixture {
 
 	result := &fixture{
 		targetIDs: map[string]string{
-			"alpha": facts.NewTargetID("go", "alpha", "alpha/go.mod"),
-			"beta":  facts.NewTargetID("go", "beta", "beta/go.mod"),
+			"alpha": facts.NewTargetID("go", "alpha", "alpha/go.mod", "program-target-alpha"),
+			"beta":  facts.NewTargetID("go", "beta", "beta/go.mod", "program-target-beta"),
 		},
 		factIDs:    map[string]string{},
 		claimIDs:   map[string]string{},
