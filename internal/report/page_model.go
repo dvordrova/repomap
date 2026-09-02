@@ -283,7 +283,7 @@ func (builder *pageBuilder) cards(view *pageView) {
 	} else {
 		for _, section := range builder.sections {
 			view.Cards = append(view.Cards, pageTargetCard{
-				SectionID: section.ID, Name: section.Name, Language: section.Language,
+				SectionID: section.ID, Name: section.Label, Language: section.Language,
 				Kind: section.Kind, Root: section.Root,
 			})
 		}
@@ -310,6 +310,7 @@ func (builder *pageBuilder) factsCard(target facts.Target) pageTargetCard {
 	}
 	if section := builder.byFacts[target.ID]; section != nil {
 		card.SectionID = section.ID
+		card.Name = section.Label
 	}
 	if target.Manifest != "" {
 		card.Manifest = builder.links.anchorPointer(target.Manifest, 0, 0)

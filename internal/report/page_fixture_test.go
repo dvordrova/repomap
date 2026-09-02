@@ -278,3 +278,21 @@ func reportTargetOutcomeArtifactFixture(
 	}
 	return portfolio, raw
 }
+
+// TestSectionLabelsDistinguishRepeatedTargetNames proves a reader can tell two
+// targets apart when a repository names them the same, as a Go module and its
+// command in one directory do.
+func TestSectionLabelsDistinguishRepeatedTargetNames(t *testing.T) {
+	sections := []*pageSection{
+		{Name: "versions", Kind: "library", Root: "_examples/versions"},
+		{Name: "versions", Kind: "executable", Root: "_examples/versions"},
+		{Name: "rest-example", Kind: "executable", Root: "_examples/rest"},
+	}
+	labelSections(sections)
+	want := []string{"versions (library)", "versions (executable)", "rest-example"}
+	for index, expected := range want {
+		if sections[index].Label != expected {
+			t.Fatalf("section %d label = %q, want %q", index, sections[index].Label, expected)
+		}
+	}
+}

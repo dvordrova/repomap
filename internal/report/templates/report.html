@@ -13,7 +13,7 @@
 <header class="top">
 <h1>{{.RepoName}}</h1>
 <p class="meta">Revision <code title="{{.Revision}}">{{.ShortRevision}}</code>{{if .RepositoryURL}} · <a href="{{.RepositoryURL}}" target="_blank" rel="noopener">repository</a>{{end}}{{if .Served}} · source links open in your editor{{end}}</p>
-<nav class="nav"><a href="#overview">Overview</a>{{range .Sections}}<a href="#{{.ID}}">{{.Name}}</a>{{end}}</nav>
+<nav class="nav"><a href="#overview">Overview</a>{{range .Sections}}<a href="#{{.ID}}">{{.Label}}</a>{{end}}</nav>
 </header>
 <noscript><p class="meta">JavaScript is optional for this report; it only adds editor links.</p></noscript>
 <main>
@@ -43,7 +43,7 @@
 </section>
 {{range .Sections}}
 <section id="{{.ID}}">
-<h2>{{.Name}} <span class="meta">{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}{{if .Root}} · <code>{{.Root}}</code>{{end}}</span></h2>
+<h2>{{.Label}} <span class="meta">{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}{{if .Root}} · <code>{{.Root}}</code>{{end}}</span></h2>
 {{if not .FactsAvailable}}<p class="empty">Facts are not available for this run; only the group graph is shown.</p>{{end}}
 <h3>Inbound</h3>
 {{if .RouteGroups}}{{range .RouteGroups}}<h4><span class="method">{{.Method}}</span></h4><ul class="plain fact">{{range .Rows}}<li><code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}{{else if .FactsAvailable}}<p class="empty">No HTTP routes found.</p>{{end}}
