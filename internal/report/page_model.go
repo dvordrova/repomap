@@ -476,14 +476,26 @@ func anchorList(anchor *pageAnchor) []pageAnchor {
 
 // flowSteps resolves the whole main flow once; every target section shows
 // it so a reader never has to leave the section to follow the path.
+// flow shows the repository's one main flow on a target page, but only where
+// that target takes part in it. A four-target repository was printing a flow
+// through one example on all four pages, including the two it never touches,
+// which reads as a claim about that target and is not one.
 func (builder *pageBuilder) flow(section *pageSection) *pageFlow {
 	orient := builder.data.Orientation
 	if orient == nil || len(orient.MainFlow.Steps) == 0 {
 		return nil
 	}
 	flow := &pageFlow{Title: orient.MainFlow.Title}
+	here := false
 	for _, step := range orient.MainFlow.Steps {
-		flow.Steps = append(flow.Steps, builder.flowStep(step, section))
+		row := builder.flowStep(step, section)
+		if row.Target == "" {
+			here = true
+		}
+		flow.Steps = append(flow.Steps, row)
+	}
+	if !here {
+		return nil
 	}
 	return flow
 }

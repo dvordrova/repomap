@@ -74,6 +74,12 @@ Rules for each part:
   their portals into the receiving target, reach the core logic, and come back
   with the result. Each step cites exactly one fact (`f*`) or one member
   (`s*`) that belongs to the step's target, and explains it in one sentence.
+  End to end means end to end: a flow that stops at the first handler has not
+  reached the logic the reader came for, and one that stops at the logic has
+  not said what comes back. Four to eight steps usually covers it. Prefer the
+  path that crosses the most targets, because that is the one a reader cannot
+  work out from any single page. Use fewer steps only when the facts genuinely
+  run out, and never invent a step to reach a count.
 
 Write plain, readable English. One sentence each; no essays, no lists inside
 sentences, no markdown, no line breaks inside a value. Do not add fields. Do
