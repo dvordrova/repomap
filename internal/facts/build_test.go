@@ -673,3 +673,24 @@ func TestBuildRejectsDuplicateTargets(t *testing.T) {
 		t.Fatal("duplicate targets were accepted")
 	}
 }
+
+// TestComposedRoutePathsFollowTheMountChain pins the rule that a router
+// mounted under a prefix answers on that prefix plus its own path, including
+// when the same router is mounted more than once.
+func TestComposedRoutePathsFollowTheMountChain(t *testing.T) {
+	for _, test := range []struct {
+		prefix, path, want string
+	}{
+		{"", "/articles", "/articles"},
+		{"/v3", "/articles", "/v3/articles"},
+		{"/v3/", "/articles", "/v3/articles"},
+		{"/v3", "/", "/v3"},
+		{"/", "/", "/"},
+		{"", "/", "/"},
+		{"/v3/articles", "/{articleID}", "/v3/articles/{articleID}"},
+	} {
+		if got := joinRoutePath(test.prefix, test.path); got != test.want {
+			t.Fatalf("joinRoutePath(%q, %q) = %q, want %q", test.prefix, test.path, got, test.want)
+		}
+	}
+}

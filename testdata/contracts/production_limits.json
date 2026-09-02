@@ -269,6 +269,15 @@
       ]
     },
     {
+      "file": "internal/facts/route_prefix.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxComposedPrefixes",
+        "maxPrefixDepth"
+      ],
+      "note": "Termination bounds on walking the mount chain, not a presentation ceiling. A router genuinely mounted under several prefixes has every one of them composed and printed; these only stop a cyclic or pathological mount graph from multiplying without end."
+    },
+    {
       "file": "internal/facts/source.go",
       "category": "byte-bound",
       "symbols": [

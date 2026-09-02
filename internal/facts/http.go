@@ -96,6 +96,7 @@ func containsFold(values []string, wanted string) bool {
 }
 
 func (b *builder) addHTTP(target *targetContext) {
+	prefixes := target.prefixesByObject()
 	for _, relation := range target.input.Index.Relations {
 		for _, pattern := range relation.Patterns {
 			selector := strings.ToLower(pattern.Selector)
@@ -107,7 +108,7 @@ func (b *builder) addHTTP(target *targetContext) {
 			side := classifyHTTP(target.externalOrigins(relation, pattern), pattern.Form, selector)
 			switch {
 			case side.server && isRoute:
-				b.addRoute(target, relation, pattern, selector)
+				b.addRoute(target, relation, pattern, selector, prefixes[relation.FromID])
 			case side.client && isCall && pattern.Form == programindex.PatternCall:
 				b.addCall(target, relation, pattern, selector)
 			}
@@ -115,7 +116,16 @@ func (b *builder) addHTTP(target *targetContext) {
 	}
 }
 
-func (b *builder) addRoute(target *targetContext, relation programindex.Relation, pattern programindex.RelationPattern, selector string) {
+// addRoute emits one fact per path this registration answers on. A router
+// mounted under three prefixes registers the same handler on three paths, and
+// printing only the un-prefixed one would print a path nobody can call.
+func (b *builder) addRoute(
+	target *targetContext,
+	relation programindex.Relation,
+	pattern programindex.RelationPattern,
+	selector string,
+	prefixes []string,
+) {
 	method, pathValue, templated, ok := routeMethodAndPath(pattern, selector)
 	if !ok || !strings.HasPrefix(pathValue, "/") {
 		return
@@ -124,24 +134,33 @@ func (b *builder) addRoute(target *targetContext, relation programindex.Relation
 	if anchor == nil {
 		return
 	}
-	if !b.once(strings.Join([]string{string(KindHTTPRoute), anchor.String(), method, pathValue}, "\x00")) {
-		return
-	}
 	symbol, objectID := target.routeHandler(relation, pattern)
 	resolution := ResolutionExact
 	if templated {
 		resolution = ResolutionPossible
 	}
-	b.add(target.root, Fact{
-		Kind:       KindHTTPRoute,
-		TargetID:   target.target.ID,
-		Anchor:     anchor,
-		Method:     method,
-		Path:       pathValue,
-		Symbol:     symbol,
-		ObjectID:   objectID,
-		Resolution: resolution,
-	}, method, pathValue)
+	paths := []string{pathValue}
+	if len(prefixes) > 0 {
+		paths = paths[:0]
+		for _, prefix := range prefixes {
+			paths = append(paths, joinRoutePath(prefix, pathValue))
+		}
+	}
+	for _, path := range paths {
+		if !b.once(strings.Join([]string{string(KindHTTPRoute), anchor.String(), method, path}, "\x00")) {
+			continue
+		}
+		b.add(target.root, Fact{
+			Kind:       KindHTTPRoute,
+			TargetID:   target.target.ID,
+			Anchor:     anchor,
+			Method:     method,
+			Path:       path,
+			Symbol:     symbol,
+			ObjectID:   objectID,
+			Resolution: resolution,
+		}, method, path)
+	}
 }
 
 // routeMethodAndPath maps a selector to its HTTP method. Registration

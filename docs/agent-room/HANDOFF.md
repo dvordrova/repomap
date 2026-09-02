@@ -137,8 +137,6 @@ string, so grep it, do not walk it as JSON.
 
 ## Known gaps, recorded not fixed
 
-- Nested route prefixes are wrong. chi's `ListArticles` reads `GET /`, not
-  `GET /articles`, because the mount prefix is not composed.
 - `os.environ["KEY"]` and `process.env.KEY` subscript reads are not captured.
   Catching them needs a `reads` relation from the adapter, a schema change.
 - `targetportfolio.Compile` and `CompileWithExecutableAuthority` are now
