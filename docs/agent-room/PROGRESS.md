@@ -9,11 +9,10 @@ fine, one self-contained HTML. Until 11:00.
 ## Finished
 
 1. **Instruments.** Categorization coverage with denominators, and grouping
-   shape (lanes, subjects grouped, largest group), printed on every run.
+   shape, printed on every run.
 2. **Findings settled.** The 172 non-object assignments are relation patterns,
    0 invented. `core` is not worth narrowing; the regressed run is what narrow
-   looks like. What finding 1 pointed at turned out to be two other things,
-   both fixed below.
+   looks like. What finding 1 pointed at was two other things, fixed below.
 3. **Speed.** Fixture 14.6 s → 5.6 s warm, 55 s cold. chi 111 s cold, 12.4 s
    warm, 4/4 targets. Biggest single win: the run id sat in the facts digest,
    so orientation never hit its cache. Reports are byte-identical across runs
@@ -41,4 +40,5 @@ authority; pre-existing, recorded in the handoff, not investigated.
 
 ## Next
 
-Keep reading both reports and fixing what is hard.
+Keep reading both reports and fixing what is hard. `make test`, `make vet` and
+`gofmt -l cmd internal` are green at every commit.
