@@ -30,3 +30,4 @@
 .repo-node-name{font-size:14px;font-weight:600;fill:var(--ink)}
 .repo-node .map-node-body{fill:#fff;stroke:#c6ccd4}
 .repo-edge-label{font-size:10.5px;fill:var(--muted)}
+.map-node-step{font-size:9.5px;font-weight:600;fill:var(--accent);letter-spacing:.02em}

@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/facts"
@@ -76,6 +77,12 @@ type pageMapNode struct {
 	Height    float64
 	BarWidth  float64
 	FullTitle string
+	// Steps names the main-flow step numbers that pass through this group, so
+	// the map and the flow below it describe the same journey. StepX and StepY
+	// are absolute because a text anchored at its end ignores dx.
+	Steps string
+	StepX float64
+	StepY float64
 	// Neighbours lists the node ids one connection away, in both directions,
 	// so the preview needs no graph traversal in the browser.
 	Neighbours string
@@ -123,6 +130,7 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	}
 	positions := make(map[string]*pageMapNode)
 	neighbours := builder.mapNeighbours(*index)
+	steps := builder.flowStepsByGroup(section, *index)
 
 	columnX := mapPadding
 	for _, lane := range lanes {
@@ -161,6 +169,9 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 			node.Outside = outside
 			node.Neighbours = strings.Join(mapNodeIDs(local), " ")
 			node.Degree = len(local) - outside
+			node.Steps = steps[group.ID]
+			node.StepX = node.X + node.Width - 10
+			node.StepY = node.Y + mapNodeHeight - 9
 			result.Nodes = append(result.Nodes, node)
 			bottom := node.Y + node.Height
 			if bottom > result.Height {
@@ -514,6 +525,55 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) []pageRepo
 			// crossing among several must not make the whole link look uncertain.
 			Possible: exact[key] == 0,
 		})
+	}
+	return result
+}
+
+// flowStepsByGroup labels each group with the main-flow step numbers that pass
+// through it. The flow below the map and the map itself then describe one
+// journey rather than two, and a reader can see where it enters and leaves
+// before reading a word of it.
+func (builder *pageBuilder) flowStepsByGroup(
+	section *pageSection,
+	index groupindex.Index,
+) map[string]string {
+	orient := builder.data.Orientation
+	if orient == nil || len(orient.MainFlow.Steps) == 0 {
+		return nil
+	}
+	owner := make(map[string][]string, len(index.Subjects))
+	for _, group := range index.Groups {
+		for _, member := range group.MemberSubjectIDs {
+			owner[member] = append(owner[member], group.ID)
+		}
+	}
+	result := make(map[string]string)
+	seen := make(map[string]map[string]struct{})
+	for position, step := range orient.MainFlow.Steps {
+		subjectID := step.SubjectID
+		if subjectID == "" && step.FactID != "" {
+			if fact, known := builder.factsByID[step.FactID]; known {
+				subjectID = fact.ObjectID
+			}
+		}
+		if subjectID == "" {
+			continue
+		}
+		ordinal := strconv.Itoa(position + 1)
+		for _, groupID := range owner[subjectID] {
+			if seen[groupID] == nil {
+				seen[groupID] = make(map[string]struct{})
+			}
+			if _, repeated := seen[groupID][ordinal]; repeated {
+				continue
+			}
+			seen[groupID][ordinal] = struct{}{}
+			if result[groupID] == "" {
+				result[groupID] = ordinal
+				continue
+			}
+			result[groupID] += "," + ordinal
+		}
 	}
 	return result
 }
