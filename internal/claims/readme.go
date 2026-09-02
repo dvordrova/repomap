@@ -81,7 +81,9 @@ func wholeReadmeQuotes(lines []string) []quote {
 	parts := paragraphs(lines)
 	texts := make([]string, 0, len(parts))
 	for _, part := range parts {
-		texts = append(texts, part.Text)
+		if readablePart := readable(part.Text); readablePart != "" {
+			texts = append(texts, readablePart)
+		}
 	}
 	whole := strings.Join(texts, " ")
 	if whole == "" {
@@ -92,7 +94,11 @@ func wholeReadmeQuotes(lines []string) []quote {
 	}
 	var result []quote
 	for _, part := range parts {
-		for _, piece := range splitWithin(part.Text) {
+		readablePart := readable(part.Text)
+		if readablePart == "" {
+			continue
+		}
+		for _, piece := range splitWithin(readablePart) {
 			result = append(result, quote{Line: part.Line, Text: piece})
 		}
 	}
@@ -108,19 +114,31 @@ func headingQuotes(lines []string) []quote {
 		if match == nil {
 			continue
 		}
-		text := collapseSpace(match[1])
-		if body := firstParagraphBelow(lines, index+1); body != "" {
-			text = strings.TrimSpace(text + " — " + body)
+		heading := readable(match[1])
+		body := readable(firstParagraphBelow(lines, index+1))
+		// A heading with no prose beneath it states nothing; the section it
+		// opens is still reachable through the anchor of a later claim.
+		if body == "" {
+			continue
+		}
+		text := body
+		if heading != "" {
+			text = heading + " — " + body
 		}
 		for _, piece := range splitWithin(text) {
 			result = append(result, quote{Line: index + 1, Text: piece})
 		}
 	}
 	if result == nil {
-		if parts := paragraphs(lines); len(parts) > 0 {
-			for _, piece := range splitWithin(parts[0].Text) {
-				result = append(result, quote{Line: parts[0].Line, Text: piece})
+		for _, part := range paragraphs(lines) {
+			readablePart := readable(part.Text)
+			if readablePart == "" {
+				continue
 			}
+			for _, piece := range splitWithin(readablePart) {
+				result = append(result, quote{Line: part.Line, Text: piece})
+			}
+			break
 		}
 	}
 	return result

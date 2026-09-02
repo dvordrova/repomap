@@ -12,7 +12,9 @@ func TestShortReadmeIsOneQuoteAtLineOne(t *testing.T) {
 	if len(quotes) != 1 || quotes[0].Line != 1 {
 		t.Fatalf("quotes = %+v, want one quote at line 1", quotes)
 	}
-	if quotes[0].Text != "# Title First paragraph spans lines. Second paragraph." {
+	// Formatting markers are dropped so the quote reads as the sentence the
+	// author wrote.
+	if quotes[0].Text != "Title First paragraph spans lines. Second paragraph." {
 		t.Fatalf("text = %q", quotes[0].Text)
 	}
 }
@@ -83,10 +85,11 @@ func TestLongReadmeQuotesHeadingsWithFirstParagraph(t *testing.T) {
 		t.Fatalf("fixture must exceed the whole-quote threshold, got %d bytes", len(text))
 	}
 	quotes := readmeQuotes(len(text), splitLines(text))
+	// A heading with no prose beneath it ("## Empty ##") states nothing and is
+	// skipped; the next heading with a body follows it directly.
 	want := []quote{
 		{Line: 1, Text: "Tutorial Game — A game for learning. Two lines long."},
 		{Line: 8, Text: "Install — Run the installer."},
-		{Line: 14, Text: "Empty"},
 	}
 	if len(quotes) < len(want) {
 		t.Fatalf("quotes = %+v", quotes)
@@ -125,6 +128,41 @@ func TestReadmeNameMatching(t *testing.T) {
 	for _, filePath := range []string{"readme_old.md", "READMEs.md", "notes.md"} {
 		if isReadmePath(filePath) {
 			t.Fatalf("%s should not be a README", filePath)
+		}
+	}
+}
+
+func TestReadmeQuotesProseRatherThanMarkup(t *testing.T) {
+	text := strings.Join([]string{
+		`<img alt="chi" src="https://cdn.example/chi.svg" width="220" />`,
+		"",
+		"[![GoDoc Widget]][GoDoc] [![Go Report Card]][GoReportCard]",
+		"",
+		"`chi` is a **lightweight**, composable router for building Go services.",
+		"See the [docs](https://example.test/docs) for details.",
+		"",
+	}, "\n")
+	quotes := readmeQuotes(len(text), splitLines(text))
+	if len(quotes) != 1 {
+		t.Fatalf("quotes = %+v", quotes)
+	}
+	want := "chi is a lightweight, composable router for building Go services. " +
+		"See the docs for details."
+	if quotes[0].Text != want {
+		t.Fatalf("quote = %q, want %q", quotes[0].Text, want)
+	}
+}
+
+func TestReadableDropsMarkupOnlyFragments(t *testing.T) {
+	for _, markup := range []string{
+		`<img src="x.svg" />`,
+		"[![Badge]][link]",
+		"![shot](shot.png)",
+		"---",
+		"**",
+	} {
+		if got := readable(markup); got != "" {
+			t.Fatalf("readable(%q) = %q, want no prose", markup, got)
 		}
 	}
 }

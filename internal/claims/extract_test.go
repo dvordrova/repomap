@@ -49,7 +49,7 @@ func TestExtractQuotesFixtureRepository(t *testing.T) {
 
 	assertClaim(t, bySource[SourceReadme], Claim{
 		Source: SourceReadme, Path: "README.md", Line: 1, Date: "2024-01-10", AgeDays: fixtureAgeDays,
-		Text: "# Tutorial Game A tiny game used to teach Python. Run `python main.py` to start.",
+		Text: "Tutorial Game A tiny game used to teach Python. Run python main.py to start.",
 	})
 	assertClaim(t, bySource[SourceDocstring], Claim{
 		Source: SourceDocstring, Path: "backend/app.py", Line: 1, Date: "2024-01-10",
