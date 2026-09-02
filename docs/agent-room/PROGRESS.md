@@ -28,13 +28,13 @@ self-contained HTML. Until 11:00.
    answered. **The grouping prompt had no size rule** — the same repository
    gave 4 to 13 groups and the 4-group answers put two thirds of the target in
    one box; now 8–13 groups, largest at 4%. The main flow reaches the response.
-6. **Robustness.** A provider timeout is retried instead of losing a whole
-   target page. `repomap <path>` no longer fails when VS Code is absent.
+6. **Robustness.** A provider timeout is retried instead of losing a target
+   page. `repomap <path>` no longer fails when VS Code is absent.
 
 ## Stuck on
 
-Nothing. `~/git/fuego` fails before analysis on incomplete `go list`
-authority; pre-existing, in the handoff, not investigated.
+Nothing. `~/git/fuego` fails before analysis on incomplete `go list` authority;
+pre-existing, in the handoff, not investigated.
 
 ## Next
 
