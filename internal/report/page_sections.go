@@ -424,7 +424,10 @@ func splitChipRows(rows []pageChipRow, limit int) (visible, more []pageChipRow, 
 		default:
 			visible = append(visible, pageChipRow{Path: row.Path, Members: row.Members[:budget]})
 			rest := row.Members[budget:]
-			more = append(more, pageChipRow{Path: row.Path, Members: rest})
+			// The path is printed once. This row's continuation opens directly
+			// under the chips it continues, so repeating its path there reads
+			// as a second file with the same name.
+			more = append(more, pageChipRow{Members: rest})
 			moreCount += len(rest)
 			budget = 0
 		}
