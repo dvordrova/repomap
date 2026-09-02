@@ -212,7 +212,7 @@ clear`.
 The product constitution lives in [docs/CONSTITUTION.md](docs/CONSTITUTION.md)
 and the current architecture in
 [docs/agent-room/CURRENT.md](docs/agent-room/CURRENT.md).
-`fixtures/python-tutorial-game` is the acceptance fixture: its `expected.json`
+`testdata/acceptance/python-tutorial-game` is the acceptance fixture: its `expected.json`
 lists the facts that must be present with their anchors, and a focused test
 rebuilds them from the sealed artifacts of a real run. Static prompt prose
 lives in Markdown beside documentation reduction, ProgramIndex categorization,

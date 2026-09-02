@@ -16,7 +16,7 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// expectedFacts is fixtures/<name>/expected.json: the rows a reader must be
+// expectedFacts is testdata/acceptance/<name>/expected.json: the rows a reader must be
 // able to find, each as kind + distinguishing fields + "path:line" anchor.
 type expectedFacts struct {
 	Version    int                 `json:"version"`
@@ -27,7 +27,7 @@ type expectedFacts struct {
 }
 
 func TestFixturePythonTutorialGame(t *testing.T) {
-	fixture := filepath.Join(repositoryRoot(t), "fixtures", "python-tutorial-game")
+	fixture := filepath.Join(repositoryRoot(t), "testdata", "acceptance", "python-tutorial-game")
 	expected := readExpected(t, filepath.Join(fixture, "expected.json"))
 	revision, err := os.ReadFile(filepath.Join(fixture, "REVISION"))
 	if err != nil {

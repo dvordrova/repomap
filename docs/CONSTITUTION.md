@@ -119,8 +119,8 @@ separate stage outputs.
 
 ## Acceptance (fixture)
 
-`fixtures/python-tutorial-game` (revision `78714d34ee`) is the canonical
-fixture. `fixtures/python-tutorial-game/expected.json` lists facts that must
+`testdata/acceptance/python-tutorial-game` (revision `78714d34ee`) is the
+canonical fixture. Its `expected.json` lists facts that must
 be present with anchors. A report is acceptable only if a reader can answer
 these from the report alone, without opening the repo: what is this, how do I
 run it, where does the frontend talk to the backend and on which port, what

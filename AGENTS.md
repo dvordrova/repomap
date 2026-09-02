@@ -406,7 +406,7 @@ sidecar tools.
 
 ## Development and acceptance
 
-- `fixtures/python-tutorial-game` is the acceptance fixture: a tracked copy of
+- `testdata/acceptance/python-tutorial-game` is the acceptance fixture: a tracked copy of
   that repository at revision `78714d34ee` with `expected.json` and the sealed
   artifacts of one real run. Its focused test rebuilds the fact layer and
   asserts every expected row with its anchor.

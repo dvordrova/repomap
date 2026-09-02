@@ -752,7 +752,7 @@ Deterministic adapter stages run for real; provider stages use exact
 request-bound, fail-closed local presets with no network. Fixture success is
 focused evidence, not product acceptance.
 
-The acceptance fixture `fixtures/python-tutorial-game` is a tracked copy of
+The acceptance fixture `testdata/acceptance/python-tutorial-game` is a copy of
 that repository at revision `78714d34ee` with its `expected.json` and the
 sealed ProgramIndex and dependency artifacts of one real run. A focused test
 rebuilds the fact layer from those inputs and asserts every expected row with
