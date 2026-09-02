@@ -242,6 +242,7 @@
       "directory": "internal/programgrouping",
       "package": "programgrouping",
       "files": [
+        "batch_search_test.go",
         "programgrouping_test.go"
       ]
     },

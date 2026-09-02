@@ -52,26 +52,20 @@ func (compilation Compilation) batchesForProvider(provider llm.Provider) ([]batc
 		documentationRefs = append(documentationRefs, row.ref)
 	}
 
-	canRepeatDocumentation := true
-	for _, ref := range subjectRefs {
-		fits, err := compilation.batchFits(provider, []string{ref}, documentationRefs)
-		if err != nil {
-			return nil, err
-		}
-		if !fits {
-			canRepeatDocumentation = false
-			break
-		}
-	}
-	if canRepeatDocumentation {
-		result, err := compilation.packSubjects(provider, subjectRefs, documentationRefs)
-		if err != nil {
-			return nil, err
-		}
+	// Repeating the complete documentation beside every subject is possible
+	// exactly when every single subject fits beside it, which is the same
+	// condition packSubjects reports as an indivisible subject. Asking it
+	// directly costs one probe; asking every subject first cost one full
+	// request encoding per subject before any planning began.
+	result, err := compilation.packSubjects(provider, subjectRefs, documentationRefs)
+	if err == nil {
 		if err := compilation.validatePlan(result); err != nil {
 			return nil, err
 		}
 		return result, nil
+	}
+	if !errors.Is(err, errIndivisibleSubject) {
+		return nil, err
 	}
 
 	// Full reduced documentation does not fit beside at least one indivisible
@@ -115,7 +109,7 @@ func (compilation Compilation) batchesForProvider(provider llm.Provider) ([]batc
 	if len(currentDocumentation) > 0 {
 		documentationShards = append(documentationShards, append([]string(nil), currentDocumentation...))
 	}
-	result := make([]batch, 0)
+	result = make([]batch, 0)
 	for _, shard := range documentationShards {
 		shardBatches, err := compilation.packSubjects(provider, subjectRefs, shard)
 		if err != nil {
@@ -129,44 +123,76 @@ func (compilation Compilation) batchesForProvider(provider llm.Provider) ([]batc
 	return result, nil
 }
 
+// errIndivisibleSubject marks the one planning failure a caller can recover
+// from by partitioning the documentation instead of the subjects.
+var errIndivisibleSubject = errors.New("program categorization: indivisible subject")
+
 func (compilation Compilation) packSubjects(
 	provider llm.Provider,
 	subjectRefs []string,
 	documentationRefs []string,
 ) ([]batch, error) {
 	result := make([]batch, 0)
-	current := make([]string, 0)
-	flush := func() {
-		if len(current) == 0 {
-			return
-		}
-		result = append(result, batch{
-			subjectRefs:       append([]string(nil), current...),
-			documentationRefs: append([]string(nil), documentationRefs...),
-		})
-		current = current[:0]
-	}
-	for _, ref := range subjectRefs {
-		if len(current) == ownedSubjectsPerRequest {
-			flush()
-		}
-		probe := append(append([]string(nil), current...), ref)
-		fits, err := compilation.batchFits(provider, probe, documentationRefs)
+	remaining := subjectRefs
+	for len(remaining) > 0 {
+		length, err := compilation.largestFittingPrefix(provider, remaining, documentationRefs)
 		if err != nil {
 			return nil, err
 		}
+		if length == 0 {
+			return nil, fmt.Errorf("%w %s does not fit provider envelope", errIndivisibleSubject, remaining[0])
+		}
+		result = append(result, batch{
+			subjectRefs:       append([]string(nil), remaining[:length]...),
+			documentationRefs: append([]string(nil), documentationRefs...),
+		})
+		remaining = remaining[length:]
+	}
+	return result, nil
+}
+
+// largestFittingPrefix returns how many of the leading subjects fit in one
+// request, never more than the request granularity, or zero when even the
+// first one does not fit beside this documentation.
+//
+// A request only grows as subjects are added, so the boundary can be found by
+// search. Probing the whole allowed chunk first makes the ordinary case, where
+// a full request of subjects fits, cost one encoding instead of one per
+// subject.
+func (compilation Compilation) largestFittingPrefix(
+	provider llm.Provider,
+	subjectRefs []string,
+	documentationRefs []string,
+) (int, error) {
+	allowed := min(len(subjectRefs), ownedSubjectsPerRequest)
+	if allowed == 0 {
+		return 0, nil
+	}
+	fits, err := compilation.batchFits(provider, subjectRefs[:allowed], documentationRefs)
+	if err != nil {
+		return 0, err
+	}
+	if fits {
+		return allowed, nil
+	}
+	fits, err = compilation.batchFits(provider, subjectRefs[:1], documentationRefs)
+	if err != nil || !fits {
+		return 0, err
+	}
+	fitting, tooLarge := 1, allowed
+	for fitting+1 < tooLarge {
+		middle := fitting + (tooLarge-fitting)/2
+		fits, err = compilation.batchFits(provider, subjectRefs[:middle], documentationRefs)
+		if err != nil {
+			return 0, err
+		}
 		if fits {
-			current = probe
+			fitting = middle
 			continue
 		}
-		if len(current) == 0 {
-			return nil, fmt.Errorf("program categorization: indivisible subject %s does not fit provider envelope", ref)
-		}
-		flush()
-		current = append(current, ref)
+		tooLarge = middle
 	}
-	flush()
-	return result, nil
+	return fitting, nil
 }
 
 func (compilation Compilation) documentationFitsEverySubject(

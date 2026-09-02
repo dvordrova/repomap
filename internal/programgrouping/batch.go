@@ -30,42 +30,75 @@ func (compilation Compilation) batchesForProvider(provider llm.Provider) ([]batc
 		return []batch{}, nil
 	}
 	result := make([]batch, 0)
-	current := make([]string, 0)
-	flush := func() {
-		if len(current) == 0 {
-			return
-		}
-		result = append(result, batch{groupRefs: append([]string(nil), current...)})
-		current = current[:0]
-	}
-	for _, ref := range compilation.categorizedRefs {
-		probe := append(append([]string(nil), current...), ref)
-		fits, err := compilation.groupingRequestFits(provider, probe)
+	remaining := compilation.categorizedRefs
+	for len(remaining) > 0 {
+		length, err := compilation.largestFittingPrefix(provider, remaining)
 		if err != nil {
 			return nil, err
 		}
-		if fits {
-			current = probe
-			continue
+		if length == 0 {
+			return nil, compilation.indivisibleSubjectError(remaining[0])
 		}
-		if len(current) == 0 {
-			return nil, compilation.indivisibleSubjectError(ref)
-		}
-		flush()
-		fits, err = compilation.groupingRequestFits(provider, []string{ref})
-		if err != nil {
-			return nil, err
-		}
-		if !fits {
-			return nil, compilation.indivisibleSubjectError(ref)
-		}
-		current = []string{ref}
+		result = append(result, batch{groupRefs: append([]string(nil), remaining[:length]...)})
+		remaining = remaining[length:]
 	}
-	flush()
 	if err := compilation.validatePlan(result); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// largestFittingPrefix returns how many of the leading refs fit in one
+// request, or zero when even the first one does not.
+//
+// A request grows with every ref it carries, so fitting is monotone in the
+// prefix length and the boundary can be found by search rather than by
+// re-encoding the whole request once per added ref. That earlier walk cost one
+// full JSON encoding per subject — quadratic in the number of subjects, and
+// the single largest local cost of a cached run. Trying the whole remainder
+// first makes the ordinary repository, where everything fits in one request,
+// cost exactly one probe. The partition is unchanged wherever the old walk
+// produced one batch, so no cache key moves.
+func (compilation Compilation) largestFittingPrefix(provider llm.Provider, refs []string) (int, error) {
+	if len(refs) == 0 {
+		return 0, nil
+	}
+	fits, err := compilation.groupingRequestFits(provider, refs)
+	if err != nil {
+		return 0, err
+	}
+	if fits {
+		return len(refs), nil
+	}
+	fits, err = compilation.groupingRequestFits(provider, refs[:1])
+	if err != nil || !fits {
+		return 0, err
+	}
+	fitting, tooLarge := 1, len(refs)
+	for step := 2; step < tooLarge; step *= 2 {
+		fits, err = compilation.groupingRequestFits(provider, refs[:step])
+		if err != nil {
+			return 0, err
+		}
+		if !fits {
+			tooLarge = step
+			break
+		}
+		fitting = step
+	}
+	for fitting+1 < tooLarge {
+		middle := fitting + (tooLarge-fitting)/2
+		fits, err = compilation.groupingRequestFits(provider, refs[:middle])
+		if err != nil {
+			return 0, err
+		}
+		if fits {
+			fitting = middle
+			continue
+		}
+		tooLarge = middle
+	}
+	return fitting, nil
 }
 
 func (compilation Compilation) indivisibleSubjectError(ref string) error {
