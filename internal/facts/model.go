@@ -43,8 +43,11 @@ const (
 	KindPortal Kind = "portal"
 	// KindConfigRead is an environment/config key read.
 	KindConfigRead Kind = "config_read"
-	// KindRisk is a dangerous call pattern (exec, eval, subprocess, ...).
-	KindRisk Kind = "risk"
+	// KindDynamicExecution marks a place where the program runs code it was
+	// given rather than code you can read: exec, eval, subprocess, a
+	// deserializer that can construct objects. It is an orientation fact, not
+	// a security finding: it tells a reader where static reading stops.
+	KindDynamicExecution Kind = "dynamic_execution"
 	// KindManifest is a fact quoted from a manifest (package.json scripts,
 	// proxy, engines, pinned versions, Pipfile packages, go.mod module...).
 	KindManifest Kind = "manifest"
@@ -65,7 +68,7 @@ const (
 func (kind Kind) Valid() bool {
 	switch kind {
 	case KindEntrypoint, KindHTTPRoute, KindHTTPCall, KindPortal, KindConfigRead,
-		KindRisk, KindManifest, KindTODO, KindDeadModule, KindNegative,
+		KindDynamicExecution, KindManifest, KindTODO, KindDeadModule, KindNegative,
 		KindDependency, KindImport:
 		return true
 	default:
@@ -139,7 +142,7 @@ type Target struct {
 //	http_call   Method, Path, Symbol (caller), ObjectID (caller object)
 //	portal      Method, Path, Refs [call id, route id], PeerTargetID, Evidence [route anchor]
 //	config_read Key (env key), Value (literal default), Symbol
-//	risk        Key (pattern), Symbol, Text (witness)
+//	dynamic_execution Key (what runs the code), Symbol, Text (source line)
 //	manifest    Key (dotted manifest key), Value
 //	todo        Text
 //	dead_module Path (file)
@@ -413,7 +416,7 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 		if fact.Kind == KindPortal && len(fact.Refs) != 2 {
 			return fmt.Errorf("portal requires exactly two refs")
 		}
-	case KindConfigRead, KindRisk, KindManifest, KindNegative, KindDependency:
+	case KindConfigRead, KindDynamicExecution, KindManifest, KindNegative, KindDependency:
 		if fact.Key == "" {
 			return fmt.Errorf("%s requires key", fact.Kind)
 		}

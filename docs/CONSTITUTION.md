@@ -28,7 +28,7 @@ worse than ten small errors.
 A developer (or a tester/PM moving toward code) who did not write this repo and
 needs to: understand what it is, run it, find the entry points, follow one main
 flow end to end, locate the data model and configuration, see the
-integrations, know what is dangerous, what is dead, and what is missing (no
+integrations, know where the code runs code it was given, what is dead, and what is missing (no
 tests, no README, no CI), and know which questions only a human can answer.
 
 The reader is not the tool's author. Internal vocabulary of the pipeline
@@ -50,8 +50,9 @@ reach the screen.
 1. **facts** — deterministic. Targets and their context (manifests, roots),
    entrypoints found by reachability, imports/calls graph, HTTP boundaries
    with method + path literals (server routes and client calls), cross-target
-   portals matched on literals, config reads (env keys), risk patterns
-   (`exec`, `eval`, `subprocess`, `os.system`, `pickle.loads`, …), manifest
+   portals matched on literals, config reads (env keys), dynamic execution
+   (`exec`, `eval`, `subprocess`, `os.system`, `pickle.loads`, …, the places
+   where control leaves code the reader can follow), manifest
    facts (`scripts`, `proxy`, `engines`, pinned versions, committed `.env`
    keys without values), TODO/FIXME, dead modules (unreachable from real
    entrypoints), and negatives (README below N bytes, zero test files, no
@@ -98,7 +99,7 @@ separate stage outputs.
   the manifest line it came from.
 * Target page, in this order: Inbound (routes/triggers) → Entrypoints → Core
   groups → External calls/dependencies, then one main flow as an ordered list
-  of steps with anchors, then risks, config, dead code, TODOs. Evidence is
+  of steps with anchors, then dynamic execution, config, dead code, TODOs. Evidence is
   collapsed by default, deduplicated by `path:line`, path printed once, max 3
   shown with "+N".
 * Connection sentences (the model's one-liners) are visible: on hover and in
@@ -122,9 +123,9 @@ separate stage outputs.
 fixture. `fixtures/python-tutorial-game/expected.json` lists facts that must
 be present with anchors. A report is acceptable only if a reader can answer
 these from the report alone, without opening the repo: what is this, how do I
-run it, where does the frontend talk to the backend and on which port, what is
-dangerous, what is dead, what is missing, and what is the main flow from
-clicking a level to the animation.
+run it, where does the frontend talk to the backend and on which port, what
+runs code it was given, what is dead, what is missing, and what is the main
+flow from clicking a level to the animation.
 
 ## Working rules for agents
 

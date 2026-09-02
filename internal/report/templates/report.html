@@ -26,7 +26,7 @@
 <h3>Targets</h3>
 {{if or .Cards .MutedCards}}<div class="cards">
 {{range .Cards}}<div class="card"><h3><a href="#{{.SectionID}}">{{.Name}}</a></h3>
-<dl><dt>Language</dt><dd>{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}</dd>{{if .Root}}<dt>Root</dt><dd><code>{{.Root}}</code></dd>{{end}}{{if .Manifest}}<dt>Manifest</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>Entrypoints</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}<dt>Counts</dt><dd class="fact">{{.Routes}} routes · {{.Calls}} calls · {{.Risks}} risks · {{.Dead}} dead files</dd></dl>
+<dl><dt>Language</dt><dd>{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}</dd>{{if .Root}}<dt>Root</dt><dd><code>{{.Root}}</code></dd>{{end}}{{if .Manifest}}<dt>Manifest</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>Entrypoints</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}<dt>Counts</dt><dd class="fact">{{.Routes}} routes · {{.Calls}} calls · {{.Dynamic}} dynamic · {{.Dead}} dead files</dd></dl>
 {{if .Role}}<span class="model"><strong>{{.Role}}</strong> — {{.Purpose}}{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span>{{end}}</div>
 {{end}}{{range .MutedCards}}<div class="card muted"><h3>{{.Name}}</h3><dl><dt>Language</dt><dd>{{.Language}}</dd><dt>Not analyzed</dt><dd>{{.Reason}} ({{.Stage}})</dd></dl></div>
 {{end}}</div>{{else}}<p class="empty">{{.CardsMissing}}</p>{{end}}
@@ -59,8 +59,8 @@
 {{if not (or .Calls .DependencyGroups .Dependencies)}}<p class="empty">{{if .FactsAvailable}}No external calls or dependencies found.{{else}}Not available.{{end}}</p>{{end}}
 <h3>Main flow</h3>
 {{if .Flow}}{{if .Flow.Title}}<p class="model">{{.Flow.Title}}</p>{{end}}<ol class="flow">{{range .Flow.Steps}}<li>{{if .Anchor}}{{template "anchor" .Anchor}}{{end}}{{if .Label}} <code>{{.Label}}</code>{{end}}{{if .Target}} <span class="meta">({{.Target}})</span>{{end}} — <span class="model">{{.Explanation}}</span></li>{{end}}</ol>{{else}}<p class="empty">{{.FlowMissing}}</p>{{end}}
-<h3>Risks</h3>
-{{if .Risks}}<ul class="plain fact">{{range .Risks}}<li><code>{{.Pattern}}</code>{{if .Symbol}} in <code>{{.Symbol}}</code>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}{{if .Witness}}<br><code class="meta">{{.Witness}}</code>{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{if .FactsAvailable}}No risky calls found.{{else}}Not available.{{end}}</p>{{end}}
+<h3>Runs code it is given</h3>
+{{if .Dynamic}}<ul class="plain fact">{{range .Dynamic}}<li><code>{{.Pattern}}</code>{{if .Symbol}} in <code>{{.Symbol}}</code>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}{{if .Witness}}<br><code class="meta">{{.Witness}}</code>{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{if .FactsAvailable}}Nothing here runs code from a string or another process.{{else}}Not available.{{end}}</p>{{end}}
 <h3>Configuration</h3>
 {{if .Config}}<table><thead><tr><th>Key</th><th>Default</th><th>Source</th></tr></thead><tbody>{{range .Config}}<tr><td><code>{{.Key}}</code></td><td>{{if .Default}}<code>{{.Default}}</code>{{end}}</td><td>{{if .Anchor}}{{template "anchor" .Anchor}}{{end}}</td></tr>{{end}}</tbody></table>{{else}}<p class="empty">{{if .FactsAvailable}}No configuration reads found.{{else}}Not available.{{end}}</p>{{end}}
 <h3>Dead code</h3>

@@ -407,44 +407,14 @@ func TestBuildRouteWithCallbackHandler(t *testing.T) {
 	}
 }
 
-func TestBuildConfigReadsFromCorpusRegex(t *testing.T) {
+// TestBuildDynamicExecution proves the stage names the places where the
+// program runs code it was handed, using only what the adapter sealed. A
+// selector alone is never enough: pattern.exec in JavaScript is a RegExp
+// method and json.loads cannot construct objects, so neither is reported.
+func TestBuildDynamicExecution(t *testing.T) {
 	repository := newCorpus(t, map[string]string{
-		"svc/config.py":   "import os\nDB = os.environ[\"DATABASE_URL\"]\nPORT = os.environ.get('PORT')\n# os.getenv(\"IGNORED\")\n",
-		"svc/client.ts":   "const base = process.env.REACT_APP_API;\n",
-		"other/tool.py":   "x = os.getenv(\"NOT_IN_TARGET\")\n",
-		"svc/notes.md":    "os.environ[\"NOT_SOURCE\"]\n",
-		"svc/__init__.py": "",
-	})
-	s := newSynthetic(t, "python", "svc", "svc/config.py")
-	s.object("mod", programindex.ObjectModule, "config", "svc/config.py", 1, "")
-	s.object("fn", programindex.ObjectFunction, "load", "svc/config.py", 2, "mod")
-	s.seed("mod", programindex.SeedMainGuard, "svc/config.py", 1)
-	result := mustBuild(t, Input{Repository: repository, Targets: []TargetInput{{Index: s.index(), Root: "svc"}}})
-	keys := make(map[string]Fact)
-	for _, fact := range result.OfKind(KindConfigRead) {
-		keys[fact.Key] = fact
-	}
-	for _, unwanted := range []string{"IGNORED", "NOT_IN_TARGET", "NOT_SOURCE"} {
-		if _, found := keys[unwanted]; found {
-			t.Fatalf("unexpected config key %s in %+v", unwanted, keys)
-		}
-	}
-	database, ok := keys["DATABASE_URL"]
-	if !ok || database.Anchor.String() != "svc/config.py:2" || database.Resolution != ResolutionPossible || database.Symbol != "load" {
-		t.Fatalf("DATABASE_URL = %+v (%v)", database, ok)
-	}
-	if port := keys["PORT"]; port.Anchor.Line != 3 {
-		t.Fatalf("PORT = %+v", port)
-	}
-	if api := keys["REACT_APP_API"]; api.Anchor.String() != "svc/client.ts:1" {
-		t.Fatalf("REACT_APP_API = %+v", api)
-	}
-}
-
-func TestBuildRisks(t *testing.T) {
-	repository := newCorpus(t, map[string]string{
-		"svc/field.py": "class Field:\n    def make_step(self):\n        exec(code, {}, {})\n        subprocess.run(cmd)\n        # os.system('never')\n        os.system('ls')\n        data = json.loads(raw)\n",
-		"svc/ui.tsx":   "const m = pattern.exec(text);\nconst f = new Function('return 1');\n<div dangerouslySetInnerHTML={{__html: raw}} />\n",
+		"svc/field.py": "class Field:\n    def make_step(self):\n        exec(code, {}, {})\n        subprocess.run(cmd)\n        os.system('ls')\n        data = json.loads(raw)\n",
+		"svc/ui.tsx":   "const m = pattern.exec(text);\nconst f = new Function('return 1');\n",
 	})
 	s := newSynthetic(t, "python", "svc", "svc/field.py", "svc/ui.tsx")
 	s.object("mod", programindex.ObjectModule, "field", "svc/field.py", 1, "")
@@ -452,38 +422,45 @@ func TestBuildRisks(t *testing.T) {
 	s.object("step", programindex.ObjectMethod, "make_step", "svc/field.py", 2, "type")
 	s.object("ui", programindex.ObjectModule, "ui", "svc/ui.tsx", 1, "")
 	s.external("run", "subprocess", "run", programindex.ExternalAuthorityPackage)
+	s.external("system", "os", "system", programindex.ExternalAuthorityPackage)
 	s.external("loads", "json", "loads", programindex.ExternalAuthorityPackage)
 	s.seed("mod", programindex.SeedMainGuard, "svc/field.py", 1)
 	s.relate("exec", programindex.RelationCalls, "step", nil, loc("svc/field.py", 3),
 		pattern("p", programindex.PatternCall, "exec", loc("svc/field.py", 3), nil, dynamic(1), dynamic(2), dynamic(3)))
 	s.relate("run", programindex.RelationInvokesExternal, "step", []string{"run"}, loc("svc/field.py", 4),
 		pattern("p", programindex.PatternCall, "run", loc("svc/field.py", 4), nil, dynamic(1)))
-	s.relate("loads", programindex.RelationInvokesExternal, "step", []string{"loads"}, loc("svc/field.py", 7),
-		pattern("p", programindex.PatternCall, "loads", loc("svc/field.py", 7), nil, dynamic(1)))
+	s.relate("system", programindex.RelationInvokesExternal, "step", []string{"system"}, loc("svc/field.py", 5),
+		pattern("p", programindex.PatternCall, "system", loc("svc/field.py", 5), nil, dynamic(1)))
+	s.relate("loads", programindex.RelationInvokesExternal, "step", []string{"loads"}, loc("svc/field.py", 6),
+		pattern("p", programindex.PatternCall, "loads", loc("svc/field.py", 6), nil, dynamic(1)))
 	s.relate("jsexec", programindex.RelationCalls, "ui", nil, loc("svc/ui.tsx", 1),
 		pattern("p", programindex.PatternCall, "exec", loc("svc/ui.tsx", 1), nil, dynamic(1)))
+	s.relate("jsfn", programindex.RelationCalls, "ui", nil, loc("svc/ui.tsx", 2),
+		pattern("p", programindex.PatternCall, "Function", loc("svc/ui.tsx", 2), nil, dynamic(1)))
 	result := mustBuild(t, Input{Repository: repository, Targets: []TargetInput{{Index: s.index(), Root: "svc"}}})
 	byAnchor := make(map[string]Fact)
-	for _, fact := range result.OfKind(KindRisk) {
+	for _, fact := range result.OfKind(KindDynamicExecution) {
 		byAnchor[fact.Anchor.String()] = fact
 	}
 	exec := byAnchor["svc/field.py:3"]
-	if exec.Key != "exec" || exec.Symbol != "make_step" || exec.Text != "exec(code, {}, {})" || exec.Resolution != ResolutionExact {
+	if exec.Key != "exec" || exec.Symbol != "make_step" || exec.Text != "exec(code, {}, {})" ||
+		exec.Resolution != ResolutionExact {
 		t.Fatalf("exec = %+v", exec)
 	}
 	if run := byAnchor["svc/field.py:4"]; run.Key != "subprocess.run" {
 		t.Fatalf("subprocess.run = %+v", run)
 	}
-	if system := byAnchor["svc/field.py:6"]; system.Key != "os.system" || system.Resolution != ResolutionPossible {
+	if system := byAnchor["svc/field.py:5"]; system.Key != "os.system" {
 		t.Fatalf("os.system = %+v", system)
 	}
-	for _, clean := range []string{"svc/field.py:5", "svc/field.py:7", "svc/ui.tsx:1"} {
-		if fact, found := byAnchor[clean]; found {
-			t.Fatalf("unexpected risk at %s: %+v", clean, fact)
-		}
+	if fn := byAnchor["svc/ui.tsx:2"]; fn.Key != "new Function" {
+		t.Fatalf("new Function = %+v", fn)
 	}
-	if byAnchor["svc/ui.tsx:2"].Key != "new Function" || byAnchor["svc/ui.tsx:3"].Key != "dangerouslySetInnerHTML" {
-		t.Fatalf("javascript risks = %+v", byAnchor)
+	// json.loads reads data; pattern.exec matches text. Neither runs code.
+	for _, quiet := range []string{"svc/field.py:6", "svc/ui.tsx:1"} {
+		if fact, found := byAnchor[quiet]; found {
+			t.Fatalf("unexpected dynamic execution at %s: %+v", quiet, fact)
+		}
 	}
 }
 

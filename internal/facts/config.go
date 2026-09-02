@@ -1,24 +1,11 @@
 package facts
 
 import (
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/programindex"
 )
-
-// configRegexes recover env reads the adapters do not model as call
-// patterns: subscripts, property access, and Go/Python getenv calls that
-// landed in unresolved relations.
-var configRegexes = []*regexp.Regexp{
-	regexp.MustCompile(`os\.environ\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\s*\]`),
-	regexp.MustCompile(`os\.environ\.get\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']`),
-	regexp.MustCompile(`os\.getenv\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']`),
-	regexp.MustCompile(`process\.env\.([A-Za-z_][A-Za-z0-9_]*)`),
-	regexp.MustCompile(`process\.env\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\s*\]`),
-	regexp.MustCompile(`os\.(?:Getenv|LookupEnv)\(\s*"([A-Za-z_][A-Za-z0-9_]*)"`),
-}
 
 func (b *builder) addConfigReads(target *targetContext) {
 	for _, relation := range target.input.Index.Relations {
@@ -35,7 +22,6 @@ func (b *builder) addConfigReads(target *targetContext) {
 			b.addConfigRead(target, *anchor, key, value, symbol, ResolutionExact)
 		}
 	}
-	b.addConfigReadsByRegex(target)
 }
 
 func (b *builder) addConfigRead(target *targetContext, anchor Anchor, key, value, symbol string, resolution Resolution) {
@@ -106,45 +92,6 @@ func defaultLiteral(pattern programindex.RelationPattern) string {
 		}
 	}
 	return ""
-}
-
-func (b *builder) addConfigReadsByRegex(target *targetContext) {
-	for _, filePath := range b.targetSourcePaths(target) {
-		file, ok := b.source.file(filePath)
-		if !ok || file.binary {
-			continue
-		}
-		for number, line := range file.lines {
-			if isCommentLine(line) {
-				continue
-			}
-			for _, key := range configKeysInLine(line) {
-				anchor := Anchor{Path: filePath, Line: number + 1}
-				b.addConfigRead(target, anchor, key, "", target.symbolAtLine(filePath, number+1), ResolutionPossible)
-			}
-		}
-	}
-}
-
-func configKeysInLine(line string) []string {
-	var keys []string
-	for _, expression := range configRegexes {
-		for _, match := range expression.FindAllStringSubmatch(line, -1) {
-			keys = append(keys, match[1])
-		}
-	}
-	return keys
-}
-
-// targetSourcePaths lists the corpus source files under the target root.
-func (b *builder) targetSourcePaths(target *targetContext) []string {
-	var result []string
-	for _, filePath := range b.source.paths() {
-		if underRoot(filePath, target.root) && isSourceFile(filePath) {
-			result = append(result, filePath)
-		}
-	}
-	return result
 }
 
 func itoa(value int) string {

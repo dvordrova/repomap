@@ -82,3 +82,40 @@ weak; only large shifts such as 30% to 90% coverage are conclusive.
 Every model stage appends counted rows with a bounded sample of offending refs
 to `rejected.jsonl` in its run directory, and the console prints the breakdown
 by reason instead of one number. Logging never fails a run.
+
+## Follow-up: the regex fallbacks were dead weight
+
+The fact layer had two text-scanning passes beside its index-sourced ones, for
+environment reads and for dangerous calls. Measured on the fixture and on chi:
+
+| | fixture | chi |
+|---|---|---|
+| config reads found | 4 | 0 |
+| of those from the sealed index | 4 | 0 |
+| of those from the regexes | 0 | 0 |
+
+Every row that landed came from adapter-emitted patterns and is `exact`; the
+regex path emits `possible` and no row carried that resolution. Both passes
+were removed. The fixture still yields the same 86 facts.
+
+What the removal genuinely gives up, until the adapters emit it: an
+environment read written as a subscript or member access, `os.environ["KEY"]`
+and `process.env.KEY`, is not a call, so no pattern exists and nothing is
+reported. The durable fix is the adapter emitting a `reads` relation, a kind
+ProgramIndex already declares and no adapter uses. That needs a pattern form
+beyond `call` and `decorator_call`, so it is a schema change rather than a
+tweak.
+
+## Follow-up: risk became dynamic execution
+
+The `risk` fact kind imported a product repomap is not. The reader already
+chose this repository, so a security finding is beside the point. What earns
+its place is narrower and more useful: the places where control leaves code
+the reader can follow, through `exec`, `eval`, a subprocess, or a deserializer
+that constructs objects. On the fixture that single fact, `exec` inside
+`make_step`, explains the whole design: why user code arrives as a string and
+why a banned-word validator exists.
+
+Renamed to `dynamic_execution`, and `dangerouslySetInnerHTML` was dropped with
+the regexes because it is an injection concern rather than an orientation one.
+The report section reads "Runs code it is given".
