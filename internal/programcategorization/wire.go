@@ -33,6 +33,11 @@ type subjectWire struct {
 	Selector          string                             `json:"selector,omitempty"`
 	RelationKind      programindex.RelationKind          `json:"relation_kind,omitempty"`
 	Arguments         []argumentWire                     `json:"arguments,omitempty"`
+	// AllowedCategories appears only when this subject cannot carry every
+	// category. A standard-library symbol is not an outbound dependency, and
+	// stating that here keeps the wrong answer out of the response instead of
+	// discarding it afterwards.
+	AllowedCategories []Category `json:"allowed_categories,omitempty"`
 }
 
 type argumentWire struct {
@@ -159,6 +164,7 @@ func (compilation Compilation) request(subjectRefs, documentationRefs []string) 
 			continue
 		}
 		row := subjectWire{Ref: subject.ref, Kind: subject.kind}
+		row.AllowedCategories = restrictedCategories(compilation.index, subject.id)
 		if subject.object != nil {
 			row.ObjectKind = subject.object.Kind
 			row.Name = subject.object.Name
@@ -328,4 +334,28 @@ func (compilation Compilation) expandReferencedContext(ids map[string]struct{}) 
 			return
 		}
 	}
+}
+
+// restrictedCategories lists what a subject may carry, but only when the full
+// closed set is not available to it. An empty result means every category is
+// allowed and the request stays silent about it.
+func restrictedCategories(index programindex.Index, subjectID string) []Category {
+	allowed := make([]Category, 0, len(allCategories))
+	for _, category := range allCategories {
+		if programindex.CategorySupported(index, subjectID, category) {
+			allowed = append(allowed, category)
+		}
+	}
+	if len(allowed) == len(allCategories) {
+		return nil
+	}
+	return allowed
+}
+
+// allCategories is the closed vocabulary in its canonical order.
+var allCategories = []Category{
+	programindex.CategoryInbound,
+	programindex.CategoryBackgroundActivity,
+	programindex.CategoryCore,
+	programindex.CategoryDependency,
 }

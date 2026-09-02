@@ -9,6 +9,7 @@ import (
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/programcategorization"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -96,18 +97,32 @@ func enrichProgramIndexForRun(
 			"program categorization: enrich target %s: %w", base.Target.ID, enrichErr,
 		), writer.Close())
 	}
+	rows := make([]modeldiag.Row, 0, len(result.Diagnostics))
+	discarded := 0
+	for _, diagnostic := range result.Diagnostics {
+		discarded += diagnostic.Count
+		rows = append(rows, modeldiag.Row{
+			Stage: debugdump.SemanticStageProgramCategorization, Target: base.Target.Name,
+			Kind: string(diagnostic.Kind), Count: diagnostic.Count, Samples: diagnostic.Samples,
+		})
+	}
+	if err := modeldiag.Append(runDir, rows); err != nil && output != nil {
+		output.Warn("could not record categorization diagnostics", err.Error())
+	}
 	if output != nil {
-		discarded := 0
-		for _, diagnostic := range result.Diagnostics {
-			discarded += diagnostic.Count
-		}
-		output.State(
-			"Program categorization", "ready",
-			"target: "+base.Target.Name,
+		details := []string{
+			"target: " + base.Target.Name,
 			fmt.Sprintf("categorized subjects: %d", len(result.Assignments)),
 			fmt.Sprintf("discarded response rows: %d", discarded),
-			formatRunOutputWallDuration(time.Since(started)),
-		)
+		}
+		if result.OutOfBatchAssignments > 0 {
+			details = append(details, fmt.Sprintf(
+				"kept rows the request did not ask for: %d", result.OutOfBatchAssignments,
+			))
+		}
+		details = append(details, modeldiag.Summary(rows)...)
+		details = append(details, formatRunOutputWallDuration(time.Since(started)))
+		output.State("Program categorization", "ready", details...)
 	}
 	closeErr := writer.Close()
 	reportSemanticOrdinalScaleWarnings(

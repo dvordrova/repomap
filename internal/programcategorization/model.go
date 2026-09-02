@@ -55,6 +55,9 @@ const (
 type Diagnostic struct {
 	Kind  DiagnosticKind `json:"kind"`
 	Count int            `json:"count"`
+	// Samples names a few of the discarded rows so a reader can tell a weak
+	// prompt from a badly shaped request without rerunning the stage.
+	Samples []string `json:"samples,omitempty"`
 }
 
 // Result is the private restored handoff to ProgramIndex.Enrich.
@@ -64,6 +67,10 @@ type Result struct {
 	ReducedDocumentationSHA256 string       `json:"reduced_documentation_sha256,omitempty"`
 	Assignments                []Assignment `json:"assignments"`
 	Diagnostics                []Diagnostic `json:"diagnostics"`
+	// OutOfBatchAssignments counts accepted rows the model volunteered for
+	// subjects of this target that its request did not ask about. They are
+	// real answers, not hallucinations, so they are kept rather than discarded.
+	OutOfBatchAssignments int `json:"out_of_batch_assignments,omitempty"`
 }
 
 // EnrichmentAssignments returns an independently owned ProgramIndex handoff.

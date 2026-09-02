@@ -10,6 +10,7 @@ import (
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/groupmatching"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/programgrouping"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -97,15 +98,22 @@ func groupProgramIndexForRun(
 			writer.Close(),
 		)
 	}
+	groupRows := groupDiagnosticRows(
+		debugdump.SemanticStageProgramGrouping, program.Target.Name, diagnostics,
+	)
+	if err := modeldiag.Append(runDir, groupRows); err != nil && output != nil {
+		output.Warn("could not record grouping diagnostics", err.Error())
+	}
 	if output != nil {
-		output.State(
-			"Program grouping", "ready",
-			"target: "+program.Target.Name,
+		details := []string{
+			"target: " + program.Target.Name,
 			fmt.Sprintf("groups: %d", len(index.Groups)),
 			fmt.Sprintf("local connections: %d", len(index.Connections)),
 			fmt.Sprintf("discarded response rows: %d", len(diagnostics)),
-			formatRunOutputWallDuration(time.Since(started)),
-		)
+		}
+		details = append(details, modeldiag.Summary(groupRows)...)
+		details = append(details, formatRunOutputWallDuration(time.Since(started)))
+		output.State("Program grouping", "ready", details...)
 	}
 	closeErr := writer.Close()
 	reportSemanticOrdinalScaleWarnings(output, "Program grouping", nil, observer.OrdinalScaleWarnings())
@@ -217,18 +225,56 @@ func matchPublishedRunGroups(
 			return nil, fmt.Errorf("group matching: persist run %s: %w", run.RunID, err)
 		}
 	}
+	matchRows := groupDiagnosticRows(debugdump.SemanticStageGroupMatching, "", diagnostics)
+	if err := modeldiag.Append(runs[0].RunDir, matchRows); err != nil && output != nil {
+		output.Warn("could not record matching diagnostics", err.Error())
+	}
 	if output != nil {
-		output.State(
-			"Group matching", "ready",
+		details := []string{
 			fmt.Sprintf("target graphs: %d", len(result)),
 			fmt.Sprintf("connections: %d", connectionCount),
 			fmt.Sprintf("discarded response rows: %d", len(diagnostics)),
-			formatRunOutputWallDuration(time.Since(started)),
-		)
+		}
+		details = append(details, modeldiag.Summary(matchRows)...)
+		details = append(details, formatRunOutputWallDuration(time.Since(started)))
+		output.State("Group matching", "ready", details...)
 	}
 	return result, nil
 }
 
 func programIndexNeedsGroupingProvider(index programindex.Index) bool {
 	return index.Categorization != nil && len(index.Categorization.Assignments) > 0
+}
+
+// groupDiagnosticRows folds per-proposal grouping and matching diagnostics
+// into one counted row per reason, naming a few of the refused proposals.
+func groupDiagnosticRows(
+	stage string,
+	target string,
+	diagnostics []groupindex.Diagnostic,
+) []modeldiag.Row {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	counts := map[string]int{}
+	samples := map[string][]string{}
+	order := []string{}
+	for _, diagnostic := range diagnostics {
+		kind := string(diagnostic.Kind)
+		if _, seen := counts[kind]; !seen {
+			order = append(order, kind)
+		}
+		counts[kind]++
+		if diagnostic.ProposalKey != "" && len(samples[kind]) < modeldiag.MaxSamples {
+			samples[kind] = append(samples[kind], diagnostic.ProposalKey)
+		}
+	}
+	rows := make([]modeldiag.Row, 0, len(order))
+	for _, kind := range order {
+		rows = append(rows, modeldiag.Row{
+			Stage: stage, Target: target, Kind: kind,
+			Count: counts[kind], Samples: samples[kind],
+		})
+	}
+	return rows
 }

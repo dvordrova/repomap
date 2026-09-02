@@ -15,6 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -73,7 +74,7 @@ func buildFirstDayLayers(ctx context.Context, options firstDayOptions) error {
 		if err := orientation.Persist(run.RunDir, orientationResult); err != nil {
 			return err
 		}
-		if err := orientation.PersistRejected(run.RunDir, rejected); err != nil {
+		if err := modeldiag.Append(run.RunDir, orientationDiagnosticRows(rejected)); err != nil {
 			return err
 		}
 	}
@@ -251,4 +252,17 @@ func repositoryTrackedPaths(ctx context.Context, repoPath string) []string {
 		return nil
 	}
 	return listing.Paths
+}
+
+// orientationDiagnosticRows folds the orientation stage's refused rows into
+// the shared per-run log, keeping each raw model row beside its reason.
+func orientationDiagnosticRows(rejected []orientation.RejectedRow) []modeldiag.Row {
+	rows := make([]modeldiag.Row, 0, len(rejected))
+	for _, row := range rejected {
+		rows = append(rows, modeldiag.Row{
+			Stage: debugdump.SemanticStageOrientation, Kind: row.Section,
+			Count: 1, Reason: row.Reason, Raw: row.Raw,
+		})
+	}
+	return rows
 }

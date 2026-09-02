@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -200,10 +201,10 @@ func TestRunRestoresSparseCategoriesAndDiscardsUnsupportedRows(t *testing.T) {
 		t.Fatalf("assignments = %#v, want %#v", result.Assignments, wantAssignments)
 	}
 	wantDiagnostics := []Diagnostic{
-		{Kind: DiagnosticEmptyCategories, Count: 1},
-		{Kind: DiagnosticInvalidCategory, Count: 1},
+		{Kind: DiagnosticEmptyCategories, Count: 1, Samples: []string{"o1"}},
+		{Kind: DiagnosticInvalidCategory, Count: 1, Samples: []string{"o2"}},
 		{Kind: DiagnosticMalformedRow, Count: 1},
-		{Kind: DiagnosticUnknownRef, Count: 1},
+		{Kind: DiagnosticUnknownRef, Count: 1, Samples: []string{"g999"}},
 	}
 	if !reflect.DeepEqual(result.Diagnostics, wantDiagnostics) {
 		t.Fatalf("diagnostics = %#v, want %#v", result.Diagnostics, wantDiagnostics)
@@ -336,6 +337,7 @@ func TestRunDiscardsReservedPlatformDependencyClaims(t *testing.T) {
 	}
 	if !reflect.DeepEqual(result.Diagnostics, []Diagnostic{{
 		Kind: DiagnosticUnsupportedCategory, Count: 2,
+		Samples: []string{"dependency on o2", "dependency on p2"},
 	}}) {
 		t.Fatalf("diagnostics = %#v", result.Diagnostics)
 	}
@@ -826,4 +828,94 @@ func patternIDBySourceRef(t *testing.T, index programindex.Index, sourceRef stri
 	}
 	t.Fatalf("no pattern source ref %q", sourceRef)
 	return ""
+}
+
+// TestNormalizeKeepsRowsForSubjectsOutsideTheAskedBatch proves the stage keeps
+// a categorization the model volunteered for a subject of the same target that
+// this request did not ask about. Those rows name real subjects and the
+// exhaustive cover would ask about them in a later request, so discarding them
+// throws away a correct answer that was already paid for.
+func TestNormalizeKeepsRowsForSubjectsOutsideTheAskedBatch(t *testing.T) {
+	index := categorizationTestIndex(t, "go")
+	compilation, err := Compile(index, reducedDocumentationFixture(t))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	var askedRef, contextRef string
+	for ref, subject := range compilation.subjectByRef {
+		if subject.object == nil {
+			continue
+		}
+		switch {
+		case askedRef == "":
+			askedRef = ref
+		case contextRef == "" && ref != askedRef:
+			contextRef = ref
+		}
+	}
+	if askedRef == "" || contextRef == "" {
+		t.Fatal("fixture needs two object subjects")
+	}
+	owned := map[string]subjectAuthority{askedRef: compilation.subjectByRef[askedRef]}
+
+	raw := []byte(fmt.Sprintf(
+		`{"assignments":[{"ref":%q,"categories":["core"]},{"ref":%q,"categories":["core"]},`+
+			`{"ref":"o404","categories":["core"]}]}`, askedRef, contextRef))
+	response, err := normalizeResponse(raw, owned, compilation.subjectByRef, index)
+	if err != nil {
+		t.Fatalf("normalizeResponse: %v", err)
+	}
+	if len(response.assignments) != 2 {
+		t.Fatalf("assignments = %#v, want the asked row and the volunteered one", response.assignments)
+	}
+	if response.outOfBatch != 1 {
+		t.Fatalf("out-of-batch acceptances = %d, want 1", response.outOfBatch)
+	}
+	// A ref that is not a subject of this target at all is still discarded.
+	if response.diagnostics[DiagnosticUnknownRef] != 1 ||
+		!reflect.DeepEqual(response.samples[DiagnosticUnknownRef], []string{"o404"}) {
+		t.Fatalf("unknown ref accounting = %#v / %#v", response.diagnostics, response.samples)
+	}
+}
+
+// TestRequestAdvertisesRestrictedCategoriesForPlatformSymbols proves the
+// request states what a subject may carry when the full set is unavailable,
+// so a standard-library symbol is never offered `dependency` in the first
+// place instead of having the answer discarded afterwards.
+func TestRequestAdvertisesRestrictedCategoriesForPlatformSymbols(t *testing.T) {
+	index := categorizationPlatformIndex(t)
+	compilation, err := Compile(index, reducedDocumentationFixture(t))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	refs := make([]string, 0, len(compilation.subjectByRef))
+	for ref := range compilation.subjectByRef {
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+	request, err := compilation.request(refs, nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	platform, pkg := 0, 0
+	for _, subject := range request.Subjects {
+		if subject.ExternalAuthority == programindex.ExternalAuthorityPlatform {
+			platform++
+			if slices.Contains(subject.AllowedCategories, CategoryDependency) {
+				t.Fatalf("platform symbol %q was offered dependency", subject.Name)
+			}
+			if len(subject.AllowedCategories) == 0 {
+				t.Fatalf("platform symbol %q did not advertise its restriction", subject.Name)
+			}
+		}
+		if subject.ExternalAuthority == programindex.ExternalAuthorityPackage {
+			pkg++
+			if len(subject.AllowedCategories) != 0 {
+				t.Fatalf("package symbol %q was restricted: %v", subject.Name, subject.AllowedCategories)
+			}
+		}
+	}
+	if platform == 0 || pkg == 0 {
+		t.Fatalf("fixture needs both authorities, got platform=%d package=%d", platform, pkg)
+	}
 }
