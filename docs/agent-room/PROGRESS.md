@@ -3,8 +3,8 @@
 ## On now
 
 Reading both reports as a newcomer and fixing what is hard. The owner's
-mid-run redirection governs: visual hierarchy, a canvas graph, 288 KB of JS is
-fine, one self-contained HTML. Until 11:00.
+mid-run redirection governs: visual hierarchy, a canvas graph, one
+self-contained HTML, script size is not the constraint. Until 11:00.
 
 ## Finished
 
@@ -20,9 +20,9 @@ fine, one self-contained HTML. Until 11:00.
 4. **The page.** Templates one file per region and per layer. Every target
    opens with an SVG map of its groups sized by membership, with hover preview
    and click-to-group; a repository map of the targets and the calls between
-   them; the summary leads and README quotes are last and clamped; the main
-   flow is a numbered sequence; a sticky target bar and a per-target jump bar
-   with counts. 145 KB, 5.4 KB of script, no page overflow at 375 px.
+   them; the summary leads and quotes are last and clamped; the main flow is a
+   numbered sequence; a sticky target bar and a per-target jump bar with
+   counts. 145 KB, 5.4 KB of script, no overflow at 375 px.
 5. **Truth.** A key repeated with an identical value no longer discards whole
    answers. Mounted route prefixes compose: `GET /articles/{articleID}` where
    chi printed `GET /`. Listen addresses are facts, so "on which port" is
