@@ -1,13 +1,11 @@
 # Progress
 
 ## On now
-
 Reading both reports as a newcomer and fixing what is hard. The owner's
 mid-run redirection governs: visual hierarchy, a canvas graph, one
 self-contained HTML. Until 11:00.
 
 ## Finished
-
 1. **Instruments.** Categorization coverage with denominators, and grouping
    shape, printed on every run.
 2. **Findings settled.** The 172 non-object assignments are relation patterns,
@@ -15,7 +13,7 @@ self-contained HTML. Until 11:00.
    looks like. What finding 1 pointed at was two other things, fixed below.
 3. **Speed.** Fixture 14.6 s → 5.6 s warm, 55 s cold. chi 111 s cold, 12.4 s
    warm, 4/4 targets. Biggest win: the run id sat in the facts digest, so
-   orientation never hit its cache. Reports are byte-identical across runs now.
+   orientation never hit its cache. Reports byte-identical across runs now.
 4. **The page.** Templates one file per region and per layer. Every target
    opens with an SVG map of its groups sized by membership, with hover preview
    and click-to-group; a repository map of the targets and the calls between
@@ -32,11 +30,9 @@ self-contained HTML. Until 11:00.
    page. `repomap <path>` no longer fails when VS Code is absent.
 
 ## Stuck on
-
 Nothing. `~/git/fuego` fails before analysis on incomplete `go list` authority;
-pre-existing, in the handoff, not investigated.
+pre-existing, recorded in the handoff, not investigated.
 
 ## Next
-
 Keep reading both reports and fixing what is hard. `make test`, `make vet` and
 `gofmt -l cmd internal` are green at every commit.
