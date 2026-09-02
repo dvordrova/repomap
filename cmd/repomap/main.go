@@ -948,29 +948,6 @@ func actionableFlagError(args []string, parseErr error) error {
 	return fmt.Errorf("%w; run 'repomap --help' for supported flags", parseErr)
 }
 
-func exactRefSet(actual, expected []string) bool {
-	if len(actual) != len(expected) {
-		return false
-	}
-	remaining := make(map[string]struct{}, len(expected))
-	for _, ref := range expected {
-		if strings.TrimSpace(ref) == "" {
-			return false
-		}
-		if _, duplicate := remaining[ref]; duplicate {
-			return false
-		}
-		remaining[ref] = struct{}{}
-	}
-	for _, ref := range actual {
-		if _, ok := remaining[ref]; !ok {
-			return false
-		}
-		delete(remaining, ref)
-	}
-	return len(remaining) == 0
-}
-
 func cloneRepositoryState(value freshness.RepositoryState) freshness.RepositoryState {
 	result := value
 	result.Dirty = append([]freshness.DirtyFile(nil), value.Dirty...)

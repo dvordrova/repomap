@@ -192,21 +192,6 @@ func (output *runOutput) Progress(event orient.ProgressEvent) {
 	}
 }
 
-func (output *runOutput) allowProgressLocked(
-	key string,
-	completed int,
-	interval time.Duration,
-	terminal bool,
-) bool {
-	now := output.now()
-	previous, found := output.lastProgress[key]
-	if !terminal && found && now.Sub(previous.at) < interval {
-		return false
-	}
-	output.lastProgress[key] = runOutputProgress{at: now, completed: completed}
-	return true
-}
-
 func (output *runOutput) stageLocked(name string) {
 	name = singleRunOutputLine(name)
 	if name == "" || name == output.currentStage {
@@ -233,13 +218,6 @@ func singleRunOutputLine(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
-func formatRunOutputCount(completed, total int) string {
-	if total <= 0 {
-		return fmt.Sprintf("completed: %d", completed)
-	}
-	return fmt.Sprintf("progress: %d/%d", completed, total)
-}
-
 func formatRunOutputDuration(milliseconds int64) string {
 	return "duration: " + (time.Duration(milliseconds) * time.Millisecond).Round(time.Millisecond).String()
 }
@@ -251,8 +229,4 @@ func formatRunOutputWallDuration(duration time.Duration) string {
 		return "duration: <1ms"
 	}
 	return "duration: " + duration.Round(time.Millisecond).String()
-}
-
-func formatRunOutputElapsed(milliseconds int64) string {
-	return "elapsed: " + (time.Duration(milliseconds) * time.Millisecond).Round(time.Second).String()
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -378,26 +377,6 @@ func claimTargetReportScaleWarningOutput(
 	}
 	output.reportedTargetReportWarnings[key] = struct{}{}
 	return true
-}
-
-// reportSemanticViewScaleWarning measures a validated, complete report view
-// while it is still resident at the semantic Accepted boundary. JSON encoding
-// is best-effort diagnostic work: an encoding failure cannot add a new
-// semantic or publication error path.
-func reportSemanticViewScaleWarning(
-	output *runOutput,
-	target programindex.Target,
-	kind string,
-	view any,
-	advisory int,
-) {
-	encoded, err := json.Marshal(view)
-	if err != nil || len(encoded) <= advisory {
-		return
-	}
-	reportInputScaleWarnings(output, []report.ReportInputScaleWarning{{
-		Kind: kind, Retained: len(encoded), AdvisorySize: advisory,
-	}}, target)
 }
 
 func reportInputScaleWarnings(

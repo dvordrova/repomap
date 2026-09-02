@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"path"
-	"sort"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -94,48 +93,6 @@ func pythonManifestPath(filePath string) bool {
 	}
 }
 
-func resolvePythonTargetOverride(
-	catalog pythontarget.Catalog,
-	resolver pythontarget.FileTargetResolver,
-	override string,
-) (pythontarget.Target, error) {
-	matches := make(map[string]pythontarget.Target)
-	for _, target := range catalog.Entries {
-		if pythonTargetMatchesOverride(target, override) {
-			matches[target.Ref] = target
-		}
-	}
-	if len(matches) == 1 {
-		for _, target := range matches {
-			return target, nil
-		}
-	}
-	if len(matches) == 0 {
-		if derived, ok, err := resolver.ResolveSelector(override); err != nil {
-			return pythontarget.Target{}, err
-		} else if ok {
-			return derived, nil
-		}
-		choices, choicesErr := pythonExactTargetChoices(catalog, resolver)
-		if choicesErr != nil {
-			return pythontarget.Target{}, choicesErr
-		}
-		return pythontarget.Target{}, fmt.Errorf(
-			"--target %q is not an eligible exact Python target; use one exact selector: %s",
-			override, choices,
-		)
-	}
-	refs := make([]string, 0, len(matches))
-	for _, target := range matches {
-		refs = append(refs, target.Selector)
-	}
-	sort.Strings(refs)
-	return pythontarget.Target{}, fmt.Errorf(
-		"--target %q is ambiguous; use one exact Python selector: %s",
-		override, strings.Join(refs, ", "),
-	)
-}
-
 func pythonExactTargetChoices(
 	catalog pythontarget.Catalog,
 	resolver pythontarget.FileTargetResolver,
@@ -163,21 +120,6 @@ func pythonExactTargetChoices(
 		return "no exact Python selectors were discovered", nil
 	}
 	return strings.Join(parts, "; "), nil
-}
-
-func pythonTargetMatchesOverride(target pythontarget.Target, override string) bool {
-	return override == target.Ref || override == target.IdentityRef || override == target.Selector ||
-		override == target.DisplayName || override == target.ProjectDir ||
-		pythonTargetHasPath(target, override)
-}
-
-func pythonTargetHasPath(target pythontarget.Target, wanted string) bool {
-	for _, root := range target.Roots {
-		if root.Path == wanted {
-			return true
-		}
-	}
-	return false
 }
 
 func pythonTargetChoices(catalog pythontarget.Catalog) string {

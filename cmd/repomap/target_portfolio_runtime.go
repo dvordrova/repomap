@@ -60,8 +60,7 @@ func selectTargetPortfolioForRun(
 	ctx context.Context,
 	corpusSnapshot corpus.Snapshot,
 	candidates []analysistarget.FileCandidate,
-	executableFileRefs *[]corpus.FileID,
-	requiredTargetFileRefs *[]corpus.FileID,
+	requiredTargetFileRefs []corpus.FileID,
 	output *runOutput,
 	providers targetPortfolioProviderFactory,
 	executor llm.Executor,
@@ -75,21 +74,9 @@ func selectTargetPortfolioForRun(
 
 	started := time.Now()
 	outcome := targetPortfolioRunOutcome{}
-	var compilation targetportfolio.Compilation
-	var err error
-	if executableFileRefs != nil && requiredTargetFileRefs != nil {
-		err = fmt.Errorf("target portfolio cannot bind executable and required target authority together")
-	} else if executableFileRefs != nil {
-		compilation, err = targetportfolio.CompileWithExecutableAuthority(
-			corpusSnapshot, candidates, *executableFileRefs,
-		)
-	} else if requiredTargetFileRefs != nil {
-		compilation, err = targetportfolio.CompileWithRequiredTargetAuthority(
-			corpusSnapshot, candidates, *requiredTargetFileRefs,
-		)
-	} else {
-		compilation, err = targetportfolio.Compile(corpusSnapshot, candidates)
-	}
+	compilation, err := targetportfolio.CompileWithRequiredTargetAuthority(
+		corpusSnapshot, candidates, requiredTargetFileRefs,
+	)
 	if err != nil {
 		failed, failErr := failTargetPortfolioSelection(
 			outcome, "request_build_failed",
@@ -647,63 +634,6 @@ func targetPortfolioChoices(catalog analysistarget.TargetCatalog) string {
 		choices = append(choices, fmt.Sprintf("... and %d more", available-len(choices)))
 	}
 	return strings.Join(choices, ", ")
-}
-
-// resolveTargetOverride applies fail-closed target resolution. Exact refs and
-// typed candidate keys win first. Human
-// path aliases are accepted only when they identify one surface: a module-root
-// executable and that module's Library API deliberately share a display path,
-// so an untyped alias such as "." or "server" must not silently pick one.
-func resolveTargetOverride(
-	catalog analysistarget.TargetCatalog,
-	override string,
-) (analysistarget.TargetCatalogEntry, error) {
-	exact := make([]analysistarget.TargetCatalogEntry, 0, 1)
-	for _, entry := range catalog.Entries {
-		if override == entry.Candidate.Target.Ref || override == entry.Candidate.Key {
-			exact = append(exact, entry)
-		}
-	}
-	if len(exact) == 1 {
-		return exact[0], nil
-	}
-	if len(exact) > 1 {
-		return analysistarget.TargetCatalogEntry{}, fmt.Errorf(
-			"--target %q matches more than one exact target", override,
-		)
-	}
-
-	aliases := make([]analysistarget.TargetCatalogEntry, 0, 1)
-	for _, entry := range catalog.Entries {
-		target := entry.Candidate.Target
-		match := override == entry.DisplayPath
-		if target.Kind == analysistarget.KindModuleLibrary {
-			match = match || override == target.ModulePath
-		} else {
-			match = match || override == target.PackagePath
-		}
-		if match {
-			aliases = append(aliases, entry)
-		}
-	}
-	switch len(aliases) {
-	case 1:
-		return aliases[0], nil
-	case 0:
-		return analysistarget.TargetCatalogEntry{}, fmt.Errorf(
-			"--target %q is not an eligible module surface; choose one of: %s",
-			override, targetPortfolioChoices(catalog),
-		)
-	default:
-		keys := make([]string, 0, len(aliases))
-		for _, entry := range aliases {
-			keys = append(keys, entry.Candidate.Key)
-		}
-		return analysistarget.TargetCatalogEntry{}, fmt.Errorf(
-			"--target %q is ambiguous; use one exact target key: %s",
-			override, strings.Join(keys, ", "),
-		)
-	}
 }
 
 func recordTargetPortfolioOutcome(
