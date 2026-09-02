@@ -160,9 +160,10 @@ string, so grep it, do not walk it as JSON.
 
 | repository | objects | relations | categorization requests | result |
 |---|---|---|---|---|
-| fixture backend | 219 | — | 10 | 5.6 s warm |
+| fixture backend | 219 | — | 10 | 5.7 s warm, 55 s cold, both targets |
 | fixture front | 222 | — | 14 | included above |
-| chi library | 433 | 887 | 30 | 7.6 s warm, 111 s cold |
+| chi library | 433 | 887 | 30 | 7.6 s warm, 111 s cold, 4/4 targets |
+| python-dotenv | 900 | 1,798 | 53 per target, 3 targets | 19.7 s warm, 864 s cold, 3/3 |
 | beets | 26,218 | 53,063 | ~820 | stopped after 388 calls |
 
 beets was pointed at on 2026-09-03 as a third repository to read. It is not
@@ -174,6 +175,12 @@ report would have looked like.
 The request plan is now announced before it executes, so the next person sees
 the number rather than the bill. Nothing caps it. If a bound is ever wanted,
 the number to bound is categorization requests, which is subjects ÷ 32.
+
+python-dotenv is the shape to keep in mind: a quarter of chi's size but eight
+times its cold wall clock, because it is three targets and each one carries
+the whole test tree, so the same test files are categorized three times and
+its groups are named after tests as often as after the library. Whether a
+target should include its own tests is a product question nobody has answered.
 
 ## Known gaps, recorded not fixed
 
