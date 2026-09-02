@@ -5,9 +5,9 @@
 <g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" data-from="{{.From}}" data-to="{{.To}}" marker-end="url(#map-arrow)"><title>{{.Label}}</title></path>{{end}}</g>
 <g class="map-nodes">{{range .Nodes}}<a href="{{.Href}}" class="map-node map-node-{{.Lane}}" data-node="{{.ID}}" data-near="{{.Neighbours}}" aria-label="{{.FullTitle}}, {{.Members}} symbol{{if ne .Members 1}}s{{end}}, {{.Degree}} connection{{if ne .Degree 1}}s{{end}} here{{if .Outside}}, {{.Outside}} to another target{{end}}">
 <rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="6" class="map-node-body"/>
-<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="18" class="map-node-title">{{.Title}}</text>
-<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="32" class="map-node-count">{{.Members}}{{if .Outside}} · {{.Outside}} outside{{end}}</text>
-<rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" transform="translate(11 38)" width="{{printf "%.1f" .BarWidth}}" height="3" rx="1.5" class="map-node-bar"/>
+{{$node := .}}{{range $line, $text := .Title}}<text x="{{printf "%.1f" $node.X}}" y="{{printf "%.1f" $node.Y}}" dx="11" dy="{{if eq $line 0}}17{{else}}30{{end}}" class="map-node-title">{{$text}}</text>{{end}}
+<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="45" class="map-node-count">{{.Members}}{{if .Outside}} · {{.Outside}} outside{{end}}</text>
+<rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" transform="translate(11 50)" width="{{printf "%.1f" .BarWidth}}" height="3" rx="1.5" class="map-node-bar"/>
 <title>{{.FullTitle}} — {{.Summary}}</title>
 </a>{{end}}</g>
 </svg>

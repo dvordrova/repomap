@@ -20,7 +20,7 @@ import (
 // names; scripting only adds the neighbourhood preview.
 const (
 	mapNodeWidth      = 196.0
-	mapNodeHeight     = 46.0
+	mapNodeHeight     = 58.0
 	mapLaneGap        = 104.0
 	mapColumnGap      = 16.0
 	mapNodeGap        = 10.0
@@ -30,9 +30,12 @@ const (
 	// map stays inside about one screen instead of becoming a list again.
 	mapMaxNodesPerColumn = 7
 	// mapTitleBudget is how many characters fit on one node line at the node
-	// width above. A longer title is cut on the node and kept whole in its
-	// tooltip and in the group card the node links to.
+	// width above, and a title may take two of them. A group's name is what
+	// the map is for, so it wraps rather than being cut; only a name too long
+	// for both lines is cut, and the whole of it stays in the node's tooltip
+	// and on the group card the node links to.
 	mapTitleBudget = 26
+	mapTitleLines  = 2
 	// Two drawing constants that keep a nearly horizontal curve from
 	// collapsing into a straight line on top of another one.
 	mapMinEdgeBend  = 24.0
@@ -59,7 +62,7 @@ type pageMapLane struct {
 type pageMapNode struct {
 	ID      string
 	Href    string
-	Title   string
+	Title   []string
 	Summary string
 	Lane    string
 	// Members is how many subjects this group holds, and Share how much of the
@@ -175,13 +178,49 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	return result
 }
 
-// mapTitle cuts a title to what fits on one node line. The whole title stays
-// in the node's tooltip and on the group card the node links to, so nothing
-// is lost, only shortened.
-func mapTitle(title string) string {
-	runes := []rune(title)
+// mapTitle breaks a title over the node's title lines, on word boundaries
+// where it can. Only a name too long for every line is cut.
+func mapTitle(title string) []string {
+	words := strings.Fields(title)
+	lines := make([]string, 0, mapTitleLines)
+	current := ""
+	for _, word := range words {
+		candidate := word
+		if current != "" {
+			candidate = current + " " + word
+		}
+		if len([]rune(candidate)) <= mapTitleBudget {
+			current = candidate
+			continue
+		}
+		if current != "" {
+			lines = append(lines, current)
+			current = ""
+		}
+		if len(lines) == mapTitleLines {
+			break
+		}
+		current = word
+	}
+	if current != "" && len(lines) < mapTitleLines {
+		lines = append(lines, current)
+	}
+	if len(lines) == 0 {
+		return []string{cutTitle(title)}
+	}
+	if last := len(lines) - 1; len([]rune(lines[last])) > mapTitleBudget {
+		lines[last] = cutTitle(lines[last])
+	}
+	if joined := strings.Join(lines, " "); joined != strings.Join(words, " ") {
+		lines[len(lines)-1] = cutTitle(lines[len(lines)-1] + " " + "\u2026")
+	}
+	return lines
+}
+
+func cutTitle(value string) string {
+	runes := []rune(value)
 	if len(runes) <= mapTitleBudget {
-		return title
+		return value
 	}
 	return strings.TrimRight(string(runes[:mapTitleBudget-1]), " ") + "\u2026"
 }
