@@ -39,7 +39,11 @@ reach the screen.
 
 * Not a documentation generator. It does not describe everything; it routes
   attention.
-* Not a graph explorer. The graph is a means; the answers are the product.
+* Not a graph explorer. The graph is a means; the answers are the product. One
+  laid-out picture of a target's groups is not an explorer and is wanted: it
+  routes attention where a column of equally weighted headings cannot. There
+  is no panning, no zooming, no expanding a node in place, and no view whose
+  only content is the graph.
 * Not interactive-first. A static report, ≤ 2 screens per target before
   expanding anything.
 * Not a place for the model to write essays. One line per group purpose, one
@@ -109,13 +113,20 @@ separate stage outputs.
 * Provenance is visible in styling: fact (solid), model (marked as model,
   muted), claim (marked with source and age). A model-written sentence must
   not look like a heading of authoritative documentation.
-* Anchors link to a permalink at the captured revision (and to the editor if
-  available).
+* Anchors link to a permalink at the captured revision, and to the editor when
+  one is installed. A missing editor never withholds the report.
 * Banned on-screen vocabulary: retained, source-bound, authority, projection,
   selector, outcome, target contract, and raw selector strings like
   `python:backend:guard:main`.
-* The report JS stays small (tens of KB, not hundreds). Prefer one page with
-  sections over many routes.
+* One page with sections, not many routes. Script size is not the constraint
+  the owner cares about — "288 KB is very little" (2026-09-03) — but every
+  answer must still be in the HTML: scripting may add preview and emphasis and
+  nothing else, so the page reads with scripting off. Today it is 145 KB with
+  5.4 KB of script.
+* The templates are one file per region of the page and one file per style or
+  script layer, under `internal/report/templates/{html,css,js}`, concatenated
+  in filename order. Adding a region or a layer is a new file and no Go change,
+  so working on the page does not mean working on that package.
 
 ## Acceptance (fixture)
 
@@ -126,6 +137,17 @@ these from the report alone, without opening the repo: what is this, how do I
 run it, where does the frontend talk to the backend and on which port, what
 runs code it was given, what is dead, what is missing, and what is the main
 flow from clicking a level to the animation.
+
+## What this tool does not protect you from
+
+repomap trusts the repository it is given and does not scan it for
+credentials. Run directories and the model cache contain exactly what the
+prompts and responses contained, so a credential committed to the analyzed
+repository can reach them like any other repository text. Treat a run
+directory as being as sensitive as the repository it came from. The provider
+key is read from the environment and is never part of a request body or a
+cache record. (Owner's decision, 2026-09-03: the scanner that used to refuse
+such content was removed rather than kept and optimised.)
 
 ## Working rules for agents
 
