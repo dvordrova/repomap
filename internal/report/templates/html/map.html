@@ -3,7 +3,7 @@
 <defs><marker id="map-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" class="map-arrow-head"/></marker></defs>
 <g class="map-lanes">{{range .Lanes}}<text x="{{printf "%.1f" .X}}" y="18" class="map-lane-label">{{.Label}}</text>{{end}}</g>
 <g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" data-from="{{.From}}" data-to="{{.To}}" marker-end="url(#map-arrow)"><title>{{.Label}}</title></path>{{end}}</g>
-<g class="map-nodes">{{range .Nodes}}<a href="{{.Href}}" class="map-node map-node-{{.Lane}}" data-node="{{.ID}}" data-near="{{.Neighbours}}" aria-label="{{.FullTitle}}, {{.Members}} members, {{.Degree}} connections here{{if .Outside}}, {{.Outside}} to another target{{end}}">
+<g class="map-nodes">{{range .Nodes}}<a href="{{.Href}}" class="map-node map-node-{{.Lane}}" data-node="{{.ID}}" data-near="{{.Neighbours}}" aria-label="{{.FullTitle}}, {{.Members}} symbol{{if ne .Members 1}}s{{end}}, {{.Degree}} connection{{if ne .Degree 1}}s{{end}} here{{if .Outside}}, {{.Outside}} to another target{{end}}">
 <rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="6" class="map-node-body"/>
 <text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="18" class="map-node-title">{{.Title}}</text>
 <text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="32" class="map-node-count">{{.Members}}{{if .Outside}} · {{.Outside}} outside{{end}}</text>
