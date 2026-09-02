@@ -12,6 +12,7 @@
       "package": "main",
       "files": [
         "cache_clear_test.go",
+        "categorization_coverage_test.go",
         "go_target_auto_test.go",
         "javascript_target_runtime_test.go",
         "program_categorization_runtime_test.go",
@@ -231,6 +232,7 @@
       "directory": "internal/programcategorization",
       "package": "programcategorization",
       "files": [
+        "coverage_test.go",
         "programcategorization_test.go"
       ]
     },

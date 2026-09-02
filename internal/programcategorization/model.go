@@ -71,6 +71,10 @@ type Result struct {
 	// subjects of this target that its request did not ask about. They are
 	// real answers, not hallucinations, so they are kept rather than discarded.
 	OutOfBatchAssignments int `json:"out_of_batch_assignments,omitempty"`
+	// RequestCount is the executed request plan and EmptyRequestCount how many
+	// of those requests returned a well-formed response that assigned nothing.
+	RequestCount      int `json:"request_count,omitempty"`
+	EmptyRequestCount int `json:"empty_request_count,omitempty"`
 }
 
 // EnrichmentAssignments returns an independently owned ProgramIndex handoff.
@@ -196,4 +200,75 @@ func subjectByID(index programindex.Index, subjectID string) (subjectAuthority, 
 // ProgramIndex boundary that ultimately seals the same assignment.
 func categorySupported(index programindex.Index, subject subjectAuthority, category Category) bool {
 	return programindex.CategorySupported(index, subject.id, category)
+}
+
+// Coverage is the instrument. An absolute assignment count with no
+// denominator cannot tell a healthy run from one that lost most of its
+// signal, and a category carried by nearly every subject routes no attention.
+// Every field here is countable from the same two inputs Validate already
+// holds, so it can never disagree with what was sealed.
+type Coverage struct {
+	// Objects and Patterns are the two kinds of subject the categorizer is
+	// asked about: program objects, and the relation patterns between them.
+	Objects         int
+	CoveredObjects  int
+	Patterns        int
+	CoveredPatterns int
+	// OutsideIndex counts accepted assignments naming neither. Validate makes
+	// this impossible, so a non-zero value means the seal itself is broken.
+	OutsideIndex int
+	ByCategory   map[Category]int
+	// Requests is the executed request plan and Empty how many of those
+	// returned a well-formed response that assigned nothing.
+	Requests int
+	Empty    int
+}
+
+// Subjects and CoveredSubjects are the run-level numerator and denominator.
+func (coverage Coverage) Subjects() int { return coverage.Objects + coverage.Patterns }
+
+// CoveredSubjects counts distinct subjects that received any category.
+func (coverage Coverage) CoveredSubjects() int {
+	return coverage.CoveredObjects + coverage.CoveredPatterns
+}
+
+// Coverage counts what the accepted assignments landed on, against the exact
+// index they were restored to.
+func (result Result) Coverage(base programindex.Index) Coverage {
+	objects := make(map[string]struct{}, len(base.Objects))
+	for _, object := range base.Objects {
+		objects[object.ID] = struct{}{}
+	}
+	patterns := make(map[string]struct{})
+	for _, relation := range base.Relations {
+		for _, pattern := range relation.Patterns {
+			patterns[pattern.ID] = struct{}{}
+		}
+	}
+	coverage := Coverage{
+		Objects:    len(objects),
+		Patterns:   len(patterns),
+		ByCategory: make(map[Category]int, 4),
+		Requests:   result.RequestCount,
+		Empty:      result.EmptyRequestCount,
+	}
+	for _, assignment := range result.Assignments {
+		switch {
+		case contains(objects, assignment.SubjectID):
+			coverage.CoveredObjects++
+		case contains(patterns, assignment.SubjectID):
+			coverage.CoveredPatterns++
+		default:
+			coverage.OutsideIndex++
+		}
+		for _, category := range assignment.Categories {
+			coverage.ByCategory[category]++
+		}
+	}
+	return coverage
+}
+
+func contains(set map[string]struct{}, key string) bool {
+	_, present := set[key]
+	return present
 }

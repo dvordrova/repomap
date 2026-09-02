@@ -115,7 +115,11 @@ func Run(
 	categoriesBySubject := make(map[string]map[Category]struct{})
 	diagnostics := make(map[DiagnosticKind]int)
 	samples := make(map[DiagnosticKind][]string)
+	result.RequestCount = len(outcomes)
 	for _, outcome := range outcomes {
+		if len(outcome.Value.assignments) == 0 {
+			result.EmptyRequestCount++
+		}
 		result.OutOfBatchAssignments += outcome.Value.outOfBatch
 		for kind, count := range outcome.Value.diagnostics {
 			diagnostics[kind] += count

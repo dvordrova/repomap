@@ -110,11 +110,11 @@ func enrichProgramIndexForRun(
 		output.Warn("could not record categorization diagnostics", err.Error())
 	}
 	if output != nil {
-		details := []string{
-			"target: " + base.Target.Name,
-			fmt.Sprintf("categorized subjects: %d", len(result.Assignments)),
-			fmt.Sprintf("discarded response rows: %d", discarded),
-		}
+		details := append(
+			[]string{"target: " + base.Target.Name},
+			formatCategorizationCoverage(result.Coverage(base))...,
+		)
+		details = append(details, fmt.Sprintf("discarded response rows: %d", discarded))
 		if result.OutOfBatchAssignments > 0 {
 			details = append(details, fmt.Sprintf(
 				"kept rows the request did not ask for: %d", result.OutOfBatchAssignments,
