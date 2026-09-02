@@ -1,29 +1,31 @@
 # Handoff: what is known, what is open
 
-Written 2026-09-02 for an agent picking this up cold. Everything here is
-measured, not remembered. Authority for the product is
+Rewritten 2026-09-03 after a night of work. Everything here is measured, not
+remembered. Authority for the product is
 [docs/CONSTITUTION.md](../CONSTITUTION.md); the architecture is
 [CURRENT.md](CURRENT.md); the flags and acceptance ritual are in the README.
 
-## Baseline, measured
+## Baseline, measured 2026-09-03
 
-One live run over the fixture, both targets, no cache:
+| what | fixture | chi |
+|---|---|---|
+| wall clock, all targets, warm cache | 5.6 s | 12.4 s |
+| wall clock, all targets, cold | 55 s | 111 s |
+| targets analyzed | 2/2 | 4/4 |
+| report.html | 145 KB | 210 KB |
+| of which script | 5.4 KB | 5.4 KB |
 
-| what | value |
-|---|---|
-| wall clock, backend + front | 66 s |
-| accepted provider calls, all four 2026-09-02 runs | 58 |
-| input tokens, those runs | 1,122,672 |
-| largest single request | 112,338 tokens (one grouping call) |
-| largest categorization request | 36,236 tokens |
-| calls over the 131,072 window | 0 |
-| max output tokens against a 128,000 cap | 1,667 |
-| provider latency, all calls | 468.9 s, of which 333.9 s is ONE call with attempts=2 |
-| the other 57 calls | 135 s total |
-| `defaultTimeout` | 10 min, against a corpus p99 of 50.7 s |
+The fixture was 14.6 s warm at the start of that night. What closed the gap,
+in order of size: the run id was inside the facts digest, so the orientation
+stage never hit its cache and paid for a live call on every run; the two
+semantic batch planners re-encoded the whole request once per subject; the
+always-on credential scans ran eight regexps and a full JSON decode over every
+payload. The credential scanning was then removed entirely on the owner's
+instruction — see the constitution for what that gives up.
 
-The single largest measured wall-clock win available is lowering
-`defaultTimeout`. It is one constant.
+Two consecutive runs of the same repository now produce a byte-identical
+`report.html`. If that stops being true, something run-varying has got into a
+stage digest again; that is what to look for first.
 
 ## There is no request-sizing defect
 
@@ -49,6 +51,25 @@ real repository. `merge.go` fails the whole run at three sites. Capping
 grouping routes every repository through that never-exercised path. Print the
 number first; cap it the day a real printout crosses the window, and exercise
 merge on the fixture deliberately before that.
+
+## Settled: the grouping answer had no size rule
+
+For one unchanged repository the model returned between four and thirteen
+groups across cold draws, and the four-group answers put two thirds of the
+target in one box. The prompt described lanes, membership and evidence in
+detail and said nothing about how big a group should be, so "everything" was a
+valid answer. It now sizes a group for reading: one responsibility a reader
+would name out loud, eight to fifteen for a target of a few hundred subjects,
+and no group over about a fifth of what it was given.
+
+| draw | before | after |
+|---|---|---|
+| fixture backend | 10 groups / 4%, 7 / 5%, 4 / **66%** | 8 / 4%, 10 / 4% |
+| fixture front | 12 / 17%, 4 / **73%** | 13 / 4%, 9 / 4% |
+
+Read that column as "groups returned / share of the target held by the largest
+one". Variance is the thing to watch here: measure several cold draws, never
+one.
 
 ## Settled finding 1: core is diluted, and narrowing it costs more than it saves
 
@@ -139,6 +160,11 @@ string, so grep it, do not walk it as JSON.
 
 - `os.environ["KEY"]` and `process.env.KEY` subscript reads are not captured.
   Catching them needs a `reads` relation from the adapter, a schema change.
+- A numeric listen port, as JavaScript writes it (`app.listen(3000)`), is not
+  captured. The index records no value for a numeric argument, so there is
+  nothing to read; a string address is captured.
+- `~/git/fuego` fails before analysis: `go list` authority is incomplete for a
+  package of templates that does not build. Not investigated.
 - `targetportfolio.Compile` and `CompileWithExecutableAuthority` are now
   production-dead, reachable only from their own tests. Removing them rewrites
   about ten call sites.
@@ -147,14 +173,15 @@ string, so grep it, do not walk it as JSON.
 
 ## Traps
 
-- **The provider's transport settings are in the cache key.** `Client.State()`
-  carries `timeout_nanoseconds`, `provider_max_tokens`, the byte limits and the
-  retry count, and the executor hashes that state into every cache key. Editing
-  `defaultTimeout` cold-started all 1,047 records in real money; this was
-  learned by paying for it. Nothing about a timeout changes what a successful
-  response contains, so those four fields do not belong there, but removing
-  them costs one more cold start and is only worth doing alongside a change
-  that pays for one anyway.
+- **The cache key is the provider state plus the request.** Transport settings
+  were in that state, so editing `defaultTimeout` re-bought all 1,047 cached
+  answers; they have since been taken out and only the endpoint, model, auth
+  mode, temperature and token cap remain. Anything added there is paid for in
+  real money on the next run of every repository.
+- **Every model stage is a coin flip until it is cached.** Categorization
+  coverage, group counts and the orientation text all differ between live
+  calls at temperature 0.1. A single cold run proves nothing about quality;
+  take several draws before believing a prompt change helped or hurt.
 - A name-based dead-code scan misses interface satisfaction.
   `runOutputWarningSink.Write` looked unreachable and has four call sites.
 - Do not reorder request fields for provider prefix caching. Measured dead: the
