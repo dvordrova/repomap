@@ -72,7 +72,7 @@ type pageTargetCard struct {
 	Entrypoints []pageAnchor
 	Routes      int
 	Calls       int
-	Risks       int
+	Dynamic     int
 	Dead        int
 	Role        string
 	Purpose     string
@@ -324,7 +324,7 @@ func (builder *pageBuilder) factsCard(target facts.Target) pageTargetCard {
 	}
 	card.Routes = len(builder.targetFacts(target.ID, facts.KindHTTPRoute))
 	card.Calls = len(builder.targetFacts(target.ID, facts.KindHTTPCall))
-	card.Risks = len(builder.targetFacts(target.ID, facts.KindRisk))
+	card.Dynamic = len(builder.targetFacts(target.ID, facts.KindDynamicExecution))
 	card.Dead = len(builder.targetFacts(target.ID, facts.KindDeadModule))
 	if orient := builder.data.Orientation; orient != nil {
 		for _, role := range orient.Roles {

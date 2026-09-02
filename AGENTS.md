@@ -377,8 +377,9 @@ sidecar tools.
   human-written artifact, or a model hypothesis, and the three are always
   labeled. `facts.json` holds the anchored fact layer: entrypoints, HTTP routes
   and client calls with method and path literals, cross-target portals,
-  environment keys, risk calls, manifest rows, TODO markers, imports, dead
-  modules, negatives, and dependencies. `claims.json` holds quotes with their
+  environment keys, the places where the program runs code it was given,
+  manifest rows, TODO markers, imports, dead modules, negatives, and
+  dependencies. `claims.json` holds quotes with their
   source path, date and age. `orientation.json` holds the model's repository
   summary, roles, run recipe, and main flow; every row cites fact, claim, or
   subject ids, and a row whose refs do not resolve goes to `rejected.jsonl`

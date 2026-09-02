@@ -59,7 +59,7 @@ func TestFixturePythonTutorialGame(t *testing.T) {
 	}
 	if len(missing) > 0 {
 		t.Errorf("%d expected rows are missing:\n  %s", len(missing), strings.Join(missing, "\n  "))
-		for _, kind := range []Kind{KindHTTPRoute, KindHTTPCall, KindPortal, KindConfigRead, KindRisk, KindTODO, KindDeadModule, KindNegative, KindManifest, KindDependency, KindImport} {
+		for _, kind := range []Kind{KindHTTPRoute, KindHTTPCall, KindPortal, KindConfigRead, KindDynamicExecution, KindTODO, KindDeadModule, KindNegative, KindManifest, KindDependency, KindImport} {
 			for _, fact := range first.OfKind(kind) {
 				t.Logf("have %s %s method=%s path=%s key=%s value=%s symbol=%s", fact.Kind, fact.Anchor, fact.Method, fact.Path, fact.Key, fact.Value, fact.Symbol)
 			}

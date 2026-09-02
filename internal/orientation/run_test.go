@@ -591,7 +591,7 @@ func (fixture *fixture) facts(t *testing.T, alphaProgramID, betaProgramID string
 		fact("call", facts.KindHTTPCall, facts.Fact{TargetID: beta, Anchor: anchor("beta/main.go", 10), Method: "GET", Path: "/api/items", Symbol: "Serve"}),
 		fact("manifest", facts.KindManifest, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/go.mod", 1), Key: "module", Value: "example.com/alpha"}),
 		fact("config", facts.KindConfigRead, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 3), Key: "PORT", Value: "8080"}),
-		fact("risk", facts.KindRisk, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 5), Key: "exec", Symbol: "Apply"}),
+		fact("risk", facts.KindDynamicExecution, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 5), Key: "exec", Symbol: "Apply"}),
 		fact("negative", facts.KindNegative, facts.Fact{Key: facts.NegativeNoTests, Text: "no test files"}),
 		fact("dependency", facts.KindDependency, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 4), Key: "example.com/queue"}),
 		fact("dead", facts.KindDeadModule, facts.Fact{TargetID: alpha, Path: "alpha/dead.go"}),

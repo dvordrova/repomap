@@ -2,8 +2,9 @@
 
 `repomap` turns a repository you have just been handed into one static HTML
 page that answers the first-day questions: what this is, how to run it, where
-the parts talk to each other and on which port, what is dangerous, what is
-dead, what is missing, and what the main flow looks like end to end. Every
+the parts talk to each other and on which port, what runs code it was given,
+what is dead, what is missing, and what the main flow looks like end to end.
+Every
 answer is anchored to an exact `path:line` you can open in one click, so any
 claim on the page can be checked in seconds.
 
@@ -11,9 +12,10 @@ Everything on the page is one of three labeled things:
 
 - **facts** — extracted from the code deterministically: entrypoints, HTTP
   routes and client calls with their method and path literals, the portals
-  where one target calls another, environment keys, risky calls such as `exec`
-  and `subprocess`, manifest settings, TODO markers, unreachable files, and
-  what the repository lacks (no tests, no CI, no Dockerfile, a stub README);
+  where one target calls another, environment keys, the places where the
+  program runs code it was given such as `exec` and `subprocess`, manifest
+  settings, TODO markers, unreachable files, and what the repository lacks
+  (no tests, no CI, no Dockerfile, a stub README);
 - **claims** — quoted from README files, docstrings, comments, and commit
   messages, always with their source and age, because they may be stale;
 - **model** — the repository summary, the role of each target, the run recipe,

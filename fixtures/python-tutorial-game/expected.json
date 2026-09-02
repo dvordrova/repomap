@@ -36,7 +36,7 @@
     {"kind": "manifest", "file": "backend/Pipfile", "name": "packages.pydantic", "value": "*", "anchor": "backend/Pipfile:12"},
     {"kind": "manifest", "file": "backend/Pipfile", "name": "requires.python_version", "value": "3.12", "anchor": "backend/Pipfile:15"},
 
-    {"kind": "risk", "pattern": "exec", "symbol": "make_step", "anchor": "backend/app/field.py:98"},
+    {"kind": "dynamic_execution", "pattern": "exec", "symbol": "make_step", "anchor": "backend/app/field.py:98"},
 
     {"kind": "todo", "anchor": "backend/app/app.py:77", "key": "TODO"},
     {"kind": "todo", "anchor": "front/src/routes/index.tsx:23", "key": "TODO", "text": "add next pages"},

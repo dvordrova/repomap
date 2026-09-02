@@ -42,7 +42,7 @@ type pageSection struct {
 	Dependencies     []pageDependency
 	Flow             *pageFlow
 	FlowMissing      string
-	Risks            []pageRisk
+	Dynamic          []pageDynamic
 	Config           []pageConfig
 	Dead             []pageAnchor
 	Todos            []pageTodo
@@ -65,7 +65,9 @@ type pageDependency struct {
 	Anchor  *pageAnchor
 }
 
-type pageRisk struct {
+// pageDynamic is one place where the program runs code it was handed rather
+// than code the reader can follow.
+type pageDynamic struct {
 	Pattern string
 	Symbol  string
 	Witness string
@@ -252,8 +254,8 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 			Name: fact.Key, Version: fact.Value, Anchor: builder.links.factAnchor(fact),
 		})
 	}
-	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindRisk) {
-		section.Risks = append(section.Risks, pageRisk{
+	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindDynamicExecution) {
+		section.Dynamic = append(section.Dynamic, pageDynamic{
 			Pattern: fact.Key, Symbol: fact.Symbol, Witness: fact.Text,
 			Anchor: builder.links.factAnchor(fact),
 		})
