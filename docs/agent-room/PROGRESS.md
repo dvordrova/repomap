@@ -2,35 +2,38 @@
 
 ## On now
 
-Item 3: decide with numbers whether `core` at 97% of backend objects is worth
-narrowing.
+The page. Owner's direction, given tonight: it lacks visual hierarchy, you
+cannot see what matters. Wants a canvas graph and real visual work; says
+288 KB of JS is fine; wants embedded, well-organised templates so UI changes
+stay cheap, and one self-contained HTML you can drop in S3. Work until 11:00.
 
 ## Finished
 
-1. **The instrument.** `81fe3e02`. Categorization prints coverage with
-   denominators, split objects vs connections, per-category share, requests
-   and how many assigned nothing, and rows naming a subject outside the index.
-   Fixture, front: was `categorized subjects: 338`; now
-   `338/424 (79%) (objects 166/222 (74%), connections 172/202 (85%))`,
-   `core 281 (66%)`, `requests: 14, of which 0 assigned nothing`, `outside: 0`.
-   Request shape untouched, so the cache did not cold start: whole run 14 s.
-2. **Finding 2 settled.** `cbd4aac8`. The 172 are relation patterns of the
-   same index — 103 `invokes_external`, 69 `calls`, each anchored. 0 of 338
-   name an id in neither set; same for backend's 25 of 239. Not invention, and
-   `Result.Validate` cannot accept one; that refusal now has a test.
+1. **Categorization instrument.** `81fe3e02`. Coverage with denominators,
+   objects vs connections, per-category share, empty requests, rows outside
+   the index. Front was `338`; now `338/424 (79%)`, `core 281 (66%)`.
+2. **Finding 2 settled.** `cbd4aac8`. All 172 non-object assignments are
+   relation patterns with anchors; 0 of 338 name an id in neither set.
+3. **Finding 1 decided.** `d2c250ba`. Do not narrow `core`: the regressed run
+   is what narrow looks like — 6 groups over 22 subjects vs 10 over 55, and 5
+   connections vs 14. Real defect is one stage down: front's largest group
+   holds 127/424 subjects. Grouping now prints its shape.
+4. **Speed, measured on the fixture, warm cache, both targets: 14.6 s → 10.3 s
+   (−29%).** `f567a56f` gated the always-on credential scan and the structured
+   scan by the literals their answer needs (5.9× on a 120 KB payload);
+   `1730be93` replaced two O(n²) batch planners with a search (1 probe instead
+   of n when everything fits). Same partitions, no cache moved.
+   `defaultTimeout` 10 min → 3 min against a measured 86.7 s slowest attempt.
 
 ## Stuck on
 
-Nothing.
+Nothing. One trap learned by paying for it: the provider timeout is inside the
+cache key, so that edit cold-started all 1,047 records. Recorded in HANDOFF.
 
 ## Next
 
-- Item 3: `core` covers 225/296 subjects on backend, 281/424 on front. Measure
-  what narrowing costs in group and connection counts before changing a word
-  of the prompt — one prompt edit cold-starts 1,014 cache entries in real money,
-  so any experiment goes in one batch.
-- Item 4: chi from `~/git`, wall clock + call count + tokens; `defaultTimeout`
-  10 min against a measured p99 of 50.7 s is the known largest win.
-- Item 5: open the report and answer the first-day questions from it alone.
+- Restructure `internal/report` templates so a UI change is cheap to make.
+- Group graph on the page with real hierarchy; keep one standalone HTML.
+- Then a medium repository (chi) end to end for wall clock and cost.
 
-`make test`, `make vet`, `gofmt -l cmd internal` green at both commits.
+`make test`, `make vet`, `gofmt -l cmd internal` green at every commit.
