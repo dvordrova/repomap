@@ -28,3 +28,31 @@ h2 .meta{font-size:.82rem;font-weight:400;text-transform:none;letter-spacing:0}
 .group{background:var(--bg)}
 .group .conn{color:var(--muted)}
 .group .conn .lbl{color:var(--ink)}
+
+/* The main flow is the one question on this page whose answer is a sequence,
+   and it was set as an ordered list of anchors that read like every other
+   list. It is numbered, stepped, and its explanations sit under the step they
+   explain rather than trailing it on the same line. */
+ol.flow{list-style:none;counter-reset:flow;padding:0;margin:.5rem 0 0}
+.flow-step{counter-increment:flow;position:relative;padding:0 0 .85rem 2.1rem;margin:0}
+.flow-step::before{content:counter(flow);position:absolute;left:0;top:.05rem;width:1.45rem;height:1.45rem;border-radius:50%;background:var(--soft);border:1px solid var(--line);color:var(--muted);font-size:.78rem;line-height:1.45rem;text-align:center;font-weight:600}
+.flow-step::after{content:"";position:absolute;left:.72rem;top:1.6rem;bottom:.05rem;width:1px;background:var(--line)}
+.flow-step:last-child{padding-bottom:0}
+.flow-step:last-child::after{display:none}
+.flow-what{font-weight:600}
+.flow-where{font-weight:400;color:var(--muted);font-size:.85em}
+.flow-why{display:block;margin-top:.1rem}
+.flow-title{margin-bottom:.2rem}
+
+/* Where the program runs code you cannot read is the page's most distinctive
+   fact. It should not look like the TODO list. */
+ul.dynamic li{border-left:3px solid var(--warn);padding:.25rem .7rem;margin:.35rem 0;background:var(--soft)}
+.dynamic-pattern{font-weight:700;color:var(--warn)}
+
+/* Provenance has to be visible, not repeated. A group already carries one
+   "model" chip in its heading and every flow step belongs to one model-written
+   flow, so the per-line chip says nothing new and turns a column of sentences
+   into a column of chips. The italic muted styling still separates a model
+   sentence from a fact. */
+.group > p.model::before,.flow-why::before,.card .model::before{content:none}
+.group > p.model,.flow-why,.card .model{font-style:italic}
