@@ -2,6 +2,7 @@ package report
 
 import (
 	"net/url"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -153,4 +154,12 @@ func shortRevision(revision string) string {
 		return revision
 	}
 	return revision[:visible]
+}
+
+// editorOnPath reports whether this machine can open a source link in an
+// editor. It names the same command internal/reportserver resolves; the page
+// only decides what to promise, and the server decides what actually happens.
+func editorOnPath() bool {
+	_, err := exec.LookPath("code")
+	return err == nil
 }

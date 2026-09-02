@@ -26,6 +26,10 @@ type pageView struct {
 	FormatVersion int
 	ReportSHA256  string
 	Served        bool
+	// EditorOpens says whether a source link will actually reach an editor on
+	// this machine. Promising one that is not installed is a small lie the
+	// reader discovers only by clicking.
+	EditorOpens   bool
 	SourceIDsJSON template.JS
 	CSS           template.CSS
 	JS            template.JS
@@ -181,6 +185,7 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 		FormatVersion: data.FormatVersion,
 		ReportSHA256:  reportSHA256,
 		Served:        builder.links.served(),
+		EditorOpens:   builder.links.served() && editorOnPath(),
 	}
 	if view.Served {
 		encoded, err := json.Marshal(data.SourceIDs)

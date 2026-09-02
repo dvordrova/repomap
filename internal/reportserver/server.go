@@ -209,9 +209,19 @@ func NewHandler(opts Options) (http.Handler, error) {
 
 	openFile := opts.OpenFile
 	if openFile == nil {
+		// A missing editor is not a reason to withhold a report that is
+		// already generated. Without VS Code on PATH the page still serves and
+		// every anchor still reads; only the "open in editor" action answers
+		// that it cannot, which is exactly what happened.
 		openFile, err = NewVSCodeLauncher(opts.Logf)
 		if err != nil {
-			return nil, fmt.Errorf("report server: VS Code launcher: %w", err)
+			if !errors.Is(err, ErrEditorUnavailable) {
+				return nil, fmt.Errorf("report server: VS Code launcher: %w", err)
+			}
+			openFile = unavailableEditor
+			if opts.Logf != nil {
+				opts.Logf("editor dispatch mechanism=none outcome=unavailable")
+			}
 		}
 	}
 	var runs map[string]runRecord

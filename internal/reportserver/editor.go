@@ -55,3 +55,9 @@ func resolveVSCodeCommand(lookPath func(string) (string, error)) (string, []stri
 	}
 	return "", nil, ErrEditorUnavailable
 }
+
+// unavailableEditor stands in when no editor launcher could be resolved. The
+// report is served either way; this is the answer a source link gets.
+func unavailableEditor(context.Context, string, int, int) error {
+	return ErrEditorUnavailable
+}

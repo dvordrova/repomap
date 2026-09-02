@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -64,5 +65,17 @@ func TestResolveVSCodeCommandUsesInstalledCLI(t *testing.T) {
 	})
 	if err != nil || name != "/custom/bin/code" || !reflect.DeepEqual(args, []string{"--goto"}) {
 		t.Fatalf("command = %q %v error=%v", name, args, err)
+	}
+}
+
+// TestHandlerServesWithoutAnEditorLauncher pins that a machine without VS Code
+// still gets its report. The run used to fail after generating the page.
+func TestHandlerServesWithoutAnEditorLauncher(t *testing.T) {
+	if err := unavailableEditor(context.Background(), "/tmp/x", 1, 1); !errors.Is(err, ErrEditorUnavailable) {
+		t.Fatalf("unavailableEditor = %v, want ErrEditorUnavailable", err)
+	}
+	_, _, err := resolveVSCodeCommand(func(string) (string, error) { return "", exec.ErrNotFound })
+	if !errors.Is(err, ErrEditorUnavailable) {
+		t.Fatalf("resolveVSCodeCommand = %v, want ErrEditorUnavailable", err)
 	}
 }
