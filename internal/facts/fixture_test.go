@@ -42,8 +42,8 @@ func TestFixturePythonTutorialGame(t *testing.T) {
 		Repository:   repository,
 		TrackedPaths: repository.VisiblePaths(),
 		Targets: []TargetInput{
-			{Index: decodeIndex(t, fixture, "backend-program-index.json"), Dependencies: decodeCatalog(t, fixture, "backend-dependency-catalog.json"), Root: "backend", Manifest: "backend/Pipfile", RunID: "backend"},
-			{Index: decodeIndex(t, fixture, "front-program-index.json"), Dependencies: decodeCatalog(t, fixture, "front-dependency-catalog.json"), Root: "front", Manifest: "front/package.json", RunID: "front"},
+			{Index: decodeIndex(t, fixture, "backend-program-index.json"), Dependencies: decodeCatalog(t, fixture, "backend-dependency-catalog.json"), Root: "backend", Manifest: "backend/Pipfile"},
+			{Index: decodeIndex(t, fixture, "front-program-index.json"), Dependencies: decodeCatalog(t, fixture, "front-dependency-catalog.json"), Root: "front", Manifest: "front/package.json"},
 		},
 	}
 	first := mustBuild(t, input)

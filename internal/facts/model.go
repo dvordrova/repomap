@@ -128,9 +128,6 @@ type Target struct {
 	Root            string `json:"root"`
 	Manifest        string `json:"manifest,omitempty"`
 	Anchor          Anchor `json:"anchor"`
-	// RunID is the child run directory that holds this target's ProgramIndex
-	// and GroupsIndex; it lets a later stage re-read exact inputs.
-	RunID string `json:"run_id,omitempty"`
 }
 
 // Fact is one anchored row. Only the fields meaningful for its Kind are set:
@@ -364,9 +361,6 @@ func (target Target) validate() error {
 	}
 	if target.ProgramTargetID != "" && !validText(target.ProgramTargetID) {
 		return fmt.Errorf("invalid program target id")
-	}
-	if target.RunID != "" && !validText(target.RunID) {
-		return fmt.Errorf("invalid run id")
 	}
 	return nil
 }

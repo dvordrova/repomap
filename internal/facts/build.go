@@ -18,7 +18,6 @@ import (
 type TargetInput struct {
 	Index        programindex.Index
 	Dependencies *dependencies.Catalog
-	RunID        string
 	Root         string
 	Manifest     string
 }
@@ -210,7 +209,6 @@ func newTargetContext(input TargetInput) (*targetContext, error) {
 		Root:            root,
 		Manifest:        manifest,
 		Anchor:          result.targetAnchor(manifest),
-		RunID:           input.RunID,
 	}
 	return result, nil
 }

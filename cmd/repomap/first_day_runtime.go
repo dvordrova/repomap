@@ -88,7 +88,7 @@ func buildRepositoryFacts(options firstDayOptions) (facts.Result, error) {
 		if err != nil {
 			return facts.Result{}, err
 		}
-		target := facts.TargetInput{Index: index, RunID: run.RunID}
+		target := facts.TargetInput{Index: index}
 		if catalog, err := readRunDependencyCatalog(run.RunDir); err == nil {
 			target.Dependencies = catalog
 		}

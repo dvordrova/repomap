@@ -281,12 +281,12 @@ func postCall(path string) programindex.PatternArgumentInput {
 }
 
 func TestBuildTargetsAndEntrypoints(t *testing.T) {
-	result := mustBuild(t, Input{Revision: "78714d34ee", Targets: []TargetInput{{Index: backendIndex(t), RunID: "run-1"}}})
+	result := mustBuild(t, Input{Revision: "78714d34ee", Targets: []TargetInput{{Index: backendIndex(t)}}})
 	if len(result.Targets) != 1 {
 		t.Fatalf("targets = %+v", result.Targets)
 	}
 	target := result.Targets[0]
-	if target.Root != "backend" || target.Language != "python" || target.Anchor.String() != "backend/main.py:14" || target.RunID != "run-1" {
+	if target.Root != "backend" || target.Language != "python" || target.Anchor.String() != "backend/main.py:14" {
 		t.Fatalf("target = %+v", target)
 	}
 	if target.ID != NewTargetID("python", "backend", "") {
