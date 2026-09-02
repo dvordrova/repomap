@@ -436,6 +436,14 @@
       "note": "Closed resource-limit kind aliases, not bound values."
     },
     {
+      "file": "internal/modeldiag/modeldiag.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "MaxSamples"
+      ],
+      "note": "Logging-only illustration bound: each diagnostic row names a few offending refs while its count stays exact and no repository authority is bounded."
+    },
+    {
       "file": "internal/orientation/model.go",
       "category": "text-bound",
       "symbols": [
@@ -481,6 +489,14 @@
       "symbols": [
         "maxOutputTokens"
       ]
+    },
+    {
+      "file": "internal/programcategorization/run.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxDiagnosticSamples"
+      ],
+      "note": "Logging-only illustration bound on discarded-row samples; counts stay exact and no accepted assignment is affected."
     },
     {
       "file": "internal/programindex/artifact_set.go",

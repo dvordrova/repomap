@@ -5,8 +5,14 @@ repository documentation. The graph may come from Go, Python, JavaScript, or
 TypeScript; use the same rules for every language and framework.
 
 `categorize_refs` is the exact disjoint set owned by this request. Other
-subjects and edges are incident context only. Evaluate the four categories
-independently for every owned ref. The response is sparse in rows but complete
+subjects and edges are incident context only. Judge the owned refs; every
+other subject is there to explain them, and a later request owns it.
+
+A subject carrying `allowed_categories` may only receive categories from that
+list. It is the closed truth about that subject: a standard-library or
+language-runtime symbol is never an outbound `dependency`, however it is used.
+
+Evaluate the four categories independently for every owned ref. The response is sparse in rows but complete
 in positive findings for this shard: return every positively supported
 ref/category pair, merging categories for the same ref. This is not a top-k
 list or an illustrative sample.

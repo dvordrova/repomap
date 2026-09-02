@@ -342,6 +342,34 @@ func (w *Writer) WriteFile(name string, data []byte) error {
 	return w.writeRootFile(name, data)
 }
 
+// AppendFile adds bytes to an existing run-local log without disturbing what
+// earlier stages wrote. It exists for append-only diagnostics; canonical
+// artifacts are always replaced whole through WriteValidatedFile.
+func (w *Writer) AppendFile(name string, data []byte) error {
+	if w == nil || w.root == nil {
+		return fmt.Errorf("debug writer is closed")
+	}
+	if w.Redacted {
+		data = redactJSON(data)
+	}
+	localName := filepath.FromSlash(name)
+	if name == "" || !filepath.IsLocal(localName) || filepath.Clean(localName) != localName {
+		return fmt.Errorf("invalid debug artifact path %q", name)
+	}
+	file, err := w.root.OpenFile(localName, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		return fmt.Errorf("append %s: %w", name, err)
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("append %s: %w", name, err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", name, err)
+	}
+	return nil
+}
+
 // WriteValidatedFile applies the writer's existing persisted-artifact
 // redaction first, validates those exact prepared bytes, and only then
 // publishes them. Callers use this for canonical artifacts whose redacted

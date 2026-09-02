@@ -29,7 +29,13 @@ type normalizedAssignment struct {
 type normalizedResponse struct {
 	assignments []normalizedAssignment
 	diagnostics map[DiagnosticKind]int
+	samples     map[DiagnosticKind][]string
+	outOfBatch  int
 }
+
+// maxDiagnosticSamples bounds how many discarded rows one diagnostic names.
+// It is a logging bound: the count stays exact.
+const maxDiagnosticSamples = 5
 
 // Run executes the first semantic ProgramIndex enrichment. Every accepted row
 // is restored locally; an empty sparse response is a legitimate empty result.
@@ -91,7 +97,7 @@ func Run(
 					},
 					Limits: limits(),
 					DecodeValidate: func(raw []byte) (normalizedResponse, error) {
-						return normalizeResponse(raw, owned, compilation.index)
+						return normalizeResponse(raw, owned, compilation.subjectByRef, compilation.index)
 					},
 				}
 			}
@@ -108,9 +114,18 @@ func Run(
 
 	categoriesBySubject := make(map[string]map[Category]struct{})
 	diagnostics := make(map[DiagnosticKind]int)
+	samples := make(map[DiagnosticKind][]string)
 	for _, outcome := range outcomes {
+		result.OutOfBatchAssignments += outcome.Value.outOfBatch
 		for kind, count := range outcome.Value.diagnostics {
 			diagnostics[kind] += count
+		}
+		for kind, rows := range outcome.Value.samples {
+			for _, sample := range rows {
+				if len(samples[kind]) < maxDiagnosticSamples {
+					samples[kind] = append(samples[kind], sample)
+				}
+			}
 		}
 		for _, assignment := range outcome.Value.assignments {
 			subject, known := compilation.subjectByRef[assignment.ref]
@@ -142,7 +157,9 @@ func Run(
 		DiagnosticUnsupportedCategory,
 	} {
 		if diagnostics[kind] > 0 {
-			result.Diagnostics = append(result.Diagnostics, Diagnostic{Kind: kind, Count: diagnostics[kind]})
+			result.Diagnostics = append(result.Diagnostics, Diagnostic{
+				Kind: kind, Count: diagnostics[kind], Samples: samples[kind],
+			})
 		}
 	}
 	if err := result.Validate(compilation.index, compilation.documentation); err != nil {
@@ -154,6 +171,7 @@ func Run(
 func normalizeResponse(
 	raw []byte,
 	owned map[string]subjectAuthority,
+	all map[string]subjectAuthority,
 	index programindex.Index,
 ) (normalizedResponse, error) {
 	normalized, err := llm.NormalizeJSON(raw)
@@ -176,27 +194,44 @@ func normalizeResponse(
 		return normalizedResponse{}, fmt.Errorf("program categorization: response assignments must be an array")
 	}
 
-	result := normalizedResponse{diagnostics: make(map[DiagnosticKind]int)}
+	result := normalizedResponse{
+		diagnostics: make(map[DiagnosticKind]int),
+		samples:     make(map[DiagnosticKind][]string),
+	}
+	note := func(kind DiagnosticKind, sample string) {
+		result.diagnostics[kind]++
+		if sample != "" && len(result.samples[kind]) < maxDiagnosticSamples {
+			result.samples[kind] = append(result.samples[kind], sample)
+		}
+	}
 	byRef := make(map[string]map[Category]struct{})
 	for _, rawRow := range envelope.Assignments {
 		var row responseAssignment
 		rowDecoder := json.NewDecoder(bytes.NewReader(rawRow))
 		rowDecoder.DisallowUnknownFields()
 		if err := rowDecoder.Decode(&row); err != nil {
-			result.diagnostics[DiagnosticMalformedRow]++
+			note(DiagnosticMalformedRow, "")
 			continue
 		}
 		if err := rowDecoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-			result.diagnostics[DiagnosticMalformedRow]++
+			note(DiagnosticMalformedRow, "")
 			continue
 		}
+		// A model shown context subjects often categorizes them too. Those rows
+		// name real subjects of this same target and the exhaustive cover would
+		// ask about them in a later request anyway, so they are accepted here
+		// rather than paid for twice. Every other check still applies.
 		subject, known := owned[row.Ref]
 		if !known {
-			result.diagnostics[DiagnosticUnknownRef]++
-			continue
+			subject, known = all[row.Ref]
+			if !known {
+				note(DiagnosticUnknownRef, row.Ref)
+				continue
+			}
+			result.outOfBatch++
 		}
 		if len(row.Categories) == 0 {
-			result.diagnostics[DiagnosticEmptyCategories]++
+			note(DiagnosticEmptyCategories, row.Ref)
 			continue
 		}
 		categories := make(map[Category]struct{}, len(row.Categories))
@@ -210,12 +245,12 @@ func normalizeResponse(
 			categories[category] = struct{}{}
 		}
 		if !valid {
-			result.diagnostics[DiagnosticInvalidCategory]++
+			note(DiagnosticInvalidCategory, row.Ref)
 			continue
 		}
 		for category := range categories {
 			if !categorySupported(index, subject, category) {
-				result.diagnostics[DiagnosticUnsupportedCategory]++
+				note(DiagnosticUnsupportedCategory, string(category)+" on "+row.Ref)
 				continue
 			}
 			if byRef[row.Ref] == nil {
