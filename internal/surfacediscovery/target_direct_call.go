@@ -8,13 +8,16 @@ import (
 )
 
 // recordTargetDirectCallEdges builds the exact edge neighborhood only after
-// the complete declaration catalog exists. This keeps every exact exported
-// library root available while making graph depth and edge limits actually
-// reduce the expensive target-reachable relation set.
+// the complete declaration catalog exists. The ordinary zero-valued controls
+// retain the complete target-reachable relation set; positive explicit depth
+// and edge values remain opt-in narrowing controls.
 func (a *analyzer) recordTargetDirectCallEdges() error {
 	if a == nil || a.directCallIndex == nil || a.input.AnalysisTarget == nil ||
 		a.directCallIndex.state != DirectCallIndexReady {
 		return nil
+	}
+	if err := a.ctx.Err(); err != nil {
+		return err
 	}
 	roots := a.targetDirectCallRoots()
 	if target := a.input.AnalysisTarget; target.Kind == AnalysisTargetExecutablePackage &&
@@ -38,16 +41,19 @@ func (a *analyzer) recordTargetDirectCallEdges() error {
 		queue = append(queue, queuedFunction{function: root})
 	}
 	for len(queue) > 0 && a.directCallIndex.state == DirectCallIndexReady {
-		if a.ctx.Err() != nil {
-			return nil
+		if err := a.ctx.Err(); err != nil {
+			return err
 		}
 		current := queue[0]
 		queue = queue[1:]
+		if current.depth > a.directCallIndex.coverage.TraversalDepthReached {
+			a.directCallIndex.coverage.TraversalDepthReached = current.depth
+		}
 		if current.function == nil || current.function.Blocks == nil {
 			continue
 		}
 		calls := targetDirectCalls(a, current.function)
-		if current.depth >= a.opts.DirectCallDepth {
+		if a.opts.DirectCallDepth > 0 && current.depth >= a.opts.DirectCallDepth {
 			a.recordTargetDepthFrontier(current.function, calls)
 			continue
 		}
@@ -74,8 +80,23 @@ func (a *analyzer) recordTargetDirectCallEdges() error {
 			distance[callee] = nextDepth
 			queue = append(queue, queuedFunction{function: callee, depth: nextDepth})
 		}
+		callerID, ok := a.directCallIndex.recordFunction(a, current.function)
+		if !ok || a.directCallIndex.state != DirectCallIndexReady {
+			continue
+		}
+		for _, candidate := range a.callableBindings.exactCandidates(callerID) {
+			if candidate == nil || candidate.Blocks == nil || !a.repositorySourceFunction(candidate) {
+				continue
+			}
+			nextDepth := current.depth + 1
+			if previous, found := distance[candidate]; found && previous <= nextDepth {
+				continue
+			}
+			distance[candidate] = nextDepth
+			queue = append(queue, queuedFunction{function: candidate, depth: nextDepth})
+		}
 	}
-	return nil
+	return a.ctx.Err()
 }
 
 func (a *analyzer) recordTargetDepthFrontier(caller *ssa.Function, calls []ssa.CallInstruction) {

@@ -20,10 +20,7 @@ import (
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
-const (
-	MaxSourceBytes = int64(2 << 20)
-	MaxTotalBytes  = int64(64 << 20)
-)
+const AdvisorySourceBytes = int64(2 << 20)
 
 const (
 	formatPyproject    = "pyproject_toml"
@@ -48,22 +45,31 @@ type requirementWork struct {
 }
 
 type builder struct {
-	ctx          context.Context
-	repository   *corpus.Corpus
-	projectDir   string
-	excludedDirs []string
-	sources      map[string]*sourceDraft
-	totalBytes   int64
-	statements   []dependencydeclaration.StatementInput
-	includes     []dependencydeclaration.IncludeInput
-	frontiers    []dependencydeclaration.FrontierInput
-	queue        []requirementWork
-	parsed       map[string]struct{}
-	includeSeen  map[string]struct{}
-	frontierSeen map[string]struct{}
+	ctx                        context.Context
+	repository                 *corpus.Corpus
+	projectDir                 string
+	excludedDirs               []string
+	sources                    map[string]*sourceDraft
+	maxLogicalRequirementBytes int
+	statements                 []dependencydeclaration.StatementInput
+	includes                   []dependencydeclaration.IncludeInput
+	frontiers                  []dependencydeclaration.FrontierInput
+	queue                      []requirementWork
+	parsed                     map[string]struct{}
+	includeSeen                map[string]struct{}
+	frontierSeen               map[string]struct{}
 }
 
-// Build reads the current bounded bytes of declaration sources through the
+type buildDiagnostics struct {
+	maxLogicalRequirementBytes int
+}
+
+const (
+	ScaleWarningPythonSourceBytes dependencydeclaration.ScaleWarningKind = "python_source_bytes"
+	ScaleWarningLogicalLineBytes  dependencydeclaration.ScaleWarningKind = "logical_requirement_bytes"
+)
+
+// Build reads the complete available bytes of declaration sources through the
 // sealed RepositoryCorpus, parses the supported closed grammars, and returns
 // a fully sealed language-neutral artifact.
 func Build(
@@ -72,6 +78,55 @@ func Build(
 	targets pythontarget.Catalog,
 	selected pythontarget.Target,
 	index programindex.Index,
+) (dependencydeclaration.Result, error) {
+	return build(ctx, repository, targets, selected, index, nil)
+}
+
+// BuildWithDiagnostics returns the same exact result plus warning-only size
+// observations for ordinary console output. Diagnostics never participate in
+// artifact identity or acceptance.
+func BuildWithDiagnostics(
+	ctx context.Context,
+	repository *corpus.Corpus,
+	targets pythontarget.Catalog,
+	selected pythontarget.Target,
+	index programindex.Index,
+) (dependencydeclaration.Result, []dependencydeclaration.ScaleWarning, error) {
+	diagnostics := &buildDiagnostics{}
+	result, err := build(ctx, repository, targets, selected, index, diagnostics)
+	if err != nil {
+		return dependencydeclaration.Result{}, nil, err
+	}
+	warnings := dependencydeclaration.ScaleWarnings(result)
+	maxSourceBytes := 0
+	for _, source := range result.Sources {
+		if source.ByteCount > maxSourceBytes {
+			maxSourceBytes = source.ByteCount
+		}
+	}
+	if int64(maxSourceBytes) > AdvisorySourceBytes {
+		warnings = append(warnings, dependencydeclaration.ScaleWarning{
+			Kind: ScaleWarningPythonSourceBytes, Retained: int64(maxSourceBytes),
+			AdvisorySize: AdvisorySourceBytes,
+		})
+	}
+	if diagnostics.maxLogicalRequirementBytes > AdvisoryLogicalRequirementBytes {
+		warnings = append(warnings, dependencydeclaration.ScaleWarning{
+			Kind:         ScaleWarningLogicalLineBytes,
+			Retained:     int64(diagnostics.maxLogicalRequirementBytes),
+			AdvisorySize: AdvisoryLogicalRequirementBytes,
+		})
+	}
+	return result, warnings, nil
+}
+
+func build(
+	ctx context.Context,
+	repository *corpus.Corpus,
+	targets pythontarget.Catalog,
+	selected pythontarget.Target,
+	index programindex.Index,
+	diagnostics *buildDiagnostics,
 ) (dependencydeclaration.Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -129,6 +184,9 @@ func Build(
 	}
 	if err := ValidateAgainst(result, snapshot, targets, selected, index); err != nil {
 		return dependencydeclaration.Result{}, err
+	}
+	if diagnostics != nil {
+		diagnostics.maxLogicalRequirementBytes = state.maxLogicalRequirementBytes
 	}
 	return result, nil
 }
@@ -217,44 +275,6 @@ func ScopeForTarget(
 		Language: "python", Ecosystem: "pypi", RepositoryPath: repositoryPath,
 		AuthoritySHA256: authoritySHA256,
 	}, excludedDirs, nil
-}
-
-// Decode restores a canonical generic declaration artifact and additionally
-// requires the exact Python target-catalog scope used by this adapter.
-func Decode(
-	encoded []byte,
-	snapshot corpus.Snapshot,
-	targets pythontarget.Catalog,
-	selected pythontarget.Target,
-	index programindex.Index,
-) (dependencydeclaration.Result, error) {
-	result, err := dependencydeclaration.Decode(encoded, snapshot, index)
-	if err != nil {
-		return dependencydeclaration.Result{}, err
-	}
-	if err := ValidateAgainst(result, snapshot, targets, selected, index); err != nil {
-		return dependencydeclaration.Result{}, err
-	}
-	return result, nil
-}
-
-// DecodeTargetAuthority restores canonical declaration bytes and binds them
-// to the persisted Python target catalog and exact ProgramIndex. It is the
-// report-time counterpart of Decode, where the complete live corpus snapshot
-// is deliberately not reconstructed.
-func DecodeTargetAuthority(
-	encoded []byte,
-	targets pythontarget.Catalog,
-	index programindex.Index,
-) (dependencydeclaration.Result, error) {
-	result, err := dependencydeclaration.DecodeStandalone(encoded)
-	if err != nil {
-		return dependencydeclaration.Result{}, err
-	}
-	if err := ValidateTargetAuthority(result, targets, index); err != nil {
-		return dependencydeclaration.Result{}, err
-	}
-	return result, nil
 }
 
 func validateCatalogCorpusScopes(snapshot corpus.Snapshot, targets pythontarget.Catalog) error {
@@ -494,19 +514,9 @@ func (state *builder) addSource(
 		}
 		return existing, nil
 	}
-	if len(state.sources) >= dependencydeclaration.MaxSources {
-		return nil, fmt.Errorf("python declared dependencies: source bound %d exceeded", dependencydeclaration.MaxSources)
-	}
-	content, err := state.repository.ReadFile(entry.ID, MaxSourceBytes)
+	content, err := state.repository.ReadFileAll(entry.ID)
 	if err != nil {
 		return nil, fmt.Errorf("python declared dependencies: read %q: %w", entry.Path, err)
-	}
-	if content.Truncated {
-		return nil, fmt.Errorf("python declared dependencies: source %q exceeds %d bytes", entry.Path, MaxSourceBytes)
-	}
-	state.totalBytes += int64(len(content.Bytes))
-	if state.totalBytes > MaxTotalBytes {
-		return nil, fmt.Errorf("python declared dependencies: total byte bound %d exceeded", MaxTotalBytes)
 	}
 	digest := sha256.Sum256(content.Bytes)
 	source := &sourceDraft{

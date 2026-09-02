@@ -15,40 +15,21 @@ import (
 	_ "embed"
 )
 
-//go:embed templates/report_app.css
-var reportAppCSS string
-
-//go:embed templates/report_app.js
-var reportAppJS string
-
-//go:embed templates/report_loader.js
-var reportLoaderJS string
-
-// The System canvas is split into deterministic browser modules so graph
-// projection, interaction policy, geometry, and DOM/SVG rendering can evolve
-// without turning report_app.js back into their shared mutable owner.
+// The report is one static page. Its only script opens source links in the
+// local editor when the run is served; everything else is plain HTML.
 //
-//go:embed templates/system_canvas_graph.js
-var systemCanvasGraphJS string
+//go:embed templates/report.css
+var reportPageCSS string
 
-//go:embed templates/system_canvas_interaction.js
-var systemCanvasInteractionJS string
+//go:embed templates/report.js
+var reportPageJS string
 
-//go:embed templates/system_canvas_geometry.js
-var systemCanvasGeometryJS string
-
-//go:embed templates/system_canvas_renderer.js
-var systemCanvasRendererJS string
-
-//go:embed templates/program_report.html
-var programTemplateHTML string
+//go:embed templates/report.html
+var reportPageHTML string
 
 func encodeReportJSON(data *ReportData, maxBytes int) ([]byte, error) {
 	if data == nil {
 		return nil, fmt.Errorf("report: data is required")
-	}
-	if maxBytes <= 0 {
-		return nil, fmt.Errorf("report: positive artifact byte limit is required")
 	}
 	if err := validateProgramPresentation(data); err != nil {
 		return nil, err
@@ -62,7 +43,7 @@ func encodeReportJSON(data *ReportData, maxBytes int) ([]byte, error) {
 		return nil, err
 	}
 	b = append(b, '\n')
-	if len(b) > maxBytes {
+	if maxBytes > 0 && len(b) > maxBytes {
 		return nil, &ReportResourceLimitError{
 			LimitBytes:  maxBytes,
 			ActualBytes: len(b),
@@ -89,207 +70,111 @@ func (err *ReportResourceLimitError) Error() string {
 // RenderHTMLWithOptions renders one ReportData target page plus optional
 // caller-authorized presentation navigation to sibling target pages.
 func RenderHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
+	rendered, _, err := renderHTMLWithOptionsDiagnostics(data, options)
+	return rendered, err
+}
+
+func renderHTMLWithOptionsDiagnostics(
+	data *ReportData,
+	options RenderOptions,
+) ([]byte, GenerationDiagnostics, error) {
 	if data == nil {
-		return nil, fmt.Errorf("report: data is required")
+		return nil, GenerationDiagnostics{}, fmt.Errorf("report: data is required")
 	}
 	if err := validateProgramPresentation(data); err != nil {
-		return nil, err
+		return nil, GenerationDiagnostics{}, err
 	}
 	if err := validateTargetNavigation(data, options.TargetNavigation); err != nil {
-		return nil, err
+		return nil, GenerationDiagnostics{}, err
 	}
 	if data.ProgramPortfolio == nil {
-		return nil, fmt.Errorf("report: HTML publication requires a complete program portfolio")
+		return nil, GenerationDiagnostics{}, fmt.Errorf("report: HTML publication requires a complete program portfolio")
 	}
-	rendered, err := buildHTMLWithOptions(data, options)
+	rendered, diagnostics, err := buildHTMLWithOptionsDiagnostics(data, options)
 	if err != nil {
-		return nil, err
+		return nil, diagnostics, err
 	}
-	if len(rendered) > MaxOrdinaryReportHTMLBytes {
-		return nil, &ReportResourceLimitError{
-			LimitBytes: MaxOrdinaryReportHTMLBytes, ActualBytes: len(rendered),
-		}
-	}
-	return rendered, nil
+	return rendered, diagnostics, nil
 }
 
 func buildHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
+	rendered, _, err := buildHTMLWithOptionsDiagnostics(data, options)
+	return rendered, err
+}
+
+func buildHTMLWithOptionsDiagnostics(
+	data *ReportData,
+	options RenderOptions,
+) ([]byte, GenerationDiagnostics, error) {
 	if err := data.GitLabSourceLinks.validate(); err != nil {
-		return nil, err
+		return nil, GenerationDiagnostics{}, err
 	}
 	if err := data.GitHubSourceLinks.validate(); err != nil {
-		return nil, err
+		return nil, GenerationDiagnostics{}, err
 	}
 	if data.GitLabSourceLinks != nil && data.GitHubSourceLinks != nil {
-		return nil, fmt.Errorf("report: multiple external source hosts are not allowed")
+		return nil, GenerationDiagnostics{}, fmt.Errorf("report: multiple external source hosts are not allowed")
 	}
 	if (data.GitLabSourceLinks != nil && data.GitLabSourceLinks.Revision != data.CapturedRevision) ||
 		(data.GitHubSourceLinks != nil && data.GitHubSourceLinks.Revision != data.CapturedRevision) {
-		return nil, fmt.Errorf("report: external source revision does not match captured report authority")
+		return nil, GenerationDiagnostics{}, fmt.Errorf("report: external source revision does not match captured report authority")
 	}
 	if err := validateBrowserSourceIDs(data); err != nil {
-		return nil, err
+		return nil, GenerationDiagnostics{}, err
 	}
 	if data.ProgramPortfolio == nil {
-		return nil, fmt.Errorf("report: HTML publication requires a complete program portfolio")
+		return nil, GenerationDiagnostics{}, fmt.Errorf("report: HTML publication requires a complete program portfolio")
 	}
-	return buildProgramHTMLWithOptions(data, options)
+	return buildProgramHTMLWithOptionsDiagnostics(data, options)
 }
 
 func buildProgramHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
+	rendered, _, err := buildProgramHTMLWithOptionsDiagnostics(data, options)
+	return rendered, err
+}
+
+func buildProgramHTMLWithOptionsDiagnostics(
+	data *ReportData,
+	options RenderOptions,
+) ([]byte, GenerationDiagnostics, error) {
+	return buildProgramHTMLWithOptionsDiagnosticsAndHooks(data, options)
+}
+
+func buildProgramHTMLWithOptionsDiagnosticsAndHooks(
+	data *ReportData,
+	options RenderOptions,
+) ([]byte, GenerationDiagnostics, error) {
 	if data.ProgramPortfolio == nil {
-		return nil, fmt.Errorf("report: program shell requires a complete program portfolio")
+		return nil, GenerationDiagnostics{}, fmt.Errorf("report: program shell requires a complete program portfolio")
 	}
-	transport, err := buildOrdinaryBrowserTransportV4(
-		data, options.TargetNavigation, renderPayloadLocalRoots(data, options.LocalRoots),
-	)
+	diagnostics := GenerationDiagnostics{}
+	localRoots := renderPayloadLocalRoots(data, options.LocalRoots)
+	rendered, err := executeProgramReport(data, options.ReportSHA256, localRoots)
+	if err != nil {
+		return nil, diagnostics, err
+	}
+	return rendered, diagnostics, nil
+}
+
+// executeProgramReport renders the one static page from the already validated
+// report data. The page carries no analysis payload of its own: everything it
+// shows is projected here, in Go, from the same artifacts report.json binds.
+func executeProgramReport(data *ReportData, reportSHA256 string, localRoots []string) ([]byte, error) {
+	view, err := buildPageView(data, reportSHA256, localRoots)
 	if err != nil {
 		return nil, err
 	}
-	section, err := standaloneBundleTransportHTMLSectionV4(transport)
+	view.CSS = template.CSS(reportPageCSS)
+	view.JS = template.JS(reportPageJS)
+	pageTemplate, err := template.New("report").Parse(reportPageHTML)
 	if err != nil {
-		return nil, err
-	}
-	return executeProgramReport(programReportTemplateData{
-		Title:            data.RepoName,
-		BrowserTransport: template.HTML(section),
-	})
-}
-
-type programReportTemplateData struct {
-	Title            string
-	BrowserTransport template.HTML
-	// StandaloneTargetBundle is a construction alias until the standalone
-	// writer switches its skeleton call to BrowserTransport.
-	StandaloneTargetBundle template.HTML
-}
-
-func executeProgramReport(data programReportTemplateData) ([]byte, error) {
-	programReportTmpl, err := template.New("program-report").Parse(programTemplateHTML)
-	if err != nil {
-		return nil, fmt.Errorf("report: parse embedded program template: %w", err)
-	}
-	browserTransport := data.BrowserTransport
-	if browserTransport == "" {
-		browserTransport = data.StandaloneTargetBundle
-	}
-	if browserTransport == "" {
-		return nil, fmt.Errorf("report: browser transport section is required")
+		return nil, fmt.Errorf("report: parse embedded page template: %w", err)
 	}
 	var buffer bytes.Buffer
-	err = programReportTmpl.Execute(&buffer, map[string]any{
-		"Title":                     data.Title,
-		"ReportAppCSS":              template.CSS(reportAppCSS),
-		"ReportLoaderJS":            template.JS(reportLoaderJS),
-		"SystemCanvasGraphJS":       template.JS(systemCanvasGraphJS),
-		"SystemCanvasInteractionJS": template.JS(systemCanvasInteractionJS),
-		"SystemCanvasGeometryJS":    template.JS(systemCanvasGeometryJS),
-		"SystemCanvasRendererJS":    template.JS(systemCanvasRendererJS),
-		"ReportAppJS":               template.JS(reportAppJS),
-		"BrowserTransport":          browserTransport,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("report: render program shell: %w", err)
+	if err := pageTemplate.Execute(&buffer, view); err != nil {
+		return nil, fmt.Errorf("report: render page: %w", err)
 	}
 	return buffer.Bytes(), nil
-}
-
-func buildOrdinaryBrowserTransportV4(
-	data *ReportData,
-	navigation *TargetNavigationPortfolio,
-	localRoots []string,
-) (standaloneBundleTransportV4, error) {
-	repository, err := ProjectBrowserRepositoryPayload(data, navigation)
-	if err != nil {
-		return standaloneBundleTransportV4{}, err
-	}
-	target, err := ProjectBrowserTargetPayload(data)
-	if err != nil {
-		return standaloneBundleTransportV4{}, err
-	}
-	repositoryRaw, err := encodeBrowserRepositoryPayloadForHTML(repository, localRoots)
-	if err != nil {
-		return standaloneBundleTransportV4{}, err
-	}
-	targetRaw, err := encodeBrowserTargetPayloadForHTML(target, localRoots)
-	if err != nil {
-		return standaloneBundleTransportV4{}, err
-	}
-	selectedTargetID := ""
-	for _, row := range repository.Targets {
-		if row.State != "analyzed" || row.ProgramTargetID != target.Target.ID {
-			continue
-		}
-		if selectedTargetID != "" {
-			return standaloneBundleTransportV4{}, fmt.Errorf("report: current browser target binding is ambiguous")
-		}
-		selectedTargetID = row.SelectedTargetID
-	}
-	if selectedTargetID == "" {
-		return standaloneBundleTransportV4{}, fmt.Errorf("report: current browser target is absent from repository index")
-	}
-	return prepareStandaloneBundleTransportV4(standaloneBundleTransportInputV4{
-		RepositoryPayload:      repositoryRaw,
-		LogicalDefaultTargetID: repository.LogicalDefaultSelectedTargetID,
-		Targets: []standaloneBundleTransportTargetInputV4{{
-			TargetID: selectedTargetID, ProgramTargetID: target.Target.ID,
-			State: standaloneBundleTransportTargetAnalyzed, Payload: targetRaw,
-		}},
-	})
-}
-
-func encodeBrowserRepositoryPayloadForHTML(
-	payload BrowserRepositoryPayload,
-	localRoots []string,
-) ([]byte, error) {
-	raw, err := EncodeBrowserRepositoryPayload(payload)
-	if err != nil {
-		return nil, fmt.Errorf("report: encode repository browser projection: %w", err)
-	}
-	restored, err := DecodeBrowserRepositoryPayload(raw)
-	if err != nil {
-		return nil, fmt.Errorf("report: round-trip repository browser projection: %w", err)
-	}
-	for index := range restored.Warnings {
-		restored.Warnings[index] = scrubBrowserLocalPaths(restored.Warnings[index], localRoots)
-	}
-	if restored.Runtime != nil {
-		for index := range restored.Runtime.Roles {
-			role := &restored.Runtime.Roles[index]
-			role.Name = scrubBrowserLocalPaths(role.Name, localRoots)
-			role.Purpose = scrubBrowserLocalPaths(role.Purpose, localRoots)
-			for implementationIndex := range role.Implementations {
-				implementation := &role.Implementations[implementationIndex]
-				implementation.Mode = scrubBrowserLocalPaths(implementation.Mode, localRoots)
-			}
-		}
-		for index := range restored.Runtime.UnclassifiedTargets {
-			target := &restored.Runtime.UnclassifiedTargets[index]
-			target.Reason = scrubBrowserLocalPaths(target.Reason, localRoots)
-		}
-	}
-	if browserValueContainsLocalPath(restored, localRoots) {
-		return nil, fmt.Errorf("report: repository browser projection retained a local path")
-	}
-	return EncodeBrowserRepositoryPayload(restored)
-}
-
-func encodeBrowserTargetPayloadForHTML(
-	payload BrowserTargetPayload,
-	localRoots []string,
-) ([]byte, error) {
-	if browserValueContainsLocalPath(payload, localRoots) {
-		return nil, fmt.Errorf("report: target browser projection retained a local path")
-	}
-	raw, err := EncodeBrowserTargetPayload(payload)
-	if err != nil {
-		return nil, fmt.Errorf("report: encode target browser projection: %w", err)
-	}
-	restored, err := DecodeBrowserTargetPayload(raw)
-	if err != nil {
-		return nil, fmt.Errorf("report: round-trip target browser projection: %w", err)
-	}
-	return EncodeBrowserTargetPayload(restored)
 }
 
 // browserValueContainsLocalPath walks the typed browser contract before JSON
@@ -448,108 +333,19 @@ func validateProgramPresentation(data *ReportData) error {
 	if err != nil {
 		return fmt.Errorf("report: %w", err)
 	}
-	if err := validateProgramSemanticPresentation(
-		data.ProgramPortfolio, data.AnalysisTarget, data.CubeMapView, data.CoreMapView,
-		data.ActivityEntrypointView, data.IntegrationUsageView, data.ActivityPathView,
-		jstsSemanticPresentation{data.JSTSSurfaceCatalogView, data.CrossSurfacePathView},
+	if data.GroupGraph == nil {
+		return fmt.Errorf("report: publication requires the final group graph")
+	}
+	if err := validateSelectedGroupGraphBinding(
+		data.GroupGraph, defaultEntry.Target, defaultEntry.View.IndexSHA256,
 	); err != nil {
-		return err
+		return fmt.Errorf("report: group graph view: %w", err)
 	}
-	if data.CubeMapView != nil {
-		if data.AnalysisTarget == nil {
-			return fmt.Errorf("report: cube map view requires an exact analysis target")
-		}
-		if err := data.AnalysisTarget.Validate(); err != nil {
-			return fmt.Errorf("report: cube map analysis target: %w", err)
-		}
-		if err := data.CubeMapView.Validate(); err != nil {
-			return fmt.Errorf("report: cube map view: %w", err)
-		}
-		if data.CubeMapView.Target.Ref != data.AnalysisTarget.Ref {
-			return fmt.Errorf("report: cube map view target does not match analysis target")
-		}
-		if data.CubeMapView.ProgramTargetID != defaultEntry.Target.ID {
-			return fmt.Errorf("report: cube map view does not bind the default program target")
-		}
-		if err := validateCubeMapProgramTarget(*data.AnalysisTarget, defaultEntry.Target); err != nil {
-			return fmt.Errorf("report: %w", err)
-		}
+	if data.TargetOutcomePortfolio == nil {
+		return fmt.Errorf("report: publication requires the exhaustive target outcome portfolio")
 	}
-	if data.CoreMapView != nil {
-		if err := data.CoreMapView.Validate(); err != nil {
-			return fmt.Errorf("report: core map view: %w", err)
-		}
-		if data.CoreMapView.ProgramTargetID != defaultEntry.Target.ID ||
-			data.CoreMapView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
-			return fmt.Errorf("report: core map view does not bind the default program target and index")
-		}
-	}
-	if data.ActivityEntrypointView != nil {
-		if err := data.ActivityEntrypointView.Validate(); err != nil {
-			return fmt.Errorf("report: activity entrypoint view: %w", err)
-		}
-		if data.ActivityEntrypointView.ProgramTargetID != defaultEntry.Target.ID ||
-			data.ActivityEntrypointView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
-			return fmt.Errorf("report: activity entrypoint view does not bind the default program target and index")
-		}
-	}
-	if data.IntegrationUsageView != nil {
-		if err := data.IntegrationUsageView.Validate(); err != nil {
-			return fmt.Errorf("report: integration usage view: %w", err)
-		}
-		if data.IntegrationUsageView.ProgramTargetID != defaultEntry.Target.ID ||
-			data.IntegrationUsageView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
-			return fmt.Errorf("report: integration usage view does not bind the default program target and index")
-		}
-	}
-	if data.ActivityPathView != nil {
-		if err := data.ActivityPathView.Validate(); err != nil {
-			return fmt.Errorf("report: activity path view: %w", err)
-		}
-		if data.ActivityPathView.ProgramTargetID != defaultEntry.Target.ID ||
-			data.ActivityPathView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
-			return fmt.Errorf("report: activity path view does not bind the default program target and index")
-		}
-		if err := data.ActivityPathView.ValidateReportJoins(
-			data.ActivityEntrypointView, data.IntegrationUsageView,
-		); err != nil {
-			return fmt.Errorf("report: activity path report joins: %w", err)
-		}
-	}
-	if data.JSTSSurfaceCatalogView != nil {
-		if err := data.JSTSSurfaceCatalogView.Validate(); err != nil {
-			return fmt.Errorf("report: JavaScript/TypeScript surface catalog view: %w", err)
-		}
-		if data.JSTSSurfaceCatalogView.ProgramTargetID != defaultEntry.Target.ID ||
-			data.JSTSSurfaceCatalogView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
-			return fmt.Errorf("report: JavaScript/TypeScript surface catalog does not bind the default program target and index")
-		}
-	}
-	if data.CrossSurfacePathView != nil {
-		if err := data.CrossSurfacePathView.Validate(); err != nil {
-			return fmt.Errorf("report: cross-surface path view: %w", err)
-		}
-		if data.CrossSurfacePathView.ProgramTargetID != defaultEntry.Target.ID ||
-			data.CrossSurfacePathView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
-			return fmt.Errorf("report: cross-surface paths do not bind the default program target and index")
-		}
-		if data.JSTSSurfaceCatalogView == nil ||
-			data.CrossSurfacePathView.JSTSProjectSHA256 != data.JSTSSurfaceCatalogView.JSTSProjectSHA256 {
-			return fmt.Errorf("report: cross-surface paths do not bind the exact JavaScript/TypeScript surface authority")
-		}
-		if err := data.CrossSurfacePathView.ValidateSurfaceJoins(data.JSTSSurfaceCatalogView); err != nil {
-			return fmt.Errorf("report: cross-surface path report joins: %w", err)
-		}
-	}
-	if data.RuntimePortfolio != nil {
-		if err := data.RuntimePortfolio.Validate(); err != nil {
-			return fmt.Errorf("report: runtime portfolio view: %w", err)
-		}
-	}
-	if data.TargetOutcomePortfolio != nil {
-		if err := data.TargetOutcomePortfolio.Validate(); err != nil {
-			return fmt.Errorf("report: target outcome portfolio view: %w", err)
-		}
+	if err := data.TargetOutcomePortfolio.Validate(); err != nil {
+		return fmt.Errorf("report: target outcome portfolio view: %w", err)
 	}
 	return nil
 }
@@ -601,6 +397,15 @@ func GenerateAuthorized(runDir string, authority RunAuthority) error {
 	return GenerateAuthorizedWithOptions(runDir, authority, RenderOptions{})
 }
 
+// GenerateAuthorizedWithDiagnostics is the ordinary generation path plus
+// transient measurements observed while the raw browser bundle exists.
+func GenerateAuthorizedWithDiagnostics(
+	runDir string,
+	authority RunAuthority,
+) (GenerationDiagnostics, error) {
+	return generateWithDiagnostics(runDir, authority, nil, RenderOptions{}, true)
+}
+
 // GenerateAuthorizedWithOptions preserves ordinary source and manifest
 // authority while adding only transient target-page navigation to report.html.
 func GenerateAuthorizedWithOptions(
@@ -609,6 +414,16 @@ func GenerateAuthorizedWithOptions(
 	options RenderOptions,
 ) error {
 	return generate(runDir, authority, nil, options, true)
+}
+
+// GenerateAuthorizedWithOptionsDiagnostics preserves transient measurements
+// completed before a later render, verification, or installation failure.
+func GenerateAuthorizedWithOptionsDiagnostics(
+	runDir string,
+	authority RunAuthority,
+	options RenderOptions,
+) (GenerationDiagnostics, error) {
+	return generateWithDiagnostics(runDir, authority, nil, options, true)
 }
 
 // GenerateAuthorizedPageData finalizes one manifest-bound backing page
@@ -628,6 +443,15 @@ func GenerateAuthorizedPageDataVerified(
 	return generateVerified(runDir, authority, nil, RenderOptions{}, false)
 }
 
+// GenerateAuthorizedPageDataVerifiedWithDiagnostics also returns scale
+// measurements completed before any later receipt or atomic-install failure.
+func GenerateAuthorizedPageDataVerifiedWithDiagnostics(
+	runDir string,
+	authority RunAuthority,
+) (VerifiedRunReceipt, GenerationDiagnostics, error) {
+	return generateVerifiedWithDiagnostics(runDir, authority, nil, RenderOptions{}, false)
+}
+
 type standaloneSourceConfig struct {
 	hostName      string
 	repositoryURL string
@@ -644,6 +468,28 @@ func GenerateAuthorizedGitLab(
 	return GenerateAuthorizedGitLabWithOptions(
 		runDir, authority, repositoryURL, RenderOptions{},
 	)
+}
+
+// GenerateAuthorizedGitLabWithDiagnostics is the GitLab generation path plus
+// transient raw-bundle scale measurements.
+func GenerateAuthorizedGitLabWithDiagnostics(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+) (GenerationDiagnostics, error) {
+	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
+	if err != nil {
+		return GenerationDiagnostics{}, err
+	}
+	if normalizedURL == "" {
+		return GenerationDiagnostics{}, fmt.Errorf("report: GitLab repository URL is required")
+	}
+	if err := validateGitLabAuthority(authority); err != nil {
+		return GenerationDiagnostics{}, err
+	}
+	return generateWithDiagnostics(runDir, authority, &standaloneSourceConfig{
+		hostName: "GitLab", repositoryURL: normalizedURL,
+	}, RenderOptions{}, true)
 }
 
 func GenerateAuthorizedGitLabWithOptions(
@@ -665,6 +511,27 @@ func GenerateAuthorizedGitLabWithOptions(
 	return generate(runDir, authority, &standaloneSourceConfig{
 		hostName:      "GitLab",
 		repositoryURL: normalizedURL,
+	}, options, true)
+}
+
+func GenerateAuthorizedGitLabWithOptionsDiagnostics(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+	options RenderOptions,
+) (GenerationDiagnostics, error) {
+	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
+	if err != nil {
+		return GenerationDiagnostics{}, err
+	}
+	if normalizedURL == "" {
+		return GenerationDiagnostics{}, fmt.Errorf("report: GitLab repository URL is required")
+	}
+	if err := validateGitLabAuthority(authority); err != nil {
+		return GenerationDiagnostics{}, err
+	}
+	return generateWithDiagnostics(runDir, authority, &standaloneSourceConfig{
+		hostName: "GitLab", repositoryURL: normalizedURL,
 	}, options, true)
 }
 
@@ -715,6 +582,28 @@ func GenerateAuthorizedGitLabPageDataVerified(
 	}, RenderOptions{}, false)
 }
 
+// GenerateAuthorizedGitLabPageDataVerifiedWithDiagnostics is the diagnostic
+// variant used by the ordinary multi-target publication transaction.
+func GenerateAuthorizedGitLabPageDataVerifiedWithDiagnostics(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+) (VerifiedRunReceipt, GenerationDiagnostics, error) {
+	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
+	if err != nil {
+		return VerifiedRunReceipt{}, GenerationDiagnostics{}, err
+	}
+	if normalizedURL == "" {
+		return VerifiedRunReceipt{}, GenerationDiagnostics{}, fmt.Errorf("report: GitLab repository URL is required")
+	}
+	if err := validateGitLabAuthority(authority); err != nil {
+		return VerifiedRunReceipt{}, GenerationDiagnostics{}, err
+	}
+	return generateVerifiedWithDiagnostics(runDir, authority, &standaloneSourceConfig{
+		hostName: "GitLab", repositoryURL: normalizedURL,
+	}, RenderOptions{}, false)
+}
+
 // GenerateAuthorizedGitHub emits the ordinary persisted report and manifest
 // plus one standalone HTML report whose source actions target the exact
 // captured revision on the supplied GitHub repository.
@@ -726,6 +615,28 @@ func GenerateAuthorizedGitHub(
 	return GenerateAuthorizedGitHubWithOptions(
 		runDir, authority, repositoryURL, RenderOptions{},
 	)
+}
+
+// GenerateAuthorizedGitHubWithDiagnostics is the GitHub generation path plus
+// transient raw-bundle scale measurements.
+func GenerateAuthorizedGitHubWithDiagnostics(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+) (GenerationDiagnostics, error) {
+	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
+	if err != nil {
+		return GenerationDiagnostics{}, err
+	}
+	if normalizedURL == "" {
+		return GenerationDiagnostics{}, fmt.Errorf("report: GitHub repository URL is required")
+	}
+	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
+		return GenerationDiagnostics{}, err
+	}
+	return generateWithDiagnostics(runDir, authority, &standaloneSourceConfig{
+		hostName: "GitHub", repositoryURL: normalizedURL,
+	}, RenderOptions{}, true)
 }
 
 func GenerateAuthorizedGitHubWithOptions(
@@ -747,6 +658,27 @@ func GenerateAuthorizedGitHubWithOptions(
 	return generate(runDir, authority, &standaloneSourceConfig{
 		hostName:      "GitHub",
 		repositoryURL: normalizedURL,
+	}, options, true)
+}
+
+func GenerateAuthorizedGitHubWithOptionsDiagnostics(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+	options RenderOptions,
+) (GenerationDiagnostics, error) {
+	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
+	if err != nil {
+		return GenerationDiagnostics{}, err
+	}
+	if normalizedURL == "" {
+		return GenerationDiagnostics{}, fmt.Errorf("report: GitHub repository URL is required")
+	}
+	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
+		return GenerationDiagnostics{}, err
+	}
+	return generateWithDiagnostics(runDir, authority, &standaloneSourceConfig{
+		hostName: "GitHub", repositoryURL: normalizedURL,
 	}, options, true)
 }
 
@@ -797,6 +729,28 @@ func GenerateAuthorizedGitHubPageDataVerified(
 	}, RenderOptions{}, false)
 }
 
+// GenerateAuthorizedGitHubPageDataVerifiedWithDiagnostics is the diagnostic
+// variant used by the ordinary multi-target publication transaction.
+func GenerateAuthorizedGitHubPageDataVerifiedWithDiagnostics(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+) (VerifiedRunReceipt, GenerationDiagnostics, error) {
+	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
+	if err != nil {
+		return VerifiedRunReceipt{}, GenerationDiagnostics{}, err
+	}
+	if normalizedURL == "" {
+		return VerifiedRunReceipt{}, GenerationDiagnostics{}, fmt.Errorf("report: GitHub repository URL is required")
+	}
+	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
+		return VerifiedRunReceipt{}, GenerationDiagnostics{}, err
+	}
+	return generateVerifiedWithDiagnostics(runDir, authority, &standaloneSourceConfig{
+		hostName: "GitHub", repositoryURL: normalizedURL,
+	}, RenderOptions{}, false)
+}
+
 func generate(
 	runDir string,
 	authority RunAuthority,
@@ -805,8 +759,22 @@ func generate(
 	publishHTML bool,
 ) error {
 	return generateWithReceipt(
-		runDir, authority, standaloneSource, renderOptions, publishHTML, nil,
+		runDir, authority, standaloneSource, renderOptions, publishHTML, nil, nil,
 	)
+}
+
+func generateWithDiagnostics(
+	runDir string,
+	authority RunAuthority,
+	standaloneSource *standaloneSourceConfig,
+	renderOptions RenderOptions,
+	publishHTML bool,
+) (GenerationDiagnostics, error) {
+	var diagnostics GenerationDiagnostics
+	err := generateWithReceipt(
+		runDir, authority, standaloneSource, renderOptions, publishHTML, nil, &diagnostics,
+	)
+	return diagnostics, err
 }
 
 func generateVerified(
@@ -816,11 +784,25 @@ func generateVerified(
 	renderOptions RenderOptions,
 	publishHTML bool,
 ) (VerifiedRunReceipt, error) {
-	var receipt VerifiedRunReceipt
-	err := generateWithReceipt(
-		runDir, authority, standaloneSource, renderOptions, publishHTML, &receipt,
+	receipt, _, err := generateVerifiedWithDiagnostics(
+		runDir, authority, standaloneSource, renderOptions, publishHTML,
 	)
 	return receipt, err
+}
+
+func generateVerifiedWithDiagnostics(
+	runDir string,
+	authority RunAuthority,
+	standaloneSource *standaloneSourceConfig,
+	renderOptions RenderOptions,
+	publishHTML bool,
+) (VerifiedRunReceipt, GenerationDiagnostics, error) {
+	var receipt VerifiedRunReceipt
+	var diagnostics GenerationDiagnostics
+	err := generateWithReceipt(
+		runDir, authority, standaloneSource, renderOptions, publishHTML, &receipt, &diagnostics,
+	)
+	return receipt, diagnostics, err
 }
 
 func generateWithReceipt(
@@ -830,6 +812,7 @@ func generateWithReceipt(
 	renderOptions RenderOptions,
 	publishHTML bool,
 	receiptOut *VerifiedRunReceipt,
+	diagnosticsOut *GenerationDiagnostics,
 ) error {
 	if standaloneSource != nil {
 		if err := validateStandaloneSourceAuthority(authority, standaloneSource.hostName); err != nil {
@@ -849,6 +832,14 @@ func generateWithReceipt(
 	data, err := readRunDir(runDir)
 	if err != nil {
 		return err
+	}
+	if authority.groupGraphBound {
+		if err := BindGroupGraphView(data, authority.groupGraphIndexes); err != nil {
+			return fmt.Errorf("report: bind group graph: %w", err)
+		}
+		if err := collectOpenablePaths(data); err != nil {
+			return fmt.Errorf("report: collect bound group graph source paths: %w", err)
+		}
 	}
 	var gitLabSourceLinks *GitLabSourceLinks
 	var gitHubSourceLinks *GitHubSourceLinks
@@ -892,11 +883,27 @@ func generateWithReceipt(
 	if err != nil {
 		return err
 	}
+	// The final canonical report JSON exists at this boundary. Preserve its
+	// advisory measurement even when manifest preparation or any later
+	// publication step fails.
+	generationDiagnostics := GenerationDiagnostics{
+		scaleWarnings: reportJSONScaleWarnings(reportJSON),
+	}
+	if diagnosticsOut != nil {
+		*diagnosticsOut = generationDiagnostics
+	}
 	manifest, err := prepareAuthorizedRunManifest(
 		runDir, data, reportJSON, authority, standaloneSource,
 	)
 	if err != nil {
 		return err
+	}
+	generationDiagnostics.scaleWarnings = append(
+		generationDiagnostics.scaleWarnings,
+		RunManifestScaleWarnings(manifest)...,
+	)
+	if diagnosticsOut != nil {
+		*diagnosticsOut = generationDiagnostics
 	}
 	var preparedReceipt VerifiedRunReceipt
 	if receiptOut != nil {
@@ -915,7 +922,26 @@ func generateWithReceipt(
 	renderData := *data
 	renderData.GitLabSourceLinks = gitLabSourceLinks
 	renderData.GitHubSourceLinks = gitHubSourceLinks
-	reportHTML, err := RenderHTMLWithOptions(&renderData, renderOptions)
+	// The page is stamped with the digest of the exact report.json bytes it
+	// was rendered from, so publication can prove the pair belongs together.
+	renderOptions.ReportSHA256 = manifestSHA256(reportJSON)
+	reportHTML, renderDiagnostics, err := renderHTMLWithOptionsDiagnostics(&renderData, renderOptions)
+	generationDiagnostics.rawStandaloneBundlePayloadBytes = renderDiagnostics.rawStandaloneBundlePayloadBytes
+	generationDiagnostics.scaleWarnings = append(
+		generationDiagnostics.scaleWarnings, renderDiagnostics.scaleWarnings...,
+	)
+	generationDiagnostics.targetScaleWarnings = append(
+		generationDiagnostics.targetScaleWarnings, renderDiagnostics.targetScaleWarnings...,
+	)
+	if err == nil {
+		generationDiagnostics.scaleWarnings = append(
+			generationDiagnostics.scaleWarnings,
+			reportHTMLScaleWarningsForSize(int64(len(reportHTML)))...,
+		)
+	}
+	if diagnosticsOut != nil {
+		*diagnosticsOut = generationDiagnostics
+	}
 	if err != nil {
 		return err
 	}

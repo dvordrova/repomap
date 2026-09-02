@@ -3,12 +3,10 @@
 package jstsproject
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/url"
 	"path"
 	"reflect"
@@ -16,20 +14,20 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 const (
-	Version                      = 4
-	HelperVersion                = 5
-	ArtifactFilename             = "jsts-project.json"
-	ProgramIndexFilename         = "program-index-jsts.json"
-	MaxArtifactBytes             = 64 << 20
-	maxPackageBinaryCommandBytes = 240
-	redactedExpression           = "<persistence-sensitive expression omitted>"
-	javascriptPlatform           = "platform:javascript"
+	Version       = 11
+	HelperVersion = 13
+	// AdvisoryResultBytes is the former adapter-result size threshold.
+	// Crossing it is diagnostic only.
+	AdvisoryResultBytes = 64 << 20
+	redactedExpression  = "<persistence-sensitive expression omitted>"
+	javascriptPlatform  = "platform:javascript"
 )
 
 type Location struct {
@@ -103,10 +101,14 @@ type File struct {
 }
 
 type Declaration struct {
-	Ref           string   `json:"ref"`
-	Kind          string   `json:"kind"`
-	Name          string   `json:"name"`
-	QualifiedName string   `json:"qualified_name"`
+	Ref  string `json:"ref"`
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	// QualifiedName is optional legacy adapter/debug metadata. ProgramIndex
+	// graph identity and presentation are derived from Ref, ownership, Name,
+	// and Location; no semantic consumer may require or parse this field. When
+	// present, it remains covered by the enclosing Result byte seal.
+	QualifiedName string   `json:"qualified_name,omitempty"`
 	Signature     string   `json:"signature,omitempty"`
 	Exported      bool     `json:"exported"`
 	OwnerRef      string   `json:"owner_ref,omitempty"`
@@ -136,16 +138,61 @@ type Export struct {
 }
 
 type Call struct {
-	Ref              string   `json:"ref"`
-	CallerRef        string   `json:"caller_ref"`
-	CalleeRefs       []string `json:"callee_refs"`
-	Invocation       string   `json:"invocation"`
-	ExternalPackage  string   `json:"external_package,omitempty"`
-	ExternalReceiver string   `json:"external_receiver,omitempty"`
-	ExternalName     string   `json:"external_name,omitempty"`
-	Expression       string   `json:"expression"`
-	Resolution       string   `json:"resolution"`
-	Location         Location `json:"location"`
+	Ref              string       `json:"ref"`
+	CallerRef        string       `json:"caller_ref"`
+	CalleeRefs       []string     `json:"callee_refs"`
+	Invocation       string       `json:"invocation"`
+	ExternalPackage  string       `json:"external_package,omitempty"`
+	ExternalExport   string       `json:"external_export,omitempty"`
+	ExternalReceiver string       `json:"external_receiver,omitempty"`
+	ExternalName     string       `json:"external_name,omitempty"`
+	Expression       string       `json:"expression"`
+	Resolution       string       `json:"resolution"`
+	Location         Location     `json:"location"`
+	Pattern          *CallPattern `json:"pattern,omitempty"`
+	PatternsObserved int          `json:"patterns_observed"`
+}
+
+// CallPattern retains only adapter-neutral syntax needed by later bounded
+// pattern classification. It deliberately carries no framework or protocol
+// meaning: the adapter records the terminal selector, exact local receiver
+// authority when the compiler has it, and every ordered positional argument.
+type CallPattern struct {
+	Selector                 string                `json:"selector"`
+	ResultRef                string                `json:"result_ref,omitempty"`
+	ReceiverRef              string                `json:"receiver_ref,omitempty"`
+	ReceiverOriginRefs       []string              `json:"receiver_origin_refs"`
+	ReceiverOriginResolution string                `json:"receiver_origin_resolution,omitempty"`
+	ReceiverOriginsObserved  int                   `json:"receiver_origins_observed"`
+	Arguments                []CallPatternArgument `json:"arguments"`
+	ArgumentsObserved        int                   `json:"arguments_observed"`
+}
+
+type CallPatternArgument struct {
+	Position                int                         `json:"position"`
+	Kind                    string                      `json:"kind"`
+	Value                   string                      `json:"value,omitempty"`
+	Parts                   []CallPatternPart           `json:"parts"`
+	ObjectRefs              []string                    `json:"object_refs"`
+	Resolution              string                      `json:"resolution,omitempty"`
+	ObjectsObserved         int                         `json:"objects_observed"`
+	ValueCandidates         []CallPatternValueCandidate `json:"value_candidates"`
+	ValueCandidatesObserved int                         `json:"value_candidates_observed"`
+}
+
+type CallPatternValueCandidate struct {
+	Kind           string            `json:"kind"`
+	Value          string            `json:"value,omitempty"`
+	Parts          []CallPatternPart `json:"parts"`
+	Resolution     string            `json:"resolution"`
+	SourceKind     string            `json:"source_kind"`
+	SourceCallRef  string            `json:"source_call_ref"`
+	SourcePosition int               `json:"source_position"`
+}
+
+type CallPatternPart struct {
+	Kind string `json:"kind"`
+	Text string `json:"text,omitempty"`
 }
 
 type SurfaceKind string
@@ -178,39 +225,6 @@ type Surface struct {
 	Location     Location    `json:"location"`
 }
 
-type RouteKind string
-
-const (
-	RouteBrowser     RouteKind = "browser_route"
-	RouteBrowserLink RouteKind = "browser_link"
-	RouteHTTP        RouteKind = "http_route"
-	RouteMiddleware  RouteKind = "middleware"
-)
-
-type Route struct {
-	Ref            string    `json:"ref"`
-	Kind           RouteKind `json:"kind"`
-	Method         string    `json:"method,omitempty"`
-	Path           string    `json:"path"`
-	OwnerRef       string    `json:"owner_ref,omitempty"`
-	ComponentRef   string    `json:"component_ref,omitempty"`
-	MiddlewareRefs []string  `json:"middleware_refs"`
-	HandlerRefs    []string  `json:"handler_refs"`
-	Resolution     string    `json:"resolution"`
-	Location       Location  `json:"location"`
-}
-
-type HTTPUse struct {
-	Ref        string   `json:"ref"`
-	Kind       string   `json:"kind"`
-	Method     string   `json:"method"`
-	Path       string   `json:"path"`
-	CallerRef  string   `json:"caller_ref"`
-	QueryKeys  []string `json:"query_keys"`
-	Resolution string   `json:"resolution"`
-	Location   Location `json:"location"`
-}
-
 type Contract struct {
 	Ref            string   `json:"ref"`
 	Kind           string   `json:"kind"`
@@ -219,35 +233,6 @@ type Contract struct {
 	DeclarationRef string   `json:"declaration_ref,omitempty"`
 	UsedByRefs     []string `json:"used_by_refs"`
 	Location       Location `json:"location"`
-}
-
-type Resource struct {
-	Ref          string   `json:"ref"`
-	Kind         string   `json:"kind"`
-	Name         string   `json:"name"`
-	PackagePath  string   `json:"package_path,omitempty"`
-	UsedByRefs   []string `json:"used_by_refs"`
-	EvidenceRefs []string `json:"evidence_refs"`
-	Location     Location `json:"location"`
-}
-
-type PathStep struct {
-	Ordinal    int      `json:"ordinal"`
-	Kind       string   `json:"kind"`
-	Label      string   `json:"label"`
-	SourceRef  string   `json:"source_ref"`
-	TargetRefs []string `json:"target_refs"`
-	Resolution string   `json:"resolution"`
-	Authority  string   `json:"authority"`
-	Location   Location `json:"location"`
-}
-
-type ProductPath struct {
-	Ref      string     `json:"ref"`
-	Name     string     `json:"name"`
-	Outcome  string     `json:"outcome"`
-	Steps    []PathStep `json:"steps"`
-	Frontier string     `json:"frontier,omitempty"`
 }
 
 type Result struct {
@@ -263,11 +248,7 @@ type Result struct {
 	Exports         []Export      `json:"exports"`
 	Calls           []Call        `json:"calls"`
 	Surfaces        []Surface     `json:"surfaces"`
-	Routes          []Route       `json:"routes"`
-	HTTPUses        []HTTPUse     `json:"http_uses"`
 	Contracts       []Contract    `json:"contracts"`
-	Resources       []Resource    `json:"resources"`
-	ProductPaths    []ProductPath `json:"product_paths"`
 	SHA256          string        `json:"sha256"`
 }
 
@@ -288,7 +269,7 @@ func Seal(result Result) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("jsts project: seal: %w", err)
 	}
-	if err := rejectPersistenceSensitiveArtifact(encoded); err != nil {
+	if err := rejectPersistenceSensitiveResult(encoded); err != nil {
 		return Result{}, err
 	}
 	digest := sha256.Sum256(encoded)
@@ -310,19 +291,59 @@ func omitPersistenceSensitiveOptionalMetadata(result *Result) {
 	for index := range result.Calls {
 		if _, sensitive := secretscan.DetectPersistenceSensitive(result.Calls[index].Expression); sensitive {
 			result.Calls[index].Expression = redactedExpression
+			result.Calls[index].Pattern = nil
 			redactedCallRefs[result.Calls[index].Ref] = struct{}{}
 		}
 	}
-	for pathIndex := range result.ProductPaths {
-		result.ProductPaths[pathIndex].Frontier = ""
-		for stepIndex := range result.ProductPaths[pathIndex].Steps {
-			step := &result.ProductPaths[pathIndex].Steps[stepIndex]
-			if _, redacted := redactedCallRefs[step.SourceRef]; redacted {
-				step.Label = redactedExpression
+	// Redacting one side of a chained call must not leave a receiver pointing
+	// at a producer pattern that no longer survives in the artifact.
+	availableResults := make(map[string]struct{})
+	for index := range result.Calls {
+		if pattern := result.Calls[index].Pattern; pattern != nil && pattern.ResultRef != "" {
+			availableResults[pattern.ResultRef] = struct{}{}
+		}
+	}
+	usedResults := make(map[string]struct{})
+	for index := range result.Calls {
+		pattern := result.Calls[index].Pattern
+		if pattern == nil || pattern.ReceiverRef == "" {
+			continue
+		}
+		if _, callResult := availableResults[pattern.ReceiverRef]; callResult {
+			usedResults[pattern.ReceiverRef] = struct{}{}
+		} else if strings.HasPrefix(pattern.ReceiverRef, "call-result:") {
+			pattern.ReceiverRef = ""
+		}
+	}
+	for index := range result.Calls {
+		pattern := result.Calls[index].Pattern
+		if pattern == nil || pattern.ResultRef == "" {
+			continue
+		}
+		if _, used := usedResults[pattern.ResultRef]; !used {
+			pattern.ResultRef = ""
+		}
+	}
+	// A recovered actual-to-formal value is optional structural metadata. If
+	// its source call was redacted, retaining the candidate would either leave
+	// a dangling provenance ref or persist the same sensitive literal through
+	// the destination argument.
+	for callIndex := range result.Calls {
+		pattern := result.Calls[callIndex].Pattern
+		if pattern == nil {
+			continue
+		}
+		for argumentIndex := range pattern.Arguments {
+			argument := &pattern.Arguments[argumentIndex]
+			retained := argument.ValueCandidates[:0]
+			for _, candidate := range argument.ValueCandidates {
+				if _, redacted := redactedCallRefs[candidate.SourceCallRef]; redacted {
+					continue
+				}
+				retained = append(retained, candidate)
 			}
-			if result.ProductPaths[pathIndex].Frontier == "" && step.Resolution == "unresolved" {
-				result.ProductPaths[pathIndex].Frontier = step.Label
-			}
+			argument.ValueCandidates = retained
+			argument.ValueCandidatesObserved = len(retained)
 		}
 	}
 }
@@ -331,9 +352,9 @@ func unsafeDeclarationSignature(value string) bool {
 	return strings.Contains(value, "node_modules/") || strings.Contains(value, `import("/`)
 }
 
-func rejectPersistenceSensitiveArtifact(encoded []byte) error {
+func rejectPersistenceSensitiveResult(encoded []byte) error {
 	if kind, sensitive := secretscan.DetectPersistenceSensitive(string(encoded)); sensitive {
-		return fmt.Errorf("jsts project: persistence-sensitive artifact content (%s)", kind)
+		return fmt.Errorf("jsts project: persistence-sensitive result content (%s)", kind)
 	}
 	return nil
 }
@@ -446,7 +467,7 @@ func (result Result) Validate() error {
 	}
 	declarations := map[string]struct{}{}
 	for _, declaration := range result.Declarations {
-		if declaration.Ref == "" || declaration.Name == "" || declaration.QualifiedName == "" {
+		if declaration.Ref == "" || declaration.Name == "" {
 			return fmt.Errorf("jsts project: invalid declaration identity")
 		}
 		if unsafeDeclarationSignature(declaration.Signature) {
@@ -467,7 +488,7 @@ func (result Result) Validate() error {
 			}
 		}
 	}
-	factRefs := make(map[string]string, len(result.Imports)+len(result.Exports)+len(result.Calls)+len(result.Surfaces)+len(result.Routes)+len(result.HTTPUses)+len(result.Contracts)+len(result.Resources)+len(result.ProductPaths))
+	factRefs := make(map[string]string, len(result.Imports)+len(result.Exports)+len(result.Calls)+len(result.Surfaces)+len(result.Contracts))
 	registerFact := func(ref, kind string) error {
 		if strings.TrimSpace(ref) == "" {
 			return fmt.Errorf("jsts project: empty %s ref", kind)
@@ -497,6 +518,27 @@ func (result Result) Validate() error {
 			return err
 		}
 	}
+	patternExternalOrigins := make(map[string]struct{})
+	patternResults := make(map[string]struct{})
+	callsByRef := make(map[string]Call, len(result.Calls))
+	for _, value := range result.Calls {
+		callsByRef[value.Ref] = value
+		if value.Pattern != nil && value.Pattern.ResultRef != "" {
+			expected := "call-result:" + value.Ref
+			if value.Pattern.ResultRef != expected {
+				return fmt.Errorf("jsts project: call has invalid result identity")
+			}
+			if _, duplicate := patternResults[value.Pattern.ResultRef]; duplicate {
+				return fmt.Errorf("jsts project: duplicate call result identity")
+			}
+			patternResults[value.Pattern.ResultRef] = struct{}{}
+		}
+		if value.ExternalPackage == "" || value.ExternalName == "" || value.Resolution == "unresolved" {
+			continue
+		}
+		patternExternalOrigins[externalProgramObjectRef(value.ExternalPackage, value.ExternalReceiver, value.ExternalName)] = struct{}{}
+	}
+	usedPatternResults := make(map[string]struct{})
 	for _, value := range result.Calls {
 		if err := registerFact(value.Ref, "call"); err != nil {
 			return err
@@ -507,28 +549,8 @@ func (result Result) Validate() error {
 			return err
 		}
 	}
-	for _, value := range result.Routes {
-		if err := registerFact(value.Ref, "route"); err != nil {
-			return err
-		}
-	}
-	for _, value := range result.HTTPUses {
-		if err := registerFact(value.Ref, "http use"); err != nil {
-			return err
-		}
-	}
 	for _, value := range result.Contracts {
 		if err := registerFact(value.Ref, "contract"); err != nil {
-			return err
-		}
-	}
-	for _, value := range result.Resources {
-		if err := registerFact(value.Ref, "resource"); err != nil {
-			return err
-		}
-	}
-	for _, value := range result.ProductPaths {
-		if err := registerFact(value.Ref, "product path"); err != nil {
 			return err
 		}
 	}
@@ -576,8 +598,12 @@ func (result Result) Validate() error {
 		if _, ok := declarations[value.CallerRef]; !ok {
 			return fmt.Errorf("jsts project: call has unknown caller")
 		}
-		if (value.ExternalReceiver != "" || value.ExternalName != "") && value.ExternalPackage == "" {
+		if (value.ExternalExport != "" || value.ExternalReceiver != "" || value.ExternalName != "") && value.ExternalPackage == "" {
 			return fmt.Errorf("jsts project: call has external symbol without package authority")
+		}
+		if value.ExternalPackage != "" && value.ExternalPackage != javascriptPlatform &&
+			(value.ExternalExport == "" || value.ExternalName == "") && value.Resolution != "unresolved" {
+			return fmt.Errorf("jsts project: resolved external call lacks package export authority")
 		}
 		if value.ExternalPackage != "" && len(value.CalleeRefs) != 0 {
 			return fmt.Errorf("jsts project: call mixes local and external authority")
@@ -590,6 +616,23 @@ func (result Result) Validate() error {
 				return fmt.Errorf("jsts project: call has unknown callee")
 			}
 		}
+		if value.Invocation == "call" {
+			if value.PatternsObserved != 1 || !validCallPattern(
+				value.Ref, value.Pattern, declarations, patternExternalOrigins, patternResults, callsByRef,
+			) {
+				return fmt.Errorf("jsts project: invalid call pattern")
+			}
+			if value.Pattern != nil {
+				if _, callResult := patternResults[value.Pattern.ReceiverRef]; callResult {
+					usedPatternResults[value.Pattern.ReceiverRef] = struct{}{}
+				}
+			}
+		} else if value.PatternsObserved != 0 || value.Pattern != nil {
+			return fmt.Errorf("jsts project: constructor has call pattern authority")
+		}
+	}
+	if len(usedPatternResults) != len(patternResults) {
+		return fmt.Errorf("jsts project: call result is not consumed by a retained receiver")
 	}
 	expectedCLISurfaces := make(map[string]Surface, len(result.Project.Binaries))
 	for _, binary := range result.Project.Binaries {
@@ -617,24 +660,6 @@ func (result Result) Validate() error {
 	if len(seenCLISurfaces) != len(expectedCLISurfaces) {
 		return fmt.Errorf("jsts project: package binary authority is missing its CLI surface")
 	}
-	for _, value := range result.Routes {
-		if value.Ref == "" || value.Path == "" || !validRouteKind(value.Kind) || !validLocation(value.Location, fileRefs) || !validResolution(value.Resolution) {
-			return fmt.Errorf("jsts project: invalid route")
-		}
-		for _, ref := range append(append(append([]string{}, value.MiddlewareRefs...), value.HandlerRefs...), value.OwnerRef, value.ComponentRef) {
-			if ref != "" && !knownDeclaration(ref) {
-				return fmt.Errorf("jsts project: route has unknown program ref %q", ref)
-			}
-		}
-	}
-	for _, value := range result.HTTPUses {
-		if value.Ref == "" || value.Method == "" || value.Path == "" || value.CallerRef == "" || !validLocation(value.Location, fileRefs) || !validResolution(value.Resolution) {
-			return fmt.Errorf("jsts project: invalid HTTP use")
-		}
-		if !knownDeclaration(value.CallerRef) {
-			return fmt.Errorf("jsts project: HTTP use has unknown caller")
-		}
-	}
 	for _, value := range result.Contracts {
 		if value.Ref == "" || value.Kind == "" || value.Name == "" || !validLocation(value.Location, fileRefs) {
 			return fmt.Errorf("jsts project: invalid contract")
@@ -648,39 +673,6 @@ func (result Result) Validate() error {
 			}
 		}
 	}
-	for _, value := range result.Resources {
-		if value.Ref == "" || value.Kind == "" || value.Name == "" || !validLocation(value.Location, fileRefs) {
-			return fmt.Errorf("jsts project: invalid resource")
-		}
-		for _, ref := range value.UsedByRefs {
-			if !knownDeclaration(ref) {
-				return fmt.Errorf("jsts project: resource has unknown use ref")
-			}
-		}
-		for _, ref := range value.EvidenceRefs {
-			if !knownRef(ref) {
-				return fmt.Errorf("jsts project: resource has unknown evidence ref")
-			}
-		}
-	}
-	for _, value := range result.ProductPaths {
-		if value.Ref == "" || value.Name == "" || value.Outcome == "" || len(value.Steps) == 0 {
-			return fmt.Errorf("jsts project: invalid product path")
-		}
-		for index, step := range value.Steps {
-			if step.Ordinal != index+1 || !validPathStepKind(step.Kind) || step.Label == "" || step.SourceRef == "" || !validResolution(step.Resolution) || !validPathAuthority(step.Authority) || !compatiblePathAuthority(step.Resolution, step.Authority) || !validLocation(step.Location, fileRefs) {
-				return fmt.Errorf("jsts project: invalid product path step")
-			}
-			if !knownRef(step.SourceRef) {
-				return fmt.Errorf("jsts project: product path has unknown source ref %q", step.SourceRef)
-			}
-			for _, ref := range step.TargetRefs {
-				if !knownRef(ref) {
-					return fmt.Errorf("jsts project: product path has unknown target ref %q", ref)
-				}
-			}
-		}
-	}
 	canonical := result.Snapshot()
 	canonical.SHA256 = ""
 	canonicalize(&canonical)
@@ -690,56 +682,13 @@ func (result Result) Validate() error {
 	}
 	digest := sha256.Sum256(encoded)
 	if result.SHA256 != hex.EncodeToString(digest[:]) {
-		return fmt.Errorf("jsts project: artifact SHA mismatch")
+		return fmt.Errorf("jsts project: result SHA mismatch")
 	}
 	canonical.SHA256 = result.SHA256
 	if !reflect.DeepEqual(result, canonical) {
-		return fmt.Errorf("jsts project: artifact is not canonical")
+		return fmt.Errorf("jsts project: result is not canonical")
 	}
 	return nil
-}
-
-func Encode(result Result) ([]byte, error) {
-	if err := result.Validate(); err != nil {
-		return nil, err
-	}
-	encoded, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("jsts project: encode: %w", err)
-	}
-	if len(encoded) > MaxArtifactBytes {
-		return nil, fmt.Errorf("jsts project: artifact exceeds %d bytes", MaxArtifactBytes)
-	}
-	if err := rejectPersistenceSensitiveArtifact(encoded); err != nil {
-		return nil, err
-	}
-	return append(encoded, '\n'), nil
-}
-
-func Decode(encoded []byte) (Result, error) {
-	if len(encoded) == 0 || len(encoded) > MaxArtifactBytes {
-		return Result{}, fmt.Errorf("jsts project: invalid artifact size")
-	}
-	if err := rejectPersistenceSensitiveArtifact(encoded); err != nil {
-		return Result{}, err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(encoded))
-	decoder.DisallowUnknownFields()
-	var result Result
-	if err := decoder.Decode(&result); err != nil {
-		return Result{}, fmt.Errorf("jsts project: decode: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return Result{}, fmt.Errorf("jsts project: trailing JSON value")
-		}
-		return Result{}, fmt.Errorf("jsts project: trailing data: %w", err)
-	}
-	if err := result.Validate(); err != nil {
-		return Result{}, err
-	}
-	return result, nil
 }
 
 func canonicalize(result *Result) {
@@ -807,6 +756,27 @@ func canonicalize(result *Result) {
 	}
 	for i := range result.Calls {
 		result.Calls[i].CalleeRefs = canonicalStrings(result.Calls[i].CalleeRefs)
+		if result.Calls[i].Pattern != nil {
+			pattern := result.Calls[i].Pattern
+			pattern.ReceiverOriginRefs = canonicalStrings(pattern.ReceiverOriginRefs)
+			if pattern.Arguments == nil {
+				pattern.Arguments = []CallPatternArgument{}
+			}
+			for j := range pattern.Arguments {
+				pattern.Arguments[j].ObjectRefs = canonicalStrings(pattern.Arguments[j].ObjectRefs)
+				if pattern.Arguments[j].Parts == nil {
+					pattern.Arguments[j].Parts = []CallPatternPart{}
+				}
+				if pattern.Arguments[j].ValueCandidates == nil {
+					pattern.Arguments[j].ValueCandidates = []CallPatternValueCandidate{}
+				}
+				for candidatePosition := range pattern.Arguments[j].ValueCandidates {
+					if pattern.Arguments[j].ValueCandidates[candidatePosition].Parts == nil {
+						pattern.Arguments[j].ValueCandidates[candidatePosition].Parts = []CallPatternPart{}
+					}
+				}
+			}
+		}
 	}
 	sort.Slice(result.Calls, func(i, j int) bool { return result.Calls[i].Ref < result.Calls[j].Ref })
 	if result.Surfaces == nil {
@@ -817,21 +787,6 @@ func canonicalize(result *Result) {
 		result.Surfaces[i].EvidenceRefs = canonicalStrings(result.Surfaces[i].EvidenceRefs)
 	}
 	sort.Slice(result.Surfaces, func(i, j int) bool { return result.Surfaces[i].Ref < result.Surfaces[j].Ref })
-	if result.Routes == nil {
-		result.Routes = []Route{}
-	}
-	for i := range result.Routes {
-		result.Routes[i].MiddlewareRefs = canonicalStrings(result.Routes[i].MiddlewareRefs)
-		result.Routes[i].HandlerRefs = canonicalStrings(result.Routes[i].HandlerRefs)
-	}
-	sort.Slice(result.Routes, func(i, j int) bool { return result.Routes[i].Ref < result.Routes[j].Ref })
-	if result.HTTPUses == nil {
-		result.HTTPUses = []HTTPUse{}
-	}
-	for i := range result.HTTPUses {
-		result.HTTPUses[i].QueryKeys = canonicalStrings(result.HTTPUses[i].QueryKeys)
-	}
-	sort.Slice(result.HTTPUses, func(i, j int) bool { return result.HTTPUses[i].Ref < result.HTTPUses[j].Ref })
 	if result.Contracts == nil {
 		result.Contracts = []Contract{}
 	}
@@ -839,23 +794,6 @@ func canonicalize(result *Result) {
 		result.Contracts[i].UsedByRefs = canonicalStrings(result.Contracts[i].UsedByRefs)
 	}
 	sort.Slice(result.Contracts, func(i, j int) bool { return result.Contracts[i].Ref < result.Contracts[j].Ref })
-	if result.Resources == nil {
-		result.Resources = []Resource{}
-	}
-	for i := range result.Resources {
-		result.Resources[i].UsedByRefs = canonicalStrings(result.Resources[i].UsedByRefs)
-		result.Resources[i].EvidenceRefs = canonicalStrings(result.Resources[i].EvidenceRefs)
-	}
-	sort.Slice(result.Resources, func(i, j int) bool { return result.Resources[i].Ref < result.Resources[j].Ref })
-	if result.ProductPaths == nil {
-		result.ProductPaths = []ProductPath{}
-	}
-	for i := range result.ProductPaths {
-		for j := range result.ProductPaths[i].Steps {
-			result.ProductPaths[i].Steps[j].TargetRefs = canonicalStrings(result.ProductPaths[i].Steps[j].TargetRefs)
-		}
-	}
-	sort.Slice(result.ProductPaths, func(i, j int) bool { return result.ProductPaths[i].Ref < result.ProductPaths[j].Ref })
 }
 
 func canonicalStrings(values []string) []string {
@@ -896,7 +834,7 @@ func validSurfaceLocation(value Location, files map[string]File, binaries map[st
 	return ok && binary.Path == value.Path && value.Line > 0 && value.Column > 0 && safeRepositoryPath(value.Path)
 }
 func validPackageBinaryCommand(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || len(value) > maxPackageBinaryCommandBytes ||
+	if value == "" || !utf8.ValidString(value) || value != strings.TrimSpace(value) ||
 		value == "." || value == ".." || path.Base(value) != value || strings.Contains(value, "\\") {
 		return false
 	}
@@ -925,27 +863,166 @@ func validResolution(value string) bool {
 func validInvocation(value string) bool {
 	return value == "call" || value == "construct"
 }
+
+func validCallPattern(
+	ownerCallRef string,
+	value *CallPattern,
+	declarations, externalOrigins, callResults map[string]struct{},
+	callsByRef map[string]Call,
+) bool {
+	// A computed call still counts as observed, but has no materialized
+	// pattern because inventing a selector would create false authority.
+	if value == nil {
+		return true
+	}
+	if strings.TrimSpace(value.Selector) == "" ||
+		value.ArgumentsObserved < len(value.Arguments) || value.ArgumentsObserved < 0 {
+		return false
+	}
+	if value.ResultRef != "" {
+		if _, ok := callResults[value.ResultRef]; !ok {
+			return false
+		}
+	}
+	if value.ReceiverRef != "" {
+		if _, declaration := declarations[value.ReceiverRef]; !declaration {
+			if _, callResult := callResults[value.ReceiverRef]; !callResult {
+				return false
+			}
+		}
+	}
+	if value.ReceiverOriginsObserved < len(value.ReceiverOriginRefs) || value.ReceiverOriginsObserved < 0 {
+		return false
+	}
+	if len(value.ReceiverOriginRefs) == 0 {
+		if value.ReceiverOriginsObserved == 0 && value.ReceiverOriginResolution != "" ||
+			value.ReceiverOriginsObserved > 0 && value.ReceiverOriginResolution != "unresolved" {
+			return false
+		}
+	} else if !validResolution(value.ReceiverOriginResolution) {
+		return false
+	}
+	for _, ref := range value.ReceiverOriginRefs {
+		if _, local := declarations[ref]; local {
+			continue
+		}
+		if _, external := externalOrigins[ref]; !external {
+			return false
+		}
+	}
+	for index, argument := range value.Arguments {
+		if argument.Position != index+1 ||
+			argument.ObjectsObserved < len(argument.ObjectRefs) || argument.ObjectsObserved < 0 {
+			return false
+		}
+		if len(argument.ObjectRefs) == 0 {
+			if argument.ObjectsObserved == 0 && argument.Resolution != "" ||
+				argument.ObjectsObserved > 0 && argument.Resolution != "unresolved" {
+				return false
+			}
+		} else if !validResolution(argument.Resolution) {
+			return false
+		}
+		for _, ref := range argument.ObjectRefs {
+			if _, ok := declarations[ref]; !ok {
+				return false
+			}
+		}
+		if argument.ValueCandidatesObserved != len(argument.ValueCandidates) ||
+			len(argument.ValueCandidates) > 1 || len(argument.ValueCandidates) > 0 && argument.Kind != "dynamic" {
+			return false
+		}
+		for _, candidate := range argument.ValueCandidates {
+			if candidate.Resolution != "possible" || candidate.SourceKind != "actual_argument" ||
+				candidate.SourceCallRef == "" || candidate.SourceCallRef == ownerCallRef || candidate.SourcePosition < 1 ||
+				!validCallPatternValue(candidate.Kind, candidate.Value, candidate.Parts) {
+				return false
+			}
+			source, ok := callsByRef[candidate.SourceCallRef]
+			if !ok || source.Resolution != "exact" || len(source.CalleeRefs) != 1 || source.ExternalPackage != "" ||
+				source.Pattern == nil || candidate.SourcePosition > len(source.Pattern.Arguments) {
+				return false
+			}
+			sourceArgument := source.Pattern.Arguments[candidate.SourcePosition-1]
+			if sourceArgument.Position != candidate.SourcePosition || sourceArgument.Kind != candidate.Kind ||
+				sourceArgument.Value != candidate.Value || !reflect.DeepEqual(sourceArgument.Parts, candidate.Parts) ||
+				(sourceArgument.Kind != "literal_string" && sourceArgument.Kind != "string_template") {
+				return false
+			}
+		}
+		switch argument.Kind {
+		case "literal_string":
+			if len(argument.Parts) != 0 {
+				return false
+			}
+		case "string_template":
+			if argument.Value != "" || len(argument.Parts) == 0 {
+				return false
+			}
+			hasHole := false
+			for _, part := range argument.Parts {
+				switch part.Kind {
+				case "literal":
+					if part.Text == "" {
+						return false
+					}
+				case "hole":
+					if part.Text != "" {
+						return false
+					}
+					hasHole = true
+				default:
+					return false
+				}
+			}
+			if !hasHole {
+				return false
+			}
+		case "dynamic":
+			if argument.Value != "" || len(argument.Parts) != 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func validCallPatternValue(kind, value string, parts []CallPatternPart) bool {
+	switch kind {
+	case "literal_string":
+		return len(parts) == 0
+	case "string_template":
+		if value != "" || len(parts) == 0 {
+			return false
+		}
+		hasHole := false
+		previousLiteral := false
+		for _, part := range parts {
+			if part.Kind == "literal" {
+				if part.Text == "" || previousLiteral {
+					return false
+				}
+				previousLiteral = true
+				continue
+			}
+			if part.Kind != "hole" || part.Text != "" {
+				return false
+			}
+			hasHole = true
+			previousLiteral = false
+		}
+		return hasHole
+	default:
+		return false
+	}
+}
 func validSurfaceKind(value SurfaceKind) bool {
 	return value == SurfaceBrowser || value == SurfaceServer || value == SurfaceCLI || value == SurfaceShared || value == SurfaceTool || value == SurfaceUnknown
 }
 func validSurfaceRole(value SurfaceRole) bool {
 	return value == SurfaceProduct || value == SurfaceSupporting || value == SurfaceScript || value == SurfaceUnclassified
-}
-func validRouteKind(value RouteKind) bool {
-	return value == RouteBrowser || value == RouteBrowserLink || value == RouteHTTP || value == RouteMiddleware
-}
-func validPathAuthority(value string) bool {
-	return value == "exact_static" || value == "resolved_indirect" || value == "possible" || value == "unresolved_frontier"
-}
-func compatiblePathAuthority(resolution, authority string) bool {
-	return (resolution == "exact" && (authority == "exact_static" || authority == "resolved_indirect")) || (resolution == "alternatives" && authority == "possible") || (resolution == "unresolved" && authority == "unresolved_frontier")
-}
-func validPathStepKind(value string) bool {
-	switch value {
-	case "page_route", "render_target", "mutation_site", "program_call", "client_http_use", "http_method_path_match", "server_route", "middleware", "handler_factory", "handler", "contract_validation", "storage_call", "resource_boundary":
-		return true
-	}
-	return false
 }
 func unsafeURLUserinfo(value string) bool {
 	if !strings.Contains(value, "://") {

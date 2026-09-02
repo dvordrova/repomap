@@ -21,6 +21,8 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+const maxSourceClassificationPrefixBytes = 256
+
 type productionPackageLoader interface {
 	Load(context.Context, string) ([]*packages.Package, error)
 }
@@ -142,8 +144,8 @@ func classifySource(relative string, raw []byte) SourceClass {
 	}
 	if strings.HasSuffix(relative, ".go") {
 		prefix := string(raw)
-		if len(prefix) > 256 {
-			prefix = prefix[:256]
+		if len(prefix) > maxSourceClassificationPrefixBytes {
+			prefix = prefix[:maxSourceClassificationPrefixBytes]
 		}
 		if strings.Contains(prefix, "Code generated") || strings.HasSuffix(relative, ".gen.go") {
 			return SourceGenerated
@@ -291,6 +293,10 @@ func buildProgramIndexWithSealObserver(
 	sources []SourceFact,
 	observer programIndexSealObserver,
 ) (programindex.Index, error) {
+	packageOrigins, err := goPackageOrigins(loaded, modulePath)
+	if err != nil {
+		return programindex.Index{}, err
+	}
 	fileRefs := make(map[string]string)
 	targetSources := make([]programindex.TargetSource, 0)
 	for _, source := range sources {
@@ -405,7 +411,11 @@ func buildProgramIndexWithSealObserver(
 				}
 				owner, _ := pkg.TypesInfo.Defs[function.Name].(*types.Func)
 				fromRef := objectRefs[owner]
+				var traversalErr error
 				ast.Inspect(function.Body, func(node ast.Node) bool {
+					if traversalErr != nil {
+						return false
+					}
 					call, ok := node.(*ast.CallExpr)
 					if !ok {
 						return true
@@ -415,7 +425,16 @@ func buildProgramIndexWithSealObserver(
 					callee := calledObject(pkg.TypesInfo, call.Fun)
 					switch object := callee.(type) {
 					case *types.Func:
-						toRef, external := relationObjectRef(object, modulePath, objectRefs, externalRefs, &objects)
+						toRef, external, err := relationObjectRef(
+							object, packageOrigins, objectRefs, externalRefs, &objects,
+						)
+						if err != nil {
+							traversalErr = fmt.Errorf(
+								"client recipe authority: resolve call at %s:%d:%d: %w",
+								location.Path, location.Line, location.Column, err,
+							)
+							return false
+						}
 						if toRef == "" {
 							break
 						}
@@ -438,7 +457,16 @@ func buildProgramIndexWithSealObserver(
 						if callback == nil {
 							continue
 						}
-						toRef, _ := relationObjectRef(callback, modulePath, objectRefs, externalRefs, &objects)
+						toRef, _, err := relationObjectRef(
+							callback, packageOrigins, objectRefs, externalRefs, &objects,
+						)
+						if err != nil {
+							traversalErr = fmt.Errorf(
+								"client recipe authority: resolve callback at %s:%d:%d: %w",
+								location.Path, location.Line, location.Column, err,
+							)
+							return false
+						}
 						if toRef == "" {
 							continue
 						}
@@ -450,6 +478,9 @@ func buildProgramIndexWithSealObserver(
 					}
 					return true
 				})
+				if traversalErr != nil {
+					return programindex.Index{}, traversalErr
+				}
 			}
 		}
 	}
@@ -486,18 +517,98 @@ func buildProgramIndexWithSealObserver(
 	return programindex.New(input)
 }
 
+type goPackageOrigin struct {
+	workspace    bool
+	externalKind programindex.ExternalAuthorityKind
+}
+
+// goPackageOrigins retains the Go loader's complete package-origin authority.
+// In this module-backed load, Module identifies workspace and dependency
+// packages and is absent for Go toolchain packages. The distinction is
+// therefore loader-owned; no import-path spelling or prefix is interpreted.
+func goPackageOrigins(
+	loaded []*packages.Package,
+	modulePath string,
+) (map[string]goPackageOrigin, error) {
+	if modulePath == "" || strings.TrimSpace(modulePath) != modulePath {
+		return nil, fmt.Errorf("client recipe authority: invalid package-origin module path")
+	}
+	result := make(map[string]goPackageOrigin)
+	visited := make(map[*packages.Package]struct{})
+	var visit func(*packages.Package) error
+	visit = func(pkg *packages.Package) error {
+		if pkg == nil {
+			return fmt.Errorf("client recipe authority: package-origin graph contains a nil package")
+		}
+		if _, found := visited[pkg]; found {
+			return nil
+		}
+		visited[pkg] = struct{}{}
+		if pkg.PkgPath == "" || strings.TrimSpace(pkg.PkgPath) != pkg.PkgPath ||
+			pkg.Types == nil || pkg.Types.Path() != pkg.PkgPath {
+			return fmt.Errorf("client recipe authority: package-origin graph has incomplete typed identity for %q", pkg.PkgPath)
+		}
+		origin := goPackageOrigin{externalKind: programindex.ExternalAuthorityPlatform}
+		if pkg.Module != nil {
+			if pkg.Module.Path == "" || strings.TrimSpace(pkg.Module.Path) != pkg.Module.Path || pkg.Module.Error != nil {
+				return fmt.Errorf("client recipe authority: package %q has incomplete module origin", pkg.PkgPath)
+			}
+			origin.workspace = pkg.Module.Path == modulePath
+			origin.externalKind = programindex.ExternalAuthorityPackage
+		}
+		if previous, found := result[pkg.PkgPath]; found && previous != origin {
+			return fmt.Errorf("client recipe authority: package %q has conflicting origin authority", pkg.PkgPath)
+		}
+		result[pkg.PkgPath] = origin
+		paths := make([]string, 0, len(pkg.Imports))
+		for importPath := range pkg.Imports {
+			paths = append(paths, importPath)
+		}
+		sort.Strings(paths)
+		for _, importPath := range paths {
+			imported := pkg.Imports[importPath]
+			if imported == nil {
+				return fmt.Errorf("client recipe authority: package %q has nil import origin for %q", pkg.PkgPath, importPath)
+			}
+			if err := visit(imported); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, pkg := range loaded {
+		if err := visit(pkg); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
 func relationObjectRef(
 	object *types.Func,
-	modulePath string,
+	origins map[string]goPackageOrigin,
 	local map[types.Object]string,
 	external map[string]string,
 	objects *[]programindex.ObjectInput,
-) (string, bool) {
+) (string, bool, error) {
 	if object == nil || object.Pkg() == nil {
-		return "", false
+		return "", false, nil
 	}
-	if object.Pkg().Path() == modulePath || strings.HasPrefix(object.Pkg().Path(), modulePath+"/") {
-		return local[object], false
+	origin, found := origins[object.Pkg().Path()]
+	if !found {
+		return "", false, fmt.Errorf(
+			"package %q has no exact loaded origin authority",
+			object.Pkg().Path(),
+		)
+	}
+	if origin.workspace {
+		return local[object], false, nil
+	}
+	if !origin.externalKind.Valid() {
+		return "", false, fmt.Errorf(
+			"external package %q has invalid loaded origin authority",
+			object.Pkg().Path(),
+		)
 	}
 	signature, _ := object.Type().(*types.Signature)
 	receiver := ""
@@ -506,7 +617,7 @@ func relationObjectRef(
 	}
 	key := object.Pkg().Path() + "\x00" + receiver + "\x00" + object.Name() + "\x00" + types.TypeString(object.Type(), packageQualifier)
 	if ref := external[key]; ref != "" {
-		return ref, true
+		return ref, true, nil
 	}
 	digest := sha256.Sum256([]byte(key))
 	ref := "external:" + hex.EncodeToString(digest[:12])
@@ -516,10 +627,11 @@ func relationObjectRef(
 		Name: object.Pkg().Path() + "." + object.Name(), Visibility: programindex.VisibilityPublic,
 		Signature: types.TypeString(object.Type(), packageQualifier),
 		External: &programindex.ExternalSymbol{
-			PackagePath: object.Pkg().Path(), Receiver: receiver, Name: object.Name(),
+			AuthorityKind: origin.externalKind,
+			PackagePath:   object.Pkg().Path(), Receiver: receiver, Name: object.Name(),
 		},
 	})
-	return ref, true
+	return ref, true, nil
 }
 
 func exactRelation(

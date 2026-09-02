@@ -1,10 +1,15 @@
 package pythonprogramindex
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -14,6 +19,57 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
+
+func TestBuildKeepsCallRegistrationPathAndHandlerPattern(t *testing.T) {
+	repository := pythonCorpus(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "actual-call-route-boundary"
+version = "1.0.0"
+`,
+		"app/__init__.py": "",
+		"app/main.py": `from routerlib import Router
+
+router = Router()
+
+def get_items():
+    return []
+
+router.get("/api/items", get_items)
+`,
+	})
+	target := targetOfKind(t, repository, pythontarget.KindLibrary)
+	indexes, err := BuildMany(context.Background(), repository, []pythontarget.Target{target})
+	if err != nil {
+		t.Fatalf("BuildMany: %v", err)
+	}
+	if len(indexes) != 1 {
+		t.Fatalf("indexes = %d", len(indexes))
+	}
+	handler := objectNamed(t, indexes[0], programindex.ObjectFunction, "get_items", "app/main.py")
+	found := false
+	for _, relation := range indexes[0].Relations {
+		for _, pattern := range relation.Patterns {
+			if pattern.Form != programindex.PatternCall || pattern.Selector != "get" {
+				continue
+			}
+			pathFound, handlerFound := false, false
+			for _, argument := range pattern.Arguments {
+				if argument.Kind == programindex.PatternLiteralString && argument.Value == "/api/items" {
+					pathFound = true
+				}
+				if slices.Contains(argument.ObjectIDs, handler.ID) {
+					handlerFound = true
+				}
+			}
+			if pathFound && handlerFound {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("call registration lost its neutral path or exact handler argument")
+	}
+}
 
 func buildOneForTest(
 	ctx context.Context,
@@ -25,6 +81,39 @@ func buildOneForTest(
 		return programindex.Index{}, err
 	}
 	return indexes[0], nil
+}
+
+func TestBuildInputSealsToTheSameIndexAsBuildMany(t *testing.T) {
+	repository := pythonCorpus(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "atomic-python-adapter"
+version = "1.0.0"
+`,
+		"src/app/__init__.py": "",
+		"src/app/main.py": `import httpx
+
+BASE = "/api"
+
+def run(client):
+    return client.get(BASE + "/items")
+`,
+	})
+	target := targetOfKind(t, repository, pythontarget.KindLibrary)
+	input, err := BuildInput(context.Background(), repository, target)
+	if err != nil {
+		t.Fatalf("BuildInput: %v", err)
+	}
+	atomic, err := programindex.New(input)
+	if err != nil {
+		t.Fatalf("programindex.New(BuildInput): %v", err)
+	}
+	legacyBatch, err := BuildMany(context.Background(), repository, []pythontarget.Target{target})
+	if err != nil {
+		t.Fatalf("BuildMany: %v", err)
+	}
+	if len(legacyBatch) != 1 || !reflect.DeepEqual(atomic, legacyBatch[0]) {
+		t.Fatalf("atomic Python adapter drifted from the established projection")
+	}
 }
 
 func TestBuildKeepsMutablePythonBindingsAsFrontiers(t *testing.T) {
@@ -48,6 +137,10 @@ class Base:
     pass
 
 class Worker(Base):
+    def execute(self):
+        return run()
+
+class _HiddenWorker:
     def execute(self):
         return run()
 
@@ -87,7 +180,22 @@ _hidden = 1
 	main := objectNamed(t, index, programindex.ObjectFunction, "main", "pkg/service.py")
 	base := objectNamed(t, index, programindex.ObjectType, "Base", "pkg/service.py")
 	worker := objectNamed(t, index, programindex.ObjectType, "Worker", "pkg/service.py")
-	execute := objectNamed(t, index, programindex.ObjectMethod, "execute", "pkg/service.py")
+	hiddenWorker := objectNamed(t, index, programindex.ObjectType, "_HiddenWorker", "pkg/service.py")
+	var execute, hiddenExecute programindex.Object
+	for _, object := range index.Objects {
+		if object.Kind != programindex.ObjectMethod || object.Name != "execute" {
+			continue
+		}
+		switch object.OwnerID {
+		case worker.ID:
+			execute = object
+		case hiddenWorker.ID:
+			hiddenExecute = object
+		}
+	}
+	if execute.ID == "" || hiddenExecute.ID == "" {
+		t.Fatal("owned public-looking methods not found")
+	}
 	hidden := objectNamed(t, index, programindex.ObjectVariable, "_hidden", "pkg/service.py")
 	_ = objectOfKindAtPath(t, index, programindex.ObjectLambda, "pkg/service.py")
 	if hidden.Visibility != programindex.VisibilityInternal {
@@ -108,10 +216,46 @@ _hidden = 1
 	if external.Visibility != programindex.VisibilityUnknown {
 		t.Fatalf("external visibility = %q, want unknown", external.Visibility)
 	}
+	if external.External == nil || external.External.PackagePath != "json" ||
+		external.External.AuthorityKind != programindex.ExternalAuthorityPlatform ||
+		external.External.Receiver != "" || external.External.Name != "dumps" {
+		t.Fatalf("external symbol authority = %#v, want json.dumps", external.External)
+	}
+	assertPythonPublicIdentity(t, run, "pkg.service.run")
+	assertPythonPublicIdentity(t, external, "json.dumps")
+	if len(hidden.SymbolLinkIdentities) != 0 {
+		t.Fatalf("internal binding received cross-target identity: %#v", hidden.SymbolLinkIdentities)
+	}
+	if len(hiddenExecute.SymbolLinkIdentities) != 0 {
+		t.Fatalf("member of private owner received cross-target identity: %#v", hiddenExecute.SymbolLinkIdentities)
+	}
 	assertAlternativeRelation(t, index, programindex.RelationInvokesExternal, run.ID, external.ID)
 
 	invoke := objectNamed(t, index, programindex.ObjectFunction, "invoke", "pkg/service.py")
 	assertUnresolvedFrom(t, index, programindex.RelationCalls, invoke.ID)
+}
+
+func TestCompileParserViewRejectsMissingOrInvalidExternalAuthorityKind(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		external *programindex.ExternalSymbol
+	}{
+		{name: "missing"},
+		{name: "empty", external: &programindex.ExternalSymbol{PackagePath: "httpx", Name: "get"}},
+		{name: "unknown", external: &programindex.ExternalSymbol{
+			AuthorityKind: "runtime", PackagePath: "httpx", Name: "get",
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := compileParserView(parserViewResult{Objects: []parsedObject{{
+				SourceRef: "external:httpx.get", Kind: string(programindex.ObjectExternalSymbol),
+				Name: "httpx.get", Visibility: string(programindex.VisibilityUnknown), External: test.external,
+			}}}, map[string]struct{}{})
+			if err == nil || !strings.Contains(err.Error(), "external authority kind") {
+				t.Fatalf("compileParserView error = %v", err)
+			}
+		})
+	}
 }
 
 func TestBuildKeepsWildcardImportModuleAsExactDependencyBoundary(t *testing.T) {
@@ -339,7 +483,7 @@ def load_through_arbitrary_member(loader):
 	}
 }
 
-func TestBuildResolvesProjectRelativeSrcImportsAndKeepsOnlyDecoratorCallee(t *testing.T) {
+func TestBuildResolvesProjectRelativeSrcImportsAndRetainsNeutralDecoratorPattern(t *testing.T) {
 	repository := pythonCorpus(t, map[string]string{
 		"pyproject.toml": `[project]
 name = "src-app"
@@ -368,6 +512,8 @@ def healthcheck():
 	mainModule := objectNamed(t, index, programindex.ObjectModule, "main", "src/main.py")
 	load := objectNamed(t, index, programindex.ObjectFunction, "load", "src/config.py")
 	healthcheck := objectNamed(t, index, programindex.ObjectFunction, "healthcheck", "src/main.py")
+	app := objectNamed(t, index, programindex.ObjectVariable, "app", "src/main.py")
+	fastAPI := objectNamed(t, index, programindex.ObjectExternalSymbol, "fastapi.FastAPI", "")
 	assertExactRelation(t, index, programindex.RelationImports, mainModule.ID, load.ID)
 	assertAlternativeRelation(t, index, programindex.RelationCalls, healthcheck.ID, load.ID)
 	assertExternalCallExpression(t, index, "fastapi.FastAPI", "FastAPI")
@@ -376,23 +522,314 @@ def healthcheck():
 			t.Fatalf("project-local src import became external: %#v", object)
 		}
 	}
-	foundDecoratorCallee := false
+	foundDecoratorPattern := false
 	for _, relation := range index.Relations {
-		if relation.Kind != programindex.RelationDecorates || relation.Location == nil ||
+		if relation.Kind != programindex.RelationDecorates || relation.FromID != healthcheck.ID || relation.Location == nil ||
 			relation.Location.Path != "src/main.py" {
 			continue
 		}
 		for _, witness := range relation.Witnesses {
 			if witness.Detail == "app.get" {
-				foundDecoratorCallee = true
-			}
-			if strings.Contains(witness.Detail, "/healthcheck") {
-				t.Fatalf("route literal persisted in decorator witness: %#v", witness)
+				foundDecoratorPattern = true
 			}
 		}
+		if relation.PatternsObserved != 1 || relation.PatternsOmitted != 0 || len(relation.Patterns) != 1 {
+			t.Fatalf("decorator pattern coverage = %#v", relation)
+		}
+		pattern := relation.Patterns[0]
+		if pattern.Form != programindex.PatternDecoratorCall || pattern.Selector != "get" ||
+			pattern.ReceiverID != app.ID || pattern.ReceiverOriginResolution != programindex.ResolutionAlternatives ||
+			!reflect.DeepEqual(pattern.ReceiverOriginIDs, []string{fastAPI.ID}) ||
+			pattern.ReceiverOriginsObserved != 1 || pattern.ReceiverOriginsOmitted != 0 {
+			t.Fatalf("decorator receiver pattern = %#v", pattern)
+		}
+		if pattern.ArgumentsObserved != 1 || pattern.ArgumentsOmitted != 0 || len(pattern.Arguments) != 1 ||
+			pattern.Arguments[0].Position != 1 || pattern.Arguments[0].Kind != programindex.PatternLiteralString ||
+			pattern.Arguments[0].Value != "/healthcheck" {
+			t.Fatalf("decorator argument pattern = %#v", pattern.Arguments)
+		}
 	}
-	if !foundDecoratorCallee {
-		t.Fatal("route decorator lost its structural callee name")
+	if !foundDecoratorPattern {
+		t.Fatal("route decorator lost its neutral pattern")
+	}
+}
+
+func TestBuildRetainsGenericReceiverOriginAndFStringTemplate(t *testing.T) {
+	repository := pythonCorpus(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "generic-patterns"
+version = "1.0.0"
+`,
+		"generic/__init__.py": "",
+		"generic/service.py": `import runtime
+from toolkit import Maker
+
+receiver = Maker()
+segment = "anything"
+
+@receiver.publish(f"/items/{segment}", mode=segment)
+def handler():
+    return None
+
+def launch():
+    runtime.start("generic.service:receiver", mode=segment)
+
+def expand(values, options):
+    runtime.start(*values, **options)
+`,
+	})
+	target := targetOfKind(t, repository, pythontarget.KindLibrary)
+	index, err := buildOneForTest(context.Background(), repository, target)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	handler := objectNamed(t, index, programindex.ObjectFunction, "handler", "generic/service.py")
+	receiver := objectNamed(t, index, programindex.ObjectVariable, "receiver", "generic/service.py")
+	maker := objectNamed(t, index, programindex.ObjectExternalSymbol, "toolkit.Maker", "")
+	segment := objectNamed(t, index, programindex.ObjectVariable, "segment", "generic/service.py")
+
+	var pattern programindex.RelationPattern
+	for _, relation := range index.Relations {
+		if relation.Kind == programindex.RelationDecorates && relation.FromID == handler.ID && len(relation.Patterns) == 1 {
+			pattern = relation.Patterns[0]
+			break
+		}
+	}
+	if pattern.ID == "" {
+		t.Fatal("generic decorator pattern not found")
+	}
+	if pattern.Selector != "publish" || pattern.ReceiverID != receiver.ID ||
+		pattern.ReceiverOriginResolution != programindex.ResolutionAlternatives ||
+		!reflect.DeepEqual(pattern.ReceiverOriginIDs, []string{maker.ID}) {
+		t.Fatalf("generic receiver origin = %#v", pattern)
+	}
+	if pattern.ArgumentsObserved != 2 || pattern.ArgumentsOmitted != 0 || len(pattern.Arguments) != 2 {
+		t.Fatalf("generic arguments coverage = %#v", pattern)
+	}
+	positional := pattern.Arguments[0]
+	if positional.Position != 1 || positional.Kind != programindex.PatternStringTemplate ||
+		!reflect.DeepEqual(positional.Parts, []programindex.PatternPart{
+			{Kind: programindex.PatternPartLiteral, Text: "/items/"},
+			{Kind: programindex.PatternPartHole},
+		}) {
+		t.Fatalf("f-string template = %#v", positional)
+	}
+	keyword := pattern.Arguments[1]
+	if keyword.Keyword != "mode" || keyword.Kind != programindex.PatternDynamic ||
+		keyword.Resolution != programindex.ResolutionAlternatives ||
+		!reflect.DeepEqual(keyword.ObjectIDs, []string{segment.ID}) {
+		t.Fatalf("keyword authority = %#v", keyword)
+	}
+
+	launch := objectNamed(t, index, programindex.ObjectFunction, "launch", "generic/service.py")
+	runtimeStart := objectNamed(t, index, programindex.ObjectExternalSymbol, "runtime.start", "")
+	foundCall := false
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationInvokesExternal || relation.FromID != launch.ID ||
+			len(relation.ToIDs) != 1 || relation.ToIDs[0] != runtimeStart.ID || len(relation.Patterns) != 1 {
+			continue
+		}
+		call := relation.Patterns[0]
+		if call.Form != programindex.PatternCall || call.Selector != "start" ||
+			call.ArgumentsObserved != 2 || call.ArgumentsOmitted != 0 || len(call.Arguments) != 2 ||
+			call.Arguments[0].Kind != programindex.PatternLiteralString ||
+			call.Arguments[0].Value != "generic.service:receiver" {
+			t.Fatalf("ordinary call pattern = %#v", call)
+		}
+		foundCall = true
+	}
+	if !foundCall {
+		t.Fatal("ordinary external call pattern not found")
+	}
+
+	expand := objectNamed(t, index, programindex.ObjectFunction, "expand", "generic/service.py")
+	foundOmission := false
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationInvokesExternal || relation.FromID != expand.ID ||
+			len(relation.Patterns) != 1 {
+			continue
+		}
+		call := relation.Patterns[0]
+		if call.ArgumentsObserved != 2 || call.ArgumentsOmitted != 2 || len(call.Arguments) != 0 {
+			t.Fatalf("expanded argument frontier = %#v", call)
+		}
+		foundOmission = true
+	}
+	if !foundOmission {
+		t.Fatal("expanded argument frontier not found")
+	}
+}
+
+func TestBuildRetainsInitializerValueCandidatesAndFailsClosedAfterReassignment(t *testing.T) {
+	repository := pythonCorpus(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "initializer-values"
+version = "1.0.0"
+`,
+		"values/__init__.py": "",
+		"values/routes.py": `from routing import Router
+
+router = Router()
+
+literal_path = "/api/dynamic"
+@router.get(literal_path)
+def literal_handler():
+    return None
+
+segment = "items"
+template_path = f"/api/{segment}"
+@router.get(template_path)
+def template_handler():
+    return None
+
+reassigned_path = "/api/before"
+reassigned_path = "/api/after"
+@router.get(reassigned_path)
+def reassigned_handler():
+    return None
+`,
+	})
+	target := targetOfKind(t, repository, pythontarget.KindLibrary)
+	index, err := buildOneForTest(context.Background(), repository, target)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	argumentForHandler := func(name string) programindex.PatternArgument {
+		t.Helper()
+		handler := objectNamed(t, index, programindex.ObjectFunction, name, "values/routes.py")
+		for _, relation := range index.Relations {
+			if relation.Kind == programindex.RelationDecorates && relation.FromID == handler.ID &&
+				len(relation.Patterns) == 1 && len(relation.Patterns[0].Arguments) == 1 {
+				return relation.Patterns[0].Arguments[0]
+			}
+		}
+		t.Fatalf("decorator argument for %q not found", name)
+		return programindex.PatternArgument{}
+	}
+	assertSource := func(argument programindex.PatternArgument, wantLine int) {
+		t.Helper()
+		if len(argument.ObjectIDs) != 1 || len(argument.ValueCandidates) != 1 ||
+			!reflect.DeepEqual(argument.ValueCandidates[0].SourceObjectIDs, argument.ObjectIDs) {
+			t.Fatalf("initializer source binding = %#v", argument)
+		}
+		source := objectByID(t, index, argument.ValueCandidates[0].SourceObjectIDs[0])
+		if source.Kind != programindex.ObjectVariable || source.Location == nil ||
+			source.Location.Path != "values/routes.py" || source.Location.Line != wantLine {
+			t.Fatalf("initializer source object = %#v, want line %d", source, wantLine)
+		}
+	}
+
+	literal := argumentForHandler("literal_handler")
+	if literal.Kind != programindex.PatternDynamic ||
+		literal.Resolution != programindex.ResolutionAlternatives ||
+		literal.ValueCandidatesObserved != 1 || literal.ValueCandidatesOmitted != 0 ||
+		len(literal.ValueCandidates) != 1 ||
+		literal.ValueCandidates[0].Kind != programindex.PatternLiteralString ||
+		literal.ValueCandidates[0].Value != "/api/dynamic" ||
+		literal.ValueCandidates[0].Resolution != programindex.PatternValuePossible ||
+		literal.ValueCandidates[0].SourceKind != programindex.PatternValueSourceInitializer {
+		t.Fatalf("literal initializer candidate = %#v", literal)
+	}
+	assertSource(literal, 5)
+
+	template := argumentForHandler("template_handler")
+	if template.Kind != programindex.PatternDynamic || template.ValueCandidatesObserved != 1 ||
+		len(template.ValueCandidates) != 1 ||
+		template.ValueCandidates[0].Kind != programindex.PatternStringTemplate ||
+		template.ValueCandidates[0].Resolution != programindex.PatternValuePossible ||
+		!reflect.DeepEqual(template.ValueCandidates[0].Parts, []programindex.PatternPart{
+			{Kind: programindex.PatternPartLiteral, Text: "/api/"},
+			{Kind: programindex.PatternPartHole},
+		}) {
+		t.Fatalf("template initializer candidate = %#v", template)
+	}
+	assertSource(template, 11)
+
+	reassigned := argumentForHandler("reassigned_handler")
+	if reassigned.Kind != programindex.PatternDynamic || reassigned.ValueCandidatesObserved != 0 ||
+		reassigned.ValueCandidatesOmitted != 0 || len(reassigned.ValueCandidates) != 0 ||
+		len(reassigned.ObjectIDs) != 1 {
+		t.Fatalf("reassigned initializer did not fail closed: %#v", reassigned)
+	}
+	reassignedSource := objectByID(t, index, reassigned.ObjectIDs[0])
+	if reassignedSource.Location == nil || reassignedSource.Location.Line != 17 {
+		t.Fatalf("reassigned argument source = %#v, want latest structural binding on line 17", reassignedSource)
+	}
+}
+
+func TestBuildRetainsNeutralCallPatternsPastFormerLocalThresholds(t *testing.T) {
+	const (
+		formerArgumentLimit = 128
+		formerPartLimit     = 64
+		formerTextLimit     = 16 * 1024
+	)
+	arguments := make([]string, formerArgumentLimit+1)
+	for position := range arguments {
+		arguments[position] = fmt.Sprintf("%q", fmt.Sprintf("arg-%d", position))
+	}
+	var template strings.Builder
+	for position := 0; position < formerPartLimit+1; position++ {
+		_, _ = fmt.Fprintf(&template, "/{value%d}", position)
+	}
+	longLiteral := strings.Repeat("x", formerTextLimit+1)
+	longSelector := strings.Repeat("s", formerTextLimit+1)
+
+	var source strings.Builder
+	source.WriteString("import runtime\n\n")
+	for position := 0; position < formerPartLimit+1; position++ {
+		_, _ = fmt.Fprintf(&source, "value%d = %d\n", position, position)
+	}
+	source.WriteString("\ndef emit():\n")
+	_, _ = fmt.Fprintf(&source, "    runtime.many(%s)\n", strings.Join(arguments, ", "))
+	_, _ = fmt.Fprintf(&source, "    runtime.template(f%q)\n", template.String())
+	_, _ = fmt.Fprintf(&source, "    runtime.literal(%q)\n", longLiteral)
+	_, _ = fmt.Fprintf(&source, "    runtime.%s(\"/computed\")\n", longSelector)
+
+	repository := pythonCorpus(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "complete-patterns"
+version = "1.0.0"
+`,
+		"complete/__init__.py": "",
+		"complete/source.py":   source.String(),
+	})
+	target := targetOfKind(t, repository, pythontarget.KindLibrary)
+	index, err := buildOneForTest(context.Background(), repository, target)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	emit := objectNamed(t, index, programindex.ObjectFunction, "emit", "complete/source.py")
+	patterns := make(map[string]programindex.RelationPattern)
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationInvokesExternal || relation.FromID != emit.ID ||
+			len(relation.Patterns) != 1 {
+			continue
+		}
+		pattern := relation.Patterns[0]
+		if relation.PatternsObserved != 1 || relation.PatternsOmitted != 0 ||
+			pattern.ArgumentsOmitted != 0 {
+			t.Fatalf("pattern was locally truncated: %#v", relation)
+		}
+		patterns[pattern.Selector] = pattern
+	}
+	if many := patterns["many"]; many.ID == "" || many.ArgumentsObserved != formerArgumentLimit+1 ||
+		len(many.Arguments) != formerArgumentLimit+1 {
+		t.Fatalf("complete positional arguments = %#v", many)
+	}
+	if value := patterns["template"]; value.ID == "" || value.ArgumentsObserved != 1 ||
+		len(value.Arguments) != 1 || value.Arguments[0].Kind != programindex.PatternStringTemplate ||
+		len(value.Arguments[0].Parts) != 2*formerPartLimit+2 {
+		t.Fatalf("complete template parts = %#v", value)
+	}
+	if value := patterns["literal"]; value.ID == "" || len(value.Arguments) != 1 ||
+		value.Arguments[0].Kind != programindex.PatternLiteralString ||
+		value.Arguments[0].Value != longLiteral {
+		t.Fatalf("complete literal = %#v", value)
+	}
+	if value := patterns[longSelector]; value.ID == "" || value.Selector != longSelector {
+		t.Fatalf("complete selector = %#v", value)
 	}
 }
 
@@ -440,7 +877,7 @@ app = Whatever()
 	}
 }
 
-func TestBuildDoesNotPersistSignatureOrDecoratorLiterals(t *testing.T) {
+func TestBuildOmitsSignatureLiteralsButRetainsDecoratorArguments(t *testing.T) {
 	repository := pythonCorpus(t, map[string]string{
 		"pyproject.toml": `[project]
 name = "literal-safety"
@@ -483,8 +920,6 @@ class Store(Generic["CLASS_BASE_LITERAL"]):
 		t.Fatalf("Encode: %v", err)
 	}
 	for _, literal := range []string{
-		"PRIVATE_ROUTE_LITERAL",
-		"DECORATOR_TOKEN_LITERAL",
 		"DEFAULT_SECRET_LITERAL",
 		"ANNOTATION_LITERAL",
 		"KEY_LITERAL",
@@ -494,6 +929,11 @@ class Store(Generic["CLASS_BASE_LITERAL"]):
 	} {
 		if strings.Contains(string(wire), literal) {
 			t.Fatalf("persistent program index contains source literal %q", literal)
+		}
+	}
+	for _, literal := range []string{"PRIVATE_ROUTE_LITERAL", "DECORATOR_TOKEN_LITERAL"} {
+		if !strings.Contains(string(wire), literal) {
+			t.Fatalf("neutral decorator pattern lost literal argument %q", literal)
 		}
 	}
 }
@@ -602,6 +1042,111 @@ func TestLimitedBufferDrainsAndReportsOverflow(t *testing.T) {
 	}
 	if buffer.String() != "abcd" || !buffer.Exceeded() {
 		t.Fatalf("limited buffer = %q exceeded=%t, want capped drained buffer", buffer.String(), buffer.Exceeded())
+	}
+}
+
+func TestSelectedTargetReadsCompleteModulePastFormerLocalLimit(t *testing.T) {
+	const formerModuleLimit = 2 << 20
+	largeSource := "# " + strings.Repeat("x", formerModuleLimit+1) + "\n"
+	repository := pythonCorpus(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "large-module"
+version = "1.0.0"
+`,
+		"large_module/__init__.py": largeSource,
+	})
+	catalog, err := pythontarget.DiscoverWithOptions(context.Background(), repository, pythontarget.Options{
+		MaxFileBytes:  corpus.MaxReadBytes,
+		MaxTotalBytes: corpus.MaxReadBytes,
+	})
+	if err != nil {
+		t.Fatalf("DiscoverWithOptions: %v", err)
+	}
+	var target pythontarget.Target
+	for _, candidate := range catalog.Entries {
+		if candidate.Kind == pythontarget.KindLibrary {
+			target = candidate
+			break
+		}
+	}
+	if target.Ref == "" {
+		t.Fatal("large library target not discovered")
+	}
+
+	sentinel := errors.New("request inspected")
+	_, err = buildMany(context.Background(), repository, []pythontarget.Target{target}, func(_ context.Context, request parserRequest) (parserResponse, error) {
+		for _, source := range request.Sources {
+			if source.Path != "large_module/__init__.py" {
+				continue
+			}
+			decoded, decodeErr := base64.StdEncoding.DecodeString(source.Content)
+			if decodeErr != nil {
+				t.Fatalf("DecodeString: %v", decodeErr)
+			}
+			if string(decoded) != largeSource {
+				t.Fatalf("parser source bytes = %d, want complete %d", len(decoded), len(largeSource))
+			}
+			return parserResponse{}, sentinel
+		}
+		t.Fatal("large source was not sent to parser")
+		return parserResponse{}, sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("buildMany error = %v, want inspection sentinel", err)
+	}
+}
+
+func TestParserTransportAndStructuralCollectionsHaveNoLocalCaps(t *testing.T) {
+	for _, forbidden := range []string{
+		"MAX_OBJECTS", "MAX_RELATIONS", "object limit exceeded", "relation limit exceeded",
+	} {
+		if strings.Contains(parserHelper, forbidden) {
+			t.Fatalf("embedded parser still contains local structural cap %q", forbidden)
+		}
+	}
+
+	const formerInjectedThreshold = 4
+	encoded := append(
+		bytes.Repeat([]byte(" "), formerInjectedThreshold+1),
+		[]byte(`{"python_version":"3.14.0","views":[{"objects":[],"relations":[]}]}`)...,
+	)
+	response, err := decodeParserResponse(encoded)
+	if err != nil {
+		t.Fatalf("decodeParserResponse past former injected threshold: %v", err)
+	}
+	if len(response.Views) != 1 {
+		t.Fatalf("parser views = %d, want 1", len(response.Views))
+	}
+
+	var source strings.Builder
+	for index := 0; index < formerInjectedThreshold+2; index++ {
+		if index+1 < formerInjectedThreshold+2 {
+			_, _ = fmt.Fprintf(&source, "def f%d():\n    return f%d()\n\n", index, index+1)
+		} else {
+			_, _ = fmt.Fprintf(&source, "def f%d():\n    return %d\n", index, index)
+		}
+	}
+	parsed, err := runParser(context.Background(), parserRequest{
+		Sources: []parserSource{{
+			Path: "many.py", Content: base64.StdEncoding.EncodeToString([]byte(source.String())),
+		}},
+		Views: []parserView{{
+			Files: []parserFile{{
+				SourceRef: "module:many", Path: "many.py", Name: "many",
+			}},
+			Packages: []parserPackage{},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("runParser generated collection: %v", err)
+	}
+	if len(parsed.Views) != 1 ||
+		len(parsed.Views[0].Objects) <= formerInjectedThreshold ||
+		len(parsed.Views[0].Relations) <= formerInjectedThreshold {
+		t.Fatalf(
+			"generated parser collections were not retained beyond injected threshold %d: %#v",
+			formerInjectedThreshold, parsed.Views,
+		)
 	}
 }
 
@@ -1088,6 +1633,17 @@ func assertExternalCallExpression(
 		}
 	}
 	t.Fatalf("external call to %q lost source expression %q", canonical, expression)
+}
+
+func assertPythonPublicIdentity(t *testing.T, object programindex.Object, display string) {
+	t.Helper()
+	for _, identity := range object.SymbolLinkIdentities {
+		if identity.Domain == "python_public_symbol_v1" && identity.Display == display &&
+			strings.HasPrefix(identity.Key, "symbol-link-") {
+			return
+		}
+	}
+	t.Fatalf("object %q lacks Python public identity %q: %#v", object.Name, display, object.SymbolLinkIdentities)
 }
 
 func unresolvedFrom(

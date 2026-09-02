@@ -2,94 +2,24 @@
   "version": 1,
   "entries": [
     {
-      "path": "internal/activityentrypoint/prompts/classifier.md",
+      "path": "internal/documentationreduce/merge_prompt.md",
       "status": "active",
-      "owner": "activityentrypoint",
-      "stage": "activity_entrypoint_selection",
+      "owner": "documentationreduce",
+      "stage": "documentation_reduction_merge",
       "role": "system",
-      "embed_source": "internal/activityentrypoint/prompt.go",
-      "embed_pattern": "prompts/classifier.md",
-      "embed_variable": "classifierPromptFile"
+      "embed_source": "internal/documentationreduce/run.go",
+      "embed_pattern": "merge_prompt.md",
+      "embed_variable": "mergePrompt"
     },
     {
-      "path": "internal/activitysurface/prompt.md",
-      "status": "dormant",
-      "owner": "activitysurface",
-      "stage": "activity_surface_classification",
+      "path": "internal/documentationreduce/prompt.md",
+      "status": "active",
+      "owner": "documentationreduce",
+      "stage": "documentation_reduction",
       "role": "system",
-      "embed_source": "internal/activitysurface/activitysurface.go",
+      "embed_source": "internal/documentationreduce/run.go",
       "embed_pattern": "prompt.md",
-      "embed_variable": "promptText"
-    },
-    {
-      "path": "internal/coremap/prompts/baseline.md",
-      "status": "active",
-      "owner": "coremap",
-      "stage": "core_map_baseline",
-      "role": "system",
-      "embed_source": "internal/coremap/prompt.go",
-      "embed_pattern": "prompts/baseline.md",
-      "embed_variable": "baselinePromptFile"
-    },
-    {
-      "path": "internal/coremap/prompts/group.md",
-      "status": "active",
-      "owner": "coremap",
-      "stage": "core_map_orientation_grouping",
-      "role": "system",
-      "embed_source": "internal/coremap/prompt.go",
-      "embed_pattern": "prompts/group.md",
-      "embed_variable": "groupPromptFile"
-    },
-    {
-      "path": "internal/coremap/prompts/reduce.md",
-      "status": "active",
-      "owner": "coremap",
-      "stage": "core_map_reduction",
-      "role": "system",
-      "embed_source": "internal/coremap/prompt.go",
-      "embed_pattern": "prompts/reduce.md",
-      "embed_variable": "reducePromptFile"
-    },
-    {
-      "path": "internal/coremap/prompts/refined.md",
-      "status": "active",
-      "owner": "coremap",
-      "stage": "core_map_refinement",
-      "role": "system",
-      "embed_source": "internal/coremap/prompt.go",
-      "embed_pattern": "prompts/refined.md",
-      "embed_variable": "refinedPromptFile"
-    },
-    {
-      "path": "internal/cubemap/prompts/entrypoints.md",
-      "status": "dormant",
-      "owner": "cubemap",
-      "stage": "cube_map_entrypoint_selection",
-      "role": "system",
-      "embed_source": "internal/cubemap/pipeline.go",
-      "embed_pattern": "prompts/entrypoints.md",
-      "embed_variable": "entrypointPrompt"
-    },
-    {
-      "path": "internal/cubemap/prompts/integration-symbols.md",
-      "status": "dormant",
-      "owner": "cubemap",
-      "stage": "cube_map_integration_symbol_selection",
-      "role": "system",
-      "embed_source": "internal/cubemap/pipeline.go",
-      "embed_pattern": "prompts/integration-symbols.md",
-      "embed_variable": "integrationSymbolsPrompt"
-    },
-    {
-      "path": "internal/cubemap/prompts/surface-core-effects.md",
-      "status": "dormant",
-      "owner": "cubemap",
-      "stage": "cube_map_surface_core_effect_binding",
-      "role": "system",
-      "embed_source": "internal/cubemap/surface_core_effect_binder.go",
-      "embed_pattern": "prompts/surface-core-effects.md",
-      "embed_variable": "surfaceCoreEffectsPrompt"
+      "embed_variable": "sourcePrompt"
     },
     {
       "path": "internal/experiments/clientrecipe/h2_prompt.md",
@@ -102,34 +32,44 @@
       "embed_variable": "h2Prompt"
     },
     {
-      "path": "internal/integrationdependency/prompts/classifier.md",
+      "path": "internal/groupmatching/prompt.md",
       "status": "active",
-      "owner": "integrationdependency",
-      "stage": "integration_dependency_observed_classification",
+      "owner": "groupmatching",
+      "stage": "cross_target_group_matching",
       "role": "system",
-      "embed_source": "internal/integrationdependency/classifier.go",
-      "embed_pattern": "prompts/classifier.md",
-      "embed_variable": "observedPrompt"
+      "embed_source": "internal/groupmatching/run.go",
+      "embed_pattern": "prompt.md",
+      "embed_variable": "promptText"
     },
     {
-      "path": "internal/integrationdependency/prompts/classifier_with_declarations.md",
+      "path": "internal/orientation/prompt.md",
       "status": "active",
-      "owner": "integrationdependency",
-      "stage": "integration_dependency_declaration_classification",
+      "owner": "orientation",
+      "stage": "orientation",
       "role": "system",
-      "embed_source": "internal/integrationdependency/classifier.go",
-      "embed_pattern": "prompts/classifier_with_declarations.md",
-      "embed_variable": "declarationPrompt"
+      "embed_source": "internal/orientation/run.go",
+      "embed_pattern": "prompt.md",
+      "embed_variable": "promptText"
     },
     {
-      "path": "internal/integrationusage/prompts/classifier.md",
+      "path": "internal/programcategorization/prompt.md",
       "status": "active",
-      "owner": "integrationusage",
-      "stage": "integration_usage_classification",
+      "owner": "programcategorization",
+      "stage": "program_element_categorization",
       "role": "system",
-      "embed_source": "internal/integrationusage/classifier.go",
-      "embed_pattern": "prompts/classifier.md",
-      "embed_variable": "prompt"
+      "embed_source": "internal/programcategorization/run.go",
+      "embed_pattern": "prompt.md",
+      "embed_variable": "promptText"
+    },
+    {
+      "path": "internal/programgrouping/prompt.md",
+      "status": "active",
+      "owner": "programgrouping",
+      "stage": "program_grouping_and_merge",
+      "role": "system",
+      "embed_source": "internal/programgrouping/run.go",
+      "embed_pattern": "prompt.md",
+      "embed_variable": "promptText"
     },
     {
       "path": "internal/readmetargetscout/prompts/system.md",
@@ -152,34 +92,24 @@
       "embed_variable": "promptUserShapeFile"
     },
     {
-      "path": "internal/runtimeportfolio/prompts/map.md",
+      "path": "internal/targetportfolio/prompts/default_system.md",
       "status": "active",
-      "owner": "runtimeportfolio",
-      "stage": "runtime_portfolio_map",
+      "owner": "targetportfolio",
+      "stage": "target_portfolio_selection",
       "role": "system",
-      "embed_source": "internal/runtimeportfolio/cube.go",
-      "embed_pattern": "prompts/map.md",
-      "embed_variable": "mapPrompt"
+      "embed_source": "internal/targetportfolio/prompt_text.go",
+      "embed_pattern": "prompts/default_system.md",
+      "embed_variable": "defaultPromptSystemFile"
     },
     {
-      "path": "internal/runtimeportfolio/prompts/reduce.md",
+      "path": "internal/targetportfolio/prompts/default_user.md",
       "status": "active",
-      "owner": "runtimeportfolio",
-      "stage": "runtime_portfolio_reduce",
-      "role": "system",
-      "embed_source": "internal/runtimeportfolio/cube.go",
-      "embed_pattern": "prompts/reduce.md",
-      "embed_variable": "reducePrompt"
-    },
-    {
-      "path": "internal/runtimeportfolio/prompts/system.md",
-      "status": "active",
-      "owner": "runtimeportfolio",
-      "stage": "runtime_portfolio_composition",
-      "role": "system",
-      "embed_source": "internal/runtimeportfolio/cube.go",
-      "embed_pattern": "prompts/system.md",
-      "embed_variable": "systemPrompt"
+      "owner": "targetportfolio",
+      "stage": "target_portfolio_selection",
+      "role": "user",
+      "embed_source": "internal/targetportfolio/prompt_text.go",
+      "embed_pattern": "prompts/default_user.md",
+      "embed_variable": "defaultPromptUserShapeFile"
     },
     {
       "path": "internal/targetportfolio/prompts/system.md",
@@ -198,26 +128,6 @@
       "stage": "target_portfolio_selection",
       "role": "user",
       "embed_source": "internal/targetportfolio/prompt_text.go",
-      "embed_pattern": "prompts/user.md",
-      "embed_variable": "promptUserShapeFile"
-    },
-    {
-      "path": "internal/targetviewchoice/prompts/system.md",
-      "status": "active",
-      "owner": "targetviewchoice",
-      "stage": "target_view_choice",
-      "role": "system",
-      "embed_source": "internal/targetviewchoice/prompt_text.go",
-      "embed_pattern": "prompts/system.md",
-      "embed_variable": "promptSystemFile"
-    },
-    {
-      "path": "internal/targetviewchoice/prompts/user.md",
-      "status": "active",
-      "owner": "targetviewchoice",
-      "stage": "target_view_choice",
-      "role": "user",
-      "embed_source": "internal/targetviewchoice/prompt_text.go",
       "embed_pattern": "prompts/user.md",
       "embed_variable": "promptUserShapeFile"
     }

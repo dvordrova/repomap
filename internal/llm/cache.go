@@ -14,10 +14,16 @@ const (
 	// CacheDirectoryName is the single accepted-response cache owned by the
 	// shared model executor. The ordinary `repomap cache clear` command removes
 	// this directory as one explicit persistent cache target.
-	CacheDirectoryName  = ".llm-cache"
-	cacheDirectoryName  = CacheDirectoryName
-	cacheRecordVersion  = 1
-	maxCacheRecordBytes = 32 * 1024 * 1024
+	CacheDirectoryName = ".llm-cache"
+	cacheDirectoryName = CacheDirectoryName
+	cacheRecordVersion = 1
+	// A record stores no prepared request or semantic state. Its only variable
+	// binary field is one accepted response, base64-expanded by JSON from the
+	// transport-owned 16 MiB ProviderResponseByteLimit. The remaining schema is
+	// fixed-size hashes, closed enums, booleans, and machine integers, so this
+	// ceiling is derived headroom for every response the executor can accept;
+	// it is not a second semantic-response limit.
+	maxCacheRecordBytes = SemanticRecordByteLimit
 )
 
 type acceptedCacheRecord struct {

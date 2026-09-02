@@ -3,12 +3,10 @@
 package pythontarget
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"path"
 	"sort"
 	"strings"
@@ -21,21 +19,9 @@ const (
 	CatalogVersion        = 3
 	TargetVersion         = 3
 	TargetIdentityVersion = 3
-	ArtifactFilename      = "python-target-catalog.json"
-	MaxArtifactBytes      = 64 << 20
-
-	maxCatalogTargets      = 2048
-	maxModuleScopes        = 2048
-	maxSourceRoots         = 64
-	maxTargetRoots         = 16
-	maxPackages            = 4096
-	maxModules             = 20000
-	maxProjectedModules    = 100000
-	maxBasis               = 128
-	maxSourceRefs          = maxTargetRoots
-	maxOmissions           = 4096
-	maxLabelBytes          = 256
-	maxSourceIdentityBytes = 1024
+	// AdvisoryCatalogBytes is a diagnostic usual size for the complete sealed
+	// in-memory target catalog. Crossing it never narrows or rejects targets.
+	AdvisoryCatalogBytes = 64 << 20
 )
 
 type Kind string
@@ -146,7 +132,7 @@ type Basis struct {
 	Label  string        `json:"label,omitempty"`
 }
 
-// Omission is a typed, bounded reason why local facts could not establish
+// Omission is a typed reason why local facts could not establish
 // an exact target. It makes partial discovery explicit without promoting a
 // guess into the catalog.
 type Omission struct {
@@ -187,6 +173,18 @@ type Catalog struct {
 	Omissions    []Omission    `json:"omissions,omitempty"`
 }
 
+// Snapshot returns a fully consumer-owned copy of one exact Python target.
+func (target Target) Snapshot() Target {
+	copyTarget := target
+	copyTarget.SourceRoots = append([]string(nil), target.SourceRoots...)
+	copyTarget.SourceRefs = append([]corpus.FileID(nil), target.SourceRefs...)
+	copyTarget.Modules = append([]Module(nil), target.Modules...)
+	copyTarget.Roots = append([]Root(nil), target.Roots...)
+	copyTarget.Packages = append([]Package(nil), target.Packages...)
+	copyTarget.Basis = append([]Basis(nil), target.Basis...)
+	return copyTarget
+}
+
 func (target Target) Validate() error {
 	if target.Version != TargetVersion || !strings.HasPrefix(target.Ref, "pyt-") ||
 		!strings.HasPrefix(target.IdentityRef, "pyti-") {
@@ -205,7 +203,7 @@ func (target Target) Validate() error {
 	if err := validateRepoDir(target.ProjectDir); err != nil {
 		return fmt.Errorf("python target: project directory: %w", err)
 	}
-	if len(target.SourceRoots) == 0 || len(target.SourceRoots) > maxSourceRoots ||
+	if len(target.SourceRoots) == 0 ||
 		!sort.StringsAreSorted(target.SourceRoots) || hasDuplicateStrings(target.SourceRoots) {
 		return fmt.Errorf("python target: source roots are not canonical")
 	}
@@ -217,7 +215,7 @@ func (target Target) Validate() error {
 			return fmt.Errorf("python target: source root %q escapes project", sourceRoot)
 		}
 	}
-	if len(target.Modules) == 0 || len(target.Modules) > maxModules {
+	if len(target.Modules) == 0 {
 		return fmt.Errorf("python target: invalid module inventory")
 	}
 	if err := validateModules(target.Modules); err != nil {
@@ -231,7 +229,7 @@ func (target Target) Validate() error {
 			return fmt.Errorf("python target: module %q is outside source roots", module.Name)
 		}
 	}
-	if len(target.Basis) == 0 || len(target.Basis) > maxBasis {
+	if len(target.Basis) == 0 {
 		return fmt.Errorf("python target: invalid basis inventory")
 	}
 	if err := validateBasis(target.Basis); err != nil {
@@ -257,7 +255,7 @@ func (target Target) Validate() error {
 
 	switch target.Kind {
 	case KindExecutable:
-		if len(target.Roots) == 0 || len(target.Roots) > maxTargetRoots || len(target.Packages) != 0 {
+		if len(target.Roots) == 0 || len(target.Packages) != 0 {
 			return fmt.Errorf("python target: executable requires exact roots and no package inventory")
 		}
 		if err := validateRoots(target.Roots); err != nil {
@@ -267,7 +265,7 @@ func (target Target) Validate() error {
 			return err
 		}
 	case KindLibrary:
-		if len(target.Roots) != 0 || len(target.Packages) == 0 || len(target.Packages) > maxPackages {
+		if len(target.Roots) != 0 || len(target.Packages) == 0 {
 			return fmt.Errorf("python target: library requires packages and no execution roots")
 		}
 		if err := validatePackages(target.Packages); err != nil {
@@ -293,9 +291,7 @@ func (target Target) Validate() error {
 }
 
 func (catalog Catalog) Validate() error {
-	if catalog.Version != CatalogVersion || !strings.HasPrefix(catalog.Ref, "pytc-") ||
-		len(catalog.Entries) > maxCatalogTargets || len(catalog.ModuleScopes) > maxModuleScopes ||
-		len(catalog.Omissions) > maxOmissions {
+	if catalog.Version != CatalogVersion || !strings.HasPrefix(catalog.Ref, "pytc-") {
 		return fmt.Errorf("python target catalog: invalid identity")
 	}
 	if (len(catalog.Omissions) == 0 && catalog.Coverage != CoverageComplete) ||
@@ -310,12 +306,7 @@ func (catalog Catalog) Validate() error {
 	}
 	seenRefs := make(map[string]struct{}, len(catalog.Entries))
 	seenSelectors := make(map[string]struct{}, len(catalog.Entries))
-	projectedModules := 0
 	for index, target := range catalog.Entries {
-		projectedModules += len(target.Modules)
-		if projectedModules > maxProjectedModules {
-			return fmt.Errorf("python target catalog: projected module limit exceeded")
-		}
 		if err := target.Validate(); err != nil {
 			return fmt.Errorf("python target catalog: entry %d: %w", index, err)
 		}
@@ -344,61 +335,13 @@ func (catalog Catalog) Validate() error {
 	return nil
 }
 
-func (catalog Catalog) CanonicalJSON() ([]byte, error) {
-	if err := catalog.Validate(); err != nil {
-		return nil, err
-	}
-	encoded, err := json.Marshal(catalog)
-	if err != nil {
-		return nil, err
-	}
-	if len(encoded) == 0 || len(encoded) > MaxArtifactBytes {
-		return nil, fmt.Errorf("python target catalog: artifact is %d bytes, limit is %d", len(encoded), MaxArtifactBytes)
-	}
-	return encoded, nil
-}
-
-// DecodeCatalog accepts only the unique canonical persisted representation.
-func DecodeCatalog(encoded []byte) (Catalog, error) {
-	if len(encoded) == 0 || len(encoded) > MaxArtifactBytes {
-		return Catalog{}, fmt.Errorf("python target catalog: invalid artifact size")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(encoded))
-	decoder.DisallowUnknownFields()
-	var catalog Catalog
-	if err := decoder.Decode(&catalog); err != nil {
-		return Catalog{}, fmt.Errorf("python target catalog: decode artifact: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return Catalog{}, fmt.Errorf("python target catalog: trailing JSON value")
-		}
-		return Catalog{}, fmt.Errorf("python target catalog: trailing artifact data: %w", err)
-	}
-	canonical, err := catalog.CanonicalJSON()
-	if err != nil {
-		return Catalog{}, err
-	}
-	if !bytes.Equal(encoded, canonical) {
-		return Catalog{}, fmt.Errorf("python target catalog: artifact is not canonical")
-	}
-	return catalog, nil
-}
-
 func (catalog Catalog) Snapshot() Catalog {
 	copyCatalog := catalog
 	copyCatalog.Omissions = append([]Omission(nil), catalog.Omissions...)
 	copyCatalog.ModuleScopes = cloneModuleScopes(catalog.ModuleScopes)
 	copyCatalog.Entries = make([]Target, len(catalog.Entries))
 	for index, target := range catalog.Entries {
-		copyCatalog.Entries[index] = target
-		copyCatalog.Entries[index].SourceRoots = append([]string(nil), target.SourceRoots...)
-		copyCatalog.Entries[index].SourceRefs = append([]corpus.FileID(nil), target.SourceRefs...)
-		copyCatalog.Entries[index].Modules = append([]Module(nil), target.Modules...)
-		copyCatalog.Entries[index].Roots = append([]Root(nil), target.Roots...)
-		copyCatalog.Entries[index].Packages = append([]Package(nil), target.Packages...)
-		copyCatalog.Entries[index].Basis = append([]Basis(nil), target.Basis...)
+		copyCatalog.Entries[index] = target.Snapshot()
 	}
 	return copyCatalog
 }
@@ -485,9 +428,6 @@ func (catalog Catalog) ResolveSelector(selector string) (Target, bool, error) {
 // provide exact local facts; this constructor derives every target and catalog
 // identity instead of accepting copied refs or anchors as authority.
 func NewCatalog(entries []Target, omissions []Omission) (Catalog, error) {
-	if len(entries) > maxCatalogTargets || len(omissions) > maxOmissions {
-		return Catalog{}, fmt.Errorf("python target catalog: input bound exceeded")
-	}
 	ownedEntries := make([]Target, 0, len(entries))
 	for _, input := range entries {
 		target := input
@@ -512,9 +452,6 @@ func NewCatalog(entries []Target, omissions []Omission) (Catalog, error) {
 }
 
 func newCatalogWithModuleScopes(entries []Target, scopes []ModuleScope, omissions []Omission) (Catalog, error) {
-	if len(entries) > maxCatalogTargets || len(scopes) > maxModuleScopes || len(omissions) > maxOmissions {
-		return Catalog{}, fmt.Errorf("python target catalog: input bound exceeded")
-	}
 	ownedEntries := make([]Target, 0, len(entries))
 	for _, input := range entries {
 		target := cloneTarget(input)
@@ -531,7 +468,6 @@ func newCatalogWithModuleScopes(entries []Target, scopes []ModuleScope, omission
 func validateModuleScopes(values []ModuleScope) error {
 	seenRefs := make(map[string]struct{}, len(values))
 	seenProjects := make(map[string]struct{}, len(values))
-	projectedModules := 0
 	for index, scope := range values {
 		if index > 0 && !moduleScopeLess(values[index-1], scope) {
 			return fmt.Errorf("python target catalog: module scopes are not canonical")
@@ -539,7 +475,7 @@ func validateModuleScopes(values []ModuleScope) error {
 		if err := validateRepoDir(scope.ProjectDir); err != nil {
 			return fmt.Errorf("python target catalog: module scope %d project: %w", index, err)
 		}
-		if len(scope.SourceRoots) == 0 || len(scope.SourceRoots) > maxSourceRoots ||
+		if len(scope.SourceRoots) == 0 ||
 			!sort.StringsAreSorted(scope.SourceRoots) || hasDuplicateStrings(scope.SourceRoots) {
 			return fmt.Errorf("python target catalog: module scope %d source roots are not canonical", index)
 		}
@@ -548,15 +484,11 @@ func validateModuleScopes(values []ModuleScope) error {
 				return fmt.Errorf("python target catalog: module scope %d has invalid source root %q", index, sourceRoot)
 			}
 		}
-		if len(scope.Modules) == 0 || len(scope.Modules) > maxModules {
+		if len(scope.Modules) == 0 {
 			return fmt.Errorf("python target catalog: module scope %d has invalid module inventory", index)
 		}
 		if err := validateModules(scope.Modules); err != nil {
 			return fmt.Errorf("python target catalog: module scope %d: %w", index, err)
-		}
-		projectedModules += len(scope.Modules)
-		if projectedModules > maxProjectedModules {
-			return fmt.Errorf("python target catalog: module-scope projection limit exceeded")
 		}
 		for _, module := range scope.Modules {
 			if !pathWithin(scope.ProjectDir, module.Path) ||
@@ -757,12 +689,12 @@ func validateBasis(values []Basis) error {
 }
 
 func validLabel(value string) bool {
-	return value != "" && len(value) <= maxLabelBytes && strings.TrimSpace(value) == value &&
+	return value != "" && strings.TrimSpace(value) == value &&
 		!strings.ContainsAny(value, "\x00\r\n")
 }
 
 func validateSourceRefs(values []corpus.FileID) error {
-	if len(values) == 0 || len(values) > maxSourceRefs {
+	if len(values) == 0 {
 		return fmt.Errorf("python target: invalid source ref inventory")
 	}
 	for index, value := range values {
@@ -1241,7 +1173,7 @@ func validModule(value string) bool {
 func validQualname(value string) bool { return validModule(value) }
 
 func validSourceIdentity(value string) bool {
-	return value != "" && len(value) <= maxSourceIdentityBytes && strings.TrimSpace(value) == value &&
+	return value != "" && strings.TrimSpace(value) == value &&
 		!strings.ContainsAny(value, "\x00\r\n")
 }
 

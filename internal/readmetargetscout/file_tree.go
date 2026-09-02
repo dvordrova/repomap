@@ -12,8 +12,6 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 )
 
-const maxFileTreeDepth = 64
-
 // FileTree is a lossless prefix-compressed FileID/path dictionary. JSON object
 // keys are repository path components. A string leaf is the exact FileID of
 // the file named by that key; an object value is the child directory. Joining
@@ -68,17 +66,14 @@ func (entry *FileTreeEntry) UnmarshalJSON(raw []byte) error {
 }
 
 func buildFileTree(entries []corpus.Entry) (FileTree, error) {
-	if len(entries) == 0 || len(entries) > corpus.MaxFiles {
+	if len(entries) == 0 {
 		return nil, fmt.Errorf("README file tree: invalid corpus entry count")
 	}
 	tree := make(FileTree)
 	for _, entry := range entries {
 		components := strings.Split(entry.Path, "/")
-		if len(components) == 0 || len(components) > maxFileTreeDepth {
-			return nil, fmt.Errorf(
-				"README file tree: path %q exceeds the %d-component depth bound",
-				entry.Path, maxFileTreeDepth,
-			)
+		if len(components) == 0 {
+			return nil, fmt.Errorf("README file tree: path %q has no components", entry.Path)
 		}
 		directory := tree
 		for _, component := range components[:len(components)-1] {
@@ -108,12 +103,12 @@ func buildFileTree(entries []corpus.Entry) (FileTree, error) {
 }
 
 func fileTreeDictionary(tree FileTree, fileCount int) (map[corpus.FileID]string, error) {
-	if len(tree) == 0 || fileCount < 1 || fileCount > corpus.MaxFiles {
+	if len(tree) == 0 || fileCount < 1 {
 		return nil, fmt.Errorf("README file tree: invalid root or file count")
 	}
 	result := make(map[corpus.FileID]string, fileCount)
 	paths := make(map[string]struct{}, fileCount)
-	if err := walkFileTree(tree, "", 0, result, paths); err != nil {
+	if err := walkFileTree(tree, "", result, paths); err != nil {
 		return nil, err
 	}
 	if len(result) != fileCount || len(paths) != fileCount {
@@ -128,12 +123,11 @@ func fileTreeDictionary(tree FileTree, fileCount int) (map[corpus.FileID]string,
 func walkFileTree(
 	tree FileTree,
 	parent string,
-	depth int,
 	result map[corpus.FileID]string,
 	paths map[string]struct{},
 ) error {
-	if len(tree) == 0 || depth >= maxFileTreeDepth {
-		return fmt.Errorf("README file tree: empty directory or depth bound exceeded")
+	if len(tree) == 0 {
+		return fmt.Errorf("README file tree: empty directory")
 	}
 	names := make([]string, 0, len(tree))
 	for name := range tree {
@@ -163,7 +157,7 @@ func walkFileTree(
 			result[entry.FileRef] = filePath
 			paths[filePath] = struct{}{}
 		case entry.FileRef == "" && len(entry.Directory) > 0:
-			if err := walkFileTree(entry.Directory, filePath, depth+1, result, paths); err != nil {
+			if err := walkFileTree(entry.Directory, filePath, result, paths); err != nil {
 				return err
 			}
 		default:

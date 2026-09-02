@@ -17,6 +17,9 @@ import (
 type Options struct {
 	RepoPath string
 	GoTarget string
+	// BuildTags is one canonical run-wide Go build selection shared with the
+	// later typed-program load.
+	BuildTags []string
 	// GoModuleDir is a pre-load routing hint derived only from an exact typed
 	// --target candidate key. ScopeAnalysisTarget still resolves that complete
 	// key against the resulting catalog before it becomes authority.
@@ -31,7 +34,7 @@ type Options struct {
 	// activating the Go adapter. A requested Go load is otherwise mandatory and
 	// fail-closed.
 	SkipGoFacts bool
-	// AutoGoTarget allows the bounded tracked-file platform preflight to
+	// AutoGoTarget allows the exhaustive tracked-file platform preflight to
 	// replace the caller's host target with one unique strong production
 	// alternative before Go facts are loaded. Callers must leave this false
 	// whenever --force-platform or either standard Go target environment
@@ -45,14 +48,15 @@ type Snapshot struct {
 	RepoName string `json:"repo_name"`
 	// DisplayName is local presentation copy only. Provider bundles deliberately
 	// omit it because temporary checkout names can contain task labels.
-	DisplayName       string                        `json:"display_name,omitempty"`
-	GoFacts           *gofacts.Facts                `json:"go_facts,omitempty"`
-	AnalysisTarget    *analysistarget.Target        `json:"analysis_target,omitempty"`
-	FilesConsidered   int                           `json:"files_considered"`
-	FilteredFiles     []string                      `json:"-"`
-	GoTargetAdvisory  *GoTargetAdvisory             `json:"-"`
-	GoTargetSelection *GoTargetSelection            `json:"-"`
-	TargetCatalog     *analysistarget.TargetCatalog `json:"-"`
+	DisplayName            string                        `json:"display_name,omitempty"`
+	GoFacts                *gofacts.Facts                `json:"go_facts,omitempty"`
+	AnalysisTarget         *analysistarget.Target        `json:"analysis_target,omitempty"`
+	FilesConsidered        int                           `json:"files_considered"`
+	FilteredFiles          []string                      `json:"-"`
+	GoTargetAdvisory       *GoTargetAdvisory             `json:"-"`
+	GoTargetSelection      *GoTargetSelection            `json:"-"`
+	TargetCatalog          *analysistarget.TargetCatalog `json:"-"`
+	repositoryScaleMetrics repositoryScaleMetrics
 }
 
 var skipDirPrefixes = []string{
@@ -143,8 +147,11 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("restore resolved Go target: %w", err)
 	}
-	goModExists, goModuleName := goModuleMetadata(repositoryCorpus, analysisFiles)
-	advisory := detectGoTargetAdvisory(opts.RepoPath, analysisFiles, currentTarget)
+	goModExists, goModuleName, goModuleBytes := goModuleMetadata(repositoryCorpus, analysisFiles)
+	advisory, scaleMetrics := detectGoTargetAdvisory(opts.RepoPath, analysisFiles, currentTarget)
+	repoName, manifestBytes := repositoryIdentity(opts.RepoPath, repositoryCorpus, goModuleName)
+	scaleMetrics.goModuleBytes = goModuleBytes
+	scaleMetrics.manifestBytes = manifestBytes
 	var goTargetSelection *GoTargetSelection
 	if opts.AutoGoTarget && advisory != nil {
 		selected, selectErr := newAutomaticGoTargetSelection(currentTarget, *advisory)
@@ -155,12 +162,13 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 		opts.GoTarget = selected.Target
 	}
 	s := Snapshot{
-		RepoName:          repositoryIdentity(opts.RepoPath, filtered, goModuleName),
-		DisplayName:       repositoryDisplayName(opts.RepoPath),
-		FilesConsidered:   len(filtered),
-		FilteredFiles:     analysisFiles,
-		GoTargetAdvisory:  advisory,
-		GoTargetSelection: goTargetSelection,
+		RepoName:               repoName,
+		DisplayName:            repositoryDisplayName(opts.RepoPath),
+		FilesConsidered:        len(filtered),
+		FilteredFiles:          analysisFiles,
+		GoTargetAdvisory:       advisory,
+		GoTargetSelection:      goTargetSelection,
+		repositoryScaleMetrics: scaleMetrics,
 	}
 
 	if !opts.SkipGoFacts && (goModExists || hasGoFiles(analysisFiles)) {
@@ -168,7 +176,10 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 			ctx,
 			opts.RepoPath,
 			analysisFiles,
-			gofacts.LoadOptions{GoTarget: opts.GoTarget, ModuleDir: opts.GoModuleDir},
+			gofacts.LoadOptions{
+				GoTarget: opts.GoTarget, BuildTags: opts.BuildTags,
+				ModuleDir: opts.GoModuleDir,
+			},
 		)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -262,21 +273,21 @@ func (s Snapshot) JSON() ([]byte, error) {
 	return json.MarshalIndent(s, "", "  ")
 }
 
-func goModuleMetadata(repositoryCorpus *corpus.Corpus, files []string) (bool, string) {
+func goModuleMetadata(repositoryCorpus *corpus.Corpus, files []string) (bool, string, int) {
 	for _, f := range files {
 		if f == "go.mod" {
 			fileID, ok := repositoryCorpus.ID(f)
 			if !ok {
-				return false, ""
+				return false, "", 0
 			}
-			content, readErr := repositoryCorpus.ReadFile(fileID, 1024*1024)
-			if readErr == nil && !content.Truncated {
-				return true, parseModuleName(content.Bytes)
+			content, readErr := repositoryCorpus.ReadFileAll(fileID)
+			if readErr == nil {
+				return true, parseModuleName(content.Bytes), len(content.Bytes)
 			}
-			return false, ""
+			return false, "", 0
 		}
 	}
-	return false, ""
+	return false, "", 0
 }
 
 func parseModuleName(goMod []byte) string {

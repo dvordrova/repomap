@@ -19,12 +19,12 @@ const (
 	robustnessGoldenVersion = 2
 	h1FreezeReceiptVersion  = 2
 
-	historicalH1FreezeSourceSHA256 = "aaa0429ce8aadd59379cf16f53c0ce50a313b06c74c68e3634a618056ce0089d"
-	historicalRobustnessRawSHA256  = "e58ea688939ff6d9359b1f7c2a0b81b3dbd9257fd49cdeed64329cdf11131a91"
-	historicalAuthorityRawSHA256   = "abe4154e01a194f7bce5000381a2bf1ced0183ee15b747fbe4d09ff858dbe4c2"
-	historicalH0RawSHA256          = "307e95b718797227c75399fe50302d44fb8c6807b2f45e609ab74e8567d3739e"
-	historicalH1RawSHA256          = "70f9f99a4ddffb0cbe1c42cc827bd9723c9556fedf4644a9a540530a6ec97500"
-	historicalEvaluationRawSHA256  = "9707bb02615f50c4aa60b3245ecc7492fcacb2ac2764a310e55a25ba23d7cb3c"
+	historicalH1FreezeSourceSHA256 = "c81b2dafe112358068a05e4dd3c6ac595195713c226260ef8c2214511013b7c2"
+	historicalRobustnessRawSHA256  = "6c0a9d763c4fcb8923a49bec16b3352213bc0b69bb58544ba77505eed608df47"
+	historicalAuthorityRawSHA256   = "6a3b9fb6721674c7c8e6e6c26ed63e5c2c8ea84d0e96ecaacf0b6f355272031f"
+	historicalH0RawSHA256          = "140d7f786af7c26c26a21ccfd040dc3beb8040231baec20cfecf2780dee09f66"
+	historicalH1RawSHA256          = "c58f7b97475b5e37cacf64388a793defd9d1ab314a2d2ab09781b56e46459b06"
+	historicalEvaluationRawSHA256  = "3ce0e102056b170f42eec1de5626b172071cf0f4f069981007b418003a7799b4"
 	historicalOracleRawSHA256      = "5474c64528cded2087fa485045d60072818ca6c63c5e9d13756ddaf287a35b40"
 )
 

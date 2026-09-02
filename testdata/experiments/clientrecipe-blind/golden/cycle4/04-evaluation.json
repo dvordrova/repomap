@@ -3,9 +3,9 @@
   "status": "TERMINAL_ERROR",
   "stage": "h1_extraction",
   "reason": "h1_extraction_failed",
-  "frozen_h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
-  "frozen_receipt_sha256": "934a4b8b7f316f44e6b83172dc8e56c6ed56dd7d8be36c5d9670c9a68fb25f8d",
-  "fixture_receipt_sha256": "9544c7391106299e56739930308444101e8308480d5783fb18b6502de8a0a15c",
+  "frozen_h1_sha256": "ec8f7411ad09e3c68f5b8deabd30ea71753fb7774b2f6806c5b482c5a5c4cb01",
+  "frozen_receipt_sha256": "014affc25712645629fc2e65aad1d98dc997ab9a12ae52a1c8c503b974395c30",
+  "fixture_receipt_sha256": "85b1469f522bc23d40a8697db7767f71dadb2b05f78549fc170fa1a299b62700",
   "candidate_oracle_isolation": true,
   "authority_artifact": true,
   "h0_artifact": true,
@@ -16,5 +16,5 @@
   "production_readiness": "NOT_READY",
   "frequency_reducer": "IGNORED_REJECTED",
   "verdict": "FAIL",
-  "sha256": "e582923cfcdf048c5617dc0d92638c86aec5548ce8fafa5520167440ae3e50fb"
+  "sha256": "f61485237b3d83befc19b6fb75fffbe30ceed5e98b14d20c5140928e2be15a4b"
 }

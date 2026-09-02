@@ -19,11 +19,32 @@ type AnalysisTargetSSAUnavailableError struct {
 	Package       string
 	ExpectedRoots int
 	ResolvedRoots int
-	// Diagnostic is one already-bounded, repository-relative package
-	// diagnostic from the selected target's local dependency closure. It
-	// explains a concrete build-input failure without weakening the fatal
+	// Diagnostic is one complete, repository-relative package diagnostic from
+	// the selected target's local dependency closure. It explains a concrete
+	// build-input failure without weakening the fatal
 	// target contract or attempting repository setup.
 	Diagnostic *PackageDiagnostic
+	// programCoverage is a process-local snapshot of the complete preparation
+	// diagnostics and phase metrics. It is intentionally not public state on
+	// the error: callers can only receive an independently owned snapshot.
+	programCoverage *ProgramCoverage
+}
+
+// ProgramCoverageSnapshot returns complete process-local preparation coverage
+// when this error was raised while validating the loaded target packages.
+func (e *AnalysisTargetSSAUnavailableError) ProgramCoverageSnapshot() (ProgramCoverage, bool) {
+	if e == nil || e.programCoverage == nil {
+		return ProgramCoverage{}, false
+	}
+	return e.programCoverage.Snapshot(), true
+}
+
+func (e *AnalysisTargetSSAUnavailableError) bindProgramCoverage(coverage ProgramCoverage) {
+	if e == nil {
+		return
+	}
+	snapshot := coverage.Snapshot()
+	e.programCoverage = &snapshot
 }
 
 func (e *AnalysisTargetSSAUnavailableError) Error() string {

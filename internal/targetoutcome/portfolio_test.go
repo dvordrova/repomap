@@ -3,6 +3,7 @@ package targetoutcome
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -120,6 +121,13 @@ func TestSelectedTargetIdentityBindsEveryPublicField(t *testing.T) {
 		testSelectedTarget(t, LanguageGroupGo, ScopeExecutable, "cmd/worker", "go-api"),
 		testSelectedTarget(t, LanguageGroupGo, ScopeExecutable, "cmd/api", "go-worker"),
 	}
+	changedLanguages, err := NewSelectedTargetWithLanguages(
+		LanguageGroupGo, []string{"go", "synthetic-go"}, ScopeExecutable, "cmd/api", "go-api",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	variants = append(variants, changedLanguages)
 	for _, variant := range variants {
 		if variant.ID == base.ID {
 			t.Fatalf("selected target identity ignored changed field: base=%#v variant=%#v", base, variant)
@@ -140,7 +148,7 @@ func TestSelectedTargetIdentityBindsEveryPublicField(t *testing.T) {
 		display  string
 		selector string
 	}{
-		{LanguageGroup("ruby"), ScopeExecutable, "app", "app"},
+		{LanguageGroup(" ruby"), ScopeExecutable, "app", "app"},
 		{LanguageGroupGo, ScopeKind("tool"), "app", "app"},
 		{LanguageGroupGo, ScopeExecutable, " app", "app"},
 		{LanguageGroupGo, ScopeExecutable, "app", "app\nsecret"},
@@ -148,6 +156,47 @@ func TestSelectedTargetIdentityBindsEveryPublicField(t *testing.T) {
 		if _, err := NewSelectedTarget(input.language, input.scope, input.display, input.selector); err == nil {
 			t.Fatalf("NewSelectedTarget accepted invalid input %#v", input)
 		}
+	}
+}
+
+func TestSelectedTargetAcceptsSyntheticAdapterDeclaredLanguages(t *testing.T) {
+	selected, err := NewSelectedTargetWithLanguages(
+		LanguageGroup("jvm"), []string{"kotlin", "java", "scala", "java"},
+		ScopePackage, "server", "jvm:server",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := selected.AllowedProgramLanguages, []string{"java", "kotlin", "scala"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("allowed languages = %#v, want %#v", got, want)
+	}
+	javaTarget := testProgramTarget(t, "java", "application", "server", "jvm:server", "src/Main.java", "f-java")
+	if _, err := NewAnalyzed(selected, javaTarget, "run-java"); err != nil {
+		t.Fatalf("NewAnalyzed Java: %v", err)
+	}
+	rubyTarget := testProgramTarget(t, "ruby", "application", "server", "jvm:server", "src/main.rb", "f-ruby")
+	if _, err := NewAnalyzed(selected, rubyTarget, "run-ruby"); err == nil || !strings.Contains(err.Error(), "language mismatch") {
+		t.Fatalf("unadvertised language error = %v", err)
+	}
+
+	copy := selected.Snapshot()
+	copy.AllowedProgramLanguages[0] = "changed"
+	if selected.AllowedProgramLanguages[0] == "changed" {
+		t.Fatal("constructor aliases caller allowed-language storage")
+	}
+}
+
+func TestSelectedTargetAcceptsAdvisoryThresholdPlusOneExactText(t *testing.T) {
+	longText := strings.Repeat("x", programindex.MaxTextBytes+1)
+	selected, err := NewSelectedTarget(LanguageGroupGo, ScopeExecutable, longText, longText)
+	if err != nil {
+		t.Fatalf("NewSelectedTarget beyond advisory text threshold: %v", err)
+	}
+	if selected.DisplayName != longText || selected.Selector != longText {
+		t.Fatal("selected target did not retain exact long text")
+	}
+	if err := selected.Validate(); err != nil {
+		t.Fatalf("Validate beyond advisory text threshold: %v", err)
 	}
 }
 
@@ -245,9 +294,62 @@ func TestPortfolioRejectsIncompleteDuplicateOrUnsafeBindings(t *testing.T) {
 		!strings.Contains(err.Error(), "duplicate analyzed run id") {
 		t.Fatalf("duplicate run Build error = %v", err)
 	}
-	tooMany := make([]Outcome, MaxOutcomes+1)
-	if _, err := Build(firstSelected.ID, tooMany); err == nil || !strings.Contains(err.Error(), "outcome bound") {
-		t.Fatalf("over-bound Build error = %v", err)
+}
+
+func TestBuildRetainsOutcomesBeyondFormerLocalThreshold(t *testing.T) {
+	outcomes := make([]Outcome, MaxOutcomes+1)
+	for position := range outcomes {
+		selected, err := NewSelectedTarget(
+			LanguageGroupGo, ScopeExecutable,
+			fmt.Sprintf("target-%05d", position), fmt.Sprintf("go:target-%05d", position),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outcomes[position], err = NewNotAnalyzed(selected, StageProgramAnalysis, ReasonSourceNotAnalyzable)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	portfolio, err := Build(outcomes[0].SelectedTarget.ID, outcomes)
+	if err != nil {
+		t.Fatalf("Build rejected complete outcome inventory: %v", err)
+	}
+	if len(portfolio.Outcomes) != len(outcomes) {
+		t.Fatalf("retained outcomes = %d, want %d", len(portfolio.Outcomes), len(outcomes))
+	}
+	warnings := ScaleWarnings(portfolio)
+	if len(warnings) == 0 || warnings[0].Kind != ScaleWarningOutcomes || warnings[0].MaximumRetained != len(outcomes) {
+		t.Fatalf("scale warnings = %#v", warnings)
+	}
+}
+
+func TestSelectedTargetRetainsAllowedLanguagesBeyondFormerLocalThreshold(t *testing.T) {
+	languages := make([]string, MaxAllowedProgramLanguages+1)
+	for position := range languages {
+		languages[position] = fmt.Sprintf("language-%02d", position)
+	}
+	selected, err := NewSelectedTargetWithLanguages(
+		LanguageGroupGo, languages, ScopeExecutable, "multi-language", "multi-language:target",
+	)
+	if err != nil {
+		t.Fatalf("NewSelectedTargetWithLanguages rejected complete language set: %v", err)
+	}
+	outcome, err := NewNotAnalyzed(selected, StageProgramAnalysis, ReasonSourceNotAnalyzable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portfolio, err := Build(selected.ID, []Outcome{outcome})
+	if err != nil {
+		t.Fatal(err)
+	}
+	warnings := ScaleWarnings(portfolio)
+	found := false
+	for _, warning := range warnings {
+		found = found || warning.Kind == ScaleWarningAllowedLanguages && warning.MaximumRetained == len(languages)
+	}
+	if !found {
+		t.Fatalf("scale warnings = %#v", warnings)
 	}
 }
 
@@ -289,9 +391,46 @@ func TestPortfolioCodecRejectsTamperAndNonCanonicalBytes(t *testing.T) {
 	if _, err := Decode(uppercaseBytes); err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
 		t.Fatalf("uppercase seal Decode error = %v", err)
 	}
-	if _, err := Decode(bytes.Repeat([]byte{'x'}, MaxArtifactBytes+1)); err == nil ||
-		!strings.Contains(err.Error(), "artifact size") {
-		t.Fatalf("over-bound Decode error = %v", err)
+}
+
+func TestDecodeMigratesCanonicalV1Portfolio(t *testing.T) {
+	programTarget := testProgramTarget(t, "typescript", "application", "web", "jsts:web", "src/main.ts", "f-ts")
+	selected := legacySelectedTarget{
+		LanguageGroup: LanguageGroupJavaScriptTypeScript,
+		ScopeKind:     ScopePackage, DisplayName: "web", Selector: "jsts:web",
+	}
+	selected.ID = legacySelectedTargetID(selected)
+	legacy := legacyPortfolio{
+		Version: 1, DefaultSelectedTargetID: selected.ID,
+		Outcomes: []legacyOutcome{{
+			SelectedTarget: selected, State: StateAnalyzed,
+			Analysis: &Analysis{ProgramTarget: programTarget, RunID: "run-jsts"},
+		}},
+	}
+	var err error
+	legacy.SHA256, err = legacyPortfolioDigest(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := Decode(raw)
+	if err != nil {
+		t.Fatalf("Decode v1: %v", err)
+	}
+	if migrated.Version != Version || len(migrated.Outcomes) != 1 ||
+		!reflect.DeepEqual(migrated.Outcomes[0].SelectedTarget.AllowedProgramLanguages, []string{"javascript", "typescript"}) ||
+		migrated.DefaultSelectedTargetID != migrated.Outcomes[0].SelectedTarget.ID ||
+		migrated.DefaultSelectedTargetID == legacy.DefaultSelectedTargetID {
+		t.Fatalf("migrated v1 portfolio = %#v", migrated)
+	}
+
+	tampered := append([]byte(nil), raw...)
+	tampered = []byte(strings.Replace(string(tampered), "run-jsts", "run-jsxx", 1))
+	if _, err := Decode(tampered); err == nil || !strings.Contains(err.Error(), "v1 sha256 mismatch") {
+		t.Fatalf("tampered v1 error = %v", err)
 	}
 }
 

@@ -136,24 +136,17 @@ app = Whatever()
 	if restored, ok, err := resolver.ResolveSelector(got.Selector); err != nil || !ok || !reflect.DeepEqual(restored, got) {
 		t.Fatalf("exact selector did not restore module view: %#v, %v, %v", restored, ok, err)
 	}
-	wire, err := catalog.CanonicalJSON()
-	if err != nil {
-		t.Fatal(err)
+	owned := catalog.Snapshot()
+	if restored, ok, err := owned.ResolveSelector(got.Selector); err != nil || !ok || !reflect.DeepEqual(restored, got) {
+		t.Fatalf("catalog snapshot did not restore module view: %#v, %v, %v", restored, ok, err)
 	}
-	decoded, err := DecodeCatalog(wire)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if restored, ok, err := decoded.ResolveSelector(got.Selector); err != nil || !ok || !reflect.DeepEqual(restored, got) {
-		t.Fatalf("catalog selector did not restore persisted module view: %#v, %v, %v", restored, ok, err)
-	}
-	restoredResolver, err := NewFileTargetResolver(repository, decoded.Snapshot())
+	restoredResolver, err := NewFileTargetResolver(repository, owned)
 	if err != nil {
 		t.Fatal(err)
 	}
 	restoredAfterPersistence, err := restoredResolver.ResolveOne(appRef)
-	if err != nil || !reflect.DeepEqual(restoredAfterPersistence, got) || !decoded.OwnsTarget(restoredAfterPersistence) {
-		t.Fatalf("persisted module-scope authority changed target: %#v, %v", restoredAfterPersistence, err)
+	if err != nil || !reflect.DeepEqual(restoredAfterPersistence, got) || !owned.OwnsTarget(restoredAfterPersistence) {
+		t.Fatalf("snapshotted module-scope authority changed target: %#v, %v", restoredAfterPersistence, err)
 	}
 	moduleView := got
 	manifestRef := resolverFileID(t, repository, "pyproject.toml")

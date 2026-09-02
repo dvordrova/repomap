@@ -25,6 +25,45 @@ const PublicationReasonArtifactsInvalid PublicationReason = "artifacts_missing_o
 type PublicationAssessment struct {
 	Status  PublicationReadiness `json:"status"`
 	Reasons []PublicationReason  `json:"reasons,omitempty"`
+
+	scaleWarnings       []ReportInputScaleWarning
+	targetScaleWarnings []TargetReportScaleWarning
+}
+
+// ScaleWarnings returns transient measurements captured by the successful
+// live publication transaction. Recovery assessment deliberately does not
+// reread or decompress the report merely to reconstruct diagnostics.
+func (assessment PublicationAssessment) ScaleWarnings() []ReportInputScaleWarning {
+	return append([]ReportInputScaleWarning(nil), assessment.scaleWarnings...)
+}
+
+// TargetScaleWarnings returns exact target-bound measurements captured during
+// this live publication transaction, including measurements completed before
+// a later sibling or atomic-install failure.
+func (assessment PublicationAssessment) TargetScaleWarnings() []TargetReportScaleWarning {
+	return append([]TargetReportScaleWarning(nil), assessment.targetScaleWarnings...)
+}
+
+func completedPublicationAssessment(
+	publicationErr error,
+	scaleWarnings []ReportInputScaleWarning,
+	targetScaleWarnings []TargetReportScaleWarning,
+) PublicationAssessment {
+	if publicationErr != nil {
+		assessment := FailedPublicationAssessment()
+		assessment.scaleWarnings = append([]ReportInputScaleWarning(nil), scaleWarnings...)
+		assessment.targetScaleWarnings = append(
+			[]TargetReportScaleWarning(nil), targetScaleWarnings...,
+		)
+		return assessment
+	}
+	return PublicationAssessment{
+		Status:        PublicationReady,
+		scaleWarnings: append([]ReportInputScaleWarning(nil), scaleWarnings...),
+		targetScaleWarnings: append(
+			[]TargetReportScaleWarning(nil), targetScaleWarnings...,
+		),
+	}
 }
 
 // AssessRunPublication uses ReadRunManifest as the one semantic and artifact
@@ -40,16 +79,10 @@ func AssessRunPublication(runDir string) (PublicationAssessment, error) {
 	if err != nil {
 		return FailedPublicationAssessment(), fmt.Errorf("read report: %w", err)
 	}
-	bundleIdentity, err := inspectPublishedHTML(
+	if err := inspectPublishedHTML(
 		filepath.Join(runDir, "report.html"), reportJSON, manifest,
-	)
-	if err != nil {
+	); err != nil {
 		return FailedPublicationAssessment(), err
-	}
-	if bundleIdentity != nil {
-		if err := verifyPublishedStandaloneTargetAuthority(runDir, manifest, *bundleIdentity); err != nil {
-			return FailedPublicationAssessment(), err
-		}
 	}
 	return PublicationAssessment{Status: PublicationReady}, nil
 }
@@ -63,84 +96,31 @@ func FailedPublicationAssessment() PublicationAssessment {
 	}
 }
 
-func verifyPublishedStandaloneTargetAuthority(
-	runDir string,
-	manifest RunManifest,
-	identity StandaloneTargetBundleIdentity,
-) error {
-	if identity.ProgramPagePortfolioSHA256 != "" {
-		portfolio, err := manifestStandaloneProgramPageAuthority(runDir, manifest)
-		if err != nil {
-			return err
-		}
-		if identity.ProgramPagePortfolioSHA256 != portfolio.SHA256 {
-			return fmt.Errorf("published standalone program page bundle does not match manifest-bound authority")
-		}
-		return nil
-	}
-	container, portfolio, err := manifestStandaloneTargetAuthority(runDir, manifest)
-	if err != nil {
-		return err
-	}
-	if identity.TargetRunContainerSHA256 != container.SHA256 ||
-		identity.TargetPagePortfolioSHA256 != portfolio.SHA256 {
-		return fmt.Errorf("published standalone target bundle does not match manifest-bound authority")
-	}
-	return nil
-}
-
+// inspectPublishedHTML proves the one physical page on disk was rendered from
+// the run's own verified report data.
 func inspectPublishedHTML(
 	path string,
 	reportJSON []byte,
 	manifest RunManifest,
-) (*StandaloneTargetBundleIdentity, error) {
+) error {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return nil, fmt.Errorf("published report html: %w", err)
+		return fmt.Errorf("published report html: %w", err)
 	}
 	if !info.Mode().IsRegular() || info.Size() <= 0 {
-		return nil, fmt.Errorf("published report html is not a bounded regular file")
-	}
-	bundleIdentity, found, bundleErr := InspectStandaloneTargetBundleHTML(path)
-	if found {
-		if bundleErr != nil {
-			return nil, fmt.Errorf("published standalone target bundle: %w", bundleErr)
-		}
-		if bundleIdentity.ProgramPagePortfolioSHA256 != "" {
-			bundleIdentity, bundleErr = VerifyStandaloneProgramPageBundleHTML(
-				path, filepath.Dir(path), manifest,
-			)
-		} else {
-			bundleIdentity, bundleErr = VerifyStandaloneTargetBundleHTML(
-				path, filepath.Dir(path), manifest,
-			)
-		}
-		if bundleErr != nil {
-			return nil, fmt.Errorf("published standalone target bundle authority: %w", bundleErr)
-		}
-		return &bundleIdentity, nil
-	}
-	if bundleErr != nil {
-		return nil, fmt.Errorf("inspect published report html: %w", bundleErr)
-	}
-	if info.Size() > MaxOrdinaryReportHTMLBytes {
-		return nil, fmt.Errorf("published report html exceeds the size limit")
+		return fmt.Errorf("published report html is not a bounded regular file")
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read published report html: %w", err)
+		return fmt.Errorf("read published report html: %w", err)
 	}
-	var navigation *TargetNavigationPortfolio
-	if manifest.MaterialInputs.TargetPagePortfolioSHA256 != "" ||
-		manifest.MaterialInputs.ProgramPagePortfolioSHA256 != "" {
-		navigation, err = LoadManifestTargetNavigation(filepath.Dir(path), manifest)
-		if err != nil {
-			return nil, fmt.Errorf("restore published target navigation: %w", err)
-		}
+	navigation, err := LoadManifestTargetNavigation(filepath.Dir(path), manifest)
+	if err != nil {
+		return fmt.Errorf("restore published target navigation: %w", err)
 	}
 	artifactsDir, err := filepath.Abs(filepath.Dir(path))
 	if err != nil {
-		return nil, fmt.Errorf("resolve published report directory: %w", err)
+		return fmt.Errorf("resolve published report directory: %w", err)
 	}
 	authority := OrdinaryReportHTMLAuthority{
 		TargetNavigation: navigation,
@@ -150,7 +130,7 @@ func inspectPublishedHTML(
 		RepositoryRoot:   manifest.RepositoryState.Identity,
 	}
 	if err := VerifyOrdinaryReportHTMLPayload(raw, reportJSON, authority); err != nil {
-		return nil, fmt.Errorf("verify published report html payload: %w", err)
+		return fmt.Errorf("verify published report html payload: %w", err)
 	}
-	return nil, nil
+	return nil
 }

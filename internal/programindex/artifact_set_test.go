@@ -13,39 +13,15 @@ func TestArtifactPersistenceAndInventoryHelpers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if got := ArtifactFilenameForTarget("ignored", true); got != ArtifactFilename {
-		t.Fatalf("default filename = %q, want %q", got, ArtifactFilename)
-	}
-	if got, want := ArtifactFilenameForTarget("pyt-example", false), "program-index.pyt-example.json"; got != want {
-		t.Fatalf("target filename = %q, want %q", got, want)
-	}
-
-	set, err := BuildArtifactSet(index.Target.ID, []Index{index}, []string{ArtifactFilename})
+	set, err := BuildArtifactSet(index)
 	if err != nil {
 		t.Fatalf("BuildArtifactSet: %v", err)
 	}
-	exact, err := ExactIndexByTargetID([]Index{index}, index.Target.ID)
-	if err != nil {
-		t.Fatalf("ExactIndexByTargetID: %v", err)
-	}
-	if exact.SHA256 != index.SHA256 {
-		t.Fatal("exact index selection changed authority")
-	}
-	exact.Objects[0].Name = "consumer-owned"
-	if index.Objects[0].Name == "consumer-owned" {
-		t.Fatal("exact index selection aliases the source inventory")
-	}
-	if _, err := ExactIndexByTargetID(nil, index.Target.ID); err == nil ||
-		!strings.Contains(err.Error(), "no exact default target") {
-		t.Fatalf("missing ExactIndexByTargetID error = %v", err)
-	}
-	if _, err := ExactIndexByTargetID([]Index{index, index}, index.Target.ID); err == nil ||
-		!strings.Contains(err.Error(), "repeats default target") {
-		t.Fatalf("duplicate ExactIndexByTargetID error = %v", err)
-	}
-	if _, err := BuildArtifactSet(index.Target.ID, []Index{index}, nil); err == nil ||
-		!strings.Contains(err.Error(), "inventories do not match") {
-		t.Fatalf("mismatched BuildArtifactSet error = %v", err)
+	if len(set.Entries) != 1 || set.DefaultTargetID != index.Target.ID ||
+		set.Entries[0].TargetID != index.Target.ID ||
+		set.Entries[0].Filename != ArtifactFilename ||
+		set.Entries[0].IndexSHA256 != index.SHA256 {
+		t.Fatalf("page-local ProgramIndex set = %#v", set)
 	}
 
 	runDir := t.TempDir()
@@ -79,11 +55,9 @@ func TestArtifactPersistenceAndInventoryHelpers(t *testing.T) {
 	}
 }
 
-func TestArtifactSetCanonicalizesMultipleSelectedViewsAndSeals(t *testing.T) {
+func TestArtifactSetSealsOnePageLocalBinding(t *testing.T) {
 	set, err := NewArtifactSet("python-target-api", []ArtifactSetEntry{
-		{TargetID: "python-target-worker", Filename: "program-index.worker.json", IndexSHA256: strings.Repeat("c", 64)},
 		{TargetID: "python-target-api", Filename: ArtifactFilename, IndexSHA256: strings.Repeat("a", 64)},
-		{TargetID: "python-target-cli", Filename: "program-index.cli.json", IndexSHA256: strings.Repeat("b", 64)},
 	})
 	if err != nil {
 		t.Fatalf("NewArtifactSet: %v", err)
@@ -92,20 +66,10 @@ func TestArtifactSetCanonicalizesMultipleSelectedViewsAndSeals(t *testing.T) {
 		t.Fatalf("Validate: %v", err)
 	}
 	if got, want := set.Entries[0].TargetID, "python-target-api"; got != want {
-		t.Fatalf("first target = %q, want %q", got, want)
+		t.Fatalf("page-local target = %q, want %q", got, want)
 	}
 	if got := len(set.SHA256); got != 64 {
 		t.Fatalf("sha256 length = %d", got)
-	}
-
-	reordered, err := NewArtifactSet("python-target-api", []ArtifactSetEntry{
-		set.Entries[2], set.Entries[0], set.Entries[1],
-	})
-	if err != nil {
-		t.Fatalf("NewArtifactSet reordered: %v", err)
-	}
-	if !reflect.DeepEqual(reordered, set) {
-		t.Fatalf("input order changed canonical set:\nfirst=%#v\nsecond=%#v", set, reordered)
 	}
 
 	snapshot := set.Snapshot()
@@ -144,14 +108,13 @@ func TestArtifactSetCodecIsStrictAndValidatesSeal(t *testing.T) {
 		t.Fatal("DecodeArtifactSet accepted an unknown field")
 	}
 	tampered := []byte(strings.Replace(string(encoded), ArtifactFilename, "changed.json", 1))
-	if _, err := DecodeArtifactSet(tampered); err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
+	if _, err := DecodeArtifactSet(tampered); err == nil || !strings.Contains(err.Error(), "not canonical") {
 		t.Fatalf("tampered DecodeArtifactSet error = %v", err)
 	}
 }
 
 func TestArtifactSetRejectsInvalidBindings(t *testing.T) {
 	shaA := strings.Repeat("a", 64)
-	shaB := strings.Repeat("b", 64)
 	tests := []struct {
 		name      string
 		defaultID string
@@ -160,26 +123,27 @@ func TestArtifactSetRejectsInvalidBindings(t *testing.T) {
 	}{
 		{
 			name: "default is absent", defaultID: "target-missing",
-			entries: []ArtifactSetEntry{{TargetID: "target-a", Filename: ArtifactFilename, IndexSHA256: shaA}},
-			want:    "default target",
+			entries: []ArtifactSetEntry{{
+				TargetID: "target-a", Filename: ArtifactFilename, IndexSHA256: shaA,
+			}},
+			want: "default target",
 		},
 		{
-			name: "duplicate target", defaultID: "target-a",
+			name: "multiple entries", defaultID: "target-a",
 			entries: []ArtifactSetEntry{
 				{TargetID: "target-a", Filename: ArtifactFilename, IndexSHA256: shaA},
-				{TargetID: "target-a", Filename: "program-index.a.json", IndexSHA256: shaA},
+				{TargetID: "target-b", Filename: ArtifactFilename, IndexSHA256: strings.Repeat("b", 64)},
 			},
-			want: "not canonical",
+			want: "exactly one page-local entry",
 		},
 		{
-			name: "unsafe parent filename", defaultID: "target-a",
-			entries: []ArtifactSetEntry{{TargetID: "target-a", Filename: "../program-index.json", IndexSHA256: shaA}},
-			want:    "invalid entry",
+			name: "empty entries", defaultID: "target-a",
+			want: "exactly one page-local entry",
 		},
 		{
-			name: "unsafe windows filename", defaultID: "target-a",
-			entries: []ArtifactSetEntry{{TargetID: "target-a", Filename: `scope\\program-index.json`, IndexSHA256: shaA}},
-			want:    "invalid entry",
+			name: "non-canonical target filename", defaultID: "target-a",
+			entries: []ArtifactSetEntry{{TargetID: "target-a", Filename: "program-index.target-a.json", IndexSHA256: shaA}},
+			want:    "not canonical",
 		},
 		{
 			name: "invalid index digest", defaultID: "target-a",
@@ -187,12 +151,11 @@ func TestArtifactSetRejectsInvalidBindings(t *testing.T) {
 			want:    "invalid entry",
 		},
 		{
-			name: "same filename cannot represent two sealed targets", defaultID: "target-a",
-			entries: []ArtifactSetEntry{
-				{TargetID: "target-a", Filename: ArtifactFilename, IndexSHA256: shaA},
-				{TargetID: "target-b", Filename: ArtifactFilename, IndexSHA256: shaB},
-			},
-			want: "more than one target",
+			name: "legacy JSTS filename is never canonical", defaultID: "target-a",
+			entries: []ArtifactSetEntry{{
+				TargetID: "target-a", Filename: "program-index-jsts.json", IndexSHA256: shaA,
+			}},
+			want: "not canonical",
 		},
 	}
 	for _, test := range tests {
@@ -207,22 +170,52 @@ func TestArtifactSetRejectsInvalidBindings(t *testing.T) {
 
 func TestArtifactSetValidateRejectsNonCanonicalAndTamperedContent(t *testing.T) {
 	set, err := NewArtifactSet("target-a", []ArtifactSetEntry{
-		{TargetID: "target-b", Filename: "program-index.b.json", IndexSHA256: strings.Repeat("b", 64)},
 		{TargetID: "target-a", Filename: ArtifactFilename, IndexSHA256: strings.Repeat("a", 64)},
 	})
 	if err != nil {
 		t.Fatalf("NewArtifactSet: %v", err)
 	}
 
-	nonCanonical := set.Snapshot()
-	nonCanonical.Entries[0], nonCanonical.Entries[1] = nonCanonical.Entries[1], nonCanonical.Entries[0]
-	if err := nonCanonical.Validate(); err == nil || !strings.Contains(err.Error(), "not canonical") {
-		t.Fatalf("non-canonical Validate error = %v", err)
+	wrongTarget := set.Snapshot()
+	wrongTarget.Entries[0].TargetID = "target-b"
+	if err := wrongTarget.Validate(); err == nil || !strings.Contains(err.Error(), "default target") {
+		t.Fatalf("wrong-target Validate error = %v", err)
 	}
 
 	tampered := set.Snapshot()
 	tampered.Entries[0].IndexSHA256 = strings.Repeat("c", 64)
 	if err := tampered.Validate(); err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
 		t.Fatalf("tampered Validate error = %v", err)
+	}
+}
+
+func TestArtifactSetRetainsArtifactBeyondFormerLocalByteThreshold(t *testing.T) {
+	targetID := strings.Repeat("t", AdvisoryArtifactSetBytes+1)
+	set, err := NewArtifactSet(targetID, []ArtifactSetEntry{{
+		TargetID: targetID, Filename: ArtifactFilename, IndexSHA256: strings.Repeat("a", 64),
+	}})
+	if err != nil {
+		t.Fatalf("NewArtifactSet above former byte threshold: %v", err)
+	}
+	encoded, err := EncodeArtifactSet(set)
+	if err != nil {
+		t.Fatalf("EncodeArtifactSet above former byte threshold: %v", err)
+	}
+	if len(encoded) <= AdvisoryArtifactSetBytes {
+		t.Fatalf("fixture artifact = %d bytes", len(encoded))
+	}
+	warnings := ArtifactSetScaleWarnings(set)
+	found := false
+	for _, warning := range warnings {
+		if warning.Kind == ArtifactSetScaleWarningBytes && warning.Retained == len(encoded) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing artifact-byte warning: %#v", warnings)
+	}
+	decoded, err := DecodeArtifactSet(encoded)
+	if err != nil || decoded.SHA256 != set.SHA256 {
+		t.Fatalf("DecodeArtifactSet above former byte threshold: %#v, %v", decoded, err)
 	}
 }

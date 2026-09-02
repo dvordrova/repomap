@@ -2,37 +2,51 @@ package jstsproject
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
-	"os"
+	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/coremap"
-	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/programindex"
-	"github.com/dvordrova/repomap/internal/readmetargetscout"
 )
 
-func TestSealDecodeAndExactProgramIndexProjection(t *testing.T) {
+func TestSealedResultProjectsExactProgramIndexAndDependencies(t *testing.T) {
 	result := minimalResult(t, "javascript")
-	encoded, err := Encode(result)
+	if err := result.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	index, catalog, err := BuildFromResult(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := Decode(encoded)
+	if err := ValidateProgramIndex(result, index); err != nil {
+		t.Fatal(err)
+	}
+	input, err := BuildInputFromResult(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	index, catalog, err := BuildFromResult(decoded)
+	fromCommonSeam, err := programindex.New(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateProgramIndex(decoded, index); err != nil {
+	if !reflect.DeepEqual(index, fromCommonSeam) {
+		t.Fatal("common ProgramIndex sealing changed the JavaScript/TypeScript adapter projection")
+	}
+	fromDependencySeam, err := BuildDependenciesFromResult(result)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(catalog, fromDependencySeam) {
+		t.Fatal("common dependency projection changed the JavaScript/TypeScript adapter authority")
+	}
+	enriched, err := programindex.Enrich(index, strings.Repeat("d", 64), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateProgramIndex(result, enriched); err != nil {
+		t.Fatalf("enriched structural projection: %v", err)
 	}
 	if index.Target.Kind != "library" || len(index.Target.Seeds) != 0 {
 		t.Fatalf("tool/library target promoted: %#v", index.Target)
@@ -43,27 +57,95 @@ func TestSealDecodeAndExactProgramIndexProjection(t *testing.T) {
 
 	tampered := index
 	tampered.Coverage.ObjectsObserved++
-	if err := ValidateProgramIndex(decoded, tampered); err == nil {
+	if err := ValidateProgramIndex(result, tampered); err == nil {
 		t.Fatal("tampered ProgramIndex was accepted")
 	}
 }
 
-func TestDecodeRejectsPreviousJSTSArtifactVersion(t *testing.T) {
-	encoded, err := Encode(minimalResult(t, "typescript"))
+func TestFormerResultSizeIsWarningOnly(t *testing.T) {
+	warnings := scaleWarningsForResultBytes(AdvisoryResultBytes + 1)
+	if len(warnings) != 1 || warnings[0].Kind != ScaleWarningResultBytes ||
+		warnings[0].Retained != AdvisoryResultBytes+1 ||
+		warnings[0].AdvisorySize != AdvisoryResultBytes {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if warnings := scaleWarningsForResultBytes(AdvisoryResultBytes); len(warnings) != 0 {
+		t.Fatalf("threshold warning = %#v", warnings)
+	}
+}
+
+func TestValidateRejectsPreviousJSTSResultVersion(t *testing.T) {
+	result := minimalResult(t, "typescript").Snapshot()
+	result.Version = Version - 1
+	if err := result.Validate(); err == nil || !strings.Contains(err.Error(), "invalid producer identity") {
+		t.Fatalf("previous JSTS result version error = %v", err)
+	}
+}
+
+func TestPackageExportIdentityJoinsTypeScriptAndJavaScriptShardsWithoutChangingResolution(t *testing.T) {
+	destination := minimalResult(t, "typescript").Snapshot()
+	destination.Project.Name = "shared"
+	destination.Project.PackagePath = "shared"
+	serve := Declaration{
+		Ref: "decl:f2:2:1:function:serve", Kind: "function", Name: "serve",
+		QualifiedName: "src/index#serve", Exported: true,
+		Location: Location{Path: destination.Files[0].Path, FileRef: destination.Files[0].FileRef, Line: 2, Column: 1},
+	}
+	destination.Declarations = append(destination.Declarations, serve)
+	destination.Exports = append(destination.Exports, Export{
+		Ref: "export:" + serve.Ref, Kind: "declaration", Name: "serve",
+		DeclarationRef: serve.Ref, Resolution: "exact", Location: serve.Location,
+	})
+	destination = rederiveAndSeal(t, destination)
+	destinationIndex, _, err := BuildFromResult(destination)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var document map[string]any
-	if err := json.Unmarshal(encoded, &document); err != nil {
-		t.Fatal(err)
-	}
-	document["version"] = Version - 1
-	encoded, err = json.Marshal(document)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Decode(encoded); err == nil || !strings.Contains(err.Error(), "invalid producer identity") {
-		t.Fatalf("previous JSTS artifact version error = %v", err)
+	destinationIdentity := identityForSourceRef(t, destinationIndex, serve.Ref, "shared#serve")
+
+	for _, test := range []struct {
+		language   string
+		resolution string
+		want       programindex.Resolution
+	}{
+		{language: "typescript", resolution: "exact", want: programindex.ResolutionExact},
+		{language: "javascript", resolution: "alternatives", want: programindex.ResolutionAlternatives},
+	} {
+		t.Run(test.language, func(t *testing.T) {
+			caller := minimalResult(t, test.language).Snapshot()
+			callable := Declaration{
+				Ref: "decl:f2:2:1:function:caller", Kind: "function", Name: "caller",
+				QualifiedName: "src/index#caller", Exported: true,
+				Location: Location{Path: caller.Files[0].Path, FileRef: caller.Files[0].FileRef, Line: 2, Column: 1},
+			}
+			caller.Declarations = append(caller.Declarations, callable)
+			caller.Calls = append(caller.Calls, Call{
+				Ref: "call:f2:3:1:serve", CallerRef: callable.Ref, Invocation: "call",
+				ExternalPackage: "shared", ExternalExport: "serve", ExternalName: "serve",
+				Expression: "serve", Resolution: test.resolution,
+				PatternsObserved: 1,
+				Location:         Location{Path: caller.Files[0].Path, FileRef: caller.Files[0].FileRef, Line: 3, Column: 1},
+			})
+			caller = rederiveAndSeal(t, caller)
+			index, _, err := BuildFromResult(caller)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var relation programindex.Relation
+			for _, candidate := range index.Relations {
+				if candidate.SourceRef == "program:call:f2:3:1:serve" {
+					relation = candidate
+					break
+				}
+			}
+			if relation.Resolution != test.want || len(relation.ToIDs) != 1 {
+				t.Fatalf("external relation = %#v, want %s", relation, test.want)
+			}
+			identity := identityForObjectID(t, index, relation.ToIDs[0], "shared#serve")
+			if identity.Domain != destinationIdentity.Domain || identity.Key != destinationIdentity.Key {
+				t.Fatalf("cross-shard identity = %#v, destination %#v", identity, destinationIdentity)
+			}
+		})
 	}
 }
 
@@ -87,6 +169,65 @@ func TestReservedJavaScriptPlatformAuthorityCannotBeDeclaredOrImported(t *testin
 			t.Fatalf("reserved import authority error = %v", err)
 		}
 	})
+}
+
+func TestProgramIndexExternalAuthorityPreservesRawLanguageIdentity(t *testing.T) {
+	result := minimalResult(t, "typescript").Snapshot()
+	caller := Declaration{
+		Ref: "decl:f2:2:1:function:caller", Kind: "function", Name: "caller", Exported: true,
+		Location: Location{Path: result.Files[0].Path, FileRef: result.Files[0].FileRef, Line: 2, Column: 1},
+	}
+	result.Declarations = append(result.Declarations, caller)
+	tests := []struct {
+		ref         string
+		packagePath string
+		name        string
+		want        programindex.ExternalAuthorityKind
+	}{
+		{ref: "platform", packagePath: javascriptPlatform, name: "fetch", want: programindex.ExternalAuthorityPlatform},
+		{ref: "node-prefixed", packagePath: "node:crypto", name: "createHash", want: programindex.ExternalAuthorityPlatform},
+		{ref: "node-bare", packagePath: "fs", name: "readFile", want: programindex.ExternalAuthorityPlatform},
+		{ref: "npm", packagePath: "axios", name: "get", want: programindex.ExternalAuthorityPackage},
+	}
+	for position, test := range tests {
+		externalExport := test.name
+		if test.packagePath == javascriptPlatform {
+			externalExport = ""
+		}
+		result.Calls = append(result.Calls, Call{
+			Ref: "call:" + test.ref, CallerRef: caller.Ref, Invocation: "call",
+			ExternalPackage: test.packagePath, ExternalExport: externalExport, ExternalName: test.name,
+			Expression: test.name, Resolution: "exact", PatternsObserved: 1,
+			Location: Location{
+				Path: result.Files[0].Path, FileRef: result.Files[0].FileRef, Line: 3 + position, Column: 1,
+			},
+		})
+	}
+	result = rederiveAndSeal(t, result)
+	index, _, err := BuildFromResult(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectsByID := make(map[string]programindex.Object, len(index.Objects))
+	for _, object := range index.Objects {
+		objectsByID[object.ID] = object
+	}
+	for _, test := range tests {
+		var relation programindex.Relation
+		for _, candidate := range index.Relations {
+			if candidate.SourceRef == "program:call:"+test.ref {
+				relation = candidate
+				break
+			}
+		}
+		if len(relation.ToIDs) != 1 {
+			t.Fatalf("%s relation = %#v", test.ref, relation)
+		}
+		external := objectsByID[relation.ToIDs[0]].External
+		if external == nil || external.AuthorityKind != test.want || external.PackagePath != test.packagePath || external.Name != test.name {
+			t.Fatalf("%s external authority = %#v, want kind=%q raw package=%q", test.ref, external, test.want, test.packagePath)
+		}
+	}
 }
 
 func TestProductSurfaceVariableBecomesBoundObjectSeed(t *testing.T) {
@@ -183,6 +324,65 @@ func TestPackageBinaryCreatesCLIProductAndRuntimeScriptCreatesSeparateSeed(t *te
 	}
 }
 
+func TestScriptSurfaceRetainsEveryExactEntryFile(t *testing.T) {
+	result := minimalResult(t, "typescript").Snapshot()
+	second := File{
+		FileRef: "f4", Path: "src/worker.ts", Language: "typescript", Module: "src/worker",
+		SHA256: strings.Repeat("d", 64),
+	}
+	result.Files = append(result.Files, second)
+	result.Declarations = append(result.Declarations, Declaration{
+		Ref: "module:f4", Kind: "module", Name: "src/worker", QualifiedName: "src/worker",
+		Location: second.location(),
+	})
+	result.SourceSHA256 = sourceDigest(result.Files)
+	result.Project.Scripts = []Script{{
+		Name: "build:all", Kind: "build", EntryFileRefs: []string{"f4", "f2"},
+	}}
+	addScriptSurfaces(&result)
+	sealed := rederiveAndSeal(t, result)
+	if len(sealed.Surfaces) != 1 {
+		t.Fatalf("script surfaces = %#v", sealed.Surfaces)
+	}
+	surface := sealed.Surfaces[0]
+	if !reflect.DeepEqual(surface.EntryRefs, []string{"module:f2", "module:f4"}) ||
+		surface.Location.Path != "src/index.ts" || surface.Location.FileRef != "f2" {
+		t.Fatalf("complete script surface = %#v", surface)
+	}
+	index, _, err := BuildFromResult(sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entrySources := map[string]bool{}
+	for _, object := range index.Objects {
+		if object.SourceRef == "module:f2" || object.SourceRef == "module:f4" {
+			entrySources[object.SourceRef] = true
+		}
+	}
+	if !entrySources["module:f2"] || !entrySources["module:f4"] {
+		t.Fatalf("ProgramIndex lost script entry refs: %#v", entrySources)
+	}
+}
+
+func TestPackageBinaryCommandPastFormerLocalLimitRemainsExactMetadata(t *testing.T) {
+	const formerCommandLimit = 240
+	command := strings.Repeat("a", formerCommandLimit+1)
+	if !validPackageBinaryCommand(command) {
+		t.Fatal("safe package binary command was rejected only because it passed the former local length cap")
+	}
+	if validPackageBinaryCommand(string([]byte{'a', 0xff, 'b'})) {
+		t.Fatal("invalid UTF-8 package binary command was accepted")
+	}
+
+	result := minimalResult(t, "typescript").Snapshot()
+	result.Project.Binaries = []PackageBinary{{Command: command, Path: "bin/sample", FileRef: "f3"}}
+	addPackageBinarySurfaces(&result)
+	sealed := rederiveAndSeal(t, result)
+	if len(sealed.Project.Binaries) != 1 || sealed.Project.Binaries[0].Command != command {
+		t.Fatalf("sealed package binary command lost exact metadata: %#v", sealed.Project.Binaries)
+	}
+}
+
 func TestRuntimeScriptWithoutPackageBinaryRemainsLibraryAndDoesNotSeed(t *testing.T) {
 	result := minimalResult(t, "typescript").Snapshot()
 	result.Project.Scripts = []Script{{Name: "dev", Kind: "runtime", EntryFileRefs: []string{"f2"}}}
@@ -240,15 +440,8 @@ func TestSealOmitsPersistenceSensitiveOptionalSourceMetadata(t *testing.T) {
 	result.Calls = append(result.Calls, Call{
 		Ref: "call:sensitive-test-sentinel", CallerRef: declaration.Ref, CalleeRefs: []string{},
 		Invocation: "call", Expression: `client({api_key: "opaque-provider-value-1234"})`, Resolution: "unresolved",
-		Location: result.Files[0].location(),
-	})
-	result.ProductPaths = append(result.ProductPaths, ProductPath{
-		Ref: "path:sensitive-test-sentinel", Name: "Test path", Outcome: "Test outcome", Frontier: result.Calls[0].Expression,
-		Steps: []PathStep{{
-			Ordinal: 1, Kind: "program_call", Label: result.Calls[0].Expression,
-			SourceRef: result.Calls[0].Ref, TargetRefs: []string{}, Resolution: "unresolved",
-			Authority: "unresolved_frontier", Location: result.Files[0].location(),
-		}},
+		PatternsObserved: 1,
+		Location:         result.Files[0].location(),
 	})
 	sealed, err := Seal(result)
 	if err != nil {
@@ -262,24 +455,78 @@ func TestSealOmitsPersistenceSensitiveOptionalSourceMetadata(t *testing.T) {
 	if len(sealed.Calls) != 1 || sealed.Calls[0].Expression != redactedExpression {
 		t.Fatalf("persistence-sensitive call expression was retained: %#v", sealed.Calls)
 	}
-	if len(sealed.ProductPaths) != 1 || sealed.ProductPaths[0].Steps[0].Label != redactedExpression {
-		t.Fatalf("persistence-sensitive product-path label was retained: %#v", sealed.ProductPaths)
+	if err := sealed.Validate(); err != nil {
+		t.Fatal(err)
 	}
-	if sealed.ProductPaths[0].Frontier != redactedExpression {
-		t.Fatalf("persistence-sensitive product-path frontier was retained: %#v", sealed.ProductPaths)
+	if _, _, err := BuildFromResult(sealed); err != nil {
+		t.Fatal(err)
 	}
-	encoded, err := Encode(sealed)
+}
+
+func TestSealOmitsActualToFormalCandidateWhenItsSourceCallIsRedacted(t *testing.T) {
+	result := minimalResult(t, "typescript").Snapshot()
+	location := result.Files[0].location()
+	callee := Declaration{
+		Ref: "decl:f2:2:1:function:startServer", Kind: "function", Name: "startServer",
+		QualifiedName: "src/index#startServer", Location: location,
+	}
+	caller := Declaration{
+		Ref: "decl:f2:3:1:function:bootstrap", Kind: "function", Name: "bootstrap",
+		QualifiedName: "src/index#bootstrap", Location: location,
+	}
+	result.Declarations = append(result.Declarations, callee, caller)
+	const sensitive = "sk-secret-shaped-provider-output"
+	sourceCall := Call{
+		Ref: "call:sensitive-actual", CallerRef: caller.Ref, CalleeRefs: []string{callee.Ref},
+		Invocation: "call", Expression: `startServer("` + sensitive + `")`, Resolution: "exact",
+		Location: location, PatternsObserved: 1,
+		Pattern: &CallPattern{
+			Selector: "startServer", ReceiverOriginRefs: []string{}, ArgumentsObserved: 1,
+			Arguments: []CallPatternArgument{{
+				Position: 1, Kind: "literal_string", Value: sensitive, Parts: []CallPatternPart{},
+				ObjectRefs: []string{}, ValueCandidates: []CallPatternValueCandidate{},
+			}},
+		},
+	}
+	destinationCall := Call{
+		Ref: "call:dynamic-formal-use", CallerRef: callee.Ref, CalleeRefs: []string{},
+		Invocation: "call", Expression: "app.get", Resolution: "unresolved",
+		Location: location, PatternsObserved: 1,
+		Pattern: &CallPattern{
+			Selector: "get", ReceiverOriginRefs: []string{}, ArgumentsObserved: 1,
+			Arguments: []CallPatternArgument{{
+				Position: 1, Kind: "dynamic", Parts: []CallPatternPart{}, ObjectRefs: []string{},
+				ValueCandidatesObserved: 1,
+				ValueCandidates: []CallPatternValueCandidate{{
+					Kind: "literal_string", Value: sensitive, Parts: []CallPatternPart{}, Resolution: "possible",
+					SourceKind: "actual_argument", SourceCallRef: sourceCall.Ref, SourcePosition: 1,
+				}},
+			}},
+		},
+	}
+	result.Calls = []Call{sourceCall, destinationCall}
+	result.ProgramTargetID = ""
+	result.SHA256 = ""
+	if err := bindProgramTargetIdentity(&result); err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := Seal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Decode(encoded); err != nil {
-		t.Fatal(err)
-	}
-	sensitiveEncoded := bytes.Replace(
-		encoded, []byte(`"sample"`), []byte(`"sk-secret-shaped-provider-output"`), 1,
-	)
-	if _, err := Decode(sensitiveEncoded); err == nil || !strings.Contains(err.Error(), "persistence-sensitive") {
-		t.Fatalf("sensitive encoded artifact error = %v", err)
+	for _, call := range sealed.Calls {
+		switch call.Ref {
+		case sourceCall.Ref:
+			if call.Expression != redactedExpression || call.Pattern != nil {
+				t.Fatalf("sensitive actual source was retained: %#v", call)
+			}
+		case destinationCall.Ref:
+			if call.Pattern == nil || len(call.Pattern.Arguments) != 1 ||
+				call.Pattern.Arguments[0].ValueCandidatesObserved != 0 ||
+				len(call.Pattern.Arguments[0].ValueCandidates) != 0 {
+				t.Fatalf("candidate survived redacted source: %#v", call)
+			}
+		}
 	}
 	if _, _, err := BuildFromResult(sealed); err != nil {
 		t.Fatal(err)
@@ -311,11 +558,7 @@ func TestSealOmitsAbsoluteSiblingTypeSignature(t *testing.T) {
 	if !found {
 		t.Fatalf("sibling-type declaration was dropped: %#v", sealed.Declarations)
 	}
-	encoded, err := Encode(sealed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Decode(encoded); err != nil {
+	if err := sealed.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	index, _, err := BuildFromResult(sealed)
@@ -326,13 +569,106 @@ func TestSealOmitsAbsoluteSiblingTypeSignature(t *testing.T) {
 	for _, object := range index.Objects {
 		if object.SourceRef == declaration.Ref {
 			projected = true
-			if object.Signature != "" || object.Name != declaration.QualifiedName {
+			if object.Signature != "" || object.Name != declaration.Name {
 				t.Fatalf("sibling-type declaration projection = %#v", object)
 			}
 		}
 	}
 	if !projected {
 		t.Fatalf("sibling-type declaration was not projected: %#v", index.Objects)
+	}
+}
+
+func TestProgramIndexUsesPathFreeDisplayNamesWithoutMergingSameNamedDeclarations(t *testing.T) {
+	result := minimalResult(t, "typescript").Snapshot()
+	secondDigest := sha256.Sum256([]byte("export const settings = 2\n"))
+	secondFile := File{
+		FileRef: "f3", Path: "src/other.ts", Language: "typescript", Module: "src/other",
+		SHA256: hex.EncodeToString(secondDigest[:]),
+	}
+	result.Files = append(result.Files, secondFile)
+	result.SourceSHA256 = sourceDigest(result.Files)
+	result.Declarations = append(result.Declarations,
+		Declaration{
+			Ref: "decl:f2:2:1:function:settings", Kind: "function", Name: "settings",
+			QualifiedName: "src/index#settings",
+			Location:      Location{Path: result.Files[0].Path, FileRef: result.Files[0].FileRef, Line: 2, Column: 1},
+		},
+		Declaration{
+			Ref: "module:f3", Kind: "module", Name: "src/other", QualifiedName: "src/other",
+			Location: secondFile.location(),
+		},
+		Declaration{
+			Ref: "decl:f3:2:1:function:settings", Kind: "function", Name: "settings",
+			QualifiedName: "src/other#settings",
+			Location:      Location{Path: secondFile.Path, FileRef: secondFile.FileRef, Line: 2, Column: 1},
+		},
+		Declaration{
+			Ref: "decl:f2:4:1:type:SimulationField", Kind: "type", Name: "SimulationField",
+			QualifiedName: "src/index#SimulationField",
+			Location:      Location{Path: result.Files[0].Path, FileRef: result.Files[0].FileRef, Line: 4, Column: 1},
+		},
+		Declaration{
+			Ref: "decl:f2:5:3:method:animate", Kind: "method", Name: "animate",
+			QualifiedName: "src/index#SimulationField.animate", OwnerRef: "decl:f2:4:1:type:SimulationField",
+			Location: Location{Path: result.Files[0].Path, FileRef: result.Files[0].FileRef, Line: 5, Column: 3},
+		},
+	)
+	result = rederiveAndSeal(t, result)
+	index, _, err := BuildFromResult(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	objectsByRef := make(map[string]programindex.Object, len(index.Objects))
+	for _, object := range index.Objects {
+		objectsByRef[object.SourceRef] = object
+	}
+	left := objectsByRef["decl:f2:2:1:function:settings"]
+	right := objectsByRef["decl:f3:2:1:function:settings"]
+	if left.Name != "settings" || right.Name != "settings" {
+		t.Fatalf("same-name display projection = %q / %q", left.Name, right.Name)
+	}
+	if left.ID == right.ID || left.SourceRef == right.SourceRef || left.Location == nil || right.Location == nil || left.Location.Path == right.Location.Path {
+		t.Fatalf("same-name declaration identities or locations were merged: left=%#v right=%#v", left, right)
+	}
+	method := objectsByRef["decl:f2:5:3:method:animate"]
+	if method.Name != "SimulationField.animate" || strings.Contains(method.Name, "src/") || strings.Contains(method.Name, "#") {
+		t.Fatalf("owned declaration display name = %q", method.Name)
+	}
+	module := objectsByRef["module:f2"]
+	if module.Name != "src/index" {
+		t.Fatalf("logical module name = %q", module.Name)
+	}
+}
+
+func TestQualifiedNameIsOptionalDebugMetadata(t *testing.T) {
+	result := minimalResult(t, "typescript").Snapshot()
+	result.Declarations[0].QualifiedName = ""
+	result.Declarations = append(result.Declarations,
+		Declaration{
+			Ref: "decl:f2:2:1:type:SimulationField", Kind: "type", Name: "SimulationField",
+			Location: Location{Path: result.Files[0].Path, FileRef: result.Files[0].FileRef, Line: 2, Column: 1},
+		},
+		Declaration{
+			Ref: "decl:f2:3:3:method:animate", Kind: "method", Name: "animate",
+			OwnerRef: "decl:f2:2:1:type:SimulationField",
+			Location: Location{Path: result.Files[0].Path, FileRef: result.Files[0].FileRef, Line: 3, Column: 3},
+		},
+	)
+	result = rederiveAndSeal(t, result)
+	index, _, err := BuildFromResult(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectsByRef := make(map[string]programindex.Object, len(index.Objects))
+	for _, object := range index.Objects {
+		objectsByRef[object.SourceRef] = object
+	}
+	method := objectsByRef["decl:f2:3:3:method:animate"]
+	if method.Name != "SimulationField.animate" || method.Location == nil ||
+		method.Location.Path != result.Files[0].Path || method.ID == "" {
+		t.Fatalf("ProgramIndex projection without qualified_name = %#v", method)
 	}
 }
 
@@ -393,98 +729,6 @@ func TestManifestFactsNeverRetainCredentialBearingLocatorsOrCommands(t *testing.
 	}
 }
 
-func TestPreparedCaltodoProject(t *testing.T) {
-	root := os.Getenv("REPOMAP_JSTS_CALT0DO_ROOT")
-	if root == "" {
-		t.Skip("set REPOMAP_JSTS_CALT0DO_ROOT to a prepared Caltodo checkout")
-	}
-	repository, err := corpus.Open(context.Background(), root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer repository.Close()
-	result, index, catalog, err := Build(context.Background(), repository, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Project.ModuleResolution != "bundler" || result.Project.BaseURL != "." {
-		t.Fatalf("compiler config = %#v", result.Project)
-	}
-	if TargetKind(result) != "application" || index.Target.ID != result.ProgramTargetID {
-		t.Fatalf("target binding = %#v", index.Target)
-	}
-	assertSurface(t, result, SurfaceBrowser, SurfaceProduct)
-	assertSurface(t, result, SurfaceServer, SurfaceProduct)
-	assertSurface(t, result, SurfaceShared, SurfaceSupporting)
-	assertSurface(t, result, SurfaceTool, SurfaceScript)
-	if !hasRoute(result, RouteBrowser, "", "/settings") || !hasRoute(result, RouteBrowserLink, "", "/settings") || !hasRoute(result, RouteHTTP, "PATCH", "/api/settings") {
-		t.Fatal("Caltodo browser/link/server settings routes were not retained")
-	}
-	declarationNames := map[string]string{}
-	for _, declaration := range result.Declarations {
-		declarationNames[declaration.Ref] = declaration.Name
-	}
-	settingsRoute := routeForNamedRefs(result, RouteHTTP, "PATCH", "/api/settings", declarationNames, "requireAuth", "createPatchSettingsHandler")
-	if settingsRoute == nil {
-		t.Fatalf("Caltodo settings route lost exact middleware/factory refs: %#v", settingsRoute)
-	}
-	settingsFactoryRef := settingsRoute.HandlerRefs[0]
-	returnedHandlerRef := ""
-	for _, declaration := range result.Declarations {
-		if declaration.OwnerRef == settingsFactoryRef && declaration.Kind == "lambda" && declaration.Name == "returned_handler" {
-			returnedHandlerRef = declaration.Ref
-			break
-		}
-	}
-	if returnedHandlerRef == "" {
-		t.Fatal("Caltodo settings factory lost its exact returned handler")
-	}
-	if !hasHTTPUse(result, "PATCH", "/api/settings") {
-		t.Fatal("Caltodo apiRequest settings mutation was not retained")
-	}
-	if !hasContract(result, "zod_schema", "updateSettingsSchema") || !hasContract(result, "drizzle_table", "userSettings") {
-		t.Fatal("Caltodo Zod/Drizzle settings contracts were not retained")
-	}
-	if !contractUsedWithin(result, "zod_schema", "updateSettingsSchema", returnedHandlerRef) || !hasContract(result, "query_key", "/api/settings") {
-		t.Fatalf("Caltodo exact handler/query contract use was not retained: handler=%s contracts=%#v", returnedHandlerRef, result.Contracts)
-	}
-	if !hasResource(result, "postgres_database") {
-		t.Fatal("Caltodo PostgreSQL resource was not retained")
-	}
-	if !hasPathKinds(result, []string{"page_route", "mutation_site", "program_call", "client_http_use", "http_method_path_match", "server_route", "handler_factory", "handler", "contract_validation", "storage_call", "resource_boundary"}) {
-		t.Fatalf("grounded settings path incomplete: %#v", result.ProductPaths)
-	}
-	if !catalogHas(catalog, "express") || !catalogHas(catalog, "@tanstack/react-query") || !catalogHas(catalog, "drizzle-orm") {
-		t.Fatal("Caltodo dependency catalog is incomplete")
-	}
-	if !hasUnresolvedCall(result, "fetch") || !pathHasExplicitSettingsBoundary(result) || !pathStorageAndResourceAuthorityIsHonest(result) {
-		t.Fatalf("Caltodo unresolved/boundary authority drifted: %#v", result.ProductPaths)
-	}
-	if countPatchSettingsPaths(result) != 1 || !hasToolSurface(result, "server/integration/testServer.ts") {
-		t.Fatalf("test server contaminated the product path/surface authority: %#v / %#v", result.ProductPaths, result.Surfaces)
-	}
-	assertEveryMethodHasExactTypeReceiver(t, index)
-	if _, err := coremap.CompileProgram(result.Project.Name, repository, index, readmetargetscout.Result{}); err != nil {
-		t.Fatalf("Caltodo ProgramIndex did not compile into CoreMap evidence: %v", err)
-	}
-	encoded, err := Encode(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if offset := bytes.Index(encoded, []byte(root)); offset >= 0 {
-		start := offset - 120
-		if start < 0 {
-			start = 0
-		}
-		end := offset + len(root) + 120
-		if end > len(encoded) {
-			end = len(encoded)
-		}
-		context := strings.ReplaceAll(string(encoded[start:end]), root, "<repository>")
-		t.Fatalf("artifact contains absolute analyzed root near %q", context)
-	}
-}
-
 func assertEveryMethodHasExactTypeReceiver(t *testing.T, index programindex.Index) {
 	t.Helper()
 	objects := make(map[string]programindex.Object, len(index.Objects))
@@ -509,7 +753,7 @@ func minimalResult(t *testing.T, language string) Result {
 	if language == "typescript" {
 		file.Path = "src/index.ts"
 	}
-	result := Result{Version: Version, HelperVersion: HelperVersion, CorpusSHA256: strings.Repeat("a", 64), SourceSHA256: sourceDigest([]File{file}), Project: Project{Ref: "project:root-package", Name: "sample", PackagePath: "sample", Language: language, Selector: "jsts:package.json", ManifestPath: "package.json", ManifestFileRef: "f1", PackageManager: "npm", ModuleResolution: "node10", PathAliases: []PathAlias{}, Scripts: []Script{}, SourceRoots: []string{"src"}, EntryFileRefs: []string{}, ToolConfigs: []ProjectFile{}, Dependencies: []PackageDependency{}}, Files: []File{file}, Declarations: []Declaration{{Ref: "module:f2", Kind: "module", Name: "src/index", QualifiedName: "src/index", Location: file.location()}}, Imports: []Import{}, Exports: []Export{}, Calls: []Call{}, Surfaces: []Surface{}, Routes: []Route{}, HTTPUses: []HTTPUse{}, Contracts: []Contract{}, Resources: []Resource{}, ProductPaths: []ProductPath{}}
+	result := Result{Version: Version, HelperVersion: HelperVersion, CorpusSHA256: strings.Repeat("a", 64), SourceSHA256: sourceDigest([]File{file}), Project: Project{Ref: "project:root-package", Name: "sample", PackagePath: "sample", Language: language, Selector: "jsts:package.json", ManifestPath: "package.json", ManifestFileRef: "f1", PackageManager: "npm", ModuleResolution: "node10", PathAliases: []PathAlias{}, Scripts: []Script{}, SourceRoots: []string{"src"}, EntryFileRefs: []string{}, ToolConfigs: []ProjectFile{}, Dependencies: []PackageDependency{}}, Files: []File{file}, Declarations: []Declaration{{Ref: "module:f2", Kind: "module", Name: "src/index", QualifiedName: "src/index", Location: file.location()}}, Imports: []Import{}, Exports: []Export{}, Calls: []Call{}, Surfaces: []Surface{}, Contracts: []Contract{}}
 	targetID, err := deriveProgramTargetID(result)
 	if err != nil {
 		t.Fatal(err)
@@ -537,161 +781,49 @@ func rederiveAndSeal(t *testing.T, result Result) Result {
 	return sealed
 }
 
+func identityForSourceRef(
+	t *testing.T,
+	index programindex.Index,
+	sourceRef string,
+	display string,
+) programindex.SymbolLinkIdentity {
+	t.Helper()
+	for _, object := range index.Objects {
+		if object.SourceRef == sourceRef {
+			return identityForObject(t, object, display)
+		}
+	}
+	t.Fatalf("object source ref %q not found", sourceRef)
+	return programindex.SymbolLinkIdentity{}
+}
+
+func identityForObjectID(
+	t *testing.T,
+	index programindex.Index,
+	objectID string,
+	display string,
+) programindex.SymbolLinkIdentity {
+	t.Helper()
+	for _, object := range index.Objects {
+		if object.ID == objectID {
+			return identityForObject(t, object, display)
+		}
+	}
+	t.Fatalf("object id %q not found", objectID)
+	return programindex.SymbolLinkIdentity{}
+}
+
+func identityForObject(t *testing.T, object programindex.Object, display string) programindex.SymbolLinkIdentity {
+	t.Helper()
+	for _, identity := range object.SymbolLinkIdentities {
+		if identity.Domain == "jsts_package_export_v1" && identity.Display == display {
+			return identity
+		}
+	}
+	t.Fatalf("object %q lacks package export identity %q: %#v", object.Name, display, object.SymbolLinkIdentities)
+	return programindex.SymbolLinkIdentity{}
+}
+
 func (file File) location() Location {
 	return Location{Path: file.Path, FileRef: file.FileRef, Line: 1, Column: 1}
-}
-func assertSurface(t *testing.T, result Result, kind SurfaceKind, role SurfaceRole) {
-	t.Helper()
-	for _, surface := range result.Surfaces {
-		if surface.Kind == kind && surface.Role == role {
-			return
-		}
-	}
-	t.Fatalf("surface %s/%s missing", kind, role)
-}
-func hasRoute(result Result, kind RouteKind, method, path string) bool {
-	for _, route := range result.Routes {
-		if route.Kind == kind && route.Method == method && route.Path == path {
-			return true
-		}
-	}
-	return false
-}
-func routeForNamedRefs(result Result, kind RouteKind, method, routePath string, names map[string]string, middlewareName, handlerName string) *Route {
-	for index := range result.Routes {
-		if result.Routes[index].Kind == kind && result.Routes[index].Method == method && result.Routes[index].Path == routePath &&
-			refsNameExactly(result.Routes[index].MiddlewareRefs, names, middlewareName) && refsNameExactly(result.Routes[index].HandlerRefs, names, handlerName) {
-			return &result.Routes[index]
-		}
-	}
-	return nil
-}
-func refsNameExactly(refs []string, names map[string]string, want string) bool {
-	return len(refs) == 1 && names[refs[0]] == want
-}
-func hasHTTPUse(result Result, method, path string) bool {
-	for _, value := range result.HTTPUses {
-		if value.Method == method && value.Path == path {
-			return true
-		}
-	}
-	return false
-}
-func hasContract(result Result, kind, name string) bool {
-	for _, value := range result.Contracts {
-		if value.Kind == kind && value.Name == name {
-			return true
-		}
-	}
-	return false
-}
-func contractUsedWithin(result Result, kind, name, declarationRef string) bool {
-	owners := map[string]string{}
-	for _, declaration := range result.Declarations {
-		owners[declaration.Ref] = declaration.OwnerRef
-	}
-	for _, value := range result.Contracts {
-		if value.Kind == kind && value.Name == name {
-			for _, ref := range value.UsedByRefs {
-				for ref != "" {
-					if ref == declarationRef {
-						return true
-					}
-					ref = owners[ref]
-				}
-			}
-		}
-	}
-	return false
-}
-func hasResource(result Result, kind string) bool {
-	for _, value := range result.Resources {
-		if value.Kind == kind {
-			return true
-		}
-	}
-	return false
-}
-func hasPathKinds(result Result, kinds []string) bool {
-	seen := map[string]bool{}
-	for _, value := range result.ProductPaths {
-		for _, step := range value.Steps {
-			seen[step.Kind] = true
-		}
-	}
-	for _, kind := range kinds {
-		if !seen[kind] {
-			return false
-		}
-	}
-	return true
-}
-func catalogHas(catalog dependencies.Catalog, name string) bool {
-	for _, value := range catalog.Dependencies {
-		if value.PackagePath == name {
-			return true
-		}
-	}
-	return false
-}
-
-func hasUnresolvedCall(result Result, expression string) bool {
-	for _, call := range result.Calls {
-		if call.Expression == expression && call.Resolution == "unresolved" {
-			return true
-		}
-	}
-	return false
-}
-
-func pathHasExplicitSettingsBoundary(result Result) bool {
-	for _, productPath := range result.ProductPaths {
-		if !strings.Contains(productPath.Name, "/settings") {
-			continue
-		}
-		for _, step := range productPath.Steps {
-			if step.Kind == "http_method_path_match" && step.Label == "PATCH /api/settings" &&
-				step.Resolution == "exact" && step.Authority == "exact_static" && len(step.TargetRefs) == 1 {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func pathStorageAndResourceAuthorityIsHonest(result Result) bool {
-	storage, resource := false, false
-	for _, productPath := range result.ProductPaths {
-		if !strings.Contains(productPath.Name, "/settings") {
-			continue
-		}
-		for _, step := range productPath.Steps {
-			switch step.Kind {
-			case "storage_call":
-				storage = storage || step.Authority == "possible" || step.Authority == "unresolved_frontier"
-			case "resource_boundary":
-				resource = resource || (step.Resolution == "alternatives" && step.Authority == "possible")
-			}
-		}
-	}
-	return storage && resource
-}
-
-func countPatchSettingsPaths(result Result) int {
-	count := 0
-	for _, productPath := range result.ProductPaths {
-		if productPath.Name == "/settings → PATCH /api/settings" {
-			count++
-		}
-	}
-	return count
-}
-
-func hasToolSurface(result Result, filePath string) bool {
-	for _, surface := range result.Surfaces {
-		if surface.Kind == SurfaceTool && surface.Role == SurfaceScript && surface.Location.Path == filePath {
-			return true
-		}
-	}
-	return false
 }

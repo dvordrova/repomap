@@ -2,7 +2,7 @@
   "version": 1,
   "repository_sha256": "eba44ff3538bb7397cdfb831842cbadc628bcf1b701c7b6349398769cf934ea7",
   "program_index": {
-    "version": 7,
+    "version": 11,
     "scenario_sha256": "5ac27b4b349746e690e7ab105e7d905886a22eb67750c4b401bf043fccc40847",
     "source_sha256": "eba44ff3538bb7397cdfb831842cbadc628bcf1b701c7b6349398769cf934ea7",
     "target": {
@@ -205,6 +205,7 @@
         "visibility": "public",
         "signature": "func(format string, a ...any) string",
         "external": {
+          "authority_kind": "platform",
           "package_path": "fmt",
           "name": "Sprintf"
         }
@@ -229,6 +230,7 @@
         "visibility": "public",
         "signature": "func() time.Time",
         "external": {
+          "authority_kind": "platform",
           "package_path": "time",
           "name": "Now"
         }
@@ -254,6 +256,7 @@
         "visibility": "public",
         "signature": "func(key string) string",
         "external": {
+          "authority_kind": "platform",
           "package_path": "os",
           "name": "Getenv"
         }
@@ -304,6 +307,7 @@
         "visibility": "public",
         "signature": "func() context.Context",
         "external": {
+          "authority_kind": "platform",
           "package_path": "net/http",
           "receiver": "*net/http.Request",
           "name": "Context"
@@ -317,6 +321,7 @@
         "visibility": "public",
         "signature": "func(format string, a ...any) (err error)",
         "external": {
+          "authority_kind": "platform",
           "package_path": "fmt",
           "name": "Errorf"
         }
@@ -366,6 +371,7 @@
         "visibility": "public",
         "signature": "func() *net/http.ServeMux",
         "external": {
+          "authority_kind": "platform",
           "package_path": "net/http",
           "name": "NewServeMux"
         }
@@ -378,6 +384,7 @@
         "visibility": "public",
         "signature": "func(ctx context.Context, charge acquirer.example/authorizer.Charge) (acquirer.example/authorizer.Decision, error)",
         "external": {
+          "authority_kind": "package",
           "package_path": "acquirer.example/authorizer",
           "receiver": "*acquirer.example/authorizer.Client",
           "name": "Authorize"
@@ -430,6 +437,7 @@
         "visibility": "public",
         "signature": "func(w net/http.ResponseWriter, error string, code int)",
         "external": {
+          "authority_kind": "platform",
           "package_path": "net/http",
           "name": "Error"
         }
@@ -480,6 +488,7 @@
         "visibility": "public",
         "signature": "func(r io.Reader) *encoding/json.Decoder",
         "external": {
+          "authority_kind": "platform",
           "package_path": "encoding/json",
           "name": "NewDecoder"
         }
@@ -492,6 +501,7 @@
         "visibility": "public",
         "signature": "func(endpoint string, key string, profile string) (*geo.example/locator.Service, error)",
         "external": {
+          "authority_kind": "package",
           "package_path": "geo.example/locator",
           "name": "New"
         }
@@ -540,6 +550,7 @@
         "visibility": "public",
         "signature": "func(options acquirer.example/authorizer.Options) (*acquirer.example/authorizer.Client, error)",
         "external": {
+          "authority_kind": "package",
           "package_path": "acquirer.example/authorizer",
           "name": "New"
         }
@@ -552,6 +563,7 @@
         "visibility": "public",
         "signature": "func(apiKey string, baseURL string) (*messaging.example/receipt.Sender, error)",
         "external": {
+          "authority_kind": "package",
           "package_path": "messaging.example/receipt",
           "name": "NewSender"
         }
@@ -564,6 +576,7 @@
         "visibility": "public",
         "signature": "func(w io.Writer) *encoding/json.Encoder",
         "external": {
+          "authority_kind": "platform",
           "package_path": "encoding/json",
           "name": "NewEncoder"
         }
@@ -655,6 +668,7 @@
         "visibility": "public",
         "signature": "func(options shipping.example/parcel.DialOptions) (*shipping.example/parcel.Broker, error)",
         "external": {
+          "authority_kind": "package",
           "package_path": "shipping.example/parcel",
           "name": "Dial"
         }
@@ -667,6 +681,7 @@
         "visibility": "public",
         "signature": "func(ctx context.Context, region string, lines []revenue.example/taxquote.Line) (revenue.example/taxquote.Result, error)",
         "external": {
+          "authority_kind": "package",
           "package_path": "revenue.example/taxquote",
           "receiver": "*revenue.example/taxquote.Client",
           "name": "Calculate"
@@ -693,6 +708,7 @@
         "visibility": "public",
         "signature": "func(ctx context.Context, message messaging.example/receipt.Message) (messaging.example/receipt.Delivery, error)",
         "external": {
+          "authority_kind": "package",
           "package_path": "messaging.example/receipt",
           "receiver": "*messaging.example/receipt.Sender",
           "name": "Dispatch"
@@ -755,6 +771,7 @@
         "visibility": "public",
         "signature": "func(v ...any)",
         "external": {
+          "authority_kind": "platform",
           "package_path": "log",
           "name": "Fatal"
         }
@@ -804,6 +821,7 @@
         "visibility": "public",
         "signature": "func(ctx context.Context, consignment shipping.example/parcel.Consignment) (shipping.example/parcel.Reservation, error)",
         "external": {
+          "authority_kind": "package",
           "package_path": "shipping.example/parcel",
           "receiver": "*shipping.example/parcel.Broker",
           "name": "Reserve"
@@ -841,6 +859,7 @@
         "visibility": "public",
         "signature": "func(pattern string, handler func(net/http.ResponseWriter, *net/http.Request))",
         "external": {
+          "authority_kind": "platform",
           "package_path": "net/http",
           "receiver": "*net/http.ServeMux",
           "name": "HandleFunc"
@@ -854,6 +873,7 @@
         "visibility": "public",
         "signature": "func(v any) error",
         "external": {
+          "authority_kind": "platform",
           "package_path": "encoding/json",
           "receiver": "*encoding/json.Decoder",
           "name": "Decode"
@@ -916,6 +936,7 @@
         "visibility": "public",
         "signature": "func()",
         "external": {
+          "authority_kind": "platform",
           "package_path": "sync",
           "receiver": "*sync.Mutex",
           "name": "Lock"
@@ -941,6 +962,7 @@
         "visibility": "public",
         "signature": "func(format string, v ...any)",
         "external": {
+          "authority_kind": "platform",
           "package_path": "log",
           "name": "Printf"
         }
@@ -1015,6 +1037,7 @@
         "visibility": "public",
         "signature": "func() error",
         "external": {
+          "authority_kind": "platform",
           "package_path": "net/http",
           "receiver": "*net/http.Server",
           "name": "ListenAndServe"
@@ -1093,6 +1116,7 @@
         "visibility": "public",
         "signature": "func(key string, value string)",
         "external": {
+          "authority_kind": "platform",
           "package_path": "net/http",
           "receiver": "net/http.Header",
           "name": "Set"
@@ -1106,6 +1130,7 @@
         "visibility": "public",
         "signature": "func(s string) (int, error)",
         "external": {
+          "authority_kind": "platform",
           "package_path": "strconv",
           "name": "Atoi"
         }
@@ -1170,6 +1195,7 @@
         "visibility": "public",
         "signature": "func(config revenue.example/taxquote.Config) (*revenue.example/taxquote.Client, error)",
         "external": {
+          "authority_kind": "package",
           "package_path": "revenue.example/taxquote",
           "name": "NewClient"
         }
@@ -1195,6 +1221,7 @@
         "visibility": "public",
         "signature": "func(ctx context.Context, candidate geo.example/locator.Candidate) (geo.example/locator.Result, error)",
         "external": {
+          "authority_kind": "package",
           "package_path": "geo.example/locator",
           "receiver": "*geo.example/locator.Service",
           "name": "Validate"
@@ -1208,6 +1235,7 @@
         "visibility": "public",
         "signature": "func()",
         "external": {
+          "authority_kind": "platform",
           "package_path": "sync",
           "receiver": "*sync.Mutex",
           "name": "Unlock"
@@ -1258,6 +1286,7 @@
         "visibility": "public",
         "signature": "func(text string) error",
         "external": {
+          "authority_kind": "platform",
           "package_path": "errors",
           "name": "New"
         }
@@ -1270,6 +1299,7 @@
         "visibility": "public",
         "signature": "func(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc)",
         "external": {
+          "authority_kind": "platform",
           "package_path": "context",
           "name": "WithTimeout"
         }
@@ -1308,6 +1338,7 @@
         "visibility": "public",
         "signature": "func() net/http.Header",
         "external": {
+          "authority_kind": "platform",
           "package_path": "net/http",
           "receiver": "net/http.ResponseWriter",
           "name": "Header"
@@ -1360,6 +1391,7 @@
         "visibility": "public",
         "signature": "func(v any) error",
         "external": {
+          "authority_kind": "platform",
           "package_path": "encoding/json",
           "receiver": "*encoding/json.Encoder",
           "name": "Encode"
@@ -1432,7 +1464,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-00b4151bd2cf1a2725e498a68cb53b46db7db63cd28c4ea73498673e0e17e067",
@@ -1462,7 +1497,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-04c69232f64d03909d783663ff12e5d0fdcb929b1fee1c933e28266e7d9da11e",
@@ -1492,7 +1530,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-084a02ee1d8ba486b3c53c6becf9ba894c6c78f6fd8198ea151710115b908046",
@@ -1522,7 +1563,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-09d0f9497701aec212cd00013859787a3eff38f81ee8f2ca4a24536b91861fc8",
@@ -1552,7 +1596,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-0dd2dd34e14f235d10c09200e8e8536b9a226965914c963abb8a5cf2911aa73d",
@@ -1582,7 +1629,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-0f4dc883457a440c226909effdb50e1f892fe952500b93f553687e3b9d7238f3",
@@ -1612,7 +1662,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-10bf1fe0371acc8391e7fd88168d2bc880bece1d41d40d9d4a636ef324a3bada",
@@ -1642,7 +1695,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-12e2f4236620470975551f8d5d0d3412bdc555adf98bde402e440066ef982fd0",
@@ -1672,7 +1728,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-17b5c2d0966c7d1c293eb3bb486aba1b231de2575b834f50351a3f28e5df258a",
@@ -1702,7 +1761,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-19ba65b60ba4c8bd4b5afea7d3d6e43418b34561389c00f400236a49473f2d8f",
@@ -1732,7 +1794,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-1a8baf685edbdbe74778df6dd82b8c26785e013c737c6b2c41a7aaea34b22762",
@@ -1762,7 +1827,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-1e234a3e1ea11abe0f8aaa1b76da661fa9771afd62fdae9067e445cec9688364",
@@ -1792,7 +1860,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-1ec38371341ed40496a17cfbf6bf43267516fa53281be8945982ee8d6e09d49e",
@@ -1822,7 +1893,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-24bed46ba218f03cdd777090e048628ee0d9467be5861ce3d66cdfc8936b35f0",
@@ -1852,7 +1926,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-252391260d913e5b3555ddf6df4751bbee6445119c174524c448c74eb4e7c25a",
@@ -1882,7 +1959,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-258153b7e9bf3f43ea3dda853e9628c597e24bc29c21c168a915cd17c7d23b40",
@@ -1912,7 +1992,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-2e7a54a8fa4818b9c088b2462d6729152394d5d9a8d1bb0c01368278208c5d59",
@@ -1940,7 +2023,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-327743d7ae99d85057aa33400f040433d8e08e534381f5b05abf4d5df6dc2c58",
@@ -1970,7 +2056,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-32ac99114841023efb082c98b068968bf0026a016e3287a57ca418cee7d74ce9",
@@ -1998,7 +2087,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-359df3ae2a39a363e2e478fec84bcb26012c4e59e05d81f1e560a622f3a43923",
@@ -2028,7 +2120,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-388caffa2ef8a0c3c12f36126829c69478b015895dceb2e97819a0e07298f037",
@@ -2058,7 +2153,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-3a4faa9094cac0d96da984a8477feae12818c625f64536eec982e3176f68ce32",
@@ -2088,7 +2186,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-3ba525a30d3adb00d6ed4c85f94f2cbb3c9dd49e78015e84fbd9f7ef0b40fc65",
@@ -2118,7 +2219,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-3c3a0eab0bd356488d206a9de7a992e6c16d7acd846d03569cb29e65a1ca3f30",
@@ -2148,7 +2252,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-3d3634545187900878090bd5e364cb7dde9b9cfc5139228ef8ec2cd24e55bc13",
@@ -2178,7 +2285,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-3e93e0e209a47d8fb8b0c2d8106a50f60a66a2deb2dd08dc462705dbde69b801",
@@ -2208,7 +2318,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-3eb26541d9166f2af5186823ca49e9bf5a3b7effa1c6e3efb6a8be5c690ebd73",
@@ -2238,7 +2351,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-41b3d2e72fca1f36299a341696107f108b94a62f00803afbeb0e95d775846d43",
@@ -2266,7 +2382,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-42ce3e588093fcedad83a29e7c9408682f42ad82123eac459432dd9d6c5c9acf",
@@ -2296,7 +2415,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-4b0536d3246f00e8a788695f1b3709c9a1d61bceb2aafd54946bacdc48a90225",
@@ -2326,7 +2448,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-4d6ba5073946f310f047dff66a94aa42ddbe76b3a52b06f4f0fc4658660dfeca",
@@ -2356,7 +2481,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-50ec78124878c9d6c0d6fc7828a836e59c9e52525b4de89b9b2276dd2fb06606",
@@ -2386,7 +2514,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-517475f3ba26ef1a768f8a186320931de0e254540138d196ae6c880496ae77c1",
@@ -2416,7 +2547,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-5292102110ebc82e5975bedf9927a497704f5e05e2d1a0eb9d5b06892bf25c4f",
@@ -2446,7 +2580,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-54b442fe94c028d7fd99e873cddd93a7bda387b952e2542a5675e2cb70af513a",
@@ -2476,7 +2613,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-5662b9f5d45c54c16297e87b445eb990dd357d718b2023d0dad0ca59295d8399",
@@ -2506,7 +2646,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-56e6a3c32d44f0000e3803dd05361ac2e357bc47e142a4774cbb4154f80020a0",
@@ -2536,7 +2679,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-57288a5c60da046d78c64fd118cf19980e9e8b1d1646eac187c6e37821f1e19b",
@@ -2566,7 +2712,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-58a7f4ccdc240a12455c2549979a0baa9e4ec00714571e1207bf6ae5cced9d11",
@@ -2596,7 +2745,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-5bc78b2460a4ee0e46f183f86c0890f01f77285d89b5b4fde5fbcefb2a9f0c51",
@@ -2626,7 +2778,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-5c74323385f4d6b52947ca25789df1f587bd95feedb1dc7020b697308330ca79",
@@ -2656,7 +2811,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-5caa64fffb607eb5180d2139795db0d7d2bf5f3ca537da6a9f68f7c400d22a18",
@@ -2686,7 +2844,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-5fc46f75dc8f8a61efb489fc3f45e52a69a1382f2b8cb40d15c82f82d2f6f649",
@@ -2716,7 +2877,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-60a2a8727e77f0267999c169e8691c2dd6202f4c1a8b1aa424754ae702653d98",
@@ -2746,7 +2910,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-6134e8288c05a6a023b91305dc0627184839c126fca9225ebc26d40838e849dc",
@@ -2776,7 +2943,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-6197ef4bd748d0f42843be583af322ad5ec6b6b8333616c0205ea579fa5cb67e",
@@ -2806,7 +2976,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-676a163f55a6a8f84f4fea4d9f59452098aab203a5ab8ac4560e26fdb2ae660b",
@@ -2836,7 +3009,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-68f12c79f95844a32a7b203b6542b1daf7f3af9716d60cc915be1f99a2bfa588",
@@ -2866,7 +3042,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-6aa2d0b5064856a88828df1dbcd7468b07afbe12f22b459784bd1b9c63e99bb5",
@@ -2896,7 +3075,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-6afe024ea345ef38f92cf804c49f05d326a8b690d23fabda3de3f87403eb75e6",
@@ -2926,7 +3108,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-6b03ba2c0be66c8fa6780228e4c3d5396f5d81e4acd88840bef4a54fec82d0dd",
@@ -2956,7 +3141,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-6d166fd5e139a4770cbf74eb3cbd1666e6d2f50a1e5f6a45d0192f35f4ff864c",
@@ -2986,7 +3174,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-6f245bad363c115a7714ba016ba1712b37b63a6f6bd75c9664c7504adfd1552a",
@@ -3016,7 +3207,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-7495a99805c97f8fea479374090ad86604d53ffa350c7761b02440d5fcfd7507",
@@ -3046,7 +3240,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-78304070c7da581c17b80405be193b1a0092ad79017488cb71da7d2e97a56c3f",
@@ -3076,7 +3273,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-7b6f3a5479c2508ec85edcd5e6aa52ab6877f43d2166777d4a288b1db4fd1f28",
@@ -3106,7 +3306,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-7c2217ba0e9bbd56023f88e7726070f6e5ad1a42311a96193874870cdbd4c2f0",
@@ -3136,7 +3339,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-7c2d456b9b94be988525ecadaae82e40251e2e95046a89c8442d2ec70aeb8abf",
@@ -3166,7 +3372,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-7d27a47a95f613ab1fa32427440fe270c4bf6118ae7090fbb2e127507fcea98b",
@@ -3196,7 +3405,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-7f8bdc6158ef87b1e9245886af76bd811ce5f7b26679434dc538fe9275525c97",
@@ -3226,7 +3438,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-80b92da6bde9043e311b7574432e5ae1161a2b5bc85728a12eae66642b3bf3b3",
@@ -3256,7 +3471,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-81408ea0470a8758bc79bc577d622700b556967849c6059d5be9fd7adc187ae8",
@@ -3286,7 +3504,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-86c688989d34db28ec1260fb471f979251c747503f2d6a24f877b47f9332fa29",
@@ -3316,7 +3537,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-871ef732f8cf031f32351652912e09fbf21810e5787d8984eff74a0d26a9cd26",
@@ -3346,7 +3570,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-874573e11e9b9a2cd38283dd3692de09a9c02d83f252480ea8a0ace602b8d8e3",
@@ -3376,7 +3603,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-891249d6f183aa6ef43d05649b06e00d6599e9592c52c029d9d32f655c9d4f8c",
@@ -3406,7 +3636,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-8c4aa76c81dccac62df712819db23b40a23cbe7af201262d2f8d449f89d74d19",
@@ -3436,7 +3669,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-8ca61b4c668171fbbc5d7ee1c64d975f8252e4df2274017a227ae04423c138e7",
@@ -3466,7 +3702,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-8cf22f05a1a290c3ab620ef4f23e88575d9c8860a202200c551864d9b0d897a5",
@@ -3496,7 +3735,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-8d9651e318393f7dc1a7d6afea5a4b95af44cba05e380e5b9c7d97c776b845c6",
@@ -3526,7 +3768,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-906144405b94bfe86cb690ab33829daf24ad0f2eee4d654c9fbb84682e4b2223",
@@ -3556,7 +3801,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-90873ca99108ad0d1e5c27bc42571cb1c7e64bfb2a2cb67a9c5a333d3ef73eb1",
@@ -3586,7 +3834,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-92ba9d0bcc120f8810f6d6d2093af495810ab0f096ba3ec6fef0a264b6b5c059",
@@ -3616,7 +3867,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-9379e8354f160d3960167c0d68eea5170b53aaea97178f196066a0a33f0fc6e0",
@@ -3646,7 +3900,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-9a8b5c7839d6620d6163650b44eb11dc915e9344d55002bf2d0ac907ba170295",
@@ -3676,7 +3933,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-9bdf16cd786c6f3557ed3564173164405a1107c3fbb0c9d30df4f4cba6674189",
@@ -3706,7 +3966,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-a22a529f548f2bf15f36c18184a96f443f3cf0086d5dc12b0a2efbe5441a169a",
@@ -3736,7 +3999,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-a269c552d87055fba489222a0aeafc14368d80605b2cb171eb0206e5a92ecd29",
@@ -3766,7 +4032,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-a324a419f63725af78966cabf1e22323a3756706cc5a55481bcf31780466940e",
@@ -3796,7 +4065,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-af01bfc90f46d45b1d8c636bef7ea082132cf21ce9977aea05cf99e8af56a047",
@@ -3826,7 +4098,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-af8a970a3f224de905c6e2990ba39dfcbf9dc6cecd535c394153b9c82aedefaf",
@@ -3856,7 +4131,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-b0103eab37222a4f84ef5dd55fa54c47ab1d6caeb872c2cdb8a4f8c21139655a",
@@ -3886,7 +4164,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-b154c9ea5a64539ff391d9123b83a3795aa147282c10383f78a2785810f59b0b",
@@ -3916,7 +4197,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-b18fd24031670ffa9065b3c551609a4ca87da535cb881d40b8a168de26d28b20",
@@ -3946,7 +4230,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-b1935bd1aba65f1d92a85d4b9a319dbf722d5c07a6e9a2609fc344cc8b34fa69",
@@ -3976,7 +4263,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-b345b256c8c5db9963780cd9ce0c3b9464c66d1b9175404678ca1a023b0f57a4",
@@ -4006,7 +4296,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-b470f41559fa96127c8d7e743b376d8ddc11db5ce63064606ac05e9b3d19789f",
@@ -4036,7 +4329,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-b4ea508761da1f4a5eb9477f24a358d7ac863070171470f620f8370f5057ec40",
@@ -4066,7 +4362,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-b713be544edc655c15d76613d2d02b10ed00e6f26f9043bc88acadbaecc56628",
@@ -4096,7 +4395,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-b8eb2547b57eb4d94fef836840b29713fcd354e44f57391949c9d23eef5e5df2",
@@ -4126,7 +4428,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-bd20e5dcb60b5edb41bf1a605e4846de951a66e54791917d8cbd4c9bf7bf7ee8",
@@ -4156,7 +4461,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-c0cb62abaa46eb1647606e55f8b600a1c44d12ea704ef976c59fdf8b7441335a",
@@ -4186,7 +4494,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-c46e7859b2d0f17eea0273ae1d32edea381d58dfdc9c8dd8b366952d13057fbe",
@@ -4216,7 +4527,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-c980100de100813a26e4598e029f5aa20e79eaa4ec9fc4c56a0a1fa6d8d54a53",
@@ -4246,7 +4560,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-cace4373cc58a2c91cff790e533df1b5231f114bdfb3b0262480751417f303c2",
@@ -4276,7 +4593,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-cd065b05b0482b24ce2b3f85e558fa9a4833b1df57a5d739caf1881cd35acb68",
@@ -4304,7 +4624,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-cfd139e7a89459bd3dbd4219cf7f0fb02d4eeb764c79aa67e464fd45100431d3",
@@ -4334,7 +4657,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-d266da8622d049daa29f867cabd3a5342a74a15d5768528a84de6dcb80b14758",
@@ -4364,7 +4690,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-d3a826875d25cfb79a1cd685ba6adb8b5e9303a77eadbb50fa0fcd3add40a672",
@@ -4394,7 +4723,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-d79d591b8dc7ca052dc500d3d7af5cda355e67958e84da661ed84b75db7d3166",
@@ -4424,7 +4756,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-d87864c06c753a8f6534ce8884a6354fe54c0d9fe0a88e5c01f48e268fcdb715",
@@ -4454,7 +4789,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-d941b790463ef26f893f6bbdc5efca58cd927df7cc59ec91ff33c7e201ddb178",
@@ -4484,7 +4822,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-d9c78f6fcf838f6e6c11cd684560656da22954289850fea7946dab4d006bc6d5",
@@ -4514,7 +4855,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-dbda9d5b6f4aad1c00acb261965650a40bdcb3598f423f7f97b20825e9e1939e",
@@ -4544,7 +4888,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-dbf24cf0b28f18823499be123ba4e24eac3c64aeb3e7bb0aee5ba2320ed357a0",
@@ -4574,7 +4921,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-dd185255ff3601d23fd60e76829c5767e296190818a7dc7dec84046365e47b84",
@@ -4604,7 +4954,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-e99d790f99741977296b769ca1b46ca7e12391cf6f8bba5947af295bf961d320",
@@ -4634,7 +4987,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-ea257cb132124cc686285c8ad1ddc4ba8d27bf72364a038dac0c6ea540a616c9",
@@ -4664,7 +5020,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-ee077874a041cdfa67f96b2e28dd89521411a85bd423e81b66c12cb0adc5ebee",
@@ -4694,7 +5053,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-eed8c051717ddd8d63475fca670acdb8235f55458bb951d772cd6954553bbde6",
@@ -4724,7 +5086,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-f112df46c97fa1b2884ff5d3fd74eb2b92213f5ab84b56a2674b05922a637c88",
@@ -4754,7 +5119,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-f14272b9db5b1bdcb6fd669e4eeb580a192b243fc6523144b1169d8e24c512d2",
@@ -4784,7 +5152,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-f176102f4b7c8a662ba9582ffc0433b56c0cc16d3b081bbf3226a0ffb24461c7",
@@ -4814,7 +5185,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-f1c2bccf71a28ef4aab322a275a3572b35dacdd05b8fab89fdf36dfca85b2143",
@@ -4844,7 +5218,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-f4920cb9ed6064869ccd9039dd3063faa5bb7a470fa1b33ad3706d1b6d881122",
@@ -4874,7 +5251,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-f742b6a4342dce8ebf8b21572d35da51d1ececbce5c2cae9f504ea8d141fee72",
@@ -4904,7 +5284,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-f97cbdb5a9bc814f56db64ba59cd3a3c0a3ad94b999579fcabec82df0ef3266d",
@@ -4934,7 +5317,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-f9f69bd8e909b15c4492838d660c09492d386ac274410a9cea546138b64e7708",
@@ -4964,7 +5350,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-fd69f517b6c05110fa9d319a3ff0fa138bfc08020b40782e57b347d0fd5c19fb",
@@ -4994,7 +5383,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-fddfaad8c38e7b8da4b150ba1921f60ce1cf128c5ad8a4948a3f786ce61b3c54",
@@ -5024,7 +5416,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       },
       {
         "id": "program-relation-fe8c0b58c9ae1def7400f5767f605a981b75d86058011deaef9c9ea49644bdd3",
@@ -5054,7 +5449,10 @@
           }
         ],
         "witnesses_observed": 1,
-        "witnesses_omitted": 0
+        "witnesses_omitted": 0,
+        "patterns": [],
+        "patterns_observed": 0,
+        "patterns_omitted": 0
       }
     ],
     "coverage": {
@@ -5072,9 +5470,30 @@
       "targets_omitted": 4,
       "witnesses_observed": 122,
       "witnesses_indexed": 122,
-      "witnesses_omitted": 0
+      "witnesses_omitted": 0,
+      "patterns_observed": 0,
+      "patterns_indexed": 0,
+      "patterns_omitted": 0,
+      "arguments_observed": 0,
+      "arguments_indexed": 0,
+      "arguments_omitted": 0,
+      "receiver_origins_observed": 0,
+      "receiver_origins_indexed": 0,
+      "receiver_origins_omitted": 0,
+      "argument_objects_observed": 0,
+      "argument_objects_indexed": 0,
+      "argument_objects_omitted": 0,
+      "argument_values_observed": 0,
+      "argument_values_indexed": 0,
+      "argument_values_omitted": 0,
+      "value_sources_observed": 0,
+      "value_sources_indexed": 0,
+      "value_sources_omitted": 0,
+      "value_argument_sources_observed": 0,
+      "value_argument_sources_indexed": 0,
+      "value_argument_sources_omitted": 0
     },
-    "sha256": "270de482bccfa30e772b920b8f76e65d56197da1fcd018630be97105225a7854"
+    "sha256": "d2449a5e35025b6e487fa0f1befbfb71776799a6100c5bccc35bea55c9b38b4b"
   },
   "dependencies": {
     "version": 1,
@@ -6034,5 +6453,5 @@
     "dependency_uses_observed": 70,
     "external_calls_observed": 18
   },
-  "sha256": "74a8f8b21f72f53f6996cc5982980aab4a321e95a6f3c34027b8db14d8b646c5"
+  "sha256": "75c8ad469e12f90701d70ba70607a9e35f1cb23f77e61c05960a16542934f2a9"
 }

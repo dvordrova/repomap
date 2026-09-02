@@ -2,7 +2,10 @@
   "version": 1,
   "entries": [
     {"id": "f1", "path": "package.json"},
-    {"id": "f2", "path": "src/platform.ts"},
-    {"id": "f3", "path": "tsconfig.json"}
+    {"id": "f2", "path": "shared/contracts.ts"},
+    {"id": "f3", "path": "src/ambiguity.tsx"},
+    {"id": "f4", "path": "src/platform.ts"},
+    {"id": "f5", "path": "src/server.ts"},
+    {"id": "f6", "path": "tsconfig.json"}
   ]
 }

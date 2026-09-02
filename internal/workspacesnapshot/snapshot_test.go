@@ -1,6 +1,7 @@
 package workspacesnapshot
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,9 +64,9 @@ func TestNewRejectsAllowedPathWithoutCapturedInput(t *testing.T) {
 	}
 }
 
-func TestNewRejectsOversizedAuthority(t *testing.T) {
+func TestNewRetainsAuthorityBeyondFormerLocalThreshold(t *testing.T) {
 	repositoryRoot := filepath.Clean(t.TempDir())
-	_, err := New(Input{
+	input := Input{
 		AnalysisRoot: repositoryRoot,
 		Repository: freshness.RepositoryState{
 			Version:  freshness.RepositoryStateVersion,
@@ -73,9 +74,27 @@ func TestNewRejectsOversizedAuthority(t *testing.T) {
 			Head:     strings.Repeat("a", 40),
 			Dirty:    []freshness.DirtyFile{},
 		},
-		AllowedPaths: make([]string, maxAllowedPaths+1),
-	})
-	if err == nil {
-		t.Fatal("oversized source authority was accepted")
+		AllowedPaths:   make([]string, advisoryMaximumAllowedPaths+1),
+		CapturedInputs: make([]freshness.CapturedInput, advisoryMaximumAllowedPaths+1),
+	}
+	for position := range input.AllowedPaths {
+		filePath := fmt.Sprintf("src/%05d.go", position)
+		input.AllowedPaths[position] = filePath
+		input.CapturedInputs[position] = freshness.CapturedInput{
+			Version: freshness.CapturedInputVersion, ID: strings.Repeat("b", 64),
+			Path: filePath, Kind: freshness.FileRegular, Mode: "100644",
+			ContentSHA256: strings.Repeat("c", 64), Stages: []string{"report_evidence"},
+		}
+	}
+	snapshot, err := New(input)
+	if err != nil {
+		t.Fatalf("complete source authority was rejected: %v", err)
+	}
+	if len(snapshot.Catalog().Paths()) != len(input.AllowedPaths) {
+		t.Fatalf("retained paths = %d, want %d", len(snapshot.Catalog().Paths()), len(input.AllowedPaths))
+	}
+	warnings := ScaleWarnings(input)
+	if len(warnings) == 0 || warnings[0].Kind != ScaleWarningAllowedPaths {
+		t.Fatalf("scale warnings = %#v", warnings)
 	}
 }

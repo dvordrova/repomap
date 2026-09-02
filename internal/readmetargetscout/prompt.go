@@ -4,8 +4,9 @@ import "fmt"
 
 var PromptVersion = "readme-target-scout-prompt-" + shortSHA256(promptSystem+"\x00"+promptUserShape)
 
-// ProviderVisibleJSON returns an independently owned copy of the complete
-// atomic semantic request.
+// ProviderVisibleJSON returns an independently owned copy of this
+// compilation's exact JSON. Run passes only bounded request-local shard
+// compilations to the provider.
 func ProviderVisibleJSON(compilation Compilation) ([]byte, error) {
 	if err := validateReadyCompilation(compilation); err != nil {
 		return nil, err

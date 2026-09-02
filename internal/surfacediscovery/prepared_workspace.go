@@ -384,6 +384,9 @@ func (workspace *PreparedWorkspace) analyzerFor(
 		}
 		functions[function] = true
 	}
+	coverage := targetProgramCoverage(
+		workspace.root, universe.preparationCoverage, universe.packageClosure(input),
+	)
 	a := &analyzer{
 		ctx: ctx, opts: opts, input: input, root: workspace.root,
 		program: universe.program, packages: ssaPackages,
@@ -391,17 +394,14 @@ func (workspace *PreparedWorkspace) analyzerFor(
 		admittedPackages: admitted, allFunctions: functions,
 		modulePaths: modulePaths, functionIDs: make(map[*ssa.Function]string),
 		scenario: workspace.scenario,
-		result:   Result{Coverage: cloneProgramCoverage(universe.preparationCoverage)},
+		result:   Result{Coverage: coverage},
 	}
-	a.recordPackageLoadOutcomes(universe.packageClosure(input))
 	for _, function := range a.materializeSelectedLibraryCallables() {
 		if function != nil && functionBelongsToFacts(function, universe.packageFacts[functionPackagePath(function)]) {
 			a.allFunctions[function] = true
 		}
 	}
-	a.directCallIndex = newDirectCallIndexBuilderWithLimits(
-		a.scenario, MaxDirectCallIndexNodes, opts.DirectCallEdgeLimit,
-	)
+	a.directCallIndex = newDirectCallIndexBuilder(a.scenario, opts.DirectCallEdgeLimit)
 	a.directCallIndex.setTargetScope(DirectCallIndexScope{
 		TargetRef: input.AnalysisTarget.TargetRef, TargetKind: input.AnalysisTarget.Kind,
 		TargetModuleID: input.AnalysisTarget.ModuleID, TargetModulePath: input.AnalysisTarget.ModulePath,
@@ -409,10 +409,23 @@ func (workspace *PreparedWorkspace) analyzerFor(
 		TargetPackages: append([]string(nil), input.AnalysisTarget.TargetPackages...),
 		MaxDepth:       opts.DirectCallDepth, EdgeLimit: opts.DirectCallEdgeLimit,
 	})
-	if opts.CaptureEntryCallSubstrate {
-		a.directCallIndex.enableEntryCallSidecar()
-	}
 	return a, nil
+}
+
+// targetProgramCoverage keeps preparation phase metrics while rebuilding
+// package diagnostics from the exact target dependency closure. Preparation
+// may load several sibling targets in one universe; its union diagnostics are
+// not target-local authority and must neither leak nor be appended twice.
+func targetProgramCoverage(
+	root string,
+	preparation ProgramCoverage,
+	packages map[string]*packages.Package,
+) ProgramCoverage {
+	coverage := cloneProgramCoverage(preparation)
+	coverage.PackageDiagnostics = []PackageDiagnostic{}
+	a := analyzer{root: root, result: Result{Coverage: coverage}}
+	a.recordPackageLoadOutcomes(packages)
+	return a.result.Coverage
 }
 
 func analyzePreparedTarget(a *analyzer) (Result, error) {
@@ -426,9 +439,10 @@ func analyzePreparedTarget(a *analyzer) (Result, error) {
 		}
 		a.externalCallIndex = index
 	}
-	if a.opts.CaptureDynamicHandoffIndex {
-		a.dynamicHandoffCapture = &dynamicHandoffCapture{}
-	}
+	// Callable field bindings are traversal input even when the optional
+	// dynamic-handoff output is not requested. The capture therefore always
+	// exists; enabled gates only call-instruction handoff rows.
+	a.dynamicHandoffCapture = &dynamicHandoffCapture{enabled: a.opts.CaptureDynamicHandoffIndex}
 
 	finishIndex := a.startPhase("program_index", "indexing exact calls and generic activity candidates")
 	a.prepareTargetProgram()
@@ -438,7 +452,7 @@ func analyzePreparedTarget(a *analyzer) (Result, error) {
 	if a.externalCallIndexErr != nil {
 		return Result{}, a.externalCallIndexErr
 	}
-	if a.dynamicHandoffCapture != nil && a.dynamicHandoffCapture.err != nil {
+	if a.dynamicHandoffCapture.err != nil {
 		return Result{}, a.dynamicHandoffCapture.err
 	}
 	if a.externalCallIndex != nil {
@@ -462,16 +476,12 @@ func analyzePreparedTarget(a *analyzer) (Result, error) {
 		}
 		a.result.CoreObjectIndex = &index
 	}
-	if a.dynamicHandoffCapture != nil {
-		index, err := a.dynamicHandoffCapture.finish(direct)
+	if a.opts.CaptureDynamicHandoffIndex {
+		index, err := a.dynamicHandoffCapture.finish(direct, a.callableBindings)
 		if err != nil {
 			return Result{}, err
 		}
 		a.result.DynamicHandoffIndex = &index
-	}
-	if a.opts.CaptureEntryCallSubstrate {
-		substrate := a.directCallIndex.entryCallSubstrate(a, direct, a.entrypoints())
-		a.result.EntryCallSubstrate = &substrate
 	}
 	a.result.normalize()
 	return a.result, nil
@@ -498,23 +508,20 @@ func normalizeWorkspaceOptions(
 		return Options{}, "", Scenario{}, fmt.Errorf("surface discovery: %w", err)
 	}
 	opts.GoTarget = target.String()
-	if opts.DirectCallDepth < 1 {
-		return Options{}, "", Scenario{}, fmt.Errorf("surface discovery: direct call depth must be at least 1")
+	if opts.DirectCallDepth < 0 {
+		return Options{}, "", Scenario{}, fmt.Errorf("surface discovery: direct call depth must be non-negative")
 	}
-	if opts.DirectCallEdgeLimit < 1 {
-		return Options{}, "", Scenario{}, fmt.Errorf("surface discovery: direct call edge limit must be at least 1")
-	}
-	if opts.DirectCallEdgeLimit > MaxDirectCallIndexEdges {
-		return Options{}, "", Scenario{}, fmt.Errorf(
-			"surface discovery: direct call edge limit %d exceeds maximum %d",
-			opts.DirectCallEdgeLimit, MaxDirectCallIndexEdges,
-		)
+	if opts.DirectCallEdgeLimit < 0 {
+		return Options{}, "", Scenario{}, fmt.Errorf("surface discovery: direct call edge limit must be non-negative")
 	}
 	root, err := filepath.Abs(opts.RepoPath)
 	if err != nil {
 		return Options{}, "", Scenario{}, fmt.Errorf("surface discovery: resolve repository: %w", err)
 	}
-	opts.BuildTags = compactStrings(opts.BuildTags)
+	opts.BuildTags, err = gotarget.CanonicalBuildTags(opts.BuildTags)
+	if err != nil {
+		return Options{}, "", Scenario{}, fmt.Errorf("surface discovery: %w", err)
+	}
 	scenario := Scenario{
 		ID:   scenarioID(target.GOOS, target.GOARCH, opts.BuildTags),
 		GOOS: target.GOOS, GOARCH: target.GOARCH,

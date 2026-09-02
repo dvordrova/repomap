@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -68,5 +69,32 @@ func TestPersistReadmeRoleAuthorityFailureIsTerminal(t *testing.T) {
 	}}
 	if err := persistReadmeRoleAuthority(runDir, rows); err == nil {
 		t.Fatal("persistReadmeRoleAuthority unexpectedly ignored persistence failure")
+	}
+}
+
+func TestReadmeRoleAuthorityBeyondFormerArtifactLimitPersistsAndWarns(t *testing.T) {
+	runDir := t.TempDir()
+	rows := []readmeRoleLogRow{{
+		FileRef: corpus.FileID("f1"), Path: "cmd/server/main.go",
+		Classifications: []readmetargetscout.Classification{{
+			Class:      readmetargetscout.ClassTargetEntry,
+			Hypotheses: []string{strings.Repeat("x", readmetargetscout.AdvisoryArtifactBytes+1)},
+		}},
+	}}
+	var console strings.Builder
+	reportReadmeRoleArtifactScaleWarnings(newRunOutput(&console), rows)
+	if !strings.Contains(console.String(), "Large repository-guidance classification retained") ||
+		!strings.Contains(console.String(), "artifact_bytes") {
+		t.Fatalf("warning output = %q", console.String())
+	}
+	if err := persistReadmeRoleAuthority(runDir, rows); err != nil {
+		t.Fatalf("persist beyond former limit: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(runDir, readmetargetscout.ArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) <= readmetargetscout.AdvisoryArtifactBytes {
+		t.Fatalf("artifact = %d bytes", len(raw))
 	}
 }

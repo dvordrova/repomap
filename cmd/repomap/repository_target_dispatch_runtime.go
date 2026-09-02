@@ -12,9 +12,9 @@ import (
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/jstsproject"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
-	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
@@ -23,6 +23,12 @@ type repositoryTargetDispatchOptions struct {
 	Repo      string
 	ExtraArgs []string
 	Deps      defaultRunDeps
+	GoTarget  string
+	// GoBuildTags and the direct-call controls are parsed once by ordinary main
+	// and passed to the Go adapter before the shared ProgramIndex seam.
+	GoBuildTags         []string
+	DirectCallDepth     int
+	DirectCallEdgeLimit int
 
 	Corpus           *corpus.Corpus
 	RepositoryState  freshness.RepositoryState
@@ -47,32 +53,6 @@ type repositoryTargetDispatchOptions struct {
 type repositoryGoWorkspaceState struct {
 	workspace        *surfacediscovery.PreparedWorkspace
 	unionUnavailable bool
-}
-
-func (state *repositoryGoWorkspaceState) bind(
-	deps *defaultRunDeps,
-	scoped snapshot.Snapshot,
-	selected []snapshot.Snapshot,
-) {
-	deps.preparedGoWorkspace = state.workspace
-	deps.preparedGoWorkspaceSink = func(workspace *surfacediscovery.PreparedWorkspace) {
-		if !state.unionUnavailable {
-			state.workspace = workspace
-		}
-	}
-	deps.preparedGoWorkspaceUnionFailureSink = func(error) {
-		state.workspace = nil
-		state.unionUnavailable = true
-	}
-	if state.workspace != nil {
-		deps.preparedGoSnapshots = nil
-		return
-	}
-	if state.unionUnavailable {
-		deps.preparedGoSnapshots = []snapshot.Snapshot{scoped}
-		return
-	}
-	deps.preparedGoSnapshots = append([]snapshot.Snapshot(nil), selected...)
 }
 
 // dispatchRepositoryTargetPlan is the one owner-path execution loop. Target
@@ -105,6 +85,7 @@ func dispatchRepositoryTargetPlan(
 	}
 	multiTarget := len(ordered) > 1
 	selectedTargets := make(map[repositoryTargetKey]targetoutcome.SelectedTarget, len(ordered))
+	selectedTargetRows := make([]targetoutcome.SelectedTarget, 0, len(ordered))
 	for _, target := range ordered {
 		selected, selectedErr := repositorySelectedTarget(target)
 		if selectedErr != nil {
@@ -114,32 +95,51 @@ func dispatchRepositoryTargetPlan(
 			)
 		}
 		selectedTargets[target.Key] = selected
+		selectedTargetRows = append(selectedTargetRows, selected)
 	}
+	reportSelectedTargetOutcomeScaleWarnings(options.Output, selectedTargetRows)
 	defaultSelected, found := selectedTargets[options.Plan.Default]
 	if !found {
 		return report.FailedPublicationAssessment(), "", fmt.Errorf(
 			"repository target dispatcher: selected default identity is absent",
 		)
 	}
+	reducedDocumentation, err := reduceRepositoryDocumentationForRun(
+		ctx,
+		options.DebugDir,
+		options.NoCache,
+		options.Deps.llmBatchConcurrency,
+		options.Deps.llmBatchController,
+		options.Deps.newCubeProvider,
+		options.Deps.runDocumentationReduce,
+		options.FirstLayer,
+		options.Plan.guidance,
+		options.Output,
+	)
+	if err != nil {
+		return report.FailedPublicationAssessment(), "", err
+	}
 
-	goSnapshots := make(map[repositoryTargetKey]snapshot.Snapshot)
-	goSnapshotErrors := make(map[repositoryTargetKey]error)
-	allGoSnapshots := make([]snapshot.Snapshot, 0)
-	if options.Plan.GoSource != nil {
-		for _, target := range ordered {
-			if target.Key.Adapter != repositoryTargetAdapterGo {
-				continue
-			}
-			scoped, err := snapshot.ScopeAnalysisTarget(*options.Plan.GoSource, target.Key.Ref)
-			if err != nil {
-				goSnapshotErrors[target.Key] = fmt.Errorf(
-					"repository target dispatcher: scope Go target %s: %w", target.Key.String(), err,
-				)
-				continue
-			}
-			goSnapshots[target.Key] = scoped
-			allGoSnapshots = append(allGoSnapshots, scoped)
+	registry, err := ordinaryRepositoryTargetAdapterRegistry()
+	if err != nil {
+		return report.FailedPublicationAssessment(), "", err
+	}
+	dispatchPlans := make(map[repositoryTargetAdapter]any)
+	for _, target := range ordered {
+		if _, prepared := dispatchPlans[target.Key.Adapter]; prepared {
+			continue
 		}
+		descriptor, ok := registry.descriptor(target.Key.Adapter)
+		if !ok {
+			return report.FailedPublicationAssessment(), "", fmt.Errorf(
+				"repository target dispatcher: adapter %q is not registered", target.Key.Adapter,
+			)
+		}
+		state, prepareErr := descriptor.PrepareDispatchPlan(options.Plan, ordered)
+		if prepareErr != nil {
+			return report.FailedPublicationAssessment(), "", prepareErr
+		}
+		dispatchPlans[target.Key.Adapter] = state
 	}
 
 	runs := make([]targetPublishedRun, 0, len(ordered))
@@ -176,13 +176,13 @@ func dispatchRepositoryTargetPlan(
 		options.Output.Warn(
 			"Target not analyzed",
 			"target: "+consoleTarget.DisplayPath,
+			"scope: "+consoleTarget.Scope,
 			"stage: "+string(stage),
 			"reason: "+string(reason),
 			targetErr.Error(),
 		)
 		return nil
 	}
-	var goWorkspace repositoryGoWorkspaceState
 	for index := range ordered {
 		target := ordered[index]
 		runID := options.RunID
@@ -205,45 +205,65 @@ func dispatchRepositoryTargetPlan(
 		selected := selectedTargets[target.Key]
 		currentStage := targetoutcome.StageTargetPreparation
 
-		if scopeErr := goSnapshotErrors[target.Key]; scopeErr != nil {
-			stage, reason := classifyRepositoryTargetFailure(currentStage, scopeErr)
-			if failureErr := recordFailure(selected, consoleTarget, stage, reason, scopeErr); failureErr != nil {
+		descriptor, ok := registry.descriptor(target.Key.Adapter)
+		if !ok {
+			return failPublication(fmt.Errorf(
+				"repository target dispatcher: adapter %q is not registered", target.Key.Adapter,
+			))
+		}
+		dispatchBinding, prepareErr := descriptor.PrepareDispatchTarget(
+			ctx, options, target, dispatchPlans[target.Key.Adapter],
+		)
+		if prepareErr != nil {
+			if ctx.Err() != nil {
+				return failPublication(prepareErr)
+			}
+			stage, reason := classifyRepositoryTargetFailure(currentStage, prepareErr)
+			if failureErr := recordFailure(selected, consoleTarget, stage, reason, prepareErr); failureErr != nil {
 				return failPublication(failureErr)
 			}
 			continue
 		}
-
-		var materializedProject jstsproject.Result
-		hasMaterializedProject := false
-		if target.Key.Adapter == repositoryTargetAdapterJSTS {
-			materialized, materializeErr := materializeSelectedJSTSProjects(
-				ctx, options, []repositoryTypedTarget{target},
+		if err := dispatchBinding.Target.validateWith(registry); err != nil ||
+			!sameRepositoryPlannedTarget(target, dispatchBinding.Target) {
+			if err == nil {
+				err = fmt.Errorf("prepared target changed its planned identity")
+			}
+			stage, reason := classifyRepositoryTargetFailure(currentStage, err)
+			if failureErr := recordFailure(
+				selected, consoleTarget, stage, reason, err,
+			); failureErr != nil {
+				return failPublication(failureErr)
+			}
+			continue
+		}
+		target = dispatchBinding.Target
+		currentStage = targetoutcome.StageProgramAnalysis
+		var programPage repositoryProgramPageAuthority
+		if !dispatchBinding.ProgramFactsBound {
+			prepareErr = fmt.Errorf(
+				"repository target adapter %q did not bind one compiler fact snapshot",
+				target.Key.Adapter,
 			)
-			if materializeErr != nil {
-				if ctx.Err() != nil {
-					return failPublication(materializeErr)
-				}
-				stage, reason := classifyRepositoryTargetFailure(currentStage, materializeErr)
-				if failureErr := recordFailure(selected, consoleTarget, stage, reason, materializeErr); failureErr != nil {
-					return failPublication(failureErr)
-				}
-				continue
+		} else {
+			programPage, prepareErr = buildRepositoryProgramPageAuthority(
+				registry,
+				repositoryProgramBuildRequest{
+					Context: ctx, Corpus: options.Corpus,
+					Target: target, Facts: dispatchBinding.ProgramFacts,
+				},
+			)
+		}
+		// Adapter-native compiler/parser facts are live only across the atomic
+		// ProgramIndex + dependency projection. Release them before any semantic
+		// or report work begins, including when the projection fails.
+		dispatchBinding.ProgramFacts = nil
+		if prepareErr != nil {
+			stage, reason := classifyRepositoryTargetFailure(currentStage, prepareErr)
+			if failureErr := recordFailure(selected, consoleTarget, stage, reason, prepareErr); failureErr != nil {
+				return failPublication(failureErr)
 			}
-			materializedProject, hasMaterializedProject = materialized[target.Key]
-			if !hasMaterializedProject {
-				return failPublication(fmt.Errorf(
-					"repository target dispatcher: materialized JavaScript/TypeScript target is missing",
-				))
-			}
-			var bindErr error
-			target, bindErr = rebindMaterializedJSTSTarget(target, materializedProject)
-			if bindErr != nil {
-				stage, reason := classifyRepositoryTargetFailure(currentStage, bindErr)
-				if failureErr := recordFailure(selected, consoleTarget, stage, reason, bindErr); failureErr != nil {
-					return failPublication(failureErr)
-				}
-				continue
-			}
+			continue
 		}
 
 		childDeps := options.Deps
@@ -251,40 +271,22 @@ func dispatchRepositoryTargetPlan(
 		state := cloneRepositoryState(options.RepositoryState)
 		childDeps.capturedRepositoryState = &state
 		childDeps.preselectedTarget = &target
-		childDeps.preselectedPythonCatalog = options.Plan.PythonCatalog
-		childDeps.preselectedJSTSProject = nil
-		if hasMaterializedProject {
-			owned := materializedProject.Snapshot()
-			childDeps.preselectedJSTSProject = &owned
-		}
+		childDeps.preselectedProgramPage = &programPage
 		childDeps.coreReadmeRoleRows = cloneReadmeRoleLog(options.Plan.Outcome.ReadmeRoles)
 		childDeps.runIDOverride = runID
 		childDeps.siblingTargetRun = true
-		childDeps.deferredPortfolioHTML = multiTarget
-		childDeps.preparedGoWorkspace = nil
-		childDeps.preparedGoSnapshots = nil
-		childDeps.preparedGoWorkspaceSink = nil
-		childDeps.preparedGoWorkspaceUnionFailureSink = nil
-		if !multiTarget && index == 0 {
-			outcome := options.Plan.Outcome
-			outcome.SelectedTargetRefs = append([]string(nil), options.Plan.Outcome.SelectedTargetRefs...)
-			outcome.ReadmeRoles = cloneReadmeRoleLog(options.Plan.Outcome.ReadmeRoles)
-			childDeps.preselectedOutcome = &outcome
-			childDeps.firstLayerObserver = options.FirstLayer
+		childDeps.deferredPortfolioHTML = true
+		ownedDocumentation, documentationErr := reducedDocumentation.Snapshot()
+		if documentationErr != nil {
+			return failPublication(fmt.Errorf(
+				"repository target dispatcher: own reduced documentation for %s: %w",
+				consoleTarget.DisplayPath,
+				documentationErr,
+			))
 		}
+		childDeps.reducedDocumentation = &ownedDocumentation
 		childDeps.targetOutcomeStageSink = func(stage targetoutcome.Stage) {
 			currentStage = stage
-		}
-		if target.Key.Adapter == repositoryTargetAdapterGo {
-			scoped, ok := goSnapshots[target.Key]
-			if !ok {
-				return report.FailedPublicationAssessment(), "", fmt.Errorf("repository target dispatcher: Go target snapshot is missing")
-			}
-			childDeps.precomputedSnapshot = &scoped
-			goWorkspace.bind(&childDeps, scoped, allGoSnapshots)
-		} else {
-			childDeps.precomputedSnapshot = nil
-			childDeps.preparedGoSnapshots = nil
 		}
 		var published targetPublishedRun
 		childDeps.publishedTargetSink = func(value targetPublishedRun) {
@@ -323,6 +325,19 @@ func dispatchRepositoryTargetPlan(
 			}
 			continue
 		}
+		if err := published.GroupIndex.Validate(); err != nil ||
+			published.GroupIndex.Target.ID != page.ProgramTarget.ID {
+			if err == nil {
+				err = fmt.Errorf("GroupsIndex target does not match exact adapter target")
+			}
+			if failureErr := recordFailure(
+				selected, consoleTarget, targetoutcome.StageSemanticAnalysis,
+				targetoutcome.ReasonTargetOutputInvalid, err,
+			); failureErr != nil {
+				return failPublication(failureErr)
+			}
+			continue
+		}
 		published.ProgramPage = page
 		analyzed, analyzedErr := targetoutcome.NewAnalyzed(selected, page.ProgramTarget, runID)
 		if analyzedErr != nil {
@@ -332,32 +347,11 @@ func dispatchRepositoryTargetPlan(
 		runs = append(runs, published)
 		pendingTargets = append(pendingTargets, consoleTarget)
 	}
-	if !multiTarget {
-		if len(runs) != 1 {
-			failurePortfolio, portfolioErr := targetoutcome.Build(defaultSelected.ID, outcomes)
-			diagnosticErr := portfolioErr
-			if portfolioErr == nil {
-				diagnosticErr = persistTargetOutcomePortfolioForRunDirs(
-					failurePortfolio,
-					[]string{filepath.Join(options.DebugDir, options.RunID)},
-				)
-			}
-			return report.FailedPublicationAssessment(), "", errors.Join(
-				errors.Join(targetErrors...), diagnosticErr,
-			)
-		}
-		assessment, err := report.AssessRunPublication(runs[0].RunDir)
-		if err != nil {
-			return failPublication(err)
-		}
-		options.Output.TargetPage("complete", pendingTargets[0])
-		return assessment, filepath.Join(runs[0].RunDir, "report.html"), nil
-	}
-
 	targetOutcomePortfolio, err := targetoutcome.Build(defaultSelected.ID, outcomes)
 	if err != nil {
 		return failPublication(err)
 	}
+	reportTargetOutcomeScaleWarnings(options.Output, targetOutcomePortfolio)
 	if len(runs) == 0 {
 		failedRunDir := filepath.Join(options.DebugDir, options.RunID)
 		flushFailedFirstLayerSemanticJournal(failedRunDir, options.FirstLayer, options.Output)
@@ -376,32 +370,59 @@ func dispatchRepositoryTargetPlan(
 	if err := recordTargetPortfolioOutcome(owner.RunDir, options.Plan.Outcome, options.Output); err != nil {
 		return failPublication(err)
 	}
+	if multiTarget {
+		runs, err = matchPublishedRunGroups(
+			ctx,
+			options.DebugDir,
+			options.NoCache,
+			options.Deps.llmBatchConcurrency,
+			options.Deps.llmBatchController,
+			options.Deps.newCubeProvider,
+			options.Deps.runGroupMatching,
+			runs,
+			options.Output,
+		)
+		if err != nil {
+			return failPublication(err)
+		}
+	}
+	owner = runs[0]
+	// The first-day layers read the completed graph and the repository corpus,
+	// then land in every backing run before its report data is generated.
+	if err := buildFirstDayLayers(ctx, firstDayOptions{
+		RepoPath:         options.Repo,
+		RepositoryName:   repoRunLabel(options.Repo),
+		Revision:         options.RepositoryState.Head,
+		Corpus:           options.Corpus,
+		TrackedPaths:     repositoryTrackedPaths(ctx, options.Repo),
+		Runs:             runs,
+		CacheRoot:        options.DebugDir,
+		NoCache:          options.NoCache,
+		BatchConcurrency: options.Deps.llmBatchConcurrency,
+		BatchController:  options.Deps.llmBatchController,
+		ProviderFactory:  options.Deps.newCubeProvider,
+		Runner:           options.Deps.runOrientation,
+		Output:           options.Output,
+	}); err != nil {
+		return failPublication(err)
+	}
 	portfolio, err := buildProgramPagePortfolio(runs, owner.RunID)
 	if err != nil {
 		return failPublication(err)
 	}
-	runtimeAuthority, err := synthesizeProgramPageRuntimePortfolio(
-		ctx,
-		options.DebugDir,
-		options.NoCache,
-		options.Deps.llmBatchConcurrency,
-		options.Deps.llmBatchController,
-		options.Deps.newCubeProvider,
-		options.Deps.runRuntimePortfolio,
-		portfolio,
-		runs,
-		options.Output,
-	)
-	if err != nil {
-		return failPublication(err)
-	}
+	reportProgramPagePortfolioScaleWarnings(options.Output, portfolio)
 	if err := persistTargetOutcomePortfolioForRuns(targetOutcomePortfolio, runs); err != nil {
 		return failPublication(err)
 	}
-	if err := finalizeProgramPageRuns(ctx, runtimeAuthority, portfolio, targetOutcomePortfolio, runs); err != nil {
+	if err := finalizeProgramPageRuns(
+		ctx, portfolio, targetOutcomePortfolio, runs, options.Output,
+	); err != nil {
 		return failPublication(err)
 	}
 	assessment, err := publishProgramPageBundle(portfolio, runs)
+	reportTargetPageRunScaleWarnings(
+		options.Output, runs, assessment.ScaleWarnings(), assessment.TargetScaleWarnings(),
+	)
 	if err != nil {
 		return failPublication(err)
 	}
@@ -442,7 +463,8 @@ func materializeSelectedJSTSProjects(
 		if target.Key.Adapter != repositoryTargetAdapterJSTS {
 			continue
 		}
-		if target.JSTS == nil {
+		jstsTarget, ok := repositoryJSTSTarget(target)
+		if !ok {
 			return nil, fmt.Errorf("repository target dispatcher: selected JavaScript/TypeScript target lacks scout authority")
 		}
 		started := time.Now()
@@ -450,31 +472,39 @@ func materializeSelectedJSTSProjects(
 			options.Output.State(
 				"JavaScript/TypeScript project materialization", "started",
 				"language adapter: JavaScript/TypeScript",
-				"target: "+target.JSTS.Name,
-				"manifest: "+target.JSTS.ManifestPath,
-				"selector: "+target.JSTS.Selector,
+				"target: "+jstsTarget.Name,
+				"manifest: "+jstsTarget.ManifestPath,
+				"selector: "+jstsTarget.Selector,
 			)
 		}
-		project, err := discover(ctx, options.Corpus, options.Repo, target.JSTS.Selector)
+		project, err := discover(ctx, options.Corpus, options.Repo, jstsTarget.Selector)
 		if err != nil {
 			if jsTSOwnerPreparationError(err) {
 				return nil, fmt.Errorf(
 					"materialize selected JavaScript/TypeScript package project %s (manifest %s): %w; the owner must prepare the manifest-declared TypeScript compiler in repository-local node_modules with the project's normal install command before running repomap; repomap never installs packages",
-					target.JSTS.Selector, target.JSTS.ManifestPath, err,
+					jstsTarget.Selector, jstsTarget.ManifestPath, err,
 				)
 			}
 			return nil, fmt.Errorf(
 				"materialize selected JavaScript/TypeScript package project %s (manifest %s): %w",
-				target.JSTS.Selector, target.JSTS.ManifestPath, err,
+				jstsTarget.Selector, jstsTarget.ManifestPath, err,
 			)
 		}
-		if err := validateJSTSTargetMaterialization(options.Corpus, *target.JSTS, project); err != nil {
+		if err := validateJSTSTargetMaterialization(options.Corpus, jstsTarget, project); err != nil {
 			return nil, fmt.Errorf(
 				"materialize selected JavaScript/TypeScript package project %s: %w",
-				target.JSTS.Selector,
+				jstsTarget.Selector,
 				err,
 			)
 		}
+		// The validated selected project is complete authority at this
+		// boundary. Report its advisory scale measurements now, before later
+		// rebinding, child-run setup, ProgramIndex projection, or persistence
+		// can fail and hide them.
+		reportJSTSProjectScaleWarnings(options.Output, programindex.Target{
+			ID: project.ProgramTargetID, Language: project.Project.Language,
+			Name: project.Project.Name, Selector: project.Project.Selector,
+		}, project)
 		result[target.Key] = project.Snapshot()
 		if options.Output != nil {
 			options.Output.State(

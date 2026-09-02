@@ -6,8 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/corpus"
 )
 
 func TestRunCanceledContextStopsBeforeSnapshotPublication(t *testing.T) {
@@ -58,4 +61,26 @@ func runOrientGit(t *testing.T, repository string, args ...string) {
 	if output, err := exec.Command("git", commandArgs...).CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", commandArgs, err, output)
 	}
+}
+
+func writeSurfaceTestFile(t *testing.T, root, name, contents string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, name), []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func prepareOrientRunOptions(t *testing.T, repository string, options Options) Options {
+	t.Helper()
+	repositoryCorpus, err := corpus.Open(t.Context(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repositoryCorpus.Close() })
+	options.RepoPath = repository
+	options.RepositoryCorpus = repositoryCorpus
+	if options.GoTarget == "" {
+		options.GoTarget = runtime.GOOS + "/" + runtime.GOARCH
+	}
+	return options
 }

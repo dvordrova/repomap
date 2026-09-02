@@ -40,6 +40,14 @@ func TestReaderReadFileBoundsContent(t *testing.T) {
 			}
 		})
 	}
+	complete, err := reader.ReadFileAll("README.md")
+	if err != nil || string(complete.Bytes) != "abcdef" || complete.Truncated {
+		t.Fatalf("ReadFileAll() = %#v, %v", complete, err)
+	}
+	complete, err = reader.ReadFile("README.md", maxReadBytes)
+	if err != nil || string(complete.Bytes) != "abcdef" || complete.Truncated {
+		t.Fatalf("ReadFile(max int) = %#v, %v", complete, err)
+	}
 }
 
 func TestReaderRejectsUnsafePathsAndSymlinkEscape(t *testing.T) {

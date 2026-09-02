@@ -6,18 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
-	ExternalCallIndexVersion = 1
-
-	MaxExternalCallIndexPackages = 65_536
-	MaxExternalCallIndexCallers  = 65_536
-	MaxExternalCallIndexFamilies = 131_072
-
-	MaxExternalCallRepresentativeCallsites = 3
+	ExternalCallIndexVersion = 3
+	// ExternalCallCgoPackagePath is the Go toolchain's pseudo-package identity
+	// for an exact handoff to a generated cgo wrapper. It does not identify a
+	// repository package or claim execution beyond that wrapper boundary.
+	ExternalCallCgoPackagePath = "C"
 )
 
 // ExternalCallPackage is one repository package present in the exact loaded
@@ -28,9 +28,9 @@ type ExternalCallPackage struct {
 	PackagePath string `json:"package_path"`
 }
 
-// ExternalCallTarget is a safely named static callee outside the repository
-// program. It deliberately states only Go package and symbol identity; a
-// later integration cube owns service or resource semantics.
+// ExternalCallTarget is a safely named static callee outside the
+// repository-owned source program. It deliberately states only Go package and
+// symbol identity; a later integration cube owns service or resource semantics.
 type ExternalCallTarget struct {
 	PackagePath string `json:"package_path"`
 	Receiver    string `json:"receiver,omitempty"`
@@ -60,6 +60,46 @@ type ExternalCallWitness struct {
 	Dispatch   ExternalCallDispatch
 	Invocation DirectCallInvocation
 	Callsite   Location
+	Pattern    *ExternalCallPattern
+}
+
+// ExternalCallPatternArgument is one source-exact argument of an exact Go
+// call. String constants retain only their exact value; every other
+// expression remains dynamic. ObjectIDs contain compiler-resolved
+// repository-callable identities, not a semantic handler claim.
+type ExternalCallPatternArgument struct {
+	Position        int      `json:"position"`
+	Kind            string   `json:"kind"`
+	Value           string   `json:"value,omitempty"`
+	ObjectIDs       []string `json:"object_ids"`
+	ObjectsObserved int      `json:"objects_observed"`
+	ObjectsOmitted  int      `json:"objects_omitted"`
+}
+
+const (
+	ExternalCallPatternLiteralString = "literal_string"
+	ExternalCallPatternDynamic       = "dynamic"
+)
+
+// ExternalCallPattern is a neutral call-syntax row shared by exact local and
+// external call authority. Its owning edge or family already owns callee
+// identity and invocation authority, so the pattern deliberately does not
+// duplicate them.
+type ExternalCallPattern struct {
+	ID       string   `json:"id"`
+	Callsite Location `json:"callsite"`
+	// ResultID is an exact, source-bound SSA call-result identity. It is not a
+	// declaration and does not claim that the call executes. A later method
+	// pattern may cite the same identity as its receiver, preserving neutral
+	// chained-call syntax without knowing any framework or protocol.
+	ResultID          string                        `json:"result_id,omitempty"`
+	ResultType        string                        `json:"result_type,omitempty"`
+	ReceiverResultIDs []string                      `json:"receiver_result_ids"`
+	ReceiversObserved int                           `json:"receivers_observed"`
+	ReceiversOmitted  int                           `json:"receivers_omitted"`
+	Arguments         []ExternalCallPatternArgument `json:"arguments"`
+	ArgumentsObserved int                           `json:"arguments_observed"`
+	ArgumentsOmitted  int                           `json:"arguments_omitted"`
 }
 
 // ExternalCallExclusion retains unresolved call shapes per exact caller. None
@@ -73,17 +113,20 @@ type ExternalCallExclusion struct {
 }
 
 // ExternalCallFamily compacts exact witnesses with the same local caller,
-// external callee and invocation. WitnessCount stays complete while only a
-// bounded canonical callsite sample is retained.
+// external callee and invocation. Every unique source callsite/pattern is
+// retained while WitnessCount separately includes duplicate compiler witnesses.
 type ExternalCallFamily struct {
-	ID               string               `json:"id"`
-	CallerID         string               `json:"caller_id"`
-	Target           ExternalCallTarget   `json:"target"`
-	Dispatch         ExternalCallDispatch `json:"dispatch"`
-	Invocation       DirectCallInvocation `json:"invocation"`
-	WitnessCount     int                  `json:"witness_count"`
-	Callsites        []Location           `json:"callsites"`
-	CallsitesOmitted int                  `json:"callsites_omitted"`
+	ID               string                `json:"id"`
+	CallerID         string                `json:"caller_id"`
+	Target           ExternalCallTarget    `json:"target"`
+	Dispatch         ExternalCallDispatch  `json:"dispatch"`
+	Invocation       DirectCallInvocation  `json:"invocation"`
+	WitnessCount     int                   `json:"witness_count"`
+	Callsites        []Location            `json:"callsites"`
+	CallsitesOmitted int                   `json:"callsites_omitted"`
+	Patterns         []ExternalCallPattern `json:"patterns"`
+	PatternsObserved int                   `json:"patterns_observed"`
+	PatternsOmitted  int                   `json:"patterns_omitted"`
 }
 
 type ExternalCallFrontier struct {
@@ -112,8 +155,12 @@ type ExternalCallIndexCoverage struct {
 	FamiliesIndexed                  int `json:"families_indexed"`
 	ExternalStaticWitnesses          int `json:"external_static_witnesses"`
 	ExternalInterfaceInvokeWitnesses int `json:"external_interface_invoke_witnesses"`
+	// Representative* are historical field names. They now count every unique
+	// retained source callsite/pattern; no small representative sample is cut.
 	RepresentativeCallsites          int `json:"representative_callsites"`
 	RepresentativeCallsitesOmitted   int `json:"representative_callsites_omitted"`
+	RepresentativePatterns           int `json:"representative_patterns"`
+	RepresentativePatternsOmitted    int `json:"representative_patterns_omitted"`
 	DynamicInvokesExcluded           int `json:"dynamic_invokes_excluded"`
 	NonStaticCallsExcluded           int `json:"non_static_calls_excluded"`
 	UnnamedStaticCalleesExcluded     int `json:"unnamed_static_callees_excluded"`
@@ -158,9 +205,6 @@ func NewExternalCallIndexBuilder(
 	if strings.TrimSpace(scenario.ID) == "" || strings.TrimSpace(scenario.GOOS) == "" ||
 		strings.TrimSpace(scenario.GOARCH) == "" {
 		return nil, fmt.Errorf("external call index: invalid scenario")
-	}
-	if len(modules) > MaxExternalCallIndexPackages || len(packages) > MaxExternalCallIndexPackages {
-		return nil, fmt.Errorf("external call index: module or package limit exceeded")
 	}
 	builder := &ExternalCallIndexBuilder{
 		index: ExternalCallIndex{
@@ -219,22 +263,33 @@ func (builder *ExternalCallIndexBuilder) AddWitness(value ExternalCallWitness) e
 		!validRepositoryDirectCallLocation(value.Callsite) {
 		return fmt.Errorf("external call index: invalid exact witness")
 	}
+	if value.Pattern != nil {
+		if err := validateExternalCallPattern(*value.Pattern); err != nil || value.Pattern.Callsite != value.Callsite {
+			return fmt.Errorf("external call index: invalid exact witness pattern")
+		}
+	}
 	familyID := externalCallFamilyID(
 		value.Caller.ID, value.Target, value.Dispatch, value.Invocation,
 	)
 	family, exists := builder.familyByID[familyID]
 	if !exists {
-		if len(builder.familyByID) >= MaxExternalCallIndexFamilies {
-			return fmt.Errorf("external call index: family limit exceeded")
-		}
 		family = ExternalCallFamily{
 			ID: familyID, CallerID: value.Caller.ID, Target: value.Target,
-			Dispatch: value.Dispatch, Invocation: value.Invocation, Callsites: []Location{},
+			Dispatch: value.Dispatch, Invocation: value.Invocation,
+			Callsites: []Location{}, Patterns: []ExternalCallPattern{},
 		}
+	}
+	if family.WitnessCount == int(^uint(0)>>1) {
+		return fmt.Errorf("external call index: witness count overflow")
 	}
 	family.WitnessCount++
 	family.Callsites = appendExternalCallsite(family.Callsites, value.Callsite)
-	family.CallsitesOmitted = family.WitnessCount - len(family.Callsites)
+	family.CallsitesOmitted = 0
+	if value.Pattern != nil {
+		family.Patterns = appendExternalCallPattern(family.Patterns, *value.Pattern)
+	}
+	family.PatternsObserved = len(family.Patterns)
+	family.PatternsOmitted = 0
 	builder.familyByID[familyID] = family
 	return nil
 }
@@ -316,9 +371,6 @@ func (builder *ExternalCallIndexBuilder) addCaller(caller DirectCallNode) error 
 		}
 		return nil
 	}
-	if len(builder.callerByID) >= MaxExternalCallIndexCallers {
-		return fmt.Errorf("external call index: caller limit exceeded")
-	}
 	builder.callerByID[caller.ID] = copyDirectCallNode(caller)
 	return nil
 }
@@ -333,6 +385,7 @@ func (builder *ExternalCallIndexBuilder) Finish() (ExternalCallIndex, error) {
 	}
 	for _, family := range builder.familyByID {
 		family.Callsites = append([]Location(nil), family.Callsites...)
+		family.Patterns = cloneExternalCallPatterns(family.Patterns)
 		result.Families = append(result.Families, family)
 	}
 	for _, frontier := range builder.frontierByID {
@@ -342,7 +395,11 @@ func (builder *ExternalCallIndexBuilder) Finish() (ExternalCallIndex, error) {
 		result.PackageFrontiers = append(result.PackageFrontiers, frontier)
 	}
 	canonicalizeExternalCallIndex(&result)
-	result.Coverage = externalCallCoverage(result)
+	coverage, err := externalCallCoverage(result)
+	if err != nil {
+		return ExternalCallIndex{}, err
+	}
+	result.Coverage = coverage
 	digest, err := externalCallIndexSHA256(result)
 	if err != nil {
 		return ExternalCallIndex{}, err
@@ -368,6 +425,7 @@ func (index ExternalCallIndex) Snapshot() ExternalCallIndex {
 		result.Families[position].Callsites = append(
 			[]Location(nil), index.Families[position].Callsites...,
 		)
+		result.Families[position].Patterns = cloneExternalCallPatterns(index.Families[position].Patterns)
 	}
 	result.Frontiers = append([]ExternalCallFrontier(nil), index.Frontiers...)
 	result.PackageFrontiers = append(
@@ -381,12 +439,6 @@ func (index ExternalCallIndex) Validate() error {
 		strings.TrimSpace(index.Scenario.GOOS) == "" || strings.TrimSpace(index.Scenario.GOARCH) == "" ||
 		!sort.StringsAreSorted(index.Scenario.Tags) || !uniqueStrings(index.Scenario.Tags) {
 		return fmt.Errorf("external call index: invalid version or scenario")
-	}
-	if len(index.Modules) > MaxExternalCallIndexPackages ||
-		len(index.Packages) > MaxExternalCallIndexPackages ||
-		len(index.Callers) > MaxExternalCallIndexCallers ||
-		len(index.Families) > MaxExternalCallIndexFamilies {
-		return fmt.Errorf("external call index: bound exceeded")
 	}
 	modules := make(map[string]DirectCallModule, len(index.Modules))
 	previous := ""
@@ -432,10 +484,11 @@ func (index ExternalCallIndex) Validate() error {
 			return fmt.Errorf("external call index: families are not canonical")
 		}
 		previous = key
-		if _, exists := callers[family.CallerID]; !exists || !validExternalCallTarget(family.Target) || !family.Dispatch.Valid() ||
+		_, callerExists := callers[family.CallerID]
+		if !callerExists || !validExternalCallTarget(family.Target) || !family.Dispatch.Valid() ||
 			!family.Invocation.Valid() || family.WitnessCount < 1 || len(family.Callsites) == 0 ||
-			len(family.Callsites) > MaxExternalCallRepresentativeCallsites ||
-			family.CallsitesOmitted != family.WitnessCount-len(family.Callsites) || family.CallsitesOmitted < 0 ||
+			family.CallsitesOmitted != 0 || family.Patterns == nil ||
+			family.PatternsObserved != len(family.Patterns) || family.PatternsOmitted != 0 ||
 			family.ID != externalCallFamilyID(family.CallerID, family.Target, family.Dispatch, family.Invocation) {
 			return fmt.Errorf("external call index: invalid family")
 		}
@@ -443,6 +496,14 @@ func (index ExternalCallIndex) Validate() error {
 			if !validRepositoryDirectCallLocation(callsite) ||
 				(position > 0 && !directCallLocationLess(family.Callsites[position-1], callsite)) {
 				return fmt.Errorf("external call index: invalid family callsites")
+			}
+		}
+		for position, pattern := range family.Patterns {
+			if err := validateExternalCallPattern(pattern); err != nil {
+				return fmt.Errorf("external call index: invalid family pattern: %w", err)
+			}
+			if position > 0 && !externalCallPatternLess(family.Patterns[position-1], pattern) {
+				return fmt.Errorf("external call index: family patterns are not canonical")
 			}
 		}
 	}
@@ -469,7 +530,8 @@ func (index ExternalCallIndex) Validate() error {
 			return fmt.Errorf("external call index: invalid package frontier")
 		}
 	}
-	if index.Coverage != externalCallCoverage(index) {
+	wantCoverage, err := externalCallCoverage(index)
+	if err != nil || index.Coverage != wantCoverage {
 		return fmt.Errorf("external call index: coverage mismatch")
 	}
 	digest, err := externalCallIndexSHA256(index)
@@ -529,10 +591,103 @@ func appendExternalCallsite(values []Location, candidate Location) []Location {
 	}
 	values = append(values, candidate)
 	sort.Slice(values, func(i, j int) bool { return directCallLocationLess(values[i], values[j]) })
-	if len(values) > MaxExternalCallRepresentativeCallsites {
-		values = values[:MaxExternalCallRepresentativeCallsites]
-	}
 	return values
+}
+
+func appendExternalCallPattern(
+	values []ExternalCallPattern,
+	candidate ExternalCallPattern,
+) []ExternalCallPattern {
+	for _, value := range values {
+		if value.ID == candidate.ID {
+			return values
+		}
+	}
+	values = append(values, cloneExternalCallPattern(candidate))
+	sort.Slice(values, func(i, j int) bool { return externalCallPatternLess(values[i], values[j]) })
+	return values
+}
+
+func externalCallPatternLess(left, right ExternalCallPattern) bool {
+	if left.Callsite != right.Callsite {
+		return directCallLocationLess(left.Callsite, right.Callsite)
+	}
+	return left.ID < right.ID
+}
+
+func cloneExternalCallPattern(value ExternalCallPattern) ExternalCallPattern {
+	result := value
+	result.ReceiverResultIDs = append([]string{}, value.ReceiverResultIDs...)
+	result.Arguments = make([]ExternalCallPatternArgument, len(value.Arguments))
+	copy(result.Arguments, value.Arguments)
+	for position := range result.Arguments {
+		result.Arguments[position].ObjectIDs = make([]string, len(value.Arguments[position].ObjectIDs))
+		copy(result.Arguments[position].ObjectIDs, value.Arguments[position].ObjectIDs)
+	}
+	return result
+}
+
+func cloneExternalCallPatterns(values []ExternalCallPattern) []ExternalCallPattern {
+	result := make([]ExternalCallPattern, len(values))
+	for position, value := range values {
+		result[position] = cloneExternalCallPattern(value)
+	}
+	return result
+}
+
+func validateExternalCallPattern(value ExternalCallPattern) error {
+	if value.ID != externalCallPatternID(value.Callsite) || !validRepositoryDirectCallLocation(value.Callsite) {
+		return fmt.Errorf("invalid pattern identity")
+	}
+	if value.ReceiverResultIDs == nil || !externalCallPlainOptional(value.ResultID) ||
+		!externalCallPlainOptional(value.ResultType) ||
+		!sort.StringsAreSorted(value.ReceiverResultIDs) || !uniqueStrings(value.ReceiverResultIDs) ||
+		value.ReceiversObserved < len(value.ReceiverResultIDs) ||
+		value.ReceiversOmitted != value.ReceiversObserved-len(value.ReceiverResultIDs) {
+		return fmt.Errorf("invalid pattern result or receiver coverage")
+	}
+	if value.Arguments == nil ||
+		value.ArgumentsObserved < len(value.Arguments) ||
+		value.ArgumentsOmitted != value.ArgumentsObserved-len(value.Arguments) {
+		return fmt.Errorf("invalid pattern argument coverage")
+	}
+	for _, resultID := range value.ReceiverResultIDs {
+		if !externalCallPlain(resultID) {
+			return fmt.Errorf("invalid pattern receiver result")
+		}
+	}
+	for position, argument := range value.Arguments {
+		if argument.Position != position+1 ||
+			!sort.StringsAreSorted(argument.ObjectIDs) || !uniqueStrings(argument.ObjectIDs) ||
+			argument.ObjectsObserved < len(argument.ObjectIDs) ||
+			argument.ObjectsOmitted != argument.ObjectsObserved-len(argument.ObjectIDs) {
+			return fmt.Errorf("invalid pattern argument")
+		}
+		for _, objectID := range argument.ObjectIDs {
+			if !externalCallPlain(objectID) {
+				return fmt.Errorf("invalid pattern object")
+			}
+		}
+		switch argument.Kind {
+		case ExternalCallPatternLiteralString:
+			if !utf8.ValidString(argument.Value) {
+				return fmt.Errorf("invalid pattern literal")
+			}
+		case ExternalCallPatternDynamic:
+			if argument.Value != "" {
+				return fmt.Errorf("invalid dynamic pattern argument")
+			}
+		default:
+			return fmt.Errorf("invalid pattern argument kind")
+		}
+	}
+	return nil
+}
+
+func externalCallPatternID(callsite Location) string {
+	return stableDirectCallID(
+		"external-call-pattern", callsite.Path, strconv.Itoa(callsite.Line), strconv.Itoa(callsite.Column),
+	)
 }
 
 func canonicalizeExternalCallIndex(index *ExternalCallIndex) {
@@ -557,33 +712,66 @@ func canonicalizeExternalCallIndex(index *ExternalCallIndex) {
 	})
 }
 
-func externalCallCoverage(index ExternalCallIndex) ExternalCallIndexCoverage {
+func externalCallCoverage(index ExternalCallIndex) (ExternalCallIndexCoverage, error) {
 	coverage := ExternalCallIndexCoverage{
 		PackagesIndexed: len(index.Packages), CallersIndexed: len(index.Callers),
 		FamiliesIndexed: len(index.Families),
 	}
+	add := func(destination *int, value int) error {
+		if destination == nil || value < 0 || *destination < 0 || *destination > int(^uint(0)>>1)-value {
+			return fmt.Errorf("external call index: coverage count overflow")
+		}
+		*destination += value
+		return nil
+	}
 	for _, family := range index.Families {
 		if family.Dispatch == ExternalCallStatic {
-			coverage.ExternalStaticWitnesses += family.WitnessCount
+			if err := add(&coverage.ExternalStaticWitnesses, family.WitnessCount); err != nil {
+				return ExternalCallIndexCoverage{}, err
+			}
 		} else if family.Dispatch == ExternalCallInterfaceInvoke {
-			coverage.ExternalInterfaceInvokeWitnesses += family.WitnessCount
+			if err := add(&coverage.ExternalInterfaceInvokeWitnesses, family.WitnessCount); err != nil {
+				return ExternalCallIndexCoverage{}, err
+			}
 		}
-		coverage.RepresentativeCallsites += len(family.Callsites)
-		coverage.RepresentativeCallsitesOmitted += family.CallsitesOmitted
+		for destination, value := range map[*int]int{
+			&coverage.RepresentativeCallsites:        len(family.Callsites),
+			&coverage.RepresentativeCallsitesOmitted: family.CallsitesOmitted,
+			&coverage.RepresentativePatterns:         len(family.Patterns),
+			&coverage.RepresentativePatternsOmitted:  family.PatternsOmitted,
+		} {
+			if err := add(destination, value); err != nil {
+				return ExternalCallIndexCoverage{}, err
+			}
+		}
 	}
 	for _, frontier := range index.Frontiers {
-		coverage.DynamicInvokesExcluded += frontier.DynamicInvokesExcluded
-		coverage.NonStaticCallsExcluded += frontier.NonStaticCallsExcluded
-		coverage.UnnamedStaticCalleesExcluded += frontier.UnnamedStaticCalleesExcluded
-		coverage.InvalidCallsitesExcluded += frontier.InvalidCallsitesExcluded
+		for destination, value := range map[*int]int{
+			&coverage.DynamicInvokesExcluded:       frontier.DynamicInvokesExcluded,
+			&coverage.NonStaticCallsExcluded:       frontier.NonStaticCallsExcluded,
+			&coverage.UnnamedStaticCalleesExcluded: frontier.UnnamedStaticCalleesExcluded,
+			&coverage.InvalidCallsitesExcluded:     frontier.InvalidCallsitesExcluded,
+		} {
+			if err := add(destination, value); err != nil {
+				return ExternalCallIndexCoverage{}, err
+			}
+		}
 	}
 	for _, frontier := range index.PackageFrontiers {
-		coverage.SyntheticCallerWitnessesExcluded +=
-			frontier.SyntheticCallerWitnessesExcluded
-		coverage.InvalidCallerWitnessesExcluded +=
-			frontier.InvalidCallerWitnessesExcluded
+		if err := add(
+			&coverage.SyntheticCallerWitnessesExcluded,
+			frontier.SyntheticCallerWitnessesExcluded,
+		); err != nil {
+			return ExternalCallIndexCoverage{}, err
+		}
+		if err := add(
+			&coverage.InvalidCallerWitnessesExcluded,
+			frontier.InvalidCallerWitnessesExcluded,
+		); err != nil {
+			return ExternalCallIndexCoverage{}, err
+		}
 	}
-	return coverage
+	return coverage, nil
 }
 
 func validExternalCallTarget(value ExternalCallTarget) bool {
@@ -614,7 +802,7 @@ func validExternalCallPackageFrontier(value ExternalCallPackageFrontier) bool {
 }
 
 func externalCallPlain(value string) bool {
-	if value == "" || strings.TrimSpace(value) != value {
+	if value == "" || strings.TrimSpace(value) != value || !utf8.ValidString(value) {
 		return false
 	}
 	for _, character := range value {
@@ -623,6 +811,10 @@ func externalCallPlain(value string) bool {
 		}
 	}
 	return true
+}
+
+func externalCallPlainOptional(value string) bool {
+	return value == "" || externalCallPlain(value)
 }
 
 func externalCallPackageKey(value ExternalCallPackage) string {

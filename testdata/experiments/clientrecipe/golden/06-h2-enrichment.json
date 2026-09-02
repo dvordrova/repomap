@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
+  "h1_sha256": "ec8f7411ad09e3c68f5b8deabd30ea71753fb7774b2f6806c5b482c5a5c4cb01",
   "request_digest": "11261de5abe7d8afc859fd8bd0e0d07a94f0a33b2095eda7ac8deccb54926a37",
   "steps": [
     {
@@ -52,5 +52,5 @@
       "summary": "Complete unit-tested boundary with explicit configuration, timeout-aware retries, metrics, and logging."
     }
   ],
-  "sha256": "0dddc460a0076c0f36b301dcf1448fc3e5b539f0d56d162aecab7c8fba1a1e91"
+  "sha256": "77144db3c102d3dcbcaf44e9360e23ef0646f31270ce083d2384f77fac1655b2"
 }

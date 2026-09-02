@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	maxEntrypointFilesPerPackage = 256
-	maxEntrypointFileBytes       = 2 * 1024 * 1024
-	maxEntrypointPackageBytes    = 16 * 1024 * 1024
+	advisoryEntrypointFilesPerPackage = 256
+	advisoryEntrypointFileBytes       = 2 * 1024 * 1024
+	advisoryEntrypointPackageBytes    = 16 * 1024 * 1024
 )
 
 // resolveMainEntrypoints turns package-main candidates from go list into
@@ -24,16 +24,17 @@ const (
 func resolveMainEntrypoints(
 	reader *reporead.Reader,
 	candidates []Entrypoint,
-) ([]Entrypoint, []string) {
+) ([]Entrypoint, []string, []string) {
 	if reader == nil {
-		return nil, []string{"entrypoint source reader is unavailable"}
+		return nil, []string{"entrypoint source reader is unavailable"}, nil
 	}
 
 	entrypoints := make([]Entrypoint, 0, len(candidates))
-	var warnings []string
+	var failures, scaleWarnings []string
 	for _, candidate := range candidates {
-		anchors, candidateWarnings := findMainFunctionAnchors(reader, candidate)
-		warnings = append(warnings, candidateWarnings...)
+		anchors, candidateFailures, candidateScaleWarnings := findMainFunctionAnchors(reader, candidate)
+		failures = append(failures, candidateFailures...)
+		scaleWarnings = append(scaleWarnings, candidateScaleWarnings...)
 		if len(anchors) == 0 {
 			continue
 		}
@@ -42,37 +43,26 @@ func resolveMainEntrypoints(
 		entrypoints = append(entrypoints, candidate)
 	}
 
-	return entrypoints, warnings
+	return entrypoints, failures, scaleWarnings
 }
 
 func findMainFunctionAnchors(
 	reader *reporead.Reader,
 	entrypoint Entrypoint,
-) ([]EntrypointAnchor, []string) {
+) ([]EntrypointAnchor, []string, []string) {
 	goFiles := append([]string(nil), entrypoint.GoFiles...)
 	sort.Strings(goFiles)
-	if len(goFiles) > maxEntrypointFilesPerPackage {
-		goFiles = goFiles[:maxEntrypointFilesPerPackage]
-	}
 
 	var (
-		anchors   []EntrypointAnchor
-		warnings  []string
-		readBytes int
+		anchors        []EntrypointAnchor
+		failures       []string
+		readBytes      int64
+		largeFileCount int
 	)
 	for _, goFile := range goFiles {
-		if readBytes >= maxEntrypointPackageBytes {
-			warnings = append(warnings, fmt.Sprintf(
-				"entrypoint package %s: source scan reached %d-byte package limit",
-				entrypoint.ImportPath,
-				maxEntrypointPackageBytes,
-			))
-			break
-		}
-
 		repoPath, err := entrypointSourcePath(entrypoint.PackageDir, goFile)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf(
+			failures = append(failures, fmt.Sprintf(
 				"entrypoint package %s: skip build-selected source %q: %v",
 				entrypoint.ImportPath,
 				goFile,
@@ -81,9 +71,9 @@ func findMainFunctionAnchors(
 			continue
 		}
 
-		content, err := reader.ReadFile(repoPath, maxEntrypointFileBytes)
+		content, err := reader.ReadFileAll(repoPath)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf(
+			failures = append(failures, fmt.Sprintf(
 				"entrypoint package %s: cannot inspect %s: %v",
 				entrypoint.ImportPath,
 				repoPath,
@@ -91,21 +81,15 @@ func findMainFunctionAnchors(
 			))
 			continue
 		}
-		readBytes += len(content.Bytes)
-		if content.Truncated {
-			warnings = append(warnings, fmt.Sprintf(
-				"entrypoint package %s: skip %s because it exceeds %d bytes",
-				entrypoint.ImportPath,
-				repoPath,
-				maxEntrypointFileBytes,
-			))
-			continue
+		readBytes += int64(len(content.Bytes))
+		if len(content.Bytes) > advisoryEntrypointFileBytes {
+			largeFileCount++
 		}
 
 		fileSet := token.NewFileSet()
 		file, err := parser.ParseFile(fileSet, repoPath, content.Bytes, parser.SkipObjectResolution)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf(
+			failures = append(failures, fmt.Sprintf(
 				"entrypoint package %s: cannot parse %s: %v",
 				entrypoint.ImportPath,
 				repoPath,
@@ -136,13 +120,19 @@ func findMainFunctionAnchors(
 		}
 	}
 
-	if len(entrypoint.GoFiles) > maxEntrypointFilesPerPackage {
-		warnings = append(warnings, fmt.Sprintf(
-			"entrypoint package %s: source scan kept %d of %d build-selected files",
+	var scaleWarnings []string
+	if len(goFiles) > advisoryEntrypointFilesPerPackage ||
+		readBytes > advisoryEntrypointPackageBytes || largeFileCount > 0 {
+		scaleWarnings = append(scaleWarnings, scaleWarning(fmt.Sprintf(
+			"entrypoint package %s: retained all %d build-selected files (%d bytes; %d file(s) above the usual %d-byte size); usual sizes are %d files and %d package bytes",
 			entrypoint.ImportPath,
-			maxEntrypointFilesPerPackage,
-			len(entrypoint.GoFiles),
-		))
+			len(goFiles),
+			readBytes,
+			largeFileCount,
+			advisoryEntrypointFileBytes,
+			advisoryEntrypointFilesPerPackage,
+			advisoryEntrypointPackageBytes,
+		)))
 	}
 
 	sort.Slice(anchors, func(i, j int) bool {
@@ -151,7 +141,7 @@ func findMainFunctionAnchors(
 		}
 		return anchors[i].Path < anchors[j].Path
 	})
-	return anchors, warnings
+	return anchors, failures, scaleWarnings
 }
 
 func isMainFunction(function *ast.FuncDecl) bool {

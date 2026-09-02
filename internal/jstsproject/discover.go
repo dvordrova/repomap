@@ -19,8 +19,6 @@ import (
 )
 
 const (
-	maxManifestBytes         = 4 << 20
-	maxHelperOutput          = 64 << 20
 	maxHelperStderrBytes     = 8 << 10
 	maxHelperDiagnosticBytes = 2_048
 )
@@ -54,9 +52,18 @@ type helperRequest struct {
 	ConfigPath          string                  `json:"config_path,omitempty"`
 	CompilerPackages    []helperCompilerPackage `json:"compiler_packages"`
 	PackageBoundaryDirs []string                `json:"package_boundary_dirs"`
+	PackageBoundaries   []helperPackageBoundary `json:"package_boundaries"`
 	Files               []helperFile            `json:"files"`
 	PathAliasPrefixes   []string                `json:"path_alias_prefixes"`
 	AdditionalFiles     []string                `json:"additional_files"`
+}
+
+// helperPackageBoundary is names-only repository authority. It lets the
+// selected compiler shard stop at another package target while retaining the
+// package identity of the exact file TypeScript resolved.
+type helperPackageBoundary struct {
+	Directory   string `json:"directory"`
+	PackagePath string `json:"package_path"`
 }
 
 type helperCompilerPackage struct {
@@ -86,10 +93,7 @@ type helperOutput struct {
 	Exports          []Export      `json:"exports"`
 	Calls            []Call        `json:"calls"`
 	Surfaces         []Surface     `json:"surfaces"`
-	Routes           []Route       `json:"routes"`
-	HTTPUses         []HTTPUse     `json:"http_uses"`
 	Contracts        []Contract    `json:"contracts"`
-	Resources        []Resource    `json:"resources"`
 }
 
 // Discover is the compatibility exact-one compiler path. Ordinary repository
@@ -207,6 +211,10 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 		)
 	}
 	request := newHelperRequest(compilerPackages, nestedPackageDirs)
+	request.PackageBoundaries, err = helperPackageBoundaries(repository, entries, manifestPath)
+	if err != nil {
+		return Result{}, err
+	}
 	if projectDir != "." {
 		request.ProjectDir = projectDir
 	}
@@ -262,7 +270,10 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 		}
 	}
 	packageManager, lockfilePath := packageManagerFacts(manifest.PackageManager, projectEntries)
-	projectName := selectedPackageIdentityName(repository, projectDir, manifest.Name)
+	projectName, err := selectedPackageIdentityName(repository, projectDir, manifest.Name)
+	if err != nil {
+		return Result{}, err
+	}
 	selectedSelector := "jsts:" + manifestPath
 	scriptFacts := buildScriptFacts(manifest.Scripts, output.Files)
 	// npm's string-form bin command is derived specifically from
@@ -294,8 +305,7 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 	result := Result{
 		Version: Version, HelperVersion: HelperVersion, CorpusSHA256: repository.SHA256(), SourceSHA256: sourceSHA256, Project: project,
 		Files: output.Files, Declarations: output.Declarations, Imports: output.Imports, Exports: output.Exports,
-		Calls: output.Calls, Surfaces: output.Surfaces, Routes: output.Routes, HTTPUses: output.HTTPUses,
-		Contracts: output.Contracts, Resources: output.Resources, ProductPaths: []ProductPath{},
+		Calls: output.Calls, Surfaces: output.Surfaces, Contracts: output.Contracts,
 	}
 	addScriptSurfaces(&result)
 	addPackageBinarySurfaces(&result)
@@ -309,7 +319,6 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 	for _, script := range result.Project.Scripts {
 		result.Project.EntryFileRefs = append(result.Project.EntryFileRefs, script.EntryFileRefs...)
 	}
-	result.ProductPaths = buildProductPaths(result)
 	if err := bindProgramTargetIdentity(&result); err != nil {
 		return Result{}, err
 	}
@@ -328,10 +337,42 @@ func newHelperRequest(
 		Version:             HelperVersion,
 		CompilerPackages:    append([]helperCompilerPackage{}, compilerPackages...),
 		PackageBoundaryDirs: append([]string{}, packageBoundaryDirs...),
+		PackageBoundaries:   []helperPackageBoundary{},
 		Files:               []helperFile{},
 		PathAliasPrefixes:   []string{"@/", "@shared/"},
 		AdditionalFiles:     []string{},
 	}
+}
+
+func helperPackageBoundaries(
+	repository *corpus.Corpus,
+	entries []corpus.Entry,
+	selectedManifestPath string,
+) ([]helperPackageBoundary, error) {
+	boundaries := make([]helperPackageBoundary, 0)
+	for _, candidate := range packageProjectCandidates(entries) {
+		if candidate.manifestPath == selectedManifestPath || len(candidate.ownSources) == 0 {
+			continue
+		}
+		manifest, err := readPackageManifest(repository, candidate.manifestPath)
+		if err != nil {
+			return nil, err
+		}
+		packagePath, err := selectedPackageIdentityName(repository, candidate.projectDir, manifest.Name)
+		if err != nil {
+			return nil, err
+		}
+		boundaries = append(boundaries, helperPackageBoundary{
+			Directory: candidate.projectDir, PackagePath: packagePath,
+		})
+	}
+	sort.Slice(boundaries, func(i, j int) bool {
+		if boundaries[i].Directory != boundaries[j].Directory {
+			return boundaries[i].Directory < boundaries[j].Directory
+		}
+		return boundaries[i].PackagePath < boundaries[j].PackagePath
+	})
+	return boundaries, nil
 }
 
 // TargetSelector returns the exact selected-package selector advertised to --target.
@@ -349,12 +390,9 @@ func readPackageManifest(repository *corpus.Corpus, manifestPath string) (packag
 	if !ok {
 		return packageManifest{}, fmt.Errorf("jsts project: package manifest %q is unavailable", manifestPath)
 	}
-	manifestContent, err := repository.ReadFile(manifestID, maxManifestBytes)
+	manifestContent, err := repository.ReadFileAll(manifestID)
 	if err != nil {
 		return packageManifest{}, fmt.Errorf("jsts project: read package manifest %q: %w", manifestPath, err)
-	}
-	if manifestContent.Truncated {
-		return packageManifest{}, fmt.Errorf("jsts project: package manifest %q exceeds %d bytes", manifestPath, maxManifestBytes)
 	}
 	trimmed := bytes.TrimSpace(manifestContent.Bytes)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
@@ -379,46 +417,50 @@ func readPackageManifest(repository *corpus.Corpus, manifestPath string) (packag
 func selectedPackageIdentityName(
 	repository *corpus.Corpus,
 	projectDir, manifestName string,
-) string {
+) (string, error) {
 	if name := canonicalProjectIdentityName(manifestName); name != "" {
-		return name
+		return name, nil
 	}
 	// Package-manager selection and project identity are separate authorities:
 	// a coexisting bun/pnpm/yarn lockfile must not hide the exact npm root name.
 	lockfileRepositoryPath := repositoryProjectPath(projectDir, "package-lock.json")
-	if name := packageLockProjectName(repository, lockfileRepositoryPath); name != "" {
-		return name
+	name, err := packageLockProjectName(repository, lockfileRepositoryPath)
+	if err != nil {
+		return "", err
+	}
+	if name != "" {
+		return name, nil
 	}
 	if projectDir == "." {
-		return "root-package"
+		return "root-package", nil
 	}
-	return projectDir
+	return projectDir, nil
 }
 
-func packageLockProjectName(repository *corpus.Corpus, lockfilePath string) string {
+func packageLockProjectName(repository *corpus.Corpus, lockfilePath string) (string, error) {
 	if repository == nil || lockfilePath == "" {
-		return ""
+		return "", nil
 	}
 	lockfileID, ok := repository.ID(lockfilePath)
 	if !ok {
-		return ""
+		return "", nil
 	}
-	content, err := repository.ReadFile(lockfileID, maxManifestBytes)
-	if err != nil || content.Truncated {
-		return ""
+	content, err := repository.ReadFileAll(lockfileID)
+	if err != nil {
+		return "", fmt.Errorf("jsts project: read package lockfile %q: %w", lockfilePath, err)
 	}
 	var metadata struct {
 		Name string `json:"name"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(content.Bytes))
 	if err := decoder.Decode(&metadata); err != nil {
-		return ""
+		return "", nil
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return ""
+		return "", nil
 	}
-	return canonicalProjectIdentityName(metadata.Name)
+	return canonicalProjectIdentityName(metadata.Name), nil
 }
 
 func canonicalProjectIdentityName(value string) string {
@@ -954,17 +996,8 @@ func rebaseHelperOutput(projectDir string, output *helperOutput) {
 	for index := range output.Surfaces {
 		rebaseLocation(&output.Surfaces[index].Location)
 	}
-	for index := range output.Routes {
-		rebaseLocation(&output.Routes[index].Location)
-	}
-	for index := range output.HTTPUses {
-		rebaseLocation(&output.HTTPUses[index].Location)
-	}
 	for index := range output.Contracts {
 		rebaseLocation(&output.Contracts[index].Location)
-	}
-	for index := range output.Resources {
-		rebaseLocation(&output.Resources[index].Location)
 	}
 }
 
@@ -1009,13 +1042,14 @@ type boundedBuffer struct {
 }
 
 func (writer *boundedBuffer) Write(value []byte) (int, error) {
+	original := len(value)
 	if writer.buffer.Len()+len(value) > writer.limit {
 		writer.exceeded = true
 		remaining := writer.limit - writer.buffer.Len()
 		if remaining > 0 {
 			_, _ = writer.buffer.Write(value[:remaining])
 		}
-		return len(value), fmt.Errorf("output exceeds limit")
+		return original, nil
 	}
 	return writer.buffer.Write(value)
 }
@@ -1033,16 +1067,13 @@ func invokeHelper(ctx context.Context, repositoryRoot string, request helperRequ
 	command.Dir = repositoryRoot
 	command.Env = []string{}
 	command.Stdin = bytes.NewReader(encoded)
-	stdout := &boundedBuffer{limit: maxHelperOutput}
+	stdout := &bytes.Buffer{}
 	stderr := &boundedBuffer{limit: maxHelperStderrBytes}
 	command.Stdout = stdout
 	command.Stderr = stderr
 	if err := command.Run(); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return helperOutput{}, ctxErr
-		}
-		if stdout.exceeded {
-			return helperOutput{}, fmt.Errorf("jsts project: TypeScript helper output exceeds %d bytes", maxHelperOutput)
 		}
 		closedDiagnostic := sanitizeDiagnostic(stderr.buffer.String(), repositoryRoot)
 		if stderr.exceeded {
@@ -1059,7 +1090,11 @@ func invokeHelper(ctx context.Context, repositoryRoot string, request helperRequ
 		}
 		return helperOutput{}, fmt.Errorf("jsts project: TypeScript helper failed: %s", sanitizeDiagnostic(err.Error(), repositoryRoot))
 	}
-	decoder := json.NewDecoder(io.LimitReader(bytes.NewReader(stdout.buffer.Bytes()), maxHelperOutput))
+	return decodeHelperOutput(stdout.Bytes())
+}
+
+func decodeHelperOutput(encoded []byte) (helperOutput, error) {
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
 	var output helperOutput
 	if err := decoder.Decode(&output); err != nil {
@@ -1089,33 +1124,40 @@ func sanitizeDiagnostic(value, root string) string {
 }
 
 func addScriptSurfaces(result *Result) {
-	fileByPath := make(map[string]File, len(result.Files))
+	fileByRef := make(map[string]File, len(result.Files))
 	for _, file := range result.Files {
-		fileByPath[file.Path] = file
+		fileByRef[file.FileRef] = file
 	}
 	for _, script := range result.Project.Scripts {
 		if script.Kind != "build" && script.Kind != "migration" {
 			continue
 		}
+		files := make([]File, 0, len(script.EntryFileRefs))
+		entryRefs := make([]string, 0, len(script.EntryFileRefs))
 		for _, fileRef := range script.EntryFileRefs {
-			var file File
-			for _, candidate := range fileByPath {
-				if candidate.FileRef == fileRef {
-					file = candidate
-					break
-				}
-			}
-			if file.Path == "" {
+			file, known := fileByRef[fileRef]
+			if !known || file.Path == "" {
 				continue
 			}
-			ref := "surface:script:" + strings.ReplaceAll(script.Name, ":", "-")
-			result.Surfaces = append(result.Surfaces, Surface{
-				Ref: ref, Kind: SurfaceTool, Role: SurfaceScript, Name: script.Name + " script",
-				EntryRefs: []string{moduleRefForFile(file.FileRef)}, EvidenceRefs: []string{},
-				Location: Location{Path: file.Path, FileRef: file.FileRef, Line: 1, Column: 1},
-			})
-			break
+			files = append(files, file)
+			entryRefs = append(entryRefs, moduleRefForFile(file.FileRef))
 		}
+		if len(files) == 0 {
+			continue
+		}
+		sort.Slice(files, func(left, right int) bool {
+			if files[left].Path != files[right].Path {
+				return files[left].Path < files[right].Path
+			}
+			return files[left].FileRef < files[right].FileRef
+		})
+		representative := files[0]
+		ref := "surface:script:" + strings.ReplaceAll(script.Name, ":", "-")
+		result.Surfaces = append(result.Surfaces, Surface{
+			Ref: ref, Kind: SurfaceTool, Role: SurfaceScript, Name: script.Name + " script",
+			EntryRefs: canonicalStrings(entryRefs), EvidenceRefs: []string{},
+			Location: Location{Path: representative.Path, FileRef: representative.FileRef, Line: 1, Column: 1},
+		})
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/jstsproject"
-	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -74,64 +72,42 @@ func TestRepositoryLanguagesActivatesJSTSProjects(t *testing.T) {
 	}
 }
 
-func TestSelectJSTSTargetRestoresCurrentRootProjectAfterFilePortfolio(t *testing.T) {
+func TestJSTSAtomicRepositoryAdapterProjectsOneCompilerSnapshot(t *testing.T) {
 	repository := pythonTargetCorpus(t, map[string]string{
-		"package.json":    `{"name":"web"}`,
-		"tsconfig.json":   `{}`,
-		"client/main.tsx": "export {}\n",
+		"package.json": `{ "name": "web", "dependencies": { "express": "1.0.0" } }`,
+		"src/index.ts": "export const ready = true\n",
 	})
 	project := jsTSTestProject(t, repository, "typescript")
-	manifestRef, ok := repository.ID("package.json")
-	if !ok {
-		t.Fatal("package.json has no corpus ref")
+	native, err := jstsproject.TargetFromResult(project)
+	if err != nil {
+		t.Fatal(err)
 	}
-	response, err := json.Marshal(map[string]any{
-		"default_file_ref": manifestRef,
-		"target_file_refs": []corpus.FileID{manifestRef},
+	target, err := newJSTSRepositoryTypedTarget(native)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := project.Snapshot()
+	input, err := buildJSTSRepositoryProgramInput(repositoryProgramBuildRequest{
+		Context: t.Context(), Corpus: repository, Target: target, Facts: facts,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &targetPortfolioClientStub{response: response}
-	discoveryCalls := 0
-	selection, err := selectJSTSTargetForRun(
-		context.Background(), "web", t.TempDir(), repository, "", nil,
-		func() (llm.Provider, error) { return provider, nil },
-		llm.Executor{Enabled: false},
-		func(context.Context, *corpus.Corpus, string, string) (jstsproject.Result, error) {
-			discoveryCalls++
-			return project.Snapshot(), nil
-		},
-	)
+	index, err := programindex.New(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if selection.Project.Project.Ref != project.Project.Ref ||
-		selection.Project.ProgramTargetID != project.ProgramTargetID ||
-		selection.Outcome.SelectedRef != project.Project.Ref ||
-		selection.Outcome.SelectedTargets != 1 || selection.Outcome.SelectedFileRefs != 1 ||
-		provider.calls != 1 || discoveryCalls != 1 {
-		t.Fatalf("JavaScript/TypeScript selection = %#v; calls = %d/%d", selection, provider.calls, discoveryCalls)
+	if err := jstsproject.ValidateProgramIndex(project, index); err != nil {
+		t.Fatalf("atomic ProgramIndex drifted from compiler facts: %v", err)
 	}
-	if !strings.Contains(provider.prompt.User, `"path":"package.json"`) ||
-		strings.Contains(strings.ToLower(provider.prompt.User), "application project") ||
-		strings.Contains(provider.prompt.User, project.Project.Ref) ||
-		strings.Contains(provider.prompt.User, project.ProgramTargetID) {
-		t.Fatalf("TargetPortfolio request leaked adapter identity or omitted package candidate: %s", provider.prompt.User)
-	}
-	runDir := t.TempDir()
-	_, index, catalog, err := buildJSTSProgramForRun(runDir, repository, selection, nil)
+	catalog, err := buildJSTSRepositoryDependencies(repositoryDependencyBuildRequest{
+		Target: target, ProgramIndex: index, Facts: facts,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if discoveryCalls != 1 || index.Target.ID != project.ProgramTargetID ||
-		index.Target.Kind != "library" || len(index.Target.Seeds) != 0 ||
-		catalog.Coverage.State != "complete" {
-		t.Fatalf("one-pass projected authority = %#v / %#v; discovery calls = %d", index.Target, catalog.Coverage, discoveryCalls)
-	}
-	persisted, err := jstsproject.Load(runDir)
-	if err != nil || persisted.SHA256 != project.SHA256 {
-		t.Fatalf("persisted selected project = %#v, %v", persisted, err)
+	if catalog.Coverage.State != "complete" {
+		t.Fatalf("atomic dependency coverage = %#v", catalog.Coverage)
 	}
 }
 
@@ -185,123 +161,12 @@ func TestJSTSProductSurfaceCountIncludesCLI(t *testing.T) {
 	}
 }
 
-func TestSelectJSTSNoProductProjectRemainsLibraryAuthority(t *testing.T) {
-	repository := pythonTargetCorpus(t, map[string]string{
-		"package.json": `{"name":"library"}`,
-		"src/index.ts": "export const answer = 42\n",
-	})
-	project := jsTSTestProject(t, repository, "typescript")
-	if kind := jstsproject.TargetKind(project); kind != "library" {
-		t.Fatalf("no-product target kind = %q, want library", kind)
-	}
-	if count := jsTSProductSurfaceCount(project); count != 0 {
-		t.Fatalf("no-product surface count = %d, want zero", count)
-	}
-	manifestRef, _ := repository.ID("package.json")
-	response, err := json.Marshal(map[string]any{
-		"default_file_ref": manifestRef,
-		"target_file_refs": []corpus.FileID{manifestRef},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := &targetPortfolioClientStub{response: response}
-	selection, err := selectJSTSTargetForRun(
-		context.Background(), "library", t.TempDir(), repository, "", nil,
-		func() (llm.Provider, error) { return provider, nil }, llm.Executor{},
-		func(context.Context, *corpus.Corpus, string, string) (jstsproject.Result, error) {
-			return project.Snapshot(), nil
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selection.Project.Project.Ref != project.Project.Ref ||
-		strings.Contains(strings.ToLower(provider.prompt.User), "application") ||
-		strings.Contains(strings.ToLower(provider.prompt.User), "runnable") {
-		t.Fatalf("library project was promoted by target hypothesis: %s", provider.prompt.User)
-	}
-}
-
-func TestSelectJSTSExplicitTargetRequiresExactProjectRefOrSelector(t *testing.T) {
-	repository := pythonTargetCorpus(t, map[string]string{
-		"package.json": `{"name":"web"}`,
-		"src/main.js":  "export {}\n",
-	})
-	project := jsTSTestProject(t, repository, "javascript")
-	discoveredSelector := "not-called"
-	discover := func(_ context.Context, _ *corpus.Corpus, _, selector string) (jstsproject.Result, error) {
-		discoveredSelector = selector
-		return project.Snapshot(), nil
-	}
-	selection, err := selectJSTSTargetForRun(
-		context.Background(), "web", t.TempDir(), repository,
-		project.Project.Selector, nil, nil, llm.Executor{}, discover,
-	)
-	if err != nil || selection.Project.Project.Ref != project.Project.Ref ||
-		selection.Outcome.SelectedFileRefs != 0 || selection.Outcome.SelectedTargets != 1 ||
-		discoveredSelector != project.Project.Selector {
-		t.Fatalf("explicit JavaScript/TypeScript selection = %#v, %v", selection, err)
-	}
-	if _, err := selectJSTSTargetForRun(
-		context.Background(), "web", t.TempDir(), repository,
-		"package.json", nil, nil, llm.Executor{}, discover,
-	); err == nil || !strings.Contains(err.Error(), project.Project.Selector) {
-		t.Fatalf("inexact JavaScript/TypeScript target error = %v", err)
-	}
-	if discoveredSelector != "" {
-		t.Fatalf("non-jsts override entered early package selection as %q", discoveredSelector)
-	}
-}
-
-func TestSelectJSTSReportsOwnerPreparedNodeModulesRequirement(t *testing.T) {
-	repository := pythonTargetCorpus(t, map[string]string{
-		"package.json": `{"name":"web"}`,
-		"src/main.ts":  "export {}\n",
-	})
-	_, err := selectJSTSTargetForRun(
-		context.Background(), "web", t.TempDir(), repository, "", nil, nil,
-		llm.Executor{},
-		func(context.Context, *corpus.Corpus, string, string) (jstsproject.Result, error) {
-			return jstsproject.Result{}, fmt.Errorf("%w: cannot find manifest-declared package", jstsproject.ErrTypeScriptCompilerUnavailable)
-		},
-	)
-	if err == nil || !strings.Contains(err.Error(), "owner must prepare") ||
-		!strings.Contains(err.Error(), "repomap never installs packages") {
-		t.Fatalf("owner-preparation error = %v", err)
-	}
-}
-
 func TestJSTSOwnerPreparationGuidanceRequiresTypedCompilerFailure(t *testing.T) {
 	if !jsTSOwnerPreparationError(fmt.Errorf("%w: typescript-api is not installed", jstsproject.ErrTypeScriptCompilerUnavailable)) {
 		t.Fatal("typed compiler failure lost the owner-prepared node_modules requirement")
 	}
 	if jsTSOwnerPreparationError(errors.New("jsts project: TypeScript helper failed")) {
 		t.Fatal("opaque helper failure was misreported as a missing owner-prepared dependency")
-	}
-}
-
-func TestSelectJSTSRejectsProjectWithStaleManifestFileRef(t *testing.T) {
-	repository := pythonTargetCorpus(t, map[string]string{
-		"package.json": `{"name":"web"}`,
-		"src/main.ts":  "export {}\n",
-	})
-	project := jsTSTestProject(t, repository, "typescript")
-	sourceRef, _ := repository.ID("src/main.ts")
-	project.Project.ManifestFileRef = string(sourceRef)
-	project, err := jstsproject.Seal(project)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = selectJSTSTargetForRun(
-		context.Background(), "web", t.TempDir(), repository, project.Project.Selector,
-		nil, nil, llm.Executor{},
-		func(context.Context, *corpus.Corpus, string, string) (jstsproject.Result, error) {
-			return project, nil
-		},
-	)
-	if err == nil || !strings.Contains(err.Error(), "exact current FileRef") {
-		t.Fatalf("stale package.json binding error = %v", err)
 	}
 }
 
@@ -326,19 +191,20 @@ func TestMaterializeSelectedJSTSProjectsRetainsEveryExactPackageBinding(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	adminKey := repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: adminTarget.Ref}
-	frontKey := repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: frontTarget.Ref}
+	adminPlanned, err := newJSTSRepositoryTypedTarget(adminTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminPlanned.FileRefs = []corpus.FileID{corpus.FileID(adminTarget.ManifestFileRef)}
+	frontPlanned, err := newJSTSRepositoryTypedTarget(frontTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontPlanned.FileRefs = []corpus.FileID{corpus.FileID(frontTarget.ManifestFileRef)}
+	adminKey := adminPlanned.Key
+	frontKey := frontPlanned.Key
 	plan := repositoryTargetPlan{
-		Targets: []repositoryTypedTarget{
-			{
-				Key: adminKey, Selector: adminTarget.Selector,
-				FileRefs: []corpus.FileID{corpus.FileID(adminTarget.ManifestFileRef)}, JSTS: &adminTarget,
-			},
-			{
-				Key: frontKey, Selector: frontTarget.Selector,
-				FileRefs: []corpus.FileID{corpus.FileID(frontTarget.ManifestFileRef)}, JSTS: &frontTarget,
-			},
-		},
+		Targets: []repositoryTypedTarget{adminPlanned, frontPlanned},
 		Default: frontKey,
 		Outcome: targetPortfolioRunOutcome{
 			SelectedRef: frontKey.String(), SelectedTargets: 2,
@@ -386,11 +252,12 @@ func TestMaterializeSelectedJSTSProjectsRetainsEveryExactPackageBinding(t *testi
 		if !ok {
 			t.Fatalf("materialized project for %s is absent", target.Key.String())
 		}
-		if project.Project.Selector != target.Selector ||
-			project.Project.ManifestFileRef != target.JSTS.ManifestFileRef {
+		jstsTarget, ok := repositoryJSTSTarget(target)
+		if !ok || project.Project.Selector != target.Selector ||
+			project.Project.ManifestFileRef != jstsTarget.ManifestFileRef {
 			t.Fatalf("materialized project for %s = %#v", target.Key.String(), project.Project)
 		}
-		if err := validateJSTSTargetMaterialization(repository, *target.JSTS, project); err != nil {
+		if err := validateJSTSTargetMaterialization(repository, jstsTarget, project); err != nil {
 			t.Fatalf("validate materialized project for %s: %v", target.Key.String(), err)
 		}
 	}
@@ -491,9 +358,7 @@ func jsTSTestProjectAt(
 		}},
 		Imports: []jstsproject.Import{}, Exports: []jstsproject.Export{},
 		Calls: []jstsproject.Call{}, Surfaces: []jstsproject.Surface{},
-		Routes: []jstsproject.Route{}, HTTPUses: []jstsproject.HTTPUse{},
-		Contracts: []jstsproject.Contract{}, Resources: []jstsproject.Resource{},
-		ProductPaths: []jstsproject.ProductPath{},
+		Contracts: []jstsproject.Contract{},
 	})
 	if err != nil {
 		t.Fatal(err)

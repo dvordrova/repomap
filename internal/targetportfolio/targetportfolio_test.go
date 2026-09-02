@@ -83,7 +83,7 @@ func TestCompileAndResolveFilePortfolio(t *testing.T) {
 		!strings.Contains(prompt.User, "exactly one JSON object with these two fields") ||
 		!strings.Contains(prompt.User, `{"default_file_ref":null,"target_file_refs":[]}`) ||
 		!strings.Contains(prompt.User, "set-valued selection") ||
-		!strings.Contains(prompt.User, "End of quoted candidate JSON") ||
+		!strings.Contains(prompt.User, "End of quoted classification-batch JSON") ||
 		strings.Contains(prompt.User, "request_ref") || strings.Contains(prompt.System, "Go repository") ||
 		strings.Contains(strings.ToLower(prompt.System), "surface") ||
 		strings.Contains(strings.ToLower(prompt.System), "unlikely") ||
@@ -140,6 +140,9 @@ func TestCompileWithExecutableAuthorityCanonicalizesAndBindsExactRefs(t *testing
 		!slices.Equal(*left.Request.ExecutableFileRefs, []corpus.FileID{"f1", "f3"}) {
 		t.Fatalf("canonical executable authority = %#v", left.Request.ExecutableFileRefs)
 	}
+	if batches, err := classificationBatches(left); err != nil || len(batches) != 1 {
+		t.Fatalf("executable classification batch = %d / %v", len(batches), err)
+	}
 	leftWire, err := ProviderVisibleJSON(left)
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +168,7 @@ func TestCompileWithExecutableAuthorityCanonicalizesAndBindsExactRefs(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt.System, "complete closed set") ||
+	if !strings.Contains(prompt.System, "complete closed subset") ||
 		!strings.Contains(prompt.System, "library-only subset or library default") ||
 		!strings.Contains(prompt.User, "exact local authority") ||
 		!strings.Contains(prompt.User, "legitimate empty selection") {
@@ -550,7 +553,7 @@ func TestCompileIsStableAcrossCandidateAndHypothesisPermutation(t *testing.T) {
 	}
 }
 
-func TestCompleteCandidateSurfaceFailsInsteadOfTruncating(t *testing.T) {
+func TestCompleteCandidateSurfaceCompilesAndPacksWithoutTruncating(t *testing.T) {
 	const count = 3000
 	paths := make([]string, count)
 	candidates := make([]Candidate, count)
@@ -564,8 +567,50 @@ func TestCompleteCandidateSurfaceFailsInsteadOfTruncating(t *testing.T) {
 			Hypotheses: []string{fmt.Sprintf("independently declared service candidate %04d with a deliberately complete label", index)},
 		}
 	}
-	if _, err := Compile(snapshot, candidates); err == nil || !strings.Contains(err.Error(), "complete candidate request") {
-		t.Fatalf("oversized complete surface error = %v", err)
+	compilation, err := Compile(snapshot, candidates)
+	if err != nil {
+		t.Fatalf("oversized complete surface: %v", err)
+	}
+	wire, err := ProviderVisibleJSON(compilation)
+	if err != nil || len(wire) <= AdvisoryCompleteRequestBytes {
+		t.Fatalf("complete reservoir bytes = %d, err = %v", len(wire), err)
+	}
+	batches, err := classificationBatches(compilation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	covered := 0
+	for _, batch := range batches {
+		if len(batch.compilation.wire) > MaxRequestBytes {
+			t.Fatalf("batch bytes = %d", len(batch.compilation.wire))
+		}
+		covered += len(batch.compilation.Request.Candidates)
+	}
+	if len(batches) < 2 || covered != count {
+		t.Fatalf("classification cover = %d batches / %d candidates", len(batches), covered)
+	}
+	warnings := ScaleWarnings(compilation)
+	if len(warnings) != 1 || warnings[0].Retained != len(wire) ||
+		warnings[0].AdvisorySize != AdvisoryCompleteRequestBytes {
+		t.Fatalf("scale warnings = %#v", warnings)
+	}
+}
+
+func TestIndivisibleCandidateCrossingPackingWindowIsRetained(t *testing.T) {
+	snapshot := testSnapshot(t, []string{"main.py"})
+	compilation, err := Compile(snapshot, []Candidate{{
+		FileRef: "f1", Hypotheses: []string{strings.Repeat("x", MaxRequestBytes+1)},
+	}})
+	if err != nil {
+		t.Fatalf("complete local authority was rejected: %v", err)
+	}
+	batches, err := classificationBatches(compilation)
+	if err != nil {
+		t.Fatalf("warning-only packing window rejected exact candidate: %v", err)
+	}
+	if len(batches) != 1 || len(batches[0].compilation.Request.Candidates) != 1 ||
+		batches[0].compilation.Request.Candidates[0].Hypotheses[0] != compilation.Request.Candidates[0].Hypotheses[0] {
+		t.Fatalf("singleton batch changed complete candidate authority: %#v", batches)
 	}
 }
 

@@ -95,12 +95,6 @@ func compile(
 	if err != nil {
 		return Compilation{}, fmt.Errorf("target portfolio: encode request: %w", err)
 	}
-	if len(wire) > MaxRequestBytes {
-		return Compilation{}, fmt.Errorf(
-			"target portfolio: complete candidate request is %d bytes, limit is %d",
-			len(wire), MaxRequestBytes,
-		)
-	}
 	if _, found := secretscan.Detect(string(wire)); found {
 		return Compilation{}, fmt.Errorf("target portfolio: provider request contains credential-shaped content")
 	}
@@ -190,7 +184,7 @@ func validateCompilation(compilation Compilation) error {
 	if err != nil {
 		return fmt.Errorf("target portfolio: encode request: %w", err)
 	}
-	if len(wire) > MaxRequestBytes || !reflect.DeepEqual(wire, compilation.wire) ||
+	if !reflect.DeepEqual(wire, compilation.wire) ||
 		compilation.RequestSHA256 != sha256Hex(wire) {
 		return fmt.Errorf("target portfolio: request wire binding mismatch")
 	}
@@ -317,7 +311,7 @@ func canonicalStrings(values []string) []string {
 
 func validateHypothesis(value string) error {
 	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
-		len(value) > MaxRequestBytes || isAbsoluteLabel(value) {
+		isAbsoluteLabel(value) {
 		return fmt.Errorf("target portfolio: invalid candidate hypothesis")
 	}
 	for _, character := range value {

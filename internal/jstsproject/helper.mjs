@@ -5,27 +5,19 @@ import { existsSync, readFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 5
-const MAX_INPUT_BYTES = 32 * 1024 * 1024
-const MAX_CONFIG_BYTES = 1024 * 1024
-const MAX_PROJECT_CONFIGS = 32
-const MAX_PROJECT_REFERENCE_DEPTH = 16
-const MAX_STABLE_ID_PART_CHARS = 240
-const MAX_EXPRESSION_TEXT_CHARS = 512
-const MAX_SIGNATURE_TEXT_CHARS = 2048
+const CONTRACT_VERSION = 13
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
-const MAX_EXTERNAL_PART_CHARS = 256
 
 function fail(message) {
   process.stderr.write(`jsts helper: ${message}\n`)
   process.exit(1)
 }
 
-let raw = ""
+const inputChunks = []
 for await (const chunk of process.stdin) {
-  raw += chunk
-  if (Buffer.byteLength(raw) > MAX_INPUT_BYTES) fail("input exceeds limit")
+  inputChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
 }
+const raw = Buffer.concat(inputChunks).toString("utf8")
 
 let request
 try {
@@ -34,11 +26,14 @@ try {
   fail("invalid JSON input")
 }
 if (request.version !== CONTRACT_VERSION || !Array.isArray(request.files) ||
-    !Array.isArray(request.compiler_packages) || !Array.isArray(request.package_boundary_dirs)) {
+    !Array.isArray(request.compiler_packages) || !Array.isArray(request.package_boundary_dirs) ||
+    !Array.isArray(request.package_boundaries)) {
   fail("unsupported input contract")
 }
 
 const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0
+const safeBoundaryText = (value) => typeof value === "string" && value.length > 0 &&
+  value.trim() === value && !/[\0\r\n]/.test(value) ? value : ""
 const slash = (value) => value.split(path.sep).join("/")
 const cleanRelative = (value) => {
   if (typeof value !== "string" || value.length === 0 || value.includes("\\")) return ""
@@ -77,6 +72,28 @@ for (const candidate of request.package_boundary_dirs) {
 const crossesPackageBoundary = (filePath) => packageBoundaryDirs.some(
   (directory) => filePath === directory || filePath.startsWith(`${directory}/`),
 )
+
+const repositoryPackageBoundaries = []
+const repositoryBoundaryPackages = new Set()
+for (const candidate of request.package_boundaries) {
+  const directory = candidate?.directory === "." ? "." : cleanRelative(candidate?.directory)
+  const packagePath = safeBoundaryText(candidate?.package_path)
+  if (!directory || !packagePath || Object.keys(candidate).some((key) => key !== "directory" && key !== "package_path") ||
+      (repositoryPackageBoundaries.length > 0 &&
+        compareText(repositoryPackageBoundaries.at(-1).directory, directory) >= 0)) {
+    fail("invalid repository package boundaries")
+  }
+  repositoryPackageBoundaries.push({ directory, packagePath })
+  repositoryBoundaryPackages.add(packagePath)
+}
+const repositoryPackageForFile = (filePath) => {
+  let selected
+  for (const boundary of repositoryPackageBoundaries) {
+    if (boundary.directory !== "." && filePath !== boundary.directory && !filePath.startsWith(`${boundary.directory}/`)) continue
+    if (!selected || boundary.directory.split("/").length > selected.directory.split("/").length) selected = boundary
+  }
+  return selected?.packagePath || ""
+}
 
 const requestedCompilerPackages = []
 const validPackageName = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/
@@ -286,7 +303,6 @@ function parseJSONC(content) {
 
 function rawConfig(configFile) {
   const bytes = readFileSync(absolute(configFile))
-  if (bytes.length > MAX_CONFIG_BYTES) fail(`project config exceeds ${MAX_CONFIG_BYTES} bytes`)
   try {
     return parseJSONC(bytes.toString("utf8"))
   } catch (error) {
@@ -318,11 +334,16 @@ function configGraph(rootConfig) {
   const visited = new Set()
   const active = new Set()
   const result = []
-  const visit = (configFile, depth) => {
-    if (depth > MAX_PROJECT_REFERENCE_DEPTH) fail("project reference depth exceeds limit")
+  const stack = [{ path: rootConfig, exit: false }]
+  while (stack.length > 0) {
+    const frame = stack.pop()
+    const configFile = frame.path
+    if (frame.exit) {
+      active.delete(configFile)
+      continue
+    }
     if (active.has(configFile)) fail(`project reference cycle at ${configFile}`)
-    if (visited.has(configFile)) return
-    if (visited.size >= MAX_PROJECT_CONFIGS) fail("project config count exceeds limit")
+    if (visited.has(configFile)) continue
     visited.add(configFile)
     active.add(configFile)
     const document = rawConfig(configFile)
@@ -333,10 +354,11 @@ function configGraph(rootConfig) {
       .map((value) => referencedConfig(configFile, value?.path))
       .filter(Boolean)
       .sort(compareText)
-    for (const child of children) visit(child, depth + 1)
-    active.delete(configFile)
+    stack.push({ path: configFile, exit: true })
+    for (let index = children.length - 1; index >= 0; index--) {
+      stack.push({ path: children[index], exit: false })
+    }
   }
-  visit(rootConfig, 0)
   return result.sort((left, right) => compareText(left.path, right.path))
 }
 
@@ -498,12 +520,17 @@ const locationOf = (node) => {
   const point = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile, false))
   return { path: filePath, file_ref: fileRefByPath.get(filePath), line: point.line + 1, column: point.character + 1 }
 }
-const stablePart = (value) => String(value).replace(/[^A-Za-z0-9_.:/@#-]+/g, "_").slice(0, MAX_STABLE_ID_PART_CHARS)
+// Stable refs hash the complete identity input. Sanitizing and clipping the
+// display spelling made distinct source facts collide before ProgramIndex.
+const stablePart = (value) => createHash("sha256").update(String(value)).digest("hex")
 const factRef = (prefix, node, detail = "") => {
   const loc = locationOf(node)
   return `${prefix}:${loc.file_ref}:${loc.line}:${loc.column}:${stablePart(detail)}`
 }
-const expressionText = (node) => node.getText(node.getSourceFile()).replace(/\s+/g, " ").trim().slice(0, MAX_EXPRESSION_TEXT_CHARS).trimEnd()
+const expressionText = (node) => node.getText(node.getSourceFile()).replace(/\s+/g, " ").trim()
+const callDisplayExpression = (node) => ts.isNewExpression(node) ? `new ${expressionText(node.expression)}` : expressionText(node.expression)
+const callFactRef = (node) => factRef("call", node, callDisplayExpression(node))
+const callResultRef = (node) => `call-result:${callFactRef(node)}`
 const moduleRef = (filePath) => `module:${fileRefByPath.get(filePath)}`
 const moduleName = (filePath) => filePath.replace(/\.(?:d\.)?[cm]?[jt]sx?$/, "")
 
@@ -555,7 +582,7 @@ function signatureOf(node) {
   const safeTypeText = (value) => {
     value = value.split(slash(rootPrefix)).join("")
     value = value.replace(/node_modules\/(?:@types\/)?(@[^/]+\/[^/]+|[^/]+)(?:\/[^"']*)?/g, "$1")
-    return value.slice(0, MAX_SIGNATURE_TEXT_CHARS).trimEnd()
+    return value
   }
   try {
     const checker = checkerForNode(node)
@@ -638,9 +665,11 @@ function refsForSymbol(symbol, checker) {
   } catch {}
   const refs = []
   for (const declaration of symbolDeclarations(symbol)) {
-    let current = declaration
-    while (current && !ts.isSourceFile(current) && !declarationRefByNode.has(current)) current = current.parent
-    if (declarationRefByNode.has(current)) refs.push(declarationRefByNode.get(current))
+    // Callee authority belongs only to the compiler-resolved declaration
+    // itself. Climbing to an enclosing indexed declaration turns parameters
+    // and destructured bindings (for example a React state setter) into false
+    // exact calls to their containing function.
+    if (declarationRefByNode.has(declaration)) refs.push(declarationRefByNode.get(declaration))
   }
   return [...new Set(refs)].sort()
 }
@@ -670,9 +699,7 @@ function localRefsForInvocation(node) {
   const checker = checkerForNode(node)
   if (!checker) return []
   const declaration = resolvedSignatureDeclaration(node, checker)
-  let current = declaration
-  while (current && !ts.isSourceFile(current) && !declarationRefByNode.has(current)) current = current.parent
-  return declarationRefByNode.has(current) ? [declarationRefByNode.get(current)] : []
+  return declarationRefByNode.has(declaration) ? [declarationRefByNode.get(declaration)] : []
 }
 
 function resolvedCallableSymbol(node, checker) {
@@ -704,7 +731,7 @@ function namedDeclarationAtOrAbove(node) {
 }
 
 function safeExternalPart(value) {
-  if (typeof value !== "string" || value.length === 0 || value.length > MAX_EXTERNAL_PART_CHARS || value.trim() !== value || /[\0\r\n]/.test(value)) return ""
+  if (typeof value !== "string" || value.length === 0 || value.trim() !== value || /[\0\r\n]/.test(value)) return ""
   return value
 }
 
@@ -774,6 +801,9 @@ function resolutionFor(specifier, containingFile, specifierNode) {
   if (resolved) {
     const targetPath = relative(resolvedFileName)
     if (targetPath && fileRefByPath.has(targetPath)) return { resolution: "exact", resolved_file_ref: fileRefByPath.get(targetPath), external_package: "" }
+    const repositoryPath = repositoryRelative(resolvedFileName)
+    const repositoryPackage = repositoryPath ? repositoryPackageForFile(repositoryPath) : ""
+    if (repositoryPackage) return { resolution: "exact", resolved_file_ref: "", external_package: repositoryPackage }
     if (isExternalSpecifier(specifier)) return { resolution: "exact", resolved_file_ref: "", external_package: packageRoot(specifier) }
   }
   if (isExternalSpecifier(specifier)) return { resolution: "unresolved", resolved_file_ref: "", external_package: packageRoot(specifier) }
@@ -784,31 +814,47 @@ function bindImportSymbols(node, externalPackage, resolution) {
   if (!externalPackage || !node.importClause) return
   const checker = checkerForNode(node)
   if (!checker) return
-  const names = []
-  if (node.importClause.name) names.push(node.importClause.name)
-  const bindings = node.importClause.namedBindings
-  if (bindings && ts.isNamespaceImport(bindings)) names.push(bindings.name)
-  if (bindings && ts.isNamedImports(bindings)) for (const element of bindings.elements) names.push(element.name)
-  for (const name of names) {
-    const symbol = checker.getSymbolAtLocation(name)
-    if (symbol) importAuthorityBySymbol.set(symbol, { package: externalPackage, resolution })
+  const importBindings = []
+  if (node.importClause.name) importBindings.push({ name: node.importClause.name, kind: "named", exportName: "default" })
+  const bindingClause = node.importClause.namedBindings
+  if (bindingClause && ts.isNamespaceImport(bindingClause)) importBindings.push({ name: bindingClause.name, kind: "namespace", exportName: "" })
+  if (bindingClause && ts.isNamedImports(bindingClause)) {
+    for (const element of bindingClause.elements) importBindings.push({
+      name: element.name, kind: "named", exportName: (element.propertyName || element.name).text,
+    })
+  }
+  for (const binding of importBindings) {
+    const symbol = checker.getSymbolAtLocation(binding.name)
+    if (symbol) importAuthorityBySymbol.set(symbol, {
+      package: externalPackage, resolution, kind: binding.kind, exportName: binding.exportName,
+    })
   }
 }
 
 function externalImportForExpression(node) {
   const checker = checkerForNode(node)
-  if (!checker) return { package: "", resolution: "unresolved" }
+  if (!checker) return { package: "", resolution: "unresolved", exportName: "" }
   let current = node
+  let namespaceExport = ""
   while (current) {
     if (ts.isIdentifier(current)) {
       const symbol = checker.getSymbolAtLocation(current)
-      if (symbol && importAuthorityBySymbol.has(symbol)) return importAuthorityBySymbol.get(symbol)
+      if (symbol && importAuthorityBySymbol.has(symbol)) {
+        const authority = importAuthorityBySymbol.get(symbol)
+        return {
+          ...authority,
+          exportName: authority.kind === "namespace" ? namespaceExport : authority.exportName,
+        }
+      }
     }
-    if (ts.isPropertyAccessExpression(current)) current = current.expression
+    if (ts.isPropertyAccessExpression(current)) {
+      namespaceExport = current.name.text
+      current = current.expression
+    }
     else if (ts.isCallExpression(current)) current = current.expression
     else break
   }
-  return { package: "", resolution: "unresolved" }
+  return { package: "", resolution: "unresolved", exportName: "" }
 }
 
 function packageForDeclarationFile(filename) {
@@ -855,7 +901,6 @@ function hasPackageEvidence(node, accepted) {
   return false
 }
 
-const expressPackages = new Set(["express", "@types/express", "@types/express-serve-static-core"])
 const nodeServerPackages = new Set(["@types/node"])
 
 for (const { sourceFile } of sourceFiles) {
@@ -873,11 +918,24 @@ for (const { sourceFile } of sourceFiles) {
     if (ts.isExportDeclaration(node)) {
       const specifier = node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier) ? node.moduleSpecifier.text : ""
       const resolved = specifier ? resolutionFor(specifier, sourceFile.fileName, node.moduleSpecifier) : { resolution: "exact", resolved_file_ref: "", external_package: "" }
-      const names = node.exportClause && ts.isNamedExports(node.exportClause) ? node.exportClause.elements.map((item) => item.name.text) : ["*"]
-      for (const name of names) exports.push({
-        ref: factRef("export", node, `${specifier}:${name}`), kind: specifier ? "reexport" : "export", name,
-        from_specifier: specifier, resolved_file_ref: resolved.resolved_file_ref, resolution: resolved.resolution, location: locationOf(node),
-      })
+      const elements = node.exportClause && ts.isNamedExports(node.exportClause) ? node.exportClause.elements : []
+      if (elements.length > 0) {
+        for (const element of elements) {
+          const declarationRefs = specifier ? [] : refsForExpression(element.name)
+          exports.push({
+            ref: factRef("export", element, `${specifier}:${element.name.text}`), kind: specifier ? "reexport" : "export",
+            name: element.name.text, declaration_ref: declarationRefs.length === 1 ? declarationRefs[0] : "",
+            from_specifier: specifier, resolved_file_ref: resolved.resolved_file_ref,
+            resolution: resolved.resolution, location: locationOf(element),
+          })
+        }
+      } else {
+        exports.push({
+          ref: factRef("export", node, `${specifier}:*`), kind: specifier ? "reexport" : "export", name: "*",
+          from_specifier: specifier, resolved_file_ref: resolved.resolved_file_ref,
+          resolution: resolved.resolution, location: locationOf(node),
+        })
+      }
       if (specifier) imports.push({
         ref: factRef("import", node.moduleSpecifier, `reexport:${specifier}`), kind: "reexport", specifier,
         importer_file_ref: fileRefByPath.get(relative(sourceFile.fileName)), ...resolved, location: locationOf(node.moduleSpecifier),
@@ -888,57 +946,35 @@ for (const { sourceFile } of sourceFiles) {
   visit(sourceFile)
 }
 
+// A page-local shard may use sibling source to resolve an exact boundary, but
+// it must not persist types inferred from that unselected target. Signatures
+// in importing files are optional display metadata; the declarations,
+// locations, calls and package/export authority remain intact.
+const boundaryImporterRefs = new Set(imports
+  .filter((value) => repositoryBoundaryPackages.has(value.external_package))
+  .map((value) => value.importer_file_ref))
+for (const declaration of declarations) {
+  if (boundaryImporterRefs.has(declaration.location.file_ref)) declaration.signature = ""
+}
+
 for (const declaration of declarations) {
   if (!declaration.exported || declaration.kind === "module") continue
+  const declarationNode = declarationNodeByRef.get(declaration.ref)
+  const defaultExport = Boolean(declarationNode?.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword))
   exports.push({
-    ref: `export:${declaration.ref}`, kind: "declaration", name: declaration.name,
+    ref: `export:${declaration.ref}`, kind: "declaration", name: defaultExport ? "default" : declaration.name,
     declaration_ref: declaration.ref, resolution: "exact", location: declaration.location,
   })
 }
 
 const calls = []
-const routes = []
-const httpUses = []
 const contracts = []
-const resources = []
 const surfaces = []
 const contractByDeclaration = new Map()
-const resourceByPackage = new Map()
 const declarationKindByRef = new Map()
 for (const declaration of declarations) {
   if (declaration.kind === "module") continue
   declarationKindByRef.set(declaration.ref, declaration.kind)
-}
-
-const resourceKinds = new Map([
-  ["express", ["http_server", "Express"]],
-  ["react-dom", ["browser_dom", "React DOM"]],
-  ["@tanstack/react-query", ["client_data_cache", "TanStack Query"]],
-  ["wouter", ["browser_router", "Wouter"]],
-  ["drizzle-orm", ["postgres_database", "PostgreSQL via Drizzle"]],
-  ["pg", ["postgres_database", "PostgreSQL"]],
-  ["connect-pg-simple", ["postgres_sessions", "PostgreSQL sessions"]],
-  ["googleapis", ["google_calendar", "Google Calendar"]],
-  ["passport-google-oauth20", ["google_oauth", "Google OAuth"]],
-  ["node-cron", ["scheduler", "Cron scheduler"]],
-])
-
-for (const value of imports) {
-  if (!value.external_package) continue
-  const resource = resourceKinds.get(value.external_package)
-  if (!resource) continue
-  const key = `${resource[0]}:${value.external_package}`
-  let fact = resourceByPackage.get(key)
-  if (!fact) {
-    fact = {
-      ref: `resource:${stablePart(key)}`, kind: resource[0], name: resource[1], package_path: value.external_package,
-      used_by_refs: [], evidence_refs: [], location: value.location,
-    }
-    resourceByPackage.set(key, fact)
-    resources.push(fact)
-  }
-  fact.evidence_refs.push(value.ref)
-  fact.used_by_refs.push(moduleRef(value.location.path))
 }
 
 function staticString(node) {
@@ -951,18 +987,43 @@ function propertyName(node) {
   if (ts.isIdentifier(node)) return node.text
   return ""
 }
-function queryKeysFrom(node) {
-  if (!node || !ts.isObjectLiteralExpression(node)) return []
-  const property = node.properties.find((item) => ts.isPropertyAssignment(item) && item.name && expressionText(item.name) === "queryKey")
-  if (!property || !ts.isPropertyAssignment(property)) return []
-  const initializer = property.initializer
-  if (ts.isArrayLiteralExpression(initializer)) return initializer.elements.map(staticString).filter(Boolean)
-  return []
+function staticPropertyName(node) {
+  if (!node) return ""
+  if (ts.isIdentifier(node) || ts.isStringLiteralLike(node) || ts.isNumericLiteral(node)) return String(node.text)
+  if (ts.isComputedPropertyName?.(node)) return staticString(node.expression)
+  return ""
 }
-function objectMethod(node) {
-  if (!node || !ts.isObjectLiteralExpression(node)) return ""
-  const property = node.properties.find((item) => ts.isPropertyAssignment(item) && expressionText(item.name) === "method")
-  return property && ts.isPropertyAssignment(property) ? staticString(property.initializer).toUpperCase() : ""
+function objectPropertyAuthority(node, propertyName) {
+  if (!node || !ts.isObjectLiteralExpression(node)) return { kind: "dynamic" }
+  let authority = { kind: "absent" }
+  for (const property of node.properties) {
+    if (ts.isSpreadAssignment(property)) {
+      // A later explicit property can override the spread again. Until then,
+      // the spread may have supplied or replaced the requested key.
+      authority = { kind: "dynamic" }
+      continue
+    }
+    const name = staticPropertyName(property.name)
+    if (!name && ts.isComputedPropertyName?.(property.name)) {
+      authority = { kind: "dynamic" }
+      continue
+    }
+    if (name !== propertyName) continue
+    authority = ts.isPropertyAssignment(property) ? { kind: "value", value: property.initializer } : { kind: "dynamic" }
+  }
+  return authority
+}
+function queryKeysFrom(node) {
+  const property = objectPropertyAuthority(node, "queryKey")
+  if (property.kind !== "value" || !ts.isArrayLiteralExpression(property.value)) return []
+  const keys = []
+  for (const element of property.value.elements) {
+    // A mixed static/dynamic query key is not a shorter exact key. The full
+    // call pattern still retains the dynamic argument as a frontier.
+    if (!ts.isStringLiteralLike(element) && !ts.isNoSubstitutionTemplateLiteral(element)) return []
+    keys.push(element.text)
+  }
+  return keys
 }
 function rootCallName(node) {
   let current = node
@@ -983,6 +1044,368 @@ function expressionRefs(node) {
   if (refs.length > 0) return refs
   if (ts.isCallExpression(node)) return refsForExpression(node.expression)
   return []
+}
+
+function terminalSelector(node) {
+  if (ts.isIdentifier(node) || ts.isPrivateIdentifier?.(node)) return node.text
+  if (ts.isPropertyAccessExpression(node)) return node.name.text
+  if (typeof ts.isElementAccessExpression === "function" && ts.isElementAccessExpression(node)) {
+    const argument = node.argumentExpression
+    if (argument && (ts.isStringLiteralLike(argument) || ts.isNumericLiteral(argument))) return argument.text
+    return ""
+  }
+  if (node.kind === ts.SyntaxKind.ImportKeyword) return "import"
+  return ""
+}
+
+function callReceiverExpression(node) {
+  if (ts.isPropertyAccessExpression(node.expression)) return node.expression.expression
+  if (typeof ts.isElementAccessExpression === "function" && ts.isElementAccessExpression(node.expression)) return node.expression.expression
+  return undefined
+}
+
+function unwrapReceiverExpression(node) {
+  let current = node
+  while (current && (
+    ts.isParenthesizedExpression?.(current) || ts.isAsExpression?.(current) ||
+    ts.isTypeAssertionExpression?.(current) || ts.isNonNullExpression?.(current) ||
+    ts.isSatisfiesExpression?.(current)
+  )) current = current.expression
+  return current
+}
+
+// Materialize only call values that are consumed directly as the receiver of
+// another retained call. This is source syntax, not a framework or runtime
+// classification.
+const chainedCallResultRefs = new Map()
+for (const { sourceFile } of sourceFiles) {
+  const visitCallResults = (node) => {
+    if (ts.isCallExpression(node)) {
+      const receiver = unwrapReceiverExpression(callReceiverExpression(node))
+      if (receiver && ts.isCallExpression(receiver)) {
+        chainedCallResultRefs.set(receiver, callResultRef(receiver))
+      }
+    }
+    ts.forEachChild(node, visitCallResults)
+  }
+  visitCallResults(sourceFile)
+}
+
+function exactLocalReceiverRef(node) {
+  const receiver = unwrapReceiverExpression(callReceiverExpression(node))
+  if (!receiver || !/\.(?:ts|tsx|mts|cts)$/.test(relative(node.getSourceFile().fileName))) return ""
+  // expressionRefs(CallExpression) intentionally falls back to the callee.
+  // That is call-target evidence, not the identity of the produced value.
+  if (ts.isCallExpression(receiver)) return ""
+  const refs = expressionRefs(receiver)
+  return refs.length === 1 ? refs[0] : ""
+}
+
+function externalProgramObjectRef(packagePath, receiver, name) {
+  const symbolName = name || packagePath
+  return `external:${packagePath}:${receiver}:${symbolName}`
+}
+
+function invocationOrigin(node) {
+  let refs = (ts.isNewExpression(node) ? localRefsForInvocation(node) : expressionRefs(node.expression))
+    .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
+  let resolution = refs.length > 1 ? "alternatives" : refs.length === 1 ? "exact" : ""
+  if (/\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName)) && resolution === "exact") {
+    resolution = "alternatives"
+  }
+  if (refs.length > 0) return { refs, resolution, observed: refs.length }
+
+  const imported = externalImportForExpression(node.expression)
+  if (imported.package && imported.resolution === "exact") {
+    const exportName = imported.exportName
+    let receiver = ""
+    let name = propertyName(node.expression)
+    if (ts.isIdentifier(node.expression)) name = exportName
+    if (exportName && name && name !== exportName) receiver = exportName
+    if (exportName && name) {
+      return {
+        refs: [externalProgramObjectRef(imported.package, receiver, name)],
+        resolution: /\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName)) ? "alternatives" : "exact",
+        observed: 1,
+      }
+    }
+  }
+
+  const platformTarget = platformTargetForInvocation(node)
+  if (platformTarget) {
+    return {
+      refs: [externalProgramObjectRef("platform:javascript", platformTarget.receiver, platformTarget.name)],
+      resolution: /\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName)) ? "alternatives" : "exact",
+      observed: 1,
+    }
+  }
+  return { refs: [], resolution: "unresolved", observed: 1 }
+}
+
+// Receiver origin is assignment provenance, not framework semantics. It says
+// only that the receiver value came from this exact local or external
+// invocation. A later assignment invalidates the origin instead of guessing
+// which runtime value wins.
+const patternReceiverOriginsByRef = new Map()
+const reassignedPatternReceivers = new Set()
+for (const { sourceFile } of sourceFiles) {
+  const visitOrigins = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) &&
+        node.initializer && (ts.isCallExpression(node.initializer) || ts.isNewExpression(node.initializer))) {
+      const ref = declarationRefByNode.get(node)
+      if (ref) patternReceiverOriginsByRef.set(ref, invocationOrigin(node.initializer))
+    }
+    if (ts.isBinaryExpression(node) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+      for (const ref of expressionRefs(node.left)) reassignedPatternReceivers.add(ref)
+    }
+    ts.forEachChild(node, visitOrigins)
+  }
+  visitOrigins(sourceFile)
+}
+
+function patternReceiver(node) {
+  const receiver = unwrapReceiverExpression(callReceiverExpression(node))
+  if (receiver && ts.isCallExpression(receiver)) {
+    const ref = chainedCallResultRefs.get(receiver) || ""
+    return { ref, originRefs: [], originResolution: "", originsObserved: 0 }
+  }
+  const ref = exactLocalReceiverRef(node)
+  if (!ref) return { ref: "", originRefs: [], originResolution: "", originsObserved: 0 }
+  if (reassignedPatternReceivers.has(ref)) {
+    return { ref, originRefs: [], originResolution: "unresolved", originsObserved: 1 }
+  }
+  const origin = patternReceiverOriginsByRef.get(ref)
+  if (!origin) return { ref, originRefs: [], originResolution: "", originsObserved: 0 }
+  return {
+    ref,
+    originRefs: [...origin.refs],
+    originResolution: origin.resolution,
+    originsObserved: origin.observed,
+  }
+}
+
+function patternObjectRefs(node) {
+  let refs = expressionRefs(node)
+  if (ts.isTemplateExpression(node)) {
+    refs = node.templateSpans.flatMap((span) => expressionRefs(span.expression))
+  } else if (ts.isSpreadElement(node)) {
+    refs = expressionRefs(node.expression)
+  }
+  return [...new Set(refs)].sort(compareText)
+}
+
+function unwrapPatternValue(node) {
+  let current = node
+  while (current && (
+    ts.isParenthesizedExpression?.(current) || ts.isAsExpression?.(current) ||
+    ts.isTypeAssertionExpression?.(current) || ts.isNonNullExpression?.(current) ||
+    ts.isSatisfiesExpression?.(current)
+  )) current = current.expression
+  return current
+}
+
+function staticPatternValue(node) {
+  const current = unwrapPatternValue(node)
+  if (!current) return undefined
+  if (ts.isStringLiteralLike(current) || ts.isNoSubstitutionTemplateLiteral(current)) {
+    return { kind: "literal_string", value: current.text, parts: [] }
+  }
+  if (!ts.isTemplateExpression(current)) return undefined
+  const parts = []
+  if (current.head.text !== "") parts.push({ kind: "literal", text: current.head.text })
+  for (const span of current.templateSpans) {
+    parts.push({ kind: "hole" })
+    if (span.literal.text !== "") parts.push({ kind: "literal", text: span.literal.text })
+  }
+  return { kind: "string_template", value: "", parts }
+}
+
+function runtimeParametersForDeclaration(ref) {
+  let declaration = declarationNodeByRef.get(ref)
+  if (declaration && ts.isVariableDeclaration(declaration) && declaration.initializer &&
+      (ts.isArrowFunction(declaration.initializer) || ts.isFunctionExpression(declaration.initializer))) {
+    declaration = declaration.initializer
+  }
+  if (!declaration || !Array.isArray(declaration.parameters)) return []
+  return declaration.parameters.filter((parameter) =>
+    !(ts.isIdentifier(parameter.name) && parameter.name.text === "this"))
+}
+
+function formalParameterKey(parameter) {
+  if (!parameter || !ts.isParameter(parameter)) return ""
+  let declaration = parameter.parent
+  if (ts.isArrowFunction(declaration) || ts.isFunctionExpression(declaration)) {
+    if (ts.isVariableDeclaration(declaration.parent)) declaration = declaration.parent
+  }
+  const ref = declarationRefByNode.get(declaration) || ""
+  if (!ref) return ""
+  const parameters = runtimeParametersForDeclaration(ref)
+  const position = parameters.indexOf(parameter)
+  if (position < 0 || parameter.dotDotDotToken) return ""
+  return `${ref}\0${position + 1}`
+}
+
+function formalParameterKeyForExpression(node) {
+  const current = unwrapPatternValue(node)
+  if (!current || !ts.isIdentifier(current)) return ""
+  const checker = checkerForNode(current)
+  if (!checker) return ""
+  let symbol
+  try { symbol = checker.getSymbolAtLocation(current) } catch {}
+  const keys = new Set()
+  for (const declaration of symbolDeclarations(symbol)) {
+    const key = formalParameterKey(declaration)
+    if (key) keys.add(key)
+  }
+  return keys.size === 1 ? keys.values().next().value : ""
+}
+
+// Actual-to-formal value provenance is compiler-owned and invocation-scoped.
+// A candidate exists only when the repository call target is exact, one
+// positional actual maps to one non-rest formal, and that formal has no other
+// incoming call or assignment anywhere in the selected compiler project.
+const incomingActualsByFormal = new Map()
+const reassignedFormalParameters = new Set()
+
+function recordIncomingActual(key, value) {
+  if (!key) return
+  const rows = incomingActualsByFormal.get(key) || []
+  rows.push(value)
+  incomingActualsByFormal.set(key, rows)
+}
+
+function markReassignedFormalTarget(node) {
+  if (!node) return
+  const key = formalParameterKeyForExpression(node)
+  if (key) reassignedFormalParameters.add(key)
+  if (ts.isArrayLiteralExpression(node) || ts.isObjectLiteralExpression(node)) {
+    ts.forEachChild(node, markReassignedFormalTarget)
+  }
+}
+
+for (const { sourceFile } of sourceFiles) {
+  const visitActualFormal = (node) => {
+    if (ts.isBinaryExpression(node) &&
+        node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+      markReassignedFormalTarget(node.left)
+    } else if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
+        (node.operator === ts.SyntaxKind.PlusPlusToken || node.operator === ts.SyntaxKind.MinusMinusToken)) {
+      markReassignedFormalTarget(node.operand)
+    } else if (ts.isForInStatement(node) || ts.isForOfStatement(node)) {
+      markReassignedFormalTarget(node.initializer)
+    }
+
+    if (ts.isCallExpression(node)) {
+      const callRef = callFactRef(node)
+      const localRefs = expressionRefs(node.expression)
+        .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
+      const resolvedDeclaration = resolvedSignatureDeclaration(node, checkerForNode(node))
+      const resolvedRef = declarationRefByNode.get(resolvedDeclaration) || ""
+      const typescript = /\.(?:ts|tsx)$/.test(relative(sourceFile.fileName))
+      const selector = terminalSelector(node.expression)
+      const exactTarget = typescript && localRefs.length === 1 && resolvedRef === localRefs[0] && selector !== ""
+      for (const calleeRef of localRefs) {
+        const parameters = runtimeParametersForDeclaration(calleeRef)
+        let positionMappingExact = true
+        for (let index = 0; index < parameters.length; index += 1) {
+          const actual = node.arguments[index]
+          if (actual && ts.isSpreadElement(actual)) positionMappingExact = false
+          const parameter = parameters[index]
+          const key = formalParameterKey(parameter)
+          recordIncomingActual(key, {
+            exact: Boolean(actual) && exactTarget && calleeRef === resolvedRef && positionMappingExact && !parameter.dotDotDotToken,
+            value: actual && !ts.isSpreadElement(actual) ? staticPatternValue(actual) : undefined,
+            source_call_ref: callRef,
+            source_position: index + 1,
+          })
+          if (parameter.dotDotDotToken) positionMappingExact = false
+        }
+      }
+    }
+    ts.forEachChild(node, visitActualFormal)
+  }
+  visitActualFormal(sourceFile)
+}
+
+function actualFormalValueCandidate(node) {
+  const key = formalParameterKeyForExpression(node)
+  if (!key || reassignedFormalParameters.has(key)) return undefined
+  const rows = incomingActualsByFormal.get(key) || []
+  if (rows.length !== 1 || !rows[0].exact || !rows[0].value) return undefined
+  return {
+    ...rows[0].value,
+    resolution: "possible",
+    source_kind: "actual_argument",
+    source_call_ref: rows[0].source_call_ref,
+    source_position: rows[0].source_position,
+  }
+}
+
+function patternHasObjectCandidate(node) {
+  let current = node
+  while (ts.isParenthesizedExpression?.(current) || ts.isAsExpression?.(current) ||
+      ts.isTypeAssertionExpression?.(current) || ts.isNonNullExpression?.(current) ||
+      ts.isSpreadElement(current)) {
+    current = current.expression
+  }
+  return ts.isIdentifier(current) || ts.isPropertyAccessExpression(current) ||
+    (typeof ts.isElementAccessExpression === "function" && ts.isElementAccessExpression(current)) ||
+    ts.isArrowFunction(current) || ts.isFunctionExpression(current)
+}
+
+function callPatternArgument(node, position) {
+  const objectRefs = patternObjectRefs(node)
+  const javascript = /\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName))
+  const hasObjectCandidate = patternHasObjectCandidate(node)
+  const resolution = objectRefs.length === 0 ? hasObjectCandidate ? "unresolved" : "" :
+    javascript || objectRefs.length > 1 ? "alternatives" : "exact"
+  const common = {
+    position,
+    parts: [],
+    object_refs: objectRefs,
+    resolution,
+    objects_observed: objectRefs.length > 0 ? objectRefs.length : hasObjectCandidate ? 1 : 0,
+    value_candidates: [],
+    value_candidates_observed: 0,
+  }
+  if (ts.isStringLiteralLike(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return { ...common, kind: "literal_string", value: node.text }
+  }
+  if (ts.isTemplateExpression(node)) {
+    const parts = []
+    if (node.head.text !== "") parts.push({ kind: "literal", text: node.head.text })
+    for (const span of node.templateSpans) {
+      parts.push({ kind: "hole" })
+      if (span.literal.text !== "") parts.push({ kind: "literal", text: span.literal.text })
+    }
+    return { ...common, kind: "string_template", parts }
+  }
+  const candidate = actualFormalValueCandidate(node)
+  return {
+    ...common,
+    kind: "dynamic",
+    value_candidates: candidate ? [candidate] : [],
+    value_candidates_observed: candidate ? 1 : 0,
+  }
+}
+
+function callPattern(node) {
+  const selector = terminalSelector(node.expression)
+  if (!selector) return undefined
+  const receiver = patternReceiver(node)
+  return {
+    selector,
+    result_ref: chainedCallResultRefs.get(node) || "",
+    receiver_ref: receiver.ref,
+    receiver_origin_refs: receiver.originRefs,
+    receiver_origin_resolution: receiver.originResolution,
+    receiver_origins_observed: receiver.originsObserved,
+    arguments: node.arguments.map((argument, index) => callPatternArgument(argument, index + 1)),
+    arguments_observed: node.arguments.length,
+  }
 }
 
 for (const { sourceFile, path: filePath } of sourceFiles) {
@@ -1031,13 +1454,17 @@ for (const { sourceFile } of sourceFiles) {
         .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
       const externalImport = localRefs.length === 0 ? externalImportForExpression(node.expression) : { package: "", resolution: "unresolved" }
       let externalPackage = externalImport.package
+      let externalExport = externalPackage ? externalImport.exportName : ""
       let externalReceiver = ""
       let externalName = externalPackage ? propertyName(node.expression) : ""
+      if (externalPackage && ts.isIdentifier(node.expression)) externalName = externalExport
+      if (externalPackage && externalExport && externalName && externalName !== externalExport) externalReceiver = externalExport
       let platformTarget
       if (localRefs.length === 0 && externalPackage === "") {
         platformTarget = platformTargetForInvocation(node)
         if (platformTarget) {
           externalPackage = "platform:javascript"
+          externalExport = ""
           externalReceiver = platformTarget.receiver
           externalName = platformTarget.name
         }
@@ -1049,43 +1476,24 @@ for (const { sourceFile } of sourceFiles) {
       // authority, or an explicit unresolved frontier with no invented target.
       let resolution = localRefs.length > 1 ? "alternatives" : localRefs.length === 1 ? "exact" : platformTarget ? "exact" : externalPackage ? externalImport.resolution : "unresolved"
       if (/\.(?:js|jsx|mjs|cjs)$/.test(relative(sourceFile.fileName)) && resolution === "exact") resolution = "alternatives"
-      const displayExpression = invocation === "construct" ? `new ${expressionText(node.expression)}` : expressionText(node.expression)
+      const displayExpression = callDisplayExpression(node)
       const call = {
-        ref: factRef("call", node, displayExpression), caller_ref: callerRef, callee_refs: localRefs,
-        invocation, external_package: externalPackage, external_receiver: externalReceiver, external_name: externalName,
+        ref: callFactRef(node), caller_ref: callerRef, callee_refs: localRefs,
+        invocation, external_package: externalPackage, external_export: externalExport,
+        external_receiver: externalReceiver, external_name: externalName,
         expression: displayExpression, resolution, location: locationOf(node.expression),
       }
-      calls.push(call)
-      if (externalPackage) {
-        for (const resource of resources) if (resource.package_path === externalPackage) resource.used_by_refs.push(callerRef)
+      if (ts.isCallExpression(node)) {
+        const pattern = callPattern(node)
+        call.patterns_observed = 1
+        if (pattern) call.pattern = pattern
+      } else {
+        call.patterns_observed = 0
       }
+      calls.push(call)
 
       if (ts.isCallExpression(node)) {
       const name = propertyName(node.expression)
-      const method = name.toUpperCase()
-      const frameworkReceiver = ts.isPropertyAccessExpression(node.expression) ? node.expression.expression : undefined
-      if (["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method) && frameworkReceiver && hasPackageEvidence(frameworkReceiver, expressPackages)) {
-        const routePath = staticString(node.arguments[0])
-        if (routePath) {
-          const argumentRefs = []
-          for (const argument of node.arguments.slice(1)) argumentRefs.push(...expressionRefs(argument))
-          const distinct = [...new Set(argumentRefs)]
-          routes.push({
-            ref: factRef("route", node, `${method}:${routePath}`), kind: "http_route", method, path: routePath,
-            owner_ref: callerRef, middleware_refs: distinct.slice(0, Math.max(0, distinct.length - 1)),
-            handler_refs: distinct.slice(Math.max(0, distinct.length - 1)), resolution: distinct.length > 0 ? "exact" : "unresolved", location: locationOf(node),
-          })
-        }
-      }
-      if (name === "use" && frameworkReceiver && hasPackageEvidence(frameworkReceiver, expressPackages)) {
-        const firstPath = staticString(node.arguments[0])
-        const handlerArguments = firstPath ? node.arguments.slice(1) : node.arguments
-        const refs = [...new Set(handlerArguments.flatMap(expressionRefs))]
-        routes.push({
-          ref: factRef("route", node, `USE:${firstPath || "*"}`), kind: "middleware", method: "USE", path: firstPath || "*",
-          owner_ref: callerRef, middleware_refs: refs, handler_refs: [], resolution: refs.length ? "exact" : "unresolved", location: locationOf(node),
-        })
-      }
       if (name === "listen" && ts.isPropertyAccessExpression(node.expression) &&
           (hasPackageEvidence(node.expression.name, nodeServerPackages) || hasPackageEvidence(node.expression.expression, nodeServerPackages))) {
         const tool = isSupportingToolPath(relative(sourceFile.fileName))
@@ -1100,15 +1508,6 @@ for (const { sourceFile } of sourceFiles) {
         const keys = queryKeysFrom(node.arguments[0])
         if (keys.length > 0) addContract({ ref: factRef("contract", node, `query-key:${keys.join("/")}`), kind: "query_key", name: keys.join("/"), value: JSON.stringify(keys), used_by_refs: [callerRef], location: locationOf(node) })
       }
-      if (name === "apiRequest") {
-        const httpMethod = staticString(node.arguments[0]).toUpperCase()
-        const requestPath = staticString(node.arguments[1])
-        if (httpMethod && requestPath) httpUses.push({ ref: factRef("http-use", node, `${httpMethod}:${requestPath}`), kind: "api_request", method: httpMethod, path: requestPath, caller_ref: callerRef, query_keys: [], resolution: "exact", location: locationOf(node) })
-      }
-      if (name === "fetch") {
-        const requestPath = staticString(node.arguments[0])
-        if (requestPath) httpUses.push({ ref: factRef("http-use", node, `FETCH:${requestPath}`), kind: "fetch", method: objectMethod(node.arguments[1]) || "GET", path: requestPath, caller_ref: callerRef, query_keys: [], resolution: "exact", location: locationOf(node) })
-      }
       if (name === "schedule" && externalImport.resolution === "exact" && externalPackage === "node-cron") {
         const schedule = staticString(node.arguments[0])
         if (schedule) addContract({ ref: factRef("contract", node, `cron:${schedule}`), kind: "cron_schedule", name: schedule, value: schedule, used_by_refs: [callerRef], location: locationOf(node) })
@@ -1120,46 +1519,17 @@ for (const { sourceFile } of sourceFiles) {
       }
     }
 
-    if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
-      const tag = expressionText(node.tagName).split(".").at(-1)
-      const jsxImport = externalImportForExpression(node.tagName)
-      if (tag === "Route" && jsxImport.resolution === "exact" && jsxImport.package === "wouter") {
-        let routePath = "*"
-        let componentRef = ""
-        for (const attribute of node.attributes.properties) {
-          if (!ts.isJsxAttribute(attribute)) continue
-          const attributeName = attribute.name.text
-          if (attributeName === "path") {
-            if (attribute.initializer && ts.isStringLiteral(attribute.initializer)) routePath = attribute.initializer.text
-            else if (attribute.initializer && ts.isJsxExpression(attribute.initializer)) routePath = staticString(attribute.initializer.expression) || "*"
-          }
-          if (attributeName === "component" && attribute.initializer && ts.isJsxExpression(attribute.initializer) && attribute.initializer.expression) {
-            componentRef = expressionRefs(attribute.initializer.expression)[0] || ""
-          }
-        }
-        routes.push({ ref: factRef("route", node, `BROWSER:${routePath}`), kind: "browser_route", path: routePath, owner_ref: refForDeclarationNode(node), component_ref: componentRef, middleware_refs: [], handler_refs: [], resolution: componentRef ? "exact" : "unresolved", location: locationOf(node) })
-      }
-      if (tag === "Link" && jsxImport.resolution === "exact" && jsxImport.package === "wouter") {
-        let linkPath = ""
-        for (const attribute of node.attributes.properties) {
-          if (!ts.isJsxAttribute(attribute) || (attribute.name.text !== "href" && attribute.name.text !== "to")) continue
-          if (attribute.initializer && ts.isStringLiteral(attribute.initializer)) linkPath = attribute.initializer.text
-          else if (attribute.initializer && ts.isJsxExpression(attribute.initializer)) linkPath = staticString(attribute.initializer.expression)
-        }
-        routes.push({
-          ref: factRef("route", node, `LINK:${linkPath || "dynamic"}`), kind: "browser_link", path: linkPath || "<dynamic>",
-          owner_ref: refForDeclarationNode(node), middleware_refs: [], handler_refs: [], resolution: linkPath ? "exact" : "unresolved", location: locationOf(node),
-        })
-      }
-    }
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)
 }
 
-if (contracts.some((value) => value.kind === "shared_type" || value.location.path.startsWith("shared/"))) {
-  const first = contracts.find((value) => value.location.path.startsWith("shared/"))
-  surfaces.push({ ref: "surface:shared-contracts", kind: "shared_contracts", role: "supporting", name: "Shared client/server contracts", entry_refs: [], evidence_refs: contracts.filter((value) => value.location.path.startsWith("shared/")).map((value) => value.ref), location: first.location })
+const sharedContract = (value) => value.kind === "shared_type" || value.location.path.startsWith("shared/")
+const sharedContracts = contracts.filter(sharedContract).sort((left, right) =>
+  compareText(left.location.path, right.location.path) || left.location.line - right.location.line ||
+  left.location.column - right.location.column || compareText(left.ref, right.ref))
+if (sharedContracts.length > 0) {
+  surfaces.push({ ref: "surface:shared-contracts", kind: "shared_contracts", role: "supporting", name: "Shared client/server contracts", entry_refs: [], evidence_refs: sharedContracts.map((value) => value.ref), location: sharedContracts[0].location })
 }
 
 const uniqueByRef = (values) => {
@@ -1169,15 +1539,7 @@ const uniqueByRef = (values) => {
 }
 const canonicalStrings = (values) => [...new Set(values.filter(Boolean))].sort()
 for (const value of calls) value.callee_refs = canonicalStrings(value.callee_refs)
-for (const value of routes) {
-  value.middleware_refs = canonicalStrings(value.middleware_refs)
-  value.handler_refs = canonicalStrings(value.handler_refs)
-}
 for (const value of contracts) value.used_by_refs = canonicalStrings(value.used_by_refs)
-for (const value of resources) {
-  value.used_by_refs = canonicalStrings(value.used_by_refs)
-  value.evidence_refs = canonicalStrings(value.evidence_refs)
-}
 for (const value of surfaces) {
   value.entry_refs = canonicalStrings(value.entry_refs)
   value.evidence_refs = canonicalStrings(value.evidence_refs)
@@ -1194,10 +1556,7 @@ const result = {
   exports: uniqueByRef(exports),
   calls: uniqueByRef(calls),
   surfaces: uniqueByRef(surfaces),
-  routes: uniqueByRef(routes),
-  http_uses: uniqueByRef(httpUses),
   contracts: uniqueByRef(contracts),
-  resources: uniqueByRef(resources),
 }
 
 const sourceDigest = createHash("sha256")

@@ -2,7 +2,6 @@ package report
 
 import (
 	"bytes"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -85,24 +84,18 @@ func TestGitHubPresentationIsHTMLOnly(t *testing.T) {
 		RepositoryURL: "https://github.com/team/project",
 		Revision:      strings.Repeat("a", 40),
 	}
-	html, err := RenderHTMLWithOptions(&data, RenderOptions{})
+	html, err := RenderHTMLWithOptions(&data, reportSingleTargetRenderOptionsFixture(t, &data))
 	if err != nil {
 		t.Fatal(err)
 	}
-	transport, err := extractStandaloneBundleTransportV4HTML(html)
-	if err != nil {
-		t.Fatalf("extract rendered browser transport: %v", err)
+	// Source routing lives only in the rendered anchors: the page links every
+	// location to the captured revision on the host.
+	wantPrefix := "https://github.com/team/project/blob/" + strings.Repeat("a", 40) + "/"
+	if !bytes.Contains(html, []byte(wantPrefix)) {
+		t.Fatalf("rendered page has no GitHub permalink at the captured revision")
 	}
-	repository, err := DecodeBrowserRepositoryPayload(transport.RepositoryPayload)
-	if err != nil {
-		t.Fatalf("decode rendered repository payload: %v", err)
-	}
-	wantSource := BrowserSource{Kind: "github", RepositoryURL: "https://github.com/team/project"}
-	if !reflect.DeepEqual(repository.Source, wantSource) {
-		t.Fatalf("rendered source routing = %#v, want %#v", repository.Source, wantSource)
-	}
-	if bytes.Contains(transport.RepositoryPayload, []byte(`"github_source_links"`)) {
-		t.Fatal("typed repository payload retained legacy GitHub source fields")
+	if bytes.Contains(html, []byte(`"github_source_links"`)) {
+		t.Fatal("rendered page retained the internal source-link field name")
 	}
 
 	persisted, err := encodeReportJSON(&data, maxManifestReportBytes)

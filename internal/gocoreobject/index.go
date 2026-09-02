@@ -15,18 +15,7 @@ import (
 	"unicode/utf8"
 )
 
-const (
-	Version = 2
-
-	MaxPackages  = 65_536
-	MaxTypes     = 65_536
-	MaxCallables = 65_536
-	MaxTextBytes = 16 * 1024
-	// MaxIndexBytes bounds the complete canonical owned substrate. Consumers
-	// that embed it in a browser-facing artifact should impose a smaller bound
-	// or persist only the exact selected projection.
-	MaxIndexBytes = 32 * 1024 * 1024
-)
+const Version = 2
 
 type TypeKind string
 
@@ -145,9 +134,6 @@ type Index struct {
 }
 
 func New(input Input) (Index, error) {
-	if err := preflightInput(input); err != nil {
-		return Index{}, err
-	}
 	index := Index{
 		Version: Version,
 		Scenario: Scenario{
@@ -228,59 +214,6 @@ func New(input Input) (Index, error) {
 	return index, nil
 }
 
-func preflightInput(input Input) error {
-	if len(input.Packages) == 0 || len(input.Packages) > MaxPackages || len(input.Types) > MaxTypes ||
-		len(input.Callables) > MaxCallables {
-		return fmt.Errorf("go core object index: collection bound exceeded")
-	}
-	aggregate := 0
-	add := func(values ...string) error {
-		for _, value := range values {
-			if len(value) > MaxTextBytes {
-				return fmt.Errorf("go core object index: scalar bound exceeded")
-			}
-			aggregate += len(value)
-			if aggregate > MaxIndexBytes {
-				return fmt.Errorf("go core object index: aggregate scalar bound exceeded")
-			}
-		}
-		return nil
-	}
-	if err := add(
-		input.Scenario.ID, input.Scenario.GOOS, input.Scenario.GOARCH,
-		input.Scope.TargetRef, input.Scope.TargetKind, input.Scope.TargetModuleID,
-		input.Scope.TargetModulePath, input.Scope.TargetModuleDir, input.Scope.TargetPackage,
-	); err != nil {
-		return err
-	}
-	if err := add(input.Scenario.Tags...); err != nil {
-		return err
-	}
-	if err := add(input.Scope.TargetPackages...); err != nil {
-		return err
-	}
-	for _, pkg := range input.Packages {
-		if err := add(pkg.ModuleID, pkg.Module, pkg.ModuleDir, pkg.Path, pkg.RepresentativeSource); err != nil {
-			return err
-		}
-	}
-	for _, declaration := range input.Types {
-		if err := add(declaration.ID, string(declaration.Kind), declaration.Package, declaration.Name, declaration.Location.Path); err != nil {
-			return err
-		}
-	}
-	for _, declaration := range input.Callables {
-		if err := add(
-			declaration.ID, string(declaration.Kind), declaration.Package, declaration.Name,
-			declaration.Receiver, declaration.Signature, declaration.Location.Path,
-			declaration.DirectCallNodeID,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (index Index) Snapshot() Index {
 	result := index
 	result.Scenario.Tags = append([]string(nil), index.Scenario.Tags...)
@@ -306,9 +239,8 @@ func (index Index) Validate() error {
 	if index.Scope.TargetPackage != "" && !validText(index.Scope.TargetPackage) {
 		return fmt.Errorf("go core object index: invalid target package")
 	}
-	if len(index.Packages) == 0 || len(index.Packages) > MaxPackages || len(index.Types) > MaxTypes ||
-		len(index.Callables) > MaxCallables {
-		return fmt.Errorf("go core object index: collection bound exceeded")
+	if len(index.Packages) == 0 {
+		return fmt.Errorf("go core object index: package inventory is empty")
 	}
 	packages := make(map[string]Package, len(index.Packages))
 	for position, pkg := range index.Packages {
@@ -397,12 +329,6 @@ func indexDigest(index Index) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("go core object index: encode digest material: %w", err)
 	}
-	if len(encoded) > MaxIndexBytes {
-		return "", fmt.Errorf(
-			"go core object index: canonical substrate is %d bytes, limit is %d",
-			len(encoded), MaxIndexBytes,
-		)
-	}
 	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:]), nil
 }
@@ -442,7 +368,7 @@ func validIdentifier(value string) bool {
 }
 
 func validText(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || len(value) > MaxTextBytes || !utf8.ValidString(value) {
+	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) {
 		return false
 	}
 	for _, character := range value {

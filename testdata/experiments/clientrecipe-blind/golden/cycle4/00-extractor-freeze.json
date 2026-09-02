@@ -2,7 +2,7 @@
   "version": 1,
   "status": "SEALED_BEFORE_CANDIDATE",
   "candidate_id": "authority-collision-fix-v2",
-  "candidate_sources_sha256": "f6923f8f7b155697dd2a3872272f23e34ec5ea13e6ebba04d078199db8064963",
+  "candidate_sources_sha256": "c81b2dafe112358068a05e4dd3c6ac595195713c226260ef8c2214511013b7c2",
   "candidate_sources": [
     {
       "path": "go.mod",
@@ -22,15 +22,15 @@
     },
     {
       "path": "internal/experiments/clientrecipe/contracts.go",
-      "sha256": "7753c863a81122674599ba75b94631e585ccd7e934ef0cf3ad0c098911123b0d"
+      "sha256": "6e45264e1036ae36a5daf13575fcb97af4ab2f5bde6a92446b3410fbdce65737"
     },
     {
       "path": "internal/experiments/clientrecipe/evaluation.go",
-      "sha256": "3903c635bcb4412f01bbac21cc3918d370252935f2774cb9fb7b652ae205f67f"
+      "sha256": "29544784be06f202f293516a00dc597e3286e387166be94816b99b19e72cee82"
     },
     {
       "path": "internal/experiments/clientrecipe/go_authority.go",
-      "sha256": "f7718b9eaa0e27aeb783e28a68ff57e0daa9699379717b0b50a8a72e3ae603cf"
+      "sha256": "2d25d76d1f6898f8f32f34655503ad6150c23919cb0cbbe00e3ad4e922b628ec"
     },
     {
       "path": "internal/experiments/clientrecipe/h0.go",
@@ -66,7 +66,7 @@
     },
     {
       "path": "internal/programindex/index.go",
-      "sha256": "bbdc04ad8af87c17098f716eddfa07420fd3683747695af7ef281fd07cc8994e"
+      "sha256": "379691bb39b1440bfc3ce817c8d61ac54e2de4a4d00a142dda5659d22c393acb"
     },
     {
       "path": "testdata/experiments/clientrecipe/negative_invariants.json",
@@ -111,36 +111,36 @@
     {
       "stage": "authority",
       "path": "testdata/experiments/clientrecipe/golden/01-input-authority.json",
-      "raw_sha256": "abe4154e01a194f7bce5000381a2bf1ced0183ee15b747fbe4d09ff858dbe4c2",
-      "internal_sha256": "a6f492ded210630277f42eac2f88161f0cdf882ad7f04baf50eb4d26ac50b510"
+      "raw_sha256": "6a3b9fb6721674c7c8e6e6c26ed63e5c2c8ea84d0e96ecaacf0b6f355272031f",
+      "internal_sha256": "acf10fb2236602bd7db0923ea7c77692106ab53a7a6c513c6c45b5e7536ed47b"
     },
     {
       "stage": "h0",
       "path": "testdata/experiments/clientrecipe/golden/02-h0-candidates.json",
-      "raw_sha256": "307e95b718797227c75399fe50302d44fb8c6807b2f45e609ab74e8567d3739e",
-      "internal_sha256": "25198acc31182428997f5eee842d56bb6ff2b9e526c0d0945b925c916d447e74"
+      "raw_sha256": "140d7f786af7c26c26a21ccfd040dc3beb8040231baec20cfecf2780dee09f66",
+      "internal_sha256": "ecba2660c284721761ba4871d7cb148decac31e930df4b1d792d3b4f29c290a6"
     },
     {
       "stage": "h1",
       "path": "testdata/experiments/clientrecipe/golden/03-h1-structural.json",
-      "raw_sha256": "70f9f99a4ddffb0cbe1c42cc827bd9723c9556fedf4644a9a540530a6ec97500",
-      "internal_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7"
+      "raw_sha256": "c58f7b97475b5e37cacf64388a793defd9d1ab314a2d2ab09781b56e46459b06",
+      "internal_sha256": "ec8f7411ad09e3c68f5b8deabd30ea71753fb7774b2f6806c5b482c5a5c4cb01"
     }
   ],
   "blind_snapshot": {
     "author_brief_raw_sha256": "2ac6286b63b3ab2ed8017de9052597bfeb87a771fc221b9823f1fd8322ff1e81",
-    "preregistration_raw_sha256": "cc33da2a49676ba7df89eed10b16291a1d5b6115e63ac02e98be4244c1d095e4",
+    "preregistration_raw_sha256": "1d7e51ffde62140742d7f04aa35dbfec3c5ac974aa75dc2088194c2850195b70",
     "oracle_schema_raw_sha256": "409de2cae576e9c2e759fa3a6fea811adbb3ecefba0c0bf761c0e59414ce24ea",
     "oracle_raw_sha256": "ad1ec48672b31ccd7419fa352836ea2f73eba6141e2e54cf5a1dd8041f569023",
-    "fixture_receipt_raw_sha256": "ff62d783deb5d75f1df7261b532e01ad4d7984b4d562e383f3dbe5b4d227cfc3",
-    "fixture_receipt_sha256": "9544c7391106299e56739930308444101e8308480d5783fb18b6502de8a0a15c",
+    "fixture_receipt_raw_sha256": "ab69d7842b7509abddbc302b7e2266d47a70f2530e24fcebfcedcb21208b4f89",
+    "fixture_receipt_sha256": "85b1469f522bc23d40a8697db7767f71dadb2b05f78549fc170fa1a299b62700",
     "repository_tree_sha256": "a8c68e09120a4b7070610d9927d2be074e5dd0e3ab2b9cea059dde5dd2147046",
     "dependencies_tree_sha256": "ac336f04eae48a5f41f56eb332cd51aa1b1fb313a5f4bfaefe6fcbb6195c3086"
   },
   "historical_terminal": {
     "path": "testdata/experiments/clientrecipe-blind/golden/04-evaluation.json",
-    "raw_sha256": "147036852636ed4315e110fe746a9aeeb2282affe90557da3b46189df3cd82e1",
-    "internal_sha256": "3181eae0d90ec8d2243983770cff2697b72c1cfccaad13d0bb883c7f2ce571c3",
+    "raw_sha256": "e4501c066ce94febe0d2d98992743f3e95da54a28efb8fd2538501b0ee317da7",
+    "internal_sha256": "8fc36a875591be820092790fe0335ceb13d652cfa83865a5cb35e7c6d18bb659",
     "stage": "authority_preparation",
     "reason": "duplicate_program_relation_identity"
   },
@@ -164,15 +164,15 @@
     "identity_rule": "legacy_singletons_unchanged_collision_groups_disambiguated_by_complete_structural_tuple"
   },
   "evaluator": {
-    "inputs_sha256": "20a12db2052f4f69bd718177802f5da0cfe68895e3a7d17e6d70abe164417ce2",
+    "inputs_sha256": "c7a2182db28051f7dccff46071f6f8128344ccd2fd192e4bafbde3f9209c5a78",
     "inputs": [
       {
         "path": "internal/experiments/clientrecipe/authority_test.go",
-        "sha256": "46e7287ec732d2a504ab42ff3c5d2e5bf9de150a1321621a6d7f17db3fd8628d"
+        "sha256": "38f69fbd2109ad069f67654b8a2280944dfa52a0f5e1e3a0510b0a20a73e1b47"
       },
       {
         "path": "internal/experiments/clientrecipe/blind_fixture_test.go",
-        "sha256": "92c3cbe79fb732fd37518a1fa8c9de810aee9d5b8f8117d2ca74aaf94f4429a3"
+        "sha256": "7101d0f6c69d3de2ec50f87ee9a742744fa084858d7037199db68f9bc5817d1b"
       },
       {
         "path": "internal/experiments/clientrecipe/contract_test.go",
@@ -180,11 +180,11 @@
       },
       {
         "path": "internal/experiments/clientrecipe/leave_one_out_test.go",
-        "sha256": "9ff6ae0d1005e56e659823a971cf77d41ba97ba236fa4cc7b5f2afa1893526d6"
+        "sha256": "1d705f8b16e7095371b417c779e92fa5b13e12ee7b70127c81d98e5102707c9d"
       },
       {
         "path": "internal/experiments/clientrecipe/mutants_test.go",
-        "sha256": "17223d860fdcdc68ba490650e3b0135ef8c51c01146a5302b629d6d8480ebf1c"
+        "sha256": "9d0e927192c53467a559fb000ab4b16e6c834307b73813ef87dd90b7cbf24d5d"
       },
       {
         "path": "testdata/experiments/clientrecipe-blind/author_brief.md",
@@ -192,7 +192,7 @@
       },
       {
         "path": "testdata/experiments/clientrecipe-blind/fixture_receipt.json",
-        "sha256": "ff62d783deb5d75f1df7261b532e01ad4d7984b4d562e383f3dbe5b4d227cfc3"
+        "sha256": "ab69d7842b7509abddbc302b7e2266d47a70f2530e24fcebfcedcb21208b4f89"
       },
       {
         "path": "testdata/experiments/clientrecipe-blind/oracle.json",
@@ -204,7 +204,7 @@
       },
       {
         "path": "testdata/experiments/clientrecipe-blind/preregistration.json",
-        "sha256": "cc33da2a49676ba7df89eed10b16291a1d5b6115e63ac02e98be4244c1d095e4"
+        "sha256": "1d7e51ffde62140742d7f04aa35dbfec3c5ac974aa75dc2088194c2850195b70"
       }
     ],
     "thresholds": {
@@ -227,5 +227,5 @@
     },
     "overall_rule": "PASS_IFF_EVERY_THRESHOLD_PASSES"
   },
-  "sha256": "0d18ec533228bf8d26a84f2c7dcd2fddf2cbe00c414b07ad4aefade42ba29fbe"
+  "sha256": "f2bd24f19d8625b45d58b39ad6ccc49f4ed26b403e6418d51a5283cce1f7299a"
 }

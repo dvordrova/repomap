@@ -19,10 +19,11 @@ const runOutputPhaseInterval = 10 * time.Second
 type runOutput struct {
 	mu sync.Mutex
 
-	writer       io.Writer
-	currentStage string
-	now          func() time.Time
-	lastProgress map[string]runOutputProgress
+	writer                       io.Writer
+	currentStage                 string
+	now                          func() time.Time
+	lastProgress                 map[string]runOutputProgress
+	reportedTargetReportWarnings map[targetReportScaleWarningOutputKey]struct{}
 }
 
 // runOutputWarningSink adapts bounded warning writers to the ordinary console
@@ -68,9 +69,10 @@ func newRunOutput(writer io.Writer) *runOutput {
 		writer = io.Discard
 	}
 	return &runOutput{
-		writer:       writer,
-		now:          time.Now,
-		lastProgress: make(map[string]runOutputProgress),
+		writer:                       writer,
+		now:                          time.Now,
+		lastProgress:                 make(map[string]runOutputProgress),
+		reportedTargetReportWarnings: make(map[targetReportScaleWarningOutputKey]struct{}),
 	}
 }
 
@@ -187,57 +189,6 @@ func (output *runOutput) Progress(event orient.ProgressEvent) {
 			}
 		}
 		output.writeDetailsLocked(details...)
-	case orient.ProgressProgramStarted:
-		output.stageLocked("Go program facts")
-		output.writeDetailsLocked("building the exact Go graph and generic semantic candidates")
-	case orient.ProgressProgramPhase:
-		output.surfacePhaseLocked(event)
-	case orient.ProgressProgramReady:
-		output.stageLocked("Go program facts")
-		output.writeDetailsLocked(
-			"state: complete",
-			fmt.Sprintf("exact graph: %d nodes, %d edges", event.GraphNodeCount, event.GraphEdgeCount),
-			fmt.Sprintf("external call families: %d", event.ExternalCallFamilies),
-			fmt.Sprintf("activity candidates: %d", event.ActivityCandidates),
-			fmt.Sprintf("core declarations: %d", event.CoreDeclarations),
-			formatRunOutputDuration(event.LatencyMillis),
-		)
-	case orient.ProgressProgramFailed:
-		output.currentStage = ""
-		fmt.Fprintln(output.writer, "ERROR")
-		output.writeDetailsLocked("Go program analysis failed", event.Warning)
-	}
-}
-
-func (output *runOutput) surfacePhaseLocked(event orient.ProgressEvent) {
-	key := "program/" + event.Phase
-	switch event.PhaseState {
-	case "started":
-		output.lastProgress[key] = runOutputProgress{at: output.now()}
-		output.stageLocked("Go program facts")
-		output.writeDetailsLocked(singleRunOutputLine(event.Activity))
-	case "completed":
-		delete(output.lastProgress, key)
-		output.stageLocked("Go program facts")
-		output.writeDetailsLocked(
-			fmt.Sprintf("%s: complete", singleRunOutputLine(event.Phase)),
-			formatRunOutputCount(event.CompletedCount, event.TotalCount),
-			formatRunOutputDuration(event.LatencyMillis),
-		)
-	default:
-		if !output.allowProgressLocked(
-			key,
-			event.CompletedCount,
-			runOutputPhaseInterval,
-			event.TotalCount > 0 && event.CompletedCount >= event.TotalCount,
-		) {
-			return
-		}
-		output.stageLocked("Go program facts")
-		output.writeDetailsLocked(
-			singleRunOutputLine(event.Phase)+": "+formatRunOutputCount(event.CompletedCount, event.TotalCount),
-			formatRunOutputElapsed(event.LatencyMillis),
-		)
 	}
 }
 

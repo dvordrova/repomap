@@ -13,8 +13,6 @@ import (
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
 )
 
-const maxReadmeFileRoleArtifactBytes = 1 << 20
-
 type readmeFileRoleArtifact struct {
 	Version int                         `json:"version"`
 	Files   []readmeFileRoleArtifactRow `json:"files"`
@@ -30,8 +28,8 @@ type readmeFileRoleArtifactRow struct {
 // classifier handoff and returns only its exact FileRef/path dictionary. The
 // prose classifications remain cube input, not report presentation data.
 func decodeReadmeFileRoleAuthority(raw []byte) (map[string]string, error) {
-	if len(raw) == 0 || len(raw) > maxReadmeFileRoleArtifactBytes {
-		return nil, fmt.Errorf("report: README file-role artifact is not bounded")
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("report: README file-role artifact is empty")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -51,9 +49,8 @@ func decodeReadmeFileRoleAuthority(raw []byte) (map[string]string, error) {
 	pathsByRef := make(map[string]string, len(artifact.Files))
 	refsByPath := make(map[string]string, len(artifact.Files))
 	for _, file := range artifact.Files {
-		if !validCubeMapViewText(file.FileRef, false) || !validCubeMapViewPath(file.Path) ||
-			len(file.Classifications) == 0 ||
-			len(file.Classifications) > readmetargetscout.MaxClassificationsPerFile {
+		if !validProgramViewText(file.FileRef) || validateManifestPath(file.Path) != nil ||
+			len(file.Classifications) == 0 {
 			return nil, fmt.Errorf("report: README file-role artifact contains an invalid file row")
 		}
 		if _, duplicate := pathsByRef[file.FileRef]; duplicate {
@@ -64,9 +61,7 @@ func decodeReadmeFileRoleAuthority(raw []byte) (map[string]string, error) {
 		}
 		classes := make(map[readmetargetscout.FileClass]struct{}, len(file.Classifications))
 		for _, classification := range file.Classifications {
-			if !validReadmeFileClass(classification.Class) ||
-				len(classification.Hypotheses) == 0 ||
-				len(classification.Hypotheses) > readmetargetscout.MaxHypothesesPerClassification {
+			if !validReadmeFileClass(classification.Class) || len(classification.Hypotheses) == 0 {
 				return nil, fmt.Errorf("report: README file-role artifact contains an invalid classification")
 			}
 			if _, duplicate := classes[classification.Class]; duplicate {
@@ -104,8 +99,7 @@ func validReadmeFileClass(value readmetargetscout.FileClass) bool {
 }
 
 func validReadmeRoleHypothesis(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) ||
-		len(value) > readmetargetscout.MaxHypothesisBytes || !utf8.ValidString(value) {
+	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) {
 		return false
 	}
 	for _, character := range value {

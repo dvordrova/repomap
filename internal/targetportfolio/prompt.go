@@ -2,11 +2,14 @@ package targetportfolio
 
 import "fmt"
 
-var PromptVersion = "target-portfolio-prompt-" + shortSHA256(promptSystem+promptUserShape)
+var PromptVersion = "target-portfolio-prompt-" + shortSHA256(
+	promptSystem+promptUserShape+defaultPromptSystem+defaultPromptUserShape,
+)
 
-// ProviderVisibleJSON returns the sole facts bytes permitted to cross the
-// provider boundary. Corpus and cache identities stay in Compilation's
-// private authority.
+// ProviderVisibleJSON returns the complete retained fact reservoir. It is the
+// sole shape permitted to cross the provider boundary, but a large compilation
+// is an authority/debug projection: Run sends deterministic bounded subsets.
+// Corpus and cache identities stay in Compilation's private authority.
 func ProviderVisibleJSON(compilation Compilation) ([]byte, error) {
 	if err := validateCompilation(compilation); err != nil {
 		return nil, err

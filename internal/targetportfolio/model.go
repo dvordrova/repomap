@@ -5,22 +5,32 @@ package targetportfolio
 import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
 const (
-	PreparationVersion    = 3
-	ResponseSchemaVersion = 6
+	PreparationVersion    = 4
+	ResponseSchemaVersion = 7
 
-	// The provider receives the complete candidate set or no request at
-	// all. There is deliberately no candidate-count or hypothesis-count
-	// truncation hidden behind these byte envelopes.
-	MaxRequestBytes         = 256 << 10
-	MaxProviderRequestBytes = 2*MaxRequestBytes + 64<<10
-	MaxResponseBytes        = 64 << 10
-	MaxOutputTokens         = 64_000
+	// MaxRequestBytes is one classification-batch packing window, not an
+	// aggregate candidate-authority bound. Run forms as many deterministic
+	// disjoint batches and default-choice rounds as required to cover the
+	// complete retained reservoir.
+	MaxRequestBytes = 256 << 10
+	// AdvisoryCompleteRequestBytes is the former one-call threshold. Crossing
+	// it emits a warning only; it never rejects or truncates candidates.
+	AdvisoryCompleteRequestBytes = 256 << 10
+	// MaxDefaultRequestBytes and MaxProviderRequestBytes retain the former
+	// packing estimates for diagnostics and provider-neutral helpers. Ordinary
+	// execution uses llm.SemanticRecordByteLimit; neither value is acceptance
+	// authority for an indivisible row.
+	MaxDefaultRequestBytes  = 2*MaxRequestBytes + 8<<10
+	MaxProviderRequestBytes = 2*MaxDefaultRequestBytes + 64<<10
+	MaxResponseBytes        = llm.ProviderResponseByteLimit
+	MaxOutputTokens         = 128_000
 )
 
-const executionContract = "positive-file-target-portfolio-selection-with-native-authority-v7"
+const executionContract = "positive-file-target-portfolio-selection-with-native-authority-v8"
 
 // Candidate is the common output of the initial scouts after their dumb
 // FileRef merge. Keep the alias so the portfolio does not invent a second
@@ -36,7 +46,8 @@ type VisibleCandidate struct {
 	Hypotheses []string      `json:"hypotheses"`
 }
 
-// Request is the complete provider-visible bundle. Corpus identity and cache
+// Request is either the complete locally retained reservoir or one bounded
+// provider-visible classification projection. Corpus identity and cache
 // identity remain private.
 type Request struct {
 	Candidates []VisibleCandidate `json:"candidates"`
@@ -87,6 +98,19 @@ type Response struct {
 	TargetFileRefs []corpus.FileID `json:"target_file_refs"`
 }
 
+// DefaultRequest compares already accepted target candidates. It may choose
+// one ref but cannot add, remove, or reclassify any target membership.
+type DefaultRequest struct {
+	Phase      string             `json:"phase"`
+	Candidates []VisibleCandidate `json:"candidates"`
+}
+
+// DefaultResponse is deliberately one closed ref. The complete selected set
+// is restored locally and never has to fit in this response.
+type DefaultResponse struct {
+	DefaultFileRef corpus.FileID `json:"default_file_ref"`
+}
+
 // Selection is a disjoint canonical-order partition. Targets contains only
 // positive model selections. Omitted input candidates are restored locally as
 // Unclassified and dropped from target execution. Default is non-nil exactly
@@ -95,4 +119,12 @@ type Selection struct {
 	Default      *VisibleCandidate
 	Targets      []VisibleCandidate
 	Unclassified []VisibleCandidate
+}
+
+// Execution owns one complete multi-call portfolio result plus every
+// provider outcome in deterministic execution order. Callers may aggregate
+// accounting without confusing the complete local authority with one batch.
+type Execution struct {
+	Selection Selection
+	Outcomes  []llm.Outcome[Selection]
 }

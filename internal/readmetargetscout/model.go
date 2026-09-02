@@ -1,7 +1,7 @@
 // Package readmetargetscout sends complete repository guidance documents and
-// the complete shared-corpus FileID/path tree through one bounded model call,
-// then reduces a sparse file-role catalog. It is language-neutral and runs in
-// parallel with language target discovery.
+// the complete shared-corpus FileID/path authority through an exhaustive set
+// of bounded model calls, then reduces one sparse file-role catalog. It is
+// language-neutral and runs in parallel with language target discovery.
 package readmetargetscout
 
 import (
@@ -9,31 +9,38 @@ import (
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
 const (
-	CompilationVersion = 6
+	CompilationVersion = 7
 
-	PreparationVersion = "complete-readmes-agents-file-tree-and-prose-ref-authority-v6"
-	SchemaVersion      = "readme-file-role-classifications-set-valued-ignore-unknown-refs-v4"
-	ReducerVersion     = "readme-file-role-classifications-known-set-normalization-with-incompatible-prose-filter-v8"
+	PreparationVersion = "complete-readmes-agents-exhaustive-file-tree-shards-and-prose-ref-authority-v8"
+	SchemaVersion      = "readme-file-role-classifications-unbounded-set-valued-ignore-unknown-refs-v5"
+	ReducerVersion     = "readme-file-role-classifications-unbounded-known-set-union-with-incompatible-prose-filter-v9"
 
-	// Keep one complete atomic semantic body below the empirically reliable
-	// provider envelope. The former flat dictionary made a measured Airflow
-	// request 1.96 MiB; the lossless path-component tree reduces the same
-	// complete request to about 1.45 MiB without chunking or omission.
-	// JSON transport escaping can at most double the body; the remaining
-	// provider allowance covers prompts and envelope fields.
-	MaxRequestBytes                = 1536 << 10
-	MaxProviderRequestBytes        = 2*MaxRequestBytes + 64<<10
-	MaxResponseBytes               = 64 << 10
-	MaxHypothesisBytes             = 160
-	MaxClassificationsPerFile      = 3
-	MaxHypothesesPerClassification = 2
-	MaxOutputTokens                = 32_000
+	// MaxRequestBytes is a deterministic shard-packing window, not an
+	// acceptance or transport limit. Larger complete inputs are covered by
+	// deterministic shards; an indivisible shard proceeds to the shared
+	// semantic-record envelope without losing a byte.
+	MaxRequestBytes = 1536 << 10
+	// MaxProviderRequestBytes retains the former prepared-request estimate for
+	// scale comparisons. Ordinary execution uses llm.SemanticRecordByteLimit.
+	MaxProviderRequestBytes = 2*MaxRequestBytes + 64<<10
+	MaxResponseBytes        = llm.ProviderResponseByteLimit
+	MaxOutputTokens         = 128_000
+
+	// Former local acceptance thresholds are retained only as scale-warning
+	// baselines. Crossing one never truncates or rejects accepted data.
+	AdvisoryAtomicRequestBytes     = 1536 << 10
+	AdvisoryResponseBytes          = 64 << 10
+	AdvisoryHypothesisBytes        = 160
+	AdvisoryClassificationsPerFile = 3
+	AdvisoryHypothesesPerClass     = 2
+	AdvisoryArtifactBytes          = 1 << 20
 )
 
-const executionContract = "repository-guidance-file-classifier-v12"
+const executionContract = "repository-guidance-file-classifier-v13"
 
 const ArtifactFilename = "readme-file-roles.json"
 
@@ -48,10 +55,10 @@ type NotApplicableReason string
 
 const NoGuidanceFiles NotApplicableReason = "no_guidance_files"
 
-// Request is the complete provider-visible first-layer evidence. FileTree is a
-// lossless prefix-compressed encoding of every tracked regular corpus file,
-// not a locally selected subset. ProseFileRefs is the exact closed prose subset
-// of that same authority. Non-guidance source contents are absent.
+// Request is either the complete aggregate first-layer evidence identity or
+// one provider-visible shard. The aggregate FileTree contains every tracked
+// regular corpus file; a shard contains an exact subset and complete
+// request-local prose authority. Non-guidance source contents are absent.
 type Request struct {
 	RepoName          string                    `json:"repo_name"`
 	FileCount         int                       `json:"file_count"`
@@ -75,8 +82,9 @@ type RequestGuidanceDocument struct {
 }
 
 // Compilation owns the expanded exact dictionary used to validate response
-// refs. The provider sees the equivalent lossless tree. A not-applicable
-// compilation has no provider request.
+// refs. Compile returns the complete aggregate authority; the internal batch
+// planner derives request-local compilations with equivalent lossless trees.
+// A not-applicable compilation has no provider request.
 type Compilation struct {
 	Version       int
 	State         CompilationState
@@ -126,6 +134,13 @@ type ClassifiedFile struct {
 // before this canonical result is built.
 type Result []ClassifiedFile
 
+// Execution binds every caller-indexed model outcome to the one merged
+// complete result. Any terminal shard failure rejects the result.
+type Execution struct {
+	Result   Result
+	Outcomes []llm.Outcome[Result]
+}
+
 // TargetCandidates projects only guidance-backed target_entry classifications
 // into the common target-hypothesis merger. All other roles remain available
 // in Result for logging and future cubes, but cannot become analysis targets
@@ -167,9 +182,6 @@ func executionStateValue() any {
 		ReducerSHA256      string `json:"reducer_sha256"`
 		MaxRequestBytes    int    `json:"max_request_bytes"`
 		MaxResponseBytes   int    `json:"max_response_bytes"`
-		MaxHypothesisBytes int    `json:"max_hypothesis_bytes"`
-		MaxClassifications int    `json:"max_classifications_per_file"`
-		MaxHypotheses      int    `json:"max_hypotheses_per_classification"`
 		MaxOutputTokens    int    `json:"max_output_tokens"`
 	}{
 		Contract: executionContract, CompilationVersion: CompilationVersion,
@@ -179,10 +191,7 @@ func executionStateValue() any {
 		SchemaVersion:      SchemaVersion, SchemaSHA256: sha256Hex([]byte(schemaContract)),
 		ReducerVersion: ReducerVersion, ReducerSHA256: sha256Hex([]byte(reducerContract)),
 		MaxRequestBytes: MaxRequestBytes, MaxResponseBytes: MaxResponseBytes,
-		MaxHypothesisBytes: MaxHypothesisBytes,
-		MaxClassifications: MaxClassificationsPerFile,
-		MaxHypotheses:      MaxHypothesesPerClassification,
-		MaxOutputTokens:    MaxOutputTokens,
+		MaxOutputTokens: MaxOutputTokens,
 	}
 }
 

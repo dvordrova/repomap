@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "authority_sha256": "a6f492ded210630277f42eac2f88161f0cdf882ad7f04baf50eb4d26ac50b510",
+  "authority_sha256": "acf10fb2236602bd7db0923ea7c77692106ab53a7a6c513c6c45b5e7536ed47b",
   "candidates": [
     {
       "id": "h0-2572c70a37ad4dc60bf20b06",
@@ -397,5 +397,5 @@
     "admitted": 6,
     "excluded": 34
   },
-  "sha256": "25198acc31182428997f5eee842d56bb6ff2b9e526c0d0945b925c916d447e74"
+  "sha256": "ecba2660c284721761ba4871d7cb148decac31e930df4b1d792d3b4f29c290a6"
 }

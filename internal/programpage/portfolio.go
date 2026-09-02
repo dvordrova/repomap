@@ -21,9 +21,12 @@ const (
 	Version          = 1
 	ArtifactFilename = "program-page-portfolio.json"
 
-	MaxPages         = programindex.MaxArtifactSetEntries
-	MaxRunIDBytes    = 255
-	MaxArtifactBytes = 8 * 1024 * 1024
+	MaxPages              = 4_096
+	MaxRunIDBytes         = 255
+	AdvisoryArtifactBytes = 8 * 1024 * 1024
+	// MaxArtifactBytes is a compatibility sentinel for report readers. Zero
+	// means the complete validated local artifact is read without a byte cutoff.
+	MaxArtifactBytes = 0
 )
 
 const digestDomain = "program-page-portfolio-v1\x00"
@@ -50,7 +53,7 @@ type Portfolio struct {
 // Build canonicalizes and seals a complete set of validated target pages. It
 // performs no filesystem access and never infers a default from page order.
 func Build(defaultTargetID string, pages []Page) (Portfolio, error) {
-	if len(pages) == 0 || len(pages) > MaxPages {
+	if len(pages) == 0 {
 		return Portfolio{}, fmt.Errorf("program page portfolio: page bound exceeded")
 	}
 	portfolio := Portfolio{
@@ -114,9 +117,6 @@ func (portfolio Portfolio) CanonicalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("program page portfolio: encode artifact: %w", err)
 	}
-	if len(encoded) > MaxArtifactBytes {
-		return nil, fmt.Errorf("program page portfolio: artifact exceeds bounded envelope")
-	}
 	return encoded, nil
 }
 
@@ -124,7 +124,7 @@ func (portfolio Portfolio) CanonicalJSON() ([]byte, error) {
 // trailing values, alternate whitespace, invalid targets, and seal tampering
 // all fail closed.
 func Decode(encoded []byte) (Portfolio, error) {
-	if len(encoded) == 0 || len(encoded) > MaxArtifactBytes {
+	if len(encoded) == 0 {
 		return Portfolio{}, fmt.Errorf("program page portfolio: invalid artifact size")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
@@ -178,7 +178,7 @@ func (portfolio Portfolio) validateShape() error {
 	if portfolio.Version != Version || !validText(portfolio.DefaultTargetID) {
 		return fmt.Errorf("program page portfolio: invalid identity")
 	}
-	if portfolio.Pages == nil || len(portfolio.Pages) == 0 || len(portfolio.Pages) > MaxPages {
+	if portfolio.Pages == nil || len(portfolio.Pages) == 0 {
 		return fmt.Errorf("program page portfolio: page bound exceeded")
 	}
 	defaultMatches := 0
@@ -214,12 +214,6 @@ func portfolioDigest(portfolio Portfolio) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("program page portfolio: encode digest material: %w", err)
 	}
-	// The sealed artifact replaces the empty SHA256 string with 64 lowercase
-	// hex bytes. Reserve that exact expansion here so Validate also enforces
-	// the persisted-byte bound, not only the unsealed digest substrate.
-	if len(encoded)+sha256.Size*2 > MaxArtifactBytes {
-		return "", fmt.Errorf("program page portfolio: canonical substrate exceeds bounded envelope")
-	}
 	digest := sha256.New()
 	_, _ = digest.Write([]byte(digestDomain))
 	_, _ = digest.Write(encoded)
@@ -238,8 +232,7 @@ func clonePages(pages []Page) []Page {
 }
 
 func validText(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || len(value) > programindex.MaxTextBytes ||
-		!utf8.ValidString(value) {
+	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) {
 		return false
 	}
 	for _, character := range value {

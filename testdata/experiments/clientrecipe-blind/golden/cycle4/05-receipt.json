@@ -2,22 +2,22 @@
   "version": 1,
   "status": "TERMINAL_ERROR",
   "candidate_id": "authority-collision-fix-v2",
-  "extractor_freeze_sha256": "0d18ec533228bf8d26a84f2c7dcd2fddf2cbe00c414b07ad4aefade42ba29fbe",
+  "extractor_freeze_sha256": "f2bd24f19d8625b45d58b39ad6ccc49f4ed26b403e6418d51a5283cce1f7299a",
   "artifacts": [
     {
       "stage": "authority",
-      "raw_sha256": "1e2eb58909a8acdc9410ef3ac43ef1962e9443781df2271b15cd8d09245e69fe",
-      "internal_sha256": "74a8f8b21f72f53f6996cc5982980aab4a321e95a6f3c34027b8db14d8b646c5"
+      "raw_sha256": "529bbf8ee4dc6deed51b8e0fd86d6274211a6f20ecda07bf0db0d92a5a1f9bef",
+      "internal_sha256": "75c8ad469e12f90701d70ba70607a9e35f1cb23f77e61c05960a16542934f2a9"
     },
     {
       "stage": "h0",
-      "raw_sha256": "fe28f32cdfdfdd42a68158cbd37feaf6e40cf08af6842728fcc8aec80d061fc2",
-      "internal_sha256": "67f6fb6ea7d5a5bcfe8217e7d94fdf556f58006f1c144df4de4c748de05dfafc"
+      "raw_sha256": "348f2bd0e4f3d5dfbaddb0af3532d75c108f285ab1211ed283c8115a7dc1211f",
+      "internal_sha256": "d1a57b1a26a327dca04c649558a3b90e44cbd5ecab0dbb95a86ecd5bb7daf075"
     },
     {
       "stage": "evaluation",
-      "raw_sha256": "3cdf525c2670c1a0d7d3592dd11b02c74ed878838815d7b63347ec7f9097c0f5",
-      "internal_sha256": "e582923cfcdf048c5617dc0d92638c86aec5548ce8fafa5520167440ae3e50fb"
+      "raw_sha256": "c7c2e38efec567dca0b72e11e062dd9bace40a0a84b752e01f4218f4289ace38",
+      "internal_sha256": "f61485237b3d83befc19b6fb75fffbe30ceed5e98b14d20c5140928e2be15a4b"
     }
   ],
   "unavailable_artifacts": [
@@ -60,5 +60,5 @@
     "reason": "h1_extraction_failed"
   },
   "verdict": "FAIL",
-  "sha256": "b94fa43c7de4eb173877dabcf6bf0f8b8288694acce0832e836212c484513a93"
+  "sha256": "5d1efa027550fa9706d7cd519525a7d94f872592270707fb0f8fbfe7c356109a"
 }

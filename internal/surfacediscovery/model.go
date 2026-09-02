@@ -6,18 +6,17 @@ package surfacediscovery
 import (
 	"sort"
 
-	"github.com/dvordrova/repomap/internal/entrycall"
 	"github.com/dvordrova/repomap/internal/gocoreobject"
 	"github.com/dvordrova/repomap/internal/godynamichandoff"
 )
 
 const (
-	// DefaultDirectCallDepth bounds exact repository-local call edges outward
-	// from the selected analysis target. The declaration inventory remains
-	// complete independently of this edge bound.
-	DefaultDirectCallDepth = 10
-	// DefaultDirectCallEdgeLimit is the ordinary target-scoped graph ceiling.
-	DefaultDirectCallEdgeLimit = 10_000
+	// DefaultDirectCallDepth keeps the ordinary target-reachable traversal
+	// unbounded. A positive explicit value remains an opt-in narrowing control.
+	DefaultDirectCallDepth = 0
+	// DefaultDirectCallEdgeLimit retains every exact target-reachable edge. A
+	// positive explicit value remains an opt-in fail-closed resource control.
+	DefaultDirectCallEdgeLimit = 0
 )
 
 type Options struct {
@@ -30,7 +29,6 @@ type Options struct {
 
 	// Optional exact sidecars reuse the same package load and SSA instruction
 	// pass. None of them is persisted from this package.
-	CaptureEntryCallSubstrate  bool
 	CaptureExternalCallIndex   bool
 	CaptureCoreObjectIndex     bool
 	CaptureDynamicHandoffIndex bool
@@ -83,7 +81,7 @@ type Location struct {
 	Column int    `json:"column,omitempty"`
 }
 
-// PackageDiagnostic is bounded, repository-relative evidence explaining why
+// PackageDiagnostic is complete, repository-relative evidence explaining why
 // a selected package could not become an exact SSA program.
 type PackageDiagnostic struct {
 	ID       string    `json:"id"`
@@ -98,13 +96,18 @@ type ProgramCoverage struct {
 	Phases             []PhaseMetric       `json:"phases,omitempty"`
 }
 
+// Snapshot returns an independently owned diagnostic/phase collection for a
+// live-run observer. It does not change or summarize retained coverage.
+func (coverage ProgramCoverage) Snapshot() ProgramCoverage {
+	return cloneProgramCoverage(coverage)
+}
+
 type Result struct {
 	Coverage ProgramCoverage `json:"program_coverage"`
 
 	// These exact artifacts are live-run handoffs. Raw source graphs and model
 	// catalogs are not serialized from surface discovery.
 	DirectCallIndex     *DirectCallIndex        `json:"-"`
-	EntryCallSubstrate  *entrycall.Substrate    `json:"-"`
 	ExternalCallIndex   *ExternalCallIndex      `json:"-"`
 	CoreObjectIndex     *gocoreobject.Index     `json:"-"`
 	DynamicHandoffIndex *godynamichandoff.Index `json:"-"`

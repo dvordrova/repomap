@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "h0_sha256": "25198acc31182428997f5eee842d56bb6ff2b9e526c0d0945b925c916d447e74",
-  "h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
+  "h0_sha256": "ecba2660c284721761ba4871d7cb148decac31e930df4b1d792d3b4f29c290a6",
+  "h1_sha256": "ec8f7411ad09e3c68f5b8deabd30ea71753fb7774b2f6806c5b482c5a5c4cb01",
   "oracle_sha256": "e843da01bdfcbb2fb4292d2e6e34ba2201d10ca177f30ee2912ad1e73e6ea528",
   "rules": [
     "best=maximize_learned_required_and_common_role_coverage_among_complete_instances",
@@ -241,5 +241,5 @@
     "passed": true
   },
   "verdict": "PASS",
-  "sha256": "be06664fb8f3be45bd8cc1c250cdef8f506fb74800799e2ce9ac1f5d1bce4a58"
+  "sha256": "2e69289caea910921037449ad5a3e8f654ede23c32e44fc71edd50ea0aeb8631"
 }

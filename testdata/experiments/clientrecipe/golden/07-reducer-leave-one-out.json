@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "freeze_receipt_sha256": "934a4b8b7f316f44e6b83172dc8e56c6ed56dd7d8be36c5d9670c9a68fb25f8d",
-  "h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
+  "freeze_receipt_sha256": "014affc25712645629fc2e65aad1d98dc997ab9a12ae52a1c8c503b974395c30",
+  "h1_sha256": "ec8f7411ad09e3c68f5b8deabd30ea71753fb7774b2f6806c5b482c5a5c4cb01",
   "hypothesis": "required/common roles learned from two complete boundary instances predict the held-out instance's non-contract repository patterns",
   "scope": "controlled_fixture_reducer_only",
   "extraction_isolation": false,
@@ -29,7 +29,7 @@
         "h1-instance-ac28c98a439448092c34e1d0",
         "h1-instance-e6c59de5d19c88e2094aa1b8"
       ],
-      "candidate_sha256": "7e1a097c3fb64453ab24743cf25c42402098a8620587acee8a3db3095103948e",
+      "candidate_sha256": "c99759306311c5978d7dbfd98d20b8e1848a026a9cf40d2c739b28fbc6b6998d",
       "task_contract_status": "TASK_SUPPLIED_NOT_LEARNED",
       "task_contract_matched": 8,
       "task_contract_total": 8,
@@ -56,7 +56,7 @@
         "h1-instance-7eed864117280bdf80506864",
         "h1-instance-e6c59de5d19c88e2094aa1b8"
       ],
-      "candidate_sha256": "7e83534a574d23f4626d376903c9034a8d07402cafbdd518b3190ff6a172fbd7",
+      "candidate_sha256": "3d10ff1999f45bc4a183dfb333b1f9b334f5b80842a5111f002a238a16461f63",
       "task_contract_status": "TASK_SUPPLIED_NOT_LEARNED",
       "task_contract_matched": 8,
       "task_contract_total": 8,
@@ -83,7 +83,7 @@
         "h1-instance-7eed864117280bdf80506864",
         "h1-instance-ac28c98a439448092c34e1d0"
       ],
-      "candidate_sha256": "da42dcbc3bbc237f64c543f66dde2229c3d08c1faa068fa034f51617bc2cbffc",
+      "candidate_sha256": "6145c9ce378957b524c733a7e6763d0708be5de5d583884d7f5b152b83e80e79",
       "task_contract_status": "TASK_SUPPLIED_NOT_LEARNED",
       "task_contract_matched": 8,
       "task_contract_total": 8,
@@ -116,5 +116,5 @@
   "user_utility_status": "NOT_TESTED",
   "production_readiness": "NOT_READY",
   "verdict": "FAIL",
-  "sha256": "828dfd2f93ca54bb40e6e17d3c2109582642904976d6aa5fcfd3d9b9fc5e90ac"
+  "sha256": "039f1673afc695bf246f1e56c1e276eaed3274c09eebaded291f0dedb853bcee"
 }

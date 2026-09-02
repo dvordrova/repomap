@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/documentationreduce"
+	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -49,7 +51,7 @@ func TestVerifyReportJSONRequiresExactProgramAndCapturedAuthority(t *testing.T) 
 	}
 }
 
-func TestVerifyReportJSONRequiresProgramIndexSemanticAuthorityForPythonAndGo(t *testing.T) {
+func TestVerifyReportJSONUsesGenericProgramIndexSemanticAuthorityForPythonAndGo(t *testing.T) {
 	pythonManifest, python := manifestProgramOnlyReportFixture(t, "python")
 	pythonJSON, err := json.Marshal(python)
 	if err != nil {
@@ -57,7 +59,7 @@ func TestVerifyReportJSONRequiresProgramIndexSemanticAuthorityForPythonAndGo(t *
 	}
 	pythonManifest.ReportSHA256 = manifestSHA256(pythonJSON)
 	if err := pythonManifest.VerifyReportJSON(pythonJSON); err != nil {
-		t.Fatalf("Python core-map page was rejected: %v", err)
+		t.Fatalf("Python program page was rejected: %v", err)
 	}
 
 	goManifest, goData := manifestProgramOnlyReportFixture(t, "go")
@@ -66,9 +68,8 @@ func TestVerifyReportJSONRequiresProgramIndexSemanticAuthorityForPythonAndGo(t *
 		t.Fatal(err)
 	}
 	goManifest.ReportSHA256 = manifestSHA256(goJSON)
-	if err := goManifest.VerifyReportJSON(goJSON); err == nil ||
-		!strings.Contains(err.Error(), "Go ProgramIndex target page requires its exact outer analysis target") {
-		t.Fatalf("Go page without semantic authority error = %v", err)
+	if err := goManifest.VerifyReportJSON(goJSON); err != nil {
+		t.Fatalf("Go page without optional analysis extension was rejected: %v", err)
 	}
 }
 
@@ -146,7 +147,7 @@ func TestDecodeRunManifestRejectsUnknownFieldsAndTrailingValues(t *testing.T) {
 }
 
 func TestDecodeRunManifestRejectsPreviousVersions(t *testing.T) {
-	for _, version := range []int{24, 25, 26, 27, 28, 29, 30, 31, 32, 33} {
+	for _, version := range []int{24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37} {
 		manifest := validRunManifestFixture(t)
 		manifest.Version = version
 		encoded, err := json.Marshal(manifest)
@@ -162,8 +163,14 @@ func TestDecodeRunManifestRejectsPreviousVersions(t *testing.T) {
 
 func manifestProgramOnlyReportFixture(t *testing.T, language string) (RunManifest, *ReportData) {
 	t.Helper()
-	index := reportProgramIndexFixture(t, language, "executable")
+	index, groups, documentation := reportFinalGraphFixture(
+		t, reportProgramIndexFixture(t, language, "executable"),
+	)
 	portfolio, err := NewProgramPortfolio(index.Target.ID, []programindex.Index{index})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := NewGroupGraphView([]groupindex.Index{groups}, index.Target.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,29 +188,22 @@ func manifestProgramOnlyReportFixture(t *testing.T, language string) (RunManifes
 		CapturedInputCount: len(manifest.CapturedInputs),
 		OpenablePaths:      append([]string(nil), manifest.OpenablePaths...),
 		ProgramPortfolio:   portfolio,
+		GroupGraph:         graph,
 	}
-	if language == "python" {
-		targets, declarations, targetRaw, declarationRaw := reportPythonDeclarationArtifactsFixture(t, index)
-		data.pythonTargetCatalog = &targets
-		data.declaredDependencies = &declarations
-		manifest.MaterialInputs.PythonTargetCatalogSHA256 = manifestSHA256(targetRaw)
-		manifest.MaterialInputs.DeclaredDependenciesSHA256 = manifestSHA256(declarationRaw)
+	data.TargetOutcomePortfolio = reportTargetOutcomeViewFixture(t, []TargetNavigationPage{{
+		RunID:            "run-fixture",
+		ProgramTarget:    index.Target.Snapshot(),
+		ArtifactFilename: programindex.ArtifactFilename,
+	}}, index.Target.ID)
+	documentationRaw, err := documentationreduce.Encode(documentation)
+	if err != nil {
+		t.Fatal(err)
 	}
-	activityView, activityRaw := reportActivityEntrypointFixture(t, index)
-	data.ActivityEntrypointView = activityView
-	coreView, coreRaw := reportCoreMapFixture(t, index)
-	data.CoreMapView = coreView
-	integrationUsageView, catalogRaw, selectedRaw, usageRaw := reportIntegrationUsageFixture(t, index)
-	data.IntegrationUsageView = integrationUsageView
-	activityPathView, activityPathRaw := reportActivityPathFixture(
-		t, index, activityRaw, selectedRaw, usageRaw,
-	)
-	data.ActivityPathView = activityPathView
-	manifest.MaterialInputs.CoreMapSHA256 = manifestSHA256(coreRaw)
-	manifest.MaterialInputs.ActivityEntrypointsSHA256 = manifestSHA256(activityRaw)
-	manifest.MaterialInputs.DependencyCatalogSHA256 = manifestSHA256(catalogRaw)
-	manifest.MaterialInputs.IntegrationDependenciesSHA256 = manifestSHA256(selectedRaw)
-	manifest.MaterialInputs.IntegrationUsageSHA256 = manifestSHA256(usageRaw)
-	manifest.MaterialInputs.ActivityPathsSHA256 = manifestSHA256(activityPathRaw)
+	groupsRaw, err := groupindex.Encode(groups)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.MaterialInputs.ReducedDocumentationSHA256 = manifestSHA256(documentationRaw)
+	manifest.MaterialInputs.GroupsIndexSHA256 = manifestSHA256(groupsRaw)
 	return manifest, data
 }

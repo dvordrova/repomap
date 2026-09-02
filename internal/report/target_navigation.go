@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -13,8 +12,6 @@ import (
 
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
-	"github.com/dvordrova/repomap/internal/runtimeportfolio"
-	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
@@ -26,6 +23,10 @@ const TargetNavigationVersion = 4
 // one ReportData value.
 type RenderOptions struct {
 	TargetNavigation *TargetNavigationPortfolio
+	// ReportSHA256 is the digest of the report.json bytes this page is
+	// rendered from. It is stamped into the page so a reader (and the
+	// publication check) can prove which data the page shows.
+	ReportSHA256 string
 	// LocalRoots are caller-authorized workstation roots that must be scrubbed
 	// from the browser payload. They affect neither report content nor source
 	// authority; the local server keeps those paths only in its open catalog.
@@ -97,7 +98,7 @@ func PreparedTargetNavigationPage(
 // LoadTargetNavigationPage restores one page identity only from its validated
 // ProgramPortfolio default and the exact ProgramIndex artifact-set binding.
 func LoadTargetNavigationPage(runDir, runID string) (TargetNavigationPage, error) {
-	if err := snapshot.ValidateTargetPageRunID(runID); err != nil {
+	if err := programpage.ValidateRunID(runID); err != nil {
 		return TargetNavigationPage{}, fmt.Errorf("report: target navigation run: %w", err)
 	}
 	data, err := ReadRunDir(runDir)
@@ -203,89 +204,13 @@ func BuildTargetNavigation(
 }
 
 // LoadManifestTargetNavigation restores transient target navigation only from
-// the exact container and portfolio bytes bound by one verified run manifest.
-// It never reads report.html and never persists the projection into
-// report.json.
+// the language-neutral page portfolio bound by one verified run manifest. It
+// never reads report.html and never persists the projection into report.json.
 func LoadManifestTargetNavigation(
 	runDir string,
 	manifest RunManifest,
 ) (*TargetNavigationPortfolio, error) {
-	if err := manifest.VerifyTargetPagePortfolioArtifacts(runDir); err != nil {
-		return nil, err
-	}
-	if manifest.MaterialInputs.ProgramPagePortfolioSHA256 != "" {
-		return loadManifestProgramPageNavigation(runDir, manifest)
-	}
-
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return nil, fmt.Errorf("report: open target navigation run: %w", err)
-	}
-	defer root.Close()
-	containerRaw, err := readManifestFile(
-		root,
-		snapshot.TargetRunContainerArtifactFilename,
-		snapshot.MaxTargetRunContainerBytes,
-	)
-	if err != nil || manifestSHA256(containerRaw) != manifest.MaterialInputs.TargetRunContainerSHA256 {
-		return nil, fmt.Errorf("report: target navigation container authority mismatch")
-	}
-	portfolioRaw, err := readManifestFile(
-		root,
-		snapshot.TargetPagePortfolioArtifactFilename,
-		snapshot.MaxTargetPagePortfolioBytes,
-	)
-	if err != nil || manifestSHA256(portfolioRaw) != manifest.MaterialInputs.TargetPagePortfolioSHA256 {
-		return nil, fmt.Errorf("report: target navigation portfolio authority mismatch")
-	}
-	container, err := snapshot.DecodeTargetRunContainer(containerRaw)
-	if err != nil {
-		return nil, fmt.Errorf("report: target navigation container: %w", err)
-	}
-	portfolio, err := snapshot.DecodeTargetPagePortfolio(portfolioRaw)
-	if err != nil {
-		return nil, fmt.Errorf("report: target navigation portfolio: %w", err)
-	}
-	if err := portfolio.ValidateAgainstContainer(container); err != nil {
-		return nil, err
-	}
-	pages := make([]TargetNavigationPage, 0, len(portfolio.Targets))
-	defaultTargetID := ""
-	currentTargetID := ""
-	runsDir := filepath.Dir(filepath.Clean(runDir))
-	for index, outerPage := range portfolio.Targets {
-		pageRunDir := filepath.Join(runsDir, outerPage.RunID)
-		page, pageErr := LoadTargetNavigationPage(pageRunDir, outerPage.RunID)
-		if pageErr != nil {
-			return nil, fmt.Errorf("report: target navigation page %d: %w", index, pageErr)
-		}
-		runtimeRaw, _, runtimeErr := readBoundedProgramArtifact(
-			filepath.Join(pageRunDir, runtimeportfolio.ArtifactFilename),
-			runtimeportfolio.MaxArtifactBytes,
-			"target navigation runtime portfolio",
-			false,
-		)
-		if runtimeErr != nil || manifestSHA256(runtimeRaw) != manifest.MaterialInputs.RuntimePortfolioSHA256 {
-			return nil, fmt.Errorf("report: target navigation page %d runtime portfolio authority mismatch", index)
-		}
-		// The current outer container is Go-specific backend authority. Keep
-		// that join local while publishing only the language-neutral target ID.
-		if err := validateCubeMapProgramTarget(container.Targets[index].Target, page.ProgramTarget); err != nil {
-			return nil, fmt.Errorf("report: target navigation page %d: %w", index, err)
-		}
-		if outerPage.Default {
-			defaultTargetID = page.ProgramTarget.ID
-		}
-		if outerPage.TargetRef == manifest.MaterialInputs.AnalysisTargetRef {
-			if filepath.Clean(pageRunDir) != filepath.Clean(runDir) ||
-				page.ProgramTarget.ID != manifest.MaterialInputs.ProgramTargetID {
-				return nil, fmt.Errorf("report: current target navigation page authority mismatch")
-			}
-			currentTargetID = page.ProgramTarget.ID
-		}
-		pages = append(pages, page)
-	}
-	return BuildTargetNavigation(pages, defaultTargetID, currentTargetID)
+	return loadManifestProgramPageNavigation(runDir, manifest)
 }
 
 func loadManifestProgramPageNavigation(
@@ -319,15 +244,6 @@ func loadManifestProgramPageNavigation(
 		if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
 			return nil, fmt.Errorf("report: program page navigation page %d target authority mismatch", index)
 		}
-		runtimeRaw, _, runtimeErr := readBoundedProgramArtifact(
-			filepath.Join(pageRunDir, runtimeportfolio.ArtifactFilename),
-			runtimeportfolio.MaxArtifactBytes,
-			"program page navigation runtime portfolio",
-			false,
-		)
-		if runtimeErr != nil || manifestSHA256(runtimeRaw) != manifest.MaterialInputs.RuntimePortfolioSHA256 {
-			return nil, fmt.Errorf("report: program page navigation page %d runtime portfolio authority mismatch", index)
-		}
 		outcomeRaw, _, outcomeErr := readBoundedProgramArtifact(
 			filepath.Join(pageRunDir, targetoutcome.ArtifactFilename),
 			targetoutcome.MaxArtifactBytes,
@@ -352,17 +268,14 @@ func loadManifestProgramPageNavigation(
 }
 
 func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPortfolio) error {
-	if navigation == nil {
-		if data != nil && data.RuntimePortfolio != nil {
-			return fmt.Errorf("report: runtime portfolio requires complete target navigation")
-		}
-		if data != nil && data.TargetOutcomePortfolio != nil {
-			return fmt.Errorf("report: target outcome portfolio requires complete target navigation")
-		}
-		return nil
-	}
 	if data == nil {
 		return fmt.Errorf("report: target navigation requires report data")
+	}
+	if data.TargetOutcomePortfolio == nil {
+		return fmt.Errorf("report: target navigation requires the exhaustive target outcome portfolio")
+	}
+	if navigation == nil {
+		return fmt.Errorf("report: target outcome portfolio requires complete target navigation")
 	}
 	if navigation.Version != TargetNavigationVersion ||
 		!validTargetNavigationText(navigation.DefaultTargetID) ||
@@ -371,9 +284,9 @@ func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPort
 		return fmt.Errorf("report: invalid target navigation identity")
 	}
 
-	// Container and portfolio authority own the exact targets and sibling run
-	// paths. Target navigation is a ProgramPortfolio contract; there is no
-	// legacy-map route rewrite or browser fallback.
+	// ProgramPagePortfolio owns the exact targets and sibling run paths. Target
+	// navigation is a ProgramPortfolio contract; there is no route rewrite or
+	// browser fallback.
 	if data.ProgramPortfolio == nil {
 		return fmt.Errorf("report: target navigation requires one exact ProgramPortfolio page")
 	}
@@ -421,21 +334,14 @@ func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPort
 	if !defaultFound || !currentFound {
 		return fmt.Errorf("report: target navigation default or current target is absent")
 	}
-	if data.RuntimePortfolio != nil {
-		if err := data.RuntimePortfolio.validateTargetNavigation(navigation); err != nil {
-			return fmt.Errorf("report: runtime portfolio target navigation: %w", err)
-		}
-	}
-	if data.TargetOutcomePortfolio != nil {
-		if err := data.TargetOutcomePortfolio.validateTargetNavigation(navigation); err != nil {
-			return fmt.Errorf("report: target outcome portfolio target navigation: %w", err)
-		}
+	if err := data.TargetOutcomePortfolio.validateTargetNavigation(navigation); err != nil {
+		return fmt.Errorf("report: target outcome portfolio target navigation: %w", err)
 	}
 	return nil
 }
 
 func validateTargetNavigationPage(page TargetNavigationPage) error {
-	if err := snapshot.ValidateTargetPageRunID(page.RunID); err != nil {
+	if err := programpage.ValidateRunID(page.RunID); err != nil {
 		return fmt.Errorf("report: target navigation page run: %w", err)
 	}
 	if err := page.ProgramTarget.Validate(); err != nil {
@@ -460,9 +366,7 @@ func validTargetNavigationText(value string) bool {
 }
 
 func validTargetNavigationArtifactFilename(value string) bool {
-	return len(value) <= programindex.MaxArtifactSetFilenameBytes &&
-		!strings.ContainsAny(value, `/\\`) && value != "." && value != ".." &&
-		path.Clean(value) == value && validTargetNavigationText(value)
+	return value == programindex.ArtifactFilename
 }
 
 func validTargetNavigationHref(value string, current bool) bool {
@@ -487,5 +391,5 @@ func validTargetNavigationHref(value string, current bool) bool {
 	if runID == "" || strings.Contains(runID, "/") {
 		return false
 	}
-	return snapshot.ValidateTargetPageRunID(runID) == nil
+	return programpage.ValidateRunID(runID) == nil
 }

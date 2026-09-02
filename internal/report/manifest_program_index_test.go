@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -32,6 +31,19 @@ func TestVerifyProgramPortfolioProjectionRebuildsCompletePortfolio(t *testing.T)
 	if err := manifest.VerifyProgramPortfolioProjection(runDir, reportJSON); err != nil {
 		t.Fatalf("VerifyProgramPortfolioProjection: %v", err)
 	}
+	legacyReportJSON := strings.Replace(
+		string(reportJSON),
+		`"view":`,
+		`"semantic_state":"program_semantic_available","view":`,
+		1,
+	)
+	if legacyReportJSON == string(reportJSON) {
+		t.Fatal("report fixture did not contain a ProgramPortfolio view")
+	}
+	if err := manifest.VerifyProgramPortfolioProjection(runDir, []byte(legacyReportJSON)); err == nil ||
+		!strings.Contains(err.Error(), "semantic_state") {
+		t.Fatalf("legacy semantic_state error = %v", err)
+	}
 
 	tampered := *portfolio
 	tampered.Entries = append([]ProgramPortfolioEntry(nil), portfolio.Entries...)
@@ -44,19 +56,6 @@ func TestVerifyProgramPortfolioProjectionRebuildsCompletePortfolio(t *testing.T)
 	if err := manifest.VerifyProgramPortfolioProjection(runDir, reportJSON); err == nil ||
 		!strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("tampered ProgramView error = %v", err)
-	}
-
-	tampered = *portfolio
-	tampered.Entries = append([]ProgramPortfolioEntry(nil), portfolio.Entries...)
-	tampered.Entries[0].SemanticState = ProgramSemanticAvailable
-	report.ProgramPortfolio = &tampered
-	reportJSON, err = json.Marshal(report)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := manifest.VerifyProgramPortfolioProjection(runDir, reportJSON); err == nil ||
-		!strings.Contains(err.Error(), "does not match") {
-		t.Fatalf("tampered semantic capability error = %v", err)
 	}
 }
 
@@ -143,14 +142,15 @@ func TestVerifyProgramIndexArtifactsBindsSetTargetAndIndex(t *testing.T) {
 		}
 	})
 
-	t.Run("unbound JavaScript TypeScript index is rejected", func(t *testing.T) {
-		runDir, manifest, _, _ := programIndexManifestFixture(t, "src/app.py")
-		writeProgramIndexManifestFile(t, runDir, jstsproject.ProgramIndexFilename, []byte(`{}`))
+	t.Run("target-specific artifact names are rejected", func(t *testing.T) {
+		runDir, manifest, indexRaw, _ := programIndexManifestFixture(t, "src/app.py")
+		writeProgramIndexManifestFile(t, runDir, "program-index.worker.json", indexRaw)
 		if err := manifest.VerifyProgramIndexArtifacts(runDir); err == nil ||
-			!strings.Contains(err.Error(), "is not bound by the artifact set") {
-			t.Fatalf("VerifyProgramIndexArtifacts error = %v, want unbound JSTS index rejection", err)
+			!strings.Contains(err.Error(), "noncanonical ProgramIndex artifact") {
+			t.Fatalf("VerifyProgramIndexArtifacts error = %v, want target-specific name rejection", err)
 		}
 	})
+
 }
 
 func programIndexManifestFixture(t *testing.T, sourceRef string) (string, RunManifest, []byte, []byte) {
@@ -286,6 +286,15 @@ func TestCompleteRunManifestVerificationReadsAndDecodesEachAuthorityOnce(t *test
 	}
 	preparedData.ArtifactsDir = runDir
 	preparedData.defaultProgramIndexArtifactFilename = programindex.ArtifactFilename
+	defaultIndexRaw, err := os.ReadFile(filepath.Join(runDir, programindex.ArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultIndex, err := programindex.Decode(defaultIndexRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparedData.defaultProgramIndex = &defaultIndex
 	preparedReceipt, err := newVerifiedRunReceiptFromReportData(runDir, manifest, &preparedData)
 	if err != nil {
 		t.Fatalf("build prepared report receipt: %v", err)
@@ -373,7 +382,7 @@ func TestPreparedTargetNavigationPageUsesCurrentRunProjection(t *testing.T) {
 
 func assertSingleManifestVerificationCounts(t *testing.T, stats manifestVerificationStats) {
 	t.Helper()
-	if len(stats.FileReads) < 10 {
+	if len(stats.FileReads) < 6 {
 		t.Fatalf("verified artifact reads = %v, want complete authority inventory", stats.FileReads)
 	}
 	for name, count := range stats.FileReads {
@@ -386,14 +395,7 @@ func assertSingleManifestVerificationCounts(t *testing.T, stats manifestVerifica
 		"program-index-authority",
 		"program-index:" + programindex.ArtifactFilename,
 		"program-page-portfolio",
-		"runtime-portfolio",
 		"target-outcome-portfolio",
-		"core-map",
-		"activity-entrypoints",
-		"activity-paths",
-		"dependency-catalog",
-		"integration-dependencies",
-		"integration-usage",
 	} {
 		if got := stats.Decodes[key]; got != 1 {
 			t.Errorf("authority %q decodes = %d, want 1; all=%v", key, got, stats.Decodes)

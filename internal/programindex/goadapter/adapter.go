@@ -20,23 +20,55 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gocoreobject"
 	"github.com/dvordrova/repomap/internal/godynamichandoff"
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
-// Build adapts the exact Go producer snapshots into one neutral program index.
-// Every relationship comes from an existing producer edge, declaration,
-// target boundary, or closed frontier; Build never infers a missing callee.
+const goPublicCallableLinkDomain = "go_public_callable_v1"
+
+// Build adapts the exact Go producer snapshots into one sealed neutral program
+// index. The common repository adapter path uses BuildInput and owns sealing;
+// Build remains the package-level convenience entrypoint for direct callers.
 func Build(
 	repository *corpus.Corpus,
 	target analysistarget.Target,
+	packageOrigins []gofacts.PackageOrigin,
 	direct surfacediscovery.DirectCallIndex,
 	external surfacediscovery.ExternalCallIndex,
 	core gocoreobject.Index,
 	dynamic godynamichandoff.Index,
 ) (programindex.Index, error) {
-	if err := validateAuthority(repository, target, direct, external, core, dynamic); err != nil {
+	input, err := BuildInput(repository, target, packageOrigins, direct, external, core, dynamic)
+	if err != nil {
 		return programindex.Index{}, err
+	}
+	index, err := programindex.New(input)
+	if err != nil {
+		return programindex.Index{}, fmt.Errorf("Go program index adapter: seal projection: %w", err)
+	}
+	return index, nil
+}
+
+// BuildInput projects one complete, independently owned Go fact snapshot into
+// the shared ProgramIndex input contract. Every relationship comes from an
+// existing producer edge, declaration, target boundary, or closed frontier;
+// BuildInput never infers a missing callee and does not seal the result.
+func BuildInput(
+	repository *corpus.Corpus,
+	target analysistarget.Target,
+	packageOrigins []gofacts.PackageOrigin,
+	direct surfacediscovery.DirectCallIndex,
+	external surfacediscovery.ExternalCallIndex,
+	core gocoreobject.Index,
+	dynamic godynamichandoff.Index,
+) (programindex.Input, error) {
+	if err := validateAuthority(repository, target, direct, external, core, dynamic); err != nil {
+		return programindex.Input{}, err
+	}
+	externalAuthorityKinds, err := goExternalAuthorityKinds(packageOrigins, external)
+	if err != nil {
+		return programindex.Input{}, err
 	}
 
 	projection := goProjection{
@@ -46,42 +78,50 @@ func Build(
 		external:             external,
 		core:                 core,
 		dynamic:              dynamic,
+		externalAuthorities:  externalAuthorityKinds,
 		objectRefs:           make(map[string]struct{}),
 		moduleRefs:           make(map[string]string),
 		packageRefs:          make(map[string]string),
 		typeRefs:             make(map[string]string),
 		directNodeObjectRefs: make(map[string]string),
 		externalRefs:         make(map[string]string),
+		callResultObjectRefs: make(map[string]string),
 		unresolvedRelations:  make(map[string]int),
 	}
 	if err := projection.projectObjects(); err != nil {
-		return programindex.Index{}, err
+		return programindex.Input{}, err
 	}
 	if err := projection.projectRelations(); err != nil {
-		return programindex.Index{}, err
+		return programindex.Input{}, err
 	}
 	targetInput, err := projection.targetInput()
 	if err != nil {
-		return programindex.Index{}, err
+		return programindex.Input{}, err
 	}
 	scenarioSHA256, err := scenarioIdentity(direct.Scenario)
 	if err != nil {
-		return programindex.Index{}, fmt.Errorf("Go program index adapter: scenario identity: %w", err)
+		return programindex.Input{}, fmt.Errorf("Go program index adapter: scenario identity: %w", err)
+	}
+	packageOriginsSHA256, err := canonicalSHA256(packageOrigins)
+	if err != nil {
+		return programindex.Input{}, fmt.Errorf("Go program index adapter: package-origin identity: %w", err)
 	}
 	sourceSHA256, err := canonicalSHA256(struct {
-		CorpusSHA256   string `json:"corpus_sha256"`
-		TargetRef      string `json:"target_ref"`
-		DirectSHA256   string `json:"direct_sha256"`
-		ExternalSHA256 string `json:"external_sha256"`
-		CoreSHA256     string `json:"core_sha256"`
-		DynamicSHA256  string `json:"dynamic_sha256"`
+		CorpusSHA256         string `json:"corpus_sha256"`
+		TargetRef            string `json:"target_ref"`
+		PackageOriginsSHA256 string `json:"package_origins_sha256"`
+		DirectSHA256         string `json:"direct_sha256"`
+		ExternalSHA256       string `json:"external_sha256"`
+		CoreSHA256           string `json:"core_sha256"`
+		DynamicSHA256        string `json:"dynamic_sha256"`
 	}{
 		CorpusSHA256: repository.SHA256(), TargetRef: target.Ref,
-		DirectSHA256: direct.SHA256, ExternalSHA256: external.SHA256, CoreSHA256: core.SHA256,
+		PackageOriginsSHA256: packageOriginsSHA256,
+		DirectSHA256:         direct.SHA256, ExternalSHA256: external.SHA256, CoreSHA256: core.SHA256,
 		DynamicSHA256: dynamic.SHA256,
 	})
 	if err != nil {
-		return programindex.Index{}, fmt.Errorf("Go program index adapter: source identity: %w", err)
+		return programindex.Input{}, fmt.Errorf("Go program index adapter: source identity: %w", err)
 	}
 	objectsObserved, err := measuredCoverageCount(
 		len(projection.objects),
@@ -89,7 +129,7 @@ func Build(
 		direct.Coverage.InvalidFunctionsExcluded,
 	)
 	if err != nil {
-		return programindex.Index{}, fmt.Errorf("Go program index adapter: object coverage: %w", err)
+		return programindex.Input{}, fmt.Errorf("Go program index adapter: object coverage: %w", err)
 	}
 	relationsObserved, err := measuredCoverageCount(
 		len(projection.relations),
@@ -98,10 +138,10 @@ func Build(
 		dynamic.Coverage.HandoffsOmitted,
 	)
 	if err != nil {
-		return programindex.Index{}, fmt.Errorf("Go program index adapter: relation coverage: %w", err)
+		return programindex.Input{}, fmt.Errorf("Go program index adapter: relation coverage: %w", err)
 	}
 
-	index, err := programindex.New(programindex.Input{
+	return programindex.Input{
 		ScenarioSHA256: scenarioSHA256,
 		SourceSHA256:   sourceSHA256,
 		Target:         targetInput,
@@ -110,23 +150,50 @@ func Build(
 		Coverage: programindex.CoverageInput{
 			Measured: true, ObjectsObserved: objectsObserved, RelationsObserved: relationsObserved,
 		},
-	})
-	if err != nil {
-		return programindex.Index{}, fmt.Errorf("Go program index adapter: seal projection: %w", err)
-	}
-	return index, nil
+	}, nil
 }
 
 func measuredCoverageCount(retained int, omitted ...int) (int, error) {
-	if retained < 0 || retained > programindex.MaxObservedCount {
+	if retained < 0 {
 		return 0, fmt.Errorf("retained count is outside bounds")
 	}
 	result := retained
+	maxInt := int(^uint(0) >> 1)
 	for _, count := range omitted {
-		if count < 0 || count > programindex.MaxObservedCount-result {
+		if count < 0 || count > maxInt-result {
 			return 0, fmt.Errorf("omission count is outside bounds")
 		}
 		result += count
+	}
+	return result, nil
+}
+
+func goExternalAuthorityKinds(
+	packageOrigins []gofacts.PackageOrigin,
+	external surfacediscovery.ExternalCallIndex,
+) (map[string]programindex.ExternalAuthorityKind, error) {
+	if err := gofacts.ValidatePackageOrigins(packageOrigins); err != nil {
+		return nil, fmt.Errorf("Go program index adapter: package-origin authority: %w", err)
+	}
+	result := make(map[string]programindex.ExternalAuthorityKind, len(packageOrigins)+1)
+	for _, origin := range packageOrigins {
+		kind := programindex.ExternalAuthorityPackage
+		if origin.Standard {
+			kind = programindex.ExternalAuthorityPlatform
+		}
+		result[origin.PackagePath] = kind
+	}
+	for _, family := range external.Families {
+		if generatedCgoTarget(family.Target) {
+			result[family.Target.PackagePath] = programindex.ExternalAuthorityPlatform
+			continue
+		}
+		if _, exists := result[family.Target.PackagePath]; !exists {
+			return nil, fmt.Errorf(
+				"Go program index adapter: external target package %q has no exact go-list origin authority",
+				family.Target.PackagePath,
+			)
+		}
 	}
 	return result, nil
 }
@@ -145,12 +212,13 @@ func scenarioIdentity(scenario surfacediscovery.Scenario) (string, error) {
 }
 
 type goProjection struct {
-	repository *corpus.Corpus
-	target     analysistarget.Target
-	direct     surfacediscovery.DirectCallIndex
-	external   surfacediscovery.ExternalCallIndex
-	core       gocoreobject.Index
-	dynamic    godynamichandoff.Index
+	repository          *corpus.Corpus
+	target              analysistarget.Target
+	direct              surfacediscovery.DirectCallIndex
+	external            surfacediscovery.ExternalCallIndex
+	core                gocoreobject.Index
+	dynamic             godynamichandoff.Index
+	externalAuthorities map[string]programindex.ExternalAuthorityKind
 
 	objects   []programindex.ObjectInput
 	relations []programindex.RelationInput
@@ -161,6 +229,7 @@ type goProjection struct {
 	typeRefs             map[string]string
 	directNodeObjectRefs map[string]string
 	externalRefs         map[string]string
+	callResultObjectRefs map[string]string
 	unresolvedRelations  map[string]int
 }
 
@@ -219,6 +288,7 @@ func (projection *goProjection) projectObjects() error {
 		}
 		kind := programindex.ObjectFunction
 		ownerRef, containerRef := packageRef, packageRef
+		receiverName := ""
 		if declaration.Kind == gocoreobject.CallableMethod {
 			kind = programindex.ObjectMethod
 			typeName, ok := receiverTypeName(declaration.Receiver, declaration.Package)
@@ -236,11 +306,19 @@ func (projection *goProjection) projectObjects() error {
 				)
 			}
 			ownerRef, containerRef = typeRef, typeRef
+			receiverName = typeName
+		}
+		var linkIdentities []programindex.SymbolLinkIdentityInput
+		if declaration.Exported {
+			linkIdentities = goPublicCallableLinkIdentities(
+				declaration.Package, receiverName, declaration.Name,
+			)
 		}
 		if err := projection.addObject(programindex.ObjectInput{
 			SourceRef: declaration.ID, Kind: kind, Name: declaration.Name,
 			Visibility: visibility(declaration.Exported), Signature: declaration.Signature,
 			OwnerRef: ownerRef, ContainerRef: containerRef, Location: location,
+			SymbolLinkIdentities: linkIdentities,
 		}); err != nil {
 			return err
 		}
@@ -289,17 +367,109 @@ func (projection *goProjection) projectObjects() error {
 			family.Target.Receiver, family.Target.Name,
 		)
 		projection.externalRefs[key] = ref
+		objectVisibility := visibility(token.IsExported(family.Target.Name))
+		linkIdentities := goPublicCallableLinkIdentities(
+			family.Target.PackagePath, normalizeGoLinkReceiver(family.Target.Receiver), family.Target.Name,
+		)
+		if generatedCgoTarget(family.Target) {
+			// The target is an exact compiler-generated wrapper boundary, not a
+			// portable repository or dependency declaration.
+			objectVisibility = programindex.VisibilityUnknown
+			linkIdentities = nil
+		}
 		if err := projection.addObject(programindex.ObjectInput{
 			SourceRef: ref, Kind: programindex.ObjectExternalSymbol,
-			Name: externalTargetName(family.Target), Visibility: visibility(token.IsExported(family.Target.Name)),
+			Name: externalTargetName(family.Target), Visibility: objectVisibility,
+			SymbolLinkIdentities: linkIdentities,
 			External: &programindex.ExternalSymbol{
-				PackagePath: family.Target.PackagePath,
-				Receiver:    family.Target.Receiver,
-				Name:        family.Target.Name,
+				AuthorityKind: projection.externalAuthorities[family.Target.PackagePath],
+				PackagePath:   family.Target.PackagePath,
+				Receiver:      family.Target.Receiver,
+				Name:          family.Target.Name,
 			},
 		}); err != nil {
 			return err
 		}
+	}
+	if err := projection.projectCallResultObjects(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// projectCallResultObjects materializes the intersection of call results cited
+// as receivers and call results whose producer patterns are retained in this
+// target projection. A cited result without its producer remains an unresolved
+// receiver frontier when callPatterns projects the consumer. These are exact
+// syntactic values, not declarations and not claims that either call executes.
+func (projection *goProjection) projectCallResultObjects() error {
+	used := make(map[string]struct{})
+	visit := func(patterns []surfacediscovery.ExternalCallPattern) {
+		for _, pattern := range patterns {
+			for _, resultID := range pattern.ReceiverResultIDs {
+				used[resultID] = struct{}{}
+			}
+		}
+	}
+	for _, edge := range projection.direct.Edges {
+		visit(edge.Patterns)
+	}
+	for _, family := range projection.external.Families {
+		visit(family.Patterns)
+	}
+	type resultFact struct {
+		id        string
+		kind      programindex.ObjectKind
+		name      string
+		signature string
+		location  surfacediscovery.Location
+	}
+	facts := make(map[string]resultFact, len(used))
+	collect := func(patterns []surfacediscovery.ExternalCallPattern) error {
+		for _, pattern := range patterns {
+			if _, needed := used[pattern.ResultID]; !needed || pattern.ResultID == "" {
+				continue
+			}
+			fact := resultFact{
+				id: pattern.ResultID, kind: programindex.ObjectVariable,
+				name: "call result", signature: pattern.ResultType, location: pattern.Callsite,
+			}
+			if previous, exists := facts[fact.id]; exists && previous != fact {
+				return fmt.Errorf("Go program index adapter: conflicting call result %q", fact.id)
+			}
+			facts[fact.id] = fact
+		}
+		return nil
+	}
+	for _, edge := range projection.direct.Edges {
+		if err := collect(edge.Patterns); err != nil {
+			return err
+		}
+	}
+	for _, family := range projection.external.Families {
+		if err := collect(family.Patterns); err != nil {
+			return err
+		}
+	}
+	ids := make([]string, 0, len(facts))
+	for id := range facts {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		fact := facts[id]
+		location, err := projection.surfaceLocation(fact.location)
+		if err != nil {
+			return err
+		}
+		if err := projection.addObject(programindex.ObjectInput{
+			SourceRef: fact.id, Kind: fact.kind, Name: fact.name,
+			Visibility: programindex.VisibilityInternal, Signature: fact.signature,
+			Location: location,
+		}); err != nil {
+			return err
+		}
+		projection.callResultObjectRefs[id] = id
 	}
 	return nil
 }
@@ -315,14 +485,35 @@ func (projection *goProjection) projectRelations() error {
 		if err != nil {
 			return err
 		}
+		callee, ok := projection.direct.Node(edge.CalleeID)
+		if !ok {
+			return fmt.Errorf("Go program index adapter: direct edge %q has no callee", edge.ID)
+		}
+		patterns, err := projection.callPatterns(edge.Patterns, callee.Symbol.Name)
+		if err != nil {
+			return err
+		}
+		witnesses := make([]programindex.Witness, 0, len(edge.Patterns))
+		for _, pattern := range edge.Patterns {
+			patternLocation, locationErr := projection.surfaceLocation(pattern.Callsite)
+			if locationErr != nil {
+				return locationErr
+			}
+			witnesses = append(witnesses, programindex.Witness{
+				Kind: "go_direct_call", Detail: locationDetail(pattern.Callsite), Location: patternLocation,
+			})
+		}
+		if len(witnesses) == 0 {
+			witnesses = append(witnesses, programindex.Witness{
+				Kind: "go_direct_call", Detail: locationDetail(edge.RepresentativeCallsite), Location: location,
+			})
+		}
 		projection.relations = append(projection.relations, programindex.RelationInput{
 			SourceRef: edge.ID, Kind: programindex.RelationCalls,
 			FromRef: fromRef, ToRefs: []string{toRef}, Resolution: programindex.ResolutionExact,
 			Invocation: string(edge.Invocation), Location: location, TargetsObserved: 1,
-			Witnesses: []programindex.Witness{{
-				Kind: "go_direct_call", Detail: locationDetail(edge.RepresentativeCallsite), Location: location,
-			}},
-			WitnessesObserved: edge.WitnessCount,
+			Witnesses: witnesses, WitnessesObserved: len(witnesses),
+			Patterns: patterns, PatternsObserved: edge.PatternsObserved,
 		})
 	}
 	dynamicRepresented, err := projection.projectDynamicHandoffs()
@@ -360,7 +551,10 @@ func (projection *goProjection) projectRelations() error {
 		}
 		invocation := string(family.Invocation)
 		witnessKind := "go_external_static_call"
-		if family.Dispatch == surfacediscovery.ExternalCallInterfaceInvoke {
+		if generatedCgoTarget(family.Target) {
+			invocation = "generated_cgo_wrapper:" + invocation
+			witnessKind = "go_generated_cgo_wrapper_call"
+		} else if family.Dispatch == surfacediscovery.ExternalCallInterfaceInvoke {
 			// The exact target is the declared interface dispatch symbol carried by
 			// the producer, never an inferred runtime implementation.
 			invocation = "declared_interface_dispatch:" + invocation
@@ -380,11 +574,16 @@ func (projection *goProjection) projectRelations() error {
 				Kind: witnessKind, Detail: locationDetail(callsite), Location: location,
 			})
 		}
+		patterns, err := projection.callPatterns(family.Patterns, family.Target.Name)
+		if err != nil {
+			return err
+		}
 		projection.relations = append(projection.relations, programindex.RelationInput{
 			SourceRef: family.ID, Kind: programindex.RelationInvokesExternal,
 			FromRef: fromRef, ToRefs: []string{toRef}, Resolution: programindex.ResolutionExact,
 			Invocation: invocation, Location: relationLocation, TargetsObserved: 1,
-			Witnesses: witnesses, WitnessesObserved: family.WitnessCount,
+			Witnesses: witnesses, WitnessesObserved: len(witnesses),
+			Patterns: patterns, PatternsObserved: family.PatternsObserved,
 		})
 	}
 
@@ -394,13 +593,20 @@ func (projection *goProjection) projectRelations() error {
 			return fmt.Errorf("Go program index adapter: external frontier has no caller %q", frontier.CallerID)
 		}
 		directFrontier := directFrontiers[frontier.CallerID]
+		represented := dynamicRepresented[frontier.CallerID]
 		projection.addUnresolved(
 			fromRef, programindex.RelationCalls, "dynamic", "go_dynamic_invoke",
-			positiveDifference(frontier.DynamicInvokesExcluded, directFrontier.DynamicInvokesExcluded),
+			positiveDifference(
+				frontier.DynamicInvokesExcluded,
+				max(directFrontier.DynamicInvokesExcluded, represented.interfaceInvokes),
+			),
 		)
 		projection.addUnresolved(
 			fromRef, programindex.RelationCalls, "non_static", "go_non_static_call",
-			positiveDifference(frontier.NonStaticCallsExcluded, directFrontier.NonStaticCallsExcluded),
+			positiveDifference(
+				frontier.NonStaticCallsExcluded,
+				max(directFrontier.NonStaticCallsExcluded, represented.functionValueCalls),
+			),
 		)
 		projection.addUnresolved(
 			fromRef, programindex.RelationInvokesExternal, "unnamed_static", "go_unnamed_external_callee",
@@ -430,6 +636,89 @@ func (projection *goProjection) projectRelations() error {
 		)
 	}
 	return nil
+}
+
+func (projection *goProjection) callPatterns(
+	values []surfacediscovery.ExternalCallPattern,
+	selector string,
+) ([]programindex.RelationPatternInput, error) {
+	result := make([]programindex.RelationPatternInput, 0, len(values))
+	for _, pattern := range values {
+		location, err := projection.surfaceLocation(pattern.Callsite)
+		if err != nil {
+			return nil, err
+		}
+		arguments := make([]programindex.PatternArgumentInput, 0, len(pattern.Arguments))
+		for _, argument := range pattern.Arguments {
+			arguments = append(arguments, projection.externalCallPatternArgument(argument))
+		}
+		resultRef := ""
+		if ref, ok := projection.callResultObjectRefs[pattern.ResultID]; ok {
+			resultRef = ref
+		}
+		receiverRef := ""
+		receiverOriginRefs := make([]string, 0, len(pattern.ReceiverResultIDs))
+		for _, resultID := range pattern.ReceiverResultIDs {
+			if ref, ok := projection.callResultObjectRefs[resultID]; ok {
+				receiverOriginRefs = append(receiverOriginRefs, ref)
+			}
+		}
+		sort.Strings(receiverOriginRefs)
+		receiverOriginRefs = slices.Compact(receiverOriginRefs)
+		receiverResolution := programindex.Resolution("")
+		receiverOriginsObserved := pattern.ReceiversObserved
+		if len(receiverOriginRefs) == 1 && pattern.ReceiversObserved == 1 && pattern.ReceiversOmitted == 0 {
+			receiverRef = receiverOriginRefs[0]
+			receiverOriginRefs = []string{}
+			receiverOriginsObserved = 0
+		} else if pattern.ReceiversObserved > 0 {
+			switch {
+			case len(receiverOriginRefs) == 0:
+				receiverResolution = programindex.ResolutionUnresolved
+			default:
+				receiverResolution = programindex.ResolutionAlternatives
+			}
+		}
+		result = append(result, programindex.RelationPatternInput{
+			SourceRef: pattern.ID, Form: programindex.PatternCall, Selector: selector,
+			Location:  location,
+			ResultRef: resultRef, ReceiverRef: receiverRef,
+			ReceiverOriginRefs:       receiverOriginRefs,
+			ReceiverOriginResolution: receiverResolution,
+			ReceiverOriginsObserved:  receiverOriginsObserved,
+			Arguments:                arguments, ArgumentsObserved: pattern.ArgumentsObserved,
+		})
+	}
+	return result, nil
+}
+
+func (projection *goProjection) externalCallPatternArgument(
+	argument surfacediscovery.ExternalCallPatternArgument,
+) programindex.PatternArgumentInput {
+	objectRefs := make([]string, 0, len(argument.ObjectIDs))
+	for _, objectID := range argument.ObjectIDs {
+		if ref, ok := projection.directNodeObjectRefs[objectID]; ok {
+			objectRefs = append(objectRefs, ref)
+		}
+	}
+	sort.Strings(objectRefs)
+	objectRefs = slices.Compact(objectRefs)
+	resolution := programindex.Resolution("")
+	if argument.ObjectsObserved > 0 {
+		switch {
+		case len(objectRefs) == 0:
+			resolution = programindex.ResolutionUnresolved
+		case len(objectRefs) == 1 && argument.ObjectsObserved == 1:
+			resolution = programindex.ResolutionExact
+		default:
+			resolution = programindex.ResolutionAlternatives
+		}
+	}
+	return programindex.PatternArgumentInput{
+		Position: argument.Position, Kind: programindex.PatternValueKind(argument.Kind),
+		Value: argument.Value, ObjectRefs: objectRefs, Resolution: resolution,
+		ObjectsObserved: argument.ObjectsObserved,
+	}
 }
 
 type dynamicHandoffRepresentation struct {
@@ -476,8 +765,22 @@ func (projection *goProjection) projectDynamicHandoffs() (
 			targetsObserved = 1
 		}
 		kind := programindex.RelationCalls
-		if handoff.Kind == godynamichandoff.CallbackTransfer {
+		if handoff.Kind == godynamichandoff.CallbackTransfer ||
+			handoff.Kind == godynamichandoff.CallableBinding {
 			kind = programindex.RelationPassesCallback
+		}
+		invocation := string(handoff.Kind) + ":" + string(handoff.Invocation)
+		if handoff.Kind == godynamichandoff.CallableBinding {
+			// A field assignment identifies the callable value exactly, but it is
+			// not proof of runtime execution at this source location.
+			invocation = "callable_binding:field"
+		}
+		var sourceArgument *programindex.PatternArgumentRefInput
+		if handoff.Kind == godynamichandoff.CallbackTransfer {
+			sourceArgument, err = projection.callbackSourceArgument(handoff)
+			if err != nil {
+				return nil, err
+			}
 		}
 		projection.relations = append(projection.relations, programindex.RelationInput{
 			SourceRef:       handoff.ID,
@@ -485,13 +788,14 @@ func (projection *goProjection) projectDynamicHandoffs() (
 			FromRef:         fromRef,
 			ToRefs:          toRefs,
 			Resolution:      resolution,
-			Invocation:      string(handoff.Kind) + ":" + string(handoff.Invocation),
+			Invocation:      invocation,
 			Location:        location,
 			TargetsObserved: targetsObserved,
 			Witnesses: []programindex.Witness{{
 				Kind: "go_ssa_dynamic_handoff", Detail: dynamicHandoffDetail(handoff), Location: location,
 			}},
 			WitnessesObserved: 1,
+			SourceArgument:    sourceArgument,
 		})
 		counts := represented[handoff.CallerID]
 		switch handoff.Kind {
@@ -503,6 +807,58 @@ func (projection *goProjection) projectDynamicHandoffs() (
 		represented[handoff.CallerID] = counts
 	}
 	return represented, nil
+}
+
+// callbackSourceArgument joins an exact callable transfer back to the neutral
+// source argument that carried it when that owning relation is retained in the
+// target's direct/external relation reservoirs. The callback transfer itself
+// is independently exact SSA authority: an unreachable owning call, or more
+// than one retained owning pattern, therefore leaves this optional provenance
+// unset instead of discarding the transfer or failing the target.
+func (projection *goProjection) callbackSourceArgument(
+	handoff godynamichandoff.Handoff,
+) (*programindex.PatternArgumentRefInput, error) {
+	type match struct {
+		relationSourceRef string
+		patternSourceRef  string
+	}
+	matchesByKey := make(map[string]match)
+	visit := func(relationSourceRef string, patterns []surfacediscovery.ExternalCallPattern) {
+		for _, pattern := range patterns {
+			if pattern.Callsite.Path != handoff.Callsite.Path ||
+				pattern.Callsite.Line != handoff.Callsite.Line ||
+				pattern.Callsite.Column != handoff.Callsite.Column {
+				continue
+			}
+			for _, argument := range pattern.Arguments {
+				if argument.Position == handoff.Slot.Parameter {
+					candidate := match{
+						relationSourceRef: relationSourceRef,
+						patternSourceRef:  pattern.ID,
+					}
+					matchesByKey[relationSourceRef+"\x00"+pattern.ID] = candidate
+				}
+			}
+		}
+	}
+	for _, edge := range projection.direct.Edges {
+		visit(edge.ID, edge.Patterns)
+	}
+	for _, family := range projection.external.Families {
+		visit(family.ID, family.Patterns)
+	}
+	if len(matchesByKey) != 1 {
+		return nil, nil
+	}
+	var matched match
+	for _, candidate := range matchesByKey {
+		matched = candidate
+	}
+	return &programindex.PatternArgumentRefInput{
+		RelationSourceRef: matched.relationSourceRef,
+		PatternSourceRef:  matched.patternSourceRef,
+		Position:          handoff.Slot.Parameter,
+	}, nil
 }
 
 func (projection *goProjection) targetInput() (programindex.TargetInput, error) {
@@ -729,6 +1085,12 @@ func dynamicHandoffDetail(value godynamichandoff.Handoff) string {
 	case godynamichandoff.CallbackTransfer:
 		return "parameter " + strconv.Itoa(value.Slot.Parameter) + " -> " +
 			dynamicStaticTargetName(value.StaticTarget) + " " + value.Slot.Signature
+	case godynamichandoff.CallableBinding:
+		detail := value.Slot.ContainerType + "." + value.Slot.Field + " <- " + value.Slot.DeclaredType
+		if value.Slot.Signature != "" {
+			detail += " " + value.Slot.Signature
+		}
+		return detail
 	default:
 		return value.Slot.Signature
 	}
@@ -956,6 +1318,33 @@ func externalTargetName(target surfacediscovery.ExternalCallTarget) string {
 		name += target.Receiver + "."
 	}
 	return name + target.Name
+}
+
+func generatedCgoTarget(target surfacediscovery.ExternalCallTarget) bool {
+	return target.PackagePath == surfacediscovery.ExternalCallCgoPackagePath && target.Receiver == ""
+}
+
+func goPublicCallableLinkIdentities(packagePath, receiver, name string) []programindex.SymbolLinkIdentityInput {
+	if packagePath == "" || name == "" {
+		return nil
+	}
+	display := name
+	if receiver != "" {
+		display = receiver + "." + name
+	}
+	parts := []string{"function", packagePath, name}
+	if receiver != "" {
+		parts = []string{"method", packagePath, receiver, name}
+	}
+	return []programindex.SymbolLinkIdentityInput{{
+		Domain:  goPublicCallableLinkDomain,
+		Parts:   parts,
+		Display: display,
+	}}
+}
+
+func normalizeGoLinkReceiver(value string) string {
+	return strings.TrimPrefix(strings.TrimSpace(value), "*")
 }
 
 func locationDetail(location surfacediscovery.Location) string {

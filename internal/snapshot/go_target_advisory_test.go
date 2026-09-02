@@ -3,6 +3,7 @@ package snapshot
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/gotarget"
@@ -43,30 +44,57 @@ func TestGoTargetEvidenceUsesOnlyPlatformConstraints(t *testing.T) {
 
 func TestDetectGoTargetAdvisoryRequiresUniqueStrongAlternative(t *testing.T) {
 	repository := t.TempDir()
-	paths := []string{"daemon/a_linux.go", "daemon/b_linux.go", "daemon/c_linux.go"}
+	paths := []string{"daemon/a_linux.go", "daemon/b_linux.go", "daemon/c_linux.go", "daemon/d.go"}
 	for _, path := range paths {
 		absolute := filepath.Join(repository, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(absolute), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(absolute, []byte("package daemon\n"), 0o600); err != nil {
+		content := "package daemon\n"
+		if path == "daemon/d.go" {
+			content = "// " + strings.Repeat("retained evidence ", AdvisoryGoTargetSourceBytes/18+2) +
+				"\n//go:build linux\n\npackage daemon\n"
+		}
+		if err := os.WriteFile(absolute, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	advisory := detectGoTargetAdvisory(repository, paths, gotarget.Target{GOOS: "darwin", GOARCH: "amd64"})
-	if advisory == nil || advisory.Suggested != "linux/amd64" || advisory.EvidenceFiles != 3 || len(advisory.Examples) != 3 {
+	advisory, metrics := detectGoTargetAdvisory(repository, paths, gotarget.Target{GOOS: "darwin", GOARCH: "amd64"})
+	if advisory == nil || advisory.Suggested != "linux/amd64" || advisory.EvidenceFiles != 4 || len(advisory.Examples) != 4 {
 		t.Fatalf("advisory = %#v", advisory)
 	}
+	if metrics.goTargetSourceBytes <= AdvisoryGoTargetSourceBytes ||
+		metrics.goTargetEvidencePaths != 4 {
+		t.Fatalf("advisory metrics = %#v", metrics)
+	}
 
-	for _, name := range []string{"a_windows.go", "b_windows.go", "c_windows.go"} {
+	for _, name := range []string{"a_windows.go", "b_windows.go", "c_windows.go", "d_windows.go"} {
 		path := filepath.Join(repository, name)
 		if err := os.WriteFile(path, []byte("package daemon\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		paths = append(paths, name)
 	}
-	if got := detectGoTargetAdvisory(repository, paths, gotarget.Target{GOOS: "darwin", GOARCH: "amd64"}); got != nil {
+	if got, _ := detectGoTargetAdvisory(repository, paths, gotarget.Target{GOOS: "darwin", GOARCH: "amd64"}); got != nil {
 		t.Fatalf("tied advisory = %#v, want nil", got)
+	}
+}
+
+func TestRepositoryScaleWarningsDoNotChangeAdvisoryAuthority(t *testing.T) {
+	warnings := RepositoryScaleWarnings(Snapshot{repositoryScaleMetrics: repositoryScaleMetrics{
+		goTargetFiles:         MaxGoTargetAdvisoryFiles + 1,
+		goTargetSourceBytes:   AdvisoryGoTargetSourceBytes + 1,
+		goTargetEvidencePaths: MaxGoTargetAdvisoryEvidencePaths + 1,
+		manifestBytes:         AdvisoryManifestBytes + 1,
+		goModuleBytes:         AdvisoryGoModuleBytes + 1,
+	}})
+	if len(warnings) != 5 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	for _, warning := range warnings {
+		if warning.Retained != warning.AdvisorySize+1 {
+			t.Fatalf("warning = %#v", warning)
+		}
 	}
 }
 
@@ -86,8 +114,8 @@ func TestGoTargetAdvisoryExcludesNonProductPaths(t *testing.T) {
 
 func TestAutomaticGoTargetSelectionRemainsBoundToExactAdvisory(t *testing.T) {
 	advisory := GoTargetAdvisory{
-		Suggested: "linux/amd64", EvidenceFiles: 3,
-		Examples: []string{"daemon/a_linux.go", "daemon/b_linux.go", "daemon/c_linux.go"},
+		Suggested: "linux/amd64", EvidenceFiles: 4,
+		Examples: []string{"daemon/a_linux.go", "daemon/b_linux.go", "daemon/c_linux.go", "daemon/d_linux.go"},
 	}
 	selection, err := newAutomaticGoTargetSelection(
 		gotarget.Target{GOOS: "darwin", GOARCH: "amd64"}, advisory,

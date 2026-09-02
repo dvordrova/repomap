@@ -313,6 +313,31 @@ func TestExecuteJSONInvalidatesProviderCubeAndInputState(t *testing.T) {
 	}
 }
 
+func TestExecuteJSONCachesLargeProviderAndCubeState(t *testing.T) {
+	root := t.TempDir()
+	provider := baseTestProvider()
+	providerState, err := json.Marshal(map[string]string{
+		"endpoint": "https://provider.test/v1/chat",
+		"model":    "fixture",
+		"context":  strings.Repeat("p", 64*1024+1),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.state = providerState
+	call := baseTestCall(strings.Repeat("c", 64*1024+1), "large-state-input")
+	executor := Executor{RootDir: root, Enabled: true}
+
+	first, err := ExecuteJSON(t.Context(), executor, provider, call)
+	if err != nil || first.Cached {
+		t.Fatalf("first = %#v, err = %v", first, err)
+	}
+	warm, err := ExecuteJSON(t.Context(), executor, provider, call)
+	if err != nil || !warm.Cached || warm.CacheKey != first.CacheKey || provider.completeCalls != 1 {
+		t.Fatalf("warm = %#v, calls = %d, err = %v", warm, provider.completeCalls, err)
+	}
+}
+
 func TestExecuteJSONRevalidatesHitAndRefetchesOnce(t *testing.T) {
 	root := t.TempDir()
 	provider := baseTestProvider()

@@ -119,9 +119,6 @@ func (state *builder) parsePyproject(source *sourceDraft) error {
 				dependencydeclaration.FrontierUnsupportedShape, "tool.poetry.group", nextOrdinal(), raw)
 		}
 	}
-	if len(state.statements) > dependencydeclaration.MaxStatements || len(state.frontiers) > dependencydeclaration.MaxFrontiers {
-		return fmt.Errorf("python declared dependencies: pyproject artifact bound exceeded")
-	}
 	return nil
 }
 

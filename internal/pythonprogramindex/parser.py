@@ -5,10 +5,7 @@ import json
 import sys
 
 
-MAX_OBJECTS = 131072
-MAX_RELATIONS = 262144
-MAX_WITNESSES_PER_RELATION = 64
-MAX_TEXT = 16384
+PYTHON_PUBLIC_SYMBOL_DOMAIN = "python_public_symbol_v1"
 
 
 def stable_ref(domain, *parts):
@@ -43,8 +40,9 @@ def visibility(name, forced_internal=False):
 
 
 def bounded_text(value):
-    value = " ".join(str(value).split())
-    return value[:MAX_TEXT]
+    # The shared ProgramIndex aggregate/envelope bounds own rejection. Local
+    # clipping here used to preserve a plausible but incomplete fact.
+    return " ".join(str(value).split())
 
 
 def safe_expression_name(node):
@@ -145,9 +143,42 @@ class Analyzer:
         self.objects_by_qname = {}
         self.node_refs = {}
         self.node_scopes = {}
+        self.call_result_refs = {}
         self.module_scopes = {}
         self.relations = []
         self.relations_by_key = {}
+
+    def symbol_link_identity(self, value, qname):
+        if not qname:
+            return None
+        if value.get("kind") == "external_symbol":
+            pass
+        elif value.get("kind") not in ("function", "method", "type") or \
+                value.get("visibility") != "public":
+            return None
+        if value.get("kind") != "external_symbol" and \
+                any(part.startswith("_") for part in qname.split(".")):
+            # A public-looking member of a private module/type is not a public
+            # import binding for another target.
+            return None
+        return {
+            "domain": PYTHON_PUBLIC_SYMBOL_DOMAIN,
+            # Python's stable cross-shard fact is the public binding's fully
+            # qualified name. Its runtime value can still be rebound, so call
+            # relations remain alternatives rather than borrowing authority
+            # from this identity.
+            "parts": ["binding", bounded_text(qname)],
+            "display": bounded_text(qname),
+        }
+
+    def add_symbol_link_identity(self, value, qname):
+        identity = self.symbol_link_identity(value, qname)
+        if identity is None:
+            return
+        identities = value.setdefault("symbol_link_identities", [])
+        if identity not in identities:
+            identities.append(identity)
+            identities.sort(key=lambda item: (item["domain"], item["parts"], item["display"]))
 
     def add_object(self, value, qname=""):
         ref = value["source_ref"]
@@ -156,10 +187,11 @@ class Analyzer:
             if existing.get("location") is None and value.get("location") is not None:
                 existing["location"] = value["location"]
             if qname:
+                self.add_symbol_link_identity(existing, qname)
                 self.objects_by_qname[qname] = ref
             return ref
-        if len(self.objects) >= MAX_OBJECTS:
-            raise ValueError("object limit exceeded")
+        if qname:
+            self.add_symbol_link_identity(value, qname)
         self.objects.append(value)
         self.objects_by_ref[ref] = value
         if qname:
@@ -168,13 +200,29 @@ class Analyzer:
 
     def ensure_external(self, name):
         name = bounded_text(name)
+        # Keep one external object per public Python binding. Different import
+        # spellings may expose the same binding, and splitting object identity
+        # by the spelling's package prefix would create contradictory copies.
+        # The top-level import name is the only package authority Python gives
+        # us without importing and executing the package.
+        package_path = bounded_text(name.split(".", 1)[0])
+        suffix = name[len(package_path):].lstrip(".")
+        parts = suffix.split(".") if suffix else [name.rsplit(".", 1)[-1]]
+        symbol_name = parts[-1]
+        receiver = ".".join(parts[:-1])
         ref = stable_ref("external", name)
         self.add_object({
             "source_ref": ref,
             "kind": "external_symbol",
             "name": name,
             "visibility": "unknown",
-        })
+            "external": {
+                "authority_kind": "platform" if package_path in self.stdlib_modules else "package",
+                "package_path": package_path,
+                **({"receiver": receiver} if receiver else {}),
+                "name": symbol_name,
+            },
+        }, name)
         return ref
 
     def canonical_qname(self, value):
@@ -189,7 +237,8 @@ class Analyzer:
 
     def add_relation(self, kind, from_ref, to_refs, resolution, node, witness_kind,
                      detail="", invocation="", targets_observed=None, witnesses_observed=1,
-                     source_expression="", witness_callee=None):
+                     source_expression="", witness_callee=None, patterns=None,
+                     patterns_observed=0, source_argument=None):
         path = self.current_path
         location = source_location(path, node)
         witness_location = callee_location(path, witness_callee) \
@@ -200,7 +249,10 @@ class Analyzer:
         location_key = ""
         if location is not None:
             location_key = "%s:%d:%d" % (location["path"], location["line"], location["column"])
-        key = (kind, from_ref, tuple(to_refs), resolution, invocation, location_key)
+        source_argument_key = ""
+        if source_argument is not None:
+            source_argument_key = json.dumps(source_argument, sort_keys=True, separators=(",", ":"))
+        key = (kind, from_ref, tuple(to_refs), resolution, invocation, location_key, source_argument_key)
         witness = {"kind": witness_kind}
         if detail:
             witness["detail"] = bounded_text(detail)
@@ -211,17 +263,31 @@ class Analyzer:
         existing = self.relations_by_key.get(key)
         if existing is not None:
             existing["witnesses_observed"] += witnesses_observed
+            existing["patterns_observed"] += patterns_observed
             candidate = json.dumps(witness, sort_keys=True, separators=(",", ":"))
             known = {
                 json.dumps(value, sort_keys=True, separators=(",", ":"))
                 for value in existing["witnesses"]
             }
-            if candidate not in known and len(existing["witnesses"]) < MAX_WITNESSES_PER_RELATION:
+            if candidate not in known:
                 existing["witnesses"].append(witness)
-            return
-        if len(self.relations) >= MAX_RELATIONS:
-            raise ValueError("relation limit exceeded")
-        ref = stable_ref("relation", kind, from_ref, "\0".join(to_refs), resolution, invocation, location_key)
+            known_patterns = {
+                value.get("source_ref", "") for value in existing.get("patterns", [])
+            }
+            for pattern in patterns or []:
+                if pattern.get("source_ref", "") not in known_patterns:
+                    existing.setdefault("patterns", []).append(pattern)
+                    known_patterns.add(pattern.get("source_ref", ""))
+            if source_argument is not None:
+                known_source = existing.get("source_argument")
+                if known_source is not None and known_source != source_argument:
+                    raise ValueError("conflicting relation source argument")
+                existing["source_argument"] = source_argument
+            return existing["source_ref"]
+        ref = stable_ref(
+            "relation", kind, from_ref, "\0".join(to_refs), resolution,
+            invocation, location_key, source_argument_key,
+        )
         relation = {
             "source_ref": ref,
             "kind": kind,
@@ -231,13 +297,18 @@ class Analyzer:
             "targets_observed": targets_observed,
             "witnesses": [witness],
             "witnesses_observed": witnesses_observed,
+            "patterns": list(patterns or []),
+            "patterns_observed": patterns_observed,
         }
         if invocation:
             relation["invocation"] = invocation
         if location is not None:
             relation["location"] = location
+        if source_argument is not None:
+            relation["source_argument"] = source_argument
         self.relations.append(relation)
         self.relations_by_key[key] = relation
+        return ref
 
     def prepare(self):
         decoded = []
@@ -373,6 +444,7 @@ class Collector(ast.NodeVisitor):
             "location": source_location(self.module["path"], node),
         }, qname)
         self.scope.bindings[name] = {"kind": "object", "ref": ref}
+        self.analyzer.node_refs[id(node)] = ref
         return ref
 
     def bind_targets(self, target, forced_internal=False):
@@ -404,6 +476,34 @@ class Collector(ast.NodeVisitor):
     def bind_callable_alias(self, target, binding):
         if binding is not None and isinstance(target, ast.Name):
             self.scope.bindings[target.id] = dict(binding)
+
+    def ensure_call_result(self, node):
+        existing = self.analyzer.call_result_refs.get(id(node), "")
+        if existing:
+            return existing
+        location = source_location(self.module["path"], node)
+        ref = stable_ref(
+            "call-result", self.module["source_ref"],
+            str(getattr(node, "lineno", 0)), str(getattr(node, "col_offset", -1) + 1),
+        )
+        self.analyzer.add_object({
+            "source_ref": ref,
+            "kind": "variable",
+            "name": "call result",
+            "visibility": "internal",
+            "container_ref": self.scope.ref,
+            **({"location": location} if location is not None else {}),
+        })
+        self.analyzer.call_result_refs[id(node)] = ref
+        return ref
+
+    def visit_Call(self, node):
+        # A chained call consumes the exact syntactic value produced by its
+        # receiver call. Retain that value without assigning any framework or
+        # runtime meaning to either selector.
+        if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Call):
+            self.ensure_call_result(node.func.value)
+        self.generic_visit(node)
 
     def visit_FunctionDef(self, node):
         self._visit_function(node)
@@ -559,6 +659,10 @@ class RelationVisitor(ast.NodeVisitor):
         self.module = module
         self.scope = scope
         self.invocation = "direct"
+        # Pattern receiver provenance is deliberately source ordered. The
+        # declaration collector has already created stable variable objects,
+        # but it must not let a later assignment explain an earlier call.
+        self.pattern_bindings = {id(scope): {}}
 
     def object(self, ref):
         return self.analyzer.objects_by_ref.get(ref)
@@ -566,15 +670,22 @@ class RelationVisitor(ast.NodeVisitor):
     def import_target(self, module_name, imported_name="", allow_external=True):
         qname = module_name + (("." + imported_name) if imported_name else "")
         if qname in self.analyzer.objects_by_qname:
-            return "local", self.analyzer.objects_by_qname[qname]
+            ref = self.analyzer.objects_by_qname[qname]
+            value = self.object(ref)
+            return ("external" if value and value["kind"] == "external_symbol" else "local"), ref
         if qname in self.analyzer.modules:
             return "local", self.analyzer.modules[qname]["source_ref"]
         canonical = self.analyzer.canonical_qname(qname)
         if canonical in self.analyzer.objects_by_qname:
-            return "local", self.analyzer.objects_by_qname[canonical]
+            ref = self.analyzer.objects_by_qname[canonical]
+            value = self.object(ref)
+            return ("external" if value and value["kind"] == "external_symbol" else "local"), ref
         if canonical in self.analyzer.modules:
             return "local", self.analyzer.modules[canonical]["source_ref"]
-        local_base = module_name in self.analyzer.modules or module_name in self.analyzer.objects_by_qname
+        base_ref = self.analyzer.objects_by_qname.get(module_name, "")
+        base_object = self.object(base_ref) if base_ref else None
+        local_base = module_name in self.analyzer.modules or \
+            (base_object is not None and base_object["kind"] != "external_symbol")
         if local_base:
             return "unknown", ""
         if not allow_external:
@@ -634,10 +745,14 @@ class RelationVisitor(ast.NodeVisitor):
                 if binding and binding["kind"] == "module":
                     qname = binding["module"] + "." + ".".join(parts)
                     if qname in self.analyzer.objects_by_qname:
-                        return "local", self.analyzer.objects_by_qname[qname]
+                        ref = self.analyzer.objects_by_qname[qname]
+                        value = self.object(ref)
+                        return ("external" if value and value["kind"] == "external_symbol" else "local"), ref
                     canonical = self.analyzer.canonical_qname(qname)
                     if canonical in self.analyzer.objects_by_qname:
-                        return "local", self.analyzer.objects_by_qname[canonical]
+                        ref = self.analyzer.objects_by_qname[canonical]
+                        value = self.object(ref)
+                        return ("external" if value and value["kind"] == "external_symbol" else "local"), ref
                     if binding.get("external"):
                         return "external", self.analyzer.ensure_external(qname)
                     return "unknown", ""
@@ -662,6 +777,228 @@ class RelationVisitor(ast.NodeVisitor):
                 return binding["module"] + "." + binding["name"]
             return node.id
         return safe_expression_name(node)
+
+    def pattern_selector(self, node):
+        if isinstance(node, ast.Name):
+            value = node.id
+        elif isinstance(node, ast.Attribute):
+            value = node.attr
+        else:
+            return ""
+        return value
+
+    def pattern_resolution(self, resolved):
+        authority, ref = resolved
+        if not ref:
+            return "unresolved", []
+        if authority == "literal":
+            return "exact", [ref]
+        if authority in ("local", "external"):
+            return "alternatives", [ref]
+        return "unresolved", []
+
+    def resolved_call_target(self, node):
+        resolved = self.resolve(node)
+        if resolved[0] == "local" and resolved[1]:
+            value = self.object(resolved[1])
+            if value is None or value["kind"] not in ("function", "method", "lambda", "type"):
+                return "unknown", ""
+        return resolved
+
+    def current_pattern_bindings(self):
+        return self.pattern_bindings.setdefault(id(self.scope), {})
+
+    def pattern_binding(self, name):
+        current = self.scope
+        while current is not None:
+            value = self.pattern_bindings.get(id(current), {}).get(name)
+            if value is not None:
+                return value
+            current = current.parent
+        return None
+
+    def bind_pattern_name(self, node, origin, initializer=None):
+        if not isinstance(node, ast.Name):
+            return
+        ref = self.analyzer.node_refs.get(id(node), "")
+        current = self.current_pattern_bindings()
+        previous = current.get(node.id)
+        reassigned = previous is not None and previous.get("binding_observed", False)
+        invalidated = reassigned or bool(previous and previous.get("value_invalidated", False))
+        value_candidate = None
+        if not invalidated and initializer is not None and ref:
+            value_candidate = dict(initializer)
+            value_candidate["source_object_refs"] = [ref]
+            value_candidate["source_objects_observed"] = 1
+        # Reassigning a name permanently clears initializer-to-use value
+        # authority in this lexical scope. Python names are mutable and a
+        # later simple literal assignment must not erase the earlier write.
+        self.current_pattern_bindings()[node.id] = {
+            "ref": ref,
+            "origin_refs": list(origin.get("refs", [])),
+            "origin_resolution": origin.get("resolution", ""),
+            "origins_observed": origin.get("observed", 0),
+            "binding_observed": True,
+            "value_invalidated": invalidated,
+            "value_candidate": value_candidate,
+        }
+
+    def bind_pattern_target(self, target, origin, initializer=None):
+        if isinstance(target, ast.Name):
+            self.bind_pattern_name(target, origin, initializer)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for value in target.elts:
+                self.bind_pattern_target(value, {"observed": 0})
+
+    def bind_nonvalue_name(self, name, ref=""):
+        if not name:
+            return
+        previous = self.current_pattern_bindings().get(name)
+        self.current_pattern_bindings()[name] = {
+            "ref": ref,
+            "origin_refs": [],
+            "origin_resolution": "",
+            "origins_observed": 0,
+            "binding_observed": True,
+            "value_invalidated": True,
+            "value_candidate": None,
+            **({"previous_binding": True} if previous is not None else {}),
+        }
+
+    def assignment_origin(self, value):
+        if not isinstance(value, ast.Call):
+            return {"observed": 0}
+        resolution, refs = self.pattern_resolution(self.resolved_call_target(value.func))
+        return {"observed": 1, "resolution": resolution, "refs": refs}
+
+    def pattern_receiver(self, callee):
+        if not isinstance(callee, ast.Attribute):
+            return {}
+        if isinstance(callee.value, ast.Call):
+            ref = self.analyzer.call_result_refs.get(id(callee.value), "")
+            return {"receiver_ref": ref} if ref else {}
+        if not isinstance(callee.value, ast.Name):
+            return {}
+        binding = self.pattern_binding(callee.value.id)
+        if binding is None:
+            return {}
+        result = {
+            "receiver_origins_observed": binding.get("origins_observed", 0),
+        }
+        if binding.get("ref"):
+            result["receiver_ref"] = binding["ref"]
+        if binding.get("origin_refs"):
+            result["receiver_origin_refs"] = list(binding["origin_refs"])
+        if binding.get("origin_resolution"):
+            result["receiver_origin_resolution"] = binding["origin_resolution"]
+        return result
+
+    def pattern_argument_authority(self, node):
+        if isinstance(node, ast.Name):
+            binding = self.pattern_binding(node.id)
+            if binding is not None and binding.get("ref"):
+                return {
+                    "object_refs": [binding["ref"]],
+                    "resolution": "alternatives",
+                    "objects_observed": 1,
+                }
+        resolution, refs = self.pattern_resolution(self.resolve(node))
+        if refs:
+            return {
+                "object_refs": refs,
+                "resolution": resolution,
+                "objects_observed": 1,
+            }
+        if isinstance(node, (ast.Name, ast.Attribute, ast.Lambda)):
+            return {"resolution": "unresolved", "objects_observed": 1}
+        return {"objects_observed": 0}
+
+    def static_pattern_value(self, node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return {"kind": "literal_string", "value": node.value}
+        if isinstance(node, ast.JoinedStr):
+            parts = []
+            valid = True
+            has_hole = False
+            for value in node.values:
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    raw = value.value
+                    if raw:
+                        parts.append({"kind": "literal", "text": raw})
+                elif isinstance(value, ast.FormattedValue):
+                    has_hole = True
+                    parts.append({"kind": "hole"})
+                else:
+                    valid = False
+                    break
+            if valid and has_hole:
+                return {"kind": "string_template", "parts": parts}
+            if valid:
+                literal = "".join(value.get("text", "") for value in parts)
+                return {"kind": "literal_string", "value": literal}
+        return None
+
+    def initializer_value_candidate(self, node):
+        value = self.static_pattern_value(node)
+        if value is None:
+            return None
+        result = dict(value)
+        result.update({
+            "resolution": "possible",
+            "source_kind": "initializer",
+        })
+        return result
+
+    def pattern_argument_value(self, node):
+        result = self.static_pattern_value(node) or {"kind": "dynamic"}
+        result.update(self.pattern_argument_authority(node))
+        if result["kind"] == "dynamic" and isinstance(node, ast.Name):
+            binding = self.pattern_binding(node.id)
+            candidate = binding.get("value_candidate") if binding is not None else None
+            if candidate is not None and not binding.get("value_invalidated", False):
+                result["value_candidates"] = [dict(candidate)]
+                result["value_candidates_observed"] = 1
+        return result
+
+    def relation_pattern(self, call, form, from_ref):
+        selector = self.pattern_selector(call.func)
+        if not selector:
+            # The call is observed but cannot be represented as a selector
+            # candidate. Relation.PatternsObserved exposes this one omission.
+            return None, 1
+        location = source_location(self.module["path"], call)
+        location_key = ""
+        if location is not None:
+            location_key = "%s:%d:%d" % (
+                location["path"], location["line"], location["column"],
+            )
+        arguments = []
+        for position, argument in enumerate(call.args, 1):
+            if isinstance(argument, ast.Starred):
+                continue
+            value = self.pattern_argument_value(argument)
+            value["position"] = position
+            arguments.append(value)
+        for keyword in call.keywords:
+            if keyword.arg is None:
+                continue
+            value = self.pattern_argument_value(keyword.value)
+            value["keyword"] = keyword.arg
+            arguments.append(value)
+        pattern = {
+            "source_ref": stable_ref("pattern", form, from_ref, selector, location_key),
+            "form": form,
+            "selector": selector,
+            "arguments": arguments,
+            "arguments_observed": len(call.args) + len(call.keywords),
+        }
+        if location is not None:
+            pattern["location"] = location
+        result_ref = self.analyzer.call_result_refs.get(id(call), "")
+        if result_ref:
+            pattern["result_ref"] = result_ref
+        pattern.update(self.pattern_receiver(call.func))
+        return pattern, 1
 
     def candidate_detail(self, detail, candidate):
         candidate_name = candidate.get("name", "") if candidate else ""
@@ -718,15 +1055,16 @@ class RelationVisitor(ast.NodeVisitor):
             candidate.get("name") == "importlib.import_module"
 
     def emit_resolved(self, kind, from_ref, resolved, node, witness_kind, detail="", invocation="",
-                      exact_authorities=(), source_expression="", witness_callee=None):
+                      exact_authorities=(), source_expression="", witness_callee=None,
+                      pattern=None, patterns_observed=0, source_argument=None):
         authority, ref = resolved
         if authority in exact_authorities and ref:
-            self.analyzer.add_relation(
+            return self.analyzer.add_relation(
                 kind, from_ref, [ref], "exact", node, witness_kind, detail,
                 invocation=invocation, targets_observed=1, source_expression=source_expression,
-                witness_callee=witness_callee,
+                witness_callee=witness_callee, patterns=[pattern] if pattern else [],
+                patterns_observed=patterns_observed, source_argument=source_argument,
             )
-            return True
         if authority in ("local", "external", "literal") and ref:
             # Python names, attributes, descriptors and class members are
             # mutable runtime joints. Retain the locally observed candidate as
@@ -734,26 +1072,28 @@ class RelationVisitor(ast.NodeVisitor):
             # to an exact runtime target.
             candidate = self.object(ref)
             candidate_detail = self.candidate_detail(detail, candidate)
-            self.analyzer.add_relation(
+            return self.analyzer.add_relation(
                 kind, from_ref, [ref], "alternatives", node, witness_kind + "_candidate",
                 candidate_detail, invocation=invocation, targets_observed=1,
                 source_expression=source_expression, witness_callee=witness_callee,
+                patterns=[pattern] if pattern else [], patterns_observed=patterns_observed,
+                source_argument=source_argument,
             )
-            return True
-        self.analyzer.add_relation(
+        return self.analyzer.add_relation(
             kind, from_ref, [], "unresolved", node, witness_kind, detail,
             invocation=invocation, targets_observed=1, source_expression=source_expression,
-            witness_callee=witness_callee,
+            witness_callee=witness_callee, patterns=[pattern] if pattern else [],
+            patterns_observed=patterns_observed, source_argument=source_argument,
         )
-        return False
 
     def emit_decorator(self, resolved, decorated_ref, node, witness_kind, detail="",
-                       exact_authorities=()):
+                       exact_authorities=(), pattern=None, patterns_observed=0):
         authority, decorator_ref = resolved
         if authority in exact_authorities and decorator_ref:
             self.analyzer.add_relation(
                 "decorates", decorated_ref, [decorator_ref], "exact", node, witness_kind, detail,
-                targets_observed=1,
+                targets_observed=1, patterns=[pattern] if pattern else [],
+                patterns_observed=patterns_observed,
             )
             return True
         candidate = self.object(decorator_ref) if decorator_ref else None
@@ -765,7 +1105,8 @@ class RelationVisitor(ast.NodeVisitor):
             "decorates", decorated_ref, [decorator_ref] if candidate else [],
             "alternatives" if candidate else "unresolved", node, witness,
             self.candidate_detail(detail, candidate),
-            targets_observed=1,
+            targets_observed=1, patterns=[pattern] if pattern else [],
+            patterns_observed=patterns_observed,
         )
         return candidate is not None
 
@@ -779,6 +1120,7 @@ class RelationVisitor(ast.NodeVisitor):
                 self.import_witness(authority, alias.name), alias.name,
                 exact_authorities=("local", "external"),
             )
+            self.bind_nonvalue_name(alias.asname or alias.name.split(".")[0])
 
     def visit_ImportFrom(self, node):
         base = relative_module(self.module["name"], self.module["package"], node.level, node.module)
@@ -796,11 +1138,24 @@ class RelationVisitor(ast.NodeVisitor):
                 )
                 continue
             resolved = self.import_target(base, alias.name, allow_external=node.level == 0)
+            witness = self.import_witness(resolved[0], base, from_import=True)
+            if resolved[0] == "unknown":
+                boundary_ref = self.local_import_target(base)
+                boundary = self.object(boundary_ref) if boundary_ref else None
+                if boundary is not None and boundary["kind"] in ("module", "package"):
+                    # A package facade may expose a mutable or re-exported
+                    # member whose declaration identity is not locally exact.
+                    # The named import still establishes its local module
+                    # boundary, just as a wildcard import does. Retain only
+                    # that boundary and do not invent the imported member.
+                    resolved = "local", boundary_ref
+                    witness = "from_import_module_boundary"
             self.emit_resolved(
                 "imports", self.scope.ref, resolved, node,
-                self.import_witness(resolved[0], base, from_import=True), base + "." + alias.name,
+                witness, base + "." + alias.name,
                 exact_authorities=("local", "external"),
             )
+            self.bind_nonvalue_name(alias.asname or alias.name)
 
     def visit_FunctionDef(self, node):
         self._visit_definition(node)
@@ -812,12 +1167,16 @@ class RelationVisitor(ast.NodeVisitor):
         defined_ref = self.analyzer.node_refs[id(node)]
         for decorator in node.decorator_list:
             target = decorator.func if isinstance(decorator, ast.Call) else decorator
-            # Only the decorator callee name is persistent. Arguments may
-            # contain routes, tokens, headers or arbitrary source literals.
             detail = self.expression_name(target)
+            pattern, patterns_observed = (None, 0)
+            if isinstance(decorator, ast.Call):
+                pattern, patterns_observed = self.relation_pattern(
+                    decorator, "decorator_call", defined_ref,
+                )
             self.emit_decorator(
                 self.resolve(target), defined_ref, decorator,
                 "decorator", detail, exact_authorities=("literal",),
+                pattern=pattern, patterns_observed=patterns_observed,
             )
             if isinstance(decorator, ast.Call):
                 for argument in list(decorator.args) + [value.value for value in decorator.keywords]:
@@ -842,6 +1201,15 @@ class RelationVisitor(ast.NodeVisitor):
             self.visit(parameter)
         previous = self.scope
         self.scope = self.analyzer.node_scopes[id(node)]
+        self.pattern_bindings[id(self.scope)] = {}
+        for argument in arguments:
+            ref = self.analyzer.node_refs.get(id(argument), "")
+            self.current_pattern_bindings()[argument.arg] = {
+                "ref": ref, "origin_refs": [], "origin_resolution": "",
+                "origins_observed": 0,
+                "binding_observed": True, "value_invalidated": True,
+                "value_candidate": None,
+            }
         for statement in node.body:
             self.visit(statement)
         self.scope = previous
@@ -859,9 +1227,15 @@ class RelationVisitor(ast.NodeVisitor):
         for decorator in node.decorator_list:
             target = decorator.func if isinstance(decorator, ast.Call) else decorator
             detail = self.expression_name(target)
+            pattern, patterns_observed = (None, 0)
+            if isinstance(decorator, ast.Call):
+                pattern, patterns_observed = self.relation_pattern(
+                    decorator, "decorator_call", defined_ref,
+                )
             self.emit_decorator(
                 self.resolve(target), defined_ref, decorator,
                 "decorator", detail, exact_authorities=("literal",),
+                pattern=pattern, patterns_observed=patterns_observed,
             )
             if isinstance(decorator, ast.Call):
                 for argument in list(decorator.args) + [value.value for value in decorator.keywords]:
@@ -870,6 +1244,7 @@ class RelationVisitor(ast.NodeVisitor):
             self.visit(parameter)
         previous = self.scope
         self.scope = self.analyzer.node_scopes[id(node)]
+        self.pattern_bindings[id(self.scope)] = {}
         for statement in node.body:
             self.visit(statement)
         self.scope = previous
@@ -888,6 +1263,15 @@ class RelationVisitor(ast.NodeVisitor):
                 self.visit(argument.annotation)
         previous = self.scope
         self.scope = self.analyzer.node_scopes[id(node)]
+        self.pattern_bindings[id(self.scope)] = {}
+        for argument in arguments:
+            ref = self.analyzer.node_refs.get(id(argument), "")
+            self.current_pattern_bindings()[argument.arg] = {
+                "ref": ref, "origin_refs": [], "origin_resolution": "",
+                "origins_observed": 0,
+                "binding_observed": True, "value_invalidated": True,
+                "value_candidate": None,
+            }
         self.visit(node.body)
         self.scope = previous
 
@@ -926,28 +1310,37 @@ class RelationVisitor(ast.NodeVisitor):
                     name, targets_observed=1,
                 )
 
-        resolved = self.resolve(node.func)
-        if resolved[0] == "local" and resolved[1]:
-            value = self.object(resolved[1])
-            if value is None or value["kind"] not in ("function", "method", "lambda", "type"):
-                resolved = ("unknown", "")
+        resolved = self.resolved_call_target(node.func)
+        # Filled only for the ordinary call relation retained below. Dynamic-only
+        # builtins have no nested pattern argument to cite.
+        pattern = None
+        call_relation_ref = ""
         if not dynamic_only:
             kind = "invokes_external" if resolved[0] == "external" else "calls"
-            self.emit_resolved(
+            pattern, patterns_observed = self.relation_pattern(node, "call", self.scope.ref)
+            call_relation_ref = self.emit_resolved(
                 kind, self.scope.ref, resolved, node, "callsite", name, self.invocation,
                 exact_authorities=("literal",), source_expression=source_expression,
-                witness_callee=node.func,
+                witness_callee=node.func, pattern=pattern, patterns_observed=patterns_observed,
             )
 
-        arguments = list(node.args) + [value.value for value in node.keywords]
-        for argument in arguments:
+        arguments = [(argument, position, "") for position, argument in enumerate(node.args, 1)]
+        arguments.extend((value.value, 0, value.arg or "") for value in node.keywords)
+        for argument, position, keyword in arguments:
             authority, ref = self.resolve(argument)
             value = self.object(ref) if ref else None
             if authority in ("local", "literal") and value and value["kind"] in ("function", "method", "lambda"):
+                source_argument = None
+                if pattern is not None and call_relation_ref and (position > 0 or keyword):
+                    source_argument = {
+                        "relation_source_ref": call_relation_ref,
+                        "pattern_source_ref": pattern["source_ref"],
+                        **({"position": position} if position > 0 else {"keyword": keyword}),
+                    }
                 self.emit_resolved(
                     "passes_callback", self.scope.ref, (authority, ref), argument,
                     "callback_argument", safe_expression_name(argument),
-                    exact_authorities=("literal",),
+                    exact_authorities=("literal",), source_argument=source_argument,
                 )
             # Every child expression is visited exactly once. Calling
             # generic_visit after this loop would recursively double nested
@@ -959,19 +1352,54 @@ class RelationVisitor(ast.NodeVisitor):
         for target in node.targets:
             self._attribute_write(target)
         self.visit(node.value)
+        origin = self.assignment_origin(node.value)
+        initializer = self.initializer_value_candidate(node.value)
+        for target in node.targets:
+            self.bind_pattern_target(target, origin, initializer)
 
     def visit_AnnAssign(self, node):
         self._attribute_write(node.target)
         if node.value is not None:
             self.visit(node.value)
+            self.bind_pattern_target(
+                node.target, self.assignment_origin(node.value),
+                self.initializer_value_candidate(node.value),
+            )
+        else:
+            self.bind_pattern_target(node.target, {"observed": 0})
 
     def visit_AugAssign(self, node):
         self._attribute_write(node.target)
         self.visit(node.value)
+        if isinstance(node.target, ast.Name):
+            previous = self.pattern_binding(node.target.id) or {}
+            self.current_pattern_bindings()[node.target.id] = {
+                "ref": previous.get("ref", ""), "origin_refs": [],
+                "origin_resolution": "", "origins_observed": 0,
+                "binding_observed": True, "value_invalidated": True,
+                "value_candidate": None,
+            }
+
+    def visit_NamedExpr(self, node):
+        self.visit(node.value)
+        self.bind_pattern_target(
+            node.target, self.assignment_origin(node.value),
+            self.initializer_value_candidate(node.value),
+        )
+
+    def visit_For(self, node):
+        self.visit(node.iter)
+        self.bind_pattern_target(node.target, {"observed": 0})
+        for statement in node.body + node.orelse:
+            self.visit(statement)
+
+    visit_AsyncFor = visit_For
 
     def visit_Delete(self, node):
         for target in node.targets:
             self._attribute_write(target)
+            if isinstance(target, ast.Name):
+                self.bind_nonvalue_name(target.id)
 
     def _attribute_write(self, target):
         if isinstance(target, ast.Attribute):

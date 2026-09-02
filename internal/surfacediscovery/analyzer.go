@@ -48,6 +48,7 @@ type analyzer struct {
 	externalCallIndex     *ExternalCallIndexBuilder
 	externalCallIndexErr  error
 	dynamicHandoffCapture *dynamicHandoffCapture
+	callableBindings      callableBindingSnapshot
 
 	packageLoadCalls int
 	ssaBuilds        int
@@ -113,10 +114,9 @@ func (a *analyzer) load() error {
 	if len(patterns) == 0 {
 		return fmt.Errorf("surface discovery: no target-selected Go packages")
 	}
-	buildFlags := []string{}
-	if len(a.opts.BuildTags) > 0 {
-		buildFlags = append(buildFlags, "-tags="+strings.Join(a.opts.BuildTags, ","))
-	}
+	// An explicit empty value is required too: packages.Load otherwise inherits
+	// GOFLAGS=-tags=... while the persisted scenario truthfully records no tags.
+	buildFlags := []string{"-tags=" + strings.Join(a.opts.BuildTags, ",")}
 	finishLoad := a.startPhase("package_load", "loading target-selected packages and dependency types")
 	fileSet := token.NewFileSet()
 	loadEnv := gotarget.Target{GOOS: a.scenario.GOOS, GOARCH: a.scenario.GOARCH}.ApplyEnv(os.Environ())
@@ -180,6 +180,11 @@ func (a *analyzer) load() error {
 		return identityErr
 	}
 	a.loadedPackages = allPackages
+	// Package-load diagnostics are complete load authority, including when the
+	// selected target is not SSA-safe and validation returns immediately below.
+	// Recording them after validation would erase the concrete failure evidence
+	// from precisely the runs that need it most.
+	a.recordPackageLoadOutcomes(allPackages)
 	if err := a.validateAnalysisTargetPackages(allPackages); err != nil {
 		return err
 	}
@@ -224,10 +229,12 @@ func (a *analyzer) validateAnalysisTargetPackages(allPackages map[string]*packag
 	for _, packagePath := range target.TargetPackages {
 		pkg := allPackages[packagePath]
 		if !packageSafeForSSA(pkg) {
-			return &AnalysisTargetSSAUnavailableError{
+			targetErr := &AnalysisTargetSSAUnavailableError{
 				Reason: AnalysisTargetPackageNotSSASafe, Package: packagePath,
 				Diagnostic: a.analysisTargetSSADiagnostic(allPackages, packagePath),
 			}
+			targetErr.bindProgramCoverage(a.result.Coverage)
+			return targetErr
 		}
 		if pkg.Module == nil || pkg.Module.Path != target.ModulePath {
 			return fmt.Errorf(
@@ -401,12 +408,14 @@ func (a *analyzer) prepareTargetProgram() {
 		a.directCallIndex.recordFunction(a, function)
 		for _, block := range function.Blocks {
 			for _, instruction := range block.Instrs {
+				if store, ok := instruction.(*ssa.Store); ok {
+					a.dynamicHandoffCapture.observeCallableBinding(a, store)
+				}
 				call, ok := instruction.(ssa.CallInstruction)
 				if !ok {
 					continue
 				}
 				a.observeExternalCallIndex(call)
-				a.directCallIndex.observeEntryCall(a, call)
 				a.observeDynamicHandoffs(call)
 			}
 		}
@@ -414,7 +423,7 @@ func (a *analyzer) prepareTargetProgram() {
 			a.emitPhaseProgress(index+1, len(functions), "SSA functions indexed")
 		}
 	}
-	a.directCallIndex.recordEntrySurfaceSyntaxCandidates(a, a.entrypoints())
+	a.callableBindings = a.dynamicHandoffCapture.freezeCallableBindings()
 }
 
 func (a *analyzer) orderedFunctions() []*ssa.Function {
@@ -467,7 +476,7 @@ func importedPackagePaths(entrypoint *ssa.Function) map[string]bool {
 func (a *analyzer) repositoryDirectStaticCall(call ssa.CallInstruction, target *ssa.Function) bool {
 	return call != nil && target != nil && call.Parent() != nil &&
 		call.Common() != nil && call.Common().StaticCallee() == target &&
-		a.isRepositoryFunction(call.Parent()) && a.isRepositoryFunction(target)
+		a.isRepositoryFunction(call.Parent()) && a.repositorySourceFunction(target)
 }
 
 func typedStringValue(expression ast.Expr, info *types.Info) (string, bool) {
@@ -533,6 +542,17 @@ func (a *analyzer) location(position token.Pos) Location {
 func (a *analyzer) isRepositoryFunction(function *ssa.Function) bool {
 	packagePath := functionPackagePath(function)
 	return packagePath != "" && a.admittedPackages[packagePath]
+}
+
+// repositorySourceFunction is stricter than package ownership: compiler
+// helpers for cgo share the repository package path but have no repository
+// declaration location and therefore cannot be repository graph nodes.
+func (a *analyzer) repositorySourceFunction(function *ssa.Function) bool {
+	if !a.isRepositoryFunction(function) {
+		return false
+	}
+	location := a.location(function.Pos())
+	return validRepositoryDirectCallLocation(location) && location.Column > 0
 }
 
 func scenarioID(goos, goarch string, tags []string) string {

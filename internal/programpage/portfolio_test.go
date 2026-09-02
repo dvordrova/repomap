@@ -1,8 +1,8 @@
 package programpage
 
 import (
-	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -124,16 +124,31 @@ func TestPortfolioRejectsIncompleteAmbiguousOrUnsafeBindings(t *testing.T) {
 		})
 	}
 
-	tooMany := make([]Page, MaxPages+1)
-	if _, err := Build(goTarget.ID, tooMany); err == nil || !strings.Contains(err.Error(), "page bound") {
-		t.Fatalf("over-bound Build error = %v", err)
-	}
-
 	invalidTarget := goTarget.Snapshot()
 	invalidTarget.ID += "-tampered"
 	if _, err := Build(invalidTarget.ID, []Page{{Target: invalidTarget, RunID: "run-go-1"}}); err == nil ||
 		!strings.Contains(err.Error(), "target identity mismatch") {
 		t.Fatalf("invalid target Build error = %v", err)
+	}
+}
+
+func TestBuildRetainsPagesBeyondFormerLocalThreshold(t *testing.T) {
+	pages := make([]Page, MaxPages+1)
+	for position := range pages {
+		name := fmt.Sprintf("app-%05d", position)
+		target := testTarget(t, "go", name, "cmd/"+name+"/main.go", "f-"+name)
+		pages[position] = Page{Target: target, RunID: fmt.Sprintf("run-%05d", position)}
+	}
+	portfolio, err := Build(pages[0].Target.ID, pages)
+	if err != nil {
+		t.Fatalf("Build rejected complete page inventory: %v", err)
+	}
+	if len(portfolio.Pages) != len(pages) {
+		t.Fatalf("retained pages = %d, want %d", len(portfolio.Pages), len(pages))
+	}
+	warnings := ScaleWarnings(portfolio)
+	if len(warnings) == 0 || warnings[0].Kind != ScaleWarningPages || warnings[0].Retained != len(pages) {
+		t.Fatalf("scale warnings = %#v", warnings)
 	}
 }
 
@@ -183,10 +198,6 @@ func TestPortfolioCodecRejectsTamperAndNonCanonicalBytes(t *testing.T) {
 		t.Fatalf("uppercase seal Decode error = %v", err)
 	}
 
-	if _, err := Decode(bytes.Repeat([]byte{'x'}, MaxArtifactBytes+1)); err == nil ||
-		!strings.Contains(err.Error(), "artifact size") {
-		t.Fatalf("over-bound Decode error = %v", err)
-	}
 }
 
 func TestValidateRunIDUsesPortableSafeSegments(t *testing.T) {
@@ -203,6 +214,13 @@ func TestValidateRunIDUsesPortableSafeSegments(t *testing.T) {
 		if err := ValidateRunID(runID); err == nil {
 			t.Errorf("accepted unsafe run ID %q", runID)
 		}
+	}
+}
+
+func TestExactTargetTextIsNotCutAtProgramIndexAdvisoryThreshold(t *testing.T) {
+	text := strings.Repeat("x", programindex.MaxTextBytes+1)
+	if !validText(text) {
+		t.Fatal("exact target text was rejected at the ProgramIndex advisory threshold")
 	}
 }
 

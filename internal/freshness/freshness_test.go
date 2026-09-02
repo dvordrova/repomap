@@ -81,6 +81,26 @@ func TestCaptureInputsUsesCapturedRevisionAndDirtyIdentity(t *testing.T) {
 	}
 }
 
+func TestCaptureInputsStreamsBlobBeyondFormerEightMiBLimit(t *testing.T) {
+	repository := testRepository(t)
+	content := strings.Repeat("x", 8*1024*1024+1)
+	writeTestFile(t, repository, "large.bin", content)
+	gitTest(t, repository, "add", "large.bin")
+	gitTest(t, repository, "commit", "-m", "large input")
+	state, err := captureTestRepository(t, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs, err := CaptureInputs(context.Background(), state, []string{"large.bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+	if len(inputs) != 1 || inputs[0].ContentSHA256 != want {
+		t.Fatalf("large captured input = %#v, want digest %q", inputs, want)
+	}
+}
+
 func TestCaptureInputsRejectsUnavailableCapturedTree(t *testing.T) {
 	repository := testRepository(t)
 	writeTestFile(t, repository, "main.go", "package main\n")

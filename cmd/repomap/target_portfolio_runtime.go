@@ -17,10 +17,8 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
-	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
-	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/targetportfolio"
 )
 
@@ -51,340 +49,11 @@ type targetPortfolioRunOutcome struct {
 	RequestBytes        int
 	ResponseBytes       int
 	LatencyMillis       int64
+	SemanticObserved    bool
 }
 
 func defaultTargetPortfolioProviderFactory() (llm.Provider, error) {
 	return deepseek.NewFromEnv()
-}
-
-// selectTargetsForRun runs the parallel first-layer scouts, dumb FileRef
-// merge, and file-only portfolio. Existing Go target refs are restored only
-// after the model decision so they never enter either provider request.
-func selectTargetsForRun(
-	ctx context.Context,
-	repoName string,
-	catalog analysistarget.TargetCatalog,
-	facts gofacts.Facts,
-	repository *corpus.Corpus,
-	override string,
-	output *runOutput,
-	providers targetPortfolioProviderFactory,
-	executor llm.Executor,
-) (snapshot.TargetRunSelection, targetPortfolioRunOutcome, error) {
-	if err := catalog.Validate(); err != nil {
-		return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, err
-	}
-	if repository == nil {
-		return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, fmt.Errorf("repository corpus is unavailable")
-	}
-	if len(catalog.Entries) == 0 {
-		return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, fmt.Errorf("no eligible Go analysis targets")
-	}
-
-	var outcome targetPortfolioRunOutcome
-	override = strings.TrimSpace(override)
-	var explicitEntry *analysistarget.TargetCatalogEntry
-	if override != "" {
-		entry, resolveErr := resolveTargetOverride(catalog, override)
-		if resolveErr != nil {
-			return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, resolveErr
-		}
-		explicitEntry = &entry
-	}
-
-	parallelContext, cancelParallel := context.WithCancel(ctx)
-	defer cancelParallel()
-	type readmeScoutResult struct {
-		roles readmetargetscout.Result
-		err   error
-	}
-	readmeResult := make(chan readmeScoutResult, 1)
-	go func() {
-		if !readmetargetscout.HasGuidanceFiles(repository) {
-			readmeResult <- readmeScoutResult{roles: readmetargetscout.Result{}}
-			return
-		}
-		roles, err := discoverReadmeFileRoles(
-			parallelContext, repoName, repository, output, providers, executor,
-		)
-		readmeResult <- readmeScoutResult{roles: roles, err: err}
-	}()
-	var (
-		goCandidates []analysistarget.FileCandidate
-		resolver     analysistarget.GoFileTargetResolver
-	)
-	if explicitEntry == nil {
-		discoveryStarted := time.Now()
-		var discoveryErr error
-		goCandidates, resolver, discoveryErr = analysistarget.DiscoverGoTargetFilesWithResolver(
-			repository, facts, catalog,
-		)
-		if discoveryErr != nil {
-			cancelParallel()
-			<-readmeResult
-			return snapshot.TargetRunSelection{}, outcome, discoveryErr
-		}
-		if output != nil {
-			output.State(
-				"Go target discovery", "ready",
-				fmt.Sprintf("exact targets: %d", len(catalog.Entries)),
-				fmt.Sprintf("native file hypotheses: %d", len(goCandidates)),
-				formatRunOutputWallDuration(time.Since(discoveryStarted)),
-			)
-		}
-	}
-
-	readme := <-readmeResult
-	if readme.err != nil {
-		return snapshot.TargetRunSelection{}, outcome, readme.err
-	}
-	if explicitEntry != nil {
-		defaultRef := explicitEntry.Candidate.Target.Ref
-		refs := []string{defaultRef}
-		outcome.SelectedRef = defaultRef
-		outcome.SelectedTargets = 1
-		outcome.SelectedTargetRefs = refs
-		outcome.ReadmeRoles = compileReadmeRoleLog(repository, readme.roles)
-		if output != nil {
-			output.State(
-				"Go target discovery", "not needed",
-				"reason: explicit --target bypasses file-hypothesis discovery",
-			)
-			output.State(
-				"Target hypothesis merge", "not needed",
-				"reason: explicit --target bypasses candidate merging",
-			)
-			output.State(
-				"Analysis target", "selected",
-				"source: explicit --target",
-				"selected: "+explicitEntry.DisplayPath,
-			)
-		}
-		return snapshot.TargetRunSelection{
-			DefaultTargetRef: defaultRef,
-			TargetRefs:       refs,
-		}, outcome, nil
-	}
-
-	readmeCandidates, unsupportedReadmeTargets := goResolvableReadmeTargetCandidates(
-		readme.roles.TargetCandidates(), resolver,
-	)
-	if output != nil && unsupportedReadmeTargets > 0 {
-		output.Stage(
-			"Repository guidance classifier",
-			fmt.Sprintf(
-				"kept %d target hypotheses for the Go adapter; retained %d unsupported target roles only in diagnostics",
-				len(readmeCandidates), unsupportedReadmeTargets,
-			),
-		)
-	}
-	mergeStarted := time.Now()
-	merged, err := analysistarget.MergeFileCandidates(
-		repository.Snapshot(), goCandidates, readmeCandidates,
-	)
-	if err != nil {
-		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf("merge target hypotheses: %w", err)
-	}
-	if output != nil {
-		output.State(
-			"Target hypothesis merge", "complete",
-			fmt.Sprintf("native hypotheses: %d", len(goCandidates)),
-			fmt.Sprintf("guidance hypotheses: %d", len(readmeCandidates)),
-			fmt.Sprintf("merged hypotheses: %d", len(merged)),
-			formatRunOutputWallDuration(time.Since(mergeStarted)),
-		)
-	}
-	if len(merged) == 0 {
-		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf("target discovery returned no file hypotheses")
-	}
-	executableFileRefs, err := exactGoExecutableFileRefs(merged, resolver, catalog)
-	if err != nil {
-		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf(
-			"bind exact executable target authority: %w", err,
-		)
-	}
-
-	selection, portfolioOutcome, err := selectTargetPortfolioForRun(
-		ctx, repository.Snapshot(), merged, &executableFileRefs, nil, output, providers, executor,
-	)
-	outcome = portfolioOutcome
-	outcome.ReadmeRoles = compileReadmeRoleLog(repository, readme.roles)
-	if err != nil {
-		return snapshot.TargetRunSelection{}, outcome, withTargetPortfolioChoices(
-			err,
-			targetPortfolioChoiceGroup{Language: "Go", Choices: targetPortfolioChoices(catalog)},
-		)
-	}
-	selectedFileRefs := make([]corpus.FileID, 0, len(selection.Targets))
-	for _, candidate := range selection.Targets {
-		selectedFileRefs = append(selectedFileRefs, candidate.FileRef)
-	}
-	refs, err := resolver.Resolve(selectedFileRefs)
-	if err != nil {
-		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf(
-			"restore selected Go targets from file portfolio: %w; choose one exact Go target with --target TARGET",
-			err,
-		)
-	}
-	defaultRef, err := resolver.ResolveOne(selection.Default.FileRef)
-	if err != nil {
-		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf(
-			"restore default Go target from file portfolio: %w; choose one exact Go target with --target TARGET",
-			err,
-		)
-	}
-	_, ok := targetCatalogEntryByRef(catalog, defaultRef)
-	if !ok {
-		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf("restored default Go target is outside the target catalog")
-	}
-	if err := validateAutomaticGoExecutableAuthority(catalog, defaultRef, refs); err != nil {
-		return snapshot.TargetRunSelection{}, outcome, err
-	}
-	outcome.SelectedRef = defaultRef
-	outcome.SelectedTargets = len(refs)
-	outcome.SelectedTargetRefs = append([]string(nil), refs...)
-	outcome.SelectedFileRefs = len(selection.Targets)
-	outcome.UnclassifiedFiles = len(selection.Unclassified)
-	return snapshot.TargetRunSelection{
-		DefaultTargetRef: defaultRef,
-		TargetRefs:       refs,
-	}, outcome, nil
-}
-
-func goResolvableReadmeTargetCandidates(
-	candidates []analysistarget.FileCandidate,
-	resolver analysistarget.GoFileTargetResolver,
-) ([]analysistarget.FileCandidate, int) {
-	result := make([]analysistarget.FileCandidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		if !resolver.ResolvesOne(candidate.FileRef) {
-			continue
-		}
-		result = append(result, candidate)
-	}
-	if result == nil {
-		result = []analysistarget.FileCandidate{}
-	}
-	return result, len(candidates) - len(result)
-}
-
-// exactGoExecutableFileRefs projects only exact current catalog/resolver
-// capability into the language-neutral selector. It does not infer runnable
-// authority from paths or hypothesis prose, and it never removes library
-// candidates from the complete request.
-func exactGoExecutableFileRefs(
-	candidates []analysistarget.FileCandidate,
-	resolver analysistarget.GoFileTargetResolver,
-	catalog analysistarget.TargetCatalog,
-) ([]corpus.FileID, error) {
-	if err := catalog.Validate(); err != nil {
-		return nil, err
-	}
-	kinds := make(map[string]analysistarget.Kind, len(catalog.Entries))
-	executables := make(map[string]struct{})
-	for _, entry := range catalog.Entries {
-		ref := entry.Candidate.Target.Ref
-		kind := entry.Candidate.Target.Kind
-		kinds[ref] = kind
-		if kind == analysistarget.KindExecutablePackage {
-			executables[ref] = struct{}{}
-		}
-	}
-
-	result := make([]corpus.FileID, 0, len(executables))
-	represented := make(map[string]struct{}, len(executables))
-	for _, candidate := range candidates {
-		refs, err := resolver.Resolve([]corpus.FileID{candidate.FileRef})
-		if err != nil {
-			return nil, fmt.Errorf("file_ref %q: %w", candidate.FileRef, err)
-		}
-		executable := false
-		for _, ref := range refs {
-			kind, known := kinds[ref]
-			if !known {
-				return nil, fmt.Errorf("file_ref %q resolves outside the exact target catalog", candidate.FileRef)
-			}
-			if kind == analysistarget.KindExecutablePackage {
-				executable = true
-				represented[ref] = struct{}{}
-			}
-		}
-		if executable {
-			result = append(result, candidate.FileRef)
-		}
-	}
-	if len(represented) != len(executables) {
-		return nil, fmt.Errorf(
-			"executable target projection is incomplete: represented %d of %d exact targets",
-			len(represented), len(executables),
-		)
-	}
-	if result == nil {
-		return []corpus.FileID{}, nil
-	}
-	return result, nil
-}
-
-// validateAutomaticGoExecutableAuthority rebinds the accepted file decision
-// to the current exact catalog. The selector must itself return an executable
-// default when one exists; this check rejects stale or incompatible authority
-// and never promotes an omitted executable. Explicit --target bypasses it.
-func validateAutomaticGoExecutableAuthority(
-	catalog analysistarget.TargetCatalog,
-	defaultRef string,
-	selectedRefs []string,
-) error {
-	if err := catalog.Validate(); err != nil {
-		return err
-	}
-	selected := make(map[string]struct{}, len(selectedRefs))
-	for _, ref := range selectedRefs {
-		if _, duplicate := selected[ref]; duplicate {
-			return fmt.Errorf("executable target authority contains duplicate selected target %q", ref)
-		}
-		selected[ref] = struct{}{}
-	}
-	if _, ok := selected[defaultRef]; !ok {
-		return fmt.Errorf("executable target authority default is outside the selected target set")
-	}
-
-	executableCatalog := 0
-	executableSelected := 0
-	defaultKind := analysistarget.Kind("")
-	knownSelected := 0
-	for _, entry := range catalog.Entries {
-		target := entry.Candidate.Target
-		if target.Kind == analysistarget.KindExecutablePackage {
-			executableCatalog++
-		}
-		if target.Ref == defaultRef {
-			defaultKind = target.Kind
-		}
-		if _, ok := selected[target.Ref]; ok {
-			knownSelected++
-			if target.Kind == analysistarget.KindExecutablePackage {
-				executableSelected++
-			}
-		}
-	}
-	if knownSelected != len(selected) || defaultKind == "" {
-		return fmt.Errorf("executable target authority is outside the current exact catalog")
-	}
-	if executableCatalog == 0 {
-		return nil
-	}
-	if executableSelected == 0 {
-		return fmt.Errorf(
-			"executable target authority was lost: exact catalog has %d executable target(s), selection has none",
-			executableCatalog,
-		)
-	}
-	if defaultKind != analysistarget.KindExecutablePackage {
-		return fmt.Errorf(
-			"executable target authority requires an executable default, got %q", defaultKind,
-		)
-	}
-	return nil
 }
 
 func selectTargetPortfolioForRun(
@@ -428,14 +97,9 @@ func selectTargetPortfolioForRun(
 		)
 		return targetportfolio.Selection{}, failed, failErr
 	}
-	prompt, err := targetportfolio.BuildPrompt(compilation)
-	if err != nil {
-		failed, failErr := failTargetPortfolioSelection(
-			outcome, "request_build_failed",
-			"could not build its model prompt", err,
-		)
-		return targetportfolio.Selection{}, failed, failErr
-	}
+	// Compilation is already complete authority. Report scale now so a later
+	// provider-visible encoding or provider failure cannot hide the crossing.
+	reportTargetPortfolioScaleWarnings(output, compilation)
 	providerBundle, err := targetportfolio.ProviderVisibleJSON(compilation)
 	if err != nil {
 		failed, failErr := failTargetPortfolioSelection(
@@ -447,7 +111,6 @@ func selectTargetPortfolioForRun(
 	outcome.Request = providerBundle
 	outcome.RequestBytes = len(providerBundle)
 	outcome.RequestProvenance = debugdump.SemanticRequestPrepared
-
 	if providers == nil {
 		failed, failErr := failTargetPortfolioSelection(
 			outcome, "provider_configuration_failed",
@@ -476,35 +139,18 @@ func selectTargetPortfolioForRun(
 
 	output.Stage(
 		"Analysis target",
-		fmt.Sprintf("asking the model to choose the default and filter %d merged file hypotheses", len(compilation.Request.Candidates)),
+		fmt.Sprintf("asking the model to classify all %d merged file hypotheses and choose one default", len(compilation.Request.Candidates)),
 	)
-	executionState, err := targetportfolio.ExecutionState(compilation)
-	if err != nil {
-		failed, failErr := failTargetPortfolioSelection(
-			outcome, "request_build_failed", "could not bind its execution state", err,
-		)
-		return targetportfolio.Selection{}, failed, failErr
-	}
-	modelOutcome, callErr := llm.ExecuteJSON(
+	_, outcome.SemanticObserved = executor.Observer.(interface {
+		ObserveStage(string, llm.Event) error
+	})
+	execution, callErr := targetportfolio.Run(
 		ctx,
-		executor,
+		debugdump.BindStage(executor, debugdump.SemanticStageTargetPortfolio),
 		provider,
-		llm.Call[targetportfolio.Selection]{
-			State: executionState,
-			Prompt: llm.Prompt{
-				System: prompt.System, User: prompt.User, ResponseFormatJSON: true,
-			},
-			Limits: llm.Limits{
-				MaxRequestBytes:  targetportfolio.MaxProviderRequestBytes,
-				MaxResponseBytes: targetportfolio.MaxResponseBytes,
-				MaxOutputTokens:  targetportfolio.MaxOutputTokens,
-			},
-			DecodeValidate: func(raw []byte) (targetportfolio.Selection, error) {
-				return targetportfolio.ResolveResponse(compilation, raw)
-			},
-		},
+		compilation,
 	)
-	applyTargetPortfolioLLMOutcome(&outcome, modelOutcome)
+	applyTargetPortfolioLLMOutcomes(&outcome, execution.Outcomes)
 	if callErr != nil {
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			outcome = targetPortfolioCanceled(outcome)
@@ -514,7 +160,7 @@ func selectTargetPortfolioForRun(
 			return targetportfolio.Selection{}, outcome, callErr
 		}
 		failureCode := targetPortfolioLLMFailureCode(callErr)
-		if modelOutcome.ResponseRedacted {
+		if targetPortfolioHasRedactedResponse(execution.Outcomes) {
 			failureCode = "response_secret_scan"
 		}
 		failed, failErr := failTargetPortfolioSelection(
@@ -524,7 +170,7 @@ func selectTargetPortfolioForRun(
 		return targetportfolio.Selection{}, failed, failErr
 	}
 
-	selection := modelOutcome.Value
+	selection := execution.Selection
 	outcome.SelectedFileRefs = len(selection.Targets)
 	outcome.UnclassifiedFiles = len(selection.Unclassified)
 	if outcome.Cached {
@@ -551,40 +197,50 @@ func selectTargetPortfolioForRun(
 		"source: "+source,
 		fmt.Sprintf("selected file hypotheses: %d", len(selection.Targets)),
 		fmt.Sprintf("unclassified file hypotheses: %d", len(selection.Unclassified)),
+		fmt.Sprintf("complete model operations: %d", len(execution.Outcomes)),
 		formatRunOutputWallDuration(time.Since(started)),
 	)
 	return selection, outcome, nil
 }
 
-func discoverReadmeFileRoles(
+// readmeFileRoleDiscovery keeps the exact first-layer document bytes beside
+// the sparse accepted role result without turning them into persisted role or
+// target-portfolio authority.
+type readmeFileRoleDiscovery struct {
+	Roles    readmetargetscout.Result
+	Guidance readmetargetscout.GuidanceSnapshot
+}
+
+func discoverReadmeFileRolesWithGuidance(
 	ctx context.Context,
 	repoName string,
 	repository *corpus.Corpus,
 	output *runOutput,
 	providers targetPortfolioProviderFactory,
 	executor llm.Executor,
-) (readmetargetscout.Result, error) {
+) (readmeFileRoleDiscovery, error) {
 	started := time.Now()
 	compilation, err := readmetargetscout.Compile(targetPortfolioRepoName(repoName), repository)
 	if err != nil {
-		return nil, fmt.Errorf("repository guidance classifier: %w", err)
+		return readmeFileRoleDiscovery{}, fmt.Errorf("repository guidance classifier: %w", err)
 	}
 	if compilation.State == readmetargetscout.StateNotApplicable {
-		return readmetargetscout.Result{}, nil
+		return readmeFileRoleDiscovery{Roles: readmetargetscout.Result{}}, nil
 	}
-	prompt, err := readmetargetscout.BuildPrompt(compilation)
+	guidance, err := compilation.GuidanceSnapshot()
 	if err != nil {
-		return nil, fmt.Errorf("repository guidance classifier: build prompt: %w", err)
+		return readmeFileRoleDiscovery{}, fmt.Errorf("repository guidance classifier: snapshot documents: %w", err)
 	}
+	reportReadmeFileRoleScaleWarnings(output, readmetargetscout.InputScaleWarnings(compilation))
 	if providers == nil {
-		return nil, fmt.Errorf("repository guidance classifier: model provider is unavailable; configure the provider and retry")
+		return readmeFileRoleDiscovery{}, fmt.Errorf("repository guidance classifier: model provider is unavailable; configure the provider and retry")
 	}
 	provider, err := providers()
 	if err != nil {
-		return nil, fmt.Errorf("repository guidance classifier: configure model provider: %w", err)
+		return readmeFileRoleDiscovery{}, fmt.Errorf("repository guidance classifier: configure model provider: %w", err)
 	}
 	if provider == nil {
-		return nil, fmt.Errorf("repository guidance classifier: configured model provider is unavailable")
+		return readmeFileRoleDiscovery{}, fmt.Errorf("repository guidance classifier: configured model provider is unavailable")
 	}
 	if output != nil {
 		output.Stage("Repository guidance classifier", fmt.Sprintf(
@@ -592,47 +248,49 @@ func discoverReadmeFileRoles(
 			compilation.Request.FileCount,
 		))
 	}
-	modelOutcome, err := llm.ExecuteJSON(
+	execution, err := readmetargetscout.Run(
 		ctx,
 		debugdump.BindStage(executor, debugdump.SemanticStageReadmeFileClassifier),
 		provider,
-		llm.Call[readmetargetscout.Result]{
-			State: readmetargetscout.ExecutionState(),
-			Prompt: llm.Prompt{
-				System: prompt.System, User: prompt.User, ResponseFormatJSON: false,
-			},
-			Limits: llm.Limits{
-				MaxRequestBytes:  readmetargetscout.MaxProviderRequestBytes,
-				MaxResponseBytes: readmetargetscout.MaxResponseBytes,
-				MaxOutputTokens:  readmetargetscout.MaxOutputTokens,
-			},
-			DecodeValidate: func(raw []byte) (readmetargetscout.Result, error) {
-				return readmetargetscout.ResolveResponse(compilation, raw)
-			},
-		},
+		compilation,
 	)
+	reportReadmeFileRoleScaleWarnings(output, readmetargetscout.ExecutionScaleWarnings(execution))
 	if err != nil {
-		return nil, fmt.Errorf(
+		return readmeFileRoleDiscovery{}, fmt.Errorf(
 			"repository guidance classifier did not complete: %w; fix provider access and retry",
 			err,
 		)
 	}
-	result := modelOutcome.Value
+	result := execution.Result
+	// The accepted role result is already complete authority. Measure its
+	// canonical artifact before any sibling adapter or portfolio step can fail.
+	reportReadmeRoleArtifactScaleWarnings(output, compileReadmeRoleLog(repository, result))
 	if output != nil {
 		counts := readmeRoleCounts(result)
 		source := "live"
-		latency := modelOutcome.Metrics.Latency.Milliseconds()
-		if modelOutcome.Cached {
+		requestBytes, responseBytes, latency := 0, 0, int64(0)
+		cached := 0
+		for _, outcome := range execution.Outcomes {
+			requestBytes += outcome.RequestBytes
+			responseBytes += outcome.ResponseBytes
+			if outcome.Cached {
+				cached++
+			} else {
+				latency += outcome.Metrics.Latency.Milliseconds()
+			}
+		}
+		if cached == len(execution.Outcomes) {
 			source = "cache"
-			latency = 0
+		} else if cached > 0 {
+			source = "mixed live/cache"
 		}
 		output.Stage(
 			"Repository guidance classifier",
 			fmt.Sprintf("classified files: %d", len(result)),
 			formatRunOutputWallDuration(time.Since(started)),
 			fmt.Sprintf(
-				"%s result: request %d bytes, response %d bytes, %d ms",
-				source, modelOutcome.RequestBytes, modelOutcome.ResponseBytes, latency,
+				"%s result: %d complete requests, %d request bytes, %d response bytes, %d ms",
+				source, len(execution.Outcomes), requestBytes, responseBytes, latency,
 			),
 			fmt.Sprintf(
 				"roles: target %d, example %d, test %d, support tool %d, config %d, database %d, client %d, docs %d, deployment %d, contract %d",
@@ -644,7 +302,26 @@ func discoverReadmeFileRoles(
 			),
 		)
 	}
-	return result, nil
+	return readmeFileRoleDiscovery{Roles: result, Guidance: guidance}, nil
+}
+
+func reportReadmeFileRoleScaleWarnings(
+	output *runOutput,
+	warnings []readmetargetscout.ScaleWarning,
+) {
+	if output == nil || len(warnings) == 0 {
+		return
+	}
+	details := []string{
+		"all tracked file authority, repository guidance, compatible closed roles, and hypotheses were retained",
+		"provider requests use an exhaustive bounded shard cover; no local prefix or first-N selection was applied",
+	}
+	for _, warning := range warnings {
+		details = append(details, fmt.Sprintf(
+			"%s: retained %d; usual size %d", warning.Kind, warning.Retained, warning.AdvisorySize,
+		))
+	}
+	output.Warn("Large repository-guidance classification retained", details...)
 }
 
 func readmeRoleCounts(result readmetargetscout.Result) map[readmetargetscout.FileClass]int {
@@ -755,23 +432,46 @@ func targetCatalogEntryByRef(
 	return analysistarget.TargetCatalogEntry{}, false
 }
 
-func applyTargetPortfolioLLMOutcome(
+func applyTargetPortfolioLLMOutcomes(
 	outcome *targetPortfolioRunOutcome,
-	modelOutcome llm.Outcome[targetportfolio.Selection],
+	modelOutcomes []llm.Outcome[targetportfolio.Selection],
 ) {
 	if outcome == nil {
 		return
 	}
-	if modelOutcome.RequestBytes > 0 {
-		outcome.Request = append([]byte(nil), modelOutcome.Request...)
-		outcome.RequestBytes = modelOutcome.RequestBytes
+	if len(modelOutcomes) == 0 {
+		return
 	}
+	outcome.Cached = true
+	outcome.Request = nil
+	outcome.Response = nil
+	outcome.ResponseUnavailable = nil
+	outcome.RequestBytes = 0
+	outcome.ResponseBytes = 0
+	outcome.SemanticCalls = 0
+	outcome.TransportAttempts = 0
+	outcome.LatencyMillis = 0
+	for _, modelOutcome := range modelOutcomes {
+		outcome.RequestBytes += modelOutcome.RequestBytes
+		outcome.ResponseBytes += max(
+			modelOutcome.ResponseBytes,
+			modelOutcome.Metrics.ProviderResponseBytes,
+		)
+		outcome.Cached = outcome.Cached && modelOutcome.Cached
+		if !modelOutcome.Cached && modelOutcome.Metrics.Attempts > 0 {
+			outcome.SemanticCalls++
+			outcome.TransportAttempts += modelOutcome.Metrics.Attempts
+			outcome.LatencyMillis += modelOutcome.Metrics.Latency.Milliseconds()
+		}
+	}
+	if len(modelOutcomes) != 1 {
+		// The stage-aware observer owns each exact batch request/response. Never
+		// fabricate one synthetic exchange by concatenating several calls.
+		return
+	}
+	modelOutcome := modelOutcomes[0]
+	outcome.Request = append([]byte(nil), modelOutcome.Request...)
 	outcome.Response = append([]byte(nil), modelOutcome.Response...)
-	outcome.ResponseBytes = max(
-		modelOutcome.ResponseBytes,
-		modelOutcome.Metrics.ProviderResponseBytes,
-	)
-	outcome.Cached = modelOutcome.Cached
 	if modelOutcome.ResponseRedacted {
 		outcome.ResponseUnavailable = &debugdump.SemanticUnavailable{
 			Code: debugdump.SemanticUnavailableOmitted, OriginalBytes: modelOutcome.ResponseBytes,
@@ -786,17 +486,39 @@ func applyTargetPortfolioLLMOutcome(
 	}
 	if modelOutcome.Cached {
 		outcome.RequestProvenance = debugdump.SemanticRequestPrepared
-		outcome.SemanticCalls = 0
-		outcome.TransportAttempts = 0
-		outcome.LatencyMillis = 0
+	} else if modelOutcome.Metrics.Attempts > 0 {
+		outcome.RequestProvenance = debugdump.SemanticRequestExactSent
+	}
+}
+
+func targetPortfolioHasRedactedResponse(outcomes []llm.Outcome[targetportfolio.Selection]) bool {
+	for _, outcome := range outcomes {
+		if outcome.ResponseRedacted {
+			return true
+		}
+	}
+	return false
+}
+
+func reportTargetPortfolioScaleWarnings(
+	output *runOutput,
+	compilation targetportfolio.Compilation,
+) {
+	warnings := targetportfolio.ScaleWarnings(compilation)
+	if output == nil || len(warnings) == 0 {
 		return
 	}
-	if modelOutcome.Metrics.Attempts > 0 {
-		outcome.RequestProvenance = debugdump.SemanticRequestExactSent
-		outcome.SemanticCalls = 1
-		outcome.TransportAttempts = modelOutcome.Metrics.Attempts
-		outcome.LatencyMillis = modelOutcome.Metrics.Latency.Milliseconds()
+	details := []string{
+		"all merged file candidates, required target refs, executable refs, and hypotheses were retained",
+		"the complete reservoir is classified through bounded disjoint model batches; no local aggregate threshold removed data",
 	}
+	for _, warning := range warnings {
+		details = append(details, fmt.Sprintf(
+			"%s: retained %d bytes; usual one-call size %d bytes",
+			warning.Kind, warning.Retained, warning.AdvisorySize,
+		))
+	}
+	output.Warn("Large target portfolio retained", details...)
 }
 
 func targetPortfolioLLMFailureCode(err error) string {
@@ -1000,7 +722,7 @@ func recordTargetPortfolioOutcome(
 			Code: debugdump.SemanticUnavailableNoContent, OriginalBytes: outcome.ResponseBytes,
 		}
 	}
-	if outcome.RequestBytes > 0 && len(outcome.Request) > 0 {
+	if !outcome.SemanticObserved && outcome.RequestBytes > 0 && len(outcome.Request) > 0 {
 		value := debugdump.SemanticExchange{
 			Stage:           debugdump.SemanticStageTargetPortfolio,
 			InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
@@ -1024,6 +746,12 @@ func recordTargetPortfolioOutcome(
 		diagnosticErr = recordSemanticStageDiagnostic(runDir, targetPortfolioDiagnostic(outcome))
 	} else if !os.IsNotExist(err) {
 		diagnosticErr = fmt.Errorf("target portfolio: inspect metadata authority: %w", err)
+	}
+	if outcome.SemanticObserved {
+		// Every exact classification/default call was already captured by the
+		// stage-aware first-layer observer. Do not add a synthetic aggregate
+		// exchange or duplicate the one-call case.
+		return diagnosticErr
 	}
 	if exchange == nil || alreadyRecorded {
 		return diagnosticErr
@@ -1062,7 +790,7 @@ func targetPortfolioSemanticExchangeRecorded(
 		}
 		metadataPath := filepath.Join(directory, entry.Name(), debugdump.SemanticExchangeMetaFile)
 		info, err := os.Lstat(metadataPath)
-		if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxSemanticMetadataBytes {
+		if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 {
 			return false, fmt.Errorf("target portfolio: semantic exchange journal contains invalid metadata")
 		}
 		encoded, err := os.ReadFile(metadataPath)
@@ -1163,6 +891,20 @@ func persistReadmeRoleAuthority(
 		return fmt.Errorf("README file-role authority: persist: %w", err)
 	}
 	return nil
+}
+
+func reportReadmeRoleArtifactScaleWarnings(output *runOutput, rows []readmeRoleLogRow) {
+	if output == nil || len(rows) == 0 {
+		return
+	}
+	payload, err := json.MarshalIndent(struct {
+		Version int                `json:"version"`
+		Files   []readmeRoleLogRow `json:"files"`
+	}{Version: 1, Files: rows}, "", "  ")
+	if err != nil {
+		return
+	}
+	reportReadmeFileRoleScaleWarnings(output, readmetargetscout.ArtifactScaleWarnings(len(payload)))
 }
 
 func validateReadmeRoleLog(raw []byte) error {

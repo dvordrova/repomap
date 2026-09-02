@@ -1,0 +1,164 @@
+{
+  "version": 1,
+  "importers": [
+    {
+      "ref": "importer-3aaccbddd83ecff5b135b05b",
+      "language": "typescript",
+      "name": "front",
+      "module_path": "front",
+      "package_path": "front",
+      "repository_path": "front"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "dependency-cdbbf07399ebe91722b8316d",
+      "language": "typescript",
+      "kind": "external",
+      "name": "@ant-design/icons",
+      "module_path": "@ant-design/icons",
+      "package_path": "@ant-design/icons",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-eee83b4945b1d8d1170aa6e2",
+      "language": "typescript",
+      "kind": "external",
+      "name": "@testing-library/jest-dom",
+      "module_path": "@testing-library/jest-dom",
+      "package_path": "@testing-library/jest-dom",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-0f2ccdca02d47843d4a88317",
+      "language": "typescript",
+      "kind": "external",
+      "name": "ace-builds",
+      "module_path": "ace-builds",
+      "package_path": "ace-builds",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-f84c5ee3db3b54b483fceb3e",
+      "language": "typescript",
+      "kind": "external",
+      "name": "antd",
+      "module_path": "antd",
+      "package_path": "antd",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-9376e2024d8147244e065ca7",
+      "language": "typescript",
+      "kind": "external",
+      "name": "axios",
+      "module_path": "axios",
+      "package_path": "axios",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-ac0d7af65177ed22e455656a",
+      "language": "typescript",
+      "kind": "external",
+      "name": "lodash",
+      "module_path": "lodash",
+      "package_path": "lodash",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-2487e30b78c256bc2169e92e",
+      "language": "typescript",
+      "kind": "external",
+      "name": "react",
+      "module_path": "react",
+      "package_path": "react",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-682d14925527b4a886e7cb56",
+      "language": "typescript",
+      "kind": "external",
+      "name": "react-ace",
+      "module_path": "react-ace",
+      "package_path": "react-ace",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-0268dc6ec3c46acdaabf8dd5",
+      "language": "typescript",
+      "kind": "external",
+      "name": "react-dom",
+      "module_path": "react-dom",
+      "package_path": "react-dom",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-a4ea436d18e9df307a7a7981",
+      "language": "typescript",
+      "kind": "external",
+      "name": "react-error-boundary",
+      "module_path": "react-error-boundary",
+      "package_path": "react-error-boundary",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-706174a024fc8cf43108b07c",
+      "language": "typescript",
+      "kind": "external",
+      "name": "react-router-dom",
+      "module_path": "react-router-dom",
+      "package_path": "react-router-dom",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-78a4eebccd6426b5aba98c1c",
+      "language": "typescript",
+      "kind": "external",
+      "name": "styled-components",
+      "module_path": "styled-components",
+      "package_path": "styled-components",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    },
+    {
+      "id": "dependency-5edbba82cb1649ebb9e3cebf",
+      "language": "typescript",
+      "kind": "external",
+      "name": "web-vitals",
+      "module_path": "web-vitals",
+      "package_path": "web-vitals",
+      "importer_refs": [
+        "importer-3aaccbddd83ecff5b135b05b"
+      ]
+    }
+  ],
+  "coverage": {
+    "state": "complete",
+    "imports_observed": 13,
+    "imports_retained": 13,
+    "omissions": null
+  }
+}

@@ -14,10 +14,8 @@ import (
 )
 
 const (
-	executorContract      = "repomap.llm.execute-json.v1"
-	maxProviderStateBytes = 64 * 1024
-	maxCubeStateBytes     = 64 * 1024
-	hardMaxResponseBytes  = 16 * 1024 * 1024
+	executorContract     = "repomap.llm.execute-json.v1"
+	hardMaxResponseBytes = ProviderResponseByteLimit
 )
 
 // ExecuteJSON prepares one exact request, attempts a fully revalidated cache
@@ -81,10 +79,6 @@ func ExecuteJSON[T any](
 	if len(call.State) == 0 {
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailurePrepare, outcome.Issues)
 		return outcome, errors.New("llm: cube state is empty while cache is enabled")
-	}
-	if len(call.State) > maxCubeStateBytes {
-		outcome.Issues = observeFailure(executor.Observer, outcome, FailurePrepare, outcome.Issues)
-		return outcome, fmt.Errorf("llm: cube state exceeds %d bytes", maxCubeStateBytes)
 	}
 	cacheKey := executionCacheKey(providerState, call.State, request)
 	outcome.CacheKey = cacheKey
@@ -167,7 +161,7 @@ func ExecuteJSONBatch[T any](
 			if isProviderOverload(err) {
 				gate.collapse()
 			}
-			return outcomes, fmt.Errorf("llm: batch item %d: %w", index, err)
+			return outcomes, &BatchItemError{Index: index, Err: err}
 		}
 	}
 	return outcomes, nil
@@ -349,7 +343,7 @@ func executeJSONBatchParallel[T any](
 		}
 	}
 	if index, err := recorder.first(); err != nil {
-		return outcomes, fmt.Errorf("llm: batch item %d: %w", index, err)
+		return outcomes, &BatchItemError{Index: index, Err: err}
 	}
 	return outcomes, nil
 }
@@ -507,9 +501,6 @@ func decodeAcceptedJSON[T any](decodeValidate DecodeValidate[T], raw []byte) (T,
 func canonicalProviderState(raw []byte) ([]byte, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("llm: provider state is empty")
-	}
-	if len(raw) > maxProviderStateBytes {
-		return nil, fmt.Errorf("llm: provider state exceeds %d bytes", maxProviderStateBytes)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()

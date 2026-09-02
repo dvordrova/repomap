@@ -5,12 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dvordrova/repomap/internal/dependencies"
+	"github.com/dvordrova/repomap/internal/reporead"
 )
 
 func loadForHost(ctx context.Context, repoPath string, files []string) (*Facts, error) {
@@ -21,6 +26,56 @@ func TestLoadWithOptionsRequiresResolvedGoTarget(t *testing.T) {
 	_, err := LoadWithOptions(context.Background(), t.TempDir(), nil, LoadOptions{})
 	if err == nil || !strings.Contains(err.Error(), "resolved Go target is required") {
 		t.Fatalf("missing target error = %v", err)
+	}
+}
+
+func TestBuildPackageOriginsUsesEveryGoListDepsRow(t *testing.T) {
+	loads := []dependencyPackageLoad{
+		{packages: []goListPackage{
+			{ImportPath: "example.com/app", Name: "app"},
+			{ImportPath: "net/http", Name: "http", DepOnly: true, Standard: true},
+			{ImportPath: "example.com/dependency/client", Name: "client", DepOnly: true},
+		}},
+		{packages: []goListPackage{
+			{ImportPath: "net/http", Name: "http", DepOnly: true, Standard: true},
+		}},
+	}
+	got, err := buildPackageOrigins(loads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []PackageOrigin{
+		{PackagePath: "example.com/app"},
+		{PackagePath: "example.com/dependency/client"},
+		{PackagePath: "net/http", Standard: true},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("package origins = %#v, want %#v", got, want)
+	}
+	if err := ValidatePackageOrigins(got); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildPackageOriginsRejectsConflictingStandardAuthority(t *testing.T) {
+	_, err := buildPackageOrigins([]dependencyPackageLoad{
+		{packages: []goListPackage{{ImportPath: "example.com/shared", DepOnly: true}}},
+		{packages: []goListPackage{{ImportPath: "example.com/shared", DepOnly: true, Standard: true}}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "conflicting standard authority") {
+		t.Fatalf("conflicting origin error = %v", err)
+	}
+}
+
+func TestValidatePackageOriginsRejectsNonCanonicalAuthority(t *testing.T) {
+	for _, values := range [][]PackageOrigin{
+		{{PackagePath: " net/http", Standard: true}},
+		{{PackagePath: "net/http", Standard: true}, {PackagePath: "bytes", Standard: true}},
+		{{PackagePath: "net/http", Standard: true}, {PackagePath: "net/http", Standard: true}},
+	} {
+		if err := ValidatePackageOrigins(values); err == nil {
+			t.Fatalf("invalid package origins were accepted: %#v", values)
+		}
 	}
 }
 
@@ -66,6 +121,21 @@ func TestLoadCollectsEveryModuleWithoutADegradedPackageCap(t *testing.T) {
 		if _, ok := retained[want]; !ok {
 			t.Fatalf("fair selection omitted exact entry package %q: %#v", want, facts.Packages)
 		}
+	}
+	origins := make(map[string]bool, len(facts.PackageOrigins))
+	for _, origin := range facts.PackageOrigins {
+		origins[origin.PackagePath] = origin.Standard
+	}
+	for _, packagePath := range []string{"example.com/a/cmd/a", "example.com/a/lib", "example.com/z/cmd/z", "example.com/z/lib"} {
+		if standard, ok := origins[packagePath]; !ok || standard {
+			t.Fatalf("workspace package origin %q = %v/%v", packagePath, standard, ok)
+		}
+	}
+	if standard, ok := origins["runtime"]; !ok || !standard {
+		t.Fatalf("standard dependency-only package origin runtime = %v/%v", standard, ok)
+	}
+	if err := ValidatePackageOrigins(facts.PackageOrigins); err != nil {
+		t.Fatal(err)
 	}
 	if facts.Coverage.State != CoverageComplete || facts.Coverage.ModulesDiscovered != 2 ||
 		facts.Coverage.ModulesAvailable != 2 || facts.Coverage.ModulesUnavailable != 0 ||
@@ -132,6 +202,76 @@ func TestLoadWithOptionsUsesOneLinuxTargetForBuildSelectedFiles(t *testing.T) {
 		!hasPackageDeclaration(facts.Packages[0].Declarations, PackageDeclarationFunc, "linuxOnly", "") ||
 		hasPackageDeclaration(facts.Packages[0].Declarations, PackageDeclarationFunc, "darwinOnly", "") {
 		t.Fatalf("linux package declarations = %#v", facts.Packages)
+	}
+}
+
+func TestLoadWithOptionsAppliesCanonicalBuildTagsToPackageFacts(t *testing.T) {
+	repo := t.TempDir()
+	files := map[string]string{
+		"go.mod":     "module example.com/tags\n\ngo 1.24\n",
+		"main.go":    "package main\n\nfunc main() {}\n",
+		"feature.go": "//go:build integration\n\npackage main\n\nfunc integrationOnly() {}\n",
+	}
+	fileList := make([]string, 0, len(files))
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fileList = append(fileList, name)
+	}
+	facts, err := LoadWithOptions(
+		context.Background(), repo, fileList,
+		LoadOptions{
+			GoTarget:  runtime.GOOS + "/" + runtime.GOARCH,
+			BuildTags: []string{"integration", "integration"},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.Packages) != 1 ||
+		!containsString(facts.Packages[0].Files, "feature.go") ||
+		!hasPackageDeclaration(
+			facts.Packages[0].Declarations,
+			PackageDeclarationFunc,
+			"integrationOnly",
+			"",
+		) {
+		t.Fatalf("tag-selected package facts = %#v", facts.Packages)
+	}
+}
+
+func TestLoadWithOptionsEmptyBuildTagsOverrideAmbientGOFLAGS(t *testing.T) {
+	t.Setenv("GOFLAGS", "-tags=ambient")
+	repo := t.TempDir()
+	files := map[string]string{
+		"go.mod":     "module example.com/no-ambient-tags\n\ngo 1.24\n",
+		"main.go":    "package main\n\nfunc main() {}\n",
+		"ambient.go": "//go:build ambient\n\npackage main\n\nfunc ambientOnly() {}\n",
+	}
+	fileList := make([]string, 0, len(files))
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fileList = append(fileList, name)
+	}
+	facts, err := LoadWithOptions(
+		context.Background(), repo, fileList,
+		LoadOptions{GoTarget: runtime.GOOS + "/" + runtime.GOARCH},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.Packages) != 1 ||
+		containsString(facts.Packages[0].Files, "ambient.go") ||
+		hasPackageDeclaration(
+			facts.Packages[0].Declarations,
+			PackageDeclarationFunc,
+			"ambientOnly",
+			"",
+		) {
+		t.Fatalf("ambient GOFLAGS changed empty-tag facts = %#v", facts.Packages)
 	}
 }
 
@@ -714,6 +854,23 @@ func TestBuildEntrypoints(t *testing.T) {
 	}
 }
 
+func TestBuildEntrypointsUsesCanonicalOriginalGoAndCgoFiles(t *testing.T) {
+	pkgs := []goListPackage{{
+		ImportPath: "example.com/cgoapp", Dir: "/repo", Name: "main",
+		GoFiles:         []string{"tools.go", "hypr.go", "shared.go"},
+		CgoFiles:        []string{"main.go", "shared.go"},
+		CompiledGoFiles: []string{"/tmp/go-build/_cgo_gotypes.go"},
+	}}
+	eps := buildEntrypointCandidates(pkgs, "/repo", "/repo", ".", "example.com/cgoapp")
+	if len(eps) != 1 {
+		t.Fatalf("entrypoints = %#v", eps)
+	}
+	want := []string{"hypr.go", "main.go", "shared.go", "tools.go"}
+	if !slices.Equal(eps[0].GoFiles, want) {
+		t.Fatalf("build-selected original Go files = %v, want %v", eps[0].GoFiles, want)
+	}
+}
+
 func TestBuildEntrypointsSubModule(t *testing.T) {
 	pkgs := []goListPackage{
 		{ImportPath: "go.etcd.io/etcd/etcdctl/v3/ctlv3/command", Dir: "/repo/etcdctl/ctlv3/command", Name: "main", GoFiles: []string{"command.go"}, Module: &goListModule{Path: "go.etcd.io/etcd/etcdctl/v3"}},
@@ -794,13 +951,17 @@ func TestBuildEntrypointsNoModule(t *testing.T) {
 }
 
 func TestBuildInternalEdges(t *testing.T) {
-	pkgs := []goListPackage{
-		{ImportPath: "example.com/cmd/app", Name: "main", Imports: []string{"example.com/lib"}},
-		{ImportPath: "example.com/lib", Name: "lib", Imports: []string{"fmt"}},
-		{ImportPath: "example.com/util", Name: "util", Imports: []string{"example.com/lib"}},
+	catalog := dependencies.Catalog{
+		Importers: []dependencies.Importer{
+			{Ref: "app", PackagePath: "example.com/cmd/app"},
+			{Ref: "util", PackagePath: "example.com/util"},
+		},
+		Dependencies: []dependencies.Dependency{{
+			Kind: dependencies.KindWorkspace, PackagePath: "example.com/lib",
+			ImporterRefs: []string{"app", "util"},
+		}},
 	}
-	known := buildKnownSet(pkgs)
-	edges := buildInternalEdges(pkgs, known)
+	edges := buildInternalEdges(catalog)
 
 	if len(edges) != 2 {
 		t.Fatalf("internal edges = %d, want 2: %+v", len(edges), edges)
@@ -820,25 +981,29 @@ func TestBuildInternalEdges(t *testing.T) {
 }
 
 func TestBuildInternalEdgesNone(t *testing.T) {
-	pkgs := []goListPackage{
-		{ImportPath: "example.com/a", Name: "a", Imports: []string{"strings", "os"}},
-		{ImportPath: "example.com/b", Name: "b", Imports: []string{"fmt"}},
+	catalog := dependencies.Catalog{
+		Importers: []dependencies.Importer{{Ref: "app", PackagePath: "example.com/a"}},
+		Dependencies: []dependencies.Dependency{{
+			Kind: dependencies.KindExternal, PackagePath: "example.com/lib",
+			ImporterRefs: []string{"app"},
+		}},
 	}
-	known := buildKnownSet(pkgs)
-	edges := buildInternalEdges(pkgs, known)
+	edges := buildInternalEdges(catalog)
 	if len(edges) != 0 {
 		t.Fatalf("internal edges = %d, want 0", len(edges))
 	}
 }
 
 func TestBuildExternalImports(t *testing.T) {
-	pkgs := []goListPackage{
-		{ImportPath: "example.com/a", Name: "a", Imports: []string{"fmt", "os", "example.com/b"}},
-		{ImportPath: "example.com/b", Name: "b", Imports: []string{"fmt", "io"}},
-		{ImportPath: "example.com/c", Name: "c", Imports: []string{"fmt"}},
+	catalog := dependencies.Catalog{
+		Dependencies: []dependencies.Dependency{
+			{Kind: dependencies.KindStdlib, PackagePath: "fmt", ImporterRefs: []string{"a", "b", "c"}},
+			{Kind: dependencies.KindStdlib, PackagePath: "io", ImporterRefs: []string{"b"}},
+			{Kind: dependencies.KindStdlib, PackagePath: "os", ImporterRefs: []string{"a"}},
+			{Kind: dependencies.KindWorkspace, PackagePath: "example.com/b", ImporterRefs: []string{"a"}},
+		},
 	}
-	known := buildKnownSet(pkgs)
-	ext := buildExternalImports(pkgs, known)
+	ext := buildExternalImports(catalog)
 
 	for _, x := range ext {
 		if x.ImportPath == "example.com/b" {
@@ -856,17 +1021,97 @@ func TestBuildExternalImports(t *testing.T) {
 }
 
 func TestBuildExternalImportsDedup(t *testing.T) {
-	pkgs := []goListPackage{
-		{ImportPath: "example.com/a", Name: "a", Imports: []string{"fmt", "fmt"}},
-		{ImportPath: "example.com/b", Name: "b", Imports: []string{"fmt"}},
+	catalog := dependencies.Catalog{
+		Dependencies: []dependencies.Dependency{{
+			Kind: dependencies.KindStdlib, PackagePath: "fmt",
+			ImporterRefs: []string{"a", "a", "b"},
+		}},
 	}
-	known := buildKnownSet(pkgs)
-	ext := buildExternalImports(pkgs, known)
+	ext := buildExternalImports(catalog)
 
 	if len(ext) != 1 {
 		t.Fatalf("external imports = %d, want 1", len(ext))
 	}
 	if ext[0].UsedByCount != 2 {
 		t.Fatalf("fmt used_by_count = %d, want 2", ext[0].UsedByCount)
+	}
+}
+
+func TestBuildExternalImportsRetainsRowsPastUsualSize(t *testing.T) {
+	rows := make([]dependencies.Dependency, 0, advisoryExternalImportSummaries+1)
+	for index := 0; index <= advisoryExternalImportSummaries; index++ {
+		rows = append(rows, dependencies.Dependency{
+			Kind: dependencies.KindExternal, PackagePath: fmt.Sprintf("example.com/dependency/%03d", index),
+			ImporterRefs: []string{"app"},
+		})
+	}
+	got := buildExternalImports(dependencies.Catalog{Dependencies: rows})
+	if len(got) != advisoryExternalImportSummaries+1 {
+		t.Fatalf("external imports = %d, want %d retained", len(got), advisoryExternalImportSummaries+1)
+	}
+}
+
+func TestVerifyModuleGoModReadsPastUsualSize(t *testing.T) {
+	repo := t.TempDir()
+	content := "module example.com/large\n\n" + strings.Repeat("// retained\n", advisoryGoModBytes/len("// retained\n")+2)
+	if len(content) <= advisoryGoModBytes {
+		t.Fatalf("fixture = %d bytes", len(content))
+	}
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := reporead.New(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	got, err := verifyModuleGoMod(reader, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != len(content) {
+		t.Fatalf("go.mod bytes = %d, want %d", got, len(content))
+	}
+}
+
+func TestScaleWarningsAreDiagnosticOnlyAndIgnoreOtherWarnings(t *testing.T) {
+	facts := &Facts{Warnings: []string{
+		"package unavailable",
+		scaleWarning("retained all 51 external import summaries; usual size is 50"),
+	}}
+	got := ScaleWarnings(facts)
+	if len(got) != 1 || got[0] != "retained all 51 external import summaries; usual size is 50" {
+		t.Fatalf("scale warnings = %v", got)
+	}
+	if got := ScaleWarnings(nil); got != nil {
+		t.Fatalf("nil facts warnings = %v", got)
+	}
+}
+
+func TestDependencySummariesKeepSameImportPathExternalToNestedModule(t *testing.T) {
+	catalog := dependencies.Catalog{
+		Importers: []dependencies.Importer{
+			{Ref: "root", PackagePath: "example.com/product/middleware"},
+			{Ref: "nested", PackagePath: "example.com/example"},
+		},
+		Dependencies: []dependencies.Dependency{
+			{
+				Kind: dependencies.KindWorkspace, PackagePath: "example.com/product",
+				ImporterRefs: []string{"root"},
+			},
+			{
+				Kind: dependencies.KindExternal, ModulePath: "example.com/product", ModuleVersion: "v1.0.0",
+				PackagePath: "example.com/product", ImporterRefs: []string{"nested"},
+			},
+		},
+	}
+
+	edges := buildInternalEdges(catalog)
+	if len(edges) != 1 || edges[0] != (Edge{From: "example.com/product/middleware", To: "example.com/product"}) {
+		t.Fatalf("resolved internal edges = %#v", edges)
+	}
+	external := buildExternalImports(catalog)
+	if len(external) != 1 || external[0] != (ExtImport{ImportPath: "example.com/product", UsedByCount: 1}) {
+		t.Fatalf("resolved external imports = %#v", external)
 	}
 }

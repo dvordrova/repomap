@@ -1,0 +1,275 @@
+{
+  "version": 1,
+  "importers": [
+    {
+      "ref": "importer-07db04f684638fd827c123a0",
+      "language": "python",
+      "name": "main",
+      "module_path": "main",
+      "package_path": "main",
+      "repository_path": "backend"
+    },
+    {
+      "ref": "importer-249b16a81afa44b6eab13e4b",
+      "language": "python",
+      "name": "app.app",
+      "module_path": "app",
+      "package_path": "app.app",
+      "repository_path": "backend/app"
+    },
+    {
+      "ref": "importer-87810ff61e4e92aef3b5cbac",
+      "language": "python",
+      "name": "app.award",
+      "module_path": "app",
+      "package_path": "app.award",
+      "repository_path": "backend/app"
+    },
+    {
+      "ref": "importer-a4f93cd1d96a51a2e792fbfe",
+      "language": "python",
+      "name": "app.field",
+      "module_path": "app",
+      "package_path": "app.field",
+      "repository_path": "backend/app"
+    },
+    {
+      "ref": "importer-c35f00bc67d434d99eb044bd",
+      "language": "python",
+      "name": "app.models",
+      "module_path": "app",
+      "package_path": "app.models",
+      "repository_path": "backend/app"
+    },
+    {
+      "ref": "importer-80fade700cf7f262a3ba955a",
+      "language": "python",
+      "name": "app.robot",
+      "module_path": "app",
+      "package_path": "app.robot",
+      "repository_path": "backend/app"
+    },
+    {
+      "ref": "importer-0079ed79e0161e66b7d676d0",
+      "language": "python",
+      "name": "app.settings",
+      "module_path": "app",
+      "package_path": "app.settings",
+      "repository_path": "backend/app"
+    },
+    {
+      "ref": "importer-a99d64e4f4d074cef8ed9b90",
+      "language": "python",
+      "name": "app.utils",
+      "module_path": "app",
+      "package_path": "app.utils",
+      "repository_path": "backend/app"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "dependency-face48993f35c38f85968f53",
+      "language": "python",
+      "kind": "workspace",
+      "name": "app.app",
+      "module_path": "app",
+      "package_path": "app.app",
+      "repository_path": "backend/app",
+      "importer_refs": [
+        "importer-07db04f684638fd827c123a0"
+      ]
+    },
+    {
+      "id": "dependency-435c24646a0b9741ccae3fd0",
+      "language": "python",
+      "kind": "workspace",
+      "name": "app.award",
+      "module_path": "app",
+      "package_path": "app.award",
+      "repository_path": "backend/app",
+      "importer_refs": [
+        "importer-249b16a81afa44b6eab13e4b",
+        "importer-a4f93cd1d96a51a2e792fbfe"
+      ]
+    },
+    {
+      "id": "dependency-cb4e2c57e09c86e63c52c425",
+      "language": "python",
+      "kind": "workspace",
+      "name": "app.field",
+      "module_path": "app",
+      "package_path": "app.field",
+      "repository_path": "backend/app",
+      "importer_refs": [
+        "importer-249b16a81afa44b6eab13e4b"
+      ]
+    },
+    {
+      "id": "dependency-66a5e7aba5778bc5fe583b8d",
+      "language": "python",
+      "kind": "workspace",
+      "name": "app.levels",
+      "module_path": "app",
+      "package_path": "app.levels",
+      "repository_path": "backend/app",
+      "importer_refs": [
+        "importer-249b16a81afa44b6eab13e4b"
+      ]
+    },
+    {
+      "id": "dependency-7fe50ba6e5446be162f4254b",
+      "language": "python",
+      "kind": "workspace",
+      "name": "app.models",
+      "module_path": "app",
+      "package_path": "app.models",
+      "repository_path": "backend/app",
+      "importer_refs": [
+        "importer-249b16a81afa44b6eab13e4b"
+      ]
+    },
+    {
+      "id": "dependency-b14fa220adaebc3e09c975a0",
+      "language": "python",
+      "kind": "workspace",
+      "name": "app.robot",
+      "module_path": "app",
+      "package_path": "app.robot",
+      "repository_path": "backend/app",
+      "importer_refs": [
+        "importer-249b16a81afa44b6eab13e4b",
+        "importer-a4f93cd1d96a51a2e792fbfe"
+      ]
+    },
+    {
+      "id": "dependency-6180c815f0f9d7cc24d6b0ea",
+      "language": "python",
+      "kind": "workspace",
+      "name": "app.settings",
+      "module_path": "app",
+      "package_path": "app.settings",
+      "repository_path": "backend/app",
+      "importer_refs": [
+        "importer-07db04f684638fd827c123a0"
+      ]
+    },
+    {
+      "id": "dependency-0bc23240bb590ad9798414e8",
+      "language": "python",
+      "kind": "workspace",
+      "name": "app.utils",
+      "module_path": "app",
+      "package_path": "app.utils",
+      "repository_path": "backend/app",
+      "importer_refs": [
+        "importer-249b16a81afa44b6eab13e4b"
+      ]
+    },
+    {
+      "id": "dependency-6bc7152917422d45a25bd0eb",
+      "language": "python",
+      "kind": "stdlib",
+      "name": "copy",
+      "package_path": "copy",
+      "importer_refs": [
+        "importer-249b16a81afa44b6eab13e4b",
+        "importer-a4f93cd1d96a51a2e792fbfe"
+      ]
+    },
+    {
+      "id": "dependency-42f6eed56b45f926dc16ce5b",
+      "language": "python",
+      "kind": "stdlib",
+      "name": "dataclasses",
+      "package_path": "dataclasses",
+      "importer_refs": [
+        "importer-80fade700cf7f262a3ba955a",
+        "importer-87810ff61e4e92aef3b5cbac",
+        "importer-a4f93cd1d96a51a2e792fbfe"
+      ]
+    },
+    {
+      "id": "dependency-efe4fc17adb4b2f3b5245a65",
+      "language": "python",
+      "kind": "stdlib",
+      "name": "enum",
+      "package_path": "enum",
+      "importer_refs": [
+        "importer-c35f00bc67d434d99eb044bd"
+      ]
+    },
+    {
+      "id": "dependency-98373747bdc814d31c55f5d7",
+      "language": "python",
+      "kind": "stdlib",
+      "name": "re",
+      "package_path": "re",
+      "importer_refs": [
+        "importer-a99d64e4f4d074cef8ed9b90"
+      ]
+    },
+    {
+      "id": "dependency-21201166bf318986eea24287",
+      "language": "python",
+      "kind": "stdlib",
+      "name": "typing",
+      "package_path": "typing",
+      "importer_refs": [
+        "importer-249b16a81afa44b6eab13e4b",
+        "importer-80fade700cf7f262a3ba955a",
+        "importer-a4f93cd1d96a51a2e792fbfe",
+        "importer-c35f00bc67d434d99eb044bd"
+      ]
+    },
+    {
+      "id": "dependency-fb80df2fad38f89a596d0f29",
+      "language": "python",
+      "kind": "stdlib",
+      "name": "uuid",
+      "package_path": "uuid",
+      "importer_refs": [
+        "importer-80fade700cf7f262a3ba955a"
+      ]
+    },
+    {
+      "id": "dependency-07fd54015895b837435b59b5",
+      "language": "python",
+      "kind": "external",
+      "name": "fastapi",
+      "module_path": "fastapi",
+      "package_path": "fastapi",
+      "importer_refs": [
+        "importer-249b16a81afa44b6eab13e4b"
+      ]
+    },
+    {
+      "id": "dependency-cffd09c03d168be37901b1b9",
+      "language": "python",
+      "kind": "external",
+      "name": "pydantic",
+      "module_path": "pydantic",
+      "package_path": "pydantic",
+      "importer_refs": [
+        "importer-0079ed79e0161e66b7d676d0",
+        "importer-c35f00bc67d434d99eb044bd"
+      ]
+    },
+    {
+      "id": "dependency-6df1a4286f3f620c55cd9e15",
+      "language": "python",
+      "kind": "external",
+      "name": "uvicorn",
+      "module_path": "uvicorn",
+      "package_path": "uvicorn",
+      "importer_refs": [
+        "importer-07db04f684638fd827c123a0"
+      ]
+    }
+  ],
+  "coverage": {
+    "state": "complete",
+    "imports_observed": 26,
+    "imports_retained": 26,
+    "omissions": null
+  }
+}

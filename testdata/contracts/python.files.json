@@ -3,6 +3,10 @@
   "entries": [
     {"id": "f1", "path": "pyproject.toml"},
     {"id": "f2", "path": "src/fixture_app/__init__.py"},
-    {"id": "f3", "path": "src/fixture_app/cli.py"}
+    {"id": "f3", "path": "src/fixture_app/cli.py"},
+    {"id": "f4", "path": "src/fixture_app/events.py"},
+    {"id": "f5", "path": "src/fixture_app/levels.py"},
+    {"id": "f6", "path": "tests/__init__.py"},
+    {"id": "f7", "path": "tests/test_facade.py"}
   ]
 }

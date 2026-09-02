@@ -27,6 +27,18 @@
       "reason": "HTTP server-error class boundary, not a retry-count or time ceiling."
     },
     {
+      "file": "internal/facts/model.go",
+      "expression": "len(value) < 7",
+      "occurrences": 1,
+      "reason": "Shortest abbreviated Git revision accepted when validating a captured revision string; it is a format rule, not a resource ceiling."
+    },
+    {
+      "file": "internal/facts/model.go",
+      "expression": "len(value) > 64",
+      "occurrences": 1,
+      "reason": "Longest Git revision string accepted when validating a captured revision; it is a format rule, not a resource ceiling."
+    },
+    {
       "file": "internal/gofacts/package_declarations.go",
       "expression": "packageDeclarationKindOrder(kind) < 5",
       "occurrences": 1,
@@ -67,749 +79,880 @@
       "expression": "len(remotePath) >= 4",
       "occurrences": 1,
       "reason": "Exact .git suffix grammar width."
-    },
-    {
-      "file": "internal/surfacediscovery/entry_surface_candidates.go",
-      "expression": "len(value) < 24",
-      "occurrences": 1,
-      "reason": "Persistence-sensitive high-entropy minimum heuristic."
-    },
-    {
-      "file": "internal/surfacediscovery/entry_surface_candidates.go",
-      "expression": "total < 24",
-      "occurrences": 1,
-      "reason": "Persistence-sensitive high-entropy minimum heuristic after rune counting."
     }
   ],
   "entries": [
     {
       "file": "cmd/repomap/python_target_runtime.go",
-      "category": "count-bound",
-      "symbols": ["limit", "moduleLimit"]
-    },
-    {
-      "file": "cmd/repomap/semantic_diagnostics.go",
-      "category": "byte-bound",
-      "symbols": ["maxSemanticMetadataBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "limit",
+        "moduleLimit"
+      ],
+      "note": "Invalid explicit --target error formatting shows a deterministic preview plus the exact remaining count; target discovery, resolution, selection, and publication retain the complete catalog."
     },
     {
       "file": "cmd/repomap/target_portfolio_runtime.go",
-      "category": "count-bound",
-      "symbols": ["limit"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "limit"
+      ],
+      "note": "Invalid explicit --target error formatting shows a deterministic preview plus the exact remaining count; the complete target catalog remains authoritative."
     },
     {
-      "file": "internal/activityentrypoint/activityentrypoint.go",
+      "file": "internal/claims/extract.go",
       "category": "byte-bound",
-      "symbols": ["MaxPayloadBytes", "MaxProviderRequestBytes", "MaxResponseBytes"]
+      "symbols": [
+        "MaxSourceBytes"
+      ],
+      "note": "Largest source file scanned for docstrings and marker comments; a larger file is skipped for quoting only and keeps every deterministic fact."
     },
     {
-      "file": "internal/activityentrypoint/activityentrypoint.go",
+      "file": "internal/claims/extract.go",
       "category": "count-bound",
-      "symbols": ["MaxAdvertisedCandidates", "MaxCandidateBatches", "MaxCandidatesPerBatch", "MaxCounterpartsPerRelation", "MaxRelationsPerCandidate", "MaxSelectedEntrypoints", "MaxWitnessesPerRelation"]
+      "symbols": [
+        "DefaultCommitLimit"
+      ],
+      "note": "Default number of recent commit subjects quoted as claims; the caller may raise it and no repository fact is bounded by it."
     },
     {
-      "file": "internal/activityentrypoint/activityentrypoint.go",
-      "category": "token-bound",
-      "symbols": ["MaxOutputTokens"]
+      "file": "internal/claims/model.go",
+      "category": "text-bound",
+      "symbols": [
+        "MaxTextRunes"
+      ],
+      "note": "Longest single quoted claim; longer sources are split into several claims rather than truncated."
     },
     {
-      "file": "internal/activityentrypoint/artifact.go",
+      "file": "internal/claims/readme.go",
       "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes"]
-    },
-    {
-      "file": "internal/activitypath/artifact.go",
-      "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes"]
-    },
-    {
-      "file": "internal/activitypath/model.go",
-      "category": "count-bound",
-      "symbols": ["MaxProjectedTraversalEdges", "MaxRouteSteps", "MaxTotalPathSteps"]
-    },
-    {
-      "file": "internal/activitysurface/activitysurface.go",
-      "category": "token-bound",
-      "symbols": ["maxOutputTokens"]
-    },
-    {
-      "file": "internal/analysistarget/roots.go",
-      "category": "count-bound",
-      "symbols": ["MaxTargetRoots"]
-    },
-    {
-      "file": "internal/coremap/coremap.go",
-      "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes", "MaxPayloadBytes", "MaxRequestBytes", "MaxResponseBytes", "maxNameBytes", "maxPurposeBytes"]
-    },
-    {
-      "file": "internal/coremap/coremap.go",
-      "category": "count-bound",
-      "symbols": ["maxBaselineBlocks", "maxBaselineRoots", "maxChildrenPerBlock", "maxReduceLevels"]
-    },
-    {
-      "file": "internal/coremap/coremap.go",
-      "category": "depth-bound",
-      "symbols": ["MaxBlockDepth"]
-    },
-    {
-      "file": "internal/coremap/coremap.go",
-      "category": "token-bound",
-      "symbols": ["MaxOutputTokens"]
-    },
-    {
-      "file": "internal/coremap/refined_pipeline.go",
-      "category": "byte-bound",
-      "symbols": ["maxRefinedPayloadBytes"]
+      "symbols": [
+        "MaxWholeReadmeBytes"
+      ],
+      "note": "README size below which the whole file is quoted; a larger README is quoted heading by heading instead."
     },
     {
       "file": "internal/corpus/corpus.go",
-      "category": "byte-bound",
-      "symbols": ["MaxReadBytes", "MaxSnapshotBytes"]
-    },
-    {
-      "file": "internal/corpus/corpus.go",
-      "category": "count-bound",
-      "symbols": ["MaxFiles"]
-    },
-    {
-      "file": "internal/cubemap/pipeline.go",
-      "category": "byte-bound",
-      "symbols": ["maxRequestBytes", "maxResponseBytes"]
-    },
-    {
-      "file": "internal/cubemap/pipeline.go",
-      "category": "count-bound",
-      "symbols": ["maxEntrypointCandidates", "maxIntegrationUsageCandidates"]
-    },
-    {
-      "file": "internal/cubemap/pipeline.go",
-      "category": "token-bound",
-      "symbols": ["maxOutputTokens"]
-    },
-    {
-      "file": "internal/cubemap/surface_core_effect_binder.go",
-      "category": "count-bound",
-      "symbols": ["maxSurfaceCoreEffectBindings"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "MaxFiles",
+        "MaxReadBytes",
+        "MaxSnapshotBytes",
+        "MaxVisiblePaths",
+        "ScaleWarningReadBytes",
+        "ScaleWarningSnapshotBytes"
+      ],
+      "note": "Compatibility thresholds and diagnostic kind names only. Corpus catalogs, canonical snapshots, and complete reads retain all valid repository data."
     },
     {
       "file": "internal/debugdump/debugdump.go",
-      "category": "byte-bound",
-      "symbols": ["maxPreservedMetadataBytes", "maxSemanticExchangePayloadSize"]
-    },
-    {
-      "file": "internal/debugdump/debugdump.go",
-      "category": "count-bound",
-      "symbols": ["MaxSemanticAttemptOrdinal", "MaxSemanticExchangeInstanceOrdinal", "MaxSemanticTransportAttempts"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "MaxSemanticAttemptOrdinal",
+        "MaxSemanticExchangeInstanceOrdinal",
+        "MaxSemanticTransportAttempts",
+        "advisoryPreservedMetadataBytes",
+        "maxPreservedMetadataBytes",
+        "maxSemanticExchangePayloadSize"
+      ],
+      "note": "Former diagnostic ordinal and metadata thresholds are warning coordinates, transport attempts are a closed record shape, and journal raw payload storage uses the shared real provider envelope. None changes analysis authority."
     },
     {
       "file": "internal/deepseek/client.go",
       "category": "byte-bound",
-      "symbols": ["maxProviderErrorBytes", "maxProviderResponseBytes"]
+      "symbols": [
+        "maxProviderErrorBytes",
+        "maxProviderResponseBytes"
+      ]
     },
     {
       "file": "internal/deepseek/client.go",
       "category": "count-bound",
-      "symbols": ["maxRetries"]
+      "symbols": [
+        "maxRetries"
+      ]
     },
     {
       "file": "internal/deepseek/client.go",
       "category": "excluded-not-a-limit",
-      "symbols": ["envMaxTokens", "envTimeout", "legacyEnvTimeout"],
+      "symbols": [
+        "envMaxTokens",
+        "envTimeout",
+        "legacyEnvTimeout"
+      ],
       "note": "Environment-variable key names, not numeric bounds."
     },
     {
       "file": "internal/deepseek/client.go",
       "category": "time-bound",
-      "symbols": ["defaultTimeout"]
+      "symbols": [
+        "defaultTimeout"
+      ]
     },
     {
       "file": "internal/deepseek/client.go",
       "category": "token-bound",
-      "symbols": ["defaultMaxTokens"]
+      "symbols": [
+        "defaultMaxTokens"
+      ]
     },
     {
       "file": "internal/deepseek/llm_provider.go",
       "category": "byte-bound",
-      "symbols": ["llmProviderRequestByteLimit"]
+      "symbols": [
+        "llmProviderRequestByteLimit"
+      ]
     },
     {
       "file": "internal/deepseek/resource_limit.go",
       "category": "excluded-not-a-limit",
-      "symbols": ["ResourceLimitOutputTokens", "ResourceLimitRequestBytes", "ResourceLimitResponseBytes"],
+      "symbols": [
+        "ResourceLimitOutputTokens",
+        "ResourceLimitRequestBytes",
+        "ResourceLimitResponseBytes"
+      ],
       "note": "Closed resource-limit kind aliases, not bound values."
     },
     {
       "file": "internal/dependencies/artifact.go",
-      "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes"]
-    },
-    {
-      "file": "internal/dependencydeclaration/model.go",
-      "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes", "MaxSourceBytes", "MaxStringBytes", "MaxTotalBytes"]
-    },
-    {
-      "file": "internal/dependencydeclaration/model.go",
-      "category": "count-bound",
-      "symbols": ["MaxFrontiers", "MaxIncludes", "MaxPackages", "MaxSources", "MaxStatementExtras", "MaxStatements"]
-    },
-    {
-      "file": "internal/entrycall/model.go",
-      "category": "byte-bound",
-      "symbols": ["MaxRequestBytes", "MaxResponseBytes"]
-    },
-    {
-      "file": "internal/entrycall/model.go",
-      "category": "count-bound",
-      "symbols": ["MaxRawSurfaceCandidates", "MaxRawSurfaceFactsPerCandidate"]
-    },
-    {
-      "file": "internal/entrycall/model.go",
       "category": "excluded-not-a-limit",
-      "symbols": ["ClosedIndexLimit"],
-      "note": "Closed outcome reason value, not a configured ceiling."
+      "symbols": [
+        "AdvisoryArtifactBytes",
+        "MaxArtifactBytes"
+      ],
+      "note": "Warning-only former catalog threshold plus the zero unbounded-reader sentinel; complete dependency authority is retained."
     },
     {
-      "file": "internal/entrycall/response.go",
-      "category": "count-bound",
-      "symbols": ["MaxCLIResponseBindings", "MaxHTTPResponseBindings", "MaxResponseBindings", "MaxScheduledResponseBindings"]
+      "file": "internal/dependencies/scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ScaleWarningArtifactBytes"
+      ],
+      "note": "Diagnostic warning kind over the complete dependency artifact."
     },
     {
-      "file": "internal/entrycall/surface.go",
+      "file": "internal/dependencydeclaration/model.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryResultBytes",
+        "AdvisorySourceBytes",
+        "AdvisoryStringBytes",
+        "AdvisoryTotalBytes"
+      ],
+      "note": "Warning-only usual sizes over the complete sealed in-memory declaration result; none authorizes truncation or rejection."
+    },
+    {
+      "file": "internal/dependencydeclaration/scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ScaleWarningResultBytes",
+        "ScaleWarningSourceBytes",
+        "ScaleWarningStringBytes",
+        "ScaleWarningTotalBytes"
+      ],
+      "note": "Diagnostic kind names for warning-only former per-source, per-string, and aggregate source-byte thresholds."
+    },
+    {
+      "file": "internal/documentationreduce/run.go",
+      "category": "token-bound",
+      "symbols": [
+        "maxOutputTokens"
+      ]
+    },
+    {
+      "file": "internal/experiments/clientrecipe/contracts.go",
       "category": "byte-bound",
-      "symbols": ["MaxProviderRequestBytes", "MaxSurfaceCandidateSectionBytes"]
+      "symbols": [
+        "maxContractBytes",
+        "maxIDBytes",
+        "maxTextBytes"
+      ]
     },
     {
-      "file": "internal/entrycall/surface.go",
-      "category": "count-bound",
-      "symbols": ["MaxSelectedSurfaceProposals", "MaxSurfaceCandidates", "MaxSurfaceFacts", "MaxSurfaceFactsPerCandidate"]
+      "file": "internal/experiments/clientrecipe/evaluation.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "criticalFalsePositiveLimit",
+        "perfectScoreLimit",
+        "roleCoverageLimit"
+      ],
+      "note": "Test-only experiment quality threshold, not a production resource ceiling."
     },
     {
-      "file": "internal/entrycall/surface.go",
+      "file": "internal/experiments/clientrecipe/go_authority.go",
+      "category": "byte-bound",
+      "symbols": [
+        "maxSourceClassificationPrefixBytes"
+      ]
+    },
+    {
+      "file": "internal/experiments/clientrecipe/h2.go",
+      "category": "byte-bound",
+      "symbols": [
+        "maxH2ResponseBytes"
+      ]
+    },
+    {
+      "file": "internal/facts/negatives.go",
+      "category": "byte-bound",
+      "symbols": [
+        "ReadmeMinBytes"
+      ],
+      "note": "README size below which the report states the repository has no real README; it is the definition of that negative, not a resource ceiling."
+    },
+    {
+      "file": "internal/facts/source.go",
+      "category": "byte-bound",
+      "symbols": [
+        "binaryProbeBytes"
+      ],
+      "note": "Prefix inspected to decide whether a tracked file is text before it is scanned for grep-able facts."
+    },
+    {
+      "file": "internal/facts/source.go",
       "category": "text-bound",
-      "symbols": ["MaxSurfaceFactLabelRunes", "MaxSurfaceFactValueRunes", "MaxSurfaceSketchRunes"]
+      "symbols": [
+        "textMaxRunes"
+      ],
+      "note": "Longest source line quoted beside an anchored fact; the anchor keeps the complete line reachable."
     },
     {
-      "file": "internal/freshness/inputs.go",
+      "file": "internal/facts/todo.go",
       "category": "byte-bound",
-      "symbols": ["maxCapturedInputBytes"]
-    },
-    {
-      "file": "internal/gocoreobject/index.go",
-      "category": "byte-bound",
-      "symbols": ["MaxIndexBytes", "MaxTextBytes"]
-    },
-    {
-      "file": "internal/gocoreobject/index.go",
-      "category": "count-bound",
-      "symbols": ["MaxCallables", "MaxPackages", "MaxTypes"]
-    },
-    {
-      "file": "internal/godynamichandoff/index.go",
-      "category": "byte-bound",
-      "symbols": ["MaxTextBytes"]
-    },
-    {
-      "file": "internal/godynamichandoff/index.go",
-      "category": "count-bound",
-      "symbols": ["MaxCandidates", "MaxCandidatesPerHandoff", "MaxFunctions", "MaxHandoffs", "MaxObservedHandoffs"]
+      "symbols": [
+        "todoScanMaxBytes"
+      ],
+      "note": "Largest file scanned for TODO markers; skipping one oversized file removes no other fact."
     },
     {
       "file": "internal/gofacts/entrypoints.go",
-      "category": "byte-bound",
-      "symbols": ["maxEntrypointFileBytes", "maxEntrypointPackageBytes"]
-    },
-    {
-      "file": "internal/gofacts/entrypoints.go",
-      "category": "count-bound",
-      "symbols": ["maxEntrypointFilesPerPackage"]
-    },
-    {
-      "file": "internal/gofacts/gofacts.go",
-      "category": "byte-bound",
-      "symbols": ["maxGoModBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "advisoryEntrypointFileBytes",
+        "advisoryEntrypointPackageBytes"
+      ],
+      "note": "Warning-only usual sizes; no build-selected entrypoint file is sliced and every source file is read through the shared emergency envelope."
     },
     {
       "file": "internal/gofacts/gofacts.go",
-      "category": "count-bound",
-      "symbols": ["maxExternalImportSummaries"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "advisoryGoModBytes"
+      ],
+      "note": "Warning-only usual sizes; every external import summary is retained and go.mod is read through the shared emergency envelope."
     },
     {
       "file": "internal/gofacts/package_declarations.go",
-      "category": "byte-bound",
-      "symbols": ["maxPackageDeclarationFileBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "advisoryPackageDeclarationFileBytes"
+      ],
+      "note": "Warning-only usual size; declaration files are read through the shared emergency envelope."
     },
     {
-      "file": "internal/integrationdependency/artifact.go",
-      "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes"]
-    },
-    {
-      "file": "internal/integrationdependency/classifier.go",
-      "category": "byte-bound",
-      "symbols": ["maxRequestBytes", "maxResponseBytes", "maxSerializedUserBytes"]
-    },
-    {
-      "file": "internal/integrationdependency/classifier.go",
-      "category": "count-bound",
-      "symbols": ["MaxAdvertisedDeclaredPackages", "MaxAdvertisedDependencies", "MaxAdvertisedImporters", "MaxDependencyBatches", "MaxSelectedCandidates", "MaxSelectedDeclaredPackages", "MaxSelectedDependencies"]
-    },
-    {
-      "file": "internal/integrationdependency/classifier.go",
-      "category": "token-bound",
-      "symbols": ["maxOutputTokens"]
-    },
-    {
-      "file": "internal/integrationusage/artifact.go",
-      "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes"]
-    },
-    {
-      "file": "internal/integrationusage/classifier.go",
-      "category": "byte-bound",
-      "symbols": ["MaxLabelBytes", "MaxMechanismBytes", "maxRequestBytes", "maxResponseBytes"]
-    },
-    {
-      "file": "internal/integrationusage/classifier.go",
-      "category": "count-bound",
-      "symbols": ["MaxAdvertisedOperationsPerRequest", "MaxSelectedUsesPerRequest"]
-    },
-    {
-      "file": "internal/integrationusage/classifier.go",
-      "category": "token-bound",
-      "symbols": ["maxOutputTokens"]
+      "file": "internal/gotarget/target.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryBuildTagBytes",
+        "AdvisoryMaximumBuildTags"
+      ],
+      "note": "Ordinary-console warning thresholds over the complete validated build-tag set; no tag is truncated or rejected for scale."
     },
     {
       "file": "internal/jstsproject/discover.go",
-      "category": "byte-bound",
-      "symbols": ["maxHelperDiagnosticBytes", "maxHelperOutput", "maxHelperStderrBytes", "maxManifestBytes"]
-    },
-    {
-      "file": "internal/jstsproject/helper.mjs",
-      "category": "byte-bound",
-      "symbols": ["MAX_CONFIG_BYTES", "MAX_INPUT_BYTES"]
-    },
-    {
-      "file": "internal/jstsproject/helper.mjs",
-      "category": "count-bound",
-      "symbols": ["MAX_PROJECT_CONFIGS"]
-    },
-    {
-      "file": "internal/jstsproject/helper.mjs",
-      "category": "depth-bound",
-      "symbols": ["MAX_PROJECT_REFERENCE_DEPTH"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxHelperDiagnosticBytes",
+        "maxHelperStderrBytes"
+      ],
+      "note": "Bounds only sanitized stderr and failure prose after the Node helper has failed; successful stdout authority is read completely."
     },
     {
       "file": "internal/jstsproject/helper.mjs",
       "category": "excluded-not-a-limit",
-      "symbols": ["MAX_NPM_SCOPED_PACKAGE_PARTS", "bytes"],
+      "symbols": [
+        "MAX_NPM_SCOPED_PACKAGE_PARTS",
+        "bytes"
+      ],
       "note": "Local byte buffer name and exact npm scoped-name grammar width; neither declares a resource ceiling."
     },
     {
-      "file": "internal/jstsproject/helper.mjs",
-      "category": "text-bound",
-      "symbols": ["MAX_EXPRESSION_TEXT_CHARS", "MAX_EXTERNAL_PART_CHARS", "MAX_SIGNATURE_TEXT_CHARS", "MAX_STABLE_ID_PART_CHARS"]
+      "file": "internal/jstsproject/model.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryResultBytes"
+      ],
+      "note": "Warning-only former result-size threshold; complete in-memory JS/TS project authority is retained."
     },
     {
-      "file": "internal/jstsproject/model.go",
-      "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes", "maxPackageBinaryCommandBytes"]
+      "file": "internal/jstsproject/scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ScaleWarningResultBytes"
+      ],
+      "note": "Diagnostic warning kind over the complete in-memory JS/TS project result."
     },
     {
       "file": "internal/llm/api.go",
       "category": "excluded-not-a-limit",
-      "symbols": ["ProviderFailureTimeout"],
+      "symbols": [
+        "ProviderFailureTimeout"
+      ],
       "note": "Closed provider-failure diagnostic enum value, not a duration or resource ceiling."
     },
     {
       "file": "internal/llm/cache.go",
       "category": "byte-bound",
-      "symbols": ["maxCacheRecordBytes"]
+      "symbols": [
+        "maxCacheRecordBytes"
+      ]
     },
     {
       "file": "internal/llm/execute.go",
       "category": "byte-bound",
-      "symbols": ["hardMaxResponseBytes", "maxCubeStateBytes", "maxProviderStateBytes"]
+      "symbols": [
+        "hardMaxResponseBytes"
+      ]
     },
     {
       "file": "internal/llm/resource_limit.go",
       "category": "byte-bound",
-      "symbols": ["ProviderResponseByteLimit", "SemanticRecordByteLimit"]
+      "symbols": [
+        "ProviderResponseByteLimit",
+        "SemanticRecordByteLimit"
+      ]
     },
     {
       "file": "internal/llm/resource_limit.go",
       "category": "excluded-not-a-limit",
-      "symbols": ["ResourceLimitCatalogItems", "ResourceLimitOutputTokens", "ResourceLimitRecordBytes", "ResourceLimitRequestBytes", "ResourceLimitResponseBytes", "ResourceLimitSemanticCalls"],
+      "symbols": [
+        "ResourceLimitCatalogItems",
+        "ResourceLimitOutputTokens",
+        "ResourceLimitRecordBytes",
+        "ResourceLimitRequestBytes",
+        "ResourceLimitResponseBytes",
+        "ResourceLimitSemanticCalls"
+      ],
       "note": "Closed resource-limit kind aliases, not bound values."
     },
     {
-      "file": "internal/orient/orient.go",
+      "file": "internal/orientation/model.go",
       "category": "text-bound",
-      "symbols": ["maxRunes"]
+      "symbols": [
+        "MaxSentenceRunes"
+      ],
+      "note": "Longest model sentence accepted; a longer row is rejected and recorded rather than trimmed."
+    },
+    {
+      "file": "internal/orientation/request.go",
+      "category": "count-bound",
+      "symbols": [
+        "MaxAdvertisedGroupMembers"
+      ],
+      "note": "Group members advertised to the model in one request; the real member count travels beside them and every member stays in the sealed graph."
+    },
+    {
+      "file": "internal/orientation/request.go",
+      "category": "text-bound",
+      "symbols": [
+        "MaxRequestClaimRunes"
+      ],
+      "note": "Claim text length sent to the model; the persisted claim keeps its complete quote."
+    },
+    {
+      "file": "internal/orientation/run.go",
+      "category": "token-bound",
+      "symbols": [
+        "maxOutputTokens"
+      ],
+      "note": "Requested provider output ceiling for the orientation stage; a lower configured provider ceiling stays authoritative."
+    },
+    {
+      "file": "internal/programcategorization/batch.go",
+      "category": "byte-bound",
+      "symbols": [
+        "MaxRequestBytes",
+        "MaxResponseBytes"
+      ]
+    },
+    {
+      "file": "internal/programcategorization/model.go",
+      "category": "token-bound",
+      "symbols": [
+        "maxOutputTokens"
+      ]
     },
     {
       "file": "internal/programindex/artifact_set.go",
       "category": "byte-bound",
-      "symbols": ["MaxArtifactSetBytes", "MaxArtifactSetFilenameBytes"]
+      "symbols": [
+        "MaxArtifactSetFilenameBytes"
+      ]
     },
     {
       "file": "internal/programindex/artifact_set.go",
-      "category": "count-bound",
-      "symbols": ["MaxArtifactSetEntries"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryArtifactSetBytes",
+        "MaxArtifactSetBytes"
+      ],
+      "note": "Warning-only former artifact-set byte threshold plus the zero unbounded-reader sentinel; the one exact page-local entry is sealed."
+    },
+    {
+      "file": "internal/programindex/artifact_set_scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ArtifactSetScaleWarningBytes"
+      ],
+      "note": "Diagnostic warning kind over the complete ProgramIndex artifact set."
     },
     {
       "file": "internal/programindex/index.go",
-      "category": "byte-bound",
-      "symbols": ["MaxAggregateTextBytes", "MaxIndexBytes", "MaxTextBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryAggregateTextBytes",
+        "AdvisoryIndexBytes",
+        "MaxAggregateTextBytes",
+        "MaxArgumentsPerPattern",
+        "MaxIndexBytes",
+        "MaxObjects",
+        "MaxObjectsPerPatternRef",
+        "MaxObservedCount",
+        "MaxPatternArguments",
+        "MaxPatternParts",
+        "MaxPatterns",
+        "MaxPatternsPerRelation",
+        "MaxRelations",
+        "MaxSymbolLinkIdentitiesPerObject",
+        "MaxSymbolLinkIdentityParts",
+        "MaxTargetSeeds",
+        "MaxTargetSources",
+        "MaxTargetsPerRelation",
+        "MaxTextBytes",
+        "MaxWitnesses",
+        "MaxWitnessesPerRelation"
+      ],
+      "note": "Compatibility names for warning-only local scale thresholds plus zero unbounded byte sentinels; they never reject or truncate ProgramIndex data."
     },
     {
-      "file": "internal/programindex/index.go",
-      "category": "count-bound",
-      "symbols": ["MaxObjects", "MaxObservedCount", "MaxRelations", "MaxTargetSeeds", "MaxTargetSources", "MaxTargetsPerRelation", "MaxWitnesses", "MaxWitnessesPerRelation"]
+      "file": "internal/programindex/scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ScaleWarningArtifactBytes",
+        "advisorySemanticTextBytes"
+      ],
+      "note": "Warning-only comparison against the former scalar size; it never rejects or truncates ProgramIndex data."
     },
     {
       "file": "internal/programpage/portfolio.go",
       "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes", "MaxRunIDBytes"]
+      "symbols": [
+        "MaxRunIDBytes"
+      ]
     },
     {
       "file": "internal/programpage/portfolio.go",
-      "category": "count-bound",
-      "symbols": ["MaxPages"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryArtifactBytes",
+        "MaxArtifactBytes",
+        "MaxPages"
+      ],
+      "note": "Warning-only former page/artifact thresholds plus the zero unbounded-reader sentinel; the portfolio remains exhaustive."
+    },
+    {
+      "file": "internal/programpage/scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ScaleWarningBytes"
+      ],
+      "note": "Diagnostic warning kind over the complete page portfolio artifact."
     },
     {
       "file": "internal/pythondeclareddependencies/build.go",
-      "category": "byte-bound",
-      "symbols": ["MaxSourceBytes", "MaxTotalBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisorySourceBytes",
+        "ScaleWarningLogicalLineBytes",
+        "ScaleWarningPythonSourceBytes"
+      ],
+      "note": "Warning-only usual source size plus diagnostic kind names; Python declaration files are read through the shared corpus emergency envelope."
     },
     {
       "file": "internal/pythondeclareddependencies/requirements.go",
-      "category": "byte-bound",
-      "symbols": ["maxLogicalRequirementBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryLogicalRequirementBytes"
+      ],
+      "note": "Warning-only usual logical-line size; complete logical requirements remain parseable."
     },
     {
       "file": "internal/pythonprogramindex/build.go",
-      "category": "byte-bound",
-      "symbols": ["maxModuleBytes", "maxParserOutput", "maxParserRequest", "maxParserStderrBytes", "maxSourceBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxParserStderrBytes"
+      ],
+      "note": "Bounds only parser stderr after a failed helper process; successful parser stdout is retained completely."
     },
     {
       "file": "internal/pythontarget/discovery.go",
-      "category": "byte-bound",
-      "symbols": ["defaultMaxFileBytes", "defaultMaxTotalBytes", "maxHelperOutputBytes", "maxHelperStderrBytes", "maxShebangBytes"]
-    },
-    {
-      "file": "internal/pythontarget/discovery.go",
-      "category": "count-bound",
-      "symbols": ["defaultMaxFiles"]
-    },
-    {
-      "file": "internal/pythontarget/discovery.go",
-      "category": "depth-bound",
-      "symbols": ["maxEntrypointAliasDepth"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxHelperStderrBytes"
+      ],
+      "note": "Bounds only helper stderr after Python target discovery fails; it cannot narrow the target inventory."
     },
     {
       "file": "internal/pythontarget/model.go",
-      "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes", "maxLabelBytes", "maxSourceIdentityBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryCatalogBytes"
+      ],
+      "note": "Warning-only usual size over the complete sealed in-memory Python target catalog."
     },
     {
-      "file": "internal/pythontarget/model.go",
-      "category": "count-bound",
-      "symbols": ["maxBasis", "maxCatalogTargets", "maxModuleScopes", "maxModules", "maxOmissions", "maxPackages", "maxProjectedModules", "maxSourceRefs", "maxSourceRoots", "maxTargetRoots"]
-    },
-    {
-      "file": "internal/readmetargetscout/file_tree.go",
-      "category": "depth-bound",
-      "symbols": ["maxFileTreeDepth"]
+      "file": "internal/pythontarget/scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ScaleWarningCatalogBytes"
+      ],
+      "note": "Diagnostic warning kind over the complete in-memory Python target catalog."
     },
     {
       "file": "internal/readmetargetscout/model.go",
       "category": "byte-bound",
-      "symbols": ["MaxHypothesisBytes", "MaxProviderRequestBytes", "MaxRequestBytes", "MaxResponseBytes"]
+      "symbols": [
+        "MaxRequestBytes",
+        "MaxResponseBytes"
+      ]
     },
     {
       "file": "internal/readmetargetscout/model.go",
-      "category": "count-bound",
-      "symbols": ["MaxClassificationsPerFile", "MaxHypothesesPerClassification"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryArtifactBytes",
+        "AdvisoryAtomicRequestBytes",
+        "AdvisoryHypothesisBytes",
+        "AdvisoryResponseBytes",
+        "MaxProviderRequestBytes"
+      ],
+      "note": "Former aggregate request, response, hypothesis-text, artifact, and prepared-request estimates are warning-only or compatibility-only. Complete evidence is sharded exhaustively and accepted closed-ref results are not truncated."
     },
     {
       "file": "internal/readmetargetscout/model.go",
       "category": "token-bound",
-      "symbols": ["MaxOutputTokens"]
+      "symbols": [
+        "MaxOutputTokens"
+      ]
+    },
+    {
+      "file": "internal/readmetargetscout/scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ScaleWarningArtifactBytes",
+        "ScaleWarningHypothesisBytes"
+      ],
+      "note": "Diagnostic kinds only; neither can reject, shorten, or sample repository-guidance authority."
     },
     {
       "file": "internal/reporead/reporead.go",
       "category": "excluded-not-a-limit",
-      "symbols": ["maxReadBytes"],
-      "note": "Overflow sentinel explicitly rejected as a caller-provided byte limit."
-    },
-    {
-      "file": "internal/report/activity_entrypoint_view_projection.go",
-      "category": "byte-bound",
-      "symbols": ["MaxActivityEntrypointViewBytes"]
-    },
-    {
-      "file": "internal/report/activity_path_view_projection.go",
-      "category": "byte-bound",
-      "symbols": ["MaxActivityPathViewBytes"]
-    },
-    {
-      "file": "internal/report/core_map_view_projection.go",
-      "category": "byte-bound",
-      "symbols": ["MaxCoreMapViewBytes"]
-    },
-    {
-      "file": "internal/report/cross_surface_path_view_projection.go",
-      "category": "byte-bound",
-      "symbols": ["MaxCrossSurfacePathViewBytes"]
-    },
-    {
-      "file": "internal/report/cube_map_view_projection.go",
-      "category": "byte-bound",
-      "symbols": ["MaxCubeMapViewJSONBytes", "maxCubeMapViewTextBytes"]
-    },
-    {
-      "file": "internal/report/cube_map_view_projection.go",
-      "category": "count-bound",
-      "symbols": ["MaxCubeMapViewActivitySurfaces", "MaxCubeMapViewCoreObjectBindings", "MaxCubeMapViewCoreObjects", "MaxCubeMapViewDependencies", "MaxCubeMapViewDependencyImporters", "MaxCubeMapViewEffectCoreBindings", "MaxCubeMapViewEntrypoints", "MaxCubeMapViewIntegrationCallsites", "MaxCubeMapViewIntegrationOperations", "MaxCubeMapViewIntegrationSymbols", "MaxCubeMapViewReversePathNodes", "MaxCubeMapViewReversePaths", "MaxCubeMapViewSurfaceCoreBindings"]
-    },
-    {
-      "file": "internal/report/integration_usage_view_projection.go",
-      "category": "byte-bound",
-      "symbols": ["MaxIntegrationUsageViewBytes"]
-    },
-    {
-      "file": "internal/report/js_ts_surface_catalog_view_projection.go",
-      "category": "byte-bound",
-      "symbols": ["MaxJSTSSurfaceCatalogViewBytes"]
+      "symbols": [
+        "maxReadBytes"
+      ],
+      "note": "Overflow-safe sentinel dispatches to the complete-read path; it is not a repository-data ceiling."
     },
     {
       "file": "internal/report/manifest.go",
       "category": "byte-bound",
-      "symbols": ["maxManifestIdentifierBytes", "maxManifestPathBytes", "maxManifestReportBytes", "maxManifestSnapshotBytes", "maxRunManifestBytes"]
+      "symbols": [
+        "maxManifestIdentifierBytes",
+        "maxManifestPathBytes"
+      ]
     },
     {
       "file": "internal/report/manifest.go",
-      "category": "count-bound",
-      "symbols": ["maxManifestOpenablePaths", "maxManifestRepositoryDirtyFiles"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "advisoryManifestSnapshotBytes",
+        "advisoryRunManifestBytes",
+        "maxManifestOpenablePaths",
+        "maxManifestReportBytes",
+        "maxManifestRepositoryDirtyFiles",
+        "maxManifestSnapshotBytes",
+        "maxRunManifestBytes"
+      ],
+      "note": "Warning-only manifest/source thresholds plus zero unbounded-reader sentinels; complete report, snapshot, dirty-file, and source authority is retained."
+    },
+    {
+      "file": "internal/report/page_model.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxOverviewClaims"
+      ],
+      "note": "Presentation-only quote count on the overview; the page states how many more the README holds and every claim stays in the sealed artifact."
+    },
+    {
+      "file": "internal/report/page_sections.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxVisibleGroupMembers"
+      ],
+      "note": "Presentation-only disclosure threshold: members beyond it stay on the page behind one expander with their exact count."
     },
     {
       "file": "internal/report/parse.go",
-      "category": "byte-bound",
-      "symbols": ["maxReportTargetMetadataBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "advisoryReportTargetMetadataBytes",
+        "maxReportTargetMetadataBytes"
+      ],
+      "note": "Warning-only former target-metadata threshold plus the zero unbounded-reader sentinel."
     },
     {
       "file": "internal/report/program_view_projection.go",
-      "category": "byte-bound",
-      "symbols": ["maxProgramViewTextBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "MaxProgramViewObjects",
+        "MaxProgramViewRelations",
+        "MaxProgramViewSeeds",
+        "MaxProgramViewWitnessesPerRelation",
+        "maxProgramViewTextBytes"
+      ],
+      "note": "Warning-only usual sizes over the complete ProgramView projection; none authorizes sampling, truncation, or rejection."
     },
     {
-      "file": "internal/report/program_view_projection.go",
-      "category": "count-bound",
-      "symbols": ["MaxProgramViewObjects", "MaxProgramViewRelations", "MaxProgramViewSeeds", "MaxProgramViewWitnessesPerRelation"]
-    },
-    {
-      "file": "internal/report/readme_file_role_authority.go",
+      "file": "internal/report/publish_page.go",
       "category": "byte-bound",
-      "symbols": ["maxReadmeFileRoleArtifactBytes"]
+      "symbols": [
+        "AdvisoryStandaloneTargetBundlePayloadBytes"
+      ],
+      "note": "Advisory published-page size that produces one warning; it never truncates or rejects a page."
     },
     {
       "file": "internal/report/report.go",
-      "category": "byte-bound",
-      "symbols": ["MaxOrdinaryReportHTMLBytes", "MaxReportJSONBytes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "MaxOrdinaryReportHTMLBytes",
+        "MaxReportJSONBytes"
+      ],
+      "note": "Former report JSON/HTML size thresholds are warning-only diagnostics; complete validated report authority is published."
     },
     {
-      "file": "internal/report/standalone_bundle_transport.go",
-      "category": "byte-bound",
-      "symbols": ["maxStandaloneBundleTargetCompressedBytesV4", "maxStandaloneBundleTargetRawBytesV4", "standaloneBundleOverflowProbeBytes"]
-    },
-    {
-      "file": "internal/report/standalone_target_bundle.go",
-      "category": "byte-bound",
-      "symbols": ["MaxStandaloneTargetBundlePayloadBytes", "maxPreparedStandaloneTargetHTMLBytes", "maxStandaloneTargetBundleHeaderBytes", "maxStandaloneTargetBundleOverhead", "maxStandaloneTargetBundleSealBytes"]
-    },
-    {
-      "file": "internal/report/templates/report_app.js",
-      "category": "count-bound",
-      "symbols": ["MAX_SURVEY_PREVIEW_ITEMS"]
-    },
-    {
-      "file": "internal/report/templates/report_app.js",
-      "category": "text-bound",
-      "symbols": ["MAX_CLIENT_ERROR_CHARS", "MAX_REVISION_ABBREVIATION_CHARS"]
-    },
-    {
-      "file": "internal/report/templates/report_loader.js",
-      "category": "byte-bound",
-      "symbols": ["MAX_TARGET_COMPRESSED_BYTES", "MAX_TARGET_RAW_BYTES", "MAX_TRANSPORT_BYTES", "aggregateRawBytes", "bytes", "rawBytes"]
-    },
-    {
-      "file": "internal/report/templates/report_loader.js",
-      "category": "text-bound",
-      "symbols": ["MAX_BASE64_CHARACTERS", "MAX_ERROR_MESSAGE_CHARS"]
+      "file": "internal/report/report_input_scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryStandaloneTargetCompressedBytes",
+        "AdvisoryStandaloneTargetPayloadBytes",
+        "ReportScaleWarningBundleBytes",
+        "ReportScaleWarningManifestBytes",
+        "ReportScaleWarningPreparedHTMLBytes",
+        "ReportScaleWarningReportHTMLBytes",
+        "ReportScaleWarningReportJSONBytes",
+        "ReportScaleWarningSnapshotBytes",
+        "ReportScaleWarningTargetBundleCompressedBytes",
+        "ReportScaleWarningTargetBundleRawBytes",
+        "ReportScaleWarningTargetMetadataBytes"
+      ],
+      "note": "Diagnostic warning kinds and former per-target raw/gzip usual sizes over complete accepted and published report inputs; none authorizes truncation or rejection."
     },
     {
       "file": "internal/reportserver/server.go",
       "category": "byte-bound",
-      "symbols": ["capabilityBytes", "maxCapabilityTokenBytes", "maxReportHTMLBytes", "maxReportJSONBytes"]
+      "symbols": [
+        "capabilityBytes",
+        "maxCapabilityTokenBytes"
+      ]
     },
     {
       "file": "internal/reportserver/server.go",
       "category": "count-bound",
-      "symbols": ["MaxTCPPort", "maxConcurrentOpenRequests", "maxOpenLocationCoordinate"]
+      "symbols": [
+        "MaxTCPPort",
+        "maxConcurrentOpenRequests",
+        "maxOpenLocationCoordinate"
+      ]
+    },
+    {
+      "file": "internal/reportserver/server.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxReportHTMLBytes",
+        "maxReportJSONBytes"
+      ],
+      "note": "Zero unbounded-reader sentinels; the local report server serves complete validated report files."
     },
     {
       "file": "internal/reportserver/server.go",
       "category": "time-bound",
-      "symbols": ["reportIdleTimeout", "reportReadHeaderTimeout", "reportShutdownTimeout"]
-    },
-    {
-      "file": "internal/runtimeportfolio/cube.go",
-      "category": "count-bound",
-      "symbols": ["maxReduceLevels", "maxRuntimePortfolioCalls"]
-    },
-    {
-      "file": "internal/runtimeportfolio/model.go",
-      "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes", "MaxProviderRequestBytes", "MaxRequestBytes", "MaxResponseBytes", "MaxTextBytes"]
-    },
-    {
-      "file": "internal/runtimeportfolio/model.go",
-      "category": "token-bound",
-      "symbols": ["MaxOutputTokens"]
+      "symbols": [
+        "reportIdleTimeout",
+        "reportReadHeaderTimeout",
+        "reportShutdownTimeout"
+      ]
     },
     {
       "file": "internal/snapshot/go_target_advisory.go",
-      "category": "byte-bound",
-      "symbols": ["maxGoTargetAdvisoryPrefixBytes"]
-    },
-    {
-      "file": "internal/snapshot/go_target_advisory.go",
-      "category": "count-bound",
-      "symbols": ["maxGoTargetAdvisoryExamples", "maxGoTargetAdvisoryFiles"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryGoModuleBytes",
+        "AdvisoryGoTargetSourceBytes",
+        "MaxGoTargetAdvisoryEvidencePaths",
+        "MaxGoTargetAdvisoryFiles",
+        "RepositoryScaleWarningGoModuleBytes",
+        "RepositoryScaleWarningGoTargetSourceBytes",
+        "RepositoryScaleWarningManifestBytes"
+      ],
+      "note": "Warning-only former preflight sizes and diagnostic kind names. All eligible files, complete source bytes, and exact evidence paths remain authoritative."
     },
     {
       "file": "internal/snapshot/identity.go",
       "category": "byte-bound",
-      "symbols": ["maxManifestBytes", "maxRemoteIdentityBytes", "maxRepositoryNameBytes"]
+      "symbols": [
+        "maxRemoteIdentityBytes",
+        "maxRepositoryNameBytes"
+      ]
     },
     {
-      "file": "internal/snapshot/target_page_portfolio.go",
-      "category": "byte-bound",
-      "symbols": ["MaxTargetPagePortfolioBytes", "maxTargetPageRunIDBytes"]
-    },
-    {
-      "file": "internal/snapshot/target_run_container.go",
-      "category": "byte-bound",
-      "symbols": ["MaxTargetRunContainerBytes"]
-    },
-    {
-      "file": "internal/surfacediscovery/direct_call_index.go",
-      "category": "count-bound",
-      "symbols": ["MaxDirectCallIndexEdges", "MaxDirectCallIndexNodes"]
+      "file": "internal/snapshot/identity.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryManifestBytes"
+      ],
+      "note": "Warning-only former manifest prefix threshold; complete tracked manifests are parsed for repository identity."
     },
     {
       "file": "internal/surfacediscovery/direct_call_index.go",
       "category": "excluded-not-a-limit",
-      "symbols": ["DirectCallIndexClosedEdgeLimit", "DirectCallIndexClosedNodeLimit"],
-      "note": "Closed outcome reason values, not configured ceilings."
+      "symbols": [
+        "AdvisoryDirectCallMaxDepth",
+        "AdvisoryDirectCallMaxEdges",
+        "AdvisoryDirectCallMaxNodes",
+        "DirectCallIndexClosedEdgeLimit"
+      ],
+      "note": "Warning-only retained graph thresholds plus the closed reason for an explicit positive user edge ceiling; none is an ordinary data cap."
     },
     {
-      "file": "internal/surfacediscovery/entry_surface_candidates.go",
-      "category": "byte-bound",
-      "symbols": ["maxEntrySurfaceTokenBytes", "maxEntrySurfaceValueBytes"]
-    },
-    {
-      "file": "internal/surfacediscovery/entry_surface_candidates.go",
-      "category": "depth-bound",
-      "symbols": ["maxCallableFactDepth"]
-    },
-    {
-      "file": "internal/surfacediscovery/external_call_index.go",
-      "category": "count-bound",
-      "symbols": ["MaxExternalCallIndexCallers", "MaxExternalCallIndexFamilies", "MaxExternalCallIndexPackages", "MaxExternalCallRepresentativeCallsites"]
-    },
-    {
-      "file": "internal/surfacediscovery/input.go",
-      "category": "byte-bound",
-      "symbols": ["maxDiagnosticBytes"]
+      "file": "internal/surfacediscovery/direct_call_scale_warning.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "DirectCallScaleWarningDepth"
+      ],
+      "note": "Diagnostic kind name for a warning-only retained traversal measurement."
     },
     {
       "file": "internal/surfacediscovery/input.go",
-      "category": "count-bound",
-      "symbols": ["maxPackageDiagnostics"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "MaxPackageDiagnostics",
+        "advisoryDiagnosticBytes"
+      ],
+      "note": "Former package-diagnostic count and message sizes retained only for scale warnings; every distinct diagnostic and complete normalized message is retained."
     },
     {
       "file": "internal/surfacediscovery/model.go",
-      "category": "count-bound",
-      "symbols": ["DefaultDirectCallEdgeLimit"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "DefaultDirectCallDepth",
+        "DefaultDirectCallEdgeLimit"
+      ],
+      "note": "Both ordinary defaults are zero, meaning retain all reachable calls and edges; positive values are explicit user narrowing controls."
     },
     {
-      "file": "internal/surfacediscovery/model.go",
-      "category": "depth-bound",
-      "symbols": ["DefaultDirectCallDepth"]
+      "file": "internal/surfacediscovery/package_diagnostic_scale_warning.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "PackageDiagnosticScaleWarningMessageBytes"
+      ],
+      "note": "Diagnostic warning kind over complete retained Go package-diagnostic messages."
     },
     {
       "file": "internal/surfacediscovery/prepared_workspace.go",
-      "category": "count-bound",
-      "symbols": ["maxPreparedProjectionDiagnosticKeys"]
-    },
-    {
-      "file": "internal/targetoutcome/portfolio.go",
-      "category": "byte-bound",
-      "symbols": ["MaxArtifactBytes"]
-    },
-    {
-      "file": "internal/targetoutcome/portfolio.go",
-      "category": "count-bound",
-      "symbols": ["MaxOutcomes"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxPreparedProjectionDiagnosticKeys"
+      ],
+      "note": "Shortens only a sorted key list inside an invariant-failure message and reports the exact additional count; analysis authority is unaffected."
     },
     {
       "file": "internal/targetoutcome/portfolio.go",
       "category": "excluded-not-a-limit",
-      "symbols": ["ReasonResourceLimit"],
-      "note": "Closed target-failure reason value, not a configured resource ceiling."
+      "symbols": [
+        "AdvisoryArtifactBytes",
+        "MaxAllowedProgramLanguages",
+        "MaxArtifactBytes",
+        "MaxOutcomes",
+        "ReasonResourceLimit"
+      ],
+      "note": "Warning-only former outcome, allowed-language, and artifact thresholds, the zero unbounded-reader sentinel, and a closed failure-reason value; none is a production data ceiling."
+    },
+    {
+      "file": "internal/targetoutcome/scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ScaleWarningBytes"
+      ],
+      "note": "Diagnostic warning kind over the complete target-outcome artifact."
     },
     {
       "file": "internal/targetportfolio/model.go",
       "category": "byte-bound",
-      "symbols": ["MaxProviderRequestBytes", "MaxRequestBytes", "MaxResponseBytes"]
+      "symbols": [
+        "MaxResponseBytes"
+      ]
+    },
+    {
+      "file": "internal/targetportfolio/model.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "AdvisoryCompleteRequestBytes",
+        "MaxDefaultRequestBytes",
+        "MaxProviderRequestBytes",
+        "MaxRequestBytes"
+      ],
+      "note": "Warning-only former one-call size and legacy batch/debug packing coordinates; Run uses exact provider-prepared disjoint batches and a closed-ref default tournament."
     },
     {
       "file": "internal/targetportfolio/model.go",
       "category": "token-bound",
-      "symbols": ["MaxOutputTokens"]
+      "symbols": [
+        "MaxOutputTokens"
+      ]
     },
     {
-      "file": "internal/targetviewchoice/model.go",
-      "category": "byte-bound",
-      "symbols": ["MaxAnchorPathBytes", "MaxLabelBytes", "MaxProviderRequestBytes", "MaxRequestBytes", "MaxResponseBytes", "MaxSummaryBytes"]
-    },
-    {
-      "file": "internal/targetviewchoice/model.go",
-      "category": "count-bound",
-      "symbols": ["MaxBasisSummaries", "MaxFileHypotheses", "MaxRootSummaries", "MaxViews"]
-    },
-    {
-      "file": "internal/targetviewchoice/model.go",
-      "category": "token-bound",
-      "symbols": ["MaxOutputTokens"]
+      "file": "internal/targetportfolio/scale_warnings.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ScaleWarningCompleteRequestBytes"
+      ],
+      "note": "Diagnostic warning kind, not a configured ceiling."
     },
     {
       "file": "internal/workspaceopen/open.go",
       "category": "byte-bound",
-      "symbols": ["maxPathBytes"]
+      "symbols": [
+        "maxPathBytes"
+      ]
     },
     {
       "file": "internal/workspacesnapshot/snapshot.go",
       "category": "byte-bound",
-      "symbols": ["maxAuthorityScalarBytes", "maxPathBytes"]
+      "symbols": [
+        "maxPathBytes"
+      ]
     },
     {
       "file": "internal/workspacesnapshot/snapshot.go",
-      "category": "count-bound",
-      "symbols": ["maxAllowedPaths", "maxCapturedInputs", "maxRepositoryEntries", "maxStagesPerInput"]
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "ScaleWarningAuthorityTextBytes",
+        "advisoryAuthorityScalarBytes",
+        "advisoryMaximumAllowedPaths",
+        "advisoryMaximumCapturedInputs",
+        "advisoryMaximumRepositoryEntries",
+        "advisoryMaximumStagesPerInput"
+      ],
+      "note": "Diagnostic thresholds over complete workspace source authority; only maxPathBytes remains a canonical path-identity guard."
     }
   ]
 }

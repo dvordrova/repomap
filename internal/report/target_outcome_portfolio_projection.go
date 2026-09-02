@@ -22,15 +22,16 @@ type TargetOutcomePortfolioView struct {
 // closed outcome union. An analyzed row joins the existing target navigation
 // by ProgramTarget ID; a failed row carries only a sanitized stage and reason.
 type TargetOutcomeView struct {
-	SelectedTargetID string                      `json:"selected_target_id"`
-	Language         targetoutcome.LanguageGroup `json:"language"`
-	ScopeKind        targetoutcome.ScopeKind     `json:"scope_kind"`
-	DisplayName      string                      `json:"display_name"`
-	Selector         string                      `json:"selector"`
-	State            targetoutcome.State         `json:"state"`
-	ProgramTargetID  string                      `json:"program_target_id,omitempty"`
-	FailureStage     targetoutcome.Stage         `json:"failure_stage,omitempty"`
-	FailureReason    targetoutcome.Reason        `json:"failure_reason,omitempty"`
+	SelectedTargetID        string                      `json:"selected_target_id"`
+	Language                targetoutcome.LanguageGroup `json:"language"`
+	AllowedProgramLanguages []string                    `json:"allowed_program_languages"`
+	ScopeKind               targetoutcome.ScopeKind     `json:"scope_kind"`
+	DisplayName             string                      `json:"display_name"`
+	Selector                string                      `json:"selector"`
+	State                   targetoutcome.State         `json:"state"`
+	ProgramTargetID         string                      `json:"program_target_id,omitempty"`
+	FailureStage            targetoutcome.Stage         `json:"failure_stage,omitempty"`
+	FailureReason           targetoutcome.Reason        `json:"failure_reason,omitempty"`
 }
 
 // NewTargetOutcomePortfolioView verifies the exact analyzed-outcome/page
@@ -62,10 +63,13 @@ func NewTargetOutcomePortfolioView(
 		row := TargetOutcomeView{
 			SelectedTargetID: outcome.SelectedTarget.ID,
 			Language:         outcome.SelectedTarget.LanguageGroup,
-			ScopeKind:        outcome.SelectedTarget.ScopeKind,
-			DisplayName:      outcome.SelectedTarget.DisplayName,
-			Selector:         outcome.SelectedTarget.Selector,
-			State:            outcome.State,
+			AllowedProgramLanguages: append(
+				[]string(nil), outcome.SelectedTarget.AllowedProgramLanguages...,
+			),
+			ScopeKind:   outcome.SelectedTarget.ScopeKind,
+			DisplayName: outcome.SelectedTarget.DisplayName,
+			Selector:    outcome.SelectedTarget.Selector,
+			State:       outcome.State,
 		}
 		switch outcome.State {
 		case targetoutcome.StateAnalyzed:
@@ -102,7 +106,7 @@ func NewTargetOutcomePortfolioView(
 // equality is re-derived from the two manifest-bound artifacts.
 func (view TargetOutcomePortfolioView) Validate() error {
 	if view.Version != targetoutcome.Version || view.Outcomes == nil ||
-		len(view.Outcomes) == 0 || len(view.Outcomes) > targetoutcome.MaxOutcomes {
+		len(view.Outcomes) == 0 {
 		return fmt.Errorf("target outcome portfolio view: invalid identity")
 	}
 	defaultMatches := 0
@@ -110,11 +114,9 @@ func (view TargetOutcomePortfolioView) Validate() error {
 	previousSelectedTargetID := ""
 	for index, outcome := range view.Outcomes {
 		selected := targetoutcome.SelectedTarget{
-			ID:            outcome.SelectedTargetID,
-			LanguageGroup: outcome.Language,
-			ScopeKind:     outcome.ScopeKind,
-			DisplayName:   outcome.DisplayName,
-			Selector:      outcome.Selector,
+			ID: outcome.SelectedTargetID, LanguageGroup: outcome.Language,
+			AllowedProgramLanguages: append([]string(nil), outcome.AllowedProgramLanguages...),
+			ScopeKind:               outcome.ScopeKind, DisplayName: outcome.DisplayName, Selector: outcome.Selector,
 		}
 		if err := selected.Validate(); err != nil {
 			return fmt.Errorf("target outcome portfolio view: outcome %d selected target: %w", index, err)

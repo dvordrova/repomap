@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
@@ -30,19 +31,10 @@ type RunMeta struct {
 	ProviderRequestCount       int              `json:"provider_request_count,omitempty"`
 	ProviderAccountingComplete bool             `json:"provider_accounting_complete,omitempty"`
 	ProviderLatencyMillis      *int64           `json:"provider_latency_ms,omitempty"`
-	GoProgramAnalysisRan       bool             `json:"go_program_analysis_ran,omitempty"`
-	GoProgramGraphNodes        int              `json:"go_program_graph_nodes,omitempty"`
-	GoProgramGraphEdges        int              `json:"go_program_graph_edges,omitempty"`
-	GoProgramAnalysisMillis    *int64           `json:"go_program_analysis_ms,omitempty"`
 	Warnings                   []string         `json:"warnings,omitempty"`
 	EffectiveOptions           EffectiveOptions `json:"effective_options,omitempty"`
 	RequestAttempts            []RequestAttempt `json:"request_attempts,omitempty"`
 	BuildIdentity              BuildIdentity    `json:"build_identity"`
-	AnalysisTargetRef          string           `json:"analysis_target_ref,omitempty"`
-	AnalysisTargetKind         string           `json:"analysis_target_kind,omitempty"`
-	AnalysisTargetModule       string           `json:"analysis_target_module,omitempty"`
-	AnalysisTargetDisplayPath  string           `json:"analysis_target_display_path,omitempty"`
-	AnalysisTargetPackage      string           `json:"analysis_target_package,omitempty"`
 }
 
 // BuildIdentity binds a run to the exact local binary without exposing build
@@ -62,20 +54,21 @@ type BuildIdentity struct {
 }
 
 type EffectiveOptions struct {
-	NoCache                bool   `json:"no_cache"`
-	GoTarget               string `json:"go_target,omitempty"`
-	GoTargetSource         string `json:"go_target_source,omitempty"`
-	GoTargetBaseline       string `json:"go_target_baseline,omitempty"`
-	AnalysisTargetOverride string `json:"analysis_target_override,omitempty"`
-	DirectCallDepth        int    `json:"direct_call_depth,omitempty"`
-	DirectCallEdgeLimit    int    `json:"direct_call_edge_limit,omitempty"`
-	ScanSecrets            bool   `json:"scan_secrets,omitempty"`
-	GitLabURL              string `json:"gitlab_url,omitempty"`
-	GitHubURL              string `json:"github_url,omitempty"`
-	NoOpen                 bool   `json:"no_open"`
-	NoServe                bool   `json:"no_serve"`
-	Port                   int    `json:"port"`
-	DebugEnabled           bool   `json:"debug_enabled"`
+	NoCache                bool     `json:"no_cache"`
+	GoTarget               string   `json:"go_target,omitempty"`
+	GoTargetSource         string   `json:"go_target_source,omitempty"`
+	GoTargetBaseline       string   `json:"go_target_baseline,omitempty"`
+	BuildTags              []string `json:"build_tags,omitempty"`
+	AnalysisTargetOverride string   `json:"analysis_target_override,omitempty"`
+	DirectCallDepth        int      `json:"direct_call_depth,omitempty"`
+	DirectCallEdgeLimit    int      `json:"direct_call_edge_limit,omitempty"`
+	ScanSecrets            bool     `json:"scan_secrets,omitempty"`
+	GitLabURL              string   `json:"gitlab_url,omitempty"`
+	GitHubURL              string   `json:"github_url,omitempty"`
+	NoOpen                 bool     `json:"no_open"`
+	NoServe                bool     `json:"no_serve"`
+	Port                   int      `json:"port"`
+	DebugEnabled           bool     `json:"debug_enabled"`
 }
 
 type RequestAttempt struct {
@@ -92,47 +85,51 @@ const (
 	SemanticExchangesDir     = "semantic_exchanges"
 	SemanticExchangeMetaFile = "exchange.v2.json"
 
-	SemanticStageReadmeFileClassifier    = "readme_file_classifier"
-	SemanticStageTargetPortfolio         = "target_portfolio_selection"
-	SemanticStageRuntimePortfolio        = "runtime_portfolio"
-	SemanticStageTargetViewChoice        = "target_view_choice"
-	SemanticStageCoreMapBaseline         = "coremap_baseline"
-	SemanticStageCoreMapRefined          = "coremap_refined"
-	SemanticStageActivityEntrypoints     = "activity_entrypoints"
-	SemanticStageIntegrationDependencies = "integration_dependencies"
-	SemanticStageIntegrationUsage        = "integration_usage"
-	SemanticStageCubemapActivities       = "cubemap_activity_surfaces"
-	SemanticStageCubemapEntrypoints      = "cubemap_entrypoints"
-	SemanticStageCubemapDependencies     = "cubemap_integration_dependencies"
-	SemanticStageCubemapSymbols          = "cubemap_integration_symbols"
-	SemanticStageCubemapBindings         = "cubemap_surface_core_effects"
-	SemanticRequestPrepared              = "prepared_request"
-	SemanticRequestExactSent             = "exact_sent_request"
-	SemanticStateAccepted                = "accepted"
-	SemanticStateRejected                = "rejected"
-	SemanticStateCacheHit                = "cache_hit"
-	SemanticStateCanceled                = "canceled"
-	SemanticStateProviderFailed          = "provider_failed"
-	SemanticValidationAccepted           = "accepted"
-	SemanticValidationCache              = "cache_validated"
-	SemanticValidationCanceled           = "canceled"
-	SemanticValidationProvider           = "provider_failed"
-	SemanticValidationSecret             = "response_secret_scan"
-	SemanticValidationDecode             = "response_decode"
-	SemanticValidationResponse           = "response_validation"
-	SemanticUnavailableNoContent         = "provider_no_content"
-	SemanticUnavailableCanceled          = "canceled"
-	SemanticUnavailableCache             = "cache_raw_unavailable"
-	SemanticUnavailableOmitted           = "cache_response_omitted"
-	SemanticUnavailableSize              = "size_limit"
-	SemanticExchangeWarningCode          = "artifact_write_failed"
-	semanticExchangeVersion              = 2
-	semanticPayloadMarkerVersion         = 1
-	maxSemanticExchangePayloadSize       = 16 << 20
-	MaxSemanticAttemptOrdinal            = 256
-	MaxSemanticExchangeInstanceOrdinal   = 4096
-	MaxSemanticTransportAttempts         = 64
-	maxPreservedMetadataBytes            = 4 << 20
+	SemanticStageReadmeFileClassifier  = "readme_file_classifier"
+	SemanticStageTargetPortfolio       = "target_portfolio_selection"
+	SemanticStageDocumentationReduce   = "documentation_reduce"
+	SemanticStageProgramCategorization = "program_categorization"
+	SemanticStageProgramGrouping       = "program_grouping"
+	SemanticStageGroupMatching         = "group_matching"
+	SemanticStageOrientation           = "orientation"
+	SemanticRequestPrepared            = "prepared_request"
+	SemanticRequestExactSent           = "exact_sent_request"
+	SemanticStateAccepted              = "accepted"
+	SemanticStateRejected              = "rejected"
+	SemanticStateCacheHit              = "cache_hit"
+	SemanticStateCanceled              = "canceled"
+	SemanticStateProviderFailed        = "provider_failed"
+	SemanticValidationAccepted         = "accepted"
+	SemanticValidationCache            = "cache_validated"
+	SemanticValidationCanceled         = "canceled"
+	SemanticValidationProvider         = "provider_failed"
+	SemanticValidationSecret           = "response_secret_scan"
+	SemanticValidationDecode           = "response_decode"
+	SemanticValidationResponse         = "response_validation"
+	SemanticUnavailableNoContent       = "provider_no_content"
+	SemanticUnavailableCanceled        = "canceled"
+	SemanticUnavailableCache           = "cache_raw_unavailable"
+	SemanticUnavailableOmitted         = "cache_response_omitted"
+	SemanticUnavailableSize            = "size_limit"
+	SemanticExchangeWarningCode        = "artifact_write_failed"
+	semanticExchangeVersion            = 2
+	semanticPayloadMarkerVersion       = 1
+	// The semantic journal may preserve every provider-valid request or
+	// response. Its payload ceiling is therefore the shared real semantic
+	// record envelope, not a smaller diagnostic-only cutoff.
+	maxSemanticExchangePayloadSize = llm.SemanticRecordByteLimit
+	// These former ordinal thresholds remain exported as compatibility and
+	// warning coordinates. Positive journal ordinals are retained beyond them.
+	MaxSemanticAttemptOrdinal          = 256
+	MaxSemanticExchangeInstanceOrdinal = 4096
+	// Transport attempts are a closed record-shape field rather than a
+	// repository-scale sampling threshold.
+	MaxSemanticTransportAttempts = 64
+	// Metadata grows with exhaustive semantic batches. The former 4 MiB local
+	// threshold is reported by the ordinary report path instead of making the
+	// journal unreadable mid-run.
+	advisoryPreservedMetadataBytes = 4 << 20
+	maxPreservedMetadataBytes      = 0
 )
 
 // SemanticUnavailable describes response bytes that the current stage seam
@@ -321,10 +318,10 @@ func readPreservedBuildIdentity(root *os.Root) (*BuildIdentity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect existing debug metadata identity: %w", err)
 	}
-	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxPreservedMetadataBytes {
-		return nil, fmt.Errorf("existing debug metadata is not a bounded regular file")
+	if !info.Mode().IsRegular() || info.Size() <= 0 {
+		return nil, fmt.Errorf("existing debug metadata is not a non-empty regular file")
 	}
-	data, err := io.ReadAll(io.LimitReader(file, maxPreservedMetadataBytes))
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("read existing debug metadata identity: %w", err)
 	}
@@ -541,8 +538,7 @@ func validateSemanticExchange(exchange SemanticExchange) error {
 	if !validSemanticStage(exchange.Stage) {
 		return fmt.Errorf("semantic exchange: invalid stage")
 	}
-	if exchange.InstanceOrdinal < 1 || exchange.InstanceOrdinal > MaxSemanticExchangeInstanceOrdinal ||
-		exchange.SemanticAttemptOrdinal < 1 || exchange.SemanticAttemptOrdinal > MaxSemanticAttemptOrdinal {
+	if exchange.InstanceOrdinal < 1 || exchange.SemanticAttemptOrdinal < 1 {
 		return fmt.Errorf("semantic exchange: invalid ordinal")
 	}
 	if exchange.RequestProvenance != SemanticRequestPrepared &&
@@ -630,18 +626,11 @@ func validSemanticStage(stage string) bool {
 	switch stage {
 	case SemanticStageReadmeFileClassifier,
 		SemanticStageTargetPortfolio,
-		SemanticStageRuntimePortfolio,
-		SemanticStageTargetViewChoice,
-		SemanticStageCoreMapBaseline,
-		SemanticStageCoreMapRefined,
-		SemanticStageActivityEntrypoints,
-		SemanticStageIntegrationDependencies,
-		SemanticStageIntegrationUsage,
-		SemanticStageCubemapActivities,
-		SemanticStageCubemapEntrypoints,
-		SemanticStageCubemapDependencies,
-		SemanticStageCubemapSymbols,
-		SemanticStageCubemapBindings:
+		SemanticStageDocumentationReduce,
+		SemanticStageProgramCategorization,
+		SemanticStageProgramGrouping,
+		SemanticStageGroupMatching,
+		SemanticStageOrientation:
 		return true
 	default:
 		return false
