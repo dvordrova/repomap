@@ -76,3 +76,36 @@ func TestCoverageCountsRequestsThatAssignedNothing(t *testing.T) {
 		t.Fatalf("coverage = %d/%d", coverage.CoveredSubjects(), coverage.Subjects())
 	}
 }
+
+// TestValidateRefusesASubjectThatIsNeitherObjectNorConnection pins the answer
+// to the question the coverage split raises: assignments naming something
+// that is not an object are relation patterns, and nothing else can be
+// accepted. A result that names an id belonging to neither is refused whole.
+func TestValidateRefusesASubjectThatIsNeitherObjectNorConnection(t *testing.T) {
+	index := categorizationTestIndex(t, "go")
+	documentation := reducedDocumentationFixture(t)
+	patternID := patternIDBySourceRef(t, index, "registration-pattern")
+
+	accepted := Result{
+		ProgramTargetID:            index.Target.ID,
+		BaseProgramIndexSHA256:     index.SHA256,
+		ReducedDocumentationSHA256: documentation.ReductionSHA256,
+		Assignments:                []Assignment{{SubjectID: patternID, Categories: []Category{CategoryCore}}},
+		Diagnostics:                []Diagnostic{},
+	}
+	if err := accepted.Validate(index, documentation); err != nil {
+		t.Fatalf("a relation pattern is a real subject: %v", err)
+	}
+	coverage := accepted.Coverage(index)
+	if coverage.CoveredPatterns != 1 || coverage.CoveredObjects != 0 || coverage.OutsideIndex != 0 {
+		t.Fatalf("coverage = %#v", coverage)
+	}
+
+	invented := accepted
+	invented.Assignments = []Assignment{
+		{SubjectID: "program-pattern-not-in-this-index", Categories: []Category{CategoryCore}},
+	}
+	if err := invented.Validate(index, documentation); err == nil {
+		t.Fatal("a subject in neither set was accepted")
+	}
+}

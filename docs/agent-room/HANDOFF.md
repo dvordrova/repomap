@@ -73,23 +73,35 @@ covering 90% of the target, and group counts fell as the signal diluted. It was
 caught by a human diffing two reports by hand. **Row count is not quality.
 Always report the denominator and the per-category split.**
 
-## Open finding 2: assignments that are not objects
+## Settled finding 2: they are connections, not invention
 
-172 of front's 338 assignments name a `subject_id` that is not an object in
-that target's sealed index. Backend has 25 of 239. These are accepted today,
-by design, because out-of-batch rows naming a real subject of the same target
-are kept rather than paid for twice. Whether all 172 are real subjects is
-unverified. This is the first thing to measure, because it is the difference
-between recovering paid-for answers and quietly accepting invention.
+172 of front's 338 assignments name a `subject_id` that is not an object.
+All 172 are relation patterns of the same sealed index: 103 `invokes_external`
+and 69 `calls`, each with its own `file:line:col` anchor. Backend's 25 of 239
+are the same thing. Zero assignments, on either target, name an id belonging
+to neither set.
 
-## The instrument that is missing
+The categorizer is asked about two kinds of subject, objects and the relation
+patterns between them, and the earlier count only had a denominator for the
+first. `Result.Validate` resolves every `subject_id` through `subjectByID`,
+which searches objects and then relation patterns and refuses the whole
+result otherwise, so an invented id cannot be accepted — that refusal is now
+pinned by `TestValidateRefusesASubjectThatIsNeitherObjectNorConnection`. The
+console prints the two denominators separately on every run.
 
-The console prints an absolute count with no denominator and no per-category
-split. That is precisely why a prompt edit could lose 60% of the signal and
-read as success, and why the reverted experiment could only be caught by hand.
-Ship the numbers first; every judgment below becomes cheap afterwards.
+Nothing to fix here. The finding was an artifact of the measurement.
 
-This snippet produced every table above and is the fastest way to check a run:
+## The instrument, shipped
+
+Every categorization now prints, on the console, the fraction of subjects
+covered split into objects and connections, the per-category counts with their
+share, the executed request plan with how many requests assigned nothing, and
+the number of accepted rows naming a subject outside the sealed index. A run
+that loses 60% of its signal can no longer read as success.
+
+The snippet below is still the fastest way to re-check a finished run
+directory without rerunning the binary. Note that it counts objects only, so
+its `ids - objs` is the connection count, not an error count:
 
 ```python
 import json, collections
