@@ -3,22 +3,20 @@
 ## On now
 
 The page, per the owner's mid-run redirection: visual hierarchy, a canvas
-graph, 288 KB of JS is fine, embedded well-organised templates, one
-self-contained HTML. Working until 11:00. Design authority for the map is
-`artifacts/.../008-cross-target-system-story/UI-UX-CONSILIUM.md`.
+graph, 288 KB of JS is fine, one self-contained HTML. Until 11:00. Map design
+authority: `artifacts/.../008-cross-target-system-story/UI-UX-CONSILIUM.md`.
 
 ## Finished
 
-1. **Instruments.** `81fe3e02` categorization coverage with denominators;
-   `d2c250ba` grouping shape (lanes, subjects grouped, largest group).
+1. **Instruments.** `81fe3e02` coverage with denominators; `d2c250ba` grouping
+   shape (lanes, subjects grouped, largest group).
 2. **Findings settled.** `cbd4aac8` the 172 are relation patterns, 0 invented.
    `d2c250ba` do not narrow `core` — the regressed run is what narrow looks
    like (6 groups over 22 subjects vs 10 over 55).
 3. **Speed 14.6 s → 5.6 s (−62%).** Literal gates on the credential scans
-   (5.9×); batch planners by search, not O(n²) re-encoding; **the run id was
-   in the facts digest so orientation never hit its cache** — one live call per
-   run gone, report now byte-identical across runs; credential scanning
-   removed on the owner's call (−1523 lines).
+   (5.9×); batch planners by search, not O(n²) re-encoding; **the run id was in
+   the facts digest so orientation never hit its cache** — one live call per run
+   gone, report byte-identical across runs; scanning removed (−1523 lines).
 4. **chi, medium Go repo, 4/4 targets: 110.9 s cold, 12.4 s warm.**
 5. **The page.** Templates split one file per region and layer. Every target
    page opens with an SVG map of its groups; a repository map of the targets
@@ -40,5 +38,4 @@ Pre-existing, unrelated to tonight, not investigated.
 
 Check the map's hover and click behaviour in a browser, then keep reading both
 reports as a newcomer and fixing what is hard.
-
 `make test`, `make vet`, `gofmt -l cmd internal` green at every commit.
