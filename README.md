@@ -82,8 +82,8 @@ export REPOMAP_LLM_API_KEY=...
 export REPOMAP_LLM_AUTH=bearer
 ```
 
-Optional settings are `REPOMAP_LLM_TIMEOUT` (default `3m`, the bound on one
-provider attempt) and
+Optional settings are `REPOMAP_LLM_TIMEOUT` (default `6m`, the bound on one
+provider attempt; an attempt that hits it is retried) and
 `REPOMAP_LLM_MAX_TOKENS` (default `128000`). An explicitly unauthenticated
 endpoint uses `REPOMAP_LLM_AUTH=none` and still requires
 `REPOMAP_LLM_ENDPOINT`.

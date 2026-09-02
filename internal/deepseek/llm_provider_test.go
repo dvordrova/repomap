@@ -597,7 +597,10 @@ func TestLLMProviderHTTPRetryExhaustionIsStructured(t *testing.T) {
 	}
 }
 
-func TestLLMProviderTimeoutIsStructuredWithoutRetry(t *testing.T) {
+// TestLLMProviderRetriesItsOwnTimeout pins that a slow attempt is tried again
+// rather than taking a whole target page with it, and that the failure it
+// eventually reports still says what happened.
+func TestLLMProviderRetriesItsOwnTimeout(t *testing.T) {
 	client := &Client{
 		HTTPClient: &http.Client{Transport: failingRoundTripper{err: context.DeadlineExceeded}},
 		Model:      "test-model", MaxTokens: 100,
@@ -611,14 +614,30 @@ func TestLLMProviderTimeoutIsStructuredWithoutRetry(t *testing.T) {
 		t.Fatalf("timeout error = %v", err)
 	}
 	failure := providerErr.ProviderFailure()
-	if failure.Kind != llm.ProviderFailureTimeout || failure.Attempts != 1 ||
-		failure.RetryExhausted || outcome.Metrics.Attempts != 1 {
+	if failure.Kind != llm.ProviderFailureTimeout || failure.Attempts != maxRetries+1 ||
+		!failure.RetryExhausted || outcome.Metrics.Attempts != maxRetries+1 {
 		t.Fatalf("timeout failure = %#v / metrics=%#v", failure, outcome.Metrics)
 	}
-	rendered := err.Error()
-	if !strings.Contains(rendered, "class=timeout attempts=1") ||
-		!strings.Contains(rendered, "check provider latency or increase the configured timeout") {
-		t.Fatalf("timeout error = %q", rendered)
+	if !strings.Contains(err.Error(), "class=timeout") {
+		t.Fatalf("timeout error = %q", err.Error())
+	}
+}
+
+// TestLLMProviderDoesNotRetryAfterTheCallerGaveUp separates "this attempt was
+// slow" from "the run was cancelled". Only the first is worth another attempt.
+func TestLLMProviderDoesNotRetryAfterTheCallerGaveUp(t *testing.T) {
+	client := &Client{
+		HTTPClient: &http.Client{Transport: failingRoundTripper{err: context.Canceled}},
+		Model:      "test-model", MaxTokens: 100,
+		Endpoint: "https://provider.example/v1/chat/completions", Auth: authNone,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	outcome, err := llm.ExecuteJSON[map[string]any](
+		ctx, llm.Executor{Enabled: false}, client, llmProviderFailureCall(),
+	)
+	if err == nil || outcome.Metrics.Attempts > 1 {
+		t.Fatalf("cancelled call = %v / attempts=%d", err, outcome.Metrics.Attempts)
 	}
 }
 

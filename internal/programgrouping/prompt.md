@@ -58,6 +58,18 @@ the same response.
 - `dependencies`: external packages, services, protocols, storage, and other
   outbound integrations.
 
+`inbound` and `background_activity` are categories, never lanes. A group whose
+`lane` is any string other than `triggers`, `core` or `dependencies` is
+discarded whole, and every connection naming it is discarded with it.
+
+Size a group for reading, not for coverage. One group is one responsibility a
+reader would name out loud, so a target of a few hundred subjects usually has
+between eight and fifteen of them. No group should hold more than about a
+fifth of the subjects in `group_refs`: a group that large is several
+responsibilities that happen to share a directory, and splitting it by what
+each part does is always the better answer. A group holding one subject is
+fine when that subject is its own responsibility.
+
 During `grouping`, groups are a sparse overlapping cover, not a partition. A
 categorized subject may belong to several useful groups or to none. Do not
 emit an acknowledgement row for every `group_refs` entry, do not create an

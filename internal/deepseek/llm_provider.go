@@ -25,27 +25,22 @@ var _ llm.Provider = (*Client)(nil)
 // prepared request or its live transport. The API key, callbacks, and client
 // identity are deliberately excluded.
 func (c *Client) State() []byte {
+	// Only what changes the answer belongs here: the executor hashes this into
+	// every cache key. The per-attempt timeout, the retry count and the byte
+	// limits are transport settings — a request that succeeds returns the same
+	// bytes whatever they were — and keeping them here meant that tuning the
+	// timeout by one minute re-bought all 1,047 cached answers.
 	type providerState struct {
-		Contract             string  `json:"contract"`
-		Endpoint             string  `json:"endpoint,omitempty"`
-		Model                string  `json:"model,omitempty"`
-		AuthMode             string  `json:"auth_mode,omitempty"`
-		TimeoutNanoseconds   int64   `json:"timeout_nanoseconds,omitempty"`
-		ProviderMaxTokens    int     `json:"provider_max_tokens,omitempty"`
-		Temperature          float64 `json:"temperature"`
-		TransportAttemptsMax int     `json:"transport_attempts_max"`
-		RequestByteLimit     int     `json:"request_byte_limit"`
-		ResponseByteLimit    int     `json:"response_byte_limit"`
-		Invalid              string  `json:"invalid,omitempty"`
+		Contract          string  `json:"contract"`
+		Endpoint          string  `json:"endpoint,omitempty"`
+		Model             string  `json:"model,omitempty"`
+		AuthMode          string  `json:"auth_mode,omitempty"`
+		ProviderMaxTokens int     `json:"provider_max_tokens,omitempty"`
+		Temperature       float64 `json:"temperature"`
+		Invalid           string  `json:"invalid,omitempty"`
 	}
 
-	state := providerState{
-		Contract:             llmProviderContract,
-		Temperature:          0.1,
-		TransportAttemptsMax: maxRetries + 1,
-		RequestByteLimit:     llmProviderRequestByteLimit,
-		ResponseByteLimit:    maxProviderResponseBytes,
-	}
+	state := providerState{Contract: llmProviderContract, Temperature: 0.1}
 	if c == nil {
 		state.Invalid = "client_missing"
 	} else {
@@ -53,7 +48,6 @@ func (c *Client) State() []byte {
 		state.Endpoint = config.Endpoint
 		state.Model = config.Model
 		state.AuthMode = config.AuthMode
-		state.TimeoutNanoseconds = config.Timeout.Nanoseconds()
 		state.ProviderMaxTokens = config.MaxTokens
 		if err := validateLLMProviderConfig(c); err != nil {
 			state.Endpoint = ""

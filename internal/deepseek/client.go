@@ -25,13 +25,14 @@ const (
 	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
 	defaultModel     = "deepseek-v4-flash"
 	defaultMaxTokens = 128_000
-	// defaultTimeout bounds one provider attempt. Across 1,047 recorded calls
-	// the slowest single attempt was 86.7 s (228k input, 19k output tokens) and
-	// p99 was 50.7 s; the only 334 s record is two attempts of a stalled small
-	// request. Three minutes is 2.1x the slowest real attempt, so it truncates
-	// no measured work while capping a stall at three minutes instead of ten.
-	// REPOMAP_LLM_TIMEOUT raises it for a slower endpoint.
-	defaultTimeout              = 3 * time.Minute
+	// defaultTimeout bounds one provider attempt. Three minutes was measured
+	// against a corpus whose slowest recorded attempt was 86.7 s, and a live
+	// cold run then lost a whole target page to a grouping call that ran past
+	// it. Six minutes keeps a stall bounded well under the previous ten while
+	// leaving four times the slowest attempt anyone has recorded, and a timeout
+	// is now retried rather than fatal. REPOMAP_LLM_TIMEOUT raises it further
+	// for a slower endpoint.
+	defaultTimeout              = 6 * time.Minute
 	defaultWaitProgressInterval = 10 * time.Second
 
 	authBearer = "bearer"
@@ -442,7 +443,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		retry := isRetryableNetworkError(err)
+		retry := isRetryableNetworkError(err) || retryableTimeout(ctx, err)
 		return chatCompletion{}, retry, newProviderTransportError(
 			providerNetworkFailureKind(err), 0, fmt.Errorf("llm request failed: %w", err),
 		)
@@ -612,6 +613,24 @@ func isRetryableNetworkError(err error) bool {
 		return false
 	}
 	return true
+}
+
+// retryableTimeout reports whether this attempt hit our own per-attempt bound
+// rather than the caller giving up. A slow provider used to take a whole
+// target page with it: one grouping call over the bound and that target was
+// recorded as not analyzed, from one attempt, with no second try. The caller's
+// context still being alive is what separates "this attempt was slow" from
+// "the run was cancelled" or "the caller's deadline passed", and only the
+// first is worth another attempt.
+func retryableTimeout(ctx context.Context, err error) bool {
+	if ctx != nil && ctx.Err() != nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var networkErr net.Error
+	return errors.As(err, &networkErr) && networkErr.Timeout()
 }
 
 func providerNetworkFailureKind(err error) llm.ProviderFailureKind {
