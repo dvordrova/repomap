@@ -23,10 +23,16 @@ import (
 )
 
 const (
-	defaultEndpoint             = "https://api.deepseek.com/chat/completions"
-	defaultModel                = "deepseek-v4-flash"
-	defaultMaxTokens            = 128_000
-	defaultTimeout              = 10 * time.Minute
+	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
+	defaultModel     = "deepseek-v4-flash"
+	defaultMaxTokens = 128_000
+	// defaultTimeout bounds one provider attempt. Across 1,047 recorded calls
+	// the slowest single attempt was 86.7 s (228k input, 19k output tokens) and
+	// p99 was 50.7 s; the only 334 s record is two attempts of a stalled small
+	// request. Three minutes is 2.1x the slowest real attempt, so it truncates
+	// no measured work while capping a stall at three minutes instead of ten.
+	// REPOMAP_LLM_TIMEOUT raises it for a slower endpoint.
+	defaultTimeout              = 3 * time.Minute
 	defaultWaitProgressInterval = 10 * time.Second
 
 	authBearer = "bearer"

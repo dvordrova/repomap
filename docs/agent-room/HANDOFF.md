@@ -149,6 +149,14 @@ string, so grep it, do not walk it as JSON.
 
 ## Traps
 
+- **The provider's transport settings are in the cache key.** `Client.State()`
+  carries `timeout_nanoseconds`, `provider_max_tokens`, the byte limits and the
+  retry count, and the executor hashes that state into every cache key. Editing
+  `defaultTimeout` cold-started all 1,047 records in real money; this was
+  learned by paying for it. Nothing about a timeout changes what a successful
+  response contains, so those four fields do not belong there, but removing
+  them costs one more cold start and is only worth doing alongside a change
+  that pays for one anyway.
 - A name-based dead-code scan misses interface satisfaction.
   `runOutputWarningSink.Write` looked unreachable and has four call sites.
 - Do not reorder request fields for provider prefix caching. Measured dead: the

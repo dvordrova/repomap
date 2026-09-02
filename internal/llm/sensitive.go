@@ -21,18 +21,20 @@ type sensitiveAssessment struct {
 
 func assessSensitiveMaterial(raw []byte) sensitiveAssessment {
 	assessment := sensitiveAssessment{}
-	if normalized, err := NormalizeJSON(raw); err == nil {
-		decoder := json.NewDecoder(bytes.NewReader(normalized))
-		decoder.UseNumber()
-		var value any
-		if decoder.Decode(&value) == nil {
-			if _, found := sensitiveStructuredValue(value); found {
-				assessment.found = true
-				assessment.structured = true
+	if mayCarrySensitiveKey(raw) {
+		if normalized, err := NormalizeJSON(raw); err == nil {
+			decoder := json.NewDecoder(bytes.NewReader(normalized))
+			decoder.UseNumber()
+			var value any
+			if decoder.Decode(&value) == nil {
+				if _, found := sensitiveStructuredValue(value); found {
+					assessment.found = true
+					assessment.structured = true
+				}
 			}
 		}
 	}
-	if _, found := secretscan.DetectPersistenceSensitive(string(raw)); found {
+	if _, found := secretscan.DetectPersistenceSensitiveBytes(raw); found {
 		assessment.found = true
 	}
 	return assessment
@@ -62,4 +64,28 @@ func sensitiveStructuredValue(value any) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// Every key sensitiveStructuredValue closes on contains one of a few short
+// stems, and normalizing a key only lowercases it and turns "-" and " " into
+// "_", so a stem written literally in the payload survives that normalization.
+// Decoding a payload carrying none of them can therefore never find a key,
+// and decoding it into a tree is the single most expensive thing this guard
+// does on a cached run.
+//
+// A JSON escape could spell a stem without those bytes appearing literally,
+// so any backslash sends the payload down the full decode. This gate has no
+// false negatives; it only skips work that could not have found anything.
+var sensitiveKeyStems = []string{"key", "auth", "token", "secret", "password", "credential"}
+
+func mayCarrySensitiveKey(raw []byte) bool {
+	if bytes.IndexByte(raw, '\\') >= 0 {
+		return true
+	}
+	for _, stem := range sensitiveKeyStems {
+		if secretscan.ContainsFold(raw, stem) {
+			return true
+		}
+	}
+	return false
 }

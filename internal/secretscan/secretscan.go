@@ -85,10 +85,24 @@ func Detect(text string) (string, bool) {
 // of --scan-secrets. It is only for persistence/observation boundaries and
 // must not be used as a broad gate over trusted repository source.
 func DetectPersistenceSensitive(text string) (string, bool) {
-	for _, candidate := range persistencePatterns {
-		for _, location := range candidate.pattern.FindAllStringIndex(text, -1) {
-			match := text[location[0]:location[1]]
-			if candidate.bearer && !looksLikeBearerCredential(text, location, match) {
+	return detectPersistenceSensitive(text)
+}
+
+// DetectPersistenceSensitiveBytes is DetectPersistenceSensitive without the
+// copy a string conversion would make of a whole provider payload.
+func DetectPersistenceSensitiveBytes(text []byte) (string, bool) {
+	return detectPersistenceSensitive(text)
+}
+
+func detectPersistenceSensitive[Text string | []byte](text Text) (string, bool) {
+	for position, candidate := range persistencePatterns {
+		if !anyLiteralPresent(text, persistenceLiterals[position]) {
+			continue
+		}
+		scanned := string(text)
+		for _, location := range candidate.pattern.FindAllStringIndex(scanned, -1) {
+			match := scanned[location[0]:location[1]]
+			if candidate.bearer && !looksLikeBearerCredential(scanned, location, match) {
 				continue
 			}
 			if candidate.assignment && (looksLikePlaceholder(match) || !looksLikeCredentialAssignment(match)) {
