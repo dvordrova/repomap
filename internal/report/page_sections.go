@@ -18,8 +18,11 @@ const maxVisibleGroupMembers = 3
 // where execution starts, what the core does, what it calls out to, the main
 // flow, and then the warnings.
 type pageSection struct {
-	ID       string
+	ID string
+	// Name is what the reader calls this target; Label additionally
+	// distinguishes two targets that share a name.
 	Name     string
+	Label    string
 	Language string
 	Kind     string
 	Root     string
@@ -165,6 +168,29 @@ func (builder *pageBuilder) createSections() {
 		}
 		builder.byProgram[index.Target.ID] = section
 		builder.sections = append(builder.sections, section)
+	}
+	labelSections(builder.sections)
+}
+
+// labelSections keeps every target distinguishable in the navigation. Two
+// targets can legitimately share a name — a library and a command in one
+// directory — so a repeated name gains the detail that separates them.
+func labelSections(sections []*pageSection) {
+	count := make(map[string]int, len(sections))
+	for _, section := range sections {
+		count[section.Name]++
+	}
+	for _, section := range sections {
+		section.Label = section.Name
+		if count[section.Name] < 2 {
+			continue
+		}
+		switch {
+		case section.Kind != "":
+			section.Label = section.Name + " (" + section.Kind + ")"
+		case section.Root != "":
+			section.Label = section.Name + " (" + section.Root + ")"
+		}
 	}
 }
 
