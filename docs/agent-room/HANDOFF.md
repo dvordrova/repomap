@@ -50,23 +50,40 @@ grouping routes every repository through that never-exercised path. Print the
 number first; cap it the day a real printout crosses the window, and exercise
 merge on the fixture deliberately before that.
 
-## Open finding 1: core is diluted
+## Settled finding 1: core is diluted, and narrowing it costs more than it saves
 
-After the 95cce28e revert, on the fixture:
+`core` is a gate, not a ranking. It decides only which subjects the grouping
+model is allowed to place in the core lane; grouping then does the actual
+routing. On the fixture the gate passes 209 of 219 backend objects and 45 of
+them reach a group. Narrowing the gate cannot reorder anything downstream —
+it can only take candidates away from the stage that does the routing.
 
-| run | coverage of indexed objects | assignments | core | inbound | dependency |
-|---|---|---|---|---|---|
-| backend, before the regression | 55% | 163 | 152 | 10 | 6 |
-| backend, regressed | 15% | 35 | 35 | 2 | 0 |
-| backend, after revert | 97% | 239 | 225 | 10 | 11 |
-| front, after revert | 74% | 338 | 281 | 10 | 43 |
+Every real run on the fixture, categorization against what grouping made of it:
 
-Core now lands on 97% of backend objects. A category carried by nearly
-everything routes no attention. This is the same dilution that made an earlier
-experiment worthless, arriving by a different road, and it is not yet decided
-whether it is worth narrowing.
+| run | obj cov | core | groups | largest group | grouped subjects | connections |
+|---|---|---|---|---|---|---|
+| backend, before the regression | 55% | 152 | 7 | 8 | 36 | 7 |
+| backend, regressed | 16% | 35 | 6 | 9 | 22 | 5 |
+| backend, after revert | 98% | 225 | 10 | 13 | 55 | 14 |
+| front, before the regression | 46% | 89 | 8 | 28 | 85 | 10 |
+| front, regressed | 34% | 94 | 9 | 17 | 54 | 9 |
+| front, after revert | 75% | 281 | 7 | **127** | 237 | 12 |
 
-The earlier experiment is the cautionary tale for this whole area. Inviting the
+Backend moves the right way at every step: more core, more groups, more
+grouped subjects, more connections. The regressed run is what a narrower core
+looks like — 6 groups over 22 subjects. **Do not narrow `core`.**
+
+The defect the 97% was standing in for is real but lives one stage down and on
+one target: front's `Simulation rendering and animation` holds 127 of 424
+subjects, 29% of the target, and renders as three rows and `+94 more`. That is
+a group-size problem in grouping, not a category problem, and the console now
+prints it on every run:
+
+    groups: 7 (core 4, dependencies 1, triggers 2)
+    subjects in a group: 237/424 (55%)
+    largest group: Simulation rendering and animation, 127/424 (29%) of this target
+
+The earlier experiment stays the cautionary tale for this area. Inviting the
 model to categorize context subjects cut discards and looked like a win: chi
 went from 264 categorized subjects to 858. But 841 of those were `core`,
 covering 90% of the target, and group counts fell as the signal diluted. It was

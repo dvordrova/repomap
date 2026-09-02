@@ -105,12 +105,11 @@ func groupProgramIndexForRun(
 		output.Warn("could not record grouping diagnostics", err.Error())
 	}
 	if output != nil {
-		details := []string{
-			"target: " + program.Target.Name,
-			fmt.Sprintf("groups: %d", len(index.Groups)),
-			fmt.Sprintf("local connections: %d", len(index.Connections)),
-			fmt.Sprintf("discarded response rows: %d", len(diagnostics)),
-		}
+		details := append(
+			[]string{"target: " + program.Target.Name},
+			formatGroupShape(index)...,
+		)
+		details = append(details, fmt.Sprintf("discarded response rows: %d", len(diagnostics)))
 		details = append(details, modeldiag.Summary(groupRows)...)
 		details = append(details, formatRunOutputWallDuration(time.Since(started)))
 		output.State("Program grouping", "ready", details...)
