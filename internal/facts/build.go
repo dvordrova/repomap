@@ -44,6 +44,7 @@ func Build(input Input) (Result, error) {
 		builder.addEntrypoints(target)
 		builder.addHTTP(target)
 		builder.addConfigReads(target)
+		builder.addListenAddresses(target)
 		builder.addDynamicExecution(target)
 		builder.addReachability(target)
 		builder.addDependencies(target)

@@ -16,6 +16,7 @@
 {{end}}</tbody></table>{{else}}<p class="empty">{{.PortalsMissing}}</p>
 {{if .LooseCalls}}<h4>HTTP calls</h4><ul class="plain fact">{{range .LooseCalls}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Target}} · {{.Target}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
 {{if .LooseRoutes}}<h4>HTTP routes</h4><ul class="plain fact">{{range .LooseRoutes}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Target}} · {{.Target}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}{{end}}
+{{if .Addresses}}<h4>Where to reach them</h4><ul class="plain fact">{{range .Addresses}}<li>{{if .Target}}<strong>{{.Target}}</strong> · {{end}}<code>{{.Key}}</code>{{if .Value}} <code>{{.Value}}</code>{{end}}{{if .Note}} <span class="meta">{{.Note}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
 <h3>What is missing</h3>
 {{if .Negatives}}<ul class="plain fact">{{range .Negatives}}<li>{{.Text}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{.NegativesMissing}}</p>{{end}}
 <h3>How to run</h3>

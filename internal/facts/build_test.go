@@ -694,3 +694,23 @@ func TestComposedRoutePathsFollowTheMountChain(t *testing.T) {
 		}
 	}
 }
+
+// TestListenAddressAcceptsOnlyRealBindTargets keeps the port answer honest:
+// what a server is actually given, and nothing that merely looks like it.
+func TestListenAddressAcceptsOnlyRealBindTargets(t *testing.T) {
+	for _, value := range []string{
+		":3333", "0.0.0.0:8080", "127.0.0.1:80", "localhost:65535", "/tmp/app.sock", "./app.sock",
+	} {
+		if !isListenAddress(value) {
+			t.Fatalf("isListenAddress(%q) = false, want true", value)
+		}
+	}
+	for _, value := range []string{
+		"", "tcp", ":0", ":65536", ":notaport", "http://example.com/path",
+		"example.com", "some text:8080", "a/b:8080",
+	} {
+		if isListenAddress(value) {
+			t.Fatalf("isListenAddress(%q) = true, want false", value)
+		}
+	}
+}

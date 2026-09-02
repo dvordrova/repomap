@@ -43,6 +43,10 @@ const (
 	KindPortal Kind = "portal"
 	// KindConfigRead is an environment/config key read.
 	KindConfigRead Kind = "config_read"
+	// KindListenAddress is a literal address a server binds to. It answers
+	// "on which port" from the code rather than from a manifest or an
+	// environment key that may have no default anywhere in the repository.
+	KindListenAddress Kind = "listen_address"
 	// KindDynamicExecution marks a place where the program runs code it was
 	// given rather than code you can read: exec, eval, subprocess, a
 	// deserializer that can construct objects. It is an orientation fact, not
@@ -68,8 +72,8 @@ const (
 func (kind Kind) Valid() bool {
 	switch kind {
 	case KindEntrypoint, KindHTTPRoute, KindHTTPCall, KindPortal, KindConfigRead,
-		KindDynamicExecution, KindManifest, KindTODO, KindDeadModule, KindNegative,
-		KindDependency, KindImport:
+		KindListenAddress, KindDynamicExecution, KindManifest, KindTODO,
+		KindDeadModule, KindNegative, KindDependency, KindImport:
 		return true
 	default:
 		return false
@@ -411,6 +415,10 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 	case KindConfigRead, KindDynamicExecution, KindManifest, KindNegative, KindDependency:
 		if fact.Key == "" {
 			return fmt.Errorf("%s requires key", fact.Kind)
+		}
+	case KindListenAddress:
+		if fact.Value == "" || fact.Anchor == nil {
+			return fmt.Errorf("listen_address requires value and anchor")
 		}
 	case KindTODO:
 		if fact.Text == "" || fact.Anchor == nil {

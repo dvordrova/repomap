@@ -269,6 +269,14 @@
       ]
     },
     {
+      "file": "internal/facts/listen.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxTCPPort"
+      ],
+      "note": "The largest number a TCP or UDP port can be. It is the protocol's own bound used to tell a port apart from other text, not a product ceiling on anything."
+    },
+    {
       "file": "internal/facts/route_prefix.go",
       "category": "excluded-not-a-limit",
       "symbols": [
