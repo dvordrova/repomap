@@ -68,3 +68,10 @@ ul.dynamic li{border-left:3px solid var(--warn);padding:.25rem .7rem;margin:.35r
 .jump a:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
 .jump b{font-weight:600;color:var(--ink)}
 h2,h3{scroll-margin-top:3.2rem}
+
+/* A group's chips are anchors into this repository. Symbols from the standard
+   library or a package have no anchor to offer, so they are separated and
+   said to be from outside rather than sitting in the same row looking like
+   files a reader could open. */
+.path.outside{font-style:italic}
+.chip-outside{background:transparent;border-style:dashed;color:var(--muted)}
