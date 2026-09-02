@@ -32,9 +32,12 @@ type pageSection struct {
 	programTargetID string
 	factsTargetID   string
 
-	FactsAvailable   bool
-	Map              *pageMap
-	RouteGroups      []pageRouteGroup
+	FactsAvailable bool
+	Map            *pageMap
+	RouteGroups    []pageRouteGroup
+	// InboundCount is how many route rows this target shows, so the jump bar
+	// can say what is behind a link before it is followed.
+	InboundCount     int
 	Triggers         []pageGroup
 	Entrypoints      []pageEntrypoint
 	Core             []pageGroup
@@ -145,6 +148,9 @@ func (builder *pageBuilder) buildSections() {
 		builder.fillSectionFacts(section)
 		builder.fillSectionGroups(section)
 		section.Map = builder.buildMap(section)
+		for _, group := range section.RouteGroups {
+			section.InboundCount += len(group.Rows)
+		}
 		section.Flow = builder.flow(section)
 		if section.Flow == nil {
 			section.FlowMissing = notAvailableOrientation
