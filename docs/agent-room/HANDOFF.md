@@ -156,6 +156,25 @@ row is `{subject_id, categories}`. Categorization exchanges are the ones whose
 `request.json` contains `categorize_refs`; the request body is an encoded
 string, so grep it, do not walk it as JSON.
 
+## Scale: what a repository costs
+
+| repository | objects | relations | categorization requests | result |
+|---|---|---|---|---|
+| fixture backend | 219 | — | 10 | 5.6 s warm |
+| fixture front | 222 | — | 14 | included above |
+| chi library | 433 | 887 | 30 | 7.6 s warm, 111 s cold |
+| beets | 26,218 | 53,063 | ~820 | stopped after 388 calls |
+
+beets was pointed at on 2026-09-03 as a third repository to read. It is not
+medium by this tool's standards: nine minutes and 388 accepted calls in, at
+12.05 M input tokens, it was roughly halfway through categorization alone. The
+run was stopped rather than finished, so nothing is known about what its
+report would have looked like.
+
+The request plan is now announced before it executes, so the next person sees
+the number rather than the bill. Nothing caps it. If a bound is ever wanted,
+the number to bound is categorization requests, which is subjects ÷ 32.
+
 ## Known gaps, recorded not fixed
 
 - `os.environ["KEY"]` and `process.env.KEY` subscript reads are not captured.
