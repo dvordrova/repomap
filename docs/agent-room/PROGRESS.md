@@ -25,16 +25,16 @@ self-contained HTML. Working until 11:00. Design authority for the map is
    and the calls between them; overview reordered so the summary leads and
    README quotes are last, quiet and clamped.
 6. **Truth.** `eee34ef9` a key repeated with an identical value no longer
-   throws away whole answers — front went from 7 groups with a 127-member
-   bucket to 12 groups, largest 42, connections 10 → 20. `e4730fdf` mounted
-   route prefixes compose, so chi prints `GET /articles/{articleID}` where it
-   printed `GET /`. `0bd00990` a listen address is a fact, so "on which port"
-   is answered on the overview.
+   discards whole answers — front went from 7 groups with a 127-member bucket
+   to 12 groups, largest 42, connections 10 → 20. `e4730fdf` mounted route
+   prefixes compose: chi prints `GET /articles/{articleID}` where it printed
+   `GET /`. `0bd00990` a listen address is a fact, so "on which port" is
+   answered on the overview.
 
 ## Stuck on
 
-`~/git/fuego` fails before analysis on incomplete `go list` authority for a
-template package. Pre-existing, unrelated to tonight, not investigated.
+`~/git/fuego` fails before analysis on incomplete `go list` authority.
+Pre-existing, unrelated to tonight, not investigated.
 
 ## Next
 
