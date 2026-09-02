@@ -91,8 +91,7 @@ func validateAcceptedCacheRecord(
 		record.RequestBytes < 0 || record.ResponseBytes < 0 ||
 		record.FinishReason != FinishStop || record.ChoiceCount != 1 ||
 		len(record.Response) > limits.MaxResponseBytes ||
-		len(record.Response) > hardMaxResponseBytes ||
-		assessSensitiveMaterial(record.Response).found {
+		len(record.Response) > hardMaxResponseBytes {
 		return errors.New("llm: rejected cache identity or byte accounting")
 	}
 	if err := validateMetrics(record.Metrics); err != nil {
@@ -108,8 +107,7 @@ func saveAcceptedCache(rootDir string, record acceptedCacheRecord) error {
 		record.ResponseSHA256 != sha256Hex(record.Response) ||
 		record.RequestBytes < 0 || record.ResponseBytes != len(record.Response) ||
 		record.FinishReason != FinishStop || record.ChoiceCount != 1 ||
-		len(record.Response) > hardMaxResponseBytes ||
-		assessSensitiveMaterial(record.Response).found {
+		len(record.Response) > hardMaxResponseBytes {
 		return errors.New("llm: refuse invalid accepted cache record")
 	}
 	if err := validateMetrics(record.Metrics); err != nil {

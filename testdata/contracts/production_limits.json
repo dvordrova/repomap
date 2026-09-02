@@ -51,30 +51,6 @@
       "reason": "Unicode control-character boundary used while sanitizing diagnostics."
     },
     {
-      "file": "internal/secretscan/secretscan.go",
-      "expression": "len(token) >= 24",
-      "occurrences": 1,
-      "reason": "Opt-in credential-detection minimum heuristic."
-    },
-    {
-      "file": "internal/secretscan/secretscan.go",
-      "expression": "len(value) < 8",
-      "occurrences": 1,
-      "reason": "Opt-in credential-detection minimum heuristic."
-    },
-    {
-      "file": "internal/secretscan/secretscan.go",
-      "expression": "len(value) >= 16",
-      "occurrences": 1,
-      "reason": "Opt-in credential-detection minimum heuristic."
-    },
-    {
-      "file": "internal/secretscan/secretscan.go",
-      "expression": "len(value) >= 8",
-      "occurrences": 1,
-      "reason": "Opt-in credential-detection minimum heuristic."
-    },
-    {
       "file": "internal/snapshot/identity.go",
       "expression": "len(remotePath) >= 4",
       "occurrences": 1,

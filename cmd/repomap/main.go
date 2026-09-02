@@ -28,7 +28,6 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
-	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
@@ -190,7 +189,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		"maximum exact target call-graph edges (0 keeps all edges)",
 	)
 	noCache := fs.Bool("no-cache", false, "disable cross-run model response caches")
-	scanSecrets := fs.Bool("scan-secrets", false, "scan repository and model material for credential-like text")
 	gitLabURLFlag := fs.String("gitlab-url", "", "create a standalone report with GitLab source links; does not select a repository")
 	gitHubURLFlag := fs.String("github-url", "", "create a standalone report with GitHub source links; does not select a repository")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
@@ -247,11 +245,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return fmt.Errorf("--force-platform: %w", err)
 	}
 	autoGoTarget := automaticGoTargetAllowed(*forcePlatform, os.Getenv)
-	restoreSecretScan := secretscan.SetEnabled(*scanSecrets)
-	defer restoreSecretScan()
-	if *scanSecrets {
-		humanOutput.State("Secret scan", "enabled", "heuristic credential detection: on")
-	}
 	if *port < 0 || *port > reportserver.MaxTCPPort {
 		return fmt.Errorf("--port must be between 0 and %d", reportserver.MaxTCPPort)
 	}
@@ -559,7 +552,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		AutoGoTarget:     autoGoTarget,
 		RunID:            runID,
 		DebugDir:         dDir,
-		DumpRedacted:     true,
 		RequireArtifacts: true,
 		SkipGoFacts:      true,
 		EffectiveOptions: debugdump.EffectiveOptions{
@@ -569,7 +561,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			AnalysisTargetOverride: analysisTargetOverride,
 			DirectCallDepth:        *directCallDepth,
 			DirectCallEdgeLimit:    *directCallEdgeLimit,
-			ScanSecrets:            *scanSecrets,
 			GitLabURL:              gitLabURL,
 			GitHubURL:              gitHubURL,
 			NoOpen:                 *noOpen,
@@ -936,7 +927,8 @@ func actionableFlagError(args []string, parseErr error) error {
 		"go-target":       "use --force-platform GOOS/GOARCH",
 		"strict-snapshot": "repository changes are allowed during analysis; remove --strict-snapshot",
 		"source-episode":  "source episodes were removed; remove --source-episode",
-		"no-secrets":      "heuristic scanning is off by default; remove --no-secrets or use --scan-secrets to enable it",
+		"no-secrets":      "credential scanning was removed; remove --no-secrets",
+		"scan-secrets":    "credential scanning was removed; remove --scan-secrets",
 		"lang":            "reports are currently canonical English; remove --lang",
 	}
 	for _, argument := range args {

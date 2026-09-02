@@ -58,7 +58,7 @@ func Append(runDir string, rows []Row) error {
 		buffer.Write(encoded)
 		buffer.WriteByte('\n')
 	}
-	writer, err := debugdump.OpenWriter(runDir, false)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return fmt.Errorf("model diagnostics: open writer: %w", err)
 	}

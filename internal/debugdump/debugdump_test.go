@@ -12,7 +12,7 @@ import (
 func TestSemanticExchangeRecordsLivePayloads(t *testing.T) {
 	t.Parallel()
 
-	writer, err := NewWriter(t.TempDir(), "semantic", false)
+	writer, err := NewWriter(t.TempDir(), "semantic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,43 +64,10 @@ func TestSemanticExchangeAcceptsOnlyLiveStages(t *testing.T) {
 	}
 }
 
-func TestSemanticExchangeMarksPersistenceSensitiveResponse(t *testing.T) {
-	t.Parallel()
-
-	writer, err := NewWriter(t.TempDir(), "unsafe", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer writer.Close()
-
-	unsafe := []byte(`{"answer":"sk-abcdefghijklmnop"}`)
-	exchange := validExchange(SemanticStageProgramGrouping)
-	exchange.State = SemanticStateRejected
-	exchange.ValidationCode = SemanticValidationSecret
-	exchange.Response = unsafe
-	reference := writer.RecordSemanticExchange(exchange)
-	if reference == "" {
-		t.Fatal("semantic exchange was not recorded")
-	}
-	runDir := filepath.Join(writer.BaseDir, writer.RunID)
-	record := readOnlySemanticExchange(t, runDir, reference)
-	if record.Response.Storage != "unsafe_marker" || record.Response.UnsafeKind != "secret_key" {
-		t.Fatalf("unsafe response record = %#v", record.Response)
-	}
-	markerPath := filepath.Join(runDir, filepath.Dir(reference), record.Response.File)
-	marker, err := os.ReadFile(markerPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(marker, unsafe) || bytes.Contains(marker, []byte("abcdefghijklmnop")) {
-		t.Fatalf("unsafe marker leaked response: %s", marker)
-	}
-}
-
 func TestSemanticExchangeWarningIsBoundedAndDeduplicated(t *testing.T) {
 	t.Parallel()
 
-	writer, err := NewWriter(t.TempDir(), "warning", false)
+	writer, err := NewWriter(t.TempDir(), "warning")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,37 +87,10 @@ func TestSemanticExchangeWarningIsBoundedAndDeduplicated(t *testing.T) {
 	}
 }
 
-func TestWriteValidatedFileChecksPersistedBytes(t *testing.T) {
-	t.Parallel()
-
-	writer, err := NewWriter(t.TempDir(), "validated", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer writer.Close()
-	original := []byte(`{"api_key":"top-secret-value","safe":true}`)
-	if err := writer.WriteValidatedFile("artifact.json", original, func(saved []byte) error {
-		if bytes.Contains(saved, []byte("top-secret-value")) ||
-			!bytes.Contains(saved, []byte(`"api_key": "[redacted]"`)) {
-			t.Fatalf("validator received unexpected bytes: %s", saved)
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	saved, err := os.ReadFile(filepath.Join(writer.BaseDir, writer.RunID, "artifact.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(saved, []byte("top-secret-value")) {
-		t.Fatalf("persisted artifact leaked secret: %s", saved)
-	}
-}
-
 func TestMetadataUsesOnlyLiveRequestStates(t *testing.T) {
 	t.Parallel()
 
-	writer, err := NewWriter(t.TempDir(), "metadata", false)
+	writer, err := NewWriter(t.TempDir(), "metadata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +126,7 @@ func TestOpenWriterPreservesBuildIdentityAndConfinement(t *testing.T) {
 	t.Parallel()
 
 	base := t.TempDir()
-	created, err := NewWriter(base, "existing", false)
+	created, err := NewWriter(base, "existing")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +143,7 @@ func TestOpenWriterPreservesBuildIdentityAndConfinement(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	opened, err := OpenWriter(runDir, false)
+	opened, err := OpenWriter(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,11 +160,11 @@ func TestNewAndOpenWriterRejectAmbiguousRunDirectories(t *testing.T) {
 	t.Parallel()
 
 	base := t.TempDir()
-	writer, err := NewWriter(base, "run", false)
+	writer, err := NewWriter(base, "run")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewWriter(base, "run", false); err == nil {
+	if _, err := NewWriter(base, "run"); err == nil {
 		t.Fatal("existing run directory was reused")
 	}
 	if err := writer.Close(); err != nil {
@@ -233,7 +173,7 @@ func TestNewAndOpenWriterRejectAmbiguousRunDirectories(t *testing.T) {
 	if err := os.Symlink(filepath.Join(base, "run"), filepath.Join(base, "alias")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := OpenWriter(filepath.Join(base, "alias"), false); err == nil {
+	if _, err := OpenWriter(filepath.Join(base, "alias")); err == nil {
 		t.Fatal("run-directory symlink was accepted")
 	}
 }
@@ -275,5 +215,33 @@ func assertSavedPayload(
 	}
 	if !bytes.Equal(data, want) {
 		t.Fatalf("saved payload = %s, want %s", data, want)
+	}
+}
+
+// TestWriteValidatedFileValidatesTheBytesItPersists keeps the validator bound
+// to the exact artifact that reaches disk.
+func TestWriteValidatedFileValidatesTheBytesItPersists(t *testing.T) {
+	t.Parallel()
+
+	writer, err := NewWriter(t.TempDir(), "validated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	original := []byte(`{"name":"orders","safe":true}`)
+	if err := writer.WriteValidatedFile("artifact.json", original, func(saved []byte) error {
+		if !bytes.Equal(saved, original) {
+			t.Fatalf("validator received %s, want %s", saved, original)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(filepath.Join(writer.BaseDir, writer.RunID, "artifact.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(saved, original) {
+		t.Fatalf("persisted artifact = %s, want %s", saved, original)
 	}
 }

@@ -64,7 +64,7 @@ func Persist(runDir string, result Result) error {
 	if err != nil {
 		return err
 	}
-	writer, err := debugdump.OpenWriter(runDir, false)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return fmt.Errorf("claims: open artifact writer: %w", err)
 	}

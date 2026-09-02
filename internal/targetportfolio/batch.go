@@ -8,7 +8,6 @@ import (
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/llm"
-	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 type classificationBatch struct {
@@ -409,9 +408,6 @@ func compileDefaultBatch(compilation Compilation, refs []corpus.FileID) (default
 	if err != nil {
 		return defaultBatch{}, fmt.Errorf("target portfolio: encode default comparison: %w", err)
 	}
-	if _, found := secretscan.Detect(string(wire)); found {
-		return defaultBatch{}, fmt.Errorf("target portfolio: default comparison contains credential-shaped content")
-	}
 	authority := make(map[corpus.FileID]VisibleCandidate, len(request.Candidates))
 	for _, candidate := range request.Candidates {
 		authority[candidate.FileRef] = cloneVisibleCandidate(candidate)
@@ -436,9 +432,6 @@ func (batch defaultBatch) resolve(raw []byte) (Selection, error) {
 	}
 	if len(raw) == 0 || len(raw) > MaxResponseBytes {
 		return Selection{}, fmt.Errorf("target portfolio: default response exceeds bounded envelope")
-	}
-	if _, found := secretscan.Detect(string(raw)); found {
-		return Selection{}, fmt.Errorf("target portfolio: default response contains credential-shaped content")
 	}
 	var response DefaultResponse
 	decoder := json.NewDecoder(bytes.NewReader(raw))

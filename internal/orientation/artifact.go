@@ -64,7 +64,7 @@ func Persist(runDir string, result Result) error {
 	if err != nil {
 		return err
 	}
-	writer, err := debugdump.OpenWriter(runDir, false)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return fmt.Errorf("orientation: open artifact writer: %w", err)
 	}
@@ -104,7 +104,7 @@ func PersistRejected(runDir string, rows []RejectedRow) error {
 		buffer.Write(encoded)
 		buffer.WriteByte('\n')
 	}
-	writer, err := debugdump.OpenWriter(runDir, false)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return fmt.Errorf("orientation: open rejected writer: %w", err)
 	}

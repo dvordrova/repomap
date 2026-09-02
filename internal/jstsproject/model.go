@@ -17,7 +17,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 const (
@@ -26,7 +25,6 @@ const (
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20
-	redactedExpression  = "<persistence-sensitive expression omitted>"
 	javascriptPlatform  = "platform:javascript"
 )
 
@@ -262,15 +260,12 @@ func (result Result) Snapshot() Result {
 func Seal(result Result) (Result, error) {
 	result.Version = Version
 	result.HelperVersion = HelperVersion
-	omitPersistenceSensitiveOptionalMetadata(&result)
+	omitUnsafeOptionalMetadata(&result)
 	canonicalize(&result)
 	result.SHA256 = ""
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return Result{}, fmt.Errorf("jsts project: seal: %w", err)
-	}
-	if err := rejectPersistenceSensitiveResult(encoded); err != nil {
-		return Result{}, err
 	}
 	digest := sha256.Sum256(encoded)
 	result.SHA256 = hex.EncodeToString(digest[:])
@@ -280,19 +275,14 @@ func Seal(result Result) (Result, error) {
 	return result, nil
 }
 
-func omitPersistenceSensitiveOptionalMetadata(result *Result) {
+// omitUnsafeOptionalMetadata drops optional metadata that would otherwise
+// leak host paths into the artifact, and repairs the chained-call receiver
+// and result refs that must not dangle.
+func omitUnsafeOptionalMetadata(result *Result) {
 	for index := range result.Declarations {
 		signature := result.Declarations[index].Signature
-		if _, sensitive := secretscan.DetectPersistenceSensitive(signature); sensitive || unsafeDeclarationSignature(signature) {
+		if unsafeDeclarationSignature(signature) {
 			result.Declarations[index].Signature = ""
-		}
-	}
-	redactedCallRefs := make(map[string]struct{})
-	for index := range result.Calls {
-		if _, sensitive := secretscan.DetectPersistenceSensitive(result.Calls[index].Expression); sensitive {
-			result.Calls[index].Expression = redactedExpression
-			result.Calls[index].Pattern = nil
-			redactedCallRefs[result.Calls[index].Ref] = struct{}{}
 		}
 	}
 	// Redacting one side of a chained call must not leave a receiver pointing
@@ -324,39 +314,10 @@ func omitPersistenceSensitiveOptionalMetadata(result *Result) {
 			pattern.ResultRef = ""
 		}
 	}
-	// A recovered actual-to-formal value is optional structural metadata. If
-	// its source call was redacted, retaining the candidate would either leave
-	// a dangling provenance ref or persist the same sensitive literal through
-	// the destination argument.
-	for callIndex := range result.Calls {
-		pattern := result.Calls[callIndex].Pattern
-		if pattern == nil {
-			continue
-		}
-		for argumentIndex := range pattern.Arguments {
-			argument := &pattern.Arguments[argumentIndex]
-			retained := argument.ValueCandidates[:0]
-			for _, candidate := range argument.ValueCandidates {
-				if _, redacted := redactedCallRefs[candidate.SourceCallRef]; redacted {
-					continue
-				}
-				retained = append(retained, candidate)
-			}
-			argument.ValueCandidates = retained
-			argument.ValueCandidatesObserved = len(retained)
-		}
-	}
 }
 
 func unsafeDeclarationSignature(value string) bool {
 	return strings.Contains(value, "node_modules/") || strings.Contains(value, `import("/`)
-}
-
-func rejectPersistenceSensitiveResult(encoded []byte) error {
-	if kind, sensitive := secretscan.DetectPersistenceSensitive(string(encoded)); sensitive {
-		return fmt.Errorf("jsts project: persistence-sensitive result content (%s)", kind)
-	}
-	return nil
 }
 
 func (result Result) Validate() error {

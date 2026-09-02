@@ -166,7 +166,7 @@ func runRepositoryOrientation(
 		provider = created
 	}
 	owner := options.Runs[0].RunDir
-	writer, err := debugdump.OpenWriter(owner, false)
+	writer, err := debugdump.OpenWriter(owner)
 	if err != nil {
 		return orientation.Result{}, nil, fmt.Errorf("orientation: open artifact writer: %w", err)
 	}

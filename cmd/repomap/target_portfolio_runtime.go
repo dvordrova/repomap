@@ -147,9 +147,6 @@ func selectTargetPortfolioForRun(
 			return targetportfolio.Selection{}, outcome, callErr
 		}
 		failureCode := targetPortfolioLLMFailureCode(callErr)
-		if targetPortfolioHasRedactedResponse(execution.Outcomes) {
-			failureCode = "response_secret_scan"
-		}
 		failed, failErr := failTargetPortfolioSelection(
 			outcome, failureCode,
 			"did not complete", callErr,
@@ -459,32 +456,16 @@ func applyTargetPortfolioLLMOutcomes(
 	modelOutcome := modelOutcomes[0]
 	outcome.Request = append([]byte(nil), modelOutcome.Request...)
 	outcome.Response = append([]byte(nil), modelOutcome.Response...)
-	if modelOutcome.ResponseRedacted {
-		outcome.ResponseUnavailable = &debugdump.SemanticUnavailable{
-			Code: debugdump.SemanticUnavailableOmitted, OriginalBytes: modelOutcome.ResponseBytes,
-		}
-	} else if len(modelOutcome.Response) == 0 && outcome.ResponseBytes > 0 {
+	if len(modelOutcome.Response) == 0 && outcome.ResponseBytes > 0 {
 		outcome.ResponseUnavailable = &debugdump.SemanticUnavailable{
 			Code: debugdump.SemanticUnavailableNoContent, OriginalBytes: outcome.ResponseBytes,
 		}
-	}
-	if modelOutcome.RequestRedacted {
-		outcome.Request = nil
 	}
 	if modelOutcome.Cached {
 		outcome.RequestProvenance = debugdump.SemanticRequestPrepared
 	} else if modelOutcome.Metrics.Attempts > 0 {
 		outcome.RequestProvenance = debugdump.SemanticRequestExactSent
 	}
-}
-
-func targetPortfolioHasRedactedResponse(outcomes []llm.Outcome[targetportfolio.Selection]) bool {
-	for _, outcome := range outcomes {
-		if outcome.ResponseRedacted {
-			return true
-		}
-	}
-	return false
 }
 
 func reportTargetPortfolioScaleWarnings(
@@ -509,12 +490,6 @@ func reportTargetPortfolioScaleWarnings(
 }
 
 func targetPortfolioLLMFailureCode(err error) string {
-	switch {
-	case errors.Is(err, llm.ErrSensitivePreparedRequest):
-		return "request_secret_scan"
-	case errors.Is(err, llm.ErrSensitiveResponse):
-		return "response_secret_scan"
-	}
 	var providerErr *llm.ProviderError
 	if errors.As(err, &providerErr) {
 		if providerErr.Operation == "prepare" {
@@ -686,7 +661,7 @@ func recordTargetPortfolioOutcome(
 	if exchange == nil || alreadyRecorded {
 		return diagnosticErr
 	}
-	writer, err := debugdump.OpenWriter(runDir, true)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return errors.Join(
 			diagnosticErr,
@@ -802,7 +777,7 @@ func persistReadmeRoleAuthority(
 	if err != nil {
 		return fmt.Errorf("README file-role authority: encode: %w", err)
 	}
-	writer, err := debugdump.OpenWriter(runDir, true)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return fmt.Errorf("README file-role authority: open writer: %w", err)
 	}

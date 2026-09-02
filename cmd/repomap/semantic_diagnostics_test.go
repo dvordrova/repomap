@@ -125,7 +125,7 @@ func TestRepositoryTargetDispatchPreflightFailureFlushesFirstLayerSemanticJourna
 func TestChildAndOuterFailureRecordOneFirstLayerSemanticJournal(t *testing.T) {
 	debugDir := t.TempDir()
 	const runID = "child-then-outer-failure"
-	writer, err := debugdump.NewWriter(debugDir, runID, false)
+	writer, err := debugdump.NewWriter(debugDir, runID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -149,7 +149,6 @@ The current flags are:
 --port PORT
 --debug-dir DIR
 --no-cache
---scan-secrets
 ```
 
 The ordinary Go call graph is complete for the selected target: `--depth 0`
@@ -183,9 +182,13 @@ caches with:
 .bin/repomap cache clear --debug-dir /path/to/repomap/runs
 ```
 
-Repository input is trusted by default. `--scan-secrets` enables heuristic
-credential scanning. Provider API keys and Authorization headers are never
-written to report, cache, or debug artifacts.
+Repository input is trusted. repomap does not scan it for credentials, and it
+does not redact what it writes: whatever a prompt or a response contains is
+what lands in the run directory and the model cache under your user-cache
+directory. The provider key itself is read from the environment and is never
+part of a request body or a cache record, but a credential committed to the
+repository can reach those files like any other repository text. Treat a run
+directory as being as sensitive as the repository it came from.
 
 ## Development
 

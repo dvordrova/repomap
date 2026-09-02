@@ -65,7 +65,7 @@ func groupProgramIndexForRun(
 		return groupindex.Index{}, fmt.Errorf("program grouping: configured model provider is unavailable")
 	}
 
-	writer, err := debugdump.OpenWriter(runDir, false)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return groupindex.Index{}, fmt.Errorf("program grouping: open artifact writer: %w", err)
 	}
@@ -176,7 +176,7 @@ func matchPublishedRunGroups(
 	if providerRequired && provider == nil {
 		return nil, fmt.Errorf("group matching: configured model provider is unavailable")
 	}
-	writer, err := debugdump.OpenWriter(runs[0].RunDir, false)
+	writer, err := debugdump.OpenWriter(runs[0].RunDir)
 	if err != nil {
 		return nil, fmt.Errorf("group matching: open artifact writer: %w", err)
 	}

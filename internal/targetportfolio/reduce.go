@@ -7,7 +7,6 @@ import (
 	"io"
 
 	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 // ResolveResponse validates the exact positive target selection and restores
@@ -19,9 +18,6 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 	}
 	if len(raw) == 0 || len(raw) > MaxResponseBytes {
 		return Selection{}, fmt.Errorf("target portfolio: response exceeds bounded envelope")
-	}
-	if _, found := secretscan.Detect(string(raw)); found {
-		return Selection{}, fmt.Errorf("target portfolio: response contains credential-shaped content")
 	}
 
 	var response Response

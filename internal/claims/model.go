@@ -63,15 +63,12 @@ type Claim struct {
 	TargetID string `json:"target_id,omitempty"`
 }
 
-// Result is the sealed claims artifact. Dropped counts quotes the extractor
-// withheld because their text matched a credential shape; the count is kept
-// so a reader can tell "nothing quoted" from "quotes withheld".
+// Result is the sealed claims artifact.
 type Result struct {
 	Version  int     `json:"version"`
 	Revision string  `json:"revision"`
 	AsOf     string  `json:"as_of,omitempty"`
 	Claims   []Claim `json:"claims"`
-	Dropped  int     `json:"dropped,omitempty"`
 	SHA256   string  `json:"sha256"`
 }
 
@@ -115,9 +112,6 @@ func (result Result) Validate() error {
 	}
 	if result.AsOf != "" && !validDate(result.AsOf) {
 		return fmt.Errorf("claims: invalid as_of date %q", result.AsOf)
-	}
-	if result.Dropped < 0 {
-		return fmt.Errorf("claims: negative dropped count")
 	}
 	ids := make(map[string]struct{}, len(result.Claims))
 	for position, claim := range result.Claims {

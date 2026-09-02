@@ -29,7 +29,6 @@ type Options struct {
 
 	DebugDir         string
 	RunID            string
-	DumpRedacted     bool
 	RequireArtifacts bool
 
 	// SkipGoFacts keeps this package a language-neutral artifact shell for a
@@ -143,7 +142,7 @@ func persistArtifacts(
 	var writer *debugdump.Writer
 	if opts.DebugDir != "" {
 		var err error
-		writer, err = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
+		writer, err = debugdump.NewWriter(opts.DebugDir, runID)
 		if err != nil {
 			if opts.RequireArtifacts {
 				return fmt.Errorf("create required debug writer: %w", err)

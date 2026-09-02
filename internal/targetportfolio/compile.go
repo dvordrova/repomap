@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 // Compile resolves every universally merged FileRef through the exact corpus.
@@ -94,9 +93,6 @@ func compile(
 	wire, err := json.Marshal(request)
 	if err != nil {
 		return Compilation{}, fmt.Errorf("target portfolio: encode request: %w", err)
-	}
-	if _, found := secretscan.Detect(string(wire)); found {
-		return Compilation{}, fmt.Errorf("target portfolio: provider request contains credential-shaped content")
 	}
 	state, err := compileState(
 		ownedCorpus, canonical, executableAuthorityBound, canonicalExecutableFileRefs,
@@ -187,9 +183,6 @@ func validateCompilation(compilation Compilation) error {
 	if !reflect.DeepEqual(wire, compilation.wire) ||
 		compilation.RequestSHA256 != sha256Hex(wire) {
 		return fmt.Errorf("target portfolio: request wire binding mismatch")
-	}
-	if _, found := secretscan.Detect(string(wire)); found {
-		return fmt.Errorf("target portfolio: provider request contains credential-shaped content")
 	}
 	wantState, err := compileState(
 		compilation.corpus,

@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 func TestCompileAndResolveFilePortfolio(t *testing.T) {
@@ -614,15 +613,8 @@ func TestIndivisibleCandidateCrossingPackingWindowIsRetained(t *testing.T) {
 	}
 }
 
-func TestProviderBoundaryRejectsVisibleSecretsAndCompilationTampering(t *testing.T) {
-	restore := secretscan.SetEnabled(true)
-	defer restore()
+func TestProviderBoundaryRejectsCompilationTampering(t *testing.T) {
 	snapshot := testSnapshot(t, []string{"main.py"})
-	secret := "sk-ABCDEFGHIJKLMNOPQRSTUVWX"
-	if _, err := Compile(snapshot, []Candidate{{FileRef: "f1", Hypotheses: []string{secret}}}); err == nil || strings.Contains(err.Error(), secret) {
-		t.Fatalf("visible secret error = %v", err)
-	}
-
 	compilation, err := Compile(snapshot, []Candidate{{FileRef: "f1", Hypotheses: []string{"application"}}})
 	if err != nil {
 		t.Fatal(err)

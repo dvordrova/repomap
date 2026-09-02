@@ -146,7 +146,7 @@ func semanticExchangeForStageEventAt(
 	event llm.Event,
 ) (SemanticExchange, bool) {
 	if stage == "" || instanceOrdinal < 1 || semanticAttemptOrdinal < 1 ||
-		event.RequestRedacted || len(event.Request) == 0 {
+		len(event.Request) == 0 {
 		return SemanticExchange{}, false
 	}
 	exchange := SemanticExchange{
@@ -189,9 +189,7 @@ func semanticExchangeForStageEventAt(
 	}
 	if len(exchange.Response) == 0 {
 		code := SemanticUnavailableNoContent
-		if event.ResponseRedacted {
-			code = SemanticUnavailableOmitted
-		} else if event.Source == llm.SourceCache {
+		if event.Source == llm.SourceCache {
 			code = SemanticUnavailableCache
 		}
 		exchange.ResponseUnavailable = &SemanticUnavailable{
@@ -217,15 +215,9 @@ func classifySemanticFailure(exchange *SemanticExchange, event llm.Event) bool {
 		if event.Source != llm.SourceLive {
 			return false
 		}
-		if event.ResponseRedacted {
-			exchange.ValidationCode = SemanticValidationSecret
-		} else {
-			exchange.ValidationCode = SemanticValidationResponse
-		}
+		exchange.ValidationCode = SemanticValidationResponse
 	case llm.FailureValidation:
-		if event.ResponseRedacted {
-			exchange.ValidationCode = SemanticValidationSecret
-		} else if _, err := llm.NormalizeJSON(event.Response); err != nil {
+		if _, err := llm.NormalizeJSON(event.Response); err != nil {
 			exchange.ValidationCode = SemanticValidationDecode
 		} else {
 			exchange.ValidationCode = SemanticValidationResponse

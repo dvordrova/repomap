@@ -71,7 +71,7 @@ func Persist(runDir string, result Result) error {
 	if err != nil {
 		return fmt.Errorf("documentation reduce: encode artifact: %w", err)
 	}
-	writer, err := debugdump.OpenWriter(runDir, false)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return fmt.Errorf("documentation reduce: open artifact writer: %w", err)
 	}

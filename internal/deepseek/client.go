@@ -19,7 +19,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/llm"
-	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 const (
@@ -594,12 +593,6 @@ func knownFinishReason(reason string) string {
 
 func safeProviderErrorText(body []byte) string {
 	text := strings.TrimSpace(string(body))
-	if kind, found := secretscan.DetectPersistenceSensitive(text); found {
-		return fmt.Sprintf("[redacted: %s detected in provider response]", kind)
-	}
-	if kind, found := secretscan.Detect(text); found {
-		return fmt.Sprintf("[redacted: %s detected in provider response]", kind)
-	}
 	if len(text) <= maxProviderErrorBytes {
 		return text
 	}

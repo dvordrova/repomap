@@ -113,11 +113,7 @@ func TestNewFromEnvRejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
-func TestSafeProviderErrorTextAlwaysRedactsExplicitCredentials(t *testing.T) {
-	secret := `{"error":"Bearer company-secret-token-value"}`
-	if got := safeProviderErrorText([]byte(secret)); strings.Contains(got, "company-secret") || !strings.Contains(got, "redacted") {
-		t.Fatalf("explicit credential error text = %q", got)
-	}
+func TestSafeProviderErrorTextIsBounded(t *testing.T) {
 	plain := `{"error":"capacity temporarily unavailable"}`
 	if got := safeProviderErrorText([]byte(plain)); got != plain {
 		t.Fatalf("plain bounded provider error = %q, want %q", got, plain)

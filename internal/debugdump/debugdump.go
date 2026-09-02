@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -18,7 +17,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/llm"
-	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 type RunMeta struct {
@@ -211,11 +209,10 @@ type preparedSemanticPayload struct {
 }
 
 type Writer struct {
-	BaseDir  string
-	RunID    string
-	Redacted bool
-	runDir   string
-	root     *os.Root
+	BaseDir string
+	RunID   string
+	runDir  string
+	root    *os.Root
 
 	semanticMu     sync.Mutex
 	warningMu      sync.Mutex
@@ -224,7 +221,7 @@ type Writer struct {
 	buildIdentity  *BuildIdentity
 }
 
-func NewWriter(baseDir, runID string, redacted bool) (*Writer, error) {
+func NewWriter(baseDir, runID string) (*Writer, error) {
 	if baseDir == "" {
 		return nil, fmt.Errorf("debug dir is empty")
 	}
@@ -252,7 +249,7 @@ func NewWriter(baseDir, runID string, redacted bool) (*Writer, error) {
 	runDir := filepath.Join(baseDir, runID)
 	identity := currentBuildIdentity()
 	return &Writer{
-		BaseDir: baseDir, RunID: runID, Redacted: redacted,
+		BaseDir: baseDir, RunID: runID,
 		runDir: runDir, root: runRoot, warningWriter: os.Stderr,
 		warnedSemantic: make(map[string]struct{}), buildIdentity: &identity,
 	}, nil
@@ -261,7 +258,7 @@ func NewWriter(baseDir, runID string, redacted bool) (*Writer, error) {
 // OpenWriter opens an existing run directory while retaining os.Root
 // confinement. It never creates or follows a replacement run-directory
 // symlink.
-func OpenWriter(runDir string, redacted bool) (*Writer, error) {
+func OpenWriter(runDir string) (*Writer, error) {
 	if runDir == "" {
 		return nil, fmt.Errorf("debug run dir is empty")
 	}
@@ -296,7 +293,7 @@ func OpenWriter(runDir string, redacted bool) (*Writer, error) {
 	}
 	return &Writer{
 		BaseDir: filepath.Dir(absRunDir), RunID: filepath.Base(absRunDir),
-		Redacted: redacted, runDir: absRunDir, root: root,
+		runDir: absRunDir, root: root,
 		warningWriter: os.Stderr, warnedSemantic: make(map[string]struct{}),
 		buildIdentity: identity,
 	}, nil
@@ -349,9 +346,6 @@ func (w *Writer) AppendFile(name string, data []byte) error {
 	if w == nil || w.root == nil {
 		return fmt.Errorf("debug writer is closed")
 	}
-	if w.Redacted {
-		data = redactJSON(data)
-	}
 	localName := filepath.FromSlash(name)
 	if name == "" || !filepath.IsLocal(localName) || filepath.Clean(localName) != localName {
 		return fmt.Errorf("invalid debug artifact path %q", name)
@@ -370,10 +364,9 @@ func (w *Writer) AppendFile(name string, data []byte) error {
 	return nil
 }
 
-// WriteValidatedFile applies the writer's existing persisted-artifact
-// redaction first, validates those exact prepared bytes, and only then
-// publishes them. Callers use this for canonical artifacts whose redacted
-// representation must remain a valid instance of their contract.
+// WriteValidatedFile validates the exact bytes it is about to publish and
+// only then publishes them. Callers use this for canonical artifacts whose
+// written representation must remain a valid instance of their contract.
 func (w *Writer) WriteValidatedFile(
 	name string,
 	data []byte,
@@ -382,20 +375,13 @@ func (w *Writer) WriteValidatedFile(
 	if validate == nil {
 		return fmt.Errorf("debug artifact validator is required")
 	}
-	prepared := data
-	if w != nil && w.Redacted {
-		prepared = redactJSON(prepared)
-	}
-	if err := validate(append([]byte(nil), prepared...)); err != nil {
+	if err := validate(append([]byte(nil), data...)); err != nil {
 		return fmt.Errorf("validate %s: %w", name, err)
 	}
-	return w.writePreparedRootFile(name, prepared)
+	return w.writePreparedRootFile(name, data)
 }
 
 func (w *Writer) writeRootFile(name string, data []byte) error {
-	if w != nil && w.Redacted {
-		data = redactJSON(data)
-	}
 	return w.writePreparedRootFile(name, data)
 }
 
@@ -723,14 +709,7 @@ func prepareSemanticPayload(
 		return prepareSemanticMarker(label, marker)
 	}
 	originalSHA := sha256Hex(raw)
-	redacted := sensitiveKeyPattern.ReplaceAll(raw, []byte(`"$1": "[redacted]"`))
-	if kind, found := secretscan.DetectPersistenceSensitive(string(redacted)); found {
-		return prepareSemanticMarker(label, semanticPayloadMarker{
-			Version: semanticPayloadMarkerVersion, Storage: "unsafe_marker",
-			OriginalSHA256: originalSHA, OriginalBytes: len(raw),
-			UnsafeKind: kind,
-		})
-	}
+	redacted := raw
 	if len(redacted) > maxSemanticExchangePayloadSize {
 		return prepareSemanticMarker(label, semanticPayloadMarker{
 			Version: semanticPayloadMarkerVersion, Storage: "raw_unavailable",
@@ -865,13 +844,6 @@ func validateBuildIdentity(identity BuildIdentity) error {
 			return fmt.Errorf("build identity time is invalid")
 		}
 	}
-	joined := strings.Join([]string{
-		identity.GoVersion, identity.ModulePath, identity.ModuleVersion,
-		identity.VCSRevision, identity.VCSTime,
-	}, "\n")
-	if _, found := secretscan.DetectPersistenceSensitive(joined); found {
-		return fmt.Errorf("build identity contains unsafe material")
-	}
 	return nil
 }
 
@@ -954,34 +926,6 @@ func (w *Writer) Close() error {
 	err := w.root.Close()
 	w.root = nil
 	return err
-}
-
-var sensitiveKeyPattern = regexp.MustCompile(
-	`(?i)"(` + strings.Join([]string{
-		`api_key`,
-		`apikey`,
-		`api-key`,
-		`authorization`,
-		`bearer`,
-		`token`,
-		`secret`,
-		`password`,
-		`passwd`,
-		`private_key`,
-		`private-key`,
-		`access_key`,
-		`access-key`,
-		`refresh_token`,
-		`refresh-token`,
-	}, "|") + `)"\s*:\s*"[^"]*"`,
-)
-
-func redactJSON(data []byte) []byte {
-	redacted := sensitiveKeyPattern.ReplaceAll(data, []byte(`"$1": "[redacted]"`))
-	if kind, found := secretscan.DetectPersistenceSensitive(string(redacted)); found {
-		return []byte(fmt.Sprintf("[redacted: %s detected]\n", kind))
-	}
-	return redacted
 }
 
 func GenerateRunID(repoName string) string {

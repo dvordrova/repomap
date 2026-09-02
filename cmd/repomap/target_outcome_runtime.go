@@ -84,7 +84,7 @@ func persistTargetOutcomePortfolioForRunDirs(
 		if err := os.Mkdir(runDir, 0o700); err != nil && !os.IsExist(err) {
 			return fmt.Errorf("target outcome portfolio: create diagnostic run: %w", err)
 		}
-		writer, writerErr := debugdump.OpenWriter(runDir, true)
+		writer, writerErr := debugdump.OpenWriter(runDir)
 		if writerErr != nil {
 			return fmt.Errorf("target outcome portfolio: open run: %w", writerErr)
 		}

@@ -51,7 +51,7 @@ func ExecuteJSON[T any](
 		return outcome, newProviderError("prepare", err, 0)
 	}
 	request := prepared.Bytes()
-	requestSensitivity := setOutcomeRequest(&outcome, request)
+	setOutcomeRequest(&outcome, request)
 	if len(request) == 0 {
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailurePrepare, outcome.Issues)
 		return outcome, errors.New("llm: provider returned an empty prepared request")
@@ -62,10 +62,6 @@ func ExecuteJSON[T any](
 			"llm: prepared request is %d bytes, limit is %d",
 			len(request), call.Limits.MaxRequestBytes,
 		)
-	}
-	if requestSensitivity.structured {
-		outcome.Issues = observeFailure(executor.Observer, outcome, FailurePrepare, outcome.Issues)
-		return outcome, ErrSensitivePreparedRequest
 	}
 
 	if !executor.Enabled {
@@ -97,7 +93,7 @@ func ExecuteJSON[T any](
 		if validateErr == nil {
 			outcome.Value = value
 			outcome.Cached = true
-			_ = setOutcomeResponse(&outcome, record.Response)
+			setOutcomeResponse(&outcome, record.Response)
 			outcome.FinishReason = record.FinishReason
 			outcome.ChoiceCount = record.ChoiceCount
 			outcome.Metrics = record.Metrics
@@ -107,7 +103,7 @@ func ExecuteJSON[T any](
 			return outcome, nil
 		}
 		outcome.Issues = append(outcome.Issues, Issue{Kind: IssueCacheValidate, Err: validateErr})
-		_ = setOutcomeResponse(&outcome, record.Response)
+		setOutcomeResponse(&outcome, record.Response)
 		outcome.FinishReason = record.FinishReason
 		outcome.ChoiceCount = record.ChoiceCount
 		outcome.Metrics = record.Metrics
@@ -368,7 +364,7 @@ func executeLive[T any](
 	outcome Outcome[T],
 ) (Outcome[T], error) {
 	completion, err := provider.Complete(ctx, prepared)
-	responseSensitivity := setOutcomeResponse(&outcome, completion.Response)
+	setOutcomeResponse(&outcome, completion.Response)
 	outcome.FinishReason = completion.FinishReason
 	outcome.ChoiceCount = completion.ChoiceCount
 	outcome.Metrics = completion.Metrics
@@ -378,10 +374,6 @@ func executeLive[T any](
 		}
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureProvider, outcome.Issues)
 		return outcome, newProviderError("complete", err, completion.Metrics.Attempts)
-	}
-	if responseSensitivity.found {
-		outcome.Issues = observeFailure(executor.Observer, outcome, FailureResponse, outcome.Issues)
-		return outcome, ErrSensitiveResponse
 	}
 	if err := validateLiveCompletion(completion, limits); err != nil {
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureResponse, outcome.Issues)
@@ -518,9 +510,6 @@ func canonicalProviderState(raw []byte) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("llm: decode provider state: %w", err)
 	}
-	if assessment := assessSensitiveMaterial(raw); assessment.found {
-		return nil, errors.New("llm: provider state contains explicit credential material")
-	}
 	canonical, err := json.Marshal(state)
 	if err != nil {
 		return nil, fmt.Errorf("llm: canonicalize provider state: %w", err)
@@ -572,38 +561,24 @@ func eventForOutcome[T any](
 		Kind: kind, Source: source, Failure: failure,
 		CacheKey: outcome.CacheKey,
 		Request:  cloneBytes(outcome.Request), RequestSHA256: outcome.RequestSHA256,
-		RequestBytes: outcome.RequestBytes, RequestRedacted: outcome.RequestRedacted,
-		Response: cloneBytes(outcome.Response), ResponseSHA256: outcome.ResponseSHA256,
-		ResponseBytes: outcome.ResponseBytes, ResponseRedacted: outcome.ResponseRedacted,
-		FinishReason: outcome.FinishReason,
-		ChoiceCount:  outcome.ChoiceCount, Metrics: outcome.Metrics, Cached: outcome.Cached,
+		RequestBytes: outcome.RequestBytes,
+		Response:     cloneBytes(outcome.Response), ResponseSHA256: outcome.ResponseSHA256,
+		ResponseBytes: outcome.ResponseBytes,
+		FinishReason:  outcome.FinishReason,
+		ChoiceCount:   outcome.ChoiceCount, Metrics: outcome.Metrics, Cached: outcome.Cached,
 	}
 }
 
-func setOutcomeRequest[T any](outcome *Outcome[T], request []byte) sensitiveAssessment {
-	assessment := assessSensitiveMaterial(request)
+func setOutcomeRequest[T any](outcome *Outcome[T], request []byte) {
 	outcome.RequestSHA256 = sha256Hex(request)
 	outcome.RequestBytes = len(request)
-	outcome.RequestRedacted = assessment.found
-	if assessment.found {
-		outcome.Request = nil
-	} else {
-		outcome.Request = cloneBytes(request)
-	}
-	return assessment
+	outcome.Request = cloneBytes(request)
 }
 
-func setOutcomeResponse[T any](outcome *Outcome[T], response []byte) sensitiveAssessment {
-	assessment := assessSensitiveMaterial(response)
+func setOutcomeResponse[T any](outcome *Outcome[T], response []byte) {
 	outcome.ResponseSHA256 = sha256Hex(response)
 	outcome.ResponseBytes = len(response)
-	outcome.ResponseRedacted = assessment.found
-	if assessment.found {
-		outcome.Response = nil
-	} else {
-		outcome.Response = cloneBytes(response)
-	}
-	return assessment
+	outcome.Response = cloneBytes(response)
 }
 
 func observe(observer Observer, event Event, issues []Issue) []Issue {

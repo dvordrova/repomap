@@ -27,9 +27,6 @@ func TestExtractQuotesFixtureRepository(t *testing.T) {
 	if result.AsOf != "2024-02-20" {
 		t.Fatalf("as_of = %q, want revision commit date", result.AsOf)
 	}
-	if result.Dropped != 1 {
-		t.Fatalf("dropped = %d, want the credential-shaped comment withheld", result.Dropped)
-	}
 	bySource := map[Source][]Claim{}
 	for _, claim := range result.Claims {
 		bySource[claim.Source] = append(bySource[claim.Source], claim)
@@ -71,8 +68,8 @@ func TestExtractQuotesFixtureRepository(t *testing.T) {
 		Source: SourceComment, Path: "front/src/http.ts", Line: 8, Date: "2024-02-20",
 		TargetID: "t:front", Text: "NOTE: the backend must be running on port 8000.",
 	})
-	if len(bySource[SourceComment]) != 1 {
-		t.Fatalf("comment claims = %+v, want only the NOTE line (TODO is a fact)", bySource[SourceComment])
+	if len(bySource[SourceComment]) != 2 {
+		t.Fatalf("comment claims = %+v, want both NOTE lines (TODO is a fact)", bySource[SourceComment])
 	}
 }
 

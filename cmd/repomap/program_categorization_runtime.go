@@ -68,7 +68,7 @@ func enrichProgramIndexForRun(
 		return programindex.Index{}, fmt.Errorf("program categorization: configured model provider is unavailable")
 	}
 
-	writer, err := debugdump.OpenWriter(runDir, false)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return programindex.Index{}, fmt.Errorf("program categorization: open artifact writer: %w", err)
 	}

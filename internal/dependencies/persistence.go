@@ -15,7 +15,7 @@ func Persist(runDir string, catalog Catalog) error {
 	if err != nil {
 		return fmt.Errorf("dependency catalog: encode: %w", err)
 	}
-	writer, err := debugdump.OpenWriter(runDir, false)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return fmt.Errorf("dependency catalog: open artifact writer: %w", err)
 	}

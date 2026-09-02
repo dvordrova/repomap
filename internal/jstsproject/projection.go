@@ -122,7 +122,7 @@ func bindProgramTargetIdentity(result *Result) error {
 	// optional persistence-sensitive metadata before the first projection, not
 	// only later in Seal, so a disposable helper signature cannot block the
 	// target's exact structural identity.
-	omitPersistenceSensitiveOptionalMetadata(result)
+	omitUnsafeOptionalMetadata(result)
 	targetID, err := deriveProgramTargetID(*result)
 	if err != nil {
 		return err

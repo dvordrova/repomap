@@ -98,7 +98,7 @@ func readSemanticMetadata(runDir string) (debugdump.RunMeta, error) {
 }
 
 func writeSemanticMetadata(runDir string, metadata debugdump.RunMeta) error {
-	writer, err := debugdump.OpenWriter(runDir, true)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return fmt.Errorf("semantic diagnostics: open confined writer: %w", err)
 	}
@@ -117,7 +117,7 @@ func flushFirstLayerSemanticJournal(
 	if observer == nil {
 		return
 	}
-	writer, err := debugdump.OpenWriter(runDir, true)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		if output != nil {
 			output.Warn("First-layer semantic exchange journal unavailable", err.Error())

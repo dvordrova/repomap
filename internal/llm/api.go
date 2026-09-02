@@ -176,22 +176,20 @@ const (
 // Event contains only exact semantic request/response bytes, measurements,
 // and SHA-256 cache identity. Provider and cube state bytes are excluded.
 type Event struct {
-	Kind             EventKind
-	Source           EventSource
-	Failure          FailureKind
-	CacheKey         string
-	Request          []byte
-	RequestSHA256    string
-	RequestBytes     int
-	RequestRedacted  bool
-	Response         []byte
-	ResponseSHA256   string
-	ResponseBytes    int
-	ResponseRedacted bool
-	FinishReason     FinishReason
-	ChoiceCount      int
-	Metrics          Metrics
-	Cached           bool
+	Kind           EventKind
+	Source         EventSource
+	Failure        FailureKind
+	CacheKey       string
+	Request        []byte
+	RequestSHA256  string
+	RequestBytes   int
+	Response       []byte
+	ResponseSHA256 string
+	ResponseBytes  int
+	FinishReason   FinishReason
+	ChoiceCount    int
+	Metrics        Metrics
+	Cached         bool
 }
 
 type Observer interface {
@@ -235,21 +233,19 @@ func (issue Issue) Unwrap() error {
 // Outcome is returned for both accepted calls and failures. A nil error from
 // ExecuteJSON means Value has passed the cube's decoder and validation.
 type Outcome[T any] struct {
-	Value            T
-	CacheKey         string
-	Cached           bool
-	Request          []byte
-	RequestSHA256    string
-	RequestBytes     int
-	RequestRedacted  bool
-	Response         []byte
-	ResponseSHA256   string
-	ResponseBytes    int
-	ResponseRedacted bool
-	FinishReason     FinishReason
-	ChoiceCount      int
-	Metrics          Metrics
-	Issues           []Issue
+	Value          T
+	CacheKey       string
+	Cached         bool
+	Request        []byte
+	RequestSHA256  string
+	RequestBytes   int
+	Response       []byte
+	ResponseSHA256 string
+	ResponseBytes  int
+	FinishReason   FinishReason
+	ChoiceCount    int
+	Metrics        Metrics
+	Issues         []Issue
 }
 
 // ProviderFailureKind is a closed, provider-neutral failure classification.

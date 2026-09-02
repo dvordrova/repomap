@@ -47,7 +47,6 @@ func TestRunRequiredArtifactsRejectBlockedDebugDirectory(t *testing.T) {
 		RepoPath:         repository,
 		RunID:            "required-browser-artifacts",
 		DebugDir:         blockedDebugDir,
-		DumpRedacted:     true,
 		RequireArtifacts: true,
 	}))
 	if err == nil || !strings.Contains(err.Error(), "create required debug writer") {

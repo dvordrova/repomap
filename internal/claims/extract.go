@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
 const (
@@ -88,7 +87,6 @@ func Extract(ctx context.Context, input Input) (Result, error) {
 		Revision: input.Revision,
 		AsOf:     asOf,
 		Claims:   builder.claims,
-		Dropped:  builder.dropped,
 	})
 }
 
@@ -194,7 +192,6 @@ type builder struct {
 	targets []TargetRoot
 	seen    map[string]struct{}
 	claims  []Claim
-	dropped int
 }
 
 func newBuilder(asOf string, targets []TargetRoot) *builder {
@@ -227,10 +224,6 @@ func (b *builder) addFile(filePath string, quote fileQuote, date string) {
 
 func (b *builder) add(claim Claim, location string) {
 	if claim.Text == "" {
-		return
-	}
-	if _, sensitive := secretscan.DetectPersistenceSensitive(claim.Text); sensitive {
-		b.dropped++
 		return
 	}
 	claim.ID = NewClaimID(claim.Source, location, claim.Text)

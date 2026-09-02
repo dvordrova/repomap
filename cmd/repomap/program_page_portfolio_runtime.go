@@ -79,7 +79,7 @@ func persistProgramPagePortfolioForRuns(
 		return err
 	}
 	for _, run := range runs {
-		writer, writerErr := debugdump.OpenWriter(run.RunDir, true)
+		writer, writerErr := debugdump.OpenWriter(run.RunDir)
 		if writerErr != nil {
 			return fmt.Errorf("program page portfolio: open run %s: %w", run.RunID, writerErr)
 		}

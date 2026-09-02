@@ -211,8 +211,7 @@
       "files": [
         "adaptive_batch_test.go",
         "execute_test.go",
-        "json_syntax_test.go",
-        "sensitive_gate_test.go"
+        "json_syntax_test.go"
       ]
     },
     {
@@ -350,14 +349,6 @@
       "files": [
         "editor_test.go",
         "server_test.go"
-      ]
-    },
-    {
-      "directory": "internal/secretscan",
-      "package": "secretscan",
-      "files": [
-        "literalgate_test.go",
-        "secretscan_test.go"
       ]
     },
     {

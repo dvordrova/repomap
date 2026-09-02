@@ -17,7 +17,7 @@ func Persist(runDir string, filename string, index Index) error {
 	if err != nil {
 		return fmt.Errorf("program index: encode %s: %w", filename, err)
 	}
-	writer, err := debugdump.OpenWriter(runDir, false)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return fmt.Errorf("program index: open artifact writer: %w", err)
 	}
@@ -44,7 +44,7 @@ func PersistArtifactSet(runDir string, set ArtifactSet) error {
 	if err != nil {
 		return fmt.Errorf("program index set: encode: %w", err)
 	}
-	writer, err := debugdump.OpenWriter(runDir, false)
+	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {
 		return fmt.Errorf("program index set: open artifact writer: %w", err)
 	}
