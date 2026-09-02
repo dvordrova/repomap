@@ -30,14 +30,24 @@ func splitLines(text string) []string {
 // prose: an HTML tag, a badge image, or a bare link. Such a line says nothing
 // a reader can act on, so it never becomes a claim.
 var (
-	htmlTag       = regexp.MustCompile(`<[^>]+>`)
+	htmlTag = regexp.MustCompile(`<[^>]+>`)
+	// A badge is an image inside a link: [![alt][ref]][ref] or the inline
+	// form. Reducing its parts one at a time leaves the reference labels
+	// behind, and a README that opens with badges then gets quoted as
+	// "[ [buildstatusbadge]][buildstatuslink]" — the first thing a reader
+	// sees under what the authors said. The whole badge goes at once.
+	badgeLink     = regexp.MustCompile(`\[!\[[^\]]*\](?:\[[^\]]*\]|\([^)]*\))\](?:\[[^\]]*\]|\([^)]*\))`)
 	inlineImage   = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
 	referenceImg  = regexp.MustCompile(`!\[[^\]]*\]`)
 	referenceLink = regexp.MustCompile(`\[([^\]]*)\]\[[^\]]*\]`)
 	inlineLink    = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
-	emphasis      = regexp.MustCompile("[*_`]{1,3}")
-	headingMark   = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s*`)
-	trailingMark  = regexp.MustCompile(`(?m)\s*#+\s*$`)
+	// Emphasis markers are formatting, but an underscore inside a word is a
+	// name: a README about `load_dotenv` and `dotenv_values` was quoted as
+	// saying "loaddotenv" and "dotenvvalues", which is not what it says.
+	// Only underscores at a word edge are markup.
+	emphasis     = regexp.MustCompile("[*`]{1,3}|(?:^|[^\\p{L}\\p{N}])_{1,3}|_{1,3}(?:[^\\p{L}\\p{N}]|$)")
+	headingMark  = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s*`)
+	trailingMark = regexp.MustCompile(`(?m)\s*#+\s*$`)
 )
 
 // readable turns one Markdown fragment into the prose a reader would see:
@@ -46,6 +56,7 @@ var (
 func readable(text string) string {
 	// Images carry no prose at all; links keep the words a reader sees. Both
 	// reference and inline forms appear in real README files.
+	text = badgeLink.ReplaceAllString(text, " ")
 	text = inlineImage.ReplaceAllString(text, " ")
 	text = referenceImg.ReplaceAllString(text, " ")
 	text = referenceLink.ReplaceAllString(text, "$1")

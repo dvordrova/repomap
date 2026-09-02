@@ -166,3 +166,35 @@ func TestReadableDropsMarkupOnlyFragments(t *testing.T) {
 		}
 	}
 }
+
+// TestReadableDropsBadgeLinks keeps a README that opens with build badges from
+// being quoted as its reference labels.
+func TestReadableDropsBadgeLinks(t *testing.T) {
+	for _, text := range []string{
+		"[![Build Status][buildstatusbadge]][buildstatuslink] [![PyPI version][pypibadge]][pypilink]",
+		"[![Build](https://img.example/b.svg)](https://ci.example/job)",
+		"[![Coverage][cov]](https://cov.example)",
+	} {
+		if got := readable(text); got != "" {
+			t.Fatalf("readable(%q) = %q, want the empty string", text, got)
+		}
+	}
+	const prose = "See [the guide][guide] for details."
+	if got := readable(prose); got != "See the guide for details." {
+		t.Fatalf("readable(%q) = %q", prose, got)
+	}
+}
+
+// TestReadableKeepsUnderscoresInsideNames stops a quote from renaming what it
+// quotes. Markdown emphasis is an underscore at a word edge, not one inside a
+// symbol.
+func TestReadableKeepsUnderscoresInsideNames(t *testing.T) {
+	const text = "The function `dotenv_values` works like `load_dotenv`, but _returns_ a dict."
+	got := readable(text)
+	if !strings.Contains(got, "dotenv_values") || !strings.Contains(got, "load_dotenv") {
+		t.Fatalf("readable(%q) = %q, want the names intact", text, got)
+	}
+	if strings.Contains(got, "_returns_") {
+		t.Fatalf("readable(%q) = %q, want the emphasis markers gone", text, got)
+	}
+}
