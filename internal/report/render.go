@@ -12,20 +12,20 @@ import (
 	"sort"
 	"strings"
 
-	_ "embed"
+	"embed"
+	"io/fs"
 )
 
-// The report is one static page. Its only script opens source links in the
-// local editor when the run is served; everything else is plain HTML.
+// The report is one static page, assembled from the files under templates/.
+// Every .html file there is one region of the page; every .css and .js file
+// is one layer, concatenated in filename order, which is why they carry a
+// numeric prefix. Adding a region or a layer is a new file and no Go change,
+// so working on the page does not mean working on this package.
 //
-//go:embed templates/report.css
-var reportPageCSS string
+//go:embed templates
+var reportTemplateFS embed.FS
 
-//go:embed templates/report.js
-var reportPageJS string
-
-//go:embed templates/report.html
-var reportPageHTML string
+const reportPageEntryTemplate = "page.html"
 
 func encodeReportJSON(data *ReportData, maxBytes int) ([]byte, error) {
 	if data == nil {
@@ -164,17 +164,50 @@ func executeProgramReport(data *ReportData, reportSHA256 string, localRoots []st
 	if err != nil {
 		return nil, err
 	}
-	view.CSS = template.CSS(reportPageCSS)
-	view.JS = template.JS(reportPageJS)
-	pageTemplate, err := template.New("report").Parse(reportPageHTML)
+	styles, err := bundledTemplateAssets("templates/css")
 	if err != nil {
-		return nil, fmt.Errorf("report: parse embedded page template: %w", err)
+		return nil, err
+	}
+	scripts, err := bundledTemplateAssets("templates/js")
+	if err != nil {
+		return nil, err
+	}
+	view.CSS = template.CSS(styles)
+	view.JS = template.JS(scripts)
+	pageTemplate, err := template.New("report").ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		return nil, fmt.Errorf("report: parse embedded page templates: %w", err)
 	}
 	var buffer bytes.Buffer
-	if err := pageTemplate.Execute(&buffer, view); err != nil {
+	if err := pageTemplate.ExecuteTemplate(&buffer, reportPageEntryTemplate, view); err != nil {
 		return nil, fmt.Errorf("report: render page: %w", err)
 	}
 	return buffer.Bytes(), nil
+}
+
+// bundledTemplateAssets concatenates one asset directory in filename order.
+// That order is the cascade, so the numeric prefixes are the contract and
+// nothing else decides which layer wins.
+func bundledTemplateAssets(directory string) (string, error) {
+	entries, err := fs.ReadDir(reportTemplateFS, directory)
+	if err != nil {
+		return "", fmt.Errorf("report: read %s: %w", directory, err)
+	}
+	var bundle strings.Builder
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		content, err := fs.ReadFile(reportTemplateFS, directory+"/"+entry.Name())
+		if err != nil {
+			return "", fmt.Errorf("report: read %s/%s: %w", directory, entry.Name(), err)
+		}
+		if bundle.Len() > 0 {
+			bundle.WriteByte('\n')
+		}
+		bundle.Write(content)
+	}
+	return strings.TrimRight(bundle.String(), "\n"), nil
 }
 
 // browserValueContainsLocalPath walks the typed browser contract before JSON

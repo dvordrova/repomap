@@ -1,0 +1,24 @@
+<section id="overview">
+<h2>Overview</h2>
+<h3>What this is</h3>
+{{if .Summary}}<p class="model">{{.Summary.Text}}{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
+{{range .Claims}}<blockquote class="claim"><p>{{.Text}}</p><span class="src">{{.Source}}{{if .Date}} · {{.Date}} · {{.AgeDays}} days ago{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</span></blockquote>{{end}}
+{{if .MoreClaims}}<p class="meta">The README says {{.MoreClaims}} more things this page does not quote.</p>{{end}}
+<h3>Targets</h3>
+{{if or .Cards .MutedCards}}<div class="cards">
+{{range .Cards}}<div class="card"><h3><a href="#{{.SectionID}}">{{.Name}}</a></h3>
+<dl><dt>Language</dt><dd>{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}</dd>{{if .Root}}<dt>Root</dt><dd><code>{{.Root}}</code></dd>{{end}}{{if .Manifest}}<dt>Manifest</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>Entrypoints</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}<dt>Counts</dt><dd class="fact">{{.Routes}} routes · {{.Calls}} calls · {{.Dynamic}} dynamic · {{.Dead}} dead files</dd></dl>
+{{if .Role}}<span class="model"><strong>{{.Role}}</strong> — {{.Purpose}}{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span>{{end}}</div>
+{{end}}{{range .MutedCards}}<div class="card muted"><h3>{{.Name}}</h3><dl><dt>Language</dt><dd>{{.Language}}</dd><dt>Not analyzed</dt><dd>{{.Reason}} ({{.Stage}})</dd></dl></div>
+{{end}}</div>{{else}}<p class="empty">{{.CardsMissing}}</p>{{end}}
+<h3>How the parts talk</h3>
+{{if .Portals}}<table><thead><tr><th>Method</th><th>Path</th><th>Call</th><th></th><th>Route</th></tr></thead><tbody>
+{{range .Portals}}<tr><td class="method">{{.Method}}</td><td><code>{{.Path}}</code>{{if .Possible}}<span class="possible">possible</span>{{end}}</td><td>{{template "anchor" .Call}}</td><td>→</td><td>{{template "anchor" .Route}}</td></tr>
+{{end}}</tbody></table>{{else}}<p class="empty">{{.PortalsMissing}}</p>
+{{if .LooseCalls}}<h4>HTTP calls</h4><ul class="plain fact">{{range .LooseCalls}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Target}} · {{.Target}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
+{{if .LooseRoutes}}<h4>HTTP routes</h4><ul class="plain fact">{{range .LooseRoutes}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Target}} · {{.Target}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}{{end}}
+<h3>What is missing</h3>
+{{if .Negatives}}<ul class="plain fact">{{range .Negatives}}<li>{{.Text}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{.NegativesMissing}}</p>{{end}}
+<h3>How to run</h3>
+{{if .Recipe}}<ul class="plain">{{range .Recipe}}<li class="{{if .Model}}model{{else}}fact{{end}}"><code>{{.Command}}</code>{{if .Cwd}} <span class="meta">(in <code>{{.Cwd}}</code>)</span>{{end}}{{range .Anchors}} {{template "anchor" .}}{{end}}{{if .Note}} — {{.Note}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{.RecipeMissing}}</p>{{end}}
+</section>

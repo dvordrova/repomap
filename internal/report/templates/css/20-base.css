@@ -1,0 +1,10 @@
+html{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:var(--ink);background:var(--bg)}
+body{margin:0;padding:0 1.25rem 4rem}
+main,header.top{max-width:64rem;margin:0 auto}
+header.top{padding:1.25rem 0 .5rem;border-bottom:1px solid var(--line)}
+h1{font-size:1.5rem;margin:0}
+h2{font-size:1.25rem;margin:2.2rem 0 .5rem;padding-top:.6rem;border-top:1px solid var(--line)}
+h3{font-size:1.05rem;margin:1.4rem 0 .4rem}
+h4{font-size:.95rem;margin:.9rem 0 .3rem;font-weight:600}
+code,.anchor,.chip,.method{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em}
+a{color:var(--accent)}

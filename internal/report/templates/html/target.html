@@ -1,0 +1,26 @@
+<section id="{{.ID}}">
+<h2>{{.Label}} <span class="meta">{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}{{if .Root}} · <code>{{.Root}}</code>{{end}}</span></h2>
+{{if not .FactsAvailable}}<p class="empty">Facts are not available for this run; only the group graph is shown.</p>{{end}}
+<h3>Inbound</h3>
+{{if .RouteGroups}}{{range .RouteGroups}}<h4><span class="method">{{.Method}}</span></h4><ul class="plain fact">{{range .Rows}}<li><code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}{{else if .FactsAvailable}}<p class="empty">No HTTP routes found.</p>{{end}}
+{{range .Triggers}}{{template "group" .}}{{end}}
+<h3>Entrypoints</h3>
+{{if .Entrypoints}}<ul class="plain fact">{{range .Entrypoints}}<li>{{if .Symbol}}<code>{{.Symbol}}</code>{{end}}{{if .Kind}} <span class="meta">{{.Kind}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{if .FactsAvailable}}No entrypoints found.{{else}}Not available.{{end}}</p>{{end}}
+<h3>Core</h3>
+{{if .Core}}{{range .Core}}{{template "group" .}}{{end}}{{else}}<p class="empty">No core groups.</p>{{end}}
+<h3>External calls &amp; dependencies</h3>
+{{if .Calls}}<h4>HTTP calls</h4><ul class="plain fact">{{range .Calls}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
+{{range .DependencyGroups}}{{template "group" .}}{{end}}
+{{if .Dependencies}}<h4>Dependencies</h4><ul class="plain fact">{{range .Dependencies}}<li><code>{{.Name}}</code>{{if .Version}} {{.Version}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
+{{if not (or .Calls .DependencyGroups .Dependencies)}}<p class="empty">{{if .FactsAvailable}}No external calls or dependencies found.{{else}}Not available.{{end}}</p>{{end}}
+<h3>Main flow</h3>
+{{if .Flow}}{{if .Flow.Title}}<p class="model">{{.Flow.Title}}</p>{{end}}<ol class="flow">{{range .Flow.Steps}}<li>{{if .Anchor}}{{template "anchor" .Anchor}}{{end}}{{if .Label}} <code>{{.Label}}</code>{{end}}{{if .Target}} <span class="meta">({{.Target}})</span>{{end}} — <span class="model">{{.Explanation}}</span></li>{{end}}</ol>{{else}}<p class="empty">{{.FlowMissing}}</p>{{end}}
+<h3>Runs code it is given</h3>
+{{if .Dynamic}}<ul class="plain fact">{{range .Dynamic}}<li><code>{{.Pattern}}</code>{{if .Symbol}} in <code>{{.Symbol}}</code>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}{{if .Witness}}<br><code class="meta">{{.Witness}}</code>{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{if .FactsAvailable}}Nothing here runs code from a string or another process.{{else}}Not available.{{end}}</p>{{end}}
+<h3>Configuration</h3>
+{{if .Config}}<table><thead><tr><th>Key</th><th>Default</th><th>Source</th></tr></thead><tbody>{{range .Config}}<tr><td><code>{{.Key}}</code></td><td>{{if .Default}}<code>{{.Default}}</code>{{end}}</td><td>{{if .Anchor}}{{template "anchor" .Anchor}}{{end}}</td></tr>{{end}}</tbody></table>{{else}}<p class="empty">{{if .FactsAvailable}}No configuration reads found.{{else}}Not available.{{end}}</p>{{end}}
+<h3>Dead code</h3>
+{{if .Dead}}<ul class="plain fact">{{range .Dead}}<li>{{template "anchor" .}}</li>{{end}}</ul>{{else}}<p class="empty">{{if .FactsAvailable}}No unreachable files found.{{else}}Not available.{{end}}</p>{{end}}
+<h3>TODOs</h3>
+{{if .Todos}}<ul class="plain fact">{{range .Todos}}<li>{{.Text}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{if .FactsAvailable}}No TODO markers found.{{else}}Not available.{{end}}</p>{{end}}
+</section>

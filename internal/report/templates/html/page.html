@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="repomap-format-version" content="{{.FormatVersion}}">
+<meta name="repomap-report-sha256" content="{{.ReportSHA256}}">
+<link rel="icon" href="data:,">
+<title>{{.RepoName}} — repomap</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<header class="top">
+<h1>{{.RepoName}}</h1>
+<p class="meta">Revision <code title="{{.Revision}}">{{.ShortRevision}}</code>{{if .RepositoryURL}} · <a href="{{.RepositoryURL}}" target="_blank" rel="noopener">repository</a>{{end}}{{if .Served}} · source links open in your editor{{end}}</p>
+<nav class="nav"><a href="#overview">Overview</a>{{range .Sections}}<a href="#{{.ID}}">{{.Label}}</a>{{end}}</nav>
+</header>
+<noscript><p class="meta">JavaScript is optional for this report; it only adds editor links.</p></noscript>
+<main>
+{{template "overview.html" .}}
+{{range .Sections}}{{template "target.html" .}}{{end}}
+{{if .Notes}}<section id="notes"><h2>Notes from this run</h2><ul class="plain notes">{{range .Notes}}<li>{{.}}</li>{{end}}</ul></section>{{end}}
+</main>
+{{if .Served}}<div class="status" id="rm-status" role="status" hidden></div>
+<script type="application/json" id="rm-source-ids">{{.SourceIDsJSON}}</script>{{end}}
+<script id="rm-report-app-js">{{.JS}}</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{{define "anchor"}}{{if .Href}}<a class="anchor" href="{{.Href}}" target="_blank" rel="noopener">{{.Text}}</a>{{else if .Open}}<a class="anchor" href="#" data-open="{{.Open}}">{{.Text}}</a>{{else}}<span class="anchor">{{.Text}}</span>{{end}}{{end}}
+{{define "chip"}}{{if .Anchor.Href}}<a class="chip" href="{{.Anchor.Href}}" target="_blank" rel="noopener" title="{{.Anchor.Text}}">{{.Name}}<span class="ln">:{{.Line}}</span></a>{{else if .Anchor.Open}}<a class="chip" href="#" data-open="{{.Anchor.Open}}" title="{{.Anchor.Text}}">{{.Name}}<span class="ln">:{{.Line}}</span></a>{{else}}<span class="chip" title="{{.Anchor.Text}}">{{.Name}}<span class="ln">:{{.Line}}</span></span>{{end}}{{end}}
+{{define "group"}}<div class="group"><h4>{{.Title}}<span class="badge">model</span></h4>{{if .Summary}}<p class="model">{{.Summary}}</p>{{end}}
+<div class="chips">{{range .Visible}}<span class="path">{{.Path}}</span>{{range .Members}}{{template "chip" .}}{{end}}{{end}}{{range .Externals}}<span class="chip">{{.}}</span>{{end}}
+{{if .More}}<details><summary>+{{.MoreCount}} more</summary>{{range .More}}<span class="path">{{.Path}}</span>{{range .Members}}{{template "chip" .}}{{end}}{{end}}</details>{{end}}</div>
+{{range .Connections}}<p class="conn">{{.Arrow}} {{if .Href}}<a href="{{.Href}}">[{{.OtherTarget}}] {{.Title}}</a>{{else}}<span class="lbl">{{.Title}}</span>{{end}}: {{.Label}}{{if .Possible}}<span class="possible">possible</span>{{end}} — <span class="model">{{.Summary}}</span></p>{{end}}
+</div>{{end}}
