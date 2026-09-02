@@ -1,0 +1,27 @@
+.map{margin:.6rem 0 1.4rem;padding:0;overflow-x:auto}
+.map-svg{display:block;max-width:100%;height:auto;min-width:34rem}
+.map-lane-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;fill:var(--muted)}
+.map-node-body{fill:var(--soft);stroke:var(--line);stroke-width:1}
+.map-node-title{font-size:12.5px;font-weight:600;fill:var(--ink)}
+.map-node-count{font-size:10.5px;fill:var(--muted)}
+.map-node-bar{fill:#9fb0c8}
+.map-node-dependencies .map-node-bar{fill:#c9bd9a}
+.map-node-triggers .map-node-bar{fill:#8fa9cf}
+.map-node{cursor:pointer}
+.map-node-triggers .map-node-body{fill:#eef3fb;stroke:#b9cbe6}
+.map-node-core .map-node-body{fill:#fff;stroke:#c6ccd4}
+.map-node-dependencies .map-node-body{fill:#f4f2ec;stroke:#d8d2c2}
+.map-node:hover .map-node-body,.map-node:focus .map-node-body{stroke:var(--accent);stroke-width:2}
+.map-node:focus{outline:none}
+.map-edge{fill:none;stroke:#aeb6c0;stroke-width:1.4}
+.map-edge-possible{stroke-dasharray:4 3}
+.map-arrow-head{fill:#aeb6c0}
+/* Preview only dims; it never moves a node or changes an edge. */
+[data-map].map-previewing .map-node,[data-map].map-previewing .map-edge{opacity:.18;transition:opacity .12s ease}
+[data-map].map-previewing .map-node.map-near,[data-map].map-previewing .map-edge.map-near{opacity:1}
+[data-map].map-previewing .map-node.map-near .map-node-body{stroke:var(--accent)}
+.map-note{margin:.35rem 0 0;color:var(--muted);font-size:.82rem}
+.group-head{display:flex;align-items:baseline;justify-content:space-between;gap:.6rem}
+.group-size{color:var(--muted);font-size:.8rem;white-space:nowrap}
+.group:target,.group.group-selected{border-color:var(--accent);box-shadow:0 0 0 2px rgba(31,95,191,.14)}
+.group:focus{outline:none}

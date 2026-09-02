@@ -242,9 +242,16 @@ func decodeStrictRow(raw json.RawMessage, expected []string, destination any) bo
 	return errors.Is(decoder.Decode(&trailing), io.EOF)
 }
 
-// hasExactObjectKeys closes duplicate-key and case-insensitive field matching
-// gaps left by encoding/json's struct decoder. Typed decoding still validates
-// the values after this exact key-set check.
+// hasExactObjectKeys closes the ambiguous-key and case-insensitive field
+// matching gaps left by encoding/json's struct decoder. Typed decoding still
+// validates the values after this exact key-set check.
+//
+// A key repeated with the same value is accepted. Two identical spellings of
+// one answer are one answer, and refusing them costs whole rows: a model that
+// repeated "summary" verbatim in every group of one target had all twelve of
+// its groups discarded, and with them the twenty connections that named them.
+// A key repeated with a different value is still refused, because choosing
+// between two answers would be repair.
 func hasExactObjectKeys(raw []byte, expected []string) bool {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	opening, err := decoder.Token()
@@ -255,7 +262,7 @@ func hasExactObjectKeys(raw []byte, expected []string) bool {
 	for _, key := range expected {
 		wanted[key] = struct{}{}
 	}
-	seen := make(map[string]struct{}, len(expected))
+	seen := make(map[string]json.RawMessage, len(expected))
 	for decoder.More() {
 		token, tokenErr := decoder.Token()
 		key, keyIsString := token.(string)
@@ -265,14 +272,14 @@ func hasExactObjectKeys(raw []byte, expected []string) bool {
 		if _, known := wanted[key]; !known {
 			return false
 		}
-		if _, duplicate := seen[key]; duplicate {
-			return false
-		}
-		seen[key] = struct{}{}
 		var value json.RawMessage
 		if decodeErr := decoder.Decode(&value); decodeErr != nil {
 			return false
 		}
+		if earlier, duplicate := seen[key]; duplicate && !sameJSONValue(earlier, value) {
+			return false
+		}
+		seen[key] = value
 	}
 	closing, err := decoder.Token()
 	if err != nil || closing != json.Delim('}') || len(seen) != len(wanted) {
@@ -280,6 +287,19 @@ func hasExactObjectKeys(raw []byte, expected []string) bool {
 	}
 	var trailing any
 	return errors.Is(decoder.Decode(&trailing), io.EOF)
+}
+
+// sameJSONValue compares two encodings by value rather than by bytes, so
+// whitespace or key order inside a repeated object cannot turn one answer
+// into two.
+func sameJSONValue(first, second json.RawMessage) bool {
+	var left, right any
+	if json.Unmarshal(first, &left) != nil || json.Unmarshal(second, &right) != nil {
+		return false
+	}
+	leftEncoded, leftErr := json.Marshal(left)
+	rightEncoded, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftEncoded, rightEncoded)
 }
 
 func validText(value string) bool {

@@ -669,6 +669,15 @@
       "note": "Warning-only manifest/source thresholds plus zero unbounded-reader sentinels; complete report, snapshot, dirty-file, and source authority is retained."
     },
     {
+      "file": "internal/report/page_map.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "mapMaxNodesPerColumn",
+        "mapTitleBudget"
+      ],
+      "note": "Drawing geometry for the target map. One wraps a long lane into further columns and the other cuts a node's title to one line; the whole title stays in the node tooltip and on the group card it links to, every group is drawn, and nothing is removed from the page."
+    },
+    {
       "file": "internal/report/page_model.go",
       "category": "excluded-not-a-limit",
       "symbols": [

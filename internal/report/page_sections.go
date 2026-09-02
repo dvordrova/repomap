@@ -33,6 +33,7 @@ type pageSection struct {
 	factsTargetID   string
 
 	FactsAvailable   bool
+	Map              *pageMap
 	RouteGroups      []pageRouteGroup
 	Triggers         []pageGroup
 	Entrypoints      []pageEntrypoint
@@ -100,6 +101,9 @@ type pageFlowStep struct {
 // pageGroup is one responsibility card. Members are grouped by file so the
 // path is printed once and each chip carries only its line.
 type pageGroup struct {
+	ID          string
+	Members     int
+	Share       int
 	Title       string
 	Summary     string
 	Visible     []pageChipRow
@@ -140,6 +144,7 @@ func (builder *pageBuilder) buildSections() {
 	for _, section := range builder.sections {
 		builder.fillSectionFacts(section)
 		builder.fillSectionGroups(section)
+		section.Map = builder.buildMap(section)
 		section.Flow = builder.flow(section)
 		if section.Flow == nil {
 			section.FlowMissing = notAvailableOrientation
@@ -308,7 +313,7 @@ func (builder *pageBuilder) fillSectionGroups(section *pageSection) {
 		return
 	}
 	for _, group := range index.Groups {
-		card := builder.groupCard(*index, group)
+		card := builder.groupCard(section.ID, *index, group)
 		switch group.Lane {
 		case groupindex.LaneTriggers:
 			section.Triggers = append(section.Triggers, card)
@@ -330,8 +335,11 @@ func (builder *pageBuilder) graphIndex(programTargetID string) *groupindex.Index
 	return nil
 }
 
-func (builder *pageBuilder) groupCard(index groupindex.Index, group groupindex.Group) pageGroup {
-	card := pageGroup{Title: group.Title, Summary: group.Summary}
+func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, group groupindex.Group) pageGroup {
+	card := pageGroup{
+		ID: groupAnchorID(sectionID, group.ID), Title: group.Title, Summary: group.Summary,
+		Members: len(group.MemberSubjectIDs), Share: laneShare(index, group),
+	}
 	rows, externals := builder.memberChips(group.MemberSubjectIDs)
 	card.Externals = externals
 	card.Visible, card.More, card.MoreCount = splitChipRows(rows, maxVisibleGroupMembers)
@@ -465,4 +473,13 @@ func (builder *pageBuilder) allConnections() []groupindex.Connection {
 		rows = append(rows, index.Connections...)
 	}
 	return rows
+}
+
+// laneShare is how much of the target one group holds. The same number sizes
+// its node on the map, so the card and the picture cannot disagree.
+func laneShare(index groupindex.Index, group groupindex.Group) int {
+	if len(index.Subjects) == 0 {
+		return 0
+	}
+	return len(group.MemberSubjectIDs) * 100 / len(index.Subjects)
 }

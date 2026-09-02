@@ -1,6 +1,7 @@
 <section id="{{.ID}}">
 <h2>{{.Label}} <span class="meta">{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}{{if .Root}} · <code>{{.Root}}</code>{{end}}</span></h2>
 {{if not .FactsAvailable}}<p class="empty">Facts are not available for this run; only the group graph is shown.</p>{{end}}
+{{if .Map}}{{template "map.html" .Map}}{{end}}
 <h3>Inbound</h3>
 {{if .RouteGroups}}{{range .RouteGroups}}<h4><span class="method">{{.Method}}</span></h4><ul class="plain fact">{{range .Rows}}<li><code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}{{else if .FactsAvailable}}<p class="empty">No HTTP routes found.</p>{{end}}
 {{range .Triggers}}{{template "group" .}}{{end}}

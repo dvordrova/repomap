@@ -515,7 +515,7 @@ func TestNormalizeResponseRequiresExactUniqueJSONKeys(t *testing.T) {
 	workerRef := refs["object:runWorker"]
 
 	for name, raw := range map[string][]byte{
-		"duplicate envelope key":   []byte(`{"groups":[],"groups":[],"connections":[]}`),
+		"conflicting envelope key": []byte(`{"groups":[],"groups":[{"key":"x"}],"connections":[]}`),
 		"case folded envelope key": []byte(`{"Groups":[],"connections":[]}`),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -524,6 +524,22 @@ func TestNormalizeResponseRequiresExactUniqueJSONKeys(t *testing.T) {
 			}
 		})
 	}
+
+	// A key repeated verbatim is one answer said twice. Refusing it cost every
+	// group of one real target, and with them every connection that named one.
+	t.Run("repeated identical keys are one answer", func(t *testing.T) {
+		raw := []byte(fmt.Sprintf(
+			`{"groups":[{"key":"core","title":"Core","summary":"Core work","summary":"Core work","lane":"core","member_refs":[%q],"evidence_refs":[]}],"connections":[]}`,
+			processRef,
+		))
+		normalized, normalizeErr := normalizeResponse(raw, compilation, request)
+		if normalizeErr != nil {
+			t.Fatalf("repeated identical key became an envelope error: %v", normalizeErr)
+		}
+		if len(normalized.groups) != 1 || len(normalized.diagnostics) != 0 {
+			t.Fatalf("repeated identical key discarded the group: %#v", normalized)
+		}
+	})
 
 	for name, raw := range map[string][]byte{
 		"duplicate group key":      []byte(fmt.Sprintf(`{"groups":[{"key":"core","key":"other","title":"Core","summary":"Core work","lane":"core","member_refs":[%q],"evidence_refs":[]}],"connections":[]}`, processRef)),

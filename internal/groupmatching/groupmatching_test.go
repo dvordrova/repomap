@@ -728,7 +728,8 @@ func TestNormalizeResponseRequiresExactUniqueJSONKeys(t *testing.T) {
 	}
 	for name, raw := range map[string][]byte{
 		"case-folded envelope": []byte(`{"Connections":[]}`),
-		"duplicate envelope":   []byte(`{"connections":[],"connections":[]}`),
+		// A key repeated with a different value is two answers, not one.
+		"conflicting envelope": []byte(`{"connections":[],"connections":[{"pair_ref":"p1"}]}`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, normalizeErr := normalizeResponse(raw, compilation, request); normalizeErr == nil {
@@ -736,6 +737,14 @@ func TestNormalizeResponseRequiresExactUniqueJSONKeys(t *testing.T) {
 			}
 		})
 	}
+	// A key repeated verbatim is one answer said twice. Refusing it used to
+	// cost whole rows for nothing.
+	if _, repeatErr := normalizeResponse(
+		[]byte(`{"connections":[],"connections":[]}`), compilation, request,
+	); repeatErr != nil {
+		t.Fatalf("identical repeated envelope key was refused: %v", repeatErr)
+	}
+
 	validRow, err := json.Marshal(responseConnection{
 		PairRef: request.Pair.Ref, FromGroupRef: request.Pair.LeftGroup.Ref,
 		ToGroupRef: request.Pair.RightGroup.Ref, SemanticKind: "strict_json_connection",

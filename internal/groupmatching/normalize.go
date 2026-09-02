@@ -331,8 +331,12 @@ func decodeStrictRow(raw json.RawMessage, destination any) bool {
 }
 
 // hasExactObjectKeys closes two gaps left by encoding/json's struct decoder:
-// duplicate object keys and case-insensitive field matching. It validates only
+// ambiguous object keys and case-insensitive field matching. It validates only
 // this object's key set; the normal decoder still owns typed value validation.
+//
+// A key repeated with the same value is accepted; two identical spellings of
+// one answer are one answer. A key repeated with a different value is
+// refused, because choosing between two answers would be repair.
 func hasExactObjectKeys(raw []byte, expected []string) bool {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	opening, err := decoder.Token()
@@ -343,7 +347,7 @@ func hasExactObjectKeys(raw []byte, expected []string) bool {
 	for _, key := range expected {
 		wanted[key] = struct{}{}
 	}
-	seen := make(map[string]struct{}, len(expected))
+	seen := make(map[string]json.RawMessage, len(expected))
 	for decoder.More() {
 		token, tokenErr := decoder.Token()
 		key, keyIsString := token.(string)
@@ -353,14 +357,14 @@ func hasExactObjectKeys(raw []byte, expected []string) bool {
 		if _, known := wanted[key]; !known {
 			return false
 		}
-		if _, duplicate := seen[key]; duplicate {
-			return false
-		}
-		seen[key] = struct{}{}
 		var value json.RawMessage
 		if decodeErr := decoder.Decode(&value); decodeErr != nil {
 			return false
 		}
+		if earlier, duplicate := seen[key]; duplicate && !sameJSONValue(earlier, value) {
+			return false
+		}
+		seen[key] = value
 	}
 	closing, err := decoder.Token()
 	if err != nil || closing != json.Delim('}') || len(seen) != len(wanted) {
@@ -398,4 +402,17 @@ func validSnakeCase(value string) bool {
 		}
 	}
 	return !previousUnderscore
+}
+
+// sameJSONValue compares two encodings by value rather than by bytes, so
+// whitespace or key order inside a repeated object cannot turn one answer
+// into two.
+func sameJSONValue(first, second json.RawMessage) bool {
+	var left, right any
+	if json.Unmarshal(first, &left) != nil || json.Unmarshal(second, &right) != nil {
+		return false
+	}
+	leftEncoded, leftErr := json.Marshal(left)
+	rightEncoded, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftEncoded, rightEncoded)
 }

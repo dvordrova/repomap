@@ -1,0 +1,15 @@
+{{define "map.html"}}<figure class="map" data-map>
+<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="Map of this target's groups and the connections between them" class="map-svg">
+<defs><marker id="map-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" class="map-arrow-head"/></marker></defs>
+<g class="map-lanes">{{range .Lanes}}<text x="{{printf "%.1f" .X}}" y="18" class="map-lane-label">{{.Label}}</text>{{end}}</g>
+<g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" data-from="{{.From}}" data-to="{{.To}}" marker-end="url(#map-arrow)"><title>{{.Label}}</title></path>{{end}}</g>
+<g class="map-nodes">{{range .Nodes}}<a href="{{.Href}}" class="map-node map-node-{{.Lane}}" data-node="{{.ID}}" data-near="{{.Neighbours}}" aria-label="{{.FullTitle}}, {{.Members}} members, {{.Degree}} connections here{{if .Outside}}, {{.Outside}} to another target{{end}}">
+<rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="6" class="map-node-body"/>
+<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="18" class="map-node-title">{{.Title}}</text>
+<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="32" class="map-node-count">{{.Members}}{{if .Outside}} · {{.Outside}} outside{{end}}</text>
+<rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" transform="translate(11 38)" width="{{printf "%.1f" .BarWidth}}" height="3" rx="1.5" class="map-node-bar"/>
+<title>{{.FullTitle}} — {{.Summary}}</title>
+</a>{{end}}</g>
+</svg>
+<figcaption class="map-note">Groups of this target, left to right: what reaches in, what it is, what it reaches out to. The bar is how many symbols a group holds. Click one to open it below.{{if ge .LargestPct 25}} The largest holds {{.LargestPct}}% of the target on its own.{{end}}</figcaption>
+</figure>{{end}}
