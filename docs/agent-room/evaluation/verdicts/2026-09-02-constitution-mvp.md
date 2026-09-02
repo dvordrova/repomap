@@ -42,3 +42,33 @@ script. 86 anchored facts, 28 quoted claims, 0 rejected model rows.
   each target's configuration (this is what made the port visible), and the
   overview quotes only the shallowest README so Create React App boilerplate
   no longer buries the summary.
+
+## Transfer: chi (Go)
+
+`github.com/go-chi/chi/v5` at `8b258c7bb28f`, live run, 4 of 4 targets
+analyzed: 53 anchored facts, 250 quoted claims, a correct summary ("the chi
+HTTP router library for Go, with examples demonstrating REST APIs and API
+versioning"), and 25 HTTP routes with their methods, path literals and
+resolved handlers, including `GET /{articleSlug:[a-z-]+}` at
+`_examples/rest/main.go:92`.
+
+Two defects surfaced by reading the page, both fixed:
+
+- the first README quote was a raw `<img>` tag and the third was a wall of
+  unrendered Markdown, so claims now quote prose;
+- two targets both rendered as "versions", so a repeated name now carries the
+  detail that separates it.
+
+### Known limitation: nested route prefixes
+
+A route registered inside a `Route`/`Mount` closure keeps only its own path
+literal, so `ListArticles` reads `GET /` rather than `GET /articles`. The
+anchor is exact and the handler is right, but the path is incomplete wherever
+a router nests. The fact layer already holds what composition needs: the
+mounting call retains its own literal, and `passes_callback` links it to the
+closure the inner routes are registered on. Composing them is the next
+correctness change to the fact layer. The canonical fixture does not nest
+routers, so acceptance is unaffected.
+
+Group-mounting calls also report the method `ANY`, which is honest for a
+subrouter mount but reads oddly beside real verbs.
