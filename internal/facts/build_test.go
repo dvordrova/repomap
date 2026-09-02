@@ -538,15 +538,14 @@ func TestBuildNegatives(t *testing.T) {
 	for _, fact := range result.OfKind(KindNegative) {
 		names[fact.Key] = fact
 	}
-	for _, name := range []string{NegativeReadmeTooShort, NegativeNoTests, NegativeNoDockerfile, NegativeNoCI} {
+	// A negative earns its place only when it changes what the reader does.
+	// A thin README does not: this page is what they would have read instead.
+	for _, name := range []string{NegativeNoTests, NegativeNoDockerfile, NegativeNoCI} {
 		if _, found := names[name]; !found {
 			t.Fatalf("missing negative %s in %+v", name, names)
 		}
 	}
-	if readme := names[NegativeReadmeTooShort]; readme.Anchor.String() != "README.md:1" || readme.Text != "README.md is 6 bytes" {
-		t.Fatalf("readme negative = %+v", readme)
-	}
-	if len(names) != 4 {
+	if len(names) != 3 {
 		t.Fatalf("negatives = %+v", names)
 	}
 
@@ -560,11 +559,13 @@ func TestBuildNegatives(t *testing.T) {
 		t.Fatalf("complete repository has negatives %+v", negatives)
 	}
 	missing := newCorpus(t, map[string]string{"src/x.go": "package x\n", "src/x_test.go": "package x\n"})
-	noReadme := mustBuild(t, Input{Repository: missing})
-	if _, found := findFact(noReadme, KindNegative, func(fact Fact) bool { return fact.Key == NegativeNoReadme }); !found {
-		t.Fatalf("no_readme missing in %+v", noReadme.OfKind(KindNegative))
+	withoutReadme := mustBuild(t, Input{Repository: missing})
+	for _, fact := range withoutReadme.OfKind(KindNegative) {
+		if strings.Contains(fact.Key, "readme") {
+			t.Fatalf("a missing README became a negative again: %+v", fact)
+		}
 	}
-	if _, found := findFact(noReadme, KindNegative, func(fact Fact) bool { return fact.Key == NegativeNoTests }); found {
+	if _, found := findFact(withoutReadme, KindNegative, func(fact Fact) bool { return fact.Key == NegativeNoTests }); found {
 		t.Fatalf("_test.go file did not count as a test")
 	}
 }
