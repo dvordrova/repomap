@@ -12,7 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/reporead"
 )
 
-const maxPackageDeclarationFileBytes = 16 * 1024 * 1024
+const advisoryPackageDeclarationFileBytes = 16 * 1024 * 1024
 
 type PackageDeclarationKind string
 
@@ -99,9 +99,9 @@ func extractPackageDeclarations(
 	reader *reporead.Reader,
 	packageDir string,
 	pkg goListPackage,
-) ([]PackageDeclaration, []string) {
+) ([]PackageDeclaration, []string, []string) {
 	if reader == nil {
-		return nil, []string{fmt.Sprintf("package %s: declaration source reader is unavailable", pkg.ImportPath)}
+		return nil, []string{fmt.Sprintf("package %s: declaration source reader is unavailable", pkg.ImportPath)}, nil
 	}
 	goFiles := append([]string(nil), pkg.GoFiles...)
 	goFiles = append(goFiles, pkg.CgoFiles...)
@@ -109,35 +109,45 @@ func extractPackageDeclarations(
 	goFiles = compactStrings(goFiles)
 
 	declarations := make([]PackageDeclaration, 0)
+	largeFileCount := 0
 	for _, goFile := range goFiles {
 		if strings.HasSuffix(goFile, "_test.go") {
 			continue
 		}
 		repoPath, err := entrypointSourcePath(packageDir, goFile)
 		if err != nil {
-			return nil, []string{fmt.Sprintf("package %s: cannot locate declaration source %q: %v", pkg.ImportPath, goFile, err)}
+			return nil, []string{fmt.Sprintf("package %s: cannot locate declaration source %q: %v", pkg.ImportPath, goFile, err)}, nil
 		}
-		content, err := reader.ReadFile(repoPath, maxPackageDeclarationFileBytes)
+		content, err := reader.ReadFileAll(repoPath)
 		if err != nil {
-			return nil, []string{fmt.Sprintf("package %s: cannot inspect declarations in %s: %v", pkg.ImportPath, repoPath, err)}
+			return nil, []string{fmt.Sprintf("package %s: cannot inspect declarations in %s: %v", pkg.ImportPath, repoPath, err)}, nil
 		}
-		if content.Truncated {
-			return nil, []string{fmt.Sprintf("package %s: declaration source %s exceeds %d bytes", pkg.ImportPath, repoPath, maxPackageDeclarationFileBytes)}
+		if len(content.Bytes) > advisoryPackageDeclarationFileBytes {
+			largeFileCount++
 		}
 
 		fileSet := token.NewFileSet()
 		file, err := parser.ParseFile(fileSet, repoPath, content.Bytes, parser.SkipObjectResolution)
 		if err != nil {
-			return nil, []string{fmt.Sprintf("package %s: cannot parse declarations in %s: %v", pkg.ImportPath, repoPath, err)}
+			return nil, []string{fmt.Sprintf("package %s: cannot parse declarations in %s: %v", pkg.ImportPath, repoPath, err)}, nil
 		}
 		declarations = append(declarations, declarationsFromFile(fileSet, file, repoPath)...)
 	}
 
 	declarations, err := CanonicalPackageDeclarations(declarations)
 	if err != nil {
-		return nil, []string{fmt.Sprintf("package %s: %v", pkg.ImportPath, err)}
+		return nil, []string{fmt.Sprintf("package %s: %v", pkg.ImportPath, err)}, nil
 	}
-	return declarations, nil
+	var scaleWarnings []string
+	if largeFileCount > 0 {
+		scaleWarnings = append(scaleWarnings, scaleWarning(fmt.Sprintf(
+			"package %s: retained declarations from all files; %d file(s) exceeded the usual %d-byte size",
+			pkg.ImportPath,
+			largeFileCount,
+			advisoryPackageDeclarationFileBytes,
+		)))
+	}
+	return declarations, nil, scaleWarnings
 }
 
 func declarationsFromFile(fileSet *token.FileSet, file *ast.File, repoPath string) []PackageDeclaration {

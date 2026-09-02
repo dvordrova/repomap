@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	schemaContract  = "response is exactly one JSON array of {file_ref,classifications:[{class,hypotheses}]}; strict fields and closed classes; repeated set-valued rows are permitted and unknown file_ref rows are ignorable-v4"
-	reducerContract = "ignore rows whose FileID is outside the complete corpus authority before merge and bounds; discard valid non-documentation classifications for known prose refs before hypothesis validation and bounds without promoting them to documentation; merge repeated known file and class rows and deduplicate identical hypotheses before applying unique class and hypothesis bounds; guidance-grounded multi-role rows without a repository-size quota; canonical path/class/hypothesis order-v8"
+	schemaContract  = "response is exactly one JSON array of {file_ref,classifications:[{class,hypotheses}]}; strict fields and closed classes; repeated set-valued rows are permitted; no local class, hypothesis-count, or hypothesis-byte ceiling; unknown file_ref rows are ignorable-v5"
+	reducerContract = "ignore rows whose FileID is outside request-local authority before class interpretation; discard valid non-documentation classifications for known prose refs before hypothesis validation without promotion; merge repeated known file and class rows and deduplicate identical hypotheses without local count or text ceilings; union every shard against aggregate authority; guidance-grounded multi-role rows without a repository-size quota; canonical path/class/hypothesis order-v9"
 )
 
 // ResolveResponse treats valid non-documentation roles for a known prose ref
 // as unsupported set members and discards them before their hypotheses or
-// bounds have authority. It never repairs such a role into documentation;
+// content has authority. It never repairs such a role into documentation;
 // independently valid classifications in the same response remain usable.
 func ResolveResponse(compilation Compilation, raw []byte) (Result, error) {
 	if err := validateReadyCompilation(compilation); err != nil {
@@ -78,8 +78,7 @@ func ResolveResponse(compilation Compilation, raw []byte) (Result, error) {
 				classes[classification.Class] = hypotheses
 			}
 			for _, hypothesis := range classification.Hypotheses {
-				if hypothesis == "" || hypothesis != strings.TrimSpace(hypothesis) ||
-					len(hypothesis) > MaxHypothesisBytes || !utf8.ValidString(hypothesis) || containsControl(hypothesis) {
+				if !validHypothesis(hypothesis) {
 					return nil, fmt.Errorf("README file classifier: invalid classification hypothesis")
 				}
 				hypotheses[hypothesis] = struct{}{}
@@ -89,14 +88,8 @@ func ResolveResponse(compilation Compilation, raw []byte) (Result, error) {
 
 	result := make(Result, 0, len(files))
 	for fileRef, classes := range files {
-		if len(classes) > MaxClassificationsPerFile {
-			return nil, fmt.Errorf("README file classifier: invalid classifications array")
-		}
 		classifications := make([]Classification, 0, len(classes))
 		for class, hypothesisSet := range classes {
-			if len(hypothesisSet) > MaxHypothesesPerClassification {
-				return nil, fmt.Errorf("README file classifier: invalid classification hypotheses array")
-			}
 			hypotheses := make([]string, 0, len(hypothesisSet))
 			for hypothesis := range hypothesisSet {
 				hypotheses = append(hypotheses, hypothesis)
@@ -122,6 +115,11 @@ func ResolveResponse(compilation Compilation, raw []byte) (Result, error) {
 		return result[left].FileRef < result[right].FileRef
 	})
 	return result, nil
+}
+
+func validHypothesis(value string) bool {
+	return value != "" && value == strings.TrimSpace(value) &&
+		utf8.ValidString(value) && !containsControl(value)
 }
 
 func validFileClass(value FileClass) bool {

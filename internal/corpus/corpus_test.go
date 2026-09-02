@@ -338,8 +338,13 @@ func TestReadFileIsBoundedCurrentAndRejectsSymlinkReplacement(t *testing.T) {
 	if _, err := corpus.ReadFile("f01", 1); err == nil || !strings.Contains(err.Error(), "unknown file ID") {
 		t.Fatalf("non-canonical ID error = %v", err)
 	}
-	if _, err := corpus.ReadFile("f1", MaxReadBytes+1); err == nil {
-		t.Fatal("ReadFile accepted an unbounded request")
+	content, err = corpus.ReadFile("f1", MaxReadBytes+1)
+	if err != nil || string(content.Bytes) != "new-current-bytes" || content.Truncated {
+		t.Fatalf("read above former advisory threshold = %#v, %v", content, err)
+	}
+	content, err = corpus.ReadFileAll("f1")
+	if err != nil || string(content.Bytes) != "new-current-bytes" || content.Truncated {
+		t.Fatalf("complete read = %#v, %v", content, err)
 	}
 
 	if err := os.Remove(filepath.Join(repo, "source.py")); err != nil {
@@ -351,6 +356,28 @@ func TestReadFileIsBoundedCurrentAndRejectsSymlinkReplacement(t *testing.T) {
 	writeCorpusFile(t, repo, "other.py", "outside identity", 0o600)
 	if _, err := corpus.ReadFile("f1", 32); err == nil || !strings.Contains(err.Error(), "symbolic links") {
 		t.Fatalf("symlink replacement error = %v", err)
+	}
+}
+
+func TestCorpusScaleWarningsAreDiagnosticOnly(t *testing.T) {
+	warnings := corpusScaleWarnings(
+		MaxFiles+1,
+		MaxVisiblePaths+1,
+		MaxFiles+2,
+		MaxSnapshotBytes+1,
+		2,
+		MaxReadBytes+1,
+	)
+	if len(warnings) != 5 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	for _, warning := range warnings {
+		if warning.Retained <= warning.AdvisorySize || warning.MaximumRetained <= warning.AdvisorySize {
+			t.Fatalf("invalid warning = %#v", warning)
+		}
+	}
+	if warnings[4].Kind != ScaleWarningReadBytes || warnings[4].AffectedCollections != 2 {
+		t.Fatalf("complete-read warning = %#v", warnings[4])
 	}
 }
 

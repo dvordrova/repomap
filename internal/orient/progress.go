@@ -7,10 +7,6 @@ type ProgressStage string
 const (
 	ProgressSnapshotStarted ProgressStage = "snapshot_started"
 	ProgressSnapshotReady   ProgressStage = "snapshot_ready"
-	ProgressProgramStarted  ProgressStage = "program_started"
-	ProgressProgramReady    ProgressStage = "program_ready"
-	ProgressProgramFailed   ProgressStage = "program_failed"
-	ProgressProgramPhase    ProgressStage = "program_phase"
 )
 
 // ProgressEvent contains bounded metadata about work in progress. It never
@@ -19,18 +15,7 @@ type ProgressEvent struct {
 	Stage                 ProgressStage
 	RepoPath              string
 	RepoName              string
-	Activity              string
 	FileCount             int
-	GraphNodeCount        int
-	GraphEdgeCount        int
-	ExternalCallFamilies  int
-	ActivityCandidates    int
-	CoreDeclarations      int
-	Phase                 string
-	PhaseState            string
-	CompletedCount        int
-	TotalCount            int
-	Warning               string
 	GoTarget              string
 	GoTargetProvenance    string
 	SuggestedGoTarget     string

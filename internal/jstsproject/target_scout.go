@@ -165,11 +165,15 @@ func scoutedTarget(
 	if projectDir != "." {
 		ref = "project:package:" + string(manifestID)
 	}
+	name, err := selectedPackageIdentityName(repository, projectDir, manifest.Name)
+	if err != nil {
+		return Target{}, err
+	}
 	target := Target{
 		Version:         TargetVersion,
 		CorpusSHA256:    repository.SHA256(),
 		Ref:             ref,
-		Name:            selectedPackageIdentityName(repository, projectDir, manifest.Name),
+		Name:            name,
 		Selector:        "jsts:" + manifestPath,
 		ProjectDir:      projectDir,
 		ManifestPath:    manifestPath,

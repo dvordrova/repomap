@@ -122,6 +122,29 @@ type Call[T any] struct {
 	Validate       func(T) error
 }
 
+// BatchItemError identifies the exact caller-order item that failed in one
+// batch execution. Domain planners may use the index to deterministically
+// re-shard only response/output-resource failures; every other item error
+// remains terminal to the complete domain result.
+type BatchItemError struct {
+	Index int
+	Err   error
+}
+
+func (err *BatchItemError) Error() string {
+	if err == nil {
+		return "llm: batch item failed"
+	}
+	return fmt.Sprintf("llm: batch item %d: %v", err.Index, err.Err)
+}
+
+func (err *BatchItemError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Err
+}
+
 type EventKind string
 
 const (

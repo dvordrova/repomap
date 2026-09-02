@@ -3,9 +3,12 @@ package surfacediscovery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/godynamichandoff"
 )
 
 func TestAnalyzeContextWithInputRequiresResolvedGoTarget(t *testing.T) {
@@ -17,20 +20,70 @@ func TestAnalyzeContextWithInputRequiresResolvedGoTarget(t *testing.T) {
 	}
 }
 
-func TestAnalyzeContextWithInputRejectsMissingGraphLimits(t *testing.T) {
+func TestAnalyzeContextWithInputRejectsNegativeGraphControls(t *testing.T) {
 	for name, mutate := range map[string]func(*Options){
-		"depth": func(options *Options) { options.DirectCallDepth = 0 },
-		"edges": func(options *Options) { options.DirectCallEdgeLimit = 0 },
+		"depth": func(options *Options) { options.DirectCallDepth = -1 },
+		"edges": func(options *Options) { options.DirectCallEdgeLimit = -1 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			options := defaultHostOptions(t.TempDir())
 			mutate(&options)
 			if _, err := AnalyzeContextWithInput(context.Background(), options, Input{}); err == nil ||
-				!strings.Contains(err.Error(), "must be at least 1") {
-				t.Fatalf("missing graph limit error = %v", err)
+				!strings.Contains(err.Error(), "must be non-negative") {
+				t.Fatalf("negative graph control error = %v", err)
 			}
 		})
 	}
+}
+
+func TestTargetDirectCallCancellationDuringTraversalIsTerminal(t *testing.T) {
+	repository := t.TempDir()
+	writeTargetScopeFile(t, repository, "go.mod", "module example.com/cancelled\n\ngo 1.24\n")
+	writeTargetScopeFile(t, repository, "main.go", `package main
+
+func leaf() {}
+func main() { leaf() }
+`)
+	input := targetDirectCallExecutableInput("example.com/cancelled", "main.go", 4)
+	options := defaultHostOptions(repository)
+	workspace, err := PrepareWorkspace(context.Background(), options, []Input{input})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := workspace.bindings[input.AnalysisTarget.TargetRef]
+	a, err := workspace.analyzerFor(
+		context.Background(), options, binding.input, workspace.universes[binding.universeKey],
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.dynamicHandoffCapture = &dynamicHandoffCapture{}
+	a.prepareTargetProgram()
+	if roots := a.targetDirectCallRoots(); len(roots) != 1 {
+		t.Fatalf("direct-call roots = %d, want one", len(roots))
+	}
+
+	// The first poll admits traversal setup; the second cancels at the first BFS
+	// item. Returning nil here used to let analyzePreparedTarget seal the
+	// declaration-only builder as a successful, incomplete DirectCallIndex.
+	a.ctx = &cancelOnErrPollContext{Context: context.Background(), cancelAt: 2}
+	if err := a.recordTargetDirectCallEdges(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled direct-call traversal error = %v, want context.Canceled", err)
+	}
+}
+
+type cancelOnErrPollContext struct {
+	context.Context
+	calls    int
+	cancelAt int
+}
+
+func (ctx *cancelOnErrPollContext) Err() error {
+	ctx.calls++
+	if ctx.calls >= ctx.cancelAt {
+		return context.Canceled
+	}
+	return nil
 }
 
 func TestTargetDirectCallRejectsMissingExactExecutableRoot(t *testing.T) {
@@ -130,6 +183,47 @@ func leaf() {}
 	}
 	if exhausted.DirectCallIndex.SHA256 == deeper.DirectCallIndex.SHA256 {
 		t.Fatal("configured depth was not bound into DirectCallIndex identity")
+	}
+}
+
+func TestTargetDirectCallDefaultRetainsCallsBeyondFormerDepth(t *testing.T) {
+	repository := t.TempDir()
+	writeTargetScopeFile(t, repository, "go.mod", "module example.com/deep\n\ngo 1.24\n")
+	var source strings.Builder
+	source.WriteString("package main\n\nfunc main() { step0() }\n")
+	for depth := 0; depth < AdvisoryDirectCallMaxDepth+2; depth++ {
+		if depth == AdvisoryDirectCallMaxDepth+1 {
+			fmt.Fprintf(&source, "func step%d() {}\n", depth)
+			continue
+		}
+		fmt.Fprintf(&source, "func step%d() { step%d() }\n", depth, depth+1)
+	}
+	writeTargetScopeFile(t, repository, "main.go", source.String())
+
+	result, err := analyzeForTest(
+		defaultHostOptions(repository),
+		targetDirectCallExecutableInput("example.com/deep", "main.go", 3),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := result.DirectCallIndex
+	if index == nil || index.State != DirectCallIndexReady ||
+		index.Scope.MaxDepth != 0 || index.Scope.EdgeLimit != 0 {
+		t.Fatalf("unbounded default index = %#v", index)
+	}
+	wantLastEdge := fmt.Sprintf("step%d->step%d", AdvisoryDirectCallMaxDepth, AdvisoryDirectCallMaxDepth+1)
+	if !targetDirectCallEdgeNames(index)[wantLastEdge] {
+		t.Fatalf("default graph lost edge beyond former depth %d: %v", AdvisoryDirectCallMaxDepth, targetDirectCallEdgeNames(index))
+	}
+	if index.Coverage.TraversalDepthReached <= AdvisoryDirectCallMaxDepth ||
+		index.Coverage.DepthBoundRepositoryCallsExcluded != 0 {
+		t.Fatalf("default traversal coverage = %#v", index.Coverage)
+	}
+	warnings := DirectCallScaleWarnings(*index)
+	if len(warnings) != 1 || warnings[0].Kind != DirectCallScaleWarningDepth ||
+		warnings[0].Retained != index.Coverage.TraversalDepthReached {
+		t.Fatalf("deep graph warnings = %#v", warnings)
 	}
 }
 
@@ -307,14 +401,262 @@ func helper() {}
 	}
 }
 
-func TestTargetDirectCallDefaultsAreExplicitProductLimits(t *testing.T) {
+func TestTargetDirectCallContinuesThroughExactFieldCallableBinding(t *testing.T) {
+	repository := t.TempDir()
+	source := `package main
+
+type Handler interface { Serve() }
+type HandlerFunc func()
+func (function HandlerFunc) Serve() { function() }
+type Server struct { Handler Handler }
+type Box struct { Value any }
+
+func leaf() {}
+func handle() {
+	_ = &Server{Handler: HandlerFunc(handle)}
+	leaf()
+}
+func main() {
+	_ = &Server{Handler: HandlerFunc(handle)}
+	_ = &Box{Value: HandlerFunc(handle)}
+	println("ready")
+}
+`
+	writeTargetScopeFile(t, repository, "go.mod", "module example.com/binding\n\ngo 1.24\n")
+	writeTargetScopeFile(t, repository, "main.go", source)
+	mainLine := strings.Count(source[:strings.Index(source, "func main")], "\n") + 1
+	input := targetDirectCallExecutableInput("example.com/binding", "main.go", mainLine)
+
+	options := defaultHostOptions(repository)
+	options.CaptureDynamicHandoffIndex = true
+	options.DirectCallDepth = 1
+	shallow, err := analyzeForTest(options, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := shallow.DirectCallIndex.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if shallow.DirectCallIndex.Coverage.BuiltinCallsExcluded != 1 ||
+		shallow.DirectCallIndex.Coverage.NonStaticCallsExcluded != 0 {
+		t.Fatalf("builtin coverage = %#v", shallow.DirectCallIndex.Coverage)
+	}
+	if got := targetDirectCallEdgeNames(shallow.DirectCallIndex); len(got) != 0 {
+		t.Fatalf("depth-1 exact edges = %v: binding must not invent main->handle and handle->leaf is behind the depth frontier", got)
+	}
+	if shallow.DirectCallIndex.Coverage.DepthBoundRepositoryCallsExcluded != 1 {
+		t.Fatalf("depth-1 frontier = %#v", shallow.DirectCallIndex.Coverage)
+	}
+	if shallow.DynamicHandoffIndex == nil || shallow.DynamicHandoffIndex.Coverage.CallableBindings != 2 {
+		t.Fatalf("callable binding overlay = %#v", shallow.DynamicHandoffIndex)
+	}
+	mainNode := targetDirectCallNodeBySymbol(t, shallow.DirectCallIndex, "main")
+	handleNode := targetDirectCallNodeBySymbol(t, shallow.DirectCallIndex, "handle")
+	mainBinding := false
+	for _, handoff := range shallow.DynamicHandoffIndex.Handoffs {
+		if handoff.Kind == godynamichandoff.CallableBinding && handoff.Slot.Field == "Value" {
+			t.Fatalf("empty any field became a callable binding: %#v", handoff)
+		}
+		if handoff.Kind == godynamichandoff.CallableBinding && handoff.CallerID == mainNode.ID &&
+			handoff.Resolution == godynamichandoff.ResolutionExact && len(handoff.Candidates) == 1 &&
+			handoff.Candidates[0].FunctionID == handleNode.ID && handoff.Slot.Field == "Handler" {
+			mainBinding = handoff.Invocation == godynamichandoff.InvocationBinding
+		}
+	}
+	if !mainBinding {
+		t.Fatalf("main callable binding is absent: %#v", shallow.DynamicHandoffIndex.Handoffs)
+	}
+
+	options.DirectCallDepth = 2
+	deep, err := analyzeForTest(options, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := deep.DirectCallIndex.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := targetDirectCallEdgeNames(deep.DirectCallIndex), map[string]bool{"handle->leaf": true}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("depth-2 exact edges = %v, want %v", got, want)
+	}
+	if deep.DirectCallIndex.Coverage.DepthBoundRepositoryCallsExcluded != 0 {
+		t.Fatalf("cycle-safe traversal retained false frontier: %#v", deep.DirectCallIndex.Coverage)
+	}
+
+	// The structural snapshot is captured independently of the optional
+	// dynamic-handoff output. Disabling that output must not change exact BFS.
+	options.CaptureDynamicHandoffIndex = false
+	withoutOverlay, err := analyzeForTest(options, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutOverlay.DynamicHandoffIndex != nil {
+		t.Fatalf("disabled dynamic overlay was published: %#v", withoutOverlay.DynamicHandoffIndex)
+	}
+	if got, want := targetDirectCallEdgeNames(withoutOverlay.DirectCallIndex), targetDirectCallEdgeNames(deep.DirectCallIndex); !reflect.DeepEqual(got, want) {
+		t.Fatalf("optional dynamic output changed binding traversal: got %v want %v", got, want)
+	}
+}
+
+func TestTargetDirectCallContinuesThroughExactCallbackArgument(t *testing.T) {
+	repository := t.TempDir()
+	source := `package main
+
+func register(_ func()) {}
+func leaf() {}
+func handler() { leaf() }
+func main() { register(handler) }
+`
+	writeTargetScopeFile(t, repository, "go.mod", "module example.com/callback\n\ngo 1.24\n")
+	writeTargetScopeFile(t, repository, "main.go", source)
+	mainLine := strings.Count(source[:strings.Index(source, "func main")], "\n") + 1
+	input := targetDirectCallExecutableInput("example.com/callback", "main.go", mainLine)
+
+	options := defaultHostOptions(repository)
+	options.CaptureDynamicHandoffIndex = true
+	options.DirectCallDepth = 1
+	shallow, err := analyzeForTest(options, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := targetDirectCallEdgeNames(shallow.DirectCallIndex), map[string]bool{"main->register": true}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("depth-1 exact edges = %v, want %v", got, want)
+	}
+	if shallow.DirectCallIndex.Coverage.DepthBoundRepositoryCallsExcluded != 1 {
+		t.Fatalf("depth-1 callback frontier = %#v", shallow.DirectCallIndex.Coverage)
+	}
+	mainNode := targetDirectCallNodeBySymbol(t, shallow.DirectCallIndex, "main")
+	handlerNode := targetDirectCallNodeBySymbol(t, shallow.DirectCallIndex, "handler")
+	transfers := 0
+	for _, handoff := range shallow.DynamicHandoffIndex.Handoffs {
+		if handoff.Kind != godynamichandoff.CallbackTransfer || handoff.CallerID != mainNode.ID {
+			continue
+		}
+		transfers++
+		if handoff.Slot.Parameter != 1 || handoff.Resolution != godynamichandoff.ResolutionExact ||
+			len(handoff.Candidates) != 1 || handoff.Candidates[0].FunctionID != handlerNode.ID {
+			t.Fatalf("exact callback transfer = %#v", handoff)
+		}
+	}
+	if transfers != 1 {
+		t.Fatalf("callback transfers = %d, want one: %#v", transfers, shallow.DynamicHandoffIndex.Handoffs)
+	}
+
+	options.DirectCallDepth = 2
+	deep, err := analyzeForTest(options, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := targetDirectCallEdgeNames(deep.DirectCallIndex), map[string]bool{
+		"main->register": true, "handler->leaf": true,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("depth-2 exact edges = %v, want %v", got, want)
+	}
+
+	options.CaptureDynamicHandoffIndex = false
+	withoutOverlay, err := analyzeForTest(options, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutOverlay.DynamicHandoffIndex != nil {
+		t.Fatalf("disabled dynamic overlay was published: %#v", withoutOverlay.DynamicHandoffIndex)
+	}
+	if got, want := targetDirectCallEdgeNames(withoutOverlay.DirectCallIndex), targetDirectCallEdgeNames(deep.DirectCallIndex); !reflect.DeepEqual(got, want) {
+		t.Fatalf("optional dynamic output changed callback traversal: got %v want %v", got, want)
+	}
+}
+
+func TestTargetDirectCallDoesNotTraverseAlternativeFieldCallableBinding(t *testing.T) {
+	repository := t.TempDir()
+	source := `package main
+
+import "os"
+
+type Handler interface { Serve() }
+type HandlerFunc func()
+func (function HandlerFunc) Serve() { function() }
+type Server struct { Handler Handler }
+
+func leafA() {}
+func leafB() {}
+func alpha() { leafA() }
+func beta() { leafB() }
+func main() {
+	var callback HandlerFunc
+	if len(os.Args) > 1 { callback = alpha } else { callback = beta }
+	_ = &Server{Handler: callback}
+}
+`
+	writeTargetScopeFile(t, repository, "go.mod", "module example.com/alternatives\n\ngo 1.24\n")
+	writeTargetScopeFile(t, repository, "main.go", source)
+	mainLine := strings.Count(source[:strings.Index(source, "func main")], "\n") + 1
+	input := targetDirectCallExecutableInput("example.com/alternatives", "main.go", mainLine)
+	options := defaultHostOptions(repository)
+	options.CaptureDynamicHandoffIndex = true
+	options.DirectCallDepth = 3
+	result, err := analyzeForTest(options, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := targetDirectCallEdgeNames(result.DirectCallIndex); len(got) != 0 {
+		t.Fatalf("alternative binding entered exact BFS: %v", got)
+	}
+	mainNode := targetDirectCallNodeBySymbol(t, result.DirectCallIndex, "main")
+	bindings := 0
+	for _, handoff := range result.DynamicHandoffIndex.Handoffs {
+		if handoff.Kind != godynamichandoff.CallableBinding || handoff.CallerID != mainNode.ID {
+			continue
+		}
+		bindings++
+		if handoff.Resolution != godynamichandoff.ResolutionAlternatives || len(handoff.Candidates) != 2 {
+			t.Fatalf("alternative field binding lost candidate authority: %#v", handoff)
+		}
+	}
+	if bindings != 1 {
+		t.Fatalf("callable bindings = %d, want one alternatives row: %#v", bindings, result.DynamicHandoffIndex.Handoffs)
+	}
+}
+
+func TestTargetDirectCallDefaultsAreUnbounded(t *testing.T) {
 	options := defaultHostOptions(".")
-	if DefaultDirectCallDepth != 10 || DefaultDirectCallEdgeLimit != 10_000 {
+	if DefaultDirectCallDepth != 0 || DefaultDirectCallEdgeLimit != 0 {
 		t.Fatalf("exported defaults = depth %d edges %d", DefaultDirectCallDepth, DefaultDirectCallEdgeLimit)
 	}
 	if options.DirectCallDepth != DefaultDirectCallDepth ||
 		options.DirectCallEdgeLimit != DefaultDirectCallEdgeLimit {
 		t.Fatalf("target direct call defaults = depth %d edges %d", options.DirectCallDepth, options.DirectCallEdgeLimit)
+	}
+}
+
+func TestDirectCallBuilderRetainsPastFormerNodeAndEdgeThresholds(t *testing.T) {
+	builder := newDirectCallIndexBuilder(Scenario{ID: "scenario", GOOS: "linux", GOARCH: "amd64"}, 0)
+	for position := 0; position <= AdvisoryDirectCallMaxNodes; position++ {
+		id := fmt.Sprintf("node-%06d", position)
+		builder.nodes[id] = DirectCallNode{ID: id, Symbol: Symbol{Name: id}}
+	}
+	for position := 0; position <= AdvisoryDirectCallMaxEdges; position++ {
+		id := fmt.Sprintf("edge-%06d", position)
+		builder.edges[id] = DirectCallEdge{ID: id, CallerID: id}
+	}
+	index := builder.finish()
+	if index.State != DirectCallIndexReady || len(index.Nodes) != AdvisoryDirectCallMaxNodes+1 ||
+		len(index.Edges) != AdvisoryDirectCallMaxEdges+1 {
+		t.Fatalf("builder truncated or closed former thresholds: state=%s nodes=%d edges=%d",
+			index.State, len(index.Nodes), len(index.Edges))
+	}
+}
+
+func TestDirectCallScaleWarningsCannotRejectMalformedDiagnosticInput(t *testing.T) {
+	if warnings := DirectCallScaleWarnings(DirectCallIndex{}); len(warnings) != 0 {
+		t.Fatalf("malformed diagnostic input warnings = %#v, want none and no failure", warnings)
+	}
+}
+
+func TestNormalizeWorkspaceOptionsAcceptsExplicitEdgeLimitPastFormerAbsoluteMaximum(t *testing.T) {
+	const formerAbsoluteEdgeMaximum = 262_144
+	options := defaultHostOptions(".")
+	options.DirectCallEdgeLimit = formerAbsoluteEdgeMaximum + 1
+	if _, _, _, err := normalizeWorkspaceOptions(context.Background(), options); err != nil {
+		t.Fatalf("explicit edge ceiling past former absolute maximum: %v", err)
 	}
 }
 

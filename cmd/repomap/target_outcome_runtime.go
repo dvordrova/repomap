@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/llm"
-	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
@@ -22,33 +20,12 @@ func repositorySelectedTarget(target repositoryTypedTarget) (targetoutcome.Selec
 	if err := target.Validate(); err != nil {
 		return targetoutcome.SelectedTarget{}, err
 	}
-	var language targetoutcome.LanguageGroup
-	var scope targetoutcome.ScopeKind
-	switch target.Key.Adapter {
-	case repositoryTargetAdapterGo:
-		language = targetoutcome.LanguageGroupGo
-		if target.Go.Kind == analysistarget.KindExecutablePackage {
-			scope = targetoutcome.ScopeExecutable
-		} else {
-			scope = targetoutcome.ScopeLibrary
-		}
-	case repositoryTargetAdapterPython:
-		language = targetoutcome.LanguageGroupPython
-		if target.Python.Kind == pythontarget.KindExecutable {
-			scope = targetoutcome.ScopeExecutable
-		} else {
-			scope = targetoutcome.ScopeLibrary
-		}
-	case repositoryTargetAdapterJSTS:
-		language = targetoutcome.LanguageGroupJavaScriptTypeScript
-		scope = targetoutcome.ScopePackage
-	default:
-		return targetoutcome.SelectedTarget{}, fmt.Errorf(
-			"target outcome: unsupported repository adapter %q", target.Key.Adapter,
-		)
-	}
-	return targetoutcome.NewSelectedTarget(
-		language, scope, repositoryTypedTargetDisplay(target), target.Selector,
+	return targetoutcome.NewSelectedTargetWithLanguages(
+		targetoutcome.LanguageGroup(target.Key.Adapter),
+		target.AllowedLanguages,
+		target.Scope,
+		target.Display,
+		target.Selector,
 	)
 }
 

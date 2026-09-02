@@ -6,10 +6,36 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/reporead"
 )
+
+func TestExtractPackageDeclarationsRetainsFilePastUsualSize(t *testing.T) {
+	repo := t.TempDir()
+	content := strings.Repeat(" ", advisoryPackageDeclarationFileBytes+1) + "package api\nfunc Retained() {}\n"
+	if err := os.WriteFile(filepath.Join(repo, "large.go"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := reporead.New(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	declarations, failures, scaleWarnings := extractPackageDeclarations(reader, ".", goListPackage{
+		ImportPath: "example.com/api", GoFiles: []string{"large.go"},
+	})
+	if len(failures) != 0 {
+		t.Fatalf("failures = %v", failures)
+	}
+	if len(declarations) != 1 || declarations[0].Name != "Retained" {
+		t.Fatalf("declarations = %#v", declarations)
+	}
+	if len(scaleWarnings) != 1 || !strings.Contains(scaleWarnings[0], "retained declarations") {
+		t.Fatalf("scale warnings = %v", scaleWarnings)
+	}
+}
 
 func TestExtractPackageDeclarationsUsesBuildSelectedNonTestFiles(t *testing.T) {
 	repo := t.TempDir()
@@ -40,11 +66,14 @@ func TestProduct(t *testing.T) {}
 	}
 	defer reader.Close()
 
-	declarations, warnings := extractPackageDeclarations(reader, ".", goListPackage{
+	declarations, warnings, scaleWarnings := extractPackageDeclarations(reader, ".", goListPackage{
 		ImportPath: "example.com/app", GoFiles: []string{"product_test.go", "dev.go", "product.go"},
 	})
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(scaleWarnings) != 0 {
+		t.Fatalf("scale warnings = %#v", scaleWarnings)
 	}
 	want := []PackageDeclaration{
 		{Kind: PackageDeclarationFunc, Name: "main", Path: "product.go", Line: 5, Column: 6, ExecutableBody: true},
@@ -70,7 +99,7 @@ func TestExtractPackageDeclarationsFailsPackageAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	declarations, warnings := extractPackageDeclarations(reader, ".", goListPackage{
+	declarations, warnings, _ := extractPackageDeclarations(reader, ".", goListPackage{
 		ImportPath: "example.com/api", GoFiles: []string{"valid.go", "missing.go"},
 	})
 	if len(declarations) != 0 || len(warnings) != 1 {

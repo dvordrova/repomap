@@ -104,6 +104,14 @@ func (a *analyzer) captureCoreObjectFile(
 	if a == nil || input == nil || info == nil || file == nil {
 		return fmt.Errorf("go core object index: typed syntax is unavailable for package %q", packagePath)
 	}
+	// packages.Load includes compiler-generated cgo syntax alongside the
+	// rewritten repository source. The rewritten source retains repository
+	// locations through its line directives; wholly generated helper files do
+	// not and cannot contribute repository-owned declarations.
+	fileLocation := a.location(file.Package)
+	if !validRepositoryDirectCallLocation(fileLocation) || fileLocation.Column <= 0 {
+		return nil
+	}
 	for _, declaration := range file.Decls {
 		switch value := declaration.(type) {
 		case *ast.GenDecl:

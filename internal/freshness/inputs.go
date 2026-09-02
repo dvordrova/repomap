@@ -15,8 +15,6 @@ import (
 	"strings"
 )
 
-const maxCapturedInputBytes = 8 * 1024 * 1024
-
 // CaptureInputs materializes exact content identities for an already captured
 // repository state. Clean files are read from the captured commit; dirty files
 // use the content hashes recorded during repository capture.
@@ -210,8 +208,8 @@ func readCommittedInputDigests(
 			return fail(fmt.Errorf("freshness: malformed captured input %q header", record.path))
 		}
 		size, err := strconv.ParseInt(fields[2], 10, 64)
-		if err != nil || size < 0 || size > maxCapturedInputBytes {
-			return fail(fmt.Errorf("freshness: captured input %q exceeds the bounded content limit", record.path))
+		if err != nil || size < 0 {
+			return fail(fmt.Errorf("freshness: captured input %q has an invalid blob size", record.path))
 		}
 		hasher := sha256.New()
 		if _, err := io.CopyN(hasher, reader, size); err != nil {

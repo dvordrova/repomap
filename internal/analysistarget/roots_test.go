@@ -163,8 +163,9 @@ func TestBindExactRootsRejectsNilDirectCallIndex(t *testing.T) {
 	}
 }
 
-func TestBoundExactRootCandidatesAccountsOnlyResourceOverflow(t *testing.T) {
-	candidates := make([]targetRootCandidate, MaxTargetRoots+3)
+func TestBoundExactRootCandidatesRetainsPastFormerNodeThreshold(t *testing.T) {
+	const formerNodeThreshold = 65_536
+	candidates := make([]targetRootCandidate, formerNodeThreshold+3)
 	for index := range candidates {
 		candidates[index] = targetRootCandidate{root: TargetRoot{
 			NodeID: fmt.Sprintf("node-%05d", index), Path: "api.go", Line: index + 1,
@@ -172,11 +173,11 @@ func TestBoundExactRootCandidatesAccountsOnlyResourceOverflow(t *testing.T) {
 		}}
 	}
 	roots, omitted := boundExactRootCandidates(candidates)
-	if len(roots) != MaxTargetRoots || omitted != 3 {
-		t.Fatalf("bound roots=%d omitted=%d, want %d and 3", len(roots), omitted, MaxTargetRoots)
+	if len(roots) != len(candidates) || omitted != 0 {
+		t.Fatalf("retained roots=%d omitted=%d, want %d and 0", len(roots), omitted, len(candidates))
 	}
-	if roots[0] != candidates[0].root || roots[len(roots)-1] != candidates[MaxTargetRoots-1].root {
-		t.Fatalf("resource bound ranked or reordered source prefix")
+	if roots[0] != candidates[0].root || roots[len(roots)-1] != candidates[len(candidates)-1].root {
+		t.Fatalf("complete roots were ranked, reordered, or truncated")
 	}
 }
 

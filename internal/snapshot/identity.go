@@ -12,13 +12,13 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/dvordrova/repomap/internal/reporead"
+	"github.com/dvordrova/repomap/internal/corpus"
 )
 
 const (
 	neutralRepositoryName  = "local-repository"
 	maxRepositoryNameBytes = 512
-	maxManifestBytes       = 128 * 1024
+	AdvisoryManifestBytes  = 128 * 1024
 	maxRemoteIdentityBytes = 4096
 )
 
@@ -35,17 +35,18 @@ var repositoryManifestReaders = []manifestNameReader{
 	{path: "setup.cfg", parse: parseSetupConfigName},
 }
 
-func repositoryIdentity(repoPath string, trackedFiles []string, goModuleName string) string {
+func repositoryIdentity(repoPath string, repository *corpus.Corpus, goModuleName string) (string, int) {
 	if identity := cleanRepositoryIdentity(goModuleName); identity != "" {
-		return identity
+		return identity, 0
 	}
 	if identity := repositoryRemoteIdentity(repoPath); identity != "" {
-		return identity
+		return identity, 0
 	}
-	if identity := repositoryManifestIdentity(repoPath, trackedFiles); identity != "" {
-		return identity
+	identity, maximumBytes := repositoryManifestIdentity(repository)
+	if identity != "" {
+		return identity, maximumBytes
 	}
-	return neutralRepositoryName
+	return neutralRepositoryName, maximumBytes
 }
 
 func repositoryDisplayName(repoPath string) string {
@@ -160,30 +161,28 @@ func joinRemoteIdentity(host, remotePath string) string {
 	return cleanRepositoryIdentity(host + "/" + cleanPath)
 }
 
-func repositoryManifestIdentity(repoPath string, trackedFiles []string) string {
-	tracked := make(map[string]struct{}, len(trackedFiles))
-	for _, filePath := range trackedFiles {
-		tracked[filePath] = struct{}{}
+func repositoryManifestIdentity(repository *corpus.Corpus) (string, int) {
+	if repository == nil {
+		return "", 0
 	}
-	reader, err := reporead.New(repoPath)
-	if err != nil {
-		return ""
-	}
-	defer reader.Close()
-
+	maximumBytes := 0
 	for _, manifest := range repositoryManifestReaders {
-		if _, ok := tracked[manifest.path]; !ok {
+		fileID, ok := repository.ID(manifest.path)
+		if !ok {
 			continue
 		}
-		content, err := reader.ReadFile(manifest.path, maxManifestBytes)
-		if err != nil || content.Truncated {
+		content, err := repository.ReadFileAll(fileID)
+		if err != nil {
 			continue
+		}
+		if len(content.Bytes) > maximumBytes {
+			maximumBytes = len(content.Bytes)
 		}
 		if identity := cleanRepositoryIdentity(manifest.parse(content.Bytes)); identity != "" {
-			return identity
+			return identity, maximumBytes
 		}
 	}
-	return ""
+	return "", maximumBytes
 }
 
 func parseJSONManifestName(data []byte) string {

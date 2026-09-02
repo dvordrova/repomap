@@ -33,18 +33,42 @@ func BuildFromResult(result Result) (programindex.Index, dependencies.Catalog, e
 	if err := result.Validate(); err != nil {
 		return programindex.Index{}, dependencies.Catalog{}, err
 	}
-	index, err := programIndexFor(result, result.SHA256)
+	input, err := BuildInputFromResult(result)
+	if err != nil {
+		return programindex.Index{}, dependencies.Catalog{}, err
+	}
+	index, err := programindex.New(input)
 	if err != nil {
 		return programindex.Index{}, dependencies.Catalog{}, err
 	}
 	if err := ValidateProgramIndex(result, index); err != nil {
 		return programindex.Index{}, dependencies.Catalog{}, err
 	}
-	catalog, err := dependencyCatalog(result)
+	catalog, err := BuildDependenciesFromResult(result)
 	if err != nil {
 		return programindex.Index{}, dependencies.Catalog{}, err
 	}
 	return index, catalog, nil
+}
+
+// BuildInputFromResult projects one complete compiler-backed result into the
+// shared ProgramIndex input contract without reading the repository, invoking
+// Node, or sealing the index. The common repository adapter path owns sealing.
+func BuildInputFromResult(result Result) (programindex.Input, error) {
+	if err := result.Validate(); err != nil {
+		return programindex.Input{}, err
+	}
+	return programInputFor(result, result.SHA256), nil
+}
+
+// BuildDependenciesFromResult projects the same compiler-backed result into
+// the language-neutral dependency contract. It performs no repository reads
+// and is paired with BuildInputFromResult by the common adapter executor.
+func BuildDependenciesFromResult(result Result) (dependencies.Catalog, error) {
+	if err := result.Validate(); err != nil {
+		return dependencies.Catalog{}, err
+	}
+	return dependencyCatalog(result)
 }
 
 // ValidateProgramIndex proves that the language-neutral index is the exact
@@ -71,11 +95,15 @@ func ValidateProgramIndex(result Result, index programindex.Index) error {
 			return fmt.Errorf("jsts project: ProgramIndex target source mismatch")
 		}
 	}
+	base, err := programindex.Base(index)
+	if err != nil {
+		return fmt.Errorf("jsts project: restore structural ProgramIndex projection: %w", err)
+	}
 	rederived, err := programIndexFor(result, result.SHA256)
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(rederived, index) {
+	if !reflect.DeepEqual(rederived, base) {
 		return fmt.Errorf("jsts project: ProgramIndex is not the exact Result projection")
 	}
 	return nil
@@ -103,7 +131,18 @@ func bindProgramTargetIdentity(result *Result) error {
 	return nil
 }
 
+func externalProgramObjectRef(packagePath, receiver, name string) string {
+	if name == "" {
+		name = packagePath
+	}
+	return "external:" + packagePath + ":" + receiver + ":" + name
+}
+
 func programIndexFor(result Result, scenarioSHA string) (programindex.Index, error) {
+	return programindex.New(programInputFor(result, scenarioSHA))
+}
+
+func programInputFor(result Result, scenarioSHA string) programindex.Input {
 	objects := make([]programindex.ObjectInput, 0, len(result.Declarations)+len(result.Imports)+len(result.Calls))
 	declarationByRef := make(map[string]Declaration, len(result.Declarations))
 	fileLanguage := make(map[string]string, len(result.Files))
@@ -113,44 +152,91 @@ func programIndexFor(result Result, scenarioSHA string) (programindex.Index, err
 	for _, declaration := range result.Declarations {
 		declarationByRef[declaration.Ref] = declaration
 	}
+	exportNamesByDeclaration := map[string][]string{}
+	for _, value := range result.Exports {
+		if value.DeclarationRef == "" || value.Name == "*" || value.Resolution != "exact" {
+			continue
+		}
+		exportNamesByDeclaration[value.DeclarationRef] = append(
+			exportNamesByDeclaration[value.DeclarationRef], value.Name,
+		)
+	}
 	for _, declaration := range result.Declarations {
 		kind := projectedObjectKind(declaration, declarationByRef)
 		visibility := programindex.VisibilityInternal
-		if declaration.Exported {
+		if declaration.Exported || len(exportNamesByDeclaration[declaration.Ref]) > 0 {
 			visibility = programindex.VisibilityPublic
 		}
 		container := declaration.OwnerRef
 		if container == "" && declaration.Kind != "module" {
 			container = moduleRefForFile(declaration.Location.FileRef)
 		}
+		linkIdentities := make([]programindex.SymbolLinkIdentityInput, 0)
+		for _, exportName := range canonicalStrings(exportNamesByDeclaration[declaration.Ref]) {
+			linkIdentities = append(linkIdentities, programindex.SymbolLinkIdentityInput{
+				Domain: "jsts_package_export_v1", Parts: []string{"export", result.Project.PackagePath, exportName},
+				Display: result.Project.PackagePath + "#" + exportName,
+			})
+		}
 		objects = append(objects, programindex.ObjectInput{
-			SourceRef: declaration.Ref, Kind: kind, Name: declaration.QualifiedName, Visibility: visibility,
+			SourceRef: declaration.Ref, Kind: kind, Name: declarationDisplayName(declaration, declarationByRef), Visibility: visibility,
 			Signature: declaration.Signature, OwnerRef: declaration.OwnerRef, ContainerRef: container, Location: programLocation(declaration.Location),
+			SymbolLinkIdentities: linkIdentities,
+		})
+	}
+	for _, value := range result.Calls {
+		if value.Pattern == nil || value.Pattern.ResultRef == "" {
+			continue
+		}
+		objects = append(objects, programindex.ObjectInput{
+			SourceRef:  value.Pattern.ResultRef,
+			Kind:       programindex.ObjectVariable,
+			Name:       "call result",
+			Visibility: programindex.VisibilityInternal,
+			Location:   programLocation(value.Location),
 		})
 	}
 	externalObjects := map[string]programindex.ObjectInput{}
-	externalRef := func(packagePath, receiver, name string) string {
+	externalRef := func(packagePath, exportName, receiver, name string) string {
 		if name == "" {
 			name = packagePath
 		}
-		ref := "external:" + packagePath + ":" + receiver + ":" + name
+		ref := externalProgramObjectRef(packagePath, receiver, name)
 		if _, exists := externalObjects[ref]; !exists {
 			displayName := packagePath + "."
 			if receiver != "" {
 				displayName += receiver + "."
 			}
 			displayName += name
-			externalObjects[ref] = programindex.ObjectInput{SourceRef: ref, Kind: programindex.ObjectExternalSymbol, Name: displayName, Visibility: programindex.VisibilityPublic, External: &programindex.ExternalSymbol{PackagePath: packagePath, Receiver: receiver, Name: name}}
+			linkIdentities := []programindex.SymbolLinkIdentityInput{}
+			if packagePath != javascriptPlatform && exportName != "" {
+				linkIdentities = append(linkIdentities, programindex.SymbolLinkIdentityInput{
+					Domain: "jsts_package_export_v1", Parts: []string{"export", packagePath, exportName},
+					Display: packagePath + "#" + exportName,
+				})
+			}
+			externalObjects[ref] = programindex.ObjectInput{
+				SourceRef: ref, Kind: programindex.ObjectExternalSymbol, Name: displayName,
+				Visibility:           programindex.VisibilityPublic,
+				SymbolLinkIdentities: linkIdentities,
+				External: &programindex.ExternalSymbol{
+					AuthorityKind: externalAuthorityKind(packagePath),
+					PackagePath:   packagePath,
+					Receiver:      receiver,
+					Name:          name,
+				},
+			}
 		}
 		return ref
 	}
 	relations := []programindex.RelationInput{}
-	addRelation := func(sourceRef string, kind programindex.RelationKind, fromRef string, toRefs []string, resolution programindex.Resolution, location Location, witnessKind, expression, invocation string) {
+	addRelation := func(sourceRef string, kind programindex.RelationKind, fromRef string, toRefs []string, resolution programindex.Resolution, location Location, witnessKind, expression, invocation string) int {
 		targetsObserved := len(toRefs)
 		if targetsObserved == 0 {
 			targetsObserved = 1
 		}
 		relations = append(relations, programindex.RelationInput{SourceRef: sourceRef, Kind: kind, FromRef: fromRef, ToRefs: toRefs, Resolution: resolution, Invocation: invocation, Location: programLocation(location), TargetsObserved: targetsObserved, Witnesses: []programindex.Witness{{Kind: witnessKind, SourceExpression: expression, Location: programLocation(location)}}, WitnessesObserved: 1})
+		return len(relations) - 1
 	}
 	for _, declaration := range result.Declarations {
 		if declaration.Kind == "module" {
@@ -169,7 +255,7 @@ func programIndexFor(result Result, scenarioSHA string) (programindex.Index, err
 		if value.ResolvedFileRef != "" {
 			to = []string{moduleRefForFile(value.ResolvedFileRef)}
 		} else if value.ExternalPackage != "" && resolution == programindex.ResolutionExact {
-			to = []string{externalRef(value.ExternalPackage, "", value.ExternalPackage)}
+			to = []string{externalRef(value.ExternalPackage, "", "", value.ExternalPackage)}
 		}
 		if len(to) == 0 {
 			resolution = programindex.ResolutionUnresolved
@@ -185,7 +271,7 @@ func programIndexFor(result Result, scenarioSHA string) (programindex.Index, err
 		kind := programindex.RelationCalls
 		resolution := programResolution(value.Resolution)
 		if value.ExternalPackage != "" && resolution != programindex.ResolutionUnresolved {
-			to = []string{externalRef(value.ExternalPackage, value.ExternalReceiver, value.ExternalName)}
+			to = []string{externalRef(value.ExternalPackage, value.ExternalExport, value.ExternalReceiver, value.ExternalName)}
 			kind = programindex.RelationInvokesExternal
 		}
 		if len(to) == 0 {
@@ -199,7 +285,58 @@ func programIndexFor(result Result, scenarioSHA string) (programindex.Index, err
 		if callLanguage == "javascript" {
 			witnessKind = "javascript_call_candidate"
 		}
-		addRelation("program:"+value.Ref, kind, value.CallerRef, to, resolution, value.Location, witnessKind, value.Expression, value.Invocation)
+		relationIndex := addRelation("program:"+value.Ref, kind, value.CallerRef, to, resolution, value.Location, witnessKind, value.Expression, value.Invocation)
+		relations[relationIndex].Patterns = programCallPatterns(value)
+		relations[relationIndex].PatternsObserved = value.PatternsObserved
+		if value.Pattern == nil {
+			continue
+		}
+		for _, argument := range value.Pattern.Arguments {
+			if len(argument.ObjectRefs) == 0 {
+				continue
+			}
+			callableRefs := make([]string, 0, len(argument.ObjectRefs))
+			for _, ref := range argument.ObjectRefs {
+				declaration, ok := declarationByRef[ref]
+				if !ok || (declaration.Kind != "function" && declaration.Kind != "method" && declaration.Kind != "lambda") {
+					continue
+				}
+				callableRefs = append(callableRefs, ref)
+			}
+			if len(callableRefs) == 0 {
+				continue
+			}
+			callbackWitnessKind := "typescript_callback_argument"
+			if callLanguage == "javascript" {
+				callbackWitnessKind = "javascript_callback_candidate"
+			}
+			callbackResolution := programResolution(argument.Resolution)
+			// An exact callback edge may have exactly one observed callable and no
+			// omitted sibling. Known non-callable declarations and unmaterialized
+			// object candidates remain measured omissions instead of erasing the
+			// callable refs or promoting them to exact authority.
+			if callbackResolution == programindex.ResolutionExact &&
+				(argument.ObjectsObserved != 1 || len(callableRefs) != 1 || len(argument.ObjectRefs) != 1) {
+				callbackResolution = programindex.ResolutionAlternatives
+			}
+			callbackRelation := addRelation(
+				fmt.Sprintf("callback:%s:%d", value.Ref, argument.Position),
+				programindex.RelationPassesCallback,
+				value.CallerRef,
+				callableRefs,
+				callbackResolution,
+				value.Location,
+				callbackWitnessKind,
+				value.Expression,
+				"",
+			)
+			relations[callbackRelation].TargetsObserved = argument.ObjectsObserved
+			relations[callbackRelation].SourceArgument = &programindex.PatternArgumentRefInput{
+				RelationSourceRef: "program:" + value.Ref,
+				PatternSourceRef:  "pattern:" + value.Ref,
+				Position:          argument.Position,
+			}
+		}
 	}
 	for _, contract := range result.Contracts {
 		if contract.DeclarationRef == "" {
@@ -270,11 +407,11 @@ func programIndexFor(result Result, scenarioSHA string) (programindex.Index, err
 			seedRefs[ref] = struct{}{}
 		}
 	}
-	return programindex.New(programindex.Input{
+	return programindex.Input{
 		ScenarioSHA256: scenarioSHA, SourceSHA256: result.SourceSHA256,
 		Target:  programindex.TargetInput{Language: result.Project.Language, Kind: TargetKind(result), Name: result.Project.Name, Selector: result.Project.Selector, Sources: targetSources(result), AnchorFileRef: result.Project.ManifestFileRef, Seeds: seeds},
 		Objects: objects, Relations: relations, Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: len(objects), RelationsObserved: len(relations)},
-	})
+	}
 }
 
 // TargetKind returns application only for an exact browser, server, or package
@@ -342,6 +479,75 @@ func programResolution(value string) programindex.Resolution {
 		return programindex.ResolutionUnresolved
 	}
 }
+
+func programOptionalResolution(value string) programindex.Resolution {
+	if value == "" {
+		return ""
+	}
+	return programResolution(value)
+}
+
+func programCallPatterns(value Call) []programindex.RelationPatternInput {
+	if value.Pattern == nil {
+		return nil
+	}
+	arguments := make([]programindex.PatternArgumentInput, 0, len(value.Pattern.Arguments))
+	for _, argument := range value.Pattern.Arguments {
+		parts := make([]programindex.PatternPartInput, 0, len(argument.Parts))
+		for _, part := range argument.Parts {
+			parts = append(parts, programindex.PatternPartInput{
+				Kind: programindex.PatternPartKind(part.Kind),
+				Text: part.Text,
+			})
+		}
+		valueCandidates := make([]programindex.PatternValueCandidateInput, 0, len(argument.ValueCandidates))
+		for _, candidate := range argument.ValueCandidates {
+			candidateParts := make([]programindex.PatternPartInput, 0, len(candidate.Parts))
+			for _, part := range candidate.Parts {
+				candidateParts = append(candidateParts, programindex.PatternPartInput{
+					Kind: programindex.PatternPartKind(part.Kind), Text: part.Text,
+				})
+			}
+			valueCandidates = append(valueCandidates, programindex.PatternValueCandidateInput{
+				Kind:       programindex.PatternValueKind(candidate.Kind),
+				Value:      candidate.Value,
+				Parts:      candidateParts,
+				Resolution: programindex.PatternValueResolution(candidate.Resolution),
+				SourceKind: programindex.PatternValueSourceKind(candidate.SourceKind),
+				SourceArgumentRefs: []programindex.PatternArgumentRefInput{{
+					RelationSourceRef: "program:" + candidate.SourceCallRef,
+					PatternSourceRef:  "pattern:" + candidate.SourceCallRef,
+					Position:          candidate.SourcePosition,
+				}},
+				SourceArgumentsObserved: 1,
+			})
+		}
+		arguments = append(arguments, programindex.PatternArgumentInput{
+			Position:        argument.Position,
+			Kind:            programindex.PatternValueKind(argument.Kind),
+			Value:           argument.Value,
+			Parts:           parts,
+			ObjectRefs:      append([]string(nil), argument.ObjectRefs...),
+			Resolution:      programOptionalResolution(argument.Resolution),
+			ObjectsObserved: argument.ObjectsObserved,
+			ValueCandidates: valueCandidates, ValueCandidatesObserved: argument.ValueCandidatesObserved,
+		})
+	}
+	return []programindex.RelationPatternInput{{
+		SourceRef:                "pattern:" + value.Ref,
+		Form:                     programindex.PatternCall,
+		Selector:                 value.Pattern.Selector,
+		Location:                 programLocation(value.Location),
+		ResultRef:                value.Pattern.ResultRef,
+		ReceiverRef:              value.Pattern.ReceiverRef,
+		ReceiverOriginRefs:       append([]string(nil), value.Pattern.ReceiverOriginRefs...),
+		ReceiverOriginResolution: programOptionalResolution(value.Pattern.ReceiverOriginResolution),
+		ReceiverOriginsObserved:  value.Pattern.ReceiverOriginsObserved,
+		Arguments:                arguments,
+		ArgumentsObserved:        value.Pattern.ArgumentsObserved,
+	}}
+}
+
 func programObjectKind(value string) programindex.ObjectKind {
 	switch value {
 	case "module":
@@ -373,6 +579,43 @@ func projectedObjectKind(declaration Declaration, declarations map[string]Declar
 	// exact type receiver; retain every other callable property as a nested
 	// function without inventing one.
 	return programindex.ObjectFunction
+}
+
+// declarationDisplayName projects adapter-local declaration structure into a
+// path-free presentation name. Repository paths remain solely in Location;
+// SourceRef, the derived Object ID, and SymbolLinkIdentities retain identity.
+// Module names are already logical module identities and may therefore keep
+// their adapter-normalized path-like spelling.
+func declarationDisplayName(declaration Declaration, declarations map[string]Declaration) string {
+	if declaration.Kind == "module" {
+		return declaration.Name
+	}
+
+	parts := []string{declaration.Name}
+	seen := map[string]struct{}{declaration.Ref: {}}
+	for ownerRef := declaration.OwnerRef; ownerRef != ""; {
+		if _, duplicate := seen[ownerRef]; duplicate {
+			break
+		}
+		seen[ownerRef] = struct{}{}
+		owner, ok := declarations[ownerRef]
+		if !ok || owner.Kind == "module" {
+			break
+		}
+		parts = append(parts, owner.Name)
+		ownerRef = owner.OwnerRef
+	}
+	for left, right := 0, len(parts)-1; left < right; left, right = left+1, right-1 {
+		parts[left], parts[right] = parts[right], parts[left]
+	}
+	return strings.Join(parts, ".")
+}
+
+func externalAuthorityKind(packagePath string) programindex.ExternalAuthorityKind {
+	if packagePath == javascriptPlatform || nodeStandardLibrary(packagePath) {
+		return programindex.ExternalAuthorityPlatform
+	}
+	return programindex.ExternalAuthorityPackage
 }
 
 func dependencyCatalog(result Result) (dependencies.Catalog, error) {
@@ -410,222 +653,4 @@ func nodeStandardLibrary(packagePath string) bool {
 		return true
 	}
 	return false
-}
-
-func buildProductPaths(result Result) []ProductPath {
-	declarationByRef := map[string]Declaration{}
-	for _, value := range result.Declarations {
-		declarationByRef[value.Ref] = value
-	}
-	ownerChainContains := func(ref, target string) bool {
-		for ref != "" {
-			if ref == target {
-				return true
-			}
-			ref = declarationByRef[ref].OwnerRef
-		}
-		return false
-	}
-	callGraph := map[string][]string{}
-	for _, call := range result.Calls {
-		if call.Resolution == "unresolved" {
-			continue
-		}
-		callGraph[call.CallerRef] = append(callGraph[call.CallerRef], call.CalleeRefs...)
-	}
-	productServerEntries := []string{}
-	for _, surface := range result.Surfaces {
-		if surface.Kind == SurfaceServer && surface.Role == SurfaceProduct {
-			productServerEntries = append(productServerEntries, surface.EntryRefs...)
-		}
-	}
-	serverReachable := map[string]bool{}
-	queue := append([]string(nil), productServerEntries...)
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		if current == "" || serverReachable[current] {
-			continue
-		}
-		serverReachable[current] = true
-		queue = append(queue, callGraph[current]...)
-	}
-	paths := []ProductPath{}
-	surfaceRefs := func(kind SurfaceKind) []string {
-		refs := []string{}
-		for _, surface := range result.Surfaces {
-			if surface.Role == SurfaceProduct && surface.Kind == kind {
-				refs = append(refs, surface.Ref)
-			}
-		}
-		return refs
-	}
-	sharedSurfaceRefs := func() []string {
-		refs := []string{}
-		for _, surface := range result.Surfaces {
-			if surface.Role == SurfaceSupporting && surface.Kind == SurfaceShared {
-				refs = append(refs, surface.Ref)
-			}
-		}
-		return refs
-	}()
-	for _, browserRoute := range result.Routes {
-		if browserRoute.Kind != RouteBrowser || browserRoute.ComponentRef == "" {
-			continue
-		}
-		for _, httpUse := range result.HTTPUses {
-			if !ownerChainContains(httpUse.CallerRef, browserRoute.ComponentRef) {
-				continue
-			}
-			for _, serverRoute := range result.Routes {
-				if serverRoute.Kind != RouteHTTP || !serverReachable[serverRoute.OwnerRef] || serverRoute.Method != httpUse.Method || serverRoute.Path != httpUse.Path {
-					continue
-				}
-				steps := []PathStep{}
-				appendStep := func(kind, label, source string, targets []string, resolution, authority string, location Location) {
-					steps = append(steps, PathStep{Ordinal: len(steps) + 1, Kind: kind, Label: label, SourceRef: source, TargetRefs: targets, Resolution: resolution, Authority: authority, Location: location})
-				}
-				var wrapperCall *Call
-				for index := range result.Calls {
-					candidate := &result.Calls[index]
-					if candidate.CallerRef == httpUse.CallerRef && sameLocation(candidate.Location, httpUse.Location) {
-						wrapperCall = candidate
-						break
-					}
-				}
-				appendStep("page_route", browserRoute.Path, browserRoute.Ref, append(nonemptyRefs(browserRoute.ComponentRef), surfaceRefs(SurfaceBrowser)...), "exact", "exact_static", browserRoute.Location)
-				appendStep("render_target", declarationByRef[browserRoute.ComponentRef].QualifiedName, browserRoute.ComponentRef, nonemptyRefs(httpUse.CallerRef), "exact", "resolved_indirect", declarationByRef[browserRoute.ComponentRef].Location)
-				mutationTargets := []string{httpUse.Ref}
-				if wrapperCall != nil {
-					mutationTargets = []string{wrapperCall.Ref}
-				}
-				appendStep("mutation_site", declarationByRef[httpUse.CallerRef].QualifiedName, httpUse.CallerRef, mutationTargets, "exact", "resolved_indirect", httpUse.Location)
-				if wrapperCall != nil {
-					appendStep("program_call", wrapperCall.Expression, wrapperCall.Ref, wrapperCall.CalleeRefs, wrapperCall.Resolution, pathAuthority(wrapperCall.Resolution, false), wrapperCall.Location)
-					for _, callee := range wrapperCall.CalleeRefs {
-						for index := range result.Calls {
-							nested := result.Calls[index]
-							if ownerChainContains(nested.CallerRef, callee) && nested.Expression == "fetch" {
-								appendStep("program_call", "fetch", nested.Ref, nested.CalleeRefs, nested.Resolution, pathAuthority(nested.Resolution, false), nested.Location)
-							}
-						}
-					}
-				}
-				appendStep("client_http_use", httpUse.Method+" "+httpUse.Path, httpUse.Ref, []string{serverRoute.Ref}, "exact", "exact_static", httpUse.Location)
-				appendStep("http_method_path_match", httpUse.Method+" "+httpUse.Path, httpUse.Ref, []string{serverRoute.Ref}, "exact", "exact_static", serverRoute.Location)
-				appendStep("server_route", serverRoute.Method+" "+serverRoute.Path, serverRoute.Ref, surfaceRefs(SurfaceServer), "exact", "exact_static", serverRoute.Location)
-				if len(serverRoute.MiddlewareRefs) > 0 {
-					appendStep("middleware", "route middleware", serverRoute.Ref, serverRoute.MiddlewareRefs, "exact", "resolved_indirect", serverRoute.Location)
-				}
-				handlerRefs := serverRoute.HandlerRefs
-				if len(handlerRefs) == 0 {
-					appendStep("handler", "handler unresolved", serverRoute.Ref, nil, "unresolved", "unresolved_frontier", serverRoute.Location)
-				} else {
-					executionHandlers := []string{}
-					for _, handler := range handlerRefs {
-						appendStep("handler_factory", declarationByRef[handler].QualifiedName, serverRoute.Ref, []string{handler}, "exact", "resolved_indirect", declarationByRef[handler].Location)
-						returned := []string{}
-						for _, declaration := range result.Declarations {
-							if declaration.OwnerRef == handler && declaration.Kind == "lambda" && declaration.Name == "returned_handler" {
-								returned = append(returned, declaration.Ref)
-							}
-						}
-						if len(returned) > 0 {
-							appendStep("handler", "returned request handler", handler, returned, "exact", "resolved_indirect", declarationByRef[returned[0]].Location)
-							executionHandlers = append(executionHandlers, returned...)
-						} else {
-							executionHandlers = append(executionHandlers, handler)
-						}
-					}
-					for _, handler := range executionHandlers {
-						for _, contract := range result.Contracts {
-							usedWithinHandler := false
-							for _, usedBy := range contract.UsedByRefs {
-								if ownerChainContains(usedBy, handler) {
-									usedWithinHandler = true
-									break
-								}
-							}
-							if usedWithinHandler && contract.Kind == "zod_schema" {
-								appendStep("contract_validation", contract.Name, handler, append([]string{contract.Ref}, sharedSurfaceRefs...), "exact", "resolved_indirect", contract.Location)
-							}
-						}
-						for _, call := range result.Calls {
-							storageReceiver := strings.HasPrefix(call.Expression, "deps.") || strings.HasPrefix(call.Expression, "storage.")
-							storageOperation := strings.Contains(call.Expression, "get") || strings.Contains(call.Expression, "update") || strings.Contains(call.Expression, "create") || strings.Contains(call.Expression, "insert") || strings.Contains(call.Expression, "delete")
-							if !ownerChainContains(call.CallerRef, handler) || !storageReceiver || !storageOperation {
-								continue
-							}
-							appendStep("storage_call", call.Expression, call.Ref, call.CalleeRefs, call.Resolution, pathAuthority(call.Resolution, false), call.Location)
-						}
-					}
-				}
-				storageRefs := []string{}
-				storageCallRefs := []string{}
-				for _, step := range steps {
-					if step.Kind == "storage_call" {
-						storageRefs = append(storageRefs, step.TargetRefs...)
-						storageCallRefs = append(storageCallRefs, step.SourceRef)
-					}
-				}
-				for _, resource := range result.Resources {
-					if resource.Kind != "postgres_database" && resource.Kind != "google_calendar" {
-						continue
-					}
-					matched := false
-					for _, ref := range storageRefs {
-						if containsString(resource.UsedByRefs, ref) {
-							matched = true
-						}
-					}
-					if matched || (resource.Kind == "postgres_database" && len(storageCallRefs) > 0) {
-						appendStep("resource_boundary", resource.Name, storageCallRefs[len(storageCallRefs)-1], []string{resource.Ref}, "alternatives", "possible", resource.Location)
-					}
-				}
-				frontier := ""
-				for _, step := range steps {
-					if step.Resolution == "unresolved" {
-						frontier = step.Label
-						break
-					}
-				}
-				paths = append(paths, ProductPath{Ref: "product-path:" + httpUse.Ref + ":" + serverRoute.Ref, Name: browserRoute.Path + " → " + httpUse.Method + " " + httpUse.Path, Outcome: "Browser action reaches the matching server route with locally grounded program evidence.", Steps: steps, Frontier: frontier})
-			}
-		}
-	}
-	return paths
-}
-
-func pathAuthority(resolution string, static bool) string {
-	if resolution == "exact" {
-		if static {
-			return "exact_static"
-		}
-		return "resolved_indirect"
-	}
-	if resolution == "alternatives" {
-		return "possible"
-	}
-	return "unresolved_frontier"
-}
-func nonemptyRefs(values ...string) []string {
-	result := []string{}
-	for _, value := range values {
-		if value != "" {
-			result = append(result, value)
-		}
-	}
-	return result
-}
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-
-func sameLocation(left, right Location) bool {
-	return left.Path == right.Path && left.FileRef == right.FileRef && left.Line == right.Line && left.Column == right.Column
 }

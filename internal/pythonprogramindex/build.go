@@ -25,11 +25,7 @@ import (
 )
 
 const (
-	adapterVersion       = 4
-	maxModuleBytes       = int64(2 << 20)
-	maxSourceBytes       = int64(64 << 20)
-	maxParserRequest     = 96 << 20
-	maxParserOutput      = 64 << 20
+	adapterVersion       = 8
 	maxParserStderrBytes = 16 << 10
 )
 
@@ -78,27 +74,87 @@ type parserViewResult struct {
 }
 
 type parsedObject struct {
-	SourceRef    string                 `json:"source_ref"`
-	Kind         string                 `json:"kind"`
-	Name         string                 `json:"name"`
-	Visibility   string                 `json:"visibility"`
-	Signature    string                 `json:"signature,omitempty"`
-	OwnerRef     string                 `json:"owner_ref,omitempty"`
-	ContainerRef string                 `json:"container_ref,omitempty"`
-	Location     *programindex.Location `json:"location,omitempty"`
+	SourceRef            string                       `json:"source_ref"`
+	Kind                 string                       `json:"kind"`
+	Name                 string                       `json:"name"`
+	Visibility           string                       `json:"visibility"`
+	Signature            string                       `json:"signature,omitempty"`
+	OwnerRef             string                       `json:"owner_ref,omitempty"`
+	ContainerRef         string                       `json:"container_ref,omitempty"`
+	Location             *programindex.Location       `json:"location,omitempty"`
+	SymbolLinkIdentities []parsedSymbolLinkIdentity   `json:"symbol_link_identities,omitempty"`
+	External             *programindex.ExternalSymbol `json:"external,omitempty"`
+}
+
+type parsedSymbolLinkIdentity struct {
+	Domain  string   `json:"domain"`
+	Parts   []string `json:"parts"`
+	Display string   `json:"display,omitempty"`
 }
 
 type parsedRelation struct {
-	SourceRef         string                 `json:"source_ref"`
-	Kind              string                 `json:"kind"`
-	FromRef           string                 `json:"from_ref"`
-	ToRefs            []string               `json:"to_refs"`
-	Resolution        string                 `json:"resolution"`
-	Invocation        string                 `json:"invocation,omitempty"`
-	Location          *programindex.Location `json:"location,omitempty"`
-	TargetsObserved   int                    `json:"targets_observed"`
-	Witnesses         []programindex.Witness `json:"witnesses"`
-	WitnessesObserved int                    `json:"witnesses_observed"`
+	SourceRef         string                    `json:"source_ref"`
+	Kind              string                    `json:"kind"`
+	FromRef           string                    `json:"from_ref"`
+	ToRefs            []string                  `json:"to_refs"`
+	Resolution        string                    `json:"resolution"`
+	Invocation        string                    `json:"invocation,omitempty"`
+	Location          *programindex.Location    `json:"location,omitempty"`
+	TargetsObserved   int                       `json:"targets_observed"`
+	Witnesses         []programindex.Witness    `json:"witnesses"`
+	WitnessesObserved int                       `json:"witnesses_observed"`
+	Patterns          []parsedRelationPattern   `json:"patterns"`
+	PatternsObserved  int                       `json:"patterns_observed"`
+	SourceArgument    *parsedPatternArgumentRef `json:"source_argument,omitempty"`
+}
+
+type parsedPatternArgumentRef struct {
+	RelationSourceRef string `json:"relation_source_ref"`
+	PatternSourceRef  string `json:"pattern_source_ref"`
+	Position          int    `json:"position,omitempty"`
+	Keyword           string `json:"keyword,omitempty"`
+}
+
+type parsedRelationPattern struct {
+	SourceRef                string                   `json:"source_ref"`
+	Form                     programindex.PatternForm `json:"form"`
+	Selector                 string                   `json:"selector"`
+	Location                 *programindex.Location   `json:"location,omitempty"`
+	ResultRef                string                   `json:"result_ref,omitempty"`
+	ReceiverRef              string                   `json:"receiver_ref,omitempty"`
+	ReceiverOriginRefs       []string                 `json:"receiver_origin_refs,omitempty"`
+	ReceiverOriginResolution programindex.Resolution  `json:"receiver_origin_resolution,omitempty"`
+	ReceiverOriginsObserved  int                      `json:"receiver_origins_observed"`
+	Arguments                []parsedPatternArgument  `json:"arguments"`
+	ArgumentsObserved        int                      `json:"arguments_observed"`
+}
+
+type parsedPatternArgument struct {
+	Position                int                           `json:"position,omitempty"`
+	Keyword                 string                        `json:"keyword,omitempty"`
+	Kind                    programindex.PatternValueKind `json:"kind"`
+	Value                   string                        `json:"value,omitempty"`
+	Parts                   []parsedPatternPart           `json:"parts,omitempty"`
+	ObjectRefs              []string                      `json:"object_refs,omitempty"`
+	Resolution              programindex.Resolution       `json:"resolution,omitempty"`
+	ObjectsObserved         int                           `json:"objects_observed"`
+	ValueCandidates         []parsedPatternValueCandidate `json:"value_candidates,omitempty"`
+	ValueCandidatesObserved int                           `json:"value_candidates_observed"`
+}
+
+type parsedPatternValueCandidate struct {
+	Kind                  programindex.PatternValueKind       `json:"kind"`
+	Value                 string                              `json:"value,omitempty"`
+	Parts                 []parsedPatternPart                 `json:"parts,omitempty"`
+	Resolution            programindex.PatternValueResolution `json:"resolution"`
+	SourceKind            programindex.PatternValueSourceKind `json:"source_kind"`
+	SourceObjectRefs      []string                            `json:"source_object_refs"`
+	SourceObjectsObserved int                                 `json:"source_objects_observed"`
+}
+
+type parsedPatternPart struct {
+	Kind programindex.PatternPartKind `json:"kind"`
+	Text string                       `json:"text,omitempty"`
 }
 
 type sourceDigest struct {
@@ -145,7 +201,7 @@ type parsedGroup struct {
 	sourceSHA256   string
 }
 
-// BuildMany preserves target order while sharing one bounded read and AST
+// BuildMany preserves target order while sharing one complete corpus read and AST
 // parse across targets with an identical module inventory. Module aliases and
 // package authority remain target-local: views that share source files but
 // assign them different meanings are projected independently over that one
@@ -158,12 +214,56 @@ func BuildMany(
 	return buildMany(ctx, repository, targets, runParser)
 }
 
+// BuildInput runs the complete isolated Python parser for one exact target and
+// returns the adapter-owned facts before common ProgramIndex identity sealing.
+// The ordinary repository dispatcher passes this value through the same
+// programindex.New boundary as every other atomic language adapter.
+func BuildInput(
+	ctx context.Context,
+	repository *corpus.Corpus,
+	target pythontarget.Target,
+) (programindex.Input, error) {
+	inputs, err := buildInputs(ctx, repository, []pythontarget.Target{target}, runParser)
+	if err != nil {
+		return programindex.Input{}, err
+	}
+	if len(inputs) != 1 {
+		return programindex.Input{}, fmt.Errorf("python program index: parser returned no exact target input")
+	}
+	return inputs[0], nil
+}
+
 func buildMany(
 	ctx context.Context,
 	repository *corpus.Corpus,
 	targets []pythontarget.Target,
 	runner parserRunner,
 ) ([]programindex.Index, error) {
+	inputs, err := buildInputs(ctx, repository, targets, runner)
+	if err != nil {
+		return nil, err
+	}
+	indexes := make([]programindex.Index, len(inputs))
+	for position, input := range inputs {
+		index, sealErr := programindex.New(input)
+		if sealErr != nil {
+			return nil, fmt.Errorf(
+				"python program index: target %q: seal: %w",
+				targets[position].Selector,
+				sealErr,
+			)
+		}
+		indexes[position] = index
+	}
+	return indexes, nil
+}
+
+func buildInputs(
+	ctx context.Context,
+	repository *corpus.Corpus,
+	targets []pythontarget.Target,
+	runner parserRunner,
+) ([]programindex.Input, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -177,7 +277,7 @@ func buildMany(
 		return nil, fmt.Errorf("python program index: parser runner is required")
 	}
 	if len(targets) == 0 {
-		return []programindex.Index{}, nil
+		return []programindex.Input{}, nil
 	}
 
 	groups := make([]*targetGroup, 0)
@@ -217,7 +317,7 @@ func buildMany(
 		batch.views = append(batch.views, group)
 	}
 
-	indexes := make([]programindex.Index, len(targets))
+	inputs := make([]programindex.Input, len(targets))
 	for _, batch := range sourceGroups {
 		parsedViews, err := parseSourceGroup(ctx, repository, batch, runner)
 		if err != nil {
@@ -226,15 +326,15 @@ func buildMany(
 		for viewPosition, group := range batch.views {
 			parsed := parsedViews[viewPosition]
 			for offset, target := range group.targets {
-				index, err := sealTarget(repository, target, parsed)
+				input, err := inputForTarget(repository, target, parsed)
 				if err != nil {
 					return nil, fmt.Errorf("python program index: target %q: %w", target.Selector, err)
 				}
-				indexes[group.positions[offset]] = index
+				inputs[group.positions[offset]] = input
 			}
 		}
 	}
-	return indexes, nil
+	return inputs, nil
 }
 
 func targetGroupForTarget(target pythontarget.Target) *targetGroup {
@@ -351,7 +451,6 @@ func parseSourceGroup(
 	}
 	allowedPaths := make(map[string]struct{}, len(group.modules))
 	baseDigests := make([]sourceDigest, 0, len(group.modules))
-	var total int64
 	for _, module := range group.modules {
 		info, ok := repository.Info(module.FileID)
 		if !ok || info.Entry.Path != module.Path {
@@ -359,18 +458,9 @@ func parseSourceGroup(
 				"python program index: module %q is not bound to repository corpus", module.Path,
 			)
 		}
-		content, err := repository.ReadFile(module.FileID, maxModuleBytes)
+		content, err := repository.ReadFileAll(module.FileID)
 		if err != nil {
 			return nil, fmt.Errorf("python program index: read %q: %w", module.Path, err)
-		}
-		if content.Truncated {
-			return nil, fmt.Errorf(
-				"python program index: module %q exceeds %d bytes", module.Path, maxModuleBytes,
-			)
-		}
-		total += int64(len(content.Bytes))
-		if total > maxSourceBytes {
-			return nil, fmt.Errorf("python program index: source bytes exceed %d", maxSourceBytes)
 		}
 		allowedPaths[module.Path] = struct{}{}
 		digest := sha256.Sum256(content.Bytes)
@@ -478,14 +568,27 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 		if err := validateHelperLocation(value.Location, allowedPaths); err != nil {
 			return parsedGroup{}, fmt.Errorf("object %q: %w", value.SourceRef, err)
 		}
+		kind := programindex.ObjectKind(value.Kind)
+		if kind == programindex.ObjectExternalSymbol {
+			if value.External == nil || !value.External.AuthorityKind.Valid() {
+				return parsedGroup{}, fmt.Errorf("object %q: missing or invalid external authority kind", value.SourceRef)
+			}
+		}
 		if _, duplicate := objectRefs[value.SourceRef]; duplicate {
 			return parsedGroup{}, fmt.Errorf("duplicate helper object %q", value.SourceRef)
 		}
 		objectRefs[value.SourceRef] = value
+		linkIdentities := make([]programindex.SymbolLinkIdentityInput, len(value.SymbolLinkIdentities))
+		for position, identity := range value.SymbolLinkIdentities {
+			linkIdentities[position] = programindex.SymbolLinkIdentityInput{
+				Domain: identity.Domain, Parts: append([]string(nil), identity.Parts...), Display: identity.Display,
+			}
+		}
 		objects = append(objects, programindex.ObjectInput{
-			SourceRef: value.SourceRef, Kind: programindex.ObjectKind(value.Kind), Name: value.Name,
+			SourceRef: value.SourceRef, Kind: kind, Name: value.Name,
 			Visibility: programindex.Visibility(value.Visibility), Signature: value.Signature,
 			OwnerRef: value.OwnerRef, ContainerRef: value.ContainerRef, Location: cloneLocation(value.Location),
+			SymbolLinkIdentities: linkIdentities, External: cloneParsedExternalSymbol(value.External),
 		})
 	}
 	relations := make([]programindex.RelationInput, 0, len(response.Relations))
@@ -503,23 +606,88 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 				Location: cloneLocation(witness.Location),
 			}
 		}
+		patterns := make([]programindex.RelationPatternInput, len(value.Patterns))
+		for patternPosition, pattern := range value.Patterns {
+			if err := validateHelperLocation(pattern.Location, allowedPaths); err != nil {
+				return parsedGroup{}, fmt.Errorf("relation %q pattern: %w", value.SourceRef, err)
+			}
+			arguments := make([]programindex.PatternArgumentInput, len(pattern.Arguments))
+			for argumentPosition, argument := range pattern.Arguments {
+				parts := make([]programindex.PatternPartInput, len(argument.Parts))
+				for partPosition, part := range argument.Parts {
+					parts[partPosition] = programindex.PatternPartInput{Kind: part.Kind, Text: part.Text}
+				}
+				valueCandidates := make([]programindex.PatternValueCandidateInput, len(argument.ValueCandidates))
+				for candidatePosition, candidate := range argument.ValueCandidates {
+					candidateParts := make([]programindex.PatternPartInput, len(candidate.Parts))
+					for partPosition, part := range candidate.Parts {
+						candidateParts[partPosition] = programindex.PatternPartInput{Kind: part.Kind, Text: part.Text}
+					}
+					valueCandidates[candidatePosition] = programindex.PatternValueCandidateInput{
+						Kind: candidate.Kind, Value: candidate.Value, Parts: candidateParts,
+						Resolution: candidate.Resolution, SourceKind: candidate.SourceKind,
+						SourceObjectRefs:      append([]string(nil), candidate.SourceObjectRefs...),
+						SourceObjectsObserved: candidate.SourceObjectsObserved,
+					}
+				}
+				arguments[argumentPosition] = programindex.PatternArgumentInput{
+					Position: argument.Position, Keyword: argument.Keyword, Kind: argument.Kind,
+					Value: argument.Value, Parts: parts,
+					ObjectRefs: append([]string(nil), argument.ObjectRefs...),
+					Resolution: argument.Resolution, ObjectsObserved: argument.ObjectsObserved,
+					ValueCandidates: valueCandidates, ValueCandidatesObserved: argument.ValueCandidatesObserved,
+				}
+			}
+			patterns[patternPosition] = programindex.RelationPatternInput{
+				SourceRef: pattern.SourceRef, Form: pattern.Form, Selector: pattern.Selector,
+				Location:                 cloneLocation(pattern.Location),
+				ResultRef:                pattern.ResultRef,
+				ReceiverRef:              pattern.ReceiverRef,
+				ReceiverOriginRefs:       append([]string(nil), pattern.ReceiverOriginRefs...),
+				ReceiverOriginResolution: pattern.ReceiverOriginResolution,
+				ReceiverOriginsObserved:  pattern.ReceiverOriginsObserved,
+				Arguments:                arguments, ArgumentsObserved: pattern.ArgumentsObserved,
+			}
+		}
 		relations = append(relations, programindex.RelationInput{
 			SourceRef: value.SourceRef, Kind: programindex.RelationKind(value.Kind), FromRef: value.FromRef,
 			ToRefs: append([]string(nil), value.ToRefs...), Resolution: programindex.Resolution(value.Resolution),
 			Invocation: value.Invocation, Location: cloneLocation(value.Location),
 			TargetsObserved: value.TargetsObserved, Witnesses: witnesses,
 			WitnessesObserved: value.WitnessesObserved,
+			Patterns:          patterns, PatternsObserved: value.PatternsObserved,
+			SourceArgument: clonePatternArgumentRefInput(value.SourceArgument),
 		})
 	}
 	return parsedGroup{objects: objects, relations: relations, objectRefs: objectRefs}, nil
 }
 
-func sealTarget(repository *corpus.Corpus, target pythontarget.Target, parsed parsedGroup) (programindex.Index, error) {
+func clonePatternArgumentRefInput(value *parsedPatternArgumentRef) *programindex.PatternArgumentRefInput {
+	if value == nil {
+		return nil
+	}
+	return &programindex.PatternArgumentRefInput{
+		RelationSourceRef: value.RelationSourceRef,
+		PatternSourceRef:  value.PatternSourceRef,
+		Position:          value.Position,
+		Keyword:           value.Keyword,
+	}
+}
+
+func cloneParsedExternalSymbol(value *programindex.ExternalSymbol) *programindex.ExternalSymbol {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
+}
+
+func inputForTarget(repository *corpus.Corpus, target pythontarget.Target, parsed parsedGroup) (programindex.Input, error) {
 	programTarget, err := projectTarget(repository, target, parsed.objectRefs)
 	if err != nil {
-		return programindex.Index{}, err
+		return programindex.Input{}, err
 	}
-	index, err := programindex.New(programindex.Input{
+	return programindex.Input{
 		ScenarioSHA256: parsed.scenarioSHA256,
 		SourceSHA256:   parsed.sourceSHA256,
 		Target:         programTarget,
@@ -528,11 +696,7 @@ func sealTarget(repository *corpus.Corpus, target pythontarget.Target, parsed pa
 		Coverage: programindex.CoverageInput{
 			Measured: true, ObjectsObserved: len(parsed.objects), RelationsObserved: len(parsed.relations),
 		},
-	})
-	if err != nil {
-		return programindex.Index{}, fmt.Errorf("python program index: seal: %w", err)
-	}
-	return index, nil
+	}, nil
 }
 
 func packageSourceRef(pkg pythontarget.Package) string {
@@ -544,13 +708,9 @@ func runParser(ctx context.Context, request parserRequest) (parserResponse, erro
 	if err != nil {
 		return parserResponse{}, fmt.Errorf("python program index: encode parser request: %w", err)
 	}
-	if len(wire) > maxParserRequest {
-		return parserResponse{}, fmt.Errorf("python program index: parser request exceeds %d bytes", maxParserRequest)
-	}
 	command := exec.CommandContext(ctx, "python3", "-I", "-S", "-c", parserHelper)
 	command.Stdin = bytes.NewReader(wire)
-	var stdout limitedBuffer
-	stdout.limit = maxParserOutput
+	var stdout bytes.Buffer
 	command.Stdout = &stdout
 	var stderr limitedBuffer
 	stderr.limit = maxParserStderrBytes
@@ -559,9 +719,6 @@ func runParser(ctx context.Context, request parserRequest) (parserResponse, erro
 		return parserResponse{}, fmt.Errorf("python program index: start isolated parser: %w", err)
 	}
 	waitErr := command.Wait()
-	if stdout.Exceeded() {
-		return parserResponse{}, fmt.Errorf("python program index: parser output exceeds %d bytes", maxParserOutput)
-	}
 	if waitErr != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return parserResponse{}, ctxErr
@@ -570,7 +727,10 @@ func runParser(ctx context.Context, request parserRequest) (parserResponse, erro
 			"python program index: isolated parser failed: %s", strings.TrimSpace(stderr.String()),
 		)
 	}
-	encoded := stdout.Bytes()
+	return decodeParserResponse(stdout.Bytes())
+}
+
+func decodeParserResponse(encoded []byte) (parserResponse, error) {
 	var response parserResponse
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()

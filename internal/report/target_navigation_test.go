@@ -11,28 +11,9 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-func embeddedBrowserRepositoryPayload(t *testing.T, html []byte) BrowserRepositoryPayload {
-	t.Helper()
-	transport, err := extractStandaloneBundleTransportV4HTML(html)
-	if err != nil {
-		t.Fatalf("extract rendered browser transport: %v", err)
-	}
-	payload, err := DecodeBrowserRepositoryPayload(transport.RepositoryPayload)
-	if err != nil {
-		t.Fatalf("decode rendered repository payload: %v", err)
-	}
-	canonical, err := EncodeBrowserRepositoryPayload(payload)
-	if err != nil {
-		t.Fatalf("re-encode rendered repository payload: %v", err)
-	}
-	if !bytes.Equal(canonical, transport.RepositoryPayload) {
-		t.Fatal("rendered repository payload is not canonical typed JSON")
-	}
-	return payload
-}
-
 func TestBuildTargetNavigationProjectsExactLanguageNeutralPages(t *testing.T) {
-	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, cubeMapProgramTargetFixture(t))
+	current := targetNavigationProgramTarget(t, "go", "executable", "api", "cmd/api/main.go", "4")
+	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, current)
 
 	got, err := BuildTargetNavigation(pages, defaultTargetID, currentTargetID)
 	if err != nil {
@@ -75,67 +56,28 @@ func TestBuildTargetNavigationProjectsExactLanguageNeutralPages(t *testing.T) {
 func TestTargetNavigationRenderOptionsStayTransient(t *testing.T) {
 	data, navigation := targetNavigationFixture(t)
 
-	ordinary, err := RenderHTMLWithOptions(data, RenderOptions{})
-	if err != nil {
-		t.Fatalf("RenderHTML: %v", err)
-	}
-	zeroOptions, err := RenderHTMLWithOptions(data, RenderOptions{})
-	if err != nil {
-		t.Fatalf("RenderHTMLWithOptions zero: %v", err)
-	}
-	if !bytes.Equal(ordinary, zeroOptions) {
-		t.Fatal("zero render options changed the existing single-target HTML")
-	}
-	ordinaryRepository := embeddedBrowserRepositoryPayload(t, ordinary)
-	entry, err := data.ProgramPortfolio.defaultEntry()
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantOrdinaryTarget := BrowserTargetIndexItem{
-		SelectedTargetID: entry.Target.ID,
-		ProgramTargetID:  entry.Target.ID,
-		Language:         entry.Target.Language,
-		Kind:             entry.Target.Kind,
-		DisplayName:      entry.Target.Name,
-		State:            "analyzed",
-		Href:             "#/program",
-	}
-	if ordinaryRepository.LogicalDefaultSelectedTargetID != entry.Target.ID ||
-		!reflect.DeepEqual(ordinaryRepository.Targets, []BrowserTargetIndexItem{wantOrdinaryTarget}) {
-		t.Fatalf("ordinary browser target index = %#v with default %q", ordinaryRepository.Targets,
-			ordinaryRepository.LogicalDefaultSelectedTargetID)
+	if _, err := RenderHTMLWithOptions(data, RenderOptions{}); err == nil ||
+		!strings.Contains(err.Error(), "complete target navigation") {
+		t.Fatalf("missing mandatory target navigation error = %v", err)
 	}
 
 	withNavigation, err := RenderHTMLWithOptions(data, RenderOptions{TargetNavigation: navigation})
 	if err != nil {
 		t.Fatalf("RenderHTMLWithOptions navigation: %v", err)
 	}
-	repository := embeddedBrowserRepositoryPayload(t, withNavigation)
-	wantTargets := make([]BrowserTargetIndexItem, 0, len(navigation.Targets))
-	for _, item := range navigation.Targets {
-		wantTargets = append(wantTargets, BrowserTargetIndexItem{
-			SelectedTargetID: item.TargetID,
-			ProgramTargetID:  item.TargetID,
-			Language:         item.Language,
-			Kind:             item.Kind,
-			DisplayName:      item.DisplayName,
-			State:            "analyzed",
-			Href:             item.Href,
-		})
-	}
-	if repository.LogicalDefaultSelectedTargetID != navigation.DefaultTargetID ||
-		!reflect.DeepEqual(repository.Targets, wantTargets) {
-		t.Fatalf("rendered browser target index = %#v with default %q, want %#v with default %q",
-			repository.Targets, repository.LogicalDefaultSelectedTargetID,
-			wantTargets, navigation.DefaultTargetID)
-	}
-	transport, err := extractStandaloneBundleTransportV4HTML(withNavigation)
+	// Sections come from the analyzed graph the run actually produced, and
+	// they are named the way the reader sees them. Render-only navigation
+	// never puts an internal identity on the page.
+	entry, err := data.ProgramPortfolio.defaultEntry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, legacy := range [][]byte{[]byte(`"target_navigation"`), []byte(`"artifact_filename"`)} {
-		if bytes.Contains(transport.RepositoryPayload, legacy) {
-			t.Fatalf("typed repository payload exposes retired navigation field %q", legacy)
+	if !bytes.Contains(withNavigation, []byte(entry.Target.Name)) {
+		t.Fatalf("rendered page is missing the analyzed target %q", entry.Target.Name)
+	}
+	for _, item := range navigation.Targets {
+		if bytes.Contains(withNavigation, []byte(item.TargetID)) {
+			t.Fatalf("rendered page exposed the internal identity of %q", item.DisplayName)
 		}
 	}
 
@@ -179,7 +121,8 @@ func TestTargetNavigationSiblingHrefResolvesForFileAndHostedReports(t *testing.T
 }
 
 func TestBuildTargetNavigationRejectsIncompleteOrTamperedPages(t *testing.T) {
-	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, cubeMapProgramTargetFixture(t))
+	current := targetNavigationProgramTarget(t, "go", "executable", "api", "cmd/api/main.go", "4")
+	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, current)
 	tests := map[string]func([]TargetNavigationPage) ([]TargetNavigationPage, string, string){
 		"unknown current": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
 			return value, defaultTargetID, "unknown"
@@ -207,6 +150,10 @@ func TestBuildTargetNavigationRejectsIncompleteOrTamperedPages(t *testing.T) {
 			value[2].ArtifactFilename = "nested/program-index.json"
 			return value, defaultTargetID, currentTargetID
 		},
+		"target-specific artifact filename": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
+			value[2].ArtifactFilename = "program-index.worker.json"
+			return value, defaultTargetID, currentTargetID
+		},
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -226,13 +173,13 @@ func TestTargetNavigationRejectsUnboundOrUnsafeProjection(t *testing.T) {
 		"unknown default": func(value *TargetNavigationPortfolio) { value.DefaultTargetID = "unknown" },
 		"duplicate":       func(value *TargetNavigationPortfolio) { value.Targets[1].TargetID = value.Targets[0].TargetID },
 		"current language drift": func(value *TargetNavigationPortfolio) {
-			value.Targets[1].Language = "python"
+			targetNavigationCurrentItem(t, value).Language = "tampered-language"
 		},
 		"current kind drift": func(value *TargetNavigationPortfolio) {
-			value.Targets[1].Kind = "library"
+			targetNavigationCurrentItem(t, value).Kind = "tampered-kind"
 		},
 		"current name drift": func(value *TargetNavigationPortfolio) {
-			value.Targets[1].DisplayName = "wrong"
+			targetNavigationCurrentItem(t, value).DisplayName = "wrong"
 		},
 		"missing href": func(value *TargetNavigationPortfolio) { value.Targets[2].Href = "" },
 		"absolute href": func(value *TargetNavigationPortfolio) {
@@ -256,32 +203,38 @@ func TestTargetNavigationRejectsUnboundOrUnsafeProjection(t *testing.T) {
 	}
 }
 
+func targetNavigationCurrentItem(t *testing.T, value *TargetNavigationPortfolio) *TargetNavigationItem {
+	t.Helper()
+	for position := range value.Targets {
+		if value.Targets[position].TargetID == value.CurrentTargetID {
+			return &value.Targets[position]
+		}
+	}
+	t.Fatal("current navigation item is missing")
+	return nil
+}
+
 func targetNavigationFixture(t *testing.T) (*ReportData, *TargetNavigationPortfolio) {
 	t.Helper()
-	// Navigation rendering is independent of semantic cubes. Use a structural
-	// language target so this fixture does not preserve the retired Go CubeMap
-	// presentation merely to test transient navigation options.
-	index := reportProgramIndexFixture(t, "bash", "tool")
-	portfolio, err := NewProgramPortfolio(index.Target.ID, []programindex.Index{index})
+	// Navigation rendering is independent of semantic cubes, but an ordinary
+	// default ProgramIndex page always carries the generic semantic cube family.
+	// Reuse the complete neutral fixture instead of teaching this test a fake
+	// language-specific structural exception.
+	data := reportProgramShellDataFixture(t, "workspace")
+	entry, err := data.ProgramPortfolio.defaultEntry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := &ReportData{
-		FormatVersion:      CurrentFormatVersion,
-		RepoName:           "workspace",
-		CapturedRevision:   strings.Repeat("a", 40),
-		CapturedInputCount: 0,
-		ProgramPortfolio:   portfolio,
-	}
-	if err := collectOpenablePaths(data); err != nil {
+	if err := collectOpenablePaths(&data); err != nil {
 		t.Fatal(err)
 	}
-	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, index.Target)
+	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, entry.Target)
 	navigation, err := BuildTargetNavigation(pages, defaultTargetID, currentTargetID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return data, navigation
+	data.TargetOutcomePortfolio = reportTargetOutcomeViewFixture(t, pages, defaultTargetID)
+	return &data, navigation
 }
 
 func targetNavigationPages(
@@ -293,10 +246,10 @@ func targetNavigationPages(
 	worker := targetNavigationProgramTarget(t, "python", "worker", "event worker", "worker/app.py", "2")
 	tool := targetNavigationProgramTarget(t, "bash", "tool", "release scripts", "scripts/release.sh", "3")
 	pages := []TargetNavigationPage{
-		{RunID: "20260810-120000-server-a1b2c3", ProgramTarget: server, ArtifactFilename: "program-index-server.json"},
-		{RunID: "20260810-120000-api-a1b2c3", ProgramTarget: current.Snapshot(), ArtifactFilename: "program-index-api.json"},
-		{RunID: "20260810-120000-worker-a1b2c3", ProgramTarget: worker, ArtifactFilename: "program-index-worker.json"},
-		{RunID: "20260810-120000-tool-a1b2c3", ProgramTarget: tool, ArtifactFilename: "program-index-tool.json"},
+		{RunID: "20260810-120000-server-a1b2c3", ProgramTarget: server, ArtifactFilename: programindex.ArtifactFilename},
+		{RunID: "20260810-120000-api-a1b2c3", ProgramTarget: current.Snapshot(), ArtifactFilename: programindex.ArtifactFilename},
+		{RunID: "20260810-120000-worker-a1b2c3", ProgramTarget: worker, ArtifactFilename: programindex.ArtifactFilename},
+		{RunID: "20260810-120000-tool-a1b2c3", ProgramTarget: tool, ArtifactFilename: programindex.ArtifactFilename},
 	}
 	return pages, server.ID, current.ID
 }

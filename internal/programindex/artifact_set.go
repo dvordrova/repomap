@@ -7,35 +7,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
-	"sort"
-	"strings"
-	"unicode"
-	"unicode/utf8"
 )
 
 const (
 	ArtifactSetVersion  = 1
 	ArtifactSetFilename = "program-index-set.json"
 
-	MaxArtifactSetEntries       = 4_096
+	// AdvisoryArtifactSetBytes is a former local threshold retained for
+	// diagnostics only. MaxArtifactSetBytes is a zero compatibility sentinel
+	// for report readers and does not impose a local cutoff.
 	MaxArtifactSetFilenameBytes = 512
-	MaxArtifactSetBytes         = 8 * 1024 * 1024
+	AdvisoryArtifactSetBytes    = 8 * 1024 * 1024
+	MaxArtifactSetBytes         = 0
 )
 
-// ArtifactSetEntry binds one selected target view to the sealed ProgramIndex
-// artifact that represents its program scope. The referenced Index is sealed
-// with the same TargetID, so every selected view owns one distinct artifact
-// filename even when the language adapter shared all expensive source parsing.
+// ArtifactSetEntry binds one page-local target to its sealed ProgramIndex.
 type ArtifactSetEntry struct {
 	TargetID    string `json:"target_id"`
 	Filename    string `json:"filename"`
 	IndexSHA256 string `json:"index_sha256"`
 }
 
-// ArtifactSet is the canonical handoff for runs that select one or more target
-// views. DefaultTargetID selects the view used by consumers that do not ask for
-// a specific target.
+// ArtifactSet is the canonical handoff for one page-local target run. Entries
+// remains an array in the persisted version-1 schema, but validation requires
+// exactly one entry bound to program-index.json.
 type ArtifactSet struct {
 	Version         int                `json:"version"`
 	DefaultTargetID string             `json:"default_target_id"`
@@ -43,74 +38,25 @@ type ArtifactSet struct {
 	SHA256          string             `json:"sha256"`
 }
 
-// BuildArtifactSet validates a ProgramIndex inventory and binds every index to
-// its distinct artifact filename before constructing the sealed artifact set.
-func BuildArtifactSet(defaultTargetID string, indexes []Index, filenames []string) (ArtifactSet, error) {
-	if len(indexes) == 0 || len(indexes) != len(filenames) {
-		return ArtifactSet{}, fmt.Errorf("program index set: index and filename inventories do not match")
+// BuildArtifactSet validates one page-local ProgramIndex and binds it to the
+// only canonical filename accepted by an ordinary target run.
+func BuildArtifactSet(index Index) (ArtifactSet, error) {
+	if err := index.Validate(); err != nil {
+		return ArtifactSet{}, fmt.Errorf("program index set: index: %w", err)
 	}
-	entries := make([]ArtifactSetEntry, len(indexes))
-	for position, index := range indexes {
-		if err := index.Validate(); err != nil {
-			return ArtifactSet{}, fmt.Errorf("program index set: index %d: %w", position, err)
-		}
-		entries[position] = ArtifactSetEntry{
-			TargetID: index.Target.ID, Filename: filenames[position], IndexSHA256: index.SHA256,
-		}
-	}
-	return NewArtifactSet(defaultTargetID, entries)
+	return NewArtifactSet(index.Target.ID, []ArtifactSetEntry{{
+		TargetID: index.Target.ID, Filename: ArtifactFilename, IndexSHA256: index.SHA256,
+	}})
 }
 
-// ExactIndexByTargetID returns one consumer-owned ProgramIndex from an
-// already-built inventory. It fails closed when the requested target is
-// missing or repeated instead of choosing an index by position.
-func ExactIndexByTargetID(indexes []Index, targetID string) (Index, error) {
-	var result *Index
-	for position := range indexes {
-		if indexes[position].Target.ID != targetID {
-			continue
-		}
-		if result != nil {
-			return Index{}, fmt.Errorf("program index set repeats default target %q", targetID)
-		}
-		copyIndex := indexes[position].Snapshot()
-		result = &copyIndex
-	}
-	if result == nil {
-		return Index{}, fmt.Errorf("program index set has no exact default target %q", targetID)
-	}
-	return *result, nil
-}
-
-// ArtifactFilenameForTarget returns the canonical default artifact filename or
-// the target-specific filename used for another selected view.
-func ArtifactFilenameForTarget(targetRef string, isDefault bool) string {
-	if isDefault {
-		return ArtifactFilename
-	}
-	return "program-index." + targetRef + ".json"
-}
-
-// NewArtifactSet canonicalizes entries by TargetID, rejects ambiguous
-// bindings, and seals the resulting artifact set.
+// NewArtifactSet rejects every shape except one exact page-local binding and
+// seals that binding.
 func NewArtifactSet(defaultTargetID string, entries []ArtifactSetEntry) (ArtifactSet, error) {
-	if len(entries) == 0 || len(entries) > MaxArtifactSetEntries {
-		return ArtifactSet{}, fmt.Errorf("program index set: entry bound exceeded")
-	}
 	result := ArtifactSet{
 		Version:         ArtifactSetVersion,
 		DefaultTargetID: defaultTargetID,
 		Entries:         cloneArtifactSetEntries(entries),
 	}
-	sort.Slice(result.Entries, func(i, j int) bool {
-		if result.Entries[i].TargetID != result.Entries[j].TargetID {
-			return result.Entries[i].TargetID < result.Entries[j].TargetID
-		}
-		if result.Entries[i].Filename != result.Entries[j].Filename {
-			return result.Entries[i].Filename < result.Entries[j].Filename
-		}
-		return result.Entries[i].IndexSHA256 < result.Entries[j].IndexSHA256
-	})
 	if err := result.validateShape(); err != nil {
 		return ArtifactSet{}, err
 	}
@@ -134,16 +80,13 @@ func EncodeArtifactSet(set ArtifactSet) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("program index set: encode artifact: %w", err)
 	}
-	if len(encoded) > MaxArtifactSetBytes {
-		return nil, fmt.Errorf("program index set: artifact is %d bytes, limit is %d", len(encoded), MaxArtifactSetBytes)
-	}
 	return encoded, nil
 }
 
 // DecodeArtifactSet strictly decodes, validates, and verifies one artifact
 // set. Unknown fields and trailing JSON values are rejected.
 func DecodeArtifactSet(encoded []byte) (ArtifactSet, error) {
-	if len(encoded) == 0 || len(encoded) > MaxArtifactSetBytes {
+	if len(encoded) == 0 {
 		return ArtifactSet{}, fmt.Errorf("program index set: invalid artifact size")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
@@ -192,28 +135,21 @@ func (set ArtifactSet) validateShape() error {
 	if set.Version != ArtifactSetVersion || !validText(set.DefaultTargetID) {
 		return fmt.Errorf("program index set: invalid identity")
 	}
-	if set.Entries == nil || len(set.Entries) == 0 || len(set.Entries) > MaxArtifactSetEntries {
-		return fmt.Errorf("program index set: entry bound exceeded")
+	if len(set.Entries) != 1 {
+		return fmt.Errorf("program index set: exactly one page-local entry is required")
 	}
-	defaultMatches := 0
-	filenames := make(map[string]struct{}, len(set.Entries))
-	for position, entry := range set.Entries {
-		if !validText(entry.TargetID) || !validArtifactSetFilename(entry.Filename) || !validSHA256(entry.IndexSHA256) {
-			return fmt.Errorf("program index set: invalid entry")
-		}
-		if position > 0 && set.Entries[position-1].TargetID >= entry.TargetID {
-			return fmt.Errorf("program index set: entries are not canonical")
-		}
-		if entry.TargetID == set.DefaultTargetID {
-			defaultMatches++
-		}
-		if _, duplicate := filenames[entry.Filename]; duplicate {
-			return fmt.Errorf("program index set: filename %q is bound to more than one target", entry.Filename)
-		}
-		filenames[entry.Filename] = struct{}{}
+	entry := set.Entries[0]
+	if !validText(entry.TargetID) || !validSHA256(entry.IndexSHA256) {
+		return fmt.Errorf("program index set: invalid entry")
 	}
-	if defaultMatches != 1 {
-		return fmt.Errorf("program index set: default target must have exactly one entry")
+	if entry.TargetID != set.DefaultTargetID {
+		return fmt.Errorf("program index set: default target must match the page-local entry")
+	}
+	if entry.Filename != ArtifactFilename {
+		return fmt.Errorf(
+			"program index set: filename %q is not canonical %q",
+			entry.Filename, ArtifactFilename,
+		)
 	}
 	return nil
 }
@@ -225,24 +161,8 @@ func artifactSetDigest(set ArtifactSet) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("program index set: encode digest material: %w", err)
 	}
-	if len(encoded) > MaxArtifactSetBytes {
-		return "", fmt.Errorf("program index set: canonical substrate is %d bytes, limit is %d", len(encoded), MaxArtifactSetBytes)
-	}
 	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:]), nil
-}
-
-func validArtifactSetFilename(value string) bool {
-	if value == "" || len(value) > MaxArtifactSetFilenameBytes || value != strings.TrimSpace(value) ||
-		!utf8.ValidString(value) || strings.ContainsAny(value, `/\\`) || value == "." || value == ".." || !fs.ValidPath(value) {
-		return false
-	}
-	for _, character := range value {
-		if unicode.IsControl(character) {
-			return false
-		}
-	}
-	return true
 }
 
 func cloneArtifactSetEntries(values []ArtifactSetEntry) []ArtifactSetEntry {

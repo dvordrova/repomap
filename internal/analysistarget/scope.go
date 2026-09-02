@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
@@ -17,11 +18,13 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 	if err := target.Validate(); err != nil {
 		return gofacts.Facts{}, fmt.Errorf("analysis target scope: %w", err)
 	}
-	packages := make(map[string]gofacts.PackageFact, len(facts.Packages))
 	packagesByIdentity := make(map[string]gofacts.PackageFact, len(facts.Packages))
 	for _, pkg := range facts.Packages {
-		packages[pkg.CanonicalPath] = pkg
 		packagesByIdentity[packageIdentityKey(pkg.ModuleID, pkg.CanonicalPath)] = pkg
+	}
+	exactDependencies, err := newExactDependencyScope(facts)
+	if err != nil {
+		return gofacts.Facts{}, fmt.Errorf("analysis target scope: dependency catalog: %w", err)
 	}
 
 	retained := make(map[string]struct{})
@@ -42,19 +45,26 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 			if !ok || pkg.Name == "main" || pkg.PackageDir != targetPackage.PackageDir {
 				return gofacts.Facts{}, fmt.Errorf("analysis target scope: module package %q is unavailable", targetPackage.PackagePath)
 			}
-			retained[targetPackage.PackagePath] = struct{}{}
+			retained[packageFactIdentity(pkg)] = struct{}{}
 		}
 	} else {
-		_, ok := packagesByIdentity[packageIdentityKey(target.ModuleID, target.PackagePath)]
+		targetPackage, ok := packagesByIdentity[packageIdentityKey(target.ModuleID, target.PackagePath)]
 		if !ok {
 			return gofacts.Facts{}, fmt.Errorf("analysis target scope: selected package %q is unavailable", target.PackagePath)
 		}
-		retained[target.PackagePath] = struct{}{}
-		growOutgoingClosure(retained, packages, facts.InternalEdges)
+		retained[packageFactIdentity(targetPackage)] = struct{}{}
+		if exactDependencies != nil {
+			if err := exactDependencies.growOutgoingClosure(retained, *facts.Dependencies); err != nil {
+				return gofacts.Facts{}, fmt.Errorf("analysis target scope: dependency catalog: %w", err)
+			}
+		} else {
+			growLegacyOutgoingClosure(retained, facts.Packages, facts.InternalEdges, target.PackagePath)
+		}
 	}
 
 	scoped := gofacts.Facts{
 		Packages:           []gofacts.PackageFact{},
+		PackageOrigins:     append([]gofacts.PackageOrigin(nil), facts.PackageOrigins...),
 		EntrypointPackages: []gofacts.Entrypoint{},
 		InternalEdges:      []gofacts.Edge{},
 		ExternalImportsTop: []gofacts.ExtImport{},
@@ -62,7 +72,7 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 	}
 	retainedModules := make(map[string]struct{})
 	for _, pkg := range facts.Packages {
-		if _, keep := retained[pkg.CanonicalPath]; !keep {
+		if _, keep := retained[packageFactIdentity(pkg)]; !keep {
 			continue
 		}
 		copyPkg := pkg
@@ -71,20 +81,11 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 		scoped.Packages = append(scoped.Packages, copyPkg)
 		retainedModules[pkg.ModuleID] = struct{}{}
 	}
-	for _, edge := range facts.InternalEdges {
-		if _, from := retained[edge.From]; !from {
-			continue
-		}
-		if _, to := retained[edge.To]; !to {
-			continue
-		}
-		scoped.InternalEdges = append(scoped.InternalEdges, edge)
-	}
 	if facts.Dependencies != nil {
 		retainedImporterRefs := make(map[string]struct{})
-		for _, importer := range facts.Dependencies.Importers {
-			if _, keep := retained[importer.PackagePath]; keep {
-				retainedImporterRefs[importer.Ref] = struct{}{}
+		for importerRef, pkg := range exactDependencies.importerPackages {
+			if _, keep := retained[pkg.identity]; keep {
+				retainedImporterRefs[importerRef] = struct{}{}
 			}
 		}
 		dependencyCatalog, dependencyErr := facts.Dependencies.Subset(retainedImporterRefs)
@@ -92,10 +93,23 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 			return gofacts.Facts{}, fmt.Errorf("analysis target scope: dependency catalog: %w", dependencyErr)
 		}
 		scoped.Dependencies = &dependencyCatalog
+		scoped.InternalEdges = exactDependencies.internalEdges(dependencyCatalog, retained)
+	} else {
+		retainedPaths := retainedPackagePaths(facts.Packages, retained)
+		for _, edge := range facts.InternalEdges {
+			if _, from := retainedPaths[edge.From]; !from {
+				continue
+			}
+			if _, to := retainedPaths[edge.To]; !to {
+				continue
+			}
+			scoped.InternalEdges = append(scoped.InternalEdges, edge)
+		}
 	}
 
 	for _, entrypoint := range facts.EntrypointPackages {
-		if target.Kind != KindExecutablePackage || entrypoint.ImportPath != target.PackagePath {
+		if target.Kind != KindExecutablePackage || entrypoint.ImportPath != target.PackagePath ||
+			entrypoint.ModulePath != target.ModulePath || entrypoint.ModuleDir != target.ModuleDir {
 			continue
 		}
 		copyEntrypoint := entrypoint
@@ -153,24 +167,204 @@ func sameTargetPackages(left, right []TargetPackage) bool {
 	return true
 }
 
-func growOutgoingClosure(retained map[string]struct{}, packages map[string]gofacts.PackageFact, edges []gofacts.Edge) {
+type exactDependencyScope struct {
+	importerPackages  map[string]exactDependencyPackage
+	workspacePackages map[string]exactDependencyPackage
+}
+
+type exactDependencyPackage struct {
+	identity    string
+	packagePath string
+}
+
+type exactDependencyPackageKey struct {
+	modulePath     string
+	packagePath    string
+	repositoryPath string
+}
+
+func newExactDependencyScope(facts gofacts.Facts) (*exactDependencyScope, error) {
+	if facts.Dependencies == nil {
+		return nil, nil
+	}
+	if err := facts.Dependencies.Validate(); err != nil {
+		return nil, err
+	}
+	packageIdentities := make(map[exactDependencyPackageKey]exactDependencyPackage, len(facts.Packages))
+	for _, pkg := range facts.Packages {
+		key := dependencyPackageKey(pkg.ModulePath, pkg.CanonicalPath, pkg.PackageDir)
+		value := exactDependencyPackage{identity: packageFactIdentity(pkg), packagePath: pkg.CanonicalPath}
+		if previous, exists := packageIdentities[key]; exists && previous.identity != value.identity {
+			return nil, fmt.Errorf("exact repository package identity %q is ambiguous", pkg.CanonicalPath)
+		}
+		packageIdentities[key] = value
+	}
+	scope := &exactDependencyScope{
+		importerPackages:  make(map[string]exactDependencyPackage, len(facts.Dependencies.Importers)),
+		workspacePackages: make(map[string]exactDependencyPackage),
+	}
+	for _, importer := range facts.Dependencies.Importers {
+		pkg, ok := packageIdentities[dependencyPackageKey(
+			importer.ModulePath, importer.PackagePath, importer.RepositoryPath,
+		)]
+		if !ok {
+			// The dependency catalog may retain exact raw non-DepOnly importer
+			// authority for a row that the build-selected package inventory
+			// deliberately excludes. It cannot admit a package into this target.
+			continue
+		}
+		scope.importerPackages[importer.Ref] = pkg
+	}
+	for _, dependency := range facts.Dependencies.Dependencies {
+		if dependency.Kind != dependencies.KindWorkspace {
+			continue
+		}
+		pkg, ok := packageIdentities[dependencyPackageKey(
+			dependency.ModulePath, dependency.PackagePath, dependency.RepositoryPath,
+		)]
+		if !ok {
+			// Unselected raw package rows may likewise appear as workspace
+			// dependency metadata. A retained executable importer that reaches
+			// one is rejected below; unrelated targets remain analyzable.
+			continue
+		}
+		scope.workspacePackages[dependency.ID] = pkg
+	}
+	return scope, nil
+}
+
+func (scope *exactDependencyScope) growOutgoingClosure(
+	retained map[string]struct{},
+	catalog dependencies.Catalog,
+) error {
+	changed := true
+	for changed {
+		changed = false
+		for _, dependency := range catalog.Dependencies {
+			if dependency.Kind != dependencies.KindWorkspace {
+				continue
+			}
+			to, targetAvailable := scope.workspacePackages[dependency.ID]
+			for _, importerRef := range dependency.ImporterRefs {
+				from, importerAvailable := scope.importerPackages[importerRef]
+				if !importerAvailable {
+					continue
+				}
+				if _, admitted := retained[from.identity]; !admitted {
+					continue
+				}
+				if !targetAvailable {
+					return fmt.Errorf(
+						"retained importer %q reaches workspace dependency %q without an exact build-selected package",
+						importerRef, dependency.ID,
+					)
+				}
+				if _, exists := retained[to.identity]; exists {
+					continue
+				}
+				retained[to.identity] = struct{}{}
+				changed = true
+			}
+		}
+	}
+	return nil
+}
+
+func (scope *exactDependencyScope) internalEdges(
+	catalog dependencies.Catalog,
+	retained map[string]struct{},
+) []gofacts.Edge {
+	edges := make([]gofacts.Edge, 0)
+	seen := make(map[gofacts.Edge]struct{})
+	for _, dependency := range catalog.Dependencies {
+		if dependency.Kind != dependencies.KindWorkspace {
+			continue
+		}
+		to, targetAvailable := scope.workspacePackages[dependency.ID]
+		if !targetAvailable {
+			continue
+		}
+		if _, admitted := retained[to.identity]; !admitted {
+			continue
+		}
+		for _, importerRef := range dependency.ImporterRefs {
+			from, importerAvailable := scope.importerPackages[importerRef]
+			if !importerAvailable {
+				continue
+			}
+			if _, admitted := retained[from.identity]; !admitted {
+				continue
+			}
+			edge := gofacts.Edge{
+				From: from.packagePath,
+				To:   to.packagePath,
+			}
+			if _, duplicate := seen[edge]; duplicate {
+				continue
+			}
+			seen[edge] = struct{}{}
+			edges = append(edges, edge)
+		}
+	}
+	return edges
+}
+
+func growLegacyOutgoingClosure(
+	retained map[string]struct{},
+	packageFacts []gofacts.PackageFact,
+	edges []gofacts.Edge,
+	targetPackagePath string,
+) {
+	packages := make(map[string]gofacts.PackageFact, len(packageFacts))
+	for _, pkg := range packageFacts {
+		packages[pkg.CanonicalPath] = pkg
+	}
+	retainedPaths := map[string]struct{}{targetPackagePath: {}}
 	changed := true
 	for changed {
 		changed = false
 		for _, edge := range edges {
-			if _, from := retained[edge.From]; !from {
+			if _, from := retainedPaths[edge.From]; !from {
 				continue
 			}
 			if _, local := packages[edge.To]; !local {
 				continue
 			}
-			if _, exists := retained[edge.To]; exists {
+			if _, exists := retainedPaths[edge.To]; exists {
 				continue
 			}
-			retained[edge.To] = struct{}{}
+			retainedPaths[edge.To] = struct{}{}
 			changed = true
 		}
 	}
+	for _, pkg := range packageFacts {
+		if _, keep := retainedPaths[pkg.CanonicalPath]; keep {
+			retained[packageFactIdentity(pkg)] = struct{}{}
+		}
+	}
+}
+
+func retainedPackagePaths(
+	packages []gofacts.PackageFact,
+	retained map[string]struct{},
+) map[string]struct{} {
+	result := make(map[string]struct{}, len(retained))
+	for _, pkg := range packages {
+		if _, keep := retained[packageFactIdentity(pkg)]; keep {
+			result[pkg.CanonicalPath] = struct{}{}
+		}
+	}
+	return result
+}
+
+func dependencyPackageKey(modulePath, packagePath, repositoryPath string) exactDependencyPackageKey {
+	return exactDependencyPackageKey{
+		modulePath: modulePath, packagePath: packagePath, repositoryPath: repositoryPath,
+	}
+}
+
+func packageFactIdentity(pkg gofacts.PackageFact) string {
+	return packageIdentityKey(pkg.ModuleID, pkg.CanonicalPath)
 }
 
 func sortFacts(facts *gofacts.Facts) {

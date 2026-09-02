@@ -16,23 +16,20 @@ import (
 )
 
 const (
-	defaultMaxFiles         = 20000
-	defaultMaxFileBytes     = int64(2 << 20)
-	defaultMaxTotalBytes    = int64(64 << 20)
-	maxHelperOutputBytes    = int64(32 << 20)
-	maxHelperStderrBytes    = 16 << 10
-	maxShebangBytes         = int64(512)
-	maxEntrypointAliasDepth = 8
+	maxHelperStderrBytes = 16 << 10
 )
 
-// Options controls bounded local discovery. Repository identity, file modes,
-// and all bounded reads come exclusively from the supplied Corpus. The Python
-// executable parses request bytes only and never imports repository modules.
+// Options controls local discovery. Repository identity, file modes, and all
+// reads come exclusively from the supplied Corpus. The Python executable
+// parses request bytes only and never imports repository modules.
 type Options struct {
 	PythonExecutable string
-	MaxFiles         int
-	MaxFileBytes     int64
-	MaxTotalBytes    int64
+	// Deprecated: exact discovery is exhaustive over complete Corpus reads.
+	// These legacy knobs are retained for source compatibility and are
+	// intentionally ignored.
+	MaxFiles      int
+	MaxFileBytes  int64
+	MaxTotalBytes int64
 }
 
 type inputFile struct {
@@ -122,8 +119,8 @@ func Discover(ctx context.Context, repository *corpus.Corpus) (Catalog, error) {
 	return DiscoverWithOptions(ctx, repository, Options{})
 }
 
-// DiscoverWithOptions is Discover with an explicit interpreter and resource
-// bounds. It returns no partial value on I/O or malformed declarative
+// DiscoverWithOptions is Discover with an explicit interpreter. It returns no
+// partial value on I/O or malformed declarative
 // configuration errors; unsupported dynamic facts become a typed omission.
 func DiscoverWithOptions(ctx context.Context, repository *corpus.Corpus, options Options) (Catalog, error) {
 	if ctx == nil {
@@ -136,7 +133,7 @@ func DiscoverWithOptions(ctx context.Context, repository *corpus.Corpus, options
 		return Catalog{}, fmt.Errorf("python target discovery: repository corpus: %w", err)
 	}
 	options = normalizeOptions(options)
-	files, launcherFiles, err := readDiscoveryFiles(repository, options)
+	files, launcherFiles, err := readDiscoveryFiles(repository)
 	if err != nil {
 		return Catalog{}, err
 	}
@@ -158,65 +155,47 @@ func normalizeOptions(options Options) Options {
 	if strings.TrimSpace(options.PythonExecutable) == "" {
 		options.PythonExecutable = "python3"
 	}
-	if options.MaxFiles <= 0 {
-		options.MaxFiles = defaultMaxFiles
-	}
-	if options.MaxFileBytes <= 0 {
-		options.MaxFileBytes = defaultMaxFileBytes
-	}
-	if options.MaxTotalBytes <= 0 {
-		options.MaxTotalBytes = defaultMaxTotalBytes
-	}
 	return options
 }
 
-func readDiscoveryFiles(repository *corpus.Corpus, options Options) ([]inputFile, []inputFile, error) {
+func readDiscoveryFiles(repository *corpus.Corpus) ([]inputFile, []inputFile, error) {
 	files := make([]inputFile, 0)
 	launchers := make([]inputFile, 0)
-	var total int64
-	executableProbes := 0
 	for _, entry := range repository.Entries() {
 		filePath := entry.Path
 		kind, launcher := discoveryFileKind(filePath)
 		probeExecutable := kind == "" && !launcher && entry.Executable && path.Ext(path.Base(filePath)) == ""
+		var loaded corpus.Content
+		loadedFile := false
 		if probeExecutable {
-			executableProbes++
-			if executableProbes > options.MaxFiles {
-				return nil, nil, fmt.Errorf("python target discovery: executable probe limit %d exceeded", options.MaxFiles)
-			}
-			prefix, err := repository.ReadFile(entry.ID, maxShebangBytes)
+			content, err := repository.ReadFileAll(entry.ID)
 			if err != nil {
 				return nil, nil, fmt.Errorf("python target discovery: probe %q: %w", filePath, err)
 			}
-			if !hasExactPythonShebang(prefix.Bytes) {
+			if !hasExactPythonShebang(content.Bytes) {
 				continue
 			}
 			kind = "python_script"
+			loaded = content
+			loadedFile = true
 		}
 		if kind == "" && !launcher {
 			continue
-		}
-		if len(files)+len(launchers) >= options.MaxFiles {
-			return nil, nil, fmt.Errorf("python target discovery: relevant file limit %d exceeded", options.MaxFiles)
 		}
 		if kind == "pipfile" || kind == "requirements" {
 			files = append(files, inputFile{ID: entry.ID, Path: filePath, Kind: kind})
 			continue
 		}
-		content, err := repository.ReadFile(entry.ID, options.MaxFileBytes)
-		if err != nil {
-			return nil, nil, fmt.Errorf("python target discovery: read %q: %w", filePath, err)
+		if !loadedFile {
+			content, err := repository.ReadFileAll(entry.ID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("python target discovery: read %q: %w", filePath, err)
+			}
+			loaded = content
 		}
-		if content.Truncated {
-			return nil, nil, fmt.Errorf("python target discovery: file %q exceeds %d bytes", filePath, options.MaxFileBytes)
-		}
-		total += int64(len(content.Bytes))
-		if total > options.MaxTotalBytes {
-			return nil, nil, fmt.Errorf("python target discovery: total byte limit %d exceeded", options.MaxTotalBytes)
-		}
-		file := inputFile{ID: entry.ID, Path: filePath, Kind: kind, Bytes: content.Bytes}
+		file := inputFile{ID: entry.ID, Path: filePath, Kind: kind, Bytes: loaded.Bytes}
 		if kind != "" {
-			file.Content = base64.StdEncoding.EncodeToString(content.Bytes)
+			file.Content = base64.StdEncoding.EncodeToString(loaded.Bytes)
 			files = append(files, file)
 		}
 		if launcher {
@@ -270,9 +249,6 @@ func hasExactPythonShebang(content []byte) bool {
 		first = first[:index]
 	}
 	first = bytes.TrimSuffix(first, []byte{'\r'})
-	if int64(len(first)) > maxShebangBytes {
-		return false
-	}
 	fields := strings.Fields(string(first[2:]))
 	if len(fields) == 0 {
 		return false
@@ -344,13 +320,10 @@ func runPythonParser(ctx context.Context, executable string, files []inputFile) 
 	if err := command.Start(); err != nil {
 		return helperResponse{}, fmt.Errorf("python target discovery: start isolated parser: %w", err)
 	}
-	wire, readErr := io.ReadAll(io.LimitReader(stdout, maxHelperOutputBytes+1))
+	wire, readErr := io.ReadAll(stdout)
 	waitErr := command.Wait()
 	if readErr != nil {
 		return helperResponse{}, fmt.Errorf("python target discovery: read parser output: %w", readErr)
-	}
-	if int64(len(wire)) > maxHelperOutputBytes {
-		return helperResponse{}, fmt.Errorf("python target discovery: parser output exceeds %d bytes", maxHelperOutputBytes)
 	}
 	if waitErr != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -897,7 +870,7 @@ func resolveMetadataEntrypointRoot(project *projectBuild, projects map[string]*p
 }
 
 // resolveEntrypointRoot follows only explicit top-level aliases. Repository
-// modules are never imported, and cycles or long chains close as unresolved.
+// modules are never imported, and cycles close as unresolved.
 func resolveEntrypointRoot(project *projectBuild, moduleName, qualname string, seen map[string]struct{}) (Root, int) {
 	modules := project.moduleFiles[moduleName]
 	if len(modules) != 1 {
@@ -911,9 +884,6 @@ func resolveEntrypointRoot(project *projectBuild, moduleName, qualname string, s
 		seen = make(map[string]struct{})
 	}
 	key := moduleName + ":" + qualname
-	if len(seen) >= maxEntrypointAliasDepth {
-		return Root{}, 0
-	}
 	if _, exists := seen[key]; exists {
 		return Root{}, 0
 	}
@@ -1256,8 +1226,7 @@ func compactBasis(values []Basis) []Basis {
 }
 
 func safeLabel(value string) bool {
-	return value != "" && len(value) <= maxLabelBytes && strings.TrimSpace(value) == value &&
-		!strings.ContainsAny(value, "\x00\r\n")
+	return validLabel(value)
 }
 
 func launchOmissions(files []inputFile) []Omission {

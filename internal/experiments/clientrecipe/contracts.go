@@ -18,6 +18,8 @@ const (
 	OracleVersion       = 1
 	MatrixVersion       = 1
 	maxContractBytes    = 1 << 20
+	maxIDBytes          = 120
+	maxTextBytes        = 2048
 )
 
 type TaskContract struct {
@@ -253,7 +255,7 @@ func decodeStrict(raw []byte, destination any, label string) error {
 }
 
 func validID(value string) bool {
-	if value == "" || len(value) > 120 || strings.TrimSpace(value) != value {
+	if value == "" || len(value) > maxIDBytes || strings.TrimSpace(value) != value {
 		return false
 	}
 	for _, r := range value {
@@ -266,7 +268,7 @@ func validID(value string) bool {
 }
 
 func validText(value string) bool {
-	return value != "" && len(value) <= 2048 && utf8.ValidString(value) && strings.TrimSpace(value) == value
+	return value != "" && len(value) <= maxTextBytes && utf8.ValidString(value) && strings.TrimSpace(value) == value
 }
 
 func sortedUnique(values []string) bool {

@@ -9,7 +9,13 @@ import (
 
 const (
 	ArtifactFilename = "dependency-catalog.json"
-	MaxArtifactBytes = 32 << 20
+
+	// AdvisoryArtifactBytes is the former catalog persistence ceiling. A
+	// complete validated catalog now crosses it unchanged and reports a scale
+	// warning on the ordinary run path. MaxArtifactBytes is retained as a
+	// compatibility sentinel for manifest readers; zero means no local cutoff.
+	AdvisoryArtifactBytes = 32 << 20
+	MaxArtifactBytes      = 0
 )
 
 // Encode returns the canonical, validated dependency artifact.
@@ -21,16 +27,12 @@ func Encode(catalog Catalog) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dependencies: encode artifact: %w", err)
 	}
-	if len(encoded) > MaxArtifactBytes {
-		return nil, fmt.Errorf("dependencies: artifact is %d bytes, limit is %d", len(encoded), MaxArtifactBytes)
-	}
 	return append(encoded, '\n'), nil
 }
 
-// Decode rejects unknown fields, trailing values, invalid identities and
-// artifacts outside the same bound used by Encode.
+// Decode rejects unknown fields, trailing values, and invalid identities.
 func Decode(encoded []byte) (Catalog, error) {
-	if len(encoded) == 0 || len(encoded) > MaxArtifactBytes {
+	if len(encoded) == 0 {
 		return Catalog{}, fmt.Errorf("dependencies: invalid artifact size")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))

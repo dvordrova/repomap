@@ -46,18 +46,11 @@ func TestSemanticExchangeAcceptsOnlyLiveStages(t *testing.T) {
 	live := []string{
 		SemanticStageReadmeFileClassifier,
 		SemanticStageTargetPortfolio,
-		SemanticStageRuntimePortfolio,
-		SemanticStageTargetViewChoice,
-		SemanticStageCoreMapBaseline,
-		SemanticStageCoreMapRefined,
-		SemanticStageActivityEntrypoints,
-		SemanticStageIntegrationDependencies,
-		SemanticStageIntegrationUsage,
-		SemanticStageCubemapActivities,
-		SemanticStageCubemapEntrypoints,
-		SemanticStageCubemapDependencies,
-		SemanticStageCubemapSymbols,
-		SemanticStageCubemapBindings,
+		SemanticStageDocumentationReduce,
+		SemanticStageProgramCategorization,
+		SemanticStageProgramGrouping,
+		SemanticStageGroupMatching,
+		SemanticStageOrientation,
 	}
 	for _, stage := range live {
 		exchange := validExchange(stage)
@@ -81,7 +74,7 @@ func TestSemanticExchangeMarksPersistenceSensitiveResponse(t *testing.T) {
 	defer writer.Close()
 
 	unsafe := []byte(`{"answer":"sk-abcdefghijklmnop"}`)
-	exchange := validExchange(SemanticStageCubemapEntrypoints)
+	exchange := validExchange(SemanticStageProgramGrouping)
 	exchange.State = SemanticStateRejected
 	exchange.ValidationCode = SemanticValidationSecret
 	exchange.Response = unsafe
@@ -115,7 +108,7 @@ func TestSemanticExchangeWarningIsBoundedAndDeduplicated(t *testing.T) {
 	var warnings bytes.Buffer
 	writer.SetWarningWriter(&warnings)
 
-	exchange := validExchange(SemanticStageCoreMapBaseline)
+	exchange := validExchange(SemanticStageProgramCategorization)
 	exchange.Response = nil
 	writer.RecordSemanticExchange(exchange)
 	writer.RecordSemanticExchange(exchange)

@@ -1,20 +1,24 @@
 package report
 
 import (
-	"github.com/dvordrova/repomap/internal/analysistarget"
-	"github.com/dvordrova/repomap/internal/dependencydeclaration"
+	"github.com/dvordrova/repomap/internal/claims"
+	"github.com/dvordrova/repomap/internal/dependencies"
+	"github.com/dvordrova/repomap/internal/documentationreduce"
+	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
-	"github.com/dvordrova/repomap/internal/pythontarget"
 )
 
 // CurrentFormatVersion is the canonical ProgramPortfolio report contract.
-const CurrentFormatVersion = 68
+const CurrentFormatVersion = 75
 
-// MaxReportJSONBytes is the single ordinary report.json bound shared by
-// generation, manifest verification, and the local report server.
+// MaxReportJSONBytes is the former ordinary report.json threshold. It is
+// advisory only; complete validated report authority is never rejected or
+// shortened because it crosses this size.
 const MaxReportJSONBytes = 64 << 20
 
-// MaxOrdinaryReportHTMLBytes covers the same browser projection plus the
+// MaxOrdinaryReportHTMLBytes is the former advisory size covering the same browser projection plus the
 // embedded application assets and transient source/navigation authority. The
 // compact browser payload is mostly a subset of the pretty-printed report
 // JSON. A served source-ID map repeats every encoded openable path once, so a
@@ -29,23 +33,18 @@ const MaxOrdinaryReportHTMLBytes = 2*MaxReportJSONBytes + 16<<20
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
 
-	// AnalysisTarget is present for the current Go semantic cube. Language-
-	// neutral ProgramPortfolio publication does not require it.
-	AnalysisTarget *analysistarget.Target `json:"analysis_target,omitempty"`
-
 	ProgramPortfolio       *ProgramPortfolio           `json:"program_portfolio"`
-	CubeMapView            *CubeMapView                `json:"cube_map_view,omitempty"`
-	CoreMapView            *CoreMapView                `json:"core_map_view,omitempty"`
-	ActivityEntrypointView *ActivityEntrypointView     `json:"activity_entrypoint_view,omitempty"`
-	IntegrationUsageView   *IntegrationUsageView       `json:"integration_usage_view,omitempty"`
-	ActivityPathView       *ActivityPathView           `json:"activity_path_view,omitempty"`
-	JSTSSurfaceCatalogView *JSTSSurfaceCatalogView     `json:"js_ts_surface_catalog_view,omitempty"`
-	CrossSurfacePathView   *CrossSurfacePathView       `json:"cross_surface_path_view,omitempty"`
-	RuntimePortfolio       *RuntimePortfolioView       `json:"runtime_portfolio,omitempty"`
-	TargetOutcomePortfolio *TargetOutcomePortfolioView `json:"target_outcome_portfolio,omitempty"`
+	GroupGraph             *GroupGraphView             `json:"group_graph"`
+	TargetOutcomePortfolio *TargetOutcomePortfolioView `json:"target_outcome_portfolio"`
+	RepoName               string                      `json:"repo_name"`
+	Warnings               []string                    `json:"warnings,omitempty"`
 
-	RepoName string   `json:"repo_name"`
-	Warnings []string `json:"warnings,omitempty"`
+	// Facts, Claims and Orientation are the repository-level first-day
+	// artifacts. They are optional so older run directories still restore;
+	// when present they are sealed values bound by the run manifest.
+	Facts       *facts.Result       `json:"facts,omitempty"`
+	Claims      *claims.Result      `json:"claims,omitempty"`
+	Orientation *orientation.Result `json:"orientation,omitempty"`
 
 	OpenablePaths []string          `json:"openable_paths"`
 	SourceIDs     map[string]string `json:"source_ids,omitempty"`
@@ -62,7 +61,10 @@ type ReportData struct {
 	standaloneLocalRoots                []string
 	materialInputPaths                  []string
 	defaultProgramIndex                 *programindex.Index
+	programIndexes                      []programindex.Index
 	defaultProgramIndexArtifactFilename string
-	pythonTargetCatalog                 *pythontarget.Catalog
-	declaredDependencies                *dependencydeclaration.Result
+	dependencyCatalog                   *dependencies.Catalog
+	localGroupsIndex                    *groupindex.Index
+	reducedDocumentation                *documentationreduce.Result
+	targetMetadataBytes                 int
 }

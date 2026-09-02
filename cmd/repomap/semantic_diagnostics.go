@@ -7,10 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
-	"github.com/dvordrova/repomap/internal/pipeline"
 )
-
-const maxSemanticMetadataBytes = 4 << 20
 
 type semanticStageDiagnostic struct {
 	Stage             string
@@ -58,90 +55,6 @@ func recordSemanticStageDiagnostic(runDir string, diagnostic semanticStageDiagno
 	return writeSemanticMetadata(runDir, metadata)
 }
 
-// recordSemanticPipelineAccounting projects the pipeline's payload-free,
-// per-call accounting events into ordinary run metadata in one confined
-// update. Repeated stage rows are retained because bounded cube batches are
-// distinct provider calls; Ordinal remains available on the pipeline result.
-func recordSemanticPipelineAccounting(
-	runDir string,
-	events []pipeline.AccountingEvent,
-) error {
-	if len(events) == 0 {
-		return nil
-	}
-	attempts := make([]debugdump.RequestAttempt, 0, len(events))
-	nextOrdinal := make(map[string]int)
-	for _, event := range events {
-		if !semanticPipelineAccountingStage(event.Stage) ||
-			event.Ordinal != nextOrdinal[event.Stage]+1 ||
-			event.RequestBytes < 0 || event.SemanticCalls < 0 || event.SemanticCalls > 1 ||
-			event.TransportAttempts < 0 || event.Metrics.Latency < 0 ||
-			(event.SemanticCalls == 0 && event.TransportAttempts != 0) {
-			return fmt.Errorf("semantic diagnostics: invalid pipeline accounting event")
-		}
-		nextOrdinal[event.Stage] = event.Ordinal
-		state, err := semanticPipelineAccountingState(event.State)
-		if err != nil {
-			return err
-		}
-		var latency *int64
-		if event.SemanticCalls > 0 {
-			value := event.Metrics.Latency.Milliseconds()
-			latency = &value
-		}
-		attempts = append(attempts, debugdump.RequestAttempt{
-			Stage: event.Stage, State: state, RequestBytes: event.RequestBytes,
-			ProviderCallCount: event.SemanticCalls, TransportAttemptCount: event.TransportAttempts,
-			LatencyMillis: latency,
-		})
-	}
-
-	metadata, err := readSemanticMetadata(runDir)
-	if err != nil {
-		return err
-	}
-	retained := make([]debugdump.RequestAttempt, 0, len(metadata.RequestAttempts)+len(attempts))
-	for _, attempt := range metadata.RequestAttempts {
-		if !semanticPipelineAccountingStage(attempt.Stage) {
-			retained = append(retained, attempt)
-		}
-	}
-	metadata.RequestAttempts = append(retained, attempts...)
-	// This function proves the complete ProgramIndex semantic chain only. The
-	// run may contain earlier target/README calls with separate owners.
-	metadata.ProviderAccountingComplete = false
-	recomputeSemanticProviderTotals(&metadata)
-	return writeSemanticMetadata(runDir, metadata)
-}
-
-func semanticPipelineAccountingStage(stage string) bool {
-	switch stage {
-	case debugdump.SemanticStageActivityEntrypoints,
-		debugdump.SemanticStageIntegrationDependencies,
-		debugdump.SemanticStageIntegrationUsage,
-		debugdump.SemanticStageCoreMapBaseline,
-		debugdump.SemanticStageCoreMapRefined:
-		return true
-	default:
-		return false
-	}
-}
-
-func semanticPipelineAccountingState(state pipeline.AccountingState) (string, error) {
-	switch state {
-	case pipeline.AccountingAccepted:
-		return debugdump.SemanticStateAccepted, nil
-	case pipeline.AccountingCacheHit:
-		return debugdump.SemanticStateCacheHit, nil
-	case pipeline.AccountingRejected:
-		return debugdump.SemanticStateRejected, nil
-	case pipeline.AccountingProviderFailed:
-		return debugdump.SemanticStateProviderFailed, nil
-	default:
-		return "", fmt.Errorf("semantic diagnostics: invalid pipeline accounting state")
-	}
-}
-
 func recomputeSemanticProviderTotals(metadata *debugdump.RunMeta) {
 	metadata.ProviderRequestCount = 0
 	metadata.ExternalRequestBytes = 0
@@ -170,8 +83,8 @@ func readSemanticMetadata(runDir string) (debugdump.RunMeta, error) {
 	if err != nil {
 		return debugdump.RunMeta{}, fmt.Errorf("semantic diagnostics: inspect metadata: %w", err)
 	}
-	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxSemanticMetadataBytes {
-		return debugdump.RunMeta{}, fmt.Errorf("semantic diagnostics: metadata is not a bounded regular file")
+	if !info.Mode().IsRegular() || info.Size() <= 0 {
+		return debugdump.RunMeta{}, fmt.Errorf("semantic diagnostics: metadata is not a non-empty regular file")
 	}
 	encoded, err := os.ReadFile(path)
 	if err != nil {

@@ -22,12 +22,36 @@ import (
 )
 
 const (
-	Version          = 2
+	Version = 2
+	// MaxFiles, MaxSnapshotBytes, and MaxReadBytes are compatibility names for
+	// former local cutoffs. They are warning thresholds only; complete valid
+	// repository authority is never rejected or shortened at these sizes.
 	MaxFiles         = 1_000_000
 	MaxSnapshotBytes = 64 << 20
 	MaxReadBytes     = int64(64 << 20)
+	MaxVisiblePaths  = MaxFiles * 4
 	refPrefix        = "rc-"
 )
+
+type ScaleWarningKind string
+
+const (
+	ScaleWarningFiles         ScaleWarningKind = "corpus_files"
+	ScaleWarningVisiblePaths  ScaleWarningKind = "corpus_visible_paths"
+	ScaleWarningGitlinks      ScaleWarningKind = "corpus_gitlinks"
+	ScaleWarningSnapshotBytes ScaleWarningKind = "corpus_snapshot_bytes"
+	ScaleWarningReadBytes     ScaleWarningKind = "corpus_complete_read_bytes"
+)
+
+// ScaleWarning describes retained repository authority beyond a former local
+// cutoff. It is diagnostic only and never participates in corpus identity.
+type ScaleWarning struct {
+	Kind                ScaleWarningKind
+	AdvisorySize        int64
+	Retained            int64
+	AffectedCollections int
+	MaximumRetained     int64
+}
 
 // ForbiddenPath reports repository paths which are never semantic corpus
 // input. The policy is intentionally language-neutral because the initial
@@ -94,7 +118,7 @@ type FileInfo struct {
 	Entry Entry
 }
 
-// Content is one current bounded read tied to its exact corpus entry.
+// Content is one current bounded or complete read tied to its exact corpus entry.
 type Content struct {
 	Entry     Entry
 	Bytes     []byte
@@ -113,6 +137,10 @@ type Corpus struct {
 
 	mu     sync.RWMutex
 	closed bool
+
+	scaleMu                    sync.Mutex
+	oversizedCompleteReadCount int
+	maximumCompleteReadBytes   int64
 }
 
 // Open inventories one repository through the exact stage-0 Git listing and
@@ -143,12 +171,12 @@ func New(ctx context.Context, repoPath string, listing gitfiles.Listing) (*Corpu
 		return nil, fmt.Errorf("repository corpus: repository path is required")
 	}
 
-	regular, err := canonicalPaths("regular", listing.RegularPaths, MaxFiles)
+	regular, err := canonicalPaths("regular", listing.RegularPaths)
 	if err != nil {
 		return nil, err
 	}
 	regular = allowedCorpusPaths(regular)
-	executable, err := canonicalPathSet("executable", listing.ExecutablePaths, MaxFiles)
+	executable, err := canonicalPathSet("executable", listing.ExecutablePaths)
 	if err != nil {
 		return nil, err
 	}
@@ -184,9 +212,6 @@ func New(ctx context.Context, repoPath string, listing gitfiles.Listing) (*Corpu
 	}
 	visiblePaths := append([]string(nil), regular...)
 	if listing.Paths != nil {
-		if len(listing.Paths) > MaxFiles*4 {
-			return nil, fmt.Errorf("repository corpus: visible path limit %d exceeded", MaxFiles*4)
-		}
 		// Non-regular index rows are deliberately opaque to the corpus. Keep
 		// their exact strings only long enough to prove that every retained
 		// regular row belongs to the listing; do not reject an otherwise ignored
@@ -351,11 +376,8 @@ func (corpus *Corpus) ReadFile(id FileID, maxBytes int64) (Content, error) {
 	if corpus == nil {
 		return Content{}, fmt.Errorf("repository corpus: corpus is not initialized")
 	}
-	if maxBytes < 0 || maxBytes > MaxReadBytes {
-		return Content{}, fmt.Errorf(
-			"repository corpus: invalid byte limit %d (maximum %d)",
-			maxBytes, MaxReadBytes,
-		)
+	if maxBytes < 0 {
+		return Content{}, fmt.Errorf("repository corpus: invalid byte limit %d", maxBytes)
 	}
 	if !validFileID(string(id)) {
 		return Content{}, fmt.Errorf("repository corpus: unknown file ID %q", id)
@@ -374,11 +396,103 @@ func (corpus *Corpus) ReadFile(id FileID, maxBytes int64) (Content, error) {
 	if err != nil {
 		return Content{}, fmt.Errorf("repository corpus: read %s: %w", id, err)
 	}
-	return Content{
+	result := Content{
 		Entry:     info.Entry,
 		Bytes:     content.Bytes,
 		Truncated: content.Truncated,
-	}, nil
+	}
+	if !result.Truncated {
+		corpus.recordCompleteRead(len(result.Bytes))
+	}
+	return result, nil
+}
+
+// ReadFileAll reads the complete current bytes of one exact FileID. It has no
+// local size policy; filesystem or allocation failures are returned honestly.
+func (corpus *Corpus) ReadFileAll(id FileID) (Content, error) {
+	if corpus == nil {
+		return Content{}, fmt.Errorf("repository corpus: corpus is not initialized")
+	}
+	if !validFileID(string(id)) {
+		return Content{}, fmt.Errorf("repository corpus: unknown file ID %q", id)
+	}
+
+	corpus.mu.RLock()
+	defer corpus.mu.RUnlock()
+	if corpus.closed || corpus.reader == nil {
+		return Content{}, fmt.Errorf("repository corpus: corpus is closed")
+	}
+	info, ok := corpus.byID[id]
+	if !ok {
+		return Content{}, fmt.Errorf("repository corpus: unknown file ID %q", id)
+	}
+	content, err := corpus.reader.ReadFileNoSymlinksAll(info.Entry.Path)
+	if err != nil {
+		return Content{}, fmt.Errorf("repository corpus: read %s: %w", id, err)
+	}
+	corpus.recordCompleteRead(len(content.Bytes))
+	return Content{Entry: info.Entry, Bytes: content.Bytes}, nil
+}
+
+func (corpus *Corpus) recordCompleteRead(byteCount int) {
+	if corpus == nil || int64(byteCount) <= MaxReadBytes {
+		return
+	}
+	corpus.scaleMu.Lock()
+	defer corpus.scaleMu.Unlock()
+	corpus.oversizedCompleteReadCount++
+	if int64(byteCount) > corpus.maximumCompleteReadBytes {
+		corpus.maximumCompleteReadBytes = int64(byteCount)
+	}
+}
+
+// ScaleWarnings returns aggregate warning-only observations over complete
+// corpus authority and complete reads performed so far.
+func (corpus *Corpus) ScaleWarnings() []ScaleWarning {
+	if corpus == nil {
+		return nil
+	}
+	snapshotBytes := int64(0)
+	if encoded, err := json.Marshal(corpus.snapshot); err == nil {
+		snapshotBytes = int64(len(encoded))
+	}
+	corpus.scaleMu.Lock()
+	readCount := corpus.oversizedCompleteReadCount
+	maximumRead := corpus.maximumCompleteReadBytes
+	corpus.scaleMu.Unlock()
+	return corpusScaleWarnings(
+		len(corpus.snapshot.Entries), len(corpus.visiblePaths), len(corpus.gitlinks),
+		snapshotBytes, readCount, maximumRead,
+	)
+}
+
+func corpusScaleWarnings(
+	files, visiblePaths, gitlinks int,
+	snapshotBytes int64,
+	oversizedReads int,
+	maximumReadBytes int64,
+) []ScaleWarning {
+	warnings := make([]ScaleWarning, 0, 5)
+	appendCount := func(kind ScaleWarningKind, retained, advisory int64) {
+		if retained > advisory {
+			warnings = append(warnings, ScaleWarning{
+				Kind: kind, Retained: retained, AdvisorySize: advisory,
+				AffectedCollections: 1, MaximumRetained: retained,
+			})
+		}
+	}
+	appendCount(ScaleWarningFiles, int64(files), MaxFiles)
+	appendCount(ScaleWarningVisiblePaths, int64(visiblePaths), MaxVisiblePaths)
+	appendCount(ScaleWarningGitlinks, int64(gitlinks), MaxFiles)
+	appendCount(ScaleWarningSnapshotBytes, snapshotBytes, MaxSnapshotBytes)
+	if oversizedReads > 0 && maximumReadBytes > MaxReadBytes {
+		warnings = append(warnings, ScaleWarning{
+			Kind: ScaleWarningReadBytes, AdvisorySize: MaxReadBytes,
+			Retained: maximumReadBytes, AffectedCollections: oversizedReads,
+			MaximumRetained: maximumReadBytes,
+		})
+	}
+	return warnings
 }
 
 // Close prevents new reads and releases the confined repository root. It is
@@ -406,7 +520,7 @@ func (corpus *Corpus) Close() error {
 
 // Validate rejects shape, order, identity, and seal drift.
 func (snapshot Snapshot) Validate() error {
-	if snapshot.Version != Version || snapshot.Entries == nil || len(snapshot.Entries) > MaxFiles {
+	if snapshot.Version != Version || snapshot.Entries == nil {
 		return fmt.Errorf("repository corpus snapshot: invalid identity")
 	}
 	for index, entry := range snapshot.Entries {
@@ -448,9 +562,6 @@ func (snapshot Snapshot) CanonicalJSON() ([]byte, error) {
 	wire, err := json.Marshal(snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("repository corpus snapshot: encode: %w", err)
-	}
-	if len(wire) > MaxSnapshotBytes {
-		return nil, fmt.Errorf("repository corpus snapshot: exceeds %d bytes", MaxSnapshotBytes)
 	}
 	return wire, nil
 }
@@ -507,9 +618,6 @@ func cloneSnapshot(snapshot Snapshot) Snapshot {
 }
 
 func canonicalGitlinks(values []gitfiles.Gitlink) ([]Gitlink, error) {
-	if len(values) > MaxFiles {
-		return nil, fmt.Errorf("repository corpus: gitlink limit %d exceeded", MaxFiles)
-	}
 	result := make([]Gitlink, len(values))
 	for index, value := range values {
 		if err := validatePath(value.Path); err != nil {
@@ -529,10 +637,7 @@ func canonicalGitlinks(values []gitfiles.Gitlink) ([]Gitlink, error) {
 	return result, nil
 }
 
-func canonicalPaths(label string, values []string, limit int) ([]string, error) {
-	if len(values) > limit {
-		return nil, fmt.Errorf("repository corpus: %s path limit %d exceeded", label, limit)
-	}
+func canonicalPaths(label string, values []string) ([]string, error) {
 	result := append([]string(nil), values...)
 	for index, value := range result {
 		if err := validatePath(value); err != nil {
@@ -561,8 +666,8 @@ func compactStrings(values []string) []string {
 	return result
 }
 
-func canonicalPathSet(label string, values []string, limit int) (map[string]struct{}, error) {
-	canonical, err := canonicalPaths(label, values, limit)
+func canonicalPathSet(label string, values []string) (map[string]struct{}, error) {
+	canonical, err := canonicalPaths(label, values)
 	if err != nil {
 		return nil, err
 	}

@@ -12,12 +12,6 @@ import (
 
 const (
 	TargetRootsVersion = 2
-
-	// MaxTargetRoots inherits the already-paid DirectCallIndex resource ceiling
-	// instead of inventing a smaller product/relevance cap. Roots below it stay
-	// in deterministic source order; any future producer expansion beyond that
-	// ceiling remains explicitly accounted rather than silently truncated.
-	MaxTargetRoots = surfacediscovery.MaxDirectCallIndexNodes
 )
 
 // TargetRoot is one exact build-selected declaration owned by the selected
@@ -34,7 +28,8 @@ type TargetRoot struct {
 // TargetRoots is a live-run-only authority envelope. Its fields cannot enter
 // provider or report JSON accidentally. The self-seal binds the exact target,
 // complete DirectCallIndex identity and build scenario to the retained roots
-// and their explicit omission count.
+// and their compatibility omission count, which is always zero now that every
+// exact root is retained.
 type TargetRoots struct {
 	Version               int                       `json:"-"`
 	TargetRef             string                    `json:"-"`
@@ -170,15 +165,11 @@ func sortTargetRootCandidates(candidates []targetRootCandidate) {
 }
 
 func boundExactRootCandidates(candidates []targetRootCandidate) ([]TargetRoot, int) {
-	limit := len(candidates)
-	if limit > MaxTargetRoots {
-		limit = MaxTargetRoots
-	}
-	result := make([]TargetRoot, 0, limit)
-	for _, candidate := range candidates[:limit] {
+	result := make([]TargetRoot, 0, len(candidates))
+	for _, candidate := range candidates {
 		result = append(result, candidate.root)
 	}
-	return result, len(candidates) - limit
+	return result, 0
 }
 
 func copyTargetRootScenario(scenario surfacediscovery.Scenario) surfacediscovery.Scenario {

@@ -12,10 +12,25 @@ import (
 type SemanticObserver struct {
 	writer *Writer
 
-	mu       sync.Mutex
-	ordinals map[string]int
-	pending  []SemanticExchange
+	mu              sync.Mutex
+	ordinals        map[string]int
+	instanceOrdinal int
+	pending         []SemanticExchange
 }
+
+// SemanticOrdinalScaleWarning reports a former journal ordinal ceiling that
+// a complete ordinary observer crossed. The warning is aggregate: callers do
+// not need to print one line for every retained exchange.
+type SemanticOrdinalScaleWarning struct {
+	Kind         string
+	Retained     int
+	AdvisorySize int
+}
+
+const (
+	SemanticScaleWarningAttemptOrdinal  = "semantic_attempt_ordinal"
+	SemanticScaleWarningInstanceOrdinal = "semantic_exchange_instance_ordinal"
+)
 
 func NewSemanticObserver(writer *Writer) *SemanticObserver {
 	return &SemanticObserver{writer: writer, ordinals: make(map[string]int)}
@@ -32,9 +47,16 @@ func (observer *SemanticObserver) ObserveStage(stage string, event llm.Event) er
 	}
 	observer.mu.Lock()
 	ordinal := observer.ordinals[stage] + 1
-	exchange, record := semanticExchangeForStageEvent(stage, ordinal, event)
+	instanceOrdinal := observer.instanceOrdinal + 1
+	exchange, record := semanticExchangeForStageEventAt(
+		stage,
+		instanceOrdinal,
+		ordinal,
+		event,
+	)
 	if record {
 		observer.ordinals[stage] = ordinal
+		observer.instanceOrdinal = instanceOrdinal
 	}
 	writer := observer.writer
 	if record && writer == nil {
@@ -45,6 +67,37 @@ func (observer *SemanticObserver) ObserveStage(stage string, event llm.Event) er
 		writer.RecordSemanticExchange(exchange)
 	}
 	return nil
+}
+
+// OrdinalScaleWarnings returns at most one warning for each former journal
+// ordinal ceiling. It snapshots only exchanges the observer actually retained;
+// redacted or otherwise unrecordable events do not inflate the measurement.
+func (observer *SemanticObserver) OrdinalScaleWarnings() []SemanticOrdinalScaleWarning {
+	if observer == nil {
+		return nil
+	}
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	maximumAttemptOrdinal := 0
+	for _, ordinal := range observer.ordinals {
+		if ordinal > maximumAttemptOrdinal {
+			maximumAttemptOrdinal = ordinal
+		}
+	}
+	warnings := make([]SemanticOrdinalScaleWarning, 0, 2)
+	if maximumAttemptOrdinal > MaxSemanticAttemptOrdinal {
+		warnings = append(warnings, SemanticOrdinalScaleWarning{
+			Kind: SemanticScaleWarningAttemptOrdinal, Retained: maximumAttemptOrdinal,
+			AdvisorySize: MaxSemanticAttemptOrdinal,
+		})
+	}
+	if observer.instanceOrdinal > MaxSemanticExchangeInstanceOrdinal {
+		warnings = append(warnings, SemanticOrdinalScaleWarning{
+			Kind: SemanticScaleWarningInstanceOrdinal, Retained: observer.instanceOrdinal,
+			AdvisorySize: MaxSemanticExchangeInstanceOrdinal,
+		})
+	}
+	return warnings
 }
 
 // Flush persists events buffered before the ordinary run directory existed.
@@ -83,13 +136,23 @@ func semanticExchangeForStageEvent(
 	ordinal int,
 	event llm.Event,
 ) (SemanticExchange, bool) {
-	if stage == "" || ordinal < 1 || ordinal > MaxSemanticAttemptOrdinal ||
+	return semanticExchangeForStageEventAt(stage, 1, ordinal, event)
+}
+
+func semanticExchangeForStageEventAt(
+	stage string,
+	instanceOrdinal int,
+	semanticAttemptOrdinal int,
+	event llm.Event,
+) (SemanticExchange, bool) {
+	if stage == "" || instanceOrdinal < 1 || semanticAttemptOrdinal < 1 ||
 		event.RequestRedacted || len(event.Request) == 0 {
 		return SemanticExchange{}, false
 	}
 	exchange := SemanticExchange{
-		Stage: stage, InstanceOrdinal: 1, SemanticAttemptOrdinal: ordinal,
-		Request: event.Request, Response: event.Response,
+		Stage: stage, InstanceOrdinal: instanceOrdinal,
+		SemanticAttemptOrdinal: semanticAttemptOrdinal,
+		Request:                event.Request, Response: event.Response,
 	}
 	if event.Source == llm.SourceLive {
 		exchange.RequestProvenance = SemanticRequestExactSent

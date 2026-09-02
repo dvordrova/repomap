@@ -15,7 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/dependencydeclaration"
 )
 
-const maxLogicalRequirementBytes = 64 << 10
+const AdvisoryLogicalRequirementBytes = 64 << 10
 
 var (
 	distributionNamePattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?`)
@@ -48,6 +48,9 @@ func (state *builder) parseRequirements(
 		return fmt.Errorf("python declared dependencies: requirements %q: %w", source.entry.Path, err)
 	}
 	for _, line := range lines {
+		if len(line.raw) > state.maxLogicalRequirementBytes {
+			state.maxLogicalRequirementBytes = len(line.raw)
+		}
 		if err := state.ctx.Err(); err != nil {
 			return err
 		}
@@ -90,9 +93,6 @@ func (state *builder) parseRequirements(
 			Section: "requirements", Ordinal: line.line, Location: location,
 			ExpressionSHA256: digest,
 		})
-		if len(state.statements) > dependencydeclaration.MaxStatements {
-			return fmt.Errorf("python declared dependencies: statement bound %d exceeded", dependencydeclaration.MaxStatements)
-		}
 	}
 	return nil
 }
@@ -107,9 +107,6 @@ func logicalRequirements(content []byte) ([]logicalRequirement, error) {
 	start := 0
 	for index, raw := range physical {
 		lineNumber := index + 1
-		if len(raw) > maxLogicalRequirementBytes {
-			return nil, fmt.Errorf("line %d exceeds logical line bound", lineNumber)
-		}
 		trimmedRight := strings.TrimRight(raw, " \t\r")
 		continued := strings.HasSuffix(trimmedRight, "\\")
 		if continued {
@@ -119,13 +116,10 @@ func logicalRequirements(content []byte) ([]logicalRequirement, error) {
 			start = lineNumber
 		}
 		parts = append(parts, trimmedRight)
-		combined := strings.Join(parts, " ")
-		if len(combined) > maxLogicalRequirementBytes {
-			return nil, fmt.Errorf("logical line at %d exceeds %d bytes", start, maxLogicalRequirementBytes)
-		}
 		if continued {
 			continue
 		}
+		combined := strings.Join(parts, " ")
 		result = append(result, logicalRequirement{
 			text: combined, raw: strings.Join(parts, "\n"), line: start,
 		})
@@ -221,9 +215,6 @@ func (state *builder) addInclude(
 		SourceKey: source.key, TargetSourceKey: targetKey, Kind: kind, Resolution: resolution,
 		Location: location, ExpressionSHA256: digest,
 	})
-	if len(state.includes) > dependencydeclaration.MaxIncludes {
-		return fmt.Errorf("python declared dependencies: include bound %d exceeded", dependencydeclaration.MaxIncludes)
-	}
 	return nil
 }
 

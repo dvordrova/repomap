@@ -16,13 +16,9 @@ import (
 func TestRepositorySelectedTargetKeepsPreanalysisGoIdentity(t *testing.T) {
 	repository, source, project := repositoryTargetRuntimeInlineInputs(t)
 	entry := targetPortfolioRuntimeEntry(t, *source.TargetCatalog, ".")
-	target := repositoryTypedTarget{
-		Key: repositoryTargetKey{
-			Adapter: repositoryTargetAdapterGo,
-			Ref:     entry.Candidate.Target.Ref,
-		},
-		Selector: entry.Candidate.Key,
-		Go:       &entry.Candidate.Target,
+	target, err := newGoRepositoryTypedTarget(entry.Candidate.Target, entry.Candidate.Key)
+	if err != nil {
+		t.Fatal(err)
 	}
 	selected, err := repositorySelectedTarget(target)
 	if err != nil {
@@ -42,11 +38,11 @@ func TestRepositorySelectedTargetKeepsPreanalysisGoIdentity(t *testing.T) {
 		t.Fatal("inline repository has no Python target")
 	}
 	python := pythonCatalog.Entries[0]
-	pythonSelected, err := repositorySelectedTarget(repositoryTypedTarget{
-		Key:      repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: python.Ref},
-		Selector: python.Selector,
-		Python:   &python,
-	})
+	pythonTarget, err := newPythonRepositoryTypedTarget(python)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pythonSelected, err := repositorySelectedTarget(pythonTarget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,15 +56,15 @@ func TestRepositorySelectedTargetKeepsPreanalysisGoIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	jstsSelected, err := repositorySelectedTarget(repositoryTypedTarget{
-		Key:      repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: jsts.Ref},
-		Selector: jsts.Selector,
-		JSTS:     &jsts,
-	})
+	jstsTarget, err := newJSTSRepositoryTypedTarget(jsts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if jstsSelected.LanguageGroup != targetoutcome.LanguageGroupJavaScriptTypeScript ||
+	jstsSelected, err := repositorySelectedTarget(jstsTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jstsSelected.LanguageGroup != targetoutcome.LanguageGroup(repositoryTargetAdapterJSTS) ||
 		jstsSelected.ScopeKind != targetoutcome.ScopePackage {
 		t.Fatalf("JSTS selected target = %#v", jstsSelected)
 	}

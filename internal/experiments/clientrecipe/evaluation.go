@@ -12,7 +12,12 @@ import (
 	"sort"
 )
 
-const EvaluationVersion = 1
+const (
+	EvaluationVersion          = 1
+	criticalFalsePositiveLimit = 0
+	perfectScoreLimit          = 1
+	roleCoverageLimit          = 0.85
+)
 
 type EvaluationVerdict string
 
@@ -182,9 +187,11 @@ func EvaluateClientRecipe(h0 H0Result, h1 H1Result, oracle Oracle, repeatedH1 ..
 		Reasons:         []string{},
 	}
 	thresholds := EvaluationThresholds{
-		InstancePrecisionMin: 1, InstanceRecallMin: 1, CriticalFPMax: 0,
-		RolePrecisionMin: 1, RoleCoverageMin: 0.85, GroundingMin: 1,
-		BestPrecisionMin: 1, BestRecallMin: 1,
+		InstancePrecisionMin: perfectScoreLimit, InstanceRecallMin: perfectScoreLimit,
+		CriticalFPMax:    criticalFalsePositiveLimit,
+		RolePrecisionMin: perfectScoreLimit, RoleCoverageMin: roleCoverageLimit,
+		GroundingMin:     perfectScoreLimit,
+		BestPrecisionMin: perfectScoreLimit, BestRecallMin: perfectScoreLimit,
 	}
 	h1Stage.Verdict = evaluateH1Verdict(h1Stage, thresholds)
 	if h1Stage.Verdict != EvaluationPass {
@@ -268,9 +275,11 @@ func (value EvaluationResult) Validate() error {
 		return err
 	}
 	if value.Thresholds != (EvaluationThresholds{
-		InstancePrecisionMin: 1, InstanceRecallMin: 1, CriticalFPMax: 0,
-		RolePrecisionMin: 1, RoleCoverageMin: 0.85, GroundingMin: 1,
-		BestPrecisionMin: 1, BestRecallMin: 1,
+		InstancePrecisionMin: perfectScoreLimit, InstanceRecallMin: perfectScoreLimit,
+		CriticalFPMax:    criticalFalsePositiveLimit,
+		RolePrecisionMin: perfectScoreLimit, RoleCoverageMin: roleCoverageLimit,
+		GroundingMin:     perfectScoreLimit,
+		BestPrecisionMin: perfectScoreLimit, BestRecallMin: perfectScoreLimit,
 	}) || value.H0.Verdict != EvaluationPartial || value.H1.Verdict != evaluateH1Verdict(value.H1, value.Thresholds) {
 		return fmt.Errorf("client recipe evaluation: invalid thresholds or stage verdict")
 	}

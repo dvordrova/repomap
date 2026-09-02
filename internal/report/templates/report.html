@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="repomap-format-version" content="{{.FormatVersion}}">
+<meta name="repomap-report-sha256" content="{{.ReportSHA256}}">
+<link rel="icon" href="data:,">
+<title>{{.RepoName}} — repomap</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<header class="top">
+<h1>{{.RepoName}}</h1>
+<p class="meta">Revision <code title="{{.Revision}}">{{.ShortRevision}}</code>{{if .RepositoryURL}} · <a href="{{.RepositoryURL}}" target="_blank" rel="noopener">repository</a>{{end}}{{if .Served}} · source links open in your editor{{end}}</p>
+<nav class="nav"><a href="#overview">Overview</a>{{range .Sections}}<a href="#{{.ID}}">{{.Name}}</a>{{end}}</nav>
+</header>
+<noscript><p class="meta">JavaScript is optional for this report; it only adds editor links.</p></noscript>
+<main>
+<section id="overview">
+<h2>Overview</h2>
+<h3>What this is</h3>
+{{if .Summary}}<p class="model">{{.Summary.Text}}{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
+{{range .Claims}}<blockquote class="claim"><p>{{.Text}}</p><span class="src">{{.Source}}{{if .Date}} · {{.Date}} · {{.AgeDays}} days ago{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</span></blockquote>{{end}}
+{{if .MoreClaims}}<p class="meta">The README says {{.MoreClaims}} more things this page does not quote.</p>{{end}}
+<h3>Targets</h3>
+{{if or .Cards .MutedCards}}<div class="cards">
+{{range .Cards}}<div class="card"><h3><a href="#{{.SectionID}}">{{.Name}}</a></h3>
+<dl><dt>Language</dt><dd>{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}</dd>{{if .Root}}<dt>Root</dt><dd><code>{{.Root}}</code></dd>{{end}}{{if .Manifest}}<dt>Manifest</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>Entrypoints</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}<dt>Counts</dt><dd class="fact">{{.Routes}} routes · {{.Calls}} calls · {{.Risks}} risks · {{.Dead}} dead files</dd></dl>
+{{if .Role}}<span class="model"><strong>{{.Role}}</strong> — {{.Purpose}}{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span>{{end}}</div>
+{{end}}{{range .MutedCards}}<div class="card muted"><h3>{{.Name}}</h3><dl><dt>Language</dt><dd>{{.Language}}</dd><dt>Not analyzed</dt><dd>{{.Reason}} ({{.Stage}})</dd></dl></div>
+{{end}}</div>{{else}}<p class="empty">{{.CardsMissing}}</p>{{end}}
+<h3>How the parts talk</h3>
+{{if .Portals}}<table><thead><tr><th>Method</th><th>Path</th><th>Call</th><th></th><th>Route</th></tr></thead><tbody>
+{{range .Portals}}<tr><td class="method">{{.Method}}</td><td><code>{{.Path}}</code>{{if .Possible}}<span class="possible">possible</span>{{end}}</td><td>{{template "anchor" .Call}}</td><td>→</td><td>{{template "anchor" .Route}}</td></tr>
+{{end}}</tbody></table>{{else}}<p class="empty">{{.PortalsMissing}}</p>
+{{if .LooseCalls}}<h4>HTTP calls</h4><ul class="plain fact">{{range .LooseCalls}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Target}} · {{.Target}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
+{{if .LooseRoutes}}<h4>HTTP routes</h4><ul class="plain fact">{{range .LooseRoutes}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Target}} · {{.Target}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}{{end}}
+<h3>What is missing</h3>
+{{if .Negatives}}<ul class="plain fact">{{range .Negatives}}<li>{{.Text}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{.NegativesMissing}}</p>{{end}}
+<h3>How to run</h3>
+{{if .Recipe}}<ul class="plain">{{range .Recipe}}<li class="{{if .Model}}model{{else}}fact{{end}}"><code>{{.Command}}</code>{{if .Cwd}} <span class="meta">(in <code>{{.Cwd}}</code>)</span>{{end}}{{range .Anchors}} {{template "anchor" .}}{{end}}{{if .Note}} — {{.Note}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{.RecipeMissing}}</p>{{end}}
+</section>
+{{range .Sections}}
+<section id="{{.ID}}">
+<h2>{{.Name}} <span class="meta">{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}{{if .Root}} · <code>{{.Root}}</code>{{end}}</span></h2>
+{{if not .FactsAvailable}}<p class="empty">Facts are not available for this run; only the group graph is shown.</p>{{end}}
+<h3>Inbound</h3>
+{{if .RouteGroups}}{{range .RouteGroups}}<h4><span class="method">{{.Method}}</span></h4><ul class="plain fact">{{range .Rows}}<li><code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}{{else if .FactsAvailable}}<p class="empty">No HTTP routes found.</p>{{end}}
+{{range .Triggers}}{{template "group" .}}{{end}}
+<h3>Entrypoints</h3>
+{{if .Entrypoints}}<ul class="plain fact">{{range .Entrypoints}}<li>{{if .Symbol}}<code>{{.Symbol}}</code>{{end}}{{if .Kind}} <span class="meta">{{.Kind}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{if .FactsAvailable}}No entrypoints found.{{else}}Not available.{{end}}</p>{{end}}
+<h3>Core</h3>
+{{if .Core}}{{range .Core}}{{template "group" .}}{{end}}{{else}}<p class="empty">No core groups.</p>{{end}}
+<h3>External calls &amp; dependencies</h3>
+{{if .Calls}}<h4>HTTP calls</h4><ul class="plain fact">{{range .Calls}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
+{{range .DependencyGroups}}{{template "group" .}}{{end}}
+{{if .Dependencies}}<h4>Dependencies</h4><ul class="plain fact">{{range .Dependencies}}<li><code>{{.Name}}</code>{{if .Version}} {{.Version}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
+{{if not (or .Calls .DependencyGroups .Dependencies)}}<p class="empty">{{if .FactsAvailable}}No external calls or dependencies found.{{else}}Not available.{{end}}</p>{{end}}
+<h3>Main flow</h3>
+{{if .Flow}}{{if .Flow.Title}}<p class="model">{{.Flow.Title}}</p>{{end}}<ol class="flow">{{range .Flow.Steps}}<li>{{if .Anchor}}{{template "anchor" .Anchor}}{{end}}{{if .Label}} <code>{{.Label}}</code>{{end}}{{if .Target}} <span class="meta">({{.Target}})</span>{{end}} — <span class="model">{{.Explanation}}</span></li>{{end}}</ol>{{else}}<p class="empty">{{.FlowMissing}}</p>{{end}}
+<h3>Risks</h3>
+{{if .Risks}}<ul class="plain fact">{{range .Risks}}<li><code>{{.Pattern}}</code>{{if .Symbol}} in <code>{{.Symbol}}</code>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}{{if .Witness}}<br><code class="meta">{{.Witness}}</code>{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{if .FactsAvailable}}No risky calls found.{{else}}Not available.{{end}}</p>{{end}}
+<h3>Configuration</h3>
+{{if .Config}}<table><thead><tr><th>Key</th><th>Default</th><th>Source</th></tr></thead><tbody>{{range .Config}}<tr><td><code>{{.Key}}</code></td><td>{{if .Default}}<code>{{.Default}}</code>{{end}}</td><td>{{if .Anchor}}{{template "anchor" .Anchor}}{{end}}</td></tr>{{end}}</tbody></table>{{else}}<p class="empty">{{if .FactsAvailable}}No configuration reads found.{{else}}Not available.{{end}}</p>{{end}}
+<h3>Dead code</h3>
+{{if .Dead}}<ul class="plain fact">{{range .Dead}}<li>{{template "anchor" .}}</li>{{end}}</ul>{{else}}<p class="empty">{{if .FactsAvailable}}No unreachable files found.{{else}}Not available.{{end}}</p>{{end}}
+<h3>TODOs</h3>
+{{if .Todos}}<ul class="plain fact">{{range .Todos}}<li>{{.Text}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{if .FactsAvailable}}No TODO markers found.{{else}}Not available.{{end}}</p>{{end}}
+</section>
+{{end}}
+{{if .Notes}}<section id="notes"><h2>Notes from this run</h2><ul class="plain notes">{{range .Notes}}<li>{{.}}</li>{{end}}</ul></section>{{end}}
+</main>
+{{if .Served}}<div class="status" id="rm-status" role="status" hidden></div>
+<script type="application/json" id="rm-source-ids">{{.SourceIDsJSON}}</script>{{end}}
+<script id="rm-report-app-js">{{.JS}}</script>
+</body>
+</html>
+{{define "anchor"}}{{if .Href}}<a class="anchor" href="{{.Href}}" target="_blank" rel="noopener">{{.Text}}</a>{{else if .Open}}<a class="anchor" href="#" data-open="{{.Open}}">{{.Text}}</a>{{else}}<span class="anchor">{{.Text}}</span>{{end}}{{end}}
+{{define "chip"}}{{if .Anchor.Href}}<a class="chip" href="{{.Anchor.Href}}" target="_blank" rel="noopener" title="{{.Anchor.Text}}">{{.Name}}<span class="ln">:{{.Line}}</span></a>{{else if .Anchor.Open}}<a class="chip" href="#" data-open="{{.Anchor.Open}}" title="{{.Anchor.Text}}">{{.Name}}<span class="ln">:{{.Line}}</span></a>{{else}}<span class="chip" title="{{.Anchor.Text}}">{{.Name}}<span class="ln">:{{.Line}}</span></span>{{end}}{{end}}
+{{define "group"}}<div class="group"><h4>{{.Title}}<span class="badge">model</span></h4>{{if .Summary}}<p class="model">{{.Summary}}</p>{{end}}
+<div class="chips">{{range .Visible}}<span class="path">{{.Path}}</span>{{range .Members}}{{template "chip" .}}{{end}}{{end}}{{range .Externals}}<span class="chip">{{.}}</span>{{end}}
+{{if .More}}<details><summary>+{{.MoreCount}} more</summary>{{range .More}}<span class="path">{{.Path}}</span>{{range .Members}}{{template "chip" .}}{{end}}{{end}}</details>{{end}}</div>
+{{range .Connections}}<p class="conn">{{.Arrow}} {{if .Href}}<a href="{{.Href}}">[{{.OtherTarget}}] {{.Title}}</a>{{else}}<span class="lbl">{{.Title}}</span>{{end}}: {{.Label}}{{if .Possible}}<span class="possible">possible</span>{{end}} — <span class="model">{{.Summary}}</span></p>{{end}}
+</div>{{end}}

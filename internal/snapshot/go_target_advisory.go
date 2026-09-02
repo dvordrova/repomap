@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/build/constraint"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/gotarget"
@@ -11,12 +12,55 @@ import (
 )
 
 const (
-	maxGoTargetAdvisoryFiles       = 8192
-	maxGoTargetAdvisoryPrefixBytes = 4096
-	maxGoTargetAdvisoryExamples    = 3
+	MaxGoTargetAdvisoryFiles         = 8192
+	AdvisoryGoTargetSourceBytes      = 4096
+	MaxGoTargetAdvisoryEvidencePaths = 3
+	AdvisoryGoModuleBytes            = 1024 * 1024
 )
 
-// GoTargetAdvisory is bounded deterministic evidence for one unique strong
+type RepositoryScaleWarningKind string
+
+const (
+	RepositoryScaleWarningGoTargetFiles         RepositoryScaleWarningKind = "go_target_advisory_files"
+	RepositoryScaleWarningGoTargetSourceBytes   RepositoryScaleWarningKind = "go_target_advisory_source_bytes"
+	RepositoryScaleWarningGoTargetEvidencePaths RepositoryScaleWarningKind = "go_target_advisory_evidence_paths"
+	RepositoryScaleWarningManifestBytes         RepositoryScaleWarningKind = "repository_identity_manifest_bytes"
+	RepositoryScaleWarningGoModuleBytes         RepositoryScaleWarningKind = "repository_go_module_bytes"
+)
+
+type RepositoryScaleWarning struct {
+	Kind         RepositoryScaleWarningKind
+	Retained     int
+	AdvisorySize int
+}
+
+type repositoryScaleMetrics struct {
+	goTargetFiles         int
+	goTargetSourceBytes   int
+	goTargetEvidencePaths int
+	manifestBytes         int
+	goModuleBytes         int
+}
+
+func RepositoryScaleWarnings(value Snapshot) []RepositoryScaleWarning {
+	metrics := value.repositoryScaleMetrics
+	warnings := make([]RepositoryScaleWarning, 0, 5)
+	appendWarning := func(kind RepositoryScaleWarningKind, retained, advisory int) {
+		if retained > advisory {
+			warnings = append(warnings, RepositoryScaleWarning{
+				Kind: kind, Retained: retained, AdvisorySize: advisory,
+			})
+		}
+	}
+	appendWarning(RepositoryScaleWarningGoTargetFiles, metrics.goTargetFiles, MaxGoTargetAdvisoryFiles)
+	appendWarning(RepositoryScaleWarningGoTargetSourceBytes, metrics.goTargetSourceBytes, AdvisoryGoTargetSourceBytes)
+	appendWarning(RepositoryScaleWarningGoTargetEvidencePaths, metrics.goTargetEvidencePaths, MaxGoTargetAdvisoryEvidencePaths)
+	appendWarning(RepositoryScaleWarningManifestBytes, metrics.manifestBytes, AdvisoryManifestBytes)
+	appendWarning(RepositoryScaleWarningGoModuleBytes, metrics.goModuleBytes, AdvisoryGoModuleBytes)
+	return warnings
+}
+
+// GoTargetAdvisory is exhaustive deterministic evidence for one unique strong
 // alternative. By default it remains console-only guidance; an ordinary
 // caller may explicitly authorize the automatic selection contract before Go
 // facts are loaded.
@@ -30,7 +74,7 @@ const GoTargetSelectionAuto = "auto"
 
 // GoTargetSelection is live exact provenance for a pre-Go-facts automatic
 // target choice. Target and Baseline are canonical GOOS/GOARCH pairs; the
-// evidence is the same bounded D251 authority that caused the choice. It is
+// evidence is the same exhaustive D251 authority that caused the choice. It is
 // copied through live target projections and persisted separately in ordinary
 // run metadata, never sent to a provider.
 type GoTargetSelection struct {
@@ -82,12 +126,15 @@ func (selection GoTargetSelection) Validate() error {
 	if selected.GOOS == baseline.GOOS || selected.GOARCH != baseline.GOARCH || selection.EvidenceFiles < 3 {
 		return fmt.Errorf("automatic Go target selection: invalid alternative authority")
 	}
-	if len(selection.Examples) > maxGoTargetAdvisoryExamples {
-		return fmt.Errorf("automatic Go target selection: too many evidence paths")
+	if len(selection.Examples) != selection.EvidenceFiles {
+		return fmt.Errorf("automatic Go target selection: incomplete evidence paths")
 	}
-	for _, path := range selection.Examples {
+	for index, path := range selection.Examples {
 		if path == "" || path != strings.TrimSpace(path) || !goTargetAdvisoryEligiblePath(path) {
 			return fmt.Errorf("automatic Go target selection: invalid evidence path")
+		}
+		if index > 0 && selection.Examples[index-1] >= path {
+			return fmt.Errorf("automatic Go target selection: evidence paths are not canonical")
 		}
 	}
 	return nil
@@ -124,33 +171,43 @@ var advisoryGOOS = map[string]bool{
 	"darwin": true, "freebsd": true, "linux": true, "windows": true,
 }
 
-func detectGoTargetAdvisory(repoPath string, files []string, current gotarget.Target) *GoTargetAdvisory {
+func detectGoTargetAdvisory(
+	repoPath string,
+	files []string,
+	current gotarget.Target,
+) (*GoTargetAdvisory, repositoryScaleMetrics) {
 	eligible := make([]string, 0)
 	for _, path := range files {
 		if goTargetAdvisoryEligiblePath(path) {
 			eligible = append(eligible, path)
 		}
 	}
-	if len(eligible) == 0 || len(eligible) > maxGoTargetAdvisoryFiles {
-		return nil
+	sort.Strings(eligible)
+	metrics := repositoryScaleMetrics{goTargetFiles: len(eligible)}
+	if len(eligible) == 0 {
+		return nil, metrics
 	}
 	reader, err := reporead.New(repoPath)
 	if err != nil {
-		return nil
+		return nil, metrics
 	}
 	defer reader.Close()
 
 	counts := make(map[string]int)
 	examples := make(map[string][]string)
 	for _, path := range eligible {
-		content, err := reader.ReadFileNoSymlinks(path, maxGoTargetAdvisoryPrefixBytes)
+		content, err := reader.ReadFileNoSymlinksAll(path)
 		if err != nil {
-			return nil
+			return nil, metrics
+		}
+		if len(content.Bytes) > metrics.goTargetSourceBytes {
+			metrics.goTargetSourceBytes = len(content.Bytes)
 		}
 		for goos := range goTargetEvidenceForFile(path, content.Bytes, current.GOARCH) {
 			counts[goos]++
-			if len(examples[goos]) < maxGoTargetAdvisoryExamples {
-				examples[goos] = append(examples[goos], path)
+			examples[goos] = append(examples[goos], path)
+			if len(examples[goos]) > metrics.goTargetEvidencePaths {
+				metrics.goTargetEvidencePaths = len(examples[goos])
 			}
 		}
 	}
@@ -166,12 +223,12 @@ func detectGoTargetAdvisory(repoPath string, files []string, current gotarget.Ta
 		}
 	}
 	if best == "" || tied || bestCount < 3 || bestCount < 2*counts[current.GOOS] {
-		return nil
+		return nil, metrics
 	}
 	return &GoTargetAdvisory{
 		Suggested: best + "/" + current.GOARCH, EvidenceFiles: bestCount,
 		Examples: append([]string(nil), examples[best]...),
-	}
+	}, metrics
 }
 
 func goTargetAdvisoryEligiblePath(path string) bool {

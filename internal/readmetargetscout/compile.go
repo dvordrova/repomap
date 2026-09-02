@@ -15,7 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 )
 
-const preparationContract = "one atomic request; complete canonical corpus FileID-to-path authority encoded as a lossless path-component tree with FileID string leaves; complete closed prose FileID set derived from that same corpus; complete current bytes of every tracked regular README and AGENTS.md guidance document; all other source bytes excluded; no semantic filtering, truncation, chunking, or partial result-v6"
+const preparationContract = "complete canonical corpus FileID-to-path authority; complete closed prose FileID set; complete current bytes of every tracked regular README and AGENTS.md; aggregate compilation never size-rejected; deterministic guidance-group by file-group product covers every guidance byte against every tracked file through lossless path-component-tree requests; former packing windows never reject an indivisible document or file row; an indivisible prepared request is terminal only after crossing the shared semantic-record envelope; no semantic filtering, truncation, prefix selection, or partial result-v8"
 
 // HasGuidanceFiles is the cheap metadata-only applicability check. Compile
 // repeats the authoritative check while building its exact request.
@@ -31,9 +31,9 @@ func HasGuidanceFiles(repository *corpus.Corpus) bool {
 	return false
 }
 
-// Compile builds one atomic model request. If complete evidence cannot fit the
-// explicit provider-safe envelope, it fails before provider execution with no
-// partial request or semantic result.
+// Compile captures the complete aggregate evidence authority. It never drops
+// or rejects repository facts merely because their combined encoding is larger
+// than one provider request; Batches creates the exhaustive bounded exchange.
 func Compile(
 	repoName string,
 	repository *corpus.Corpus,
@@ -56,15 +56,9 @@ func Compile(
 		if !ok {
 			continue
 		}
-		content, err := repository.ReadFile(entry.ID, corpus.MaxReadBytes)
+		content, err := repository.ReadFileAll(entry.ID)
 		if err != nil {
 			return Compilation{}, fmt.Errorf("readme target scout: read complete repository guidance %s: %w", entry.ID, err)
-		}
-		if content.Truncated {
-			return Compilation{}, fmt.Errorf(
-				"readme target scout: repository guidance %q exceeds the %d-byte complete-read limit; no provider request was made because partial guidance analysis is forbidden",
-				entry.Path, corpus.MaxReadBytes,
-			)
 		}
 		if !utf8.Valid(content.Bytes) {
 			return Compilation{}, fmt.Errorf("readme target scout: repository guidance %q is not valid UTF-8; no provider request was made", entry.Path)
@@ -92,12 +86,6 @@ func Compile(
 	wire, err := json.Marshal(request)
 	if err != nil {
 		return Compilation{}, fmt.Errorf("readme target scout: encode complete request: %w", err)
-	}
-	if len(wire) > MaxRequestBytes {
-		return Compilation{}, fmt.Errorf(
-			"readme target scout: complete guidance + lossless file-tree + prose-ref authority request is %d bytes, reliable atomic limit is %d; no provider request was made and an explicitly approved semantic partition or chunked repository-index contract is required",
-			len(wire), MaxRequestBytes,
-		)
 	}
 	compilation := Compilation{
 		Version: CompilationVersion, State: StateReady, Request: request,
@@ -155,7 +143,7 @@ func validateReadyCompilation(compilation Compilation) error {
 	if err != nil {
 		return fmt.Errorf("readme target scout: encode complete request: %w", err)
 	}
-	if len(wire) > MaxRequestBytes || !reflect.DeepEqual(wire, compilation.wire) || compilation.RequestSHA256 != sha256Hex(wire) {
+	if !reflect.DeepEqual(wire, compilation.wire) || compilation.RequestSHA256 != sha256Hex(wire) {
 		return fmt.Errorf("readme target scout: request wire binding mismatch")
 	}
 	if compilation.seal != compilationSeal(compilation) {
@@ -174,7 +162,7 @@ func cloneDictionary(source map[corpus.FileID]string) map[corpus.FileID]string {
 
 func compilationSeal(compilation Compilation) string {
 	return sha256Hex([]byte(strings.Join([]string{
-		"readme-target-scout-compilation-v6", compilation.corpusRef,
+		"readme-target-scout-compilation-v7", compilation.corpusRef,
 		string(compilation.State), string(compilation.Reason), compilation.RequestSHA256,
 	}, "\x00")))
 }

@@ -1,12 +1,10 @@
 package dependencydeclaration
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"reflect"
 	"strings"
 
@@ -38,14 +36,8 @@ func (result Result) Validate() error {
 	if result.Sources == nil || result.Packages == nil || result.Includes == nil || result.Frontiers == nil {
 		return fmt.Errorf("dependency declarations: result inventories must be present")
 	}
-	if len(result.Sources) > MaxSources || len(result.Packages) > MaxPackages ||
-		len(result.Includes) > MaxIncludes || len(result.Frontiers) > MaxFrontiers {
-		return fmt.Errorf("dependency declarations: result bound exceeded")
-	}
-
 	sourceByID := make(map[string]Source, len(result.Sources))
 	sourceIdentity := make(map[string]struct{}, len(result.Sources))
-	totalBytes := 0
 	for position, source := range result.Sources {
 		if err := validateSource(result.CorpusSHA256, result.Scope.RepositoryPath, source); err != nil {
 			return fmt.Errorf("dependency declarations: source %d: %w", position, err)
@@ -59,24 +51,15 @@ func (result Result) Validate() error {
 		}
 		sourceByID[source.ID] = source
 		sourceIdentity[projectionKey] = struct{}{}
-		totalBytes += source.ByteCount
-		if totalBytes > MaxTotalBytes {
-			return fmt.Errorf("dependency declarations: total source byte bound %d exceeded", MaxTotalBytes)
-		}
 		if position > 0 && sourceKey(result.Sources[position-1]) >= sourceKey(source) {
 			return fmt.Errorf("dependency declarations: sources are not canonical")
 		}
 	}
 
-	statementCount := 0
 	seenStatements := make(map[string]struct{})
 	for position, value := range result.Packages {
 		if err := validatePackage(result.Scope.Ecosystem, value, sourceByID, seenStatements); err != nil {
 			return fmt.Errorf("dependency declarations: package %d: %w", position, err)
-		}
-		statementCount += len(value.Statements)
-		if statementCount > MaxStatements {
-			return fmt.Errorf("dependency declarations: statement bound %d exceeded", MaxStatements)
 		}
 		if position > 0 && packageKey(result.Packages[position-1]) >= packageKey(value) {
 			return fmt.Errorf("dependency declarations: packages are not canonical")
@@ -158,8 +141,8 @@ func (result Result) Validate() error {
 	return nil
 }
 
-// ValidateAgainst binds the standalone artifact to one exact corpus snapshot
-// and ProgramIndex. It deliberately does not reread live file bytes: repository
+// ValidateAgainst binds the in-memory result to one exact corpus snapshot and
+// ProgramIndex. It deliberately does not reread live file bytes: repository
 // mutation during a run is allowed and every Source already binds the bytes
 // actually read by its producing adapter.
 func (result Result) ValidateAgainst(snapshot corpus.Snapshot, index programindex.Index) error {
@@ -190,80 +173,10 @@ func (result Result) ValidateAgainst(snapshot corpus.Snapshot, index programinde
 	return nil
 }
 
-// Encode emits the unique canonical JSON representation of a valid artifact.
-func Encode(result Result) ([]byte, error) {
-	if err := result.Validate(); err != nil {
-		return nil, err
-	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		return nil, fmt.Errorf("dependency declarations: encode artifact: %w", err)
-	}
-	if len(encoded) == 0 || len(encoded) > MaxArtifactBytes {
-		return nil, fmt.Errorf("dependency declarations: artifact is %d bytes, limit is %d", len(encoded), MaxArtifactBytes)
-	}
-	return encoded, nil
-}
-
-// DecodeStandalone rejects unknown fields, trailing values, noncanonical
-// bytes and invalid seals. Cross-input consumers should additionally call the
-// adapter-owned authority validator for the inputs they actually possess.
-func DecodeStandalone(encoded []byte) (Result, error) {
-	if len(encoded) == 0 || len(encoded) > MaxArtifactBytes {
-		return Result{}, fmt.Errorf("dependency declarations: invalid artifact size")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(encoded))
-	decoder.DisallowUnknownFields()
-	var result Result
-	if err := decoder.Decode(&result); err != nil {
-		return Result{}, fmt.Errorf("dependency declarations: decode artifact: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return Result{}, fmt.Errorf("dependency declarations: trailing JSON value")
-		}
-		return Result{}, fmt.Errorf("dependency declarations: trailing artifact data: %w", err)
-	}
-	if err := result.Validate(); err != nil {
-		return Result{}, err
-	}
-	canonical, err := Encode(result)
-	if err != nil {
-		return Result{}, err
-	}
-	if !bytes.Equal(encoded, canonical) {
-		return Result{}, fmt.Errorf("dependency declarations: artifact is not canonical")
-	}
-	return result, nil
-}
-
-// Decode additionally binds the canonical artifact to the exact repository
-// corpus and ProgramIndex used by an ordinary producer.
-func Decode(encoded []byte, snapshot corpus.Snapshot, index programindex.Index) (Result, error) {
-	result, err := DecodeStandalone(encoded)
-	if err != nil {
-		return Result{}, err
-	}
-	if err := result.ValidateAgainst(snapshot, index); err != nil {
-		return Result{}, err
-	}
-	return result, nil
-}
-
-func (result Result) ArtifactSHA256() (string, error) {
-	encoded, err := Encode(result)
-	if err != nil {
-		return "", err
-	}
-	digest := sha256.Sum256(encoded)
-	return hex.EncodeToString(digest[:]), nil
-}
-
 func validateSource(corpusSHA, scopeRoot string, source Source) error {
 	if !validFileRef(source.FileRef) || !repositoryPath(source.Path) || !pathWithin(scopeRoot, source.Path) ||
 		!token(source.Format) || !source.State.Valid() || !validSHA256(source.ContentSHA256) ||
-		source.ByteCount < 0 || source.ByteCount > MaxSourceBytes {
+		source.ByteCount < 0 {
 		return fmt.Errorf("invalid source")
 	}
 	wantID := identity("ddsrc-", struct {

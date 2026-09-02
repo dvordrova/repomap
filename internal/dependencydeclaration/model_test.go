@@ -1,6 +1,7 @@
 package dependencydeclaration
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -58,11 +59,6 @@ func TestBuildSealsCanonicalDeclarationLedger(t *testing.T) {
 		result.Coverage.IncludesFrontier != 1 || result.Coverage.Boundaries != 2 {
 		t.Fatalf("coverage = %#v", result.Coverage)
 	}
-	encoded, err := Encode(result)
-	if err != nil || len(encoded) == 0 {
-		t.Fatalf("Encode() = %d bytes, %v", len(encoded), err)
-	}
-
 	snapshot := result.Snapshot()
 	snapshot.Packages[0].Names[0] = "mutated"
 	if result.Packages[0].Names[0] != "Foo.Bar" {
@@ -73,6 +69,18 @@ func TestBuildSealsCanonicalDeclarationLedger(t *testing.T) {
 	tampered.Sources[0].Path = "other.toml"
 	if err := tampered.Validate(); err == nil {
 		t.Fatal("tampered source path validated")
+	}
+}
+
+func TestFormerResultSizeIsWarningOnly(t *testing.T) {
+	warnings := resultScaleWarningsForBytes(AdvisoryResultBytes + 1)
+	if len(warnings) != 1 || warnings[0].Kind != ScaleWarningResultBytes ||
+		warnings[0].Retained != AdvisoryResultBytes+1 ||
+		warnings[0].AdvisorySize != AdvisoryResultBytes {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if warnings := resultScaleWarningsForBytes(AdvisoryResultBytes); len(warnings) != 0 {
+		t.Fatalf("threshold warning = %#v", warnings)
 	}
 }
 
@@ -90,5 +98,75 @@ func TestFrontierSourceRequiresExactBoundary(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("frontier source without an exact boundary validated")
+	}
+}
+
+func TestBuildRetainsSourcesAboveFormerCountThreshold(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	sources := make([]SourceInput, 0, AdvisorySources+1)
+	for position := 0; position <= AdvisorySources; position++ {
+		sources = append(sources, SourceInput{
+			Key: fmt.Sprintf("source-%05d", position), FileRef: corpus.FileID(fmt.Sprintf("f%d", position+1)),
+			Path: fmt.Sprintf("requirements/%05d.txt", position), Format: "requirements_txt",
+			State: SourceParsed, ContentSHA256: digest, ByteCount: 1,
+		})
+	}
+	result, err := Build(Input{
+		CorpusSHA256: digest, ProgramIndexSHA256: digest, TargetID: "target-1",
+		Scope:   Scope{Language: "python", Ecosystem: "pypi", AuthoritySHA256: digest},
+		Sources: sources, Statements: []StatementInput{}, Includes: []IncludeInput{}, Frontiers: []FrontierInput{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Sources) != AdvisorySources+1 {
+		t.Fatalf("sources = %d, want %d", len(result.Sources), AdvisorySources+1)
+	}
+	warnings := ScaleWarnings(result)
+	if len(warnings) != 1 || warnings[0].Kind != ScaleWarningSources ||
+		warnings[0].Retained != AdvisorySources+1 {
+		t.Fatalf("scale warnings = %#v", warnings)
+	}
+}
+
+func TestBuildRetainsFormerPerValueThresholds(t *testing.T) {
+	digest := strings.Repeat("b", 64)
+	extras := make([]string, 0, AdvisoryStatementExtras+1)
+	for position := 0; position <= AdvisoryStatementExtras; position++ {
+		extras = append(extras, fmt.Sprintf("extra-%03d", position))
+	}
+	longName := strings.Repeat("x", AdvisoryStringBytes+1)
+	result, err := Build(Input{
+		CorpusSHA256: digest, ProgramIndexSHA256: digest, TargetID: "target-1",
+		Scope: Scope{Language: "python", Ecosystem: "pypi", AuthoritySHA256: digest},
+		Sources: []SourceInput{
+			{Key: "one", FileRef: "f1", Path: "requirements/one.txt", Format: "requirements_txt", State: SourceParsed, ContentSHA256: digest, ByteCount: 32<<20 + 1},
+			{Key: "two", FileRef: "f2", Path: "requirements/two.txt", Format: "requirements_txt", State: SourceParsed, ContentSHA256: digest, ByteCount: 32<<20 + 1},
+		},
+		Statements: []StatementInput{{
+			SourceKey: "one", Kind: StatementRequirement, Role: RoleRuntime,
+			Name: longName, NormalizedName: longName, Extras: extras,
+			Locator: Locator{Kind: LocatorRegistry}, Section: "requirements", Ordinal: 1,
+			ExpressionSHA256: digest,
+		}},
+		Includes: []IncludeInput{}, Frontiers: []FrontierInput{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Packages) != 1 || len(result.Packages[0].Statements[0].Extras) != AdvisoryStatementExtras+1 ||
+		result.Packages[0].Name != longName {
+		t.Fatalf("retained declarations = %#v", result.Packages)
+	}
+	kinds := make(map[ScaleWarningKind]struct{})
+	for _, warning := range ScaleWarnings(result) {
+		kinds[warning.Kind] = struct{}{}
+	}
+	for _, kind := range []ScaleWarningKind{
+		ScaleWarningSourceBytes, ScaleWarningTotalBytes, ScaleWarningStringBytes, ScaleWarningStatementExtras,
+	} {
+		if _, ok := kinds[kind]; !ok {
+			t.Fatalf("scale warnings missing %q: %#v", kind, ScaleWarnings(result))
+		}
 	}
 }

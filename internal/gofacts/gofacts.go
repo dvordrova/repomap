@@ -20,12 +20,38 @@ import (
 )
 
 const (
-	maxGoModBytes              = 1024 * 1024
-	maxExternalImportSummaries = 50
+	advisoryGoModBytes              = 1024 * 1024
+	advisoryExternalImportSummaries = 50
+	scaleWarningPrefix              = "large retained Go facts: "
 )
+
+// ScaleWarnings returns only warning-only size diagnostics from an accepted
+// fact set. It deliberately performs no validation and can never change
+// target or publication authority.
+func ScaleWarnings(facts *Facts) []string {
+	if facts == nil {
+		return nil
+	}
+	result := make([]string, 0)
+	for _, warning := range facts.Warnings {
+		if !strings.HasPrefix(warning, scaleWarningPrefix) {
+			continue
+		}
+		result = append(result, strings.TrimPrefix(warning, scaleWarningPrefix))
+	}
+	return result
+}
+
+func scaleWarning(message string) string {
+	return scaleWarningPrefix + message
+}
 
 type LoadOptions struct {
 	GoTarget string
+	// BuildTags is the canonical run-wide Go build selection. It must match the
+	// later packages/types/SSA load so the target catalog and ProgramIndex see
+	// the same source set.
+	BuildTags []string
 	// ModuleDir narrows deterministic collection only when ordinary main has an
 	// exact typed target key. Final target resolution still validates that key
 	// against the catalog built from this module; the directory is not target
@@ -36,6 +62,7 @@ type LoadOptions struct {
 type Facts struct {
 	Modules               []ModuleFact          `json:"modules"`
 	Packages              []PackageFact         `json:"packages"`
+	PackageOrigins        []PackageOrigin       `json:"package_origins"`
 	PackagesCount         int                   `json:"packages_count"`
 	RetainedPackagesCount int                   `json:"retained_packages_count"`
 	EntrypointPackages    []Entrypoint          `json:"entrypoint_packages"`
@@ -44,6 +71,30 @@ type Facts struct {
 	Dependencies          *dependencies.Catalog `json:"dependencies,omitempty"`
 	Coverage              Coverage              `json:"coverage"`
 	Warnings              []string              `json:"warnings,omitempty"`
+}
+
+// PackageOrigin is the exact package namespace row returned by the canonical
+// build-selected `go list -deps` invocation. PackagePath deliberately keeps
+// the Go tool's raw import identity; Standard is the tool-owned distinction
+// between platform and ordinary package authority.
+type PackageOrigin struct {
+	PackagePath string `json:"package_path"`
+	Standard    bool   `json:"standard"`
+}
+
+// ValidatePackageOrigins checks the sealed canonical shape consumed by the Go
+// ProgramIndex adapter. The complete producer owns sorting and deduplication;
+// downstream stages never repair or reinterpret this authority.
+func ValidatePackageOrigins(values []PackageOrigin) error {
+	for index, value := range values {
+		if value.PackagePath == "" || strings.TrimSpace(value.PackagePath) != value.PackagePath {
+			return fmt.Errorf("Go package origin %d has invalid package path", index)
+		}
+		if index > 0 && values[index-1].PackagePath >= value.PackagePath {
+			return fmt.Errorf("Go package origins are not canonical at %q", value.PackagePath)
+		}
+	}
+	return nil
 }
 
 type CoverageState string
@@ -263,6 +314,10 @@ func LoadWithOptions(
 	if err != nil {
 		return nil, fmt.Errorf("load Go facts: %w", err)
 	}
+	buildTags, err := gotarget.CanonicalBuildTags(opts.BuildTags)
+	if err != nil {
+		return nil, fmt.Errorf("load Go facts: %w", err)
+	}
 
 	absRepoPath, err := filepath.Abs(repoPath)
 	if err != nil {
@@ -300,8 +355,15 @@ func LoadWithOptions(
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := verifyModuleGoMod(repoReader, modRelDir); err != nil {
+		goModBytes, err := verifyModuleGoMod(repoReader, modRelDir)
+		if err != nil {
 			return nil, fmt.Errorf("load Go facts for module %s: validate go.mod: %w", modRelDir, err)
+		}
+		if goModBytes > advisoryGoModBytes {
+			topWarnings = append(topWarnings, scaleWarning(fmt.Sprintf(
+				"module %s: retained the complete %d-byte go.mod; usual size is %d bytes",
+				modRelDir, goModBytes, advisoryGoModBytes,
+			)))
 		}
 
 		absDir := resolvedRepoPath
@@ -318,7 +380,7 @@ func LoadWithOptions(
 		}
 		modulePath := moduleInfo.Path
 		moduleID := moduleFactID(modulePath, modRelDir)
-		listedPkgs, modWarnings, err := runGoList(ctx, absDir, target)
+		listedPkgs, modWarnings, err := runGoList(ctx, absDir, target, buildTags)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
@@ -353,13 +415,14 @@ func LoadWithOptions(
 			if displayPath == "." || displayPath == "" {
 				displayPath = pkg.Name
 			}
-			declarations, declarationWarnings := extractPackageDeclarations(repoReader, packageDir, pkg)
+			declarations, declarationWarnings, declarationScaleWarnings := extractPackageDeclarations(repoReader, packageDir, pkg)
 			if len(declarationWarnings) > 0 {
 				return nil, fmt.Errorf(
 					"load Go facts for module %s: incomplete declaration authority: %s",
 					modRelDir, summarizeCollectionFailures(declarationWarnings),
 				)
 			}
+			topWarnings = append(topWarnings, declarationScaleWarnings...)
 			packageFacts = append(packageFacts, PackageFact{
 				CanonicalPath: pkg.ImportPath, Name: pkg.Name, ModuleID: moduleID, ModulePath: modulePath,
 				PackageDir: filepath.ToSlash(packageDir), ModuleRelativeDir: filepath.ToSlash(moduleRelativeDir),
@@ -370,13 +433,14 @@ func LoadWithOptions(
 		}
 
 		entrypointCandidates := buildEntrypointCandidates(pkgs, resolvedRepoPath, absDir, modRelDir, modulePath)
-		modEntrypoints, entrypointWarnings := resolveMainEntrypoints(repoReader, entrypointCandidates)
+		modEntrypoints, entrypointWarnings, entrypointScaleWarnings := resolveMainEntrypoints(repoReader, entrypointCandidates)
 		if len(entrypointWarnings) > 0 {
 			return nil, fmt.Errorf(
 				"load Go facts for module %s: incomplete entrypoint authority: %s",
 				modRelDir, summarizeCollectionFailures(entrypointWarnings),
 			)
 		}
+		topWarnings = append(topWarnings, entrypointScaleWarnings...)
 		allEntrypoints = append(allEntrypoints, modEntrypoints...)
 		replacements, replacementErr := readModuleReplacements(repoReader, resolvedRepoPath, modRelDir)
 		if replacementErr != nil {
@@ -405,17 +469,26 @@ func LoadWithOptions(
 
 	}
 
-	known := buildKnownSet(allPkgs)
 	dependencyCatalog, dependencyWarnings, err := buildDependencyCatalog(resolvedRepoPath, dependencyLoads)
 	if err != nil {
 		return nil, fmt.Errorf("build Go dependency catalog: %w", err)
 	}
 	topWarnings = append(topWarnings, dependencyWarnings...)
+	packageOrigins, err := buildPackageOrigins(dependencyLoads)
+	if err != nil {
+		return nil, fmt.Errorf("build Go package-origin authority: %w", err)
+	}
 
-	allEdges := buildInternalEdges(allPkgs, known)
+	allEdges := buildInternalEdges(dependencyCatalog)
 	discoveredEdges := len(allEdges)
 
-	extImports := buildExternalImports(allPkgs, known)
+	extImports := buildExternalImports(dependencyCatalog)
+	if len(extImports) > advisoryExternalImportSummaries {
+		topWarnings = append(topWarnings, scaleWarning(fmt.Sprintf(
+			"retained all %d external import summaries; usual size is %d",
+			len(extImports), advisoryExternalImportSummaries,
+		)))
+	}
 	sort.Slice(packageFacts, func(i, j int) bool {
 		return packageFactLess(packageFacts[i], packageFacts[j])
 	})
@@ -455,6 +528,7 @@ func LoadWithOptions(
 	return &Facts{
 		Modules:               modules,
 		Packages:              packageFacts,
+		PackageOrigins:        packageOrigins,
 		PackagesCount:         len(allPkgs),
 		RetainedPackagesCount: len(packageFacts),
 		EntrypointPackages:    allEntrypoints,
@@ -462,8 +536,34 @@ func LoadWithOptions(
 		ExternalImportsTop:    extImports,
 		Dependencies:          &dependencyCatalog,
 		Coverage:              coverage,
-		Warnings:              topWarnings,
+		Warnings:              canonicalWarnings(topWarnings),
 	}, nil
+}
+
+func buildPackageOrigins(loads []dependencyPackageLoad) ([]PackageOrigin, error) {
+	byPath := make(map[string]bool)
+	for _, load := range loads {
+		for _, pkg := range load.packages {
+			if pkg.ImportPath == "" || strings.TrimSpace(pkg.ImportPath) != pkg.ImportPath {
+				return nil, fmt.Errorf("go-list package has invalid import path")
+			}
+			if previous, exists := byPath[pkg.ImportPath]; exists && previous != pkg.Standard {
+				return nil, fmt.Errorf("conflicting standard authority for package %q", pkg.ImportPath)
+			}
+			byPath[pkg.ImportPath] = pkg.Standard
+		}
+	}
+	result := make([]PackageOrigin, 0, len(byPath))
+	for packagePath, standard := range byPath {
+		result = append(result, PackageOrigin{PackagePath: packagePath, Standard: standard})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].PackagePath < result[j].PackagePath
+	})
+	if err := ValidatePackageOrigins(result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func selectModuleDirs(discovered []string, explicit string) ([]string, error) {
@@ -543,12 +643,9 @@ func readModuleReplacements(reader *reporead.Reader, repoRoot, moduleDir string)
 	if moduleDir != "." {
 		goModPath = filepath.ToSlash(filepath.Join(moduleDir, goModPath))
 	}
-	content, err := reader.ReadFile(goModPath, maxGoModBytes)
+	content, err := reader.ReadFileAll(goModPath)
 	if err != nil {
 		return nil, err
-	}
-	if content.Truncated {
-		return nil, fmt.Errorf("%s exceeds %d bytes", goModPath, maxGoModBytes)
 	}
 	parsed, err := modfile.Parse(goModPath, content.Bytes, nil)
 	if err != nil {
@@ -628,24 +725,32 @@ func moduleSource(repoRoot string, module *goListModule) *ModuleSource {
 	return &ModuleSource{Path: module.Path, Dir: dir, GoMod: goMod, Local: dir != ""}
 }
 
-func verifyModuleGoMod(reader *reporead.Reader, moduleDir string) error {
+func verifyModuleGoMod(reader *reporead.Reader, moduleDir string) (int, error) {
 	goModPath := "go.mod"
 	if moduleDir != "." {
 		goModPath = filepath.Join(moduleDir, goModPath)
 	}
 
-	content, err := reader.ReadFile(goModPath, maxGoModBytes)
+	content, err := reader.ReadFileAll(goModPath)
 	if err != nil {
-		return fmt.Errorf("verify %q: %w", goModPath, err)
+		return 0, fmt.Errorf("verify %q: %w", goModPath, err)
 	}
-	if content.Truncated {
-		return fmt.Errorf("verify %q: file exceeds %d-byte limit", goModPath, maxGoModBytes)
-	}
-	return nil
+	return len(content.Bytes), nil
 }
 
-func runGoList(ctx context.Context, repoDir string, target gotarget.Target) ([]goListPackage, []string, error) {
-	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-e", "-json", "./...")
+func runGoList(
+	ctx context.Context,
+	repoDir string,
+	target gotarget.Target,
+	buildTags []string,
+) ([]goListPackage, []string, error) {
+	// Always pass an explicit value, including empty, so ambient
+	// GOFLAGS=-tags=... cannot silently change the run's recorded source set.
+	args := []string{
+		"list", "-deps", "-e", "-json", "-tags=" + strings.Join(buildTags, ","),
+	}
+	args = append(args, "./...")
+	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = repoDir
 	cmd.Env = append(target.ApplyEnv(os.Environ()), "GOWORK=off")
 
@@ -796,14 +901,6 @@ func normalizePackagePaths(repoRoot, moduleRoot, pkgDir string) (moduleDir strin
 	return moduleDir, moduleRelativeDir, packageDir, nil
 }
 
-func buildKnownSet(pkgs []goListPackage) map[string]struct{} {
-	known := make(map[string]struct{}, len(pkgs))
-	for _, p := range pkgs {
-		known[p.ImportPath] = struct{}{}
-	}
-	return known
-}
-
 func coverageStateForWarnings(warnings []string) CoverageState {
 	if len(warnings) > 0 {
 		return CoveragePartial
@@ -852,22 +949,45 @@ func buildEntrypointCandidates(pkgs []goListPackage, repoRoot string, moduleRoot
 			ModuleRelativeDir: mrd,
 			ModuleDir:         md,
 			Kind:              EntrypointKindGoMain,
-			GoFiles:           p.GoFiles,
+			GoFiles:           buildSelectedOriginalGoFiles(p),
 		})
 	}
 	return eps
 }
 
-func buildInternalEdges(pkgs []goListPackage, known map[string]struct{}) []Edge {
+// buildSelectedOriginalGoFiles owns the exact repository sources that may
+// contain a process entrypoint. CompiledGoFiles is deliberately excluded: for
+// cgo packages it includes generated objdir syntax that has no repository
+// source identity.
+func buildSelectedOriginalGoFiles(pkg goListPackage) []string {
+	files := append([]string(nil), pkg.GoFiles...)
+	files = append(files, pkg.CgoFiles...)
+	sort.Strings(files)
+	return compactStrings(files)
+}
+
+func buildInternalEdges(catalog dependencies.Catalog) []Edge {
+	importers := make(map[string]string, len(catalog.Importers))
+	for _, importer := range catalog.Importers {
+		importers[importer.Ref] = importer.PackagePath
+	}
 	edges := make([]Edge, 0)
-	for _, p := range pkgs {
-		if p.Error != nil {
+	seen := make(map[Edge]struct{})
+	for _, dependency := range catalog.Dependencies {
+		if dependency.Kind != dependencies.KindWorkspace {
 			continue
 		}
-		for _, imp := range p.Imports {
-			if _, ok := known[imp]; ok {
-				edges = append(edges, Edge{From: p.ImportPath, To: imp})
+		for _, importerRef := range dependency.ImporterRefs {
+			from := importers[importerRef]
+			edge := Edge{From: from, To: dependency.PackagePath}
+			if edge.From == "" || edge.To == "" {
+				continue
 			}
+			if _, duplicate := seen[edge]; duplicate {
+				continue
+			}
+			seen[edge] = struct{}{}
+			edges = append(edges, edge)
 		}
 	}
 	sort.Slice(edges, func(i, j int) bool {
@@ -879,28 +999,30 @@ func buildInternalEdges(pkgs []goListPackage, known map[string]struct{}) []Edge 
 	return edges
 }
 
-func buildExternalImports(pkgs []goListPackage, known map[string]struct{}) []ExtImport {
-	extCount := make(map[string]int)
-	for _, p := range pkgs {
-		if p.Error != nil {
+func buildExternalImports(catalog dependencies.Catalog) []ExtImport {
+	uses := make(map[string]map[string]struct{})
+	for _, dependency := range catalog.Dependencies {
+		if dependency.Kind == dependencies.KindWorkspace {
 			continue
 		}
-		seen := make(map[string]struct{})
-		for _, imp := range p.Imports {
-			if _, isInternal := known[imp]; isInternal {
-				continue
+		refs := uses[dependency.PackagePath]
+		if refs == nil {
+			refs = make(map[string]struct{})
+			uses[dependency.PackagePath] = refs
+		}
+		for _, importerRef := range dependency.ImporterRefs {
+			if importerRef != "" {
+				refs[importerRef] = struct{}{}
 			}
-			if _, counted := seen[imp]; counted {
-				continue
-			}
-			seen[imp] = struct{}{}
-			extCount[imp]++
 		}
 	}
 
-	extImports := make([]ExtImport, 0, len(extCount))
-	for imp, count := range extCount {
-		extImports = append(extImports, ExtImport{ImportPath: imp, UsedByCount: count})
+	extImports := make([]ExtImport, 0, len(uses))
+	for packagePath, refs := range uses {
+		if packagePath == "" || len(refs) == 0 {
+			continue
+		}
+		extImports = append(extImports, ExtImport{ImportPath: packagePath, UsedByCount: len(refs)})
 	}
 	sort.Slice(extImports, func(i, j int) bool {
 		if extImports[i].UsedByCount == extImports[j].UsedByCount {
@@ -908,8 +1030,5 @@ func buildExternalImports(pkgs []goListPackage, known map[string]struct{}) []Ext
 		}
 		return extImports[i].UsedByCount > extImports[j].UsedByCount
 	})
-	if len(extImports) > maxExternalImportSummaries {
-		extImports = extImports[:maxExternalImportSummaries]
-	}
 	return extImports
 }

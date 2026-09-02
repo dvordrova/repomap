@@ -19,16 +19,7 @@ import (
 	"unicode/utf8"
 )
 
-const (
-	Version = 1
-
-	MaxFunctions            = 65_536
-	MaxHandoffs             = 131_072
-	MaxCandidates           = 262_144
-	MaxCandidatesPerHandoff = 32
-	MaxObservedHandoffs     = 1<<31 - 1
-	MaxTextBytes            = 16 * 1024
-)
+const Version = 3
 
 type Scenario struct {
 	ID     string   `json:"id"`
@@ -59,10 +50,14 @@ const (
 	InvocationSynchronous Invocation = "synchronous"
 	InvocationGoroutine   Invocation = "goroutine"
 	InvocationDeferred    Invocation = "deferred"
+	// InvocationBinding is a callable value assignment, not an assertion that
+	// the callable executes at this program point.
+	InvocationBinding Invocation = "binding"
 )
 
 func (value Invocation) valid() bool {
-	return value == InvocationSynchronous || value == InvocationGoroutine || value == InvocationDeferred
+	return value == InvocationSynchronous || value == InvocationGoroutine ||
+		value == InvocationDeferred || value == InvocationBinding
 }
 
 // Kind describes a structural control-flow joint, not product semantics.
@@ -76,10 +71,12 @@ const (
 	InterfaceInvoke   Kind = "interface_invoke"
 	FunctionValueCall Kind = "function_value_call"
 	CallbackTransfer  Kind = "callback_transfer"
+	CallableBinding   Kind = "callable_binding"
 )
 
 func (value Kind) valid() bool {
-	return value == InterfaceInvoke || value == FunctionValueCall || value == CallbackTransfer
+	return value == InterfaceInvoke || value == FunctionValueCall ||
+		value == CallbackTransfer || value == CallableBinding
 }
 
 type Resolution string
@@ -142,12 +139,16 @@ type StaticTarget struct {
 
 // Slot is the exact declared joint at the callsite. Interface invokes use
 // DeclaredType+Method+Signature; function-value calls use Signature; callback
-// transfers use one-based Parameter+Signature.
+// transfers use one-based Parameter+Signature; callable bindings use
+// ContainerType+Field+DeclaredType and may retain the resolved callable
+// signature when SSA exposes it.
 type Slot struct {
-	DeclaredType string `json:"declared_type,omitempty"`
-	Method       string `json:"method,omitempty"`
-	Signature    string `json:"signature"`
-	Parameter    int    `json:"parameter,omitempty"`
+	ContainerType string `json:"container_type,omitempty"`
+	DeclaredType  string `json:"declared_type,omitempty"`
+	Field         string `json:"field,omitempty"`
+	Method        string `json:"method,omitempty"`
+	Signature     string `json:"signature,omitempty"`
+	Parameter     int    `json:"parameter,omitempty"`
 }
 
 type Handoff struct {
@@ -164,10 +165,10 @@ type Handoff struct {
 	CandidatesOmitted    int          `json:"candidates_omitted"`
 }
 
-// Coverage separates missing relation rows from candidates deliberately
-// withheld from an indexed unresolved relation. HandoffsOmitted counts only
-// observed structural joints that produced no Handoff row; CandidatesOmitted
-// counts known value-flow candidates that were not retained as authoritative.
+// Coverage separates missing relation rows from unresolved candidate
+// frontiers. HandoffsOmitted counts only observed structural joints that
+// produced no Handoff row; CandidatesOmitted counts open value-flow candidate
+// positions for which no exact local function identity was available.
 type Coverage struct {
 	HandoffsObserved         int `json:"handoffs_observed"`
 	HandoffsIndexed          int `json:"handoffs_indexed"`
@@ -178,6 +179,7 @@ type Coverage struct {
 	InterfaceInvokes         int `json:"interface_invokes"`
 	FunctionValueCalls       int `json:"function_value_calls"`
 	CallbackTransfers        int `json:"callback_transfers"`
+	CallableBindings         int `json:"callable_bindings"`
 	ExactResolutions         int `json:"exact_resolutions"`
 	AlternativeResolutions   int `json:"alternative_resolutions"`
 	Unresolved               int `json:"unresolved"`
@@ -226,9 +228,6 @@ func New(input Input) (Index, error) {
 	}
 	sort.Strings(index.Scenario.Tags)
 	index.Scenario.Tags = compactStrings(index.Scenario.Tags)
-	if len(index.Functions) > MaxFunctions || len(index.Handoffs) > MaxHandoffs {
-		return Index{}, fmt.Errorf("Go dynamic handoff index: collection bound exceeded")
-	}
 
 	functionByID := make(map[string]Function, len(index.Functions))
 	for _, function := range index.Functions {
@@ -244,7 +243,6 @@ func New(input Input) (Index, error) {
 	sort.Slice(index.Functions, func(i, j int) bool { return functionKey(index.Functions[i]) < functionKey(index.Functions[j]) })
 
 	canonical := make(map[string]Handoff, len(index.Handoffs))
-	totalCandidates := 0
 	for _, handoff := range index.Handoffs {
 		if handoff.ID != "" {
 			return Index{}, fmt.Errorf("Go dynamic handoff index: adapter supplied a handoff identity")
@@ -258,9 +256,6 @@ func New(input Input) (Index, error) {
 			}
 		}
 		handoff.Candidates = canonicalCandidates(handoff.Candidates)
-		if len(handoff.Candidates) > MaxCandidatesPerHandoff {
-			return Index{}, fmt.Errorf("Go dynamic handoff index: adapter retained too many candidates at one handoff")
-		}
 		for _, candidate := range handoff.Candidates {
 			if _, exists := functionByID[candidate.FunctionID]; !exists {
 				return Index{}, fmt.Errorf("Go dynamic handoff index: handoff cites unknown candidate %q", candidate.FunctionID)
@@ -268,6 +263,9 @@ func New(input Input) (Index, error) {
 		}
 		if handoff.CandidatesConsidered == 0 {
 			handoff.CandidatesConsidered = len(handoff.Candidates)
+		}
+		if handoff.CandidatesConsidered < len(handoff.Candidates) {
+			return Index{}, fmt.Errorf("Go dynamic handoff index: invalid candidate accounting")
 		}
 		handoff.CandidatesOmitted = handoff.CandidatesConsidered - len(handoff.Candidates)
 		handoff.ID = stableID(
@@ -279,17 +277,17 @@ func New(input Input) (Index, error) {
 			return Index{}, fmt.Errorf("Go dynamic handoff index: conflicting handoff %q", handoff.ID)
 		}
 		canonical[handoff.ID] = handoff
-		totalCandidates += len(handoff.Candidates)
-	}
-	if totalCandidates > MaxCandidates {
-		return Index{}, fmt.Errorf("Go dynamic handoff index: candidate bound exceeded")
 	}
 	index.Handoffs = index.Handoffs[:0]
 	for _, handoff := range canonical {
 		index.Handoffs = append(index.Handoffs, handoff)
 	}
 	sort.Slice(index.Handoffs, func(i, j int) bool { return handoffKey(index.Handoffs[i]) < handoffKey(index.Handoffs[j]) })
-	index.Coverage = compileCoverage(index.Handoffs, input.Coverage)
+	coverage, err := compileCoverage(index.Handoffs, input.Coverage)
+	if err != nil {
+		return Index{}, err
+	}
+	index.Coverage = coverage
 	digest, err := indexDigest(index)
 	if err != nil {
 		return Index{}, err
@@ -318,9 +316,6 @@ func (index Index) Validate() error {
 		!validSHA256(index.SourceDirectCallSHA256) {
 		return fmt.Errorf("Go dynamic handoff index: invalid producer identity")
 	}
-	if len(index.Functions) > MaxFunctions || len(index.Handoffs) > MaxHandoffs {
-		return fmt.Errorf("Go dynamic handoff index: collection bound exceeded")
-	}
 	functions := make(map[string]struct{}, len(index.Functions))
 	for position, function := range index.Functions {
 		if !validText(function.ID) || !validText(function.Package) || !validText(function.Symbol) ||
@@ -332,7 +327,6 @@ func (index Index) Validate() error {
 		}
 		functions[function.ID] = struct{}{}
 	}
-	totalCandidates := 0
 	for position, handoff := range index.Handoffs {
 		if err := validateHandoff(handoff, functions); err != nil {
 			return err
@@ -340,13 +334,13 @@ func (index Index) Validate() error {
 		if position > 0 && handoffKey(index.Handoffs[position-1]) >= handoffKey(handoff) {
 			return fmt.Errorf("Go dynamic handoff index: handoffs are not canonical")
 		}
-		totalCandidates += len(handoff.Candidates)
 	}
-	if totalCandidates > MaxCandidates || index.Coverage != compileCoverage(index.Handoffs, CoverageInput{
+	wantCoverage, err := compileCoverage(index.Handoffs, CoverageInput{
 		UnsupportedCallers:       index.Coverage.UnsupportedCallers,
 		InvalidCallsites:         index.Coverage.InvalidCallsites,
 		UnsupportedStaticTargets: index.Coverage.UnsupportedStaticTargets,
-	}) {
+	})
+	if err != nil || index.Coverage != wantCoverage {
 		return fmt.Errorf("Go dynamic handoff index: invalid coverage")
 	}
 	want, err := indexDigest(index)
@@ -361,7 +355,7 @@ func (index Index) Validate() error {
 
 func validateHandoff(handoff Handoff, functions map[string]struct{}) error {
 	if !handoff.Kind.valid() || !handoff.Invocation.valid() || !handoff.Resolution.valid() ||
-		!validText(handoff.ID) || !validLocation(handoff.Callsite) || !validText(handoff.Slot.Signature) {
+		!validText(handoff.ID) || !validLocation(handoff.Callsite) {
 		return fmt.Errorf("Go dynamic handoff index: invalid handoff")
 	}
 	if _, exists := functions[handoff.CallerID]; !exists {
@@ -370,8 +364,7 @@ func validateHandoff(handoff Handoff, functions map[string]struct{}) error {
 	if err := validateKindShape(handoff, functions); err != nil {
 		return err
 	}
-	if len(handoff.Candidates) > MaxCandidatesPerHandoff || handoff.CandidatesConsidered > MaxCandidatesPerHandoff ||
-		handoff.CandidatesConsidered < len(handoff.Candidates) ||
+	if handoff.CandidatesConsidered < len(handoff.Candidates) ||
 		handoff.CandidatesOmitted != handoff.CandidatesConsidered-len(handoff.Candidates) {
 		return fmt.Errorf("Go dynamic handoff index: invalid candidate accounting")
 	}
@@ -389,8 +382,8 @@ func validateHandoff(handoff Handoff, functions map[string]struct{}) error {
 			return fmt.Errorf("Go dynamic handoff index: invalid exact resolution")
 		}
 	case ResolutionAlternatives:
-		if len(handoff.Candidates) < 2 || handoff.CandidatesOmitted != 0 {
-			return fmt.Errorf("Go dynamic handoff index: alternatives require a complete candidate set")
+		if len(handoff.Candidates) < 1 || len(handoff.Candidates) == 1 && handoff.CandidatesOmitted == 0 {
+			return fmt.Errorf("Go dynamic handoff index: alternatives require multiple known candidates or an open frontier")
 		}
 	case ResolutionUnresolved:
 		if len(handoff.Candidates) != 0 {
@@ -404,7 +397,9 @@ func validateKindShape(handoff Handoff, functions map[string]struct{}) error {
 	target := handoff.StaticTarget
 	switch handoff.Kind {
 	case InterfaceInvoke:
-		if !validText(handoff.Slot.DeclaredType) || !validIdentifier(handoff.Slot.Method) || handoff.Slot.Parameter != 0 ||
+		if !validText(handoff.Slot.DeclaredType) || !validIdentifier(handoff.Slot.Method) ||
+			!validText(handoff.Slot.Signature) || handoff.Slot.ContainerType != "" ||
+			handoff.Slot.Field != "" || handoff.Slot.Parameter != 0 || handoff.Invocation == InvocationBinding ||
 			target != (StaticTarget{}) {
 			return fmt.Errorf("Go dynamic handoff index: invalid interface invoke slot")
 		}
@@ -415,14 +410,25 @@ func validateKindShape(handoff Handoff, functions map[string]struct{}) error {
 			}
 		}
 	case FunctionValueCall:
-		if handoff.Slot.DeclaredType != "" || handoff.Slot.Method != "" || handoff.Slot.Parameter != 0 ||
-			target != (StaticTarget{}) {
+		if !validText(handoff.Slot.Signature) || handoff.Slot.ContainerType != "" ||
+			handoff.Slot.DeclaredType != "" || handoff.Slot.Field != "" ||
+			handoff.Slot.Method != "" || handoff.Slot.Parameter != 0 ||
+			handoff.Invocation == InvocationBinding || target != (StaticTarget{}) {
 			return fmt.Errorf("Go dynamic handoff index: invalid function-value slot")
 		}
 	case CallbackTransfer:
-		if handoff.Slot.DeclaredType != "" || handoff.Slot.Method != "" || handoff.Slot.Parameter < 1 ||
-			!validStaticTarget(target, functions) {
+		if !validText(handoff.Slot.Signature) || handoff.Slot.ContainerType != "" ||
+			handoff.Slot.DeclaredType != "" || handoff.Slot.Field != "" ||
+			handoff.Slot.Method != "" || handoff.Slot.Parameter < 1 ||
+			handoff.Invocation == InvocationBinding || !validStaticTarget(target, functions) {
 			return fmt.Errorf("Go dynamic handoff index: invalid callback transfer")
+		}
+	case CallableBinding:
+		if handoff.Invocation != InvocationBinding || !validText(handoff.Slot.ContainerType) ||
+			!validIdentifier(handoff.Slot.Field) || !validText(handoff.Slot.DeclaredType) ||
+			handoff.Slot.Method != "" || handoff.Slot.Parameter != 0 || target != (StaticTarget{}) ||
+			handoff.Slot.Signature != "" && !validText(handoff.Slot.Signature) {
+			return fmt.Errorf("Go dynamic handoff index: invalid callable binding")
 		}
 	}
 	return nil
@@ -471,7 +477,7 @@ func evidenceRank(value CandidateEvidence) int {
 	}
 }
 
-func compileCoverage(handoffs []Handoff, input CoverageInput) Coverage {
+func compileCoverage(handoffs []Handoff, input CoverageInput) (Coverage, error) {
 	coverage := Coverage{
 		HandoffsIndexed:          len(handoffs),
 		UnsupportedCallers:       input.UnsupportedCallers,
@@ -485,16 +491,18 @@ func compileCoverage(handoffs []Handoff, input CoverageInput) Coverage {
 	}
 	omitted := 0
 	for _, count := range counts {
-		if count < 0 || count > MaxObservedHandoffs-omitted {
-			return Coverage{HandoffsObserved: -1}
+		var ok bool
+		omitted, ok = addNonnegativeCount(omitted, count)
+		if !ok {
+			return Coverage{}, fmt.Errorf("Go dynamic handoff index: coverage count overflow")
 		}
-		omitted += count
 	}
-	if len(handoffs) > MaxObservedHandoffs-omitted {
-		return Coverage{HandoffsObserved: -1}
+	observed, ok := addNonnegativeCount(len(handoffs), omitted)
+	if !ok {
+		return Coverage{}, fmt.Errorf("Go dynamic handoff index: coverage count overflow")
 	}
 	coverage.HandoffsOmitted = omitted
-	coverage.HandoffsObserved = coverage.HandoffsIndexed + coverage.HandoffsOmitted
+	coverage.HandoffsObserved = observed
 	for _, handoff := range handoffs {
 		switch handoff.Kind {
 		case InterfaceInvoke:
@@ -503,6 +511,8 @@ func compileCoverage(handoffs []Handoff, input CoverageInput) Coverage {
 			coverage.FunctionValueCalls++
 		case CallbackTransfer:
 			coverage.CallbackTransfers++
+		case CallableBinding:
+			coverage.CallableBindings++
 		}
 		switch handoff.Resolution {
 		case ResolutionExact:
@@ -512,11 +522,33 @@ func compileCoverage(handoffs []Handoff, input CoverageInput) Coverage {
 		case ResolutionUnresolved:
 			coverage.Unresolved++
 		}
-		coverage.CandidatesConsidered += handoff.CandidatesConsidered
-		coverage.CandidatesIndexed += len(handoff.Candidates)
-		coverage.CandidatesOmitted += handoff.CandidatesOmitted
+		coverage.CandidatesConsidered, ok = addNonnegativeCount(
+			coverage.CandidatesConsidered, handoff.CandidatesConsidered,
+		)
+		if !ok {
+			return Coverage{}, fmt.Errorf("Go dynamic handoff index: candidate count overflow")
+		}
+		coverage.CandidatesIndexed, ok = addNonnegativeCount(
+			coverage.CandidatesIndexed, len(handoff.Candidates),
+		)
+		if !ok {
+			return Coverage{}, fmt.Errorf("Go dynamic handoff index: candidate count overflow")
+		}
+		coverage.CandidatesOmitted, ok = addNonnegativeCount(
+			coverage.CandidatesOmitted, handoff.CandidatesOmitted,
+		)
+		if !ok {
+			return Coverage{}, fmt.Errorf("Go dynamic handoff index: candidate count overflow")
+		}
 	}
-	return coverage
+	return coverage, nil
+}
+
+func addNonnegativeCount(left, right int) (int, bool) {
+	if left < 0 || right < 0 || left > int(^uint(0)>>1)-right {
+		return 0, false
+	}
+	return left + right, true
 }
 
 func (index Index) digestPayload() Index {
@@ -562,7 +594,8 @@ func staticTargetKey(value StaticTarget) string {
 }
 
 func slotKey(value Slot) string {
-	return value.DeclaredType + "\x00" + value.Method + "\x00" + value.Signature + "\x00" + strconv.Itoa(value.Parameter)
+	return value.ContainerType + "\x00" + value.DeclaredType + "\x00" + value.Field + "\x00" +
+		value.Method + "\x00" + value.Signature + "\x00" + strconv.Itoa(value.Parameter)
 }
 
 func locationKey(value Location) string {
@@ -587,7 +620,7 @@ func validPath(value string) bool {
 }
 
 func validText(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || len(value) > MaxTextBytes || !utf8.ValidString(value) {
+	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) {
 		return false
 	}
 	for _, character := range value {

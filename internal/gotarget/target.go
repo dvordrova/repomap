@@ -4,7 +4,14 @@ package gotarget
 import (
 	"fmt"
 	"runtime"
+	"sort"
 	"strings"
+	"unicode"
+)
+
+const (
+	AdvisoryMaximumBuildTags = 64
+	AdvisoryBuildTagBytes    = 128
 )
 
 // Target is one atomic GOOS/GOARCH pair.
@@ -67,6 +74,78 @@ func (target Target) ApplyEnv(base []string) []string {
 		result = append(result, entry)
 	}
 	return append(result, "GOOS="+target.GOOS, "GOARCH="+target.GOARCH)
+}
+
+// ParseBuildTags restores the conventional comma-or-whitespace separated Go
+// build-tag input into one canonical, uniquely sorted set. The accepted
+// alphabet is the one used by Go build constraints: Unicode letters and
+// digits, underscore, and dot.
+func ParseBuildTags(value string) ([]string, error) {
+	return CanonicalBuildTags(strings.FieldsFunc(value, func(character rune) bool {
+		return character == ',' || unicode.IsSpace(character)
+	}))
+}
+
+// CanonicalBuildTags validates and owns an already tokenized build-tag set.
+// Keeping this validation beside Target lets deterministic fact loading and
+// the typed-program load share exactly one spelling contract.
+func CanonicalBuildTags(values []string) ([]string, error) {
+	canonical := append([]string(nil), values...)
+	for _, value := range canonical {
+		if !validBuildTag(value) {
+			return nil, fmt.Errorf(
+				"Go build tag %q must contain only letters, digits, underscores, or dots",
+				value,
+			)
+		}
+	}
+	sort.Strings(canonical)
+	result := canonical[:0]
+	for _, value := range canonical {
+		if len(result) == 0 || result[len(result)-1] != value {
+			result = append(result, value)
+		}
+	}
+	if result == nil {
+		return []string{}, nil
+	}
+	return result, nil
+}
+
+type ScaleWarning struct {
+	Kind         string
+	Retained     int
+	AdvisorySize int
+}
+
+func ScaleWarnings(tags []string) []ScaleWarning {
+	result := []ScaleWarning{}
+	if len(tags) > AdvisoryMaximumBuildTags {
+		result = append(result, ScaleWarning{Kind: "go_build_tags", Retained: len(tags), AdvisorySize: AdvisoryMaximumBuildTags})
+	}
+	maximum := 0
+	for _, tag := range tags {
+		if len(tag) > maximum {
+			maximum = len(tag)
+		}
+	}
+	if maximum > AdvisoryBuildTagBytes {
+		result = append(result, ScaleWarning{Kind: "go_build_tag_bytes", Retained: maximum, AdvisorySize: AdvisoryBuildTagBytes})
+	}
+	return result
+}
+
+func validBuildTag(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if !unicode.IsLetter(character) && !unicode.IsDigit(character) &&
+			character != '_' && character != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func safeToken(value string) bool {

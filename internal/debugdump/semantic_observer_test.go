@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ func TestSemanticObserverPersistsRawInvalidResponse(t *testing.T) {
 	request := []byte(`{"model":"fixture","messages":[]}`)
 	response := []byte("leading words {not-json")
 	observer := NewSemanticObserver(writer)
-	if err := observer.ObserveStage(SemanticStageCubemapEntrypoints, llm.Event{
+	if err := observer.ObserveStage(SemanticStageProgramGrouping, llm.Event{
 		Kind: llm.EventFailure, Source: llm.SourceLive, Failure: llm.FailureValidation,
 		Request: request, RequestBytes: len(request),
 		Response: response, ResponseBytes: len(response),
@@ -33,7 +34,7 @@ func TestSemanticObserverPersistsRawInvalidResponse(t *testing.T) {
 
 	runDir := filepath.Join(writer.BaseDir, writer.RunID)
 	directory, record := onlyObserverRecord(t, runDir)
-	if record.Stage != SemanticStageCubemapEntrypoints ||
+	if record.Stage != SemanticStageProgramGrouping ||
 		record.State != SemanticStateRejected ||
 		record.ValidationCode != SemanticValidationDecode ||
 		record.Response.Storage != "raw_content" || record.Response.File != "response.txt" {
@@ -78,6 +79,64 @@ func TestBoundSemanticObserverFlushesAcceptedExchange(t *testing.T) {
 	}
 }
 
+func TestSemanticObserverRetainsExchangeBeyondFormerOrdinalThreshold(t *testing.T) {
+	request := []byte(`{"model":"fixture","messages":[]}`)
+	response := []byte(`[]`)
+	exchange, retained := semanticExchangeForStageEvent(
+		SemanticStageTargetPortfolio,
+		MaxSemanticAttemptOrdinal+1,
+		llm.Event{
+			Kind: llm.EventLive, Source: llm.SourceLive,
+			Request: request, Response: response, Metrics: llm.Metrics{Attempts: 1},
+		},
+	)
+	if !retained || exchange.SemanticAttemptOrdinal != MaxSemanticAttemptOrdinal+1 {
+		t.Fatalf("exchange beyond former ordinal threshold = %#v, retained %t", exchange, retained)
+	}
+}
+
+func TestSemanticObserverReportsFormerOrdinalThresholdsAsAggregateWarnings(t *testing.T) {
+	observer := NewSemanticObserver(nil)
+	event := llm.Event{
+		Kind: llm.EventLive, Source: llm.SourceLive,
+		Request: []byte(`{"model":"fixture","messages":[]}`), Response: []byte(`[]`),
+		Metrics: llm.Metrics{Attempts: 1},
+	}
+	for ordinal := 0; ordinal < MaxSemanticExchangeInstanceOrdinal+1; ordinal++ {
+		if err := observer.ObserveStage(SemanticStageTargetPortfolio, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []SemanticOrdinalScaleWarning{
+		{
+			Kind:         SemanticScaleWarningAttemptOrdinal,
+			Retained:     MaxSemanticExchangeInstanceOrdinal + 1,
+			AdvisorySize: MaxSemanticAttemptOrdinal,
+		},
+		{
+			Kind:         SemanticScaleWarningInstanceOrdinal,
+			Retained:     MaxSemanticExchangeInstanceOrdinal + 1,
+			AdvisorySize: MaxSemanticExchangeInstanceOrdinal,
+		},
+	}
+	if got := observer.OrdinalScaleWarnings(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("OrdinalScaleWarnings = %#v, want %#v", got, want)
+	}
+	if got := observer.pending[len(observer.pending)-1]; got.InstanceOrdinal != MaxSemanticExchangeInstanceOrdinal+1 ||
+		got.SemanticAttemptOrdinal != MaxSemanticExchangeInstanceOrdinal+1 {
+		t.Fatalf("last retained exchange ordinals = %#v", got)
+	}
+
+	redacted := NewSemanticObserver(nil)
+	event.RequestRedacted = true
+	if err := redacted.ObserveStage(SemanticStageTargetPortfolio, event); err != nil {
+		t.Fatal(err)
+	}
+	if len(redacted.OrdinalScaleWarnings()) != 0 || redacted.instanceOrdinal != 0 {
+		t.Fatalf("redacted event entered ordinal accounting: %#v", redacted)
+	}
+}
+
 func TestSemanticObserverOmitsRedactedAuthorizationRequest(t *testing.T) {
 	t.Parallel()
 
@@ -111,7 +170,7 @@ func TestSemanticObserverMarksRedactedResponseUnavailable(t *testing.T) {
 	defer writer.Close()
 	observer := NewSemanticObserver(writer)
 	request := []byte(`{"model":"fixture","messages":[]}`)
-	if err := observer.ObserveStage(SemanticStageCubemapEntrypoints, llm.Event{
+	if err := observer.ObserveStage(SemanticStageProgramGrouping, llm.Event{
 		Kind: llm.EventFailure, Source: llm.SourceLive, Failure: llm.FailureResponse,
 		Request: request, RequestBytes: len(request),
 		ResponseRedacted: true, ResponseSHA256: strings.Repeat("a", 64), ResponseBytes: 48,

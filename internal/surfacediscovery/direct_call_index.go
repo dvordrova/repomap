@@ -14,14 +14,20 @@ import (
 )
 
 const (
-	DirectCallIndexVersion = 3
+	// Version 7 additionally measures the complete traversal depth while the
+	// ordinary zero-valued depth and edge controls retain the full exact graph.
+	// Version 6 introduced adapter-neutral call-result and
+	// receiver-result provenance plus every source-distinct pattern. Duplicate
+	// compiler witnesses remain only in WitnessCount; there is no per-edge
+	// pattern sample or truncation. The retained edges remain only actual static
+	// calls; callback execution is not inferred from an argument binding.
+	DirectCallIndexVersion = 7
 
-	// The direct-call substrate is retained only in memory, but it is still
-	// bounded independently from the SSA program. Crossing either ceiling closes
-	// the index: a retained prefix must never masquerade as the complete declared
-	// or configured target-rooted neighborhood for later domain cubes.
-	MaxDirectCallIndexNodes = 65_536
-	MaxDirectCallIndexEdges = 262_144
+	// These values are diagnostics only. Crossing them emits one aggregate
+	// warning and never drops a node, drops an edge, or closes the index.
+	AdvisoryDirectCallMaxDepth = 10
+	AdvisoryDirectCallMaxEdges = 10_000
+	AdvisoryDirectCallMaxNodes = 65_536
 )
 
 type DirectCallIndexState string
@@ -39,14 +45,12 @@ type DirectCallIndexClosedReason string
 
 const (
 	DirectCallIndexClosedSSAUnavailable DirectCallIndexClosedReason = "ssa_unavailable"
-	DirectCallIndexClosedNodeLimit      DirectCallIndexClosedReason = "node_limit"
 	DirectCallIndexClosedEdgeLimit      DirectCallIndexClosedReason = "edge_limit"
 )
 
 func (reason DirectCallIndexClosedReason) Valid() bool {
 	switch reason {
 	case DirectCallIndexClosedSSAUnavailable,
-		DirectCallIndexClosedNodeLimit,
 		DirectCallIndexClosedEdgeLimit:
 		return true
 	default:
@@ -103,16 +107,20 @@ type DirectCallNode struct {
 }
 
 // DirectCallEdge is one exact source-level repository call relation. Calls
-// with the same endpoints and invocation mode compact into one edge; the first
-// exact callsite in source order is retained and WitnessCount remains complete.
+// with the same endpoints and invocation mode compact into one edge. Every
+// source-distinct neutral call pattern is retained while WitnessCount separately
+// preserves duplicate compiler/SSA witnesses at the same source position.
 type DirectCallEdge struct {
-	ID                     string               `json:"id"`
-	CallerID               string               `json:"caller_id"`
-	CalleeID               string               `json:"callee_id"`
-	ScenarioID             string               `json:"scenario_id"`
-	Invocation             DirectCallInvocation `json:"invocation"`
-	RepresentativeCallsite Location             `json:"representative_callsite"`
-	WitnessCount           int                  `json:"witness_count"`
+	ID                     string                `json:"id"`
+	CallerID               string                `json:"caller_id"`
+	CalleeID               string                `json:"callee_id"`
+	ScenarioID             string                `json:"scenario_id"`
+	Invocation             DirectCallInvocation  `json:"invocation"`
+	RepresentativeCallsite Location              `json:"representative_callsite"`
+	WitnessCount           int                   `json:"witness_count"`
+	Patterns               []ExternalCallPattern `json:"patterns"`
+	PatternsObserved       int                   `json:"patterns_observed"`
+	PatternsOmitted        int                   `json:"patterns_omitted"`
 }
 
 // DirectCallNodeFrontier is closed per-caller accounting for call
@@ -143,6 +151,7 @@ type DirectCallIndexCoverage struct {
 	InvalidFunctionsExcluded     int `json:"invalid_functions_excluded"`
 	DynamicInvokesExcluded       int `json:"dynamic_invokes_excluded"`
 	NonStaticCallsExcluded       int `json:"non_static_calls_excluded"`
+	BuiltinCallsExcluded         int `json:"builtin_calls_excluded"`
 	NonRepositoryCallsExcluded   int `json:"non_repository_calls_excluded"`
 	InvalidEndpointCallsExcluded int `json:"invalid_endpoint_calls_excluded"`
 	InvalidCallsitesExcluded     int `json:"invalid_callsites_excluded"`
@@ -151,6 +160,9 @@ type DirectCallIndexCoverage struct {
 	// edges are intentionally absent, so a later consumer cannot interpret a
 	// missing connector as proof of true target-unreachability.
 	DepthBoundRepositoryCallsExcluded int `json:"depth_bound_repository_calls_excluded"`
+	// TraversalDepthReached is the greatest exact target-rooted distance visited
+	// by the BFS. It is measured even when the ordinary traversal is unbounded.
+	TraversalDepthReached int `json:"traversal_depth_reached"`
 	// EdgeLimitSafeDepth is populated only when a target-rooted edge ceiling
 	// closes the index. It is the greatest positive CLI depth known to exclude
 	// the overflowing BFS layer, so the suggested retry is causal rather than a
@@ -159,7 +171,8 @@ type DirectCallIndexCoverage struct {
 }
 
 // DirectCallIndexScope binds the exact declaration catalog and target-rooted
-// relation neighborhood to one selected analysis target and explicit bounds.
+// relation neighborhood to one selected analysis target and its optional
+// positive narrowing controls. Zero depth and edge limit mean unbounded.
 type DirectCallIndexScope struct {
 	TargetRef        string   `json:"target_ref,omitempty"`
 	TargetKind       string   `json:"target_kind,omitempty"`
@@ -191,7 +204,7 @@ func (scope DirectCallIndexScope) validate() error {
 		!validDirectCallModuleDirectory(scope.TargetModuleDir) {
 		return fmt.Errorf("direct call index: invalid target scope module identity")
 	}
-	if len(scope.TargetPackages) == 0 || len(scope.TargetPackages) > MaxDirectCallIndexNodes ||
+	if len(scope.TargetPackages) == 0 ||
 		!sort.StringsAreSorted(scope.TargetPackages) || !uniqueStrings(scope.TargetPackages) {
 		return fmt.Errorf("direct call index: invalid target scope packages")
 	}
@@ -211,16 +224,16 @@ func (scope DirectCallIndexScope) validate() error {
 			return fmt.Errorf("direct call index: module library target scope retained executable package")
 		}
 	}
-	if scope.MaxDepth < 1 {
+	if scope.MaxDepth < 0 {
 		return fmt.Errorf("direct call index: invalid target scope depth %d", scope.MaxDepth)
 	}
-	if scope.EdgeLimit < 1 || scope.EdgeLimit > MaxDirectCallIndexEdges {
+	if scope.EdgeLimit < 0 {
 		return fmt.Errorf("direct call index: invalid target scope edge limit %d", scope.EdgeLimit)
 	}
 	return nil
 }
 
-// DirectCallIndex is a deterministic, bounded, non-persisted local substrate.
+// DirectCallIndex is a deterministic, non-persisted local substrate.
 // SHA256 binds the complete canonical index (or its closed unavailable state)
 // so later bounded requests and final artifacts can name the exact producer
 // input without retaining the SSA program.
@@ -258,6 +271,9 @@ func (index DirectCallIndex) Snapshot() DirectCallIndex {
 		snapshot.Nodes[position] = copyDirectCallNode(snapshot.Nodes[position])
 	}
 	snapshot.Edges = cloneDirectCallSlice(index.Edges)
+	for position := range snapshot.Edges {
+		snapshot.Edges[position] = copyDirectCallEdge(snapshot.Edges[position])
+	}
 	snapshot.Frontiers = cloneDirectCallSlice(index.Frontiers)
 	snapshot.initializeLookups()
 	return snapshot
@@ -305,7 +321,7 @@ func (index *DirectCallIndex) Incoming(nodeID string) []DirectCallEdge {
 	result := make([]DirectCallEdge, 0)
 	for _, edge := range index.Edges {
 		if edge.CalleeID == nodeID {
-			result = append(result, edge)
+			result = append(result, copyDirectCallEdge(edge))
 		}
 	}
 	return result
@@ -321,7 +337,7 @@ func (index *DirectCallIndex) Outgoing(nodeID string) []DirectCallEdge {
 	result := make([]DirectCallEdge, 0)
 	for _, edge := range index.Edges {
 		if edge.CallerID == nodeID {
-			result = append(result, edge)
+			result = append(result, copyDirectCallEdge(edge))
 		}
 	}
 	return result
@@ -331,10 +347,15 @@ func (index *DirectCallIndex) edgesAt(positions []int) []DirectCallEdge {
 	result := make([]DirectCallEdge, 0, len(positions))
 	for _, position := range positions {
 		if position >= 0 && position < len(index.Edges) {
-			result = append(result, index.Edges[position])
+			result = append(result, copyDirectCallEdge(index.Edges[position]))
 		}
 	}
 	return result
+}
+
+func copyDirectCallEdge(value DirectCallEdge) DirectCallEdge {
+	value.Patterns = cloneExternalCallPatterns(value.Patterns)
+	return value
 }
 
 func (index *DirectCallIndex) initializeLookups() {
@@ -367,13 +388,20 @@ func (index DirectCallIndex) Validate() error {
 	if index.Coverage.DepthBoundRepositoryCallsExcluded < 0 {
 		return fmt.Errorf("direct call index: invalid depth-bound coverage")
 	}
+	if index.Coverage.TraversalDepthReached < 0 ||
+		(index.Scope.MaxDepth > 0 && index.Coverage.TraversalDepthReached > index.Scope.MaxDepth) {
+		return fmt.Errorf("direct call index: invalid traversal depth coverage")
+	}
+	if index.Coverage.BuiltinCallsExcluded < 0 {
+		return fmt.Errorf("direct call index: invalid builtin-call coverage")
+	}
 	if index.Coverage.EdgeLimitSafeDepth < 0 {
 		return fmt.Errorf("direct call index: invalid edge-limit recovery depth")
 	}
 	if index.Coverage.EdgeLimitSafeDepth > 0 &&
 		(index.State != DirectCallIndexUnavailable ||
 			index.ClosedReason != DirectCallIndexClosedEdgeLimit ||
-			index.Coverage.EdgeLimitSafeDepth >= index.Scope.MaxDepth) {
+			(index.Scope.MaxDepth > 0 && index.Coverage.EdgeLimitSafeDepth >= index.Scope.MaxDepth)) {
 		return fmt.Errorf("direct call index: inconsistent edge-limit recovery depth")
 	}
 	if index.State == DirectCallIndexReady && index.Coverage.EdgeLimitSafeDepth != 0 {
@@ -391,10 +419,7 @@ func (index DirectCallIndex) Validate() error {
 	} else if index.ClosedReason != "" {
 		return fmt.Errorf("direct call index: ready index has closed reason %q", index.ClosedReason)
 	}
-	if len(index.Nodes) > MaxDirectCallIndexNodes || len(index.Edges) > MaxDirectCallIndexEdges {
-		return fmt.Errorf("direct call index: graph exceeds production bounds")
-	}
-	if len(index.Edges) > index.Scope.EdgeLimit {
+	if index.Scope.EdgeLimit > 0 && len(index.Edges) > index.Scope.EdgeLimit {
 		return fmt.Errorf("direct call index: target graph exceeds configured edge limit")
 	}
 	if index.Coverage.ModulesIndexed != len(index.Modules) ||
@@ -466,8 +491,16 @@ func (index DirectCallIndex) Validate() error {
 		}
 		if edge.ScenarioID != index.Scenario.ID || !edge.Invocation.Valid() || edge.WitnessCount <= 0 ||
 			!validRepositoryDirectCallLocation(edge.RepresentativeCallsite) ||
+			edge.Patterns == nil || edge.PatternsObserved != len(edge.Patterns) ||
+			edge.PatternsOmitted != 0 ||
 			edge.ID != stableDirectCallEdgeID(edge) {
 			return fmt.Errorf("direct call index: invalid edge %q", edge.ID)
+		}
+		for position, pattern := range edge.Patterns {
+			if err := validateExternalCallPattern(pattern); err != nil ||
+				(position > 0 && !externalCallPatternLess(edge.Patterns[position-1], pattern)) {
+				return fmt.Errorf("direct call index: invalid edge patterns")
+			}
 		}
 		if _, duplicate := edges[edge.ID]; duplicate {
 			return fmt.Errorf("direct call index: duplicate edge %q", edge.ID)
@@ -524,7 +557,6 @@ func (index DirectCallIndex) Validate() error {
 type directCallIndexBuilder struct {
 	scenario      Scenario
 	scope         DirectCallIndexScope
-	maxNodes      int
 	maxEdges      int
 	state         DirectCallIndexState
 	closedReason  DirectCallIndexClosedReason
@@ -535,15 +567,14 @@ type directCallIndexBuilder struct {
 	functionNode  map[*ssa.Function]string
 	functionsSeen map[*ssa.Function]struct{}
 	coverage      DirectCallIndexCoverage
-	entryCalls    *entryCallSidecar
 }
 
-func newDirectCallIndexBuilderWithLimits(scenario Scenario, maxNodes, maxEdges int) *directCallIndexBuilder {
+func newDirectCallIndexBuilder(scenario Scenario, maxEdges int) *directCallIndexBuilder {
 	scenario.Tags = append([]string(nil), scenario.Tags...)
 	sort.Strings(scenario.Tags)
 	scenario.Tags = compactStrings(scenario.Tags)
 	return &directCallIndexBuilder{
-		scenario: scenario, maxNodes: maxNodes, maxEdges: maxEdges,
+		scenario: scenario, maxEdges: maxEdges,
 		state:   DirectCallIndexReady,
 		modules: make(map[string]DirectCallModule), nodes: make(map[string]DirectCallNode),
 		edges: make(map[string]DirectCallEdge), functionNode: make(map[*ssa.Function]string),
@@ -565,8 +596,9 @@ func (builder *directCallIndexBuilder) close(reason DirectCallIndexClosedReason)
 	}
 	builder.state = DirectCallIndexUnavailable
 	builder.closedReason = reason
-	// Fail closed and release the partial graph immediately. Coverage counters
-	// remain available to explain the bounded local outcome.
+	// An explicit positive edge ceiling still fails closed and releases the
+	// partial graph immediately. The ordinary zero-valued control never reaches
+	// this path.
 	builder.modules = nil
 	builder.nodes = nil
 	builder.edges = nil
@@ -608,10 +640,6 @@ func (builder *directCallIndexBuilder) recordFunction(a *analyzer, function *ssa
 	}
 	builder.coverage.NodesConsidered++
 	if _, exists := builder.nodes[node.ID]; !exists {
-		if len(builder.nodes) >= builder.maxNodes {
-			builder.close(DirectCallIndexClosedNodeLimit)
-			return "", false
-		}
 		builder.nodes[node.ID] = node
 		builder.modules[module.ID] = module
 	}
@@ -629,6 +657,10 @@ func (builder *directCallIndexBuilder) recordCall(a *analyzer, call ssa.CallInst
 	if common == nil {
 		builder.coverage.NonStaticCallsExcluded++
 		builder.recordCallerFrontier(a, call.Parent(), directCallFrontierNonStatic)
+		return
+	}
+	if _, builtin := common.Value.(*ssa.Builtin); builtin {
+		builder.coverage.BuiltinCallsExcluded++
 		return
 	}
 	if common.IsInvoke() {
@@ -664,25 +696,47 @@ func (builder *directCallIndexBuilder) recordCall(a *analyzer, call ssa.CallInst
 	edge := DirectCallEdge{
 		CallerID: callerID, CalleeID: calleeID, ScenarioID: builder.scenario.ID,
 		Invocation: directCallInvocation(call), RepresentativeCallsite: callsite,
-		WitnessCount: 1,
+		WitnessCount: 1, Patterns: []ExternalCallPattern{},
 	}
+	if pattern := a.externalCallPattern(common, callsite); pattern != nil {
+		edge.Patterns = appendDirectCallPattern(edge.Patterns, *pattern)
+	}
+	edge.PatternsObserved = len(edge.Patterns)
 	edge.ID = stableDirectCallEdgeID(edge)
 	if existing, found := builder.edges[edge.ID]; found {
 		existing.WitnessCount++
 		if directCallLocationLess(callsite, existing.RepresentativeCallsite) {
 			existing.RepresentativeCallsite = callsite
 		}
+		if pattern := a.externalCallPattern(common, callsite); pattern != nil {
+			existing.Patterns = appendDirectCallPattern(existing.Patterns, *pattern)
+		}
+		existing.PatternsObserved = len(existing.Patterns)
 		builder.edges[edge.ID] = existing
 		builder.coverage.DirectStaticWitnessesIndexed++
 		return
 	}
 	builder.coverage.UniqueEdgesConsidered++
-	if len(builder.edges) >= builder.maxEdges {
+	if builder.maxEdges > 0 && len(builder.edges) >= builder.maxEdges {
 		builder.close(DirectCallIndexClosedEdgeLimit)
 		return
 	}
 	builder.edges[edge.ID] = edge
 	builder.coverage.DirectStaticWitnessesIndexed++
+}
+
+func appendDirectCallPattern(
+	values []ExternalCallPattern,
+	candidate ExternalCallPattern,
+) []ExternalCallPattern {
+	for _, value := range values {
+		if value.ID == candidate.ID {
+			return values
+		}
+	}
+	values = append(values, cloneExternalCallPattern(candidate))
+	sort.Slice(values, func(i, j int) bool { return externalCallPatternLess(values[i], values[j]) })
+	return values
 }
 
 type directCallFrontierKind uint8
@@ -738,7 +792,7 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 			index.Nodes = append(index.Nodes, node)
 		}
 		for _, edge := range builder.edges {
-			index.Edges = append(index.Edges, edge)
+			index.Edges = append(index.Edges, copyDirectCallEdge(edge))
 		}
 		for _, frontier := range builder.frontiers {
 			index.Frontiers = append(index.Frontiers, frontier)

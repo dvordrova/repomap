@@ -1,8 +1,10 @@
 package gotarget
 
 import (
+	"fmt"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -41,5 +43,38 @@ func TestParseRejectsNonCanonicalTargetAndApplyEnvReplacesPair(t *testing.T) {
 	want := []string{"A=1", "B=2", "GOOS=linux", "GOARCH=arm64"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("target environment = %v, want %v", got, want)
+	}
+}
+
+func TestParseBuildTagsCanonicalizesCommaAndWhitespaceInput(t *testing.T) {
+	got, err := ParseBuildTags(" integration,netgo\tdebug integration ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"debug", "integration", "netgo"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("build tags = %v, want %v", got, want)
+	}
+
+	for _, value := range []string{"broken-tag", "prod!", "a/b"} {
+		if _, err := ParseBuildTags(value); err == nil {
+			t.Fatalf("ParseBuildTags(%q) succeeded", value)
+		}
+	}
+	long, err := ParseBuildTags(strings.Repeat("x", AdvisoryBuildTagBytes+1))
+	if err != nil || len(long) != 1 || len(long[0]) != AdvisoryBuildTagBytes+1 {
+		t.Fatalf("long build tag was not retained: %v, %v", long, err)
+	}
+	many := make([]string, AdvisoryMaximumBuildTags+1)
+	for index := range many {
+		many[index] = fmt.Sprintf("tag%d", index)
+	}
+	retained, err := CanonicalBuildTags(many)
+	if err != nil || len(retained) != len(many) {
+		t.Fatalf("large build tag set was not retained: %d, %v", len(retained), err)
+	}
+	warnings := append(ScaleWarnings(long), ScaleWarnings(retained)...)
+	if len(warnings) != 2 {
+		t.Fatalf("scale warnings = %#v", warnings)
 	}
 }

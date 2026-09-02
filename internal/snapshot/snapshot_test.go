@@ -109,6 +109,29 @@ func TestBuildUsesSemanticRepositoryIdentity(t *testing.T) {
 		}
 	})
 
+	t.Run("large tracked manifest keeps its identity", func(t *testing.T) {
+		t.Parallel()
+
+		repo := filepath.Join(t.TempDir(), "large-manifest")
+		manifest := strings.Repeat(" ", AdvisoryManifestBytes+1) + `{"name":"complete-manifest-project"}`
+		writeSnapshotFile(t, repo, "package.json", manifest)
+		trackSnapshotFiles(t, repo, "package.json")
+
+		got, err := buildSnapshotForTest(Options{RepoPath: repo})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.RepoName != "complete-manifest-project" {
+			t.Fatalf("repo_name = %q", got.RepoName)
+		}
+		warnings := RepositoryScaleWarnings(got)
+		if !slices.ContainsFunc(warnings, func(warning RepositoryScaleWarning) bool {
+			return warning.Kind == RepositoryScaleWarningManifestBytes
+		}) {
+			t.Fatalf("manifest warnings = %#v", warnings)
+		}
+	})
+
 	t.Run("untracked manifest cannot replace neutral fallback", func(t *testing.T) {
 		t.Parallel()
 
@@ -132,6 +155,23 @@ func TestBuildUsesSemanticRepositoryIdentity(t *testing.T) {
 			t.Fatalf("snapshot included untracked manifest identity: %s", encoded)
 		}
 	})
+}
+
+func TestGoModuleMetadataReadsBeyondFormerOneMiBLimit(t *testing.T) {
+	repo := t.TempDir()
+	goMod := strings.Repeat("// retained metadata\n", AdvisoryGoModuleBytes/20+2) +
+		"module example.com/complete/module\n\ngo 1.24\n"
+	writeSnapshotFile(t, repo, "go.mod", goMod)
+	trackSnapshotFiles(t, repo, "go.mod")
+	repository, err := corpus.Open(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	exists, name, byteCount := goModuleMetadata(repository, []string{"go.mod"})
+	if !exists || name != "example.com/complete/module" || byteCount != len(goMod) {
+		t.Fatalf("go module metadata = %t, %q, %d", exists, name, byteCount)
+	}
 }
 
 func TestBuildAutoGoTargetUsesUniqueProductionPlatformBeforeGoFacts(t *testing.T) {

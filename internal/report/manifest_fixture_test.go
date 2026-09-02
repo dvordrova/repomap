@@ -3,6 +3,7 @@ package report
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,34 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/freshness"
 )
+
+func TestRunManifestRetainsRepositoryStateBeyondFormerDirtyEntryThreshold(t *testing.T) {
+	manifest := validRunManifestFixture(t)
+	manifest.RepositoryState.Dirty = make([]freshness.DirtyFile, maxManifestRepositoryDirtyFiles+1)
+	for index := range manifest.RepositoryState.Dirty {
+		manifest.RepositoryState.Dirty[index] = freshness.DirtyFile{
+			Status: "modified", Path: fmt.Sprintf("dirty/%05d.go", index),
+			Kind: freshness.FileRegular, ContentSHA256: strings.Repeat("d", 64),
+		}
+	}
+	digest, err := manifest.RepositoryState.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.RepositoryStateSHA256 = digest
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("manifest above former dirty-entry threshold: %v", err)
+	}
+	warnings := RunManifestScaleWarnings(manifest)
+	found := false
+	for _, warning := range warnings {
+		found = found || warning.Kind == ReportScaleWarningDirtyEntries &&
+			warning.Retained == len(manifest.RepositoryState.Dirty)
+	}
+	if !found {
+		t.Fatalf("manifest scale warnings = %#v", warnings)
+	}
+}
 
 func validRunManifestFixture(t *testing.T) RunManifest {
 	t.Helper()
@@ -50,12 +79,17 @@ func validRunManifestFixture(t *testing.T) RunManifest {
 		CapturedInputs:        inputs,
 		CapturedInputsSHA256:  inputsDigest,
 		MaterialInputs: MaterialInputs{
-			SelectedRevision:      repository.Head,
-			ProgramTargetID:       "pt-fixture",
-			ProgramTargetSHA256:   strings.Repeat("8", 64),
-			ProgramIndexSetSHA256: strings.Repeat("9", 64),
-			InputPolicyVersion:    "captured-inputs-v1",
-			ReportContract:        CurrentFormatVersion,
+			SelectedRevision:             repository.Head,
+			ProgramTargetID:              "pt-fixture",
+			ProgramTargetSHA256:          strings.Repeat("8", 64),
+			ProgramIndexSetSHA256:        strings.Repeat("9", 64),
+			ProgramPagePortfolioSHA256:   strings.Repeat("3", 64),
+			TargetOutcomePortfolioSHA256: strings.Repeat("4", 64),
+			DependencyCatalogSHA256:      strings.Repeat("5", 64),
+			ReducedDocumentationSHA256:   strings.Repeat("6", 64),
+			GroupsIndexSHA256:            strings.Repeat("7", 64),
+			InputPolicyVersion:           "captured-inputs-v1",
+			ReportContract:               CurrentFormatVersion,
 		},
 	}
 }
@@ -157,6 +191,13 @@ func writeTestFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
 		t.Fatalf("writeTestFile(%s): %v", name, err)
+	}
+}
+
+func writeTargetPageManifestArtifact(t *testing.T, runDir, name string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(runDir, name), data, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -17,9 +17,6 @@ except ImportError:
     print(json.dumps({"fatal": "python 3.11 or newer is required for TOML parsing"}))
     raise SystemExit(0)
 
-MAX_LITERAL_DEPTH = 20
-MAX_LITERAL_ITEMS = 10000
-
 def decode_file(item):
     try:
         return base64.b64decode(item["content"], validate=True).decode("utf-8")
@@ -155,21 +152,14 @@ def setup_cfg(item, text):
 class UnsafeLiteral(Exception):
     pass
 
-def safe_literal(node, env, depth=0, count=None):
-    if count is None:
-        count = [0]
-    if depth > MAX_LITERAL_DEPTH:
-        raise UnsafeLiteral()
-    count[0] += 1
-    if count[0] > MAX_LITERAL_ITEMS:
-        raise UnsafeLiteral()
+def safe_literal(node, env):
     if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, float, bool, type(None))):
         return node.value
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
-        return [safe_literal(value, env, depth + 1, count) for value in node.elts]
+        return [safe_literal(value, env) for value in node.elts]
     if isinstance(node, ast.Dict):
         return {
-            safe_literal(key, env, depth + 1, count): safe_literal(value, env, depth + 1, count)
+            safe_literal(key, env): safe_literal(value, env)
             for key, value in zip(node.keys, node.values) if key is not None
         }
     if isinstance(node, ast.Name) and node.id in env:

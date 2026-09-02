@@ -1,8 +1,11 @@
 {
   "version": 1,
   "entries": [
-    {"id": "f1", "path": "cmd/app/main.go"},
-    {"id": "f2", "path": "go.mod"},
-    {"id": "f3", "path": "internal/storefixture/fixtures.go"}
+    {"id": "f1", "path": "_examples/published/go.mod"},
+    {"id": "f2", "path": "_examples/published/main.go"},
+    {"id": "f3", "path": "cmd/app/main.go"},
+    {"id": "f4", "path": "go.mod"},
+    {"id": "f5", "path": "internal/storefixture/fixtures.go"},
+    {"id": "f6", "path": "root.go"}
   ]
 }

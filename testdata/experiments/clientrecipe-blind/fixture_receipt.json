@@ -2,7 +2,7 @@
   "version": 1,
   "status": "SEALED",
   "author_brief_sha256": "2ac6286b63b3ab2ed8017de9052597bfeb87a771fc221b9823f1fd8322ff1e81",
-  "preregistration_sha256": "cc33da2a49676ba7df89eed10b16291a1d5b6115e63ac02e98be4244c1d095e4",
+  "preregistration_sha256": "1d7e51ffde62140742d7f04aa35dbfec3c5ac974aa75dc2088194c2850195b70",
   "oracle_schema_version": 1,
   "oracle_schema_sha256": "409de2cae576e9c2e759fa3a6fea811adbb3ecefba0c0bf761c0e59414ce24ea",
   "repository_files": [
@@ -181,5 +181,5 @@
     "fixture_validated_before_seal": true,
     "oracle_sealed_before_candidate": true
   },
-  "sha256": "9544c7391106299e56739930308444101e8308480d5783fb18b6502de8a0a15c"
+  "sha256": "85b1469f522bc23d40a8697db7767f71dadb2b05f78549fc170fa1a299b62700"
 }

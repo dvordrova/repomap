@@ -16,8 +16,8 @@ import (
 const (
 	reducerLeaveOneOutVersion = 1
 	reducerCandidateVersion   = 1
-	frozenH1SHA256            = "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7"
-	frozenReceiptSHA256       = "934a4b8b7f316f44e6b83172dc8e56c6ed56dd7d8be36c5d9670c9a68fb25f8d"
+	frozenH1SHA256            = "ec8f7411ad09e3c68f5b8deabd30ea71753fb7774b2f6806c5b482c5a5c4cb01"
+	frozenReceiptSHA256       = "014affc25712645629fc2e65aad1d98dc997ab9a12ae52a1c8c503b974395c30"
 )
 
 type reducerCandidate struct {

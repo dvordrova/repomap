@@ -16,35 +16,34 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/dvordrova/repomap/internal/activityentrypoint"
-	"github.com/dvordrova/repomap/internal/activitypath"
-	"github.com/dvordrova/repomap/internal/analysistarget"
-	"github.com/dvordrova/repomap/internal/coremap"
-	"github.com/dvordrova/repomap/internal/cubemap"
+	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/dependencies"
-	"github.com/dvordrova/repomap/internal/dependencydeclaration"
+	"github.com/dvordrova/repomap/internal/documentationreduce"
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/freshness"
-	"github.com/dvordrova/repomap/internal/integrationdependency"
-	"github.com/dvordrova/repomap/internal/integrationusage"
-	"github.com/dvordrova/repomap/internal/jstsproject"
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
-	"github.com/dvordrova/repomap/internal/pythondeclareddependencies"
-	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
-	"github.com/dvordrova/repomap/internal/runtimeportfolio"
-	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
 const (
-	CurrentRunManifestVersion = 35
+	CurrentRunManifestVersion = 39
 	RunManifestFilename       = "run_manifest.json"
 
-	maxRunManifestBytes             = 4 * 1024 * 1024
-	maxManifestReportBytes          = MaxReportJSONBytes
-	maxManifestSnapshotBytes        = 64 * 1024 * 1024
+	advisoryRunManifestBytes      = 4 * 1024 * 1024
+	maxRunManifestBytes           = 0
+	maxManifestReportBytes        = 0
+	advisoryManifestSnapshotBytes = 64 * 1024 * 1024
+	// Snapshot artifacts are local exact authority. Zero means read the whole
+	// regular file; scale diagnostics, not validation, own the former 64 MiB
+	// observation threshold.
+	maxManifestSnapshotBytes = 0
+	// maxManifestOpenablePaths is advisory only. Complete source authority is
+	// retained; unusually large path sets are reported through scale warnings.
 	maxManifestOpenablePaths        = 4096
 	maxManifestIdentifierBytes      = 256
 	maxManifestPathBytes            = 4096
@@ -100,39 +99,34 @@ func (authority *StandaloneSourceAuthority) validate() error {
 }
 
 type MaterialInputs struct {
-	SelectedRevision              string `json:"selected_revision"`
-	AnalysisTargetRef             string `json:"analysis_target_ref,omitempty"`
-	AnalysisTargetSHA256          string `json:"analysis_target_sha256,omitempty"`
-	ProgramTargetID               string `json:"program_target_id"`
-	ProgramTargetSHA256           string `json:"program_target_sha256"`
-	ProgramIndexSetSHA256         string `json:"program_index_set_sha256"`
-	CubeMapSHA256                 string `json:"cube_map_sha256,omitempty"`
-	CoreMapSHA256                 string `json:"core_map_sha256,omitempty"`
-	ActivityEntrypointsSHA256     string `json:"activity_entrypoints_sha256,omitempty"`
-	PythonTargetCatalogSHA256     string `json:"python_target_catalog_sha256,omitempty"`
-	DeclaredDependenciesSHA256    string `json:"declared_dependencies_sha256,omitempty"`
-	DependencyCatalogSHA256       string `json:"dependency_catalog_sha256,omitempty"`
-	IntegrationDependenciesSHA256 string `json:"integration_dependencies_sha256,omitempty"`
-	IntegrationUsageSHA256        string `json:"integration_usage_sha256,omitempty"`
-	ActivityPathsSHA256           string `json:"activity_paths_sha256,omitempty"`
-	JSTSProjectSHA256             string `json:"js_ts_project_sha256,omitempty"`
-	ReadmeFileRolesSHA256         string `json:"readme_file_roles_sha256,omitempty"`
-	TargetRunContainerSHA256      string `json:"target_run_container_sha256,omitempty"`
-	TargetPagePortfolioSHA256     string `json:"target_page_portfolio_sha256,omitempty"`
-	ProgramPagePortfolioSHA256    string `json:"program_page_portfolio_sha256,omitempty"`
-	RuntimePortfolioSHA256        string `json:"runtime_portfolio_sha256,omitempty"`
-	TargetOutcomePortfolioSHA256  string `json:"target_outcome_portfolio_sha256,omitempty"`
-	InputPolicyVersion            string `json:"input_policy_version"`
-	ReportContract                int    `json:"report_contract"`
+	SelectedRevision             string `json:"selected_revision"`
+	ProgramTargetID              string `json:"program_target_id"`
+	ProgramTargetSHA256          string `json:"program_target_sha256"`
+	ProgramIndexSetSHA256        string `json:"program_index_set_sha256"`
+	DependencyCatalogSHA256      string `json:"dependency_catalog_sha256"`
+	ReducedDocumentationSHA256   string `json:"reduced_documentation_sha256"`
+	GroupsIndexSHA256            string `json:"groups_index_sha256"`
+	ReadmeFileRolesSHA256        string `json:"readme_file_roles_sha256,omitempty"`
+	ProgramPagePortfolioSHA256   string `json:"program_page_portfolio_sha256"`
+	TargetOutcomePortfolioSHA256 string `json:"target_outcome_portfolio_sha256"`
+	// The first-day artifacts are optional: an empty digest means the run
+	// directory carries no such file and report.json carries no such value.
+	FactsSHA256        string `json:"facts_sha256,omitempty"`
+	ClaimsSHA256       string `json:"claims_sha256,omitempty"`
+	OrientationSHA256  string `json:"orientation_sha256,omitempty"`
+	InputPolicyVersion string `json:"input_policy_version"`
+	ReportContract     int    `json:"report_contract"`
 }
 
 // RunAuthority binds one analysis to its captured repository identity and
 // exact material inputs. It deliberately carries no later-state comparison.
 type RunAuthority struct {
-	analysisRoot string
-	repository   freshness.RepositoryState
-	inputs       []freshness.CapturedInput
-	confirmed    bool
+	analysisRoot      string
+	repository        freshness.RepositoryState
+	inputs            []freshness.CapturedInput
+	confirmed         bool
+	groupGraphIndexes []groupindex.Index
+	groupGraphBound   bool
 }
 
 // Validate checks that a manifest is bounded, canonical, and internally
@@ -143,9 +137,6 @@ func (m RunManifest) Validate() error {
 	}
 	if err := m.RepositoryState.Validate(); err != nil {
 		return fmt.Errorf("report manifest: repository state: %w", err)
-	}
-	if len(m.RepositoryState.Dirty) > maxManifestRepositoryDirtyFiles {
-		return fmt.Errorf("report manifest: repository state has more than %d dirty files", maxManifestRepositoryDirtyFiles)
 	}
 	if err := validateAnalysisRoot(m.RepositoryState.Identity, m.AnalysisRoot); err != nil {
 		return fmt.Errorf("report manifest: analysis root: %w", err)
@@ -169,9 +160,6 @@ func (m RunManifest) Validate() error {
 	if m.ReportFormatVersion != CurrentFormatVersion {
 		return fmt.Errorf("report manifest: unsupported report format version %d", m.ReportFormatVersion)
 	}
-	if len(m.OpenablePaths) > maxManifestOpenablePaths {
-		return fmt.Errorf("report manifest: more than %d openable paths", maxManifestOpenablePaths)
-	}
 	inputsDigest, err := freshness.CapturedInputsDigest(m.CapturedInputs)
 	if err != nil {
 		return fmt.Errorf("report manifest: captured inputs: %w", err)
@@ -183,17 +171,6 @@ func (m RunManifest) Validate() error {
 		!validManifestLabel(m.MaterialInputs.InputPolicyVersion) ||
 		m.MaterialInputs.ReportContract != m.ReportFormatVersion {
 		return fmt.Errorf("report manifest: material inputs are invalid")
-	}
-	hasAnalysisTargetRef := m.MaterialInputs.AnalysisTargetRef != ""
-	hasAnalysisTargetSHA256 := m.MaterialInputs.AnalysisTargetSHA256 != ""
-	if hasAnalysisTargetRef != hasAnalysisTargetSHA256 {
-		return fmt.Errorf("report manifest: analysis target ref and sha256 must both be present or absent")
-	}
-	if hasAnalysisTargetRef && !validManifestLabel(m.MaterialInputs.AnalysisTargetRef) {
-		return fmt.Errorf("report manifest: analysis target ref is invalid")
-	}
-	if hasAnalysisTargetSHA256 && !validManifestSHA256(m.MaterialInputs.AnalysisTargetSHA256) {
-		return fmt.Errorf("report manifest: analysis target sha256 is invalid")
 	}
 	hasProgramTargetID := m.MaterialInputs.ProgramTargetID != ""
 	hasProgramTargetSHA256 := m.MaterialInputs.ProgramTargetSHA256 != ""
@@ -209,100 +186,33 @@ func (m RunManifest) Validate() error {
 	if !validManifestSHA256(m.MaterialInputs.ProgramIndexSetSHA256) {
 		return fmt.Errorf("report manifest: program index set sha256 is invalid")
 	}
-	hasCubeMap := m.MaterialInputs.CubeMapSHA256 != ""
-	if hasCubeMap && !validManifestSHA256(m.MaterialInputs.CubeMapSHA256) {
-		return fmt.Errorf("report manifest: cube map sha256 is invalid")
-	}
-	if hasCubeMap && (!hasAnalysisTargetRef || !hasProgramTargetID) {
-		return fmt.Errorf("report manifest: cube map requires exact analysis and program targets")
-	}
-	hasCoreMap := m.MaterialInputs.CoreMapSHA256 != ""
-	if hasCoreMap && !validManifestSHA256(m.MaterialInputs.CoreMapSHA256) {
-		return fmt.Errorf("report manifest: core map sha256 is invalid")
-	}
-	if hasCoreMap && (!hasProgramTargetID || hasCubeMap) {
-		return fmt.Errorf("report manifest: core map requires one exact program target and no legacy cube map")
-	}
-	hasActivityEntrypoints := m.MaterialInputs.ActivityEntrypointsSHA256 != ""
-	if hasActivityEntrypoints && !validManifestSHA256(m.MaterialInputs.ActivityEntrypointsSHA256) {
-		return fmt.Errorf("report manifest: activity entrypoints sha256 is invalid")
-	}
-	if hasActivityEntrypoints != hasCoreMap {
-		return fmt.Errorf("report manifest: core map and activity entrypoints must be bound together")
-	}
-	hasPythonTargetCatalog := m.MaterialInputs.PythonTargetCatalogSHA256 != ""
-	if hasPythonTargetCatalog && !validManifestSHA256(m.MaterialInputs.PythonTargetCatalogSHA256) {
-		return fmt.Errorf("report manifest: Python target catalog sha256 is invalid")
-	}
-	hasDeclaredDependencies := m.MaterialInputs.DeclaredDependenciesSHA256 != ""
-	if hasDeclaredDependencies && !validManifestSHA256(m.MaterialInputs.DeclaredDependenciesSHA256) {
-		return fmt.Errorf("report manifest: declared dependencies sha256 is invalid")
-	}
-	if hasDeclaredDependencies && (!hasCoreMap || !hasPythonTargetCatalog) {
-		return fmt.Errorf("report manifest: declared dependencies require a core map and Python target catalog")
-	}
-	hasIntegrationDependencies := m.MaterialInputs.IntegrationDependenciesSHA256 != ""
-	if hasIntegrationDependencies && !validManifestSHA256(m.MaterialInputs.IntegrationDependenciesSHA256) {
-		return fmt.Errorf("report manifest: integration dependencies sha256 is invalid")
-	}
-	hasDependencyCatalog := m.MaterialInputs.DependencyCatalogSHA256 != ""
-	if hasDependencyCatalog && !validManifestSHA256(m.MaterialInputs.DependencyCatalogSHA256) {
+	if !validManifestSHA256(m.MaterialInputs.DependencyCatalogSHA256) {
 		return fmt.Errorf("report manifest: dependency catalog sha256 is invalid")
 	}
-	hasIntegrationUsage := m.MaterialInputs.IntegrationUsageSHA256 != ""
-	if hasIntegrationUsage && !validManifestSHA256(m.MaterialInputs.IntegrationUsageSHA256) {
-		return fmt.Errorf("report manifest: integration usage sha256 is invalid")
+	if !validManifestSHA256(m.MaterialInputs.GroupsIndexSHA256) {
+		return fmt.Errorf("report manifest: groups index sha256 is invalid")
 	}
-	if hasIntegrationDependencies != hasCoreMap || hasDependencyCatalog != hasCoreMap ||
-		hasIntegrationUsage != hasCoreMap {
-		return fmt.Errorf("report manifest: core map, dependency catalog, integration dependencies, and integration usage must be bound together")
-	}
-	hasActivityPaths := m.MaterialInputs.ActivityPathsSHA256 != ""
-	if hasActivityPaths && !validManifestSHA256(m.MaterialInputs.ActivityPathsSHA256) {
-		return fmt.Errorf("report manifest: activity paths sha256 is invalid")
-	}
-	if hasActivityPaths != hasCoreMap {
-		return fmt.Errorf("report manifest: semantic authority requires a bound activity path artifact")
-	}
-	if m.MaterialInputs.JSTSProjectSHA256 != "" &&
-		!validManifestSHA256(m.MaterialInputs.JSTSProjectSHA256) {
-		return fmt.Errorf("report manifest: JavaScript/TypeScript project sha256 is invalid")
-	}
-	if m.MaterialInputs.JSTSProjectSHA256 != "" && !hasCoreMap {
-		return fmt.Errorf("report manifest: JavaScript/TypeScript project requires complete semantic authority")
+	if !validManifestSHA256(m.MaterialInputs.ReducedDocumentationSHA256) {
+		return fmt.Errorf("report manifest: reduced documentation sha256 is invalid")
 	}
 	if m.MaterialInputs.ReadmeFileRolesSHA256 != "" &&
 		!validManifestSHA256(m.MaterialInputs.ReadmeFileRolesSHA256) {
 		return fmt.Errorf("report manifest: README file-role sha256 is invalid")
 	}
-	hasTargetRunContainer := m.MaterialInputs.TargetRunContainerSHA256 != ""
-	hasTargetPagePortfolio := m.MaterialInputs.TargetPagePortfolioSHA256 != ""
-	hasProgramPagePortfolio := m.MaterialInputs.ProgramPagePortfolioSHA256 != ""
-	hasRuntimePortfolio := m.MaterialInputs.RuntimePortfolioSHA256 != ""
-	hasTargetOutcomePortfolio := m.MaterialInputs.TargetOutcomePortfolioSHA256 != ""
-	if hasTargetRunContainer && !hasAnalysisTargetRef {
-		return fmt.Errorf("report manifest: target run container requires one analysis target")
-	}
-	if hasTargetRunContainer && !validManifestSHA256(m.MaterialInputs.TargetRunContainerSHA256) {
-		return fmt.Errorf("report manifest: target run container sha256 is invalid")
-	}
-	if hasTargetPagePortfolio && (!hasTargetRunContainer ||
-		!validManifestSHA256(m.MaterialInputs.TargetPagePortfolioSHA256)) {
-		return fmt.Errorf("report manifest: target page portfolio binding is invalid")
-	}
-	if hasProgramPagePortfolio && !validManifestSHA256(m.MaterialInputs.ProgramPagePortfolioSHA256) {
+	if !validManifestSHA256(m.MaterialInputs.ProgramPagePortfolioSHA256) {
 		return fmt.Errorf("report manifest: program page portfolio sha256 is invalid")
 	}
-	if hasProgramPagePortfolio && (hasTargetRunContainer || hasTargetPagePortfolio) {
-		return fmt.Errorf("report manifest: program and Go target page authority are mutually exclusive")
+	if !validManifestSHA256(m.MaterialInputs.TargetOutcomePortfolioSHA256) {
+		return fmt.Errorf("report manifest: target outcome portfolio sha256 is invalid")
 	}
-	if hasTargetOutcomePortfolio != hasProgramPagePortfolio ||
-		hasTargetOutcomePortfolio && !validManifestSHA256(m.MaterialInputs.TargetOutcomePortfolioSHA256) {
-		return fmt.Errorf("report manifest: target outcome portfolio binding is invalid")
-	}
-	if hasRuntimePortfolio != (hasTargetPagePortfolio || hasProgramPagePortfolio) ||
-		hasRuntimePortfolio && !validManifestSHA256(m.MaterialInputs.RuntimePortfolioSHA256) {
-		return fmt.Errorf("report manifest: runtime portfolio binding is invalid")
+	for label, digest := range map[string]string{
+		"facts":       m.MaterialInputs.FactsSHA256,
+		"claims":      m.MaterialInputs.ClaimsSHA256,
+		"orientation": m.MaterialInputs.OrientationSHA256,
+	} {
+		if digest != "" && !validManifestSHA256(digest) {
+			return fmt.Errorf("report manifest: %s sha256 is invalid", label)
+		}
 	}
 	previousPath := ""
 	for index, value := range m.OpenablePaths {
@@ -393,6 +303,51 @@ func ExtendRunAuthority(
 	return result, nil
 }
 
+// BindRunAuthorityGroupGraph attaches the complete matched graph set only
+// after every source path carried by that set has entered captured-input
+// authority. The set is transaction-local; canonical report.json receives the
+// direct GroupGraph projection during generation.
+func BindRunAuthorityGroupGraph(
+	authority RunAuthority,
+	indexes []groupindex.Index,
+) (RunAuthority, error) {
+	if err := authority.validate(); err != nil {
+		return RunAuthority{}, err
+	}
+	if len(indexes) == 0 {
+		return RunAuthority{}, fmt.Errorf("report manifest: group graph set is empty")
+	}
+	view, err := NewGroupGraphView(indexes, indexes[0].Target.ID)
+	if err != nil {
+		return RunAuthority{}, fmt.Errorf("report manifest: group graph: %w", err)
+	}
+	paths, err := view.SourcePaths()
+	if err != nil {
+		return RunAuthority{}, fmt.Errorf("report manifest: group graph source paths: %w", err)
+	}
+	wantPaths, err := repositoryRelativeInputPaths(
+		authority.repository.Identity, authority.analysisRoot, paths,
+	)
+	if err != nil {
+		return RunAuthority{}, err
+	}
+	captured := make(map[string]struct{}, len(authority.inputs))
+	for _, input := range authority.inputs {
+		captured[input.Path] = struct{}{}
+	}
+	for _, sourcePath := range wantPaths {
+		if _, ok := captured[sourcePath]; !ok {
+			return RunAuthority{}, fmt.Errorf(
+				"report manifest: group graph path %q is not captured", sourcePath,
+			)
+		}
+	}
+	result := authority
+	result.groupGraphIndexes = view.Indexes
+	result.groupGraphBound = true
+	return result, nil
+}
+
 func validateAuthorityRoots(analysisRoot string, initial freshness.RepositoryState) (string, string, error) {
 	root, err := canonicalManifestDirectory("analysis root", analysisRoot)
 	if err != nil {
@@ -447,17 +402,12 @@ func CapturedInputPaths(data *ReportData) ([]string, error) {
 	if data.ProgramPortfolio == nil {
 		return nil, fmt.Errorf("report: captured input paths require a program portfolio")
 	}
-	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
+	_, err := data.ProgramPortfolio.defaultEntry()
 	if err != nil {
 		return nil, fmt.Errorf("report: captured input paths: %w", err)
 	}
 	paths := append([]string(nil), data.OpenablePaths...)
 	paths = append(paths, data.materialInputPaths...)
-	goInputs := strings.EqualFold(defaultEntry.Target.Language, "go") ||
-		strings.EqualFold(defaultEntry.Target.Language, "golang")
-	if goInputs {
-		paths = append(paths, "go.work", "go.work.sum")
-	}
 	sort.Strings(paths)
 	compacted := paths[:0]
 	for _, value := range paths {
@@ -521,7 +471,7 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	if err := m.Validate(); err != nil {
 		return err
 	}
-	if len(reportJSON) > maxManifestReportBytes {
+	if maxManifestReportBytes > 0 && len(reportJSON) > maxManifestReportBytes {
 		return fmt.Errorf("report manifest: report exceeds %d bytes", maxManifestReportBytes)
 	}
 	if manifestSHA256(reportJSON) != m.ReportSHA256 {
@@ -551,19 +501,15 @@ func (m RunManifest) verifyReportData(report ReportData) error {
 		return fmt.Errorf("report manifest: source authority does not match report")
 	}
 	material := m.MaterialInputs
-	targetRef, targetSHA256, err := reportAnalysisTargetMaterial(report.AnalysisTarget)
-	if err != nil {
-		return fmt.Errorf("report manifest: report analysis target: %w", err)
-	}
-	if targetRef != material.AnalysisTargetRef || targetSHA256 != material.AnalysisTargetSHA256 {
-		return fmt.Errorf("report manifest: analysis target identity does not match report")
-	}
 	if report.ProgramPortfolio == nil {
 		return fmt.Errorf("report manifest: report program portfolio is missing")
 	}
 	defaultEntry, err := report.ProgramPortfolio.defaultEntry()
 	if err != nil {
 		return fmt.Errorf("report manifest: report program portfolio: %w", err)
+	}
+	if report.GroupGraph == nil {
+		return fmt.Errorf("report manifest: final group graph is missing")
 	}
 	programTargetID, programTargetSHA256, err := reportProgramTargetMaterial(&defaultEntry.Target)
 	if err != nil {
@@ -572,140 +518,43 @@ func (m RunManifest) verifyReportData(report ReportData) error {
 	if programTargetID != material.ProgramTargetID || programTargetSHA256 != material.ProgramTargetSHA256 {
 		return fmt.Errorf("report manifest: program target identity does not match report")
 	}
-	if err := validateProgramSemanticPresentation(
-		report.ProgramPortfolio,
-		report.AnalysisTarget,
-		report.CubeMapView,
-		report.CoreMapView,
-		report.ActivityEntrypointView,
-		report.IntegrationUsageView,
-		report.ActivityPathView,
-		jstsSemanticPresentation{report.JSTSSurfaceCatalogView, report.CrossSurfacePathView},
-	); err != nil {
-		return fmt.Errorf("report manifest: %w", err)
+	if report.TargetOutcomePortfolio == nil {
+		return fmt.Errorf("report manifest: target outcome portfolio projection is missing")
 	}
-	hasCubeMap := material.CubeMapSHA256 != ""
-	if (report.CubeMapView != nil) != hasCubeMap {
-		return fmt.Errorf("report manifest: cube map identity does not match report projection")
+	if err := report.TargetOutcomePortfolio.Validate(); err != nil {
+		return fmt.Errorf("report manifest: target outcome portfolio view: %w", err)
 	}
-	if report.CubeMapView != nil {
-		if report.AnalysisTarget == nil {
-			return fmt.Errorf("report manifest: cube map projection lacks exact target authority")
-		}
-		if err := report.CubeMapView.Validate(); err != nil {
-			return fmt.Errorf("report manifest: cube map view: %w", err)
-		}
-		if report.CubeMapView.Target.Ref != report.AnalysisTarget.Ref {
-			return fmt.Errorf("report manifest: cube map target does not match report target")
-		}
-		if report.CubeMapView.ProgramTargetID != defaultEntry.Target.ID {
-			return fmt.Errorf("report manifest: cube map does not bind the report program target")
-		}
-		if err := validateCubeMapProgramTarget(*report.AnalysisTarget, defaultEntry.Target); err != nil {
-			return fmt.Errorf("report manifest: %w", err)
+	return m.verifyFirstDayReportValues(report)
+}
+
+// verifyFirstDayReportValues proves that report.json carries a first-day
+// artifact exactly when the manifest binds one, and that the sealed values
+// validate. The artifact bytes themselves are compared by the verification
+// suite, which has the run directory.
+func (m RunManifest) verifyFirstDayReportValues(report ReportData) error {
+	material := m.MaterialInputs
+	if (material.FactsSHA256 == "") != (report.Facts == nil) {
+		return fmt.Errorf("report manifest: facts binding does not match report")
+	}
+	if report.Facts != nil {
+		if err := report.Facts.Validate(); err != nil {
+			return fmt.Errorf("report manifest: report facts: %w", err)
 		}
 	}
-	hasCoreMap := material.CoreMapSHA256 != ""
-	if (report.CoreMapView != nil) != hasCoreMap {
-		return fmt.Errorf("report manifest: core map identity does not match report projection")
+	if (material.ClaimsSHA256 == "") != (report.Claims == nil) {
+		return fmt.Errorf("report manifest: claims binding does not match report")
 	}
-	if report.CoreMapView != nil {
-		if err := report.CoreMapView.Validate(); err != nil {
-			return fmt.Errorf("report manifest: core map view: %w", err)
-		}
-		if report.CoreMapView.ProgramTargetID != defaultEntry.Target.ID ||
-			report.CoreMapView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 ||
-			report.CoreMapView.IntegrationUsageSHA256 != material.IntegrationUsageSHA256 {
-			return fmt.Errorf("report manifest: core map does not bind the report program and semantic inputs")
+	if report.Claims != nil {
+		if err := report.Claims.Validate(); err != nil {
+			return fmt.Errorf("report manifest: report claims: %w", err)
 		}
 	}
-	hasActivityEntrypoints := material.ActivityEntrypointsSHA256 != ""
-	if (report.ActivityEntrypointView != nil) != hasActivityEntrypoints {
-		return fmt.Errorf("report manifest: activity entrypoint identity does not match report projection")
+	if (material.OrientationSHA256 == "") != (report.Orientation == nil) {
+		return fmt.Errorf("report manifest: orientation binding does not match report")
 	}
-	if report.ActivityEntrypointView != nil {
-		if err := report.ActivityEntrypointView.Validate(); err != nil {
-			return fmt.Errorf("report manifest: activity entrypoint view: %w", err)
-		}
-		if report.ActivityEntrypointView.ProgramTargetID != defaultEntry.Target.ID ||
-			report.ActivityEntrypointView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
-			return fmt.Errorf("report manifest: activity entrypoints do not bind the report program target and index")
-		}
-	}
-	hasIntegrationUsage := material.IntegrationUsageSHA256 != ""
-	if (report.IntegrationUsageView != nil) != hasIntegrationUsage {
-		return fmt.Errorf("report manifest: integration usage identity does not match report projection")
-	}
-	if report.IntegrationUsageView != nil {
-		if err := report.IntegrationUsageView.Validate(); err != nil {
-			return fmt.Errorf("report manifest: integration usage view: %w", err)
-		}
-		if report.IntegrationUsageView.ProgramTargetID != defaultEntry.Target.ID ||
-			report.IntegrationUsageView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 ||
-			report.IntegrationUsageView.DependencyCatalogSHA256 != material.DependencyCatalogSHA256 ||
-			report.IntegrationUsageView.IntegrationDependenciesSHA256 != material.IntegrationDependenciesSHA256 ||
-			report.IntegrationUsageView.IntegrationUsageSHA256 != material.IntegrationUsageSHA256 {
-			return fmt.Errorf("report manifest: integration usage does not bind the report program and semantic inputs")
-		}
-	}
-	hasActivityPaths := material.ActivityPathsSHA256 != ""
-	if (report.ActivityPathView != nil) != hasActivityPaths {
-		return fmt.Errorf("report manifest: activity path identity does not match report projection")
-	}
-	if report.ActivityPathView != nil {
-		if err := report.ActivityPathView.Validate(); err != nil {
-			return fmt.Errorf("report manifest: activity path view: %w", err)
-		}
-		if report.ActivityPathView.ProgramTargetID != defaultEntry.Target.ID ||
-			report.ActivityPathView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 ||
-			report.ActivityPathView.ActivityEntrypointsSHA256 != material.ActivityEntrypointsSHA256 ||
-			report.ActivityPathView.IntegrationDependenciesSHA256 != material.IntegrationDependenciesSHA256 ||
-			report.ActivityPathView.IntegrationUsageSHA256 != material.IntegrationUsageSHA256 ||
-			report.ActivityPathView.ActivityPathsSHA256 != material.ActivityPathsSHA256 {
-			return fmt.Errorf("report manifest: activity path does not bind the report program and semantic inputs")
-		}
-		if err := report.ActivityPathView.ValidateReportJoins(
-			report.ActivityEntrypointView, report.IntegrationUsageView,
-		); err != nil {
-			return fmt.Errorf("report manifest: activity path report joins: %w", err)
-		}
-	}
-	hasJSTSProject := material.JSTSProjectSHA256 != ""
-	if (report.JSTSSurfaceCatalogView != nil) != hasJSTSProject ||
-		(report.CrossSurfacePathView != nil) != hasJSTSProject {
-		return fmt.Errorf("report manifest: JavaScript/TypeScript project identity does not match report projections")
-	}
-	if report.JSTSSurfaceCatalogView != nil {
-		if err := report.JSTSSurfaceCatalogView.Validate(); err != nil {
-			return fmt.Errorf("report manifest: JavaScript/TypeScript surface catalog view: %w", err)
-		}
-		if err := report.CrossSurfacePathView.Validate(); err != nil {
-			return fmt.Errorf("report manifest: cross-surface path view: %w", err)
-		}
-		if report.JSTSSurfaceCatalogView.ProgramTargetID != defaultEntry.Target.ID ||
-			report.JSTSSurfaceCatalogView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 ||
-			report.CrossSurfacePathView.ProgramTargetID != defaultEntry.Target.ID ||
-			report.CrossSurfacePathView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 ||
-			report.JSTSSurfaceCatalogView.JSTSProjectSHA256 != report.CrossSurfacePathView.JSTSProjectSHA256 {
-			return fmt.Errorf("report manifest: JavaScript/TypeScript views do not bind the report program and producer authority")
-		}
-	}
-	hasRuntimePortfolio := material.RuntimePortfolioSHA256 != ""
-	if (report.RuntimePortfolio != nil) != hasRuntimePortfolio {
-		return fmt.Errorf("report manifest: runtime portfolio identity does not match report projection")
-	}
-	if report.RuntimePortfolio != nil {
-		if err := report.RuntimePortfolio.Validate(); err != nil {
-			return fmt.Errorf("report manifest: runtime portfolio view: %w", err)
-		}
-	}
-	hasTargetOutcomePortfolio := material.TargetOutcomePortfolioSHA256 != ""
-	if (report.TargetOutcomePortfolio != nil) != hasTargetOutcomePortfolio {
-		return fmt.Errorf("report manifest: target outcome portfolio identity does not match report projection")
-	}
-	if report.TargetOutcomePortfolio != nil {
-		if err := report.TargetOutcomePortfolio.Validate(); err != nil {
-			return fmt.Errorf("report manifest: target outcome portfolio view: %w", err)
+	if report.Orientation != nil {
+		if err := report.Orientation.Validate(); err != nil {
+			return fmt.Errorf("report manifest: report orientation: %w", err)
 		}
 	}
 	return nil
@@ -867,7 +716,7 @@ func (suite *manifestVerificationSuite) readFile(name string, limit int) ([]byte
 		if file.released {
 			return nil, fmt.Errorf("report manifest: internal released authority was read again: %s", name)
 		}
-		if len(file.data) > limit {
+		if limit > 0 && len(file.data) > limit {
 			return nil, fmt.Errorf("report manifest: %s exceeds %d bytes", name, limit)
 		}
 		return file.data, nil
@@ -878,7 +727,7 @@ func (suite *manifestVerificationSuite) readFile(name string, limit int) ([]byte
 		file.readErr = fmt.Errorf("report manifest: %s is not a regular file", name)
 		return nil, file.readErr
 	}
-	if file.info.Size() < 0 || file.info.Size() > int64(limit) {
+	if file.info.Size() < 0 || (limit > 0 && file.info.Size() > int64(limit)) {
 		file.readErr = fmt.Errorf("report manifest: %s exceeds %d bytes", name, limit)
 		return nil, file.readErr
 	}
@@ -887,7 +736,11 @@ func (suite *manifestVerificationSuite) readFile(name string, limit int) ([]byte
 		file.readErr = fmt.Errorf("report manifest: open %s: %w", name, err)
 		return nil, file.readErr
 	}
-	data, readErr := io.ReadAll(io.LimitReader(handle, int64(limit)+1))
+	var reader io.Reader = handle
+	if limit > 0 {
+		reader = io.LimitReader(handle, int64(limit)+1)
+	}
+	data, readErr := io.ReadAll(reader)
 	closeErr := handle.Close()
 	if readErr != nil {
 		file.readErr = fmt.Errorf("report manifest: read %s: %w", name, readErr)
@@ -897,7 +750,7 @@ func (suite *manifestVerificationSuite) readFile(name string, limit int) ([]byte
 		file.readErr = fmt.Errorf("report manifest: close %s: %w", name, closeErr)
 		return nil, file.readErr
 	}
-	if len(data) > limit {
+	if limit > 0 && len(data) > limit {
 		file.readErr = fmt.Errorf("report manifest: %s exceeds %d bytes", name, limit)
 		return nil, file.readErr
 	}
@@ -926,10 +779,14 @@ func (suite *manifestVerificationSuite) programIndexInventory() ([]string, error
 	names := make([]string, 0)
 	for _, entry := range entries {
 		name := entry.Name()
-		if name == programindex.ArtifactSetFilename || name == programindex.ArtifactFilename ||
-			name == jstsproject.ProgramIndexFilename ||
-			strings.HasPrefix(name, "program-index.") && strings.HasSuffix(name, ".json") {
+		if name == programindex.ArtifactSetFilename || name == programindex.ArtifactFilename {
 			names = append(names, name)
+			continue
+		}
+		if strings.HasPrefix(name, "program-index") {
+			return nil, fmt.Errorf(
+				"report manifest: noncanonical ProgramIndex artifact %q is not accepted", name,
+			)
 		}
 	}
 	sort.Strings(names)
@@ -1030,7 +887,7 @@ func (suite *manifestVerificationSuite) report(reportJSON []byte) (ReportData, e
 		if err != nil {
 			return ReportData{}, err
 		}
-		if len(reportJSON) > maxManifestReportBytes {
+		if maxManifestReportBytes > 0 && len(reportJSON) > maxManifestReportBytes {
 			return ReportData{}, fmt.Errorf("report manifest: report exceeds %d bytes", maxManifestReportBytes)
 		}
 		report, err := decodeStrictReportJSON(reportJSON)
@@ -1145,7 +1002,7 @@ func (suite *manifestVerificationSuite) programIndexes() (manifestProgramIndexes
 			result.defaultIndex = index
 		}
 		if result.defaultIndex.Target.ID == "" {
-			return manifestProgramIndexes{}, fmt.Errorf("report manifest: core map default ProgramIndex is missing")
+			return manifestProgramIndexes{}, fmt.Errorf("report manifest: default ProgramIndex is missing")
 		}
 		return result, nil
 	})
@@ -1200,120 +1057,10 @@ func (suite *manifestVerificationSuite) verifyProgramPortfolioProjection(reportJ
 	return nil
 }
 
-// VerifyRuntimePortfolioProjection binds the repository-level semantic
-// artifact, its target-page portfolio input, and the reduced report/browser
-// projection. Artifact absence is valid only before target-page publication.
-func (m RunManifest) VerifyRuntimePortfolioProjection(runDir string, reportJSON []byte) error {
-	suite, err := newManifestVerificationSuite(m, runDir)
-	if err != nil {
-		return err
-	}
-	defer suite.Close()
-	return suite.verifyRuntimePortfolioProjection(reportJSON)
-}
-
-func (suite *manifestVerificationSuite) verifyRuntimePortfolioProjection(reportJSON []byte) error {
-	report, err := suite.report(reportJSON)
-	if err != nil {
-		return fmt.Errorf("report manifest: runtime portfolio view: %w", err)
-	}
-	wantSHA256 := suite.manifest.MaterialInputs.RuntimePortfolioSHA256
-	present, err := suite.artifactPresent(runtimeportfolio.ArtifactFilename)
-	if err != nil {
-		return err
-	}
-	if wantSHA256 == "" {
-		if present || report.RuntimePortfolio != nil {
-			return fmt.Errorf("report manifest: unbound runtime portfolio artifact or projection is present")
-		}
-		return nil
-	}
-	if !present || report.RuntimePortfolio == nil {
-		return fmt.Errorf("report manifest: bound runtime portfolio artifact or projection is missing")
-	}
-	result, _, err := manifestDecodeBound(
-		suite,
-		"runtime-portfolio",
-		runtimeportfolio.ArtifactFilename,
-		runtimeportfolio.MaxArtifactBytes,
-		wantSHA256,
-		"runtime portfolio",
-		runtimeportfolio.Decode,
-	)
-	if err != nil {
-		return err
-	}
-	if suite.manifest.MaterialInputs.ProgramPagePortfolioSHA256 != "" {
-		portfolio, _, decodeErr := manifestDecodeBound(
-			suite,
-			"program-page-portfolio",
-			programpage.ArtifactFilename,
-			programpage.MaxArtifactBytes,
-			suite.manifest.MaterialInputs.ProgramPagePortfolioSHA256,
-			"program page portfolio",
-			programpage.Decode,
-		)
-		if decodeErr != nil {
-			return fmt.Errorf("report manifest: runtime portfolio program-page binding: %w", decodeErr)
-		}
-		if err := validateRuntimeProgramPageCoverage(result, portfolio); err != nil {
-			return fmt.Errorf("report manifest: %w", err)
-		}
-	} else {
-		portfolio, _, decodeErr := manifestDecodeBound(
-			suite,
-			"target-page-portfolio",
-			snapshot.TargetPagePortfolioArtifactFilename,
-			snapshot.MaxTargetPagePortfolioBytes,
-			suite.manifest.MaterialInputs.TargetPagePortfolioSHA256,
-			"target page portfolio",
-			snapshot.DecodeTargetPagePortfolio,
-		)
-		if decodeErr != nil {
-			return fmt.Errorf("report manifest: runtime portfolio target-page binding: %w", decodeErr)
-		}
-		if result.TargetPagePortfolioSHA256 != portfolio.SHA256 {
-			return fmt.Errorf("report manifest: runtime portfolio target-page binding mismatch")
-		}
-		if len(result.Targets) != len(portfolio.Targets) {
-			return fmt.Errorf("report manifest: runtime portfolio target coverage does not match target pages")
-		}
-	}
-	if report.ProgramPortfolio == nil {
-		return fmt.Errorf("report manifest: runtime portfolio current ProgramTarget is missing")
-	}
-	defaultEntry, err := report.ProgramPortfolio.defaultEntry()
-	if err != nil {
-		return fmt.Errorf("report manifest: runtime portfolio current ProgramTarget: %w", err)
-	}
-	if err := validateRuntimePortfolioCurrentTarget(result, defaultEntry.Target); err != nil {
-		return fmt.Errorf("report manifest: %w", err)
-	}
-	expected, err := NewRuntimePortfolioView(result)
-	if err != nil {
-		return fmt.Errorf("report manifest: project runtime portfolio: %w", err)
-	}
-	if !reflect.DeepEqual(report.RuntimePortfolio, expected) {
-		return fmt.Errorf("report manifest: runtime portfolio projection does not match artifact")
-	}
-	openable := make(map[string]struct{}, len(report.OpenablePaths))
-	for _, sourcePath := range report.OpenablePaths {
-		openable[sourcePath] = struct{}{}
-	}
-	for _, role := range expected.Roles {
-		for _, evidence := range role.Evidence {
-			if _, allowed := openable[evidence.Location.Path]; !allowed {
-				return fmt.Errorf("report manifest: runtime portfolio evidence is outside source authority")
-			}
-		}
-	}
-	return nil
-}
-
 // VerifyTargetOutcomePortfolioProjection binds the complete selected-target
 // outcome artifact, the exact set of analyzed program pages, and the reduced
-// report/browser projection. The artifact is present exactly when neutral
-// multi-selected page authority is present.
+// report/browser projection. Both artifacts and the projection are mandatory
+// for every published page, including a one-target portfolio.
 func (m RunManifest) VerifyTargetOutcomePortfolioProjection(runDir string, reportJSON []byte) error {
 	suite, err := newManifestVerificationSuite(m, runDir)
 	if err != nil {
@@ -1332,12 +1079,6 @@ func (suite *manifestVerificationSuite) verifyTargetOutcomePortfolioProjection(r
 	present, err := suite.artifactPresent(targetoutcome.ArtifactFilename)
 	if err != nil {
 		return err
-	}
-	if wantSHA256 == "" {
-		if present || report.TargetOutcomePortfolio != nil {
-			return fmt.Errorf("report manifest: unbound target outcome portfolio artifact or projection is present")
-		}
-		return nil
 	}
 	if !present || report.TargetOutcomePortfolio == nil {
 		return fmt.Errorf("report manifest: bound target outcome portfolio artifact or projection is missing")
@@ -1376,688 +1117,17 @@ func (suite *manifestVerificationSuite) verifyTargetOutcomePortfolioProjection(r
 	return nil
 }
 
-func validateRuntimeProgramPageCoverage(
-	result runtimeportfolio.Result,
-	portfolio programpage.Portfolio,
-) error {
-	if result.TargetPagePortfolioSHA256 != portfolio.SHA256 ||
-		len(result.Targets) != len(portfolio.Pages) {
-		return fmt.Errorf("runtime portfolio program-page binding mismatch")
-	}
-	pages := make(map[string]programpage.Page, len(portfolio.Pages))
-	for _, page := range portfolio.Pages {
-		pages[page.Target.ID] = page
-	}
-	for _, target := range result.Targets {
-		page, ok := pages[target.ProgramTargetID]
-		if !ok || target.DisplayName != page.Target.Name ||
-			target.Language != page.Target.Language || target.Kind != page.Target.Kind ||
-			target.Selector != page.Target.Selector ||
-			target.Default != (page.Target.ID == portfolio.DefaultTargetID) {
-			return fmt.Errorf("runtime portfolio target coverage does not match program pages")
-		}
-	}
-	return nil
-}
-
-// VerifyCubeMapProjection binds the complete saved semantic artifact and
-// re-derives the browser projection. A missing artifact is a valid explicit
-// absence; a present but unbound, malformed, or differently projected
-// artifact is never ignored.
-func (m RunManifest) VerifyCubeMapProjection(runDir string, reportJSON []byte) error {
-	suite, err := newManifestVerificationSuite(m, runDir)
-	if err != nil {
-		return err
-	}
-	defer suite.Close()
-	return suite.verifyCubeMapProjection(reportJSON)
-}
-
-func (suite *manifestVerificationSuite) verifyCubeMapProjection(reportJSON []byte) error {
-	report, err := suite.report(reportJSON)
-	if err != nil {
-		return fmt.Errorf("report manifest: cube map view: %w", err)
-	}
-	wantSHA256 := suite.manifest.MaterialInputs.CubeMapSHA256
-	value, present, err := manifestDecodeBound(
-		suite,
-		"cube-map",
-		cubemap.ArtifactFilename,
-		maxManifestReportBytes,
-		wantSHA256,
-		"cube map",
-		cubemap.Decode,
-	)
-	if err != nil {
-		return err
-	}
-	if wantSHA256 == "" {
-		if present {
-			return fmt.Errorf("report manifest: unbound cube map artifact is present")
-		}
-		if report.CubeMapView != nil {
-			return fmt.Errorf("report manifest: unbound cube map view is present")
-		}
-		return nil
-	}
-	if !present {
-		return fmt.Errorf("report manifest: bound cube map artifact is missing")
-	}
-	if report.CubeMapView == nil {
-		return fmt.Errorf("report manifest: bound cube map view is missing")
-	}
-	if report.ProgramPortfolio == nil {
-		return fmt.Errorf("report manifest: bound cube map lacks a program portfolio")
-	}
-	defaultEntry, err := report.ProgramPortfolio.defaultEntry()
-	if err != nil {
-		return fmt.Errorf("report manifest: bound cube map default target: %w", err)
-	}
-	expected, err := NewCubeMapView(value, defaultEntry.Target, defaultEntry.View.IndexSHA256)
-	if err != nil {
-		return fmt.Errorf("report manifest: rederive cube map view: %w", err)
-	}
-	if !reflect.DeepEqual(report.CubeMapView, expected) {
-		return fmt.Errorf("report manifest: cube map view does not match cube map artifact")
-	}
-	return nil
-}
-
-// VerifyActivityEntrypointProjection binds the complete selected-callable
-// artifact to the exact default ProgramIndex and re-derives the report view.
-// Missing authority is valid only for targets whose semantic capability does
-// not declare this separate cube; a present unbound artifact is never ignored.
-func (m RunManifest) VerifyActivityEntrypointProjection(runDir string, reportJSON []byte) error {
-	suite, err := newManifestVerificationSuite(m, runDir)
-	if err != nil {
-		return err
-	}
-	defer suite.Close()
-	return suite.verifyActivityEntrypointProjection(reportJSON)
-}
-
-func (suite *manifestVerificationSuite) activityEntrypoints() (activityentrypoint.Result, bool, error) {
-	wantSHA256 := suite.manifest.MaterialInputs.ActivityEntrypointsSHA256
-	program, err := suite.programIndexes()
-	if err != nil {
-		return activityentrypoint.Result{}, false, err
-	}
-	return manifestDecodeBound(
-		suite,
-		"activity-entrypoints",
-		activityentrypoint.ArtifactFilename,
-		activityentrypoint.MaxArtifactBytes,
-		wantSHA256,
-		"activity entrypoint",
-		func(raw []byte) (activityentrypoint.Result, error) {
-			return activityentrypoint.Decode(raw, program.defaultIndex)
-		},
-	)
-}
-
-type manifestPythonSemantics struct {
-	declarations dependencydeclaration.Result
-	integrations integrationdependency.Result
-	usage        integrationusage.Result
-}
-
-func (suite *manifestVerificationSuite) declaredDependencies() (dependencydeclaration.Result, error) {
-	return manifestDecodeCached(suite, "declared-dependency-authority", func() (dependencydeclaration.Result, error) {
-		declarationPresent, err := suite.artifactPresent(dependencydeclaration.ArtifactFilename)
-		if err != nil {
-			return dependencydeclaration.Result{}, err
-		}
-		targetPresent, err := suite.artifactPresent(pythontarget.ArtifactFilename)
-		if err != nil {
-			return dependencydeclaration.Result{}, err
-		}
-		wantTargetSHA256 := suite.manifest.MaterialInputs.PythonTargetCatalogSHA256
-		wantDeclarationSHA256 := suite.manifest.MaterialInputs.DeclaredDependenciesSHA256
-		if wantTargetSHA256 == "" {
-			if targetPresent || declarationPresent || wantDeclarationSHA256 != "" {
-				return dependencydeclaration.Result{}, fmt.Errorf(
-					"report manifest: unbound Python target or declared dependency artifact is present",
-				)
-			}
-			return dependencydeclaration.Result{}, nil
-		}
-		if !targetPresent {
-			return dependencydeclaration.Result{}, fmt.Errorf(
-				"report manifest: bound Python target catalog is missing",
-			)
-		}
-		targets, _, err := manifestDecodeBound(
-			suite,
-			"python-target-catalog",
-			pythontarget.ArtifactFilename,
-			pythontarget.MaxArtifactBytes,
-			wantTargetSHA256,
-			"Python target catalog",
-			pythontarget.DecodeCatalog,
-		)
-		if err != nil {
-			return dependencydeclaration.Result{}, err
-		}
-		if wantDeclarationSHA256 == "" {
-			if declarationPresent {
-				return dependencydeclaration.Result{}, fmt.Errorf(
-					"report manifest: unbound declared dependency artifact is present",
-				)
-			}
-			return dependencydeclaration.Result{}, nil
-		}
-		if !declarationPresent {
-			return dependencydeclaration.Result{}, fmt.Errorf(
-				"report manifest: bound declared dependency artifact is missing",
-			)
-		}
-		program, err := suite.programIndexes()
-		if err != nil {
-			return dependencydeclaration.Result{}, err
-		}
-		return manifestDecodeCached(suite, "declared-dependencies", func() (dependencydeclaration.Result, error) {
-			raw, readErr := suite.readFile(
-				dependencydeclaration.ArtifactFilename, dependencydeclaration.MaxArtifactBytes,
-			)
-			if readErr != nil {
-				return dependencydeclaration.Result{}, readErr
-			}
-			if manifestSHA256(raw) != wantDeclarationSHA256 {
-				return dependencydeclaration.Result{}, fmt.Errorf(
-					"report manifest: declared dependencies sha256 mismatch",
-				)
-			}
-			declarations, decodeErr := pythondeclareddependencies.DecodeTargetAuthority(
-				raw, targets, program.defaultIndex,
-			)
-			if decodeErr != nil {
-				return dependencydeclaration.Result{}, fmt.Errorf(
-					"report manifest: declared dependency artifact: %w", decodeErr,
-				)
-			}
-			suite.releaseFile(dependencydeclaration.ArtifactFilename)
-			return declarations, nil
-		})
-	})
-}
-
-func (suite *manifestVerificationSuite) pythonSemantics() (manifestPythonSemantics, error) {
-	return manifestDecodeCached(suite, "python-semantic-authority", func() (manifestPythonSemantics, error) {
-		declarations, err := suite.declaredDependencies()
-		if err != nil {
-			return manifestPythonSemantics{}, err
-		}
-		catalogPresent, err := suite.artifactPresent(dependencies.ArtifactFilename)
-		if err != nil {
-			return manifestPythonSemantics{}, err
-		}
-		integrationPresent, err := suite.artifactPresent(integrationdependency.ArtifactFilename)
-		if err != nil {
-			return manifestPythonSemantics{}, err
-		}
-		usagePresent, err := suite.artifactPresent(integrationusage.ArtifactFilename)
-		if err != nil {
-			return manifestPythonSemantics{}, err
-		}
-		wantCatalogSHA256 := suite.manifest.MaterialInputs.DependencyCatalogSHA256
-		wantIntegrationSHA256 := suite.manifest.MaterialInputs.IntegrationDependenciesSHA256
-		wantUsageSHA256 := suite.manifest.MaterialInputs.IntegrationUsageSHA256
-		if wantCatalogSHA256 == "" && wantIntegrationSHA256 == "" && wantUsageSHA256 == "" {
-			if catalogPresent || integrationPresent || usagePresent {
-				return manifestPythonSemantics{}, fmt.Errorf(
-					"report manifest: unbound Python semantic artifact is present",
-				)
-			}
-			return manifestPythonSemantics{declarations: declarations}, nil
-		}
-		if !catalogPresent || !integrationPresent || !usagePresent {
-			return manifestPythonSemantics{}, fmt.Errorf(
-				"report manifest: bound Python semantic artifact is missing",
-			)
-		}
-		catalog, _, err := manifestDecodeBound(
-			suite,
-			"dependency-catalog",
-			dependencies.ArtifactFilename,
-			dependencies.MaxArtifactBytes,
-			wantCatalogSHA256,
-			"dependency catalog",
-			dependencies.Decode,
-		)
-		if err != nil {
-			return manifestPythonSemantics{}, err
-		}
-		integrations, _, err := manifestDecodeBound(
-			suite,
-			"integration-dependencies",
-			integrationdependency.ArtifactFilename,
-			integrationdependency.MaxArtifactBytes,
-			wantIntegrationSHA256,
-			"integration dependencies",
-			integrationdependency.Decode,
-		)
-		if err != nil {
-			return manifestPythonSemantics{}, err
-		}
-		program, err := suite.programIndexes()
-		if err != nil {
-			return manifestPythonSemantics{}, err
-		}
-		if program.defaultIndex.Target.Language == "python" {
-			err = integrations.ValidateAgainstDeclarations(catalog, declarations, program.defaultIndex.Target)
-		} else {
-			err = integrations.ValidateAgainst(catalog)
-		}
-		if err != nil {
-			return manifestPythonSemantics{}, fmt.Errorf(
-				"report manifest: integration dependencies authority: %w", err,
-			)
-		}
-		usage, _, err := manifestDecodeBound(
-			suite,
-			"integration-usage",
-			integrationusage.ArtifactFilename,
-			integrationusage.MaxArtifactBytes,
-			wantUsageSHA256,
-			"integration usage",
-			integrationusage.Decode,
-		)
-		if err != nil {
-			return manifestPythonSemantics{}, err
-		}
-		return manifestPythonSemantics{
-			declarations: declarations,
-			integrations: integrations,
-			usage:        usage,
-		}, nil
-	})
-}
-
-func (suite *manifestVerificationSuite) verifyActivityEntrypointProjection(reportJSON []byte) error {
-	report, err := suite.report(reportJSON)
-	if err != nil {
-		return fmt.Errorf("report manifest: activity entrypoint view: %w", err)
-	}
-	wantSHA256 := suite.manifest.MaterialInputs.ActivityEntrypointsSHA256
-	result, present, err := suite.activityEntrypoints()
-	if err != nil {
-		return err
-	}
-	if wantSHA256 == "" {
-		if present {
-			return fmt.Errorf("report manifest: unbound activity entrypoint artifact is present")
-		}
-		if report.ActivityEntrypointView != nil {
-			return fmt.Errorf("report manifest: unbound activity entrypoint view is present")
-		}
-		return nil
-	}
-	if !present {
-		return fmt.Errorf("report manifest: bound activity entrypoint artifact is missing")
-	}
-	if report.ActivityEntrypointView == nil || report.ProgramPortfolio == nil {
-		return fmt.Errorf("report manifest: bound activity entrypoint view or portfolio is missing")
-	}
-	defaultEntry, err := report.ProgramPortfolio.defaultEntry()
-	if err != nil {
-		return fmt.Errorf("report manifest: bound activity entrypoint default target: %w", err)
-	}
-	program, err := suite.programIndexes()
-	if err != nil {
-		return err
-	}
-	defaultIndex := program.defaultIndex
-	if defaultIndex.Target.ID != defaultEntry.Target.ID ||
-		defaultIndex.SHA256 != defaultEntry.View.IndexSHA256 {
-		return fmt.Errorf("report manifest: activity entrypoint default ProgramIndex differs from report portfolio")
-	}
-	expected, err := NewActivityEntrypointView(result, defaultIndex)
-	if err != nil {
-		return fmt.Errorf("report manifest: rederive activity entrypoint view: %w", err)
-	}
-	if !reflect.DeepEqual(report.ActivityEntrypointView, expected) {
-		return fmt.Errorf("report manifest: activity entrypoint view does not match activity artifact")
-	}
-	return nil
-}
-
-// VerifyActivityPathProjection binds the deterministic activity-path artifact
-// to its exact ProgramIndex, ActivityEntrypoint, IntegrationDependency and
-// IntegrationUsage inputs, then re-derives the compact report projection.
-func (m RunManifest) VerifyActivityPathProjection(runDir string, reportJSON []byte) error {
-	suite, err := newManifestVerificationSuite(m, runDir)
-	if err != nil {
-		return err
-	}
-	defer suite.Close()
-	return suite.verifyActivityPathProjection(reportJSON)
-}
-
-func (suite *manifestVerificationSuite) activityPaths() (activitypath.Result, bool, error) {
-	wantSHA256 := suite.manifest.MaterialInputs.ActivityPathsSHA256
-	program, err := suite.programIndexes()
-	if err != nil {
-		return activitypath.Result{}, false, err
-	}
-	activities, _, err := suite.activityEntrypoints()
-	if err != nil {
-		return activitypath.Result{}, false, err
-	}
-	python, err := suite.pythonSemantics()
-	if err != nil {
-		return activitypath.Result{}, false, err
-	}
-	return manifestDecodeBound(
-		suite,
-		"activity-paths",
-		activitypath.ArtifactFilename,
-		activitypath.MaxArtifactBytes,
-		wantSHA256,
-		"activity path",
-		func(raw []byte) (activitypath.Result, error) {
-			return activitypath.Decode(
-				raw,
-				program.defaultIndex,
-				activities,
-				python.integrations,
-				python.usage,
-			)
-		},
-	)
-}
-
-func (suite *manifestVerificationSuite) verifyActivityPathProjection(reportJSON []byte) error {
-	report, err := suite.report(reportJSON)
-	if err != nil {
-		return fmt.Errorf("report manifest: activity path view: %w", err)
-	}
-	wantSHA256 := suite.manifest.MaterialInputs.ActivityPathsSHA256
-	result, present, err := suite.activityPaths()
-	if err != nil {
-		return err
-	}
-	if wantSHA256 == "" {
-		if present {
-			return fmt.Errorf("report manifest: unbound activity path artifact is present")
-		}
-		if report.ActivityPathView != nil {
-			return fmt.Errorf("report manifest: unbound activity path view is present")
-		}
-		return nil
-	}
-	if !present {
-		return fmt.Errorf("report manifest: bound activity path artifact is missing")
-	}
-	if report.ActivityPathView == nil || report.ActivityEntrypointView == nil ||
-		report.IntegrationUsageView == nil || report.ProgramPortfolio == nil {
-		return fmt.Errorf("report manifest: bound activity path report authority is incomplete")
-	}
-	defaultEntry, err := report.ProgramPortfolio.defaultEntry()
-	if err != nil {
-		return fmt.Errorf("report manifest: bound activity path default target: %w", err)
-	}
-	program, err := suite.programIndexes()
-	if err != nil {
-		return err
-	}
-	index := program.defaultIndex
-	if index.Target.ID != defaultEntry.Target.ID || index.SHA256 != defaultEntry.View.IndexSHA256 {
-		return fmt.Errorf("report manifest: activity path default ProgramIndex differs from report portfolio")
-	}
-	activities, _, err := suite.activityEntrypoints()
-	if err != nil {
-		return err
-	}
-	python, err := suite.pythonSemantics()
-	if err != nil {
-		return err
-	}
-	expected, err := NewActivityPathView(
-		result, index, activities, python.integrations, python.usage,
-	)
-	if err != nil {
-		return fmt.Errorf("report manifest: rederive activity path view: %w", err)
-	}
-	if err := expected.ValidateReportJoins(
-		report.ActivityEntrypointView, report.IntegrationUsageView,
-	); err != nil {
-		return fmt.Errorf("report manifest: rederive activity path joins: %w", err)
-	}
-	if !reflect.DeepEqual(report.ActivityPathView, expected) {
-		return fmt.Errorf("report manifest: activity path view does not match activity path artifact")
-	}
-	return nil
-}
-
-// VerifyJSTSProjection binds the single sealed deterministic JS/TS project
-// artifact to both report projections and the exact default ProgramIndex.
-// Either both views re-derive byte-for-byte from that authority or publication
-// fails; the browser cannot fill a missing surface or path projection.
-func (m RunManifest) VerifyJSTSProjection(runDir string, reportJSON []byte) error {
-	suite, err := newManifestVerificationSuite(m, runDir)
-	if err != nil {
-		return err
-	}
-	defer suite.Close()
-	return suite.verifyJSTSProjection(reportJSON)
-}
-
-func (suite *manifestVerificationSuite) jstsProject() (jstsproject.Result, bool, error) {
-	return manifestDecodeBound(
-		suite,
-		"js-ts-project",
-		jstsproject.ArtifactFilename,
-		jstsproject.MaxArtifactBytes,
-		suite.manifest.MaterialInputs.JSTSProjectSHA256,
-		"JavaScript/TypeScript project",
-		jstsproject.Decode,
-	)
-}
-
-func (suite *manifestVerificationSuite) verifyJSTSProjection(reportJSON []byte) error {
-	report, err := suite.report(reportJSON)
-	if err != nil {
-		return fmt.Errorf("report manifest: JavaScript/TypeScript views: %w", err)
-	}
-	result, present, err := suite.jstsProject()
-	if err != nil {
-		return err
-	}
-	wantSHA256 := suite.manifest.MaterialInputs.JSTSProjectSHA256
-	if wantSHA256 == "" {
-		if present {
-			return fmt.Errorf("report manifest: unbound JavaScript/TypeScript project artifact is present")
-		}
-		if report.JSTSSurfaceCatalogView != nil || report.CrossSurfacePathView != nil {
-			return fmt.Errorf("report manifest: unbound JavaScript/TypeScript report projection is present")
-		}
-		return nil
-	}
-	if !present {
-		return fmt.Errorf("report manifest: bound JavaScript/TypeScript project artifact is missing")
-	}
-	if report.JSTSSurfaceCatalogView == nil || report.CrossSurfacePathView == nil || report.ProgramPortfolio == nil {
-		return fmt.Errorf("report manifest: bound JavaScript/TypeScript report authority is incomplete")
-	}
-	defaultEntry, err := report.ProgramPortfolio.defaultEntry()
-	if err != nil {
-		return fmt.Errorf("report manifest: JavaScript/TypeScript default target: %w", err)
-	}
-	program, err := suite.programIndexes()
-	if err != nil {
-		return err
-	}
-	index := program.defaultIndex
-	if index.Target.ID != defaultEntry.Target.ID || index.SHA256 != defaultEntry.View.IndexSHA256 {
-		return fmt.Errorf("report manifest: JavaScript/TypeScript default ProgramIndex differs from report portfolio")
-	}
-	expectedSurfaces, err := NewJSTSSurfaceCatalogView(result, index)
-	if err != nil {
-		return fmt.Errorf("report manifest: rederive JavaScript/TypeScript surface catalog: %w", err)
-	}
-	expectedPaths, err := NewCrossSurfacePathView(result, index)
-	if err != nil {
-		return fmt.Errorf("report manifest: rederive cross-surface paths: %w", err)
-	}
-	if err := expectedPaths.ValidateSurfaceJoins(expectedSurfaces); err != nil {
-		return fmt.Errorf("report manifest: rederive cross-surface joins: %w", err)
-	}
-	if !reflect.DeepEqual(report.JSTSSurfaceCatalogView, expectedSurfaces) ||
-		!reflect.DeepEqual(report.CrossSurfacePathView, expectedPaths) {
-		return fmt.Errorf("report manifest: JavaScript/TypeScript views do not match exact project artifact")
-	}
-	return nil
-}
-
-// VerifyCoreMapProjection binds the complete ProgramIndex-backed CoreMap, its
-// optional README file-role authority, and re-derives the browser projection.
-// Missing CoreMap authority is accepted only when neither the artifact nor the
-// report view exists; the Python capability contract independently makes that
-// absence terminal for a Python default.
-func (m RunManifest) VerifyCoreMapProjection(runDir string, reportJSON []byte) error {
-	suite, err := newManifestVerificationSuite(m, runDir)
-	if err != nil {
-		return err
-	}
-	defer suite.Close()
-	return suite.verifyCoreMapProjection(reportJSON)
-}
-
-func (suite *manifestVerificationSuite) readmeFileRoles() (map[string]string, error) {
-	return manifestDecodeCached(suite, "readme-file-roles", func() (map[string]string, error) {
-		present, err := suite.artifactPresent(readmetargetscout.ArtifactFilename)
-		if err != nil {
-			return nil, err
-		}
-		wantSHA256 := suite.manifest.MaterialInputs.ReadmeFileRolesSHA256
-		if wantSHA256 == "" {
-			if present {
-				return nil, fmt.Errorf("report manifest: unbound README file-role artifact is present")
-			}
-			return map[string]string{}, nil
-		}
-		if !present {
-			return nil, fmt.Errorf("report manifest: bound README file-role artifact is missing")
-		}
-		raw, err := suite.readFile(
-			readmetargetscout.ArtifactFilename, maxReadmeFileRoleArtifactBytes,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if manifestSHA256(raw) != wantSHA256 {
-			return nil, fmt.Errorf("report manifest: README file-role sha256 mismatch")
-		}
-		files, err := decodeReadmeFileRoleAuthority(raw)
-		if err != nil {
-			return nil, fmt.Errorf("report manifest: %w", err)
-		}
-		suite.releaseFile(readmetargetscout.ArtifactFilename)
-		return files, nil
-	})
-}
-
-func (suite *manifestVerificationSuite) coreMap() (coremap.Result, bool, error) {
-	return manifestDecodeBound(
-		suite,
-		"core-map",
-		coremap.ArtifactFilename,
-		coremap.MaxArtifactBytes,
-		suite.manifest.MaterialInputs.CoreMapSHA256,
-		"core map",
-		coremap.Decode,
-	)
-}
-
-func (suite *manifestVerificationSuite) verifyCoreMapProjection(reportJSON []byte) error {
-	report, err := suite.report(reportJSON)
-	if err != nil {
-		return fmt.Errorf("report manifest: core map view: %w", err)
-	}
-	python, err := suite.pythonSemantics()
-	if err != nil {
-		return err
-	}
-	readmeFiles, err := suite.readmeFileRoles()
-	if err != nil {
-		return err
-	}
-	value, present, err := suite.coreMap()
-	if err != nil {
-		return err
-	}
-	wantSHA256 := suite.manifest.MaterialInputs.CoreMapSHA256
-	if wantSHA256 == "" {
-		if present {
-			return fmt.Errorf("report manifest: unbound core map artifact is present")
-		}
-		if report.CoreMapView != nil {
-			return fmt.Errorf("report manifest: unbound core map view is present")
-		}
-		return nil
-	}
-	if !present {
-		return fmt.Errorf("report manifest: bound core map artifact is missing")
-	}
-	if report.CoreMapView == nil || report.ProgramPortfolio == nil {
-		return fmt.Errorf("report manifest: bound core map view or portfolio is missing")
-	}
-	defaultEntry, err := report.ProgramPortfolio.defaultEntry()
-	if err != nil {
-		return fmt.Errorf("report manifest: bound core map default target: %w", err)
-	}
-	integrationUsageSHA256, err := python.usage.ArtifactSHA256()
-	if err != nil {
-		return fmt.Errorf("report manifest: integration usage identity: %w", err)
-	}
-	if value.IntegrationUsageSHA256 == "" ||
-		value.IntegrationUsageSHA256 != integrationUsageSHA256 {
-		return fmt.Errorf("report manifest: core map integration usage authority mismatch")
-	}
-	if report.CoreMapView.IntegrationUsageSHA256 != integrationUsageSHA256 {
-		return fmt.Errorf("report manifest: core map view integration usage authority mismatch")
-	}
-	program, err := suite.programIndexes()
-	if err != nil {
-		return err
-	}
-	defaultIndex := program.defaultIndex
-	if defaultIndex.Target.ID != defaultEntry.Target.ID || defaultIndex.SHA256 != defaultEntry.View.IndexSHA256 {
-		return fmt.Errorf("report manifest: core map default ProgramIndex differs from report portfolio")
-	}
-	if err := python.usage.ValidateAgainst(defaultIndex, python.integrations); err != nil {
-		return fmt.Errorf("report manifest: integration usage authority: %w", err)
-	}
-	expectedIntegrationUsage, err := NewIntegrationUsageView(
-		python.usage, defaultIndex, python.integrations,
-	)
-	if err != nil {
-		return fmt.Errorf("report manifest: rederive integration usage view: %w", err)
-	}
-	if !reflect.DeepEqual(report.IntegrationUsageView, expectedIntegrationUsage) {
-		return fmt.Errorf("report manifest: integration usage view does not match integration usage artifact")
-	}
-	expected, err := NewCoreMapView(value, defaultIndex, readmeFiles)
-	if err != nil {
-		return fmt.Errorf("report manifest: rederive core map view: %w", err)
-	}
-	if !reflect.DeepEqual(report.CoreMapView, expected) {
-		return fmt.Errorf("report manifest: core map view does not match core map artifact")
-	}
-	return nil
-}
-
 func readManifestDefaultProgramIndex(root *os.Root, setSHA256 string) (programindex.Index, error) {
 	setRaw, err := readManifestFile(root, programindex.ArtifactSetFilename, programindex.MaxArtifactSetBytes)
 	if err != nil {
 		return programindex.Index{}, err
 	}
 	if manifestSHA256(setRaw) != setSHA256 {
-		return programindex.Index{}, fmt.Errorf("report manifest: core map program index set sha256 mismatch")
+		return programindex.Index{}, fmt.Errorf("report manifest: program index set sha256 mismatch")
 	}
 	set, err := programindex.DecodeArtifactSet(setRaw)
 	if err != nil {
-		return programindex.Index{}, fmt.Errorf("report manifest: core map program index set: %w", err)
+		return programindex.Index{}, fmt.Errorf("report manifest: program index set: %w", err)
 	}
 	for _, entry := range set.Entries {
 		if entry.TargetID != set.DefaultTargetID {
@@ -2069,14 +1139,14 @@ func readManifestDefaultProgramIndex(root *os.Root, setSHA256 string) (programin
 		}
 		index, decodeErr := programindex.Decode(raw)
 		if decodeErr != nil {
-			return programindex.Index{}, fmt.Errorf("report manifest: core map default ProgramIndex: %w", decodeErr)
+			return programindex.Index{}, fmt.Errorf("report manifest: default ProgramIndex: %w", decodeErr)
 		}
 		if index.Target.ID != entry.TargetID || index.SHA256 != entry.IndexSHA256 {
-			return programindex.Index{}, fmt.Errorf("report manifest: core map default ProgramIndex binding mismatch")
+			return programindex.Index{}, fmt.Errorf("report manifest: default ProgramIndex binding mismatch")
 		}
 		return index, nil
 	}
-	return programindex.Index{}, fmt.Errorf("report manifest: core map default ProgramIndex is missing")
+	return programindex.Index{}, fmt.Errorf("report manifest: default ProgramIndex is missing")
 }
 
 // VerifySnapshotArtifact binds the exact saved snapshot bytes used to derive
@@ -2105,8 +1175,8 @@ func (suite *manifestVerificationSuite) verifySnapshotArtifact() error {
 
 // DecodeRunManifest strictly decodes one bounded run_manifest.json payload.
 func DecodeRunManifest(data []byte) (RunManifest, error) {
-	if len(data) == 0 || len(data) > maxRunManifestBytes {
-		return RunManifest{}, fmt.Errorf("report manifest: size must be between 1 and %d bytes", maxRunManifestBytes)
+	if len(data) == 0 {
+		return RunManifest{}, fmt.Errorf("report manifest: artifact is empty")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -2294,8 +1364,7 @@ func newVerifiedRunReceiptFromReportData(
 		return VerifiedRunReceipt{}, fmt.Errorf("report manifest: verified report program page: %w", err)
 	}
 	return newVerifiedRunReceipt(runDir, manifest, verifiedRunIdentity{
-		programPage:    page,
-		repositoryName: data.RepoName,
+		programPage: page, repositoryName: data.RepoName,
 	})
 }
 
@@ -2325,37 +1394,28 @@ func verifyCompleteRunManifestWithIdentity(
 	if err != nil {
 		return suite.stats(), verifiedRunIdentity{}, err
 	}
-	if err := suite.verifyProgramPortfolioProjection(reportJSON); err != nil {
+	if err := suite.verifyDependencyCatalogArtifact(); err != nil {
 		return suite.stats(), verifiedRunIdentity{}, err
 	}
-	if err := suite.verifyRuntimePortfolioProjection(reportJSON); err != nil {
+	if err := suite.verifyReducedDocumentationArtifact(program); err != nil {
+		return suite.stats(), verifiedRunIdentity{}, err
+	}
+	if err := suite.verifyGroupsIndexArtifact(program, reportJSON); err != nil {
+		return suite.stats(), verifiedRunIdentity{}, err
+	}
+	if err := suite.verifyProgramPortfolioProjection(reportJSON); err != nil {
 		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyTargetOutcomePortfolioProjection(reportJSON); err != nil {
 		return suite.stats(), verifiedRunIdentity{}, err
 	}
-	if err := suite.verifyCubeMapProjection(reportJSON); err != nil {
-		return suite.stats(), verifiedRunIdentity{}, err
-	}
-	if err := suite.verifyActivityEntrypointProjection(reportJSON); err != nil {
-		return suite.stats(), verifiedRunIdentity{}, err
-	}
-	if err := suite.verifyActivityPathProjection(reportJSON); err != nil {
-		return suite.stats(), verifiedRunIdentity{}, err
-	}
-	if err := suite.verifyJSTSProjection(reportJSON); err != nil {
-		return suite.stats(), verifiedRunIdentity{}, err
-	}
-	if err := suite.verifyCoreMapProjection(reportJSON); err != nil {
-		return suite.stats(), verifiedRunIdentity{}, err
-	}
 	if err := suite.verifySnapshotArtifact(); err != nil {
 		return suite.stats(), verifiedRunIdentity{}, err
 	}
-	if err := suite.verifyTargetPagePortfolioArtifacts(); err != nil {
+	if err := suite.verifyProgramPagePortfolioArtifact(); err != nil {
 		return suite.stats(), verifiedRunIdentity{}, err
 	}
-	if err := suite.verifyProgramPagePortfolioArtifact(); err != nil {
+	if err := suite.verifyFirstDayArtifacts(reportJSON); err != nil {
 		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	report, err := suite.report(reportJSON)
@@ -2380,101 +1440,121 @@ func verifyCompleteRunManifestWithIdentity(
 	return suite.stats(), identity, nil
 }
 
-// VerifyTargetPagePortfolioArtifacts binds the exact selected-target
-// container and, when publication has completed, the shared sibling-page
-// portfolio. A container-only manifest is valid for the initial/default or
-// single-target publication; a portfolio can never exist without it.
-func (m RunManifest) VerifyTargetPagePortfolioArtifacts(runDir string) error {
-	suite, err := newManifestVerificationSuiteWithValidation(m, runDir, false)
+func (suite *manifestVerificationSuite) verifyReducedDocumentationArtifact(
+	program manifestProgramIndexes,
+) error {
+	present, err := suite.artifactPresent(documentationreduce.ArtifactFilename)
 	if err != nil {
 		return err
 	}
-	defer suite.Close()
-	return suite.verifyTargetPagePortfolioArtifacts()
+	digest := suite.manifest.MaterialInputs.ReducedDocumentationSHA256
+	required := program.defaultIndex.Categorization != nil
+	if digest == "" {
+		if present {
+			return fmt.Errorf("report manifest: unbound reduced documentation is present")
+		}
+		if required {
+			return fmt.Errorf("report manifest: required reduced documentation is missing")
+		}
+		return nil
+	}
+	if !present || !required {
+		return fmt.Errorf("report manifest: reduced documentation sha256 mismatch")
+	}
+	raw, err := suite.readFile(documentationreduce.ArtifactFilename, 0)
+	if err != nil {
+		return err
+	}
+	if manifestSHA256(raw) != digest {
+		return fmt.Errorf("report manifest: reduced documentation sha256 mismatch")
+	}
+	reduced, err := documentationreduce.Decode(raw)
+	if err != nil {
+		return fmt.Errorf("report manifest: reduced documentation artifact: %w", err)
+	}
+	suite.releaseFile(documentationreduce.ArtifactFilename)
+	if reduced.ReductionSHA256 != program.defaultIndex.Categorization.ReducedDocumentationSHA256 {
+		return fmt.Errorf("report manifest: reduced documentation does not bind categorized ProgramIndex")
+	}
+	return nil
 }
 
-func (suite *manifestVerificationSuite) verifyTargetPagePortfolioArtifacts() error {
-	containerPresent, err := suite.artifactPresent(snapshot.TargetRunContainerArtifactFilename)
+func (suite *manifestVerificationSuite) verifyDependencyCatalogArtifact() error {
+	raw, err := suite.readFile(dependencies.ArtifactFilename, dependencies.MaxArtifactBytes)
 	if err != nil {
 		return err
 	}
-	portfolioPresent, err := suite.artifactPresent(snapshot.TargetPagePortfolioArtifactFilename)
+	if manifestSHA256(raw) != suite.manifest.MaterialInputs.DependencyCatalogSHA256 {
+		return fmt.Errorf("report manifest: dependency catalog sha256 mismatch")
+	}
+	if _, err := dependencies.Decode(raw); err != nil {
+		return fmt.Errorf("report manifest: dependency catalog artifact: %w", err)
+	}
+	suite.releaseFile(dependencies.ArtifactFilename)
+	return nil
+}
+
+func (suite *manifestVerificationSuite) verifyGroupsIndexArtifact(
+	program manifestProgramIndexes,
+	reportJSON []byte,
+) error {
+	present, err := suite.artifactPresent(groupindex.ArtifactFilename)
 	if err != nil {
 		return err
 	}
-	if suite.manifest.MaterialInputs.TargetRunContainerSHA256 == "" && containerPresent {
-		return fmt.Errorf(
-			"report manifest: unbound target page artifact %s is present",
-			snapshot.TargetRunContainerArtifactFilename,
-		)
-	}
-	if suite.manifest.MaterialInputs.TargetPagePortfolioSHA256 == "" && portfolioPresent {
-		return fmt.Errorf(
-			"report manifest: unbound target page artifact %s is present",
-			snapshot.TargetPagePortfolioArtifactFilename,
-		)
-	}
-	if suite.manifest.MaterialInputs.TargetRunContainerSHA256 != "" && !containerPresent {
-		return fmt.Errorf(
-			"report manifest: target page artifact %s sha256 mismatch",
-			snapshot.TargetRunContainerArtifactFilename,
-		)
-	}
-	if suite.manifest.MaterialInputs.TargetPagePortfolioSHA256 != "" && !portfolioPresent {
-		return fmt.Errorf(
-			"report manifest: target page artifact %s sha256 mismatch",
-			snapshot.TargetPagePortfolioArtifactFilename,
-		)
-	}
-	container, containerPresent, err := manifestDecodeBound(
-		suite,
-		"target-run-container",
-		snapshot.TargetRunContainerArtifactFilename,
-		snapshot.MaxTargetRunContainerBytes,
-		suite.manifest.MaterialInputs.TargetRunContainerSHA256,
-		"target page artifact "+snapshot.TargetRunContainerArtifactFilename,
-		snapshot.DecodeTargetRunContainer,
-	)
-	if err != nil {
-		return err
-	}
-	portfolio, portfolioPresent, err := manifestDecodeBound(
-		suite,
-		"target-page-portfolio",
-		snapshot.TargetPagePortfolioArtifactFilename,
-		snapshot.MaxTargetPagePortfolioBytes,
-		suite.manifest.MaterialInputs.TargetPagePortfolioSHA256,
-		"target page artifact "+snapshot.TargetPagePortfolioArtifactFilename,
-		snapshot.DecodeTargetPagePortfolio,
-	)
-	if err != nil {
-		return err
-	}
-	if !containerPresent {
-		if portfolioPresent {
-			return fmt.Errorf("report manifest: target page portfolio lacks container authority")
+	digest := suite.manifest.MaterialInputs.GroupsIndexSHA256
+	if digest == "" {
+		if present {
+			return fmt.Errorf("report manifest: unbound groups index is present")
 		}
 		return nil
 	}
-	if !portfolioPresent {
-		return nil
+	if !present {
+		return fmt.Errorf("report manifest: groups index sha256 mismatch")
 	}
-	if err := portfolio.ValidateAgainstContainer(container); err != nil {
-		return fmt.Errorf("report manifest: target page portfolio: %w", err)
+	raw, err := suite.readFile(groupindex.ArtifactFilename, 0)
+	if err != nil {
+		return err
 	}
-	for _, page := range portfolio.Targets {
-		if page.TargetRef == suite.manifest.MaterialInputs.AnalysisTargetRef &&
-			page.RunID == filepath.Base(suite.runDir) {
-			return nil
+	if manifestSHA256(raw) != digest {
+		return fmt.Errorf("report manifest: groups index sha256 mismatch")
+	}
+	local, err := groupindex.Decode(raw)
+	if err != nil {
+		return fmt.Errorf("report manifest: groups index artifact: %w", err)
+	}
+	suite.releaseFile(groupindex.ArtifactFilename)
+	if local.Target.ID != program.defaultIndex.Target.ID ||
+		local.ProgramIndexSHA256 != program.defaultIndex.SHA256 ||
+		!reflect.DeepEqual(local.Target, program.defaultIndex.Target) {
+		return fmt.Errorf("report manifest: groups index does not bind the default ProgramIndex")
+	}
+	report, err := suite.report(reportJSON)
+	if err != nil {
+		return err
+	}
+	if report.GroupGraph == nil {
+		return fmt.Errorf("report manifest: groups index lacks report projection")
+	}
+	var selected *groupindex.Index
+	for index := range report.GroupGraph.Indexes {
+		if report.GroupGraph.Indexes[index].Target.ID == local.Target.ID {
+			selected = &report.GroupGraph.Indexes[index]
+			break
 		}
 	}
-	return fmt.Errorf("report manifest: analysis target has no exact published target page")
+	if selected == nil {
+		return fmt.Errorf("report manifest: groups index projection omits the selected target")
+	}
+	if err := validateLocalGroupIndexExtension(local, *selected); err != nil {
+		return fmt.Errorf("report manifest: %w", err)
+	}
+	return nil
 }
 
 // VerifyProgramPagePortfolioArtifact binds the language-neutral page
 // portfolio and proves that this exact run publishes the manifest's current
-// ProgramTarget. The neutral authority is mutually exclusive with the legacy
-// Go target container/page pair in MaterialInputs.Validate.
+// ProgramTarget.
 func (m RunManifest) VerifyProgramPagePortfolioArtifact(runDir string) error {
 	suite, err := newManifestVerificationSuiteWithValidation(m, runDir, false)
 	if err != nil {
@@ -2484,18 +1564,54 @@ func (m RunManifest) VerifyProgramPagePortfolioArtifact(runDir string) error {
 	return suite.verifyProgramPagePortfolioArtifact()
 }
 
+// verifyFirstDayArtifacts binds facts.json, claims.json and orientation.json
+// to the manifest digests and proves report.json carries the same sealed
+// values. Absent artifacts must be unbound and absent from the report.
+func (suite *manifestVerificationSuite) verifyFirstDayArtifacts(reportJSON []byte) error {
+	report, err := suite.report(reportJSON)
+	if err != nil {
+		return fmt.Errorf("report manifest: first-day artifacts: %w", err)
+	}
+	material := suite.manifest.MaterialInputs
+	if err := verifyFirstDayArtifact(
+		suite, "facts", facts.ArtifactFilename, material.FactsSHA256, facts.Decode, report.Facts,
+	); err != nil {
+		return err
+	}
+	if err := verifyFirstDayArtifact(
+		suite, "claims", claims.ArtifactFilename, material.ClaimsSHA256, claims.Decode, report.Claims,
+	); err != nil {
+		return err
+	}
+	return verifyFirstDayArtifact(
+		suite, "orientation", orientation.ArtifactFilename, material.OrientationSHA256,
+		orientation.Decode, report.Orientation,
+	)
+}
+
+func verifyFirstDayArtifact[T any](
+	suite *manifestVerificationSuite,
+	label string,
+	name string,
+	wantSHA256 string,
+	decode func([]byte) (T, error),
+	reported *T,
+) error {
+	decoded, present, err := manifestDecodeBound(suite, label, name, 0, wantSHA256, label, decode)
+	if err != nil {
+		return err
+	}
+	if present != (reported != nil) {
+		return fmt.Errorf("report manifest: %s artifact and report value disagree", label)
+	}
+	if present && !reflect.DeepEqual(decoded, *reported) {
+		return fmt.Errorf("report manifest: report %s does not match the bound artifact", label)
+	}
+	return nil
+}
+
 func (suite *manifestVerificationSuite) verifyProgramPagePortfolioArtifact() error {
 	wantSHA256 := suite.manifest.MaterialInputs.ProgramPagePortfolioSHA256
-	if wantSHA256 == "" {
-		present, err := suite.artifactPresent(programpage.ArtifactFilename)
-		if err != nil {
-			return err
-		}
-		if present {
-			return fmt.Errorf("report manifest: unbound program page portfolio artifact is present")
-		}
-		return nil
-	}
 	portfolio, _, err := manifestDecodeBound(
 		suite,
 		"program-page-portfolio",
@@ -2537,6 +1653,13 @@ func (authority RunAuthority) validate() error {
 	if err := validateAnalysisRoot(authority.repository.Identity, authority.analysisRoot); err != nil {
 		return fmt.Errorf("report manifest: analysis root: %w", err)
 	}
+	if authority.groupGraphBound {
+		if err := groupindex.ValidateSet(authority.groupGraphIndexes); err != nil {
+			return fmt.Errorf("report manifest: group graph: %w", err)
+		}
+	} else if len(authority.groupGraphIndexes) != 0 {
+		return fmt.Errorf("report manifest: unbound group graph")
+	}
 	return nil
 }
 
@@ -2558,10 +1681,6 @@ func prepareAuthorizedRunManifest(
 	if err != nil {
 		return RunManifest{}, err
 	}
-	analysisTargetRef, analysisTargetDigest, err := reportAnalysisTargetMaterial(data.AnalysisTarget)
-	if err != nil {
-		return RunManifest{}, fmt.Errorf("report manifest: analysis target: %w", err)
-	}
 	if data.ProgramPortfolio == nil {
 		return RunManifest{}, fmt.Errorf("report manifest: program portfolio is missing")
 	}
@@ -2577,41 +1696,19 @@ func prepareAuthorizedRunManifest(
 	if err != nil {
 		return RunManifest{}, err
 	}
-	cubeMapDigest, err := savedCubeMapSHA256(runDir)
+	dependencyCatalogDigest, err := savedDependencyCatalogSHA256(runDir)
 	if err != nil {
 		return RunManifest{}, err
 	}
-	coreMapDigest, err := savedCoreMapSHA256(runDir)
+	reducedDocumentationDigest, err := savedReducedDocumentationSHA256(runDir, data.defaultProgramIndex)
 	if err != nil {
 		return RunManifest{}, err
 	}
-	activityEntrypointsDigest, err := savedActivityEntrypointsSHA256(runDir, programIndexSetDigest)
-	if err != nil {
-		return RunManifest{}, err
-	}
-	pythonTargetCatalogDigest, declaredDependenciesDigest, err :=
-		savedDeclaredDependencyArtifactsSHA256(runDir, programIndexSetDigest)
-	if err != nil {
-		return RunManifest{}, err
-	}
-	dependencyCatalogDigest, integrationDependenciesDigest, integrationUsageDigest, err :=
-		savedPythonSemanticArtifactsSHA256(runDir, programIndexSetDigest)
-	if err != nil {
-		return RunManifest{}, err
-	}
-	activityPathsDigest, err := savedActivityPathsSHA256(runDir, programIndexSetDigest)
-	if err != nil {
-		return RunManifest{}, err
-	}
-	jstsProjectDigest, err := savedJSTSProjectSHA256(runDir, programIndexSetDigest)
+	groupsIndexDigest, err := savedGroupsIndexSHA256(runDir, data.GroupGraph != nil)
 	if err != nil {
 		return RunManifest{}, err
 	}
 	readmeFileRolesDigest, err := savedReadmeFileRolesSHA256(runDir)
-	if err != nil {
-		return RunManifest{}, err
-	}
-	runtimePortfolioDigest, err := savedRuntimePortfolioSHA256(runDir)
 	if err != nil {
 		return RunManifest{}, err
 	}
@@ -2661,30 +1758,21 @@ func prepareAuthorizedRunManifest(
 		CapturedInputs:        inputs,
 		CapturedInputsSHA256:  inputsDigest,
 		MaterialInputs: MaterialInputs{
-			SelectedRevision:              authority.repository.Head,
-			AnalysisTargetRef:             analysisTargetRef,
-			AnalysisTargetSHA256:          analysisTargetDigest,
-			ProgramTargetID:               programTargetID,
-			ProgramTargetSHA256:           programTargetDigest,
-			ProgramIndexSetSHA256:         programIndexSetDigest,
-			CubeMapSHA256:                 cubeMapDigest,
-			CoreMapSHA256:                 coreMapDigest,
-			ActivityEntrypointsSHA256:     activityEntrypointsDigest,
-			PythonTargetCatalogSHA256:     pythonTargetCatalogDigest,
-			DeclaredDependenciesSHA256:    declaredDependenciesDigest,
-			DependencyCatalogSHA256:       dependencyCatalogDigest,
-			IntegrationDependenciesSHA256: integrationDependenciesDigest,
-			IntegrationUsageSHA256:        integrationUsageDigest,
-			ActivityPathsSHA256:           activityPathsDigest,
-			JSTSProjectSHA256:             jstsProjectDigest,
-			ReadmeFileRolesSHA256:         readmeFileRolesDigest,
-			TargetRunContainerSHA256:      savedArtifactSHA256(runDir, snapshot.TargetRunContainerArtifactFilename),
-			TargetPagePortfolioSHA256:     savedArtifactSHA256(runDir, snapshot.TargetPagePortfolioArtifactFilename),
-			ProgramPagePortfolioSHA256:    savedArtifactSHA256(runDir, programpage.ArtifactFilename),
-			RuntimePortfolioSHA256:        runtimePortfolioDigest,
-			TargetOutcomePortfolioSHA256:  savedArtifactSHA256(runDir, targetoutcome.ArtifactFilename),
-			InputPolicyVersion:            "captured-inputs-v1",
-			ReportContract:                data.FormatVersion,
+			SelectedRevision:             authority.repository.Head,
+			ProgramTargetID:              programTargetID,
+			ProgramTargetSHA256:          programTargetDigest,
+			ProgramIndexSetSHA256:        programIndexSetDigest,
+			DependencyCatalogSHA256:      dependencyCatalogDigest,
+			ReducedDocumentationSHA256:   reducedDocumentationDigest,
+			GroupsIndexSHA256:            groupsIndexDigest,
+			ReadmeFileRolesSHA256:        readmeFileRolesDigest,
+			ProgramPagePortfolioSHA256:   savedArtifactSHA256(runDir, programpage.ArtifactFilename),
+			TargetOutcomePortfolioSHA256: savedArtifactSHA256(runDir, targetoutcome.ArtifactFilename),
+			FactsSHA256:                  savedArtifactSHA256(runDir, facts.ArtifactFilename),
+			ClaimsSHA256:                 savedArtifactSHA256(runDir, claims.ArtifactFilename),
+			OrientationSHA256:            savedArtifactSHA256(runDir, orientation.ArtifactFilename),
+			InputPolicyVersion:           "captured-inputs-v1",
+			ReportContract:               data.FormatVersion,
 		},
 	}
 	if err := verifyPreparedRunManifest(manifest, data, reportJSON); err != nil {
@@ -2708,7 +1796,7 @@ func verifyPreparedRunManifest(
 	if err := manifest.Validate(); err != nil {
 		return err
 	}
-	if len(reportJSON) > maxManifestReportBytes || manifestSHA256(reportJSON) != manifest.ReportSHA256 {
+	if maxManifestReportBytes > 0 && len(reportJSON) > maxManifestReportBytes || manifestSHA256(reportJSON) != manifest.ReportSHA256 {
 		return fmt.Errorf("report manifest: prepared report bytes do not match manifest authority")
 	}
 	persisted := reportDataForPersistence(data)
@@ -2719,24 +1807,6 @@ func verifyPreparedRunManifest(
 		return err
 	}
 	return nil
-}
-
-func reportAnalysisTargetBinding(target *analysistarget.Target) (string, string, error) {
-	if target == nil {
-		return "", "", fmt.Errorf("analysis target is missing")
-	}
-	canonical, err := target.CanonicalJSON()
-	if err != nil {
-		return "", "", err
-	}
-	return target.Ref, manifestSHA256(canonical), nil
-}
-
-func reportAnalysisTargetMaterial(target *analysistarget.Target) (string, string, error) {
-	if target != nil {
-		return reportAnalysisTargetBinding(target)
-	}
-	return "", "", nil
 }
 
 func reportProgramTargetMaterial(target *programindex.Target) (string, string, error) {
@@ -2755,7 +1825,8 @@ func reportProgramTargetMaterial(target *programindex.Target) (string, string, e
 
 func savedArtifactSHA256(runDir, name string) string {
 	info, err := os.Lstat(filepath.Join(runDir, name))
-	if err != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxManifestReportBytes {
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 0 ||
+		(maxManifestReportBytes > 0 && info.Size() > int64(maxManifestReportBytes)) {
 		return ""
 	}
 	data, err := os.ReadFile(filepath.Join(runDir, name))
@@ -2763,417 +1834,6 @@ func savedArtifactSHA256(runDir, name string) string {
 		return ""
 	}
 	return manifestSHA256(data)
-}
-
-func savedRuntimePortfolioSHA256(runDir string) (string, error) {
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: open runtime portfolio run: %w", err)
-	}
-	defer root.Close()
-	_, runtimeErr := root.Lstat(runtimeportfolio.ArtifactFilename)
-	_, targetPortfolioErr := root.Lstat(snapshot.TargetPagePortfolioArtifactFilename)
-	_, programPortfolioErr := root.Lstat(programpage.ArtifactFilename)
-	runtimePresent := runtimeErr == nil
-	targetPortfolioPresent := targetPortfolioErr == nil
-	programPortfolioPresent := programPortfolioErr == nil
-	if runtimeErr != nil && !errors.Is(runtimeErr, fs.ErrNotExist) {
-		return "", fmt.Errorf("report manifest: inspect runtime portfolio: %w", runtimeErr)
-	}
-	if targetPortfolioErr != nil && !errors.Is(targetPortfolioErr, fs.ErrNotExist) {
-		return "", fmt.Errorf("report manifest: inspect target page portfolio for runtime portfolio: %w", targetPortfolioErr)
-	}
-	if programPortfolioErr != nil && !errors.Is(programPortfolioErr, fs.ErrNotExist) {
-		return "", fmt.Errorf("report manifest: inspect program page portfolio for runtime portfolio: %w", programPortfolioErr)
-	}
-	if targetPortfolioPresent && programPortfolioPresent {
-		return "", fmt.Errorf("report manifest: program and Go target page authority are mutually exclusive")
-	}
-	pagePortfolioPresent := targetPortfolioPresent || programPortfolioPresent
-	if runtimePresent != pagePortfolioPresent {
-		return "", fmt.Errorf("report manifest: page and runtime portfolio authority must be published together")
-	}
-	if !runtimePresent {
-		return "", nil
-	}
-	raw, err := readManifestFile(root, runtimeportfolio.ArtifactFilename, runtimeportfolio.MaxArtifactBytes)
-	if err != nil {
-		return "", err
-	}
-	result, err := runtimeportfolio.Decode(raw)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: runtime portfolio artifact: %w", err)
-	}
-	if programPortfolioPresent {
-		portfolioRaw, readErr := readManifestFile(
-			root, programpage.ArtifactFilename, programpage.MaxArtifactBytes,
-		)
-		if readErr != nil {
-			return "", readErr
-		}
-		portfolio, decodeErr := programpage.Decode(portfolioRaw)
-		if decodeErr != nil {
-			return "", fmt.Errorf("report manifest: runtime program page portfolio: %w", decodeErr)
-		}
-		if err := validateRuntimeProgramPageCoverage(result, portfolio); err != nil {
-			return "", fmt.Errorf("report manifest: %w", err)
-		}
-	} else {
-		portfolioRaw, readErr := readManifestFile(
-			root,
-			snapshot.TargetPagePortfolioArtifactFilename,
-			snapshot.MaxTargetPagePortfolioBytes,
-		)
-		if readErr != nil {
-			return "", readErr
-		}
-		portfolio, decodeErr := snapshot.DecodeTargetPagePortfolio(portfolioRaw)
-		if decodeErr != nil {
-			return "", fmt.Errorf("report manifest: runtime target page portfolio: %w", decodeErr)
-		}
-		if result.TargetPagePortfolioSHA256 != portfolio.SHA256 {
-			return "", fmt.Errorf("report manifest: runtime portfolio target-page binding mismatch")
-		}
-	}
-	return manifestSHA256(raw), nil
-}
-
-func savedCubeMapSHA256(runDir string) (string, error) {
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: open cube map run: %w", err)
-	}
-	defer root.Close()
-	if _, err := root.Lstat(cubemap.ArtifactFilename); errors.Is(err, fs.ErrNotExist) {
-		return "", nil
-	} else if err != nil {
-		return "", fmt.Errorf("report manifest: inspect cube map: %w", err)
-	}
-	raw, err := readManifestFile(root, cubemap.ArtifactFilename, maxManifestReportBytes)
-	if err != nil {
-		return "", err
-	}
-	if _, err := cubemap.Decode(raw); err != nil {
-		return "", fmt.Errorf("report manifest: cube map artifact: %w", err)
-	}
-	return manifestSHA256(raw), nil
-}
-
-func savedCoreMapSHA256(runDir string) (string, error) {
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: open core map run: %w", err)
-	}
-	defer root.Close()
-	if _, err := root.Lstat(coremap.ArtifactFilename); errors.Is(err, fs.ErrNotExist) {
-		return "", nil
-	} else if err != nil {
-		return "", fmt.Errorf("report manifest: inspect core map: %w", err)
-	}
-	raw, err := readManifestFile(root, coremap.ArtifactFilename, coremap.MaxArtifactBytes)
-	if err != nil {
-		return "", err
-	}
-	if _, err := coremap.Decode(raw); err != nil {
-		return "", fmt.Errorf("report manifest: core map artifact: %w", err)
-	}
-	return manifestSHA256(raw), nil
-}
-
-func savedActivityEntrypointsSHA256(
-	runDir string,
-	programIndexSetSHA256 string,
-) (string, error) {
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: open activity entrypoint run: %w", err)
-	}
-	defer root.Close()
-	present, err := manifestArtifactPresent(root, activityentrypoint.ArtifactFilename)
-	if err != nil {
-		return "", err
-	}
-	if !present {
-		return "", nil
-	}
-	defaultIndex, err := readManifestDefaultProgramIndex(root, programIndexSetSHA256)
-	if err != nil {
-		return "", err
-	}
-	raw, err := readManifestFile(
-		root, activityentrypoint.ArtifactFilename, activityentrypoint.MaxArtifactBytes,
-	)
-	if err != nil {
-		return "", err
-	}
-	if _, err := activityentrypoint.Decode(raw, defaultIndex); err != nil {
-		return "", fmt.Errorf("report manifest: activity entrypoint artifact: %w", err)
-	}
-	return manifestSHA256(raw), nil
-}
-
-func savedDeclaredDependencyArtifactsSHA256(
-	runDir string,
-	programIndexSetSHA256 string,
-) (string, string, error) {
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return "", "", fmt.Errorf("report manifest: open declared dependency run: %w", err)
-	}
-	defer root.Close()
-	declarationPresent, err := manifestArtifactPresent(root, dependencydeclaration.ArtifactFilename)
-	if err != nil {
-		return "", "", err
-	}
-	targetPresent, err := manifestArtifactPresent(root, pythontarget.ArtifactFilename)
-	if err != nil {
-		return "", "", err
-	}
-	if !targetPresent {
-		if !declarationPresent {
-			return "", "", nil
-		}
-		return "", "", fmt.Errorf("report manifest: declared dependencies require the Python target catalog")
-	}
-	targetRaw, err := readManifestFile(root, pythontarget.ArtifactFilename, pythontarget.MaxArtifactBytes)
-	if err != nil {
-		return "", "", err
-	}
-	targets, err := pythontarget.DecodeCatalog(targetRaw)
-	if err != nil {
-		return "", "", fmt.Errorf("report manifest: Python target catalog artifact: %w", err)
-	}
-	targetSHA256 := manifestSHA256(targetRaw)
-	if !declarationPresent {
-		return targetSHA256, "", nil
-	}
-	declarationRaw, err := readManifestFile(
-		root, dependencydeclaration.ArtifactFilename, dependencydeclaration.MaxArtifactBytes,
-	)
-	if err != nil {
-		return "", "", err
-	}
-	index, err := readManifestDefaultProgramIndex(root, programIndexSetSHA256)
-	if err != nil {
-		return "", "", err
-	}
-	if _, err := pythondeclareddependencies.DecodeTargetAuthority(declarationRaw, targets, index); err != nil {
-		return "", "", fmt.Errorf("report manifest: declared dependency artifact: %w", err)
-	}
-	return targetSHA256, manifestSHA256(declarationRaw), nil
-}
-
-func readSavedDeclaredDependencyAuthority(
-	root *os.Root,
-	index programindex.Index,
-) (dependencydeclaration.Result, error) {
-	targetRaw, err := readManifestFile(root, pythontarget.ArtifactFilename, pythontarget.MaxArtifactBytes)
-	if err != nil {
-		return dependencydeclaration.Result{}, err
-	}
-	targets, err := pythontarget.DecodeCatalog(targetRaw)
-	if err != nil {
-		return dependencydeclaration.Result{}, fmt.Errorf("report manifest: Python target catalog artifact: %w", err)
-	}
-	declarationRaw, err := readManifestFile(
-		root, dependencydeclaration.ArtifactFilename, dependencydeclaration.MaxArtifactBytes,
-	)
-	if err != nil {
-		return dependencydeclaration.Result{}, err
-	}
-	declarations, err := pythondeclareddependencies.DecodeTargetAuthority(declarationRaw, targets, index)
-	if err != nil {
-		return dependencydeclaration.Result{}, fmt.Errorf("report manifest: declared dependency artifact: %w", err)
-	}
-	return declarations, nil
-}
-
-func savedPythonSemanticArtifactsSHA256(
-	runDir string,
-	programIndexSetSHA256 string,
-) (string, string, string, error) {
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return "", "", "", fmt.Errorf("report manifest: open Python semantic run: %w", err)
-	}
-	defer root.Close()
-	catalogPresent, err := manifestArtifactPresent(root, dependencies.ArtifactFilename)
-	if err != nil {
-		return "", "", "", err
-	}
-	integrationPresent, err := manifestArtifactPresent(root, integrationdependency.ArtifactFilename)
-	if err != nil {
-		return "", "", "", err
-	}
-	usagePresent, err := manifestArtifactPresent(root, integrationusage.ArtifactFilename)
-	if err != nil {
-		return "", "", "", err
-	}
-	if !catalogPresent && !integrationPresent && !usagePresent {
-		return "", "", "", nil
-	}
-	if !catalogPresent || !integrationPresent || !usagePresent {
-		return "", "", "", fmt.Errorf(
-			"report manifest: Python dependency catalog, integration result, and integration usage must all be present",
-		)
-	}
-	catalogRaw, err := readManifestFile(root, dependencies.ArtifactFilename, dependencies.MaxArtifactBytes)
-	if err != nil {
-		return "", "", "", err
-	}
-	catalog, err := dependencies.Decode(catalogRaw)
-	if err != nil {
-		return "", "", "", fmt.Errorf("report manifest: dependency catalog artifact: %w", err)
-	}
-	defaultIndex, err := readManifestDefaultProgramIndex(root, programIndexSetSHA256)
-	if err != nil {
-		return "", "", "", err
-	}
-	integrationRaw, err := readManifestFile(
-		root, integrationdependency.ArtifactFilename, integrationdependency.MaxArtifactBytes,
-	)
-	if err != nil {
-		return "", "", "", err
-	}
-	integration, err := integrationdependency.Decode(integrationRaw)
-	if err != nil {
-		return "", "", "", fmt.Errorf("report manifest: integration dependencies artifact: %w", err)
-	}
-	var integrationAuthorityErr error
-	if defaultIndex.Target.Language == "python" {
-		declarations, declarationErr := readSavedDeclaredDependencyAuthority(root, defaultIndex)
-		if declarationErr != nil {
-			return "", "", "", declarationErr
-		}
-		integrationAuthorityErr = integration.ValidateAgainstDeclarations(catalog, declarations, defaultIndex.Target)
-	} else {
-		integrationAuthorityErr = integration.ValidateAgainst(catalog)
-	}
-	if integrationAuthorityErr != nil {
-		return "", "", "", fmt.Errorf("report manifest: integration dependencies authority: %w", integrationAuthorityErr)
-	}
-	usageRaw, err := readManifestFile(root, integrationusage.ArtifactFilename, integrationusage.MaxArtifactBytes)
-	if err != nil {
-		return "", "", "", err
-	}
-	usage, err := integrationusage.Decode(usageRaw)
-	if err != nil {
-		return "", "", "", fmt.Errorf("report manifest: integration usage artifact: %w", err)
-	}
-	if err := usage.ValidateAgainst(defaultIndex, integration); err != nil {
-		return "", "", "", fmt.Errorf("report manifest: integration usage authority: %w", err)
-	}
-	return manifestSHA256(catalogRaw), manifestSHA256(integrationRaw), manifestSHA256(usageRaw), nil
-}
-
-func savedActivityPathsSHA256(
-	runDir string,
-	programIndexSetSHA256 string,
-) (string, error) {
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: open activity path run: %w", err)
-	}
-	defer root.Close()
-	present, err := manifestArtifactPresent(root, activitypath.ArtifactFilename)
-	if err != nil {
-		return "", err
-	}
-	if !present {
-		return "", nil
-	}
-	index, err := readManifestDefaultProgramIndex(root, programIndexSetSHA256)
-	if err != nil {
-		return "", err
-	}
-	activityRaw, err := readManifestFile(
-		root, activityentrypoint.ArtifactFilename, activityentrypoint.MaxArtifactBytes,
-	)
-	if err != nil {
-		return "", err
-	}
-	activities, err := activityentrypoint.Decode(activityRaw, index)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: activity path activity entrypoints: %w", err)
-	}
-	catalogRaw, err := readManifestFile(root, dependencies.ArtifactFilename, dependencies.MaxArtifactBytes)
-	if err != nil {
-		return "", err
-	}
-	catalog, err := dependencies.Decode(catalogRaw)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: activity path dependency catalog: %w", err)
-	}
-	integrationRaw, err := readManifestFile(
-		root, integrationdependency.ArtifactFilename, integrationdependency.MaxArtifactBytes,
-	)
-	if err != nil {
-		return "", err
-	}
-	integrations, err := integrationdependency.Decode(integrationRaw)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: activity path integration dependencies: %w", err)
-	}
-	var integrationAuthorityErr error
-	if index.Target.Language == "python" {
-		declarations, declarationErr := readSavedDeclaredDependencyAuthority(root, index)
-		if declarationErr != nil {
-			return "", declarationErr
-		}
-		integrationAuthorityErr = integrations.ValidateAgainstDeclarations(catalog, declarations, index.Target)
-	} else {
-		integrationAuthorityErr = integrations.ValidateAgainst(catalog)
-	}
-	if integrationAuthorityErr != nil {
-		return "", fmt.Errorf("report manifest: activity path integration dependency authority: %w", integrationAuthorityErr)
-	}
-	usageRaw, err := readManifestFile(root, integrationusage.ArtifactFilename, integrationusage.MaxArtifactBytes)
-	if err != nil {
-		return "", err
-	}
-	usage, err := integrationusage.Decode(usageRaw)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: activity path integration usage: %w", err)
-	}
-	pathRaw, err := readManifestFile(root, activitypath.ArtifactFilename, activitypath.MaxArtifactBytes)
-	if err != nil {
-		return "", err
-	}
-	if _, err := activitypath.Decode(pathRaw, index, activities, integrations, usage); err != nil {
-		return "", fmt.Errorf("report manifest: activity path artifact: %w", err)
-	}
-	return manifestSHA256(pathRaw), nil
-}
-
-func savedJSTSProjectSHA256(runDir, programIndexSetSHA256 string) (string, error) {
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: open JavaScript/TypeScript project run: %w", err)
-	}
-	defer root.Close()
-	present, err := manifestArtifactPresent(root, jstsproject.ArtifactFilename)
-	if err != nil {
-		return "", err
-	}
-	if !present {
-		return "", nil
-	}
-	index, err := readManifestDefaultProgramIndex(root, programIndexSetSHA256)
-	if err != nil {
-		return "", err
-	}
-	raw, err := readManifestFile(root, jstsproject.ArtifactFilename, jstsproject.MaxArtifactBytes)
-	if err != nil {
-		return "", err
-	}
-	result, err := jstsproject.Decode(raw)
-	if err != nil {
-		return "", fmt.Errorf("report manifest: JavaScript/TypeScript project artifact: %w", err)
-	}
-	if err := validateJSTSProgramIndexBinding(result, index); err != nil {
-		return "", fmt.Errorf("report manifest: JavaScript/TypeScript project binding: %w", err)
-	}
-	return manifestSHA256(raw), nil
 }
 
 func manifestArtifactPresent(root *os.Root, name string) (bool, error) {
@@ -3196,7 +1856,7 @@ func savedReadmeFileRolesSHA256(runDir string) (string, error) {
 	} else if err != nil {
 		return "", fmt.Errorf("report manifest: inspect README file-role artifact: %w", err)
 	}
-	raw, err := readManifestFile(root, readmetargetscout.ArtifactFilename, maxReadmeFileRoleArtifactBytes)
+	raw, err := readManifestFile(root, readmetargetscout.ArtifactFilename, 0)
 	if err != nil {
 		return "", err
 	}
@@ -3224,6 +1884,91 @@ func savedProgramIndexSetSHA256(runDir string) (string, error) {
 	return manifestSHA256(raw), nil
 }
 
+func savedDependencyCatalogSHA256(runDir string) (string, error) {
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open dependency catalog run: %w", err)
+	}
+	defer root.Close()
+	if _, err := root.Lstat(dependencies.ArtifactFilename); errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("report manifest: required dependency catalog is missing")
+	} else if err != nil {
+		return "", fmt.Errorf("report manifest: inspect %s: %w", dependencies.ArtifactFilename, err)
+	}
+	raw, err := readManifestFile(root, dependencies.ArtifactFilename, dependencies.MaxArtifactBytes)
+	if err != nil {
+		return "", err
+	}
+	if _, err := dependencies.Decode(raw); err != nil {
+		return "", fmt.Errorf("report manifest: dependency catalog artifact: %w", err)
+	}
+	return manifestSHA256(raw), nil
+}
+
+func savedGroupsIndexSHA256(runDir string, required bool) (string, error) {
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open groups index run: %w", err)
+	}
+	defer root.Close()
+	if _, err := root.Lstat(groupindex.ArtifactFilename); errors.Is(err, fs.ErrNotExist) {
+		if required {
+			return "", fmt.Errorf("report manifest: required groups index is missing")
+		}
+		return "", nil
+	} else if err != nil {
+		return "", fmt.Errorf("report manifest: inspect %s: %w", groupindex.ArtifactFilename, err)
+	}
+	if !required {
+		return "", fmt.Errorf("report manifest: unbound groups index is present")
+	}
+	raw, err := readManifestFile(root, groupindex.ArtifactFilename, 0)
+	if err != nil {
+		return "", err
+	}
+	if _, err := groupindex.Decode(raw); err != nil {
+		return "", fmt.Errorf("report manifest: groups index artifact: %w", err)
+	}
+	return manifestSHA256(raw), nil
+}
+
+func savedReducedDocumentationSHA256(
+	runDir string,
+	index *programindex.Index,
+) (string, error) {
+	required := index != nil && index.Categorization != nil
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open reduced documentation run: %w", err)
+	}
+	defer root.Close()
+	if _, err := root.Lstat(documentationreduce.ArtifactFilename); errors.Is(err, fs.ErrNotExist) {
+		if required {
+			return "", fmt.Errorf("report manifest: required reduced documentation is missing")
+		}
+		return "", nil
+	} else if err != nil {
+		return "", fmt.Errorf(
+			"report manifest: inspect %s: %w", documentationreduce.ArtifactFilename, err,
+		)
+	}
+	if !required {
+		return "", fmt.Errorf("report manifest: unbound reduced documentation is present")
+	}
+	raw, err := readManifestFile(root, documentationreduce.ArtifactFilename, 0)
+	if err != nil {
+		return "", err
+	}
+	reduced, err := documentationreduce.Decode(raw)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: reduced documentation artifact: %w", err)
+	}
+	if reduced.ReductionSHA256 != index.Categorization.ReducedDocumentationSHA256 {
+		return "", fmt.Errorf("report manifest: reduced documentation does not bind categorized ProgramIndex")
+	}
+	return manifestSHA256(raw), nil
+}
+
 func validManifestLabel(value string) bool {
 	if value == "" || len(value) > maxManifestIdentifierBytes {
 		return false
@@ -3245,7 +1990,7 @@ func writeRunManifestAtomic(runDir string, manifest RunManifest) error {
 		return fmt.Errorf("report manifest: encode: %w", err)
 	}
 	data = append(data, '\n')
-	if len(data) > maxRunManifestBytes {
+	if maxRunManifestBytes > 0 && len(data) > maxRunManifestBytes {
 		return fmt.Errorf("report manifest: encoded manifest exceeds %d bytes", maxRunManifestBytes)
 	}
 	temporary, err := os.CreateTemp(runDir, ".run-manifest-*.tmp")
@@ -3331,7 +2076,7 @@ func readManifestFile(root *os.Root, name string, limit int) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("report manifest: %s is not a regular file", name)
 	}
-	if info.Size() < 0 || info.Size() > int64(limit) {
+	if info.Size() < 0 || limit > 0 && info.Size() > int64(limit) {
 		return nil, fmt.Errorf("report manifest: %s exceeds %d bytes", name, limit)
 	}
 	file, err := root.Open(name)
@@ -3339,11 +2084,15 @@ func readManifestFile(root *os.Root, name string, limit int) ([]byte, error) {
 		return nil, fmt.Errorf("report manifest: open %s: %w", name, err)
 	}
 	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
+	var reader io.Reader = file
+	if limit > 0 {
+		reader = io.LimitReader(file, int64(limit)+1)
+	}
+	data, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("report manifest: read %s: %w", name, err)
 	}
-	if len(data) > limit {
+	if limit > 0 && len(data) > limit {
 		return nil, fmt.Errorf("report manifest: %s exceeds %d bytes", name, limit)
 	}
 	return data, nil

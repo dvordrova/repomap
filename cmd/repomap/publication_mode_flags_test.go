@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"io"
 	"strings"
@@ -21,16 +22,50 @@ func TestExplicitPortIsRejectedOnlyForStaticReportMode(t *testing.T) {
 	}
 }
 
-func TestSemanticStopAfterAcceptsOnlyActivityEntrypoints(t *testing.T) {
-	if stage, err := semanticStopAfter(""); err != nil || stage != "" {
-		t.Fatalf("empty checkpoint = %q, %v", stage, err)
+func TestDirectCallControlsUseZeroAsUnboundedAndAcceptPositiveNarrowing(t *testing.T) {
+	for _, controls := range [][2]int{{0, 0}, {11, 300_000}} {
+		if err := validateDirectCallControls(controls[0], controls[1]); err != nil {
+			t.Fatalf("controls depth=%d edges=%d: %v", controls[0], controls[1], err)
+		}
 	}
-	if stage, err := semanticStopAfter(" ActivityEntrypoints "); err != nil || stage != "activity_entrypoints" {
-		t.Fatalf("activity checkpoint = %q, %v", stage, err)
+	for _, controls := range [][2]int{{-1, 0}, {0, -1}} {
+		if err := validateDirectCallControls(controls[0], controls[1]); err == nil ||
+			!strings.Contains(err.Error(), "0 keeps all") {
+			t.Fatalf("negative controls depth=%d edges=%d error = %v", controls[0], controls[1], err)
+		}
 	}
-	if _, err := semanticStopAfter("CoreMap"); err == nil ||
-		!strings.Contains(err.Error(), "supported checkpoint is ActivityEntrypoints") {
-		t.Fatalf("unsupported checkpoint error = %v", err)
+}
+
+func TestDirectCallExplicitEdgeCeilingGuidanceHasNoAbsoluteMaximum(t *testing.T) {
+	err := directCallEdgeCeilingError("example.com/server", 0, 300_000, 12)
+	if err == nil {
+		t.Fatal("missing explicit edge ceiling error")
+	}
+	for _, expected := range []string{
+		"explicit --edges-limit=300000",
+		"all reachable calls",
+		"--depth 12",
+		"--edges-limit 600000",
+		"--edges-limit 0",
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("edge ceiling guidance missing %q:\n%s", expected, err)
+		}
+	}
+}
+
+func TestUsageExplainsUnboundedDirectCallDefaults(t *testing.T) {
+	var output bytes.Buffer
+	printUsageTo(&output)
+	for _, expected := range []string{
+		"--depth N",
+		"target call-graph depth (0 = all; default: 0)",
+		"--edges-limit N",
+		"maximum exact target call-graph edges (0 = all; default: 0)",
+	} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("usage missing %q:\n%s", expected, output.String())
+		}
 	}
 }
 

@@ -1,6 +1,10 @@
 package gocoreobject
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestNewCanonicalizesSealsAndSnapshotsExactDeclarations(t *testing.T) {
 	index, err := New(Input{
@@ -43,5 +47,66 @@ func TestNewCanonicalizesSealsAndSnapshotsExactDeclarations(t *testing.T) {
 	tampered.Callables[0].Signature = "func()"
 	if err := tampered.Validate(); err == nil {
 		t.Fatal("tampered signature retained the producer seal")
+	}
+}
+
+func TestNewRetainsTextBeyondFormerLocalScalarThreshold(t *testing.T) {
+	const formerLocalTextBytes = 16 * 1024
+	longSignature := "func(" + strings.Repeat("x", formerLocalTextBytes+1) + ")"
+	index, err := New(Input{
+		Scenario: Scenario{ID: "go:test", GOOS: "linux", GOARCH: "amd64"},
+		Scope: Scope{
+			TargetRef: "target-1", TargetKind: ScopeModuleLibrary,
+			TargetModuleID: "module-1", TargetModulePath: "example.com/product", TargetModuleDir: ".",
+			TargetPackages: []string{"example.com/product"},
+		},
+		Packages: []Package{{
+			ModuleID: "module-1", Module: "example.com/product", ModuleDir: ".",
+			Path: "example.com/product", RepresentativeSource: "main.go",
+		}},
+		Callables: []CallableDeclaration{{
+			Kind: CallableFunction, Package: "example.com/product", Name: "Run",
+			Signature: longSignature, Location: Location{Path: "main.go", Line: 3, Column: 1},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if len(index.Callables) != 1 || index.Callables[0].Signature != longSignature {
+		t.Fatalf("long signature was changed or omitted: %#v", index.Callables)
+	}
+	if err := index.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+}
+
+func TestNewRetainsRowsBeyondFormerLocalCollectionThreshold(t *testing.T) {
+	const formerLocalCallables = 65_536
+	callables := make([]CallableDeclaration, formerLocalCallables+1)
+	for position := range callables {
+		callables[position] = CallableDeclaration{
+			Kind: CallableFunction, Package: "example.com/product",
+			Name: fmt.Sprintf("Function%d", position), Signature: "func()",
+			Location: Location{Path: "main.go", Line: position + 1, Column: 1},
+		}
+	}
+	index, err := New(Input{
+		Scenario: Scenario{ID: "go:test", GOOS: "linux", GOARCH: "amd64"},
+		Scope: Scope{
+			TargetRef: "target-1", TargetKind: ScopeModuleLibrary,
+			TargetModuleID: "module-1", TargetModulePath: "example.com/product", TargetModuleDir: ".",
+			TargetPackages: []string{"example.com/product"},
+		},
+		Packages: []Package{{
+			ModuleID: "module-1", Module: "example.com/product", ModuleDir: ".",
+			Path: "example.com/product", RepresentativeSource: "main.go",
+		}},
+		Callables: callables,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if len(index.Callables) != formerLocalCallables+1 || index.Coverage.CallablesIndexed != formerLocalCallables+1 {
+		t.Fatalf("retained callables = %d coverage=%+v", len(index.Callables), index.Coverage)
 	}
 }

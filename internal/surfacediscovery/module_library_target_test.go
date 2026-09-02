@@ -25,7 +25,7 @@ func TestModuleLibraryTargetRootsEveryExactPublicPackageOnly(t *testing.T) {
 		t.Fatalf("Validate module library index: %v", err)
 	}
 	wantScopePackages := []string{"example.com/plural", "example.com/plural/client"}
-	if index.Version != 3 || index.Scope.TargetRef != "target-plural" ||
+	if index.Version != DirectCallIndexVersion || index.Scope.TargetRef != "target-plural" ||
 		index.Scope.TargetKind != AnalysisTargetModuleLibrary ||
 		index.Scope.TargetModuleID != "module-plural" ||
 		index.Scope.TargetModulePath != "example.com/plural" ||

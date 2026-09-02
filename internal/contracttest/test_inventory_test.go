@@ -197,7 +197,7 @@ func validateTestInventoryContract(t *testing.T, contract testInventoryContract)
 		if !slicesContain([]string{"", "browser-vm", "compiler", "filesystem-platform", "interpreter", "process"}, exception.Resource) ||
 			!slicesContain([]string{"", "loopback", "external"}, exception.Network) ||
 			!slicesContain([]string{"", "real-provider"}, exception.Provider) ||
-			!slicesContain([]string{"", "cumulative-go", "cumulative-jsts", "cumulative-python", "external-checkout", "temporary-repository"}, exception.Fixture) {
+			!slicesContain([]string{"", "cumulative-go", "cumulative-jsts", "cumulative-python", "cumulative-python-and-jsts", "external-checkout", "temporary-repository"}, exception.Fixture) {
 			t.Fatalf("unknown test exception profile: %#v", exception)
 		}
 		if slicesContain(exception.Characteristics, "loopback-network") && exception.Network != "loopback" {

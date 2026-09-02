@@ -3,7 +3,6 @@ package report
 import (
 	"fmt"
 	"io/fs"
-	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -12,11 +11,11 @@ import (
 )
 
 const (
-	ProgramViewVersion = 3
+	ProgramViewVersion = 5
 
-	// The ProgramIndex remains the complete canonical artifact. ProgramView is
-	// deliberately small enough to embed in report JSON and hand to the
-	// browser without turning the presentation into another analysis store.
+	// These values are advisory scale thresholds retained only for aggregate
+	// diagnostics. ProgramView always projects every indexed row and witness;
+	// crossing a threshold never authorizes truncation or rejection.
 	MaxProgramViewSeeds                = 1_024
 	MaxProgramViewObjects              = 2_048
 	MaxProgramViewRelations            = 4_096
@@ -25,7 +24,7 @@ const (
 	maxProgramViewTextBytes = 8 << 20
 )
 
-// ProgramView is a bounded, provider-free presentation projection of one
+// ProgramView is a complete, provider-free presentation projection of one
 // validated ProgramIndex. It retains exact local identities and structural
 // facts; it does not assign product semantics to objects or relations.
 type ProgramView struct {
@@ -71,9 +70,8 @@ type ProgramViewObject struct {
 	External    *programindex.ExternalSymbol `json:"external,omitempty"`
 }
 
-// ProgramViewRelation preserves one exact ProgramIndex relation whenever all
-// of its retained endpoints are present in Objects. Witness payloads remain in
-// the canonical index; their complete accounting is retained here.
+// ProgramViewRelation preserves one complete ProgramIndex relation with every
+// indexed endpoint and witness.
 type ProgramViewRelation struct {
 	ID         string                    `json:"id"`
 	SourceRef  string                    `json:"source_ref"`
@@ -94,9 +92,9 @@ type ProgramViewRelation struct {
 	WitnessesProjectionOmitted int                    `json:"witnesses_projection_omitted"`
 }
 
-// ProgramViewProjectionCounts distinguishes canonical index coverage from
-// report projection coverage. Eligible is the complete indexed collection;
-// omitted is always eligible minus shown.
+// ProgramViewProjectionCounts distinguishes upstream ProgramIndex coverage
+// from presentation coverage. New projections always have Eligible == Shown
+// and Omitted == 0; the explicit fields keep the handoff self-describing.
 type ProgramViewProjectionCounts struct {
 	Seeds     ProgramViewCollectionCounts `json:"seeds"`
 	Objects   ProgramViewCollectionCounts `json:"objects"`
@@ -109,34 +107,11 @@ type ProgramViewCollectionCounts struct {
 	Omitted  int `json:"omitted"`
 }
 
-type programViewLimits struct {
-	Seeds     int
-	Objects   int
-	Relations int
-	TextBytes int
-}
-
 // NewProgramView validates the complete input, projects it without name/path
 // joins, then validates the closed presentation handoff before returning it.
 func NewProgramView(index programindex.Index) (*ProgramView, error) {
-	return projectProgramView(index, programViewLimits{
-		Seeds: MaxProgramViewSeeds, Objects: MaxProgramViewObjects,
-		Relations: MaxProgramViewRelations, TextBytes: maxProgramViewTextBytes,
-	})
-}
-
-func projectProgramView(index programindex.Index, limits programViewLimits) (*ProgramView, error) {
 	if err := index.Validate(); err != nil {
 		return nil, fmt.Errorf("program view: invalid program index: %w", err)
-	}
-	if limits.Seeds <= 0 || limits.Seeds > MaxProgramViewSeeds ||
-		limits.Objects <= 0 || limits.Objects > MaxProgramViewObjects ||
-		limits.Relations <= 0 || limits.Relations > MaxProgramViewRelations ||
-		limits.TextBytes <= 0 || limits.TextBytes > maxProgramViewTextBytes {
-		return nil, fmt.Errorf("program view: invalid projection limits")
-	}
-	if len(index.Target.Seeds) > limits.Seeds {
-		return nil, fmt.Errorf("program view: %d target seeds exceed projection limit %d", len(index.Target.Seeds), limits.Seeds)
 	}
 
 	objectsByID := make(map[string]programindex.Object, len(index.Objects))
@@ -144,128 +119,26 @@ func projectProgramView(index programindex.Index, limits programViewLimits) (*Pr
 		objectsByID[object.ID] = object
 	}
 
-	selected := make(map[string]struct{}, min(len(index.Objects), limits.Objects))
-	for _, seed := range index.Target.Seeds {
-		additions, err := programViewObjectClosure(seed.ObjectID, objectsByID, selected)
-		if err != nil {
-			return nil, err
-		}
-		for _, id := range additions {
-			selected[id] = struct{}{}
-		}
-	}
-	if len(selected) > limits.Objects {
-		return nil, fmt.Errorf("program view: target seeds require %d objects, projection limit is %d", len(selected), limits.Objects)
-	}
-
 	view := &ProgramView{
 		Version: ProgramViewVersion, TargetID: index.Target.ID, IndexSHA256: index.SHA256,
-		Seeds: []ProgramViewSeed{}, Objects: []ProgramViewObject{}, Relations: []ProgramViewRelation{},
+		Seeds:         make([]ProgramViewSeed, 0, len(index.Target.Seeds)),
+		Objects:       make([]ProgramViewObject, 0, len(index.Objects)),
+		Relations:     make([]ProgramViewRelation, 0, len(index.Relations)),
 		IndexCoverage: index.Coverage,
 	}
-	textBytes := len(view.TargetID) + len(view.IndexSHA256)
 	for _, seed := range index.Target.Seeds {
 		object, ok := objectsByID[seed.ObjectID]
 		if !ok {
 			return nil, fmt.Errorf("program view: seed object %q is missing", seed.ObjectID)
 		}
-		projected := programViewSeed(seed, object)
-		view.Seeds = append(view.Seeds, projected)
-		textBytes += programViewSeedTextBytes(projected)
+		view.Seeds = append(view.Seeds, programViewSeed(seed, object))
 	}
-
-	mandatoryIDs := make([]string, 0, len(selected))
-	for id := range selected {
-		mandatoryIDs = append(mandatoryIDs, id)
-	}
-	sort.Strings(mandatoryIDs)
-	for _, id := range mandatoryIDs {
-		textBytes += programViewObjectTextBytes(programViewObject(objectsByID[id]))
-	}
-	if textBytes > limits.TextBytes {
-		return nil, fmt.Errorf("program view: target seeds and ownership closure exceed text limit")
-	}
-
-	candidates := make([]programindex.Object, 0, len(index.Objects)-len(selected))
 	for _, object := range index.Objects {
-		if _, exists := selected[object.ID]; !exists {
-			candidates = append(candidates, object)
-		}
+		view.Objects = append(view.Objects, programViewObject(object))
 	}
-	sort.Slice(candidates, func(left, right int) bool {
-		leftPriority := programViewObjectPriority(candidates[left])
-		rightPriority := programViewObjectPriority(candidates[right])
-		if leftPriority != rightPriority {
-			return leftPriority < rightPriority
-		}
-		return candidates[left].ID < candidates[right].ID
-	})
-	for _, candidate := range candidates {
-		if _, exists := selected[candidate.ID]; exists {
-			continue
-		}
-		additions, err := programViewObjectClosure(candidate.ID, objectsByID, selected)
-		if err != nil {
-			return nil, err
-		}
-		if len(selected)+len(additions) > limits.Objects {
-			continue
-		}
-		additionalText := 0
-		for _, id := range additions {
-			additionalText += programViewObjectTextBytes(programViewObject(objectsByID[id]))
-		}
-		if textBytes+additionalText > limits.TextBytes {
-			continue
-		}
-		for _, id := range additions {
-			selected[id] = struct{}{}
-		}
-		textBytes += additionalText
-	}
-
-	for _, object := range index.Objects {
-		if _, exists := selected[object.ID]; exists {
-			view.Objects = append(view.Objects, programViewObject(object))
-		}
-	}
-	relationCandidates := make([]programindex.Relation, 0, len(index.Relations))
 	for _, relation := range index.Relations {
-		if programViewRelationEndpointsSelected(relation, selected) {
-			relationCandidates = append(relationCandidates, relation)
-		}
+		view.Relations = append(view.Relations, programViewRelation(relation))
 	}
-	distances := programViewSeedDistances(index.Target.Seeds, relationCandidates, selected)
-	sort.Slice(relationCandidates, func(left, right int) bool {
-		leftDistance := programViewRelationDistance(relationCandidates[left], distances)
-		rightDistance := programViewRelationDistance(relationCandidates[right], distances)
-		if leftDistance != rightDistance {
-			return leftDistance < rightDistance
-		}
-		leftResolution := programViewResolutionPriority(relationCandidates[left].Resolution)
-		rightResolution := programViewResolutionPriority(relationCandidates[right].Resolution)
-		if leftResolution != rightResolution {
-			return leftResolution < rightResolution
-		}
-		return relationCandidates[left].ID < relationCandidates[right].ID
-	})
-	for _, relation := range relationCandidates {
-		if len(view.Relations) == limits.Relations {
-			break
-		}
-		projected := programViewRelation(relation)
-		additionalText := programViewRelationTextBytes(projected)
-		if textBytes+additionalText > limits.TextBytes {
-			continue
-		}
-		view.Relations = append(view.Relations, projected)
-		textBytes += additionalText
-	}
-	// Selection is usefulness-ordered, but the closed handoff remains
-	// canonical and independent of browser iteration order.
-	sort.Slice(view.Relations, func(left, right int) bool {
-		return view.Relations[left].ID < view.Relations[right].ID
-	})
 
 	view.Projection = ProgramViewProjectionCounts{
 		Seeds:     newProgramViewCollectionCounts(len(index.Target.Seeds), len(view.Seeds)),
@@ -278,72 +151,15 @@ func projectProgramView(index programindex.Index, limits programViewLimits) (*Pr
 	return view, nil
 }
 
-func programViewSeedDistances(
-	seeds []programindex.TargetSeed,
-	relations []programindex.Relation,
-	selected map[string]struct{},
-) map[string]int {
-	distances := make(map[string]int, len(selected))
-	queue := make([]string, 0, len(selected))
-	for _, seed := range seeds {
-		if _, retained := selected[seed.ObjectID]; !retained {
-			continue
-		}
-		if _, duplicate := distances[seed.ObjectID]; duplicate {
-			continue
-		}
-		distances[seed.ObjectID] = 0
-		queue = append(queue, seed.ObjectID)
-	}
-	outgoing := make(map[string][]string)
-	for _, relation := range relations {
-		outgoing[relation.FromID] = append(outgoing[relation.FromID], relation.ToIDs...)
-	}
-	for position := 0; position < len(queue); position++ {
-		fromID := queue[position]
-		for _, toID := range outgoing[fromID] {
-			if _, retained := selected[toID]; !retained {
-				continue
-			}
-			if _, seen := distances[toID]; seen {
-				continue
-			}
-			distances[toID] = distances[fromID] + 1
-			queue = append(queue, toID)
-		}
-	}
-	return distances
-}
-
-func programViewRelationDistance(relation programindex.Relation, distances map[string]int) int {
-	if distance, ok := distances[relation.FromID]; ok {
-		return distance
-	}
-	return int(^uint(0) >> 1)
-}
-
-func programViewResolutionPriority(resolution programindex.Resolution) int {
-	switch resolution {
-	case programindex.ResolutionExact:
-		return 0
-	case programindex.ResolutionAlternatives:
-		return 1
-	default:
-		return 2
-	}
-}
-
-// Validate checks the bounded projection independently of the in-memory
+// Validate checks the complete projection independently of the in-memory
 // ProgramIndex used to construct it.
 func (view ProgramView) Validate() error {
 	if view.Version != ProgramViewVersion || !validProgramViewText(view.TargetID) ||
 		!strings.HasPrefix(view.TargetID, "program-target-") || !validProgramViewSHA256(view.IndexSHA256) {
 		return fmt.Errorf("invalid identity")
 	}
-	if view.Seeds == nil || view.Objects == nil || view.Relations == nil ||
-		len(view.Seeds) > MaxProgramViewSeeds || len(view.Objects) > MaxProgramViewObjects ||
-		len(view.Relations) > MaxProgramViewRelations {
-		return fmt.Errorf("collection bound exceeded")
+	if view.Seeds == nil || view.Objects == nil || view.Relations == nil {
+		return fmt.Errorf("missing collection")
 	}
 
 	objectsByID := make(map[string]ProgramViewObject, len(view.Objects))
@@ -405,73 +221,7 @@ func (view ProgramView) Validate() error {
 	if err := validateProgramViewCollectionCounts(view.Projection.Relations, view.IndexCoverage.RelationsIndexed, len(view.Relations)); err != nil {
 		return fmt.Errorf("relation projection: %w", err)
 	}
-	if programViewTextBytes(view) > maxProgramViewTextBytes {
-		return fmt.Errorf("aggregate text bound exceeded")
-	}
 	return nil
-}
-
-func programViewObjectClosure(
-	objectID string,
-	objectsByID map[string]programindex.Object,
-	alreadySelected map[string]struct{},
-) ([]string, error) {
-	pending := []string{objectID}
-	additions := make(map[string]struct{})
-	for len(pending) > 0 {
-		last := len(pending) - 1
-		id := pending[last]
-		pending = pending[:last]
-		if _, exists := alreadySelected[id]; exists {
-			continue
-		}
-		if _, exists := additions[id]; exists {
-			continue
-		}
-		object, exists := objectsByID[id]
-		if !exists {
-			return nil, fmt.Errorf("program view: object closure references missing ID %q", id)
-		}
-		additions[id] = struct{}{}
-		if object.OwnerID != "" {
-			pending = append(pending, object.OwnerID)
-		}
-		if object.ContainerID != "" {
-			pending = append(pending, object.ContainerID)
-		}
-	}
-	result := make([]string, 0, len(additions))
-	for id := range additions {
-		result = append(result, id)
-	}
-	sort.Strings(result)
-	return result, nil
-}
-
-func programViewObjectPriority(object programindex.Object) int {
-	switch object.Kind {
-	case programindex.ObjectPackage:
-		return 0
-	case programindex.ObjectModule:
-		return 1
-	default:
-		if object.Visibility == programindex.VisibilityPublic {
-			return 2
-		}
-		return 3
-	}
-}
-
-func programViewRelationEndpointsSelected(relation programindex.Relation, selected map[string]struct{}) bool {
-	if _, exists := selected[relation.FromID]; !exists {
-		return false
-	}
-	for _, id := range relation.ToIDs {
-		if _, exists := selected[id]; !exists {
-			return false
-		}
-	}
-	return true
 }
 
 func programViewSeed(seed programindex.TargetSeed, object programindex.Object) ProgramViewSeed {
@@ -495,10 +245,9 @@ func programViewObject(object programindex.Object) ProgramViewObject {
 func programViewRelation(relation programindex.Relation) ProgramViewRelation {
 	// An unresolved relation intentionally has a present-but-empty target
 	// collection. Preserve that distinction across the presentation handoff;
-	// nil means the projection itself omitted the field.
+	// nil is invalid rather than an omission signal.
 	toIDs := append([]string{}, relation.ToIDs...)
-	witnessCount := min(len(relation.Witnesses), MaxProgramViewWitnessesPerRelation)
-	witnesses := cloneProgramViewWitnesses(relation.Witnesses[:witnessCount])
+	witnesses := cloneProgramViewWitnesses(relation.Witnesses)
 	return ProgramViewRelation{
 		ID: relation.ID, SourceRef: relation.SourceRef, Kind: relation.Kind, Resolution: relation.Resolution,
 		FromID: relation.FromID, ToIDs: toIDs, Invocation: relation.Invocation,
@@ -506,7 +255,7 @@ func programViewRelation(relation programindex.Relation) ProgramViewRelation {
 		TargetsIndexed: len(relation.ToIDs), TargetsOmitted: relation.TargetsOmitted,
 		WitnessesObserved: relation.WitnessesObserved, WitnessesIndexed: len(relation.Witnesses),
 		WitnessesOmitted: relation.WitnessesOmitted, Witnesses: witnesses,
-		WitnessesProjectionOmitted: len(relation.Witnesses) - len(witnesses),
+		WitnessesProjectionOmitted: 0,
 	}
 }
 
@@ -524,6 +273,7 @@ func validateProgramViewObject(object ProgramViewObject) error {
 	}
 	if object.External != nil &&
 		(object.Kind != programindex.ObjectExternalSymbol ||
+			!object.External.AuthorityKind.Valid() ||
 			!validProgramViewText(object.External.PackagePath) ||
 			!validOptionalProgramViewText(object.External.Receiver) ||
 			!validProgramViewText(object.External.Name)) {
@@ -550,9 +300,7 @@ func validateProgramViewRelation(relation ProgramViewRelation, objectsByID map[s
 	if !validProgramViewText(relation.ID) || !strings.HasPrefix(relation.ID, "program-relation-") ||
 		!validProgramViewText(relation.SourceRef) || !relation.Kind.Valid() || !relation.Resolution.Valid() ||
 		!validProgramViewText(relation.FromID) || !validOptionalProgramViewText(relation.Invocation) ||
-		!validProgramViewLocation(relation.Location) || relation.ToIDs == nil ||
-		len(relation.ToIDs) > programindex.MaxTargetsPerRelation || relation.Witnesses == nil ||
-		len(relation.Witnesses) > MaxProgramViewWitnessesPerRelation {
+		!validProgramViewLocation(relation.Location) || relation.ToIDs == nil || relation.Witnesses == nil {
 		return fmt.Errorf("invalid relation %q", relation.ID)
 	}
 	if _, exists := objectsByID[relation.FromID]; !exists {
@@ -569,13 +317,10 @@ func validateProgramViewRelation(relation ProgramViewRelation, objectsByID map[s
 		previousID = id
 	}
 	if relation.TargetsIndexed != len(relation.ToIDs) || relation.TargetsObserved < relation.TargetsIndexed ||
-		relation.TargetsObserved > programindex.MaxObservedCount ||
 		relation.TargetsOmitted != relation.TargetsObserved-relation.TargetsIndexed ||
 		relation.WitnessesIndexed < 0 || relation.WitnessesObserved < relation.WitnessesIndexed ||
-		relation.WitnessesObserved > programindex.MaxObservedCount ||
 		relation.WitnessesOmitted != relation.WitnessesObserved-relation.WitnessesIndexed ||
-		relation.WitnessesIndexed < len(relation.Witnesses) ||
-		relation.WitnessesProjectionOmitted != relation.WitnessesIndexed-len(relation.Witnesses) {
+		relation.WitnessesIndexed != len(relation.Witnesses) || relation.WitnessesProjectionOmitted != 0 {
 		return fmt.Errorf("relation %q has invalid counts", relation.ID)
 	}
 	previousWitness := ""
@@ -617,7 +362,7 @@ func validateProgramViewIndexCoverage(coverage programindex.Coverage) error {
 		coverage.WitnessesObserved, coverage.WitnessesIndexed, coverage.WitnessesOmitted,
 	}
 	for _, count := range counts {
-		if count < 0 || count > programindex.MaxObservedCount {
+		if count < 0 {
 			return fmt.Errorf("invalid index coverage count")
 		}
 	}
@@ -632,7 +377,7 @@ func validateProgramViewIndexCoverage(coverage programindex.Coverage) error {
 }
 
 func validateProgramViewCollectionCounts(counts ProgramViewCollectionCounts, eligible, shown int) error {
-	if counts.Eligible != eligible || counts.Shown != shown || counts.Omitted != eligible-shown || shown > eligible {
+	if eligible != shown || counts.Eligible != eligible || counts.Shown != shown || counts.Omitted != 0 {
 		return fmt.Errorf("invalid shown/eligible/omitted counts")
 	}
 	return nil
@@ -694,7 +439,7 @@ func programViewExternalTextBytes(value *programindex.ExternalSymbol) int {
 	if value == nil {
 		return 0
 	}
-	return len(value.PackagePath) + len(value.Receiver) + len(value.Name)
+	return len(string(value.AuthorityKind)) + len(value.PackagePath) + len(value.Receiver) + len(value.Name)
 }
 
 func cloneProgramViewExternal(value *programindex.ExternalSymbol) *programindex.ExternalSymbol {
@@ -743,7 +488,7 @@ func programViewLocationTextBytes(location *programindex.Location) int {
 }
 
 func validProgramViewText(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || len(value) > programindex.MaxTextBytes || !utf8.ValidString(value) {
+	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) {
 		return false
 	}
 	for _, character := range value {
@@ -766,7 +511,7 @@ func validProgramViewLocation(location *programindex.Location) bool {
 }
 
 func validProgramViewPath(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || len(value) > programindex.MaxTextBytes ||
+	if value == "" || value != strings.TrimSpace(value) ||
 		strings.Contains(value, "\\") || strings.HasPrefix(value, "/") || !fs.ValidPath(value) ||
 		value == "." || !utf8.ValidString(value) {
 		return false

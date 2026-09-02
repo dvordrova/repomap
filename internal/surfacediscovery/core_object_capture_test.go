@@ -1,11 +1,114 @@
 package surfacediscovery
 
 import (
+	"go/build"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/gocoreobject"
 )
+
+func TestCoreObjectIndexKeepsAuthoredCgoDeclarationsAndSkipsGeneratedHelpers(t *testing.T) {
+	if !build.Default.CgoEnabled {
+		t.Skip("cgo is disabled")
+	}
+	repository := t.TempDir()
+	writeTargetScopeFile(t, repository, "go.mod", "module example.com/cgocore\n\ngo 1.24\n")
+	writeTargetScopeFile(t, repository, "core.go", `package cgocore
+
+type Core struct{}
+`)
+	writeTargetScopeFile(t, repository, "cgo.go", `package cgocore
+
+/*
+typedef int repomap_int;
+static repomap_int repomap_increment(repomap_int value) { return value + 1; }
+*/
+import "C"
+
+type CValue C.repomap_int
+
+func NewCValue(value C.repomap_int) CValue { return CValue(value) }
+func Increment(value C.repomap_int) CValue { return CValue(C.repomap_increment(value)) }
+`)
+
+	options := defaultHostOptions(repository)
+	options.CaptureCoreObjectIndex = true
+	result, err := analyzeForTest(options, Input{
+		ModuleDirs: []string{"."},
+		Packages:   []PackageInput{{Path: "example.com/cgocore", ModuleDir: "."}},
+		AnalysisTarget: &AnalysisTargetInput{
+			TargetRef: "target-cgocore", Kind: AnalysisTargetModuleLibrary,
+			ModuleID: "module-cgocore", ModulePath: "example.com/cgocore", ModuleDir: ".",
+			TargetPackages: []string{"example.com/cgocore"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := result.CoreObjectIndex
+	if index == nil {
+		t.Fatal("core object index is absent")
+	}
+	if err := index.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	wantTypes := map[string]string{"Core": "core.go", "CValue": "cgo.go"}
+	for _, declaration := range index.Types {
+		if strings.HasPrefix(declaration.Name, "_C") {
+			t.Fatalf("generated cgo type entered core object index: %#v", declaration)
+		}
+		if wantPath, ok := wantTypes[declaration.Name]; ok {
+			if declaration.Location.Path != wantPath {
+				t.Fatalf("authored type location = %#v, want %s", declaration.Location, wantPath)
+			}
+			delete(wantTypes, declaration.Name)
+		}
+	}
+	if len(wantTypes) != 0 {
+		t.Fatalf("missing authored cgo types = %#v", wantTypes)
+	}
+	wantCallables := map[string]bool{"NewCValue": true, "Increment": true}
+	for _, declaration := range index.Callables {
+		if strings.HasPrefix(declaration.Name, "_C") {
+			t.Fatalf("generated cgo callable entered core object index: %#v", declaration)
+		}
+		if wantCallables[declaration.Name] {
+			if declaration.Location.Path != "cgo.go" {
+				t.Fatalf("authored cgo callable location = %#v", declaration.Location)
+			}
+			delete(wantCallables, declaration.Name)
+		}
+	}
+	if len(wantCallables) != 0 {
+		t.Fatalf("authored cgo callables are absent: %#v", wantCallables)
+	}
+}
+
+func TestCoreObjectIndexStillRejectsExternalDeclarationInRepositorySyntax(t *testing.T) {
+	repository := t.TempDir()
+	writeTargetScopeFile(t, repository, "go.mod", "module example.com/coreline\n\ngo 1.24\n")
+	writeTargetScopeFile(t, repository, "core.go", `package coreline
+
+//line /outside-repository.go:1
+type Escaped struct{}
+`)
+
+	options := defaultHostOptions(repository)
+	options.CaptureCoreObjectIndex = true
+	_, err := analyzeForTest(options, Input{
+		ModuleDirs: []string{"."},
+		Packages:   []PackageInput{{Path: "example.com/coreline", ModuleDir: "."}},
+		AnalysisTarget: &AnalysisTargetInput{
+			TargetRef: "target-coreline", Kind: AnalysisTargetModuleLibrary,
+			ModuleID: "module-coreline", ModulePath: "example.com/coreline", ModuleDir: ".",
+			TargetPackages: []string{"example.com/coreline"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "declaration has no repository-local location") {
+		t.Fatalf("repository syntax with external declaration error = %v", err)
+	}
+}
 
 func TestCoreObjectIndexCapturesExactTargetDeclarationsFromExistingTypedProgram(t *testing.T) {
 	repository := t.TempDir()

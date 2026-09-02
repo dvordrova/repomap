@@ -30,6 +30,18 @@ func TestPersistWritesExactValidatedCatalog(t *testing.T) {
 	}
 }
 
+func TestScaleWarningsTreatFormerArtifactCeilingAsDiagnosticOnly(t *testing.T) {
+	warnings := scaleWarningsForEncodedBytes(AdvisoryArtifactBytes + 1)
+	if len(warnings) != 1 || warnings[0].Kind != ScaleWarningArtifactBytes ||
+		warnings[0].Retained != AdvisoryArtifactBytes+1 ||
+		warnings[0].AdvisorySize != AdvisoryArtifactBytes {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if warnings := scaleWarningsForEncodedBytes(AdvisoryArtifactBytes); len(warnings) != 0 {
+		t.Fatalf("threshold warning = %#v", warnings)
+	}
+}
+
 func TestBuildCanonicalizesStableDependenciesAndImporterRefs(t *testing.T) {
 	t.Parallel()
 

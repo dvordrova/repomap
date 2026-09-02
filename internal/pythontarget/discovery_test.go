@@ -1,12 +1,13 @@
 package pythontarget
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/base64"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -39,16 +40,8 @@ worker = "acme.cli:worker"
 	if err != nil {
 		t.Fatal(err)
 	}
-	left, err := first.CanonicalJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	right, err := second.CanonicalJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(left, right) {
-		t.Fatalf("discovery is not deterministic:\n%s\n%s", left, right)
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("discovery is not deterministic:\nfirst=%#v\nsecond=%#v", first, second)
 	}
 	if err := first.Validate(); err != nil {
 		t.Fatalf("catalog validation: %v", err)
@@ -82,13 +75,6 @@ worker = "acme.cli:worker"
 		t.Fatalf("library manifest authority = %q/%#v", library.AnchorFileRef, library.SourceRefs)
 	}
 
-	var restored Catalog
-	if err := json.Unmarshal(left, &restored); err != nil {
-		t.Fatal(err)
-	}
-	if err := restored.Validate(); err != nil {
-		t.Fatalf("canonical JSON did not restore a valid catalog: %v", err)
-	}
 }
 
 func TestDiscoverKeepsArbitraryObjectsInSealedModuleScopeWithoutAdvertisingTargets(t *testing.T) {
@@ -137,10 +123,11 @@ func TestDiscoverRequirementsOnlyScopesIndependentGuards(t *testing.T) {
 }
 
 func TestDiscoverPythonShebangUsesCorpusExecutableModeAndAnchor(t *testing.T) {
+	longShebang := "#!/usr/bin/env -S python3 " + strings.Repeat("-X ", 200) + "\n"
 	repository := fixtureWithExecutables(t, map[string]string{
 		"bin/plain.py":     "#!/usr/bin/env python3\nprint('ready')\n",
 		"bin/guarded.py":   "#!/opt/venv/bin/python3.12\nif __name__ == '__main__':\n    pass\n",
-		"bin/tool":         "#!/usr/bin/env -S python3 -u\nprint('extensionless')\n",
+		"bin/tool":         longShebang + "print('extensionless')\n",
 		"bin/not-python":   "#!/bin/sh\nexit 0\n",
 		"bin/lookalike.py": "#!/usr/bin/env python-tool\nprint('not exact')\n",
 	}, []string{"bin/not-python", "bin/tool"})
@@ -168,6 +155,231 @@ func TestDiscoverPythonShebangUsesCorpusExecutableModeAndAnchor(t *testing.T) {
 			target.Selector == "python:.:script-file:bin/guarded" {
 			t.Fatalf("invented executable target: %#v", target)
 		}
+	}
+}
+
+func TestDiscoverLegacyLocalBoundsDoNotDropExactFiles(t *testing.T) {
+	repository := fixture(t, map[string]string{
+		"pyproject.toml": "[project]\nname = \"example\"\n",
+		"app.py":         "if __name__ == '__main__':\n    pass\n",
+	})
+	catalog, err := DiscoverWithOptions(context.Background(), repository, Options{
+		MaxFiles: 1, MaxFileBytes: 1, MaxTotalBytes: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetBySelector(t, catalog, "python:.:guard:app")
+	if len(catalog.ModuleScopes) != 1 || len(catalog.ModuleScopes[0].Modules) != 1 {
+		t.Fatalf("legacy bounds changed exhaustive discovery: %#v", catalog.ModuleScopes)
+	}
+}
+
+func TestResolveEntrypointRootFollowsDeepAliasesAndStopsCycles(t *testing.T) {
+	project := &projectBuild{
+		moduleFiles:  make(map[string][]Module),
+		bindings:     make(map[string]map[string]parsedBinding),
+		syntaxErrors: make(map[string]bool),
+	}
+	const aliases = 12
+	for index := 0; index < aliases; index++ {
+		name := fmt.Sprintf("layer%02d", index)
+		filePath := name + ".py"
+		project.moduleFiles[name] = []Module{{Name: name, Path: filePath, Importable: true}}
+		binding := parsedBinding{Name: "entry", Kind: "function", Line: 1}
+		if index+1 < aliases {
+			binding = parsedBinding{
+				Name: "entry", Kind: "alias", Module: fmt.Sprintf("layer%02d", index+1), Target: "entry",
+			}
+		}
+		project.bindings[filePath] = map[string]parsedBinding{"entry": binding}
+	}
+	root, state := resolveEntrypointRoot(project, "layer00", "entry", nil)
+	if state != 1 || root.Module != "layer11" || root.Qualname != "entry" || root.Path != "layer11.py" {
+		t.Fatalf("deep alias root = %#v, state %d", root, state)
+	}
+
+	for _, name := range []string{"cycle_a", "cycle_b"} {
+		filePath := name + ".py"
+		project.moduleFiles[name] = []Module{{Name: name, Path: filePath, Importable: true}}
+	}
+	project.bindings["cycle_a.py"] = map[string]parsedBinding{
+		"entry": {Name: "entry", Kind: "alias", Module: "cycle_b", Target: "entry"},
+	}
+	project.bindings["cycle_b.py"] = map[string]parsedBinding{
+		"entry": {Name: "entry", Kind: "alias", Module: "cycle_a", Target: "entry"},
+	}
+	if root, state := resolveEntrypointRoot(project, "cycle_a", "entry", nil); state != 0 || root != (Root{}) {
+		t.Fatalf("alias cycle resolved unexpectedly: %#v, state %d", root, state)
+	}
+}
+
+func TestPythonHelperRetainsFormerLiteralItemThresholdPlusOne(t *testing.T) {
+	const formerLiteralItems = 10000
+	var source strings.Builder
+	source.WriteString("from setuptools import setup\nPOINTS = {\"console_scripts\": [\n")
+	for index := 0; index <= formerLiteralItems; index++ {
+		fmt.Fprintf(&source, "\"command_%05d = package.cli:main\",\n", index)
+	}
+	source.WriteString("]}\nsetup(entry_points=POINTS)\n")
+	content := []byte(source.String())
+	response, err := runPythonParser(context.Background(), "python3", []inputFile{{
+		Path: "setup.py", Kind: "setup_py", Bytes: content,
+		Content: base64.StdEncoding.EncodeToString(content),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Configs) != 1 {
+		t.Fatalf("helper retained %d configs", len(response.Configs))
+	}
+	if len(response.Configs[0].Scripts) != formerLiteralItems+1 || response.Configs[0].Dynamic {
+		t.Fatalf("helper retained scripts/dynamic = %d/%v",
+			len(response.Configs[0].Scripts), response.Configs[0].Dynamic)
+	}
+}
+
+func TestNewCatalogRetainsFormerStructuralThresholdsPlusOne(t *testing.T) {
+	const (
+		formerSourceRoots = 64
+		formerTargetRoots = 16
+		formerBasis       = 128
+	)
+	sourceRoots := []string{"."}
+	for index := 0; index < formerSourceRoots; index++ {
+		sourceRoots = append(sourceRoots, fmt.Sprintf("source-%03d", index))
+	}
+	modules := make([]Module, 0, formerTargetRoots+1)
+	roots := make([]Root, 0, formerTargetRoots+1)
+	for index := 0; index <= formerTargetRoots; index++ {
+		name := fmt.Sprintf("module_%03d", index)
+		if index == 0 {
+			name = strings.Repeat("m", 1025)
+		}
+		filePath := fmt.Sprintf("module_%03d.py", index)
+		modules = append(modules, Module{
+			FileID: corpus.FileID(fmt.Sprintf("f%d", index+1)), Name: name, Path: filePath, Importable: true,
+		})
+		roots = append(roots, Root{Kind: RootCallable, Module: name, Qualname: "entry", Path: filePath, Line: 1})
+	}
+	basis := make([]Basis, 0, formerBasis+1)
+	for index := 0; index <= formerBasis; index++ {
+		label := fmt.Sprintf("basis-%03d", index)
+		if index == formerBasis {
+			label = strings.Repeat("label", 64) + "x"
+		}
+		basis = append(basis, Basis{
+			FileID: "f1", Kind: BasisNameMainGuard, Path: "module_000.py", Line: index + 1, Label: label,
+		})
+	}
+	catalog, err := NewCatalog([]Target{{
+		Version: TargetVersion, Kind: KindExecutable,
+		Selector: "python:.:script:wide", DisplayName: strings.Repeat("display", 40),
+		ProjectDir: ".", SourceRoots: sourceRoots, Modules: modules, Roots: roots, Basis: basis,
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Entries) != 1 {
+		t.Fatalf("catalog entries = %d", len(catalog.Entries))
+	}
+	target := catalog.Entries[0]
+	if len(target.SourceRoots) != formerSourceRoots+1 || len(target.Roots) != formerTargetRoots+1 ||
+		len(target.SourceRefs) != formerTargetRoots+1 || len(target.Basis) != formerBasis+1 {
+		t.Fatalf(
+			"retained structure = roots %d/source refs %d/source roots %d/basis %d",
+			len(target.Roots), len(target.SourceRefs), len(target.SourceRoots), len(target.Basis),
+		)
+	}
+}
+
+func TestStructuralValidatorsRetainFormerModuleAndPackageThresholdsPlusOne(t *testing.T) {
+	const (
+		formerModules  = 20000
+		formerPackages = 4096
+	)
+	modules := make([]Module, 0, formerModules+1)
+	for index := 0; index <= formerModules; index++ {
+		name := fmt.Sprintf("module_%05d", index)
+		modules = append(modules, Module{
+			FileID: corpus.FileID(fmt.Sprintf("f%d", index+1)),
+			Name:   name, Path: name + ".py", Importable: true,
+		})
+	}
+	if err := validateModules(modules); err != nil {
+		t.Fatalf("former module threshold still rejects exact rows: %v", err)
+	}
+
+	packages := make([]Package, 0, formerPackages+1)
+	for index := 0; index <= formerPackages; index++ {
+		name := fmt.Sprintf("package_%04d", index)
+		packages = append(packages, Package{Name: name, Dir: "packages/" + name, Namespace: true})
+	}
+	if err := validatePackages(packages); err != nil {
+		t.Fatalf("former package threshold still rejects exact rows: %v", err)
+	}
+}
+
+func TestNewCatalogRetainsFormerCatalogAndOmissionThresholdsPlusOne(t *testing.T) {
+	const (
+		formerCatalogTargets = 2048
+		formerOmissions      = 4096
+	)
+	base := Target{
+		Version: TargetVersion, Kind: KindExecutable, DisplayName: "task", ProjectDir: ".",
+		SourceRoots: []string{"."},
+		Modules:     []Module{{FileID: "f1", Name: "task", Path: "task.py", Importable: true}},
+		Roots:       []Root{{Kind: RootCallable, Module: "task", Qualname: "main", Path: "task.py", Line: 1}},
+		Basis:       []Basis{{FileID: "f1", Kind: BasisNameMainGuard, Path: "task.py", Line: 1}},
+	}
+	entries := make([]Target, 0, formerCatalogTargets+1)
+	for index := 0; index <= formerCatalogTargets; index++ {
+		target := base
+		target.Selector = fmt.Sprintf("python:.:script:task-%04d", index)
+		entries = append(entries, target)
+	}
+	catalog, err := NewCatalog(entries, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Entries) != formerCatalogTargets+1 {
+		t.Fatalf("catalog retained %d entries", len(catalog.Entries))
+	}
+
+	omissions := make([]Omission, 0, formerOmissions+1)
+	for index := 0; index <= formerOmissions; index++ {
+		omissions = append(omissions, Omission{
+			Kind: OmissionSourceSyntax, Path: fmt.Sprintf("errors/error_%04d.py", index), Line: 1,
+		})
+	}
+	omissionCatalog, err := NewCatalog(nil, omissions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(omissionCatalog.Omissions) != formerOmissions+1 {
+		t.Fatalf("catalog retained %d omissions", len(omissionCatalog.Omissions))
+	}
+}
+
+func TestCatalogRetainsFormerModuleScopeThresholdPlusOne(t *testing.T) {
+	const formerModuleScopes = 2048
+	scopes := make([]ModuleScope, 0, formerModuleScopes+1)
+	for index := 0; index <= formerModuleScopes; index++ {
+		projectDir := fmt.Sprintf("projects/project_%04d", index)
+		scopes = append(scopes, ModuleScope{
+			ProjectDir: projectDir, SourceRoots: []string{projectDir},
+			Modules: []Module{{
+				FileID: corpus.FileID(fmt.Sprintf("f%d", index+1)), Name: "main",
+				Path: projectDir + "/main.py", Importable: true,
+			}},
+		})
+	}
+	catalog, err := newCatalogWithModuleScopes(nil, scopes, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.ModuleScopes) != formerModuleScopes+1 {
+		t.Fatalf("catalog retained %d module scopes", len(catalog.ModuleScopes))
 	}
 }
 

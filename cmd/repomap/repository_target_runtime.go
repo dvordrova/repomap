@@ -8,7 +8,6 @@ import (
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
@@ -16,116 +15,17 @@ import (
 	"github.com/dvordrova/repomap/internal/targetportfolio"
 )
 
-// repositoryTargetAdapter is the command-owned dispatch key for one native
-// language adapter. JavaScript and TypeScript deliberately share one adapter:
-// the sealed selected package project retains its exact producer language.
-type repositoryTargetAdapter string
-
-const (
-	repositoryTargetAdapterGo     repositoryTargetAdapter = "go"
-	repositoryTargetAdapterPython repositoryTargetAdapter = "python"
-	repositoryTargetAdapterJSTS   repositoryTargetAdapter = "jsts"
-)
-
-func boolCount(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
-}
-
-// repositoryTargetKey is the collision-safe identity used by the execution
-// plan. Native refs remain untouched, but never become cross-adapter map keys
-// on their own.
-type repositoryTargetKey struct {
-	Adapter repositoryTargetAdapter
-	Ref     string
-}
-
-func (key repositoryTargetKey) String() string {
-	return string(key.Adapter) + ":" + key.Ref
-}
-
-// repositoryTypedTarget carries exactly one adapter-native payload. Selector
-// is the exact user-facing spelling that can restore this target without a
-// semantic request. FileRefs records only the closed portfolio choices that
-// restored the payload; it is empty for an explicit selector bypass.
-type repositoryTypedTarget struct {
-	Key      repositoryTargetKey
-	Selector string
-	FileRefs []corpus.FileID
-
-	Go     *analysistarget.Target
-	Python *pythontarget.Target
-	JSTS   *jstsproject.Target
-}
-
-func (target repositoryTypedTarget) Validate() error {
-	if strings.TrimSpace(target.Key.Ref) == "" || target.Key.Ref != strings.TrimSpace(target.Key.Ref) ||
-		strings.TrimSpace(target.Selector) == "" || target.Selector != strings.TrimSpace(target.Selector) {
-		return fmt.Errorf("repository target: invalid exact identity")
-	}
-	payloads := boolCount(target.Go != nil) + boolCount(target.Python != nil) + boolCount(target.JSTS != nil)
-	if payloads != 1 {
-		return fmt.Errorf("repository target %q: expected exactly one native payload, got %d", target.Key, payloads)
-	}
-	for index, fileRef := range target.FileRefs {
-		if strings.TrimSpace(string(fileRef)) == "" || string(fileRef) != strings.TrimSpace(string(fileRef)) {
-			return fmt.Errorf("repository target %q: invalid file_ref at index %d", target.Key, index)
-		}
-		if index > 0 && target.FileRefs[index-1] >= fileRef {
-			return fmt.Errorf("repository target %q: file refs are not canonical", target.Key)
-		}
-	}
-
-	switch target.Key.Adapter {
-	case repositoryTargetAdapterGo:
-		if target.Go == nil || target.Python != nil || target.JSTS != nil {
-			return fmt.Errorf("repository target %q: Go adapter/payload mismatch", target.Key)
-		}
-		if err := target.Go.Validate(); err != nil {
-			return fmt.Errorf("repository target %q: Go payload: %w", target.Key, err)
-		}
-		if target.Key.Ref != target.Go.Ref {
-			return fmt.Errorf("repository target %q: Go ref mismatch", target.Key)
-		}
-	case repositoryTargetAdapterPython:
-		if target.Python == nil || target.Go != nil || target.JSTS != nil {
-			return fmt.Errorf("repository target %q: Python adapter/payload mismatch", target.Key)
-		}
-		if err := target.Python.Validate(); err != nil {
-			return fmt.Errorf("repository target %q: Python payload: %w", target.Key, err)
-		}
-		if target.Key.Ref != target.Python.Ref || target.Selector != target.Python.Selector {
-			return fmt.Errorf("repository target %q: Python exact identity mismatch", target.Key)
-		}
-	case repositoryTargetAdapterJSTS:
-		if target.JSTS == nil || target.Go != nil || target.Python != nil {
-			return fmt.Errorf("repository target %q: JavaScript/TypeScript adapter/payload mismatch", target.Key)
-		}
-		if err := target.JSTS.Validate(); err != nil {
-			return fmt.Errorf("repository target %q: JavaScript/TypeScript scout target: %w", target.Key, err)
-		}
-		if target.Key.Ref != target.JSTS.Ref || target.Selector != target.JSTS.Selector {
-			return fmt.Errorf("repository target %q: JavaScript/TypeScript exact identity mismatch", target.Key)
-		}
-	default:
-		return fmt.Errorf("repository target %q: unsupported adapter", target.Key)
-	}
-	return nil
-}
-
 // repositoryTargetPlan is the exact, typed output of one repository-wide
 // target decision. GoSource is the one unscoped snapshot from which a caller
 // may derive a target-local snapshot with snapshot.ScopeAnalysisTarget.
 // PythonCatalog retains ownership of native and resolver-derived Python views.
 type repositoryTargetPlan struct {
-	Targets       []repositoryTypedTarget
-	Default       repositoryTargetKey
-	Explicit      bool
-	GoSource      *snapshot.Snapshot
-	PythonCatalog *pythontarget.Catalog
-	Outcome       targetPortfolioRunOutcome
+	Targets     []repositoryTypedTarget
+	Default     repositoryTargetKey
+	Explicit    bool
+	Authorities map[repositoryTargetAdapter]any
+	Outcome     targetPortfolioRunOutcome
+	guidance    readmetargetscout.GuidanceSnapshot
 }
 
 func (plan repositoryTargetPlan) DefaultTarget() (repositoryTypedTarget, bool) {
@@ -137,35 +37,52 @@ func (plan repositoryTargetPlan) DefaultTarget() (repositoryTypedTarget, bool) {
 	return repositoryTypedTarget{}, false
 }
 
+func repositoryPlanGoSource(plan repositoryTargetPlan) (*snapshot.Snapshot, bool) {
+	value, ok := plan.Authorities[repositoryTargetAdapterGo].(snapshot.Snapshot)
+	if !ok {
+		return nil, false
+	}
+	owned, err := snapshot.OwnSnapshot(value)
+	if err != nil {
+		return nil, false
+	}
+	return &owned, true
+}
+
+func repositoryPlanPythonCatalog(plan repositoryTargetPlan) (*pythontarget.Catalog, bool) {
+	value, ok := plan.Authorities[repositoryTargetAdapterPython].(pythontarget.Catalog)
+	if !ok {
+		return nil, false
+	}
+	owned := value.Snapshot()
+	return &owned, true
+}
+
 func (plan repositoryTargetPlan) Validate() error {
+	registry, err := ordinaryRepositoryTargetAdapterRegistry()
+	if err != nil {
+		return fmt.Errorf("repository target plan: adapter registry: %w", err)
+	}
+	return plan.validateWith(registry)
+}
+
+func (plan repositoryTargetPlan) validateWith(registry repositoryTargetAdapterRegistry) error {
 	if len(plan.Targets) == 0 {
 		return fmt.Errorf("repository target plan: target set is empty")
 	}
-	if plan.GoSource != nil {
-		if plan.GoSource.AnalysisTarget != nil || plan.GoSource.GoFacts == nil || plan.GoSource.TargetCatalog == nil {
-			return fmt.Errorf("repository target plan: Go source is not an unscoped catalog snapshot")
-		}
-		if err := plan.GoSource.TargetCatalog.Validate(); err != nil {
-			return fmt.Errorf("repository target plan: Go source catalog: %w", err)
-		}
-		rebuilt, err := analysistarget.BuildCatalog(*plan.GoSource.GoFacts)
-		if err != nil {
-			return fmt.Errorf("repository target plan: Go source facts: %w", err)
-		}
-		if rebuilt.Ref != plan.GoSource.TargetCatalog.Ref {
-			return fmt.Errorf("repository target plan: Go source catalog does not match its facts")
-		}
+	if err := plan.guidance.Validate(); err != nil {
+		return fmt.Errorf("repository target plan: repository guidance: %w", err)
 	}
-	if plan.PythonCatalog != nil {
-		if err := plan.PythonCatalog.Validate(); err != nil {
-			return fmt.Errorf("repository target plan: Python catalog: %w", err)
+	for key := range plan.Authorities {
+		if _, known := registry.descriptor(key); !known {
+			return fmt.Errorf("repository target plan: authority belongs to unregistered adapter %q", key)
 		}
 	}
 
 	seen := make(map[repositoryTargetKey]struct{}, len(plan.Targets))
 	defaultCount := 0
 	for index, target := range plan.Targets {
-		if err := target.Validate(); err != nil {
+		if err := target.validateWith(registry); err != nil {
 			return fmt.Errorf("repository target plan: target %d: %w", index, err)
 		}
 		if index > 0 && !repositoryTypedTargetLess(plan.Targets[index-1], target) {
@@ -179,18 +96,13 @@ func (plan repositoryTargetPlan) Validate() error {
 			defaultCount++
 		}
 
-		switch target.Key.Adapter {
-		case repositoryTargetAdapterGo:
-			if plan.GoSource == nil {
-				return fmt.Errorf("repository target plan: Go target has no source snapshot")
-			}
-			entry, ok := targetCatalogEntryByRef(*plan.GoSource.TargetCatalog, target.Key.Ref)
-			if !ok || entry.Candidate.Key != target.Selector || entry.Candidate.Target.Ref != target.Go.Ref {
-				return fmt.Errorf("repository target plan: Go target %q is outside exact source authority", target.Key)
-			}
-		case repositoryTargetAdapterPython:
-			if plan.PythonCatalog == nil || !plan.PythonCatalog.OwnsTarget(*target.Python) {
-				return fmt.Errorf("repository target plan: Python target %q is outside exact catalog authority", target.Key)
+		descriptor, known := registry.descriptor(target.Key.Adapter)
+		if !known {
+			return fmt.Errorf("repository target plan: target %q uses an unregistered adapter", target.Key)
+		}
+		if descriptor.ValidatePlanAuthority != nil {
+			if err := descriptor.ValidatePlanAuthority(plan.Authorities[target.Key.Adapter], target); err != nil {
+				return fmt.Errorf("repository target plan: target %q: %w", target.Key, err)
 			}
 		}
 	}
@@ -225,20 +137,34 @@ type repositoryTargetRuntimeOptions struct {
 	ScoutJSTSFn jsTSTargetScout
 }
 
+// prepareRepositoryPlanningGoSource keeps initial language prerequisites
+// scoped to the adapter that can own an explicit namespaced selector. JSTS and
+// Python selectors are closed, disjoint namespaces, so neither needs Go facts
+// in order to prove its exact identity. Adapter-neutral aliases and ordinary
+// discovery still prepare Go whenever the corpus contains Go evidence.
+func prepareRepositoryPlanningGoSource(
+	hasGoEvidence bool,
+	targetOverride string,
+	prepare func() (snapshot.Snapshot, error),
+) (*snapshot.Snapshot, error) {
+	if !hasGoEvidence || explicitNonGoRepositoryTargetSelector(targetOverride) {
+		return nil, nil
+	}
+	if prepare == nil {
+		return nil, fmt.Errorf("prepare repository planning Go source: builder is unavailable")
+	}
+	prepared, err := prepare()
+	if err != nil {
+		return nil, err
+	}
+	return &prepared, nil
+}
+
 type repositoryTargetDiscovery struct {
-	goSource     *snapshot.Snapshot
-	goCandidates []analysistarget.FileCandidate
-	goResolver   analysistarget.GoFileTargetResolver
-
-	pythonCatalog    *pythontarget.Catalog
-	pythonCandidates []analysistarget.FileCandidate
-	pythonResolver   pythontarget.FileTargetResolver
-
-	jstsTargets    []jstsproject.Target
-	jstsByManifest map[corpus.FileID]jstsproject.Target
-	jstsCandidates []analysistarget.FileCandidate
-
-	readme readmetargetscout.Result
+	adapters []repositoryTargetAdapterDiscovery
+	byKey    map[repositoryTargetAdapter]repositoryTargetAdapterDiscovery
+	readme   readmetargetscout.Result
+	guidance readmetargetscout.GuidanceSnapshot
 }
 
 // selectRepositoryTargetPlanForRun runs all enabled deterministic adapters
@@ -300,11 +226,12 @@ func selectRepositoryTargetPlanForRun(
 			),
 		)
 	}
+	adapterCandidates := make([][]analysistarget.FileCandidate, 0, len(discovery.adapters))
+	for _, adapter := range discovery.adapters {
+		adapterCandidates = append(adapterCandidates, adapter.Candidates)
+	}
 	nativeCandidates, err := analysistarget.MergeFileCandidates(
-		options.Repository.Snapshot(),
-		discovery.goCandidates,
-		discovery.pythonCandidates,
-		discovery.jstsCandidates,
+		options.Repository.Snapshot(), adapterCandidates...,
 	)
 	if err != nil {
 		return repositoryTargetPlan{}, fmt.Errorf("merge native repository target hypotheses: %w", err)
@@ -374,52 +301,8 @@ func repositoryRequiredTargetFileRefs(
 		}
 	}
 
-	if discovery.goSource != nil && discovery.goSource.TargetCatalog != nil {
-		targetRefs := make([]string, len(discovery.goSource.TargetCatalog.Entries))
-		for index, entry := range discovery.goSource.TargetCatalog.Entries {
-			targetRefs[index] = entry.Candidate.Target.Ref
-		}
-		refs, err := canonicalNativeTargetFileRefs(
-			"Go",
-			discovery.goCandidates,
-			targetRefs,
-			func(fileRef corpus.FileID) ([]string, error) {
-				return discovery.goResolver.Resolve([]corpus.FileID{fileRef})
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-		add(refs)
-	}
-	if discovery.pythonCatalog != nil {
-		targetRefs := make([]string, len(discovery.pythonCatalog.Entries))
-		for index, target := range discovery.pythonCatalog.Entries {
-			targetRefs[index] = target.Ref
-		}
-		refs, err := canonicalNativeTargetFileRefs(
-			"Python",
-			discovery.pythonCandidates,
-			targetRefs,
-			func(fileRef corpus.FileID) ([]string, error) {
-				targets, resolveErr := discovery.pythonResolver.Resolve([]corpus.FileID{fileRef})
-				if resolveErr != nil {
-					return nil, resolveErr
-				}
-				refs := make([]string, len(targets))
-				for index, target := range targets {
-					refs[index] = target.Ref
-				}
-				return refs, nil
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-		add(refs)
-	}
-	for _, target := range discovery.jstsTargets {
-		selected[corpus.FileID(target.ManifestFileRef)] = struct{}{}
+	for _, adapter := range discovery.adapters {
+		add(adapter.RequiredFileRefs)
 	}
 
 	result := make([]corpus.FileID, 0, len(selected))
@@ -503,79 +386,42 @@ func discoverRepositoryTargets(
 	options repositoryTargetRuntimeOptions,
 ) (repositoryTargetDiscovery, error) {
 	var result repositoryTargetDiscovery
-	if options.GoSnapshot != nil {
-		owned, err := snapshot.OwnSnapshot(*options.GoSnapshot)
-		if err != nil {
-			return result, fmt.Errorf("own prepared Go snapshot: %w", err)
-		}
-		if owned.AnalysisTarget != nil || owned.GoFacts == nil || owned.TargetCatalog == nil {
-			return result, fmt.Errorf("prepared Go snapshot must be unscoped and contain exact facts plus target catalog")
-		}
-		if err := owned.TargetCatalog.Validate(); err != nil {
-			return result, fmt.Errorf("validate prepared Go target catalog: %w", err)
-		}
-		rebuilt, err := analysistarget.BuildCatalog(*owned.GoFacts)
-		if err != nil {
-			return result, fmt.Errorf("validate prepared Go facts: %w", err)
-		}
-		if rebuilt.Ref != owned.TargetCatalog.Ref {
-			return result, fmt.Errorf("prepared Go target catalog does not match its facts")
-		}
-		result.goSource = &owned
+	registry, err := ordinaryRepositoryTargetAdapterRegistry()
+	if err != nil {
+		return result, err
 	}
-	if result.goSource == nil && !options.DiscoverPython && !options.DiscoverJSTS {
-		return result, fmt.Errorf("repository target selection has no enabled language adapter")
-	}
-
 	parallelContext, cancelParallel := context.WithCancel(ctx)
 	defer cancelParallel()
-	type pythonResult struct {
-		catalog pythontarget.Catalog
-		err     error
+	type adapterResult struct {
+		key       repositoryTargetAdapter
+		discovery repositoryTargetAdapterDiscovery
+		enabled   bool
+		err       error
 	}
-	pythonChannel := make(chan pythonResult, 1)
-	go func() {
-		if !options.DiscoverPython {
-			pythonChannel <- pythonResult{}
-			return
-		}
-		catalog, err := pythontarget.Discover(parallelContext, options.Repository)
-		pythonChannel <- pythonResult{catalog: catalog, err: err}
-	}()
-
-	type jstsResult struct {
-		targets []jstsproject.Target
-		err     error
+	adapterChannel := make(chan adapterResult, len(registry.ordered))
+	for _, descriptor := range registry.ordered {
+		descriptor := descriptor
+		go func() {
+			discovery, enabled, discoverErr := descriptor.Discover(parallelContext, options)
+			adapterChannel <- adapterResult{
+				key: descriptor.Key, discovery: discovery, enabled: enabled, err: discoverErr,
+			}
+		}()
 	}
-	jstsChannel := make(chan jstsResult, 1)
-	go func() {
-		if !options.DiscoverJSTS {
-			jstsChannel <- jstsResult{}
-			return
-		}
-		scout := options.ScoutJSTSFn
-		if scout == nil {
-			scout = jstsproject.ScoutTargets
-		}
-		targets, err := scout(
-			parallelContext,
-			options.Repository,
-			exactJSTSManifestSelector(options.TargetOverride),
-		)
-		jstsChannel <- jstsResult{targets: targets, err: err}
-	}()
 
 	type readmeResult struct {
-		roles readmetargetscout.Result
-		err   error
+		discovery readmeFileRoleDiscovery
+		err       error
 	}
 	readmeChannel := make(chan readmeResult, 1)
 	go func() {
 		if !readmetargetscout.HasGuidanceFiles(options.Repository) {
-			readmeChannel <- readmeResult{roles: readmetargetscout.Result{}}
+			readmeChannel <- readmeResult{discovery: readmeFileRoleDiscovery{
+				Roles: readmetargetscout.Result{},
+			}}
 			return
 		}
-		roles, err := discoverReadmeFileRoles(
+		discovery, err := discoverReadmeFileRolesWithGuidance(
 			parallelContext,
 			options.RepoName,
 			options.Repository,
@@ -583,79 +429,47 @@ func discoverRepositoryTargets(
 			options.Providers,
 			options.Executor,
 		)
-		readmeChannel <- readmeResult{roles: roles, err: err}
+		readmeChannel <- readmeResult{discovery: discovery, err: err}
 	}()
 
-	var goErr error
-	if result.goSource != nil && len(result.goSource.TargetCatalog.Entries) > 0 {
-		result.goCandidates, result.goResolver, goErr = analysistarget.DiscoverGoTargetFilesWithResolver(
-			options.Repository,
-			*result.goSource.GoFacts,
-			*result.goSource.TargetCatalog,
-		)
+	discoveredByKey := make(map[repositoryTargetAdapter]repositoryTargetAdapterDiscovery)
+	for range registry.ordered {
+		adapter := <-adapterChannel
+		if adapter.err != nil {
+			cancelParallel()
+			return result, adapter.err
+		}
+		if !adapter.enabled {
+			continue
+		}
+		if adapter.discovery.Key != adapter.key {
+			return result, fmt.Errorf(
+				"repository target adapter %q returned discovery for %q", adapter.key, adapter.discovery.Key,
+			)
+		}
+		if err := adapter.discovery.validate(registry); err != nil {
+			return result, err
+		}
+		discoveredByKey[adapter.key] = adapter.discovery
 	}
-	python := <-pythonChannel
-	jsts := <-jstsChannel
 	readme := <-readmeChannel
-	if goErr != nil {
-		return result, fmt.Errorf("discover Go target files: %w", goErr)
-	}
-	if python.err != nil {
-		return result, fmt.Errorf("discover Python targets: %w", python.err)
-	}
-	if jsts.err != nil {
-		return result, fmt.Errorf("scout JavaScript/TypeScript package target: %w", jsts.err)
-	}
 	if readme.err != nil {
 		return result, readme.err
 	}
-	result.readme = readme.roles
-
-	if options.DiscoverPython {
-		if err := python.catalog.Validate(); err != nil {
-			return result, fmt.Errorf("validate Python target catalog: %w", err)
-		}
-		catalog := python.catalog.Snapshot()
-		candidates, resolver, err := pythontarget.FileCandidatesWithResolver(options.Repository, catalog)
-		if err != nil {
-			return result, fmt.Errorf("project Python targets into repository portfolio: %w", err)
-		}
-		result.pythonCatalog = &catalog
-		result.pythonCandidates = candidates
-		result.pythonResolver = resolver
+	if len(discoveredByKey) == 0 {
+		return result, fmt.Errorf("repository target selection has no enabled language adapter")
 	}
-	if options.DiscoverJSTS {
-		if len(jsts.targets) == 0 {
-			return result, fmt.Errorf("JavaScript/TypeScript target scout returned no exact package targets")
+	result.byKey = make(map[repositoryTargetAdapter]repositoryTargetAdapterDiscovery, len(discoveredByKey))
+	for _, descriptor := range registry.ordered {
+		discovery, ok := discoveredByKey[descriptor.Key]
+		if !ok {
+			continue
 		}
-		result.jstsTargets = append([]jstsproject.Target(nil), jsts.targets...)
-		result.jstsByManifest = make(map[corpus.FileID]jstsproject.Target, len(jsts.targets))
-		result.jstsCandidates = make([]analysistarget.FileCandidate, 0, len(jsts.targets))
-		seenRefs := make(map[string]struct{}, len(jsts.targets))
-		for index, target := range result.jstsTargets {
-			if err := target.ValidateAgainst(options.Repository); err != nil {
-				return result, fmt.Errorf("bind JavaScript/TypeScript scout target %d to the current repository: %w", index, err)
-			}
-			if index > 0 && (result.jstsTargets[index-1].Selector >= target.Selector) {
-				return result, fmt.Errorf("JavaScript/TypeScript scout targets are not canonical")
-			}
-			if _, duplicate := seenRefs[target.Ref]; duplicate {
-				return result, fmt.Errorf("JavaScript/TypeScript scout targets share ref %q", target.Ref)
-			}
-			seenRefs[target.Ref] = struct{}{}
-			manifest := corpus.FileID(target.ManifestFileRef)
-			if _, duplicate := result.jstsByManifest[manifest]; duplicate {
-				return result, fmt.Errorf("JavaScript/TypeScript scout targets share manifest file_ref %q", manifest)
-			}
-			result.jstsByManifest[manifest] = target
-			result.jstsCandidates = append(result.jstsCandidates, analysistarget.FileCandidate{
-				FileRef: manifest,
-				Hypotheses: []string{
-					"JavaScript/TypeScript package project with an exact tracked manifest and owned source-file evidence",
-				},
-			})
-		}
+		result.adapters = append(result.adapters, discovery)
+		result.byKey[descriptor.Key] = discovery
 	}
+	result.readme = readme.discovery.Roles
+	result.guidance = readme.discovery.Guidance
 	return result, nil
 }
 
@@ -680,15 +494,11 @@ func repositoryResolvableReadmeCandidates(
 func (discovery repositoryTargetDiscovery) adapterForFile(
 	fileRef corpus.FileID,
 ) (repositoryTargetAdapter, bool, error) {
-	matches := make([]repositoryTargetAdapter, 0, 3)
-	if discovery.goSource != nil && discovery.goResolver.ResolvesOne(fileRef) {
-		matches = append(matches, repositoryTargetAdapterGo)
-	}
-	if discovery.pythonCatalog != nil && discovery.pythonResolver.Resolves(fileRef) {
-		matches = append(matches, repositoryTargetAdapterPython)
-	}
-	if _, ok := discovery.jstsByManifest[fileRef]; ok {
-		matches = append(matches, repositoryTargetAdapterJSTS)
+	matches := make([]repositoryTargetAdapter, 0, len(discovery.adapters))
+	for _, adapter := range discovery.adapters {
+		if adapter.ResolvesFile(fileRef) {
+			matches = append(matches, adapter.Key)
+		}
 	}
 	if len(matches) == 0 {
 		return "", false, nil
@@ -713,62 +523,21 @@ func resolveExplicitRepositoryTarget(
 	readmeRows []readmeRoleLogRow,
 ) (repositoryTargetPlan, error) {
 	matches := make(map[repositoryTargetKey]repositoryTypedTarget)
-	if discovery.goSource != nil {
-		for _, entry := range discovery.goSource.TargetCatalog.Entries {
-			if override != entry.Candidate.Key && override != entry.Candidate.Target.Ref {
-				continue
+	for _, adapter := range discovery.adapters {
+		resolved, err := adapter.ResolveExplicit(repository, override)
+		if err != nil {
+			return repositoryTargetPlan{}, fmt.Errorf(
+				"resolve exact target through adapter %q: %w", adapter.Key, err,
+			)
+		}
+		for _, target := range resolved {
+			if target.Key.Adapter != adapter.Key {
+				return repositoryTargetPlan{}, fmt.Errorf(
+					"adapter %q restored target owned by %q", adapter.Key, target.Key.Adapter,
+				)
 			}
-			target := entry.Candidate.Target.Snapshot()
-			key := repositoryTargetKey{Adapter: repositoryTargetAdapterGo, Ref: target.Ref}
-			matches[key] = repositoryTypedTarget{Key: key, Selector: entry.Candidate.Key, Go: &target}
+			matches[target.Key] = target
 		}
-	}
-	if discovery.pythonCatalog != nil {
-		// A repository-relative path is accepted only as an exact alias for a
-		// native catalog anchor. The retained target still carries its sealed
-		// selector; the path never becomes target identity. Matching anchors
-		// before the resolver-only selector path also prevents an exact native
-		// package entry from being replaced by a synthesized module-execution
-		// view for the same file.
-		nativeAnchorMatched := false
-		if repository != nil {
-			if fileRef, known := repository.ID(override); known {
-				for _, entry := range discovery.pythonCatalog.Entries {
-					if entry.AnchorFileRef != fileRef {
-						continue
-					}
-					nativeAnchorMatched = true
-					target := entry
-					key := repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}
-					matches[key] = repositoryTypedTarget{Key: key, Selector: target.Selector, Python: &target}
-				}
-			}
-		}
-		for _, entry := range discovery.pythonCatalog.Entries {
-			if override != entry.Selector && override != entry.Ref && override != entry.IdentityRef {
-				continue
-			}
-			target := entry
-			key := repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}
-			matches[key] = repositoryTypedTarget{Key: key, Selector: target.Selector, Python: &target}
-		}
-		if !nativeAnchorMatched {
-			if derived, ok, err := discovery.pythonResolver.ResolveSelector(override); err != nil {
-				return repositoryTargetPlan{}, fmt.Errorf("resolve exact Python selector: %w", err)
-			} else if ok {
-				target := derived
-				key := repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}
-				matches[key] = repositoryTypedTarget{Key: key, Selector: target.Selector, Python: &target}
-			}
-		}
-	}
-	for _, value := range discovery.jstsTargets {
-		if override != value.Selector && override != value.Ref {
-			continue
-		}
-		target := value
-		key := repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: target.Ref}
-		matches[key] = repositoryTypedTarget{Key: key, Selector: target.Selector, JSTS: &target}
 	}
 	if len(matches) != 1 {
 		groups, err := repositoryTargetChoiceGroups(discovery)
@@ -822,11 +591,7 @@ func restoreRepositoryTargetPortfolio(
 	if portfolio.Default == nil {
 		return repositoryTargetPlan{}, fmt.Errorf("repository target portfolio accepted targets without a default")
 	}
-	selectedFiles := map[repositoryTargetAdapter][]corpus.FileID{
-		repositoryTargetAdapterGo:     {},
-		repositoryTargetAdapterPython: {},
-		repositoryTargetAdapterJSTS:   {},
-	}
+	selectedFiles := make(map[repositoryTargetAdapter][]corpus.FileID, len(discovery.adapters))
 	for _, candidate := range portfolio.Targets {
 		adapter, matched, err := discovery.adapterForFile(candidate.FileRef)
 		if err != nil {
@@ -874,77 +639,30 @@ func restoreRepositoryTargetPortfolio(
 		return nil
 	}
 
-	goRefs := []string{}
-	if len(selectedFiles[repositoryTargetAdapterGo]) > 0 {
-		goRefs, err = discovery.goResolver.Resolve(selectedFiles[repositoryTargetAdapterGo])
-		if err != nil {
-			return repositoryTargetPlan{}, fmt.Errorf("restore selected Go targets: %w", err)
+	for _, adapter := range discovery.adapters {
+		fileRefs := selectedFiles[adapter.Key]
+		if len(fileRefs) == 0 {
+			continue
 		}
-		for _, ref := range goRefs {
-			entry, ok := targetCatalogEntryByRef(*discovery.goSource.TargetCatalog, ref)
-			if !ok {
-				return repositoryTargetPlan{}, fmt.Errorf("restored Go target %q is outside exact catalog", ref)
+		restored, restoreErr := adapter.RestoreFiles(fileRefs)
+		if restoreErr != nil {
+			return repositoryTargetPlan{}, fmt.Errorf(
+				"restore selected targets through adapter %q: %w", adapter.Key, restoreErr,
+			)
+		}
+		for _, value := range restored {
+			if value.Target.Key.Adapter != adapter.Key {
+				return repositoryTargetPlan{}, fmt.Errorf(
+					"adapter %q restored target owned by %q", adapter.Key, value.Target.Key.Adapter,
+				)
 			}
-			target := entry.Candidate.Target.Snapshot()
-			key := repositoryTargetKey{Adapter: repositoryTargetAdapterGo, Ref: ref}
-			if err := addTarget(repositoryTypedTarget{Key: key, Selector: entry.Candidate.Key, Go: &target}); err != nil {
+			if err := addTarget(value.Target); err != nil {
 				return repositoryTargetPlan{}, err
 			}
-		}
-		for _, fileRef := range selectedFiles[repositoryTargetAdapterGo] {
-			refs, resolveErr := discovery.goResolver.Resolve([]corpus.FileID{fileRef})
-			if resolveErr != nil {
-				return repositoryTargetPlan{}, fmt.Errorf("restore Go file_ref %q: %w", fileRef, resolveErr)
-			}
-			for _, ref := range refs {
-				if err := addFile(repositoryTargetKey{Adapter: repositoryTargetAdapterGo, Ref: ref}, fileRef); err != nil {
+			for _, fileRef := range value.FileRefs {
+				if err := addFile(value.Target.Key, fileRef); err != nil {
 					return repositoryTargetPlan{}, err
 				}
-			}
-		}
-	}
-
-	if len(selectedFiles[repositoryTargetAdapterPython]) > 0 {
-		pythonTargets, resolveErr := discovery.pythonResolver.Resolve(selectedFiles[repositoryTargetAdapterPython])
-		if resolveErr != nil {
-			return repositoryTargetPlan{}, fmt.Errorf("restore selected Python targets: %w", resolveErr)
-		}
-		for _, value := range pythonTargets {
-			if !discovery.pythonCatalog.OwnsTarget(value) {
-				return repositoryTargetPlan{}, fmt.Errorf("restored Python target %q is outside exact catalog", value.Ref)
-			}
-			target := value
-			key := repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}
-			if err := addTarget(repositoryTypedTarget{Key: key, Selector: target.Selector, Python: &target}); err != nil {
-				return repositoryTargetPlan{}, err
-			}
-		}
-		for _, fileRef := range selectedFiles[repositoryTargetAdapterPython] {
-			targets, resolveErr := discovery.pythonResolver.Resolve([]corpus.FileID{fileRef})
-			if resolveErr != nil {
-				return repositoryTargetPlan{}, fmt.Errorf("restore Python file_ref %q: %w", fileRef, resolveErr)
-			}
-			for _, target := range targets {
-				if err := addFile(repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}, fileRef); err != nil {
-					return repositoryTargetPlan{}, err
-				}
-			}
-		}
-	}
-
-	if len(selectedFiles[repositoryTargetAdapterJSTS]) > 0 {
-		for _, fileRef := range selectedFiles[repositoryTargetAdapterJSTS] {
-			value, ok := discovery.jstsByManifest[fileRef]
-			if !ok {
-				return repositoryTargetPlan{}, fmt.Errorf("restored JavaScript/TypeScript file_ref %q is not an exact package target manifest", fileRef)
-			}
-			target := value
-			key := repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: target.Ref}
-			if err := addTarget(repositoryTypedTarget{Key: key, Selector: target.Selector, JSTS: &target}); err != nil {
-				return repositoryTargetPlan{}, err
-			}
-			if err := addFile(key, fileRef); err != nil {
-				return repositoryTargetPlan{}, err
 			}
 		}
 	}
@@ -1002,20 +720,25 @@ func repositoryTargetPlanFromDiscovery(
 	explicit bool,
 	outcome targetPortfolioRunOutcome,
 ) (repositoryTargetPlan, error) {
+	guidance, err := discovery.guidance.Snapshot()
+	if err != nil {
+		return repositoryTargetPlan{}, fmt.Errorf("own repository guidance: %w", err)
+	}
 	plan := repositoryTargetPlan{
 		Targets: append([]repositoryTypedTarget(nil), targets...),
-		Default: defaultKey, Explicit: explicit, Outcome: outcome,
+		Default: defaultKey, Explicit: explicit, Outcome: outcome, guidance: guidance,
+		Authorities: make(map[repositoryTargetAdapter]any),
 	}
-	if discovery.goSource != nil {
-		owned, err := snapshot.OwnSnapshot(*discovery.goSource)
-		if err != nil {
-			return repositoryTargetPlan{}, fmt.Errorf("own repository plan Go source: %w", err)
+	for _, adapter := range discovery.adapters {
+		authority, authorityErr := adapter.SnapshotAuthority()
+		if authorityErr != nil {
+			return repositoryTargetPlan{}, fmt.Errorf(
+				"own repository plan authority for adapter %q: %w", adapter.Key, authorityErr,
+			)
 		}
-		plan.GoSource = &owned
-	}
-	if discovery.pythonCatalog != nil {
-		catalog := discovery.pythonCatalog.Snapshot()
-		plan.PythonCatalog = &catalog
+		if authority != nil {
+			plan.Authorities[adapter.Key] = authority
+		}
 	}
 	if err := plan.Validate(); err != nil {
 		return repositoryTargetPlan{}, err
@@ -1026,58 +749,18 @@ func repositoryTargetPlanFromDiscovery(
 func repositoryTargetChoiceGroups(
 	discovery repositoryTargetDiscovery,
 ) ([]targetPortfolioChoiceGroup, error) {
-	groups := make([]targetPortfolioChoiceGroup, 0, 3)
-	if discovery.goSource != nil && len(discovery.goSource.TargetCatalog.Entries) > 0 {
-		groups = append(groups, targetPortfolioChoiceGroup{
-			Language: "Go", Choices: targetPortfolioChoices(*discovery.goSource.TargetCatalog),
-		})
-	}
-	if discovery.pythonCatalog != nil {
-		choices, err := pythonExactTargetChoices(*discovery.pythonCatalog, discovery.pythonResolver)
+	groups := make([]targetPortfolioChoiceGroup, 0, len(discovery.adapters))
+	for _, adapter := range discovery.adapters {
+		group, err := adapter.ChoiceGroup()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("build choices for adapter %q: %w", adapter.Key, err)
 		}
-		groups = append(groups, targetPortfolioChoiceGroup{Language: "Python", Choices: choices})
-	}
-	if len(discovery.jstsTargets) > 0 {
-		choices := make([]string, len(discovery.jstsTargets))
-		for index, target := range discovery.jstsTargets {
-			choices[index] = target.Selector + " (" + target.ManifestPath + ")"
-		}
-		groups = append(groups, targetPortfolioChoiceGroup{
-			Language: "JavaScript/TypeScript",
-			Choices:  strings.Join(choices, ", "),
-		})
+		groups = append(groups, group)
 	}
 	if len(groups) == 0 {
 		return nil, fmt.Errorf("no exact repository target choices were discovered")
 	}
 	return groups, nil
-}
-
-func repositoryTypedTargetLess(left, right repositoryTypedTarget) bool {
-	leftRank := repositoryTargetAdapterRank(left.Key.Adapter)
-	rightRank := repositoryTargetAdapterRank(right.Key.Adapter)
-	if leftRank != rightRank {
-		return leftRank < rightRank
-	}
-	if left.Selector != right.Selector {
-		return left.Selector < right.Selector
-	}
-	return left.Key.Ref < right.Key.Ref
-}
-
-func repositoryTargetAdapterRank(adapter repositoryTargetAdapter) int {
-	switch adapter {
-	case repositoryTargetAdapterGo:
-		return 0
-	case repositoryTargetAdapterPython:
-		return 1
-	case repositoryTargetAdapterJSTS:
-		return 2
-	default:
-		return 3
-	}
 }
 
 func repositoryTargetRefs(targets []repositoryTypedTarget) []string {

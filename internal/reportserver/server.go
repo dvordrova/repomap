@@ -29,8 +29,8 @@ import (
 )
 
 const (
-	maxReportJSONBytes        = report.MaxReportJSONBytes
-	maxReportHTMLBytes        = report.MaxOrdinaryReportHTMLBytes
+	maxReportJSONBytes        = 0
+	maxReportHTMLBytes        = 0
 	capabilityBytes           = 32
 	maxCapabilityTokenBytes   = 256
 	MaxTCPPort                = 65535
@@ -302,7 +302,9 @@ func bindVerifiedRuns(
 	initial := records[initialRunID]
 	initialManifest := initial.manifest
 	initialRepositoryName := initial.repositoryName
-	if len(records) > 1 && initialManifest.MaterialInputs.ProgramPagePortfolioSHA256 == "" {
+	if len(records) > 1 &&
+		(initialManifest.MaterialInputs.ProgramPagePortfolioSHA256 == "" ||
+			initialManifest.MaterialInputs.TargetOutcomePortfolioSHA256 == "") {
 		return nil, fmt.Errorf("verified multi-run pages lack neutral portfolio authority")
 	}
 	for index, page := range pages {
@@ -314,7 +316,6 @@ func bindVerifiedRuns(
 			manifest.RepositoryStateSHA256 != initialManifest.RepositoryStateSHA256 ||
 			manifest.MaterialInputs.SelectedRevision != initialManifest.MaterialInputs.SelectedRevision ||
 			manifest.MaterialInputs.ProgramPagePortfolioSHA256 != initialManifest.MaterialInputs.ProgramPagePortfolioSHA256 ||
-			manifest.MaterialInputs.RuntimePortfolioSHA256 != initialManifest.MaterialInputs.RuntimePortfolioSHA256 ||
 			manifest.MaterialInputs.TargetOutcomePortfolioSHA256 != initialManifest.MaterialInputs.TargetOutcomePortfolioSHA256 ||
 			!reflect.DeepEqual(manifest.StandaloneSource, initialManifest.StandaloneSource) {
 			return nil, fmt.Errorf("verified run %d repository authority mismatch", index)
@@ -392,7 +393,7 @@ func loadRun(runsDir, runID string) (runRecord, error) {
 	if err != nil {
 		return runRecord{}, fmt.Errorf("render report: %w", err)
 	}
-	if len(rendered) > maxReportHTMLBytes {
+	if maxReportHTMLBytes > 0 && len(rendered) > maxReportHTMLBytes {
 		return runRecord{}, fmt.Errorf("rendered report exceeds %d bytes", maxReportHTMLBytes)
 	}
 	return runRecord{
@@ -477,7 +478,7 @@ func loadVerifiedRunPage(
 	if err != nil {
 		return workspacesnapshot.Snapshot{}, nil, nil, fmt.Errorf("render report: %w", err)
 	}
-	if len(rendered) > maxReportHTMLBytes {
+	if maxReportHTMLBytes > 0 && len(rendered) > maxReportHTMLBytes {
 		return workspacesnapshot.Snapshot{}, nil, nil,
 			fmt.Errorf("rendered report exceeds %d bytes", maxReportHTMLBytes)
 	}
@@ -507,9 +508,11 @@ func loadTargetNavigation(
 	runDir string,
 	manifest report.RunManifest,
 ) (*report.TargetNavigationPortfolio, error) {
-	if manifest.MaterialInputs.TargetPagePortfolioSHA256 == "" &&
-		manifest.MaterialInputs.ProgramPagePortfolioSHA256 == "" {
-		return nil, nil
+	if manifest.MaterialInputs.ProgramPagePortfolioSHA256 == "" {
+		return nil, fmt.Errorf("load target navigation: neutral program page authority is missing")
+	}
+	if manifest.MaterialInputs.TargetOutcomePortfolioSHA256 == "" {
+		return nil, fmt.Errorf("load target navigation: neutral target outcome authority is missing")
 	}
 	navigation, err := report.LoadManifestTargetNavigation(runDir, manifest)
 	if err != nil {
@@ -579,30 +582,16 @@ func navigationRunID(
 func authorizeSiblingRun(initial, sibling runRecord, targetID string) error {
 	initialMaterial := initial.manifest.MaterialInputs
 	siblingMaterial := sibling.manifest.MaterialInputs
-	legacyAuthority := initialMaterial.TargetRunContainerSHA256 != "" &&
-		initialMaterial.TargetPagePortfolioSHA256 != "" &&
-		siblingMaterial.TargetRunContainerSHA256 == initialMaterial.TargetRunContainerSHA256 &&
-		siblingMaterial.TargetPagePortfolioSHA256 == initialMaterial.TargetPagePortfolioSHA256
 	programPageAuthority := initialMaterial.ProgramPagePortfolioSHA256 != "" &&
 		siblingMaterial.ProgramPagePortfolioSHA256 == initialMaterial.ProgramPagePortfolioSHA256 &&
 		initialMaterial.TargetOutcomePortfolioSHA256 != "" &&
 		siblingMaterial.TargetOutcomePortfolioSHA256 == initialMaterial.TargetOutcomePortfolioSHA256
 	if siblingMaterial.ProgramTargetID != targetID ||
-		(!legacyAuthority && !programPageAuthority) ||
-		initialMaterial.RuntimePortfolioSHA256 == "" ||
-		siblingMaterial.RuntimePortfolioSHA256 != initialMaterial.RuntimePortfolioSHA256 ||
+		!programPageAuthority ||
 		sibling.manifest.RepositoryState.Identity != initial.manifest.RepositoryState.Identity ||
 		sibling.targetNavigation == nil ||
 		sibling.targetNavigation.CurrentTargetID != targetID ||
 		sibling.targetNavigation.DefaultTargetID != initial.targetNavigation.DefaultTargetID {
-		return fmt.Errorf("manifest binding mismatch")
-	}
-	// AnalysisTargetRef is backend-specific outer-page authority. When both
-	// Go page manifests carry it, a sibling must not reuse the initial page's
-	// outer identity; its exact ProgramTargetID remains the navigation join.
-	if initialMaterial.AnalysisTargetRef != "" &&
-		siblingMaterial.AnalysisTargetRef != "" &&
-		initialMaterial.AnalysisTargetRef == siblingMaterial.AnalysisTargetRef {
 		return fmt.Errorf("manifest binding mismatch")
 	}
 	return nil
@@ -796,7 +785,7 @@ func readRootFile(root *os.Root, name string, maxBytes int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxBytes {
+	if !info.Mode().IsRegular() || info.Size() < 0 || (maxBytes > 0 && info.Size() > maxBytes) {
 		return nil, fmt.Errorf("artifact is not a bounded regular file")
 	}
 	file, err := root.Open(name)
@@ -804,11 +793,15 @@ func readRootFile(root *os.Root, name string, maxBytes int64) ([]byte, error) {
 		return nil, err
 	}
 	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	var reader io.Reader = file
+	if maxBytes > 0 {
+		reader = io.LimitReader(file, maxBytes+1)
+	}
+	data, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > maxBytes {
+	if maxBytes > 0 && int64(len(data)) > maxBytes {
 		return nil, fmt.Errorf("artifact exceeds %d bytes", maxBytes)
 	}
 	return data, nil

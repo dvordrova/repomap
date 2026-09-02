@@ -1,16 +1,36 @@
 # repomap
 
-`repomap` is an online, model-assisted repository orientation tool. It
-extracts exact repository facts locally, sends bounded request-local catalogs
-to an OpenAI-compatible model, and publishes manifest-bound report data plus
-one user-facing report HTML. Every selected Go, Python, and
-JavaScript/TypeScript typed target runs through its complete target-local
-ProgramIndex, dependency, semantic-cube, and report-page path. A multi-target
-run seals a language-neutral program-page portfolio and a repository-level
-runtime portfolio that bind those complete pages without reducing a non-default
-target to a structural-only substitute.
-Their validated page-local data remains separate, while one deterministic
-successful target run owns the publication's only physical `report.html`.
+`repomap` turns a repository you have just been handed into one static HTML
+page that answers the first-day questions: what this is, how to run it, where
+the parts talk to each other and on which port, what is dangerous, what is
+dead, what is missing, and what the main flow looks like end to end. Every
+answer is anchored to an exact `path:line` you can open in one click, so any
+claim on the page can be checked in seconds.
+
+Everything on the page is one of three labeled things:
+
+- **facts** — extracted from the code deterministically: entrypoints, HTTP
+  routes and client calls with their method and path literals, the portals
+  where one target calls another, environment keys, risky calls such as `exec`
+  and `subprocess`, manifest settings, TODO markers, unreachable files, and
+  what the repository lacks (no tests, no CI, no Dockerfile, a stub README);
+- **claims** — quoted from README files, docstrings, comments, and commit
+  messages, always with their source and age, because they may be stale;
+- **model** — the repository summary, the role of each target, the run recipe,
+  and the main flow, written by the model and marked as such. Every model
+  sentence cites facts by id; a row citing something that does not exist is
+  rejected into `rejected.jsonl` with its raw output and the reason, never
+  repaired.
+
+Under the page, each selected Go, Python, and JavaScript/TypeScript target
+builds one complete target-local ProgramIndex. Reduced repository documentation
+feeds a shared categorizer that enriches that same index with sparse
+overlapping `inbound`, `background_activity`, `dependency`, and `core` facts. A
+grouping pass seals one target-local `groups-index.json`; one repository-level
+matching pass then adds supported connections across the complete target graph
+set. The deterministic fact and claim stages and the model orientation stage
+run over that finished graph and write their own artifacts, so the facts
+survive any rewrite of the model stage.
 
 The supported product surface is deliberately small:
 
@@ -87,8 +107,8 @@ retain a canonical file representative for every exact native target, may also
 retain positively supported repository-guidance candidates, and chooses one
 retained target as the default. Every restored typed target receives a complete
 target-local report page; a mixed-language run publishes those pages through
-the neutral program-page and runtime portfolios in one HTML report. Its target
-picker replaces the old workflow of opening or merging one HTML file per target.
+the neutral program-page and target-outcome portfolios in one HTML report. Its
+target picker switches among the validated backing pages in that report.
 If one selected target cannot complete its own preparation, typed analysis,
 semantic validation, or page validation, the other targets continue. The
 report keeps that target visible as a red, non-clickable `Not analyzed` row and
@@ -106,8 +126,9 @@ the matching sealed selectors and requires an explicit choice.
 An unselected language's compiler and page-local analysis do not run. For every
 non-explicit discovered candidate set — even one eligible file — a fully
 validated live or cached model selection is required. Unavailable providers,
-transport failures, invalid responses, or incomplete activity, dependency, or
-snapshot evidence never produce a locally guessed or partial map. A
+transport failures, invalid responses, or incomplete categorization, grouping,
+matching, dependency, or snapshot evidence never produce a locally guessed or
+partial map. A
 target-local failure is recorded as not analyzed when another complete page
 can host the repository report; shared selection, repository overview,
 persistence, manifest, or bundle failures still end publication.
@@ -127,6 +148,12 @@ The current flags are:
 --no-cache
 --scan-secrets
 ```
+
+The ordinary Go call graph is complete for the selected target: `--depth 0`
+and `--edges-limit 0` are the defaults and keep every reachable exact call and
+edge. Positive values opt into narrower local analysis. Unusually deep or large
+graphs produce aggregate warnings; those warnings do not remove data or fail a
+target.
 
 Without `--no-serve`, repomap starts a loopback server. Report code links use
 that server to open manifest-authorized local files in VS Code. `--no-open`
@@ -169,15 +196,24 @@ make build
 ```
 
 For a successful product check, verify the process exit status and the emitted
-manifest, sealed ProgramIndex set, semantic cube artifact, `report.json`, and
-`report.html`. For a multi-target run, verify every backing manifest and
-`report.json`, and verify that only the default run contains the physical
-`report.html`. When the selected default was not analyzed, verify that only the
-first successful owner run contains it instead. Cache changes also require a
+manifest, `reduced-documentation.json`, sealed enriched ProgramIndex set, every
+target-scoped `dependency-catalog.json`, every `groups-index.json`, the complete
+matched graph in `report.json`, the `facts.json`, `claims.json`,
+`orientation.json` and `rejected.jsonl` artifacts, and `report.html`. Then open
+the page and answer the first-day questions from it alone; that dogfood read is
+the real acceptance. For a multi-target run, verify every backing manifest and
+`report.json`, and verify that only the first successful owner run contains the
+physical `report.html`. Cache changes also require a
 second real run and `repomap cache
 clear`.
 
-The current architecture and product decisions live in
-[docs/agent-room/CURRENT.md](docs/agent-room/CURRENT.md). Static prompt prose
-lives in Markdown beside each model-assisted domain cube and is embedded in the
-binary; dynamic bounded catalogs and semantic validation remain in Go.
+The product constitution lives in [docs/CONSTITUTION.md](docs/CONSTITUTION.md)
+and the current architecture in
+[docs/agent-room/CURRENT.md](docs/agent-room/CURRENT.md).
+`fixtures/python-tutorial-game` is the acceptance fixture: its `expected.json`
+lists the facts that must be present with their anchors, and a focused test
+rebuilds them from the sealed artifacts of a real run. Static prompt prose
+lives in Markdown beside documentation reduction, ProgramIndex categorization,
+target-local grouping, and cross-target matching and is embedded in the binary;
+complete dynamic reservoirs, provider-sized request partitions, ref restoration,
+and semantic validation remain in Go.

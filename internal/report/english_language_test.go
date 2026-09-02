@@ -11,13 +11,13 @@ func TestReportRenderingIsEnglishOnly(t *testing.T) {
 	t.Parallel()
 
 	data := reportProgramShellDataFixture(t, "fixture")
-	html, err := RenderHTMLWithOptions(&data, RenderOptions{})
+	html, err := RenderHTMLWithOptions(&data, reportSingleTargetRenderOptionsFixture(t, &data))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
 		`<html lang="en">`,
-		`This report requires JavaScript.`,
+		`JavaScript is optional for this report`,
 		`id="rm-report-app-js"`,
 	} {
 		if !strings.Contains(string(html), want) {
@@ -46,7 +46,7 @@ func TestRunMetadataCannotActivateRemovedReportLanguage(t *testing.T) {
 	if err := parseRunMetadata(path, &data); err != nil {
 		t.Fatal(err)
 	}
-	html, err := RenderHTMLWithOptions(&data, RenderOptions{})
+	html, err := RenderHTMLWithOptions(&data, reportSingleTargetRenderOptionsFixture(t, &data))
 	if err != nil {
 		t.Fatal(err)
 	}

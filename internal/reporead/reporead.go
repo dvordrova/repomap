@@ -1,4 +1,4 @@
-// Package reporead provides bounded reads of regular files contained in a
+// Package reporead provides confined reads of regular files contained in a
 // resolved repository root.
 package reporead
 
@@ -60,7 +60,7 @@ func (r *Reader) ReadFile(repoRelativePath string, maxBytes int64) (Content, err
 	if r == nil || r.root == nil {
 		return Content{}, fmt.Errorf("reporead: reader is not initialized")
 	}
-	if maxBytes < 0 || maxBytes == maxReadBytes {
+	if maxBytes < 0 {
 		return Content{}, fmt.Errorf("reporead: invalid byte limit %d", maxBytes)
 	}
 
@@ -70,7 +70,25 @@ func (r *Reader) ReadFile(repoRelativePath string, maxBytes int64) (Content, err
 	}
 	defer file.Close()
 
+	if maxBytes == maxReadBytes {
+		return readCompleteFile(file)
+	}
 	return readBoundedFile(file, maxBytes)
+}
+
+// ReadFileAll reads the complete current bytes of one confined regular file.
+// It has no local size policy: operating-system or allocation failures are
+// returned honestly to the caller.
+func (r *Reader) ReadFileAll(repoRelativePath string) (Content, error) {
+	if r == nil || r.root == nil {
+		return Content{}, fmt.Errorf("reporead: reader is not initialized")
+	}
+	file, err := r.openRegularFile(repoRelativePath)
+	if err != nil {
+		return Content{}, err
+	}
+	defer file.Close()
+	return readCompleteFile(file)
 }
 
 // ReadFileNoSymlinks is ReadFile with a stricter identity check: every path
@@ -80,7 +98,7 @@ func (r *Reader) ReadFileNoSymlinks(repoRelativePath string, maxBytes int64) (Co
 	if r == nil || r.root == nil {
 		return Content{}, fmt.Errorf("reporead: reader is not initialized")
 	}
-	if maxBytes < 0 || maxBytes == maxReadBytes {
+	if maxBytes < 0 {
 		return Content{}, fmt.Errorf("reporead: invalid byte limit %d", maxBytes)
 	}
 
@@ -90,7 +108,31 @@ func (r *Reader) ReadFileNoSymlinks(repoRelativePath string, maxBytes int64) (Co
 	}
 	defer file.Close()
 
+	if maxBytes == maxReadBytes {
+		return readCompleteFile(file)
+	}
 	return readBoundedFile(file, maxBytes)
+}
+
+// ReadFileNoSymlinksAll is the complete-read form of ReadFileNoSymlinks.
+func (r *Reader) ReadFileNoSymlinksAll(repoRelativePath string) (Content, error) {
+	if r == nil || r.root == nil {
+		return Content{}, fmt.Errorf("reporead: reader is not initialized")
+	}
+	file, err := r.openRegularFileNoSymlinks(repoRelativePath)
+	if err != nil {
+		return Content{}, err
+	}
+	defer file.Close()
+	return readCompleteFile(file)
+}
+
+func readCompleteFile(file *os.File) (Content, error) {
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return Content{}, fmt.Errorf("reporead: read file: %w", err)
+	}
+	return Content{Bytes: data[:len(data):len(data)]}, nil
 }
 
 func readBoundedFile(file *os.File, maxBytes int64) (Content, error) {

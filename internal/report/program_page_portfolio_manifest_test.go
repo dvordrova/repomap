@@ -5,13 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
-	"github.com/dvordrova/repomap/internal/runtimeportfolio"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
@@ -74,117 +72,12 @@ func TestRunManifestVerifiesProgramPagePortfolioArtifact(t *testing.T) {
 	t.Run("present unbound portfolio is rejected", func(t *testing.T) {
 		runDir, manifest := fixture.run(t)
 		manifest.MaterialInputs.ProgramPagePortfolioSHA256 = ""
-		manifest.MaterialInputs.RuntimePortfolioSHA256 = ""
 		manifest.MaterialInputs.TargetOutcomePortfolioSHA256 = ""
 		if err := manifest.VerifyProgramPagePortfolioArtifact(runDir); err == nil ||
 			!strings.Contains(err.Error(), "unbound program page portfolio") {
 			t.Fatalf("unbound portfolio error = %v", err)
 		}
 	})
-}
-
-func TestRunManifestPageAuthoritiesAreMutuallyExclusiveAndBindRuntime(t *testing.T) {
-	fixture := newProgramPageManifestFixture(t)
-	_, neutral := fixture.run(t)
-
-	legacy := neutral
-	legacy.MaterialInputs.AnalysisTargetRef = "at-fixture"
-	legacy.MaterialInputs.AnalysisTargetSHA256 = strings.Repeat("a", 64)
-	legacy.MaterialInputs.TargetRunContainerSHA256 = strings.Repeat("b", 64)
-	if err := legacy.Validate(); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Fatalf("neutral plus Go container error = %v", err)
-	}
-
-	legacy.MaterialInputs.TargetPagePortfolioSHA256 = strings.Repeat("c", 64)
-	if err := legacy.Validate(); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Fatalf("neutral plus Go page portfolio error = %v", err)
-	}
-
-	missingRuntime := neutral
-	missingRuntime.MaterialInputs.RuntimePortfolioSHA256 = ""
-	if err := missingRuntime.Validate(); err == nil || !strings.Contains(err.Error(), "runtime portfolio binding") {
-		t.Fatalf("neutral page without runtime error = %v", err)
-	}
-
-	missingPage := validRunManifestFixture(t)
-	missingPage.MaterialInputs.RuntimePortfolioSHA256 = strings.Repeat("d", 64)
-	if err := missingPage.Validate(); err == nil || !strings.Contains(err.Error(), "runtime portfolio binding") {
-		t.Fatalf("runtime without page authority error = %v", err)
-	}
-}
-
-func TestRunManifestVerifiesRuntimePortfolioAgainstProgramPages(t *testing.T) {
-	fixture := newProgramPageManifestFixture(t)
-	runDir, manifest := fixture.run(t)
-	targets := runtimeTargetsForProgramPages(fixture.portfolio)
-	result := reportRuntimePortfolioFixture(t, fixture.portfolio.SHA256, targets)
-	runtimeRaw, err := runtimeportfolio.Encode(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTargetPageManifestArtifact(t, runDir, runtimeportfolio.ArtifactFilename, runtimeRaw)
-	manifest.MaterialInputs.RuntimePortfolioSHA256 = manifestSHA256(runtimeRaw)
-
-	index := reportProgramIndexFixture(t, fixture.current.Language, fixture.current.Kind)
-	if index.Target.ID != fixture.current.ID {
-		t.Fatalf("current fixture target changed: %q != %q", index.Target.ID, fixture.current.ID)
-	}
-	programPortfolio, err := NewProgramPortfolio(index.Target.ID, []programindex.Index{index})
-	if err != nil {
-		t.Fatal(err)
-	}
-	view, err := NewRuntimePortfolioView(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reportRaw, err := json.Marshal(ReportData{
-		FormatVersion: CurrentFormatVersion, RepoName: "fixture",
-		CapturedRevision: manifest.RepositoryState.Head, CapturedInputCount: len(manifest.CapturedInputs),
-		ProgramPortfolio: programPortfolio, RuntimePortfolio: view,
-		OpenablePaths: []string{"batch.go", "cmd/app/main.go"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := manifest.VerifyRuntimePortfolioProjection(runDir, reportRaw); err != nil {
-		t.Fatalf("VerifyRuntimePortfolioProjection: %v", err)
-	}
-	if digest, err := savedRuntimePortfolioSHA256(runDir); err != nil || digest != manifestSHA256(runtimeRaw) {
-		t.Fatalf("savedRuntimePortfolioSHA256 = %q, %v", digest, err)
-	}
-
-	driftedTargets := append([]runtimeportfolio.Target(nil), targets...)
-	for index := range driftedTargets {
-		if driftedTargets[index].ProgramTargetID != fixture.sibling.ID {
-			continue
-		}
-		driftedTargets[index].ProgramTargetID = "program-target-substituted"
-		break
-	}
-	drifted := reportRuntimePortfolioFixture(t, fixture.portfolio.SHA256, driftedTargets)
-	driftedRaw, err := runtimeportfolio.Encode(drifted)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTargetPageManifestArtifact(t, runDir, runtimeportfolio.ArtifactFilename, driftedRaw)
-	manifest.MaterialInputs.RuntimePortfolioSHA256 = manifestSHA256(driftedRaw)
-	driftedView, err := NewRuntimePortfolioView(drifted)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var driftedReport ReportData
-	if err := json.Unmarshal(reportRaw, &driftedReport); err != nil {
-		t.Fatal(err)
-	}
-	driftedReport.RuntimePortfolio = driftedView
-	driftedReportRaw, err := json.Marshal(driftedReport)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := manifest.VerifyRuntimePortfolioProjection(runDir, driftedReportRaw); err == nil ||
-		!strings.Contains(err.Error(), "does not match program pages") {
-		t.Fatalf("substituted runtime target error = %v", err)
-	}
 }
 
 func TestTargetOutcomePortfolioViewRequiresExactAnalyzedPageBijection(t *testing.T) {
@@ -363,22 +256,6 @@ func (fixture programPageManifestFixture) run(t *testing.T) (string, RunManifest
 		t.Fatal(err)
 	}
 	manifest.MaterialInputs.ProgramPagePortfolioSHA256 = manifestSHA256(fixture.raw)
-	manifest.MaterialInputs.RuntimePortfolioSHA256 = strings.Repeat("7", 64)
 	manifest.MaterialInputs.TargetOutcomePortfolioSHA256 = manifestSHA256(fixture.outcomeRaw)
 	return runDir, manifest
-}
-
-func runtimeTargetsForProgramPages(portfolio programpage.Portfolio) []runtimeportfolio.Target {
-	result := make([]runtimeportfolio.Target, 0, len(portfolio.Pages))
-	for _, page := range portfolio.Pages {
-		result = append(result, runtimeportfolio.Target{
-			ProgramTargetID: page.Target.ID, DisplayName: page.Target.Name,
-			Language: page.Target.Language, Kind: page.Target.Kind, Selector: page.Target.Selector,
-			Default: page.Target.ID == portfolio.DefaultTargetID,
-		})
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].ProgramTargetID < result[j].ProgramTargetID
-	})
-	return result
 }

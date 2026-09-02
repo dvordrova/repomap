@@ -19,20 +19,21 @@ import (
 )
 
 const (
-	Version          = 2
-	ArtifactFilename = "declared-dependencies.json"
+	Version = 2
 
-	MaxSources    = 4096
-	MaxPackages   = 16384
-	MaxStatements = 65536
-	MaxIncludes   = 16384
-	MaxFrontiers  = 16384
+	// AdvisoryResultBytes is a diagnostic usual size for the complete sealed
+	// in-memory result. Crossing it never narrows or rejects declaration facts.
+	AdvisoryResultBytes = 64 << 20
 
-	MaxArtifactBytes   = 64 << 20
-	MaxStringBytes     = 4096
-	MaxSourceBytes     = 8 << 20
-	MaxTotalBytes      = 64 << 20
-	MaxStatementExtras = 128
+	AdvisorySources         = 4096
+	AdvisoryPackages        = 16384
+	AdvisoryStatements      = 65536
+	AdvisoryIncludes        = 16384
+	AdvisoryFrontiers       = 16384
+	AdvisoryStringBytes     = 4096
+	AdvisorySourceBytes     = 8 << 20
+	AdvisoryTotalBytes      = 64 << 20
+	AdvisoryStatementExtras = 128
 )
 
 type CoverageState string
@@ -93,7 +94,7 @@ func (role Role) Valid() bool {
 
 // LocatorKind intentionally retains only a safe structural category. Raw
 // URLs, credentials, absolute paths and package-index options never enter the
-// artifact.
+// in-memory declaration authority.
 type LocatorKind string
 
 const (
@@ -360,11 +361,6 @@ func Build(input Input) (Result, error) {
 	if input.Sources == nil || input.Statements == nil || input.Includes == nil || input.Frontiers == nil {
 		return Result{}, fmt.Errorf("dependency declarations: input inventories must be present")
 	}
-	if len(input.Sources) > MaxSources || len(input.Statements) > MaxStatements ||
-		len(input.Includes) > MaxIncludes || len(input.Frontiers) > MaxFrontiers {
-		return Result{}, fmt.Errorf("dependency declarations: input bound exceeded")
-	}
-
 	sources, sourceByKey, err := buildSources(input.CorpusSHA256, input.Sources)
 	if err != nil {
 		return Result{}, err
@@ -406,7 +402,7 @@ func buildSources(corpusSHA string, inputs []SourceInput) ([]Source, map[string]
 	for _, input := range inputs {
 		if !plainValue(input.Key) || !validFileRef(input.FileRef) || !repositoryPath(input.Path) ||
 			!token(input.Format) || !input.State.Valid() || !validSHA256(input.ContentSHA256) ||
-			input.ByteCount < 0 || input.ByteCount > MaxSourceBytes {
+			input.ByteCount < 0 {
 			return nil, nil, fmt.Errorf("dependency declarations: invalid source input")
 		}
 		if _, duplicate := byKey[input.Key]; duplicate {
@@ -466,9 +462,6 @@ func buildPackages(ecosystem string, inputs []StatementInput, sources map[string
 		}
 		value.Names = append(value.Names, statement.Name)
 		value.Statements = append(value.Statements, statement)
-	}
-	if len(byPackage) > MaxPackages {
-		return nil, fmt.Errorf("dependency declarations: package bound %d exceeded", MaxPackages)
 	}
 	result := make([]Package, 0, len(byPackage))
 	for _, value := range byPackage {
@@ -595,7 +588,7 @@ func validateStatementShape(value Statement) error {
 		value.Ordinal <= 0 || !validSHA256(value.ExpressionSHA256) ||
 		(value.Group != "" && !plainValue(value.Group)) ||
 		(value.Specifier != "" && (!plainValue(value.Specifier) || !safeSpecifier(value.Specifier))) ||
-		value.Extras == nil || len(value.Extras) > MaxStatementExtras {
+		value.Extras == nil {
 		return fmt.Errorf("dependency declarations: invalid statement")
 	}
 	for index, extra := range value.Extras {
@@ -764,7 +757,7 @@ func validFileRef(value corpus.FileID) bool {
 }
 
 func plainValue(value string) bool {
-	if value == "" || len(value) > MaxStringBytes || !utf8.ValidString(value) || strings.TrimSpace(value) != value {
+	if value == "" || !utf8.ValidString(value) || strings.TrimSpace(value) != value {
 		return false
 	}
 	for _, character := range value {
@@ -804,7 +797,7 @@ func repositoryDir(value string) bool {
 }
 
 func repositoryPath(value string) bool {
-	return value != "" && len(value) <= MaxStringBytes && path.Clean(value) == value &&
+	return value != "" && path.Clean(value) == value &&
 		!path.IsAbs(value) && value != "." && value != ".." && !strings.HasPrefix(value, "../") &&
 		!strings.Contains(value, "\\") && !strings.ContainsRune(value, 0)
 }

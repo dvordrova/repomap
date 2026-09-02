@@ -10,31 +10,24 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/dvordrova/repomap/internal/activityentrypoint"
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/dependencies"
+	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/freshness"
-	"github.com/dvordrova/repomap/internal/gocoreobject"
-	"github.com/dvordrova/repomap/internal/godynamichandoff"
 	"github.com/dvordrova/repomap/internal/gotarget"
 	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/orient"
-	"github.com/dvordrova/repomap/internal/pipeline"
 	"github.com/dvordrova/repomap/internal/programindex"
-	"github.com/dvordrova/repomap/internal/programindex/goadapter"
-	"github.com/dvordrova/repomap/internal/pythondependencies"
-	"github.com/dvordrova/repomap/internal/pythonprogramindex"
-	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
-	"github.com/dvordrova/repomap/internal/runtimeportfolio"
 	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
@@ -126,6 +119,11 @@ type defaultRunDeps struct {
 	captureRepo                func(context.Context, string, *corpus.Corpus) (freshness.RepositoryState, error)
 	newTargetPortfolioProvider targetPortfolioProviderFactory
 	newCubeProvider            targetPortfolioProviderFactory
+	runDocumentationReduce     documentationReduceRunner
+	runProgramCategorization   programCategorizationRunner
+	runProgramGrouping         programGroupingRunner
+	runGroupMatching           groupMatchingRunner
+	runOrientation             orientationRunner
 	// One controller follows the complete repository run, including selected
 	// child targets and the repository overview. DeepSeek concurrency limits are
 	// account-scoped, so a transient HTTP 429 must serialize later attempts even
@@ -134,47 +132,36 @@ type defaultRunDeps struct {
 	llmBatchController  *llm.BatchController
 	// preselectedTarget is one exact page from the outer repository target
 	// plan. It bypasses every first-layer scout and portfolio model call.
-	preselectedTarget        *repositoryTypedTarget
-	preselectedPythonCatalog *pythontarget.Catalog
-	preselectedJSTSProject   *jstsproject.Result
-	preselectedOutcome       *targetPortfolioRunOutcome
-	firstLayerObserver       *debugdump.SemanticObserver
-	resolveGoTarget          func(string, func(string) string) (gotarget.Target, error)
+	preselectedTarget      *repositoryTypedTarget
+	preselectedProgramPage *repositoryProgramPageAuthority
+	reducedDocumentation   *documentationreduce.Result
+	resolveGoTarget        func(string, func(string) string) (gotarget.Target, error)
+	// goBuildTags is parsed once by the outer ordinary run and copied into every
+	// selected child page. A bound empty slice is distinct from an unbound value
+	// so sibling pages never reread a changing process environment.
+	goBuildTags      []string
+	goBuildTagsBound bool
 	// sharedRepositoryCorpus and capturedRepositoryState let an outer
 	// multi-language target dispatcher keep one tracked-file namespace and one
 	// repository authority across every exact target page. Child pages borrow
 	// the corpus and never close it.
 	sharedRepositoryCorpus  *corpus.Corpus
 	capturedRepositoryState *freshness.RepositoryState
-	precomputedSnapshot     *snapshot.Snapshot
-	// preparedGoWorkspace is the one live packages/types/SSA authority shared
-	// by the default Go page and every recursively published sibling page.
-	preparedGoWorkspace     *surfacediscovery.PreparedWorkspace
-	preparedGoSnapshots     []snapshot.Snapshot
-	preparedGoWorkspaceSink func(*surfacediscovery.PreparedWorkspace)
-	// preparedGoWorkspaceUnionFailureSink is a live dispatcher signal: shared
-	// union preparation failed, so this target retries exactly and later Go
-	// targets must not receive that union again.
-	preparedGoWorkspaceUnionFailureSink func(error)
 	// coreReadmeRoleRows carries the one accepted first-layer README role
 	// catalog into every selected target page. Each run rebinds paths to its
 	// current corpus, so run-local f* identities are never reused blindly.
 	coreReadmeRoleRows []readmeRoleLogRow
 	runIDOverride      string
 	siblingTargetRun   bool
-	// deferredPortfolioHTML marks a target-local backing run in a multi-target
-	// ProgramPagePortfolio. It publishes report.json and manifest authority but
-	// leaves the sole browser HTML to the default portfolio owner.
+	// deferredPortfolioHTML marks a target-local backing run in the repository
+	// ProgramPagePortfolio. It leaves report generation and the sole browser HTML
+	// to the complete portfolio transaction, including for a one-target run.
 	deferredPortfolioHTML bool
 	publishedTargetSink   func(targetPublishedRun)
 	// targetOutcomeStageSink exposes only the current closed per-target
 	// boundary to the outer dispatcher. It never changes execution semantics;
 	// it lets a contained failure be reported without matching error strings.
 	targetOutcomeStageSink func(targetoutcome.Stage)
-	runRuntimePortfolio    runtimePortfolioRunner
-	runtimeCacheRoot       string
-	runtimeNoCache         bool
-	finalizeTargetPages    func(context.Context, snapshot.TargetRunContainer, snapshot.TargetPagePortfolio, []targetPublishedRun) error
 	// repositoryArgumentOmitted is true only when the user left [repo] out of
 	// the command. Internal child pages retain the outer invocation choice.
 	repositoryArgumentOmitted bool
@@ -189,10 +176,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if deps.llmBatchController == nil {
 		deps.llmBatchController = &llm.BatchController{}
 	}
-	stopAfter, err := semanticStopAfter(os.Getenv("STOP_AFTER"))
-	if err != nil {
-		return err
-	}
 	fs := flag.NewFlagSet("repomap", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
@@ -200,11 +183,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	analysisTargetFlag := fs.String("target", "", "analysis surface (unambiguous advertised path or exact target key)")
 	directCallDepth := fs.Int(
 		"depth", surfacediscovery.DefaultDirectCallDepth,
-		"target call-graph depth",
+		"target call-graph depth (0 keeps all reachable calls)",
 	)
 	directCallEdgeLimit := fs.Int(
 		"edges-limit", surfacediscovery.DefaultDirectCallEdgeLimit,
-		"maximum exact target call-graph edges",
+		"maximum exact target call-graph edges (0 keeps all edges)",
 	)
 	noCache := fs.Bool("no-cache", false, "disable cross-run model response caches")
 	scanSecrets := fs.Bool("scan-secrets", false, "scan repository and model material for credential-like text")
@@ -229,29 +212,24 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 	})
 	humanOutput := newRunOutput(deps.stderr)
-	var defaultTargetConsole *targetPageConsoleContext
-	defaultTargetConsoleClosed := false
 	newTargetPortfolioProvider := deps.newTargetPortfolioProvider
 	if newTargetPortfolioProvider == nil {
 		newTargetPortfolioProvider = defaultTargetPortfolioProviderFactory
 	}
-	newCubeProvider := deps.newCubeProvider
-	if newCubeProvider == nil {
-		newCubeProvider = defaultTargetPortfolioProviderFactory
+	if deps.newCubeProvider == nil {
+		deps.newCubeProvider = defaultTargetPortfolioProviderFactory
 	}
+	newCubeProvider := deps.newCubeProvider
 	publicationStateEmitted := false
 	defer func() {
 		if runErr != nil && !publicationStateEmitted && !deps.siblingTargetRun {
-			if defaultTargetConsole != nil && !defaultTargetConsoleClosed {
-				humanOutput.TargetPage("failed", *defaultTargetConsole)
-				defaultTargetConsoleClosed = true
-			}
 			humanOutput.State(
 				"Run", "failed",
 				"report publication did not complete",
 			)
 		}
 	}()
+	var err error
 	repo, deps.repositoryArgumentOmitted, err = bindParsedRepositoryArgument(
 		repo,
 		deps.repositoryArgumentOmitted,
@@ -268,7 +246,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err != nil {
 		return fmt.Errorf("--force-platform: %w", err)
 	}
-	autoGoTarget := deps.precomputedSnapshot == nil && automaticGoTargetAllowed(*forcePlatform, os.Getenv)
+	autoGoTarget := automaticGoTargetAllowed(*forcePlatform, os.Getenv)
 	restoreSecretScan := secretscan.SetEnabled(*scanSecrets)
 	defer restoreSecretScan()
 	if *scanSecrets {
@@ -277,14 +255,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if *port < 0 || *port > reportserver.MaxTCPPort {
 		return fmt.Errorf("--port must be between 0 and %d", reportserver.MaxTCPPort)
 	}
-	if *directCallDepth < 1 {
-		return fmt.Errorf("--depth must be at least 1")
-	}
-	if *directCallEdgeLimit < 1 || *directCallEdgeLimit > surfacediscovery.MaxDirectCallIndexEdges {
-		return fmt.Errorf(
-			"--edges-limit must be between 1 and %d",
-			surfacediscovery.MaxDirectCallIndexEdges,
-		)
+	if err := validateDirectCallControls(*directCallDepth, *directCallEdgeLimit); err != nil {
+		return err
 	}
 	gitLabURL := strings.TrimSpace(*gitLabURLFlag)
 	gitHubURL := strings.TrimSpace(*gitHubURLFlag)
@@ -380,11 +352,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	repositoryName := ""
-	if deps.precomputedSnapshot != nil {
-		repositoryName = deps.precomputedSnapshot.RepoName
-	}
 	var repositoryCorpus *corpus.Corpus
+	ownsRepositoryCorpus := deps.sharedRepositoryCorpus == nil
 	if deps.sharedRepositoryCorpus != nil {
 		repositoryCorpus = deps.sharedRepositoryCorpus
 		if err := repositoryCorpus.Snapshot().Validate(); err != nil {
@@ -400,6 +369,28 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				runErr = closeErr
 			}
 		}()
+	}
+	if ownsRepositoryCorpus {
+		defer reportCorpusScaleWarnings(humanOutput, repositoryCorpus)
+	}
+	languageEvidence := repositoryLanguages(repositoryCorpus)
+	targetOverride := strings.TrimSpace(*analysisTargetFlag)
+	goBuildTags := append([]string(nil), deps.goBuildTags...)
+	var deferredGoBuildTagsErr error
+	if !deps.goBuildTagsBound {
+		goBuildTags, deferredGoBuildTagsErr, err = prepareGoBuildTags(
+			languageEvidence.Go,
+			os.Getenv("GOTAGS"),
+			targetOverride,
+		)
+		if err != nil {
+			return fmt.Errorf("GOTAGS: %w", err)
+		}
+		deps.goBuildTags = append([]string(nil), goBuildTags...)
+		deps.goBuildTagsBound = true
+	}
+	if deps.preselectedTarget == nil {
+		reportGoBuildTagScaleWarnings(humanOutput, goBuildTags)
 	}
 	captureRepo := deps.captureRepo
 	if captureRepo == nil {
@@ -439,28 +430,32 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if staticSourceHost != "" && repositoryStateHasAnalyzedSubmodule(initialState) {
 		return fmt.Errorf("standalone %s reports do not support analyzed submodule source because one repository URL cannot address it", staticSourceHost)
 	}
-	if deps.preselectedTarget == nil &&
-		deps.precomputedSnapshot == nil && !deps.siblingTargetRun {
-		targetOverride := strings.TrimSpace(*analysisTargetFlag)
-		languageEvidence := repositoryLanguages(repositoryCorpus)
-		var goSource *snapshot.Snapshot
-		if languageEvidence.Go {
-			moduleDir := ""
-			if exactModuleDir, ok := analysistarget.ExactCandidateKeyModuleDir(targetOverride); ok {
-				moduleDir = exactModuleDir
-			}
-			prepared, prepareErr := snapshot.BuildContext(ctx, snapshot.Options{
-				RepoPath: repo, GoTarget: goTarget.String(), GoModuleDir: moduleDir,
-				RepositoryCorpus: repositoryCorpus, AutoGoTarget: autoGoTarget,
-			})
-			if prepareErr != nil {
-				return prepareErr
-			}
-			if prepared.GoFacts == nil || prepared.TargetCatalog == nil ||
-				len(prepared.TargetCatalog.Entries) == 0 {
-				return fmt.Errorf("repository target planning found Go project evidence without an exact Go target catalog")
-			}
-			goSource = &prepared
+	if deps.preselectedTarget == nil && !deps.siblingTargetRun {
+		goSource, prepareErr := prepareRepositoryPlanningGoSource(
+			languageEvidence.Go,
+			targetOverride,
+			func() (snapshot.Snapshot, error) {
+				moduleDir := ""
+				if exactModuleDir, ok := analysistarget.ExactCandidateKeyModuleDir(targetOverride); ok {
+					moduleDir = exactModuleDir
+				}
+				return snapshot.BuildContext(ctx, snapshot.Options{
+					RepoPath: repo, GoTarget: goTarget.String(), GoModuleDir: moduleDir,
+					BuildTags:        goBuildTags,
+					RepositoryCorpus: repositoryCorpus, AutoGoTarget: autoGoTarget,
+				})
+			},
+		)
+		if prepareErr != nil {
+			return prepareErr
+		}
+		if goSource != nil && (goSource.GoFacts == nil || goSource.TargetCatalog == nil ||
+			len(goSource.TargetCatalog.Entries) == 0) {
+			return fmt.Errorf("repository target planning found Go project evidence without an exact Go target catalog")
+		}
+		if goSource != nil {
+			reportRepositorySnapshotScaleWarnings(humanOutput, *goSource)
+			reportGoFactScaleWarnings(humanOutput, goSource.GoFacts)
 		}
 		firstLayer := debugdump.NewSemanticObserver(nil)
 		selectionExecutor := llm.Executor{
@@ -480,10 +475,22 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			Output:         humanOutput, Providers: newTargetPortfolioProvider,
 			Executor: selectionExecutor, ScoutJSTSFn: jstsproject.ScoutTargets,
 		})
+		reportSemanticOrdinalScaleWarnings(
+			humanOutput, "Repository selection",
+			[]string{"repository: " + repositoryName},
+			firstLayer.OrdinalScaleWarnings(),
+		)
 		if selectionErr != nil {
 			flushFailedFirstLayerSemanticJournal(runDir, firstLayer, humanOutput)
 			return errors.Join(
 				selectionErr,
+				recordTargetPortfolioOutcome(runDir, plan.Outcome, humanOutput),
+			)
+		}
+		if deferredGoBuildTagsErr != nil && repositoryTargetPlanContainsGo(plan) {
+			flushFailedFirstLayerSemanticJournal(runDir, firstLayer, humanOutput)
+			return errors.Join(
+				fmt.Errorf("GOTAGS: %w", deferredGoBuildTagsErr),
 				recordTargetPortfolioOutcome(runDir, plan.Outcome, humanOutput),
 			)
 		}
@@ -492,6 +499,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			ctx,
 			repositoryTargetDispatchOptions{
 				Repo: repo, ExtraArgs: append([]string(nil), extraArgs...), Deps: deps,
+				GoTarget: goTarget.String(), GoBuildTags: append([]string(nil), goBuildTags...),
+				DirectCallDepth: *directCallDepth, DirectCallEdgeLimit: *directCallEdgeLimit,
 				Corpus: repositoryCorpus, RepositoryState: initialState, Plan: plan,
 				RunID: runID, DebugDir: dDir, NoCache: *noCache, NoOpen: *noOpen,
 				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
@@ -516,27 +525,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		)
 	}
 
-	var directCallIndex *surfacediscovery.DirectCallIndex
-	var externalCallIndex *surfacediscovery.ExternalCallIndex
 	var dependencyCatalog *dependencies.Catalog
-	var coreObjectIndex *gocoreobject.Index
-	var dynamicHandoffIndex *godynamichandoff.Index
-	var analysisTarget *analysistarget.Target
-	var targetRunContainer *snapshot.TargetRunContainer
-	var automaticGoTargetSelection *snapshot.GoTargetSelection
-	preparedGoWorkspace := deps.preparedGoWorkspace
-	var targetPortfolioOutcome targetPortfolioRunOutcome
-	var pythonTargetSelection *pythonTargetRunSelection
-	var pythonTargetCatalog *pythontarget.Catalog
-	var jsTSTargetSelection *jsTSTargetRunSelection
 	coreReadmeRoleRows := cloneReadmeRoleLog(deps.coreReadmeRoleRows)
-	firstLayerSemanticObserver := deps.firstLayerObserver
-	ownsFirstLayerAuthority := deps.preselectedOutcome != nil || firstLayerSemanticObserver != nil
 	analysisTargetOverride := strings.TrimSpace(*analysisTargetFlag)
-	explicitGoModuleDir := ""
-	if moduleDir, ok := analysistarget.ExactCandidateKeyModuleDir(analysisTargetOverride); ok {
-		explicitGoModuleDir = moduleDir
-	}
 	if deps.preselectedTarget == nil {
 		return fmt.Errorf("repository target dispatcher did not provide an exact page target")
 	}
@@ -544,134 +535,37 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err := selected.Validate(); err != nil {
 		return fmt.Errorf("bind preselected repository target: %w", err)
 	}
-	if deps.preselectedOutcome != nil {
-		targetPortfolioOutcome = *deps.preselectedOutcome
-		targetPortfolioOutcome.SelectedTargetRefs = append(
-			[]string(nil), deps.preselectedOutcome.SelectedTargetRefs...,
-		)
-		targetPortfolioOutcome.ReadmeRoles = cloneReadmeRoleLog(
-			deps.preselectedOutcome.ReadmeRoles,
-		)
-		coreReadmeRoleRows = cloneReadmeRoleLog(targetPortfolioOutcome.ReadmeRoles)
+	if deps.preselectedProgramPage == nil {
+		return fmt.Errorf("repository target dispatcher did not provide exact ProgramIndex authority")
 	}
-	switch selected.Key.Adapter {
-	case repositoryTargetAdapterGo:
-		if deps.precomputedSnapshot == nil || deps.precomputedSnapshot.AnalysisTarget == nil ||
-			deps.precomputedSnapshot.AnalysisTarget.Ref != selected.Key.Ref {
-			return fmt.Errorf("preselected Go target lacks its exact scoped snapshot")
-		}
-	case repositoryTargetAdapterPython:
-		if selected.Python == nil || deps.preselectedPythonCatalog == nil ||
-			!deps.preselectedPythonCatalog.OwnsTarget(*selected.Python) {
-			return fmt.Errorf("preselected Python target lacks its exact catalog authority")
-		}
-		catalog := deps.preselectedPythonCatalog.Snapshot()
-		selection := pythonTargetRunSelection{
-			Catalog: catalog,
-			Default: *selected.Python,
-			Targets: []pythontarget.Target{*selected.Python},
-			Outcome: targetPortfolioOutcome,
-		}
-		pythonTargetCatalog = &catalog
-		pythonTargetSelection = &selection
-	case repositoryTargetAdapterJSTS:
-		if selected.JSTS == nil || deps.preselectedJSTSProject == nil {
-			return fmt.Errorf("preselected JavaScript/TypeScript target lacks its exact scout and materialized project authority")
-		}
-		project := deps.preselectedJSTSProject.Snapshot()
-		if materializationErr := validateJSTSTargetMaterialization(
-			repositoryCorpus, *selected.JSTS, project,
-		); materializationErr != nil {
-			return fmt.Errorf("bind preselected JavaScript/TypeScript project: %w", materializationErr)
-		}
-		localOutcome := jsTSTargetSelectionOutcome(
-			project,
-			targetPortfolioOutcome.ReadmeRoles,
-		)
-		selection := jsTSTargetRunSelection{
-			Project: project, Outcome: localOutcome,
-		}
-		jsTSTargetSelection = &selection
-	default:
-		return fmt.Errorf("preselected repository target has unsupported adapter %q", selected.Key.Adapter)
+	registry, err := ordinaryRepositoryTargetAdapterRegistry()
+	if err != nil {
+		return fmt.Errorf("bind preselected repository target: %w", err)
+	}
+	genericProgramPage, err := ownRepositoryProgramPageAuthority(
+		registry, selected, *deps.preselectedProgramPage,
+	)
+	if err != nil {
+		return fmt.Errorf("bind preselected repository target: %w", err)
 	}
 	if deps.targetOutcomeStageSink != nil {
 		deps.targetOutcomeStageSink(targetoutcome.StageProgramAnalysis)
 	}
-	programIndexDefault := pythonTargetSelection != nil || jsTSTargetSelection != nil
 	opts := orient.Options{
-		RepoPath:            repo,
-		GoTarget:            goTarget.String(),
-		GoModuleDir:         explicitGoModuleDir,
-		RepositoryCorpus:    repositoryCorpus,
-		AutoGoTarget:        autoGoTarget,
-		RunID:               runID,
-		DebugDir:            dDir,
-		DumpRedacted:        true,
-		RequireArtifacts:    true,
-		AnalyzeGoProgram:    !programIndexDefault,
-		SkipGoFacts:         programIndexDefault,
-		DirectCallDepth:     *directCallDepth,
-		DirectCallEdgeLimit: *directCallEdgeLimit,
-		PrecomputedSnapshot: deps.precomputedSnapshot,
-		PreparedGoWorkspace: preparedGoWorkspace,
-		PreparedGoSnapshots: append([]snapshot.Snapshot(nil), deps.preparedGoSnapshots...),
-		PreparedGoWorkspaceSink: func(workspace *surfacediscovery.PreparedWorkspace) {
-			preparedGoWorkspace = workspace
-			if deps.preparedGoWorkspaceSink != nil {
-				deps.preparedGoWorkspaceSink(workspace)
-			}
-		},
-		PreparedGoWorkspaceUnionFailureSink: deps.preparedGoWorkspaceUnionFailureSink,
-		DirectCallIndexSink: func(index surfacediscovery.DirectCallIndex) {
-			directCallIndex = &index
-		},
-		ExternalCallIndexSink: func(index surfacediscovery.ExternalCallIndex) {
-			externalCallIndex = &index
-		},
-		DependencyCatalogSink: func(catalog dependencies.Catalog) {
-			dependencyCatalog = &catalog
-		},
-		CoreObjectIndexSink: func(index gocoreobject.Index) {
-			copyIndex := index.Snapshot()
-			coreObjectIndex = &copyIndex
-		},
-		DynamicHandoffIndexSink: func(index godynamichandoff.Index) {
-			copyIndex := index.Snapshot()
-			dynamicHandoffIndex = &copyIndex
-		},
-		AnalysisTargetSink: func(target analysistarget.Target) {
-			copyTarget := target.Snapshot()
-			analysisTarget = &copyTarget
-		},
-		TargetRunContainerSink: func(container snapshot.TargetRunContainer) {
-			copyContainer := container.Snapshot()
-			targetRunContainer = &copyContainer
-			if len(container.Targets) > 1 {
-				for _, projection := range container.Targets {
-					if projection.Target.Ref != container.DefaultTargetRef {
-						continue
-					}
-					context := targetPageConsoleContext{
-						DisplayPath: projection.DisplayPath,
-						Scope:       analysisTargetSubject(projection.Target),
-						RunID:       runID,
-						Role:        "default",
-					}
-					defaultTargetConsole = &context
-					humanOutput.TargetPage("started", context)
-					break
-				}
-			}
-		},
-		GoTargetSelectionSink: func(selection snapshot.GoTargetSelection) {
-			owned := selection
-			owned.Examples = append([]string(nil), selection.Examples...)
-			automaticGoTargetSelection = &owned
-		},
+		RepoPath:         repo,
+		GoTarget:         goTarget.String(),
+		BuildTags:        append([]string(nil), goBuildTags...),
+		RepositoryCorpus: repositoryCorpus,
+		AutoGoTarget:     autoGoTarget,
+		RunID:            runID,
+		DebugDir:         dDir,
+		DumpRedacted:     true,
+		RequireArtifacts: true,
+		SkipGoFacts:      true,
 		EffectiveOptions: debugdump.EffectiveOptions{
 			NoCache:                *noCache,
 			GoTarget:               goTarget.String(),
+			BuildTags:              append([]string(nil), goBuildTags...),
 			AnalysisTargetOverride: analysisTargetOverride,
 			DirectCallDepth:        *directCallDepth,
 			DirectCallEdgeLimit:    *directCallEdgeLimit,
@@ -687,30 +581,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	opts.Progress = humanOutput.Progress
 
 	err = orient.Run(ctx, opts)
-	if err != nil && ownsFirstLayerAuthority {
-		if _, metadataErr := os.Stat(filepath.Join(runDir, "metadata.json")); os.IsNotExist(metadataErr) {
-			flushFailedFirstLayerSemanticJournal(runDir, firstLayerSemanticObserver, humanOutput)
-		}
-	}
-	if automaticGoTargetSelection != nil {
-		selected, parseErr := gotarget.Parse(automaticGoTargetSelection.Target)
-		if parseErr != nil {
-			return fmt.Errorf("restore automatic Go target selection: %w", parseErr)
-		}
-		goTarget = selected
-	}
 	metadataPath := filepath.Join(runDir, "metadata.json")
-	if ownsFirstLayerAuthority {
-		if _, metadataErr := os.Stat(metadataPath); metadataErr == nil {
-			flushFirstLayerSemanticJournal(runDir, firstLayerSemanticObserver, humanOutput)
-			if diagnosticErr := recordTargetPortfolioOutcome(runDir, targetPortfolioOutcome, humanOutput); diagnosticErr != nil {
-				if err != nil {
-					return errors.Join(err, diagnosticErr)
-				}
-				return diagnosticErr
-			}
-		}
-	}
 	if err != nil {
 		if _, metadataErr := os.Stat(metadataPath); metadataErr == nil {
 			return fmt.Errorf("%w\nrequest diagnostics: %s", err, metadataPath)
@@ -725,419 +596,125 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err := persistReadmeRoleAuthority(runDir, coreReadmeRoleRows); err != nil {
 		return err
 	}
-	if analysisTarget == nil && pythonTargetSelection == nil && jsTSTargetSelection == nil {
-		return fmt.Errorf("no advertised Go, Python, or JavaScript/TypeScript package targets; choose a supported repository or select a Go platform with --force-platform GOOS/GOARCH")
+	index := genericProgramPage.ProgramIndex.Snapshot()
+	reportProgramIndexScaleWarnings(humanOutput, []programindex.Index{index})
+	reportProgramViewScaleWarnings(humanOutput, []programindex.Index{index})
+	catalog, catalogErr := dependencies.BuildWithOmissions(
+		genericProgramPage.Dependencies.Importers,
+		genericProgramPage.Dependencies.Dependencies,
+		genericProgramPage.Dependencies.Coverage.Omissions,
+	)
+	if catalogErr != nil {
+		return fmt.Errorf("own generic dependency authority: %w", catalogErr)
 	}
-	if analysisTarget != nil && !programIndexDefault {
-		targetDisplay := analysisTarget.DisplayPath()
-		targetSubject := analysisTargetSubject(*analysisTarget)
-		if directCallIndex == nil {
-			return fmt.Errorf(
-				"Go call analysis is unavailable for target %s under %s; choose the correct platform with --force-platform GOOS/GOARCH (diagnostics: %s)",
-				targetDisplay, goTarget.String(), filepath.Join(runDir, "metadata.json"),
-			)
-		}
-		if err := directCallIndex.Validate(); err != nil {
-			return fmt.Errorf("validate Go call analysis for target %s: %w", targetDisplay, err)
-		}
-		if !analysisTarget.MatchesDirectCallIndexScope(
-			directCallIndex.Scope, *directCallDepth, *directCallEdgeLimit,
-		) {
-			return fmt.Errorf(
-				"Go call analysis scope does not match target %s and requested --depth/--edges-limit",
-				targetSubject,
-			)
-		}
-		if directCallIndex.State != surfacediscovery.DirectCallIndexReady {
-			switch directCallIndex.ClosedReason {
-			case surfacediscovery.DirectCallIndexClosedSSAUnavailable:
-				return fmt.Errorf(
-					"Go SSA is unavailable for target %s under %s; choose the correct platform with --force-platform GOOS/GOARCH",
-					targetDisplay, goTarget.String(),
-				)
-			case surfacediscovery.DirectCallIndexClosedNodeLimit:
-				return fmt.Errorf(
-					"Go call analysis for target %s exceeds the %d-function declaration safety bound; choose a narrower target with --target (the --depth option limits edges, not the exact symbol catalog)",
-					targetDisplay, surfacediscovery.MaxDirectCallIndexNodes,
-				)
-			case surfacediscovery.DirectCallIndexClosedEdgeLimit:
-				return directCallEdgeCeilingError(
-					targetSubject, *directCallDepth, *directCallEdgeLimit,
-					directCallIndex.Coverage.EdgeLimitSafeDepth,
-				)
-			default:
-				return fmt.Errorf("Go call analysis for target %s is unavailable", targetDisplay)
-			}
-		}
-	}
-	if pythonTargetCatalog != nil {
-		if err := pythontarget.PersistCatalog(runDir, *pythonTargetCatalog); err != nil {
-			return err
-		}
-	}
-	programIndexes := make([]programindex.Index, 0)
-	programIndexFilenames := make([]string, 0)
-	programDefaultTargetID := ""
-	var jsTSProgramIndex *programindex.Index
-	if jsTSTargetSelection != nil {
-		_, index, catalog, buildErr := buildJSTSProgramForRun(
-			runDir, repositoryCorpus, *jsTSTargetSelection, humanOutput,
-		)
-		if buildErr != nil {
-			return buildErr
-		}
-		programDefaultTargetID = index.Target.ID
-		dependencyCatalog = &catalog
-		ownedIndex := index.Snapshot()
-		jsTSProgramIndex = &ownedIndex
-		programIndexes = append(programIndexes, index)
-		programIndexFilenames = append(programIndexFilenames, jstsproject.ProgramIndexFilename)
-	}
-	pythonTargetsForBuild := []pythontarget.Target{}
-	var pythonPreferredTarget *pythontarget.Target
-	if pythonTargetSelection != nil {
-		pythonTargetsForBuild = append(
-			[]pythontarget.Target(nil), pythonTargetSelection.Targets...,
-		)
-		preferred := pythonTargetSelection.Default
-		pythonPreferredTarget = &preferred
-	}
-	if len(pythonTargetsForBuild) > 0 {
-		programIndexStarted := time.Now()
-		representatives, representativeErr := pythonProgramRepresentativesForTargets(
-			pythonTargetsForBuild, pythonPreferredTarget,
-		)
-		if representativeErr != nil {
-			return representativeErr
-		}
-		indexes, indexErr := pythonprogramindex.BuildMany(ctx, repositoryCorpus, representatives)
-		if indexErr != nil {
-			return fmt.Errorf("build Python program index: %w", indexErr)
-		}
-		indexFilenames := make([]string, len(indexes))
-		for position, index := range indexes {
-			isDefault := pythonPreferredTarget != nil &&
-				representatives[position].Ref == pythonPreferredTarget.Ref
-			indexFilenames[position] = programindex.ArtifactFilenameForTarget(representatives[position].Ref, isDefault)
-			if err := programindex.Persist(
-				runDir,
-				indexFilenames[position],
-				index,
-			); err != nil {
-				return err
-			}
-			if isDefault {
-				programDefaultTargetID = index.Target.ID
-			}
-		}
-		programIndexes = append(programIndexes, indexes...)
-		programIndexFilenames = append(programIndexFilenames, indexFilenames...)
-		programScopes, scopeErr := pythonProgramScopeCount(representatives)
-		if scopeErr != nil {
-			return scopeErr
-		}
-		programDetails := []string{
-			fmt.Sprintf("Python program scopes: %d", programScopes),
-			fmt.Sprintf("selected target views: %d", len(pythonTargetsForBuild)),
-			formatRunOutputWallDuration(time.Since(programIndexStarted)),
-		}
-		programDetails = append(programDetails, "default artifact: program-index.json")
-		humanOutput.State("Program index", "ready", programDetails...)
-	}
-	if !programIndexDefault && analysisTarget != nil && repositoryCorpus != nil && directCallIndex != nil {
-		programIndexStarted := time.Now()
-		if externalCallIndex == nil {
-			return fmt.Errorf("Go program index requires the exact external-call index")
-		}
-		if coreObjectIndex == nil {
-			return fmt.Errorf("Go program index requires the exact target core-object index")
-		}
-		if dynamicHandoffIndex == nil {
-			return fmt.Errorf("Go program index requires the exact dynamic-handoff index")
-		}
-		index, indexErr := goadapter.Build(
-			repositoryCorpus,
-			*analysisTarget,
-			*directCallIndex,
-			*externalCallIndex,
-			*coreObjectIndex,
-			*dynamicHandoffIndex,
-		)
-		if indexErr != nil {
-			return fmt.Errorf("build Go program index: %w", indexErr)
-		}
-		if err := programindex.Persist(runDir, "", index); err != nil {
-			return err
-		}
-		programDefaultTargetID = index.Target.ID
-		programIndexes = append(programIndexes, index)
-		programIndexFilenames = append(programIndexFilenames, programindex.ArtifactFilename)
-		humanOutput.State(
-			"Program index", "ready",
-			fmt.Sprintf("objects: %d", len(index.Objects)),
-			fmt.Sprintf("relations: %d", len(index.Relations)),
-			formatRunOutputWallDuration(time.Since(programIndexStarted)),
-			"artifact: program-index.json",
-		)
-	}
-	if len(programIndexes) == 0 {
-		return fmt.Errorf("ordinary analysis produced no exact program index")
-	}
-	if strings.TrimSpace(programDefaultTargetID) == "" {
+	dependencyCatalog = &catalog
+	humanOutput.State(
+		"Base program index", "ready",
+		"language: "+index.Target.Language,
+		fmt.Sprintf("objects: %d", len(index.Objects)),
+		fmt.Sprintf("relations: %d", len(index.Relations)),
+	)
+	if strings.TrimSpace(index.Target.ID) == "" {
 		return fmt.Errorf("ordinary analysis produced program indexes without an exact default target")
 	}
-	indexSet, setErr := programindex.BuildArtifactSet(
-		programDefaultTargetID,
-		programIndexes,
-		programIndexFilenames,
+	if deps.reducedDocumentation == nil {
+		return fmt.Errorf("repository target dispatcher did not provide reduced documentation authority")
+	}
+	if deps.targetOutcomeStageSink != nil {
+		deps.targetOutcomeStageSink(targetoutcome.StageSemanticAnalysis)
+	}
+	ownedDocumentation, documentationErr := deps.reducedDocumentation.Snapshot()
+	if documentationErr != nil {
+		return fmt.Errorf("bind reduced documentation authority: %w", documentationErr)
+	}
+	index, err = enrichProgramIndexForRun(
+		ctx,
+		runDir,
+		dDir,
+		*noCache,
+		deps.llmBatchConcurrency,
+		deps.llmBatchController,
+		newCubeProvider,
+		deps.runProgramCategorization,
+		ownedDocumentation,
+		index,
+		humanOutput,
 	)
+	if err != nil {
+		return err
+	}
+	indexSet, setErr := programindex.BuildArtifactSet(index)
 	if setErr != nil {
 		return setErr
+	}
+	reportProgramIndexSetScaleWarnings(humanOutput, indexSet, []programindex.Index{index})
+	if err := programindex.Persist(runDir, programindex.ArtifactFilename, index); err != nil {
+		return err
 	}
 	if err := programindex.PersistArtifactSet(runDir, indexSet); err != nil {
 		return err
 	}
-	defaultProgramIndex, defaultIndexErr := programindex.ExactIndexByTargetID(
-		programIndexes, programDefaultTargetID,
+	humanOutput.State(
+		"Program index", "ready",
+		"enriched targets: 1",
+		"artifact set: "+programindex.ArtifactSetFilename,
 	)
-	if defaultIndexErr != nil {
-		return defaultIndexErr
+	defaultProgramIndex := index.Snapshot()
+	defaultGroupIndex, err := groupProgramIndexForRun(
+		ctx,
+		runDir,
+		dDir,
+		*noCache,
+		deps.llmBatchConcurrency,
+		deps.llmBatchController,
+		newCubeProvider,
+		deps.runProgramGrouping,
+		index,
+		humanOutput,
+	)
+	if err != nil {
+		return err
 	}
 	if deps.targetOutcomeStageSink != nil {
 		deps.targetOutcomeStageSink(targetoutcome.StageDependencyAnalysis)
 	}
-	if analysisTarget != nil && !programIndexDefault {
-		targetDetails := []string{
-			"kind: " + string(analysisTarget.Kind),
-			"scope: " + analysisTargetSubject(*analysisTarget),
-		}
-		if targetPortfolioOutcome.SemanticState == debugdump.SemanticStateAccepted ||
-			targetPortfolioOutcome.SemanticState == debugdump.SemanticStateCacheHit {
-			targetDetails = append(
-				targetDetails,
-				fmt.Sprintf("target entry files selected: %d", targetPortfolioOutcome.SelectedFileRefs),
-				fmt.Sprintf("unclassified file hypotheses dropped: %d", targetPortfolioOutcome.UnclassifiedFiles),
-				fmt.Sprintf("exact analysis targets restored: %d", targetPortfolioOutcome.SelectedTargets),
-			)
-		}
-		humanOutput.State(
-			"Analysis target", analysisTarget.DisplayPath(),
-			targetDetails...,
-		)
+	index = genericProgramPage.ProgramIndex
+	humanOutput.State(
+		"Analysis target", index.Target.Name,
+		"language: "+index.Target.Language,
+		"kind: "+index.Target.Kind,
+		"selector: "+index.Target.Selector,
+	)
+	if dependencyCatalog == nil {
+		return fmt.Errorf("selected target requires exact dependency authority")
 	}
-	if pythonTargetSelection != nil {
-		targetDetails := []string{
-			"language: python",
-			"kind: " + string(pythonTargetSelection.Default.Kind),
-			fmt.Sprintf("exact analysis targets restored: %d", len(pythonTargetSelection.Targets)),
-		}
-		if targetPortfolioOutcome.SelectedFileRefs > 0 {
-			targetDetails = append(
-				targetDetails,
-				fmt.Sprintf("target entry files selected: %d", targetPortfolioOutcome.SelectedFileRefs),
-				fmt.Sprintf("unclassified file hypotheses dropped: %d", targetPortfolioOutcome.UnclassifiedFiles),
-			)
-		}
-		humanOutput.State(
-			"Analysis target", pythonTargetSelection.Default.DisplayName,
-			targetDetails...,
-		)
-	}
-	if jsTSTargetSelection != nil {
-		if jsTSProgramIndex == nil {
-			return fmt.Errorf("selected JavaScript/TypeScript ProgramIndex is unavailable")
-		}
-		targetDetails := []string{
-			"language: " + jsTSProgramIndex.Target.Language,
-			"kind: " + jsTSProgramIndex.Target.Kind,
-			"selector: " + jsTSProgramIndex.Target.Selector,
-			"project manifest: " + jsTSTargetSelection.Project.Project.ManifestPath,
-		}
-		if targetPortfolioOutcome.SelectedFileRefs > 0 {
-			targetDetails = append(
-				targetDetails,
-				fmt.Sprintf("target entry files selected: %d", targetPortfolioOutcome.SelectedFileRefs),
-				fmt.Sprintf("unclassified file hypotheses dropped: %d", targetPortfolioOutcome.UnclassifiedFiles),
-			)
-		}
-		humanOutput.State(
-			"Analysis target", jsTSTargetSelection.Project.Project.Name,
-			targetDetails...,
-		)
-	}
-	if pythonTargetSelection != nil {
-		if pythonTargetSelection == nil {
-			return fmt.Errorf("Python semantic cubes require the exact target selection authority")
-		}
-		declaredDependencies, declarationErr := runPythonDeclaredDependenciesForRun(
-			ctx,
-			runDir,
-			repositoryCorpus,
-			pythonTargetSelection.Catalog,
-			pythonTargetSelection.Default,
-			defaultProgramIndex,
-			humanOutput,
-		)
-		if declarationErr != nil {
-			return declarationErr
-		}
-		dependencyCatalogStarted := time.Now()
-		catalog, catalogErr := pythondependencies.Build(defaultProgramIndex)
-		if catalogErr != nil {
-			return fmt.Errorf("build Python dependency catalog: %w", catalogErr)
-		}
-		if err := dependencies.Persist(runDir, catalog); err != nil {
-			return err
-		}
-		dependencyCatalog = &catalog
-		humanOutput.State(
-			"Python dependencies", "ready",
-			fmt.Sprintf("direct dependency packages: %d", len(catalog.Dependencies)),
-			formatRunOutputWallDuration(time.Since(dependencyCatalogStarted)),
-			"artifact: "+dependencies.ArtifactFilename,
-		)
-		if catalog.Coverage.State != dependencies.CoverageComplete {
-			return pythonDependencyCoverageError(catalog)
-		}
-
-		if deps.targetOutcomeStageSink != nil {
-			deps.targetOutcomeStageSink(targetoutcome.StageSemanticAnalysis)
-		}
-		semanticResult, semanticErr := runSemanticPipelineForRun(
-			ctx,
-			runDir,
-			dDir,
-			*noCache,
-			stopAfter,
-			"Python",
-			pipeline.Authorities{
-				RepositoryName: repoRunLabel(repo),
-				Repository:     repositoryCorpus,
-				ProgramIndex:   defaultProgramIndex,
-				Dependencies:   catalog,
-				Declarations:   &declaredDependencies,
-				ReadmeRoles:    boundReadmeRoles,
-			},
-			humanOutput,
-			deps.llmBatchConcurrency,
-			deps.llmBatchController,
-			newCubeProvider,
-		)
-		if semanticErr != nil {
-			return semanticErr
-		}
-		if semanticResult.StoppedAfter != "" {
-			humanOutput.State(
-				"Run", "stopped",
-				"requested checkpoint: STOP_AFTER=ActivityEntrypoints",
-				"last artifact: "+activityentrypoint.ArtifactFilename,
-			)
-			return nil
-		}
-	}
-	if jsTSTargetSelection != nil {
-		if jsTSTargetSelection == nil {
-			return fmt.Errorf("JavaScript/TypeScript semantic cubes require the exact package project selection authority")
-		}
-		if dependencyCatalog == nil {
-			return fmt.Errorf("JavaScript/TypeScript semantic cubes require the exact dependency catalog")
-		}
-		if deps.targetOutcomeStageSink != nil {
-			deps.targetOutcomeStageSink(targetoutcome.StageSemanticAnalysis)
-		}
-		semanticResult, semanticErr := runSemanticPipelineForRun(
-			ctx,
-			runDir,
-			dDir,
-			*noCache,
-			stopAfter,
-			"JavaScript/TypeScript",
-			pipeline.Authorities{
-				RepositoryName: repoRunLabel(repo),
-				Repository:     repositoryCorpus,
-				ProgramIndex:   defaultProgramIndex,
-				Dependencies:   *dependencyCatalog,
-				Declarations:   nil,
-				ReadmeRoles:    boundReadmeRoles,
-			},
-			humanOutput,
-			deps.llmBatchConcurrency,
-			deps.llmBatchController,
-			newCubeProvider,
-		)
-		if semanticErr != nil {
-			return semanticErr
-		}
-		if semanticResult.StoppedAfter != "" {
-			humanOutput.State(
-				"Run", "stopped",
-				"requested checkpoint: STOP_AFTER=ActivityEntrypoints",
-				"last artifact: "+activityentrypoint.ArtifactFilename,
-			)
-			return nil
-		}
-	}
-	if !programIndexDefault {
-		if analysisTarget == nil {
-			return fmt.Errorf("analysis cubes require one exact Go analysis target")
-		}
-		if strings.TrimSpace(repositoryName) == "" {
-			return fmt.Errorf("analysis cubes require the semantic repository name")
-		}
-		if repositoryCorpus == nil {
-			return fmt.Errorf("analysis cubes require the repository corpus")
-		}
-		if dependencyCatalog == nil {
-			return fmt.Errorf("analysis cubes require the target-scoped dependency catalog")
-		}
-		if err := dependencies.Persist(runDir, *dependencyCatalog); err != nil {
-			return err
-		}
-		if deps.targetOutcomeStageSink != nil {
-			deps.targetOutcomeStageSink(targetoutcome.StageSemanticAnalysis)
-		}
-		semanticResult, semanticErr := runSemanticPipelineForRun(
-			ctx,
-			runDir,
-			dDir,
-			*noCache,
-			stopAfter,
-			"Go",
-			pipeline.Authorities{
-				RepositoryName: repositoryName,
-				Repository:     repositoryCorpus,
-				ProgramIndex:   defaultProgramIndex,
-				Dependencies:   *dependencyCatalog,
-				Declarations:   nil,
-				ReadmeRoles:    boundReadmeRoles,
-			},
-			humanOutput,
-			deps.llmBatchConcurrency,
-			deps.llmBatchController,
-			newCubeProvider,
-		)
-		if semanticErr != nil {
-			return semanticErr
-		}
-		if semanticResult.StoppedAfter != "" {
-			humanOutput.State(
-				"Run", "stopped",
-				"requested checkpoint: STOP_AFTER=ActivityEntrypoints",
-				"last artifact: "+activityentrypoint.ArtifactFilename,
-			)
-			return nil
-		}
+	reportDependencyCatalogScaleWarnings(humanOutput, defaultProgramIndex.Target, *dependencyCatalog)
+	if err := dependencies.Persist(runDir, *dependencyCatalog); err != nil {
+		return err
 	}
 	if deps.targetOutcomeStageSink != nil {
 		deps.targetOutcomeStageSink(targetoutcome.StageTargetPage)
 	}
 	var reportPath string
-	reconciliationStarted := time.Now()
-	humanOutput.Stage("Repository authority", "reconciling captured inputs")
 	reportData, err := report.ReadRunDir(runDir)
 	if err != nil {
 		return fmt.Errorf("read captured report inputs: %w", err)
 	}
+	reportTarget := reportDefaultProgramTarget(reportData)
+	targetReportScaleWarnings := report.ReportInputScaleWarnings(reportData)
+	targetReportScaleWarnings = append(
+		targetReportScaleWarnings,
+		report.CapturedReportInputFileScaleWarnings(runDir)...,
+	)
+	if manifest, manifestErr := report.ReadRunManifest(runDir); manifestErr == nil {
+		targetReportScaleWarnings = append(
+			targetReportScaleWarnings,
+			report.RunManifestScaleWarnings(manifest)...,
+		)
+	}
+	reportInputScaleWarnings(humanOutput, targetReportScaleWarnings, reportTarget)
+	reconciliationStarted := time.Now()
+	humanOutput.Stage("Repository authority", "reconciling captured inputs")
 	capturedInputPaths, err := report.CapturedInputPaths(reportData)
 	if err != nil {
 		return fmt.Errorf("collect captured report inputs: %w", err)
@@ -1153,32 +730,68 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		fmt.Sprintf("captured inputs: %d", len(capturedInputPaths)),
 		formatRunOutputWallDuration(time.Since(reconciliationStarted)),
 	)
-	generateAuthorizedReport := func() error {
+	generateAuthorizedReport := func() (report.GenerationDiagnostics, error) {
 		if gitLabURL != "" {
-			return report.GenerateAuthorizedGitLab(runDir, authority, gitLabURL)
+			return report.GenerateAuthorizedGitLabWithDiagnostics(runDir, authority, gitLabURL)
 		}
 		if gitHubURL != "" {
-			return report.GenerateAuthorizedGitHub(runDir, authority, gitHubURL)
+			return report.GenerateAuthorizedGitHubWithDiagnostics(runDir, authority, gitHubURL)
 		}
-		return report.GenerateAuthorized(runDir, authority)
+		return report.GenerateAuthorizedWithDiagnostics(runDir, authority)
 	}
 	reportStarted := time.Now()
 	if !deps.deferredPortfolioHTML {
 		humanOutput.Stage("Report", "generating authorized Program report")
-		if err := generateAuthorizedReport(); err != nil {
-			return fmt.Errorf("generate authorized browser report: %w", err)
+		generationDiagnostics, generationErr := generateAuthorizedReport()
+		alreadyReported := reportScaleWarningKeySet(targetReportScaleWarnings)
+		generationScaleWarnings := excludeReportScaleWarnings(
+			generationDiagnostics.ScaleWarnings(), alreadyReported,
+		)
+		reportInputScaleWarnings(humanOutput, generationScaleWarnings, reportTarget)
+		generationTargetScaleWarnings := reportTargetBoundInputScaleWarnings(
+			humanOutput,
+			excludeTargetReportScaleWarnings(
+				generationDiagnostics.TargetScaleWarnings(), alreadyReported,
+			),
+			reportTarget,
+		)
+		targetReportScaleWarnings = append(
+			targetReportScaleWarnings,
+			generationScaleWarnings...,
+		)
+		targetReportScaleWarnings = append(
+			targetReportScaleWarnings,
+			generationTargetScaleWarnings...,
+		)
+		if generationErr != nil {
+			return fmt.Errorf("generate authorized browser report: %w", generationErr)
 		}
+		reportScaleWarnings := make([]report.ReportInputScaleWarning, 0)
+		if manifest, manifestErr := report.ReadRunManifest(runDir); manifestErr == nil {
+			reportScaleWarnings = append(
+				reportScaleWarnings,
+				report.RunManifestScaleWarnings(manifest)...,
+			)
+		}
+		reportScaleWarnings = append(
+			reportScaleWarnings,
+			report.PublishedReportScaleWarnings(runDir)...,
+		)
+		reportScaleWarnings = excludeReportScaleWarnings(
+			reportScaleWarnings,
+			reportScaleWarningKeySet(targetReportScaleWarnings),
+		)
+		reportInputScaleWarnings(humanOutput, reportScaleWarnings, reportTarget)
 	}
 	reportPath = filepath.Join(runDir, "report.html")
-	repositoryPortfolioPublication := !deps.siblingTargetRun && targetRunContainer != nil
-	if !deps.siblingTargetRun && !repositoryPortfolioPublication {
+	if !deps.siblingTargetRun {
 		humanOutput.State(
 			"Report", "generated",
 			formatRunOutputWallDuration(time.Since(reportStarted)),
 		)
 		humanOutput.Stage("Report", "path: "+reportPath)
 	}
-	if !deps.siblingTargetRun && !repositoryPortfolioPublication && staticSourceHost != "" {
+	if !deps.siblingTargetRun && staticSourceHost != "" {
 		humanOutput.Stage(
 			"Report",
 			fmt.Sprintf("standalone host: %s", staticSourceHost),
@@ -1187,24 +800,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		)
 	}
 	publication := report.PublicationAssessment{Status: report.PublicationReady}
-	var backingPage report.TargetNavigationPage
-	var runtimeTargetInput runtimeportfolio.TargetInput
-	if deps.deferredPortfolioHTML {
-		backingPage, err = report.PreparedTargetNavigationPage(runDir, reportData)
-		if err != nil {
-			return errors.Join(
-				fmt.Errorf("retain prepared report page identity: %w", err),
-				quarantineTargetPagePublication([]string{runDir}),
-			)
-		}
-		runtimeTargetInput, err = runtimePortfolioTargetInput(reportData, backingPage, false)
-		if err != nil {
-			return errors.Join(
-				fmt.Errorf("retain generated report runtime projection: %w", err),
-				quarantineTargetPagePublication([]string{runDir}),
-			)
-		}
-	} else {
+	backingPage, err := preparePublishedTargetAuthority(
+		func() (report.TargetNavigationPage, error) {
+			return report.PreparedTargetNavigationPage(runDir, reportData)
+		},
+	)
+	if err != nil {
+		return errors.Join(err, quarantineTargetPagePublication([]string{runDir}))
+	}
+	if !deps.deferredPortfolioHTML {
 		publication, err = report.AssessRunPublication(runDir)
 		if err != nil {
 			return errors.Join(
@@ -1217,12 +821,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		RunID:                 runID,
 		RunDir:                runDir,
 		ProgramPage:           backingPage,
-		RepositoryName:        reportData.RepoName,
-		RuntimeTargetInput:    runtimeTargetInput,
+		GroupIndex:            defaultGroupIndex,
+		ReportScaleWarnings:   append([]report.ReportInputScaleWarning(nil), targetReportScaleWarnings...),
 		Authority:             authority,
 		RepositoryStateSHA256: initialRepositoryStateSHA256,
 		SelectedRevision:      initialState.Head,
-		GoTarget:              goTarget.String(),
 		GitLabURL:             gitLabURL,
 		GitHubURL:             gitHubURL,
 	}
@@ -1230,55 +833,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		publishedTarget.SelectedTargetKey = deps.preselectedTarget.Key.String()
 		publishedTarget.SelectedTargetDisplay = repositoryTypedTargetDisplay(*deps.preselectedTarget)
 	}
-	if automaticGoTargetSelection != nil {
-		publishedTarget.GoTargetSource = automaticGoTargetSelection.Source
-		publishedTarget.GoTargetBaseline = automaticGoTargetSelection.Baseline
-	}
-	if analysisTarget != nil {
-		publishedTarget.Target = analysisTarget.Snapshot()
-	}
 	if deps.publishedTargetSink != nil {
 		deps.publishedTargetSink(publishedTarget)
-	}
-	if defaultTargetConsole != nil && !defaultTargetConsoleClosed && !repositoryPortfolioPublication {
-		humanOutput.TargetPage("complete", *defaultTargetConsole)
-		defaultTargetConsoleClosed = true
-	}
-	if repositoryPortfolioPublication {
-		portfolioDeps := deps
-		portfolioDeps.ctx = ctx
-		portfolioDeps.coreReadmeRoleRows = cloneReadmeRoleLog(coreReadmeRoleRows)
-		portfolioDeps.preparedGoWorkspace = preparedGoWorkspace
-		portfolioDeps.runtimeCacheRoot = dDir
-		portfolioDeps.runtimeNoCache = *noCache
-		publication, err = publishTargetPagePortfolio(
-			repo,
-			extraArgs,
-			portfolioDeps,
-			*targetRunContainer,
-			publishedTarget,
-			humanOutput,
-		)
-		if err != nil {
-			return fmt.Errorf("publish selected target pages: %w", err)
-		}
-		if defaultTargetConsole != nil && !defaultTargetConsoleClosed {
-			humanOutput.TargetPage("complete", *defaultTargetConsole)
-			defaultTargetConsoleClosed = true
-		}
-		humanOutput.State(
-			"Report", "generated",
-			formatRunOutputWallDuration(time.Since(reportStarted)),
-		)
-		humanOutput.Stage("Report", "path: "+reportPath)
-		if staticSourceHost != "" {
-			humanOutput.Stage(
-				"Report",
-				fmt.Sprintf("standalone host: %s", staticSourceHost),
-				"captured revision: "+initialState.Head,
-				"remote availability is not checked; ensure the captured commit is pushed before sharing",
-			)
-		}
 	}
 	if !deps.siblingTargetRun {
 		linkLatest(dDir, runDir, runOutputWarningSink{
@@ -1373,21 +929,6 @@ func validateImplicitRepositorySourceLink(
 	)
 }
 
-func semanticStopAfter(value string) (pipeline.Stage, error) {
-	value = strings.TrimSpace(value)
-	switch value {
-	case "":
-		return "", nil
-	case "ActivityEntrypoints":
-		return pipeline.StageActivityEntrypoints, nil
-	default:
-		return "", fmt.Errorf(
-			"invalid STOP_AFTER=%q: supported checkpoint is ActivityEntrypoints; unset STOP_AFTER to run the complete analysis",
-			value,
-		)
-	}
-}
-
 func actionableFlagError(args []string, parseErr error) error {
 	guidance := map[string]string{
 		"offline":         "repomap is online-only; remove --offline",
@@ -1405,14 +946,6 @@ func actionableFlagError(args []string, parseErr error) error {
 		}
 	}
 	return fmt.Errorf("%w; run 'repomap --help' for supported flags", parseErr)
-}
-
-func targetRunContainerHasExactRefs(container snapshot.TargetRunContainer, expected []string) bool {
-	actual := make([]string, len(container.Targets))
-	for index, projection := range container.Targets {
-		actual[index] = projection.Target.Ref
-	}
-	return exactRefSet(actual, expected)
 }
 
 func exactRefSet(actual, expected []string) bool {
@@ -1455,31 +988,79 @@ func automaticGoTargetAllowed(explicit string, getenv func(string) string) bool 
 	return getenv("GOOS") == "" && getenv("GOARCH") == ""
 }
 
+func resolveGoBuildTagsForRepository(hasGoEvidence bool, raw string) ([]string, error) {
+	if !hasGoEvidence {
+		return []string{}, nil
+	}
+	return gotarget.ParseBuildTags(raw)
+}
+
+// prepareGoBuildTags may defer an invalid Go-only environment value only long
+// enough to resolve one explicit language-neutral target. Default selection
+// still fails before its model request, while an exact Python or JavaScript /
+// TypeScript target is not blocked by irrelevant Go configuration.
+func prepareGoBuildTags(
+	hasGoEvidence bool,
+	raw string,
+	targetOverride string,
+) (tags []string, deferredErr error, immediateErr error) {
+	tags, err := resolveGoBuildTagsForRepository(hasGoEvidence, raw)
+	if err == nil {
+		return tags, nil, nil
+	}
+	if strings.TrimSpace(targetOverride) != "" {
+		return []string{}, err, nil
+	}
+	return nil, nil, err
+}
+
+func repositoryTargetPlanContainsGo(plan repositoryTargetPlan) bool {
+	for _, target := range plan.Targets {
+		if target.Key.Adapter == repositoryTargetAdapterGo {
+			return true
+		}
+	}
+	return false
+}
+
 func directCallEdgeCeilingError(target string, depth, edgeLimit, safeDepth int) error {
+	depthLabel := "all reachable calls"
+	if depth > 0 {
+		depthLabel = strconv.Itoa(depth)
+	}
 	lines := []string{fmt.Sprintf(
-		"Go call analysis for target %s exceeded --edges-limit=%d at --depth=%d",
-		target, edgeLimit, depth,
+		"Go call analysis for target %s exceeded the explicit --edges-limit=%d at depth %s",
+		target, edgeLimit, depthLabel,
 	)}
-	if safeDepth >= 1 && safeDepth < depth {
+	if safeDepth >= 1 && (depth == 0 || safeDepth < depth) {
 		lines = append(lines, fmt.Sprintf(
-			"you can decrease depth via --depth %d (default %d; this depth is known to fit the current edge ceiling)",
-			safeDepth, surfacediscovery.DefaultDirectCallDepth,
+			"you can opt into a narrower traversal with --depth %d; this depth is known to fit the current edge ceiling",
+			safeDepth,
 		))
 	}
-	if edgeLimit < surfacediscovery.MaxDirectCallIndexEdges {
+	if edgeLimit > 0 {
 		next := edgeLimit * 2
-		if next <= edgeLimit || next > surfacediscovery.MaxDirectCallIndexEdges {
-			next = surfacediscovery.MaxDirectCallIndexEdges
+		if next > edgeLimit {
+			lines = append(lines, fmt.Sprintf(
+				"to preserve depth, try --edges-limit %d or use --edges-limit 0 to retain every edge",
+				next,
+			))
 		}
-		lines = append(lines, fmt.Sprintf(
-			"to preserve depth, try --edges-limit %d (default %d; maximum %d; the full edge count is not computed after the safety stop)",
-			next, surfacediscovery.DefaultDirectCallEdgeLimit, surfacediscovery.MaxDirectCallIndexEdges,
-		))
 	}
 	lines = append(lines,
 		"the retry rebuilds local SSA and the call index; the standard Go build cache remains reusable, and no provider call was made",
 	)
 	return errors.New(strings.Join(lines, "\n"))
+}
+
+func validateDirectCallControls(depth, edgeLimit int) error {
+	if depth < 0 {
+		return fmt.Errorf("--depth must be non-negative (0 keeps all reachable calls)")
+	}
+	if edgeLimit < 0 {
+		return fmt.Errorf("--edges-limit must be non-negative (0 keeps all exact edges)")
+	}
+	return nil
 }
 
 func repositoryStateHasAnalyzedSubmodule(state freshness.RepositoryState) bool {
@@ -1554,8 +1135,8 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "\nFlags:\n")
 	fmt.Fprintf(writer, "  --target TARGET             analyze exactly one explicit target\n")
 	fmt.Fprintf(writer, "  --force-platform GOOS/GOARCH override normal Go platform selection\n")
-	fmt.Fprintf(writer, "  --depth N                   target call-graph depth (default: %d)\n", surfacediscovery.DefaultDirectCallDepth)
-	fmt.Fprintf(writer, "  --edges-limit N             maximum exact target call-graph edges (default: %d)\n", surfacediscovery.DefaultDirectCallEdgeLimit)
+	fmt.Fprintf(writer, "  --depth N                   target call-graph depth (0 = all; default: 0)\n")
+	fmt.Fprintf(writer, "  --edges-limit N             maximum exact target call-graph edges (0 = all; default: 0)\n")
 	fmt.Fprintf(writer, "  --github-url URL            static GitHub source links; does not select a repository\n")
 	fmt.Fprintf(writer, "  --gitlab-url URL            static GitLab source links; does not select a repository\n")
 	fmt.Fprintf(writer, "  --no-open                   do not open the report\n")
@@ -1567,6 +1148,7 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  --help, -h                  show this help\n")
 	fmt.Fprintf(writer, "  --version                   show version\n")
 	fmt.Fprintf(writer, "\nEnvironment:\n")
+	fmt.Fprintf(writer, "  GOTAGS               additional Go build tags (comma or whitespace separated)\n")
 	fmt.Fprintf(writer, "  REPOMAP_LLM_ENDPOINT full OpenAI-compatible chat/completions URL\n")
 	fmt.Fprintf(writer, "  REPOMAP_LLM_MODEL\n")
 	fmt.Fprintf(writer, "  REPOMAP_LLM_API_KEY (for bearer auth)\n")

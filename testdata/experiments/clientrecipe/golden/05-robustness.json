@@ -8,12 +8,12 @@
     "h0_version": 1,
     "h1_version": 1,
     "evaluation_version": 1,
-    "baseline_authority_sha256": "a6f492ded210630277f42eac2f88161f0cdf882ad7f04baf50eb4d26ac50b510",
-    "baseline_h0_sha256": "25198acc31182428997f5eee842d56bb6ff2b9e526c0d0945b925c916d447e74",
-    "baseline_h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
+    "baseline_authority_sha256": "acf10fb2236602bd7db0923ea7c77692106ab53a7a6c513c6c45b5e7536ed47b",
+    "baseline_h0_sha256": "ecba2660c284721761ba4871d7cb148decac31e930df4b1d792d3b4f29c290a6",
+    "baseline_h1_sha256": "ec8f7411ad09e3c68f5b8deabd30ea71753fb7774b2f6806c5b482c5a5c4cb01",
     "baseline_oracle_sha256": "5474c64528cded2087fa485045d60072818ca6c63c5e9d13756ddaf287a35b40",
-    "baseline_evaluation_sha256": "be06664fb8f3be45bd8cc1c250cdef8f506fb74800799e2ce9ac1f5d1bce4a58",
-    "source_sha256": "aaa0429ce8aadd59379cf16f53c0ce50a313b06c74c68e3634a618056ce0089d",
+    "baseline_evaluation_sha256": "2e69289caea910921037449ad5a3e8f654ede23c32e44fc71edd50ea0aeb8631",
+    "source_sha256": "c81b2dafe112358068a05e4dd3c6ac595195713c226260ef8c2214511013b7c2",
     "sources": [
       {
         "path": "go.mod",
@@ -33,15 +33,15 @@
       },
       {
         "path": "internal/experiments/clientrecipe/contracts.go",
-        "sha256": "7753c863a81122674599ba75b94631e585ccd7e934ef0cf3ad0c098911123b0d"
+        "sha256": "6e45264e1036ae36a5daf13575fcb97af4ab2f5bde6a92446b3410fbdce65737"
       },
       {
         "path": "internal/experiments/clientrecipe/evaluation.go",
-        "sha256": "3903c635bcb4412f01bbac21cc3918d370252935f2774cb9fb7b652ae205f67f"
+        "sha256": "29544784be06f202f293516a00dc597e3286e387166be94816b99b19e72cee82"
       },
       {
         "path": "internal/experiments/clientrecipe/go_authority.go",
-        "sha256": "0d61b5c77d5f4b7582e4a07cbf210f3050860ba62a27817d3c84fe5a70b1df53"
+        "sha256": "2d25d76d1f6898f8f32f34655503ad6150c23919cb0cbbe00e3ad4e922b628ec"
       },
       {
         "path": "internal/experiments/clientrecipe/h0.go",
@@ -77,7 +77,7 @@
       },
       {
         "path": "internal/programindex/index.go",
-        "sha256": "bbdc04ad8af87c17098f716eddfa07420fd3683747695af7ef281fd07cc8994e"
+        "sha256": "379691bb39b1440bfc3ce817c8d61ac54e2de4a4d00a142dda5659d22c393acb"
       },
       {
         "path": "testdata/experiments/clientrecipe/negative_invariants.json",
@@ -118,7 +118,7 @@
         "statement": "reduce roles over complete instances: all is required, at least two and two-thirds is common, and the remainder is optional"
       }
     ],
-    "sha256": "934a4b8b7f316f44e6b83172dc8e56c6ed56dd7d8be36c5d9670c9a68fb25f8d"
+    "sha256": "014affc25712645629fc2e65aad1d98dc997ab9a12ae52a1c8c503b974395c30"
   },
   "scorecard": {
     "verdict": "PASS",

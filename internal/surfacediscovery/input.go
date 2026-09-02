@@ -18,8 +18,10 @@ const (
 	AnalysisTargetExecutablePackage = "executable_package"
 	AnalysisTargetModuleLibrary     = "module_library"
 
-	maxPackageDiagnostics = 128
-	maxDiagnosticBytes    = 512
+	// MaxPackageDiagnostics is the former ordinary collection size. It remains
+	// only as a scale-warning threshold; every distinct diagnostic is retained.
+	MaxPackageDiagnostics   = 128
+	advisoryDiagnosticBytes = 512
 )
 
 // Input is an exact, already-selected Go analysis boundary. The package does
@@ -86,7 +88,7 @@ func normalizeAnalysisTargetInput(
 			return nil, fmt.Errorf("surface discovery: analysis target has an invalid target package")
 		}
 	}
-	if len(result.TargetPackages) == 0 || len(result.TargetPackages) > MaxDirectCallIndexNodes ||
+	if len(result.TargetPackages) == 0 ||
 		!sort.StringsAreSorted(result.TargetPackages) || !uniqueStrings(result.TargetPackages) {
 		return nil, fmt.Errorf("surface discovery: analysis target packages are not canonical sorted unique order")
 	}
@@ -210,12 +212,10 @@ func (a *analyzer) recordPackageLoadOutcomes(allPackages map[string]*packages.Pa
 				continue
 			}
 			seen[id] = struct{}{}
-			if len(a.result.Coverage.PackageDiagnostics) < maxPackageDiagnostics {
-				a.result.Coverage.PackageDiagnostics = append(a.result.Coverage.PackageDiagnostics, PackageDiagnostic{
-					ID: id, Kind: packageErrorKind(packageError.Kind), Message: message,
-					Package: packageIdentity(pkg), Location: location,
-				})
-			}
+			a.result.Coverage.PackageDiagnostics = append(a.result.Coverage.PackageDiagnostics, PackageDiagnostic{
+				ID: id, Kind: packageErrorKind(packageError.Kind), Message: message,
+				Package: packageIdentity(pkg), Location: location,
+			})
 		}
 	}
 }
@@ -379,9 +379,6 @@ func boundedDiagnosticMessage(message, root string) string {
 	root = filepath.Clean(root)
 	message = strings.ReplaceAll(message, root, ".")
 	message = strings.ReplaceAll(message, filepath.ToSlash(root), ".")
-	if len(message) > maxDiagnosticBytes {
-		message = message[:maxDiagnosticBytes]
-	}
 	return message
 }
 

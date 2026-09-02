@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"sort"
@@ -86,6 +88,116 @@ func TestPrepareAuthorityDeterministicAndSingleLoad(t *testing.T) {
 		}
 	}
 	assertExperimentGolden(t, "01-input-authority.json", firstRaw)
+}
+
+func TestGoPackageOriginsUseExactModuleAuthority(t *testing.T) {
+	const modulePath = "example.com/application"
+	workspaceTypes := types.NewPackage(modulePath+"/internal/service", "service")
+	platformTypes := types.NewPackage("net/http", "http")
+	// A nested module is an external package even though its raw package path
+	// starts with the workspace module path.
+	packageTypes := types.NewPackage(modulePath+"/plugin/client", "client")
+	workspace := &packages.Package{
+		PkgPath: workspaceTypes.Path(), Types: workspaceTypes,
+		Module:  &packages.Module{Path: modulePath, Main: true},
+		Imports: map[string]*packages.Package{},
+	}
+	platform := &packages.Package{
+		PkgPath: platformTypes.Path(), Types: platformTypes,
+		Imports: map[string]*packages.Package{},
+	}
+	externalPackage := &packages.Package{
+		PkgPath: packageTypes.Path(), Types: packageTypes,
+		Module:  &packages.Module{Path: modulePath + "/plugin"},
+		Imports: map[string]*packages.Package{},
+	}
+	workspace.Imports[platform.PkgPath] = platform
+	workspace.Imports[externalPackage.PkgPath] = externalPackage
+
+	origins, err := goPackageOrigins([]*packages.Package{workspace}, modulePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !origins[workspace.PkgPath].workspace ||
+		origins[platform.PkgPath].externalKind != programindex.ExternalAuthorityPlatform ||
+		origins[externalPackage.PkgPath].workspace ||
+		origins[externalPackage.PkgPath].externalKind != programindex.ExternalAuthorityPackage {
+		t.Fatalf("package origins = %#v", origins)
+	}
+
+	function := types.NewFunc(
+		token.NoPos, packageTypes, "Send",
+		types.NewSignature(nil, types.NewTuple(), types.NewTuple(), false),
+	)
+	objects := make([]programindex.ObjectInput, 0, 1)
+	ref, external, err := relationObjectRef(
+		function, origins, map[types.Object]string{}, map[string]string{}, &objects,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref == "" || !external || len(objects) != 1 || objects[0].External == nil ||
+		objects[0].External.AuthorityKind != programindex.ExternalAuthorityPackage ||
+		objects[0].External.PackagePath != packageTypes.Path() {
+		t.Fatalf("external object = ref %q, external %t, objects %#v", ref, external, objects)
+	}
+}
+
+func TestRelationObjectRefRejectsUnknownPackageOrigin(t *testing.T) {
+	unknownPackage := types.NewPackage("example.com/unknown/client", "client")
+	function := types.NewFunc(
+		token.NoPos, unknownPackage, "Send",
+		types.NewSignature(nil, types.NewTuple(), types.NewTuple(), false),
+	)
+	objects := make([]programindex.ObjectInput, 0, 1)
+	_, _, err := relationObjectRef(
+		function, map[string]goPackageOrigin{}, map[types.Object]string{}, map[string]string{}, &objects,
+	)
+	if err == nil || !strings.Contains(err.Error(), "no exact loaded origin authority") {
+		t.Fatalf("unknown package origin error = %v", err)
+	}
+	if len(objects) != 0 {
+		t.Fatalf("unknown package origin produced objects: %#v", objects)
+	}
+}
+
+func TestAuthorityExternalSymbolsCarryExactOriginKind(t *testing.T) {
+	authority := preparedFixtureAuthority(t)
+	want := map[string]programindex.ExternalAuthorityKind{
+		"context":                   programindex.ExternalAuthorityPlatform,
+		"fmt":                       programindex.ExternalAuthorityPlatform,
+		"io":                        programindex.ExternalAuthorityPlatform,
+		"log":                       programindex.ExternalAuthorityPlatform,
+		"net/http":                  programindex.ExternalAuthorityPlatform,
+		"sync":                      programindex.ExternalAuthorityPlatform,
+		"example.com/clickhousesdk": programindex.ExternalAuthorityPackage,
+		"example.com/kubernetessdk": programindex.ExternalAuthorityPackage,
+		"example.com/legacysdk":     programindex.ExternalAuthorityPackage,
+		"example.com/notifiersdk":   programindex.ExternalAuthorityPackage,
+		"example.com/vaultsdk":      programindex.ExternalAuthorityPackage,
+	}
+	seen := make(map[string]bool, len(want))
+	for _, object := range authority.Program.Objects {
+		if object.Kind != programindex.ObjectExternalSymbol {
+			continue
+		}
+		if object.External == nil {
+			t.Fatalf("external object %s has no external authority", object.ID)
+		}
+		kind, found := want[object.External.PackagePath]
+		if !found {
+			t.Fatalf("unexpected raw external package path %q", object.External.PackagePath)
+		}
+		if object.External.AuthorityKind != kind {
+			t.Errorf("external package %q authority = %q, want %q", object.External.PackagePath, object.External.AuthorityKind, kind)
+		}
+		seen[object.External.PackagePath] = true
+	}
+	for packagePath := range want {
+		if !seen[packagePath] {
+			t.Errorf("external package %q was not retained", packagePath)
+		}
+	}
 }
 
 func TestBlindAuthorityRelationObservationLedger(t *testing.T) {

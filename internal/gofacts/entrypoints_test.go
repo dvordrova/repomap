@@ -2,11 +2,13 @@ package gofacts
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/reporead"
@@ -120,13 +122,16 @@ func TestResolveMainEntrypointsUsesDeclarationsInBuildSelectedFiles(t *testing.T
 			}
 			defer reader.Close()
 
-			entrypoints, warnings := resolveMainEntrypoints(reader, []Entrypoint{{
+			entrypoints, warnings, scaleWarnings := resolveMainEntrypoints(reader, []Entrypoint{{
 				ImportPath: "example.com/project/cmd/app",
 				PackageDir: "cmd/app",
 				GoFiles:    test.goFiles,
 			}})
 			if len(warnings) != 0 {
 				t.Fatalf("warnings = %v, want none", warnings)
+			}
+			if len(scaleWarnings) != 0 {
+				t.Fatalf("scale warnings = %v, want none", scaleWarnings)
 			}
 			if len(entrypoints) != test.wantCount {
 				t.Fatalf("entrypoints = %#v, want %d", entrypoints, test.wantCount)
@@ -145,6 +150,45 @@ func TestResolveMainEntrypointsUsesDeclarationsInBuildSelectedFiles(t *testing.T
 				t.Fatalf("anchor = %#v, want %s:%d go main v%d", anchor, test.wantPath, test.wantLine, EntrypointAnchorVersion)
 			}
 		})
+	}
+}
+
+func TestResolveMainEntrypointsRetainsFilesPastUsualSize(t *testing.T) {
+	repo := t.TempDir()
+	packageDir := filepath.Join(repo, "cmd", "app")
+	if err := os.MkdirAll(packageDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	goFiles := make([]string, 0, advisoryEntrypointFilesPerPackage+1)
+	for index := 0; index < advisoryEntrypointFilesPerPackage; index++ {
+		name := fmt.Sprintf("source_%03d.go", index)
+		if err := os.WriteFile(filepath.Join(packageDir, name), []byte("package main\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		goFiles = append(goFiles, name)
+	}
+	const mainFile = "zz_main.go"
+	if err := os.WriteFile(filepath.Join(packageDir, mainFile), []byte("package main\nfunc main() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	goFiles = append(goFiles, mainFile)
+
+	reader, err := reporead.New(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	entrypoints, failures, scaleWarnings := resolveMainEntrypoints(reader, []Entrypoint{{
+		ImportPath: "example.com/project/cmd/app", PackageDir: "cmd/app", GoFiles: goFiles,
+	}})
+	if len(failures) != 0 {
+		t.Fatalf("failures = %v", failures)
+	}
+	if len(entrypoints) != 1 || len(entrypoints[0].Anchors) != 1 || entrypoints[0].Anchors[0].Path != "cmd/app/"+mainFile {
+		t.Fatalf("entrypoint after usual file count = %#v", entrypoints)
+	}
+	if len(scaleWarnings) != 1 || !strings.Contains(scaleWarnings[0], "retained all 257") {
+		t.Fatalf("scale warnings = %v", scaleWarnings)
 	}
 }
 

@@ -25,9 +25,9 @@ const (
 
 	cycle4CandidateID = "authority-collision-fix-v2"
 
-	historicalBlindTerminalRawSHA256       = "147036852636ed4315e110fe746a9aeeb2282affe90557da3b46189df3cd82e1"
-	historicalBlindTerminalInternalSHA256  = "3181eae0d90ec8d2243983770cff2697b72c1cfccaad13d0bb883c7f2ce571c3"
-	historicalBlindFixtureReceiptRawSHA256 = "ff62d783deb5d75f1df7261b532e01ad4d7984b4d562e383f3dbe5b4d227cfc3"
+	historicalBlindTerminalRawSHA256       = "e4501c066ce94febe0d2d98992743f3e95da54a28efb8fd2538501b0ee317da7"
+	historicalBlindTerminalInternalSHA256  = "8fc36a875591be820092790fe0335ceb13d652cfa83865a5cb35e7c6d18bb659"
+	historicalBlindFixtureReceiptRawSHA256 = "ab69d7842b7509abddbc302b7e2266d47a70f2530e24fcebfcedcb21208b4f89"
 )
 
 type cycle4ArtifactBinding struct {
@@ -852,7 +852,7 @@ func (value cycle4ExtractorFreeze) Validate(
 	}
 	wantBlind := cycle4BlindSnapshot{
 		AuthorBriefRawSHA256:     "2ac6286b63b3ab2ed8017de9052597bfeb87a771fc221b9823f1fd8322ff1e81",
-		PreregistrationRawSHA256: "cc33da2a49676ba7df89eed10b16291a1d5b6115e63ac02e98be4244c1d095e4",
+		PreregistrationRawSHA256: "1d7e51ffde62140742d7f04aa35dbfec3c5ac974aa75dc2088194c2850195b70",
 		OracleSchemaRawSHA256:    "409de2cae576e9c2e759fa3a6fea811adbb3ecefba0c0bf761c0e59414ce24ea",
 		OracleRawSHA256:          "ad1ec48672b31ccd7419fa352836ea2f73eba6141e2e54cf5a1dd8041f569023",
 		FixtureReceiptRawSHA256:  historicalBlindFixtureReceiptRawSHA256,

@@ -1,13 +1,17 @@
 package pythondeclareddependencies
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/dependencydeclaration"
+	"github.com/dvordrova/repomap/internal/gitfiles"
 )
 
 func TestRequirementParserRetainsIdentityAndRedactsLocator(t *testing.T) {
@@ -164,5 +168,49 @@ func TestLogicalRequirementsPreserveIncludeAndContinuationLocation(t *testing.T)
 	kind, argument, ok := parseIncludeDirective(lines[0].text)
 	if !ok || kind != dependencydeclaration.IncludeRequirement || argument != "constraints/base.txt" {
 		t.Fatalf("include = %q %q %v", kind, argument, ok)
+	}
+}
+
+func TestRequirementsRetainLogicalLineAboveFormerThreshold(t *testing.T) {
+	content := []byte("httpx==0.27 # " + strings.Repeat("x", AdvisoryLogicalRequirementBytes+1) + "\n")
+	source := &sourceDraft{
+		key: "source-f1-requirements", entry: corpus.Entry{ID: "f1", Path: "requirements.txt"},
+		format: formatRequirements, state: dependencydeclaration.SourceParsed, content: content,
+		digest: textSHA256(string(content)),
+	}
+	state := &builder{
+		ctx: context.Background(), sources: map[string]*sourceDraft{source.key: source},
+		frontierSeen: make(map[string]struct{}), includeSeen: make(map[string]struct{}),
+	}
+	if err := state.parseRequirements(source, dependencydeclaration.StatementRequirement); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.statements) != 1 || state.statements[0].NormalizedName != "httpx" ||
+		state.maxLogicalRequirementBytes <= AdvisoryLogicalRequirementBytes {
+		t.Fatalf("statements / observed bytes = %#v / %d", state.statements, state.maxLogicalRequirementBytes)
+	}
+}
+
+func TestAddSourceRetainsBytesAboveFormerPythonThreshold(t *testing.T) {
+	repositoryPath := t.TempDir()
+	content := []byte("httpx==0.27 # " + strings.Repeat("x", int(AdvisorySourceBytes)+1))
+	if err := os.WriteFile(filepath.Join(repositoryPath, "requirements.txt"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repository, err := corpus.New(t.Context(), repositoryPath, gitfiles.Listing{
+		RegularPaths: []string{"requirements.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	entry := repository.Entries()[0]
+	state := &builder{repository: repository, sources: make(map[string]*sourceDraft)}
+	source, err := state.addSource(entry, formatRequirements, dependencydeclaration.SourceParsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(source.content) != len(content) || int64(len(source.content)) <= AdvisorySourceBytes {
+		t.Fatalf("retained bytes = %d, want %d", len(source.content), len(content))
 	}
 }
