@@ -43,8 +43,7 @@ type pageView struct {
 	CardsMissing     string
 	Portals          []pagePortal
 	PortalsMissing   string
-	LooseCalls       []pageHTTPRow
-	LooseRoutes      []pageHTTPRow
+	Boundaries       []pageBoundary
 	Negatives        []pageNegative
 	NegativesMissing string
 	Recipe           []pageRecipe
@@ -98,6 +97,17 @@ type pagePortal struct {
 	Possible bool
 	Call     pageAnchor
 	Route    pageAnchor
+}
+
+// pageBoundary is how much HTTP surface one target has when no call of one
+// target reaches a route of another. Listing every route of every target here
+// would answer "what routes exist", which each target page already answers,
+// rather than "how do the parts talk", which is the question above it.
+type pageBoundary struct {
+	Target    string
+	SectionID string
+	Routes    int
+	Calls     int
 }
 
 type pageHTTPRow struct {
@@ -388,8 +398,7 @@ func (builder *pageBuilder) portals(view *pageView) {
 		return
 	}
 	view.PortalsMissing = "No cross-target HTTP link was found."
-	view.LooseCalls = builder.httpRows(facts.KindHTTPCall, "")
-	view.LooseRoutes = builder.httpRows(facts.KindHTTPRoute, "")
+	view.Boundaries = builder.boundaryCounts()
 }
 
 // httpRows lists http_call or http_route facts; an empty targetID means every
@@ -584,4 +593,31 @@ func sortedMethods(methods map[string][]pageHTTPRow) []string {
 		return keys[i] < keys[j]
 	})
 	return keys
+}
+
+// boundaryCounts summarises each analyzed target's HTTP surface.
+func (builder *pageBuilder) boundaryCounts() []pageBoundary {
+	if builder.data.Facts == nil {
+		return nil
+	}
+	var result []pageBoundary
+	for _, section := range builder.sections {
+		if section.factsTargetID == "" {
+			continue
+		}
+		row := pageBoundary{Target: section.Label, SectionID: section.ID}
+		for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindHTTPRoute) {
+			_ = fact
+			row.Routes++
+		}
+		for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindHTTPCall) {
+			_ = fact
+			row.Calls++
+		}
+		if row.Routes == 0 && row.Calls == 0 {
+			continue
+		}
+		result = append(result, row)
+	}
+	return result
 }
