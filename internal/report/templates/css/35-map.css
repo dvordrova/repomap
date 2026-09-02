@@ -25,3 +25,8 @@
 .group-size{color:var(--muted);font-size:.8rem;white-space:nowrap}
 .group:target,.group.group-selected{border-color:var(--accent);box-shadow:0 0 0 2px rgba(31,95,191,.14)}
 .group:focus{outline:none}
+.repo-map{margin:.5rem 0 1rem}
+.repo-map .map-svg{min-width:0}
+.repo-node-name{font-size:14px;font-weight:600;fill:var(--ink)}
+.repo-node .map-node-body{fill:#fff;stroke:#c6ccd4}
+.repo-edge-label{font-size:10.5px;fill:var(--muted)}

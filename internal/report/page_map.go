@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -300,4 +301,180 @@ func safeIDFragment(value string) string {
 		}
 	}
 	return builder.String()
+}
+
+// The repository map answers the first question on the page — what are the
+// parts and which one talks to which — before the reader has to join a table
+// of portals to a list of target cards by hand.
+const (
+	repoNodeWidth  = 208.0
+	repoNodeHeight = 62.0
+	repoNodeGap    = 118.0
+	repoRowGap     = 26.0
+)
+
+type pageRepoMap struct {
+	Width  float64
+	Height float64
+	Nodes  []pageRepoNode
+	Edges  []pageRepoEdge
+}
+
+type pageRepoNode struct {
+	Href     string
+	Name     string
+	Language string
+	Detail   string
+	Analyzed bool
+	X        float64
+	Y        float64
+	Width    float64
+	Height   float64
+}
+
+type pageRepoEdge struct {
+	Path  string
+	Label string
+	LabelX,
+	LabelY float64
+	Possible bool
+}
+
+// repoOutgoingCounts is how many other targets each target calls.
+func (builder *pageBuilder) repoOutgoingCounts() map[string]int {
+	counts := make(map[string]int)
+	if builder.data.Facts == nil {
+		return counts
+	}
+	seen := make(map[[2]string]struct{})
+	for _, portal := range builder.data.Facts.OfKind(facts.KindPortal) {
+		if len(portal.Refs) < 2 {
+			continue
+		}
+		call, callKnown := builder.factsByID[portal.Refs[0]]
+		route, routeKnown := builder.factsByID[portal.Refs[1]]
+		if !callKnown || !routeKnown || call.TargetID == route.TargetID {
+			continue
+		}
+		key := [2]string{call.TargetID, route.TargetID}
+		if _, repeated := seen[key]; repeated {
+			continue
+		}
+		seen[key] = struct{}{}
+		counts[call.TargetID]++
+	}
+	return counts
+}
+
+// buildRepoMap places every analyzed target in one row and draws one arrow per
+// ordered pair of targets that a portal connects, labelled with how many
+// crossings that pair carries. One arrow per portal would redraw the table
+// that is already on the page.
+func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
+	if len(builder.sections) < 2 {
+		return nil
+	}
+	result := &pageRepoMap{Height: repoRowGap + repoNodeHeight + repoRowGap}
+	centres := make(map[string]*pageRepoNode, len(builder.sections))
+	// A caller reads better to the left of what it calls, so the row is
+	// ordered by how many other targets each one reaches, with section order
+	// breaking the tie.
+	ordered := append([]*pageSection(nil), builder.sections...)
+	calls := builder.repoOutgoingCounts()
+	place := make(map[*pageSection]int, len(ordered))
+	for index, section := range ordered {
+		place[section] = index
+	}
+	sort.SliceStable(ordered, func(left, right int) bool {
+		leftCalls := calls[ordered[left].factsTargetID]
+		rightCalls := calls[ordered[right].factsTargetID]
+		if leftCalls != rightCalls {
+			return leftCalls > rightCalls
+		}
+		return place[ordered[left]] < place[ordered[right]]
+	})
+	x := mapPadding
+	for _, section := range ordered {
+		node := pageRepoNode{
+			Href: "#" + section.ID, Name: section.Label, Language: section.Language,
+			Detail: repoNodeDetail(section), Analyzed: true,
+			X: x, Y: repoRowGap, Width: repoNodeWidth, Height: repoNodeHeight,
+		}
+		result.Nodes = append(result.Nodes, node)
+		x += repoNodeWidth + repoNodeGap
+	}
+	for index := range result.Nodes {
+		centres[ordered[index].factsTargetID] = &result.Nodes[index]
+	}
+	result.Width = x - repoNodeGap + mapPadding
+	result.Edges = builder.repoEdges(centres)
+	if len(result.Edges) == 0 {
+		// Boxes with no arrows say nothing the target cards above have not
+		// already said. A picture that adds nothing is not a picture.
+		return nil
+	}
+	return result
+}
+
+func repoNodeDetail(section *pageSection) string {
+	detail := section.Language
+	if section.Kind != "" {
+		detail += " · " + section.Kind
+	}
+	if section.Root != "" {
+		detail += " · " + section.Root
+	}
+	return detail
+}
+
+// repoEdges counts the portals between each ordered pair of targets.
+func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) []pageRepoEdge {
+	if builder.data.Facts == nil {
+		return nil
+	}
+	type pair struct{ from, to string }
+	counts := make(map[pair]int)
+	exact := make(map[pair]int)
+	var order []pair
+	for _, portal := range builder.data.Facts.OfKind(facts.KindPortal) {
+		if len(portal.Refs) < 2 {
+			continue
+		}
+		call, callKnown := builder.factsByID[portal.Refs[0]]
+		route, routeKnown := builder.factsByID[portal.Refs[1]]
+		if !callKnown || !routeKnown || call.TargetID == route.TargetID {
+			continue
+		}
+		key := pair{call.TargetID, route.TargetID}
+		if counts[key] == 0 {
+			order = append(order, key)
+		}
+		counts[key]++
+		if portal.Resolution != facts.ResolutionPossible {
+			exact[key]++
+		}
+	}
+	var result []pageRepoEdge
+	for _, key := range order {
+		from, fromKnown := nodes[key.from]
+		to, toKnown := nodes[key.to]
+		if !fromKnown || !toKnown {
+			continue
+		}
+		startX, startY := from.X+from.Width, from.Y+from.Height/2
+		endX, endY := to.X, to.Y+to.Height/2
+		if to.X < from.X {
+			startX, endX = from.X, to.X+to.Width
+		}
+		result = append(result, pageRepoEdge{
+			Path: fmt.Sprintf("M%.1f %.1f L%.1f %.1f", startX, startY, endX, endY),
+			Label: fmt.Sprintf("%d HTTP %s", counts[key],
+				map[bool]string{true: "calls", false: "call"}[counts[key] != 1]),
+			LabelX: (startX + endX) / 2, LabelY: startY - 8,
+			// Dashed only when nothing about this pair is exact; one uncertain
+			// crossing among several must not make the whole link look uncertain.
+			Possible: exact[key] == 0,
+		})
+	}
+	return result
 }

@@ -45,6 +45,7 @@ type pageView struct {
 	NegativesMissing string
 	Recipe           []pageRecipe
 	RecipeMissing    string
+	RepoMap          *pageRepoMap
 	Sections         []*pageSection
 	Notes            []string
 }
@@ -190,6 +191,7 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 	builder.buildSections()
 	view.Sections = builder.sections
 	builder.overview(view)
+	view.RepoMap = builder.buildRepoMap(view)
 	for _, warning := range data.Warnings {
 		view.Notes = append(view.Notes, scrubBrowserLocalPaths(warning, localRoots))
 	}

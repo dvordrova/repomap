@@ -64,3 +64,15 @@
     }
   }
 })();
+
+// A long quote is clamped to a few lines so it cannot outshout the summary.
+// Clicking it opens the whole thing; the anchor beside it always leads to the
+// source either way.
+(function () {
+  var quotes = document.querySelectorAll('.claim p');
+  for (var index = 0; index < quotes.length; index++) {
+    quotes[index].addEventListener('click', function (event) {
+      event.currentTarget.parentNode.classList.toggle('claim-open');
+    });
+  }
+})();

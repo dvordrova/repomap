@@ -1,0 +1,30 @@
+/* The page has four kinds of thing on it and they were all shouting at the
+   same volume: the one sentence that orients a reader was set smaller than a
+   ten-line README quote that may be years stale. Loudness now follows how much
+   a reader can rely on something. */
+
+/* The summary is the first thing anyone reads. It gets the size. */
+.summary{font-size:1.12rem;line-height:1.45;font-style:normal;color:var(--ink);margin:.2rem 0 1rem;max-width:44rem}
+.summary::before{vertical-align:.12em}
+.summary .anchor{font-size:.78em}
+
+/* Quotes are the least reliable layer, so they are the quietest. A long one
+   is clamped to a few lines and opens on click; the anchor is always there. */
+.claims{margin:.4rem 0}
+.claim{font-size:.9rem;border-left-width:2px;background:transparent;padding:.35rem .7rem}
+.claim p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;line-clamp:3;overflow:hidden;cursor:pointer}
+.claim.claim-open p{-webkit-line-clamp:unset;line-clamp:unset;overflow:visible}
+
+/* Section headings inside a target page carry the reading order, so they need
+   to be findable when scrolling past a wall of anchors. */
+h3{font-size:1rem;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);margin:1.6rem 0 .4rem}
+h2{font-size:1.45rem}
+h2 .meta{font-size:.82rem;font-weight:400;text-transform:none;letter-spacing:0}
+.card h3{font-size:1.02rem;text-transform:none;letter-spacing:0;color:var(--ink);margin:0 0 .3rem}
+.group h4{font-size:1rem}
+
+/* Facts are what the reader can check, so they stay in the ink colour while
+   the scaffolding around them recedes. */
+.group{background:var(--bg)}
+.group .conn{color:var(--muted)}
+.group .conn .lbl{color:var(--ink)}
