@@ -448,6 +448,11 @@ type Executor struct {
 	Observer         Observer
 	BatchConcurrency int
 	BatchController  *BatchController
+	// PlanNotice, when set, is called once with the number of provider
+	// requests a batch is about to make, before it makes the first one. A
+	// repository whose analysis needs hundreds of calls should say so while
+	// the reader can still stop it, not after the bill.
+	PlanNotice func(requests int)
 }
 
 func cloneBytes(value []byte) []byte {

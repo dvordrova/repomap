@@ -48,6 +48,9 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 	split func(Item) (Item, Item, bool),
 ) ([]Item, []Outcome[Value], AdaptiveBatchAccounting, error) {
 	plan := append([]Item(nil), items...)
+	if executor.PlanNotice != nil {
+		executor.PlanNotice(len(plan))
+	}
 	var accounting AdaptiveBatchAccounting
 	for {
 		calls, err := build(plan)

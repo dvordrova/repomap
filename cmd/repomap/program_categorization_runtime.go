@@ -79,6 +79,7 @@ func enrichProgramIndexForRun(
 		Observer:         observer,
 		BatchConcurrency: batchConcurrency,
 		BatchController:  batchController,
+		PlanNotice:       largePlanNotice(output, "Program categorization", base.Target.Name),
 	}, debugdump.SemanticStageProgramCategorization)
 
 	if output != nil {
