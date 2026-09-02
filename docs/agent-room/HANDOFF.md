@@ -1,0 +1,130 @@
+# Handoff: what is known, what is open
+
+Written 2026-09-02 for an agent picking this up cold. Everything here is
+measured, not remembered. Authority for the product is
+[docs/CONSTITUTION.md](../CONSTITUTION.md); the architecture is
+[CURRENT.md](CURRENT.md); the flags and acceptance ritual are in the README.
+
+## Baseline, measured
+
+One live run over the fixture, both targets, no cache:
+
+| what | value |
+|---|---|
+| wall clock, backend + front | 66 s |
+| accepted provider calls, all four 2026-09-02 runs | 58 |
+| input tokens, those runs | 1,122,672 |
+| largest single request | 112,338 tokens (one grouping call) |
+| largest categorization request | 36,236 tokens |
+| calls over the 131,072 window | 0 |
+| max output tokens against a 128,000 cap | 1,667 |
+| provider latency, all calls | 468.9 s, of which 333.9 s is ONE call with attempts=2 |
+| the other 57 calls | 135 s total |
+| `defaultTimeout` | 10 min, against a corpus p99 of 50.7 s |
+
+The single largest measured wall-clock win available is lowering
+`defaultTimeout`. It is one constant.
+
+## There is no request-sizing defect
+
+A five-role council was convened on the premise that requests are bounded by
+transport bytes rather than the model's context window. The premise is false
+for the code in the tree, and the veto checked it rather than argued it.
+
+All 1,014 cache records were bucketed by response schema and date. Every call
+that ever exceeded 131,072 input tokens is dated Aug 25-29 and belongs to
+`activity_refs`, `blocks`, `uses`, or bare `roles`. The first three have zero
+JSON tags anywhere in `internal/` or `cmd/` — deleted packages. Bare `roles` is
+`internal/experiments/clientrecipe`, referenced only by its own tests.
+
+Do not reopen this without new measurements. Specifically do not add
+`MaxInputTokens`, do not raise `ownedSubjectsPerRequest` from 32, do not cap
+`programgrouping` or `groupmatching`, and do not add a run-level token budget.
+`cubeState` hashes exact request bytes, so any prompt or request-shape edit
+cold-starts all 1,014 cache entries in real money.
+
+`programgrouping/run.go:93` gates `runMergeTournament` on `len(finalPlan) > 1`,
+and grouping is always one batch today, so that tournament has never run on a
+real repository. `merge.go` fails the whole run at three sites. Capping
+grouping routes every repository through that never-exercised path. Print the
+number first; cap it the day a real printout crosses the window, and exercise
+merge on the fixture deliberately before that.
+
+## Open finding 1: core is diluted
+
+After the 95cce28e revert, on the fixture:
+
+| run | coverage of indexed objects | assignments | core | inbound | dependency |
+|---|---|---|---|---|---|
+| backend, before the regression | 55% | 163 | 152 | 10 | 6 |
+| backend, regressed | 15% | 35 | 35 | 2 | 0 |
+| backend, after revert | 97% | 239 | 225 | 10 | 11 |
+| front, after revert | 74% | 338 | 281 | 10 | 43 |
+
+Core now lands on 97% of backend objects. A category carried by nearly
+everything routes no attention. This is the same dilution that made an earlier
+experiment worthless, arriving by a different road, and it is not yet decided
+whether it is worth narrowing.
+
+The earlier experiment is the cautionary tale for this whole area. Inviting the
+model to categorize context subjects cut discards and looked like a win: chi
+went from 264 categorized subjects to 858. But 841 of those were `core`,
+covering 90% of the target, and group counts fell as the signal diluted. It was
+caught by a human diffing two reports by hand. **Row count is not quality.
+Always report the denominator and the per-category split.**
+
+## Open finding 2: assignments that are not objects
+
+172 of front's 338 assignments name a `subject_id` that is not an object in
+that target's sealed index. Backend has 25 of 239. These are accepted today,
+by design, because out-of-batch rows naming a real subject of the same target
+are kept rather than paid for twice. Whether all 172 are real subjects is
+unverified. This is the first thing to measure, because it is the difference
+between recovering paid-for answers and quietly accepting invention.
+
+## The instrument that is missing
+
+The console prints an absolute count with no denominator and no per-category
+split. That is precisely why a prompt edit could lose 60% of the signal and
+read as success, and why the reverted experiment could only be caught by hand.
+Ship the numbers first; every judgment below becomes cheap afterwards.
+
+This snippet produced every table above and is the fastest way to check a run:
+
+```python
+import json, collections
+pi = json.load(open(f'{run}/program-index.json'))
+objs = {o['id'] for o in pi['objects']}
+a = pi['categorization']['assignments']
+ids = {r['subject_id'] for r in a}
+cc = collections.Counter(c for r in a for c in r['categories'])
+print(len(objs), len(a), len(ids & objs), len(ids - objs), dict(cc))
+```
+
+Note the field names: assignments live at `categorization.assignments`, each
+row is `{subject_id, categories}`. Categorization exchanges are the ones whose
+`request.json` contains `categorize_refs`; the request body is an encoded
+string, so grep it, do not walk it as JSON.
+
+## Known gaps, recorded not fixed
+
+- Nested route prefixes are wrong. chi's `ListArticles` reads `GET /`, not
+  `GET /articles`, because the mount prefix is not composed.
+- `os.environ["KEY"]` and `process.env.KEY` subscript reads are not captured.
+  Catching them needs a `reads` relation from the adapter, a schema change.
+- `targetportfolio.Compile` and `CompileWithExecutableAuthority` are now
+  production-dead, reachable only from their own tests. Removing them rewrites
+  about ten call sites.
+- The `resolveGoTarget` field on `defaultRunDeps` is injected by nothing, in
+  production or in tests.
+
+## Traps
+
+- A name-based dead-code scan misses interface satisfaction.
+  `runOutputWarningSink.Write` looked unreachable and has four call sites.
+- Do not reorder request fields for provider prefix caching. Measured dead: the
+  shared prefix is 141 bytes and subject sets differ per batch.
+- The 429 collapse is not worth touching: 1,013 of 1,014 calls succeeded on the
+  first attempt.
+- Failing a whole run is never an acceptable answer to a model disagreement.
+  Log it to `rejected.jsonl` and continue.
