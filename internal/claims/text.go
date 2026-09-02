@@ -1,9 +1,15 @@
 package claims
 
 import (
+	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
+
+// minProseLetters is the shortest run of letters that makes a fragment read
+// as a sentence rather than as badges or punctuation.
+const minProseLetters = 3
 
 // quote is one located quote produced by a scanner.
 type quote struct {
@@ -20,6 +26,60 @@ func splitLines(text string) []string {
 }
 
 // collapseSpace keeps the original words and folds every whitespace run.
+// markupOnly matches a line whose visible content is markup rather than
+// prose: an HTML tag, a badge image, or a bare link. Such a line says nothing
+// a reader can act on, so it never becomes a claim.
+var (
+	htmlTag       = regexp.MustCompile(`<[^>]+>`)
+	inlineImage   = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
+	referenceImg  = regexp.MustCompile(`!\[[^\]]*\]`)
+	referenceLink = regexp.MustCompile(`\[([^\]]*)\]\[[^\]]*\]`)
+	inlineLink    = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+	emphasis      = regexp.MustCompile("[*_`]{1,3}")
+	headingMark   = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s*`)
+	trailingMark  = regexp.MustCompile(`(?m)\s*#+\s*$`)
+)
+
+// readable turns one Markdown fragment into the prose a reader would see:
+// images and tags drop out, links keep their text, emphasis markers go away.
+// It returns the empty string when nothing but markup remains.
+func readable(text string) string {
+	// Images carry no prose at all; links keep the words a reader sees. Both
+	// reference and inline forms appear in real README files.
+	text = inlineImage.ReplaceAllString(text, " ")
+	text = referenceImg.ReplaceAllString(text, " ")
+	text = referenceLink.ReplaceAllString(text, "$1")
+	text = inlineLink.ReplaceAllString(text, "$1")
+	text = htmlTag.ReplaceAllString(text, " ")
+	// Heading and emphasis markers are formatting, not words: a quote reads as
+	// the sentence the author wrote.
+	text = headingMark.ReplaceAllString(text, "")
+	text = trailingMark.ReplaceAllString(text, "")
+	text = emphasis.ReplaceAllString(text, "")
+	text = collapseSpace(text)
+	if !hasProse(text) {
+		return ""
+	}
+	return text
+}
+
+// hasProse requires at least a few letters in a row, so a line of badges,
+// punctuation, or a bare URL is not quoted as if it said something.
+func hasProse(text string) bool {
+	run := 0
+	for _, r := range text {
+		if unicode.IsLetter(r) {
+			run++
+			if run >= minProseLetters {
+				return true
+			}
+			continue
+		}
+		run = 0
+	}
+	return false
+}
+
 func collapseSpace(text string) string {
 	return strings.Join(strings.Fields(text), " ")
 }
