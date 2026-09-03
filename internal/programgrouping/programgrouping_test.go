@@ -524,7 +524,8 @@ func TestPromptMakesEveryMembershipLaneCompatibleAndConsolidationLossless(t *tes
 		"`inbound` or `background_activity` for `triggers`",
 		"`dependency` for `dependencies`",
 		"not become membership",
-		"It carries no member\nrefs, and your answer selects none",
+		"It\ncarries no member refs, and your answer selects none",
+		"Read it as a graph and not as a list of names",
 		"Name every candidate exactly once",
 		"Candidates in one group must share a `lane`",
 	} {

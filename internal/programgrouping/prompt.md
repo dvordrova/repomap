@@ -8,7 +8,9 @@ The request has one of two phases:
 
 - `grouping`: form useful groups directly from categorized program subjects;
 - `consolidate`: say which of the group candidates proposed by earlier shards
-  are the same thing.
+  are the same thing;
+- `containers`: name the parts this target has, and put every candidate in
+  one of them.
 
 In both phases, `group_refs` is the only closed set from which `member_refs`
 may be selected. Every ref in `group_refs` has at least one positive category.
@@ -108,12 +110,21 @@ kinds such as `registers`, `invokes`, `dispatches_to`, `reads_from`,
 `writes_to`, `publishes_to`, `consumes_from`, `schedules`, `configures`, or
 `transforms_into`, but introduce a new precise snake_case kind when none fits.
 
-A `consolidate` request carries only `candidates`: each one's title, summary,
-lane, how many members it holds, and a few member names. It carries no member
-refs, and your answer selects none. Separate shards of one target saw
-different parts of it, so several of them describe the same thing under
-different words — "Middleware", "Middleware common" and "Middleware heartbeat"
-are one group.
+A `consolidate` request is a graph one level up from the subjects. Its nodes
+are `candidates` — each one's title, summary, lane, how many members it holds,
+and a few member names — and its edges are `connections` between them. It
+carries no member refs, and your answer selects none.
+
+Read it as a graph and not as a list of names. Candidates that constantly
+reach each other are usually one thing however differently they are named;
+candidates that share a word and never touch usually are not. Separate shards
+of one target each saw a different part of it, so several of them describe the
+same thing under different words — "Middleware", "Middleware common" and
+"Middleware heartbeat" are one group.
+
+The same request shape describes every level. Whatever you return becomes the
+nodes of the next one, so a group's title has to read as the name of a part of
+this repository, not as a bag: "Request logging" and not "Group 3".
 
 Return strict JSON with exactly this shape:
 
@@ -130,9 +141,18 @@ Return strict JSON with exactly this shape:
 }
 ```
 
-Name every candidate exactly once, across all groups. A candidate that belongs
-with nothing else is a group of one, and keeps its own title unless a better
-one covers it. Candidates in one group must share a `lane`: a lane follows
+A `containers` request has the same shape and asks a different question. Do
+not ask again which candidates are the same thing — that was already settled
+and the answer will not change. Ask which **part of this target** each one
+belongs to. Basic authentication and response compression are not the same
+thing and both are middleware; a router and its route tree are not the same
+thing and both are the router. Name four to eight parts, each holding several
+candidates, and use a name a reader of this repository would recognise.
+A part holding one candidate is not a part.
+
+Name every candidate exactly once, across all groups. In a `consolidate`
+response a candidate that belongs with nothing else is a group of one, and
+keeps its own title unless a better one covers it. Candidates in one group must share a `lane`: a lane follows
 from a member's own categories and this phase may not move one. Aim for the
 fewest groups a reader can still tell apart — a target reads well at four to
 fourteen — but never gather things that are not the same thing merely to

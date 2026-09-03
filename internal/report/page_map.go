@@ -142,6 +142,9 @@ type pageMapNode struct {
 	// not drawn: a cross-target arrow on this map would claim a geometry that
 	// belongs to the other target's page.
 	Outside int
+	// Holds is how many groups a box stands for when it is a container, and
+	// zero when the box is a group itself.
+	Holds int
 }
 
 type pageMapEdge struct {
@@ -175,10 +178,18 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 		{groupindex.LaneDependencies, "Reaches out to"},
 	}
 
+	drawn := mapDrawnGroups(*index)
+	drawnID := make(map[string]string, len(index.Groups))
+	for _, box := range drawn {
+		drawnID[box.ID] = box.ID
+		for _, held := range box.GroupIDs {
+			drawnID[held] = box.ID
+		}
+	}
 	largest := 0
-	for _, group := range index.Groups {
-		if len(group.MemberSubjectIDs) > largest {
-			largest = len(group.MemberSubjectIDs)
+	for _, box := range drawn {
+		if len(box.Members) > largest {
+			largest = len(box.Members)
 		}
 	}
 	result := &pageMap{Subjects: subjects}
@@ -193,12 +204,16 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	}
 	result.Grouped = len(grouped)
 	positions := make(map[string]*pageMapNode)
-	neighbours := builder.mapNeighbours(*index)
-	steps := builder.flowStepsByGroup(section, *index)
+	neighbours := remapNeighbours(builder.mapNeighbours(*index), drawnID)
+	steps := remapSteps(builder.flowStepsByGroup(section, *index), drawnID)
 
+	// A target of thirty groups is thirty true things and an unreadable
+	// picture. When grouping named the parts they belong to, the map draws
+	// the parts and the groups stay on the cards below, where a list is the
+	// right shape for them.
 	columnX := mapPadding
 	for _, lane := range lanes {
-		members := laneGroups(*index, lane.lane)
+		members := laneDrawnGroups(drawn, lane.lane)
 		if len(members) == 0 {
 			continue
 		}
@@ -212,13 +227,13 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 			column := position / perColumn
 			row := position % perColumn
 			node := pageMapNode{
-				ID: mapNodeID(group.ID), Href: "#" + groupAnchorID(section.ID, group.ID),
+				ID: mapNodeID(group.ID), Href: "#" + groupAnchorID(section.ID, mapBoxAnchor(group)),
 				Title: mapTitle(group.Title), FullTitle: group.Title,
 				Summary: group.Summary, Lane: string(lane.lane),
-				Members: len(group.MemberSubjectIDs),
-				X:       columnX + float64(column)*(mapNodeWidth+mapColumnGap),
-				Y:       mapPadding + mapLaneLabelSpace + float64(row)*(mapNodeHeight+mapNodeGap),
-				Width:   mapNodeWidth, Height: mapNodeHeight,
+				Members: len(group.Members), Holds: group.Holds,
+				X:     columnX + float64(column)*(mapNodeWidth+mapColumnGap),
+				Y:     mapPadding + mapLaneLabelSpace + float64(row)*(mapNodeHeight+mapNodeGap),
+				Width: mapNodeWidth, Height: mapNodeHeight,
 			}
 			if subjects > 0 {
 				node.Share = node.Members * 100 / subjects
@@ -248,7 +263,7 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 		positions[result.Nodes[position].ID] = &result.Nodes[position]
 	}
 	result.Width = columnX - mapLaneGap + mapPadding
-	edges, band, rightmost := mapEdges(*index, positions, result.Height)
+	edges, band, rightmost := mapEdges(*index, positions, drawnID, result.Height)
 	result.Edges = edges
 	result.Height += band + mapPadding + 14
 	if reach := rightmost + mapPadding; reach > result.Width {
@@ -412,6 +427,166 @@ func cutTitle(value string) string {
 	return strings.TrimRight(string(runes[:mapTitleBudget-1]), " ") + "\u2026"
 }
 
+// mapDrawnGroup is one box on the map: either a group, or a container standing
+// for the several groups it holds.
+type mapDrawnGroup struct {
+	ID       string
+	Title    string
+	Summary  string
+	Lane     groupindex.Lane
+	Members  []string
+	Holds    int
+	GroupIDs []string
+}
+
+// mapDrawnGroups replaces every group a container holds with the container,
+// and leaves the rest as they are. A container's members are exactly the
+// union of its groups' members, so the sizes on the map still add up.
+func mapDrawnGroups(index groupindex.Index) []mapDrawnGroup {
+	byID := make(map[string]groupindex.Group, len(index.Groups))
+	for _, group := range index.Groups {
+		byID[group.ID] = group
+	}
+	held := make(map[string]struct{})
+	result := make([]mapDrawnGroup, 0, len(index.Groups))
+	for _, container := range index.Containers {
+		members := make(map[string]struct{})
+		for _, id := range container.GroupIDs {
+			group, known := byID[id]
+			if !known {
+				continue
+			}
+			held[id] = struct{}{}
+			for _, member := range group.MemberSubjectIDs {
+				members[member] = struct{}{}
+			}
+		}
+		if len(members) == 0 {
+			continue
+		}
+		list := make([]string, 0, len(members))
+		for member := range members {
+			list = append(list, member)
+		}
+		sort.Strings(list)
+		result = append(result, mapDrawnGroup{
+			ID: container.ID, Title: container.Title, Summary: container.Summary,
+			Lane: container.Lane, Members: list, Holds: len(container.GroupIDs),
+			GroupIDs: container.GroupIDs,
+		})
+	}
+	for _, group := range index.Groups {
+		if _, inside := held[group.ID]; inside {
+			continue
+		}
+		result = append(result, mapDrawnGroup{
+			ID: group.ID, Title: group.Title, Summary: group.Summary,
+			Lane: group.Lane, Members: group.MemberSubjectIDs,
+		})
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if len(result[left].Members) != len(result[right].Members) {
+			return len(result[left].Members) > len(result[right].Members)
+		}
+		return result[left].ID < result[right].ID
+	})
+	return result
+}
+
+// remapNeighbours moves a neighbourhood from group ids onto the boxes the map
+// actually draws, so a container inherits the connections of everything in it
+// and never points at itself.
+func remapNeighbours(neighbours map[string][]string, drawnID map[string]string) map[string][]string {
+	result := make(map[string][]string, len(neighbours))
+	seen := make(map[string]map[string]struct{}, len(neighbours))
+	for group, others := range neighbours {
+		box, known := drawnID[group]
+		if !known {
+			continue
+		}
+		if seen[box] == nil {
+			seen[box] = make(map[string]struct{})
+		}
+		for _, other := range others {
+			target := ""
+			if other != "" {
+				target = drawnID[other]
+				if target == box || target == "" {
+					continue
+				}
+			}
+			if _, repeated := seen[box][target]; repeated {
+				continue
+			}
+			seen[box][target] = struct{}{}
+			result[box] = append(result[box], target)
+		}
+	}
+	for box := range result {
+		sort.Strings(result[box])
+	}
+	return result
+}
+
+func remapSteps(steps map[string]string, drawnID map[string]string) map[string]string {
+	result := make(map[string]string, len(steps))
+	for group, ordinals := range steps {
+		box, known := drawnID[group]
+		if !known {
+			continue
+		}
+		result[box] = mergeStepOrdinals(result[box], ordinals)
+	}
+	return result
+}
+
+// mergeStepOrdinals keeps one ascending list of step numbers when several
+// groups of one container are on the main flow.
+func mergeStepOrdinals(left, right string) string {
+	seen := make(map[int]struct{})
+	var numbers []int
+	for _, part := range append(strings.Split(left, ","), strings.Split(right, ",")...) {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			continue
+		}
+		if _, repeated := seen[value]; repeated {
+			continue
+		}
+		seen[value] = struct{}{}
+		numbers = append(numbers, value)
+	}
+	sort.Ints(numbers)
+	parts := make([]string, 0, len(numbers))
+	for _, value := range numbers {
+		parts = append(parts, strconv.Itoa(value))
+	}
+	return strings.Join(parts, ",")
+}
+
+// mapBoxAnchor is the id a box links at. A container has no card of its own,
+// so it leads to the first group it holds, which is where its detail starts.
+func mapBoxAnchor(box mapDrawnGroup) string {
+	if len(box.GroupIDs) > 0 {
+		return box.GroupIDs[0]
+	}
+	return box.ID
+}
+
+func laneDrawnGroups(drawn []mapDrawnGroup, lane groupindex.Lane) []mapDrawnGroup {
+	var result []mapDrawnGroup
+	for _, group := range drawn {
+		if group.Lane == lane {
+			result = append(result, group)
+		}
+	}
+	return result
+}
+
 func laneGroups(index groupindex.Index, lane groupindex.Lane) []groupindex.Group {
 	var result []groupindex.Group
 	for _, group := range index.Groups {
@@ -469,7 +644,12 @@ func mapNodeIDs(groupIDs []string) []string {
 // map. Two connections between the same pair are one arrow carrying both
 // labels, because two identical curves drawn on top of each other are one
 // curve that reads as a thicker line.
-func mapEdges(index groupindex.Index, nodes map[string]*pageMapNode, bottom float64) ([]pageMapEdge, float64, float64) {
+func mapEdges(
+	index groupindex.Index,
+	nodes map[string]*pageMapNode,
+	drawnID map[string]string,
+	bottom float64,
+) ([]pageMapEdge, float64, float64) {
 	type pair struct{ from, to string }
 	labels := make(map[pair][]string)
 	possible := make(map[pair]bool)
@@ -479,8 +659,8 @@ func mapEdges(index groupindex.Index, nodes map[string]*pageMapNode, bottom floa
 		if connection.From.TargetID != index.Target.ID || connection.To.TargetID != index.Target.ID {
 			continue
 		}
-		from, fromKnown := nodes[mapNodeID(connection.From.GroupID)]
-		to, toKnown := nodes[mapNodeID(connection.To.GroupID)]
+		from, fromKnown := nodes[mapNodeID(drawnID[connection.From.GroupID])]
+		to, toKnown := nodes[mapNodeID(drawnID[connection.To.GroupID])]
 		if !fromKnown || !toKnown || from == to {
 			continue
 		}

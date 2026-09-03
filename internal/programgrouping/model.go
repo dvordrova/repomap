@@ -49,6 +49,7 @@ const (
 	diagnosticConsolidationRepeatedCandidate = "consolidation_repeated_candidate"
 	diagnosticConsolidationLaneMismatch      = "consolidation_lane_mismatch"
 	diagnosticConsolidationUnclaimed         = "consolidation_unclaimed"
+	diagnosticContainerSkipped               = "container_skipped"
 )
 
 type groupProposal struct {
@@ -58,6 +59,10 @@ type groupProposal struct {
 	Lane               groupindex.Lane
 	MemberSubjectIDs   []string
 	EvidenceSubjectIDs []string
+	// absorbed names the candidate refs this proposal was consolidated from.
+	// It is how a later pass knows which groups a container holds, and never
+	// reaches the index.
+	absorbed []string
 }
 
 type connectionProposal struct {
@@ -72,6 +77,7 @@ type connectionProposal struct {
 type proposalSet struct {
 	groups      []groupProposal
 	connections []connectionProposal
+	containers  []groupindex.ContainerProposal
 	diagnostics []groupindex.Diagnostic
 }
 
@@ -79,6 +85,7 @@ func (set proposalSet) groupIndexProposals() groupindex.Proposals {
 	result := groupindex.Proposals{
 		Groups:      make([]groupindex.GroupProposal, len(set.groups)),
 		Connections: make([]groupindex.ConnectionProposal, len(set.connections)),
+		Containers:  append([]groupindex.ContainerProposal(nil), set.containers...),
 	}
 	for position, group := range set.groups {
 		result.Groups[position] = groupindex.GroupProposal{

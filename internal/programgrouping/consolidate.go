@@ -30,6 +30,12 @@ import (
 // unioned here. A union cannot drop a member, so there is no answer to reject.
 const (
 	phaseConsolidate phase = "consolidate"
+	// phaseContainers asks a different question of the same graph. "Which of
+	// these are the same thing" answered twice returns the same answer twice:
+	// basic auth and compression are not the same thing, and asking again
+	// says so. "Which part does each belong to" is what puts them both under
+	// middleware, and it is the only question a level above can be built on.
+	phaseContainers phase = "containers"
 	// consolidateSampleMembers is how many member names ride along with a
 	// candidate. Enough to tell "Middleware" from "Middleware tests" without
 	// sending the memberships themselves.
@@ -37,9 +43,6 @@ const (
 	// consolidateEnough is the number of groups a target page reads well at.
 	// Reaching it stops the loop asking for further passes.
 	consolidateEnough = 14
-	// consolidateMaxPasses bounds the loop. Each pass is one request, and a
-	// pass that does not reduce the count stops it early anyway.
-	consolidateMaxPasses = 3
 )
 
 type consolidateRequest struct {
@@ -47,6 +50,18 @@ type consolidateRequest struct {
 	Phase      phase                  `json:"phase"`
 	Target     targetWire             `json:"target"`
 	Candidates []consolidateCandidate `json:"candidates"`
+	// Connections make this a graph rather than a list of names. Two
+	// candidates that talk to each other constantly are usually one thing,
+	// and two that share a word in their title often are not. Without them
+	// the only evidence for joining is how the titles read.
+	Connections []consolidateConnection `json:"connections"`
+}
+
+type consolidateConnection struct {
+	FromRef      string `json:"from_ref"`
+	ToRef        string `json:"to_ref"`
+	SemanticKind string `json:"semantic_kind,omitempty"`
+	Label        string `json:"label,omitempty"`
 }
 
 type consolidateCandidate struct {
@@ -71,25 +86,43 @@ type consolidateGroup struct {
 
 // consolidateRequestFor describes every candidate by what it is, never by whom
 // it holds. Members are the code's business.
-func (compilation Compilation) consolidateRequestFor(candidates proposalSet) consolidateRequest {
+func (compilation Compilation) consolidateRequestFor(
+	requestPhase phase,
+	candidates proposalSet,
+) consolidateRequest {
 	request := consolidateRequest{
-		Version: requestVersion, Phase: phaseConsolidate,
+		Version: requestVersion, Phase: requestPhase,
 		Target: targetWire{
 			Language: compilation.index.Target.Language,
 			Kind:     compilation.index.Target.Kind,
 			Name:     compilation.index.Target.Name,
 			Selector: compilation.index.Target.Selector,
 		},
-		Candidates: make([]consolidateCandidate, 0, len(candidates.groups)),
+		Candidates:  make([]consolidateCandidate, 0, len(candidates.groups)),
+		Connections: make([]consolidateConnection, 0, len(candidates.connections)),
 	}
+	refByKey := make(map[string]string, len(candidates.groups))
 	for position, group := range candidates.groups {
+		ref := candidateRef(position)
+		refByKey[group.Key] = ref
 		request.Candidates = append(request.Candidates, consolidateCandidate{
-			Ref:     candidateRef(position),
+			Ref:     ref,
 			Title:   group.Title,
 			Summary: group.Summary,
 			Lane:    group.Lane,
 			Members: len(group.MemberSubjectIDs),
 			Sample:  compilation.sampleMemberNames(group.MemberSubjectIDs),
+		})
+	}
+	for _, connection := range candidates.connections {
+		from, fromKnown := refByKey[connection.FromGroupKey]
+		to, toKnown := refByKey[connection.ToGroupKey]
+		if !fromKnown || !toKnown || from == to {
+			continue
+		}
+		request.Connections = append(request.Connections, consolidateConnection{
+			FromRef: from, ToRef: to,
+			SemanticKind: connection.SemanticKind, Label: connection.Label,
 		})
 	}
 	return request
@@ -156,34 +189,78 @@ func runConsolidation(
 	candidates := canonicalProposalSet(initial)
 	diagnostics := append([]groupindex.Diagnostic(nil), candidates.diagnostics...)
 	candidates.diagnostics = nil
-	for pass := 1; pass <= consolidateMaxPasses; pass++ {
-		// The first pass always runs: two shards that saw different halves of
-		// one thing propose it twice however few groups there are, and only
-		// this phase can see both. Later passes are for count alone.
-		if pass > 1 && len(candidates.groups) <= consolidateEnough {
-			break
+
+	// One pass joins what separate shards proposed twice. Asking again would
+	// keep joining, and joining past the truth is how thirty middlewares
+	// became four buckets: chi's router package really does hold one group
+	// per middleware file, and the second question is not "join more" but
+	// "which part does each of these belong to".
+	joined, passDiagnostics, err := consolidateOnce(
+		ctx, executor, provider, compilation, phaseConsolidate, candidates,
+	)
+	if err != nil {
+		if ctx.Err() != nil {
+			return proposalSet{}, err
 		}
-		next, passDiagnostics, err := consolidateOnce(ctx, executor, provider, compilation, candidates)
-		if err != nil {
-			if ctx.Err() != nil {
-				return proposalSet{}, err
-			}
-			diagnostics = append(diagnostics, groupindex.Diagnostic{
-				Kind: diagnosticMergeSkipped, Reason: err.Error(),
-			})
-			break
-		}
-		diagnostics = append(diagnostics, passDiagnostics...)
-		if len(next.groups) >= len(candidates.groups) {
-			// A pass that consolidates nothing will not consolidate anything
-			// on the next try either.
-			candidates = next
-			break
-		}
-		candidates = next
+		diagnostics = append(diagnostics, groupindex.Diagnostic{
+			Kind: diagnosticMergeSkipped, Reason: err.Error(),
+		})
+		candidates.diagnostics = canonicalDiagnostics(append(diagnostics, candidates.diagnostics...))
+		return candidates, nil
+	}
+	diagnostics = append(diagnostics, passDiagnostics...)
+	candidates = joined
+
+	// What is left is the truth about this target, and for a package of thirty
+	// middlewares the truth is thirty groups. One more pass over the same
+	// graph names the parts they belong to, and those names become a level
+	// above rather than replacing anything.
+	if len(candidates.groups) > consolidateEnough {
+		containers, containerDiagnostics := consolidateIntoContainers(
+			ctx, executor, provider, compilation, candidates,
+		)
+		candidates.containers = containers
+		diagnostics = append(diagnostics, containerDiagnostics...)
 	}
 	candidates.diagnostics = canonicalDiagnostics(append(diagnostics, candidates.diagnostics...))
 	return candidates, nil
+}
+
+// consolidateIntoContainers asks the same question one level up and keeps the
+// answer as a level rather than a replacement. A container names groups; it
+// never selects a member, so it cannot change what a group holds.
+func consolidateIntoContainers(
+	ctx context.Context,
+	executor llm.Executor,
+	provider llm.Provider,
+	compilation Compilation,
+	candidates proposalSet,
+) ([]groupindex.ContainerProposal, []groupindex.Diagnostic) {
+	merged, diagnostics, err := consolidateOnce(
+		ctx, executor, provider, compilation, phaseContainers, candidates,
+	)
+	if err != nil {
+		return nil, []groupindex.Diagnostic{{
+			Kind: diagnosticContainerSkipped, Reason: err.Error(),
+		}}
+	}
+	keyByCandidate := make(map[string]string, len(candidates.groups))
+	for position, group := range candidates.groups {
+		keyByCandidate[candidateRef(position)] = group.Key
+	}
+	containers := make([]groupindex.ContainerProposal, 0, len(merged.groups))
+	for _, group := range merged.groups {
+		container := groupindex.ContainerProposal{
+			Key: group.Key, Title: group.Title, Summary: group.Summary, Lane: group.Lane,
+		}
+		for _, member := range group.absorbed {
+			if key, known := keyByCandidate[member]; known {
+				container.GroupKeys = append(container.GroupKeys, key)
+			}
+		}
+		containers = append(containers, container)
+	}
+	return containers, diagnostics
 }
 
 func consolidateOnce(
@@ -191,14 +268,15 @@ func consolidateOnce(
 	executor llm.Executor,
 	provider llm.Provider,
 	compilation Compilation,
+	requestPhase phase,
 	candidates proposalSet,
 ) (proposalSet, []groupindex.Diagnostic, error) {
-	request := compilation.consolidateRequestFor(candidates)
+	request := compilation.consolidateRequestFor(requestPhase, candidates)
 	wire, err := json.Marshal(request)
 	if err != nil {
 		return proposalSet{}, nil, fmt.Errorf("program grouping: encode consolidation request: %w", err)
 	}
-	state, err := cubeState(compilation.index.SHA256, phaseConsolidate, wire)
+	state, err := cubeState(compilation.index.SHA256, requestPhase, wire)
 	if err != nil {
 		return proposalSet{}, nil, err
 	}
@@ -300,6 +378,7 @@ func applyConsolidation(
 		result.groups = append(result.groups, groupProposal{
 			Key: key, Title: title, Summary: summary, Lane: lane,
 			MemberSubjectIDs: distinctStrings(members), EvidenceSubjectIDs: distinctStrings(evidence),
+			absorbed: absorbed,
 		})
 	}
 	// Whatever the response left out survives untouched. This is the whole
@@ -314,6 +393,7 @@ func applyConsolidation(
 		parentOf[ref] = key
 		kept := group
 		kept.Key = key
+		kept.absorbed = []string{ref}
 		result.groups = append(result.groups, kept)
 		diagnostics = append(diagnostics, groupindex.Diagnostic{
 			Kind: diagnosticConsolidationUnclaimed, Reason: group.Title,

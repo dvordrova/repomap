@@ -225,9 +225,14 @@ type Index struct {
 	ProgramIndexSHA256 string              `json:"program_index_sha256"`
 	Subjects           []Subject           `json:"subjects"`
 	Groups             []Group             `json:"groups"`
-	StructuralEdges    []StructuralEdge    `json:"structural_edges"`
-	Connections        []Connection        `json:"connections"`
-	SHA256             string              `json:"sha256"`
+	// Containers are the level above the groups: a handful of named parts,
+	// each holding several groups. chi's router package really does hold
+	// thirty groups — one per middleware file — and thirty is the truth and
+	// also unreadable. A container says which of them are one part.
+	Containers      []Container      `json:"containers"`
+	StructuralEdges []StructuralEdge `json:"structural_edges"`
+	Connections     []Connection     `json:"connections"`
+	SHA256          string           `json:"sha256"`
 }
 
 // GroupProposal is one already-restored grouping row. Key exists only to join
@@ -269,6 +274,27 @@ type ConnectionInput struct {
 type Proposals struct {
 	Groups      []GroupProposal
 	Connections []ConnectionProposal
+	Containers  []ContainerProposal
+}
+
+// ContainerProposal names one part of a target and which group keys are in it.
+// It selects no subject: a container holds exactly the members of the groups
+// it names, and cannot add or drop one.
+type ContainerProposal struct {
+	Key       string
+	Title     string
+	Summary   string
+	Lane      Lane
+	GroupKeys []string
+}
+
+// Container is one part of a target: a name over several groups.
+type Container struct {
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Summary  string   `json:"summary"`
+	Lane     Lane     `json:"lane"`
+	GroupIDs []string `json:"group_ids"`
 }
 
 // Diagnostic reports one proposal row that could not acquire local authority.
@@ -280,14 +306,18 @@ type Diagnostic struct {
 }
 
 const (
-	diagnosticInvalidGroup          = "invalid_group"
-	diagnosticUnknownSubject        = "unknown_subject"
-	diagnosticLaneMismatch          = "lane_mismatch"
-	diagnosticUnsupportedEvidence   = "unsupported_evidence"
-	diagnosticConflictingGroupKey   = "conflicting_group_key"
-	diagnosticInvalidConnection     = "invalid_connection"
-	diagnosticUnknownGroup          = "unknown_group"
-	diagnosticConflictingConnection = "conflicting_connection"
+	diagnosticInvalidGroup           = "invalid_group"
+	diagnosticUnknownSubject         = "unknown_subject"
+	diagnosticLaneMismatch           = "lane_mismatch"
+	diagnosticUnsupportedEvidence    = "unsupported_evidence"
+	diagnosticConflictingGroupKey    = "conflicting_group_key"
+	diagnosticContainerIncomplete    = "container_incomplete"
+	diagnosticContainerUnknownGroup  = "container_unknown_group"
+	diagnosticContainerRepeatedGroup = "container_repeated_group"
+	diagnosticContainerTooSmall      = "container_too_small"
+	diagnosticInvalidConnection      = "invalid_connection"
+	diagnosticUnknownGroup           = "unknown_group"
+	diagnosticConflictingConnection  = "conflicting_connection"
 )
 
 // Build filters restored proposal rows against one exact enriched
@@ -343,6 +373,9 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 		groups = []Group{}
 	}
 
+	containers, containerDiagnostics := compileContainers(program.Target.ID, groupIDsByKey, accepted.Containers)
+	diagnostics = append(diagnostics, containerDiagnostics...)
+
 	connectionCandidates := make(map[string]map[string]Connection)
 	for _, proposal := range accepted.Connections {
 		connection, kind, reason := compileConnectionProposal(program.Target.ID, subjects, groupIDsByKey, proposal)
@@ -392,6 +425,7 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 		ProgramIndexSHA256: program.SHA256,
 		Subjects:           allSubjects,
 		Groups:             groups,
+		Containers:         containers,
 		StructuralEdges:    structuralEdges,
 		Connections:        connections,
 	}
@@ -1614,6 +1648,73 @@ func patternValueCandidateIdentity(argumentID string, value PatternValueCandidat
 	fields = append(fields, "source-arguments")
 	fields = append(fields, value.SourceArgumentIDs...)
 	return stableID("program-pattern-value", fields...)
+}
+
+func containerIdentity(targetID string, container Container) string {
+	fields := []string{targetID, string(container.Lane), container.Title, container.Summary,
+		"groups", strconv.Itoa(len(container.GroupIDs))}
+	fields = append(fields, container.GroupIDs...)
+	return stableID("program-container", fields...)
+}
+
+// compileContainers resolves the group keys a container names. A container
+// that ends up holding fewer than two groups is not a level, it is the group
+// itself under another name, and is dropped.
+func compileContainers(
+	targetID string,
+	groupIDsByKey map[string]string,
+	proposals []ContainerProposal,
+) ([]Container, []Diagnostic) {
+	diagnostics := make([]Diagnostic, 0)
+	seen := make(map[string]struct{})
+	result := make([]Container, 0, len(proposals))
+	for _, proposal := range proposals {
+		if strings.TrimSpace(proposal.Title) == "" || !proposal.Lane.Valid() {
+			diagnostics = append(diagnostics, Diagnostic{
+				Kind: diagnosticContainerIncomplete, ProposalKey: proposal.Key,
+				Reason: "a container needs a title and a valid lane",
+			})
+			continue
+		}
+		ids := make([]string, 0, len(proposal.GroupKeys))
+		for _, key := range proposal.GroupKeys {
+			id, known := groupIDsByKey[key]
+			if !known {
+				diagnostics = append(diagnostics, Diagnostic{
+					Kind: diagnosticContainerUnknownGroup, ProposalKey: proposal.Key, Reason: key,
+				})
+				continue
+			}
+			if _, repeated := seen[id]; repeated {
+				diagnostics = append(diagnostics, Diagnostic{
+					Kind: diagnosticContainerRepeatedGroup, ProposalKey: proposal.Key, Reason: id,
+				})
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+		if len(ids) < 2 {
+			// A part holding one group is that group under a second name.
+			for _, id := range ids {
+				delete(seen, id)
+			}
+			diagnostics = append(diagnostics, Diagnostic{
+				Kind: diagnosticContainerTooSmall, ProposalKey: proposal.Key,
+				Reason: proposal.Title,
+			})
+			continue
+		}
+		sort.Strings(ids)
+		container := Container{
+			Title: strings.TrimSpace(proposal.Title), Summary: strings.TrimSpace(proposal.Summary),
+			Lane: proposal.Lane, GroupIDs: ids,
+		}
+		container.ID = containerIdentity(targetID, container)
+		result = append(result, container)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result, diagnostics
 }
 
 func groupIdentity(targetID string, group Group) string {
