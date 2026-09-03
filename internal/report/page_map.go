@@ -873,6 +873,38 @@ type pageRepoEdge struct {
 	Possible bool
 }
 
+// repoCodeDependencies counts, per ordered pair of targets, how many symbols
+// one takes from the other. chi's rest-example imports github.com/go-chi/chi/v5
+// thirteen times and that is a target on the same page; the repository map used
+// to say "no target calls another" because it only knew about HTTP.
+func (builder *pageBuilder) repoCodeDependencies() map[[2]string]int {
+	counts := make(map[[2]string]int)
+	for _, section := range builder.sections {
+		index := builder.graphIndex(section.programTargetID)
+		if index == nil {
+			continue
+		}
+		seen := make(map[string]struct{})
+		for _, subject := range index.Subjects {
+			if subject.Object == nil || subject.Object.External == nil {
+				continue
+			}
+			sibling := builder.siblingByPackage(subject.Object.External.PackagePath)
+			if sibling == nil || sibling == section {
+				continue
+			}
+			name := subject.Object.Name
+			key := sibling.ID + "\x00" + name
+			if _, repeated := seen[key]; repeated {
+				continue
+			}
+			seen[key] = struct{}{}
+			counts[[2]string{section.factsTargetID, sibling.factsTargetID}]++
+		}
+	}
+	return counts
+}
+
 // repoOutgoingCounts is how many other targets each target calls.
 func (builder *pageBuilder) repoOutgoingCounts() map[string]int {
 	counts := make(map[string]int)
@@ -895,6 +927,9 @@ func (builder *pageBuilder) repoOutgoingCounts() map[string]int {
 		}
 		seen[key] = struct{}{}
 		counts[call.TargetID]++
+	}
+	for pair := range builder.repoCodeDependencies() {
+		counts[pair[0]]++
 	}
 	return counts
 }
@@ -1016,9 +1051,9 @@ func repoMapCaption(analyzed, unread, edges int) string {
 	caption := "Every part of this repository, sized by how many symbols it holds."
 	switch {
 	case edges > 0:
-		caption += " An arrow is one target calling another over HTTP."
+		caption += " An arrow is one target reaching another, over HTTP or by importing it."
 	default:
-		caption += " No target calls another over HTTP, so there are no arrows."
+		caption += " No target reaches another, over HTTP or by import, so there are no arrows."
 	}
 	if unread > 0 {
 		caption += fmt.Sprintf(
@@ -1077,7 +1112,20 @@ func cutToBudget(value string, budget int) string {
 	return strings.TrimRight(string(runes[:budget-1]), " ·") + "…"
 }
 
-// repoEdges counts the portals between each ordered pair of targets.
+// repoEdgeLabel says what one target takes from another: HTTP crossings,
+// imported symbols, or both.
+func repoEdgeLabel(calls, symbols int) string {
+	var parts []string
+	if calls > 0 {
+		parts = append(parts, fmt.Sprintf("%d HTTP %s", calls, pluralWord(calls, "call", "calls")))
+	}
+	if symbols > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s", symbols, pluralWord(symbols, "symbol", "symbols")))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// repoEdges counts the portals and imports between each ordered pair of targets.
 func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) []pageRepoEdge {
 	if builder.data.Facts == nil {
 		return nil
@@ -1085,7 +1133,19 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) []pageRepo
 	type pair struct{ from, to string }
 	counts := make(map[pair]int)
 	exact := make(map[pair]int)
+	symbols := make(map[pair]int)
 	var order []pair
+	// A target that imports another's package depends on it as surely as one
+	// that calls it over HTTP, and that arrow was missing entirely: chi's
+	// rest-example takes thirteen symbols from github.com/go-chi/chi/v5, a
+	// target on the same page, and the map said no target called another.
+	for dependency, count := range builder.repoCodeDependencies() {
+		key := pair{dependency[0], dependency[1]}
+		if counts[key] == 0 && symbols[key] == 0 {
+			order = append(order, key)
+		}
+		symbols[key] += count
+	}
 	for _, portal := range builder.data.Facts.OfKind(facts.KindPortal) {
 		if len(portal.Refs) < 2 {
 			continue
@@ -1096,7 +1156,7 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) []pageRepo
 			continue
 		}
 		key := pair{call.TargetID, route.TargetID}
-		if counts[key] == 0 {
+		if counts[key] == 0 && symbols[key] == 0 {
 			order = append(order, key)
 		}
 		counts[key]++
@@ -1120,12 +1180,12 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) []pageRepo
 		result = append(result, pageRepoEdge{
 			Path: fmt.Sprintf("M%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f",
 				startX, startY, startX+bend, startY, endX-bend, endY, endX, endY),
-			Label: fmt.Sprintf("%d HTTP %s", counts[key],
-				map[bool]string{true: "calls", false: "call"}[counts[key] != 1]),
+			Label:  repoEdgeLabel(counts[key], symbols[key]),
 			LabelX: (startX + endX) / 2, LabelY: (startY+endY)/2 - 7,
 			// Dashed only when nothing about this pair is exact; one uncertain
 			// crossing among several must not make the whole link look uncertain.
-			Possible: exact[key] == 0,
+			// An import is always exact.
+			Possible: symbols[key] == 0 && exact[key] == 0,
 		})
 	}
 	return result

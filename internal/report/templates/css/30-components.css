@@ -52,3 +52,8 @@ summary{cursor:pointer;color:var(--accent);font-size:.9rem}
 .route-to{color:var(--muted);font-size:.76rem}
 .route-symbol{color:var(--accent);font-weight:550;text-decoration:none;border-bottom:1px dotted var(--accent)}
 .route-symbol:hover{text-decoration:none;border-bottom-style:solid}
+
+/* A symbol that belongs to another target of this repository is not outside
+   it: the chip leads there. */
+.chip-sibling{border-style:solid;border-color:var(--accent);color:var(--accent);text-decoration:none}
+.chip-sibling:hover{background:var(--soft)}

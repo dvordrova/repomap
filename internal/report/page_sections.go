@@ -115,7 +115,7 @@ type pageGroup struct {
 	Visible     []pageChipRow
 	More        []pageChipRow
 	MoreCount   int
-	Externals   []string
+	Externals   []pageExternal
 	Connections []pageConnection
 }
 
@@ -381,6 +381,22 @@ func (builder *pageBuilder) fillSectionGroups(section *pageSection) {
 	}
 }
 
+// siblingByPackage finds the analyzed target a package path names. chi's
+// rest-example imports github.com/go-chi/chi/v5, and that is a target on this
+// same page: calling it external is true of the compiler and false of the
+// reader.
+func (builder *pageBuilder) siblingByPackage(packagePath string) *pageSection {
+	if packagePath == "" {
+		return nil
+	}
+	for _, section := range builder.sections {
+		if section.Name == packagePath || section.Label == packagePath {
+			return section
+		}
+	}
+	return nil
+}
+
 func (builder *pageBuilder) graphIndex(programTargetID string) *groupindex.Index {
 	for position := range builder.data.GroupGraph.Indexes {
 		index := &builder.data.GroupGraph.Indexes[position]
@@ -406,10 +422,19 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 // memberChips resolves member subjects to anchored chips grouped by file and
 // deduplicated by path and line, so one file prints its path once. Members
 // without a location (external packages) become plain labels.
-func (builder *pageBuilder) memberChips(memberIDs []string) ([]pageChipRow, []string) {
+// pageExternal is a symbol this group uses that has no line in this target. It
+// is usually genuinely outside the repository — but when its package is
+// another target of this same repository, saying "outside" is wrong and the
+// chip leads there instead.
+type pageExternal struct {
+	Name string
+	Href string
+}
+
+func (builder *pageBuilder) memberChips(memberIDs []string) ([]pageChipRow, []pageExternal) {
 	byPath := make(map[string][]pageChip)
 	seen := make(map[string]struct{}, len(memberIDs))
-	var externals []string
+	var externals []pageExternal
 	for _, id := range memberIDs {
 		ref, known := builder.subjects[id]
 		if !known {
@@ -424,7 +449,13 @@ func (builder *pageBuilder) memberChips(memberIDs []string) ([]pageChipRow, []st
 				continue
 			}
 			seen[name] = struct{}{}
-			externals = append(externals, name)
+			row := pageExternal{Name: name}
+			if object := ref.subject.Object; object != nil && object.External != nil {
+				if sibling := builder.siblingByPackage(object.External.PackagePath); sibling != nil {
+					row.Href = "#" + sibling.ID
+				}
+			}
+			externals = append(externals, row)
 			continue
 		}
 		key := anchor.Path + ":" + name
@@ -452,7 +483,14 @@ func (builder *pageBuilder) memberChips(memberIDs []string) ([]pageChipRow, []st
 		})
 		rows = append(rows, pageChipRow{Path: path, Members: chips})
 	}
-	sort.Strings(externals)
+	// A sibling target first: a name a reader can follow is worth more than
+	// one they cannot.
+	sort.SliceStable(externals, func(left, right int) bool {
+		if (externals[left].Href != "") != (externals[right].Href != "") {
+			return externals[left].Href != ""
+		}
+		return externals[left].Name < externals[right].Name
+	})
 	return rows, externals
 }
 
