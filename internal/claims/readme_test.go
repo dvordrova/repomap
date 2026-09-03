@@ -197,4 +197,18 @@ func TestReadableKeepsUnderscoresInsideNames(t *testing.T) {
 	if strings.Contains(got, "_returns_") {
 		t.Fatalf("readable(%q) = %q, want the emphasis markers gone", text, got)
 	}
+	// Removing a marker must not remove the space beside it.
+	if got != "The function dotenv_values works like load_dotenv, but returns a dict." {
+		t.Fatalf("readable(%q) = %q", text, got)
+	}
+	for _, pair := range [][2]string{
+		{"alpha _beta_ gamma", "alpha beta gamma"},
+		{"use _emphasis_ here", "use emphasis here"},
+		{"__bold__ heading text", "bold heading text"},
+		{"the name alpha__beta survives", "the name alpha__beta survives"},
+	} {
+		if out := readable(pair[0]); out != pair[1] {
+			t.Fatalf("readable(%q) = %q, want %q", pair[0], out, pair[1])
+		}
+	}
 }

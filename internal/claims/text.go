@@ -41,13 +41,16 @@ var (
 	referenceImg  = regexp.MustCompile(`!\[[^\]]*\]`)
 	referenceLink = regexp.MustCompile(`\[([^\]]*)\]\[[^\]]*\]`)
 	inlineLink    = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
-	// Emphasis markers are formatting, but an underscore inside a word is a
-	// name: a README about `load_dotenv` and `dotenv_values` was quoted as
-	// saying "loaddotenv" and "dotenvvalues", which is not what it says.
-	// Only underscores at a word edge are markup.
-	emphasis     = regexp.MustCompile("[*`]{1,3}|(?:^|[^\\p{L}\\p{N}])_{1,3}|_{1,3}(?:[^\\p{L}\\p{N}]|$)")
-	headingMark  = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s*`)
-	trailingMark = regexp.MustCompile(`(?m)\s*#+\s*$`)
+	emphasis      = regexp.MustCompile("[*`]{1,3}")
+	// An underscore inside a word is part of a name, not markup: a README
+	// about `load_dotenv` and `dotenv_values` was quoted as saying
+	// "loaddotenv" and "dotenvvalues", which is not what it says. Only an
+	// underscore run at a word edge is emphasis, and Go has no lookaround, so
+	// each pattern captures the neighbour it had to look at and puts it back.
+	openingUnderscore = regexp.MustCompile("(^|[^\\p{L}\\p{N}_])_{1,3}")
+	closingUnderscore = regexp.MustCompile("_{1,3}([^\\p{L}\\p{N}_]|$)")
+	headingMark       = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s*`)
+	trailingMark      = regexp.MustCompile(`(?m)\s*#+\s*$`)
 )
 
 // readable turns one Markdown fragment into the prose a reader would see:
@@ -67,6 +70,8 @@ func readable(text string) string {
 	text = headingMark.ReplaceAllString(text, "")
 	text = trailingMark.ReplaceAllString(text, "")
 	text = emphasis.ReplaceAllString(text, "")
+	text = openingUnderscore.ReplaceAllString(text, "$1")
+	text = closingUnderscore.ReplaceAllString(text, "$1")
 	text = collapseSpace(text)
 	if !hasProse(text) {
 		return ""
