@@ -16,7 +16,7 @@ const (
 	executionContract     = "repomap.program-grouping.v5"
 	preparationVersion    = 5
 	responseSchemaVersion = 2
-	outputTokenCount      = 128_000
+	outputTokenCount      = 32_768
 )
 
 type phase string

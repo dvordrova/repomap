@@ -17,7 +17,7 @@ const (
 	executionContract     = "repomap.group-matching.v10"
 	preparationVersion    = 10
 	responseSchemaVersion = 5
-	outputTokenCount      = 128_000
+	outputTokenCount      = 32_768
 )
 
 const (

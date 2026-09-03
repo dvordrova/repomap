@@ -25,7 +25,7 @@ const (
 	preparationVersion    = 1
 	promptVersion         = 1
 	responseSchemaVersion = 1
-	maxOutputTokens       = 128_000
+	maxOutputTokens       = 32_768
 )
 
 //go:embed prompt.md

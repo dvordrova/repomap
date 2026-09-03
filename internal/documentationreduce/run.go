@@ -25,7 +25,16 @@ const (
 	executionContract     = "repomap.documentation-reduce.v1"
 	preparationVersion    = 1
 	responseSchemaVersion = 1
-	maxOutputTokens       = 128_000
+	// A completion reservation is subtracted from the model's context window
+	// before the request is even read, so an oversized one is input the request
+	// cannot carry. Across 2,157 recorded responses the largest was 20,444 tokens
+	// and p99 was 7,026; none reached 32,768. The old 128,000 reserved six times
+	// the largest answer ever produced and cost the same in input: repomap's own
+	// cmd/repomap was refused with "you requested 1,051,970 tokens (923,970 in
+	// the messages, 128,000 in the completion)" against a 1,048,576 window, over
+	// by 3,394. A truncated answer is not silently accepted either — a completion
+	// that did not stop is rejected and its batch is split.
+	maxOutputTokens = 32_768
 )
 
 //go:embed prompt.md

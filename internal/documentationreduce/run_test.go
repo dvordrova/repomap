@@ -170,7 +170,7 @@ func (provider *documentationPresetProvider) State() []byte {
 func (provider *documentationPresetProvider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
 	if !prompt.ResponseFormatJSON || prompt.System == "" || prompt.User == "" ||
 		limits.MaxRequestBytes != llm.SemanticRecordByteLimit ||
-		limits.MaxResponseBytes != llm.ProviderResponseByteLimit || limits.MaxOutputTokens != 128_000 {
+		limits.MaxResponseBytes != llm.ProviderResponseByteLimit || limits.MaxOutputTokens != maxOutputTokens {
 		return llm.Prepared{}, fmt.Errorf("preset received invalid request contract")
 	}
 	wire, err := json.Marshal(documentationPresetPrepared{System: prompt.System, User: prompt.User})

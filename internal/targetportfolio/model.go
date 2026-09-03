@@ -27,7 +27,7 @@ const (
 	MaxDefaultRequestBytes  = 2*MaxRequestBytes + 8<<10
 	MaxProviderRequestBytes = 2*MaxDefaultRequestBytes + 64<<10
 	MaxResponseBytes        = llm.ProviderResponseByteLimit
-	MaxOutputTokens         = 128_000
+	MaxOutputTokens         = 32_768
 )
 
 const executionContract = "positive-file-target-portfolio-selection-with-native-authority-v8"

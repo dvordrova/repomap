@@ -17,7 +17,7 @@ const (
 	executionContract       = "repomap.program-categorization.v4"
 	preparationVersion      = 4
 	responseSchemaVersion   = 1
-	maxOutputTokens         = 128_000
+	maxOutputTokens         = 32_768
 	ownedSubjectsPerRequest = 32
 )
 

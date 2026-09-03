@@ -28,7 +28,7 @@ const (
 	// scale comparisons. Ordinary execution uses llm.SemanticRecordByteLimit.
 	MaxProviderRequestBytes = 2*MaxRequestBytes + 64<<10
 	MaxResponseBytes        = llm.ProviderResponseByteLimit
-	MaxOutputTokens         = 128_000
+	MaxOutputTokens         = 32_768
 
 	// Former local acceptance thresholds are retained only as scale-warning
 	// baselines. Crossing one never truncates or rejects accepted data.
