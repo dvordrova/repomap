@@ -182,6 +182,40 @@ the whole test tree, so the same test files are categorized three times and
 its groups are named after tests as often as after the library. Whether a
 target should include its own tests is a product question nobody has answered.
 
+## The merge phase asks for a copy, and copies lose things
+
+Grouping splits a large target into request shards, and a merge phase then
+consolidates what the shards proposed. A merge response must re-emit every
+membership of every candidate it was handed, so the task is a copy of
+thousands of refs, and a response that drops one is refused whole. chi's
+router package sent 33 candidates in a 1.35 MB merge request and lost the
+merge to exactly that.
+
+Three things were done and one was not.
+
+Done: a failed merge keeps the shards' groups instead of losing the target; a
+rejection is local to the candidates it was given, so the consolidations the
+model got right survive; and candidates per merge request are bounded at
+twelve, which took chi from one 1.35 MB request to three of about 700 KB, two
+of which merged cleanly.
+
+Not done, and this is the real fix: the response should name which candidates
+belong together and let the code union their members. Nothing can be dropped
+from a union. That changes the merge request and response shape and the prompt,
+so it cold-starts grouping everywhere, and it is the next thing worth doing in
+this area.
+
+Two experiments were tried against this and reverted, with their numbers:
+
+- telling the model that tests are one responsibility took python-dotenv's
+  test-heavy targets from 16 and 15 groups to 5 and 7, each with a single test
+  group — and destabilised chi's router package, whose longer answer stopped
+  fitting in one attempt. Whether tests belong on the map at all is a product
+  question nobody has answered.
+- capping grouping at 256 subjects per request, added when a 1.64 MB request
+  went unanswered twice, split that same package into four shards and 34
+  unconsolidated groups. It made the one target it existed for worse.
+
 ## Known gaps, recorded not fixed
 
 - `os.environ["KEY"]` and `process.env.KEY` subscript reads are not captured.
