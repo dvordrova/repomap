@@ -158,19 +158,34 @@ string, so grep it, do not walk it as JSON.
 
 ## Scale: what a repository costs
 
-| repository | objects | relations | categorization requests | result |
-|---|---|---|---|---|
-| fixture backend | 219 | — | 10 | 5.7 s warm, 55 s cold, both targets |
-| fixture front | 222 | — | 14 | included above |
-| chi library | 433 | 887 | 30 | 7.6 s warm, 111 s cold, 4/4 targets |
-| python-dotenv | 900 | 1,798 | 53 per target, 3 targets | 19.7 s warm, 864 s cold, 3/3 |
-| beets | 26,218 | 53,063 | ~820 | stopped after 388 calls |
+| repository | objects | categorization requests | result |
+|---|---|---|---|
+| fixture, both targets | 441 | 24 | 5.9 s warm, 55 s cold, 2/2 |
+| chi, four targets | 1,516 | ~60 | 7.6 s warm, 118 s cold, 4/4 |
+| python-dotenv, three targets | 900 each | 53 each | 21 s warm, 3/3 |
+| repomap itself, twenty targets | 4,162 largest | 502 largest | 1,287 s cold, 18/20 |
+| type-fest | 3,405 | 283 | not run; the plan was announced and refused |
+| beets | 26,218 | ~820 | stopped after 388 calls |
+
+repomap's two unanalyzed targets are TypeScript fixtures under `testdata`
+with no `node_modules`; the run says so and continues. Getting from "run
+failed, nothing analyzed" to 18/20 took three fixes, each with the provider's
+own words behind it: a module `go list` cannot describe is skipped rather than
+fatal; the completion reservation was six times the largest answer ever
+produced and was eating the context window; and a grouping request is bounded
+at three megabytes because a 15.4 MB one was refused outright.
 
 beets was pointed at on 2026-09-03 as a third repository to read. It is not
 medium by this tool's standards: nine minutes and 388 accepted calls in, at
 12.05 M input tokens, it was roughly halfway through categorization alone. The
 run was stopped rather than finished, so nothing is known about what its
 report would have looked like.
+
+**The model's context window is 1,048,576 tokens, not 131,072.** The provider
+says so when a request misses it, and the completion reservation is subtracted
+from it before the request is read. Both numbers in the old baseline table
+were wrong about this, which is why "no call ever crossed the window" held
+right up until a real repository crossed it twice in one run.
 
 The request plan is now announced before it executes, so the next person sees
 the number rather than the bill. Nothing caps it. If a bound is ever wanted,
