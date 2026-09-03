@@ -146,7 +146,7 @@ func splitGroup(
 	if err != nil {
 		return nil, nil, fmt.Errorf("program grouping: encode split request: %w", err)
 	}
-	state, err := cubeState(compilation.index.SHA256, phaseSplit, wire)
+	state, err := cubeState(phaseSplit, wire)
 	if err != nil {
 		return nil, nil, err
 	}

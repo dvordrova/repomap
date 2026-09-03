@@ -275,7 +275,11 @@ func TestRunBuildsSparseOverlappingGroupsAndOpenSemanticConnections(t *testing.T
 	requests := append([]groupingRequest(nil), provider.requests...)
 	prompts := append([]llm.Prompt(nil), provider.prompts...)
 	provider.mu.Unlock()
-	if len(requests) != 1 || requests[0].Phase != phaseGrouping {
+	// One shard, then the consolidation that runs over every shard result
+	// however few there are: it cannot lose a member, and skipping it left a
+	// small target with one raw draw of a stage whose draws vary widely.
+	if len(requests) != 2 || requests[0].Phase != phaseGrouping ||
+		requests[1].Phase != phaseConsolidate {
 		t.Fatalf("provider requests = %#v", requests)
 	}
 	refs := requestRefs(requests[0].Request)

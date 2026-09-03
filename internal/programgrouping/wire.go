@@ -149,9 +149,15 @@ type candidateConnectionWire struct {
 // selection authority. Other subjects are complete incident context and may
 // be cited as evidence, but an unclassified row is never a selectable member.
 type Request struct {
-	Version              int                       `json:"version"`
-	Phase                phase                     `json:"phase"`
-	Target               targetWire                `json:"target"`
+	Version int        `json:"version"`
+	Phase   phase      `json:"phase"`
+	Target  targetWire `json:"target"`
+	// Selectable is how many refs this request may select from. The sizing
+	// rule is written against it, because the model cannot see the target: a
+	// rule about "a few hundred subjects" read by a request carrying 64 of
+	// them is a rule about nothing, and the answer's size was the largest
+	// free variable in the whole stage.
+	Selectable           int                       `json:"selectable"`
 	GroupRefs            []string                  `json:"group_refs"`
 	Subjects             []subjectWire             `json:"subjects"`
 	Edges                []edgeWire                `json:"edges"`
@@ -239,6 +245,7 @@ func (compilation Compilation) request(
 			Language: compilation.index.Target.Language, Kind: compilation.index.Target.Kind,
 			Name: compilation.index.Target.Name, Selector: compilation.index.Target.Selector,
 		},
+		Selectable:           len(groupRefs),
 		GroupRefs:            append([]string(nil), groupRefs...),
 		Subjects:             make([]subjectWire, 0, len(contextIDs)),
 		Edges:                make([]edgeWire, 0, len(incidentEdges)),

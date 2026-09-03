@@ -67,12 +67,13 @@ the same response.
 discarded whole, and every connection naming it is discarded with it.
 
 Size a group for reading, not for coverage. One group is one responsibility a
-reader would name out loud, so a target of a few hundred subjects usually has
-between eight and fifteen of them. No group should hold more than about a
-fifth of the subjects in `group_refs`: a group that large is several
-responsibilities that happen to share a directory, and splitting it by what
-each part does is always the better answer. A group holding one subject is
-fine when that subject is its own responsibility.
+reader would name out loud. `selectable` says how many refs this request has
+to work with, and the answer is measured against that number and nothing
+else: return at least `selectable`/20 groups and at most `selectable`/4.
+For a request carrying 64 refs that is between 3 and 16 groups. No group may
+hold more than a fifth of `selectable`: a group that large is several
+responsibilities that happen to share a directory. A group holding one
+subject is fine when that subject is its own responsibility.
 
 During `grouping`, groups are a sparse overlapping cover, not a partition. A
 categorized subject may belong to several useful groups or to none. Do not

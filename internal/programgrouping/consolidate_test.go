@@ -66,25 +66,31 @@ func TestConsolidationNeverLosesAMember(t *testing.T) {
 	}
 }
 
-// A lane follows from a member's own categories, so consolidation may not move
-// one; the candidate whose lane does not match stays as it was.
-func TestConsolidationRefusesToMoveALane(t *testing.T) {
+// A part of a target is naturally several lanes at once, but a lane follows
+// from a member's own categories and consolidation may not move one. A group
+// naming candidates of two lanes becomes one group per lane under the same
+// name — not one group and a reject that falls back out on its own.
+func TestConsolidationSplitsACrossLaneGroupByLane(t *testing.T) {
 	t.Parallel()
 
-	merged, diagnostics := applyConsolidation(consolidationCandidates(), consolidateResponse{
+	merged, _ := applyConsolidation(consolidationCandidates(), consolidateResponse{
 		Groups: []consolidateGroup{
 			{Title: "Everything", Lane: groupindex.LaneCore, CandidateRefs: []string{"c1", "c4"}},
 		},
 	})
+	named := make(map[groupindex.Lane][]string)
 	for _, group := range merged.groups {
-		for _, member := range group.MemberSubjectIDs {
-			if member == "s5" && group.Lane != groupindex.LaneTriggers {
-				t.Fatalf("a triggers member was moved to %s: %#v", group.Lane, group)
-			}
+		if group.Title != "Everything" {
+			continue
 		}
+		named[group.Lane] = group.MemberSubjectIDs
 	}
-	if !hasDiagnostic(diagnostics, diagnosticConsolidationLaneMismatch) {
-		t.Fatalf("the refused lane move was not recorded: %#v", diagnostics)
+	if len(named) != 2 {
+		t.Fatalf("a cross-lane part did not become one group per lane: %#v", merged.groups)
+	}
+	if !reflect.DeepEqual(named[groupindex.LaneCore], []string{"s1", "s2"}) ||
+		!reflect.DeepEqual(named[groupindex.LaneTriggers], []string{"s5"}) {
+		t.Fatalf("members moved lane: %#v", named)
 	}
 }
 

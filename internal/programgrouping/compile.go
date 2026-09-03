@@ -113,7 +113,17 @@ func Compile(index programindex.Index) (Compilation, error) {
 			})
 		}
 	}
+	// Order subjects by where they are written, not by their identity. An id
+	// is a content hash, so sorting by it hands the model 64 unrelated
+	// symbols from thirty-six files and asks what they have in common; a
+	// shard is then a coherent slice of the repository instead, and adding a
+	// function somewhere moves one boundary rather than reshuffling all of
+	// them.
 	sort.Slice(compilation.subjects, func(i, j int) bool {
+		left, right := subjectOrder(compilation.subjects[i]), subjectOrder(compilation.subjects[j])
+		if left != right {
+			return left < right
+		}
 		return compilation.subjects[i].id < compilation.subjects[j].id
 	})
 	for position := range compilation.subjects {
@@ -254,6 +264,37 @@ func (compilation *Compilation) compileEdges() {
 	for position := range compilation.edges {
 		compilation.edges[position].ref = "e" + strconv.Itoa(position+1)
 	}
+}
+
+// subjectOrder is a subject's place in the repository: its file, then its line
+// and column, padded so they sort as numbers. A subject written nowhere — an
+// external symbol — sorts after everything local, by package and name, so the
+// dependencies of one area still travel with it.
+func subjectOrder(subject subjectAuthority) string {
+	if location := subjectLocation(subject); location != nil {
+		return fmt.Sprintf("0\x00%s\x00%09d\x00%09d", location.Path, location.Line, location.Column)
+	}
+	if subject.object != nil && subject.object.External != nil {
+		return "1\x00" + subject.object.External.PackagePath + "\x00" + subject.object.External.Name
+	}
+	name := ""
+	if subject.object != nil {
+		name = subject.object.Name
+	}
+	return "2\x00" + name
+}
+
+func subjectLocation(subject subjectAuthority) *programindex.Location {
+	if subject.object != nil {
+		return subject.object.Location
+	}
+	if subject.pattern != nil && subject.pattern.Location != nil {
+		return subject.pattern.Location
+	}
+	if subject.relation != nil {
+		return subject.relation.Location
+	}
+	return nil
 }
 
 func (compilation *Compilation) addEdge(edge graphEdge) {

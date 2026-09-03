@@ -276,7 +276,7 @@ func consolidateOnce(
 	if err != nil {
 		return proposalSet{}, nil, fmt.Errorf("program grouping: encode consolidation request: %w", err)
 	}
-	state, err := cubeState(compilation.index.SHA256, requestPhase, wire)
+	state, err := cubeState(requestPhase, wire)
 	if err != nil {
 		return proposalSet{}, nil, err
 	}
@@ -320,10 +320,14 @@ func applyConsolidation(
 	parentOf := make(map[string]string, len(byRef))
 	result := proposalSet{}
 	for position, group := range response.Groups {
-		lane := group.Lane
-		members := make([]string, 0)
-		evidence := make([]string, 0)
-		absorbed := make([]string, 0, len(group.CandidateRefs))
+		// A part of a target is naturally several lanes at once — a router is
+		// its routes and its dispatch — but a lane follows from a member's own
+		// categories and nothing here may move one. So a group naming
+		// candidates of several lanes becomes one group per lane under the
+		// same name, instead of one group and a pile of rejects that fall back
+		// out and put the count up again.
+		byLane := make(map[groupindex.Lane][]string)
+		var laneOrder []groupindex.Lane
 		for _, ref := range group.CandidateRefs {
 			candidate, known := byRef[ref]
 			if !known {
@@ -339,47 +343,44 @@ func applyConsolidation(
 				})
 				continue
 			}
-			if !lane.Valid() {
-				lane = candidate.Lane
-			}
-			if candidate.Lane != lane {
-				// A lane is decided by a member's own categories. A grouping
-				// of titles may not move one.
-				diagnostics = append(diagnostics, groupindex.Diagnostic{
-					Kind:   diagnosticConsolidationLaneMismatch,
-					Reason: fmt.Sprintf("%s is %s, group is %s", ref, candidate.Lane, lane),
-				})
-				continue
-			}
 			claimed[ref] = group.Title
-			absorbed = append(absorbed, ref)
-			members = append(members, candidate.MemberSubjectIDs...)
-			evidence = append(evidence, candidate.EvidenceSubjectIDs...)
-		}
-		if len(absorbed) == 0 {
-			continue
-		}
-		key := fmt.Sprintf("k%d", position+1)
-		title, summary := group.Title, group.Summary
-		if len(absorbed) == 1 {
-			// One candidate on its own keeps the words its own shard chose;
-			// a rename here would be a claim nothing was measured for.
-			only := byRef[absorbed[0]]
-			if title == "" {
-				title = only.Title
+			if _, seen := byLane[candidate.Lane]; !seen {
+				laneOrder = append(laneOrder, candidate.Lane)
 			}
-			if summary == "" {
-				summary = only.Summary
+			byLane[candidate.Lane] = append(byLane[candidate.Lane], ref)
+		}
+		for laneIndex, lane := range laneOrder {
+			absorbed := byLane[lane]
+			members := make([]string, 0)
+			evidence := make([]string, 0)
+			for _, ref := range absorbed {
+				candidate := byRef[ref]
+				members = append(members, candidate.MemberSubjectIDs...)
+				evidence = append(evidence, candidate.EvidenceSubjectIDs...)
 			}
+			key := fmt.Sprintf("k%d-%d", position+1, laneIndex+1)
+			title, summary := group.Title, group.Summary
+			if len(absorbed) == 1 {
+				// One candidate on its own keeps the words its own shard
+				// chose; a rename here would be a claim nothing was measured
+				// for.
+				only := byRef[absorbed[0]]
+				if title == "" {
+					title = only.Title
+				}
+				if summary == "" {
+					summary = only.Summary
+				}
+			}
+			for _, ref := range absorbed {
+				parentOf[ref] = key
+			}
+			result.groups = append(result.groups, groupProposal{
+				Key: key, Title: title, Summary: summary, Lane: lane,
+				MemberSubjectIDs: distinctStrings(members), EvidenceSubjectIDs: distinctStrings(evidence),
+				absorbed: absorbed,
+			})
 		}
-		for _, ref := range absorbed {
-			parentOf[ref] = key
-		}
-		result.groups = append(result.groups, groupProposal{
-			Key: key, Title: title, Summary: summary, Lane: lane,
-			MemberSubjectIDs: distinctStrings(members), EvidenceSubjectIDs: distinctStrings(evidence),
-			absorbed: absorbed,
-		})
 	}
 	// Whatever the response left out survives untouched. This is the whole
 	// point: a consolidation that helps with half the candidates is worth

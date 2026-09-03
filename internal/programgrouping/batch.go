@@ -23,6 +23,15 @@ import (
 // target when it goes wrong.
 const maxGroupingRequestBytes = 3 << 20
 
+// ownedSubjectsPerGroupingRequest bounds a shard by what a model will answer
+// rather than by what a request will hold. Bounded only by bytes, chi's router
+// package went into one request of 892 subjects, and eight cold draws of that
+// one question returned 1, 3, 4, 17, 26, 30, 30 and 33 groups — the same
+// collapse categorization showed at 128 owned refs and does not show at 32.
+// Duplicate proposals from separate shards are what consolidation is for, and
+// it cannot lose a member, so more shards costs calls and not truth.
+const ownedSubjectsPerGroupingRequest = 64
+
 type batch struct {
 	groupRefs []string
 }
@@ -46,7 +55,16 @@ func (compilation Compilation) batchesForProvider(provider llm.Provider) ([]batc
 	result := make([]batch, 0)
 	remaining := compilation.categorizedRefs
 	for len(remaining) > 0 {
-		length, err := compilation.largestFittingPrefix(provider, remaining)
+		// Bound the candidate before searching it, not after. Searching the
+		// whole remainder encoded multi-megabyte probe requests — each one
+		// running the full context expansion — only to throw the answer away
+		// at the cap, and it made every later boundary depend on how many
+		// edges the head subjects happened to carry.
+		candidate := remaining
+		if len(candidate) > ownedSubjectsPerGroupingRequest {
+			candidate = candidate[:ownedSubjectsPerGroupingRequest]
+		}
+		length, err := compilation.largestFittingPrefix(provider, candidate)
 		if err != nil {
 			return nil, err
 		}

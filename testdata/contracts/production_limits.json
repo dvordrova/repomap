@@ -489,7 +489,7 @@
       "symbols": [
         "maxGroupingRequestBytes"
       ],
-      "note": "Request-planning granularity, measured against what the provider refuses: a 15.4 MB grouping request was rejected for exceeding the model's context window while 2.4 MB and 1.6 MB requests answered. The subject cover is unchanged and exhaustive; it is spread over more requests."
+      "note": "Request-planning granularity, measured twice against what the model and the provider actually do. A 15.4 MB request was refused for exceeding the context window while 2.4 MB and 1.6 MB answered, and a shard bounded only by bytes put 892 subjects in one question, whose eight cold draws returned between 1 and 33 groups. The subject cover is unchanged and exhaustive; it is spread over more requests, and duplicate proposals across shards are joined by a consolidation that cannot lose a member."
     },
     {
       "file": "internal/programgrouping/merge.go",

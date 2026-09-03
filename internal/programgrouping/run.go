@@ -55,7 +55,7 @@ func Run(
 				if encodeErr != nil {
 					return nil, fmt.Errorf("program grouping: encode request: %w", encodeErr)
 				}
-				state, stateErr := cubeState(compilation.index.SHA256, phaseGrouping, wire)
+				state, stateErr := cubeState(phaseGrouping, wire)
 				if stateErr != nil {
 					return nil, stateErr
 				}
@@ -90,7 +90,10 @@ func Run(
 		combined.diagnostics = append(combined.diagnostics, namespaced.diagnostics...)
 	}
 	combined = canonicalProposalSet(combined)
-	if len(finalPlan) > 1 && len(combined.groups) > 1 {
+	// Consolidation runs for a single shard too. It cannot lose a member, and
+	// a target small enough for one request was otherwise one raw draw of a
+	// stage whose draws range from one group to thirty-three.
+	if len(combined.groups) > 1 {
 		// Consolidation asks which of the shards' proposals are the same
 		// thing and unions their members here. It cannot lose a member, so a
 		// consolidation that does not work is a target with more groups than
@@ -130,7 +133,13 @@ func Run(
 	return grouped, canonicalDiagnostics(diagnostics), nil
 }
 
-func cubeState(indexSHA string, requestPhase phase, request []byte) ([]byte, error) {
+// cubeState keys an answer by the question. The whole enriched index digest
+// used to be in here as well, so a request whose bytes had not changed by one
+// character still missed the cache when the categorization model returned one
+// extra category on an unrelated subject somewhere else in the target. The
+// request carries everything the model sees; two identical requests deserve
+// the same answer.
+func cubeState(requestPhase phase, request []byte) ([]byte, error) {
 	promptDigest := sha256.Sum256([]byte(strings.TrimSpace(promptText)))
 	requestDigest := sha256.Sum256(request)
 	state := struct {
@@ -139,12 +148,11 @@ func cubeState(indexSHA string, requestPhase phase, request []byte) ([]byte, err
 		ResponseSchemaVersion int    `json:"response_schema_version"`
 		Phase                 phase  `json:"phase"`
 		PromptSHA256          string `json:"prompt_sha256"`
-		ProgramIndexSHA256    string `json:"program_index_sha256"`
 		RequestSHA256         string `json:"request_sha256"`
 	}{
 		Contract: executionContract, PreparationVersion: preparationVersion,
 		ResponseSchemaVersion: responseSchemaVersion, Phase: requestPhase,
-		PromptSHA256: hex.EncodeToString(promptDigest[:]), ProgramIndexSHA256: indexSHA,
+		PromptSHA256:  hex.EncodeToString(promptDigest[:]),
 		RequestSHA256: hex.EncodeToString(requestDigest[:]),
 	}
 	wire, err := json.Marshal(state)

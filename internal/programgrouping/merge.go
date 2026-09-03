@@ -269,7 +269,7 @@ func runMergeBatch(
 	if err != nil {
 		return llm.Outcome[proposalSet]{}, fmt.Errorf("program grouping: encode merge request: %w", err)
 	}
-	state, err := cubeState(compilation.index.SHA256, phaseMerge, wire)
+	state, err := cubeState(phaseMerge, wire)
 	if err != nil {
 		return llm.Outcome[proposalSet]{}, err
 	}
