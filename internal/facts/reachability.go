@@ -1,6 +1,7 @@
 package facts
 
 import (
+	"path"
 	"sort"
 	"strings"
 
@@ -47,6 +48,7 @@ func (b *builder) addReachability(target *targetContext) {
 			}
 		}
 	}
+	addPackageInitEdges(target.files(), edges)
 	roots := seedFiles(target)
 	if len(roots) == 0 {
 		b.diagnose("dead_module_skipped", target.target.Name+": no entrypoint seeds")
@@ -120,6 +122,39 @@ func reach(roots []string, edges map[string]map[string]struct{}) map[string]stru
 		}
 	}
 	return reached
+}
+
+// addPackageInitEdges records what Python does when a module is imported:
+// importing `pkg.sub.module` executes `pkg/__init__.py` and
+// `pkg/sub/__init__.py` first. Without those edges a package's `__init__.py`
+// is reachable only when something imports the package by name, and
+// python-dotenv's was reported as dead code while `python -m dotenv` could
+// not run without it.
+func addPackageInitEdges(targetFiles []string, edges map[string]map[string]struct{}) {
+	files := make(map[string]struct{}, len(targetFiles))
+	for _, filePath := range targetFiles {
+		files[filePath] = struct{}{}
+	}
+	for filePath := range files {
+		if !strings.HasSuffix(filePath, ".py") {
+			continue
+		}
+		for directory := path.Dir(filePath); directory != "." && directory != "/" && directory != ""; directory = path.Dir(directory) {
+			initPath := path.Join(directory, "__init__.py")
+			if initPath == filePath {
+				continue
+			}
+			if _, present := files[initPath]; !present {
+				// A directory without __init__.py is not a package, and
+				// nothing above it is either.
+				break
+			}
+			if edges[filePath] == nil {
+				edges[filePath] = make(map[string]struct{})
+			}
+			edges[filePath][initPath] = struct{}{}
+		}
+	}
 }
 
 // isDeclarationFile excludes TypeScript ambient declarations: they are never

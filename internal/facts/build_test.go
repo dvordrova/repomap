@@ -714,3 +714,33 @@ func TestListenAddressAcceptsOnlyRealBindTargets(t *testing.T) {
 		}
 	}
 }
+
+// TestPackageInitEdgesFollowPythonImport pins that importing a module inside a
+// package reaches that package's __init__.py, which is what Python does and
+// what python-dotenv's report got wrong.
+func TestPackageInitEdgesFollowPythonImport(t *testing.T) {
+	edges := make(map[string]map[string]struct{})
+	addPackageInitEdges([]string{
+		"src/pkg/__init__.py", "src/pkg/sub/__init__.py", "src/pkg/sub/module.py",
+		"src/loose/module.py", "src/pkg/asset.txt",
+	}, edges)
+
+	if _, ok := edges["src/pkg/sub/module.py"]["src/pkg/sub/__init__.py"]; !ok {
+		t.Fatal("a module does not reach its own package init")
+	}
+	if _, ok := edges["src/pkg/sub/module.py"]["src/pkg/__init__.py"]; !ok {
+		t.Fatal("a module does not reach its parent package init")
+	}
+	if _, ok := edges["src/loose/module.py"]; ok {
+		t.Fatal("a directory without __init__.py was treated as a package")
+	}
+	if _, ok := edges["src/pkg/asset.txt"]; ok {
+		t.Fatal("a non-Python file was given package edges")
+	}
+	if _, ok := edges["src/pkg/sub/__init__.py"]["src/pkg/__init__.py"]; !ok {
+		t.Fatal("a package init does not reach its parent package init")
+	}
+	if _, ok := edges["src/pkg/sub/__init__.py"]["src/pkg/sub/__init__.py"]; ok {
+		t.Fatal("a package init reaches itself")
+	}
+}
