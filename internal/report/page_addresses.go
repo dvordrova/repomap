@@ -48,7 +48,12 @@ func (builder *pageBuilder) addresses(view *pageView) {
 				row.Target = section.Label
 			}
 			if row.Value == "" {
-				row.Note = "read from the environment; no default in the code"
+				// Saying "no default" would be a claim this page cannot make:
+				// a Python `Field(default=8080, env='APP_PORT')` has one, and
+				// the index records no value for a numeric literal, so there
+				// is nothing to read. The anchor is the answer; it stands on
+				// its own without a sentence that might be wrong.
+				row.Note = ""
 			}
 			view.Addresses = append(view.Addresses, row)
 		}

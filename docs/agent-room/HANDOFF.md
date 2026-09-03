@@ -220,9 +220,14 @@ Two experiments were tried against this and reverted, with their numbers:
 
 - `os.environ["KEY"]` and `process.env.KEY` subscript reads are not captured.
   Catching them needs a `reads` relation from the adapter, a schema change.
-- A numeric listen port, as JavaScript writes it (`app.listen(3000)`), is not
-  captured. The index records no value for a numeric argument, so there is
-  nothing to read; a string address is captured.
+- **The index records no value for a numeric or boolean literal argument.**
+  `PatternArgument.Kind` has `literal_string`, `string_template` and
+  `dynamic`, and everything else arrives as `dynamic` with no value. Three
+  answers are missing because of it: a JavaScript `app.listen(3000)` port, a
+  Python `Field(default=8080, env='APP_PORT')` default — the page shows
+  `APP_HOST 0.0.0.0` beside a bare `APP_PORT` for exactly this reason — and
+  any numeric manifest-like literal. One adapter change would close all three,
+  and it is the same shape of change the `os.environ["KEY"]` gap needs.
 - `~/git/fuego` fails before analysis: `go list` authority is incomplete for a
   package of templates that does not build. Not investigated.
 - `targetportfolio.Compile` and `CompileWithExecutableAuthority` are now
