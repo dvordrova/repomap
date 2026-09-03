@@ -1,5 +1,5 @@
 {{define "map.html"}}<figure class="map" data-map>
-<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="Map of this target's groups and the connections between them" class="map-svg">
+<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="Map of this target's groups and the connections between them" class="map-svg" style="min-width:{{printf "%.0f" .MinWidth}}px">
 <defs><marker id="map-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0.5 L10 5 L0 9.5 z" class="map-arrow-head"/></marker></defs>
 <g class="map-lanes">{{range .Lanes}}<text x="{{printf "%.1f" .X}}" y="18" class="map-lane-label">{{.Label}}</text>{{end}}</g>
 <g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" data-from="{{.From}}" data-to="{{.To}}" marker-end="url(#map-arrow)"><title>{{.Label}}</title></path>{{end}}</g>

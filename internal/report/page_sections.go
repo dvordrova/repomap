@@ -334,6 +334,7 @@ func mergeRoutesByHandler(rows []pageHTTPRow) []pageRouteRow {
 	}
 	position := make(map[key]int, len(rows))
 	merged := make([]pageRouteRow, 0, len(rows))
+	var unnamed []pageRoutePath
 	for _, row := range rows {
 		identity := key{symbol: row.Symbol}
 		if row.SymbolAnchor != nil {
@@ -341,9 +342,10 @@ func mergeRoutesByHandler(rows []pageHTTPRow) []pageRouteRow {
 		}
 		path := pageRoutePath{Path: row.Path, Anchor: row.Anchor, Possible: row.Possible}
 		if row.Symbol == "" {
-			// Without a handler name there is nothing to merge on, and two
-			// unnamed routes are two routes.
-			merged = append(merged, pageRouteRow{Paths: []pageRoutePath{path}})
+			// Paths whose handler the code does not name go together at the
+			// end. One a line, each under a row that does name a handler,
+			// they read as if that handler answered them too.
+			unnamed = append(unnamed, path)
 			continue
 		}
 		if index, seen := position[identity]; seen {
@@ -354,6 +356,9 @@ func mergeRoutesByHandler(rows []pageHTTPRow) []pageRouteRow {
 		merged = append(merged, pageRouteRow{
 			Paths: []pageRoutePath{path}, Symbol: row.Symbol, SymbolAnchor: row.SymbolAnchor,
 		})
+	}
+	if len(unnamed) > 0 {
+		merged = append(merged, pageRouteRow{Paths: unnamed})
 	}
 	return merged
 }

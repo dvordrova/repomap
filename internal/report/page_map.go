@@ -73,6 +73,14 @@ const (
 	// arrow's tooltip anyway.
 	mapEdgeLabelMinRoom   = 40.0
 	mapEdgeLabelMinBudget = 6
+	// mapLegibleScale is the most a map may be shrunk to fit the column it is
+	// in; past it the words on the arrows stop being words. A map that would
+	// have to shrink further scrolls sideways inside its own frame instead,
+	// and the page around it still does not.
+	mapLegibleScale = 0.78
+	// mapSmallestFrame keeps a map of three boxes from being drawn as three
+	// postage stamps in a wide column.
+	mapSmallestFrame = 544.0
 )
 
 // mapLabelOffsets are the vertical nudges a label tries, in order, when the
@@ -80,8 +88,12 @@ const (
 var mapLabelOffsets = []float64{0, -14, 14, -27, 27, -40, 40}
 
 type pageMap struct {
-	Width      float64
-	Height     float64
+	Width  float64
+	Height float64
+	// MinWidth is how far the picture may be shrunk to fit the column before
+	// it starts to scroll instead. A wide map squeezed into a phone is a
+	// pattern of grey boxes with unreadable words on it.
+	MinWidth   float64
 	Lanes      []pageMapLane
 	Nodes      []pageMapNode
 	Edges      []pageMapEdge
@@ -242,6 +254,7 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	if reach := rightmost + mapPadding; reach > result.Width {
 		result.Width = reach
 	}
+	result.MinWidth = mapMinWidth(result.Width)
 	return result
 }
 
@@ -783,10 +796,11 @@ const (
 )
 
 type pageRepoMap struct {
-	Width  float64
-	Height float64
-	Nodes  []pageRepoNode
-	Edges  []pageRepoEdge
+	Width    float64
+	Height   float64
+	MinWidth float64
+	Nodes    []pageRepoNode
+	Edges    []pageRepoEdge
 	// Caption says what the picture is and, when nothing calls anything, why
 	// there are no arrows in it.
 	Caption string
@@ -940,8 +954,20 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 	result.Width = mapPadding*2 + float64(columns)*repoNodeWidth + float64(columns-1)*gapX
 	result.Height = repoRowGap*2 + float64(rows)*repoNodeHeight + float64(rows-1)*repoNodeGapY
 	result.Edges = builder.repoEdges(centres)
+	result.MinWidth = mapMinWidth(result.Width)
 	result.Caption = repoMapCaption(len(builder.sections), len(unread), len(result.Edges))
 	return result
+}
+
+func mapMinWidth(width float64) float64 {
+	minimum := width * mapLegibleScale
+	if minimum < mapSmallestFrame {
+		minimum = mapSmallestFrame
+	}
+	if minimum > width {
+		minimum = width
+	}
+	return minimum
 }
 
 func repoMapCaption(analyzed, unread, edges int) string {

@@ -1,5 +1,5 @@
 {{define "repomap.html"}}<figure class="map repo-map" data-map>
-<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="The targets of this repository, their size, and the HTTP calls between them" class="map-svg">
+<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="The targets of this repository, their size, and the HTTP calls between them" class="map-svg" style="min-width:{{printf "%.0f" .MinWidth}}px">
 <defs><marker id="repo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0.5 L10 5 L0 9.5 z" class="map-arrow-head"/></marker></defs>
 <g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" marker-end="url(#repo-arrow)"/><text x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}" text-anchor="middle" class="repo-edge-label">{{.Label}}</text>{{end}}</g>
 <g class="map-nodes">{{range .Nodes}}{{if .Analyzed}}<a href="{{.Href}}" class="map-node repo-node" aria-label="{{.FullName}}, {{.Members}} symbol{{if ne .Members 1}}s{{end}}">{{else}}<g class="repo-node repo-node-unread" aria-label="{{.FullName}}, {{.Note}}">{{end}}
