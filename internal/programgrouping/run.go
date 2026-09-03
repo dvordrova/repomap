@@ -124,6 +124,13 @@ func Run(
 	combined = split
 	combined.diagnostics = append(combined.diagnostics, splitDiagnostics...)
 
+	// Parts are named last, over groups that are already the size they are
+	// going to be.
+	combined = runContainers(ctx, executor, provider, compilation, combined)
+	if ctx.Err() != nil {
+		return groupindex.Index{}, nil, ctx.Err()
+	}
+
 	grouped, buildDiagnostics, err := groupindex.Build(compilation.index, combined.groupIndexProposals())
 	if err != nil {
 		return groupindex.Index{}, nil, err

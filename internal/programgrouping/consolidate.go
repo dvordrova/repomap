@@ -211,19 +211,29 @@ func runConsolidation(
 	diagnostics = append(diagnostics, passDiagnostics...)
 	candidates = joined
 
-	// What is left is the truth about this target, and for a package of thirty
-	// middlewares the truth is thirty groups. One more pass over the same
-	// graph names the parts they belong to, and those names become a level
-	// above rather than replacing anything.
-	if len(candidates.groups) > consolidateEnough {
-		containers, containerDiagnostics := consolidateIntoContainers(
-			ctx, executor, provider, compilation, candidates,
-		)
-		candidates.containers = containers
-		diagnostics = append(diagnostics, containerDiagnostics...)
-	}
 	candidates.diagnostics = canonicalDiagnostics(append(diagnostics, candidates.diagnostics...))
 	return candidates, nil
+}
+
+// runContainers names the parts a target has once its groups are settled. It
+// is the last thing that happens to them: a group put inside a part is never
+// split afterwards, so a part built before splitting hid the one group worth
+// splitting — chi's largest held two fifths of its target and was skipped for
+// being inside a part.
+func runContainers(
+	ctx context.Context,
+	executor llm.Executor,
+	provider llm.Provider,
+	compilation Compilation,
+	set proposalSet,
+) proposalSet {
+	if len(set.groups) <= consolidateEnough {
+		return set
+	}
+	containers, diagnostics := consolidateIntoContainers(ctx, executor, provider, compilation, set)
+	set.containers = append(set.containers, containers...)
+	set.diagnostics = canonicalDiagnostics(append(set.diagnostics, diagnostics...))
+	return set
 }
 
 // consolidateIntoContainers asks the same question one level up and keeps the

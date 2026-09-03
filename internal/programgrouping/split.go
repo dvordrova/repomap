@@ -67,8 +67,9 @@ func runSplits(
 			continue
 		}
 		if _, inside := held[group.Key]; inside {
-			// A group already inside a part keeps its place; splitting it
-			// would put a level under a level for no reader's benefit.
+			// A group inside a part keeps its place; a level under a level
+			// helps no reader. Splitting runs before parts are named, so this
+			// only guards a part a split itself created.
 			result.groups = append(result.groups, group)
 			continue
 		}
