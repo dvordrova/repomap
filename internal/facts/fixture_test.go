@@ -229,6 +229,13 @@ func copyFixtureTree(t *testing.T, source, destination string, skipTopLevel map[
 			}
 			return nil
 		}
+		// Installed dependencies are not part of a fixture. The owner has to
+		// install them for repomap to read a TypeScript target at all, and
+		// they arrive full of symlinks; copying them would make whether the
+		// tests pass depend on whether an install has been run.
+		if entry.IsDir() && entry.Name() == "node_modules" {
+			return filepath.SkipDir
+		}
 		if entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("fixture contains unsupported symbolic link %q", filepath.ToSlash(relative))
 		}

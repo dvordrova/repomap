@@ -78,3 +78,14 @@ h2,h3{scroll-margin-top:3.2rem}
    files a reader could open. */
 .path.outside{font-style:italic}
 .chip-outside{background:transparent;border-style:dashed;color:var(--muted)}
+
+/* The headline strip: a few counts that answer "how much of this was read and
+   how big is it" before the reader gets to a sentence. */
+.figures{display:flex;flex-wrap:wrap;gap:.4rem .5rem;list-style:none;margin:.9rem 0 1.1rem;padding:0}
+.figures li{display:flex;flex-direction:column;gap:.05rem;min-width:6.5rem;padding:.45rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--soft)}
+.figures strong{font-size:1.25rem;font-weight:650;line-height:1.15;letter-spacing:-.01em}
+.figures span{font-size:.74rem;color:var(--muted);letter-spacing:.02em}
+.figures em{font-size:.72rem;font-style:normal;color:var(--warn)}
+.figures .figure-warn strong{color:var(--warn)}
+.repo-node-unread .map-node-body{fill:var(--soft);stroke:var(--line);stroke-dasharray:4 3}
+.repo-node-unread .repo-node-name,.repo-node-unread .map-node-count{fill:var(--muted)}

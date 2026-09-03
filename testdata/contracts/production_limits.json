@@ -713,10 +713,16 @@
       "file": "internal/report/page_map.go",
       "category": "excluded-not-a-limit",
       "symbols": [
+        "mapEdgeLabelBudget",
+        "mapEdgeLabelMinBudget",
+        "mapLoopMaxDepth",
+        "mapLoopMinDepth",
         "mapMaxNodesPerColumn",
-        "mapTitleBudget"
+        "mapTitleBudget",
+        "repoDetailBudget",
+        "repoNameBudget"
       ],
-      "note": "Drawing geometry for the target map. One wraps a long lane into further columns and the other cuts a node's title to one line; the whole title stays in the node tooltip and on the group card it links to, every group is drawn, and nothing is removed from the page."
+      "note": "Drawing geometry for the target and repository maps. They wrap a lane into further columns, wrap or cut a name to the lines a box has, bound how far a loop bows out of its column, and cut an arrow's label to the gutter it is written in. Every group and every target is drawn, every full name and every connection sentence stays in the tooltip and on the card it links to, and nothing is removed from the page."
     },
     {
       "file": "internal/report/page_model.go",

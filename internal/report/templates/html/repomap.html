@@ -1,11 +1,14 @@
 {{define "repomap.html"}}<figure class="map repo-map" data-map>
-<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="The targets of this repository and the HTTP calls between them" class="map-svg">
-<defs><marker id="repo-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" class="map-arrow-head"/></marker></defs>
+<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="The targets of this repository, their size, and the HTTP calls between them" class="map-svg">
+<defs><marker id="repo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0.5 L10 5 L0 9.5 z" class="map-arrow-head"/></marker></defs>
 <g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" marker-end="url(#repo-arrow)"/><text x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}" text-anchor="middle" class="repo-edge-label">{{.Label}}</text>{{end}}</g>
-<g class="map-nodes">{{range .Nodes}}<a href="{{.Href}}" class="map-node repo-node">
+<g class="map-nodes">{{range .Nodes}}{{if .Analyzed}}<a href="{{.Href}}" class="map-node repo-node" aria-label="{{.FullName}}, {{.Members}} symbol{{if ne .Members 1}}s{{end}}">{{else}}<g class="repo-node repo-node-unread" aria-label="{{.FullName}}, {{.Note}}">{{end}}
 <rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="7" class="map-node-body"/>
-<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="13" dy="26" class="repo-node-name">{{.Name}}</text>
-<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="13" dy="43" class="map-node-count">{{.Detail}}</text>
-</a>{{end}}</g>
+{{$node := .}}{{range $line, $text := .Name}}<text x="{{printf "%.1f" $node.X}}" y="{{printf "%.1f" $node.Y}}" dx="13" dy="{{if eq $line 0}}23{{else}}39{{end}}" class="repo-node-name">{{$text}}</text>{{end}}
+<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="13" dy="{{if gt (len .Name) 1}}56{{else}}42{{end}}" class="map-node-count">{{if .Analyzed}}{{.Detail}}{{else}}{{.Note}}{{end}}</text>
+{{if .Analyzed}}<rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" transform="translate(13 63)" width="{{printf "%.1f" .BarWidth}}" height="3" rx="1.5" class="map-node-bar"/>{{end}}
+<title>{{.FullName}}{{if .Analyzed}} — {{.Detail}}{{else}} — {{.Note}}{{end}}</title>
+{{if .Analyzed}}</a>{{else}}</g>{{end}}{{end}}</g>
 </svg>
+{{if .Caption}}<figcaption class="map-note">{{.Caption}}</figcaption>{{end}}
 </figure>{{end}}

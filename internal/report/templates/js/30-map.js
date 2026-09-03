@@ -10,7 +10,7 @@
 
   function bind(map) {
     var nodes = map.querySelectorAll('[data-node]');
-    var edges = map.querySelectorAll('.map-edge');
+    var edges = map.querySelectorAll('.map-edge, .map-edge-label');
     for (var index = 0; index < nodes.length; index++) {
       var node = nodes[index];
       node.addEventListener('mouseenter', preview);

@@ -2,15 +2,19 @@
 <h2>Overview</h2>
 <h3>What this is</h3>
 {{if .Summary}}<p class="summary model">{{.Summary.Text}}{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
+{{if .Figures}}<ul class="figures fact">{{range .Figures}}<li{{if .Warn}} class="figure-warn"{{end}}><strong>{{.Value}}</strong><span>{{.Label}}</span>{{if .Note}}<em>{{.Note}}</em>{{end}}</li>{{end}}</ul>{{end}}
+{{if .RepoMap}}<h3>What is in it</h3>
+{{template "repomap.html" .RepoMap}}{{end}}
 <h3>Targets</h3>
 {{if or .Cards .MutedCards}}<div class="cards">
 {{range .Cards}}<div class="card"><h3><a href="#{{.SectionID}}">{{.Name}}</a></h3>
-<dl><dt>Language</dt><dd>{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}</dd>{{if .Root}}<dt>Root</dt><dd><code>{{.Root}}</code></dd>{{end}}{{if .Manifest}}<dt>Manifest</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>Entrypoints</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}<dt>Counts</dt><dd class="fact">{{.Routes}} routes · {{.Calls}} calls · {{.Dynamic}} dynamic · {{.Dead}} dead files</dd></dl>
+<dl><dt>Language</dt><dd>{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}</dd>{{if .Root}}<dt>Root</dt><dd><code>{{.Root}}</code></dd>{{end}}{{if .Manifest}}<dt>Manifest</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>Entrypoints</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}{{if .Counts}}<dt>Holds</dt><dd class="fact">{{.Counts}}</dd>{{end}}</dl>
 {{if .Role}}<span class="model"><strong>{{.Role}}</strong> — {{.Purpose}}{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span>{{end}}</div>
-{{end}}{{range .MutedCards}}<div class="card muted"><h3>{{.Name}}</h3><dl><dt>Language</dt><dd>{{.Language}}</dd><dt>Not analyzed</dt><dd>{{.Reason}} ({{.Stage}})</dd></dl></div>
 {{end}}</div>{{else}}<p class="empty">{{.CardsMissing}}</p>{{end}}
+{{if .MutedCards}}<h4>{{len .MutedCards}} target{{if ne (len .MutedCards) 1}}s{{end}} this run could not read</h4>
+<div class="cards">{{range .MutedCards}}<div class="card muted"><h3>{{.Name}}</h3><dl><dt>Language</dt><dd>{{.Language}}</dd><dt>Why</dt><dd>{{.Reason}} ({{.Stage}})</dd></dl></div>
+{{end}}</div>{{end}}
 <h3>How the parts talk</h3>
-{{if .RepoMap}}{{template "repomap.html" .RepoMap}}{{end}}
 {{if .Portals}}<table><thead><tr><th>Method</th><th>Path</th><th>Call</th><th></th><th>Route</th></tr></thead><tbody>
 {{range .Portals}}<tr><td class="method">{{.Method}}</td><td><code>{{.Path}}</code>{{if .Possible}}<span class="possible">possible</span>{{end}}</td><td>{{template "anchor" .Call}}</td><td>→</td><td>{{template "anchor" .Route}}</td></tr>
 {{end}}</tbody></table>{{else}}<p class="empty">{{.PortalsMissing}}</p>

@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/claims"
@@ -34,8 +35,13 @@ type pageView struct {
 	CSS           template.CSS
 	JS            template.JS
 
-	Summary          *pageSentence
-	SummaryMissing   string
+	Summary        *pageSentence
+	SummaryMissing string
+	// Figures are the few counts worth reading before anything else: how much
+	// of the repository was read, how big it is, and what it exposes. They
+	// are the first thing on the page that is not a sentence, because a
+	// paragraph cannot say "one target of twenty holds most of this".
+	Figures          []pageFigure
 	Claims           []pageClaim
 	MoreClaims       int
 	Cards            []pageTargetCard
@@ -59,6 +65,17 @@ type pageSentence struct {
 	Anchors []pageAnchor
 }
 
+type pageFigure struct {
+	Value string
+	Label string
+	// Note is the qualifier that keeps a number honest — which targets it
+	// counts, or that some were not read.
+	Note string
+	// Warn marks a figure the reader should not skim past, such as targets
+	// the run could not read.
+	Warn bool
+}
+
 type pageClaim struct {
 	Text    string
 	Source  string
@@ -78,6 +95,8 @@ type pageTargetCard struct {
 	Routes      int
 	Calls       int
 	Dynamic     int
+	// Counts is the same numbers written out, with the zeros left off.
+	Counts      string
 	Dead        int
 	Role        string
 	Purpose     string
@@ -116,6 +135,29 @@ type pageHTTPRow struct {
 	Symbol string
 	Target string
 	Anchor *pageAnchor
+	// SymbolAnchor points at where the handler itself is written, which is a
+	// different place from where the route is registered. A reader following
+	// a route wants one or the other and should not have to guess which of
+	// them a single link leads to.
+	SymbolAnchor *pageAnchor
+	Possible     bool
+}
+
+// pageRouteRow is every path one handler answers on, under one method. Three
+// versions of an API mounted under three prefixes are one handler and three
+// paths, and printing that as three rows repeats the handler three times.
+type pageRouteRow struct {
+	Paths        []pageRoutePath
+	Symbol       string
+	SymbolAnchor *pageAnchor
+}
+
+type pageRoutePath struct {
+	Path   string
+	Anchor *pageAnchor
+	// Possible marks a path the code builds rather than writes out, so the
+	// exact string is a reading of the code and not a quote from it.
+	Possible bool
 }
 
 type pageNegative struct {
@@ -225,6 +267,97 @@ func (builder *pageBuilder) overview(view *pageView) {
 	builder.portals(view)
 	builder.negatives(view)
 	builder.recipe(view)
+	builder.figures(view)
+}
+
+// figures is the headline strip: how much of the repository was read and what
+// it is made of, in numbers a reader can take in without reading a sentence.
+// A count that is zero says nothing and is left out, except the two that are
+// always worth stating.
+func (builder *pageBuilder) figures(view *pageView) {
+	symbols, routes, calls, dead, dynamic := 0, 0, 0, 0, 0
+	for _, count := range builder.repoSymbolCounts() {
+		symbols += count
+	}
+	for _, card := range view.Cards {
+		routes += card.Routes
+		calls += card.Calls
+		dead += card.Dead
+		dynamic += card.Dynamic
+	}
+	analyzed, unread := len(view.Cards), len(view.MutedCards)
+	targets := pageFigure{
+		Value: strconv.Itoa(analyzed), Label: pluralWord(analyzed, "target", "targets"),
+	}
+	if unread > 0 {
+		targets.Value = fmt.Sprintf("%d of %d", analyzed, analyzed+unread)
+		targets.Note = fmt.Sprintf("%d could not be read", unread)
+		targets.Warn = true
+	}
+	view.Figures = append(view.Figures, targets)
+	if languages := builder.repoLanguages(view); languages != "" {
+		view.Figures = append(view.Figures, pageFigure{Value: languages, Label: "language"})
+	}
+	optional := []pageFigure{
+		{Value: thousands(symbols), Label: "symbols read"},
+		{Value: thousands(routes), Label: pluralWord(routes, "route served", "routes served")},
+		{Value: thousands(calls), Label: pluralWord(calls, "HTTP call out", "HTTP calls out")},
+		{Value: thousands(len(view.Portals)), Label: pluralWord(len(view.Portals), "target crossing", "target crossings")},
+		{Value: thousands(dynamic), Label: pluralWord(dynamic, "place running handed-in code", "places running handed-in code")},
+		{Value: thousands(dead), Label: pluralWord(dead, "file nothing reaches", "files nothing reach"), Warn: dead > 0},
+	}
+	for position, figure := range optional {
+		if figure.Value == "0" {
+			continue
+		}
+		view.Figures = append(view.Figures, optional[position])
+	}
+}
+
+// repoLanguages names the languages of the targets that were read, so a
+// reader learns in one word whether this is one stack or several.
+func (builder *pageBuilder) repoLanguages(view *pageView) string {
+	var order []string
+	seen := make(map[string]struct{})
+	for _, card := range view.Cards {
+		if card.Language == "" {
+			continue
+		}
+		if _, repeated := seen[card.Language]; repeated {
+			continue
+		}
+		seen[card.Language] = struct{}{}
+		order = append(order, card.Language)
+	}
+	return strings.Join(order, ", ")
+}
+
+func pluralWord(count int, one, many string) string {
+	if count == 1 {
+		return one
+	}
+	return many
+}
+
+// thousandsFromDigits is where a count starts being grouped. Four digits read
+// as a number; five do not.
+const thousandsFromDigits = 5
+
+// thousands groups a large count so four digits do not read as one number the
+// eye has to spell out.
+func thousands(value int) string {
+	digits := strconv.Itoa(value)
+	if len(digits) < thousandsFromDigits {
+		return digits
+	}
+	var out []byte
+	for position, digit := range []byte(digits) {
+		if position > 0 && (len(digits)-position)%3 == 0 {
+			out = append(out, ',')
+		}
+		out = append(out, digit)
+	}
+	return string(out)
 }
 
 func (builder *pageBuilder) summary(view *pageView) {
@@ -348,6 +481,7 @@ func (builder *pageBuilder) factsCard(target facts.Target) pageTargetCard {
 	card.Calls = len(builder.targetFacts(target.ID, facts.KindHTTPCall))
 	card.Dynamic = len(builder.targetFacts(target.ID, facts.KindDynamicExecution))
 	card.Dead = len(builder.targetFacts(target.ID, facts.KindDeadModule))
+	card.Counts = cardCounts(card)
 	if orient := builder.data.Orientation; orient != nil {
 		for _, role := range orient.Roles {
 			if role.TargetID != target.ID {
@@ -360,6 +494,30 @@ func (builder *pageBuilder) factsCard(target facts.Target) pageTargetCard {
 		}
 	}
 	return card
+}
+
+// cardCounts writes only the counts a target actually has. Four zeros in a
+// row read as a broken tool, not as a library with no routes.
+func cardCounts(card pageTargetCard) string {
+	var parts []string
+	for _, count := range []struct {
+		value     int
+		one, many string
+	}{
+		{card.Routes, "route", "routes"},
+		{card.Calls, "HTTP call out", "HTTP calls out"},
+		{card.Dynamic, "place running handed-in code", "places running handed-in code"},
+		{card.Dead, "file nothing reaches", "files nothing reach"},
+	} {
+		if count.value == 0 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", count.value, pluralWord(count.value, count.one, count.many)))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " · ")
 }
 
 func (builder *pageBuilder) targetFacts(targetID string, kind facts.Kind) []facts.Fact {
@@ -417,7 +575,15 @@ func (builder *pageBuilder) httpRows(kind facts.Kind, targetID string) []pageHTT
 		}
 		row := pageHTTPRow{
 			Method: fact.Method, Path: fact.Path, Symbol: fact.Symbol,
-			Anchor: builder.links.factAnchor(fact),
+			Anchor:   builder.links.factAnchor(fact),
+			Possible: fact.Resolution == facts.ResolutionPossible,
+		}
+		if fact.ObjectID != "" {
+			if subject, known := builder.subjects[fact.ObjectID]; known {
+				if _, anchor := builder.subjectDisplay(subject.subject); anchor != nil {
+					row.SymbolAnchor = anchor
+				}
+			}
 		}
 		if targetID == "" {
 			if section := builder.byFacts[fact.TargetID]; section != nil {

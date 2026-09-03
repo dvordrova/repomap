@@ -40,3 +40,15 @@ summary{cursor:pointer;color:var(--accent);font-size:.9rem}
 .nav a{margin-right:.8rem}
 .status{position:fixed;right:1rem;bottom:1rem;padding:.5rem .8rem;background:var(--ink);color:#fff;border-radius:4px;font-size:.9rem}
 .status.bad{background:var(--warn)}
+
+/* Routes: the path leads to where it is registered, the handler name to where
+   it is written. Two links that go to two different places must not look the
+   same, and the rows sit under their method rather than beside it. */
+.routes{list-style:none;margin:.15rem 0 .9rem;padding:0 0 0 1.1rem;border-left:2px solid var(--line)}
+.routes li{display:flex;flex-wrap:wrap;align-items:baseline;gap:.25rem .5rem;padding:.16rem 0}
+.route-paths{display:flex;flex-wrap:wrap;gap:.2rem .45rem}
+.route-path{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86rem;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line);padding-bottom:1px}
+.route-path:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.route-to{color:var(--muted);font-size:.76rem}
+.route-symbol{color:var(--accent);font-weight:550;text-decoration:none;border-bottom:1px dotted var(--accent)}
+.route-symbol:hover{text-decoration:none;border-bottom-style:solid}

@@ -13,12 +13,17 @@
 .map-node-dependencies .map-node-body{fill:#f4f2ec;stroke:#d8d2c2}
 .map-node:hover .map-node-body,.map-node:focus .map-node-body{stroke:var(--accent);stroke-width:2}
 .map-node:focus{outline:none}
-.map-edge{fill:none;stroke:#aeb6c0;stroke-width:1.4}
+.map-edge{fill:none;stroke:#98a2ae;stroke-width:1.5;stroke-linecap:round}
 .map-edge-possible{stroke-dasharray:4 3}
-.map-arrow-head{fill:#aeb6c0}
+.map-arrow-head{fill:#7c8794}
+/* The label is written over its own line, so it needs the page colour cut
+   out from under it rather than a box drawn around it. */
+.map-edge-label text{font-size:9.5px;fill:var(--muted);paint-order:stroke;stroke:var(--bg);stroke-width:3.5px;stroke-linejoin:round}
 /* Preview only dims; it never moves a node or changes an edge. */
-[data-map].map-previewing .map-node,[data-map].map-previewing .map-edge{opacity:.18;transition:opacity .12s ease}
-[data-map].map-previewing .map-node.map-near,[data-map].map-previewing .map-edge.map-near{opacity:1}
+[data-map].map-previewing .map-node,[data-map].map-previewing .map-edge,[data-map].map-previewing .map-edge-label{opacity:.18;transition:opacity .12s ease}
+[data-map].map-previewing .map-node.map-near,[data-map].map-previewing .map-edge.map-near,[data-map].map-previewing .map-edge-label.map-near{opacity:1}
+[data-map].map-previewing .map-edge.map-near{stroke:var(--accent);stroke-width:2}
+[data-map].map-previewing .map-edge-label.map-near text{fill:var(--ink)}
 [data-map].map-previewing .map-node.map-near .map-node-body{stroke:var(--accent)}
 .map-note{margin:.35rem 0 0;color:var(--muted);font-size:.82rem}
 .group-head{display:flex;align-items:baseline;justify-content:space-between;gap:.6rem}

@@ -54,7 +54,10 @@ type pageSection struct {
 
 type pageRouteGroup struct {
 	Method string
-	Rows   []pageHTTPRow
+	Rows   []pageRouteRow
+	// Paths is how many paths the method answers on, which is what the jump
+	// bar counts; a row can hold several.
+	Paths int
 }
 
 type pageEntrypoint struct {
@@ -149,7 +152,7 @@ func (builder *pageBuilder) buildSections() {
 		builder.fillSectionGroups(section)
 		section.Map = builder.buildMap(section)
 		for _, group := range section.RouteGroups {
-			section.InboundCount += len(group.Rows)
+			section.InboundCount += group.Paths
 		}
 		section.Flow = builder.flow(section)
 		if section.Flow == nil {
@@ -311,9 +314,48 @@ func (builder *pageBuilder) routeGroups(targetID string) []pageRouteGroup {
 	}
 	groups := make([]pageRouteGroup, 0, len(byMethod))
 	for _, method := range sortedMethods(byMethod) {
-		groups = append(groups, pageRouteGroup{Method: method, Rows: byMethod[method]})
+		merged := mergeRoutesByHandler(byMethod[method])
+		paths := 0
+		for _, row := range merged {
+			paths += len(row.Paths)
+		}
+		groups = append(groups, pageRouteGroup{Method: method, Rows: merged, Paths: paths})
 	}
 	return groups
+}
+
+// mergeRoutesByHandler puts every path one handler answers on into one row.
+// The order routes were found in is kept, so the first path of a handler is
+// where its row appears.
+func mergeRoutesByHandler(rows []pageHTTPRow) []pageRouteRow {
+	type key struct {
+		symbol string
+		anchor string
+	}
+	position := make(map[key]int, len(rows))
+	merged := make([]pageRouteRow, 0, len(rows))
+	for _, row := range rows {
+		identity := key{symbol: row.Symbol}
+		if row.SymbolAnchor != nil {
+			identity.anchor = row.SymbolAnchor.Text
+		}
+		path := pageRoutePath{Path: row.Path, Anchor: row.Anchor, Possible: row.Possible}
+		if row.Symbol == "" {
+			// Without a handler name there is nothing to merge on, and two
+			// unnamed routes are two routes.
+			merged = append(merged, pageRouteRow{Paths: []pageRoutePath{path}})
+			continue
+		}
+		if index, seen := position[identity]; seen {
+			merged[index].Paths = append(merged[index].Paths, path)
+			continue
+		}
+		position[identity] = len(merged)
+		merged = append(merged, pageRouteRow{
+			Paths: []pageRoutePath{path}, Symbol: row.Symbol, SymbolAnchor: row.SymbolAnchor,
+		})
+	}
+	return merged
 }
 
 func (builder *pageBuilder) fillSectionGroups(section *pageSection) {
