@@ -180,3 +180,17 @@ func containsPair(values [][2]string, wanted [2]string) bool {
 	}
 	return false
 }
+
+// A window numbers its candidates from one. Translating those refs back onto
+// the whole list is what lets a later level resolve them; without it a part
+// gathered whichever groups happened to sit at those positions.
+func TestWindowCandidateRefsBecomeGlobal(t *testing.T) {
+	t.Parallel()
+
+	if got := globalCandidateRefs([]string{"c1", "c3"}, 40); !reflect.DeepEqual(got, []string{"c41", "c43"}) {
+		t.Fatalf("second window refs = %#v", got)
+	}
+	if got := globalCandidateRefs([]string{"c1"}, 0); !reflect.DeepEqual(got, []string{"c1"}) {
+		t.Fatalf("first window refs = %#v", got)
+	}
+}

@@ -76,3 +76,73 @@
     });
   }
 })();
+
+// Map controls. The picture is complete and legible before any of this runs:
+// it fits its frame, it scrolls, and every box is a link. Scripting only adds
+// what a static picture cannot do — moving closer and dragging around.
+(function () {
+  var maps = document.querySelectorAll('[data-map]');
+  for (var index = 0; index < maps.length; index++) {
+    bindControls(maps[index]);
+  }
+
+  function bindControls(map) {
+    var controls = map.querySelector('[data-map-controls]');
+    var stage = map.querySelector('[data-map-stage]');
+    var svg = map.querySelector('svg');
+    if (!controls || !stage || !svg) return;
+    var baseWidth = svg.getBoundingClientRect().width;
+    if (!baseWidth) return;
+    controls.hidden = false;
+    var scale = 1;
+
+    function apply() {
+      svg.style.width = baseWidth * scale + 'px';
+      svg.style.maxWidth = 'none';
+      svg.style.minWidth = '0';
+      stage.classList.toggle('map-zoomed', scale > 1);
+    }
+    function zoom(factor) {
+      scale = Math.min(4, Math.max(0.4, scale * factor));
+      apply();
+    }
+    controls.addEventListener('click', function (event) {
+      var button = event.target.closest('button');
+      if (!button) return;
+      if (button.hasAttribute('data-map-zoom')) {
+        zoom(parseFloat(button.getAttribute('data-map-zoom')));
+      } else if (button.hasAttribute('data-map-fit')) {
+        scale = stage.clientWidth / baseWidth;
+        apply();
+      } else if (button.hasAttribute('data-map-reset')) {
+        scale = 1;
+        svg.style.width = '';
+        svg.style.maxWidth = '';
+        svg.style.minWidth = '';
+        stage.classList.remove('map-zoomed');
+        stage.scrollTo(0, 0);
+      }
+    });
+
+    // Dragging pans the stage. It never moves a node: the layout is computed
+    // once, in Go, and the picture a reader sees is the picture that was laid
+    // out.
+    var dragging = false, startX = 0, startY = 0, leftAt = 0, topAt = 0;
+    stage.addEventListener('pointerdown', function (event) {
+      if (event.target.closest('a')) return;
+      dragging = true;
+      startX = event.clientX; startY = event.clientY;
+      leftAt = stage.scrollLeft; topAt = stage.scrollTop;
+      stage.classList.add('map-grabbing');
+      stage.setPointerCapture(event.pointerId);
+    });
+    stage.addEventListener('pointermove', function (event) {
+      if (!dragging) return;
+      stage.scrollLeft = leftAt - (event.clientX - startX);
+      stage.scrollTop = topAt - (event.clientY - startY);
+    });
+    function endDrag() { dragging = false; stage.classList.remove('map-grabbing'); }
+    stage.addEventListener('pointerup', endDrag);
+    stage.addEventListener('pointercancel', endDrag);
+  }
+})();

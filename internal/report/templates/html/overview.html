@@ -2,7 +2,6 @@
 <h2>Overview</h2>
 <h3>What this is</h3>
 {{if .Summary}}<p class="summary model">{{.Summary.Text}}{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
-{{if .Figures}}<ul class="figures fact">{{range .Figures}}<li{{if .Warn}} class="figure-warn"{{end}}><strong>{{.Value}}</strong><span>{{.Label}}</span>{{if .Note}}<em>{{.Note}}</em>{{end}}</li>{{end}}</ul>{{end}}
 {{if .RepoMap}}<h3>What is in it</h3>
 {{template "repomap.html" .RepoMap}}{{end}}
 <h3>Targets</h3>

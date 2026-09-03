@@ -1,31 +1,28 @@
-.map{margin:.6rem 0 1.4rem;padding:0;overflow-x:auto}
+.map{margin:.5rem 0 1.2rem;padding:.7rem;overflow:auto;background:var(--paper);border:var(--rule) solid var(--ink);border-radius:var(--radius);box-shadow:var(--shadow)}
 .map-svg{display:block;max-width:100%;height:auto}
 .map-lane-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;fill:var(--muted)}
-.map-node-body{fill:var(--soft);stroke:var(--line);stroke-width:1}
-.map-node-title{font-size:12.5px;font-weight:600;fill:var(--ink)}
+.map-node-body{fill:var(--paper);stroke:var(--ink);stroke-width:var(--edge)}
+.map-node-title{font-size:12.5px;font-weight:700;fill:var(--ink)}
 .map-node-count{font-size:10.5px;fill:var(--muted)}
 .map-node-bar{fill:#9fb0c8}
 .map-node-dependencies .map-node-bar{fill:#c9bd9a}
 .map-node-triggers .map-node-bar{fill:#8fa9cf}
 .map-node{cursor:pointer}
-.map-node-triggers .map-node-body{fill:#eef3fb;stroke:#b9cbe6}
-.map-node-core .map-node-body{fill:#fff;stroke:#c6ccd4}
-.map-node-dependencies .map-node-body{fill:#f4f2ec;stroke:#d8d2c2}
-.map-node:hover .map-node-body,.map-node:focus .map-node-body{stroke:var(--accent);stroke-width:2}
+.map-node:hover .map-node-body,.map-node:focus .map-node-body{fill:var(--soft);stroke-width:4}
 .map-node:focus{outline:none}
-.map-edge{fill:none;stroke:#98a2ae;stroke-width:1.5;stroke-linecap:round}
+.map-edge{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round}
 .map-edge-possible{stroke-dasharray:4 3}
-.map-arrow-head{fill:#7c8794}
+.map-arrow-head{fill:var(--ink)}
 /* The label is written over its own line, so it needs the page colour cut
    out from under it rather than a box drawn around it. */
-.map-edge-label text{font-size:9.5px;fill:var(--muted);paint-order:stroke;stroke:var(--bg);stroke-width:3.5px;stroke-linejoin:round}
+.map-edge-label text{font-size:10px;font-weight:600;fill:var(--ink);paint-order:stroke;stroke:var(--paper);stroke-width:4px;stroke-linejoin:round}
 /* Preview only dims; it never moves a node or changes an edge. */
 [data-map].map-previewing .map-node,[data-map].map-previewing .map-edge,[data-map].map-previewing .map-edge-label{opacity:.18;transition:opacity .12s ease}
 [data-map].map-previewing .map-node.map-near,[data-map].map-previewing .map-edge.map-near,[data-map].map-previewing .map-edge-label.map-near{opacity:1}
 [data-map].map-previewing .map-edge.map-near{stroke:var(--accent);stroke-width:2}
 [data-map].map-previewing .map-edge-label.map-near text{fill:var(--ink)}
 [data-map].map-previewing .map-node.map-near .map-node-body{stroke:var(--accent)}
-.map-note{margin:.35rem 0 0;color:var(--muted);font-size:.82rem}
+.map-note{margin:.45rem 0 0;color:var(--muted);font-size:.84rem}
 .group-head{display:flex;align-items:baseline;justify-content:space-between;gap:.6rem}
 .group-size{color:var(--muted);font-size:.8rem;white-space:nowrap}
 .group:target,.group.group-selected{border-color:var(--accent);box-shadow:0 0 0 2px rgba(31,95,191,.14)}
@@ -37,8 +34,28 @@
 .map-node-step{font-size:9.5px;font-weight:600;fill:var(--accent);letter-spacing:.02em}
 /* A part is a frame with its name on it; the groups inside stay boxes, so
    both levels are on the picture at once. */
-.map-frame rect{fill:#fafbfc;stroke:#dfe3e8;stroke-width:1}
-.map-frame text{font-size:10.5px;font-weight:600;letter-spacing:.03em;fill:var(--muted)}
-.map-frame-core rect{fill:#fbfcfd}
-.map-frame-triggers rect{fill:#f6f9fe;stroke:#d7e3f2}
-.map-frame-dependencies rect{fill:#faf9f5;stroke:#e6e1d4}
+/* A zone is an architectural area of the target, painted so the eye groups it
+   before reading a word. The colour says which area, never how sure we are. */
+.map-frame rect{stroke:var(--ink);stroke-width:var(--rule)}
+.map-frame text{font-size:11px;font-weight:700;letter-spacing:.02em;fill:var(--ink)}
+.map-zone-1 rect{fill:var(--zone-1)}.map-zone-2 rect{fill:var(--zone-2)}
+.map-zone-3 rect{fill:var(--zone-3)}.map-zone-4 rect{fill:var(--zone-4)}
+.map-zone-5 rect{fill:var(--zone-5)}.map-zone-6 rect{fill:var(--zone-6)}
+.map-zone-7 rect{fill:var(--zone-7)}.map-zone-8 rect{fill:var(--zone-8)}
+.map-line{display:block}
+.map-legend{margin-top:.3rem}
+.map-legend summary{cursor:pointer;font-weight:600;color:var(--ink)}
+.map-legend ul{margin:.4rem 0 0;font-size:.82rem}
+
+/* Controls appear only when scripting is there to make them work; without it
+   the map is a plain picture that already fits and already scrolls. */
+.map-controls{display:flex;align-items:center;gap:.35rem;margin:0 0 .5rem}
+.map-controls button{font:inherit;font-weight:700;line-height:1;cursor:pointer;
+  padding:.35rem .7rem;min-width:2.2rem;color:var(--ink);background:var(--paper);
+  border:var(--edge) solid var(--ink);border-radius:var(--radius);box-shadow:var(--shadow-sm)}
+.map-controls button:hover{background:var(--zone-1)}
+.map-controls button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 0 var(--ink)}
+.map-hint{font-size:.74rem;color:var(--muted)}
+.map-stage{overflow:auto}
+.map-stage.map-grabbing{cursor:grabbing}
+.map-stage.map-zoomed{cursor:grab}

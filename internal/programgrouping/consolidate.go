@@ -145,6 +145,20 @@ func (compilation Compilation) consolidateRequestFor(
 
 func candidateRef(position int) string { return fmt.Sprintf("c%d", position+1) }
 
+// globalCandidateRefs moves a window's local candidate refs onto the whole
+// candidate list.
+func globalCandidateRefs(local []string, offset int) []string {
+	result := make([]string, 0, len(local))
+	for _, ref := range local {
+		var position int
+		if _, err := fmt.Sscanf(ref, "c%d", &position); err != nil {
+			continue
+		}
+		result = append(result, candidateRef(offset+position-1))
+	}
+	return result
+}
+
 // sampleMemberNames names a few of a candidate's members so the model can see
 // what it holds. Names, never refs: nothing in this response selects a member.
 func (compilation Compilation) sampleMemberNames(memberIDs []string) []string {
@@ -210,7 +224,7 @@ func runConsolidation(
 	// stops as soon as it stops joining rather than grinding on.
 	for pass := 0; pass < consolidatePasses; pass++ {
 		joined, passDiagnostics, err := consolidateWindows(
-			ctx, executor, provider, compilation, candidates,
+			ctx, executor, provider, compilation, phaseConsolidate, candidates,
 		)
 		diagnostics = append(diagnostics, passDiagnostics...)
 		if err != nil {
@@ -269,7 +283,11 @@ func consolidateIntoContainers(
 	compilation Compilation,
 	candidates proposalSet,
 ) ([]groupindex.ContainerProposal, []groupindex.Diagnostic) {
-	merged, diagnostics, err := consolidateOnce(
+	// Naming the parts of a target is the Overview level of the page, and it
+	// was asked about every group at once: three cold draws over roughly
+	// seventy groups produced ten parts, four parts and one. It goes through
+	// the same windows as the joining question, for the same reason.
+	merged, diagnostics, err := consolidateWindows(
 		ctx, executor, provider, compilation, phaseContainers, candidates,
 	)
 	if err != nil {
@@ -306,10 +324,11 @@ func consolidateWindows(
 	executor llm.Executor,
 	provider llm.Provider,
 	compilation Compilation,
+	requestPhase phase,
 	candidates proposalSet,
 ) (proposalSet, []groupindex.Diagnostic, error) {
 	if len(candidates.groups) <= consolidateWindow {
-		return consolidateOnce(ctx, executor, provider, compilation, phaseConsolidate, candidates)
+		return consolidateOnce(ctx, executor, provider, compilation, requestPhase, candidates)
 	}
 	var diagnostics []groupindex.Diagnostic
 	result := proposalSet{connections: candidates.connections}
@@ -320,7 +339,7 @@ func consolidateWindows(
 			connections: candidates.connections,
 		}
 		joined, windowDiagnostics, err := consolidateOnce(
-			ctx, executor, provider, compilation, phaseConsolidate, window,
+			ctx, executor, provider, compilation, requestPhase, window,
 		)
 		diagnostics = append(diagnostics, windowDiagnostics...)
 		if err != nil {
@@ -332,6 +351,15 @@ func consolidateWindows(
 				Kind: diagnosticMergeSkipped, Reason: err.Error(),
 			})
 			joined = window
+		}
+		// A window numbers its candidates from one, so c1 in the second window
+		// is the forty-first candidate overall. Translate before the result
+		// leaves the window, or a later level resolves those refs against the
+		// whole list and silently gathers the wrong groups.
+		for position := range joined.groups {
+			joined.groups[position].absorbed = globalCandidateRefs(
+				joined.groups[position].absorbed, start,
+			)
 		}
 		namespaced := namespaceProposalSet(joined, fmt.Sprintf("w%d:", start/consolidateWindow+1))
 		result.groups = append(result.groups, namespaced.groups...)

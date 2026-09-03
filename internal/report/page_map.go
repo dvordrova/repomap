@@ -83,8 +83,17 @@ const (
 	mapSmallestFrame = 544.0
 	// A part's frame is drawn around its boxes with this much room, and its
 	// name sits in the band above them.
-	mapFramePad    = 9.0
-	mapFrameHeader = 20.0
+	mapFramePad    = 12.0
+	mapFrameHeader = 26.0
+	// mapZoneGroups is how many groups a zone shows on the overview. A zone
+	// holding more says so and keeps the rest on its cards below: the map is
+	// the architecture of a target, not an inventory of it, and thirty equal
+	// boxes are an inventory.
+	mapZoneGroups = 5
+	// mapOverviewBoxes bounds what the first screen carries at all. Zones and
+	// standalone groups past it are named in the caption and stay in full on
+	// the cards.
+	mapOverviewBoxes = 14
 )
 
 // mapLabelOffsets are the vertical nudges a label tries, in order, when the
@@ -104,6 +113,9 @@ type pageMap struct {
 	Nodes      []pageMapNode
 	Edges      []pageMapEdge
 	LargestPct int
+	// Hidden is how many groups the overview leaves to the cards below. The
+	// map is the architecture; the inventory is underneath it.
+	Hidden int
 	// Subjects and Grouped say how much of the target the map accounts for.
 	// Grouping is a sparse cover by design, so a map of four boxes over a
 	// thousand symbols must not read as the whole target.
@@ -113,8 +125,16 @@ type pageMap struct {
 
 // pageMapFrame is one part of a target drawn around the groups inside it.
 type pageMapFrame struct {
-	ID     string
-	Title  string
+	ID string
+	// Zone is which pastel area this part is painted in. It names an
+	// architectural area of the target and nothing else — not confidence, not
+	// where a fact came from.
+	Zone  int
+	Title string
+	// Holds is how many groups the part has in all, and Shown how many the
+	// overview draws of them.
+	Holds  int
+	Shown  int
 	Lane   string
 	X      float64
 	Y      float64
@@ -219,7 +239,8 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	// the groups it holds are the boxes inside. Drawing only the parts would
 	// hide thirty true things behind eight names, and drawing only the groups
 	// is the wall of boxes the parts exist to organise.
-	blocks := mapBlocks(*index)
+	blocks, hidden := overviewBlocks(mapBlocks(*index))
+	result.Hidden = hidden
 	frameTop := 0.0
 	if len(index.Containers) > 0 {
 		frameTop = mapFrameHeader
@@ -252,6 +273,10 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 			}
 			if entry.container != nil {
 				growFrame(frames, entry.container, node)
+				if frame := frames[entry.container.ID]; frame != nil {
+					frame.Holds = len(entry.container.GroupIDs)
+					frame.Shown++
+				}
 			}
 			if subjects > 0 {
 				node.Share = node.Members * 100 / subjects
@@ -457,6 +482,8 @@ type mapBlock struct {
 	container *groupindex.Container
 	lane      groupindex.Lane
 	groups    []groupindex.Group
+	// overflow is how many of this zone's groups the overview does not draw.
+	overflow int
 }
 
 // mapBlocks orders a target's groups so the ones inside a part stand together,
@@ -512,6 +539,31 @@ func mapBlocks(index groupindex.Index) []mapBlock {
 		}
 	}
 	return result
+}
+
+// overviewBlocks trims what the first screen carries. A zone keeps its own
+// name and its largest groups; the rest of its groups, and any zone past the
+// bound, are counted in the caption and stay in full on the cards below. This
+// is presentation only: nothing here decides what a group holds or which zone
+// it is in.
+func overviewBlocks(blocks []mapBlock) ([]mapBlock, int) {
+	hidden := 0
+	trimmed := make([]mapBlock, 0, len(blocks))
+	boxes := 0
+	for _, block := range blocks {
+		if boxes >= mapOverviewBoxes {
+			hidden += len(block.groups)
+			continue
+		}
+		if block.container != nil && len(block.groups) > mapZoneGroups {
+			hidden += len(block.groups) - mapZoneGroups
+			block.overflow = len(block.groups) - mapZoneGroups
+			block.groups = block.groups[:mapZoneGroups]
+		}
+		boxes += len(block.groups)
+		trimmed = append(trimmed, block)
+	}
+	return trimmed, hidden
 }
 
 func blockMembers(block mapBlock) int {
@@ -663,7 +715,8 @@ func growFrame(frames map[string]*pageMapFrame, container *groupindex.Container,
 	if !known {
 		frame = &pageMapFrame{
 			ID: container.ID, Title: container.Title, Lane: string(container.Lane),
-			X: node.X, Y: node.Y, Width: node.Width, Height: node.Height,
+			Zone: zoneOf(container.ID),
+			X:    node.X, Y: node.Y, Width: node.Width, Height: node.Height,
 		}
 		frames[container.ID] = frame
 		return
@@ -671,6 +724,16 @@ func growFrame(frames map[string]*pageMapFrame, container *groupindex.Container,
 	right, bottom := max(frame.X+frame.Width, node.X+node.Width), max(frame.Y+frame.Height, node.Y+node.Height)
 	frame.X, frame.Y = min(frame.X, node.X), min(frame.Y, node.Y)
 	frame.Width, frame.Height = right-frame.X, bottom-frame.Y
+}
+
+// zoneOf picks a stable pastel for one part. The same part keeps its colour
+// between runs because the choice follows its identity, not its position.
+func zoneOf(id string) int {
+	sum := 0
+	for _, symbol := range id {
+		sum = (sum*31 + int(symbol)) % 8
+	}
+	return sum + 1
 }
 
 // sealFrames pads every frame around its boxes and leaves room for its name

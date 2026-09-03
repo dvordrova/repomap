@@ -89,3 +89,18 @@ h2,h3{scroll-margin-top:3.2rem}
 .figures .figure-warn strong{color:var(--warn)}
 .repo-node-unread .map-node-body{fill:var(--soft);stroke:var(--line);stroke-dasharray:4 3}
 .repo-node-unread .repo-node-name,.repo-node-unread .map-node-count{fill:var(--muted)}
+
+/* Tool-like header: identity, coverage and the target switcher in one strip. */
+.top{display:flex;flex-direction:column;gap:.5rem}
+.brand{display:flex;align-items:baseline;flex-wrap:wrap;gap:.5rem}
+.brand .mark{font-weight:800;letter-spacing:-.02em;background:var(--ink);color:var(--canvas);padding:.1rem .45rem;border-radius:var(--radius)}
+.brand .repo{font-size:1.15rem;font-weight:700}
+.brand .meta{font-size:.8rem;color:var(--muted)}
+.top .figures{margin:0}
+.top .figures li{padding:.3rem .55rem;min-width:0;border:var(--edge) solid var(--ink);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm)}
+.top .figures strong{font-size:1rem}
+.top .figures span{font-size:.7rem}
+.nav{display:flex;flex-wrap:wrap;gap:.4rem;padding:0;border:0}
+.nav a{border:var(--edge) solid var(--ink);border-radius:var(--radius);background:var(--paper);
+  box-shadow:var(--shadow-sm);padding:.3rem .6rem;font-weight:600;text-decoration:none;color:var(--ink)}
+.nav a:hover{background:var(--zone-1)}

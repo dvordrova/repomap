@@ -57,3 +57,18 @@ summary{cursor:pointer;color:var(--accent);font-size:.9rem}
    it: the chip leads there. */
 .chip-sibling{border-style:solid;border-color:var(--accent);color:var(--accent);text-decoration:none}
 .chip-sibling:hover{background:var(--soft)}
+
+/* The detail under the map wears the same outlines, quieter: it is the
+   inventory the map points into, and it must not compete with the map. */
+.card,.group,.claim{border:var(--edge) solid var(--ink);border-radius:var(--radius);
+  background:var(--paper);box-shadow:var(--shadow-sm)}
+.group{padding:.7rem .8rem;margin:.6rem 0}
+.card{padding:.7rem .8rem}
+.claim{padding:.6rem .8rem;border-left-width:var(--drop)}
+.group:target,.group.group-selected{box-shadow:var(--shadow);background:var(--soft)}
+.chip{border:1.5px solid var(--ink);border-radius:4px;background:var(--paper)}
+.chip-outside{border-style:dashed}
+.badge{border:1.5px solid var(--ink);border-radius:4px;background:var(--model-bg);font-weight:600}
+.method{border:var(--edge) solid var(--ink);border-radius:4px;padding:.05rem .35rem;background:var(--zone-3);font-weight:700}
+.routes{border-left:var(--rule) solid var(--ink)}
+details>summary{cursor:pointer;font-weight:600}

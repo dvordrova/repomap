@@ -1,7 +1,15 @@
 {{define "map.html"}}<figure class="map" data-map>
+<div class="map-controls" data-map-controls hidden>
+<button type="button" data-map-fit>fit</button>
+<button type="button" data-map-zoom="1.25">+</button>
+<button type="button" data-map-zoom="0.8">−</button>
+<button type="button" data-map-reset>reset</button>
+<span class="map-hint">drag to pan</span>
+</div>
+<div class="map-stage" data-map-stage>
 <svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="Map of this target's groups and the connections between them" class="map-svg" style="min-width:{{printf "%.0f" .MinWidth}}px">
 <defs><marker id="map-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0.5 L10 5 L0 9.5 z" class="map-arrow-head"/></marker></defs>
-<g class="map-frames">{{range .Frames}}<g class="map-frame map-frame-{{.Lane}}"><rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="10"/><text x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Title}}</text></g>{{end}}</g>
+<g class="map-frames">{{range .Frames}}<g class="map-frame map-zone-{{.Zone}}"><rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="6"/><text x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Title}}{{if gt .Holds .Shown}} · {{.Holds}} groups{{end}}</text></g>{{end}}</g>
 <g class="map-lanes">{{range .Lanes}}<text x="{{printf "%.1f" .X}}" y="18" class="map-lane-label">{{.Label}}</text>{{end}}</g>
 <g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" data-from="{{.From}}" data-to="{{.To}}" marker-end="url(#map-arrow)"><title>{{.Label}}</title></path>{{end}}</g>
 <g class="map-edge-labels">{{range .Edges}}{{if .Lines}}<g class="map-edge-label" data-from="{{.From}}" data-to="{{.To}}">{{$edge := .}}{{range $line, $text := .Lines}}<text x="{{printf "%.1f" $edge.LabelX}}" y="{{printf "%.1f" $edge.LabelY}}" dy="{{if eq (len $edge.Lines) 1}}3.5{{else if eq $line 0}}-2{{else}}9{{end}}" text-anchor="middle">{{$text}}</text>{{end}}<title>{{.Label}}</title></g>{{end}}{{end}}</g>
@@ -14,5 +22,14 @@
 <title>{{.FullTitle}} — {{.Summary}}</title>
 </a>{{end}}</g>
 </svg>
-<figcaption class="map-note">Groups of this target, left to right: what reaches in, what it is, what it reaches out to. The bar is how many symbols a group holds, and a step number marks a group the main flow passes through. An arrow runs from the group that reaches to the group it reaches, labelled with what the connection is where there is room and named in full when you point at it; a loop back into one column is a connection inside that column, a line along the bottom is one that skips a column, and a dashed arrow is one no exact call was found for. A named frame around several boxes is one part of this target and the boxes are the groups inside it. Click a group to open it below.{{if ge .LargestPct 25}} The largest holds {{.LargestPct}}% of the target on its own.{{end}}{{if .Subjects}} These groups name {{.Grouped}} of this target's {{.Subjects}} symbols and connections; the rest belong to no group and are not on this map.{{end}}</figcaption>
+</div>
+<figcaption class="map-note"><span class="map-line">What this target is made of, left to right: what reaches in, what it is, what it reaches out to.{{if .Hidden}} {{.Hidden}} more groups are on the cards below.{{end}}</span>
+<details class="map-legend"><summary>legend</summary><ul class="plain">
+<li>A coloured zone is one part of this target; the boxes inside it are its groups.</li>
+<li>A bar under a name is how many symbols the group holds; "step N" marks the main flow passing through.</li>
+<li>An arrow runs from the group that reaches to the group it reaches, labelled with what the connection is; a dashed one has no exact call behind it.</li>
+<li>Click any box to open its card below, with every symbol and its line in the source.</li>
+{{if ge .LargestPct 25}}<li>The largest group holds {{.LargestPct}}% of the target on its own.</li>{{end}}
+{{if .Subjects}}<li>These groups name {{.Grouped}} of this target's {{.Subjects}} symbols and connections.</li>{{end}}
+</ul></details></figcaption>
 </figure>{{end}}

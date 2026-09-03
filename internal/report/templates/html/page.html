@@ -11,10 +11,11 @@
 </head>
 <body>
 <header class="top">
-<h1>{{.RepoName}}</h1>
-<p class="meta">Revision <code title="{{.Revision}}">{{.ShortRevision}}</code>{{if .RepositoryURL}} · <a href="{{.RepositoryURL}}" target="_blank" rel="noopener">repository</a>{{end}}{{if .EditorOpens}} · source links open in your editor{{end}}</p>
-</header>
+<div class="brand"><span class="mark">repomap</span><span class="repo">{{.RepoName}}</span>
+<span class="meta">rev <code title="{{.Revision}}">{{.ShortRevision}}</code>{{if .RepositoryURL}} · <a href="{{.RepositoryURL}}" target="_blank" rel="noopener">repository</a>{{end}}</span></div>
+{{if .Figures}}<ul class="figures fact">{{range .Figures}}<li{{if .Warn}} class="figure-warn"{{end}}><strong>{{.Value}}</strong><span>{{.Label}}</span></li>{{end}}</ul>{{end}}
 <nav class="nav" aria-label="Targets"><a href="#overview">Overview</a>{{range .Sections}}<a href="#{{.ID}}">{{.Label}}</a>{{end}}</nav>
+</header>
 <noscript><p class="meta">JavaScript is optional here. Every answer on this page is in the HTML and every link works without it; scripting only previews a map node's neighbourhood, marks the group you clicked, opens a long quote{{if .EditorOpens}}, and opens a source link in your editor{{end}}.</p></noscript>
 <main>
 {{template "overview.html" .}}
