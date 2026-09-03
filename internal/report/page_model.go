@@ -136,8 +136,11 @@ type pageRecipe struct {
 const maxOverviewClaims = 4
 
 const (
-	notAvailableFacts       = "Facts are not available for this run."
-	notAvailableOrientation = "Orientation is not available for this run."
+	// A reader has never heard of this tool's stages, so an empty section says
+	// what is missing from the page rather than which stage did not produce
+	// it. The run's own console and artifacts say the rest.
+	notAvailableFacts       = "This run did not read the repository, so nothing here is anchored to it."
+	notAvailableOrientation = "This run produced no written summary."
 )
 
 // subjectRef locates one GroupsIndex subject and the target that owns it.

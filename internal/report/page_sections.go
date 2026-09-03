@@ -153,7 +153,7 @@ func (builder *pageBuilder) buildSections() {
 		}
 		section.Flow = builder.flow(section)
 		if section.Flow == nil {
-			section.FlowMissing = notAvailableOrientation
+			section.FlowMissing = "This run produced no main flow."
 			if builder.data.Orientation != nil && len(builder.data.Orientation.MainFlow.Steps) > 0 {
 				section.FlowMissing = "The repository's main flow does not pass through this target."
 			}
