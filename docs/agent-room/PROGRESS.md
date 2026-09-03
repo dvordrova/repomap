@@ -1,39 +1,38 @@
 # Progress
 
 ## On now
-Nothing in flight. Four repositories read end to end, the night's own diff
-reviewed, all green.
+Blocked on money: the provider answers 402 Payment Required. Cached runs
+still work; nothing new can be analyzed until the account is topped up.
 
-## Finished
-1. **Instruments.** Categorization coverage with denominators, grouping shape,
-   and the size of a request plan before it runs.
-2. **Findings settled.** The 172 non-object assignments are relation patterns.
-   `core` is not worth narrowing; what finding 1 pointed at was a parser
-   refusing a repeated key and a prompt with no size rule.
-3. **Speed and coverage.** Fixture 5.9 s warm (from 14.6 s), 2/2 targets.
-   chi 7.6 s warm and 118 s cold, 4/4, at 55 provider calls, 1.64 M input and
-   24.6 K output tokens. python-dotenv 21 s, 3/3. repomap on itself 18/20,
-   where at the start of the night it failed before analyzing anything.
-4. **The page.** Templates one file per region and per layer. Each target
-   opens with an SVG map of its groups, sized by membership, marked with the
-   main-flow steps through them, saying how much of the target it covers; a
-   repository map; summary first, quotes last; the flow as a numbered
-   sequence; sticky nav and per-target jump bars. 5.2 KB of script, nothing
-   external, no overflow at 375 px.
-5. **Truth, audited not assumed.** 1,172 anchors across four reports resolve;
-   41 text-bearing facts and 37 route paths match their source. Wrong claims
-   found and fixed: `APP_PORT` does have a default, a package `__init__.py` is
-   not dead code, tests are not dead code, no pipeline word reaches the page.
-6. **What the provider actually refuses.** Its own messages, twice: the window
-   is 1,048,576 tokens and the completion reservation comes out of it. Every
-   stage reserved 128,000 against a largest-ever answer of 20,444, now 32,768;
-   a grouping request is bounded at 3 MB after a 15.4 MB one was refused; a
-   module `go list` cannot describe no longer fails the repository.
+## Finished since the night brief
+1. **Arrows say what they are.** Three shapes were drawn wrong: 65 edges
+   inside one column arrived with the head pointing away from the box,
+   31 that skipped a column passed behind the boxes between, and none
+   carried a word. Now a loop returns into the side it left, a skipping
+   edge runs a band under the map, and the sentence is written beside
+   the arrow — 27 of chi's 29 arrows carry theirs, from none.
+2. **The overview leads with numbers and a picture.** Targets read of
+   total, languages, symbols, routes, crossings, dead files; then every
+   part of the repository sized by symbols, unread ones pale with the
+   reason on them. Zero counts are off the cards.
+3. **Inbound is one row per handler.** Every path a handler answers on
+   in one row; the path links to its registration, the name to the
+   declaration. chi: 15 registrations in 6 rows, was 15.
+4. **Two counting bugs fixed.** python-dotenv said 2700 symbols and
+   holds 900 — three targets of one package were added up. A map
+   shrunk to 58% of its size had unreadable words; it now stops at 78%
+   and scrolls inside its own frame.
+5. **19 of 20 on itself.** The two unread targets were both TypeScript
+   with no compiler installed. `front` installs and reads, so 19/20.
+   `testdata/repositories/jsts` declares `@fixture/kafka-client`, which
+   is not on npm, so it can never install — 19/20 is the ceiling.
+   Fixture copying now skips `node_modules`, so tests are green whether
+   or not an install has been run.
 
 ## Stuck on
-Nothing. In the handoff, recorded not fixed: merge should ask which candidates
-belong together rather than for a copy; the index has no value for numeric
-literals; `os.environ["KEY"]` reads; whether tests belong on the map.
+The provider account. Also recorded in the handoff: a fixture inside
+this repository re-buys its orientation call on every commit, because
+commit subjects are quoted claims.
 
 ## Next
 Nothing queued. `make test`, `make vet`, `gofmt -l cmd internal` green.

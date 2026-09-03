@@ -175,14 +175,23 @@ One chi run, the medium case the brief names, counted from its own artifacts:
 | fixture, both targets | 441 | 24 | 5.9 s warm, 55 s cold, 2/2 |
 | chi, four targets | 1,516 | ~60 | 7.6 s warm, 118 s cold, 4/4 |
 | python-dotenv, three targets | 900 each | 53 each | 21 s warm, 3/3 |
-| repomap itself, twenty targets | 4,162 largest | 502 largest | 1,287 s cold, 18/20 |
+| repomap itself, twenty targets | 4,162 largest | 506 largest | 2,063 s cold, 19/20 |
 | type-fest | 3,405 | 283 | not run; the plan was announced and refused |
 | beets | 26,218 | ~820 | stopped after 388 calls |
 
-repomap's two unanalyzed targets are TypeScript fixtures under `testdata`
-with no `node_modules`; the run says so and continues. Getting from "run
-failed, nothing analyzed" to 18/20 took three fixes, each with the provider's
-own words behind it: a module `go list` cannot describe is skipped rather than
+repomap's unanalyzed targets are TypeScript fixtures under `testdata` with no
+`node_modules`; the run says so and continues. There were two, and the
+difference between them matters. `testdata/acceptance/python-tutorial-game/front`
+is an ordinary project: install its dependencies and it reads, which is how
+the count is 19/20 and not 18/20. `testdata/repositories/jsts` declares
+`@fixture/kafka-client@1.0.0`, which does not exist on npm, so no install can
+ever succeed there and 19/20 is the ceiling for this repository. Installing
+dependencies used to break `make test`, because the fixture copier refused the
+symlinks an install leaves behind; it skips `node_modules` now, so the tests
+pass either way.
+
+Getting from "run failed, nothing analyzed" to 19/20 took three fixes, each
+with the provider's own words behind it: a module `go list` cannot describe is skipped rather than
 fatal; the completion reservation was six times the largest answer ever
 produced and was eating the context window; and a grouping request is bounded
 at three megabytes because a 15.4 MB one was refused outright.
@@ -265,6 +274,16 @@ Two experiments were tried against this and reverted, with their numbers:
 
 ## Traps
 
+- **The provider account can run out.** On 2026-09-03 it started answering
+  402 Payment Required. Runs whose every call is cached still work and still
+  produce a report; anything that needs one new call fails at that stage and
+  publishes nothing. There is no way to tell the two apart before running.
+- **A fixture inside this repository re-buys its orientation call on every
+  commit.** Commit subjects are quoted claims, so the orientation request for
+  `testdata/acceptance/python-tutorial-game` changes whenever anything is
+  committed here, even when nothing in the fixture changed. Re-rendering that
+  report is therefore never free, unlike chi or python-dotenv. This is correct
+  behaviour, not a cache defect — it is only expensive.
 - **The cache key is the provider state plus the request.** Transport settings
   were in that state, so editing `defaultTimeout` re-bought all 1,047 cached
   answers; they have since been taken out and only the endpoint, model, auth
