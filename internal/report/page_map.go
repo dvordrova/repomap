@@ -36,6 +36,9 @@ const (
 	mapLaneLabelSpace = 26.0
 	// mapMaxNodesPerColumn wraps a long lane into further columns so the whole
 	// map stays inside about one screen instead of becoming a list again.
+	// mapFewestColumns keeps a map that holds almost nothing from becoming a
+	// single stack, where every connection is a loop back into one side.
+	mapFewestColumns     = 2
 	mapMaxNodesPerColumn = 7
 	// mapTitleBudget is how many characters fit on one node line at the node
 	// width above, and a title may take two of them. A group's name is what
@@ -685,10 +688,25 @@ type placedEntry struct {
 }
 
 func placeLaneBlocks(layers [][]mapBlock) placedLane {
-	result := placedLane{}
-	column := 0
+	nodes := 0
 	for _, layer := range layers {
-		row := 0
+		for _, block := range layer {
+			nodes += len(block.groups)
+		}
+	}
+	widest := widestColumns(nodes)
+	result := placedLane{}
+	column, row := 0, 0
+	for index, layer := range layers {
+		// A layer starts a column of its own until the map has as many as it
+		// can be read across; past that, layers share a column rather than
+		// stretching the picture into a strip. Fourteen boxes laid one layer
+		// per column came out 1420 wide against 481 tall, which is a diagram
+		// nobody reads across.
+		if index > 0 && column+1 < widest {
+			column++
+			row = 0
+		}
 		for _, block := range layer {
 			// A part is never broken across columns: its frame is drawn round
 			// its boxes, and a frame in two pieces is two frames.
@@ -703,7 +721,6 @@ func placeLaneBlocks(layers [][]mapBlock) placedLane {
 				row++
 			}
 		}
-		column++
 	}
 	for _, entry := range result.entries {
 		if entry.column+1 > result.columns {
@@ -711,6 +728,16 @@ func placeLaneBlocks(layers [][]mapBlock) placedLane {
 		}
 	}
 	return result
+}
+
+// widestColumns is how many columns a map of this many boxes may use. A square
+// is the shape a reader takes in at a glance, so the count is the side of one.
+func widestColumns(nodes int) int {
+	columns := mapFewestColumns
+	for columns*columns < nodes {
+		columns++
+	}
+	return columns
 }
 
 func blockID(block mapBlock) string {

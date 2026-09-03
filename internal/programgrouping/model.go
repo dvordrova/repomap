@@ -55,6 +55,7 @@ const (
 	diagnosticConsolidationRepeatedCandidate = "consolidation_repeated_candidate"
 	diagnosticConsolidationLaneMismatch      = "consolidation_lane_mismatch"
 	diagnosticConsolidationUnclaimed         = "consolidation_unclaimed"
+	diagnosticConsolidationPass              = "consolidation_pass"
 	diagnosticContainerSkipped               = "container_skipped"
 	diagnosticNamesSkipped                   = "names_skipped"
 	// A split either partitions a group or does not happen. These three say

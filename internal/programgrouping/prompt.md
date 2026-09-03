@@ -109,6 +109,12 @@ Answer with one line per candidate and nothing else:
 }
 ```
 
+`labels` in the request says how many distinct labels to answer with, and it
+is counted from this request and not from the target: a request of forty
+candidates asks for about twenty. Coming back with one label per candidate
+joins nothing and coming back with a handful gathers things that are not the
+same thing, and both are wrong however well the labels read.
+
 `cluster` is a short lowercase label you choose. Candidates carrying the same
 label are the same thing; a candidate that belongs with nothing else gets a
 label of its own. Every `ref` in `candidates` appears exactly once, none is
@@ -116,25 +122,22 @@ left out and none is repeated. Do not return titles, summaries, lanes,
 members, connections or prose — they are decided elsewhere from what you
 assign here.
 
-A `containers` request has the same shape and asks a different question. Do
-not ask again which candidates are the same thing — that was already settled
-and the answer will not change. Ask which **part of this target** each one
-belongs to. Basic authentication and response compression are not the same
-thing and both are middleware; a router and its route tree are not the same
-thing and both are the router. Name at most one part for every three candidates in this request — ten
-candidates are at most three parts, forty are at most thirteen — and give each
-a name a reader of this repository would recognise. Every part holds at least
-two candidates: a part holding one is that candidate under a second name and
-is thrown away, so a request answered with one part per candidate produces no
-parts at all.
+A `containers` request has the same shape and asks a different question, and
+it is not open: `parts` lists the areas of this target, already named. Put
+every candidate in the one it belongs to, spelling the name exactly as
+`parts` spells it. Basic authentication and response compression are not the
+same thing and both are middleware; a router and its route tree are not the
+same thing and both are the router. A candidate that belongs in none of the
+named parts is left out of the answer rather than given a part of its own —
+a name that is not in `parts` is dropped.
 
 Name every candidate exactly once, across all groups. In a `consolidate`
 response a candidate that belongs with nothing else is a group of one, and
 keeps its own title unless a better one covers it. Candidates in one group must share a `lane`: a lane follows
-from a member's own categories and this phase may not move one. Aim for the
-fewest groups a reader can still tell apart — a target reads well at four to
-fourteen — but never gather things that are not the same thing merely to
-reach a number.
+from a member's own categories and this phase may not move one. Aim for the fewest
+groups a reader can still tell apart, up to the `labels` the request asks
+for, but never gather things that are not the same thing merely to reach a
+number.
 
 Return no confidence, scores, negative classifications, exhaustive coverage,
 frontiers, paths, Markdown, extra fields, or prose outside the JSON object.

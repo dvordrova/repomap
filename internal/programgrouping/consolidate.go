@@ -36,6 +36,9 @@ const (
 	// says so. "Which part does each belong to" is what puts them both under
 	// middleware, and it is the only question a level above can be built on.
 	phaseContainers phase = "containers"
+	// phasePartNames names a target's areas without assigning anything to
+	// them, so that the question after it is a choice from a closed list.
+	phasePartNames phase = "part_names"
 	// consolidateSampleMembers is how many member names ride along with a
 	// candidate. Enough to tell "Middleware" from "Middleware tests" without
 	// sending the memberships themselves.
@@ -53,10 +56,19 @@ const (
 	// keep it honest, because candidates that landed in different windows
 	// meet in a later pass once the pool has shrunk. The code decides only
 	// how much to ask at a time, never what belongs with what.
-	consolidateWindow = 40
+	// consolidateSmallest is the fewest labels a question is ever asked for.
+	// Below it a window is already small enough that halving it says more
+	// about arithmetic than about the target.
+	consolidateSmallest = 4
+	consolidateWindow   = 40
 	// consolidatePasses bounds the loop. A pass that joins nothing stops it
-	// earlier anyway.
-	consolidatePasses = 3
+	// first, and so does a pool that fits one question, so this is only the
+	// ceiling. Three was too few to reach the ceiling: a pass joins about
+	// three candidates in ten rather than the half it is asked for, so a
+	// hundred and thirty candidates came out as a hundred and seven — a
+	// stable number at a useless level. Five passes of seven tenths reach
+	// forty from twice that.
+	consolidatePasses = 8
 )
 
 type consolidateRequest struct {
@@ -64,6 +76,19 @@ type consolidateRequest struct {
 	Phase      phase                  `json:"phase"`
 	Target     targetWire             `json:"target"`
 	Candidates []consolidateCandidate `json:"candidates"`
+	// Labels is how many distinct labels this request should come back
+	// with. The rule it replaces was written in units of a target — "a
+	// target reads well at four to fourteen" — while the question is asked
+	// of one window of candidates, so a model that obeyed it squeezed a
+	// window of forty down to fourteen and a model that ignored it joined
+	// nothing. Both are the same instruction read against a different
+	// denominator. Counting is code's work, so code counts.
+	Labels int `json:"labels"`
+	// Parts is the closed list a containers request chooses from. Inventing a
+	// partition of forty groups is many decisions and a model with no
+	// reasoning makes many decisions badly — nineteen parts in one draw,
+	// thirty-six in the next. Choosing one of five named areas is one.
+	Parts []string `json:"parts,omitempty"`
 	// Connections make this a graph rather than a list of names. Two
 	// candidates that talk to each other constantly are usually one thing,
 	// and two that share a word in their title often are not. Without them
@@ -97,9 +122,25 @@ type consolidateResponse struct {
 	Assign []consolidateAssign `json:"assign"`
 }
 
+// consolidateAssign is one candidate and where it goes. The field it comes
+// back under follows the wording of the question: asked to choose from
+// `parts`, three cold draws answered with "part", and asked about groups, with
+// "group". All three name the same thing, and a reader that insisted on
+// "cluster" threw away answers that were entirely correct.
 type consolidateAssign struct {
 	Ref     string `json:"ref"`
 	Cluster string `json:"cluster"`
+	Part    string `json:"part"`
+	Group   string `json:"group"`
+}
+
+func (assign consolidateAssign) cluster() string {
+	for _, named := range []string{assign.Cluster, assign.Part, assign.Group} {
+		if named != "" {
+			return named
+		}
+	}
+	return ""
 }
 
 // consolidateRequestFor describes every candidate by what it is, never by whom
@@ -107,6 +148,7 @@ type consolidateAssign struct {
 func (compilation Compilation) consolidateRequestFor(
 	requestPhase phase,
 	candidates proposalSet,
+	parts []string,
 ) consolidateRequest {
 	request := consolidateRequest{
 		Version: requestVersion, Phase: requestPhase,
@@ -116,6 +158,8 @@ func (compilation Compilation) consolidateRequestFor(
 			Name:     compilation.index.Target.Name,
 			Selector: compilation.index.Target.Selector,
 		},
+		Labels:      wantedLabels(requestPhase, len(candidates.groups)),
+		Parts:       parts,
 		Candidates:  make([]consolidateCandidate, 0, len(candidates.groups)),
 		Connections: make([]consolidateConnection, 0, len(candidates.connections)),
 	}
@@ -227,7 +271,7 @@ func runConsolidation(
 	// stops as soon as it stops joining rather than grinding on.
 	for pass := 0; pass < consolidatePasses; pass++ {
 		joined, passDiagnostics, err := consolidateWindows(
-			ctx, executor, provider, compilation, phaseConsolidate, candidates,
+			ctx, executor, provider, compilation, phaseConsolidate, candidates, nil,
 		)
 		diagnostics = append(diagnostics, passDiagnostics...)
 		if err != nil {
@@ -239,6 +283,14 @@ func runConsolidation(
 			})
 			break
 		}
+		// What each pass did to the count, because the stage is judged by it:
+		// a target that settles at a hundred groups and a target that settles
+		// at thirty are the same code with a different number of passes, and
+		// the run says which happened.
+		diagnostics = append(diagnostics, groupindex.Diagnostic{
+			Kind:   diagnosticConsolidationPass,
+			Reason: fmt.Sprintf("%d to %d", len(candidates.groups), len(joined.groups)),
+		})
 		if len(joined.groups) >= len(candidates.groups) {
 			candidates = joined
 			break
@@ -286,20 +338,31 @@ func consolidateIntoContainers(
 	compilation Compilation,
 	candidates proposalSet,
 ) ([]groupindex.ContainerProposal, []groupindex.Diagnostic) {
-	// Naming the parts of a target is the Overview level of the page, and it
-	// was asked about every group at once: three cold draws over roughly
-	// seventy groups produced ten parts, four parts and one. It goes through
-	// the same windows as the joining question, for the same reason.
+	// The parts are the Overview level of the page, and the Overview holds
+	// fourteen boxes. Asked of every group of a target through windows, the
+	// answer covered twenty-three of ninety groups in one draw and none in
+	// the next, because each window named parts of a fortieth of the target
+	// and most came back holding one group. Ask instead about the groups the
+	// first screen actually shows, which is one question and not three, and
+	// what comes back covers what the reader sees. A group past the overview
+	// belongs to no part, which is what standalone means.
+	overview := largestGroups(candidates, consolidateWindow)
+	parts, err := proposePartNames(ctx, executor, provider, compilation, overview)
+	if err != nil {
+		return nil, []groupindex.Diagnostic{{
+			Kind: diagnosticContainerSkipped, Reason: err.Error(),
+		}}
+	}
 	merged, diagnostics, err := consolidateWindows(
-		ctx, executor, provider, compilation, phaseContainers, candidates,
+		ctx, executor, provider, compilation, phaseContainers, overview, parts,
 	)
 	if err != nil {
 		return nil, []groupindex.Diagnostic{{
 			Kind: diagnosticContainerSkipped, Reason: err.Error(),
 		}}
 	}
-	keyByCandidate := make(map[string]string, len(candidates.groups))
-	for position, group := range candidates.groups {
+	keyByCandidate := make(map[string]string, len(overview.groups))
+	for position, group := range overview.groups {
 		keyByCandidate[candidateRef(position)] = group.Key
 	}
 	containers := make([]groupindex.ContainerProposal, 0, len(merged.groups))
@@ -329,9 +392,10 @@ func consolidateWindows(
 	compilation Compilation,
 	requestPhase phase,
 	candidates proposalSet,
+	parts []string,
 ) (proposalSet, []groupindex.Diagnostic, error) {
 	if len(candidates.groups) <= consolidateWindow {
-		return consolidateOnce(ctx, executor, provider, compilation, requestPhase, candidates)
+		return consolidateOnce(ctx, executor, provider, compilation, requestPhase, candidates, parts)
 	}
 	var diagnostics []groupindex.Diagnostic
 	result := proposalSet{connections: candidates.connections}
@@ -342,7 +406,7 @@ func consolidateWindows(
 			connections: candidates.connections,
 		}
 		joined, windowDiagnostics, err := consolidateOnce(
-			ctx, executor, provider, compilation, requestPhase, window,
+			ctx, executor, provider, compilation, requestPhase, window, parts,
 		)
 		diagnostics = append(diagnostics, windowDiagnostics...)
 		if err != nil {
@@ -378,8 +442,9 @@ func consolidateOnce(
 	compilation Compilation,
 	requestPhase phase,
 	candidates proposalSet,
+	parts []string,
 ) (proposalSet, []groupindex.Diagnostic, error) {
-	request := compilation.consolidateRequestFor(requestPhase, candidates)
+	request := compilation.consolidateRequestFor(requestPhase, candidates, parts)
 	wire, err := json.Marshal(request)
 	if err != nil {
 		return proposalSet{}, nil, fmt.Errorf("program grouping: encode consolidation request: %w", err)
@@ -401,6 +466,14 @@ func consolidateOnce(
 			}
 			if len(decoded.Assign) == 0 {
 				return consolidateResponse{}, fmt.Errorf("program grouping: consolidation assigned nothing")
+			}
+			if err := refuseFlatConsolidation(request, decoded); err != nil {
+				return consolidateResponse{}, err
+			}
+			if kept, err := keepNamedParts(request, decoded); err != nil {
+				return consolidateResponse{}, err
+			} else {
+				decoded = kept
 			}
 			return decoded, nil
 		},
@@ -450,7 +523,7 @@ func applyConsolidation(
 		// cluster label rather than being decided by it: candidates of two
 		// lanes under one label become one cluster per lane, and no member
 		// moves.
-		label := assign.Cluster + "\x00" + string(candidate.Lane)
+		label := assign.cluster() + "\x00" + string(candidate.Lane)
 		clusterOf[assign.Ref] = label
 		if _, seen := members[label]; !seen {
 			clusterOrder = append(clusterOrder, label)
@@ -713,4 +786,220 @@ func nameContainers(
 		set.containers[position-1].Summary = title
 	}
 	return set
+}
+
+// wantedLabels is how many distinct labels a consolidation question of this
+// size should answer with. Roughly half: enough to join the several shards
+// that saw the same thing under different words, and not so few that the
+// question turns into "gather these into a handful whatever they are".
+// A pass that halves is repeated until the whole target fits one window, so
+// a hundred candidates settle near thirty rather than at fourteen or at a
+// hundred depending on how willing one draw of the model felt.
+func wantedLabels(requestPhase phase, candidates int) int {
+	if candidates < consolidateSmallest {
+		return candidates
+	}
+	if requestPhase == phaseContainers {
+		// A part gathers several groups, so there are far fewer parts than
+		// groups — a third, the same number the rule is written in. Asked for
+		// half, the model answered with half, and a target of forty groups
+		// came back as twenty parts of two, which is the target again under
+		// twenty new names.
+		return max(consolidateSmallest, candidates/3)
+	}
+	return max(consolidateSmallest, (candidates+1)/2)
+}
+
+// refuseFlatConsolidation turns down an answer whose count is wrong. The count
+// is the answer's other shape: a window of forty asked for twenty labels came
+// back once with thirty-six and once with a single one, and a single one is
+// forty unrelated things declared identical — an answer that reads as settled
+// and destroys the target. Validation is the third face of the call, so it
+// checks the number as well as the fields. The floor is half of what was asked
+// for and not the number itself: a window that joins a little more eagerly
+// than asked still says something true, while one that halves it twice is no
+// longer answering the question. Too many labels needs no refusing:
+// that is a window left unjoined, which the next pass takes up again.
+func refuseFlatConsolidation(request consolidateRequest, response consolidateResponse) error {
+	if request.Phase != phaseConsolidate {
+		// Only joining has a floor. The parts question is answered well by a
+		// small number — four parts for forty groups is an architecture, and
+		// refusing it left three cold draws with no zones at all.
+		return nil
+	}
+	labels := make(map[string]struct{}, len(response.Assign))
+	for _, assign := range response.Assign {
+		labels[assign.cluster()] = struct{}{}
+	}
+	if floor := max(2, request.Labels/2); len(labels) < floor {
+		return fmt.Errorf(
+			"program grouping: consolidation gathered %d candidates into %d labels, fewer than the %d asked for",
+			len(request.Candidates), len(labels), request.Labels,
+		)
+	}
+	return nil
+}
+
+// largestGroups is the part of a target a reader is asked about: the groups
+// holding the most members, in the order they were already in. A target's
+// parts are the shape of its first screen, and a group too small to appear
+// there does not need one.
+func largestGroups(candidates proposalSet, most int) proposalSet {
+	if len(candidates.groups) <= most {
+		return candidates
+	}
+	bySize := append([]groupProposal(nil), candidates.groups...)
+	sort.SliceStable(bySize, func(left, right int) bool {
+		return len(bySize[left].MemberSubjectIDs) > len(bySize[right].MemberSubjectIDs)
+	})
+	kept := make(map[string]struct{}, most)
+	for _, group := range bySize[:most] {
+		kept[group.Key] = struct{}{}
+	}
+	result := proposalSet{connections: candidates.connections}
+	for _, group := range candidates.groups {
+		if _, in := kept[group.Key]; in {
+			result.groups = append(result.groups, group)
+		}
+	}
+	return result
+}
+
+// The parts question used to ask one model call to invent a partition of forty
+// groups. Three cold draws answered it with nineteen parts, thirty-six parts
+// and two — because inventing a partition is not one decision, it is many, and
+// a model with no reasoning makes many decisions badly. It is two cubes now:
+// name the parts of this target, then choose one named part per group. The
+// second is the shape the categorization phase has always used, and it is the
+// steadiest phase in the run.
+const partNamesPrompt = `You name the parts of one software target.
+
+` + "`groups`" + ` lists what the target is made of. Name the few areas these
+groups fall into — the parts a reader of this repository would name if asked
+what the target contains: its entry points, its core, the things it talks to.
+Give exactly as many as ` + "`parts`" + ` asks for, each three words or fewer,
+each an area rather than one group's own name.
+
+Reply with strict json and nothing else:
+
+{"parts": ["request routing", "middleware chain", "route tree"]}
+
+Return no groups, memberships, summaries, counts or prose.`
+
+type partNamesRequest struct {
+	Version int             `json:"version"`
+	Phase   phase           `json:"phase"`
+	Target  targetWire      `json:"target"`
+	Parts   int             `json:"parts"`
+	Groups  []partNameGroup `json:"groups"`
+}
+
+type partNameGroup struct {
+	Title string `json:"title"`
+	Lane  string `json:"lane"`
+}
+
+type partNamesResponse struct {
+	Parts []string `json:"parts"`
+}
+
+// proposePartNames asks only for the names of a target's areas. Nothing is
+// assigned here, so a bad answer costs a name and never a membership.
+func proposePartNames(
+	ctx context.Context,
+	executor llm.Executor,
+	provider llm.Provider,
+	compilation Compilation,
+	candidates proposalSet,
+) ([]string, error) {
+	request := partNamesRequest{
+		Version: requestVersion, Phase: phasePartNames,
+		Target: targetWire{
+			Language: compilation.index.Target.Language,
+			Kind:     compilation.index.Target.Kind,
+			Name:     compilation.index.Target.Name,
+			Selector: compilation.index.Target.Selector,
+		},
+		Parts:  wantedLabels(phaseContainers, len(candidates.groups)),
+		Groups: make([]partNameGroup, 0, len(candidates.groups)),
+	}
+	for _, group := range candidates.groups {
+		request.Groups = append(request.Groups, partNameGroup{
+			Title: group.Title, Lane: string(group.Lane),
+		})
+	}
+	wire, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	state, err := cubeStateWithPrompt(phasePartNames, partNamesPrompt, wire)
+	if err != nil {
+		return nil, err
+	}
+	outcome, err := llm.ExecuteJSON(ctx, executor, provider, llm.Call[partNamesResponse]{
+		State: state,
+		Prompt: llm.Prompt{
+			System: partNamesPrompt, User: string(wire), ResponseFormatJSON: true,
+		},
+		Limits: limits(),
+		DecodeValidate: func(raw []byte) (partNamesResponse, error) {
+			var decoded partNamesResponse
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				return partNamesResponse{}, fmt.Errorf("program grouping: decode part names: %w", err)
+			}
+			named := make([]string, 0, len(decoded.Parts))
+			seen := make(map[string]struct{}, len(decoded.Parts))
+			for _, part := range decoded.Parts {
+				part = strings.TrimSpace(part)
+				folded := strings.ToLower(part)
+				if part == "" {
+					continue
+				}
+				if _, repeated := seen[folded]; repeated {
+					continue
+				}
+				seen[folded] = struct{}{}
+				named = append(named, part)
+			}
+			if len(named) < 2 {
+				return partNamesResponse{}, fmt.Errorf(
+					"program grouping: %d part names, and a target of one part has no parts", len(named),
+				)
+			}
+			return partNamesResponse{Parts: named}, nil
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return outcome.Value.Parts, nil
+}
+
+// keepNamedParts drops an assignment to a part nobody named. The list was
+// chosen one call earlier, so a cluster outside it is the model writing its
+// own partition again, which is the freedom this phase was split up to remove.
+// A group whose part is dropped belongs to none, which is what standalone
+// means and is always a safe answer.
+func keepNamedParts(request consolidateRequest, response consolidateResponse) (consolidateResponse, error) {
+	if len(request.Parts) == 0 {
+		return response, nil
+	}
+	named := make(map[string]string, len(request.Parts))
+	for _, part := range request.Parts {
+		named[strings.ToLower(strings.TrimSpace(part))] = part
+	}
+	kept := consolidateResponse{Assign: make([]consolidateAssign, 0, len(response.Assign))}
+	for _, assign := range response.Assign {
+		part, known := named[strings.ToLower(strings.TrimSpace(assign.cluster()))]
+		if !known {
+			continue
+		}
+		kept.Assign = append(kept.Assign, consolidateAssign{Ref: assign.Ref, Cluster: part})
+	}
+	if len(kept.Assign) == 0 {
+		return consolidateResponse{}, fmt.Errorf(
+			"program grouping: no group was put in any of the %d named parts", len(request.Parts),
+		)
+	}
+	return kept, nil
 }

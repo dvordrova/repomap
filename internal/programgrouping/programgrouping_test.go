@@ -570,8 +570,12 @@ func TestRunExhaustivelyBatchesAndConvergentlyConsolidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(diagnostics) != 0 {
-		t.Fatalf("diagnostics = %#v", diagnostics)
+	// A consolidation pass says what it did to the count, which is how a run
+	// that settles at ninety groups is told from one that settles at thirty.
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Kind != diagnosticConsolidationPass {
+			t.Fatalf("diagnostics = %#v", diagnostics)
+		}
 	}
 	// Consolidation joins what the shards proposed and invents nothing. These
 	// shards owned one subject each and so proposed no connection; a phase
