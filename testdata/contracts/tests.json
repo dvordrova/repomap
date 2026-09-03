@@ -333,6 +333,7 @@
         "manifest_program_index_test.go",
         "manifest_report_authority_test.go",
         "page_fixture_test.go",
+        "page_map_test.go",
         "program_index_projection_test.go",
         "program_page_portfolio_manifest_test.go",
         "program_portfolio_projection_test.go",
