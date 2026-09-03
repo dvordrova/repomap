@@ -588,9 +588,8 @@ var semanticOutcomeRegistry = map[string]map[string]struct{}{
 	"provider_call": {
 		"canceled": {}, "provider_failed": {},
 	},
-	"response_secret_scan": {"response_secret_scan": {}},
-	"response_decode":      {"response_decode": {}},
-	"response_validation":  {"response_validation": {}},
+	"response_decode":     {"response_decode": {}},
+	"response_validation": {"response_validation": {}},
 }
 
 func normalizedSemanticOutcome(exchange SemanticExchange) SemanticOutcome {
