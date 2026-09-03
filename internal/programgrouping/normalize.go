@@ -15,17 +15,28 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
+// normalizeResponse turns one grouping answer into proposals. The answer is a
+// flat assignment — one label per selectable ref — plus the links between
+// those labels, and nothing else. The model makes one decision and the code
+// makes every other: which lane a group answers on, what it holds, what the
+// evidence is. Asking the model for titles, summaries, lanes, members and
+// evidence in one answer is asking a model with reasoning disabled to think,
+// and that freedom is where the run-to-run spread came from.
 func normalizeResponse(raw []byte, compilation Compilation, request Request) (proposalSet, error) {
 	normalized, err := llm.NormalizeJSON(raw)
 	if err != nil {
 		return proposalSet{}, err
 	}
-	if !hasExactObjectKeys(normalized, []string{"groups", "connections"}) {
+	// The envelope must carry the one thing that is asked for and nothing
+	// unknown. `links` is optional: a shard whose groups say nothing to each
+	// other has none, and refusing that answer lost the whole target.
+	if !hasExactObjectKeys(normalized, []string{"assign", "links"}) &&
+		!hasExactObjectKeys(normalized, []string{"assign"}) {
 		return proposalSet{}, fmt.Errorf("program grouping: response envelope does not match the closed schema")
 	}
 	var envelope struct {
-		Groups      []json.RawMessage `json:"groups"`
-		Connections []json.RawMessage `json:"connections"`
+		Assign []json.RawMessage `json:"assign"`
+		Links  []json.RawMessage `json:"links"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(normalized))
 	decoder.DisallowUnknownFields()
@@ -36,177 +47,152 @@ func normalizeResponse(raw []byte, compilation Compilation, request Request) (pr
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return proposalSet{}, fmt.Errorf("program grouping: response has trailing data")
 	}
-	if envelope.Groups == nil || envelope.Connections == nil {
-		return proposalSet{}, fmt.Errorf("program grouping: response groups and connections must be arrays")
+	if envelope.Assign == nil {
+		return proposalSet{}, fmt.Errorf("program grouping: response assign must be an array")
 	}
 
-	knownRefs := make(map[string]struct{}, len(request.Subjects))
-	for _, subject := range request.Subjects {
-		knownRefs[subject.Ref] = struct{}{}
-	}
 	selectableRefs := make(map[string]struct{}, len(request.GroupRefs))
 	for _, ref := range request.GroupRefs {
 		selectableRefs[ref] = struct{}{}
 	}
 	result := proposalSet{}
-	for _, rawRow := range envelope.Groups {
-		var row responseGroup
-		if !decodeStrictRow(rawRow, []string{
-			"key", "title", "summary", "lane", "member_refs", "evidence_refs",
-		}, &row) {
+
+	// Gather the assignments by label, and inside a label by lane. A lane
+	// follows from a member's own categories, so a label covering two lanes is
+	// two groups and nobody moves; the model is never asked for a lane.
+	type bucket struct {
+		title   string
+		lane    groupindex.Lane
+		members []string
+	}
+	buckets := make(map[string]*bucket)
+	var order []string
+	placed := make(map[string]struct{}, len(envelope.Assign))
+	for _, rawRow := range envelope.Assign {
+		var row responseAssign
+		if !decodeStrictRow(rawRow, []string{"ref", "group"}, &row) {
 			result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
-				Kind: diagnosticMalformedGroup, Reason: "group row does not match the closed response schema",
+				Kind: diagnosticMalformedGroup, Reason: "assignment row does not match the closed response schema",
 			})
 			continue
 		}
-		if !validText(row.Key) || !validText(row.Title) || !validText(row.Summary) ||
-			!row.Lane.Valid() || len(row.MemberRefs) == 0 || row.EvidenceRefs == nil {
+		if !validText(row.Group) {
 			result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
-				Kind: diagnosticInvalidGroup, ProposalKey: row.Key,
-				Reason: "group has an invalid key, title, summary, lane, members, or evidence array",
+				Kind: diagnosticInvalidGroup, ProposalKey: row.Group, Reason: "assignment has an invalid group label",
 			})
 			continue
 		}
-		memberIDs := make([]string, 0, len(row.MemberRefs))
-		for _, ref := range canonicalStrings(row.MemberRefs) {
-			if _, known := knownRefs[ref]; !known {
-				result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
-					Kind: diagnosticUnknownMemberRef, ProposalKey: row.Key,
-					Reason: "group member ref was not advertised in this request",
-				})
-				continue
-			}
-			if _, selectable := selectableRefs[ref]; !selectable {
-				result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
-					Kind: diagnosticUnselectableMember, ProposalKey: row.Key,
-					Reason: "context subject is not selectable as a group member in this request",
-				})
-				continue
-			}
-			subject := compilation.subjectByRef[ref]
-			if !subjectSupportsLane(subject, row.Lane) {
-				result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
-					Kind: diagnosticLaneMismatch, ProposalKey: row.Key,
-					Reason: "group member category does not support the selected lane",
-				})
-				continue
-			}
-			memberIDs = append(memberIDs, subject.id)
-		}
-		if len(memberIDs) == 0 {
+		if _, selectable := selectableRefs[row.Ref]; !selectable {
+			result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
+				Kind: diagnosticUnselectableMember, ProposalKey: row.Group,
+				Reason: "assignment names a ref this request does not offer",
+			})
 			continue
 		}
-		evidenceIDs := make([]string, 0, len(row.EvidenceRefs))
-		for _, ref := range canonicalStrings(row.EvidenceRefs) {
-			if _, known := knownRefs[ref]; !known {
-				result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
-					Kind: diagnosticUnknownEvidenceRef, ProposalKey: row.Key,
-					Reason: "group evidence ref was not advertised in this request",
-				})
-				continue
-			}
-			subject := compilation.subjectByRef[ref]
-			if row.Lane == groupindex.LaneDependencies &&
-				!programindex.CategorySupported(compilation.index, subject.id, programindex.CategoryDependency) {
-				result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
-					Kind: diagnosticUnsupportedEvidence, ProposalKey: row.Key,
-					Reason: "platform authority cannot evidence a dependencies-lane group",
-				})
-				continue
-			}
-			evidenceIDs = append(evidenceIDs, subject.id)
+		if _, repeated := placed[row.Ref]; repeated {
+			result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
+				Kind: diagnosticUnknownMemberRef, ProposalKey: row.Group,
+				Reason: "assignment repeats a ref already placed",
+			})
+			continue
 		}
+		subject := compilation.subjectByRef[row.Ref]
+		lane := subjectLane(subject)
+		if lane == "" {
+			result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
+				Kind: diagnosticLaneMismatch, ProposalKey: row.Group,
+				Reason: "subject categories support no lane",
+			})
+			continue
+		}
+		placed[row.Ref] = struct{}{}
+		key := row.Group + "\x00" + string(lane)
+		item, known := buckets[key]
+		if !known {
+			item = &bucket{title: row.Group, lane: lane}
+			buckets[key] = item
+			order = append(order, key)
+		}
+		item.members = append(item.members, subject.id)
+	}
+	labelKey := make(map[string]string, len(order))
+	for position, key := range order {
+		item := buckets[key]
+		proposalKey := fmt.Sprintf("g%d", position+1)
+		labelKey[key] = proposalKey
 		result.groups = append(result.groups, groupProposal{
-			Key: row.Key, Title: row.Title, Summary: row.Summary, Lane: row.Lane,
-			MemberSubjectIDs: memberIDs, EvidenceSubjectIDs: evidenceIDs,
+			Key: proposalKey, Title: item.title, Summary: item.title,
+			Lane: item.lane, MemberSubjectIDs: canonicalStrings(item.members),
+			EvidenceSubjectIDs: []string{},
 		})
 	}
-	for _, rawRow := range envelope.Connections {
-		var row responseConnection
-		if !decodeStrictRow(rawRow, []string{
-			"from_group_key", "to_group_key", "semantic_kind", "label", "summary", "evidence_refs",
-		}, &row) {
+
+	// A link joins two labels. It is kept for every lane pair those labels
+	// resolved to, because a label that became two groups is still the thing
+	// the link was about.
+	for _, rawRow := range envelope.Links {
+		var row responseLink
+		if !decodeStrictRow(rawRow, []string{"from", "to", "label"}, &row) {
 			result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
-				Kind:   diagnosticMalformedConnection,
-				Reason: "connection row does not match the closed response schema",
+				Kind: diagnosticMalformedConnection, Reason: "link row does not match the closed response schema",
 			})
 			continue
 		}
-		proposalKey := row.FromGroupKey + "->" + row.ToGroupKey + ":" + row.SemanticKind
-		if !validText(row.FromGroupKey) || !validText(row.ToGroupKey) ||
-			!validSnakeCase(row.SemanticKind) || !validText(row.Label) || !validText(row.Summary) ||
-			row.EvidenceRefs == nil {
+		if !validText(row.From) || !validText(row.To) || !validText(row.Label) || row.From == row.To {
 			result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
-				Kind: diagnosticInvalidConnection, ProposalKey: proposalKey,
-				Reason: "connection has an invalid endpoint, semantic kind, label, summary, or evidence array",
+				Kind: diagnosticInvalidConnection, ProposalKey: row.From + "->" + row.To,
+				Reason: "link has an invalid label or joins one group to itself",
 			})
 			continue
 		}
-		evidenceIDs := make([]string, 0, len(row.EvidenceRefs))
-		for _, ref := range canonicalStrings(row.EvidenceRefs) {
-			if _, known := knownRefs[ref]; !known {
-				result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
-					Kind: diagnosticUnknownEvidenceRef, ProposalKey: proposalKey,
-					Reason: "connection evidence ref was not advertised in this request",
+		fromKeys, toKeys := labelKeys(labelKey, row.From), labelKeys(labelKey, row.To)
+		if len(fromKeys) == 0 || len(toKeys) == 0 {
+			result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
+				Kind: diagnosticUnknownGroupKey, ProposalKey: row.From + "->" + row.To,
+				Reason: "link names a group label nothing was assigned to",
+			})
+			continue
+		}
+		for _, from := range fromKeys {
+			for _, to := range toKeys {
+				if from == to {
+					continue
+				}
+				result.connections = append(result.connections, connectionProposal{
+					FromGroupKey: from, ToGroupKey: to,
+					SemanticKind: "relates_to", Label: row.Label, Summary: row.Label,
+					EvidenceSubjectIDs: []string{},
 				})
-				continue
 			}
-			evidenceIDs = append(evidenceIDs, compilation.subjectByRef[ref].id)
-		}
-		result.connections = append(result.connections, connectionProposal{
-			FromGroupKey: row.FromGroupKey, ToGroupKey: row.ToGroupKey,
-			SemanticKind: row.SemanticKind, Label: row.Label, Summary: row.Summary,
-			EvidenceSubjectIDs: evidenceIDs,
-		})
-	}
-	result = canonicalProposalSet(result)
-	if request.Phase == phaseMerge {
-		if err := validateMergeCandidateCoverage(result, compilation, request); err != nil {
-			return proposalSet{}, err
 		}
 	}
-	return result, nil
+	return canonicalProposalSet(result), nil
 }
 
-func validateMergeCandidateCoverage(result proposalSet, compilation Compilation, request Request) error {
-	for _, candidate := range request.CandidateGroups {
-		expected := make([]string, 0, len(candidate.MemberRefs))
-		for _, ref := range canonicalStrings(candidate.MemberRefs) {
-			subject, known := compilation.subjectByRef[ref]
-			if !known {
-				return fmt.Errorf("program grouping: merge request retained an unknown candidate member ref %q", ref)
-			}
-			expected = append(expected, subject.id)
-		}
-		covered := false
-		for _, group := range result.groups {
-			if group.Lane != candidate.Lane || !containsAllStrings(group.MemberSubjectIDs, expected) {
-				continue
-			}
-			covered = true
-			break
-		}
-		if !covered {
-			return fmt.Errorf(
-				"program grouping: merge response omitted validated candidate memberships from %s",
-				candidate.Ref,
-			)
+// subjectLane is the one lane a subject answers on, decided by its own
+// categories. Inbound and background activity are both ways work begins, so
+// they share the triggers lane.
+func subjectLane(subject subjectAuthority) groupindex.Lane {
+	for _, lane := range []groupindex.Lane{
+		groupindex.LaneTriggers, groupindex.LaneCore, groupindex.LaneDependencies,
+	} {
+		if subjectSupportsLane(subject, lane) {
+			return lane
 		}
 	}
-	return nil
+	return ""
 }
 
-func containsAllStrings(values, expected []string) bool {
-	set := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		set[value] = struct{}{}
-	}
-	for _, value := range expected {
-		if _, ok := set[value]; !ok {
-			return false
+func labelKeys(labelKey map[string]string, label string) []string {
+	var result []string
+	for _, lane := range []groupindex.Lane{
+		groupindex.LaneTriggers, groupindex.LaneCore, groupindex.LaneDependencies,
+	} {
+		if key, known := labelKey[label+"\x00"+string(lane)]; known {
+			result = append(result, key)
 		}
 	}
-	return true
+	return result
 }
 
 func subjectSupportsLane(subject subjectAuthority, lane groupindex.Lane) bool {

@@ -72,14 +72,14 @@ func TestMergeFailureKeepsTheShardGroups(t *testing.T) {
 			ref := request.GroupRefs[0]
 			subject := subjectByRef(t, request.Request, ref)
 			lane := laneForCategories(subject.Categories)
+			_ = lane
 			return []byte(fmt.Sprintf(
-				`{"groups":[{"key":"g1","title":%q,"summary":"Shard group","lane":%q,"member_refs":[%q],"evidence_refs":[]}],"connections":[]}`,
-				"Group "+ref, lane, ref,
+				`{"assign":[{"ref":%q,"group":%q}],"links":[]}`, ref, "Group "+ref,
 			))
 		}
-		// A merge response that drops every candidate membership is exactly
-		// what lost chi's router package.
-		return []byte(`{"groups":[],"connections":[]}`)
+		// A consolidation that assigns nothing is refused, and the shards'
+		// own groups survive it.
+		return []byte(`{"assign":[]}`)
 	}
 
 	grouped, diagnostics, err := Run(t.Context(), llm.Executor{

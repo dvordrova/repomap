@@ -165,22 +165,18 @@ type Request struct {
 	CandidateConnections []candidateConnectionWire `json:"candidate_connections"`
 }
 
-type responseGroup struct {
-	Key          string          `json:"key"`
-	Title        string          `json:"title"`
-	Summary      string          `json:"summary"`
-	Lane         groupindex.Lane `json:"lane"`
-	MemberRefs   []string        `json:"member_refs"`
-	EvidenceRefs []string        `json:"evidence_refs"`
+// responseAssign is the whole grouping answer, one row per selectable ref:
+// which group it belongs to, by name. Nothing else is asked for.
+type responseAssign struct {
+	Ref   string `json:"ref"`
+	Group string `json:"group"`
 }
 
-type responseConnection struct {
-	FromGroupKey string   `json:"from_group_key"`
-	ToGroupKey   string   `json:"to_group_key"`
-	SemanticKind string   `json:"semantic_kind"`
-	Label        string   `json:"label"`
-	Summary      string   `json:"summary"`
-	EvidenceRefs []string `json:"evidence_refs"`
+// responseLink joins two group names with what one does to the other.
+type responseLink struct {
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Label string `json:"label"`
 }
 
 func (compilation Compilation) request(

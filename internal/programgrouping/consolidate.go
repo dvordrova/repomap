@@ -43,6 +43,17 @@ const (
 	// consolidateEnough is the number of groups a target page reads well at.
 	// Reaching it stops the loop asking for further passes.
 	consolidateEnough = 14
+	// consolidateWindow is how many candidates one consolidation question
+	// carries. Asked about 130 at once the same input returned 47, 123 and 8
+	// groups on three cold draws — the whole spread of the stage lives in
+	// that one question. Windows keep each question small; several passes
+	// keep it honest, because candidates that landed in different windows
+	// meet in a later pass once the pool has shrunk. The code decides only
+	// how much to ask at a time, never what belongs with what.
+	consolidateWindow = 40
+	// consolidatePasses bounds the loop. A pass that joins nothing stops it
+	// earlier anyway.
+	consolidatePasses = 3
 )
 
 type consolidateRequest struct {
@@ -194,26 +205,34 @@ func runConsolidation(
 	diagnostics := append([]groupindex.Diagnostic(nil), candidates.diagnostics...)
 	candidates.diagnostics = nil
 
-	// One pass joins what separate shards proposed twice. Asking again would
-	// keep joining, and joining past the truth is how thirty middlewares
-	// became four buckets: chi's router package really does hold one group
-	// per middleware file, and the second question is not "join more" but
-	// "which part does each of these belong to".
-	joined, passDiagnostics, err := consolidateOnce(
-		ctx, executor, provider, compilation, phaseConsolidate, candidates,
-	)
-	if err != nil {
-		if ctx.Err() != nil {
-			return proposalSet{}, err
+	// Join what separate shards proposed twice, a window at a time. Joining
+	// past the truth is how thirty middlewares became four buckets, so a pass
+	// stops as soon as it stops joining rather than grinding on.
+	for pass := 0; pass < consolidatePasses; pass++ {
+		joined, passDiagnostics, err := consolidateWindows(
+			ctx, executor, provider, compilation, candidates,
+		)
+		diagnostics = append(diagnostics, passDiagnostics...)
+		if err != nil {
+			if ctx.Err() != nil {
+				return proposalSet{}, err
+			}
+			diagnostics = append(diagnostics, groupindex.Diagnostic{
+				Kind: diagnosticMergeSkipped, Reason: err.Error(),
+			})
+			break
 		}
-		diagnostics = append(diagnostics, groupindex.Diagnostic{
-			Kind: diagnosticMergeSkipped, Reason: err.Error(),
-		})
-		candidates.diagnostics = canonicalDiagnostics(append(diagnostics, candidates.diagnostics...))
-		return candidates, nil
+		if len(joined.groups) >= len(candidates.groups) {
+			candidates = joined
+			break
+		}
+		candidates = joined
+		if len(candidates.groups) <= consolidateWindow {
+			// The whole pool now fits one question, and the pass above just
+			// asked it.
+			break
+		}
 	}
-	diagnostics = append(diagnostics, passDiagnostics...)
-	candidates = joined
 
 	candidates.diagnostics = canonicalDiagnostics(append(diagnostics, candidates.diagnostics...))
 	return candidates, nil
@@ -275,6 +294,50 @@ func consolidateIntoContainers(
 		containers = append(containers, container)
 	}
 	return containers, diagnostics
+}
+
+// consolidateWindows asks the consolidation question over slices of the
+// candidate list and returns everything, joined or not. Candidates keep the
+// order they were compiled in, which is the order of the code they came from,
+// so a window is a stretch of the repository and the duplicates two adjacent
+// shards proposed land in it together.
+func consolidateWindows(
+	ctx context.Context,
+	executor llm.Executor,
+	provider llm.Provider,
+	compilation Compilation,
+	candidates proposalSet,
+) (proposalSet, []groupindex.Diagnostic, error) {
+	if len(candidates.groups) <= consolidateWindow {
+		return consolidateOnce(ctx, executor, provider, compilation, phaseConsolidate, candidates)
+	}
+	var diagnostics []groupindex.Diagnostic
+	result := proposalSet{connections: candidates.connections}
+	for start := 0; start < len(candidates.groups); start += consolidateWindow {
+		end := min(start+consolidateWindow, len(candidates.groups))
+		window := proposalSet{
+			groups:      candidates.groups[start:end],
+			connections: candidates.connections,
+		}
+		joined, windowDiagnostics, err := consolidateOnce(
+			ctx, executor, provider, compilation, phaseConsolidate, window,
+		)
+		diagnostics = append(diagnostics, windowDiagnostics...)
+		if err != nil {
+			if ctx.Err() != nil {
+				return proposalSet{}, diagnostics, err
+			}
+			// A window that fails keeps its candidates exactly as they were.
+			diagnostics = append(diagnostics, groupindex.Diagnostic{
+				Kind: diagnosticMergeSkipped, Reason: err.Error(),
+			})
+			joined = window
+		}
+		namespaced := namespaceProposalSet(joined, fmt.Sprintf("w%d:", start/consolidateWindow+1))
+		result.groups = append(result.groups, namespaced.groups...)
+		diagnostics = append(diagnostics, namespaced.diagnostics...)
+	}
+	return canonicalProposalSet(result), diagnostics, nil
 }
 
 func consolidateOnce(

@@ -21,50 +21,39 @@ particular, a subject with `categories: []` must never be selected as a group
 member. Short refs exist only inside this request; never copy or invent a
 canonical identity.
 
-Return strict JSON with exactly this shape:
+Answer with one line per selectable ref and nothing else:
 
 ```json
 {
-  "groups": [
-    {
-      "key": "delivery",
-      "title": "Order delivery",
-      "summary": "Accepts HTTP and queued order work",
-      "lane": "triggers",
-      "member_refs": ["s2", "s7"],
-      "evidence_refs": ["s1", "s4"]
-    }
+  "assign": [
+    {"ref": "s2", "group": "Order delivery"},
+    {"ref": "s7", "group": "Order delivery"},
+    {"ref": "s4", "group": "Order storage"}
   ],
-  "connections": [
-    {
-      "from_group_key": "delivery",
-      "to_group_key": "orders",
-      "semantic_kind": "dispatches_work_to",
-      "label": "dispatches orders",
-      "summary": "Delivery boundaries hand validated orders to domain behavior",
-      "evidence_refs": ["s2", "s5"]
-    }
+  "links": [
+    {"from": "Order delivery", "to": "Order storage", "label": "stores accepted orders"}
   ]
 }
 ```
 
-`key` is a response-local join key used by `connections`; it is not a
-repository identity. Every connection endpoint must cite a key returned in
-the same response.
+`group` is the name of the group the ref belongs to — a responsibility a
+reader would say out loud, written the same way every time it appears. Refs
+carrying the same name are one group. Every ref in `group_refs` appears
+exactly once: none left out, none repeated, and no ref that is not in
+`group_refs`.
 
-`lane` is closed to exactly:
+`links` says what one group does to another, naming the groups by the same
+names used in `assign`. A group never links to itself.
 
-- `triggers`: all ways work begins. Both `inbound` delivery boundaries and
-  `background_activity` such as cron, schedulers, consumers, workers, startup
-  hooks, filesystem watchers, polling loops, controller reconciles, and CLI
-  invocation belong in this one column;
-- `core`: product/domain behavior, state, entities, and operations;
-- `dependencies`: external packages, services, protocols, storage, and other
-  outbound integrations.
+Do not return lanes, member lists, evidence, summaries, keys, confidence or
+prose. A group's lane and its evidence follow from the categories of the refs
+you assign to it, and are decided here, not by you.
 
-`inbound` and `background_activity` are categories, never lanes. A group whose
-`lane` is any string other than `triggers`, `core` or `dependencies` is
-discarded whole, and every connection naming it is discarded with it.
+Every ref is placed in exactly one group, so a group's lane is decided by the
+categories of what it holds: `inbound` or `background_activity` refs make a
+triggers group, `core` refs a core group, `dependency` refs a dependencies
+group. Refs of different lanes under one name simply become one group per
+lane. You never write a lane.
 
 Size a group for reading, not for coverage. One group is one responsibility a
 reader would name out loud. `selectable` says how many refs this request has
@@ -75,25 +64,11 @@ hold more than a fifth of `selectable`: a group that large is several
 responsibilities that happen to share a directory. A group holding one
 subject is fine when that subject is its own responsibility.
 
-During `grouping`, groups are a sparse overlapping cover, not a partition. A
-categorized subject may belong to several useful groups or to none. Do not
-emit an acknowledgement row for every `group_refs` entry, do not create an
-`unassigned`/`support` complement, and do not force unrelated subjects
-together. Every `member_ref` must itself carry a category compatible with the
-group's lane: `inbound` or `background_activity` for `triggers`, `core` for
-`core`, and `dependency` for `dependencies`. A multiply categorized subject
-may therefore belong to groups in several compatible lanes. `evidence_refs`
-may cite advertised subjects, including unclassified context, subject to the
-platform/dependencies exception below. Evidence does not become membership and
-does not make an incompatible member valid. The `grouping` phase is sparse:
-a subject with no group is a subject this shard had nothing to say about.
-
-For a `dependencies` group, do not cite an explicit `authority_kind:
-platform` object or an exact invocation pattern whose complete targets are
-platform authorities as evidence. Standard-runtime APIs are structural
-context, not external dependency evidence. Other advertised local or
-unclassified subjects may still provide evidence, and connection evidence is
-not restricted by this group-lane rule.
+`grouping` is a partition, not a sample: every ref in `group_refs` gets a
+group, including the ones that look like plumbing. A ref you cannot place with
+anything else is its own group of one — that is a real answer, and leaving it
+out is not. Do not invent a catch-all "misc" or "support" group to park refs
+you did not think about; name what they actually do.
 
 `edges` are complete incident structural facts for every selectable subject in
 this shard. They may describe ownership, containment, relation targets,
@@ -102,17 +77,14 @@ argument/value provenance. Dynamic arguments may retain reconstructed values
 with request-local source object or source argument refs. A candidate with
 `resolution: possible` remains only a possible value at that use; its exact
 source provenance does not turn it into an exact runtime edge. Use these facts
-as evidence, but do not invent a missing call, runtime occurrence, order, path,
-framework meaning, or repository fact.
+as evidence for which refs belong together, but do not invent a missing call,
+runtime occurrence, order, path, framework meaning, or repository fact.
 
-Connections are concise directed semantic relationships between returned
-groups. They do not need a locally proven call corridor: the supplied exact
-subjects, values, structural graph, categories, and group meanings are their
-evidence. `semantic_kind` is an open snake_case vocabulary. Prefer precise
-kinds such as `registers`, `invokes`, `dispatches_to`, `reads_from`,
-`writes_to`, `publishes_to`, `consumes_from`, `schedules`, `configures`, or
-`transforms_into`, but introduce a new precise snake_case kind when none fits.
-
+A link is a concise directed relationship between two groups you named. It
+does not need a locally proven call corridor: the supplied exact subjects,
+values, structural graph and categories are its evidence. Its `label` says
+what the first group does to the second in a few words — "registers routes",
+"reads settings", "dispatches work" — and nothing more.
 A `consolidate` request is a graph one level up from the subjects. Its nodes
 are `candidates` — each one's title, summary, lane, how many members it holds,
 and a few member names — and its edges are `connections` between them.

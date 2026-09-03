@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -92,7 +91,7 @@ func (provider *presetProvider) Complete(_ context.Context, prepared llm.Prepare
 		System: envelope.System, User: envelope.User, ResponseFormatJSON: true,
 	})
 	provider.mu.Unlock()
-	response := []byte(`{"groups":[],"connections":[]}`)
+	response := []byte(`{"assign":[],"links":[]}`)
 	if provider.respond != nil {
 		response = provider.respond(request)
 	}
@@ -193,31 +192,43 @@ func validatePresetRequest(request Request) error {
 	return nil
 }
 
-func TestRunBuildsSparseOverlappingGroupsAndOpenSemanticConnections(t *testing.T) {
+func TestRunPartitionsSelectableRefsAndKeepsOpenLinks(t *testing.T) {
 	index := groupingTestIndex(t, "go")
 	provider := &presetProvider{}
 	provider.respond = func(request groupingRequest) []byte {
 		refs := requestRefs(request.Request)
+		if request.Phase == phaseConsolidate {
+			assign := make([]consolidateAssign, 0, len(request.Candidates))
+			for _, candidate := range request.Candidates {
+				assign = append(assign, consolidateAssign{Ref: candidate.Ref, Cluster: candidate.Title})
+			}
+			wire, err := json.Marshal(consolidateResponse{Assign: assign})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return wire
+		}
+		// One label over two lanes, one ref repeated, one invented, one that
+		// is context and not selectable, and a link to a label nothing was
+		// assigned to.
 		return []byte(fmt.Sprintf(`{
-  "groups": [
-    {"key":"triggers","title":"Order triggers","summary":"Starts order work","lane":"triggers","member_refs":[%q,%q],"evidence_refs":[%q]},
-    {"key":"core","title":"Order core","summary":"Processes orders","lane":"core","member_refs":[%q],"evidence_refs":[]},
-    {"key":"core","title":"Order core","summary":"Processes orders","lane":"core","member_refs":[%q],"evidence_refs":[%q]},
-    {"key":"unknown","title":"Unknown","summary":"Broken ref","lane":"core","member_refs":["s9999"],"evidence_refs":[]},
-    {"key":"context-member","title":"Context","summary":"Must not select context","lane":"core","member_refs":[%q],"evidence_refs":[]},
-    {"key":42,"title":"Malformed","summary":"Wrong key type","lane":"core","member_refs":[%q],"evidence_refs":[]}
+  "assign": [
+    {"ref":%q,"group":"Order work"},
+    {"ref":%q,"group":"Order work"},
+    {"ref":%q,"group":"Order core"},
+    {"ref":%q,"group":"Order core"},
+    {"ref":"s9999","group":"Invented"},
+    {"ref":%q,"group":"Context"}
   ],
-  "connections": [
-    {"from_group_key":"triggers","to_group_key":"core","semantic_kind":"dispatches_work_to","label":"dispatches orders","summary":"Triggers hand work to the order core","evidence_refs":[%q]},
-    {"from_group_key":"triggers","to_group_key":"core","semantic_kind":"dispatches_work_to","label":"dispatches orders","summary":"Triggers hand work to the order core","evidence_refs":[%q]},
-    {"from_group_key":"triggers","to_group_key":"missing","semantic_kind":"uses","label":"broken","summary":"Unknown group key","evidence_refs":[]},
-    {"from_group_key":"triggers","to_group_key":"core","semantic_kind":"Not Snake","label":"broken","summary":"Invalid kind","evidence_refs":[]}
+  "links": [
+    {"from":"Order work","to":"Order core","label":"dispatches orders"},
+    {"from":"Order work","to":"Nowhere","label":"broken"},
+    {"from":"Order work","to":"Order work","label":"itself"}
   ]
 }`,
-			refs["pattern:HandleFunc"], refs["object:runWorker"], refs["object:normalize"],
-			refs["object:processOrder"], refs["pattern:HandleFunc"], refs["object:normalize"],
-			refs["object:normalize"], refs["object:processOrder"],
-			refs["pattern:HandleFunc"], refs["object:processOrder"],
+			refs["pattern:HandleFunc"], refs["object:runWorker"],
+			refs["object:processOrder"], refs["object:processOrder"],
+			refs["object:normalize"],
 		))
 	}
 
@@ -230,46 +241,30 @@ func TestRunBuildsSparseOverlappingGroupsAndOpenSemanticConnections(t *testing.T
 	if err := grouped.Validate(); err != nil {
 		t.Fatalf("GroupsIndex.Validate: %v", err)
 	}
-	trigger := groupByTitle(t, grouped, "Order triggers")
-	core := groupByTitle(t, grouped, "Order core")
-	if trigger.Lane != groupindex.LaneTriggers || len(trigger.MemberSubjectIDs) != 2 {
-		t.Fatalf("trigger group = %#v", trigger)
-	}
-	if core.Lane != groupindex.LaneCore || len(core.MemberSubjectIDs) != 2 {
-		t.Fatalf("compatible duplicate core rows were not unioned: %#v", core)
-	}
-	patternID := subjectIDBySourceRef(t, index, "registration-pattern")
-	if !containsString(trigger.MemberSubjectIDs, patternID) || !containsString(core.MemberSubjectIDs, patternID) {
-		t.Fatalf("overlapping core/trigger membership was lost: trigger=%#v core=%#v", trigger, core)
-	}
-	if len(grouped.Connections) != 1 || grouped.Connections[0].SemanticKind != "dispatches_work_to" {
-		t.Fatalf("open semantic connection = %#v", grouped.Connections)
-	}
-	wantEvidence := []string{
-		subjectIDBySourceRef(t, index, "process"),
-		subjectIDBySourceRef(t, index, "registration-pattern"),
-	}
-	sort.Strings(wantEvidence)
-	var gotEvidence []string
-	for _, evidence := range grouped.Connections[0].Evidence {
-		gotEvidence = append(gotEvidence, evidence.SubjectID)
-	}
-	if !reflect.DeepEqual(gotEvidence, wantEvidence) {
-		t.Fatalf("compatible duplicate connection evidence = %#v, want %#v", gotEvidence, wantEvidence)
-	}
-	for _, omitted := range []string{"audit", "storage"} {
-		id := subjectIDBySourceRef(t, index, omitted)
-		for _, group := range grouped.Groups {
-			if containsString(group.MemberSubjectIDs, id) {
-				t.Fatalf("sparse omitted subject %q appeared in group %#v", omitted, group)
-			}
+
+	// Every placed ref appears in exactly one group, and no group holds a ref
+	// the request never offered.
+	seen := make(map[string]int)
+	for _, group := range grouped.Groups {
+		for _, member := range group.MemberSubjectIDs {
+			seen[member]++
 		}
 	}
-	assertDiagnosticKind(t, diagnostics, diagnosticUnknownMemberRef)
+	for id, count := range seen {
+		if count != 1 {
+			t.Fatalf("subject %s is in %d groups; grouping is a partition", id, count)
+		}
+	}
+	context := subjectIDBySourceRef(t, index, "helper")
+	if _, placed := seen[context]; placed {
+		t.Fatalf("an unselectable context subject was placed: %#v", grouped.Groups)
+	}
+	if len(grouped.Connections) != 1 || grouped.Connections[0].Label != "dispatches orders" {
+		t.Fatalf("links to an unassigned label or to itself survived: %#v", grouped.Connections)
+	}
 	assertDiagnosticKind(t, diagnostics, diagnosticUnselectableMember)
-	assertDiagnosticKind(t, diagnostics, diagnosticMalformedGroup)
+	assertDiagnosticKind(t, diagnostics, diagnosticUnknownMemberRef)
 	assertDiagnosticKind(t, diagnostics, diagnosticUnknownGroupKey)
-	assertDiagnosticKind(t, diagnostics, diagnosticInvalidConnection)
 
 	provider.mu.Lock()
 	requests := append([]groupingRequest(nil), provider.requests...)
@@ -342,65 +337,49 @@ func TestRunBuildsSparseOverlappingGroupsAndOpenSemanticConnections(t *testing.T
 			}
 		}
 	}
-	if strings.Contains(prompts[0].System, "one row for every") ||
-		!strings.Contains(prompts[0].System, "open snake_case vocabulary") {
-		t.Fatalf("prompt lost sparse/open-vocabulary contract")
+	// The whole point of the cube: the model is asked for membership and
+	// nothing it could invent instead.
+	if !strings.Contains(prompts[0].System, "Do not return lanes, member lists, evidence") ||
+		!strings.Contains(prompts[0].System, "is a partition, not a sample") {
+		t.Fatalf("prompt lost the assignment-only contract")
 	}
 }
 
-func TestNormalizeResponseFiltersSetValuedRefsWithoutDiscardingValidRows(t *testing.T) {
+func TestNormalizeResponseKeepsValidAssignmentsAndRejectsTheRest(t *testing.T) {
 	index := groupingTestIndex(t, "go")
 	compilation, err := Compile(index)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := compilation.request(
-		phaseGrouping, compilation.categorizedRefs, proposalSet{},
-	)
+	request, err := compilation.request(phaseGrouping, compilation.categorizedRefs, proposalSet{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	refs := requestRefs(request)
 	processRef := refs["object:processOrder"]
-	handlerRef := refs["object:handleOrder"]
 	workerRef := refs["object:runWorker"]
-	storageRef := refs["object:Store.Put"]
-	platformRef := refs["object:platform:javascript.requestAnimationFrame"]
-	platformPatternRef := refs["pattern:requestAnimationFrame"]
 	contextRef := refs["object:normalize"]
-	if processRef == "" || handlerRef == "" || workerRef == "" || storageRef == "" ||
-		platformRef == "" || platformPatternRef == "" || contextRef == "" {
+	if processRef == "" || workerRef == "" || contextRef == "" {
 		t.Fatalf("fixture request refs = %#v", refs)
 	}
+
+	// processOrder is core and runWorker is background activity, so one label
+	// over both becomes one group per lane and nobody moves. normalize is not
+	// categorized, so it is context and cannot be assigned at all.
 	raw, err := json.Marshal(struct {
-		Groups      []responseGroup      `json:"groups"`
-		Connections []responseConnection `json:"connections"`
+		Assign []responseAssign `json:"assign"`
+		Links  []responseLink   `json:"links"`
 	}{
-		Groups: []responseGroup{
-			{
-				Key: "mixed", Title: "Mixed", Summary: "Keeps advertised selectable members", Lane: groupindex.LaneCore,
-				MemberRefs:   []string{processRef, workerRef, contextRef, "s9999", handlerRef, processRef},
-				EvidenceRefs: []string{contextRef, "s9998", contextRef},
-			},
-			{
-				Key: "all-invalid", Title: "Invalid", Summary: "Has no selectable members", Lane: groupindex.LaneCore,
-				MemberRefs: []string{contextRef, "s9997"}, EvidenceRefs: []string{},
-			},
-			{
-				Key: "peer", Title: "Peer", Summary: "Connection endpoint", Lane: groupindex.LaneTriggers,
-				MemberRefs: []string{workerRef}, EvidenceRefs: []string{},
-			},
-			{
-				Key: "dependency", Title: "Storage dependency", Summary: "Filters platform-only evidence", Lane: groupindex.LaneDependencies,
-				MemberRefs:   []string{storageRef},
-				EvidenceRefs: []string{platformRef, platformPatternRef, processRef},
-			},
+		Assign: []responseAssign{
+			{Ref: processRef, Group: "Order work"},
+			{Ref: workerRef, Group: "Order work"},
+			{Ref: processRef, Group: "Second home"},
+			{Ref: contextRef, Group: "Context"},
+			{Ref: "s9999", Group: "Invented"},
 		},
-		Connections: []responseConnection{{
-			FromGroupKey: "mixed", ToGroupKey: "peer", SemanticKind: "dispatches_to",
-			Label: "dispatches", Summary: "Mixed reaches peer",
-			EvidenceRefs: []string{contextRef, "s9996", contextRef},
-		}},
+		Links: []responseLink{
+			{From: "Order work", To: "Nothing", Label: "goes nowhere"},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -410,124 +389,42 @@ func TestNormalizeResponseFiltersSetValuedRefsWithoutDiscardingValidRows(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(normalized.groups) != 3 {
-		t.Fatalf("filtered groups = %#v", normalized.groups)
-	}
-	groupsByKey := make(map[string]groupProposal, len(normalized.groups))
+	byLane := make(map[groupindex.Lane]groupProposal, len(normalized.groups))
 	for _, group := range normalized.groups {
-		groupsByKey[group.Key] = group
+		if group.Title == "Order work" {
+			byLane[group.Lane] = group
+		}
 	}
-	mixed, ok := groupsByKey["mixed"]
-	if !ok {
-		t.Fatalf("mixed group was discarded: %#v", normalized.groups)
+	if len(byLane) != 2 {
+		t.Fatalf("one label over two lanes did not become two groups: %#v", normalized.groups)
 	}
-	wantMembers := canonicalStrings([]string{
-		compilation.subjectByRef[processRef].id,
-		compilation.subjectByRef[handlerRef].id,
-	})
-	if !reflect.DeepEqual(mixed.MemberSubjectIDs, wantMembers) {
-		t.Fatalf("mixed member subset = %#v, want %#v", mixed.MemberSubjectIDs, wantMembers)
+	if !reflect.DeepEqual(byLane[groupindex.LaneCore].MemberSubjectIDs,
+		[]string{compilation.subjectByRef[processRef].id}) {
+		t.Fatalf("core group members = %#v", byLane[groupindex.LaneCore])
 	}
-	wantEvidence := []string{compilation.subjectByRef[contextRef].id}
-	if !reflect.DeepEqual(mixed.EvidenceSubjectIDs, wantEvidence) {
-		t.Fatalf("mixed evidence subset = %#v, want %#v", mixed.EvidenceSubjectIDs, wantEvidence)
+	if !reflect.DeepEqual(byLane[groupindex.LaneTriggers].MemberSubjectIDs,
+		[]string{compilation.subjectByRef[workerRef].id}) {
+		t.Fatalf("triggers group members = %#v", byLane[groupindex.LaneTriggers])
 	}
-	if _, exists := groupsByKey["all-invalid"]; exists {
-		t.Fatalf("all-invalid group survived: %#v", normalized.groups)
+	for _, group := range normalized.groups {
+		if group.Title == "Context" || group.Title == "Invented" || group.Title == "Second home" {
+			t.Fatalf("an unselectable, invented or repeated ref was placed: %#v", group)
+		}
 	}
-	dependency, exists := groupsByKey["dependency"]
-	if !exists || !reflect.DeepEqual(dependency.EvidenceSubjectIDs, []string{compilation.subjectByRef[processRef].id}) {
-		t.Fatalf("dependency evidence retained platform authority: %#v", dependency)
+	if len(normalized.connections) != 0 {
+		t.Fatalf("a link naming an unassigned label survived: %#v", normalized.connections)
 	}
-	if len(normalized.connections) != 1 ||
-		!reflect.DeepEqual(normalized.connections[0].EvidenceSubjectIDs, wantEvidence) {
-		t.Fatalf("connection after evidence filtering = %#v", normalized.connections)
-	}
-	assertDiagnosticKind(t, normalized.diagnostics, diagnosticUnknownMemberRef)
 	assertDiagnosticKind(t, normalized.diagnostics, diagnosticUnselectableMember)
-	assertDiagnosticKind(t, normalized.diagnostics, diagnosticLaneMismatch)
-	assertDiagnosticKind(t, normalized.diagnostics, diagnosticUnsupportedEvidence)
-	unknownEvidenceDiagnostics := 0
-	for _, diagnostic := range normalized.diagnostics {
-		if diagnostic.Kind == diagnosticUnknownEvidenceRef {
-			unknownEvidenceDiagnostics++
-		}
-	}
-	if unknownEvidenceDiagnostics != 2 {
-		t.Fatalf("unknown evidence diagnostics = %#v", normalized.diagnostics)
-	}
-}
-
-func TestNormalizeMergeResponseRejectsCandidateMemberLoss(t *testing.T) {
-	index := groupingTestIndex(t, "jsts")
-	compilation, err := Compile(index)
-	if err != nil {
-		t.Fatal(err)
-	}
-	handlerID := subjectIDBySourceRef(t, index, "handler")
-	processID := subjectIDBySourceRef(t, index, "process")
-	candidates := proposalSet{groups: []groupProposal{
-		{
-			Key: "http-run", Title: "HTTP service layer", Summary: "Runs one level",
-			Lane: groupindex.LaneCore, MemberSubjectIDs: []string{handlerID}, EvidenceSubjectIDs: []string{},
-		},
-		{
-			Key: "http-read", Title: "HTTP service layer", Summary: "Reads levels",
-			Lane: groupindex.LaneCore, MemberSubjectIDs: []string{processID}, EvidenceSubjectIDs: []string{},
-		},
-	}}
-	request, err := compilation.mergeRequest(candidates)
-	if err != nil {
-		t.Fatal(err)
-	}
-	handlerRef := compilation.refBySubjectID[handlerID]
-	processRef := compilation.refBySubjectID[processID]
-	response := func(memberRefs []string, lane groupindex.Lane) []byte {
-		t.Helper()
-		wire, marshalErr := json.Marshal(struct {
-			Groups      []responseGroup      `json:"groups"`
-			Connections []responseConnection `json:"connections"`
-		}{
-			Groups: []responseGroup{{
-				Key: "http", Title: "HTTP service layer", Summary: "Reads and runs levels",
-				Lane: lane, MemberRefs: memberRefs, EvidenceRefs: []string{},
-			}},
-			Connections: []responseConnection{},
-		})
-		if marshalErr != nil {
-			t.Fatal(marshalErr)
-		}
-		return wire
-	}
-
-	if _, err := normalizeResponse(
-		response([]string{processRef}, groupindex.LaneCore), compilation, request,
-	); err == nil || !strings.Contains(err.Error(), "omitted validated candidate memberships") {
-		t.Fatalf("lossy merge error = %v", err)
-	}
-	if _, err := normalizeResponse(
-		response([]string{handlerRef, processRef}, groupindex.LaneTriggers), compilation, request,
-	); err == nil || !strings.Contains(err.Error(), "omitted validated candidate memberships") {
-		t.Fatalf("cross-lane merge error = %v", err)
-	}
-	merged, err := normalizeResponse(
-		response([]string{handlerRef, processRef}, groupindex.LaneCore), compilation, request,
-	)
-	if err != nil {
-		t.Fatalf("complete merge: %v", err)
-	}
-	if len(merged.groups) != 1 ||
-		!reflect.DeepEqual(merged.groups[0].MemberSubjectIDs, canonicalStrings([]string{handlerID, processID})) {
-		t.Fatalf("complete consolidated merge = %#v", merged.groups)
-	}
+	assertDiagnosticKind(t, normalized.diagnostics, diagnosticUnknownMemberRef)
+	assertDiagnosticKind(t, normalized.diagnostics, diagnosticUnknownGroupKey)
 }
 
 func TestPromptMakesEveryMembershipLaneCompatibleAndConsolidationLossless(t *testing.T) {
 	for _, required := range []string{
-		"Every `member_ref` must itself carry a category compatible",
-		"`inbound` or `background_activity` for `triggers`",
-		"`dependency` for `dependencies`",
-		"not become membership",
+		"grouping` is a partition, not a sample",
+		"`inbound` or `background_activity` refs make a",
+		"You never write a lane",
+		"Do not return lanes, member lists, evidence",
 		"Read it as a graph and not as a list of names",
 		"Answer with one line per candidate and nothing else",
 		"appears exactly once, none is\nleft out and none is repeated",
@@ -565,11 +462,24 @@ func TestNormalizeResponseRequiresExactUniqueJSONKeys(t *testing.T) {
 		})
 	}
 
+	// A shard whose groups say nothing to each other returns no links at all.
+	// Refusing that answer failed the whole target on a live run.
+	t.Run("links may be absent", func(t *testing.T) {
+		raw := []byte(fmt.Sprintf(`{"assign":[{"ref":%q,"group":"Core"}]}`, processRef))
+		normalized, normalizeErr := normalizeResponse(raw, compilation, request)
+		if normalizeErr != nil {
+			t.Fatalf("an answer with no links was refused: %v", normalizeErr)
+		}
+		if len(normalized.groups) != 1 || len(normalized.connections) != 0 {
+			t.Fatalf("answer with no links = %#v", normalized)
+		}
+	})
+
 	// A key repeated verbatim is one answer said twice. Refusing it cost every
 	// group of one real target, and with them every connection that named one.
 	t.Run("repeated identical keys are one answer", func(t *testing.T) {
 		raw := []byte(fmt.Sprintf(
-			`{"groups":[{"key":"core","title":"Core","summary":"Core work","summary":"Core work","lane":"core","member_refs":[%q],"evidence_refs":[]}],"connections":[]}`,
+			`{"assign":[{"ref":%q,"group":"Core","group":"Core"}],"links":[]}`,
 			processRef,
 		))
 		normalized, normalizeErr := normalizeResponse(raw, compilation, request)
@@ -582,9 +492,9 @@ func TestNormalizeResponseRequiresExactUniqueJSONKeys(t *testing.T) {
 	})
 
 	for name, raw := range map[string][]byte{
-		"duplicate group key":      []byte(fmt.Sprintf(`{"groups":[{"key":"core","key":"other","title":"Core","summary":"Core work","lane":"core","member_refs":[%q],"evidence_refs":[]}],"connections":[]}`, processRef)),
-		"case folded group key":    []byte(fmt.Sprintf(`{"groups":[{"Key":"core","title":"Core","summary":"Core work","lane":"core","member_refs":[%q],"evidence_refs":[]}],"connections":[]}`, processRef)),
-		"duplicate connection key": []byte(fmt.Sprintf(`{"groups":[{"key":"core","title":"Core","summary":"Core work","lane":"core","member_refs":[%q],"evidence_refs":[]},{"key":"trigger","title":"Trigger","summary":"Starts work","lane":"triggers","member_refs":[%q],"evidence_refs":[]}],"connections":[{"from_group_key":"trigger","from_group_key":"core","to_group_key":"core","semantic_kind":"dispatches_to","label":"dispatches","summary":"Starts core work","evidence_refs":[]}]}`, processRef, workerRef)),
+		"duplicate assign key":   []byte(fmt.Sprintf(`{"assign":[{"ref":%q,"ref":"other","group":"Core"}],"links":[]}`, processRef)),
+		"case folded assign key": []byte(fmt.Sprintf(`{"assign":[{"Ref":%q,"group":"Core"}],"links":[]}`, processRef)),
+		"duplicate link key":     []byte(fmt.Sprintf(`{"assign":[{"ref":%q,"group":"Core"},{"ref":%q,"group":"Trigger"}],"links":[{"from":"Trigger","from":"Core","to":"Core","label":"dispatches"}]}`, processRef, workerRef)),
 	} {
 		t.Run(name, func(t *testing.T) {
 			normalized, normalizeErr := normalizeResponse(raw, compilation, request)
@@ -635,8 +545,9 @@ func TestRunExhaustivelyBatchesAndConvergentlyConsolidates(t *testing.T) {
 			ref := request.GroupRefs[0]
 			subject := subjectByRef(t, request.Request, ref)
 			lane := laneForCategories(subject.Categories)
-			return []byte(fmt.Sprintf(`{"groups":[{"key":"g1","title":%q,"summary":"Shard group","lane":%q,"member_refs":[%q],"evidence_refs":[]}],"connections":[]}`,
-				"Group "+ref, lane, ref))
+			_ = lane
+			return []byte(fmt.Sprintf(`{"assign":[{"ref":%q,"group":%q}],"links":[]}`,
+				ref, "Group "+ref))
 		}
 		// Consolidation answers one label per candidate; here every candidate
 		// of one lane gets that lane as its label.
