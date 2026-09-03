@@ -585,8 +585,6 @@ func targetPortfolioFailureSemantics(code string) (string, string) {
 	switch code {
 	case "provider_configuration_failed", "provider_failed", "request_build_failed":
 		return debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider
-	case "request_secret_scan", "response_secret_scan":
-		return debugdump.SemanticStateRejected, debugdump.SemanticValidationSecret
 	default:
 		return debugdump.SemanticStateRejected, debugdump.SemanticValidationResponse
 	}

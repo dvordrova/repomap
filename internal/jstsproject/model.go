@@ -285,7 +285,7 @@ func omitUnsafeOptionalMetadata(result *Result) {
 			result.Declarations[index].Signature = ""
 		}
 	}
-	// Redacting one side of a chained call must not leave a receiver pointing
+	// Dropping one side of a chained call must not leave a receiver pointing
 	// at a producer pattern that no longer survives in the artifact.
 	availableResults := make(map[string]struct{})
 	for index := range result.Calls {

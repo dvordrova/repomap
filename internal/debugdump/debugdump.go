@@ -60,7 +60,6 @@ type EffectiveOptions struct {
 	AnalysisTargetOverride string   `json:"analysis_target_override,omitempty"`
 	DirectCallDepth        int      `json:"direct_call_depth,omitempty"`
 	DirectCallEdgeLimit    int      `json:"direct_call_edge_limit,omitempty"`
-	ScanSecrets            bool     `json:"scan_secrets,omitempty"`
 	GitLabURL              string   `json:"gitlab_url,omitempty"`
 	GitHubURL              string   `json:"github_url,omitempty"`
 	NoOpen                 bool     `json:"no_open"`
@@ -101,7 +100,6 @@ const (
 	SemanticValidationCache            = "cache_validated"
 	SemanticValidationCanceled         = "canceled"
 	SemanticValidationProvider         = "provider_failed"
-	SemanticValidationSecret           = "response_secret_scan"
 	SemanticValidationDecode           = "response_decode"
 	SemanticValidationResponse         = "response_validation"
 	SemanticUnavailableNoContent       = "provider_no_content"
@@ -158,8 +156,8 @@ type SemanticExchange struct {
 }
 
 // SemanticOutcome is the closed, safe explanation of what the stage decided.
-// Raw provider/error text never belongs here: payload bytes already live in
-// separately redacted and secret-scanned files.
+// Raw provider or error text never belongs here: payload bytes live in their
+// own files beside the exchange record.
 type SemanticOutcome struct {
 	Phase string `json:"phase"`
 	Code  string `json:"code"`
@@ -173,7 +171,6 @@ type SemanticPayloadRecord struct {
 	OriginalBytes   int    `json:"original_bytes"`
 	SavedSHA256     string `json:"saved_sha256"`
 	SavedBytes      int    `json:"saved_bytes"`
-	UnsafeKind      string `json:"unsafe_kind,omitempty"`
 	UnavailableCode string `json:"unavailable_code,omitempty"`
 }
 
@@ -198,7 +195,6 @@ type semanticPayloadMarker struct {
 	Storage         string `json:"storage"`
 	OriginalSHA256  string `json:"original_sha256,omitempty"`
 	OriginalBytes   int    `json:"original_bytes"`
-	UnsafeKind      string `json:"unsafe_kind,omitempty"`
 	UnavailableCode string `json:"unavailable_code,omitempty"`
 }
 
@@ -614,8 +610,6 @@ func normalizedSemanticOutcome(exchange SemanticExchange) SemanticOutcome {
 		return SemanticOutcome{Phase: "provider_call", Code: "canceled"}
 	case SemanticValidationProvider:
 		return SemanticOutcome{Phase: "provider_call", Code: "provider_failed"}
-	case SemanticValidationSecret:
-		return SemanticOutcome{Phase: "response_secret_scan", Code: "response_secret_scan"}
 	case SemanticValidationDecode:
 		return SemanticOutcome{Phase: "response_decode", Code: "response_decode"}
 	case SemanticValidationResponse:
@@ -670,7 +664,6 @@ func validSemanticValidationCode(code string) bool {
 		SemanticValidationCache,
 		SemanticValidationCanceled,
 		SemanticValidationProvider,
-		SemanticValidationSecret,
 		SemanticValidationDecode,
 		SemanticValidationResponse:
 		return true
@@ -709,8 +702,7 @@ func prepareSemanticPayload(
 		return prepareSemanticMarker(label, marker)
 	}
 	originalSHA := sha256Hex(raw)
-	redacted := raw
-	if len(redacted) > maxSemanticExchangePayloadSize {
+	if len(raw) > maxSemanticExchangePayloadSize {
 		return prepareSemanticMarker(label, semanticPayloadMarker{
 			Version: semanticPayloadMarkerVersion, Storage: "raw_unavailable",
 			OriginalSHA256: originalSHA, OriginalBytes: len(raw),
@@ -719,17 +711,17 @@ func prepareSemanticPayload(
 	}
 	extension := ".txt"
 	mediaType := "text/plain"
-	if json.Valid(redacted) {
+	if json.Valid(raw) {
 		extension = ".json"
 		mediaType = "application/json"
 	}
 	name := label + extension
 	return preparedSemanticPayload{
-		name: name, data: append([]byte(nil), redacted...),
+		name: name, data: append([]byte(nil), raw...),
 		record: SemanticPayloadRecord{
 			Storage: "raw_content", File: name, MediaType: mediaType,
 			OriginalSHA256: originalSHA, OriginalBytes: len(raw),
-			SavedSHA256: sha256Hex(redacted), SavedBytes: len(redacted),
+			SavedSHA256: originalSHA, SavedBytes: len(raw),
 		},
 	}, nil
 }
@@ -750,7 +742,7 @@ func prepareSemanticMarker(
 			Storage: marker.Storage, File: name, MediaType: "application/json",
 			OriginalSHA256: marker.OriginalSHA256, OriginalBytes: marker.OriginalBytes,
 			SavedSHA256: sha256Hex(data), SavedBytes: len(data),
-			UnsafeKind: marker.UnsafeKind, UnavailableCode: marker.UnavailableCode,
+			UnavailableCode: marker.UnavailableCode,
 		},
 	}, nil
 }

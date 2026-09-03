@@ -70,8 +70,8 @@ func (observer *SemanticObserver) ObserveStage(stage string, event llm.Event) er
 }
 
 // OrdinalScaleWarnings returns at most one warning for each former journal
-// ordinal ceiling. It snapshots only exchanges the observer actually retained;
-// redacted or otherwise unrecordable events do not inflate the measurement.
+// ordinal ceiling. It snapshots only exchanges the observer actually recorded,
+// so an unrecordable event does not inflate the measurement.
 func (observer *SemanticObserver) OrdinalScaleWarnings() []SemanticOrdinalScaleWarning {
 	if observer == nil {
 		return nil
