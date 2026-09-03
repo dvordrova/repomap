@@ -282,9 +282,10 @@ func TestRunAcceptsSparseEmptyResponseForEveryLanguage(t *testing.T) {
 			}
 			if len(prompts) != 1 ||
 				!strings.Contains(prompts[0].System, "Evaluate the four categories") ||
-				!strings.Contains(prompts[0].System, "positively supported") ||
-				!strings.Contains(prompts[0].System, "only when no owned") ||
-				!strings.Contains(prompts[0].System, "merely to acknowledge every ref") {
+				!strings.Contains(prompts[0].System, "the whole context for its owned refs") ||
+				!strings.Contains(prompts[0].System, "Nothing has to be joined") ||
+				!strings.Contains(prompts[0].System, "only when no owned ref has any support") ||
+				!strings.Contains(prompts[0].System, "Never invent a category") {
 				t.Fatalf("sparse-complete prompt contract = %#v", prompts)
 			}
 		})

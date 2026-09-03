@@ -33,6 +33,16 @@ type subjectWire struct {
 	Selector          string                             `json:"selector,omitempty"`
 	RelationKind      programindex.RelationKind          `json:"relation_kind,omitempty"`
 	Arguments         []argumentWire                     `json:"arguments,omitempty"`
+	// Inside, Calls and On spell out, in names, what the edge list says about
+	// a subject this request has to decide. Without them a call pattern
+	// arrives as a bare selector and a line number, and the only way to learn
+	// that it is `chi.Mux.Use` written inside `func main` is to join four
+	// edges back into the subject array — once per owned ref. They are filled
+	// only for owned subjects: a context subject is there to be read, not
+	// decided.
+	Inside string   `json:"inside,omitempty"`
+	Calls  []string `json:"calls,omitempty"`
+	On     string   `json:"on,omitempty"`
 	// AllowedCategories appears only when this subject cannot carry every
 	// category. A standard-library symbol is not an outbound dependency, and
 	// stating that here keeps the wrong answer out of the response instead of
@@ -165,12 +175,17 @@ func (compilation Compilation) request(subjectRefs, documentationRefs []string) 
 		Edges:          make([]edgeWire, 0, len(edges)),
 		Documentation:  make([]documentationWire, 0, len(documentationRefs)),
 	}
+	objectByID := make(map[string]*programindex.Object, len(compilation.index.Objects))
+	for position := range compilation.index.Objects {
+		objectByID[compilation.index.Objects[position].ID] = &compilation.index.Objects[position]
+	}
 	for _, subject := range compilation.subjects {
 		if _, include := contextIDs[subject.id]; !include {
 			continue
 		}
 		row := subjectWire{Ref: subject.ref, Kind: subject.kind}
 		row.AllowedCategories = restrictedCategories(compilation.index, subject.id)
+		_, owned := ownedIDs[subject.id]
 		if subject.object != nil {
 			row.ObjectKind = subject.object.Kind
 			row.Name = subject.object.Name
@@ -190,6 +205,12 @@ func (compilation Compilation) request(subjectRefs, documentationRefs []string) 
 					row.ExternalSymbol = strings.TrimSpace(subject.object.External.Receiver + "." + row.ExternalSymbol)
 				}
 			}
+			if owned {
+				row.Inside = subjectDisplayName(objectByID[subject.object.OwnerID])
+				if row.Inside == "" {
+					row.Inside = subjectDisplayName(objectByID[subject.object.ContainerID])
+				}
+			}
 		} else {
 			row.PatternForm = subject.pattern.Form
 			row.Selector = subject.pattern.Selector
@@ -202,6 +223,15 @@ func (compilation Compilation) request(subjectRefs, documentationRefs []string) 
 				row.Path = location.Path
 				row.Line = location.Line
 				row.Column = location.Column
+			}
+			if owned {
+				row.Inside = subjectDisplayName(objectByID[subject.relation.FromID])
+				row.On = subjectDisplayName(objectByID[subject.pattern.ReceiverID])
+				for _, targetID := range subject.relation.ToIDs {
+					if name := subjectDisplayName(objectByID[targetID]); name != "" {
+						row.Calls = append(row.Calls, name)
+					}
+				}
 			}
 			row.Arguments = make([]argumentWire, 0, len(subject.pattern.Arguments))
 			for _, argument := range subject.pattern.Arguments {
@@ -345,6 +375,32 @@ func (compilation Compilation) expandReferencedContext(ids map[string]struct{}) 
 // restrictedCategories lists what a subject may carry, but only when the full
 // closed set is not available to it. An empty result means every category is
 // allowed and the request stays silent about it.
+// subjectDisplayName writes an object the way a reader would name it, so an
+// owned subject can say what it reaches without the reader looking anything
+// up. An external symbol carries its package; a local one carries its kind.
+func subjectDisplayName(object *programindex.Object) string {
+	if object == nil {
+		return ""
+	}
+	if object.External != nil {
+		name := object.External.Name
+		if object.External.Receiver != "" {
+			name = object.External.Receiver + "." + name
+		}
+		if object.External.PackagePath != "" {
+			name = object.External.PackagePath + "." + name
+		}
+		return strings.TrimSpace(name)
+	}
+	if object.Name == "" {
+		return ""
+	}
+	if object.Kind == "" {
+		return object.Name
+	}
+	return string(object.Kind) + " " + object.Name
+}
+
 func restrictedCategories(index programindex.Index, subjectID string) []Category {
 	allowed := make([]Category, 0, len(allCategories))
 	for _, category := range allCategories {
