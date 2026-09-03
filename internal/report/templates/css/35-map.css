@@ -35,3 +35,10 @@
 .repo-node .map-node-body{fill:#fff;stroke:#c6ccd4}
 .repo-edge-label{font-size:10.5px;fill:var(--muted)}
 .map-node-step{font-size:9.5px;font-weight:600;fill:var(--accent);letter-spacing:.02em}
+/* A part is a frame with its name on it; the groups inside stay boxes, so
+   both levels are on the picture at once. */
+.map-frame rect{fill:#fafbfc;stroke:#dfe3e8;stroke-width:1}
+.map-frame text{font-size:10.5px;font-weight:600;letter-spacing:.03em;fill:var(--muted)}
+.map-frame-core rect{fill:#fbfcfd}
+.map-frame-triggers rect{fill:#f6f9fe;stroke:#d7e3f2}
+.map-frame-dependencies rect{fill:#faf9f5;stroke:#e6e1d4}

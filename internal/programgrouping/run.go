@@ -109,6 +109,18 @@ func Run(
 		}
 	}
 
+	// Consolidation can only join, so a shard that put a third of the target
+	// in one group leaves it there. Splitting asks what such a group is made
+	// of, and its own name becomes the part above the answer.
+	split, splitDiagnostics := runSplits(
+		ctx, executor, provider, compilation, combined, len(compilation.categorizedRefs),
+	)
+	if ctx.Err() != nil {
+		return groupindex.Index{}, nil, ctx.Err()
+	}
+	combined = split
+	combined.diagnostics = append(combined.diagnostics, splitDiagnostics...)
+
 	grouped, buildDiagnostics, err := groupindex.Build(compilation.index, combined.groupIndexProposals())
 	if err != nil {
 		return groupindex.Index{}, nil, err

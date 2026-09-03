@@ -10,7 +10,9 @@ The request has one of two phases:
 - `consolidate`: say which of the group candidates proposed by earlier shards
   are the same thing;
 - `containers`: name the parts this target has, and put every candidate in
-  one of them.
+  one of them;
+- `split`: say what parts one group is made of, placing every one of its
+  members in exactly one part.
 
 In both phases, `group_refs` is the only closed set from which `member_refs`
 may be selected. Every ref in `group_refs` has at least one positive category.
@@ -140,6 +142,16 @@ Return strict JSON with exactly this shape:
   ]
 }
 ```
+
+A `split` request carries the members of one group that grew large enough to
+hide what is inside it. Unlike `grouping`, it is not sparse: every ref in
+`group_refs` must appear in exactly one returned group, none may appear twice,
+and none may be left out. Return at least two groups; one is the group again
+under its own name. Keep the parts recognisable — "Response compression" and
+"Panic recovery", not "Part 1" and "Part 2" — because the group's own name
+becomes the part above them and theirs are what a reader sees inside it. If
+these members genuinely have no parts, return them as one group and the split
+will be left alone.
 
 A `containers` request has the same shape and asks a different question. Do
 not ask again which candidates are the same thing — that was already settled
