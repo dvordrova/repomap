@@ -275,10 +275,8 @@ func (builder *pageBuilder) overview(view *pageView) {
 // A count that is zero says nothing and is left out, except the two that are
 // always worth stating.
 func (builder *pageBuilder) figures(view *pageView) {
-	symbols, routes, calls, dead, dynamic := 0, 0, 0, 0, 0
-	for _, count := range builder.repoSymbolCounts() {
-		symbols += count
-	}
+	symbols := builder.distinctSymbolCount()
+	routes, calls, dead, dynamic := 0, 0, 0, 0
 	for _, card := range view.Cards {
 		routes += card.Routes
 		calls += card.Calls
@@ -332,6 +330,34 @@ func (builder *pageBuilder) repoLanguages(view *pageView) string {
 	return strings.Join(order, ", ")
 }
 
+// distinctSymbolCount counts a symbol once even when several targets reach
+// it. python-dotenv is one package read under three entrypoints, and adding
+// its targets up said the repository held three times what it holds.
+func (builder *pageBuilder) distinctSymbolCount() int {
+	seen := make(map[string]struct{})
+	for _, section := range builder.sections {
+		index := builder.graphIndex(section.programTargetID)
+		if index == nil {
+			continue
+		}
+		for _, subject := range index.Subjects {
+			if subject.Kind != groupindex.SubjectObject || subject.Object == nil {
+				continue
+			}
+			seen[symbolIdentity(*subject.Object)] = struct{}{}
+		}
+	}
+	return len(seen)
+}
+
+func symbolIdentity(object groupindex.ObjectFacts) string {
+	if object.Location == nil {
+		return object.Name
+	}
+	return fmt.Sprintf("%s:%d:%d:%s",
+		object.Location.Path, object.Location.Line, object.Location.Column, object.Name)
+}
+
 func pluralWord(count int, one, many string) string {
 	if count == 1 {
 		return one
@@ -339,9 +365,9 @@ func pluralWord(count int, one, many string) string {
 	return many
 }
 
-// thousandsFromDigits is where a count starts being grouped. Four digits read
-// as a number; five do not.
-const thousandsFromDigits = 5
+// thousandsFromDigits is where a count starts being grouped. Three digits read
+// as a number; four do not.
+const thousandsFromDigits = 4
 
 // thousands groups a large count so four digits do not read as one number the
 // eye has to spell out.
