@@ -15,7 +15,7 @@
 <p class="meta">Revision <code title="{{.Revision}}">{{.ShortRevision}}</code>{{if .RepositoryURL}} · <a href="{{.RepositoryURL}}" target="_blank" rel="noopener">repository</a>{{end}}{{if .EditorOpens}} · source links open in your editor{{end}}</p>
 </header>
 <nav class="nav" aria-label="Targets"><a href="#overview">Overview</a>{{range .Sections}}<a href="#{{.ID}}">{{.Label}}</a>{{end}}</nav>
-<noscript><p class="meta">JavaScript is optional for this report; it only adds editor links.</p></noscript>
+<noscript><p class="meta">JavaScript is optional here. Every answer on this page is in the HTML and every link works without it; scripting only previews a map node's neighbourhood, marks the group you clicked, opens a long quote{{if .EditorOpens}}, and opens a source link in your editor{{end}}.</p></noscript>
 <main>
 {{template "overview.html" .}}
 {{range .Sections}}{{template "target.html" .}}{{end}}
