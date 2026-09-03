@@ -312,6 +312,28 @@ Still open: split's first attempt is not always a partition
 whole for the run. A repeat of the partition instruction at the end of the
 request is the cheap thing to try.
 
+## What actually moves grouping variance, measured on the live endpoint
+
+Probed the largest consolidate request (108 candidates, dotenv core) directly
+against the DeepSeek endpoint on 2026-09-03, thinking disabled to match the
+pipeline. A first probe left thinking on by mistake and reported 131 s and
+17,779 completion tokens; disabled, the same call is 8.1 s and 1,769 tokens.
+Any measurement of this stage MUST send `"thinking":{"type":"disabled"}` or it
+describes a mode production never runs.
+
+- **Temperature: keep 0.1.** Three draws at 0.1 held 15 of 31 distinct merges
+  stable across >=2 runs; at 1.0, 4 of 34. Raising temperature to sample and
+  vote makes it worse here, not better.
+- **Response bloat is real but small in tokens.** The answer is 6,163 bytes vs
+  3,521 for a bare ref->cluster form — about half — but only ~1,769 tokens
+  either way. The reason to shrink the response is the model's freedom to
+  reword titles and dither on borderline merges, not speed.
+- **The size of the question is what is left.** At 108 candidates even 0.1
+  keeps only half its merges and the group count swings 19-35; the stable
+  ones are the large obvious merges, the churn is two-or-three-candidate
+  borderline ones. Cut the consolidate question into windows over several
+  passes so borderline merges get another chance to meet.
+
 ## Known gaps, recorded not fixed
 
 - `os.environ["KEY"]` and `process.env.KEY` subscript reads are not captured.
