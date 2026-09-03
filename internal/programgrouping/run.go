@@ -127,6 +127,7 @@ func Run(
 	// Parts are named last, over groups that are already the size they are
 	// going to be.
 	combined = runContainers(ctx, executor, provider, compilation, combined)
+	combined = nameContainers(ctx, executor, provider, compilation, combined)
 	if ctx.Err() != nil {
 		return groupindex.Index{}, nil, ctx.Err()
 	}
@@ -147,7 +148,13 @@ func Run(
 // request carries everything the model sees; two identical requests deserve
 // the same answer.
 func cubeState(requestPhase phase, request []byte) ([]byte, error) {
-	promptDigest := sha256.Sum256([]byte(strings.TrimSpace(promptText)))
+	return cubeStateWithPrompt(requestPhase, promptText, request)
+}
+
+// cubeStateWithPrompt keys an answer by the exact instruction that produced
+// it, so a cube carrying its own short prompt is cached under that prompt.
+func cubeStateWithPrompt(requestPhase phase, prompt string, request []byte) ([]byte, error) {
+	promptDigest := sha256.Sum256([]byte(strings.TrimSpace(prompt)))
 	requestDigest := sha256.Sum256(request)
 	state := struct {
 		Contract              string `json:"contract"`

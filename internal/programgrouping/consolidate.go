@@ -529,3 +529,157 @@ func distinctStrings(values []string) []string {
 }
 
 var _ = programindex.Category("")
+
+// Naming is its own cube, and the smallest one. A part gathers groups that are
+// not the same thing, so it cannot borrow the name of the largest of them:
+// three cold draws produced a part called "Compression middleware" holding
+// fifty groups and one called "Recoverer stack formatting" holding thirty-two.
+// The question here is tiny — four to eight parts, described by what they
+// hold — and the answer is one title per part and nothing else.
+type nameRequest struct {
+	Version int        `json:"version"`
+	Phase   phase      `json:"phase"`
+	Target  targetWire `json:"target"`
+	Parts   []namePart `json:"parts"`
+}
+
+type namePart struct {
+	Ref    string   `json:"ref"`
+	Lane   string   `json:"lane"`
+	Groups []string `json:"groups"`
+}
+
+// nameResponse accepts the two shapes this answer arrives in. The model was
+// first given the whole five-phase prompt and answered in the shape of its
+// neighbours — {"assign":[{"ref","part"}]} — so every naming was refused. It
+// has its own short prompt now, and the reader below still takes either.
+type nameResponse struct {
+	Name   []nameAssign `json:"name"`
+	Assign []nameAssign `json:"assign"`
+}
+
+type nameAssign struct {
+	Ref   string `json:"ref"`
+	Title string `json:"title"`
+	Part  string `json:"part"`
+}
+
+func (row nameAssign) title() string {
+	if strings.TrimSpace(row.Title) != "" {
+		return strings.TrimSpace(row.Title)
+	}
+	return strings.TrimSpace(row.Part)
+}
+
+func (response nameResponse) rows() []nameAssign {
+	if len(response.Name) > 0 {
+		return response.Name
+	}
+	return response.Assign
+}
+
+// namePrompt is this cube's whole instruction. A cube this small does not need
+// to be told about the phases around it, and being told made it answer in
+// their shape.
+const namePrompt = `You name the parts of one software target.
+
+Each part in ` + "`parts`" + ` lists the names of the groups inside it. Give every
+part one title: the name a reader of this repository would use for that area,
+three or four words, distinct from every other part's. A part is not the
+largest group inside it — when it covers several different groups, do not
+reuse one of their names.
+
+Reply with strict json and nothing but titles:
+
+{"name": [{"ref": "p1", "title": "Response handling middleware"}]}
+
+No prose, no other fields in the json, one row per part.`
+
+// nameGroupSample is how many of a part's group names travel with it. Enough
+// to see what the part is, few enough to keep the question small.
+const nameGroupSample = 12
+
+// nameContainers replaces each part's borrowed title with one chosen for the
+// part as a whole. A part the answer does not name keeps the title it had, so
+// this can improve the page and never break it.
+func nameContainers(
+	ctx context.Context,
+	executor llm.Executor,
+	provider llm.Provider,
+	compilation Compilation,
+	set proposalSet,
+) proposalSet {
+	if len(set.containers) == 0 {
+		return set
+	}
+	titleOf := make(map[string]string, len(set.groups))
+	for _, group := range set.groups {
+		titleOf[group.Key] = group.Title
+	}
+	request := nameRequest{
+		Version: requestVersion, Phase: phaseNames,
+		Target: targetWire{
+			Language: compilation.index.Target.Language,
+			Kind:     compilation.index.Target.Kind,
+			Name:     compilation.index.Target.Name,
+			Selector: compilation.index.Target.Selector,
+		},
+		Parts: make([]namePart, 0, len(set.containers)),
+	}
+	for position, container := range set.containers {
+		part := namePart{Ref: fmt.Sprintf("p%d", position+1), Lane: string(container.Lane)}
+		for _, key := range container.GroupKeys {
+			if title := titleOf[key]; title != "" {
+				part.Groups = append(part.Groups, title)
+			}
+			if len(part.Groups) == nameGroupSample {
+				break
+			}
+		}
+		request.Parts = append(request.Parts, part)
+	}
+	wire, err := json.Marshal(request)
+	if err != nil {
+		return set
+	}
+	state, err := cubeStateWithPrompt(phaseNames, namePrompt, wire)
+	if err != nil {
+		return set
+	}
+	outcome, err := llm.ExecuteJSON(ctx, executor, provider, llm.Call[nameResponse]{
+		State: state,
+		Prompt: llm.Prompt{
+			System: namePrompt, User: string(wire), ResponseFormatJSON: true,
+		},
+		Limits: limits(),
+		DecodeValidate: func(raw []byte) (nameResponse, error) {
+			var decoded nameResponse
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				return nameResponse{}, fmt.Errorf("program grouping: decode part names: %w", err)
+			}
+			if len(decoded.rows()) == 0 {
+				return nameResponse{}, fmt.Errorf("program grouping: no part was named")
+			}
+			return decoded, nil
+		},
+	})
+	if err != nil {
+		set.diagnostics = canonicalDiagnostics(append(set.diagnostics, groupindex.Diagnostic{
+			Kind: diagnosticNamesSkipped, Reason: err.Error(),
+		}))
+		return set
+	}
+	for _, named := range outcome.Value.rows() {
+		var position int
+		if _, err := fmt.Sscanf(named.Ref, "p%d", &position); err != nil {
+			continue
+		}
+		title := named.title()
+		if position < 1 || position > len(set.containers) || title == "" {
+			continue
+		}
+		set.containers[position-1].Title = title
+		set.containers[position-1].Summary = title
+	}
+	return set
+}

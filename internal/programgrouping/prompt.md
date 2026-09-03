@@ -12,7 +12,8 @@ The request has one of two phases:
 - `containers`: name the parts this target has, and put every candidate in
   one of them;
 - `split`: say what parts one group is made of, placing every one of its
-  members in exactly one part.
+  members in exactly one part;
+- `names`: give each part of a target a title.
 
 In both phases, `group_refs` is the only closed set from which `member_refs`
 may be selected. Every ref in `group_refs` has at least one positive category.

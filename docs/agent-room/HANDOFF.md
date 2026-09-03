@@ -334,6 +334,45 @@ describes a mode production never runs.
   borderline ones. Cut the consolidate question into windows over several
   passes so borderline merges get another chance to meet.
 
+## The grouping cubes, and what they are worth
+
+Every model call in this stage is now a cube in the owner's sense: a simple
+question, one decision, a flat answer the code validates and assembles.
+Grouping answers `{"ref","group"}` per selectable ref plus `{from,to,label}`
+links; consolidation answers `{"ref","cluster"}`; naming answers
+`{"ref","title"}` per part. Lanes, members, evidence and assembly are the
+code's, derived from the categories a subject already carries.
+
+Three cold chi draws at each step, partition agreement between draws as the
+measure (share of symbol pairs that are together-or-apart the same way):
+
+| | groups | coverage | largest | agreement |
+|---|---|---|---|---|
+| 892-subject question | 1-33 | | up to 75% | |
+| shard 64, code order, split before parts | 28/31/29 | 52-63% | 7-11% | 96/98/98% |
+| grouping cube alone | 47/123/8 | 90-94% | up to 60% | 96/61/58% |
+| + consolidation in windows of 40 | 39/66/82 | 93-95% | 10-18% | 92/97/94% |
+| + naming cube | 78/68/75 | 90-94% | 10-13% | **97/99/98%** |
+
+Coverage nearly doubled and agreement is at its best, so the page now
+describes almost the whole target instead of half of it. Group count is the
+loose end: 68-78 where it used to be about 30, because a partition must place
+everything. Parts are what make that readable and they are not settled — one
+draw produced ten parts, another one.
+
+Three traps found the hard way, all worth keeping:
+
+- **A cube with its own short prompt must still contain the word "json".**
+  DeepSeek refuses `response_format: json_object` otherwise, and the refusal
+  arrives as a provider error that looked exactly like a bad answer. Two fixes
+  were aimed at the wrong cause before anyone read the response body.
+- **Give a small cube the whole multi-phase prompt and it answers in the shape
+  of its neighbours.** The naming cube replied `{"assign":[{"ref","part"}]}`
+  until it got an instruction about nothing but naming.
+- **Validation must not punish a missing optional field.** A shard whose
+  groups say nothing to each other returns no `links`, and refusing that
+  failed the whole target.
+
 ## Known gaps, recorded not fixed
 
 - `os.environ["KEY"]` and `process.env.KEY` subscript reads are not captured.

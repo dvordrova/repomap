@@ -28,6 +28,8 @@ const (
 	// request is a grouping request; only the cache key says which it was, so
 	// a split and a shard of the same members never share an answer.
 	phaseSplit phase = "split"
+	// phaseNames asks only for a title per part, over a handful of parts.
+	phaseNames phase = "names"
 )
 
 const (
@@ -54,6 +56,7 @@ const (
 	diagnosticConsolidationLaneMismatch      = "consolidation_lane_mismatch"
 	diagnosticConsolidationUnclaimed         = "consolidation_unclaimed"
 	diagnosticContainerSkipped               = "container_skipped"
+	diagnosticNamesSkipped                   = "names_skipped"
 	// A split either partitions a group or does not happen. These three say
 	// which, and in every one of them the group stays exactly as it was.
 	diagnosticSplitSkipped       = "split_skipped"
