@@ -347,6 +347,10 @@ func LoadWithOptions(
 	var packageFacts []PackageFact
 	var allEntrypoints []Entrypoint
 	var topWarnings []string
+	// undescribedModules are the modules go list could not describe. Skipping
+	// one is partial coverage; skipping all of them is no coverage, and that
+	// still fails rather than producing an empty map.
+	var undescribedModules []string
 	modules := make([]ModuleFact, 0, len(moduleDirs))
 	availableModules := 0
 	dependencyLoads := make([]dependencyPackageLoad, 0, len(moduleDirs))
@@ -388,10 +392,20 @@ func LoadWithOptions(
 			return nil, fmt.Errorf("load Go facts for module %s: %w", modRelDir, err)
 		}
 		if len(modWarnings) > 0 {
-			return nil, fmt.Errorf(
-				"load Go facts for module %s: incomplete go list authority: %s",
+			// A module `go list` cannot describe is a module this report will
+			// not cover. It is not a reason to refuse the whole repository:
+			// the coverage below already counts unavailable modules and turns
+			// the run partial. Refusing outright meant that pointing repomap
+			// at its own checkout failed on a synthetic module in testdata,
+			// and go-fuego failed on a package of templates that does not
+			// build, in both cases before anything was analyzed.
+			reason := fmt.Sprintf(
+				"module %s: not covered; go list could not describe it: %s",
 				modRelDir, summarizeCollectionFailures(modWarnings),
 			)
+			topWarnings = append(topWarnings, reason)
+			undescribedModules = append(undescribedModules, reason)
+			continue
 		}
 		pkgs := rootGoListPackages(listedPkgs)
 		availableModules++
@@ -517,6 +531,12 @@ func LoadWithOptions(
 		PackagesRetained:   len(packageFacts),
 		EdgesDiscovered:    discoveredEdges,
 		EdgesRetained:      len(edges),
+	}
+	if availableModules == 0 && len(undescribedModules) > 0 {
+		return nil, fmt.Errorf(
+			"load Go facts: no module could be described: %s",
+			strings.Join(undescribedModules, "; "),
+		)
 	}
 	if availableModules == 0 {
 		coverage.State = CoverageUnavailable

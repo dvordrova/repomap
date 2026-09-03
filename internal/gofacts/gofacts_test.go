@@ -301,9 +301,59 @@ func Public() {}
 	}
 
 	_, err := loadForHost(context.Background(), repo, fileList)
-	if err == nil || !strings.Contains(err.Error(), "incomplete go list authority") ||
+	if err == nil || !strings.Contains(err.Error(), "no module could be described") ||
 		!strings.Contains(err.Error(), "example.com/incomplete/api") {
 		t.Fatalf("incomplete package error = %v", err)
+	}
+}
+
+// TestLoadCoversTheModulesItCanWhenOneCannotBeDescribed keeps one unbuildable
+// module from refusing a whole repository. repomap's own checkout holds a
+// synthetic module in testdata that go list cannot resolve, and pointing the
+// tool at itself failed before anything was analyzed.
+func TestLoadCoversTheModulesItCanWhenOneCannotBeDescribed(t *testing.T) {
+	repo := t.TempDir()
+	files := map[string]string{
+		"go.mod":        "module example.com/ok\n\ngo 1.24\n",
+		"api/api.go":    "package api\n\nfunc Public() {}\n",
+		"broken/go.mod": "module example.com/broken\n\ngo 1.24\n",
+		"broken/api/api.go": `package api
+import _ "embed"
+//go:embed missing.txt
+var Missing string
+func Public() {}
+`,
+	}
+	fileList := make([]string, 0, len(files))
+	for name, content := range files {
+		path := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fileList = append(fileList, name)
+	}
+
+	loaded, err := loadForHost(context.Background(), repo, fileList)
+	if err != nil {
+		t.Fatalf("one undescribable module refused the repository: %v", err)
+	}
+	if loaded.Coverage.ModulesAvailable != 1 || loaded.Coverage.ModulesUnavailable != 1 {
+		t.Fatalf("coverage = %#v", loaded.Coverage)
+	}
+	if loaded.Coverage.State != CoveragePartial {
+		t.Fatalf("coverage state = %q, want partial", loaded.Coverage.State)
+	}
+	var said bool
+	for _, warning := range loaded.Warnings {
+		if strings.Contains(warning, "not covered") && strings.Contains(warning, "broken") {
+			said = true
+		}
+	}
+	if !said {
+		t.Fatalf("the skipped module was not reported: %#v", loaded.Warnings)
 	}
 }
 
