@@ -245,64 +245,58 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	if len(index.Containers) > 0 {
 		frameTop = mapFrameHeader
 	}
-	columnX := mapPadding
-	for _, lane := range lanes {
-		laneBlocks := laneMapBlocks(blocks, lane.lane)
-		if len(laneBlocks) == 0 {
-			continue
+	// Zones are the composition, not a decoration inside three fixed columns.
+	// A part of a target is an architectural area and it is laid out as one:
+	// the whole target flows left to right along its own arrows, and what
+	// reaches in tends to the left and what it reaches out to the right
+	// because a lane orders a block, it no longer imprisons it in a column.
+	placed := placeLaneBlocks(layerBlocks(orderedBlocks(blocks, lanes), *index))
+	frames := make(map[string]*pageMapFrame, len(blocks))
+	for _, entry := range placed.entries {
+		group := entry.group
+		column, row := entry.column, entry.row
+		node := pageMapNode{
+			ID: mapNodeID(group.ID), Href: "#" + groupAnchorID(section.ID, group.ID),
+			Title: mapTitle(group.Title), FullTitle: group.Title,
+			Summary: group.Summary, Lane: string(group.Lane),
+			Members: len(group.MemberSubjectIDs),
+			X:       mapPadding + float64(column)*(mapNodeWidth+mapColumnGap),
+			Y: mapPadding + mapLaneLabelSpace + frameTop +
+				float64(row)*(mapNodeHeight+mapNodeGap),
+			Width: mapNodeWidth, Height: mapNodeHeight,
 		}
-		placed := placeLaneBlocks(layerBlocks(laneBlocks, *index))
-		columns := placed.columns
-		laneWidth := float64(columns)*mapNodeWidth + float64(columns-1)*mapColumnGap
-		result.Lanes = append(result.Lanes, pageMapLane{
-			Label: lane.label, X: columnX, Width: laneWidth,
-		})
-		frames := make(map[string]*pageMapFrame, len(laneBlocks))
-		for _, entry := range placed.entries {
-			group := entry.group
-			column, row := entry.column, entry.row
-			node := pageMapNode{
-				ID: mapNodeID(group.ID), Href: "#" + groupAnchorID(section.ID, group.ID),
-				Title: mapTitle(group.Title), FullTitle: group.Title,
-				Summary: group.Summary, Lane: string(lane.lane),
-				Members: len(group.MemberSubjectIDs),
-				X:       columnX + float64(column)*(mapNodeWidth+mapColumnGap),
-				Y: mapPadding + mapLaneLabelSpace + frameTop +
-					float64(row)*(mapNodeHeight+mapNodeGap),
-				Width: mapNodeWidth, Height: mapNodeHeight,
-			}
-			if entry.container != nil {
-				growFrame(frames, entry.container, node)
-				if frame := frames[entry.container.ID]; frame != nil {
-					frame.Holds = len(entry.container.GroupIDs)
-					frame.Shown++
-				}
-			}
-			if subjects > 0 {
-				node.Share = node.Members * 100 / subjects
-			}
-			node.BarWidth = mapBarWidth * float64(node.Members) / float64(largest)
-			local, outside := neighbours[group.ID], 0
-			for _, other := range local {
-				if other == "" {
-					outside++
-				}
-			}
-			node.Outside = outside
-			node.Neighbours = strings.Join(mapNodeIDs(local), " ")
-			node.Degree = len(local) - outside
-			node.Steps = steps[group.ID]
-			node.StepX = node.X + node.Width - 10
-			node.StepY = node.Y + mapNodeHeight - 9
-			result.Nodes = append(result.Nodes, node)
-			bottom := node.Y + node.Height
-			if bottom > result.Height {
-				result.Height = bottom
+		if entry.container != nil {
+			growFrame(frames, entry.container, node)
+			if frame := frames[entry.container.ID]; frame != nil {
+				frame.Holds = len(entry.container.GroupIDs)
+				frame.Shown++
 			}
 		}
-		result.Frames = append(result.Frames, sealFrames(frames)...)
-		columnX += laneWidth + mapLaneGap
+		if subjects > 0 {
+			node.Share = node.Members * 100 / subjects
+		}
+		node.BarWidth = mapBarWidth * float64(node.Members) / float64(largest)
+		local, outside := neighbours[group.ID], 0
+		for _, other := range local {
+			if other == "" {
+				outside++
+			}
+		}
+		node.Outside = outside
+		node.Neighbours = strings.Join(mapNodeIDs(local), " ")
+		node.Degree = len(local) - outside
+		node.Steps = steps[group.ID]
+		node.StepX = node.X + node.Width - 10
+		node.StepY = node.Y + mapNodeHeight - 9
+		result.Nodes = append(result.Nodes, node)
+		if bottom := node.Y + node.Height; bottom > result.Height {
+			result.Height = bottom
+		}
 	}
+	result.Frames = append(result.Frames, sealFrames(frames)...)
+	result.Width = mapPadding*2 + float64(placed.columns)*mapNodeWidth +
+		float64(max(placed.columns-1, 0))*mapColumnGap
+
 	for position := range result.Nodes {
 		positions[result.Nodes[position].ID] = &result.Nodes[position]
 	}
@@ -311,7 +305,6 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	// arrow between the parts. Drawn box to box regardless, chi's core was
 	// forty lines with "part of middleware" written on eight of them.
 	endpoints, endpointOf := mapEndpoints(result.Frames, result.Nodes, blocks)
-	result.Width = columnX - mapLaneGap + mapPadding
 	edges, band, rightmost := mapEdges(*index, endpoints, endpointOf, result.Height)
 	result.Edges = edges
 	result.Height += band + mapPadding + 14
@@ -572,6 +565,27 @@ func blockMembers(block mapBlock) int {
 		total += len(group.MemberSubjectIDs)
 	}
 	return total
+}
+
+// orderedBlocks puts what reaches in before what the target is, and that
+// before what it reaches out to. It is an ordering, not a partition: the
+// layout that follows is free to place a block wherever its arrows put it.
+func orderedBlocks(blocks []mapBlock, lanes []struct {
+	lane  groupindex.Lane
+	label string
+}) []mapBlock {
+	rank := make(map[groupindex.Lane]int, len(lanes))
+	for position, lane := range lanes {
+		rank[lane.lane] = position
+	}
+	result := append([]mapBlock(nil), blocks...)
+	sort.SliceStable(result, func(left, right int) bool {
+		if rank[result[left].lane] != rank[result[right].lane] {
+			return rank[result[left].lane] < rank[result[right].lane]
+		}
+		return blockMembers(result[left]) > blockMembers(result[right])
+	})
+	return result
 }
 
 func laneMapBlocks(blocks []mapBlock, lane groupindex.Lane) []mapBlock {

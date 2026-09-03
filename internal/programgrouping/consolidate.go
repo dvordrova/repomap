@@ -41,8 +41,11 @@ const (
 	// sending the memberships themselves.
 	consolidateSampleMembers = 6
 	// consolidateEnough is the number of groups a target page reads well at.
-	// Reaching it stops the loop asking for further passes.
-	consolidateEnough = 14
+	// Reaching it stops the loop asking for further passes. It also decides
+	// whether a target gets parts at all, and at fourteen a target of ten
+	// groups got none — ten equal boxes and no architecture. Eight is where
+	// naming the areas starts to earn its call.
+	consolidateEnough = 8
 	// consolidateWindow is how many candidates one consolidation question
 	// carries. Asked about 130 at once the same input returned 47, 123 and 8
 	// groups on three cold draws — the whole spread of the stage lives in

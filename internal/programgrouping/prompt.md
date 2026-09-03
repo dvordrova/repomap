@@ -121,9 +121,12 @@ not ask again which candidates are the same thing — that was already settled
 and the answer will not change. Ask which **part of this target** each one
 belongs to. Basic authentication and response compression are not the same
 thing and both are middleware; a router and its route tree are not the same
-thing and both are the router. Name four to eight parts, each holding several
-candidates, and use a name a reader of this repository would recognise.
-A part holding one candidate is not a part.
+thing and both are the router. Name at most one part for every three candidates in this request — ten
+candidates are at most three parts, forty are at most thirteen — and give each
+a name a reader of this repository would recognise. Every part holds at least
+two candidates: a part holding one is that candidate under a second name and
+is thrown away, so a request answered with one part per candidate produces no
+parts at all.
 
 Name every candidate exactly once, across all groups. In a `consolidate`
 response a candidate that belongs with nothing else is a group of one, and
