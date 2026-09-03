@@ -336,3 +336,64 @@ func isFixtureGitOverride(name string) bool {
 			strings.HasPrefix(name, "GIT_CONFIG_VALUE_")
 	}
 }
+
+// TestFixtureAnchorsResolveInTheRepository is the page's first promise made
+// checkable: every anchor a reader can click names a file that exists at the
+// captured revision and a line inside it. An anchored claim that does not
+// resolve is worse than a missing one, because it looks verified.
+func TestFixtureAnchorsResolveInTheRepository(t *testing.T) {
+	fixture := filepath.Join(repositoryRoot(t), "testdata", "acceptance", "python-tutorial-game")
+	expected := readExpected(t, filepath.Join(fixture, "expected.json"))
+	repository := materializeFixture(t, fixture)
+	result := mustBuild(t, Input{
+		Revision:     expected.Revision,
+		Repository:   repository,
+		TrackedPaths: repository.VisiblePaths(),
+		Targets: []TargetInput{
+			{Index: decodeIndex(t, fixture, "backend-program-index.json"), Dependencies: decodeCatalog(t, fixture, "backend-dependency-catalog.json"), Root: "backend", Manifest: "backend/Pipfile"},
+			{Index: decodeIndex(t, fixture, "front-program-index.json"), Dependencies: decodeCatalog(t, fixture, "front-dependency-catalog.json"), Root: "front", Manifest: "front/package.json"},
+		},
+	})
+
+	lines := make(map[string]int)
+	lineCount := func(path string) int {
+		if known, seen := lines[path]; seen {
+			return known
+		}
+		count := -1
+		if id, known := repository.ID(path); known {
+			if content, err := repository.ReadFileAll(id); err == nil {
+				count = strings.Count(string(content.Bytes), "\n") + 1
+			}
+		}
+		lines[path] = count
+		return count
+	}
+
+	checked := 0
+	check := func(what string, anchor *Anchor) {
+		if anchor == nil || anchor.Path == "" {
+			return
+		}
+		checked++
+		switch count := lineCount(anchor.Path); {
+		case count < 0:
+			t.Errorf("%s anchors %s, which is not a file at this revision", what, anchor)
+		case anchor.Line > count:
+			t.Errorf("%s anchors %s, but that file has %d lines", what, anchor, count)
+		}
+	}
+	for _, target := range result.Targets {
+		check("target "+target.Name, &target.Anchor)
+	}
+	for _, fact := range result.Facts {
+		check(string(fact.Kind), fact.Anchor)
+		for position := range fact.Evidence {
+			check(string(fact.Kind)+" evidence", &fact.Evidence[position])
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no anchors were checked")
+	}
+	t.Logf("%d anchors resolve in the repository", checked)
+}
