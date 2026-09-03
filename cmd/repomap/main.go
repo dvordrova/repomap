@@ -1121,7 +1121,7 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  REPOMAP_LLM_MODEL\n")
 	fmt.Fprintf(writer, "  REPOMAP_LLM_API_KEY (for bearer auth)\n")
 	fmt.Fprintf(writer, "  REPOMAP_LLM_AUTH    bearer (default) or none\n")
-	fmt.Fprintf(writer, "  REPOMAP_LLM_TIMEOUT (default 6m; an attempt that hits it is retried)\n")
+	fmt.Fprintf(writer, "  REPOMAP_LLM_TIMEOUT (default 10m; an attempt that hits it is retried)\n")
 	fmt.Fprintf(writer, "  DEEPSEEK_API_KEY    quick setup; defaults to deepseek-v4-flash\n")
 	fmt.Fprintf(writer, "  DEEPSEEK_*          compatibility configuration aliases\n")
 	fmt.Fprintf(writer, "\nExamples:\n")

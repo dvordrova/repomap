@@ -25,14 +25,15 @@ const (
 	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
 	defaultModel     = "deepseek-v4-flash"
 	defaultMaxTokens = 128_000
-	// defaultTimeout bounds one provider attempt. Three minutes was measured
-	// against a corpus whose slowest recorded attempt was 86.7 s, and a live
-	// cold run then lost a whole target page to a grouping call that ran past
-	// it. Six minutes keeps a stall bounded well under the previous ten while
-	// leaving four times the slowest attempt anyone has recorded, and a timeout
-	// is now retried rather than fatal. REPOMAP_LLM_TIMEOUT raises it further
-	// for a slower endpoint.
-	defaultTimeout              = 6 * time.Minute
+	// defaultTimeout bounds one provider attempt. It was lowered to three and
+	// then six minutes on a corpus whose slowest recorded attempt was 86.7 s,
+	// and both were wrong: that corpus held no grouping call for a target of a
+	// few thousand subjects, and python-dotenv produced one that needed more
+	// than six minutes on its own. Cutting a call that is still working wastes
+	// the whole attempt, so the bound is generous and the retry — not the
+	// bound — is what protects a run from a stall.
+	// REPOMAP_LLM_TIMEOUT changes it; nothing here is in a cache key.
+	defaultTimeout              = 10 * time.Minute
 	defaultWaitProgressInterval = 10 * time.Second
 
 	authBearer = "bearer"

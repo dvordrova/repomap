@@ -38,6 +38,10 @@ const (
 	diagnosticLaneMismatch        = "lane_mismatch"
 	diagnosticUnknownGroupKey     = "unknown_group_key"
 	diagnosticConflictingGroupKey = "conflicting_group_key"
+	// diagnosticMergeSkipped records that consolidating the groups proposed by
+	// separate request shards did not happen. The shards' own groups are
+	// already validated, so the target keeps them.
+	diagnosticMergeSkipped = "merge_skipped"
 )
 
 type groupProposal struct {

@@ -484,6 +484,14 @@
       "note": "Logging-only illustration bound on discarded-row samples; counts stay exact and no accepted assignment is affected."
     },
     {
+      "file": "internal/programgrouping/merge.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxMergeCandidatesPerRequest"
+      ],
+      "note": "Request-planning granularity for the merge phase. Every candidate is still merged; they are spread over more requests because a merge response must re-emit every membership it was given and a longer copy is a lossier one."
+    },
+    {
       "file": "internal/programindex/artifact_set.go",
       "category": "byte-bound",
       "symbols": [

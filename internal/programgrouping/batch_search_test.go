@@ -1,6 +1,7 @@
 package programgrouping
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/llm"
@@ -57,5 +58,46 @@ func TestBatchPlanCoversEverySubjectInContiguousPrefixes(t *testing.T) {
 				t.Fatalf("planning one fitting batch took %d probes, want 1", provider.probes)
 			}
 		}
+	}
+}
+
+// TestMergeFailureKeepsTheShardGroups pins that a target survives a merge the
+// model gets wrong. The shards' own groups are already validated; consolidating
+// them is an improvement, not a precondition.
+func TestMergeFailureKeepsTheShardGroups(t *testing.T) {
+	index := groupingTestIndex(t, "python")
+	provider := &presetProvider{maxInitialGroupRefs: 1}
+	provider.respond = func(request Request) []byte {
+		if request.Phase == phaseGrouping {
+			ref := request.GroupRefs[0]
+			subject := subjectByRef(t, request, ref)
+			lane := laneForCategories(subject.Categories)
+			return []byte(fmt.Sprintf(
+				`{"groups":[{"key":"g1","title":%q,"summary":"Shard group","lane":%q,"member_refs":[%q],"evidence_refs":[]}],"connections":[]}`,
+				"Group "+ref, lane, ref,
+			))
+		}
+		// A merge response that drops every candidate membership is exactly
+		// what lost chi's router package.
+		return []byte(`{"groups":[],"connections":[]}`)
+	}
+
+	grouped, diagnostics, err := Run(t.Context(), llm.Executor{
+		Enabled: false, BatchConcurrency: 4, BatchController: &llm.BatchController{},
+	}, provider, index)
+	if err != nil {
+		t.Fatalf("a bad merge failed the target: %v", err)
+	}
+	if len(grouped.Groups) == 0 {
+		t.Fatal("the shard groups were lost with the merge")
+	}
+	var skipped bool
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Kind == diagnosticMergeSkipped {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Fatalf("the skipped merge was not recorded: %#v", diagnostics)
 	}
 }

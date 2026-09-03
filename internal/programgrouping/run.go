@@ -91,9 +91,22 @@ func Run(
 	}
 	combined = canonicalProposalSet(combined)
 	if len(finalPlan) > 1 && len(combined.groups) > 1 {
-		combined, err = runMergeTournament(ctx, executor, provider, compilation, combined)
-		if err != nil {
-			return groupindex.Index{}, nil, err
+		// Merging consolidates what separate request shards proposed. Those
+		// proposals are already validated on their own, so a merge that does
+		// not work is a consolidation this target did without, not a reason to
+		// lose the target: chi's router package was recorded as not analyzed
+		// because one merge response dropped a membership it had to keep.
+		merged, mergeErr := runMergeTournament(ctx, executor, provider, compilation, combined)
+		switch {
+		case mergeErr == nil:
+			combined = merged
+		case ctx.Err() != nil:
+			return groupindex.Index{}, nil, mergeErr
+		default:
+			combined.diagnostics = append(combined.diagnostics, groupindex.Diagnostic{
+				Kind:   diagnosticMergeSkipped,
+				Reason: mergeErr.Error(),
+			})
 		}
 	}
 

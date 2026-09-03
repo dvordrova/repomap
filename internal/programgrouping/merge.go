@@ -15,15 +15,6 @@ type mergeBatch struct {
 	candidates proposalSet
 }
 
-func splitMergeBatch(value mergeBatch) (mergeBatch, mergeBatch, bool) {
-	if len(value.candidates.groups) < 2 {
-		return mergeBatch{}, mergeBatch{}, false
-	}
-	middle := len(value.candidates.groups) / 2
-	return mergeBatch{candidates: proposalSubset(value.candidates, value.candidates.groups[:middle])},
-		mergeBatch{candidates: proposalSubset(value.candidates, value.candidates.groups[middle:])}, true
-}
-
 func proposalSubset(all proposalSet, groups []groupProposal) proposalSet {
 	result := proposalSet{groups: append([]groupProposal(nil), groups...)}
 	keys := make(map[string]struct{}, len(groups))
@@ -41,6 +32,15 @@ func proposalSubset(all proposalSet, groups []groupProposal) proposalSet {
 	}
 	return result
 }
+
+// maxMergeCandidatesPerRequest bounds how many group candidates one merge
+// request carries. A merge response must re-emit every membership of every
+// candidate it was given, so the task is a copy of thousands of refs and a
+// response that drops one is refused whole: chi's router package sent 33
+// candidates in a 1.35 MB request, got 15 groups back, and lost the merge
+// because memberships from one candidate were missing. Fewer candidates per
+// request is a shorter copy.
+const maxMergeCandidatesPerRequest = 12
 
 func (compilation Compilation) mergeBatchesForProvider(
 	provider llm.Provider,
@@ -63,6 +63,9 @@ func (compilation Compilation) mergeBatchesForProvider(
 		current = current[:0]
 	}
 	for _, group := range candidates.groups {
+		if len(current) == maxMergeCandidatesPerRequest {
+			flush()
+		}
 		probe := append(append([]groupProposal(nil), current...), group)
 		subset := proposalSubset(candidates, probe)
 		fits, err := compilation.mergeRequestFits(provider, subset)
@@ -162,42 +165,34 @@ func runMergeTournament(
 		if len(batches) == 0 {
 			return proposalSet{diagnostics: canonicalDiagnostics(diagnostics)}, nil
 		}
-		finalPlan, outcomes, err := llm.ExecuteAdaptiveJSONBatch(
-			ctx, executor, provider, batches,
-			func(plan []mergeBatch) ([]llm.Call[proposalSet], error) {
-				calls := make([]llm.Call[proposalSet], len(plan))
-				for position := range plan {
-					request, requestErr := compilation.mergeRequest(plan[position].candidates)
-					if requestErr != nil {
-						return nil, requestErr
-					}
-					wire, encodeErr := json.Marshal(request)
-					if encodeErr != nil {
-						return nil, fmt.Errorf("program grouping: encode merge request: %w", encodeErr)
-					}
-					state, stateErr := cubeState(compilation.index.SHA256, phaseMerge, wire)
-					if stateErr != nil {
-						return nil, stateErr
-					}
-					requestCopy := request
-					calls[position] = llm.Call[proposalSet]{
-						State: state,
-						Prompt: llm.Prompt{
-							System: strings.TrimSpace(promptText), User: string(wire), ResponseFormatJSON: true,
-						},
-						Limits: limits(),
-						DecodeValidate: func(raw []byte) (proposalSet, error) {
-							return normalizeResponse(raw, compilation, requestCopy)
-						},
-					}
-				}
-				return calls, nil
-			},
-			splitMergeBatch,
-		)
-		if err != nil {
-			return proposalSet{}, fmt.Errorf("program grouping: model merge level %d: %w", level, err)
+		// One batch at a time, because a merge that goes wrong for one group
+		// of candidates says nothing about the others. Executing them as a
+		// single batch made any one rejection discard the whole level, and
+		// with it every consolidation the model had got right.
+		outcomes := make([]llm.Outcome[proposalSet], 0, len(batches))
+		merged := 0
+		for position := range batches {
+			outcome, batchErr := runMergeBatch(ctx, executor, provider, compilation, batches[position])
+			if batchErr == nil {
+				outcomes = append(outcomes, outcome)
+				merged++
+				continue
+			}
+			if ctx.Err() != nil {
+				return proposalSet{}, fmt.Errorf("program grouping: model merge level %d: %w", level, batchErr)
+			}
+			diagnostics = append(diagnostics, groupindex.Diagnostic{
+				Kind:   diagnosticMergeSkipped,
+				Reason: batchErr.Error(),
+			})
+			// The candidates this batch carried stay exactly as they were.
+			outcomes = append(outcomes, llm.Outcome[proposalSet]{Value: batches[position].candidates})
 		}
+		if merged == 0 {
+			candidates.diagnostics = canonicalDiagnostics(diagnostics)
+			return candidates, nil
+		}
+		finalPlan := batches
 		next := proposalSet{}
 		for position, outcome := range outcomes {
 			namespaced := namespaceProposalSet(outcome.Value, fmt.Sprintf("m%db%d:", level, position+1))
@@ -255,4 +250,37 @@ func proposalFootprint(value proposalSet) (int, error) {
 		return 0, fmt.Errorf("program grouping: encode merge progress: %w", err)
 	}
 	return len(wire), nil
+}
+
+// runMergeBatch executes one merge request on its own so a rejection is local
+// to the candidates it was given.
+func runMergeBatch(
+	ctx context.Context,
+	executor llm.Executor,
+	provider llm.Provider,
+	compilation Compilation,
+	batch mergeBatch,
+) (llm.Outcome[proposalSet], error) {
+	request, err := compilation.mergeRequest(batch.candidates)
+	if err != nil {
+		return llm.Outcome[proposalSet]{}, err
+	}
+	wire, err := json.Marshal(request)
+	if err != nil {
+		return llm.Outcome[proposalSet]{}, fmt.Errorf("program grouping: encode merge request: %w", err)
+	}
+	state, err := cubeState(compilation.index.SHA256, phaseMerge, wire)
+	if err != nil {
+		return llm.Outcome[proposalSet]{}, err
+	}
+	return llm.ExecuteJSON(ctx, executor, provider, llm.Call[proposalSet]{
+		State: state,
+		Prompt: llm.Prompt{
+			System: strings.TrimSpace(promptText), User: string(wire), ResponseFormatJSON: true,
+		},
+		Limits: limits(),
+		DecodeValidate: func(raw []byte) (proposalSet, error) {
+			return normalizeResponse(raw, compilation, request)
+		},
+	})
 }
