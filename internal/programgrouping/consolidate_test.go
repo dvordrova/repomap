@@ -301,3 +301,22 @@ func TestAssignmentIsReadUnderAnyOfItsNames(t *testing.T) {
 		}
 	}
 }
+
+// A window carries only the connections whose both ends it can see, so the
+// ones crossing windows were dropped and the pool's own list still named keys
+// that consolidation had replaced. chi came out of four passes with a hundred
+// groups and not one connection, and its map drew fourteen boxes and no arrow.
+func TestConnectionsFollowTheGroupsTheyWereJoinedInto(t *testing.T) {
+	renamed := map[string]string{"k1": "w1:a", "k2": "w1:a", "k3": "w2:b"}
+	moved := movedConnections([]connectionProposal{
+		{FromGroupKey: "k1", ToGroupKey: "k3", Label: "routes to handler"},
+		{FromGroupKey: "k1", ToGroupKey: "k2", Label: "same group now"},
+		{FromGroupKey: "k2", ToGroupKey: "k3", Label: "routes to handler"},
+	}, renamed)
+	if len(moved) != 1 {
+		t.Fatalf("moved = %#v", moved)
+	}
+	if moved[0].FromGroupKey != "w1:a" || moved[0].ToGroupKey != "w2:b" {
+		t.Errorf("connection = %s -> %s", moved[0].FromGroupKey, moved[0].ToGroupKey)
+	}
+}

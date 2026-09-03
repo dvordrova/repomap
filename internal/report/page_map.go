@@ -242,7 +242,8 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	// the groups it holds are the boxes inside. Drawing only the parts would
 	// hide thirty true things behind eight names, and drawing only the groups
 	// is the wall of boxes the parts exist to organise.
-	blocks, hidden := overviewBlocks(mapBlocks(*index))
+	everything := mapBlocks(*index)
+	blocks, hidden := overviewBlocks(everything)
 	result.Hidden = hidden
 	frameTop := 0.0
 	if len(index.Containers) > 0 {
@@ -307,7 +308,13 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	// one part are joined box to box; anything crossing a part's frame is one
 	// arrow between the parts. Drawn box to box regardless, chi's core was
 	// forty lines with "part of middleware" written on eight of them.
-	endpoints, endpointOf := mapEndpoints(result.Frames, result.Nodes, blocks)
+	// A group the overview left out still reaches, and what it reaches is
+	// still on the screen — inside a zone. Its connection is the zone's, so
+	// endpoints are resolved over every block and not only the drawn ones.
+	// Resolved over the drawn ones alone, chi's map carried two arrows for
+	// fourteen boxes, because almost everything a box talks to is one of the
+	// ninety groups on the cards below.
+	endpoints, endpointOf := mapEndpoints(result.Frames, result.Nodes, everything)
 	edges, band, rightmost := mapEdges(*index, endpoints, endpointOf, result.Height)
 	result.Edges = edges
 	result.Height += band + mapPadding + 14

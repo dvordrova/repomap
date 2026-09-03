@@ -398,7 +398,14 @@ func consolidateWindows(
 		return consolidateOnce(ctx, executor, provider, compilation, requestPhase, candidates, parts)
 	}
 	var diagnostics []groupindex.Diagnostic
-	result := proposalSet{connections: candidates.connections}
+	result := proposalSet{}
+	// Where each candidate ended up, over the whole pool. A window can only
+	// carry the connections whose both ends it can see, so the ones crossing
+	// windows were dropped there and the pool's own list still named keys
+	// that no longer existed — chi came out of four passes with a hundred
+	// groups and not one connection, while a target consolidated in a single
+	// window kept sixty-seven.
+	renamed := make(map[string]string, len(candidates.groups))
 	for start := 0; start < len(candidates.groups); start += consolidateWindow {
 		end := min(start+consolidateWindow, len(candidates.groups))
 		window := proposalSet{
@@ -429,9 +436,21 @@ func consolidateWindows(
 			)
 		}
 		namespaced := namespaceProposalSet(joined, fmt.Sprintf("w%d:", start/consolidateWindow+1))
+		for _, group := range namespaced.groups {
+			for _, ref := range group.absorbed {
+				var position int
+				if _, err := fmt.Sscanf(ref, "c%d", &position); err != nil {
+					continue
+				}
+				if position -= 1; position >= 0 && position < len(candidates.groups) {
+					renamed[candidates.groups[position].Key] = group.Key
+				}
+			}
+		}
 		result.groups = append(result.groups, namespaced.groups...)
 		diagnostics = append(diagnostics, namespaced.diagnostics...)
 	}
+	result.connections = movedConnections(candidates.connections, renamed)
 	return canonicalProposalSet(result), diagnostics, nil
 }
 
@@ -1002,4 +1021,31 @@ func keepNamedParts(request consolidateRequest, response consolidateResponse) (c
 		)
 	}
 	return kept, nil
+}
+
+// movedConnections carries a pool's connections onto the groups its windows
+// produced. A connection whose ends landed in one group is that group talking
+// to itself and goes; one whose end was in a window that failed keeps the key
+// it had, which the next level resolves or drops on its own.
+func movedConnections(connections []connectionProposal, renamed map[string]string) []connectionProposal {
+	result := make([]connectionProposal, 0, len(connections))
+	seen := make(map[[3]string]struct{}, len(connections))
+	for _, connection := range connections {
+		if moved, known := renamed[connection.FromGroupKey]; known {
+			connection.FromGroupKey = moved
+		}
+		if moved, known := renamed[connection.ToGroupKey]; known {
+			connection.ToGroupKey = moved
+		}
+		if connection.FromGroupKey == connection.ToGroupKey {
+			continue
+		}
+		key := [3]string{connection.FromGroupKey, connection.ToGroupKey, connection.Label}
+		if _, repeated := seen[key]; repeated {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, connection)
+	}
+	return result
 }
