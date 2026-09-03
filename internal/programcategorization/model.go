@@ -13,11 +13,20 @@ import (
 )
 
 const (
-	requestVersion          = 2
-	executionContract       = "repomap.program-categorization.v4"
-	preparationVersion      = 4
-	responseSchemaVersion   = 1
-	maxOutputTokens         = 32_768
+	requestVersion        = 2
+	executionContract     = "repomap.program-categorization.v4"
+	preparationVersion    = 4
+	responseSchemaVersion = 1
+	maxOutputTokens       = 32_768
+	// ownedSubjectsPerRequest is how many subjects one request decides. Making
+	// it larger is the obvious way to stop paying for the same preamble — at
+	// 32, a 72 KB request carried 23 KB of documentation and 74 context
+	// subjects to decide 32 owned ones — and it was measured and refused. At
+	// 128 chi's request count fell from 42 to 12 and its answers fell with it:
+	// the core library went from 747 of 950 subjects covered to 182, with 0 of
+	// 433 objects named at all, and 6 of its 8 requests came back empty. A
+	// model asked about too much at once stops answering, so this stays where
+	// the answers are.
 	ownedSubjectsPerRequest = 32
 )
 

@@ -252,6 +252,35 @@ Two experiments were tried against this and reverted, with their numbers:
   went unanswered twice, split that same package into four shards and 34
   unconsolidated groups. It made the one target it existed for worse.
 
+## What a day of running this actually costs
+
+Measured on 2026-09-03 from the provider's own per-call metrics, 3,574 live
+requests in one day:
+
+| | |
+|---|---|
+| input tokens | 133,588,160 |
+| output tokens | 680,019 |
+| requests answered `{"assignments":[]}` | 2,361 of 3,574 (66%) |
+| input tokens spent on those | 76,744,675 (57%) |
+| repomap analyzing its own checkout | 2,243 calls, 98 M tokens, **84% of the day** |
+| chi, python-dotenv and the fixture together | 413 calls, 13 M tokens, 10% |
+
+**Never run repomap on its own checkout as a routine check.** It is the worst
+repository this tool owns: one target of 4,162 objects and 11,889 relation
+patterns, 502 categorization requests, and every commit here invalidates all
+of them. Four self-runs in one day cost roughly $38 of a $45 bill to answer a
+question a log line already answered. chi and python-dotenv cost about a
+dollar cold and nothing warm; they are the loop.
+
+The empty answers are not evenly spread. On chi and python-dotenv, relation
+patterns are productive — chi categorized 107 of 107, python-dotenv 445 of
+795. On repomap's own big target, 11,889 patterns produced 613 assignments,
+of which 19 were not `core`, and those 19 read as noise: `Fprintf` as
+inbound, `Lstat` as background activity, `Parent` as a dependency. Yield per
+request collapses as a target grows, and type-fest is the limit case: 5,636
+patterns, 288 requests, zero pattern assignments.
+
 ## Known gaps, recorded not fixed
 
 - `os.environ["KEY"]` and `process.env.KEY` subscript reads are not captured.
@@ -295,8 +324,19 @@ Two experiments were tried against this and reverted, with their numbers:
   take several draws before believing a prompt change helped or hurt.
 - A name-based dead-code scan misses interface satisfaction.
   `runOutputWarningSink.Write` looked unreachable and has four call sites.
-- Do not reorder request fields for provider prefix caching. Measured dead: the
-  shared prefix is 141 bytes and subject sets differ per batch.
+- **Do not reorder request fields for provider prefix caching, and this time
+  there are numbers.** The prefix cache is already the biggest discount the
+  tool gets: on a cold chi run the provider reported 64-72% of categorization
+  input tokens as prefix hits. Moving `documentation` to the front of the
+  request — on the reasoning that it is the one part identical in every
+  request for a target — dropped that to 6-7%. Reverted; chi came back to
+  184/747/15/100 subjects covered at 8.5 s warm without spending anything,
+  because the old cache records were still there.
+- **A bigger categorization shard buys fewer answers, not cheaper ones.** At
+  128 owned subjects per request instead of 32, chi's request count fell from
+  42 to 12 and its coverage collapsed: the core library went from 747 of 950
+  subjects to 182, with 0 of 433 objects named, and 6 of its 8 requests came
+  back empty. Measured and refused.
 - The 429 collapse is not worth touching: 1,013 of 1,014 calls succeeded on the
   first attempt.
 - Failing a whole run is never an acceptable answer to a model disagreement.

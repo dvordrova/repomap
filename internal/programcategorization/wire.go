@@ -92,6 +92,12 @@ type documentationWire struct {
 
 // Request is deliberately request-local: no ProgramIndex identity or digest
 // is provider-visible.
+// Field order here is worth money and has been measured twice. Leaving the
+// documentation last, behind the shard, gives the provider a prefix it
+// already holds for 64-72% of a categorization request's input tokens.
+// Moving it to the front — on the reasoning that it is the one part
+// identical in every request — dropped that to 6-7% and cost more, so it
+// stayed where it was.
 type Request struct {
 	Version        int                 `json:"version"`
 	Target         targetWire          `json:"target"`
