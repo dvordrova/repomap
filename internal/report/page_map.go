@@ -113,6 +113,7 @@ type pageMap struct {
 
 // pageMapFrame is one part of a target drawn around the groups inside it.
 type pageMapFrame struct {
+	ID     string
 	Title  string
 	Lane   string
 	X      float64
@@ -226,21 +227,19 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	columnX := mapPadding
 	for _, lane := range lanes {
 		laneBlocks := laneMapBlocks(blocks, lane.lane)
-		members := blockGroups(laneBlocks)
-		if len(members) == 0 {
+		if len(laneBlocks) == 0 {
 			continue
 		}
-		columns := (len(members) + mapMaxNodesPerColumn - 1) / mapMaxNodesPerColumn
-		perColumn := (len(members) + columns - 1) / columns
+		placed := placeLaneBlocks(layerBlocks(laneBlocks, *index))
+		columns := placed.columns
 		laneWidth := float64(columns)*mapNodeWidth + float64(columns-1)*mapColumnGap
 		result.Lanes = append(result.Lanes, pageMapLane{
 			Label: lane.label, X: columnX, Width: laneWidth,
 		})
 		frames := make(map[string]*pageMapFrame, len(laneBlocks))
-		for position, entry := range members {
+		for _, entry := range placed.entries {
 			group := entry.group
-			column := position / perColumn
-			row := position % perColumn
+			column, row := entry.column, entry.row
 			node := pageMapNode{
 				ID: mapNodeID(group.ID), Href: "#" + groupAnchorID(section.ID, group.ID),
 				Title: mapTitle(group.Title), FullTitle: group.Title,
@@ -282,8 +281,13 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	for position := range result.Nodes {
 		positions[result.Nodes[position].ID] = &result.Nodes[position]
 	}
+	// Connections follow the levels the boxes are drawn at. Two groups inside
+	// one part are joined box to box; anything crossing a part's frame is one
+	// arrow between the parts. Drawn box to box regardless, chi's core was
+	// forty lines with "part of middleware" written on eight of them.
+	endpoints, endpointOf := mapEndpoints(result.Frames, result.Nodes, blocks)
 	result.Width = columnX - mapLaneGap + mapPadding
-	edges, band, rightmost := mapEdges(*index, positions, result.Height)
+	edges, band, rightmost := mapEdges(*index, endpoints, endpointOf, result.Height)
 	result.Edges = edges
 	result.Height += band + mapPadding + 14
 	if reach := rightmost + mapPadding; reach > result.Width {
@@ -455,11 +459,6 @@ type mapBlock struct {
 	groups    []groupindex.Group
 }
 
-type mapBlockEntry struct {
-	group     groupindex.Group
-	container *groupindex.Container
-}
-
 // mapBlocks orders a target's groups so the ones inside a part stand together,
 // which is what lets a frame be drawn around them. Parts come first, biggest
 // first, and the groups that belong to none follow.
@@ -499,17 +498,18 @@ func mapBlocks(index groupindex.Index) []mapBlock {
 		}
 		loose[group.Lane] = append(loose[group.Lane], group)
 	}
+	// A group in no part is a block of its own, so the layout can place it
+	// between the parts its arrows run to rather than in a leftover pile.
 	for _, lane := range []groupindex.Lane{
 		groupindex.LaneTriggers, groupindex.LaneCore, groupindex.LaneDependencies,
 	} {
 		groups := loose[lane]
-		if len(groups) == 0 {
-			continue
-		}
 		sort.Slice(groups, func(left, right int) bool {
 			return len(groups[left].MemberSubjectIDs) > len(groups[right].MemberSubjectIDs)
 		})
-		result = append(result, mapBlock{lane: lane, groups: groups})
+		for _, group := range groups {
+			result = append(result, mapBlock{lane: lane, groups: []groupindex.Group{group}})
+		}
 	}
 	return result
 }
@@ -532,14 +532,129 @@ func laneMapBlocks(blocks []mapBlock, lane groupindex.Lane) []mapBlock {
 	return result
 }
 
-func blockGroups(blocks []mapBlock) []mapBlockEntry {
-	var result []mapBlockEntry
+// layerBlocks puts a lane's blocks in the order its own arrows run: what
+// nothing points at goes first, what it points at follows. A lane laid out by
+// size alone is one tall column, and in a library where almost everything is
+// core that turns every connection into a loop or a detour under the map.
+func layerBlocks(blocks []mapBlock, index groupindex.Index) [][]mapBlock {
+	if len(blocks) < 2 {
+		return [][]mapBlock{blocks}
+	}
+	idOf := make(map[string]string)
 	for _, block := range blocks {
+		id := blockID(block)
 		for _, group := range block.groups {
-			result = append(result, mapBlockEntry{group: group, container: block.container})
+			idOf[group.ID] = id
+		}
+	}
+	incoming := make(map[string]map[string]struct{}, len(blocks))
+	for _, connection := range index.Connections {
+		if connection.From.TargetID != index.Target.ID || connection.To.TargetID != index.Target.ID {
+			continue
+		}
+		from, fromKnown := idOf[connection.From.GroupID]
+		to, toKnown := idOf[connection.To.GroupID]
+		if !fromKnown || !toKnown || from == to {
+			continue
+		}
+		if incoming[to] == nil {
+			incoming[to] = make(map[string]struct{})
+		}
+		incoming[to][from] = struct{}{}
+	}
+	depth := make(map[string]int, len(blocks))
+	// Longest path by relaxation, bounded by the block count so a cycle
+	// settles instead of running away.
+	for round := 0; round < len(blocks); round++ {
+		changed := false
+		for _, block := range blocks {
+			id := blockID(block)
+			for source := range incoming[id] {
+				if depth[source]+1 > depth[id] && depth[source]+1 < len(blocks) {
+					depth[id] = depth[source] + 1
+					changed = true
+				}
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+	deepest := 0
+	for _, value := range depth {
+		if value > deepest {
+			deepest = value
+		}
+	}
+	layers := make([][]mapBlock, deepest+1)
+	for _, block := range blocks {
+		position := depth[blockID(block)]
+		layers[position] = append(layers[position], block)
+	}
+	result := make([][]mapBlock, 0, len(layers))
+	for _, layer := range layers {
+		if len(layer) == 0 {
+			continue
+		}
+		sort.SliceStable(layer, func(left, right int) bool {
+			return blockMembers(layer[left]) > blockMembers(layer[right])
+		})
+		result = append(result, layer)
+	}
+	return result
+}
+
+// placedLane is where every box of one lane goes: a column per layer, and a
+// layer taller than the map allows spilling into the next column beside it.
+type placedLane struct {
+	columns int
+	entries []placedEntry
+}
+
+type placedEntry struct {
+	group     groupindex.Group
+	container *groupindex.Container
+	column    int
+	row       int
+}
+
+func placeLaneBlocks(layers [][]mapBlock) placedLane {
+	result := placedLane{}
+	column := 0
+	for _, layer := range layers {
+		row := 0
+		for _, block := range layer {
+			// A part is never broken across columns: its frame is drawn round
+			// its boxes, and a frame in two pieces is two frames.
+			if row > 0 && row+len(block.groups) > mapMaxNodesPerColumn {
+				column++
+				row = 0
+			}
+			for _, group := range block.groups {
+				result.entries = append(result.entries, placedEntry{
+					group: group, container: block.container, column: column, row: row,
+				})
+				row++
+			}
+		}
+		column++
+	}
+	for _, entry := range result.entries {
+		if entry.column+1 > result.columns {
+			result.columns = entry.column + 1
 		}
 	}
 	return result
+}
+
+func blockID(block mapBlock) string {
+	if block.container != nil {
+		return block.container.ID
+	}
+	if len(block.groups) > 0 {
+		return block.groups[0].ID
+	}
+	return ""
 }
 
 // growFrame widens a part's frame to hold one more of its boxes.
@@ -547,7 +662,7 @@ func growFrame(frames map[string]*pageMapFrame, container *groupindex.Container,
 	frame, known := frames[container.ID]
 	if !known {
 		frame = &pageMapFrame{
-			Title: container.Title, Lane: string(container.Lane),
+			ID: container.ID, Title: container.Title, Lane: string(container.Lane),
 			X: node.X, Y: node.Y, Width: node.Width, Height: node.Height,
 		}
 		frames[container.ID] = frame
@@ -636,9 +751,51 @@ func mapNodeIDs(groupIDs []string) []string {
 // map. Two connections between the same pair are one arrow carrying both
 // labels, because two identical curves drawn on top of each other are one
 // curve that reads as a thicker line.
+// mapEndpoints lists what an arrow may start and end at: every box that is in
+// no part, and every part as a whole. It also says, for each group, which of
+// those its connections belong to.
+func mapEndpoints(
+	frames []pageMapFrame,
+	nodes []pageMapNode,
+	blocks []mapBlock,
+) (map[string]*pageMapNode, map[string]string) {
+	frameOf := make(map[string]string)
+	for _, block := range blocks {
+		if block.container == nil {
+			continue
+		}
+		for _, group := range block.groups {
+			frameOf[group.ID] = mapNodeID(block.container.ID)
+		}
+	}
+	endpoints := make(map[string]*pageMapNode, len(nodes)+len(frames))
+	for position := range nodes {
+		endpoints[nodes[position].ID] = &nodes[position]
+	}
+	for position := range frames {
+		frame := frames[position]
+		endpoints[mapNodeID(frame.ID)] = &pageMapNode{
+			ID: mapNodeID(frame.ID), FullTitle: frame.Title, Lane: frame.Lane,
+			X: frame.X, Y: frame.Y, Width: frame.Width, Height: frame.Height,
+		}
+	}
+	endpointOf := make(map[string]string, len(nodes))
+	for _, block := range blocks {
+		for _, group := range block.groups {
+			if frame, inside := frameOf[group.ID]; inside {
+				endpointOf[group.ID] = frame
+				continue
+			}
+			endpointOf[group.ID] = mapNodeID(group.ID)
+		}
+	}
+	return endpoints, endpointOf
+}
+
 func mapEdges(
 	index groupindex.Index,
 	nodes map[string]*pageMapNode,
+	endpointOf map[string]string,
 	bottom float64,
 ) ([]pageMapEdge, float64, float64) {
 	type pair struct{ from, to string }
@@ -650,8 +807,14 @@ func mapEdges(
 		if connection.From.TargetID != index.Target.ID || connection.To.TargetID != index.Target.ID {
 			continue
 		}
-		from, fromKnown := nodes[mapNodeID(connection.From.GroupID)]
-		to, toKnown := nodes[mapNodeID(connection.To.GroupID)]
+		// Inside one part the boxes are joined; across parts the parts are.
+		fromID, toID := endpointOf[connection.From.GroupID], endpointOf[connection.To.GroupID]
+		if fromID == toID {
+			fromID = mapNodeID(connection.From.GroupID)
+			toID = mapNodeID(connection.To.GroupID)
+		}
+		from, fromKnown := nodes[fromID]
+		to, toKnown := nodes[toID]
 		if !fromKnown || !toKnown || from == to {
 			continue
 		}
