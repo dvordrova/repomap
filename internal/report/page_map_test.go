@@ -48,3 +48,23 @@ func TestMapTitleMarksWhatItDropped(t *testing.T) {
 		t.Fatalf("a shortened title does not say so: %#v", got)
 	}
 }
+
+// TestAddressValueSeparatesAPortFromATime keeps "where to reach them" from
+// listing something that merely has the shape of an address.
+func TestAddressValueSeparatesAPortFromATime(t *testing.T) {
+	for _, value := range []string{
+		":8080", "localhost:8080", "0.0.0.0:3000", "http://localhost:8080",
+		"https://example.test:443/path", "127.0.0.1:65535",
+	} {
+		if !addressValue(value) {
+			t.Fatalf("addressValue(%q) = false, want true", value)
+		}
+	}
+	for _, value := range []string{
+		"", "12:30", "8080", "localhost", "x:0", "x:65536", "a b:80", "1:2",
+	} {
+		if addressValue(value) {
+			t.Fatalf("addressValue(%q) = true, want false", value)
+		}
+	}
+}

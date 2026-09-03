@@ -2,7 +2,9 @@ package report
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/dvordrova/repomap/internal/facts"
 )
@@ -20,9 +22,11 @@ type pageAddress struct {
 	Anchor *pageAnchor
 }
 
-// hostPortValue matches a value that names a port, whether written as a URL,
-// a host:port pair, or a bare listen address.
-var hostPortValue = regexp.MustCompile(`^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?[A-Za-z0-9_.-]*:\d{2,5}(?:/\S*)?$`)
+// hostPortValue matches the shape of a value that names a port, whether
+// written as a URL, a host:port pair, or a bare listen address. Shape alone is
+// not enough — "12:30" has it — so addressValue also checks the port and asks
+// the host to look like one.
+var hostPortValue = regexp.MustCompile(`^(?:([a-zA-Z][a-zA-Z0-9+.-]*)://)?([A-Za-z0-9_.-]*):(\d{1,5})(?:/\S*)?$`)
 
 func (builder *pageBuilder) addresses(view *pageView) {
 	if builder.data.Facts == nil {
@@ -63,10 +67,34 @@ func (builder *pageBuilder) addresses(view *pageView) {
 // addressFact keeps a fact that names where something listens or connects: a
 // value carrying a port, or a key whose name is a port with no default.
 func addressFact(fact facts.Fact) bool {
-	if hostPortValue.MatchString(fact.Value) {
+	if addressValue(fact.Value) {
 		return true
 	}
 	key := strings.ToLower(fact.Key)
 	return fact.Value == "" &&
 		(key == "port" || strings.HasSuffix(key, "_port") || strings.HasSuffix(key, ".port"))
 }
+
+// addressValue reports whether a value really names somewhere to connect. A
+// scheme, an empty host after a leading colon, or a host carrying a letter or
+// a dot separates ":8080", "localhost:8080" and "http://x/y" from a time of
+// day, which has the same shape and is not an address.
+func addressValue(value string) bool {
+	match := hostPortValue.FindStringSubmatch(value)
+	if match == nil {
+		return false
+	}
+	port, err := strconv.Atoi(match[3])
+	if err != nil || port < 1 || port > maxTCPPort {
+		return false
+	}
+	scheme, host := match[1], match[2]
+	if scheme != "" || host == "" {
+		return true
+	}
+	return strings.ContainsAny(host, ".") || strings.ContainsFunc(host, unicode.IsLetter)
+}
+
+// maxTCPPort is the largest number a TCP or UDP port can be. It is the
+// protocol's own bound, not a product limit.
+const maxTCPPort = 65535

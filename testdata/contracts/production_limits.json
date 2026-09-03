@@ -694,6 +694,14 @@
       "note": "Warning-only manifest/source thresholds plus zero unbounded-reader sentinels; complete report, snapshot, dirty-file, and source authority is retained."
     },
     {
+      "file": "internal/report/page_addresses.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "maxTCPPort"
+      ],
+      "note": "The largest number a TCP or UDP port can be, used to tell an address apart from other text of the same shape. It is the protocol's bound, not a ceiling on anything this tool produces."
+    },
+    {
       "file": "internal/report/page_map.go",
       "category": "excluded-not-a-limit",
       "symbols": [
