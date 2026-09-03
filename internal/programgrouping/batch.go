@@ -9,6 +9,20 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
+// maxGroupingRequestBytes bounds one grouping request. It is not the provider
+// envelope, which is far larger, and not the token window, which nothing here
+// counts: it is the size past which the provider refuses the request outright.
+// Pointing repomap at its own checkout built a 15.4 MB grouping request for
+// cmd/repomap and got back "maximum context length is 1048576 tokens"; the
+// requests that work are smaller by an order of magnitude — python-dotenv's
+// 2.4 MB and chi's router package at 1.6 MB both answer. Three megabytes
+// leaves both of those in one request and splits only what was failing.
+//
+// Nothing is sampled or omitted. The subject cover is the same, spread over
+// more requests, and the merge phase that then runs can no longer lose a
+// target when it goes wrong.
+const maxGroupingRequestBytes = 3 << 20
+
 type batch struct {
 	groupRefs []string
 }
@@ -120,6 +134,13 @@ func (compilation Compilation) groupingRequestFits(provider llm.Provider, refs [
 	request, err := compilation.request(phaseGrouping, refs, proposalSet{})
 	if err != nil {
 		return false, err
+	}
+	wire, err := json.Marshal(request)
+	if err != nil {
+		return false, fmt.Errorf("program grouping: encode provider request: %w", err)
+	}
+	if len(wire) > maxGroupingRequestBytes {
+		return false, nil
 	}
 	return requestFits(provider, request)
 }
