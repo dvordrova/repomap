@@ -158,6 +158,18 @@ string, so grep it, do not walk it as JSON.
 
 ## Scale: what a repository costs
 
+One chi run, the medium case the brief names, counted from its own artifacts:
+
+| what | value |
+|---|---|
+| wall clock, cold | 118 s |
+| wall clock, warm | 7.6 s |
+| provider calls | 55 — 42 categorization, 5 matching, 4 grouping, 4 once each |
+| input tokens | 1,635,718 |
+| output tokens | 24,585 |
+| provider latency, summed | 196 s |
+| targets analyzed | 4/4 |
+
 | repository | objects | categorization requests | result |
 |---|---|---|---|
 | fixture, both targets | 441 | 24 | 5.9 s warm, 55 s cold, 2/2 |

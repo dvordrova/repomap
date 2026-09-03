@@ -10,9 +10,10 @@ reviewed, all green.
 2. **Findings settled.** The 172 non-object assignments are relation patterns.
    `core` is not worth narrowing; what finding 1 pointed at was a parser
    refusing a repeated key and a prompt with no size rule.
-3. **Speed and coverage.** Fixture 5.9 s warm (from 14.6 s), 2/2 targets. chi
-   7.6 s, 4/4. python-dotenv 21 s, 3/3. repomap on itself 18/20, where at the
-   start of the night it failed before analyzing anything.
+3. **Speed and coverage.** Fixture 5.9 s warm (from 14.6 s), 2/2 targets.
+   chi 7.6 s warm and 118 s cold, 4/4, at 55 provider calls, 1.64 M input and
+   24.6 K output tokens. python-dotenv 21 s, 3/3. repomap on itself 18/20,
+   where at the start of the night it failed before analyzing anything.
 4. **The page.** Templates one file per region and per layer. Each target
    opens with an SVG map of its groups, sized by membership, marked with the
    main-flow steps through them, saying how much of the target it covers; a

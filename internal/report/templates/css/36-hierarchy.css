@@ -60,8 +60,11 @@ ul.dynamic li{border-left:3px solid var(--warn);padding:.25rem .7rem;margin:.35r
 /* One page holding every target is easy to read and hard to move around in.
    The target bar sticks; each target carries its own bar of sections with the
    count already on it, so a reader can see what is there before going. */
-.nav{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:.5rem 1.25rem;margin:0 -1.25rem .2rem;font-size:.9rem}
-.nav a{margin-right:.9rem;text-decoration:none}
+/* A repository can have twenty targets with long module paths. Wrapped, that
+   bar is four lines of sticky chrome above every screen of content; on one
+   line it stays out of the way and scrolls to reach the rest. */
+.nav{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:.5rem 1.25rem;margin:0 -1.25rem .2rem;font-size:.9rem;white-space:nowrap;overflow-x:auto;overflow-y:hidden}
+.nav a{display:inline-block;margin-right:.9rem;text-decoration:none}
 .nav a:hover{text-decoration:underline}
 .jump{position:static;border:0;background:transparent;padding:0;margin:.1rem 0 .2rem;display:flex;flex-wrap:wrap;gap:.3rem}
 .jump a{margin:0;font-size:.82rem;color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:11px;padding:.1rem .5rem;background:var(--bg)}
