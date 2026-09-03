@@ -52,6 +52,11 @@ type pageMap struct {
 	Nodes      []pageMapNode
 	Edges      []pageMapEdge
 	LargestPct int
+	// Subjects and Grouped say how much of the target the map accounts for.
+	// Grouping is a sparse cover by design, so a map of four boxes over a
+	// thousand symbols must not read as the whole target.
+	Subjects int
+	Grouped  int
 }
 
 type pageMapLane struct {
@@ -124,10 +129,17 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 			largest = len(group.MemberSubjectIDs)
 		}
 	}
-	result := &pageMap{}
+	result := &pageMap{Subjects: subjects}
 	if subjects > 0 {
 		result.LargestPct = largest * 100 / subjects
 	}
+	grouped := make(map[string]struct{})
+	for _, group := range index.Groups {
+		for _, member := range group.MemberSubjectIDs {
+			grouped[member] = struct{}{}
+		}
+	}
+	result.Grouped = len(grouped)
 	positions := make(map[string]*pageMapNode)
 	neighbours := builder.mapNeighbours(*index)
 	steps := builder.flowStepsByGroup(section, *index)

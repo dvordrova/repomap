@@ -12,5 +12,5 @@
 <title>{{.FullTitle}} — {{.Summary}}</title>
 </a>{{end}}</g>
 </svg>
-<figcaption class="map-note">Groups of this target, left to right: what reaches in, what it is, what it reaches out to. The bar is how many symbols a group holds, and a step number marks a group the main flow passes through. Click one to open it below.{{if ge .LargestPct 25}} The largest holds {{.LargestPct}}% of the target on its own.{{end}}</figcaption>
+<figcaption class="map-note">Groups of this target, left to right: what reaches in, what it is, what it reaches out to. The bar is how many symbols a group holds, and a step number marks a group the main flow passes through. Click one to open it below.{{if ge .LargestPct 25}} The largest holds {{.LargestPct}}% of the target on its own.{{end}}{{if .Subjects}} These groups name {{.Grouped}} of this target's {{.Subjects}} symbols and connections; the rest belong to no group and are not on this map.{{end}}</figcaption>
 </figure>{{end}}
