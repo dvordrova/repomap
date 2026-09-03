@@ -297,6 +297,38 @@ func mapTitle(title string) []string {
 	return lines
 }
 
+// splitForWrap breaks text where a line may end. Spaces are break points and
+// are dropped; a path separator is a break point and stays, so a target named
+// github.com/dvordrova/repomap/cmd/repomap wraps after a slash instead of
+// being cut mid-word at the first line.
+func splitForWrap(text string) []string {
+	// A name with no spaces in it has nowhere else to break, so a hyphen
+	// counts too: repomap-cumulative-jsts-fixture wraps rather than being cut
+	// halfway. In a sentence a hyphen is part of a word — content-type is one
+	// word — so there it does not.
+	hyphenBreaks := !strings.ContainsAny(text, " \t\n")
+	var chunks []string
+	current := strings.Builder{}
+	for _, symbol := range text {
+		if symbol == ' ' || symbol == '\t' || symbol == '\n' {
+			if current.Len() > 0 {
+				chunks = append(chunks, current.String())
+				current.Reset()
+			}
+			continue
+		}
+		current.WriteRune(symbol)
+		if symbol == '/' || (hyphenBreaks && symbol == '-') {
+			chunks = append(chunks, current.String())
+			current.Reset()
+		}
+	}
+	if current.Len() > 0 {
+		chunks = append(chunks, current.String())
+	}
+	return chunks
+}
+
 // wrapToLines fills at most lines lines of at most budget characters each,
 // breaking on words where it can. Text that does not fit ends in an ellipsis
 // rather than being dropped silently.
@@ -304,14 +336,11 @@ func wrapToLines(text string, budget, lines int) []string {
 	if budget < mapEdgeLabelMinBudget || lines < 1 {
 		return nil
 	}
-	words := strings.Fields(text)
+	words := splitForWrap(text)
 	result := make([]string, 0, lines)
 	current := ""
 	for position, word := range words {
-		candidate := word
-		if current != "" {
-			candidate = current + " " + word
-		}
+		candidate := joinWrapped(current, word)
 		if len([]rune(candidate)) <= budget {
 			current = candidate
 			continue
@@ -344,6 +373,19 @@ func wrapToLines(text string, budget, lines int) []string {
 		return nil
 	}
 	return result
+}
+
+// joinWrapped puts two chunks on one line: a chunk that ends in a separator
+// already carries its own join, so no space is added after it.
+func joinWrapped(left, right string) string {
+	switch {
+	case left == "":
+		return right
+	case strings.HasSuffix(left, "/"), strings.HasSuffix(left, "-"):
+		return left + right
+	default:
+		return left + " " + right
+	}
 }
 
 func withEllipsis(lines []string, budget int) []string {
