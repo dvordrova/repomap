@@ -115,8 +115,7 @@ kinds such as `registers`, `invokes`, `dispatches_to`, `reads_from`,
 
 A `consolidate` request is a graph one level up from the subjects. Its nodes
 are `candidates` — each one's title, summary, lane, how many members it holds,
-and a few member names — and its edges are `connections` between them. It
-carries no member refs, and your answer selects none.
+and a few member names — and its edges are `connections` between them.
 
 Read it as a graph and not as a list of names. Candidates that constantly
 reach each other are usually one thing however differently they are named;
@@ -125,34 +124,24 @@ of one target each saw a different part of it, so several of them describe the
 same thing under different words — "Middleware", "Middleware common" and
 "Middleware heartbeat" are one group.
 
-The same request shape describes every level. Whatever you return becomes the
-nodes of the next one, so a group's title has to read as the name of a part of
-this repository, not as a bag: "Request logging" and not "Group 3".
-
-Return strict JSON with exactly this shape:
+Answer with one line per candidate and nothing else:
 
 ```json
 {
-  "groups": [
-    {
-      "title": "Middleware",
-      "summary": "Request-scoped wrappers the router composes around handlers",
-      "lane": "core",
-      "candidate_refs": ["c3", "c7", "c12"]
-    }
+  "assign": [
+    {"ref": "c1", "cluster": "middleware"},
+    {"ref": "c2", "cluster": "middleware"},
+    {"ref": "c3", "cluster": "router"}
   ]
 }
 ```
 
-A `split` request carries the members of one group that grew large enough to
-hide what is inside it. Unlike `grouping`, it is not sparse: every ref in
-`group_refs` must appear in exactly one returned group, none may appear twice,
-and none may be left out. Return at least two groups; one is the group again
-under its own name. Keep the parts recognisable — "Response compression" and
-"Panic recovery", not "Part 1" and "Part 2" — because the group's own name
-becomes the part above them and theirs are what a reader sees inside it. If
-these members genuinely have no parts, return them as one group and the split
-will be left alone.
+`cluster` is a short lowercase label you choose. Candidates carrying the same
+label are the same thing; a candidate that belongs with nothing else gets a
+label of its own. Every `ref` in `candidates` appears exactly once, none is
+left out and none is repeated. Do not return titles, summaries, lanes,
+members, connections or prose — they are decided elsewhere from what you
+assign here.
 
 A `containers` request has the same shape and asks a different question. Do
 not ask again which candidates are the same thing — that was already settled

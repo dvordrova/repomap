@@ -2,6 +2,7 @@ package programgrouping
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -30,23 +31,22 @@ func TestConsolidationNeverLosesAMember(t *testing.T) {
 
 	candidates := consolidationCandidates()
 	for name, response := range map[string]consolidateResponse{
-		"joins two": {Groups: []consolidateGroup{
-			{Title: "Middleware", Lane: groupindex.LaneCore, CandidateRefs: []string{"c1", "c2"}},
-			{Title: "Router core", Lane: groupindex.LaneCore, CandidateRefs: []string{"c3"}},
-			{Title: "HTTP entry", Lane: groupindex.LaneTriggers, CandidateRefs: []string{"c4"}},
+		"joins two": {Assign: []consolidateAssign{
+			{Ref: "c1", Cluster: "mw"}, {Ref: "c2", Cluster: "mw"},
+			{Ref: "c3", Cluster: "router"}, {Ref: "c4", Cluster: "entry"},
 		}},
-		"forgets one": {Groups: []consolidateGroup{
-			{Title: "Middleware", Lane: groupindex.LaneCore, CandidateRefs: []string{"c1", "c2"}},
+		"forgets one": {Assign: []consolidateAssign{
+			{Ref: "c1", Cluster: "mw"}, {Ref: "c2", Cluster: "mw"},
 		}},
-		"names one twice": {Groups: []consolidateGroup{
-			{Title: "Middleware", Lane: groupindex.LaneCore, CandidateRefs: []string{"c1", "c2"}},
-			{Title: "Middleware again", Lane: groupindex.LaneCore, CandidateRefs: []string{"c2", "c3"}},
+		"names one twice": {Assign: []consolidateAssign{
+			{Ref: "c1", Cluster: "mw"}, {Ref: "c2", Cluster: "mw"},
+			{Ref: "c2", Cluster: "other"}, {Ref: "c3", Cluster: "other"},
 		}},
-		"moves a lane": {Groups: []consolidateGroup{
-			{Title: "Everything", Lane: groupindex.LaneCore, CandidateRefs: []string{"c1", "c4"}},
+		"puts two lanes under one label": {Assign: []consolidateAssign{
+			{Ref: "c1", Cluster: "all"}, {Ref: "c4", Cluster: "all"},
 		}},
-		"invents a candidate": {Groups: []consolidateGroup{
-			{Title: "Middleware", Lane: groupindex.LaneCore, CandidateRefs: []string{"c1", "c99"}},
+		"invents a candidate": {Assign: []consolidateAssign{
+			{Ref: "c1", Cluster: "mw"}, {Ref: "c99", Cluster: "mw"},
 		}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -74,23 +74,31 @@ func TestConsolidationSplitsACrossLaneGroupByLane(t *testing.T) {
 	t.Parallel()
 
 	merged, _ := applyConsolidation(consolidationCandidates(), consolidateResponse{
-		Groups: []consolidateGroup{
-			{Title: "Everything", Lane: groupindex.LaneCore, CandidateRefs: []string{"c1", "c4"}},
+		Assign: []consolidateAssign{
+			{Ref: "c1", Cluster: "all"}, {Ref: "c4", Cluster: "all"},
 		},
 	})
-	named := make(map[groupindex.Lane][]string)
-	for _, group := range merged.groups {
-		if group.Title != "Everything" {
+	// c1 (core) and c4 (triggers) shared one label, so they are two clusters,
+	// one per lane, and no member crossed.
+	var core, triggers *groupProposal
+	for position := range merged.groups {
+		group := &merged.groups[position]
+		if !strings.HasPrefix(group.Key, "k") {
 			continue
 		}
-		named[group.Lane] = group.MemberSubjectIDs
+		switch group.Lane {
+		case groupindex.LaneCore:
+			core = group
+		case groupindex.LaneTriggers:
+			triggers = group
+		}
 	}
-	if len(named) != 2 {
-		t.Fatalf("a cross-lane part did not become one group per lane: %#v", merged.groups)
+	if core == nil || triggers == nil {
+		t.Fatalf("one label over two lanes did not stay two clusters: %#v", merged.groups)
 	}
-	if !reflect.DeepEqual(named[groupindex.LaneCore], []string{"s1", "s2"}) ||
-		!reflect.DeepEqual(named[groupindex.LaneTriggers], []string{"s5"}) {
-		t.Fatalf("members moved lane: %#v", named)
+	if !reflect.DeepEqual(core.MemberSubjectIDs, []string{"s1", "s2"}) ||
+		!reflect.DeepEqual(triggers.MemberSubjectIDs, []string{"s5"}) {
+		t.Fatalf("members moved lane: core=%#v triggers=%#v", core, triggers)
 	}
 }
 
@@ -100,10 +108,9 @@ func TestConsolidationMovesConnectionsAndDropsSelfLoops(t *testing.T) {
 	t.Parallel()
 
 	merged, _ := applyConsolidation(consolidationCandidates(), consolidateResponse{
-		Groups: []consolidateGroup{
-			{Title: "Middleware", Lane: groupindex.LaneCore, CandidateRefs: []string{"c1", "c2"}},
-			{Title: "Router core", Lane: groupindex.LaneCore, CandidateRefs: []string{"c3"}},
-			{Title: "HTTP entry", Lane: groupindex.LaneTriggers, CandidateRefs: []string{"c4"}},
+		Assign: []consolidateAssign{
+			{Ref: "c1", Cluster: "mw"}, {Ref: "c2", Cluster: "mw"},
+			{Ref: "c3", Cluster: "router"}, {Ref: "c4", Cluster: "entry"},
 		},
 	})
 	keyOf := make(map[string]string, len(merged.groups))
@@ -134,8 +141,8 @@ func TestConsolidationKeepsWhatTheResponseIgnored(t *testing.T) {
 	t.Parallel()
 
 	merged, diagnostics := applyConsolidation(consolidationCandidates(), consolidateResponse{
-		Groups: []consolidateGroup{
-			{Title: "Middleware", Lane: groupindex.LaneCore, CandidateRefs: []string{"c1", "c2"}},
+		Assign: []consolidateAssign{
+			{Ref: "c1", Cluster: "mw"}, {Ref: "c2", Cluster: "mw"},
 		},
 	})
 	var kept *groupProposal

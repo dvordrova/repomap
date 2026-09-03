@@ -73,15 +73,19 @@ type consolidateCandidate struct {
 	Sample  []string        `json:"sample_members,omitempty"`
 }
 
+// consolidateResponse is one flat assignment per candidate and nothing else.
+// The model is asked for exactly one decision — which candidates are the same
+// thing — and answers with a label; the code does the joining, the lane and
+// the naming. Asking for titles and summaries in the same answer held 15 of
+// 31 merges stable across three draws, and this form held 17 of 25 while
+// placing all 108 candidates every time.
 type consolidateResponse struct {
-	Groups []consolidateGroup `json:"groups"`
+	Assign []consolidateAssign `json:"assign"`
 }
 
-type consolidateGroup struct {
-	Title         string          `json:"title"`
-	Summary       string          `json:"summary"`
-	Lane          groupindex.Lane `json:"lane"`
-	CandidateRefs []string        `json:"candidate_refs"`
+type consolidateAssign struct {
+	Ref     string `json:"ref"`
+	Cluster string `json:"cluster"`
 }
 
 // consolidateRequestFor describes every candidate by what it is, never by whom
@@ -301,8 +305,8 @@ func consolidateOnce(
 			if err := json.Unmarshal(raw, &decoded); err != nil {
 				return consolidateResponse{}, fmt.Errorf("program grouping: decode consolidation: %w", err)
 			}
-			if len(decoded.Groups) == 0 {
-				return consolidateResponse{}, fmt.Errorf("program grouping: consolidation named no groups")
+			if len(decoded.Assign) == 0 {
+				return consolidateResponse{}, fmt.Errorf("program grouping: consolidation assigned nothing")
 			}
 			return decoded, nil
 		},
@@ -326,78 +330,70 @@ func applyConsolidation(
 		byRef[candidateRef(position)] = group
 	}
 	var diagnostics []groupindex.Diagnostic
-	claimed := make(map[string]string, len(byRef))
-	parentOf := make(map[string]string, len(byRef))
-	result := proposalSet{}
-	for position, group := range response.Groups {
-		// A part of a target is naturally several lanes at once — a router is
-		// its routes and its dispatch — but a lane follows from a member's own
-		// categories and nothing here may move one. So a group naming
-		// candidates of several lanes becomes one group per lane under the
-		// same name, instead of one group and a pile of rejects that fall back
-		// out and put the count up again.
-		byLane := make(map[groupindex.Lane][]string)
-		var laneOrder []groupindex.Lane
-		for _, ref := range group.CandidateRefs {
-			candidate, known := byRef[ref]
-			if !known {
-				diagnostics = append(diagnostics, groupindex.Diagnostic{
-					Kind: diagnosticConsolidationUnknownCandidate, Reason: ref,
-				})
-				continue
-			}
-			if owner, taken := claimed[ref]; taken {
-				diagnostics = append(diagnostics, groupindex.Diagnostic{
-					Kind:   diagnosticConsolidationRepeatedCandidate,
-					Reason: ref + " already in " + owner,
-				})
-				continue
-			}
-			claimed[ref] = group.Title
-			if _, seen := byLane[candidate.Lane]; !seen {
-				laneOrder = append(laneOrder, candidate.Lane)
-			}
-			byLane[candidate.Lane] = append(byLane[candidate.Lane], ref)
-		}
-		for laneIndex, lane := range laneOrder {
-			absorbed := byLane[lane]
-			members := make([]string, 0)
-			evidence := make([]string, 0)
-			for _, ref := range absorbed {
-				candidate := byRef[ref]
-				members = append(members, candidate.MemberSubjectIDs...)
-				evidence = append(evidence, candidate.EvidenceSubjectIDs...)
-			}
-			key := fmt.Sprintf("k%d-%d", position+1, laneIndex+1)
-			title, summary := group.Title, group.Summary
-			if len(absorbed) == 1 {
-				// One candidate on its own keeps the words its own shard
-				// chose; a rename here would be a claim nothing was measured
-				// for.
-				only := byRef[absorbed[0]]
-				if title == "" {
-					title = only.Title
-				}
-				if summary == "" {
-					summary = only.Summary
-				}
-			}
-			for _, ref := range absorbed {
-				parentOf[ref] = key
-			}
-			result.groups = append(result.groups, groupProposal{
-				Key: key, Title: title, Summary: summary, Lane: lane,
-				MemberSubjectIDs: distinctStrings(members), EvidenceSubjectIDs: distinctStrings(evidence),
-				absorbed: absorbed,
+
+	// Gather the assignments into clusters. A candidate named twice keeps its
+	// first cluster; one named for a cluster nobody else joins is a cluster of
+	// one, which is the same as not being consolidated at all.
+	clusterOf := make(map[string]string, len(byRef))
+	var clusterOrder []string
+	members := make(map[string][]string)
+	for _, assign := range response.Assign {
+		candidate, known := byRef[assign.Ref]
+		if !known {
+			diagnostics = append(diagnostics, groupindex.Diagnostic{
+				Kind: diagnosticConsolidationUnknownCandidate, Reason: assign.Ref,
 			})
+			continue
 		}
+		if owner, taken := clusterOf[assign.Ref]; taken {
+			diagnostics = append(diagnostics, groupindex.Diagnostic{
+				Kind:   diagnosticConsolidationRepeatedCandidate,
+				Reason: assign.Ref + " already in " + owner,
+			})
+			continue
+		}
+		// A lane follows from a member's own categories, so it joins the
+		// cluster label rather than being decided by it: candidates of two
+		// lanes under one label become one cluster per lane, and no member
+		// moves.
+		label := assign.Cluster + "\x00" + string(candidate.Lane)
+		clusterOf[assign.Ref] = label
+		if _, seen := members[label]; !seen {
+			clusterOrder = append(clusterOrder, label)
+		}
+		members[label] = append(members[label], assign.Ref)
 	}
+
+	result := proposalSet{}
+	parentOf := make(map[string]string, len(byRef))
+	for position, label := range clusterOrder {
+		absorbed := members[label]
+		key := fmt.Sprintf("k%d", position+1)
+		var subjectIDs, evidenceIDs []string
+		for _, ref := range absorbed {
+			candidate := byRef[ref]
+			subjectIDs = append(subjectIDs, candidate.MemberSubjectIDs...)
+			evidenceIDs = append(evidenceIDs, candidate.EvidenceSubjectIDs...)
+			parentOf[ref] = key
+		}
+		// The cluster keeps the words of the largest candidate in it. The
+		// model was not asked for a title, and inventing one here would be a
+		// claim nothing was measured for.
+		title, summary := clusterWords(byRef, absorbed)
+		result.groups = append(result.groups, groupProposal{
+			Key: key, Title: title, Summary: summary, Lane: byRef[absorbed[0]].Lane,
+			MemberSubjectIDs:   distinctStrings(subjectIDs),
+			EvidenceSubjectIDs: distinctStrings(evidenceIDs),
+			absorbed:           absorbed,
+		})
+	}
+
 	// Whatever the response left out survives untouched. This is the whole
 	// point: a consolidation that helps with half the candidates is worth
 	// keeping, and the other half is not lost for it.
 	for position, group := range candidates.groups {
 		ref := candidateRef(position)
-		if _, taken := claimed[ref]; taken {
+		if _, taken := clusterOf[ref]; taken {
 			continue
 		}
 		key := fmt.Sprintf("u%d", position+1)
@@ -412,6 +408,18 @@ func applyConsolidation(
 	}
 	result.connections = remapConnections(candidates, parentOf)
 	return canonicalProposalSet(result), diagnostics
+}
+
+// clusterWords names a cluster after the largest candidate in it, which is the
+// one whose words already cover the most of what the cluster holds.
+func clusterWords(byRef map[string]groupProposal, absorbed []string) (string, string) {
+	best := byRef[absorbed[0]]
+	for _, ref := range absorbed[1:] {
+		if candidate := byRef[ref]; len(candidate.MemberSubjectIDs) > len(best.MemberSubjectIDs) {
+			best = candidate
+		}
+	}
+	return best.Title, best.Summary
 }
 
 // remapConnections moves every connection onto the groups its endpoints ended

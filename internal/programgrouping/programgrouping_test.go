@@ -528,9 +528,10 @@ func TestPromptMakesEveryMembershipLaneCompatibleAndConsolidationLossless(t *tes
 		"`inbound` or `background_activity` for `triggers`",
 		"`dependency` for `dependencies`",
 		"not become membership",
-		"It\ncarries no member refs, and your answer selects none",
 		"Read it as a graph and not as a list of names",
-		"Name every candidate exactly once",
+		"Answer with one line per candidate and nothing else",
+		"appears exactly once, none is\nleft out and none is repeated",
+		"Do not return titles, summaries, lanes,\nmembers, connections or prose",
 		"Candidates in one group must share a `lane`",
 	} {
 		if !strings.Contains(promptText, required) {
@@ -637,24 +638,15 @@ func TestRunExhaustivelyBatchesAndConvergentlyConsolidates(t *testing.T) {
 			return []byte(fmt.Sprintf(`{"groups":[{"key":"g1","title":%q,"summary":"Shard group","lane":%q,"member_refs":[%q],"evidence_refs":[]}],"connections":[]}`,
 				"Group "+ref, lane, ref))
 		}
-		// Consolidation gathers every candidate of one lane into that lane.
-		byLane := map[groupindex.Lane][]string{}
+		// Consolidation answers one label per candidate; here every candidate
+		// of one lane gets that lane as its label.
+		assign := make([]consolidateAssign, 0, len(request.Candidates))
 		for _, candidate := range request.Candidates {
-			byLane[candidate.Lane] = append(byLane[candidate.Lane], candidate.Ref)
-		}
-		groups := make([]consolidateGroup, 0)
-		for _, lane := range []groupindex.Lane{
-			groupindex.LaneTriggers, groupindex.LaneCore, groupindex.LaneDependencies,
-		} {
-			if len(byLane[lane]) == 0 {
-				continue
-			}
-			groups = append(groups, consolidateGroup{
-				Title: strings.ToUpper(string(lane)), Summary: "Merged target lane",
-				Lane: lane, CandidateRefs: byLane[lane],
+			assign = append(assign, consolidateAssign{
+				Ref: candidate.Ref, Cluster: strings.ToUpper(string(candidate.Lane)),
 			})
 		}
-		wire, err := json.Marshal(consolidateResponse{Groups: groups})
+		wire, err := json.Marshal(consolidateResponse{Assign: assign})
 		if err != nil {
 			t.Fatalf("marshal consolidation response: %v", err)
 		}
@@ -676,9 +668,17 @@ func TestRunExhaustivelyBatchesAndConvergentlyConsolidates(t *testing.T) {
 	if len(grouped.Groups) != 3 || len(grouped.Connections) != 0 {
 		t.Fatalf("consolidated GroupsIndex = groups %#v connections %#v", grouped.Groups, grouped.Connections)
 	}
-	trigger := groupByTitle(t, grouped, strings.ToUpper(string(groupindex.LaneTriggers)))
-	if len(trigger.MemberSubjectIDs) != 3 {
-		t.Fatalf("inbound + background activity were not merged into triggers: %#v", trigger)
+	// The model assigns labels, not names: a consolidated group carries the
+	// words of the largest candidate it absorbed, so this asserts the join by
+	// lane and membership rather than by a title the model never wrote.
+	var trigger *groupindex.Group
+	for position := range grouped.Groups {
+		if grouped.Groups[position].Lane == groupindex.LaneTriggers {
+			trigger = &grouped.Groups[position]
+		}
+	}
+	if trigger == nil || len(trigger.MemberSubjectIDs) != 3 {
+		t.Fatalf("inbound + background activity were not merged into triggers: %#v", grouped.Groups)
 	}
 
 	provider.mu.Lock()
