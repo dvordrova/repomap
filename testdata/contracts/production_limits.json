@@ -492,6 +492,14 @@
       "note": "Request-planning granularity, measured against what the provider refuses: a 15.4 MB grouping request was rejected for exceeding the model's context window while 2.4 MB and 1.6 MB requests answered. The subject cover is unchanged and exhaustive; it is spread over more requests."
     },
     {
+      "file": "internal/programgrouping/consolidate.go",
+      "category": "excluded-not-a-limit",
+      "symbols": [
+        "consolidateMaxPasses"
+      ],
+      "note": "How many times consolidation may ask again. Each pass only joins candidates that are the same thing; stopping early leaves a target with more groups than it deserves and never with fewer members. Nothing is dropped at any pass."
+    },
+    {
       "file": "internal/programgrouping/merge.go",
       "category": "excluded-not-a-limit",
       "symbols": [

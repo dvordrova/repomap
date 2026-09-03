@@ -7,8 +7,8 @@ language and framework.
 The request has one of two phases:
 
 - `grouping`: form useful groups directly from categorized program subjects;
-- `merge`: consolidate immutable restored group memberships proposed by
-  earlier bounded shards and connect them across shard boundaries.
+- `consolidate`: say which of the group candidates proposed by earlier shards
+  are the same thing.
 
 In both phases, `group_refs` is the only closed set from which `member_refs`
 may be selected. Every ref in `group_refs` has at least one positive category.
@@ -80,9 +80,8 @@ group's lane: `inbound` or `background_activity` for `triggers`, `core` for
 may therefore belong to groups in several compatible lanes. `evidence_refs`
 may cite advertised subjects, including unclassified context, subject to the
 platform/dependencies exception below. Evidence does not become membership and
-does not make an incompatible member valid. This
-sparse initial-selection rule does not authorize a `merge` response to retract
-an already validated candidate membership.
+does not make an incompatible member valid. The `grouping` phase is sparse:
+a subject with no group is a subject this shard had nothing to say about.
 
 For a `dependencies` group, do not cite an explicit `authority_kind:
 platform` object or an exact invocation pattern whose complete targets are
@@ -109,34 +108,35 @@ kinds such as `registers`, `invokes`, `dispatches_to`, `reads_from`,
 `writes_to`, `publishes_to`, `consumes_from`, `schedules`, `configures`, or
 `transforms_into`, but introduce a new precise snake_case kind when none fits.
 
-During `merge`, `candidate_groups` and `candidate_connections` are validated
-semantic proposals from earlier shards. This phase may consolidate groups; it
-must not retract membership already selected by those shards. For every row in
-`candidate_groups`, one returned group with the same `lane` must contain all of
-that candidate's `member_refs`. One returned group may cover any number of
-candidate rows, so do not emit an acknowledgement row for every candidate and
-do not echo candidate `g*` refs. Preserve overlapping membership when the same
-subject belongs to distinct useful candidates. A merge response that omits,
-splits, or moves an accepted candidate membership to another lane is
-incomplete and will be rejected as a whole.
+A `consolidate` request carries only `candidates`: each one's title, summary,
+lane, how many members it holds, and a few member names. It carries no member
+refs, and your answer selects none. Separate shards of one target saw
+different parts of it, so several of them describe the same thing under
+different words — "Middleware", "Middleware common" and "Middleware heartbeat"
+are one group.
 
-Every candidate member is already individually compatible with its candidate
-lane. Preserve that exact membership during `merge`, and require the same
-per-member lane compatibility for every newly proposed membership. Never use
-one compatible member to promote an incompatible member into the same lane.
-A member may additionally appear in another group only when its own categories
-also support that other lane; such duplication does not replace its required
-membership in the original candidate's same-lane container.
+Return strict JSON with exactly this shape:
 
-Return the consolidated members and evidence using subject refs from
-`group_refs`/`subjects`; candidate `g*` refs are context and must not appear in
-`member_refs` or `evidence_refs`. Titles, summaries, evidence, connections, and
-the number of groups may be reconsidered, but candidate lane/member sets are
-immutable lower bounds. Before returning a `merge` response, check every
-candidate row against the complete output: one same-lane output group must
-contain its full member set. The initial `grouping` phase remains sparse; this
-merge-only preservation rule does not require an initial group for every
-categorized subject.
+```json
+{
+  "groups": [
+    {
+      "title": "Middleware",
+      "summary": "Request-scoped wrappers the router composes around handlers",
+      "lane": "core",
+      "candidate_refs": ["c3", "c7", "c12"]
+    }
+  ]
+}
+```
+
+Name every candidate exactly once, across all groups. A candidate that belongs
+with nothing else is a group of one, and keeps its own title unless a better
+one covers it. Candidates in one group must share a `lane`: a lane follows
+from a member's own categories and this phase may not move one. Aim for the
+fewest groups a reader can still tell apart — a target reads well at four to
+fourteen — but never gather things that are not the same thing merely to
+reach a number.
 
 Return no confidence, scores, negative classifications, exhaustive coverage,
 frontiers, paths, Markdown, extra fields, or prose outside the JSON object.

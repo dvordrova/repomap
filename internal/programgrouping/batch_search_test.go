@@ -67,10 +67,10 @@ func TestBatchPlanCoversEverySubjectInContiguousPrefixes(t *testing.T) {
 func TestMergeFailureKeepsTheShardGroups(t *testing.T) {
 	index := groupingTestIndex(t, "python")
 	provider := &presetProvider{maxInitialGroupRefs: 1}
-	provider.respond = func(request Request) []byte {
+	provider.respond = func(request groupingRequest) []byte {
 		if request.Phase == phaseGrouping {
 			ref := request.GroupRefs[0]
-			subject := subjectByRef(t, request, ref)
+			subject := subjectByRef(t, request.Request, ref)
 			lane := laneForCategories(subject.Categories)
 			return []byte(fmt.Sprintf(
 				`{"groups":[{"key":"g1","title":%q,"summary":"Shard group","lane":%q,"member_refs":[%q],"evidence_refs":[]}],"connections":[]}`,

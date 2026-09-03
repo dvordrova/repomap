@@ -243,6 +243,7 @@
       "package": "programgrouping",
       "files": [
         "batch_search_test.go",
+        "consolidate_test.go",
         "programgrouping_test.go"
       ]
     },

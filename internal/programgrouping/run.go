@@ -91,12 +91,11 @@ func Run(
 	}
 	combined = canonicalProposalSet(combined)
 	if len(finalPlan) > 1 && len(combined.groups) > 1 {
-		// Merging consolidates what separate request shards proposed. Those
-		// proposals are already validated on their own, so a merge that does
-		// not work is a consolidation this target did without, not a reason to
-		// lose the target: chi's router package was recorded as not analyzed
-		// because one merge response dropped a membership it had to keep.
-		merged, mergeErr := runMergeTournament(ctx, executor, provider, compilation, combined)
+		// Consolidation asks which of the shards' proposals are the same
+		// thing and unions their members here. It cannot lose a member, so a
+		// consolidation that does not work is a target with more groups than
+		// it deserves, never a target that was lost.
+		merged, mergeErr := runConsolidation(ctx, executor, provider, compilation, combined)
 		switch {
 		case mergeErr == nil:
 			combined = merged

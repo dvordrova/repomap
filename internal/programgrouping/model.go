@@ -42,6 +42,13 @@ const (
 	// separate request shards did not happen. The shards' own groups are
 	// already validated, so the target keeps them.
 	diagnosticMergeSkipped = "merge_skipped"
+	// The consolidation diagnostics all describe a candidate that came
+	// through unchanged. None of them loses anything: a candidate the
+	// response could not place stays exactly as its shard proposed it.
+	diagnosticConsolidationUnknownCandidate  = "consolidation_unknown_candidate"
+	diagnosticConsolidationRepeatedCandidate = "consolidation_repeated_candidate"
+	diagnosticConsolidationLaneMismatch      = "consolidation_lane_mismatch"
+	diagnosticConsolidationUnclaimed         = "consolidation_unclaimed"
 )
 
 type groupProposal struct {

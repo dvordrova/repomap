@@ -18,10 +18,19 @@ import (
 
 type presetProvider struct {
 	mu                  sync.Mutex
-	requests            []Request
+	requests            []groupingRequest
 	prompts             []llm.Prompt
 	maxInitialGroupRefs int
-	respond             func(Request) []byte
+	respond             func(groupingRequest) []byte
+}
+
+// groupingRequest is whichever phase the fake provider was handed. The two
+// phases share a wire envelope and differ in what they carry: a grouping
+// request carries subjects to select from, a consolidation request carries
+// only candidate descriptions.
+type groupingRequest struct {
+	Request
+	Candidates []consolidateCandidate `json:"candidates"`
 }
 
 func (provider *presetProvider) State() []byte {
@@ -29,7 +38,7 @@ func (provider *presetProvider) State() []byte {
 }
 
 func (provider *presetProvider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
-	var request Request
+	var request groupingRequest
 	if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
 		return llm.Prepared{}, err
 	}
@@ -66,11 +75,15 @@ func (provider *presetProvider) Complete(_ context.Context, prepared llm.Prepare
 	if err := json.Unmarshal(prepared.Bytes(), &envelope); err != nil {
 		return llm.Completion{}, err
 	}
-	var request Request
+	var request groupingRequest
 	if err := json.Unmarshal([]byte(envelope.User), &request); err != nil {
 		return llm.Completion{}, err
 	}
-	if err := validatePresetRequest(request); err != nil {
+	if request.Phase != phaseConsolidate {
+		if err := validatePresetRequest(request.Request); err != nil {
+			return llm.Completion{}, err
+		}
+	} else if err := validatePresetConsolidation(request); err != nil {
 		return llm.Completion{}, err
 	}
 	provider.mu.Lock()
@@ -87,6 +100,30 @@ func (provider *presetProvider) Complete(_ context.Context, prepared llm.Prepare
 		Response: response, FinishReason: llm.FinishStop, ChoiceCount: 1,
 		Metrics: llm.Metrics{Attempts: 1, Latency: time.Millisecond},
 	}, nil
+}
+
+// validatePresetConsolidation pins the one property that makes consolidation
+// safe: the request describes candidates and never carries a member ref, so
+// no answer to it can select or drop a member.
+func validatePresetConsolidation(request groupingRequest) error {
+	if request.Version != requestVersion || len(request.Candidates) == 0 {
+		return fmt.Errorf("preset: incomplete consolidation request")
+	}
+	if len(request.GroupRefs) != 0 || len(request.Subjects) != 0 ||
+		len(request.CandidateGroups) != 0 {
+		return fmt.Errorf("preset: consolidation request carries member selection")
+	}
+	seen := make(map[string]struct{}, len(request.Candidates))
+	for _, candidate := range request.Candidates {
+		if candidate.Ref == "" || candidate.Title == "" || !candidate.Lane.Valid() {
+			return fmt.Errorf("preset: incomplete consolidation candidate %#v", candidate)
+		}
+		if _, duplicate := seen[candidate.Ref]; duplicate {
+			return fmt.Errorf("preset: duplicate consolidation candidate %s", candidate.Ref)
+		}
+		seen[candidate.Ref] = struct{}{}
+	}
+	return nil
 }
 
 func validatePresetRequest(request Request) error {
@@ -159,8 +196,8 @@ func validatePresetRequest(request Request) error {
 func TestRunBuildsSparseOverlappingGroupsAndOpenSemanticConnections(t *testing.T) {
 	index := groupingTestIndex(t, "go")
 	provider := &presetProvider{}
-	provider.respond = func(request Request) []byte {
-		refs := requestRefs(request)
+	provider.respond = func(request groupingRequest) []byte {
+		refs := requestRefs(request.Request)
 		return []byte(fmt.Sprintf(`{
   "groups": [
     {"key":"triggers","title":"Order triggers","summary":"Starts order work","lane":"triggers","member_refs":[%q,%q],"evidence_refs":[%q]},
@@ -235,21 +272,21 @@ func TestRunBuildsSparseOverlappingGroupsAndOpenSemanticConnections(t *testing.T
 	assertDiagnosticKind(t, diagnostics, diagnosticInvalidConnection)
 
 	provider.mu.Lock()
-	requests := append([]Request(nil), provider.requests...)
+	requests := append([]groupingRequest(nil), provider.requests...)
 	prompts := append([]llm.Prompt(nil), provider.prompts...)
 	provider.mu.Unlock()
 	if len(requests) != 1 || requests[0].Phase != phaseGrouping {
 		t.Fatalf("provider requests = %#v", requests)
 	}
-	refs := requestRefs(requests[0])
-	helper := subjectByRef(t, requests[0], refs["object:normalize"])
+	refs := requestRefs(requests[0].Request)
+	helper := subjectByRef(t, requests[0].Request, refs["object:normalize"])
 	if len(helper.Categories) != 0 {
 		t.Fatalf("unclassified context categories = %#v", helper.Categories)
 	}
-	if !requestHasGlobalSourceArgument(requests[0], refs["pattern:HandleFunc"]) {
+	if !requestHasGlobalSourceArgument(requests[0].Request, refs["pattern:HandleFunc"]) {
 		t.Fatalf("cross-relation source argument was not restored through its owning pattern: %#v", requests[0].Edges)
 	}
-	registration := subjectByRef(t, requests[0], refs["pattern:HandleFunc"])
+	registration := subjectByRef(t, requests[0].Request, refs["pattern:HandleFunc"])
 	if len(registration.Arguments) == 0 || registration.Arguments[0].Ref == "" ||
 		len(registration.Arguments[0].ValueCandidates) != 2 ||
 		registration.Arguments[0].ValueCandidatesObserved != 2 || registration.Arguments[0].ValueCandidatesOmitted != 0 {
@@ -481,21 +518,18 @@ func TestNormalizeMergeResponseRejectsCandidateMemberLoss(t *testing.T) {
 	}
 }
 
-func TestPromptMakesEveryMembershipLaneCompatibleAndMergePreserving(t *testing.T) {
+func TestPromptMakesEveryMembershipLaneCompatibleAndConsolidationLossless(t *testing.T) {
 	for _, required := range []string{
-		"immutable restored group memberships",
-		"sparse initial-selection rule does not authorize",
-		"must not retract membership already selected",
 		"Every `member_ref` must itself carry a category compatible",
 		"`inbound` or `background_activity` for `triggers`",
 		"`dependency` for `dependencies`",
 		"not become membership",
-		"Every candidate member is already individually compatible",
-		"candidate lane/member sets are",
-		"immutable lower bounds",
+		"It carries no member\nrefs, and your answer selects none",
+		"Name every candidate exactly once",
+		"Candidates in one group must share a `lane`",
 	} {
 		if !strings.Contains(promptText, required) {
-			t.Fatalf("grouping prompt lost merge preservation rule %q", required)
+			t.Fatalf("grouping prompt lost consolidation rule %q", required)
 		}
 	}
 }
@@ -572,7 +606,7 @@ func TestRunUsesOneLanguageNeutralContractForGoPythonAndJSTS(t *testing.T) {
 				t.Fatalf("sparse empty output = %#v / %#v", grouped, diagnostics)
 			}
 			provider.mu.Lock()
-			requests := append([]Request(nil), provider.requests...)
+			requests := append([]groupingRequest(nil), provider.requests...)
 			prompts := append([]llm.Prompt(nil), provider.prompts...)
 			provider.mu.Unlock()
 			if len(requests) != 1 || requests[0].Target.Language != language || len(requests[0].GroupRefs) == 0 {
@@ -587,48 +621,37 @@ func TestRunUsesOneLanguageNeutralContractForGoPythonAndJSTS(t *testing.T) {
 	}
 }
 
-func TestRunExhaustivelyBatchesAndConvergentlyMerges(t *testing.T) {
+func TestRunExhaustivelyBatchesAndConvergentlyConsolidates(t *testing.T) {
 	index := groupingTestIndex(t, "python")
 	provider := &presetProvider{maxInitialGroupRefs: 1}
-	provider.respond = func(request Request) []byte {
+	provider.respond = func(request groupingRequest) []byte {
 		if request.Phase == phaseGrouping {
 			ref := request.GroupRefs[0]
-			subject := subjectByRef(t, request, ref)
+			subject := subjectByRef(t, request.Request, ref)
 			lane := laneForCategories(subject.Categories)
 			return []byte(fmt.Sprintf(`{"groups":[{"key":"g1","title":%q,"summary":"Shard group","lane":%q,"member_refs":[%q],"evidence_refs":[]}],"connections":[]}`,
 				"Group "+ref, lane, ref))
 		}
-		membersByLane := map[groupindex.Lane][]string{}
-		for _, ref := range request.GroupRefs {
-			subject := subjectByRef(t, request, ref)
-			membersByLane[laneForCategories(subject.Categories)] = append(membersByLane[laneForCategories(subject.Categories)], ref)
+		// Consolidation gathers every candidate of one lane into that lane.
+		byLane := map[groupindex.Lane][]string{}
+		for _, candidate := range request.Candidates {
+			byLane[candidate.Lane] = append(byLane[candidate.Lane], candidate.Ref)
 		}
-		keys := []groupindex.Lane{groupindex.LaneTriggers, groupindex.LaneCore, groupindex.LaneDependencies}
-		groups := make([]responseGroup, 0)
-		for _, lane := range keys {
-			members := membersByLane[lane]
-			if len(members) == 0 {
+		groups := make([]consolidateGroup, 0)
+		for _, lane := range []groupindex.Lane{
+			groupindex.LaneTriggers, groupindex.LaneCore, groupindex.LaneDependencies,
+		} {
+			if len(byLane[lane]) == 0 {
 				continue
 			}
-			groups = append(groups, responseGroup{
-				Key: string(lane), Title: strings.ToUpper(string(lane)), Summary: "Merged target lane",
-				Lane: lane, MemberRefs: members, EvidenceRefs: []string{},
+			groups = append(groups, consolidateGroup{
+				Title: strings.ToUpper(string(lane)), Summary: "Merged target lane",
+				Lane: lane, CandidateRefs: byLane[lane],
 			})
 		}
-		connections := []responseConnection{}
-		if len(membersByLane[groupindex.LaneTriggers]) > 0 && len(membersByLane[groupindex.LaneCore]) > 0 {
-			connections = append(connections, responseConnection{
-				FromGroupKey: string(groupindex.LaneTriggers), ToGroupKey: string(groupindex.LaneCore),
-				SemanticKind: "initiates_domain_work", Label: "starts work",
-				Summary: "Trigger groups initiate core domain behavior", EvidenceRefs: []string{},
-			})
-		}
-		wire, err := json.Marshal(struct {
-			Groups      []responseGroup      `json:"groups"`
-			Connections []responseConnection `json:"connections"`
-		}{groups, connections})
+		wire, err := json.Marshal(consolidateResponse{Groups: groups})
 		if err != nil {
-			t.Fatalf("marshal merge response: %v", err)
+			t.Fatalf("marshal consolidation response: %v", err)
 		}
 		return wire
 	}
@@ -642,9 +665,11 @@ func TestRunExhaustivelyBatchesAndConvergentlyMerges(t *testing.T) {
 	if len(diagnostics) != 0 {
 		t.Fatalf("diagnostics = %#v", diagnostics)
 	}
-	if len(grouped.Groups) != 3 || len(grouped.Connections) != 1 ||
-		grouped.Connections[0].SemanticKind != "initiates_domain_work" {
-		t.Fatalf("merged GroupsIndex = groups %#v connections %#v", grouped.Groups, grouped.Connections)
+	// Consolidation joins what the shards proposed and invents nothing. These
+	// shards owned one subject each and so proposed no connection; a phase
+	// that returned one here would be making it up.
+	if len(grouped.Groups) != 3 || len(grouped.Connections) != 0 {
+		t.Fatalf("consolidated GroupsIndex = groups %#v connections %#v", grouped.Groups, grouped.Connections)
 	}
 	trigger := groupByTitle(t, grouped, strings.ToUpper(string(groupindex.LaneTriggers)))
 	if len(trigger.MemberSubjectIDs) != 3 {
@@ -652,7 +677,7 @@ func TestRunExhaustivelyBatchesAndConvergentlyMerges(t *testing.T) {
 	}
 
 	provider.mu.Lock()
-	requests := append([]Request(nil), provider.requests...)
+	requests := append([]groupingRequest(nil), provider.requests...)
 	provider.mu.Unlock()
 	compilation, err := Compile(index)
 	if err != nil {
@@ -668,12 +693,12 @@ func TestRunExhaustivelyBatchesAndConvergentlyMerges(t *testing.T) {
 			if len(request.GroupRefs) != 1 {
 				t.Fatalf("forced grouping shard = %#v", request.GroupRefs)
 			}
-			assertCompleteIncidentEdges(t, compilation, request)
+			assertCompleteIncidentEdges(t, compilation, request.Request)
 			seen[request.GroupRefs[0]]++
-		case phaseMerge:
+		case phaseConsolidate:
 			mergeCalls++
-			if len(request.CandidateGroups) < 2 {
-				t.Fatalf("merge request did not provide a cross-shard meeting point: %#v", request.CandidateGroups)
+			if len(request.Candidates) < 2 {
+				t.Fatalf("consolidation did not provide a cross-shard meeting point: %#v", request.Candidates)
 			}
 		}
 	}
