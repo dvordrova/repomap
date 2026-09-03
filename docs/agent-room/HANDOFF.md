@@ -281,6 +281,37 @@ inbound, `Lstat` as background activity, `Parent` as a dependency. Yield per
 request collapses as a target grows, and type-fest is the limit case: 5,636
 patterns, 288 requests, zero pattern assignments.
 
+## Grouping variance, measured and narrowed
+
+The grouping stage is a coin flip until cached, and on 2026-09-03 it was
+measured. chi's router package, 892 categorized subjects, eight cold draws of
+one 892-subject request returned 1, 3, 4, 17, 26, 30, 30 and 33 groups, the
+largest holding up to 75% of the target. Four causes, all in what the request
+was, none in the model:
+
+- the request asked about all 892 subjects at once; a grouping shard is now
+  capped at 64 owned refs, applied before the byte search not after;
+- subjects were ordered by id, a content hash, so a shard was 64 unrelated
+  symbols and — because ids are prefixed `program-object-`/`program-pattern-`
+  and `o` sorts before `p` — a function and its call sites could never be
+  selectable together; subjects are ordered by file, line, column now;
+- the size rule was written for "a few hundred subjects" and read by a request
+  carrying 64, so the request now states its own selectable count and the rule
+  is written against it;
+- a group holding a fifth of the target was named into a container before it
+  could be split, so it never was; groups are now settled — joined, then split
+  — before the parts are named.
+
+Three cold draws on the fixed code returned 28, 31 and 29 groups, largest
+holding 7-11%. Spread 1.1x instead of 33x, and the degenerate one-group
+outcome is gone. Take three draws into separate `--debug-dir` caches to
+measure this; one draw proves nothing.
+
+Still open: split's first attempt is not always a partition
+(`split_not_a_partition`), and there is no semantic retry, so that group stays
+whole for the run. A repeat of the partition instruction at the end of the
+request is the cheap thing to try.
+
 ## Known gaps, recorded not fixed
 
 - `os.environ["KEY"]` and `process.env.KEY` subscript reads are not captured.
