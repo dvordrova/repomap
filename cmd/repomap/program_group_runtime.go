@@ -71,7 +71,7 @@ func groupProgramIndexForRun(
 	}
 	observer := debugdump.NewSemanticObserver(writer)
 	executor := debugdump.BindStage(llm.Executor{
-		RootDir: cacheRoot, Enabled: !noCache, Observer: observer,
+		RootDir: cacheRoot, Enabled: !noCache, Observer: timed(output, observer),
 		BatchConcurrency: batchConcurrency, BatchController: batchController,
 	}, debugdump.SemanticStageProgramGrouping)
 
@@ -182,7 +182,7 @@ func matchPublishedRunGroups(
 	}
 	observer := debugdump.NewSemanticObserver(writer)
 	executor := debugdump.BindStage(llm.Executor{
-		RootDir: cacheRoot, Enabled: !noCache, Observer: observer,
+		RootDir: cacheRoot, Enabled: !noCache, Observer: timed(output, observer),
 		BatchConcurrency: batchConcurrency, BatchController: batchController,
 	}, debugdump.SemanticStageGroupMatching)
 	if output != nil {

@@ -452,7 +452,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 		firstLayer := debugdump.NewSemanticObserver(nil)
 		selectionExecutor := llm.Executor{
-			RootDir: dDir, Enabled: !*noCache, Observer: firstLayer,
+			RootDir: dDir, Enabled: !*noCache, Observer: timed(humanOutput, firstLayer),
 			BatchConcurrency: deps.llmBatchConcurrency,
 			BatchController:  deps.llmBatchController,
 		}
@@ -781,6 +781,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			formatRunOutputWallDuration(time.Since(reportStarted)),
 		)
 		humanOutput.Stage("Report", "path: "+reportPath)
+		humanOutput.Timing()
 	}
 	if !deps.siblingTargetRun && staticSourceHost != "" {
 		humanOutput.Stage(

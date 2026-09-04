@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/llm"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,9 +22,14 @@ const runOutputPhaseInterval = 10 * time.Second
 type runOutput struct {
 	mu sync.Mutex
 
-	writer                       io.Writer
-	currentStage                 string
-	now                          func() time.Time
+	writer       io.Writer
+	currentStage string
+	now          func() time.Time
+	// started is when the run began; every stage line says how far in it
+	// is, so a reader can tell a slow stage from a slow provider without a
+	// stopwatch. modelTime is what the provider took, by stage.
+	started                      time.Time
+	modelTime                    map[string]*stageModelTime
 	lastProgress                 map[string]runOutputProgress
 	reportedTargetReportWarnings map[targetReportScaleWarningOutputKey]struct{}
 }
@@ -71,6 +79,8 @@ func newRunOutput(writer io.Writer) *runOutput {
 	return &runOutput{
 		writer:                       writer,
 		now:                          time.Now,
+		started:                      time.Now(),
+		modelTime:                    make(map[string]*stageModelTime),
 		lastProgress:                 make(map[string]runOutputProgress),
 		reportedTargetReportWarnings: make(map[targetReportScaleWarningOutputKey]struct{}),
 	}
@@ -198,7 +208,103 @@ func (output *runOutput) stageLocked(name string) {
 		return
 	}
 	output.currentStage = name
-	fmt.Fprintf(output.writer, "%s:\n", name)
+	fmt.Fprintf(output.writer, "%s: (t+%s)\n", name, sinceStart(output))
+}
+
+func sinceStart(output *runOutput) string {
+	if output.started.IsZero() {
+		return "0s"
+	}
+	return output.now().Sub(output.started).Round(time.Second).String()
+}
+
+// stageModelTime is what the provider took for one stage: how many calls
+// were live and how many the cache answered, and the sum and the longest of
+// the live ones. Live calls in one stage run several at a time, so the sum
+// is provider effort and the wall clock is what the reader waited.
+type stageModelTime struct {
+	live, cached int
+	sum, longest time.Duration
+}
+
+// ModelCall accounts one provider call to its stage.
+func (output *runOutput) ModelCall(stage string, latency time.Duration, cached bool) {
+	if output == nil {
+		return
+	}
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	at := output.modelTime[stage]
+	if at == nil {
+		at = &stageModelTime{}
+		output.modelTime[stage] = at
+	}
+	if cached {
+		at.cached++
+		return
+	}
+	at.live++
+	at.sum += latency
+	if latency > at.longest {
+		at.longest = latency
+	}
+}
+
+// Timing closes the run with where the time went: the wall clock, and for
+// every stage that asked the model, how many calls, how much provider time
+// and how long the slowest call took. kubernetes in an hour starts with
+// knowing which of these numbers is the hour.
+func (output *runOutput) Timing() {
+	if output == nil {
+		return
+	}
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	output.stageLocked("Time")
+	lines := []string{"wall clock: " + sinceStart(output)}
+	stages := make([]string, 0, len(output.modelTime))
+	for stage := range output.modelTime {
+		stages = append(stages, stage)
+	}
+	sort.Strings(stages)
+	var total time.Duration
+	for _, stage := range stages {
+		at := output.modelTime[stage]
+		total += at.sum
+		lines = append(lines, fmt.Sprintf(
+			"%s: %d live calls, %d cached, provider time %s, slowest %s",
+			stage, at.live, at.cached, at.sum.Round(time.Second), at.longest.Round(time.Second),
+		))
+	}
+	if len(stages) > 0 {
+		lines = append(lines, "provider time in all: "+total.Round(time.Second).String())
+	}
+	output.writeDetailsLocked(lines...)
+}
+
+// timedObserver hands every model call to the run output's clock on its way
+// to the exchange journal.
+type timedObserver struct {
+	output *runOutput
+	inner  *debugdump.SemanticObserver
+}
+
+func timed(output *runOutput, inner *debugdump.SemanticObserver) llm.Observer {
+	if output == nil {
+		return inner
+	}
+	return timedObserver{output: output, inner: inner}
+}
+
+func (observer timedObserver) Observe(event llm.Event) error {
+	return observer.inner.Observe(event)
+}
+
+func (observer timedObserver) ObserveStage(stage string, event llm.Event) error {
+	if event.Kind != llm.EventFailure {
+		observer.output.ModelCall(stage, event.Metrics.Latency, event.Source == llm.SourceCache)
+	}
+	return observer.inner.ObserveStage(stage, event)
 }
 
 func (output *runOutput) writeDetailsLocked(details ...string) {

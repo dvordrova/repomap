@@ -76,7 +76,7 @@ func enrichProgramIndexForRun(
 	executor := debugdump.BindStage(llm.Executor{
 		RootDir:          cacheRoot,
 		Enabled:          !noCache,
-		Observer:         observer,
+		Observer:         timed(output, observer),
 		BatchConcurrency: batchConcurrency,
 		BatchController:  batchController,
 		PlanNotice:       largePlanNotice(output, "Program categorization", base.Target.Name),

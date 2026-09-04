@@ -149,10 +149,16 @@ type SemanticExchange struct {
 	ValidationCode         string
 	SemanticCalls          int
 	TransportAttempts      int
-	Request                []byte
-	Response               []byte
-	ResponseUnavailable    *SemanticUnavailable
-	Outcome                SemanticOutcome
+	// Latency and the token counts are what a call cost, kept beside what
+	// it said. A run of chi wrote a hundred and forty-six exchanges and not
+	// one number of seconds, so "where does the time go" had no answer.
+	Latency             time.Duration
+	InputTokens         int
+	OutputTokens        int
+	Request             []byte
+	Response            []byte
+	ResponseUnavailable *SemanticUnavailable
+	Outcome             SemanticOutcome
 }
 
 // SemanticOutcome is the closed, safe explanation of what the stage decided.
@@ -185,6 +191,9 @@ type SemanticExchangeRecord struct {
 	ValidationCode         string                `json:"validation_code"`
 	SemanticCalls          int                   `json:"semantic_calls"`
 	TransportAttempts      int                   `json:"transport_attempts"`
+	LatencyMS              int64                 `json:"latency_ms"`
+	InputTokens            int                   `json:"input_tokens"`
+	OutputTokens           int                   `json:"output_tokens"`
 	Outcome                SemanticOutcome       `json:"outcome"`
 	Request                SemanticPayloadRecord `json:"request"`
 	Response               SemanticPayloadRecord `json:"response"`
@@ -473,6 +482,8 @@ func (w *Writer) writeSemanticExchange(
 		RequestProvenance:      exchange.RequestProvenance,
 		State:                  exchange.State, ValidationCode: exchange.ValidationCode,
 		SemanticCalls: exchange.SemanticCalls, TransportAttempts: exchange.TransportAttempts,
+		LatencyMS:   exchange.Latency.Milliseconds(),
+		InputTokens: exchange.InputTokens, OutputTokens: exchange.OutputTokens,
 		Outcome: normalizedSemanticOutcome(exchange),
 		Request: request.record, Response: response.record,
 	}

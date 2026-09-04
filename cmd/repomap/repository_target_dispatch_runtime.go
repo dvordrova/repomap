@@ -561,6 +561,7 @@ func finishRepositoryTargetDispatch(
 	})
 	output.State("Report", "generated")
 	output.Stage("Report", "path: "+reportPath)
+	output.Timing()
 	if staticHost != "" {
 		output.Stage("Report", "standalone host: "+staticHost)
 	}

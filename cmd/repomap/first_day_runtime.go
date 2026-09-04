@@ -173,7 +173,7 @@ func runRepositoryOrientation(
 	defer writer.Close()
 	observer := debugdump.NewSemanticObserver(writer)
 	executor := debugdump.BindStage(llm.Executor{
-		RootDir: options.CacheRoot, Enabled: !options.NoCache, Observer: observer,
+		RootDir: options.CacheRoot, Enabled: !options.NoCache, Observer: timed(options.Output, observer),
 		BatchConcurrency: options.BatchConcurrency, BatchController: options.BatchController,
 	}, debugdump.SemanticStageOrientation)
 

@@ -153,6 +153,9 @@ func semanticExchangeForStageEventAt(
 		Stage: stage, InstanceOrdinal: instanceOrdinal,
 		SemanticAttemptOrdinal: semanticAttemptOrdinal,
 		Request:                event.Request, Response: event.Response,
+		Latency:      event.Metrics.Latency,
+		InputTokens:  event.Metrics.InputTokens,
+		OutputTokens: event.Metrics.OutputTokens,
 	}
 	if event.Source == llm.SourceLive {
 		exchange.RequestProvenance = SemanticRequestExactSent
