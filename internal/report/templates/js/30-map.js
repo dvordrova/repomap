@@ -21,6 +21,7 @@
     }
 
     function preview(event) {
+      if (map.classList.contains('map-held')) return;
       var node = event.currentTarget;
       var near = {};
       near[node.getAttribute('data-node')] = true;
@@ -40,6 +41,7 @@
     }
 
     function clear() {
+      if (map.classList.contains('map-held')) return;
       map.classList.remove('map-previewing');
       for (var index = 0; index < nodes.length; index++) {
         nodes[index].classList.remove('map-near');
@@ -144,5 +146,151 @@
     function endDrag() { dragging = false; stage.classList.remove('map-grabbing'); }
     stage.addEventListener('pointerup', endDrag);
     stage.addEventListener('pointercancel', endDrag);
+  }
+})();
+
+// The reading layer over the map, written from the journeys a reader
+// actually makes, not from what a canvas can do:
+//   - "what is this box?" — pointing at a node shows a small card beside it:
+//     the summary, the size, and its arrows as sentences. The question is
+//     answered without leaving the map, so a jump is for reading in full.
+//   - "where is this on the map?" — every group card gets an "on the map"
+//     link back to its node, which is lit for a moment; the round trip is one
+//     click each way.
+//   - "just this part" — clicking a zone's name holds it in focus, dimming
+//     the rest, until it is clicked again or Escape is pressed.
+// None of it exists without scripting, and none of it moves a node.
+(function () {
+  var maps = document.querySelectorAll('[data-map]');
+  for (var index = 0; index < maps.length; index++) {
+    bindReading(maps[index]);
+  }
+  function titleOf(node) {
+    var lines = node.querySelectorAll('.map-node-title');
+    var parts = [];
+    for (var i = 0; i < lines.length; i++) parts.push(lines[i].textContent);
+    return parts.join(' ');
+  }
+  function bindReading(map) {
+    var stage = map.querySelector('[data-map-stage]') || map;
+    var nodes = map.querySelectorAll('[data-node]');
+    var byId = {};
+    for (var i = 0; i < nodes.length; i++) byId[nodes[i].getAttribute('data-node')] = nodes[i];
+    var edges = map.querySelectorAll('.map-edge');
+    var card = document.createElement('div');
+    card.className = 'map-card';
+    card.hidden = true;
+    stage.appendChild(card);
+    stage.style.position = stage.style.position || 'relative';
+
+    function sentences(id) {
+      var out = [];
+      for (var e = 0; e < edges.length; e++) {
+        var edge = edges[e];
+        var label = (edge.querySelector('title') || {}).textContent || '';
+        var from = edge.getAttribute('data-from'), to = edge.getAttribute('data-to');
+        if (from === id && byId[to]) out.push('\u2192 ' + (label ? label + ' \u00b7 ' : '') + titleOf(byId[to]));
+        else if (to === id && byId[from]) out.push('\u2190 ' + titleOf(byId[from]) + (label ? ' \u00b7 ' + label : ''));
+        if (out.length === 4) break;
+      }
+      return out;
+    }
+    function show(node) {
+      var id = node.getAttribute('data-node');
+      var label = node.getAttribute('aria-label') || '';
+      var counts = label.indexOf(', ') > 0 ? label.slice(label.indexOf(', ') + 2) : '';
+      var html = '<b>' + titleOf(node) + '</b>';
+      var summary = node.getAttribute('data-summary');
+      if (summary) html += '<p>' + summary + '</p>';
+      if (counts) html += '<span class="map-card-meta">' + counts + '</span>';
+      var arrows = sentences(id);
+      if (arrows.length) html += '<ul>' + arrows.map(function (a) { return '<li>' + a + '</li>'; }).join('') + '</ul>';
+      html += '<span class="map-card-hint">click \u2014 open its card</span>';
+      card.innerHTML = html;
+      card.hidden = false;
+      var nodeBox = node.getBoundingClientRect(), stageBox = stage.getBoundingClientRect();
+      var left = nodeBox.right - stageBox.left + stage.scrollLeft + 8;
+      var top = nodeBox.top - stageBox.top + stage.scrollTop;
+      if (left + card.offsetWidth > stage.scrollLeft + stage.clientWidth) {
+        left = nodeBox.left - stageBox.left + stage.scrollLeft - card.offsetWidth - 8;
+      }
+      card.style.left = Math.max(0, left) + 'px';
+      card.style.top = Math.max(0, top) + 'px';
+    }
+    function hide() { card.hidden = true; }
+    for (var n = 0; n < nodes.length; n++) {
+      nodes[n].addEventListener('mouseenter', function (event) { show(event.currentTarget); });
+      nodes[n].addEventListener('focus', function (event) { show(event.currentTarget); });
+      nodes[n].addEventListener('mouseleave', hide);
+      nodes[n].addEventListener('blur', hide);
+    }
+
+    // A group card links back to its node on the map.
+    for (var k = 0; k < nodes.length; k++) {
+      var href = nodes[k].getAttribute('href') || '';
+      if (href.charAt(0) !== '#') continue;
+      var group = document.getElementById(href.slice(1));
+      var head = group && group.querySelector('.group-head');
+      if (!head || head.querySelector('.on-map')) continue;
+      var link = document.createElement('a');
+      link.className = 'on-map';
+      link.href = '#' + nodes[k].getAttribute('data-node');
+      link.textContent = 'on the map';
+      link.addEventListener('click', (function (node) {
+        return function (event) {
+          event.preventDefault();
+          node.scrollIntoView({ block: 'center', inline: 'center' });
+          node.classList.remove('map-flash');
+          void node.getBoundingClientRect();
+          node.classList.add('map-flash');
+          setTimeout(function () { node.classList.remove('map-flash'); }, 1600);
+        };
+      })(nodes[k]));
+      head.appendChild(link);
+    }
+
+    // Clicking a zone's name holds it in focus.
+    var frames = map.querySelectorAll('[data-frame]');
+    var held = null;
+    function inside(node, rect) {
+      var r = node.querySelector('.map-node-body');
+      if (!r) return false;
+      var x = parseFloat(r.getAttribute('x')), y = parseFloat(r.getAttribute('y'));
+      return x >= rect.x && y >= rect.y && x + parseFloat(r.getAttribute('width')) <= rect.x + rect.w &&
+        y + parseFloat(r.getAttribute('height')) <= rect.y + rect.h;
+    }
+    function release() {
+      held = null;
+      map.classList.remove('map-previewing', 'map-held');
+      for (var i = 0; i < nodes.length; i++) nodes[i].classList.remove('map-near');
+      var lines = map.querySelectorAll('.map-edge, .map-edge-label');
+      for (var j = 0; j < lines.length; j++) lines[j].classList.remove('map-near');
+    }
+    for (var f = 0; f < frames.length; f++) {
+      var text = frames[f].querySelector('text');
+      if (!text) continue;
+      text.style.cursor = 'pointer';
+      text.addEventListener('click', (function (frame) {
+        return function () {
+          var id = frame.getAttribute('data-frame');
+          if (held === id) { release(); return; }
+          release();
+          held = id;
+          var rectNode = frame.querySelector('rect');
+          var rect = { x: parseFloat(rectNode.getAttribute('x')), y: parseFloat(rectNode.getAttribute('y')),
+            w: parseFloat(rectNode.getAttribute('width')), h: parseFloat(rectNode.getAttribute('height')) };
+          var near = {};
+          for (var i = 0; i < nodes.length; i++) {
+            if (inside(nodes[i], rect)) { near[nodes[i].getAttribute('data-node')] = true; nodes[i].classList.add('map-near'); }
+          }
+          var lines = map.querySelectorAll('.map-edge, .map-edge-label');
+          for (var j = 0; j < lines.length; j++) {
+            if (near[lines[j].getAttribute('data-from')] || near[lines[j].getAttribute('data-to')]) lines[j].classList.add('map-near');
+          }
+          map.classList.add('map-previewing', 'map-held');
+        };
+      })(frames[f]));
+    }
+    document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && held) release(); });
   }
 })();

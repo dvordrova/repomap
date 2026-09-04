@@ -59,3 +59,17 @@
 .map-stage{overflow:auto}
 .map-stage.map-grabbing{cursor:grabbing}
 .map-stage.map-zoomed{cursor:grab}
+/* The card beside a pointed-at node: what it is, how big, what its arrows say. */
+.map-card{position:absolute;z-index:6;max-width:22rem;padding:.5rem .7rem;border:var(--edge) solid var(--ink);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm);font-size:.85rem;line-height:1.35;pointer-events:none}
+.map-card b{display:block;margin-bottom:.15rem}
+.map-card p{margin:0 0 .3rem;color:var(--model)}
+.map-card ul{margin:.3rem 0 0;padding-left:0;list-style:none}
+.map-card li{margin:.1rem 0}
+.map-card .map-card-meta{display:block;font-size:.78rem;color:var(--muted)}
+.map-card .map-card-hint{display:block;margin-top:.35rem;font-size:.74rem;color:var(--muted);letter-spacing:.02em}
+/* A node lit from its card's "on the map" link. */
+.map-node.map-flash .map-node-body{stroke:var(--accent);stroke-width:5;animation:map-flash 1.6s ease-out}
+@keyframes map-flash{from{fill:var(--zone-5)}to{fill:var(--paper)}}
+.group-head .on-map{margin-left:.6rem;font-size:.78rem;white-space:nowrap}
+/* A zone held in focus: its name stays dark while the rest dims. */
+[data-map].map-held .map-frame text{fill:var(--muted)}

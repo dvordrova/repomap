@@ -185,6 +185,7 @@ const maxOverviewClaims = 4
 const (
 	maxNestedReadmeClaims = 2
 	maxReadmeClaims       = 8
+	maxReadmeClaimRunes   = 280
 )
 
 const (
@@ -478,7 +479,10 @@ func (builder *pageBuilder) readmeClaims(view *pageView) {
 func selectReadmeClaims(all []claims.Claim) ([]claims.Claim, int) {
 	var readme []claims.Claim
 	for _, claim := range all {
-		if claim.Source == claims.SourceReadme && claim.Path != "" {
+		// A README bullet list flattened into one paragraph — chi's list of
+		// forty example names — is not a sentence a reader can quote.
+		if claim.Source == claims.SourceReadme && claim.Path != "" &&
+			len([]rune(claim.Text)) <= maxReadmeClaimRunes {
 			readme = append(readme, claim)
 		}
 	}
