@@ -3,7 +3,7 @@ span.anchor{color:var(--ink)}
 .meta,.notes{color:var(--muted);font-size:.9rem}
 .fact{color:var(--ink)}
 .model{color:var(--model);font-style:italic}
-.badge,.model::before{content:"model";display:inline-block;font-style:normal;font-size:.68rem;line-height:1;padding:.15rem .35rem;margin-right:.4rem;border-radius:3px;background:var(--model-bg);color:var(--model);vertical-align:middle;letter-spacing:.03em;font-weight:500}
+.badge,.model::before{content:"model";display:inline-block;font-style:normal;font-size:.68rem;line-height:1;padding:.15rem .35rem;margin-right:.4rem;border-radius:3px;background:var(--model-bg);color:var(--model);vertical-align:middle;letter-spacing:.03em;font-weight:600}
 h4 .badge{margin-left:.4rem;margin-right:0}
 .claim{margin:.6rem 0;padding:.5rem .8rem;border-left:3px solid var(--claim);background:var(--claim-bg);color:var(--ink)}
 .claim p{margin:0;white-space:pre-line}
@@ -50,7 +50,7 @@ summary{cursor:pointer;color:var(--accent);font-size:.9rem}
 .route-path{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86rem;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line);padding-bottom:1px}
 .route-path:hover{color:var(--accent);border-bottom-color:var(--accent)}
 .route-to{color:var(--muted);font-size:.76rem}
-.route-symbol{color:var(--accent);font-weight:550;text-decoration:none;border-bottom:1px dotted var(--accent)}
+.route-symbol{color:var(--accent);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--accent)}
 .route-symbol:hover{text-decoration:none;border-bottom-style:solid}
 
 /* A symbol that belongs to another target of this repository is not outside
