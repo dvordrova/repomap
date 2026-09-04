@@ -176,7 +176,9 @@ func restoreReducedDocumentation(runDir string, data *ReportData) error {
 	}
 	for _, index := range data.programIndexes {
 		if index.Categorization == nil {
-			return fmt.Errorf("report: ProgramIndex %q is not categorized", index.Target.ID)
+			// The atlas path reads the base index: the reduced documentation
+			// is the run's, not a categorization's, and nothing binds them.
+			continue
 		}
 		if index.Categorization.ReducedDocumentationSHA256 != reduced.ReductionSHA256 {
 			return fmt.Errorf("report: ProgramIndex %q does not bind reduced documentation", index.Target.ID)

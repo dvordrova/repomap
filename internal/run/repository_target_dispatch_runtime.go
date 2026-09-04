@@ -38,9 +38,8 @@ type repositoryTargetDispatchOptions struct {
 	NoServe         bool
 	Port            int
 	StaticHost      string
-	// Atlas reads the analyzed targets as tables of places and stops before
-	// the report; NoModel does that walk without a provider.
-	Atlas            bool
+	// NoModel walks the atlas without a provider: every cell is its
+	// fallback line and no orientation is asked.
 	NoModel          bool
 	Output           *runOutput
 	FirstLayer       *debugdump.SemanticObserver
@@ -85,7 +84,6 @@ func dispatchRepositoryTargetPlan(
 	if options.Output == nil {
 		options.Output = newRunOutput(options.Deps.stderr)
 	}
-	multiTarget := len(ordered) > 1
 	selectedTargets := make(map[repositoryTargetKey]targetoutcome.SelectedTarget, len(ordered))
 	selectedTargetRows := make([]targetoutcome.SelectedTarget, 0, len(ordered))
 	for _, target := range ordered {
@@ -363,58 +361,23 @@ func dispatchRepositoryTargetPlan(
 	if err := recordTargetPortfolioOutcome(owner.RunDir, options.Plan.Outcome, options.Output); err != nil {
 		return failPublication(err)
 	}
-	if options.Atlas {
-		tablesPath, err := readRepositoryAtlas(ctx, options, runs)
-		if err != nil {
-			return failPublication(err)
-		}
-		if err := persistTargetOutcomePortfolioForRuns(targetOutcomePortfolio, runs); err != nil {
-			return failPublication(err)
-		}
-		if err := writeRunTiming(owner.RunDir, wholeRunTiming(options.Output, runs)); err != nil {
-			options.Output.Warn("could not record the run's timing", err.Error())
-		}
-		for _, consoleTarget := range pendingTargets {
-			options.Output.TargetPage("complete", consoleTarget)
-		}
-		return tablesPath, nil
+	// The atlas is read over every target: the tables, then the boxes
+	// projected into the groups the page draws, then the orientation over
+	// those.
+	outcome, err := readRepositoryAtlas(ctx, options, runs)
+	if err != nil {
+		return failPublication(err)
 	}
-	if multiTarget {
-		runs, err = matchPublishedRunGroups(
-			ctx,
-			options.DebugDir,
-			options.NoCache,
-			options.Deps.llmBatchConcurrency,
-			options.Deps.llmBatchController,
-			options.Deps.newCubeProvider,
-			options.Deps.runGroupMatching,
-			runs,
-			options.Output,
-		)
-		if err != nil {
+	runs, err = projectAtlasRuns(runs, outcome, options.Output)
+	if err != nil {
+		return failPublication(err)
+	}
+	if !options.NoModel {
+		if err := orientAtlasRuns(ctx, options, runs, outcome); err != nil {
 			return failPublication(err)
 		}
 	}
 	owner = runs[0]
-	// The first-day layers read the completed graph and the repository corpus,
-	// then land in every backing run before its report data is generated.
-	if err := buildFirstDayLayers(ctx, firstDayOptions{
-		RepoPath:         options.Repo,
-		RepositoryName:   repoRunLabel(options.Repo),
-		Revision:         options.RepositoryState.Head,
-		Corpus:           options.Corpus,
-		TrackedPaths:     repositoryTrackedPaths(ctx, options.Repo),
-		Runs:             runs,
-		CacheRoot:        options.DebugDir,
-		NoCache:          options.NoCache,
-		BatchConcurrency: options.Deps.llmBatchConcurrency,
-		BatchController:  options.Deps.llmBatchController,
-		ProviderFactory:  options.Deps.newCubeProvider,
-		Runner:           options.Deps.runOrientation,
-		Output:           options.Output,
-	}); err != nil {
-		return failPublication(err)
-	}
 	portfolio, err := buildProgramPagePortfolio(runs, owner.RunID)
 	if err != nil {
 		return failPublication(err)

@@ -37,9 +37,13 @@ where. Group matching reads incidence from indexes built once — repomap
 on itself compiled its 233,047 cross-target pairs in 42 s where it had
 spent seventy CPU-minutes without finishing.
 
-## Atlas (in progress, from 2026-09-04)
+## Atlas (the model path, from 2026-09-04)
 
-The model-assisted stages are being replaced by one reading layer,
+The sections "Sparse overlapping categorization", "GroupsIndex" as built by
+grouping, and "Cross-target group matching" below describe history: those
+three stages and their packages were deleted on 2026-09-04. The GroupsIndex
+remains as the projection of the atlas the page reads
+(`groupindex.ProjectAtlas`). The atlas is one reading layer,
 `internal/atlas`, along the plan in ATLAS_PLAN.md: the repository as places
 (directories, files, boundaries; symbols next) asked about in keyed tables,
 one line per place, context one step up, boxes by directory, arrows and
@@ -79,8 +83,16 @@ cross-fixture false candidate refused; 24 s wall with everything cached,
 11 live windows and 55 s: the file's line is carried into the rows of the
 files it calls, round after round, and a reworded line cold-starts them.
 A change past the first sentence costs nothing, since only the first
-sentence is sent. Steps 3 to 5 (symbols; the page reading the atlas and the
-deletion of the old stages; kubernetes) follow.
+sentence is sent. Step 4 is in: the atlas is the only path, `--atlas` is gone, the child run
+writes an empty groups index that the projection replaces once every target
+is read, the orientation is asked over the projected groups, and the page,
+served or static, is built from them unchanged. The old stages'
+packages (`programcategorization`, `programgrouping`, `groupmatching`) and
+their run glue are deleted; `groupindex.Build` and the proposal types are
+dead code awaiting removal. An in-process test drives the whole path over a
+two-file Go repository with `--no-model` in about a second. repomap on
+itself, seven targets, cold cache: 3m02s wall against 29m34s before.
+Step 5 (chi, etcd, kubernetes measured) follows.
 
 ## Product surface
 

@@ -276,9 +276,9 @@ end-to-end adapter conformance slice uses the generic command registry, then
 runs the same shared sequence as every other target:
 
 1. reduce repository documentation once and persist its exact artifact;
-2. categorize the adapter's sealed ProgramIndex and reseal the same index type;
-3. build and persist one `GroupsIndex` from the enriched index;
-4. include that index in repository-level group matching;
+2. read the adapter's sealed ProgramIndex as the atlas tables;
+3. project the atlas into one `GroupsIndex` for the page;
+4. join it to the other targets through matched boundary values;
 5. bind the complete matched graph to `report.ReportData`, project the typed
    browser group graph, and render the existing Canvas.
 

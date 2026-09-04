@@ -12,11 +12,10 @@ supported user-facing surface is deliberately small:
 
 There is no supported offline, investigate, doctor, dev, replay, experiment, or
 `serve` subcommand. Report serving remains part of the ordinary run and is
-controlled by `--no-serve` and `--port`. `--atlas` reads the analyzed targets
-as tables of places and stops at those tables (transitional, until the page
-reads the atlas); `--no-model` makes that walk without a provider, every cell
-on its fallback line, and needs `--target` because no target is selected
-without the model. Do not add script entrypoints or sidecar tools.
+controlled by `--no-serve` and `--port`. `--no-model` walks the atlas without
+a provider, every cell on its fallback line and no orientation, and needs
+`--target` because no target is selected without the model. Do not add
+script entrypoints or sidecar tools.
 
 ## Authority
 
@@ -32,10 +31,11 @@ without the model. Do not add script entrypoints or sidecar tools.
   at the pre-cleanup commit `4e54ab3`; they are not current requirements.
 - [docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md) owns only the live
   online transport contract. Prompt and response schemas live with their code.
-- The owner has approved the single ProgramIndex-to-GroupsIndex graph pipeline
-  recorded in CURRENT.md and a shared LLM-provider executor. Do not add another
-  analysis graph, semantic authority, or presentation layer outside that
-  pipeline without fresh approval.
+- The owner has approved the single ProgramIndex-to-atlas pipeline recorded
+  in CURRENT.md and a shared LLM-provider executor: the atlas tables read
+  every target and their boxes are projected into the GroupsIndex the page
+  reads. Do not add another analysis graph, semantic authority, or
+  presentation layer outside that pipeline without fresh approval.
 
 ## Product contract
 
@@ -106,10 +106,9 @@ without the model. Do not add script entrypoints or sidecar tools.
   authority; it is never repaired or promoted into `documentation`. Go
   owns exhaustive batching, completeness, and identity. If filtering leaves a
   mandatory scalar choice or complete assignment unresolved, reject that
-  incomplete result without inventing a replacement. Program categorization
-  is a sparse positive selection: omission is not a negative assignment, and
-  categories are an overlapping cover, not a partition. Grouping is a
-  partition of the subjects a request shows. Every later model call is an
+  incomplete result without inventing a replacement. An atlas table row asks
+  one short line or one closed choice; every key the code sent comes back
+  exactly once, and a window that does not is refused whole. Every later model call is an
   LLM cube — a simple prepared format in, one decision, a simple validated
   format out: consolidation returns `{ref, cluster}` labels and Go unions the
   members; parts are named first and then chosen from that closed list;
@@ -168,13 +167,13 @@ without the model. Do not add script entrypoints or sidecar tools.
   checking is not filtered and still fails its owning target closed.
 - Execute every selected typed target through its own complete page-local path:
   sealed base `ProgramIndex`, target-scoped dependency authority, exact reduced
-  documentation, sparse overlapping categorization on that same ProgramIndex,
-  one target-local `GroupsIndex`, and a validated report page. A selected
+  documentation, the atlas tables over that ProgramIndex, one target-local
+  `GroupsIndex` projected from the atlas, and a validated report page. A selected
   non-default target is not a structural substitute for that path. Multi-target
   publication seals a language-neutral `ProgramPagePortfolio` keyed by exact
   `ProgramTarget` IDs and child run IDs plus one exhaustive
-  `TargetOutcomePortfolio`, then matches the complete GroupsIndex set across
-  targets. Preserve every analyzed child run's `report.json`, enriched ProgramIndex,
+  `TargetOutcomePortfolio`; joints between targets come from matched boundary
+  values confirmed by the model. Preserve every analyzed child run's `report.json`, ProgramIndex,
   reduced documentation, and GroupsIndex, but publish exactly one physical
   `report.html` in the deterministic successful owner run. Derive that owner
   document directly from the backing data rather than merging child HTML. In served mode, sibling target URLs are virtual
@@ -270,101 +269,38 @@ without the model. Do not add script entrypoints or sidecar tools.
   into an application.
 - Language adapters retain method/path-shaped calls, decorators, arguments,
   reconstructed values, exact targets, alternatives, and unresolved frontiers
-  only as neutral ProgramIndex evidence. Protocol meaning and cross-target
-  connection authority arise through validated model grouping and matching
-  over the complete GroupsIndex set; deterministic stages preserve the neutral
+  only as neutral ProgramIndex evidence. Protocol meaning arises through the
+  atlas tables over that evidence; deterministic stages preserve the neutral
   evidence and its exact provenance.
-- Program categorization receives the complete target-local objects and
-  relation patterns through deterministic disjoint provider batches, with
-  exact incident structure and reduced documentation as request-local evidence.
-  At most 32 owned refs per request is semantic-focus partitioning, not a
-  repository count limit: complete authority is covered exhaustively, incident
-  context is not capped, provider envelopes may split requests further, and no
-  subject may be sampled, truncated, or omitted. Every request is sparse only
-  in rows and complete for all positively supported ref/category pairs; an
-  empty assignment set is legitimate only when none is positively supported.
-  Its closed categories are `inbound`, `background_activity`, `dependency`, and
-  `core`; one subject may receive several. Framework, protocol, TLS, dependency,
-  path, selector, and naming familiarity are evidence only and never establish
-  a category locally. A model-selected `dependency` member that contradicts an
-  explicit `authority_kind: platform` fact above is an unsupported set member: discard
-  and diagnose only that category pair, preserve other valid categories on the
-  row, and make the sealed ProgramIndex reject any reintroduced copy.
-- Target-local grouping consumes the enriched ProgramIndex and produces one
-  sealed `GroupsIndex`. Its closed presentation lanes are `triggers`, `core`,
-  and `dependencies`; `triggers` combines inbound and background-activity
-  groups visually while their exact categories remain distinct on subjects and
-  cards. Every direct group member is locally checked against its lane; evidence
-  may cite other advertised context but never becomes membership. An explicit
-  platform object, or an exact invocation pattern whose complete targets are
-  platform authorities, cannot evidence a `dependencies` group; standard-runtime
-  APIs do not become outbound integration evidence. This restriction does not
-  apply to connection evidence. Groups are sparse and overlapping. Directed
-  local semantic connections use an open snake-case kind and exact restored
-  evidence; they need not pretend to be exact runtime calls or deterministic
-  call corridors.
-- Repository matching consumes only the complete validated GroupsIndex set.
-  Every unordered cross-target group pair is considered exactly once to derive
-  its complete deterministic candidate set `J(pair)`. Only a pair with a
-  non-empty `J(pair)` becomes an indivisible provider item. A zero-candidate
-  pair contributes no connection locally and makes no provider, cache, or
-  observer call; this is neither a negative semantic fact nor a fallback. Each
-  eligible pair's exact dossier advertises the two complete endpoint-group
-  member/evidence sets plus separate deterministic `boundary_edge_refs`. Each
-  boundary ref names an existing structural `pattern_target`,
-  `pattern_receiver`, or `pattern_receiver_origin` edge from a group-owned
-  pattern to an exact non-platform external package symbol. The pattern's
-  local source object is either an object member or reaches one through a
-  finite cycle-safe chain of exact OwnerID/ContainerID facts. Evidence is never
-  an ownership root, and calls, paths, frameworks, names, graph adjacency, and
-  local semantic connections never enter that closure. An exact qualifying
-  edge has exact boundary support. The only non-exact admission is one
-  `pattern_receiver_origin` edge with `alternatives` resolution whose endpoint
-  group is in the `triggers` lane, whose pattern has `inbound` or
-  `background_activity` category, and whose retained origin set contains that
-  single external symbol; this remains possible support.
-  The dossier retains the deterministic subject-reference closure, complete
-  one-hop structural-edge incidence of the endpoint
-  member/evidence/boundary-pattern sets, and only target-local connections
-  incident to either endpoint with compact neighboring group context; unrelated
-  target-local graph facts are not copied into that decision. Before planning
-  provider items, Go exhaustively combines the pair's eligible boundary edges with
-  arguments owned by each edge's source pattern. It retains every locally
-  valid equal direct or reconstructed literal/template value as one closed
-  request-local `j*` witness candidate. Each candidate carries its two boundary
-  edge refs, source-pattern refs, argument refs, and derived
-  `support_resolution`; candidates are evidence only and never create graph
-  connections by themselves. Two possible boundary edges cannot form a
-  candidate. One possible boundary edge must be paired with an exact edge and
-  an exact value match, and that candidate remains possible.
-  Matching returns sparse directed cross-target connections. The model authors
-  the connection direction, open snake-case kind, label, and summary between
-  the two groups in the advertised pair, and selects one or more advertised
-  candidates through `witness_joint_refs`. Pair order has no direction
-  authority: the `from` endpoint must be the actor described by the semantic
-  kind and the grammatical subject of the label/summary, while `to` is the
-  acted-on endpoint. When one candidate joins a positive inbound delivery
-  pattern in a triggers group to a positive dependency-category exact
-  outbound `invokes_external` call, Go advertises that closed
-  outbound-to-inbound orientation on the `j*` row and rejects a contradictory
-  response; it never flips the model edge. A dual-role subject, arbitrary
-  background activity, or bare trigger-lane membership has no direction
-  authority. Sparse empty output is legitimate;
-  omission of a candidate is not a negative fact, and no candidate is promoted
-  without model selection. Go accepts only known `j*` refs, revalidates each
-  selected candidate against the same pair authority, automatically restores
-  both source-pattern subjects as bilateral connection evidence, and derives
-  the connection's strongest surviving `support_resolution` as `exact` or
-  `possible`. A row with no surviving selected candidate is discarded.
-  The complete eligible batch of candidate-bearing pair items remains atomic:
-  any terminal item failure rejects the matching result rather than publishing
-  accepted siblings as partial graph authority.
-  Possible boundary or value evidence is never promoted to an exact runtime
-  call, binding, or occurrence. The response carries no supplementary subject
-  evidence. The matcher preserves all target-local groups, structural edges,
-  and connections unchanged. It extends that same graph; it never creates a
-  protocol-specific or second graph and never asks browser code to infer
-  matching from names or paths.
+- The atlas (`internal/atlas`) is the model path. `places` builds
+  `places.json` from the program indexes, claims, facts and corpus: every
+  directory and file, the declarations of a file with the first sentence of
+  their docstrings, up to ten candidate symbols per file, the boundaries
+  (routes, client calls, listeners, configuration reads, dynamic execution,
+  and calls into non-platform packages with a literal argument), the
+  file-to-file edges and the seeds. `reading` walks them in rounds and asks
+  one keyed table per round: directories by depth, files by call-graph
+  round, symbols, boundaries, the parts of a target (one row asking for
+  exactly `want` names, then every top box choosing from that closed list),
+  the drawn arrows, the portfolio, the joints. A row carries the place's own
+  facts and its parent's line, one step up; nothing transitive, nothing
+  filled to a window. The model writes one line or one closed choice per
+  cell; the code owns membership, arrows and their direction, joints by
+  matched values, counts and identities. A refused window falls back on its
+  rows' deterministic lines and is written to `rejected.jsonl`, never
+  cached. Every row and answer is printed to `tables.md`, with the exact
+  request bytes under `tables/`. Above two thousand files the directory and
+  file rows carry an `open` cell and what the model closes keeps its
+  fallback line.
+- `groupindex.ProjectAtlas` turns the atlas into the GroupsIndex the page,
+  the orientation and the publication read: a box is a group whose members
+  are the objects declared in its files, a zone is a container, an arrow is
+  a connection labelled with the model's sentence, a joint is a connection
+  into another target. Lanes follow a box's side: `triggers` where the
+  outside calls in or execution starts, `dependencies` where it only calls
+  out, `core` otherwise. No request sends repository source text: paths,
+  names, signatures, first sentences of docstrings and README lines, literal
+  values and the model's own earlier lines are all that crosses the wire.
 - The ordinary Go direct-call traversal is complete for the selected target:
   `--depth 0` and `--edges-limit 0` are the defaults and mean retain every
   reachable exact call and edge. Positive values are explicit user-requested
@@ -448,9 +384,9 @@ without the model. Do not add script entrypoints or sidecar tools.
   the normal online provider path. Offline runs, fixtures, replay commands, and
   helper tools are not acceptance evidence.
 - Verify the process exit status and the generated manifest, exact reduced
-  documentation, sealed enriched ProgramIndex set, each target-scoped
-  `dependency-catalog.json`, every GroupsIndex, the complete matched graph in
-  report JSON, and report HTML. For a multi-target run, verify
+  documentation, sealed ProgramIndex set, each target-scoped
+  `dependency-catalog.json`, `places.json`, `atlas.json`, `tables.md`, every
+  projected GroupsIndex, the complete graph in report JSON, and report HTML. For a multi-target run, verify
   every backing manifest/report JSON and exactly one physical report HTML in the
   successful owner run. For cache changes, also verify a real second run and `repomap
   cache clear`.

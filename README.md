@@ -25,14 +25,17 @@ Everything on the page is one of three labeled things:
   repaired.
 
 Under the page, each selected Go, Python, and JavaScript/TypeScript target
-builds one complete target-local ProgramIndex. Reduced repository documentation
-feeds a shared categorizer that enriches that same index with sparse
-overlapping `inbound`, `background_activity`, `dependency`, and `core` facts. A
-grouping pass seals one target-local `groups-index.json`; one repository-level
-matching pass then adds supported connections across the complete target graph
-set. The deterministic fact and claim stages and the model orientation stage
-run over that finished graph and write their own artifacts, so the facts
-survive any rewrite of the model stage.
+builds one complete target-local ProgramIndex. The deterministic fact and
+claim stages run over the indexes, and then the atlas reads every target as
+tables: directories by depth, files by their distance from the entry points,
+the key symbols of each file, the boundaries where the code touches the
+outside, the parts a target is made of, the arrows between its boxes, the
+portfolio of targets, and the joints between targets. Each row gets one line
+or one closed choice from the model; membership, arrows, direction and joints
+are the code's. The boxes are projected into one target-local
+`groups-index.json`, which is what the page draws, and the model orientation
+runs over that. `--no-model` makes the same walk with every cell on its
+fallback line.
 
 The supported product surface is deliberately small:
 
@@ -139,6 +142,7 @@ The current flags are:
 
 ```text
 --target TARGET
+--no-model
 --force-platform GOOS/GOARCH
 --depth N
 --edges-limit N
@@ -216,7 +220,7 @@ and the current architecture in
 `testdata/acceptance/python-tutorial-game` is the acceptance fixture: its `expected.json`
 lists the facts that must be present with their anchors, and a focused test
 rebuilds them from the sealed artifacts of a real run. Static prompt prose
-lives in Markdown beside documentation reduction, ProgramIndex categorization,
-target-local grouping, and cross-target matching and is embedded in the binary;
+lives in Markdown beside documentation reduction, the atlas tables and the
+orientation and is embedded in the binary;
 complete dynamic reservoirs, provider-sized request partitions, ref restoration,
 and semantic validation remain in Go.

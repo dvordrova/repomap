@@ -10,7 +10,7 @@ import (
 )
 
 func TestPreparePublishedTargetAuthorityRetainsOnlyProgramPage(t *testing.T) {
-	program := runtimeGroupedProgramIndex(
+	program := runtimeProgramIndex(
 		t, "api", "go:./cmd/api", "cmd/api/main.go", "f-api",
 	)
 	want := report.TargetNavigationPage{RunID: "run-api", ProgramTarget: program.Target}
@@ -39,7 +39,7 @@ func TestProgramPagePortfolioPersistsIdenticallyForEveryGraphRun(t *testing.T) {
 	}
 	runs := make([]targetPublishedRun, len(programs))
 	for position, fixture := range programs {
-		program := runtimeGroupedProgramIndex(
+		program := runtimeProgramIndex(
 			t, fixture.name, fixture.selector, fixture.path, fixture.fileRef,
 		)
 		runID := "run-" + fixture.name

@@ -121,8 +121,11 @@ func TestNewSupportsAnEmptyTrackedRegularCorpus(t *testing.T) {
 
 func TestCorpusExcludesCredentialConfigurationDependenciesAndGeneratedOutputs(t *testing.T) {
 	repo := t.TempDir()
+	// build, coverage and dist are ordinary directories now: a Go repository
+	// keeps real code there. Only the dependency tree and secrets are closed.
 	allowed := []string{
-		"client/src/App.tsx", "package.json", "shared/schema.ts", "tsconfig.json",
+		"client/build/app.js", "client/src/App.tsx", "coverage/report.json", "dist/index.js",
+		"package.json", "shared/schema.ts", "tsconfig.json",
 	}
 	for _, filePath := range append(append([]string(nil), allowed...),
 		".npmrc", ".env", ".env.local", "client/.env.production",
@@ -164,9 +167,9 @@ func TestForbiddenPathIsComponentExact(t *testing.T) {
 	tests := map[string]bool{
 		".npmrc": true, "ui/.npmrc": true, ".env": true, ".env.test": true,
 		"src/.environment.ts": true, "node_modules/pkg/index.js": true,
-		"src/node_modules_helper.ts": false, "dist/app.js": true, "src/dist/app.js": true,
-		"build/app.js": true, "coverage/report.json": true, "app.tsbuildinfo": true,
-		"src/build.ts": false, "src/coverage.ts": false,
+		"src/node_modules_helper.ts": false, "dist/app.js": false, "src/dist/app.js": false,
+		"build/app.js": false, "coverage/report.json": false, "app.tsbuildinfo": true,
+		"src/build.ts": false, "src/coverage.ts": false, "pkg/util/coverage/coverage.go": false,
 	}
 	for filePath, want := range tests {
 		if got := ForbiddenPath(filePath); got != want {

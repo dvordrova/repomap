@@ -122,9 +122,6 @@ type defaultRunDeps struct {
 	newTargetPortfolioProvider targetPortfolioProviderFactory
 	newCubeProvider            targetPortfolioProviderFactory
 	runDocumentationReduce     documentationReduceRunner
-	runProgramCategorization   programCategorizationRunner
-	runProgramGrouping         programGroupingRunner
-	runGroupMatching           groupMatchingRunner
 	runOrientation             orientationRunner
 	// One controller follows the complete repository run, including selected
 	// child targets and the repository overview. DeepSeek concurrency limits are
@@ -198,8 +195,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	noServe := fs.Bool("no-serve", false, "generate a static report without starting the local server")
 	port := fs.Int("port", 0, "local report server port (default: random)")
 	debugDir := fs.String("debug-dir", defaultDebugDir(), "directory for debug artifacts")
-	atlasMode := fs.Bool("atlas", false, "read the repository as tables of places (transitional; stops before the report)")
-	noModel := fs.Bool("no-model", false, "make no model call: the atlas tables are printed with their fallback lines")
+	noModel := fs.Bool("no-model", false, "make no model call: every atlas cell is its fallback line, no orientation")
 
 	if err := fs.Parse(extraArgs); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -222,7 +218,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if deps.newCubeProvider == nil {
 		deps.newCubeProvider = defaultTargetPortfolioProviderFactory
 	}
-	newCubeProvider := deps.newCubeProvider
 	publicationStateEmitted := false
 	defer func() {
 		if runErr != nil && !publicationStateEmitted && !deps.siblingTargetRun {
@@ -369,11 +364,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	}
 	languageEvidence := repositoryLanguages(repositoryCorpus)
 	targetOverride := strings.TrimSpace(*analysisTargetFlag)
-	if *noModel {
-		if targetOverride == "" {
-			return fmt.Errorf("--no-model requires --target: without the model no target is selected")
-		}
-		*atlasMode = true
+	if *noModel && targetOverride == "" {
+		return fmt.Errorf("--no-model requires --target: without the model no target is selected")
 	}
 	goBuildTags := append([]string(nil), deps.goBuildTags...)
 	var deferredGoBuildTagsErr error
@@ -491,8 +483,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				Corpus: repositoryCorpus, RepositoryState: initialState, Plan: plan,
 				RunID: runID, DebugDir: dDir, NoCache: *noCache, NoOpen: *noOpen,
 				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
-				Atlas: *atlasMode, NoModel: *noModel,
-				Output: humanOutput, FirstLayer: firstLayer,
+				NoModel: *noModel,
+				Output:  humanOutput, FirstLayer: firstLayer,
 				DiscoverJSTSFn: jstsproject.DiscoverSelected,
 				VerifiedRunsSink: func(receipts []report.RunReceipt) {
 					verifiedRuns = append([]report.RunReceipt(nil), receipts...)
@@ -507,11 +499,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			)
 		}
 		publicationStateEmitted = true
-		if *atlasMode {
-			// The atlas path stops at its tables: the owner reads them before
-			// a report is built on them.
-			return finishAtlasDispatch(dDir, reportPath, humanOutput)
-		}
 		return finishRepositoryTargetDispatch(
 			ctx, deps, dDir, filepath.Dir(reportPath), reportPath,
 			*noServe, *noOpen, *port, staticSourceHost, verifiedRuns, humanOutput,
@@ -618,30 +605,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if documentationErr != nil {
 		return fmt.Errorf("bind reduced documentation authority: %w", documentationErr)
 	}
-	if *atlasMode {
-		// The atlas reads the base index; the categorization it would have
-		// enriched it with is not asked. The reduced documentation is still
-		// persisted here, where the page expects it.
-		if err := documentationreduce.Persist(runDir, ownedDocumentation); err != nil {
-			return fmt.Errorf("persist reduced documentation: %w", err)
-		}
-	} else {
-		index, err = enrichProgramIndexForRun(
-			ctx,
-			runDir,
-			dDir,
-			*noCache,
-			deps.llmBatchConcurrency,
-			deps.llmBatchController,
-			newCubeProvider,
-			deps.runProgramCategorization,
-			ownedDocumentation,
-			index,
-			humanOutput,
-		)
-		if err != nil {
-			return err
-		}
+	// The atlas reads the base index. The reduced documentation is persisted
+	// here, where the page expects it.
+	if err := documentationreduce.Persist(runDir, ownedDocumentation); err != nil {
+		return fmt.Errorf("persist reduced documentation: %w", err)
 	}
 	indexSet, setErr := programindex.BuildArtifactSet(index)
 	if setErr != nil {
@@ -658,31 +625,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		"enriched targets: 1",
 		"artifact set: "+programindex.ArtifactSetFilename,
 	)
-	var defaultGroupIndex groupindex.Index
-	if *atlasMode {
-		defaultGroupIndex, err = groupindex.Empty(index)
-		if err != nil {
-			return err
-		}
-		if err := groupindex.Persist(runDir, defaultGroupIndex); err != nil {
-			return err
-		}
-	} else {
-		defaultGroupIndex, err = groupProgramIndexForRun(
-			ctx,
-			runDir,
-			dDir,
-			*noCache,
-			deps.llmBatchConcurrency,
-			deps.llmBatchController,
-			newCubeProvider,
-			deps.runProgramGrouping,
-			index,
-			humanOutput,
-		)
-		if err != nil {
-			return err
-		}
+	// The groups the page reads are projected from the atlas once every
+	// target is read; until then the run carries a valid empty index.
+	defaultGroupIndex, err := groupindex.Empty(index)
+	if err != nil {
+		return err
+	}
+	if err := groupindex.Persist(runDir, defaultGroupIndex); err != nil {
+		return err
 	}
 	if deps.targetOutcomeStageSink != nil {
 		deps.targetOutcomeStageSink(targetoutcome.StageDependencyAnalysis)
@@ -704,13 +654,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		deps.targetOutcomeStageSink(targetoutcome.StageTargetPage)
 	}
 	var reportPath string
-	var reportData *report.ReportData
-	if !*atlasMode {
-		reportData, err = report.ReadRunDir(runDir)
-		if err != nil {
-			return fmt.Errorf("read captured report inputs: %w", err)
-		}
-	}
 	source, err := report.NewRunSource(analysisRoot, initialState)
 	if err != nil {
 		return fmt.Errorf("name the report source: %w", err)
@@ -750,12 +693,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			"remote availability is not checked; ensure the captured commit is pushed before sharing",
 		)
 	}
-	var backingPage report.TargetNavigationPage
-	if *atlasMode {
-		backingPage, err = report.TargetNavigationPageFor(runDir, index.Target)
-	} else {
-		backingPage, err = report.PreparedTargetNavigationPage(runDir, reportData)
-	}
+	backingPage, err := report.TargetNavigationPageFor(runDir, index.Target)
 	if err != nil {
 		return fmt.Errorf("retain prepared report page identity: %w", err)
 	}

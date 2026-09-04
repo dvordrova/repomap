@@ -105,7 +105,7 @@ func withSymbols(t *testing.T, graph atlas.Graph) atlas.Graph {
 		graph.Places = append(graph.Places, atlas.Place{
 			ID: atlas.SymbolID("svc/core/c.go", 10+i, name), Kind: atlas.PlaceSymbol, Path: "svc/core/c.go",
 			LineNo: 10 + i, Depth: 1, TargetIDs: []string{"svc"}, Parent: atlas.FileID("svc/core/c.go"),
-			Given: "func " + name,
+			Given:  "func " + name,
 			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true}, Candidate: true, Rank: i},
 		})
 	}

@@ -45,32 +45,6 @@ type firstDayOptions struct {
 	Output           *runOutput
 }
 
-// buildFirstDayLayers derives the deterministic fact and claim layers, asks
-// the model for one orientation over them, and persists all three into every
-// analyzed run directory. A failure here never discards a completed page: the
-// caller keeps publishing and the report renders the sections it has.
-func buildFirstDayLayers(ctx context.Context, options firstDayOptions) error {
-	factsResult, claimsResult, err := buildFirstDayFacts(ctx, options)
-	if err != nil {
-		return err
-	}
-	orientationResult, rejected, err := runRepositoryOrientation(
-		ctx, options, factsResult, claimsResult,
-	)
-	if err != nil {
-		return err
-	}
-	for _, run := range options.Runs {
-		if err := orientation.Persist(run.RunDir, orientationResult); err != nil {
-			return err
-		}
-		if err := modeldiag.Append(run.RunDir, orientationDiagnosticRows(rejected)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // buildFirstDayFacts derives and persists the two deterministic layers,
 // facts and claims, into every analyzed run directory. The atlas path stops
 // here; the ordinary path asks for an orientation over them next.

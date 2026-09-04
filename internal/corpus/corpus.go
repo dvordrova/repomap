@@ -50,11 +50,12 @@ func ForbiddenPath(filePath string) bool {
 			strings.HasSuffix(part, ".tsbuildinfo") {
 			return true
 		}
-		if index < len(parts)-1 {
-			switch part {
-			case "node_modules", "dist", "build", "coverage":
-				return true
-			}
+		// Only a dependency tree is closed by name. A directory called build,
+		// dist or coverage is real code in a Go repository: kubernetes keeps
+		// pkg/util/coverage and its build scripts; generated bundles are
+		// recognised by their own markers, not by their parent's name.
+		if index < len(parts)-1 && part == "node_modules" {
+			return true
 		}
 	}
 	return false

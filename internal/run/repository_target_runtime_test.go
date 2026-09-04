@@ -9,13 +9,10 @@ import (
 	"fmt"
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/llm"
-	"github.com/dvordrova/repomap/internal/orientation"
-	"github.com/dvordrova/repomap/internal/programcategorization"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
@@ -1347,129 +1344,6 @@ func requireRepositoryPlanGuidance(t *testing.T, plan repositoryTargetPlan) {
 	owned.Documents[0].Content = "mutated"
 	if plan.guidance.Documents[0].Content != "# Universal runtime\n\nGo API, Python runtime, and TypeScript client.\n" {
 		t.Fatal("repository plan guidance shares storage with returned snapshot")
-	}
-}
-
-type ordinaryGraphSemanticPreset struct {
-	provider                *ordinaryGraphNoNetworkProvider
-	providerFactoryCalls    int
-	documentationCalls      int
-	categorizationLanguages map[string]int
-	groupingLanguages       map[string]int
-	matchingCalls           int
-	wantMatchingIndexCount  int
-}
-
-func newOrdinaryGraphSemanticPreset(wantMatchingIndexCount int) *ordinaryGraphSemanticPreset {
-	return &ordinaryGraphSemanticPreset{
-		provider:                &ordinaryGraphNoNetworkProvider{},
-		categorizationLanguages: make(map[string]int),
-		groupingLanguages:       make(map[string]int),
-		wantMatchingIndexCount:  wantMatchingIndexCount,
-	}
-}
-
-func (preset *ordinaryGraphSemanticPreset) deps(ctx context.Context) defaultRunDeps {
-	return defaultRunDeps{
-		ctx: ctx, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{},
-		llmBatchConcurrency: 2, llmBatchController: &llm.BatchController{},
-		newCubeProvider: func() (llm.Provider, error) {
-			preset.providerFactoryCalls++
-			return preset.provider, nil
-		},
-		runDocumentationReduce: func(
-			ctx context.Context,
-			executor llm.Executor,
-			provider llm.Provider,
-			guidance readmetargetscout.GuidanceSnapshot,
-		) (documentationreduce.Result, error) {
-			preset.documentationCalls++
-			if executor.Enabled || provider != nil || len(guidance.Documents) != 0 {
-				return documentationreduce.Result{}, fmt.Errorf(
-					"unexpected documentation preset authority: executor=%#v provider=%#v guidance=%#v",
-					executor, provider, guidance,
-				)
-			}
-			return documentationreduce.Run(ctx, executor, provider, guidance)
-		},
-		runProgramCategorization: func(
-			_ context.Context,
-			executor llm.Executor,
-			provider llm.Provider,
-			base programindex.Index,
-			documentation documentationreduce.Result,
-		) (programcategorization.Result, error) {
-			if executor.Enabled || provider != preset.provider || len(base.Objects) == 0 {
-				return programcategorization.Result{}, fmt.Errorf(
-					"unexpected categorization preset authority for %s", base.Target.ID,
-				)
-			}
-			preset.categorizationLanguages[base.Target.Language]++
-			return programcategorization.Result{
-				ProgramTargetID:            base.Target.ID,
-				BaseProgramIndexSHA256:     base.SHA256,
-				ReducedDocumentationSHA256: documentation.ReductionSHA256,
-				Assignments: []programcategorization.Assignment{{
-					SubjectID:  base.Objects[0].ID,
-					Categories: []programcategorization.Category{programcategorization.CategoryCore},
-				}},
-				Diagnostics: []programcategorization.Diagnostic{},
-			}, nil
-		},
-		runProgramGrouping: func(
-			_ context.Context,
-			executor llm.Executor,
-			provider llm.Provider,
-			program programindex.Index,
-		) (groupindex.Index, []groupindex.Diagnostic, error) {
-			if executor.Enabled || provider != preset.provider || program.Categorization == nil ||
-				len(program.Categorization.Assignments) != 1 {
-				return groupindex.Index{}, nil, fmt.Errorf(
-					"unexpected grouping preset authority for %s", program.Target.ID,
-				)
-			}
-			preset.groupingLanguages[program.Target.Language]++
-			subjectID := program.Categorization.Assignments[0].SubjectID
-			return groupindex.Build(program, groupindex.Proposals{Groups: []groupindex.GroupProposal{{
-				Key: "core", Title: program.Target.Name + " core",
-				Summary: "Owns the selected target's core behavior.", Lane: groupindex.LaneCore,
-				MemberSubjectIDs: []string{subjectID}, EvidenceSubjectIDs: []string{subjectID},
-			}}})
-		},
-		runOrientation: func(
-			_ context.Context,
-			executor llm.Executor,
-			_ llm.Provider,
-			input orientation.Input,
-		) (orientation.Result, []orientation.RejectedRow, error) {
-			if executor.Enabled {
-				return orientation.Result{}, nil, fmt.Errorf("orientation reused the live cache")
-			}
-			result, sealErr := orientation.Empty(
-				input.Facts.SHA256, input.Claims.SHA256, orientationGroupDigests(input.Groups), 0,
-			)
-			return result, nil, sealErr
-		},
-		runGroupMatching: func(
-			_ context.Context,
-			executor llm.Executor,
-			provider llm.Provider,
-			indexes []groupindex.Index,
-		) ([]groupindex.Index, []groupindex.Diagnostic, error) {
-			preset.matchingCalls++
-			if executor.Enabled || provider != preset.provider ||
-				len(indexes) != preset.wantMatchingIndexCount {
-				return nil, nil, fmt.Errorf(
-					"matching received %d GroupsIndexes, want %d",
-					len(indexes), preset.wantMatchingIndexCount,
-				)
-			}
-			matched := make([]groupindex.Index, len(indexes))
-			for index := range indexes {
-				matched[index] = indexes[index].Snapshot()
-			}
-			return matched, nil, nil
-		},
 	}
 }
 
