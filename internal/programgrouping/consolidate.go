@@ -410,32 +410,48 @@ func consolidateWindows(
 	if len(candidates.groups) <= consolidateWindow {
 		return consolidateOnce(ctx, executor, provider, compilation, requestPhase, candidates, parts)
 	}
-	var diagnostics []groupindex.Diagnostic
-	result := proposalSet{}
-	// Where each candidate ended up, over the whole pool. A window can only
-	// carry the connections whose both ends it can see, so the ones crossing
-	// windows were dropped there and the pool's own list still named keys
-	// that no longer existed — chi came out of four passes with a hundred
-	// groups and not one connection, while a target consolidated in a single
-	// window kept sixty-seven.
-	renamed := make(map[string]string, len(candidates.groups))
+	// The windows of one pass are independent questions, so they are asked
+	// together through the batch executor and its gate. Asked one after
+	// another, the grouping of repomap's own target ran fourteen minutes of
+	// wall clock for twenty-six minutes of provider time — less than twice
+	// parallel on a four-way pool.
+	var windows []proposalSet
+	var calls []llm.Call[consolidateResponse]
 	for start := 0; start < len(candidates.groups); start += consolidateWindow {
 		end := min(start+consolidateWindow, len(candidates.groups))
 		window := proposalSet{
 			groups:      candidates.groups[start:end],
 			connections: candidates.connections,
 		}
-		joined, windowDiagnostics, err := consolidateOnce(
-			ctx, executor, provider, compilation, requestPhase, window, parts,
-		)
-		diagnostics = append(diagnostics, windowDiagnostics...)
+		call, err := consolidateCall(compilation, requestPhase, window, parts)
 		if err != nil {
-			if ctx.Err() != nil {
-				return proposalSet{}, diagnostics, err
-			}
+			return proposalSet{}, nil, err
+		}
+		windows = append(windows, window)
+		calls = append(calls, call)
+	}
+	outcomes, batchErr := llm.ExecuteJSONBatch(ctx, executor, provider, calls)
+	if ctx.Err() != nil {
+		return proposalSet{}, nil, ctx.Err()
+	}
+	var diagnostics []groupindex.Diagnostic
+	result := proposalSet{connections: candidates.connections}
+	for position, window := range windows {
+		start := position * consolidateWindow
+		var joined proposalSet
+		answered := position < len(outcomes) && len(outcomes[position].Value.Assign) > 0
+		if answered {
+			var windowDiagnostics []groupindex.Diagnostic
+			joined, windowDiagnostics = applyConsolidation(window, outcomes[position].Value)
+			diagnostics = append(diagnostics, windowDiagnostics...)
+		} else {
 			// A window that fails keeps its candidates exactly as they were.
+			reason := "window was not answered"
+			if batchErr != nil {
+				reason = batchErr.Error()
+			}
 			diagnostics = append(diagnostics, groupindex.Diagnostic{
-				Kind: diagnosticMergeSkipped, Reason: err.Error(),
+				Kind: diagnosticMergeSkipped, Reason: reason,
 			})
 			joined = window
 		}
@@ -443,27 +459,13 @@ func consolidateWindows(
 		// is the forty-first candidate overall. Translate before the result
 		// leaves the window, or a later level resolves those refs against the
 		// whole list and silently gathers the wrong groups.
-		for position := range joined.groups {
-			joined.groups[position].absorbed = globalCandidateRefs(
-				joined.groups[position].absorbed, start,
-			)
+		for index := range joined.groups {
+			joined.groups[index].absorbed = globalCandidateRefs(joined.groups[index].absorbed, start)
 		}
-		namespaced := namespaceProposalSet(joined, fmt.Sprintf("w%d:", start/consolidateWindow+1))
-		for _, group := range namespaced.groups {
-			for _, ref := range group.absorbed {
-				var position int
-				if _, err := fmt.Sscanf(ref, "c%d", &position); err != nil {
-					continue
-				}
-				if position -= 1; position >= 0 && position < len(candidates.groups) {
-					renamed[candidates.groups[position].Key] = group.Key
-				}
-			}
-		}
+		namespaced := namespaceProposalSet(joined, fmt.Sprintf("w%d:", position+1))
 		result.groups = append(result.groups, namespaced.groups...)
 		diagnostics = append(diagnostics, namespaced.diagnostics...)
 	}
-	result.connections = movedConnections(candidates.connections, renamed)
 	return canonicalProposalSet(result), diagnostics, nil
 }
 
@@ -476,16 +478,37 @@ func consolidateOnce(
 	candidates proposalSet,
 	parts []string,
 ) (proposalSet, []groupindex.Diagnostic, error) {
-	request := compilation.consolidateRequestFor(requestPhase, candidates, parts)
-	wire, err := json.Marshal(request)
-	if err != nil {
-		return proposalSet{}, nil, fmt.Errorf("program grouping: encode consolidation request: %w", err)
-	}
-	state, err := cubeState(requestPhase, wire)
+	call, err := consolidateCall(compilation, requestPhase, candidates, parts)
 	if err != nil {
 		return proposalSet{}, nil, err
 	}
-	outcome, err := llm.ExecuteJSON(ctx, executor, provider, llm.Call[consolidateResponse]{
+	outcome, err := llm.ExecuteJSON(ctx, executor, provider, call)
+	if err != nil {
+		return proposalSet{}, nil, err
+	}
+	merged, diagnostics := applyConsolidation(candidates, outcome.Value)
+	return merged, diagnostics, nil
+}
+
+// consolidateCall is one consolidation question as the provider is asked it,
+// with its validation. A window's question is built the same way whether it
+// is asked alone or in a batch with its neighbours.
+func consolidateCall(
+	compilation Compilation,
+	requestPhase phase,
+	candidates proposalSet,
+	parts []string,
+) (llm.Call[consolidateResponse], error) {
+	request := compilation.consolidateRequestFor(requestPhase, candidates, parts)
+	wire, err := json.Marshal(request)
+	if err != nil {
+		return llm.Call[consolidateResponse]{}, fmt.Errorf("program grouping: encode consolidation request: %w", err)
+	}
+	state, err := cubeState(requestPhase, wire)
+	if err != nil {
+		return llm.Call[consolidateResponse]{}, err
+	}
+	return llm.Call[consolidateResponse]{
 		State: state,
 		Prompt: llm.Prompt{
 			System: strings.TrimSpace(promptText), User: string(wire), ResponseFormatJSON: true,
@@ -502,19 +525,13 @@ func consolidateOnce(
 			if err := refuseFlatConsolidation(request, decoded); err != nil {
 				return consolidateResponse{}, err
 			}
-			if kept, err := keepNamedParts(request, decoded); err != nil {
+			kept, err := keepNamedParts(request, decoded)
+			if err != nil {
 				return consolidateResponse{}, err
-			} else {
-				decoded = kept
 			}
-			return decoded, nil
+			return kept, nil
 		},
-	})
-	if err != nil {
-		return proposalSet{}, nil, err
-	}
-	merged, diagnostics := applyConsolidation(candidates, outcome.Value)
-	return merged, diagnostics, nil
+	}, nil
 }
 
 // applyConsolidation unions the members of the candidates each returned group
