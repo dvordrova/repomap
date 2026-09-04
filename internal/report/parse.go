@@ -30,8 +30,9 @@ type snapshotJSON struct {
 }
 
 type runMetadataJSON struct {
-	RepoName string   `json:"repo_name"`
-	Warnings []string `json:"warnings"`
+	RepoName string     `json:"repo_name"`
+	Warnings []string   `json:"warnings"`
+	Timing   *RunTiming `json:"timing"`
 }
 
 func ReadRunDir(runDir string) (*ReportData, error) {
@@ -437,6 +438,7 @@ func parseRunMetadata(metadataPath string, data *ReportData) error {
 		return fmt.Errorf("report: metadata repository name does not match snapshot")
 	}
 	data.Warnings = append(data.Warnings, metadata.Warnings...)
+	data.Timing = metadata.Timing
 	return nil
 }
 

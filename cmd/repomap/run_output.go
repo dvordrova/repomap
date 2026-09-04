@@ -1,10 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/llm"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -278,6 +281,52 @@ func (output *runOutput) Timing() {
 		lines = append(lines, "provider time in all: "+total.Round(time.Second).String())
 	}
 	output.writeDetailsLocked(lines...)
+}
+
+// TimingReport is the Time stage as data, for the run's metadata.
+func (output *runOutput) TimingReport() debugdump.RunTiming {
+	if output == nil {
+		return debugdump.RunTiming{}
+	}
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	report := debugdump.RunTiming{WallMS: output.now().Sub(output.started).Milliseconds()}
+	stages := make([]string, 0, len(output.modelTime))
+	for stage := range output.modelTime {
+		stages = append(stages, stage)
+	}
+	sort.Strings(stages)
+	for _, stage := range stages {
+		at := output.modelTime[stage]
+		report.Stages = append(report.Stages, debugdump.StageTiming{
+			Stage: stage, Live: at.live, Cached: at.cached,
+			ProviderMS: at.sum.Milliseconds(), SlowestMS: at.longest.Milliseconds(),
+		})
+	}
+	return report
+}
+
+// writeRunTiming records the run's account in its metadata, so the page
+// generated next can say how long the run took and where.
+func writeRunTiming(runDir string, timing debugdump.RunTiming) error {
+	path := filepath.Join(runDir, "metadata.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("run timing: read metadata: %w", err)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return fmt.Errorf("run timing: decode metadata: %w", err)
+	}
+	metadata["timing"] = timing
+	encoded, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("run timing: encode metadata: %w", err)
+	}
+	if err := os.WriteFile(path, append(encoded, '\n'), 0o644); err != nil {
+		return fmt.Errorf("run timing: write metadata: %w", err)
+	}
+	return nil
 }
 
 // timedObserver hands every model call to the run output's clock on its way

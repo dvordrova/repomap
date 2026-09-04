@@ -33,6 +33,26 @@ type RunMeta struct {
 	EffectiveOptions           EffectiveOptions `json:"effective_options,omitempty"`
 	RequestAttempts            []RequestAttempt `json:"request_attempts,omitempty"`
 	BuildIdentity              BuildIdentity    `json:"build_identity"`
+	// Timing is where this run's time went, written when the run is done so
+	// the page can say it: the wall clock, and per model stage the calls and
+	// the provider time.
+	Timing *RunTiming `json:"timing,omitempty"`
+}
+
+// RunTiming is the Time stage of a run as data.
+type RunTiming struct {
+	WallMS int64         `json:"wall_ms"`
+	Stages []StageTiming `json:"stages,omitempty"`
+}
+
+// StageTiming is one model stage's account: how many calls were live and
+// how many the cache answered, what the live ones summed to and the slowest.
+type StageTiming struct {
+	Stage      string `json:"stage"`
+	Live       int    `json:"live"`
+	Cached     int    `json:"cached"`
+	ProviderMS int64  `json:"provider_ms"`
+	SlowestMS  int64  `json:"slowest_ms"`
 }
 
 // BuildIdentity binds a run to the exact local binary without exposing build

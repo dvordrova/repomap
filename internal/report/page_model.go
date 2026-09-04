@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/facts"
@@ -59,6 +60,7 @@ type pageView struct {
 	Addresses        []pageAddress
 	Sections         []*pageSection
 	Notes            []string
+	Timing           []string
 }
 
 type pageSentence struct {
@@ -300,6 +302,7 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 	for _, warning := range data.Warnings {
 		view.Notes = append(view.Notes, scrubBrowserLocalPaths(warning, localRoots))
 	}
+	view.Timing = timingLines(data.Timing)
 	return view, nil
 }
 
@@ -895,4 +898,36 @@ func (builder *pageBuilder) boundaryCounts() []pageBoundary {
 		result = append(result, row)
 	}
 	return result
+}
+
+// timingLines says where a run's time went, in the words of the Time stage.
+func timingLines(timing *RunTiming) []string {
+	if timing == nil || timing.WallMS <= 0 {
+		return nil
+	}
+	lines := []string{"This run took " + durationWords(timing.WallMS) + " of wall clock."}
+	var total int64
+	for _, stage := range timing.Stages {
+		total += stage.ProviderMS
+		lines = append(lines, fmt.Sprintf(
+			"%s: %d live model call%s, %d from cache, %s of provider time, slowest %s.",
+			strings.ReplaceAll(stage.Stage, "_", " "), stage.Live, pluralS(stage.Live), stage.Cached,
+			durationWords(stage.ProviderMS), durationWords(stage.SlowestMS),
+		))
+	}
+	if len(timing.Stages) > 0 {
+		lines = append(lines, "Provider time in all: "+durationWords(total)+".")
+	}
+	return lines
+}
+
+func durationWords(ms int64) string {
+	return (time.Duration(ms) * time.Millisecond).Round(time.Second).String()
+}
+
+func pluralS(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
 }

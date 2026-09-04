@@ -20,7 +20,7 @@
 <main>
 {{template "overview.html" .}}
 {{range .Sections}}{{template "target.html" .}}{{end}}
-{{if .Notes}}<section id="notes"><h2>Notes from this run</h2><ul class="plain notes">{{range .Notes}}<li>{{.}}</li>{{end}}</ul></section>{{end}}
+{{if or .Notes .Timing}}<section id="notes"><h2>Notes from this run</h2>{{if .Timing}}<ul class="plain fact timing">{{range .Timing}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Notes}}<ul class="plain notes">{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}</section>{{end}}
 </main>
 {{if .Served}}<div class="status" id="rm-status" role="status" hidden></div>
 <script type="application/json" id="rm-source-ids">{{.SourceIDsJSON}}</script>{{end}}

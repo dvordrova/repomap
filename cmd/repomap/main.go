@@ -675,6 +675,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			GitLabURL: gitLabURL, GitHubURL: gitHubURL, PublishHTML: true,
 		})
 	}
+	if err := writeRunTiming(runDir, humanOutput.TimingReport()); err != nil {
+		humanOutput.Warn("could not record the run's timing", err.Error())
+	}
 	reportStarted := time.Now()
 	if !deps.deferredPortfolioHTML {
 		humanOutput.Stage("Report", "generating authorized Program report")

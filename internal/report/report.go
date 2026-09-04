@@ -38,6 +38,10 @@ type ReportData struct {
 	TargetOutcomePortfolio *TargetOutcomePortfolioView `json:"target_outcome_portfolio"`
 	RepoName               string                      `json:"repo_name"`
 	Warnings               []string                    `json:"warnings,omitempty"`
+	// Timing is where the run's time went: the wall clock, and per model
+	// stage the calls and the provider time. A reader deciding whether to
+	// run this on a bigger repository wants the number, not a feeling.
+	Timing *RunTiming `json:"timing,omitempty"`
 
 	// Facts, Claims and Orientation are the repository-level first-day
 	// artifacts. They are optional so older run directories still restore;
@@ -71,4 +75,18 @@ type ReportData struct {
 	localGroupsIndex                    *groupindex.Index
 	reducedDocumentation                *documentationreduce.Result
 	targetMetadataBytes                 int
+}
+
+// RunTiming mirrors the run's Time stage as the page reads it.
+type RunTiming struct {
+	WallMS int64         `json:"wall_ms"`
+	Stages []StageTiming `json:"stages,omitempty"`
+}
+
+type StageTiming struct {
+	Stage      string `json:"stage"`
+	Live       int    `json:"live"`
+	Cached     int    `json:"cached"`
+	ProviderMS int64  `json:"provider_ms"`
+	SlowestMS  int64  `json:"slowest_ms"`
 }
