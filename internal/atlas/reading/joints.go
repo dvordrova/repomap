@@ -276,9 +276,53 @@ func (r *reader) readJoints(ctx context.Context) error {
 			}
 		}
 	}
+	r.joints = append(r.joints, r.linkJoints()...)
 	sort.Slice(r.joints, func(i, j int) bool { return r.joints[i].ID < r.joints[j].ID })
 	r.reportStage(def.Stage)
 	return nil
+}
+
+// linkJoints are the joints the code sees without a value: a call or an
+// import from a box of one target into a box of another. A workspace
+// package of the same target is no boundary at all; one of another target
+// is the seam between them, and it is exact.
+func (r *reader) linkJoints() []atlas.Joint {
+	type key struct{ from, fromBox, to, toBox string }
+	seen := make(map[key]bool)
+	var joints []atlas.Joint
+	for _, edge := range r.opts.Graph.Edges {
+		fromBox, toBox := r.boxOfPlace(edge.From), r.boxOfPlace(edge.To)
+		if fromBox == "" || toBox == "" || fromBox == toBox {
+			continue
+		}
+		for _, fromTarget := range r.places[edge.From].TargetIDs {
+			if r.targetFiles(r.boxes[fromBox], fromTarget) == 0 {
+				continue
+			}
+			for _, toTarget := range r.places[edge.To].TargetIDs {
+				if fromTarget == toTarget || r.targetFiles(r.boxes[toBox], toTarget) == 0 {
+					continue
+				}
+				if contains(r.places[edge.To].TargetIDs, fromTarget) {
+					// The callee is this target's own file too: an internal call.
+					continue
+				}
+				k := key{fromTarget, fromBox, toTarget, toBox}
+				if seen[k] {
+					continue
+				}
+				seen[k] = true
+				joints = append(joints, atlas.Joint{
+					ID:    fmt.Sprintf("joint:%s:%s->%s:%s", fromTarget, fromBox, toTarget, toBox),
+					From:  atlas.Endpoint{TargetID: fromTarget, BoxID: fromBox},
+					To:    atlas.Endpoint{TargetID: toTarget, BoxID: toBox},
+					Value: edge.Kind + " " + r.boxes[toBox].dir,
+					Same:  true, Label: "uses " + r.boxes[toBox].title,
+				})
+			}
+		}
+	}
+	return joints
 }
 
 func (r *reader) sideOf(state *boundaryState, byTarget map[string]TargetMeta) lines.BoundarySide {

@@ -56,11 +56,38 @@ type Input struct {
 	Facts facts.Result
 }
 
-// sdkPackages are standard-library packages whose calls with literal
-// arguments are integration points even though the runtime is not an SDK:
-// exactly these packages, not their subpackages (net/http client calls with
-// a literal URL are already facts).
-var sdkPackages = []string{"database/sql", "net"}
+// sdkPackages are the client libraries whose calls with a literal argument
+// are integration points: a database, a queue, a cloud, a store, a service
+// SDK. "Any non-platform package with a literal" was measured on kubernetes
+// as 844 field paths and 120 feature-gate names; a closed list of what a
+// reader would call an integration is honest and small. Matched by exact
+// path or as a prefix with a slash.
+var sdkPackages = []string{
+	"database/sql", "net",
+	"google.golang.org/grpc", "github.com/jackc/pgx", "github.com/jackc/pgconn", "github.com/lib/pq",
+	"github.com/go-sql-driver/mysql", "gorm.io", "github.com/jmoiron/sqlx", "github.com/mattn/go-sqlite3",
+	"modernc.org/sqlite", "go.mongodb.org/mongo-driver", "github.com/redis/go-redis", "github.com/go-redis/redis",
+	"github.com/gomodule/redigo", "github.com/ClickHouse/clickhouse-go", "github.com/segmentio/kafka-go",
+	"github.com/IBM/sarama", "github.com/Shopify/sarama", "github.com/confluentinc/confluent-kafka-go",
+	"github.com/nats-io/nats.go", "github.com/rabbitmq/amqp091-go", "github.com/streadway/amqp",
+	"github.com/apache/pulsar-client-go", "github.com/eclipse/paho.mqtt.golang",
+	"github.com/aws/aws-sdk-go", "github.com/aws/aws-sdk-go-v2", "cloud.google.com/go",
+	"github.com/Azure/azure-sdk-for-go", "github.com/elastic/go-elasticsearch", "github.com/olivere/elastic",
+	"github.com/minio/minio-go", "github.com/hashicorp/vault", "github.com/hashicorp/consul",
+	"go.etcd.io/etcd/client", "k8s.io/client-go", "github.com/docker/docker/client", "github.com/moby/moby/client",
+	"github.com/go-resty/resty", "github.com/valyala/fasthttp", "github.com/gorilla/websocket", "nhooyr.io/websocket",
+	"github.com/slack-go/slack", "github.com/stripe/stripe-go", "github.com/twilio", "github.com/sendgrid",
+	"github.com/bwmarrin/discordgo", "gopkg.in/telebot", "github.com/go-telegram-bot-api",
+	"github.com/dgraph-io/badger", "go.etcd.io/bbolt", "github.com/syndtr/goleveldb", "github.com/gocql/gocql",
+	// Python and JavaScript client libraries, by import name.
+	"boto3", "botocore", "pymongo", "motor", "redis", "aioredis", "sqlalchemy", "psycopg2", "psycopg", "asyncpg",
+	"pymysql", "mysql", "sqlite3", "kafka", "aiokafka", "confluent_kafka", "pika", "aio_pika", "celery", "stripe",
+	"twilio", "slack_sdk", "google.cloud", "azure", "elasticsearch", "cassandra", "hvac", "consul", "kubernetes",
+	"docker", "paramiko", "smtplib", "ftplib", "telebot", "aiogram", "discord",
+	"@aws-sdk", "aws-sdk", "mongoose", "mongodb", "pg", "mysql2", "ioredis", "kafkajs", "amqplib", "@slack",
+	"firebase", "firebase-admin", "@google-cloud", "@azure", "socket.io", "socket.io-client", "ws", "nodemailer",
+	"stripe", "twilio", "discord.js", "telegraf", "node-telegram-bot-api", "@elastic/elasticsearch", "cassandra-driver",
+}
 
 // sdkNeverPackages are packages whose literal arguments are never an
 // integration: format strings, separators, error text, log messages, flag
@@ -1024,11 +1051,17 @@ func sdkCandidate(external programindex.ExternalSymbol) bool {
 	if _, never := packageMatches(external.PackagePath, sdkNeverPackages...); never {
 		return false
 	}
-	if external.AuthorityKind == programindex.ExternalAuthorityPackage {
-		return true
-	}
-	for _, exact := range sdkPackages {
-		if external.PackagePath == exact {
+	for _, known := range sdkPackages {
+		if known == "net" {
+			// net itself (Dial, Listen), not net/http, whose client calls
+			// with a literal URL are already facts.
+			if external.PackagePath == "net" {
+				return true
+			}
+			continue
+		}
+		if external.PackagePath == known || strings.HasPrefix(external.PackagePath, known+"/") ||
+			strings.HasPrefix(external.PackagePath, known+".") {
 			return true
 		}
 	}

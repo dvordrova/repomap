@@ -48,8 +48,14 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 		if !joint.Same {
 			continue
 		}
-		fromGroup := groupIDs[joint.From.TargetID][boxOfBoundary[joint.From.TargetID][joint.From.BoundaryID]]
-		toGroup := groupIDs[joint.To.TargetID][boxOfBoundary[joint.To.TargetID][joint.To.BoundaryID]]
+		endpointBox := func(endpoint atlas.Endpoint) string {
+			if endpoint.BoxID != "" {
+				return endpoint.BoxID
+			}
+			return boxOfBoundary[endpoint.TargetID][endpoint.BoundaryID]
+		}
+		fromGroup := groupIDs[joint.From.TargetID][endpointBox(joint.From)]
+		toGroup := groupIDs[joint.To.TargetID][endpointBox(joint.To)]
 		if fromGroup == "" || toGroup == "" {
 			continue
 		}

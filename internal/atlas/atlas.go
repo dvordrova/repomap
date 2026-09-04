@@ -346,10 +346,12 @@ type Joint struct {
 	Blind    bool   `json:"blind"`
 }
 
-// Endpoint names one boundary of one target.
+// Endpoint names one side of a joint: a boundary of a target, or, for a
+// joint the code derived from a call or an import across targets, a box.
 type Endpoint struct {
 	TargetID   string `json:"target_id"`
-	BoundaryID string `json:"boundary_id"`
+	BoundaryID string `json:"boundary_id,omitempty"`
+	BoxID      string `json:"box_id,omitempty"`
 }
 
 // Budget says how much of the repository the model was asked about.
@@ -636,6 +638,7 @@ func Validate(value Atlas) error {
 	}
 	targets := make(map[string]struct{}, len(value.Targets))
 	boundaries := make(map[string]map[string]struct{})
+	boxesOf := make(map[string]map[string]struct{})
 	for _, target := range value.Targets {
 		if target.ID == "" {
 			return fmt.Errorf("atlas: target without id")
@@ -747,6 +750,7 @@ func Validate(value Atlas) error {
 			}
 		}
 		boundaries[target.ID] = owned
+		boxesOf[target.ID] = boxes
 		for _, boxID := range target.Trace {
 			if _, ok := boxes[boxID]; !ok {
 				return fmt.Errorf("atlas: trace names unknown box %q", boxID)
@@ -759,8 +763,17 @@ func Validate(value Atlas) error {
 			if !ok {
 				return fmt.Errorf("atlas: joint %q names unknown target %q", joint.ID, endpoint.TargetID)
 			}
-			if _, ok := owned[endpoint.BoundaryID]; !ok {
-				return fmt.Errorf("atlas: joint %q names unknown boundary %q", joint.ID, endpoint.BoundaryID)
+			switch {
+			case endpoint.BoundaryID != "" && endpoint.BoxID == "":
+				if _, ok := owned[endpoint.BoundaryID]; !ok {
+					return fmt.Errorf("atlas: joint %q names unknown boundary %q", joint.ID, endpoint.BoundaryID)
+				}
+			case endpoint.BoxID != "" && endpoint.BoundaryID == "":
+				if _, ok := boxesOf[endpoint.TargetID][endpoint.BoxID]; !ok {
+					return fmt.Errorf("atlas: joint %q names unknown box %q", joint.ID, endpoint.BoxID)
+				}
+			default:
+				return fmt.Errorf("atlas: joint %q endpoint names neither a boundary nor a box", joint.ID)
 			}
 		}
 		if joint.From.TargetID == joint.To.TargetID {

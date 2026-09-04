@@ -333,6 +333,43 @@ func TestJointsMatchValuesAcrossTargetsAndAskPeersForTheRest(t *testing.T) {
 	}
 }
 
+func TestCrossTargetCallsBecomeLinkJoints(t *testing.T) {
+	graph := twoTargetGraph(t)
+	// web's client calls svc's handler file directly: a seam between targets.
+	graph.Edges = append(graph.Edges, atlas.Edge{
+		From: atlas.FileID("web/src/client.ts"), To: atlas.FileID("svc/api/h.go"), Kind: "calls", Count: 1,
+		Witnesses: []atlas.Witness{{Caller: "F", Callee: "F", Path: "web/src/client.ts", LineNo: 7}},
+	})
+	encoded, err := atlas.EncodeGraph(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err = atlas.DecodeGraph(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Read(context.Background(), twoTargetOptions(t, graph, &tableProvider{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	links := 0
+	for _, joint := range result.Atlas.Joints {
+		if joint.From.BoxID == "" {
+			continue
+		}
+		links++
+		if joint.From.TargetID != "web" || joint.From.BoxID != "web/src" || joint.To.TargetID != "svc" || joint.To.BoxID != "svc/api" || !joint.Same || joint.Possible {
+			t.Fatalf("link joint: %+v", joint)
+		}
+	}
+	if links != 1 {
+		t.Fatalf("link joints: %d", links)
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFixturesJoinOnlyWithinTheirRoot(t *testing.T) {
 	if fixtureRoot("testdata/acceptance/python-tutorial-game/backend") != "testdata/acceptance" {
 		t.Fatal(fixtureRoot("testdata/acceptance/python-tutorial-game/backend"))
