@@ -86,6 +86,9 @@ type reader struct {
 	openFiles map[string]bool   // file place ID -> open, budget mode only
 	budget    bool
 
+	symbolLine map[string]cell     // symbol place ID -> model line
+	keys       map[string][]string // file place ID -> key symbol IDs, by rank
+
 	boxOf      map[string]string    // file place ID -> box ID
 	boxes      map[string]*boxState // box ID -> box
 	zones      map[string][]*zoneState
@@ -119,16 +122,18 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		opts.State = func(string, string, ...string) {}
 	}
 	r := &reader{
-		opts:      opts,
-		places:    make(map[string]atlas.Place, len(opts.Graph.Places)),
-		lines:     make(map[string]cell),
-		titles:    make(map[string]cell),
-		boxChoice: make(map[string]string),
-		openDirs:  make(map[string]bool),
-		openFiles: make(map[string]bool),
-		uses:      make(map[string]*atlas.StageUse),
-		started:   make(map[string]time.Time),
-		dry:       opts.Provider == nil,
+		opts:       opts,
+		places:     make(map[string]atlas.Place, len(opts.Graph.Places)),
+		lines:      make(map[string]cell),
+		titles:     make(map[string]cell),
+		boxChoice:  make(map[string]string),
+		openDirs:   make(map[string]bool),
+		openFiles:  make(map[string]bool),
+		symbolLine: make(map[string]cell),
+		keys:       make(map[string][]string),
+		uses:       make(map[string]*atlas.StageUse),
+		started:    make(map[string]time.Time),
+		dry:        opts.Provider == nil,
 	}
 	files := 0
 	for _, place := range opts.Graph.Places {
@@ -150,7 +155,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 	}
 	fmt.Fprintf(&r.tables, "# Atlas tables\n\nrepository: %s\nrevision: %s\nmode: %s\n\n", opts.Repository, opts.Revision, mode)
 	steps := []func(context.Context) error{
-		r.readDirectories, r.readFiles,
+		r.readDirectories, r.readFiles, r.readSymbols,
 		func(context.Context) error { r.assignBoxes(); return nil },
 		r.readBoundaries, r.readZones, r.readArrows, r.readTargets, r.readJoints,
 	}
@@ -661,16 +666,24 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 				Callers: len(place.File.Callers), Callees: len(place.File.Callees),
 			}
 			for _, decl := range place.File.Decls {
-				file.Symbols = append(file.Symbols, atlas.Symbol{
+				symbol := atlas.Symbol{
 					ID: atlas.SymbolID(place.Path, decl.LineNo, decl.Name), Name: decl.Name, Kind: decl.Kind,
 					Signature: decl.Signature, Doc: decl.Doc, LineNo: decl.LineNo, Column: decl.Column,
-				})
+				}
+				if line, ok := r.symbolLine[symbol.ID]; ok {
+					symbol.Line = line.value
+				}
+				symbol.Key = contains(r.keys[fileID], symbol.ID)
+				file.Symbols = append(file.Symbols, symbol)
 			}
 			box.Files = append(box.Files, file)
 			target.Files++
 			target.Symbols += len(file.Symbols)
 		}
-		box.Keys = rankedKeys(box.Files)
+		box.Keys = modelKeys(box.Files)
+		if len(box.Keys) == 0 {
+			box.Keys = rankedKeys(box.Files)
+		}
 		target.Boxes = append(target.Boxes, box)
 	}
 	for _, zone := range r.zones[meta.ID] {
@@ -709,6 +722,34 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 	}
 	target.Trace = r.trace(meta.ID)
 	return target
+}
+
+// modelKeys lists the symbols the model marked as key, three per box, the
+// documented ones first.
+func modelKeys(files []atlas.File) []atlas.Key {
+	var keys []atlas.Key
+	for _, file := range files {
+		for _, symbol := range file.Symbols {
+			if !symbol.Key {
+				continue
+			}
+			doc := symbol.Line
+			if doc == "" {
+				doc = symbol.Doc
+			}
+			keys = append(keys, atlas.Key{SymbolID: symbol.ID, Name: symbol.Name, Path: file.Path, Doc: doc, LineNo: symbol.LineNo})
+		}
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		if (keys[i].Doc != "") != (keys[j].Doc != "") {
+			return keys[i].Doc != ""
+		}
+		return keys[i].Name < keys[j].Name
+	})
+	if len(keys) > 3 {
+		keys = keys[:3]
+	}
+	return keys
 }
 
 // rankedKeys picks a box's key symbols by code: exported and documented

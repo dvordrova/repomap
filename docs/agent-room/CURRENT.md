@@ -65,11 +65,15 @@ per target when there are several); joints between compatible targets by
 matched method and path or equal literal, confirmed yes or no, and a blind
 peer choice for outgoing calls nothing matched. Side and trace are code.
 Above 2,000 files the directory and file rows carry an `open` cell and what
-the model closes keeps its fallback line.
+the model closes keeps its fallback line. Step 3 adds the symbol table: the
+code lifts up to ten declarations per file (exported and documented first,
+then by callers) to symbol places, the model gives each a line and a yes or
+no as a key symbol, the code keeps at most five keys per file by rank and a
+box shows three. Without the model the keys are the code's ranking.
 
-Measured on 2026-09-04, repomap on itself, seven targets: 30 windows, of
-which cmd/repomap's 47 directories, 199 files, 10 boundaries, 7 zones and
-106 arrows; the three fixture joints on `/api/levels` confirmed and the
+Measured on 2026-09-04, repomap on itself, seven targets: 30 windows plus
+33 symbol windows for 1,613 candidates (55 s), of which cmd/repomap's 47
+directories, 199 files, 10 boundaries, 7 zones and 106 arrows; the three fixture joints on `/api/levels` confirmed and the
 cross-fixture false candidate refused; 24 s wall with everything cached,
 16 s on a repeat. One docstring's first sentence changed in one file cost
 11 live windows and 55 s: the file's line is carried into the rows of the

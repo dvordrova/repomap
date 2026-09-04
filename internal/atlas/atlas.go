@@ -135,12 +135,16 @@ type FileFacts struct {
 	Generated bool `json:"generated,omitempty"`
 }
 
-// SymbolFacts is one declaration lifted to a place of its own.
+// SymbolFacts is one declaration lifted to a place of its own: only the
+// candidates the code chose as possible key symbols of their file become
+// places, ranked exported-and-documented first, then by callers.
 type SymbolFacts struct {
 	Decl Decl `json:"decl"`
 	// Candidate says the code chose this symbol as a possible key symbol of
 	// its file, so a symbol row is asked about it.
 	Candidate bool `json:"candidate"`
+	// Rank is the symbol's place among its file's candidates, from 1.
+	Rank int `json:"rank"`
 }
 
 // BoundaryFacts is one integration point: a call into an external symbol with

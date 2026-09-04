@@ -132,6 +132,29 @@ func TestFixturePlaces(t *testing.T) {
 	if len(first.Edges) == 0 {
 		t.Fatal("no edges")
 	}
+	symbols := 0
+	perFile := make(map[string]int)
+	for _, place := range first.Places {
+		if place.Kind != atlas.PlaceSymbol {
+			continue
+		}
+		symbols++
+		perFile[place.Parent]++
+		if !place.Symbol.Candidate || place.Symbol.Rank < 1 || place.Symbol.Rank > MaxSymbolCandidates || place.Given == "" {
+			t.Fatalf("symbol place %s: %+v", place.ID, place.Symbol)
+		}
+		if _, ok := places[place.Parent]; !ok {
+			t.Fatalf("symbol %s has no file place", place.ID)
+		}
+	}
+	if symbols == 0 {
+		t.Fatal("no symbol places")
+	}
+	for fileID, count := range perFile {
+		if count > MaxSymbolCandidates {
+			t.Fatalf("%s has %d candidates", fileID, count)
+		}
+	}
 	for _, place := range first.Places {
 		if place.Path == "front/src/react-app-env.d.ts" && !place.File.Generated {
 			t.Fatal("a .d.ts file was not marked generated")

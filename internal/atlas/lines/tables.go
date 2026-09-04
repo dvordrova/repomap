@@ -11,12 +11,14 @@ import (
 )
 
 const (
+	StageSymbols    = "atlas_symbols"
 	StageBoundaries = "atlas_boundaries"
 	StageZones      = "atlas_zones"
 	StageArrows     = "atlas_arrows"
 	StageTargets    = "atlas_targets"
 	StageJoints     = "atlas_joints"
 
+	symbolsContract    = "repomap.atlas.symbols.v1"
 	boundariesContract = "repomap.atlas.boundaries.v1"
 	zonesContract      = "repomap.atlas.zones.v1"
 	arrowsContract     = "repomap.atlas.arrows.v1"
@@ -37,6 +39,9 @@ const (
 	maxValues    = 8
 )
 
+//go:embed prompts/symbols.md
+var symbolsPrompt string
+
 //go:embed prompts/boundaries.md
 var boundariesPrompt string
 
@@ -51,6 +56,45 @@ var targetsPrompt string
 
 //go:embed prompts/joints.md
 var jointsPrompt string
+
+// SymbolWindowRows is the symbol table's window: the rows are short.
+const SymbolWindowRows = 50
+
+// MaxKeysPerFile bounds how many symbols the model may mark as key in one
+// file; the code keeps the first by rank.
+const MaxKeysPerFile = 5
+
+// Symbols is the symbol table.
+func Symbols() table.Definition {
+	return table.Definition{
+		Stage: StageSymbols, Contract: symbolsContract, Window: SymbolWindowRows,
+		System: symbolsPrompt, MaxOutputTokens: 8192,
+		Columns: []table.Column{
+			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what this declaration does or is"},
+			{Name: "key_symbol", Kind: table.Choice, Options: []string{"yes", "no"}, Note: "yes for the declarations a reader looks at first"},
+		},
+	}
+}
+
+// SymbolRow builds the row of one candidate symbol.
+func SymbolRow(place atlas.Place, fileLine string) table.Row {
+	decl := place.Symbol.Decl
+	fields := []table.Field{
+		{Name: "name", Value: decl.Name},
+		{Name: "kind", Value: decl.Kind},
+	}
+	if decl.Signature != "" {
+		fields = append(fields, table.Field{Name: "signature", Value: cut(decl.Signature, maxSignature)})
+	}
+	if decl.Doc != "" {
+		fields = append(fields, table.Field{Name: "doc", Value: cut(decl.Doc, maxDoc)})
+	}
+	if fileLine != "" {
+		fields = append(fields, table.Field{Name: "file", Value: fileLine})
+	}
+	fields = append(fields, table.Field{Name: "callers", Value: decl.FanIn})
+	return table.Row{ID: place.ID, Fields: fields}
+}
 
 // Boundaries is the boundary table.
 func Boundaries() table.Definition {

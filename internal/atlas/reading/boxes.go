@@ -443,6 +443,62 @@ func (r *reader) readArrows(ctx context.Context) error {
 	return nil
 }
 
+// budgetSymbolCandidates is how many of a file's candidates are asked
+// about under a budget.
+const budgetSymbolCandidates = 6
+
+// readSymbols asks one line and a key flag per candidate symbol of every
+// open, asked file; the code keeps at most MaxKeysPerFile keys per file, by
+// rank. Without the model the keys are the code's ranking.
+func (r *reader) readSymbols(ctx context.Context) error {
+	def := lines.Symbols()
+	var rows []table.Row
+	var order []atlas.Place
+	for _, place := range r.opts.Graph.Places {
+		if place.Kind != atlas.PlaceSymbol || !place.Symbol.Candidate {
+			continue
+		}
+		file := r.places[place.Parent]
+		if file.File == nil || file.File.Generated || r.budget && (!r.openFiles[place.Parent] || place.Symbol.Rank > budgetSymbolCandidates) {
+			continue
+		}
+		fileLine, _ := r.Line(place.Parent)
+		rows = append(rows, lines.SymbolRow(place, fileLine))
+		order = append(order, place)
+	}
+	r.opts.Stage(def.Stage, fmt.Sprintf("%d candidate symbols", len(rows)))
+	answers, err := r.runTable(ctx, def, 1, rows)
+	if err != nil {
+		return err
+	}
+	type marked struct {
+		id   string
+		rank int
+	}
+	byFile := make(map[string][]marked)
+	for i, place := range order {
+		answer := answers[i]
+		if answer.answer == nil {
+			continue
+		}
+		r.symbolLine[place.ID] = cell{value: answer.answer["line"], source: answer.source}
+		if answer.answer["key_symbol"] == "yes" {
+			byFile[place.Parent] = append(byFile[place.Parent], marked{id: place.ID, rank: place.Symbol.Rank})
+		}
+	}
+	for fileID, list := range byFile {
+		sort.Slice(list, func(i, j int) bool { return list[i].rank < list[j].rank })
+		if len(list) > lines.MaxKeysPerFile {
+			list = list[:lines.MaxKeysPerFile]
+		}
+		for _, item := range list {
+			r.keys[fileID] = append(r.keys[fileID], item.id)
+		}
+	}
+	r.reportStage(def.Stage)
+	return nil
+}
+
 // boundaryState is one boundary after its row.
 type boundaryState struct {
 	place atlas.Place

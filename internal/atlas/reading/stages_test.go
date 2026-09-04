@@ -88,6 +88,91 @@ func twoTargetGraph(t *testing.T) atlas.Graph {
 	return decoded
 }
 
+// withSymbols adds eight candidate symbols to svc/core/c.go, ranked 1..8.
+func withSymbols(t *testing.T, graph atlas.Graph) atlas.Graph {
+	t.Helper()
+	core := -1
+	for i, place := range graph.Places {
+		if place.ID == atlas.FileID("svc/core/c.go") {
+			core = i
+		}
+	}
+	for i := 1; i <= 8; i++ {
+		name := "Op" + itoa(i)
+		graph.Places[core].File.Decls = append(graph.Places[core].File.Decls, atlas.Decl{
+			Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true,
+		})
+		graph.Places = append(graph.Places, atlas.Place{
+			ID: atlas.SymbolID("svc/core/c.go", 10+i, name), Kind: atlas.PlaceSymbol, Path: "svc/core/c.go",
+			LineNo: 10 + i, Depth: 1, TargetIDs: []string{"svc"}, Parent: atlas.FileID("svc/core/c.go"),
+			Given: "func " + name,
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true}, Candidate: true, Rank: i},
+		})
+	}
+	atlas.SortPlaces(graph.Places)
+	encoded, err := atlas.EncodeGraph(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := atlas.DecodeGraph(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decoded
+}
+
+func TestSymbolsGetLinesAndAtMostFiveKeysPerFile(t *testing.T) {
+	graph := withSymbols(t, twoTargetGraph(t))
+	// The fake answers "yes" (the first option) for every key_symbol cell.
+	provider := &tableProvider{}
+	result, err := Read(context.Background(), twoTargetOptions(t, graph, provider))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var core atlas.File
+	var box atlas.Box
+	for _, target := range result.Atlas.Targets {
+		for _, candidate := range target.Boxes {
+			for _, file := range candidate.Files {
+				if file.Path == "svc/core/c.go" {
+					core, box = file, candidate
+				}
+			}
+		}
+	}
+	keys, lined := 0, 0
+	for _, symbol := range core.Symbols {
+		if symbol.Key {
+			keys++
+		}
+		if strings.HasPrefix(symbol.Line, "Text for") {
+			lined++
+		}
+	}
+	// c.go declares F (not a candidate) plus eight candidates: eight lines,
+	// five keys by rank.
+	if lined != 8 || keys != lines.MaxKeysPerFile {
+		t.Fatalf("lined %d keys %d: %+v", lined, keys, core.Symbols)
+	}
+	for _, symbol := range core.Symbols {
+		if symbol.Key && !strings.HasPrefix(symbol.Name, "Op") {
+			t.Fatalf("a non-candidate became a key: %+v", symbol)
+		}
+	}
+	if len(box.Keys) != 3 || box.Keys[0].Doc == "" {
+		t.Fatalf("box keys: %+v", box.Keys)
+	}
+	var use atlas.StageUse
+	for _, candidate := range result.Uses {
+		if candidate.Stage == lines.StageSymbols {
+			use = candidate
+		}
+	}
+	if use.Rows != 8 || use.Windows != 1 {
+		t.Fatalf("symbol use: %+v", use)
+	}
+}
+
 func itoa(value int) string {
 	return strings.TrimSpace(strings.Repeat(" ", 0) + string(rune('0'+value/10)) + string(rune('0'+value%10)))
 }

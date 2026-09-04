@@ -113,6 +113,7 @@ func Build(input Input) (atlas.Graph, error) {
 	}
 	b.collectDirectories()
 	b.assignDepths()
+	b.collectSymbols()
 	b.collectBoundaries()
 	for _, target := range input.Targets {
 		b.collectExternalCalls(target)
@@ -169,6 +170,7 @@ type builder struct {
 	seeds    map[string]struct{}
 	targetOf map[string]map[string]struct{}
 	bounds   map[boundaryKey]*boundaryState
+	symbols  []atlas.Place
 }
 
 func (b *builder) indexClaims() {
@@ -247,6 +249,10 @@ func (b *builder) collectObjects(target TargetInput) {
 				name = owner.Name + "." + name
 			}
 		}
+		// A file two targets index carries each declaration in both indexes.
+		if state.hasDecl(object.Location.Line, name) {
+			continue
+		}
 		state.decls = append(state.decls, atlas.Decl{
 			Name:      name,
 			Kind:      string(object.Kind),
@@ -260,6 +266,15 @@ func (b *builder) collectObjects(target TargetInput) {
 	if root := atlasPath(target.Root); root != "" {
 		b.targetOf[targetID] = map[string]struct{}{root: {}}
 	}
+}
+
+func (state *fileState) hasDecl(line int, name string) bool {
+	for _, decl := range state.decls {
+		if decl.LineNo == line && decl.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *builder) file(filePath string) *fileState {
@@ -791,6 +806,54 @@ func (b *builder) assignDepths() {
 	}
 }
 
+// MaxSymbolCandidates is how many declarations of one file may become
+// symbol places: exported and documented first, then by callers.
+const MaxSymbolCandidates = 10
+
+// collectSymbols lifts each file's most telling declarations to places.
+func (b *builder) collectSymbols() {
+	for filePath, state := range b.files {
+		if state.generated {
+			continue
+		}
+		ranked := append([]atlas.Decl(nil), state.decls...)
+		sort.SliceStable(ranked, func(i, j int) bool {
+			a, c := ranked[i], ranked[j]
+			if (a.Exported && a.Doc != "") != (c.Exported && c.Doc != "") {
+				return a.Exported && a.Doc != ""
+			}
+			if a.Exported != c.Exported {
+				return a.Exported
+			}
+			if (a.Doc != "") != (c.Doc != "") {
+				return a.Doc != ""
+			}
+			if a.FanIn != c.FanIn {
+				return a.FanIn > c.FanIn
+			}
+			return a.LineNo < c.LineNo
+		})
+		for rank, decl := range ranked {
+			if rank == MaxSymbolCandidates {
+				break
+			}
+			given := decl.Doc
+			if given == "" {
+				given = decl.Signature
+			}
+			if given == "" {
+				given = decl.Kind + " " + decl.Name
+			}
+			b.symbols = append(b.symbols, atlas.Place{
+				ID: atlas.SymbolID(filePath, decl.LineNo, decl.Name), Kind: atlas.PlaceSymbol, Path: filePath,
+				LineNo: decl.LineNo, Depth: state.depth, TargetIDs: sortedKeys(state.targets),
+				Parent: atlas.FileID(filePath), Given: truncateRunes(given, maxLineRunes),
+				Symbol: &atlas.SymbolFacts{Decl: decl, Candidate: true, Rank: rank + 1},
+			})
+		}
+	}
+}
+
 // collectBoundaries lifts the facts the code already knows as integration
 // points into boundary places, one per anchor and kind. A route registered
 // under three prefixes is one boundary with three values.
@@ -1102,6 +1165,7 @@ func (b *builder) graph() (atlas.Graph, error) {
 		place.Given = fileGiven(place)
 		graph.Places = append(graph.Places, place)
 	}
+	graph.Places = append(graph.Places, b.symbols...)
 	for _, state := range b.bounds {
 		place := state.place
 		sort.Strings(place.TargetIDs)
