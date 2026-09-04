@@ -95,6 +95,14 @@ const (
 	NegativeNoTests      = "no_tests"
 	NegativeNoDockerfile = "no_dockerfile"
 	NegativeNoCI         = "no_ci"
+	// The next four are what a person handing a repository over is asked
+	// about first, and what a first-day reader looks for before the code:
+	// under which terms, how to contribute, what changed, and what keeps
+	// the code in one style.
+	NegativeNoLicense      = "no_license"
+	NegativeNoContributing = "no_contributing"
+	NegativeNoChangelog    = "no_changelog"
+	NegativeNoLinter       = "no_linter_config"
 )
 
 // Anchor is an exact repository-relative source location.

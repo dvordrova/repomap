@@ -540,12 +540,15 @@ func TestBuildNegatives(t *testing.T) {
 	}
 	// A negative earns its place only when it changes what the reader does.
 	// A thin README does not: this page is what they would have read instead.
-	for _, name := range []string{NegativeNoTests, NegativeNoDockerfile, NegativeNoCI} {
+	for _, name := range []string{
+		NegativeNoTests, NegativeNoDockerfile, NegativeNoCI,
+		NegativeNoLicense, NegativeNoContributing, NegativeNoChangelog, NegativeNoLinter,
+	} {
 		if _, found := names[name]; !found {
 			t.Fatalf("missing negative %s in %+v", name, names)
 		}
 	}
-	if len(names) != 3 {
+	if len(names) != 7 {
 		t.Fatalf("negatives = %+v", names)
 	}
 
@@ -554,6 +557,10 @@ func TestBuildNegatives(t *testing.T) {
 		"Dockerfile":               "FROM scratch\n",
 		".github/workflows/ci.yml": "on: push\n",
 		"tests/test_main.py":       "def test_x(): pass\n",
+		"LICENSE":                  "MIT\n",
+		"docs/CONTRIBUTING.md":     "# how\n",
+		"CHANGELOG.md":             "# 1.0\n",
+		".golangci.yml":            "linters: {}\n",
 	})
 	if negatives := mustBuild(t, Input{Repository: complete}).OfKind(KindNegative); len(negatives) != 0 {
 		t.Fatalf("complete repository has negatives %+v", negatives)
