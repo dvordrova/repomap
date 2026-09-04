@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -42,7 +41,7 @@ type repositoryTargetDispatchOptions struct {
 	Output           *runOutput
 	FirstLayer       *debugdump.SemanticObserver
 	DiscoverJSTSFn   jsTSProjectDiscoverer
-	VerifiedRunsSink func([]report.VerifiedRunReceipt)
+	VerifiedRunsSink func([]report.RunReceipt)
 }
 
 // repositoryGoWorkspaceState keeps the successful fast-path workspace live
@@ -62,22 +61,22 @@ type repositoryGoWorkspaceState struct {
 func dispatchRepositoryTargetPlan(
 	ctx context.Context,
 	options repositoryTargetDispatchOptions,
-) (report.PublicationAssessment, string, error) {
+) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	ordered, err := repositoryTargetExecutionOrder(options.Plan)
 	if err != nil {
-		return report.FailedPublicationAssessment(), "", err
+		return "", err
 	}
 	if options.Corpus == nil {
-		return report.FailedPublicationAssessment(), "", fmt.Errorf("repository target dispatcher: repository corpus is unavailable")
+		return "", fmt.Errorf("repository target dispatcher: repository corpus is unavailable")
 	}
 	if err := options.RepositoryState.Validate(); err != nil {
-		return report.FailedPublicationAssessment(), "", fmt.Errorf("repository target dispatcher: repository state: %w", err)
+		return "", fmt.Errorf("repository target dispatcher: repository state: %w", err)
 	}
 	if options.RunID == "" || options.DebugDir == "" {
-		return report.FailedPublicationAssessment(), "", fmt.Errorf("repository target dispatcher: run identity is incomplete")
+		return "", fmt.Errorf("repository target dispatcher: run identity is incomplete")
 	}
 	if options.Output == nil {
 		options.Output = newRunOutput(options.Deps.stderr)
@@ -88,7 +87,7 @@ func dispatchRepositoryTargetPlan(
 	for _, target := range ordered {
 		selected, selectedErr := repositorySelectedTarget(target)
 		if selectedErr != nil {
-			return report.FailedPublicationAssessment(), "", fmt.Errorf(
+			return "", fmt.Errorf(
 				"repository target dispatcher: project selected target %s: %w",
 				target.Key.String(), selectedErr,
 			)
@@ -98,7 +97,7 @@ func dispatchRepositoryTargetPlan(
 	}
 	defaultSelected, found := selectedTargets[options.Plan.Default]
 	if !found {
-		return report.FailedPublicationAssessment(), "", fmt.Errorf(
+		return "", fmt.Errorf(
 			"repository target dispatcher: selected default identity is absent",
 		)
 	}
@@ -115,12 +114,12 @@ func dispatchRepositoryTargetPlan(
 		options.Output,
 	)
 	if err != nil {
-		return report.FailedPublicationAssessment(), "", err
+		return "", err
 	}
 
 	registry, err := ordinaryRepositoryTargetAdapterRegistry()
 	if err != nil {
-		return report.FailedPublicationAssessment(), "", err
+		return "", err
 	}
 	dispatchPlans := make(map[repositoryTargetAdapter]any)
 	for _, target := range ordered {
@@ -129,13 +128,13 @@ func dispatchRepositoryTargetPlan(
 		}
 		descriptor, ok := registry.descriptor(target.Key.Adapter)
 		if !ok {
-			return report.FailedPublicationAssessment(), "", fmt.Errorf(
+			return "", fmt.Errorf(
 				"repository target dispatcher: adapter %q is not registered", target.Key.Adapter,
 			)
 		}
 		state, prepareErr := descriptor.PrepareDispatchPlan(options.Plan, ordered)
 		if prepareErr != nil {
-			return report.FailedPublicationAssessment(), "", prepareErr
+			return "", prepareErr
 		}
 		dispatchPlans[target.Key.Adapter] = state
 	}
@@ -145,11 +144,9 @@ func dispatchRepositoryTargetPlan(
 	pendingTargets := make([]targetPageConsoleContext, 0, len(ordered))
 	outcomes := make([]targetoutcome.Outcome, 0, len(ordered))
 	targetErrors := make([]error, 0, len(ordered))
-	failPublication := func(runErr error) (report.PublicationAssessment, string, error) {
+	failPublication := func(runErr error) (string, error) {
 		reportAnalyzedTargetPagePublicationFailure(options.Output, pendingTargets)
-		return report.FailedPublicationAssessment(), "", errors.Join(
-			runErr, quarantineTargetPagePublication(attemptedRunDirs),
-		)
+		return "", runErr
 	}
 	recordFailure := func(
 		selected targetoutcome.SelectedTarget,
@@ -161,11 +158,6 @@ func dispatchRepositoryTargetPlan(
 		outcome, outcomeErr := targetoutcome.NewNotAnalyzed(selected, stage, reason)
 		if outcomeErr != nil {
 			return outcomeErr
-		}
-		if quarantineErr := quarantineTargetPagePublication([]string{
-			filepath.Join(options.DebugDir, consoleTarget.RunID),
-		}); quarantineErr != nil {
-			return quarantineErr
 		}
 		outcomes = append(outcomes, outcome)
 		wrapped := fmt.Errorf("target page %s failed: %w", consoleTarget.DisplayPath, targetErr)
@@ -356,7 +348,7 @@ func dispatchRepositoryTargetPlan(
 			recordTargetPortfolioOutcome(failedRunDir, options.Plan.Outcome, options.Output),
 			persistTargetOutcomePortfolioForRunDirs(targetOutcomePortfolio, []string{failedRunDir}),
 		)
-		return report.FailedPublicationAssessment(), "", errors.Join(
+		return "", errors.Join(
 			fmt.Errorf("all selected repository targets were not analyzed"),
 			errors.Join(targetErrors...), diagnosticErr,
 		)
@@ -415,12 +407,11 @@ func dispatchRepositoryTargetPlan(
 	); err != nil {
 		return failPublication(err)
 	}
-	assessment, err := publishProgramPageBundle(portfolio, runs)
-	if err != nil {
+	if err := publishProgramPageBundle(portfolio, runs); err != nil {
 		return failPublication(err)
 	}
 	if options.VerifiedRunsSink != nil {
-		receipts := make([]report.VerifiedRunReceipt, 0, len(runs))
+		receipts := make([]report.RunReceipt, 0, len(runs))
 		for _, run := range runs {
 			receipts = append(receipts, run.Receipt)
 		}
@@ -434,7 +425,7 @@ func dispatchRepositoryTargetPlan(
 		fmt.Sprintf("analyzed: %d/%d", len(runs), len(ordered)),
 		fmt.Sprintf("not analyzed: %d", len(ordered)-len(runs)),
 	)
-	return assessment, filepath.Join(owner.RunDir, "report.html"), nil
+	return filepath.Join(owner.RunDir, "report.html"), nil
 }
 
 // materializeSelectedJSTSProjects is the selected-target execution boundary
@@ -533,12 +524,11 @@ func finishRepositoryTargetDispatch(
 	debugDir string,
 	runDir string,
 	reportPath string,
-	publication report.PublicationAssessment,
 	noServe bool,
 	noOpen bool,
 	port int,
 	staticHost string,
-	verifiedRuns []report.VerifiedRunReceipt,
+	verifiedRuns []report.RunReceipt,
 	output *runOutput,
 ) error {
 	linkLatest(debugDir, runDir, runOutputWarningSink{
@@ -550,15 +540,11 @@ func finishRepositoryTargetDispatch(
 	if staticHost != "" {
 		output.Stage("Report", "standalone host: "+staticHost)
 	}
-	publicationDetails := []string{"report: " + reportPath}
-	if publication.Status != report.PublicationReady {
-		publicationDetails = append(publicationDetails, "report or analysis artifacts are missing or invalid")
-	}
-	output.State("Run", strings.ToLower(string(publication.Status)), publicationDetails...)
+	output.State("Run", "ready", "report: "+reportPath)
 	if !noServe && deps.serveReport != nil {
 		return deps.serveReport(ctx, reportserver.Options{
 			RunsDir: debugDir, InitialRunID: filepath.Base(runDir), Port: port,
-			VerifiedRuns: verifiedRuns,
+			Runs: verifiedRuns,
 			Logf: func(format string, args ...any) {
 				output.Stage("Server", fmt.Sprintf(format, args...))
 			},

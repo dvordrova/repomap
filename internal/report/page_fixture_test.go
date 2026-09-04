@@ -1,16 +1,12 @@
 package report
 
 import (
-	"context"
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
+	"strings"
+	"testing"
 )
 
 // reportProgramShellDataFixture is one complete analyzed repository as the
@@ -140,108 +136,6 @@ func reportSelectedTargetFixture(
 		t.Fatalf("selected target fixture %d: %v", position, err)
 	}
 	return selected
-}
-
-// artifactProgramPageBundleFixture publishes one complete run directory the
-// ordinary way: real artifacts, a confirmed authority, and the generated
-// report pair. It returns the page portfolio, the run directory, and the
-// analyzed target ids.
-func artifactProgramPageBundleFixture(
-	t *testing.T,
-	targetCount int,
-) (programpage.Portfolio, string, []string) {
-	t.Helper()
-	if targetCount < 1 || targetCount > 2 {
-		t.Fatalf("artifact program-page target count = %d", targetCount)
-	}
-	repository := newRunManifestRepository(t)
-	state := captureRunManifestRepositoryState(t, repository)
-	runDir := t.TempDir()
-
-	writeReportProgramFile(t, filepath.Join(runDir, "snapshot.json"), []byte(`{"repo_name":"fixture"}`))
-	writeReportProgramFile(t, filepath.Join(runDir, "metadata.json"), []byte(`{"repo_name":"fixture"}`))
-	index := reportProgramIndexFixture(t, "python", "executable")
-	enriched, groups, _ := writeReportFinalGraphArtifacts(t, runDir, index)
-
-	pages := []programpage.Page{{Target: enriched.Target.Snapshot(), RunID: filepath.Base(runDir)}}
-	navigationPages := []TargetNavigationPage{{
-		RunID:            filepath.Base(runDir),
-		ProgramTarget:    enriched.Target.Snapshot(),
-		ArtifactFilename: programindex.ArtifactFilename,
-	}}
-	targetIDs := []string{enriched.Target.ID}
-	if targetCount == 2 {
-		sibling := reportProgramIndexFixture(t, "python", "library")
-		pages = append(pages, programpage.Page{
-			Target: sibling.Target.Snapshot(), RunID: "artifact-page-sibling",
-		})
-		navigationPages = append(navigationPages, TargetNavigationPage{
-			RunID:            "artifact-page-sibling",
-			ProgramTarget:    sibling.Target.Snapshot(),
-			ArtifactFilename: programindex.ArtifactFilename,
-		})
-		targetIDs = append(targetIDs, sibling.Target.ID)
-	}
-	portfolio, err := programpage.Build(enriched.Target.ID, pages)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := portfolio.CanonicalJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeProgramIndexManifestFile(t, runDir, programpage.ArtifactFilename, raw)
-	outcomes, outcomeRaw := reportTargetOutcomeArtifactFixture(t, navigationPages, enriched.Target.ID)
-	_ = outcomes
-	writeProgramIndexManifestFile(t, runDir, targetoutcome.ArtifactFilename, outcomeRaw)
-
-	graphView, err := NewGroupGraphView([]groupindex.Index{groups}, enriched.Target.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	graphPaths, err := graphView.SourcePaths()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, relative := range graphPaths {
-		absolute := filepath.Join(repository, filepath.FromSlash(relative))
-		if err := os.MkdirAll(filepath.Dir(absolute), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(absolute, []byte("# fixture source\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	runManifestGit(t, repository, "add", "--all")
-	runManifestGit(t, repository,
-		"-c", "user.name=repomap test",
-		"-c", "user.email=repomap@example.invalid",
-		"-c", "commit.gpgsign=false",
-		"commit", "--quiet", "-m", "graph sources",
-	)
-	state = captureRunManifestRepositoryState(t, repository)
-	authority, err := ConfirmRunAuthorityScoped(
-		context.Background(), repository, state, graphPaths,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bound, err := BindRunAuthorityGroupGraph(authority, []groupindex.Index{groups})
-	if err != nil {
-		t.Fatal(err)
-	}
-	navigation, err := BuildTargetNavigation(
-		navigationPages, enriched.Target.ID, enriched.Target.ID,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := GenerateAuthorizedWithOptionsDiagnostics(
-		runDir, bound, RenderOptions{TargetNavigation: navigation},
-	); err != nil {
-		t.Fatalf("generate authorized report: %v", err)
-	}
-	return portfolio, runDir, targetIDs
 }
 
 // reportTargetOutcomeArtifactFixture builds the persisted outcome inventory

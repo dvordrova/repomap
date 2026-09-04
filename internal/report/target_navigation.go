@@ -5,14 +5,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
-	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
 const TargetNavigationVersion = 4
@@ -217,16 +215,9 @@ func loadManifestProgramPageNavigation(
 	runDir string,
 	manifest RunManifest,
 ) (*TargetNavigationPortfolio, error) {
-	root, err := os.OpenRoot(runDir)
+	portfolioRaw, err := os.ReadFile(filepath.Join(runDir, programpage.ArtifactFilename))
 	if err != nil {
-		return nil, fmt.Errorf("report: open program page navigation run: %w", err)
-	}
-	portfolioRaw, err := readManifestFile(
-		root, programpage.ArtifactFilename, programpage.MaxArtifactBytes,
-	)
-	_ = root.Close()
-	if err != nil || manifestSHA256(portfolioRaw) != manifest.MaterialInputs.ProgramPagePortfolioSHA256 {
-		return nil, fmt.Errorf("report: program page navigation portfolio authority mismatch")
+		return nil, fmt.Errorf("report: program page navigation portfolio: %w", err)
 	}
 	portfolio, err := programpage.Decode(portfolioRaw)
 	if err != nil {
@@ -241,21 +232,9 @@ func loadManifestProgramPageNavigation(
 		if pageErr != nil {
 			return nil, fmt.Errorf("report: program page navigation page %d: %w", index, pageErr)
 		}
-		if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
-			return nil, fmt.Errorf("report: program page navigation page %d target authority mismatch", index)
-		}
-		outcomeRaw, _, outcomeErr := readBoundedProgramArtifact(
-			filepath.Join(pageRunDir, targetoutcome.ArtifactFilename),
-			targetoutcome.MaxArtifactBytes,
-			"program page navigation target outcome portfolio",
-			false,
-		)
-		if outcomeErr != nil || manifestSHA256(outcomeRaw) != manifest.MaterialInputs.TargetOutcomePortfolioSHA256 {
-			return nil, fmt.Errorf("report: program page navigation page %d target outcome authority mismatch", index)
-		}
 		if filepath.Clean(pageRunDir) == filepath.Clean(runDir) {
-			if binding.Target.ID != manifest.MaterialInputs.ProgramTargetID {
-				return nil, fmt.Errorf("report: current program page navigation authority mismatch")
+			if binding.Target.ID != manifest.ProgramTargetID {
+				return nil, fmt.Errorf("report: current program page is not the one this run is for")
 			}
 			currentTargetID = binding.Target.ID
 		}

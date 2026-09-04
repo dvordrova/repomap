@@ -52,8 +52,7 @@ type ReportData struct {
 	GitLabSourceLinks *GitLabSourceLinks `json:"gitlab_source_links,omitempty"`
 	GitHubSourceLinks *GitHubSourceLinks `json:"github_source_links,omitempty"`
 
-	CapturedRevision   string `json:"captured_revision"`
-	CapturedInputCount int    `json:"captured_input_count"`
+	CapturedRevision string `json:"captured_revision"`
 
 	// ArtifactsDir and the following fields are process-local publication
 	// authority. They are never persisted or embedded in the browser payload.

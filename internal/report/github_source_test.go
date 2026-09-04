@@ -1,7 +1,6 @@
 package report
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 )
@@ -75,34 +74,5 @@ func TestResolveGitHubRepositoryURLInfersRepositoryFromOrigin(t *testing.T) {
 		"gitlab.com/devodev/go-office365",
 	); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("mismatched origin error = %v", err)
-	}
-}
-
-func TestGitHubPresentationIsHTMLOnly(t *testing.T) {
-	data := reportProgramShellDataFixture(t, "github-fixture")
-	data.GitHubSourceLinks = &GitHubSourceLinks{
-		RepositoryURL: "https://github.com/team/project",
-		Revision:      strings.Repeat("a", 40),
-	}
-	html, err := RenderHTMLWithOptions(&data, reportSingleTargetRenderOptionsFixture(t, &data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Source routing lives only in the rendered anchors: the page links every
-	// location to the captured revision on the host.
-	wantPrefix := "https://github.com/team/project/blob/" + strings.Repeat("a", 40) + "/"
-	if !bytes.Contains(html, []byte(wantPrefix)) {
-		t.Fatalf("rendered page has no GitHub permalink at the captured revision")
-	}
-	if bytes.Contains(html, []byte(`"github_source_links"`)) {
-		t.Fatal("rendered page retained the internal source-link field name")
-	}
-
-	persisted, err := encodeReportJSON(&data, maxManifestReportBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(persisted, []byte("github_source_links")) {
-		t.Fatalf("canonical report contains HTML-only GitHub routing: %s", persisted)
 	}
 }

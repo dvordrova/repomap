@@ -152,22 +152,3 @@ func validGitRevision(revision string) bool {
 	_, err := hex.DecodeString(revision)
 	return err == nil
 }
-
-func validateGitLabAuthority(authority RunAuthority) error {
-	return validateStandaloneSourceAuthority(authority, "GitLab")
-}
-
-func validateStandaloneSourceAuthority(authority RunAuthority, hostName string) error {
-	if err := authority.validate(); err != nil {
-		return err
-	}
-	for _, submodule := range authority.repository.Submodules {
-		if submodule.IncludedInAnalysis {
-			return fmt.Errorf(
-				"report: standalone %s report does not support analyzed submodule source",
-				hostName,
-			)
-		}
-	}
-	return nil
-}

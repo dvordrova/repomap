@@ -2,10 +2,13 @@ package report
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -344,9 +347,6 @@ func validateProgramPresentation(data *ReportData) error {
 	if !validGitRevision(data.CapturedRevision) || data.CapturedRevision != strings.ToLower(data.CapturedRevision) {
 		return fmt.Errorf("report: captured revision must be a canonical lowercase 40- or 64-character hex revision")
 	}
-	if data.CapturedInputCount < 0 {
-		return fmt.Errorf("report: captured input count cannot be negative")
-	}
 	previousPath := ""
 	for index, sourcePath := range data.OpenablePaths {
 		if err := validateManifestPath(sourcePath); err != nil {
@@ -426,461 +426,88 @@ func validBrowserSourceID(value string) bool {
 
 // GenerateAuthorized renders a report and binds its exact generated JSON to
 // repository authority confirmed stable across orientation.
-func GenerateAuthorized(runDir string, authority RunAuthority) error {
-	return GenerateAuthorizedWithOptions(runDir, authority, RenderOptions{})
-}
-
-// GenerateAuthorizedWithDiagnostics is the ordinary generation path plus
-// transient measurements observed while the raw browser bundle exists.
-func GenerateAuthorizedWithDiagnostics(
-	runDir string,
-	authority RunAuthority,
-) (GenerationDiagnostics, error) {
-	return generateWithDiagnostics(runDir, authority, nil, RenderOptions{}, true)
-}
-
-// GenerateAuthorizedWithOptions preserves ordinary source and manifest
-// authority while adding only transient target-page navigation to report.html.
-func GenerateAuthorizedWithOptions(
-	runDir string,
-	authority RunAuthority,
-	options RenderOptions,
-) error {
-	return generate(runDir, authority, nil, options, true)
-}
-
-// GenerateAuthorizedWithOptionsDiagnostics preserves transient measurements
-// completed before a later render, verification, or installation failure.
-func GenerateAuthorizedWithOptionsDiagnostics(
-	runDir string,
-	authority RunAuthority,
-	options RenderOptions,
-) (GenerationDiagnostics, error) {
-	return generateWithDiagnostics(runDir, authority, nil, options, true)
-}
-
-// GenerateAuthorizedPageData finalizes one manifest-bound backing page
-// without publishing a browser HTML artifact. Multi-target publication uses
-// these exact report.json/manifest authorities to build its sole owner HTML.
-func GenerateAuthorizedPageData(runDir string, authority RunAuthority) error {
-	return generate(runDir, authority, nil, RenderOptions{}, false)
-}
-
-// GenerateAuthorizedPageDataVerified finalizes one backing page and returns
-// its compact current-transaction receipt. The receipt is created only after
-// the already verified report and manifest have been atomically installed.
-func GenerateAuthorizedPageDataVerified(
-	runDir string,
-	authority RunAuthority,
-) (VerifiedRunReceipt, error) {
-	return generateVerified(runDir, authority, nil, RenderOptions{}, false)
-}
-
-// GenerateAuthorizedPageDataVerifiedWithDiagnostics also returns scale
-// measurements completed before any later receipt or atomic-install failure.
-func GenerateAuthorizedPageDataVerifiedWithDiagnostics(
-	runDir string,
-	authority RunAuthority,
-) (VerifiedRunReceipt, GenerationDiagnostics, error) {
-	return generateVerifiedWithDiagnostics(runDir, authority, nil, RenderOptions{}, false)
-}
-
 type standaloneSourceConfig struct {
 	hostName      string
 	repositoryURL string
 }
 
-// GenerateAuthorizedGitLab emits the ordinary persisted report and manifest
-// plus one standalone HTML report whose source actions target the exact
-// captured revision on the supplied GitLab project.
-func GenerateAuthorizedGitLab(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-) error {
-	return GenerateAuthorizedGitLabWithOptions(
-		runDir, authority, repositoryURL, RenderOptions{},
-	)
+// GenerateOptions is how a report is to be generated: linked to a source host
+// or not, rendered with sibling navigation or not, published as HTML or kept
+// as page data for a multi-target page to publish.
+type GenerateOptions struct {
+	GitHubURL   string
+	GitLabURL   string
+	Render      RenderOptions
+	PublishHTML bool
 }
 
-// GenerateAuthorizedGitLabWithDiagnostics is the GitLab generation path plus
-// transient raw-bundle scale measurements.
-func GenerateAuthorizedGitLabWithDiagnostics(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-) (GenerationDiagnostics, error) {
-	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
-	if err != nil {
-		return GenerationDiagnostics{}, err
+// Generate writes report.json, the manifest and, when asked, report.html
+// into the run directory, and returns the run as later stages refer to it.
+// Twenty named variants used to do this — authorized, verified, with
+// diagnostics, for GitLab, for GitHub, page data only — each a thin wrapper
+// over the one below. This is that one.
+func Generate(runDir string, source RunSource, options GenerateOptions) (RunReceipt, error) {
+	var standalone *standaloneSourceConfig
+	switch {
+	case options.GitLabURL != "" && options.GitHubURL != "":
+		return RunReceipt{}, fmt.Errorf("report: multiple external source hosts are not allowed")
+	case options.GitLabURL != "":
+		normalized, err := NormalizeGitLabRepositoryURL(options.GitLabURL)
+		if err != nil {
+			return RunReceipt{}, err
+		}
+		if normalized == "" {
+			return RunReceipt{}, fmt.Errorf("report: GitLab repository URL is required")
+		}
+		standalone = &standaloneSourceConfig{hostName: "GitLab", repositoryURL: normalized}
+	case options.GitHubURL != "":
+		normalized, err := NormalizeGitHubRepositoryURL(options.GitHubURL)
+		if err != nil {
+			return RunReceipt{}, err
+		}
+		if normalized == "" {
+			return RunReceipt{}, fmt.Errorf("report: GitHub repository URL is required")
+		}
+		standalone = &standaloneSourceConfig{hostName: "GitHub", repositoryURL: normalized}
 	}
-	if normalizedURL == "" {
-		return GenerationDiagnostics{}, fmt.Errorf("report: GitLab repository URL is required")
-	}
-	if err := validateGitLabAuthority(authority); err != nil {
-		return GenerationDiagnostics{}, err
-	}
-	return generateWithDiagnostics(runDir, authority, &standaloneSourceConfig{
-		hostName: "GitLab", repositoryURL: normalizedURL,
-	}, RenderOptions{}, true)
-}
-
-func GenerateAuthorizedGitLabWithOptions(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-	options RenderOptions,
-) error {
-	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
-	if err != nil {
-		return err
-	}
-	if normalizedURL == "" {
-		return fmt.Errorf("report: GitLab repository URL is required")
-	}
-	if err := validateGitLabAuthority(authority); err != nil {
-		return err
-	}
-	return generate(runDir, authority, &standaloneSourceConfig{
-		hostName:      "GitLab",
-		repositoryURL: normalizedURL,
-	}, options, true)
-}
-
-func GenerateAuthorizedGitLabWithOptionsDiagnostics(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-	options RenderOptions,
-) (GenerationDiagnostics, error) {
-	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
-	if err != nil {
-		return GenerationDiagnostics{}, err
-	}
-	if normalizedURL == "" {
-		return GenerationDiagnostics{}, fmt.Errorf("report: GitLab repository URL is required")
-	}
-	if err := validateGitLabAuthority(authority); err != nil {
-		return GenerationDiagnostics{}, err
-	}
-	return generateWithDiagnostics(runDir, authority, &standaloneSourceConfig{
-		hostName: "GitLab", repositoryURL: normalizedURL,
-	}, options, true)
-}
-
-// GenerateAuthorizedGitLabPageData is the backing-page equivalent of
-// GenerateAuthorizedGitLab. It retains exact static source authority in the
-// manifest while deliberately publishing no target-local HTML.
-func GenerateAuthorizedGitLabPageData(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-) error {
-	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
-	if err != nil {
-		return err
-	}
-	if normalizedURL == "" {
-		return fmt.Errorf("report: GitLab repository URL is required")
-	}
-	if err := validateGitLabAuthority(authority); err != nil {
-		return err
-	}
-	return generate(runDir, authority, &standaloneSourceConfig{
-		hostName:      "GitLab",
-		repositoryURL: normalizedURL,
-	}, RenderOptions{}, false)
-}
-
-// GenerateAuthorizedGitLabPageDataVerified is the transaction-receipt
-// equivalent of GenerateAuthorizedGitLabPageData.
-func GenerateAuthorizedGitLabPageDataVerified(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-) (VerifiedRunReceipt, error) {
-	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
-	if err != nil {
-		return VerifiedRunReceipt{}, err
-	}
-	if normalizedURL == "" {
-		return VerifiedRunReceipt{}, fmt.Errorf("report: GitLab repository URL is required")
-	}
-	if err := validateGitLabAuthority(authority); err != nil {
-		return VerifiedRunReceipt{}, err
-	}
-	return generateVerified(runDir, authority, &standaloneSourceConfig{
-		hostName:      "GitLab",
-		repositoryURL: normalizedURL,
-	}, RenderOptions{}, false)
-}
-
-// GenerateAuthorizedGitLabPageDataVerifiedWithDiagnostics is the diagnostic
-// variant used by the ordinary multi-target publication transaction.
-func GenerateAuthorizedGitLabPageDataVerifiedWithDiagnostics(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-) (VerifiedRunReceipt, GenerationDiagnostics, error) {
-	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
-	if err != nil {
-		return VerifiedRunReceipt{}, GenerationDiagnostics{}, err
-	}
-	if normalizedURL == "" {
-		return VerifiedRunReceipt{}, GenerationDiagnostics{}, fmt.Errorf("report: GitLab repository URL is required")
-	}
-	if err := validateGitLabAuthority(authority); err != nil {
-		return VerifiedRunReceipt{}, GenerationDiagnostics{}, err
-	}
-	return generateVerifiedWithDiagnostics(runDir, authority, &standaloneSourceConfig{
-		hostName: "GitLab", repositoryURL: normalizedURL,
-	}, RenderOptions{}, false)
-}
-
-// GenerateAuthorizedGitHub emits the ordinary persisted report and manifest
-// plus one standalone HTML report whose source actions target the exact
-// captured revision on the supplied GitHub repository.
-func GenerateAuthorizedGitHub(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-) error {
-	return GenerateAuthorizedGitHubWithOptions(
-		runDir, authority, repositoryURL, RenderOptions{},
-	)
-}
-
-// GenerateAuthorizedGitHubWithDiagnostics is the GitHub generation path plus
-// transient raw-bundle scale measurements.
-func GenerateAuthorizedGitHubWithDiagnostics(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-) (GenerationDiagnostics, error) {
-	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
-	if err != nil {
-		return GenerationDiagnostics{}, err
-	}
-	if normalizedURL == "" {
-		return GenerationDiagnostics{}, fmt.Errorf("report: GitHub repository URL is required")
-	}
-	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
-		return GenerationDiagnostics{}, err
-	}
-	return generateWithDiagnostics(runDir, authority, &standaloneSourceConfig{
-		hostName: "GitHub", repositoryURL: normalizedURL,
-	}, RenderOptions{}, true)
-}
-
-func GenerateAuthorizedGitHubWithOptions(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-	options RenderOptions,
-) error {
-	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
-	if err != nil {
-		return err
-	}
-	if normalizedURL == "" {
-		return fmt.Errorf("report: GitHub repository URL is required")
-	}
-	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
-		return err
-	}
-	return generate(runDir, authority, &standaloneSourceConfig{
-		hostName:      "GitHub",
-		repositoryURL: normalizedURL,
-	}, options, true)
-}
-
-func GenerateAuthorizedGitHubWithOptionsDiagnostics(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-	options RenderOptions,
-) (GenerationDiagnostics, error) {
-	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
-	if err != nil {
-		return GenerationDiagnostics{}, err
-	}
-	if normalizedURL == "" {
-		return GenerationDiagnostics{}, fmt.Errorf("report: GitHub repository URL is required")
-	}
-	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
-		return GenerationDiagnostics{}, err
-	}
-	return generateWithDiagnostics(runDir, authority, &standaloneSourceConfig{
-		hostName: "GitHub", repositoryURL: normalizedURL,
-	}, options, true)
-}
-
-// GenerateAuthorizedGitHubPageData is the backing-page equivalent of
-// GenerateAuthorizedGitHub. It retains exact static source authority in the
-// manifest while deliberately publishing no target-local HTML.
-func GenerateAuthorizedGitHubPageData(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-) error {
-	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
-	if err != nil {
-		return err
-	}
-	if normalizedURL == "" {
-		return fmt.Errorf("report: GitHub repository URL is required")
-	}
-	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
-		return err
-	}
-	return generate(runDir, authority, &standaloneSourceConfig{
-		hostName:      "GitHub",
-		repositoryURL: normalizedURL,
-	}, RenderOptions{}, false)
-}
-
-// GenerateAuthorizedGitHubPageDataVerified is the transaction-receipt
-// equivalent of GenerateAuthorizedGitHubPageData.
-func GenerateAuthorizedGitHubPageDataVerified(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-) (VerifiedRunReceipt, error) {
-	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
-	if err != nil {
-		return VerifiedRunReceipt{}, err
-	}
-	if normalizedURL == "" {
-		return VerifiedRunReceipt{}, fmt.Errorf("report: GitHub repository URL is required")
-	}
-	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
-		return VerifiedRunReceipt{}, err
-	}
-	return generateVerified(runDir, authority, &standaloneSourceConfig{
-		hostName:      "GitHub",
-		repositoryURL: normalizedURL,
-	}, RenderOptions{}, false)
-}
-
-// GenerateAuthorizedGitHubPageDataVerifiedWithDiagnostics is the diagnostic
-// variant used by the ordinary multi-target publication transaction.
-func GenerateAuthorizedGitHubPageDataVerifiedWithDiagnostics(
-	runDir string,
-	authority RunAuthority,
-	repositoryURL string,
-) (VerifiedRunReceipt, GenerationDiagnostics, error) {
-	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
-	if err != nil {
-		return VerifiedRunReceipt{}, GenerationDiagnostics{}, err
-	}
-	if normalizedURL == "" {
-		return VerifiedRunReceipt{}, GenerationDiagnostics{}, fmt.Errorf("report: GitHub repository URL is required")
-	}
-	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
-		return VerifiedRunReceipt{}, GenerationDiagnostics{}, err
-	}
-	return generateVerifiedWithDiagnostics(runDir, authority, &standaloneSourceConfig{
-		hostName: "GitHub", repositoryURL: normalizedURL,
-	}, RenderOptions{}, false)
+	return generate(runDir, source, standalone, options.Render, options.PublishHTML)
 }
 
 func generate(
 	runDir string,
-	authority RunAuthority,
+	source RunSource,
 	standaloneSource *standaloneSourceConfig,
 	renderOptions RenderOptions,
 	publishHTML bool,
-) error {
-	return generateWithReceipt(
-		runDir, authority, standaloneSource, renderOptions, publishHTML, nil, nil,
-	)
-}
-
-func generateWithDiagnostics(
-	runDir string,
-	authority RunAuthority,
-	standaloneSource *standaloneSourceConfig,
-	renderOptions RenderOptions,
-	publishHTML bool,
-) (GenerationDiagnostics, error) {
-	var diagnostics GenerationDiagnostics
-	err := generateWithReceipt(
-		runDir, authority, standaloneSource, renderOptions, publishHTML, nil, &diagnostics,
-	)
-	return diagnostics, err
-}
-
-func generateVerified(
-	runDir string,
-	authority RunAuthority,
-	standaloneSource *standaloneSourceConfig,
-	renderOptions RenderOptions,
-	publishHTML bool,
-) (VerifiedRunReceipt, error) {
-	receipt, _, err := generateVerifiedWithDiagnostics(
-		runDir, authority, standaloneSource, renderOptions, publishHTML,
-	)
-	return receipt, err
-}
-
-func generateVerifiedWithDiagnostics(
-	runDir string,
-	authority RunAuthority,
-	standaloneSource *standaloneSourceConfig,
-	renderOptions RenderOptions,
-	publishHTML bool,
-) (VerifiedRunReceipt, GenerationDiagnostics, error) {
-	var receipt VerifiedRunReceipt
-	var diagnostics GenerationDiagnostics
-	err := generateWithReceipt(
-		runDir, authority, standaloneSource, renderOptions, publishHTML, &receipt, &diagnostics,
-	)
-	return receipt, diagnostics, err
-}
-
-func generateWithReceipt(
-	runDir string,
-	authority RunAuthority,
-	standaloneSource *standaloneSourceConfig,
-	renderOptions RenderOptions,
-	publishHTML bool,
-	receiptOut *VerifiedRunReceipt,
-	diagnosticsOut *GenerationDiagnostics,
-) error {
-	if standaloneSource != nil {
-		if err := validateStandaloneSourceAuthority(authority, standaloneSource.hostName); err != nil {
-			return err
-		}
+) (RunReceipt, error) {
+	if err := source.validate(); err != nil {
+		return RunReceipt{}, err
 	}
-	if err := authority.validate(); err != nil {
-		return err
-	}
-	// report.json and report.html are not publication authority without the
-	// manifest, but they still look like a finished product when opened
-	// directly. Invalidate all final names before any regeneration and install
-	// the manifest last only after the complete replacement has validated.
+	// report.json and report.html look like a finished product when opened
+	// directly, so every final name is removed before regeneration and the
+	// manifest is installed last, after the complete replacement is written.
 	if err := removePublishedReportArtifacts(runDir); err != nil {
-		return err
+		return RunReceipt{}, err
 	}
 	data, err := readRunDir(runDir)
 	if err != nil {
-		return err
+		return RunReceipt{}, err
 	}
-	if authority.groupGraphBound {
-		if err := BindGroupGraphView(data, authority.groupGraphIndexes); err != nil {
-			return fmt.Errorf("report: bind group graph: %w", err)
+	if len(source.GroupGraph) > 0 {
+		if err := BindGroupGraphView(data, source.GroupGraph); err != nil {
+			return RunReceipt{}, fmt.Errorf("report: bind group graph: %w", err)
 		}
 		if err := collectOpenablePaths(data); err != nil {
-			return fmt.Errorf("report: collect bound group graph source paths: %w", err)
+			return RunReceipt{}, fmt.Errorf("report: collect bound group graph source paths: %w", err)
 		}
 	}
 	var gitLabSourceLinks *GitLabSourceLinks
 	var gitHubSourceLinks *GitHubSourceLinks
-	data.CapturedRevision = authority.repository.Head
+	data.CapturedRevision = source.Repository.Head
 	if standaloneSource != nil && publishHTML {
-		pathPrefix, err := standaloneSourcePathPrefix(authority.repository.Identity, authority.analysisRoot)
+		pathPrefix, err := standaloneSourcePathPrefix(source.Repository.Identity, source.AnalysisRoot)
 		if err != nil {
-			return err
+			return RunReceipt{}, err
 		}
 		switch standaloneSource.hostName {
 		case "GitLab":
@@ -890,7 +517,7 @@ func generateWithReceipt(
 				pathPrefix,
 			)
 			if err != nil {
-				return err
+				return RunReceipt{}, err
 			}
 		case "GitHub":
 			gitHubSourceLinks, err = newGitHubSourceLinks(
@@ -899,62 +526,49 @@ func generateWithReceipt(
 				pathPrefix,
 			)
 			if err != nil {
-				return err
+				return RunReceipt{}, err
 			}
 		default:
-			return fmt.Errorf("report: unsupported external source host %q", standaloneSource.hostName)
+			return RunReceipt{}, fmt.Errorf("report: unsupported external source host %q", standaloneSource.hostName)
 		}
 		data.standaloneLocalRoots = []string{
 			data.ArtifactsDir,
-			authority.analysisRoot,
-			authority.repository.Identity,
+			source.AnalysisRoot,
+			source.Repository.Identity,
 		}
 	}
-	data.CapturedInputCount = len(authority.inputs)
 
-	reportJSON, err := encodeReportJSON(data, maxManifestReportBytes)
+	reportJSON, err := encodeReportJSON(data, 0)
 	if err != nil {
-		return err
+		return RunReceipt{}, err
 	}
 	// The final canonical report JSON exists at this boundary. Preserve its
 	// advisory measurement even when manifest preparation or any later
 	// publication step fails.
-	generationDiagnostics := GenerationDiagnostics{}
-	if diagnosticsOut != nil {
-		*diagnosticsOut = generationDiagnostics
-	}
-	manifest, err := prepareAuthorizedRunManifest(
-		runDir, data, reportJSON, authority, standaloneSource,
-	)
+	manifest, err := prepareRunManifest(data, source, standaloneSource)
 	if err != nil {
-		return err
+		return RunReceipt{}, err
 	}
-	var preparedReceipt VerifiedRunReceipt
-	if receiptOut != nil {
-		preparedReceipt, err = newVerifiedRunReceiptFromReportData(runDir, manifest, data)
-		if err != nil {
-			return err
-		}
+	receipt, err := newRunReceipt(runDir, manifest, data)
+	if err != nil {
+		return RunReceipt{}, err
 	}
 	if !publishHTML {
 		if err := installAuthorizedReport(runDir, reportJSON, nil, manifest); err != nil {
-			return err
+			return RunReceipt{}, err
 		}
-		retainVerifiedRunReceipt(receiptOut, preparedReceipt)
-		return nil
+		return receipt, nil
 	}
 	renderData := *data
 	renderData.GitLabSourceLinks = gitLabSourceLinks
 	renderData.GitHubSourceLinks = gitHubSourceLinks
 	// The page is stamped with the digest of the exact report.json bytes it
 	// was rendered from, so publication can prove the pair belongs together.
-	renderOptions.ReportSHA256 = manifestSHA256(reportJSON)
-	reportHTML, _, err := renderHTMLWithOptionsDiagnostics(&renderData, renderOptions)
-	if diagnosticsOut != nil {
-		*diagnosticsOut = generationDiagnostics
-	}
+	digest := sha256.Sum256(reportJSON)
+	renderOptions.ReportSHA256 = hex.EncodeToString(digest[:])
+	reportHTML, err := RenderHTMLWithOptions(&renderData, renderOptions)
 	if err != nil {
-		return err
+		return RunReceipt{}, err
 	}
 	if err := VerifyOrdinaryReportHTMLPayload(
 		reportHTML,
@@ -967,23 +581,12 @@ func generateWithReceipt(
 			RepositoryRoot:   manifest.RepositoryState.Identity,
 		},
 	); err != nil {
-		return fmt.Errorf("report: verify generated html before publication: %w", err)
+		return RunReceipt{}, fmt.Errorf("report: verify generated html before publication: %w", err)
 	}
 	if err := installAuthorizedReport(runDir, reportJSON, reportHTML, manifest); err != nil {
-		return err
+		return RunReceipt{}, err
 	}
-	retainVerifiedRunReceipt(receiptOut, preparedReceipt)
-	return nil
-}
-
-func retainVerifiedRunReceipt(
-	receiptOut *VerifiedRunReceipt,
-	receipt VerifiedRunReceipt,
-) {
-	if receiptOut == nil {
-		return
-	}
-	*receiptOut = receipt
+	return receipt, nil
 }
 
 // installAuthorizedReport stages the canonical report data and, when non-nil,
@@ -1194,3 +797,24 @@ func scrubRenderLocalPaths(value any, roots []string) {
 // result. It used to carry advisory scale warnings; it carries nothing now
 // and stays only so the generation functions keep their shape.
 type GenerationDiagnostics struct{}
+
+// decodeStrictReportJSON reads report.json exactly as it was written: no
+// unknown fields, one value, the format this code renders.
+func decodeStrictReportJSON(reportJSON []byte) (ReportData, error) {
+	decoder := json.NewDecoder(bytes.NewReader(reportJSON))
+	decoder.DisallowUnknownFields()
+	var data ReportData
+	if err := decoder.Decode(&data); err != nil {
+		return ReportData{}, fmt.Errorf("report: decode report.json: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return ReportData{}, fmt.Errorf("report: report.json contains multiple values")
+		}
+		return ReportData{}, fmt.Errorf("report: report.json has trailing data: %w", err)
+	}
+	if data.FormatVersion != CurrentFormatVersion {
+		return ReportData{}, fmt.Errorf("report: unsupported report format version %d", data.FormatVersion)
+	}
+	return data, nil
+}

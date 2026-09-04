@@ -4,13 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"github.com/dvordrova/repomap/internal/corpus"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
-
-	"github.com/dvordrova/repomap/internal/corpus"
 )
 
 func TestCaptureRepositoryTracksOnlyTrackedChanges(t *testing.T) {
@@ -44,91 +42,6 @@ func TestCaptureRepositoryTracksOnlyTrackedChanges(t *testing.T) {
 	want := fmt.Sprintf("%x", sha256.Sum256([]byte("package changed\n")))
 	if dirty.Dirty[0].ContentSHA256 != want {
 		t.Fatalf("dirty content digest = %q, want %q", dirty.Dirty[0].ContentSHA256, want)
-	}
-}
-
-func TestCaptureInputsUsesCapturedRevisionAndDirtyIdentity(t *testing.T) {
-	repository := testRepository(t)
-	writeTestFile(t, repository, "clean.go", "package clean\n")
-	writeTestFile(t, repository, "dirty.go", "package initial\n")
-	gitTest(t, repository, "add", "clean.go", "dirty.go")
-	gitTest(t, repository, "commit", "-m", "initial")
-	writeTestFile(t, repository, "dirty.go", "package dirty\n")
-
-	state, err := captureTestRepository(t, repository)
-	if err != nil {
-		t.Fatalf("capture repository: %v", err)
-	}
-	writeTestFile(t, repository, "clean.go", "package changed_later\n")
-	inputs, err := CaptureInputs(
-		context.Background(),
-		state,
-		[]string{"dirty.go", "clean.go", "missing.go"},
-	)
-	if err != nil {
-		t.Fatalf("capture inputs: %v", err)
-	}
-	if len(inputs) != 3 || inputs[0].Path != "clean.go" || inputs[1].Path != "dirty.go" || inputs[2].Path != "missing.go" {
-		t.Fatalf("unexpected captured inputs: %#v", inputs)
-	}
-	cleanDigest := fmt.Sprintf("%x", sha256.Sum256([]byte("package clean\n")))
-	dirtyDigest := fmt.Sprintf("%x", sha256.Sum256([]byte("package dirty\n")))
-	if inputs[0].ContentSHA256 != cleanDigest || inputs[1].ContentSHA256 != dirtyDigest || inputs[2].Kind != FileMissing {
-		t.Fatalf("captured inputs do not match captured authority: %#v", inputs)
-	}
-	if _, err := CapturedInputsDigest(inputs); err != nil {
-		t.Fatalf("digest captured inputs: %v", err)
-	}
-}
-
-func TestCaptureInputsStreamsBlobBeyondFormerEightMiBLimit(t *testing.T) {
-	repository := testRepository(t)
-	content := strings.Repeat("x", 8*1024*1024+1)
-	writeTestFile(t, repository, "large.bin", content)
-	gitTest(t, repository, "add", "large.bin")
-	gitTest(t, repository, "commit", "-m", "large input")
-	state, err := captureTestRepository(t, repository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	inputs, err := CaptureInputs(context.Background(), state, []string{"large.bin"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-	if len(inputs) != 1 || inputs[0].ContentSHA256 != want {
-		t.Fatalf("large captured input = %#v, want digest %q", inputs, want)
-	}
-}
-
-func TestCaptureInputsRejectsUnavailableCapturedTree(t *testing.T) {
-	repository := testRepository(t)
-	writeTestFile(t, repository, "main.go", "package main\n")
-	gitTest(t, repository, "add", "main.go")
-	gitTest(t, repository, "commit", "-m", "initial")
-	state, err := captureTestRepository(t, repository)
-	if err != nil {
-		t.Fatalf("capture repository: %v", err)
-	}
-	state.Head = strings.Repeat("0", len(state.Head))
-	if inputs, err := CaptureInputs(context.Background(), state, []string{"main.go"}); err == nil || inputs != nil ||
-		!strings.Contains(err.Error(), "validate captured commit tree") {
-		t.Fatalf("inputs = %#v, error = %v", inputs, err)
-	}
-}
-
-func TestCapturedInputsDigestRejectsDuplicatePaths(t *testing.T) {
-	input := CapturedInput{
-		Version:       CapturedInputVersion,
-		ID:            strings.Repeat("a", 64),
-		Path:          "main.go",
-		Kind:          FileRegular,
-		Mode:          "100644",
-		ContentSHA256: strings.Repeat("b", 64),
-		Stages:        []string{"report_evidence"},
-	}
-	if _, err := CapturedInputsDigest([]CapturedInput{input, input}); err == nil {
-		t.Fatal("duplicate captured paths were accepted")
 	}
 }
 

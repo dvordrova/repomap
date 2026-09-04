@@ -445,7 +445,7 @@ func parseSnapshot(snapshotPath string, data *ReportData) error {
 	}
 	encoded, _, err := readBoundedProgramArtifact(
 		snapshotPath,
-		maxManifestSnapshotBytes,
+		0,
 		"snapshot",
 		false,
 	)

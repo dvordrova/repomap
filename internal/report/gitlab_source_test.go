@@ -2,12 +2,9 @@ package report
 
 import (
 	"bytes"
-	"context"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/dvordrova/repomap/internal/freshness"
 )
 
 func TestNormalizeGitLabRepositoryURL(t *testing.T) {
@@ -193,44 +190,6 @@ func TestNewGitLabSourceLinksValidatesRevisionAndPathPrefix(t *testing.T) {
 		); err == nil {
 			t.Fatalf("newGitLabSourceLinks(%q, %q) succeeded", test.revision, test.prefix)
 		}
-	}
-}
-
-func TestGitLabAuthorityAllowsCapturedDirtyStateAndRejectsAnalyzedSubmodules(t *testing.T) {
-	repository := newRunManifestRepository(t)
-	writeTestFile(t, repository, "batch.go", "package fixture\n\nfunc Commit() { panic(\"dirty\") }\n")
-	dirty := captureRunManifestRepositoryState(t, repository)
-	dirtyAuthority, err := ConfirmRunAuthorityScoped(
-		context.Background(), repository, dirty, []string{"batch.go"},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := validateGitLabAuthority(dirtyAuthority); err != nil {
-		t.Fatalf("stable dirty authority rejected: %v", err)
-	}
-
-	cleanRepository := newRunManifestRepository(t)
-	clean := captureRunManifestRepositoryState(t, cleanRepository)
-	submoduleAuthority, err := ConfirmRunAuthorityScoped(
-		context.Background(), cleanRepository, clean, []string{"batch.go"},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	submoduleAuthority.repository.Submodules = []freshness.SubmoduleState{{
-		Path:               "third_party/library",
-		IncludedInAnalysis: true,
-		RecordedGitlink:    strings.Repeat("b", 40),
-		CurrentHead:        strings.Repeat("b", 40),
-		Availability:       freshness.SubmoduleClean,
-	}}
-	if err := GenerateAuthorizedGitLab(
-		t.TempDir(),
-		submoduleAuthority,
-		"https://gitlab.example.test/team/project",
-	); err == nil || !strings.Contains(err.Error(), "does not support analyzed submodule source") {
-		t.Fatalf("analyzed submodule authority error = %v", err)
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 	"unicode"
 )
@@ -60,18 +59,6 @@ type SubmoduleState struct {
 	WorktreeModified   bool                  `json:"worktree_modified,omitempty"`
 	WorktreeUntracked  bool                  `json:"worktree_untracked,omitempty"`
 	Availability       SubmoduleAvailability `json:"availability"`
-}
-
-type CapturedInput struct {
-	Version        int      `json:"version"`
-	ID             string   `json:"id"`
-	Path           string   `json:"path"`
-	Kind           FileKind `json:"kind"`
-	Mode           string   `json:"mode,omitempty"`
-	ContentSHA256  string   `json:"content_sha256,omitempty"`
-	OwningModuleID string   `json:"owning_module_id,omitempty"`
-	OwningPackage  string   `json:"owning_package,omitempty"`
-	Stages         []string `json:"stages"`
 }
 
 func (state RepositoryState) Validate() error {
@@ -163,56 +150,6 @@ func (state SubmoduleState) validate() error {
 		return fmt.Errorf("invalid submodule availability %q", state.Availability)
 	}
 	return nil
-}
-
-func (input CapturedInput) Validate() error {
-	if input.Version != CapturedInputVersion || !validHexDigest(input.ID, 64) {
-		return fmt.Errorf("freshness: captured input version or id is invalid")
-	}
-	if err := validateRelativePath(input.Path); err != nil {
-		return err
-	}
-	if input.Kind != FileRegular && input.Kind != FileSymlink && input.Kind != FileMissing {
-		return fmt.Errorf("freshness: captured input kind %q is unsupported", input.Kind)
-	}
-	if input.Kind != FileMissing && !validHexDigest(input.ContentSHA256, 64) {
-		return fmt.Errorf("freshness: captured input content SHA-256 is required")
-	}
-	if input.Kind == FileMissing && input.ContentSHA256 != "" {
-		return fmt.Errorf("freshness: missing captured input has content")
-	}
-	previous := ""
-	for _, stage := range input.Stages {
-		if !validLabel(stage) || (previous != "" && stage <= previous) {
-			return fmt.Errorf("freshness: captured input stages must be uniquely sorted")
-		}
-		previous = stage
-	}
-	if len(input.Stages) == 0 {
-		return fmt.Errorf("freshness: captured input has no consuming stage")
-	}
-	return nil
-}
-
-func CapturedInputsDigest(inputs []CapturedInput) (string, error) {
-	canonical := append([]CapturedInput(nil), inputs...)
-	sort.Slice(canonical, func(i, j int) bool { return canonical[i].Path < canonical[j].Path })
-	previous := ""
-	for index := range canonical {
-		if err := canonical[index].Validate(); err != nil {
-			return "", fmt.Errorf("freshness: captured input %d: %w", index, err)
-		}
-		if previous != "" && canonical[index].Path <= previous {
-			return "", fmt.Errorf("freshness: captured inputs must be uniquely sorted")
-		}
-		previous = canonical[index].Path
-		canonical[index].Stages = append([]string(nil), canonical[index].Stages...)
-	}
-	encoded, err := json.Marshal(canonical)
-	if err != nil {
-		return "", fmt.Errorf("freshness: encode captured inputs: %w", err)
-	}
-	return sha256Hex(encoded), nil
 }
 
 func dirtyFileKey(file DirtyFile) string {

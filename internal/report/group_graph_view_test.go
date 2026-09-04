@@ -1,20 +1,17 @@
 package report
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
-	"path/filepath"
-	"reflect"
-	"strings"
-	"testing"
-
 	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
 )
 
 func TestGroupGraphViewOwnsCompleteMatchedSetWithoutReconstruction(t *testing.T) {
@@ -137,45 +134,6 @@ func TestReadRunDirDefersForeignEndpointsUntilCompleteGraphBinding(t *testing.T)
 	}
 }
 
-func TestBindRunAuthorityGroupGraphRequiresEveryProjectedSourcePath(t *testing.T) {
-	repository := t.TempDir()
-	writeTestFile(t, repository, "api.go", "package fixture\n")
-	writeTestFile(t, repository, "worker.py", "def run():\n    pass\n")
-	writeTestFile(t, repository, "worker_config.py", "QUEUE = 'jobs'\n")
-	runManifestGit(t, repository, "init", "--quiet")
-	runManifestGit(t, repository, "add", "api.go", "worker.py", "worker_config.py")
-	runManifestGit(t, repository,
-		"-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid",
-		"-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture",
-	)
-	state := captureRunManifestRepositoryState(t, repository)
-	authority, err := ConfirmRunAuthorityScoped(
-		context.Background(), repository, state, []string{"api.go", "worker.py"},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	left := reportGroupIndexFixture(t, "api", "fixture:api", "api.go")
-	right := reportGroupIndexWithUngroupedSource(t)
-	if _, err := BindRunAuthorityGroupGraph(authority, []groupindex.Index{left, right}); err == nil ||
-		!strings.Contains(err.Error(), "worker_config.py") {
-		t.Fatalf("missing group source authorization error = %v", err)
-	}
-	extended, err := ExtendRunAuthority(
-		context.Background(), authority, []string{"api.go", "worker.py", "worker_config.py"},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bound, err := BindRunAuthorityGroupGraph(extended, []groupindex.Index{left, right})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bound.groupGraphBound || len(bound.groupGraphIndexes) != 2 {
-		t.Fatalf("bound graph authority = %#v", bound)
-	}
-}
-
 func reportGroupIndexWithUngroupedSource(t *testing.T) groupindex.Index {
 	t.Helper()
 	base, err := programindex.New(programindex.Input{
@@ -220,116 +178,6 @@ func reportGroupIndexWithUngroupedSource(t *testing.T) groupindex.Index {
 		t.Fatalf("groupindex.Build: diagnostics=%#v err=%v", diagnostics, err)
 	}
 	return index
-}
-
-func TestManifestBindsExactLocalGroupsIndexBeforeMatchedReportSet(t *testing.T) {
-	program, local := reportCategorizedGroupFixture(
-		t, "api", "fixture:api", "api.go",
-		[]programindex.Category{programindex.CategoryCore}, groupindex.LaneCore,
-	)
-	right := reportGroupIndexFixture(t, "worker", "fixture:worker", "worker.py")
-	matched, diagnostics, err := groupindex.WithConnections(
-		[]groupindex.Index{local, right},
-		[]groupindex.ConnectionInput{{
-			From:         groupindex.Endpoint{TargetID: local.Target.ID, GroupID: local.Groups[0].ID},
-			To:           groupindex.Endpoint{TargetID: right.Target.ID, GroupID: right.Groups[0].ID},
-			SemanticKind: "dispatches_to", Label: "dispatches to", Summary: "Dispatches work.",
-			SupportResolution: programindex.PatternValueExact,
-		}},
-	)
-	if err != nil || len(diagnostics) != 0 {
-		t.Fatalf("WithConnections: diagnostics=%#v err=%v", diagnostics, err)
-	}
-	local = matchedGroupIndex(t, matched, local.Target.ID)
-	runDir := t.TempDir()
-	writeReportProgramIndexArtifacts(t, runDir, program)
-	documentation := reportReducedDocumentationFixture(t)
-	if err := documentationreduce.Persist(runDir, documentation); err != nil {
-		t.Fatal(err)
-	}
-	if err := groupindex.Persist(runDir, local); err != nil {
-		t.Fatal(err)
-	}
-	manifest := validRunManifestFixture(t)
-	manifest.MaterialInputs.ProgramTargetID, manifest.MaterialInputs.ProgramTargetSHA256, err =
-		reportProgramTargetMaterial(&program.Target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	setRaw, err := os.ReadFile(filepath.Join(runDir, programindex.ArtifactSetFilename))
-	if err != nil {
-		t.Fatal(err)
-	}
-	groupsRaw, err := os.ReadFile(filepath.Join(runDir, groupindex.ArtifactFilename))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest.MaterialInputs.ProgramIndexSetSHA256 = manifestSHA256(setRaw)
-	documentationRaw, err := os.ReadFile(filepath.Join(runDir, documentationreduce.ArtifactFilename))
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest.MaterialInputs.ReducedDocumentationSHA256 = manifestSHA256(documentationRaw)
-	manifest.MaterialInputs.GroupsIndexSHA256 = manifestSHA256(groupsRaw)
-	view, err := NewGroupGraphView(matched, local.Target.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	portfolio, err := NewProgramPortfolio(program.Target.ID, []programindex.Index{program})
-	if err != nil {
-		t.Fatal(err)
-	}
-	reportData := ReportData{
-		FormatVersion: CurrentFormatVersion, RepoName: "fixture",
-		CapturedRevision:   manifest.RepositoryState.Head,
-		CapturedInputCount: len(manifest.CapturedInputs),
-		OpenablePaths:      []string{"api.go", "worker.py"},
-		ProgramPortfolio:   portfolio,
-		GroupGraph:         view,
-	}
-	reportData.TargetOutcomePortfolio = reportTargetOutcomeViewFixture(t, []TargetNavigationPage{{
-		RunID:            "run-fixture",
-		ProgramTarget:    program.Target.Snapshot(),
-		ArtifactFilename: programindex.ArtifactFilename,
-	}}, program.Target.ID)
-	manifest.OpenablePaths = append([]string(nil), reportData.OpenablePaths...)
-	if err := manifest.verifyReportData(reportData); err != nil {
-		t.Fatalf("verify graph-only report projection: %v", err)
-	}
-	reportJSON, err := json.Marshal(&reportData)
-	if err != nil {
-		t.Fatal(err)
-	}
-	verify := func(candidate RunManifest) error {
-		suite, suiteErr := newManifestVerificationSuiteWithValidation(candidate, runDir, false)
-		if suiteErr != nil {
-			return suiteErr
-		}
-		defer suite.Close()
-		programs, suiteErr := suite.programIndexes()
-		if suiteErr != nil {
-			return suiteErr
-		}
-		if suiteErr = suite.verifyReducedDocumentationArtifact(programs); suiteErr != nil {
-			return suiteErr
-		}
-		return suite.verifyGroupsIndexArtifact(programs, reportJSON)
-	}
-	if err := verify(manifest); err != nil {
-		t.Fatalf("verify exact GroupsIndex: %v", err)
-	}
-	unboundDocumentation := manifest
-	unboundDocumentation.MaterialInputs.ReducedDocumentationSHA256 = ""
-	if err := verify(unboundDocumentation); err == nil ||
-		!strings.Contains(err.Error(), "unbound reduced documentation") {
-		t.Fatalf("unbound reduced documentation verification error = %v", err)
-	}
-	tampered := append([]byte(nil), groupsRaw...)
-	tampered[len(tampered)-2] ^= 1
-	writeReportProgramFile(t, filepath.Join(runDir, groupindex.ArtifactFilename), tampered)
-	if err := verify(manifest); err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
-		t.Fatalf("tampered GroupsIndex verification error = %v", err)
-	}
 }
 
 func reportGroupIndexFixture(t *testing.T, name, selector, sourcePath string) groupindex.Index {

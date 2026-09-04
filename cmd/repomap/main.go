@@ -409,10 +409,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			staticSourceHost,
 		)
 	}
-	initialRepositoryStateSHA256, err := initialState.Digest()
-	if err != nil {
-		return fmt.Errorf("hash repository state before orientation: %w", err)
-	}
 	if staticSourceHost != "" && repositoryStateHasAnalyzedSubmodule(initialState) {
 		return fmt.Errorf("standalone %s reports do not support analyzed submodule source because one repository URL cannot address it", staticSourceHost)
 	}
@@ -471,8 +467,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				recordTargetPortfolioOutcome(runDir, plan.Outcome, humanOutput),
 			)
 		}
-		var verifiedRuns []report.VerifiedRunReceipt
-		publication, reportPath, dispatchErr := dispatchRepositoryTargetPlan(
+		var verifiedRuns []report.RunReceipt
+		reportPath, dispatchErr := dispatchRepositoryTargetPlan(
 			ctx,
 			repositoryTargetDispatchOptions{
 				Repo: repo, ExtraArgs: append([]string(nil), extraArgs...), Deps: deps,
@@ -483,8 +479,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
 				Output: humanOutput, FirstLayer: firstLayer,
 				DiscoverJSTSFn: jstsproject.DiscoverSelected,
-				VerifiedRunsSink: func(receipts []report.VerifiedRunReceipt) {
-					verifiedRuns = append([]report.VerifiedRunReceipt(nil), receipts...)
+				VerifiedRunsSink: func(receipts []report.RunReceipt) {
+					verifiedRuns = append([]report.RunReceipt(nil), receipts...)
 				},
 			},
 		)
@@ -497,7 +493,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 		publicationStateEmitted = true
 		return finishRepositoryTargetDispatch(
-			ctx, deps, dDir, filepath.Dir(reportPath), reportPath, publication,
+			ctx, deps, dDir, filepath.Dir(reportPath), reportPath,
 			*noServe, *noOpen, *port, staticSourceHost, verifiedRuns, humanOutput,
 		)
 	}
@@ -670,36 +666,19 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err != nil {
 		return fmt.Errorf("read captured report inputs: %w", err)
 	}
-	reconciliationStarted := time.Now()
-	humanOutput.Stage("Repository authority", "reconciling captured inputs")
-	capturedInputPaths, err := report.CapturedInputPaths(reportData)
+	source, err := report.NewRunSource(analysisRoot, initialState)
 	if err != nil {
-		return fmt.Errorf("collect captured report inputs: %w", err)
+		return fmt.Errorf("name the report source: %w", err)
 	}
-	authority, err := report.ConfirmRunAuthorityScoped(
-		ctx, analysisRoot, initialState, capturedInputPaths,
-	)
-	if err != nil {
-		return fmt.Errorf("confirm browser report authority: %w", err)
-	}
-	humanOutput.State(
-		"Repository authority", "confirmed",
-		fmt.Sprintf("captured inputs: %d", len(capturedInputPaths)),
-		formatRunOutputWallDuration(time.Since(reconciliationStarted)),
-	)
-	generateAuthorizedReport := func() (report.GenerationDiagnostics, error) {
-		if gitLabURL != "" {
-			return report.GenerateAuthorizedGitLabWithDiagnostics(runDir, authority, gitLabURL)
-		}
-		if gitHubURL != "" {
-			return report.GenerateAuthorizedGitHubWithDiagnostics(runDir, authority, gitHubURL)
-		}
-		return report.GenerateAuthorizedWithDiagnostics(runDir, authority)
+	generateReport := func() (report.RunReceipt, error) {
+		return report.Generate(runDir, source, report.GenerateOptions{
+			GitLabURL: gitLabURL, GitHubURL: gitHubURL, PublishHTML: true,
+		})
 	}
 	reportStarted := time.Now()
 	if !deps.deferredPortfolioHTML {
 		humanOutput.Stage("Report", "generating authorized Program report")
-		if _, generationErr := generateAuthorizedReport(); generationErr != nil {
+		if _, generationErr := generateReport(); generationErr != nil {
 			return fmt.Errorf("generate authorized browser report: %w", generationErr)
 		}
 	}
@@ -723,34 +702,19 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			"remote availability is not checked; ensure the captured commit is pushed before sharing",
 		)
 	}
-	publication := report.PublicationAssessment{Status: report.PublicationReady}
-	backingPage, err := preparePublishedTargetAuthority(
-		func() (report.TargetNavigationPage, error) {
-			return report.PreparedTargetNavigationPage(runDir, reportData)
-		},
-	)
+	backingPage, err := report.PreparedTargetNavigationPage(runDir, reportData)
 	if err != nil {
-		return errors.Join(err, quarantineTargetPagePublication([]string{runDir}))
-	}
-	if !deps.deferredPortfolioHTML {
-		publication, err = report.AssessRunPublication(runDir)
-		if err != nil {
-			return errors.Join(
-				fmt.Errorf("verify generated report publication: %w", err),
-				quarantineTargetPagePublication([]string{runDir}),
-			)
-		}
+		return fmt.Errorf("retain prepared report page identity: %w", err)
 	}
 	publishedTarget := targetPublishedRun{
-		RunID:                 runID,
-		RunDir:                runDir,
-		ProgramPage:           backingPage,
-		GroupIndex:            defaultGroupIndex,
-		Authority:             authority,
-		RepositoryStateSHA256: initialRepositoryStateSHA256,
-		SelectedRevision:      initialState.Head,
-		GitLabURL:             gitLabURL,
-		GitHubURL:             gitHubURL,
+		RunID:            runID,
+		RunDir:           runDir,
+		ProgramPage:      backingPage,
+		GroupIndex:       defaultGroupIndex,
+		Source:           source,
+		SelectedRevision: initialState.Head,
+		GitLabURL:        gitLabURL,
+		GitHubURL:        gitHubURL,
 	}
 	if deps.preselectedTarget != nil {
 		publishedTarget.SelectedTargetKey = deps.preselectedTarget.Key.String()
@@ -767,11 +731,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if deps.siblingTargetRun {
 		return nil
 	}
-	publicationDetails := []string{"report: " + reportPath}
-	if publication.Status != report.PublicationReady {
-		publicationDetails = append(publicationDetails, "report or analysis artifacts are missing or invalid")
-	}
-	humanOutput.State("Run", strings.ToLower(string(publication.Status)), publicationDetails...)
+	humanOutput.State("Run", "ready", "report: "+reportPath)
 	publicationStateEmitted = true
 
 	if !*noServe && deps.serveReport != nil {

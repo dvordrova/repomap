@@ -28,13 +28,14 @@ func TestInstallAuthorizedReportCommitsManifestLast(t *testing.T) {
 			t.Fatalf("%s = %q, want %q", name, got, want)
 		}
 	}
-	if _, err := ReadRunManifest(runDir); err == nil {
-		// The low-level fixture deliberately supplies arbitrary report bytes;
-		// installation proves ordering, not semantic fixture construction.
-		t.Fatal("arbitrary report unexpectedly passed canonical manifest restore")
+	// The manifest is a record of the run, installed last; reading it back
+	// is reading it back, not verifying the report against it.
+	installed, err := ReadRunManifest(runDir)
+	if err != nil {
+		t.Fatalf("read installed manifest: %v", err)
 	}
-	if _, err := os.Lstat(filepath.Join(runDir, RunManifestFilename)); err != nil {
-		t.Fatalf("ready manifest is missing: %v", err)
+	if installed.ProgramTargetID != manifest.ProgramTargetID || installed.AnalysisRoot != manifest.AnalysisRoot {
+		t.Fatalf("installed manifest = %#v, want %#v", installed, manifest)
 	}
 	assertNoReportStages(t, runDir)
 }

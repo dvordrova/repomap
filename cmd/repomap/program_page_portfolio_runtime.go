@@ -149,20 +149,13 @@ func finalizeProgramPageRuns(
 	if err != nil {
 		return fmt.Errorf("program page portfolio: validate matched group graph: %w", err)
 	}
-	groupGraphPaths, err := groupGraph.SourcePaths()
-	if err != nil {
-		return fmt.Errorf("program page portfolio: collect group graph sources: %w", err)
-	}
+	_ = groupGraph
 	for index := range runs {
-		extended, err := report.ExtendRunAuthority(ctx, runs[index].Authority, groupGraphPaths)
-		if err != nil {
-			return fmt.Errorf("program page portfolio: authorize graph sources for run %s: %w", runs[index].RunID, err)
-		}
-		bound, err := report.BindRunAuthorityGroupGraph(extended, groupIndexes)
+		bound, err := runs[index].Source.WithGroupGraph(groupIndexes)
 		if err != nil {
 			return fmt.Errorf("program page portfolio: bind group graph for run %s: %w", runs[index].RunID, err)
 		}
-		runs[index].Authority = bound
+		runs[index].Source = bound
 	}
 
 	runIndexByID := make(map[string]int, len(runs))
@@ -185,22 +178,9 @@ func finalizeProgramPageRuns(
 		if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
 			return fmt.Errorf("program page portfolio: completed page target mismatch")
 		}
-		receipt, _, err := run.generateBackingPageData()
+		receipt, err := run.generateBackingPageData()
 		if err != nil {
 			return fmt.Errorf("program page portfolio: finalize backing run %s: %w", run.RunID, err)
-		}
-		if err := receipt.ValidateRunIdentity(run.RunDir); err != nil {
-			return fmt.Errorf("program page portfolio: verify run receipt %s: %w", run.RunID, err)
-		}
-		if receiptPage := receipt.ProgramPage(); !reflect.DeepEqual(receiptPage, page) {
-			return fmt.Errorf("program page portfolio: run %s receipt page mismatch", run.RunID)
-		}
-		manifest := receipt.Manifest()
-		if manifest.RepositoryStateSHA256 != run.RepositoryStateSHA256 ||
-			manifest.MaterialInputs.SelectedRevision != run.SelectedRevision ||
-			manifest.MaterialInputs.ProgramTargetID != binding.Target.ID ||
-			manifest.MaterialInputs.ProgramPagePortfolioSHA256 == "" {
-			return fmt.Errorf("program page portfolio: run %s authority mismatch", run.RunID)
 		}
 		run.Receipt = receipt
 	}
@@ -210,43 +190,38 @@ func finalizeProgramPageRuns(
 func publishProgramPageBundle(
 	portfolio programpage.Portfolio,
 	runs []targetPublishedRun,
-) (report.PublicationAssessment, error) {
+) error {
 	if err := portfolio.Validate(); err != nil {
-		return report.FailedPublicationAssessment(), err
+		return err
 	}
 	runsByID := make(map[string]targetPublishedRun, len(runs))
 	for _, run := range runs {
 		if run.RunID == "" || run.RunDir == "" || filepath.Base(run.RunDir) != run.RunID {
-			return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: completed run identity is invalid")
+			return fmt.Errorf("program page bundle: completed run identity is invalid")
 		}
 		if _, duplicate := runsByID[run.RunID]; duplicate {
-			return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: duplicate completed run")
+			return fmt.Errorf("program page bundle: duplicate completed run")
 		}
 		runsByID[run.RunID] = run
 	}
 	if len(runsByID) != len(portfolio.Pages) {
-		return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: completed run coverage is incomplete")
+		return fmt.Errorf("program page bundle: completed run coverage is incomplete")
 	}
 	defaultRunDir := ""
-	receipts := make([]report.VerifiedRunReceipt, 0, len(portfolio.Pages))
 	for _, page := range portfolio.Pages {
 		run, found := runsByID[page.RunID]
 		if !found {
-			return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: portfolio run is missing")
+			return fmt.Errorf("program page bundle: portfolio run is missing")
 		}
 		if page.Target.ID == portfolio.DefaultTargetID {
 			defaultRunDir = run.RunDir
 		}
-		receipts = append(receipts, run.Receipt)
 	}
 	if defaultRunDir == "" {
-		return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: default run is missing")
+		return fmt.Errorf("program page bundle: default run is missing")
 	}
-	assessment, err := report.PublishProgramPageBundleFromVerifiedRunsAtomic(
-		defaultRunDir, portfolio, receipts,
-	)
-	if err != nil {
-		return assessment, fmt.Errorf("program page bundle: publish: %w", err)
+	if err := report.PublishProgramPageBundle(defaultRunDir, portfolio); err != nil {
+		return fmt.Errorf("program page bundle: publish: %w", err)
 	}
-	return assessment, nil
+	return nil
 }

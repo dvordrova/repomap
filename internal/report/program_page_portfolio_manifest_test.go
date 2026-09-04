@@ -3,82 +3,12 @@ package report
 import (
 	"bytes"
 	"encoding/json"
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
+	"strings"
+	"testing"
 )
-
-func TestRunManifestVerifiesProgramPagePortfolioArtifact(t *testing.T) {
-	fixture := newProgramPageManifestFixture(t)
-
-	t.Run("portfolio binds exact current ProgramTarget and run", func(t *testing.T) {
-		runDir, manifest := fixture.run(t)
-		if err := manifest.Validate(); err != nil {
-			t.Fatalf("neutral page manifest: %v", err)
-		}
-		if err := manifest.VerifyProgramPagePortfolioArtifact(runDir); err != nil {
-			t.Fatalf("VerifyProgramPagePortfolioArtifact: %v", err)
-		}
-	})
-
-	t.Run("manifest digest rejects changed bytes", func(t *testing.T) {
-		runDir, manifest := fixture.run(t)
-		changed := append(append([]byte(nil), fixture.raw...), '\n')
-		writeTargetPageManifestArtifact(t, runDir, programpage.ArtifactFilename, changed)
-		if err := manifest.VerifyProgramPagePortfolioArtifact(runDir); err == nil ||
-			!strings.Contains(err.Error(), "sha256 mismatch") {
-			t.Fatalf("changed portfolio error = %v", err)
-		}
-	})
-
-	t.Run("portfolio self-seal rejects tamper even when manifest follows bytes", func(t *testing.T) {
-		runDir, manifest := fixture.run(t)
-		tampered := bytes.Replace(fixture.raw, []byte(fixture.currentRunID), []byte("run-current-2"), 1)
-		writeTargetPageManifestArtifact(t, runDir, programpage.ArtifactFilename, tampered)
-		manifest.MaterialInputs.ProgramPagePortfolioSHA256 = manifestSHA256(tampered)
-		if err := manifest.VerifyProgramPagePortfolioArtifact(runDir); err == nil ||
-			!strings.Contains(err.Error(), "sha256 mismatch") {
-			t.Fatalf("tampered portfolio error = %v", err)
-		}
-	})
-
-	t.Run("current target must own this exact run", func(t *testing.T) {
-		runDir, manifest := fixture.run(t)
-		manifest.MaterialInputs.ProgramTargetID = fixture.sibling.ID
-		_, manifest.MaterialInputs.ProgramTargetSHA256, _ = reportProgramTargetMaterial(&fixture.sibling)
-		if err := manifest.VerifyProgramPagePortfolioArtifact(runDir); err == nil ||
-			!strings.Contains(err.Error(), "no exact published program page") {
-			t.Fatalf("other sibling page error = %v", err)
-		}
-
-		otherDir := filepath.Join(t.TempDir(), "run-current-other")
-		if err := os.Mkdir(otherDir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		writeTargetPageManifestArtifact(t, otherDir, programpage.ArtifactFilename, fixture.raw)
-		manifest.MaterialInputs.ProgramTargetID = fixture.current.ID
-		_, manifest.MaterialInputs.ProgramTargetSHA256, _ = reportProgramTargetMaterial(&fixture.current)
-		if err := manifest.VerifyProgramPagePortfolioArtifact(otherDir); err == nil ||
-			!strings.Contains(err.Error(), "no exact published program page") {
-			t.Fatalf("other run page error = %v", err)
-		}
-	})
-
-	t.Run("present unbound portfolio is rejected", func(t *testing.T) {
-		runDir, manifest := fixture.run(t)
-		manifest.MaterialInputs.ProgramPagePortfolioSHA256 = ""
-		manifest.MaterialInputs.TargetOutcomePortfolioSHA256 = ""
-		if err := manifest.VerifyProgramPagePortfolioArtifact(runDir); err == nil ||
-			!strings.Contains(err.Error(), "unbound program page portfolio") {
-			t.Fatalf("unbound portfolio error = %v", err)
-		}
-	})
-}
 
 func TestTargetOutcomePortfolioViewRequiresExactAnalyzedPageBijection(t *testing.T) {
 	fixture := newProgramPageManifestFixture(t)
@@ -137,42 +67,6 @@ func TestTargetOutcomePortfolioViewRequiresExactAnalyzedPageBijection(t *testing
 	if _, err := NewTargetOutcomePortfolioView(driftedPortfolio, fixture.portfolio); err == nil ||
 		!strings.Contains(err.Error(), "no exact program page") {
 		t.Fatalf("drifted run binding error = %v", err)
-	}
-}
-
-func TestRunManifestVerifiesTargetOutcomePortfolioProjection(t *testing.T) {
-	fixture := newProgramPageManifestFixture(t)
-	runDir, manifest := fixture.run(t)
-	view, err := NewTargetOutcomePortfolioView(fixture.outcomes, fixture.portfolio)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reportRaw, err := json.Marshal(ReportData{TargetOutcomePortfolio: view})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := manifest.VerifyTargetOutcomePortfolioProjection(runDir, reportRaw); err != nil {
-		t.Fatalf("VerifyTargetOutcomePortfolioProjection: %v", err)
-	}
-
-	tampered := *view
-	tampered.Outcomes = append([]TargetOutcomeView(nil), view.Outcomes...)
-	tampered.Outcomes[0].DisplayName += " changed"
-	tamperedRaw, err := json.Marshal(ReportData{TargetOutcomePortfolio: &tampered})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := manifest.VerifyTargetOutcomePortfolioProjection(runDir, tamperedRaw); err == nil ||
-		!strings.Contains(err.Error(), "does not match artifacts") {
-		t.Fatalf("tampered projection error = %v", err)
-	}
-
-	if err := os.Remove(filepath.Join(runDir, targetoutcome.ArtifactFilename)); err != nil {
-		t.Fatal(err)
-	}
-	if err := manifest.VerifyTargetOutcomePortfolioProjection(runDir, reportRaw); err == nil ||
-		!strings.Contains(err.Error(), "artifact or projection is missing") {
-		t.Fatalf("missing outcome artifact error = %v", err)
 	}
 }
 
@@ -238,24 +132,4 @@ func newProgramPageManifestFixture(t *testing.T) programPageManifestFixture {
 		portfolio: portfolio, raw: raw, current: current, sibling: sibling,
 		currentRunID: currentRunID, outcomes: outcomes, outcomeRaw: outcomeRaw,
 	}
-}
-
-func (fixture programPageManifestFixture) run(t *testing.T) (string, RunManifest) {
-	t.Helper()
-	runDir := filepath.Join(t.TempDir(), fixture.currentRunID)
-	if err := os.Mkdir(runDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeTargetPageManifestArtifact(t, runDir, programpage.ArtifactFilename, fixture.raw)
-	writeTargetPageManifestArtifact(t, runDir, targetoutcome.ArtifactFilename, fixture.outcomeRaw)
-	manifest := validRunManifestFixture(t)
-	var err error
-	manifest.MaterialInputs.ProgramTargetID, manifest.MaterialInputs.ProgramTargetSHA256, err =
-		reportProgramTargetMaterial(&fixture.current)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest.MaterialInputs.ProgramPagePortfolioSHA256 = manifestSHA256(fixture.raw)
-	manifest.MaterialInputs.TargetOutcomePortfolioSHA256 = manifestSHA256(fixture.outcomeRaw)
-	return runDir, manifest
 }

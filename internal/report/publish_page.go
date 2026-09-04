@@ -15,29 +15,19 @@ import (
 // its own verified report.json; the owner run holds the complete matched
 // graph, the fact layer, and the target inventory, so the page is projected
 // from the owner's data alone and never merges sibling HTML.
-func PublishProgramPageBundleFromVerifiedRunsAtomic(
-	runDir string,
-	portfolio programpage.Portfolio,
-	receipts []VerifiedRunReceipt,
-) (PublicationAssessment, error) {
+// PublishProgramPageBundle renders the one page of a multi-target run into
+// its owner run directory.
+func PublishProgramPageBundle(runDir string, portfolio programpage.Portfolio) error {
 	if err := portfolio.Validate(); err != nil {
-		return FailedPublicationAssessment(), err
-	}
-	if len(receipts) == 0 {
-		return FailedPublicationAssessment(), fmt.Errorf("report: publication requires at least one verified run")
+		return err
 	}
 	rendered, err := renderPublishedPage(runDir)
 	if err != nil {
-		return FailedPublicationAssessment(), err
+		return err
 	}
-	if err := writePublishedPageAtomic(runDir, rendered); err != nil {
-		return FailedPublicationAssessment(), err
-	}
-	return PublicationAssessment{Status: PublicationReady}, nil
+	return writePublishedPageAtomic(runDir, rendered)
 }
 
-// renderPublishedPage projects the page from the run's own persisted
-// report.json, so the published HTML can only show data the manifest binds.
 func renderPublishedPage(runDir string) ([]byte, error) {
 	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
 	if err != nil {

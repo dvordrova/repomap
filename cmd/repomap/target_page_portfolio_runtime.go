@@ -1,10 +1,7 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/report"
@@ -20,12 +17,11 @@ type targetPublishedRun struct {
 	RunDir      string
 	ProgramPage report.TargetNavigationPage
 	GroupIndex  groupindex.Index
-	Receipt     report.VerifiedRunReceipt
+	Receipt     report.RunReceipt
 
 	SelectedTargetKey     string
 	SelectedTargetDisplay string
-	Authority             report.RunAuthority
-	RepositoryStateSHA256 string
+	Source                report.RunSource
 	SelectedRevision      string
 	GitLabURL             string
 	GitHubURL             string
@@ -54,47 +50,9 @@ func reportAnalyzedTargetPagePublicationFailure(output *runOutput, targets []tar
 // already-rendered files an explicit failed suffix. Raw analysis artifacts
 // remain available for diagnostics, but no partial multi-target publication
 // keeps a product-looking report.html/report.json pair.
-func quarantineTargetPagePublication(runDirs []string) error {
-	seen := make(map[string]struct{}, len(runDirs))
-	var result error
-	for _, runDir := range runDirs {
-		if runDir == "" {
-			continue
-		}
-		clean := filepath.Clean(runDir)
-		if _, exists := seen[clean]; exists {
-			continue
-		}
-		seen[clean] = struct{}{}
-		if err := report.RemoveRunManifest(clean); err != nil {
-			result = errors.Join(result, err)
-		}
-		for _, name := range []string{"report.html", "report.json"} {
-			from := filepath.Join(clean, name)
-			to := filepath.Join(clean, name+".failed")
-			if err := os.Rename(from, to); err != nil && !os.IsNotExist(err) {
-				result = errors.Join(result, fmt.Errorf("quarantine %s: %w", from, err))
-			}
-		}
-	}
-	return result
-}
 
-func (run targetPublishedRun) generateBackingPageData() (
-	report.VerifiedRunReceipt,
-	report.GenerationDiagnostics,
-	error,
-) {
-	switch {
-	case run.GitLabURL != "":
-		return report.GenerateAuthorizedGitLabPageDataVerifiedWithDiagnostics(
-			run.RunDir, run.Authority, run.GitLabURL,
-		)
-	case run.GitHubURL != "":
-		return report.GenerateAuthorizedGitHubPageDataVerifiedWithDiagnostics(
-			run.RunDir, run.Authority, run.GitHubURL,
-		)
-	default:
-		return report.GenerateAuthorizedPageDataVerifiedWithDiagnostics(run.RunDir, run.Authority)
-	}
+func (run targetPublishedRun) generateBackingPageData() (report.RunReceipt, error) {
+	return report.Generate(run.RunDir, run.Source, report.GenerateOptions{
+		GitLabURL: run.GitLabURL, GitHubURL: run.GitHubURL, PublishHTML: false,
+	})
 }

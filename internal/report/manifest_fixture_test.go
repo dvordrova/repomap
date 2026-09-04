@@ -3,65 +3,31 @@ package report
 import (
 	"context"
 	"encoding/json"
+	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/freshness"
 )
 
+// validRunManifestFixture is a manifest of the shape the code reads: a
+// repository at a revision, the directory of it that was analysed, and the
+// target the run is for.
 func validRunManifestFixture(t *testing.T) RunManifest {
 	t.Helper()
-	repository := freshness.RepositoryState{
-		Version:  freshness.RepositoryStateVersion,
-		Identity: "/repo",
-		Head:     strings.Repeat("a", 40),
-		Dirty:    []freshness.DirtyFile{},
-	}
-	digest, err := repository.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	inputs := []freshness.CapturedInput{{
-		Version:       freshness.CapturedInputVersion,
-		ID:            strings.Repeat("c", 64),
-		Path:          "batch.go",
-		Kind:          freshness.FileRegular,
-		Mode:          "100644",
-		ContentSHA256: strings.Repeat("d", 64),
-		Stages:        []string{"report_evidence"},
-	}}
-	inputsDigest, err := freshness.CapturedInputsDigest(inputs)
-	if err != nil {
-		t.Fatal(err)
-	}
 	return RunManifest{
-		Version:               CurrentRunManifestVersion,
-		RepositoryState:       repository,
-		AnalysisRoot:          "/repo",
-		RepositoryStateSHA256: digest,
-		SnapshotSHA256:        strings.Repeat("e", 64),
-		ReportSHA256:          strings.Repeat("b", 64),
-		ReportFormatVersion:   CurrentFormatVersion,
-		OpenablePaths:         []string{"batch.go"},
-		CapturedInputs:        inputs,
-		CapturedInputsSHA256:  inputsDigest,
-		MaterialInputs: MaterialInputs{
-			SelectedRevision:             repository.Head,
-			ProgramTargetID:              "pt-fixture",
-			ProgramTargetSHA256:          strings.Repeat("8", 64),
-			ProgramIndexSetSHA256:        strings.Repeat("9", 64),
-			ProgramPagePortfolioSHA256:   strings.Repeat("3", 64),
-			TargetOutcomePortfolioSHA256: strings.Repeat("4", 64),
-			DependencyCatalogSHA256:      strings.Repeat("5", 64),
-			ReducedDocumentationSHA256:   strings.Repeat("6", 64),
-			GroupsIndexSHA256:            strings.Repeat("7", 64),
-			InputPolicyVersion:           "captured-inputs-v1",
-			ReportContract:               CurrentFormatVersion,
+		Version: CurrentRunManifestVersion,
+		RepositoryState: freshness.RepositoryState{
+			Version:  freshness.RepositoryStateVersion,
+			Identity: "/repo",
+			Head:     strings.Repeat("a", 40),
+			Dirty:    []freshness.DirtyFile{},
 		},
+		AnalysisRoot:        "/repo",
+		ReportFormatVersion: CurrentFormatVersion,
+		ProgramTargetID:     "pt-fixture",
 	}
 }
 
