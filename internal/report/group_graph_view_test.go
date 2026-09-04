@@ -490,3 +490,49 @@ func TestConnectionRowsAreSaidOnceAndDoNotEchoTheirLabel(t *testing.T) {
 		t.Error("dropEcho keeps the echo or drops the explanation")
 	}
 }
+
+// The graph keeps one group per title per lane; the page shows one per title.
+// The largest slice lends its identity and its place in a zone, every slice's
+// connections follow it, and a slice talking to its twin is dropped.
+func TestPageFoldsOneTitleIntoOneGroup(t *testing.T) {
+	target := "t1"
+	indexes := []groupindex.Index{{
+		Target: programindex.Target{ID: target},
+		Groups: []groupindex.Group{
+			{ID: "trig", Title: "Client IP middleware", Lane: groupindex.LaneTriggers, MemberSubjectIDs: []string{"s1", "s2"}},
+			{ID: "core", Title: "Client IP middleware", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"s3", "s4", "s5"}, Summary: "reads the client address from headers"},
+			{ID: "router", Title: "Router", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"s6"}},
+		},
+		Containers: []groupindex.Container{
+			{ID: "z1", Title: "Middleware", GroupIDs: []string{"core", "router"}},
+			{ID: "z2", Title: "Entry", GroupIDs: []string{"trig"}},
+		},
+		Connections: []groupindex.Connection{
+			{From: groupindex.Endpoint{TargetID: target, GroupID: "trig"}, To: groupindex.Endpoint{TargetID: target, GroupID: "router"}, Label: "wraps"},
+			{From: groupindex.Endpoint{TargetID: target, GroupID: "core"}, To: groupindex.Endpoint{TargetID: target, GroupID: "router"}, Label: "wraps"},
+			{From: groupindex.Endpoint{TargetID: target, GroupID: "trig"}, To: groupindex.Endpoint{TargetID: target, GroupID: "core"}, Label: "builds"},
+		},
+	}}
+	folded := foldIndexes(indexes)[0]
+	if len(folded.Groups) != 2 {
+		t.Fatalf("groups = %#v", folded.Groups)
+	}
+	var one groupindex.Group
+	for _, group := range folded.Groups {
+		if group.ID == "core" {
+			one = group
+		}
+	}
+	if one.ID != "core" || one.Lane != groupindex.LaneCore || len(one.MemberSubjectIDs) != 5 || one.Summary == "" {
+		t.Errorf("folded group = %#v", one)
+	}
+	if len(folded.Containers) != 1 || len(folded.Containers[0].GroupIDs) != 2 {
+		t.Errorf("containers = %#v", folded.Containers)
+	}
+	if len(folded.Connections) != 1 || folded.Connections[0].From.GroupID != "core" {
+		t.Errorf("connections = %#v", folded.Connections)
+	}
+	if len(indexes[0].Groups) != 3 {
+		t.Error("the graph itself was changed")
+	}
+}

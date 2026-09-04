@@ -171,9 +171,9 @@ func (builder *pageBuilder) buildSections() {
 // one authority that exists for every analyzed target, then binds the fact
 // target that describes the same root.
 func (builder *pageBuilder) createSections() {
-	used := make(map[string]struct{}, len(builder.data.GroupGraph.Indexes))
-	for position := range builder.data.GroupGraph.Indexes {
-		index := &builder.data.GroupGraph.Indexes[position]
+	used := make(map[string]struct{}, len(builder.indexes))
+	for position := range builder.indexes {
+		index := &builder.indexes[position]
 		section := &pageSection{
 			ID:              sectionID(index.Target.Name, position),
 			Name:            index.Target.Name,
@@ -471,8 +471,8 @@ func ownerOfPackage(packagePath string, owners []packageOwner) *pageSection {
 }
 
 func (builder *pageBuilder) graphIndex(programTargetID string) *groupindex.Index {
-	for position := range builder.data.GroupGraph.Indexes {
-		index := &builder.data.GroupGraph.Indexes[position]
+	for position := range builder.indexes {
+		index := &builder.indexes[position]
 		if index.Target.ID == programTargetID {
 			return index
 		}
@@ -681,7 +681,7 @@ func dropEcho(text, beside string) string {
 // must look at every index to find it.
 func (builder *pageBuilder) allConnections() []groupindex.Connection {
 	var rows []groupindex.Connection
-	for _, index := range builder.data.GroupGraph.Indexes {
+	for _, index := range builder.indexes {
 		rows = append(rows, index.Connections...)
 	}
 	return rows

@@ -203,6 +203,9 @@ type pageBuilder struct {
 	groupTitles map[groupindex.Endpoint]string
 	// owners is built once: which target indexed which packages.
 	owners []packageOwner
+	// indexes is the group graph as the page shows it: one group per title
+	// in a target, see foldIndexes.
+	indexes []groupindex.Index
 }
 
 func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (*pageView, error) {
@@ -225,8 +228,9 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 	if data.Claims != nil {
 		builder.claimsByID = data.Claims.ByID()
 	}
-	for position := range data.GroupGraph.Indexes {
-		index := &data.GroupGraph.Indexes[position]
+	builder.indexes = foldIndexes(data.GroupGraph.Indexes)
+	for position := range builder.indexes {
+		index := &builder.indexes[position]
 		for _, subject := range index.Subjects {
 			builder.subjects[subject.ID] = subjectRef{subject: subject, programTargetID: index.Target.ID}
 		}
