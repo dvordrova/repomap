@@ -110,10 +110,17 @@ type Compilation struct {
 	valueOwnerByEndpoint    map[string]string
 	edges                   []edgeAuthority
 	edgeByRef               map[string]edgeAuthority
-	localConnections        []localConnectionAuthority
-	boundaryEdgesByGroupRef map[string]map[string]boundaryEdgeAuthority
-	pairs                   []pairAuthority
-	pairByRef               map[string]pairAuthority
+	// edgesBySubjectRef and localConnectionsByGroupRef are the incidence
+	// indexes a pair reads instead of scanning every edge and connection of
+	// the repository. Compiled without them, repomap on itself — nineteen
+	// targets, eleven hundred groups, forty-eight thousand edges — spent
+	// seventy minutes of CPU in compilePair and had not finished.
+	edgesBySubjectRef          map[string][]int
+	localConnectionsByGroupRef map[string][]int
+	localConnections           []localConnectionAuthority
+	boundaryEdgesByGroupRef    map[string]map[string]boundaryEdgeAuthority
+	pairs                      []pairAuthority
+	pairByRef                  map[string]pairAuthority
 }
 
 // Compile validates the complete set, snapshots it, assigns deterministic
@@ -266,6 +273,28 @@ func Compile(indexes []groupindex.Index) (Compilation, error) {
 	for position := range compilation.localConnections {
 		compilation.localConnections[position].ref = "c" + strconv.Itoa(position+1)
 	}
+	compilation.edgesBySubjectRef = make(map[string][]int)
+	for position, edge := range compilation.edges {
+		for _, ref := range []string{
+			compilation.subjectRefByEndpoint[subjectEndpointKey(edge.targetID, edge.edge.FromSubjectID)],
+			compilation.subjectRefByEndpoint[subjectEndpointKey(edge.targetID, edge.edge.ToSubjectID)],
+		} {
+			if ref != "" {
+				compilation.edgesBySubjectRef[ref] = append(compilation.edgesBySubjectRef[ref], position)
+			}
+		}
+	}
+	compilation.localConnectionsByGroupRef = make(map[string][]int)
+	for position, connection := range compilation.localConnections {
+		for _, ref := range []string{
+			compilation.groupRefByEndpoint[groupEndpointKey(connection.connection.From.TargetID, connection.connection.From.GroupID)],
+			compilation.groupRefByEndpoint[groupEndpointKey(connection.connection.To.TargetID, connection.connection.To.GroupID)],
+		} {
+			if ref != "" {
+				compilation.localConnectionsByGroupRef[ref] = append(compilation.localConnectionsByGroupRef[ref], position)
+			}
+		}
+	}
 	for _, group := range compilation.groups {
 		compilation.boundaryEdgesByGroupRef[group.ref] = compilation.compileGroupBoundaryEdges(group)
 	}
@@ -318,16 +347,14 @@ func (compilation Compilation) compilePair(left, right groupAuthority) pairAutho
 	// Keep every such connection and its exact evidence, while its neighboring
 	// group is represented compactly by localConnectionWire rather than pulling
 	// that group's complete membership into this dossier.
-	for _, connection := range compilation.localConnections {
-		fromRef := compilation.groupRefByEndpoint[groupEndpointKey(
-			connection.connection.From.TargetID, connection.connection.From.GroupID,
-		)]
-		toRef := compilation.groupRefByEndpoint[groupEndpointKey(
-			connection.connection.To.TargetID, connection.connection.To.GroupID,
-		)]
-		if fromRef != left.ref && fromRef != right.ref && toRef != left.ref && toRef != right.ref {
-			continue
+	touched := make(map[int]struct{})
+	for _, ref := range []string{left.ref, right.ref} {
+		for _, position := range compilation.localConnectionsByGroupRef[ref] {
+			touched[position] = struct{}{}
 		}
+	}
+	for position := range touched {
+		connection := compilation.localConnections[position]
 		pair.connectionRefs[connection.ref] = struct{}{}
 		for _, evidence := range connection.connection.Evidence {
 			compilation.addSubjectEndpointRef(pair.subjectRefs, evidence.TargetID, evidence.SubjectID)
@@ -345,14 +372,16 @@ func (compilation Compilation) compilePair(left, right groupAuthority) pairAutho
 	unionRefSets(incidentSeeds, pair.rightEvidenceRefs)
 	unionRefSets(incidentSeeds, pair.leftBoundaryPatternRefs)
 	unionRefSets(incidentSeeds, pair.rightBoundaryPatternRefs)
-	for _, edge := range compilation.edges {
+	incident := make(map[int]struct{})
+	for seed := range incidentSeeds {
+		for _, position := range compilation.edgesBySubjectRef[seed] {
+			incident[position] = struct{}{}
+		}
+	}
+	for position := range incident {
+		edge := compilation.edges[position]
 		fromRef := compilation.subjectRefByEndpoint[subjectEndpointKey(edge.targetID, edge.edge.FromSubjectID)]
 		toRef := compilation.subjectRefByEndpoint[subjectEndpointKey(edge.targetID, edge.edge.ToSubjectID)]
-		_, fromIncident := incidentSeeds[fromRef]
-		_, toIncident := incidentSeeds[toRef]
-		if !fromIncident && !toIncident {
-			continue
-		}
 		pair.edgeRefs[edge.ref] = struct{}{}
 		addNonEmptyRef(pair.subjectRefs, fromRef)
 		addNonEmptyRef(pair.subjectRefs, toRef)
@@ -672,23 +701,34 @@ func addNonEmptyRef(destination map[string]struct{}, ref string) bool {
 }
 
 func (compilation Compilation) closeSubjectRefs(subjectRefs map[string]struct{}) {
-	for {
-		changed := false
-		for _, authority := range compilation.subjects {
-			if _, include := subjectRefs[authority.ref]; !include {
-				continue
+	// A worklist of the refs not yet expanded. Every subject of the
+	// repository used to be visited on every round of every pair.
+	pending := make([]string, 0, len(subjectRefs))
+	for ref := range subjectRefs {
+		pending = append(pending, ref)
+	}
+	sort.Strings(pending)
+	for len(pending) > 0 {
+		ref := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		authority, known := compilation.subjectByRef[ref]
+		if !known {
+			continue
+		}
+		before := len(subjectRefs)
+		added := make([]string, 0, 4)
+		addID := func(id string) {
+			if id == "" {
+				return
 			}
-			addID := func(id string) {
-				if id == "" {
-					return
-				}
-				changed = compilation.addSubjectReference(subjectRefs, authority.targetID, id) || changed
+			if compilation.addSubjectReference(subjectRefs, authority.targetID, id) {
+				added = append(added, compilation.subjectRefByEndpoint[subjectEndpointKey(authority.targetID, id)])
 			}
-			if authority.subject.Object != nil {
-				addID(authority.subject.Object.OwnerID)
-				addID(authority.subject.Object.ContainerID)
-				continue
-			}
+		}
+		if authority.subject.Object != nil {
+			addID(authority.subject.Object.OwnerID)
+			addID(authority.subject.Object.ContainerID)
+		} else {
 			pattern := authority.subject.Pattern
 			addID(pattern.FromID)
 			for _, id := range pattern.ToIDs {
@@ -708,13 +748,16 @@ func (compilation Compilation) closeSubjectRefs(subjectRefs map[string]struct{})
 						addID(id)
 					}
 					for _, id := range candidate.SourceArgumentIDs {
-						changed = addNonEmptyRef(subjectRefs, compilation.argumentOwnerByEndpoint[nestedEndpointKey(authority.targetID, id)]) || changed
+						owner := compilation.argumentOwnerByEndpoint[nestedEndpointKey(authority.targetID, id)]
+						if addNonEmptyRef(subjectRefs, owner) {
+							added = append(added, owner)
+						}
 					}
 				}
 			}
 		}
-		if !changed {
-			return
+		if len(subjectRefs) > before {
+			pending = append(pending, added...)
 		}
 	}
 }
