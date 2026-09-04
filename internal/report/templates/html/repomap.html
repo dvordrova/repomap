@@ -6,7 +6,6 @@
 <rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="7" class="map-node-body"/>
 {{$node := .}}{{range $line, $text := .Name}}<text x="{{printf "%.1f" $node.X}}" y="{{printf "%.1f" $node.Y}}" dx="13" dy="{{if eq $line 0}}23{{else}}39{{end}}" class="repo-node-name">{{$text}}</text>{{end}}
 <text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="13" dy="{{if gt (len .Name) 1}}56{{else}}42{{end}}" class="map-node-count">{{if .Analyzed}}{{.Detail}}{{else}}{{.Note}}{{end}}</text>
-{{if .Analyzed}}<rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" transform="translate(13 63)" width="{{printf "%.1f" .BarWidth}}" height="3" rx="1.5" class="map-node-bar"/>{{end}}
 <title>{{.FullName}}{{if .Analyzed}} — {{.Detail}}{{else}} — {{.Note}}{{end}}</title>
 {{if .Analyzed}}</a>{{else}}</g>{{end}}{{end}}</g>
 </svg>

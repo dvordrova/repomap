@@ -21,8 +21,11 @@ import (
 // scripting the map still reads and every node is a link to the group it
 // names; scripting only adds the neighbourhood preview.
 const (
-	mapNodeWidth  = 196.0
-	mapNodeHeight = 58.0
+	mapNodeWidth = 196.0
+	// A box holds its name and nothing else: the count and the size bar
+	// under the name were pretty, and the owner found them a distraction that
+	// told him nothing the hover card does not.
+	mapNodeHeight = 44.0
 	// mapLaneGap is wide enough to write on. An arrow with no words on it is
 	// a line between two boxes and a reader has to guess what it means, so
 	// the gutter between lanes carries the connection's own words.
@@ -88,6 +91,10 @@ const (
 	// name sits in the band above them.
 	mapFramePad    = 12.0
 	mapFrameHeader = 26.0
+	// mapFrameArrowGap is how far short of a zone's outline an arrow stops.
+	// Landing on the outline, the head sat across the 2.5px stroke and the
+	// first box inside, and read as a mistake.
+	mapFrameArrowGap = 7.0
 	// mapZoneGroups is how many groups a zone shows on the overview. A zone
 	// holding more says so and keeps the rest on its cards below: the map is
 	// the architecture of a target, not an inventory of it, and thirty equal
@@ -99,9 +106,14 @@ const (
 	mapOverviewBoxes = 14
 )
 
-// mapLabelOffsets are the vertical nudges a label tries, in order, when the
-// place it wants is already written on.
-var mapLabelOffsets = []float64{0, -14, 14, -27, 27, -40, 40}
+// mapLabelSteps are the vertical nudges a label tries, in order, when the
+// place it wants is taken — in multiples of its own height, so two labels
+// that end up one step apart do not touch. Fixed fourteen-pixel steps put
+// "wraps handlers" against "routes requests" with no air between them.
+var mapLabelSteps = []float64{0, -1, 1, -2, 2, -3, 3}
+
+// mapLabelClearance is the air between two stacked labels.
+const mapLabelClearance = 3.0
 
 type pageMap struct {
 	Width  float64
@@ -159,6 +171,9 @@ type pageMapLane struct {
 }
 
 type pageMapNode struct {
+	// Frame is true of an endpoint that is a zone rather than a box: an
+	// arrow to it stops short of its outline instead of landing on it.
+	Frame bool
 	// Keys names the group's key symbols with what their authors wrote,
 	// for the card beside a pointed-at node: enough to decide whether to
 	// go down to the code.
@@ -1000,7 +1015,7 @@ func mapEndpoints(
 	for position := range frames {
 		frame := frames[position]
 		endpoints[mapNodeID(frame.ID)] = &pageMapNode{
-			ID: mapNodeID(frame.ID), FullTitle: frame.Title, Lane: frame.Lane,
+			ID: mapNodeID(frame.ID), FullTitle: frame.Title, Lane: frame.Lane, Frame: true,
 			X: frame.X, Y: frame.Y, Width: frame.Width, Height: frame.Height,
 		}
 	}
@@ -1032,11 +1047,14 @@ func mapEdges(
 		if connection.From.TargetID != index.Target.ID || connection.To.TargetID != index.Target.ID {
 			continue
 		}
-		// Inside one part the boxes are joined; across parts the parts are.
+		// Across parts the parts are joined. Inside one part nothing is
+		// drawn: two boxes of one zone stand in one column, and an arrow
+		// between them left the zone, arced through the gutter and came
+		// back into it, which read as "why does this leave and re-enter?".
+		// The card beside either box says the connection in words.
 		fromID, toID := endpointOf[connection.From.GroupID], endpointOf[connection.To.GroupID]
 		if fromID == toID {
-			fromID = mapNodeID(connection.From.GroupID)
-			toID = mapNodeID(connection.To.GroupID)
+			continue
 		}
 		from, fromKnown := nodes[fromID]
 		to, toKnown := nodes[toID]
@@ -1112,21 +1130,52 @@ func newMapEdgeRouter(nodes map[string]*pageMapNode, bottom float64) *mapEdgeRou
 	seen := make(map[float64]struct{}, len(nodes))
 	router := &mapEdgeRouter{bandY: bottom + mapBandTop, loops: make(map[float64]int)}
 	for _, node := range nodes {
-		if _, repeated := seen[node.X]; repeated {
+		// A zone's outline stands a pad to the left of its boxes; it is not
+		// a column of its own. Counted as one, an arrow from a box to its
+		// neighbour zone was routed as if to the next column and drawn as
+		// a stub at the zone's edge, leading nowhere.
+		x := columnX(node)
+		if _, repeated := seen[x]; repeated {
 			continue
 		}
-		seen[node.X] = struct{}{}
-		router.columns = append(router.columns, node.X)
+		seen[x] = struct{}{}
+		router.columns = append(router.columns, x)
 	}
 	sort.Float64s(router.columns)
+	// A zone's top and bottom outline are taken before any label is placed:
+	// "wraps handlers" written across a frame's edge was a word cut by a line.
+	for _, node := range nodes {
+		if !node.Frame {
+			continue
+		}
+		for _, y := range []float64{node.Y, node.Y + node.Height} {
+			router.placed = append(router.placed, mapLabelBox{
+				left: node.X - 4, right: node.X + node.Width + 4,
+				top: y - mapFrameOutlineBand, bottom: y + mapFrameOutlineBand,
+			})
+		}
+	}
 	return router
 }
+
+// mapFrameOutlineBand is how far above and below a zone's outline a label
+// keeps off.
+const mapFrameOutlineBand = 5.0
 
 func (router *mapEdgeRouter) extraHeight() float64 {
 	if len(router.bandEnd) == 0 {
 		return 0
 	}
 	return mapBandTop + float64(len(router.bandEnd))*mapBandStep
+}
+
+// columnX is the column a node stands in: a box's own left edge, and for a
+// zone the left edge of the boxes inside it.
+func columnX(node *pageMapNode) float64 {
+	if node.Frame {
+		return node.X + mapFramePad
+	}
+	return node.X
 }
 
 func (router *mapEdgeRouter) column(x float64) int {
@@ -1153,7 +1202,7 @@ func (router *mapEdgeRouter) gutter(index int) (centre, width float64) {
 // route returns the path, where a label for it would sit, and how much
 // horizontal room that label has.
 func (router *mapEdgeRouter) route(from, to *pageMapNode) (path string, labelX, labelY, room, minLeft float64) {
-	fromColumn, toColumn := router.column(from.X), router.column(to.X)
+	fromColumn, toColumn := router.column(columnX(from)), router.column(columnX(to))
 	startY, endY := from.Y+from.Height/2, to.Y+to.Height/2
 	switch {
 	case fromColumn == toColumn:
@@ -1178,10 +1227,9 @@ func (router *mapEdgeRouter) direct(
 	fromColumn, toColumn int,
 	startY, endY float64,
 ) (string, float64, float64, float64) {
-	startX, endX := from.X+from.Width, to.X
+	startX, endX := arrowEnds(from, to, toColumn < fromColumn)
 	gutterIndex := fromColumn
 	if toColumn < fromColumn {
-		startX, endX = from.X, to.X+to.Width
 		gutterIndex = toColumn
 	}
 	// The curve bends by half the horizontal distance it covers and no more:
@@ -1226,7 +1274,7 @@ func (router *mapEdgeRouter) loopLabel(
 ) (x, y, room float64) {
 	side := from.X + from.Width
 	depth := router.loopDepth(from, startY, endY)
-	_, width := router.gutter(router.column(from.X))
+	_, width := router.gutter(router.column(columnX(from)))
 	return side + depth*0.6, (startY + endY) / 2, width
 }
 
@@ -1237,10 +1285,9 @@ func (router *mapEdgeRouter) detour(
 	fromColumn, toColumn int,
 	startY, endY float64,
 ) (string, float64, float64, float64) {
-	startX, endX := from.X+from.Width, to.X
+	startX, endX := arrowEnds(from, to, toColumn < fromColumn)
 	firstGutter, lastGutter := fromColumn, toColumn-1
 	if toColumn < fromColumn {
-		startX, endX = from.X, to.X+to.Width
 		firstGutter, lastGutter = fromColumn-1, toColumn
 	}
 	first, _ := router.gutter(firstGutter)
@@ -1263,6 +1310,22 @@ func (router *mapEdgeRouter) detour(
 		last, bandY, last, endY, endX, endY,
 	)
 	return path, (first + last) / 2, bandY - 6, right - left
+}
+
+// arrowEnds is where an arrow leaves one endpoint and meets the other: at a
+// box's side, and a little short of a zone's outline.
+func arrowEnds(from, to *pageMapNode, backwards bool) (startX, endX float64) {
+	fromGap, toGap := 0.0, 0.0
+	if from.Frame {
+		fromGap = mapFrameArrowGap
+	}
+	if to.Frame {
+		toGap = mapFrameArrowGap
+	}
+	if backwards {
+		return from.X - fromGap, to.X + to.Width + toGap
+	}
+	return from.X + from.Width + fromGap, to.X - toGap
 }
 
 func (router *mapEdgeRouter) bandRow(left, right float64) int {
@@ -1305,7 +1368,8 @@ func (router *mapEdgeRouter) placeLabel(label string, x, y, room, minLeft float6
 	// A label that would land on one already written moves off its edge a
 	// little rather than disappearing. Only when every offset is taken does
 	// the label give up and stay on the tooltip alone.
-	for _, offset := range mapLabelOffsets {
+	for _, step := range mapLabelSteps {
+		offset := step * (height + mapLabelClearance)
 		box := mapLabelBox{
 			left: x - width/2, right: x + width/2,
 			top: y + offset - height/2, bottom: y + offset + height/2,

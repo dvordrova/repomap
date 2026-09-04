@@ -16,8 +16,6 @@
 <g class="map-nodes">{{range .Nodes}}<a href="{{.Href}}" id="{{.ID}}" class="map-node map-node-{{.Lane}}" data-node="{{.ID}}" data-near="{{.Neighbours}}" data-summary="{{.Summary}}" data-keys="{{.Keys}}" aria-label="{{.FullTitle}}, {{.Members}} symbol{{if ne .Members 1}}s{{end}}, {{.Degree}} connection{{if ne .Degree 1}}s{{end}} here{{if .Outside}}, {{.Outside}} to another target{{end}}">
 <rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="6" class="map-node-body"/>
 {{$node := .}}{{range $line, $text := .Title}}<text x="{{printf "%.1f" $node.X}}" y="{{printf "%.1f" $node.Y}}" dx="11" dy="{{if eq $line 0}}17{{else}}30{{end}}" class="map-node-title">{{$text}}</text>{{end}}
-<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="45" class="map-node-count">{{.Members}}{{if .Outside}} · {{.Outside}} outside{{end}}</text>
-<rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" transform="translate(11 50)" width="{{printf "%.1f" .BarWidth}}" height="3" rx="1.5" class="map-node-bar"/>
 {{if .Steps}}<text x="{{printf "%.1f" .StepX}}" y="{{printf "%.1f" .StepY}}" text-anchor="end" class="map-node-step">step {{.Steps}}</text>{{end}}
 <title>{{.FullTitle}} — {{.Summary}}</title>
 </a>{{end}}</g>
