@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -382,5 +383,42 @@ func TestPageFoldsOneTitleIntoOneGroup(t *testing.T) {
 	}
 	if len(indexes[0].Groups) != 3 {
 		t.Error("the graph itself was changed")
+	}
+}
+
+// The docstring of a symbol is the last one quoted above its declaration
+// and within reach of it; the next symbol's docstring is not this one's.
+func TestNearestDocstringIsTheOneAboveTheSymbol(t *testing.T) {
+	docs := []claims.Claim{
+		{Line: 10, Text: "FileServer serves static files."},
+		{Line: 40, Text: "Walk prints every route."},
+	}
+	for line, want := range map[int]string{
+		12: "FileServer serves static files.",
+		30: "",
+		42: "Walk prints every route.",
+		9:  "",
+	} {
+		if got := nearestDocstring(docs, line); got != want {
+			t.Errorf("nearestDocstring(%d) = %q, want %q", line, got, want)
+		}
+	}
+}
+
+// The root README gets the most room, a nested one a line or two, and the
+// page quotes at most eight README sentences in all.
+func TestReadmeClaimsQuoteEveryReadmeShallowestFirst(t *testing.T) {
+	var all []claims.Claim
+	for line := 1; line <= 6; line++ {
+		all = append(all, claims.Claim{Source: claims.SourceReadme, Path: "README.md", Line: line, Text: "root"})
+		all = append(all, claims.Claim{Source: claims.SourceReadme, Path: "_examples/README.md", Line: line, Text: "examples"})
+	}
+	all = append(all, claims.Claim{Source: claims.SourceDocstring, Path: "a.go", Line: 1, Text: "not a readme"})
+	picked, more := selectReadmeClaims(all)
+	if len(picked) != 6 || more != 6 {
+		t.Fatalf("picked %d, more %d: %#v", len(picked), more, picked)
+	}
+	if picked[0].Path != "README.md" || picked[3].Path != "README.md" || picked[4].Path != "_examples/README.md" {
+		t.Errorf("order = %v", []string{picked[0].Path, picked[3].Path, picked[4].Path})
 	}
 }

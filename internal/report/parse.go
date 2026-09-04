@@ -186,6 +186,7 @@ func restoreReducedDocumentation(runDir string, data *ReportData) error {
 		return fmt.Errorf("report: reduced documentation: %w", err)
 	}
 	data.reducedDocumentation = &owned
+	data.ReadmeOverview = strings.TrimSpace(owned.Overview)
 	for _, source := range owned.Sources {
 		data.materialInputPaths = append(data.materialInputPaths, source.Path)
 	}

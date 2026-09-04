@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"github.com/dvordrova/repomap/internal/claims"
 	"sort"
 	"strings"
 
@@ -117,6 +118,7 @@ type pageGroup struct {
 	MoreCount   int
 	Externals   []pageExternal
 	Connections []pageConnection
+	Docs        []pageDoc
 }
 
 type pageChipRow struct {
@@ -128,6 +130,17 @@ type pageChip struct {
 	Name   string
 	Line   int
 	Anchor pageAnchor
+	// Doc is what the author wrote above this symbol, when they wrote
+	// anything. A hundred and ninety docstrings of chi were quoted into the
+	// claims layer and none reached the page; a card that shows a symbol
+	// can show the sentence that explains it.
+	Doc string
+}
+
+// pageDoc is one author's sentence shown on a card, under the model's.
+type pageDoc struct {
+	Symbol string
+	Text   string
 }
 
 // pageConnection is one model sentence between two groups. A connection to
@@ -491,6 +504,7 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 	card.Externals = externals
 	card.Visible, card.More, card.MoreCount = splitChipRows(rows, maxVisibleGroupMembers)
 	card.Connections = builder.groupConnections(index, group)
+	card.Docs = cardDocs(card.Visible, maxCardDocs)
 	return card
 }
 
@@ -540,6 +554,7 @@ func (builder *pageBuilder) memberChips(memberIDs []string) ([]pageChipRow, []pa
 		seen[key] = struct{}{}
 		byPath[anchor.Path] = append(byPath[anchor.Path], pageChip{
 			Name: name, Line: anchor.Line, Anchor: *anchor,
+			Doc: builder.docstringFor(anchor.Path, anchor.Line),
 		})
 	}
 	paths := make([]string, 0, len(byPath))
@@ -694,4 +709,46 @@ func laneShare(index groupindex.Index, group groupindex.Group) int {
 		return 0
 	}
 	return len(group.MemberSubjectIDs) * 100 / len(index.Subjects)
+}
+
+// maxCardDocs is how many authors' sentences a card quotes. Every member's
+// docstring is still on its chip; the card leads with the first few.
+const maxCardDocs = 2
+
+// docstringReach is how far above a declaration its docstring may start.
+// A Go doc comment sits directly above; a long one starts a dozen lines up.
+const docstringReach = 12
+
+func cardDocs(rows []pageChipRow, most int) []pageDoc {
+	var docs []pageDoc
+	for _, row := range rows {
+		for _, chip := range row.Members {
+			if chip.Doc == "" || len(docs) == most {
+				continue
+			}
+			docs = append(docs, pageDoc{Symbol: chip.Name, Text: chip.Doc})
+		}
+	}
+	return docs
+}
+
+// docstringFor is the docstring written above the symbol declared at this
+// line of this file, if one was quoted into the claims.
+func (builder *pageBuilder) docstringFor(path string, line int) string {
+	return nearestDocstring(builder.docstrings[path], line)
+}
+
+// nearestDocstring picks, from a file's docstrings in line order, the last
+// one that starts above the line and within reach of it.
+func nearestDocstring(docs []claims.Claim, line int) string {
+	found := ""
+	for _, doc := range docs {
+		if doc.Line > line {
+			break
+		}
+		if line-doc.Line <= docstringReach {
+			found = doc.Text
+		}
+	}
+	return found
 }

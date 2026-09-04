@@ -73,3 +73,6 @@ summary{cursor:pointer;color:var(--accent);font-size:.9rem}
 .routes{border-left:var(--rule) solid var(--ink)}
 details>summary{cursor:pointer;font-weight:600}
 .conn-count{font-weight:700;color:var(--muted)}
+/* An author's own sentence on a card, marked as a claim: quoted, not verified. */
+.doc{margin:.2rem 0 0;padding-left:.6rem;border-left:3px solid var(--claim);font-size:.92rem}
+.doc .lbl{font-weight:600}

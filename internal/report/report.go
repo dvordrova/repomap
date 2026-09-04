@@ -53,6 +53,11 @@ type ReportData struct {
 	GitHubSourceLinks *GitHubSourceLinks `json:"github_source_links,omitempty"`
 
 	CapturedRevision string `json:"captured_revision"`
+	// ReadmeOverview is the repository's own account of itself, condensed
+	// from its README by the documentation stage. It was computed on every
+	// run, hashed into the manifest, handed to categorization as context,
+	// and never shown to the one reader it was written for.
+	ReadmeOverview string `json:"readme_overview,omitempty"`
 
 	// ArtifactsDir and the following fields are process-local publication
 	// authority. They are never persisted or embedded in the browser payload.

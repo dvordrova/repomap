@@ -44,6 +44,7 @@ type pageView struct {
 	Figures          []pageFigure
 	Claims           []pageClaim
 	MoreClaims       int
+	ReadmeOverview   *pageClaim
 	Cards            []pageTargetCard
 	MutedCards       []pageMutedCard
 	CardsMissing     string
@@ -177,6 +178,13 @@ type pageRecipe struct {
 // how many more the README holds.
 const maxOverviewClaims = 4
 
+// A nested README gets a line or two; the page quotes at most this many
+// README sentences in all.
+const (
+	maxNestedReadmeClaims = 2
+	maxReadmeClaims       = 8
+)
+
 const (
 	// A reader has never heard of this tool's stages, so an empty section says
 	// what is missing from the page rather than which stage did not produce
@@ -206,6 +214,9 @@ type pageBuilder struct {
 	// indexes is the group graph as the page shows it: one group per title
 	// in a target, see foldIndexes.
 	indexes []groupindex.Index
+	// docstrings is what the authors wrote above their symbols, by file, in
+	// line order, so a chip can carry the sentence that explains it.
+	docstrings map[string][]claims.Claim
 }
 
 func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (*pageView, error) {
@@ -227,6 +238,17 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 	}
 	if data.Claims != nil {
 		builder.claimsByID = data.Claims.ByID()
+		builder.docstrings = make(map[string][]claims.Claim)
+		for _, claim := range data.Claims.Claims {
+			if claim.Source == claims.SourceDocstring && claim.Path != "" {
+				builder.docstrings[claim.Path] = append(builder.docstrings[claim.Path], claim)
+			}
+		}
+		for path := range builder.docstrings {
+			sort.Slice(builder.docstrings[path], func(left, right int) bool {
+				return builder.docstrings[path][left].Line < builder.docstrings[path][right].Line
+			})
+		}
 	}
 	builder.indexes = foldIndexes(data.GroupGraph.Indexes)
 	for position := range builder.indexes {
@@ -405,31 +427,68 @@ func (builder *pageBuilder) summary(view *pageView) {
 // shallowest README speaks for the whole repository; a nested one describes
 // its own directory and would otherwise bury the overview in boilerplate.
 func (builder *pageBuilder) readmeClaims(view *pageView) {
+	if overview := builder.data.ReadmeOverview; overview != "" {
+		view.ReadmeOverview = &pageClaim{Text: overview, Source: "README"}
+		if builder.data.reducedDocumentation != nil {
+			for _, source := range builder.data.reducedDocumentation.Sources {
+				if source.Path != "" {
+					view.ReadmeOverview.Source = source.Path
+					view.ReadmeOverview.Anchor = builder.links.anchorPointer(source.Path, 1, 0)
+					break
+				}
+			}
+		}
+	}
 	if builder.data.Claims == nil {
 		return
 	}
-	primary := ""
-	for _, claim := range builder.data.Claims.Claims {
-		if claim.Source != claims.SourceReadme {
-			continue
-		}
-		if primary == "" || readmeDepth(claim.Path) < readmeDepth(primary) {
-			primary = claim.Path
-		}
-	}
-	for _, claim := range builder.data.Claims.Claims {
-		if claim.Source != claims.SourceReadme || claim.Path != primary {
-			continue
-		}
-		if len(view.Claims) >= maxOverviewClaims {
-			view.MoreClaims++
-			continue
-		}
+	picked, more := selectReadmeClaims(builder.data.Claims.Claims)
+	view.MoreClaims = more
+	for _, claim := range picked {
 		view.Claims = append(view.Claims, pageClaim{
 			Text: claim.Text, Source: claim.Path, Date: claim.Date, AgeDays: claim.AgeDays,
 			Anchor: builder.links.anchorPointer(claim.Path, claim.Line, 0),
 		})
 	}
+}
+
+// selectReadmeClaims quotes the repository's READMEs, the shallowest first.
+// The root README speaks for the whole repository and gets the most room; a
+// nested one describes its own directory and gets a line or two, because
+// chi's _examples/README.md said what the examples are and the page said
+// nothing of it.
+func selectReadmeClaims(all []claims.Claim) ([]claims.Claim, int) {
+	var readme []claims.Claim
+	for _, claim := range all {
+		if claim.Source == claims.SourceReadme && claim.Path != "" {
+			readme = append(readme, claim)
+		}
+	}
+	sort.SliceStable(readme, func(left, right int) bool {
+		if readmeDepth(readme[left].Path) != readmeDepth(readme[right].Path) {
+			return readmeDepth(readme[left].Path) < readmeDepth(readme[right].Path)
+		}
+		if readme[left].Path != readme[right].Path {
+			return readme[left].Path < readme[right].Path
+		}
+		return readme[left].Line < readme[right].Line
+	})
+	var picked []claims.Claim
+	perFile := make(map[string]int)
+	more := 0
+	for position, claim := range readme {
+		room := maxNestedReadmeClaims
+		if position < len(readme) && readmeDepth(claim.Path) == readmeDepth(readme[0].Path) && claim.Path == readme[0].Path {
+			room = maxOverviewClaims
+		}
+		if perFile[claim.Path] >= room || len(picked) >= maxReadmeClaims {
+			more++
+			continue
+		}
+		perFile[claim.Path]++
+		picked = append(picked, claim)
+	}
+	return picked, more
 }
 
 func readmeDepth(path string) int {
