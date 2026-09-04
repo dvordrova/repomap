@@ -735,18 +735,31 @@ func cardDocs(rows []pageChipRow, most int) []pageDoc {
 // docstringFor is the docstring written above the symbol declared at this
 // line of this file, if one was quoted into the claims.
 func (builder *pageBuilder) docstringFor(path string, line int) string {
-	return nearestDocstring(builder.docstrings[path], line)
+	return nearestDocstring(builder.docstrings[path], builder.declarations[path], line)
 }
 
 // nearestDocstring picks, from a file's docstrings in line order, the last
-// one that starts above the line and within reach of it.
-func nearestDocstring(docs []claims.Claim, line int) string {
+// one that starts above the line and within reach of it — and belongs to
+// this symbol and not to one declared between them. Matched by reach alone,
+// the sentence above adminRouter was also NewRouter's, declared nine lines
+// below it.
+func nearestDocstring(docs []claims.Claim, declarations []int, line int) string {
 	found := ""
 	for _, doc := range docs {
 		if doc.Line > line {
 			break
 		}
-		if line-doc.Line <= docstringReach {
+		if line-doc.Line > docstringReach {
+			continue
+		}
+		claimed := false
+		for _, declared := range declarations {
+			if declared > doc.Line && declared < line {
+				claimed = true
+				break
+			}
+		}
+		if !claimed {
 			found = doc.Text
 		}
 	}

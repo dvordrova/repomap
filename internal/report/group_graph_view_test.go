@@ -393,13 +393,17 @@ func TestNearestDocstringIsTheOneAboveTheSymbol(t *testing.T) {
 		{Line: 10, Text: "FileServer serves static files."},
 		{Line: 40, Text: "Walk prints every route."},
 	}
+	// FileServer is declared at 12 and its helper at 15: the sentence above
+	// FileServer is FileServer's alone.
+	declarations := []int{12, 15, 42}
 	for line, want := range map[int]string{
 		12: "FileServer serves static files.",
+		15: "",
 		30: "",
 		42: "Walk prints every route.",
 		9:  "",
 	} {
-		if got := nearestDocstring(docs, line); got != want {
+		if got := nearestDocstring(docs, declarations, line); got != want {
 			t.Errorf("nearestDocstring(%d) = %q, want %q", line, got, want)
 		}
 	}

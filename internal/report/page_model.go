@@ -215,8 +215,12 @@ type pageBuilder struct {
 	// in a target, see foldIndexes.
 	indexes []groupindex.Index
 	// docstrings is what the authors wrote above their symbols, by file, in
-	// line order, so a chip can carry the sentence that explains it.
-	docstrings map[string][]claims.Claim
+	// line order, so a chip can carry the sentence that explains it;
+	// declarations is where every symbol of a file is declared, so a
+	// docstring goes to the first symbol after it and not to every symbol
+	// within reach.
+	docstrings   map[string][]claims.Claim
+	declarations map[string][]int
 }
 
 func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (*pageView, error) {
@@ -224,14 +228,15 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 		return nil, fmt.Errorf("report: page requires the final group graph and target inventory")
 	}
 	builder := &pageBuilder{
-		data:        data,
-		links:       newPageLinks(data),
-		byProgram:   make(map[string]*pageSection),
-		byFacts:     make(map[string]*pageSection),
-		factsByID:   make(map[string]facts.Fact),
-		claimsByID:  make(map[string]claims.Claim),
-		subjects:    make(map[string]subjectRef),
-		groupTitles: make(map[groupindex.Endpoint]string),
+		data:         data,
+		links:        newPageLinks(data),
+		byProgram:    make(map[string]*pageSection),
+		byFacts:      make(map[string]*pageSection),
+		factsByID:    make(map[string]facts.Fact),
+		claimsByID:   make(map[string]claims.Claim),
+		subjects:     make(map[string]subjectRef),
+		groupTitles:  make(map[groupindex.Endpoint]string),
+		declarations: make(map[string][]int),
 	}
 	if data.Facts != nil {
 		builder.factsByID = data.Facts.ByID()
@@ -255,6 +260,11 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 		index := &builder.indexes[position]
 		for _, subject := range index.Subjects {
 			builder.subjects[subject.ID] = subjectRef{subject: subject, programTargetID: index.Target.ID}
+			if object := subject.Object; object != nil && object.Location != nil && object.Location.Path != "" {
+				builder.declarations[object.Location.Path] = append(
+					builder.declarations[object.Location.Path], object.Location.Line,
+				)
+			}
 		}
 		for _, group := range index.Groups {
 			builder.groupTitles[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: group.ID}] = group.Title
