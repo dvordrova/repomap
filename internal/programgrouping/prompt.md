@@ -44,7 +44,9 @@ exactly once: none left out, none repeated, and no ref that is not in
 `group_refs`.
 
 `links` says what one group does to another, naming the groups by the same
-names used in `assign`. A group never links to itself.
+names used in `assign`. A group never links to itself, one pair of groups is
+linked at most once, and a group links to at most three others: a list that
+repeats itself is wrong however long it is.
 
 Do not return lanes, member lists, evidence, summaries, keys, confidence or
 prose. A group's lane and its evidence follow from the categories of the refs

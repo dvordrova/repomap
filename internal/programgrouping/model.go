@@ -16,7 +16,13 @@ const (
 	executionContract     = "repomap.program-grouping.v5"
 	preparationVersion    = 5
 	responseSchemaVersion = 2
-	outputTokenCount      = 32_768
+	// outputTokenCount bounds one answer. A grouping window answers with at
+	// most sixty-four assignment rows and a few links — a couple of thousand
+	// tokens. Bounded at 32,768, a model that fell into repeating three links
+	// wrote a hundred and fifty kilobytes of them for two minutes before the
+	// provider cut it off, and the window was lost anyway. At 8,192 the same
+	// loop dies in seconds.
+	outputTokenCount = 8_192
 )
 
 type phase string
