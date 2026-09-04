@@ -135,6 +135,10 @@ type pageGroup struct {
 	Externals   []pageExternal
 	Connections []pageConnection
 	Docs        []pageDoc
+	// Zone is the part this group is in, when it is in one, and ZoneHref
+	// the frame on the map that draws it.
+	Zone     string
+	ZoneHref string
 }
 
 type pageChipRow struct {
@@ -405,8 +409,18 @@ func (builder *pageBuilder) fillSectionGroups(section *pageSection) {
 	if index == nil {
 		return
 	}
+	zoneOfGroup := make(map[string]groupindex.Container)
+	for _, container := range index.Containers {
+		for _, id := range container.GroupIDs {
+			zoneOfGroup[id] = container
+		}
+	}
 	for _, group := range index.Groups {
 		card := builder.groupCard(section.ID, *index, group)
+		if zone, inZone := zoneOfGroup[group.ID]; inZone {
+			card.Zone = zone.Title
+			card.ZoneHref = "#" + zone.ID
+		}
 		switch group.Lane {
 		case groupindex.LaneTriggers:
 			section.Triggers = append(section.Triggers, card)

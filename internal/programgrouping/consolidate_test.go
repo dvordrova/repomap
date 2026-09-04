@@ -353,3 +353,16 @@ func TestSameTitleInOneLaneIsOneGroup(t *testing.T) {
 		t.Error("the join was not reported")
 	}
 }
+
+// Every window answers with the same part names, so one name from two
+// windows is one part.
+func TestPartsFromSeveralWindowsAreJoinedByTitle(t *testing.T) {
+	joined := joinPartsByTitle([]groupProposal{
+		{Key: "w1:k1", Title: "Router", Lane: groupindex.LaneCore, absorbed: []string{"c1", "c2"}},
+		{Key: "w1:k2", Title: "Middleware", Lane: groupindex.LaneCore, absorbed: []string{"c3"}},
+		{Key: "w2:k1", Title: "router", Lane: groupindex.LaneCore, absorbed: []string{"c41"}},
+	})
+	if len(joined) != 2 || len(joined[0].absorbed) != 3 || joined[0].absorbed[2] != "c41" {
+		t.Fatalf("joined = %#v", joined)
+	}
+}

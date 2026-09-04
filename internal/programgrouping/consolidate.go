@@ -351,6 +351,11 @@ func consolidateIntoContainers(
 	// first screen actually shows, which is one question and not three, and
 	// what comes back covers what the reader sees. A group past the overview
 	// belongs to no part, which is what standalone means.
+	// The parts are named from the largest groups — they are the
+	// architecture — and then every group is placed in one of them, a window
+	// at a time against the same closed list. Placed only the largest forty,
+	// repomap's own target of six hundred and ninety-six groups had zones
+	// over thirty-seven of them and a page of cards that named no zone.
 	overview := largestGroups(candidates, consolidateWindow)
 	parts, err := proposePartNames(ctx, executor, provider, compilation, overview)
 	if err != nil {
@@ -359,17 +364,20 @@ func consolidateIntoContainers(
 		}}
 	}
 	merged, diagnostics, err := consolidateWindows(
-		ctx, executor, provider, compilation, phaseContainers, overview, parts,
+		ctx, executor, provider, compilation, phaseContainers, candidates, parts,
 	)
 	if err != nil {
 		return nil, []groupindex.Diagnostic{{
 			Kind: diagnosticContainerSkipped, Reason: err.Error(),
 		}}
 	}
-	keyByCandidate := make(map[string]string, len(overview.groups))
-	for position, group := range overview.groups {
+	keyByCandidate := make(map[string]string, len(candidates.groups))
+	for position, group := range candidates.groups {
 		keyByCandidate[candidateRef(position)] = group.Key
 	}
+	// Every window answered with the same part names, so the same name from
+	// two windows is one part: the windows' clusters are joined by title.
+	merged.groups = joinPartsByTitle(merged.groups)
 	containers := make([]groupindex.ContainerProposal, 0, len(merged.groups))
 	for _, group := range merged.groups {
 		container := groupindex.ContainerProposal{
@@ -1111,4 +1119,26 @@ func appendMissing(into, more []string) []string {
 		into = append(into, value)
 	}
 	return into
+}
+
+// joinPartsByTitle unions clusters that carry one part name. A window's
+// answer is namespaced to the window, so "router" from the first window and
+// "router" from the second arrived as two clusters of one part.
+func joinPartsByTitle(groups []groupProposal) []groupProposal {
+	at := make(map[string]int, len(groups))
+	result := make([]groupProposal, 0, len(groups))
+	for _, group := range groups {
+		key := strings.ToLower(strings.TrimSpace(group.Title))
+		position, seen := at[key]
+		if !seen || key == "" {
+			at[key] = len(result)
+			result = append(result, group)
+			continue
+		}
+		into := &result[position]
+		into.absorbed = append(into.absorbed, group.absorbed...)
+		into.MemberSubjectIDs = appendMissing(into.MemberSubjectIDs, group.MemberSubjectIDs)
+		into.EvidenceSubjectIDs = appendMissing(into.EvidenceSubjectIDs, group.EvidenceSubjectIDs)
+	}
+	return result
 }
