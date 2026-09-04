@@ -70,11 +70,14 @@ func testGraph(t *testing.T) atlas.Graph {
 // test says otherwise. A window whose rows include a path in `refuse` comes
 // back with a duplicate key, which the table refuses.
 type tableProvider struct {
-	mu      sync.Mutex
-	calls   int
-	refuse  map[string]bool
-	boxFor  map[string]string
-	answers map[string]int
+	mu        sync.Mutex
+	calls     int
+	refuse    map[string]bool
+	boxFor    map[string]string
+	partFor   map[string]string
+	partNames []string
+	sameFor   map[string]string
+	answers   map[string]int
 }
 
 func (*tableProvider) State() []byte {
@@ -90,8 +93,14 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 	provider.calls++
 	provider.mu.Unlock()
 	var request struct {
-		Table string           `json:"table"`
-		Rows  []map[string]any `json:"rows"`
+		Table string `json:"table"`
+		Fill  []struct {
+			Name        string   `json:"name"`
+			Kind        string   `json:"kind"`
+			Options     []string `json:"options"`
+			OptionsFrom string   `json:"options_from"`
+		} `json:"fill"`
+		Rows []map[string]any `json:"rows"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
@@ -110,16 +119,67 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 		}
 		provider.answers[path]++
 		provider.mu.Unlock()
+		// Every column gets a plausible cell: text from the key, a choice
+		// from the first option; the directory and file tables get the
+		// cells the tests look for.
+		answer := map[string]string{"key": key}
+		for _, column := range request.Fill {
+			switch column.Kind {
+			case "text":
+				answer[column.Name] = "Text for " + key
+			case "choice":
+				options := column.Options
+				if column.OptionsFrom != "" {
+					if list, ok := row[column.OptionsFrom].([]any); ok {
+						for _, item := range list {
+							options = append(options, fmt.Sprint(item))
+						}
+					}
+				}
+				if len(options) > 0 {
+					answer[column.Name] = options[0]
+				}
+				// A peer choice takes the first listed ref, not "none".
+				if column.Name == "peer" && len(options) > 1 {
+					answer[column.Name] = options[1]
+				}
+			}
+		}
 		switch request.Table {
 		case lines.StageDirectories:
-			rows = append(rows, map[string]string{"key": key, "title": "Title " + filepath.Base(path), "line": "Directory " + path + " does things."})
+			answer["title"] = "Title " + filepath.Base(path)
+			answer["line"] = "Directory " + path + " does things."
 		case lines.StageFiles:
-			box := lines.BoxHere
+			answer["line"] = "File " + path + " does things."
 			if chosen, ok := provider.boxFor[path]; ok {
-				box = chosen
+				answer["box"] = chosen
 			}
-			rows = append(rows, map[string]string{"key": key, "line": "File " + path + " does things.", "box": box})
+		case lines.StageZones:
+			if part, ok := row["title"].(string); ok && provider.partFor != nil {
+				if chosen, ok := provider.partFor[part]; ok {
+					answer["part"] = chosen
+				}
+			}
+			for i, column := range request.Fill {
+				if strings.HasPrefix(column.Name, "part_") {
+					if i < len(provider.partNames) {
+						answer[column.Name] = provider.partNames[i]
+					} else {
+						answer[column.Name] = fmt.Sprintf("Part %d", i+1)
+					}
+				}
+			}
+		case lines.StageJoints:
+			if provider.sameFor != nil {
+				if value, ok := row["value"].(string); ok {
+					if same, ok := provider.sameFor[value]; ok {
+						answer["same"] = same
+						answer["label"] = "reads " + value
+					}
+				}
+			}
 		}
+		rows = append(rows, answer)
 	}
 	if refused && len(rows) > 0 {
 		rows = append(rows, rows[0])
@@ -178,7 +238,8 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 		}
 	}
 	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "*.request.json"))
-	if len(requests) != 3+2 {
+	// three directory rounds, two file rounds, one arrow window
+	if len(requests) != 3+2+1 {
 		t.Fatalf("request files: %d", len(requests))
 	}
 	if err := atlas.Validate(result.Atlas); err != nil {

@@ -243,7 +243,7 @@ func (output *runOutput) Wall(name string, duration time.Duration) {
 	output.wallTime[name] += duration
 }
 
-// ModelCall accounts one provider call to its stage.
+// ModelCall records one provider call under its stage. It waits for nothing.
 func (output *runOutput) ModelCall(stage string, latency time.Duration, cached bool) {
 	if output == nil {
 		return

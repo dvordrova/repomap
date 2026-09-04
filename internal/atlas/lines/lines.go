@@ -78,6 +78,17 @@ func Files() table.Definition {
 	}
 }
 
+// WithOpen adds the budget cell: whether the model would open this place to
+// read what is beneath it.
+func WithOpen(def table.Definition) table.Definition {
+	def.Contract += ".open"
+	def.Columns = append(append([]table.Column{}, def.Columns...), table.Column{
+		Name: "open", Kind: table.Choice, Options: []string{"yes", "no"},
+		Note: "yes when a reader of the architecture should look inside; no for vendored, generated, test or trivial code",
+	})
+	return def
+}
+
 // Lines is what the reading knows so far: the model's line per place ID,
 // consulted when a row needs its parent's or its callers' lines.
 type Lines interface {

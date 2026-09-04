@@ -77,10 +77,13 @@ type Row struct {
 }
 
 // Window is one request: up to Definition.Window rows with keys r1..rN.
+// Context is what every row of the window shares: a closed list of names to
+// choose from, a count the answer is measured against.
 type Window struct {
 	Stage   string
 	Round   int
 	Index   int
+	Context []Field
 	Rows    []Row
 	Request []byte
 }
@@ -92,13 +95,18 @@ func Key(i int) string { return fmt.Sprintf("r%d", i+1) }
 // caller's order. Boundaries are the caller's business: it sorts rows by path
 // so a window rarely straddles a directory.
 func Windows(def Definition, round int, rows []Row) ([]Window, error) {
+	return WindowsWithContext(def, round, nil, rows)
+}
+
+// WindowsWithContext is Windows with fields every window carries.
+func WindowsWithContext(def Definition, round int, context []Field, rows []Row) ([]Window, error) {
 	if def.Window < 1 {
 		return nil, fmt.Errorf("table %s: window size %d", def.Stage, def.Window)
 	}
 	var windows []Window
 	for start := 0; start < len(rows); start += def.Window {
 		end := min(start+def.Window, len(rows))
-		window := Window{Stage: def.Stage, Round: round, Index: len(windows), Rows: rows[start:end]}
+		window := Window{Stage: def.Stage, Round: round, Index: len(windows), Context: context, Rows: rows[start:end]}
 		request, err := Request(def, window)
 		if err != nil {
 			return nil, err
@@ -138,7 +146,20 @@ func Request(def Definition, window Window) ([]byte, error) {
 		}
 		writeJSON(&out, spec)
 	}
-	out.WriteString("],\n  \"rows\": [\n")
+	out.WriteString("]")
+	if len(window.Context) > 0 {
+		out.WriteString(",\n  \"context\": {")
+		for i, field := range window.Context {
+			if i > 0 {
+				out.WriteString(", ")
+			}
+			writeJSON(&out, field.Name)
+			out.WriteString(": ")
+			writeJSON(&out, field.Value)
+		}
+		out.WriteString("}")
+	}
+	out.WriteString(",\n  \"rows\": [\n")
 	for i, row := range window.Rows {
 		if i > 0 {
 			out.WriteString(",\n")

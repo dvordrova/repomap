@@ -19,6 +19,7 @@ import (
 	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/dependencies"
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -50,6 +51,23 @@ type Input struct {
 	Repository *corpus.Corpus
 	Targets    []TargetInput
 	Claims     claims.Result
+	// Facts carries the boundaries the code already knows: routes, client
+	// calls, listeners, configuration reads, dynamic execution.
+	Facts facts.Result
+}
+
+// sdkPackages are standard-library packages whose calls with literal
+// arguments are integration points even though the runtime is not an SDK:
+// exactly these packages, not their subpackages (net/http client calls with
+// a literal URL are already facts).
+var sdkPackages = []string{"database/sql", "net"}
+
+// sdkNeverPackages are standard-library packages whose literal arguments are
+// never an integration: format strings, separators, error text.
+var sdkNeverPackages = []string{
+	"fmt", "strings", "errors", "bytes", "path", "path/filepath", "encoding/json", "io", "os",
+	"time", "regexp", "flag", "html/template", "text/template", "sort", "strconv", "unicode", "log",
+	"context", "sync", "math", "os/exec", "os/signal", "bufio", "crypto/sha256", "encoding/hex", "runtime",
 }
 
 var generatedMarker = regexp.MustCompile(`(?i)code generated .* do not edit|do not edit`)
@@ -75,6 +93,7 @@ func Build(input Input) (atlas.Graph, error) {
 		entries:  make(map[string]corpus.Entry),
 		seeds:    make(map[string]struct{}),
 		targetOf: make(map[string]map[string]struct{}),
+		bounds:   make(map[boundaryKey]*boundaryState),
 	}
 	b.indexClaims()
 	b.indexCorpus()
@@ -94,6 +113,10 @@ func Build(input Input) (atlas.Graph, error) {
 	}
 	b.collectDirectories()
 	b.assignDepths()
+	b.collectBoundaries()
+	for _, target := range input.Targets {
+		b.collectExternalCalls(target)
+	}
 	return b.graph()
 }
 
@@ -122,6 +145,16 @@ type dirState struct {
 
 type edgeKey struct{ from, to, kind string }
 
+type boundaryKey struct {
+	path string
+	line int
+	kind string
+}
+
+type boundaryState struct {
+	place atlas.Place
+}
+
 type builder struct {
 	input    Input
 	files    map[string]*fileState
@@ -135,6 +168,7 @@ type builder struct {
 	entries  map[string]corpus.Entry
 	seeds    map[string]struct{}
 	targetOf map[string]map[string]struct{}
+	bounds   map[boundaryKey]*boundaryState
 }
 
 func (b *builder) indexClaims() {
@@ -348,9 +382,8 @@ func (b *builder) collectImports(target TargetInput) {
 			if from == to {
 				continue
 			}
-			b.addEdge(atlas.DirectoryID(from), atlas.DirectoryID(to), "imports", atlas.Witness{
-				Caller: importer.PackagePath, Callee: dependency.PackagePath, Path: from,
-			})
+			// An import has no call site to witness; the edge counts alone.
+			b.addEdge(atlas.DirectoryID(from), atlas.DirectoryID(to), "imports", atlas.Witness{})
 		}
 	}
 }
@@ -758,6 +791,282 @@ func (b *builder) assignDepths() {
 	}
 }
 
+// collectBoundaries lifts the facts the code already knows as integration
+// points into boundary places, one per anchor and kind. A route registered
+// under three prefixes is one boundary with three values.
+func (b *builder) collectBoundaries() {
+	// Facts name their own target rows; the atlas speaks in program target
+	// IDs, so a fact's target is translated before it names a place.
+	programTarget := make(map[string]string, len(b.input.Facts.Targets))
+	for _, target := range b.input.Facts.Targets {
+		programTarget[target.ID] = target.ProgramTargetID
+	}
+	for _, fact := range b.input.Facts.Facts {
+		if fact.Anchor == nil {
+			continue
+		}
+		targetID, ok := programTarget[fact.TargetID]
+		if !ok || targetID == "" {
+			continue
+		}
+		var direction, kind, method string
+		var values []string
+		switch fact.Kind {
+		case facts.KindHTTPRoute:
+			direction, kind, method, values = atlas.DirectionIn, atlas.BoundaryHTTPServer, fact.Method, []string{fact.Path}
+		case facts.KindHTTPCall:
+			direction, kind, method, values = atlas.DirectionOut, atlas.BoundaryHTTPClient, fact.Method, []string{fact.Path}
+		case facts.KindListenAddress:
+			direction, kind, values = atlas.DirectionIn, atlas.BoundaryHTTPServer, []string{fact.Value}
+		case facts.KindConfigRead:
+			direction, kind, values = atlas.DirectionOut, atlas.BoundaryConfig, []string{fact.Key}
+			if fact.Value != "" {
+				values = append(values, "default "+fact.Value)
+			}
+		case facts.KindDynamicExecution:
+			direction, kind, values = atlas.DirectionOut, atlas.BoundaryOther, []string{fact.Key}
+		default:
+			continue
+		}
+		filePath := atlasPath(fact.Anchor.Path)
+		file, ok := b.files[filePath]
+		if !ok {
+			continue
+		}
+		key := boundaryKey{path: filePath, line: fact.Anchor.Line, kind: kind}
+		if state, exists := b.bounds[key]; exists {
+			state.place.Boundary.Values = appendUnique(state.place.Boundary.Values, values...)
+			state.place.TargetIDs = appendUnique(state.place.TargetIDs, targetID)
+			continue
+		}
+		caller, callerDoc := b.callerOf(file, fact.ObjectID, fact.Symbol, fact.Anchor.Line)
+		b.bounds[key] = &boundaryState{place: atlas.Place{
+			ID: boundaryID(filePath, fact.Anchor.Line, kind), Kind: atlas.PlaceBoundary, Path: filePath,
+			LineNo: fact.Anchor.Line, Depth: file.depth, TargetIDs: []string{targetID},
+			Parent: atlas.FileID(filePath),
+			Boundary: &atlas.BoundaryFacts{
+				Source: "fact", FactID: fact.ID, ObjectID: fact.ObjectID,
+				Caller: caller, CallerDoc: callerDoc, Method: method, Values: values,
+				Direction: direction, GivenKind: kind,
+			},
+		}}
+	}
+}
+
+// collectExternalCalls lifts calls into non-platform packages that carry a
+// literal argument: an SDK client method called with a topic, a table, a
+// bucket. The model says what kind of integration it is.
+func (b *builder) collectExternalCalls(target TargetInput) {
+	for _, relation := range target.Index.Relations {
+		if relation.Kind != programindex.RelationInvokesExternal {
+			continue
+		}
+		from, ok := b.fileOf[relation.FromID]
+		if !ok {
+			continue
+		}
+		var external *programindex.ExternalSymbol
+		for _, toID := range relation.ToIDs {
+			if object, ok := b.byID[toID]; ok && object.External != nil {
+				external = object.External
+				break
+			}
+		}
+		if external == nil || !sdkCandidate(*external) {
+			continue
+		}
+		var values []string
+		line := relationLine(relation)
+		for _, pattern := range relation.Patterns {
+			if pattern.Location != nil && line == 0 {
+				line = pattern.Location.Line
+			}
+			for _, argument := range pattern.Arguments {
+				if value, ok := literalArgument(argument); ok {
+					values = appendUnique(values, value)
+				}
+			}
+		}
+		if len(values) == 0 || line == 0 {
+			continue
+		}
+		if len(values) > 8 {
+			values = values[:8]
+		}
+		claimed := false
+		for key := range b.bounds {
+			if key.path == from && key.line == line {
+				claimed = true
+				break
+			}
+		}
+		if claimed {
+			continue
+		}
+		key := boundaryKey{path: from, line: line, kind: "sdk"}
+		if state, exists := b.bounds[key]; exists {
+			state.place.Boundary.Values = appendUnique(state.place.Boundary.Values, values...)
+			state.place.TargetIDs = appendUnique(state.place.TargetIDs, target.Index.Target.ID)
+			continue
+		}
+		caller := b.byID[relation.FromID]
+		callerName, callerDoc := b.callerOf(b.files[from], relation.FromID, displayName(caller, b.byID), line)
+		b.bounds[key] = &boundaryState{place: atlas.Place{
+			ID: boundaryID(from, line, "sdk"), Kind: atlas.PlaceBoundary, Path: from,
+			LineNo: line, Depth: b.files[from].depth, TargetIDs: []string{target.Index.Target.ID},
+			Parent: atlas.FileID(from),
+			Boundary: &atlas.BoundaryFacts{
+				Source: "external_call", ObjectID: relation.FromID,
+				Caller: callerName, CallerDoc: callerDoc,
+				External: externalName(*external), Values: values,
+				Direction: atlas.DirectionOut,
+			},
+		}}
+	}
+}
+
+func sdkCandidate(external programindex.ExternalSymbol) bool {
+	if _, never := packageMatches(external.PackagePath, sdkNeverPackages...); never {
+		return false
+	}
+	if external.AuthorityKind == programindex.ExternalAuthorityPackage {
+		return true
+	}
+	for _, exact := range sdkPackages {
+		if external.PackagePath == exact {
+			return true
+		}
+	}
+	return false
+}
+
+func externalName(external programindex.ExternalSymbol) string {
+	pkg := external.PackagePath
+	if slash := strings.LastIndex(pkg, "/"); slash >= 0 {
+		pkg = pkg[slash+1:]
+	}
+	name := external.Name
+	if strings.HasPrefix(name, pkg+".") {
+		name = strings.TrimPrefix(name, pkg+".")
+	}
+	if external.Receiver != "" && !strings.HasPrefix(name, external.Receiver+".") {
+		name = strings.TrimPrefix(external.Receiver, "*") + "." + name
+	}
+	return pkg + "." + name
+}
+
+func literalArgument(argument programindex.PatternArgument) (string, bool) {
+	switch argument.Kind {
+	case programindex.PatternLiteralString:
+		return argument.Value, argument.Value != ""
+	case programindex.PatternStringTemplate:
+		var text strings.Builder
+		for _, part := range argument.Parts {
+			if part.Kind == programindex.PatternPartHole {
+				text.WriteString("{param}")
+				continue
+			}
+			text.WriteString(part.Text)
+		}
+		return text.String(), text.Len() > 0
+	default:
+		return "", false
+	}
+}
+
+// packageMatches reports whether a package path is one of the candidates or
+// beneath one, tolerating a Go major-version suffix.
+func packageMatches(packagePath string, candidates ...string) (string, bool) {
+	if slash := strings.LastIndex(packagePath, "/"); slash >= 0 {
+		suffix := packagePath[slash+1:]
+		if len(suffix) >= 2 && suffix[0] == 'v' && strings.Trim(suffix[1:], "0123456789") == "" {
+			packagePath = packagePath[:slash]
+		}
+	}
+	for _, candidate := range candidates {
+		if packagePath == candidate || strings.HasPrefix(packagePath, candidate+"/") {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+// callerOf names the declaration a boundary sits in and its docstring.
+func (b *builder) callerOf(file *fileState, objectID, symbol string, line int) (string, string) {
+	if file == nil {
+		return symbol, ""
+	}
+	if objectID != "" {
+		for _, decl := range file.decls {
+			if decl.ObjectID == objectID {
+				return decl.Name, decl.Doc
+			}
+		}
+	}
+	if symbol != "" {
+		for _, decl := range file.decls {
+			if decl.Name == symbol || strings.HasSuffix(decl.Name, "."+symbol) {
+				return decl.Name, decl.Doc
+			}
+		}
+	}
+	best := atlas.Decl{}
+	for _, decl := range file.decls {
+		if decl.LineNo <= line && decl.LineNo >= best.LineNo {
+			best = decl
+		}
+	}
+	if best.Name != "" {
+		return best.Name, best.Doc
+	}
+	return symbol, ""
+}
+
+func boundaryID(filePath string, line int, kind string) string {
+	return fmt.Sprintf("bnd:%s:%d:%s", filePath, line, kind)
+}
+
+func appendUnique(values []string, more ...string) []string {
+	for _, value := range more {
+		if value == "" {
+			continue
+		}
+		found := false
+		for _, existing := range values {
+			if existing == value {
+				found = true
+				break
+			}
+		}
+		if !found {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+// boundaryGiven is the fallback line of a boundary: what it touches, in
+// which declaration.
+func boundaryGiven(place atlas.Place) string {
+	facts := place.Boundary
+	subject := facts.External
+	if subject == "" {
+		subject = facts.GivenKind
+	}
+	detail := strings.Join(facts.Values, ", ")
+	if facts.Method != "" {
+		detail = facts.Method + " " + detail
+	}
+	text := subject
+	if detail != "" {
+		text += " " + detail
+	}
+	if facts.Caller != "" {
+		text += " in " + facts.Caller
+	}
+	return truncateRunes(strings.TrimSpace(text), maxLineRunes)
+}
+
 func (b *builder) graph() (atlas.Graph, error) {
 	graph := atlas.Graph{Version: atlas.GraphVersion, Revision: b.input.Revision}
 	for dir, state := range b.dirs {
@@ -791,6 +1100,15 @@ func (b *builder) graph() (atlas.Graph, error) {
 			place.File.Decls = []atlas.Decl{}
 		}
 		place.Given = fileGiven(place)
+		graph.Places = append(graph.Places, place)
+	}
+	for _, state := range b.bounds {
+		place := state.place
+		sort.Strings(place.TargetIDs)
+		if place.Boundary.Values == nil {
+			place.Boundary.Values = []string{}
+		}
+		place.Given = boundaryGiven(place)
 		graph.Places = append(graph.Places, place)
 	}
 	atlas.SortPlaces(graph.Places)

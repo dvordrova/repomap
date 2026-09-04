@@ -24,7 +24,7 @@ func readRepositoryAtlas(
 	runs []targetPublishedRun,
 ) (string, error) {
 	owner := runs[0]
-	_, claimsResult, err := buildFirstDayFacts(ctx, firstDayOptions{
+	factsResult, claimsResult, err := buildFirstDayFacts(ctx, firstDayOptions{
 		RepoPath:       options.Repo,
 		RepositoryName: repoRunLabel(options.Repo),
 		Revision:       options.RepositoryState.Head,
@@ -59,7 +59,7 @@ func readRepositoryAtlas(
 	started := time.Now()
 	graph, err := places.Build(places.Input{
 		Revision: options.RepositoryState.Head, Repository: options.Corpus,
-		Targets: targets, Claims: claimsResult,
+		Targets: targets, Claims: claimsResult, Facts: factsResult,
 	})
 	if err != nil {
 		return "", err
@@ -67,17 +67,19 @@ func readRepositoryAtlas(
 	if err := atlas.PersistGraph(owner.RunDir, graph); err != nil {
 		return "", err
 	}
-	dirs, files := 0, 0
+	dirs, files, boundaries := 0, 0, 0
 	for _, place := range graph.Places {
 		switch place.Kind {
 		case atlas.PlaceDirectory:
 			dirs++
 		case atlas.PlaceFile:
 			files++
+		case atlas.PlaceBoundary:
+			boundaries++
 		}
 	}
 	options.Output.State("Atlas places", "ready",
-		fmt.Sprintf("directories: %d", dirs), fmt.Sprintf("files: %d", files),
+		fmt.Sprintf("directories: %d", dirs), fmt.Sprintf("files: %d", files), fmt.Sprintf("boundaries: %d", boundaries),
 		fmt.Sprintf("edges: %d", len(graph.Edges)), fmt.Sprintf("seeds: %d", len(graph.Seeds)),
 		formatRunOutputWallDuration(time.Since(started)),
 	)

@@ -41,21 +41,42 @@ spent seventy CPU-minutes without finishing.
 
 The model-assisted stages are being replaced by one reading layer,
 `internal/atlas`, along the plan in ATLAS_PLAN.md: the repository as places
-(directories, files, later symbols and boundaries) asked about in keyed
-tables, one line per place, context one step up, boxes by directory, arrows
-and joints derived by code. Step 1 is in: `places` builds `places.json` from
-the program indexes, claims and corpus; `table` is the keyed request shape
-with strict decoding; `lines` holds the directory and file tables and their
-prompts; `reading` walks directories by depth and files by call-graph round
-and prints every row to `tables.md` with the request bytes under `tables/`.
-`--atlas` runs it after facts and claims and stops before the report;
-`--no-model` walks it dry. Under `--atlas` the child run persists the base
-index, the reduced documentation and an empty groups index and asks no
-categorization or grouping. Measured on repomap's own `cmd/repomap`: 47
-directories and 196 files in 14 windows, 111k input tokens, 1m05s wall of
-which 44 s are the tables. Steps 2 to 5 (boundaries, zones, arrows, joints;
-symbols; the page reading the atlas and the deletion of the old stages;
-kubernetes) follow.
+(directories, files, boundaries; symbols next) asked about in keyed tables,
+one line per place, context one step up, boxes by directory, arrows and
+joints derived by code. `places` builds `places.json` from the program
+indexes, claims, facts and corpus; `table` is the keyed request shape with
+strict decoding; `lines` holds the tables and their prompts; `reading`
+walks them and prints every row to `tables.md` with the request bytes under
+`tables/`. `--atlas` runs it after facts and claims and stops before the
+report; `--no-model` walks it dry. Under `--atlas` the child run persists
+the base index, the reduced documentation and an empty groups index and asks
+no categorization or grouping.
+
+Steps 1 and 2 are in. The tables, in order: directories by depth; files by
+call-graph round (a file may move to a sibling box or start one, a box of
+one file is cancelled); boundaries from facts and from SDK calls with
+literal arguments (kind from the code where it knows, else the model);
+zones per target as two cubes, one row asking for exactly `want` part names
+(the square root of the top boxes, four to eight) and then every top box
+choosing from that closed list, boxes beneath inheriting; arrows folded by
+code from file-to-file edges (six outgoing per box drawn), the model
+writing only the hover sentence; the portfolio table (one line and a role
+per target when there are several); joints between compatible targets by
+matched method and path or equal literal, confirmed yes or no, and a blind
+peer choice for outgoing calls nothing matched. Side and trace are code.
+Above 2,000 files the directory and file rows carry an `open` cell and what
+the model closes keeps its fallback line.
+
+Measured on 2026-09-04, repomap on itself, seven targets: 30 windows, of
+which cmd/repomap's 47 directories, 199 files, 10 boundaries, 7 zones and
+106 arrows; the three fixture joints on `/api/levels` confirmed and the
+cross-fixture false candidate refused; 24 s wall with everything cached,
+16 s on a repeat. One docstring's first sentence changed in one file cost
+11 live windows and 55 s: the file's line is carried into the rows of the
+files it calls, round after round, and a reworded line cold-starts them.
+A change past the first sentence costs nothing, since only the first
+sentence is sent. Steps 3 to 5 (symbols; the page reading the atlas and the
+deletion of the old stages; kubernetes) follow.
 
 ## Product surface
 
