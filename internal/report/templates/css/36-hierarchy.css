@@ -104,3 +104,10 @@ h2,h3{scroll-margin-top:3.2rem}
 .nav a{border:var(--edge) solid var(--ink);border-radius:var(--radius);background:var(--paper);
   box-shadow:var(--shadow-sm);padding:.3rem .6rem;font-weight:600;text-decoration:none;color:var(--ink)}
 .nav a:hover{background:var(--zone-1)}
+/* The find box lives in the sticky nav and exists only with scripting. */
+.nav .find{margin-left:auto;min-width:16rem;padding:.3rem .55rem;border:var(--edge) solid var(--ink);border-radius:var(--radius);background:var(--paper);font:inherit;font-size:.9rem;box-shadow:var(--shadow-sm)}
+.nav .find:focus{outline:none;box-shadow:var(--shadow)}
+.nav{display:flex;flex-wrap:wrap;align-items:center;gap:.2rem .5rem}
+.nav .find-count{font-size:.8rem;color:var(--muted);min-width:5rem}
+/* While finding, an empty section header is noise; the count says what was found. */
+html.finding .empty{display:none}
