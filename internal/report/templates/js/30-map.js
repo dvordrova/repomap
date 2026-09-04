@@ -261,8 +261,11 @@
       var traced = map.querySelector('[data-node][href="#' + traceIds[t] + '"]');
       if (traced) trace.push(traced);
     }
+    // A step is counted along the whole path, drawn or left to the cards
+    // below, so "step 2 of 5" is true of the path and not of the picture.
     function traceIndex(node) {
-      for (var i = 0; i < trace.length; i++) if (trace[i] === node) return i;
+      var href = node.getAttribute('href') || '';
+      for (var i = 0; i < traceIds.length; i++) if ('#' + traceIds[i] === href) return i;
       return -1;
     }
     function lightTrace() {
@@ -284,6 +287,6 @@
       trace[u].addEventListener('blur', unlightTrace);
     }
     map.traceIndex = traceIndex;
-    map.traceLength = trace.length;
+    map.traceLength = traceIds.length;
   }
 })();

@@ -351,7 +351,9 @@ func (builder *pageBuilder) keySymbols(group groupindex.Group, most int) string 
 			continue
 		}
 		name, anchor := builder.subjectDisplay(ref.subject)
-		if name == "" || anchor == nil {
+		// A closure is named main$3 by the compiler and by nobody else; it
+		// is not a key a reader would recognise.
+		if name == "" || anchor == nil || strings.Contains(name, "$") {
 			continue
 		}
 		if doc := builder.docstringFor(anchor.Path, anchor.Line); doc != "" {
