@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
@@ -53,7 +54,34 @@ type targetPortfolioRunOutcome struct {
 }
 
 func defaultTargetPortfolioProviderFactory() (llm.Provider, error) {
-	return deepseek.NewFromEnv()
+	client, err := deepseek.NewFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	client.OnWait = waitingOnTheModel(os.Stderr)
+	return client, nil
+}
+
+// waitingOnTheModel says so on the console while a provider call runs long:
+// at thirty seconds and then every minute. A run of repomap sat twenty-seven
+// minutes on one stalled call, inside a ten-minute attempt and its retry,
+// and the console said nothing at all.
+func waitingOnTheModel(writer io.Writer) func(deepseek.WaitProgress) {
+	var mu sync.Mutex
+	last := make(map[string]time.Duration)
+	return func(progress deepseek.WaitProgress) {
+		elapsed := progress.Elapsed.Round(time.Second)
+		if elapsed < 30*time.Second {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if previous, seen := last[progress.Stage]; seen && elapsed-previous < time.Minute {
+			return
+		}
+		last[progress.Stage] = elapsed
+		fmt.Fprintf(writer, "  still waiting on the model: %s (%s)\n", elapsed, progress.Stage)
+	}
 }
 
 func selectTargetPortfolioForRun(
