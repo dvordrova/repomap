@@ -28,16 +28,20 @@ type repositoryTargetDispatchOptions struct {
 	DirectCallDepth     int
 	DirectCallEdgeLimit int
 
-	Corpus           *corpus.Corpus
-	RepositoryState  freshness.RepositoryState
-	Plan             repositoryTargetPlan
-	RunID            string
-	DebugDir         string
-	NoCache          bool
-	NoOpen           bool
-	NoServe          bool
-	Port             int
-	StaticHost       string
+	Corpus          *corpus.Corpus
+	RepositoryState freshness.RepositoryState
+	Plan            repositoryTargetPlan
+	RunID           string
+	DebugDir        string
+	NoCache         bool
+	NoOpen          bool
+	NoServe         bool
+	Port            int
+	StaticHost      string
+	// Atlas reads the analyzed targets as tables of places and stops before
+	// the report; NoModel does that walk without a provider.
+	Atlas            bool
+	NoModel          bool
 	Output           *runOutput
 	FirstLayer       *debugdump.SemanticObserver
 	DiscoverJSTSFn   jsTSProjectDiscoverer
@@ -358,6 +362,22 @@ func dispatchRepositoryTargetPlan(
 	flushFirstLayerSemanticJournal(owner.RunDir, options.FirstLayer, options.Output)
 	if err := recordTargetPortfolioOutcome(owner.RunDir, options.Plan.Outcome, options.Output); err != nil {
 		return failPublication(err)
+	}
+	if options.Atlas {
+		tablesPath, err := readRepositoryAtlas(ctx, options, runs)
+		if err != nil {
+			return failPublication(err)
+		}
+		if err := persistTargetOutcomePortfolioForRuns(targetOutcomePortfolio, runs); err != nil {
+			return failPublication(err)
+		}
+		if err := writeRunTiming(owner.RunDir, wholeRunTiming(options.Output, runs)); err != nil {
+			options.Output.Warn("could not record the run's timing", err.Error())
+		}
+		for _, consoleTarget := range pendingTargets {
+			options.Output.TargetPage("complete", consoleTarget)
+		}
+		return tablesPath, nil
 	}
 	if multiTarget {
 		runs, err = matchPublishedRunGroups(

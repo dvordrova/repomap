@@ -50,11 +50,7 @@ type firstDayOptions struct {
 // analyzed run directory. A failure here never discards a completed page: the
 // caller keeps publishing and the report renders the sections it has.
 func buildFirstDayLayers(ctx context.Context, options firstDayOptions) error {
-	factsResult, err := buildRepositoryFacts(options)
-	if err != nil {
-		return err
-	}
-	claimsResult, err := buildRepositoryClaims(ctx, options)
+	factsResult, claimsResult, err := buildFirstDayFacts(ctx, options)
 	if err != nil {
 		return err
 	}
@@ -65,12 +61,6 @@ func buildFirstDayLayers(ctx context.Context, options firstDayOptions) error {
 		return err
 	}
 	for _, run := range options.Runs {
-		if err := facts.Persist(run.RunDir, factsResult); err != nil {
-			return err
-		}
-		if err := claims.Persist(run.RunDir, claimsResult); err != nil {
-			return err
-		}
 		if err := orientation.Persist(run.RunDir, orientationResult); err != nil {
 			return err
 		}
@@ -79,6 +69,29 @@ func buildFirstDayLayers(ctx context.Context, options firstDayOptions) error {
 		}
 	}
 	return nil
+}
+
+// buildFirstDayFacts derives and persists the two deterministic layers,
+// facts and claims, into every analyzed run directory. The atlas path stops
+// here; the ordinary path asks for an orientation over them next.
+func buildFirstDayFacts(ctx context.Context, options firstDayOptions) (facts.Result, claims.Result, error) {
+	factsResult, err := buildRepositoryFacts(options)
+	if err != nil {
+		return facts.Result{}, claims.Result{}, err
+	}
+	claimsResult, err := buildRepositoryClaims(ctx, options)
+	if err != nil {
+		return facts.Result{}, claims.Result{}, err
+	}
+	for _, run := range options.Runs {
+		if err := facts.Persist(run.RunDir, factsResult); err != nil {
+			return facts.Result{}, claims.Result{}, err
+		}
+		if err := claims.Persist(run.RunDir, claimsResult); err != nil {
+			return facts.Result{}, claims.Result{}, err
+		}
+	}
+	return factsResult, claimsResult, nil
 }
 
 func buildRepositoryFacts(options firstDayOptions) (facts.Result, error) {

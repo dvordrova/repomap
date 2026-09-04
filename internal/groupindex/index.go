@@ -638,6 +638,35 @@ func (index Index) Validate() error {
 	return nil
 }
 
+// Empty is the sealed index of a target that was not grouped: the atlas path
+// reads the program index directly and needs no groups, while the run
+// directory still carries one valid groups-index.json for the readers that
+// expect it.
+func Empty(program programindex.Index) (Index, error) {
+	if err := program.Validate(); err != nil {
+		return Index{}, fmt.Errorf("group index: validate program index: %w", err)
+	}
+	index := Index{
+		Version:            Version,
+		Target:             program.Target.Snapshot(),
+		ProgramIndexSHA256: program.SHA256,
+		Subjects:           []Subject{},
+		Groups:             []Group{},
+		Containers:         []Container{},
+		StructuralEdges:    []StructuralEdge{},
+		Connections:        []Connection{},
+	}
+	seal, err := indexDigest(index)
+	if err != nil {
+		return Index{}, err
+	}
+	index.SHA256 = seal
+	if err := index.Validate(); err != nil {
+		return Index{}, err
+	}
+	return index, nil
+}
+
 // Encode validates and returns canonical JSON artifact bytes.
 func Encode(index Index) ([]byte, error) {
 	if err := index.Validate(); err != nil {

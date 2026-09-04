@@ -33,6 +33,7 @@ type runOutput struct {
 	// stopwatch. modelTime is what the provider took, by stage.
 	started      time.Time
 	modelTime    map[string]*stageModelTime
+	wallTime     map[string]time.Duration
 	lastProgress map[string]runOutputProgress
 }
 
@@ -228,6 +229,20 @@ type stageModelTime struct {
 	sum, longest time.Duration
 }
 
+// Wall accounts a stretch of non-model work, such as building the program
+// index, so the Time block can say what the model was not responsible for.
+func (output *runOutput) Wall(name string, duration time.Duration) {
+	if output == nil {
+		return
+	}
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	if output.wallTime == nil {
+		output.wallTime = make(map[string]time.Duration)
+	}
+	output.wallTime[name] += duration
+}
+
 // ModelCall accounts one provider call to its stage.
 func (output *runOutput) ModelCall(stage string, latency time.Duration, cached bool) {
 	if output == nil {
@@ -263,6 +278,14 @@ func (output *runOutput) Timing() {
 	defer output.mu.Unlock()
 	output.stageLocked("Time")
 	lines := []string{"wall clock: " + sinceStart(output)}
+	walls := make([]string, 0, len(output.wallTime))
+	for name := range output.wallTime {
+		walls = append(walls, name)
+	}
+	sort.Strings(walls)
+	for _, name := range walls {
+		lines = append(lines, fmt.Sprintf("%s: %s, no model", name, output.wallTime[name].Round(time.Millisecond)))
+	}
 	stages := make([]string, 0, len(output.modelTime))
 	for stage := range output.modelTime {
 		stages = append(stages, stage)

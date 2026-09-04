@@ -37,6 +37,26 @@ where. Group matching reads incidence from indexes built once — repomap
 on itself compiled its 233,047 cross-target pairs in 42 s where it had
 spent seventy CPU-minutes without finishing.
 
+## Atlas (in progress, from 2026-09-04)
+
+The model-assisted stages are being replaced by one reading layer,
+`internal/atlas`, along the plan in ATLAS_PLAN.md: the repository as places
+(directories, files, later symbols and boundaries) asked about in keyed
+tables, one line per place, context one step up, boxes by directory, arrows
+and joints derived by code. Step 1 is in: `places` builds `places.json` from
+the program indexes, claims and corpus; `table` is the keyed request shape
+with strict decoding; `lines` holds the directory and file tables and their
+prompts; `reading` walks directories by depth and files by call-graph round
+and prints every row to `tables.md` with the request bytes under `tables/`.
+`--atlas` runs it after facts and claims and stops before the report;
+`--no-model` walks it dry. Under `--atlas` the child run persists the base
+index, the reduced documentation and an empty groups index and asks no
+categorization or grouping. Measured on repomap's own `cmd/repomap`: 47
+directories and 196 files in 14 windows, 111k input tokens, 1m05s wall of
+which 44 s are the tables. Steps 2 to 5 (boundaries, zones, arrows, joints;
+symbols; the page reading the atlas and the deletion of the old stages;
+kubernetes) follow.
+
 ## Product surface
 
 `repomap` has one supported product path:

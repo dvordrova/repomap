@@ -28,6 +28,13 @@ type repositoryTargetPlan struct {
 	guidance    readmetargetscout.GuidanceSnapshot
 }
 
+// withoutGuidance drops the guidance documents so the documentation
+// reduction has nothing to ask the model about.
+func (plan repositoryTargetPlan) withoutGuidance() repositoryTargetPlan {
+	plan.guidance = readmetargetscout.GuidanceSnapshot{}
+	return plan
+}
+
 func (plan repositoryTargetPlan) DefaultTarget() (repositoryTypedTarget, bool) {
 	for _, target := range plan.Targets {
 		if target.Key == plan.Default {
@@ -130,6 +137,9 @@ type repositoryTargetRuntimeOptions struct {
 	DiscoverPython bool
 	DiscoverJSTS   bool
 	TargetOverride string
+	// NoModel skips the README scout: file roles stay empty, as they do for
+	// a repository without guidance files.
+	NoModel bool
 
 	Output      *runOutput
 	Providers   targetPortfolioProviderFactory
@@ -414,7 +424,7 @@ func discoverRepositoryTargets(
 	}
 	readmeChannel := make(chan readmeResult, 1)
 	go func() {
-		if !readmetargetscout.HasGuidanceFiles(options.Repository) {
+		if options.NoModel || !readmetargetscout.HasGuidanceFiles(options.Repository) {
 			readmeChannel <- readmeResult{discovery: readmeFileRoleDiscovery{
 				Roles: readmetargetscout.Result{},
 			}}

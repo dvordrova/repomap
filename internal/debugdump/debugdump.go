@@ -109,27 +109,37 @@ const (
 	SemanticStageProgramGrouping       = "program_grouping"
 	SemanticStageGroupMatching         = "group_matching"
 	SemanticStageOrientation           = "orientation"
-	SemanticRequestPrepared            = "prepared_request"
-	SemanticRequestExactSent           = "exact_sent_request"
-	SemanticStateAccepted              = "accepted"
-	SemanticStateRejected              = "rejected"
-	SemanticStateCacheHit              = "cache_hit"
-	SemanticStateCanceled              = "canceled"
-	SemanticStateProviderFailed        = "provider_failed"
-	SemanticValidationAccepted         = "accepted"
-	SemanticValidationCache            = "cache_validated"
-	SemanticValidationCanceled         = "canceled"
-	SemanticValidationProvider         = "provider_failed"
-	SemanticValidationDecode           = "response_decode"
-	SemanticValidationResponse         = "response_validation"
-	SemanticUnavailableNoContent       = "provider_no_content"
-	SemanticUnavailableCanceled        = "canceled"
-	SemanticUnavailableCache           = "cache_raw_unavailable"
-	SemanticUnavailableOmitted         = "cache_response_omitted"
-	SemanticUnavailableSize            = "size_limit"
-	SemanticExchangeWarningCode        = "artifact_write_failed"
-	semanticExchangeVersion            = 2
-	semanticPayloadMarkerVersion       = 1
+	// The atlas tables: one stage per table, so the journal and the Time
+	// block say which table a window belonged to.
+	SemanticStageAtlasTargets     = "atlas_targets"
+	SemanticStageAtlasDirectories = "atlas_directories"
+	SemanticStageAtlasZones       = "atlas_zones"
+	SemanticStageAtlasFiles       = "atlas_files"
+	SemanticStageAtlasSymbols     = "atlas_symbols"
+	SemanticStageAtlasBoundaries  = "atlas_boundaries"
+	SemanticStageAtlasArrows      = "atlas_arrows"
+	SemanticStageAtlasJoints      = "atlas_joints"
+	SemanticRequestPrepared       = "prepared_request"
+	SemanticRequestExactSent      = "exact_sent_request"
+	SemanticStateAccepted         = "accepted"
+	SemanticStateRejected         = "rejected"
+	SemanticStateCacheHit         = "cache_hit"
+	SemanticStateCanceled         = "canceled"
+	SemanticStateProviderFailed   = "provider_failed"
+	SemanticValidationAccepted    = "accepted"
+	SemanticValidationCache       = "cache_validated"
+	SemanticValidationCanceled    = "canceled"
+	SemanticValidationProvider    = "provider_failed"
+	SemanticValidationDecode      = "response_decode"
+	SemanticValidationResponse    = "response_validation"
+	SemanticUnavailableNoContent  = "provider_no_content"
+	SemanticUnavailableCanceled   = "canceled"
+	SemanticUnavailableCache      = "cache_raw_unavailable"
+	SemanticUnavailableOmitted    = "cache_response_omitted"
+	SemanticUnavailableSize       = "size_limit"
+	SemanticExchangeWarningCode   = "artifact_write_failed"
+	semanticExchangeVersion       = 2
+	semanticPayloadMarkerVersion  = 1
 	// The semantic journal may preserve every provider-valid request or
 	// response. Its payload ceiling is therefore the shared real semantic
 	// record envelope, not a smaller diagnostic-only cutoff.
@@ -668,7 +678,15 @@ func validSemanticStage(stage string) bool {
 		SemanticStageProgramCategorization,
 		SemanticStageProgramGrouping,
 		SemanticStageGroupMatching,
-		SemanticStageOrientation:
+		SemanticStageOrientation,
+		SemanticStageAtlasTargets,
+		SemanticStageAtlasDirectories,
+		SemanticStageAtlasZones,
+		SemanticStageAtlasFiles,
+		SemanticStageAtlasSymbols,
+		SemanticStageAtlasBoundaries,
+		SemanticStageAtlasArrows,
+		SemanticStageAtlasJoints:
 		return true
 	default:
 		return false

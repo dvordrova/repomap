@@ -12,8 +12,11 @@ supported user-facing surface is deliberately small:
 
 There is no supported offline, investigate, doctor, dev, replay, experiment, or
 `serve` subcommand. Report serving remains part of the ordinary run and is
-controlled by `--no-serve` and `--port`. Do not add script entrypoints or
-sidecar tools.
+controlled by `--no-serve` and `--port`. `--atlas` reads the analyzed targets
+as tables of places and stops at those tables (transitional, until the page
+reads the atlas); `--no-model` makes that walk without a provider, every cell
+on its fallback line, and needs `--target` because no target is selected
+without the model. Do not add script entrypoints or sidecar tools.
 
 ## Authority
 
@@ -72,11 +75,14 @@ sidecar tools.
   state. Every provider transport attempt acquires the run-shared adaptive
   gate. An HTTP 429 collapses that gate to one before the provider's existing
   backoff/retry, so already-started attempts finish while that retry and every
-  new attempt become serial. Only a terminal item error cancels the batch child
-  context and prevents queued items from starting. The owning stage still
-  rejects the complete batch on any terminal item failure; accepted sibling
-  calls may retain their exact identity-bound cache entries but never become a partial
-  semantic result.
+  new attempt become serial. `ExecuteJSONBatch` fails closed: a terminal item
+  error cancels the batch child context, prevents queued items from starting,
+  and the owning stage rejects the complete batch. `ExecuteJSONEach` is the
+  table form: the same pool, gate and observer, but one window's failure
+  leaves its neighbours untouched, its rows take their fallback line, and the
+  refused answer is written to `rejected.jsonl` and never cached. Validation
+  annotates and does not abort a run (docs/CONSTITUTION.md); accepted sibling
+  calls keep their identity-bound cache entries in both forms.
 - A model-assisted stage returns a fully validated result, a contractually
   legitimate empty result, or an error. Backend orchestration, report
   projection, and browser code must never supply semantic fallback, repair, promotion, or partial

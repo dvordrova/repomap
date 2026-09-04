@@ -22,6 +22,7 @@ import (
 	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/gotarget"
+	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/orient"
@@ -197,6 +198,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	noServe := fs.Bool("no-serve", false, "generate a static report without starting the local server")
 	port := fs.Int("port", 0, "local report server port (default: random)")
 	debugDir := fs.String("debug-dir", defaultDebugDir(), "directory for debug artifacts")
+	atlasMode := fs.Bool("atlas", false, "read the repository as tables of places (transitional; stops before the report)")
+	noModel := fs.Bool("no-model", false, "make no model call: the atlas tables are printed with their fallback lines")
 
 	if err := fs.Parse(extraArgs); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -366,6 +369,12 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	}
 	languageEvidence := repositoryLanguages(repositoryCorpus)
 	targetOverride := strings.TrimSpace(*analysisTargetFlag)
+	if *noModel {
+		if targetOverride == "" {
+			return fmt.Errorf("--no-model requires --target: without the model no target is selected")
+		}
+		*atlasMode = true
+	}
 	goBuildTags := append([]string(nil), deps.goBuildTags...)
 	var deferredGoBuildTagsErr error
 	if !deps.goBuildTagsBound {
@@ -451,8 +460,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			RepoName: repositoryName, Repository: repositoryCorpus,
 			GoSnapshot: goSource, DiscoverPython: languageEvidence.Python,
 			DiscoverJSTS:   languageEvidence.JavaScriptTypeScript,
-			TargetOverride: targetOverride,
-			Output:         humanOutput, Providers: newTargetPortfolioProvider,
+			TargetOverride: targetOverride, NoModel: *noModel,
+			Output: humanOutput, Providers: newTargetPortfolioProvider,
 			Executor: selectionExecutor, ScoutJSTSFn: jstsproject.ScoutTargets,
 		})
 		if selectionErr != nil {
@@ -469,6 +478,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				recordTargetPortfolioOutcome(runDir, plan.Outcome, humanOutput),
 			)
 		}
+		if *noModel {
+			plan = plan.withoutGuidance()
+		}
 		var verifiedRuns []report.RunReceipt
 		reportPath, dispatchErr := dispatchRepositoryTargetPlan(
 			ctx,
@@ -479,6 +491,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				Corpus: repositoryCorpus, RepositoryState: initialState, Plan: plan,
 				RunID: runID, DebugDir: dDir, NoCache: *noCache, NoOpen: *noOpen,
 				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
+				Atlas: *atlasMode, NoModel: *noModel,
 				Output: humanOutput, FirstLayer: firstLayer,
 				DiscoverJSTSFn: jstsproject.DiscoverSelected,
 				VerifiedRunsSink: func(receipts []report.RunReceipt) {
@@ -494,6 +507,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			)
 		}
 		publicationStateEmitted = true
+		if *atlasMode {
+			// The atlas path stops at its tables: the owner reads them before
+			// a report is built on them.
+			return finishAtlasDispatch(dDir, reportPath, humanOutput)
+		}
 		return finishRepositoryTargetDispatch(
 			ctx, deps, dDir, filepath.Dir(reportPath), reportPath,
 			*noServe, *noOpen, *port, staticSourceHost, verifiedRuns, humanOutput,
@@ -553,7 +571,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	}
 	opts.Progress = humanOutput.Progress
 
+	indexStarted := time.Now()
 	err = orient.Run(ctx, opts)
+	humanOutput.Wall("program index", time.Since(indexStarted))
 	metadataPath := filepath.Join(runDir, "metadata.json")
 	if err != nil {
 		if _, metadataErr := os.Stat(metadataPath); metadataErr == nil {
@@ -598,21 +618,30 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if documentationErr != nil {
 		return fmt.Errorf("bind reduced documentation authority: %w", documentationErr)
 	}
-	index, err = enrichProgramIndexForRun(
-		ctx,
-		runDir,
-		dDir,
-		*noCache,
-		deps.llmBatchConcurrency,
-		deps.llmBatchController,
-		newCubeProvider,
-		deps.runProgramCategorization,
-		ownedDocumentation,
-		index,
-		humanOutput,
-	)
-	if err != nil {
-		return err
+	if *atlasMode {
+		// The atlas reads the base index; the categorization it would have
+		// enriched it with is not asked. The reduced documentation is still
+		// persisted here, where the page expects it.
+		if err := documentationreduce.Persist(runDir, ownedDocumentation); err != nil {
+			return fmt.Errorf("persist reduced documentation: %w", err)
+		}
+	} else {
+		index, err = enrichProgramIndexForRun(
+			ctx,
+			runDir,
+			dDir,
+			*noCache,
+			deps.llmBatchConcurrency,
+			deps.llmBatchController,
+			newCubeProvider,
+			deps.runProgramCategorization,
+			ownedDocumentation,
+			index,
+			humanOutput,
+		)
+		if err != nil {
+			return err
+		}
 	}
 	indexSet, setErr := programindex.BuildArtifactSet(index)
 	if setErr != nil {
@@ -629,20 +658,31 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		"enriched targets: 1",
 		"artifact set: "+programindex.ArtifactSetFilename,
 	)
-	defaultGroupIndex, err := groupProgramIndexForRun(
-		ctx,
-		runDir,
-		dDir,
-		*noCache,
-		deps.llmBatchConcurrency,
-		deps.llmBatchController,
-		newCubeProvider,
-		deps.runProgramGrouping,
-		index,
-		humanOutput,
-	)
-	if err != nil {
-		return err
+	var defaultGroupIndex groupindex.Index
+	if *atlasMode {
+		defaultGroupIndex, err = groupindex.Empty(index)
+		if err != nil {
+			return err
+		}
+		if err := groupindex.Persist(runDir, defaultGroupIndex); err != nil {
+			return err
+		}
+	} else {
+		defaultGroupIndex, err = groupProgramIndexForRun(
+			ctx,
+			runDir,
+			dDir,
+			*noCache,
+			deps.llmBatchConcurrency,
+			deps.llmBatchController,
+			newCubeProvider,
+			deps.runProgramGrouping,
+			index,
+			humanOutput,
+		)
+		if err != nil {
+			return err
+		}
 	}
 	if deps.targetOutcomeStageSink != nil {
 		deps.targetOutcomeStageSink(targetoutcome.StageDependencyAnalysis)
@@ -664,9 +704,12 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		deps.targetOutcomeStageSink(targetoutcome.StageTargetPage)
 	}
 	var reportPath string
-	reportData, err := report.ReadRunDir(runDir)
-	if err != nil {
-		return fmt.Errorf("read captured report inputs: %w", err)
+	var reportData *report.ReportData
+	if !*atlasMode {
+		reportData, err = report.ReadRunDir(runDir)
+		if err != nil {
+			return fmt.Errorf("read captured report inputs: %w", err)
+		}
 	}
 	source, err := report.NewRunSource(analysisRoot, initialState)
 	if err != nil {
@@ -707,7 +750,12 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			"remote availability is not checked; ensure the captured commit is pushed before sharing",
 		)
 	}
-	backingPage, err := report.PreparedTargetNavigationPage(runDir, reportData)
+	var backingPage report.TargetNavigationPage
+	if *atlasMode {
+		backingPage, err = report.TargetNavigationPageFor(runDir, index.Target)
+	} else {
+		backingPage, err = report.PreparedTargetNavigationPage(runDir, reportData)
+	}
 	if err != nil {
 		return fmt.Errorf("retain prepared report page identity: %w", err)
 	}
@@ -1005,6 +1053,8 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  --edges-limit N             maximum exact target call-graph edges (0 = all; default: 0)\n")
 	fmt.Fprintf(writer, "  --github-url URL            static GitHub source links; does not select a repository\n")
 	fmt.Fprintf(writer, "  --gitlab-url URL            static GitLab source links; does not select a repository\n")
+	fmt.Fprintf(writer, "  --atlas                     read the repository as tables of places; stops before the report\n")
+	fmt.Fprintf(writer, "  --no-model                  make no model call; the atlas tables carry their fallback lines (needs --target)\n")
 	fmt.Fprintf(writer, "  --no-open                   do not open the report\n")
 	fmt.Fprintf(writer, "  --no-serve                  write static HTML with remote source links\n")
 	fmt.Fprintf(writer, "  --port PORT                 local report server port (default: random)\n")

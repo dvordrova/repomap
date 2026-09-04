@@ -93,6 +93,25 @@ func PreparedTargetNavigationPage(
 	return page, nil
 }
 
+// TargetNavigationPageFor names a page from its run directory and program
+// target alone. The atlas path uses it: no categorized index or group graph
+// exists there for ReadRunDir to demand.
+func TargetNavigationPageFor(runDir string, target programindex.Target) (TargetNavigationPage, error) {
+	absoluteRunDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return TargetNavigationPage{}, fmt.Errorf("report: resolve target navigation run: %w", err)
+	}
+	page := TargetNavigationPage{
+		RunID:            filepath.Base(filepath.Clean(absoluteRunDir)),
+		ProgramTarget:    target.Snapshot(),
+		ArtifactFilename: programindex.ArtifactFilename,
+	}
+	if err := validateTargetNavigationPage(page); err != nil {
+		return TargetNavigationPage{}, err
+	}
+	return page, nil
+}
+
 // LoadTargetNavigationPage restores one page identity only from its validated
 // ProgramPortfolio default and the exact ProgramIndex artifact-set binding.
 func LoadTargetNavigationPage(runDir, runID string) (TargetNavigationPage, error) {
