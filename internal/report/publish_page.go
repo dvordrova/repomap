@@ -3,6 +3,7 @@ package report
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +37,12 @@ func renderPublishedPage(runDir string) ([]byte, error) {
 	data, err := decodeStrictReportJSON(reportJSON)
 	if err != nil {
 		return nil, fmt.Errorf("report: decode published report data: %w", err)
+	}
+	// report.json was written by this target's own run and carries that
+	// run's account; the whole run's account is stamped into the metadata
+	// afterwards, and the published page is the one that should say it.
+	if timing := runTimingFromMetadata(runDir); timing != nil {
+		data.Timing = timing
 	}
 	manifest, err := ReadRunManifest(runDir)
 	if err != nil {
@@ -90,4 +97,16 @@ func writePublishedPageAtomic(runDir string, rendered []byte) error {
 		return fmt.Errorf("report: install published page: %w", err)
 	}
 	return nil
+}
+
+func runTimingFromMetadata(runDir string) *RunTiming {
+	raw, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		return nil
+	}
+	var metadata runMetadataJSON
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return nil
+	}
+	return metadata.Timing
 }
