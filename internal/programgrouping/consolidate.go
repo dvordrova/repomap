@@ -291,6 +291,11 @@ func runConsolidation(
 			Kind:   diagnosticConsolidationPass,
 			Reason: fmt.Sprintf("%d to %d", len(candidates.groups), len(joined.groups)),
 		})
+		// Two windows each named a cluster "Client IP middleware" and the
+		// next pass, asked, did not join them: fifty-six of chi's hundred
+		// groups shared a title after four passes. Joined by code between
+		// passes, so a pass starts from what the last one agreed on.
+		joined = joinSameTitles(joined)
 		if len(joined.groups) >= len(candidates.groups) {
 			candidates = joined
 			break
@@ -1048,4 +1053,62 @@ func movedConnections(connections []connectionProposal, renamed map[string]strin
 		result = append(result, connection)
 	}
 	return result
+}
+
+// joinSameTitles unions groups that carry the same title in the same lane.
+// Shards of one target each name what they see, and several see the same
+// thing; the title they agree on is the plainest evidence there is that it is
+// one thing, and a reader shown two cards with one name could not tell them
+// apart anyway. Connections follow their groups. A title shared across lanes
+// is left alone: a lane follows from the members' own categories, and this
+// phase may not move one.
+func joinSameTitles(set proposalSet) proposalSet {
+	type sameThing struct {
+		title string
+		lane  groupindex.Lane
+	}
+	first := make(map[sameThing]int, len(set.groups))
+	renamed := make(map[string]string)
+	result := proposalSet{diagnostics: set.diagnostics}
+	joined := 0
+	for _, group := range set.groups {
+		key := sameThing{strings.ToLower(strings.TrimSpace(group.Title)), group.Lane}
+		position, seen := first[key]
+		if !seen || key.title == "" {
+			first[key] = len(result.groups)
+			result.groups = append(result.groups, group)
+			continue
+		}
+		into := &result.groups[position]
+		into.MemberSubjectIDs = appendMissing(into.MemberSubjectIDs, group.MemberSubjectIDs)
+		into.EvidenceSubjectIDs = appendMissing(into.EvidenceSubjectIDs, group.EvidenceSubjectIDs)
+		into.absorbed = append(into.absorbed, group.absorbed...)
+		if into.Summary == "" {
+			into.Summary = group.Summary
+		}
+		renamed[group.Key] = into.Key
+		joined++
+	}
+	result.connections = movedConnections(set.connections, renamed)
+	if joined > 0 {
+		result.diagnostics = append(result.diagnostics, groupindex.Diagnostic{
+			Kind: diagnosticSameTitleJoined, Reason: fmt.Sprintf("%d", joined),
+		})
+	}
+	return result
+}
+
+func appendMissing(into, more []string) []string {
+	seen := make(map[string]struct{}, len(into))
+	for _, value := range into {
+		seen[value] = struct{}{}
+	}
+	for _, value := range more {
+		if _, repeated := seen[value]; repeated {
+			continue
+		}
+		seen[value] = struct{}{}
+		into = append(into, value)
+	}
+	return into
 }

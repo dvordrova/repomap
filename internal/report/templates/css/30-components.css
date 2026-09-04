@@ -72,3 +72,4 @@ summary{cursor:pointer;color:var(--accent);font-size:.9rem}
 .method{border:var(--edge) solid var(--ink);border-radius:4px;padding:.05rem .35rem;background:var(--zone-3);font-weight:700}
 .routes{border-left:var(--rule) solid var(--ink)}
 details>summary{cursor:pointer;font-weight:600}
+.conn-count{font-weight:700;color:var(--muted)}

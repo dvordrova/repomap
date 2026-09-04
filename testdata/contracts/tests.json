@@ -342,6 +342,7 @@
         "publication_assessment_test.go",
         "readme_file_role_authority_test.go",
         "render_transaction_test.go",
+        "repo_map_test.go",
         "report_test.go",
         "target_navigation_test.go"
       ]

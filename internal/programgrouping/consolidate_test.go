@@ -320,3 +320,36 @@ func TestConnectionsFollowTheGroupsTheyWereJoinedInto(t *testing.T) {
 		t.Errorf("connection = %s -> %s", moved[0].FromGroupKey, moved[0].ToGroupKey)
 	}
 }
+
+// Two shards that each proposed "Client IP middleware" in the core lane
+// proposed one group. Code joins them and their connections follow; the same
+// title in another lane is another thing, because a lane follows from the
+// members' categories and may not be moved here.
+func TestSameTitleInOneLaneIsOneGroup(t *testing.T) {
+	set := proposalSet{
+		groups: []groupProposal{
+			{Key: "a", Title: "Client IP middleware", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"s1", "s2"}},
+			{Key: "b", Title: "client ip middleware ", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"s2", "s3"}, Summary: "reads X-Forwarded-For"},
+			{Key: "c", Title: "Client IP middleware", Lane: groupindex.LaneTriggers, MemberSubjectIDs: []string{"s4"}},
+			{Key: "d", Title: "Router", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"s5"}},
+		},
+		connections: []connectionProposal{
+			{FromGroupKey: "b", ToGroupKey: "d", Label: "wraps"},
+			{FromGroupKey: "a", ToGroupKey: "b", Label: "self after joining"},
+		},
+	}
+	joined := joinSameTitles(set)
+	if len(joined.groups) != 3 {
+		t.Fatalf("groups = %d, want 3: %#v", len(joined.groups), joined.groups)
+	}
+	first := joined.groups[0]
+	if first.Key != "a" || len(first.MemberSubjectIDs) != 3 || first.Summary != "reads X-Forwarded-For" {
+		t.Errorf("joined group = %#v", first)
+	}
+	if len(joined.connections) != 1 || joined.connections[0].FromGroupKey != "a" || joined.connections[0].ToGroupKey != "d" {
+		t.Errorf("connections = %#v", joined.connections)
+	}
+	if !hasDiagnostic(joined.diagnostics, diagnosticSameTitleJoined) {
+		t.Error("the join was not reported")
+	}
+}

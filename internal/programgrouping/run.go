@@ -93,6 +93,13 @@ func Run(
 	// Consolidation runs for a single shard too. It cannot lose a member, and
 	// a target small enough for one request was otherwise one raw draw of a
 	// stage whose draws range from one group to thirty-three.
+	// Two shards that each proposed "Client IP middleware" in the core lane
+	// proposed one group, and no model needs asking. Joined by code first,
+	// because asked, the model left sixty of chi's ninety-nine groups sharing
+	// a title with another — six of the fourteen boxes on the first screen
+	// read the same as some other box.
+	combined = joinSameTitles(combined)
+
 	if len(combined.groups) > 1 {
 		// Consolidation asks which of the shards' proposals are the same
 		// thing and unions their members here. It cannot lose a member, so a
@@ -121,7 +128,7 @@ func Run(
 	if ctx.Err() != nil {
 		return groupindex.Index{}, nil, ctx.Err()
 	}
-	combined = split
+	combined = joinSameTitles(split)
 	combined.diagnostics = append(combined.diagnostics, splitDiagnostics...)
 
 	// Parts are named last, over groups that are already the size they are

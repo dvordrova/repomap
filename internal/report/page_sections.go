@@ -140,6 +140,9 @@ type pageConnection struct {
 	Label       string
 	Summary     string
 	Possible    bool
+	// Count is how many times this same line was said. Three exact calls
+	// from one group to another were three identical rows on the card.
+	Count int
 }
 
 // buildSections creates one section per analyzed target and fills it from the
@@ -389,12 +392,82 @@ func (builder *pageBuilder) siblingByPackage(packagePath string) *pageSection {
 	if packagePath == "" {
 		return nil
 	}
-	for _, section := range builder.sections {
-		if section.Name == packagePath || section.Label == packagePath {
-			return section
+	return ownerOfPackage(packagePath, builder.packageOwners())
+}
+
+// packageOwner is one target and the package paths it indexed. A target owns
+// the packages it was read from, so an import is credited by what it names
+// and not by whose module root it happens to sit under.
+type packageOwner struct {
+	section  *pageSection
+	packages []string
+}
+
+func (builder *pageBuilder) packageOwners() []packageOwner {
+	if builder.owners != nil {
+		return builder.owners
+	}
+	byTarget := make(map[string][]string)
+	if builder.data.ProgramPortfolio != nil {
+		for _, entry := range builder.data.ProgramPortfolio.Entries {
+			for _, object := range entry.View.Objects {
+				if object.Kind == programindex.ObjectPackage || object.Kind == programindex.ObjectModule {
+					byTarget[entry.Target.ID] = append(byTarget[entry.Target.ID], object.Name)
+				}
+			}
 		}
 	}
-	return nil
+	builder.owners = make([]packageOwner, 0, len(builder.sections))
+	for _, section := range builder.sections {
+		packages := append([]string(nil), byTarget[section.programTargetID]...)
+		packages = append(packages, section.Name, section.Label)
+		builder.owners = append(builder.owners, packageOwner{section: section, packages: packages})
+	}
+	return builder.owners
+}
+
+// ownerOfPackage is the target an import path belongs to. Exactly the package
+// a target indexed is the surest match. Next comes the target's own directory
+// in the repository, found inside the path — chi's example executable imports
+// github.com/go-chi/chi/v5/_examples/versions/presenter/v2, and the library
+// beside it lives at _examples/versions; so does the package's module-relative
+// tail, versions/presenter/v2, when the report knows the target's packages.
+// Only failing all of those does a path under a target's module root count for
+// that target, which is how those presenter imports were credited to chi/v5
+// and the example library was reached by nothing. Among equals the longer
+// name wins, and a library beats a main, since nothing imports a main.
+func ownerOfPackage(packagePath string, owners []packageOwner) *pageSection {
+	var found *pageSection
+	bestRank, bestLength := 0, 0
+	consider := func(section *pageSection, rank, length int) {
+		better := rank > bestRank ||
+			(rank == bestRank && length > bestLength) ||
+			(rank == bestRank && length == bestLength && found != nil &&
+				found.Kind != "library" && section.Kind == "library")
+		if better {
+			found, bestRank, bestLength = section, rank, length
+		}
+	}
+	for _, owner := range owners {
+		if root := strings.Trim(owner.section.Root, "/"); root != "" && root != "." &&
+			strings.Contains("/"+packagePath+"/", "/"+root+"/") {
+			consider(owner.section, 2, len(root))
+		}
+		for _, name := range owner.packages {
+			if name == "" {
+				continue
+			}
+			switch {
+			case packagePath == name:
+				consider(owner.section, 3, len(name))
+			case strings.HasSuffix(packagePath, "/"+name):
+				consider(owner.section, 2, len(name))
+			case strings.HasPrefix(packagePath, name+"/"):
+				consider(owner.section, 1, len(name))
+			}
+		}
+	}
+	return found
 }
 
 func (builder *pageBuilder) graphIndex(programTargetID string) *groupindex.Index {
@@ -409,7 +482,9 @@ func (builder *pageBuilder) graphIndex(programTargetID string) *groupindex.Index
 
 func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, group groupindex.Group) pageGroup {
 	card := pageGroup{
-		ID: groupAnchorID(sectionID, group.ID), Title: group.Title, Summary: group.Summary,
+		ID: groupAnchorID(sectionID, group.ID), Title: group.Title,
+		// A summary that is the title again is the title said twice.
+		Summary: dropEcho(group.Summary, group.Title),
 		Members: len(group.MemberSubjectIDs), Share: laneShare(index, group),
 	}
 	rows, externals := builder.memberChips(group.MemberSubjectIDs)
@@ -558,7 +633,47 @@ func (builder *pageBuilder) groupConnections(
 		}
 		rows = append(rows, row)
 	}
-	return rows
+	return collapseConnections(rows)
+}
+
+// collapseConnections says each distinct line once, with how often it was
+// said, and does not repeat the label as its own explanation. A card read
+// "← Client IP middleware: provides client IP context — provides client IP
+// context" three times over; the model's summary of a connection is usually
+// its label again, and when it is, it is noise on the line.
+func collapseConnections(rows []pageConnection) []pageConnection {
+	type key struct {
+		arrow, title, otherTarget, label string
+		possible                         bool
+	}
+	at := make(map[key]int, len(rows))
+	result := make([]pageConnection, 0, len(rows))
+	for _, row := range rows {
+		row.Summary = dropEcho(row.Summary, row.Label)
+		k := key{row.Arrow, row.Title, row.OtherTarget, row.Label, row.Possible}
+		if position, seen := at[k]; seen {
+			result[position].Count++
+			if result[position].Summary == "" {
+				result[position].Summary = row.Summary
+			}
+			continue
+		}
+		row.Count = 1
+		at[k] = len(result)
+		result = append(result, row)
+	}
+	return result
+}
+
+// dropEcho is text unless it only repeats what stands beside it.
+func dropEcho(text, beside string) string {
+	fold := func(value string) string {
+		return strings.ToLower(strings.TrimRight(strings.TrimSpace(value), "."))
+	}
+	if fold(text) == fold(beside) {
+		return ""
+	}
+	return text
 }
 
 // allConnections is the complete matched set. A cross-target connection is

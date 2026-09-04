@@ -1,5 +1,5 @@
 <section id="{{.ID}}">
-<h2>{{.Label}} <span class="meta">{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}{{if .Root}} · <code>{{.Root}}</code>{{end}}</span></h2>
+<h2>{{.Label}} <span class="meta">{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}{{if and .Root (ne .Root ".")}} · <code>{{.Root}}</code>{{end}}</span></h2>
 {{if not .FactsAvailable}}<p class="empty">This run did not read the repository, so this page shows only what the model grouped.</p>{{end}}
 {{if .Map}}{{template "map.html" .Map}}{{end}}
 <nav class="jump" aria-label="Sections of this target"><a href="#{{.ID}}-inbound">Inbound{{if .InboundCount}} <b>{{.InboundCount}}</b>{{end}}</a><a href="#{{.ID}}-entrypoints">Entrypoints{{if .Entrypoints}} <b>{{len .Entrypoints}}</b>{{end}}</a><a href="#{{.ID}}-core">Core{{if .Core}} <b>{{len .Core}}</b>{{end}}</a><a href="#{{.ID}}-external">Dependencies{{if .Dependencies}} <b>{{len .Dependencies}}</b>{{end}}</a><a href="#{{.ID}}-flow">Main flow{{if .Flow}} <b>{{len .Flow.Steps}}</b>{{end}}</a><a href="#{{.ID}}-dynamic">Runs code{{if .Dynamic}} <b>{{len .Dynamic}}</b>{{end}}</a><a href="#{{.ID}}-config">Config{{if .Config}} <b>{{len .Config}}</b>{{end}}</a><a href="#{{.ID}}-dead">Unreached{{if .Dead}} <b>{{len .Dead}}</b>{{end}}</a><a href="#{{.ID}}-todos">TODOs{{if .Todos}} <b>{{len .Todos}}</b>{{end}}</a></nav>

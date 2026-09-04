@@ -1275,11 +1275,22 @@ const (
 	// as wide.
 	repoCalledPerRow = 4
 	repoBarWidth     = 158.0
-	repoNameBudget   = 24
-	repoNameLines    = 2
+	// repoNameBudget is in characters of the bold name at the node width
+	// above. Twenty-four let github.com/go-chi/chi/v5 — exactly twenty-four
+	// — stay on one line and run past the box; it breaks at the slashes now.
+	repoNameBudget = 20
+	repoNameLines  = 2
 	// repoDetailBudget is what fits on the line under the name at the node
 	// width above.
 	repoDetailBudget = 30
+	// An arrow between two targets with a third between them on the row used
+	// to run straight through the third box and out its other side, where it
+	// merged with that box's own arrow: on chi's map rest-example reaching
+	// chi/v5 read as versions reaching it twice. Such an arrow swings under
+	// the row instead. repoDetourPull is the control-point offset; a cubic
+	// with both controls pulled by it reaches three quarters of the way down.
+	repoDetourPull      = 88.0
+	repoDetourLabelDrop = 14.0
 )
 
 type pageRepoMap struct {
@@ -1475,7 +1486,12 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 	}
 	result.Width = mapPadding*2 + float64(columns)*repoNodeWidth + float64(columns-1)*gapX
 	result.Height = repoRowGap*2 + float64(rows)*repoNodeHeight + float64(rows-1)*repoNodeGapY
-	result.Edges = builder.repoEdges(centres)
+	edges, reach := builder.repoEdges(centres)
+	result.Edges = edges
+	// An arrow that swings under its row needs the map to reach that far.
+	if reach+repoRowGap > result.Height {
+		result.Height = reach + repoRowGap
+	}
 	result.MinWidth = mapMinWidth(result.Width)
 	result.Caption = repoMapCaption(len(builder.sections), len(unread), len(result.Edges))
 	return result
@@ -1571,9 +1587,9 @@ func repoEdgeLabel(calls, symbols int) string {
 }
 
 // repoEdges counts the portals and imports between each ordered pair of targets.
-func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) []pageRepoEdge {
+func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) ([]pageRepoEdge, float64) {
 	if builder.data.Facts == nil {
-		return nil
+		return nil, 0
 	}
 	type pair struct{ from, to string }
 	counts := make(map[pair]int)
@@ -1610,30 +1626,67 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) []pageRepo
 		}
 	}
 	var result []pageRepoEdge
+	bottom := 0.0
 	for _, key := range order {
 		from, fromKnown := nodes[key.from]
 		to, toKnown := nodes[key.to]
 		if !fromKnown || !toKnown {
 			continue
 		}
-		startX, startY := from.X+from.Width, from.Y+from.Height/2
-		endX, endY := to.X, to.Y+to.Height/2
-		if to.X < from.X {
-			startX, endX = from.X, to.X+to.Width
-		}
-		bend := (endX - startX) / 2
-		result = append(result, pageRepoEdge{
+		edge, reach := repoEdgeGeometry(from, to, nodes)
+		edge.Label = repoEdgeLabel(counts[key], symbols[key])
+		// Dashed only when nothing about this pair is exact; one uncertain
+		// crossing among several must not make the whole link look uncertain.
+		// An import is always exact.
+		edge.Possible = symbols[key] == 0 && exact[key] == 0
+		result = append(result, edge)
+		bottom = max(bottom, reach)
+	}
+	return result, bottom
+}
+
+// repoEdgeGeometry draws one arrow between two targets and says how far down
+// the map it reaches. Side to side when nothing is in the way; under the row
+// when a third box sits between the two, because drawn straight it ran through
+// that box and came out looking like the box's own arrow.
+func repoEdgeGeometry(from, to *pageRepoNode, nodes map[string]*pageRepoNode) (pageRepoEdge, float64) {
+	startX, startY := from.X+from.Width, from.Y+from.Height/2
+	endX, endY := to.X, to.Y+to.Height/2
+	if to.X < from.X {
+		startX, endX = from.X, to.X+to.Width
+	}
+	bend := (endX - startX) / 2
+	if !repoRowHasBoxBetween(from, to, nodes) {
+		return pageRepoEdge{
 			Path: fmt.Sprintf("M%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f",
 				startX, startY, startX+bend, startY, endX-bend, endY, endX, endY),
-			Label:  repoEdgeLabel(counts[key], symbols[key]),
 			LabelX: (startX + endX) / 2, LabelY: (startY+endY)/2 - 7,
-			// Dashed only when nothing about this pair is exact; one uncertain
-			// crossing among several must not make the whole link look uncertain.
-			// An import is always exact.
-			Possible: symbols[key] == 0 && exact[key] == 0,
-		})
+		}, endY + from.Height/2
 	}
-	return result
+	lowest := startY + repoDetourPull*0.75
+	return pageRepoEdge{
+		Path: fmt.Sprintf("M%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f",
+			startX, startY, startX+bend, startY+repoDetourPull, endX-bend, endY+repoDetourPull, endX, endY),
+		LabelX: (startX + endX) / 2, LabelY: lowest + repoDetourLabelDrop,
+	}, lowest + repoDetourLabelDrop + 6
+}
+
+// repoRowHasBoxBetween is whether a third target sits on the same row between
+// these two, in the stretch a straight arrow would cross.
+func repoRowHasBoxBetween(from, to *pageRepoNode, nodes map[string]*pageRepoNode) bool {
+	if from.Y != to.Y {
+		return false
+	}
+	left, right := min(from.X, to.X), max(from.X, to.X)
+	for _, node := range nodes {
+		if node == from || node == to || node.Y != from.Y {
+			continue
+		}
+		if node.X > left && node.X < right {
+			return true
+		}
+	}
+	return false
 }
 
 // flowStepsByGroup labels each group with the main-flow step numbers that pass

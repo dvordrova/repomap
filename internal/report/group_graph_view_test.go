@@ -471,3 +471,22 @@ func matchedGroupIndex(t *testing.T, indexes []groupindex.Index, targetID string
 	t.Fatalf("matched GroupsIndex %q is absent", targetID)
 	return groupindex.Index{}
 }
+
+// Three exact calls from one group to another were three identical rows on
+// the card, each explaining its label with the label again.
+func TestConnectionRowsAreSaidOnceAndDoNotEchoTheirLabel(t *testing.T) {
+	row := pageConnection{Arrow: "←", Title: "Client IP middleware", Label: "provides client IP context", Summary: "Provides client IP context."}
+	rows := collapseConnections([]pageConnection{row, row, row, {Arrow: "→", Title: "Timeout", Label: "uses context", Summary: "hands the request context on"}})
+	if len(rows) != 2 || rows[0].Count != 3 || rows[1].Count != 1 {
+		t.Fatalf("rows = %#v", rows)
+	}
+	if rows[0].Summary != "" {
+		t.Errorf("a summary repeating the label was kept: %q", rows[0].Summary)
+	}
+	if rows[1].Summary != "hands the request context on" {
+		t.Errorf("a summary saying more than the label was lost: %q", rows[1].Summary)
+	}
+	if dropEcho("Compression middleware", "Compression middleware") != "" || dropEcho("gzip and brotli", "Compression middleware") == "" {
+		t.Error("dropEcho keeps the echo or drops the explanation")
+	}
+}

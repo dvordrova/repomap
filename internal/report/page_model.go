@@ -201,6 +201,8 @@ type pageBuilder struct {
 	claimsByID  map[string]claims.Claim
 	subjects    map[string]subjectRef
 	groupTitles map[groupindex.Endpoint]string
+	// owners is built once: which target indexed which packages.
+	owners []packageOwner
 }
 
 func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (*pageView, error) {
