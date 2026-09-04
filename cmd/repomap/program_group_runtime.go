@@ -115,7 +115,6 @@ func groupProgramIndexForRun(
 		output.State("Program grouping", "ready", details...)
 	}
 	closeErr := writer.Close()
-	reportSemanticOrdinalScaleWarnings(output, "Program grouping", nil, observer.OrdinalScaleWarnings())
 	if closeErr != nil {
 		return groupindex.Index{}, fmt.Errorf("program grouping: close artifact writer: %w", closeErr)
 	}
@@ -191,7 +190,6 @@ func matchPublishedRunGroups(
 	started := time.Now()
 	matched, diagnostics, runErr := runner(ctx, executor, provider, indexes)
 	closeErr := writer.Close()
-	reportSemanticOrdinalScaleWarnings(output, "Group matching", nil, observer.OrdinalScaleWarnings())
 	if runErr != nil {
 		return nil, errors.Join(fmt.Errorf("group matching: match target graphs: %w", runErr), closeErr)
 	}

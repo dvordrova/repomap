@@ -62,18 +62,6 @@ func TestSealedResultProjectsExactProgramIndexAndDependencies(t *testing.T) {
 	}
 }
 
-func TestFormerResultSizeIsWarningOnly(t *testing.T) {
-	warnings := scaleWarningsForResultBytes(AdvisoryResultBytes + 1)
-	if len(warnings) != 1 || warnings[0].Kind != ScaleWarningResultBytes ||
-		warnings[0].Retained != AdvisoryResultBytes+1 ||
-		warnings[0].AdvisorySize != AdvisoryResultBytes {
-		t.Fatalf("warnings = %#v", warnings)
-	}
-	if warnings := scaleWarningsForResultBytes(AdvisoryResultBytes); len(warnings) != 0 {
-		t.Fatalf("threshold warning = %#v", warnings)
-	}
-}
-
 func TestValidateRejectsPreviousJSTSResultVersion(t *testing.T) {
 	result := minimalResult(t, "typescript").Snapshot()
 	result.Version = Version - 1

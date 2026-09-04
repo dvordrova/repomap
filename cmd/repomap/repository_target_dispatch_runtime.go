@@ -12,7 +12,6 @@ import (
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/jstsproject"
-	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
@@ -97,7 +96,6 @@ func dispatchRepositoryTargetPlan(
 		selectedTargets[target.Key] = selected
 		selectedTargetRows = append(selectedTargetRows, selected)
 	}
-	reportSelectedTargetOutcomeScaleWarnings(options.Output, selectedTargetRows)
 	defaultSelected, found := selectedTargets[options.Plan.Default]
 	if !found {
 		return report.FailedPublicationAssessment(), "", fmt.Errorf(
@@ -351,7 +349,6 @@ func dispatchRepositoryTargetPlan(
 	if err != nil {
 		return failPublication(err)
 	}
-	reportTargetOutcomeScaleWarnings(options.Output, targetOutcomePortfolio)
 	if len(runs) == 0 {
 		failedRunDir := filepath.Join(options.DebugDir, options.RunID)
 		flushFailedFirstLayerSemanticJournal(failedRunDir, options.FirstLayer, options.Output)
@@ -410,7 +407,6 @@ func dispatchRepositoryTargetPlan(
 	if err != nil {
 		return failPublication(err)
 	}
-	reportProgramPagePortfolioScaleWarnings(options.Output, portfolio)
 	if err := persistTargetOutcomePortfolioForRuns(targetOutcomePortfolio, runs); err != nil {
 		return failPublication(err)
 	}
@@ -420,9 +416,6 @@ func dispatchRepositoryTargetPlan(
 		return failPublication(err)
 	}
 	assessment, err := publishProgramPageBundle(portfolio, runs)
-	reportTargetPageRunScaleWarnings(
-		options.Output, runs, assessment.ScaleWarnings(), assessment.TargetScaleWarnings(),
-	)
 	if err != nil {
 		return failPublication(err)
 	}
@@ -497,14 +490,6 @@ func materializeSelectedJSTSProjects(
 				err,
 			)
 		}
-		// The validated selected project is complete authority at this
-		// boundary. Report its advisory scale measurements now, before later
-		// rebinding, child-run setup, ProgramIndex projection, or persistence
-		// can fail and hide them.
-		reportJSTSProjectScaleWarnings(options.Output, programindex.Target{
-			ID: project.ProgramTargetID, Language: project.Project.Language,
-			Name: project.Project.Name, Selector: project.Project.Selector,
-		}, project)
 		result[target.Key] = project.Snapshot()
 		if options.Output != nil {
 			options.Output.State(

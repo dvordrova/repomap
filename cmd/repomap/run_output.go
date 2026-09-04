@@ -28,10 +28,9 @@ type runOutput struct {
 	// started is when the run began; every stage line says how far in it
 	// is, so a reader can tell a slow stage from a slow provider without a
 	// stopwatch. modelTime is what the provider took, by stage.
-	started                      time.Time
-	modelTime                    map[string]*stageModelTime
-	lastProgress                 map[string]runOutputProgress
-	reportedTargetReportWarnings map[targetReportScaleWarningOutputKey]struct{}
+	started      time.Time
+	modelTime    map[string]*stageModelTime
+	lastProgress map[string]runOutputProgress
 }
 
 // runOutputWarningSink adapts bounded warning writers to the ordinary console
@@ -77,12 +76,11 @@ func newRunOutput(writer io.Writer) *runOutput {
 		writer = io.Discard
 	}
 	return &runOutput{
-		writer:                       writer,
-		now:                          time.Now,
-		started:                      time.Now(),
-		modelTime:                    make(map[string]*stageModelTime),
-		lastProgress:                 make(map[string]runOutputProgress),
-		reportedTargetReportWarnings: make(map[targetReportScaleWarningOutputKey]struct{}),
+		writer:       writer,
+		now:          time.Now,
+		started:      time.Now(),
+		modelTime:    make(map[string]*stageModelTime),
+		lastProgress: make(map[string]runOutputProgress),
 	}
 }
 

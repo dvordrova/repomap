@@ -919,9 +919,7 @@ func generateWithReceipt(
 	// The final canonical report JSON exists at this boundary. Preserve its
 	// advisory measurement even when manifest preparation or any later
 	// publication step fails.
-	generationDiagnostics := GenerationDiagnostics{
-		scaleWarnings: reportJSONScaleWarnings(reportJSON),
-	}
+	generationDiagnostics := GenerationDiagnostics{}
 	if diagnosticsOut != nil {
 		*diagnosticsOut = generationDiagnostics
 	}
@@ -930,13 +928,6 @@ func generateWithReceipt(
 	)
 	if err != nil {
 		return err
-	}
-	generationDiagnostics.scaleWarnings = append(
-		generationDiagnostics.scaleWarnings,
-		RunManifestScaleWarnings(manifest)...,
-	)
-	if diagnosticsOut != nil {
-		*diagnosticsOut = generationDiagnostics
 	}
 	var preparedReceipt VerifiedRunReceipt
 	if receiptOut != nil {
@@ -958,20 +949,7 @@ func generateWithReceipt(
 	// The page is stamped with the digest of the exact report.json bytes it
 	// was rendered from, so publication can prove the pair belongs together.
 	renderOptions.ReportSHA256 = manifestSHA256(reportJSON)
-	reportHTML, renderDiagnostics, err := renderHTMLWithOptionsDiagnostics(&renderData, renderOptions)
-	generationDiagnostics.rawStandaloneBundlePayloadBytes = renderDiagnostics.rawStandaloneBundlePayloadBytes
-	generationDiagnostics.scaleWarnings = append(
-		generationDiagnostics.scaleWarnings, renderDiagnostics.scaleWarnings...,
-	)
-	generationDiagnostics.targetScaleWarnings = append(
-		generationDiagnostics.targetScaleWarnings, renderDiagnostics.targetScaleWarnings...,
-	)
-	if err == nil {
-		generationDiagnostics.scaleWarnings = append(
-			generationDiagnostics.scaleWarnings,
-			reportHTMLScaleWarningsForSize(int64(len(reportHTML)))...,
-		)
-	}
+	reportHTML, _, err := renderHTMLWithOptionsDiagnostics(&renderData, renderOptions)
 	if diagnosticsOut != nil {
 		*diagnosticsOut = generationDiagnostics
 	}
@@ -1211,3 +1189,8 @@ func scrubRenderLocalPaths(value any, roots []string) {
 	}
 	scrub(value)
 }
+
+// GenerationDiagnostics is what report generation has to say besides its
+// result. It used to carry advisory scale warnings; it carries nothing now
+// and stays only so the generation functions keep their shape.
+type GenerationDiagnostics struct{}

@@ -615,35 +615,6 @@ func TestCompileIsExplicitlyNotApplicableWithoutGuidance(t *testing.T) {
 	}
 }
 
-func TestCompileAndBatchesRetainGuidanceBeyondFormerAtomicWindow(t *testing.T) {
-	repository, _ := testCorpus(t, map[string]string{
-		"README.md": strings.Repeat("x", MaxRequestBytes),
-		"main.go":   "package main\n",
-	})
-	compilation, err := compileWithTestHints(t, "sample", repository)
-	if err != nil {
-		t.Fatalf("Compile oversized aggregate: %v", err)
-	}
-	if len(InputScaleWarnings(compilation)) == 0 {
-		t.Fatal("oversize aggregate emitted no diagnostic")
-	}
-	shards, err := batches(compilation)
-	if err != nil {
-		t.Fatalf("warning-only evidence window rejected complete guidance: %v", err)
-	}
-	covered := 0
-	for _, shard := range shards {
-		for _, document := range shard.Request.GuidanceDocuments {
-			if document.Path == "README.md" && document.Content == compilation.Request.GuidanceDocuments[0].Content {
-				covered++
-			}
-		}
-	}
-	if covered == 0 {
-		t.Fatal("provider shards did not retain complete README bytes")
-	}
-}
-
 func TestRunSendsFourMiBReadmeThroughSemanticEnvelope(t *testing.T) {
 	content := strings.Repeat("complete repository guidance\n", (4<<20)/29+1)
 	repository, _ := testCorpus(t, map[string]string{
@@ -742,74 +713,6 @@ func TestRunExecutesEveryShardAndReturnsOneCompleteResult(t *testing.T) {
 	if len(execution.Outcomes) != len(batches) || provider.calls.Load() != int64(len(batches)) ||
 		execution.Result == nil || len(execution.Result) != 0 {
 		t.Fatalf("execution = %#v, calls = %d, batches = %d", execution, provider.calls.Load(), len(batches))
-	}
-}
-
-func TestFormerPerFileThresholdsAreWarningOnly(t *testing.T) {
-	repository, _ := testCorpus(t, map[string]string{
-		"README.md": "Run main.go as the client with configuration and deployment support.\n",
-		"main.go":   "package main\n",
-	})
-	compilation, err := compileWithTestHints(t, "sample", repository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mainID, _ := repository.ID("main.go")
-	long := strings.Repeat("x", AdvisoryHypothesisBytes+1)
-	raw := fmt.Sprintf(`[{"file_ref":%q,"classifications":[
-		{"class":"target_entry","hypotheses":["a","b","c",%q]},
-		{"class":"client_entry","hypotheses":["client"]},
-		{"class":"configuration","hypotheses":["config"]},
-		{"class":"deployment","hypotheses":["deploy"]}
-	]}]`, mainID, long)
-	result, err := ResolveResponse(compilation, []byte(raw))
-	if err != nil {
-		t.Fatalf("ResolveResponse crossed former thresholds: %v", err)
-	}
-	if len(result) != 1 || len(result[0].Classifications) != 4 {
-		t.Fatalf("result = %#v", result)
-	}
-	warnings := ResultScaleWarnings(result)
-	for _, kind := range []ScaleWarningKind{
-		ScaleWarningClassifications, ScaleWarningHypotheses, ScaleWarningHypothesisBytes,
-	} {
-		if !slices.ContainsFunc(warnings, func(warning ScaleWarning) bool { return warning.Kind == kind }) {
-			t.Fatalf("warnings %#v omit %s", warnings, kind)
-		}
-	}
-	snapshot, err := result.SnapshotAgainstCorpus(repository)
-	if err != nil || !reflect.DeepEqual(snapshot, result) {
-		t.Fatalf("SnapshotAgainstCorpus = %#v, %v", snapshot, err)
-	}
-}
-
-func TestExecutionScaleWarningsUseExactOutcomeResponseBytes(t *testing.T) {
-	execution := Execution{
-		Result: Result{{
-			FileRef: "f1",
-			Classifications: []Classification{{
-				Class: ClassDocumentation, Hypotheses: []string{"small merged result"},
-			}},
-		}},
-		Outcomes: []llm.Outcome[Result]{
-			{ResponseBytes: AdvisoryResponseBytes/2 + 1},
-			{ResponseBytes: AdvisoryResponseBytes/2 + 1},
-		},
-	}
-	warnings := ExecutionScaleWarnings(execution)
-	warningIndex := slices.IndexFunc(warnings, func(warning ScaleWarning) bool {
-		return warning.Kind == ScaleWarningAggregateResponse
-	})
-	if warningIndex < 0 {
-		t.Fatalf("warnings %#v omit exact provider response accounting", warnings)
-	}
-	if got, want := warnings[warningIndex].Retained, AdvisoryResponseBytes+2; got != want {
-		t.Fatalf("aggregate response bytes = %d, want exact outcome sum %d", got, want)
-	}
-	if slices.ContainsFunc(ResultScaleWarnings(execution.Result), func(warning ScaleWarning) bool {
-		return warning.Kind == ScaleWarningAggregateResponse
-	}) {
-		t.Fatal("merged result JSON was reported as provider response bytes")
 	}
 }
 

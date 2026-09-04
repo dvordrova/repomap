@@ -33,26 +33,6 @@ const (
 	refPrefix        = "rc-"
 )
 
-type ScaleWarningKind string
-
-const (
-	ScaleWarningFiles         ScaleWarningKind = "corpus_files"
-	ScaleWarningVisiblePaths  ScaleWarningKind = "corpus_visible_paths"
-	ScaleWarningGitlinks      ScaleWarningKind = "corpus_gitlinks"
-	ScaleWarningSnapshotBytes ScaleWarningKind = "corpus_snapshot_bytes"
-	ScaleWarningReadBytes     ScaleWarningKind = "corpus_complete_read_bytes"
-)
-
-// ScaleWarning describes retained repository authority beyond a former local
-// cutoff. It is diagnostic only and never participates in corpus identity.
-type ScaleWarning struct {
-	Kind                ScaleWarningKind
-	AdvisorySize        int64
-	Retained            int64
-	AffectedCollections int
-	MaximumRetained     int64
-}
-
 // ForbiddenPath reports repository paths which are never semantic corpus
 // input. The policy is intentionally language-neutral because the initial
 // repository-guidance request sees the complete corpus namespace before a
@@ -444,55 +424,6 @@ func (corpus *Corpus) recordCompleteRead(byteCount int) {
 	if int64(byteCount) > corpus.maximumCompleteReadBytes {
 		corpus.maximumCompleteReadBytes = int64(byteCount)
 	}
-}
-
-// ScaleWarnings returns aggregate warning-only observations over complete
-// corpus authority and complete reads performed so far.
-func (corpus *Corpus) ScaleWarnings() []ScaleWarning {
-	if corpus == nil {
-		return nil
-	}
-	snapshotBytes := int64(0)
-	if encoded, err := json.Marshal(corpus.snapshot); err == nil {
-		snapshotBytes = int64(len(encoded))
-	}
-	corpus.scaleMu.Lock()
-	readCount := corpus.oversizedCompleteReadCount
-	maximumRead := corpus.maximumCompleteReadBytes
-	corpus.scaleMu.Unlock()
-	return corpusScaleWarnings(
-		len(corpus.snapshot.Entries), len(corpus.visiblePaths), len(corpus.gitlinks),
-		snapshotBytes, readCount, maximumRead,
-	)
-}
-
-func corpusScaleWarnings(
-	files, visiblePaths, gitlinks int,
-	snapshotBytes int64,
-	oversizedReads int,
-	maximumReadBytes int64,
-) []ScaleWarning {
-	warnings := make([]ScaleWarning, 0, 5)
-	appendCount := func(kind ScaleWarningKind, retained, advisory int64) {
-		if retained > advisory {
-			warnings = append(warnings, ScaleWarning{
-				Kind: kind, Retained: retained, AdvisorySize: advisory,
-				AffectedCollections: 1, MaximumRetained: retained,
-			})
-		}
-	}
-	appendCount(ScaleWarningFiles, int64(files), MaxFiles)
-	appendCount(ScaleWarningVisiblePaths, int64(visiblePaths), MaxVisiblePaths)
-	appendCount(ScaleWarningGitlinks, int64(gitlinks), MaxFiles)
-	appendCount(ScaleWarningSnapshotBytes, snapshotBytes, MaxSnapshotBytes)
-	if oversizedReads > 0 && maximumReadBytes > MaxReadBytes {
-		warnings = append(warnings, ScaleWarning{
-			Kind: ScaleWarningReadBytes, AdvisorySize: MaxReadBytes,
-			Retained: maximumReadBytes, AffectedCollections: oversizedReads,
-			MaximumRetained: maximumReadBytes,
-		})
-	}
-	return warnings
 }
 
 // Close prevents new reads and releases the confined repository root. It is

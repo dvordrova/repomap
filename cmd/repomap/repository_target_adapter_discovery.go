@@ -131,7 +131,6 @@ func discoverPythonRepositoryTargets(
 		return repositoryTargetAdapterDiscovery{}, false, fmt.Errorf("validate Python target catalog: %w", err)
 	}
 	catalog = catalog.Snapshot()
-	reportPythonTargetCatalogScaleWarnings(options.Output, catalog)
 	candidates, resolver, err := pythontarget.FileCandidatesWithResolver(options.Repository, catalog)
 	if err != nil {
 		return repositoryTargetAdapterDiscovery{}, false,

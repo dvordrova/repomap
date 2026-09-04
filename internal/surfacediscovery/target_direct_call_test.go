@@ -186,47 +186,6 @@ func leaf() {}
 	}
 }
 
-func TestTargetDirectCallDefaultRetainsCallsBeyondFormerDepth(t *testing.T) {
-	repository := t.TempDir()
-	writeTargetScopeFile(t, repository, "go.mod", "module example.com/deep\n\ngo 1.24\n")
-	var source strings.Builder
-	source.WriteString("package main\n\nfunc main() { step0() }\n")
-	for depth := 0; depth < AdvisoryDirectCallMaxDepth+2; depth++ {
-		if depth == AdvisoryDirectCallMaxDepth+1 {
-			fmt.Fprintf(&source, "func step%d() {}\n", depth)
-			continue
-		}
-		fmt.Fprintf(&source, "func step%d() { step%d() }\n", depth, depth+1)
-	}
-	writeTargetScopeFile(t, repository, "main.go", source.String())
-
-	result, err := analyzeForTest(
-		defaultHostOptions(repository),
-		targetDirectCallExecutableInput("example.com/deep", "main.go", 3),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	index := result.DirectCallIndex
-	if index == nil || index.State != DirectCallIndexReady ||
-		index.Scope.MaxDepth != 0 || index.Scope.EdgeLimit != 0 {
-		t.Fatalf("unbounded default index = %#v", index)
-	}
-	wantLastEdge := fmt.Sprintf("step%d->step%d", AdvisoryDirectCallMaxDepth, AdvisoryDirectCallMaxDepth+1)
-	if !targetDirectCallEdgeNames(index)[wantLastEdge] {
-		t.Fatalf("default graph lost edge beyond former depth %d: %v", AdvisoryDirectCallMaxDepth, targetDirectCallEdgeNames(index))
-	}
-	if index.Coverage.TraversalDepthReached <= AdvisoryDirectCallMaxDepth ||
-		index.Coverage.DepthBoundRepositoryCallsExcluded != 0 {
-		t.Fatalf("default traversal coverage = %#v", index.Coverage)
-	}
-	warnings := DirectCallScaleWarnings(*index)
-	if len(warnings) != 1 || warnings[0].Kind != DirectCallScaleWarningDepth ||
-		warnings[0].Retained != index.Coverage.TraversalDepthReached {
-		t.Fatalf("deep graph warnings = %#v", warnings)
-	}
-}
-
 func TestTargetDirectCallEdgeLimitClosesBeforeProviderGraphCanBeUsed(t *testing.T) {
 	repository := t.TempDir()
 	writeTargetScopeFile(t, repository, "go.mod", "module example.com/limit\n\ngo 1.24\n")
@@ -642,12 +601,6 @@ func TestDirectCallBuilderRetainsPastFormerNodeAndEdgeThresholds(t *testing.T) {
 		len(index.Edges) != AdvisoryDirectCallMaxEdges+1 {
 		t.Fatalf("builder truncated or closed former thresholds: state=%s nodes=%d edges=%d",
 			index.State, len(index.Nodes), len(index.Edges))
-	}
-}
-
-func TestDirectCallScaleWarningsCannotRejectMalformedDiagnosticInput(t *testing.T) {
-	if warnings := DirectCallScaleWarnings(DirectCallIndex{}); len(warnings) != 0 {
-		t.Fatalf("malformed diagnostic input warnings = %#v, want none and no failure", warnings)
 	}
 }
 

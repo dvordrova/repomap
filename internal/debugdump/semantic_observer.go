@@ -18,20 +18,6 @@ type SemanticObserver struct {
 	pending         []SemanticExchange
 }
 
-// SemanticOrdinalScaleWarning reports a former journal ordinal ceiling that
-// a complete ordinary observer crossed. The warning is aggregate: callers do
-// not need to print one line for every retained exchange.
-type SemanticOrdinalScaleWarning struct {
-	Kind         string
-	Retained     int
-	AdvisorySize int
-}
-
-const (
-	SemanticScaleWarningAttemptOrdinal  = "semantic_attempt_ordinal"
-	SemanticScaleWarningInstanceOrdinal = "semantic_exchange_instance_ordinal"
-)
-
 func NewSemanticObserver(writer *Writer) *SemanticObserver {
 	return &SemanticObserver{writer: writer, ordinals: make(map[string]int)}
 }
@@ -67,37 +53,6 @@ func (observer *SemanticObserver) ObserveStage(stage string, event llm.Event) er
 		writer.RecordSemanticExchange(exchange)
 	}
 	return nil
-}
-
-// OrdinalScaleWarnings returns at most one warning for each former journal
-// ordinal ceiling. It snapshots only exchanges the observer actually recorded,
-// so an unrecordable event does not inflate the measurement.
-func (observer *SemanticObserver) OrdinalScaleWarnings() []SemanticOrdinalScaleWarning {
-	if observer == nil {
-		return nil
-	}
-	observer.mu.Lock()
-	defer observer.mu.Unlock()
-	maximumAttemptOrdinal := 0
-	for _, ordinal := range observer.ordinals {
-		if ordinal > maximumAttemptOrdinal {
-			maximumAttemptOrdinal = ordinal
-		}
-	}
-	warnings := make([]SemanticOrdinalScaleWarning, 0, 2)
-	if maximumAttemptOrdinal > MaxSemanticAttemptOrdinal {
-		warnings = append(warnings, SemanticOrdinalScaleWarning{
-			Kind: SemanticScaleWarningAttemptOrdinal, Retained: maximumAttemptOrdinal,
-			AdvisorySize: MaxSemanticAttemptOrdinal,
-		})
-	}
-	if observer.instanceOrdinal > MaxSemanticExchangeInstanceOrdinal {
-		warnings = append(warnings, SemanticOrdinalScaleWarning{
-			Kind: SemanticScaleWarningInstanceOrdinal, Retained: observer.instanceOrdinal,
-			AdvisorySize: MaxSemanticExchangeInstanceOrdinal,
-		})
-	}
-	return warnings
 }
 
 // Flush persists events buffered before the ordinary run directory existed.

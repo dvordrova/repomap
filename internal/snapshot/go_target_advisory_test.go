@@ -80,24 +80,6 @@ func TestDetectGoTargetAdvisoryRequiresUniqueStrongAlternative(t *testing.T) {
 	}
 }
 
-func TestRepositoryScaleWarningsDoNotChangeAdvisoryAuthority(t *testing.T) {
-	warnings := RepositoryScaleWarnings(Snapshot{repositoryScaleMetrics: repositoryScaleMetrics{
-		goTargetFiles:         MaxGoTargetAdvisoryFiles + 1,
-		goTargetSourceBytes:   AdvisoryGoTargetSourceBytes + 1,
-		goTargetEvidencePaths: MaxGoTargetAdvisoryEvidencePaths + 1,
-		manifestBytes:         AdvisoryManifestBytes + 1,
-		goModuleBytes:         AdvisoryGoModuleBytes + 1,
-	}})
-	if len(warnings) != 5 {
-		t.Fatalf("warnings = %#v", warnings)
-	}
-	for _, warning := range warnings {
-		if warning.Retained != warning.AdvisorySize+1 {
-			t.Fatalf("warning = %#v", warning)
-		}
-	}
-}
-
 func TestGoTargetAdvisoryExcludesNonProductPaths(t *testing.T) {
 	for _, path := range []string{
 		"daemon_linux_test.go",

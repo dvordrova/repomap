@@ -71,19 +71,6 @@ func prepareGoRepositoryProgramFacts(
 	result, err := state.workspace.analyze(
 		ctx, surfaceOptions, scoped, state.all,
 	)
-	targetLabel := repositoryTypedTargetDisplay(target) + " (" + target.Key.String() + ")"
-	if options.Output != nil {
-		coverage := result.Coverage
-		if err != nil {
-			var unavailable *surfacediscovery.AnalysisTargetSSAUnavailableError
-			if errors.As(err, &unavailable) {
-				if failedCoverage, ok := unavailable.ProgramCoverageSnapshot(); ok {
-					coverage = failedCoverage
-				}
-			}
-		}
-		reportPackageDiagnosticScaleWarnings(options.Output, targetLabel, coverage)
-	}
 	if err != nil {
 		return goRepositoryProgramFacts{}, err
 	}
@@ -126,18 +113,12 @@ func prepareGoRepositoryProgramFacts(
 			)
 		}
 	}
-	if options.Output != nil {
-		reportDirectCallIndexScaleWarnings(options.Output, targetLabel, *result.DirectCallIndex)
-	}
 	if scoped.GoFacts.Dependencies == nil {
 		return goRepositoryProgramFacts{}, fmt.Errorf("Go adapter requires target-scoped dependency authority")
 	}
 	ownedDependencies, err := ownRepositoryDependencies(*scoped.GoFacts.Dependencies)
 	if err != nil {
 		return goRepositoryProgramFacts{}, fmt.Errorf("own Go dependency authority: %w", err)
-	}
-	if options.Output != nil {
-		reportDependencyCatalogScaleWarningsForTarget(options.Output, targetLabel, ownedDependencies)
 	}
 	return goRepositoryProgramFacts{
 		Target:            scoped.AnalysisTarget.Snapshot(),

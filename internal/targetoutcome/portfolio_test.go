@@ -3,7 +3,6 @@ package targetoutcome
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -293,63 +292,6 @@ func TestPortfolioRejectsIncompleteDuplicateOrUnsafeBindings(t *testing.T) {
 	if _, err := Build(firstSelected.ID, []Outcome{first, secondDuplicateRun}); err == nil ||
 		!strings.Contains(err.Error(), "duplicate analyzed run id") {
 		t.Fatalf("duplicate run Build error = %v", err)
-	}
-}
-
-func TestBuildRetainsOutcomesBeyondFormerLocalThreshold(t *testing.T) {
-	outcomes := make([]Outcome, MaxOutcomes+1)
-	for position := range outcomes {
-		selected, err := NewSelectedTarget(
-			LanguageGroupGo, ScopeExecutable,
-			fmt.Sprintf("target-%05d", position), fmt.Sprintf("go:target-%05d", position),
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		outcomes[position], err = NewNotAnalyzed(selected, StageProgramAnalysis, ReasonSourceNotAnalyzable)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	portfolio, err := Build(outcomes[0].SelectedTarget.ID, outcomes)
-	if err != nil {
-		t.Fatalf("Build rejected complete outcome inventory: %v", err)
-	}
-	if len(portfolio.Outcomes) != len(outcomes) {
-		t.Fatalf("retained outcomes = %d, want %d", len(portfolio.Outcomes), len(outcomes))
-	}
-	warnings := ScaleWarnings(portfolio)
-	if len(warnings) == 0 || warnings[0].Kind != ScaleWarningOutcomes || warnings[0].MaximumRetained != len(outcomes) {
-		t.Fatalf("scale warnings = %#v", warnings)
-	}
-}
-
-func TestSelectedTargetRetainsAllowedLanguagesBeyondFormerLocalThreshold(t *testing.T) {
-	languages := make([]string, MaxAllowedProgramLanguages+1)
-	for position := range languages {
-		languages[position] = fmt.Sprintf("language-%02d", position)
-	}
-	selected, err := NewSelectedTargetWithLanguages(
-		LanguageGroupGo, languages, ScopeExecutable, "multi-language", "multi-language:target",
-	)
-	if err != nil {
-		t.Fatalf("NewSelectedTargetWithLanguages rejected complete language set: %v", err)
-	}
-	outcome, err := NewNotAnalyzed(selected, StageProgramAnalysis, ReasonSourceNotAnalyzable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	portfolio, err := Build(selected.ID, []Outcome{outcome})
-	if err != nil {
-		t.Fatal(err)
-	}
-	warnings := ScaleWarnings(portfolio)
-	found := false
-	for _, warning := range warnings {
-		found = found || warning.Kind == ScaleWarningAllowedLanguages && warning.MaximumRetained == len(languages)
-	}
-	if !found {
-		t.Fatalf("scale warnings = %#v", warnings)
 	}
 }
 

@@ -108,35 +108,6 @@ func TestExternalAuthorityKindIsRequiredClosedRawAndSealed(t *testing.T) {
 	}
 }
 
-func TestObservedCountsPastFormerPortableCeilingRemainValidAndWarn(t *testing.T) {
-	if strconv.IntSize < 64 {
-		t.Skip("the host int cannot represent a count above the former 32-bit advisory threshold")
-	}
-	former := int64(MaxObservedCount)
-	observed := int(former + 1)
-	input := representativeInput()
-	input.Coverage.ObjectsObserved = observed
-	input.Coverage.RelationsObserved = observed
-	input.Relations[0].TargetsObserved = observed
-	input.Relations[0].WitnessesObserved = observed
-	index, err := newMeasuredProgramIndex(input)
-	if err != nil {
-		t.Fatalf("New above former observed-count threshold: %v", err)
-	}
-	if err := index.Validate(); err != nil {
-		t.Fatalf("Validate above former observed-count threshold: %v", err)
-	}
-	found := false
-	for _, warning := range ScaleWarnings(index) {
-		if warning.Kind == ScaleWarningObservedCount && warning.MaximumRetained >= observed {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("former observed-count threshold produced no warning: %#v", ScaleWarnings(index))
-	}
-}
-
 func TestNewRejectsMethodOwnedByNonType(t *testing.T) {
 	input := representativeInput()
 	input.Objects[0].OwnerRef = "object-package"

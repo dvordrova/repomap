@@ -122,61 +122,6 @@ func repositoryShapeBounded(repository freshness.RepositoryState) error {
 	return nil
 }
 
-type ScaleWarningKind string
-
-const (
-	ScaleWarningAllowedPaths       ScaleWarningKind = "workspace_allowed_paths"
-	ScaleWarningCapturedInputs     ScaleWarningKind = "workspace_captured_inputs"
-	ScaleWarningDirtyEntries       ScaleWarningKind = "workspace_dirty_entries"
-	ScaleWarningSubmodules         ScaleWarningKind = "workspace_submodules"
-	ScaleWarningStagesPerInput     ScaleWarningKind = "workspace_stages_per_input"
-	ScaleWarningAuthorityTextBytes ScaleWarningKind = "workspace_authority_text_bytes"
-)
-
-type ScaleWarning struct {
-	Kind                ScaleWarningKind
-	AdvisorySize        int
-	AffectedCollections int
-	MaximumRetained     int
-}
-
-// ScaleWarnings reports former aggregate thresholds over complete authority.
-// It is diagnostic-only and never participates in Snapshot construction.
-func ScaleWarnings(input Input) []ScaleWarning {
-	warnings := []ScaleWarning{
-		{Kind: ScaleWarningAllowedPaths, AdvisorySize: advisoryMaximumAllowedPaths},
-		{Kind: ScaleWarningCapturedInputs, AdvisorySize: advisoryMaximumCapturedInputs},
-		{Kind: ScaleWarningDirtyEntries, AdvisorySize: advisoryMaximumRepositoryEntries},
-		{Kind: ScaleWarningSubmodules, AdvisorySize: advisoryMaximumRepositoryEntries},
-		{Kind: ScaleWarningStagesPerInput, AdvisorySize: advisoryMaximumStagesPerInput},
-		{Kind: ScaleWarningAuthorityTextBytes, AdvisorySize: advisoryAuthorityScalarBytes},
-	}
-	record := func(position, retained int) {
-		if retained <= warnings[position].AdvisorySize {
-			return
-		}
-		warnings[position].AffectedCollections++
-		if retained > warnings[position].MaximumRetained {
-			warnings[position].MaximumRetained = retained
-		}
-	}
-	record(0, len(input.AllowedPaths))
-	record(1, len(input.CapturedInputs))
-	record(2, len(input.Repository.Dirty))
-	record(3, len(input.Repository.Submodules))
-	for _, captured := range input.CapturedInputs {
-		record(4, len(captured.Stages))
-	}
-	record(5, authorityScalarBytes(input))
-	result := make([]ScaleWarning, 0, len(warnings))
-	for _, warning := range warnings {
-		if warning.AffectedCollections > 0 {
-			result = append(result, warning)
-		}
-	}
-	return result
-}
-
 func authorityScalarBytes(input Input) int {
 	total := len(input.Repository.Identity) + len(input.Repository.Head) + len(input.AnalysisRoot)
 	for _, dirty := range input.Repository.Dirty {

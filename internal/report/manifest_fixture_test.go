@@ -3,7 +3,6 @@ package report
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,34 +12,6 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/freshness"
 )
-
-func TestRunManifestRetainsRepositoryStateBeyondFormerDirtyEntryThreshold(t *testing.T) {
-	manifest := validRunManifestFixture(t)
-	manifest.RepositoryState.Dirty = make([]freshness.DirtyFile, maxManifestRepositoryDirtyFiles+1)
-	for index := range manifest.RepositoryState.Dirty {
-		manifest.RepositoryState.Dirty[index] = freshness.DirtyFile{
-			Status: "modified", Path: fmt.Sprintf("dirty/%05d.go", index),
-			Kind: freshness.FileRegular, ContentSHA256: strings.Repeat("d", 64),
-		}
-	}
-	digest, err := manifest.RepositoryState.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest.RepositoryStateSHA256 = digest
-	if err := manifest.Validate(); err != nil {
-		t.Fatalf("manifest above former dirty-entry threshold: %v", err)
-	}
-	warnings := RunManifestScaleWarnings(manifest)
-	found := false
-	for _, warning := range warnings {
-		found = found || warning.Kind == ReportScaleWarningDirtyEntries &&
-			warning.Retained == len(manifest.RepositoryState.Dirty)
-	}
-	if !found {
-		t.Fatalf("manifest scale warnings = %#v", warnings)
-	}
-}
 
 func validRunManifestFixture(t *testing.T) RunManifest {
 	t.Helper()

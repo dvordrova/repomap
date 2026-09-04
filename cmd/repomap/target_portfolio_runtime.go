@@ -84,9 +84,6 @@ func selectTargetPortfolioForRun(
 		)
 		return targetportfolio.Selection{}, failed, failErr
 	}
-	// Compilation is already complete authority. Report scale now so a later
-	// provider-visible encoding or provider failure cannot hide the crossing.
-	reportTargetPortfolioScaleWarnings(output, compilation)
 	providerBundle, err := targetportfolio.ProviderVisibleJSON(compilation)
 	if err != nil {
 		failed, failErr := failTargetPortfolioSelection(
@@ -215,7 +212,6 @@ func discoverReadmeFileRolesWithGuidance(
 	if err != nil {
 		return readmeFileRoleDiscovery{}, fmt.Errorf("repository guidance classifier: snapshot documents: %w", err)
 	}
-	reportReadmeFileRoleScaleWarnings(output, readmetargetscout.InputScaleWarnings(compilation))
 	if providers == nil {
 		return readmeFileRoleDiscovery{}, fmt.Errorf("repository guidance classifier: model provider is unavailable; configure the provider and retry")
 	}
@@ -238,7 +234,6 @@ func discoverReadmeFileRolesWithGuidance(
 		provider,
 		compilation,
 	)
-	reportReadmeFileRoleScaleWarnings(output, readmetargetscout.ExecutionScaleWarnings(execution))
 	if err != nil {
 		return readmeFileRoleDiscovery{}, fmt.Errorf(
 			"repository guidance classifier did not complete: %w; fix provider access and retry",
@@ -246,9 +241,6 @@ func discoverReadmeFileRolesWithGuidance(
 		)
 	}
 	result := execution.Result
-	// The accepted role result is already complete authority. Measure its
-	// canonical artifact before any sibling adapter or portfolio step can fail.
-	reportReadmeRoleArtifactScaleWarnings(output, compileReadmeRoleLog(repository, result))
 	if output != nil {
 		counts := readmeRoleCounts(result)
 		source := "live"
@@ -287,25 +279,6 @@ func discoverReadmeFileRolesWithGuidance(
 		)
 	}
 	return readmeFileRoleDiscovery{Roles: result, Guidance: guidance}, nil
-}
-
-func reportReadmeFileRoleScaleWarnings(
-	output *runOutput,
-	warnings []readmetargetscout.ScaleWarning,
-) {
-	if output == nil || len(warnings) == 0 {
-		return
-	}
-	details := []string{
-		"all tracked file authority, repository guidance, compatible closed roles, and hypotheses were retained",
-		"provider requests use an exhaustive bounded shard cover; no local prefix or first-N selection was applied",
-	}
-	for _, warning := range warnings {
-		details = append(details, fmt.Sprintf(
-			"%s: retained %d; usual size %d", warning.Kind, warning.Retained, warning.AdvisorySize,
-		))
-	}
-	output.Warn("Large repository-guidance classification retained", details...)
 }
 
 func readmeRoleCounts(result readmetargetscout.Result) map[readmetargetscout.FileClass]int {
@@ -466,27 +439,6 @@ func applyTargetPortfolioLLMOutcomes(
 	} else if modelOutcome.Metrics.Attempts > 0 {
 		outcome.RequestProvenance = debugdump.SemanticRequestExactSent
 	}
-}
-
-func reportTargetPortfolioScaleWarnings(
-	output *runOutput,
-	compilation targetportfolio.Compilation,
-) {
-	warnings := targetportfolio.ScaleWarnings(compilation)
-	if output == nil || len(warnings) == 0 {
-		return
-	}
-	details := []string{
-		"all merged file candidates, required target refs, executable refs, and hypotheses were retained",
-		"the complete reservoir is classified through bounded disjoint model batches; no local aggregate threshold removed data",
-	}
-	for _, warning := range warnings {
-		details = append(details, fmt.Sprintf(
-			"%s: retained %d bytes; usual one-call size %d bytes",
-			warning.Kind, warning.Retained, warning.AdvisorySize,
-		))
-	}
-	output.Warn("Large target portfolio retained", details...)
 }
 
 func targetPortfolioLLMFailureCode(err error) string {
@@ -794,20 +746,6 @@ func persistReadmeRoleAuthority(
 		return fmt.Errorf("README file-role authority: persist: %w", err)
 	}
 	return nil
-}
-
-func reportReadmeRoleArtifactScaleWarnings(output *runOutput, rows []readmeRoleLogRow) {
-	if output == nil || len(rows) == 0 {
-		return
-	}
-	payload, err := json.MarshalIndent(struct {
-		Version int                `json:"version"`
-		Files   []readmeRoleLogRow `json:"files"`
-	}{Version: 1, Files: rows}, "", "  ")
-	if err != nil {
-		return
-	}
-	reportReadmeFileRoleScaleWarnings(output, readmetargetscout.ArtifactScaleWarnings(len(payload)))
 }
 
 func validateReadmeRoleLog(raw []byte) error {

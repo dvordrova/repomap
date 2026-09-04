@@ -18,46 +18,12 @@ const (
 	AdvisoryGoModuleBytes            = 1024 * 1024
 )
 
-type RepositoryScaleWarningKind string
-
-const (
-	RepositoryScaleWarningGoTargetFiles         RepositoryScaleWarningKind = "go_target_advisory_files"
-	RepositoryScaleWarningGoTargetSourceBytes   RepositoryScaleWarningKind = "go_target_advisory_source_bytes"
-	RepositoryScaleWarningGoTargetEvidencePaths RepositoryScaleWarningKind = "go_target_advisory_evidence_paths"
-	RepositoryScaleWarningManifestBytes         RepositoryScaleWarningKind = "repository_identity_manifest_bytes"
-	RepositoryScaleWarningGoModuleBytes         RepositoryScaleWarningKind = "repository_go_module_bytes"
-)
-
-type RepositoryScaleWarning struct {
-	Kind         RepositoryScaleWarningKind
-	Retained     int
-	AdvisorySize int
-}
-
 type repositoryScaleMetrics struct {
 	goTargetFiles         int
 	goTargetSourceBytes   int
 	goTargetEvidencePaths int
 	manifestBytes         int
 	goModuleBytes         int
-}
-
-func RepositoryScaleWarnings(value Snapshot) []RepositoryScaleWarning {
-	metrics := value.repositoryScaleMetrics
-	warnings := make([]RepositoryScaleWarning, 0, 5)
-	appendWarning := func(kind RepositoryScaleWarningKind, retained, advisory int) {
-		if retained > advisory {
-			warnings = append(warnings, RepositoryScaleWarning{
-				Kind: kind, Retained: retained, AdvisorySize: advisory,
-			})
-		}
-	}
-	appendWarning(RepositoryScaleWarningGoTargetFiles, metrics.goTargetFiles, MaxGoTargetAdvisoryFiles)
-	appendWarning(RepositoryScaleWarningGoTargetSourceBytes, metrics.goTargetSourceBytes, AdvisoryGoTargetSourceBytes)
-	appendWarning(RepositoryScaleWarningGoTargetEvidencePaths, metrics.goTargetEvidencePaths, MaxGoTargetAdvisoryEvidencePaths)
-	appendWarning(RepositoryScaleWarningManifestBytes, metrics.manifestBytes, AdvisoryManifestBytes)
-	appendWarning(RepositoryScaleWarningGoModuleBytes, metrics.goModuleBytes, AdvisoryGoModuleBytes)
-	return warnings
 }
 
 // GoTargetAdvisory is exhaustive deterministic evidence for one unique strong

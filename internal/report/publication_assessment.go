@@ -25,45 +25,13 @@ const PublicationReasonArtifactsInvalid PublicationReason = "artifacts_missing_o
 type PublicationAssessment struct {
 	Status  PublicationReadiness `json:"status"`
 	Reasons []PublicationReason  `json:"reasons,omitempty"`
-
-	scaleWarnings       []ReportInputScaleWarning
-	targetScaleWarnings []TargetReportScaleWarning
 }
 
-// ScaleWarnings returns transient measurements captured by the successful
-// live publication transaction. Recovery assessment deliberately does not
-// reread or decompress the report merely to reconstruct diagnostics.
-func (assessment PublicationAssessment) ScaleWarnings() []ReportInputScaleWarning {
-	return append([]ReportInputScaleWarning(nil), assessment.scaleWarnings...)
-}
-
-// TargetScaleWarnings returns exact target-bound measurements captured during
-// this live publication transaction, including measurements completed before
-// a later sibling or atomic-install failure.
-func (assessment PublicationAssessment) TargetScaleWarnings() []TargetReportScaleWarning {
-	return append([]TargetReportScaleWarning(nil), assessment.targetScaleWarnings...)
-}
-
-func completedPublicationAssessment(
-	publicationErr error,
-	scaleWarnings []ReportInputScaleWarning,
-	targetScaleWarnings []TargetReportScaleWarning,
-) PublicationAssessment {
+func completedPublicationAssessment(publicationErr error) PublicationAssessment {
 	if publicationErr != nil {
-		assessment := FailedPublicationAssessment()
-		assessment.scaleWarnings = append([]ReportInputScaleWarning(nil), scaleWarnings...)
-		assessment.targetScaleWarnings = append(
-			[]TargetReportScaleWarning(nil), targetScaleWarnings...,
-		)
-		return assessment
+		return FailedPublicationAssessment()
 	}
-	return PublicationAssessment{
-		Status:        PublicationReady,
-		scaleWarnings: append([]ReportInputScaleWarning(nil), scaleWarnings...),
-		targetScaleWarnings: append(
-			[]TargetReportScaleWarning(nil), targetScaleWarnings...,
-		),
-	}
+	return PublicationAssessment{Status: PublicationReady}
 }
 
 // AssessRunPublication uses ReadRunManifest as the one semantic and artifact

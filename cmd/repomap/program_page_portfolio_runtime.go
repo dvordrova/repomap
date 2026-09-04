@@ -154,7 +154,6 @@ func finalizeProgramPageRuns(
 		return fmt.Errorf("program page portfolio: collect group graph sources: %w", err)
 	}
 	for index := range runs {
-		reportCurrentCapturedInputScaleWarnings(output, &runs[index])
 		extended, err := report.ExtendRunAuthority(ctx, runs[index].Authority, groupGraphPaths)
 		if err != nil {
 			return fmt.Errorf("program page portfolio: authorize graph sources for run %s: %w", runs[index].RunID, err)
@@ -186,13 +185,7 @@ func finalizeProgramPageRuns(
 		if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
 			return fmt.Errorf("program page portfolio: completed page target mismatch")
 		}
-		receipt, diagnostics, err := run.generateBackingPageData()
-		newWarnings := excludeReportScaleWarnings(
-			diagnostics.ScaleWarnings(),
-			reportScaleWarningKeySet(run.ReportScaleWarnings),
-		)
-		reportInputScaleWarnings(output, newWarnings, run.ProgramPage.ProgramTarget)
-		run.ReportScaleWarnings = append(run.ReportScaleWarnings, newWarnings...)
+		receipt, _, err := run.generateBackingPageData()
 		if err != nil {
 			return fmt.Errorf("program page portfolio: finalize backing run %s: %w", run.RunID, err)
 		}
@@ -210,7 +203,6 @@ func finalizeProgramPageRuns(
 			return fmt.Errorf("program page portfolio: run %s authority mismatch", run.RunID)
 		}
 		run.Receipt = receipt
-		reportCurrentTargetPageScaleWarnings(output, run)
 	}
 	return nil
 }

@@ -112,29 +112,6 @@ func CanonicalBuildTags(values []string) ([]string, error) {
 	return result, nil
 }
 
-type ScaleWarning struct {
-	Kind         string
-	Retained     int
-	AdvisorySize int
-}
-
-func ScaleWarnings(tags []string) []ScaleWarning {
-	result := []ScaleWarning{}
-	if len(tags) > AdvisoryMaximumBuildTags {
-		result = append(result, ScaleWarning{Kind: "go_build_tags", Retained: len(tags), AdvisorySize: AdvisoryMaximumBuildTags})
-	}
-	maximum := 0
-	for _, tag := range tags {
-		if len(tag) > maximum {
-			maximum = len(tag)
-		}
-	}
-	if maximum > AdvisoryBuildTagBytes {
-		result = append(result, ScaleWarning{Kind: "go_build_tag_bytes", Retained: maximum, AdvisorySize: AdvisoryBuildTagBytes})
-	}
-	return result
-}
-
 func validBuildTag(value string) bool {
 	if value == "" {
 		return false

@@ -126,12 +126,6 @@ func enrichProgramIndexForRun(
 		output.State("Program categorization", "ready", details...)
 	}
 	closeErr := writer.Close()
-	reportSemanticOrdinalScaleWarnings(
-		output,
-		"Program categorization",
-		nil,
-		observer.OrdinalScaleWarnings(),
-	)
 	if closeErr != nil {
 		return programindex.Index{}, fmt.Errorf("program categorization: close artifact writer: %w", closeErr)
 	}

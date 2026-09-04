@@ -10,25 +10,6 @@ import (
 	"github.com/dvordrova/repomap/internal/programpage"
 )
 
-// AdvisoryStandaloneTargetBundlePayloadBytes is the size above which one
-// published page is reported as unusually large. It is a warning only and
-// never truncates or rejects a page.
-const AdvisoryStandaloneTargetBundlePayloadBytes int64 = 24 * 1024 * 1024
-
-// StandaloneTargetBundleResourceLimitError is the terminal outcome of a page
-// that cannot be represented. It exposes byte counts only, never content.
-type StandaloneTargetBundleResourceLimitError struct {
-	LimitBytes  int64
-	ActualBytes int64
-}
-
-func (err *StandaloneTargetBundleResourceLimitError) Error() string {
-	return fmt.Sprintf(
-		"report: published page needs %d bytes and the limit is %d",
-		err.ActualBytes, err.LimitBytes,
-	)
-}
-
 // PublishProgramPageBundleFromVerifiedRunsAtomic writes the one physical
 // report page of a repository run. Every analyzed target already persisted
 // its own verified report.json; the owner run holds the complete matched
@@ -89,11 +70,6 @@ func renderPublishedPage(runDir string) ([]byte, error) {
 	rendered, err := executeProgramReport(&data, hex.EncodeToString(digest[:]), localRoots)
 	if err != nil {
 		return nil, err
-	}
-	if int64(len(rendered)) > MaxOrdinaryReportHTMLBytes {
-		return nil, &StandaloneTargetBundleResourceLimitError{
-			LimitBytes: MaxOrdinaryReportHTMLBytes, ActualBytes: int64(len(rendered)),
-		}
 	}
 	return rendered, nil
 }

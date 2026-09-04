@@ -346,7 +346,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		ctx = context.Background()
 	}
 	var repositoryCorpus *corpus.Corpus
-	ownsRepositoryCorpus := deps.sharedRepositoryCorpus == nil
 	if deps.sharedRepositoryCorpus != nil {
 		repositoryCorpus = deps.sharedRepositoryCorpus
 		if err := repositoryCorpus.Snapshot().Validate(); err != nil {
@@ -363,9 +362,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			}
 		}()
 	}
-	if ownsRepositoryCorpus {
-		defer reportCorpusScaleWarnings(humanOutput, repositoryCorpus)
-	}
 	languageEvidence := repositoryLanguages(repositoryCorpus)
 	targetOverride := strings.TrimSpace(*analysisTargetFlag)
 	goBuildTags := append([]string(nil), deps.goBuildTags...)
@@ -381,9 +377,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 		deps.goBuildTags = append([]string(nil), goBuildTags...)
 		deps.goBuildTagsBound = true
-	}
-	if deps.preselectedTarget == nil {
-		reportGoBuildTagScaleWarnings(humanOutput, goBuildTags)
 	}
 	captureRepo := deps.captureRepo
 	if captureRepo == nil {
@@ -446,10 +439,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			len(goSource.TargetCatalog.Entries) == 0) {
 			return fmt.Errorf("repository target planning found Go project evidence without an exact Go target catalog")
 		}
-		if goSource != nil {
-			reportRepositorySnapshotScaleWarnings(humanOutput, *goSource)
-			reportGoFactScaleWarnings(humanOutput, goSource.GoFacts)
-		}
 		firstLayer := debugdump.NewSemanticObserver(nil)
 		selectionExecutor := llm.Executor{
 			RootDir: dDir, Enabled: !*noCache, Observer: timed(humanOutput, firstLayer),
@@ -468,11 +457,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			Output:         humanOutput, Providers: newTargetPortfolioProvider,
 			Executor: selectionExecutor, ScoutJSTSFn: jstsproject.ScoutTargets,
 		})
-		reportSemanticOrdinalScaleWarnings(
-			humanOutput, "Repository selection",
-			[]string{"repository: " + repositoryName},
-			firstLayer.OrdinalScaleWarnings(),
-		)
 		if selectionErr != nil {
 			flushFailedFirstLayerSemanticJournal(runDir, firstLayer, humanOutput)
 			return errors.Join(
@@ -588,8 +572,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return err
 	}
 	index := genericProgramPage.ProgramIndex.Snapshot()
-	reportProgramIndexScaleWarnings(humanOutput, []programindex.Index{index})
-	reportProgramViewScaleWarnings(humanOutput, []programindex.Index{index})
 	catalog, catalogErr := dependencies.BuildWithOmissions(
 		genericProgramPage.Dependencies.Importers,
 		genericProgramPage.Dependencies.Dependencies,
@@ -638,7 +620,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if setErr != nil {
 		return setErr
 	}
-	reportProgramIndexSetScaleWarnings(humanOutput, indexSet, []programindex.Index{index})
 	if err := programindex.Persist(runDir, programindex.ArtifactFilename, index); err != nil {
 		return err
 	}
@@ -650,7 +631,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		"enriched targets: 1",
 		"artifact set: "+programindex.ArtifactSetFilename,
 	)
-	defaultProgramIndex := index.Snapshot()
 	defaultGroupIndex, err := groupProgramIndexForRun(
 		ctx,
 		runDir,
@@ -679,7 +659,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if dependencyCatalog == nil {
 		return fmt.Errorf("selected target requires exact dependency authority")
 	}
-	reportDependencyCatalogScaleWarnings(humanOutput, defaultProgramIndex.Target, *dependencyCatalog)
 	if err := dependencies.Persist(runDir, *dependencyCatalog); err != nil {
 		return err
 	}
@@ -691,19 +670,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err != nil {
 		return fmt.Errorf("read captured report inputs: %w", err)
 	}
-	reportTarget := reportDefaultProgramTarget(reportData)
-	targetReportScaleWarnings := report.ReportInputScaleWarnings(reportData)
-	targetReportScaleWarnings = append(
-		targetReportScaleWarnings,
-		report.CapturedReportInputFileScaleWarnings(runDir)...,
-	)
-	if manifest, manifestErr := report.ReadRunManifest(runDir); manifestErr == nil {
-		targetReportScaleWarnings = append(
-			targetReportScaleWarnings,
-			report.RunManifestScaleWarnings(manifest)...,
-		)
-	}
-	reportInputScaleWarnings(humanOutput, targetReportScaleWarnings, reportTarget)
 	reconciliationStarted := time.Now()
 	humanOutput.Stage("Repository authority", "reconciling captured inputs")
 	capturedInputPaths, err := report.CapturedInputPaths(reportData)
@@ -733,46 +699,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	reportStarted := time.Now()
 	if !deps.deferredPortfolioHTML {
 		humanOutput.Stage("Report", "generating authorized Program report")
-		generationDiagnostics, generationErr := generateAuthorizedReport()
-		alreadyReported := reportScaleWarningKeySet(targetReportScaleWarnings)
-		generationScaleWarnings := excludeReportScaleWarnings(
-			generationDiagnostics.ScaleWarnings(), alreadyReported,
-		)
-		reportInputScaleWarnings(humanOutput, generationScaleWarnings, reportTarget)
-		generationTargetScaleWarnings := reportTargetBoundInputScaleWarnings(
-			humanOutput,
-			excludeTargetReportScaleWarnings(
-				generationDiagnostics.TargetScaleWarnings(), alreadyReported,
-			),
-			reportTarget,
-		)
-		targetReportScaleWarnings = append(
-			targetReportScaleWarnings,
-			generationScaleWarnings...,
-		)
-		targetReportScaleWarnings = append(
-			targetReportScaleWarnings,
-			generationTargetScaleWarnings...,
-		)
-		if generationErr != nil {
+		if _, generationErr := generateAuthorizedReport(); generationErr != nil {
 			return fmt.Errorf("generate authorized browser report: %w", generationErr)
 		}
-		reportScaleWarnings := make([]report.ReportInputScaleWarning, 0)
-		if manifest, manifestErr := report.ReadRunManifest(runDir); manifestErr == nil {
-			reportScaleWarnings = append(
-				reportScaleWarnings,
-				report.RunManifestScaleWarnings(manifest)...,
-			)
-		}
-		reportScaleWarnings = append(
-			reportScaleWarnings,
-			report.PublishedReportScaleWarnings(runDir)...,
-		)
-		reportScaleWarnings = excludeReportScaleWarnings(
-			reportScaleWarnings,
-			reportScaleWarningKeySet(targetReportScaleWarnings),
-		)
-		reportInputScaleWarnings(humanOutput, reportScaleWarnings, reportTarget)
 	}
 	reportPath = filepath.Join(runDir, "report.html")
 	if !deps.siblingTargetRun {
@@ -781,8 +710,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			formatRunOutputWallDuration(time.Since(reportStarted)),
 		)
 		humanOutput.Stage("Report", "path: "+reportPath)
-		humanOutput.Timing()
 	}
+	// Every run says where its time went, a target-local run included: the
+	// categorization and grouping of one target happen there, and a summary
+	// printed only by the parent would never mention them.
+	humanOutput.Timing()
 	if !deps.siblingTargetRun && staticSourceHost != "" {
 		humanOutput.Stage(
 			"Report",
@@ -814,7 +746,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		RunDir:                runDir,
 		ProgramPage:           backingPage,
 		GroupIndex:            defaultGroupIndex,
-		ReportScaleWarnings:   append([]report.ReportInputScaleWarning(nil), targetReportScaleWarnings...),
 		Authority:             authority,
 		RepositoryStateSHA256: initialRepositoryStateSHA256,
 		SelectedRevision:      initialState.Head,

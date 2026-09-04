@@ -22,8 +22,6 @@ type targetPublishedRun struct {
 	GroupIndex  groupindex.Index
 	Receipt     report.VerifiedRunReceipt
 
-	ReportScaleWarnings []report.ReportInputScaleWarning
-
 	SelectedTargetKey     string
 	SelectedTargetDisplay string
 	Authority             report.RunAuthority

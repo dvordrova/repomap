@@ -1124,20 +1124,6 @@ func TestVerifyModuleGoModReadsPastUsualSize(t *testing.T) {
 	}
 }
 
-func TestScaleWarningsAreDiagnosticOnlyAndIgnoreOtherWarnings(t *testing.T) {
-	facts := &Facts{Warnings: []string{
-		"package unavailable",
-		scaleWarning("retained all 51 external import summaries; usual size is 50"),
-	}}
-	got := ScaleWarnings(facts)
-	if len(got) != 1 || got[0] != "retained all 51 external import summaries; usual size is 50" {
-		t.Fatalf("scale warnings = %v", got)
-	}
-	if got := ScaleWarnings(nil); got != nil {
-		t.Fatalf("nil facts warnings = %v", got)
-	}
-}
-
 func TestDependencySummariesKeepSameImportPathExternalToNestedModule(t *testing.T) {
 	catalog := dependencies.Catalog{
 		Importers: []dependencies.Importer{

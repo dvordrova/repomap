@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -14,35 +13,7 @@ import (
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/llm"
-	"github.com/dvordrova/repomap/internal/targetportfolio"
 )
-
-func TestReportTargetPortfolioScaleWarningsKeepsCompleteReservoir(t *testing.T) {
-	repository := targetPortfolioCorpus(t, false)
-	snapshot := repository.Snapshot()
-	long := strings.Repeat("complete target evidence ", 4000)
-	compilation, err := targetportfolio.Compile(snapshot, []targetportfolio.Candidate{
-		{FileRef: snapshot.Entries[0].ID, Hypotheses: []string{long + "one"}},
-		{FileRef: snapshot.Entries[1].ID, Hypotheses: []string{long + "two"}},
-		{FileRef: snapshot.Entries[2].ID, Hypotheses: []string{long + "three"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var console strings.Builder
-	reportTargetPortfolioScaleWarnings(newRunOutput(&console), compilation)
-	output := console.String()
-	for _, expected := range []string{
-		"WARN", "Large target portfolio retained",
-		"all merged file candidates, required target refs, executable refs, and hypotheses were retained",
-		"bounded disjoint model batches; no local aggregate threshold removed data",
-		"complete_candidate_request_bytes",
-	} {
-		if !strings.Contains(output, expected) {
-			t.Fatalf("console warning missing %q:\n%s", expected, output)
-		}
-	}
-}
 
 type targetPortfolioClientStub struct {
 	response []byte

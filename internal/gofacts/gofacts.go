@@ -25,23 +25,6 @@ const (
 	scaleWarningPrefix              = "large retained Go facts: "
 )
 
-// ScaleWarnings returns only warning-only size diagnostics from an accepted
-// fact set. It deliberately performs no validation and can never change
-// target or publication authority.
-func ScaleWarnings(facts *Facts) []string {
-	if facts == nil {
-		return nil
-	}
-	result := make([]string, 0)
-	for _, warning := range facts.Warnings {
-		if !strings.HasPrefix(warning, scaleWarningPrefix) {
-			continue
-		}
-		result = append(result, strings.TrimPrefix(warning, scaleWarningPrefix))
-	}
-	return result
-}
-
 func scaleWarning(message string) string {
 	return scaleWarningPrefix + message
 }

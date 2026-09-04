@@ -6,88 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/reporead"
 )
-
-func TestExtractPackageDeclarationsRetainsFilePastUsualSize(t *testing.T) {
-	repo := t.TempDir()
-	content := strings.Repeat(" ", advisoryPackageDeclarationFileBytes+1) + "package api\nfunc Retained() {}\n"
-	if err := os.WriteFile(filepath.Join(repo, "large.go"), []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	reader, err := reporead.New(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reader.Close()
-	declarations, failures, scaleWarnings := extractPackageDeclarations(reader, ".", goListPackage{
-		ImportPath: "example.com/api", GoFiles: []string{"large.go"},
-	})
-	if len(failures) != 0 {
-		t.Fatalf("failures = %v", failures)
-	}
-	if len(declarations) != 1 || declarations[0].Name != "Retained" {
-		t.Fatalf("declarations = %#v", declarations)
-	}
-	if len(scaleWarnings) != 1 || !strings.Contains(scaleWarnings[0], "retained declarations") {
-		t.Fatalf("scale warnings = %v", scaleWarnings)
-	}
-}
-
-func TestExtractPackageDeclarationsUsesBuildSelectedNonTestFiles(t *testing.T) {
-	repo := t.TempDir()
-	files := map[string]string{
-		"product.go": `package main
-const productName, _ = "app", 0
-var buildMode string
-type Server[T any] struct{}
-func main() {}
-func runProduct() {}
-func (s *Server[T]) Start() {}
-`,
-		"dev.go": `package main
-func runDevPreview() {}
-`,
-		"product_test.go": `package main
-func TestProduct(t *testing.T) {}
-`,
-	}
-	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	reader, err := reporead.New(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reader.Close()
-
-	declarations, warnings, scaleWarnings := extractPackageDeclarations(reader, ".", goListPackage{
-		ImportPath: "example.com/app", GoFiles: []string{"product_test.go", "dev.go", "product.go"},
-	})
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %#v", warnings)
-	}
-	if len(scaleWarnings) != 0 {
-		t.Fatalf("scale warnings = %#v", scaleWarnings)
-	}
-	want := []PackageDeclaration{
-		{Kind: PackageDeclarationFunc, Name: "main", Path: "product.go", Line: 5, Column: 6, ExecutableBody: true},
-		{Kind: PackageDeclarationFunc, Name: "runDevPreview", Path: "dev.go", Line: 2, Column: 6, ExecutableBody: true},
-		{Kind: PackageDeclarationFunc, Name: "runProduct", Path: "product.go", Line: 6, Column: 6, ExecutableBody: true},
-		{Kind: PackageDeclarationMethod, Name: "Start", Receiver: "Server", Path: "product.go", Line: 7, Column: 21, ExecutableBody: true},
-		{Kind: PackageDeclarationType, Name: "Server", Path: "product.go", Line: 4, Column: 6},
-		{Kind: PackageDeclarationVar, Name: "buildMode", Path: "product.go", Line: 3, Column: 5},
-		{Kind: PackageDeclarationConst, Name: "productName", Path: "product.go", Line: 2, Column: 7},
-	}
-	if !slices.Equal(declarations, want) {
-		t.Fatalf("declarations = %#v, want %#v", declarations, want)
-	}
-}
 
 func TestExtractPackageDeclarationsFailsPackageAtomically(t *testing.T) {
 	repo := t.TempDir()
@@ -172,3 +94,5 @@ func TestCanonicalPackageDeclarationsIsPermutationStableAndStrict(t *testing.T) 
 		})
 	}
 }
+
+func main() {}

@@ -359,28 +359,6 @@ func TestReadFileIsBoundedCurrentAndRejectsSymlinkReplacement(t *testing.T) {
 	}
 }
 
-func TestCorpusScaleWarningsAreDiagnosticOnly(t *testing.T) {
-	warnings := corpusScaleWarnings(
-		MaxFiles+1,
-		MaxVisiblePaths+1,
-		MaxFiles+2,
-		MaxSnapshotBytes+1,
-		2,
-		MaxReadBytes+1,
-	)
-	if len(warnings) != 5 {
-		t.Fatalf("warnings = %#v", warnings)
-	}
-	for _, warning := range warnings {
-		if warning.Retained <= warning.AdvisorySize || warning.MaximumRetained <= warning.AdvisorySize {
-			t.Fatalf("invalid warning = %#v", warning)
-		}
-	}
-	if warnings[4].Kind != ScaleWarningReadBytes || warnings[4].AffectedCollections != 2 {
-		t.Fatalf("complete-read warning = %#v", warnings[4])
-	}
-}
-
 func TestConcurrentReadsAndClose(t *testing.T) {
 	t.Parallel()
 

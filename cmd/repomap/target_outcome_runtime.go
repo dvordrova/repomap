@@ -41,9 +41,7 @@ func classifyRepositoryTargetFailure(
 	}
 	var resourceErr *llm.ResourceLimitError
 	var reportResourceErr *report.ReportResourceLimitError
-	var bundleResourceErr *report.StandaloneTargetBundleResourceLimitError
-	if errors.As(err, &resourceErr) || errors.As(err, &reportResourceErr) ||
-		errors.As(err, &bundleResourceErr) {
+	if errors.As(err, &resourceErr) || errors.As(err, &reportResourceErr) {
 		return stage, targetoutcome.ReasonResourceLimit
 	}
 	var goSourceErr *surfacediscovery.AnalysisTargetSSAUnavailableError
