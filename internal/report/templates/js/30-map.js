@@ -21,7 +21,6 @@
     }
 
     function preview(event) {
-      if (map.classList.contains('map-held')) return;
       var node = event.currentTarget;
       var near = {};
       near[node.getAttribute('data-node')] = true;
@@ -41,7 +40,6 @@
     }
 
     function clear() {
-      if (map.classList.contains('map-held')) return;
       map.classList.remove('map-previewing');
       for (var index = 0; index < nodes.length; index++) {
         nodes[index].classList.remove('map-near');
@@ -157,8 +155,9 @@
 //   - "where is this on the map?" — every group card gets an "on the map"
 //     link back to its node, which is lit for a moment; the round trip is one
 //     click each way.
-//   - "just this part" — clicking a zone's name holds it in focus, dimming
-//     the rest, until it is clicked again or Escape is pressed.
+//   - "how does a request go through?" — pointing at a node on the main
+//     path lights the whole path and its arrows, and the card says which
+//     step this is.
 // None of it exists without scripting, and none of it moves a node.
 (function () {
   var maps = document.querySelectorAll('[data-map]');
@@ -203,6 +202,10 @@
       var summary = node.getAttribute('data-summary');
       if (summary) html += '<p>' + summary + '</p>';
       if (counts) html += '<span class="map-card-meta">' + counts + '</span>';
+      var step = map.traceIndex ? map.traceIndex(node) : -1;
+      if (step >= 0) html += '<span class="map-card-meta">step ' + (step + 1) + ' of ' + map.traceLength + ' on the main path</span>';
+      var keys = (node.getAttribute('data-keys') || '').split(' | ').filter(Boolean);
+      if (keys.length) html += '<ul class="map-card-keys">' + keys.map(function (k) { return '<li><code>' + k.replace(/ — .*$/, '') + '</code>' + (k.indexOf(' — ') > 0 ? ' — ' + k.slice(k.indexOf(' — ') + 3) : '') + '</li>'; }).join('') + '</ul>';
       var arrows = sentences(id);
       if (arrows.length) html += '<ul>' + arrows.map(function (a) { return '<li>' + a + '</li>'; }).join('') + '</ul>';
       html += '<span class="map-card-hint">click \u2014 open its card</span>';
@@ -249,48 +252,38 @@
       head.appendChild(link);
     }
 
-    // Clicking a zone's name holds it in focus.
-    var frames = map.querySelectorAll('[data-frame]');
-    var held = null;
-    function inside(node, rect) {
-      var r = node.querySelector('.map-node-body');
-      if (!r) return false;
-      var x = parseFloat(r.getAttribute('x')), y = parseFloat(r.getAttribute('y'));
-      return x >= rect.x && y >= rect.y && x + parseFloat(r.getAttribute('width')) <= rect.x + rect.w &&
-        y + parseFloat(r.getAttribute('height')) <= rect.y + rect.h;
+    // The main path through the target. Pointing at a node on it lights the
+    // whole path and its arrows, so "how does a request go through?" is
+    // answered on the map; the card says which step this is.
+    var traceIds = (map.getAttribute('data-trace') || '').split(/\s+/).filter(Boolean);
+    var trace = [];
+    for (var t = 0; t < traceIds.length; t++) {
+      var traced = map.querySelector('[data-node][href="#' + traceIds[t] + '"]');
+      if (traced) trace.push(traced);
     }
-    function release() {
-      held = null;
-      map.classList.remove('map-previewing', 'map-held');
-      for (var i = 0; i < nodes.length; i++) nodes[i].classList.remove('map-near');
+    function traceIndex(node) {
+      for (var i = 0; i < trace.length; i++) if (trace[i] === node) return i;
+      return -1;
+    }
+    function lightTrace() {
+      var on = {};
+      for (var i = 0; i < trace.length; i++) { on[trace[i].getAttribute('data-node')] = true; trace[i].classList.add('map-near', 'map-traced'); }
       var lines = map.querySelectorAll('.map-edge, .map-edge-label');
-      for (var j = 0; j < lines.length; j++) lines[j].classList.remove('map-near');
+      for (var j = 0; j < lines.length; j++) {
+        if (on[lines[j].getAttribute('data-from')] && on[lines[j].getAttribute('data-to')]) lines[j].classList.add('map-near');
+      }
+      map.classList.add('map-previewing');
     }
-    for (var f = 0; f < frames.length; f++) {
-      var text = frames[f].querySelector('text');
-      if (!text) continue;
-      text.style.cursor = 'pointer';
-      text.addEventListener('click', (function (frame) {
-        return function () {
-          var id = frame.getAttribute('data-frame');
-          if (held === id) { release(); return; }
-          release();
-          held = id;
-          var rectNode = frame.querySelector('rect');
-          var rect = { x: parseFloat(rectNode.getAttribute('x')), y: parseFloat(rectNode.getAttribute('y')),
-            w: parseFloat(rectNode.getAttribute('width')), h: parseFloat(rectNode.getAttribute('height')) };
-          var near = {};
-          for (var i = 0; i < nodes.length; i++) {
-            if (inside(nodes[i], rect)) { near[nodes[i].getAttribute('data-node')] = true; nodes[i].classList.add('map-near'); }
-          }
-          var lines = map.querySelectorAll('.map-edge, .map-edge-label');
-          for (var j = 0; j < lines.length; j++) {
-            if (near[lines[j].getAttribute('data-from')] || near[lines[j].getAttribute('data-to')]) lines[j].classList.add('map-near');
-          }
-          map.classList.add('map-previewing', 'map-held');
-        };
-      })(frames[f]));
+    function unlightTrace() {
+      for (var i = 0; i < trace.length; i++) trace[i].classList.remove('map-traced');
     }
-    document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && held) release(); });
+    for (var u = 0; u < trace.length; u++) {
+      trace[u].addEventListener('mouseenter', lightTrace);
+      trace[u].addEventListener('focus', lightTrace);
+      trace[u].addEventListener('mouseleave', unlightTrace);
+      trace[u].addEventListener('blur', unlightTrace);
+    }
+    map.traceIndex = traceIndex;
+    map.traceLength = trace.length;
   }
 })();

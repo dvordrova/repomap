@@ -71,5 +71,6 @@
 .map-node.map-flash .map-node-body{stroke:var(--accent);stroke-width:5;animation:map-flash 1.6s ease-out}
 @keyframes map-flash{from{fill:var(--zone-5)}to{fill:var(--paper)}}
 .group-head .on-map{margin-left:.6rem;font-size:.78rem;white-space:nowrap}
-/* A zone held in focus: its name stays dark while the rest dims. */
-[data-map].map-held .map-frame text{fill:var(--muted)}
+.map-card .map-card-keys li{color:var(--claim)}
+.map-card .map-card-keys code{color:var(--ink)}
+[data-map].map-previewing .map-node.map-traced .map-node-body{stroke-width:4}

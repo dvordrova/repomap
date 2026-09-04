@@ -439,3 +439,13 @@ func TestStartReachesKeepsOutgoingHopsOnly(t *testing.T) {
 		t.Fatalf("startReaches = %#v", got)
 	}
 }
+
+// The main path is the groups the flow passes through, in the order of
+// their first step.
+func TestTraceOrderFollowsTheFirstStep(t *testing.T) {
+	got := traceOrder(map[string]string{"router": "2, 5", "entry": "1", "handler": "3", "noise": "x"})
+	want := []string{"entry", "router", "handler"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("traceOrder = %v, want %v", got, want)
+	}
+}

@@ -112,9 +112,14 @@ type pageMap struct {
 	MinWidth float64
 	Lanes    []pageMapLane
 	// Frames are the parts: a named rectangle around the boxes it holds.
-	Frames     []pageMapFrame
-	Nodes      []pageMapNode
-	Edges      []pageMapEdge
+	Frames []pageMapFrame
+	Nodes  []pageMapNode
+	Edges  []pageMapEdge
+	// Trace is the main path through this target as the group anchors it
+	// visits in order — the model's main flow when one passes through, else
+	// the entrypoints read forward — so a reader can see how a request goes
+	// through and not only who is next to whom.
+	Trace      string
 	LargestPct int
 	// Hidden is how many groups the overview leaves to the cards below. The
 	// map is the architecture; the inventory is underneath it.
@@ -154,6 +159,10 @@ type pageMapLane struct {
 }
 
 type pageMapNode struct {
+	// Keys names the group's key symbols with what their authors wrote,
+	// for the card beside a pointed-at node: enough to decide whether to
+	// go down to the code.
+	Keys    string
 	ID      string
 	Href    string
 	Title   []string
@@ -262,7 +271,9 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 		node := pageMapNode{
 			ID: mapNodeID(group.ID), Href: "#" + groupAnchorID(section.ID, group.ID),
 			Title: mapTitle(group.Title), FullTitle: group.Title,
-			Summary: group.Summary, Lane: string(group.Lane),
+			// A summary that is the title again is the title said twice,
+			// on the card beside the node as on the card below.
+			Summary: dropEcho(group.Summary, group.Title), Lane: string(group.Lane),
 			Members: len(group.MemberSubjectIDs),
 			X:       mapPadding + float64(column)*(mapNodeWidth+mapColumnGap),
 			Y: mapPadding + mapLaneLabelSpace + frameTop +
@@ -290,6 +301,7 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 		node.Neighbours = strings.Join(mapNodeIDs(local), " ")
 		node.Degree = len(local) - outside
 		node.Steps = steps[group.ID]
+		node.Keys = builder.keySymbols(group, maxKeySymbols)
 		node.StepX = node.X + node.Width - 10
 		node.StepY = node.Y + mapNodeHeight - 9
 		result.Nodes = append(result.Nodes, node)
@@ -322,6 +334,106 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 		result.Width = reach
 	}
 	result.MinWidth = mapMinWidth(result.Width)
+	result.Trace = builder.mapTrace(section, *index, steps)
+	return result
+}
+
+// maxKeySymbols is how many symbols the card beside a node names.
+const maxKeySymbols = 3
+
+// keySymbols names a group's key symbols, the documented ones first.
+func (builder *pageBuilder) keySymbols(group groupindex.Group, most int) string {
+	type key struct{ name, doc string }
+	var documented, plain []key
+	for _, id := range group.MemberSubjectIDs {
+		ref, known := builder.subjects[id]
+		if !known {
+			continue
+		}
+		name, anchor := builder.subjectDisplay(ref.subject)
+		if name == "" || anchor == nil {
+			continue
+		}
+		if doc := builder.docstringFor(anchor.Path, anchor.Line); doc != "" {
+			documented = append(documented, key{name, doc})
+		} else {
+			plain = append(plain, key{name, ""})
+		}
+	}
+	var lines []string
+	for _, k := range append(documented, plain...) {
+		if len(lines) == most {
+			break
+		}
+		if k.doc != "" {
+			lines = append(lines, k.name+" — "+k.doc)
+		} else {
+			lines = append(lines, k.name)
+		}
+	}
+	return strings.Join(lines, " | ")
+}
+
+// mapTrace is the main path as group anchors in order.
+func (builder *pageBuilder) mapTrace(section *pageSection, index groupindex.Index, steps map[string]string) string {
+	if ordered := traceOrder(steps); len(ordered) > 0 {
+		anchors := make([]string, 0, len(ordered))
+		for _, groupID := range ordered {
+			anchors = append(anchors, groupAnchorID(section.ID, groupID))
+		}
+		return strings.Join(anchors, " ")
+	}
+	for _, start := range builder.startSteps(section, index) {
+		if start.Href == "" {
+			continue
+		}
+		anchors := []string{strings.TrimPrefix(start.Href, "#")}
+		for _, reach := range start.Reaches {
+			if reach.Href != "" && !strings.HasPrefix(reach.Href, "#"+section.ID+"-") {
+				continue
+			}
+			if reach.Href != "" {
+				anchors = append(anchors, strings.TrimPrefix(reach.Href, "#"))
+			}
+		}
+		return strings.Join(anchors, " ")
+	}
+	return ""
+}
+
+// traceOrder orders the groups a main flow passes through by their first
+// step number.
+func traceOrder(steps map[string]string) []string {
+	type at struct {
+		groupID string
+		first   int
+	}
+	var order []at
+	for groupID, listed := range steps {
+		first := 0
+		for _, part := range strings.Split(listed, ",") {
+			number, err := strconv.Atoi(strings.TrimSpace(part))
+			if err != nil {
+				continue
+			}
+			if first == 0 || number < first {
+				first = number
+			}
+		}
+		if first > 0 {
+			order = append(order, at{groupID, first})
+		}
+	}
+	sort.Slice(order, func(left, right int) bool {
+		if order[left].first != order[right].first {
+			return order[left].first < order[right].first
+		}
+		return order[left].groupID < order[right].groupID
+	})
+	result := make([]string, 0, len(order))
+	for _, entry := range order {
+		result = append(result, entry.groupID)
+	}
 	return result
 }
 

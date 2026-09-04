@@ -1,4 +1,4 @@
-{{define "map.html"}}<figure class="map" data-map>
+{{define "map.html"}}<figure class="map" data-map data-trace="{{.Trace}}">
 <div class="map-controls" data-map-controls hidden>
 <button type="button" data-map-fit>fit</button>
 <button type="button" data-map-zoom="1.25">+</button>
@@ -13,7 +13,7 @@
 <g class="map-lanes">{{range .Lanes}}<text x="{{printf "%.1f" .X}}" y="18" class="map-lane-label">{{.Label}}</text>{{end}}</g>
 <g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" data-from="{{.From}}" data-to="{{.To}}" marker-end="url(#map-arrow)"><title>{{.Label}}</title></path>{{end}}</g>
 <g class="map-edge-labels">{{range .Edges}}{{if .Lines}}<g class="map-edge-label" data-from="{{.From}}" data-to="{{.To}}">{{$edge := .}}{{range $line, $text := .Lines}}<text x="{{printf "%.1f" $edge.LabelX}}" y="{{printf "%.1f" $edge.LabelY}}" dy="{{if eq (len $edge.Lines) 1}}3.5{{else if eq $line 0}}-2{{else}}9{{end}}" text-anchor="middle">{{$text}}</text>{{end}}<title>{{.Label}}</title></g>{{end}}{{end}}</g>
-<g class="map-nodes">{{range .Nodes}}<a href="{{.Href}}" id="{{.ID}}" class="map-node map-node-{{.Lane}}" data-node="{{.ID}}" data-near="{{.Neighbours}}" data-summary="{{.Summary}}" aria-label="{{.FullTitle}}, {{.Members}} symbol{{if ne .Members 1}}s{{end}}, {{.Degree}} connection{{if ne .Degree 1}}s{{end}} here{{if .Outside}}, {{.Outside}} to another target{{end}}">
+<g class="map-nodes">{{range .Nodes}}<a href="{{.Href}}" id="{{.ID}}" class="map-node map-node-{{.Lane}}" data-node="{{.ID}}" data-near="{{.Neighbours}}" data-summary="{{.Summary}}" data-keys="{{.Keys}}" aria-label="{{.FullTitle}}, {{.Members}} symbol{{if ne .Members 1}}s{{end}}, {{.Degree}} connection{{if ne .Degree 1}}s{{end}} here{{if .Outside}}, {{.Outside}} to another target{{end}}">
 <rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="6" class="map-node-body"/>
 {{$node := .}}{{range $line, $text := .Title}}<text x="{{printf "%.1f" $node.X}}" y="{{printf "%.1f" $node.Y}}" dx="11" dy="{{if eq $line 0}}17{{else}}30{{end}}" class="map-node-title">{{$text}}</text>{{end}}
 <text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="45" class="map-node-count">{{.Members}}{{if .Outside}} · {{.Outside}} outside{{end}}</text>
