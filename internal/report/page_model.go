@@ -349,7 +349,7 @@ func (builder *pageBuilder) figures(view *pageView) {
 		{Value: thousands(calls), Label: pluralWord(calls, "HTTP call out", "HTTP calls out")},
 		{Value: thousands(len(view.Portals)), Label: pluralWord(len(view.Portals), "target crossing", "target crossings")},
 		{Value: thousands(dynamic), Label: pluralWord(dynamic, "place running handed-in code", "places running handed-in code")},
-		{Value: thousands(dead), Label: pluralWord(dead, "file nothing reaches", "files nothing reach"), Warn: dead > 0},
+		{Value: thousands(dead), Label: pluralWord(dead, "file nothing reaches", "files nothing reaches"), Warn: dead > 0},
 	}
 	for position, figure := range optional {
 		if figure.Value == "0" {
@@ -620,7 +620,7 @@ func cardCounts(card pageTargetCard) string {
 		{card.Routes, "route", "routes"},
 		{card.Calls, "HTTP call out", "HTTP calls out"},
 		{card.Dynamic, "place running handed-in code", "places running handed-in code"},
-		{card.Dead, "file nothing reaches", "files nothing reach"},
+		{card.Dead, "file nothing reaches", "files nothing reaches"},
 	} {
 		if count.value == 0 {
 			continue

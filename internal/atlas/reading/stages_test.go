@@ -3,6 +3,7 @@ package reading
 import (
 	"context"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -340,6 +341,24 @@ func TestCrossTargetCallsBecomeLinkJoints(t *testing.T) {
 		From: atlas.FileID("web/src/client.ts"), To: atlas.FileID("svc/api/h.go"), Kind: "calls", Count: 1,
 		Witnesses: []atlas.Witness{{Caller: "F", Callee: "F", Path: "web/src/client.ts", LineNo: 7}},
 	})
+	// A shared package under neither root that only svc happened to index is
+	// not svc's: a call into it from web is no seam between the two.
+	graph.Places = append(graph.Places,
+		atlas.Place{
+			ID: atlas.DirectoryID("shared/pb"), Kind: atlas.PlaceDirectory, Path: "shared/pb", Depth: 2,
+			Parent: atlas.DirectoryID("."), TargetIDs: []string{"svc"}, Given: "shared/pb files",
+			Directory: &atlas.DirectoryFacts{Dirs: []string{}, Files: []string{"p.go"}, FileCount: 1, TopBox: true},
+		},
+		atlas.Place{
+			ID: atlas.FileID("shared/pb/p.go"), Kind: atlas.PlaceFile, Path: "shared/pb/p.go", Depth: 2,
+			Parent: atlas.DirectoryID("shared/pb"), TargetIDs: []string{"svc"}, Given: "given shared/pb/p.go",
+			File: &atlas.FileFacts{Callers: []string{atlas.FileID("web/src/client.ts")}, Callees: []string{}, Decls: []atlas.Decl{}},
+		})
+	graph.Edges = append(graph.Edges, atlas.Edge{
+		From: atlas.FileID("web/src/client.ts"), To: atlas.FileID("shared/pb/p.go"), Kind: "imports", Count: 9,
+		Witnesses: []atlas.Witness{{Caller: "F", Callee: "F", Path: "web/src/client.ts", LineNo: 8}},
+	})
+	sort.Slice(graph.Places, func(i, j int) bool { return graph.Places[i].ID < graph.Places[j].ID })
 	encoded, err := atlas.EncodeGraph(graph)
 	if err != nil {
 		t.Fatal(err)

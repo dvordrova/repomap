@@ -908,7 +908,7 @@ func growFrame(frames map[string]*pageMapFrame, container *groupindex.Container,
 func zoneOf(id string) int {
 	sum := 0
 	for _, symbol := range id {
-		sum = (sum*31 + int(symbol)) % 8
+		sum = (sum*31 + int(symbol)) % mapZoneColours
 	}
 	return sum + 1
 }
@@ -931,8 +931,34 @@ func sealFrames(frames map[string]*pageMapFrame) []pageMapFrame {
 		}
 		return result[left].Title < result[right].Title
 	})
+	spreadZones(result)
 	return result
 }
+
+// spreadZones keeps two parts of one map from sharing a pastel while a free
+// one is left: etcdctl's five parts hashed to three colours, and two zones
+// in one colour read as one zone cut in half. A part keeps its hashed
+// colour when it can, so the picture is still stable between runs.
+func spreadZones(frames []pageMapFrame) {
+	taken := make(map[int]bool, len(frames))
+	for position := range frames {
+		zone := frames[position].Zone
+		if taken[zone] && len(taken) < mapZoneColours {
+			for step := 1; step <= mapZoneColours; step++ {
+				candidate := (zone-1+step)%mapZoneColours + 1
+				if !taken[candidate] {
+					zone = candidate
+					break
+				}
+			}
+			frames[position].Zone = zone
+		}
+		taken[zone] = true
+	}
+}
+
+// mapZoneColours is how many pastels the stylesheet defines for zones.
+const mapZoneColours = 8
 
 func laneGroups(index groupindex.Index, lane groupindex.Lane) []groupindex.Group {
 	var result []groupindex.Group
@@ -1146,6 +1172,11 @@ func newMapEdgeRouter(nodes map[string]*pageMapNode, bottom float64) *mapEdgeRou
 	// "wraps handlers" written across a frame's edge was a word cut by a line.
 	for _, node := range nodes {
 		if !node.Frame {
+			// A box is taken whole: a loop's words at its apex landed on
+			// the box of the next column when the gutter was narrow.
+			router.placed = append(router.placed, mapLabelBox{
+				left: node.X, right: node.X + node.Width, top: node.Y, bottom: node.Y + node.Height,
+			})
 			continue
 		}
 		for _, y := range []float64{node.Y, node.Y + node.Height} {
@@ -1512,28 +1543,23 @@ type pageRepoEdge struct {
 // thirteen times and that is a target on the same page; the repository map used
 // to say "no target calls another" because it only knew about HTTP.
 func (builder *pageBuilder) repoCodeDependencies() map[[2]string]int {
+	// The seams between targets are the atlas joints, projected as the
+	// cross-target connections of the group graph, each with its direction
+	// decided by the code from a call or an import. Counting a target's
+	// foreign symbols instead pointed etcd's client at etcdctl, because
+	// etcdctl had indexed the shared api packages the client uses.
 	counts := make(map[[2]string]int)
-	for _, section := range builder.sections {
-		index := builder.graphIndex(section.programTargetID)
-		if index == nil {
-			continue
-		}
-		seen := make(map[string]struct{})
-		for _, subject := range index.Subjects {
-			if subject.Object == nil || subject.Object.External == nil {
+	for _, index := range builder.indexes {
+		for _, connection := range index.Connections {
+			if connection.From.TargetID == connection.To.TargetID {
 				continue
 			}
-			sibling := builder.siblingByPackage(subject.Object.External.PackagePath)
-			if sibling == nil || sibling == section {
+			from, fromKnown := builder.byProgram[connection.From.TargetID]
+			to, toKnown := builder.byProgram[connection.To.TargetID]
+			if !fromKnown || !toKnown || from == to || from.factsTargetID == "" || to.factsTargetID == "" {
 				continue
 			}
-			name := subject.Object.Name
-			key := sibling.ID + "\x00" + name
-			if _, repeated := seen[key]; repeated {
-				continue
-			}
-			seen[key] = struct{}{}
-			counts[[2]string{section.factsTargetID, sibling.factsTargetID}]++
+			counts[[2]string{from.factsTargetID, to.factsTargetID}]++
 		}
 	}
 	return counts
@@ -1759,7 +1785,7 @@ func repoEdgeLabel(calls, symbols int) string {
 		parts = append(parts, fmt.Sprintf("%d HTTP %s", calls, pluralWord(calls, "call", "calls")))
 	}
 	if symbols > 0 {
-		parts = append(parts, fmt.Sprintf("%d %s", symbols, pluralWord(symbols, "symbol", "symbols")))
+		parts = append(parts, fmt.Sprintf("%d %s", symbols, pluralWord(symbols, "link", "links")))
 	}
 	return strings.Join(parts, " · ")
 }

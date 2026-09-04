@@ -74,3 +74,18 @@ func label(section *pageSection) string {
 	}
 	return section.Label
 }
+
+func TestPartsOfOneMapDoNotShareAColour(t *testing.T) {
+	frames := []pageMapFrame{{ID: "a", Zone: 4}, {ID: "b", Zone: 4}, {ID: "c", Zone: 3}, {ID: "d", Zone: 3}, {ID: "e", Zone: 8}}
+	spreadZones(frames)
+	seen := make(map[int]bool)
+	for _, frame := range frames {
+		if seen[frame.Zone] {
+			t.Fatalf("zones: %+v", frames)
+		}
+		seen[frame.Zone] = true
+	}
+	if frames[0].Zone != 4 || frames[2].Zone != 3 || frames[4].Zone != 8 {
+		t.Fatalf("hashed colours were not kept: %+v", frames)
+	}
+}

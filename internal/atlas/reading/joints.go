@@ -308,6 +308,14 @@ func (r *reader) linkJoints() []atlas.Joint {
 					// The callee is this target's own file too: an internal call.
 					continue
 				}
+				if !r.underRoot(r.boxes[toBox].dir, toTarget) {
+					// The callee is a shared package the other target merely
+					// indexed: etcd's client module loads only its own
+					// packages, while etcdctl loads api/* transitively, so
+					// api/* looked like etcdctl's and the client seemed to
+					// depend on the command.
+					continue
+				}
 				k := key{fromTarget, fromBox, toTarget, toBox}
 				weight[k] += edge.Count
 				if seen[k] {
@@ -346,6 +354,19 @@ func (r *reader) linkJoints() []atlas.Joint {
 
 // maxLinkJointsPerPair bounds the seams drawn between two targets.
 const maxLinkJointsPerPair = 5
+
+// underRoot says whether a directory lies under a target's root. A target
+// rooted at the repository owns every directory.
+func (r *reader) underRoot(dir, targetID string) bool {
+	for _, target := range r.opts.Targets {
+		if target.ID != targetID {
+			continue
+		}
+		root := strings.TrimPrefix(strings.Trim(target.Root, "/"), "./")
+		return root == "" || root == "." || dir == root || strings.HasPrefix(dir, root+"/")
+	}
+	return false
+}
 
 func (r *reader) sideOf(state *boundaryState, byTarget map[string]TargetMeta) lines.BoundarySide {
 	name := ""
