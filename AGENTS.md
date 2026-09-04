@@ -51,21 +51,20 @@ sidecar tools.
   validation. The shared LLM layer owns exact provider requests, transport,
   retries, provider-envelope/JSON decoding, batch execution, cache, accounting,
   and semantic-journal events.
-- Repository scale is not a local correctness boundary. Former local
-  count/text/byte/depth and artifact/report thresholds are warning-only: they
-  must never sample, truncate, omit, reject, or partially publish valid
-  repository-derived authority. Complete reservoirs are processed through as
-  many deterministic disjoint provider batches and convergent closed-ref
-  reduction rounds as necessary. Every current stage uses the shared actual
-  32 MiB request envelope and 16 MiB decoded-response ceiling and requests up
-  to 128,000 output tokens; a lower configured provider token ceiling remains
-  authoritative. Composite input is exhaustively repartitioned when its
-  prepared request does not fit. A real
-  provider response/output envelope failure remains terminal unless the owning
-  stage defines a lossless adaptive repartition; it never authorizes truncation
-  or partial publication. Only such an actual provider envelope,
-  representation overflow, security policy, canonical identity/path/format
-  validation, or an explicit user narrowing option may remain terminal.
+- Repository scale is not a correctness boundary and not a warning either:
+  there are no size thresholds, no scale warnings and no page-size limits.
+  Complete reservoirs are processed through as many deterministic disjoint
+  provider batches and convergent closed-ref reduction rounds as necessary.
+  Every stage uses the shared actual 32 MiB request envelope and 16 MiB
+  decoded-response ceiling and requests up to 128,000 output tokens; a lower
+  configured provider token ceiling remains authoritative. Composite input is
+  repartitioned when its prepared request does not fit. A real provider
+  envelope failure is terminal unless the owning stage defines a lossless
+  repartition; it never authorizes truncation or partial publication. Only
+  such a provider envelope, a representation overflow, canonical
+  identity/path/format validation, or an explicit user narrowing option may
+  remain terminal. Every run prints where its time went: a `(t+…)` on each
+  stage line, `latency_ms` on each exchange, and a closing `Time` stage.
 - Execute independent stage-planned batch items through the shared bounded LLM
   worker pool, with the ordinary product limit set to four. Preserve the
   caller's item index as the only in-memory result slot and replay observer
@@ -102,13 +101,15 @@ sidecar tools.
   owns exhaustive batching, completeness, and identity. If filtering leaves a
   mandatory scalar choice or complete assignment unresolved, reject that
   incomplete result without inventing a replacement. Program categorization
-  and initial grouping are sparse positive selections: omission is not a
-  negative assignment. Categories and group membership are overlapping covers,
-  not partitions, and no local `support`, `unassigned`, or other semantic
-  complement is manufactured. A grouping merge is consolidation, not a second
-  sparse selection: every validated candidate group's complete member set must
-  be contained by one returned group in the same lane. One returned group may
-  cover many candidates, so the model never has to acknowledge every `g*`.
+  is a sparse positive selection: omission is not a negative assignment, and
+  categories are an overlapping cover, not a partition. Grouping is a
+  partition of the subjects a request shows. Every later model call is an
+  LLM cube — a simple prepared format in, one decision, a simple validated
+  format out: consolidation returns `{ref, cluster}` labels and Go unions the
+  members; parts are named first and then chosen from that closed list;
+  titles, lanes and connections are decided in Go. Groups that carry one
+  title in one lane are joined by Go before and between model passes. No
+  local `support`, `unassigned`, or other semantic complement is manufactured.
   Every accepted group member must itself carry a category compatible with
   that lane: `inbound` or `background_activity` for `triggers`, `core` for
   `core`, and `dependency` for `dependencies`. One compatible member never
@@ -125,9 +126,12 @@ sidecar tools.
   internal edges, canonical internal IDs, credentials, or unadvertised paths.
   A complete names-only tracked-file dictionary is explicitly allowed for the
   README file-role classifier.
-- The selected repository is trusted by default. Heuristic credential scanning
-  is opt-in through `--scan-secrets`; API keys and Authorization headers must
-  still never be persisted.
+- The selected repository is trusted and the tool is not a security boundary.
+  Nothing is scanned or redacted, the run directory is as sensitive as the
+  repository, the run manifest is a record and is never verified against the
+  artifacts, and the report server opens the files a page names under the
+  analysed root. The provider key is read from the environment and never
+  enters a request body or a cache record.
 - Analyze every eligible target by default. `--target` selects an explicit
   target; `--force-platform GOOS/GOARCH` overrides the normal Go platform
   selection.
@@ -164,11 +168,10 @@ sidecar tools.
   publication seals a language-neutral `ProgramPagePortfolio` keyed by exact
   `ProgramTarget` IDs and child run IDs plus one exhaustive
   `TargetOutcomePortfolio`, then matches the complete GroupsIndex set across
-  targets. Preserve every analyzed child run's manifest-bound `report.json`,
-  enriched ProgramIndex, reduced documentation, and GroupsIndex, but publish
-  exactly one physical `report.html` in the deterministic successful owner run.
-  Derive that owner document directly from the verified backing data rather
-  than merging child HTML. In served mode, sibling target URLs are virtual
+  targets. Preserve every analyzed child run's `report.json`, enriched ProgramIndex,
+  reduced documentation, and GroupsIndex, but publish exactly one physical
+  `report.html` in the deterministic successful owner run. Derive that owner
+  document directly from the backing data rather than merging child HTML. In served mode, sibling target URLs are virtual
   projections of that backing data and never require sibling HTML files.
   Single-target publication uses the same one-page `ProgramPagePortfolio` and
   one-row exhaustive `TargetOutcomePortfolio`; it has no direct page,

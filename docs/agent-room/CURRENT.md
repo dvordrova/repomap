@@ -2,13 +2,34 @@
 
 Status: active living ADR
 
-Last updated: 2026-09-02
+Last updated: 2026-09-04
 
 Historical provenance: pre-cleanup commit `4e54ab3`
 
 This is the only current architectural decision record. Change the affected
 section here when the ordinary product path changes. Older decisions and
 planning notes are history in Git, not current requirements.
+
+## Removed on 2026-09-04
+
+The owner's rule: limits are not wanted and the tool is not a security
+boundary. Gone, with their tests: the scale-warning system in eleven
+packages, the manifest verification suite and run receipts, RunAuthority
+and the captured-input allow-list, the publication assessment and the
+quarantine of failed runs, the workspace snapshot / source catalogue /
+workspace-open chain behind the report server, the page-size limit, the
+credential scanner, the test/limit/prompt inventory contracts, the
+clientrecipe experiment and its fixtures. The run manifest is a record of
+where a run came from; one `report.Generate` replaces the twenty named
+generation variants; the server reads a run directory and serves it. Where
+a section below still describes verification, receipts, thresholds or
+allow-lists, it describes history.
+
+Added the same day: every stage line prints `(t+…)`, every exchange record
+carries `latency_ms` and token counts, and a run closes with a `Time`
+stage per target; the page shows the authors' docstrings on cards, the
+README's own overview and quotes from every README, and gains a find box
+that exists only with scripting.
 
 ## Product surface
 
