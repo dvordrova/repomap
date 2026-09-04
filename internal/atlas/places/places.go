@@ -62,12 +62,24 @@ type Input struct {
 // a literal URL are already facts).
 var sdkPackages = []string{"database/sql", "net"}
 
-// sdkNeverPackages are standard-library packages whose literal arguments are
-// never an integration: format strings, separators, error text.
+// sdkNeverPackages are packages whose literal arguments are never an
+// integration: format strings, separators, error text, log messages, flag
+// names, metric names, assertions. etcd's first atlas found 1,055 of its
+// 1,791 "boundaries" in calls to zap.
 var sdkNeverPackages = []string{
 	"fmt", "strings", "errors", "bytes", "path", "path/filepath", "encoding/json", "io", "os",
 	"time", "regexp", "flag", "html/template", "text/template", "sort", "strconv", "unicode", "log",
 	"context", "sync", "math", "os/exec", "os/signal", "bufio", "crypto/sha256", "encoding/hex", "runtime",
+	"go.uber.org/zap", "go.uber.org/multierr", "github.com/sirupsen/logrus", "k8s.io/klog",
+	"github.com/golang/glog", "github.com/rs/zerolog", "github.com/go-logr/logr", "log/slog",
+	"google.golang.org/grpc/status", "google.golang.org/grpc/codes", "google.golang.org/grpc/grpclog",
+	"github.com/spf13/pflag", "github.com/spf13/cobra", "github.com/spf13/viper", "github.com/urfave/cli",
+	"github.com/pkg/errors", "github.com/stretchr/testify", "github.com/onsi/ginkgo", "github.com/onsi/gomega",
+	"github.com/prometheus/client_golang", "go.opentelemetry.io/otel", "github.com/google/go-cmp",
+	"golang.org/x/exp", "golang.org/x/sync", "golang.org/x/text", "golang.org/x/net/context",
+	"github.com/dustin/go-humanize", "github.com/olekukonko/tablewriter", "gopkg.in/yaml", "sigs.k8s.io/yaml",
+	"github.com/xiang90/probing", "github.com/coreos/go-semver", "github.com/gogo/protobuf",
+	"google.golang.org/protobuf", "github.com/golang/protobuf",
 }
 
 var generatedMarker = regexp.MustCompile(`(?i)code generated .* do not edit|do not edit`)
@@ -81,19 +93,33 @@ func Build(input Input) (atlas.Graph, error) {
 		return atlas.Graph{}, fmt.Errorf("atlas places: no targets")
 	}
 	b := &builder{
-		input:    input,
-		files:    make(map[string]*fileState),
-		dirs:     make(map[string]*dirState),
-		byID:     make(map[string]programindex.Object),
-		fileOf:   make(map[string]string),
-		fanIn:    make(map[string]int),
-		edges:    make(map[edgeKey]*atlas.Edge),
-		docs:     make(map[string][]claims.Claim),
-		readmes:  make(map[string]corpus.Entry),
-		entries:  make(map[string]corpus.Entry),
-		seeds:    make(map[string]struct{}),
-		targetOf: make(map[string]map[string]struct{}),
-		bounds:   make(map[boundaryKey]*boundaryState),
+		input:     input,
+		files:     make(map[string]*fileState),
+		dirs:      make(map[string]*dirState),
+		byID:      make(map[string]programindex.Object),
+		fileOf:    make(map[string]string),
+		fanIn:     make(map[string]int),
+		edges:     make(map[edgeKey]*atlas.Edge),
+		docs:      make(map[string][]claims.Claim),
+		readmes:   make(map[string]corpus.Entry),
+		entries:   make(map[string]corpus.Entry),
+		seeds:     make(map[string]struct{}),
+		targetOf:  make(map[string]map[string]struct{}),
+		bounds:    make(map[boundaryKey]*boundaryState),
+		workspace: make(map[string]struct{}),
+	}
+	for _, target := range input.Targets {
+		if target.Dependencies == nil {
+			continue
+		}
+		for _, dependency := range target.Dependencies.Dependencies {
+			if dependency.Kind == dependencies.KindWorkspace {
+				b.workspace[dependency.PackagePath] = struct{}{}
+			}
+		}
+		for _, importer := range target.Dependencies.Importers {
+			b.workspace[importer.PackagePath] = struct{}{}
+		}
 	}
 	b.indexClaims()
 	b.indexCorpus()
@@ -171,6 +197,9 @@ type builder struct {
 	targetOf map[string]map[string]struct{}
 	bounds   map[boundaryKey]*boundaryState
 	symbols  []atlas.Place
+	// workspace lists the package paths of the repository's own modules, from
+	// the dependency catalogs: a call into one of them is not an integration.
+	workspace map[string]struct{}
 }
 
 func (b *builder) indexClaims() {
@@ -938,6 +967,9 @@ func (b *builder) collectExternalCalls(target TargetInput) {
 		if external == nil || !sdkCandidate(*external) {
 			continue
 		}
+		if _, own := b.workspace[external.PackagePath]; own {
+			continue
+		}
 		var values []string
 		line := relationLine(relation)
 		for _, pattern := range relation.Patterns {
@@ -1175,8 +1207,23 @@ func (b *builder) graph() (atlas.Graph, error) {
 		place.Given = boundaryGiven(place)
 		graph.Places = append(graph.Places, place)
 	}
+	for position := range graph.Places {
+		sanitizePlace(&graph.Places[position])
+	}
 	atlas.SortPlaces(graph.Places)
+	known := make(map[string]struct{}, len(graph.Places))
+	for _, place := range graph.Places {
+		known[place.ID] = struct{}{}
+	}
 	for _, edge := range b.edges {
+		// An import of a package whose declarations the index did not reach
+		// names a directory with no place; the edge has nowhere to land.
+		if _, ok := known[edge.From]; !ok {
+			continue
+		}
+		if _, ok := known[edge.To]; !ok {
+			continue
+		}
 		sort.SliceStable(edge.Witnesses, func(i, j int) bool {
 			if edge.Witnesses[i].LineNo != edge.Witnesses[j].LineNo {
 				return edge.Witnesses[i].LineNo < edge.Witnesses[j].LineNo
@@ -1260,6 +1307,53 @@ func fileGiven(place atlas.Place) string {
 		return "no declarations"
 	}
 	return fmt.Sprintf("%d %s: %s", len(facts.Decls), unit, strings.Join(names, ", "))
+}
+
+// sanitizePlace keeps every text of a place printable: a literal argument
+// with a newline or a docstring with a tab would otherwise be refused by the
+// atlas, and a request must never carry a control character.
+func sanitizePlace(place *atlas.Place) {
+	place.Given = cleanText(place.Given)
+	if place.Directory != nil {
+		place.Directory.Readme = cleanText(place.Directory.Readme)
+		place.Directory.Doc = cleanText(place.Directory.Doc)
+	}
+	if place.File != nil {
+		place.File.Doc = cleanText(place.File.Doc)
+		for i := range place.File.Decls {
+			place.File.Decls[i].Doc = cleanText(place.File.Decls[i].Doc)
+			place.File.Decls[i].Signature = cleanText(place.File.Decls[i].Signature)
+		}
+	}
+	if place.Symbol != nil {
+		place.Symbol.Decl.Doc = cleanText(place.Symbol.Decl.Doc)
+		place.Symbol.Decl.Signature = cleanText(place.Symbol.Decl.Signature)
+	}
+	if place.Boundary != nil {
+		place.Boundary.CallerDoc = cleanText(place.Boundary.CallerDoc)
+		for i := range place.Boundary.Values {
+			place.Boundary.Values[i] = cleanText(place.Boundary.Values[i])
+		}
+	}
+}
+
+// cleanText replaces control characters with spaces and collapses runs.
+func cleanText(text string) string {
+	if text == "" {
+		return ""
+	}
+	dirty := false
+	for _, r := range text {
+		if r < 0x20 || r == 0x7f {
+			dirty = true
+			break
+		}
+	}
+	if !dirty {
+		return text
+	}
+	fields := strings.FieldsFunc(text, func(r rune) bool { return r < 0x20 || r == 0x7f || unicode.IsSpace(r) })
+	return strings.Join(fields, " ")
 }
 
 func fileIDs(set map[string]struct{}) []string {

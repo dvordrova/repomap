@@ -190,6 +190,15 @@ func firstDeclarationLine(t *testing.T, index programindex.Index, path string) i
 	return line
 }
 
+func TestCleanTextDropsControlCharacters(t *testing.T) {
+	if got := cleanText("a\nb\tc\x00d"); got != "a b c d" {
+		t.Fatalf("cleanText: %q", got)
+	}
+	if got := cleanText("plain text"); got != "plain text" {
+		t.Fatalf("cleanText left plain text alone: %q", got)
+	}
+}
+
 func TestShortSignature(t *testing.T) {
 	cases := map[string]string{
 		"func(entries []github.com/dvordrova/repomap/internal/corpus.Entry) (map[string]github.com/x/y/z.T, error)": "func(entries []corpus.Entry) (map[string]z.T, error)",

@@ -314,7 +314,9 @@ func (r *reader) foldArrows() {
 			if from == "" || to == "" || from == to {
 				continue
 			}
-			if !r.edgeInTarget(edge, target.ID) {
+			// A directory edge may name a box that holds none of this
+			// target's files; the arrow belongs to another target's map.
+			if r.targetFiles(r.boxes[from], target.ID) == 0 || r.targetFiles(r.boxes[to], target.ID) == 0 {
 				continue
 			}
 			key := [2]string{from, to}
@@ -363,11 +365,6 @@ func (r *reader) boxOfPlace(placeID string) string {
 		}
 	}
 	return ""
-}
-
-func (r *reader) edgeInTarget(edge atlas.Edge, targetID string) bool {
-	from, to := r.places[edge.From], r.places[edge.To]
-	return contains(from.TargetIDs, targetID) && contains(to.TargetIDs, targetID)
 }
 
 func (arrow *arrowState) topWitnesses() []atlas.Witness {
