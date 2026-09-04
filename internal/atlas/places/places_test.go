@@ -162,6 +162,27 @@ func TestFixturePlaces(t *testing.T) {
 	}
 }
 
+func atlasTestIndexTarget(t *testing.T, name string) programindex.Index {
+	t.Helper()
+	index, err := programindex.New(programindex.Input{
+		ScenarioSHA256: strings.Repeat("a", 64), SourceSHA256: strings.Repeat("b", 64),
+		Target: programindex.TargetInput{
+			Language: "go", Kind: "executable", Name: name, Selector: name,
+			Sources: []programindex.TargetSource{{FileRef: "f1", Path: name + "/main.go"}}, AnchorFileRef: "f1",
+		},
+		Objects: []programindex.ObjectInput{{
+			SourceRef: "o", Kind: programindex.ObjectFunction, Name: "F", Visibility: programindex.VisibilityPublic,
+			Location: &programindex.Location{Path: name + "/main.go", Line: 1, Column: 1},
+		}},
+		Relations: []programindex.RelationInput{},
+		Coverage:  programindex.CoverageInput{Measured: true, ObjectsObserved: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return index
+}
+
 func placesFile(graph atlas.Graph, path string) *atlas.FileFacts {
 	for _, place := range graph.Places {
 		if place.ID == atlas.FileID(path) {
@@ -188,6 +209,24 @@ func firstDeclarationLine(t *testing.T, index programindex.Index, path string) i
 		t.Fatalf("no function in %s after line 2", path)
 	}
 	return line
+}
+
+func TestFilesUnderAnotherTargetRootBelongToIt(t *testing.T) {
+	b := &builder{files: map[string]*fileState{
+		"cmd/tool/main.go": {targets: map[string]struct{}{"tool": {}}},
+		"lib/x.go":         {targets: map[string]struct{}{"tool": {}, "lib": {}}},
+		"shared/y.go":      {targets: map[string]struct{}{"tool": {}, "lib": {}}},
+	}}
+	tool := atlasTestIndexTarget(t, "tool")
+	lib := atlasTestIndexTarget(t, "lib")
+	b.input.Targets = []TargetInput{{Index: tool, Root: "cmd/tool"}, {Index: lib, Root: "lib"}}
+	b.claimByRoot()
+	if _, still := b.files["lib/x.go"].targets[tool.Target.ID]; still {
+		t.Fatal("lib/x.go is still the tool's")
+	}
+	if len(b.files["shared/y.go"].targets) != 2 {
+		t.Fatal("a shared file lost a target")
+	}
 }
 
 func TestCleanTextDropsControlCharacters(t *testing.T) {

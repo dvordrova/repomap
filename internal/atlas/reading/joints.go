@@ -289,6 +289,7 @@ func (r *reader) readJoints(ctx context.Context) error {
 func (r *reader) linkJoints() []atlas.Joint {
 	type key struct{ from, fromBox, to, toBox string }
 	seen := make(map[key]bool)
+	weight := make(map[key]int)
 	var joints []atlas.Joint
 	for _, edge := range r.opts.Graph.Edges {
 		fromBox, toBox := r.boxOfPlace(edge.From), r.boxOfPlace(edge.To)
@@ -308,6 +309,7 @@ func (r *reader) linkJoints() []atlas.Joint {
 					continue
 				}
 				k := key{fromTarget, fromBox, toTarget, toBox}
+				weight[k] += edge.Count
 				if seen[k] {
 					continue
 				}
@@ -322,8 +324,28 @@ func (r *reader) linkJoints() []atlas.Joint {
 			}
 		}
 	}
-	return joints
+	// A pair of targets keeps its five busiest seams: etcd's twenty-seven
+	// targets produced 2,456 box-to-box links, which is a listing, not a map.
+	sort.SliceStable(joints, func(i, j int) bool {
+		a := key{joints[i].From.TargetID, joints[i].From.BoxID, joints[i].To.TargetID, joints[i].To.BoxID}
+		b := key{joints[j].From.TargetID, joints[j].From.BoxID, joints[j].To.TargetID, joints[j].To.BoxID}
+		return weight[a] > weight[b]
+	})
+	perPair := make(map[[2]string]int)
+	kept := joints[:0]
+	for _, joint := range joints {
+		pair := [2]string{joint.From.TargetID, joint.To.TargetID}
+		if perPair[pair] == maxLinkJointsPerPair {
+			continue
+		}
+		perPair[pair]++
+		kept = append(kept, joint)
+	}
+	return kept
 }
+
+// maxLinkJointsPerPair bounds the seams drawn between two targets.
+const maxLinkJointsPerPair = 5
 
 func (r *reader) sideOf(state *boundaryState, byTarget map[string]TargetMeta) lines.BoundarySide {
 	name := ""

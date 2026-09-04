@@ -156,6 +156,7 @@ func Build(input Input) (atlas.Graph, error) {
 		}
 		b.collectObjects(target)
 	}
+	b.claimByRoot()
 	for _, target := range input.Targets {
 		b.collectEdges(target)
 		b.collectImports(target)
@@ -321,6 +322,47 @@ func (b *builder) collectObjects(target TargetInput) {
 	}
 	if root := atlasPath(target.Root); root != "" {
 		b.targetOf[targetID] = map[string]struct{}{root: {}}
+	}
+}
+
+// claimByRoot gives a file under another target's root to that target
+// alone: a program reaches the files of the libraries it uses, but they are
+// the library's, and a call into them is the seam between the two. The
+// deepest root wins; a file under no target's root stays shared.
+func (b *builder) claimByRoot() {
+	type root struct {
+		targetID string
+		path     string
+	}
+	var roots []root
+	for _, target := range b.input.Targets {
+		path := atlasPath(target.Root)
+		if path == "" {
+			continue
+		}
+		roots = append(roots, root{target.Index.Target.ID, path})
+	}
+	for filePath, state := range b.files {
+		owner, depth := "", -1
+		for _, r := range roots {
+			if r.path != "." && filePath != r.path && !strings.HasPrefix(filePath, r.path+"/") {
+				continue
+			}
+			if d := strings.Count(r.path, "/") + 1; r.path == "." {
+				if depth < 0 {
+					owner, depth = r.targetID, 0
+				}
+			} else if d > depth {
+				owner, depth = r.targetID, d
+			}
+		}
+		if owner == "" {
+			continue
+		}
+		if _, reaches := state.targets[owner]; !reaches {
+			continue
+		}
+		state.targets = map[string]struct{}{owner: {}}
 	}
 }
 
@@ -1233,6 +1275,10 @@ func (b *builder) graph() (atlas.Graph, error) {
 	graph.Places = append(graph.Places, b.symbols...)
 	for _, state := range b.bounds {
 		place := state.place
+		// A boundary belongs to whoever owns its file, claimed by root.
+		if file, ok := b.files[place.Path]; ok {
+			place.TargetIDs = sortedKeys(file.targets)
+		}
 		sort.Strings(place.TargetIDs)
 		if place.Boundary.Values == nil {
 			place.Boundary.Values = []string{}
