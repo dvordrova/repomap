@@ -153,12 +153,11 @@ The current flags are:
 
 The ordinary Go call graph is complete for the selected target: `--depth 0`
 and `--edges-limit 0` are the defaults and keep every reachable exact call and
-edge. Positive values opt into narrower local analysis. Unusually deep or large
-graphs produce aggregate warnings; those warnings do not remove data or fail a
-target.
+edge. Positive values opt into narrower local analysis. There is no size at
+which repomap warns, samples or stops: a large graph is processed completely.
 
 Without `--no-serve`, repomap starts a loopback server. Report code links use
-that server to open manifest-authorized local files in VS Code. `--no-open`
+that server to open the files the page names in VS Code. `--no-open`
 keeps the browser closed, and `--port` selects a fixed port. In a multi-target
 run, sibling target URLs are served virtually from their validated page data;
 they do not require sibling `report.html` files on disk.
@@ -168,8 +167,8 @@ the captured revision on GitHub or GitLab. The repository `origin` must identify
 a supported host, or the matching `--github-url`/`--gitlab-url` must be supplied.
 Invalid static-link configuration fails in preflight before analysis or model
 requests. For a multi-target run, the standalone document is projected directly
-from every manifest-verified `report.json` and page-local artifact; repomap does
-not merge child HTML documents. These flags remain presentation configuration
+from every backing `report.json` and page-local artifact; repomap does not
+merge child HTML documents. These flags remain presentation configuration
 and do not download or switch the analyzed checkout.
 
 Report runs and model-response caches default to the OS user-cache directory.
@@ -201,17 +200,15 @@ make build
 .bin/repomap /path/to/a/real/repository --no-open
 ```
 
-For a successful product check, verify the process exit status and the emitted
-manifest, `reduced-documentation.json`, sealed enriched ProgramIndex set, every
-target-scoped `dependency-catalog.json`, every `groups-index.json`, the complete
-matched graph in `report.json`, the `facts.json`, `claims.json`,
-`orientation.json` and `rejected.jsonl` artifacts, and `report.html`. Then open
+For a product check, look at the exit status, at the run directory —
+`reduced-documentation.json`, the enriched ProgramIndex set, every
+`dependency-catalog.json` and `groups-index.json`, `report.json`, `facts.json`,
+`claims.json`, `orientation.json`, `rejected.jsonl`, `report.html` — and at the
+`Time` stage the run prints last, which says where the minutes went. Then open
 the page and answer the first-day questions from it alone; that dogfood read is
-the real acceptance. For a multi-target run, verify every backing manifest and
-`report.json`, and verify that only the first successful owner run contains the
-physical `report.html`. Cache changes also require a
-second real run and `repomap cache
-clear`.
+the real acceptance. In a multi-target run only the first successful owner run
+holds the physical `report.html`. Cache changes also need a second real run
+and `repomap cache clear`.
 
 The product constitution lives in [docs/CONSTITUTION.md](docs/CONSTITUTION.md)
 and the current architecture in
