@@ -426,3 +426,16 @@ func TestReadmeClaimsQuoteEveryReadmeShallowestFirst(t *testing.T) {
 		t.Errorf("order = %v", []string{picked[0].Path, picked[3].Path, picked[4].Path})
 	}
 }
+
+// An entrypoint read forward shows only what its group reaches, the first
+// few, never what reaches it.
+func TestStartReachesKeepsOutgoingHopsOnly(t *testing.T) {
+	rows := []pageConnection{
+		{Arrow: "←", Title: "caller"}, {Arrow: "→", Title: "a"}, {Arrow: "→", Title: "b"},
+		{Arrow: "→", Title: "c"}, {Arrow: "→", Title: "d"},
+	}
+	got := startReaches(rows, 3)
+	if len(got) != 3 || got[0].Title != "a" || got[2].Title != "c" {
+		t.Fatalf("startReaches = %#v", got)
+	}
+}

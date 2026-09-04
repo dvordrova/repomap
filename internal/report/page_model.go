@@ -221,6 +221,9 @@ type pageBuilder struct {
 	// within reach.
 	docstrings   map[string][]claims.Claim
 	declarations map[string][]int
+	// subjectAt finds the symbol declared at a path:line, which is how an
+	// entrypoint fact meets the group graph.
+	subjectAt map[string]string
 }
 
 func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (*pageView, error) {
@@ -237,6 +240,7 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 		subjects:     make(map[string]subjectRef),
 		groupTitles:  make(map[groupindex.Endpoint]string),
 		declarations: make(map[string][]int),
+		subjectAt:    make(map[string]string),
 	}
 	if data.Facts != nil {
 		builder.factsByID = data.Facts.ByID()
@@ -264,6 +268,7 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 				builder.declarations[object.Location.Path] = append(
 					builder.declarations[object.Location.Path], object.Location.Line,
 				)
+				builder.subjectAt[object.Location.Path+":"+strconv.Itoa(object.Location.Line)] = subject.ID
 			}
 		}
 		for _, group := range index.Groups {

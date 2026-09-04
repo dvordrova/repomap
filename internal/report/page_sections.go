@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/dvordrova/repomap/internal/claims"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/facts"
@@ -46,11 +47,16 @@ type pageSection struct {
 	DependencyGroups []pageGroup
 	Dependencies     []pageDependency
 	Flow             *pageFlow
-	FlowMissing      string
-	Dynamic          []pageDynamic
-	Config           []pageConfig
-	Dead             []pageAnchor
-	Todos            []pageTodo
+	// Start is where to start reading when no model flow passes through
+	// this target: each entrypoint, the group it lands in, and what that
+	// group reaches first. Three of chi's four targets said only that the
+	// repository's main flow does not pass through them.
+	Start       []pageStart
+	FlowMissing string
+	Dynamic     []pageDynamic
+	Config      []pageConfig
+	Dead        []pageAnchor
+	Todos       []pageTodo
 }
 
 type pageRouteGroup struct {
@@ -65,6 +71,16 @@ type pageEntrypoint struct {
 	Symbol string
 	Kind   string
 	Anchor *pageAnchor
+}
+
+// pageStart is one entrypoint read forward: the symbol, the group it is in,
+// and the first groups that group reaches.
+type pageStart struct {
+	Symbol  string
+	Anchor  *pageAnchor
+	Group   string
+	Href    string
+	Reaches []pageConnection
 }
 
 type pageDependency struct {
@@ -171,6 +187,11 @@ func (builder *pageBuilder) buildSections() {
 			section.InboundCount += group.Paths
 		}
 		section.Flow = builder.flow(section)
+		if section.Flow == nil {
+			if index := builder.graphIndex(section.programTargetID); index != nil {
+				section.Start = builder.startSteps(section, *index)
+			}
+		}
 		if section.Flow == nil {
 			section.FlowMissing = "This run produced no main flow."
 			if builder.data.Orientation != nil && len(builder.data.Orientation.MainFlow.Steps) > 0 {
@@ -764,4 +785,47 @@ func nearestDocstring(docs []claims.Claim, declarations []int, line int) string 
 		}
 	}
 	return found
+}
+
+// maxStartReaches is how many first hops one entrypoint shows.
+const maxStartReaches = 3
+
+// startSteps reads each entrypoint forward through the group graph: the
+// group the entrypoint's symbol is in, then what that group reaches. It is
+// assembled from facts and the graph, so it exists for every target, model
+// flow or not.
+func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.Index) []pageStart {
+	groupOf := make(map[string]groupindex.Group)
+	for _, group := range index.Groups {
+		for _, member := range group.MemberSubjectIDs {
+			groupOf[member] = group
+		}
+	}
+	var steps []pageStart
+	for _, entry := range section.Entrypoints {
+		step := pageStart{Symbol: entry.Symbol, Anchor: entry.Anchor}
+		if entry.Anchor != nil {
+			if subjectID, known := builder.subjectAt[entry.Anchor.Path+":"+strconv.Itoa(entry.Anchor.Line)]; known {
+				if group, inGroup := groupOf[subjectID]; inGroup {
+					step.Group = group.Title
+					step.Href = "#" + groupAnchorID(section.ID, group.ID)
+					step.Reaches = startReaches(builder.groupConnections(index, group), maxStartReaches)
+				}
+			}
+		}
+		steps = append(steps, step)
+	}
+	return steps
+}
+
+// startReaches keeps the outgoing connections of a group, the first few.
+func startReaches(rows []pageConnection, most int) []pageConnection {
+	var out []pageConnection
+	for _, row := range rows {
+		if row.Arrow != "→" || len(out) == most {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
 }
