@@ -449,3 +449,14 @@ func TestTraceOrderFollowsTheFirstStep(t *testing.T) {
 		t.Fatalf("traceOrder = %v, want %v", got, want)
 	}
 }
+
+// The steps through a group read as a person writes them.
+func TestStepRangesReadLikeAPerson(t *testing.T) {
+	for listed, want := range map[string]string{
+		"1": "step 1", "2,3,4,5,6,7,8": "steps 2–8", "1,3,4,5": "steps 1, 3–5", "": "", "x": "",
+	} {
+		if got := stepRanges(listed); got != want {
+			t.Errorf("stepRanges(%q) = %q, want %q", listed, got, want)
+		}
+	}
+}

@@ -315,7 +315,7 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 		node.Outside = outside
 		node.Neighbours = strings.Join(mapNodeIDs(local), " ")
 		node.Degree = len(local) - outside
-		node.Steps = steps[group.ID]
+		node.Steps = stepRanges(steps[group.ID])
 		node.Keys = builder.keySymbols(group, maxKeySymbols)
 		node.StepX = node.X + node.Width - 10
 		node.StepY = node.Y + mapNodeHeight - 9
@@ -1914,4 +1914,38 @@ func (builder *pageBuilder) flowStepsByGroup(
 		}
 	}
 	return result
+}
+
+// stepRanges writes the steps that pass through a group the way a person
+// would: "step 1", "steps 2–8", "steps 1, 3–5". Written out, chi's
+// "step 2,3,4,5,6,7,8" ran off the right of its box.
+func stepRanges(listed string) string {
+	var numbers []int
+	for _, part := range strings.Split(listed, ",") {
+		if number, err := strconv.Atoi(strings.TrimSpace(part)); err == nil {
+			numbers = append(numbers, number)
+		}
+	}
+	if len(numbers) == 0 {
+		return ""
+	}
+	sort.Ints(numbers)
+	var runs []string
+	for start := 0; start < len(numbers); {
+		end := start
+		for end+1 < len(numbers) && numbers[end+1] == numbers[end]+1 {
+			end++
+		}
+		if end > start {
+			runs = append(runs, fmt.Sprintf("%d–%d", numbers[start], numbers[end]))
+		} else {
+			runs = append(runs, strconv.Itoa(numbers[start]))
+		}
+		start = end + 1
+	}
+	word := "step"
+	if len(numbers) > 1 {
+		word = "steps"
+	}
+	return word + " " + strings.Join(runs, ", ")
 }
