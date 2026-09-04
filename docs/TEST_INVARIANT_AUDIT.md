@@ -45,17 +45,16 @@ are listed separately at the end.
 
 | Test file | Contract and invariants asserted |
 | --- | --- |
-| `cmd/repomap/cache_clear_test.go` | Cache clearing removes only the known persistent cache directories, rejects a symlinked cache root, and does not leave a partially cleared state. |
-| `cmd/repomap/go_target_auto_test.go` | Explicit Go target selection wins over automatic/environment selection, while environment fallback remains exact and canonical. |
-| `cmd/repomap/javascript_target_runtime_test.go` | Repository language detection, nested-manifest and package-bin corpus binding, typed compiler-preparation guidance, CLI product authority, warning-before-persistence ordering, and preservation of every repository-planned package materialization. |
-| `cmd/repomap/publication_mode_flags_test.go` | `--port` is invalid only with static publication, semantic stop points remain closed, positional repository parsing survives flag order, and implicit static source-link preflight is enforced. |
-| `cmd/repomap/python_target_runtime_test.go` | Explicit Python target resolution accepts the exact derived module selector and rejects a source path as an implicit target alias. |
-| `cmd/repomap/readme_role_authority_test.go` | README role authority is persisted exactly, canonical empty authority means absence, and persistence failure is terminal. |
-| `cmd/repomap/repository_target_runtime_test.go` | Mixed Go/Python/JS/TS target planning restores every adapter and native target, defers JS/TS compilation to target dispatch, preserves canonical representatives and Python execution identity, honors exact selectors, rejects ambiguity/suppression, and isolates Go targets after shared-workspace failure. |
-| `cmd/repomap/semantic_diagnostics_test.go` | Preflight/child failures flush exactly one first-layer semantic journal, failed runs do not create sibling run directories, and accounting metadata is updated exactly once. |
-| `cmd/repomap/target_outcome_runtime_test.go` | Selected targets retain pre-analysis Go identity, failures map only to closed public stages/reasons, and one canonical target-outcome portfolio is written identically to all bound run directories. |
-| `cmd/repomap/target_page_publication_quarantine_test.go` | A global publication failure leaves completed pages classified as analyzed, while quarantine removes their publication authority and product filenames. |
-| `cmd/repomap/target_portfolio_runtime_test.go` | Target-portfolio warnings retain and report the complete candidate reservoir, and repository naming strips semantic-major suffixes correctly. |
+| `internal/run/cache_clear_test.go` | Cache clearing removes only the known persistent cache directories, rejects a symlinked cache root, and does not leave a partially cleared state. |
+| `internal/run/go_target_auto_test.go` | Explicit Go target selection wins over automatic/environment selection, while environment fallback remains exact and canonical. |
+| `internal/run/javascript_target_runtime_test.go` | Repository language detection, nested-manifest and package-bin corpus binding, typed compiler-preparation guidance, CLI product authority, warning-before-persistence ordering, and preservation of every repository-planned package materialization. |
+| `internal/run/publication_mode_flags_test.go` | `--port` is invalid only with static publication, semantic stop points remain closed, positional repository parsing survives flag order, and implicit static source-link preflight is enforced. |
+| `internal/run/python_target_runtime_test.go` | Explicit Python target resolution accepts the exact derived module selector and rejects a source path as an implicit target alias. |
+| `internal/run/readme_role_authority_test.go` | README role authority is persisted exactly, canonical empty authority means absence, and persistence failure is terminal. |
+| `internal/run/repository_target_runtime_test.go` | Mixed Go/Python/JS/TS target planning restores every adapter and native target, defers JS/TS compilation to target dispatch, preserves canonical representatives and Python execution identity, honors exact selectors, rejects ambiguity/suppression, and isolates Go targets after shared-workspace failure. |
+| `internal/run/semantic_diagnostics_test.go` | Preflight/child failures flush exactly one first-layer semantic journal, failed runs do not create sibling run directories, and accounting metadata is updated exactly once. |
+| `internal/run/target_outcome_runtime_test.go` | Selected targets retain pre-analysis Go identity, failures map only to closed public stages/reasons, and one canonical target-outcome portfolio is written identically to all bound run directories. |
+| `internal/run/target_portfolio_runtime_test.go` | Target-portfolio warnings retain and report the complete candidate reservoir, and repository naming strips semantic-major suffixes correctly. |
 
 ## Semantic cube and model-boundary contracts
 

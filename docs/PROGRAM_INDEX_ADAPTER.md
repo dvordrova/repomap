@@ -14,8 +14,8 @@ For a new language named `jvm`, make only these product changes:
 2. Add or extend the one cumulative real-language fixture at
    `testdata/repositories/jvm/`, including exact inventory expectations.
 3. Add one command-layer descriptor in
-   `cmd/repomap/repository_target_registry.go` and its discovery/runtime
-   callbacks in a language-owned `cmd/repomap/jvm_target_runtime.go`. The
+   `internal/run/repository_target_registry.go` and its discovery/runtime
+   callbacks in a language-owned `internal/run/jvm_target_runtime.go`. The
    descriptor declares selector prefixes, display text, and every
    `AllowedLanguages` value the adapter may actually emit.
 4. Add the language's dependency-catalog producer if its package authority is
