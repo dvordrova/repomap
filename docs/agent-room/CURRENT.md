@@ -29,7 +29,13 @@ Added the same day: every stage line prints `(t+…)`, every exchange record
 carries `latency_ms` and token counts, and a run closes with a `Time`
 stage per target; the page shows the authors' docstrings on cards, the
 README's own overview and quotes from every README, and gains a find box
-that exists only with scripting.
+that exists only with scripting; the map's hover card names a group's key
+symbols and its arrows as sentences and the main path through a target is
+a trace; "What is missing" names LICENSE, CONTRIBUTING, CHANGELOG and a
+linter configuration; the page says how long the whole run took and
+where. Group matching reads incidence from indexes built once — repomap
+on itself compiled its 233,047 cross-target pairs in 42 s where it had
+spent seventy CPU-minutes without finishing.
 
 ## Product surface
 

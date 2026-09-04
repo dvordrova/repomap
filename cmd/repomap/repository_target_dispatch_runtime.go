@@ -407,6 +407,13 @@ func dispatchRepositoryTargetPlan(
 	); err != nil {
 		return failPublication(err)
 	}
+	// The owner page says how long the whole run took, not how long its own
+	// target did: every target run's account is merged and stamped with the
+	// wall clock of the run that drove them. chi's page said "29s" of a
+	// five-minute run before this.
+	if err := writeRunTiming(owner.RunDir, wholeRunTiming(options.Output, runs)); err != nil {
+		options.Output.Warn("could not record the run's timing", err.Error())
+	}
 	if err := publishProgramPageBundle(portfolio, runs); err != nil {
 		return failPublication(err)
 	}
