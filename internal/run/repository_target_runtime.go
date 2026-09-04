@@ -531,6 +531,32 @@ func resolveExplicitRepositoryTarget(
 	override string,
 	readmeRows []readmeRoleLogRow,
 ) (repositoryTargetPlan, error) {
+	// Several selectors, comma-separated, are several explicit targets; the
+	// first is the default page.
+	selectors := strings.Split(override, ",")
+	if len(selectors) > 1 {
+		targets := make([]repositoryTypedTarget, 0, len(selectors))
+		var refs []string
+		for _, selector := range selectors {
+			selector = strings.TrimSpace(selector)
+			if selector == "" {
+				continue
+			}
+			one, err := resolveExplicitRepositoryTarget(repository, discovery, selector, readmeRows)
+			if err != nil {
+				return repositoryTargetPlan{}, err
+			}
+			targets = append(targets, one.Targets...)
+			refs = append(refs, one.Default.String())
+		}
+		defaultKey := targets[0].Key
+		sort.SliceStable(targets, func(i, j int) bool { return repositoryTypedTargetLess(targets[i], targets[j]) })
+		outcome := targetPortfolioRunOutcome{
+			SelectedRef: refs[0], SelectedTargets: len(targets), SelectedTargetRefs: refs,
+			ReadmeRoles: cloneReadmeRoleLog(readmeRows),
+		}
+		return repositoryTargetPlanFromDiscovery(discovery, targets, defaultKey, true, outcome)
+	}
 	matches := make(map[repositoryTargetKey]repositoryTypedTarget)
 	for _, adapter := range discovery.adapters {
 		resolved, err := adapter.ResolveExplicit(repository, override)

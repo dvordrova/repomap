@@ -179,7 +179,17 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	fs.SetOutput(io.Discard)
 
 	forcePlatform := fs.String("force-platform", "", "force Go platform as GOOS/GOARCH")
-	analysisTargetFlag := fs.String("target", "", "analysis surface (unambiguous advertised path or exact target key)")
+	var analysisTargets []string
+	fs.Func("target", "analysis surface (exact target key); repeat the flag or separate keys with commas for several targets", func(value string) error {
+		for _, part := range strings.Split(value, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				analysisTargets = append(analysisTargets, part)
+			}
+		}
+		return nil
+	})
+	analysisTargetJoined := strings.Join(analysisTargets, ",")
+	analysisTargetFlag := &analysisTargetJoined
 	directCallDepth := fs.Int(
 		"depth", surfacediscovery.DefaultDirectCallDepth,
 		"target call-graph depth (0 keeps all reachable calls)",
@@ -197,7 +207,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	debugDir := fs.String("debug-dir", defaultDebugDir(), "directory for debug artifacts")
 	noModel := fs.Bool("no-model", false, "make no model call: every atlas cell is its fallback line, no orientation")
 
-	if err := fs.Parse(extraArgs); err != nil {
+	parseErr := fs.Parse(extraArgs)
+	analysisTargetJoined = strings.Join(analysisTargets, ",")
+	if err := parseErr; err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			printUsageTo(deps.stderr)
 			return nil
@@ -421,7 +433,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			targetOverride,
 			func() (snapshot.Snapshot, error) {
 				moduleDir := ""
-				if exactModuleDir, ok := analysistarget.ExactCandidateKeyModuleDir(targetOverride); ok {
+				// One explicit target narrows the snapshot to its module; several
+				// from different modules need the whole repository.
+				for i, selector := range strings.Split(targetOverride, ",") {
+					exactModuleDir, ok := analysistarget.ExactCandidateKeyModuleDir(strings.TrimSpace(selector))
+					if !ok || i > 0 && exactModuleDir != moduleDir {
+						moduleDir = ""
+						break
+					}
 					moduleDir = exactModuleDir
 				}
 				return snapshot.BuildContext(ctx, snapshot.Options{
