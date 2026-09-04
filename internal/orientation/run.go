@@ -175,14 +175,22 @@ func requestFits(provider llm.Provider, wire []byte) error {
 	if err != nil {
 		return err
 	}
-	if prepared.Len() > bounds.MaxRequestBytes {
+	// The shape shrinks against what the model can read, not against the
+	// record limit: kubernetes' complete request was under the record limit
+	// and over the model's context, and the provider answered 400.
+	if prepared.Len() > MaxRequestBytes {
 		return llm.NewResourceLimitError(llm.ResourceLimitError{
 			Stage: StageName + "_prepare", Kind: llm.ResourceLimitRequestBytes,
-			Limit: bounds.MaxRequestBytes, Observed: prepared.Len(), ObservedKnown: true,
+			Limit: MaxRequestBytes, Observed: prepared.Len(), ObservedKnown: true,
 		})
 	}
 	return nil
 }
+
+// MaxRequestBytes is the largest orientation request sent: about half a
+// million tokens of a one-million-token context, leaving the model room to
+// answer.
+const MaxRequestBytes = 2 << 20
 
 func cubeState(input Input, groupDigests []string, wire []byte) []byte {
 	requestDigest := sha256.Sum256(wire)

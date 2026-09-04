@@ -93,6 +93,19 @@ func TestDecodeRefusesBadWindows(t *testing.T) {
 	}
 }
 
+func TestChoiceAcceptsAUniquePrefix(t *testing.T) {
+	def := testDefinition()
+	def.Columns[1] = Column{Name: "box", Kind: Choice, Options: []string{"Utilities and configuration", "Utilities and logging", "Storage"}}
+	windows, _ := Windows(def, 1, testRows()[:1])
+	if _, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"r1","line":"a","box":"Utilities and"}]}`)); err == nil {
+		t.Fatal("an ambiguous prefix was accepted")
+	}
+	answers, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"r1","line":"a","box":"Stor"}]}`))
+	if err != nil || answers[0]["box"] != "Storage" {
+		t.Fatalf("unique prefix: %v %v", answers, err)
+	}
+}
+
 func TestTextIsCutAtAWord(t *testing.T) {
 	def := testDefinition()
 	windows, _ := Windows(def, 1, testRows()[:1])

@@ -92,7 +92,25 @@ their run glue are deleted; `groupindex.Build` and the proposal types are
 dead code awaiting removal. An in-process test drives the whole path over a
 two-file Go repository with `--no-model` in about a second. repomap on
 itself, seven targets, cold cache: 3m02s wall against 29m34s before.
-Step 5 (chi, etcd, kubernetes measured) follows.
+Step 5, measured the same day on the owner's Mac (4 provider threads):
+
+| repository | targets | files | windows | wall, cold cache |
+|---|---|---|---|---|
+| repomap on itself | 7 | 245 | 63 | 2m43s |
+| etcd | 27 | 582 | 157 | 9m25s |
+| kubernetes, cmd/kube-apiserver | 1 | 820 | 154 | about 10 min: facts 3 min, claims 1 min, tables 4m30s, orientation 6 s |
+
+kubernetes' Go index takes seconds with a warm build cache; cold it is
+the build of kube-apiserver. Three rules came out of the big runs: SDK
+boundaries are a closed list of client libraries (the open "any package
+with a literal" rule gave etcd 1,055 zap log calls and kubernetes 844
+field paths); a call or import into a box of another target is a joint
+the code derives (a workspace package of the same target is no boundary
+at all); the orientation request is bounded by the model's context
+(2 MB), not by the 32 MB record limit that let kubernetes' request draw
+an HTTP 400. Not measured: chi (a minute by the numbers), etcd with a
+warm cache. The disk was full during these runs (see the memory note);
+an "unavailable for SSA" error with no diagnostic was the disk.
 
 ## Product surface
 

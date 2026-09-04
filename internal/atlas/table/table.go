@@ -293,6 +293,23 @@ func normalizeCell(column Column, row Row, cell string) (string, error) {
 				return option, nil
 			}
 		}
+		// A cut answer that begins exactly one option is that option: the
+		// model wrote "Utilities and" for "Utilities and configuration".
+		if len(text) >= 4 {
+			matched := ""
+			for _, option := range options {
+				if len(option) > len(text) && strings.EqualFold(option[:len(text)], text) {
+					if matched != "" {
+						matched = ""
+						break
+					}
+					matched = option
+				}
+			}
+			if matched != "" {
+				return matched, nil
+			}
+		}
 		if column.Free != "" && len(text) > len(column.Free) &&
 			strings.EqualFold(text[:len(column.Free)], column.Free) {
 			rest := collapse(text[len(column.Free):])
