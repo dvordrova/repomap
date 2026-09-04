@@ -144,6 +144,11 @@ func (r *reader) readTargetZones(ctx context.Context, targetID string) error {
 			tops = append(tops, owner)
 		}
 	}
+	if all := r.boxesOfTarget(targetID); len(tops) < 4 && len(all) >= 4 {
+		// A library whose root directory holds files has one top box and
+		// everything beneath it; its parts are cut over all of its boxes.
+		tops = all
+	}
 	if len(tops) < 4 {
 		// A target of a few boxes needs no parts: each box is its own.
 		for _, owner := range tops {
@@ -154,82 +159,31 @@ func (r *reader) readTargetZones(ctx context.Context, targetID string) error {
 		r.inheritZones(targetID)
 		return nil
 	}
-	sort.SliceStable(tops, func(i, j int) bool {
-		a, b := r.targetFiles(tops[i], targetID), r.targetFiles(tops[j], targetID)
-		if a != b {
-			return a > b
-		}
-		return tops[i].id < tops[j].id
-	})
-	largest := tops
-	if len(largest) > lines.WindowRows {
-		largest = largest[:lines.WindowRows]
-	}
-	want := lines.WantZones(len(largest))
-	summaries := make([]lines.BoxSummary, 0, len(largest))
-	for _, owner := range largest {
-		summaries = append(summaries, r.summary(owner, targetID))
-	}
-	// Cube one: the names, exactly want of them, in one row.
-	names := lines.ZoneNames(want)
-	named, err := r.runTableWith(ctx, names, 1, []table.Field{{Name: "question", Value: "names"}, {Name: "want", Value: want}},
-		[]table.Row{lines.ZoneNamesRow(targetID, summaries)}, func(answers table.Answers) error {
-			distinct := make(map[string]struct{})
-			for i := 0; i < want; i++ {
-				distinct[strings.ToLower(strings.TrimSpace(lines.PartName(answers[0], i)))] = struct{}{}
-			}
-			if len(distinct) != want {
-				return fmt.Errorf("%d distinct parts, want %d", len(distinct), want)
-			}
-			return nil
-		})
+	parts, err := r.partition(ctx, targetID, tops, 1)
 	if err != nil {
 		return err
 	}
-	var titles []string
-	byKey := make(map[string]*zoneState)
-	addPart := func(title string) *zoneState {
-		key := strings.ToLower(strings.TrimSpace(title))
-		if zone, ok := byKey[key]; ok {
-			return zone
-		}
-		zone := &zoneState{id: atlas.Slug(title), title: strings.TrimSpace(title)}
-		byKey[key] = zone
-		titles = append(titles, zone.title)
-		r.zones[targetID] = append(r.zones[targetID], zone)
-		return zone
-	}
-	if named[0].answer != nil {
-		for i := 0; i < want; i++ {
-			addPart(lines.PartName(named[0].answer, i))
-		}
-	} else {
-		// The window was refused: the largest boxes name the parts.
-		for _, owner := range largest[:want] {
-			addPart(owner.title)
-		}
-	}
-	// Cube two: every top box chooses its part from the closed list.
-	rows := make([]table.Row, 0, len(tops))
-	for _, owner := range tops {
-		rows = append(rows, lines.ZoneBoxRow(r.summary(owner, targetID)))
-	}
-	assigned, err := r.runTableWith(ctx, lines.ZoneAssign(titles), 2, []table.Field{{Name: "question", Value: "assign"}, {Name: "parts", Value: titles}}, rows, nil)
-	if err != nil {
-		return err
-	}
-	for i, owner := range tops {
-		if answer := assigned[i]; answer.answer != nil {
-			zone := addPart(answer.answer["part"])
-			zone.boxes = append(zone.boxes, owner.id)
-			owner.zoneID[targetID] = zone.id
+	// A part holding more than half of the boxes is not a part, it is the
+	// target under one name: client/v3 came back as "Official Go client ·
+	// 18 groups". Such a part is partitioned once more on its own.
+	for _, part := range parts {
+		if len(part.boxes) < 6 || len(part.boxes)*2 <= len(tops) {
+			r.zones[targetID] = append(r.zones[targetID], part)
 			continue
 		}
-		// Refused window: a box whose title named a part stands in it.
-		if zone, ok := byKey[strings.ToLower(strings.TrimSpace(owner.title))]; ok {
-			zone.boxes = append(zone.boxes, owner.id)
-			owner.zoneID[targetID] = zone.id
+		inner := make([]*boxState, 0, len(part.boxes))
+		for _, boxID := range part.boxes {
+			inner = append(inner, r.boxes[boxID])
 		}
+		sub, err := r.partition(ctx, targetID, inner, 10)
+		if err != nil {
+			return err
+		}
+		if len(sub) < 2 {
+			r.zones[targetID] = append(r.zones[targetID], part)
+			continue
+		}
+		r.zones[targetID] = append(r.zones[targetID], sub...)
 	}
 	r.inheritZones(targetID)
 	// Empty parts vanish; every remaining part gets its sentence.
@@ -240,7 +194,7 @@ func (r *reader) readTargetZones(ctx context.Context, targetID string) error {
 		}
 	}
 	r.zones[targetID] = kept
-	rows = rows[:0]
+	var rows []table.Row
 	for _, zone := range kept {
 		var boxes []lines.BoxSummary
 		for _, boxID := range zone.boxes {
@@ -623,4 +577,90 @@ func parentDir(filePath string) string {
 		return "."
 	}
 	return dir
+}
+
+// partition names the parts of a set of boxes in one row and lets every box
+// choose its part from that closed list. It returns the parts with their
+// boxes and stamps each box's zone; empty parts are dropped.
+func (r *reader) partition(ctx context.Context, targetID string, tops []*boxState, round int) ([]*zoneState, error) {
+	sort.SliceStable(tops, func(i, j int) bool {
+		a, b := r.targetFiles(tops[i], targetID), r.targetFiles(tops[j], targetID)
+		if a != b {
+			return a > b
+		}
+		return tops[i].id < tops[j].id
+	})
+	largest := tops
+	if len(largest) > lines.WindowRows {
+		largest = largest[:lines.WindowRows]
+	}
+	want := lines.WantZones(len(largest))
+	summaries := make([]lines.BoxSummary, 0, len(largest))
+	for _, owner := range largest {
+		summaries = append(summaries, r.summary(owner, targetID))
+	}
+	named, err := r.runTableWith(ctx, lines.ZoneNames(want), round, []table.Field{{Name: "question", Value: "names"}, {Name: "want", Value: want}},
+		[]table.Row{lines.ZoneNamesRow(targetID, summaries)}, func(answers table.Answers) error {
+			distinct := make(map[string]struct{})
+			for i := 0; i < want; i++ {
+				distinct[strings.ToLower(strings.TrimSpace(lines.PartName(answers[0], i)))] = struct{}{}
+			}
+			if len(distinct) != want {
+				return fmt.Errorf("%d distinct parts, want %d", len(distinct), want)
+			}
+			return nil
+		})
+	if err != nil {
+		return nil, err
+	}
+	var titles []string
+	var parts []*zoneState
+	byKey := make(map[string]*zoneState)
+	addPart := func(title string) *zoneState {
+		key := strings.ToLower(strings.TrimSpace(title))
+		if zone, ok := byKey[key]; ok {
+			return zone
+		}
+		zone := &zoneState{id: atlas.Slug(title), title: strings.TrimSpace(title)}
+		byKey[key] = zone
+		titles = append(titles, zone.title)
+		parts = append(parts, zone)
+		return zone
+	}
+	if named[0].answer != nil {
+		for i := 0; i < want; i++ {
+			addPart(lines.PartName(named[0].answer, i))
+		}
+	} else {
+		for _, owner := range largest[:want] {
+			addPart(owner.title)
+		}
+	}
+	rows := make([]table.Row, 0, len(tops))
+	for _, owner := range tops {
+		rows = append(rows, lines.ZoneBoxRow(r.summary(owner, targetID)))
+	}
+	assigned, err := r.runTableWith(ctx, lines.ZoneAssign(titles), round+1, []table.Field{{Name: "question", Value: "assign"}, {Name: "parts", Value: titles}}, rows, nil)
+	if err != nil {
+		return nil, err
+	}
+	for i, owner := range tops {
+		if answer := assigned[i]; answer.answer != nil {
+			zone := addPart(answer.answer["part"])
+			zone.boxes = append(zone.boxes, owner.id)
+			owner.zoneID[targetID] = zone.id
+			continue
+		}
+		if zone, ok := byKey[strings.ToLower(strings.TrimSpace(owner.title))]; ok {
+			zone.boxes = append(zone.boxes, owner.id)
+			owner.zoneID[targetID] = zone.id
+		}
+	}
+	kept := parts[:0]
+	for _, part := range parts {
+		if len(part.boxes) > 0 {
+			kept = append(kept, part)
+		}
+	}
+	return kept, nil
 }
