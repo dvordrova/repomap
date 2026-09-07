@@ -49,7 +49,12 @@ have no individual output-token ceilings: they use the shared 128,000-token
 request envelope, and the configured provider ceiling still applies. Reasoning
 and visible output share that allowance; concise prose is a prompt requirement,
 not a smaller generation cutoff. The DeepSeek adapter encodes that preference on its
-official endpoint, leaving other compatible endpoints unchanged. Exact request
+official endpoint. Other compatible endpoints default to
+`chat_template_kwargs: {enable_thinking: false}`, including final answers, per
+the owner's request. `REPOMAP_LLM_CHAT_TEMPLATE_KWARGS` (or the legacy
+`DEEPSEEK_CHAT_TEMPLATE_KWARGS`) replaces that object; `{}` omits the extension.
+The actual endpoint host selects native DeepSeek controls, never the variable
+prefix. Exact request
 and memo identities distinguish the preference. Other atlas tables keep their
 existing fast mode. The final answer reads the original question and evidence;
 the route's open question remains in its supporting reading and does not become

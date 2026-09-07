@@ -158,6 +158,8 @@
     var readableScale = minimumText / smallestFont;
     var scale;
     var homeBoxes = [], pendingFocus = false;
+    var panHint = controls.querySelector('.map-hint');
+    var dragPointer = null, startX = 0, startY = 0, leftAt = 0, topAt = 0;
 
     function focusOpened() {
       if (!pendingFocus || !stage.clientWidth || !stage.clientHeight) return;
@@ -174,7 +176,9 @@
     }
     // A report opened at a question may initially hide this map. Frame it once
     // when it becomes visible; later resizing must preserve the reader's pan.
-    new ResizeObserver(focusOpened).observe(stage);
+    var resize = new ResizeObserver(function () { updatePan(); focusOpened(); });
+    resize.observe(stage);
+    resize.observe(svg);
 
     function readable() {
       scale = readableScale;
@@ -185,7 +189,15 @@
       svg.style.width = baseWidth * scale + 'px';
       svg.style.maxWidth = 'none';
       svg.style.minWidth = '0';
-      stage.classList.toggle('map-zoomed', baseWidth * scale > stage.clientWidth + 1);
+      updatePan();
+    }
+    function updatePan() {
+      var canPan = stage.clientWidth > 0 && stage.clientHeight > 0 &&
+        (stage.scrollWidth > stage.clientWidth + 1 || stage.scrollHeight > stage.clientHeight + 1);
+      stage.classList.toggle('map-zoomed', canPan);
+      if (panHint) panHint.hidden = !canPan;
+      if (!canPan) endDrag();
+      return canPan;
     }
     function zoom(factor) {
       scale = Math.min(4, Math.max(0.4, scale * factor));
@@ -216,23 +228,31 @@
     });
 
     // Dragging pans the stage. Only an explicit scope change lays out nodes.
-    var dragging = false, startX = 0, startY = 0, leftAt = 0, topAt = 0;
     stage.addEventListener('pointerdown', function (event) {
-      if (event.target.closest('a,[role="button"]')) return;
-      dragging = true;
+      if (event.button !== 0 || event.isPrimary === false || dragPointer !== null ||
+          event.target.closest('a,button,input,select,textarea,[role="button"],[contenteditable]') || !updatePan()) return;
+      dragPointer = event.pointerId;
       startX = event.clientX; startY = event.clientY;
       leftAt = stage.scrollLeft; topAt = stage.scrollTop;
       stage.classList.add('map-grabbing');
       stage.setPointerCapture(event.pointerId);
+      event.preventDefault();
     });
     stage.addEventListener('pointermove', function (event) {
-      if (!dragging) return;
+      if (event.pointerId !== dragPointer) return;
       stage.scrollLeft = leftAt - (event.clientX - startX);
       stage.scrollTop = topAt - (event.clientY - startY);
     });
-    function endDrag() { dragging = false; stage.classList.remove('map-grabbing'); }
+    function endDrag(event) {
+      if (event && event.pointerId !== dragPointer) return;
+      var captured = dragPointer;
+      dragPointer = null;
+      stage.classList.remove('map-grabbing');
+      if (captured !== null && stage.hasPointerCapture(captured)) stage.releasePointerCapture(captured);
+    }
     stage.addEventListener('pointerup', endDrag);
     stage.addEventListener('pointercancel', endDrag);
+    stage.addEventListener('lostpointercapture', endDrag);
   }
 })();
 

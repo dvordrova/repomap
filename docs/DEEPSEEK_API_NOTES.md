@@ -16,6 +16,7 @@ REPOMAP_LLM_API_KEY       bearer credential
 REPOMAP_LLM_AUTH          bearer (default) or none
 REPOMAP_LLM_MAX_TOKENS    positive integer (default: 128000)
 REPOMAP_LLM_TIMEOUT       positive Go duration (default: 10m)
+REPOMAP_LLM_CHAT_TEMPLATE_KWARGS  JSON object overriding template options
 ```
 
 If any `REPOMAP_LLM_*` variable is present, that namespace is authoritative:
@@ -25,7 +26,7 @@ another.
 
 When no generic variable is present, the legacy `DEEPSEEK_ENDPOINT`,
 `DEEPSEEK_MODEL`, `DEEPSEEK_API_KEY`, `DEEPSEEK_AUTH`, and
-`DEEPSEEK_TIMEOUT` names remain accepted. Their default endpoint is
+`DEEPSEEK_TIMEOUT` and `DEEPSEEK_CHAT_TEMPLATE_KWARGS` names remain accepted. Their default endpoint is
 `https://api.deepseek.com/chat/completions`. There is no legacy max-token
 override; `REPOMAP_LLM_MAX_TOKENS` is the only one.
 
@@ -35,6 +36,24 @@ be HTTP(S) URLs with a host and without userinfo, query, or fragment.
 
 `repomap` does not source an analyzed repository's `.env` file. Configuration
 comes from the caller's environment.
+
+Custom endpoint requests default to
+`"chat_template_kwargs":{"enable_thinking":false}`. The final answer table's
+reasoning preference does not override that default. The configured JSON object
+replaces these template options; `{}` explicitly omits the field. Invalid JSON,
+null, arrays and scalar values are rejected during configuration. The endpoint
+host, independent of the environment-variable family, selects the native
+DeepSeek behavior: exactly `api.deepseek.com` (case-insensitive) uses its
+existing `thinking` control and receives no default template-kwargs extension.
+No model-name or path-name heuristic selects a provider.
+
+This extension is documented by [vLLM](https://docs.vllm.ai/en/stable/features/reasoning_outputs/)
+and [SGLang for Qwen](https://docs.sglang.io/cookbook/autoregressive/Qwen/Qwen3.5).
+It is not universal: unsupported servers may reject it with HTTP 400. Repomap
+does not silently retry without the owner's thinking control. The options live
+at the top level of the wire JSON, not under an `extra_body` object. They
+participate in exact request/cache identity; retries and replay preserve the
+saved request bytes rather than applying new environment settings to them.
 
 ## Wire and failure contract
 
@@ -69,7 +88,12 @@ comes from the caller's environment.
 - Responses are byte-bounded. The adapter decodes exactly one provider choice
   and its finish reason; the shared executor then accepts one unambiguous JSON
   object or array with harmless whitespace, one JSON fence, or short leading
-  prose. It never repairs fields, refs, schema, or values. Non-2xx outcomes
+  prose. A single complete leading `<think>...</think>` block is separated
+  before JSON parsing, so draft JSON and code fences inside it are never
+  mistaken for the final answer. Missing closing tags, nested/repeated leading
+  blocks and invalid final JSON remain rejected. This does not disable provider
+  reasoning; the complete original response remains in diagnostics and cache.
+  It never repairs fields, refs, schema, or values. Non-2xx outcomes
   retain their bounded response bytes for the normal secret-guarded semantic
   journal; a sensitive body is reduced to its guarded hash/count metadata.
   The user-facing error reports only a closed failure class, safe HTTP status,

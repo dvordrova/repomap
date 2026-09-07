@@ -10,11 +10,25 @@ import (
 )
 
 // NormalizeJSON accepts one complete object or array, optionally surrounded
-// by whitespace, one Markdown JSON fence, or non-structural leading prose. It
-// rejects multiple values, trailing prose or delimiters, and truncated roots.
+// by whitespace, one Markdown JSON fence, or non-structural leading prose.
+// One complete leading <think>...</think> block is separate from the answer.
+// It rejects multiple values, trailing prose or delimiters, and truncated roots.
 // It does not repair fields, refs, schemas, values, or malformed JSON.
 func NormalizeJSON(raw []byte) ([]byte, error) {
 	trimmed := bytes.TrimSpace(raw)
+	if bytes.HasPrefix(trimmed, []byte("<think>")) {
+		end := bytes.Index(trimmed, []byte("</think>"))
+		if end < 0 {
+			return nil, errors.New("llm: response thinking block is incomplete")
+		}
+		if bytes.Contains(trimmed[len("<think>"):end], []byte("<think>")) {
+			return nil, errors.New("llm: response thinking blocks are nested")
+		}
+		trimmed = bytes.TrimSpace(trimmed[end+len("</think>"):])
+		if bytes.HasPrefix(trimmed, []byte("<think>")) {
+			return nil, errors.New("llm: response contains multiple thinking blocks")
+		}
+	}
 	if len(trimmed) == 0 {
 		return nil, errors.New("llm: JSON response is empty")
 	}

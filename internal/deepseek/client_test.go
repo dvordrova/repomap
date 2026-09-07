@@ -1,10 +1,13 @@
 package deepseek
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
 func TestNewFromEnvUsesGenericConfigurationWithoutMixingAliases(t *testing.T) {
@@ -15,11 +18,13 @@ func TestNewFromEnvUsesGenericConfigurationWithoutMixingAliases(t *testing.T) {
 	t.Setenv(envMaxTokens, "1234")
 	t.Setenv(envTimeout, "7.5s")
 	t.Setenv(envAuth, authBearer)
+	t.Setenv(envChatTemplateKwargs, `{"enable_thinking":false}`)
 	t.Setenv(legacyEnvEndpoint, "https://legacy.example.com/chat/completions")
 	t.Setenv(legacyEnvModel, "legacy-model")
 	t.Setenv(legacyEnvAPIKey, "legacy-key")
 	t.Setenv(legacyEnvTimeout, "45s")
 	t.Setenv(legacyEnvAuth, authNone)
+	t.Setenv(legacyEnvChatTemplateKwargs, `{"enable_thinking":true}`)
 
 	client, err := NewFromEnv()
 	if err != nil {
@@ -28,7 +33,7 @@ func TestNewFromEnvUsesGenericConfigurationWithoutMixingAliases(t *testing.T) {
 	if client.Endpoint != "https://internal.example.com/v1/chat/completions" ||
 		client.Model != "internal-code-model" || client.APIKey != "repomap-key" ||
 		client.MaxTokens != 1234 || client.HTTPClient.Timeout != 7500*time.Millisecond ||
-		client.Auth != authBearer {
+		client.Auth != authBearer || string(client.ChatTemplateKwargs["enable_thinking"]) != "false" {
 		t.Fatalf("generic configuration = %#v, timeout = %s", client, client.HTTPClient.Timeout)
 	}
 }
@@ -36,6 +41,7 @@ func TestNewFromEnvUsesGenericConfigurationWithoutMixingAliases(t *testing.T) {
 func TestNewFromEnvSupportsDeepSeekAliasesAndDefaults(t *testing.T) {
 	clearLLMConfigEnv(t)
 	t.Setenv(legacyEnvAPIKey, "legacy-key")
+	t.Setenv(legacyEnvChatTemplateKwargs, `{"enable_thinking":false}`)
 
 	client, err := NewFromEnv()
 	if err != nil {
@@ -43,8 +49,46 @@ func TestNewFromEnvSupportsDeepSeekAliasesAndDefaults(t *testing.T) {
 	}
 	if client.Endpoint != defaultEndpoint || client.Model != defaultModel ||
 		client.APIKey != "legacy-key" || client.MaxTokens != defaultMaxTokens ||
-		client.HTTPClient.Timeout != defaultTimeout || client.Auth != authBearer {
+		client.HTTPClient.Timeout != defaultTimeout || client.Auth != authBearer ||
+		string(client.ChatTemplateKwargs["enable_thinking"]) != "false" {
 		t.Fatalf("default configuration = %#v, timeout = %s", client, client.HTTPClient.Timeout)
+	}
+}
+
+func TestLegacyEndpointSelectsTemplateControlByActualHost(t *testing.T) {
+	for _, test := range []struct {
+		endpoint string
+		official bool
+	}{
+		{endpoint: "https://api.deepseek.com/chat/completions", official: true},
+		{endpoint: "https://API.DEEPSEEK.COM/v1/chat/completions", official: true},
+		{endpoint: "http://127.0.0.1:8000/v1/chat/completions"},
+		{endpoint: "https://api.deepseek.com.proxy.example/v1/chat/completions"},
+	} {
+		t.Run(test.endpoint, func(t *testing.T) {
+			clearLLMConfigEnv(t)
+			t.Setenv(legacyEnvEndpoint, test.endpoint)
+			t.Setenv(legacyEnvAPIKey, "fixture-key")
+			client, err := NewFromEnv()
+			if err != nil {
+				t.Fatal(err)
+			}
+			prepared, err := client.Prepare(llm.Prompt{System: "system", User: "user"}, llmProviderTestLimits(400))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var request chatRequest
+			if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
+				t.Fatal(err)
+			}
+			if test.official {
+				if request.ChatTemplateKwargs != nil || request.Thinking == nil || request.Thinking.Type != "disabled" {
+					t.Fatalf("official controls = %#v", request)
+				}
+			} else if request.Thinking != nil || string(request.ChatTemplateKwargs["enable_thinking"]) != "false" {
+				t.Fatalf("compatible controls = %#v", request)
+			}
+		})
 	}
 }
 
@@ -93,6 +137,10 @@ func TestNewFromEnvRejectsInvalidConfiguration(t *testing.T) {
 		{name: "timeout malformed", environ: map[string]string{envTimeout: "later"}, want: envTimeout},
 		{name: "timeout negative", environ: map[string]string{envTimeout: "-1s"}, want: "positive"},
 		{name: "auth unsupported", environ: map[string]string{envAuth: "basic"}, want: envAuth},
+		{name: "template kwargs invalid JSON", environ: map[string]string{envChatTemplateKwargs: `{`}, want: envChatTemplateKwargs},
+		{name: "template kwargs array", environ: map[string]string{envChatTemplateKwargs: `[]`}, want: "JSON object"},
+		{name: "template kwargs null", environ: map[string]string{envChatTemplateKwargs: `null`}, want: "JSON object"},
+		{name: "legacy template kwargs invalid", environ: map[string]string{legacyEnvChatTemplateKwargs: `false`}, want: legacyEnvChatTemplateKwargs},
 		{name: "endpoint relative", environ: map[string]string{envEndpoint: "/v1/chat/completions", envAuth: authNone}, want: "scheme"},
 		{name: "endpoint missing host", environ: map[string]string{envEndpoint: "https:///chat/completions", envAuth: authNone}, want: "host"},
 		{name: "endpoint with userinfo", environ: map[string]string{envEndpoint: "https://user:password@models.example.com/chat", envAuth: authNone}, want: "userinfo"},
@@ -124,8 +172,10 @@ func clearLLMConfigEnv(t *testing.T) {
 	t.Helper()
 	for _, name := range []string{
 		envEndpoint, envModel, envAPIKey, envMaxTokens, envTimeout, envAuth,
+		envChatTemplateKwargs,
 		legacyEnvEndpoint, legacyEnvModel, legacyEnvAPIKey, "DEEPSEEK_MAX_TOKENS",
 		legacyEnvTimeout, legacyEnvAuth,
+		legacyEnvChatTemplateKwargs,
 	} {
 		value, present := os.LookupEnv(name)
 		if err := os.Unsetenv(name); err != nil {

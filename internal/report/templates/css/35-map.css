@@ -78,8 +78,8 @@
 .operation-context{flex-basis:100%;color:var(--muted);min-height:1.4em}
 .operation-controls[hidden]{display:none}
 .map-stage{overflow:auto}
-.map-stage.map-grabbing{cursor:grabbing}
 .map-stage.map-zoomed{cursor:grab}
+.map-stage.map-grabbing,.map-stage.map-grabbing *{cursor:grabbing}
 /* The card beside a pointed-at node: what it is, how big, what its arrows say. */
 .map-card,.source-card{position:fixed;z-index:30;width:max-content;max-width:min(24rem,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;overscroll-behavior:contain;padding:.75rem .9rem;border:1px solid var(--line);border-radius:8px;background:var(--paper);box-shadow:0 6px 24px #0003;font-size:var(--text-body);line-height:1.45;pointer-events:auto;overflow-wrap:anywhere}
 .map-interactive{overflow:visible}

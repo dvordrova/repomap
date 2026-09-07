@@ -40,29 +40,32 @@ const (
 	authBearer = "bearer"
 	authNone   = "none"
 
-	envEndpoint  = "REPOMAP_LLM_ENDPOINT"
-	envModel     = "REPOMAP_LLM_MODEL"
-	envAPIKey    = "REPOMAP_LLM_API_KEY"
-	envMaxTokens = "REPOMAP_LLM_MAX_TOKENS"
-	envTimeout   = "REPOMAP_LLM_TIMEOUT"
-	envAuth      = "REPOMAP_LLM_AUTH"
+	envEndpoint           = "REPOMAP_LLM_ENDPOINT"
+	envModel              = "REPOMAP_LLM_MODEL"
+	envAPIKey             = "REPOMAP_LLM_API_KEY"
+	envMaxTokens          = "REPOMAP_LLM_MAX_TOKENS"
+	envTimeout            = "REPOMAP_LLM_TIMEOUT"
+	envAuth               = "REPOMAP_LLM_AUTH"
+	envChatTemplateKwargs = "REPOMAP_LLM_CHAT_TEMPLATE_KWARGS"
 
-	legacyEnvEndpoint = "DEEPSEEK_ENDPOINT"
-	legacyEnvModel    = "DEEPSEEK_MODEL"
-	legacyEnvAPIKey   = "DEEPSEEK_API_KEY"
-	legacyEnvTimeout  = "DEEPSEEK_TIMEOUT"
-	legacyEnvAuth     = "DEEPSEEK_AUTH"
+	legacyEnvEndpoint           = "DEEPSEEK_ENDPOINT"
+	legacyEnvModel              = "DEEPSEEK_MODEL"
+	legacyEnvAPIKey             = "DEEPSEEK_API_KEY"
+	legacyEnvTimeout            = "DEEPSEEK_TIMEOUT"
+	legacyEnvAuth               = "DEEPSEEK_AUTH"
+	legacyEnvChatTemplateKwargs = "DEEPSEEK_CHAT_TEMPLATE_KWARGS"
 )
 
 // Client is safe for concurrent llm.Provider calls after configuration. Its
 // exported fields and OnWait hook must not be mutated once execution starts.
 type Client struct {
-	HTTPClient *http.Client
-	APIKey     string
-	Model      string
-	MaxTokens  int
-	Endpoint   string
-	Auth       string
+	HTTPClient         *http.Client
+	APIKey             string
+	Model              string
+	MaxTokens          int
+	Endpoint           string
+	Auth               string
+	ChatTemplateKwargs map[string]json.RawMessage
 	// OnWait is called from a heartbeat goroutine during long semantic stages.
 	// Set it before starting a request; it must be concurrency-safe, return
 	// promptly, and never log prompt, response, source, or credential content.
@@ -109,6 +112,7 @@ func NewFromEnv() (*Client, error) {
 		envMaxTokens,
 		envTimeout,
 		envAuth,
+		envChatTemplateKwargs,
 	)
 	value := func(primary, legacy string) string {
 		if useGenericConfig {
@@ -154,6 +158,17 @@ func NewFromEnv() (*Client, error) {
 		timeout = parsed
 	}
 
+	var chatTemplateKwargs map[string]json.RawMessage
+	if raw := value(envChatTemplateKwargs, legacyEnvChatTemplateKwargs); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &chatTemplateKwargs); err != nil || chatTemplateKwargs == nil {
+			name := envChatTemplateKwargs
+			if !useGenericConfig {
+				name = legacyEnvChatTemplateKwargs
+			}
+			return nil, fmt.Errorf("%s must be a JSON object", name)
+		}
+	}
+
 	endpoint := value(envEndpoint, legacyEnvEndpoint)
 	if endpoint == "" {
 		if useGenericConfig {
@@ -177,12 +192,13 @@ func NewFromEnv() (*Client, error) {
 	}
 
 	return &Client{
-		HTTPClient: &http.Client{Timeout: timeout},
-		APIKey:     key,
-		Model:      model,
-		MaxTokens:  maxTokens,
-		Endpoint:   endpoint,
-		Auth:       auth,
+		HTTPClient:         &http.Client{Timeout: timeout},
+		APIKey:             key,
+		Model:              model,
+		MaxTokens:          maxTokens,
+		Endpoint:           endpoint,
+		Auth:               auth,
+		ChatTemplateKwargs: chatTemplateKwargs,
 	}, nil
 }
 
@@ -224,13 +240,14 @@ type thinkingConfig struct {
 }
 
 type chatRequest struct {
-	Model           string          `json:"model"`
-	Messages        []chatMessage   `json:"messages"`
-	Temperature     *float64        `json:"temperature,omitempty"`
-	MaxTokens       int             `json:"max_tokens"`
-	ResponseFormat  *jsonFormat     `json:"response_format,omitempty"`
-	Thinking        *thinkingConfig `json:"thinking,omitempty"`
-	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
+	Model              string                     `json:"model"`
+	Messages           []chatMessage              `json:"messages"`
+	Temperature        *float64                   `json:"temperature,omitempty"`
+	MaxTokens          int                        `json:"max_tokens"`
+	ResponseFormat     *jsonFormat                `json:"response_format,omitempty"`
+	Thinking           *thinkingConfig            `json:"thinking,omitempty"`
+	ReasoningEffort    string                     `json:"reasoning_effort,omitempty"`
+	ChatTemplateKwargs map[string]json.RawMessage `json:"chat_template_kwargs,omitempty"`
 }
 
 type chatMessage struct {

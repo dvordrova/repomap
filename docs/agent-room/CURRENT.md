@@ -119,10 +119,18 @@ are local mockups over frozen report text, not a second product presentation
 path. The owner's additional ideas are recorded as UX32–UX36: member cubes
 inside groups with hover preview, text below the map, member-level arrows,
 misleading grab/grabbing cursors, and the composition of small diagrams.
-The existing report's cursor mismatch is reproduced when a hidden map first
-initializes with zero width and later fits entirely; resetting removes the
-stale map-zoomed class. It remains an open implementation item. Priorities and
-display choices remain for the owner's review.
+The existing report's cursor mismatch was reproduced when a hidden map first
+initialized with zero width and later fit entirely. Pan eligibility now uses
+the visible stage's actual horizontal or vertical overflow, recomputed on
+stage/SVG resize and zoom. The same check controls the cursor, drag hint and
+background pointer capture; controls remain clickable. Pointer identity and
+up/cancel/lost-capture cleanup prevent an obsolete grabbing state. An independent
+Chrome walkthrough of a UI-only copy of ordinary report 121841 verified
+Home-to-backend, zoom, a real 220px drag and release, reset/fit and node/control
+clicks. Report tests and the owner build passed. This is not a new ordinary
+online acceptance run; narrow/vertical/canceled-drag cases and the held cursor
+appearance remain unverified. Priorities and display choices remain for the
+owner's review.
 
 The owner added a separate return-after-a-break check: after leaving and
 returning to the tab, can the reader tell both where they are and what they
@@ -2245,6 +2253,25 @@ response payloads stored by content hash. Semantic journals v3 retain per-run
 accounting and relative links into this same store. Atlas tables likewise write
 prompt/request/response ref JSON, plus run-local normalized results. Replay
 prints the shared request and response paths, duration, attempts and usage.
+
+The shared JSON normalizer separates one complete leading
+`<think>...</think>` block before inspecting the final answer. Code fences or
+draft JSON inside that block cannot become the answer. An incomplete block,
+nested/repeated leading blocks, multiple final values or malformed final JSON
+remain rejected. The live outcome, observer and reused response retain all
+original bytes; normalization changes only the input to semantic validation.
+This compatibility handling does not itself turn thinking off at the provider.
+The owner's subsequent request makes custom endpoints send
+`chat_template_kwargs: {enable_thinking: false}` by default, including final
+answer requests. `REPOMAP_LLM_CHAT_TEMPLATE_KWARGS` or its legacy
+`DEEPSEEK_CHAT_TEMPLATE_KWARGS` alias replaces that object; an explicit empty
+object omits the extension for servers that reject it. No silent retry removes
+the control. The actual endpoint host selects native DeepSeek handling:
+`api.deepseek.com` retains its existing thinking control and final-answer opt-in.
+The configured variable prefix does not classify the endpoint. `DEEPSEEK_*`
+and `REPOMAP_LLM_*` configure the same client, with the generic namespace
+authoritative whenever any of its settings is set. These request options take
+part in exact cache identity, and replay does not reapply environment options.
 
 Question-only readings use the same four row builders in recall-only mode:
 they restore current descriptions but make no description requests. Source rows

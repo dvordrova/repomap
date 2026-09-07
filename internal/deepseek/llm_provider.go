@@ -87,12 +87,19 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 	maxOutputTokens := min(limits.MaxOutputTokens, c.MaxTokens)
 	request := c.semanticRequest(prompt.User, prompt.System, prompt.ResponseFormatJSON)
 	request.MaxTokens = maxOutputTokens
+	request.ChatTemplateKwargs = c.ChatTemplateKwargs
 	if isOfficialDeepSeekEndpoint(c.Endpoint) {
 		// Most tables reserve their budget for the answer. A table that requests
 		// reasoning must provide an output budget for both reasoning and content.
 		request.Thinking = &thinkingConfig{Type: "disabled"}
 		if prompt.Reasoning {
 			request.Thinking.Type = "enabled"
+		}
+	} else if request.ChatTemplateKwargs == nil {
+		// Compatible servers commonly default to thinking. Keep the owner's
+		// default explicit; an empty configured object opts out of this field.
+		request.ChatTemplateKwargs = map[string]json.RawMessage{
+			"enable_thinking": json.RawMessage("false"),
 		}
 	}
 	body, err := json.Marshal(request)

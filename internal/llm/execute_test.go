@@ -386,7 +386,7 @@ func TestExecuteJSONRevalidatesHitAndRefetchesOnce(t *testing.T) {
 	provider := baseTestProvider()
 	provider.responses = [][]byte{
 		[]byte(`{"value":"old"}`),
-		[]byte("```json\n{\"value\":\"new\"}\n```"),
+		[]byte("<think>\n```python\nvalue = 'draft'\n```\n</think>\n```json\n{\"value\":\"new\"}\n```"),
 	}
 	var events []Event
 	executor := Executor{
@@ -427,8 +427,10 @@ func TestExecuteJSONRevalidatesHitAndRefetchesOnce(t *testing.T) {
 		t.Fatalf("event kinds = %v", got)
 	}
 	if !reflect.DeepEqual(replaced.Response, provider.responses[1]) ||
+		!reflect.DeepEqual(warm.Response, provider.responses[1]) ||
 		!reflect.DeepEqual(events[2].Request, replaced.Request) ||
 		!reflect.DeepEqual(events[2].Response, replaced.Response) ||
+		!reflect.DeepEqual(events[3].Response, provider.responses[1]) ||
 		events[2].Metrics.InputTokens != 11 {
 		t.Fatalf("live event lost exact exchange: event=%#v outcome=%#v", events[2], replaced)
 	}

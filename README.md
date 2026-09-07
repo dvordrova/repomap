@@ -257,6 +257,19 @@ If any `REPOMAP_LLM_*` variable is present, that namespace is authoritative and
 no `DEEPSEEK_*` value is inherited. The complete transport contract is in
 [docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md).
 
+For a custom endpoint, requests default to
+`"chat_template_kwargs":{"enable_thinking":false}`. Qwen servers such as
+vLLM and SGLang use this to turn off thinking, including on answer-table
+requests. The actual endpoint host selects this behavior; setting it through
+`DEEPSEEK_ENDPOINT` works too. Official `api.deepseek.com` keeps its native
+thinking controls, with the final answer table's existing reasoning opt-in.
+
+`REPOMAP_LLM_CHAT_TEMPLATE_KWARGS` can replace this object. When using the
+legacy configuration family, use `DEEPSEEK_CHAT_TEMPLATE_KWARGS` instead.
+An explicit `{}` omits the field for a server that rejects it; that leaves
+thinking behavior to that server. This is a server extension, so an endpoint
+that does not support it may return HTTP 400. No retry silently removes it.
+
 ## Run
 
 ```bash
