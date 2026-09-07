@@ -132,12 +132,50 @@ online acceptance run; narrow/vertical/canceled-drag cases and the held cursor
 appearance remain unverified. Priorities and display choices remain for the
 owner's review.
 
+The second display mockup compares reading below, beside or above the map,
+compact small-map composition, member previews and optional inner arrows.
+Wide desktop walkthroughs covered below/side reading, an inline Settings side
+trip and field.py → imports → source with named returns to the question.
+The member arrow uses the frozen report's exact field.py-to-Robot import at
+field.py:6; the group-level model connection keeps its own endpoints.
+Preview preserves the current reading but expands the group and can move
+below-map reading down. These are comparison results, not product acceptance.
+The owner subsequently deferred very narrow windows (“ну прям узкие окна меня
+не интересуют пока”): prioritize ordinary wide desktop composition and
+navigation; keep earlier narrow-window observations as history.
+
 The owner added a separate return-after-a-break check: after leaving and
 returning to the tab, can the reader tell both where they are and what they
 were doing? Evaluate the current screenshot with the click history forgotten.
 Retained UI state alone is insufficient. UX31 records this for both Learn
 side questions and Work investigations; its importance is still for the owner
 to assess. Do not infer an unrecorded user intention from the selected object.
+
+A later wide desktop check over the UI-only 121841 copy confirmed the actual
+Learn source round trip: launch question → Settings → GitHub settings.py:4 →
+the unchanged report → map → Work → the expanded original Learn answer.
+The question, term and named returns remained visible at the relevant stops.
+An independent Work check selected frontend animate and Area/Part Interactive
+components, zoomed four times and dragged the map 260px. Reading the full
+Interactive components section, following Utility helpers and using Back to map
+preserved the exact selected operation, scope, SVG dimensions and scrollLeft=260.
+The return label named that destination before the click. These close previously
+unmeasured source/pan branches, not human comprehension, vertical pan, browser
+history restoration or current-binary ordinary acceptance. Notes are
+`work/ui-ux-wide-source-return.md` and `work/ui-ux-wide-pan-return.md`.
+
+A wide desktop pass over the frozen 083529 etcd report with current CSS/JS
+confirmed server → EtcdServer.run → Storage engine → Compaction logic →
+API and networking. Operation paging preserves that selection; All uses
+leaves the operation while retaining the area, then Back returns to Component.
+At a deeper page scroll, however, the operation and area/part trail disappear
+above the viewport while the map and sticky inspector remain visible. This is
+an open wide-desktop UX31 gap: preserved state does not keep the original task
+visible. The pass is recorded in `work/ui-ux-etcd-wide-operation.md`; its
+Go-rendered HTML and analysis remain frozen, so it is not current-binary
+ordinary acceptance. Apparent duplicate Revision term labels in that old HTML
+are already disambiguated by current Go rendering and do not justify another
+product fix. Fresh ordinary visual acceptance remains open.
 
 That walkthrough exposed loss of the originating question when opening the
 term library or a map. The existing reading navigator now keeps a visible
