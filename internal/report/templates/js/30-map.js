@@ -22,15 +22,15 @@
     stage.before(workspace); workspace.appendChild(stage);
     var inspector = document.createElement('aside');
     inspector.className = 'map-inspector';
-    inspector.setAttribute('aria-label', 'Selected node details');
+    inspector.setAttribute('aria-label', rmT('Selected node details'));
     var content = document.createElement('div');
     content.className = 'map-inspector-content';
     content.tabIndex = 0;
     content.setAttribute('role', 'region');
-    content.setAttribute('aria-label', 'Node description and sources');
+    content.setAttribute('aria-label', rmT('Node description and sources'));
     var hint = document.createElement('p');
     hint.className = 'map-inspector-hint';
-    hint.textContent = 'Hover or focus a node to read about it.';
+    hint.textContent = rmT('Hover or focus a node to read about it.');
     content.appendChild(hint); inspector.appendChild(content); workspace.appendChild(inspector);
     var continuation = document.createElement('div');
     continuation.className = 'map-inspector-continuation';
@@ -41,7 +41,7 @@
       var overflow = content.scrollHeight > content.clientHeight + 1;
       var below = overflow && content.scrollTop + content.clientHeight < content.scrollHeight - 1;
       more.hidden = !overflow;
-      more.textContent = below ? 'More details ↓' : '↑ Back to top';
+      more.textContent = below ? rmT('More details ↓') : rmT('↑ Back to top');
       continuation.classList.toggle('has-more', below);
     }
     more.addEventListener('click', function () {
@@ -151,11 +151,12 @@
     if (!baseWidth) return;
     controls.hidden = false;
     var smallestFont = Infinity;
-    svg.querySelectorAll('text').forEach(function (text) {
+    svg.querySelectorAll('text,[data-map-text]').forEach(function (text) {
       smallestFont = Math.min(smallestFont, parseFloat(getComputedStyle(text).fontSize));
     });
     var minimumText = parseFloat(getComputedStyle(controls.querySelector('.map-hint')).fontSize);
     var readableScale = minimumText / smallestFont;
+    map.readableScale = readableScale;
     var scale;
     var homeBoxes = [], pendingFocus = false;
     var panHint = controls.querySelector('.map-hint');
@@ -261,7 +262,7 @@
 //   - "what is this box?" — pointing at a node fills the map's details panel:
 //     the summary, the size, and its arrows as sentences. The question is
 //     answered without leaving the map, so a jump is for reading in full.
-//   - "where is this on the map?" — every group card gets an "on the map"
+//   - "where is this on the map?" — every group card gets an rmT("on the map")
 //     link back to its node, which is lit for a moment; the round trip is one
 //     click each way.
 //   - "how does a request go through?" — pointing at a node on the main
@@ -290,6 +291,8 @@
     card.className = 'map-card map-card-docked';
     card.hidden = true;
     var content = map.querySelector('.map-inspector-content');
+    var inspector=content.closest('.map-inspector'),heading=document.createElement('div');
+    heading.className='map-inspector-heading';content.before(heading);
     content.appendChild(card);
     new ResizeObserver(function () { content.dispatchEvent(new Event('scroll')); }).observe(card);
 
@@ -309,7 +312,7 @@
     var inspectedNode=null, inspectionRevision=0, remembered=new Map();
     function remember(){
       if(!inspectedNode||card.classList.contains('map-card-connection'))return;
-      var picker=card.querySelector('[aria-label="Concept to explain"]');
+      var picker=heading.querySelector('[data-concept-picker]');
       remembered.set(inspectedNode,{concept:picker?.value,scroll:content.scrollTop});
     }
     content.addEventListener('scroll',remember);
@@ -319,46 +322,45 @@
       content.scrollTop = 0;
       card.classList.remove('map-card-connection');
       var id = node.getAttribute('data-node');
-      var label = node.getAttribute('aria-label') || '';
-      var counts = node.dataset.branch ? (node.dataset.children||'').split(/\s+/).filter(Boolean).length+' parts' : (label.indexOf(', ') > 0 ? label.slice(label.indexOf(', ') + 2) : '');
+      var counts = node.dataset.branch ? rmT('{0} parts',(node.dataset.children||'').split(/\s+/).filter(Boolean).length) : node.dataset.activation ? rmT(node.dataset.activation) : node.dataset.members ? rmT('{0} symbols',Number(node.dataset.members)) : '';
       var html = '<div class="map-card-intro">';
       if(map.exploreNode){
         var current=node.dataset.activation?map.explorerOperation===node&&map.dataset.operationPinned==='true':map.explorerScope===id;
-        html+='<span class="map-card-kind">'+(current?'':'Preview · ')+(node.dataset.activation?'Operation'+(counts?' · '+escapeText(counts):''):node.dataset.branch==='component'?'Component':node.dataset.branch?'Area':'Part')+'</span>';
+        html+='<span class="map-card-kind">'+(current?'':rmT('Preview')+' · ')+(node.dataset.activation?rmT('Operation')+(counts?' · '+escapeText(counts):''):node.dataset.branch==='component'?rmT('Component'):node.dataset.branch?rmT('Area'):rmT('Part'))+'</span>';
       }
       html += '<b>' + escapeText(titleOf(node)) + '</b>';
       var summary = node.getAttribute('data-summary');
       if (summary) html += '<p>' + escapeText(summary) + '</p>';
       if (node.dataset.operationGroup) html += '<span class="map-card-meta">' + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
-      if(source) html += '<p><a target="_blank" rel="noopener" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||'Source')+'</a></p>';
-      else if(node.dataset.open) html += '<p><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||'Source')+'</a></p>';
+      if(source) html += '<p><a target="_blank" rel="noopener" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
+      else if(node.dataset.open) html += '<p><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</a></p>';
       html += '</div>';
       var concepts = JSON.parse(node.dataset.concepts || '[]');
       card.classList.toggle('map-card-has-concepts', concepts.length > 0);
       if (concepts.length) {
-        html += '<div class="map-concepts"><label><span>Concept</span> <select aria-label="Concept to explain">';
+        html += ("<div class=\"map-concepts\"><label><span>"+rmT.html("Concept")+"</span> <select data-concept-picker aria-label=\""+rmT.html("Concept to explain")+"\">");
         concepts.forEach(function (concept, i) {
           var repeated=concepts.some(function(other,j){return j!==i&&other.name===concept.name;});
           html += '<option value="'+i+'">'+escapeText(concept.name+(repeated?' · '+concept.source.Text:''))+'</option>';
         });
-        html += '</select></label><span class="map-card-meta">Model explanation</span><p data-concept-explanation></p><span data-concept-source></span></div>';
+        html += ("</select></label><span class=\"map-card-meta\">"+rmT.html("Model explanation")+"</span><p data-concept-explanation></p><span data-concept-source></span></div>");
       }
-      html += '<details class="map-card-evidence"><summary>Code and connections</summary>';
+      html += ("<details class=\"map-card-evidence\"><summary>"+rmT.html("Code and connections")+"</summary>");
       if (counts && !node.dataset.activation) html += '<span class="map-card-meta">' + escapeText(counts) + '</span>';
       if(map.areaDescriptions){
         var descriptions=Array.from(new Set(map.areaDescriptions(node))).filter(function(text){return text&&text!==summary;});
         if(descriptions.length){
-          html+='<details><summary>Additional model description</summary>';
+          html+=("<details><summary>"+rmT.html("Additional model description")+"</summary>");
           descriptions.forEach(function(text){html+='<p>'+escapeText(text)+'</p>';});html+='</details>';
         }
       }
       var operation = map.inspectedOperation;
       var witness = operation && !node.dataset.activation && JSON.parse(operation.dataset.callPaths || '{}')[id];
       if (witness && witness.length) {
-        html += '<details class="call-path"><summary>Why it appears in '+escapeText(operation.dataset.title)+'</summary><p>One shortest static call path:</p><ol>';
+        html += '<details class="call-path"><summary>'+rmT.html('Why it appears in {0}',operation.dataset.title)+'</summary><p>'+rmT.html('One shortest static call path:')+'</p><ol>';
         witness.forEach(function (step) {
-          html += '<li>'+(step.possible?'<span class="possible">possible call</span> ':'')+'<strong>'+escapeText(step.name)+'</strong><br>';
+          html += '<li>'+(step.possible?("<span class=\"possible\">"+rmT.html("possible call")+"</span> "):'')+'<strong>'+escapeText(step.name)+'</strong><br>';
           if (step.href) html += '<a target="_blank" rel="noopener" href="'+escapeText(step.href)+'">'+escapeText(step.source)+'</a>';
           else if (step.open) html += '<a href="#" data-open="'+escapeText(step.open)+'">'+escapeText(step.source)+'</a>';
           else html += escapeText(step.source);
@@ -367,15 +369,23 @@
         html += '</ol></details>';
       }
       var step = map.traceIndex ? map.traceIndex(node) : -1;
-      if (step >= 0) html += '<span class="map-card-meta">step ' + (step + 1) + ' of ' + map.traceLength + ' on the main path</span>';
+      if (step >= 0) html += '<span class="map-card-meta">'+rmT.html('step {0} of {1} on the main path',step+1,map.traceLength)+'</span>';
       var keys = (node.getAttribute('data-keys') || '').split(' | ').filter(Boolean).map(escapeText);
       if (keys.length) html += '<ul class="map-card-keys">' + keys.map(function (k) { return '<li><code>' + k.replace(/ — .*$/, '') + '</code>' + (k.indexOf(' — ') > 0 ? ' — ' + k.slice(k.indexOf(' — ') + 3) : '') + '</li>'; }).join('') + '</ul>';
       var arrows = map.classList.contains('repo-map') || witness ? [] : sentences(id);
       if (arrows.length) html += '<ul>' + arrows.map(function (a) { return '<li>' + escapeText(a) + '</li>'; }).join('') + '</ul>';
-      html += '<span class="map-card-hint">'+(node.getAttribute('data-activation')?'Click to keep this operation selected. Open code using the source link.':'click — explore')+'</span>';
+      html += '<span class="map-card-hint">'+(node.getAttribute('data-activation')?rmT('Click to keep this operation selected. Open code using the source link.'):rmT('click — explore'))+'</span>';
       card.innerHTML = html+'</details>';
+      // Keep the current object and term above the scrolling evidence. This
+      // is a reserved row of the inspector, never an overlay on map controls.
+      heading.replaceChildren();
+      var objectHeading=document.createElement('div'),kindHeading=card.querySelector('.map-card-kind');
+      if(kindHeading)objectHeading.appendChild(kindHeading);
+      objectHeading.appendChild(card.querySelector('.map-card-intro>b'));heading.appendChild(objectHeading);
+      heading.classList.toggle('has-concepts',concepts.length>0);
       if (concepts.length) {
-        var picker=card.querySelector('[aria-label="Concept to explain"]');
+        heading.appendChild(card.querySelector('.map-concepts label'));
+        var picker=heading.querySelector('[data-concept-picker]');
         if(saved?.concept!==undefined)picker.value=saved.concept;
         var explain=function(){
           var concept=concepts[Number(picker.value)],source=concept.source;
@@ -389,14 +399,16 @@
       }
       var actions=document.createElement('div');actions.className='map-card-actions';card.querySelector('.map-card-intro').appendChild(actions);
       if(map.exploreNode && !node.dataset.activation){
-        if(map.explorerScope!==id){var explore=document.createElement('button');explore.type='button';explore.textContent=node.dataset.branch?'Explore these parts':'Explore connections';explore.addEventListener('click',function(){map.exploreNode(id);});actions.appendChild(explore);}
+        if(map.explorerScope!==id){var explore=document.createElement('button');explore.type='button';explore.textContent=node.dataset.branch?rmT('Explore these parts'):rmT('Explore connections');explore.addEventListener('click',function(){map.exploreNode(id);});actions.appendChild(explore);}
         var href=node.getAttribute('href')||'';
-        if(href.charAt(0)==='#'&&href!=='#'+id){var detail=document.createElement('a');detail.href=href;detail.textContent=node.dataset.branch?'Open component':'Code and all group details';detail.className='map-details-link';actions.appendChild(detail);}
+        if(href.charAt(0)==='#'&&href!=='#'+id){var detail=document.createElement('a');detail.href=href;detail.textContent=node.dataset.branch?rmT('Open component'):rmT('Code and all group details');detail.className='map-details-link';actions.appendChild(detail);}
         var users=map.operationChoices(id);
-        if(users.length){var usage=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Related operations for '+titleOf(node)+' · '+users.length;usage.appendChild(summary);
-          users.forEach(function(op){var b=document.createElement('button');b.type='button';b.textContent=op.dataset.title;b.addEventListener('click',function(){
-            var picker=card.querySelector('[aria-label="Concept to explain"]'),concept=picker&&concepts[Number(picker.value)];
-            map.chooseOperation(op.id,{node:node,label:concept?picker.selectedOptions[0].textContent+' in '+titleOf(node):titleOf(node),source:concept&&{href:concept.source.Href,open:concept.source.Open}});
+        if(users.length){var usage=document.createElement('details'),summary=document.createElement('summary');summary.textContent=rmT('Related operations for {0} · {1}',titleOf(node),users.length);usage.appendChild(summary);
+          users.forEach(function(op){var b=document.createElement('button');b.type='button';b.textContent=op.dataset.title;
+            if(users.some(function(other){return other!==op&&other.dataset.title===op.dataset.title;})&&op.dataset.sourceText)b.textContent+=' · '+op.dataset.sourceText;
+            b.addEventListener('click',function(){
+            var picker=heading.querySelector('[data-concept-picker]'),concept=picker&&concepts[Number(picker.value)];
+            map.chooseOperation(op.id,{node:node,label:concept?rmT('{0} in {1}',picker.selectedOptions[0].textContent,titleOf(node)):titleOf(node),source:concept&&{href:concept.source.Href,open:concept.source.Open}});
           });usage.appendChild(b);});actions.prepend(usage);}
       }
       var evidence=card.querySelector('.map-card-evidence');
@@ -409,7 +421,7 @@
       if(!inspectedNode)return;
       var concepts=JSON.parse(inspectedNode.dataset.concepts||'[]');
       var index=concepts.findIndex(function(c){return (source.href&&source.href===c.source.Href)||(source.open&&source.open===c.source.Open);});
-      var picker=card.querySelector('[aria-label="Concept to explain"]');
+      var picker=heading.querySelector('[data-concept-picker]');
       if(index<0||!picker)return;
       picker.value=String(index);picker.dispatchEvent(new Event('change'));
     };
@@ -419,8 +431,8 @@
       remember();inspectionRevision++;
       content.scrollTop = 0;
       card.classList.add('map-card-connection');
-      var edge=event.detail;card.replaceChildren();var title=document.createElement('b');title.textContent=titleOf(byId[edge.from])+' → '+titleOf(byId[edge.to]);card.appendChild(title);
-      var kind=document.createElement('p');kind.textContent=edge.possible?'Interpreted connection or possible dispatch':'Code connections';card.appendChild(kind);
+      var edge=event.detail;card.replaceChildren();var title=document.createElement('b');title.textContent=titleOf(byId[edge.from])+' → '+titleOf(byId[edge.to]);heading.replaceChildren(title);heading.classList.remove('has-concepts');
+      var kind=document.createElement('p');kind.textContent=edge.possible?rmT('Interpreted connection or possible dispatch'):rmT('Code connections');card.appendChild(kind);
       edge.relations.forEach(function(relation){var row=document.createElement('p');
         [relation.from,relation.to].forEach(function(id,i){if(i)row.appendChild(document.createTextNode(' → '+relation.label+' → '));var n=byId[id];if(!n)return;var a=document.createElement('button');a.type='button';a.textContent=titleOf(n);a.addEventListener('click',function(){if(map.exploreNode)map.exploreNode(id);else n.click();});row.appendChild(a);});card.appendChild(row);
         if(relation.summary){var summary=document.createElement('p');summary.textContent=relation.summary;card.appendChild(summary);}
@@ -446,7 +458,7 @@
       var link = document.createElement('a');
       link.className = 'on-map';
       link.href = '#' + nodes[k].getAttribute('data-node');
-      link.textContent = 'on the map';
+      link.textContent = rmT('on the map');
       link.addEventListener('click', (function (node) {
         return function (event) {
           event.preventDefault();

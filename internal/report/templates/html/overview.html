@@ -1,32 +1,32 @@
 <section id="overview" data-report-page>
 {{template "learn.html" .}}
-<div data-reading-mode="work"><h2>Explore the code</h2><p>Search for a component, topic, operation or symbol, or start from the map.</p></div>
-<div id="repository-map" class="repository-map-panel"><h3>System map</h3>
+<div data-reading-mode="work"><h2>{{t "Explore the code"}}</h2><p>{{t "Search for a component, topic, operation or symbol, or start from the map."}}</p></div>
+<div id="repository-map" class="repository-map-panel"><h3>{{t "System map"}}</h3>
 {{if .RepoMap}}{{template "repomap.html" .RepoMap}}{{end}}
-<details class="evidence-list"><summary>Component details <span class="collapse-label">Collapse details</span></summary>
+<details class="evidence-list"><summary>{{t "Component details"}} <span class="collapse-label">{{t "Collapse details"}}</span></summary>
 {{if or .Cards .MutedCards}}<div class="cards">
 {{range .Cards}}<div class="card"><h3><a href="#{{.SectionID}}">{{.ShortName}}</a></h3>
-<p class="meta">{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}</p>
+<p class="meta">{{.Language}}{{if .Kind}} · {{t .Kind}}{{end}}</p>
 {{if .Role}}<p class="model"><strong>{{.Role}}</strong> — {{.Purpose}}<span class="model-sources">{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span></p>{{end}}
-<details class="target-facts"><summary>Code and entrypoints</summary><p><code>{{.Name}}</code></p><dl>{{if .Manifest}}<dt>Source</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>Entrypoints</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}{{if .Counts}}<dt>Found</dt><dd class="fact">{{.Counts}}</dd>{{end}}</dl></details></div>
+<details class="target-facts"><summary>{{t "Code and entrypoints"}}</summary><p><code>{{.Name}}</code></p><dl>{{if .Manifest}}<dt>{{t "Source"}}</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>{{t "Entrypoints"}}</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}{{if .Counts}}<dt>{{t "Found"}}</dt><dd class="fact">{{.Counts}}</dd>{{end}}</dl></details></div>
 {{end}}</div>{{else}}<p class="empty">{{.CardsMissing}}</p>{{end}}
-{{if .MutedCards}}<h4>{{len .MutedCards}} target{{if ne (len .MutedCards) 1}}s{{end}} this run could not read</h4>
-<div class="cards">{{range .MutedCards}}<div class="card muted"><h3>{{.Name}}</h3><dl><dt>Language</dt><dd>{{.Language}}</dd><dt>Why</dt><dd>{{.Reason}} ({{.Stage}})</dd></dl></div>
+{{if .MutedCards}}<h4>{{t "This run could not read {0} targets" (len .MutedCards)}}</h4>
+<div class="cards">{{range .MutedCards}}<div class="card muted"><h3>{{.Name}}</h3><dl><dt>{{t "Language"}}</dt><dd>{{.Language}}</dd><dt>{{t "Why"}}</dt><dd>{{.Reason}} ({{.Stage}})</dd></dl></div>
 {{end}}</div>{{end}}
 </details>
 </div>
 {{template "learn-start.html" .}}
 </section>
-{{if or .Questions .LearningReviews}}<section id="questions" data-report-page><h2>Questions to explore</h2><p>Answers from the code and documentation read in this report, with paths into the map.</p>{{if .LearningNote}}<p>{{.LearningNote}}</p>{{end}}{{range .Questions}}{{template "question.html" .}}{{end}}{{template "learning-review.html" .}}</section>{{end}}
-<section id="repository-reference" data-report-page><h2>Repository reference</h2>
-{{if .Portals}}<details class="evidence-list"><summary>HTTP connection sources <span class="collapse-label">Collapse sources</span></summary><table><thead><tr><th>Method</th><th>Path</th><th>Call</th><th></th><th>Route</th></tr></thead><tbody>
-{{range .Portals}}<tr><td class="method">{{.Method}}</td><td><code>{{.Path}}</code>{{if .Possible}}<span class="possible">possible</span>{{end}}</td><td>{{template "anchor" .Call}}</td><td>→</td><td>{{template "anchor" .Route}}</td></tr>{{end}}</tbody></table></details>{{end}}
-{{if .Addresses}}<h4>Where to reach them</h4><ul class="plain fact">{{range .Addresses}}<li>{{if .Target}}<strong>{{.Target}}</strong> · {{end}}<code>{{.Key}}</code>{{if .Value}} <code>{{.Value}}</code>{{end}}{{if .Note}} <span class="meta">{{.Note}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
-<h3>What is missing</h3>
+{{if or .Questions .LearningReviews}}<section id="questions" data-report-page><h2>{{t "Questions to explore"}}</h2><p>{{t "Answers from the code and documentation read in this report, with paths into the map."}}</p>{{if .LearningNote}}<p>{{.LearningNote}}</p>{{end}}{{range .Questions}}{{template "question.html" .}}{{end}}{{template "learning-review.html" .}}</section>{{end}}
+<section id="repository-reference" data-report-page><h2>{{t "Repository reference"}}</h2>
+{{if .Portals}}<details class="evidence-list"><summary>{{t "HTTP connection sources"}} <span class="collapse-label">{{t "Collapse sources"}}</span></summary><table><thead><tr><th>{{t "Method"}}</th><th>{{t "Path"}}</th><th>{{t "Call"}}</th><th></th><th>{{t "Route"}}</th></tr></thead><tbody>
+{{range .Portals}}<tr><td class="method">{{.Method}}</td><td><code>{{.Path}}</code>{{if .Possible}}<span class="possible">{{t "possible"}}</span>{{end}}</td><td>{{template "anchor" .Call}}</td><td>→</td><td>{{template "anchor" .Route}}</td></tr>{{end}}</tbody></table></details>{{end}}
+{{if .Addresses}}<h4>{{t "Where to reach them"}}</h4><ul class="plain fact">{{range .Addresses}}<li>{{if .Target}}<strong>{{.Target}}</strong> · {{end}}<code>{{.Key}}</code>{{if .Value}} <code>{{.Value}}</code>{{end}}{{if .Note}} <span class="meta">{{.Note}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
+<h3>{{t "What is missing"}}</h3>
 {{if .Negatives}}<ul class="plain fact">{{range .Negatives}}<li>{{.Text}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{.NegativesMissing}}</p>{{end}}
-<h3 id="how-to-run">How to run</h3>
-{{if .Recipe}}<ul class="plain">{{range .Recipe}}<li class="{{if .Model}}model{{else}}fact{{end}}"><code>{{.Command}}</code>{{if .Cwd}} <span class="meta">(in <code>{{.Cwd}}</code>)</span>{{end}}{{if .Note}} — {{.Note}}{{end}}<span class="{{if .Model}}model-sources{{end}}">{{range .Anchors}} {{template "anchor" .}}{{end}}</span></li>{{end}}</ul>{{else}}<p class="empty">{{.RecipeMissing}}</p>{{end}}
-<h3>What the people who wrote it said</h3>
-{{if .Claims}}<div class="claims">{{range .Claims}}<blockquote class="claim"><p>{{.Text}}</p><span class="src">{{.Source}}{{if .Date}} · {{.Date}} · {{.AgeDays}} days ago{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</span></blockquote>{{end}}</div>
-{{if .MoreClaims}}<p class="meta">The README says {{.MoreClaims}} more things this page does not quote.</p>{{end}}{{else}}<p class="empty">Nothing quotable was found in the README, comments or commit messages.</p>{{end}}
+<h3 id="how-to-run">{{t "How to run"}}</h3>
+{{if .Recipe}}<ul class="plain">{{range .Recipe}}<li class="{{if .Model}}model{{else}}fact{{end}}"><code>{{.Command}}</code>{{if .Cwd}} <span class="meta">{{t "(in"}} <code>{{.Cwd}}</code>)</span>{{end}}{{if .Note}} — {{.Note}}{{end}}<span class="{{if .Model}}model-sources{{end}}">{{range .Anchors}} {{template "anchor" .}}{{end}}</span></li>{{end}}</ul>{{else}}<p class="empty">{{.RecipeMissing}}</p>{{end}}
+<h3>{{t "What the people who wrote it said"}}</h3>
+{{if .Claims}}<div class="claims">{{range .Claims}}<blockquote class="claim"><p>{{.Text}}</p><span class="src">{{.Source}}{{if .Date}} · {{.Date}} · {{t "{0} days ago" .AgeDays}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</span></blockquote>{{end}}</div>
+{{if .MoreClaims}}<p class="meta">{{t "The README says {0} more things this page does not quote." .MoreClaims}}</p>{{end}}{{else}}<p class="empty">{{t "Nothing quotable was found in the README, comments or commit messages."}}</p>{{end}}
 </section>

@@ -185,7 +185,8 @@ recorded in `work/ui-ux-etcd-wide-operation.md` and the follow-up in
 Go-rendered HTML and analysis remain frozen, so it is not current-binary
 ordinary acceptance. Apparent duplicate Revision term labels in that old HTML
 are already disambiguated by current Go rendering and do not justify another
-product fix. Fresh ordinary visual acceptance remains open.
+product fix. Current ordinary chi/server/Python+TypeScript checks and their
+remaining owner review items are recorded in the report section below.
 
 The owner subsequently clarified that the levels themselves are confusing:
 “Root library”, and even the Python report's “front → backend” overview,
@@ -203,8 +204,9 @@ presentation observations, not a reopened truth audit of all generated text.
 
 The owner raised rapid DeepSeek spending and asked to pack questions and
 categorization decisions into the largest useful requests, including comparing
-thinking for a whole batch. This is the immediate investigation priority;
-UI findings remain recorded. No new paid calls followed the cost concern.
+thinking for a whole batch. The completed batching changes and measured
+checks are recorded below; UI findings remain in the owner checklist. Paid
+calls were paused during the initial audit.
 The interrupted Python run is described below. The full WORK audit found
 17,317 live calls, 143.22M input and 7.54M output tokens, excluding 9,443 local
 cache events. All saved model names were deepseek-v4-flash. Etcd accounts for
@@ -221,15 +223,16 @@ answers. Detailed evidence is in `work/deepseek-usage-independent-audit.md`,
 `work/deepseek-question-prefix-audit.json` and
 `work/deepseek-question-batch-sizing.json`.
 
-Question retrieval now serializes its complete evidence rows before changing
-question context, permitting a common provider-cache prefix. Other tables keep
-their exact previous byte order. The question/response schema, evidence,
-selection semantics and reasoning setting are unchanged; exact request/cache
-identities change for this table, so prior request-cache entries are not hits
-for the reordered bytes. Focused table/lines/reading tests verify identical
-JSON content, the shared full-row prefix, distinct question identities and
-unchanged default table bytes. Actual provider cache savings and answer quality
-have not been measured after this ordering change; no paid run was made.
+The initial prefix-only change has been superseded by the shared question cube
+v1. It serializes the complete evidence catalogue once before all independent
+questions, retaining question-specific selections and inspection coverage. The
+old per-question string-cell retrieval table and its prompt are removed. The
+new typed response requires every question, carries only positively selected
+rows and their original anchors, and leaves refused windows unavailable. Its
+per-question memos refer to current cached response bytes and revalidate the
+complete original shared request before reuse. Adding or reordering questions
+does not resend unchanged decisions. Replay changes are observed on the next
+read; original runs remain snapshots.
 
 The owner's proposal is broader than this prefix fix: one shared evidence
 catalogue with all applicable questions/independent categorization rows,
@@ -244,14 +247,20 @@ A larger request must preserve question-specific source selections without
 repeating empty decisions for every question/source pair. Compare larger
 batches with thinking disabled/enabled on the same source set, measuring
 missed sources, complete question coverage, tokens and latency; do not assume
-that filling the context or enabling thinking improves quality. Neither batch
-retrieval nor a new default thinking policy is implemented yet. Micro-request
-limits (8 symbol/type/operation rows, 40 other rows, 64KiB input) are under the
-same audit; changes must retain entity-bound reuse and dependencies between
-rounds. Exact offline packing of the original etcd 083529 rows under the same
+that filling the context or enabling thinking improves quality. Shared retrieval is now integrated as the owning question cube, with
+provider-supported thinking and unchanged compatible-endpoint preferences.
+Ordinary quality acceptance is still outstanding. Independent
+directory/file/callable/type/boundary/operation tables now use byte-only greedy
+packing instead of the artificial 8/40-row caps. Explicit read-stage row limits
+and the current 64KiB planning budget remain; other tables keep their own
+contexts and dependent rounds. Entity memo inputs retain their singleton
+representation independently of changed batch boundaries. Exact offline packing
+of the original etcd 083529 rows under the same
 64KiB input budget reduces Symbols from 1,075 to 148 calls and Operations from
 180 to 53 when the 8-row cap is removed. These are preparation measurements,
-not a live quality/cost comparison; the production caps have not been changed.
+not a live quality/cost comparison. Focused table/lines/reading checks and vet
+pass; the ordinary 20260907-202410 small-server run completed with this packing.
+A large-repository quality/cost comparison is still outstanding.
 The consolidated measurement and next experiment are recorded in
 `work/repomap-request-batching-review.md`, with the micro-request audit in
 `work/deepseek-microrequest-audit.md`. Offline shared-question drafts now retain
@@ -266,8 +275,85 @@ new model-quality evidence. Exact local drafts and checks are under
 `work/question-batch-design`. A batch implementation must keep per-question,
 per-evidence-window coverage and per-question memo reuse, and requires a typed
 selection response instead of weakening the shared string-cell table decoder.
+Two authorized live chi draft replays have now completed with one attempt each.
+Fast mode used 81,064 input / 3,414 output tokens in 17.54s, selecting 508 anchors.
+Thinking used 81,143 input / 13,745 output tokens (12,082 reasoning) in 105.73s,
+selecting 59 anchors. Both covered all eight questions with valid closed refs.
+The independent source review nevertheless found a central missed README flow
+example for question 2 and an unsupported test-specific reason for question 7.
+Neither draft is accepted as the ordinary retrieval contract or its default
+thinking policy. `work/question-batch-design/chi/quality-review.md` records exact
+sources and required follow-up checks; fewer selected anchors is not itself
+proof of better coverage. The second thinking draft completed in 138.98s with
+81,336 input and 19,098 output tokens, including 17,134 reasoning tokens. It
+restored the missing context-flow example but still promoted some test hints
+into confirmed behavior and omitted the original excerpt for a named library's
+role. `work/question-batch-design/chi/quality-review-v2.md` records all eight
+questions. These failures informed the new cube's prompt, not local semantic
+repair. The shared cube and its ordinary reader integration pass focused tests;
+final question-answer quality remains an acceptance item.
+
+The new ordinary small-server retrieval inspected all 28 original chunks for
+eight questions in one call: 6,880 input and 25,026 output tokens, 189.262s.
+Chi inspected 151 chunks for 57 questions in one call: 83,049 input and 26,945
+output tokens, including 19,399 reasoning tokens, 203.668s. Jieba inspected 99
+chunks for 16 questions in one call: 50,351 input and 31,718 output tokens,
+260.931s. These results establish complete request/coverage handling, not that
+every useful source was selected. In chi the new selection correctly retains
+the separate ClientIP advisory tests previously missed by the draft. Other
+questions still miss useful original excerpts, and a later route can omit a
+requested example. The detailed audit is `work/shared-question-chi-live-review.md`.
+The 57-question chi run was deliberately interrupted after 23 completed answers
+because its menu repeats several introductory tasks. No report was published;
+accepted responses remain cached. The selector and merger had both seen all
+57 candidates together and retained them all. `work/chi-menu-selection-diagnosis.md`
+records the actual responses; this was not a partition or UI duplication bug.
+Learn proposal preparation now starts with complete evidence instead of the
+artificial 64KiB fragments that generated five introductions. Actual prepared
+request size and explicit development budgets still govern preparation; real
+resource refusals split complete evidence by encoded byte weight. Accepted
+sibling reviews survive, while child reviews retain their partial-context
+scope. Selection/merge prompts and the absence of a question quota are unchanged.
+When every child of a refused Learn request succeeds, a request-identity memo
+retains only the accepted complete partition boundaries and child request keys.
+Warm readings validate and reuse those exact child responses without resending
+the refused parent. Original review order and current source bindings survive;
+partial or semantically refused subtrees receive no positive partition memo.
+Replay of an accepted whole parent takes precedence, and child replay is checked
+by the usual decoder. Resource/replay/no-cache/cache-clear regressions pass;
+the nested split regression now makes zero warm calls instead of two repeated
+failed attempts. This specific branch has local provider-test evidence.
+The ordinary chi run `20260907-212616` produced 15 final questions from one
+proposal context, covering all eight goals, in 16.42s across proposal, selection
+and merge. It preserves separate useful tasks such as REST flow and versioned
+data. Its final ordinary publication and warm reuse passed in the v4 display
+checks below; a smaller menu alone does not establish answer quality. Jieba likewise moved from three proposal contexts
+and 16 questions to one context and eight questions in `20260907-215305`.
+All 140 original context items, their order, the eight goals and all three
+proposal/selection/merge prompts are identical across that comparison.
+
+A real full-etcd envelope probe returned HTTP 400 before generation: its
+1,656,470 input plus 128,000 reserved output tokens exceeded the provider's
+reported 1,048,576 context. The adapter now exposes only an explicit context
+refusal as `context_tokens`, retaining the exact body. Shared adaptive execution
+allows the owning cube to split complete inputs; generic 400/quotas do not
+trigger splitting. No guessed tokenizer ratio or new fixed token cap was added.
 No new semantic graph, source truncation or question quota is approved by this
 cost discussion.
+
+The current cube also completed a real saved-input etcd reading with all 2,739
+chunks and the original 24 questions. The initial request received an explicit
+context refusal (1,462,018 input plus 128,000 reserved output tokens). Two
+complete child catalogues of 692 and 2,047 chunks then succeeded in parallel,
+using 1,464,151 input and 43,617 output tokens in total. All 65,736 question/chunk
+slots were inspected, with zero refused final windows and 335 selected anchors;
+wall time was 227.192s. A second `read --through question` reused both accepted
+responses in 4.681s with zero live calls and identical selections. This reading
+recalls no old model descriptions because those memos predate the shared
+English policy, so its input differs from the earlier draft/baseline beyond
+batching. It is a transport/partition/cache experiment, not an ordinary etcd
+report or a matched answer-quality comparison. The receipt is
+`work/question-batch-design/etcd/current-cube-verification.json`.
 
 The owner replenished official DeepSeek access after the two 18:30 UTC
 attempts failed with 402. Fresh ordinary runs at 18:56 UTC completed with exit
@@ -286,7 +372,9 @@ handlers and Utility functions. Singleton role lanes all remain expanded even
 when Applications or Libraries appears selected; an example/tool can be above
 the intended component. These are display observations, not a general audit of
 answer truth. Notes and screenshots are `work/ui-ux-fresh-chi-levels.md` and
-`work/ui-ux-fresh-server-levels.md`; first-screen composition remains open.
+`work/ui-ux-fresh-server-levels.md`. The later native headings, component cards
+and actual role filters are checked below; broader visual alternatives remain
+explicit owner-review items.
 
 The explorer now bypasses a local area only when it has exactly one actual
 part with the same title. It retains the original area node and description,
@@ -2260,7 +2348,7 @@ program-index rebuild was not part of this isolated repeatability check.
 
 The owner asked to implement and verify from extracted evidence upward;
 HTML prototypes are for discussing possible reader experiences. The first
-new development boundary is `reading-input.json` (version 2): the complete
+new development boundary is `reading-input.json` (current version 9): the complete
 places graph and target metadata used by the ordinary atlas reading. The
 normal run persists it before any atlas model call. `repomap read INPUT`
 runs those same stages without compilers, corpus collection, orientation or
@@ -2377,11 +2465,11 @@ retain their actual context path, so generated-file attributes cannot silently
 describe a configuration anchor. Internal IDs are restored locally, never sent
 to the model.
 
-Independent directory, file, symbol and boundary interpretations now persist
+Independent directory, file, symbol, operation and boundary interpretations persist
 as knowledge.json v2. Each record binds the internal subject, current owners, context, exact
 single-row evidence, cells and dependencies on earlier model interpretations.
 The model still receives batches; single-row preparation only computes identity.
-Only these four tables opt into reuse and their prompts explicitly require
+Only these independent tables opt into reuse and their prompts explicitly require
 row independence. Comparative stages (groups, routes, portfolio) keep complete
 request identity. Existing provider exchanges retain real transport accounting;
 reused entities are counted as reused_rows, not fictional provider cache hits.
@@ -2398,7 +2486,14 @@ to this run's parent knowledge, not obsolete records. A parent's changed source
 evidence can therefore produce a new provenance chain without model calls for
 children receiving identical text. If its supplied model line changes, the
 child's request and answer basis change too. Missing or changed inputs are
-batched together. Exact accepted request caching still applies to those batches.
+batched together. Missing rows with the same exact answer basis now share one
+provider row within the reading. Every original subject still receives its own
+current knowledge/owner/location binding and the same validated response-row
+reference. This removes cold-run disagreements between identical inputs that
+could otherwise change a warm run's recalled hint and invalidate question
+retrieval. The regression covers distinct parent interpretations, rejected
+aliases, changed batching, and replay updating all matching subjects. Exact
+accepted request caching still applies to those batches.
 No-cache bypasses reusable answer reads and pointer/index writes. Diagnostic
 payloads still go to the shared cache directory. Cache clear removes payloads,
 answer pointers and memo indexes; run snapshots remain, but raw-payload links
@@ -2438,7 +2533,7 @@ and `REPOMAP_LLM_*` configure the same client, with the generic namespace
 authoritative whenever any of its settings is set. These request options take
 part in exact cache identity, and replay does not reapply environment options.
 
-Question-only readings use the same four row builders in recall-only mode:
+Question-only readings use the same independent row builders in recall-only mode:
 they restore current descriptions but make no description requests. Source rows
 receive explicitly labelled prior model hypotheses; stops retain used knowledge
 IDs. This is reuse of extracted-evidence descriptions, not implementation
@@ -3438,9 +3533,160 @@ payload projection, and the per-target chunk transport were removed.
 The target picker keeps failed rows visible, red, disabled, and linkless. The
 repository overview reports analyzed versus selected coverage.
 
-Semantic output and the current HTML report are canonical English. There is no
-`--lang` flag until a separately approved final presentation-localization
-stage exists.
+The owner explicitly approved final localization on 2026-09-07/08 and supplied
+two diagrams clarifying its boundary. Analytical LLM cubes receive one shared
+English response instruction. The completed English frontend structure then
+feeds two presentation steps: a deterministic dictionary translates our own UI
+vocabulary, and an LLM cube translates explicitly selected generated display
+prose. These values are assembled before rendering. This is not translation of
+analysis artifacts, source quotations, code names, paths, IDs or graph topology.
+The implementation passed ordinary publication on the small Go server and its
+two sibling library/script components. The first run `20260907-202410` finished
+in 5m56s and translated 160 collected display texts in one 37s call. After UI
+catalogue corrections, `20260907-203247` repeated all analysis and translation
+from cache in 2s with zero live calls. `20260907-203910` then translated the
+revised 152-entry catalogue after ordinary words were removed from the protected
+code-name set. Source names, paths and explicit code syntax stay original;
+ordinary prose words such as Run/service/protocol remain translatable.
+
+Focused publication/server regressions prove that canonical report.json is
+unchanged by localization, only the selected HTML is installed, a failed
+installation removes its translation and final artifacts, and a restored server
+uses the same saved translation while retaining exact source opening. The
+legacy report.html redirect preserves mode query parameters. Dictionary-only
+no-model publication never creates a provider. Clearing an isolated copy of the
+real cache removed its persistent entries while preserving JSON, translated
+HTML and the saved display translation. Full product tests and vet passed;
+follow-up UI and smart-question changes continue through focused acceptance.
+The early online translation runs exposed a missing closed journal-stage
+registration: their translation and cache succeeded, but a diagnostic exchange
+warning was emitted. `report_translation` is now registered and covered by the
+journal round-trip regression. The ordinary `20260907-211253` run records its
+accepted exact translation exchange without that warning. Its predecessor
+`20260907-205650` was correctly left unpublished when the translation echoed an
+extra `protected` field. The first wire format subsequently tolerated that
+irrelevant echo while retaining text/placeholder/completeness checks. Larger
+chi and jieba responses then exposed malformed JSON in repeated `ref` fields;
+these are not envelope refusals and remain rejected without local repair.
+The current translation contract v4 sends and receives one flat JSON object,
+`{"t1":"text","t2":"text"}`. Input preserves the catalogue's original order;
+role labels and original protected-source metadata remain local. Every text,
+closed ref and placeholder still crosses the wire. This avoids redundant
+wrappers and repeated entry fields; it does not trim the catalogue or impose a
+row count. The decoder preserves duplicate keys until it can reject conflicting
+values, discards unknown refs, and rejects missing or non-string known values,
+altered placeholders and trailing JSON. A 600-entry regression verifies one
+complete request without a row-count cap.
+
+Earlier v2/v3 live calls succeeded on several complete catalogues but sometimes
+returned an extra closing delimiter. These malformed responses were rejected,
+never repaired or cached, and their runs published no HTML. The transport path
+was checked for local suffix insertion; the extra delimiter was already in the
+extracted provider message. There is no automatic malformed-JSON retry. A
+bounded v4 control on the problematic server catalogue accepted all 148 texts
+and every protected occurrence on its first attempt: 5,424 input and 7,110 output
+tokens in 32.073s. Its prepared request shrank from 33,070 to 25,556 bytes. This
+is evidence for the simpler wire format, not a guarantee that a provider will
+always return valid JSON.
+
+The display collector distinguishes an observed HTTP route name from its
+model-written purpose: the former stays original and the latter is translated
+in both the menu and map inspector. An unused README view field is omitted
+from the translation catalogue; its canonical report field remains. Literal
+text resembling a generated protection marker is itself protected, so restoring
+code snippets cannot accidentally substitute a source author's literal marker.
+Executable regressions cover these boundaries and the rendered operation text.
+
+Final current-binary ordinary publication passed on four real repositories:
+
+| Repository | Owner run | Complete targets | Questions: answered / partial | Display texts |
+| --- | --- | --- | --- | --- |
+| go-http-server | `20260907-223921-go-http-server-92a6e716e1e1` | 3/3 | 1 / 7 | 147 |
+| python-tutorial-game | `20260907-223922-python-tutorial-game-94f3805eb917` | 2/2 | 10 / 3 | 317 |
+| chi | `20260907-223911-chi-0ff23ffb96e0` | 4/4 | 13 / 2 | 607 |
+| jieba | `20260907-223904-jieba-e4569fcdc91e` | 21/21 | 6 / 2 | 412 |
+
+Each used its accepted analytical cache and one successful v4 translation
+request. These four translation calls used 37,845 input and 50,749 output tokens
+in total; these figures are not the cost of their preceding analysis or earlier
+format experiments. Full catalogues and all protected source occurrences were
+validated. The 412 restored Jieba values appear in its HTML, with 20 Chinese
+source excerpts preserved exactly. Each publication has one English canonical
+report JSON, one selected Russian HTML and the original per-target indexsets,
+dependency catalogues, reduced documentation and GroupsIndexes. Ordinary warm
+repeats for all four made zero live calls or transport attempts. Canonical
+report content except timing and saved translations remain stable; Jieba's
+warm owner is `20260907-224255-jieba-03a710366393`. Full `make test`, `make vet`
+and `make build` passed on this final code.
+
+These are ordinary-path and display checks, not a guarantee about every answer.
+For example, chi's run answer still leaves the examples directory implicit,
+Jieba's parallel-processing answer omits the Windows limitation, and the small
+server has seven explicitly partial answers. The earlier chi test-first order
+inversion is fixed. The owner can review all current questions and the retained
+visual alternatives in `work/repomap-review-current.md`. Exact verification
+receipts are `work/final-{server,fixture,chi,jieba}-v4-acceptance.json`.
+
+The ordinary server `20260907-211253` finished with all three targets, one Russian
+HTML, English report JSON and saved translation. One formerly rejected answer
+and its updated display translation were the only live calls. The next ordinary
+run `20260907-211622` completed in 2s with zero provider calls, including reuse of
+all 224 question/evidence decisions and the complete translation. Exact target
+indexes, dependency catalogues, GroupsIndexes, common portfolios and publication
+artifacts were verified. The untranslated source names and source-opening links
+remain visible beside translated prose.
+
+`llm.Prepare` owns the reusable response-language prompt fragment independently
+of DeepSeek. Execution, memo identity and the existing provider-sized preparation
+checks all use that boundary; raw replay still sends saved bytes unchanged.
+The default is English and the final translation cube supplies its target
+language. This intentionally changes exact request and memo identities once.
+Focused llm/deepseek/targetportfolio/documentationreduce/orientation/reading
+checks pass after their presets account for the shared fragment.
+
+`--lang ru` selects one physical `report.<repo>.ru.html`, using the selected
+repository checkout's directory name. A Go module suffix such as `chi/v5`
+does not produce `report.v5.ru.html`. Default English publication retains
+`report.html`. Canonical `report.json` remains English.
+A separately saved display translation retains its language, original text
+catalogue hash and closed text refs; the manifest names that presentation and
+the receipt carries it in memory. The server restores the same values when it
+re-renders source links. UI translation is an embedded dictionary, not another
+model call. `--no-model` must still make zero provider calls and uses only that
+dictionary. Initial supported display languages are `en` and `ru`.
+
+Real browser checks found and corrected a filtered-search empty state that hid
+matches in other categories, indistinguishable operation choices with the same
+title, and a selected term/header that scrolled out of the inspector. Search
+now offers the other matches while preserving query and component; duplicate
+operations retain their distinct exact source anchors in the menu; the selected
+header and term picker remain above the panel's scrolling body. Role controls
+now really filter existing components, with All components as the default and
+the selection retained in the URL. Ordinary browser checks on `20260907-211253`
+and `20260907-211622` covered library/tool filtering, component navigation,
+Back/Home, Learn/Work, reload and returning from a real GitHub source link.
+The three existing reading entrances now appear immediately after the summary;
+the fixed-height repository description sits below its canvas without moving
+nodes during hover or expansion. Disconnected components now use a compact
+width-aware grid. Connected maps pack their actual connected components while
+retaining every real edge, direction, label and operation reference. Native
+component names replace the deterministic root-directory label; language,
+application/library/tool role and path remain distinct. Real native or model
+names that happen to say Root are not rewritten.
+
+The run entrance uses the existing learning intent: one matching question opens
+its answer, several open their topic menu. Long question links fill their whole
+list row, removing the non-clickable gap between wrapped lines. Browser checks
+on chi and the Python/TypeScript fixture followed questions through a term,
+component, operation, exact GitHub source and return to Learn/Work, preserving
+URL context without runtime errors. The fixture's real frontend/backend edge
+remains; the current chi overview has no confirmed cross-component edge, while
+a saved connected chi case checks placement without manufacturing a connection.
+The owner checklist is `work/repomap-review-current.md`, retaining all 38 prior
+UX IDs and separate Learn/Work importance review. Nested-cube hover previews,
+additional arrow treatments and the remaining visual alternatives stay visible
+for owner review; this acceptance does not declare every generated answer or
+possible presentation choice final.
 
 ## Source links and report server
 

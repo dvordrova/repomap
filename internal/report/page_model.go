@@ -21,13 +21,15 @@ import (
 // reader-facing values: names, paths, lines, sentences. Target and group
 // identities, digests, and adapter refs never reach the template.
 type pageView struct {
-	RepoName      string
-	Revision      string
-	ShortRevision string
-	RepositoryURL string
-	FormatVersion int
-	ReportSHA256  string
-	Served        bool
+	Language         DisplayLanguage
+	UIVocabularyJSON template.JS
+	RepoName         string
+	Revision         string
+	ShortRevision    string
+	RepositoryURL    string
+	FormatVersion    int
+	ReportSHA256     string
+	Served           bool
 	// EditorOpens says whether a source link will actually reach an editor on
 	// this machine. Promising one that is not installed is a small lie the
 	// reader discovers only by clicking.
@@ -52,7 +54,6 @@ type pageView struct {
 	Figures          []pageFigure
 	Claims           []pageClaim
 	MoreClaims       int
-	ReadmeOverview   *pageClaim
 	Cards            []pageTargetCard
 	MutedCards       []pageMutedCard
 	CardsMissing     string
@@ -463,18 +464,6 @@ func (builder *pageBuilder) summary(view *pageView) {
 // shallowest README speaks for the whole repository; a nested one describes
 // its own directory and would otherwise bury the overview in boilerplate.
 func (builder *pageBuilder) readmeClaims(view *pageView) {
-	if overview := builder.data.ReadmeOverview; overview != "" {
-		view.ReadmeOverview = &pageClaim{Text: overview, Source: "README"}
-		if builder.data.reducedDocumentation != nil {
-			for _, source := range builder.data.reducedDocumentation.Sources {
-				if source.Path != "" {
-					view.ReadmeOverview.Source = source.Path
-					view.ReadmeOverview.Anchor = builder.links.anchorPointer(source.Path, 1, 0)
-					break
-				}
-			}
-		}
-	}
 	if builder.data.Claims == nil {
 		return
 	}

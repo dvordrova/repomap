@@ -84,6 +84,7 @@ type EffectiveOptions struct {
 	GitHubURL              string   `json:"github_url,omitempty"`
 	NoOpen                 bool     `json:"no_open"`
 	NoServe                bool     `json:"no_serve"`
+	ReportLanguage         string   `json:"report_language,omitempty"`
 	Port                   int      `json:"port"`
 	DebugEnabled           bool     `json:"debug_enabled"`
 }
@@ -109,6 +110,7 @@ const (
 	SemanticStageProgramGrouping       = "program_grouping"
 	SemanticStageGroupMatching         = "group_matching"
 	SemanticStageOrientation           = "orientation"
+	SemanticStageReportTranslation     = "report_translation"
 	// The atlas tables: one stage per table, so the journal and the Time
 	// block say which table a window belonged to.
 	SemanticStageAtlasTargets     = "atlas_targets"
@@ -710,6 +712,7 @@ func validSemanticStage(stage string) bool {
 		SemanticStageAtlasArrows,
 		SemanticStageAtlasJoints,
 		SemanticStageAtlasQuestion,
+		SemanticStageReportTranslation,
 		SemanticStageAtlasRoute,
 		SemanticStageAtlasAnswer,
 		SemanticStageAtlasLearn:

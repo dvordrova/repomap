@@ -4,7 +4,75 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
+
+const repoNodeWidth, repoNodeHeight = 184.0, 74.0 // Small arrow-obstacle fixtures.
+
+func TestRootComponentKeepsItsNativeNameAcrossNavigationAndTranslation(t *testing.T) {
+	sections := []*pageSection{
+		{ID: "app", Name: "example.org/native", Root: ".", Kind: "executable"},
+		{ID: "lib", Name: "example.org/native", Root: ".", Kind: "library", Map: &pageMap{Nodes: []pageMapNode{{ID: "group", FullTitle: "Root"}}}},
+		{ID: "nested", Name: "Root", Root: "nested/path", Kind: "library"},
+	}
+	labelSections(sections)
+	if sections[0].ShortLabel != "example.org/native (executable)" || sections[1].ShortLabel != "example.org/native (library)" || sections[2].ShortLabel != "nested/path" {
+		t.Fatalf("native component labels lost: %+v", sections)
+	}
+	page := &PreparedPage{view: &pageView{Sections: sections}}
+	page.rebuildDisplayLabels(Russian)
+	if sections[0].ShortLabel != "example.org/native (исполняемый компонент)" || sections[1].ShortLabel != "example.org/native (библиотека)" {
+		t.Fatalf("translated navigation renamed the native component: %q / %q", sections[0].ShortLabel, sections[1].ShortLabel)
+	}
+	if sections[2].Name != "Root" || sections[2].Root != "nested/path" || sections[1].Map.Nodes[0].FullTitle != "Root" {
+		t.Fatal("component display changed a native name, source path or model group title")
+	}
+}
+
+func TestDisconnectedRepositoryMapKeepsNativeIdentityAndDefaultFirst(t *testing.T) {
+	sections := []*pageSection{
+		{ID: "library", programTargetID: "library-id", Name: "example.org/server", Kind: "library", Root: "."},
+		{ID: "tool", programTargetID: "tool-id", Name: "scripts.patch", Kind: "executable", Root: "scripts"},
+		{ID: "server", programTargetID: "server-id", Name: "example.org/server", Kind: "executable", Root: "."},
+	}
+	labelSections(sections)
+	data := &ReportData{TargetOutcomePortfolio: &TargetOutcomePortfolioView{
+		DefaultSelectedTargetID: "selected-server",
+		Outcomes: []TargetOutcomeView{
+			{SelectedTargetID: "selected-library", ProgramTargetID: "library-id", State: targetoutcome.StateAnalyzed},
+			{SelectedTargetID: "selected-tool", ProgramTargetID: "tool-id", State: targetoutcome.StateAnalyzed},
+			{SelectedTargetID: "selected-server", ProgramTargetID: "server-id", State: targetoutcome.StateAnalyzed},
+		},
+	}}
+	builder := &pageBuilder{data: data, sections: sections}
+	result := builder.buildRepoMap(&pageView{})
+	if len(result.Edges) != 0 || len(result.Nodes) != 3 {
+		t.Fatalf("component layout invented or lost graph content: %+v", result)
+	}
+	want := []string{"repo-server", "repo-library", "repo-tool"}
+	for i, node := range result.Nodes {
+		if node.ID != want[i] || node.Default != (i == 0) {
+			t.Fatalf("default or stable order lost: %+v", result.Nodes)
+		}
+		if node.Y != result.Nodes[0].Y || (i > 0 && node.X <= result.Nodes[i-1].X+result.Nodes[i-1].Width) {
+			t.Fatalf("unconnected cards are not a compact non-overlapping row: %+v", result.Nodes)
+		}
+	}
+	if got := result.Nodes[0]; got.NativeName != "example.org/server" || got.Root != "." || got.Kind != "executable" {
+		t.Fatalf("native component identity was replaced by Root or presentation text: %+v", got)
+	}
+	// A failed default remains first and disabled; it does not promote an
+	// arbitrary successful component to be the repository's default.
+	data.TargetOutcomePortfolio.Outcomes[2].State = targetoutcome.StateNotAnalyzed
+	data.TargetOutcomePortfolio.Outcomes[2].ProgramTargetID = ""
+	data.TargetOutcomePortfolio.Outcomes[2].DisplayName = "failed server"
+	builder.sections = sections[:2]
+	result = builder.buildRepoMap(&pageView{})
+	if first := result.Nodes[0]; !first.Default || first.Analyzed || first.Href != "" || first.NativeName != "failed server" {
+		t.Fatalf("failed default was hidden or made openable: %+v", first)
+	}
+}
 
 func TestPortfolioArrowStaysOutsideItsColumn(t *testing.T) {
 	top := &pageRepoNode{X: 20, Y: 20, Width: repoNodeWidth, Height: repoNodeHeight}

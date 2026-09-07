@@ -27,8 +27,8 @@ script entrypoints or sidecar tools.
 
 `--question TEXT` is repeatable and supplements local `.repomap.conf` questions.
 Settings are loaded once and passed as a typed value through target work and
-serving. Questions share the graph and recalled descriptions, with independent
-provider requests and question-keyed table references. Learn links questions
+serving. Questions share the graph, recalled descriptions and provider input;
+each keeps independent source selections and question-keyed request references. Learn links questions
 to short source-anchored answers; supporting reading routes remain collapsed.
 The flag adds retrieval, route selection and an answer after the ordinary atlas;
 on `read` it runs those stages without the ordinary atlas. `--through question`
@@ -44,7 +44,7 @@ a brief explanation, its basis, source refs and a specific remaining gap.
 Final answer prose preserves paragraphs and complete qualifications; only
 short label cells are whitespace-collapsed or length-trimmed. Source checks
 keep owned declarations together, each with its original code link.
-Only this final answer table opts into provider-supported reasoning. Tables
+The shared question retrieval and final answer opt into provider-supported reasoning. Tables
 have no individual output-token ceilings: they use the shared 128,000-token
 request envelope, and the configured provider ceiling still applies. Reasoning
 and visible output share that allowance; concise prose is a prompt requirement,
@@ -70,7 +70,13 @@ If selected evidence needs multiple windows, their original anchors survive in
 separate partial answer parts. No body retrieval or new semantic graph is added.
 The ordinary reading adapts eight base learning intents after the atlas using
 the configured client, then answers its proposals through the same question,
-route and answer stages. The owner explicitly approved this for user-selected
+route and answer stages. Proposal preparation starts with the complete original
+learning evidence and all eight intents, using the actual provider request
+envelope rather than an ordinary 64KiB fragment budget. Explicit development
+budgets remain available. Actual context/output/response resource refusals
+partition complete original evidence by encoded byte weight; accepted sibling
+reviews survive, children retain their partial-context scope, and failed parents
+supply no semantic review. The owner explicitly approved this for user-selected
 repositories on 2026-09-06. `read --through learn` stops after the plan.
 `learning-plan.json` retains each context review and every proposal's original
 intent, reason and sources. Overlapping automatic questions share one answer;
@@ -103,13 +109,22 @@ locations, including external tests, private packages and test-only directories.
 They belong to their module component (or their own executable package), never
 become production API or launch seeds, and currently carry no test call graph,
 execution result or assertion semantics.
-Question table v6 selects a closed set of useful anchors from each complete
-context chunk; chunk boundaries never impose one representative declaration.
-Its requests serialize the repeated evidence rows before the changing question
-context, so common input can participate in provider prefix caching. Other
-tables retain their existing request order. This changes exact question request
-identities, not the retrieval evidence or response schema; larger multi-question
-requests and their thinking policy are still under measurement.
+The shared question cube v1 selects closed source anchors for every question
+from one evidence catalogue. Complete evidence precedes the changing questions;
+unselected rows need no separate negative explanation. Every question is
+mandatory in a response and retains per-chunk inspection coverage. Refused
+windows stay unavailable rather than becoming negative findings. Only explicit
+provider context/output/response resource refusals authorize lossless partition
+of complete evidence rows or questions; there is no ordinary row-count or 64KiB
+planning cap for this cube. Output refusals split independent questions first
+while retaining their complete evidence; input/context refusals split by actual
+encoded input weight. Explicit development budgets remain available.
+Per-question memos store references to the original shared response, with the
+input metadata needed to reconstruct and compare its exact prepared request.
+Replay is revalidated against that complete original window before reuse.
+Adding or reordering questions reuses existing decisions; canonical ownership
+is restored from the current graph. This implementation is under ordinary
+quality acceptance; its measured drafts and limitations are in CURRENT.md.
 Selected type anchors keep their native owned declarations and exact member
 locations, also shown under the answer's source checks. Types beyond the
 description-candidate budget remain available for question reading.
@@ -468,8 +483,11 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   exactly `want` names, then every top box choosing from that closed list),
   the drawn arrows, the portfolio, the joints. A row carries the place's own facts and its directory's line, one step up.
   File callers contribute deterministic facts, never another file's model
-  line. Table windows split at complete rows under their row and input-byte
-  budgets (64 KiB default); an oversized singleton is an explicit preparation
+  line. Independent directory, file, callable, type, boundary and operation
+  tables pack consecutive complete rows by their input-byte budget (64 KiB
+  default), without artificial 8/40-row caps. Explicit read-stage row budgets
+  remain available. Other tables retain their owning context and round bounds.
+  An oversized singleton is an explicit preparation
   error requiring a different evidence representation in its owning stage. The model writes one line or one closed choice per
   cell; the code owns membership, arrows and their direction, joints by
   matched values, counts and identities. A refused window falls back on its
@@ -554,9 +572,18 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   strings such as `python:backend:guard:main` are banned on screen. The page
   ships only its own small stylesheet and one optional editor-link script; it
   embeds no analysis payload.
-- Semantic output and the current HTML report are canonical English. There is
-  no `--lang` flag until a separately approved final presentation-localization
-  stage actually exists.
+- Semantic output is canonical English. The owner approved final presentation
+  localization on 2026-09-07/08: `--lang ru` translates the already-built English
+  frontend structure, with an ordinary UI dictionary and a separate LLM cube
+  for generated display prose, then renders `report.<repo>.ru.html`. Source
+  excerpts, names, IDs and topology remain original. The default English file
+  remains `report.html`. Ordinary publication passed on the small server,
+  chi, Python/TypeScript fixture and Chinese Jieba repository; answer quality
+  and the retained visual alternatives remain explicit owner-review items in
+  CURRENT.md. `llm.Prepare` adds one shared response-language system fragment
+  before provider encoding, execution, fit checks and memo identity. Empty
+  ResponseLanguage means English; the final translator supplies its language.
+  Exact-byte replay does not rebuild or add this instruction.
 - Repository changes during a run do not fail publication. Do not reintroduce a
   freshness gate or strict-snapshot mode.
 - `--no-serve` requires resolvable GitHub or GitLab source links and fails in
@@ -596,16 +623,12 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   actual language-specific semantics; a missing equivalent is recorded as
   such rather than fabricated. Code that already handles the case needs its
   regression example, not an unnecessary production change.
-- Keep the source-bound development inventories under `testdata/contracts`
-  exact. Every static prompt Markdown file is classified as active or dormant
-  and bound to its owning `go:embed`; every production hard-bound symbol is
-  classified, while material anonymous Go/JavaScript boundary forms are
-  rejected; every Go test file under the product roots `cmd`/`internal` and
-  every repository-owned JavaScript/TypeScript test script is inventoried,
-  with non-ordinary compiler, interpreter, browser, subprocess,
-  network, environment, external-checkout, or cumulative-fixture requirements
-  recorded explicitly. Update the inventory and its contract test together
-  when one of those surfaces changes.
+- Keep the cumulative language file inventories under `testdata/contracts`
+  exact and update their executable expectations with each fixture change.
+  The separate prompt, numeric-limit and test-file inventories were removed
+  in `b9f1c182`; do not recreate them as a second bookkeeping step. Embedded
+  prompts and provider contracts are checked by their owning packages, and
+  `make test` covers all product packages under `cmd` and `internal`.
 - Build the owner-facing binary with `make build`; it must write
   `.bin/repomap`.
 - Canonical `make test` and `make vet` use the ambient system Go build and

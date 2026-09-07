@@ -1,7 +1,11 @@
 # Test invariant audit
 
-This audit describes the working-tree test inventory owned by
-`testdata/contracts/tests.json`. It covers all 140 production-root Go test files
+This is a historical audit of the former test inventory. Commit `b9f1c182`
+removed that inventory and its checking tests; the descriptions below are not
+an exhaustive map of the current tree. Current validation uses `make test`
+over `cmd/` and `internal/`, plus the cumulative language fixture contracts.
+
+The original audit described `testdata/contracts/tests.json` and covered 140 production-root Go test files
 under `cmd/` and `internal/`, including two helper-only `_test.go` files, and the
 complete repository-owned JavaScript/TypeScript test-script inventory (currently
 empty). The descriptions below state the product contract each file protects;
@@ -137,7 +141,7 @@ are listed separately at the end.
 | `internal/deepseek/llm_provider_test.go` | Provider preparation uses only cube prompt/state and bounded requests; state is credential-free; completion metrics/heartbeat/concurrency work; 429 collapses the shared gate before exact retry; retry bytes/accounting and terminal length/timeout/HTTP failures are structured and closed. |
 | `internal/llm/execute_test.go` | Shared execution binds provider/cube/input state, revalidates and evicts unsafe/tampered cache entries, honors cache bypass and failure non-caching, preserves batch order and bounded parallelism, replays observers in caller order, cancels queued work on terminal failure, shares persistent rate-limit collapse, distinguishes semantic failure, retains accepted operational issues, protects credentials, and copies prepared bytes immutably. |
 | `internal/llm/json_syntax_test.go` | JSON normalization accepts exactly one unambiguous object/array, rejects garbage/ambiguity/truncation, and never repairs schema, refs, or values. |
-| `internal/report/english_language_test.go` | Rendering is canonical English-only and persisted metadata cannot reactivate removed language selection. |
+| `internal/report/english_language_test.go` | Canonical analysis remains English; explicit Russian display translation preserves protected source text, source locations and complete text identity, independently of legacy metadata. |
 | `internal/report/github_source_test.go` | GitHub repository URLs normalize only safe roots, infer exact origin identity, reject unsafe/non-root forms, and remain an HTML presentation concern. |
 | `internal/report/gitlab_source_test.go` | GitLab URL/remote/revision/prefix authority is canonical and credential-safe, rejects missing/mismatched/unsafe sources and analyzed submodules, tolerates captured dirty state, preserves source content, and scrubs local roots from standalone payloads. |
 | `internal/report/html_payload_test.go` | Ordinary HTML embeds one canonical report payload, rejects malformed/ambiguous data, preserves only validated standalone/render navigation, and omits backend producer digests and legacy Go target authority from the browser. |

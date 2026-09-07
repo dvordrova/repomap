@@ -99,6 +99,16 @@ separate stage outputs.
 
 ## Report invariants (UI)
 
+* Analysis and model-generated semantic prose use English through one shared,
+  provider-neutral system-prompt instruction. The owner's 2026-09-07/08
+  localization design applies only after the English frontend structure is
+  built: ordinary code translates our fixed UI vocabulary, and a separate LLM
+  cube translates explicitly selected generated display text. Their results
+  form the final frontend structure before HTML rendering. `--lang ru` selects
+  a Russian report such as `report.etcd.ru.html`. Canonical analysis, IDs,
+  topology, code names, source excerpts and source links keep their original
+  values. The localized static HTML and server-rendered report use the same
+  saved display translation; JavaScript is not required to obtain translation.
 * Learn and Work are two entrances to this same report, sharing analysis,
   maps, sources and navigation. Learn is the default on first open: a short
   system explanation and a visible, progressively expanded system map, with

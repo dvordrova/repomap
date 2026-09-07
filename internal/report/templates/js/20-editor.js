@@ -12,12 +12,15 @@
   var runID = decodeURIComponent(route[2]);
   var status = document.getElementById('rm-status');
 
-  function say(message, failed) {
+  function say(message, failed, detail) {
     if (!status) return;
-    status.textContent = message;
+    status.replaceChildren(document.createTextNode(message));
+    if(detail){var details=document.createElement('details'),summary=document.createElement('summary'),original=document.createElement('pre');summary.textContent=rmT('Technical details');original.textContent=detail;details.append(summary,original);status.appendChild(details);}
     status.className = failed ? 'status bad' : 'status';
     status.hidden = false;
   }
+
+  function uiError(message,detail) { var error=new Error(message);error.repomapMessage=true;error.detail=detail;return error; }
 
   function open(spec) {
     var parts = spec.split(':');
@@ -25,7 +28,7 @@
     var line = parts.length > 1 ? parseInt(parts.pop(), 10) || 0 : 0;
     var sourceID = sourceIDs[parts.join(':')];
     if (typeof sourceID !== 'string' || !sourceID) {
-      say('This source is not openable from this report.', true);
+      say(rmT('This source is not openable from this report.'), true);
       return;
     }
     fetch(base + '/api/open', {
@@ -34,14 +37,14 @@
       body: JSON.stringify({ run_id: runID, source_id: sourceID, line: line, column: column })
     }).then(function (response) {
       return response.json().catch(function () {
-        throw new Error('The editor response was not valid JSON.');
+        throw uiError(rmT('The editor response was not valid JSON.'));
       }).then(function (body) {
-        if (!response.ok) throw new Error(body && body.error ? String(body.error) : 'open-file failed');
-        if (!body || body.status !== 'opened') throw new Error('The editor did not confirm the source action.');
-        say('Opened ' + spec + ' in your editor.', false);
+        if (!response.ok) throw uiError(rmT('Could not open this source in the editor.'),body&&body.error?String(body.error):'');
+        if (!body || body.status !== 'opened') throw uiError(rmT('The editor did not confirm the source action.'));
+        say(rmT('Opened {0} in your editor.',spec), false);
       });
     }).catch(function (error) {
-      say(error && error.message ? error.message : String(error), true);
+      say(error && error.repomapMessage ? error.message : rmT('Could not open this source in the editor.'), true, error && error.repomapMessage ? error.detail : String(error));
     });
   }
 

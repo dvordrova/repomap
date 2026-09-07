@@ -152,7 +152,7 @@ func buildProgramHTMLWithOptionsDiagnosticsAndHooks(
 	}
 	diagnostics := GenerationDiagnostics{}
 	localRoots := renderPayloadLocalRoots(data, options.LocalRoots)
-	rendered, err := executeProgramReport(data, options.ReportSHA256, localRoots)
+	rendered, err := executeProgramReport(data, options, localRoots)
 	if err != nil {
 		return nil, diagnostics, err
 	}
@@ -162,11 +162,25 @@ func buildProgramHTMLWithOptionsDiagnosticsAndHooks(
 // executeProgramReport renders the one static page from the already validated
 // report data. The page carries no analysis payload of its own: everything it
 // shows is projected here, in Go, from the same artifacts report.json binds.
-func executeProgramReport(data *ReportData, reportSHA256 string, localRoots []string) ([]byte, error) {
-	view, err := buildPageView(data, reportSHA256, localRoots)
+func executeProgramReport(data *ReportData, options RenderOptions, localRoots []string) ([]byte, error) {
+	options.LocalRoots = localRoots
+	page, err := PreparePage(data, options)
 	if err != nil {
 		return nil, err
 	}
+	if err := page.applyDisplay(options); err != nil {
+		return nil, err
+	}
+	view := page.view
+	vocabulary, err := uiVocabulary(view.Language)
+	if err != nil {
+		return nil, err
+	}
+	encodedVocabulary, err := json.Marshal(vocabulary)
+	if err != nil {
+		return nil, err
+	}
+	view.UIVocabularyJSON = template.JS(encodedVocabulary)
 	styles, err := bundledTemplateAssets("templates/css")
 	if err != nil {
 		return nil, err
@@ -177,7 +191,7 @@ func executeProgramReport(data *ReportData, reportSHA256 string, localRoots []st
 	}
 	view.CSS = template.CSS(styles)
 	view.JS = template.JS(scripts)
-	pageTemplate, err := template.New("report").ParseFS(reportTemplateFS, "templates/html/*.html")
+	pageTemplate, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, params ...any) (string, error) { return uiText(view.Language, key, params...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("report: parse embedded page templates: %w", err)
 	}
@@ -565,12 +579,23 @@ func generate(
 	if err != nil {
 		return RunReceipt{}, err
 	}
+	// The module display name may end in a language version suffix (chi/v5).
+	// Name the file after the selected repository, independently of its modules.
+	display, translationsJSON, err := prepareDisplayPublication(filepath.Base(source.Repository.Identity), renderOptions)
+	if err != nil {
+		return RunReceipt{}, err
+	}
+	manifest.Display = display
 	receipt, err := newRunReceipt(runDir, manifest, data)
 	if err != nil {
 		return RunReceipt{}, err
 	}
+	receipt.renderOptions = renderOptions
 	if !publishHTML {
-		if err := installAuthorizedReport(runDir, reportJSON, nil, manifest); err != nil {
+		if display != nil {
+			return RunReceipt{}, fmt.Errorf("report: translated publication requires HTML")
+		}
+		if err := installAuthorizedReport(runDir, reportJSON, nil, manifest, nil); err != nil {
 			return RunReceipt{}, err
 		}
 		return receipt, nil
@@ -586,7 +611,7 @@ func generate(
 	if err != nil {
 		return RunReceipt{}, err
 	}
-	if err := installAuthorizedReport(runDir, reportJSON, reportHTML, manifest); err != nil {
+	if err := installAuthorizedReport(runDir, reportJSON, reportHTML, manifest, translationsJSON); err != nil {
 		return RunReceipt{}, err
 	}
 	return receipt, nil
@@ -601,20 +626,34 @@ func installAuthorizedReport(
 	reportJSON []byte,
 	reportHTML []byte,
 	manifest RunManifest,
+	translationsJSON []byte,
 ) (resultErr error) {
 	jsonStage, err := stageReportArtifact(runDir, ".report-json-*.tmp", reportJSON)
 	if err != nil {
 		return err
 	}
 	htmlStage := ""
+	translationsStage := ""
 	installed := false
 	defer func() {
-		cleanupErr := errors.Join(removeIfPresent(jsonStage), removeIfPresent(htmlStage))
+		cleanupErr := errors.Join(removeIfPresent(jsonStage), removeIfPresent(htmlStage), removeIfPresent(translationsStage))
 		if !installed {
 			cleanupErr = errors.Join(cleanupErr, removePublishedReportArtifacts(runDir))
 		}
 		resultErr = errors.Join(resultErr, cleanupErr)
 	}()
+	if err := manifest.Display.validate(); err != nil {
+		return err
+	}
+	if (manifest.Display == nil) != (translationsJSON == nil) {
+		return fmt.Errorf("report: translated artifact and publication must be supplied together")
+	}
+	if translationsJSON != nil {
+		translationsStage, err = stageReportArtifact(runDir, ".report-translations-*.tmp", translationsJSON)
+		if err != nil {
+			return err
+		}
+	}
 
 	if reportHTML != nil {
 		htmlStage, err = stageReportArtifact(runDir, ".report-html-*.tmp", reportHTML)
@@ -633,11 +672,21 @@ func installAuthorizedReport(
 	}
 	jsonStage = ""
 	if reportHTML != nil {
-		htmlPath := filepath.Join(runDir, "report.html")
+		htmlFilename := "report.html"
+		if manifest.Display != nil {
+			htmlFilename = manifest.Display.HTMLFilename
+		}
+		htmlPath := filepath.Join(runDir, htmlFilename)
 		if err := os.Rename(htmlStage, htmlPath); err != nil {
-			return fmt.Errorf("report: install report.html: %w", err)
+			return fmt.Errorf("report: install HTML: %w", err)
 		}
 		htmlStage = ""
+	}
+	if translationsStage != "" {
+		if err := os.Rename(translationsStage, filepath.Join(runDir, manifest.Display.TranslationsFilename)); err != nil {
+			return fmt.Errorf("report: install translations: %w", err)
+		}
+		translationsStage = ""
 	}
 	if err := writeRunManifestAtomic(runDir, manifest); err != nil {
 		return err
@@ -679,7 +728,19 @@ func stageReportArtifact(runDir string, pattern string, data []byte) (string, er
 
 func removePublishedReportArtifacts(runDir string) error {
 	var result error
-	for _, name := range []string{RunManifestFilename, "report.json", "report.html"} {
+	names := []string{RunManifestFilename, "report.json", "report.html"}
+	entries, err := os.ReadDir(runDir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "report.") && strings.HasSuffix(name, ".html") ||
+			strings.HasPrefix(name, "report-translations.") && strings.HasSuffix(name, ".json") {
+			names = append(names, name)
+		}
+	}
+	for _, name := range names {
 		if err := removeIfPresent(filepath.Join(runDir, name)); err != nil {
 			result = errors.Join(result, fmt.Errorf("report: remove incomplete %s: %w", name, err))
 		}

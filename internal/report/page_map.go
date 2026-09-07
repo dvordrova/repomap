@@ -205,6 +205,9 @@ type pageMapNode struct {
 	Height    float64
 	BarWidth  float64
 	FullTitle string
+	// CanonicalTitle keeps existing structural comparisons independent of a
+	// translated display title.
+	CanonicalTitle string
 	// Steps names the main-flow step numbers that pass through this group, so
 	// the map and the flow below it describe the same journey. StepX and StepY
 	// are absolute because a text anchored at its end ignores dx.
@@ -1564,8 +1567,9 @@ func safeIDFragment(value string) string {
 // every target the run knew about, including the ones it could not read, so
 // "seventeen of twenty" is a picture and not a footnote.
 const (
-	repoNodeWidth  = 184.0
-	repoNodeHeight = 74.0
+	// Repository cards show their existing purpose as well as native identity.
+	repoCardWidth  = 244.0
+	repoCardHeight = 176.0
 	repoNodeGapX   = 30.0
 	// A repository whose targets call each other needs room between the boxes
 	// for the arrow and what it carries; one whose targets do not can pack
@@ -1603,13 +1607,18 @@ type pageRepoMap struct {
 
 type pageRepoLane struct {
 	Title string
+	Role  string // Existing repository band, kept stable across display languages.
 	Y     float64
 }
 
 type pageRepoNode struct {
 	ID         string
 	Summary    string
+	NativeName string
+	Root       string
+	Default    bool
 	Kind       string
+	Role       string
 	Language   string
 	Neighbours string
 	Href       string
@@ -1726,6 +1735,13 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 		return nil
 	}
 	result := &pageRepoMap{}
+	defaultTargetID := ""
+	for _, outcome := range builder.data.TargetOutcomePortfolio.Outcomes {
+		if outcome.SelectedTargetID == builder.data.TargetOutcomePortfolio.DefaultSelectedTargetID {
+			defaultTargetID = outcome.ProgramTargetID
+			break
+		}
+	}
 	centres := make(map[string]*pageRepoNode, len(builder.sections))
 	// A caller reads better to the left of what it calls, and a big part
 	// before a small one, so the grid is ordered by how many other targets
@@ -1766,9 +1782,9 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 	position := 0
 	band := ""
 	appendNode := func(node pageRepoNode) {
-		node.X = mapPadding + float64(position%perRow)*(repoNodeWidth+gapX)
-		node.Y = repoRowGap + float64(position/perRow)*(repoNodeHeight+repoNodeGapY)
-		node.Width, node.Height = repoNodeWidth, repoNodeHeight
+		node.X = mapPadding + float64(position%perRow)*(repoCardWidth+gapX)
+		node.Y = repoRowGap + float64(position/perRow)*(repoCardHeight+repoNodeGapY)
+		node.Width, node.Height = repoCardWidth, repoCardHeight
 		result.Nodes = append(result.Nodes, node)
 		position++
 	}
@@ -1778,7 +1794,7 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 			if position > 0 {
 				position = ((position + perRow - 1) / perRow) * perRow
 			}
-			result.Lanes = append(result.Lanes, pageRepoLane{Title: role[2:], Y: repoRowGap + float64(position/perRow)*(repoNodeHeight+repoNodeGapY) - 8})
+			result.Lanes = append(result.Lanes, pageRepoLane{Title: role[2:], Role: role[2:], Y: repoRowGap + float64(position/perRow)*(repoCardHeight+repoNodeGapY) - 8})
 			band = role
 		}
 		members := symbols[section.factsTargetID]
@@ -1787,7 +1803,8 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 			summary = index.Summary
 		}
 		appendNode(pageRepoNode{
-			ID: "repo-" + section.ID, Summary: summary, Kind: section.Kind, Language: section.Language,
+			ID: "repo-" + section.ID, Summary: summary, Kind: section.Kind, Role: role[2:], Language: section.Language,
+			NativeName: section.Name, Root: section.Root, Default: section.programTargetID == defaultTargetID,
 			Href: "#" + section.ID, Name: wrapToLines(strings.TrimSuffix(section.ShortLabel, " ("+section.Kind+")"), repoNameBudget, repoNameLines),
 			FullName: section.Label, ShortName: section.ShortLabel, Detail: repoNodeDetail(section, members), Analyzed: true,
 			Members: members, BarWidth: repoBarWidth * float64(members) / float64(largest),
@@ -1799,7 +1816,8 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 	for _, target := range unread {
 		appendNode(pageRepoNode{
 			Name: wrapToLines(target.name, repoNameBudget, repoNameLines), FullName: target.name,
-			Detail: target.language, Note: cutToBudget(target.note, repoDetailBudget),
+			NativeName: target.name, Default: target.isDefault, Language: target.language,
+			Detail: target.language, Note: target.note,
 		})
 	}
 	rows := (position + perRow - 1) / perRow
@@ -1807,10 +1825,13 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 	if columns > perRow {
 		columns = perRow
 	}
-	result.Width = mapPadding*2 + float64(columns)*repoNodeWidth + float64(columns-1)*gapX
-	result.Height = repoRowGap*2 + float64(rows)*repoNodeHeight + float64(rows-1)*repoNodeGapY
+	result.Width = mapPadding*2 + float64(columns)*repoCardWidth + float64(columns-1)*gapX
+	result.Height = repoRowGap*2 + float64(rows)*repoCardHeight + float64(rows-1)*repoNodeGapY
 	edges, reach := builder.repoEdges(centres)
 	result.Edges = edges
+	if len(edges) == 0 {
+		layoutDisconnectedRepoMap(result)
+	}
 	near := make(map[string][]string)
 	for _, edge := range edges {
 		near[edge.From] = append(near[edge.From], edge.To)
@@ -1820,16 +1841,33 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 		sort.Strings(near[result.Nodes[i].ID])
 		result.Nodes[i].Neighbours = strings.Join(near[result.Nodes[i].ID], " ")
 	}
-	// An arrow that swings under its row needs the map to reach that far.
-	if reach+repoRowGap > result.Height {
-		result.Height = reach + repoRowGap
-	}
-	for _, node := range result.Nodes {
-		result.Width = max(result.Width, node.X+node.Width+mapLoopMaxDepth+mapPadding)
+	if len(edges) > 0 {
+		// An arrow that swings outside its row needs the canvas to contain it.
+		result.Height = max(result.Height, reach+repoRowGap)
+		for _, node := range result.Nodes {
+			result.Width = max(result.Width, node.X+node.Width+mapLoopMaxDepth+mapPadding)
+		}
 	}
 	result.MinWidth = mapMinWidth(result.Width)
 	result.Caption = repoMapCaption(len(builder.sections), len(unread), len(result.Edges))
 	return result
+}
+
+// With no connections, spatial order expresses only a stable component list.
+// The browser wraps this same list to its measured reading width.
+func layoutDisconnectedRepoMap(result *pageRepoMap) {
+	if len(result.Nodes) == 0 {
+		return
+	}
+	sort.SliceStable(result.Nodes, func(i, j int) bool { return result.Nodes[i].Default && !result.Nodes[j].Default })
+	columns := min(repoPerRow, len(result.Nodes))
+	for i := range result.Nodes {
+		result.Nodes[i].X = mapPadding + float64(i%columns)*(repoCardWidth+repoNodeGapX)
+		result.Nodes[i].Y = mapPadding + float64(i/columns)*(repoCardHeight+repoNodeGapY)
+	}
+	rows := (len(result.Nodes) + columns - 1) / columns
+	result.Width = mapPadding*2 + float64(columns)*repoCardWidth + float64(columns-1)*repoNodeGapX
+	result.Height = mapPadding*2 + float64(rows)*repoCardHeight + float64(rows-1)*repoNodeGapY
 }
 
 func (builder *pageBuilder) repoRole(section *pageSection) string {
@@ -1877,7 +1915,10 @@ func repoMapCaption(analyzed, unread, edges int) string {
 }
 
 // unreadTarget is a target the run knew about and could not read.
-type unreadTarget struct{ name, language, note string }
+type unreadTarget struct {
+	name, language, note string
+	isDefault            bool
+}
 
 func (builder *pageBuilder) unreadTargets() []unreadTarget {
 	var result []unreadTarget
@@ -1886,9 +1927,10 @@ func (builder *pageBuilder) unreadTargets() []unreadTarget {
 			continue
 		}
 		result = append(result, unreadTarget{
-			name:     outcome.DisplayName,
-			language: string(outcome.Language),
-			note:     "not read · " + strings.ReplaceAll(string(outcome.FailureReason), "_", " "),
+			name:      outcome.DisplayName,
+			language:  string(outcome.Language),
+			note:      "not read · " + strings.ReplaceAll(string(outcome.FailureReason), "_", " "),
+			isDefault: outcome.SelectedTargetID == builder.data.TargetOutcomePortfolio.DefaultSelectedTargetID,
 		})
 	}
 	return result

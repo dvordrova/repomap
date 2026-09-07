@@ -121,6 +121,148 @@ func TestLoadRunRestoresVirtualPageWithoutPhysicalHTML(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("owner without physical report.html: %v", err)
 	}
+
+	t.Run("localized receipt and disk restore share display and source locations", func(t *testing.T) {
+		fixture := writeTestRun(t)
+		runDir := filepath.Join(fixture.runsDir, fixture.runID)
+		initial, err := reportpkg.ReadRunReceipt(runDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data := *initial.Data()
+		data.ReadmeOverview = "This program prepares a batch response."
+		options := reportpkg.RenderOptions{Language: reportpkg.Russian}
+		prepared, err := reportpkg.PreparePage(&data, options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		catalog := prepared.TextCatalog()
+		if len(catalog.Entries) == 0 {
+			t.Fatal("localized fixture has no generated display text")
+		}
+		translations := reportpkg.DisplayTranslations{
+			Version: reportpkg.DisplayTextVersion, Language: reportpkg.Russian, CatalogSHA256: catalog.SHA256,
+		}
+		for _, entry := range catalog.Entries {
+			text := "Описание программы " + entry.Ref
+			for _, protected := range entry.Protected {
+				text += strings.Repeat(" "+protected.Ref, strings.Count(entry.Text, protected.Ref))
+			}
+			translations.Entries = append(translations.Entries, reportpkg.DisplayTranslationEntry{Ref: entry.Ref, Text: text})
+		}
+		options.Translations = &translations
+		manifest := initial.Manifest()
+		source, err := reportpkg.NewRunSource(manifest.AnalysisRoot, manifest.RepositoryState)
+		if err != nil {
+			t.Fatal(err)
+		}
+		receipt, err := reportpkg.Generate(runDir, source, reportpkg.GenerateOptions{
+			Data: &data, Render: options, PublishHTML: true,
+			GitHubURL: "https://github.com/example/batch",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		filename, err := reportpkg.ReportHTMLFilename(filepath.Base(source.Repository.Identity), reportpkg.Russian)
+		if err != nil || receipt.HTMLFilename() != filename || filename == "report.html" {
+			t.Fatalf("localized filename = %q, want %q: %v", receipt.HTMLFilename(), filename, err)
+		}
+		static := readTestFile(t, filepath.Join(runDir, filename))
+		if !bytes.Contains(static, []byte("Описание программы")) || bytes.Contains(static, []byte(fixture.sourceID)) {
+			t.Fatal("static Russian report omits translated text or stores transient source IDs")
+		}
+		if _, err := os.Stat(filepath.Join(runDir, "report.html")); !os.IsNotExist(err) {
+			t.Fatalf("localized publication kept a second English HTML: %v", err)
+		}
+		canonical := readTestFile(t, filepath.Join(runDir, "report.json"))
+		if !bytes.Contains(canonical, []byte(data.ReadmeOverview)) || bytes.Contains(canonical, []byte("Описание программы")) {
+			t.Fatal("translation replaced the canonical English analysis")
+		}
+		// A new server needs the canonical data and saved translation artifact,
+		// not the rendered file or access to the translation provider.
+		if err := os.Remove(filepath.Join(runDir, filename)); err != nil {
+			t.Fatal(err)
+		}
+		restored, err := reportpkg.ReadRunReceipt(runDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if restored.HTMLFilename() != filename || restored.RenderOptions().Language != reportpkg.Russian ||
+			restored.RenderOptions().Translations == nil {
+			t.Fatal("disk receipt lost the chosen language or saved translations")
+		}
+		var firstHTML []byte
+		for _, mode := range []string{"memory", "disk"} {
+			t.Run(mode, func(t *testing.T) {
+				var openedPath string
+				var openedLine, openedColumn int
+				opts := Options{
+					RunsDir: fixture.runsDir, InitialRunID: fixture.runID, Capability: testCapability,
+					OpenFile: func(_ context.Context, path string, line, column int) error {
+						openedPath, openedLine, openedColumn = path, line, column
+						return nil
+					},
+				}
+				if mode == "memory" {
+					opts.Runs = []reportpkg.RunReceipt{receipt}
+				}
+				handler, err := NewHandler(opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				server := httptest.NewServer(handler)
+				defer server.Close()
+				baseURL := server.URL + capabilityURLPrefix(testCapability)
+				reportPath := "/runs/" + fixture.runID + "/" + filename
+				response, err := server.Client().Get(baseURL + reportPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				served := readResponse(t, response, http.StatusOK)
+				for _, want := range []string{`<html lang="ru">`, "Описание программы", fixture.sourceID, "batch.go"} {
+					if !bytes.Contains(served, []byte(want)) {
+						t.Fatalf("served Russian page omits %q", want)
+					}
+				}
+				if mode == "memory" {
+					firstHTML = served
+				} else if !bytes.Equal(firstHTML, served) {
+					t.Fatal("restored Russian report differs from in-memory rendering")
+				}
+				client := *server.Client()
+				client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+				for path, want := range map[string]string{
+					"/": capabilityURLPrefix(testCapability) + reportPath + "#/repository",
+					"/runs/" + fixture.runID + "/report.html":           capabilityURLPrefix(testCapability) + reportPath,
+					"/runs/" + fixture.runID + "/report.html?mode=work": capabilityURLPrefix(testCapability) + reportPath + "?mode=work",
+				} {
+					response, err := client.Get(baseURL + path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					readResponse(t, response, http.StatusFound)
+					if got := response.Header.Get("Location"); got != want {
+						t.Fatalf("redirect %q = %q, want %q", path, got, want)
+					}
+				}
+				response, err = client.Get(baseURL + "/runs/" + fixture.runID + "/report.unknown.ru.html")
+				if err != nil {
+					t.Fatal(err)
+				}
+				readResponse(t, response, http.StatusNotFound)
+				var result map[string]any
+				decodeResponse(t, postOpen(t, baseURL, openRequest{
+					RunID: fixture.runID, SourceID: fixture.sourceID, Line: 7, Column: 3,
+				}), http.StatusOK, &result)
+				if result["status"] != "opened" || openedPath != fixture.sourcePath || openedLine != 7 || openedColumn != 3 {
+					t.Fatalf("localized source open=%#v path=%q line=%d column=%d", result, openedPath, openedLine, openedColumn)
+				}
+			})
+		}
+		if after := readTestFile(t, filepath.Join(runDir, "report.json")); !bytes.Equal(canonical, after) {
+			t.Fatal("server rendering changed the canonical report")
+		}
+	})
 }
 
 func TestOpenNamesSourcesByIDAndFollowsTheFile(t *testing.T) {

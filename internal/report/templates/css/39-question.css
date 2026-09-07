@@ -22,6 +22,7 @@
 .learn-question-topics { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,23rem),1fr));gap:.6rem 1.5rem;align-items:start }
 .learn-question-topics > details { padding:.5rem 0;border-bottom:1px solid var(--line) }
 .learn-question-topics summary { font-weight:600;cursor:pointer }
+.learn-question-topics li > a { display:block }
 .reading-question { font-size: 1rem; font-weight: 600; cursor: pointer; }
 .reading-stops { padding-left: 1.5rem; }
 .reading-part + .reading-part { margin-top:1rem;padding-top:.5rem;border-top:2px solid var(--line) }

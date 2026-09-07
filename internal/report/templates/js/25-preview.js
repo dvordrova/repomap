@@ -129,13 +129,13 @@ var repomapPreview = (function () {
     var card = document.createElement('aside');
     card.className = 'source-card';
     card.id = 'model-sources-' + index;
-    card.setAttribute('aria-label', 'About this model response');
+    card.setAttribute('aria-label', rmT('About this model response'));
     var title = document.createElement('strong');
-    title.textContent = 'Model response';
+    title.textContent = rmT('Model response');
     card.appendChild(title);
     var source = text.querySelector('.model-sources');
     var note = document.createElement('p');
-    note.textContent = source && source.children.length ? 'The model cited these sources:' : 'No citations were saved for this text.';
+    note.textContent = source && source.children.length ? rmT('The model cited these sources:') : rmT('No citations were saved for this text.');
     card.appendChild(note);
     if (source) {
       var links = source.cloneNode(true);
@@ -145,10 +145,10 @@ var repomapPreview = (function () {
     }
     var hint = document.createElement('button');
     hint.type = 'button'; hint.className = 'source-hint'; hint.textContent = 'ⓘ';
-    hint.setAttribute('aria-label', 'About this model response and its sources');
+    hint.setAttribute('aria-label', rmT('About this model response and its sources'));
     hint.setAttribute('aria-controls', card.id);
     var answer = text.classList.contains('answer-copy');
-    if (answer) hint.textContent = 'Model explanation · sources';
+    if (answer) hint.textContent = rmT('Model explanation · sources');
     text.appendChild(hint);
     repomapPreview.bind(answer ? hint : text, card);
     text.classList.add('model-inspectable');

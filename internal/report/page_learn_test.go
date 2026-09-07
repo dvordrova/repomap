@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
 	"strings"
 	"testing"
@@ -24,6 +25,37 @@ func TestLearnWorkKeepOneReport(t *testing.T) {
 	}
 	if bytes.Count(html, []byte(`data-component-name=`)) != 1 {
 		t.Fatal("reading modes duplicated the component")
+	}
+}
+
+func TestLearnRunEntranceUsesSelectedIntent(t *testing.T) {
+	for _, count := range []int{0, 1, 2} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			view := &pageView{}
+			plan := &atlas.LearningPlan{Reviews: []atlas.LearningReview{{Intent: "run", Title: "Run and try it"}}}
+			for i := 0; i < count; i++ {
+				view.Questions = append(view.Questions, &pageQuestion{ID: fmt.Sprintf("question-%d", i), Question: fmt.Sprintf("Startup question %d?", i), Origins: []pageQuestionOrigin{{Title: "Run and try it"}}})
+			}
+			// Unrelated explicit wording must not become run-intent authority.
+			view.Questions = append(view.Questions, &pageQuestion{ID: "user-run", Question: "How do I run it?", UserQuestion: true})
+			learningQuestionTopics(view, plan)
+			want := "#how-to-run"
+			if count == 1 {
+				want = "#question-0"
+			} else if count > 1 {
+				want = "#learn-topic-run"
+			}
+			if got := view.LearnRunHref(); got != want {
+				t.Fatalf("run entrance = %q, want %q", got, want)
+			}
+			// Translation changes display titles; intent and exact destinations survive.
+			for i := range view.LearnQuestionTopics {
+				view.LearnQuestionTopics[i].Title = "Запуск и знакомство"
+			}
+			if got := view.LearnRunHref(); got != want {
+				t.Fatalf("translated run entrance = %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -64,7 +96,7 @@ func TestQuestionAnswerRendersItsOwnSourcesAndKeepsTheReadingRoute(t *testing.T)
 			t.Fatalf("observed launch/manifest source missing: %s", want)
 		}
 	}
-	for _, want := range []string{"The README documents the local startup command.\n\nRun &lt;example&gt; with &#39;two  spaces&#39; preserved.", `<table class="reading-members">`, `<code>labels: list[str] = [&#39;&lt;run&gt;&#39;]</code>`, `<span>Author's documentation</span>Starts a run.`} {
+	for _, want := range []string{"The README documents the local startup command.\n\nRun &lt;example&gt; with &#39;two  spaces&#39; preserved.", `<table class="reading-members">`, `<code>labels: list[str] = [&#39;&lt;run&gt;&#39;]</code>`, `<span>Author&#39;s documentation</span>Starts a run.`} {
 		if !bytes.Contains(html, []byte(want)) {
 			t.Fatalf("answer formatting or original member evidence lost: %s", want)
 		}
@@ -107,7 +139,13 @@ func TestIndependentReadingsDoNotInventAGlobalOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Count(html, []byte(`<div class="reading-part"><ol`)) != 2 || !bytes.Contains(html, []byte("separate reading orders")) || !bytes.Contains(html, []byte("Required environment is not described.")) || bytes.Contains(html, []byte("some model answers were unavailable")) {
+	// Inspect the published reading, not unused messages in the UI vocabulary.
+	_, main, ok := strings.Cut(string(html), `<main>`)
+	if !ok {
+		t.Fatal("report has no main content")
+	}
+	main, _, _ = strings.Cut(main, `</main>`)
+	if strings.Count(main, `<div class="reading-part"><ol`) != 2 || !strings.Contains(main, "separate reading orders") || !strings.Contains(main, "Required environment is not described.") || strings.Contains(main, "some model answers were unavailable") {
 		t.Fatal("separate accepted readings became one order or a provider failure")
 	}
 	data.Questions[0].Guide.Parts[1].Steps = steps[:1]
@@ -166,7 +204,9 @@ func TestQuestionTermsUseSelectedDeclarationsNotNameGuesses(t *testing.T) {
 	if len(terms) != 1 || terms[0].ID != lease.ID || len(terms[0].Places) != 2 || terms[0].Explanation != lease.Explanation {
 		t.Fatalf("wrong or altered explanations: %+v", terms)
 	}
-	templates, err := template.New("report").ParseFS(reportTemplateFS, "templates/html/*.html")
+	templates, err := template.New("report").Funcs(template.FuncMap{
+		"t": func(key string, params ...any) (string, error) { return uiText(English, key, params...) },
+	}).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -32,6 +32,7 @@ type RunManifest struct {
 	StandaloneSource    *StandaloneSourceAuthority `json:"standalone_source,omitempty"`
 	ReportFormatVersion int                        `json:"report_format_version"`
 	ProgramTargetID     string                     `json:"program_target_id"`
+	Display             *DisplayPublication        `json:"display,omitempty"`
 }
 
 const (
@@ -92,7 +93,7 @@ func (m RunManifest) Validate() error {
 	if m.ProgramTargetID == "" {
 		return fmt.Errorf("report manifest: program target id is required")
 	}
-	return nil
+	return m.Display.validate()
 }
 
 // RunSource is what a report is generated from: the repository as it was
@@ -154,6 +155,7 @@ type RunReceipt struct {
 	programPage    TargetNavigationPage
 	repositoryName string
 	data           *ReportData
+	renderOptions  RenderOptions
 }
 
 func newRunReceipt(runDir string, manifest RunManifest, data *ReportData) (RunReceipt, error) {
@@ -191,7 +193,15 @@ func ReadRunReceipt(runDir string) (RunReceipt, error) {
 	}
 	data.ArtifactsDir = absoluteRunDir
 	data.defaultProgramIndexArtifactFilename = programindex.ArtifactFilename
-	return newRunReceipt(absoluteRunDir, manifest, &data)
+	receipt, err := newRunReceipt(absoluteRunDir, manifest, &data)
+	if err != nil {
+		return RunReceipt{}, err
+	}
+	receipt.renderOptions, err = loadDisplayOptions(absoluteRunDir, manifest.Display)
+	if err != nil {
+		return RunReceipt{}, err
+	}
+	return receipt, nil
 }
 
 // Data returns the immutable in-memory publication result, if available.

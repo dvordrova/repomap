@@ -78,6 +78,7 @@ func TestSemanticExchangeAcceptsOnlyLiveStages(t *testing.T) {
 		SemanticStageGroupMatching,
 		SemanticStageOrientation,
 		SemanticStageAtlasQuestion,
+		SemanticStageReportTranslation,
 		SemanticStageAtlasRoute,
 		SemanticStageAtlasAnswer,
 		SemanticStageAtlasLearn,

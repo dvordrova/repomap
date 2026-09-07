@@ -18,22 +18,22 @@
   function locate(){try{return document.getElementById(decodeURIComponent(location.hash.slice(1)));}catch(e){return null;}}
   function showReturn(){
     returnLink.hidden=!question||current===enclosing(question);
-    if(question){returnLink.href='#'+question.id;returnLink.textContent='← Back to question: '+question.querySelector('.reading-question').textContent;}
+    if(question){returnLink.href='#'+question.id;returnLink.textContent=rmT('← Back to question: {0}',question.querySelector('.reading-question').textContent);}
     termLink.hidden=!term||current===enclosing(term);
-    if(term){termLink.href='#'+term.id;termLink.textContent='← Back to term: '+term.querySelector('summary').textContent;}
+    if(term){termLink.href='#'+term.id;termLink.textContent=rmT('← Back to term: {0}',term.querySelector('summary').textContent);}
     var map=detailGroup&&current.querySelector('[data-map-explorer]');
     mapLink.hidden=!map;
-    if(map){mapLink.href='#'+current.id;mapLink.textContent='← Back to map: '+map.explorationLabel();}
+    if(map){mapLink.href='#'+current.id;mapLink.textContent=rmT('← Back to map: {0}',map.explorationLabel());}
     returnLinks.hidden=returnLink.hidden&&termLink.hidden&&mapLink.hidden;
   }
   function showLocation(){
     var place=current===home?'':(current.dataset.componentName||current.querySelector('h2')?.textContent||'');
     var detailTitle=detailGroup&&detailGroup.querySelector('.group-head h4').cloneNode(true);
     if(detailTitle)detailTitle.querySelectorAll('button,.model-sources').forEach(function(n){n.remove();});
-    locationName.textContent=document.querySelector('.brand .repo').textContent+(place?' · '+place:'')+(detailTitle?' · Full details: '+detailTitle.textContent:'');
+    locationName.textContent=document.querySelector('.brand .repo').textContent+(place?' · '+place:'')+(detailTitle?' · '+rmT('Full details: {0}',detailTitle.textContent):'');
     var map=!detailGroup&&current.querySelector('[data-map-explorer]');
     mapContext.hidden=!map;
-    if(map){mapContext.href='#'+current.id;mapContext.textContent='Map: '+map.explorationLabel();}
+    if(map){mapContext.href='#'+current.id;mapContext.textContent=rmT('Map: {0}',map.explorationLabel());}
   }
   function setPage(node){
     var page=enclosing(node);if(!page)return;
@@ -111,8 +111,8 @@
     var terms=search.value.toLowerCase().trim().split(/\s+/), found=entries.filter(function(e,i){return terms.every(function(t){return text[i].includes(t);});});
     page=Math.min(page,Math.max(0,Math.ceil(found.length/size)-1));
     var visible=new Set(found.slice(page*size,(page+1)*size));entries.forEach(function(e){e.hidden=!visible.has(e);});
-    count.textContent=found.length?found.length+' terms':'No terms match. Try another word from its name or description.';
-    pager.hidden=found.length<=size;pager.querySelector('span').textContent=(found.length?page*size+1:0)+'–'+Math.min((page+1)*size,found.length)+' of '+found.length;
+    count.textContent=found.length?rmT('{0} terms',found.length):rmT('No terms match. Try another word from its name or description.');
+    pager.hidden=found.length<=size;pager.querySelector('span').textContent=rmT('{0}–{1} of {2}',found.length?page*size+1:0,Math.min((page+1)*size,found.length),found.length);
     pager.querySelector('[data-prev]').disabled=page===0;pager.querySelector('[data-next]').disabled=(page+1)*size>=found.length;
   }
   library.querySelector('.concept-search').hidden=false;

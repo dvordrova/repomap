@@ -64,6 +64,7 @@ type runRecord struct {
 	runDir       string
 	analysisRoot string
 	rendered     []byte
+	htmlFilename string
 	// sources maps the ids the page carries to the paths they name.
 	sources map[string]string
 }
@@ -111,9 +112,16 @@ func Serve(ctx context.Context, opts Options) error {
 		_ = listener.Close()
 		return err
 	}
+	filename := "report.html"
+	for _, receipt := range opts.Runs {
+		if filepath.Base(receipt.RunDir()) == opts.InitialRunID {
+			filename = receipt.HTMLFilename()
+			break
+		}
+	}
 	url := fmt.Sprintf(
-		"http://127.0.0.1:%d%s/runs/%s/report.html#/repository",
-		address.Port, capabilityURLPrefix(opts.Capability), opts.InitialRunID,
+		"http://127.0.0.1:%d%s/runs/%s/%s#/repository",
+		address.Port, capabilityURLPrefix(opts.Capability), opts.InitialRunID, filename,
 	)
 	if opts.OnReady != nil {
 		if err := opts.OnReady(url); err != nil {
@@ -191,7 +199,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+h.urlPrefix+"/{$}", h.serveRoot)
-	mux.HandleFunc("GET "+h.urlPrefix+"/runs/{runID}/report.html", h.serveReport)
+	mux.HandleFunc("GET "+h.urlPrefix+"/runs/{runID}/{filename}", h.serveReport)
 	mux.HandleFunc("POST "+h.urlPrefix+"/api/open", h.serveOpen)
 	return mux, nil
 }
@@ -242,15 +250,15 @@ func renderRun(runID string, receipt report.RunReceipt) (runRecord, error) {
 		sourceIDs[relativePath] = id
 	}
 	reportData.SourceIDs = sourceIDs
-	rendered, err := report.RenderHTMLWithOptions(&reportData, report.RenderOptions{
-		LocalRoots: []string{runDir, analysisRoot, manifest.RepositoryState.Identity},
-	})
+	renderOptions := receipt.RenderOptions()
+	renderOptions.LocalRoots = []string{runDir, analysisRoot, manifest.RepositoryState.Identity}
+	rendered, err := report.RenderHTMLWithOptions(&reportData, renderOptions)
 	if err != nil {
 		return runRecord{}, fmt.Errorf("render report: %w", err)
 	}
 	return runRecord{
 		id: runID, runDir: runDir, analysisRoot: analysisRoot,
-		rendered: rendered, sources: sources,
+		rendered: rendered, sources: sources, htmlFilename: receipt.HTMLFilename(),
 	}, nil
 }
 
@@ -298,7 +306,7 @@ func navigationRunID(
 }
 
 func (h *handler) serveRoot(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, h.urlPrefix+"/runs/"+h.initialRun+"/report.html#/repository", http.StatusFound)
+	http.Redirect(w, r, h.urlPrefix+"/runs/"+h.initialRun+"/"+h.runs[h.initialRun].htmlFilename+"#/repository", http.StatusFound)
 }
 
 func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
@@ -307,9 +315,21 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if r.PathValue("filename") != run.htmlFilename {
+		if r.PathValue("filename") == "report.html" {
+			location := h.urlPrefix + "/runs/" + run.id + "/" + run.htmlFilename
+			if r.URL.RawQuery != "" {
+				location += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, location, http.StatusFound)
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	http.ServeContent(w, r, "report.html", time.Time{}, bytes.NewReader(run.rendered))
+	http.ServeContent(w, r, run.htmlFilename, time.Time{}, bytes.NewReader(run.rendered))
 }
 
 func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {

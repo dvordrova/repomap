@@ -22,6 +22,17 @@ func TestExplicitPortIsRejectedOnlyForStaticReportMode(t *testing.T) {
 	}
 }
 
+func TestUnsupportedReportLanguageFailsBeforeRepositoryWork(t *testing.T) {
+	var output bytes.Buffer
+	err := runDefaultWithDeps("/does-not-exist", []string{"--lang", "invalid"}, defaultRunDeps{stdout: &output, stderr: &output})
+	if err == nil || !strings.Contains(err.Error(), "language") {
+		t.Fatalf("language validation = %v", err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("invalid display language started repository work: %s", output.String())
+	}
+}
+
 func TestDirectCallControlsUseZeroAsUnboundedAndAcceptPositiveNarrowing(t *testing.T) {
 	for _, controls := range [][2]int{{0, 0}, {11, 300_000}} {
 		if err := validateDirectCallControls(controls[0], controls[1]); err != nil {

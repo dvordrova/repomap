@@ -118,8 +118,9 @@ func publishRepositoryReport(
 	targetOutcomes targetoutcome.Portfolio,
 	runs []targetPublishedRun,
 	outcome atlasOutcome,
-	output *runOutput,
+	options repositoryTargetDispatchOptions,
 ) (report.RunReceipt, error) {
+	output := options.Output
 	if err := ctx.Err(); err != nil {
 		return report.RunReceipt{}, err
 	}
@@ -168,6 +169,11 @@ func publishRepositoryReport(
 	data.Facts, data.Claims, data.Orientation = &outcome.Facts, &outcome.Claims, outcome.Orientation
 	data.Questions = outcome.Questions
 	data.Learning = outcome.Learning
+	data.CapturedRevision = owner.Source.Repository.Head
+	renderOptions, err := translateReportDisplay(ctx, options, owner.RunDir, data)
+	if err != nil {
+		return report.RunReceipt{}, err
+	}
 	timing := wholeRunTiming(output, runs)
 	data.Timing = &report.RunTiming{WallMS: timing.WallMS}
 	for _, stage := range timing.Stages {
@@ -180,6 +186,6 @@ func publishRepositoryReport(
 		return report.RunReceipt{}, err
 	}
 	return report.Generate(owner.RunDir, owner.Source, report.GenerateOptions{
-		Data: data, GitLabURL: owner.GitLabURL, GitHubURL: owner.GitHubURL, PublishHTML: true,
+		Data: data, GitLabURL: owner.GitLabURL, GitHubURL: owner.GitHubURL, PublishHTML: true, Render: renderOptions,
 	})
 }

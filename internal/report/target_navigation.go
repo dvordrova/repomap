@@ -20,6 +20,10 @@ const TargetNavigationVersion = 4
 // navigation here preserves the invariant that one report page owns exactly
 // one ReportData value.
 type RenderOptions struct {
+	Language     DisplayLanguage
+	Translations *DisplayTranslations
+	// NoModel keeps the optional final display pass free of provider calls.
+	NoModel          bool
 	TargetNavigation *TargetNavigationPortfolio
 	// ReportSHA256 is the digest of the report.json bytes this page is
 	// rendered from. It is stamped into the page so a reader (and the

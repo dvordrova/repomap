@@ -1,15 +1,19 @@
-{{define "repomap.html"}}<figure class="map repo-map" data-map>
+{{define "repomap.html"}}<figure class="map repo-map{{if not .Edges}} repo-map-disconnected{{end}}" data-map>
 {{template "map-controls.html"}}
-<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="Repository components and their connections" class="map-svg" style="min-width:{{printf "%.0f" .MinWidth}}px">
+<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="{{t "Repository components and their connections"}}" class="map-svg" style="min-width:{{printf "%.0f" .MinWidth}}px">
 <defs><marker id="repo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0.5 L10 5 L0 9.5 z" class="map-arrow-head"/></marker></defs>
 <g class="map-edges">{{range .Edges}}<path d="{{.Path}}" data-from="{{.From}}" data-to="{{.To}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" marker-end="url(#repo-arrow)"><title>{{.Label}}</title></path>{{end}}</g>
-<g class="map-lanes">{{range .Lanes}}<text x="14" y="{{.Y}}" class="map-lane-label">{{.Title}}</text>{{end}}</g>
-<g class="map-nodes">{{range .Nodes}}{{if .Analyzed}}<a href="{{.Href}}" id="{{.ID}}" data-node="{{.ID}}" data-near="{{.Neighbours}}" data-title="{{.ShortName}}" data-summary="{{.Summary}}" class="map-node repo-node repo-node-{{.Kind}}" aria-label="{{.FullName}}, {{.Kind}}">{{else}}<g class="repo-node repo-node-unread" aria-label="{{.FullName}}, {{.Note}}">{{end}}
+<g class="map-lanes">{{range .Lanes}}<text x="14" y="{{.Y}}" class="map-lane-label" data-role="{{.Role}}">{{.Title}}</text>{{end}}</g>
+<g class="map-nodes">{{range .Nodes}}{{if .Analyzed}}<a href="{{.Href}}" id="{{.ID}}" data-node="{{.ID}}" data-role="{{.Role}}" data-default="{{.Default}}" data-near="{{.Neighbours}}" data-title="{{.FullName}}" data-summary="{{.Summary}}" class="map-node repo-node repo-node-{{.Kind}}" aria-label="{{.FullName}}, {{t .Kind}}{{if .Summary}}. {{.Summary}}{{end}}">{{else}}<g class="repo-node repo-node-unread" data-role="{{.Role}}" data-default="{{.Default}}" aria-label="{{.FullName}}, {{.Note}}">{{end}}
 <rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="7" class="map-node-body"/>
-{{$node := .}}{{range $line, $text := .Name}}<text x="{{printf "%.1f" $node.X}}" y="{{printf "%.1f" $node.Y}}" dx="13" dy="{{if eq $line 0}}23{{else}}39{{end}}" class="repo-node-name map-node-title">{{$text}}</text>{{end}}
-<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="43" dy="62" class="map-node-count">{{if .Analyzed}}{{.Kind}}{{else}}{{.Note}}{{end}}</text>
-{{if .Analyzed}}<svg x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="40" height="68" aria-label="{{.Language}}"><g transform="translate(12 48)"><rect width="24" height="18" rx="4" class="language-icon language-{{.Language}}"/><text x="12" y="13" text-anchor="middle" class="language-icon-text">{{if eq .Language "go"}}Go{{else if eq .Language "python"}}Py{{else if eq .Language "typescript"}}TS{{else if eq .Language "javascript"}}JS{{else}}&lt;/&gt;{{end}}</text></g></svg>{{end}}
-<title>{{.FullName}}{{if .Analyzed}} — {{.Detail}}{{else}} — {{.Note}}{{end}}</title>
+<foreignObject x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}">
+<div xmlns="http://www.w3.org/1999/xhtml" class="repo-card-content">
+<div class="repo-card-name" data-map-text title="{{.NativeName}}">{{.NativeName}}</div>
+<div class="repo-card-meta" data-map-text><svg xmlns="http://www.w3.org/2000/svg" class="repo-card-language" viewBox="0 0 24 18" aria-label="{{.Language}}"><rect width="24" height="18" rx="4" class="language-icon language-{{.Language}}"/><text x="12" y="13" text-anchor="middle" class="language-icon-text">{{if eq .Language "go"}}Go{{else if eq .Language "python"}}Py{{else if eq .Language "typescript"}}TS{{else if eq .Language "javascript"}}JS{{else}}{{t "</>"}}{{end}}</text></svg> {{if .Role}}<span class="repo-card-role">{{t .Role}}</span> · {{end}}{{if .Analyzed}}{{t .Kind}}{{end}}</div>
+{{if .Root}}<div class="repo-card-path" data-map-text title="{{.Root}}">{{t "Path"}}: <code>{{.Root}}</code></div>{{end}}
+{{if .Summary}}<p class="repo-card-purpose" data-map-text>{{.Summary}}</p>{{else if .Note}}<p class="repo-card-purpose repo-card-note" data-map-text>{{.Note}}</p>{{end}}
+</div></foreignObject>
+<title>{{.FullName}}{{if .Analyzed}} — {{.Detail}}{{if .Summary}} — {{.Summary}}{{end}}{{else}} — {{.Note}}{{end}}</title>
 {{if .Analyzed}}</a>{{else}}</g>{{end}}{{end}}</g>
 </svg>
 {{if .Caption}}<figcaption class="map-note">{{.Caption}}</figcaption>{{end}}

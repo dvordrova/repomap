@@ -229,6 +229,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	gitHubURLFlag := fs.String("github-url", "", "create a standalone report with GitHub source links; does not select a repository")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
 	noServe := fs.Bool("no-serve", false, "generate a static report without starting the local server")
+	languageFlag := fs.String("lang", "en", "report display language: en or ru (analysis remains English)")
 	port := fs.Int("port", 0, "local report server port (default: random)")
 	debugDir := fs.String("debug-dir", defaultDebugDir(), "directory for debug artifacts")
 	noModel := fs.Bool("no-model", false, "make no model call: every atlas cell is its fallback line, no orientation")
@@ -241,6 +242,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			return nil
 		}
 		return actionableFlagError(extraArgs, err)
+	}
+	displayLanguage, err := report.NormalizeDisplayLanguage(*languageFlag)
+	if err != nil {
+		return err
 	}
 	portExplicit := false
 	fs.Visit(func(option *flag.Flag) {
@@ -265,7 +270,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			)
 		}
 	}()
-	var err error
 	repo, deps.repositoryArgumentOmitted, err = bindParsedRepositoryArgument(
 		repo,
 		deps.repositoryArgumentOmitted,
@@ -549,7 +553,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				Corpus: repositoryCorpus, RepositoryState: initialState, Plan: plan,
 				RunID: runID, DebugDir: dDir, NoCache: *noCache, NoOpen: *noOpen,
 				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
-				NoModel: *noModel, Questions: questions,
+				NoModel: *noModel, Questions: questions, DisplayLanguage: displayLanguage,
 				Output: humanOutput, FirstLayer: firstLayer,
 				DiscoverJSTSFn: jstsproject.DiscoverSelected,
 				VerifiedRunsSink: func(receipts []report.RunReceipt) {
@@ -618,6 +622,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			GitHubURL:              gitHubURL,
 			NoOpen:                 *noOpen,
 			NoServe:                *noServe,
+			ReportLanguage:         string(displayLanguage),
 			Port:                   *port,
 			DebugEnabled:           dDir != "",
 		},
@@ -1084,6 +1089,7 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  --question TEXT             add a reading question (repeatable; extends .repomap.conf)\n")
 	fmt.Fprintf(writer, "  --no-open                   do not open the report\n")
 	fmt.Fprintf(writer, "  --no-serve                  write static HTML with remote source links\n")
+	fmt.Fprintf(writer, "  --lang en|ru                translate the finished report (default: en)\n")
 	fmt.Fprintf(writer, "  --port PORT                 local report server port (default: random)\n")
 	fmt.Fprintf(writer, "  --debug-dir DIR             report and cache directory\n")
 	fmt.Fprintf(writer, "  --no-cache                  bypass persistent model-response caches\n")

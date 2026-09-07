@@ -14,7 +14,7 @@
     var directParts={},areaDescriptions={};
     nodes.forEach(function(n){
       var ids=children(n),part=ids.length===1&&byID[ids[0]];
-      if(n.dataset.branch==='area'&&n.dataset.remote!=='true'&&part&&!part.dataset.branch&&!part.dataset.activation&&n.dataset.title===part.dataset.title){
+      if(n.dataset.branch==='area'&&n.dataset.remote!=='true'&&part&&!part.dataset.branch&&!part.dataset.activation&&n.dataset.canonicalTitle===part.dataset.canonicalTitle){
         directParts[n.id]=part.id;(areaDescriptions[part.id]||(areaDescriptions[part.id]=[])).push(n.dataset.summary);
       }
     });
@@ -27,17 +27,17 @@
     svg.querySelector('.map-frames').replaceChildren();svg.querySelector('.map-lanes').replaceChildren();svg.querySelector('.map-edge-labels').replaceChildren();
     var oldControls=map.querySelector('[data-operation-controls]');if(oldControls)oldControls.remove();
     var bar=document.createElement('div');bar.className='explorer-controls';
-    bar.innerHTML='<div class="explorer-modes" role="group" aria-label="Explore by"><button type="button" data-structure>Structure</button><button type="button" data-operations>Operations</button></div><label class="explorer-search">Find a part <input type="search" placeholder="Name or description" aria-label="Find a part"></label><button type="button" data-all-uses>All uses</button><nav class="explorer-breadcrumbs" aria-label="Map path"></nav>';
+    bar.innerHTML=("<div class=\"explorer-modes\" role=\"group\" aria-label=\""+rmT.html("Explore by")+"\"><button type=\"button\" data-structure>"+rmT.html("Structure")+"</button><button type=\"button\" data-operations>"+rmT.html("Operations")+"</button></div><label class=\"explorer-search\">"+rmT.html("Find a part")+" <input type=\"search\" placeholder=\""+rmT.html("Name or description")+"\" aria-label=\""+rmT.html("Find a part")+"\"></label><button type=\"button\" data-all-uses>"+rmT.html("All uses")+"</button><nav class=\"explorer-breadcrumbs\" aria-label=\""+rmT.html("Map path")+"\"></nav>");
     map.prepend(bar);
     var structure=bar.querySelector('[data-structure]'), operationMode=bar.querySelector('[data-operations]'), search=bar.querySelector('input'), allUses=bar.querySelector('[data-all-uses]'), crumbs=bar.querySelector('nav');
     operationMode.hidden=!ops.length;
     var operationPicker=document.createElement('div');operationPicker.className='operation-picker';operationPicker.hidden=true;
-    operationPicker.innerHTML='<label>Find an operation <input type="search" placeholder="Command, endpoint, activity" aria-label="Find an operation"></label><div class="operation-choices"></div>';
+    operationPicker.innerHTML=("<label>"+rmT.html("Find an operation")+" <input type=\"search\" placeholder=\""+rmT.html("Command, endpoint, activity")+"\" aria-label=\""+rmT.html("Find an operation")+"\"></label><div class=\"operation-choices\"></div>");
     bar.after(operationPicker);
     var choices=operationPicker.querySelector('.operation-choices'), opSearch=operationPicker.querySelector('input');
     var choiceNav=document.createElement('div');choiceNav.className='operation-choice-nav';
-    var previousChoices=button('← Previous operations',function(){choices.scrollBy({left:-choices.clientWidth});});
-    var nextChoices=button('More operations →',function(){choices.scrollBy({left:choices.clientWidth});});
+    var previousChoices=button(rmT('← Previous operations'),function(){choices.scrollBy({left:-choices.clientWidth});});
+    var nextChoices=button(rmT('More operations →'),function(){choices.scrollBy({left:choices.clientWidth});});
     var choiceCount=document.createElement('span');choiceCount.className='operation-choice-count';
     operationPicker.querySelector('label').appendChild(choiceCount);
     choiceNav.append(previousChoices,nextChoices);operationPicker.appendChild(choiceNav);
@@ -49,16 +49,19 @@
       var b=button(op.dataset.title,async function(){var same=operation===op;operation=op;pinned=true;if(!same){scope='';trail=[];visit=null;}search.value='';await render();revealChoice();show(op);orient();});b.dataset.operationChoice=op.id;
       b.addEventListener('mouseenter',function(){if(pinned)return;operation=op;scope='';trail=[];render();show(op);});
       b.addEventListener('focus',function(){if(pinned)return;operation=op;scope='';trail=[];render();show(op);});
-      var desc=document.createElement('span');desc.textContent=op.dataset.activation+' · '+op.dataset.operationGroup;b.appendChild(desc);choices.appendChild(b);
+      var desc=document.createElement('span');desc.textContent=rmT(op.dataset.activation)+' · '+op.dataset.operationGroup;b.appendChild(desc);choices.appendChild(b);
+      if(ops.some(function(other){return other!==op&&other.dataset.title===op.dataset.title;})&&op.dataset.sourceText){
+        var source=document.createElement('span');source.className='operation-choice-source';source.textContent=op.dataset.sourceText;b.appendChild(source);
+      }
     });
     function updateChoices(){
       var matching=Array.from(choices.children).filter(function(b){return !b.hidden;}).length;
-      choiceCount.textContent=(matching===ops.length?matching:matching+' of '+ops.length)+' operations';
+      choiceCount.textContent=matching===ops.length?rmT('{0} operations',matching):rmT('{0} of {1} operations',matching,ops.length);
       previousChoices.disabled=choices.scrollLeft<=0;
       nextChoices.disabled=Math.ceil(choices.scrollLeft+choices.clientWidth)>=choices.scrollWidth;
       choiceNav.hidden=choices.scrollWidth<=choices.clientWidth;
     }
-    function filterChoices(){var term=opSearch.value.toLowerCase();choices.querySelectorAll('button').forEach(function(b){var n=byID[b.dataset.operationChoice];b.hidden=(n.dataset.title+' '+n.dataset.summary+' '+n.dataset.activation).toLowerCase().indexOf(term)<0;});updateChoices();}
+    function filterChoices(){var term=opSearch.value.toLowerCase();choices.querySelectorAll('button').forEach(function(b){var n=byID[b.dataset.operationChoice];b.hidden=(n.dataset.title+' '+n.dataset.summary+' '+n.dataset.activation+' '+n.dataset.sourceText).toLowerCase().indexOf(term)<0;});updateChoices();}
     function revealChoice(keepFilter){
       var selected=operation&&Array.from(choices.children).find(function(b){return b.dataset.operationChoice===operation.id;});
       if(!selected||operationPicker.hidden)return;
@@ -91,7 +94,7 @@
     function showReturnPath(){
       returnPath.replaceChildren();returnPath.hidden=!visit;if(!visit)return;
       var previous=visit;
-      returnPath.append('Opened ',button(previous.operation.dataset.title,async function(){operation=previous.operation;pinned=true;mode='operations';await render();revealChoice();show(operation);orient();}),' from ',button(previous.origin.label,async function(){
+      returnPath.append(rmT('Opened')+' ',button(previous.operation.dataset.title,async function(){operation=previous.operation;pinned=true;mode='operations';await render();revealChoice();show(operation);orient();}),' '+rmT('from')+' ',button(previous.origin.label,async function(){
         operation=null;pinned=false;mode='structure';setScope(previous.origin.node.id);search.value='';await render();
         if(previous.origin.source)map.explainSource(previous.origin.source);orient();
       }));
@@ -138,7 +141,7 @@
       var mapStyle=getComputedStyle(map),availableWidth=map.clientWidth-parseFloat(mapStyle.paddingLeft)-parseFloat(mapStyle.paddingRight);
       try{layout=await repomapGraph.layout(boxes,currentEdges,null,availableWidth);}catch(error){
         if(ticket!==revision)return;map.setAttribute('aria-busy','false');
-        var message=bar.querySelector('[role="alert"]');if(!message){message=document.createElement('p');message.setAttribute('role','alert');bar.appendChild(message);}message.textContent='Could not arrange this map. Try another scope.';console.error('Component map layout',error);return;
+        var message=bar.querySelector('[role="alert"]');if(!message){message=document.createElement('p');message.setAttribute('role','alert');bar.appendChild(message);}message.textContent=rmT('Could not arrange this map. Try another scope.');console.error('Component map layout',error);return;
       }
       if(ticket!==revision)return;
       repomapPreview.freeze(map);boxes=layout.boxes;
@@ -149,19 +152,19 @@
       visibleIDs=visible;map.inspectedOperation=operation;map.dataset.operationPinned=pinned?'true':'false';map.classList.remove('map-previewing');
       map.explorerScope=scope;map.explorerOperation=operation;
       structure.setAttribute('aria-pressed',mode==='structure');operationMode.setAttribute('aria-pressed',mode==='operations');operationPicker.hidden=mode!=='operations';
-      allUses.hidden=!operation;allUses.textContent=operation?'All uses (leave '+operation.dataset.title+')':'All uses';
+      allUses.hidden=!operation;allUses.textContent=operation?rmT('All uses (leave {0})',operation.dataset.title):rmT('All uses');
       choices.querySelectorAll('button').forEach(function(b){var selected=operation&&b.dataset.operationChoice===operation.id;b.setAttribute('aria-pressed',!!selected);});
       crumbs.replaceChildren();crumbs.appendChild(button(map.closest('[data-report-page]').dataset.componentName,function(){scope='';trail=[];visit=null;search.value='';render();}));
-      if(operation){var label=document.createElement('strong');label.textContent='→ '+operation.dataset.title+(pinned?' · selected':' · preview');crumbs.appendChild(label);}
+      if(operation){var label=document.createElement('strong');label.textContent='→ '+operation.dataset.title+' · '+rmT(pinned?'selected':'preview');crumbs.appendChild(label);}
       trail.concat(scope?[scope]:[]).forEach(function(id){
         var item=button(byID[id].dataset.title,function(){open(id);});
         item.className='explorer-crumb';
-        var kind=document.createElement('span');kind.className='explorer-crumb-kind';kind.textContent=byID[id].dataset.branch==='component'?'Component':byID[id].dataset.branch?'Area':'Part';item.prepend(kind);
+        var kind=document.createElement('span');kind.className='explorer-crumb-kind';kind.textContent=byID[id].dataset.branch==='component'?rmT('Component'):byID[id].dataset.branch?rmT('Area'):rmT('Part');item.prepend(kind);
         if(id===scope){item.setAttribute('aria-current','location');item.disabled=true;}
         crumbs.appendChild(item);
       });
-      if(scope)crumbs.prepend(button('← Back',function(){if(!operation)visit=null;setScope(trail[trail.length-1]||'');search.value='';render();}));
-      var status=document.createElement('span');status.className='explorer-status';status.textContent=visible.length+' parts · '+currentEdges.length+' connections';crumbs.appendChild(status);
+      if(scope)crumbs.prepend(button(rmT('← Back'),function(){if(!operation)visit=null;setScope(trail[trail.length-1]||'');search.value='';render();}));
+      var status=document.createElement('span');status.className='explorer-status';status.textContent=rmT('{0} parts · {1} connections',visible.length,currentEdges.length);crumbs.appendChild(status);
       showReturnPath();
       map.dispatchEvent(new Event('repomap:layout'));
       stage.scrollTo(0,0);
@@ -177,9 +180,9 @@
     async function reveal(n,allUses,source){if(!n||nodes.indexOf(n)<0)return;visit=null;document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:n}}));n=byID[displayed(n.id)];if(allUses){mode='structure';operation=null;pinned=false;}if(n.dataset.activation){mode='operations';operation=n;pinned=true;scope='';trail=[];}else{setScope(n.id);}search.value='';await render();if(n.dataset.activation)revealChoice();map.scrollIntoView({block:'start'});show(n);if(source)map.explainSource(source);}
     map.exploreNode=function(id){open(id);};
     map.explorationLabel=function(){
-      var labels=[mode==='operations'?'Operations':'Structure'];
-      if(operation)labels.push(operation.dataset.title+(pinned?' · selected':' · preview'));
-      trail.concat(scope?[scope]:[]).forEach(function(id){var n=byID[id];labels.push((n.dataset.branch==='component'?'Component':n.dataset.branch?'Area':'Part')+' '+n.dataset.title);});
+      var labels=[mode==='operations'?rmT('Operations'):rmT('Structure')];
+      if(operation)labels.push(operation.dataset.title+' · '+rmT(pinned?'selected':'preview'));
+      trail.concat(scope?[scope]:[]).forEach(function(id){var n=byID[id];labels.push((n.dataset.branch==='component'?rmT('Component'):n.dataset.branch?rmT('Area'):rmT('Part'))+' '+n.dataset.title);});
       return labels.join(' › ');
     };
     map.resumeExploration=function(){if(scope)show(byID[scope]);else if(operation)show(operation);};

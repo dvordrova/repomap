@@ -38,6 +38,7 @@ type repositoryTargetDispatchOptions struct {
 	NoServe         bool
 	Port            int
 	StaticHost      string
+	DisplayLanguage report.DisplayLanguage
 	// NoModel walks the atlas without a provider: every cell is its
 	// fallback line and no orientation is asked.
 	NoModel          bool
@@ -392,7 +393,7 @@ func dispatchRepositoryTargetPlan(
 	}
 	options.Output.Stage("Report publication", "assembling one repository report from memory")
 	publicationStarted := time.Now()
-	receipt, err := publishRepositoryReport(ctx, portfolio, targetOutcomePortfolio, runs, outcome, options.Output)
+	receipt, err := publishRepositoryReport(ctx, portfolio, targetOutcomePortfolio, runs, outcome, options)
 	if err != nil {
 		return failPublication(err)
 	}
@@ -408,7 +409,7 @@ func dispatchRepositoryTargetPlan(
 		fmt.Sprintf("analyzed: %d/%d", len(runs), len(ordered)),
 		fmt.Sprintf("not analyzed: %d", len(ordered)-len(runs)),
 	)
-	return filepath.Join(owner.RunDir, "report.html"), nil
+	return filepath.Join(owner.RunDir, receipt.HTMLFilename()), nil
 }
 
 // materializeSelectedJSTSProjects is the selected-target execution boundary

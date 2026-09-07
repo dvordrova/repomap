@@ -168,6 +168,7 @@ type pageChip struct {
 
 type pageGroupOperation struct {
 	Name, Kind, Summary, Href string
+	Source                    string
 	Anchor                    pageAnchor
 }
 
@@ -261,7 +262,7 @@ func labelSections(sections []*pageSection) {
 	for _, section := range sections {
 		section.ShortLabel = section.Root
 		if section.Root == "." {
-			section.ShortLabel = "Root"
+			section.ShortLabel = section.Name
 		}
 		if section.Root == "" {
 			section.ShortLabel = section.Name
@@ -625,7 +626,7 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 			continue
 		}
 		card.Operations = append(card.Operations, pageGroupOperation{
-			Name: operation.Name, Kind: operation.Kind, Summary: operation.Summary,
+			Name: operation.Name, Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
 			Href:   "#" + operationNodeID(sectionID, operation.ID),
 			Anchor: builder.links.anchor(operation.Location.Path, operation.Location.Line, operation.Location.Column),
 		})

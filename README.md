@@ -74,8 +74,9 @@ in served reports. Settings are read once per run and passed in memory to target
 editing the configuration takes effect on the next repomap launch. If the
 editor cannot start, the error names the configuration file and that file stays
 available to edit manually. Per-target build variants are still planned.
-Questions share the repository graph and accumulated descriptions; each question
-has its own retrieval, reading route, answer and cache entries. Repeated `--question`
+Questions share the repository graph, accumulated descriptions and one source
+catalogue sent to the model. Each keeps its own source selections, reading route,
+answer and cache identity. Repeated `--question`
 flags add to this list, keeping order and dropping duplicate question texts.
 Learn links to these questions below the map. Opening a question shows a short
 model answer with its sources and any unresolved part. “Check this interpretation”
@@ -83,8 +84,23 @@ shows what the model relied on alongside original declarations or documentation
 excerpts and exact source links. Deductions from names and signatures are welcome
 when identifiable and easy to check. The detailed reading route stays under a
 separate disclosure. The answer uses the evidence already
-selected for that route. Questions are currently supplied by the user;
-automatic adaptation of general learning questions is planned.
+selected for that route. The ordinary run also adapts eight learning goals to
+the repository and composes an introductory menu. Each proposed question keeps
+its reason and original sources. There is no question quota; explicit questions
+remain visible independently of the automatic menu.
+
+Use `--lang ru` for a Russian report:
+
+```bash
+.bin/repomap /path/to/repository --lang ru
+```
+
+It writes `report.<repository-directory>.ru.html`, using the selected checkout's
+directory name, independently of language module names. The default `--lang en` writes
+`report.html`. Analysis stays in English: a fixed UI dictionary and a separate
+model call translate the completed report's display text. Code names, commands,
+source excerpts and links retain their original values. Saved translations are
+reused on later runs and when the report server opens source links.
 
 ## Work from the evidence upward
 
@@ -126,7 +142,7 @@ format changes; there are no readers for previous formats.
 Use the same `--debug-dir` as the original run to share its model cache.
 `--no-cache` requests fresh model responses. Each reading writes a new
 output directory and reports its path. `--through` accepts `directories`,
-`files`, `symbols`, `operations`, `boundaries`, `zones`, `arrows`, `targets`, `joints`, `question`, `route`, or `answer`.
+`files`, `symbols`, `operations`, `boundaries`, `zones`, `arrows`, `targets`, `joints`, `learn`, `question`, `route`, or `answer`.
 The prompt and budget overrides apply to that stage; budget overrides without
 `--through` apply to all stages. A prompt override requires `--through`.
 
@@ -147,7 +163,9 @@ gets a new answer basis. Ownership changes and new parent interpretation IDs
 only rebind the answer to the current entities; changing the parent's supplied
 text still invalidates the dependent answer. `knowledge.json` v2 keeps these
 current ownership and provenance bindings separately from answer reuse.
-Missing rows still go to the model in batches;
+Missing rows still go to the model in batches. Rows with identical exact model
+inputs share one accepted description while retaining their own source locations
+and ownership;
 this does not introduce one provider call per function. The entity cache stores
 only a reference to a request and a row in its current response. It reads and
 validates that row again on reuse, so replayed answers cannot leave a second
@@ -168,7 +186,10 @@ evidence and internal subjects, locally restored source positions, and
 connections with distinct call, declaration and inventory evidence.
 Every declaration and boundary in the graph is partitioned into complete
 chunks, including generated files. Unanswered chunks remain explicitly
-unresolved. The pass sees names, signatures and author documentation, not
+unresolved. Retrieval first prepares all questions against the complete shared
+catalogue. Only actual provider envelopes or explicit development budgets split
+it; every question keeps inspection coverage for every original chunk. Reordering
+questions or adding a new one reuses unchanged question decisions. The pass sees names, signatures and author documentation, not
 function bodies; it neither verifies implementation behavior nor turns these
 file connections into an execution trace. The `guide` selects a short list of distinct
 locations in reading order, preserving their original reasons and an open question. For many
@@ -183,12 +204,13 @@ it does not invent a global order or repeat the same request. The ordinary comma
 the common HTML report with source links and unresolved gaps. `read` prints and
 saves it without rendering HTML.
 
-A table is split at complete row boundaries by row count and system + user
-UTF-8 bytes (64 KiB by default). Bytes are a reproducible planning budget,
-not a token estimate or a promise of model quality. Shared context and every
-row survive splitting; an oversized single row is an error naming that row.
-Do not ask another model to summarize the same oversized blob: change the
-owning stage's evidence selection or split the question itself.
+Ordinary independent description tables pack complete rows by system + user
+UTF-8 bytes (64 KiB by default), without an additional row-count cap. Other
+tables retain their dependency-specific contexts. Shared question retrieval and
+Learn proposal generation start with complete evidence and use the actual
+prepared provider envelope; a real context or output refusal permits complete
+partitions, never truncation. Explicit `--input-bytes` and `--window-rows` remain
+development controls. These bounds are not a promise of model quality.
 
 File descriptions use the directory's model line and deterministic facts
 about direct callers. They do not inherit other file descriptions, so files
@@ -205,7 +227,7 @@ a small Python example. Exact exchanges are saved in `extractions.json`;
 normalized entities and relationships enter `facts.json` (version 2).
 The same entities and relationships enter the places graph and question table,
 with producer declarations distinguished from compiler calls. Saved graph and
-reading input are version 2; previous inputs need a fresh analysis. The plugin
+reading input are version 9; previous inputs need a fresh analysis. The plugin
 protocol stays version 1. This supplies reading evidence, not a generated change
 recipe; the report layout is unchanged.
 

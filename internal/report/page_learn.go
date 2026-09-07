@@ -17,8 +17,24 @@ type pageLearnLink struct {
 }
 
 type pageLearnQuestionTopic struct {
-	Title     string
-	Questions []pageLearnLink
+	ID, Intent string
+	Title      string
+	Questions  []pageLearnLink
+}
+
+// The run entrance follows the already selected learning intent, without
+// guessing from wording or choosing one question from several distinct ones.
+func (view *pageView) LearnRunHref() string {
+	for _, topic := range view.LearnQuestionTopics {
+		if topic.Intent != "run" || len(topic.Questions) == 0 {
+			continue
+		}
+		if len(topic.Questions) == 1 {
+			return topic.Questions[0].Href
+		}
+		return "#" + topic.ID
+	}
+	return "#how-to-run"
 }
 
 type pageLearnPart struct {
@@ -113,7 +129,7 @@ func (builder *pageBuilder) learn(view *pageView) {
 }
 
 func learningQuestionTopics(view *pageView, plan *atlas.LearningPlan) {
-	add := func(title string, question *pageQuestion) {
+	add := func(intent, title string, question *pageQuestion) {
 		at := -1
 		for i, topic := range view.LearnQuestionTopics {
 			if topic.Title == title {
@@ -123,7 +139,7 @@ func learningQuestionTopics(view *pageView, plan *atlas.LearningPlan) {
 		}
 		if at < 0 {
 			at = len(view.LearnQuestionTopics)
-			view.LearnQuestionTopics = append(view.LearnQuestionTopics, pageLearnQuestionTopic{Title: title})
+			view.LearnQuestionTopics = append(view.LearnQuestionTopics, pageLearnQuestionTopic{ID: "learn-topic-" + intent, Intent: intent, Title: title})
 		}
 		for _, link := range view.LearnQuestionTopics[at].Questions {
 			if link.Href == "#"+question.ID {
@@ -134,7 +150,7 @@ func learningQuestionTopics(view *pageView, plan *atlas.LearningPlan) {
 	}
 	for _, q := range view.Questions {
 		if q.UserQuestion || len(q.Origins) == 0 {
-			add("Your questions", q)
+			add("user", "Your questions", q)
 		}
 	}
 	if plan == nil {
@@ -144,7 +160,7 @@ func learningQuestionTopics(view *pageView, plan *atlas.LearningPlan) {
 		for _, q := range view.Questions {
 			for _, origin := range q.Origins {
 				if origin.Title == review.Title {
-					add(review.Title, q)
+					add(review.Intent, review.Title, q)
 				}
 			}
 		}

@@ -87,7 +87,7 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 	question := &atlas.QuestionRoute{Version: 7, Question: "Where is state stored?", Revision: strings.Repeat("a", 40), Stops: []atlas.QuestionStop{{Path: "part-00/main.go", Line: 1, Name: "Open", Why: "Inspect the storage entry."}}, Guide: &atlas.QuestionGuide{State: "partial", Steps: []atlas.QuestionStep{{Path: "part-00/main.go", Line: 1, StopIndexes: []int{0}}}}}
-	receipt, err := publishRepositoryReport(ctx, portfolio, inventory, runs, atlasOutcome{Questions: []atlas.QuestionRoute{*question, {Version: 7, Question: "How do I run it?", Revision: question.Revision}}}, newRunOutput(io.Discard))
+	receipt, err := publishRepositoryReport(ctx, portfolio, inventory, runs, atlasOutcome{Questions: []atlas.QuestionRoute{*question, {Version: 7, Question: "How do I run it?", Revision: question.Revision}}}, repositoryTargetDispatchOptions{Output: newRunOutput(io.Discard)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,6 +125,37 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 			t.Fatalf("reading guide omits %q", expected)
 		}
 	}
+	t.Run("Russian no-model publication keeps the common page and never opens a provider", func(t *testing.T) {
+		providerCalls := 0
+		localized, err := publishRepositoryReport(ctx, portfolio, inventory, runs, atlasOutcome{}, repositoryTargetDispatchOptions{
+			Output: newRunOutput(io.Discard), DisplayLanguage: report.Russian, NoModel: true,
+			Deps: defaultRunDeps{newCubeProvider: func() (llm.Provider, error) {
+				providerCalls++
+				return nil, fmt.Errorf("no-model publication opened a provider")
+			}},
+		})
+		if err != nil || providerCalls != 0 {
+			t.Fatalf("no-model translation: calls=%d, error=%v", providerCalls, err)
+		}
+		expectedFilename, filenameErr := report.ReportHTMLFilename(filepath.Base(runs[0].Source.Repository.Identity), report.Russian)
+		if filenameErr != nil || localized.HTMLFilename() != expectedFilename || len(localized.RenderOptions().Translations.Entries) != 0 {
+			t.Fatal("no-model publication lost its localized dictionary-only display")
+		}
+		for i, run := range runs {
+			matches, err := filepath.Glob(filepath.Join(run.RunDir, "report*.html"))
+			if err != nil || i == 0 && len(matches) != 1 || i != 0 && len(matches) != 0 {
+				t.Fatalf("localized common-page count in %s: %v, %v", run.RunID, matches, err)
+			}
+		}
+		restored, err := report.ReadRunReceipt(runs[0].RunDir)
+		if err != nil || !restored.RenderOptions().NoModel || restored.RenderOptions().Language != report.Russian {
+			t.Fatalf("restored dictionary-only display: %v", err)
+		}
+		html, err := report.RenderHTMLWithOptions(restored.Data(), restored.RenderOptions())
+		if err != nil || !strings.Contains(string(html), `<html lang="ru">`) {
+			t.Fatalf("Russian no-model rerender: %v", err)
+		}
+	})
 	if err := os.RemoveAll(runs[0].RunDir); err != nil {
 		t.Fatal(err)
 	}
