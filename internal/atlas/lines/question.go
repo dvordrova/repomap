@@ -1,7 +1,6 @@
 package lines
 
 import (
-	_ "embed"
 	"fmt"
 	"sort"
 	"strings"
@@ -20,21 +19,6 @@ const QuestionChunkAnchors = 24
 // DocumentChunkBytes partitions prose losslessly; every part is reviewed.
 // Leave room for JSON escaping, section context and the shared question.
 const DocumentChunkBytes = 4096
-
-//go:embed prompts/question.md
-var questionPrompt string
-
-func Question() table.Definition {
-	return table.Definition{
-		Stage: StageQuestion, Contract: "repomap.atlas.question.v6", Window: 24,
-		System: questionPrompt, ContextAfterRows: true,
-		Columns: []table.Column{
-			{Name: "relevance", Kind: table.Choice, Options: []string{"none", "direct", "context"}},
-			{Name: "anchors", Kind: table.Sequence, OptionsFrom: "anchor_options"},
-			{Name: "why", Kind: table.Text, MaxRunes: LineRunes},
-		},
-	}
-}
 
 // QuestionAnchor is restored locally; only its short row-local ref and
 // explanatory facts enter the request. Paths and positions never come back

@@ -1,7 +1,6 @@
 package lines
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -42,14 +41,8 @@ func TestQuestionSourceFactsKeepLaunchContextAndExistingRequestPrefix(t *testing
 	for _, chunk := range after {
 		input = append(input, chunk.Row)
 	}
-	windows, err := table.WindowsWithContext(Question(), 0, nil, input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, window := range windows {
-		if strings.Contains(string(window.Request), "private-") {
-			t.Fatal("internal source identities reached the provider")
-		}
+	if strings.Contains(string(questionFieldJSON(t, input)), "private-") {
+		t.Fatal("internal source identities reached question fields")
 	}
 }
 
@@ -82,21 +75,12 @@ func TestQuestionDocumentationIsLosslessAndAnchoredAcrossLongLines(t *testing.T)
 	if len(rows) < 3 || joined.String() != text {
 		t.Fatal("commands, links, a long line or the document tail were discarded")
 	}
-	windows, err := table.WindowsWithContext(Question(), 0, nil, input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, window := range windows {
-		if strings.Contains(string(window.Request), place.ID) {
-			t.Fatal("document identity reached the provider")
-		}
+	if strings.Contains(string(questionFieldJSON(t, input)), place.ID) {
+		t.Fatal("document identity reached question fields")
 	}
 }
 
 func TestQuestionRowsKeepEveryDeclarationIncludingGeneratedTail(t *testing.T) {
-	if !strings.Contains(strings.ToLower(Question().System), "json") {
-		t.Fatal("provider JSON mode requires an explicit JSON instruction")
-	}
 	file := atlas.Place{ID: "file:generated.go", Kind: atlas.PlaceFile, Path: "generated.go", File: &atlas.FileFacts{Generated: true}}
 	for i := 0; i < QuestionChunkAnchors*2+1; i++ {
 		file.File.Decls = append(file.File.Decls, atlas.Decl{Name: fmt.Sprintf("D%d", i), Kind: "function", LineNo: i + 1, ObjectID: "internal-id-never-sent"})
@@ -120,60 +104,8 @@ func TestQuestionRowsKeepEveryDeclarationIncludingGeneratedTail(t *testing.T) {
 			t.Fatalf("declaration %s occurs %d times", decl.Name, seen[decl.Name])
 		}
 	}
-	questions := []string{"Where is state?", "How do \"levels\" run?\nInclude пример <level>."}
-	context := []table.Field{{Name: "question", Value: questions[0]}, {Name: "repository", Value: "example/repository"}}
-	windows, err := table.WindowsWithContext(Question(), 0, context, inputRows)
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherContext := []table.Field{{Name: "question", Value: questions[1]}, context[1]}
-	otherWindows, err := table.WindowsWithContext(Question(), 0, otherContext, inputRows)
-	if err != nil || len(otherWindows) != len(windows) {
-		t.Fatalf("same evidence changed windows across questions: %v", err)
-	}
-	for i, window := range windows {
-		if strings.Contains(string(window.Request), "internal-id-never-sent") {
-			t.Fatal("internal ID entered provider input")
-		}
-		other := otherWindows[i]
-		contextAt := bytes.Index(window.Request, []byte(",\n  \"context\": {"))
-		rowsEnd := bytes.LastIndex(window.Request, []byte("\n  ]"))
-		if rowsEnd < 0 || contextAt <= rowsEnd || !bytes.HasPrefix(other.Request, window.Request[:contextAt]) {
-			t.Fatal("changing the question broke the shared prefix before the complete evidence rows")
-		}
-		if !reflect.DeepEqual(window.Rows, other.Rows) || bytes.Equal(window.Request, other.Request) {
-			t.Fatal("question requests lost their shared evidence or independent question")
-		}
-		for j, current := range []table.Window{window, other} {
-			var decoded map[string]any
-			if err := json.Unmarshal(current.Request, &decoded); err != nil {
-				t.Fatal(err)
-			}
-			wantContext := map[string]any{"question": questions[j], "repository": "example/repository"}
-			if !reflect.DeepEqual(decoded["context"], wantContext) {
-				t.Fatalf("question context was changed: %#v", decoded["context"])
-			}
-			previous := Question()
-			previous.ContextAfterRows = false
-			previousRequest, err := table.Request(previous, current)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var previousDecoded map[string]any
-			if err := json.Unmarshal(previousRequest, &previousDecoded); err != nil || !reflect.DeepEqual(previousDecoded, decoded) {
-				t.Fatalf("context placement changed JSON evidence or instructions: %v", err)
-			}
-			previousWindow := current
-			previousWindow.Request = previousRequest
-			previousState, err := table.State(previous, previousWindow)
-			if err != nil {
-				t.Fatal(err)
-			}
-			state, err := table.State(Question(), current)
-			if err != nil || bytes.Equal(state, previousState) {
-				t.Fatalf("new question bytes kept the old cache identity: %v", err)
-			}
-		}
+	if strings.Contains(string(questionFieldJSON(t, inputRows)), "internal-id-never-sent") {
+		t.Fatal("internal ID entered question fields")
 	}
 }
 
@@ -209,15 +141,25 @@ func TestObservationInputKeepsAllMembersAndNeverOffersAMissingPath(t *testing.T)
 			t.Fatal("member repeated across chunks")
 		}
 	}
-	windows, err := table.WindowsWithContext(Question(), 0, nil, input)
+	encoded := string(questionFieldJSON(t, input))
+	for _, forbidden := range []string{"private-output-id", "private-missing-id"} {
+		if strings.Contains(encoded, forbidden) {
+			t.Fatal("internal identity reached question fields")
+		}
+	}
+}
+
+// The owning question cube serializes these fields; local Row.ID and the
+// restoration map are deliberately outside this evidence contract.
+func questionFieldJSON(t *testing.T, rows []table.Row) []byte {
+	t.Helper()
+	fields := make([][]table.Field, len(rows))
+	for i, row := range rows {
+		fields[i] = row.Fields
+	}
+	raw, err := json.Marshal(fields)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, window := range windows {
-		for _, forbidden := range []string{"private-output-id", "private-missing-id"} {
-			if strings.Contains(string(window.Request), forbidden) {
-				t.Fatal("internal identity reached the model")
-			}
-		}
-	}
+	return raw
 }

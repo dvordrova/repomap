@@ -687,10 +687,14 @@ func (r *reader) use(stage string) *atlas.StageUse {
 
 func (r *reader) reportStage(stage string) {
 	use := r.use(stage)
+	reused := fmt.Sprintf("reused entity descriptions: %d", use.Reused)
+	if stage == lines.StageQuestion {
+		reused = fmt.Sprintf("reused question/evidence decisions: %d", use.Reused)
+	}
 	details := []string{
 		fmt.Sprintf("rows: %d", use.Rows),
 		fmt.Sprintf("windows: %d (live %d, cached %d, rejected %d)", use.Windows, use.Live, use.Cached, use.Rejected),
-		fmt.Sprintf("reused entity descriptions: %d", use.Reused),
+		reused,
 		fmt.Sprintf("rows without a model answer: %d", use.Given),
 	}
 	if started, ok := r.started[stage]; ok {

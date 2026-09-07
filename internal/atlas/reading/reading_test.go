@@ -13,6 +13,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/questionbatch"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
 )
@@ -69,7 +70,7 @@ func testGraph(t *testing.T) atlas.Graph {
 // tableProvider answers every window from its request: rows get a line made
 // of their path, directories get a title, files keep their box unless the
 // test says otherwise. A window whose rows include a path in `refuse` comes
-// back with a duplicate key, which the table refuses.
+// back with a duplicate table key or a missing shared-question decision.
 type tableProvider struct {
 	mu                 sync.Mutex
 	calls              int
@@ -81,17 +82,29 @@ type tableProvider struct {
 	sameFor            map[string]string
 	answers            map[string]int
 	questionFor        map[string]table.Answer
+	questionBatchFor   func(questionBatchRequest, questionbatch.Response) questionbatch.Response
+	questionRequests   [][]byte
+	maxQuestionBytes   int
 	routeFor           func(map[string]any) table.Answer
 	answerFor          func(map[string]any) table.Answer
 	learningFor        func(learningRequest) learningResponse
 	learningSelectNone bool
 }
 
+type questionBatchRequest struct {
+	Task      string           `json:"task"`
+	Evidence  []map[string]any `json:"evidence"`
+	Questions []struct {
+		Key      string `json:"key"`
+		Question string `json:"question"`
+	} `json:"questions"`
+}
+
 func (*tableProvider) State() []byte {
 	return []byte(`{"endpoint":"https://provider.test","model":"table"}`)
 }
 
-func (*tableProvider) Prepare(prompt llm.Prompt, _ llm.Limits) (llm.Prepared, error) {
+func (provider *tableProvider) Prepare(prompt llm.Prompt, _ llm.Limits) (llm.Prepared, error) {
 	var request map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
 		return llm.Prepared{}, err
@@ -101,6 +114,12 @@ func (*tableProvider) Prepare(prompt llm.Prompt, _ llm.Limits) (llm.Prepared, er
 	if err != nil {
 		return llm.Prepared{}, err
 	}
+	if provider.maxQuestionBytes > 0 && string(request["task"]) == `"`+questionbatch.Contract+`"` && len(raw) > provider.maxQuestionBytes {
+		return llm.Prepared{}, llm.NewResourceLimitError(llm.ResourceLimitError{
+			Stage: lines.StageQuestion, Kind: llm.ResourceLimitRequestBytes,
+			Limit: provider.maxQuestionBytes, Observed: len(raw), ObservedKnown: true,
+		})
+	}
 	return llm.NewPrepared(raw)
 }
 
@@ -108,6 +127,42 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 	provider.mu.Lock()
 	provider.calls++
 	provider.mu.Unlock()
+	var batch questionBatchRequest
+	if err := json.Unmarshal(prepared.Bytes(), &batch); err != nil {
+		return llm.Completion{}, err
+	}
+	if batch.Task == questionbatch.Contract {
+		provider.mu.Lock()
+		provider.questionRequests = append(provider.questionRequests, append([]byte(nil), prepared.Bytes()...))
+		provider.mu.Unlock()
+		response := questionbatch.Response{Questions: []questionbatch.Decision{}}
+		refused := false
+		for _, question := range batch.Questions {
+			decision := questionbatch.Decision{Key: question.Key, Selections: []questionbatch.Selection{}}
+			for _, row := range batch.Evidence {
+				path, _ := row["path"].(string)
+				refused = refused || provider.refuse[path]
+				answer, found := provider.questionFor[path]
+				if !found || answer["relevance"] == "none" {
+					continue
+				}
+				decision.Selections = append(decision.Selections, questionbatch.Selection{
+					Row: row["key"].(string), Anchors: strings.Fields(answer["anchors"]),
+					Relevance: answer["relevance"], Why: answer["why"],
+				})
+			}
+			response.Questions = append(response.Questions, decision)
+		}
+		if refused && len(response.Questions) > 0 {
+			response.Questions = response.Questions[:len(response.Questions)-1]
+		}
+		if provider.questionBatchFor != nil {
+			response = provider.questionBatchFor(batch, response)
+		}
+		raw, err := json.Marshal(response)
+		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1,
+			Metrics: llm.Metrics{Attempts: 1, UsageReported: true, InputTokens: 10, OutputTokens: 5}}, err
+	}
 	var learning learningRequest
 	if json.Unmarshal(prepared.Bytes(), &learning) == nil && learning.Evidence != nil && provider.learningFor != nil {
 		raw, err := json.Marshal(provider.learningFor(learning))
@@ -206,10 +261,6 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 				for key, value := range provider.routeFor(row) {
 					answer[key] = value
 				}
-			}
-		case lines.StageQuestion:
-			for name, value := range provider.questionFor[path] {
-				answer[name] = value
 			}
 		case lines.StageDirectories:
 			answer["title"] = "Title " + filepath.Base(path)

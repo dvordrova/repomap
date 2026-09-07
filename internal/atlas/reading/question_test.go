@@ -12,6 +12,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/questionbatch"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
@@ -38,17 +39,37 @@ func TestQuestionsShareGraphAndKeepIndependentCacheEntries(t *testing.T) {
 			if err != nil || len(files) != 4 {
 				t.Fatalf("question request references overwritten: %v %v", files, err)
 			}
+			for _, file := range files {
+				raw, err := readWindowPayload(file)
+				if err != nil || !strings.Contains(string(raw), route.Question) {
+					t.Fatalf("question reference lost its original shared request: %s / %v", file, err)
+				}
+			}
 		}
 		return result
 	}
-	read(8)
+	initial := read(4)
 	// Reordering questions changes presentation, not provider requests.
 	opts.OwnerRunDir, opts.Questions = t.TempDir(), []string{second, first}
-	read(8)
+	warm := read(4)
+	for _, route := range warm.Questions {
+		if route.GraphSHA256 != initial.Questions[0].GraphSHA256 || route.Stops[0].Source != atlas.SourceCache {
+			t.Fatalf("reordered question did not retain cached source provenance: %+v", route)
+		}
+	}
 	// Adding one question must not invalidate either existing question.
 	opts.OwnerRunDir = t.TempDir()
 	opts.Questions = append(opts.Questions, "Where are the tests?")
-	read(12)
+	expanded := read(8)
+	for i, route := range expanded.Questions {
+		wantSource := atlas.SourceCache
+		if i == 2 {
+			wantSource = atlas.SourceModel
+		}
+		if route.Stops[0].Source != wantSource {
+			t.Fatalf("added question changed old provenance: question=%s source=%s", route.Question, route.Stops[0].Source)
+		}
+	}
 	raw, err := os.ReadFile(filepath.Join(opts.OwnerRunDir, atlas.QuestionFilename))
 	if err != nil {
 		t.Fatal(err)
@@ -192,12 +213,110 @@ func TestQuestionRejectedAnchorDoesNotBecomeANegativeFinding(t *testing.T) {
 }
 
 func TestQuestionCanRunOnTheOrdinaryReadingPath(t *testing.T) {
-	opts, _ := questionFixture(t)
-	opts.Through = ""
-	result, route := readQuestionResult(t, opts)
-	if !result.Complete || len(result.Atlas.Targets) == 0 || result.Through != lines.StageAnswer || len(route.Stops) == 0 || route.Guide == nil || route.Answer == nil {
-		t.Fatal("full atlas path did not retain its question result")
+	opts, provider := questionFixture(t)
+	opts.Through, opts.WindowRows = "", 0
+	opts.Questions = append(opts.Questions, "Where is the entry point?")
+	for i := range opts.Graph.Places {
+		if place := &opts.Graph.Places[i]; place.Path == "pkg/a/x.go" && place.File != nil {
+			place.File.Decls[0].ObjectID = "original-main-declaration"
+		}
 	}
+	provider.questionBatchFor = func(request questionBatchRequest, response questionbatch.Response) questionbatch.Response {
+		for i, question := range request.Questions {
+			if question.Question != opts.Questions[1] {
+				continue
+			}
+			response.Questions[i].Selections = nil
+			for _, row := range request.Evidence {
+				if row["path"] == "pkg/a/x.go" {
+					response.Questions[i].Selections = append(response.Questions[i].Selections, questionbatch.Selection{
+						Row: row["key"].(string), Anchors: []string{"a1"}, Relevance: "direct", Why: "Inspect the original entry declaration.",
+					})
+				}
+			}
+		}
+		return response
+	}
+	result, err := Read(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Complete || len(result.Atlas.Targets) == 0 || result.Through != lines.StageAnswer || len(result.Questions) != 2 || len(provider.questionRequests) != 1 {
+		t.Fatalf("ordinary questions did not share one provider call: complete=%t questions=%d retrieval calls=%d", result.Complete, len(result.Questions), len(provider.questionRequests))
+	}
+	var sent questionBatchRequest
+	if err := json.Unmarshal(provider.questionRequests[0], &sent); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent.Evidence) != 4 || len(sent.Questions) != 2 || strings.Contains(string(provider.questionRequests[0]), "original-main-declaration") {
+		t.Fatal("shared request duplicated its corpus, omitted a question or exposed local source identity")
+	}
+	input, err := LoadInput(filepath.Join(opts.OwnerRunDir, InputFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, route := range result.Questions {
+		if route.Question != opts.Questions[i] || route.GraphSHA256 != input.Graph.SHA256 || route.Coverage.InspectedChunks != 4 || route.Coverage.UnresolvedChunks != 0 || route.Guide == nil || route.Answer == nil {
+			t.Fatalf("shared retrieval changed a question's graph, coverage or downstream reading: %+v", route)
+		}
+		pattern := fmt.Sprintf("%s-%x-r0-w*.request.ref.json", lines.StageQuestion, sha256.Sum256([]byte(route.Question)))
+		refs, err := filepath.Glob(filepath.Join(opts.OwnerRunDir, atlas.TablesDir, pattern))
+		if err != nil || len(refs) != 1 {
+			t.Fatalf("question lost its shared request reference: %v %v", refs, err)
+		}
+		raw, err := readWindowPayload(refs[0])
+		if err != nil || string(raw) != string(provider.questionRequests[0]) {
+			t.Fatalf("question reference no longer resolves its exact shared provider bytes: %v", err)
+		}
+	}
+	first, second := result.Questions[0], result.Questions[1]
+	if len(first.Stops) != 4 || len(first.Connections) != 1 || first.Connections[0].Witnesses[0].LineNo != 4 || len(second.Stops) != 1 || len(second.Connections) != 0 {
+		t.Fatalf("questions competed for sources or shared decisions: first=%+v second=%+v", first.Stops, second.Stops)
+	}
+	stop := second.Stops[0]
+	if stop.SubjectID != "original-main-declaration" || stop.Name != "Main" || stop.Path != "pkg/a/x.go" || stop.Line != 3 || stop.Why != "Inspect the original entry declaration." {
+		t.Fatalf("entry question lost its exact source: %+v", stop)
+	}
+	for _, use := range result.Uses {
+		if use.Stage == lines.StageQuestion && (use.Windows != 1 || use.Live != 1 || use.Rows != 8) {
+			t.Fatalf("retrieval accounting counted question/corpus pairs as provider calls: %+v", use)
+		}
+	}
+
+	t.Run("missing question rejects the whole shared window", func(t *testing.T) {
+		opts, provider := questionFixture(t)
+		opts.Through, opts.WindowRows = "", 0
+		opts.Questions = append(opts.Questions, "Where is the entry point?")
+		provider.questionBatchFor = func(_ questionBatchRequest, response questionbatch.Response) questionbatch.Response {
+			return questionbatch.Response{Questions: response.Questions[:1]}
+		}
+		result, err := Read(context.Background(), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Questions) != 2 || len(provider.questionRequests) != 1 || len(result.Rejected) != 1 || result.Rejected[0].Stage != lines.StageQuestion || result.Rejected[0].Count != 8 {
+			t.Fatalf("missing question was not one refused shared window: %+v", result.Rejected)
+		}
+		for _, route := range result.Questions {
+			if len(route.Stops) != 0 || route.Coverage.InspectedChunks != 0 || route.Coverage.UnresolvedChunks != 4 || route.Answer == nil || route.Answer.State != "unavailable" {
+				t.Fatalf("missing decision became a negative finding or partial success: %+v", route)
+			}
+		}
+		provider.questionBatchFor = nil
+		opts.OwnerRunDir = t.TempDir()
+		retried, err := Read(context.Background(), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(provider.questionRequests) != 2 || len(retried.Rejected) != 0 {
+			t.Fatal("refused shared response was reused from cache")
+		}
+		for _, route := range retried.Questions {
+			if len(route.Stops) != 4 || route.Coverage.UnresolvedChunks != 0 || route.Stops[0].Source != atlas.SourceModel {
+				t.Fatalf("fresh complete response did not restore the question: %+v", route)
+			}
+		}
+	})
 }
 
 func TestAnswerKeepsOriginalSourcesAndReusesTheReadingRoute(t *testing.T) {
@@ -283,9 +402,11 @@ func TestAnswerDoesNotTurnMissingEvidenceIntoInapplicability(t *testing.T) {
 	// retrieval window was refused. Preserve that failure as unknown.
 	opts.OwnerRunDir = t.TempDir()
 	opts.Executor.Enabled = false
-	// Retrieval uses its ordinary 24-row windows while --through answer
-	// overrides only the answer stage. One refused window must leave a
-	// second accepted window, not a wholly empty route.
+	// A provider with room for the original complete request must partition
+	// the expanded evidence by its actual prepared byte envelope. One refused
+	// partition must leave accepted neighbours, not a wholly empty route.
+	provider.maxQuestionBytes = len(provider.questionRequests[0])
+	provider.questionRequests = nil
 	for i := 0; i < 24; i++ {
 		path := fmt.Sprintf("pkg/b/extra-%02d.go", i)
 		opts.Graph.Places = append(opts.Graph.Places, atlas.Place{ID: atlas.FileID(path), Kind: atlas.PlaceFile, Path: path,
@@ -299,7 +420,22 @@ func TestAnswerDoesNotTurnMissingEvidenceIntoInapplicability(t *testing.T) {
 		return table.Answer{"state": "not_applicable", "answer": "The premise does not apply.", "sources": "c1", "remaining": "none"}
 	}
 	result, route = readQuestionResult(t, opts)
-	if route.Answer.State != "unavailable" || route.Coverage.UnresolvedChunks != 24 || len(result.Rejected) != 2 {
+	unresolved := 0
+	for _, raw := range provider.questionRequests {
+		if len(raw) > provider.maxQuestionBytes {
+			t.Fatal("retrieval exceeded the provider's prepared byte envelope")
+		}
+		var request questionBatchRequest
+		if err := json.Unmarshal(raw, &request); err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range request.Evidence {
+			if row["path"] == "pkg/a/y.go" {
+				unresolved += len(request.Evidence)
+			}
+		}
+	}
+	if len(provider.questionRequests) < 2 || unresolved == 0 || route.Coverage.InspectedChunks == 0 || route.Coverage.InspectedChunks+unresolved != 28 || route.Answer.State != "unavailable" || route.Coverage.UnresolvedChunks != unresolved || len(result.Rejected) != 2 {
 		t.Fatalf("partial scan: state=%s unresolved=%d rejected=%+v", route.Answer.State, route.Coverage.UnresolvedChunks, result.Rejected)
 	}
 	// A legitimate empty retrieval is still unanswered, never inapplicable.

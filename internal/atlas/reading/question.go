@@ -27,10 +27,14 @@ func (r *reader) readQuestions(ctx context.Context) error {
 			origins[proposal.Question] = append(origins[proposal.Question], proposal.Origins...)
 		}
 	}
-	for _, question := range questions {
+	retrieval, err := r.readQuestionBatch(ctx, chunks, questions)
+	if err != nil {
+		return err
+	}
+	for questionIndex, question := range questions {
 		r.questionText = question
 		r.questionKey = fmt.Sprintf("%x", sha256.Sum256([]byte(question)))
-		if err := r.readQuestion(ctx, chunks); err != nil {
+		if err := r.bindQuestion(chunks, retrieval[questionIndex]); err != nil {
 			return err
 		}
 		r.question.UserQuestion = contains(r.opts.Questions, question)
@@ -79,12 +83,10 @@ func (r *reader) questionRows() []lines.QuestionChunk {
 	return chunks
 }
 
-func (r *reader) readQuestion(ctx context.Context, chunks []lines.QuestionChunk) error {
-	rows := make([]table.Row, len(chunks))
+func (r *reader) bindQuestion(chunks []lines.QuestionChunk, answers []rowAnswer) error {
 	files, entities, documents := make(map[string]bool), make(map[string]bool), make(map[string]bool)
 	sourceFacts := 0
-	for i, chunk := range chunks {
-		rows[i] = chunk.Row
+	for _, chunk := range chunks {
 		if chunk.Place.Kind == atlas.PlaceFile {
 			files[chunk.Place.ID] = true
 		} else if chunk.Place.Kind == atlas.PlaceDocument {
@@ -94,20 +96,6 @@ func (r *reader) readQuestion(ctx context.Context, chunks []lines.QuestionChunk)
 		} else {
 			entities[chunk.Place.ID] = true
 		}
-	}
-	r.opts.Stage(lines.StageQuestion, r.questionText, fmt.Sprintf("inspecting %d code files, %d documents, %d launch/manifest facts and %d observed entities in %d complete evidence chunks", len(files), len(documents), sourceFacts, len(entities), len(rows)))
-	answers, err := r.runTableWith(ctx, lines.Question(), 0, []table.Field{
-		{Name: "question", Value: r.questionText}, {Name: "repository", Value: r.opts.Repository},
-	}, rows, func(answers table.Answers) error {
-		for _, answer := range answers {
-			if (answer["relevance"] == "none") != (answer["anchors"] == "") {
-				return fmt.Errorf("none relevance and an empty anchor selection must agree")
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return err
 	}
 	route := atlas.QuestionRoute{
 		Version: 7, Question: r.questionText, Repository: r.opts.Repository, Revision: r.opts.Revision, GraphSHA256: r.opts.Graph.SHA256,
@@ -228,7 +216,6 @@ func (r *reader) readQuestion(ctx context.Context, chunks []lines.QuestionChunk)
 	if err := r.persistQuestion(); err != nil {
 		return err
 	}
-	r.reportStage(lines.StageQuestion)
 	r.opts.State("Question candidates", "ready", fmt.Sprintf("reading stops: %d; connections with source evidence: %d", len(route.Stops), len(route.Connections)), "result: "+filepath.Join(r.opts.OwnerRunDir, atlas.QuestionFilename))
 	return nil
 }
