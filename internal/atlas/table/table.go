@@ -77,6 +77,9 @@ type Definition struct {
 	// Independent allows accepted rows to be reused outside their original
 	// batch. The prompt must restrict each answer to that row and its context.
 	Independent bool
+	// ContextAfterRows keeps repeated evidence ahead of changing context in
+	// the request prefix. The default preserves context before rows.
+	ContextAfterRows bool
 }
 
 // Field is one ordered input of a row.
@@ -191,7 +194,10 @@ func Request(def Definition, window Window) ([]byte, error) {
 		writeJSON(&out, spec)
 	}
 	out.WriteString("]")
-	if len(window.Context) > 0 {
+	writeContext := func() {
+		if len(window.Context) == 0 {
+			return
+		}
 		out.WriteString(",\n  \"context\": {")
 		for i, field := range window.Context {
 			if i > 0 {
@@ -202,6 +208,9 @@ func Request(def Definition, window Window) ([]byte, error) {
 			writeJSON(&out, field.Value)
 		}
 		out.WriteString("}")
+	}
+	if !def.ContextAfterRows {
+		writeContext()
 	}
 	out.WriteString(",\n  \"rows\": [\n")
 	for i, row := range window.Rows {
@@ -218,7 +227,11 @@ func Request(def Definition, window Window) ([]byte, error) {
 		}
 		out.WriteString("}")
 	}
-	out.WriteString("\n  ]\n}\n")
+	out.WriteString("\n  ]")
+	if def.ContextAfterRows {
+		writeContext()
+	}
+	out.WriteString("\n}\n")
 	if out.err != nil {
 		return nil, fmt.Errorf("table %s: encode evidence: %w", def.Stage, out.err)
 	}

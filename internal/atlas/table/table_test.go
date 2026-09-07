@@ -64,6 +64,30 @@ func TestWindowsKeepOrderAndBytesAreStable(t *testing.T) {
 	if strings.Contains(request, "file:a.go") {
 		t.Fatal("the request carries the code-side row ID")
 	}
+	withContext := first[0]
+	withContext.Context = []Field{{Name: "question", Value: "Where is state?"}, {Name: "repository", Value: "example/repository"}}
+	raw, err := Request(def, withContext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const existingRequest = `{
+  "table": "atlas_test",
+  "fill": [{"kind":"text","max_runes":20,"name":"line"}, {"free_prefix":"new: ","kind":"choice","name":"box","options_from":"box_options"}],
+  "context": {"question": "Where is state?", "repository": "example/repository"},
+  "rows": [
+    {"key": "r1", "path": "a.go", "box_options": ["here","pkg/b"]},
+    {"key": "r2", "path": "b.go", "box_options": ["here"]}
+  ]
+}
+`
+	if string(raw) != existingRequest {
+		t.Fatalf("default request bytes changed:\n%s", raw)
+	}
+	def.ContextAfterRows = true
+	withoutContext, err := Request(def, first[0])
+	if err != nil || !bytes.Equal(withoutContext, first[0].Request) {
+		t.Fatalf("context placement changed a request without context: %v", err)
+	}
 }
 
 func TestDecodeAcceptsEveryKeyOnce(t *testing.T) {
@@ -226,5 +250,12 @@ func TestRequestDoesNotReplaceUnencodableEvidenceWithNull(t *testing.T) {
 	rows[0].Fields = append(rows[0].Fields, Field{Name: "evidence", Value: make(chan int)})
 	if _, err := Windows(testDefinition(), 1, rows); err == nil {
 		t.Fatal("invalid evidence silently became null")
+	}
+	for _, afterRows := range []bool{false, true} {
+		def := testDefinition()
+		def.ContextAfterRows = afterRows
+		if _, err := WindowsWithContext(def, 1, []Field{{Name: "context", Value: make(chan int)}}, testRows()); err == nil {
+			t.Fatalf("invalid context silently became null with ContextAfterRows=%t", afterRows)
+		}
 	}
 }

@@ -105,6 +105,11 @@ become production API or launch seeds, and currently carry no test call graph,
 execution result or assertion semantics.
 Question table v6 selects a closed set of useful anchors from each complete
 context chunk; chunk boundaries never impose one representative declaration.
+Its requests serialize the repeated evidence rows before the changing question
+context, so common input can participate in provider prefix caching. Other
+tables retain their existing request order. This changes exact question request
+identities, not the retrieval evidence or response schema; larger multi-question
+requests and their thinking policy are still under measurement.
 Selected type anchors keep their native owned declarations and exact member
 locations, also shown under the answer's source checks. Types beyond the
 description-candidate budget remain available for question reading.

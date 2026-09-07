@@ -27,7 +27,7 @@ var questionPrompt string
 func Question() table.Definition {
 	return table.Definition{
 		Stage: StageQuestion, Contract: "repomap.atlas.question.v6", Window: 24,
-		System: questionPrompt,
+		System: questionPrompt, ContextAfterRows: true,
 		Columns: []table.Column{
 			{Name: "relevance", Kind: table.Choice, Options: []string{"none", "direct", "context"}},
 			{Name: "anchors", Kind: table.Sequence, OptionsFrom: "anchor_options"},

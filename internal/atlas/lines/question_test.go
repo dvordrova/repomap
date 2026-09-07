@@ -1,6 +1,7 @@
 package lines
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -119,16 +120,59 @@ func TestQuestionRowsKeepEveryDeclarationIncludingGeneratedTail(t *testing.T) {
 			t.Fatalf("declaration %s occurs %d times", decl.Name, seen[decl.Name])
 		}
 	}
-	windows, err := table.WindowsWithContext(Question(), 0, []table.Field{{Name: "question", Value: "Where is state?"}}, inputRows)
+	questions := []string{"Where is state?", "How do \"levels\" run?\nInclude пример <level>."}
+	context := []table.Field{{Name: "question", Value: questions[0]}, {Name: "repository", Value: "example/repository"}}
+	windows, err := table.WindowsWithContext(Question(), 0, context, inputRows)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, window := range windows {
+	otherContext := []table.Field{{Name: "question", Value: questions[1]}, context[1]}
+	otherWindows, err := table.WindowsWithContext(Question(), 0, otherContext, inputRows)
+	if err != nil || len(otherWindows) != len(windows) {
+		t.Fatalf("same evidence changed windows across questions: %v", err)
+	}
+	for i, window := range windows {
 		if strings.Contains(string(window.Request), "internal-id-never-sent") {
 			t.Fatal("internal ID entered provider input")
 		}
-		if !json.Valid(window.Request) {
-			t.Fatal("invalid request")
+		other := otherWindows[i]
+		contextAt := bytes.Index(window.Request, []byte(",\n  \"context\": {"))
+		rowsEnd := bytes.LastIndex(window.Request, []byte("\n  ]"))
+		if rowsEnd < 0 || contextAt <= rowsEnd || !bytes.HasPrefix(other.Request, window.Request[:contextAt]) {
+			t.Fatal("changing the question broke the shared prefix before the complete evidence rows")
+		}
+		if !reflect.DeepEqual(window.Rows, other.Rows) || bytes.Equal(window.Request, other.Request) {
+			t.Fatal("question requests lost their shared evidence or independent question")
+		}
+		for j, current := range []table.Window{window, other} {
+			var decoded map[string]any
+			if err := json.Unmarshal(current.Request, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			wantContext := map[string]any{"question": questions[j], "repository": "example/repository"}
+			if !reflect.DeepEqual(decoded["context"], wantContext) {
+				t.Fatalf("question context was changed: %#v", decoded["context"])
+			}
+			previous := Question()
+			previous.ContextAfterRows = false
+			previousRequest, err := table.Request(previous, current)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var previousDecoded map[string]any
+			if err := json.Unmarshal(previousRequest, &previousDecoded); err != nil || !reflect.DeepEqual(previousDecoded, decoded) {
+				t.Fatalf("context placement changed JSON evidence or instructions: %v", err)
+			}
+			previousWindow := current
+			previousWindow.Request = previousRequest
+			previousState, err := table.State(previous, previousWindow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state, err := table.State(Question(), current)
+			if err != nil || bytes.Equal(state, previousState) {
+				t.Fatalf("new question bytes kept the old cache identity: %v", err)
+			}
 		}
 	}
 }

@@ -201,16 +201,90 @@ metadata. A title-only rename does not resolve these display-level problems.
 UX37–UX38 retain the owner's feedback and the actual screenshots. These are
 presentation observations, not a reopened truth audit of all generated text.
 
-The owner confirmed provider access and authorized fresh runs of `~/git/chi`
-and `~/git/go-http-server`. Both current-binary ordinary attempts at 18:30 UTC
-still terminated at repository guidance with HTTP 402, before publication:
-`20260907-183052-chi-3b3b0e6bb93b` and
-`20260907-183052-go-http-server-9c46a0303b13`. Both process handles returned
-exit 1. Neither endpoint variable is set in this shell, so the adapter uses
-its official api.deepseek.com default. Provider configuration clarification
-is pending; do not repeat these attempts without a further access change.
-The new repository comparison remains unfinished. Its sources, attempts and
-local display evidence are recorded in `work/ui-ux-levels-cross-repository.md`.
+The owner raised rapid DeepSeek spending and asked to pack questions and
+categorization decisions into the largest useful requests, including comparing
+thinking for a whole batch. This is the immediate investigation priority;
+UI findings remain recorded. No new paid calls followed the cost concern.
+The interrupted Python run is described below. The full WORK audit found
+17,317 live calls, 143.22M input and 7.54M output tokens, excluding 9,443 local
+cache events. All saved model names were deepseek-v4-flash. Etcd accounts for
+92.9% of input. This diagnostic scope is not an account billing export and
+cannot establish the owner's full ~$100 spend.
+
+The concrete amplification is repeated retrieval: ordinary etcd 083529 used
+24 final questions (681 original proposals), each rereading 179 source
+windows: 4,296 calls and 45.45M input tokens. All 179 evidence-row payloads
+were identical across those 24 questions; the complete request differed in
+the question. There were no duplicate live exact requests inside any audited
+run. A count of hundreds of Learn proposals is not a count of completed
+answers. Detailed evidence is in `work/deepseek-usage-independent-audit.md`,
+`work/deepseek-question-prefix-audit.json` and
+`work/deepseek-question-batch-sizing.json`.
+
+Question retrieval now serializes its complete evidence rows before changing
+question context, permitting a common provider-cache prefix. Other tables keep
+their exact previous byte order. The question/response schema, evidence,
+selection semantics and reasoning setting are unchanged; exact request/cache
+identities change for this table, so prior request-cache entries are not hits
+for the reordered bytes. Focused table/lines/reading tests verify identical
+JSON content, the shared full-row prefix, distinct question identities and
+unchanged default table bytes. Actual provider cache savings and answer quality
+have not been measured after this ordering change; no paid run was made.
+
+The owner's proposal is broader than this prefix fix: one shared evidence
+catalogue with all applicable questions/independent categorization rows,
+partitioning only where actual input/output envelopes or genuine prior-result
+dependencies require it. Merely batching each of the existing 179 windows
+would not be the full investigation. Offline sizing with the official V4
+tokenizer counts 1,655,254 tokens for all 2,739 compact source rows of etcd
+083529 with unique row keys, before questions/output/reasoning. Thus today's
+representation alone exceeds the published 1M context, but 179 is not a
+provider requirement. The receipt is `work/deepseek-whole-corpus-token-count.json`.
+A larger request must preserve question-specific source selections without
+repeating empty decisions for every question/source pair. Compare larger
+batches with thinking disabled/enabled on the same source set, measuring
+missed sources, complete question coverage, tokens and latency; do not assume
+that filling the context or enabling thinking improves quality. Neither batch
+retrieval nor a new default thinking policy is implemented yet. Micro-request
+limits (8 symbol/type/operation rows, 40 other rows, 64KiB input) are under the
+same audit; changes must retain entity-bound reuse and dependencies between
+rounds. No new semantic graph, source truncation or question quota is approved
+by this cost discussion.
+
+The owner replenished official DeepSeek access after the two 18:30 UTC
+attempts failed with 402. Fresh ordinary runs at 18:56 UTC completed with exit
+0: `20260907-185650-chi-68356c6bdb1b` (4/4 targets, eight answers) and
+`20260907-185650-go-http-server-c4b4bcd5328b` (3/3 targets, ten answers).
+Their common manifests/report bundles, target-local indexes/dependency
+catalogues/GroupsIndexes and shared atlas artifacts were checked; the receipt
+is `work/ui-ux-fresh-reports-verification.json`. The server checkout's existing
+Terraform edits remain recorded in its manifest and were not changed.
+
+Actual fresh browser clicks reinforce UX37–UX38. Chi hides its useful HTTP
+middleware → HTTP routing pair behind Home → Root → Area HTTP routing. Part
+HTTP routing then repeats the same picture and description before exposing
+code. In the small server, Root (executable) → Cluster setup hides Server
+handlers and Utility functions. Singleton role lanes all remain expanded even
+when Applications or Libraries appears selected; an example/tool can be above
+the intended component. These are display observations, not a general audit of
+answer truth. Notes and screenshots are `work/ui-ux-fresh-chi-levels.md` and
+`work/ui-ux-fresh-server-levels.md`; first-screen composition remains open.
+
+The explorer now bypasses a local area only when it has exactly one actual
+part with the same title. It retains the original area node and description,
+opens the part directly, and preserves the old area's URL as an alias without
+adding a second history entry. Global search indexes one part and still matches
+the area's description. Remote areas may be incomplete subsets and retain
+their level. Multi-part and differently named areas also retain it. Python
+frozen-data browser checks covered the direct click/code-detail path, area-only
+search, Frontend UI's three parts, the remote Backend logic area, animate and
+All uses, plus old area links and actual browser Back. Notes are
+`work/ui-ux-direct-parts-check.md` and `work/ui-ux-direct-parts-history.md`.
+The fresh chi/server runs include the initial direct-part change, but predate
+the final history/search correction. The new Python ordinary run
+`20260907-185833-python-tutorial-game-0b9d396aba81` was interrupted with SIGINT
+(exit 130) during answers when the owner raised provider cost. It did not publish
+a report. Do not treat these checks as final Learn/Work acceptance.
 
 That walkthrough exposed loss of the originating question when opening the
 term library or a map. The existing reading navigator now keeps a visible
