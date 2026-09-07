@@ -248,8 +248,26 @@ that filling the context or enabling thinking improves quality. Neither batch
 retrieval nor a new default thinking policy is implemented yet. Micro-request
 limits (8 symbol/type/operation rows, 40 other rows, 64KiB input) are under the
 same audit; changes must retain entity-bound reuse and dependencies between
-rounds. No new semantic graph, source truncation or question quota is approved
-by this cost discussion.
+rounds. Exact offline packing of the original etcd 083529 rows under the same
+64KiB input budget reduces Symbols from 1,075 to 148 calls and Operations from
+180 to 53 when the 8-row cap is removed. These are preparation measurements,
+not a live quality/cost comparison; the production caps have not been changed.
+The consolidated measurement and next experiment are recorded in
+`work/repomap-request-batching-review.md`, with the micro-request audit in
+`work/deepseek-microrequest-audit.md`. Offline shared-question drafts now retain
+the complete original evidence once and all questions with separate closed refs.
+The complete chi retrieval input is about 81k tokenized content for eight
+questions, versus 80 historical retrieval calls. The etcd input is about 1.656M
+tokens for 24 questions; its 61,502 negative question/chunk decisions previously
+included individual explanations. Re-encoding only the 3,994 accepted positive
+decisions with original reasons uses about 168k tokens. Historical unavailable
+rows stay separately unavailable; neither these sizes nor old selections are
+new model-quality evidence. Exact local drafts and checks are under
+`work/question-batch-design`. A batch implementation must keep per-question,
+per-evidence-window coverage and per-question memo reuse, and requires a typed
+selection response instead of weakening the shared string-cell table decoder.
+No new semantic graph, source truncation or question quota is approved by this
+cost discussion.
 
 The owner replenished official DeepSeek access after the two 18:30 UTC
 attempts failed with 402. Fresh ordinary runs at 18:56 UTC completed with exit
