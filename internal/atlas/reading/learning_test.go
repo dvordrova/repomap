@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -197,6 +198,241 @@ func TestLearningPartitionsEveryContextWithoutLeakingIdentities(t *testing.T) {
 	}
 	if len(seen) != len(evidence) {
 		t.Fatal("context tail omitted")
+	}
+}
+
+// This provider speaks only the existing proposal contract. It attaches every
+// advertised source to an unknown review, without adding selection/merge calls.
+type learningResourceProvider struct {
+	mu         sync.Mutex
+	requests   []learningRequest
+	prompts    []llm.Prompt
+	oversize   bool
+	prepareErr error
+	refuse     func(learningRequest) error
+	invalid    func(learningRequest) bool
+}
+
+func (*learningResourceProvider) State() []byte {
+	return []byte(`{"provider":"learning-resource-test"}`)
+}
+func (p *learningResourceProvider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
+	if p.prepareErr != nil {
+		return llm.Prepared{}, p.prepareErr
+	}
+	var pool learningRequest
+	if err := json.Unmarshal([]byte(prompt.User), &pool); err != nil {
+		return llm.Prepared{}, err
+	}
+	raw, err := json.Marshal(prompt)
+	if err != nil {
+		return llm.Prepared{}, err
+	}
+	if p.oversize && len(pool.Evidence) > 2 {
+		// The ordinary envelope applies to exact encoded provider bytes, even
+		// when the owning stage's user JSON itself would fit comfortably.
+		raw = append(raw, make([]byte, limits.MaxRequestBytes+1-len(raw))...)
+	}
+	return llm.NewPrepared(raw)
+}
+func (p *learningResourceProvider) Complete(_ context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	var prompt llm.Prompt
+	if err := json.Unmarshal(prepared.Bytes(), &prompt); err != nil {
+		return llm.Completion{}, err
+	}
+	var pool learningRequest
+	if err := json.Unmarshal([]byte(prompt.User), &pool); err != nil {
+		return llm.Completion{}, err
+	}
+	p.mu.Lock()
+	p.requests = append(p.requests, pool)
+	p.prompts = append(p.prompts, prompt)
+	p.mu.Unlock()
+	completion := llm.Completion{FinishReason: "stop", ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}
+	if p.refuse != nil {
+		if err := p.refuse(pool); err != nil {
+			return completion, err
+		}
+	}
+	var refs []string
+	for _, item := range pool.Evidence {
+		refs = append(refs, item.Ref)
+	}
+	var response learningResponse
+	for _, intent := range learningIntents() {
+		response.Reviews = append(response.Reviews, learningReview{Intent: intent.ID, State: "unknown",
+			Reason: "The original evidence needs further reading.", Sources: refs})
+	}
+	if p.invalid != nil && p.invalid(pool) {
+		response.Reviews = response.Reviews[:len(response.Reviews)-1]
+	}
+	completion.Response, _ = json.Marshal(response)
+	return completion, nil
+}
+
+func TestLearningOrdinaryProposalsUseCompleteProviderSizedContext(t *testing.T) {
+	provider := &learningResourceProvider{}
+	r := isolatedLearningReader(t, t.TempDir(), provider)
+	for _, place := range r.opts.Graph.Places {
+		if place.File != nil {
+			place.File.Doc = strings.Repeat("Original author explanation. ", 1000)
+		}
+	}
+	evidence := r.learningEvidence()
+	whole := newLearningPool(evidence, false)
+	raw, _ := json.Marshal(whole)
+	if len(raw) < 64*1024 {
+		t.Fatal("fixture no longer crosses the former artificial context boundary")
+	}
+	if err := r.readLearning(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.requests) != 1 || provider.requests[0].PartialContext || len(provider.requests[0].Evidence) != len(evidence) || len(r.learning.Reviews) != len(learningIntents()) {
+		t.Fatal("ordinary proposals did not compare all original evidence in one complete context")
+	}
+	if !strings.Contains(provider.prompts[0].System, "prose in English.") {
+		t.Fatal("fit and execution lost the common English response preparation")
+	}
+	for _, intent := range learningIntents() {
+		if !strings.Contains(strings.Join(strings.Fields(provider.prompts[0].System), " "), intent.Goal) {
+			t.Fatalf("whole-context proposal lost curated intent %s", intent.ID)
+		}
+	}
+	for i, item := range provider.requests[0].Evidence {
+		if item.Ref != fmt.Sprintf("e%d", i+1) {
+			t.Fatal("proposal catalogue lost its closed local references")
+		}
+		want, _ := json.Marshal(evidence[i].Context)
+		got, _ := json.Marshal(item.Context)
+		if string(want) != string(got) {
+			t.Fatal("complete proposal input omitted original context")
+		}
+	}
+	// An explicit development budget still partitions losslessly.
+	pools, err := learningPools(evidence, len(learningPrompt)+len(raw)/2, learningPrompt)
+	if err != nil || len(pools) < 2 {
+		t.Fatalf("explicit input budget no longer applies: %v, %d pools", err, len(pools))
+	}
+}
+
+func TestLearningResourcePartitionsRetainSourcesAndAcceptedCache(t *testing.T) {
+	for _, kind := range []llm.ResourceLimitKind{llm.ResourceLimitRequestBytes, llm.ResourceLimitContextTokens, llm.ResourceLimitOutputTokens, llm.ResourceLimitResponseBytes} {
+		t.Run(string(kind), func(t *testing.T) {
+			var evidence []learningEvidence
+			for i := 0; i < 4; i++ {
+				evidence = append(evidence, learningEvidence{Context: map[string]any{"ordinal": i, "original": strings.Repeat("original ", 20)},
+					Source: atlas.QuestionStop{PlaceID: fmt.Sprintf("private-place-%d", i), SubjectID: fmt.Sprintf("private-subject-%d", i),
+						Path: fmt.Sprintf("file%d.py", i), Line: i + 4, Column: i + 2, Kind: "documentation", Name: "Original section",
+						TargetIDs: []string{"private-target"}, KnowledgeIDs: []string{"private-knowledge"}, Evidence: map[string]any{"original": i}}})
+			}
+			provider := &learningResourceProvider{refuse: func(pool learningRequest) error {
+				if len(pool.Evidence) > 2 || len(pool.Evidence) == 2 && pool.Evidence[0].Context["ordinal"] == float64(2) {
+					return &llm.ResourceLimitError{Kind: kind}
+				}
+				return nil
+			}}
+			cache := t.TempDir()
+			run := func() *reader {
+				r := isolatedLearningReader(t, cache, provider)
+				r.opts.Executor.BatchConcurrency = 4
+				r.learning = &atlas.LearningPlan{Version: 1, GraphSHA256: r.opts.Graph.SHA256, State: "ready"}
+				if err := r.executeLearning(t.Context(), []learningRequest{newLearningPool(evidence, false)}, learningPrompt); err != nil {
+					t.Fatal(err)
+				}
+				return r
+			}
+			r := run()
+			if len(provider.requests) != 5 || len(r.learning.Reviews) != 3*len(learningIntents()) || r.learning.State != "ready" || len(r.rejected) != 0 {
+				t.Fatalf("resource parent acquired semantic authority or a child was lost: calls=%d plan=%+v", len(provider.requests), r.learning)
+			}
+			checkSources := func(r *reader, source string) {
+				t.Helper()
+				seen := map[string]bool{}
+				for _, review := range r.learning.Reviews {
+					if !review.PartialContext || review.Source != source || review.Window == 1 || review.Window == 3 {
+						t.Fatal("child lost partial-comparison scope or retained superseded parent authority")
+					}
+					if review.Intent != "purpose" {
+						continue
+					}
+					for _, stop := range review.Sources {
+						index := slices.IndexFunc(evidence, func(item learningEvidence) bool { return item.Source.SubjectID == stop.SubjectID })
+						if index < 0 || seen[stop.SubjectID] {
+							t.Fatal("source was fabricated or visited twice")
+						}
+						seen[stop.SubjectID] = true
+						stop.Source = ""
+						if !reflect.DeepEqual(stop, evidence[index].Source) {
+							t.Fatal("partition changed original source, ownership or exact location")
+						}
+					}
+				}
+				if len(seen) != len(evidence) {
+					t.Fatal("partition omitted an original evidence item")
+				}
+			}
+			checkSources(r, atlas.SourceModel)
+			warm := run()
+			if len(provider.requests) != 7 || warm.use(stageLearn).Cached != 3 || warm.use(stageLearn).Live != 2 {
+				t.Fatal("accepted neighbours were called again or rejected resource requests were cached")
+			}
+			checkSources(warm, atlas.SourceCache)
+			for _, prompt := range provider.prompts {
+				if strings.Contains(prompt.User, "private-") {
+					t.Fatal("request leaked local source identity")
+				}
+			}
+		})
+	}
+}
+
+func TestLearningPreparedEnvelopeAndNonresourceRefusal(t *testing.T) {
+	var evidence []learningEvidence
+	for i := 0; i < 4; i++ {
+		evidence = append(evidence, learningEvidence{Context: map[string]any{"ordinal": i}, Source: atlas.QuestionStop{Path: fmt.Sprintf("file%d.py", i), Line: i + 1}})
+	}
+	t.Run("nonresource preparation", func(t *testing.T) {
+		provider := &learningResourceProvider{prepareErr: fmt.Errorf("provider preparation unavailable")}
+		r := isolatedLearningReader(t, t.TempDir(), provider)
+		if err := r.readLearning(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if len(provider.requests) != 0 || r.learning.State != "unavailable" || len(r.learning.Reviews) != len(learningIntents()) || r.use(stageLearn).Live != 0 || len(r.rejected) != 1 {
+			t.Fatal("nonresource preparation failure changed the ordinary unavailable boundary or invented a provider call")
+		}
+	})
+	t.Run("indivisible resource preparation", func(t *testing.T) {
+		provider := &learningResourceProvider{prepareErr: &llm.ResourceLimitError{Kind: llm.ResourceLimitRequestBytes}}
+		r := isolatedLearningReader(t, t.TempDir(), provider)
+		if _, err := r.prepareLearningPools(t.Context(), []learningRequest{newLearningPool(evidence[:1], false)}, learningPrompt); !learningResourceFailure(err) || len(provider.requests) != 0 {
+			t.Fatal("indivisible original evidence was discarded or sent beyond the provider envelope")
+		}
+	})
+	provider := &learningResourceProvider{oversize: true, invalid: func(pool learningRequest) bool { return pool.Evidence[0].Context["ordinal"] == float64(2) }}
+	r := isolatedLearningReader(t, t.TempDir(), provider)
+	r.opts.Executor.BatchConcurrency = 4
+	pools, err := r.prepareLearningPools(t.Context(), []learningRequest{newLearningPool(evidence, false)}, learningPrompt)
+	if err != nil || len(pools) != 2 || len(provider.requests) != 0 {
+		t.Fatalf("prepared-byte envelope did not partition before transport: pools=%d err=%v", len(pools), err)
+	}
+	r.learning = &atlas.LearningPlan{State: "ready"}
+	if err := r.executeLearning(t.Context(), pools, learningPrompt); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.requests) != 2 || len(r.learning.Reviews) != 2*len(learningIntents()) || r.learning.State != "partial" || len(r.rejected) != 1 {
+		t.Fatal("nonresource refusal was retried, split or suppressed an accepted neighbour")
+	}
+	for _, review := range r.learning.Reviews {
+		if !review.PartialContext || review.Window == 2 && (review.State != "unavailable" || len(review.Sources) != 0) {
+			t.Fatal("uninspected child became a negative or gained source authority")
+		}
+	}
+	// Byte balance, rather than item count, keeps one large original section
+	// separate from three much smaller units without cutting the section.
+	evidence[0].Context["original"] = strings.Repeat("large document ", 1000)
+	children, err := splitLearningPool(newLearningPool(evidence, false))
+	if err != nil || len(children[0].Evidence) != 1 || len(children[1].Evidence) != 3 {
+		t.Fatal("resource split ignored serialized evidence weight")
 	}
 }
 

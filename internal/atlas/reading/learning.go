@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -130,40 +131,149 @@ func (r *reader) learningEvidence() []learningEvidence {
 }
 
 func learningPools(evidence []learningEvidence, budget int, prompt string) ([]learningRequest, error) {
-	if budget == 0 {
-		budget = 64 * 1024
+	if budget < 0 {
+		return nil, fmt.Errorf("learn: input budget must be nonnegative")
 	}
 	var pools []learningRequest
-	var split func([]learningEvidence) error
-	split = func(items []learningEvidence) error {
-		pool := learningRequest{PartialContext: true, Evidence: append([]learningEvidence{}, items...)}
-		for i := range pool.Evidence {
-			pool.Evidence[i].Ref = fmt.Sprintf("e%d", i+1)
-		}
+	var split func(learningRequest) error
+	split = func(pool learningRequest) error {
 		raw, err := json.Marshal(pool)
 		if err != nil {
 			return err
 		}
-		if len(raw)+len(prompt) > budget {
-			if len(items) < 2 {
+		if budget > 0 && len(raw)+len(prompt) > budget {
+			if len(pool.Evidence) < 2 {
 				return fmt.Errorf("learn: one original context item exceeds the input budget")
 			}
-			mid := len(items) / 2
-			if err := split(items[:mid]); err != nil {
+			children, err := splitLearningPool(pool)
+			if err != nil {
 				return err
 			}
-			return split(items[mid:])
+			if err := split(children[0]); err != nil {
+				return err
+			}
+			return split(children[1])
 		}
 		pools = append(pools, pool)
 		return nil
 	}
-	if err := split(evidence); err != nil {
+	if err := split(newLearningPool(evidence, false)); err != nil {
 		return nil, err
 	}
-	if len(pools) == 1 {
-		pools[0].PartialContext = false
-	}
 	return pools, nil
+}
+
+func newLearningPool(evidence []learningEvidence, partial bool) learningRequest {
+	pool := learningRequest{PartialContext: partial, Evidence: append([]learningEvidence{}, evidence...)}
+	for i := range pool.Evidence {
+		pool.Evidence[i].Ref = fmt.Sprintf("e%d", i+1)
+	}
+	return pool
+}
+
+// Keep complete original units in order, balancing their serialized bytes.
+// A large document cannot be made smaller by guessing a token ratio or by
+// dropping its later paragraphs.
+func splitLearningPool(pool learningRequest) ([]learningRequest, error) {
+	if len(pool.Evidence) < 2 {
+		return nil, fmt.Errorf("learn: one original context item cannot be partitioned")
+	}
+	sizes := make([]int, len(pool.Evidence))
+	total := 0
+	for i, item := range pool.Evidence {
+		raw, err := json.Marshal(item)
+		if err != nil {
+			return nil, err
+		}
+		sizes[i] = len(raw) + 1
+		total += sizes[i]
+	}
+	mid, best, prefix := 1, total, 0
+	for i := 1; i < len(sizes); i++ {
+		prefix += sizes[i-1]
+		difference := total - 2*prefix
+		if difference < 0 {
+			difference = -difference
+		}
+		if difference < best {
+			mid, best = i, difference
+		}
+	}
+	return []learningRequest{newLearningPool(pool.Evidence[:mid], true), newLearningPool(pool.Evidence[mid:], true)}, nil
+}
+
+func learningCall(pool learningRequest, prompt string) (llm.Call[learningResponse], error) {
+	raw, err := json.Marshal(pool)
+	if err != nil {
+		return llm.Call[learningResponse]{}, err
+	}
+	return llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v1"),
+		Prompt:         llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true},
+		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
+		DecodeValidate: func(raw []byte) (learningResponse, error) { return decodeLearning(raw, pool) }}, nil
+}
+
+func learningResourceFailure(err error) bool {
+	var limit *llm.ResourceLimitError
+	if !errors.As(err, &limit) {
+		return false
+	}
+	switch limit.Kind {
+	case llm.ResourceLimitRequestBytes, llm.ResourceLimitResponseBytes, llm.ResourceLimitOutputTokens, llm.ResourceLimitContextTokens:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *reader) prepareLearningPools(ctx context.Context, pools []learningRequest, prompt string) ([]learningRequest, error) {
+	var prepared []learningRequest
+	var fit func(learningRequest) error
+	fit = func(pool learningRequest) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		call, err := learningCall(pool, prompt)
+		if err != nil {
+			return err
+		}
+		if !r.dry {
+			request, prepareErr := llm.Prepare(r.opts.Provider, call.Prompt, call.Limits)
+			if prepareErr == nil && request.Len() > call.Limits.MaxRequestBytes {
+				prepareErr = &llm.ResourceLimitError{Stage: stageLearn, Kind: llm.ResourceLimitRequestBytes,
+					Limit: call.Limits.MaxRequestBytes, Observed: request.Len(), ObservedKnown: true}
+			}
+			if prepareErr != nil {
+				if !learningResourceFailure(prepareErr) {
+					// Preserve the shared executor's ordinary unavailable window
+					// and diagnostic for a nonresource preparation failure.
+					prepared = append(prepared, pool)
+					return nil
+				}
+				if len(pool.Evidence) < 2 {
+					return prepareErr
+				}
+				children, err := splitLearningPool(pool)
+				if err != nil {
+					return err
+				}
+				for _, child := range children {
+					if err := fit(child); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+		}
+		prepared = append(prepared, pool)
+		return nil
+	}
+	for _, pool := range pools {
+		if err := fit(pool); err != nil {
+			return nil, err
+		}
+	}
+	return prepared, nil
 }
 
 func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) {
@@ -250,111 +360,143 @@ func (r *reader) readLearning(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	pools, err = r.prepareLearningPools(ctx, pools, prompt)
+	if err != nil {
+		return err
+	}
 	r.learning = &atlas.LearningPlan{Version: 1, GraphSHA256: r.opts.Graph.SHA256, State: "ready"}
 	r.opts.Stage(stageLearn, fmt.Sprintf("adapting %d learning intents in %d context windows", len(learningIntents()), len(pools)))
-	calls := make([]llm.Call[learningResponse], len(pools))
-	for i, pool := range pools {
-		raw, err := json.Marshal(pool)
-		if err != nil {
-			return err
-		}
-		calls[i] = llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v1"),
-			Prompt:         llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true},
-			Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
-			DecodeValidate: func(raw []byte) (learningResponse, error) { return decodeLearning(raw, pool) }}
-	}
 	// The ordinary shared executor owns cache, retries, concurrency and journal.
-	return r.executeLearning(ctx, pools, calls, prompt)
+	return r.executeLearning(ctx, pools, prompt)
 }
 
-func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, calls []llm.Call[learningResponse], prompt string) error {
-	results := make([]llm.EachResult[learningResponse], len(calls))
-	if !r.dry {
-		results = llm.ExecuteJSONEach(ctx, debugdump.BindStage(r.opts.Executor, stageLearn), r.opts.Provider, calls)
-	}
+func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, prompt string) error {
 	use := r.use(stageLearn)
-	use.Windows += len(calls)
-	use.Rows += len(calls) * len(learningIntents())
 	titles := map[string]string{}
 	for _, intent := range learningIntents() {
 		titles[intent.ID] = intent.Title
 	}
-	for i, result := range results {
-		window := table.Window{Stage: stageLearn, Index: i + 1}
-		for _, item := range []struct {
-			name string
-			data []byte
-		}{
-			{"prompt.md", []byte(prompt)}, {"input.json", []byte(calls[i].Prompt.User)},
-			{"request.json", result.Outcome.Request}, {"response.json", result.Outcome.Response},
-		} {
-			if len(item.data) > 0 {
-				if err := r.writeWindowFile(window, item.name, item.data); err != nil {
-					return err
-				}
+	windowIndex := 0
+	for len(pools) > 0 {
+		calls := make([]llm.Call[learningResponse], len(pools))
+		for i, pool := range pools {
+			var err error
+			calls[i], err = learningCall(pool, prompt)
+			if err != nil {
+				return err
 			}
 		}
-		if ctx.Err() != nil {
-			return ctx.Err()
+		results := make([]llm.EachResult[learningResponse], len(calls))
+		if !r.dry {
+			results = llm.ExecuteJSONEach(ctx, debugdump.BindStage(r.opts.Executor, stageLearn), r.opts.Provider, calls)
 		}
-		source := atlas.SourceModel
-		if result.Outcome.Cached {
-			source = atlas.SourceCache
-			use.Cached++
-		} else if !r.dry {
-			use.Live++
-		}
-		if result.Err != nil || r.dry {
-			r.learning.State = "partial"
-			use.Given += len(learningIntents())
-			reason := "No model provider was available."
-			if result.Err != nil {
-				use.Rejected++
-				reason = result.Err.Error()
-				r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "window_rejected", Count: len(learningIntents()), Reason: reason,
-					ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))})
-			}
-			for _, intent := range learningIntents() {
-				r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{
-					Intent: intent.ID, Title: intent.Title, State: "unavailable", Reason: reason, Source: atlas.SourceGiven, Window: i + 1, PartialContext: pools[i].PartialContext})
-			}
-			continue
-		}
-		restore := func(refs []string) []atlas.QuestionStop {
-			var sources []atlas.QuestionStop
-			for _, ref := range refs {
-				for _, item := range pools[i].Evidence {
-					if item.Ref == ref {
-						stop := item.Source
-						stop.Source = source
-						sources = append(sources, stop)
-						break
+		use.Windows += len(calls)
+		use.Rows += len(calls) * len(learningIntents())
+		var next []learningRequest
+		for i, result := range results {
+			windowIndex++
+			window := table.Window{Stage: stageLearn, Index: windowIndex}
+			for _, item := range []struct {
+				name string
+				data []byte
+			}{
+				{"prompt.md", []byte(prompt)}, {"input.json", []byte(calls[i].Prompt.User)},
+				{"request.json", result.Outcome.Request}, {"response.json", result.Outcome.Response},
+			} {
+				if len(item.data) > 0 {
+					if err := r.writeWindowFile(window, item.name, item.data); err != nil {
+						return err
 					}
 				}
 			}
-			return sources
-		}
-		for _, review := range result.Outcome.Value.Reviews {
-			r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{Intent: review.Intent, Title: titles[review.Intent],
-				Window: i + 1, PartialContext: pools[i].PartialContext, State: review.State, Reason: review.Reason, Source: source, Sources: restore(review.Sources)})
-			for _, q := range review.Questions {
-				origin := atlas.LearningOrigin{Intent: review.Intent, Title: titles[review.Intent], Question: q.Question, Why: q.Why, Source: source, Sources: restore(q.Sources)}
-				index := slices.IndexFunc(r.learning.Questions, func(old atlas.LearningQuestion) bool { return old.Question == q.Question })
-				if index < 0 {
-					r.learning.Questions = append(r.learning.Questions, atlas.LearningQuestion{Question: q.Question, Origins: []atlas.LearningOrigin{origin}})
-				} else {
-					r.learning.Questions[index].Origins = append(r.learning.Questions[index].Origins, origin)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			source := atlas.SourceModel
+			if result.Outcome.Cached {
+				source = atlas.SourceCache
+				use.Cached++
+			} else if !r.dry && len(result.Outcome.Request) > 0 {
+				use.Live++
+			}
+			if learningResourceFailure(result.Err) && len(pools[i].Evidence) > 1 {
+				children, err := splitLearningPool(pools[i])
+				if err != nil {
+					return err
+				}
+				children, err = r.prepareLearningPools(ctx, children, prompt)
+				if err != nil {
+					return err
+				}
+				next = append(next, children...)
+				// The failed request stays in operational history; only its children
+				// may produce source-bound reviews or unavailable context cells.
+				raw, err := json.MarshalIndent(struct {
+					Superseded bool   `json:"superseded"`
+					Reason     string `json:"reason"`
+				}{true, result.Err.Error()}, "", "  ")
+				if err != nil {
+					return err
+				}
+				if err := r.writeWindowFile(window, "result.json", raw); err != nil {
+					return err
+				}
+				fmt.Fprintf(&r.tables, "## %s · window %d · partitioned after resource refusal\n\n%s\n\n", stageLearn, windowIndex, raw)
+				continue
+			}
+			if result.Err != nil || r.dry {
+				r.learning.State = "partial"
+				use.Given += len(learningIntents())
+				reason := "No model provider was available."
+				if result.Err != nil {
+					use.Rejected++
+					reason = result.Err.Error()
+					r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "window_rejected", Count: len(learningIntents()), Reason: reason,
+						ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))})
+				}
+				for _, intent := range learningIntents() {
+					r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{
+						Intent: intent.ID, Title: intent.Title, State: "unavailable", Reason: reason, Source: atlas.SourceGiven, Window: windowIndex, PartialContext: pools[i].PartialContext})
+				}
+				continue
+			}
+			restore := func(refs []string) []atlas.QuestionStop {
+				var sources []atlas.QuestionStop
+				for _, ref := range refs {
+					for _, item := range pools[i].Evidence {
+						if item.Ref == ref {
+							stop := item.Source
+							stop.Source = source
+							sources = append(sources, stop)
+							break
+						}
+					}
+				}
+				return sources
+			}
+			for _, review := range result.Outcome.Value.Reviews {
+				r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{Intent: review.Intent, Title: titles[review.Intent],
+					Window: windowIndex, PartialContext: pools[i].PartialContext, State: review.State, Reason: review.Reason, Source: source, Sources: restore(review.Sources)})
+				for _, q := range review.Questions {
+					origin := atlas.LearningOrigin{Intent: review.Intent, Title: titles[review.Intent], Question: q.Question, Why: q.Why, Source: source, Sources: restore(q.Sources)}
+					index := slices.IndexFunc(r.learning.Questions, func(old atlas.LearningQuestion) bool { return old.Question == q.Question })
+					if index < 0 {
+						r.learning.Questions = append(r.learning.Questions, atlas.LearningQuestion{Question: q.Question, Origins: []atlas.LearningOrigin{origin}})
+					} else {
+						r.learning.Questions[index].Origins = append(r.learning.Questions[index].Origins, origin)
+					}
 				}
 			}
+			raw, err := json.MarshalIndent(result.Outcome.Value, "", "  ")
+			if err != nil {
+				return err
+			}
+			if err := r.writeWindowFile(window, "result.json", raw); err != nil {
+				return err
+			}
+			fmt.Fprintf(&r.tables, "## %s · window %d · %s\n\n%s\n\n", stageLearn, windowIndex, source, raw)
 		}
-		raw, err := json.MarshalIndent(result.Outcome.Value, "", "  ")
-		if err != nil {
-			return err
-		}
-		if err := r.writeWindowFile(window, "result.json", raw); err != nil {
-			return err
-		}
-		fmt.Fprintf(&r.tables, "## %s · window %d · %s\n\n%s\n\n", stageLearn, i+1, source, raw)
+		pools = next
 	}
 	if err := r.selectLearning(ctx); err != nil {
 		return err
