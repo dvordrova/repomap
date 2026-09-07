@@ -211,9 +211,15 @@ type learningResourceProvider struct {
 	prepareErr error
 	refuse     func(learningRequest) error
 	invalid    func(learningRequest) bool
+	state      string
+	reason     string
 }
 
-func (*learningResourceProvider) State() []byte {
+func (p *learningResourceProvider) State() []byte {
+	if p.state != "" {
+		raw, _ := json.Marshal(map[string]string{"provider": p.state})
+		return raw
+	}
 	return []byte(`{"provider":"learning-resource-test"}`)
 }
 func (p *learningResourceProvider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
@@ -259,9 +265,13 @@ func (p *learningResourceProvider) Complete(_ context.Context, prepared llm.Prep
 		refs = append(refs, item.Ref)
 	}
 	var response learningResponse
+	reason := p.reason
+	if reason == "" {
+		reason = "The original evidence needs further reading."
+	}
 	for _, intent := range learningIntents() {
 		response.Reviews = append(response.Reviews, learningReview{Intent: intent.ID, State: "unknown",
-			Reason: "The original evidence needs further reading.", Sources: refs})
+			Reason: reason, Sources: refs})
 	}
 	if p.invalid != nil && p.invalid(pool) {
 		response.Reviews = response.Reviews[:len(response.Reviews)-1]
@@ -326,7 +336,7 @@ func TestLearningResourcePartitionsRetainSourcesAndAcceptedCache(t *testing.T) {
 						TargetIDs: []string{"private-target"}, KnowledgeIDs: []string{"private-knowledge"}, Evidence: map[string]any{"original": i}}})
 			}
 			provider := &learningResourceProvider{refuse: func(pool learningRequest) error {
-				if len(pool.Evidence) > 2 || len(pool.Evidence) == 2 && pool.Evidence[0].Context["ordinal"] == float64(2) {
+				if len(pool.Evidence) > 2 || len(pool.Evidence) == 2 && pool.Evidence[0].Context["ordinal"] == float64(0) {
 					return &llm.ResourceLimitError{Kind: kind}
 				}
 				return nil
@@ -349,7 +359,7 @@ func TestLearningResourcePartitionsRetainSourcesAndAcceptedCache(t *testing.T) {
 				t.Helper()
 				seen := map[string]bool{}
 				for _, review := range r.learning.Reviews {
-					if !review.PartialContext || review.Source != source || review.Window == 1 || review.Window == 3 {
+					if !review.PartialContext || review.Source != source || source == atlas.SourceModel && (review.Window == 1 || review.Window == 2) {
 						t.Fatal("child lost partial-comparison scope or retained superseded parent authority")
 					}
 					if review.Intent != "purpose" {
@@ -373,16 +383,189 @@ func TestLearningResourcePartitionsRetainSourcesAndAcceptedCache(t *testing.T) {
 			}
 			checkSources(r, atlas.SourceModel)
 			warm := run()
-			if len(provider.requests) != 7 || warm.use(stageLearn).Cached != 3 || warm.use(stageLearn).Live != 2 {
-				t.Fatal("accepted neighbours were called again or rejected resource requests were cached")
+			if len(provider.requests) != 5 || warm.use(stageLearn).Cached != 3 || warm.use(stageLearn).Live != 0 {
+				t.Fatal("warm partition repeated a resource refusal or called an accepted child again")
 			}
 			checkSources(warm, atlas.SourceCache)
+			for i, review := range warm.learning.Reviews {
+				cold := r.learning.Reviews[i]
+				if review.Intent != cold.Intent || len(review.Sources) != len(cold.Sources) {
+					t.Fatal("warm partition changed accepted review order")
+				}
+				for j, source := range review.Sources {
+					if source.SubjectID != cold.Sources[j].SubjectID {
+						t.Fatal("warm partition reordered sources and could change the next proposal catalogue")
+					}
+				}
+			}
+			uncached := isolatedLearningReader(t, cache, provider)
+			uncached.opts.Executor.Enabled = false
+			uncached.learning = &atlas.LearningPlan{Version: 1, State: "ready"}
+			if err := uncached.executeLearning(t.Context(), []learningRequest{newLearningPool(evidence, false)}, learningPrompt); err != nil {
+				t.Fatal(err)
+			}
+			if len(provider.requests) != 10 || uncached.use(stageLearn).Cached != 0 {
+				t.Fatal("no-cache reused a saved partition or response")
+			}
+			if err := os.RemoveAll(filepath.Join(cache, llm.CacheDirectoryName)); err != nil {
+				t.Fatal(err)
+			}
+			cleared := run()
+			if len(provider.requests) != 15 || cleared.use(stageLearn).Cached != 0 {
+				t.Fatal("cache clear retained partition or response authority")
+			}
 			for _, prompt := range provider.prompts {
 				if strings.Contains(prompt.User, "private-") {
 					t.Fatal("request leaked local source identity")
 				}
 			}
 		})
+	}
+}
+
+func TestLearningPartitionMemoRevalidatesReplayAndExactInputs(t *testing.T) {
+	var evidence []learningEvidence
+	for i := 0; i < 4; i++ {
+		evidence = append(evidence, learningEvidence{Context: map[string]any{"ordinal": i, "original": "Original declaration."},
+			Source: atlas.QuestionStop{SubjectID: fmt.Sprintf("private-subject-%d", i), Path: fmt.Sprintf("file%d.py", i), Line: i + 1}})
+	}
+	pool := func() learningRequest { return newLearningPool(evidence, false) }
+	provider := &learningResourceProvider{refuse: func(pool learningRequest) error {
+		if len(pool.Evidence) > 2 {
+			return &llm.ResourceLimitError{Kind: llm.ResourceLimitOutputTokens}
+		}
+		return nil
+	}}
+	cache := t.TempDir()
+	run := func() *reader {
+		r := isolatedLearningReader(t, cache, provider)
+		r.learning = &atlas.LearningPlan{Version: 1, State: "ready"}
+		if err := r.executeLearning(t.Context(), []learningRequest{pool()}, learningPrompt); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	r := run()
+	if len(provider.requests) != 3 {
+		t.Fatal("fixture did not accept two children after one resource refusal")
+	}
+	plan, windows := r.planLearningPartitions([]learningRequest{pool()}, learningPrompt)
+	if len(windows) != 2 {
+		t.Fatal("complete accepted partition was not recalled")
+	}
+	memo, found, err := llm.LoadMemo(r.opts.Executor, plan.keys[0], llm.DecodeJSON[learningPartitionMemo](nil))
+	if err != nil || !found {
+		t.Fatalf("saved partition: %v", err)
+	}
+	raw, _ := json.Marshal(memo)
+	for _, forbidden := range []string{"private-subject", "Original declaration", "reviews", "reason", "context"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatal("partition memo copied evidence or reviews")
+		}
+	}
+	// Each input authority changes the exact partition identity independently.
+	changed, changedWindows := r.planLearningPartitions([]learningRequest{pool()}, learningPrompt+"\nDifferent proposal instruction.")
+	if changed.keys[0] == plan.keys[0] || len(changedWindows) != 1 {
+		t.Fatal("changed prompt reused an old partition")
+	}
+	evidence[0].Context["original"] = "Changed declaration."
+	changed, changedWindows = r.planLearningPartitions([]learningRequest{pool()}, learningPrompt)
+	if changed.keys[0] == plan.keys[0] || len(changedWindows) != 1 {
+		t.Fatal("changed original evidence reused an old partition")
+	}
+	evidence[0].Context["original"] = "Original declaration."
+	provider.state = "different-provider-configuration"
+	changed, changedWindows = r.planLearningPartitions([]learningRequest{pool()}, learningPrompt)
+	if changed.keys[0] == plan.keys[0] || len(changedWindows) != 1 {
+		t.Fatal("changed provider reused an old partition")
+	}
+	provider.state = ""
+	// A locally rebound subject keeps identical model input and current sources.
+	evidence[0].Source.SubjectID = "private-rebound-subject"
+	warm := run()
+	if len(provider.requests) != 3 || warm.learning.Reviews[0].Sources[0].SubjectID != "private-rebound-subject" {
+		t.Fatal("partition cache called the provider or restored stale local ownership")
+	}
+	// Even a structurally valid memo cannot point one range at another request.
+	wrong := learningPartitionMemo{Version: 1, Windows: append([]learningPartitionRange(nil), memo.Windows...)}
+	wrong.Windows[0].RequestKey = wrong.Windows[1].RequestKey
+	raw, _ = json.Marshal(wrong)
+	if err := llm.SaveMemo(r.opts.Executor, plan.keys[0], raw); err != nil {
+		t.Fatal(err)
+	}
+	_, windows = r.planLearningPartitions([]learningRequest{pool()}, learningPrompt)
+	if len(windows) != 1 {
+		t.Fatal("partition accepted a child request for different original evidence")
+	}
+	raw, _ = json.Marshal(memo)
+	if err := llm.SaveMemo(r.opts.Executor, plan.keys[0], raw); err != nil {
+		t.Fatal(err)
+	}
+	child, found, err := llm.CachedExchange(cache, memo.Windows[0].RequestKey)
+	if err != nil || !found {
+		t.Fatal("accepted child request missing")
+	}
+	prepared, err := llm.NewPrepared(child.Request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.reason = "A new review from the exact replay."
+	if _, err := llm.ReplayJSON(t.Context(), r.opts.Executor, provider, prepared); err != nil {
+		t.Fatal(err)
+	}
+	before := len(provider.requests)
+	warm = run()
+	if len(provider.requests) != before || warm.learning.Reviews[0].Reason != provider.reason {
+		t.Fatal("partition memo hid a child's current replay response")
+	}
+	// Replay accepts transport JSON; Learn still rejects a missing intent.
+	provider.invalid = func(pool learningRequest) bool { return pool.Evidence[0].Context["ordinal"] == float64(0) }
+	if _, err := llm.ReplayJSON(t.Context(), r.opts.Executor, provider, prepared); err != nil {
+		t.Fatal(err)
+	}
+	before = len(provider.requests)
+	warm = run()
+	if len(provider.requests) != before+1 || warm.use(stageLearn).Rejected != 1 || warm.use(stageLearn).Cached != 1 || warm.learning.Reviews[0].State != "unavailable" {
+		t.Fatal("invalid replay became an accepted review or reran the unchanged sibling")
+	}
+	// A successful replay of the complete parent replaces its older partition.
+	provider.invalid, provider.refuse = nil, nil
+	provider.reason = "A new complete-context review."
+	call, err := learningCall(pool(), learningPrompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err = llm.Prepare(provider, call.Prompt, call.Limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := llm.ReplayJSON(t.Context(), r.opts.Executor, provider, prepared); err != nil {
+		t.Fatal(err)
+	}
+	before = len(provider.requests)
+	warm = run()
+	if len(provider.requests) != before || warm.use(stageLearn).Cached != 1 || len(warm.learning.Reviews) != len(learningIntents()) || warm.learning.Reviews[0].PartialContext || warm.learning.Reviews[0].Reason != provider.reason {
+		t.Fatal("partition memo hid a current complete-parent replay")
+	}
+}
+
+func TestLearningPartitionDoesNotRememberUnavailableWindows(t *testing.T) {
+	provider := &learningResourceProvider{refuse: func(pool learningRequest) error {
+		if len(pool.Evidence) > 1 {
+			return &llm.ResourceLimitError{Kind: llm.ResourceLimitOutputTokens}
+		}
+		return nil
+	}, invalid: func(pool learningRequest) bool { return pool.Evidence[0].Context["ordinal"] == float64(0) }}
+	r := isolatedLearningReader(t, t.TempDir(), provider)
+	r.learning = &atlas.LearningPlan{Version: 1, State: "ready"}
+	pool := newLearningPool([]learningEvidence{{Context: map[string]any{"ordinal": 0}}, {Context: map[string]any{"ordinal": 1}}}, false)
+	if err := r.executeLearning(t.Context(), []learningRequest{pool}, learningPrompt); err != nil {
+		t.Fatal(err)
+	}
+	plan, windows := r.planLearningPartitions([]learningRequest{pool}, learningPrompt)
+	_, found, err := llm.LoadMemo(r.opts.Executor, plan.keys[0], llm.DecodeJSON[learningPartitionMemo](nil))
+	if err != nil || found || len(windows) != 1 || r.use(stageLearn).Rejected != 1 {
+		t.Fatal("incomplete resource subtree acquired a positive partition memo")
 	}
 }
 

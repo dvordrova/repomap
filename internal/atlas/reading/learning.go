@@ -372,16 +372,17 @@ func (r *reader) readLearning(ctx context.Context) error {
 
 func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, prompt string) error {
 	use := r.use(stageLearn)
+	partitions, planned := r.planLearningPartitions(pools, prompt)
 	titles := map[string]string{}
 	for _, intent := range learningIntents() {
 		titles[intent.ID] = intent.Title
 	}
 	windowIndex := 0
-	for len(pools) > 0 {
-		calls := make([]llm.Call[learningResponse], len(pools))
-		for i, pool := range pools {
+	for len(planned) > 0 {
+		calls := make([]llm.Call[learningResponse], len(planned))
+		for i, item := range planned {
 			var err error
-			calls[i], err = learningCall(pool, prompt)
+			calls[i], err = learningCall(item.Pool, prompt)
 			if err != nil {
 				return err
 			}
@@ -392,8 +393,10 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 		}
 		use.Windows += len(calls)
 		use.Rows += len(calls) * len(learningIntents())
-		var next []learningRequest
+		var next []learningWindow
 		for i, result := range results {
+			current := planned[i]
+			pool := current.Pool
 			windowIndex++
 			window := table.Window{Stage: stageLearn, Index: windowIndex}
 			for _, item := range []struct {
@@ -419,8 +422,8 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 			} else if !r.dry && len(result.Outcome.Request) > 0 {
 				use.Live++
 			}
-			if learningResourceFailure(result.Err) && len(pools[i].Evidence) > 1 {
-				children, err := splitLearningPool(pools[i])
+			if learningResourceFailure(result.Err) && len(pool.Evidence) > 1 {
+				children, err := splitLearningPool(pool)
 				if err != nil {
 					return err
 				}
@@ -428,7 +431,13 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 				if err != nil {
 					return err
 				}
-				next = append(next, children...)
+				partitions.split[current.Root] = true
+				start := current.Start
+				for _, child := range children {
+					end := start + len(child.Evidence)
+					next = append(next, learningWindow{Pool: child, Root: current.Root, Start: start, End: end})
+					start = end
+				}
 				// The failed request stays in operational history; only its children
 				// may produce source-bound reviews or unavailable context cells.
 				raw, err := json.MarshalIndent(struct {
@@ -456,14 +465,15 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 				}
 				for _, intent := range learningIntents() {
 					r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{
-						Intent: intent.ID, Title: intent.Title, State: "unavailable", Reason: reason, Source: atlas.SourceGiven, Window: windowIndex, PartialContext: pools[i].PartialContext})
+						Intent: intent.ID, Title: intent.Title, State: "unavailable", Reason: reason, Source: atlas.SourceGiven, Window: windowIndex, PartialContext: pool.PartialContext})
 				}
 				continue
 			}
+			partitions.accept(current, result.Outcome.CacheKey)
 			restore := func(refs []string) []atlas.QuestionStop {
 				var sources []atlas.QuestionStop
 				for _, ref := range refs {
-					for _, item := range pools[i].Evidence {
+					for _, item := range pool.Evidence {
 						if item.Ref == ref {
 							stop := item.Source
 							stop.Source = source
@@ -476,7 +486,7 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 			}
 			for _, review := range result.Outcome.Value.Reviews {
 				r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{Intent: review.Intent, Title: titles[review.Intent],
-					Window: windowIndex, PartialContext: pools[i].PartialContext, State: review.State, Reason: review.Reason, Source: source, Sources: restore(review.Sources)})
+					Window: windowIndex, PartialContext: pool.PartialContext, State: review.State, Reason: review.Reason, Source: source, Sources: restore(review.Sources)})
 				for _, q := range review.Questions {
 					origin := atlas.LearningOrigin{Intent: review.Intent, Title: titles[review.Intent], Question: q.Question, Why: q.Why, Source: source, Sources: restore(q.Sources)}
 					index := slices.IndexFunc(r.learning.Questions, func(old atlas.LearningQuestion) bool { return old.Question == q.Question })
@@ -496,8 +506,9 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 			}
 			fmt.Fprintf(&r.tables, "## %s · window %d · %s\n\n%s\n\n", stageLearn, windowIndex, source, raw)
 		}
-		pools = next
+		planned = next
 	}
+	r.saveLearningPartitions(partitions)
 	if err := r.selectLearning(ctx); err != nil {
 		return err
 	}
