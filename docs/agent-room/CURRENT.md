@@ -3602,7 +3602,8 @@ original excerpt stays literal. Cross-component link labels rebuild their
 component disambiguators from their already resolved destinations; native names,
 source anchors and model-written descriptions retain their separate ownership.
 
-Final current-binary ordinary publication passed on four real repositories:
+The accepted v4 translations and complete ordinary publications were verified
+on four real repositories:
 
 | Repository | Owner run | Complete targets | Questions: answered / partial | Display texts |
 | --- | --- | --- | --- | --- |
@@ -3622,7 +3623,12 @@ dependency catalogues, reduced documentation and GroupsIndexes. Ordinary warm
 repeats for all four made zero live calls or transport attempts. Canonical
 report content except timing and saved translations remain stable; Jieba's
 warm owner is `20260907-224255-jieba-03a710366393`. Full `make test`, `make vet`
-and `make build` passed on this final code.
+and `make build` passed on this final code. After the final dictionary-only
+corrections, ordinary display refreshes at `20260907-225451` (server, fixture
+and chi) and `20260907-225452` (Jieba) reuse these same accepted catalogues and
+translations with zero provider calls; the owner checklist links those latest
+HTML files. `work/final-{server,fixture,chi,jieba}-display-refresh.json` binds
+these refreshed publications to the original v4 verification.
 
 These are ordinary-path and display checks, not a guarantee about every answer.
 For example, chi's run answer still leaves the examples directory implicit,
