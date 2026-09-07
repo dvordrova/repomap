@@ -169,7 +169,7 @@ func encodeRequest(input Input, shape requestShape) ([]byte, catalog, error) {
 // *llm.ResourceLimitError when it is too large, and any other error as is.
 func requestFits(provider llm.Provider, wire []byte) error {
 	bounds := limits()
-	prepared, err := provider.Prepare(llm.Prompt{
+	prepared, err := llm.Prepare(provider, llm.Prompt{
 		System: strings.TrimSpace(promptText), User: string(wire), ResponseFormatJSON: true,
 	}, bounds)
 	if err != nil {

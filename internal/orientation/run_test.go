@@ -360,7 +360,7 @@ func (provider *presetProvider) State() []byte {
 }
 
 func (provider *presetProvider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
-	if !prompt.ResponseFormatJSON || prompt.System != strings.TrimSpace(promptText) || prompt.User == "" ||
+	if !prompt.ResponseFormatJSON || !strings.HasSuffix(prompt.System, "\n\n"+strings.TrimSpace(promptText)) || !strings.Contains(prompt.System, "prose in English.") || prompt.User == "" ||
 		limits.MaxRequestBytes != llm.SemanticRecordByteLimit ||
 		limits.MaxResponseBytes != llm.ProviderResponseByteLimit || limits.MaxOutputTokens != maxOutputTokens {
 		return llm.Prepared{}, fmt.Errorf("preset received invalid request contract")

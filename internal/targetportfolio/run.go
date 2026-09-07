@@ -30,7 +30,7 @@ func Run(
 		prompt := llm.Prompt{
 			System: promptSystem, User: fmt.Sprintf(promptUserShape, wire), ResponseFormatJSON: true,
 		}
-		_, prepareErr := provider.Prepare(prompt, portfolioCallLimits())
+		_, prepareErr := llm.Prepare(provider, prompt, portfolioCallLimits())
 		return requestFitResult(prepareErr)
 	})
 	if err != nil {
@@ -125,7 +125,7 @@ func runDefaultTournament(
 	remaining := append([]corpus.FileID(nil), refs...)
 	for round := 1; len(remaining) > 1; round++ {
 		batches, err := defaultBatchesWithFit(compilation, remaining, func(wire []byte) (bool, error) {
-			_, prepareErr := provider.Prepare(llm.Prompt{
+			_, prepareErr := llm.Prepare(provider, llm.Prompt{
 				System: defaultPromptSystem, User: fmt.Sprintf(defaultPromptUserShape, wire),
 				ResponseFormatJSON: true,
 			}, portfolioCallLimits())

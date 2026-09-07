@@ -10,6 +10,7 @@ const (
 	ResourceLimitRequestBytes  = llm.ResourceLimitRequestBytes
 	ResourceLimitResponseBytes = llm.ResourceLimitResponseBytes
 	ResourceLimitOutputTokens  = llm.ResourceLimitOutputTokens
+	ResourceLimitContextTokens = llm.ResourceLimitContextTokens
 )
 
 type ResourceLimitError = llm.ResourceLimitError

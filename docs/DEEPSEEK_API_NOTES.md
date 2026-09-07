@@ -105,6 +105,18 @@ saved request bytes rather than applying new environment settings to them.
   journal; a sensitive body is reduced to its guarded hash/count metadata.
   The user-facing error reports only a closed failure class, safe HTTP status,
   transport-attempt count, and fixed corrective guidance.
+- An explicit HTTP 400/413 context overflow is a typed `context_tokens`
+  resource result, with the unchanged body retained for diagnostics. The
+  adapter recognizes the closed `context_length_exceeded` code, the explicit
+  `Input token exceed the limit` message, or a numeric maximum-context refusal
+  whose requested/input/reserved-output counts agree. A generic 400, quota
+  failure or unsupported parameter does not authorize splitting. Transport
+  does not retry unchanged bytes for this failure. A cube with a lossless
+  repartition can split complete input items through the shared executor;
+  an indivisible input remains a resource failure. The actual 2026-09-07 etcd
+  probe reported 1,656,470 input plus 128,000 reserved output tokens against
+  a 1,048,576-token provider context. This is an observed refusal, not a new
+  hardcoded product token limit.
 - Provider inputs remain bounded and request-local. A domain cube may include
   a complete names-only tracked-file dictionary when its contract requires
   repository-wide matching; that is not permission to include corresponding

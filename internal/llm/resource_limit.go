@@ -21,6 +21,7 @@ const (
 	ResourceLimitRecordBytes   ResourceLimitKind = "record_bytes"
 	ResourceLimitCatalogItems  ResourceLimitKind = "catalog_items"
 	ResourceLimitOutputTokens  ResourceLimitKind = "output_tokens"
+	ResourceLimitContextTokens ResourceLimitKind = "context_tokens"
 	ResourceLimitSemanticCalls ResourceLimitKind = "semantic_calls"
 )
 

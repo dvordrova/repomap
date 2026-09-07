@@ -637,7 +637,7 @@ func requestFits(provider llm.Provider, systemPrompt string, request any) (bool,
 	if err != nil {
 		return false, fmt.Errorf("documentation reduce: encode provider request: %w", err)
 	}
-	_, err = provider.Prepare(llm.Prompt{
+	_, err = llm.Prepare(provider, llm.Prompt{
 		System: strings.TrimSpace(systemPrompt), User: string(wire), ResponseFormatJSON: true,
 	}, limits())
 	if err == nil {

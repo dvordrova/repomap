@@ -494,6 +494,9 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resourceErr := providerContextLimit(resp.StatusCode, respBody); resourceErr != nil {
+			return chatCompletion{Content: append([]byte(nil), respBody...), ResponseBytes: len(respBody)}, false, resourceErr
+		}
 		retry := isRetryableHTTP(resp.StatusCode)
 		retryAfter := retryAfterDuration(resp.Header.Get("Retry-After"), time.Now())
 		if resp.StatusCode == http.StatusTooManyRequests {

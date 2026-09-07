@@ -43,7 +43,7 @@ func ExecuteJSON[T any](
 		return outcome, err
 	}
 
-	prepared, err := provider.Prepare(call.Prompt, call.Limits)
+	prepared, err := Prepare(provider, call.Prompt, call.Limits)
 	if err != nil {
 		outcome.Issues = observe(executor.Observer, Event{
 			Kind: EventFailure, Source: SourceLive, Failure: FailurePrepare,

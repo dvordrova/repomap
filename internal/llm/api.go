@@ -24,6 +24,10 @@ type Prompt struct {
 	System             string
 	User               string
 	ResponseFormatJSON bool
+	// ResponseLanguage controls generated prose, independently of the source
+	// language and provider. Empty means English. Presentation translation
+	// supplies its target language tag after the English analysis is complete.
+	ResponseLanguage string
 	// Reasoning requests deliberate reasoning when the provider supports it.
 	// Its tokens share the call's output budget.
 	Reasoning bool
@@ -396,7 +400,7 @@ func normalizeProviderFailure(failure ProviderFailure) ProviderFailure {
 func validResourceLimitKind(kind ResourceLimitKind) bool {
 	switch kind {
 	case ResourceLimitRequestBytes, ResourceLimitResponseBytes, ResourceLimitRecordBytes,
-		ResourceLimitCatalogItems, ResourceLimitOutputTokens, ResourceLimitSemanticCalls:
+		ResourceLimitCatalogItems, ResourceLimitOutputTokens, ResourceLimitContextTokens, ResourceLimitSemanticCalls:
 		return true
 	default:
 		return false
@@ -425,6 +429,8 @@ func providerFailureGuidance(failure ProviderFailure) string {
 		switch failure.ResourceKind {
 		case ResourceLimitOutputTokens:
 			return "reduce the requested result, or raise the output-token limit where configurable"
+		case ResourceLimitContextTokens:
+			return "partition the complete input into smaller requests, or use a provider with a larger context window"
 		case ResourceLimitResponseBytes:
 			return "reduce the requested result, or raise the response limit where configurable"
 		case ResourceLimitSemanticCalls:

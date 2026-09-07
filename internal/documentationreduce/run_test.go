@@ -201,7 +201,7 @@ func (provider *documentationPresetProvider) Complete(
 	var response modelResponse
 	switch {
 	case raw["documents"] != nil:
-		if prompt.System != strings.TrimSpace(sourcePrompt) {
+		if !strings.HasSuffix(prompt.System, "\n\n"+strings.TrimSpace(sourcePrompt)) || !strings.Contains(prompt.System, "prose in English.") {
 			return llm.Completion{}, fmt.Errorf("preset source prompt mismatch")
 		}
 		var request sourceRequest
@@ -238,7 +238,7 @@ func (provider *documentationPresetProvider) Complete(
 		}
 		response.Sources = append(response.Sources, responseSource{Ref: "d999"})
 	case raw["candidates"] != nil:
-		if prompt.System != strings.TrimSpace(mergePrompt) {
+		if !strings.HasSuffix(prompt.System, "\n\n"+strings.TrimSpace(mergePrompt)) || !strings.Contains(prompt.System, "prose in English.") {
 			return llm.Completion{}, fmt.Errorf("preset merge prompt mismatch")
 		}
 		var request mergeRequest

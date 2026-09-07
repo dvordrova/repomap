@@ -16,7 +16,7 @@ func MemoIdentity(provider Provider, state []byte, prompt Prompt, limits Limits)
 	if err != nil {
 		return "", err
 	}
-	prepared, err := provider.Prepare(prompt, limits)
+	prepared, err := Prepare(provider, prompt, limits)
 	if err != nil {
 		return "", err
 	}

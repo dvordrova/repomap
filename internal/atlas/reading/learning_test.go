@@ -447,8 +447,11 @@ func TestLearnPromptKeepsAudienceAndMergeContracts(t *testing.T) {
 		if err := json.Unmarshal(raw, &prompt); err != nil {
 			t.Fatal(err)
 		}
-		seenAudience = seenAudience || prompt.System == learningSelectPrompt
-		seenMerge = seenMerge || prompt.System == learningMergePrompt
+		if !strings.Contains(prompt.System, "prose in English.") {
+			t.Fatal("learning request lost the shared English response policy")
+		}
+		seenAudience = seenAudience || strings.HasSuffix(prompt.System, "\n\n"+learningSelectPrompt)
+		seenMerge = seenMerge || strings.HasSuffix(prompt.System, "\n\n"+learningMergePrompt)
 	}
 	if !seenAudience || !seenMerge {
 		t.Fatal("missing independent subtable prompts")

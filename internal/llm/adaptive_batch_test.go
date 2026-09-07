@@ -143,3 +143,15 @@ func TestExecuteAdaptiveJSONBatchKeepsAtomicResourceFailureTerminal(t *testing.T
 		t.Fatalf("provider attempts = %d, want 1", provider.attempts)
 	}
 }
+
+func TestExecuteAdaptiveJSONBatchSplitsExplicitContextRefusal(t *testing.T) {
+	provider := &adaptiveBatchTestProvider{kind: ResourceLimitContextTokens}
+	plan, outcomes, err := ExecuteAdaptiveJSONBatch(t.Context(), Executor{}, provider,
+		[][]string{{"a", "b"}}, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
+	if err != nil || len(plan) != 2 || len(outcomes) != 2 || outcomes[0].Value.Value != "a" || outcomes[1].Value.Value != "b" {
+		t.Fatalf("context split: %#v, %#v, %v", plan, outcomes, err)
+	}
+	if provider.attempts != 3 {
+		t.Fatalf("attempts = %d, want one refusal and two complete partitions", provider.attempts)
+	}
+}

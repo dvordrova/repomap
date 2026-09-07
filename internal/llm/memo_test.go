@@ -50,4 +50,12 @@ func TestMemoIdentityChangesWithModelAndSemanticState(t *testing.T) {
 	if err != nil || second == third || provider.completeCalls != 0 {
 		t.Fatalf("basis change or preparation made a provider call: %v, calls %d", err, provider.completeCalls)
 	}
+	english, err := MemoIdentity(provider, []byte(`{"entity":"x","basis":"two"}`), Prompt{User: "row", ResponseLanguage: "en"}, Limits{})
+	if err != nil || english != third {
+		t.Fatalf("explicit English changed the default memo: %v", err)
+	}
+	russian, err := MemoIdentity(provider, []byte(`{"entity":"x","basis":"two"}`), Prompt{User: "row", ResponseLanguage: "ru"}, Limits{})
+	if err != nil || russian == english || provider.completeCalls != 0 {
+		t.Fatalf("translation language reused English memo or made a call: %v", err)
+	}
 }

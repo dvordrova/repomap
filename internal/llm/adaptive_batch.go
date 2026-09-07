@@ -18,7 +18,7 @@ type AdaptiveBatchAccounting struct {
 }
 
 // ExecuteAdaptiveJSONBatch executes a complete caller-ordered plan. When the
-// real provider response or output-token envelope rejects one non-atomic item,
+// real provider context, response or output-token envelope rejects one non-atomic item,
 // split deterministically replaces that item and the complete plan is retried.
 // Accepted sibling requests may be served from their identity-bound cache;
 // no partial outcomes are returned as semantic authority.
@@ -73,7 +73,8 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 		if !errors.As(err, &itemErr) || itemErr.Index < 0 || itemErr.Index >= len(plan) ||
 			!errors.As(err, &resourceErr) ||
 			(resourceErr.Kind != ResourceLimitResponseBytes &&
-				resourceErr.Kind != ResourceLimitOutputTokens) {
+				resourceErr.Kind != ResourceLimitOutputTokens &&
+				resourceErr.Kind != ResourceLimitContextTokens) {
 			return nil, nil, accounting, err
 		}
 		left, right, ok := split(plan[itemErr.Index])
