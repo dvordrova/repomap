@@ -169,13 +169,48 @@ confirmed server → EtcdServer.run → Storage engine → Compaction logic →
 API and networking. Operation paging preserves that selection; All uses
 leaves the operation while retaining the area, then Back returns to Component.
 At a deeper page scroll, however, the operation and area/part trail disappear
-above the viewport while the map and sticky inspector remain visible. This is
-an open wide-desktop UX31 gap: preserved state does not keep the original task
-visible. The pass is recorded in `work/ui-ux-etcd-wide-operation.md`; its
+above the viewport while the map and sticky inspector remain visible. The
+existing sticky reading-location now also links to the map's current Structure
+or Operations view, with its selected/preview operation and area/part trail.
+It updates on that visible map's committed layout, separately from a hover
+subject or an explicitly opened Full details section. Following the link
+restores the current map explanation and scrolls to its controls without
+redrawing the map. A wide 1280×720 browser pass confirmed the operation/path
+above a scrolled map, and an exact round trip with a nonempty Compaction filter,
+four zoom steps and scrollLeft=260. All uses removes the operation from that
+line while retaining the area/part. This addresses the specific disappearing
+path, not the broader question of understandable levels. The original pass is
+recorded in `work/ui-ux-etcd-wide-operation.md` and the follow-up in
+`work/ui-ux-etcd-location-root.md`; their
 Go-rendered HTML and analysis remain frozen, so it is not current-binary
 ordinary acceptance. Apparent duplicate Revision term labels in that old HTML
 are already disambiguated by current Go rendering and do not justify another
 product fix. Fresh ordinary visual acceptance remains open.
+
+The owner subsequently clarified that the levels themselves are confusing:
+“Root library”, and even the Python report's “front → backend” overview,
+do not explain a useful system structure. Evaluate actual cube clicks on
+different repository types, including a library and a small server from
+`~/git`, before treating a preserved breadcrumb as success. In the frozen
+Python report, front → Area Page views → Part Page views repeats the same
+name and graph before exposing the code link. In frozen etcd, Root library
+opens an empty application-shaped sequence (no HTTP routes, no entrypoints,
+no core groups) rather than a useful library introduction. Root comes from
+the renderer's substitution for the directory `.`; Kind is separate technical
+metadata. A title-only rename does not resolve these display-level problems.
+UX37–UX38 retain the owner's feedback and the actual screenshots. These are
+presentation observations, not a reopened truth audit of all generated text.
+
+The owner confirmed provider access and authorized fresh runs of `~/git/chi`
+and `~/git/go-http-server`. Both current-binary ordinary attempts at 18:30 UTC
+still terminated at repository guidance with HTTP 402, before publication:
+`20260907-183052-chi-3b3b0e6bb93b` and
+`20260907-183052-go-http-server-9c46a0303b13`. Both process handles returned
+exit 1. Neither endpoint variable is set in this shell, so the adapter uses
+its official api.deepseek.com default. Provider configuration clarification
+is pending; do not repeat these attempts without a further access change.
+The new repository comparison remains unfinished. Its sources, attempts and
+local display evidence are recorded in `work/ui-ux-levels-cross-repository.md`.
 
 That walkthrough exposed loss of the originating question when opening the
 term library or a map. The existing reading navigator now keeps a visible

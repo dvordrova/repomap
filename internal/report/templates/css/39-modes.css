@@ -14,6 +14,8 @@
 .reading-modes button[aria-pressed=true]{background:var(--accent);color:white;font-weight:650}
 .reading-location{flex-basis:100%;font-size:var(--text-small);color:var(--muted)}
 .reading-location:empty{display:none}
+.reading-map-context{margin-left:.65rem;text-decoration:underline;text-underline-offset:.15em}
+.reading-map-context[hidden]{display:none}
 .reading-return{display:flex;flex-wrap:wrap;gap:.4rem 1rem;flex-basis:100%;padding:.4rem .65rem;border:1px solid var(--line);border-radius:5px;background:var(--paper);font-size:var(--text-small);line-height:1.4}
 .reading-return a[hidden]{display:none}
 .reading-return[hidden]{display:none}

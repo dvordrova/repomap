@@ -6,6 +6,8 @@
   var home=document.getElementById('overview'), repoMap=document.getElementById('repository-map');
   if(!bar||!home)return;
   var toolbar=bar.closest('.report-toolbar');
+  var locationLine=toolbar.querySelector('.reading-location'),locationName=document.createElement('span'),mapContext=document.createElement('a');
+  mapContext.className='reading-map-context';mapContext.hidden=true;locationLine.append(locationName,' ',mapContext);
   var returnLinks=document.createElement('div');returnLinks.className='reading-return';returnLinks.hidden=true;toolbar.appendChild(returnLinks);
   var returnLink=document.createElement('a'),termLink=document.createElement('a'),mapLink=document.createElement('a');returnLinks.append(returnLink,termLink,mapLink);
   var detailGroup=null;
@@ -24,6 +26,15 @@
     if(map){mapLink.href='#'+current.id;mapLink.textContent='← Back to map: '+map.explorationLabel();}
     returnLinks.hidden=returnLink.hidden&&termLink.hidden&&mapLink.hidden;
   }
+  function showLocation(){
+    var place=current===home?'':(current.dataset.componentName||current.querySelector('h2')?.textContent||'');
+    var detailTitle=detailGroup&&detailGroup.querySelector('.group-head h4').cloneNode(true);
+    if(detailTitle)detailTitle.querySelectorAll('button,.model-sources').forEach(function(n){n.remove();});
+    locationName.textContent=document.querySelector('.brand .repo').textContent+(place?' · '+place:'')+(detailTitle?' · Full details: '+detailTitle.textContent:'');
+    var map=!detailGroup&&current.querySelector('[data-map-explorer]');
+    mapContext.hidden=!map;
+    if(map){mapContext.href='#'+current.id;mapContext.textContent='Map: '+map.explorationLabel();}
+  }
   function setPage(node){
     var page=enclosing(node);if(!page)return;
     var nextQuestion=node.closest('.reading-guide');
@@ -34,11 +45,7 @@
     else if(node.id==='concepts')term=null;
     revealConcept(node);
     current=page;detailGroup=node.closest('.group');pages.forEach(function(p){p.hidden=p!==page;});
-    showReturn();
-    var place=page===home?'':(page.dataset.componentName||page.querySelector('h2')?.textContent||'');
-    var detailTitle=detailGroup&&detailGroup.querySelector('.group-head h4').cloneNode(true);
-    if(detailTitle)detailTitle.querySelectorAll('button,.model-sources').forEach(function(n){n.remove();});
-    document.querySelector('.reading-location').textContent=document.querySelector('.brand .repo').textContent+(place?' · '+place:'')+(detailTitle?' · Full details: '+detailTitle.textContent:'');
+    showReturn();showLocation();
     for(var p=node;p&&p!==page;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;
     document.querySelectorAll('.target-picker').forEach(function(p){p.open=false;});
     // Navigation scrolls immediately; the return links and search panel may
@@ -62,7 +69,13 @@
   // All navigators (search, map deep links and ordinary anchors) reveal the
   // existing section before any map measures its available space.
   document.addEventListener('repomap:navigate',function(e){var node=e.detail.destination;if(!enclosing(node))return;setPage(node);address(node);});
+  // Layout commits the explorer's operation and scope. Hidden maps and the
+  // inspector's temporary hover subject must not replace this reading context.
+  document.addEventListener('repomap:layout',function(e){if(!detailGroup&&enclosing(e.target)===current)showLocation();},true);
   document.addEventListener('click',function(e){
+    if(e.target.closest('a')===mapContext&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
+      e.preventDefault();var contextMap=current.querySelector('[data-map-explorer]');contextMap.resumeExploration();contextMap.scrollIntoView({block:'start'});return;
+    }
     if(e.target.closest('a')===mapLink&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
       e.preventDefault();var map=current.querySelector('[data-map-explorer]');
       setPage(map);address(current);map.resumeExploration();map.scrollIntoView({block:'start'});return;
