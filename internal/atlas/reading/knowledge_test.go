@@ -3,6 +3,7 @@ package reading
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,6 +23,157 @@ type replacementProvider struct {
 
 func (p *replacementProvider) Complete(context.Context, llm.Prepared) (llm.Completion, error) {
 	return llm.Completion{Response: p.response, ChoiceCount: 1, FinishReason: llm.FinishStop, Metrics: llm.Metrics{Attempts: 1}}, nil
+}
+
+type distinctDescriptionProvider struct {
+	tableProvider
+	symbolRows int
+}
+
+func (p *distinctDescriptionProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	completion, err := p.tableProvider.Complete(ctx, prepared)
+	if err != nil {
+		return completion, err
+	}
+	var request struct{ Table string }
+	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil || request.Table != lines.StageSymbols {
+		return completion, err
+	}
+	var response struct{ Rows []map[string]string }
+	if err := json.Unmarshal(completion.Response, &response); err != nil {
+		return completion, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, row := range response.Rows {
+		p.symbolRows++
+		row["line"] = fmt.Sprintf("Accepted description number %d.", p.symbolRows)
+	}
+	completion.Response, err = json.Marshal(map[string]any{"rows": response.Rows})
+	return completion, err
+}
+
+func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) {
+	graph := knowledgeGraph(t)
+	firstID := atlas.SymbolID("pkg/a/y.go", 3, "help")
+	secondID := atlas.SymbolID("pkg/a/y.go", 8, "help")
+	for _, place := range graph.Places {
+		if place.ID != firstID {
+			continue
+		}
+		other := place
+		facts := *place.Symbol
+		other.ID, other.LineNo, other.Symbol = secondID, 8, &facts
+		other.Symbol.Decl.LineNo = 8
+		other.Symbol.Decl.ObjectID = "different-native-object"
+		graph.Places = append(graph.Places, other)
+		break
+	}
+	atlas.SortPlaces(graph.Places)
+	cache := t.TempDir()
+	provider := &distinctDescriptionProvider{}
+	opts := readOptions(t, graph, provider, cache)
+	opts.Through, opts.WindowRows = lines.StageSymbols, 1
+	first := readKnowledge(t, opts)
+	a, b := first[firstID], first[secondID]
+	if provider.symbolRows != 3 {
+		t.Fatalf("provider saw %d symbol rows, want three distinct inputs for four declarations", provider.symbolRows)
+	}
+	if a.ID == b.ID || a.SubjectID == b.SubjectID || a.Line != 3 || b.Line != 8 ||
+		a.ContextID != atlas.FileID("pkg/a/y.go") || b.ContextID != a.ContextID ||
+		a.BasisID != b.BasisID || !reflect.DeepEqual(a.Cells, b.Cells) ||
+		a.OriginRequest != b.OriginRequest || a.OriginResponse != b.OriginResponse {
+		t.Fatalf("shared answer lost distinct current source bindings: %+v / %+v", a, b)
+	}
+	journal, err := os.ReadFile(filepath.Join(opts.OwnerRunDir, atlas.TablesFilename))
+	if err != nil || !strings.Contains(string(journal), "Shared exact input "+secondID+" · representative "+firstID) {
+		t.Fatalf("shared source has no explicit journal binding: %v", err)
+	}
+	warmProvider := &distinctDescriptionProvider{}
+	warmOpts := readOptions(t, graph, warmProvider, cache)
+	warmOpts.Through, warmOpts.WindowRows = lines.StageSymbols, 3
+	warm := readKnowledge(t, warmOpts)
+	if warmProvider.calls != 0 || warmProvider.symbolRows != 0 {
+		t.Fatal("unchanged warm reading repeated an exact description input")
+	}
+	for id, record := range first {
+		if record.ID != warm[id].ID || !reflect.DeepEqual(record.Cells, warm[id].Cells) {
+			t.Fatalf("warm reading changed a current hint or binding: %s", id)
+		}
+	}
+	replayLine := func(record Knowledge, text string) {
+		t.Helper()
+		ref, found, err := llm.LoadMemo(opts.Executor, record.BasisID, llm.DecodeJSON[rememberedRow](nil))
+		if err != nil || !found {
+			t.Fatalf("memo: %v", err)
+		}
+		exchange, found, err := llm.CachedExchange(cache, ref.RequestKey)
+		if err != nil || !found {
+			t.Fatalf("exchange: %v", err)
+		}
+		var response struct{ Rows []map[string]string }
+		if err := json.Unmarshal(exchange.Response, &response); err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range response.Rows {
+			if row["key"] == ref.RowKey {
+				row["line"] = text
+			}
+		}
+		raw, _ := json.Marshal(map[string]any{"rows": response.Rows})
+		prepared, _ := llm.NewPrepared(exchange.Request)
+		if _, err := llm.ReplayJSON(t.Context(), opts.Executor, &replacementProvider{response: raw}, prepared); err != nil {
+			t.Fatal(err)
+		}
+	}
+	replayLine(a, "Updated shared description.")
+	updatedProvider := &distinctDescriptionProvider{}
+	updatedOpts := readOptions(t, graph, updatedProvider, cache)
+	updatedOpts.Through = lines.StageSymbols
+	updated := readKnowledge(t, updatedOpts)
+	if updatedProvider.calls != 0 {
+		t.Fatal("replay required a new description request")
+	}
+	for _, id := range []string{firstID, secondID} {
+		if updated[id].Cells["line"] != "Updated shared description." || updated[id].ID == first[id].ID ||
+			updated[id].SubjectID != first[id].SubjectID || updated[id].Line != first[id].Line {
+			t.Fatalf("replay did not refresh the original subject: %s", id)
+		}
+	}
+	// A changed parent's actual line is a new input, even when the source
+	// name and declaration signature remain identical to their prior values.
+	replayLine(first[atlas.FileID("pkg/a/y.go")], "A different parent-file purpose.")
+	changedProvider := &distinctDescriptionProvider{}
+	changedOpts := readOptions(t, graph, changedProvider, cache)
+	changedOpts.Through = lines.StageSymbols
+	changed := readKnowledge(t, changedOpts)
+	if changedProvider.calls != 1 || changedProvider.symbolRows != 1 {
+		t.Fatalf("changed parent input requires one new shared decision: calls=%d rows=%d", changedProvider.calls, changedProvider.symbolRows)
+	}
+	for _, id := range []string{firstID, secondID} {
+		if changed[id].BasisID == updated[id].BasisID || !strings.Contains(string(changed[id].Input), "A different parent-file purpose.") {
+			t.Fatal("different parent hypothesis reused an old input")
+		}
+	}
+	if changed[firstID].ID == changed[secondID].ID || !reflect.DeepEqual(changed[firstID].Cells, changed[secondID].Cells) {
+		t.Fatal("new shared decision merged native subjects")
+	}
+	refusedProvider := &tableProvider{refuse: map[string]bool{"pkg/a/y.go": true}}
+	refusedOpts := readOptions(t, graph, refusedProvider, t.TempDir())
+	refusedOpts.Through, refusedOpts.WindowRows = lines.StageSymbols, 1
+	refused, err := Read(t.Context(), refusedOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var symbols atlas.StageUse
+	for _, use := range refused.Uses {
+		if use.Stage == lines.StageSymbols {
+			symbols = use
+		}
+	}
+	if symbols.Rows != 4 || symbols.Given != 2 || symbols.Windows != 3 || symbols.Rejected != 1 {
+		t.Fatalf("refused shared row lost original source accounting: %+v", symbols)
+	}
 }
 
 func TestKnowledgeReadsReplayedRowsWithoutRepeatingAnalysis(t *testing.T) {

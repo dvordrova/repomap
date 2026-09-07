@@ -170,14 +170,16 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
 }
 
-// runIndependent removes known entities before planning provider windows, then
-// binds each accepted answer back to the entity, independent of its batch key.
+// runIndependent removes known entities and coalesces identical missing inputs
+// before planning provider windows. Every original entity keeps its own binding
+// to the one accepted answer, independent of its provider batch key.
 func (r *reader) runIndependent(ctx context.Context, def table.Definition, round int, shared []table.Field, rows []table.Row) ([]rowAnswer, error) {
 	answers := make([]rowAnswer, len(rows))
 	inputs := make([]Knowledge, len(rows))
 	reused := make([]bool, len(rows))
 	var missing []table.Row
-	var positions []int
+	var positions [][]int
+	missingByBasis := make(map[string]int)
 	for i, row := range rows {
 		k, window, err := r.knowledgeInput(def, shared, row)
 		if err != nil {
@@ -208,8 +210,13 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 			r.use(def.Stage).Rows++
 			r.use(def.Stage).Given++
 		} else {
-			missing = append(missing, row)
-			positions = append(positions, i)
+			if group, found := missingByBasis[k.BasisID]; found {
+				positions[group] = append(positions[group], i)
+			} else {
+				missingByBasis[k.BasisID] = len(missing)
+				missing = append(missing, row)
+				positions = append(positions, []int{i})
+			}
 		}
 	}
 	if len(missing) > 0 {
@@ -217,10 +224,22 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 		if err != nil {
 			return nil, err
 		}
-		for j, position := range positions {
-			answers[position] = fresh[j]
+		for j, group := range positions {
+			for alias, position := range group {
+				answers[position] = fresh[j]
+				if alias == 0 {
+					continue
+				}
+				r.use(def.Stage).Rows++
+				if fresh[j].answer == nil {
+					r.use(def.Stage).Given++
+				}
+				fmt.Fprintf(&r.tables, "- Shared exact input %s · representative %s · request %s · row %s\n",
+					rows[position].ID, missing[j].ID, fresh[j].requestKey, fresh[j].rowKey)
+			}
 		}
 	}
+	saved := make(map[string]bool)
 	for i, answer := range answers {
 		if answer.answer == nil {
 			continue
@@ -231,7 +250,7 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 		k.ID = k.identity(r.opts.Repository)
 		r.knowledge[k.PlaceID] = &k
 		r.knowledgeSubjects[k.SubjectID] = &k
-		if !r.recallOnly && !reused[i] {
+		if !r.recallOnly && !reused[i] && !saved[k.BasisID] {
 			raw, err := json.Marshal(rememberedRow{RequestKey: answer.requestKey, RowKey: answer.rowKey})
 			if err != nil {
 				return nil, err
@@ -239,6 +258,7 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 			if err := llm.SaveMemo(r.opts.Executor, k.BasisID, raw); err != nil {
 				return nil, err
 			}
+			saved[k.BasisID] = true
 		}
 	}
 	return answers, nil
