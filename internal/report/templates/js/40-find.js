@@ -12,7 +12,7 @@
   var kind=panel.querySelector('[aria-label="Search result type"]'),component=panel.querySelector('[aria-label="Search component"]'),status=panel.querySelector('.find-status'),results=panel.querySelector('ol'),pages=panel.querySelector('.find-pages'),page=0,pageSize=12;
   var entries=[],components={},groupNodes={},codeEntries=new Map(),lastQuery='';
   function modelText(node){if(!node)return '';var copy=node.cloneNode(true);copy.querySelectorAll('.source-hint,.model-sources').forEach(function(n){n.remove();});return copy.textContent;}
-  function add(entry){entry.title=entry.title||'';entry.summary=entry.summary||'';entry.path=entry.path||'';entry.haystack=(entry.title+' '+entry.summary+' '+entry.path+' '+entry.component).toLowerCase();entries.push(entry);}
+  function add(entry){entry.title=entry.title||'';entry.summary=entry.summary||'';entry.path=entry.path||'';entry.haystack=(entry.title+' '+entry.summary+' '+entry.path+' '+entry.component+' '+(entry.additionalText||'')).toLowerCase();entries.push(entry);}
   document.querySelectorAll('.repo-map .repo-node[data-node]').forEach(function(n){
     var id=(n.getAttribute('href')||'').slice(1);if(!id)return;
     components[id]=n.dataset.title;
@@ -21,9 +21,11 @@
   Object.keys(components).sort(function(a,b){return components[a].localeCompare(components[b]);}).forEach(function(id){var option=document.createElement('option');option.value=id;option.textContent=components[id];component.appendChild(option);});
   document.querySelectorAll('[data-map-explorer] [data-node]').forEach(function(n){
     if(n.dataset.remote==='true')return;
+    var map=n.closest('[data-map-explorer]');
+    if(map.displayedNode(n)!==n)return;
     var section=n.closest('section'),id=section.id,href=n.getAttribute('href');
     if(href&&href[0]==='#'&&!n.dataset.activation&&!n.dataset.branch)groupNodes[href.slice(1)]=n;
-    add({title:n.dataset.title,summary:n.dataset.summary,component:components[id]||section.querySelector('h2').textContent,section:id,kind:n.dataset.activation?'operation':'part',type:n.dataset.activation|| (n.dataset.branch?'Area':'Part'),node:n,map:n.closest('[data-map-explorer]')});
+    add({title:n.dataset.title,summary:n.dataset.summary,additionalText:map.areaDescriptions(n).join(' '),component:components[id]||section.querySelector('h2').textContent,section:id,kind:n.dataset.activation?'operation':'part',type:n.dataset.activation|| (n.dataset.branch?'Area':'Part'),node:n,map:map});
   });
   // Retain every displayed membership; overlapping executable/library views
   // stay separate and explicitly labelled.

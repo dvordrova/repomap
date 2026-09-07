@@ -24,7 +24,7 @@
 </div>
 <figcaption class="map-note"><span class="map-line">Explore areas and their parts, or select an operation. Click a connection to inspect what it contains. Solid lines are code relations; dashed lines include an interpretation or unresolved dispatch.{{if .Hidden}} {{.Hidden}} more groups are on the cards below.{{end}}</span>
 <details class="map-legend"><summary>legend</summary><ul class="plain">
-<li>Structure starts with related areas. Click an area to open its parts, or a part to see its callers and dependencies. Back returns to the previous scope.</li>
+<li>Structure shows areas and parts. Click an area to open its parts, or a part to see its callers and dependencies. Back returns to the containing area or component.</li>
 {{if .Operations}}<li>Operations follows one command, endpoint or activity. Its context stays selected while you explore; All uses returns to the complete structure.</li>{{end}}
 <li>A connection may contain several relations between the folded areas. Click it to read the individual endpoints and evidence. These are static relations, not a recorded execution.</li>
 {{if .Subjects}}<li>These groups name {{.Grouped}} of this target's {{.Subjects}} symbols and connections.</li>{{end}}

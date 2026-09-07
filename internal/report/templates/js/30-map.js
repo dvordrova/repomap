@@ -346,6 +346,13 @@
       }
       html += '<details class="map-card-evidence"><summary>Code and connections</summary>';
       if (counts && !node.dataset.activation) html += '<span class="map-card-meta">' + escapeText(counts) + '</span>';
+      if(map.areaDescriptions){
+        var descriptions=Array.from(new Set(map.areaDescriptions(node))).filter(function(text){return text&&text!==summary;});
+        if(descriptions.length){
+          html+='<details><summary>Additional model description</summary>';
+          descriptions.forEach(function(text){html+='<p>'+escapeText(text)+'</p>';});html+='</details>';
+        }
+      }
       var operation = map.inspectedOperation;
       var witness = operation && !node.dataset.activation && JSON.parse(operation.dataset.callPaths || '{}')[id];
       if (witness && witness.length) {
