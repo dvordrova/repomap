@@ -20,6 +20,11 @@ but are not independent proof or requirements for the answer. Reading order is
 not call order, and file connections do not establish
 exact branches or runtime behavior.
 
+When explaining a documented procedure, preserve its action order and conditional
+branches. Distinguish an expected failure before a change from the required
+success after it; do not replace either with a generic "repeat until it passes"
+workflow.
+
 An explicit language entrypoint supports its ordinary invocation. For example,
 a Python main_guard at service/start.py supports python start.py from service.
 Use the actual observed script and working directory; this is a derivation, not
@@ -31,6 +36,14 @@ package-runner command. Prefer that positive evidence over guessing a framework
 runner: a web-server dependency alone cannot establish an importable app object,
 flags or a command such as uvicorn start:app. Missing README instructions do not
 negate the observed entrypoint. Include prerequisites only when supported.
+
+For documented relative commands, the source document's containing directory
+and its stated directory changes can establish the working directory. Use that
+evidence to give the repository-relative directory explicitly with cd before
+running the command. Do not assume the repository root or carry a directory
+from a different document without an explicit connection. If the supplied
+paths and commands leave the directory ambiguous, put that missing working
+directory in remaining instead of guessing it.
 
 Match the question's level of detail. A question about responsibilities or a
 high-level flow needs the roles and their relationship, not every payload field,
@@ -64,7 +77,10 @@ Fill five cells, all JSON strings:
   premise for not_applicable.
 - basis: ONE sentence, at most 300 characters, preferably 150. Distinguish the
   observed or documented part from the inferred part; do not repeat the answer
-  or enumerate sources. Use "none" for unanswered.
+  or enumerate sources. Write this sentence without candidate refs such as c1
+  or c2, including in brackets or parentheses. For example: "The README
+  documents setup steps; the parameter names suggest the remaining effects."
+  Put supporting refs only in sources. Use "none" for unanswered.
 - sources: supporting candidate refs separated by spaces, e.g. "c1 c2".
   Every substantive answer, including not_applicable, needs original evidence.
   Use "none" for unanswered. These refs belong ONLY here, never in prose.
@@ -88,5 +104,7 @@ it with unsupported general background.
 
 Return only {"rows":[...]} with every supplied row key once. Each row contains
 exactly key, answer, basis, sources, remaining and state. Write sources as a
-string, never an array. Choose state after checking answer and remaining:
+string, never an array. Check answer, basis and remaining contain no candidate
+refs; all supporting refs go only in sources. Choose state after checking answer
+and remaining:
 {"rows":[{"key":"r1","answer":"...","basis":"...","sources":"c1 c2","remaining":"...","state":"partial"}]}
