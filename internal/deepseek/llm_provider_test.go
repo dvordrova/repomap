@@ -784,6 +784,7 @@ func TestLLMProviderRateLimitWaitUsesMinuteFloorAndRetryAfter(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		header     string
+		body       string
 		dateOffset time.Duration
 		want       time.Duration
 	}{
@@ -794,6 +795,16 @@ func TestLLMProviderRateLimitWaitUsesMinuteFloorAndRetryAfter(t *testing.T) {
 		{name: "date", dateOffset: 2 * time.Minute, want: 2 * time.Minute},
 		{name: "past date", dateOffset: -time.Minute, want: time.Minute},
 		{name: "invalid", header: "not a date", want: time.Minute},
+		{name: "reported body waits below minute", body: "rate limit exceeded: retry after 9.636307001s, reset after 45.636307001s", want: time.Minute},
+		{name: "fractional reset extends header", header: "90", body: "rate limit exceeded: retry after 9.636307001s, reset after 95.636307001s", want: 95*time.Second + 636307001*time.Nanosecond},
+		{name: "retry longer than reset", body: "rate limit exceeded: retry after 2m0.25s, reset after 95s", want: 2*time.Minute + 250*time.Millisecond},
+		{name: "header longer than body", header: "180", body: "rate limit exceeded: retry after 9s, reset after 95s", want: 3 * time.Minute},
+		{name: "compatible JSON error", body: `{"error":{"message":"rate limit exceeded: retry after 9.636307001s, reset after 95.636307001s"}}`, want: 95*time.Second + 636307001*time.Nanosecond},
+		{name: "JSON string error", body: `{"error":"rate limit exceeded: retry after 9s, reset after 2m"}`, want: 2 * time.Minute},
+		{name: "JSON top-level message", body: `{"message":"rate limit exceeded: retry after 9s, reset after 2m."}`, want: 2 * time.Minute},
+		{name: "negative waits", body: "rate limit exceeded: retry after -90s, reset after -120s", want: time.Minute},
+		{name: "invalid or unitless waits", body: "rate limit exceeded: retry after unknown, reset after 120", want: time.Minute},
+		{name: "overflow wait", body: "rate limit exceeded: reset after 999999999999999999999999s", want: time.Minute},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -810,6 +821,7 @@ func TestLLMProviderRateLimitWaitUsesMinuteFloorAndRetryAfter(t *testing.T) {
 						}
 						w.Header().Set("Retry-After", header)
 						w.WriteHeader(http.StatusTooManyRequests)
+						_, _ = io.WriteString(w, test.body)
 						return
 					}
 					_, _ = w.Write(llmProviderResponse("stop", `{"ok":true}`, nil))
@@ -825,6 +837,29 @@ func TestLLMProviderRateLimitWaitUsesMinuteFloorAndRetryAfter(t *testing.T) {
 					t.Fatal("retry changed prepared request bytes")
 				}
 			})
+		})
+	}
+}
+
+func TestLLMProviderBodyWaitHintsOnlyApplyTo429AndPreserveErrorBytes(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			body := []byte(`{"error":{"message":"rate limit exceeded: retry after 9.636307001s, reset after 95.636307001s"}}`)
+			client := llmProviderHandlerClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				_, _ = w.Write(body)
+			}))
+			completion, retryable, err := doChatMeasured(t.Context(), client.HTTPClient, client.Endpoint, client.APIKey, client.Auth, []byte(`{}`))
+			if err == nil || !retryable || !bytes.Equal(completion.Content, body) || completion.ResponseBytes != len(body) {
+				t.Fatalf("HTTP %d: completion=%#v retryable=%v err=%v", status, completion, retryable, err)
+			}
+			want := time.Duration(0)
+			if status == http.StatusTooManyRequests {
+				want = 95*time.Second + 636307001*time.Nanosecond
+			}
+			if completion.retryAfter != want {
+				t.Fatalf("HTTP %d wait=%v, want %v", status, completion.retryAfter, want)
+			}
 		})
 	}
 }
@@ -853,6 +888,11 @@ func TestLLMProviderConcurrentRateLimitsShareLongestWaitAndRetrySerially(t *test
 		initial := make(chan struct{}, 3)
 		releaseInitial := make(chan struct{})
 		headers := map[string]string{"one": "30", "two": "90", "three": "120"}
+		messages := map[string]string{
+			"one":   "rate limit exceeded: retry after 9.636307001s, reset after 45.636307001s",
+			"two":   `{"error":{"message":"rate limit exceeded: retry after 10s, reset after 100s"}}`,
+			"three": "rate limit exceeded: retry after 20s, reset after 120.25s",
+		}
 		var mu sync.Mutex
 		attempts := map[string]int{}
 		var retryStarts []time.Time
@@ -873,6 +913,7 @@ func TestLLMProviderConcurrentRateLimitsShareLongestWaitAndRetrySerially(t *test
 				<-releaseInitial
 				w.Header().Set("Retry-After", headers[user])
 				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = io.WriteString(w, messages[user])
 				return
 			}
 			mu.Lock()
@@ -919,8 +960,8 @@ func TestLLMProviderConcurrentRateLimitsShareLongestWaitAndRetrySerially(t *test
 			}
 		}
 		for _, start := range retryStarts {
-			if start.Sub(limitedAt) < 2*time.Minute {
-				t.Errorf("retry started after %v, before longest Retry-After", start.Sub(limitedAt))
+			if start.Sub(limitedAt) < 2*time.Minute+250*time.Millisecond {
+				t.Errorf("retry started after %v, before longest server wait", start.Sub(limitedAt))
 			}
 		}
 	})

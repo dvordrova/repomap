@@ -73,6 +73,13 @@ saved request bytes rather than applying new environment settings to them.
   invalid, expired or shorter header retains the one-minute minimum. The
   wait can be canceled and does not change request bytes or cache identity.
   Other retryable failures keep their existing short exponential backoff.
+- Compatible-server 429 bodies may also report relative waits as
+  `retry after 9.636307001s, reset after 45.636307001s`. Positive Go-duration
+  values in these two phrases extend the same cooldown. The adapter reads plain
+  error text, a JSON `message`, a JSON string `error`, or `error.message`, and
+  uses the longest valid body hint, `Retry-After` header and one-minute floor.
+  Invalid, negative and unitless body values are ignored. The original error
+  bytes remain unchanged. Other HTTP statuses do not use body wait hints.
 - Independent batch calls start behind a run-shared bounded attempt gate. The
   ordinary product limit is four live provider attempts. A DeepSeek HTTP 429
   atomically collapses that gate to one and sets the same cooldown before

@@ -3306,6 +3306,23 @@ A three-request simultaneous 429 burst with Retry-After values of 30, 90 and
 120 seconds waits for the longest shared deadline, then retries all three
 serially. That scenario passed ten repetitions under the race detector.
 
+The owner subsequently supplied a compatible server's actual 429 message:
+`rate limit exceeded: retry after 9.636307001s, reset after 45.636307001s`.
+The adapter now reads both labelled relative durations from a plain error body
+or its JSON `message`, string `error`, or `error.message`. The longest valid
+body hint and Retry-After header feed that same minute-minimum shared cooldown.
+The supplied example still waits one minute; a longer reset can extend it.
+Negative, unitless or invalid values are ignored, the original error bytes
+remain available unchanged, and non-429 responses keep their existing backoff.
+The owner's reported 3,000 requests/minute, 300,000 tokens/minute and million-token
+context describe their custom endpoint, not global product defaults. The current
+gate controls concurrent attempts and server-requested cooldowns; it does not
+preallocate a rolling token quota or equate context capacity with output length.
+Focused DeepSeek, LLM and run tests, provider/LLM vet and the owner-facing build
+passed. Ten race-detector repetitions of three simultaneous 429 responses
+confirmed serial retries after the longest mixed header/body wait of 120.25s.
+These are local HTTP-contract checks, not a live check of the owner's endpoint.
+
 Each model-assisted stage owns its state, complete input authority,
 provider-sized request preparation, prompt, response schema, restoration, and
 semantic validation. Static prompt prose lives in readable Markdown beside

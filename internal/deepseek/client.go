@@ -495,10 +495,14 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		retry := isRetryableHTTP(resp.StatusCode)
+		retryAfter := retryAfterDuration(resp.Header.Get("Retry-After"), time.Now())
+		if resp.StatusCode == http.StatusTooManyRequests {
+			retryAfter = max(retryAfter, rateLimitBodyDelay(respBody))
+		}
 		return chatCompletion{
 			Content:       append([]byte(nil), respBody...),
 			ResponseBytes: len(respBody),
-			retryAfter:    retryAfterDuration(resp.Header.Get("Retry-After"), time.Now()),
+			retryAfter:    retryAfter,
 		}, retry, newProviderTransportError(
 			llm.ProviderFailureHTTPStatus,
 			resp.StatusCode,
@@ -689,4 +693,43 @@ func retryAfterDuration(value string, now time.Time) time.Duration {
 		return date.Sub(now)
 	}
 	return 0
+}
+
+// Compatible servers may put relative waits in their 429 error message, for
+// example "retry after 9.636307001s, reset after 45.636307001s". Both extend
+// the same shared cooldown; neither can shorten Retry-After or its minute floor.
+func rateLimitBodyDelay(body []byte) time.Duration {
+	messages := []string{string(body)}
+	var envelope struct {
+		Message string          `json:"message"`
+		Error   json.RawMessage `json:"error"`
+	}
+	if json.Unmarshal(body, &envelope) == nil {
+		messages = []string{envelope.Message}
+		var message string
+		if json.Unmarshal(envelope.Error, &message) == nil {
+			messages = append(messages, message)
+		} else {
+			var detail struct {
+				Message string `json:"message"`
+			}
+			if json.Unmarshal(envelope.Error, &detail) == nil {
+				messages = append(messages, detail.Message)
+			}
+		}
+	}
+	var wait time.Duration
+	for _, message := range messages {
+		words := strings.Fields(message)
+		for i := 2; i < len(words); i++ {
+			if !(strings.EqualFold(words[i-2], "retry") || strings.EqualFold(words[i-2], "reset")) ||
+				!strings.EqualFold(words[i-1], "after") {
+				continue
+			}
+			if delay, err := time.ParseDuration(strings.TrimRight(words[i], ",;.")); err == nil && delay > wait {
+				wait = delay
+			}
+		}
+	}
+	return wait
 }

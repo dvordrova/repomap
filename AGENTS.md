@@ -250,7 +250,8 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   events in that order; do not add a random batch identity to semantic or cache
   state. Every provider transport attempt acquires the run-shared adaptive
   gate. An HTTP 429 collapses that gate to one and pauses new attempts for at
-  least one minute, honoring a longer Retry-After seconds/date value. Later
+  least one minute, honoring a longer Retry-After seconds/date value or a
+  relative `retry after`/`reset after` duration in its error message. Later
   429s can extend but never shorten that shared cooldown. Already-started
   attempts finish while retries and new calls wait and then become serial.
   Cancellation interrupts the wait; other retryable failures retain their
