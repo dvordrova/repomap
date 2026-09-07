@@ -78,7 +78,7 @@ are listed separately at the end.
 | `internal/dependencydeclaration/model_test.go` | Declaration ledgers seal canonical authority and frontier sources require an exact boundary. |
 | `internal/freshness/freshness_test.go` | Captured repository state includes only tracked changes, binds revision and dirty identity to inputs, rejects unavailable captured trees, and rejects duplicate paths in the digest. |
 | `internal/gitfiles/gitfiles_test.go` | Git listing cancellation terminates the child command, NUL/index parsing admits only regular stage-zero paths, and the command environment neutralizes ambient Git configuration injection. |
-| `internal/gocoreobject/index_test.go` | Go core-object declarations are canonicalized, sealed, independently snapshotted, and exact. |
+| `internal/gocoreobject/index_test.go` | Go core-object declarations and their owned struct fields are canonicalized, sealed, independently snapshotted, and exact. Field identities and signatures survive persistence without aliasing mutable input. |
 | `internal/godynamichandoff/index_test.go` | Dynamic handoffs seal exact versus uncertain authority, reject interface candidates lacking value-flow evidence, and retain honest omission accounting. |
 | `internal/gofacts/dependencies_test.go` | One Go inventory builds exact dependency kinds/importers across nested modules, deduplicates importers, keeps `DepOnly` metadata from contaminating roots, and marks missing/broken imports as partial. |
 | `internal/gofacts/entrypoints_test.go` | Only build-selected, correctly signed `main` declarations become process anchors, resolved from exact selected files. |
@@ -156,7 +156,11 @@ are listed separately at the end.
 | `internal/report/standalone_target_bundle_test.go` | Legacy standalone bundles publish canonical self-contained targets atomically, bind exact payloads/routes/assets, select before app startup, resolve hosted/file links, pin remote source and scrub local authority, reject legacy aliases/drift/resealed rewrites, preserve existing HTML on failure, detect tampering, and enforce aggregate limits. |
 | `internal/report/system_canvas_modules_test.go` | Pure graph/interaction/geometry modules preserve their contracts, and a real browser interaction changes emphasis without rebuilding geometry. |
 | `internal/report/target_navigation_test.go` | Target navigation projects exact language-neutral pages, keeps render options transient, creates portable sibling links, and rejects incomplete, tampered, unbound, or unsafe pages. |
-| `internal/reportserver/editor_test.go` | VS Code launch requires an installed CLI, passes the exact authorized target, waits for success, and surfaces dispatch failure. |
+| `internal/repoconfig/config_test.go` | Local YAML configuration is created once, preserves edits, does not inherit parent settings, keeps each expanded editor argument intact, and rejects unsupported fields or invalid templates. |
+| `internal/atlas/reading/question_test.go` | Independent questions share one graph, retain their own evidence and table references, and reuse cached answers when reordered or extended. |
+| `internal/run/repository_report_test.go` | All questions and target graphs pass in memory into one common report, survive persistence, and render as collapsed guides. |
+| `internal/run/conf_test.go` | `repomap conf` creates/opens the local file without Git or analysis, preserves owner comments/settings, dispatches the configured arguments, and leaves the file available when the editor cannot start. |
+| `internal/reportserver/editor_test.go` | The server binds editor settings once, source clicks retain that in-memory command even after the file changes, exact locations reach the subprocess, and a missing editor produces an error while the report stays available. |
 | `internal/reportserver/server_test.go` | The loopback server serves only manifest-authorized initial/virtual pages, requires portfolio routing for siblings, binds opaque source-open capabilities to host/origin/action, rejects raw paths/symlink replacement/report drift, and stops with context. |
 | `internal/sourcecatalog/dependency_test.go` | The neutral source-catalog production package has no import dependency on presentation/report layers. |
 | `internal/workspaceopen/dependency_test.go` | Workspace-open authorization remains independent of presentation/report packages. |
@@ -169,11 +173,11 @@ are listed separately at the end.
 | Test file | Contract and invariants asserted |
 | --- | --- |
 | `internal/contracttest/fixture_test.go` | No direct test entrypoint; shared fixture helpers copy one approved cumulative language fixture, reject symlinks/nonregular files, create an isolated Git index, verify the exact file inventory, and expose canonical artifact helpers to the language contract tests. |
-| `internal/contracttest/go_repository_test.go` | The one cumulative Go fixture has exact tracked-file inventory, exercises real Go discovery through deterministic ProgramIndex construction with request-bound local presets, and keeps a same-import-path root module resolved outside the repository external to its nested-module target. |
+| `internal/contracttest/go_repository_test.go` | The one cumulative Go fixture has exact tracked-file inventory, exercises real Go discovery through deterministic ProgramIndex construction with request-bound local presets, and keeps a same-import-path root module resolved outside the repository external to its nested-module target. Response fields retain native owners, types, JSON tags and exact source locations through atlas question evidence; aliases and embedding cannot manufacture a new Count declaration. |
 | `internal/contracttest/jsts_repository_test.go` | The one cumulative JS/TS fixture has an exact tracked-file inventory; every scenario file must be represented in the contract. |
 | `internal/contracttest/production_limit_inventory_test.go` | Every governed production limit is inventoried, source-bound to the expected declaration, canonical, unique, and unchanged without an explicit contract update. |
 | `internal/contracttest/prompt_inventory_test.go` | Every static prompt Markdown file is classified active/dormant, active prompts have exact `go:embed` ownership, and prompt inventory is complete and canonical. |
-| `internal/contracttest/python_repository_test.go` | The one cumulative Python fixture has exact tracked-file inventory and exercises real interpreter-backed discovery/ProgramIndex construction with deterministic provider-free expectations. |
+| `internal/contracttest/python_repository_test.go` | The one cumulative Python fixture has exact tracked-file inventory and exercises real interpreter-backed discovery/ProgramIndex construction with deterministic provider-free expectations. Separate response classes retain their own count field, signature and source location through atlas question evidence. |
 | `internal/contracttest/test_inventory_test.go` | `tests.json` exactly equals all owned Go and JS test files; package/file order, default profile, exception characteristics, external tools, fixtures, and detected nonordinary mechanics are complete and canonical. |
 
 ## Non-ordinary execution mechanics
@@ -211,7 +215,8 @@ separate from the invariant descriptions above.
 | `internal/report/manifest_fixture_test.go` | Temporary Git repository; invokes `git`. |
 | `internal/report/standalone_target_bundle_test.go` | Runs standalone bootstrap JavaScript in a Node subprocess and skips when Node is unavailable. |
 | `internal/report/system_canvas_modules_test.go` | Runs Node pure-module checks and a Chrome/Chromium headless browser over loopback HTTP; runtime absence causes skips. |
-| `internal/reportserver/editor_test.go` | Uses ambient executable lookup and launches a controlled test-binary subprocess. |
+| `internal/run/conf_test.go` | Changes cwd/PATH within the test, invokes a controlled `/bin/sh` editor stand-in, and requires no Git repository, compiler invocation, or provider. |
+| `internal/reportserver/editor_test.go` | Uses loopback HTTP, overrides PATH/environment, and launches a controlled test-binary subprocess. |
 | `internal/reportserver/server_test.go` | Uses loopback HTTP and filesystem-platform behavior; unavailable platform semantics may skip. |
 | `internal/snapshot/snapshot_test.go` | Temporary Git repository, `git` subprocesses, and filesystem-platform cases with conditional skips. |
 | `internal/surfacediscovery/core_object_capture_test.go` | Temporary repository; invokes the Go toolchain/compiler. |

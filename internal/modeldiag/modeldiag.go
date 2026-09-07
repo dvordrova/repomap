@@ -27,13 +27,14 @@ const MaxSamples = 5
 // a bounded illustration. Raw carries the model's own output when a whole
 // response section was refused.
 type Row struct {
-	Stage   string          `json:"stage"`
-	Target  string          `json:"target,omitempty"`
-	Kind    string          `json:"kind"`
-	Count   int             `json:"count"`
-	Samples []string        `json:"samples,omitempty"`
-	Reason  string          `json:"reason,omitempty"`
-	Raw     json.RawMessage `json:"raw,omitempty"`
+	Stage       string          `json:"stage"`
+	Target      string          `json:"target,omitempty"`
+	Kind        string          `json:"kind"`
+	Count       int             `json:"count"`
+	Samples     []string        `json:"samples,omitempty"`
+	Reason      string          `json:"reason,omitempty"`
+	Raw         json.RawMessage `json:"raw,omitempty"`
+	ResponseRef string          `json:"response_ref,omitempty"`
 }
 
 // Append adds rows to the run's log without disturbing what earlier stages

@@ -1,6 +1,7 @@
 package report
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -24,6 +25,11 @@ func foldIndexes(indexes []groupindex.Index) []groupindex.Index {
 		folded[position] = index
 		folded[position].Groups = foldGroups(index, canonical)
 		folded[position].Containers = foldContainers(index, canonical)
+		folded[position].Operations = append([]groupindex.Operation(nil), index.Operations...)
+		for i := range folded[position].Operations {
+			op := &folded[position].Operations[i]
+			op.GroupID = canonical[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: op.GroupID}].GroupID
+		}
 	}
 	for position := range folded {
 		folded[position].Connections = foldConnections(folded[position].Connections, canonical)
@@ -105,8 +111,10 @@ func foldContainers(index groupindex.Index, canonical map[groupindex.Endpoint]gr
 // two slices saying the same thing to the same neighbour say it once.
 func foldConnections(connections []groupindex.Connection, canonical map[groupindex.Endpoint]groupindex.Endpoint) []groupindex.Connection {
 	type said struct {
-		from, to    groupindex.Endpoint
-		label, kind string
+		from, to                                     groupindex.Endpoint
+		label, kind                                  string
+		sourceKind, sourceID, fromSubject, toSubject string
+		fromLocation, toLocation                     string
 	}
 	seen := make(map[said]struct{}, len(connections))
 	result := make([]groupindex.Connection, 0, len(connections))
@@ -120,7 +128,13 @@ func foldConnections(connections []groupindex.Connection, canonical map[groupind
 		if connection.From == connection.To {
 			continue
 		}
-		key := said{connection.From, connection.To, connection.Label, connection.SemanticKind}
+		key := said{from: connection.From, to: connection.To, label: connection.Label, kind: connection.SemanticKind, sourceKind: connection.SourceKind, sourceID: connection.SourceID, fromSubject: connection.FromSubjectID, toSubject: connection.ToSubjectID}
+		if connection.FromLocation != nil {
+			key.fromLocation = fmt.Sprint(*connection.FromLocation)
+		}
+		if connection.ToLocation != nil {
+			key.toLocation = fmt.Sprint(*connection.ToLocation)
+		}
 		if _, repeated := seen[key]; repeated {
 			continue
 		}

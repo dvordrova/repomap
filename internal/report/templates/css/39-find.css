@@ -1,0 +1,20 @@
+.nav .find-panel{flex-basis:100%;min-width:0;border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:.8rem;font-size:1rem;white-space:normal}
+.find-panel[hidden],.find-pages[hidden]{display:none}
+.find-tools,.find-pages{display:flex;align-items:center;flex-wrap:wrap;gap:.6rem}
+.find-tools label{display:flex;align-items:center;gap:.4rem}
+.find-tools select,.find-tools button,.find-pages button{font:inherit;padding:.35rem .55rem;background:var(--paper);border:1px solid var(--line);border-radius:5px;max-width:100%}
+.find-tools [data-close]{margin-left:auto}
+.find-status{font-size:var(--text-small);color:var(--muted);margin:.7rem 0}
+.find-results{list-style:none;padding:0;margin:0;max-height:60vh;overflow:auto;overscroll-behavior:contain}
+.find-results li{padding:.7rem .2rem;border-top:1px solid var(--line)}
+.find-result-head{display:flex;align-items:baseline;gap:.7rem;justify-content:space-between}
+.find-results button{font:inherit;text-align:left;color:var(--accent);background:none;border:0;box-shadow:none;padding:0;border-radius:0;cursor:pointer;overflow-wrap:anywhere}
+.find-result-head button{font-weight:650;text-decoration:underline;text-underline-offset:3px}
+.find-results button:hover,.find-results button:focus-visible{background:var(--soft);outline:2px solid var(--accent);outline-offset:3px}
+.find-result-type{font-size:var(--text-small);color:var(--muted);flex-shrink:0}
+.find-result-place{font-size:var(--text-small);color:var(--muted);margin:.15rem 0;overflow-wrap:anywhere}
+.find-result-summary{margin:.35rem 0;color:#51406f;max-width:80ch}
+.find-result-links{display:flex;flex-wrap:wrap;gap:.4rem 1rem;font-size:var(--text-small)}
+.find-pages{justify-content:flex-end;border-top:1px solid var(--line);padding-top:.7rem}
+.reading-map-links{display:flex;flex-wrap:wrap;gap:.4rem 1rem;font-size:var(--text-small)}
+@media(max-width:650px){.find-tools label{width:100%}.find-tools select{min-width:0;flex:1}.find-result-head{align-items:flex-start}.find-result-type{max-width:30%;overflow-wrap:anywhere}}

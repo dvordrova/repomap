@@ -6,3 +6,5 @@ package cumulativegofixture
 func PublishedRoot() string {
 	return "repository root"
 }
+
+type testRootReader struct{}

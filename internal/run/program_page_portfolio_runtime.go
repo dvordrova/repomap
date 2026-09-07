@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"reflect"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -111,117 +110,76 @@ func persistProgramPagePortfolioForRuns(
 	return nil
 }
 
-// finalizeProgramPageRuns installs the one complete matched GroupsIndex set
-// into every successful backing page. No repository-level semantic authority
-// is rebuilt here: ProgramPagePortfolio and TargetOutcomePortfolio retain
-// orchestration identity, while GroupsIndex is the sole repository graph.
-func finalizeProgramPageRuns(
+// publishRepositoryReport projects shared results once and publishes from memory.
+// Target directories keep their own analysis artifacts, never repository reports.
+func publishRepositoryReport(
 	ctx context.Context,
 	portfolio programpage.Portfolio,
 	targetOutcomes targetoutcome.Portfolio,
 	runs []targetPublishedRun,
+	outcome atlasOutcome,
 	output *runOutput,
-) error {
+) (report.RunReceipt, error) {
+	if err := ctx.Err(); err != nil {
+		return report.RunReceipt{}, err
+	}
 	if err := portfolio.Validate(); err != nil {
-		return err
+		return report.RunReceipt{}, err
 	}
-	if len(runs) != len(portfolio.Pages) {
-		return fmt.Errorf("program page portfolio: completed run coverage is incomplete")
+	if len(runs) == 0 || len(runs) != len(portfolio.Pages) {
+		return report.RunReceipt{}, fmt.Errorf("repository report: completed target coverage is incomplete")
 	}
-	if _, err := report.NewTargetOutcomePortfolioView(targetOutcomes, portfolio); err != nil {
-		return err
+	owner := &runs[0]
+	if owner.ProgramPage.ProgramTarget.ID != portfolio.DefaultTargetID {
+		return report.RunReceipt{}, fmt.Errorf("repository report: owner is not the default target")
 	}
-	if err := persistProgramPagePortfolioForRuns(portfolio, runs); err != nil {
-		return err
+	inventory, err := report.NewTargetOutcomePortfolioView(targetOutcomes, portfolio)
+	if err != nil {
+		return report.RunReceipt{}, err
 	}
-
+	if err := persistProgramPagePortfolioForRuns(portfolio, runs[:1]); err != nil {
+		return report.RunReceipt{}, err
+	}
+	if err := persistTargetOutcomePortfolioForRuns(targetOutcomes, runs[:1]); err != nil {
+		return report.RunReceipt{}, err
+	}
 	groupIndexes := make([]groupindex.Index, len(runs))
 	for position, run := range runs {
-		if err := run.GroupIndex.Validate(); err != nil {
-			return fmt.Errorf("program page portfolio: run %s GroupsIndex: %w", run.RunID, err)
-		}
 		if run.GroupIndex.Target.ID != run.ProgramPage.ProgramTarget.ID {
-			return fmt.Errorf("program page portfolio: run %s graph target mismatch", run.RunID)
+			return report.RunReceipt{}, fmt.Errorf("repository report: run %s graph target mismatch", run.RunID)
 		}
-		groupIndexes[position] = run.GroupIndex.Snapshot()
+		groupIndexes[position] = run.GroupIndex
 	}
-	groupGraph, err := report.NewGroupGraphView(groupIndexes, portfolio.DefaultTargetID)
+	index, err := owner.programIndex()
 	if err != nil {
-		return fmt.Errorf("program page portfolio: validate matched group graph: %w", err)
+		return report.RunReceipt{}, err
 	}
-	_ = groupGraph
-	for index := range runs {
-		bound, err := runs[index].Source.WithGroupGraph(groupIndexes)
-		if err != nil {
-			return fmt.Errorf("program page portfolio: bind group graph for run %s: %w", runs[index].RunID, err)
-		}
-		runs[index].Source = bound
+	if owner.Documentation == nil {
+		return report.RunReceipt{}, fmt.Errorf("repository report: documentation is missing from memory")
 	}
-
-	runIndexByID := make(map[string]int, len(runs))
-	for index, run := range runs {
-		if _, duplicate := runIndexByID[run.RunID]; duplicate {
-			return fmt.Errorf("program page portfolio: duplicate completed run")
-		}
-		runIndexByID[run.RunID] = index
+	data, err := report.NewData(owner.RunDir, owner.RepoName, index, *owner.Documentation)
+	if err != nil {
+		return report.RunReceipt{}, err
 	}
-	for _, binding := range portfolio.Pages {
-		runIndex, found := runIndexByID[binding.RunID]
-		if !found {
-			return fmt.Errorf("program page portfolio: completed run is missing")
-		}
-		run := &runs[runIndex]
-		page := run.ProgramPage
-		if page.RunID != run.RunID {
-			return fmt.Errorf("program page portfolio: completed page identity is invalid")
-		}
-		if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
-			return fmt.Errorf("program page portfolio: completed page target mismatch")
-		}
-		receipt, err := run.generateBackingPageData()
-		if err != nil {
-			return fmt.Errorf("program page portfolio: finalize backing run %s: %w", run.RunID, err)
-		}
-		run.Receipt = receipt
+	if err := report.BindGroupGraphView(data, groupIndexes); err != nil {
+		return report.RunReceipt{}, err
 	}
-	return nil
-}
-
-func publishProgramPageBundle(
-	portfolio programpage.Portfolio,
-	runs []targetPublishedRun,
-) error {
-	if err := portfolio.Validate(); err != nil {
-		return err
+	data.TargetOutcomePortfolio = inventory
+	data.Facts, data.Claims, data.Orientation = &outcome.Facts, &outcome.Claims, outcome.Orientation
+	data.Questions = outcome.Questions
+	data.Learning = outcome.Learning
+	timing := wholeRunTiming(output, runs)
+	data.Timing = &report.RunTiming{WallMS: timing.WallMS}
+	for _, stage := range timing.Stages {
+		data.Timing.Stages = append(data.Timing.Stages, report.StageTiming{
+			Stage: stage.Stage, Live: stage.Live, Cached: stage.Cached,
+			ProviderMS: stage.ProviderMS, SlowestMS: stage.SlowestMS,
+		})
 	}
-	runsByID := make(map[string]targetPublishedRun, len(runs))
-	for _, run := range runs {
-		if run.RunID == "" || run.RunDir == "" || filepath.Base(run.RunDir) != run.RunID {
-			return fmt.Errorf("program page bundle: completed run identity is invalid")
-		}
-		if _, duplicate := runsByID[run.RunID]; duplicate {
-			return fmt.Errorf("program page bundle: duplicate completed run")
-		}
-		runsByID[run.RunID] = run
+	if err := writeRunTiming(owner.RunDir, timing); err != nil {
+		return report.RunReceipt{}, err
 	}
-	if len(runsByID) != len(portfolio.Pages) {
-		return fmt.Errorf("program page bundle: completed run coverage is incomplete")
-	}
-	defaultRunDir := ""
-	for _, page := range portfolio.Pages {
-		run, found := runsByID[page.RunID]
-		if !found {
-			return fmt.Errorf("program page bundle: portfolio run is missing")
-		}
-		if page.Target.ID == portfolio.DefaultTargetID {
-			defaultRunDir = run.RunDir
-		}
-	}
-	if defaultRunDir == "" {
-		return fmt.Errorf("program page bundle: default run is missing")
-	}
-	if err := report.PublishProgramPageBundle(defaultRunDir, portfolio); err != nil {
-		return fmt.Errorf("program page bundle: publish: %w", err)
-	}
-	return nil
+	return report.Generate(owner.RunDir, owner.Source, report.GenerateOptions{
+		Data: data, GitLabURL: owner.GitLabURL, GitHubURL: owner.GitHubURL, PublishHTML: true,
+	})
 }

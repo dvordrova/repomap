@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -260,7 +262,7 @@ func TestCumulativeJSTSActualToFormalValueProvenance(t *testing.T) {
 		t.Fatal("resolve JSTS contract-test source path")
 	}
 	fixtureRoot := filepath.Join(filepath.Dir(filename), "..", "..", "testdata", "repositories", "jsts")
-	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/platform.ts", "src/server.ts", "tsconfig.json"}
+	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/platform.ts", "src/server.ts", "src/type-members.ts", "tsconfig.json"}
 	for _, relative := range tracked {
 		contents, err := os.ReadFile(filepath.Join(fixtureRoot, filepath.FromSlash(relative)))
 		if err != nil {
@@ -291,7 +293,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		t.Fatal("resolve JSTS contract-test source path")
 	}
 	fixtureRoot := filepath.Join(filepath.Dir(filename), "..", "..", "testdata", "repositories", "jsts")
-	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/platform.ts", "src/server.ts", "tsconfig.json"}
+	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/platform.ts", "src/server.ts", "src/type-members.ts", "tsconfig.json"}
 	for _, relative := range tracked {
 		contents, err := os.ReadFile(filepath.Join(fixtureRoot, filepath.FromSlash(relative)))
 		if err != nil {
@@ -327,6 +329,75 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	if _, err := programindex.Decode(encoded); err != nil {
 		t.Fatalf("round-trip cumulative JSTS ProgramIndex: %v", err)
 	}
+	graph, err := places.Build(places.Input{
+		Revision: strings.Repeat("a", 40), Repository: repository,
+		Targets: []places.TargetInput{{Index: index, Dependencies: &catalog}},
+	})
+	if err != nil {
+		t.Fatalf("build cumulative JSTS places: %v", err)
+	}
+	assertCumulativeJSTSTypeMembers(t, result, index, lines.QuestionRows(graph))
+
+	// JSX supplies callbacks, including internal render props. Keep their
+	// compiler identities and source attributes without claiming execution.
+	declarationsByRef := make(map[string]Declaration)
+	for _, declaration := range result.Declarations {
+		declarationsByRef[declaration.Ref] = declaration
+	}
+	activationRecipients := make(map[string]string)
+	unresolvedWrappedValue := false
+	for _, binding := range result.Bindings {
+		if binding.Element != "ActionPanel" {
+			continue
+		}
+		if binding.Attribute == "label" {
+			t.Fatal("non-callable JSX value became a callback")
+		}
+		if binding.Attribute == "wrappedValue" {
+			if len(binding.ToRefs) != 0 || binding.Resolution != "unresolved" {
+				t.Fatalf("JSX factory result became a binding to its factory: %+v", binding)
+			}
+			unresolvedWrappedValue = true
+		}
+		if len(binding.ToRefs) == 0 {
+			if binding.Resolution != "unresolved" {
+				t.Fatalf("unindexed inline callback gained authority: %+v", binding)
+			}
+			continue
+		}
+		recipient := declarationsByRef[binding.ToRefs[0]]
+		owner := declarationsByRef[binding.FromRef]
+		if binding.Resolution != "exact" || binding.TargetsObserved != 1 || recipient.Kind != "function" || recipient.OwnerRef != owner.Ref {
+			t.Fatalf("JSX callback lost lexical/type authority: %+v, recipient=%+v", binding, recipient)
+		}
+		if binding.Attribute == "onActivate" {
+			activationRecipients[owner.Name] = recipient.Ref
+		}
+		found := false
+		for _, relation := range index.Relations {
+			if relation.Invocation != "callable_binding:jsx_attribute" || relation.Location == nil ||
+				relation.Location.Path != binding.Location.Path || relation.Location.Line != binding.Location.Line || relation.Location.Column != binding.Location.Column {
+				continue
+			}
+			found = relation.Kind == programindex.RelationPassesCallback && relation.Resolution == programindex.ResolutionExact &&
+				len(relation.ToIDs) == 1 && len(relation.Witnesses) == 1 && relation.Witnesses[0].Detail == "ActionPanel."+binding.Attribute
+		}
+		if !found {
+			t.Fatalf("JSX binding not preserved as an anchored callback relation: %+v", binding)
+		}
+	}
+	if activationRecipients["ActionPage"] == "" || activationRecipients["OtherActionPage"] == "" ||
+		activationRecipients["ActionPage"] == activationRecipients["OtherActionPage"] {
+		t.Fatalf("wrapped callback missing or same-name declarations joined: %+v", activationRecipients)
+	}
+	if !unresolvedWrappedValue {
+		t.Fatal("unresolved JSX factory-result binding was omitted")
+	}
+	badBinding := result.Snapshot()
+	badBinding.Bindings[0].ToRefs = []string{"missing"}
+	if _, err := Seal(badBinding); err == nil {
+		t.Fatal("unknown JSX callback identity accepted")
+	}
 
 	calls := make(map[string]Call, len(result.Calls))
 	for _, call := range result.Calls {
@@ -346,10 +417,10 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		receiver string
 		name     string
 	}{
-		"this.context.beginPath": {receiver: "CanvasRenderingContext2D", name: "beginPath"},
-		"this.context.moveTo":    {receiver: "CanvasRenderingContext2D", name: "moveTo"},
-		"this.context.lineTo":    {receiver: "CanvasRenderingContext2D", name: "lineTo"},
-		"this.context.stroke":    {receiver: "CanvasRenderingContext2D", name: "stroke"},
+		"this.context.beginPath": {receiver: "CanvasDrawPath", name: "beginPath"},
+		"this.context.moveTo":    {receiver: "CanvasPath", name: "moveTo"},
+		"this.context.lineTo":    {receiver: "CanvasPath", name: "lineTo"},
+		"this.context.stroke":    {receiver: "CanvasDrawPath", name: "stroke"},
 		"canvas.getContext":      {receiver: "HTMLCanvasElement", name: "getContext"},
 		"Math.min":               {receiver: "Math", name: "min"},
 		"console.log":            {receiver: "Console", name: "log"},
@@ -1016,6 +1087,7 @@ func assertCumulativeJSTSActualToFormalValueProvenance(t *testing.T, result Resu
 
 func TestAxiosCallsProjectNeutralExternalOriginsAndPathArguments(t *testing.T) {
 	root := preparedTempProject(t)
+	materializeCumulativeJSTSDependencyTypes(t, root)
 	writeTestFile(t, root, "package.json", `{"name":"axios-patterns","dependencies":{"axios":"1.0.0"},"devDependencies":{"typescript":"5.9.3"}}`)
 	writeTestFile(t, root, "tsconfig.json", `{"include":["src/main.ts"],"compilerOptions":{"module":"ESNext","moduleResolution":"bundler","strict":true}}`)
 	writeTestFile(t, root, "src/main.ts", "import axios from \"axios\"\n"+
@@ -2436,7 +2508,7 @@ func preparedTempProject(t *testing.T) string {
 	t.Helper()
 	root := preparedCompilerProject(t)
 	writeTestFile(t, root, "package.json", `{"name":"sample","devDependencies":{"typescript":"5.9.3"}}`)
-	writeTestFile(t, root, "tsconfig.json", `{"include":["src/**/*"],"exclude":["src/excluded.ts"],"compilerOptions":{"allowJs":true,"module":"ESNext","moduleResolution":"bundler","jsx":"preserve","baseUrl":".","paths":{"@/*":["./src/*"]},"strict":true}}`)
+	writeTestFile(t, root, "tsconfig.json", `{"include":["src/**/*"],"exclude":["src/excluded.ts"],"compilerOptions":{"target":"ES2022","lib":["ES2022","DOM"],"allowJs":true,"module":"ESNext","moduleResolution":"bundler","jsx":"preserve","baseUrl":".","paths":{"@/*":["./src/*"]},"strict":true}}`)
 	var collisions strings.Builder
 	for index := 0; index <= programindex.MaxTargetsPerRelation; index++ {
 		_, _ = fmt.Fprintf(&collisions, "export namespace Candidate%d { export function test() {} }\n", index)
@@ -2588,6 +2660,126 @@ func assertExactSiblingPackageCalls(
 		if !foundIdentity {
 			t.Fatalf("sibling call target %q lacks package/export identity: %#v", expression, target)
 		}
+	}
+}
+
+func assertCumulativeJSTSTypeMembers(t *testing.T, result Result, index programindex.Index, questions []lines.QuestionChunk) {
+	t.Helper()
+	const sourcePath = "src/type-members.ts"
+	type memberExpectation struct {
+		owner, name, signature string
+		line, column           int
+	}
+	want := []memberExpectation{
+		{"IGetLevelsResponse", "count", "count: number;", 3, 3},
+		{"OtherResponse", "count", "readonly count?: string;", 8, 12},
+		{"OtherResponse", "metadata", "metadata?: { nestedOnly: boolean };", 9, 3},
+		{"OtherResponse", "callback", "callback?: () => void;", 12, 3},
+		{"OtherResponse", "source", `readonly source: "node_modules/pkg  internal";`, 13, 12},
+		{"OtherResponse", "message", "message: `first\\nsecond`;", 14, 3},
+		{"OtherResponse", "route", "route: `first\\n${number}  last`;", 16, 3},
+		{"ExtendedResponse", "own", "own: boolean;", 22, 3},
+	}
+	declarations := make(map[string]Declaration)
+	owners := make(map[string]Declaration)
+	objects := make(map[string]programindex.Object)
+	for _, declaration := range result.Declarations {
+		declarations[declaration.Ref] = declaration
+		if declaration.Location.Path != sourcePath {
+			continue
+		}
+		if declaration.Kind == "type" {
+			owners[declaration.Name] = declaration
+		}
+		switch declaration.Name {
+		case "nestedOnly", "aliasOnly", "runtimeOnly":
+			t.Fatalf("nested/runtime property became an interface declaration: %+v", declaration)
+		}
+	}
+	for _, object := range index.Objects {
+		objects[object.SourceRef] = object
+	}
+	found := make(map[string]bool)
+	for _, declaration := range declarations {
+		if declaration.Location.Path != sourcePath || declaration.OwnerRef == "" {
+			continue
+		}
+		owner := declarations[declaration.OwnerRef]
+		key := owner.Name + "." + declaration.Name
+		var expected *memberExpectation
+		for i := range want {
+			if want[i].owner == owner.Name && want[i].name == declaration.Name {
+				expected = &want[i]
+				break
+			}
+		}
+		if expected == nil || found[key] {
+			t.Fatalf("unexpected or duplicate direct interface member: %+v", declaration)
+		}
+		found[key] = true
+		if declaration.Kind != "variable" || !declaration.SignatureIsSource || declaration.Signature != expected.signature ||
+			declaration.Location.Line != expected.line || declaration.Location.Column != expected.column || owner.Kind != "type" {
+			t.Fatalf("interface member lost its source declaration: %+v, want %+v", declaration, *expected)
+		}
+		object, ownerObject := objects[declaration.Ref], objects[owner.Ref]
+		if object.Kind != programindex.ObjectVariable || object.OwnerID != ownerObject.ID || object.ContainerID != ownerObject.ID ||
+			object.Name != key || object.Signature != expected.signature || object.Location == nil ||
+			object.Location.Path != sourcePath || object.Location.Line != expected.line || object.Location.Column != expected.column {
+			t.Fatalf("interface member lost native ownership/source: %+v, owner=%+v", object, ownerObject)
+		}
+		contains := false
+		for _, relation := range index.Relations {
+			if relation.Kind == programindex.RelationContains && relation.FromID == ownerObject.ID &&
+				len(relation.ToIDs) == 1 && relation.ToIDs[0] == object.ID && relation.Resolution == programindex.ResolutionExact {
+				contains = true
+			}
+		}
+		if !contains {
+			t.Fatalf("interface member lacks its exact contains relation: %+v", object)
+		}
+	}
+	if len(found) != len(want) {
+		t.Fatalf("interface members = %+v, want %d original declarations", found, len(want))
+	}
+
+	questionOwners := make(map[string]bool)
+	for _, chunk := range questions {
+		for ref, anchor := range chunk.Anchors {
+			owner, ok := owners[anchor.Name]
+			if !ok || anchor.Path != sourcePath {
+				continue
+			}
+			questionOwners[anchor.Name] = true
+			if anchor.SubjectID != objects[owner.Ref].ID || anchor.Line != owner.Location.Line || anchor.Column != owner.Location.Column {
+				t.Fatalf("question owner lost its original identity/anchor: %+v", anchor)
+			}
+			evidence := lines.AnchorEvidence(chunk, ref)["evidence"].([]map[string]any)[0]
+			members, _ := evidence["owned_declarations"].([]map[string]any)
+			var expected []memberExpectation
+			for _, member := range want {
+				if member.owner == anchor.Name {
+					expected = append(expected, member)
+				}
+			}
+			if len(members) != len(expected) {
+				t.Fatalf("question members of %s = %+v, want %+v", anchor.Name, members, expected)
+			}
+			for _, member := range expected {
+				matched := false
+				for _, actual := range members {
+					if actual["name"] == member.owner+"."+member.name && actual["signature"] == member.signature &&
+						actual["path"] == sourcePath && actual["line"] == member.line && actual["kind"] == "variable" {
+						matched = true
+					}
+				}
+				if !matched {
+					t.Fatalf("question omitted original interface field %+v: %+v", member, members)
+				}
+			}
+		}
+	}
+	if len(questionOwners) != len(owners) {
+		t.Fatalf("question owner coverage = %+v, want %+v", questionOwners, owners)
 	}
 }
 

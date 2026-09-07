@@ -13,6 +13,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // RunManifest records where a run came from: which repository at which
@@ -152,6 +153,7 @@ type RunReceipt struct {
 	manifest       RunManifest
 	programPage    TargetNavigationPage
 	repositoryName string
+	data           *ReportData
 }
 
 func newRunReceipt(runDir string, manifest RunManifest, data *ReportData) (RunReceipt, error) {
@@ -165,7 +167,7 @@ func newRunReceipt(runDir string, manifest RunManifest, data *ReportData) (RunRe
 	}
 	return RunReceipt{
 		runDir: filepath.Clean(absoluteRunDir), manifest: manifest,
-		programPage: page, repositoryName: data.RepoName,
+		programPage: page, repositoryName: data.RepoName, data: data,
 	}, nil
 }
 
@@ -179,19 +181,22 @@ func ReadRunReceipt(runDir string) (RunReceipt, error) {
 	if err != nil {
 		return RunReceipt{}, fmt.Errorf("report manifest: resolve run directory: %w", err)
 	}
-	page, err := LoadTargetNavigationPage(absoluteRunDir, filepath.Base(absoluteRunDir))
+	raw, err := os.ReadFile(filepath.Join(absoluteRunDir, "report.json"))
 	if err != nil {
 		return RunReceipt{}, err
 	}
-	data, err := ReadRunDir(absoluteRunDir)
+	data, err := decodeStrictReportJSON(raw)
 	if err != nil {
 		return RunReceipt{}, err
 	}
-	return RunReceipt{
-		runDir: filepath.Clean(absoluteRunDir), manifest: manifest,
-		programPage: page, repositoryName: data.RepoName,
-	}, nil
+	data.ArtifactsDir = absoluteRunDir
+	data.defaultProgramIndexArtifactFilename = programindex.ArtifactFilename
+	return newRunReceipt(absoluteRunDir, manifest, &data)
 }
+
+// Data returns the immutable in-memory publication result, if available.
+// A server makes a shallow copy before attaching its session source links.
+func (receipt RunReceipt) Data() *ReportData { return receipt.data }
 
 func (receipt RunReceipt) Manifest() RunManifest   { return receipt.manifest }
 func (receipt RunReceipt) RunDir() string          { return receipt.runDir }

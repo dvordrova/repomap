@@ -515,6 +515,30 @@ func TestBuildDeadModulesAndImports(t *testing.T) {
 	}
 }
 
+func TestGoTODOsOnlyComeFromCommentsWithPhysicalAnchors(t *testing.T) {
+	source := "package sample\n" +
+		"var ctx = context.TODO()\n" +
+		"var text = `// TODO not a comment`\n" +
+		"var escaped = \"TODO: not work\"\n" +
+		"//line fake.go:900\n" +
+		"func f() { context.TODO() /* TODO: retry later */ }\n" +
+		"/* notes\n * FIXME: preserve this anchor\n */\n"
+	repository := newCorpus(t, map[string]string{"sample.go": source})
+	result := mustBuild(t, Input{Repository: repository})
+	rows := result.OfKind(KindTODO)
+	if len(rows) != 2 {
+		t.Fatalf("calls or strings became TODOs: %+v", rows)
+	}
+	for _, expected := range []struct {
+		line int
+		text string
+	}{{6, "retry later"}, {8, "preserve this anchor"}} {
+		requireFact(t, result, KindTODO, expected.text, func(f Fact) bool {
+			return f.Anchor.Path == "sample.go" && f.Anchor.Line == expected.line && f.Text == expected.text
+		})
+	}
+}
+
 func TestBuildDeadModulesNeedSeeds(t *testing.T) {
 	s := newSynthetic(t, "python", "lib", "lib/a.py", "lib/b.py")
 	s.object("a", programindex.ObjectModule, "a", "lib/a.py", 1, "")
@@ -574,6 +598,38 @@ func TestBuildNegatives(t *testing.T) {
 	}
 	if _, found := findFact(withoutReadme, KindNegative, func(fact Fact) bool { return fact.Key == NegativeNoTests }); found {
 		t.Fatalf("_test.go file did not count as a test")
+	}
+}
+
+// Use the ordinary no-Git filesystem inventory: New with a manually readable
+// YAML listing concealed the difference between a missing and unread file.
+func TestNegativesUsePathInventoryAndNestedProjectConfiguration(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		".github/workflows/ci.yaml":  "on: push\n",
+		"tools/.golangci.yaml":       "linters: {}\n",
+		"CHANGELOG/CHANGELOG-3.7.md": "# Changes\n",
+	} {
+		file := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repository, err := corpus.Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	if _, readable := repository.ID(".github/workflows/ci.yaml"); readable {
+		t.Fatal("test must exercise a path outside readable source content")
+	}
+	for _, row := range mustBuild(t, Input{Repository: repository}).OfKind(KindNegative) {
+		if row.Key == NegativeNoCI || row.Key == NegativeNoLinter || row.Key == NegativeNoChangelog {
+			t.Fatalf("present project files claimed absent: %+v", row)
+		}
 	}
 }
 

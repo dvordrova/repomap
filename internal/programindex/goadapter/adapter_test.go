@@ -80,6 +80,7 @@ func Increment(value C.repomap_int) CValue {
 		repository, target, goAdapterPackageOrigins(t, *result.ExternalCallIndex),
 		*result.DirectCallIndex, *result.ExternalCallIndex,
 		*result.CoreObjectIndex, *result.DynamicHandoffIndex,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -180,6 +181,7 @@ func GetLevel(http.ResponseWriter, *http.Request) {}
 		repository, target, goAdapterPackageOrigins(t, *result.ExternalCallIndex),
 		*result.DirectCallIndex, *result.ExternalCallIndex,
 		*result.CoreObjectIndex, *result.DynamicHandoffIndex,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -190,6 +192,7 @@ func GetLevel(http.ResponseWriter, *http.Request) {}
 	if _, err := Build(
 		repository, target, nil, *result.DirectCallIndex, *result.ExternalCallIndex,
 		*result.CoreObjectIndex, *result.DynamicHandoffIndex,
+		nil,
 	); err == nil || !strings.Contains(err.Error(), "external target package \"net/http\" has no exact go-list origin authority") {
 		t.Fatalf("Build accepted missing external package-origin authority: %v", err)
 	}
@@ -345,6 +348,7 @@ func Partial(
 		repository, target, goAdapterPackageOrigins(t, *result.ExternalCallIndex),
 		*result.DirectCallIndex, *result.ExternalCallIndex,
 		*result.CoreObjectIndex, *result.DynamicHandoffIndex,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -470,6 +474,7 @@ func TestBuildRetainsKnownPartialCandidatesBeyondFormerProducerThreshold(t *test
 		repository, target, goAdapterPackageOrigins(t, *result.ExternalCallIndex),
 		*result.DirectCallIndex, *result.ExternalCallIndex,
 		*result.CoreObjectIndex, *result.DynamicHandoffIndex,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -589,6 +594,7 @@ func GetProduct() {}
 		repository, target, goAdapterPackageOrigins(t, *result.ExternalCallIndex),
 		*result.DirectCallIndex, *result.ExternalCallIndex,
 		*result.CoreObjectIndex, *result.DynamicHandoffIndex,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -762,6 +768,7 @@ func helper() {}
 		repository, target, goAdapterPackageOrigins(t, *result.ExternalCallIndex),
 		*result.DirectCallIndex, *result.ExternalCallIndex, *result.CoreObjectIndex,
 		*result.DynamicHandoffIndex,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -773,6 +780,7 @@ func helper() {}
 		repository, target, goAdapterPackageOrigins(t, *result.ExternalCallIndex),
 		*result.DirectCallIndex, *result.ExternalCallIndex, *result.CoreObjectIndex,
 		*result.DynamicHandoffIndex,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -788,6 +796,7 @@ func helper() {}
 		repository, target, goAdapterPackageOrigins(t, *result.ExternalCallIndex),
 		*result.DirectCallIndex, *result.ExternalCallIndex, *result.CoreObjectIndex,
 		*result.DynamicHandoffIndex,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -979,6 +988,7 @@ var Enabled = true
 		repository, target, goAdapterPackageOrigins(t, *result.ExternalCallIndex),
 		*result.DirectCallIndex, *result.ExternalCallIndex, *result.CoreObjectIndex,
 		*result.DynamicHandoffIndex,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -998,7 +1008,7 @@ var Enabled = true
 
 func TestBuildRejectsMissingCorpus(t *testing.T) {
 	if _, err := Build(nil, analysistarget.Target{}, nil, surfacediscovery.DirectCallIndex{}, surfacediscovery.ExternalCallIndex{},
-		(gocoreobject.Index{}), godynamichandoff.Index{}); err == nil {
+		(gocoreobject.Index{}), godynamichandoff.Index{}, nil); err == nil {
 		t.Fatal("Build accepted absent corpus and unavailable producer authority")
 	}
 }

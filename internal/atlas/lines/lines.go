@@ -2,8 +2,8 @@
 // directory table and the file table. Each definition says what a row
 // carries, what the model fills, and how the answer is applied. The row
 // context is one step up: a directory row carries its parent's fallback
-// line; a file row carries its directory's model line and the lines of a few
-// files that call it. Nothing transitive, nothing filled to a window.
+// line; a file row carries its directory's model line and deterministic
+// evidence from a few direct callers. Nothing transitive, nothing filled to a window.
 package lines
 
 import (
@@ -21,8 +21,8 @@ const (
 	StageDirectories = "atlas_directories"
 	StageFiles       = "atlas_files"
 
-	directoriesContract = "repomap.atlas.directories.v1"
-	filesContract       = "repomap.atlas.files.v1"
+	directoriesContract = "repomap.atlas.directories.v2"
+	filesContract       = "repomap.atlas.files.v3"
 
 	// WindowRows is how many rows one request carries.
 	WindowRows = 40
@@ -54,7 +54,7 @@ var filesPrompt string
 func Directories() table.Definition {
 	return table.Definition{
 		Stage: StageDirectories, Contract: directoriesContract, Window: WindowRows,
-		System: directoriesPrompt, MaxOutputTokens: 8192,
+		System: directoriesPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "title", Kind: table.Text, MaxRunes: TitleRunes, Note: "two to four words for the box"},
 			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what the directory's code does"},
@@ -66,7 +66,7 @@ func Directories() table.Definition {
 func Files() table.Definition {
 	return table.Definition{
 		Stage: StageFiles, Contract: filesContract, Window: WindowRows,
-		System: filesPrompt, MaxOutputTokens: 8192,
+		System: filesPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what the file does"},
 			{
@@ -90,7 +90,7 @@ func WithOpen(def table.Definition) table.Definition {
 }
 
 // Lines is what the reading knows so far: the model's line per place ID,
-// consulted when a row needs its parent's or its callers' lines.
+// consulted when a row needs its directory's line.
 type Lines interface {
 	Line(placeID string) (string, bool)
 }
@@ -121,9 +121,9 @@ func DirectoryRow(place atlas.Place, parent *atlas.Place) table.Row {
 	return table.Row{ID: place.ID, Fields: fields}
 }
 
-// FileRow builds the row of one file. Its directory's model line and its
-// callers' model lines come from earlier rounds; a caller without a line
-// yet is left out rather than replaced by its fallback.
+// FileRow uses the directory's model line and direct caller facts. Caller
+// evidence never contains another file's model output, so file requests are
+// independent and a reworded file does not propagate through the call graph.
 func FileRow(
 	place atlas.Place, directory atlas.Place, siblings []string,
 	lines Lines, places map[string]atlas.Place,
@@ -134,21 +134,27 @@ func FileRow(
 		fields = append(fields, table.Field{Name: "doc", Value: facts.Doc})
 	}
 	if line, ok := lines.Line(directory.ID); ok {
-		fields = append(fields, table.Field{Name: "directory", Value: line})
+		fields = append(fields, table.Field{Name: "directory_hypothesis", Value: line})
 	} else {
-		fields = append(fields, table.Field{Name: "directory", Value: directory.Given})
+		fields = append(fields, table.Field{Name: "directory_facts", Value: directory.Given})
 	}
-	callers := make([]string, 0, maxCallers)
+	callers := make([]map[string]any, 0, maxCallers)
 	for _, callerID := range facts.Callers {
-		line, ok := lines.Line(callerID)
-		if !ok {
-			continue
-		}
 		caller, known := places[callerID]
-		if !known {
+		if !known || caller.File == nil {
 			continue
 		}
-		callers = append(callers, path.Base(caller.Path)+": "+line)
+		entry := map[string]any{"path": caller.Path}
+		if caller.File.Doc != "" {
+			entry["doc"] = cut(caller.File.Doc, maxDoc)
+		}
+		decls := rankedDecls(caller.File.Decls)
+		names := make([]string, 0, min(len(decls), 3))
+		for _, decl := range decls[:min(len(decls), 3)] {
+			names = append(names, decl.Name)
+		}
+		entry["declarations"] = names
+		callers = append(callers, entry)
 		if len(callers) == maxCallers {
 			break
 		}
@@ -156,6 +162,7 @@ func FileRow(
 	if len(callers) > 0 {
 		fields = append(fields, table.Field{Name: "callers", Value: callers})
 	}
+
 	decls := make([]map[string]any, 0, min(len(facts.Decls), maxDecls))
 	for _, decl := range rankedDecls(facts.Decls) {
 		entry := map[string]any{"name": decl.Name, "kind": decl.Kind}
@@ -170,7 +177,7 @@ func FileRow(
 			break
 		}
 	}
-	fields = append(fields, table.Field{Name: "declarations", Value: decls})
+	fields = append(fields, table.Field{Name: "declaration_count", Value: len(facts.Decls)}, table.Field{Name: "declarations", Value: decls})
 	options := []string{BoxHere}
 	options = append(options, bounded(siblings, maxSiblings)...)
 	fields = append(fields, table.Field{Name: "box_options", Value: options})

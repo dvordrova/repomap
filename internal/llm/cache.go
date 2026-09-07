@@ -16,13 +16,8 @@ const (
 	// this directory as one explicit persistent cache target.
 	CacheDirectoryName = ".llm-cache"
 	cacheDirectoryName = CacheDirectoryName
-	cacheRecordVersion = 1
-	// A record stores no prepared request or semantic state. Its only variable
-	// binary field is one accepted response, base64-expanded by JSON from the
-	// transport-owned 16 MiB ProviderResponseByteLimit. The remaining schema is
-	// fixed-size hashes, closed enums, booleans, and machine integers, so this
-	// ceiling is derived headroom for every response the executor can accept;
-	// it is not a second semantic-response limit.
+	cacheRecordVersion = 2
+	// Accepted records reference exact request/response files in payloads/.
 	maxCacheRecordBytes = SemanticRecordByteLimit
 )
 
@@ -35,10 +30,30 @@ type acceptedCacheRecord struct {
 	ResponseSHA256 string       `json:"response_sha256"`
 	RequestBytes   int          `json:"request_bytes"`
 	ResponseBytes  int          `json:"response_bytes"`
-	Response       []byte       `json:"response"`
+	RequestFile    string       `json:"request_file"`
+	ResponseFile   string       `json:"response_file"`
+	Request        []byte       `json:"-"`
+	Response       []byte       `json:"-"`
 	FinishReason   FinishReason `json:"finish_reason"`
 	ChoiceCount    int          `json:"choice_count"`
 	Metrics        Metrics      `json:"metrics"`
+}
+
+// CachedExchange reads the current answer behind an entity's request reference.
+// Its owning stage must still validate the response against its own schema.
+func CachedExchange(rootDir, key string) (Outcome[json.RawMessage], bool, error) {
+	var outcome Outcome[json.RawMessage]
+	if !validSHA256(key) {
+		return outcome, false, fmt.Errorf("llm: invalid request cache key")
+	}
+	record, found, err := readAcceptedCache(rootDir, key, Limits{MaxResponseBytes: ProviderResponseByteLimit})
+	if err != nil || !found {
+		return outcome, false, err
+	}
+	outcome.CacheKey = key
+	setOutcomeRequest(&outcome, record.Request)
+	outcome.Response, outcome.ResponseSHA256 = record.Response, record.ResponseSHA256
+	return outcome, true, nil
 }
 
 func loadAcceptedCache(
@@ -47,6 +62,17 @@ func loadAcceptedCache(
 	request []byte,
 	limits Limits,
 ) (acceptedCacheRecord, bool, error) {
+	record, found, err := readAcceptedCache(rootDir, cacheKey, limits)
+	if err != nil || !found {
+		return record, found, err
+	}
+	if !bytes.Equal(record.Request, request) {
+		return acceptedCacheRecord{}, false, errors.New("llm: cached request differs from prepared request")
+	}
+	return record, true, nil
+}
+
+func readAcceptedCache(rootDir, cacheKey string, limits Limits) (acceptedCacheRecord, bool, error) {
 	cacheDir, found, err := existingCacheDirectory(rootDir)
 	if err != nil || !found {
 		return acceptedCacheRecord{}, false, err
@@ -70,7 +96,15 @@ func loadAcceptedCache(
 		}
 		return acceptedCacheRecord{}, false, fmt.Errorf("llm: decode accepted cache tail: %w", err)
 	}
-	if err := validateAcceptedCacheRecord(record, cacheKey, request, limits); err != nil {
+	record.Request, err = readPayload(cacheDir, record.RequestFile, SemanticRecordByteLimit)
+	if err != nil {
+		return acceptedCacheRecord{}, false, err
+	}
+	record.Response, err = readPayload(cacheDir, record.ResponseFile, limits.MaxResponseBytes)
+	if err != nil {
+		return acceptedCacheRecord{}, false, err
+	}
+	if err := validateAcceptedCacheRecord(record, cacheKey, record.Request, limits); err != nil {
 		return acceptedCacheRecord{}, false, err
 	}
 	return record, true, nil
@@ -85,6 +119,7 @@ func validateAcceptedCacheRecord(
 	if record.Version != cacheRecordVersion || record.Contract != executorContract ||
 		record.CacheKey != cacheKey || !record.Accepted ||
 		record.RequestSHA256 != sha256Hex(request) ||
+		!bytes.Equal(record.Request, request) ||
 		record.ResponseSHA256 != sha256Hex(record.Response) ||
 		record.RequestBytes != len(request) ||
 		record.ResponseBytes != len(record.Response) ||
@@ -103,9 +138,9 @@ func validateAcceptedCacheRecord(
 func saveAcceptedCache(rootDir string, record acceptedCacheRecord) error {
 	if record.Version != cacheRecordVersion || record.Contract != executorContract ||
 		!validSHA256(record.CacheKey) || !record.Accepted ||
-		!validSHA256(record.RequestSHA256) ||
+		record.RequestSHA256 != sha256Hex(record.Request) ||
 		record.ResponseSHA256 != sha256Hex(record.Response) ||
-		record.RequestBytes < 0 || record.ResponseBytes != len(record.Response) ||
+		record.RequestBytes != len(record.Request) || record.ResponseBytes != len(record.Response) ||
 		record.FinishReason != FinishStop || record.ChoiceCount != 1 ||
 		len(record.Response) > hardMaxResponseBytes {
 		return errors.New("llm: refuse invalid accepted cache record")
@@ -113,6 +148,15 @@ func saveAcceptedCache(rootDir string, record acceptedCacheRecord) error {
 	if err := validateMetrics(record.Metrics); err != nil {
 		return fmt.Errorf("llm: refuse invalid accepted cache metrics: %w", err)
 	}
+	requestFile, err := SavePayload(rootDir, record.Request)
+	if err != nil {
+		return err
+	}
+	responseFile, err := SavePayload(rootDir, record.Response)
+	if err != nil {
+		return err
+	}
+	record.RequestFile, record.ResponseFile = filepath.Base(requestFile), filepath.Base(responseFile)
 	encoded, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return fmt.Errorf("llm: encode accepted cache: %w", err)

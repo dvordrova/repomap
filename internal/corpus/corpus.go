@@ -1,4 +1,4 @@
-// Package corpus owns the run-local, tracked-file namespace shared by
+// Package corpus owns the run-local working-directory namespace shared by
 // repository analysis cubes.
 package corpus
 
@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	Version = 2
+	Version = 3
 	// MaxFiles, MaxSnapshotBytes, and MaxReadBytes are compatibility names for
 	// former local cutoffs. They are warning thresholds only; complete valid
 	// repository authority is never rejected or shortened at these sizes.
@@ -41,6 +41,11 @@ const (
 // therefore be removed before FileIDs exist rather than filtered by a later
 // consumer.
 func ForbiddenPath(filePath string) bool {
+	// Repomap settings control local execution, not the repository being
+	// explained. In particular an editor change must not perturb model inputs.
+	if filePath == ".repomap.conf" {
+		return true
+	}
 	if filePath == "" || filePath != path.Clean(filePath) || strings.HasPrefix(filePath, "/") {
 		return false
 	}
@@ -65,8 +70,8 @@ func ForbiddenPath(filePath string) bool {
 // canonical repository-relative path order and never come from model output.
 type FileID string
 
-// Entry is one stage-0 tracked regular file. Path is repository-relative and
-// slash-separated. Executable is exact Git index mode authority.
+// Entry is one regular working-directory file. Path is repository-relative and
+// slash-separated. Executable comes from current filesystem permissions.
 //
 // Working-tree size is deliberately not part of this sealed identity: files
 // may change during a run, and every cube binds the actual bounded bytes it
@@ -124,23 +129,22 @@ type Corpus struct {
 	maximumCompleteReadBytes   int64
 }
 
-// Open inventories one repository through the exact stage-0 Git listing and
-// opens its confined reader.
-func Open(ctx context.Context, repoPath string) (*Corpus, error) {
+// Open inventories current files independently of Git. Exclusions are exact
+// repository-relative paths; excluding a directory excludes its descendants.
+func Open(ctx context.Context, repoPath string, exclusions ...string) (*Corpus, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	listing, err := gitfiles.ListWithModesContext(ctx, repoPath)
+	listing, err := inventory(ctx, repoPath, exclusions)
 	if err != nil {
-		return nil, fmt.Errorf("repository corpus: tracked files: %w", err)
+		return nil, fmt.Errorf("repository corpus: filesystem: %w", err)
 	}
 	return New(ctx, repoPath, listing)
 }
 
-// New builds a corpus from an already captured Git listing. Only
-// Listing.RegularPaths enter the corpus; stage conflicts, symlinks, gitlinks,
-// and other index modes are absent. Every retained working-tree path must
-// currently be a non-symlink regular file.
+// New binds an already captured listing to its live reader. Only regular files
+// receive readable identities. Git metadata, when supplied by a fixture, never
+// determines the ordinary filesystem inventory.
 func New(ctx context.Context, repoPath string, listing gitfiles.Listing) (*Corpus, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -322,9 +326,9 @@ func (corpus *Corpus) Gitlinks() []Gitlink {
 	return append([]Gitlink(nil), corpus.gitlinks...)
 }
 
-// VisiblePaths returns every tracked path reported by Git, including
-// symlinks, gitlinks, and unresolved conflict paths that deliberately have no
-// FileID and cannot be read by analysis cubes.
+// VisiblePaths returns the inspected filesystem paths, including file types
+// and non-regular entries without a readable FileID. Explicit exclusions and
+// skipped dependency/cache directories remain outside this inventory.
 func (corpus *Corpus) VisiblePaths() []string {
 	if corpus == nil {
 		return nil

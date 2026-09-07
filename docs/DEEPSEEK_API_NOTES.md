@@ -73,3 +73,20 @@ comes from the caller's environment.
   source contents or raw internal edges. Full repository source, raw internal
   edges, canonical Atlas IDs, API keys, and Authorization headers must never
   enter saved debug artifacts.
+
+## Saved request replay
+
+`repomap replay --file REQUEST.json` uses the same Client.Complete path as an
+ordinary run. It accepts the exact provider request payload, not an atlas table
+input or a `.ref.json` file. Saved model, messages, temperature, output ceiling,
+thinking mode, response format and unknown provider options are preserved byte
+for byte. Current environment defaults do not rebuild the request. Endpoint,
+authentication, timeout, bounded response handling and retry policy are supplied
+by the configured client. Streaming requests are unsupported.
+
+Replay always calls the provider and replaces the shared exact-request answer
+on successful provider-envelope and JSON validation. Owning stages revalidate
+their own schemas on reuse. Request/response payloads are content-addressed in
+`.llm-cache/payloads`; journal records reference those files. Use the original
+run's `--debug-dir` to update the same cache. Existing run snapshots are not
+rewritten. A failed replay keeps the previous accepted answer.

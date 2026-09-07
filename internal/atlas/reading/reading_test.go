@@ -13,6 +13,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
@@ -70,14 +71,20 @@ func testGraph(t *testing.T) atlas.Graph {
 // test says otherwise. A window whose rows include a path in `refuse` comes
 // back with a duplicate key, which the table refuses.
 type tableProvider struct {
-	mu        sync.Mutex
-	calls     int
-	refuse    map[string]bool
-	boxFor    map[string]string
-	partFor   map[string]string
-	partNames []string
-	sameFor   map[string]string
-	answers   map[string]int
+	mu                 sync.Mutex
+	calls              int
+	refuse             map[string]bool
+	boxFor             map[string]string
+	fileLineFor        map[string]string
+	partFor            map[string]string
+	partNames          []string
+	sameFor            map[string]string
+	answers            map[string]int
+	questionFor        map[string]table.Answer
+	routeFor           func(map[string]any) table.Answer
+	answerFor          func(map[string]any) table.Answer
+	learningFor        func(learningRequest) learningResponse
+	learningSelectNone bool
 }
 
 func (*tableProvider) State() []byte {
@@ -85,13 +92,27 @@ func (*tableProvider) State() []byte {
 }
 
 func (*tableProvider) Prepare(prompt llm.Prompt, _ llm.Limits) (llm.Prepared, error) {
-	return llm.NewPrepared([]byte(prompt.User))
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
+		return llm.Prepared{}, err
+	}
+	request["_system"], _ = json.Marshal(prompt.System)
+	raw, err := json.Marshal(request)
+	if err != nil {
+		return llm.Prepared{}, err
+	}
+	return llm.NewPrepared(raw)
 }
 
 func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared) (llm.Completion, error) {
 	provider.mu.Lock()
 	provider.calls++
 	provider.mu.Unlock()
+	var learning learningRequest
+	if json.Unmarshal(prepared.Bytes(), &learning) == nil && learning.Evidence != nil && provider.learningFor != nil {
+		raw, err := json.Marshal(provider.learningFor(learning))
+		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
+	}
 	var request struct {
 		Table string `json:"table"`
 		Fill  []struct {
@@ -125,7 +146,9 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 		answer := map[string]string{"key": key}
 		for _, column := range request.Fill {
 			switch column.Kind {
-			case "text":
+			case "sequence":
+				answer[column.Name] = "none"
+			case "text", "prose":
 				answer[column.Name] = "Text for " + key
 			case "choice":
 				options := column.Options
@@ -146,11 +169,56 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 			}
 		}
 		switch request.Table {
+		case stageLearn:
+			_, merging := answer["representative"]
+			if ref, ok := row["own_ref"].(string); ok && merging {
+				answer["representative"] = ref
+			}
+			if candidates, ok := row["candidate_options"].([]any); ok {
+				var selected []string
+				if !provider.learningSelectNone {
+					for _, candidate := range candidates {
+						selected = append(selected, candidate.(string))
+					}
+				}
+				answer["questions"] = "none"
+				if len(selected) > 0 {
+					answer["questions"] = strings.Join(selected, " ")
+				}
+			}
+		case lines.StageAnswer:
+			answer["basis"] = "The selected declarations and their signatures suggest this role."
+			answer["state"], answer["answer"], answer["sources"], answer["remaining"] = "partial", "The declarations describe the available functions.", "c1", "Their implementation was not inspected."
+			if provider.answerFor != nil {
+				for key, value := range provider.answerFor(row) {
+					answer[key] = value
+				}
+			}
+		case lines.StageRoute:
+			options := row["candidate_options"].([]any)
+			limit := int(row["preferred_steps"].(float64))
+			var selected []string
+			for _, option := range options[:min(limit, len(options))] {
+				selected = append(selected, option.(string))
+			}
+			answer["order"], answer["open_question"] = strings.Join(selected, " "), "none"
+			if provider.routeFor != nil {
+				for key, value := range provider.routeFor(row) {
+					answer[key] = value
+				}
+			}
+		case lines.StageQuestion:
+			for name, value := range provider.questionFor[path] {
+				answer[name] = value
+			}
 		case lines.StageDirectories:
 			answer["title"] = "Title " + filepath.Base(path)
 			answer["line"] = "Directory " + path + " does things."
 		case lines.StageFiles:
 			answer["line"] = "File " + path + " does things."
+			if line, ok := provider.fileLineFor[path]; ok {
+				answer["line"] = line
+			}
 			if chosen, ok := provider.boxFor[path]; ok {
 				answer["box"] = chosen
 			}
@@ -201,6 +269,20 @@ func readOptions(t *testing.T, graph atlas.Graph, provider llm.Provider, cacheRo
 	}
 }
 
+func readWindowPayload(filename string) ([]byte, error) {
+	raw, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	var ref struct {
+		File string `json:"file"`
+	}
+	if err := json.Unmarshal(raw, &ref); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(filepath.Join(filepath.Dir(filename), ref.File))
+}
+
 func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 	graph := testGraph(t)
 	result, err := Read(context.Background(), readOptions(t, graph, nil, ""))
@@ -237,9 +319,9 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 			}
 		}
 	}
-	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "*.request.json"))
-	// three directory rounds, two file rounds, one arrow window
-	if len(requests) != 3+2+1 {
+	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "*.input.ref.json"))
+	// three directory rounds, one independent file round, one arrow window
+	if len(requests) != 3+1+1 {
 		t.Fatalf("request files: %d", len(requests))
 	}
 	if err := atlas.Validate(result.Atlas); err != nil {
@@ -253,6 +335,23 @@ func TestLiveReadingKeepsLinesAndMovesFiles(t *testing.T) {
 	result, err := Read(context.Background(), readOptions(t, graph, provider, ""))
 	if err != nil {
 		t.Fatal(err)
+	}
+	wireRequests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "*.request.ref.json"))
+	if len(wireRequests) == 0 {
+		t.Fatal("no exact provider request references")
+	}
+	for _, request := range wireRequests {
+		var wire map[string]json.RawMessage
+		raw, err := readWindowPayload(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if len(wire["_system"]) == 0 {
+			t.Fatal("request reference points to table input without provider preparation")
+		}
 	}
 	target := result.Atlas.Targets[0]
 	boxes := make(map[string]atlas.Box)
@@ -277,14 +376,15 @@ func TestLiveReadingKeepsLinesAndMovesFiles(t *testing.T) {
 	if !strings.Contains(string(tables), "line → File pkg/a/x.go does things.") {
 		t.Fatal("tables.md does not print the model's cell beside the row")
 	}
-	// The caller's line reaches the callee's row in the next round.
-	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "atlas_files-r2-*.request.json"))
+	// All files can be read together. Caller evidence is available even when
+	// that caller has not been described, and contains no generated sentence.
+	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "atlas_files-*.input.ref.json"))
 	if len(requests) != 1 {
-		t.Fatalf("second file round windows: %d", len(requests))
+		t.Fatalf("file windows: %d", len(requests))
 	}
-	second, _ := os.ReadFile(requests[0])
-	if !strings.Contains(string(second), `"callers": ["x.go: File pkg/a/x.go does things."]`) {
-		t.Fatalf("second round lacks the caller's line:\n%s", second)
+	request, _ := readWindowPayload(requests[0])
+	if !strings.Contains(string(request), `"declarations":["Main"],"path":"pkg/a/x.go"`) || strings.Contains(string(request), "File pkg/a/x.go does things.") {
+		t.Fatalf("file request does not isolate deterministic caller evidence:\n%s", request)
 	}
 }
 
@@ -306,7 +406,9 @@ func TestRejectedWindowFallsBackAndIsNotCached(t *testing.T) {
 	graph := testGraph(t)
 	cacheRoot := t.TempDir()
 	provider := &tableProvider{refuse: map[string]bool{"pkg/b/z.go": true}}
-	result, err := Read(context.Background(), readOptions(t, graph, provider, cacheRoot))
+	opts := readOptions(t, graph, provider, cacheRoot)
+	opts.WindowRows = 2
+	result, err := Read(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +437,9 @@ func TestRejectedWindowFallsBackAndIsNotCached(t *testing.T) {
 	// Ask again with a provider that answers well: the refused window is
 	// asked live, the accepted ones come from the cache.
 	again := &tableProvider{}
-	second, err := Read(context.Background(), readOptions(t, graph, again, cacheRoot))
+	opts = readOptions(t, graph, again, cacheRoot)
+	opts.WindowRows = 2
+	second, err := Read(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +450,7 @@ func TestRejectedWindowFallsBackAndIsNotCached(t *testing.T) {
 		t.Fatalf("an accepted window was asked again: %v", again.answers)
 	}
 	for _, use := range second.Uses {
-		if use.Stage == lines.StageFiles && (use.Cached == 0 || use.Live != 1) {
+		if use.Stage == lines.StageFiles && (use.Reused != 2 || use.Live != 1) {
 			t.Fatalf("second run file use: %+v", use)
 		}
 	}
@@ -363,9 +467,12 @@ func TestRequestBytesCarryNoIdentities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "*.request.json"))
+	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "*.input.ref.json"))
+	if len(requests) == 0 {
+		t.Fatal("no request references")
+	}
 	for _, name := range requests {
-		raw, _ := os.ReadFile(name)
+		raw, _ := readWindowPayload(name)
 		if hexID.Match(raw) || absolutePath.Match(raw) || strings.Contains(string(raw), "dir:") || strings.Contains(string(raw), "file:") {
 			t.Errorf("%s carries an identity or an absolute path", filepath.Base(name))
 		}

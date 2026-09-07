@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 13
+const CONTRACT_VERSION = 16
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 
 function fail(message) {
@@ -557,11 +557,28 @@ function declarationKind(node) {
   if (ts.isFunctionDeclaration(node)) return "function"
   if (ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) return "method"
   if (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) || ts.isEnumDeclaration(node)) return "type"
+  // Only a directly declared interface field belongs to that interface.
+  // Nested type literals and instance assignments do not establish ownership.
+  if (ts.isPropertySignature(node) && ts.isInterfaceDeclaration(node.parent)) return "variable"
   if (ts.isVariableDeclaration(node)) {
-    return node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) ? "function" : "variable"
+    return node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer) || callableExpression(node.name)) ? "function" : "variable"
   }
   if ((ts.isArrowFunction(node) || ts.isFunctionExpression(node)) && ts.isReturnStatement(node.parent)) return "lambda"
   return ""
+}
+
+// A function-valued variable remains callable when its initializer is a
+// factory call. This is compiler type evidence, independent of factory names.
+function callableExpression(node) {
+  const checker = checkerForNode(node)
+  if (!checker) return false
+  try {
+    const type = checker.getTypeAtLocation(node)
+    const signatures = typeof checker.getSignaturesOfType === "function"
+      ? checker.getSignaturesOfType(type, ts.SignatureKind.Call)
+      : type.getCallSignatures?.() || []
+    return signatures.length > 0
+  } catch { return false }
 }
 
 function declarationExported(node) {
@@ -587,6 +604,54 @@ function signatureOf(node) {
   try {
     const checker = checkerForNode(node)
     if (!checker) return ""
+    // Preserve optional/readonly modifiers and the written field type rather
+    // than reducing a field declaration to its inferred value type.
+    if (ts.isPropertySignature(node) && ts.isInterfaceDeclaration(node.parent)) {
+      const source = node.getSourceFile()
+      const literals = []
+      const visit = (child) => {
+        if (ts.isStringLiteral(child) || ts.isNoSubstitutionTemplateLiteral(child) ||
+            child.kind === ts.SyntaxKind.TemplateHead || child.kind === ts.SyntaxKind.TemplateMiddle ||
+            child.kind === ts.SyntaxKind.TemplateTail) {
+          literals.push(child)
+        } else ts.forEachChild(child, visit)
+      }
+      visit(node)
+      const compactTrivia = (text) => {
+        const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, text)
+        let compact = ""
+        for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+          if (token === ts.SyntaxKind.WhitespaceTrivia || token === ts.SyntaxKind.NewLineTrivia ||
+              token === ts.SyntaxKind.SingleLineCommentTrivia || token === ts.SyntaxKind.MultiLineCommentTrivia) {
+            if (!compact.endsWith(" ")) compact += " "
+          } else compact += scanner.getTokenText()
+        }
+        return compact
+      }
+      let cursor = node.getStart(source)
+      let signature = ""
+      for (const literal of literals) {
+        signature += compactTrivia(source.text.slice(cursor, literal.getStart(source)))
+        let text = literal.getText(source)
+        if (/[\u0000-\u001f\u007f-\u009f]/.test(text)) {
+          // ProgramIndex signatures are single-line text. The compiler's
+          // cooked literal value gives an equivalent escaped spelling without
+          // collapsing meaningful newlines or spaces inside a literal type.
+          const quoted = JSON.stringify(literal.text).replace(/[\u007f-\u009f]/g,
+            (value) => `\\u${value.charCodeAt(0).toString(16).padStart(4, "0")}`)
+          if (ts.isStringLiteral(literal)) text = quoted
+          else {
+            const value = quoted.slice(1, -1).replace(/`/g, "\\`").replace(/\$\{/g, "\\${")
+            const head = literal.kind === ts.SyntaxKind.TemplateHead || ts.isNoSubstitutionTemplateLiteral(literal)
+            const tail = literal.kind === ts.SyntaxKind.TemplateTail || ts.isNoSubstitutionTemplateLiteral(literal)
+            text = `${head ? "`" : "}"}${value}${tail ? "`" : "${"}`
+          }
+        }
+        signature += text
+        cursor = literal.end
+      }
+      return (signature + compactTrivia(source.text.slice(cursor, node.end))).trim()
+    }
     if (ts.isFunctionLike(node) && typeof checker.signatureToString === "function") {
       const signature = checker.getSignatureFromDeclaration(node)
       return signature ? safeTypeText(checker.signatureToString(signature, node, ts.TypeFormatFlags?.NoTruncation || 0)) : ""
@@ -628,6 +693,7 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
         name,
         qualified_name: `${moduleName(filePath)}#${ownerName ? `${ownerName}.` : ""}${name}`,
         signature: signatureOf(node),
+        signature_is_source: ts.isPropertySignature(node) && ts.isInterfaceDeclaration(node.parent) || undefined,
         exported: declarationExported(node),
         owner_ref: ownerRef,
         location: locationOf(node.name || node),
@@ -641,8 +707,12 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
 const refForDeclarationNode = (node) => {
   let current = node
   while (current && !ts.isSourceFile(current)) {
-    if (declarationRefByNode.has(current)) return declarationRefByNode.get(current)
-    if (ts.isVariableDeclaration(current) && declarationRefByNode.has(current)) return declarationRefByNode.get(current)
+    // A local value's initializer executes in its enclosing callable. The
+    // value is still indexed independently for argument/receiver provenance.
+    if (declarationRefByNode.has(current) &&
+        (!ts.isVariableDeclaration(current) || declarationKind(current) === "function")) {
+      return declarationRefByNode.get(current)
+    }
     current = current.parent
   }
   const sourceFile = node.getSourceFile()
@@ -851,7 +921,9 @@ function externalImportForExpression(node) {
       namespaceExport = current.name.text
       current = current.expression
     }
-    else if (ts.isCallExpression(current)) current = current.expression
+    // A factory's import identifies the factory, not methods on its result.
+    // The result receiver is retained separately by callPattern.
+    else if (ts.isCallExpression(current)) break
     else break
   }
   return { package: "", resolution: "unresolved", exportName: "" }
@@ -1524,6 +1596,34 @@ for (const { sourceFile } of sourceFiles) {
   visit(sourceFile)
 }
 
+// JSX attributes supply values; they do not call those values. Preserve every
+// compiler-observed callable attribute, including renderers and internal props,
+// so the semantic reader can distinguish user actions from ordinary callbacks.
+const bindings = []
+for (const { sourceFile, path: filePath } of sourceFiles) {
+  const visitJSXBindings = (node) => {
+    if (ts.isJsxAttribute(node) && node.initializer && ts.isJsxExpression(node.initializer)) {
+      const expression = node.initializer.expression
+      if (expression && callableExpression(expression)) {
+        const value = unwrapReceiverExpression(expression)
+        // The callable returned by a factory is not the factory itself.
+        const refs = ts.isCallExpression(value) ? [] : expressionRefs(value)
+        const callableRefs = refs.filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
+        const element = node.parent.parent
+        bindings.push({
+          ref: factRef("binding", node), from_ref: refForDeclarationNode(node), to_refs: callableRefs,
+          element: expressionText(element.tagName), attribute: expressionText(node.name),
+          resolution: callableRefs.length === 0 ? "unresolved" :
+            /\.(?:js|jsx|mjs|cjs)$/.test(filePath) || refs.length !== 1 || callableRefs.length !== 1 ? "alternatives" : "exact",
+          targets_observed: Math.max(1, refs.length), location: locationOf(node),
+        })
+      }
+    }
+    ts.forEachChild(node, visitJSXBindings)
+  }
+  visitJSXBindings(sourceFile)
+}
+
 const sharedContract = (value) => value.kind === "shared_type" || value.location.path.startsWith("shared/")
 const sharedContracts = contracts.filter(sharedContract).sort((left, right) =>
   compareText(left.location.path, right.location.path) || left.location.line - right.location.line ||
@@ -1555,6 +1655,7 @@ const result = {
   imports: uniqueByRef(imports),
   exports: uniqueByRef(exports),
   calls: uniqueByRef(calls),
+  bindings: uniqueByRef(bindings),
   surfaces: uniqueByRef(surfaces),
   contracts: uniqueByRef(contracts),
 }

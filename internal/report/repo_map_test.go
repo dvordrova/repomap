@@ -1,9 +1,34 @@
 package report
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func TestPortfolioArrowStaysOutsideItsColumn(t *testing.T) {
+	top := &pageRepoNode{X: 20, Y: 20, Width: repoNodeWidth, Height: repoNodeHeight}
+	middle := &pageRepoNode{X: 20, Y: 180, Width: repoNodeWidth, Height: repoNodeHeight}
+	bottom := &pageRepoNode{X: 20, Y: 340, Width: repoNodeWidth, Height: repoNodeHeight}
+	nodes := map[string]*pageRepoNode{"top": top, "middle": middle, "bottom": bottom}
+	for _, endpoints := range [][2]*pageRepoNode{{top, bottom}, {bottom, top}} {
+		edge, _ := repoEdgeGeometry(endpoints[0], endpoints[1], nodes)
+		var x0, y0, x1, y1, x2, y2, x3, y3 float64
+		if n, err := fmt.Sscanf(edge.Path, "M%f %f C%f %f %f %f %f %f", &x0, &y0, &x1, &y1, &x2, &y2, &x3, &y3); err != nil || n != 8 {
+			t.Fatalf("invalid loop %q: %v", edge.Path, err)
+		}
+		if x3 != endpoints[1].X+endpoints[1].Width || x2 <= x3 {
+			t.Fatalf("arrow does not arrive from outside its destination: %s", edge.Path)
+		}
+		for i := 1; i < 100; i++ {
+			u := float64(i) / 100
+			x := (1-u)*(1-u)*(1-u)*x0 + 3*(1-u)*(1-u)*u*x1 + 3*(1-u)*u*u*x2 + u*u*u*x3
+			if x <= middle.X+middle.Width {
+				t.Fatalf("loop crosses its column at t=%f: %s", u, edge.Path)
+			}
+		}
+	}
+}
 
 // An arrow between two targets with a third between them on the row ran
 // straight through the third box, where it merged with that box's own arrow.
@@ -25,12 +50,97 @@ func TestPortfolioArrowSwingsUnderABoxInItsWay(t *testing.T) {
 		t.Errorf("straight arrow leaves from the wrong place: %s", straight.Path)
 	}
 	detour, reach := repoEdgeGeometry(left, right, nodes)
-	if !repoRowHasBoxBetween(left, right, nodes) {
-		t.Fatal("the middle box was not seen as in the way")
-	}
 	if detour.LabelY <= straight.LabelY || reach <= straightReach {
 		t.Errorf("the arrow over a box did not swing under the row: label %.0f, reach %.0f", detour.LabelY, reach)
 	}
+}
+
+// Dense rows reproduce the overview bug: a diagonal could cross an unrelated
+// box even though no box shared the endpoints' row. Check both directions,
+// nearby and distant endpoints, and the compact grid's narrower gutters.
+func TestPortfolioArrowsAvoidEveryCard(t *testing.T) {
+	for _, gap := range []float64{repoCalledGapX, repoNodeGapX} {
+		nodes := make(map[string]*pageRepoNode)
+		for row := 0; row < 5; row++ {
+			for column := 0; column < 4; column++ {
+				id := fmt.Sprintf("%d/%d", row, column)
+				nodes[id] = &pageRepoNode{ID: id,
+					X:     mapPadding + float64(column)*(repoNodeWidth+gap),
+					Y:     repoRowGap + float64(row)*(repoNodeHeight+repoNodeGapY),
+					Width: repoNodeWidth, Height: repoNodeHeight,
+				}
+			}
+		}
+		for _, from := range nodes {
+			for _, to := range nodes {
+				if from == to {
+					continue
+				}
+				edge, reach := repoEdgeGeometry(from, to, nodes)
+				points := sampleRepoPath(t, edge.Path)
+				end, before := points[len(points)-1], points[len(points)-2]
+				if end[1] != to.Y+to.Height/2 || (end[0] != to.X && end[0] != to.X+to.Width) {
+					t.Fatalf("arrow misses destination %s: %s", to.ID, edge.Path)
+				}
+				if (end[0] == to.X && before[0] >= end[0]) || (end[0] > to.X && before[0] <= end[0]) {
+					t.Fatalf("arrowhead points away from destination %s: %s", to.ID, edge.Path)
+				}
+				for _, point := range points {
+					if point[1] > reach+0.01 {
+						t.Fatalf("arrow leaves canvas: %s", edge.Path)
+					}
+					for _, box := range nodes {
+						if point[0] > box.X+0.01 && point[0] < box.X+box.Width-0.01 && point[1] > box.Y+0.01 && point[1] < box.Y+box.Height-0.01 {
+							t.Fatalf("gap %.0f: %s -> %s crosses %s at %v: %s", gap, from.ID, to.ID, box.ID, point, edge.Path)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func sampleRepoPath(t *testing.T, path string) [][2]float64 {
+	t.Helper()
+	reader := strings.NewReader(strings.NewReplacer("M", "M ", "C", "C ", "L", "L ").Replace(path))
+	var command string
+	var current [2]float64
+	if n, err := fmt.Fscan(reader, &command, &current[0], &current[1]); err != nil || n != 3 || command != "M" {
+		t.Fatalf("invalid path: %s", path)
+	}
+	points := [][2]float64{current}
+	for reader.Len() > 0 {
+		if _, err := fmt.Fscan(reader, &command); err != nil {
+			t.Fatal(err)
+		}
+		var a, b, end [2]float64
+		switch command {
+		case "C":
+			if _, err := fmt.Fscan(reader, &a[0], &a[1], &b[0], &b[1], &end[0], &end[1]); err != nil {
+				t.Fatal(err)
+			}
+		case "L":
+			if _, err := fmt.Fscan(reader, &end[0], &end[1]); err != nil {
+				t.Fatal(err)
+			}
+		default:
+			t.Fatalf("unsupported path command %s", command)
+		}
+		for i := 1; i <= 200; i++ {
+			u := float64(i) / 200
+			var point [2]float64
+			for axis := range point {
+				if command == "L" {
+					point[axis] = (1-u)*current[axis] + u*end[axis]
+				} else {
+					point[axis] = (1-u)*(1-u)*(1-u)*current[axis] + 3*(1-u)*(1-u)*u*a[axis] + 3*(1-u)*u*u*b[axis] + u*u*u*end[axis]
+				}
+			}
+			points = append(points, point)
+		}
+		current = end
+	}
+	return points
 }
 
 // A target owns the packages it indexed. chi's example executable imports

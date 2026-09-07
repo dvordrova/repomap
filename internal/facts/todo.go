@@ -1,6 +1,9 @@
 package facts
 
 import (
+	"go/scanner"
+	"go/token"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -21,7 +24,7 @@ func (b *builder) addTODOs() {
 		}
 		targetID := b.targetForPath(filePath)
 		root := b.rootForTarget(targetID)
-		for number, line := range file.lines {
+		for number, line := range todoLines(filePath, file.lines) {
 			match := todoMarker.FindStringSubmatchIndex(line)
 			if match == nil {
 				continue
@@ -41,4 +44,31 @@ func (b *builder) addTODOs() {
 			}, marker, text)
 		}
 	}
+}
+
+// Go's lexer distinguishes actual comments from context.TODO(), identifiers
+// and strings. Keep physical source lines, including inside block comments.
+func todoLines(filePath string, lines []string) []string {
+	if path.Ext(filePath) != ".go" {
+		return lines
+	}
+	source := []byte(strings.Join(lines, "\n"))
+	file := token.NewFileSet().AddFile(filePath, -1, len(source))
+	var lexer scanner.Scanner
+	lexer.Init(file, source, func(token.Position, string) {}, scanner.ScanComments)
+	comments := make([]string, len(lines))
+	for {
+		pos, kind, text := lexer.Scan()
+		if kind == token.EOF {
+			break
+		}
+		if kind != token.COMMENT {
+			continue
+		}
+		start := file.PositionFor(pos, false).Line - 1
+		for offset, line := range strings.Split(text, "\n") {
+			comments[start+offset] += " " + line
+		}
+	}
+	return comments
 }

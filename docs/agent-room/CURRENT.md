@@ -2,7 +2,7 @@
 
 Status: active living ADR
 
-Last updated: 2026-09-04
+Last updated: 2026-09-07
 
 Historical provenance: pre-cleanup commit `4e54ab3`
 
@@ -36,6 +36,2381 @@ linter configuration; the page says how long the whole run took and
 where. Group matching reads incidence from indexes built once — repomap
 on itself compiled its 233,047 cross-target pairs in 42 s where it had
 spent seventy CPU-minutes without finishing.
+
+## Bottom-up iteration (2026-09-05)
+
+### Active goal: finish Learn/Work
+
+On 2026-09-07 the owner asked task
+`01a07a8c-53dd-7f33-8614-d726b350680f` to inherit the previous task's still-active
+goal, whose final wording was “доводим систему learn/work до ума”. Continue
+from the existing implementation and acceptance evidence. Learn should provide
+a useful introduction through the system map, questions, source-anchored answers
+and terms. Work should support investigation from either a subsystem or an
+operation, retaining context while drilling into its connections and sources.
+The operations/matching milestone below remains part of this work.
+
+The owner is reviewing `repomap-questions-learn-work.md` and
+`repomap-ui-ux-review.md`. Their 109 questions are a prioritization catalogue,
+not a promise to implement every distant capability. Keep the recorded UI/UX
+remarks until their acceptance journeys pass, and incorporate the owner's
+subsequent importance ratings. The small-report browser check has verified the
+continuation button for long inspector explanations (UX17) and preservation of
+the selected explanation and its scroll position when switching to Work. Source
+checks now avoid repeating the enclosing declaration's link while preserving
+each member's exact source (UX29). Current full etcd Learn/Work acceptance,
+reliable matching and the remaining navigation journeys are still open. The
+ordinary 27-target run `20260907-083529-etcd-9d31f0a919d8` completed in
+1 hour 42 minutes 29 seconds. All 27 targets were analyzed, with one common
+publication and matching native/group and saved graph/question bindings.
+Its 24 questions have 13 answered, seven partial and four unavailable results.
+It predates the output allowance, answer/type contracts and later UI changes,
+so it remains a baseline. Current-binary ordinary run
+`20260907-101952-etcd-720ad79ed333` terminated after 55 minutes 1 second
+with all 27 target pages analyzed but no common report or manifest. The
+provider began returning HTTP 402, "Insufficient Balance"; the final orientation
+request failed, so publication failed. Its saved 17 questions contain four
+answered, one partial and 12 unavailable results. Successful requests remain
+cached. The process ended by itself; it was not interrupted or restarted.
+Online acceptance resumes only after provider access is restored. The log is
+`work/learn-work-etcd-current-binary.log`. The incomplete-run receipt
+`work/learn-work-etcd-current-binary-incomplete.json` verifies all 27 native,
+group and index-set bindings and the saved graph. It records 3,029 accepted
+table results and 1,873 refusals, including 1,865 HTTP 402 refusals; the shared
+page/outcome portfolios and publication are absent. This is a terminal
+incomplete run, not a passed large-report acceptance.
+Ordinary runs and direct browser/source checks determine completion;
+passing tests or a historical small-repository screenshot alone do not.
+
+The owner's UI review method, clarified on 2026-09-07, follows a pair of real
+questions through the visible interface. Choose actions by their visual
+affordances, search first among prominent elements, then explore beside the
+relevant item. An unfamiliar term starts a side question. After navigation,
+assume the reader remembers learned terms but has lost their place; the page
+must help them orient again and start the next question. Record these journeys
+in `repomap-ui-ux-review.md`; DOM existence checks do not substitute for them.
+
+The owner subsequently clarified that the UI/UX council should consider
+overlooked ways of displaying and navigating the report, not challenge the
+truth of all generated information. Compare composition, detail placement,
+term side trips and visible context after a break. Preserve the completed
+content audit separately; it is not a mandate to expand that audit. The owner
+explicitly kept the current TypeScript field-loss fix in scope and requested
+comparable TypeScript, Python and Go examples in the cumulative testdata.
+The owner also made this a standing development rule: each language-cube
+behavior change must be captured by an understandable source example in its
+one cumulative language repository and an executable expectation over the
+real language path. Existing exact coverage can be reused; unrelated green
+tests or documentation alone are insufficient. Go interface declarations are
+already represented by generic TicketContract.Cancel/Status plus embedding
+and alias counterexamples in the cumulative Go fixture.
+This rule applies across languages: a case discovered in one language requires
+checking and recording its equivalents in every other supported language
+without another owner prompt. Respect the native semantics; record a missing
+equivalent instead of inventing one. An already-correct adapter needs the
+regression example, not an unnecessary production change. The count-field
+case demonstrates this: TypeScript and Go required fixes; Python required
+only the comparable fixture and executable expectation.
+
+The next display review has three comparison candidates: map with one reading
+pane, wider reading with a compact coordinated map and inline term expansion,
+and the same map with named returns through explicitly opened details. These
+are local mockups over frozen report text, not a second product presentation
+path. The owner's additional ideas are recorded as UX32–UX36: member cubes
+inside groups with hover preview, text below the map, member-level arrows,
+misleading grab/grabbing cursors, and the composition of small diagrams.
+The existing report's cursor mismatch is reproduced when a hidden map first
+initializes with zero width and later fits entirely; resetting removes the
+stale map-zoomed class. It remains an open implementation item. Priorities and
+display choices remain for the owner's review.
+
+The owner added a separate return-after-a-break check: after leaving and
+returning to the tab, can the reader tell both where they are and what they
+were doing? Evaluate the current screenshot with the click history forgotten.
+Retained UI state alone is insufficient. UX31 records this for both Learn
+side questions and Work investigations; its importance is still for the owner
+to assess. Do not infer an unrecorded user intention from the selected object.
+
+That walkthrough exposed loss of the originating question when opening the
+term library or a map. The existing reading navigator now keeps a visible
+“Back to question” link with its title during these side trips, including
+Learn/Work switches and subsequent map navigation. It returns to the existing
+expanded answer. Home and the general Questions entrance start a new journey.
+This is in-page navigation state, not persistent investigation history.
+An open area's hidden parent may still supply the inspector description, but
+cannot dim its visible children as if it were a node on their current map.
+Both changes passed focused report tests and browser checks on ordinary small
+reports; the return link also wrapped and worked at a 600px viewport. The
+latest small run is `20260907-085807-python-tutorial-game-88f6b9dbc0f2`, with
+no added explicit questions and no live provider calls. The ongoing etcd run
+predates these presentation changes. Missing explanations of external terms
+such as uvicorn, the incomplete backend startup answer and the large-report
+journeys remain open.
+
+The owner subsequently rejected arbitrary small generation ceilings. The common
+LLM allowance now supplies all stages, and table definitions cannot override it
+with a smaller output cutoff. Focused atlas, provider, cache, guidance, portfolio,
+documentation, orientation and run tests plus vet pass. Ordinary small run
+`20260907-092436-python-tutorial-game-0d882d08ea25` completed in 8 minutes
+27 seconds; all 92 saved table requests confirm `max_tokens: 128000`, including
+reasoning-enabled answers. Its 16 questions have nine answered, four partial
+and three unavailable results. The earlier etcd process continues as a baseline with its original
+binary and ceilings; it cannot validate this change.
+
+At the owner's request three agents independently walked launch/verification,
+subsystem investigation and operation-to-source journeys. Their logs are saved
+in the desktop project's `work/ui-ux-agent-*.md` and summarized in the UI review.
+The shared HTML search now includes existing questions, complete answer text and
+term explanations, with links back to their actual sections and sources. A
+search preview is an excerpt; opening it preserves the full answer. Existing
+source links identify the exact concept to explain when opening a code result.
+The inspector remembers its selected concept per existing map node. Choosing
+one of that part's using operations retains this selection, while a deliberate
+drill-down brings the updated map path into view if it was above the viewport.
+Hover alone does not scroll the page. The Learn/Work switch stays at the top
+when search results open. These are presentation changes over the same HTML and
+map, not another knowledge graph.
+
+Ordinary run `20260907-094401-python-tutorial-game-c24b5800d13a` completed in
+44 seconds with two targets, 16 questions, 11 answered and five partial, no
+rejected windows. It preserves the prior run's question menu and group graph;
+the three formerly rejected answers completed on the normal retry. Native
+index/group bindings, common publication, graph/question persistence and HTML
+anchors passed inspection. All 92 table requests use the shared 128,000-token
+allowance. Agent repetitions confirmed search/navigation improvements and Robot retention
+through Used by/All uses and exact Code search. A longer path also clicked the
+already-selected operation-picker button; that still reset scope. The picker
+now retains scope when selecting that same operation, and duplicate concept
+names gain their existing exact source labels.
+
+Type-v5 ordinary run `20260907-094938-python-tutorial-game-770ae08a8048`
+completed in 4 minutes 59 seconds, with 14 questions: seven answered, three
+partial and four unavailable. The subsequent current-binary run
+`20260907-095737-python-tutorial-game-7b65a187424d` completed in 47 seconds,
+preserving that menu and group graph. It has ten answered, three partial and
+one unavailable question: "How do the backend and frontend divide the work in
+this project?" received no provider content. The three prior source-ref
+rejections resolved on normal retry. Both runs passed native index/group,
+single-publication, saved graph/question and HTML-anchor inspection. All their
+saved table requests retain the shared allowance. Development check records
+are `work/learn-work-type-prose-acceptance.json` and
+`work/learn-work-agent-final-acceptance.json`.
+
+The agent's final browser repetition on 095737 confirmed Robot retention
+through Used by POST, clicking the already-selected upper POST card, and
+All uses. Field and Robot now end in whole sentences and retain their source
+links, including Robot in the term library. Duplicate-label presentation
+remains unverified: this reading selected only one Robot concept. An API Robot
+still generated an unnecessary lifecycle-absence sentence in its type row;
+prompt intent does not establish complete editorial acceptance. Dependency
+installation and current full etcd acceptance remain open.
+
+Two agents then evaluated the return-after-a-break scenario on 095737. In
+Learn, an open Settings article visibly retains the original launch question;
+its map link opens Application core with Field selected, losing the side
+question about Settings. In Work, POST and its Area/Part path remain visible,
+but the preceding Robot inspection is no longer shown. All uses restores Robot
+while removing the trace of the just-read POST. The repository name is above
+the viewport in these scrolled states. These are open UX31 findings: current
+location is clearer than the previous activity. No persistent history or
+guessed user-intention layer has been introduced.
+
+The next ordinary small run, 101216, completed in 31 seconds and resolved the
+remaining provider refusal: 14 questions, 11 marked answered and three partial.
+The declared states are not editorial acceptance: the frontend/backend
+responsibility answer still describes the HTTP boundary while excluding other
+frontend work from its selection. That broad answer needs further review.
+The map's existing term link now passes its exact source into the inspector,
+and the reading toolbar preserves both the originating question and the term
+article as named return links. The repository name stays in the desktop toolbar.
+Choosing a group's operation from a concept records the observed navigation
+step: "Opened [operation] from [concept in part]". Both names are actions that
+reopen the corresponding view; the step remains after All uses. This records
+the user's click provenance, not a new claim that the operation uses that type.
+Component or a new independent scope clears that local operation-return step.
+The agents verified both Learn and Work loops on 101216.
+
+Resizing had separately hidden the docked inspector. Only floating previews
+now close on resize. Ordinary run 101721 completed in seven seconds with no
+provider calls; it preserved the graph and answer contents, changing only
+the newly answered question's provenance from live model to cache. Settings
+and its inspector remained visible when narrowing to 600 pixels and restoring
+the viewport. At that point the narrow toolbar still scrolled out of view
+and the inspector had limited reading space. The later 103546 run fixes
+the Concept label's mid-word wrapping and increases the narrow inspector height.
+Development checks are recorded in `work/learn-work-return-context-acceptance.json`
+and `work/learn-work-return-resize-acceptance.json`.
+
+The owner requested a three-agent UI/UX design council to investigate whether
+the interaction model itself is missing something fundamental. Independent
+Learn, Work/navigation and visual-critique reviews exchange objections before
+a combined recommendation. These proposals are review hypotheses, not new
+product requirements or permission for a separate semantic model. They examine
+the difference between user intent, current object, relationship scope and
+navigation history, and whether a correct-looking answer actually satisfies
+the original task. Keep the owner's central visible map, optional entry by
+question or object, and direct source access in view when comparing alternatives.
+The combined owner-facing review is `repomap-ui-ux-design-review.md`, with six
+testable hypotheses and blank importance fields. The strongest concrete finding
+is relation attribution: a reviewer read Used by beside Robot as operations
+using that type, but the list belongs to Application core. All three reviews
+distinguish current object, map scope/filter and observed navigation history;
+hover preview must not silently become the recorded activity. The proposed
+single reading composition remains a comparison candidate, not an approved
+large redesign. Test it on task understanding and correct relation attribution,
+not just working links or the model's answered state.
+
+Ordinary small run `20260907-103546-python-tutorial-game-e2aab0f7b611`
+completed in seven seconds without live provider calls. Part actions now sit
+inside that part's description, with "Related operations for [part]" before
+secondary source details and a separate Concept column. The list comes from
+the existing operation/group neighbourhood, including possible connections;
+it does not assert ownership of the operation or use of the selected type.
+The first layout attempt hid this action below the inspector fold and failed
+visual review. The revised layout passed 1600px and 600px checks, including
+Robot → POST → source → All uses and a More details click without page movement.
+These checks resolve one concrete attribution defect, not the council's full
+interaction-model review. The incomplete current-binary etcd run predates these
+UI edits and cannot validate them.
+
+D03 diagnosis on the older etcd baseline found that Applications expands a
+role area; it is not an exclusive filter. All three applications were present.
+ELK's placement, subsequent readable scaling and the initial top-left camera
+put them below Tools/Examples and outside the first screen. The current bounded
+UI change frames the opened area's existing components in a scrollable map
+window without changing their layout or relations. Oversized areas frame their
+first component at readable scale. A map initially hidden by a question URL
+waits until it is visible to apply this initial frame; later resizing does not
+reset the reader's pan. Fit remains the explicit whole-map view, while Reset
+restores the opened area's readable frame.
+Ordinary small run `20260907-104821-python-tutorial-game-34463d691ba7`
+completed in seven seconds with no live provider calls. Exact native/group,
+question, saved input and publication checks passed; graph and answer contents
+are unchanged from 103546. Browser checks covered the initial map, hidden
+Home → visible Home, and zoom/reset at 600px. Its frontend is readable while
+the backend partly extends past the horizontal edge. The separate etcd UI
+preview uses baseline HTML with current exact CSS/JS solely for layout testing;
+it is not a new ordinary report or current-analysis acceptance. At 600px its
+server is fully visible, Fit reveals neighbours, and Reset restores the same
+readable frame without moving the page. Broader first-screen composition and
+fresh large-report acceptance remain open. Development records are
+`work/learn-work-relation-actions-acceptance.json` and
+`work/learn-work-map-focus-acceptance.json`.
+
+Ordinary small run `20260907-112735-python-tutorial-game-e70a52ffed75`
+completed in six seconds with no live calls. The reading toolbar now remains
+sticky at narrow widths. Map inspectors reserve its measured height on wider
+screens; at 650 pixels and below they scroll with the page, so they do not
+form a second permanently fixed block. Navigation measures the toolbar after
+updating return links, location and the picker, before scrolling. Waiting only
+for ResizeObserver had hidden the Level article heading beneath a newly taller
+toolbar and misplaced search results after closing the search panel.
+The 600-pixel walkthrough verifies the long domain question, its Level article,
+the Application core map and named return to Level. At 16-pixel root text the
+map toolbar is 288 pixels tall; the graph remains readable after scrolling its
+inspector away. A separate 600-by-900 check with 20-pixel root text verifies
+both named returns and the Learn/Work switch: the Level article begins below
+its 346-pixel toolbar, and both map nodes can be read below the 379-pixel
+toolbar after page scrolling. At 934 pixels the sticky inspector begins exactly below the
+184-pixel toolbar. The narrow map breadcrumb and inspector can still leave
+the viewport: visible return links do not fully solve D02/UX31 context or hover
+inspection. No persistent history or inferred intention was added. Focused
+report tests, vet and script syntax checks passed; all 55 structural checks in
+`work/learn-work-narrow-context-acceptance.json` passed, including unchanged
+graph, learning plan and 14 questions compared with 104821.
+
+Ordinary small run `20260907-114411-python-tutorial-game-6dc028f6bb31`
+completed in six seconds without live provider calls. A map node's existing
+source link now sits beside its explanation, outside Code and connections.
+Operation kind remains visible with its title; an operation with no further
+keys, call witness, connections or main-path step has no empty disclosure.
+Real supporting material stays collapsed. Root opened the POST source directly
+at the exact captured GitHub revision, app.py line 74, and verified the route
+highlight. An independent frontend check found animate's exact line 138 without
+opening either disclosure or inspector continuation; on a 600-by-900 screen
+with 20-pixel text it required normal page scrolling. All 69 structural checks
+passed, with graph, questions and source bindings unchanged. Focused report
+tests passed in 0.750 seconds; vet and script syntax passed. The receipt is
+`work/learn-work-operation-source-acceptance.json`.
+
+Ordinary small run `20260907-115943-python-tutorial-game-9ea84cf7a647`
+completed in six seconds with no live calls. The operation strip now shows its
+count and previous/more controls when it overflows. Explicit selection, clearing
+the search and width changes reveal the selected card by scrolling only the
+strip. Typing and resizing preserve the current search; an explicit external
+selection clears an incompatible operation search to expose the new choice.
+Map controls retain their own inspector instead of dismissing it on pointerdown.
+A node inspected outside the exact selected scope or pinned operation is labelled
+Preview; this does not change the selected scope or record a new intention.
+Root verified global selection, strip paging, filtering and clearing at 934px.
+An independent Work walkthrough verified Related operations selection and
+wide-to-600-to-wide resizing with 20px text, plus keyboard Preview of Frontend UI
+while Utility helpers remained selected. On the narrow screen the strip may
+require ordinary page scrolling; an external selection can scroll the page back
+to the map. A long breadcrumb still partly exceeds its visible width. The full
+group detail section at this checkpoint also retained map state without showing
+the prior operation; the later detail-return change below addresses that path.
+These observations are not state loss or completed UX31 acceptance.
+All 45 structural delta checks passed: graph, learning plan, 14 questions and
+source bindings are unchanged. Focused report tests passed in 0.808 seconds;
+vet and script syntax checks passed. Records are
+`work/learn-work-operation-context-acceptance.json`,
+`work/ui-ux-operation-context-root.md` and `work/ui-ux-work-current-context.md`.
+
+Ordinary small run `20260907-121841-python-tutorial-game-b36eaf41cfe6`
+adds an explicit Back to map action to the existing toolbar return block while
+reading a full group section. Its label describes the live map's view, exact
+operation with selected/preview state, and Area/Part path. The reading-location
+line separately names Full details and the actual group. Source-hint buttons
+are removed only from a copy of that title. Full group content remains general;
+an operation in the return label never filters or claims ownership of its facts.
+The new action scrolls to the existing map and shows its selected scope or
+operation without changing the map's selection, searches, layout, zoom or pan.
+The original on the map action still locates the named group and may change
+scope. Inspector contents are shown again; exact disclosure restoration and
+serialization of map state into browser history are not added.
+Root verified POST → Area/Part → full section → Back at 934px on 121436.
+An independent frontend path opened a neighbouring full group, changed
+Learn/Work and returned to the original animate/Area/Part rather than that
+neighbour. Final 121841 also passed a cold full-section URL and Learn → Back
+to Structure without inventing a previous operation. Its 600px walkthrough
+could not receive visual acceptance: after entering full details the browser
+capture was displaced relative to measured DOM coordinates. The link's full
+wrap is DOM-checked only; screenshots are not used to claim narrow acceptance.
+Both temporary viewport overrides were restored. A later root check reproduced
+capture failure on the ordinary Structure map before entering full details:
+the viewport override changed measured DPR and both supported screenshot APIs
+failed. Reset restored the normal 934-by-992 capture. This confirms an emulator
+limitation without proving the absence of a separate narrow-layout defect;
+repeat attempts with that unchanged mechanism are not acceptance progress.
+The final ordinary run completed in eight seconds with no live calls. Its 24
+delta checks preserve the 41 structural checks of 121436 against 115943: graph,
+14 questions, both page bindings and source links are unchanged. Report tests
+passed in 0.801 seconds; vet and script syntax passed. Records are
+`work/learn-work-full-details-context-acceptance.json`,
+`work/learn-work-full-details-label-acceptance.json` and
+`work/ui-ux-full-details-context-root.md`. Large-report and human-comprehension
+acceptance, D04 and the other open Learn/Work paths remain incomplete.
+
+D04 source audit on 104821 isolated two semantic failures. Question retrieval
+retained 23 original candidates, including UI and simulation declarations.
+The single complete route pool selected only three backend endpoints and
+three corresponding client HTTP functions. The final provider response itself
+returned answered/none while explicitly excluding other frontend work. The
+reader and renderer did not promote that state; both current prompts already
+require completeness against the original question. The next bounded quality
+checks are separate: an honest partial answer on the same six sources, a
+complementary role selection from the unchanged 23, and a narrow HTTP-only
+question as a control against over-demanding implementation details. Do not
+repair the state or reinsert sources locally. The saved diagnosis is
+`work/ui-ux-answer-task-completeness.md`.
+
+The full 14-question static source audit of ordinary 121841 found three further
+wrong answered results. Both the stored-level format and add-level answers
+substitute the API Level model for the catalogue's actual dictionaries. The
+add-level answer wrongly requires id (added by handlers) and omits the
+wincondition_check used unconditionally to run the level. The selected levels
+anchor carries a name and prior hypothesis, not its initializer structure;
+route selection did not lose that anchor. The HTTP endpoint answer also calls
+/api/levels a list response although it returns count. GetLevelsInfoResponse
+with count was present in the original question input but was not selected.
+The frontend IGetLevelsResponse reached the candidates but had no count field
+in its original evidence; its later route exclusion is not the loss of that
+field. Separately, the error-state answer is honestly partial against its
+final input, while route selection discarded the already available State enum
+with error/success. A final-answer prompt alone cannot repair all these paths.
+The startup commands are factually correct but do not explain dependency setup
+or state a prepared-environment assumption; they are not accepted as a complete
+first-run recipe. The purpose answer's partial state is honest, but retrieval
+retained only the README title. The other reviewed answers did not yield a
+confirmed factual defect at their requested level; this is static audit, not
+runtime success or human comprehension. The report and cached responses were
+not patched. `work/learn-work-answer-quality-review.md` links all 14 exact
+questions, original inputs and sources, with importance left for the owner.
+`work/learn-work-remaining-acceptance.md` covers all 31 UX and six design items;
+API balance blocks new semantic responses and the fresh large ordinary run,
+while source/relationship, editor-failure and exact-name checks remain local
+work rather than grounds to mark the full goal blocked.
+
+Five isolated prompt-only development readings kept all nine tested stage
+inputs byte-identical to the original small run. The first answer clarification
+still called the HTTP-only overview answered. One broad route response contained
+invalid JSON; the narrow route kept all three client/server pairs but asked for
+unrequested payload details. The next route attempt and both second variants
+were refused with HTTP 402, not evaluated semantically. None of these prompts
+has entered the ordinary path. A reviewed next answer variant preserves useful
+qualified deductions from names/signatures rather than demanding explicit job
+documentation. `work/d04-prompt-experiments.json` records the outcomes; the next
+variants are `work/d04-answer-completeness-prompt-3.md` and
+`work/d04-route-responsibilities-prompt-2.md`.
+Source inspection separately confirmed that proposal Title/Question/Why survive
+in question origins but are absent from provider question/route/answer inputs.
+Their causal role in D04 is unproven. No projection has been added: explicit
+questions must not acquire invented intent, complete base goals must not add
+unasked requirements, and standalone saved-input readings lack those origins.
+
+### Active acceptance: operations and matching
+
+The owner narrowed the next milestone to universal operation discovery and
+matching, with Cobra and HTTP as examples. Preserve model descriptions and
+roles on internal entities, plus the kinds, endpoints and evidence of their
+connections through publication. A command, route, scheduled task or permanent
+process uses the same graph interaction. Framework meaning belongs to model
+interpretation over language-neutral evidence; no parallel Cobra analyzer.
+
+Acceptance starts on the overview graph: find etcdutl, hover for a short
+description, click the same node without moving the pointer, then see its
+operations on the component graph. Hovering an operation highlights the paths
+and components it touches; cross-component edges lead to the relevant code or
+operation. Imports, calls and inferred integrations remain distinguishable.
+The equivalent server view exposes routes and background work through the same
+mechanism. The map work is part of this milestone: grouped, short overview
+names; distinct executable/library colors and language icons; compact model
+descriptions with source links; reachable previews with pointer-intent handling;
+stable layout without overlapping boxes or a permanent tangle of arrows.
+Performance optimization is paused. Existing symbol descriptions, knowledge
+records, native relations and matching stages must be used before adding stages.
+
+The owner's morning review separates the product's base questions from optional
+agent-style investigation. The ordinary report should guide a reader through
+useful questions chosen by the product: what is here, which component to open,
+which operations it exposes, and what code those operations touch. A developer's
+`--question` experiment is an additional reading aid, not the report's default
+opening or a replacement for those base questions. Acceptance must independently
+check the relevant source and actual navigation, not grade an answer by another
+generated answer. The base-question coverage remains unfinished.
+
+The normal Go call-index pass now visits every loaded repository function,
+including callbacks outside the launch call tree, and canonicalizes generic
+origins. Anonymous functions retain their compiler signatures through the
+Go adapter as well (DirectCallIndex v9). Explicit depth/edge narrowing remains
+explicit. Declaration candidates
+include anonymous functions passed as callbacks; incidental closures are not
+automatically added. Neutral callable bindings retain the source and destination
+names, field/argument detail, invocation, resolution and source location. Calls
+to external code retain qualified names, so `context.WithTimeout` does not lose
+its identity before interpretation. DynamicHandoffIndex v6 also retains source
+assignments to interface fields, keyed by the compiler's field declaration.
+Local factory return values can resolve a stored implementation. These are
+possible alternatives with an open frontier, never exact instance bindings:
+all observed stores to one field do not prove the value of a particular receiver.
+Fields with the same name on unrelated types do not share candidates. Both the
+call site and the constructor assignment survive projection; an assignment is
+support for the call, not a second call at the constructor line. This recovers
+`quotaKVServer.Put -> kvServer.Put -> EtcdServer.Put` in etcd without any
+framework-specific rule.
+
+Interface-valued arguments now retain the concrete methods of the declared
+interface when their implementation is resolved from the actual value, local
+factory return, or observed alternatives. The existing transfer slot records
+the declared interface and method. An unrelated compatible type cannot supply
+an implementation; extra concrete methods outside the interface are excluded.
+These are object-registration observations, not callback executions. On etcd,
+quotaKVServer.Put retains the RegisterKVServer argument at grpc.go:80 and the
+separate local KvServerToKvClient adapter binding at v3client.go:33.
+
+Callable bindings now retain literal assignments to other fields of the same
+SSA receiver in that function. Referrer identity keeps two command/worker
+objects of the same type separate; conditional or later stores remain separate
+anchored observations, not final runtime values. Named and anonymous callbacks
+share this mechanism. No field names or framework types drive extraction.
+ProgramIndex carries these as `callable_receiver_field` witnesses, and the
+atlas attaches them as binding evidence rather than additional registrations.
+The own callback sees its object's fields; a neighbouring caller's registration
+retains just the binding shape and source, so a shared error helper does not
+inherit every command's help text. Canonical sealing, independent copies,
+source anchors and a two-object fixture verify the underlying facts.
+
+Symbol rows propose activation and selected outgoing calls using local refs.
+The independent `atlas_operations` v12 table reviews the candidate declarations
+against registration evidence and their immediate native callers. Caller object
+identities remain in Graph/reading-input v6 for local retrieval, then disappear
+from provider rows. Each caller is represented once with its source signature,
+documentation, registrations and every distinct incoming call site. The review
+does not include unrelated same-named methods or recursively expand a caller's
+own callers and outgoing calls. That expansion exceeded one row's context on
+etcd's shared ExitWithError helper. It does not repeat previous
+activation/name/description hypotheses in its input:
+on etcd those encouraged the model to confirm internal helpers as operations.
+Its compact calls also omit unrelated literal and log-message payloads. It keeps an
+action name and short result description on the original symbol, with a separate
+knowledge record for this decision. It can reject a helper without deleting its
+function description. A closed entry choice now distinguishes this declaration,
+an advertised immediate caller, and no supported entry. Only a self choice can
+publish this declaration as an operation; choosing a caller does not promote
+that caller without its own review. A registered callback or an observed asynchronous entry
+is reviewed even if the first symbol pass did not propose an operation. Native
+patternless calls retain qualified dispatch detail and resolution; previously
+these observations vanished before reaching the model. Commands, requests, user
+interactions, scheduled work and continuous work
+share this contract. An observed HTTP route replaces the duplicate declaration
+operation; different route aliases remain separate. These interpretations still
+need evaluation: a source anchor proves the declaration exists, not that the
+model's classification or explanation is correct.
+
+Symbol table v5 and operation table v12 admit `interaction` for user-facing
+handlers. A callable JSX attribute is evidence for review, not an automatic
+interaction classification: render props and internal callbacks use the same
+neutral binding observations. The model reads the exact element/attribute,
+declaration and existing calls. Labels come from that evidence, not invented
+button text. The original declaration and its native paths remain the map's
+operation identity.
+
+Repeated source observations use a row-local evidence dictionary. Callable
+bindings use shared columns plus association rows. An operation row receives
+only the registrations whose recipient is that declaration. Callbacks it
+supplies are listed by name; their command metadata belongs to their own rows. This is lossless input
+preparation: original order, multiplicity, alternatives and source locations
+remain recoverable. Immediate caller context includes how that caller is bound,
+not every callback it registers. Provider symbol windows contain eight rows;
+already accepted entity descriptions do not change identity with batch size.
+
+Path-presence questions use the corpus's existing VisiblePaths inventory,
+including non-readable configuration types, rather than only source entries.
+Filesystem inventory retains those paths before selecting readable content and
+still respects explicit exclusions and skipped dependency directories; it does
+not depend on Git. This fixes false "no CI" claims for YAML workflows. Changelog
+directories and nested-project linter configurations also count. Absence wording
+is restricted to recognized files in the inspected paths; it is not an assertion
+that no alternative configuration exists. Content selection remains unchanged.
+
+Matching retains native imports, calls and callback transfers separately from
+model-confirmed integration hypotheses. Every peer window is considered rather
+than silently selecting a first candidate subset. Rows share a peer dictionary
+only when they have identical eligible counterparts: the same source object,
+same-component-only counterparts and incompatible fixtures never appear as
+choices in a request that forbids them. This removed six rejected peer windows
+on etcd; shared dictionaries remain exhaustive over admissible peers. Inferred connections retain
+their original joint identity, source/destination subjects and exact anchors,
+including distinct calls at one source line. The ordinary report projection
+keeps this information in GroupsIndex v5 (atlas v2, report v78), with no legacy
+reader. Blind matching now compares each peer window's winners again against
+the original evidence until one counterpart or none remains per outgoing
+boundary. It no longer publishes one independent winner from every window.
+Peer eligibility is partitioned inside each bounded window to keep unrelated
+outgoing rows batched. Candidate declarations retain exact signatures and
+comments, including streaming result types; protocol similarity alone is not
+the same operation. No Cobra-specific detector or parallel graph has been introduced.
+
+The operation map follows native calls and executions from the selected
+subject, with cycle protection, and projects the visited subjects to groups.
+Imports and the act of supplying a callback or service object do not become
+execution paths. This currently also leaves an open path where an external
+framework invokes a supplied callback without a separately observed call;
+the binding stays in the underlying graph. A model-matched endpoint is included in
+an operation's path only if its caller is reached; otherwise it remains visible
+on the caller's group. Cross-component endpoints link to the matching operation
+where its anchor is known. These are possible static paths, not a runtime trace;
+unresolved dispatch and model integrations use dashed lines.
+
+The operation view now has search, a group filter, and eight operations per
+view. This is display pagination: every operation and its precomputed paths
+remains in the static HTML. Hovering keeps the operation stationary and brings
+its related groups alongside it; labels include their group to distinguish
+same-named methods. Links to operations on another page reveal that page first.
+Links back from code cards also reveal a hidden group. The existing pan/zoom,
+source links and pointer-intent preview remain shared across these views.
+
+An ordinary `--question` run now carries the atlas question result in memory
+through publication into the common report JSON/HTML. It renders a short reading
+guide, original source links and the unresolved question; incomplete/unavailable
+selection remains explicit. The separate development `read` command still does
+not render HTML. Six stops is a preference for the final reading order, not an
+evidence-validity ceiling: seven or eight known anchors no longer cause the
+whole guide to be discarded. Intermediate reduction rounds remain bounded and
+unknown references do not become source anchors. No source bodies have been
+added to question evidence yet.
+
+Last checkpoint with the sampled command-to-handler transitions intact:
+`20260906-020207-etcd-0249ec32f700`,
+88.037 s with no new provider calls, 27/27 targets and one common HTML/report
+JSON/manifest. All 27 local
+ProgramIndex sets, dependency catalogs, reduced documents and GroupsIndex hashes
+were inspected against the common report; each local set has one entry and all
+native/set/groups/report hashes agree. The browser opened etcdutl from the
+overview and followed etcdctl put to quotaKVServer.Put at quota.go:60, revealing
+the destination page. It found no duplicate IDs, missing internal anchors,
+visible node overlaps or console errors. No pointer-intent code changed, and
+diagonal pointer transfer was not repeated; its prior real mouse acceptance
+remains the 211826 checkpoint. The full receipt is workspace
+`work/etcd-operation-map-views-acceptance.json`.
+
+This is NOT universal matching acceptance. All 5,563 symbol descriptions,
+564 file descriptions and 1,248 operation rows were reused. Matching reused all
+2,651 rows in 129 windows, with no rejected rows. Current sampled choices are
+kv.Get -> kvServer.Range, kv.GetStream -> kvServer.RangeStream and kv.Put ->
+quotaKVServer.Put or kvProxy.Put. In the earlier 012907 diagnostic checkpoint,
+changing the operation peer pool instead selected mockKVServer.RangeStream and
+leasingKV.Get. The current correct samples do not establish general precision.
+The global one-peer reduction applies to blind matches, not separately confirmed
+equal-value pairs.
+Exact gRPC full-method literals already exist in the generated client boundary
+facts. An SDK wrapper's short method name and a model operation label are weaker
+candidates; do not claim a runtime destination from their agreement. A mock or
+client adapter is not the deployed server simply because its signature fits.
+
+The callable context gap is now repaired locally. Graph/reading-input v6 retains
+CalleeIDs on SymbolCall and PlaceID on SymbolCaller, resolved from compiler
+locations to existing symbol places. The provider projection removes these
+keys. Generated callables retain their calls and bindings with Candidate=false;
+neither description nor operation review asks new rows for them. Multiple
+target-native IDs at the same declaration now contribute observations to that
+one place. Previously only the first target copy supplied its calls/bindings,
+silently losing observations from siblings. Source-distinct calls survive,
+duplicate copies meet, and same-named declarations in other files stay separate.
+Graph validation rejects dangling caller/callee place links. The v6 increment
+also keeps outgoing source columns locally. Inspection of getCommandFunc showed
+one exact call site twice: its library index has no implementation in scope,
+whereas the executable index has a possible kv.Get receiver plus an explicitly
+open frontier. Both share compiler position, invocation and dispatch detail.
+The atlas now removes the empty unresolved copy only when a possible receiver
+at that exact source position carries otherwise identical call facts. It keeps
+every possible receiver, different columns/details and independent evidence;
+an exact view cannot erase an uncertain observation. Native indexes remain
+unchanged. Source columns are stripped from provider rows, as callee IDs are.
+This is a local representation correction, not the blocked callee-context
+expansion. The concrete native observations are recorded in workspace
+`work/etcd-interface-call-observations.json`.
+
+Ordinary v6 run `20260906-033749-etcd-cbfec998d314` completed in 373.531 s.
+It removed 221 empty repeated observations and preserved 156 source-distinct
+calls formerly merged by their shared line number. Get matched kvServer.Range
+again; GetStream did not. Comparing its provider facts also exposed 163 symbols
+whose facts were unchanged but reordered by adding the local column. The key
+now sorts existing call evidence first and uses the column only to distinguish
+otherwise identical call sites. A new ordinary run
+`20260906-035246-etcd-ed01de1c72e8` completed in 261.564 s, with zero order-only
+changes across 6,790 unchanged symbols and 306 symbols with changed call facts.
+Put matched quotaKVServer.Put and kvProxy.Put; Get matched kvServer.Range;
+GetStream remains unresolved. Receipts: `work/etcd-dispatch-projection-diff.json`
+and `work/etcd-dispatch-stable-order-diff.json`. These are possible matches,
+not runtime endpoint resolution. Native target indexes are unchanged.
+
+The first ordinary v5 run `20260906-022225-etcd-71e0df180a44` completed in
+472.557 s. It keeps 1,533 generated context callables and 5,563 description
+candidates. Aggregation changed observations for 825 symbols; 4,738 descriptions
+were reused. Eight malformed symbol rows were recovered through the same read
+stage in two four-row windows, 6.828 s total, reusing the other 5,555 descriptions.
+All 1,263 operation rows answered (849 reused); three matching rows were
+rejected for a missing peer cell. The second ordinary full run
+`20260906-023410-etcd-11ea3457fab6` finished in 125.826 s, with 27/27 complete
+targets and zero rejected/unanswered rows. Every symbol and operation row was
+reused; only one matching window, two question windows, four route windows and
+orientation made live calls. Native/set/groups/report hashes agree for all
+27 pages, and the common HTML/JSON/manifest exist once. Its structural receipt
+is `work/etcd-callable-identity-acceptance.json`.
+
+The v5 report is diagnostic, NOT matching acceptance: browser search finds
+etcdctl put but no remote destination, because all candidate pairs were rejected.
+Get/GetStream also lost their previous matched endpoints; unnamed outgoing
+rows of the enclosing get callback instead matched EtcdServer.Range. The
+etcdutl map still exposes seven callbacks plus main; keyboard focus shows a
+short defrag description and highlights its neighbouring groups. Pointer
+transfer was not repeated in this check. Keep 020207 as the last sampled
+working map. The 023410 owner HTML remains, but its backing cohort has been
+replaced by newer diagnostic cohorts below.
+Logs, metrics and exact call-path examples are in workspace
+`work/etcd-callable-identity*`.
+
+The restored native path is kv.Get -> kv.Do -> retryKVClient.Range ->
+kVClient.Range -> the external Invoke carrying /etcdserverpb.KV/Range.
+Reachability from kv.Get also reaches Put/DeleteRange/Txn through the shared
+Do switch. Therefore this graph alone cannot assert that Get writes or deletes:
+branch conditions and operation arguments are not interpreted by this pass.
+GetStream has a separate path through retryKVClient.RangeStream. Do not replace
+this remaining semantic gap with a gRPC/Cobra allowlist or guessed receivers.
+
+Pending user approval: automatic approval review twice rejected a proposed
+matching-context patch as a general source-data egress expansion, despite
+inspection showing the same signature/doc/registration fields already present
+in accepted symbol and operation requests. That patch is NOT applied. It would
+give matching the selected call's immediate callee declarations and an incoming
+callable's own registrations, without bodies or recursive expansion. An async
+approval question is pending in this task. Do not retry the patch, change tool
+to bypass review, or send the proposed new matching context until the user
+answers. A separate safer correction was accepted: matching v3 renames existing
+`signature`/`author_doc` fields to `caller_signature`/`caller_doc` and explains
+that an outgoing boundary's signature belongs to its enclosing caller, not
+the invoked SDK method. It adds no source data. The prior v2 input misleadingly
+placed putCommandFunc's Cobra callback signature beside v3.KV.Put and compared
+it with a protobuf handler signature. The ordinary full v3 run
+`20260906-024726-etcd-c52238fbb537` completed in 325.416 s: 27/27 targets,
+4,082 matching rows in 199 live windows, no rejected/unanswered rows. The
+symbol/operation/question/route stages reused all their results; orientation
+made one live call. All 27 native/set/groups/report hashes agree; the common
+HTML/JSON/manifest exist once. The initial reference count covered only 8,306
+outgoing callee links; a later audit also checked the 7,156 incoming called_by
+place links. All 15,462 resolve. The earlier audit incorrectly looked for the
+incoming JSON key callers instead of called_by; its receipt is corrected.
+Put now matches quotaKVServer.Put (four source/target-view pairs for one
+destination anchor); Get and GetStream still have no matched destination.
+This is a partial recovery, NOT universal semantic acceptance. The receipt is
+`work/etcd-matching-caller-fields-acceptance.json`, with semantic_acceptance=false.
+Additional callee context still awaits approval and is not present in v3.
+
+Browser verification of 024726 was not completed: a mistaken file-URL navigation
+was denied by the browser URL policy, which explicitly forbade an alternate
+route to the same blocked outcome. No HTTP/browser workaround was attempted.
+The preceding keyboard and real pointer checks remain historical evidence,
+not browser acceptance of this new report. Follow the prescribed loopback QA
+entry point from the start in future independently permitted browser work.
+Use `--no-open` for subsequent unattended runs so the ordinary CLI does not
+attempt its own OS-level browser launch while browser inspection is unavailable.
+
+Operation input v11 gives each declaration only its own registration evidence,
+with a shorter prompt. Registrations of other callables keep their names, not
+their help text. This removed the v10 regressions NewSnapshotRestoreCommand,
+Start, the JWT parser callback and inner kvServer.Put from external actions;
+quotaKVServer.Put remains a request. All seven executing etcdutl callbacks
+remain, plus main as a launcher node. Server has 148 library / 149 executable
+operation nodes; leasingKV.Get is still misclassified as a request. These counts
+are not a verified public API inventory. The first v11 read rejected 16 rows
+with invalid caller refs; isolated four-row windows recovered 12 and single-row
+windows recovered the last four. The production window remains eight. Accepted
+entity results were reused by the ordinary full run. Compact source examples
+are in workspace `work/etcd-operation-owner-checked-examples.json`; discarded
+development run directories are not required to replay accepted cache entries.
+
+The operation map now projects one destination for the same source anchor and
+component name across overlapping library/executable views, preferring the
+executable destination when present. It preserves all source connections and
+keeps different anchors/components separate: quota Put and proxy Put are still
+two alternatives, not duplicate views of one endpoint.
+
+The last field-only accepted report `20260906-001259-etcd-7947eb7ba5f8` remains
+available: 97.709 s warm, seven source-registered etcdutl callbacks, 27 targets.
+The command-parent relationship remains absent: names alone do not constitute a
+complete CLI grammar. Library and executable views of server are overlapping
+uses of the same implementation, not two independently deployed services.
+Etcdutl uses server storage code locally; test client/server protocol matching
+with etcdctl, not by pretending snapshot restore sends a request to a server.
+
+The 024726 question guide reused the ready 023410 result: all 725 chunks,
+93 candidate locations and
+six selected stops, including WAL, EtcdServer.Put and applierV3backend.Put. It
+still asks which bbolt buckets/MVCC index updates a Put writes and how WAL
+relates to backend commit. That is a reading guide, not an
+answer about storage semantics or durability. Source signatures/comments locate
+code but cannot establish those details. The source-checked question review is
+workspace `work/repomap-question-review.md`, including a 50-question catalogue
+and a manually source-checked storage answer to use as an acceptance example.
+That answer is not yet generated by repomap. Its next useful increment is reading
+selected function bodies and necessary neighbours from the same snapshot,
+attaching the result to existing entities instead of summarizing summaries.
+
+Repeated source evidence previously overflowed individual rows: updateMax at
+92,884 bytes and newGRPCProxyServer after first compaction at 73,433. Lossless
+row-local evidence and binding tables resolved those envelopes. Two symbol
+windows still produced invalid responses; eight-row windows recovered the 24
+missing symbol descriptions without reanalyzing accepted entities. This is a
+context/quality correction, not a new repository size limit.
+
+Disk cleanup removed only our failed or superseded development cohorts and
+retained shared response/entity caches and user-facing reports. The latest
+receipts include `work/etcd-superseded-cohorts-cleanup.json`,
+`etcd-entry-ownership-failed-retention.json`,
+`etcd-operation-owner-probes-retention.json`,
+`etcd-operation-owner-partial-retention.json` and
+`etcd-operation-map-views-retention.json`,
+`etcd-callable-identity-retention.json` and
+`etcd-callable-identity-complete-retention.json` and
+`etcd-matching-caller-fields-retention.json`,
+`etcd-historical-native-retention.json`,
+`etcd-cancellation-guide-retention.json` and
+`etcd-storage-checkpoint-retention.json` and
+`etcd-question-v4-retention.json` and `etcd-storage-v4-retention.json`.
+Superseded successful owner HTML files
+and compact source examples remain; their full native cohorts were removed only
+after the replacement passed structural checks. The 020207 working-map and
+042339 current cohorts remain complete. The earlier replacement of 022225
+and its symbol-recovery directory freed 737,557,865 bytes. The 023410 backing
+cohort has now also been removed, preserving its HTML/manifest/page portfolio.
+An overly narrow timestamp assertion interrupted that cleanup after its first
+portion; the receipt records the remaining exact portfolio paths and the
+unavailable first-portion byte count. Cleanup then completed, leaving about
+958 MB free. That was insufficient for the next publication's temporary JSON
+peak. Inspection then found 78 obsolete child report.json copies in three older
+27-target runs. Removing those copies and native indexes in six exact historical
+cohorts freed 6,440,944,296 bytes, preserving every HTML and each complete common
+historical report JSON, all manifests and model journals/caches. The failed
+030952 backing cohort and duplicate development input/knowledge snapshots were
+also removed after replacement, freeing 605,523,602 bytes. Finally, 024726's
+native graph was compared with 031547: places agree exactly and the atlas differs
+only in matching live/cache counters and its resulting hash. Its redundant
+backing cohort was removed (458,679,362 bytes), preserving HTML/common JSON,
+question guide and model journals. After 041257 passed the full artifact checks,
+the 031547, 033749, 035246 and 040344 native backing cohorts were removed, along
+with three replaced development input/knowledge copies. Their 27 native index
+identities were compared with the replacement before any removal. All common
+report JSON/HTML, manifests, portfolios, question results and model journals
+remain. This freed another 2,060,161,816 bytes. After 042339 passed the same
+full structural audit, its 27 native index identities were compared with
+041257 before removing that redundant backing cohort and the route-only
+comparison's duplicate input/knowledge. This freed another 533,826,012 bytes;
+the compaction report, common JSON, question evidence and response journals
+remain available. Neither model nor Go caches were touched.
+Do not create per-run Go caches or retain every full failed analysis indefinitely.
+
+The route table is now v5 and question-route output is v4 (report format 79).
+It requests only the closed reading order and an open question; the redundant
+summary is removed from provider output, persisted guide and stage logging.
+The page already showed original candidate reasons instead of this summary.
+There is no old-format adapter. Candidate pools receive aggregate file/entity
+connections with their kinds and counts, while the original detailed call
+witnesses remain in `QuestionRoute.Connections`. Previously every representative
+anchor pair repeated all calls between its files, making even eighteen candidate
+locations require another split and misleadingly suggesting function-level
+precision. The compact context fits eighteen locations in one final pool.
+Earlier isolated route reads took 8.319 s and 5.434 s, and both were partial:
+one of the four initial pools received invalid JSON, even with provider JSON mode.
+The failed response was not cached as accepted; the other four requests reused
+accepted answers. Repeated full runs are not a remedy for this model failure.
+The report shows the selected source locations and their original reasons.
+This is a reading aid, not an established explanation of etcd persistence.
+
+A second question was checked on the current saved input: how cancellation or
+timeout reaches the etcdctl user. `work/question-cancellation-review` read all
+725 chunks in 60.518 s including reduction, selecting 74 candidates, but its
+final route had invalid JSON. One exact `replay` in 2.249 s reproduced the
+extra closing brace; neither answer was accepted or repaired. With route v5,
+the same retrieval was reused and five route windows succeeded in 8.915 s,
+selecting commandCtx, ContextError, isContextError, EtcdError and ExitWithError.
+This is development evidence. The first ordinary run 030952 completed all 27
+analyses but failed to stage report.json when the disk filled, after 97.199 s;
+the failure and rejected publication are recorded, not counted as acceptance.
+After the cleanup above, ordinary run `20260906-031547-etcd-b051ef9237d9`
+published in 89.827 s with zero new provider calls: all 27 target-local artifacts
+agree with one common report JSON/HTML/manifest, all 15,462 callable refs resolve,
+and the five-step cancellation guide is carried into the common report. Static
+HTML checks found no duplicate IDs or missing internal anchors. Browser QA was
+not repeated. Put still matches quotaKVServer.Put and Get/GetStream still lack
+destinations; the route itself is reading guidance, not a behavioral answer.
+Receipt: `work/etcd-cancellation-guide-acceptance.json` (structural acceptance
+true, semantic acceptance false). Log/metrics are `work/etcd-cancellation-guide*`.
+Tests for atlas/report/run/contracts and vet for changed Go packages passed,
+and `make build` rebuilt the ordinary binary.
+
+A later acceptance check found question.graph_sha256 was empty on the ordinary
+path, although saved-input reading filled it. PersistGraph and SaveInput sealed
+copies, while the reader kept the unsealed input value. SaveInput now returns
+the same sealed graph it saves, and the reader uses that value in memory before
+constructing its state. No artifact reread or provider context was added.
+A regression begins with an unsealed graph, then reads its saved input and
+checks both result identities and response reuse. Ordinary run
+`20260906-040344-etcd-87110e6ac23a` completed in 89.690 s with zero live model
+calls after the fix. This corrects a gap in earlier structural acceptance; their
+question hash was not actually checked. The current receipt also checks that
+question, places and saved input name the identical nonempty graph hash.
+
+The storage question exposed two different losses. In the v6 run its final
+six-stop guide selected forwarding wrappers and dropped the actual path and
+write locations. A bounded generic facet-preservation prompt comparison on
+033749 took 8.260 s and retained newBackend, but discarded both ToBackendFileName
+and BackendPath even though they reached the final candidate pool. That prompt
+was NOT adopted. See `work/question-storage-facets-evaluation.json`. Selecting
+original evidence instead of repeated summaries is necessary but does not by
+itself preserve every part of a compound question.
+
+The next real question asks what starts/stops automatic compaction and what it
+affects. The existing reader took 48.413 s; two rejected windows left 36 of 725
+chunks unanswered. Its guide is explicitly partial. Run and Stop were present
+in the same chunks, but the question table permitted only one selected anchor;
+both Stop methods were discarded before route selection. It also chose Start
+instead of NewServer, and Raft-log compaction instead of Cleanup. These are
+different mechanisms, not interchangeable background work. The exact input and
+output selections are recorded in `work/question-compaction-anchor-audit.json`.
+Question table v4 now selects multiple closed anchors per chunk. Each anchor
+keeps its own subject, source location and original evidence; the short row
+reason explains their shared relevance and is not a behavioral proof. This uses
+the existing sequence cell and the same provider input, with no framework rules
+or new stage. Question-route remains v4 and report format 79. Tests cover two
+complementary declarations in one chunk, duplicate/unknown ref filtering, exact
+source identities and independent evidence restoration.
+
+The v4 comparison took 50.804 s and retained all eight source-checked lifecycle
+anchors (Run/Stop/Pause/Resume for Periodic and Revision), versus two before.
+This is a narrow anchor-recall check, not a general precision/recall benchmark.
+One six-row window was refused as malformed JSON. Ordinary online acceptance
+`20260906-041257-etcd-f1b5669ecc73` then completed in 95.530 s: that one window
+was the only live provider call, all 725 chunks were answered, all map stages
+and the five route windows reused accepted answers. All 27 target-local graphs
+agree with the one common report/manifest, all 15,509 caller/callee place refs
+resolve, and question/places/reading-input share the same nonempty hash. Static
+HTML checks verify its JSON digest and internal anchors; fresh mouse QA remains
+blocked. Receipts: `work/etcd-question-graph-binding-acceptance.json`,
+`work/etcd-compaction-question-acceptance.json`, and
+`work/question-compaction-evaluation.json`.
+
+The six-stop compaction guide now retains Periodic.Stop, but remains semantically
+incomplete: it misses NewServer's actual startup and Cleanup's shutdown, and
+incorrectly brings Raft-log compaction into the automatic MVCC compaction path.
+The row's declarations do not expose the calls connecting those lifecycle sites.
+No source bodies or additional matching context were sent. A ready reading
+route is not proof that the question has been answered. Do not rerun blindly,
+add framework-specific rules, or hide this loss with a longer summary.
+
+The same storage/write question was next evaluated through the ordinary path
+with question v4: `20260906-042339-etcd-d83a95e8daf6`, 141.150 s, all 27 targets,
+725 answered chunks, 58 question windows and 14 route windows, no refusals. All
+map stages reused answers. The 236 candidates retain the complete datadir
+helper family and BackendPath, and the final guide now reaches MVCC Put; it
+still discards every path helper. BackendPath survived to the final pool, so
+this is not a retrieval miss. Structural checks pass, including all 15,509
+callable refs, question graph identity and HTML digest/internal anchors.
+Receipts: `work/etcd-storage-multi-anchor-acceptance.json` and
+`work/question-storage-multi-anchor-evaluation.json`. This is the latest ordinary
+HTML; it is not a complete storage answer or renewed browser acceptance.
+
+A bounded route-only comparison clarified the six-stop rule in the prompt:
+intermediate pools retain their limit, while the final length is a preference,
+as already implemented by validation. It took 11.433 s and produced seven
+forwarding/write stops, still dropping BackendPath from the final pool. A
+different partial pool returned all 24 refs against its six-ref limit and was
+refused. This variant was NOT adopted. The result refutes a six-stop limit as
+the sole cause. No further prompt lottery was run. The saved question reservoir
+retains the omitted evidence; the current HTML displays only the selected guide.
+
+Source inspection confirms that the local datadir call graph already has
+ToBackendFileName -> ToSnapDir -> ToMemberDir and the literal fragments db,
+snap and member, with a separate WAL helper and wal literal. Those calls are
+not supplied in the question declaration rows. Future question work must
+distinguish missing evidence, discarded anchors and unsupported behavioral
+claims before changing another prompt. Existing native identities and entity
+knowledge are the starting point; no second graph or framework-specific path
+interpretation was introduced.
+
+A final local source review distinguishes transaction completion from physical
+storage work. storeTxnWrite.End calls backend Unlock; batchTxBuffered.Unlock
+writes back the read buffer and commits conditionally (batch limit or pending
+deletes), while backend.run also commits on its timer/shutdown. WAL.sync flushes
+and calls Fdatasync unless unsafeNoSync. Raft Ready sends committed entries to
+applyc before its local storage.Save, and applyAll waits for notifyc after
+applyEntries and before snapshot work. Consequently a single serial
+Put -> WAL -> apply -> commit trace is not established by call reachability.
+The ordinary storage candidate reservoir retains seven of nine manually checked
+declarations in this slice, but only two survive the final guide; buffered
+Unlock and backend.run are not candidates. Window 43 nevertheless contains
+both declarations, including backend.run's existing hypothesis about periodic
+commit. Thus this omission is selection despite an available relevant hint,
+not a missing saved description or a cache miss. This is a narrow source audit, not
+an end-to-end durability claim or product answer. It is recorded in the existing
+question review and question-storage-multi-anchor-evaluation.json, without a
+new provider request, graph, code change or browser-policy workaround.
+
+The earlier question corpus had 582 code files and no `_test.go` files,
+versus 401 regular test sources in the etcd checkout. Go discovery now retains
+TestGoFiles and XTestGoFiles from its existing build-selected go-list result,
+including rows for test-only directories. It parses declarations once through
+the corpus reader, then passes them in memory through scoped Go facts into the
+same ProgramIndex, places and question rows. No second compiler/SSA load or
+test execution is introduced. Ordinary module packages remain distinct from
+test-source containers; external test packages do not become new products.
+Module components own tests of all their non-main packages, including private
+packages, plus test-only directories. An executable owns tests of its exact
+package, not tests of dependencies it imports. Parsed declarations are internal,
+have no public callable identity or launch seed, and carry only declared
+containment with a go_test_declaration witness. Declared imports remain in
+the producer facts and are not inferred call edges. Parse failures preserve
+the known source with unavailable declarations and a warning. Build tags and
+the supplied corpus determine selection; excluded files are not reread.
+The cumulative Go fixture checks same-package tests, external tests, a separate
+test-only directory, a private production package, build-tag selection,
+methods whose receiver is declared in production or later in test source,
+independent mutable ownership, unavailable syntax and exact question anchors.
+This supplies possible examples to inspect; setup, assertions, test-to-operation
+calls and behavioral coverage still need analysis. A separate test-only
+directory in a module with executables but no module-library component still
+needs explicit ownership in the product; it must not be assigned arbitrarily
+to every executable. Repositories made entirely of test-only packages are also
+not yet product targets.
+
+Ordinary online etcd acceptance 20260906-065354-etcd-8a1b15ba9192 completed
+27/27 targets and published one common report in 17m20s (the report's timing
+snapshot before final publication is 1032.657s). All 398 build-selected regular
+test files reach places, including 82 under tests/integration and 58 under
+tests/e2e. Their indexes contain 3,131 parsed objects and their question rows
+2,978 declarations, with no test launch seeds or inferred test calls.
+The guide for finding an MVCC write-test example now selects TestStorePut at
+server/storage/mvcc/kvstore_test.go:61, TestTxnPut at :714, and the test commands
+under CONTRIBUTING.md:132. Manual source inspection confirms these are useful
+write-test and run-instruction pointers; this does not establish assertion or
+execution understanding. One invalid JSON question window left 12 of 2,656
+chunks unresolved, and the visible guide correctly remains partial. Other
+refusals affected eight symbol descriptions and twelve zone assignments.
+Structural checks verified all target indexes/dependencies/groups, the saved
+graph binding, physical common artifacts and source links. Browser inspection
+found no console errors or broken internal anchors. The Python acceptance
+fixture 20260906-064626-python-tutorial-game-8ec9b687878b completed in 5.471s
+with zero live provider calls and unchanged accepted facts/answers.
+The test-source navigation foundation is accepted within these limits; a
+complete behavioral testing guide and build-variant support are not delivered.
+
+The next Go-specific design is a small build/run-variant catalog, not a
+union of every tag. This is a proposal, not implemented behavior. Today
+GOTAGS selects one canonical run-wide tag set and the Go platform is selected
+separately; inactive files and alternative contexts are not exposed in the
+report. The owner's follow-up sketch is a repository-local .repomap.conf
+where the person running repomap can supply additional conditions per target
+and questions they want the report to address. Repository-wide questions
+are now accepted as a `questions` string list; named target build variants remain
+a sketch. The local command is repomap conf [repository]: create
+.repomap.conf once and open it, preserving existing bytes and comments.
+It uses YAML with an editor argument vector and optional reading questions, initially
+`editor: [code, --goto, '{{ .File }}:{{ .Line }}:{{ .Column }}']`.
+Each argument is a Go text/template over absolute File and one-based Line and
+Column; expansion never resplits the file path. The command runs directly in
+the selected repository directory with inherited terminal streams. The same
+opener handles the configuration and served source links. The ordinary run reads
+settings once and passes the Config value to child targets and the report server;
+source clicks do not reread the file. A separately constructed report server
+loads settings only when no in-memory Config was supplied.
+An editor change takes effect on the next repomap launch. A missing editor
+shows a short corner error pointing to the editor setting in .repomap.conf;
+it does not stop report serving or replace an existing file. Unknown
+configuration fields fail explicitly. The root configuration is outside the
+analysis corpus and provider inputs, so editor edits do not change analysis
+hashes. There is no parent-directory search, global home config, Git requirement,
+format migration or alternate editor fallback. Global configuration remains
+deferred. Owner questions supplement useful product defaults and use the existing
+graph and accumulated descriptions. The reader prepares question evidence once,
+then retrieves and selects independently for each question. Configured questions
+come first; repeated --question flags append distinct, trimmed texts. Reordering
+or adding questions does not alter another question's provider request. Each
+question has hash-prefixed table references, so its journals cannot overwrite
+those of a neighbour. The common report contains all routes in memory and in
+JSON, with collapsed guides below the map. No automatic question collection is
+selected for the owner, and no query triggers another compiler or atlas pass.
+Ordinary fixture runs 20260906-080755-python-tutorial-game-9373acf26f25 and
+20260906-080807-python-tutorial-game-b17ccbe6b088 read two configured questions,
+then those same two plus a third CLI question. Both completed with two targets,
+identical graph hashes, and ready guides. In the second run the existing four
+retrieval windows and two route windows were cached; only the new question made
+two retrieval calls and one route call. The temporary fixture configuration
+was removed. Receipt: work/questions-map-acceptance.json.
+Final ordinary run 20260906-081323-python-tutorial-game-19b48e2b215e
+completed in about five seconds with all three questions and zero live model
+calls. Its HTML includes the moving safe triangle and collapsed question list.
+The preview event-handler regression checks immediate docked node switching,
+transfer through blank space, Escape, and releasing a floating preview when the
+pointer leaves the corridor advanced by its previous movement. It does not
+claim a continuous mouse test in the browser, whose API still lacks pointer move.
+The focused configuration, source-opening and corpus tests pass, as do the
+changed packages' vet checks and make build. The built repomap conf created
+and opened the working repository's local file successfully. Ordinary online
+fixture run 20260906-074859-python-tutorial-game-af3833c6de0e published both
+targets in about six seconds, with zero live provider calls despite adding
+the local editor config. Its temporary config was removed after verification.
+Explicit owner knowledge supplies missing context; automatic
+discovery can expose conditions and suggest anchored contexts without having
+to infer every script. Several named variants remain alternatives, never a
+union of their tags. Configuration must resolve to existing repository parts;
+unknown or ambiguous targets are visible errors, not guessed assignments.
+A variant would retain its package scope, effective Go build context
+and anchored source command. Labels such as "Integration tests" describe the
+command; they never assign semantics to a tag merely named integration.
+First retain corpus-file conditions (build expressions and implicit platform
+suffixes) and go-list selection/ignored-file evidence so an inactive source
+can be found without pretending it was analyzed. Then discover concrete
+command contexts in build scripts, CI and documentation. Model explanations
+remain hypotheses; Go's own file selection and, when performed, type checking
+are separate facts. Listing selected files is not proof that a test builds or
+runs. Unknown script expansion remains unresolved rather than inventing tags.
+Do not enumerate the powerset of tags. Analyze requested or repository-defined
+contexts separately, preserving context on their calls and symbols within the
+existing pipeline. Reuse content-identical evidence and model rows; a context
+label alone must not force another full repository analysis. The static report
+can switch among already analyzed variants, never launch analysis on hover.
+
+etcd at 58f45a9ff1c0 gives the first acceptance example: scripts/test.sh's
+integration_pass runs tests/integration normally and tests/common with
+-tags=integration; e2e_pass runs tests/e2e normally and tests/common with
+-tags=e2e. The two common/*_test.go setup files assign different testRunner
+and clusterTestCases implementations and declare overlapping helper functions.
+The same TestKVPut has two cluster-run setup contexts plus the default
+compilation context: unit_test.go has !(e2e || integration), returns no cluster
+test cases, and selects UnitTestRunner. That runner fails outside short mode
+and does not call m.Run in short mode. Seeing this test typecheck in the default
+context therefore does not establish a cluster test execution. A development
+packages.Load probe checked fixture tests, MVCC tests, and common tests in the
+default, integration and e2e contexts; all five loads typechecked. Tests:true
+introduces distinct compiler package IDs with the same PkgPath, including the
+augmented package and generated test main. It cannot simply replace Tests:false
+in the production loader, whose universe requires unique PkgPaths. Test calls
+also include conversions, callable variables, interfaces and nested callbacks;
+typed declarations alone cannot turn these into concrete execution edges.
+This is investigation evidence, not shipped test-body or variant analysis.
+Enabling both tags is not a valid combined context. A first useful answer
+should connect a test to these source commands and selected setup files, without
+claiming that the test was executed or that its assertions were analyzed.
+
+The documentation gap is now addressed in the same places graph: every corpus
+Markdown file contributes source sections, with complete text including fenced
+examples, later paragraphs and original link targets. ATX headings outside
+fences split sections; other Markdown syntax stays as text. These are author
+claims with exact source extents, not code-file groups, call edges or inferred
+target ownership. Question v5 reads each section in lossless 4 KiB excerpts;
+long lines split at UTF-8 boundaries and retain exact line/column anchors.
+No initial model reduction chooses which documentation survives. Graph/input
+are v7; question-routes.json v1 collects v5 routes, report v81; old formats have no adapters. Commands
+are evidence to inspect, not executed or asserted to work. This change does
+not extend matching's separately blocked caller/callee context.
+Ordinary etcd run 20260906-055542-etcd-12319d77cce7 finished in 228.231s,
+27/27 targets, with 120 live question windows and 16 live route windows;
+the base atlas stages reused their cache. All 67 Markdown documents became
+1,485 sections, preserving 669,176 bytes and exact source line extents.
+All 2,227 question chunks were inspected. The first guide stop is
+CONTRIBUTING.md:132, whose original excerpt retains make verify, make test-unit,
+make test-integration and make test-e2e, plus the distinction between tests
+required for every change and integration or e2e tests for new features.
+Route v5 nevertheless asked which test suites to run; the fixture likewise
+asked for the exact dev-server command after selecting the npm start section.
+Both were selection errors despite the original commands reaching the route
+input. Route v6 checks selected excerpts before declaring an open question.
+The same evidence now leaves the specific new test file/package unresolved
+for etcd and no open question for the fixture. This narrow before/after check
+is in docs-route-comparison.json; redundant parent README stops still remain.
+Final ordinary etcd run 20260906-060335-etcd-af4c4a0663ef finished in 93.835s,
+27/27 targets, with zero live LLM requests, including all question/route windows.
+The fixture run 20260906-060335-python-tutorial-game-d0643b96d36f finished in
+5.238s, 2/2 targets, also with zero live requests. The common report/artifact
+hashes, current formats, callable references, HTML IDs and internal anchors
+passed checks. Browser inspection confirmed the guide, revision-pinned
+CONTRIBUTING source link and remaining question, with no console errors.
+Receipts are etcd-documentation-v6-acceptance.json and
+etcd-documentation-evaluation.json under the project work directory.
+This validates documentation retrieval for these two questions, not test
+implementation selection, default orientation recipes or universal matching.
+Do not spend repeated model calls trying to recover sources that are not
+supplied. The question review manually checks the concrete cancellation path,
+including command-timeout, ContextError, retry cancellation and stderr/exit.
+Those manual answers are acceptance examples, not generated product output.
+
+Superseded artifacts from the 21:35 full experiment (27 directories, 617 MB)
+and the 22:03, 22:09, 22:15, 22:33 and 22:39 experiments were removed after their
+replacement passed. The shared cache and earlier user reports were preserved.
+The superseded 20260906-051922-etcd-a2bf12cd82a5 cohort (27 directories,
+638 MiB) was also removed after checking its exact portfolio membership and
+replacement; docs-obsolete-cohort-cleanup.json records the removed paths.
+The shared LLM cache and current complete report cohorts were retained.
+Focused tests and vet passed
+for atlas, native Go discovery/adapter, GroupsIndex, report, run, debug journal
+and report server; `make build` and `git diff --check` passed.
+
+
+The etcd report exposed a shared-root ownership defect: the first target at a
+root took every file from its library/executable sibling. Places now retains
+all indexed owners tied at the deepest root; a nested target still owns its
+own subtree. Input order does not decide ownership. Configuration reads no
+longer put an entire directory in the outbound integration lane, and entry
+seeds are checked against the current target's file membership.
+
+Go TODO extraction scans comment tokens, preserving physical source lines;
+`context.TODO()` and string literals are not comment markers. Other languages
+still use their existing line matching. Dependency facts retain the complete
+imported package path instead of only the short package name.
+
+The overview graph groups parts by their interpreted role, uses short
+repository-relative labels, and distinguishes executable/library nodes by color
+and languages by small badges. The detailed catalogue remains collapsed below
+it, and a compact chooser also handles navigation. Edges remain visible at low
+contrast; hover emphasizes connected paths and reveals their labels. TODOs are grouped by file, unreached
+files by directory, and the raw dependency inventory is subordinate and
+collapsed. Open evidence lists keep their collapse control visible while
+scrolling. A file link has no synthetic line-one label. Missing entrypoints
+mean reachability was not assessed, rather than that every file is reachable.
+
+The static zone layout reserves header and padding before the next zone. Both
+interactive maps reserve a description strip above the graph, so text never
+covers nodes or paths. Explorer descriptions lead with the retained summary
+and navigation; code, witnesses and connection details expand separately.
+Initial/reset scale is determined by label size alone; a single node does not
+stretch to fill the stage. Explorer names are 16 px and auxiliary labels 14 px
+at native scale; nested code and source links cannot compound font reductions.
+The earlier typography-only checks missed the clipped overview and oversized
+single-node map. Current acceptance includes actual screenshots of both sizes
+and the component-to-backend journey, not just font measurements.
+Hover emphasis softens unrelated outlines and arrows without fading node text.
+Overview and explorer use the same ELK.js 0.12.0 layered layout and orthogonal
+router. Its unmodified bundle and EPL-2.0 license are embedded in the report;
+there is no CDN request or new analysis service. Nodes are placed from their
+connections, rather than alphabetically before routing. Existing overview role
+categories become expandable areas: the first category is expanded initially,
+and All components deliberately opens the complete graph. A downward layout is preferred when it reduces
+horizontal overflow; label size and graph membership do not change. Both
+orientations start from clean inputs because ELK mutates its graph. White
+casings distinguish a crossing from a junction. This does not assert that an
+arbitrary dense graph has a planar layout. Folding the retained hierarchy and
+restricting a deliberate scope are the primary density controls. Layout requests
+carry a generation counter, so a slow previous selection cannot overwrite a
+newer scope. Source observations and model interpretations remain unchanged.
+Docked details follow a new hovered node immediately and retain the last
+selection across empty space, allowing transfer to the panel without a triangle.
+Leaving a node clears its graph emphasis independently of those retained details.
+Structure is the initial view, independent of whether operations were found.
+Operations is an explicit mode with a stable searchable chooser and a filled
+selected operation. Hover previews before a selection; click pins it without
+navigating to code. An explicit matched endpoint also pins its destination
+operation. Source links open separately or use the configured editor. Opening
+an area keeps the operation and filters its children to native reachability.
+After a scope layout, a motionless pointer cannot select the node that happens
+to move beneath it. Real pointer movement or keyboard focus resumes inspection;
+this rule uses coordinates, not a delay.
+An inspected group can expand one shortest native call path from the selected
+operation, with source anchors and possible-call markers. It explains static
+reachability, not a recorded execution or all behaviour of the group.
+Group cards put navigable connections first, then already interpreted key
+subjects with descriptions and operations. The full symbol inventory is
+collapsed and grouped by file. No first-three-source-order representative
+selection remains. Matched connections link to the exact peer operation and
+show both source endpoints; a local group can link onward to a neighbour's
+integrations without claiming that all of them execute on its own path.
+The active navigation goal includes two equally supported starting points:
+structure (a responsibility such as storage, without knowing an operation)
+and operations (a command, endpoint or background activity). Structure is the
+default. Existing GroupsIndex containers supply the areas; no framework names
+or repository-specific classification is introduced by the renderer. The old
+operation renderer bypassed these containers and flattened all reached groups;
+the retained etcd graph still has Storage engine, Consensus and replication,
+API and networking, and the other model-proposed areas.
+
+Drilling into an area or group must keep the selected operation, if any, with
+visible breadcrumbs, return navigation and an explicit All uses switch. A
+group's general source card remains available separately. Search must find
+areas and groups by their retained names and descriptions, independently of
+operation names. The storage journey must expose its actual interpreted parts,
+their code and the operations using them without starting from a command.
+
+Breadcrumbs follow the existing containment hierarchy, not click history. They
+distinguish Area and Part when the model gave both the same name; opening the
+current node is idempotent. A boundary peer never contains an already displayed
+part: shared ancestors are expanded just far enough to show disjoint peers.
+Map-local navigation does not scroll the document. Explicit links into the map
+reserve the measured sticky toolbar height, and the breadcrumb row scrolls
+horizontally rather than changing the map's vertical position. Initial layout
+uses the map's available width, independent of when the shared inspector mounts.
+
+The reading canvas is now a light mineral grey-green with white content and map
+surfaces. The toolbar has one background; Home, Questions and the part picker
+share an aligned control row, with a separate count and disclosure chevron.
+Key code has one shaded file header per file and aligned symbol/description
+rows; narrow cards stack each name above its explanation. Operations have their
+own rows and kind labels. Existing model styling and source controls remain.
+Browser acceptance on `20260906-193401-python-tutorial-game-00a4aab7514c`
+checked native pointer clicks between both backend groups, repeated clicks,
+parent navigation and the Field continuation/source. Document scroll stayed at
+154.5 px across those map clicks; the inspector stayed 192 px high and revealed
+the source when scrolled. The earlier 192800 build was also inspected at 900 px
+and 600 px widths: the picker was visible, the page had no horizontal overflow,
+and key-code rows stacked at the narrow width. Final ordinary run: six seconds,
+zero live model calls. Reading/report/run tests, vet and build pass.
+
+A later fresh-page check caught a specificity regression: the generic
+non-operation inspector rule overrode the fixed overview and explorer heights.
+On `20260906-210546-python-tutorial-game-71fe31d217bd`, the first hover increased
+the overview inspector to 156 px and shifted the clicked node by about 61 px,
+so a native pointer click missed. The generic auto-height override is removed.
+The ordinary `20260906-211442-python-tutorial-game-858745b4d0fb` run finished
+successfully in six seconds using the existing model cache. The overview
+inspector now stays 112 px high and its first coordinate click opens front.
+The explorer stays 192 px high; local clicks through Frontend components,
+Interactive components, Routing and services, HTTP service and the backend
+boundary keep document scroll at 96.875 px, with containment breadcrumbs.
+Clicking the matched POST /api/level/run then opens that backend operation
+inside the same report, visibly selected. The mineral canvas was also checked
+in the browser as rgb(238, 242, 239).
+
+Ordinary report `20260906-215453-python-tutorial-game-31acae9b84c8` includes
+the JSX interaction review: run simulation, change slider, change slowness and
+toggle play, alongside the continuous animation. The source chain is
+StyledButton.onClick at playground.tsx:117, PlayGround.handleClick:60,
+runLevel called at playground.tsx:72, and axios.post at service/http.ts:34.
+In the browser, selecting run simulation preserves the operation context
+through Routing and services / HTTP service and the backend boundary; clicking
+POST /api/level/run selects the backend operation in the same HTML.
+The predecessor ordinary run with the changed native graph took 2m39s; this
+unchanged analysis rerun took eight seconds with zero live calls. The real
+TypeScript 5.9.3 suite, atlas/group/report/contract tests and focused vet passed.
+
+That browser check also exposed width-only `fit`: a vertical four-node map
+grew beyond its viewport with 231 px high nodes. Fit now considers the stage's
+height limit and width together and never enlarges past the reading scale.
+The same map fits in a 645 px stage with 78 px nodes and no internal overflow.
+Reset still restores reading scale. This verifies the small fixture; the
+larger etcd routing/layout acceptance remains separate.
+
+Repository search now finds the names and descriptions of existing components,
+areas and operations, plus code entries already present in the HTML. It opens
+the selected part on the existing map rather than hiding cards far below the
+current viewport. Parts and operations come before the source inventory, with
+exact names first within each category. Type and component filters, twelve-row
+display pages and the source links preserve access to every match. This is text
+search over current descriptions, not a natural-language answer engine. Opening
+a search result starts in the complete structure, or pins that exact operation;
+an earlier unrelated operation cannot silently restrict the result.
+
+The owner approved Learn/Work and clarified that Learn must keep the map at
+the centre of the page. The first implementation uses the existing repository
+role hierarchy and connections, already folded to the primary applications
+and expandable areas. Learn adds the short repository explanation and routes
+to area responsibilities, running the project, and unfamiliar terms. Work
+opens search and the same map. Maps remain mounted when changing modes;
+selection, operation scope, filters, zoom and inspector must stay intact.
+Only the active report section is shown with scripting; ordinary anchors,
+search and question links reveal their exact existing destination. The URL
+stores the mode and destination. Every section remains in static HTML.
+Term search exposes the existing key-type explanations, eight collapsed
+entries per display page, with source links and every owning map destination.
+It deduplicates identical explanation/source pairs without merging distinct
+executable/library owners. It adds no model call or second semantic authority.
+This is the initial navigation layer, not completion of the Learn experience:
+useful guided questions and system-level terminology still depend on the
+quality and completeness of the existing analysis. Ordinary/browser acceptance
+is being checked on both repositories before delivery.
+
+The owner refined the next Learn step: maintain a curated base of general
+learning intents, not a fixed list of questions copied into every report.
+Existing terms and key types, core areas, integrations, README and document
+sections give the model the context to propose useful repository-specific
+questions. One base intent may produce zero, one or several questions;
+inapplicable intents are omitted without a minimum count. For example, a
+storage intent may split into questions about primary state, a log and
+temporary data when those distinctions are supported here. Overlapping
+questions from different intents should share one answer while retaining the
+parent intents. No etcd-specific taxonomy belongs in the renderer.
+
+Applicability and answer availability are separate decisions. A failed model
+request or missing evidence does not justify declaring a topic inapplicable.
+Keep the adaptation decision and its grounding inspectable; useful unanswered
+questions remain visible with the narrower missing information. Explicit user
+questions from `.repomap.conf` or the command line must receive a visible result,
+including an explanation when inapplicable, rather than silently disappearing
+under the automatic-question filter.
+
+Automatic question generation runs after the ordinary atlas through the configured
+client. `reading/learning.go` and embedded `prompts/learning.md` prepare the
+eight curated intents, losslessly partition existing documentation, file purposes,
+key declarations and boundaries, and accept zero/one/many proposals with original
+anchors and reasons. Consolidation compares every proposal pair when context
+requires multiple windows and retains all parent intents on the shared question.
+Unknown context and positively supported inapplicability are separate. Generated
+questions use the existing retrieval, route and answer stages. Explicit questions
+are preserved; exact duplicate wording shares a result with both origins. The
+report exposes each question's reason and original source excerpts, plus the
+intent reviews. `read --through learn` stops before answers. The stage is registered
+with the shared semantic journal; request/response payloads use the shared cache.
+
+On 2026-09-06 the owner explicitly resolved the earlier automatic approval
+rejection: automatic Learn generation is authorized in ordinary repomap for
+user-selected repositories through the configured LLM client ("да, все что
+потребуется"). No further confirmation is required for that integration. This
+does not change the separate earlier matching-context expansion decision.
+
+Term explanations are reused beside answers when an answer selects the exact
+named declaration and source location. They are collapsed by default and retain
+the original explanation, source and every map membership. The shared term
+catalog has addressable entries; following a term reveals its page even through
+an existing search filter. Name-only guesses and another type at the same source
+line cannot supply an answer's term definition. Report format is v82.
+
+Ordinary acceptance on public python-tutorial-game: `20260906-182915-…`
+completed in 146 seconds with 16 automatic questions plus two explicit ones;
+the resulting answers were 14 answered and four partial. Its ordinary warm
+repeat `20260906-183305-…` took ten seconds with zero live calls. Browser
+inspection followed a question topic to an answer, its exact Field definition,
+the source and the existing map membership. The same map context survived
+Learn/Work switching; a term link cleared a stale catalog search and revealed
+the exact term. Questions are grouped by their base intents, with explicit
+questions separately discoverable. Focused reading/report/run/debugdump tests,
+vet and the build pass. Tests cover zero/one/many proposals, original origins,
+unknown refs, exhaustive merge comparisons, rejected consolidation, ordinary
+answer handoff and warm reuse. Answer completeness still needs review: a
+local-run answer can admit a missing launch command while saying answered.
+
+Full etcd learning-plan checks exposed a separate consolidation failure:
+66 source windows produced 634 proposals (630 distinct wordings), but two consolidation
+responses omitted mandatory rows. Those results were rejected and no automatic
+question set was published. Consolidation now advertises shared choice refs
+once instead of repeating the entire list in each row, and its prompt explicitly
+requires every input row even when representatives coincide. Learn timing starts
+before proposal generation, including both proposal and consolidation work.
+The revised plan-only run `reading-2242729849` completed in 51 seconds:
+66 cached proposal calls, 25 live consolidation calls and no rejected windows.
+It retained 630 questions, so technical validation has not yet produced a useful
+large-repository learning menu. No full answer run for those 630 questions was
+started. Question granularity and full etcd answer acceptance remain open.
+
+A subsequent independent audience review (`reading-32349442`) kept 541 of 630
+candidates, yielding 536 merged questions: still not a useful introductory menu.
+That iteration compared candidates within each base intent, retaining
+first-day/specialist reasons and original sources. Input-sized pools reduced until
+they fit together or reach a fixed point, with no question quota; explicit user
+questions bypass this selection. Consolidation requires its shared catalogue
+and every assignment to fit one window, avoiding hundreds of nearly empty
+windows. These stages keep their own prompts even with a proposal prompt
+override. The small ordinary 192800 run retained 16 automatic questions plus
+two explicit ones. The full saved etcd plan `reading-2480982289` completed in
+2m48.65s: 66 cached proposal calls, eight live audience comparisons and six live
+consolidation calls. It retained 370 of 630 candidates, and consolidation left
+all 370 separate. This is not a usable introduction and no full answer run for
+that menu was started.
+
+Follow-up checks on the same input isolated the failure. A more explicit merge
+instruction (`reading-3753884770`) and an additional learning-need cell
+(`reading-1647307051`, 2m9.452s) again retained 370 questions. Replaying eight
+real purpose questions through the existing client did merge some candidates;
+a grouped-response experiment also merged that small sample but copied every
+question when given the full 370-question catalogue. Replaying an unchanged
+185-row original merge request with thinking enabled took 100.365 seconds and
+13,316 reasoning tokens, again returning 185 representatives. Request options,
+responses and timings are preserved under `work/learn-etcd-*.{json,log}` and the
+shared payload cache. These are isolated experiments, not ordinary acceptance.
+The extra cell and prompt changes were removed; provider defaults are unchanged.
+The unresolved work is repository-level question formation and granularity,
+not another unverified instruction to merge a long list.
+
+Selection decisions now record whether comparison covered only part of the
+candidate set. A reduction replaces a previous partial decision when it reaches
+the complete surviving menu; a nonshrinking set terminates with its independent
+decisions labelled as such. Focused tests cover both cases, complete catalogues
+with all their assignment rows, retained original reasons and anchors, and warm
+cache reuse without live calls. The report exposes the partial comparison beside
+the selection reason.
+
+Selection v3 replaces per-question audience ratings with one set-valued menu
+decision for each original learning goal. Every goal row reads its full curated
+goal and closed candidate refs, while all rows share one original catalogue.
+The model composes the topic menus together, then the next round compares the
+union of the chosen original questions. The same byte-bound partitions, fixed
+point, executor and exact cache apply; there is no numeric question quota or
+local semantic ranking. A missing goal row rejects its whole window. Questions
+shared across goals preserve all origins without duplicating the answer.
+The report labels menu rationales as such; an omitted candidate is not declared
+inapplicable or given an invented individual reason for exclusion.
+
+The saved full etcd plan `reading-2628323038` finished in 1m3.825s, with
+54.408s in Learn: 66 cached proposals and 15 live menu/consolidation calls,
+zero rejected windows. It chose 23 original wordings and consolidated them to
+22 questions from 630 candidates. All eight base goals remain represented.
+This follows a 59-question per-intent set-valued experiment: a single flat
+global menu omitted whole goals despite claiming coverage, whereas mandatory
+per-goal rows keep the goals reviewable together. Some retained robustness-test
+questions and overlapping introductions still need editorial acceptance.
+The ordinary etcd run `20260906-203245-etcd-658b6f3a7346` completed in 57m23s
+with 27 targets and 22 questions, using the older graph v8 binary. It is not
+accepted as Learn quality: the answer marked `answered` for concepts and bbolt
+only explains keyIndex/generation, omits leases and bbolt storage, and leaves
+the remaining gap empty. Its retrieval also left 12 chunks unresolved. The
+menu still repeats launch/concept/networking topics and contains four
+specialized robustness questions. Completion of HTML and syntactically valid
+answer rows do not establish coverage of the user's question. Exact findings
+and rejection diagnostics are in `work/learn-etcd-full-acceptance-findings.json`.
+
+The ordinary small run `20260906-203251-python-tutorial-game-d2f0ba59f350`
+completed in 10 seconds with two targets, one common HTML/JSON, 16 automatic
+questions and two explicit questions. All 18 answers have preserved evidence;
+eight are answered and ten partial. The menu comparison was the only live call;
+the unchanged retrieval, routes and answers came from the shared cache. The
+grey-green background, aligned navigation, expanded run answer and answer-to-map
+transition were inspected in the browser. Focused reading/report/run tests and
+vet passed. Artifact checks are in `work/learn-joint-small-acceptance.json`.
+That run answer exposed a concrete evidence gap: `backend/main.py:14`
+is a known main-guard seed in the ProgramIndex target and facts, but the shared
+places graph's file declarations contain only App and App.app. Question
+retrieval therefore missed the existing launch observation, so the orientation
+run recipe and question answer differed.
+
+Graph and saved reading input v9 carry the existing facts result's observed
+entrypoint seeds and manifest values as source facts in the same graph. They
+retain the original location, target context and native launch identity;
+manifest files need not be code files. No extra source reads, launch-command
+heuristics, semantic groups or edges are introduced. References outside the
+corpus, including excluded environment files, do not enter this evidence.
+Learn can use these observations without a key-symbol model decision, and
+question retrieval appends them after its previous reservoir. Earlier complete
+request windows remain reusable. Answer verification displays the exact
+entrypoint or manifest value at its original source link. Focused regressions
+cover the real acceptance fixture's main guard at line 14, frontend start
+script and Python requirement; persistence, native identities and provider
+identity isolation are also checked.
+
+The first ordinary v9 run (`20260906-205642-python-tutorial-game-9a0ba26f9c81`,
+2m2s) retained 13 launch/manifest observations, but the run answer still treated
+the observed main guard as an unknown launch. Two isolated answer-only reads
+even guessed an unsupported framework import command. The answer prompt now
+illustrates the difference between invoking an observed script entrypoint and
+inventing an application object for a framework runner. The route prompt keeps
+complementary launch sources for the requested components before repeated
+documentation. No command is inserted by Go or copied from the experiment.
+The third isolated read derived `python main.py` from the actual seed; its
+unchanged retrieval and route were cached, with one 2.149s answer call.
+
+Ordinary acceptance `20260906-210410-python-tutorial-game-51ddff6ae36d`
+completed in 44s. A malformed provider JSON response left one route unavailable,
+so the unchanged ordinary rerun `20260906-210546-python-tutorial-game-71fe31d217bd`
+reused the accepted results and completed in eight seconds, with no rejected
+windows. It has two native targets, one common HTML/JSON, and 13 questions:
+ten answered and three partial. Launch prerequisites include the exact Python
+requirement, frontend script and backend main guard. The explicit run answer
+now offers the derived backend invocation but still labels undocumented
+configuration as an open question; that qualification needs further editorial
+review rather than automatic promotion. The generated prerequisites answer
+gives both launches. All question and Learn records bind to the same v9 graph;
+native/group bindings, source locations and HTML/report digest passed checks
+recorded in `work/learn-launch-acceptance.json`. Browser inspection covered the
+grey-green overview, the native click into that answer, and the main-guard and
+manifest excerpts with their exact source links. Focused atlas/report/run and
+contract tests, vet and diff whitespace checks passed.
+
+The full ordinary etcd run `20260906-203245-etcd-658b6f3a7346` completed in
+57m23s (27 targets, 22 questions), as recorded above. It used graph v8 and the
+earlier answer prompt, so it does not validate the v9 launch changes. Its
+technically completed answers failed the Learn coverage review; it is not a
+live process.
+
+The earlier answer stage also received the prior reader's unresolved question
+as a labelled tentative gap. In the current small report that guess overruled
+the observed backend entrypoint and left a supported launch command unresolved.
+Answer v6 removes that extra task while retaining original evidence and labelled
+model descriptions. Its prompt requires a partial status when an essential
+requested step remains missing, and grounds runnable commands in documentation
+or observed launch configuration rather than a plausible framework example.
+An isolated v6 retry gave `python main.py` and explained npm and uvicorn, with
+dependency installation still unresolved. The first attempt exhausted the old
+8192-token ceiling; neither that rejection nor the successful development read
+constitutes ordinary report acceptance. The new ordinary check is pending.
+
+The question pass takes already supplied text, retrieves anchored evidence and
+selects a reading route. It now appends `atlas_answer`, a brief grounded answer
+over those selected original anchors, through the same executor and cache.
+Route artifacts are v7; retrieval is v6 and the answer table is v6.
+Route-selection v7 treats the preferred six sources as a writing preference
+in every round, not a validation limit. Complete original candidates are split
+by the configured input-byte budget, without a 24-candidate ceiling. Every
+round either shrinks the selected set, produces the final accepted reading,
+or ends at a fixed point with separate accepted reading parts. The parts keep
+their own order, gap and model/cache provenance; the report does not imply an
+order between them. Their exact union supplies original evidence to the answer.
+Missing or rejected windows remain distinct from these valid independent
+readings. Answer table v6 retains labelled prior hypotheses alongside original
+evidence. `read --through answer` isolates that final stage. An answer records
+its text, basis, source locations, remaining gap and status independently of the
+reading route. Missing evidence is unanswered; a rejected model window is
+unavailable. A substantive answer or not-applicable explanation needs source
+refs, and incomplete coverage cannot establish inapplicability. Multiple
+evidence windows preserve their original sources as partial answer parts.
+The final answer table requests provider-supported deliberate reasoning. On
+2026-09-07 the owner rejected the arbitrary small generation ceilings after a
+valid answer request exhausted its 8192-token reasoning/output allowance.
+Table definitions no longer carry individual 2048/4096/8192-token ceilings.
+All stages use the shared 128,000-token request envelope, subject to the configured
+client ceiling; the guidance classifier, target portfolio, documentation and
+orientation stages also no longer impose their former 32,768-token cutoffs.
+Short answers remain a prompt requirement rather than a smaller
+generation cutoff. The official DeepSeek adapter encodes the reasoning
+preference; other compatible endpoints receive no new vendor-specific fields.
+Other tables retain fast mode. Exact request and memo identities include the
+effective output allowance and reasoning preference.
+The answer explains supported parts, names any missing central part, then chooses
+its status. The original question determines both coverage and depth: an overview
+does not require exact payload fields or internal branches, while a question
+explicitly asking for those details does. Silent omission of a requested part
+cannot become a complete answer merely because the remaining prose is useful.
+The route's open question remains in the saved supporting reading, but is no
+longer included as an extra task in the final answer input. Its earlier model
+uncertainty must not overrule positive source evidence, such as an observed
+Python script entrypoint. The answer briefly explains unfamiliar names needed
+for the requested action. No second review stage, new graph or local semantic
+status repair is added.
+
+Final-answer prose keeps its paragraph breaks and complete qualifications through
+normalization, caching and publication. The answer, basis and remaining-gap cells
+use the table's prose kind; only short label cells collapse whitespace or trim
+length. The existing provider response envelope and output-token budget still
+bound an answer. The prompt asks for short paragraphs, with distinct steps and
+payload shapes separated. In Learn, the explanation has a separate model/source
+control, so reading or selecting the text does not trigger a source preview.
+Source checks group a selected type's original fields and methods in a compact
+table. Each declaration and its author documentation keep their own source link,
+including methods declared in other files.
+
+Readability verification on 2026-09-07 used ordinary run
+`20260907-062913-python-tutorial-game-564ff42337d5`: two complete targets,
+sixteen cached current-contract answers, seven marked answered and nine partial,
+about eight seconds and no live provider calls. Focused table/lines/reading/report/
+run tests and vet pass. The common artifacts, native/group bindings, saved
+question data, original answer prose and HTML anchors agree. Browser inspection
+covered topic-to-answer navigation, separate endpoint paragraphs and compact
+member tables with exact links. This is not full Learn or current etcd acceptance.
+Receipt: `work/learn-readability-acceptance.json` in the desktop project.
+The owner's prioritization review is kept in workspace
+`repomap-questions-learn-work.md` (the original 100 IDs plus nine new scenarios)
+and `repomap-ui-ux-review.md` (29 UI/UX items). Historical fixes remain visible
+there until their stated user journey is accepted; code changes alone do not
+close the owner's remarks.
+
+The current small report also passed the Field-continuation browser journey:
+the inspector shows More details and a lower visual boundary before the text
+ends; its button reveals the final qualification and field.py:10 source link,
+then becomes Back to top. The map does not shift, and switching to Work keeps
+the selected Application core and inspector scroll. This verifies the existing
+implementation rather than adding another scrolling mechanism. UX17 remains
+available for the owner's usability review; continuous pointer transfer and the
+large report are separate checks. Receipt:
+`work/learn-work-field-continuation-acceptance.json` in the desktop project.
+
+Source-check presentation now shares one location link between a declaration's
+signature, author documentation and member-table heading, using the stop's link
+when the original location is identical. A different original declaration still
+gets its own anchor, and every field/method keeps its exact individual link.
+The ordinary small run `20260907-083823-python-tutorial-game-fbf7b65fc9cd`
+completed in seven seconds with no live model calls. Browser inspection confirms
+the class path appears once instead of three times and the member links remain.
+Report tests cover both the selected location and other original declarations,
+including a cross-file method; report vet and whitespace checks pass. This
+addresses UX29 without changing provider evidence or stored answers.
+
+Coverage acceptance on 2026-09-06 compared the original six-source etcd
+keyIndex/generation answer and four saved small-repository questions. Prompt-only
+variants either still omitted part of the question or demanded unasked details;
+the ordinary `20260906-220956-…` run exposed a regression to a guessed framework
+launch command and was not accepted. Reasoning-mode replays returned a partial
+etcd storage answer and the observed Python script invocation, at 6.953s and
+24.619s respectively. The current route prompt independently selected ten original
+etcd anchors instead of six, preserving Lease, Lessor, Backend and BatchTx.
+These replays do not replace full current-version etcd acceptance.
+
+The ordinary answer-v4 run `20260906-222116-python-tutorial-game-3c5fdacb140c`
+completed in 5m33s, with all retrieval/route/map work cached. Fourteen final
+answers were accepted; one provider response error left an answer unavailable.
+The unchanged `222724-…` run completed in 25s with one live answer and fourteen
+cached answers, no rejected windows. The final warm ordinary report is
+`20260906-222822-python-tutorial-game-6ac1cc158644`: 6.656s, no live calls,
+all fifteen answers cached, nine answered and six partial. Initial plus recovery
+answer requests used 48,558 input and 43,687 output tokens (including reasoning),
+with sixteen transport attempts. This cost increase is confined to final answers;
+it is not a speed improvement. The unchanged v9 graph, both native/group bindings,
+original answer anchors, single common HTML/JSON, internal links and warm answer
+identity passed inspection. Browser checks covered the two launch commands,
+their original main-guard/manifest/README evidence, a native jump to the backend
+map, and the visible unanswered backend-testing part. No browser errors were
+reported. Focused llm/deepseek/table/reading/report/contract tests and vet passed.
+Receipt: `work/learn-answer-reasoning-acceptance.json`. Full etcd menu/answer
+coverage, missing type fields/defaults, and some literal Markdown/meta wording
+in model prose remain open.
+Learn links questions to one shared question section; a question opens the
+answer before the supporting reading route, with links to existing map nodes.
+“Check this interpretation” exposes the model's brief basis and original selected
+declarations or author excerpts with their own exact source links. It does not
+relabel directory context or earlier model prose as a declaration's documentation.
+No implementation bodies or additional evidence category is sent by this step.
+The owner explicitly reaffirmed that useful model interpretations are welcome:
+the operator must be able to check them quickly. Names, signatures and argument
+names can support an interpretation without bodies; do not automatically turn
+that into “unanswered” or demand runtime proof for every explanation. Recalled
+model descriptions can contribute, with that reliance stated; they do not become
+independent proof for the answer. Concepts should
+be explained where an answer needs them and link back to their owning areas.
+Learn presents the system map and a manageable set of useful questions, with
+further questions inside the selected topic. Its separate term search remains
+an alternative entrance, not the learning sequence.
+
+Answer-stage acceptance on 2026-09-06: the ordinary two-component report
+`20260906-170233-python-tutorial-game-83677a41a877` completed in 8 seconds with
+zero live provider calls after an answer-only reading took 4.175 seconds.
+The browser showed the short answer, its one-sentence basis, original excerpts
+and exact map links. Earlier output leaked request-local candidate numbers in
+prose; these are now rejected at the answer boundary rather than published.
+Focused reading/report/run tests and vet passed. The ordinary 27-component
+etcd report `20260906-170227-etcd-5cd6bdae2281` completed in 2m51s with an
+accepted Lease explanation and inspectable sources, also checked in the browser.
+It is not complete question-route acceptance: one previously refused retrieval
+window was recomputed, changing the subsequent route pools; five intermediate
+route windows were refused for choosing 7–8 anchors against a six-item limit.
+The route is explicitly partial. The answer does not establish exact expiry
+timing or a complete runtime trace. The v7 correction removes that selection
+limit and preserves termination without cutting accepted sources. All current report memberships and HTML links passed the artifact
+audit in `work/learn-answer-final-acceptance.json`.
+
+Route v7 acceptance on 2026-09-06: the saved full etcd reading
+`reading-2859291439` reused all 150 retrieval windows, inspected all 2,685
+chunks and selected from 492 original locations. Its four rounds kept
+103 / 38 / 12 / 6 locations across 13 / 4 / 2 / 1 pools, with no refused
+window. The 20 route calls took 10.095 s; the complete saved reading took
+21.227 s. The selected README now includes lease grant/TTL, attaching keys,
+expiry and revoke, together with the Lease and Lessor declarations. Its short
+answer explains TTL, attached keys and deletion on expiry/revocation; it still
+does not prove precise scheduling or a runtime deletion trace.
+
+The ordinary full report `20260906-172703-etcd-eab91f0f7a54` completed 27/27
+components in 2 minutes with zero live model requests. The ordinary fixture
+`20260906-173149-python-tutorial-game-f81404157eb1` completed in 13 seconds;
+its changed route/answer inputs made four calls, while retrieval and atlas
+descriptions reused their cached results. Both have one common report,
+matching report digest, current question/places/input graph hashes, and exact
+source locations and map memberships. Receipts are
+`work/learn-route-artifact-acceptance.json` and
+`work/learn-route-question-acceptance.json`.
+
+Browser checks opened the short answers and their original evidence, followed
+the Lease answer into the correct existing group, preserved its inspector and
+viewport on switching Work/Learn, and returned using the new shared Questions
+navigation link. Source links retain the captured revision and open separately.
+Focused tests exercise seven/eight-source intermediate selections, byte-bound
+complete partitions, a nonshrinking selection terminating with all 83 sources,
+cache reuse of those independent parts, legitimate empty selections, refusal,
+and refusal to render parts that disagree with the answer's source selection.
+Reading/lines/report/run/debugdump tests, vet and diff checks passed.
+
+The saved reading also exposed a missing journal-stage registration for
+`atlas_answer`. It is now registered. The later ordinary fixture persisted
+both answer exchanges with verified exact request/response cache payloads.
+The full 172703 report predates that journal-only correction; its table
+request/response references remain available. This closes that diagnostic
+gap without claiming automatic Learn question generation is implemented.
+
+The first Learn/Work browser checks passed on the two-component fixture,
+including mode changes with an operation and inspector selected. The full
+27-component ordinary etcd run `20260906-155417-etcd-309ddf67939c` completed,
+but visual acceptance is still pending: the overview's graph layout placed
+tests above the primary applications and made the initial map too tall.
+Folding role areas alone therefore does not yet satisfy the newcomer journey.
+
+Question reading stops now link to exact existing operations or all groups
+containing their subject, preserving separate executable/library owners. A
+boundary's existing operation ID is also a direct join. Where a boundary has
+no corresponding ProgramIndex subject, its file can link to groups containing
+declarations in that file, explicitly labelled "file in". That fallback locates
+the source file; it does not claim that all those groups execute the boundary.
+Documentation without such membership remains a source link. No new provider
+evidence, model classification or graph is added by these navigation changes.
+
+The owner's Lease example adds a concrete terminology acceptance requirement:
+an unfamiliar concept needs a short explanation of what it means here, which
+objects it acts on and its important lifecycle, with source pointers. For etcd,
+the manual reference is api/etcdserverpb/rpc.proto:107-117: a lease has a TTL,
+keep-alives renew it, and expiry/revocation deletes its attached keys. Calling
+the area "Lease management" does not explain this, and Lease must not be
+presented as a generic mutex. The existing search can locate the area; this
+complete lifecycle explanation is not yet a generated product answer.
+Hard-coding an etcd glossary in the renderer would not satisfy the goal.
+
+The terminology improvement stays on the existing symbol knowledge:
+types receive their native-owned declarations, including methods in other
+files and explicit Go interface methods, with exact ownership and signatures.
+Interface methods have no invented direct-call nodes or implementation edges.
+Claims now capture documentation attached to those explicit declarations, and
+type context keeps the existing bounded author quote rather than reducing it
+again to its first sentence. Ordinary file/callable context remains unchanged.
+Atlas graph and saved reading input are version 8. The independent type table
+`repomap.atlas.types.v5` returns an explanation and key flag; ordinary callable
+rows retain their previous prompt and memo contract. A type's file hypothesis
+is not supplied as factual evidence. Bare names without owned declarations or
+author documentation remain source entries without a generated definition.
+An initial ordinary run demonstrated why: the model invented active/completed
+states for an undocumented enum. That intermediate report was discarded; the
+final ordinary run does not ask for those unsupported definitions.
+
+The three-agent UI walkthrough on 2026-09-07 exposed another loss: the complete
+type response was normalized as a 240-character label, so Field and Robot still
+ended in literal ellipses after the inspector was fully scrolled. Type v5 uses
+prose normalization and asks for short complete sentences. It also omits an
+undocumented lifecycle topic instead of appending an irrelevant "no deletion
+rule is documented" caveat. Original declaration evidence remains unchanged.
+The preservation regression covers a complete qualification beyond the old
+cutoff. Ordinary runs 094938 and 095737 use type v5; the latter's browser
+repetition confirms complete Field/Robot explanations and source links.
+Editorial quality remains under review: one API Robot row still includes an
+irrelevant lifecycle-absence sentence despite the prompt instruction.
+
+Map inspectors now offer one concept at a time from the existing group's key
+type subjects. A type named in the group's title is selected first; all other
+retained concepts are available through the selector. Selecting it changes
+both the explanation and the declaration link. The text is labelled as model
+interpretation, not an author quotation. The explanation, source and actions
+have separate columns in a fixed-height inspector, avoiding a list of type
+definitions or a layout shift on hover. Source links open separately.
+
+Longer explanations can overflow this fixed strip. Its inner content now has
+a reserved continuation control outside the scrolling area: a shadowed lower
+edge and “More details ↓” appear when content remains below, and clicking moves
+down to the explanation's source. At the bottom it offers “↑ Back to top”.
+The control disappears when all content fits, and the strip's height stays
+fixed. Browser acceptance on `20260906-184502-…` checked Field's initially hidden
+source, one-click scrolling to its exact link, returning to the top and changing
+the selected concept. The ordinary run took seven seconds with no live calls.
+
+Ordinary acceptance on the final UI:
+`20260906-143809-etcd-63d416dc47ad` explicitly selects only the server library
+(26 s in the CLI log; 194 type descriptions; zero live calls, zero refused
+windows). `20260906-143918-python-tutorial-game-89f14476c0a9` covers both small
+targets (16 s; four type descriptions; zero live calls or refused windows).
+Browser screenshots at 1322x992 checked Lease search → Lease management with
+Lease selected, changing to Lessor with its own source, and Application core →
+Robot. Text, source and actions fit without scrolling the initial inspector.
+Native/group bindings, exact reduced overview, single shared report artifacts,
+question-map destinations and concept source paths were checked in
+`work/type-concepts-acceptance.json`. Focused atlas/group/report tests, vet and
+JavaScript syntax checks passed. This is not full 27-target etcd acceptance.
+
+The subsequent ordinary check `20260906-151708-etcd-b512db32e076` selects the
+server library only (63 s in the CLI, 60.991 s recorded before publication;
+206 type rows, 102 marked key, 26 live type windows). Its Lessor row now has
+16 explicitly owned interface methods and the second sentences documenting
+deletion. The model line states that revoking a lease removes its attached
+items, and the browser inspector shows it with the exact declaration link.
+`20260906-151728-python-tutorial-game-6f5f41c54187` covers both small targets
+(16 s; four type rows; one live type window). Native/groups/set hashes,
+single shared report artifacts, exact reduced overview and input-to-HTML
+Lessor text were checked in `work/interface-contract-acceptance.json`.
+Focused claims/atlas/discovery/adapter/contract/report tests and vet passed.
+These reports are diagnostic evidence, not completed semantic acceptance.
+
+Two material gaps remain. The Lease row still lacks the separate service
+contract connecting expiration to key deletion. Without implementation
+evidence, type summaries can also overinfer: Robot.collides became collision
+prevention, although its implementation only compares identity and position.
+Explicit Go interface methods additionally expose a pre-existing review
+weakness: operation classification can treat a method contract as an actual
+request handler. Native edges remain correct, but declaration-only syntax
+must reach operation eligibility/review before this change is fully accepted.
+Do not use missing direct-call-node membership as a proxy for an absent body:
+some implemented native declarations legitimately have no such node.
+
+The owner clarified that names, signatures, argument names and implementation
+are successive useful evidence, as for a human reader. Names can support a
+model hypothesis; comments are optional. Code should refine what is queried,
+changed or returned, and following the caller is needed to explain what it
+does with a result. Retain declared fields/enum values where native adapters
+currently expose only a type name. Do not count these improvements as
+completion of terminology question 13.
+
+An owner-authorized incremental experiment now compares the same four types
+(Robot, Field, Lease, Lessor) from the pinned public acceptance revisions:
+names only, existing normalized signatures/arguments, own code without
+comments, then the same code with documentation. Each variant uses the same
+prompt and actual configured request parameters, through `repomap replay`,
+twice. It adds no alternative product pipeline and is not report acceptance.
+Requests and responses live in the shared `.llm-cache/payloads`; measurements
+and exact references are in `work/concept-evidence-experiment/manifest.json`
+and `measurements.json`. No key or Authorization header is recorded.
+Input tokens per four-type request were respectively 835 / 1277 / 3727 /
+4390. Provider latency was 2.02–2.52 s; output was 155–185 tokens. Replays
+remain live generations even when the provider reports prefix-cache hits.
+This small set does not establish repository-wide latency. Code made Robot
+and Field descriptions more faithful, but Lessor still became a method list;
+more input by itself does not guarantee a useful lifecycle explanation.
+The saved 27-component atlas contains 627 lifted type candidates, not 627
+distinct domain concepts. The fresh server-library count above is narrower.
+
+Search acceptance is currently complete on the small ordinary report
+`20260906-140300-python-tutorial-game-e2d2e24bb8d2` (6 s, zero live calls).
+Browser inspection checked readable topic results, parts before the source
+inventory, and operation selection followed by an unrelated part search opening
+its complete Structure scope. Reopening results resets their scroll position so
+the first title stays visible. The preceding run with identical question-link
+code also checked the guide's exec source-file link opening Application core.
+Report tests and vet passed; current JavaScript syntax and whitespace checks
+pass. Artifact checks are recorded in `work/topic-search-acceptance.json`.
+
+Large-repository acceptance remains pending. The final etcd attempt
+`20260906-134909-etcd-9951db1e0fe1` failed after 5m45s because the disk filled.
+Earlier persistence failures excluded the server library and etcdutl executable;
+that changed directory/file inputs, causing 247 live semantic calls rather than
+the expected reuse. This is an observed changed input after target failures,
+not evidence of nondeterministic request construction. No final report was
+published. Its 27 unpublished run directories were removed after preserving
+the log, changed directory inputs and accounting in
+`work/topic-search-etcd-failure.json`; shared caches and delivered reports remain.
+Do not retry the large run until sufficient disk space is available. The older
+complete etcd report below remains the delivered map, without this search change.
+
+Connections follow the displayed level: aggregate between areas/components,
+expand to their members on deliberate drill-down, retain direction, provenance
+and the constituent relations. At a focused scope, boundary-to-boundary edges
+do not belong to that view; opening a boundary explores those connections.
+One shared geometry mechanism routes visible edges around nodes, with
+separate directional ports and readable labels, instead of separate patches
+for overview and operation curves. Folding is a view operation and never
+deletes graph evidence or silently promotes a possible call to an exact one.
+Acceptance includes storage → parts → users, an operation → area → group with
+context/back/All uses, migrate, the Raft call witness, frontend → backend,
+and both single-node and dense graphs. Actual browser screenshots and journeys
+are required; font measurements alone did not catch the previous defects.
+Navigation and routing acceptance: ordinary runs
+`20260906-130947-python-tutorial-game-d719b156fce1` (5 s) and
+`20260906-131200-etcd-06f70d7533b7` (1m51s), both with zero live provider calls.
+On these final files, browser checks followed Interactive components → Routing
+and services → HTTP service → backend → POST /api/level/run and reached the
+exact destination operation without opening source code. On etcd, opening
+etcdutl from the overview and pinning migrate retained that operation while
+opening Admin utility. Structure → Storage engine → Backend storage exposed
+its users; choosing backend.run retained the scope, and All uses restored all
+five neighbouring parts. Back restored the previous area. The seven-call native
+witness from main to Raft Transport.AddRemote retained its original source
+anchors. Stationary-pointer layout changes no longer replace that selection
+with another operation. Continuous physical mouse transfer was not retested;
+the available browser API exposes clicks and keyboard focus, not pointer motion.
+
+Screenshots of the final overview, API area and storage views were inspected.
+The folded etcd overview fits horizontally at the inspected viewport; expanded
+dense areas still need scrolling. This is not a promise of a planar graph or
+complete matching acceptance. Geometry checks on the retained root, API,
+storage and backend scopes preserve every displayed relation, produce repeatable
+coordinates and find no edge segments crossing card interiors. The same checks
+pass for a complete directed 12-node/132-edge graph. Workspace record:
+`work/structure-geometry-acceptance.json`. Both final reports have one common
+HTML/JSON/manifest, all 2/27 native-to-group hash bindings match, and every
+internal HTML anchor resolves without duplicate IDs; 4/476 native call-path
+payloads parse. Record: `work/structure-final-artifact-audit.json`. No browser
+errors were reported. Focused report tests, report vet and whitespace checks
+pass. Base-question coverage and general matching quality remain active work.
+Floating source cards test each pointer movement against the previous safe
+triangle, then advance its apex to the accepted point. Leaving that narrowing
+corridor releases a pending preview immediately. There is no timed expiry for
+pointer intent; a stationary pointer preserves its current selection.
+Keyboard selection survives scrolling. Scripted map nodes remove their duplicate native tooltip.
+The ordinary morning UI checkpoint is
+`20260906-051922-etcd-a2bf12cd82a5`: 91.884 s, 27/27 targets, no live provider
+calls and no experimental question. All native/group/report hashes, 15,509
+callable references and HTML anchors were inspected. Focused report/contract
+tests, report vet and diff checks passed. Fresh loopback browser inspection
+opened etcdutl from the overview and checked completion and migrate with the
+description outside the graph. Command positions relative to the stage changed
+by less than 0.002 CSS px; keyboard transfer to the source link retained the
+description and path, and Escape dismissed it. No console errors were captured.
+The compact layout's DOM measurements put the description above the stage;
+viewport-emulated screenshots were blank, so visual acceptance of that layout
+is still pending. Continuous mouse transfer was not retested: the current
+browser API exposes focus/click but no pointer-move operation. That checkpoint
+fixed same-column routing only. Workspace receipt:
+`work/etcd-map-inspector-final-acceptance.json`.
+The subsequent overview routing checkpoint is
+`20260906-053535-etcd-e812a0e34892`: 94.230 s, 27/27 targets, no live provider
+calls. Sampling the generated paths against all node rectangles found 88
+edge/card intersections in 051922 and zero in this report, with the same 27
+nodes and 84 edges, all inside the canvas. A dense-grid regression checks both
+directions, skipped rows/columns, narrow gutters, and arrowhead arrival.
+Report/contract tests, report vet, build and artifact checks passed. Fresh
+loopback browser inspection checked the server-library overview, the etcdutl
+description and click-through, and migrate's highlighted path with the
+description beside it; no console errors were captured. Shared line segments
+and crossings between edges remain, and this geometry change does not establish
+matching precision or complete mouse-interaction acceptance. Workspace receipts:
+`work/etcd-map-gutters-acceptance.json`, `work/etcd-map-gutters-geometry.json`.
+Model prose is dotted and inspectable: the whole passage highlights, and a
+hover/focus/click preview exposes its saved citations. These are the model's
+citations, not a reconstruction of every file in the prompt or a guarantee
+that the cited line supports the explanation. Text without saved citations
+says so. Static HTML retains inline citations for readers without scripting.
+
+Development storage: use one `.bin/repomap` and the ambient shared Go caches.
+The model cache is shared within a debug root, so creating many experimental
+debug roots duplicates caches. Cleanup removed 797 generated global runs older
+than 2026-09-05 and 46 archived historical binaries (10.71 GiB), preserving all
+model caches, the shared Go cache, current reports and experiment inputs.
+
+An urgent owner-requested disk cleanup on 2026-09-06 found only 282 MiB free.
+The Go compiler cache occupied 17.55 GiB and the etcd run root 12.30 GiB
+(including its 0.76 GiB model cache). These are measured totals, not a claim
+that all this data was written by the last run. Removed only 54,109 compiler
+cache entries whose modification time was older than 72 hours, validating
+their paths, inode, size and timestamp before deletion. This reclaimed
+7.68 GiB; available disk space rose to 7.98 GiB. Recent compiler entries,
+module downloads, all model caches, source and delivered reports remain.
+Both final terminology report URLs returned HTTP 200 after cleanup. The exact
+receipt is `work/emergency-go-build-cleanup-20260906.json`. No retention
+mechanism was implemented by this emergency action. Before further heavy
+acceptance runs, measure free space and clean only this task's superseded
+unpublished cohorts; do not let automatic continuation repeatedly consume
+the recovered headroom or clear model answers to obtain space.
+
+The owner subsequently explicitly requested old etcd reports be removed.
+Cleanup deleted 739 dated run directories, preserving the latest completed
+cohort, the active cohort and the open in-app report, and excluding all model
+caches. Free space rose from 4.40 to 16.62 GiB (12.22 GiB recovered). Exact
+paths and the keep set are recorded in `work/etcd-cleanup-20260906-1705.json`.
+Many historical run paths mentioned above no longer exist; their measurements
+are historical records, not promises to retain their full artifacts. The latest
+small and full report cohorts passed their bindings/link audit after deletion.
+
+Publication now passes the completed ProgramIndex and dependency catalogue
+through facts, claims, places and group projection in memory. A restored target
+loads its missing value once. The owner projects the shared report once and
+writes one `report.json`, `run_manifest.json` and `report.html`; facts, claims,
+orientation, atlas and both portfolios are also repository-wide owner artifacts.
+Target directories retain target-specific indexes. The server receives the
+in-memory report, while a new process restores only the common JSON and manifest.
+Report format is 77, without an old-format adapter. The former per-target report
+generation and subsequent owner JSON reload/render step have been removed.
+
+Acceptance on etcd revision `58f45a9ff1c0`: the two ordinary warm runs
+`20260905-170032` and `20260905-170910` completed in 74.399 s and 74.606 s,
+down from 148.383 s. Each analyzed 27/27 targets with zero live provider calls.
+Publication took 3.705 s and 4.064 s. One 88,179,503-byte report JSON replaces
+27 reports totaling 1,718,748,491 bytes. Compared with `20260905-160210`, the
+final report differs only in format version and timing; graph, facts, claims,
+orientation, target inventory and source paths are identical. HTML source and
+navigation links and section IDs are identical too. Browser QA covered the
+overview, target chooser and jump to the server map. Eleven unresolved
+container anchors exist in both reports and remain a separate UI defect.
+
+The detailed repeat attributes 21.543 s to target artifact preparation
+(including copies, validation, serialization and persistence), 16.701 s to
+native analysis and 8.474 s to common ProgramIndex/dependency projection.
+These are measured wall spans, not a CPU profile separating their internals.
+Native analysis reuses a Go workspace across targets within the run; completed
+native indexes are not yet reused across runs by the model-response cache.
+The public mixed-language fixture completed in 5.582 s with 2/2 targets and
+zero live model calls. Focused run/report/server tests and vet pass, including
+27-target publication without saved index inputs and serving after the saved
+publication is deleted. No compatibility reader was added.
+
+Acceptance: the 20260905-135910 etcd run analyzed 27/27 targets in 5m14s;
+Go TODO facts fell from 472 to 288 and the testgrid library now has its own
+four files and a group. Focused places, reading, facts, report, groupindex
+and run tests plus vet passed. Browser checks covered pointer transfer onto
+the preview, Escape, source-link navigation, grouped TODO/file disclosures,
+collapse from the middle of a list, compact navigation and all 51 zone frames
+across 27 maps (no intersecting frames). Rendering the saved report with the
+latest preview handler took 1.70s, including JSON decoding and writing HTML.
+
+Cache audit: three readings of the identical saved etcd input each reused all
+4,374 entity descriptions and 41 whole windows, attempted zero provider calls
+and took 1.64–2.75s. Between the preceding and current full runs, 2,223 entity
+bases changed: all are explained by changed ownership and parent knowledge.
+Of these, 106 changed only because ownership participates in the memo key;
+another 129 retained identical model input but changed parent knowledge IDs.
+This is excessive invalidation, not evidence of nondeterministic request
+ordering in the repeated reading. The subsequent cache change below separates
+exact model input reuse from current entity/provenance bindings. The full
+program-index rebuild was not part of this isolated repeatability check.
+
+The owner asked to implement and verify from extracted evidence upward;
+HTML prototypes are for discussing possible reader experiences. The first
+new development boundary is `reading-input.json` (version 2): the complete
+places graph and target metadata used by the ordinary atlas reading. The
+normal run persists it before any atlas model call. `repomap read INPUT`
+runs those same stages without compilers, corpus collection, orientation or
+HTML. `--through` stops at a named table and saves only the work actually
+done; partial readings never publish an atlas. `--prompt`, `--window-rows`
+and `--input-bytes` control the selected table; unchanged preceding requests
+use the shared exact-response cache. The input has one current format, with
+explicit errors instead of compatibility readers.
+
+File rows now use deterministic direct-caller evidence (path, documentation,
+leading declaration names), alongside the directory's model description.
+They no longer consume other files' generated lines, so all file windows
+can run independently. The file prompt contract is v2. Tables also split
+complete rows under a 64 KiB system+user UTF-8 planning budget. This is
+independent of provider envelope limits and does not claim to measure tokens
+or comprehension. A singleton exceeding the budget is an explicit error;
+its owner must change the evidence representation. Per-window prompts and
+normalized results with source bindings accompany the raw exchanges.
+
+Validation proceeds from deterministic fixture expectations, to frozen-input
+readings and real provider calls, to the ordinary end-to-end run. The baseline
+fixture completed 2/2 targets in 49 s; 29 file descriptions took 9 sequential
+requests and 12.3 s. A concrete downstream quality defect remains: the last
+main-flow sentence described frontend animation but cited backend exec.
+This needs better evidence selection and semantic anchoring in orientation,
+not a change to the renderer. See README for the executable iteration loop.
+
+The small-window experiment exposed a deterministic bug: module-level Python
+and TypeScript variables have `ContainerID`, while the places builder checked
+`OwnerID`. It therefore dropped the exported `instructions` object from
+`front/src/utils/instructions.ts` and sent an empty declarations list. The
+builder now uses lexical containment and its fixture test preserves the
+constant's exact source binding without promoting function locals. File rows
+also distinguish `directory_hypothesis` from `directory_facts` and disclose
+the total declaration count. With the repaired input the model described the
+file as instructional text, including in the smaller-window experiment.
+
+Measured locally during this change (single runs, not a performance guarantee):
+
+| workload | result |
+|---|---|
+| fixture, original cold model cache | 49 s end to end; 9 file requests, 12.3 s |
+| fixture, independent files, cold model cache | 41 s end to end; 1 file request, about 6 s |
+| fixture, same evidence, 8 rows / 16 KiB file budget | 4 live file requests in about 3 s; directory requests cached |
+| fixture, complete saved reading after the declaration fix | 53 ms inside reader; 15 cached requests, no live calls |
+| etcd, ordinary cold model cache run | 8m05s; 27/27 targets, 582 files, one physical HTML; one invalid JSON window recorded |
+| etcd, saved input with final file prompt | 32.2 s; 20 live file windows, zero rejected; directory requests cached |
+| etcd, repeat of that saved reading | under 1 s; all 29 windows cached |
+
+The etcd end-to-end timing predates the final file-prompt wording and the
+Python/TypeScript declaration fix. The final prompt was exercised on its
+saved evidence separately, not claimed as another complete cold run. The
+fixture's final ordinary run analyzed both targets and preserved facts.json
+byte for byte. All product tests and vet passed; the updated places, reader,
+table and CLI tests also passed after the last code changes.
+
+The command and file-round descriptions below predate this boundary where
+they conflict with this section.
+
+### Question candidates and generation evidence (2026-09-05)
+
+The next cube is the atlas question table, using the same executor, request
+cache and frozen reading input. `read --question TEXT` runs it followed by
+route selection; the ordinary command appends both after the atlas tables. Every graph declaration
+and boundary enters exactly one chunk, including generated code, with up to
+24 anchors per chunk. The model chooses relevance, a closed local anchor and
+a short reason. Paths, positions and target identity are restored locally.
+`question-route.json` records coverage and candidate stops. Connections keep
+compiler witnesses, producer declarations and corpus membership distinct;
+they do not claim that chosen representative declarations call each other.
+Failed chunks remain unresolved.
+There is no implementation/body inspection yet. The ordinary report now renders
+the selected guide; the development `read` command still only saves artifacts.
+
+Route selection now compares up to 24 distinct source locations in each pool,
+then compares their selections until one pool remains. Pools split further by
+the actual prepared input byte budget. A partial pool must reduce its members;
+the final pool aims for six anchors in reading order, preserving extra valid
+anchors instead of refusing the guide. The model returns
+an ordered closed ref sequence, a short summary and one open question. Original
+evidence, not summaries of earlier pools, is carried into every round. The full
+candidate reservoir and all existing connections remain in question-route.json
+v3, alongside the guide and per-round coverage. Unknown refs do not gain
+authority, failed pools are recorded and no deterministic route is invented.
+`--through question` isolates retrieval; `--through route` changes selection
+while the shared exact-request cache reuses unchanged retrieval.
+
+The live sqlc example reused retrieval in 5 ms and selected its six stops in
+2.142 s: query.sql, sqlc.yaml, generated ListAuthors, handwritten ListAuthorNames,
+schema.sql and generated Author. It left caller/test dependence as an open
+question. The ordinary python-tutorial-game run completed 2/2 targets in 7 s;
+only the route table called the provider. It chose the frontend HTTP sender,
+backend receiving route, exec site, playground and level page. A deterministic
+83-candidate test verifies that the entire first-round reservoir reaches the
+model and that the tail survives successive selections. This is not yet a fresh
+etcd routing measurement; its older saved input needs a new native preparation.
+
+### Internal entity knowledge (owner clarification, 2026-09-05)
+
+The owner wants descriptions and discoveries to accumulate on internal
+entities and serve both later model cubes and people. A function's general
+behavior can be reused across callers; the purpose and arguments of one call
+belong to that call's context. Do not re-read a shared lower-level subtree just
+because another higher-level caller reaches it. Keep source facts and model
+interpretations distinct and remember which evidence and earlier interpretations
+each conclusion depends on, so the affected knowledge can be invalidated when
+its basis changes. This should remain a small record boundary, not a large
+taxonomy or another plugin system.
+
+SubjectID on a question stop is distinct from its context PlaceID, with original
+selected evidence retained. Native declarations use their ProgramIndex object
+IDs; boundaries and observed entities use existing graph IDs. Context fields
+retain their actual context path, so generated-file attributes cannot silently
+describe a configuration anchor. Internal IDs are restored locally, never sent
+to the model.
+
+Independent directory, file, symbol and boundary interpretations now persist
+as knowledge.json v2. Each record binds the internal subject, current owners, context, exact
+single-row evidence, cells and dependencies on earlier model interpretations.
+The model still receives batches; single-row preparation only computes identity.
+Only these four tables opt into reuse and their prompts explicitly require
+row independence. Comparative stages (groups, routes, portfolio) keep complete
+request identity. Existing provider exchanges retain real transport accounting;
+reused entities are counted as reused_rows, not fictional provider cache hits.
+
+The shared executor stores entity-to-response-row indexes in its existing
+.llm-cache directory. Each memo contains only the request key and original row
+key; the answer comes from the current shared response and is revalidated by
+the owning table. Response tables are loaded once per request per reading. Answer basis identity includes provider configuration, prompt/table
+contract and the exact single-row model request. Repository labels, native
+subject IDs, ownership and parent knowledge IDs do not affect answer reuse.
+They instead contribute to the current knowledge ID together with the answer
+basis and accepted cells. Every reuse rebuilds that binding: dependencies point
+to this run's parent knowledge, not obsolete records. A parent's changed source
+evidence can therefore produce a new provenance chain without model calls for
+children receiving identical text. If its supplied model line changes, the
+child's request and answer basis change too. Missing or changed inputs are
+batched together. Exact accepted request caching still applies to those batches.
+No-cache bypasses reusable answer reads and pointer/index writes. Diagnostic
+payloads still go to the shared cache directory. Cache clear removes payloads,
+answer pointers and memo indexes; run snapshots remain, but raw-payload links
+then stop resolving. Recalled rows are revalidated and are not rewritten.
+
+`repomap replay --file REQUEST.json [--debug-dir DIR]` sends the exact prepared
+provider payload through the existing configured client, always live. It keeps
+all saved request options, including unknown provider fields; the configured
+client supplies endpoint, authentication, timeout and retry policy. Only a
+successful provider response containing valid JSON replaces the answer pointer.
+The owning stage checks its domain schema on later reuse. Replaying a batch
+updates the rows recalled by entity indexes even if a later reading uses a
+different batch size. Old run results and HTML remain snapshots.
+
+The cache has one current format: v2 accepted records reference request and
+response payloads stored by content hash. Semantic journals v3 retain per-run
+accounting and relative links into this same store. Atlas tables likewise write
+prompt/request/response ref JSON, plus run-local normalized results. Replay
+prints the shared request and response paths, duration, attempts and usage.
+
+Question-only readings use the same four row builders in recall-only mode:
+they restore current descriptions but make no description requests. Source rows
+receive explicitly labelled prior model hypotheses; stops retain used knowledge
+IDs. This is reuse of extracted-evidence descriptions, not implementation
+analysis. Functions still cover selected declarations using names, signatures
+and docs. An uninspected body change does not invalidate those descriptions.
+Changed target inventories may reuse byte-identical row inputs while producing
+new entity bindings. This is exact input reuse, not fuzzy identity matching;
+there are no old-format readers or cache migration paths.
+
+Deterministic tests verify rebatching without provider calls, reanalysis of a
+changed file while its unchanged function input stays cached, updated parent
+links, invalidation when the parent's supplied wording changes, preservation of
+unrelated knowledge, ownership/native-subject rebinding without provider calls,
+question reuse, model/repository bindings and no-cache behavior.
+
+Shared-payload/replay acceptance on 2026-09-05 used the same configured
+DeepSeek client and current binary. The first ordinary python-tutorial-game
+run took 41.69 s; its full repeat took 4.528 s with zero live calls and all 159
+entity rows reused. Both targets retained their backing artifacts and one HTML;
+browser inspection confirmed rendering and an openable source card. Shared
+journal references and payload hashes were checked across both runs. Cache
+clear was exercised on a copy: the payloads and indexes disappeared while
+report.html and knowledge.json stayed byte-identical; the working cache stayed.
+
+A real replay of one 50-symbol batch took 6.765 s and preserved the saved
+request bytes. The subsequent reading through symbols, with a one-row budget,
+took 72 ms wall / 43 ms inside the reader and made no provider calls. All 50
+rows referenced the new response; 17 descriptions changed. This checks that
+replay warms the cache used by entity references rather than an unused copy.
+
+On the saved etcd input at revision 58f45a9ff1c0, first filling the new cache
+format took 251.086 s. One file window was refused for an extra closing brace
+after JSON, leaving 40 file descriptions missing. The next pass took 31.475 s,
+reused 4039 rows and made 11 live calls to fill that gap and its changed
+context. With all responses accepted, the third pass took 2.818 s: 4374 entity
+rows reused, 37 complete windows cached, zero live calls and identical
+knowledge IDs/cells. These are saved-input reading measurements, excluding
+compiler extraction and report rendering. The old cache files were preserved;
+the new cache format/key contract does not read old entries or migrate them.
+
+Full ordinary etcd runs measured separately: 189.117 s with the atlas cache
+warm and four live discovery/documentation/orientation calls (47 s of provider
+time), then 148.383 s with every stage cached and zero live calls. The latter
+completed 27/27 targets and published the single owner HTML. All 4374 knowledge
+IDs and cells stayed identical across the two full runs. Coarse stage markers
+place 71 s before the places graph, another 15 s through atlas projection and
+cache reading, and 62 s after that through report publication. These intervals
+are wall-clock regions, not a CPU profile. The next performance work belongs to
+local preparation and publication; a 2.8 s saved read does not measure those.
+The intermediate full run is removed after the final run's artifacts are
+checked, retaining the newest complete report and the shared cache.
+
+Live validation on the clean public python-tutorial-game revision 78714d34ee:
+the first normal run with the new description prompts completed 2/2 targets
+in 45 s (earlier discovery/documentation requests were cached). It produced
+159 descriptions: 10 directories, 29 files, 109 symbols and 11 boundaries,
+with 149 model dependency links. Every subject and dependency resolved; all
+109 native symbol IDs matched their exact file and line. A second normal run
+completed in 4 s, reused all 159 records with unchanged IDs, and made no live
+provider calls. Both targets retained their required artifacts, facts.json was
+unchanged, and the owner had the only physical HTML for that run portfolio.
+
+Changing the symbol batch from 50 rows to 7 and the input budget to 8 KiB in
+an isolated reading reused 148 descriptions through symbols in 34 ms with zero
+provider windows. A new question about frontend animation recalled all 159
+descriptions and ran only retrieval and selection: 7.685 s, no rejected windows.
+Its route reached runLevel, PlayGround, SimulationField, drawRobotsBetweenSteps
+and ISimulationStep. It also speculated about an unused sleep helper; source
+inspection shows animation uses requestAnimationFrame. This remains a quality
+gap: remembered model text is a hint, not verification of implementation.
+
+Browser inspection of the ordinary repeat report confirmed the repository
+purpose, run commands, HTTP crossings/port, exec site and missing/dead files.
+The main flow currently ends at backend exec rather than frontend animation,
+and a group titled Core application logic still appears in Inbound. These are
+outstanding semantic/flow issues, not fixed by knowledge reuse. The new animation
+question supplies a useful route separately; the HTML layout was not changed.
+Full product tests and vet passed; focused tests/vet passed after the final
+cache-write optimization. The real cache-clear command was exercised on a copy
+of this run's cache (159 memo and 33 request entries): both were removed while
+copied knowledge.json and report.html remained byte-for-byte intact. The working
+experiment cache is retained for further development.
+
+### Earlier question and extractor measurements
+
+The saved etcd state-storage question processed 582 files / 713 chunks in
+33 live windows, 36.8 s, with no rejected windows. It selected 19 direct and
+64 context stops, with 112 witnessed file connections. BackendPath, WAL.Save
+and batchTx.Commit were checked in source. This is candidate retrieval
+evidence, not a completed user-facing route. An earlier run was rejected by
+the API because the prompt omitted the word JSON; the prompt and semantic
+journal registration were repaired before this measurement.
+
+The owner asked for company-specific code to supply evidence, with sqlc as
+the first example and the same rules for built-in and external producers.
+The public interface has just nodes (local id, path or name, optional line)
+and links (from, to, label, optional more precise source). Producers do not
+assign architecture roles or copy internal IDs. A `.repomap.json` command
+entry receives JSON on stdin and writes JSON on stdout. Repomap records the
+exchange, restores identities and target membership, and lists corpus members
+under a referenced path. See docs/EXTRACTORS.md and the Python example.
+
+The built-in sqlc extractor crosses that same response decoder and fact
+normalizer. It reads config v2 and emits config-block/path nodes and labeled
+schema/query/output links with exact config lines. Missing output paths stay
+visible; nonliteral and out-of-repository references stay named but unresolved.
+Membership does not prove generation or migration execution. The common fact
+format is v2, without old-format readers. Its `entity` and `relation` rows now
+enter the same places graph. Entities retain the producer, declared path and
+complete corpus membership. Observation edges retain the exact declaration;
+inventory edges join entities to indexed code files without asserting that
+those files were generated. Question rows include these declarations and
+all member anchors in complete bounded chunks. Related code rows receive
+the original producer context, not another model's summary. A selected source
+anchor can be in a configuration file different from the row's declared path.
+Missing outputs never become invented file anchors. Graph and saved reading
+input are v2; question route is now v3 and plugin protocol remains v1. Ordinary HTML and
+architecture classification tables are unchanged; there is no separate
+HTTP/OpenAPI interpretation path or generated change recipe.
+
+The live sqlc exercise now uses actual sqlc-generated Go files, ignored by
+Git, plus a handwritten caller and the external Python producer. The first
+ordinary run took 17 s; later full runs reused unchanged stages (10 s and
+4 s). It read 4 code files plus 7 entities in 11 chunks. Compiler witnesses
+connect ListAuthorNames to New and Queries.ListAuthors at main.go:21; producer
+declarations connect query/schema/output paths and inventory connects the
+output directory to indexed files. These are distinct connections.
+
+Online inspection found two question defects: advice to edit generated code,
+and a reason about query.sql paired with an anchor opening sqlc.yaml. The
+question prompt now asks only what to inspect, and each closed anchor's actual
+path and line are explicit in its evidence. The isolated final replay took
+3.276 s, one live window, all 11 chunks accepted. Its query/config/caller
+pointers matched their reasons on inspection. This is one observed fixture,
+not a correctness guarantee or complete change plan. Duplicate stops from
+independent producers remain in the reservoir; the new guide compares distinct
+source locations and retains each location's original producer observations.
+
+The final ordinary public python-tutorial-game run completed 2/2 targets in
+12 s, with one physical HTML and all 30 question chunks accepted. The report
+was opened again: run commands, three HTTP crossings, exec at field.py:98 and
+the main flow ending at SimulationField.animate:138 remained available. The
+question selected the HTTP sender, receiving route, request model and execution
+site. Full tests passed, then affected atlas tests, final vet and build passed.
+One build ran out of disk space; only three reproducible, untracked test
+executables in .codex-tmp were removed. Source, reports and shared Go cache
+were preserved.
+
+The question-enabled ordinary fixture run completed 2/2 targets in 51 s,
+with one physical HTML. All 30 question chunks were processed; it selected
+the frontend HTTP call, backend endpoint and exec call with exact anchors.
+The report was opened in the browser and its run instructions, protocol
+crossings and execution pointer checked. Its final animation step now points
+to frontend SimulationField.animate; this is one observed model result,
+not proof the earlier semantic anchoring weakness is generally solved.
+
+The simplified extension contract was tested with the built-in sqlc response
+and an external process returning the same nodes and links. The ordinary
+command also ran the 16-line Python example alongside sqlc on an isolated
+project: 1/1 target in about 1 s, 7 entities, 5 relations, and both exact
+exchanges saved. The output folder was absent. The complete test suite passed
+with package concurrency 1 (parallel build/test/vet exhausted the remaining
+disk space); vet and the final build then passed separately, without clearing
+the shared Go cache. Tests for the final path lookup also passed.
 
 ## Atlas (the model path, from 2026-09-04)
 
@@ -135,12 +2510,14 @@ The supported commands are deliberately small:
 
 - `repomap [repository] [flags]` runs the ordinary online analysis and
   publishes the report;
+- `repomap replay --file REQUEST.json [--debug-dir DIR]` repeats a prepared
+  provider request and refreshes its shared answer.
 - `repomap cache clear [--debug-dir DIR]` clears persistent model-response
   caches.
 
 Report serving is part of the ordinary run and is controlled by `--no-serve`
-and `--port`; `--no-open` controls only automatic opening. There is no second
-analysis command, replay product, developer server, or sidecar entrypoint.
+and `--port`; `--no-open` controls only automatic opening. The `read` development command above reuses the atlas reader. There is no
+second analysis implementation, developer server, or sidecar entrypoint.
 
 The graph has one semantic data path. Language adapters provide deterministic
 program facts. Repository documentation is reduced once and supplies context
@@ -167,13 +2544,27 @@ indistinguishable generic entry.
 ## Repository corpus and file identity
 
 Every later stage derives authority from one immutable repository corpus.
-Corpus collection owns repository-relative paths, tracked-file bytes,
-Git-host metadata, and stable short file refs. Later stages select from that
-corpus; they do not reopen arbitrary workspace paths.
+Corpus collection now inventories current source files, recognized project
+manifests and documentation on disk, including new and Git-ignored generated
+sources. File refs and executable permissions come from that working directory,
+independently of Git index membership. Later stages select from the same corpus.
+The root `.repomapignore` lists literal repository-relative files or directories
+to exclude; it is separate from `.gitignore`. Installed dependency trees,
+virtual environments and known caches are excluded. A directory named `build`,
+`dist` or `coverage` alone is not grounds to omit its sources. The current run's
+output directory is excluded when it is inside the analyzed directory.
+
+Remaining integration work: ordinary repository-state capture still requires
+a Git HEAD, and claims extraction and report validation still require a
+revision. A filesystem corpus works without Git; the complete ordinary command
+does not yet. Those stages need optional Git metadata and content identities
+for untracked inputs before Git-free execution and static-link correctness are
+complete. Corpus tests cover identical inventory before Git init, before the
+first commit and after a commit; they do not stand in for that integration.
 
 Before any short file identity exists, collection excludes `.npmrc`, every
-`.env*`, dependency/generated subtrees `node_modules`, `dist`, `build`, and
-`coverage`, and every `*.tsbuildinfo`. Excluded files never enter freshness
+`.env*`, installed dependency subtrees `node_modules`, and every
+`*.tsbuildinfo`. Excluded files never enter freshness
 state, model input, debug output, or publication.
 
 The selected repository is trusted by default. Heuristic credential scanning
@@ -355,6 +2746,34 @@ It maps an exact top-level import root in `sys.stdlib_module_names` to
 `platform` and every other external root to `package`; an invalid or missing
 authority kind fails the adapter boundary.
 
+The current declaration experiment uses adapter v9 and question table v6.
+Native class ownership feeds the existing atlas type-member representation;
+question selection now keeps those members beside the selected type, and
+the report displays each member at its own source location. Types beyond
+the description-candidate budget remain readable without raising that budget.
+The ordinary public python-tutorial-game run
+`20260906-224927-python-tutorial-game-8bbd9681f1f0` completed in 7m34s.
+Two answer responses failed validation; a second ordinary run,
+`20260906-225804-python-tutorial-game-37aaa0710132`, completed in 1m03s
+with two live answer calls and no rejected responses. The sealed native and
+atlas graphs are identical between those runs. The final report has sixteen
+questions: six answered and ten partial. This is not whole-Learn acceptance.
+The API answer now names RunLevelRequest's level_id/code fields and the
+response fields, while remaining explicit that its selected evidence lacks
+nested model definitions. The settings answer includes port/debug/reload
+defaults. Native extraction, shared reading, publication tests, all product
+tests and changed-package vet passed. Browser QA opened the field excerpts,
+clicked models.py:52 into a separate captured-revision GitHub tab, and followed
+the answer into Application core without leaving the report. The selected
+class retains its members, but referenced types are not recursively expanded
+into answer evidence. The acceptance receipt is
+`work/learn-python-declarations-acceptance.json` in the desktop project.
+
+Instruction clarification resolved on 2026-09-07: the owner explicitly approved
+editing AGENTS.md. Its obsolete signature/source-expression omission rule was
+removed, and its credential restriction now names the LLM client's authentication
+credentials. The repository-trust rule remains as stated in the constitution.
+
 ### JavaScript and TypeScript
 
 Every eligible `package.json` project is considered. Source ownership belongs
@@ -407,6 +2826,59 @@ parallel route catalog, HTTP-use catalog, resource catalog, product path, or
 deterministic HTTP join. Target-local meaning comes from categorization and
 grouping; cross-target connections come only from repository matching over the
 complete GroupsIndex set.
+
+JSTS result v13 / helper v16 retains callable JSX attributes as anchored
+`passes_callback` relations with `callable_binding:jsx_attribute` invocation.
+Element and attribute names remain source observations; no event-name or
+framework allowlist assigns meaning. Compiler-confirmed function-valued
+variables remain callable when initialized through a wrapper. Inline anonymous
+JSX functions and unindexed callable factory results currently keep an
+unresolved binding; a factory result is never a binding to the factory itself.
+Bindings are rebased with the rest of the helper output for nested packages.
+Calls in non-callable local value initializers belong to the enclosing callable,
+while those values retain separate receiver/argument identities. An imported
+factory does not give exact import authority to a method on its result.
+
+Direct interface property declarations now enter the same native declaration
+catalogue. Their written signatures preserve optional/readonly modifiers and
+nested field types; original names, locations and owners remain exact. A nested
+type-literal member is not lifted into the outer interface, and inherited
+members do not acquire a declaration at the derived interface. These are
+type-owned variables, not callable implementations. The existing atlas member
+projection carries them into question evidence. This repairs the deterministic
+loss that left IGetLevelsResponse without count before any question selection;
+it does not establish that a later model answer selects or explains the field.
+
+Go core objects v3 similarly retain explicitly declared struct fields with
+their native locations and signatures, including tags and embedded fields.
+The Go adapter projects them into the same type-owned variable objects already
+used by Python class declarations; no shared graph kind or body retrieval is
+added. The cumulative language repositories have comparable count-field
+examples linked from testdata/repositories/README.md. Their checks follow the
+real adapters through the atlas and question evidence and distinguish
+same-named fields in separate owners. This is local regression evidence;
+new ordinary answer acceptance remains open while the provider is unavailable.
+
+The field regression completed locally on 2026-09-07. All eight direct
+TypeScript example fields reach question evidence with their source anchors;
+the fixture covers optional/readonly fields, comments in multiline object
+types, literal strings containing node_modules and significant spaces, and
+multiline/interpolated template literal types. Source-derived signatures are
+distinguished from compiler-generated type text before metadata normalization;
+literal values survive the single-line representation and host-absolute import
+paths remain excluded in both forms. The full JSTS suite ran with the existing
+TypeScript 5.9.2 compiler (23.232s), not a skipped compiler check. Go producer,
+adapter and discovery suites, cumulative contracts for all three languages,
+atlas places/lines/reading tests, changed-package vet and final make build all
+passed. No provider request or new ordinary report was made for this change.
+Continue next with the owner's display/navigation comparison, not a broader
+audit of every generated answer.
+
+The cumulative JSTS fixture verifies wrapped callbacks, same-name callbacks in
+different owners, internal render props, unresolved factory results and source
+identity after sealing. Real TypeScript 5.9.3 checks use a temporary prepared
+compiler prefix when the developer machine has no global compiler; a skipped
+compiler suite is not acceptance. The ordinary product still installs nothing.
 
 Optional signatures and source-expression display text matching the
 always-on persistence guard are removed before initial ProgramIndex sealing;
@@ -664,8 +3136,8 @@ deterministic fact layer and never replaces it.
 
 `facts` is a deterministic stage over the repository corpus, the sealed
 ProgramIndex set, the dependency catalogs, and the manifests. It runs after
-matching and writes one repository-wide `facts.json` into every successful
-backing run. Its closed row kinds are entrypoints from adapter seeds, HTTP
+index extraction and writes one repository-wide `facts.json` into the owner
+run. Its closed row kinds are entrypoints from adapter seeds, HTTP
 server routes and client calls with their method and path literals, cross-target
 portals, environment-key config reads, risk calls, manifest rows, TODO markers,
 file-level imports, dead modules, negatives, and dependencies. Every row carries
@@ -717,8 +3189,7 @@ a failed target into a partial page.
 `program-page-portfolio.json` is the complete language-neutral binding from
 every successfully analyzed ProgramTarget to its safe child run. It has an
 explicit logical default and does not infer one from slice order. Both
-portfolios are sealed and persisted identically in every successful backing
-run.
+portfolios are sealed and persisted once in the successful owner run.
 The same artifacts are mandatory when the repository selects only one target:
 that run contains a one-page ProgramPagePortfolio and one exhaustive outcome
 row, with no direct-page or browser-synthesized fallback.
@@ -739,8 +3210,8 @@ retained but no targetless report is invented.
 
 ## Persistence and publication
 
-Manifest version 39 binds the exact material inputs of the current path. A
-successful target run persists, as applicable:
+Manifest version 40 records the repository and publication source. Across a
+successful repository run the following artifacts are persisted, as applicable:
 
 - repository corpus and repository-guidance authority;
 - `reduced-documentation.json`;
@@ -753,19 +3224,20 @@ successful target run persists, as applicable:
 - manifest-bound `report.json`;
 - the single owner `report.html`.
 
-Multi-target publication preserves every successful child run's backing
-manifest, ProgramIndex, GroupsIndex, and report JSON. Exactly one physical
-HTML is published in the deterministic owner run. Its contents are derived
-from verified backing data, never by merging child HTML. In served mode,
-sibling target URLs are virtual projections of those backing artifacts.
+Multi-target publication retains each target's ProgramIndex, dependency
+catalogue and GroupsIndex. Shared artifacts, the manifest, report JSON and HTML
+are published once in the owner run from values already held in memory. A
+served report has the same complete set of target sections; it needs no sibling
+report files. Saved report restoration reads the common JSON and manifest.
 
 The report is one static page rendered in Go from the run's own verified
 report data. Its overview answers what the repository is, which targets exist,
 how they talk to each other, what is missing, and how to run it; each target
 then reads inbound routes, entrypoints, core responsibilities, external calls
 and dependencies, the main flow, risks, configuration, dead code, and TODOs.
-Provenance is visible: facts are plain, model sentences carry a model badge,
-and claims are quoted with their source and age. Anchors are `path:line` links
+Provenance is visible: facts are plain, model sentences have a distinct colour
+and dotted underline with an inspectable source explanation, and claims are
+quoted with their source and age. Anchors are `path:line` links
 to the captured revision on GitHub or GitLab, or to the local editor opener in
 served mode. The page embeds no analysis payload; it is stamped with the digest
 of the report.json bytes it was rendered from. The Canvas renderer, the browser
@@ -782,7 +3254,8 @@ stage exists.
 
 `--no-serve` requires resolvable GitHub or GitLab source links and fails in
 preflight with corrective flag guidance otherwise. A served report may add
-only manifest-authorized local VS Code opening. It does not expose browser APIs
+only manifest-authorized local editor opening, using the repository's
+.repomap.conf (VS Code by default). It does not expose browser APIs
 for workspace reads, symbol lookup, source context, analysis control, or run
 selection.
 
@@ -839,9 +3312,12 @@ once. Unknown keyed rows are likewise discarded. If filtering leaves a
 mandatory scalar or complete required assignment unresolved, the stage rejects
 the result instead of inventing a replacement.
 
-Persistent caches remain on the ordinary path. Every hit is bound to exact
-stage state, prompt, request, schema, provider configuration, and relevant
-input digests, then decoded and validated again before use. `--no-cache` is the
+Persistent caches remain on the ordinary path. A transport response is bound to
+exact prepared request bytes and provider transport identity (endpoint/auth
+mode), then decoded and validated by its current owning stage before use.
+Effective model/options are already in the request bytes; local schema/state
+changes alone do not alter what the provider was asked. Entity reuse separately
+includes the table contract and exact single-row preparation. `--no-cache` is the
 explicit live-provider bypass. Debug artifacts never contain API keys or
 Authorization headers.
 
@@ -881,10 +3357,10 @@ A product change is accepted only when:
 3. the process exit status is verified;
 4. repository guidance, `reduced-documentation.json`, every enriched
    ProgramIndex, `program-index-set.json`, every matched `groups-index.json`,
-   both target/page portfolios, every backing manifest and report JSON, and
+   both target/page portfolios, the common manifest and report JSON, and
    the owner report HTML are inspected directly;
-5. a multi-target run proves that every successful backing page validates and
-   exactly one physical report HTML exists;
+5. a multi-target run preserves every successful target in the shared graph
+   and has exactly one report JSON and one physical report HTML;
 6. focused tests and vet for changed packages pass.
 
 For cache changes, acceptance also verifies a real second run and

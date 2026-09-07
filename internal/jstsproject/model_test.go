@@ -464,6 +464,31 @@ func TestSealOmitsAbsoluteSiblingTypeSignature(t *testing.T) {
 	}
 }
 
+func TestSealOmitsAbsoluteImportFromSourceFieldSignature(t *testing.T) {
+	result := minimalResult(t, "typescript")
+	result.Declarations = append(result.Declarations,
+		Declaration{Ref: "decl:owner", Kind: "type", Name: "Response", Location: result.Files[0].location()},
+		Declaration{
+			Ref: "decl:field", Kind: "variable", Name: "value", OwnerRef: "decl:owner",
+			Signature: `value: import("/host/repository/shared").Shared;`, SignatureIsSource: true,
+			Location: result.Files[0].location(),
+		},
+	)
+	sealed, err := Seal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range sealed.Declarations {
+		if declaration.Ref == "decl:field" {
+			if declaration.Signature != "" || !declaration.SignatureIsSource || declaration.OwnerRef != "decl:owner" {
+				t.Fatalf("unsafe source signature changed declaration authority: %+v", declaration)
+			}
+			return
+		}
+	}
+	t.Fatal("source field was dropped with its unsafe display signature")
+}
+
 func TestProgramIndexUsesPathFreeDisplayNamesWithoutMergingSameNamedDeclarations(t *testing.T) {
 	result := minimalResult(t, "typescript").Snapshot()
 	secondDigest := sha256.Sum256([]byte("export const settings = 2\n"))

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go/types"
 	"io/fs"
 	"path/filepath"
 	"sort"
@@ -21,7 +22,7 @@ const (
 	// compiler witnesses remain only in WitnessCount; there is no per-edge
 	// pattern sample or truncation. The retained edges remain only actual static
 	// calls; callback execution is not inferred from an argument binding.
-	DirectCallIndexVersion = 7
+	DirectCallIndexVersion = 9
 
 	// These values are diagnostics only. Crossing them emits one aggregate
 	// warning and never drops a node, drops an edge, or closes the index.
@@ -93,8 +94,9 @@ type DirectCallBodyRange struct {
 }
 
 type DirectCallNode struct {
-	ID     string `json:"id"`
-	Symbol Symbol `json:"symbol"`
+	ID        string `json:"id"`
+	Symbol    Symbol `json:"symbol"`
+	Signature string `json:"signature,omitempty"`
 	// Package and Exported are producer-owned declaration facts. Later
 	// consumers may scope an exact public API without guessing from symbol
 	// spelling or loading the package a second time.
@@ -855,6 +857,9 @@ func (a *analyzer) directCallNode(function *ssa.Function, scenario Scenario) (Di
 		Symbol: symbol, Package: packagePath, Exported: directCallFunctionExported(function),
 		ModuleID: module.ID, ScenarioID: scenario.ID,
 		Declaration: declaration, Body: body,
+	}
+	if function.Signature != nil {
+		node.Signature = types.TypeString(function.Signature, packageQualifier)
 	}
 	node.ID = stableDirectCallNodeID(node)
 	return node, module, true

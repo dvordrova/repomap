@@ -22,16 +22,18 @@ import (
 // atlasOutcome is what the atlas path hands to publication: the atlas, the
 // facts and claims it was read over, and where the owner's tables are.
 type atlasOutcome struct {
-	TablesPath string
-	Atlas      atlas.Atlas
-	Facts      facts.Result
-	Claims     claims.Result
+	TablesPath  string
+	Atlas       atlas.Atlas
+	Facts       facts.Result
+	Claims      claims.Result
+	Orientation *orientation.Result
+	Questions   []atlas.QuestionRoute
+	Learning    *atlas.LearningPlan
 }
 
 // readRepositoryAtlas is the atlas path after every target page has its
 // program index: facts and claims, then the places graph, then the tables.
-// places.json, tables.md and tables/ land in the owner run; atlas.json in
-// every run.
+// Repository-wide artifacts land once in the owner run.
 func readRepositoryAtlas(
 	ctx context.Context,
 	options repositoryTargetDispatchOptions,
@@ -53,16 +55,19 @@ func readRepositoryAtlas(
 
 	targets := make([]places.TargetInput, 0, len(runs))
 	metas := make([]reading.TargetMeta, 0, len(runs))
-	for _, run := range runs {
-		index, err := readRunProgramIndex(run.RunDir)
+	for position := range runs {
+		run := &runs[position]
+		index, err := run.programIndex()
 		if err != nil {
 			return atlasOutcome{}, err
 		}
 		root := filepath.ToSlash(filepath.Dir(runTargetAnchorPath(index)))
 		target := places.TargetInput{Index: index, Root: root}
-		if catalog, err := readRunDependencyCatalog(run.RunDir); err == nil {
-			target.Dependencies = catalog
+		catalog, err := run.dependencyCatalog()
+		if err != nil {
+			return atlasOutcome{}, err
 		}
+		target.Dependencies = catalog
 		targets = append(targets, target)
 		metas = append(metas, reading.TargetMeta{
 			ID: index.Target.ID, Language: index.Target.Language, Kind: index.Target.Kind,
@@ -123,6 +128,7 @@ func readRepositoryAtlas(
 		Graph: graph, Targets: metas,
 		Repository: repoRunLabel(options.Repo), Revision: options.RepositoryState.Head,
 		Executor: executor, Provider: provider, OwnerRunDir: owner.RunDir,
+		Questions: options.Questions, Learn: true,
 		Stage: options.Output.Stage, State: options.Output.State,
 	})
 	if err != nil {
@@ -131,10 +137,8 @@ func readRepositoryAtlas(
 	if err := modeldiag.Append(owner.RunDir, result.Rejected); err != nil {
 		options.Output.Warn("could not record atlas diagnostics", err.Error())
 	}
-	for _, run := range runs {
-		if err := atlas.Persist(run.RunDir, result.Atlas); err != nil {
-			return atlasOutcome{}, err
-		}
+	if err := atlas.Persist(owner.RunDir, result.Atlas); err != nil {
+		return atlasOutcome{}, err
 	}
 	details := []string{
 		"tables: " + result.TablesPath,
@@ -148,7 +152,7 @@ func readRepositoryAtlas(
 		))
 	}
 	options.Output.State("Atlas", "ready", details...)
-	return atlasOutcome{TablesPath: result.TablesPath, Atlas: result.Atlas, Facts: factsResult, Claims: claimsResult}, nil
+	return atlasOutcome{TablesPath: result.TablesPath, Atlas: result.Atlas, Facts: factsResult, Claims: claimsResult, Questions: result.Questions, Learning: result.Learning}, nil
 }
 
 // projectAtlasRuns gives every run the GroupsIndex the page reads, built
@@ -156,8 +160,9 @@ func readRepositoryAtlas(
 // connections. The projected index replaces the empty one the child wrote.
 func projectAtlasRuns(runs []targetPublishedRun, outcome atlasOutcome, output *runOutput) ([]targetPublishedRun, error) {
 	programs := make(map[string]programindex.Index, len(runs))
-	for _, run := range runs {
-		index, err := readRunProgramIndex(run.RunDir)
+	for position := range runs {
+		run := &runs[position]
+		index, err := run.programIndex()
 		if err != nil {
 			return nil, err
 		}
@@ -194,12 +199,12 @@ func projectAtlasRuns(runs []targetPublishedRun, outcome atlasOutcome, output *r
 }
 
 // orientAtlasRuns asks the orientation over the projected groups and lands
-// it in every run, as the ordinary path does after matching.
+// it in the repository owner run.
 func orientAtlasRuns(
 	ctx context.Context,
 	options repositoryTargetDispatchOptions,
 	runs []targetPublishedRun,
-	outcome atlasOutcome,
+	outcome *atlasOutcome,
 ) error {
 	firstDay := firstDayOptions{
 		RepoPath:         options.Repo,
@@ -219,7 +224,8 @@ func orientAtlasRuns(
 	if err != nil {
 		return err
 	}
-	for _, run := range runs {
+	outcome.Orientation = &orientationResult
+	for _, run := range runs[:1] {
 		if err := orientation.Persist(run.RunDir, orientationResult); err != nil {
 			return err
 		}

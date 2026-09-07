@@ -1,7 +1,11 @@
 package claims
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -127,6 +131,39 @@ func goDocComments(lines []string) []quote {
 			result = append(result, item)
 		}
 	}
+	// Interface contracts carry documentation on explicitly declared methods,
+	// even though those declarations have no func keyword or implementation.
+	// Syntax attachment distinguishes them from embedded types and comments
+	// inside unrelated blocks. This does not resolve or infer a call target.
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", strings.Join(lines, "\n"), parser.ParseComments|parser.SkipObjectResolution)
+	if err == nil {
+		ast.Inspect(file, func(node ast.Node) bool {
+			switch node := node.(type) {
+			case *ast.FuncDecl:
+				return false
+			case *ast.GenDecl:
+				return node.Tok == token.TYPE
+			case *ast.TypeSpec:
+				_, ok := node.Type.(*ast.InterfaceType)
+				return ok
+			}
+			iface, ok := node.(*ast.InterfaceType)
+			if !ok {
+				return true
+			}
+			for _, field := range iface.Methods.List {
+				if _, ok := field.Type.(*ast.FuncType); !ok || len(field.Names) == 0 || field.Doc == nil {
+					continue
+				}
+				if item, ok := docstringQuote(fset.PositionFor(field.Doc.Pos(), false).Line-1, field.Doc.Text()); ok {
+					result = append(result, item)
+				}
+			}
+			return false
+		})
+	}
+	sort.SliceStable(result, func(i, j int) bool { return result[i].Line < result[j].Line })
 	return result
 }
 

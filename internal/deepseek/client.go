@@ -24,7 +24,7 @@ import (
 const (
 	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
 	defaultModel     = "deepseek-v4-flash"
-	defaultMaxTokens = 128_000
+	defaultMaxTokens = llm.DefaultMaxOutputTokens
 	// defaultTimeout bounds one provider attempt. It was lowered to three and
 	// then six minutes on a corpus whose slowest recorded attempt was 86.7 s,
 	// and both were wrong: that corpus held no grouping call for a target of a

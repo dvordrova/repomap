@@ -76,7 +76,9 @@ func ExecuteJSON[T any](
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailurePrepare, outcome.Issues)
 		return outcome, errors.New("llm: cube state is empty while cache is enabled")
 	}
-	cacheKey := executionCacheKey(providerState, call.State, request)
+	// A local validator change cannot change an answer to identical model
+	// input. The owning stage still validates every cached response below.
+	cacheKey := executionCacheKey(providerState, nil, request)
 	outcome.CacheKey = cacheKey
 
 	record, found, loadErr := loadAcceptedCache(executor.RootDir, cacheKey, request, call.Limits)
@@ -397,6 +399,7 @@ func executeLive[T any](
 			ResponseSHA256: sha256Hex(completion.Response),
 			RequestBytes:   len(exactRequest),
 			ResponseBytes:  len(completion.Response),
+			Request:        exactRequest,
 			Response:       cloneBytes(completion.Response),
 			FinishReason:   outcome.FinishReason,
 			ChoiceCount:    outcome.ChoiceCount,

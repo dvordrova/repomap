@@ -9,8 +9,11 @@ integration points by kind and direction.
 Fill two cells for every row and nothing else:
 
 - `line`: one sentence, at most 160 characters, saying what this target is
-  and does. Use the README line and the counts; state only what the row
-  shows.
+  and does. Explain its purpose using the README and named operations.
+  Do not repeat file counts, directory counts, language or package paths.
+  `operation_hypotheses` are prior model interpretations, not verified facts.
+  A library exposes reusable code; an executable starts a process, even when
+  both belong to the same module. Describe that distinction when supported.
 - `role`: one of `product` (a program or service the repository exists to
   ship), `library` (code meant to be imported by other programs), `fixture`
   (a sample repository kept for tests, under a test or fixture directory),

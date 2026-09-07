@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/dependencies"
+	"github.com/dvordrova/repomap/internal/extractors"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -46,10 +48,10 @@ type firstDayOptions struct {
 }
 
 // buildFirstDayFacts derives and persists the two deterministic layers,
-// facts and claims, into every analyzed run directory. The atlas path stops
+// facts and claims, into the repository owner directory. The atlas path stops
 // here; the ordinary path asks for an orientation over them next.
 func buildFirstDayFacts(ctx context.Context, options firstDayOptions) (facts.Result, claims.Result, error) {
-	factsResult, err := buildRepositoryFacts(options)
+	factsResult, err := buildRepositoryFacts(ctx, options)
 	if err != nil {
 		return facts.Result{}, claims.Result{}, err
 	}
@@ -57,7 +59,7 @@ func buildFirstDayFacts(ctx context.Context, options firstDayOptions) (facts.Res
 	if err != nil {
 		return facts.Result{}, claims.Result{}, err
 	}
-	for _, run := range options.Runs {
+	for _, run := range options.Runs[:1] {
 		if err := facts.Persist(run.RunDir, factsResult); err != nil {
 			return facts.Result{}, claims.Result{}, err
 		}
@@ -68,28 +70,45 @@ func buildFirstDayFacts(ctx context.Context, options firstDayOptions) (facts.Res
 	return factsResult, claimsResult, nil
 }
 
-func buildRepositoryFacts(options firstDayOptions) (facts.Result, error) {
+func buildRepositoryFacts(ctx context.Context, options firstDayOptions) (facts.Result, error) {
 	targets := make([]facts.TargetInput, 0, len(options.Runs))
-	for _, run := range options.Runs {
-		index, err := readRunProgramIndex(run.RunDir)
+	for position := range options.Runs {
+		run := &options.Runs[position]
+		index, err := run.programIndex()
 		if err != nil {
 			return facts.Result{}, err
 		}
 		target := facts.TargetInput{Index: index}
-		if catalog, err := readRunDependencyCatalog(run.RunDir); err == nil {
-			target.Dependencies = catalog
+		catalog, err := run.dependencyCatalog()
+		if err != nil {
+			return facts.Result{}, err
 		}
+		target.Dependencies = catalog
 		targets = append(targets, target)
 	}
 	if options.Output != nil {
 		options.Output.Stage("Facts", "extracting anchored repository facts")
 	}
 	started := time.Now()
+	extraction, extractionErr := extractors.Run(ctx, options.RepoPath, options.Corpus)
+	data, err := json.MarshalIndent(extraction, "", "  ")
+	if err != nil {
+		return facts.Result{}, err
+	}
+	for _, run := range options.Runs[:1] {
+		if err := os.WriteFile(filepath.Join(run.RunDir, extractors.ArtifactFilename), data, 0o600); err != nil {
+			return facts.Result{}, err
+		}
+	}
+	if extractionErr != nil {
+		return facts.Result{}, extractionErr
+	}
 	result, err := facts.Build(facts.Input{
 		Revision:     options.Revision,
 		Repository:   options.Corpus,
 		TrackedPaths: options.TrackedPaths,
 		Targets:      targets,
+		Extractions:  extraction.Extractions,
 	})
 	if err != nil {
 		return facts.Result{}, fmt.Errorf("repository facts: %w", err)
@@ -106,8 +125,9 @@ func buildRepositoryFacts(options firstDayOptions) (facts.Result, error) {
 
 func buildRepositoryClaims(ctx context.Context, options firstDayOptions) (claims.Result, error) {
 	roots := make([]claims.TargetRoot, 0, len(options.Runs))
-	for _, run := range options.Runs {
-		index, err := readRunProgramIndex(run.RunDir)
+	for position := range options.Runs {
+		run := &options.Runs[position]
+		index, err := run.programIndex()
 		if err != nil {
 			return claims.Result{}, err
 		}

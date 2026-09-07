@@ -87,6 +87,17 @@ func (view *GroupGraphView) SourcePaths() ([]string, error) {
 	}
 	paths := make([]string, 0)
 	for _, index := range view.Indexes {
+		for _, operation := range index.Operations {
+			paths = append(paths, operation.Location.Path)
+		}
+		for _, connection := range index.Connections {
+			if connection.FromLocation != nil {
+				paths = append(paths, connection.FromLocation.Path)
+			}
+			if connection.ToLocation != nil {
+				paths = append(paths, connection.ToLocation.Path)
+			}
+		}
 		for _, source := range index.Target.Sources {
 			paths = append(paths, source.Path)
 		}

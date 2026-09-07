@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	Version          = 4
+	Version          = 5
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -67,6 +67,12 @@ type Connection struct {
 	Summary           string                              `json:"summary"`
 	SupportResolution programindex.PatternValueResolution `json:"support_resolution"`
 	Evidence          []SubjectEndpoint                   `json:"evidence"`
+	SourceKind        string                              `json:"source_kind,omitempty"`
+	SourceID          string                              `json:"source_id,omitempty"`
+	FromSubjectID     string                              `json:"from_subject_id,omitempty"`
+	ToSubjectID       string                              `json:"to_subject_id,omitempty"`
+	FromLocation      *programindex.Location              `json:"from_location,omitempty"`
+	ToLocation        *programindex.Location              `json:"to_location,omitempty"`
 }
 
 // SubjectEndpoint qualifies evidence by target so a cross-target connection
@@ -169,6 +175,29 @@ type Subject struct {
 	Categories []programindex.Category `json:"categories"`
 	Object     *ObjectFacts            `json:"object,omitempty"`
 	Pattern    *PatternFacts           `json:"pattern,omitempty"`
+	// Interpretation stays on the exact entity; grouping never replaces it.
+	Interpretation *Interpretation `json:"interpretation,omitempty"`
+}
+
+type Interpretation struct {
+	Line             string `json:"line"`
+	Key              bool   `json:"key"`
+	Activation       string `json:"activation,omitempty"`
+	Operation        string `json:"operation,omitempty"`
+	OperationSummary string `json:"operation_summary,omitempty"`
+}
+
+// Operation retains an action on the same subject and group graph. Source
+// distinguishes model interpretation from a directly extracted boundary.
+type Operation struct {
+	ID        string                `json:"id"`
+	SubjectID string                `json:"subject_id,omitempty"`
+	GroupID   string                `json:"group_id"`
+	Kind      string                `json:"kind"`
+	Name      string                `json:"name"`
+	Summary   string                `json:"summary"`
+	Source    string                `json:"source"`
+	Location  programindex.Location `json:"location"`
 }
 
 // StructuralEdgeRole is a deterministic projection of exact ProgramIndex
@@ -221,10 +250,13 @@ type StructuralEdge struct {
 // ProgramIndex target.
 type Index struct {
 	Version            int                 `json:"version"`
+	Role               string              `json:"role,omitempty"`
+	Summary            string              `json:"summary,omitempty"`
 	Target             programindex.Target `json:"target"`
 	ProgramIndexSHA256 string              `json:"program_index_sha256"`
 	Subjects           []Subject           `json:"subjects"`
 	Groups             []Group             `json:"groups"`
+	Operations         []Operation         `json:"operations,omitempty"`
 	// Containers are the level above the groups: a handful of named parts,
 	// each holding several groups. chi's router package really does hold
 	// thirty groups — one per middleware file — and thirty is the truth and
@@ -547,6 +579,7 @@ func WithConnections(indexes []Index, accepted []ConnectionInput) ([]Index, []Di
 // Snapshot returns a consumer-owned deep copy.
 func (index Index) Snapshot() Index {
 	result := index
+	result.Operations = append([]Operation(nil), index.Operations...)
 	result.Target = index.Target.Snapshot()
 	result.Subjects = make([]Subject, len(index.Subjects))
 	for position, subject := range index.Subjects {
@@ -564,6 +597,14 @@ func (index Index) Snapshot() Index {
 	for position, connection := range index.Connections {
 		result.Connections[position] = connection
 		result.Connections[position].Evidence = cloneSubjectEndpoints(connection.Evidence)
+		if connection.FromLocation != nil {
+			location := *connection.FromLocation
+			result.Connections[position].FromLocation = &location
+		}
+		if connection.ToLocation != nil {
+			location := *connection.ToLocation
+			result.Connections[position].ToLocation = &location
+		}
 	}
 	return result
 }
@@ -604,6 +645,20 @@ func (index Index) Validate() error {
 			return fmt.Errorf("group index: groups are not canonical")
 		}
 		groupsByID[group.ID] = struct{}{}
+	}
+	for i, operation := range index.Operations {
+		if operation.Kind != "command" && operation.Kind != "request" && operation.Kind != "interaction" && operation.Kind != "scheduled" && operation.Kind != "continuous" {
+			return fmt.Errorf("group index: invalid operation kind %q", operation.Kind)
+		}
+		_, groupExists := groupsByID[operation.GroupID]
+		_, subjectExists := subjectsByID[operation.SubjectID]
+		if !groupExists || operation.SubjectID != "" && !subjectExists || !validText(operation.ID) || !validText(operation.Name) || !validText(operation.Summary) ||
+			(operation.Source != "model" && operation.Source != "fact") || operation.Location.Path == "" || operation.Location.Line < 1 || operation.Location.Column < 1 {
+			return fmt.Errorf("group index: invalid operation %q", operation.ID)
+		}
+		if i > 0 && index.Operations[i-1].ID >= operation.ID {
+			return fmt.Errorf("group index: operations are not canonical")
+		}
 	}
 	for position, edge := range index.StructuralEdges {
 		if err := validateStructuralEdge(subjectsByID, edge); err != nil {
@@ -921,9 +976,11 @@ func subjectSupportsLane(subject subjectAuthority, lane Lane) bool {
 }
 
 func compileRetainedSubjects(index programindex.Index, retained map[string]struct{}) []Subject {
-	categoriesByID := make(map[string][]programindex.Category, len(index.Categorization.Assignments))
-	for _, assignment := range index.Categorization.Assignments {
-		categoriesByID[assignment.SubjectID] = append([]programindex.Category(nil), assignment.Categories...)
+	categoriesByID := make(map[string][]programindex.Category)
+	if index.Categorization != nil {
+		for _, assignment := range index.Categorization.Assignments {
+			categoriesByID[assignment.SubjectID] = append([]programindex.Category(nil), assignment.Categories...)
+		}
 	}
 	result := make([]Subject, 0, len(retained))
 	for _, object := range index.Objects {
@@ -1097,6 +1154,9 @@ func compileStructuralEdges(index programindex.Index, retained map[string]struct
 }
 
 func validateSubject(subject Subject) error {
+	if subject.Interpretation != nil && !validText(subject.Interpretation.Line) {
+		return fmt.Errorf("group index: invalid subject interpretation")
+	}
 	if !validDirectSubjectID(subject.ID) || !subject.Kind.Valid() || subject.Categories == nil ||
 		!canonicalCategories(subject.Categories) {
 		return fmt.Errorf("group index: invalid subject")
@@ -1174,6 +1234,21 @@ func validateConnection(
 	subjects map[string]Subject,
 	connection Connection,
 ) error {
+	if connection.FromSubjectID != "" {
+		if _, ok := subjects[connection.FromSubjectID]; !ok {
+			return fmt.Errorf("group index: unknown connection source subject")
+		}
+	}
+	if connection.To.TargetID == localTargetID && connection.ToSubjectID != "" {
+		if _, ok := subjects[connection.ToSubjectID]; !ok {
+			return fmt.Errorf("group index: unknown connection target subject")
+		}
+	}
+	for _, location := range []*programindex.Location{connection.FromLocation, connection.ToLocation} {
+		if location != nil && (location.Path == "" || location.Line < 1 || location.Column < 1) {
+			return fmt.Errorf("group index: invalid connection location")
+		}
+	}
 	if !validConnectionID(connection.ID) || !validTargetID(connection.From.TargetID) || !validGroupID(connection.From.GroupID) ||
 		!validTargetID(connection.To.TargetID) || !validGroupID(connection.To.GroupID) ||
 		!validSnakeCase(connection.SemanticKind) || !validText(connection.Label) || !validText(connection.Summary) ||
@@ -1755,17 +1830,34 @@ func groupIdentity(targetID string, group Group) string {
 }
 
 func connectionSlot(connection Connection) string {
-	return strings.Join([]string{
+	values := []string{
 		connection.From.TargetID, connection.From.GroupID,
 		connection.To.TargetID, connection.To.GroupID,
-		connection.SemanticKind,
-	}, "\x00")
+		connection.SemanticKind, connection.SourceKind, connection.SourceID,
+	}
+	for _, location := range []*programindex.Location{connection.FromLocation, connection.ToLocation} {
+		if location != nil {
+			values = append(values, location.Path, strconv.Itoa(location.Line), strconv.Itoa(location.Column))
+		} else {
+			values = append(values, "")
+		}
+	}
+	return strings.Join(values, "\x00")
 }
 
 func connectionKey(connection Connection) string {
 	values := []string{
 		connectionSlot(connection), string(connection.SupportResolution),
 		connection.Label, connection.Summary, strconv.Itoa(len(connection.Evidence)),
+		connection.SourceKind,
+		connection.FromSubjectID, connection.ToSubjectID,
+	}
+	for _, location := range []*programindex.Location{connection.FromLocation, connection.ToLocation} {
+		if location != nil {
+			values = append(values, location.Path, strconv.Itoa(location.Line), strconv.Itoa(location.Column))
+		} else {
+			values = append(values, "")
+		}
 	}
 	for _, evidence := range connection.Evidence {
 		values = append(values, evidence.TargetID, evidence.SubjectID)
@@ -1989,6 +2081,10 @@ func cloneSubjectEndpoints(values []SubjectEndpoint) []SubjectEndpoint {
 
 func cloneSubject(subject Subject) Subject {
 	result := subject
+	if subject.Interpretation != nil {
+		interpretation := *subject.Interpretation
+		result.Interpretation = &interpretation
+	}
 	result.Categories = make([]programindex.Category, len(subject.Categories))
 	copy(result.Categories, subject.Categories)
 	if subject.Object != nil {

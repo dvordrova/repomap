@@ -398,6 +398,9 @@ func ssaPackagePath(pkg *ssa.Package) string {
 
 func (a *analyzer) prepareTargetProgram() {
 	functions := a.orderedFunctions()
+	// Collect assignments before resolving any invocation, so declaration
+	// ordering cannot determine which possible receivers were observed.
+	a.dynamicHandoffCapture.collectInterfaceFieldStores(a, functions)
 	for index, function := range functions {
 		if a.ctx.Err() != nil {
 			return

@@ -56,14 +56,17 @@ func TestBuildTargetNavigationProjectsExactLanguageNeutralPages(t *testing.T) {
 func TestTargetNavigationRenderOptionsStayTransient(t *testing.T) {
 	data, navigation := targetNavigationFixture(t)
 
-	if _, err := RenderHTMLWithOptions(data, RenderOptions{}); err == nil ||
-		!strings.Contains(err.Error(), "complete target navigation") {
-		t.Fatalf("missing mandatory target navigation error = %v", err)
+	withoutNavigation, err := RenderHTMLWithOptions(data, RenderOptions{})
+	if err != nil {
+		t.Fatalf("repository sections without sibling navigation: %v", err)
 	}
 
 	withNavigation, err := RenderHTMLWithOptions(data, RenderOptions{TargetNavigation: navigation})
 	if err != nil {
 		t.Fatalf("RenderHTMLWithOptions navigation: %v", err)
+	}
+	if !bytes.Equal(withNavigation, withoutNavigation) {
+		t.Fatal("sibling directory changes the shared report")
 	}
 	// Sections come from the analyzed graph the run actually produced, and
 	// they are named the way the reader sees them. Render-only navigation

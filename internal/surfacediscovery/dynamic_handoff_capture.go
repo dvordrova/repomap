@@ -18,6 +18,7 @@ type dynamicHandoffCapture struct {
 	callableBindings  []callableBindingFact
 	callbackTraversal map[string][]*ssa.Function
 	bindingsFrozen    bool
+	interfaceFields   map[*types.Var][]*ssa.Store
 	coverage          godynamichandoff.CoverageInput
 	err               error
 }
@@ -49,6 +50,9 @@ func (a *analyzer) observeDynamicHandoffs(call ssa.CallInstruction) {
 	capture := a.dynamicHandoffCapture
 	common := call.Common()
 	callbackArguments := dynamicCallbackArguments(common)
+	if capture.enabled {
+		callbackArguments = append(callbackArguments, dynamicInterfaceArguments(common)...)
+	}
 	shapes := len(callbackArguments)
 	if capture.enabled {
 		if common.IsInvoke() {
@@ -162,9 +166,50 @@ func (capture *dynamicHandoffCapture) observeCallableBinding(a *analyzer, store 
 			Resolution:           resolution,
 			Candidates:           candidates,
 			CandidatesConsidered: candidatesConsidered,
+			ReceiverFields:       callableReceiverFields(a, fieldAddress, store.Parent()),
 		},
 		exactCandidate: exactCandidate,
 	})
+}
+
+// Keep literal stores on this exact receiver value. Looking through its SSA
+// referrers avoids joining all instances of a named framework type or scanning
+// a source file for a familiar field name. This deliberately does not infer
+// values through aliases, callees, nonconstant expressions or other objects.
+func callableReceiverFields(a *analyzer, binding *ssa.FieldAddr, parent *ssa.Function) []godynamichandoff.ReceiverField {
+	if binding.X.Referrers() == nil {
+		return nil
+	}
+	container := binding.X.Type().Underlying().(*types.Pointer).Elem().Underlying().(*types.Struct)
+	var result []godynamichandoff.ReceiverField
+	for _, ref := range *binding.X.Referrers() {
+		address, ok := ref.(*ssa.FieldAddr)
+		if !ok || address.X != binding.X || address.Field == binding.Field || address.Referrers() == nil {
+			continue
+		}
+		for _, use := range *address.Referrers() {
+			store, ok := use.(*ssa.Store)
+			if !ok || store.Addr != address || store.Parent() != parent {
+				continue
+			}
+			value := store.Val
+			if boxed, ok := value.(*ssa.MakeInterface); ok {
+				value = boxed.X
+			}
+			literal, ok := value.(*ssa.Const)
+			if !ok || literal.Value == nil {
+				continue
+			}
+			at := a.location(store.Pos())
+			if !validRepositoryDirectCallLocation(at) || at.Column <= 0 {
+				continue
+			}
+			result = append(result, godynamichandoff.ReceiverField{
+				Field: container.Field(address.Field).Name(), Literal: literal.Value.ExactString(), Location: dynamicLocation(at),
+			})
+		}
+	}
+	return result
 }
 
 func dynamicCallableFieldBinding(
@@ -221,6 +266,7 @@ func (capture *dynamicHandoffCapture) freezeCallableBindings() callableBindingSn
 	capture.bindingsFrozen = true
 	facts := make([]callableBindingFact, len(capture.callableBindings))
 	for position, fact := range capture.callableBindings {
+		fact.handoff.ReceiverFields = append([]godynamichandoff.ReceiverField(nil), fact.handoff.ReceiverFields...)
 		fact.handoff.Candidates = append([]godynamichandoff.Candidate(nil), fact.handoff.Candidates...)
 		facts[position] = fact
 	}
@@ -308,15 +354,21 @@ func (capture *dynamicHandoffCapture) observeInterfaceInvoke(
 	if resolution == godynamichandoff.ResolutionUnresolved {
 		candidates = []godynamichandoff.Candidate{}
 	}
+	containerType, fieldName := "", ""
+	if field, container := interfaceReceiverField(common.Value); field != nil {
+		containerType, fieldName = types.TypeString(container, packageQualifier), field.Name()
+	}
 	capture.append(godynamichandoff.Handoff{
 		Kind:       godynamichandoff.InterfaceInvoke,
 		CallerID:   callerID,
 		Invocation: dynamicInvocation(call),
 		Callsite:   dynamicLocation(callsite),
 		Slot: godynamichandoff.Slot{
-			DeclaredType: types.TypeString(common.Value.Type(), packageQualifier),
-			Method:       common.Method.Name(),
-			Signature:    types.TypeString(common.Signature(), packageQualifier),
+			ContainerType: containerType,
+			Field:         fieldName,
+			DeclaredType:  types.TypeString(common.Value.Type(), packageQualifier),
+			Method:        common.Method.Name(),
+			Signature:     types.TypeString(common.Signature(), packageQualifier),
 		},
 		Resolution:           resolution,
 		Candidates:           candidates,
@@ -355,6 +407,7 @@ type dynamicCallbackArgument struct {
 	value     ssa.Value
 	parameter int
 	signature string
+	method    *types.Func
 }
 
 func (capture *dynamicHandoffCapture) observeCallbackTransfer(
@@ -366,6 +419,10 @@ func (capture *dynamicHandoffCapture) observeCallbackTransfer(
 	staticTargetOK bool,
 	argument dynamicCallbackArgument,
 ) {
+	if argument.method != nil {
+		capture.observeInterfaceTransfer(a, call, callerID, callsite, staticTarget, staticTargetOK, argument)
+		return
+	}
 	candidateFacts, unresolved := dynamicFunctionCandidateFacts(a, argument.value)
 	candidates := make([]godynamichandoff.Candidate, 0, len(candidateFacts))
 	for _, candidate := range candidateFacts {
@@ -398,6 +455,29 @@ func (capture *dynamicHandoffCapture) observeCallbackTransfer(
 		Resolution:           resolution,
 		Candidates:           candidates,
 		CandidatesConsidered: candidatesConsidered,
+	})
+}
+
+// Passing an interface object also supplies its concrete method implementations.
+// The recipient and parameter remain explicit: this is not an assertion that
+// the recipient registers a service, nor that any method runs at this point.
+// Unknown implementations stay in the ordinary argument/dispatch evidence;
+// only actual value-flow candidates add associations to source declarations.
+func (capture *dynamicHandoffCapture) observeInterfaceTransfer(a *analyzer, call ssa.CallInstruction, callerID string, callsite Location, target godynamichandoff.StaticTarget, targetOK bool, argument dynamicCallbackArgument) {
+	if !capture.enabled || !targetOK {
+		return
+	}
+	candidates, unresolved := dynamicInterfaceCandidates(a, argument.value, argument.method)
+	if len(candidates) == 0 {
+		return
+	}
+	capture.append(godynamichandoff.Handoff{
+		Kind: godynamichandoff.CallbackTransfer, CallerID: callerID,
+		Invocation: dynamicInvocation(call), Callsite: dynamicLocation(callsite), StaticTarget: target,
+		Slot: godynamichandoff.Slot{Parameter: argument.parameter, Signature: argument.signature,
+			DeclaredType: types.TypeString(argument.value.Type(), packageQualifier), Method: argument.method.Name()},
+		Resolution: dynamicResolution(candidates, unresolved), Candidates: candidates,
+		CandidatesConsidered: dynamicCandidatesConsidered(candidates, unresolved),
 	})
 }
 
@@ -499,6 +579,36 @@ func dynamicCallbackArguments(common *ssa.CallCommon) []dynamicCallbackArgument 
 	return result
 }
 
+func dynamicInterfaceArguments(common *ssa.CallCommon) []dynamicCallbackArgument {
+	if common == nil || common.Signature() == nil {
+		return nil
+	}
+	if _, builtin := common.Value.(*ssa.Builtin); builtin {
+		return nil
+	}
+	offset := 0
+	if !common.IsInvoke() && common.Signature().Recv() != nil {
+		offset = 1
+	}
+	var arguments []dynamicCallbackArgument
+	for position, value := range common.Args {
+		if position < offset || value == nil || value.Type() == nil {
+			continue
+		}
+		iface, ok := types.Unalias(value.Type()).Underlying().(*types.Interface)
+		if !ok {
+			continue
+		}
+		iface = iface.Complete()
+		for i := 0; i < iface.NumMethods(); i++ {
+			method := iface.Method(i)
+			arguments = append(arguments, dynamicCallbackArgument{value: value, parameter: position - offset + 1,
+				signature: types.TypeString(method.Type(), packageQualifier), method: method})
+		}
+	}
+	return arguments
+}
+
 func dynamicCallbackStaticTarget(
 	a *analyzer,
 	common *ssa.CallCommon,
@@ -552,9 +662,12 @@ func dynamicInterfaceCandidates(
 	method *types.Func,
 ) ([]godynamichandoff.Candidate, int) {
 	resolved := make(map[*ssa.Function]struct{})
-	unresolved := resolveDynamicInterfaceValue(a, value, method, resolved, make(map[ssa.Value]bool))
+	assignments := make(map[*ssa.Function][]godynamichandoff.Location)
+	unresolved := resolveDynamicInterfaceValue(a, value, method, resolved, assignments, make(map[ssa.Value]bool))
 	functionIDs := make(map[string]struct{}, len(resolved))
+	assignmentsByID := make(map[string][]godynamichandoff.Location)
 	for function := range resolved {
+		locations := assignments[function]
 		function = externalCallCanonicalFunction(function)
 		if function == nil || !a.isRepositoryFunction(function) {
 			unresolved++
@@ -566,6 +679,7 @@ func dynamicInterfaceCandidates(
 			continue
 		}
 		functionIDs[functionID] = struct{}{}
+		assignmentsByID[functionID] = append(assignmentsByID[functionID], locations...)
 	}
 	evidence := godynamichandoff.EvidenceConcreteInterfaceValue
 	if len(functionIDs) > 1 {
@@ -573,9 +687,14 @@ func dynamicInterfaceCandidates(
 	}
 	candidates := make([]godynamichandoff.Candidate, 0, len(functionIDs))
 	for functionID := range functionIDs {
+		candidateEvidence := evidence
+		if len(assignmentsByID[functionID]) > 0 {
+			candidateEvidence = godynamichandoff.EvidenceInterfaceFieldAssignment
+		}
 		candidates = append(candidates, godynamichandoff.Candidate{
-			FunctionID: functionID,
-			Evidence:   evidence,
+			FunctionID:  functionID,
+			Evidence:    candidateEvidence,
+			Assignments: assignmentsByID[functionID],
 		})
 	}
 	sort.Slice(candidates, func(i, j int) bool {
@@ -589,6 +708,7 @@ func resolveDynamicInterfaceValue(
 	value ssa.Value,
 	method *types.Func,
 	resolved map[*ssa.Function]struct{},
+	assignments map[*ssa.Function][]godynamichandoff.Location,
 	active map[ssa.Value]bool,
 ) int {
 	if a == nil || a.program == nil || value == nil || method == nil || active[value] {
@@ -608,16 +728,25 @@ func resolveDynamicInterfaceValue(
 		resolved[implementation] = struct{}{}
 		return 0
 	case *ssa.ChangeInterface:
-		return resolveDynamicInterfaceValue(a, current.X, method, resolved, active)
+		return resolveDynamicInterfaceValue(a, current.X, method, resolved, assignments, active)
 	case *ssa.Phi:
 		if len(current.Edges) == 0 {
 			return 1
 		}
 		unresolved := 0
 		for _, edge := range current.Edges {
-			unresolved += resolveDynamicInterfaceValue(a, edge, method, resolved, active)
+			unresolved += resolveDynamicInterfaceValue(a, edge, method, resolved, assignments, active)
 		}
 		return unresolved
+	case *ssa.UnOp:
+		return resolveInterfaceField(a, current, method, resolved, assignments, active)
+	case *ssa.Call:
+		return resolveInterfaceReturns(a, current, 0, method, resolved, assignments, active)
+	case *ssa.Extract:
+		if call, ok := current.Tuple.(*ssa.Call); ok {
+			return resolveInterfaceReturns(a, call, current.Index, method, resolved, assignments, active)
+		}
+		return 1
 	default:
 		return 1
 	}

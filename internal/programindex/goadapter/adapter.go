@@ -38,8 +38,9 @@ func Build(
 	external surfacediscovery.ExternalCallIndex,
 	core gocoreobject.Index,
 	dynamic godynamichandoff.Index,
+	testSources []gofacts.TestSource,
 ) (programindex.Index, error) {
-	input, err := BuildInput(repository, target, packageOrigins, direct, external, core, dynamic)
+	input, err := BuildInput(repository, target, packageOrigins, direct, external, core, dynamic, testSources)
 	if err != nil {
 		return programindex.Index{}, err
 	}
@@ -62,6 +63,7 @@ func BuildInput(
 	external surfacediscovery.ExternalCallIndex,
 	core gocoreobject.Index,
 	dynamic godynamichandoff.Index,
+	testSources []gofacts.TestSource,
 ) (programindex.Input, error) {
 	if err := validateAuthority(repository, target, direct, external, core, dynamic); err != nil {
 		return programindex.Input{}, err
@@ -91,6 +93,9 @@ func BuildInput(
 	if err := projection.projectObjects(); err != nil {
 		return programindex.Input{}, err
 	}
+	if err := projection.projectTestSources(testSources); err != nil {
+		return programindex.Input{}, err
+	}
 	if err := projection.projectRelations(); err != nil {
 		return programindex.Input{}, err
 	}
@@ -107,18 +112,19 @@ func BuildInput(
 		return programindex.Input{}, fmt.Errorf("Go program index adapter: package-origin identity: %w", err)
 	}
 	sourceSHA256, err := canonicalSHA256(struct {
-		CorpusSHA256         string `json:"corpus_sha256"`
-		TargetRef            string `json:"target_ref"`
-		PackageOriginsSHA256 string `json:"package_origins_sha256"`
-		DirectSHA256         string `json:"direct_sha256"`
-		ExternalSHA256       string `json:"external_sha256"`
-		CoreSHA256           string `json:"core_sha256"`
-		DynamicSHA256        string `json:"dynamic_sha256"`
+		CorpusSHA256         string               `json:"corpus_sha256"`
+		TargetRef            string               `json:"target_ref"`
+		PackageOriginsSHA256 string               `json:"package_origins_sha256"`
+		DirectSHA256         string               `json:"direct_sha256"`
+		ExternalSHA256       string               `json:"external_sha256"`
+		CoreSHA256           string               `json:"core_sha256"`
+		DynamicSHA256        string               `json:"dynamic_sha256"`
+		TestSources          []gofacts.TestSource `json:"test_sources"`
 	}{
 		CorpusSHA256: repository.SHA256(), TargetRef: target.Ref,
 		PackageOriginsSHA256: packageOriginsSHA256,
 		DirectSHA256:         direct.SHA256, ExternalSHA256: external.SHA256, CoreSHA256: core.SHA256,
-		DynamicSHA256: dynamic.SHA256,
+		DynamicSHA256: dynamic.SHA256, TestSources: testSources,
 	})
 	if err != nil {
 		return programindex.Input{}, fmt.Errorf("Go program index adapter: source identity: %w", err)
@@ -275,6 +281,20 @@ func (projection *goProjection) projectObjects() error {
 			return err
 		}
 		projection.addContains(packageRef, declaration.ID, declaration.Name, location)
+		for _, field := range declaration.Fields {
+			fieldLocation, err := projection.coreLocation(field.Location)
+			if err != nil {
+				return err
+			}
+			if err := projection.addObject(programindex.ObjectInput{
+				SourceRef: field.ID, Kind: programindex.ObjectVariable, Name: field.Name,
+				Signature: field.Signature, Visibility: visibility(field.Exported),
+				OwnerRef: declaration.ID, ContainerRef: declaration.ID, Location: fieldLocation,
+			}); err != nil {
+				return err
+			}
+			projection.addContains(declaration.ID, field.ID, field.Name, fieldLocation)
+		}
 	}
 
 	for _, declaration := range projection.core.Callables {
@@ -348,6 +368,7 @@ func (projection *goProjection) projectObjects() error {
 		}
 		if err := projection.addObject(programindex.ObjectInput{
 			SourceRef: node.ID, Kind: programindex.ObjectFunction, Name: node.Symbol.Name,
+			Signature:  node.Signature,
 			Visibility: visibility(node.Exported), OwnerRef: packageRef, ContainerRef: packageRef,
 			Location: location,
 		}); err != nil {
@@ -731,6 +752,10 @@ func (projection *goProjection) projectDynamicHandoffs() (
 	error,
 ) {
 	represented := make(map[string]dynamicHandoffRepresentation)
+	functionNames := make(map[string]string, len(projection.dynamic.Functions))
+	for _, function := range projection.dynamic.Functions {
+		functionNames[function.ID] = function.Symbol
+	}
 	for _, handoff := range projection.dynamic.Handoffs {
 		fromRef, ok := projection.directNodeObjectRefs[handoff.CallerID]
 		if !ok {
@@ -776,25 +801,43 @@ func (projection *goProjection) projectDynamicHandoffs() (
 			invocation = "callable_binding:field"
 		}
 		var sourceArgument *programindex.PatternArgumentRefInput
-		if handoff.Kind == godynamichandoff.CallbackTransfer {
+		if handoff.Kind == godynamichandoff.CallbackTransfer && handoff.Slot.Method == "" {
+			// This provenance identifies a callable value passed as an
+			// argument. An interface object's method is carried indirectly;
+			// its typed slot and callsite remain the transfer evidence.
 			sourceArgument, err = projection.callbackSourceArgument(handoff)
 			if err != nil {
 				return nil, err
 			}
 		}
+		witnesses := []programindex.Witness{{Kind: "go_ssa_dynamic_handoff", Detail: dynamicHandoffDetail(handoff, functionNames), Location: location}}
+		for _, field := range handoff.ReceiverFields {
+			at, err := projection.dynamicLocation(field.Location)
+			if err != nil {
+				return nil, err
+			}
+			witnesses = append(witnesses, programindex.Witness{Kind: "callable_receiver_field", Detail: field.Field + " = " + field.Literal, Location: at})
+		}
+		for _, candidate := range handoff.Candidates {
+			for _, assignment := range candidate.Assignments {
+				at, err := projection.dynamicLocation(assignment)
+				if err != nil {
+					return nil, err
+				}
+				witnesses = append(witnesses, programindex.Witness{Kind: "interface_field_assignment", Detail: "observed receiver assignment for " + functionNames[candidate.FunctionID], Location: at})
+			}
+		}
 		projection.relations = append(projection.relations, programindex.RelationInput{
-			SourceRef:       handoff.ID,
-			Kind:            kind,
-			FromRef:         fromRef,
-			ToRefs:          toRefs,
-			Resolution:      resolution,
-			Invocation:      invocation,
-			Location:        location,
-			TargetsObserved: targetsObserved,
-			Witnesses: []programindex.Witness{{
-				Kind: "go_ssa_dynamic_handoff", Detail: dynamicHandoffDetail(handoff), Location: location,
-			}},
-			WitnessesObserved: 1,
+			SourceRef:         handoff.ID,
+			Kind:              kind,
+			FromRef:           fromRef,
+			ToRefs:            toRefs,
+			Resolution:        resolution,
+			Invocation:        invocation,
+			Location:          location,
+			TargetsObserved:   targetsObserved,
+			Witnesses:         witnesses,
+			WitnessesObserved: len(witnesses),
 			SourceArgument:    sourceArgument,
 		})
 		counts := represented[handoff.CallerID]
@@ -1076,15 +1119,22 @@ func programResolution(value godynamichandoff.Resolution) (programindex.Resoluti
 	}
 }
 
-func dynamicHandoffDetail(value godynamichandoff.Handoff) string {
+func dynamicHandoffDetail(value godynamichandoff.Handoff, functionNames map[string]string) string {
 	switch value.Kind {
 	case godynamichandoff.InterfaceInvoke:
-		return value.Slot.DeclaredType + "." + value.Slot.Method + " " + value.Slot.Signature
+		detail := value.Slot.DeclaredType + "." + value.Slot.Method + " " + value.Slot.Signature
+		if value.Slot.Field != "" {
+			detail += " via field " + value.Slot.ContainerType + "." + value.Slot.Field
+		}
+		return detail
 	case godynamichandoff.FunctionValueCall:
 		return value.Slot.Signature
 	case godynamichandoff.CallbackTransfer:
-		return "parameter " + strconv.Itoa(value.Slot.Parameter) + " -> " +
-			dynamicStaticTargetName(value.StaticTarget) + " " + value.Slot.Signature
+		detail := "parameter " + strconv.Itoa(value.Slot.Parameter) + " -> " + dynamicStaticTargetName(value.StaticTarget, functionNames)
+		if value.Slot.Method != "" {
+			detail += "; interface " + value.Slot.DeclaredType + " method " + value.Slot.Method
+		}
+		return detail + " " + value.Slot.Signature
 	case godynamichandoff.CallableBinding:
 		detail := value.Slot.ContainerType + "." + value.Slot.Field + " <- " + value.Slot.DeclaredType
 		if value.Slot.Signature != "" {
@@ -1096,9 +1146,9 @@ func dynamicHandoffDetail(value godynamichandoff.Handoff) string {
 	}
 }
 
-func dynamicStaticTargetName(value godynamichandoff.StaticTarget) string {
+func dynamicStaticTargetName(value godynamichandoff.StaticTarget, functionNames map[string]string) string {
 	if value.FunctionID != "" {
-		return value.FunctionID
+		return functionNames[value.FunctionID]
 	}
 	name := value.Package + "."
 	if value.Receiver != "" {

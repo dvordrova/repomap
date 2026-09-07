@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -405,23 +406,41 @@ func (r *reader) readSymbols(ctx context.Context) error {
 	def := lines.Symbols()
 	var rows []table.Row
 	var order []atlas.Place
+	var typeRows []table.Row
+	var typeOrder []atlas.Place
 	for _, place := range r.opts.Graph.Places {
 		if place.Kind != atlas.PlaceSymbol || !place.Symbol.Candidate {
 			continue
 		}
 		file := r.places[place.Parent]
-		if file.File == nil || file.File.Generated || r.budget && (!r.openFiles[place.Parent] || place.Symbol.Rank > budgetSymbolCandidates) {
+		if file.File == nil || file.File.Generated {
 			continue
 		}
 		fileLine, _ := r.Line(place.Parent)
+		if place.Symbol.Decl.Kind == "type" {
+			// A bare name and a file hypothesis do not establish what the type
+			// means. Retain its source entry without asking for an invented gloss.
+			if len(place.Symbol.Members) == 0 && place.Symbol.Decl.Doc == "" {
+				continue
+			}
+			typeRows = append(typeRows, lines.TypeRow(place))
+			typeOrder = append(typeOrder, place)
+			continue
+		}
 		rows = append(rows, lines.SymbolRow(place, fileLine))
 		order = append(order, place)
 	}
-	r.opts.Stage(def.Stage, fmt.Sprintf("%d candidate symbols", len(rows)))
+	r.opts.Stage(def.Stage, fmt.Sprintf("%d candidate symbols, including %d types with their owned declarations", len(rows)+len(typeRows), len(typeRows)))
 	answers, err := r.runTable(ctx, def, 1, rows)
 	if err != nil {
 		return err
 	}
+	typeAnswers, err := r.runTable(ctx, lines.Types(), 2, typeRows)
+	if err != nil {
+		return err
+	}
+	order = append(order, typeOrder...)
+	answers = append(answers, typeAnswers...)
 	type marked struct {
 		id   string
 		rank int
@@ -433,6 +452,15 @@ func (r *reader) readSymbols(ctx context.Context) error {
 			continue
 		}
 		r.symbolLine[place.ID] = cell{value: answer.answer["line"], source: answer.source}
+		for _, ref := range strings.Fields(answer.answer["outbound"]) {
+			n, err := strconv.Atoi(strings.TrimPrefix(ref, "c"))
+			if err == nil && n > 0 && n <= len(place.Symbol.Calls) {
+				r.outbound[place.ID] = append(r.outbound[place.ID], place.Symbol.Calls[n-1])
+			}
+		}
+		if activation := answer.answer["activation"]; activation != "" && activation != "none" {
+			r.operations[place.ID] = [3]string{activation, answer.answer["operation"]}
+		}
 		if answer.answer["key_symbol"] == "yes" {
 			byFile[place.Parent] = append(byFile[place.Parent], marked{id: place.ID, rank: place.Symbol.Rank})
 		}
@@ -499,8 +527,52 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	if disagreed > 0 {
 		r.opts.Stage(def.Stage, fmt.Sprintf("kinds the model answered differently from the code: %d, the code's kept", disagreed))
 	}
+	r.bindInterpretedBoundaries()
 	r.reportStage(def.Stage)
 	return nil
+}
+
+// Interpretation becomes a boundary on the same declaration, not a second
+// analyzer. The selected call retains its source line and literal arguments.
+func (r *reader) bindInterpretedBoundaries() {
+	claimed := make(map[string]bool)
+	key := func(path string, line int, direction string) string {
+		return fmt.Sprintf("%s:%d:%s", path, line, direction)
+	}
+	for _, boundary := range r.boundaries {
+		claimed[key(boundary.place.Path, boundary.place.LineNo, boundary.place.Boundary.Direction)] = true
+	}
+	for _, place := range r.opts.Graph.Places {
+		if place.Symbol == nil {
+			continue
+		}
+		decl := place.Symbol.Decl
+		add := func(id string, line, column int, direction, kind, external, description string, values []string) {
+			if line < 1 || claimed[key(place.Path, line, direction)] {
+				return
+			}
+			p := atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: line, Column: column, Parent: place.Parent, TargetIDs: append([]string(nil), place.TargetIDs...), Boundary: &atlas.BoundaryFacts{Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, CallerDoc: decl.Doc, External: external, Values: values, Direction: direction}}
+			r.boundaries[id] = &boundaryState{place: p, line: description, kind: kind}
+		}
+		if operation := r.operations[place.ID]; operation[0] == "request" {
+			add("in:"+place.ID, place.LineNo, decl.Column, atlas.DirectionIn, atlas.BoundaryOther, decl.Name, operation[2], []string{operation[1], operationIdentifier(decl.Name)})
+		}
+		for i, call := range r.outbound[place.ID] {
+			values := append([]string(nil), call.Values...)
+			values = append(values, operationIdentifier(call.Name))
+			add(fmt.Sprintf("out:%s:%d", place.ID, i), call.Line, 0, atlas.DirectionOut, atlas.BoundarySDK, call.Name, r.symbolLine[place.ID].value, values)
+		}
+	}
+}
+
+// An equal terminal identifier is only a candidate for the model to confirm.
+// It never establishes that two interfaces are connected.
+func operationIdentifier(name string) string {
+	parts := strings.FieldsFunc(name, func(r rune) bool { return r == '.' || r == '/' || r == '(' || r == ')' || r == '*' })
+	if len(parts) == 0 {
+		return name
+	}
+	return parts[len(parts)-1]
 }
 
 // side says which column a box stands in: in when the outside calls into
@@ -508,12 +580,17 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 func (r *reader) side(owner *boxState, targetID string) string {
 	in, out := false, false
 	for _, fileID := range owner.files {
-		if contains(r.opts.Graph.Seeds, fileID) {
+		if contains(r.places[fileID].TargetIDs, targetID) && contains(r.opts.Graph.Seeds, fileID) {
 			in = true
 		}
 	}
 	for _, state := range r.boundaries {
 		if r.boxOf[state.place.Parent] != owner.id || !contains(state.place.TargetIDs, targetID) {
+			continue
+		}
+		// Configuration describes how this code is parameterized. Reading an
+		// environment key does not make the entire module an integration.
+		if state.kind == "config" {
 			continue
 		}
 		if state.place.Boundary.Direction == atlas.DirectionIn {

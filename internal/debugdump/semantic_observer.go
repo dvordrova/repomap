@@ -81,6 +81,7 @@ func BindStage(executor llm.Executor, stage string) llm.Executor {
 		return executor
 	}
 	executor.Observer = llm.ObserverFunc(func(event llm.Event) error {
+		event.CacheRoot = executor.RootDir
 		return observer.ObserveStage(stage, event)
 	})
 	return executor
@@ -105,7 +106,8 @@ func semanticExchangeForStageEventAt(
 		return SemanticExchange{}, false
 	}
 	exchange := SemanticExchange{
-		Stage: stage, InstanceOrdinal: instanceOrdinal,
+		CacheRoot: event.CacheRoot,
+		Stage:     stage, InstanceOrdinal: instanceOrdinal,
 		SemanticAttemptOrdinal: semanticAttemptOrdinal,
 		Request:                event.Request, Response: event.Response,
 		Latency:      event.Metrics.Latency,

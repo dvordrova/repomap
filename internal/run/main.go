@@ -27,6 +27,7 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/repoconfig"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/snapshot"
@@ -52,6 +53,28 @@ func Main() {
 		if err := runCache(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
+		}
+		return
+	}
+
+	if len(os.Args) >= 2 && os.Args[1] == "conf" {
+		if err := runConf(os.Args[2:], os.Stdout, os.Stderr); err != nil {
+			writeDefaultRunError(os.Stderr, err)
+			os.Exit(defaultRunExitCode(err))
+		}
+		return
+	}
+	if len(os.Args) >= 2 && os.Args[1] == "read" {
+		if err := runRead(os.Args[2:], os.Stdout); err != nil {
+			writeDefaultRunError(os.Stderr, err)
+			os.Exit(defaultRunExitCode(err))
+		}
+		return
+	}
+	if len(os.Args) >= 2 && os.Args[1] == "replay" {
+		if err := runReplay(os.Args[2:], os.Stdout, os.Stderr); err != nil {
+			writeDefaultRunError(os.Stderr, err)
+			os.Exit(defaultRunExitCode(err))
 		}
 		return
 	}
@@ -113,6 +136,7 @@ func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool)
 }
 
 type defaultRunDeps struct {
+	repositoryConfig           *repoconfig.Config
 	ctx                        context.Context
 	stdout                     io.Writer
 	stderr                     io.Writer
@@ -199,6 +223,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		"maximum exact target call-graph edges (0 keeps all edges)",
 	)
 	noCache := fs.Bool("no-cache", false, "disable cross-run model response caches")
+	var questions []string
+	fs.Func("question", "add a reading question; repeat for several questions", func(value string) error { return appendQuestion(&questions, value) })
 	gitLabURLFlag := fs.String("gitlab-url", "", "create a standalone report with GitLab source links; does not select a repository")
 	gitHubURLFlag := fs.String("github-url", "", "create a standalone report with GitHub source links; does not select a repository")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
@@ -289,6 +315,21 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return fmt.Errorf("resolve repository path: %w", err)
 	}
 	repo = absRepo
+	if deps.repositoryConfig == nil {
+		config, err := repoconfig.Load(repo)
+		if err != nil {
+			return err
+		}
+		deps.repositoryConfig = &config
+	}
+	configuredQuestions := append([]string{}, deps.repositoryConfig.Questions...)
+	questionsFromFlags := questions
+	questions = nil
+	for _, question := range append(configuredQuestions, questionsFromFlags...) {
+		if err := appendQuestion(&questions, question); err != nil {
+			return err
+		}
+	}
 	originIdentity := snapshot.RepositoryOriginIdentity(repo)
 	if *noServe && gitLabURL == "" && gitHubURL == "" {
 		remoteHost, _, hasProject := strings.Cut(originIdentity, "/")
@@ -364,7 +405,13 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			return fmt.Errorf("bind shared repository corpus: %w", err)
 		}
 	} else {
-		repositoryCorpus, err = corpus.Open(ctx, repo)
+		var excludedOutputs []string
+		if outputRoot, absErr := filepath.Abs(dDir); absErr == nil {
+			if relative, relErr := filepath.Rel(repo, outputRoot); relErr == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				excludedOutputs = append(excludedOutputs, filepath.ToSlash(relative))
+			}
+		}
+		repositoryCorpus, err = corpus.Open(ctx, repo, excludedOutputs...)
 		if err != nil {
 			return fmt.Errorf("build repository corpus: %w", err)
 		}
@@ -502,8 +549,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				Corpus: repositoryCorpus, RepositoryState: initialState, Plan: plan,
 				RunID: runID, DebugDir: dDir, NoCache: *noCache, NoOpen: *noOpen,
 				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
-				NoModel: *noModel,
-				Output:  humanOutput, FirstLayer: firstLayer,
+				NoModel: *noModel, Questions: questions,
+				Output: humanOutput, FirstLayer: firstLayer,
 				DiscoverJSTSFn: jstsproject.DiscoverSelected,
 				VerifiedRunsSink: func(receipts []report.RunReceipt) {
 					verifiedRuns = append([]report.RunReceipt(nil), receipts...)
@@ -575,7 +622,13 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			DebugEnabled:           dDir != "",
 		},
 	}
-	opts.Progress = humanOutput.Progress
+	var repositoryName string
+	opts.Progress = func(event orient.ProgressEvent) {
+		if event.Stage == orient.ProgressSnapshotReady {
+			repositoryName = event.RepoName
+		}
+		humanOutput.Progress(event)
+	}
 
 	indexStarted := time.Now()
 	err = orient.Run(ctx, opts)
@@ -678,7 +731,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return fmt.Errorf("name the report source: %w", err)
 	}
 	generateReport := func() (report.RunReceipt, error) {
+		data, err := report.NewData(runDir, repositoryName, index, ownedDocumentation)
+		if err != nil {
+			return report.RunReceipt{}, err
+		}
+		if err := report.BindGroupGraphView(data, []groupindex.Index{defaultGroupIndex}); err != nil {
+			return report.RunReceipt{}, err
+		}
 		return report.Generate(runDir, source, report.GenerateOptions{
+			Data:      data,
 			GitLabURL: gitLabURL, GitHubURL: gitHubURL, PublishHTML: true,
 		})
 	}
@@ -721,6 +782,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		RunDir:           runDir,
 		ProgramPage:      backingPage,
 		GroupIndex:       defaultGroupIndex,
+		ProgramIndex:     &index,
+		Dependencies:     dependencyCatalog,
+		Documentation:    &ownedDocumentation,
+		RepoName:         repositoryName,
+		Timing:           humanOutput.TimingReport(),
 		Source:           source,
 		SelectedRevision: initialState.Head,
 		GitLabURL:        gitLabURL,
@@ -746,6 +812,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 
 	if !*noServe && deps.serveReport != nil {
 		return deps.serveReport(ctx, reportserver.Options{
+			Config:       deps.repositoryConfig,
 			RunsDir:      dDir,
 			InitialRunID: runID,
 			Port:         *port,
@@ -1002,7 +1069,10 @@ func printUsage() {
 
 func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "Usage: repomap [repo] [flags]\n")
+	fmt.Fprintf(writer, "       repomap conf [repository]\n")
 	fmt.Fprintf(writer, "       repomap cache clear [--debug-dir DIR]\n")
+	fmt.Fprintf(writer, "       repomap replay --file REQUEST.json\n")
+	fmt.Fprintf(writer, "       repomap read READING_INPUT.json [--through STAGE] [flags]\n")
 	fmt.Fprintf(writer, "\nFlags:\n")
 	fmt.Fprintf(writer, "  --target TARGET             analyze exactly one explicit target\n")
 	fmt.Fprintf(writer, "  --force-platform GOOS/GOARCH override normal Go platform selection\n")
@@ -1010,8 +1080,8 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  --edges-limit N             maximum exact target call-graph edges (0 = all; default: 0)\n")
 	fmt.Fprintf(writer, "  --github-url URL            static GitHub source links; does not select a repository\n")
 	fmt.Fprintf(writer, "  --gitlab-url URL            static GitLab source links; does not select a repository\n")
-	fmt.Fprintf(writer, "  --atlas                     read the repository as tables of places; stops before the report\n")
 	fmt.Fprintf(writer, "  --no-model                  make no model call; the atlas tables carry their fallback lines (needs --target)\n")
+	fmt.Fprintf(writer, "  --question TEXT             add a reading question (repeatable; extends .repomap.conf)\n")
 	fmt.Fprintf(writer, "  --no-open                   do not open the report\n")
 	fmt.Fprintf(writer, "  --no-serve                  write static HTML with remote source links\n")
 	fmt.Fprintf(writer, "  --port PORT                 local report server port (default: random)\n")

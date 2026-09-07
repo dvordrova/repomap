@@ -5,33 +5,33 @@ import (
 	"strings"
 )
 
-// addNegatives states what the repository lacks. Rows are repository-level
-// and only exist when a corpus was provided.
+// addNegatives records missing recognized paths within the inspected inventory.
+// Readable source entries alone cannot establish that configuration is absent.
 func (b *builder) addNegatives() {
 	if b.input.Repository == nil {
 		return
 	}
-	paths := b.source.paths()
+	paths := b.input.Repository.VisiblePaths()
 	if !hasAny(paths, isTestPath) {
-		b.addNegative(NegativeNoTests, "no test files", nil)
+		b.addNegative(NegativeNoTests, "no recognized test files found in inspected paths", nil)
 	}
 	if !hasAny(paths, isDockerPath) {
-		b.addNegative(NegativeNoDockerfile, "no Dockerfile or compose file", nil)
+		b.addNegative(NegativeNoDockerfile, "no Dockerfile or compose file found in inspected paths", nil)
 	}
 	if !hasAny(paths, isCIPath) {
-		b.addNegative(NegativeNoCI, "no CI configuration", nil)
+		b.addNegative(NegativeNoCI, "no recognized CI configuration found in inspected paths", nil)
 	}
 	if !hasAny(paths, isLicensePath) {
-		b.addNegative(NegativeNoLicense, "no LICENSE file", nil)
+		b.addNegative(NegativeNoLicense, "no LICENSE file found in inspected paths", nil)
 	}
 	if !hasAny(paths, isContributingPath) {
-		b.addNegative(NegativeNoContributing, "no CONTRIBUTING file", nil)
+		b.addNegative(NegativeNoContributing, "no CONTRIBUTING file found in inspected paths", nil)
 	}
 	if !hasAny(paths, isChangelogPath) {
-		b.addNegative(NegativeNoChangelog, "no CHANGELOG file", nil)
+		b.addNegative(NegativeNoChangelog, "no changelog found in inspected paths", nil)
 	}
 	if !hasAny(paths, isLinterConfigPath) {
-		b.addNegative(NegativeNoLinter, "no linter or formatter configuration", nil)
+		b.addNegative(NegativeNoLinter, "no recognized linter or formatter configuration found in inspected paths", nil)
 	}
 }
 
@@ -100,16 +100,15 @@ func isContributingPath(filePath string) bool {
 
 func isChangelogPath(filePath string) bool {
 	base := strings.ToUpper(path.Base(filePath))
-	return path.Dir(filePath) == "." && (strings.HasPrefix(base, "CHANGELOG") || strings.HasPrefix(base, "CHANGES") ||
-		strings.HasPrefix(base, "HISTORY") || strings.HasPrefix(base, "RELEASES"))
+	dir := strings.ToUpper(path.Dir(filePath))
+	return dir == "CHANGELOG" || dir == "CHANGES" || dir == "RELEASES" || dir == "HISTORY" ||
+		path.Dir(filePath) == "." && (strings.HasPrefix(base, "CHANGELOG") || strings.HasPrefix(base, "CHANGES") ||
+			strings.HasPrefix(base, "HISTORY") || strings.HasPrefix(base, "RELEASES"))
 }
 
 // isLinterConfigPath is any of the usual style and lint configurations at the
-// root, across the languages this tool reads.
+// repository or a nested project, across the languages this tool reads.
 func isLinterConfigPath(filePath string) bool {
-	if path.Dir(filePath) != "." {
-		return false
-	}
 	base := path.Base(filePath)
 	for _, name := range []string{
 		".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json",

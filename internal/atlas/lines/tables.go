@@ -18,12 +18,12 @@ const (
 	StageTargets    = "atlas_targets"
 	StageJoints     = "atlas_joints"
 
-	symbolsContract    = "repomap.atlas.symbols.v1"
-	boundariesContract = "repomap.atlas.boundaries.v1"
+	symbolsContract    = "repomap.atlas.symbols.v5"
+	boundariesContract = "repomap.atlas.boundaries.v2"
 	zonesContract      = "repomap.atlas.zones.v1"
 	arrowsContract     = "repomap.atlas.arrows.v1"
-	targetsContract    = "repomap.atlas.targets.v1"
-	jointsContract     = "repomap.atlas.joints.v1"
+	targetsContract    = "repomap.atlas.targets.v2"
+	jointsContract     = "repomap.atlas.joints.v3"
 
 	// ShortLineRunes bounds the lines of boundaries and symbols; LabelRunes
 	// the label of a joint.
@@ -42,6 +42,9 @@ const (
 //go:embed prompts/symbols.md
 var symbolsPrompt string
 
+//go:embed prompts/types.md
+var typesPrompt string
+
 //go:embed prompts/boundaries.md
 var boundariesPrompt string
 
@@ -57,8 +60,9 @@ var targetsPrompt string
 //go:embed prompts/joints.md
 var jointsPrompt string
 
-// SymbolWindowRows is the symbol table's window: the rows are short.
-const SymbolWindowRows = 50
+// Calls and callback bindings make symbol rows larger than a declaration.
+// Keep the provider batch small; accepted entity rows reuse independently.
+const SymbolWindowRows = 8
 
 // MaxKeysPerFile bounds how many symbols the model may mark as key in one
 // file; the code keeps the first by rank.
@@ -68,18 +72,53 @@ const MaxKeysPerFile = 5
 func Symbols() table.Definition {
 	return table.Definition{
 		Stage: StageSymbols, Contract: symbolsContract, Window: SymbolWindowRows,
-		System: symbolsPrompt, MaxOutputTokens: 8192,
+		System: symbolsPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what this declaration does or is"},
 			{Name: "key_symbol", Kind: table.Choice, Options: []string{"yes", "no"}, Note: "yes for the declarations a reader looks at first"},
+			{Name: "activation", Kind: table.Choice, Options: []string{"none", "command", "request", "interaction", "scheduled", "continuous"}, Note: "externally activated operation; none for internal helpers and registration factories"},
+			{Name: "operation", Kind: table.Text, MaxRunes: 60, Note: "short reader-facing action name; use none when activation is none"},
+			{Name: "outbound", Kind: table.Sequence, OptionsFrom: "call_options", LimitFrom: "call_count", Note: "refs of calls to another service, database or message transport; none for ordinary in-process helpers"},
 		},
 	}
 }
 
+// Types describes the concept represented by a type using its own interface.
+// It shares symbol knowledge and publication; it does not classify operations.
+func Types() table.Definition {
+	return table.Definition{
+		Stage: StageSymbols, Contract: "repomap.atlas.types.v5", Window: SymbolWindowRows,
+		System: typesPrompt, Independent: true,
+		Columns: []table.Column{
+			{Name: "line", Kind: table.Prose, Note: "briefly explain what this represents or controls and any consequential documented rule, preserving its conditions; no method inventory or invented effects"},
+			{Name: "key_symbol", Kind: table.Choice, Options: []string{"yes", "no"}, Note: "yes for a concept a newcomer needs to understand this file"},
+		},
+	}
+}
+
+func TypeRow(place atlas.Place) table.Row {
+	decl := place.Symbol.Decl
+	fields := []table.Field{{Name: "path", Value: place.Path}, {Name: "name", Value: decl.Name},
+		{Name: "signature", Value: decl.Signature}, {Name: "author_doc", Value: decl.Doc}}
+	fields = append(fields, table.Field{Name: "owned_declarations", Value: ownedDeclarations(place.Symbol.Members)})
+	return table.Row{ID: place.ID, Fields: fields}
+}
+
+func ownedDeclarations(declarations []atlas.TypeMember) []map[string]any {
+	members := make([]map[string]any, 0, len(declarations))
+	for _, member := range declarations {
+		members = append(members, map[string]any{"path": member.Path, "line": member.Decl.LineNo,
+			"name": member.Decl.Name, "kind": member.Decl.Kind, "signature": member.Decl.Signature, "author_doc": member.Decl.Doc})
+	}
+	return members
+}
+
 // SymbolRow builds the row of one candidate symbol.
 func SymbolRow(place atlas.Place, fileLine string) table.Row {
+	var evidence EvidenceCatalog
 	decl := place.Symbol.Decl
 	fields := []table.Field{
+		{Name: "path", Value: place.Path},
 		{Name: "name", Value: decl.Name},
 		{Name: "kind", Value: decl.Kind},
 	}
@@ -90,9 +129,21 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 		fields = append(fields, table.Field{Name: "doc", Value: cut(decl.Doc, maxDoc)})
 	}
 	if fileLine != "" {
-		fields = append(fields, table.Field{Name: "file", Value: fileLine})
+		fields = append(fields, table.Field{Name: "file_hypothesis", Value: fileLine})
 	}
 	fields = append(fields, table.Field{Name: "callers", Value: decl.FanIn})
+	if len(place.Symbol.Bindings) > 0 {
+		fields = append(fields, table.Field{Name: "callable_bindings", Value: evidence.Bindings(place.Symbol.Bindings)})
+	}
+	calls := make([]map[string]any, 0, len(place.Symbol.Calls))
+	refs := make([]string, 0, len(place.Symbol.Calls))
+	for i, call := range place.Symbol.Calls {
+		ref := fmt.Sprintf("c%d", i+1)
+		refs = append(refs, ref)
+		calls = append(calls, map[string]any{"ref": ref, "evidence": evidence.Call(call)})
+	}
+	fields = append(fields, table.Field{Name: "calls", Value: calls}, table.Field{Name: "call_options", Value: refs}, table.Field{Name: "call_count", Value: len(refs)})
+	fields = append(fields, evidence.Fields()...)
 	return table.Row{ID: place.ID, Fields: fields}
 }
 
@@ -100,7 +151,7 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 func Boundaries() table.Definition {
 	return table.Definition{
 		Stage: StageBoundaries, Contract: boundariesContract, Window: WindowRows,
-		System: boundariesPrompt, MaxOutputTokens: 8192,
+		System: boundariesPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what crosses this boundary"},
 			{Name: "kind", Kind: table.Choice, Options: atlas.BoundaryKinds(), Note: "repeat kind_given when present"},
@@ -119,7 +170,7 @@ func BoundaryRow(place atlas.Place, fileLine string) table.Row {
 		fields = append(fields, table.Field{Name: "caller_doc", Value: facts.CallerDoc})
 	}
 	if fileLine != "" {
-		fields = append(fields, table.Field{Name: "file", Value: fileLine})
+		fields = append(fields, table.Field{Name: "file_hypothesis", Value: fileLine})
 	}
 	if facts.External != "" {
 		fields = append(fields, table.Field{Name: "external", Value: facts.External})
@@ -151,7 +202,7 @@ func ZoneNames(want int) table.Definition {
 	}
 	return table.Definition{
 		Stage: StageZones, Contract: fmt.Sprintf("%s.names.%d", zonesContract, want), Window: 1,
-		System: zonesPrompt, MaxOutputTokens: 2048, Columns: columns,
+		System: zonesPrompt, Columns: columns,
 	}
 }
 
@@ -173,7 +224,7 @@ func PartName(answer map[string]string, i int) string {
 func ZoneAssign(parts []string) table.Definition {
 	return table.Definition{
 		Stage: StageZones, Contract: zonesContract + ".assign", Window: WindowRows,
-		System: zonesPrompt, MaxOutputTokens: 4096,
+		System:  zonesPrompt,
 		Columns: []table.Column{{Name: "part", Kind: table.Choice, Options: parts, Note: "one of context.parts"}},
 	}
 }
@@ -181,7 +232,7 @@ func ZoneAssign(parts []string) table.Definition {
 func ZoneLines() table.Definition {
 	return table.Definition{
 		Stage: StageZones, Contract: zonesContract + ".lines", Window: WindowRows,
-		System: zonesPrompt, MaxOutputTokens: 4096,
+		System:  zonesPrompt,
 		Columns: []table.Column{{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what this part does"}},
 	}
 }
@@ -243,7 +294,7 @@ func WantZones(n int) int {
 func Arrows() table.Definition {
 	return table.Definition{
 		Stage: StageArrows, Contract: arrowsContract, Window: WindowRows,
-		System: arrowsPrompt, MaxOutputTokens: 8192,
+		System:  arrowsPrompt,
 		Columns: []table.Column{{Name: "sentence", Kind: table.Text, MaxRunes: LineRunes, Note: "what the first box does with the second"}},
 	}
 }
@@ -284,7 +335,7 @@ func FallbackSentence(from, to BoxSummary, witnesses []atlas.Witness) string {
 func Targets() table.Definition {
 	return table.Definition{
 		Stage: StageTargets, Contract: targetsContract, Window: WindowRows,
-		System: targetsPrompt, MaxOutputTokens: 8192,
+		System: targetsPrompt,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what this target is and does"},
 			{Name: "role", Kind: table.Choice, Options: atlas.Roles()},
@@ -304,6 +355,7 @@ type TargetSummary struct {
 	Files      int
 	Dirs       int
 	Boundaries map[string]int
+	Operations []string
 }
 
 // TargetRow builds the row of one target.
@@ -324,6 +376,9 @@ func TargetRow(target TargetSummary) table.Row {
 		table.Field{Name: "files", Value: target.Files},
 		table.Field{Name: "dirs", Value: target.Dirs},
 	)
+	if len(target.Operations) > 0 {
+		fields = append(fields, table.Field{Name: "operation_hypotheses", Value: target.Operations})
+	}
 	if len(target.Boundaries) > 0 {
 		kinds := make([]string, 0, len(target.Boundaries))
 		for kind := range target.Boundaries {
@@ -363,7 +418,7 @@ func FallbackRole(root, kind string) string {
 func Joints() table.Definition {
 	return table.Definition{
 		Stage: StageJoints, Contract: jointsContract + ".joints", Window: WindowRows,
-		System: jointsPrompt, MaxOutputTokens: 4096,
+		System: jointsPrompt,
 		Columns: []table.Column{
 			{Name: "same", Kind: table.Choice, Options: []string{"yes", "no"}},
 			{Name: "label", Kind: table.Text, MaxRunes: LabelRunes, Note: "at most six words, or - when same is no"},
@@ -374,7 +429,7 @@ func Joints() table.Definition {
 func Peers() table.Definition {
 	return table.Definition{
 		Stage: StageJoints, Contract: jointsContract + ".peers", Window: WindowRows,
-		System: jointsPrompt, MaxOutputTokens: 4096,
+		System: jointsPrompt,
 		Columns: []table.Column{
 			{Name: "peer", Kind: table.Choice, OptionsFrom: "peer_options", Note: "a ref from context.peers, or none"},
 			{Name: "label", Kind: table.Text, MaxRunes: LabelRunes, Note: "at most six words, or - when peer is none"},
@@ -384,17 +439,31 @@ func Peers() table.Definition {
 
 // BoundarySide is one side of a joint as the model sees it.
 type BoundarySide struct {
-	Target   string
-	Line     string
-	External string
-	Method   string
-	Values   []string
+	Target    string
+	Line      string
+	Path      string
+	Caller    string
+	Source    string
+	External  string
+	Method    string
+	Values    []string
+	Signature string
+	CallerDoc string
 }
 
 func sideValue(side BoundarySide) map[string]any {
 	value := map[string]any{"target": side.Target, "line": side.Line, "values": bounded(side.Values, maxValues)}
+	if side.Path != "" {
+		value["path"], value["caller"], value["source"] = side.Path, side.Caller, side.Source
+	}
 	if side.External != "" {
 		value["external"] = side.External
+	}
+	if side.Signature != "" {
+		value["caller_signature"] = side.Signature
+	}
+	if side.CallerDoc != "" {
+		value["caller_doc"] = side.CallerDoc
 	}
 	if side.Method != "" {
 		value["method"] = side.Method

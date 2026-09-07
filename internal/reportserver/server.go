@@ -19,11 +19,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/repoconfig"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
-// The server does two things: it serves the pages of a run and its sibling
-// target runs, and it opens a source file of the page in the editor at a
+// The server does two things: it serves one repository report with its target
+// sections, and it opens a source file of the page in the editor at a
 // line. It used to verify every run against its manifest, every manifest
 // against every artifact, and every path a page might open against an
 // allow-list captured at analysis time, with the page keyed by capability
@@ -47,6 +48,7 @@ type OpenFileFunc func(ctx context.Context, absolutePath string, line, column in
 // current process just generated; otherwise every run is read from disk by
 // following the initial run's navigation.
 type Options struct {
+	Config       *repoconfig.Config
 	RunsDir      string
 	InitialRunID string
 	Port         int
@@ -171,22 +173,13 @@ func NewHandler(opts Options) (http.Handler, error) {
 	if !validCapability(capability) {
 		return nil, fmt.Errorf("report server: invalid capability")
 	}
-	openFile := opts.OpenFile
-	if openFile == nil {
-		openFile, err = NewVSCodeLauncher(opts.Logf)
-		if err != nil {
-			if !errors.Is(err, ErrEditorUnavailable) {
-				return nil, fmt.Errorf("report server: VS Code launcher: %w", err)
-			}
-			openFile = unavailableEditor
-			if opts.Logf != nil {
-				opts.Logf("editor dispatch mechanism=none outcome=unavailable")
-			}
-		}
-	}
 	runs, err := loadRuns(runsDir, opts.InitialRunID, opts.Runs)
 	if err != nil {
 		return nil, err
+	}
+	openFile := opts.OpenFile
+	if openFile == nil {
+		openFile = configuredEditor(runs[opts.InitialRunID].analysisRoot, opts.Config, opts.Logf)
 	}
 	h := &handler{
 		urlPrefix:  capabilityURLPrefix(capability),
@@ -207,62 +200,39 @@ func NewHandler(opts Options) (http.Handler, error) {
 // to. Runs handed over by the generating process are loaded the same way:
 // what they add is only which run directories to read.
 func loadRuns(runsDir, initialRunID string, given []report.RunReceipt) (map[string]runRecord, error) {
-	ids := []string{initialRunID}
 	for _, receipt := range given {
-		if id := receipt.ProgramPage().RunID; id != initialRunID && validRunID(id) {
-			ids = append(ids, id)
+		if filepath.Base(receipt.RunDir()) == initialRunID && receipt.Data() != nil {
+			run, err := renderRun(initialRunID, receipt)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]runRecord{initialRunID: run}, nil
 		}
 	}
-	runs := make(map[string]runRecord, len(ids))
-	initial, navigation, err := loadRun(runsDir, initialRunID)
+	initial, _, err := loadRun(runsDir, initialRunID)
 	if err != nil {
 		return nil, fmt.Errorf("report server: load initial run %s: %w", initialRunID, err)
 	}
-	runs[initialRunID] = initial
-	if navigation != nil {
-		for _, item := range navigation.Targets {
-			runID, err := navigationRunID(initialRunID, navigation.CurrentTargetID, item)
-			if err != nil {
-				return nil, fmt.Errorf("report server: navigation: %w", err)
-			}
-			ids = append(ids, runID)
-		}
-	}
-	for _, runID := range ids {
-		if _, loaded := runs[runID]; loaded {
-			continue
-		}
-		run, _, err := loadRun(runsDir, runID)
-		if err != nil {
-			return nil, fmt.Errorf("report server: load run %s: %w", runID, err)
-		}
-		runs[runID] = run
-	}
-	return runs, nil
+	return map[string]runRecord{initialRunID: initial}, nil
 }
 
 func loadRun(runsDir, runID string) (runRecord, *report.TargetNavigationPortfolio, error) {
 	runDir := filepath.Join(runsDir, runID)
-	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
-	if err != nil {
-		return runRecord{}, nil, fmt.Errorf("read report.json: %w", err)
-	}
-	reportData, err := decodeReportJSON(reportJSON)
+	receipt, err := report.ReadRunReceipt(runDir)
 	if err != nil {
 		return runRecord{}, nil, err
 	}
-	manifest, err := report.ReadRunManifest(runDir)
-	if err != nil {
-		return runRecord{}, nil, err
-	}
+	run, err := renderRun(runID, receipt)
+	return run, nil, err
+}
+
+func renderRun(runID string, receipt report.RunReceipt) (runRecord, error) {
+	runDir := receipt.RunDir()
+	reportData := *receipt.Data()
+	manifest := receipt.Manifest()
 	analysisRoot, err := manifest.ResolveAnalysisRoot()
 	if err != nil {
-		return runRecord{}, nil, fmt.Errorf("resolve analysis root: %w", err)
-	}
-	// A run of one target has no portfolio to navigate; that is not an error.
-	navigation, err := report.LoadManifestTargetNavigation(runDir, manifest)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return runRecord{}, nil, fmt.Errorf("load target navigation: %w", err)
+		return runRecord{}, fmt.Errorf("resolve analysis root: %w", err)
 	}
 	sources := make(map[string]string, len(reportData.OpenablePaths))
 	sourceIDs := make(map[string]string, len(reportData.OpenablePaths))
@@ -273,16 +243,15 @@ func loadRun(runsDir, runID string) (runRecord, *report.TargetNavigationPortfoli
 	}
 	reportData.SourceIDs = sourceIDs
 	rendered, err := report.RenderHTMLWithOptions(&reportData, report.RenderOptions{
-		TargetNavigation: navigation,
-		LocalRoots:       []string{runDir, analysisRoot, manifest.RepositoryState.Identity},
+		LocalRoots: []string{runDir, analysisRoot, manifest.RepositoryState.Identity},
 	})
 	if err != nil {
-		return runRecord{}, nil, fmt.Errorf("render report: %w", err)
+		return runRecord{}, fmt.Errorf("render report: %w", err)
 	}
 	return runRecord{
 		id: runID, runDir: runDir, analysisRoot: analysisRoot,
 		rendered: rendered, sources: sources,
-	}, navigation, nil
+	}, nil
 }
 
 func decodeReportJSON(encoded []byte) (report.ReportData, error) {
@@ -385,11 +354,8 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.openFile(r.Context(), absolutePath, request.Line, request.Column); err != nil {
-		status := http.StatusBadGateway
-		if errors.Is(err, ErrEditorUnavailable) {
-			status = http.StatusServiceUnavailable
-		}
-		writeJSON(w, status, map[string]string{"error": "could not open file in VS Code"})
+		h.log("source open failed: %v", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Could not open your editor. Check editor in .repomap.conf."})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "opened"})

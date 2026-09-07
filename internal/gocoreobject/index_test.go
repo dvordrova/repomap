@@ -20,7 +20,9 @@ func TestNewCanonicalizesSealsAndSnapshotsExactDeclarations(t *testing.T) {
 		},
 		Types: []TypeDeclaration{
 			{Kind: TypeInterface, Package: "example.com/product/client", Name: "Transport", Exported: true, Location: Location{Path: "client/client.go", Line: 8, Column: 6}},
-			{Kind: TypeStruct, Package: "example.com/product", Name: "Engine", Exported: true, Location: Location{Path: "engine.go", Line: 5, Column: 6}},
+			{Kind: TypeStruct, Package: "example.com/product", Name: "Engine", Exported: true, Location: Location{Path: "engine.go", Line: 5, Column: 6}, Fields: []FieldDeclaration{
+				{Name: "Count", Signature: "Count int", Exported: true, Location: Location{Path: "engine.go", Line: 6, Column: 2}},
+			}},
 		},
 		Callables: []CallableDeclaration{
 			{Kind: CallableMethod, Package: "example.com/product", Name: "Run", Receiver: "*example.com/product.Engine", Signature: "func(ctx context.Context) error", Exported: true, Location: Location{Path: "engine.go", Line: 12, Column: 18}, DirectCallNodeID: "direct-node-1"},
@@ -33,20 +35,26 @@ func TestNewCanonicalizesSealsAndSnapshotsExactDeclarations(t *testing.T) {
 	if err := index.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if index.SHA256 == "" || index.Types[0].ID == "" || index.Callables[0].ID == "" ||
+	if index.SHA256 == "" || index.Types[0].ID == "" || index.Types[0].Fields[0].ID == "" || index.Callables[0].ID == "" ||
 		index.Scope.TargetPackages[0] != "example.com/product" || index.Packages[0].Path != "example.com/product" {
 		t.Fatalf("non-canonical index: %#v", index)
 	}
 	snapshot := index.Snapshot()
 	snapshot.Scope.TargetPackages[0] = "changed"
 	snapshot.Types[0].Name = "Changed"
-	if index.Scope.TargetPackages[0] != "example.com/product" || index.Types[0].Name != "Engine" {
+	snapshot.Types[0].Fields[0].Name = "Changed"
+	if index.Scope.TargetPackages[0] != "example.com/product" || index.Types[0].Name != "Engine" || index.Types[0].Fields[0].Name != "Count" {
 		t.Fatalf("snapshot aliases producer: %#v", index)
 	}
 	tampered := index.Snapshot()
 	tampered.Callables[0].Signature = "func()"
 	if err := tampered.Validate(); err == nil {
 		t.Fatal("tampered signature retained the producer seal")
+	}
+	tampered = index.Snapshot()
+	tampered.Types[0].Fields[0].Signature = "Count string"
+	if err := tampered.Validate(); err == nil {
+		t.Fatal("tampered field signature retained the producer seal")
 	}
 }
 

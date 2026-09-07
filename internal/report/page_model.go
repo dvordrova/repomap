@@ -36,8 +36,15 @@ type pageView struct {
 	CSS           template.CSS
 	JS            template.JS
 
-	Summary        *pageSentence
-	SummaryMissing string
+	Summary             *pageSentence
+	SummaryMissing      string
+	Questions           []*pageQuestion
+	LearningNote        string
+	LearningReviews     []pageLearningReview
+	LearningSelections  []pageLearningReview
+	LearnBands          []pageLearnBand
+	LearnConcepts       []pageLearnConcept
+	LearnQuestionTopics []pageLearnQuestionTopic
 	// Figures are the few counts worth reading before anything else: how much
 	// of the repository was read, how big it is, and what it exposes. They
 	// are the first thing on the page that is not a sentence, because a
@@ -90,6 +97,7 @@ type pageClaim struct {
 type pageTargetCard struct {
 	SectionID   string
 	Name        string
+	ShortName   string
 	Language    string
 	Kind        string
 	Root        string
@@ -298,7 +306,16 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 	builder.buildSections()
 	view.Sections = builder.sections
 	builder.overview(view)
+	questions, err := builder.questionGuides()
+	if err != nil {
+		return nil, err
+	}
+	view.Questions = questions
+	if err := builder.learningReviews(view); err != nil {
+		return nil, err
+	}
 	view.RepoMap = builder.buildRepoMap(view)
+	builder.learn(view)
 	builder.addresses(view)
 	for _, warning := range data.Warnings {
 		view.Notes = append(view.Notes, scrubBrowserLocalPaths(warning, localRoots))
@@ -551,7 +568,7 @@ func (builder *pageBuilder) cards(view *pageView) {
 	} else {
 		for _, section := range builder.sections {
 			view.Cards = append(view.Cards, pageTargetCard{
-				SectionID: section.ID, Name: section.Label, Language: section.Language,
+				SectionID: section.ID, Name: section.Label, ShortName: section.ShortLabel, Language: section.Language,
 				Kind: section.Kind, Root: section.Root,
 			})
 		}
@@ -574,11 +591,12 @@ func (builder *pageBuilder) cards(view *pageView) {
 
 func (builder *pageBuilder) factsCard(target facts.Target) pageTargetCard {
 	card := pageTargetCard{
-		Name: target.Name, Language: target.Language, Kind: target.Kind, Root: target.Root,
+		Name: target.Name, ShortName: target.Name, Language: target.Language, Kind: target.Kind, Root: target.Root,
 	}
 	if section := builder.byFacts[target.ID]; section != nil {
 		card.SectionID = section.ID
 		card.Name = section.Label
+		card.ShortName = section.ShortLabel
 	}
 	if target.Manifest != "" {
 		card.Manifest = builder.links.anchorPointer(target.Manifest, 0, 0)

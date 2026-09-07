@@ -1,5 +1,5 @@
 // Package reading walks the places of a repository the way a reader would:
-// directories by depth, then files by their distance from the entry points,
+// directories by depth, then independent files with direct caller facts,
 // then the boundaries, the parts, the arrows, the portfolio and the joints,
 // asking the model one table per round and keeping its lines. It prints
 // every table it asked so the owner can read the rows, and it folds the
@@ -34,11 +34,11 @@ const BudgetThreshold = 2000
 
 // TargetMeta names one analyzed target of the run.
 type TargetMeta struct {
-	ID       string
-	Language string
-	Kind     string
-	Name     string
-	Root     string
+	ID       string `json:"id"`
+	Language string `json:"language"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+	Root     string `json:"root"`
 }
 
 // Options is everything the reading needs.
@@ -60,14 +60,32 @@ type Options struct {
 	// Budget forces the budget mode regardless of the file count; tests use
 	// it. Zero keeps the threshold.
 	Budget bool
+	// Through stops after this table stage; empty runs the complete reading.
+	Through string
+	// Table controls apply to Through, or to all stages when Through is empty.
+	// Prompt needs an explicit Through stage. Zero limits use the stage defaults.
+	Prompt     string
+	WindowRows int
+	InputBytes int
+	// Questions ask independent reading questions over the deterministic
+	// graph. Through=atlas_question stops at candidates; atlas_route selects
+	// their reading order; atlas_answer answers from those original sources.
+	// These isolated stages do not run the map wording stages.
+	Questions []string
+	// Learn adapts the base learning intents after the ordinary atlas.
+	Learn bool
 }
 
 // Result is the reading's outcome.
 type Result struct {
+	Complete   bool
+	Through    string
 	Atlas      atlas.Atlas
 	Uses       []atlas.StageUse
 	Rejected   []modeldiag.Row
 	TablesPath string
+	Questions  []atlas.QuestionRoute
+	Learning   *atlas.LearningPlan
 }
 
 // cell is one model line with where it came from.
@@ -86,8 +104,10 @@ type reader struct {
 	openFiles map[string]bool   // file place ID -> open, budget mode only
 	budget    bool
 
-	symbolLine map[string]cell     // symbol place ID -> model line
-	keys       map[string][]string // file place ID -> key symbol IDs, by rank
+	symbolLine map[string]cell               // symbol place ID -> model line
+	operations map[string][3]string          // symbol ID -> activation, operation name and description
+	outbound   map[string][]atlas.SymbolCall // model-selected calls, still anchored in source
+	keys       map[string][]string           // file place ID -> key symbol IDs, by rank
 
 	boxOf      map[string]string    // file place ID -> box ID
 	boxes      map[string]*boxState // box ID -> box
@@ -97,17 +117,30 @@ type reader struct {
 	targets    map[string]*targetState
 	joints     []atlas.Joint
 
-	uses     map[string]*atlas.StageUse
-	started  map[string]time.Time
-	rejected []modeldiag.Row
-	tables   strings.Builder
-	dry      bool
+	uses              map[string]*atlas.StageUse
+	started           map[string]time.Time
+	rejected          []modeldiag.Row
+	tables            strings.Builder
+	dry               bool
+	question          *atlas.QuestionRoute
+	questions         []atlas.QuestionRoute
+	questionText      string
+	questionKey       string
+	learning          *atlas.LearningPlan
+	learningRound     int
+	knowledge         map[string]*Knowledge
+	knowledgeSubjects map[string]*Knowledge
+	responseTables    map[string]rememberedTable
+	recallOnly        bool
 }
 
 // Read performs the walk.
 func Read(ctx context.Context, opts Options) (Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if err := validateControls(opts); err != nil {
+		return Result{}, err
 	}
 	if len(opts.Graph.Places) == 0 {
 		return Result{}, fmt.Errorf("atlas reading: the graph has no places")
@@ -121,19 +154,32 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 	if opts.State == nil {
 		opts.State = func(string, string, ...string) {}
 	}
+	if err := os.MkdirAll(filepath.Join(opts.OwnerRunDir, atlas.TablesDir), 0o700); err != nil {
+		return Result{}, fmt.Errorf("atlas reading: prepare %s: %w", atlas.TablesDir, err)
+	}
+	graph, err := SaveInput(opts)
+	if err != nil {
+		return Result{}, err
+	}
+	opts.Graph = graph
 	r := &reader{
-		opts:       opts,
-		places:     make(map[string]atlas.Place, len(opts.Graph.Places)),
-		lines:      make(map[string]cell),
-		titles:     make(map[string]cell),
-		boxChoice:  make(map[string]string),
-		openDirs:   make(map[string]bool),
-		openFiles:  make(map[string]bool),
-		symbolLine: make(map[string]cell),
-		keys:       make(map[string][]string),
-		uses:       make(map[string]*atlas.StageUse),
-		started:    make(map[string]time.Time),
-		dry:        opts.Provider == nil,
+		opts:              opts,
+		places:            make(map[string]atlas.Place, len(opts.Graph.Places)),
+		lines:             make(map[string]cell),
+		titles:            make(map[string]cell),
+		boxChoice:         make(map[string]string),
+		openDirs:          make(map[string]bool),
+		openFiles:         make(map[string]bool),
+		symbolLine:        make(map[string]cell),
+		operations:        make(map[string][3]string),
+		outbound:          make(map[string][]atlas.SymbolCall),
+		keys:              make(map[string][]string),
+		uses:              make(map[string]*atlas.StageUse),
+		started:           make(map[string]time.Time),
+		dry:               opts.Provider == nil,
+		knowledge:         make(map[string]*Knowledge),
+		knowledgeSubjects: make(map[string]*Knowledge),
+		responseTables:    make(map[string]rememberedTable),
 	}
 	files := 0
 	for _, place := range opts.Graph.Places {
@@ -143,9 +189,6 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		}
 	}
 	r.budget = opts.Budget || files > BudgetThreshold
-	if err := os.MkdirAll(filepath.Join(opts.OwnerRunDir, atlas.TablesDir), 0o700); err != nil {
-		return Result{}, fmt.Errorf("atlas reading: prepare %s: %w", atlas.TablesDir, err)
-	}
 	mode := "live"
 	if r.dry {
 		mode = "dry, every cell is its fallback"
@@ -154,21 +197,97 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		mode += ", budget: the model says where to dig"
 	}
 	fmt.Fprintf(&r.tables, "# Atlas tables\n\nrepository: %s\nrevision: %s\nmode: %s\n\n", opts.Repository, opts.Revision, mode)
-	steps := []func(context.Context) error{
-		r.readDirectories, r.readFiles, r.readSymbols,
-		func(context.Context) error { r.assignBoxes(); return nil },
-		r.readBoundaries, r.readZones, r.readArrows, r.readTargets, r.readJoints,
+	steps := []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{lines.StageDirectories, r.readDirectories},
+		{lines.StageFiles, r.readFiles},
+		{lines.StageSymbols, r.readSymbols},
+		{lines.StageOperations, r.readOperations},
+		{lines.StageBoundaries, r.readBoundaries},
+		{lines.StageZones, r.readZones},
+		{lines.StageArrows, r.readArrows},
+		{lines.StageTargets, r.readTargets},
+		{lines.StageJoints, r.readJoints},
 	}
+	questionOnly := opts.Through == lines.StageQuestion || opts.Through == lines.StageRoute || opts.Through == lines.StageAnswer
+	if questionOnly {
+		// Restore only descriptions whose exact current basis is remembered.
+		// Reuse the ordinary row builders; this prelude never calls a model.
+		if opts.Executor.Enabled && !r.dry {
+			r.recallOnly = true
+			stage, state := r.opts.Stage, r.opts.State
+			r.opts.Stage = func(string, ...string) {}
+			r.opts.State = func(string, string, ...string) {}
+			for _, step := range steps[:5] {
+				if err := step.run(ctx); err != nil {
+					return Result{}, err
+				}
+				if r.use(step.name).Reused == 0 {
+					delete(r.uses, step.name)
+				}
+			}
+			r.opts.Stage, r.opts.State = stage, state
+			r.recallOnly = false
+			if len(r.knowledge) > 0 {
+				r.opts.State("Knowledge", "ready", fmt.Sprintf("reused %d entity descriptions; no description requests made", len(r.knowledge)))
+			}
+		}
+		steps = nil
+	}
+	through := ""
 	for _, step := range steps {
-		if err := step(ctx); err != nil {
+		if err := step.run(ctx); err != nil {
+			return Result{}, err
+		}
+		through = step.name
+		if through == lines.StageSymbols {
+			r.assignBoxes()
+		}
+		if err := os.WriteFile(filepath.Join(opts.OwnerRunDir, atlas.TablesFilename), []byte(r.tables.String()), 0o600); err != nil {
+			return Result{}, err
+		}
+		if err := r.persistKnowledge(); err != nil {
+			return Result{}, err
+		}
+		if through == opts.Through {
+			break
+		}
+	}
+	if through == lines.StageJoints && (opts.Learn || opts.Through == stageLearn) {
+		if err := r.readLearning(ctx); err != nil {
+			return Result{}, err
+		}
+		if opts.Through == stageLearn {
+			through = stageLearn
+		}
+		if err := os.WriteFile(filepath.Join(opts.OwnerRunDir, atlas.TablesFilename), []byte(r.tables.String()), 0o600); err != nil {
+			return Result{}, err
+		}
+	}
+	if (through == lines.StageJoints || questionOnly) && (len(opts.Questions) > 0 || r.learning != nil && len(r.learning.Questions) > 0) {
+		if err := r.readQuestions(ctx); err != nil {
+			return Result{}, err
+		}
+		through = lines.StageAnswer
+		if opts.Through == lines.StageQuestion {
+			through = lines.StageQuestion
+		} else if opts.Through == lines.StageRoute {
+			through = lines.StageRoute
+		}
+		if err := os.WriteFile(filepath.Join(opts.OwnerRunDir, atlas.TablesFilename), []byte(r.tables.String()), 0o600); err != nil {
+			return Result{}, err
+		}
+		if err := r.persistKnowledge(); err != nil {
 			return Result{}, err
 		}
 	}
 	tablesPath := filepath.Join(opts.OwnerRunDir, atlas.TablesFilename)
-	if err := os.WriteFile(tablesPath, []byte(r.tables.String()), 0o600); err != nil {
-		return Result{}, fmt.Errorf("atlas reading: write %s: %w", atlas.TablesFilename, err)
+	result := Result{Complete: !questionOnly && (through == lines.StageJoints || through == lines.StageAnswer), Through: through, Rejected: r.rejected, TablesPath: tablesPath, Questions: r.questions, Learning: r.learning}
+	if result.Complete {
+		result.Atlas = r.atlas(files)
 	}
-	result := Result{Atlas: r.atlas(files), Rejected: r.rejected, TablesPath: tablesPath}
 	for _, use := range r.uses {
 		result.Uses = append(result.Uses, *use)
 	}
@@ -259,7 +378,7 @@ func (r *reader) readFiles(ctx context.Context) error {
 	if r.budget {
 		def = lines.WithOpen(def)
 	}
-	byDepth := make(map[int][]atlas.Place)
+	var files []atlas.Place
 	generated, closed := 0, 0
 	for _, place := range r.opts.Graph.Places {
 		if place.Kind != atlas.PlaceFile {
@@ -274,11 +393,10 @@ func (r *reader) readFiles(ctx context.Context) error {
 			r.lines[place.ID] = cell{value: place.Given, source: atlas.SourceUnused}
 			r.openFiles[place.ID] = false
 		default:
-			byDepth[place.Depth] = append(byDepth[place.Depth], place)
+			files = append(files, place)
 		}
 	}
-	depths := sortedInts(byDepth)
-	details := []string{fmt.Sprintf("%d files in %d rounds by distance from the entry points", countPlaces(byDepth), len(depths))}
+	details := []string{fmt.Sprintf("%d files in independent windows with direct caller facts", len(files))}
 	if generated > 0 {
 		details = append(details, fmt.Sprintf("generated files left unasked: %d", generated))
 	}
@@ -287,31 +405,28 @@ func (r *reader) readFiles(ctx context.Context) error {
 	}
 	r.opts.Stage(def.Stage, details...)
 	siblings := r.siblingBoxes()
-	for round, depth := range depths {
-		files := byDepth[depth]
-		sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-		rows := make([]table.Row, 0, len(files))
-		for _, place := range files {
-			directory := r.places[place.Parent]
-			rows = append(rows, lines.FileRow(place, directory, r.rankedSiblings(place, siblings[directory.Path]), r, r.places))
-		}
-		answers, err := r.runTable(ctx, def, round+1, rows)
-		if err != nil {
-			return err
-		}
-		for i, row := range rows {
-			place := r.places[row.ID]
-			r.openFiles[row.ID] = true
-			if answer := answers[i]; answer.answer != nil {
-				r.lines[row.ID] = cell{value: answer.answer["line"], source: answer.source}
-				r.boxChoice[row.ID] = answer.answer["box"]
-				if r.budget {
-					r.openFiles[row.ID] = answer.answer["open"] == "yes"
-				}
-			} else {
-				r.lines[row.ID] = cell{value: place.Given, source: answer.source}
-				r.boxChoice[row.ID] = lines.BoxHere
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	rows := make([]table.Row, 0, len(files))
+	for _, place := range files {
+		directory := r.places[place.Parent]
+		rows = append(rows, lines.FileRow(place, directory, r.rankedSiblings(place, siblings[directory.Path]), r, r.places))
+	}
+	answers, err := r.runTable(ctx, def, 1, rows)
+	if err != nil {
+		return err
+	}
+	for i, row := range rows {
+		place := r.places[row.ID]
+		r.openFiles[row.ID] = true
+		if answer := answers[i]; answer.answer != nil {
+			r.lines[row.ID] = cell{value: answer.answer["line"], source: answer.source}
+			r.boxChoice[row.ID] = answer.answer["box"]
+			if r.budget {
+				r.openFiles[row.ID] = answer.answer["open"] == "yes"
 			}
+		} else {
+			r.lines[row.ID] = cell{value: place.Given, source: answer.source}
+			r.boxChoice[row.ID] = lines.BoxHere
 		}
 	}
 	r.cancelLonelyBoxes()
@@ -397,8 +512,12 @@ func (r *reader) cancelLonelyBoxes() {
 // rowAnswer is what one row ends with: the model's cells, or none with the
 // source saying why.
 type rowAnswer struct {
-	answer table.Answer
-	source string
+	answer      table.Answer
+	source      string
+	requestSHA  string
+	responseSHA string
+	requestKey  string
+	rowKey      string
 }
 
 func (r *reader) runTable(ctx context.Context, def table.Definition, round int, rows []table.Row) ([]rowAnswer, error) {
@@ -419,6 +538,28 @@ func (r *reader) runTableWith(
 	if _, started := r.started[def.Stage]; !started {
 		r.started[def.Stage] = time.Now()
 	}
+	if r.opts.Through == "" || r.opts.Through == def.Stage {
+		if r.opts.Prompt != "" {
+			def.System = r.opts.Prompt
+		}
+		if r.opts.WindowRows > 0 {
+			def.Window = r.opts.WindowRows
+		}
+		if r.opts.InputBytes > 0 {
+			def.MaxInputBytes = r.opts.InputBytes
+		}
+	}
+	if def.Independent && !r.dry {
+		if check != nil {
+			return nil, fmt.Errorf("table %s: a whole-window check cannot validate independent knowledge", def.Stage)
+		}
+		return r.runIndependent(ctx, def, round, shared, rows)
+	}
+	return r.runPreparedTable(ctx, def, round, shared, rows, check)
+}
+
+func (r *reader) runPreparedTable(ctx context.Context, def table.Definition, round int, shared []table.Field, rows []table.Row, check func(table.Answers) error) ([]rowAnswer, error) {
+	answers := make([]rowAnswer, len(rows))
 	windows, err := table.WindowsWithContext(def, round, shared, rows)
 	if err != nil {
 		return nil, err
@@ -427,7 +568,10 @@ func (r *reader) runTableWith(
 	use.Rows += len(rows)
 	use.Windows += len(windows)
 	for _, window := range windows {
-		if err := r.writeWindowFile(window, "request.json", window.Request); err != nil {
+		if err := r.writeWindowFile(window, "prompt.md", []byte(def.System)); err != nil {
+			return nil, err
+		}
+		if err := r.writeWindowFile(window, "input.json", window.Request); err != nil {
 			return nil, err
 		}
 	}
@@ -443,6 +587,9 @@ func (r *reader) runTableWith(
 				answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven}
 			}
 			use.Given += len(window.Rows)
+			if err := r.writeWindowResult(window, nil, atlas.SourceGiven, "no provider"); err != nil {
+				return nil, err
+			}
 			r.printWindow(def, window, nil, "dry: fallback lines", 0)
 		}
 		return answers, nil
@@ -472,6 +619,11 @@ func (r *reader) runTableWith(
 	results := llm.ExecuteJSONEach(ctx, executor, r.opts.Provider, calls)
 	for i, window := range windows {
 		result := results[i]
+		if len(result.Outcome.Request) > 0 {
+			if err := r.writeWindowFile(window, "request.json", result.Outcome.Request); err != nil {
+				return nil, err
+			}
+		}
 		if len(result.Outcome.Response) > 0 {
 			if err := r.writeWindowFile(window, "response.json", result.Outcome.Response); err != nil {
 				return nil, err
@@ -486,7 +638,10 @@ func (r *reader) runTableWith(
 				use.Live++
 			}
 			for j := range window.Rows {
-				answers[offsets[i]+j] = rowAnswer{answer: result.Outcome.Value[j], source: source}
+				answers[offsets[i]+j] = rowAnswer{answer: result.Outcome.Value[j], source: source, requestSHA: result.Outcome.RequestSHA256, responseSHA: result.Outcome.ResponseSHA256, requestKey: result.Outcome.CacheKey, rowKey: table.Key(j)}
+			}
+			if err := r.writeWindowResult(window, result.Outcome.Value, source, ""); err != nil {
+				return nil, err
 			}
 			r.printWindow(def, window, result.Outcome.Value, source, result.Outcome.Metrics.Latency)
 			continue
@@ -503,11 +658,19 @@ func (r *reader) runTableWith(
 			answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven}
 		}
 		reason := result.Err.Error()
+		responseRef := ""
+		if len(result.Outcome.Response) > 0 {
+			responseRef = filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))
+		}
 		r.rejected = append(r.rejected, modeldiag.Row{
 			Stage: def.Stage, Kind: "window_rejected", Count: len(window.Rows),
-			Reason: reason, Raw: rawJSON(result.Outcome.Response),
-			Samples: []string{fmt.Sprintf("round %d window %d", window.Round, window.Index)},
+			Reason:      reason,
+			ResponseRef: responseRef,
+			Samples:     []string{fmt.Sprintf("round %d window %d", window.Round, window.Index)},
 		})
+		if err := r.writeWindowResult(window, nil, atlas.SourceGiven, reason); err != nil {
+			return nil, err
+		}
 		r.printWindow(def, window, nil, "rejected: "+reason, result.Outcome.Metrics.Latency)
 	}
 	return answers, nil
@@ -527,7 +690,8 @@ func (r *reader) reportStage(stage string) {
 	details := []string{
 		fmt.Sprintf("rows: %d", use.Rows),
 		fmt.Sprintf("windows: %d (live %d, cached %d, rejected %d)", use.Windows, use.Live, use.Cached, use.Rejected),
-		fmt.Sprintf("rows on their fallback line: %d", use.Given),
+		fmt.Sprintf("reused entity descriptions: %d", use.Reused),
+		fmt.Sprintf("rows without a model answer: %d", use.Given),
 	}
 	if started, ok := r.started[stage]; ok {
 		details = append(details, fmt.Sprintf("duration: %s", time.Since(started).Round(time.Millisecond)))
@@ -535,12 +699,41 @@ func (r *reader) reportStage(stage string) {
 	r.opts.State(stage, "ready", details...)
 }
 
-func windowFileName(window table.Window, suffix string) string {
-	return fmt.Sprintf("%s-r%d-w%d.%s", window.Stage, window.Round, window.Index, suffix)
+func (r *reader) windowFileName(window table.Window, suffix string) string {
+	prefix := window.Stage
+	if r.questionKey != "" {
+		prefix += "-" + r.questionKey
+	}
+	return fmt.Sprintf("%s-r%d-w%d.%s", prefix, window.Round, window.Index, suffix)
 }
 
 func (r *reader) writeWindowFile(window table.Window, suffix string, data []byte) error {
-	name := filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir, windowFileName(window, suffix))
+	if suffix != "result.json" {
+		cacheRoot := r.opts.Executor.RootDir
+		if cacheRoot == "" {
+			cacheRoot = filepath.Dir(r.opts.OwnerRunDir)
+		}
+		filename, err := llm.SavePayload(cacheRoot, data)
+		if err != nil {
+			return err
+		}
+		tablesDir, err := filepath.Abs(filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir))
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(tablesDir, filename)
+		if err != nil {
+			return err
+		}
+		data, err = json.Marshal(struct {
+			File string `json:"file"`
+		}{filepath.ToSlash(relative)})
+		if err != nil {
+			return err
+		}
+		suffix = strings.TrimSuffix(suffix, filepath.Ext(suffix)) + ".ref.json"
+	}
+	name := filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir, r.windowFileName(window, suffix))
 	if err := os.WriteFile(name, data, 0o600); err != nil {
 		return fmt.Errorf("atlas reading: write %s: %w", filepath.Base(name), err)
 	}
@@ -551,7 +744,7 @@ func (r *reader) writeWindowFile(window table.Window, suffix string, data []byte
 // inputs, its fallback and, after a live run, the model's cells beside it.
 func (r *reader) printWindow(def table.Definition, window table.Window, answers table.Answers, source string, latency time.Duration) {
 	fmt.Fprintf(&r.tables, "## %s · round %d · window %d · %s\n\n",
-		def.Stage, window.Round, window.Index, path.Join(atlas.TablesDir, windowFileName(window, "request.json")))
+		def.Stage, window.Round, window.Index, path.Join(atlas.TablesDir, r.windowFileName(window, "request.ref.json")))
 	fmt.Fprintf(&r.tables, "source: %s", source)
 	if latency > 0 {
 		fmt.Fprintf(&r.tables, " · %s", latency.Round(time.Millisecond))
@@ -578,20 +771,6 @@ func (r *reader) printWindow(def table.Definition, window table.Window, answers 
 		}
 	}
 	r.tables.WriteString("\n")
-}
-
-func rawJSON(response []byte) json.RawMessage {
-	if len(response) == 0 {
-		return nil
-	}
-	if json.Valid(response) {
-		return json.RawMessage(response)
-	}
-	encoded, err := json.Marshal(string(response))
-	if err != nil {
-		return nil
-	}
-	return json.RawMessage(encoded)
 }
 
 // atlas folds everything into the artifact the page reads.
@@ -667,13 +846,17 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			}
 			for _, decl := range place.File.Decls {
 				symbol := atlas.Symbol{
-					ID: atlas.SymbolID(place.Path, decl.LineNo, decl.Name), Name: decl.Name, Kind: decl.Kind,
+					ObjectID: decl.ObjectID,
+					ID:       atlas.SymbolID(place.Path, decl.LineNo, decl.Name), Name: decl.Name, Kind: decl.Kind,
 					Signature: decl.Signature, Doc: decl.Doc, LineNo: decl.LineNo, Column: decl.Column,
 				}
 				if line, ok := r.symbolLine[symbol.ID]; ok {
 					symbol.Line = line.value
 				}
 				symbol.Key = contains(r.keys[fileID], symbol.ID)
+				if operation, ok := r.operations[symbol.ID]; ok {
+					symbol.Activation, symbol.Operation, symbol.OperationSummary = operation[0], operation[1], operation[2]
+				}
 				file.Symbols = append(file.Symbols, symbol)
 			}
 			box.Files = append(box.Files, file)
@@ -715,8 +898,9 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		}
 		facts := state.place.Boundary
 		target.Boundaries = append(target.Boundaries, atlas.Boundary{
-			ID: state.place.ID, BoxID: boxID, Path: state.place.Path, LineNo: state.place.LineNo,
-			Caller: facts.Caller, Direction: facts.Direction, Kind: state.kind, External: facts.External,
+			ObjectID: facts.ObjectID,
+			ID:       state.place.ID, BoxID: boxID, Path: state.place.Path, LineNo: state.place.LineNo, Column: state.place.Column,
+			Caller: facts.Caller, Direction: facts.Direction, Kind: state.kind, External: facts.External, Method: facts.Method,
 			Values: append([]string{}, facts.Values...), Line: state.line, FactID: facts.FactID,
 		})
 	}

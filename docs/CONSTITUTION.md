@@ -39,11 +39,11 @@ reach the screen.
 
 * Not a documentation generator. It does not describe everything; it routes
   attention.
-* Not a graph explorer. The graph is a means; the answers are the product. One
-  laid-out picture of a target's groups is not an explorer and is wanted: it
-  routes attention where a column of equally weighted headings cannot. There
-  is no panning, no zooming, no expanding a node in place, and no view whose
-  only content is the graph.
+* The graph is a means; the answers are the product. The owner-approved map
+  supports pan/zoom, short reachable hover cards, operation-path highlighting,
+  and jumps between matched endpoints. It routes attention to commands,
+  requests and background work with source anchors. A raw import graph or a
+  column of equally weighted headings does not satisfy this purpose.
 * Not interactive-first. A static report, ≤ 2 screens per target before
   expanding anything.
 * Not a place for the model to write essays. One line per group purpose, one
@@ -77,9 +77,12 @@ separate stage outputs.
 
 ## Pipeline invariants
 
-* Stages are separate, each reads files and writes files (JSONL/JSON). Any
-  stage can be re-run from its inputs alone. Deterministic stages never depend
-  on LLM stages.
+* Stages are separate functions over typed values. Persisting their inputs and
+  results is separate from computation, so a stage can be re-run from saved
+  inputs without forcing every ordinary handoff through disk. A cached result
+  is keyed by the stage contract, parameters and input content: reuse memory
+  first, restore disk only when absent, compute on a miss. Deterministic stages
+  never depend on LLM stages.
 * Validation is a pure function `(model_output, facts) -> (accepted,
   rejected_with_reason)`. It annotates; it never aborts a run. No thresholds
   like "fail if < 80% valid". Rejected items go to `rejected.jsonl` with the
@@ -96,6 +99,24 @@ separate stage outputs.
 
 ## Report invariants (UI)
 
+* Learn and Work are two entrances to this same report, sharing analysis,
+  maps, sources and navigation. Learn is the default on first open: a short
+  system explanation and a visible, progressively expanded system map, with
+  paths into areas, run instructions and unfamiliar terms. The map is central,
+  not hidden behind a catalogue. Work starts with search and the map for a
+  concrete investigation. Switching modes preserves the component, scope,
+  operation, zoom and inspector. Structure/Operations and contextual/all uses
+  remain controls within the map, not additional report modes. With scripting
+  disabled all sections and source links remain available in the HTML.
+* Learn questions come from a curated, repository-independent set of learning
+  intents. The model uses the existing concepts, core parts, integrations,
+  README and documentation to turn each intent into zero, one or several
+  useful repository-specific questions. There is no question quota. Omit an
+  inapplicable intent; lack of an answer is not evidence of inapplicability.
+  Answers are short, distinguish original evidence from model interpretation,
+  explain the terms needed here, and lead into the same map and exact sources.
+  Unresolved relevant questions remain visible as unresolved. This uses the
+  existing analysis, not a separate glossary or question knowledge graph.
 * Overview page: what the repository is (roles with purpose + anchors), the
   targets as cards, the cross-target portals as a table
   (`GET /api/levels: front/src/service/http.ts:12 → backend/app/app.py:19`),

@@ -54,3 +54,27 @@ export function fetchMethodAuthority(dynamicMethod: string): void {
   fetch("/products/duplicate-method", { method: "POST", method: "PATCH" })
   fetch("/products/dynamic-method", { method: dynamicMethod })
 }
+
+function preserveCallable<T extends (...args: any[]) => any>(value: T): T {
+  return value
+}
+
+declare function ActionPanel(props: {
+  onActivate: (event: unknown) => void
+  renderValue: () => string
+  wrappedValue?: (event: unknown) => void
+  label: string
+}): unknown
+
+export function ActionPage() {
+  const execute = preserveCallable((_event: unknown) => {
+    fetch("/products/run", { method: "POST" })
+  })
+  const renderValue = () => "Ready"
+  return <ActionPanel onActivate={execute} renderValue={renderValue} wrappedValue={preserveCallable(execute)} label="Run" />
+}
+
+export function OtherActionPage() {
+  const execute = () => console.log("different declaration")
+  return <ActionPanel onActivate={execute} renderValue={() => "Other"} label="Other" />
+}

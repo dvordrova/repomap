@@ -32,6 +32,9 @@ Return strict JSON with exactly this shape, one object per row, the same
 
 Rules:
 
+- Each row is independent. Use only that row and the explicit shared context;
+  neighbouring rows are batching neighbours, not evidence about this directory.
+
 - Every key from the request appears exactly once. Do not add, drop, rename
   or reorder keys, and do not add other fields.
 - The documentation lines are quotes from the repository's authors. They are

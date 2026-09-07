@@ -34,7 +34,7 @@ const (
 	// the messages, 128,000 in the completion)" against a 1,048,576 window, over
 	// by 3,394. A truncated answer is not silently accepted either — a completion
 	// that did not stop is rejected and its batch is split.
-	maxOutputTokens = 32_768
+	maxOutputTokens = llm.DefaultMaxOutputTokens
 )
 
 //go:embed prompt.md

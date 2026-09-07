@@ -55,6 +55,10 @@ var bulkFactKinds = map[facts.Kind]struct{}{
 var countOnlyFactKinds = map[facts.Kind]struct{}{
 	facts.KindImport: {},
 	facts.KindTODO:   {},
+	// Extension relationships are kept in their shared artifact until the
+	// reading stage consumes them; do not advertise incomplete scalar rows.
+	facts.KindEntity:   {},
+	facts.KindRelation: {},
 }
 
 func (shape requestShape) advertises(kind facts.Kind) bool {
@@ -70,6 +74,7 @@ func (shape requestShape) advertises(kind facts.Kind) bool {
 type targetWire struct {
 	Ref      string `json:"ref"`
 	Language string `json:"language"`
+	Kind     string `json:"kind"`
 	Name     string `json:"name"`
 	Root     string `json:"root"`
 	Manifest string `json:"manifest,omitempty"`
@@ -228,7 +233,7 @@ func (builder *requestBuilder) targets() []targetWire {
 		builder.targetRefs[target.ID] = ref
 		builder.programRefs[target.ProgramTargetID] = ref
 		rows = append(rows, targetWire{
-			Ref: ref, Language: target.Language, Name: target.Name,
+			Ref: ref, Language: target.Language, Kind: target.Kind, Name: target.Name,
 			Root: target.Root, Manifest: target.Manifest,
 		})
 	}

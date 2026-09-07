@@ -6,7 +6,7 @@
 /* The summary is the first thing anyone reads. It gets the size. */
 .summary{font-size:1.12rem;line-height:1.45;font-style:normal;color:var(--ink);margin:.2rem 0 1rem;max-width:44rem}
 .summary::before{vertical-align:.12em}
-.summary .anchor{font-size:.78em}
+.summary .anchor{font-size:max(var(--text-small),.78em)}
 
 /* Quotes are the least reliable layer, so they are the quietest. A long one
    is clamped to a few lines and opens on click; the anchor is always there. */
@@ -19,7 +19,7 @@
    to be findable when scrolling past a wall of anchors. */
 h3{font-size:1rem;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);margin:1.6rem 0 .4rem}
 h2{font-size:1.45rem}
-h2 .meta{font-size:.82rem;font-weight:400;text-transform:none;letter-spacing:0}
+h2 .meta{font-size:var(--text-small);font-weight:400;text-transform:none;letter-spacing:0}
 .card h3{font-size:1.02rem;text-transform:none;letter-spacing:0;color:var(--ink);margin:0 0 .3rem}
 .group h4{font-size:1rem}
 
@@ -35,12 +35,12 @@ h2 .meta{font-size:.82rem;font-weight:400;text-transform:none;letter-spacing:0}
    explain rather than trailing it on the same line. */
 ol.flow{list-style:none;counter-reset:flow;padding:0;margin:.5rem 0 0}
 .flow-step{counter-increment:flow;position:relative;padding:0 0 .85rem 2.1rem;margin:0}
-.flow-step::before{content:counter(flow);position:absolute;left:0;top:.05rem;width:1.45rem;height:1.45rem;border-radius:50%;background:var(--soft);border:1px solid var(--line);color:var(--muted);font-size:.78rem;line-height:1.45rem;text-align:center;font-weight:600}
+.flow-step::before{content:counter(flow);position:absolute;left:0;top:.05rem;width:1.45rem;height:1.45rem;border-radius:50%;background:var(--soft);border:1px solid var(--line);color:var(--muted);font-size:var(--text-small);line-height:1.45rem;text-align:center;font-weight:600}
 .flow-step::after{content:"";position:absolute;left:.72rem;top:1.6rem;bottom:.05rem;width:1px;background:var(--line)}
 .flow-step:last-child{padding-bottom:0}
 .flow-step:last-child::after{display:none}
 .flow-what{font-weight:600}
-.flow-where{font-weight:400;color:var(--muted);font-size:.85em}
+.flow-where{font-weight:400;color:var(--muted);font-size:max(var(--text-small),.85em)}
 .flow-why{display:block;margin-top:.1rem}
 .flow-title{margin-bottom:.2rem}
 
@@ -66,7 +66,7 @@ ul.dynamic li{border-left:3px solid var(--warn);padding:.25rem .7rem;margin:.35r
 .nav{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:.5rem 1.25rem;margin:0 -1.25rem .2rem;font-size:.9rem;white-space:nowrap;overflow-x:auto;overflow-y:hidden}
 .nav a{display:inline-block;margin-right:.9rem;text-decoration:none}
 .jump{position:static;border:0;background:transparent;padding:0;margin:.1rem 0 .2rem;display:flex;flex-wrap:wrap;gap:.3rem}
-.jump a{margin:0;font-size:.82rem;color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:11px;padding:.1rem .5rem;background:var(--bg)}
+.jump a{margin:0;font-size:var(--text-small);color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:11px;padding:.1rem .5rem;background:var(--bg)}
 .jump a:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
 .jump b{font-weight:600;color:var(--ink)}
 h2,h3{scroll-margin-top:3.2rem}
@@ -83,8 +83,8 @@ h2,h3{scroll-margin-top:3.2rem}
 .figures{display:flex;flex-wrap:wrap;gap:.4rem .5rem;list-style:none;margin:.9rem 0 1.1rem;padding:0}
 .figures li{display:flex;flex-direction:column;gap:.05rem;min-width:6.5rem;padding:.45rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--soft)}
 .figures strong{font-size:1.25rem;font-weight:700;line-height:1.15;letter-spacing:-.01em}
-.figures span{font-size:.74rem;color:var(--muted);letter-spacing:.02em}
-.figures em{font-size:.72rem;font-style:normal;color:var(--warn)}
+.figures span{font-size:var(--text-small);color:var(--muted);letter-spacing:.02em}
+.figures em{font-size:var(--text-small);font-style:normal;color:var(--warn)}
 .figures .figure-warn strong{color:var(--warn)}
 .repo-node-unread .map-node-body{fill:var(--soft);stroke:var(--line);stroke-dasharray:4 3}
 .repo-node-unread .repo-node-name,.repo-node-unread .map-node-count{fill:var(--muted)}
@@ -94,11 +94,11 @@ h2,h3{scroll-margin-top:3.2rem}
 .brand{display:flex;align-items:baseline;flex-wrap:wrap;gap:.5rem}
 .brand .mark{font-weight:700;letter-spacing:-.02em;background:var(--ink);color:var(--canvas);padding:.1rem .45rem;border-radius:var(--radius)}
 .brand .repo{font-size:1.15rem;font-weight:700}
-.brand .meta{font-size:.8rem;color:var(--muted)}
+.brand .meta{font-size:var(--text-small);color:var(--muted)}
 .top .figures{margin:0}
 .top .figures li{padding:.3rem .55rem;min-width:0;border:var(--edge) solid var(--ink);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm)}
 .top .figures strong{font-size:1rem}
-.top .figures span{font-size:.7rem}
+.top .figures span{font-size:var(--text-small)}
 .nav{display:flex;flex-wrap:wrap;gap:.4rem;padding:0;border:0}
 .nav a{border:var(--edge) solid var(--ink);border-radius:var(--radius);background:var(--paper);
   box-shadow:var(--shadow-sm);padding:.3rem .6rem;font-weight:600;text-decoration:none;color:var(--ink)}
@@ -107,6 +107,34 @@ h2,h3{scroll-margin-top:3.2rem}
 .nav .find{margin-left:auto;min-width:16rem;padding:.3rem .55rem;border:var(--edge) solid var(--ink);border-radius:var(--radius);background:var(--paper);font:inherit;font-size:.9rem;box-shadow:var(--shadow-sm)}
 .nav .find:focus{outline:none;box-shadow:var(--shadow)}
 .nav{display:flex;flex-wrap:wrap;align-items:center;gap:.2rem .5rem}
-.nav .find-count{font-size:.8rem;color:var(--muted);min-width:5rem}
+.nav .find-count{font-size:var(--text-small);color:var(--muted);min-width:5rem}
 /* While finding, an empty section header is noise; the count says what was found. */
 html.finding .empty{display:none}
+.group h5{margin:1rem 0 .45rem;font-size:var(--text-small);color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.group-connections{padding-bottom:.5rem;border-bottom:1px solid var(--line)}
+.group-connections .conn{margin:.6rem 0}
+.group-connections .conn p{margin:.15rem 0 .15rem 1.1rem}
+.connection-sources,.connection-next{font-size:var(--text-small);color:var(--muted)}
+.connection-sources{margin-left:1.1rem}
+.group-highlights{display:grid;grid-template-columns:minmax(0,1fr);gap:.8rem;container-type:inline-size}
+.group-highlights h5{margin-bottom:0}
+.key-file{border:1px solid var(--line);border-radius:7px;min-width:0;overflow:hidden;background:var(--paper)}
+.key-file .path{display:block;padding:.55rem .85rem;border-bottom:1px solid var(--line);background:var(--soft);font-size:var(--text-small);overflow-wrap:anywhere;color:var(--muted)}
+.key-symbol{display:grid;grid-template-columns:minmax(10rem,1fr) minmax(0,3fr);gap:.35rem 1rem;margin:0;padding:.75rem .85rem;align-items:baseline}
+.key-symbol+.key-symbol{border-top:1px solid var(--line)}
+.key-symbol>strong,.key-symbol .operation-name{min-width:0;overflow-wrap:anywhere}
+.key-symbol p{margin:0;position:relative;padding-right:1.6rem;font-size:var(--text-body);line-height:1.5}
+.key-symbol p .source-hint{position:absolute;top:0;right:0}
+.key-symbol .anchor{font-size:var(--text-small)}
+.group-operations{container-type:inline-size}
+.group-operations .key-symbol{border:1px solid var(--line);border-radius:7px;margin:.5rem 0;background:var(--paper)}
+.operation-name>a{font-weight:600;overflow-wrap:anywhere}
+.operation-name .group-size{display:block;margin-top:.2rem;font-size:var(--text-small);color:var(--muted)}
+@container(max-width:600px){.key-symbol{grid-template-columns:minmax(0,1fr);gap:.35rem}}
+.group-inventory{margin-top:1rem;font-size:var(--text-small)}
+.group-inventory>summary,.inventory-file>summary{position:sticky;top:0;background:var(--soft);padding:.35rem .5rem;z-index:1}
+.inventory-file{margin:.4rem 0 .4rem .5rem}.symbol-index{list-style:none;padding-left:.5rem}
+.symbol-index li{display:flex;flex-wrap:wrap;gap:.4rem .8rem;align-items:baseline;margin:.25rem 0}
+.symbol-index .chip{border:0;box-shadow:none;background:transparent;padding:0;font-size:var(--text-small)}
+.key-symbol .chip{border:0;box-shadow:none;background:transparent;padding:0;color:var(--accent);text-decoration:underline}
+.key-symbol .chip .ln{display:none}

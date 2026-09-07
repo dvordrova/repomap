@@ -1,10 +1,12 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -25,7 +27,7 @@ const (
 	// A box holds its name and nothing else: the count and the size bar
 	// under the name were pretty, and the owner found them a distraction that
 	// told him nothing the hover card does not.
-	mapNodeHeight = 44.0
+	mapNodeHeight = 50.0
 	// mapLaneGap is wide enough to write on. An arrow with no words on it is
 	// a line between two boxes and a reader has to guess what it means, so
 	// the gutter between lanes carries the connection's own words.
@@ -48,7 +50,7 @@ const (
 	// the map is for, so it wraps rather than being cut; only a name too long
 	// for both lines is cut, and the whole of it stays in the node's tooltip
 	// and on the group card the node links to.
-	mapTitleBudget = 26
+	mapTitleBudget = 23
 	mapTitleLines  = 2
 	// mapBarWidth is how wide a full-width membership bar is drawn.
 	mapBarWidth = 174.0
@@ -116,8 +118,11 @@ var mapLabelSteps = []float64{0, -1, 1, -2, 2, -3, 3}
 const mapLabelClearance = 3.0
 
 type pageMap struct {
-	Width  float64
-	Height float64
+	MarkerID   string
+	Explorer   bool
+	Operations bool
+	Width      float64
+	Height     float64
 	// MinWidth is how far the picture may be shrunk to fit the column before
 	// it starts to scroll instead. A wide map squeezed into a phone is a
 	// pattern of grey boxes with unreadable words on it.
@@ -171,18 +176,24 @@ type pageMapLane struct {
 }
 
 type pageMapNode struct {
+	InitiallyHidden bool
 	// Frame is true of an endpoint that is a zone rather than a box: an
 	// arrow to it stops short of its outline instead of landing on it.
 	Frame bool
 	// Keys names the group's key symbols with what their authors wrote,
 	// for the card beside a pointed-at node: enough to decide whether to
 	// go down to the code.
-	Keys    string
-	ID      string
-	Href    string
-	Title   []string
-	Summary string
-	Lane    string
+	Keys      string
+	Concepts  string
+	CallPaths string
+	Children  string
+	Branch    string
+	Component string
+	ID        string
+	Href      string
+	Title     []string
+	Summary   string
+	Lane      string
 	// Members is how many subjects this group holds, and Share how much of the
 	// target that is. The node's height carries the same number, so a bucket
 	// looks like a bucket before any of it is read.
@@ -207,15 +218,26 @@ type pageMapNode struct {
 	// Outside counts connections this group has to another target. They are
 	// not drawn: a cross-target arrow on this map would claim a geometry that
 	// belongs to the other target's page.
-	Outside int
+	Outside        int
+	Source         pageAnchor
+	Activation     string
+	OperationGroup string
+	Subtitle       string
+	Remote         bool
+	SourceKind     string
 }
 
 type pageMapEdge struct {
-	Path     string
-	From     string
-	To       string
-	Label    string
-	Possible bool
+	Summary    string
+	FromSource pageAnchor
+	ToSource   pageAnchor
+	Scope      string
+	Operations string
+	Path       string
+	From       string
+	To         string
+	Label      string
+	Possible   bool
 	// Lines is the label written beside the edge. It is empty when there is
 	// no room for it without covering another one; the whole label is on the
 	// edge's tooltip either way.
@@ -231,6 +253,14 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	if index == nil || len(index.Groups) == 0 {
 		return nil
 	}
+	result := builder.buildOperationMap(section, index)
+	builder.addMapStructure(result, section, index)
+	return result
+}
+
+// Kept as the static zone layout; the interactive explorer projects these
+// same containers without throwing their hierarchy away for operation views.
+func (builder *pageBuilder) buildZoneMap(section *pageSection, index *groupindex.Index) *pageMap {
 	subjects := len(index.Subjects)
 	lanes := []struct {
 		lane  groupindex.Lane
@@ -247,7 +277,7 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 			largest = len(group.MemberSubjectIDs)
 		}
 	}
-	result := &pageMap{Subjects: subjects}
+	result := &pageMap{MarkerID: "map-arrow-" + section.ID, Subjects: subjects}
 	if subjects > 0 {
 		result.LargestPct = largest * 100 / subjects
 	}
@@ -269,10 +299,6 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	everything := mapBlocks(*index)
 	blocks, hidden := overviewBlocks(everything)
 	result.Hidden = hidden
-	frameTop := 0.0
-	if len(index.Containers) > 0 {
-		frameTop = mapFrameHeader
-	}
 	// Zones are the composition, not a decoration inside three fixed columns.
 	// A part of a target is an architectural area and it is laid out as one:
 	// the whole target flows left to right along its own arrows, and what
@@ -282,7 +308,7 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	frames := make(map[string]*pageMapFrame, len(blocks))
 	for _, entry := range placed.entries {
 		group := entry.group
-		column, row := entry.column, entry.row
+		column := entry.column
 		node := pageMapNode{
 			ID: mapNodeID(group.ID), Href: "#" + groupAnchorID(section.ID, group.ID),
 			Title: mapTitle(group.Title), FullTitle: group.Title,
@@ -291,9 +317,8 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 			Summary: dropEcho(group.Summary, group.Title), Lane: string(group.Lane),
 			Members: len(group.MemberSubjectIDs),
 			X:       mapPadding + float64(column)*(mapNodeWidth+mapColumnGap),
-			Y: mapPadding + mapLaneLabelSpace + frameTop +
-				float64(row)*(mapNodeHeight+mapNodeGap),
-			Width: mapNodeWidth, Height: mapNodeHeight,
+			Y:       mapPadding + mapLaneLabelSpace + entry.y,
+			Width:   mapNodeWidth, Height: mapNodeHeight,
 		}
 		if entry.container != nil {
 			growFrame(frames, entry.container, node)
@@ -317,6 +342,7 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 		node.Degree = len(local) - outside
 		node.Steps = stepRanges(steps[group.ID])
 		node.Keys = builder.keySymbols(group, maxKeySymbols)
+		node.Concepts = builder.groupConcepts(group)
 		node.StepX = node.X + node.Width - 10
 		node.StepY = node.Y + mapNodeHeight - 9
 		result.Nodes = append(result.Nodes, node)
@@ -325,6 +351,9 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 		}
 	}
 	result.Frames = append(result.Frames, sealFrames(frames)...)
+	for _, frame := range result.Frames {
+		result.Height = max(result.Height, frame.Y+frame.Height)
+	}
 	result.Width = mapPadding*2 + float64(placed.columns)*mapNodeWidth +
 		float64(max(placed.columns-1, 0))*mapColumnGap
 
@@ -350,11 +379,65 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	}
 	result.MinWidth = mapMinWidth(result.Width)
 	result.Trace = builder.mapTrace(section, *index, steps)
+	if len(result.Nodes) == 1 && len(result.Edges) == 0 {
+		node := &result.Nodes[0]
+		node.X, node.Y = mapPadding, mapPadding
+		result.Frames, result.Lanes = nil, nil
+		result.Width, result.Height = node.Width+2*mapPadding, node.Height+2*mapPadding
+		result.MinWidth = result.Width
+	}
 	return result
 }
 
 // maxKeySymbols is how many symbols the card beside a node names.
 const maxKeySymbols = 3
+
+type pageMapConcept struct {
+	Name        string     `json:"name"`
+	Explanation string     `json:"explanation"`
+	Source      pageAnchor `json:"source"`
+}
+
+// Concept explanations belong to existing type subjects, including overlapping
+// memberships. The renderer neither guesses terminology nor writes definitions.
+func (builder *pageBuilder) groupConcepts(group groupindex.Group) string {
+	var concepts []pageMapConcept
+	for _, id := range group.MemberSubjectIDs {
+		ref, ok := builder.subjects[id]
+		if !ok || ref.subject.Object == nil || ref.subject.Object.Kind != programindex.ObjectType {
+			continue
+		}
+		interpretation := ref.subject.Interpretation
+		if interpretation == nil || !interpretation.Key || interpretation.Line == "" {
+			continue
+		}
+		name, anchor := builder.subjectDisplay(ref.subject)
+		if name == "" || anchor == nil {
+			continue
+		}
+		concepts = append(concepts, pageMapConcept{Name: name, Explanation: interpretation.Line, Source: *anchor})
+	}
+	if len(concepts) == 0 {
+		return ""
+	}
+	titleWords := strings.FieldsFunc(group.Title, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	mentioned := func(name string) bool {
+		for _, word := range titleWords {
+			if strings.EqualFold(word, name) {
+				return true
+			}
+		}
+		return false
+	}
+	sort.SliceStable(concepts, func(i, j int) bool {
+		if mentioned(concepts[i].Name) != mentioned(concepts[j].Name) {
+			return mentioned(concepts[i].Name)
+		}
+		return concepts[i].Name < concepts[j].Name
+	})
+	raw, _ := json.Marshal(concepts)
+	return string(raw)
+}
 
 // keySymbols names a group's key symbols, the documented ones first.
 func (builder *pageBuilder) keySymbols(group groupindex.Group, most int) string {
@@ -371,11 +454,11 @@ func (builder *pageBuilder) keySymbols(group groupindex.Group, most int) string 
 		if name == "" || anchor == nil || strings.Contains(name, "$") {
 			continue
 		}
-		if doc := builder.docstringFor(anchor.Path, anchor.Line); doc != "" {
-			documented = append(documented, key{name, doc})
-		} else {
-			plain = append(plain, key{name, ""})
+		if interpretation := ref.subject.Interpretation; interpretation != nil && interpretation.Key {
+			documented = append(documented, key{name, interpretation.Line})
+			continue
 		}
+		plain = append(plain, key{name, ""})
 	}
 	var lines []string
 	for _, k := range append(documented, plain...) {
@@ -820,7 +903,7 @@ type placedEntry struct {
 	group     groupindex.Group
 	container *groupindex.Container
 	column    int
-	row       int
+	y         float64
 }
 
 func placeLaneBlocks(layers [][]mapBlock) placedLane {
@@ -833,6 +916,7 @@ func placeLaneBlocks(layers [][]mapBlock) placedLane {
 	widest := widestColumns(nodes)
 	result := placedLane{}
 	column, row := 0, 0
+	y := 0.0
 	for index, layer := range layers {
 		// A layer starts a column of its own until the map has as many as it
 		// can be read across; past that, layers share a column rather than
@@ -842,6 +926,7 @@ func placeLaneBlocks(layers [][]mapBlock) placedLane {
 		if index > 0 && column+1 < widest {
 			column++
 			row = 0
+			y = 0
 		}
 		for _, block := range layer {
 			// A part is never broken across columns: its frame is drawn round
@@ -849,12 +934,23 @@ func placeLaneBlocks(layers [][]mapBlock) placedLane {
 			if row > 0 && row+len(block.groups) > mapMaxNodesPerColumn {
 				column++
 				row = 0
+				y = 0
+			}
+			// Reserve the whole frame, including its header, before placing
+			// another block. Padding added after layout used to overlap the
+			// preceding zone's last boxes.
+			if block.container != nil {
+				y += mapFramePad + mapFrameHeader
 			}
 			for _, group := range block.groups {
 				result.entries = append(result.entries, placedEntry{
-					group: group, container: block.container, column: column, row: row,
+					group: group, container: block.container, column: column, y: y,
 				})
 				row++
+				y += mapNodeHeight + mapNodeGap
+			}
+			if block.container != nil {
+				y += mapFramePad
 			}
 		}
 	}
@@ -1474,15 +1570,14 @@ const (
 	// A repository whose targets call each other needs room between the boxes
 	// for the arrow and what it carries; one whose targets do not can pack
 	// them closer and fit more on a row.
-	repoCalledGapX = 122.0
+	repoCalledGapX = 50.0
 	repoNodeGapY   = 22.0
 	repoRowGap     = 20.0
 	// repoPerRow wraps the row so twenty targets are a block a screen wide
 	// rather than a strip nobody scrolls to the end of.
-	repoPerRow = 5
-	// With arrows to draw the row is shorter, because each gap is four times
-	// as wide.
-	repoCalledPerRow = 4
+	repoPerRow = 3
+	// Keep the same three readable columns when drawing connections.
+	repoCalledPerRow = 3
 	repoBarWidth     = 158.0
 	// repoNameBudget is in characters of the bold name at the node width
 	// above. Twenty-four let github.com/go-chi/chi/v5 — exactly twenty-four
@@ -1492,14 +1587,6 @@ const (
 	// repoDetailBudget is what fits on the line under the name at the node
 	// width above.
 	repoDetailBudget = 30
-	// An arrow between two targets with a third between them on the row used
-	// to run straight through the third box and out its other side, where it
-	// merged with that box's own arrow: on chi's map rest-example reaching
-	// chi/v5 read as versions reaching it twice. Such an arrow swings under
-	// the row instead. repoDetourPull is the control-point offset; a cubic
-	// with both controls pulled by it reaches three quarters of the way down.
-	repoDetourPull      = 88.0
-	repoDetourLabelDrop = 14.0
 )
 
 type pageRepoMap struct {
@@ -1508,16 +1595,28 @@ type pageRepoMap struct {
 	MinWidth float64
 	Nodes    []pageRepoNode
 	Edges    []pageRepoEdge
+	Lanes    []pageRepoLane
 	// Caption says what the picture is and, when nothing calls anything, why
 	// there are no arrows in it.
 	Caption string
 }
 
+type pageRepoLane struct {
+	Title string
+	Y     float64
+}
+
 type pageRepoNode struct {
-	Href     string
-	Name     []string
-	FullName string
-	Detail   string
+	ID         string
+	Summary    string
+	Kind       string
+	Language   string
+	Neighbours string
+	Href       string
+	Name       []string
+	FullName   string
+	ShortName  string
+	Detail     string
 	// Note carries why a target has no page of its own. A target the run
 	// could not read is still one of the repository's parts.
 	Note     string
@@ -1531,6 +1630,8 @@ type pageRepoNode struct {
 }
 
 type pageRepoEdge struct {
+	From  string
+	To    string
 	Path  string
 	Label string
 	LabelX,
@@ -1638,6 +1739,10 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 	}
 	sort.SliceStable(ordered, func(left, right int) bool {
 		leftSection, rightSection := ordered[left], ordered[right]
+		leftRole, rightRole := builder.repoRole(leftSection), builder.repoRole(rightSection)
+		if leftRole != rightRole {
+			return leftRole < rightRole
+		}
 		leftCalls, rightCalls := calls[leftSection.factsTargetID], calls[rightSection.factsTargetID]
 		if leftCalls != rightCalls {
 			return leftCalls > rightCalls
@@ -1659,6 +1764,7 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 		gapX, perRow = repoCalledGapX, repoCalledPerRow
 	}
 	position := 0
+	band := ""
 	appendNode := func(node pageRepoNode) {
 		node.X = mapPadding + float64(position%perRow)*(repoNodeWidth+gapX)
 		node.Y = repoRowGap + float64(position/perRow)*(repoNodeHeight+repoNodeGapY)
@@ -1667,10 +1773,23 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 		position++
 	}
 	for _, section := range ordered {
+		role := builder.repoRole(section)
+		if role != band {
+			if position > 0 {
+				position = ((position + perRow - 1) / perRow) * perRow
+			}
+			result.Lanes = append(result.Lanes, pageRepoLane{Title: role[2:], Y: repoRowGap + float64(position/perRow)*(repoNodeHeight+repoNodeGapY) - 8})
+			band = role
+		}
 		members := symbols[section.factsTargetID]
+		summary := ""
+		if index := builder.graphIndex(section.programTargetID); index != nil {
+			summary = index.Summary
+		}
 		appendNode(pageRepoNode{
-			Href: "#" + section.ID, Name: wrapToLines(section.Label, repoNameBudget, repoNameLines),
-			FullName: section.Label, Detail: repoNodeDetail(section, members), Analyzed: true,
+			ID: "repo-" + section.ID, Summary: summary, Kind: section.Kind, Language: section.Language,
+			Href: "#" + section.ID, Name: wrapToLines(strings.TrimSuffix(section.ShortLabel, " ("+section.Kind+")"), repoNameBudget, repoNameLines),
+			FullName: section.Label, ShortName: section.ShortLabel, Detail: repoNodeDetail(section, members), Analyzed: true,
 			Members: members, BarWidth: repoBarWidth * float64(members) / float64(largest),
 		})
 	}
@@ -1692,13 +1811,41 @@ func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
 	result.Height = repoRowGap*2 + float64(rows)*repoNodeHeight + float64(rows-1)*repoNodeGapY
 	edges, reach := builder.repoEdges(centres)
 	result.Edges = edges
+	near := make(map[string][]string)
+	for _, edge := range edges {
+		near[edge.From] = append(near[edge.From], edge.To)
+		near[edge.To] = append(near[edge.To], edge.From)
+	}
+	for i := range result.Nodes {
+		sort.Strings(near[result.Nodes[i].ID])
+		result.Nodes[i].Neighbours = strings.Join(near[result.Nodes[i].ID], " ")
+	}
 	// An arrow that swings under its row needs the map to reach that far.
 	if reach+repoRowGap > result.Height {
 		result.Height = reach + repoRowGap
 	}
+	for _, node := range result.Nodes {
+		result.Width = max(result.Width, node.X+node.Width+mapLoopMaxDepth+mapPadding)
+	}
 	result.MinWidth = mapMinWidth(result.Width)
 	result.Caption = repoMapCaption(len(builder.sections), len(unread), len(result.Edges))
 	return result
+}
+
+func (builder *pageBuilder) repoRole(section *pageSection) string {
+	if index := builder.graphIndex(section.programTargetID); index != nil {
+		switch index.Role {
+		case "product":
+			return "1 Applications"
+		case "tool":
+			return "3 Tools"
+		case "example":
+			return "4 Examples"
+		case "fixture":
+			return "5 Tests and fixtures"
+		}
+	}
+	return "2 Libraries"
 }
 
 func mapMinWidth(width float64) float64 {
@@ -1713,12 +1860,12 @@ func mapMinWidth(width float64) float64 {
 }
 
 func repoMapCaption(analyzed, unread, edges int) string {
-	caption := "Every part of this repository, sized by how many symbols it holds."
+	caption := "Choose a component. Hover to read its description and connections; click to explore its structure and operations."
 	switch {
 	case edges > 0:
-		caption += " An arrow is one target reaching another, over HTTP or by importing it."
+		caption += " Hover highlights the component's connections."
 	default:
-		caption += " No target reaches another, over HTTP or by import, so there are no arrows."
+		caption += " No connections between components were identified in this analysis."
 	}
 	if unread > 0 {
 		caption += fmt.Sprintf(
@@ -1799,6 +1946,37 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) ([]pageRep
 	counts := make(map[pair]int)
 	exact := make(map[pair]int)
 	symbols := make(map[pair]int)
+	kinds := make(map[pair]map[string]int)
+	native := make(map[pair]bool)
+	for _, index := range builder.indexes {
+		for _, connection := range index.Connections {
+			from, to := builder.byProgram[connection.From.TargetID], builder.byProgram[connection.To.TargetID]
+			if from == nil || to == nil || from == to {
+				continue
+			}
+			key := pair{from.factsTargetID, to.factsTargetID}
+			if kinds[key] == nil {
+				kinds[key] = make(map[string]int)
+			}
+			kind := connection.SourceKind
+			switch kind {
+			case "imports":
+				kind = "imports"
+			case "calls":
+				kind = "calls"
+			case "passes_callback":
+				kind = "callback bindings"
+			case "integration":
+				kind = "inferred integrations"
+			default:
+				kind = "links"
+			}
+			kinds[key][kind]++
+			if connection.SourceKind != "integration" && connection.SupportResolution != programindex.PatternValuePossible {
+				native[key] = true
+			}
+		}
+	}
 	var order []pair
 	// A target that imports another's package depends on it as surely as one
 	// that calls it over HTTP, and that arrow was missing entirely: chi's
@@ -1831,6 +2009,12 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) ([]pageRep
 	}
 	var result []pageRepoEdge
 	bottom := 0.0
+	sort.Slice(order, func(i, j int) bool {
+		if order[i].from != order[j].from {
+			return order[i].from < order[j].from
+		}
+		return order[i].to < order[j].to
+	})
 	for _, key := range order {
 		from, fromKnown := nodes[key.from]
 		to, toKnown := nodes[key.to]
@@ -1838,59 +2022,86 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) ([]pageRep
 			continue
 		}
 		edge, reach := repoEdgeGeometry(from, to, nodes)
+		edge.From, edge.To = from.ID, to.ID
 		edge.Label = repoEdgeLabel(counts[key], symbols[key])
+		if len(kinds[key]) > 0 {
+			var labels []string
+			for kind, count := range kinds[key] {
+				labels = append(labels, fmt.Sprintf("%d %s", count, kind))
+			}
+			sort.Strings(labels)
+			edge.Label = strings.Join(labels, " · ")
+		}
 		// Dashed only when nothing about this pair is exact; one uncertain
 		// crossing among several must not make the whole link look uncertain.
 		// An import is always exact.
-		edge.Possible = symbols[key] == 0 && exact[key] == 0
+		edge.Possible = !native[key] && exact[key] == 0
 		result = append(result, edge)
 		bottom = max(bottom, reach)
 	}
 	return result, bottom
 }
 
-// repoEdgeGeometry draws one arrow between two targets and says how far down
-// the map it reaches. Side to side when nothing is in the way; under the row
-// when a third box sits between the two, because drawn straight it ran through
-// that box and came out looking like the box's own arrow.
+// repoEdgeGeometry routes through the grid's empty gutters. Adjacent columns
+// can share a curve; skipping a column requires a horizontal row gap even when
+// the endpoints are on different rows. Testing only their own row let long
+// diagonals disappear behind unrelated components.
 func repoEdgeGeometry(from, to *pageRepoNode, nodes map[string]*pageRepoNode) (pageRepoEdge, float64) {
 	startX, startY := from.X+from.Width, from.Y+from.Height/2
 	endX, endY := to.X, to.Y+to.Height/2
+	if from.X == to.X {
+		// Both ends belong on the outer side. Crossing from right to left
+		// would thread the curve through every intervening node in this column.
+		endX = to.X + to.Width
+		depth := min(mapLoopMaxDepth, mapLoopMinDepth+abs(int(endY-startY))*mapLoopPerRow)
+		for _, node := range nodes {
+			if node.X > startX {
+				depth = min(depth, node.X-startX-mapPadding)
+			}
+		}
+		return pageRepoEdge{
+			Path: fmt.Sprintf("M%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f",
+				startX, startY, startX+depth, startY, endX+depth, endY, endX, endY),
+			LabelX: startX + depth, LabelY: (startY + endY) / 2,
+		}, max(startY, endY) + from.Height/2
+	}
 	if to.X < from.X {
 		startX, endX = from.X, to.X+to.Width
 	}
+	left, right := from, to
+	if left.X > right.X {
+		left, right = right, left
+	}
+	nextColumn, previousColumnEnd := right.X, left.X+left.Width
+	for _, node := range nodes {
+		if node.X > left.X && node.X < right.X {
+			nextColumn = min(nextColumn, node.X)
+			previousColumnEnd = max(previousColumnEnd, node.X+node.Width)
+		}
+	}
 	bend := (endX - startX) / 2
-	if !repoRowHasBoxBetween(from, to, nodes) {
+	if nextColumn == right.X {
 		return pageRepoEdge{
 			Path: fmt.Sprintf("M%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f",
 				startX, startY, startX+bend, startY, endX-bend, endY, endX, endY),
 			LabelX: (startX + endX) / 2, LabelY: (startY+endY)/2 - 7,
-		}, endY + from.Height/2
+		}, max(from.Y+from.Height, to.Y+to.Height)
 	}
-	lowest := startY + repoDetourPull*0.75
+	first := (left.X + left.Width + nextColumn) / 2
+	last := (previousColumnEnd + right.X) / 2
+	turn := min(mapBandTurn, repoNodeGapY/2)
+	if to.X < from.X {
+		first, last, turn = last, first, -turn
+	}
+	// Every row uses the same height and spacing. This corridor is immediately
+	// below the source row, not below the whole repository or through a node.
+	bandY := from.Y + from.Height + repoNodeGapY/2
 	return pageRepoEdge{
-		Path: fmt.Sprintf("M%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f",
-			startX, startY, startX+bend, startY+repoDetourPull, endX-bend, endY+repoDetourPull, endX, endY),
-		LabelX: (startX + endX) / 2, LabelY: lowest + repoDetourLabelDrop,
-	}, lowest + repoDetourLabelDrop + 6
-}
-
-// repoRowHasBoxBetween is whether a third target sits on the same row between
-// these two, in the stretch a straight arrow would cross.
-func repoRowHasBoxBetween(from, to *pageRepoNode, nodes map[string]*pageRepoNode) bool {
-	if from.Y != to.Y {
-		return false
-	}
-	left, right := min(from.X, to.X), max(from.X, to.X)
-	for _, node := range nodes {
-		if node == from || node == to || node.Y != from.Y {
-			continue
-		}
-		if node.X > left && node.X < right {
-			return true
-		}
-	}
-	return false
+		Path: fmt.Sprintf("M%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f L%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f",
+			startX, startY, first, startY, first, bandY, first+turn, bandY,
+			last-turn, bandY, last, bandY, last, endY, endX, endY),
+		LabelX: (first + last) / 2, LabelY: bandY - 6,
+	}, max(bandY, to.Y+to.Height)
 }
 
 // flowStepsByGroup labels each group with the main-flow step numbers that pass

@@ -16,6 +16,27 @@ import (
 	"github.com/dvordrova/repomap/internal/gitfiles"
 )
 
+func TestEditorConfigDoesNotEnterAnalysisCorpus(t *testing.T) {
+	root := t.TempDir()
+	writeCorpusFile(t, root, "main.go", "package main\n", 0o600)
+	before, err := Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer before.Close()
+	for _, editor := range []string{"code", "another-editor"} {
+		writeCorpusFile(t, root, ".repomap.conf", "editor: ["+editor+"]\n", 0o600)
+		after, err := Open(context.Background(), root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if before.SHA256() != after.SHA256() || !reflect.DeepEqual(before.VisiblePaths(), after.VisiblePaths()) {
+			t.Fatal("local editor settings changed the analysis corpus")
+		}
+		after.Close()
+	}
+}
+
 func TestNewIsPermutationStableAndBuildsBothIndexes(t *testing.T) {
 	t.Parallel()
 
@@ -411,7 +432,7 @@ func TestOpenPropagatesCancellationAndListingFailure(t *testing.T) {
 	if _, err := Open(canceled, t.TempDir()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Open canceled error = %v", err)
 	}
-	if _, err := Open(context.Background(), t.TempDir()); err == nil || !strings.Contains(err.Error(), "tracked files") {
+	if _, err := Open(context.Background(), filepath.Join(t.TempDir(), "missing")); err == nil || !strings.Contains(err.Error(), "filesystem") {
 		t.Fatalf("Open non-repository error = %v", err)
 	}
 	if _, err := New(canceled, t.TempDir(), gitfiles.Listing{}); !errors.Is(err, context.Canceled) {
@@ -419,18 +440,18 @@ func TestOpenPropagatesCancellationAndListingFailure(t *testing.T) {
 	}
 }
 
-func TestOpenUsesOnlyStageZeroRegularIndexModes(t *testing.T) {
+func TestOpenUsesCurrentRegularFilesAndPermissions(t *testing.T) {
 	t.Parallel()
 
 	repo := t.TempDir()
 	runCorpusGit(t, repo, "init", "--quiet")
 	writeCorpusFile(t, repo, "main.go", "package main\n", 0o600)
-	writeCorpusFile(t, repo, "tool", "#!/bin/sh\n", 0o700)
+	writeCorpusFile(t, repo, "tool.sh", "#!/bin/sh\n", 0o700)
 	if err := os.Symlink("main.go", filepath.Join(repo, "linked.go")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	runCorpusGit(t, repo, "add", "main.go", "tool", "linked.go")
-	runCorpusGit(t, repo, "update-index", "--chmod=+x", "tool")
+	runCorpusGit(t, repo, "add", "main.go", "tool.sh", "linked.go")
+	runCorpusGit(t, repo, "update-index", "--chmod=-x", "tool.sh")
 
 	corpus, err := Open(context.Background(), repo)
 	if err != nil {
@@ -439,12 +460,117 @@ func TestOpenUsesOnlyStageZeroRegularIndexModes(t *testing.T) {
 	t.Cleanup(func() { _ = corpus.Close() })
 	if got := corpus.Entries(); !reflect.DeepEqual(got, []Entry{
 		{ID: "f1", Path: "main.go"},
-		{ID: "f2", Path: "tool", Executable: true},
+		{ID: "f2", Path: "tool.sh", Executable: true},
 	}) {
 		t.Fatalf("Open entries = %#v", got)
 	}
 	if _, ok := corpus.ID("linked.go"); ok {
 		t.Fatal("tracked symlink entered the regular corpus")
+	}
+}
+
+func TestOpenIncludesGeneratedAndUntrackedSourceWithoutGit(t *testing.T) {
+	repo := t.TempDir()
+	files := map[string]string{
+		"go.mod":                    "module example.test/generated\n\ngo 1.26\n",
+		"main.go":                   "package main\nfunc main() { generated() }\n",
+		"generated.go":              "// Code generated. DO NOT EDIT.\npackage main\nfunc generated() {}\n",
+		"build/client.ts":           "export const endpoint = '/generated';\n",
+		"dist/models.py":            "class Generated: pass\n",
+		"new/feature.py":            "def feature(): return 1\n",
+		".gitignore":                "generated.go\nbuild/\ndist/\n",
+		".repomapignore":            "# Analysis output\nreports/\n",
+		"reports/README.md":         "A previous generated report\n",
+		"node_modules/dep/index.js": "external dependency\n",
+		"custom-env/pyvenv.cfg":     "home = /python\n",
+		"custom-env/lib/dep.py":     "external dependency\n",
+		".github/workflows/ci.yml":  "on: push\n",
+		"tools/.golangci.yaml":      "linters: {}\n",
+		"state/example.bin":         "binary fixture data\n",
+	}
+	for name, content := range files {
+		writeCorpusFile(t, repo, name, content, 0o600)
+	}
+	var before Snapshot
+	for _, state := range []string{"no-git", "git-without-commit", "git-with-commit"} {
+		switch state {
+		case "git-without-commit":
+			runCorpusGit(t, repo, "init", "--quiet")
+			runCorpusGit(t, repo, "add", "main.go", "go.mod", ".gitignore")
+		case "git-with-commit":
+			runCorpusGit(t, repo, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.test", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "initial")
+		}
+		opened, err := Open(context.Background(), repo)
+		if err != nil {
+			t.Fatalf("%s: %v", state, err)
+		}
+		for _, name := range []string{"main.go", "generated.go", "build/client.ts", "dist/models.py", "new/feature.py"} {
+			id, ok := opened.ID(name)
+			if !ok {
+				t.Fatalf("%s: missing working source %s", state, name)
+			}
+			content, err := opened.ReadFileAll(id)
+			if err != nil || string(content.Bytes) != files[name] {
+				t.Fatalf("%s: wrong current content for %s: %v", state, name, err)
+			}
+		}
+		for _, name := range []string{"reports/README.md", "node_modules/dep/index.js", "custom-env/lib/dep.py"} {
+			if _, ok := opened.ID(name); ok {
+				t.Fatalf("%s: included excluded input %s", state, name)
+			}
+		}
+		visible := opened.VisiblePaths()
+		for _, name := range []string{".github/workflows/ci.yml", "tools/.golangci.yaml", "state/example.bin"} {
+			found := false
+			for _, p := range visible {
+				found = found || p == name
+			}
+			if !found {
+				t.Fatalf("%s: lost path-only inventory %s", state, name)
+			}
+			if _, readable := opened.ID(name); readable {
+				t.Fatalf("%s: inventory observation made arbitrary content readable: %s", state, name)
+			}
+		}
+		if state == "no-git" {
+			before = opened.Snapshot()
+		} else if !reflect.DeepEqual(before, opened.Snapshot()) {
+			t.Fatalf("Git state changed the corpus in %s", state)
+		}
+		if err := opened.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestOpenDoesNotRequireGitExecutable(t *testing.T) {
+	repo := t.TempDir()
+	writeCorpusFile(t, repo, "main.py", "print('hello')\n", 0o600)
+	t.Setenv("PATH", t.TempDir())
+	opened, err := Open(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	if _, ok := opened.ID("main.py"); !ok {
+		t.Fatal("source absent without Git executable")
+	}
+}
+
+func TestOpenExcludesRequestedOutputDirectory(t *testing.T) {
+	repo := t.TempDir()
+	writeCorpusFile(t, repo, "src/main.py", "print('hello')\n", 0o600)
+	writeCorpusFile(t, repo, "output/README.md", "previous output\n", 0o600)
+	opened, err := Open(context.Background(), repo, "output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	if _, ok := opened.ID("output/README.md"); ok {
+		t.Fatal("run output entered analysis")
+	}
+	if _, err := Open(context.Background(), repo, "../outside"); err == nil {
+		t.Fatal("non-repository exclusion accepted")
 	}
 }
 

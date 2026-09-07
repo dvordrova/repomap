@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	Version          = 1
+	Version          = 2
 	ArtifactFilename = "facts.json"
 
-	digestDomain = "repomap-facts-v1\x00"
+	digestDomain = "repomap-facts-v2\x00"
 	idDomain     = "repomap-fact-id-v1\x00"
 	idHexWidth   = 16
 )
@@ -67,13 +67,17 @@ const (
 	KindDependency Kind = "dependency"
 	// KindImport is a file-level import edge inside a target.
 	KindImport Kind = "import"
+	// Extension entities and relationships preserve a producer's observations;
+	// their human-readable labels are not architecture classifications.
+	KindEntity   Kind = "entity"
+	KindRelation Kind = "relation"
 )
 
 func (kind Kind) Valid() bool {
 	switch kind {
 	case KindEntrypoint, KindHTTPRoute, KindHTTPCall, KindPortal, KindConfigRead,
 		KindListenAddress, KindDynamicExecution, KindManifest, KindTODO,
-		KindDeadModule, KindNegative, KindDependency, KindImport:
+		KindDeadModule, KindNegative, KindDependency, KindImport, KindEntity, KindRelation:
 		return true
 	default:
 		return false
@@ -156,6 +160,8 @@ type Target struct {
 //	negative    Key (negative name), Text (detail)
 //	dependency  Key (package), Value (declared version)
 //	import      Path (imported file)
+//	entity      Key (local id), Symbol (name), Path, Value (corpus presence)
+//	relation    Key (label), Refs [from entity id, to entity id], Anchor
 type Fact struct {
 	ID           string     `json:"id"`
 	Kind         Kind       `json:"kind"`
@@ -172,6 +178,8 @@ type Fact struct {
 	Resolution   Resolution `json:"resolution,omitempty"`
 	Refs         []string   `json:"refs,omitempty"`
 	Evidence     []Anchor   `json:"evidence,omitempty"`
+	// Extractor names the producer of an extension fact, including built-ins.
+	Extractor string `json:"extractor,omitempty"`
 }
 
 // Diagnostic records something the extractor saw but could not turn into a
@@ -406,7 +414,7 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 			return err
 		}
 	}
-	for _, text := range []string{fact.Symbol, fact.ObjectID, fact.Method, fact.Path, fact.Key, fact.Value, fact.Text} {
+	for _, text := range []string{fact.Symbol, fact.ObjectID, fact.Method, fact.Path, fact.Key, fact.Value, fact.Text, fact.Extractor} {
 		if text != "" && !validText(text) {
 			return fmt.Errorf("invalid text field")
 		}
@@ -446,6 +454,19 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 	case KindEntrypoint:
 		if fact.Anchor == nil {
 			return fmt.Errorf("entrypoint requires anchor")
+		}
+	case KindEntity:
+		if fact.Key == "" || fact.Extractor == "" || fact.Path == "" && fact.Symbol == "" {
+			return fmt.Errorf("entity requires local identity, producer and path or name")
+		}
+		if fact.Path != "" && fact.Path != "." {
+			if err := validateRepositoryPath(fact.Path); err != nil {
+				return err
+			}
+		}
+	case KindRelation:
+		if fact.Key == "" || len(fact.Refs) != 2 || fact.Anchor == nil || fact.Extractor == "" {
+			return fmt.Errorf("relation requires a label, two entities, producer and source anchor")
 		}
 	}
 	return nil

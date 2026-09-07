@@ -28,6 +28,7 @@ type goRepositoryProgramFacts struct {
 	Core              gocoreobject.Index
 	Dynamic           godynamichandoff.Index
 	PackageOrigins    []gofacts.PackageOrigin
+	TestSources       []gofacts.TestSource
 	Dependencies      dependencies.Catalog
 }
 
@@ -128,6 +129,7 @@ func prepareGoRepositoryProgramFacts(
 		Core:              result.CoreObjectIndex.Snapshot(),
 		Dynamic:           result.DynamicHandoffIndex.Snapshot(),
 		PackageOrigins:    append([]gofacts.PackageOrigin(nil), scoped.GoFacts.PackageOrigins...),
+		TestSources:       gofacts.CloneTestSources(scoped.GoFacts.TestSources),
 		Dependencies:      ownedDependencies,
 	}, nil
 }
@@ -244,6 +246,7 @@ func buildGoRepositoryProgramInput(
 		facts.External,
 		facts.Core,
 		facts.Dynamic,
+		facts.TestSources,
 	)
 }
 

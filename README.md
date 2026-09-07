@@ -27,7 +27,7 @@ Everything on the page is one of three labeled things:
 Under the page, each selected Go, Python, and JavaScript/TypeScript target
 builds one complete target-local ProgramIndex. The deterministic fact and
 claim stages run over the indexes, and then the atlas reads every target as
-tables: directories by depth, files by their distance from the entry points,
+tables: directories by depth, independent files with direct caller facts,
 the key symbols of each file, the boundaries where the code touches the
 outside, the parts a target is made of, the arrows between its boxes, the
 portfolio of targets, and the joints between targets. Each row gets one line
@@ -41,11 +41,173 @@ The supported product surface is deliberately small:
 
 ```text
 repomap [repository] [flags]
+repomap conf [repository]
 repomap cache clear [--debug-dir DIR]
+repomap replay --file REQUEST.json [--debug-dir DIR]
+repomap read READING_INPUT.json [--through STAGE] [flags]
 ```
 
-There are no offline, replay, investigate, doctor, dev, experiment, or separate
-serve commands.
+`read` exercises the same atlas stages on saved evidence without rescanning
+source code or producing a report. It is the development loop for context,
+prompts and intermediate results.
+
+`repomap conf` creates `.repomap.conf` in the current directory if absent
+and opens it for editing. Pass a repository directory to edit its settings
+instead. An existing file, including comments, is preserved. Git is not required;
+parent directories and the home directory are not searched.
+
+The local file uses YAML. It supports an editor command and optional reading questions:
+
+```yaml
+editor: [code, --goto, '{{ .File }}:{{ .Line }}:{{ .Column }}']
+questions:
+  - How do I run this project?
+  - Where is state stored and changed?
+```
+
+This runs `code --goto file:line:column`. Each template expands inside its own
+argument, so paths with spaces work without additional quoting. `.File` is an
+absolute path; `.Line` and `.Column` start at 1. For example, Vim can use
+`editor: [vim, '+{{ .Line }}', '{{ .File }}']`. Commands run in the selected
+repository directory. The same setting opens the configuration and source links
+in served reports. Settings are read once per run and passed in memory to target analysis and serving;
+editing the configuration takes effect on the next repomap launch. If the
+editor cannot start, the error names the configuration file and that file stays
+available to edit manually. Per-target build variants are still planned.
+Questions share the repository graph and accumulated descriptions; each question
+has its own retrieval, reading route, answer and cache entries. Repeated `--question`
+flags add to this list, keeping order and dropping duplicate question texts.
+Learn links to these questions below the map. Opening a question shows a short
+model answer with its sources and any unresolved part. “Check this interpretation”
+shows what the model relied on alongside original declarations or documentation
+excerpts and exact source links. Deductions from names and signatures are welcome
+when identifiable and easy to check. The detailed reading route stays under a
+separate disclosure. The answer uses the evidence already
+selected for that route. Questions are currently supplied by the user;
+automatic adaptation of general learning questions is planned.
+
+## Work from the evidence upward
+
+A normal analysis saves `reading-input.json` before the first atlas call.
+It contains the places graph and target metadata; copy this one file to
+iterate without the repository checkout, compilers, or `report.json`.
+Only the current input format is supported. Generate a new analysis when its
+format changes; there are no readers for previous formats.
+
+```bash
+# Read through files. Earlier directory requests reuse the shared cache.
+.bin/repomap read /path/to/run/reading-input.json --through files
+
+# Try a prompt and smaller contexts on the same evidence.
+.bin/repomap read /path/to/run/reading-input.json --through files \
+  --prompt internal/atlas/lines/prompts/files.md \
+  --window-rows 12 --input-bytes 32768 --output /tmp/reading-small
+
+# Run every atlas stage, producing atlas.json without orientation or HTML.
+.bin/repomap read /path/to/run/reading-input.json
+
+# Find sources, order a reading route and answer from that evidence.
+.bin/repomap read /path/to/run/reading-input.json \
+  --question 'Where does this program store state?' --output /tmp/reading-state
+
+# Iterate on retrieval alone, or edit only the route selector after retrieval.
+.bin/repomap read /path/to/run/reading-input.json --through question \
+  --question 'Where does this program store state?'
+.bin/repomap read /path/to/run/reading-input.json --through route \
+  --question 'Where does this program store state?' \
+  --prompt internal/atlas/lines/prompts/route.md
+
+# Revise only the answer, reusing retrieval and the selected route.
+.bin/repomap read /path/to/run/reading-input.json --through answer \
+  --question 'Where does this program store state?' \
+  --prompt internal/atlas/lines/prompts/answer.md
+```
+
+Use the same `--debug-dir` as the original run to share its model cache.
+`--no-cache` requests fresh model responses. Each reading writes a new
+output directory and reports its path. `--through` accepts `directories`,
+`files`, `symbols`, `operations`, `boundaries`, `zones`, `arrows`, `targets`, `joints`, `question`, `route`, or `answer`.
+The prompt and budget overrides apply to that stage; budget overrides without
+`--through` apply to all stages. A prompt override requires `--through`.
+
+Inspect `tables.md`, or compare `tables/*.result.json`: the latter holds
+normalized cells with source IDs, paths and lines, or an explicit rejection
+reason. The matching `.prompt.ref.json`, `.request.ref.json` and `.response.ref.json`
+link to the exact bytes in the shared `.llm-cache/payloads/` directory.
+`.input.ref.json` holds the table input before the provider envelope is built. `reading-result.json` records completion,
+stage counts and wall time. Stopping early produces no partial `atlas.json`
+and no HTML. These artifacts are for development, not another reader UI.
+
+`knowledge.json` records descriptions of internal directory, file, symbol and
+boundary entities, their exact input evidence, model cells and dependencies on
+earlier interpretations. Accepted independent rows are reused before batching:
+changing the row or byte budget no longer reanalyses unchanged entities. A
+changed prompt, model configuration or evidence actually supplied to the model
+gets a new answer basis. Ownership changes and new parent interpretation IDs
+only rebind the answer to the current entities; changing the parent's supplied
+text still invalidates the dependent answer. `knowledge.json` v2 keeps these
+current ownership and provenance bindings separately from answer reuse.
+Missing rows still go to the model in batches;
+this does not introduce one provider call per function. The entity cache stores
+only a reference to a request and a row in its current response. It reads and
+validates that row again on reuse, so replayed answers cannot leave a second
+copy of the description stale. `--no-cache` bypasses answer reuse and index
+updates; `cache clear` removes responses and entity references.
+
+The record describes what the supplied declarations and extracted facts
+support. It does not claim that a function body was read or that changing an
+uninspected body invalidates a declaration-only description. Question-only
+readings recall available descriptions with the same ordinary row builders,
+without making description calls. They send these as labelled model hints
+beside the original facts, with used knowledge IDs restored locally on stops.
+
+`--question TEXT` runs candidate retrieval, route selection and an answer in
+`read`; the ordinary command appends them to the normal atlas run. The output
+`question-routes.json` v1 contains a list of v7 reading routes: selected stops, their original
+evidence and internal subjects, locally restored source positions, and
+connections with distinct call, declaration and inventory evidence.
+Every declaration and boundary in the graph is partitioned into complete
+chunks, including generated files. Unanswered chunks remain explicitly
+unresolved. The pass sees names, signatures and author documentation, not
+function bodies; it neither verifies implementation behavior nor turns these
+file connections into an execution trace. The `guide` selects a short list of distinct
+locations in reading order, preserving their original reasons and an open question. For many
+candidates it compares bounded pools and then their selections, always carrying
+the original evidence forward. Every candidate remains in the artifact, and
+every round records coverage and unresolved pools. Editing the route prompt
+does not invalidate unchanged retrieval. Six stops is a preference: additional
+valid selections are kept in every round. Pools split by the input-byte budget,
+without a fixed number of candidate sources. If the model keeps every source
+and another comparison cannot fit, the report keeps separate reading orders;
+it does not invent a global order or repeat the same request. The ordinary command publishes the guide in
+the common HTML report with source links and unresolved gaps. `read` prints and
+saves it without rendering HTML.
+
+A table is split at complete row boundaries by row count and system + user
+UTF-8 bytes (64 KiB by default). Bytes are a reproducible planning budget,
+not a token estimate or a promise of model quality. Shared context and every
+row survive splitting; an oversized single row is an error naming that row.
+Do not ask another model to summarize the same oversized blob: change the
+owning stage's evidence selection or split the question itself.
+
+File descriptions use the directory's model line and deterministic facts
+about direct callers. They do not inherit other file descriptions, so files
+can be processed in parallel and a reworded file does not invalidate callers'
+next descriptions. Check extracted evidence first, then whether model cells
+point to the right code, then the downstream guide. Valid JSON alone is not
+an assessment of usefulness.
+
+The facts stage runs built-in sqlc and optional external commands through one
+small interface: nodes and labeled links. Configure your command in
+`.repomap.json`; it receives JSON on stdin and returns JSON on stdout.
+See [Writing an extractor](docs/EXTRACTORS.md) for the complete contract and
+a small Python example. Exact exchanges are saved in `extractions.json`;
+normalized entities and relationships enter `facts.json` (version 2).
+The same entities and relationships enter the places graph and question table,
+with producer declarations distinguished from compiler calls. Saved graph and
+reading input are version 2; previous inputs need a fresh analysis. The plugin
+protocol stays version 1. This supplies reading evidence, not a generated change
+recipe; the report layout is unchanged.
 
 ## Build
 
@@ -112,9 +274,9 @@ Target discovery is high-recall. By default one repository-wide portfolio must
 retain a canonical file representative for every exact native target, may also
 retain positively supported repository-guidance candidates, and chooses one
 retained target as the default. Every restored typed target receives a complete
-target-local report page; a mixed-language run publishes those pages through
+target-local section; a mixed-language run publishes those sections through
 the neutral program-page and target-outcome portfolios in one HTML report. Its
-target picker switches among the validated backing pages in that report.
+target picker jumps between sections of that report.
 If one selected target cannot complete its own preparation, typed analysis,
 semantic validation, or page validation, the other targets continue. The
 report keeps that target visible as a red, non-clickable `Not analyzed` row and
@@ -161,18 +323,21 @@ edge. Positive values opt into narrower local analysis. There is no size at
 which repomap warns, samples or stops: a large graph is processed completely.
 
 Without `--no-serve`, repomap starts a loopback server. Report code links use
-that server to open the files the page names in VS Code. `--no-open`
+that server to open the files the page names in the configured editor (VS Code
+by default). `--no-open`
 keeps the browser closed, and `--port` selects a fixed port. In a multi-target
-run, sibling target URLs are served virtually from their validated page data;
-they do not require sibling `report.html` files on disk.
+run, every target is a section of one common report. The server receives the
+generated data in memory; reopening a saved run reads its common report and
+manifest once.
 
 With `--no-serve`, repomap writes one standalone HTML whose code links point to
 the captured revision on GitHub or GitLab. The repository `origin` must identify
 a supported host, or the matching `--github-url`/`--gitlab-url` must be supplied.
 Invalid static-link configuration fails in preflight before analysis or model
 requests. For a multi-target run, the standalone document is projected directly
-from every backing `report.json` and page-local artifact; repomap does not
-merge child HTML documents. These flags remain presentation configuration
+from the completed in-memory results. Repository-wide data is written once in
+the owner's `report.json`; target directories keep their own analysis artifacts.
+These flags remain presentation configuration
 and do not download or switch the analyzed checkout.
 
 Report runs and model-response caches default to the OS user-cache directory.
@@ -184,6 +349,31 @@ caches with:
 .bin/repomap cache clear
 .bin/repomap cache clear --debug-dir /path/to/repomap/runs
 ```
+
+To repeat one saved provider request and update its cached answer:
+
+```bash
+.bin/repomap replay --file /path/to/.llm-cache/payloads/REQUEST_SHA.json \
+  --debug-dir /path/to/repomap/runs
+```
+
+Use the request payload linked by `tables/*.request.ref.json` or a semantic
+exchange's `request.file`. Replay always contacts the provider through the same
+configured client. The exact saved model, messages, token limit, temperature,
+thinking mode and response format are preserved; endpoint, authentication,
+timeout and retries come from the client configuration. Assistant content goes
+to stdout; shared request/response paths, timing and token usage go to stderr.
+Replay checks the provider envelope and JSON. The owning stage validates its
+own schema when it next uses that answer. A failed replay leaves the previous
+accepted answer available. It generates no report and does not rewrite an old
+run; the next reading uses the updated answer.
+
+Requests and responses are stored once by content hash under
+`.llm-cache/payloads/`. Run directories contain exchange metadata and relative
+references, along with their normalized results and report snapshot. Cache
+clear removes these payloads too: existing HTML and result snapshots remain,
+but their raw-exchange links stop resolving. `--no-cache` still saves shared
+payloads for diagnostics, without updating reusable answer pointers.
 
 Repository input is trusted. repomap does not scan it for credentials, and it
 does not redact what it writes: whatever a prompt or a response contains is
@@ -211,8 +401,8 @@ For a product check, look at the exit status, at the run directory —
 `Time` stage the run prints last, which says where the minutes went. Then open
 the page and answer the first-day questions from it alone; that dogfood read is
 the real acceptance. In a multi-target run only the first successful owner run
-holds the physical `report.html`. Cache changes also need a second real run
-and `repomap cache clear`.
+holds the common `report.json`, manifest and physical `report.html`. Cache changes also need a second real run
+`repomap replay`, and `repomap cache clear`.
 
 The product constitution lives in [docs/CONSTITUTION.md](docs/CONSTITUTION.md)
 and the current architecture in

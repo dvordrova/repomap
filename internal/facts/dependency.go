@@ -20,9 +20,9 @@ func (b *builder) addDependencies(target *targetContext) {
 			Kind:     KindDependency,
 			TargetID: target.target.ID,
 			Anchor:   anchor,
-			Key:      dependency.Name,
+			Key:      dependency.PackagePath,
 			Value:    dependency.ModuleVersion,
-		}, dependency.Name)
+		}, dependency.PackagePath)
 	}
 }
 

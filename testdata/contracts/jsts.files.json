@@ -6,6 +6,7 @@
     {"id": "f3", "path": "src/ambiguity.tsx"},
     {"id": "f4", "path": "src/platform.ts"},
     {"id": "f5", "path": "src/server.ts"},
-    {"id": "f6", "path": "tsconfig.json"}
+    {"id": "f6", "path": "src/type-members.ts"},
+    {"id": "f7", "path": "tsconfig.json"}
   ]
 }

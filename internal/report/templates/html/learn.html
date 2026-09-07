@@ -1,0 +1,47 @@
+{{define "learn.html"}}
+<div class="learn-home" data-reading-mode="learn">
+<div class="learn-intro"><h2>Understand this repository</h2>
+{{if .Summary}}<p class="summary model">{{.Summary.Text}}<span class="model-sources">{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</span></p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
+</div>
+</div>
+{{end}}
+
+{{define "learn-start.html"}}
+<div data-reading-mode="learn">
+{{if .LearnQuestionTopics}}<div class="learn-questions"><h3>Questions to explore</h3><div class="learn-question-topics">{{range .LearnQuestionTopics}}<details><summary>{{.Title}} <span class="meta">{{len .Questions}}</span></summary><ul class="plain">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}} →</a></li>{{end}}</ul></details>{{end}}</div></div>{{end}}
+{{if .LearningNote}}<p>{{.LearningNote}} <a href="#questions">View the topic review →</a></p>{{end}}
+<nav class="learn-start" aria-label="Starting points">
+<a href="#learn-parts"><strong>What is inside each part?</strong><span>Explore areas and their responsibilities →</span></a>
+<a href="#how-to-run"><strong>How do I run it?</strong><span>Read the commands and their sources →</span></a>
+{{if .LearnConcepts}}<a href="#concepts"><strong>What does this term mean?</strong><span>Find an explanation and where it belongs →</span></a>{{end}}
+</nav>
+</div>{{end}}
+
+{{define "learn-parts.html"}}
+<section id="learn-parts" data-report-page><h2>Explore the system's parts</h2>
+<p>Choose an area by what it does. Each link opens that area on the map.</p>
+<div class="learn-bands">
+{{range $i, $band := .LearnBands}}<details class="learn-band"{{if eq $i 0}} open{{end}}><summary>{{$band.Title}} <span class="meta">{{len $band.Parts}}</span></summary><div class="learn-parts">
+{{range $band.Parts}}<article class="learn-part"><h4><a href="{{.Href}}">{{.Title}} →</a></h4><p class="meta">{{.Language}} · {{.Kind}}</p>
+{{if .Summary}}<p class="model">{{.Summary}}</p>{{end}}
+{{if .Areas}}<ul class="plain learn-area-links">{{range .Areas}}<li><a href="{{.Href}}">{{.Title}} →</a></li>{{end}}</ul>{{end}}
+</article>{{end}}
+</div></details>{{end}}
+</div>
+<a class="learn-full-map" href="#repository-map">Back to the system map →</a>
+</section>
+{{end}}
+
+{{define "concepts.html"}}
+{{if .LearnConcepts}}<section id="concepts" class="concept-library" data-report-page>
+<h2>Understand a term</h2><p>Short model explanations from the code read in this report. Open a term to see its source and explore where it is used.</p>
+<label class="concept-search" hidden>Find a term <input type="search" aria-label="Find a term" placeholder="Name or description"></label>
+<p class="concept-count" role="status"></p><div class="concept-results">
+{{range .LearnConcepts}}<details id="{{.ID}}" class="learn-concept"><summary>{{.Name}}{{if .Context}} <span class="meta">· {{.Context}}</span>{{end}}</summary>
+{{template "concept-explanation.html" .}}
+<ul class="plain">{{range .Places}}<li><a href="{{.Href}}">Explore {{.Title}} →</a></li>{{end}}</ul></details>{{end}}
+</div><div class="concept-pages" hidden><button type="button" data-prev>← Previous</button><span></span><button type="button" data-next>Next →</button></div>
+</section>{{end}}
+{{end}}
+
+{{define "concept-explanation.html"}}<p class="model">{{.Explanation}}<span class="model-sources"> {{template "anchor" .Source}}</span></p>{{end}}

@@ -20,14 +20,23 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
+// DefaultInputBytes is a starting context budget, tunable in isolated readings.
+// The model still needs to be evaluated on the resulting evidence, not its size.
+const DefaultInputBytes = 64 * 1024
+
 // Kind is what a cell may hold.
 type Kind string
 
 const (
 	// Text is one short line; longer answers are cut at a word.
 	Text Kind = "text"
+	// Prose preserves the complete explanation and its whitespace. The
+	// provider response envelope bounds it; qualifiers must not be cut off.
+	Prose Kind = "prose"
 	// Choice is one option from a closed list.
 	Choice Kind = "choice"
+	// Sequence is a space-separated ordered selection of exact closed refs.
+	Sequence Kind = "sequence"
 )
 
 // Column is one cell the model fills for every row.
@@ -40,6 +49,8 @@ type Column struct {
 	// field that carries the row's own list instead.
 	Options     []string `json:"options,omitempty"`
 	OptionsFrom string   `json:"options_from,omitempty"`
+	// LimitFrom names the row field bounding a Sequence's number of choices.
+	LimitFrom string `json:"limit_from,omitempty"`
 	// Free is a prefix after which the model may write its own short text,
 	// such as "new: " for a title the code has not seen. Empty means no.
 	Free         string `json:"free,omitempty"`
@@ -58,9 +69,14 @@ type Definition struct {
 	Window   int
 	System   string
 	Columns  []Column
-	// MaxOutputTokens bounds the answer; a window that overflows it is cut
-	// in half by the caller, never retried as is.
-	MaxOutputTokens int
+	// Reasoning opts this table into provider-supported deliberate reasoning.
+	Reasoning bool
+	// MaxInputBytes bounds system + user UTF-8 bytes before provider encoding.
+	// It is a context planning budget, not a token count or transport ceiling.
+	MaxInputBytes int
+	// Independent allows accepted rows to be reused outside their original
+	// batch. The prompt must restrict each answer to that row and its context.
+	Independent bool
 }
 
 // Field is one ordered input of a row.
@@ -103,16 +119,41 @@ func WindowsWithContext(def Definition, round int, context []Field, rows []Row) 
 	if def.Window < 1 {
 		return nil, fmt.Errorf("table %s: window size %d", def.Stage, def.Window)
 	}
+	limit := def.MaxInputBytes
+	if limit == 0 {
+		limit = DefaultInputBytes
+	}
+	if limit < 1 {
+		return nil, fmt.Errorf("table %s: input budget must be positive", def.Stage)
+	}
 	var windows []Window
-	for start := 0; start < len(rows); start += def.Window {
-		end := min(start+def.Window, len(rows))
-		window := Window{Stage: def.Stage, Round: round, Index: len(windows), Context: context, Rows: rows[start:end]}
+	// Split complete rows; shared context and every row's fields survive.
+	// A single oversized row needs a different representation in its owner.
+	var appendWindow func([]Row) error
+	appendWindow = func(part []Row) error {
+		window := Window{Stage: def.Stage, Round: round, Index: len(windows), Context: context, Rows: part}
 		request, err := Request(def, window)
 		if err != nil {
-			return nil, err
+			return err
+		}
+		if size := len(def.System) + len(request); size > limit {
+			if len(part) == 1 {
+				return fmt.Errorf("table %s: row %s needs %d input bytes, budget %d; reduce this row's evidence or shared context", def.Stage, part[0].ID, size, limit)
+			}
+			middle := len(part) / 2
+			if err := appendWindow(part[:middle]); err != nil {
+				return err
+			}
+			return appendWindow(part[middle:])
 		}
 		window.Request = request
 		windows = append(windows, window)
+		return nil
+	}
+	for start := 0; start < len(rows); start += def.Window {
+		if err := appendWindow(rows[start:min(start+def.Window, len(rows))]); err != nil {
+			return nil, err
+		}
 	}
 	return windows, nil
 }
@@ -120,7 +161,7 @@ func WindowsWithContext(def Definition, round int, context []Field, rows []Row) 
 // Request is the exact user prompt of a window: one JSON object with the
 // table name, the columns to fill and the rows. Field order is the caller's.
 func Request(def Definition, window Window) ([]byte, error) {
-	var out bytes.Buffer
+	var out jsonBuffer
 	out.WriteString("{\n  \"table\": ")
 	writeJSON(&out, def.Stage)
 	out.WriteString(",\n  \"fill\": [")
@@ -137,6 +178,9 @@ func Request(def Definition, window Window) ([]byte, error) {
 		}
 		if column.OptionsFrom != "" {
 			spec["options_from"] = column.OptionsFrom
+		}
+		if column.LimitFrom != "" {
+			spec["limit_from"] = column.LimitFrom
 		}
 		if column.Free != "" {
 			spec["free_prefix"] = column.Free
@@ -175,17 +219,26 @@ func Request(def Definition, window Window) ([]byte, error) {
 		out.WriteString("}")
 	}
 	out.WriteString("\n  ]\n}\n")
+	if out.err != nil {
+		return nil, fmt.Errorf("table %s: encode evidence: %w", def.Stage, out.err)
+	}
 	return out.Bytes(), nil
 }
 
-func writeJSON(out *bytes.Buffer, value any) {
-	encoder := json.NewEncoder(out)
-	encoder.SetEscapeHTML(false)
+type jsonBuffer struct {
+	bytes.Buffer
+	err error
+}
+
+func writeJSON(out *jsonBuffer, value any) {
+	if out.err != nil {
+		return
+	}
 	var buffer bytes.Buffer
-	encoder = json.NewEncoder(&buffer)
+	encoder := json.NewEncoder(&buffer)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(value); err != nil {
-		out.WriteString("null")
+		out.err = err
 		return
 	}
 	out.Write(bytes.TrimRight(buffer.Bytes(), "\n"))
@@ -273,8 +326,44 @@ func keyIndex(key string, count int) (int, bool) {
 }
 
 func normalizeCell(column Column, row Row, cell string) (string, error) {
+	if column.Kind == Prose {
+		text := strings.TrimSpace(cell)
+		if text == "" {
+			return "", fmt.Errorf("cell %q is empty", column.Name)
+		}
+		return text, nil
+	}
 	text := collapse(cell)
 	switch column.Kind {
+	case Sequence:
+		if text == "none" {
+			return "", nil
+		}
+		options := make(map[string]bool)
+		for _, option := range rowOptions(row, column.OptionsFrom) {
+			options[option] = true
+		}
+		var selected []string
+		seen := make(map[string]bool)
+		for _, ref := range strings.Fields(text) {
+			if options[ref] && !seen[ref] {
+				selected = append(selected, ref)
+				seen[ref] = true
+			}
+		}
+		if len(selected) == 0 {
+			return "", fmt.Errorf("cell %q has no known choices; use none for an empty selection", column.Name)
+		}
+		limit := 0
+		for _, field := range row.Fields {
+			if field.Name == column.LimitFrom {
+				limit, _ = field.Value.(int)
+			}
+		}
+		if column.LimitFrom != "" && (limit < 1 || len(selected) > limit) {
+			return "", fmt.Errorf("cell %q chooses %d items, limit %d", column.Name, len(selected), limit)
+		}
+		return strings.Join(selected, " "), nil
 	case Text:
 		if text == "" {
 			return "", fmt.Errorf("cell %q is empty", column.Name)
@@ -376,17 +465,19 @@ func cutRunes(text string, limit int) string {
 }
 
 // State is the cache identity of one window: the table contract, the prompt
-// digest and the request digest. The run, the target and the clock are not
-// in it, so an unchanged row is answered from the cache across runs.
+// digest, request digest and reasoning preference. The run, target and clock
+// are not in it, so an unchanged window reuses the cache across runs.
 func State(def Definition, window Window) ([]byte, error) {
 	return json.Marshal(struct {
-		Contract string `json:"contract"`
-		Prompt   string `json:"prompt_sha256"`
-		Request  string `json:"request_sha256"`
+		Contract  string `json:"contract"`
+		Prompt    string `json:"prompt_sha256"`
+		Request   string `json:"request_sha256"`
+		Reasoning bool   `json:"reasoning,omitempty"`
 	}{
-		Contract: def.Contract,
-		Prompt:   sha256Hex([]byte(def.System)),
-		Request:  sha256Hex(window.Request),
+		Contract:  def.Contract,
+		Prompt:    sha256Hex([]byte(def.System)),
+		Request:   sha256Hex(window.Request),
+		Reasoning: def.Reasoning,
 	})
 }
 
@@ -396,19 +487,16 @@ func Call(def Definition, window Window) (llm.Call[Answers], error) {
 	if err != nil {
 		return llm.Call[Answers]{}, err
 	}
-	maxOutput := def.MaxOutputTokens
-	if maxOutput <= 0 {
-		maxOutput = 8192
-	}
 	return llm.Call[Answers]{
 		State: state,
 		Prompt: llm.Prompt{
 			System: def.System, User: string(window.Request), ResponseFormatJSON: true,
+			Reasoning: def.Reasoning,
 		},
 		Limits: llm.Limits{
 			MaxRequestBytes:  llm.SemanticRecordByteLimit,
 			MaxResponseBytes: llm.ProviderResponseByteLimit,
-			MaxOutputTokens:  maxOutput,
+			MaxOutputTokens:  llm.DefaultMaxOutputTokens,
 		},
 		DecodeValidate: func(raw []byte) (Answers, error) {
 			return Decode(def, window, raw)

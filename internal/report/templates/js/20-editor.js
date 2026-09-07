@@ -38,7 +38,7 @@
       }).then(function (body) {
         if (!response.ok) throw new Error(body && body.error ? String(body.error) : 'open-file failed');
         if (!body || body.status !== 'opened') throw new Error('The editor did not confirm the source action.');
-        say('Opened ' + spec + ' in VS Code.', false);
+        say('Opened ' + spec + ' in your editor.', false);
       });
     }).catch(function (error) {
       say(error && error.message ? error.message : String(error), true);

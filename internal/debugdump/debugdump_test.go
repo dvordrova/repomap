@@ -40,6 +40,32 @@ func TestSemanticExchangeRecordsLivePayloads(t *testing.T) {
 	assertSavedPayload(t, runDir, reference, record.Response, response)
 }
 
+func TestSemanticExchangesSharePayloadsAcrossRunDirectories(t *testing.T) {
+	root := t.TempDir()
+	var requestPath string
+	for _, label := range []string{"first", "second"} {
+		writer, err := NewWriter(root, label)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exchange := validExchange(SemanticStageTargetPortfolio)
+		reference := writer.RecordSemanticExchange(exchange)
+		runDir := filepath.Join(root, writer.RunID)
+		record := readOnlySemanticExchange(t, runDir, reference)
+		path := filepath.Clean(filepath.Join(runDir, filepath.Dir(reference), record.Request.File))
+		if !strings.Contains(path, string(filepath.Separator)+".llm-cache"+string(filepath.Separator)+"payloads"+string(filepath.Separator)) {
+			t.Fatalf("payload kept inside run: %s", path)
+		}
+		if requestPath != "" && path != requestPath {
+			t.Fatal("identical requests duplicated between runs")
+		}
+		requestPath = path
+		assertSavedPayload(t, runDir, reference, record.Request, exchange.Request)
+		assertSavedPayload(t, runDir, reference, record.Response, exchange.Response)
+		writer.Close()
+	}
+}
+
 func TestSemanticExchangeAcceptsOnlyLiveStages(t *testing.T) {
 	t.Parallel()
 
@@ -51,6 +77,10 @@ func TestSemanticExchangeAcceptsOnlyLiveStages(t *testing.T) {
 		SemanticStageProgramGrouping,
 		SemanticStageGroupMatching,
 		SemanticStageOrientation,
+		SemanticStageAtlasQuestion,
+		SemanticStageAtlasRoute,
+		SemanticStageAtlasAnswer,
+		SemanticStageAtlasLearn,
 	}
 	for _, stage := range live {
 		exchange := validExchange(stage)

@@ -3,6 +3,8 @@ package contracttest
 import (
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
@@ -43,6 +45,71 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 		t.Fatalf("Python script seed object = %#v, want exact main function", seed)
 	}
 	assertCumulativePythonSemanticFacts(t, index)
+	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index}}})
+	if err != nil {
+		t.Fatalf("build Python atlas: %v", err)
+	}
+	for _, want := range []struct {
+		name      string
+		signature string
+		line      int
+	}{
+		{name: "GetLevelsInfoResponse", signature: "count: int", line: 2},
+		{name: "OtherResponse", signature: "count: str", line: 6},
+	} {
+		t.Run(want.name+" owns its count field", func(t *testing.T) {
+			owner := programIndexObjectNamed(t, index, programindex.ObjectType, want.name, "src/fixture_app/models.py")
+			var field programindex.Object
+			for _, object := range index.Objects {
+				if object.Name == "count" && object.OwnerID == owner.ID {
+					if field.ID != "" {
+						t.Fatalf("%s has duplicate count declarations", want.name)
+					}
+					field = object
+				}
+			}
+			if field.ID == "" || field.Kind != programindex.ObjectVariable || field.ContainerID != owner.ID ||
+				field.Signature != want.signature || field.Location == nil ||
+				field.Location.Path != "src/fixture_app/models.py" || field.Location.Line != want.line || field.Location.Column != 5 {
+				t.Fatalf("%s lost its count declaration, syntax or exact location: %#v", want.name, field)
+			}
+			for _, place := range graph.Places {
+				if place.Symbol == nil || place.Symbol.Decl.ObjectID != owner.ID {
+					continue
+				}
+				members := place.Symbol.Members
+				if len(members) != 1 || members[0].Decl.ObjectID != field.ID ||
+					members[0].Decl.Signature != want.signature || members[0].Path != field.Location.Path ||
+					members[0].Decl.LineNo != want.line || members[0].Decl.Column != 5 {
+					t.Fatalf("%s atlas membership differs from its native field: %#v", want.name, members)
+				}
+			}
+			for _, chunk := range lines.QuestionRows(graph) {
+				for ref, anchor := range chunk.Anchors {
+					if anchor.SubjectID != owner.ID {
+						continue
+					}
+					for _, evidence := range chunk.Row.Fields {
+						if evidence.Name != "evidence" {
+							continue
+						}
+						for _, row := range evidence.Value.([]map[string]any) {
+							if row["ref"] != ref {
+								continue
+							}
+							members, ok := row["owned_declarations"].([]map[string]any)
+							if !ok || len(members) != 1 || members[0]["name"] != "count" ||
+								members[0]["signature"] != want.signature || members[0]["path"] != field.Location.Path || members[0]["line"] != want.line {
+								t.Fatalf("%s question evidence lost or mixed its count declaration: %#v", want.name, row)
+							}
+							return
+						}
+					}
+				}
+			}
+			t.Fatalf("%s did not reach question evidence", want.name)
+		})
+	}
 
 	fixturePackage := programIndexObjectNamed(
 		t, index, programindex.ObjectPackage, "fixture_app", "src/fixture_app/__init__.py",

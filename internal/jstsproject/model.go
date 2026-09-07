@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	Version       = 11
-	HelperVersion = 13
+	Version       = 13
+	HelperVersion = 16
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20
@@ -106,11 +106,14 @@ type Declaration struct {
 	// graph identity and presentation are derived from Ref, ownership, Name,
 	// and Location; no semantic consumer may require or parse this field. When
 	// present, it remains covered by the enclosing Result byte seal.
-	QualifiedName string   `json:"qualified_name,omitempty"`
-	Signature     string   `json:"signature,omitempty"`
-	Exported      bool     `json:"exported"`
-	OwnerRef      string   `json:"owner_ref,omitempty"`
-	Location      Location `json:"location"`
+	QualifiedName string `json:"qualified_name,omitempty"`
+	Signature     string `json:"signature,omitempty"`
+	// SignatureIsSource distinguishes the written interface field from a
+	// compiler-rendered type, whose inferred imports can contain host paths.
+	SignatureIsSource bool     `json:"signature_is_source,omitempty"`
+	Exported          bool     `json:"exported"`
+	OwnerRef          string   `json:"owner_ref,omitempty"`
+	Location          Location `json:"location"`
 }
 
 type Import struct {
@@ -149,6 +152,19 @@ type Call struct {
 	Location         Location     `json:"location"`
 	Pattern          *CallPattern `json:"pattern,omitempty"`
 	PatternsObserved int          `json:"patterns_observed"`
+}
+
+// Binding records a callable value supplied to a JSX attribute, not an
+// invocation. Element and Attribute are syntax, never an operation taxonomy.
+type Binding struct {
+	Ref             string   `json:"ref"`
+	FromRef         string   `json:"from_ref"`
+	ToRefs          []string `json:"to_refs"`
+	Element         string   `json:"element"`
+	Attribute       string   `json:"attribute"`
+	Resolution      string   `json:"resolution"`
+	TargetsObserved int      `json:"targets_observed"`
+	Location        Location `json:"location"`
 }
 
 // CallPattern retains only adapter-neutral syntax needed by later bounded
@@ -245,6 +261,7 @@ type Result struct {
 	Imports         []Import      `json:"imports"`
 	Exports         []Export      `json:"exports"`
 	Calls           []Call        `json:"calls"`
+	Bindings        []Binding     `json:"bindings"`
 	Surfaces        []Surface     `json:"surfaces"`
 	Contracts       []Contract    `json:"contracts"`
 	SHA256          string        `json:"sha256"`
@@ -281,7 +298,7 @@ func Seal(result Result) (Result, error) {
 func omitUnsafeOptionalMetadata(result *Result) {
 	for index := range result.Declarations {
 		signature := result.Declarations[index].Signature
-		if unsafeDeclarationSignature(signature) {
+		if unsafeDeclarationSignature(signature, result.Declarations[index].SignatureIsSource) {
 			result.Declarations[index].Signature = ""
 		}
 	}
@@ -316,8 +333,8 @@ func omitUnsafeOptionalMetadata(result *Result) {
 	}
 }
 
-func unsafeDeclarationSignature(value string) bool {
-	return strings.Contains(value, "node_modules/") || strings.Contains(value, `import("/`)
+func unsafeDeclarationSignature(value string, isSource bool) bool {
+	return !isSource && strings.Contains(value, "node_modules/") || strings.Contains(value, `import("/`)
 }
 
 func (result Result) Validate() error {
@@ -431,7 +448,10 @@ func (result Result) Validate() error {
 		if declaration.Ref == "" || declaration.Name == "" {
 			return fmt.Errorf("jsts project: invalid declaration identity")
 		}
-		if unsafeDeclarationSignature(declaration.Signature) {
+		if declaration.SignatureIsSource && (declaration.Kind != "variable" || declaration.OwnerRef == "") {
+			return fmt.Errorf("jsts project: invalid source field signature for %q", declaration.Ref)
+		}
+		if unsafeDeclarationSignature(declaration.Signature, declaration.SignatureIsSource) {
 			return fmt.Errorf("jsts project: invalid declaration signature for %q", declaration.Ref)
 		}
 		if !validLocation(declaration.Location, fileRefs) {
@@ -510,6 +530,11 @@ func (result Result) Validate() error {
 			return err
 		}
 	}
+	for _, value := range result.Bindings {
+		if err := registerFact(value.Ref, "binding"); err != nil {
+			return err
+		}
+	}
 	for _, value := range result.Contracts {
 		if err := registerFact(value.Ref, "contract"); err != nil {
 			return err
@@ -523,6 +548,24 @@ func (result Result) Validate() error {
 		return file || binary || decl || fact
 	}
 	knownDeclaration := func(ref string) bool { _, ok := declarations[ref]; return ok }
+	callableDeclarations := make(map[string]bool)
+	for _, declaration := range result.Declarations {
+		callableDeclarations[declaration.Ref] = declaration.Kind == "function" || declaration.Kind == "method" || declaration.Kind == "lambda"
+	}
+	for _, value := range result.Bindings {
+		if !knownDeclaration(value.FromRef) || value.Element == "" || value.Attribute == "" ||
+			!validLocation(value.Location, fileRefs) || !validResolution(value.Resolution) ||
+			value.TargetsObserved < 1 || value.TargetsObserved < len(value.ToRefs) ||
+			(value.Resolution == "exact" && (value.TargetsObserved != 1 || len(value.ToRefs) != 1)) ||
+			(value.Resolution == "unresolved") != (len(value.ToRefs) == 0) {
+			return fmt.Errorf("jsts project: invalid callable binding at %s:%d:%d (known source=%t, targets=%d/%d, resolution=%q, element=%q, attribute=%q)", value.Location.Path, value.Location.Line, value.Location.Column, knownDeclaration(value.FromRef), len(value.ToRefs), value.TargetsObserved, value.Resolution, value.Element, value.Attribute)
+		}
+		for _, ref := range value.ToRefs {
+			if !callableDeclarations[ref] {
+				return fmt.Errorf("jsts project: binding has unknown or non-callable recipient")
+			}
+		}
+	}
 	for _, value := range result.Imports {
 		if value.Ref == "" || value.Specifier == "" || !validLocation(value.Location, fileRefs) || value.ImporterFileRef != value.Location.FileRef || !validResolution(value.Resolution) {
 			return fmt.Errorf("jsts project: invalid import")
@@ -740,6 +783,13 @@ func canonicalize(result *Result) {
 		}
 	}
 	sort.Slice(result.Calls, func(i, j int) bool { return result.Calls[i].Ref < result.Calls[j].Ref })
+	if result.Bindings == nil {
+		result.Bindings = []Binding{}
+	}
+	for i := range result.Bindings {
+		result.Bindings[i].ToRefs = canonicalStrings(result.Bindings[i].ToRefs)
+	}
+	sort.Slice(result.Bindings, func(i, j int) bool { return result.Bindings[i].Ref < result.Bindings[j].Ref })
 	if result.Surfaces == nil {
 		result.Surfaces = []Surface{}
 	}

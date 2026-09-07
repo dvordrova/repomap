@@ -186,6 +186,44 @@ func leaf() {}
 	}
 }
 
+func TestDefaultDirectCallsIncludeHandlersOutsideTheMainCallTree(t *testing.T) {
+	repository := t.TempDir()
+	writeTargetScopeFile(t, repository, "go.mod", "module example.com/operations\n\ngo 1.24\n")
+	writeTargetScopeFile(t, repository, "main.go", `package main
+
+func main() {}
+func callback() { worker() }
+func worker() { store() }
+func store() {}
+func factory() func(value int) error {
+	return func(value int) error { store(); return nil }
+}
+`)
+	options := defaultHostOptions(repository)
+	options.DirectCallDepth = 0
+	options.DirectCallEdgeLimit = 0
+	result, err := analyzeForTest(options, targetDirectCallExecutableInput("example.com/operations", "main.go", 3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"callback->worker": true, "worker->store": true, "factory$1->store": true}
+	if got := targetDirectCallEdgeNames(result.DirectCallIndex); !reflect.DeepEqual(got, want) {
+		t.Fatalf("handler paths lost outside main: %v", got)
+	}
+	found := false
+	for _, node := range result.DirectCallIndex.Nodes {
+		if node.Symbol.Name == "factory$1" {
+			found = true
+			if node.Signature != "func(value int) error" {
+				t.Fatalf("anonymous callback signature lost: %q", node.Signature)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("anonymous callback missing")
+	}
+}
+
 func TestTargetDirectCallEdgeLimitClosesBeforeProviderGraphCanBeUsed(t *testing.T) {
 	repository := t.TempDir()
 	writeTargetScopeFile(t, repository, "go.mod", "module example.com/limit\n\ngo 1.24\n")
@@ -346,17 +384,23 @@ func helper() {}
 		t.Fatal(err)
 	}
 	index := result.DirectCallIndex
-	if index == nil || index.State != DirectCallIndexReady || len(index.Edges) != 1 {
+	if index == nil || index.State != DirectCallIndexReady || len(index.Edges) != 2 {
 		t.Fatalf("generic library index = %#v", index)
 	}
 	nodes := make(map[string]DirectCallNode, len(index.Nodes))
 	for _, node := range index.Nodes {
 		nodes[node.ID] = node
 	}
-	edge := index.Edges[0]
-	if nodes[edge.CallerID].Symbol.Name != "Convert" ||
-		nodes[edge.CalleeID].Symbol.Name != "helper" || edge.WitnessCount != 1 {
-		t.Fatalf("generic method root edge = %#v nodes=%#v", edge, nodes)
+	want := map[string]bool{"use->Convert": true, "Convert->helper": true}
+	for _, edge := range index.Edges {
+		pair := nodes[edge.CallerID].Symbol.Name + "->" + nodes[edge.CalleeID].Symbol.Name
+		if !want[pair] || edge.WitnessCount != 1 {
+			t.Fatalf("generic origin edge = %#v nodes=%#v", edge, nodes)
+		}
+		delete(want, pair)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing generic origin calls: %v", want)
 	}
 }
 

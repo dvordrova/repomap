@@ -338,6 +338,13 @@ func collectOpenablePaths(data *ReportData) error {
 		paths[sourcePath] = struct{}{}
 		return nil
 	}
+	for _, question := range data.Questions {
+		for _, stop := range question.Stops {
+			if err := add(stop.Path); err != nil {
+				return err
+			}
+		}
+	}
 	if data.GroupGraph != nil {
 		groupPaths, err := data.GroupGraph.SourcePaths()
 		if err != nil {

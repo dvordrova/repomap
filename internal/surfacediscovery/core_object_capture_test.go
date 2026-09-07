@@ -179,7 +179,7 @@ func hidden() {}
 	}
 	wantCallables := map[string]gocoreobject.CallableKind{
 		"New": gocoreobject.CallableFunction, "Start": gocoreobject.CallableMethod,
-		"hidden": gocoreobject.CallableFunction,
+		"hidden": gocoreobject.CallableFunction, "Run": gocoreobject.CallableMethod,
 	}
 	if len(index.Callables) != len(wantCallables) {
 		t.Fatalf("callables = %#v", index.Callables)
@@ -191,6 +191,13 @@ func hidden() {}
 		}
 		if declaration.Name == "Start" && declaration.Receiver != "*example.com/core.Config" {
 			t.Fatalf("method receiver = %q", declaration.Receiver)
+		}
+		if declaration.Name == "Run" {
+			if declaration.Receiver != "example.com/core.Runner" || declaration.DirectCallNodeID != "" {
+				t.Fatalf("interface declaration lost ownership or invented implementation: %+v", declaration)
+			}
+			delete(wantCallables, declaration.Name)
+			continue
 		}
 		if declaration.DirectCallNodeID == "" {
 			t.Fatalf("callable has no exact DirectCallNode join: %#v", declaration)

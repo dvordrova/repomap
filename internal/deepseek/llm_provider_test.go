@@ -70,6 +70,30 @@ func TestLLMProviderPrepareUsesOnlyCubePromptAndEffectiveLimit(t *testing.T) {
 	if request.MaxTokens != 200 || request.Thinking == nil || request.Thinking.Type != "disabled" {
 		t.Fatalf("official request output controls = %#v", request)
 	}
+	prompt.Reasoning = true
+	reasoned, err := official.Prepare(prompt, llmProviderTestLimits(900))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(reasoned.Bytes(), &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.Thinking == nil || request.Thinking.Type != "enabled" || request.MaxTokens != client.MaxTokens {
+		t.Fatalf("reasoning must retain the configured output ceiling: %#v", request)
+	}
+	withoutReasoning := prompt
+	withoutReasoning.Reasoning = false
+	plain, err := official.Prepare(withoutReasoning, llmProviderTestLimits(900))
+	if err != nil || bytes.Equal(reasoned.Bytes(), plain.Bytes()) {
+		t.Fatal("reasoning preference must change the exact request cache identity")
+	}
+	compatible, err := client.Prepare(prompt, llmProviderTestLimits(900))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(prepared.Bytes(), compatible.Bytes()) {
+		t.Fatal("provider-specific reasoning options must not enter other compatible endpoints")
+	}
 }
 
 func TestLLMProviderStateIsStableAndCredentialFree(t *testing.T) {
@@ -95,8 +119,17 @@ func TestLLMProviderStateIsStableAndCredentialFree(t *testing.T) {
 	}
 	changedModel := *base
 	changedModel.Model = "model-b"
-	if bytes.Equal(state, changedModel.State()) {
-		t.Fatal("model change did not change provider state")
+	if !bytes.Equal(state, changedModel.State()) {
+		t.Fatal("model defaults should not change transport identity")
+	}
+	prompt := llm.Prompt{System: "system", User: "input"}
+	first, err := base.Prepare(prompt, llmProviderTestLimits(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := changedModel.Prepare(prompt, llmProviderTestLimits(100))
+	if err != nil || bytes.Equal(first.Bytes(), second.Bytes()) {
+		t.Fatal("model change did not change exact request identity")
 	}
 }
 

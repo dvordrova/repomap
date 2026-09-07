@@ -1,10 +1,10 @@
-/* The page is a tool, not a document: a lavender canvas, near-black outlines
-   thick enough to read at a glance, and hard offset shadows with no blur. The
+/* A quiet mineral canvas surrounds white reading and map surfaces. The
    zone palette names architectural areas of a target — never confidence and
    never where a fact came from, which stay a matter of wording and badges. */
 :root{
-  --canvas:#f2e6ff;--paper:#fff;--ink:#0a0a0a;--muted:#4b4b55;--line:#0a0a0a;
-  --bg:#fff;--soft:#faf7ff;--accent:#2563eb;--warn:#9a3412;
+  --text-body:1rem;--text-small:.875rem;
+  --canvas:#eef2ef;--paper:#fff;--ink:#202923;--muted:#526057;--line:#c6d0c9;
+  --bg:#fff;--soft:#f5f8f6;--accent:#2563eb;--warn:#9a3412;
   --claim:#6b5300;--claim-bg:#fff8e1;--model:#3f3f46;--model-bg:#ece7f6;
   --edge:2.5px;--rule:3px;--drop:4px;--radius:6px;
   --shadow:var(--drop) var(--drop) 0 0 var(--ink);

@@ -89,6 +89,58 @@ func TestNewSealsExactAndUncertainDynamicHandoffs(t *testing.T) {
 	}
 }
 
+func TestInterfaceFieldAssignmentsRemainPossibleAndKeepSources(t *testing.T) {
+	a := Location{Path: "factory.go", Line: 5, Column: 10}
+	b := Location{Path: "factory.go", Line: 9, Column: 10}
+	input := Input{
+		Scenario:               Scenario{ID: "go:linux/amd64", GOOS: "linux", GOARCH: "amd64"},
+		SourceDirectCallSHA256: strings.Repeat("f", 64),
+		Functions: []Function{
+			{ID: "caller", Package: "example.com/app", Symbol: "Facade.Run", Location: Location{Path: "facade.go", Line: 3, Column: 1}},
+			{ID: "engine", Package: "example.com/app", Symbol: "Engine.Run", Location: Location{Path: "engine.go", Line: 3, Column: 1}},
+		},
+		Handoffs: []Handoff{{
+			Kind: InterfaceInvoke, CallerID: "caller", Invocation: InvocationSynchronous,
+			Callsite:   Location{Path: "facade.go", Line: 4, Column: 2},
+			Slot:       Slot{ContainerType: "example.com/app.Facade", Field: "engine", DeclaredType: "example.com/app.Runner", Method: "Run", Signature: "func()"},
+			Resolution: ResolutionAlternatives, CandidatesConsidered: 2,
+			Candidates: []Candidate{
+				{FunctionID: "engine", Evidence: EvidenceInterfaceFieldAssignment, Assignments: []Location{b, a}},
+				{FunctionID: "engine", Evidence: EvidenceInterfaceFieldAssignment, Assignments: []Location{a}},
+			},
+		}},
+	}
+	index, err := New(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handoff := index.Handoffs[0]
+	if len(handoff.Candidates) != 1 || handoff.CandidatesOmitted != 1 || len(handoff.Candidates[0].Assignments) != 2 {
+		t.Fatalf("field sources or open receiver lost: %+v", handoff)
+	}
+	input.Handoffs[0].Candidates[0], input.Handoffs[0].Candidates[1] = input.Handoffs[0].Candidates[1], input.Handoffs[0].Candidates[0]
+	reordered, err := New(input)
+	if err != nil || reordered.SHA256 != index.SHA256 {
+		t.Fatalf("assignment order changed identity: %v", err)
+	}
+	snapshot := index.Snapshot()
+	snapshot.Handoffs[0].Candidates[0].Assignments[0].Line = 100
+	if index.Handoffs[0].Candidates[0].Assignments[0].Line == 100 {
+		t.Fatal("Snapshot aliases assignment locations")
+	}
+	input.Handoffs[0].Resolution = ResolutionExact
+	input.Handoffs[0].CandidatesConsidered = 1
+	if _, err := New(input); err == nil {
+		t.Fatal("observed field store accepted as an exact runtime call")
+	}
+	input.Handoffs[0].Resolution = ResolutionAlternatives
+	input.Handoffs[0].CandidatesConsidered = 2
+	input.Handoffs[0].Candidates = []Candidate{{FunctionID: "engine", Evidence: EvidenceInterfaceFieldAssignment}}
+	if _, err := New(input); err == nil {
+		t.Fatal("field candidate accepted without its source")
+	}
+}
+
 func TestNewRejectsInterfaceRuntimeCandidateWithoutValueFlowAuthority(t *testing.T) {
 	_, err := New(Input{
 		Scenario:               Scenario{ID: "go:linux/amd64", GOOS: "linux", GOARCH: "amd64"},
@@ -179,6 +231,76 @@ func TestNewRetainsKnownPartialAlternativeAndCountsOnlyOpenFrontier(t *testing.T
 	incompleteAlternative.Handoffs[0].CandidatesConsidered = 1
 	if _, err := New(incompleteAlternative); err == nil || !strings.Contains(err.Error(), "open frontier") {
 		t.Fatalf("single complete candidate accepted as alternatives: %v", err)
+	}
+}
+
+func TestCallableReceiverFieldsAreCanonicalOwnedAndAnchored(t *testing.T) {
+	first := ReceiverField{Field: "Name", Literal: `"restore"`, Location: Location{Path: "main.go", Line: 4, Column: 5}}
+	second := ReceiverField{Field: "Name", Literal: `"recover"`, Location: Location{Path: "main.go", Line: 7, Column: 5}}
+	input := Input{
+		Scenario:               Scenario{ID: "go:linux/amd64", GOOS: "linux", GOARCH: "amd64"},
+		SourceDirectCallSHA256: strings.Repeat("f", 64),
+		Functions: []Function{
+			{ID: "factory", Package: "example.com/app", Symbol: "example.com/app.factory", Location: Location{Path: "main.go", Line: 3, Column: 6}},
+			{ID: "callback", Package: "example.com/app", Symbol: "example.com/app.callback", Location: Location{Path: "main.go", Line: 10, Column: 6}},
+		},
+		Handoffs: []Handoff{{Kind: CallableBinding, CallerID: "factory", Invocation: InvocationBinding,
+			Callsite: Location{Path: "main.go", Line: 5, Column: 5}, Slot: Slot{ContainerType: "example.com/app.Action", Field: "Run", DeclaredType: "func()"},
+			Resolution: ResolutionExact, Candidates: []Candidate{{FunctionID: "callback", Evidence: EvidenceDirectFunctionValue}},
+			ReceiverFields: []ReceiverField{second, first, first},
+		}},
+	}
+	index, err := New(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(index.Handoffs[0].ReceiverFields) != 2 {
+		t.Fatal("distinct assignments were merged")
+	}
+	input.Handoffs[0].ReceiverFields = []ReceiverField{first, second}
+	again, err := New(input)
+	if err != nil || again.SHA256 != index.SHA256 {
+		t.Fatalf("field order changed sealed digest: %v", err)
+	}
+	input.Handoffs[0].ReceiverFields[0].Literal = `"changed"`
+	copy := index.Snapshot()
+	copy.Handoffs[0].ReceiverFields[0].Literal = `"changed"`
+	if index.Handoffs[0].ReceiverFields[0] != first {
+		t.Fatal("field storage aliases input or snapshot")
+	}
+	for _, invalid := range []ReceiverField{
+		{Field: "Name", Literal: `"x"`},
+		{Field: "Run", Literal: `"x"`, Location: first.Location},
+		{Field: "Name", Literal: "", Location: first.Location},
+	} {
+		input.Handoffs[0].ReceiverFields = []ReceiverField{invalid}
+		if _, err := New(input); err == nil {
+			t.Fatalf("accepted invalid field: %+v", invalid)
+		}
+	}
+}
+
+func TestTransferredInterfaceMethodKeepsItsRecipientAndUncertainty(t *testing.T) {
+	input := Input{
+		Scenario: Scenario{ID: "go:linux/amd64", GOOS: "linux", GOARCH: "amd64"}, SourceDirectCallSHA256: strings.Repeat("a", 64),
+		Functions: []Function{{ID: "from", Package: "example.com/app", Symbol: "example.com/app.install", Location: Location{Path: "main.go", Line: 1, Column: 1}}, {ID: "method", Package: "example.com/app", Symbol: "example.com/app.Service.Apply", Location: Location{Path: "main.go", Line: 7, Column: 1}}},
+		Handoffs:  []Handoff{{Kind: CallbackTransfer, CallerID: "from", Invocation: InvocationSynchronous, Callsite: Location{Path: "main.go", Line: 3, Column: 2}, StaticTarget: StaticTarget{Package: "company/framework", Name: "Mount"}, Slot: Slot{Parameter: 2, DeclaredType: "company/framework.Service", Method: "Apply", Signature: "func(Request) Response"}, Resolution: ResolutionAlternatives, Candidates: []Candidate{{FunctionID: "method", Evidence: EvidenceConcreteInterfaceValue}}, CandidatesConsidered: 2}},
+	}
+	index, err := New(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index.Handoffs[0].CandidatesOmitted != 1 || index.Coverage.CallbackTransfers != 1 {
+		t.Fatal("object transfer lost its open frontier")
+	}
+	input.Handoffs[0].Slot.Method = ""
+	if _, err := New(input); err == nil {
+		t.Fatal("accepted interface without its declared method")
+	}
+	input.Handoffs[0].Slot.Method = "Apply"
+	input.Handoffs[0].Candidates[0].Evidence = EvidenceDirectFunctionValue
+	if _, err := New(input); err == nil {
+		t.Fatal("ordinary function gained interface method authority")
 	}
 }
 

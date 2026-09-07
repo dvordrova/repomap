@@ -1,0 +1,263 @@
+package reading
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+
+	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/modeldiag"
+)
+
+const (
+	KnowledgeFilename = "knowledge.json"
+	KnowledgeVersion  = 2
+)
+
+// Knowledge is one interpretation attached to an internal entity. Input is
+// the exact evidence shown for that entity; DependsOn names earlier model
+// interpretations, rather than silently presenting them as source facts.
+// Descriptions currently inspect declarations and extracted facts, not bodies.
+type Knowledge struct {
+	ID             string          `json:"id"`
+	SubjectID      string          `json:"subject_id"`
+	PlaceID        string          `json:"place_id"`
+	ContextID      string          `json:"context_id,omitempty"`
+	TargetIDs      []string        `json:"target_ids"`
+	Path           string          `json:"path"`
+	Line           int             `json:"line,omitempty"`
+	Stage          string          `json:"stage"`
+	Contract       string          `json:"contract"`
+	PromptSHA256   string          `json:"prompt_sha256"`
+	BasisID        string          `json:"basis_id"`
+	Input          json.RawMessage `json:"input"`
+	DependsOn      []string        `json:"depends_on,omitempty"`
+	Cells          table.Answer    `json:"cells"`
+	Source         string          `json:"source"`
+	OriginRequest  string          `json:"origin_request_sha256"`
+	OriginResponse string          `json:"origin_response_sha256"`
+}
+
+// A memo is an index into the current shared response, never a second copy
+// of the answer. Replaying that request updates every entity bound to it.
+type rememberedRow struct {
+	RequestKey string `json:"request_key"`
+	RowKey     string `json:"row_key"`
+}
+
+type rememberedTable struct {
+	rows                    map[string]map[string]string
+	requestSHA, responseSHA string
+	err                     error
+}
+
+func digest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func (r *reader) knowledgeInput(def table.Definition, shared []table.Field, row table.Row) (Knowledge, table.Window, error) {
+	place, known := r.places[row.ID]
+	if !known {
+		return Knowledge{}, table.Window{}, fmt.Errorf("knowledge: row %s has no internal entity", row.ID)
+	}
+	k := Knowledge{
+		SubjectID: place.ID, PlaceID: place.ID, Path: place.Path, Line: place.LineNo,
+		TargetIDs: append([]string(nil), place.TargetIDs...),
+		Stage:     def.Stage, Contract: def.Contract, PromptSHA256: digest([]byte(def.System)),
+	}
+	sort.Strings(k.TargetIDs)
+	if place.Symbol != nil && place.Symbol.Decl.ObjectID != "" {
+		k.SubjectID = place.Symbol.Decl.ObjectID
+	}
+	// A file's placement uses its directory; a declaration/boundary uses
+	// its file. These interpretations retain that context even when it is
+	// deterministic and contributes no model dependency.
+	k.ContextID = place.Parent
+	if parent := r.knowledge[place.Parent]; parent != nil {
+		for _, field := range row.Fields {
+			if (field.Name == "directory_hypothesis" || field.Name == "file_hypothesis" || field.Name == "description_hypothesis") && field.Value == parent.Cells["line"] {
+				k.DependsOn = []string{parent.ID}
+				break
+			}
+		}
+	}
+	window := table.Window{Stage: def.Stage, Context: shared, Rows: []table.Row{row}}
+	input, err := table.Request(def, window)
+	if err != nil {
+		return k, window, err
+	}
+	window.Request, k.Input = input, input
+	call, err := table.Call(def, window)
+	if err != nil {
+		return k, window, err
+	}
+	// Reuse depends on what the model actually receives and the table contract.
+	// Ownership and prior knowledge IDs are local bindings, not model input.
+	// A changed parent line still changes this row's exact request.
+	k.BasisID, err = llm.MemoIdentity(r.opts.Provider, call.State, call.Prompt, call.Limits)
+	return k, window, err
+}
+
+// identity binds an answer to its current subject and provenance. Reusing the
+// same answer after a scope change must not retain stale dependency IDs.
+func (k Knowledge) identity(repository string) string {
+	raw, _ := json.Marshal(struct {
+		Repository string       `json:"repository"`
+		Subject    string       `json:"subject"`
+		Place      string       `json:"place"`
+		Context    string       `json:"context"`
+		Targets    []string     `json:"targets"`
+		DependsOn  []string     `json:"depends_on"`
+		Basis      string       `json:"basis"`
+		Cells      table.Answer `json:"cells"`
+	}{repository, k.SubjectID, k.PlaceID, k.ContextID, k.TargetIDs, k.DependsOn, k.BasisID, k.Cells})
+	return digest(raw)
+}
+
+func (r *reader) recallRow(def table.Definition, window table.Window, ref rememberedRow) (rowAnswer, bool, error) {
+	cached, known := r.responseTables[ref.RequestKey]
+	if !known {
+		exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, ref.RequestKey)
+		cached = rememberedTable{requestSHA: exchange.RequestSHA256, responseSHA: exchange.ResponseSHA256, err: err}
+		if err == nil && found {
+			envelope, err := llm.DecodeJSON[struct {
+				Rows []map[string]string `json:"rows"`
+			}](nil)(exchange.Response)
+			cached.err = err
+			if err == nil {
+				cached.rows = make(map[string]map[string]string, len(envelope.Rows))
+				for _, cells := range envelope.Rows {
+					key := cells["key"]
+					if key == "" || cached.rows[key] != nil {
+						cached.err = fmt.Errorf("knowledge: missing or duplicate response row key %q", key)
+						break
+					}
+					cached.rows[key] = cells
+				}
+			}
+		}
+		r.responseTables[ref.RequestKey] = cached
+	}
+	if cached.err != nil {
+		return rowAnswer{}, false, cached.err
+	}
+	original, found := cached.rows[ref.RowKey]
+	if !found {
+		return rowAnswer{}, false, nil
+	}
+	cells := make(map[string]string, len(original))
+	for key, value := range original {
+		cells[key] = value
+	}
+	cells["key"] = table.Key(0)
+	raw, err := json.Marshal(map[string]any{"rows": []map[string]string{cells}})
+	if err != nil {
+		return rowAnswer{}, false, err
+	}
+	answers, err := table.Decode(def, window, raw)
+	if err != nil {
+		return rowAnswer{}, false, err
+	}
+	return rowAnswer{answer: answers[0], source: atlas.SourceCache, requestSHA: cached.requestSHA,
+		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
+}
+
+// runIndependent removes known entities before planning provider windows, then
+// binds each accepted answer back to the entity, independent of its batch key.
+func (r *reader) runIndependent(ctx context.Context, def table.Definition, round int, shared []table.Field, rows []table.Row) ([]rowAnswer, error) {
+	answers := make([]rowAnswer, len(rows))
+	inputs := make([]Knowledge, len(rows))
+	reused := make([]bool, len(rows))
+	var missing []table.Row
+	var positions []int
+	for i, row := range rows {
+		k, window, err := r.knowledgeInput(def, shared, row)
+		if err != nil {
+			return nil, err
+		}
+		inputs[i] = k
+		ref, found, err := llm.LoadMemo(r.opts.Executor, k.BasisID, llm.DecodeJSON(func(value rememberedRow) error {
+			if len(value.RequestKey) != 64 || value.RowKey == "" {
+				return fmt.Errorf("knowledge: invalid response row reference")
+			}
+			return nil
+		}))
+		var answer rowAnswer
+		if found {
+			answer, found, err = r.recallRow(def, window, ref)
+		}
+		if err != nil {
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "knowledge_rejected", Count: 1, Reason: err.Error(), Samples: []string{row.ID}})
+		}
+		if found {
+			reused[i] = true
+			answers[i] = answer
+			r.use(def.Stage).Reused++
+			r.use(def.Stage).Rows++
+			fmt.Fprintf(&r.tables, "- Reused %s · %s\n", row.ID, answer.answer["line"])
+		} else if r.recallOnly {
+			answers[i] = rowAnswer{source: atlas.SourceGiven}
+			r.use(def.Stage).Rows++
+			r.use(def.Stage).Given++
+		} else {
+			missing = append(missing, row)
+			positions = append(positions, i)
+		}
+	}
+	if len(missing) > 0 {
+		fresh, err := r.runPreparedTable(ctx, def, round, shared, missing, nil)
+		if err != nil {
+			return nil, err
+		}
+		for j, position := range positions {
+			answers[position] = fresh[j]
+		}
+	}
+	for i, answer := range answers {
+		if answer.answer == nil {
+			continue
+		}
+		k := inputs[i]
+		k.Cells, k.Source, k.OriginRequest = answer.answer, answer.source, answer.requestSHA
+		k.OriginResponse = answer.responseSHA
+		k.ID = k.identity(r.opts.Repository)
+		r.knowledge[k.PlaceID] = &k
+		r.knowledgeSubjects[k.SubjectID] = &k
+		if !r.recallOnly && !reused[i] {
+			raw, err := json.Marshal(rememberedRow{RequestKey: answer.requestKey, RowKey: answer.rowKey})
+			if err != nil {
+				return nil, err
+			}
+			if err := llm.SaveMemo(r.opts.Executor, k.BasisID, raw); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return answers, nil
+}
+
+func (r *reader) persistKnowledge() error {
+	rows := make([]Knowledge, 0, len(r.knowledge))
+	for _, record := range r.knowledge {
+		rows = append(rows, *record)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].PlaceID < rows[j].PlaceID })
+	raw, err := json.MarshalIndent(struct {
+		Version    int         `json:"version"`
+		Repository string      `json:"repository"`
+		Revision   string      `json:"revision"`
+		Records    []Knowledge `json:"records"`
+	}{KnowledgeVersion, r.opts.Repository, r.opts.Revision, rows}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(r.opts.OwnerRunDir, KnowledgeFilename), raw, 0o600)
+}

@@ -407,21 +407,6 @@ func formatRunOutputWallDuration(duration time.Duration) string {
 	return "duration: " + duration.Round(time.Millisecond).String()
 }
 
-// readRunTiming is the account a run wrote into its metadata, or nothing.
-func readRunTiming(runDir string) debugdump.RunTiming {
-	raw, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
-	if err != nil {
-		return debugdump.RunTiming{}
-	}
-	var metadata struct {
-		Timing *debugdump.RunTiming `json:"timing"`
-	}
-	if err := json.Unmarshal(raw, &metadata); err != nil || metadata.Timing == nil {
-		return debugdump.RunTiming{}
-	}
-	return *metadata.Timing
-}
-
 // wholeRunTiming merges every target run's account under the driving run's
 // wall clock: per stage the calls add up and the slowest stays the slowest.
 func wholeRunTiming(output *runOutput, runs []targetPublishedRun) debugdump.RunTiming {
@@ -434,7 +419,7 @@ func wholeRunTiming(output *runOutput, runs []targetPublishedRun) debugdump.RunT
 		byStage[total.Stages[position].Stage] = &total.Stages[position]
 	}
 	for _, run := range runs {
-		for _, stage := range readRunTiming(run.RunDir).Stages {
+		for _, stage := range run.Timing.Stages {
 			at, known := byStage[stage.Stage]
 			if !known {
 				total.Stages = append(total.Stages, stage)

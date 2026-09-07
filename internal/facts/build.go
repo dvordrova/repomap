@@ -31,6 +31,7 @@ type Input struct {
 	Repository   *corpus.Corpus
 	TrackedPaths []string
 	Targets      []TargetInput
+	Extractions  []Extraction
 }
 
 // Build derives the sealed fact layer from its inputs. It is pure: the same
@@ -48,6 +49,9 @@ func Build(input Input) (Result, error) {
 		builder.addDynamicExecution(target)
 		builder.addReachability(target)
 		builder.addDependencies(target)
+	}
+	if err := builder.addExtractions(); err != nil {
+		return Result{}, err
 	}
 	builder.addPortals()
 	builder.addManifests()

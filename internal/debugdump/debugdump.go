@@ -100,7 +100,7 @@ type RequestAttempt struct {
 
 const (
 	SemanticExchangesDir     = "semantic_exchanges"
-	SemanticExchangeMetaFile = "exchange.v2.json"
+	SemanticExchangeMetaFile = "exchange.v3.json"
 
 	SemanticStageReadmeFileClassifier  = "readme_file_classifier"
 	SemanticStageTargetPortfolio       = "target_portfolio_selection"
@@ -116,9 +116,14 @@ const (
 	SemanticStageAtlasZones       = "atlas_zones"
 	SemanticStageAtlasFiles       = "atlas_files"
 	SemanticStageAtlasSymbols     = "atlas_symbols"
+	SemanticStageAtlasOperations  = "atlas_operations"
 	SemanticStageAtlasBoundaries  = "atlas_boundaries"
 	SemanticStageAtlasArrows      = "atlas_arrows"
 	SemanticStageAtlasJoints      = "atlas_joints"
+	SemanticStageAtlasQuestion    = "atlas_question"
+	SemanticStageAtlasRoute       = "atlas_route"
+	SemanticStageAtlasAnswer      = "atlas_answer"
+	SemanticStageAtlasLearn       = "atlas_learn"
 	SemanticRequestPrepared       = "prepared_request"
 	SemanticRequestExactSent      = "exact_sent_request"
 	SemanticStateAccepted         = "accepted"
@@ -138,7 +143,7 @@ const (
 	SemanticUnavailableOmitted    = "cache_response_omitted"
 	SemanticUnavailableSize       = "size_limit"
 	SemanticExchangeWarningCode   = "artifact_write_failed"
-	semanticExchangeVersion       = 2
+	semanticExchangeVersion       = 3
 	semanticPayloadMarkerVersion  = 1
 	// The semantic journal may preserve every provider-valid request or
 	// response. Its payload ceiling is therefore the shared real semantic
@@ -171,6 +176,7 @@ type SemanticUnavailable struct {
 // recorder is diagnostic-only: callers give it their existing outcome after
 // validation and never read a value back into execution.
 type SemanticExchange struct {
+	CacheRoot              string
 	Stage                  string
 	InstanceOrdinal        int
 	SemanticAttemptOrdinal int
@@ -517,12 +523,6 @@ func (w *Writer) writeSemanticExchange(
 		Outcome: normalizedSemanticOutcome(exchange),
 		Request: request.record, Response: response.record,
 	}
-	metadata, err := json.MarshalIndent(record, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode semantic exchange metadata: %w", err)
-	}
-	metadata = append(metadata, '\n')
-
 	w.semanticMu.Lock()
 	defer w.semanticMu.Unlock()
 	if w.root == nil {
@@ -541,11 +541,27 @@ func (w *Writer) writeSemanticExchange(
 			_ = w.root.RemoveAll(directory)
 		}
 	}()
-	if err := w.writePreparedRootFile(filepath.Join(directory, request.name), request.data); err != nil {
-		return err
+	cacheRoot := exchange.CacheRoot
+	if cacheRoot == "" {
+		cacheRoot = w.BaseDir
 	}
-	if err := w.writePreparedRootFile(filepath.Join(directory, response.name), response.data); err != nil {
-		return err
+	for _, payload := range []struct {
+		data   []byte
+		record *SemanticPayloadRecord
+	}{{request.data, &record.Request}, {response.data, &record.Response}} {
+		filename, err := llm.SavePayload(cacheRoot, payload.data)
+		if err != nil {
+			return err
+		}
+		entryDir, err := filepath.Abs(filepath.Join(w.runDir, directory))
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(entryDir, filename)
+		if err != nil {
+			return err
+		}
+		payload.record.File = filepath.ToSlash(relative)
 	}
 	if afterPayloads != nil {
 		if err := afterPayloads(); err != nil {
@@ -553,6 +569,11 @@ func (w *Writer) writeSemanticExchange(
 		}
 	}
 	// Metadata is the commit marker and is always published last.
+	metadata, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode semantic exchange metadata: %w", err)
+	}
+	metadata = append(metadata, '\n')
 	if err := w.writePreparedRootFile(filepath.Join(directory, SemanticExchangeMetaFile), metadata); err != nil {
 		return err
 	}
@@ -684,9 +705,14 @@ func validSemanticStage(stage string) bool {
 		SemanticStageAtlasZones,
 		SemanticStageAtlasFiles,
 		SemanticStageAtlasSymbols,
+		SemanticStageAtlasOperations,
 		SemanticStageAtlasBoundaries,
 		SemanticStageAtlasArrows,
-		SemanticStageAtlasJoints:
+		SemanticStageAtlasJoints,
+		SemanticStageAtlasQuestion,
+		SemanticStageAtlasRoute,
+		SemanticStageAtlasAnswer,
+		SemanticStageAtlasLearn:
 		return true
 	default:
 		return false

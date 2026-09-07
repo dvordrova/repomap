@@ -276,7 +276,7 @@ func baseTestCall(cubeState, user string) Call[testValue] {
 	}
 }
 
-func TestExecuteJSONInvalidatesProviderCubeAndInputState(t *testing.T) {
+func TestExecuteJSONRevalidatesCubeStateAndInvalidatesChangedRequests(t *testing.T) {
 	root := t.TempDir()
 	provider := baseTestProvider()
 	call := baseTestCall("cube-v1", "input-a")
@@ -296,7 +296,7 @@ func TestExecuteJSONInvalidatesProviderCubeAndInputState(t *testing.T) {
 
 	cubeChanged := call
 	cubeChanged.State = []byte("cube-v2")
-	if outcome, err := ExecuteJSON(t.Context(), executor, provider, cubeChanged); err != nil || outcome.Cached {
+	if outcome, err := ExecuteJSON(t.Context(), executor, provider, cubeChanged); err != nil || !outcome.Cached {
 		t.Fatalf("cube state change = %#v, err = %v", outcome, err)
 	}
 	inputChanged := call
@@ -308,8 +308,8 @@ func TestExecuteJSONInvalidatesProviderCubeAndInputState(t *testing.T) {
 	if outcome, err := ExecuteJSON(t.Context(), executor, provider, call); err != nil || outcome.Cached {
 		t.Fatalf("provider state change = %#v, err = %v", outcome, err)
 	}
-	if provider.completeCalls != 4 {
-		t.Fatalf("live calls = %d, want four distinct identities", provider.completeCalls)
+	if provider.completeCalls != 3 {
+		t.Fatalf("live calls = %d, want three distinct requests", provider.completeCalls)
 	}
 }
 

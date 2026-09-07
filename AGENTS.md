@@ -7,15 +7,186 @@ supported user-facing surface is deliberately small:
 
 - `repomap [repository] [flags]` runs the ordinary analysis and publishes the
   report artifacts.
+- `repomap conf [repository]` creates the local `.repomap.conf` if absent and
+  opens it using its editor setting. This command performs no analysis.
+- `repomap replay --file REQUEST.json [--debug-dir DIR]` resends exact saved
+  provider bytes through the configured client and refreshes its cached answer.
 - `repomap cache clear [--debug-dir DIR]` clears persistent model-response
   caches.
 
-There is no supported offline, investigate, doctor, dev, replay, experiment, or
+`repomap read READING_INPUT.json [--through STAGE] [flags]` runs the same
+atlas reading stages from the current saved input format for development.
+It can override one stage's prompt and context budgets, saves inputs and
+normalized results, and never renders HTML. No old-format adapters or
+parallel analysis implementations are supported. There is no separate
 `serve` subcommand. Report serving remains part of the ordinary run and is
 controlled by `--no-serve` and `--port`. `--no-model` walks the atlas without
 a provider, every cell on its fallback line and no orientation, and needs
 `--target` because no target is selected without the model. Do not add
 script entrypoints or sidecar tools.
+
+`--question TEXT` is repeatable and supplements local `.repomap.conf` questions.
+Settings are loaded once and passed as a typed value through target work and
+serving. Questions share the graph and recalled descriptions, with independent
+provider requests and question-keyed table references. Learn links questions
+to short source-anchored answers; supporting reading routes remain collapsed.
+The flag adds retrieval, route selection and an answer after the ordinary atlas;
+on `read` it runs those stages without the ordinary atlas. `--through question`
+stops before route selection; `--through route` edits the selector alone
+while unchanged retrieval is cached; `--through answer` changes only the final
+answer with unchanged retrieval and route inputs reused. `question-routes.json`
+v1 stores a list of v7 routes. Each retains every
+candidate and its original evidence, plus a short ordered list of source locations
+and an open question. Route table v7 does not request a redundant summary;
+selected locations retain their original reasons. Answer table v6 reads the
+selected original evidence with labelled prior model interpretations and returns
+a brief explanation, its basis, source refs and a specific remaining gap.
+Final answer prose preserves paragraphs and complete qualifications; only
+short label cells are whitespace-collapsed or length-trimmed. Source checks
+keep owned declarations together, each with its original code link.
+Only this final answer table opts into provider-supported reasoning. Tables
+have no individual output-token ceilings: they use the shared 128,000-token
+request envelope, and the configured provider ceiling still applies. Reasoning
+and visible output share that allowance; concise prose is a prompt requirement,
+not a smaller generation cutoff. The DeepSeek adapter encodes that preference on its
+official endpoint, leaving other compatible endpoints unchanged. Exact request
+and memo identities distinguish the preference. Other atlas tables keep their
+existing fast mode. The final answer reads the original question and evidence;
+the route's open question remains in its supporting reading and does not become
+an extra requirement for the answer. Required unfamiliar names are briefly
+explained at first use. Completeness compares the original question with the
+answer at its requested level: silent omission of a central part is partial;
+an overview does not require unasked implementation details.
+Useful deductions are welcome, including from names and signatures; they stay
+recognizable as interpretations and can be checked beside the original excerpts.
+Answered, partial, unanswered, not-applicable and
+unavailable remain distinct; incomplete evidence cannot establish inapplicability.
+If selected evidence needs multiple windows, their original anchors survive in
+separate partial answer parts. No body retrieval or new semantic graph is added.
+The ordinary reading adapts eight base learning intents after the atlas using
+the configured client, then answers its proposals through the same question,
+route and answer stages. The owner explicitly approved this for user-selected
+repositories on 2026-09-06. `read --through learn` stops after the plan.
+`learning-plan.json` retains each context review and every proposal's original
+intent, reason and sources. Overlapping automatic questions share one answer;
+explicit questions remain visible. Exact duplicate explicit/generated wording
+shares a result carrying both origins. Questions expose their selection reasons
+and original excerpts. Answers offer existing term explanations when they
+selected that exact named declaration, with links to the term's map memberships.
+Generated declarations participate.
+Automatic proposal selection composes the base-intent menus together through
+the same executor. Each intent has one mandatory set-valued decision over its
+closed candidate refs; all rows share the original candidate catalogue and read
+their full curated learning goals. Selected and unselected questions retain
+their original sources and the menu rationale; an unselected question is not
+declared inapplicable or individually judged unsuitable. Explicit questions
+bypass this selection. Context partitions reduce without a question quota.
+Decisions made before
+the candidates fit together retain their partial-comparison scope, including a
+nonshrinking fixed point; the report does not imply a whole-menu comparison.
+Stage prompt overrides
+do not replace the separate selection and consolidation contracts. Large-repository
+menu quality remains under acceptance review; a technically valid plan is not
+by itself evidence of a useful introduction. The full saved etcd check now
+selects 22 questions from 630 original candidates, covering all eight goals.
+Ordinary report and answer quality still need acceptance. Prompt-only merge
+changes, an extra explanation cell and a reasoning-mode replay did not solve
+the earlier oversized menu; those experiments are not ordinary-path changes.
+Go test declarations also enter the same index and question rows. Existing
+build-selected go-list test inventories supply parsed declarations with exact
+locations, including external tests, private packages and test-only directories.
+They belong to their module component (or their own executable package), never
+become production API or launch seeds, and currently carry no test call graph,
+execution result or assertion semantics.
+Question table v6 selects a closed set of useful anchors from each complete
+context chunk; chunk boundaries never impose one representative declaration.
+Selected type anchors keep their native owned declarations and exact member
+locations, also shown under the answer's source checks. Types beyond the
+description-candidate budget remain available for question reading.
+Every selected anchor retains its own subject and original evidence. Its row's
+reason is a shared relevance hint, not a separate proof about each declaration.
+The reader uses the same sealed in-memory graph that SaveInput persists, so
+ordinary and saved readings bind their question results to the same graph hash.
+Connections retain their source kind; the route is not an execution trace.
+The selector aims for six stops; extra valid anchors remain valid in every
+round. Pools partition complete original evidence by the configured input-byte
+budget, with no candidate-count ceiling. A round either reduces the source
+set or finishes with independently ordered reading parts; a fixed point never
+retries unchanged evidence, invents a global ranking, or discards sources to
+force convergence. Their exact union feeds the answer stage. The facts stage runs built-in sqlc and configured external commands through
+the same nodes/links contract in docs/EXTRACTORS.md (facts format v2).
+Extensions supply source observations, not architecture role assignments.
+These rows enter the same places graph and question table, with producer
+declarations and corpus membership distinguished from compiler call edges.
+Graph and saved reading input are v9; there are no old-format readers.
+Observed entrypoint seeds and manifest values from the existing facts result
+also enter this graph, with their exact source and component context. They are
+available to both Learn proposals and question retrieval without requiring a
+key-symbol interpretation. Native launch identities stay local; no framework
+command, call edge or new architecture group is inferred. Corpus-excluded
+configuration-file references remain excluded. These observations are appended
+after the existing question reservoir so unchanged earlier requests can reuse
+their cache entries. Supporting answer excerpts retain the original source.
+Markdown documents enter that same graph as source sections, independently
+of code-file groups. Question rows include bounded verbatim excerpts with
+commands, links and later paragraphs, labelled as author instructions rather
+than runtime evidence. Oversized sections are partitioned without omissions;
+exact source lines/columns and section identities remain local. This extends
+documentation evidence, not matching's pending caller/callee evidence change.
+Callable observations from different target indexes meet at their existing
+compiler-located symbol place. Incoming calls retain that place identity as
+well as the native object ID; outgoing calls retain callee place IDs for local
+retrieval. Outgoing calls also retain their source column locally. An empty
+unresolved target view is subsumed only by possible receiver observations at
+the same exact call site with otherwise identical call facts; distinct sites,
+dispatch details and independent evidence remain. Possible dispatch never
+becomes exact. Generated callables retain facts without becoming description or
+operation-review candidates. These local keys and call columns never enter provider rows.
+The operation review sends immediate caller declarations once with
+their distinct call sites; it does not join names or recursively expand callers.
+Go callable bindings retain anchored literal assignments to other fields of
+the same SSA receiver, independent of framework names. These observations enter
+the callable's own review; neighbouring caller registrations omit their field
+metadata. No field observation asserts a final runtime value or callback call.
+
+JSTS result v13 / helper v16 also preserves every compiler-observed callable
+JSX attribute as an anchored callback binding, including render props. The
+element and attribute are source facts; neither their names nor a framework
+allowlist classify an operation. Wrapped function-valued declarations retain
+compiler callable identity; inline anonymous callbacks and unindexed callable
+factory results remain unresolved. A factory result never becomes a binding or
+method call on the factory itself. Calls in ordinary local value initializers
+belong to their enclosing callable. Symbol table v5 and operation table v12
+can interpret these observations as user `interaction`, alongside commands,
+requests, scheduled and continuous work, using the same graph and review.
+
+Direct TypeScript interface property declarations retain their written type,
+optional/readonly modifiers, exact source location and native owner. Go core
+objects v3 retain explicitly declared struct fields, including tags and embedded
+field declarations, under their native type. Both project into the existing
+type-owned variable objects used by Python class fields. The same atlas members
+and question evidence carry them onward; no field creates a runtime call or an
+inherited declaration at a new owner. Comparable count-field examples live in
+the cumulative TypeScript, Python and Go testdata repositories.
+
+Knowledge is attached to internal entities, separately from provider batches.
+Independent directory, file, symbol and boundary rows persist their accepted
+cells, exact evidence and prior interpretation dependencies in knowledge.json.
+The shared executor stores request/row references beside its exact-response cache;
+reuse is keyed by the table contract, provider configuration and exact model
+input. `knowledge.json` v2 separately binds reused answers to the current
+subject, owners and parent knowledge IDs. Ownership/provenance-only changes do
+not trigger model calls; a changed parent line in the input does. Only missing
+or changed inputs enter new batches. Question-only readings recall
+current descriptions without description calls, then use labelled model hints
+alongside source evidence. Question stops retain SubjectID separately from
+their context PlaceID and reference used knowledge records. See CURRENT.md for
+the distinction between entity behavior and a purpose at one call site. These
+descriptions still inspect extracted declarations, not function bodies.
+Request/response bytes live once in .llm-cache/payloads; run journals and table
+artifacts link to them. Entity memos contain no copied cells: reuse resolves the
+current cached response and validates its row, so replay affects the next read.
+Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
 
 ## Authority
 
@@ -127,8 +298,9 @@ script entrypoints or sidecar tools.
   promotes the omitted member. Group proposals left with no advertised known
   member are discarded. Only genuinely incompatible assignments for one known
   ref remain an explicit ambiguity; do not apply first-wins repair.
-- Provider requests must never contain full repository source contents, raw
-  internal edges, canonical internal IDs, credentials, or unadvertised paths.
+- Provider request bodies must never contain full repository source contents,
+  raw internal edges, canonical internal IDs, the LLM client's authentication
+  credentials, or unadvertised paths.
   A complete names-only tracked-file dictionary is explicitly allowed for the
   README file-role classifier.
 - The selected repository is trusted and the tool is not a security boundary.
@@ -173,11 +345,14 @@ script entrypoints or sidecar tools.
   publication seals a language-neutral `ProgramPagePortfolio` keyed by exact
   `ProgramTarget` IDs and child run IDs plus one exhaustive
   `TargetOutcomePortfolio`; joints between targets come from matched boundary
-  values confirmed by the model. Preserve every analyzed child run's `report.json`, ProgramIndex,
-  reduced documentation, and GroupsIndex, but publish exactly one physical
-  `report.html` in the deterministic successful owner run. Derive that owner
-  document directly from the backing data rather than merging child HTML. In served mode, sibling target URLs are virtual
-  projections of that backing data and never require sibling HTML files.
+  values confirmed by the model. Retain target-local ProgramIndex, dependency
+  catalogue and GroupsIndex artifacts. Publish repository-wide facts, claims,
+  orientation, atlas, portfolios, manifest, `report.json` and `report.html` once
+  in the successful owner run. Stages pass typed values in memory; persistence
+  is separate from computation. Load a saved artifact only when its value is
+  absent from memory. The report server consumes the generated result directly,
+  or restores one common report and manifest in another process. Every target
+  is a section of that common page.
   Single-target publication uses the same one-page `ProgramPagePortfolio` and
   one-row exhaustive `TargetOutcomePortfolio`; it has no direct page,
   manifest, report, or browser fallback.
@@ -259,11 +434,6 @@ script entrypoints or sidecar tools.
   candidates in the selected API tier fail closed; one stable legacy Compiler
   API candidate is preferred over a native-preview candidate when both are
   deliberately declared.
-  Optional signatures and source-expression display text that match the
-  always-on persistence guard are omitted locally before the first ProgramIndex
-  projection and sealing; the same callsite identity, location, resolution,
-  targets, and witness count remain.
-  Sensitive required identity or semantic fields still fail closed.
   Shared contracts are supporting code, build/migration scripts remain tools,
   and a runtime script, library, or tool-only root must never promote itself
   into an application.
@@ -279,19 +449,50 @@ script entrypoints or sidecar tools.
   (routes, client calls, listeners, configuration reads, dynamic execution,
   and calls into non-platform packages with a literal argument), the
   file-to-file edges and the seeds. `reading` walks them in rounds and asks
-  one keyed table per round: directories by depth, files by call-graph
-  round, symbols, boundaries, the parts of a target (one row asking for
+  one keyed table per round: directories by depth, independent files with direct caller facts,
+  symbols, boundaries, the parts of a target (one row asking for
   exactly `want` names, then every top box choosing from that closed list),
-  the drawn arrows, the portfolio, the joints. A row carries the place's own
-  facts and its parent's line, one step up; nothing transitive, nothing
-  filled to a window. The model writes one line or one closed choice per
+  the drawn arrows, the portfolio, the joints. A row carries the place's own facts and its directory's line, one step up.
+  File callers contribute deterministic facts, never another file's model
+  line. Table windows split at complete rows under their row and input-byte
+  budgets (64 KiB default); an oversized singleton is an explicit preparation
+  error requiring a different evidence representation in its owning stage. The model writes one line or one closed choice per
   cell; the code owns membership, arrows and their direction, joints by
   matched values, counts and identities. A refused window falls back on its
   rows' deterministic lines and is written to `rejected.jsonl`, never
-  cached. Every row and answer is printed to `tables.md`, with the exact
-  request bytes under `tables/`. Above two thousand files the directory and
+  cached. Every row and answer is printed to `tables.md`, with prompts, requests, raw
+  responses and normalized source-bound results under `tables/`. The ordinary
+  path saves `reading-input.json` before its first atlas call; `read` consumes
+  exactly that format and runs the same reader. Above two thousand files the directory and
   file rows carry an `open` cell and what the model closes keeps its
   fallback line.
+- Type descriptions use the existing symbol stage and symbol knowledge, with
+  the active `lines/prompts/types.md` prompt embedded by `lines/tables.go`.
+  Atlas graph and saved reading input version 8 retain a type's declarations
+  through exact native owner IDs, including cross-file methods and explicit Go
+  interface method declarations. Interface declarations have no invented
+  direct-call node. Type context retains the existing bounded author quotes,
+  including later sentences; ordinary file/callable rows still use first
+  sentences. The type table v5 asks for a short explanation
+  and key flag; it cannot classify activations. Its explanation is prose, so
+  normalization preserves complete sentences and qualifications rather than
+  cutting them at 240 characters. Undocumented lifecycle topics are omitted
+  instead of appending irrelevant absence claims. Bare names without owned
+  declarations or author documentation stay in the source index without an
+  invented definition. A file's model hypothesis is not type evidence. Ordinary
+  callable rows keep their own contract and memo identity. Concept explanations
+  on maps are a projection of existing interpreted type subjects, not a glossary
+  or a second semantic graph. Effects implemented elsewhere still require their
+  actual source contract; method ownership alone does not establish them.
+  Names, signatures and argument names are useful clues for model hypotheses;
+  absence of comments must not prevent orientation. Distinguish such hypotheses
+  from observed local actions and effects established by following callers.
+  The owner explicitly authorized an incremental context/cost experiment on
+  the public acceptance repositories: compare names, signatures, own code
+  without comments, and documented code through the configured replay client.
+  This is a development measurement, not ordinary report acceptance or a
+  general implementation-body expansion of the product pipeline. The separate
+  matching-context approval recorded in CURRENT.md remains pending.
 - `groupindex.ProjectAtlas` turns the atlas into the GroupsIndex the page,
   the orientation and the publication read: a box is a group whose members
   are the objects declared in its files, a zone is a container, an arrow is
@@ -299,11 +500,14 @@ script entrypoints or sidecar tools.
   into another target. Lanes follow a box's side: `triggers` where the
   outside calls in or execution starts, `dependencies` where it only calls
   out, `core` otherwise. No request sends repository source text: paths,
-  names, signatures, first sentences of docstrings and README lines, literal
-  values and the model's own earlier lines are all that crosses the wire.
+  names, signatures, first sentences of docstrings and documentation excerpts,
+  literal values and the model's own earlier lines cross the wire. Question
+  excerpts preserve Markdown-authored command/code examples; implementation
+  source-file bodies are not sent.
 - The ordinary Go direct-call traversal is complete for the selected target:
   `--depth 0` and `--edges-limit 0` are the defaults and mean retain every
-  reachable exact call and edge. Positive values are explicit user-requested
+  exact call and edge across loaded repository declarations, including functions
+  outside the launch tree. Positive values are explicit user-requested
   narrowing controls. Graph depth above 10, more than 10,000 exact edges, or
   more than 65,536 exact nodes emits one aggregate warning but never truncates
   the ordinary graph or fails a target. Dynamic and unresolved call frontiers
@@ -343,7 +547,7 @@ script entrypoints or sidecar tools.
   freshness gate or strict-snapshot mode.
 - `--no-serve` requires resolvable GitHub or GitLab source links and fails in
   preflight with corrective flag guidance otherwise. Served reports may only
-  add manifest-authorized local VS Code opening; do not add browser APIs for
+  add manifest-authorized local editor opening; do not add browser APIs for
   workspace reads, investigation, symbols, source context, or run selection.
 - Persistent caches remain part of the ordinary path. Cache hits must be
   identity-bound and fully validated before use; `--no-cache` is the explicit
@@ -364,6 +568,20 @@ script entrypoints or sidecar tools.
   request-bound, fail-closed local presets with no network access. Fixture
   success is focused test evidence only and never replaces ordinary online
   product acceptance.
+- Every language-cube behavior change must be recorded in that language's
+  cumulative `testdata/repositories` fixture and an executable expectation.
+  Add or extend an understandable source example, run the actual extractor
+  and adapter, and assert the changed contract at its consuming boundary.
+  Existing coverage may be reused when it demonstrates the exact changed
+  behavior. Ownership or resolution changes also keep a contrasting case that
+  would expose an invented owner, call or relationship. A passing unrelated
+  test or a prose note alone does not record the change.
+  When a case found in one language has equivalents in other supported
+  languages, immediately add or extend comparable examples and expectations
+  in all of them, without waiting for a separate owner request. Check the
+  actual language-specific semantics; a missing equivalent is recorded as
+  such rather than fabricated. Code that already handles the case needs its
+  regression example, not an unnecessary production change.
 - Keep the source-bound development inventories under `testdata/contracts`
   exact. Every static prompt Markdown file is classified as active or dormant
   and bound to its owning `go:embed`; every production hard-bound symbol is
@@ -387,7 +605,7 @@ script entrypoints or sidecar tools.
   documentation, sealed ProgramIndex set, each target-scoped
   `dependency-catalog.json`, `places.json`, `atlas.json`, `tables.md`, every
   projected GroupsIndex, the complete graph in report JSON, and report HTML. For a multi-target run, verify
-  every backing manifest/report JSON and exactly one physical report HTML in the
+  exactly one common manifest/report JSON and one physical report HTML in the
   successful owner run. For cache changes, also verify a real second run and `repomap
   cache clear`.
 - Browser QA for a generated standalone report serves the narrow run root that

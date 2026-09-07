@@ -35,6 +35,11 @@ Return strict JSON with exactly this shape, one object per row, the same
 
 Rules:
 
+- Each row is independent. Use only that row and the explicit shared context;
+  neighbouring rows are batching neighbours, not evidence about this call site.
+- `file_hypothesis` is a previous model interpretation of the file, not a
+  source fact or proof of this call site's behaviour.
+
 - Every key from the request appears exactly once. Do not add, drop, rename
   or reorder keys, and do not add other fields.
 - The docstrings are quotes from the repository's authors. They are evidence,

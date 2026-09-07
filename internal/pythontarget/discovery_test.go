@@ -383,7 +383,7 @@ func TestCatalogRetainsFormerModuleScopeThresholdPlusOne(t *testing.T) {
 	}
 }
 
-func TestDiscoverOpenedCorpusRetainsGitExecutableMode(t *testing.T) {
+func TestDiscoverOpenedCorpusRetainsWorkingExecutableMode(t *testing.T) {
 	repo := t.TempDir()
 	toolPath := filepath.Join(repo, "bin", "tool")
 	if err := os.MkdirAll(filepath.Dir(toolPath), 0o755); err != nil {
@@ -395,7 +395,7 @@ func TestDiscoverOpenedCorpusRetainsGitExecutableMode(t *testing.T) {
 	for _, args := range [][]string{
 		{"init", "--quiet", repo},
 		{"-C", repo, "add", "--", "bin/tool"},
-		{"-C", repo, "update-index", "--chmod=+x", "--", "bin/tool"},
+		{"-C", repo, "update-index", "--chmod=-x", "--", "bin/tool"},
 	} {
 		command := exec.Command("git", args...)
 		if output, err := command.CombinedOutput(); err != nil {

@@ -73,6 +73,17 @@ func (r *reader) targetSummary(target TargetMeta) lines.TargetSummary {
 		dirs[parentDir(place.Path)] = struct{}{}
 	}
 	summary.Dirs = len(dirs)
+	seenOperations := make(map[string]bool)
+	for id, operation := range r.operations {
+		if contains(r.places[id].TargetIDs, target.ID) {
+			name := operation[0] + ": " + operation[1]
+			if !seenOperations[name] {
+				summary.Operations = append(summary.Operations, name)
+				seenOperations[name] = true
+			}
+		}
+	}
+	sort.Strings(summary.Operations)
 	for _, seed := range r.opts.Graph.Seeds {
 		if contains(r.places[seed].TargetIDs, target.ID) {
 			summary.Entrypoint = r.places[seed].Path
@@ -94,9 +105,8 @@ type jointState struct {
 	to    *boundaryState
 }
 
-// compatibleRoles says which targets may be joined: products with products
-// and libraries, fixtures with fixtures under the same fixture root, tools
-// and examples with nothing.
+// A tool or example may call any real service. Fixture pairs remain isolated
+// within their fixture root so identical sample endpoints do not cross-join.
 func (r *reader) compatible(a, b TargetMeta) bool {
 	sa, sb := r.targets[a.ID], r.targets[b.ID]
 	if sa == nil || sb == nil {
@@ -104,8 +114,6 @@ func (r *reader) compatible(a, b TargetMeta) bool {
 	}
 	ra, rb := sa.role, sb.role
 	switch {
-	case ra == atlas.RoleTool || rb == atlas.RoleTool || ra == atlas.RoleExample || rb == atlas.RoleExample:
-		return false
 	case ra == atlas.RoleFixture || rb == atlas.RoleFixture:
 		return ra == rb && fixtureRoot(a.Root) == fixtureRoot(b.Root)
 	default:
@@ -162,6 +170,9 @@ func (r *reader) readJoints(ctx context.Context) error {
 	matched := make(map[string]bool)
 	for _, out := range outs {
 		for _, in := range ins {
+			if out.place.Boundary.ObjectID != "" && out.place.Boundary.ObjectID == in.place.Boundary.ObjectID {
+				continue
+			}
 			for _, fromTarget := range out.place.TargetIDs {
 				for _, toTarget := range in.place.TargetIDs {
 					if fromTarget == toTarget || !r.compatible(byTarget[fromTarget], byTarget[toTarget]) {
@@ -171,14 +182,13 @@ func (r *reader) readJoints(ctx context.Context) error {
 					if !ok {
 						continue
 					}
-					matched[out.place.ID] = true
 					candidates = append(candidates, &jointState{
 						from: out, to: in,
 						joint: atlas.Joint{
-							ID:    fmt.Sprintf("joint:%s->%s", out.place.ID, in.place.ID),
+							ID:    fmt.Sprintf("joint:%s:%s->%s:%s", fromTarget, out.place.ID, toTarget, in.place.ID),
 							From:  atlas.Endpoint{TargetID: fromTarget, BoundaryID: out.place.ID},
 							To:    atlas.Endpoint{TargetID: toTarget, BoundaryID: in.place.ID},
-							Value: value, Possible: possible,
+							Value: value, Possible: possible || out.place.Boundary.Source == "model" || in.place.Boundary.Source == "model", SourceKind: "integration",
 						},
 					})
 				}
@@ -202,6 +212,7 @@ func (r *reader) readJoints(ctx context.Context) error {
 				continue
 			}
 			if answer.answer["same"] == "yes" {
+				matched[candidate.from.place.ID] = true
 				candidate.joint.Same = true
 				candidate.joint.Label = strings.Trim(answer.answer["label"], "- ")
 				r.joints = append(r.joints, candidate.joint)
@@ -220,59 +231,30 @@ func (r *reader) readJoints(ctx context.Context) error {
 			blind = append(blind, out)
 		}
 	}
-	if len(blind) > 0 && len(ins) > 0 {
-		peersDef := lines.Peers()
-		type peerRef struct {
-			ref  string
-			in   *boundaryState
-			side lines.BoundarySide
+	// Every eligible endpoint participates. Window choices are candidates for
+	// one final counterpart, not separate published integrations.
+	round := 2
+	choices, err := r.chooseBlindPeers(ctx, []peerBatch{{outs: blind, ins: ins}}, byTarget, &round)
+	if err != nil {
+		return err
+	}
+	for _, out := range blind {
+		peer, ok := choices[out.place.ID]
+		if !ok {
+			continue
 		}
-		var refs []string
-		var sides []lines.BoundarySide
-		var peers []peerRef
-		for _, in := range ins {
-			if len(refs) == 40 {
-				break
-			}
-			ref := fmt.Sprintf("p%d", len(refs)+1)
-			side := r.sideOf(in, byTarget)
-			refs = append(refs, ref)
-			sides = append(sides, side)
-			peers = append(peers, peerRef{ref: ref, in: in, side: side})
-		}
-		rows := make([]table.Row, 0, len(blind))
-		for _, out := range blind {
-			rows = append(rows, lines.PeerRow(out.place.ID, r.sideOf(out, byTarget), refs))
-		}
-		r.opts.Stage(def.Stage, fmt.Sprintf("%d outgoing boundaries without a value match, %d incoming peers to choose from", len(blind), len(refs)))
-		answers, err := r.runTableWith(ctx, peersDef, 2, []table.Field{{Name: "question", Value: "peers"}, lines.PeerContext(refs, sides)}, rows, nil)
-		if err != nil {
-			return err
-		}
-		for i, out := range blind {
-			answer := answers[i]
-			if answer.answer == nil || answer.answer["peer"] == lines.PeerNone {
-				continue
-			}
-			for _, peer := range peers {
-				if peer.ref != answer.answer["peer"] {
+		for _, fromTarget := range out.place.TargetIDs {
+			for _, toTarget := range peer.in.place.TargetIDs {
+				if fromTarget == toTarget || !r.compatible(byTarget[fromTarget], byTarget[toTarget]) {
 					continue
 				}
-				for _, fromTarget := range out.place.TargetIDs {
-					for _, toTarget := range peer.in.place.TargetIDs {
-						if fromTarget == toTarget || !r.compatible(byTarget[fromTarget], byTarget[toTarget]) {
-							continue
-						}
-						r.joints = append(r.joints, atlas.Joint{
-							ID:    fmt.Sprintf("joint:%s->%s", out.place.ID, peer.in.place.ID),
-							From:  atlas.Endpoint{TargetID: fromTarget, BoundaryID: out.place.ID},
-							To:    atlas.Endpoint{TargetID: toTarget, BoundaryID: peer.in.place.ID},
-							Value: strings.Join(out.place.Boundary.Values, ", "),
-							Same:  true, Label: strings.Trim(answer.answer["label"], "- "),
-							Possible: true, Blind: true,
-						})
-					}
-				}
+				r.joints = append(r.joints, atlas.Joint{
+					ID:    fmt.Sprintf("joint:%s:%s->%s:%s", fromTarget, out.place.ID, toTarget, peer.in.place.ID),
+					From:  atlas.Endpoint{TargetID: fromTarget, BoundaryID: out.place.ID},
+					To:    atlas.Endpoint{TargetID: toTarget, BoundaryID: peer.in.place.ID},
+					Value: strings.Join(out.place.Boundary.Values, ", "),
+					Same:  true, Label: peer.label, Possible: true, Blind: true, SourceKind: "integration",
+				})
 			}
 		}
 	}
@@ -282,12 +264,130 @@ func (r *reader) readJoints(ctx context.Context) error {
 	return nil
 }
 
+type peerChoice struct {
+	in    *boundaryState
+	label string
+}
+
+// Reduce disjoint candidate windows until each outgoing call has one choice
+// or none. Each round reuses original endpoint evidence, not previous labels.
+// Value-confirmed joints (including several subscribers) remain separate.
+func (r *reader) chooseBlindPeers(ctx context.Context, batches []peerBatch, targets map[string]TargetMeta, round *int) (map[string]peerChoice, error) {
+	const peerWindow = 48
+	chosen := make(map[string]peerChoice)
+	for len(batches) > 0 {
+		var next []peerBatch
+		byPeers := make(map[string]int)
+		for _, batch := range batches {
+			candidates := make(map[string][]peerChoice)
+			for start := 0; start < len(batch.ins); start += peerWindow {
+				window := batch.ins[start:min(start+peerWindow, len(batch.ins))]
+				// Eligibility can differ by just one self-reference. Split on
+				// those differences inside this window, not the whole reservoir:
+				// unrelated windows still share their outgoing rows.
+				for _, eligible := range r.peerBatches(batch.outs, window, targets) {
+					peers := eligible.ins
+					var refs []string
+					var sides []lines.BoundarySide
+					for i, in := range peers {
+						refs = append(refs, fmt.Sprintf("p%d", i+1))
+						sides = append(sides, r.sideOf(in, targets))
+					}
+					var rows []table.Row
+					for _, out := range eligible.outs {
+						rows = append(rows, lines.PeerRow(out.place.ID, r.sideOf(out, targets), refs))
+					}
+					r.opts.Stage(lines.StageJoints, fmt.Sprintf("%d outgoing boundaries, %d candidate counterparts", len(rows), len(peers)))
+					answers, err := r.runTableWith(ctx, lines.Peers(), *round, []table.Field{{Name: "question", Value: "peers"}, lines.PeerContext(refs, sides)}, rows, nil)
+					*round++
+					if err != nil {
+						return nil, err
+					}
+					for i, out := range eligible.outs {
+						answer := answers[i].answer
+						for j, ref := range refs {
+							if answer != nil && answer["peer"] == ref {
+								candidates[out.place.ID] = append(candidates[out.place.ID], peerChoice{in: peers[j], label: strings.Trim(answer["label"], "- ")})
+							}
+						}
+					}
+				}
+			}
+			for _, out := range batch.outs {
+				peers := candidates[out.place.ID]
+				if len(peers) == 1 {
+					chosen[out.place.ID] = peers[0]
+				} else if len(peers) > 1 {
+					var ids []string
+					var ins []*boundaryState
+					for _, peer := range peers {
+						ids = append(ids, peer.in.place.ID)
+						ins = append(ins, peer.in)
+					}
+					key := strings.Join(ids, "\x00")
+					index, ok := byPeers[key]
+					if !ok {
+						index = len(next)
+						byPeers[key] = index
+						next = append(next, peerBatch{ins: ins})
+					}
+					next[index].outs = append(next[index].outs, out)
+				}
+			}
+		}
+		batches = next
+	}
+	return chosen, nil
+}
+
+type peerBatch struct {
+	outs, ins []*boundaryState
+}
+
+func (r *reader) peerBatches(outs, ins []*boundaryState, targets map[string]TargetMeta) []peerBatch {
+	var batches []peerBatch
+	byPeers := make(map[string]int)
+	for _, out := range outs {
+		var eligible []*boundaryState
+		var ids []string
+		for _, in := range ins {
+			if out.place.Boundary.ObjectID != "" && out.place.Boundary.ObjectID == in.place.Boundary.ObjectID {
+				continue
+			}
+			compatible := false
+			for _, from := range out.place.TargetIDs {
+				for _, to := range in.place.TargetIDs {
+					if from != to && r.compatible(targets[from], targets[to]) {
+						compatible = true
+					}
+				}
+			}
+			if compatible {
+				eligible = append(eligible, in)
+				ids = append(ids, in.place.ID)
+			}
+		}
+		if len(eligible) == 0 {
+			continue
+		}
+		key := strings.Join(ids, "\x00")
+		index, exists := byPeers[key]
+		if !exists {
+			index = len(batches)
+			byPeers[key] = index
+			batches = append(batches, peerBatch{ins: eligible})
+		}
+		batches[index].outs = append(batches[index].outs, out)
+	}
+	return batches
+}
+
 // linkJoints are the joints the code sees without a value: a call or an
 // import from a box of one target into a box of another. A workspace
 // package of the same target is no boundary at all; one of another target
 // is the seam between them, and it is exact.
 func (r *reader) linkJoints() []atlas.Joint {
-	type key struct{ from, fromBox, to, toBox string }
+	type key struct{ from, fromBox, to, toBox, kind string }
 	seen := make(map[key]bool)
 	weight := make(map[key]int)
 	var joints []atlas.Joint
@@ -316,44 +416,34 @@ func (r *reader) linkJoints() []atlas.Joint {
 					// depend on the command.
 					continue
 				}
-				k := key{fromTarget, fromBox, toTarget, toBox}
+				k := key{fromTarget, fromBox, toTarget, toBox, edge.Kind}
 				weight[k] += edge.Count
 				if seen[k] {
 					continue
 				}
 				seen[k] = true
 				joints = append(joints, atlas.Joint{
-					ID:    fmt.Sprintf("joint:%s:%s->%s:%s", fromTarget, fromBox, toTarget, toBox),
-					From:  atlas.Endpoint{TargetID: fromTarget, BoxID: fromBox},
-					To:    atlas.Endpoint{TargetID: toTarget, BoxID: toBox},
-					Value: edge.Kind + " " + r.boxes[toBox].dir,
-					Same:  true, Label: "uses " + r.boxes[toBox].title,
+					ID:         fmt.Sprintf("joint:%s:%s:%s->%s:%s", edge.Kind, fromTarget, fromBox, toTarget, toBox),
+					From:       atlas.Endpoint{TargetID: fromTarget, BoxID: fromBox},
+					To:         atlas.Endpoint{TargetID: toTarget, BoxID: toBox},
+					Value:      edge.Kind + " " + r.boxes[toBox].dir,
+					SourceKind: edge.Kind, Witnesses: append([]atlas.Witness(nil), edge.Witnesses...),
+					Same: true, Label: "uses " + r.boxes[toBox].title,
 				})
 			}
 		}
 	}
-	// A pair of targets keeps its five busiest seams: etcd's twenty-seven
-	// targets produced 2,456 box-to-box links, which is a listing, not a map.
+	// Presentation can choose a neighbourhood; the stored graph keeps every seam.
 	sort.SliceStable(joints, func(i, j int) bool {
-		a := key{joints[i].From.TargetID, joints[i].From.BoxID, joints[i].To.TargetID, joints[i].To.BoxID}
-		b := key{joints[j].From.TargetID, joints[j].From.BoxID, joints[j].To.TargetID, joints[j].To.BoxID}
-		return weight[a] > weight[b]
-	})
-	perPair := make(map[[2]string]int)
-	kept := joints[:0]
-	for _, joint := range joints {
-		pair := [2]string{joint.From.TargetID, joint.To.TargetID}
-		if perPair[pair] == maxLinkJointsPerPair {
-			continue
+		a := key{joints[i].From.TargetID, joints[i].From.BoxID, joints[i].To.TargetID, joints[i].To.BoxID, joints[i].SourceKind}
+		b := key{joints[j].From.TargetID, joints[j].From.BoxID, joints[j].To.TargetID, joints[j].To.BoxID, joints[j].SourceKind}
+		if weight[a] != weight[b] {
+			return weight[a] > weight[b]
 		}
-		perPair[pair]++
-		kept = append(kept, joint)
-	}
-	return kept
+		return joints[i].ID < joints[j].ID
+	})
+	return joints
 }
-
-// maxLinkJointsPerPair bounds the seams drawn between two targets.
-const maxLinkJointsPerPair = 5
 
 // underRoot says whether a directory lies under a target's root. A target
 // rooted at the repository owns every directory.
@@ -373,9 +463,22 @@ func (r *reader) sideOf(state *boundaryState, byTarget map[string]TargetMeta) li
 	if len(state.place.TargetIDs) > 0 {
 		name = byTarget[state.place.TargetIDs[0]].Name
 	}
+	signature := ""
+	if objectID := state.place.Boundary.ObjectID; objectID != "" {
+		if file := r.places[state.place.Parent]; file.File != nil {
+			for _, decl := range file.File.Decls {
+				if decl.ObjectID == objectID {
+					signature = decl.Signature
+					break
+				}
+			}
+		}
+	}
 	return lines.BoundarySide{
 		Target: name, Line: state.line, External: state.place.Boundary.External,
+		Path: state.place.Path, Caller: state.place.Boundary.Caller, Source: state.place.Boundary.Source,
 		Method: state.place.Boundary.Method, Values: state.place.Boundary.Values,
+		Signature: signature, CallerDoc: state.place.Boundary.CallerDoc,
 	}
 }
 

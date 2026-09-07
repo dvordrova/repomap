@@ -64,6 +64,7 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 
 	scoped := gofacts.Facts{
 		Packages:           []gofacts.PackageFact{},
+		TestSources:        scopedTestSources(facts, target),
 		PackageOrigins:     append([]gofacts.PackageOrigin(nil), facts.PackageOrigins...),
 		EntrypointPackages: []gofacts.Entrypoint{},
 		InternalEdges:      []gofacts.Edge{},
@@ -153,6 +154,36 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 		"analysis target %s retained %d package(s)", target.Ref, len(scoped.Packages),
 	))
 	return scoped, nil
+}
+
+// Tests belong to their package's component, not to every executable that
+// imports that package. Test-only directories stay with their module library
+// without becoming ordinary packages, API roots or process entrypoints.
+func scopedTestSources(facts gofacts.Facts, target Target) []gofacts.TestSource {
+	ordinary := make(map[string]bool)
+	for _, pkg := range facts.Packages {
+		if pkg.ModuleID == target.ModuleID {
+			ordinary[pkg.CanonicalPath] = true
+		}
+	}
+	selected := make(map[string]bool)
+	if target.Kind == KindModuleLibrary {
+		for _, pkg := range target.ModulePackages {
+			selected[pkg.PackagePath] = true
+		}
+	} else {
+		selected[target.PackagePath] = true
+	}
+	var result []gofacts.TestSource
+	for _, source := range facts.TestSources {
+		if source.ModuleID != target.ModuleID {
+			continue
+		}
+		if selected[source.PackagePath] || target.Kind == KindModuleLibrary && !ordinary[source.PackagePath] {
+			result = append(result, source)
+		}
+	}
+	return gofacts.CloneTestSources(result)
 }
 
 func sameTargetPackages(left, right []TargetPackage) bool {

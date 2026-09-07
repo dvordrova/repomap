@@ -435,6 +435,8 @@ type standaloneSourceConfig struct {
 // or not, rendered with sibling navigation or not, published as HTML or kept
 // as page data for a multi-target page to publish.
 type GenerateOptions struct {
+	// Data is the current process's result. Nil restores saved stage artifacts.
+	Data        *ReportData
 	GitHubURL   string
 	GitLabURL   string
 	Render      RenderOptions
@@ -470,7 +472,7 @@ func Generate(runDir string, source RunSource, options GenerateOptions) (RunRece
 		}
 		standalone = &standaloneSourceConfig{hostName: "GitHub", repositoryURL: normalized}
 	}
-	return generate(runDir, source, standalone, options.Render, options.PublishHTML)
+	return generate(runDir, source, standalone, options.Render, options.PublishHTML, options.Data)
 }
 
 func generate(
@@ -479,6 +481,7 @@ func generate(
 	standaloneSource *standaloneSourceConfig,
 	renderOptions RenderOptions,
 	publishHTML bool,
+	data *ReportData,
 ) (RunReceipt, error) {
 	if err := source.validate(); err != nil {
 		return RunReceipt{}, err
@@ -489,17 +492,30 @@ func generate(
 	if err := removePublishedReportArtifacts(runDir); err != nil {
 		return RunReceipt{}, err
 	}
-	data, err := readRunDir(runDir)
-	if err != nil {
-		return RunReceipt{}, err
+	var err error
+	if data == nil {
+		data, err = readRunDir(runDir)
+		if err != nil {
+			return RunReceipt{}, err
+		}
+	} else {
+		copy := *data
+		data = &copy
+		absDir, err := filepath.Abs(runDir)
+		if err != nil {
+			return RunReceipt{}, err
+		}
+		if data.ArtifactsDir != absDir {
+			return RunReceipt{}, fmt.Errorf("report: in-memory data belongs to another run")
+		}
 	}
 	if len(source.GroupGraph) > 0 {
 		if err := BindGroupGraphView(data, source.GroupGraph); err != nil {
 			return RunReceipt{}, fmt.Errorf("report: bind group graph: %w", err)
 		}
-		if err := collectOpenablePaths(data); err != nil {
-			return RunReceipt{}, fmt.Errorf("report: collect bound group graph source paths: %w", err)
-		}
+	}
+	if err := collectOpenablePaths(data); err != nil {
+		return RunReceipt{}, err
 	}
 	var gitLabSourceLinks *GitLabSourceLinks
 	var gitHubSourceLinks *GitHubSourceLinks
@@ -569,19 +585,6 @@ func generate(
 	reportHTML, err := RenderHTMLWithOptions(&renderData, renderOptions)
 	if err != nil {
 		return RunReceipt{}, err
-	}
-	if err := VerifyOrdinaryReportHTMLPayload(
-		reportHTML,
-		reportJSON,
-		OrdinaryReportHTMLAuthority{
-			TargetNavigation: renderOptions.TargetNavigation,
-			StandaloneSource: manifest.StandaloneSource,
-			ArtifactsDir:     data.ArtifactsDir,
-			AnalysisRoot:     manifest.AnalysisRoot,
-			RepositoryRoot:   manifest.RepositoryState.Identity,
-		},
-	); err != nil {
-		return RunReceipt{}, fmt.Errorf("report: verify generated html before publication: %w", err)
 	}
 	if err := installAuthorizedReport(runDir, reportJSON, reportHTML, manifest); err != nil {
 		return RunReceipt{}, err

@@ -1,6 +1,7 @@
 package report
 
 import (
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/documentationreduce"
@@ -11,7 +12,7 @@ import (
 )
 
 // CurrentFormatVersion is the canonical ProgramPortfolio report contract.
-const CurrentFormatVersion = 75
+const CurrentFormatVersion = 82
 
 // MaxReportJSONBytes is the former ordinary report.json threshold. It is
 // advisory only; complete validated report authority is never rejected or
@@ -44,11 +45,12 @@ type ReportData struct {
 	Timing *RunTiming `json:"timing,omitempty"`
 
 	// Facts, Claims and Orientation are the repository-level first-day
-	// artifacts. They are optional so older run directories still restore;
-	// when present they are sealed values bound by the run manifest.
-	Facts       *facts.Result       `json:"facts,omitempty"`
-	Claims      *claims.Result      `json:"claims,omitempty"`
-	Orientation *orientation.Result `json:"orientation,omitempty"`
+	// artifacts. Orientation is absent when no model is used.
+	Facts       *facts.Result         `json:"facts,omitempty"`
+	Claims      *claims.Result        `json:"claims,omitempty"`
+	Orientation *orientation.Result   `json:"orientation,omitempty"`
+	Questions   []atlas.QuestionRoute `json:"questions,omitempty"`
+	Learning    *atlas.LearningPlan   `json:"learning,omitempty"`
 
 	OpenablePaths []string          `json:"openable_paths"`
 	SourceIDs     map[string]string `json:"source_ids,omitempty"`

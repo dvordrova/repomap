@@ -2,6 +2,7 @@ package table
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -13,6 +14,22 @@ func testDefinition() Definition {
 			{Name: "line", Kind: Text, MaxRunes: 20},
 			{Name: "box", Kind: Choice, OptionsFrom: "box_options", Free: "new: ", FreeMaxRunes: 10},
 		},
+	}
+}
+
+func TestSequencePreservesOrderAndFiltersOnlyExactKnownRefs(t *testing.T) {
+	column := Column{Name: "order", Kind: Sequence, OptionsFrom: "options", LimitFrom: "limit"}
+	row := Row{Fields: []Field{{Name: "options", Value: []string{"c1", "c2", "c3"}}, {Name: "limit", Value: 2}}}
+	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": ""} {
+		value, err := normalizeCell(column, row, input)
+		if err != nil || value != expected {
+			t.Fatalf("%q -> %q, %v", input, value, err)
+		}
+	}
+	for _, input := range []string{"", "c999", "c01", "c1 c2 c3", "c1,c2"} {
+		if _, err := normalizeCell(column, row, input); err == nil {
+			t.Fatalf("accepted %q", input)
+		}
 	}
 }
 
@@ -119,6 +136,24 @@ func TestTextIsCutAtAWord(t *testing.T) {
 	}
 }
 
+func TestProsePreservesParagraphsAndTheCompleteQualification(t *testing.T) {
+	def := testDefinition()
+	def.Columns[0] = Column{Name: "line", Kind: Prose}
+	windows, err := Windows(def, 1, testRows()[:1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := "The declared default is 'two  spaces'.\n\n" + strings.Repeat("A supported observation. ", 45) + "\n\nThis does not establish runtime behavior."
+	raw, _ := json.Marshal(map[string]any{"rows": []map[string]string{{"key": "r1", "line": " \n" + text + "\n ", "box": "here"}}})
+	answers, err := Decode(def, windows[0], raw)
+	if err != nil || answers[0]["line"] != text {
+		t.Fatalf("prose was changed: %v, %v", answers, err)
+	}
+	if _, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"r1","line":" \n ","box":"here"}]}`)); err == nil {
+		t.Fatal("accepted empty prose")
+	}
+}
+
 func TestStateIgnoresTheClock(t *testing.T) {
 	def := testDefinition()
 	windows, _ := Windows(def, 1, testRows())
@@ -132,5 +167,64 @@ func TestStateIgnoresTheClock(t *testing.T) {
 	c, _ := State(other, windows[0])
 	if bytes.Equal(a, c) {
 		t.Fatal("a changed prompt kept the cache identity")
+	}
+	other = def
+	other.Reasoning = true
+	d, _ := State(other, windows[0])
+	if bytes.Equal(a, d) {
+		t.Fatal("a changed reasoning preference kept the table identity")
+	}
+	call, err := Call(other, windows[0])
+	if err != nil || !call.Prompt.Reasoning {
+		t.Fatalf("table reasoning preference did not reach request preparation: %v", err)
+	}
+	if call.Limits.MaxOutputTokens != 128000 {
+		t.Fatalf("table narrowed the shared output envelope: %d", call.Limits.MaxOutputTokens)
+	}
+}
+
+func TestWindowsSplitByInputBytesWithoutLosingRowsOrContext(t *testing.T) {
+	def := testDefinition()
+	def.Window = 40
+	rows := testRows()
+	for i := range rows {
+		rows[i].Fields = append(rows[i].Fields, Field{Name: "doc", Value: strings.Repeat("ю", 700)})
+	}
+	shared := []Field{{Name: "purpose", Value: "one question shared by all rows"}}
+	one, err := Request(def, Window{Rows: rows[:1], Context: shared})
+	if err != nil {
+		t.Fatal(err)
+	}
+	def.MaxInputBytes = len(def.System) + len(one)
+	windows, err := WindowsWithContext(def, 1, shared, rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, window := range windows {
+		if len(window.Request)+len(def.System) > def.MaxInputBytes {
+			t.Fatal("oversized request")
+		}
+		if !strings.Contains(string(window.Request), "one question shared by all rows") {
+			t.Fatal("shared context disappeared")
+		}
+		for _, row := range window.Rows {
+			ids = append(ids, row.ID)
+		}
+	}
+	if len(windows) != 3 || strings.Join(ids, ",") != "file:a.go,file:b.go,file:c.go" {
+		t.Fatalf("lost or reordered rows: %v", ids)
+	}
+	def.MaxInputBytes--
+	if _, err := WindowsWithContext(def, 1, shared, rows); err == nil || !strings.Contains(err.Error(), "row file:a.go") {
+		t.Fatalf("an oversized single row was hidden: %v", err)
+	}
+}
+
+func TestRequestDoesNotReplaceUnencodableEvidenceWithNull(t *testing.T) {
+	rows := testRows()
+	rows[0].Fields = append(rows[0].Fields, Field{Name: "evidence", Value: make(chan int)})
+	if _, err := Windows(testDefinition(), 1, rows); err == nil {
+		t.Fatal("invalid evidence silently became null")
 	}
 }

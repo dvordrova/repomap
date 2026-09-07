@@ -19,7 +19,7 @@ import (
 	"unicode/utf8"
 )
 
-const Version = 3
+const Version = 6
 
 type Scenario struct {
 	ID     string   `json:"id"`
@@ -103,13 +103,16 @@ const (
 	EvidenceValueFlowAlternative      CandidateEvidence = "value_flow_alternative"
 	EvidenceConcreteInterfaceValue    CandidateEvidence = "concrete_interface_value"
 	EvidenceInterfaceValueAlternative CandidateEvidence = "interface_value_alternative"
+	// A concrete value was stored in this declared field somewhere in the
+	// repository. It is a possible receiver, not proof about this instance.
+	EvidenceInterfaceFieldAssignment CandidateEvidence = "interface_field_assignment"
 )
 
 func (value CandidateEvidence) valid() bool {
 	switch value {
 	case EvidenceDirectFunctionValue, EvidenceClosureValue, EvidenceUniqueValueFlow,
 		EvidenceValueFlowAlternative, EvidenceConcreteInterfaceValue,
-		EvidenceInterfaceValueAlternative:
+		EvidenceInterfaceValueAlternative, EvidenceInterfaceFieldAssignment:
 		return true
 	default:
 		return false
@@ -122,8 +125,9 @@ func (value CandidateEvidence) exact() bool {
 }
 
 type Candidate struct {
-	FunctionID string            `json:"function_id"`
-	Evidence   CandidateEvidence `json:"evidence"`
+	FunctionID  string            `json:"function_id"`
+	Evidence    CandidateEvidence `json:"evidence"`
+	Assignments []Location        `json:"assignments,omitempty"`
 }
 
 // StaticTarget names the exact statically declared recipient joint for a
@@ -139,7 +143,9 @@ type StaticTarget struct {
 
 // Slot is the exact declared joint at the callsite. Interface invokes use
 // DeclaredType+Method+Signature; function-value calls use Signature; callback
-// transfers use one-based Parameter+Signature; callable bindings use
+// transfers use one-based Parameter+Signature. When an interface object is
+// passed, DeclaredType+Method identify one method carried by that argument;
+// callable bindings use
 // ContainerType+Field+DeclaredType and may retain the resolved callable
 // signature when SSA exposes it.
 type Slot struct {
@@ -151,18 +157,28 @@ type Slot struct {
 	Parameter     int    `json:"parameter,omitempty"`
 }
 
+// ReceiverField is a literal assignment to another field of the same SSA
+// receiver as a callable binding. All observed stores remain distinct; these
+// are source observations, not the final runtime contents of that object.
+type ReceiverField struct {
+	Field    string   `json:"field"`
+	Literal  string   `json:"literal"`
+	Location Location `json:"location"`
+}
+
 type Handoff struct {
-	ID                   string       `json:"id"`
-	Kind                 Kind         `json:"kind"`
-	CallerID             string       `json:"caller_id"`
-	Invocation           Invocation   `json:"invocation"`
-	Callsite             Location     `json:"callsite"`
-	StaticTarget         StaticTarget `json:"static_target,omitempty"`
-	Slot                 Slot         `json:"slot"`
-	Resolution           Resolution   `json:"resolution"`
-	Candidates           []Candidate  `json:"candidates"`
-	CandidatesConsidered int          `json:"candidates_considered"`
-	CandidatesOmitted    int          `json:"candidates_omitted"`
+	ID                   string          `json:"id"`
+	Kind                 Kind            `json:"kind"`
+	CallerID             string          `json:"caller_id"`
+	Invocation           Invocation      `json:"invocation"`
+	Callsite             Location        `json:"callsite"`
+	StaticTarget         StaticTarget    `json:"static_target,omitempty"`
+	Slot                 Slot            `json:"slot"`
+	Resolution           Resolution      `json:"resolution"`
+	Candidates           []Candidate     `json:"candidates"`
+	CandidatesConsidered int             `json:"candidates_considered"`
+	CandidatesOmitted    int             `json:"candidates_omitted"`
+	ReceiverFields       []ReceiverField `json:"receiver_fields,omitempty"`
 }
 
 // Coverage separates missing relation rows from unresolved candidate
@@ -256,6 +272,7 @@ func New(input Input) (Index, error) {
 			}
 		}
 		handoff.Candidates = canonicalCandidates(handoff.Candidates)
+		handoff.ReceiverFields = canonicalReceiverFields(handoff.ReceiverFields)
 		for _, candidate := range handoff.Candidates {
 			if _, exists := functionByID[candidate.FunctionID]; !exists {
 				return Index{}, fmt.Errorf("Go dynamic handoff index: handoff cites unknown candidate %q", candidate.FunctionID)
@@ -305,7 +322,11 @@ func (index Index) Snapshot() Index {
 	result.Functions = append([]Function(nil), index.Functions...)
 	result.Handoffs = append([]Handoff(nil), index.Handoffs...)
 	for position := range result.Handoffs {
+		result.Handoffs[position].ReceiverFields = append([]ReceiverField(nil), index.Handoffs[position].ReceiverFields...)
 		result.Handoffs[position].Candidates = append([]Candidate(nil), index.Handoffs[position].Candidates...)
+		for i := range result.Handoffs[position].Candidates {
+			result.Handoffs[position].Candidates[i].Assignments = append([]Location(nil), index.Handoffs[position].Candidates[i].Assignments...)
+		}
 	}
 	return result
 }
@@ -364,6 +385,13 @@ func validateHandoff(handoff Handoff, functions map[string]struct{}) error {
 	if err := validateKindShape(handoff, functions); err != nil {
 		return err
 	}
+	for i, field := range handoff.ReceiverFields {
+		if handoff.Kind != CallableBinding || !validIdentifier(field.Field) || field.Field == handoff.Slot.Field ||
+			!validText(field.Literal) || !validLocation(field.Location) ||
+			i > 0 && receiverFieldKey(handoff.ReceiverFields[i-1]) >= receiverFieldKey(field) {
+			return fmt.Errorf("Go dynamic handoff index: invalid callable receiver field")
+		}
+	}
 	if handoff.CandidatesConsidered < len(handoff.Candidates) ||
 		handoff.CandidatesOmitted != handoff.CandidatesConsidered-len(handoff.Candidates) {
 		return fmt.Errorf("Go dynamic handoff index: invalid candidate accounting")
@@ -375,6 +403,14 @@ func validateHandoff(handoff Handoff, functions map[string]struct{}) error {
 			return fmt.Errorf("Go dynamic handoff index: invalid candidate")
 		}
 		previous = key
+		if (candidate.Evidence == EvidenceInterfaceFieldAssignment) != (len(candidate.Assignments) > 0) {
+			return fmt.Errorf("Go dynamic handoff index: field candidate must cite its assignments")
+		}
+		for i, location := range candidate.Assignments {
+			if !validLocation(location) || i > 0 && locationKey(candidate.Assignments[i-1]) >= locationKey(location) {
+				return fmt.Errorf("Go dynamic handoff index: invalid field assignment location")
+			}
+		}
 	}
 	switch handoff.Resolution {
 	case ResolutionExact:
@@ -398,14 +434,16 @@ func validateKindShape(handoff Handoff, functions map[string]struct{}) error {
 	switch handoff.Kind {
 	case InterfaceInvoke:
 		if !validText(handoff.Slot.DeclaredType) || !validIdentifier(handoff.Slot.Method) ||
-			!validText(handoff.Slot.Signature) || handoff.Slot.ContainerType != "" ||
-			handoff.Slot.Field != "" || handoff.Slot.Parameter != 0 || handoff.Invocation == InvocationBinding ||
+			!validText(handoff.Slot.Signature) ||
+			(handoff.Slot.ContainerType == "") != (handoff.Slot.Field == "") ||
+			handoff.Slot.ContainerType != "" && (!validText(handoff.Slot.ContainerType) || !validIdentifier(handoff.Slot.Field)) ||
+			handoff.Slot.Parameter != 0 || handoff.Invocation == InvocationBinding ||
 			target != (StaticTarget{}) {
 			return fmt.Errorf("Go dynamic handoff index: invalid interface invoke slot")
 		}
 		for _, candidate := range handoff.Candidates {
 			if candidate.Evidence != EvidenceConcreteInterfaceValue &&
-				candidate.Evidence != EvidenceInterfaceValueAlternative {
+				candidate.Evidence != EvidenceInterfaceValueAlternative && candidate.Evidence != EvidenceInterfaceFieldAssignment {
 				return fmt.Errorf("Go dynamic handoff index: interface candidate lacks concrete SSA value flow")
 			}
 		}
@@ -418,10 +456,18 @@ func validateKindShape(handoff Handoff, functions map[string]struct{}) error {
 		}
 	case CallbackTransfer:
 		if !validText(handoff.Slot.Signature) || handoff.Slot.ContainerType != "" ||
-			handoff.Slot.DeclaredType != "" || handoff.Slot.Field != "" ||
-			handoff.Slot.Method != "" || handoff.Slot.Parameter < 1 ||
+			handoff.Slot.Field != "" || handoff.Slot.Parameter < 1 ||
+			(handoff.Slot.DeclaredType == "") != (handoff.Slot.Method == "") ||
+			handoff.Slot.Method != "" && (!validIdentifier(handoff.Slot.Method) || !validText(handoff.Slot.DeclaredType)) ||
 			handoff.Invocation == InvocationBinding || !validStaticTarget(target, functions) {
 			return fmt.Errorf("Go dynamic handoff index: invalid callback transfer")
+		}
+		if handoff.Slot.Method != "" {
+			for _, candidate := range handoff.Candidates {
+				if candidate.Evidence != EvidenceConcreteInterfaceValue && candidate.Evidence != EvidenceInterfaceValueAlternative && candidate.Evidence != EvidenceInterfaceFieldAssignment {
+					return fmt.Errorf("Go dynamic handoff index: transferred method lacks interface value flow")
+				}
+			}
 		}
 	case CallableBinding:
 		if handoff.Invocation != InvocationBinding || !validText(handoff.Slot.ContainerType) ||
@@ -442,11 +488,46 @@ func validStaticTarget(target StaticTarget, functions map[string]struct{}) bool 
 	return validText(target.Package) && validIdentifier(target.Name) && (target.Receiver == "" || validText(target.Receiver))
 }
 
+func receiverFieldKey(value ReceiverField) string {
+	return locationKey(value.Location) + "\x00" + value.Field + "\x00" + value.Literal
+}
+
+func canonicalReceiverFields(values []ReceiverField) []ReceiverField {
+	byKey := make(map[string]ReceiverField, len(values))
+	for _, value := range values {
+		byKey[receiverFieldKey(value)] = value
+	}
+	result := make([]ReceiverField, 0, len(byKey))
+	for _, value := range byKey {
+		result = append(result, value)
+	}
+	sort.Slice(result, func(i, j int) bool { return receiverFieldKey(result[i]) < receiverFieldKey(result[j]) })
+	return result
+}
+
 func canonicalCandidates(values []Candidate) []Candidate {
 	byFunction := make(map[string]Candidate, len(values))
 	for _, candidate := range values {
 		previous, exists := byFunction[candidate.FunctionID]
-		if !exists || evidenceRank(candidate.Evidence) < evidenceRank(previous.Evidence) {
+		if exists && candidate.Evidence == EvidenceInterfaceFieldAssignment && previous.Evidence == candidate.Evidence {
+			candidate.Assignments = append(append([]Location(nil), previous.Assignments...), candidate.Assignments...)
+		}
+		if candidate.Evidence == EvidenceInterfaceFieldAssignment {
+			locations := make(map[string]Location)
+			for _, location := range candidate.Assignments {
+				locations[locationKey(location)] = location
+			}
+			candidate.Assignments = nil
+			keys := make([]string, 0, len(locations))
+			for key := range locations {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				candidate.Assignments = append(candidate.Assignments, locations[key])
+			}
+		}
+		if !exists || evidenceRank(candidate.Evidence) <= evidenceRank(previous.Evidence) {
 			byFunction[candidate.FunctionID] = candidate
 		}
 	}

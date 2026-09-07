@@ -1,29 +1,31 @@
-<section id="overview">
-<h2>Overview</h2>
-<h3>What this is</h3>
-{{if .Summary}}<p class="summary model">{{.Summary.Text}}{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
-{{with .ReadmeOverview}}<blockquote class="claim"><p>{{.Text}}</p><span class="src">{{.Source}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</span></blockquote>{{end}}
-{{if .RepoMap}}<h3>What is in it</h3>
-{{template "repomap.html" .RepoMap}}{{end}}
-<h3>Targets</h3>
+<section id="overview" data-report-page>
+{{template "learn.html" .}}
+<div data-reading-mode="work"><h2>Explore the code</h2><p>Search for a component, topic, operation or symbol, or start from the map.</p></div>
+<div id="repository-map" class="repository-map-panel"><h3>System map</h3>
+{{if .RepoMap}}{{template "repomap.html" .RepoMap}}{{end}}
+<details class="evidence-list"><summary>Component details <span class="collapse-label">Collapse details</span></summary>
 {{if or .Cards .MutedCards}}<div class="cards">
-{{range .Cards}}<div class="card"><h3><a href="#{{.SectionID}}">{{.Name}}</a></h3>
-<dl><dt>Language</dt><dd>{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}</dd>{{if .Root}}<dt>Root</dt><dd><code>{{.Root}}</code></dd>{{end}}{{if .Manifest}}<dt>Manifest</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>Entrypoints</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}{{if .Counts}}<dt>Holds</dt><dd class="fact">{{.Counts}}</dd>{{end}}</dl>
-{{if .Role}}<span class="model"><strong>{{.Role}}</strong> — {{.Purpose}}{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span>{{end}}</div>
+{{range .Cards}}<div class="card"><h3><a href="#{{.SectionID}}">{{.ShortName}}</a></h3>
+<p class="meta">{{.Language}}{{if .Kind}} · {{.Kind}}{{end}}</p>
+{{if .Role}}<p class="model"><strong>{{.Role}}</strong> — {{.Purpose}}<span class="model-sources">{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span></p>{{end}}
+<details class="target-facts"><summary>Code and entrypoints</summary><p><code>{{.Name}}</code></p><dl>{{if .Manifest}}<dt>Source</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>Entrypoints</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}{{if .Counts}}<dt>Found</dt><dd class="fact">{{.Counts}}</dd>{{end}}</dl></details></div>
 {{end}}</div>{{else}}<p class="empty">{{.CardsMissing}}</p>{{end}}
 {{if .MutedCards}}<h4>{{len .MutedCards}} target{{if ne (len .MutedCards) 1}}s{{end}} this run could not read</h4>
 <div class="cards">{{range .MutedCards}}<div class="card muted"><h3>{{.Name}}</h3><dl><dt>Language</dt><dd>{{.Language}}</dd><dt>Why</dt><dd>{{.Reason}} ({{.Stage}})</dd></dl></div>
 {{end}}</div>{{end}}
-<h3>How the parts talk</h3>
-{{if .Portals}}<table><thead><tr><th>Method</th><th>Path</th><th>Call</th><th></th><th>Route</th></tr></thead><tbody>
-{{range .Portals}}<tr><td class="method">{{.Method}}</td><td><code>{{.Path}}</code>{{if .Possible}}<span class="possible">possible</span>{{end}}</td><td>{{template "anchor" .Call}}</td><td>→</td><td>{{template "anchor" .Route}}</td></tr>
-{{end}}</tbody></table>{{else}}<p class="empty">{{.PortalsMissing}}</p>
-{{if .Boundaries}}<ul class="plain fact">{{range .Boundaries}}<li><a href="#{{.SectionID}}">{{.Target}}</a> serves {{.Routes}} route{{if ne .Routes 1}}s{{end}} and makes {{.Calls}} HTTP call{{if ne .Calls 1}}s{{end}} of its own.</li>{{end}}</ul>{{end}}{{end}}
+</details>
+</div>
+{{template "learn-start.html" .}}
+</section>
+{{if or .Questions .LearningReviews}}<section id="questions" data-report-page><h2>Questions to explore</h2><p>Answers from the code and documentation read in this report, with paths into the map.</p>{{if .LearningNote}}<p>{{.LearningNote}}</p>{{end}}{{range .Questions}}{{template "question.html" .}}{{end}}{{template "learning-review.html" .}}</section>{{end}}
+<section id="repository-reference" data-report-page><h2>Repository reference</h2>
+{{if .Portals}}<details class="evidence-list"><summary>HTTP connection sources <span class="collapse-label">Collapse sources</span></summary><table><thead><tr><th>Method</th><th>Path</th><th>Call</th><th></th><th>Route</th></tr></thead><tbody>
+{{range .Portals}}<tr><td class="method">{{.Method}}</td><td><code>{{.Path}}</code>{{if .Possible}}<span class="possible">possible</span>{{end}}</td><td>{{template "anchor" .Call}}</td><td>→</td><td>{{template "anchor" .Route}}</td></tr>{{end}}</tbody></table></details>{{end}}
 {{if .Addresses}}<h4>Where to reach them</h4><ul class="plain fact">{{range .Addresses}}<li>{{if .Target}}<strong>{{.Target}}</strong> · {{end}}<code>{{.Key}}</code>{{if .Value}} <code>{{.Value}}</code>{{end}}{{if .Note}} <span class="meta">{{.Note}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
 <h3>What is missing</h3>
 {{if .Negatives}}<ul class="plain fact">{{range .Negatives}}<li>{{.Text}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{.NegativesMissing}}</p>{{end}}
-<h3>How to run</h3>
-{{if .Recipe}}<ul class="plain">{{range .Recipe}}<li class="{{if .Model}}model{{else}}fact{{end}}"><code>{{.Command}}</code>{{if .Cwd}} <span class="meta">(in <code>{{.Cwd}}</code>)</span>{{end}}{{range .Anchors}} {{template "anchor" .}}{{end}}{{if .Note}} — {{.Note}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{.RecipeMissing}}</p>{{end}}
+<h3 id="how-to-run">How to run</h3>
+{{if .Recipe}}<ul class="plain">{{range .Recipe}}<li class="{{if .Model}}model{{else}}fact{{end}}"><code>{{.Command}}</code>{{if .Cwd}} <span class="meta">(in <code>{{.Cwd}}</code>)</span>{{end}}{{if .Note}} — {{.Note}}{{end}}<span class="{{if .Model}}model-sources{{end}}">{{range .Anchors}} {{template "anchor" .}}{{end}}</span></li>{{end}}</ul>{{else}}<p class="empty">{{.RecipeMissing}}</p>{{end}}
 <h3>What the people who wrote it said</h3>
 {{if .Claims}}<div class="claims">{{range .Claims}}<blockquote class="claim"><p>{{.Text}}</p><span class="src">{{.Source}}{{if .Date}} · {{.Date}} · {{.AgeDays}} days ago{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</span></blockquote>{{end}}</div>
 {{if .MoreClaims}}<p class="meta">The README says {{.MoreClaims}} more things this page does not quote.</p>{{end}}{{else}}<p class="empty">Nothing quotable was found in the README, comments or commit messages.</p>{{end}}

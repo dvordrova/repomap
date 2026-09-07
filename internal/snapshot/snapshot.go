@@ -64,9 +64,6 @@ var skipDirPrefixes = []string{
 	".github/",
 	"vendor/",
 	"node_modules/",
-	"dist/",
-	"build/",
-	"coverage/",
 }
 
 var skipFileExt = map[string]struct{}{

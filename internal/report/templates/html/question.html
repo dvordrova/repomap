@@ -1,0 +1,46 @@
+{{define "question.html"}}<details id="{{.ID}}" class="reading-guide">
+<summary class="reading-question">{{.Question}}</summary>
+{{if .AnswerNote}}<p class="reading-answer-note">{{.AnswerNote}}</p>{{end}}
+{{range .Answers}}<div class="reading-answer">
+{{if .Text}}<div class="model answer-copy"><p class="answer-prose">{{.Text}}</p><span class="model-sources">{{range .Sources}} {{template "anchor" .}}{{end}}</span></div>{{end}}
+{{if .Terms}}<div class="answer-terms"><p>Terms in these sources</p>{{range .Terms}}<details class="answer-term"><summary>{{.Name}}{{if .Context}} <span class="meta">· {{.Context}}</span>{{end}}</summary>
+{{template "concept-explanation.html" .}}
+<a href="#{{.ID}}">Where this term belongs →</a></details>{{end}}</div>{{end}}
+{{if .MapLinks}}<div class="reading-map-links">Explore the answer on the map: {{range .MapLinks}}<a href="{{.Href}}" data-question-map="{{.NodeID}}">{{.Label}} →</a> {{end}}</div>{{end}}
+{{if .Remaining}}<p class="reading-gap"><strong>Still to investigate</strong> <span class="model">{{.Remaining}}</span></p>{{end}}
+{{if .Checks}}<details class="answer-check"><summary>Check this interpretation</summary>
+{{if .Basis}}<p class="model">{{.Basis}}<span class="model-sources">{{range .Sources}} {{template "anchor" .}}{{end}}</span></p>{{end}}
+<ul class="reading-stops">{{range .Checks}}<li><strong>{{.Name}}</strong> <span class="reading-source">{{template "anchor" .Source}}</span>
+{{template "question-excerpts.html" .Excerpts}}
+</li>{{end}}</ul></details>{{end}}
+</div>{{end}}
+{{if .Note}}<p class="meta">{{.Note}}</p>{{end}}
+{{if .Readings}}<details class="answer-reading"><summary>Read the supporting code and documentation</summary>{{range .Readings}}<div class="reading-part"><ol class="reading-stops">{{range .Steps}}<li>
+<div><strong>{{.Name}}</strong> <span class="reading-source">{{template "anchor" .Source}}</span></div>
+<p class="model">{{.Why}}<span class="model-sources">{{template "anchor" .Source}}</span></p>
+{{if .MapLinks}}<div class="reading-map-links">On the map: {{range .MapLinks}}<a href="{{.Href}}" data-question-map="{{.NodeID}}">{{.Label}} →</a> {{end}}</div>{{end}}
+</li>{{end}}</ol>{{if .OpenQuestion}}<p class="reading-gap"><strong>Still to investigate in these sources</strong> <span class="model">{{.OpenQuestion}}</span></p>{{end}}</div>{{end}}</details>{{end}}
+{{if .OpenQuestion}}<p class="reading-gap"><strong>Still to investigate</strong> <span class="model">{{.OpenQuestion}}</span></p>{{end}}
+{{if or .UserQuestion .Origins}}<details class="question-origins"><summary>Why this question?</summary>
+{{if .UserQuestion}}<p>Included because you asked it.</p>{{end}}
+{{range .Origins}}<div class="question-origin"><strong>{{.Title}}</strong><p class="model">{{.Why}}<span class="model-sources">{{range .Checks}} {{template "anchor" .Source}}{{end}}</span></p>
+{{if ne .Question $.Question}}<p>Combined with: {{.Question}}</p>{{end}}
+{{template "question-checks.html" .Checks}}</div>{{end}}</details>{{end}}
+<details><summary>What this guide was based on</summary><ul>{{range .Scope}}<li>{{.}}</li>{{end}}</ul></details>
+</details>{{end}}
+
+{{define "question-checks.html"}}{{if .}}<details><summary>Check the sources</summary><ul class="reading-stops">{{range .}}<li><strong>{{.Name}}</strong> {{template "anchor" .Source}}
+{{template "question-excerpts.html" .Excerpts}}</li>{{end}}</ul></details>{{end}}{{end}}
+
+{{define "question-excerpts.html"}}{{range .}}<div class="reading-excerpt">
+{{if .Members}}<table class="reading-members"><caption>{{.Kind}}{{if .ShowSource}} · {{template "anchor" .Source}}{{end}}</caption>
+<thead><tr><th scope="col">Declaration</th><th scope="col">Source</th></tr></thead>
+<tbody>{{range .Members}}<tr><td><code>{{.Text}}</code>{{if .Doc}}<p class="member-doc"><span>Author's documentation</span>{{.Doc}}</p>{{end}}</td><td>{{template "anchor" .Source}}</td></tr>{{end}}</tbody></table>
+{{else}}<span>{{.Kind}}{{if .ShowSource}} · {{template "anchor" .Source}}{{end}}</span><pre>{{.Text}}</pre>{{end}}
+</div>{{end}}{{end}}
+
+{{define "learning-review.html"}}{{if .LearningReviews}}<details class="learning-review"><summary>How were these questions chosen?</summary><p>The model adapted general learning topics to this repository. These decisions can be checked against the original sources.</p>
+{{if .LearningSelections}}<details><summary>Which questions belong in the introduction? · {{len .LearningSelections}} considered</summary><p>The model chose a menu of questions for each topic. Its rationale describes that menu; it is not a separate judgment of each omitted question. All candidates remain here with their original sources.</p>{{template "learning-decisions.html" .LearningSelections}}</details>{{end}}
+<details><summary>How did the sources suggest learning topics?</summary>{{template "learning-decisions.html" .LearningReviews}}</details></details>{{end}}{{end}}
+
+{{define "learning-decisions.html"}}{{range .}}<details><summary>{{.Title}} · {{.State}}{{if .PartialContext}} · part of the repository{{end}}</summary><p class="model">{{.Reason}}<span class="model-sources">{{range .Checks}} {{template "anchor" .Source}}{{end}}</span></p>{{template "question-checks.html" .Checks}}</details>{{end}}{{end}}

@@ -2,62 +2,33 @@ package reportserver
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"os/exec"
-	"path/filepath"
-	"strconv"
+	"os"
 	"time"
+
+	"github.com/dvordrova/repomap/internal/repoconfig"
 )
 
-var ErrEditorUnavailable = errors.New("VS Code launcher is unavailable")
-
-func NewVSCodeLauncher(loggers ...func(string, ...any)) (OpenFileFunc, error) {
-	name, prefix, err := resolveVSCodeCommand(exec.LookPath)
-	if err != nil {
-		return nil, err
+// Bind settings once for this server's lifetime. A configuration error affects
+// the source action, not the availability of the generated report.
+func configuredEditor(root string, config *repoconfig.Config, logf func(string, ...any)) OpenFileFunc {
+	var loadErr error
+	if config == nil {
+		loaded, err := repoconfig.Load(root)
+		config, loadErr = &loaded, err
 	}
-	var logf func(string, ...any)
-	if len(loggers) > 0 {
-		logf = loggers[0]
-	}
-	return editorLauncherWithLog(name, prefix, "code_cli", logf), nil
-}
-
-func editorLauncherWithLog(name string, prefix []string, mechanism string, logf func(string, ...any)) OpenFileFunc {
-	return func(ctx context.Context, absolutePath string, line, column int) error {
-		target := absolutePath
-		if line > 0 {
-			target += ":" + strconv.Itoa(line)
-			if column > 0 {
-				target += ":" + strconv.Itoa(column)
-			}
+	return func(ctx context.Context, file string, line, column int) error {
+		if loadErr != nil {
+			return loadErr
 		}
-		args := append(append([]string(nil), prefix...), target)
-		cmd := exec.CommandContext(ctx, name, args...)
 		started := time.Now()
-		if err := cmd.Run(); err != nil {
-			if logf != nil {
-				logf("editor dispatch mechanism=%s executable=%s outcome=exit_error elapsed_ms=%d", mechanism, filepath.Base(name), time.Since(started).Milliseconds())
-			}
-			return fmt.Errorf("VS Code open command failed: %w", err)
-		}
+		err := config.Open(ctx, root, file, line, column, os.Stdin, os.Stdout, os.Stderr)
 		if logf != nil {
-			logf("editor dispatch mechanism=%s executable=%s outcome=opened elapsed_ms=%d", mechanism, filepath.Base(name), time.Since(started).Milliseconds())
+			outcome := "opened"
+			if err != nil {
+				outcome = "error"
+			}
+			logf("editor dispatch outcome=%s elapsed_ms=%d", outcome, time.Since(started).Milliseconds())
 		}
-		return nil
+		return err
 	}
-}
-
-func resolveVSCodeCommand(lookPath func(string) (string, error)) (string, []string, error) {
-	if codePath, err := lookPath("code"); err == nil {
-		return codePath, []string{"--goto"}, nil
-	}
-	return "", nil, ErrEditorUnavailable
-}
-
-// unavailableEditor stands in when no editor launcher could be resolved. The
-// report is served either way; this is the answer a source link gets.
-func unavailableEditor(context.Context, string, int, int) error {
-	return ErrEditorUnavailable
 }

@@ -41,6 +41,7 @@ type repositoryTargetDispatchOptions struct {
 	// NoModel walks the atlas without a provider: every cell is its
 	// fallback line and no orientation is asked.
 	NoModel          bool
+	Questions        []string
 	Output           *runOutput
 	FirstLayer       *debugdump.SemanticObserver
 	DiscoverJSTSFn   jsTSProjectDiscoverer
@@ -203,9 +204,11 @@ func dispatchRepositoryTargetPlan(
 				"repository target dispatcher: adapter %q is not registered", target.Key.Adapter,
 			))
 		}
+		prepareStarted := time.Now()
 		dispatchBinding, prepareErr := descriptor.PrepareDispatchTarget(
 			ctx, options, target, dispatchPlans[target.Key.Adapter],
 		)
+		options.Output.Wall("target native analysis", time.Since(prepareStarted))
 		if prepareErr != nil {
 			if ctx.Err() != nil {
 				return failPublication(prepareErr)
@@ -231,6 +234,7 @@ func dispatchRepositoryTargetPlan(
 		}
 		target = dispatchBinding.Target
 		currentStage = targetoutcome.StageProgramAnalysis
+		projectionStarted := time.Now()
 		var programPage repositoryProgramPageAuthority
 		if !dispatchBinding.ProgramFactsBound {
 			prepareErr = fmt.Errorf(
@@ -250,6 +254,7 @@ func dispatchRepositoryTargetPlan(
 		// ProgramIndex + dependency projection. Release them before any semantic
 		// or report work begins, including when the projection fails.
 		dispatchBinding.ProgramFacts = nil
+		options.Output.Wall("target program projection", time.Since(projectionStarted))
 		if prepareErr != nil {
 			stage, reason := classifyRepositoryTargetFailure(currentStage, prepareErr)
 			if failureErr := recordFailure(selected, consoleTarget, stage, reason, prepareErr); failureErr != nil {
@@ -284,7 +289,10 @@ func dispatchRepositoryTargetPlan(
 		childDeps.publishedTargetSink = func(value targetPublishedRun) {
 			published = value
 		}
-		if err := runDefaultWithDeps(options.Repo, options.ExtraArgs, childDeps); err != nil {
+		artifactStarted := time.Now()
+		childErr := runDefaultWithDeps(options.Repo, options.ExtraArgs, childDeps)
+		options.Output.Wall("target artifact preparation", time.Since(artifactStarted))
+		if err := childErr; err != nil {
 			if ctx.Err() != nil {
 				return failPublication(fmt.Errorf("target page %s failed: %w", consoleTarget.DisplayPath, err))
 			}
@@ -373,7 +381,7 @@ func dispatchRepositoryTargetPlan(
 		return failPublication(err)
 	}
 	if !options.NoModel {
-		if err := orientAtlasRuns(ctx, options, runs, outcome); err != nil {
+		if err := orientAtlasRuns(ctx, options, runs, &outcome); err != nil {
 			return failPublication(err)
 		}
 	}
@@ -382,30 +390,15 @@ func dispatchRepositoryTargetPlan(
 	if err != nil {
 		return failPublication(err)
 	}
-	if err := persistTargetOutcomePortfolioForRuns(targetOutcomePortfolio, runs); err != nil {
+	options.Output.Stage("Report publication", "assembling one repository report from memory")
+	publicationStarted := time.Now()
+	receipt, err := publishRepositoryReport(ctx, portfolio, targetOutcomePortfolio, runs, outcome, options.Output)
+	if err != nil {
 		return failPublication(err)
 	}
-	if err := finalizeProgramPageRuns(
-		ctx, portfolio, targetOutcomePortfolio, runs, options.Output,
-	); err != nil {
-		return failPublication(err)
-	}
-	// The owner page says how long the whole run took, not how long its own
-	// target did: every target run's account is merged and stamped with the
-	// wall clock of the run that drove them. chi's page said "29s" of a
-	// five-minute run before this.
-	if err := writeRunTiming(owner.RunDir, wholeRunTiming(options.Output, runs)); err != nil {
-		options.Output.Warn("could not record the run's timing", err.Error())
-	}
-	if err := publishProgramPageBundle(portfolio, runs); err != nil {
-		return failPublication(err)
-	}
+	options.Output.State("Report publication", "ready", formatRunOutputWallDuration(time.Since(publicationStarted)))
 	if options.VerifiedRunsSink != nil {
-		receipts := make([]report.RunReceipt, 0, len(runs))
-		for _, run := range runs {
-			receipts = append(receipts, run.Receipt)
-		}
-		options.VerifiedRunsSink(receipts)
+		options.VerifiedRunsSink([]report.RunReceipt{receipt})
 	}
 	for _, consoleTarget := range pendingTargets {
 		options.Output.TargetPage("complete", consoleTarget)
@@ -533,6 +526,7 @@ func finishRepositoryTargetDispatch(
 	output.State("Run", "ready", "report: "+reportPath)
 	if !noServe && deps.serveReport != nil {
 		return deps.serveReport(ctx, reportserver.Options{
+			Config:  deps.repositoryConfig,
 			RunsDir: debugDir, InitialRunID: filepath.Base(runDir), Port: port,
 			Runs: verifiedRuns,
 			Logf: func(format string, args ...any) {

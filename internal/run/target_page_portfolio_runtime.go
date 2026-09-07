@@ -3,7 +3,11 @@ package run
 import (
 	"fmt"
 
+	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/dependencies"
+	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
@@ -13,11 +17,15 @@ import (
 // page's semantic graph and is replaced by its matched snapshot before the
 // final shared graph is bound.
 type targetPublishedRun struct {
-	RunID       string
-	RunDir      string
-	ProgramPage report.TargetNavigationPage
-	GroupIndex  groupindex.Index
-	Receipt     report.RunReceipt
+	RunID         string
+	RunDir        string
+	ProgramPage   report.TargetNavigationPage
+	GroupIndex    groupindex.Index
+	ProgramIndex  *programindex.Index
+	Dependencies  *dependencies.Catalog
+	Documentation *documentationreduce.Result
+	RepoName      string
+	Timing        debugdump.RunTiming
 
 	SelectedTargetKey     string
 	SelectedTargetDisplay string
@@ -46,13 +54,25 @@ func reportAnalyzedTargetPagePublicationFailure(output *runOutput, targets []tar
 	)
 }
 
-// quarantineTargetPagePublication removes browser authority and gives any
-// already-rendered files an explicit failed suffix. Raw analysis artifacts
-// remain available for diagnostics, but no partial multi-target publication
-// keeps a product-looking report.html/report.json pair.
+// Restored stage inputs are loaded once. Ordinary runs already own these values.
+func (run *targetPublishedRun) programIndex() (programindex.Index, error) {
+	if run.ProgramIndex == nil {
+		index, err := readRunProgramIndex(run.RunDir)
+		if err != nil {
+			return programindex.Index{}, err
+		}
+		run.ProgramIndex = &index
+	}
+	return *run.ProgramIndex, nil
+}
 
-func (run targetPublishedRun) generateBackingPageData() (report.RunReceipt, error) {
-	return report.Generate(run.RunDir, run.Source, report.GenerateOptions{
-		GitLabURL: run.GitLabURL, GitHubURL: run.GitHubURL, PublishHTML: false,
-	})
+func (run *targetPublishedRun) dependencyCatalog() (*dependencies.Catalog, error) {
+	if run.Dependencies == nil {
+		catalog, err := readRunDependencyCatalog(run.RunDir)
+		if err != nil {
+			return nil, err
+		}
+		run.Dependencies = catalog
+	}
+	return run.Dependencies, nil
 }

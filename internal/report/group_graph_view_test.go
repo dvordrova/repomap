@@ -340,6 +340,27 @@ func TestConnectionRowsAreSaidOnceAndDoNotEchoTheirLabel(t *testing.T) {
 	}
 }
 
+func TestGroupCardUsesSelectedKnowledgeAndLinksToItsNeighbour(t *testing.T) {
+	group := groupindex.Group{ID: "components", Title: "Components", MemberSubjectIDs: []string{"props", "editor"}}
+	index := groupindex.Index{Target: programindex.Target{ID: "front"}, Groups: []groupindex.Group{group}, Connections: []groupindex.Connection{{
+		From: groupindex.Endpoint{TargetID: "front", GroupID: "components"}, To: groupindex.Endpoint{TargetID: "front", GroupID: "http"}, Label: "uses HTTP service",
+	}}}
+	builder := pageBuilder{indexes: []groupindex.Index{index}, byProgram: map[string]*pageSection{"front": {ID: "front"}}, groupTitles: map[groupindex.Endpoint]string{{TargetID: "front", GroupID: "http"}: "HTTP service"}, subjects: map[string]subjectRef{
+		"props":  {subject: groupindex.Subject{ID: "props", Object: &groupindex.ObjectFacts{Name: "Props", Location: &programindex.Location{Path: "editor.tsx", Line: 1}}}},
+		"editor": {subject: groupindex.Subject{ID: "editor", Object: &groupindex.ObjectFacts{Name: "Editor", Location: &programindex.Location{Path: "editor.tsx", Line: 20}}, Interpretation: &groupindex.Interpretation{Key: true, Line: "Edits code."}}},
+	}}
+	card := builder.groupCard("front", index, group)
+	if len(card.Highlights) != 1 || len(card.Highlights[0].Members) != 1 || card.Highlights[0].Members[0].Name != "Editor" || card.Highlights[0].Members[0].Summary != "Edits code." {
+		t.Fatalf("key knowledge lost: %+v", card.Highlights)
+	}
+	if len(card.Inventory) != 1 || len(card.Inventory[0].Members) != 2 {
+		t.Fatal("source inventory was discarded")
+	}
+	if len(card.Connections) != 1 || card.Connections[0].Href != "#"+groupAnchorID("front", "http") {
+		t.Fatalf("neighbour is not navigable: %+v", card.Connections)
+	}
+}
+
 // The graph keeps one group per title per lane; the page shows one per title.
 // The largest slice lends its identity and its place in a zone, every slice's
 // connections follow it, and a slice talking to its twin is dropped.

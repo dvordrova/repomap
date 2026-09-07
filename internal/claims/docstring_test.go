@@ -67,6 +67,34 @@ func TestGoDocCommentsSkipDirectivesAndDetachedComments(t *testing.T) {
 	}
 }
 
+func TestGoInterfaceContractsKeepAttachedMethodDocumentation(t *testing.T) {
+	quotes := goDocComments(splitLines(`package x
+type Ticket[T any] interface {
+ // Cancel revokes a ticket. Pending jobs are removed from the queue.
+ Cancel(id T) error
+ // Detached comment must not describe Status.
+
+ Status(id T) string
+ // Embedded documentation is not a method declaration.
+ Other
+}
+type Other interface{}
+func local() {
+ type Nested interface {
+  // Incidental local interface, outside the native declaration scope.
+  Run()
+ }
+}
+var anonymous interface {
+ // Anonymous variable interface, not a named contract.
+ Run()
+}
+`))
+	if len(quotes) != 1 || quotes[0].Line != 3 || quotes[0].Text != "Cancel revokes a ticket. Pending jobs are removed from the queue." {
+		t.Fatalf("interface documentation lost or misattached: %+v", quotes)
+	}
+}
+
 func TestJSDocBlocksRequireDeclarationAndDropTags(t *testing.T) {
 	lines := splitLines(strings.Join([]string{
 		`/** Not attached to a declaration. */`,

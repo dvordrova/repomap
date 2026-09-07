@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"github.com/dvordrova/repomap/internal/claims"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,10 +13,6 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// maxVisibleGroupMembers is how many member chips a group shows before the
-// rest move behind one disclosure. Three keeps a target under two screens.
-const maxVisibleGroupMembers = 3
-
 // pageSection is one analyzed target as the reader walks it: what calls in,
 // where execution starts, what the core does, what it calls out to, the main
 // flow, and then the warnings.
@@ -23,11 +20,12 @@ type pageSection struct {
 	ID string
 	// Name is what the reader calls this target; Label additionally
 	// distinguishes two targets that share a name.
-	Name     string
-	Label    string
-	Language string
-	Kind     string
-	Root     string
+	Name       string
+	Label      string
+	ShortLabel string
+	Language   string
+	Kind       string
+	Root       string
 
 	// programTargetID and factsTargetID join this section to the group graph
 	// and the fact layer; neither ever reaches the page.
@@ -57,6 +55,17 @@ type pageSection struct {
 	Config      []pageConfig
 	Dead        []pageAnchor
 	Todos       []pageTodo
+	DeadFolders []pageFileFolder
+	TodoFiles   []pageTodoFile
+}
+
+type pageFileFolder struct {
+	Path  string
+	Files []pageAnchor
+}
+type pageTodoFile struct {
+	Path string
+	Rows []pageTodo
 }
 
 type pageRouteGroup struct {
@@ -129,12 +138,11 @@ type pageGroup struct {
 	Share       int
 	Title       string
 	Summary     string
-	Visible     []pageChipRow
-	More        []pageChipRow
-	MoreCount   int
+	Highlights  []pageChipRow
+	Inventory   []pageChipRow
+	Operations  []pageGroupOperation
 	Externals   []pageExternal
 	Connections []pageConnection
-	Docs        []pageDoc
 	// Zone is the part this group is in, when it is in one, and ZoneHref
 	// the frame on the map that draws it.
 	Zone     string
@@ -154,7 +162,13 @@ type pageChip struct {
 	// anything. A hundred and ninety docstrings of chi were quoted into the
 	// claims layer and none reached the page; a card that shows a symbol
 	// can show the sentence that explains it.
-	Doc string
+	Doc     string
+	Summary string
+}
+
+type pageGroupOperation struct {
+	Name, Kind, Summary, Href string
+	Anchor                    pageAnchor
 }
 
 // pageDoc is one author's sentence shown on a card, under the model's.
@@ -166,13 +180,15 @@ type pageDoc struct {
 // pageConnection is one model sentence between two groups. A connection to
 // another target renders as a stub that links to that target's section.
 type pageConnection struct {
-	Arrow       string
-	Title       string
-	OtherTarget string
-	Href        string
-	Label       string
-	Summary     string
-	Possible    bool
+	Arrow                string
+	Title                string
+	OtherTarget          string
+	Href                 string
+	Label                string
+	Summary              string
+	Possible             bool
+	FromSource, ToSource *pageAnchor
+	Continues            []pageExternal
 	// Count is how many times this same line was said. Three exact calls
 	// from one group to another were three identical rows on the card.
 	Count int
@@ -185,8 +201,8 @@ func (builder *pageBuilder) buildSections() {
 	builder.createSections()
 	for _, section := range builder.sections {
 		builder.fillSectionFacts(section)
-		builder.fillSectionGroups(section)
 		section.Map = builder.buildMap(section)
+		builder.fillSectionGroups(section)
 		for _, group := range section.RouteGroups {
 			section.InboundCount += group.Paths
 		}
@@ -199,7 +215,7 @@ func (builder *pageBuilder) buildSections() {
 		if section.Flow == nil {
 			section.FlowMissing = "This run produced no main flow."
 			if builder.data.Orientation != nil && len(builder.data.Orientation.MainFlow.Steps) > 0 {
-				section.FlowMissing = "The repository's main flow does not pass through this target."
+				section.FlowMissing = "The model did not include this target in its selected main flow."
 			}
 		}
 	}
@@ -237,10 +253,22 @@ func (builder *pageBuilder) createSections() {
 // directory — so a repeated name gains the detail that separates them.
 func labelSections(sections []*pageSection) {
 	count := make(map[string]int, len(sections))
+	roots := make(map[string]int, len(sections))
 	for _, section := range sections {
 		count[section.Name]++
+		roots[section.Root]++
 	}
 	for _, section := range sections {
+		section.ShortLabel = section.Root
+		if section.Root == "." {
+			section.ShortLabel = "Root"
+		}
+		if section.Root == "" {
+			section.ShortLabel = section.Name
+		}
+		if roots[section.Root] > 1 {
+			section.ShortLabel += " (" + section.Kind + ")"
+		}
 		section.Label = section.Name
 		if count[section.Name] < 2 {
 			continue
@@ -332,7 +360,7 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 	}
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindDeadModule) {
 		if anchor := builder.links.factAnchor(fact); anchor != nil {
-			section.Dead = append(section.Dead, *anchor)
+			section.Dead = append(section.Dead, builder.links.anchor(anchor.Path, 0, 0))
 		}
 	}
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindTODO) {
@@ -340,6 +368,44 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 			Text: fact.Text, Anchor: builder.links.factAnchor(fact),
 		})
 	}
+	section.DeadFolders = groupFiles(section.Dead)
+	section.TodoFiles = groupTodos(section.Todos)
+}
+
+func groupFiles(files []pageAnchor) []pageFileFolder {
+	byPath := make(map[string][]pageAnchor)
+	for _, file := range files {
+		folder := path.Dir(file.Path)
+		file.Text = path.Base(file.Path)
+		byPath[folder] = append(byPath[folder], file)
+	}
+	var groups []pageFileFolder
+	for folder, files := range byPath {
+		sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+		groups = append(groups, pageFileFolder{folder, files})
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Path < groups[j].Path })
+	return groups
+}
+
+func groupTodos(rows []pageTodo) []pageTodoFile {
+	byPath := make(map[string][]pageTodo)
+	for _, row := range rows {
+		file := "Source unavailable"
+		if row.Anchor != nil {
+			anchor := *row.Anchor
+			file = anchor.Path
+			anchor.Text = "line " + strconv.Itoa(anchor.Line)
+			row.Anchor = &anchor
+		}
+		byPath[file] = append(byPath[file], row)
+	}
+	var groups []pageTodoFile
+	for file, rows := range byPath {
+		groups = append(groups, pageTodoFile{file, rows})
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Path < groups[j].Path })
+	return groups
 }
 
 // routeGroups buckets the target's routes by method so a reader scans one
@@ -419,7 +485,16 @@ func (builder *pageBuilder) fillSectionGroups(section *pageSection) {
 		card := builder.groupCard(section.ID, *index, group)
 		if zone, inZone := zoneOfGroup[group.ID]; inZone {
 			card.Zone = zone.Title
-			card.ZoneHref = "#" + zone.ID
+			// Operations have a different map layout without zone frames.
+			// Keep the grouping label, but link only to a frame actually drawn.
+			if section.Map != nil {
+				for _, frame := range section.Map.Frames {
+					if frame.ID == zone.ID {
+						card.ZoneHref = "#" + frame.ID
+						break
+					}
+				}
+			}
 		}
 		switch group.Lane {
 		case groupindex.LaneTriggers:
@@ -537,9 +612,25 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 	}
 	rows, externals := builder.memberChips(group.MemberSubjectIDs)
 	card.Externals = externals
-	card.Visible, card.More, card.MoreCount = splitChipRows(rows, maxVisibleGroupMembers)
+	card.Inventory = rows
+	var selected []string
+	for _, id := range group.MemberSubjectIDs {
+		if ref, ok := builder.subjects[id]; ok && ref.subject.Interpretation != nil && ref.subject.Interpretation.Key {
+			selected = append(selected, id)
+		}
+	}
+	card.Highlights, _ = builder.memberChips(selected)
+	for _, operation := range index.Operations {
+		if operation.GroupID != group.ID {
+			continue
+		}
+		card.Operations = append(card.Operations, pageGroupOperation{
+			Name: operation.Name, Kind: operation.Kind, Summary: operation.Summary,
+			Href:   "#" + operationNodeID(sectionID, operation.ID),
+			Anchor: builder.links.anchor(operation.Location.Path, operation.Location.Line, operation.Location.Column),
+		})
+	}
 	card.Connections = builder.groupConnections(index, group)
-	card.Docs = cardDocs(card.Visible, maxCardDocs)
 	return card
 }
 
@@ -587,10 +678,14 @@ func (builder *pageBuilder) memberChips(memberIDs []string) ([]pageChipRow, []pa
 			continue
 		}
 		seen[key] = struct{}{}
-		byPath[anchor.Path] = append(byPath[anchor.Path], pageChip{
+		chip := pageChip{
 			Name: name, Line: anchor.Line, Anchor: *anchor,
 			Doc: builder.docstringFor(anchor.Path, anchor.Line),
-		})
+		}
+		if ref.subject.Interpretation != nil {
+			chip.Summary = ref.subject.Interpretation.Line
+		}
+		byPath[anchor.Path] = append(byPath[anchor.Path], chip)
 	}
 	paths := make([]string, 0, len(byPath))
 	for path := range byPath {
@@ -617,32 +712,6 @@ func (builder *pageBuilder) memberChips(memberIDs []string) ([]pageChipRow, []pa
 		return externals[left].Name < externals[right].Name
 	})
 	return rows, externals
-}
-
-// splitChipRows keeps the first limit chips visible and moves the rest behind
-// a disclosure, splitting a file's chips across the boundary when needed.
-func splitChipRows(rows []pageChipRow, limit int) (visible, more []pageChipRow, moreCount int) {
-	budget := limit
-	for _, row := range rows {
-		switch {
-		case budget <= 0:
-			more = append(more, row)
-			moreCount += len(row.Members)
-		case len(row.Members) <= budget:
-			visible = append(visible, row)
-			budget -= len(row.Members)
-		default:
-			visible = append(visible, pageChipRow{Path: row.Path, Members: row.Members[:budget]})
-			rest := row.Members[budget:]
-			// The path is printed once. This row's continuation opens directly
-			// under the chips it continues, so repeating its path there reads
-			// as a second file with the same name.
-			more = append(more, pageChipRow{Members: rest})
-			moreCount += len(rest)
-			budget = 0
-		}
-	}
-	return visible, more, moreCount
 }
 
 // groupConnections renders the model's one-line sentences for every
@@ -675,10 +744,47 @@ func (builder *pageBuilder) groupConnections(
 		if row.Title == "" {
 			row.Title = strings.ReplaceAll(connection.SemanticKind, "_", " ")
 		}
-		if other.TargetID != index.Target.ID {
-			if section := builder.byProgram[other.TargetID]; section != nil {
-				row.OtherTarget = section.Name
-				row.Href = "#" + section.ID
+		if section := builder.byProgram[other.TargetID]; section != nil {
+			row.Href = "#" + groupAnchorID(section.ID, other.GroupID)
+			if other.TargetID != index.Target.ID {
+				row.OtherTarget = section.ShortLabel
+			}
+			location := connection.ToLocation
+			if arrow == "←" {
+				location = connection.FromLocation
+			}
+			if location != nil {
+				if otherIndex := builder.graphIndex(other.TargetID); otherIndex != nil {
+					for _, operation := range otherIndex.Operations {
+						if operationLocationKey(operation.Location) == operationLocationKey(*location) {
+							row.Href = "#" + operationNodeID(section.ID, operation.ID)
+							row.Title = operation.Name
+							break
+						}
+					}
+				}
+			}
+		}
+		if connection.FromLocation != nil {
+			location := connection.FromLocation
+			row.FromSource = builder.links.anchorPointer(location.Path, location.Line, location.Column)
+		}
+		if connection.ToLocation != nil {
+			location := connection.ToLocation
+			row.ToSource = builder.links.anchorPointer(location.Path, location.Line, location.Column)
+		}
+		// This names the neighbouring group's own integrations; it does not
+		// turn a group-level connection into a trace of the selected function.
+		if arrow == "→" && other.TargetID == index.Target.ID {
+			seen := map[string]bool{}
+			for _, next := range index.Connections {
+				if next.From != other || next.To.TargetID == index.Target.ID || next.SourceKind != "integration" || seen[next.To.TargetID] {
+					continue
+				}
+				if peer := builder.byProgram[next.To.TargetID]; peer != nil {
+					row.Continues = append(row.Continues, pageExternal{Name: peer.ShortLabel, Href: row.Href})
+					seen[next.To.TargetID] = true
+				}
 			}
 		}
 		rows = append(rows, row)
@@ -693,14 +799,20 @@ func (builder *pageBuilder) groupConnections(
 // its label again, and when it is, it is noise on the line.
 func collapseConnections(rows []pageConnection) []pageConnection {
 	type key struct {
-		arrow, title, otherTarget, label string
-		possible                         bool
+		arrow, title, otherTarget, label, from, to string
+		possible                                   bool
 	}
 	at := make(map[key]int, len(rows))
 	result := make([]pageConnection, 0, len(rows))
 	for _, row := range rows {
 		row.Summary = dropEcho(row.Summary, row.Label)
-		k := key{row.Arrow, row.Title, row.OtherTarget, row.Label, row.Possible}
+		k := key{arrow: row.Arrow, title: row.Title, otherTarget: row.OtherTarget, label: row.Label, possible: row.Possible}
+		if row.FromSource != nil {
+			k.from = row.FromSource.Text
+		}
+		if row.ToSource != nil {
+			k.to = row.ToSource.Text
+		}
 		if position, seen := at[k]; seen {
 			result[position].Count++
 			if result[position].Summary == "" {
@@ -746,26 +858,9 @@ func laneShare(index groupindex.Index, group groupindex.Group) int {
 	return len(group.MemberSubjectIDs) * 100 / len(index.Subjects)
 }
 
-// maxCardDocs is how many authors' sentences a card quotes. Every member's
-// docstring is still on its chip; the card leads with the first few.
-const maxCardDocs = 2
-
 // docstringReach is how far above a declaration its docstring may start.
 // A Go doc comment sits directly above; a long one starts a dozen lines up.
 const docstringReach = 12
-
-func cardDocs(rows []pageChipRow, most int) []pageDoc {
-	var docs []pageDoc
-	for _, row := range rows {
-		for _, chip := range row.Members {
-			if chip.Doc == "" || len(docs) == most {
-				continue
-			}
-			docs = append(docs, pageDoc{Symbol: chip.Name, Text: chip.Doc})
-		}
-	}
-	return docs
-}
 
 // docstringFor is the docstring written above the symbol declared at this
 // line of this file, if one was quoted into the claims.

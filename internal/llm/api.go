@@ -14,12 +14,19 @@ import (
 // fixtures, and callers that have not opted in retain their original behavior.
 const DefaultBatchConcurrency = 4
 
+// DefaultMaxOutputTokens is the shared request allowance. Stages do not set
+// smaller generation cutoffs; the provider applies its configured ceiling.
+const DefaultMaxOutputTokens = 128000
+
 // Prompt is provider-neutral model input. A Provider is responsible for
 // turning it into its exact transport request.
 type Prompt struct {
 	System             string
 	User               string
 	ResponseFormatJSON bool
+	// Reasoning requests deliberate reasoning when the provider supports it.
+	// Its tokens share the call's output budget.
+	Reasoning bool
 }
 
 // Limits are part of request preparation and response acceptance. Providers
@@ -109,8 +116,9 @@ func DecodeJSON[T any](validate func(T) error) DecodeValidate[T] {
 	return func(raw []byte) (T, error) { return decodeJSONValue(raw, validate) }
 }
 
-// Call is one cube-owned model operation. State should contain preparation,
-// prompt, and semantic-contract versions. It is hashed but never persisted.
+// Call is one cube-owned model operation. State contains the semantic contract
+// used for independent-row memo identity. Exact-response caching uses the
+// prepared request and provider state; every hit runs the current validator.
 //
 // Set DecodeValidate for a custom reducer, or set Validate to use the default
 // JSON decoder. Setting both is an error.
@@ -176,6 +184,8 @@ const (
 // Event contains only exact semantic request/response bytes, measurements,
 // and SHA-256 cache identity. Provider and cube state bytes are excluded.
 type Event struct {
+	// CacheRoot selects the shared exchange store for a run journal.
+	CacheRoot      string
 	Kind           EventKind
 	Source         EventSource
 	Failure        FailureKind

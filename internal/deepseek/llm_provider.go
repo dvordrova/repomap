@@ -31,27 +31,24 @@ func (c *Client) State() []byte {
 	// bytes whatever they were — and keeping them here meant that tuning the
 	// timeout by one minute re-bought all 1,047 cached answers.
 	type providerState struct {
-		Contract          string  `json:"contract"`
-		Endpoint          string  `json:"endpoint,omitempty"`
-		Model             string  `json:"model,omitempty"`
-		AuthMode          string  `json:"auth_mode,omitempty"`
-		ProviderMaxTokens int     `json:"provider_max_tokens,omitempty"`
-		Temperature       float64 `json:"temperature"`
-		Invalid           string  `json:"invalid,omitempty"`
+		Contract string `json:"contract"`
+		Endpoint string `json:"endpoint,omitempty"`
+		AuthMode string `json:"auth_mode,omitempty"`
+		Invalid  string `json:"invalid,omitempty"`
 	}
 
-	state := providerState{Contract: llmProviderContract, Temperature: 0.1}
+	// Model, temperature and effective token limit are already in the exact
+	// request. Keeping environment defaults here would prevent a replay from
+	// warming that request's cache when those defaults differ from the file.
+	state := providerState{Contract: llmProviderContract}
 	if c == nil {
 		state.Invalid = "client_missing"
 	} else {
 		config := c.EffectiveConfig()
 		state.Endpoint = config.Endpoint
-		state.Model = config.Model
 		state.AuthMode = config.AuthMode
-		state.ProviderMaxTokens = config.MaxTokens
 		if err := validateLLMProviderConfig(c); err != nil {
 			state.Endpoint = ""
-			state.Model = ""
 			state.Invalid = "configuration_invalid"
 		}
 	}
@@ -91,10 +88,12 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 	request := c.semanticRequest(prompt.User, prompt.System, prompt.ResponseFormatJSON)
 	request.MaxTokens = maxOutputTokens
 	if isOfficialDeepSeekEndpoint(c.Endpoint) {
-		// Bounded structured cubes need an answer inside their explicit output
-		// budget. Official DeepSeek endpoints otherwise enable thinking by
-		// default and can consume that budget without returning content.
+		// Most tables reserve their budget for the answer. A table that requests
+		// reasoning must provide an output budget for both reasoning and content.
 		request.Thinking = &thinkingConfig{Type: "disabled"}
+		if prompt.Reasoning {
+			request.Thinking.Type = "enabled"
+		}
 	}
 	body, err := json.Marshal(request)
 	if err != nil {

@@ -58,39 +58,26 @@ def safe_expression_name(node):
     return ""
 
 
-def safe_arguments(arguments):
-    # Parameter identifiers and Python's positional/keyword markers describe
-    # the callable shape without copying annotations or default expressions.
-    # Defaults and annotations can contain credentials or other source
-    # literals and therefore never enter a persistent ProgramIndex.
-    values = []
-    positional_only = [value.arg for value in arguments.posonlyargs]
-    positional = [value.arg for value in arguments.args]
-    values.extend(positional_only)
-    if positional_only:
-        values.append("/")
-    values.extend(positional)
-    if arguments.vararg is not None:
-        values.append("*" + arguments.vararg.arg)
-    elif arguments.kwonlyargs:
-        values.append("*")
-    values.extend(value.arg for value in arguments.kwonlyargs)
-    if arguments.kwarg is not None:
-        values.append("**" + arguments.kwarg.arg)
-    return ", ".join(values)
+def declaration_arguments(arguments):
+    # Preserve declaration syntax without evaluating annotations or defaults.
+    # ast.unparse escapes multiline strings and preserves spaces inside literals.
+    return ast.unparse(arguments)
 
 
 def function_signature(node):
     prefix = "async " if isinstance(node, ast.AsyncFunctionDef) else ""
-    return bounded_text(prefix + node.name + "(" + safe_arguments(node.args) + ")")
+    signature = prefix + node.name + "(" + declaration_arguments(node.args) + ")"
+    if node.returns is not None:
+        signature += " -> " + ast.unparse(node.returns)
+    return signature
 
 
 def class_signature(node):
-    bases = [safe_expression_name(value) for value in node.bases]
-    bases = [value for value in bases if value]
+    bases = [ast.unparse(value) for value in node.bases]
+    bases.extend(ast.unparse(keyword) for keyword in node.keywords)
     if not bases:
         return "class " + node.name
-    return bounded_text("class " + node.name + "(" + ", ".join(bases) + ")")
+    return "class " + node.name + "(" + ", ".join(bases) + ")"
 
 
 def relative_module(current, is_package, level, module):
@@ -430,7 +417,7 @@ class Collector(ast.NodeVisitor):
             str(getattr(node, "lineno", 0)), str(getattr(node, "col_offset", -1) + 1),
         )
 
-    def add_variable(self, name, node, forced_internal=False):
+    def add_variable(self, name, node, forced_internal=False, signature=""):
         if not name or name == "_":
             return ""
         qname = self.scope.qname + "." + name
@@ -440,6 +427,8 @@ class Collector(ast.NodeVisitor):
             "kind": "variable",
             "name": name,
             "visibility": visibility(name, forced_internal or self.scope.kind in ("function", "method", "lambda")),
+            **({"owner_ref": self.scope.ref} if self.scope.kind == "type" else {}),
+            **({"signature": signature} if signature else {}),
             "container_ref": self.scope.ref,
             "location": source_location(self.module["path"], node),
         }, qname)
@@ -560,6 +549,7 @@ class Collector(ast.NodeVisitor):
             "name": node.name,
             "visibility": visibility(node.name),
             "signature": class_signature(node),
+            **({"owner_ref": parent.ref} if parent.kind == "type" else {}),
             "container_ref": parent.ref,
             "location": source_location(self.module["path"], node),
         }, qname)
@@ -584,7 +574,7 @@ class Collector(ast.NodeVisitor):
             "kind": "lambda",
             "name": name,
             "visibility": "internal",
-            "signature": bounded_text("lambda " + safe_arguments(node.args)),
+            "signature": ("lambda " + declaration_arguments(node.args)).rstrip(),
             "container_ref": parent.ref,
             "location": source_location(self.module["path"], node),
         }, qname)
@@ -601,7 +591,10 @@ class Collector(ast.NodeVisitor):
         alias_binding = self.callable_alias_binding(node.value)
         self.visit(node.value)
         for target in node.targets:
-            self.bind_targets(target)
+            if self.scope.kind == "type" and isinstance(target, ast.Name):
+                self.add_variable(target.id, target, signature=target.id + " = " + ast.unparse(node.value))
+            else:
+                self.bind_targets(target)
             self.bind_callable_alias(target, alias_binding)
         if isinstance(node.value, ast.Lambda):
             lambda_ref = self.analyzer.node_refs.get(id(node.value), "")
@@ -614,7 +607,13 @@ class Collector(ast.NodeVisitor):
         alias_binding = self.callable_alias_binding(node.value) if node.value is not None else None
         if node.value is not None:
             self.visit(node.value)
-        self.bind_targets(node.target)
+        if isinstance(node.target, ast.Name):
+            signature = node.target.id + ": " + ast.unparse(node.annotation)
+            if node.value is not None and self.scope.kind in ("module", "type"):
+                signature += " = " + ast.unparse(node.value)
+            self.add_variable(node.target.id, node.target, signature=signature)
+        else:
+            self.bind_targets(node.target)
         self.bind_callable_alias(node.target, alias_binding)
 
     def visit_NamedExpr(self, node):

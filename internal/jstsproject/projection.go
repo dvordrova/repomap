@@ -338,6 +338,13 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			}
 		}
 	}
+	for _, binding := range result.Bindings {
+		relation := addRelation("program:"+binding.Ref, programindex.RelationPassesCallback,
+			binding.FromRef, binding.ToRefs, programResolution(binding.Resolution), binding.Location,
+			"jsx_callable_attribute", "", "callable_binding:jsx_attribute")
+		relations[relation].TargetsObserved = binding.TargetsObserved
+		relations[relation].Witnesses[0].Detail = binding.Element + "." + binding.Attribute
+	}
 	for _, contract := range result.Contracts {
 		if contract.DeclarationRef == "" {
 			continue

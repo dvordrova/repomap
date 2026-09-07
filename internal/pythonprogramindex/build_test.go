@@ -877,7 +877,7 @@ app = Whatever()
 	}
 }
 
-func TestBuildOmitsSignatureLiteralsButRetainsDecoratorArguments(t *testing.T) {
+func TestBuildKeepsDeclarationSignaturesAndTypeOwnership(t *testing.T) {
 	repository := pythonCorpus(t, map[string]string{
 		"pyproject.toml": `[project]
 name = "literal-safety"
@@ -892,8 +892,16 @@ def endpoint(secret="DEFAULT_SECRET_LITERAL", *, api_key: "ANNOTATION_LITERAL" =
 
 handler = lambda token="LAMBDA_DEFAULT_LITERAL": token
 
-class Store(Generic["CLASS_BASE_LITERAL"]):
-    pass
+class Store(Generic["CLASS_BASE_LITERAL"], metaclass=Meta):
+    items: list[Point]
+    enabled: bool = Field(default=False, env='ENABLED')
+    mode = 'two  words'
+    class Config:
+        strict = True
+    def read(self, index: int = 0, /, *flags: str, fallback: Point | None = None, **options: bool) -> Point:
+        local: int = 1
+        self.result = local
+        return 'FUNCTION_BODY_NOT_A_DECLARATION'
 `,
 	})
 	target := targetOfKind(t, repository, pythontarget.KindLibrary)
@@ -903,33 +911,47 @@ class Store(Generic["CLASS_BASE_LITERAL"]):
 	}
 
 	endpoint := objectNamed(t, index, programindex.ObjectFunction, "endpoint", "safe_pkg/api.py")
-	if endpoint.Signature != "endpoint(secret, *, api_key)" {
-		t.Fatalf("endpoint signature = %q, want structural parameters only", endpoint.Signature)
+	if endpoint.Signature != "endpoint(secret='DEFAULT_SECRET_LITERAL', *, api_key: 'ANNOTATION_LITERAL'='KEY_LITERAL') -> 'RETURN_LITERAL'" {
+		t.Fatalf("endpoint declaration lost annotations or defaults: %q", endpoint.Signature)
 	}
 	lambda := objectOfKindAtPath(t, index, programindex.ObjectLambda, "safe_pkg/api.py")
-	if lambda.Signature != "lambda token" {
-		t.Fatalf("lambda signature = %q, want structural parameters only", lambda.Signature)
+	if lambda.Signature != "lambda token='LAMBDA_DEFAULT_LITERAL'" {
+		t.Fatalf("lambda declaration lost its default: %q", lambda.Signature)
 	}
 	store := objectNamed(t, index, programindex.ObjectType, "Store", "safe_pkg/api.py")
-	if store.Signature != "class Store(Generic)" {
-		t.Fatalf("class signature = %q, want structural base name only", store.Signature)
+	if store.Signature != "class Store(Generic['CLASS_BASE_LITERAL'], metaclass=Meta)" {
+		t.Fatalf("class declaration lost generic bases or keywords: %q", store.Signature)
+	}
+	for name, signature := range map[string]string{
+		"items":   "items: list[Point]",
+		"enabled": "enabled: bool = Field(default=False, env='ENABLED')",
+		"mode":    "mode = 'two  words'",
+	} {
+		field := objectNamed(t, index, programindex.ObjectVariable, name, "safe_pkg/api.py")
+		if field.OwnerID != store.ID || field.ContainerID != store.ID || field.Signature != signature {
+			t.Fatalf("class declaration %s lost native ownership or syntax: %+v", name, field)
+		}
+	}
+	config := objectNamed(t, index, programindex.ObjectType, "Config", "safe_pkg/api.py")
+	strict := objectNamed(t, index, programindex.ObjectVariable, "strict", "safe_pkg/api.py")
+	if config.OwnerID != store.ID || strict.OwnerID != config.ID {
+		t.Fatal("nested class declarations lost their immediate owners")
+	}
+	read := objectNamed(t, index, programindex.ObjectMethod, "read", "safe_pkg/api.py")
+	if read.Signature != "read(self, index: int=0, /, *flags: str, fallback: Point | None=None, **options: bool) -> Point" {
+		t.Fatalf("method declaration lost its argument shape: %q", read.Signature)
+	}
+	local := objectNamed(t, index, programindex.ObjectVariable, "local", "safe_pkg/api.py")
+	if local.OwnerID != "" || local.ContainerID != read.ID {
+		t.Fatal("method local was promoted into a class field")
 	}
 
 	wire, err := programindex.Encode(index)
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
-	for _, literal := range []string{
-		"DEFAULT_SECRET_LITERAL",
-		"ANNOTATION_LITERAL",
-		"KEY_LITERAL",
-		"RETURN_LITERAL",
-		"LAMBDA_DEFAULT_LITERAL",
-		"CLASS_BASE_LITERAL",
-	} {
-		if strings.Contains(string(wire), literal) {
-			t.Fatalf("persistent program index contains source literal %q", literal)
-		}
+	if strings.Contains(string(wire), "FUNCTION_BODY_NOT_A_DECLARATION") {
+		t.Fatal("declaration signatures copied a function body")
 	}
 	for _, literal := range []string{"PRIVATE_ROUTE_LITERAL", "DECORATOR_TOKEN_LITERAL"} {
 		if !strings.Contains(string(wire), literal) {

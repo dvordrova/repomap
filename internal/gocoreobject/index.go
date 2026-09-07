@@ -15,7 +15,7 @@ import (
 	"unicode/utf8"
 )
 
-const Version = 2
+const Version = 3
 
 type TypeKind string
 
@@ -86,12 +86,23 @@ type Location struct {
 }
 
 type TypeDeclaration struct {
-	ID       string   `json:"id"`
-	Kind     TypeKind `json:"kind"`
-	Package  string   `json:"package"`
-	Name     string   `json:"name"`
-	Exported bool     `json:"exported"`
-	Location Location `json:"location"`
+	ID       string             `json:"id"`
+	Kind     TypeKind           `json:"kind"`
+	Package  string             `json:"package"`
+	Name     string             `json:"name"`
+	Exported bool               `json:"exported"`
+	Location Location           `json:"location"`
+	Fields   []FieldDeclaration `json:"fields,omitempty"`
+}
+
+// FieldDeclaration belongs to the enclosing native type declaration. Embedded
+// fields are declarations; their promoted members are not new declarations.
+type FieldDeclaration struct {
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Signature string   `json:"signature"`
+	Exported  bool     `json:"exported"`
+	Location  Location `json:"location"`
 }
 
 type CallableDeclaration struct {
@@ -170,6 +181,7 @@ func New(input Input) (Index, error) {
 
 	for position := range index.Types {
 		declaration := &index.Types[position]
+		declaration.Fields = append([]FieldDeclaration(nil), declaration.Fields...)
 		pkg, exists := packageByPath[declaration.Package]
 		if !exists {
 			return Index{}, fmt.Errorf("go core object index: type cites unknown package %q", declaration.Package)
@@ -181,6 +193,16 @@ func New(input Input) (Index, error) {
 			"go-core-type", index.Scenario.ID, pkg.ModuleID, declaration.Package,
 			declaration.Name, locationKey(declaration.Location),
 		)
+		for position := range declaration.Fields {
+			field := &declaration.Fields[position]
+			if field.ID != "" {
+				return Index{}, fmt.Errorf("go core object index: adapter supplied a field identity")
+			}
+			field.ID = stableID("go-core-field", declaration.ID, field.Name, locationKey(field.Location))
+		}
+		sort.Slice(declaration.Fields, func(i, j int) bool {
+			return fieldKey(declaration.Fields[i]) < fieldKey(declaration.Fields[j])
+		})
 	}
 	for position := range index.Callables {
 		declaration := &index.Callables[position]
@@ -220,6 +242,9 @@ func (index Index) Snapshot() Index {
 	result.Scope.TargetPackages = append([]string(nil), index.Scope.TargetPackages...)
 	result.Packages = append([]Package(nil), index.Packages...)
 	result.Types = append([]TypeDeclaration(nil), index.Types...)
+	for position := range result.Types {
+		result.Types[position].Fields = append([]FieldDeclaration(nil), result.Types[position].Fields...)
+	}
 	result.Callables = append([]CallableDeclaration(nil), index.Callables...)
 	return result
 }
@@ -267,6 +292,7 @@ func (index Index) Validate() error {
 		return fmt.Errorf("go core object index: invalid target package boundary")
 	}
 	typeIDs := make(map[string]struct{}, len(index.Types))
+	fieldIDs := make(map[string]struct{})
 	for position, declaration := range index.Types {
 		if _, exists := packages[declaration.Package]; !exists || !declaration.Kind.Valid() ||
 			!validText(declaration.ID) || !validIdentifier(declaration.Name) || !validLocation(declaration.Location) ||
@@ -277,6 +303,17 @@ func (index Index) Validate() error {
 			return fmt.Errorf("go core object index: duplicate type declaration")
 		}
 		typeIDs[declaration.ID] = struct{}{}
+		for position, field := range declaration.Fields {
+			if !validText(field.ID) || !validIdentifier(field.Name) || !validText(field.Signature) ||
+				!validLocation(field.Location) ||
+				position > 0 && fieldKey(declaration.Fields[position-1]) >= fieldKey(field) {
+				return fmt.Errorf("go core object index: invalid field declaration")
+			}
+			if _, duplicate := fieldIDs[field.ID]; duplicate {
+				return fmt.Errorf("go core object index: duplicate field declaration")
+			}
+			fieldIDs[field.ID] = struct{}{}
+		}
 	}
 	callableIDs := make(map[string]struct{}, len(index.Callables))
 	for position, declaration := range index.Callables {
@@ -339,6 +376,10 @@ func packageKey(pkg Package) string {
 
 func typeKey(value TypeDeclaration) string {
 	return strings.Join([]string{value.Package, locationKey(value.Location), value.Name, string(value.Kind), value.ID}, "\x00")
+}
+
+func fieldKey(value FieldDeclaration) string {
+	return strings.Join([]string{locationKey(value.Location), value.Name, value.ID}, "\x00")
 }
 
 func callableKey(value CallableDeclaration) string {

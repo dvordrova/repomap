@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strconv"
 
 	"github.com/dvordrova/repomap/internal/gocoreobject"
 )
@@ -135,6 +136,56 @@ func (a *analyzer) captureCoreObjectFile(
 					Kind: coreObjectTypeKind(object), Package: packagePath, Name: object.Name(),
 					Exported: object.Exported(), Location: location,
 				})
+				if _, ok := typeSpec.Type.(*ast.StructType); ok {
+					structure, ok := types.Unalias(object.Type()).Underlying().(*types.Struct)
+					if !ok {
+						return fmt.Errorf("go core object index: struct %s.%s has no exact type", packagePath, object.Name())
+					}
+					for position := 0; position < structure.NumFields(); position++ {
+						field := structure.Field(position)
+						if field.Name() == "_" {
+							continue // blank fields have no addressable declaration
+						}
+						location, err := a.coreObjectLocation(field.Pos())
+						if err != nil {
+							return err
+						}
+						signature := field.Name() + " " + types.TypeString(field.Type(), packageQualifier)
+						if tag := structure.Tag(position); tag != "" {
+							signature += " " + strconv.Quote(tag)
+						}
+						owner := &input.Types[len(input.Types)-1]
+						owner.Fields = append(owner.Fields, gocoreobject.FieldDeclaration{
+							Name: field.Name(), Signature: signature, Exported: field.Exported(), Location: location,
+						})
+					}
+				}
+				if iface, ok := typeSpec.Type.(*ast.InterfaceType); ok {
+					for _, field := range iface.Methods.List {
+						// Embedded interfaces declare no method here. Their methods
+						// retain their original owner and source location.
+						if _, ok := field.Type.(*ast.FuncType); !ok {
+							continue
+						}
+						for _, name := range field.Names {
+							method, ok := info.Defs[name].(*types.Func)
+							if !ok || method.Pkg() == nil || method.Pkg().Path() != packagePath {
+								return fmt.Errorf("go core object index: interface method %s.%s has no exact object", object.Name(), name.Name)
+							}
+							location, err := a.coreObjectLocation(method.Pos())
+							if err != nil {
+								return err
+							}
+							input.Callables = append(input.Callables, gocoreobject.CallableDeclaration{
+								Kind: gocoreobject.CallableMethod, Package: packagePath, Name: method.Name(),
+								Receiver:  types.TypeString(object.Type(), packageQualifier),
+								Signature: types.TypeString(method.Type(), packageQualifier),
+								Exported:  method.Exported(), Location: location,
+								// An interface declaration is not an implementation or call.
+							})
+						}
+					}
+				}
 			}
 		case *ast.FuncDecl:
 			if value.Name == nil || value.Name.Name == "_" {

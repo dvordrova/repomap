@@ -9,7 +9,9 @@ import (
 
 // recordTargetDirectCallEdges builds the exact edge neighborhood only after
 // the complete declaration catalog exists. The ordinary zero-valued controls
-// retain the complete target-reachable relation set; positive explicit depth
+// retain calls from every repository declaration in the loaded target scope;
+// discovery of declarations is independent of runtime entrypoint reachability.
+// Positive explicit depth
 // and edge values remain opt-in narrowing controls.
 func (a *analyzer) recordTargetDirectCallEdges() error {
 	if a == nil || a.directCallIndex == nil || a.input.AnalysisTarget == nil ||
@@ -25,6 +27,20 @@ func (a *analyzer) recordTargetDirectCallEdges() error {
 		return &AnalysisTargetSSAUnavailableError{
 			Reason: AnalysisTargetExactRootsUnavailable, Package: target.PackagePath,
 			ExpectedRoots: len(target.Roots), ResolvedRoots: len(roots),
+		}
+	}
+	if a.opts.DirectCallDepth == 0 && a.opts.DirectCallEdgeLimit == 0 {
+		roots = nil
+		seen := make(map[*ssa.Function]bool)
+		for _, function := range a.orderedFunctions() {
+			if function != nil && function.Origin() != nil {
+				function = function.Origin()
+			}
+			if function == nil || function.Blocks == nil || !a.repositorySourceFunction(function) || seen[function] {
+				continue
+			}
+			seen[function] = true
+			roots = append(roots, function)
 		}
 	}
 	if len(roots) == 0 {
@@ -73,6 +89,9 @@ func (a *analyzer) recordTargetDirectCallEdges() error {
 			if callee == nil || callee.Blocks == nil || !a.repositoryDirectStaticCall(call, callee) {
 				continue
 			}
+			if origin := callee.Origin(); origin != nil {
+				callee = origin
+			}
 			nextDepth := current.depth + 1
 			if previous, found := distance[callee]; found && previous <= nextDepth {
 				continue
@@ -85,6 +104,9 @@ func (a *analyzer) recordTargetDirectCallEdges() error {
 			continue
 		}
 		for _, candidate := range a.callableBindings.exactCandidates(callerID) {
+			if candidate != nil && candidate.Origin() != nil {
+				candidate = candidate.Origin()
+			}
 			if candidate == nil || candidate.Blocks == nil || !a.repositorySourceFunction(candidate) {
 				continue
 			}

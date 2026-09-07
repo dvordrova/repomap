@@ -25,7 +25,7 @@ const (
 	preparationVersion    = 1
 	promptVersion         = 1
 	responseSchemaVersion = 1
-	maxOutputTokens       = 32_768
+	maxOutputTokens       = llm.DefaultMaxOutputTokens
 )
 
 //go:embed prompt.md

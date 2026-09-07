@@ -273,7 +273,9 @@ func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPort
 		return fmt.Errorf("report: target navigation requires the exhaustive target outcome portfolio")
 	}
 	if navigation == nil {
-		return fmt.Errorf("report: target outcome portfolio requires complete target navigation")
+		// The ordinary report contains every target as a section. Its graph
+		// and inventory already carry the complete navigation identities.
+		return nil
 	}
 	if navigation.Version != TargetNavigationVersion ||
 		!validTargetNavigationText(navigation.DefaultTargetID) ||

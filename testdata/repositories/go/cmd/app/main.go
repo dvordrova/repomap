@@ -61,8 +61,8 @@ func deleteProduct() {}
 
 // unreachableHandler and unreachableHandlerConsumer preserve a real chained
 // receiver shape found in chi. The consumer is still visible to the complete
-// external-call scan even though target-root traversal does not retain the
-// local producer call as a reachable direct edge.
+// external-call scan and declaration-wide direct graph; neither requires the
+// local producer call to be reachable from main.
 func unreachableHandler() http.HandlerFunc { return http.NotFound }
 
 func unreachableHandlerConsumer(w http.ResponseWriter, r *http.Request) {
@@ -70,8 +70,8 @@ func unreachableHandlerConsumer(w http.ResponseWriter, r *http.Request) {
 }
 
 // unreachableCallbackFactory mirrors a callback passed from inside a returned
-// closure. The exact callback transfer exists program-wide, while its owning
-// local call is deliberately outside the target-root direct traversal.
+// closure. The exact callback transfer and its owning argument are retained
+// even though the local call is outside main reachability.
 func unreachableCallbackFactory() func() {
 	return func() {
 		walkFixture([]string{"fixture"}, func(value string) bool { return value != "" })

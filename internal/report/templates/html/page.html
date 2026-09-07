@@ -13,15 +13,19 @@
 <header class="top">
 <div class="brand"><span class="mark">repomap</span><span class="repo">{{.RepoName}}</span>
 <span class="meta">rev <code title="{{.Revision}}">{{.ShortRevision}}</code>{{if .RepositoryURL}} · <a href="{{.RepositoryURL}}" target="_blank" rel="noopener">repository</a>{{end}}</span></div>
-{{if .Figures}}<ul class="figures fact">{{range .Figures}}<li{{if .Warn}} class="figure-warn"{{end}}><strong>{{.Value}}</strong><span>{{.Label}}</span></li>{{end}}</ul>{{end}}
-<nav class="nav" aria-label="Targets"><a href="#overview">Overview</a>{{range .Sections}}<a href="#{{.ID}}">{{.Label}}</a>{{end}}</nav>
 </header>
+<div class="report-toolbar"><div class="reading-modes" role="group" aria-label="Reading mode" hidden><button type="button" data-mode="learn" aria-pressed="true">Learn</button><button type="button" data-mode="work" aria-pressed="false">Work</button></div>
+<nav class="nav" aria-label="Repository"><a href="#overview">Home</a>{{if .Questions}}<a href="#questions">Questions</a>{{end}}<details class="target-picker"><summary>Choose a part <span class="meta">{{len .Sections}}</span></summary><div class="target-options">{{range .Cards}}<a href="#{{.SectionID}}" title="{{.Name}}">{{.ShortName}}</a>{{end}}</div></details></nav>
+<span class="reading-location" aria-live="polite"></span></div>
 <noscript><p class="meta">JavaScript is optional here. Every answer on this page is in the HTML and every link works without it; scripting only previews a map node's neighbourhood, marks the group you clicked, opens a long quote{{if .EditorOpens}}, and opens a source link in your editor{{end}}.</p></noscript>
 <main>
 {{template "overview.html" .}}
+{{template "learn-parts.html" .}}
+{{template "concepts.html" .}}
 {{range .Sections}}{{template "target.html" .}}{{end}}
-{{if or .Notes .Timing}}<section id="notes"><h2>Notes from this run</h2>{{if .Timing}}<ul class="plain fact timing">{{range .Timing}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Notes}}<ul class="plain notes">{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}</section>{{end}}
+<section id="notes" data-report-page><h2>About this run</h2>{{if .Figures}}<ul class="figures fact">{{range .Figures}}<li{{if .Warn}} class="figure-warn"{{end}}><strong>{{.Value}}</strong><span>{{.Label}}</span></li>{{end}}</ul>{{end}}{{if .Timing}}<ul class="plain fact timing">{{range .Timing}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Notes}}<ul class="plain notes">{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}</section>
 </main>
+<footer class="report-footer"><a href="#notes">About this run</a>{{if .LearnConcepts}} · <a href="#concepts">Terms</a>{{end}}</footer>
 {{if .Served}}<div class="status" id="rm-status" role="status" hidden></div>
 <script type="application/json" id="rm-source-ids">{{.SourceIDsJSON}}</script>{{end}}
 <script id="rm-report-app-js">{{.JS}}</script>

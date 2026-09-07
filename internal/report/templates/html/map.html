@@ -1,33 +1,39 @@
-{{define "map.html"}}<figure class="map" data-map data-trace="{{.Trace}}">
-<div class="map-controls" data-map-controls hidden>
-<button type="button" data-map-fit>fit</button>
-<button type="button" data-map-zoom="1.25">+</button>
-<button type="button" data-map-zoom="0.8">−</button>
-<button type="button" data-map-reset>reset</button>
-<span class="map-hint">drag to pan</span>
-</div>
+{{define "map.html"}}<figure class="map" data-map data-trace="{{.Trace}}"{{if .Explorer}} data-map-explorer{{end}}{{if .Operations}} data-operation-map{{end}}>
+{{if .Operations}}<div class="operation-controls" data-operation-controls hidden>
+<label>Find an operation <input type="search" data-operation-search placeholder="Name or description"></label>
+<label>In <select data-operation-group><option value="">All groups</option></select></label>
+<button type="button" data-operation-prev aria-label="Previous operations">←</button><span data-operation-count aria-live="polite"></span><button type="button" data-operation-next aria-label="Next operations">→</button>
+<span class="operation-context" data-operation-context>Hover an operation to see the parts it touches.</span>
+</div>{{end}}
+{{template "map-controls.html"}}
 <div class="map-stage" data-map-stage>
 <svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="Map of this target's groups and the connections between them" class="map-svg" style="min-width:{{printf "%.0f" .MinWidth}}px">
-<defs><marker id="map-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0.5 L10 5 L0 9.5 z" class="map-arrow-head"/></marker></defs>
+<defs><marker id="{{.MarkerID}}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0.5 L10 5 L0 9.5 z" class="map-arrow-head"/></marker></defs>
 <g class="map-frames">{{range .Frames}}<g class="map-frame map-zone-{{.Zone}}" id="{{.ID}}" data-frame="{{.ID}}"><rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="6"/><text x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Title}}{{if gt .Holds .Shown}} · {{.Holds}} groups{{end}}</text></g>{{end}}</g>
 <g class="map-lanes">{{range .Lanes}}<text x="{{printf "%.1f" .X}}" y="18" class="map-lane-label">{{.Label}}</text>{{end}}</g>
-<g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" data-from="{{.From}}" data-to="{{.To}}" marker-end="url(#map-arrow)"><title>{{.Label}}</title></path>{{end}}</g>
+<g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" data-scope="{{.Scope}}" data-summary="{{.Summary}}" data-from-source="{{.FromSource.Href}}" data-from-text="{{.FromSource.Text}}" data-to-source="{{.ToSource.Href}}" data-to-text="{{.ToSource.Text}}"{{if and $.Explorer (ne .Scope "static")}} style="display:none"{{end}} data-from="{{.From}}" data-to="{{.To}}" data-operations="{{.Operations}}" marker-end="url(#{{$.MarkerID}})"><title>{{.Label}}</title></path>{{end}}</g>
 <g class="map-edge-labels">{{range .Edges}}{{if .Lines}}<g class="map-edge-label" data-from="{{.From}}" data-to="{{.To}}">{{$edge := .}}{{range $line, $text := .Lines}}<text x="{{printf "%.1f" $edge.LabelX}}" y="{{printf "%.1f" $edge.LabelY}}" dy="{{if eq (len $edge.Lines) 1}}3.5{{else if eq $line 0}}-2{{else}}9{{end}}" text-anchor="middle">{{$text}}</text>{{end}}<title>{{.Label}}</title></g>{{end}}{{end}}</g>
-<g class="map-nodes">{{range .Nodes}}<a href="{{.Href}}" id="{{.ID}}" class="map-node map-node-{{.Lane}}" data-node="{{.ID}}" data-near="{{.Neighbours}}" data-summary="{{.Summary}}" data-keys="{{.Keys}}" aria-label="{{.FullTitle}}, {{.Members}} symbol{{if ne .Members 1}}s{{end}}, {{.Degree}} connection{{if ne .Degree 1}}s{{end}} here{{if .Outside}}, {{.Outside}} to another target{{end}}">
+<g class="map-nodes">{{range .Nodes}}<a href="{{.Href}}" id="{{.ID}}" class="map-node map-node-{{.Lane}}"{{if .InitiallyHidden}} style="display:none"{{end}}{{if .Activation}} target="_blank" rel="noopener"{{end}} data-node="{{.ID}}" data-near="{{.Neighbours}}" data-title="{{.FullTitle}}" data-summary="{{.Summary}}" data-keys="{{.Keys}}" data-concepts="{{.Concepts}}" data-call-paths="{{.CallPaths}}" data-source="{{.Source.Href}}" data-source-text="{{.Source.Text}}" data-open="{{.Source.Open}}" data-activation="{{.Activation}}" data-operation-group="{{.OperationGroup}}" data-remote="{{.Remote}}" data-children="{{.Children}}" data-branch="{{.Branch}}" data-component="{{.Component}}" data-source-kind="{{.SourceKind}}" aria-label="{{.FullTitle}}, {{if .Activation}}{{.Activation}}{{else}}{{.Members}} symbol{{if ne .Members 1}}s{{end}}{{end}}">
 <rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="6" class="map-node-body"/>
-{{$node := .}}{{range $line, $text := .Title}}<text x="{{printf "%.1f" $node.X}}" y="{{printf "%.1f" $node.Y}}" dx="11" dy="{{if eq $line 0}}17{{else}}30{{end}}" class="map-node-title">{{$text}}</text>{{end}}
+{{$node := .}}{{range $line, $text := .Title}}<text x="{{printf "%.1f" $node.X}}" y="{{printf "%.1f" $node.Y}}" dx="11" dy="{{if eq $line 0}}20{{else}}37{{end}}" class="map-node-title">{{$text}}</text>{{end}}
+{{if .Subtitle}}<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="56" class="map-node-context">{{.Subtitle}}</text>{{end}}
 {{if .Steps}}<text x="{{printf "%.1f" .StepX}}" y="{{printf "%.1f" .StepY}}" text-anchor="end" class="map-node-step">{{.Steps}}</text>{{end}}
 <title>{{.FullTitle}} — {{.Summary}}</title>
 </a>{{end}}</g>
 </svg>
 </div>
-<figcaption class="map-note"><span class="map-line">What this target is made of, left to right: what reaches in, what it is, what it reaches out to.{{if .Hidden}} {{.Hidden}} more groups are on the cards below.{{end}}</span>
+<figcaption class="map-note"><span class="map-line">Explore areas and their parts, or select an operation. Click a connection to inspect what it contains. Solid lines are code relations; dashed lines include an interpretation or unresolved dispatch.{{if .Hidden}} {{.Hidden}} more groups are on the cards below.{{end}}</span>
 <details class="map-legend"><summary>legend</summary><ul class="plain">
-<li>A coloured zone is one part of this target; the boxes inside it are its groups.</li>
-<li>A bar under a name is how many symbols the group holds; "step N" marks the main flow passing through.</li>
-<li>An arrow runs from the group that reaches to the group it reaches, labelled with what the connection is; a dashed one has no exact call behind it.</li>
-<li>Click any box to open its card below, with every symbol and its line in the source.</li>
-{{if ge .LargestPct 25}}<li>The largest group holds {{.LargestPct}}% of the target on its own.</li>{{end}}
+<li>Structure starts with related areas. Click an area to open its parts, or a part to see its callers and dependencies. Back returns to the previous scope.</li>
+{{if .Operations}}<li>Operations follows one command, endpoint or activity. Its context stays selected while you explore; All uses returns to the complete structure.</li>{{end}}
+<li>A connection may contain several relations between the folded areas. Click it to read the individual endpoints and evidence. These are static relations, not a recorded execution.</li>
 {{if .Subjects}}<li>These groups name {{.Grouped}} of this target's {{.Subjects}} symbols and connections.</li>{{end}}
 </ul></details></figcaption>
 </figure>{{end}}
+{{define "map-controls.html"}}<div class="map-controls" data-map-controls hidden>
+<button type="button" data-map-fit title="Fit the whole map; labels may be smaller">fit</button>
+<button type="button" data-map-zoom="1.25">+</button>
+<button type="button" data-map-zoom="0.8">−</button>
+<button type="button" data-map-reset title="Return to readable text">reset</button>
+<span class="map-hint">drag to pan</span>
+</div>{{end}}

@@ -1,7 +1,5 @@
-// The map works with scripting off: every node is a link to the group it
-// names. Scripting adds one thing on top — pointing at a node previews its
-// own neighbourhood, and nothing else. It never changes the layout, the
-// geometry or which page you are on.
+// Shared hover, inspection and pan/zoom behavior. The explorer owns scope and
+// layout; without scripting, nodes still link to their code cards.
 (function () {
   var maps = document.querySelectorAll('[data-map]');
   for (var index = 0; index < maps.length; index++) {
@@ -9,19 +7,67 @@
   }
 
   function bind(map) {
+    map.classList.add('map-interactive');
+    // Reserve description space before measuring zoom or showing a preview.
+    // Opening a card must neither cover a path nor move the pointed-at node.
+    var stage = map.querySelector('[data-map-stage]');
+    if (!stage) {
+      stage = document.createElement('div');
+      stage.className = 'map-stage'; stage.setAttribute('data-map-stage', '');
+      var svg = map.querySelector('svg');
+      svg.before(stage); stage.appendChild(svg);
+    }
+    var workspace = document.createElement('div');
+    workspace.className = 'map-workspace';
+    stage.before(workspace); workspace.appendChild(stage);
+    var inspector = document.createElement('aside');
+    inspector.className = 'map-inspector';
+    inspector.setAttribute('aria-label', 'Selected node details');
+    var content = document.createElement('div');
+    content.className = 'map-inspector-content';
+    content.tabIndex = 0;
+    content.setAttribute('role', 'region');
+    content.setAttribute('aria-label', 'Node description and sources');
+    var hint = document.createElement('p');
+    hint.className = 'map-inspector-hint';
+    hint.textContent = 'Hover or focus a node to read about it.';
+    content.appendChild(hint); inspector.appendChild(content); workspace.appendChild(inspector);
+    var continuation = document.createElement('div');
+    continuation.className = 'map-inspector-continuation';
+    var more = document.createElement('button');
+    more.type = 'button'; more.hidden = true;
+    continuation.appendChild(more); inspector.appendChild(continuation);
+    function updateContinuation() {
+      var overflow = content.scrollHeight > content.clientHeight + 1;
+      var below = overflow && content.scrollTop + content.clientHeight < content.scrollHeight - 1;
+      more.hidden = !overflow;
+      more.textContent = below ? 'More details ↓' : '↑ Back to top';
+      continuation.classList.toggle('has-more', below);
+    }
+    more.addEventListener('click', function () {
+      var below = content.scrollTop + content.clientHeight < content.scrollHeight - 1;
+      content.scrollTo({top: below ? content.scrollTop + content.clientHeight * .8 : 0});
+    });
+    content.addEventListener('scroll', updateContinuation);
+    new ResizeObserver(updateContinuation).observe(content);
+    new MutationObserver(function () { requestAnimationFrame(updateContinuation); })
+      .observe(content, {childList:true, subtree:true, attributes:true, attributeFilter:['hidden','open']});
     var nodes = map.querySelectorAll('[data-node]');
     var edges = map.querySelectorAll('.map-edge, .map-edge-label');
     for (var index = 0; index < nodes.length; index++) {
       var node = nodes[index];
-      node.addEventListener('mouseenter', preview);
-      node.addEventListener('mouseleave', clear);
-      node.addEventListener('focus', preview);
-      node.addEventListener('blur', clear);
+      node.addEventListener('repomap:preview', preview);
+      node.addEventListener('repomap:previewend', clear);
       node.addEventListener('click', select);
     }
 
     function preview(event) {
       var node = event.currentTarget;
+      edges = map.querySelectorAll('.map-edge, .map-edge-label');
+      // An open area's description stays in the inspector while the map
+      // shows its children. That hidden parent cannot highlight this view.
+      if (!node.getClientRects().length) { clear(); return; }
+      if (node.dataset.activation && map.dataset.operationPinned === 'true' && node !== map.inspectedOperation) return;
       var near = {};
       near[node.getAttribute('data-node')] = true;
       var listed = (node.getAttribute('data-near') || '').split(/\s+/);
@@ -33,7 +79,9 @@
       }
       for (var edge = 0; edge < edges.length; edge++) {
         var line = edges[edge];
-        var incident = near[line.getAttribute('data-from')] && near[line.getAttribute('data-to')];
+        var paths=(line.getAttribute('data-operations')||'').split(/\s+/);
+        var selected=node.getAttribute('data-node');
+        var incident = node.getAttribute('data-activation') ? paths.indexOf(selected)>=0 : (line.getAttribute('data-from')===selected || line.getAttribute('data-to')===selected);
         line.classList.toggle('map-near', !!incident);
       }
       map.classList.add('map-previewing');
@@ -61,6 +109,13 @@
         selected[index].classList.remove('group-selected');
       }
       group.classList.add('group-selected');
+      if (group.hasAttribute('data-node')) {
+        // Let the URL identify the endpoint, then show it with map context.
+        requestAnimationFrame(function () {
+          group.scrollIntoView({block:'center', inline:'center'});
+          group.focus({preventScroll:true});
+        });
+      }
     }
   }
 })();
@@ -77,9 +132,8 @@
   }
 })();
 
-// Map controls. The picture is complete and legible before any of this runs:
-// it fits its frame, it scrolls, and every box is a link. Scripting only adds
-// what a static picture cannot do — moving closer and dragging around.
+// Map controls start at readable text size. Fitting the whole diagram is an
+// explicit overview action; reset restores reading size and the starting position.
 (function () {
   var maps = document.querySelectorAll('[data-map]');
   for (var index = 0; index < maps.length; index++) {
@@ -91,45 +145,80 @@
     var stage = map.querySelector('[data-map-stage]');
     var svg = map.querySelector('svg');
     if (!controls || !stage || !svg) return;
-    var baseWidth = svg.getBoundingClientRect().width;
+    // SVG text scales with the viewBox. Measuring the already fitted picture
+    // as the baseline made large maps start with 6–8 px labels.
+    var baseWidth = svg.viewBox.baseVal.width;
     if (!baseWidth) return;
     controls.hidden = false;
-    var scale = 1;
+    var smallestFont = Infinity;
+    svg.querySelectorAll('text').forEach(function (text) {
+      smallestFont = Math.min(smallestFont, parseFloat(getComputedStyle(text).fontSize));
+    });
+    var minimumText = parseFloat(getComputedStyle(controls.querySelector('.map-hint')).fontSize);
+    var readableScale = minimumText / smallestFont;
+    var scale;
+    var homeBoxes = [], pendingFocus = false;
+
+    function focusOpened() {
+      if (!pendingFocus || !stage.clientWidth || !stage.clientHeight) return;
+      pendingFocus = false;
+      if (!homeBoxes.length) { stage.scrollTo(0, 0); return; }
+      var left=Infinity, top=Infinity, right=-Infinity, bottom=-Infinity;
+      homeBoxes.forEach(function(b){left=Math.min(left,b.x);top=Math.min(top,b.y);right=Math.max(right,b.x+b.w);bottom=Math.max(bottom,b.y+b.h);});
+      var box = {x:left,y:top,w:right-left,h:bottom-top};
+      // An oversized area starts at its first component, without shrinking text
+      // or changing ELK's placement. Neighbours remain reachable by panning.
+      if (box.w*scale > stage.clientWidth-48 || box.h*scale > stage.clientHeight-48) box=homeBoxes[0];
+      stage.scrollTo(Math.max(0,(box.x+box.w/2)*scale-stage.clientWidth/2),
+        Math.max(0,(box.y+box.h/2)*scale-stage.clientHeight/2));
+    }
+    // A report opened at a question may initially hide this map. Frame it once
+    // when it becomes visible; later resizing must preserve the reader's pan.
+    new ResizeObserver(focusOpened).observe(stage);
+
+    function readable() {
+      scale = readableScale;
+      apply();
+    }
 
     function apply() {
       svg.style.width = baseWidth * scale + 'px';
       svg.style.maxWidth = 'none';
       svg.style.minWidth = '0';
-      stage.classList.toggle('map-zoomed', scale > 1);
+      stage.classList.toggle('map-zoomed', baseWidth * scale > stage.clientWidth + 1);
     }
     function zoom(factor) {
       scale = Math.min(4, Math.max(0.4, scale * factor));
       apply();
     }
+    readable();
+    map.addEventListener('repomap:layout',function(event){
+      baseWidth=svg.viewBox.baseVal.width;readable();
+      homeBoxes=event.detail?.focus||[];
+      if(homeBoxes.length){pendingFocus=true;focusOpened();}
+    });
     controls.addEventListener('click', function (event) {
       var button = event.target.closest('button');
       if (!button) return;
       if (button.hasAttribute('data-map-zoom')) {
         zoom(parseFloat(button.getAttribute('data-map-zoom')));
       } else if (button.hasAttribute('data-map-fit')) {
-        scale = stage.clientWidth / baseWidth;
+        pendingFocus=false;
+        var heightLimit = parseFloat(getComputedStyle(stage).maxHeight);
+        var fitHeight = Number.isFinite(heightLimit) ? heightLimit / svg.viewBox.baseVal.height : Infinity;
+        scale = Math.min(readableScale, stage.clientWidth / baseWidth, fitHeight);
         apply();
-      } else if (button.hasAttribute('data-map-reset')) {
-        scale = 1;
-        svg.style.width = '';
-        svg.style.maxWidth = '';
-        svg.style.minWidth = '';
-        stage.classList.remove('map-zoomed');
         stage.scrollTo(0, 0);
+      } else if (button.hasAttribute('data-map-reset')) {
+        readable();
+        pendingFocus=true;focusOpened();
       }
     });
 
-    // Dragging pans the stage. It never moves a node: the layout is computed
-    // once, in Go, and the picture a reader sees is the picture that was laid
-    // out.
+    // Dragging pans the stage. Only an explicit scope change lays out nodes.
     var dragging = false, startX = 0, startY = 0, leftAt = 0, topAt = 0;
     stage.addEventListener('pointerdown', function (event) {
-      if (event.target.closest('a')) return;
+      if (event.target.closest('a,[role="button"]')) return;
       dragging = true;
       startX = event.clientX; startY = event.clientY;
       leftAt = stage.scrollLeft; topAt = stage.scrollTop;
@@ -149,7 +238,7 @@
 
 // The reading layer over the map, written from the journeys a reader
 // actually makes, not from what a canvas can do:
-//   - "what is this box?" — pointing at a node shows a small card beside it:
+//   - "what is this box?" — pointing at a node fills the map's details panel:
 //     the summary, the size, and its arrows as sentences. The question is
 //     answered without leaving the map, so a jump is for reading in full.
 //   - "where is this on the map?" — every group card gets an "on the map"
@@ -158,31 +247,34 @@
 //   - "how does a request go through?" — pointing at a node on the main
 //     path lights the whole path and its arrows, and the card says which
 //     step this is.
-// None of it exists without scripting, and none of it moves a node.
+// Hover does not change the layout.
 (function () {
   var maps = document.querySelectorAll('[data-map]');
   for (var index = 0; index < maps.length; index++) {
     bindReading(maps[index]);
   }
+  function escapeText(text) {var span=document.createElement('span');span.textContent=text||'';return span.innerHTML;}
   function titleOf(node) {
+    if (node.dataset.title) return node.dataset.title;
     var lines = node.querySelectorAll('.map-node-title');
     var parts = [];
     for (var i = 0; i < lines.length; i++) parts.push(lines[i].textContent);
     return parts.join(' ');
   }
   function bindReading(map) {
-    var stage = map.querySelector('[data-map-stage]') || map;
     var nodes = map.querySelectorAll('[data-node]');
     var byId = {};
     for (var i = 0; i < nodes.length; i++) byId[nodes[i].getAttribute('data-node')] = nodes[i];
     var edges = map.querySelectorAll('.map-edge');
     var card = document.createElement('div');
-    card.className = 'map-card';
+    card.className = 'map-card map-card-docked';
     card.hidden = true;
-    stage.appendChild(card);
-    stage.style.position = stage.style.position || 'relative';
+    var content = map.querySelector('.map-inspector-content');
+    content.appendChild(card);
+    new ResizeObserver(function () { content.dispatchEvent(new Event('scroll')); }).observe(card);
 
     function sentences(id) {
+      edges = map.querySelectorAll('.map-edge');
       var out = [];
       for (var e = 0; e < edges.length; e++) {
         var edge = edges[e];
@@ -194,38 +286,127 @@
       }
       return out;
     }
+    var inspectedNode=null, inspectionRevision=0, remembered=new Map();
+    function remember(){
+      if(!inspectedNode||card.classList.contains('map-card-connection'))return;
+      var picker=card.querySelector('[aria-label="Concept to explain"]');
+      remembered.set(inspectedNode,{concept:picker?.value,scroll:content.scrollTop});
+    }
+    content.addEventListener('scroll',remember);
     function show(node) {
+      remember();inspectedNode=node;
+      var saved=remembered.get(node), ticket=++inspectionRevision;
+      content.scrollTop = 0;
+      card.classList.remove('map-card-connection');
       var id = node.getAttribute('data-node');
       var label = node.getAttribute('aria-label') || '';
-      var counts = label.indexOf(', ') > 0 ? label.slice(label.indexOf(', ') + 2) : '';
-      var html = '<b>' + titleOf(node) + '</b>';
+      var counts = node.dataset.branch ? (node.dataset.children||'').split(/\s+/).filter(Boolean).length+' parts' : (label.indexOf(', ') > 0 ? label.slice(label.indexOf(', ') + 2) : '');
+      var html = '<div class="map-card-intro">';
+      if(map.exploreNode){
+        var current=node.dataset.activation?map.explorerOperation===node&&map.dataset.operationPinned==='true':map.explorerScope===id;
+        html+='<span class="map-card-kind">'+(current?'':'Preview · ')+(node.dataset.activation?'Operation'+(counts?' · '+escapeText(counts):''):node.dataset.branch==='component'?'Component':node.dataset.branch?'Area':'Part')+'</span>';
+      }
+      html += '<b>' + escapeText(titleOf(node)) + '</b>';
       var summary = node.getAttribute('data-summary');
-      if (summary) html += '<p>' + summary + '</p>';
-      if (counts) html += '<span class="map-card-meta">' + counts + '</span>';
+      if (summary) html += '<p>' + escapeText(summary) + '</p>';
+      if (node.dataset.operationGroup) html += '<span class="map-card-meta">' + escapeText(node.dataset.operationGroup) + '</span>';
+      var source=node.getAttribute('data-source');
+      if(source) html += '<p><a target="_blank" rel="noopener" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||'Source')+'</a></p>';
+      else if(node.dataset.open) html += '<p><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||'Source')+'</a></p>';
+      html += '</div>';
+      var concepts = JSON.parse(node.dataset.concepts || '[]');
+      card.classList.toggle('map-card-has-concepts', concepts.length > 0);
+      if (concepts.length) {
+        html += '<div class="map-concepts"><label><span>Concept</span> <select aria-label="Concept to explain">';
+        concepts.forEach(function (concept, i) {
+          var repeated=concepts.some(function(other,j){return j!==i&&other.name===concept.name;});
+          html += '<option value="'+i+'">'+escapeText(concept.name+(repeated?' · '+concept.source.Text:''))+'</option>';
+        });
+        html += '</select></label><span class="map-card-meta">Model explanation</span><p data-concept-explanation></p><span data-concept-source></span></div>';
+      }
+      html += '<details class="map-card-evidence"><summary>Code and connections</summary>';
+      if (counts && !node.dataset.activation) html += '<span class="map-card-meta">' + escapeText(counts) + '</span>';
+      var operation = map.inspectedOperation;
+      var witness = operation && !node.dataset.activation && JSON.parse(operation.dataset.callPaths || '{}')[id];
+      if (witness && witness.length) {
+        html += '<details class="call-path"><summary>Why it appears in '+escapeText(operation.dataset.title)+'</summary><p>One shortest static call path:</p><ol>';
+        witness.forEach(function (step) {
+          html += '<li>'+(step.possible?'<span class="possible">possible call</span> ':'')+'<strong>'+escapeText(step.name)+'</strong><br>';
+          if (step.href) html += '<a target="_blank" rel="noopener" href="'+escapeText(step.href)+'">'+escapeText(step.source)+'</a>';
+          else if (step.open) html += '<a href="#" data-open="'+escapeText(step.open)+'">'+escapeText(step.source)+'</a>';
+          else html += escapeText(step.source);
+          html += '</li>';
+        });
+        html += '</ol></details>';
+      }
       var step = map.traceIndex ? map.traceIndex(node) : -1;
       if (step >= 0) html += '<span class="map-card-meta">step ' + (step + 1) + ' of ' + map.traceLength + ' on the main path</span>';
-      var keys = (node.getAttribute('data-keys') || '').split(' | ').filter(Boolean);
+      var keys = (node.getAttribute('data-keys') || '').split(' | ').filter(Boolean).map(escapeText);
       if (keys.length) html += '<ul class="map-card-keys">' + keys.map(function (k) { return '<li><code>' + k.replace(/ — .*$/, '') + '</code>' + (k.indexOf(' — ') > 0 ? ' — ' + k.slice(k.indexOf(' — ') + 3) : '') + '</li>'; }).join('') + '</ul>';
-      var arrows = sentences(id);
-      if (arrows.length) html += '<ul>' + arrows.map(function (a) { return '<li>' + a + '</li>'; }).join('') + '</ul>';
-      html += '<span class="map-card-hint">click \u2014 open its card</span>';
-      card.innerHTML = html;
-      card.hidden = false;
-      var nodeBox = node.getBoundingClientRect(), stageBox = stage.getBoundingClientRect();
-      var left = nodeBox.right - stageBox.left + stage.scrollLeft + 8;
-      var top = nodeBox.top - stageBox.top + stage.scrollTop;
-      if (left + card.offsetWidth > stage.scrollLeft + stage.clientWidth) {
-        left = nodeBox.left - stageBox.left + stage.scrollLeft - card.offsetWidth - 8;
+      var arrows = map.classList.contains('repo-map') || witness ? [] : sentences(id);
+      if (arrows.length) html += '<ul>' + arrows.map(function (a) { return '<li>' + escapeText(a) + '</li>'; }).join('') + '</ul>';
+      html += '<span class="map-card-hint">'+(node.getAttribute('data-activation')?'Click to keep this operation selected. Open code using the source link.':'click — explore')+'</span>';
+      card.innerHTML = html+'</details>';
+      if (concepts.length) {
+        var picker=card.querySelector('[aria-label="Concept to explain"]');
+        if(saved?.concept!==undefined)picker.value=saved.concept;
+        var explain=function(){
+          var concept=concepts[Number(picker.value)],source=concept.source;
+          card.querySelector('[data-concept-explanation]').textContent=concept.explanation;
+          var link=document.createElement(source.Href||source.Open?'a':'span');link.textContent=source.Text;
+          if(source.Href){link.href=source.Href;link.target='_blank';link.rel='noopener';}
+          else if(source.Open){link.href='#';link.dataset.open=source.Open;}
+          card.querySelector('[data-concept-source]').replaceChildren(link);
+        };
+        picker.addEventListener('change',function(){inspectionRevision++;explain();content.scrollTop=0;remember();});explain();
       }
-      card.style.left = Math.max(0, left) + 'px';
-      card.style.top = Math.max(0, top) + 'px';
+      var actions=document.createElement('div');actions.className='map-card-actions';card.querySelector('.map-card-intro').appendChild(actions);
+      if(map.exploreNode && !node.dataset.activation){
+        if(map.explorerScope!==id){var explore=document.createElement('button');explore.type='button';explore.textContent=node.dataset.branch?'Explore these parts':'Explore connections';explore.addEventListener('click',function(){map.exploreNode(id);});actions.appendChild(explore);}
+        var href=node.getAttribute('href')||'';
+        if(href.charAt(0)==='#'&&href!=='#'+id){var detail=document.createElement('a');detail.href=href;detail.textContent=node.dataset.branch?'Open component':'Code and all group details';detail.className='map-details-link';actions.appendChild(detail);}
+        var users=map.operationChoices(id);
+        if(users.length){var usage=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Related operations for '+titleOf(node)+' · '+users.length;usage.appendChild(summary);
+          users.forEach(function(op){var b=document.createElement('button');b.type='button';b.textContent=op.dataset.title;b.addEventListener('click',function(){
+            var picker=card.querySelector('[aria-label="Concept to explain"]'),concept=picker&&concepts[Number(picker.value)];
+            map.chooseOperation(op.id,{node:node,label:concept?picker.selectedOptions[0].textContent+' in '+titleOf(node):titleOf(node),source:concept&&{href:concept.source.Href,open:concept.source.Open}});
+          });usage.appendChild(b);});actions.prepend(usage);}
+      }
+      var evidence=card.querySelector('.map-card-evidence');
+      if(node.dataset.activation&&!witness?.length&&step<0&&!keys.length&&!arrows.length)evidence.remove();
+      else actions.appendChild(evidence);
+      if(!actions.childElementCount)actions.remove();
+      requestAnimationFrame(function(){if(inspectionRevision===ticket&&!card.hidden)content.scrollTop=saved?.scroll||0;});
     }
-    function hide() { card.hidden = true; }
+    map.explainSource=function(source){
+      if(!inspectedNode)return;
+      var concepts=JSON.parse(inspectedNode.dataset.concepts||'[]');
+      var index=concepts.findIndex(function(c){return (source.href&&source.href===c.source.Href)||(source.open&&source.open===c.source.Open);});
+      var picker=card.querySelector('[aria-label="Concept to explain"]');
+      if(index<0||!picker)return;
+      picker.value=String(index);picker.dispatchEvent(new Event('change'));
+    };
+    map.showNode=function(node){if(!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');}};
+    map.clearInspection=function(){card.hidden=true;map.querySelector('.map-inspector').classList.remove('has-preview');};
+    map.addEventListener('repomap:connection',function(event){
+      remember();inspectionRevision++;
+      content.scrollTop = 0;
+      card.classList.add('map-card-connection');
+      var edge=event.detail;card.replaceChildren();var title=document.createElement('b');title.textContent=titleOf(byId[edge.from])+' → '+titleOf(byId[edge.to]);card.appendChild(title);
+      var kind=document.createElement('p');kind.textContent=edge.possible?'Interpreted connection or possible dispatch':'Code connections';card.appendChild(kind);
+      edge.relations.forEach(function(relation){var row=document.createElement('p');
+        [relation.from,relation.to].forEach(function(id,i){if(i)row.appendChild(document.createTextNode(' → '+relation.label+' → '));var n=byId[id];if(!n)return;var a=document.createElement('button');a.type='button';a.textContent=titleOf(n);a.addEventListener('click',function(){if(map.exploreNode)map.exploreNode(id);else n.click();});row.appendChild(a);});card.appendChild(row);
+        if(relation.summary){var summary=document.createElement('p');summary.textContent=relation.summary;card.appendChild(summary);}
+        [['fromSource','fromText'],['toSource','toText']].forEach(function(fields){if(!relation[fields[0]])return;var a=document.createElement('a');a.href=relation[fields[0]];a.textContent=relation[fields[1]];a.target='_blank';a.rel='noopener';a.className='map-details-link';card.appendChild(a);});
+      });
+      card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');
+    });
     for (var n = 0; n < nodes.length; n++) {
-      nodes[n].addEventListener('mouseenter', function (event) { show(event.currentTarget); });
-      nodes[n].addEventListener('focus', function (event) { show(event.currentTarget); });
-      nodes[n].addEventListener('mouseleave', hide);
-      nodes[n].addEventListener('blur', hide);
+      // The native title remains in the static HTML for readers without JS.
+      var title = nodes[n].querySelector('title');
+      if (title) title.remove();
+      (function (node) { repomapPreview.bind(node, card, function () { show(node); }); })(nodes[n]);
+      nodes[n].addEventListener('dragstart',function(event){event.preventDefault();});
     }
 
     // A group card links back to its node on the map.
@@ -242,6 +423,7 @@
       link.addEventListener('click', (function (node) {
         return function (event) {
           event.preventDefault();
+          if(map.revealNode){map.revealNode(node);return;}
           node.scrollIntoView({ block: 'center', inline: 'center' });
           node.classList.remove('map-flash');
           void node.getBoundingClientRect();
@@ -281,9 +463,9 @@
       for (var i = 0; i < trace.length; i++) trace[i].classList.remove('map-traced');
     }
     for (var u = 0; u < trace.length; u++) {
-      trace[u].addEventListener('mouseenter', lightTrace);
+      trace[u].addEventListener('repomap:preview', lightTrace);
       trace[u].addEventListener('focus', lightTrace);
-      trace[u].addEventListener('mouseleave', unlightTrace);
+      trace[u].addEventListener('repomap:previewend', unlightTrace);
       trace[u].addEventListener('blur', unlightTrace);
     }
     map.traceIndex = traceIndex;

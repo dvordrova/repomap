@@ -23,6 +23,18 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 	projected := make([]projectedTarget, 0, len(value.Targets))
 	groupIDs := make(map[string]map[string]string, len(value.Targets)) // target -> box -> group
 	boxOfBoundary := make(map[string]map[string]string, len(value.Targets))
+	boundaries := make(map[string]map[string]atlas.Boundary)
+	// Native IDs and source refs are scoped by target. A declaration's source
+	// anchor and kind identify it across a library and its executable.
+	sourceRefs := make(map[string]string)
+	localRefs := make(map[string]map[string]string)
+	for targetID, program := range programs {
+		localRefs[targetID] = make(map[string]string)
+		for _, object := range program.Objects {
+			sourceRefs[object.ID] = declarationKey(object)
+			localRefs[targetID][declarationKey(object)] = object.ID
+		}
+	}
 	for _, target := range value.Targets {
 		program, ok := programs[target.ID]
 		if !ok {
@@ -31,15 +43,18 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 		if err := program.Validate(); err != nil {
 			return nil, fmt.Errorf("group index: project atlas: target %s: %w", target.Name, err)
 		}
-		one, err := projectTarget(program, target)
+		one, err := projectTarget(program, target, sourceRefs)
 		if err != nil {
 			return nil, err
 		}
 		projected = append(projected, one)
 		groupIDs[target.ID] = one.groupOfBox
 		boxes := make(map[string]string, len(target.Boundaries))
+		boundaries[target.ID] = make(map[string]atlas.Boundary)
 		for _, boundary := range target.Boundaries {
+			boundary.ObjectID = localRefs[target.ID][sourceRefs[boundary.ObjectID]]
 			boxes[boundary.ID] = boundary.BoxID
+			boundaries[target.ID][boundary.ID] = boundary
 		}
 		boxOfBoundary[target.ID] = boxes
 	}
@@ -79,6 +94,19 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 				Summary:           strings.TrimSpace(joint.Value),
 				SupportResolution: resolution,
 				Evidence:          []SubjectEndpoint{},
+				SourceKind:        joint.SourceKind,
+				SourceID:          joint.ID,
+			}
+			if from, ok := boundaries[joint.From.TargetID][joint.From.BoundaryID]; ok {
+				connection.FromSubjectID = from.ObjectID
+				connection.FromLocation = &programindex.Location{Path: from.Path, Line: from.LineNo, Column: max(1, from.Column)}
+			}
+			if to, ok := boundaries[joint.To.TargetID][joint.To.BoundaryID]; ok {
+				connection.ToSubjectID = to.ObjectID
+				connection.ToLocation = &programindex.Location{Path: to.Path, Line: to.LineNo, Column: max(1, to.Column)}
+			}
+			if connection.SourceKind == "" && joint.From.BoundaryID != "" {
+				connection.SourceKind = "integration"
 			}
 			if connection.Summary == "" {
 				connection.Summary = label
@@ -137,18 +165,32 @@ func categoryOfLane(lane Lane) programindex.Category {
 	}
 }
 
-func projectTarget(program programindex.Index, target atlas.Target) (projectedTarget, error) {
+func projectTarget(program programindex.Index, target atlas.Target, sourceRefs map[string]string) (projectedTarget, error) {
 	boxOfFile := make(map[string]*atlas.Box)
+	interpretations := make(map[string]Interpretation)
 	for position := range target.Boxes {
 		box := &target.Boxes[position]
 		for _, file := range box.Files {
 			boxOfFile[file.Path] = box
+			for _, symbol := range file.Symbols {
+				if symbol.Line != "" {
+					interpretations[sourceRefs[symbol.ObjectID]] = Interpretation{Line: symbol.Line, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary}
+				}
+			}
 		}
 	}
 	// Every object is a subject, so owner and container references resolve;
 	// the objects of a box's files carry its lane's category.
 	membersOfBox := make(map[string][]string, len(target.Boxes))
-	subjects := make([]Subject, 0, len(program.Objects))
+	retained := make(map[string]struct{})
+	for _, object := range program.Objects {
+		retained[object.ID] = struct{}{}
+	}
+	subjects := compileRetainedSubjects(program, retained)
+	byID := make(map[string]*Subject, len(subjects))
+	for i := range subjects {
+		byID[subjects[i].ID] = &subjects[i]
+	}
 	for _, object := range program.Objects {
 		categories := []programindex.Category{}
 		if object.Location != nil {
@@ -157,16 +199,13 @@ func projectTarget(program programindex.Index, target atlas.Target) (projectedTa
 				membersOfBox[box.ID] = append(membersOfBox[box.ID], object.ID)
 			}
 		}
-		subjects = append(subjects, Subject{
-			ID: object.ID, Kind: SubjectObject, Categories: categories,
-			Object: &ObjectFacts{
-				Name: object.Name, Kind: object.Kind, Visibility: object.Visibility,
-				Signature: object.Signature, OwnerID: object.OwnerID, ContainerID: object.ContainerID,
-				SymbolLinkIdentities: cloneSymbolLinkIdentities(object.SymbolLinkIdentities),
-				External:             cloneExternal(object.External),
-				Location:             cloneLocation(object.Location),
-			},
-		})
+		subject := byID[object.ID]
+		subject.Categories = categories
+		if object.Location != nil {
+			if interpretation, ok := interpretations[declarationKey(object)]; ok {
+				subject.Interpretation = &interpretation
+			}
+		}
 	}
 	sort.Slice(subjects, func(i, j int) bool { return subjects[i].ID < subjects[j].ID })
 
@@ -252,19 +291,94 @@ func projectTarget(program programindex.Index, target atlas.Target) (projectedTa
 		connections = append(connections, connection)
 	}
 
+	var operations []Operation
+	for _, group := range groups {
+		for _, id := range group.MemberSubjectIDs {
+			subject := byID[id]
+			if subject.Interpretation == nil || subject.Interpretation.Activation == "" {
+				continue
+			}
+			if subject.Object == nil || subject.Object.Location == nil {
+				continue
+			}
+			v := subject.Interpretation
+			operations = append(operations, Operation{ID: id, SubjectID: id, GroupID: group.ID, Kind: v.Activation, Name: v.Operation, Summary: v.OperationSummary, Source: "model", Location: *subject.Object.Location})
+		}
+	}
+	boundRequests := make(map[string]bool)
+	for _, boundary := range target.Boundaries {
+		if boundary.Direction != atlas.DirectionIn || boundary.Kind == atlas.BoundaryConfig {
+			continue
+		}
+		groupID := groupOfBox[boundary.BoxID]
+		if groupID == "" {
+			continue
+		}
+		// A request interpreted on a declaration is already an operation.
+		// Keep the boundary for matching without drawing the same action twice.
+		if strings.HasPrefix(boundary.ID, "in:") {
+			continue
+		}
+		name := strings.TrimSpace(boundary.Method + " " + strings.Join(boundary.Values, ", "))
+		if name == "" {
+			name = boundary.Caller
+		}
+		source := "model"
+		if boundary.FactID != "" {
+			source = "fact"
+		}
+		subjectID := boundary.ObjectID
+		if byID[subjectID] == nil {
+			subjectID = ""
+			for _, object := range program.Objects {
+				if declarationKey(object) == sourceRefs[boundary.ObjectID] {
+					subjectID = object.ID
+					break
+				}
+			}
+		}
+		operations = append(operations, Operation{ID: boundary.ID, SubjectID: subjectID, GroupID: groupID, Kind: "request", Name: name, Summary: boundary.Line, Source: source, Location: programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)}})
+		if subjectID != "" {
+			boundRequests[subjectID] = true
+		}
+	}
+	// A declaration with an observed route already has an operation carrying
+	// that route's syntax. Keep its interpretation on the subject, without
+	// presenting the declaration as a second route. Multiple observed routes
+	// on the same handler remain distinct.
+	uniqueOperations := operations[:0]
+	for _, operation := range operations {
+		if operation.ID == operation.SubjectID && operation.Kind == "request" && boundRequests[operation.SubjectID] {
+			continue
+		}
+		uniqueOperations = append(uniqueOperations, operation)
+	}
+	operations = uniqueOperations
+	sort.Slice(operations, func(i, j int) bool { return operations[i].ID < operations[j].ID })
 	return projectedTarget{
 		index: Index{
 			Version:            Version,
+			Role:               target.Role,
+			Summary:            target.Line,
 			Target:             program.Target.Snapshot(),
 			ProgramIndexSHA256: program.SHA256,
 			Subjects:           subjects,
 			Groups:             groups,
+			Operations:         operations,
 			Containers:         containers,
-			StructuralEdges:    []StructuralEdge{},
+			StructuralEdges:    compileStructuralEdges(program, retained),
 			Connections:        connections,
 		},
 		groupOfBox: groupOfBox,
 	}, nil
+}
+
+func declarationKey(object programindex.Object) string {
+	if object.Location == nil {
+		return ""
+	}
+	location := object.Location
+	return fmt.Sprintf("%s:%d:%d:%s:%s", location.Path, location.Line, location.Column, object.Kind, object.Name)
 }
 
 func dedupeConnections(values []Connection) []Connection {

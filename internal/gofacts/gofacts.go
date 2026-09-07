@@ -45,6 +45,7 @@ type LoadOptions struct {
 type Facts struct {
 	Modules               []ModuleFact          `json:"modules"`
 	Packages              []PackageFact         `json:"packages"`
+	TestSources           []TestSource          `json:"test_sources"`
 	PackageOrigins        []PackageOrigin       `json:"package_origins"`
 	PackagesCount         int                   `json:"packages_count"`
 	RetainedPackagesCount int                   `json:"retained_packages_count"`
@@ -218,6 +219,8 @@ type goListPackage struct {
 	GoFiles         []string
 	CompiledGoFiles []string
 	CgoFiles        []string
+	TestGoFiles     []string
+	XTestGoFiles    []string
 	CFiles          []string
 	CXXFiles        []string
 	MFiles          []string
@@ -328,6 +331,7 @@ func LoadWithOptions(
 
 	var allPkgs []goListPackage
 	var packageFacts []PackageFact
+	var testSources []TestSource
 	var allEntrypoints []Entrypoint
 	var topWarnings []string
 	// undescribedModules are the modules go list could not describe. Skipping
@@ -391,6 +395,12 @@ func LoadWithOptions(
 			continue
 		}
 		pkgs := rootGoListPackages(listedPkgs)
+		moduleTests, testWarnings, err := collectTestSources(repoReader, resolvedRepoPath, absDir, moduleID, modulePath, listedPkgs, fileList)
+		if err != nil {
+			return nil, fmt.Errorf("load Go test sources for module %s: %w", modRelDir, err)
+		}
+		testSources = append(testSources, moduleTests...)
+		topWarnings = append(topWarnings, testWarnings...)
 		availableModules++
 		allPkgs = append(allPkgs, pkgs...)
 		dependencyLoads = append(dependencyLoads, dependencyPackageLoad{packages: listedPkgs})
@@ -531,6 +541,7 @@ func LoadWithOptions(
 	return &Facts{
 		Modules:               modules,
 		Packages:              packageFacts,
+		TestSources:           canonicalTestSources(testSources),
 		PackageOrigins:        packageOrigins,
 		PackagesCount:         len(allPkgs),
 		RetainedPackagesCount: len(packageFacts),

@@ -2,6 +2,7 @@ package reading
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -10,6 +11,32 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 )
+
+func TestInterpretedOperationsBindCallsWithoutFrameworkRules(t *testing.T) {
+	client := atlas.Place{ID: "send", Kind: atlas.PlaceSymbol, Path: "app/send.go", LineNo: 5, Parent: "file:send", TargetIDs: []string{"client"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "sender", Name: "Submit"}}}
+	handler := atlas.Place{ID: "handle", Kind: atlas.PlaceSymbol, Path: "service/handle.py", LineNo: 8, Parent: "file:handle", TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "receiver", Name: "Handler.Submit", Column: 17}}}
+	r := reader{opts: Options{Graph: atlas.Graph{Places: []atlas.Place{client, handler}}}, boundaries: map[string]*boundaryState{}, operations: map[string][3]string{"handle": {"request", "submit job"}}, symbolLine: map[string]cell{"send": {value: "Submits a job to the service."}, "handle": {value: "Accepts a job."}}, outbound: map[string][]atlas.SymbolCall{"send": {{Name: "CompanySDK.Submit", Line: 11, Values: []string{"jobs"}}}}}
+	r.bindInterpretedBoundaries()
+	if len(r.boundaries) != 2 {
+		t.Fatalf("wanted two bound endpoints, got %v", r.boundaries)
+	}
+	out, in := r.boundaries["out:send:0"], r.boundaries["in:handle"]
+	if out.place.Boundary.ObjectID != "sender" || out.place.LineNo != 11 || in.place.Boundary.ObjectID != "receiver" || in.place.Column != 17 {
+		t.Fatal("lost source identity")
+	}
+	if out.place.Boundary.Source != "model" || in.place.Boundary.Source != "model" {
+		t.Fatal("interpretation became a source fact")
+	}
+	r.boxOf = map[string]string{"file:handle": "handler-group"}
+	published := r.target(TargetMeta{ID: "service"})
+	if len(published.Boundaries) != 1 || published.Boundaries[0].Column != 17 {
+		t.Fatalf("boundary lost the declaration column before map matching: %+v", published.Boundaries)
+	}
+	value, _, ok := valuesJoin(out.place.Boundary, in.place.Boundary)
+	if !ok || value != "Submit" {
+		t.Fatalf("method candidate lost: %q %v", value, ok)
+	}
+}
 
 // twoTargetGraph is a repository of two targets: a backend "svc" with five
 // top boxes, a route and a config read, and a "web" client that calls the
@@ -229,7 +256,7 @@ func TestZonesAreNamedAssignedAndInherited(t *testing.T) {
 	for _, box := range svc.Boxes {
 		sides[box.ID] = box.Side
 	}
-	if sides["svc/api"] != atlas.SideIn || sides["svc/db"] != atlas.SideOut || sides["svc/core"] != atlas.SideMid {
+	if sides["svc/api"] != atlas.SideIn || sides["svc/db"] != atlas.SideMid || sides["svc/core"] != atlas.SideMid {
 		t.Fatalf("sides: %v", sides)
 	}
 	if strings.Join(svc.Trace, " ") != "svc/api svc/core svc/db" {
@@ -245,6 +272,32 @@ func TestZonesAreNamedAssignedAndInherited(t *testing.T) {
 	}
 	if err := atlas.Validate(result.Atlas); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestConfigReadDoesNotTurnCoreIntoDependencyOrShareASeed(t *testing.T) {
+	owner := &boxState{id: "tool/cmd", files: []string{"main", "commands"}}
+	r := &reader{
+		opts: Options{Graph: atlas.Graph{Seeds: []string{"main"}}},
+		places: map[string]atlas.Place{
+			"main":     {TargetIDs: []string{"exe"}},
+			"commands": {TargetIDs: []string{"exe", "lib"}},
+		},
+		boxOf: map[string]string{"commands": owner.id},
+		boundaries: map[string]*boundaryState{"token": {
+			kind: "config", place: atlas.Place{Parent: "commands", TargetIDs: []string{"exe", "lib"},
+				Boundary: &atlas.BoundaryFacts{Direction: atlas.DirectionOut}},
+		}},
+	}
+	if got := r.side(owner, "lib"); got != atlas.SideMid {
+		t.Fatalf("config or another target's seed classified library as %s", got)
+	}
+	if got := r.side(owner, "exe"); got != atlas.SideIn {
+		t.Fatalf("executable lost its entrypoint: %s", got)
+	}
+	r.boundaries["token"].kind = "http"
+	if got := r.side(owner, "lib"); got != atlas.SideOut {
+		t.Fatalf("outbound integration lost its direction: %s", got)
 	}
 }
 
@@ -331,6 +384,105 @@ func TestJointsMatchValuesAcrossTargetsAndAskPeersForTheRest(t *testing.T) {
 	}
 	if err := atlas.Validate(result.Atlas); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPeerContextsContainOnlyEligibleCounterparts(t *testing.T) {
+	r := reader{targets: map[string]*targetState{"a": {role: atlas.RoleProduct}, "b": {role: atlas.RoleProduct}, "f": {role: atlas.RoleFixture}}}
+	targets := map[string]TargetMeta{"a": {ID: "a"}, "b": {ID: "b"}, "f": {ID: "f", Root: "fixtures/one"}}
+	boundary := func(id, object, target string) *boundaryState {
+		return &boundaryState{place: atlas.Place{ID: id, TargetIDs: []string{target}, Boundary: &atlas.BoundaryFacts{ObjectID: object}}}
+	}
+	outs := []*boundaryState{boundary("out1", "shared", "a"), boundary("out2", "other", "a"), boundary("out3", "third", "a")}
+	ins := []*boundaryState{boundary("self", "shared", "b"), boundary("remote", "remote", "b"), boundary("local", "local", "a"), boundary("fixture", "fixture", "f")}
+	batches := r.peerBatches(outs, ins, targets)
+	if len(batches) != 2 || len(batches[0].outs) != 1 || len(batches[1].outs) != 2 {
+		t.Fatalf("different eligible dictionaries were not separated: %+v", batches)
+	}
+	if len(batches[0].ins) != 1 || batches[0].ins[0].place.ID != "remote" {
+		t.Fatalf("same-object, local or fixture peer exposed: %+v", batches[0].ins)
+	}
+	if len(batches[1].ins) != 2 || batches[1].ins[0].place.ID != "self" || batches[1].ins[1].place.ID != "remote" {
+		t.Fatalf("eligible peer lost: %+v", batches[1].ins)
+	}
+}
+
+func TestPeerWindowWinnersCompeteBeforePublication(t *testing.T) {
+	graph := twoTargetGraph(t)
+	// More than one peer window. The provider picks the first candidate in
+	// each window; only their final comparison can identify one counterpart.
+	for i := 0; i < 55; i++ {
+		graph.Places = append(graph.Places, atlas.Place{
+			ID: fmt.Sprintf("bnd:svc/extra:%03d", i), Kind: atlas.PlaceBoundary,
+			Path: "svc/api/h.go", LineNo: 100 + i, Parent: atlas.FileID("svc/api/h.go"), TargetIDs: []string{"svc"},
+			Boundary: &atlas.BoundaryFacts{Source: "fact", Caller: "Extra", Direction: atlas.DirectionIn, GivenKind: atlas.BoundaryHTTPServer, Method: "GET", Values: []string{fmt.Sprintf("/extra/%d", i)}},
+		})
+	}
+	atlas.SortPlaces(graph.Places)
+	provider := &tableProvider{sameFor: map[string]string{"GET /api/levels/{id}": "yes"}}
+	result, err := Read(context.Background(), twoTargetOptions(t, graph, provider))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var blind, literal int
+	for _, joint := range result.Atlas.Joints {
+		if joint.Blind {
+			blind++
+			if joint.To.BoundaryID != "bnd:svc/api/h.go:10:http_server" || !joint.Possible {
+				t.Fatalf("final source identity or uncertainty lost: %+v", joint)
+			}
+		} else {
+			literal++
+		}
+	}
+	if blind != 1 || literal != 1 {
+		t.Fatalf("published intermediate window choices: blind=%d literal=%d", blind, literal)
+	}
+}
+
+func TestMatchingSignatureBelongsToExactBoundaryObject(t *testing.T) {
+	r := reader{places: map[string]atlas.Place{
+		"file:service.go": {File: &atlas.FileFacts{Decls: []atlas.Decl{
+			{Name: "Read", ObjectID: "unary", Signature: "func(Request) Response"},
+			{Name: "Read", ObjectID: "stream", Signature: "func(Request, ResponseStream) error"},
+		}}},
+	}}
+	state := &boundaryState{place: atlas.Place{Parent: "file:service.go", Boundary: &atlas.BoundaryFacts{ObjectID: "stream", Caller: "Read", CallerDoc: "Streams results."}}}
+	side := r.sideOf(state, nil)
+	if side.Signature != "func(Request, ResponseStream) error" || side.CallerDoc != "Streams results." {
+		t.Fatalf("matching lost the exact protocol declaration: %+v", side)
+	}
+	state.place.Boundary.ObjectID = "unknown"
+	if side := r.sideOf(state, nil); side.Signature != "" {
+		t.Fatal("a same-named declaration supplied a guessed signature")
+	}
+}
+
+func TestPeerEligibilityDifferencesDoNotSplitUnrelatedWindows(t *testing.T) {
+	graph := twoTargetGraph(t)
+	for i := 0; i < 64; i++ {
+		object := fmt.Sprintf("shared-object-%d", i)
+		for _, side := range []struct{ target, path, direction, kind string }{
+			{"web", "web/src/client.ts", atlas.DirectionOut, atlas.BoundarySDK},
+			{"svc", "svc/api/h.go", atlas.DirectionIn, atlas.BoundaryOther},
+		} {
+			graph.Places = append(graph.Places, atlas.Place{
+				ID: fmt.Sprintf("bnd:%s:peer-%03d", side.target, i), Kind: atlas.PlaceBoundary, Path: side.path, LineNo: 100 + i,
+				Parent: atlas.FileID(side.path), TargetIDs: []string{side.target},
+				Boundary: &atlas.BoundaryFacts{Source: "fact", ObjectID: object, Caller: "F", Direction: side.direction, GivenKind: side.kind},
+			})
+		}
+	}
+	atlas.SortPlaces(graph.Places)
+	provider := &tableProvider{sameFor: map[string]string{"GET /api/levels/{id}": "yes"}}
+	result, err := Read(context.Background(), twoTargetOptions(t, graph, provider))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, use := range result.Uses {
+		if use.Stage == lines.StageJoints && use.Windows >= 100 {
+			t.Fatalf("a self-reference split every peer window into single-row calls: %+v", use)
+		}
 	}
 }
 
