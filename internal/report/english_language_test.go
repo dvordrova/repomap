@@ -16,6 +16,40 @@ import (
 	"github.com/dvordrova/repomap/internal/claims"
 )
 
+func TestQuestionExcerptHeadingsTranslateWithoutChangingOriginalText(t *testing.T) {
+	const sourceText = "我来到北京清华大学 <cut> & test (executable)"
+	anchor := pageAnchor{Path: "jieba/__init__.py", Text: "jieba/__init__.py:53", Href: "https://example.test/jieba.py#L53"}
+	excerpts := []pageQuestionExcerpt{
+		{Kind: "Declaration", Text: sourceText, Source: anchor, ShowSource: true},
+		{Kind: "Author's documentation", Text: sourceText, Source: anchor},
+		{Kind: "Observed entrypoint", Text: sourceText, Source: anchor},
+		{Kind: "Manifest value", Text: sourceText, Source: anchor},
+		{Kind: "Observed boundary", Text: sourceText, Source: anchor},
+		{Kind: "Declared members", Source: anchor, ShowSource: true, Members: []pageQuestionMember{{Text: sourceText, Doc: sourceText, Source: anchor}}},
+	}
+	for _, language := range []DisplayLanguage{English, Russian} {
+		t.Run(string(language), func(t *testing.T) {
+			parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, params ...any) (string, error) { return uiText(language, key, params...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			if err := parsed.ExecuteTemplate(&out, "question-excerpts.html", excerpts); err != nil {
+				t.Fatal(err)
+			}
+			html := out.String()
+			for _, excerpt := range excerpts {
+				if !strings.Contains(html, stdhtml.EscapeString(englishUI(language, excerpt.Kind))) {
+					t.Fatalf("missing translated heading %q", excerpt.Kind)
+				}
+			}
+			if strings.Count(html, "<pre>"+stdhtml.EscapeString(sourceText)+"</pre>") != 5 || !strings.Contains(html, "<code>"+stdhtml.EscapeString(sourceText)+"</code>") || !strings.Contains(html, `href="https://example.test/jieba.py#L53"`) {
+				t.Fatal("translated headings changed an original quote, member or source destination")
+			}
+		})
+	}
+}
+
 func TestReportRenderingIsEnglishOnly(t *testing.T) {
 	t.Parallel()
 

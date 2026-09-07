@@ -3596,6 +3596,11 @@ from the translation catalogue; its canonical report field remains. Literal
 text resembling a generated protection marker is itself protected, so restoring
 code snippets cannot accidentally substitute a source author's literal marker.
 Executable regressions cover these boundaries and the rendered operation text.
+Final browser reading of Jieba also distinguishes our evidence-kind headings
+from the quoted text beneath them: headings use the UI dictionary while the
+original excerpt stays literal. Cross-component link labels rebuild their
+component disambiguators from their already resolved destinations; native names,
+source anchors and model-written descriptions retain their separate ownership.
 
 Final current-binary ordinary publication passed on four real repositories:
 

@@ -30,6 +30,46 @@ func TestRootComponentKeepsItsNativeNameAcrossNavigationAndTranslation(t *testin
 	}
 }
 
+func TestTranslatedCrossComponentLabelsKeepTheirExactDestinations(t *testing.T) {
+	for _, language := range []DisplayLanguage{English, Russian} {
+		t.Run(string(language), func(t *testing.T) {
+			peer := &pageSection{ID: "peer", programTargetID: "peer-id", Name: "test.command", Root: "test", Kind: "executable", Triggers: []pageGroup{{ID: "peer-group", Title: "Набор тестов"}}}
+			sameRoot := &pageSection{ID: "sibling", programTargetID: "sibling-id", Name: "test.other", Root: "test", Kind: "executable"}
+			here := &pageSection{ID: "here", programTargetID: "here-id", Name: "jieba", Root: "jieba", Kind: "library"}
+			sections := []*pageSection{here, peer, sameRoot}
+			labelSections(sections)
+			const original = "test (executable) / cut"
+			here.Map = &pageMap{Nodes: []pageMapNode{
+				{ID: "remote", Component: "peer-id", Href: "#peer-group", FullTitle: original, CanonicalTitle: original},
+				{ID: "native", Component: "here-id", Href: "#local", FullTitle: original, CanonicalTitle: original},
+				{ID: "unbound", Component: "unknown", Href: "#missing", FullTitle: original, CanonicalTitle: original},
+			}}
+			here.Triggers = []pageGroup{{ID: "local", Connections: []pageConnection{
+				{Href: "#peer-group", OtherTarget: peer.ShortLabel, Title: "Набор тестов", Arrow: "→", Label: "uses", Possible: true},
+				{Href: "#missing", OtherTarget: "test (executable)", Title: "unchanged"},
+			}}}
+			page := &PreparedPage{view: &pageView{Sections: sections}}
+			page.rebuildDisplayLabels(language)
+			wantPrefix := "test (" + englishUI(language, "executable") + ")"
+			if node := here.Map.Nodes[0]; node.FullTitle != wantPrefix+" / cut" || node.CanonicalTitle != original || node.ID != "remote" || node.Component != "peer-id" || node.Href != "#peer-group" {
+				t.Fatalf("remote display lost its exact identity or native title: %+v", node)
+			}
+			for _, node := range here.Map.Nodes[1:] {
+				if node.FullTitle != original {
+					t.Fatalf("a name without matching remote ownership was rewritten: %+v", node)
+				}
+			}
+			links := here.Triggers[0].Connections
+			if link := links[0]; link.OtherTarget != wantPrefix || link.Href != "#peer-group" || link.Title != "Набор тестов" || link.Arrow != "→" || link.Label != "uses" || !link.Possible {
+				t.Fatalf("cross-component link lost its destination or relation: %+v", link)
+			}
+			if links[1].OtherTarget != "test (executable)" || peer.Root != "test" || peer.Name != "test.command" {
+				t.Fatal("unknown destination, path, or native name was guessed")
+			}
+		})
+	}
+}
+
 func TestDisconnectedRepositoryMapKeepsNativeIdentityAndDefaultFirst(t *testing.T) {
 	sections := []*pageSection{
 		{ID: "library", programTargetID: "library-id", Name: "example.org/server", Kind: "library", Root: "."},

@@ -675,8 +675,10 @@ func (page *PreparedPage) rebuildDisplayLabels(language DisplayLanguage) {
 	view := page.view
 	bySection := make(map[string]*pageSection, len(view.Sections))
 	byTarget := make(map[string]*pageSection, len(view.Sections))
+	oldShortByTarget := make(map[string]string, len(view.Sections))
 	for _, section := range view.Sections {
 		oldShort, oldLabel := section.ShortLabel, section.Label
+		oldShortByTarget[section.programTargetID] = oldShort
 		kind := englishUI(language, section.Kind)
 		base := section.Root
 		if base == "." {
@@ -706,7 +708,14 @@ func (page *PreparedPage) rebuildDisplayLabels(language DisplayLanguage) {
 		node    *pageMapNode
 	}
 	byNode := make(map[string]destination)
+	byDestination := make(map[string]*pageSection)
 	for _, section := range view.Sections {
+		byDestination["#"+section.ID] = section
+		for _, groups := range [][]pageGroup{section.Triggers, section.Core, section.DependencyGroups} {
+			for i := range groups {
+				byDestination["#"+groups[i].ID] = section
+			}
+		}
 		if section.Map == nil {
 			continue
 		}
@@ -716,9 +725,37 @@ func (page *PreparedPage) rebuildDisplayLabels(language DisplayLanguage) {
 				if owner := byTarget[node.Component]; owner != nil {
 					node.FullTitle = owner.ShortLabel
 				}
+			} else if node.Component != "" && node.Component != section.programTargetID {
+				if owner := byTarget[node.Component]; owner != nil {
+					prefix := oldShortByTarget[node.Component] + " / "
+					if strings.HasPrefix(node.FullTitle, prefix) {
+						node.FullTitle = owner.ShortLabel + " / " + strings.TrimPrefix(node.FullTitle, prefix)
+					}
+				}
 			}
 			node.Title = mapTitle(node.FullTitle)
 			byNode[node.ID] = destination{section, node}
+			byDestination["#"+node.ID] = section
+		}
+	}
+	updateConnections := func(values []pageConnection) {
+		for i := range values {
+			link := &values[i]
+			if link.OtherTarget != "" {
+				if owner := byDestination[link.Href]; owner != nil {
+					link.OtherTarget = owner.ShortLabel
+				}
+			}
+		}
+	}
+	for _, section := range view.Sections {
+		for _, groups := range [][]pageGroup{section.Triggers, section.Core, section.DependencyGroups} {
+			for i := range groups {
+				updateConnections(groups[i].Connections)
+			}
+		}
+		for i := range section.Start {
+			updateConnections(section.Start[i].Reaches)
 		}
 	}
 	questionTitles := make(map[string]string, len(view.Questions))

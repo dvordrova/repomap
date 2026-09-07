@@ -33,10 +33,10 @@
 {{template "question-excerpts.html" .Excerpts}}</li>{{end}}</ul></details>{{end}}{{end}}
 
 {{define "question-excerpts.html"}}{{range .}}<div class="reading-excerpt">
-{{if .Members}}<table class="reading-members"><caption>{{.Kind}}{{if .ShowSource}} · {{template "anchor" .Source}}{{end}}</caption>
+{{if .Members}}<table class="reading-members"><caption>{{t .Kind}}{{if .ShowSource}} · {{template "anchor" .Source}}{{end}}</caption>
 <thead><tr><th scope="col">{{t "Declaration"}}</th><th scope="col">{{t "Source"}}</th></tr></thead>
 <tbody>{{range .Members}}<tr><td><code>{{.Text}}</code>{{if .Doc}}<p class="member-doc"><span>{{t "Author's documentation"}}</span>{{.Doc}}</p>{{end}}</td><td>{{template "anchor" .Source}}</td></tr>{{end}}</tbody></table>
-{{else}}<span>{{.Kind}}{{if .ShowSource}} · {{template "anchor" .Source}}{{end}}</span><pre>{{.Text}}</pre>{{end}}
+{{else}}<span>{{t .Kind}}{{if .ShowSource}} · {{template "anchor" .Source}}{{end}}</span><pre>{{.Text}}</pre>{{end}}
 </div>{{end}}{{end}}
 
 {{define "learning-review.html"}}{{if .LearningReviews}}<details class="learning-review"><summary>{{t "How were these questions chosen?"}}</summary><p>{{t "The model adapted general learning topics to this repository. These decisions can be checked against the original sources."}}</p>
