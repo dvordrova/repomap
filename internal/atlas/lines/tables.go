@@ -60,10 +60,6 @@ var targetsPrompt string
 //go:embed prompts/joints.md
 var jointsPrompt string
 
-// Calls and callback bindings make symbol rows larger than a declaration.
-// Keep the provider batch small; accepted entity rows reuse independently.
-const SymbolWindowRows = 8
-
 // MaxKeysPerFile bounds how many symbols the model may mark as key in one
 // file; the code keeps the first by rank.
 const MaxKeysPerFile = 5
@@ -71,7 +67,7 @@ const MaxKeysPerFile = 5
 // Symbols is the symbol table.
 func Symbols() table.Definition {
 	return table.Definition{
-		Stage: StageSymbols, Contract: symbolsContract, Window: SymbolWindowRows,
+		Stage: StageSymbols, Contract: symbolsContract,
 		System: symbolsPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what this declaration does or is"},
@@ -87,7 +83,7 @@ func Symbols() table.Definition {
 // It shares symbol knowledge and publication; it does not classify operations.
 func Types() table.Definition {
 	return table.Definition{
-		Stage: StageSymbols, Contract: "repomap.atlas.types.v5", Window: SymbolWindowRows,
+		Stage: StageSymbols, Contract: "repomap.atlas.types.v5",
 		System: typesPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Prose, Note: "briefly explain what this represents or controls and any consequential documented rule, preserving its conditions; no method inventory or invented effects"},
@@ -150,7 +146,7 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 // Boundaries is the boundary table.
 func Boundaries() table.Definition {
 	return table.Definition{
-		Stage: StageBoundaries, Contract: boundariesContract, Window: WindowRows,
+		Stage: StageBoundaries, Contract: boundariesContract,
 		System: boundariesPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what crosses this boundary"},

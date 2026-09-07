@@ -165,3 +165,32 @@ func TestTypeContextKeepsOwnedDeclarationsWithoutNativeIDs(t *testing.T) {
 		t.Fatalf("type explanation lost its full qualification or paragraph break: %v, %v", answer, err)
 	}
 }
+
+func TestIndependentTablesPackCompleteRowsWithoutCountCaps(t *testing.T) {
+	var rows []table.Row
+	for i := 0; i < 41; i++ {
+		place := atlas.Place{ID: fmt.Sprintf("type-%d", i), Path: fmt.Sprintf("queue/type%d.go", i), Symbol: &atlas.SymbolFacts{
+			Decl: atlas.Decl{Name: fmt.Sprintf("Ticket%d", i), Kind: "type", Doc: "Tracks a pending job."},
+			Members: []atlas.TypeMember{{Path: "queue/renew.go", Decl: atlas.Decl{
+				Name: "Renew", Kind: "method", LineNo: 9, Signature: "func() error", Doc: "Renew extends the ticket's validity.",
+			}}},
+		}}
+		rows = append(rows, TypeRow(place))
+	}
+	for _, def := range []table.Definition{Directories(), Files(), Symbols(), Types(), Boundaries(), Operations()} {
+		t.Run(def.Contract, func(t *testing.T) {
+			windows, err := table.Windows(def, 0, rows)
+			if err != nil || len(windows) != 1 || !reflect.DeepEqual(windows[0].Rows, rows) {
+				t.Fatalf("complete evidence that fits one request was split or changed: %d windows, %v", len(windows), err)
+			}
+			if len(def.System)+len(windows[0].Request) > table.DefaultInputBytes {
+				t.Fatal("independent table exceeded the unchanged default byte budget")
+			}
+			def.Window = 8
+			limited, err := table.Windows(def, 0, rows)
+			if err != nil || len(limited) != 6 || len(limited[0].Rows) != 8 || len(limited[5].Rows) != 1 {
+				t.Fatalf("explicit row budget was ignored: %d windows, %v", len(limited), err)
+			}
+		})
+	}
+}

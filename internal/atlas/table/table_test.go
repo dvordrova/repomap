@@ -3,6 +3,8 @@ package table
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -209,7 +211,7 @@ func TestStateIgnoresTheClock(t *testing.T) {
 
 func TestWindowsSplitByInputBytesWithoutLosingRowsOrContext(t *testing.T) {
 	def := testDefinition()
-	def.Window = 40
+	def.Window = 0
 	rows := testRows()
 	for i := range rows {
 		rows[i].Fields = append(rows[i].Fields, Field{Name: "doc", Value: strings.Repeat("ю", 700)})
@@ -242,6 +244,81 @@ func TestWindowsSplitByInputBytesWithoutLosingRowsOrContext(t *testing.T) {
 	def.MaxInputBytes--
 	if _, err := WindowsWithContext(def, 1, shared, rows); err == nil || !strings.Contains(err.Error(), "row file:a.go") {
 		t.Fatalf("an oversized single row was hidden: %v", err)
+	}
+}
+
+func TestWindowsGreedilyFillByteBudgetWithExactLocalKeys(t *testing.T) {
+	doc := strings.Repeat("ю\"<&\n", 20)
+	var rows []Row
+	for i := 0; i < 25; i++ {
+		rows = append(rows, Row{ID: fmt.Sprintf("private-row-%d", i), Fields: []Field{{Name: "doc", Value: doc}}})
+	}
+	shared := []Field{{Name: "purpose", Value: "Keep complete evidence."}}
+	for _, afterRows := range []bool{false, true} {
+		def := testDefinition()
+		def.ContextAfterRows = afterRows
+		ten, err := Request(def, Window{Context: shared, Rows: rows[:10]})
+		if err != nil {
+			t.Fatal(err)
+		}
+		budget := len(def.System) + len(ten)
+		for _, test := range []struct {
+			name   string
+			cap    int
+			budget int
+			sizes  []int
+		}{
+			{name: "byte only", budget: budget, sizes: []int{10, 10, 5}},
+			{name: "one byte short of r10", budget: budget - 1, sizes: []int{9, 9, 7}},
+			{name: "explicit row cap", cap: 7, budget: budget, sizes: []int{7, 7, 7, 4}},
+		} {
+			t.Run(fmt.Sprintf("%s/context-after-%t", test.name, afterRows), func(t *testing.T) {
+				def.Window, def.MaxInputBytes = test.cap, test.budget
+				windows, err := WindowsWithContext(def, 3, shared, rows)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var sizes []int
+				offset := 0
+				for i, window := range windows {
+					sizes = append(sizes, len(window.Rows))
+					if window.Stage != def.Stage || window.Round != 3 || window.Index != i || !reflect.DeepEqual(window.Rows, rows[offset:offset+len(window.Rows)]) {
+						t.Fatal("rebatching changed row order or round provenance")
+					}
+					if len(def.System)+len(window.Request) > test.budget {
+						t.Fatal("packed request exceeded its exact input budget")
+					}
+					var input struct {
+						Context map[string]string   `json:"context"`
+						Rows    []map[string]string `json:"rows"`
+					}
+					if err := json.Unmarshal(window.Request, &input); err != nil {
+						t.Fatal(err)
+					}
+					if input.Context["purpose"] != shared[0].Value || len(input.Rows) != len(window.Rows) {
+						t.Fatal("request lost shared context or complete rows")
+					}
+					for j, row := range input.Rows {
+						if row["key"] != Key(j) || row["doc"] != doc {
+							t.Fatal("request key or escaped UTF-8 evidence changed")
+						}
+					}
+					offset += len(window.Rows)
+				}
+				if !reflect.DeepEqual(sizes, test.sizes) || offset != len(rows) {
+					t.Fatalf("underfilled windows or lost rows: %v, want %v", sizes, test.sizes)
+				}
+			})
+		}
+	}
+	def := testDefinition()
+	def.Window = 0
+	if windows, err := Windows(def, 0, nil); err != nil || len(windows) != 0 {
+		t.Fatalf("empty input produced a window or error: %v", err)
+	}
+	def.Window = -1
+	if _, err := Windows(def, 0, rows); err == nil {
+		t.Fatal("negative row budget was accepted")
 	}
 }
 

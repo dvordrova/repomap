@@ -24,7 +24,7 @@ const (
 	directoriesContract = "repomap.atlas.directories.v2"
 	filesContract       = "repomap.atlas.files.v3"
 
-	// WindowRows is how many rows one request carries.
+	// WindowRows is the row budget of the dependent table definitions.
 	WindowRows = 40
 
 	// LineRunes bounds a model line; TitleRunes a box title.
@@ -53,7 +53,7 @@ var filesPrompt string
 // Directories is the directory table.
 func Directories() table.Definition {
 	return table.Definition{
-		Stage: StageDirectories, Contract: directoriesContract, Window: WindowRows,
+		Stage: StageDirectories, Contract: directoriesContract,
 		System: directoriesPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "title", Kind: table.Text, MaxRunes: TitleRunes, Note: "two to four words for the box"},
@@ -65,7 +65,7 @@ func Directories() table.Definition {
 // Files is the file table.
 func Files() table.Definition {
 	return table.Definition{
-		Stage: StageFiles, Contract: filesContract, Window: WindowRows,
+		Stage: StageFiles, Contract: filesContract,
 		System: filesPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what the file does"},

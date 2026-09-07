@@ -66,9 +66,10 @@ type Definition struct {
 	// Contract versions the prompt and the columns; it is part of the cache
 	// identity so a changed table never reads an old answer.
 	Contract string
-	Window   int
-	System   string
-	Columns  []Column
+	// Window optionally limits rows per request. Zero uses only the byte budget.
+	Window  int
+	System  string
+	Columns []Column
 	// Reasoning opts this table into provider-supported deliberate reasoning.
 	Reasoning bool
 	// MaxInputBytes bounds system + user UTF-8 bytes before provider encoding.
@@ -95,7 +96,7 @@ type Row struct {
 	Fields []Field
 }
 
-// Window is one request: up to Definition.Window rows with keys r1..rN.
+// Window is one request with keys r1..rN and optional Definition.Window row limit.
 // Context is what every row of the window shares: a closed list of names to
 // choose from, a count the answer is measured against.
 type Window struct {
@@ -110,7 +111,7 @@ type Window struct {
 // Key is the window-local key of row i.
 func Key(i int) string { return fmt.Sprintf("r%d", i+1) }
 
-// Windows cuts rows into windows of the definition's size, keeping the
+// Windows packs rows into windows of the definition's budgets, keeping the
 // caller's order. Boundaries are the caller's business: it sorts rows by path
 // so a window rarely straddles a directory.
 func Windows(def Definition, round int, rows []Row) ([]Window, error) {
@@ -119,7 +120,7 @@ func Windows(def Definition, round int, rows []Row) ([]Window, error) {
 
 // WindowsWithContext is Windows with fields every window carries.
 func WindowsWithContext(def Definition, round int, context []Field, rows []Row) ([]Window, error) {
-	if def.Window < 1 {
+	if def.Window < 0 {
 		return nil, fmt.Errorf("table %s: window size %d", def.Stage, def.Window)
 	}
 	limit := def.MaxInputBytes
@@ -130,35 +131,77 @@ func WindowsWithContext(def Definition, round int, context []Field, rows []Row) 
 		return nil, fmt.Errorf("table %s: input budget must be positive", def.Stage)
 	}
 	var windows []Window
-	// Split complete rows; shared context and every row's fields survive.
-	// A single oversized row needs a different representation in its owner.
-	var appendWindow func([]Row) error
-	appendWindow = func(part []Row) error {
+	if len(rows) == 0 {
+		return windows, nil
+	}
+	empty, err := Request(def, Window{Context: context})
+	if err != nil {
+		return nil, err
+	}
+	baseSize := len(def.System) + len(empty)
+	appendWindow := func(part []Row) error {
 		window := Window{Stage: def.Stage, Round: round, Index: len(windows), Context: context, Rows: part}
 		request, err := Request(def, window)
 		if err != nil {
 			return err
 		}
-		if size := len(def.System) + len(request); size > limit {
-			if len(part) == 1 {
-				return fmt.Errorf("table %s: row %s needs %d input bytes, budget %d; reduce this row's evidence or shared context", def.Stage, part[0].ID, size, limit)
-			}
-			middle := len(part) / 2
-			if err := appendWindow(part[:middle]); err != nil {
-				return err
-			}
-			return appendWindow(part[middle:])
-		}
 		window.Request = request
 		windows = append(windows, window)
 		return nil
 	}
-	for start := 0; start < len(rows); start += def.Window {
-		if err := appendWindow(rows[start:min(start+def.Window, len(rows))]); err != nil {
-			return nil, err
+	// Measure with the same encoder as Request, including each window-local
+	// key. Fill consecutive complete rows until the next one no longer fits.
+	start, size := 0, baseSize
+	for i, row := range rows {
+		position := i - start
+		if def.Window > 0 && position == def.Window {
+			if err := appendWindow(rows[start:i]); err != nil {
+				return nil, err
+			}
+			start, position, size = i, 0, baseSize
 		}
+		var encoded jsonBuffer
+		writeRow(&encoded, position, row)
+		if encoded.err != nil {
+			return nil, fmt.Errorf("table %s: encode evidence: %w", def.Stage, encoded.err)
+		}
+		additional := encoded.Len()
+		if position > 0 {
+			additional += len(",\n")
+		}
+		if position > 0 && size+additional > limit {
+			if err := appendWindow(rows[start:i]); err != nil {
+				return nil, err
+			}
+			start, size = i, baseSize
+			encoded.Reset()
+			writeRow(&encoded, 0, row)
+			if encoded.err != nil {
+				return nil, fmt.Errorf("table %s: encode evidence: %w", def.Stage, encoded.err)
+			}
+			additional = encoded.Len()
+		}
+		if size+additional > limit {
+			return nil, fmt.Errorf("table %s: row %s needs %d input bytes, budget %d; reduce this row's evidence or shared context", def.Stage, row.ID, size+additional, limit)
+		}
+		size += additional
+	}
+	if err := appendWindow(rows[start:]); err != nil {
+		return nil, err
 	}
 	return windows, nil
+}
+
+func writeRow(out *jsonBuffer, index int, row Row) {
+	out.WriteString("    {\"key\": ")
+	writeJSON(out, Key(index))
+	for _, field := range row.Fields {
+		out.WriteString(", ")
+		writeJSON(out, field.Name)
+		out.WriteString(": ")
+		writeJSON(out, field.Value)
+	}
+	out.WriteString("}")
 }
 
 // Request is the exact user prompt of a window: one JSON object with the
@@ -217,15 +260,7 @@ func Request(def Definition, window Window) ([]byte, error) {
 		if i > 0 {
 			out.WriteString(",\n")
 		}
-		out.WriteString("    {\"key\": ")
-		writeJSON(&out, Key(i))
-		for _, field := range row.Fields {
-			out.WriteString(", ")
-			writeJSON(&out, field.Name)
-			out.WriteString(": ")
-			writeJSON(&out, field.Value)
-		}
-		out.WriteString("}")
+		writeRow(&out, i, row)
 	}
 	out.WriteString("\n  ]")
 	if def.ContextAfterRows {
