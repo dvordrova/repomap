@@ -11,11 +11,54 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
 type testValue struct {
 	Value string `json:"value"`
+}
+
+func TestProviderBackoffWaitsAcrossBatchesAndCannotBeShortened(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		controller := &BatchController{}
+		executor := Executor{BatchConcurrency: 4, BatchController: controller}
+		first := bindExecutorAttemptGate(t.Context(), executor)
+		release, err := AcquireProviderAttempt(first)
+		if err != nil {
+			t.Fatal(err)
+		}
+		BackoffProviderAttempts(first, time.Minute)
+		release()
+		second := bindExecutorAttemptGate(t.Context(), executor)
+		started := time.Now()
+		admitted := make(chan time.Time, 1)
+		go func() {
+			release, err := AcquireProviderAttempt(second)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			admitted <- time.Now()
+			release()
+		}()
+		time.Sleep(20 * time.Second)
+		BackoffProviderAttempts(second, time.Second)
+		select {
+		case <-admitted:
+			t.Fatal("a new batch bypassed the rate-limit wait")
+		default:
+		}
+		time.Sleep(20 * time.Second)
+		BackoffProviderAttempts(second, time.Minute)
+		when := <-admitted
+		if delay := when.Sub(started); delay != 100*time.Second {
+			t.Fatalf("shared cooldown=%v, want extension to 100s", delay)
+		}
+		if limit := controller.bind(4).currentLimit(); limit != 1 {
+			t.Fatalf("limit=%d, want 1", limit)
+		}
+	})
 }
 
 type classifiedTestProviderError struct {

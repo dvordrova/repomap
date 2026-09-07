@@ -144,6 +144,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		lastErr       error
 		attempts      int
 		responseBytes int
+		retryDelay    time.Duration
 	)
 	for attempt := 1; attempt <= maxRetries+1; attempt++ {
 		if attempt > 1 {
@@ -151,7 +152,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 			case <-ctx.Done():
 				completion := llmCompletion(last, attempts, responseBytes, time.Since(started))
 				return completion, closedLLMProviderError("complete", ctx.Err(), attempts, false)
-			case <-time.After(backoffDuration(attempt - 1)):
+			case <-time.After(retryDelay):
 			}
 		}
 		releaseAttempt, acquireErr := llm.AcquireProviderAttempt(ctx)
@@ -164,7 +165,10 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 			ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body,
 		)
 		if providerRateLimited(err) {
-			llm.CollapseProviderAttempts(ctx)
+			retryDelay = max(minimumRateLimitBackoff, completion.retryAfter)
+			llm.BackoffProviderAttempts(ctx, retryDelay)
+		} else {
+			retryDelay = backoffDuration(attempt)
 		}
 		releaseAttempt()
 		attempts = attempt

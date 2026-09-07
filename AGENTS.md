@@ -244,9 +244,12 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   caller's item index as the only in-memory result slot and replay observer
   events in that order; do not add a random batch identity to semantic or cache
   state. Every provider transport attempt acquires the run-shared adaptive
-  gate. An HTTP 429 collapses that gate to one before the provider's existing
-  backoff/retry, so already-started attempts finish while that retry and every
-  new attempt become serial. `ExecuteJSONBatch` fails closed: a terminal item
+  gate. An HTTP 429 collapses that gate to one and pauses new attempts for at
+  least one minute, honoring a longer Retry-After seconds/date value. Later
+  429s can extend but never shorten that shared cooldown. Already-started
+  attempts finish while retries and new calls wait and then become serial.
+  Cancellation interrupts the wait; other retryable failures retain their
+  short backoff. `ExecuteJSONBatch` fails closed: a terminal item
   error cancels the batch child context, prevents queued items from starting,
   and the owning stage rejects the complete batch. `ExecuteJSONEach` is the
   table form: the same pool, gate and observer, but one window's failure

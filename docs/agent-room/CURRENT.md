@@ -3265,6 +3265,20 @@ No successful report contains deliberately inert source links.
 
 ## Model execution contract
 
+The owner's 2026-09-07 transport rule requires at least one minute before a
+retry after HTTP 429. The provider now uses that floor and honors a longer
+Retry-After delay in seconds or HTTP-date form. Its run-shared attempt gate
+pauses new calls from sibling batches for the same interval and collapses to
+one concurrent attempt; later rate limits may extend but never shorten the
+pause. In-flight requests may finish and cancellation interrupts waiting.
+Other retryable failures keep the existing short exponential backoff. This
+transport-only change preserves prepared bytes, memo identities and the
+three-retry allowance. Virtual-clock tests cover the floor, both header forms,
+exhaustion, cancellation, and cooldown sharing/extension across batches.
+A three-request simultaneous 429 burst with Retry-After values of 30, 90 and
+120 seconds waits for the longest shared deadline, then retries all three
+serially. That scenario passed ten repetitions under the race detector.
+
 Each model-assisted stage owns its state, complete input authority,
 provider-sized request preparation, prompt, response schema, restoration, and
 semantic validation. Static prompt prose lives in readable Markdown beside

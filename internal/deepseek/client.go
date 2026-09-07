@@ -35,6 +35,7 @@ const (
 	// REPOMAP_LLM_TIMEOUT changes it; nothing here is in a cache key.
 	defaultTimeout              = 10 * time.Minute
 	defaultWaitProgressInterval = 10 * time.Second
+	minimumRateLimitBackoff     = time.Minute
 
 	authBearer = "bearer"
 	authNone   = "none"
@@ -422,6 +423,7 @@ type chatCompletion struct {
 	PromptCacheHitTokens  int
 	PromptCacheMissTokens int
 	finishReasonClass     string
+	retryAfter            time.Duration
 }
 
 func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte) (chatCompletion, bool, error) {
@@ -479,6 +481,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		return chatCompletion{
 			Content:       append([]byte(nil), respBody...),
 			ResponseBytes: len(respBody),
+			retryAfter:    retryAfterDuration(resp.Header.Get("Retry-After"), time.Now()),
 		}, retry, newProviderTransportError(
 			llm.ProviderFailureHTTPStatus,
 			resp.StatusCode,
@@ -652,4 +655,21 @@ func backoffDuration(attempt int) time.Duration {
 	base := time.Duration(1<<(attempt-1)) * 500 * time.Millisecond
 	jitter := time.Duration(float64(base) * (0.5 + rand.Float64()*0.5))
 	return jitter
+}
+
+func retryAfterDuration(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if seconds, err := strconv.ParseUint(value, 10, 64); err == nil {
+		// Saturate before converting seconds to nanoseconds; a long server wait
+		// must never overflow into an immediate retry.
+		const maxDuration = time.Duration(1<<63 - 1)
+		if seconds > uint64(maxDuration/time.Second) {
+			return maxDuration
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if date, err := http.ParseTime(value); err == nil && date.After(now) {
+		return date.Sub(now)
+	}
+	return 0
 }

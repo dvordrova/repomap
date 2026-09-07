@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 // BatchController carries one adaptive provider-attempt gate across batches
@@ -34,6 +35,7 @@ type attemptGate struct {
 	limit   int
 	active  int
 	changed chan struct{}
+	retryAt time.Time
 }
 
 func newAttemptGate(limit int) *attemptGate {
@@ -53,7 +55,8 @@ func (gate *attemptGate) acquire(ctx context.Context) (func(), error) {
 			gate.mu.Unlock()
 			return nil, err
 		}
-		if gate.active < gate.limit {
+		remaining := time.Until(gate.retryAt)
+		if gate.active < gate.limit && remaining <= 0 {
 			gate.active++
 			gate.mu.Unlock()
 			if err := ctx.Err(); err != nil {
@@ -67,10 +70,23 @@ func (gate *attemptGate) acquire(ctx context.Context) (func(), error) {
 		}
 		changed := gate.changed
 		gate.mu.Unlock()
+		var timer *time.Timer
+		var ready <-chan time.Time
+		if remaining > 0 {
+			timer = time.NewTimer(remaining)
+			ready = timer.C
+		}
 		select {
 		case <-changed:
+		case <-ready:
 		case <-ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
 			return nil, ctx.Err()
+		}
+		if timer != nil {
+			timer.Stop()
 		}
 	}
 }
@@ -85,12 +101,24 @@ func (gate *attemptGate) release() {
 }
 
 func (gate *attemptGate) collapse() {
+	gate.backoff(0)
+}
+
+func (gate *attemptGate) backoff(delay time.Duration) {
 	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	changed := false
 	if gate.limit > 1 {
 		gate.limit = 1
+		changed = true
+	}
+	if next := time.Now().Add(delay); delay > 0 && next.After(gate.retryAt) {
+		gate.retryAt = next
+		changed = true
+	}
+	if changed {
 		gate.signalLocked()
 	}
-	gate.mu.Unlock()
 }
 
 func (gate *attemptGate) currentLimit() int {
@@ -147,5 +175,14 @@ func CollapseProviderAttempts(ctx context.Context) {
 	gate := attemptGateForContext(ctx)
 	if gate != nil {
 		gate.collapse()
+	}
+}
+
+// BackoffProviderAttempts atomically serializes the shared gate and postpones
+// every new attempt. Later overloads may extend, but never shorten, the wait.
+// Already-started requests may finish; cancellation interrupts queued waits.
+func BackoffProviderAttempts(ctx context.Context, delay time.Duration) {
+	if gate := attemptGateForContext(ctx); gate != nil {
+		gate.backoff(delay)
 	}
 }

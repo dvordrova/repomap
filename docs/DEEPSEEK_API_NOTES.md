@@ -49,10 +49,17 @@ comes from the caller's environment.
 - The serialized request is immutable across transport retries. Retryable
   network errors and HTTP statuses receive at most three retries after the
   first attempt; schema or semantic rejection never triggers a new model call.
+- After HTTP 429, each retry waits at least one minute. A longer `Retry-After`
+  delay, expressed in seconds or as an HTTP date, is honored. An absent,
+  invalid, expired or shorter header retains the one-minute minimum. The
+  wait can be canceled and does not change request bytes or cache identity.
+  Other retryable failures keep their existing short exponential backoff.
 - Independent batch calls start behind a run-shared bounded attempt gate. The
   ordinary product limit is four live provider attempts. A DeepSeek HTTP 429
-  atomically collapses that gate to one before releasing the failed attempt and
-  entering the existing retry backoff. Attempts already on the wire are not
+  atomically collapses that gate to one and sets the same cooldown before
+  releasing the failed attempt. New calls in other batches sharing this gate
+  also wait; another 429 may extend, but never shorten, the cooldown.
+  Attempts already on the wire are not
   replayed or canceled merely because of the 429; once they finish, that retry
   and all later attempts in the run are serialized. If retries are exhausted,
   the terminal batch item cancels the batch child context, stops queued work,

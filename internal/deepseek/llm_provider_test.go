@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/llm"
@@ -296,6 +297,10 @@ func TestLLMProviderSupportsConcurrentExecutorBatch(t *testing.T) {
 }
 
 func TestLLMProviderRateLimitCollapsesSharedAttemptGateBeforeRetry(t *testing.T) {
+	synctest.Test(t, testLLMProviderRateLimitCollapsesSharedAttemptGateBeforeRetry)
+}
+
+func testLLMProviderRateLimitCollapsesSharedAttemptGateBeforeRetry(t *testing.T) {
 	type attemptEvent struct {
 		user    string
 		attempt int
@@ -313,7 +318,7 @@ func TestLLMProviderRateLimitCollapsesSharedAttemptGateBeforeRetry(t *testing.T)
 		maxActive int
 	)
 	success := llmProviderResponse("stop", `{"ok":true}`, nil)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		body, _ := io.ReadAll(request.Body)
 		_ = request.Body.Close()
 		var wire chatRequest
@@ -353,8 +358,7 @@ func TestLLMProviderRateLimitCollapsesSharedAttemptGateBeforeRetry(t *testing.T)
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(success)
-	}))
-	defer server.Close()
+	})
 	defer func() {
 		for _, release := range releases {
 			select {
@@ -395,7 +399,7 @@ func TestLLMProviderRateLimitCollapsesSharedAttemptGateBeforeRetry(t *testing.T)
 	executor := llm.Executor{
 		Enabled: false, BatchConcurrency: 3, BatchController: controller,
 	}
-	client := llmProviderTestClient(server)
+	client := llmProviderHandlerClient(handler)
 	firstDone := make(chan result, 1)
 	go func() {
 		outcomes, err := llm.ExecuteJSONBatch(
@@ -432,7 +436,7 @@ func TestLLMProviderRateLimitCollapsesSharedAttemptGateBeforeRetry(t *testing.T)
 	var retry attemptEvent
 	select {
 	case retry = <-started:
-	case <-time.After(2 * time.Second):
+	case <-time.After(61 * time.Second):
 		t.Fatal("rate-limited request did not retry")
 	}
 	if retry.user != "two" || retry.attempt != 2 || retry.active != 1 {
@@ -594,19 +598,23 @@ func TestLLMProviderErrorsAreClosedButRetainTypedCause(t *testing.T) {
 }
 
 func TestLLMProviderHTTPRetryExhaustionIsStructured(t *testing.T) {
+	synctest.Test(t, testLLMProviderHTTPRetryExhaustionIsStructured)
+}
+
+func testLLMProviderHTTPRetryExhaustionIsStructured(t *testing.T) {
 	var (
 		mu    sync.Mutex
 		calls int
 	)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
 		writer.WriteHeader(http.StatusTooManyRequests)
 		_, _ = writer.Write([]byte(`{"error":"rate limited"}`))
-	}))
-	defer server.Close()
-	client := llmProviderTestClient(server)
+	})
+	client := llmProviderHandlerClient(handler)
+	started := time.Now()
 	outcome, err := llm.ExecuteJSON[map[string]any](
 		context.Background(), llm.Executor{Enabled: false}, client, llmProviderFailureCall(),
 	)
@@ -622,6 +630,9 @@ func TestLLMProviderHTTPRetryExhaustionIsStructured(t *testing.T) {
 		failure.Attempts != maxRetries+1 || !failure.RetryExhausted ||
 		outcome.Metrics.Attempts != maxRetries+1 || gotCalls != maxRetries+1 {
 		t.Fatalf("retry exhaustion = %#v / metrics=%#v / calls=%d", failure, outcome.Metrics, gotCalls)
+	}
+	if elapsed := time.Since(started); elapsed != 3*time.Minute {
+		t.Fatalf("429 retries waited %v, want one minute before each retry", elapsed)
 	}
 	rendered := err.Error()
 	if !strings.Contains(rendered, "class=http_status status=429 attempts=4 retries_exhausted=true") ||
@@ -707,6 +718,168 @@ func llmProviderFailureCall() llm.Call[map[string]any] {
 
 type failingRoundTripper struct {
 	err error
+}
+
+type handlerRoundTripper struct{ handler http.Handler }
+
+func (transport handlerRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	recorder := httptest.NewRecorder()
+	transport.handler.ServeHTTP(recorder, request)
+	return recorder.Result(), nil
+}
+
+func llmProviderHandlerClient(handler http.Handler) *Client {
+	return &Client{
+		HTTPClient: &http.Client{Transport: handlerRoundTripper{handler}},
+		Model:      "test-model", MaxTokens: 100,
+		Endpoint: "https://provider.example/chat/completions", Auth: authNone,
+	}
+}
+
+func TestLLMProviderRateLimitWaitUsesMinuteFloorAndRetryAfter(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		header     string
+		dateOffset time.Duration
+		want       time.Duration
+	}{
+		{name: "missing", want: time.Minute},
+		{name: "short", header: "5", want: time.Minute},
+		{name: "zero", header: "0", want: time.Minute},
+		{name: "longer", header: "90", want: 90 * time.Second},
+		{name: "date", dateOffset: 2 * time.Minute, want: 2 * time.Minute},
+		{name: "past date", dateOffset: -time.Minute, want: time.Minute},
+		{name: "invalid", header: "not a date", want: time.Minute},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var bodies [][]byte
+				var starts []time.Time
+				client := llmProviderHandlerClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					body, _ := io.ReadAll(r.Body)
+					bodies = append(bodies, body)
+					starts = append(starts, time.Now())
+					if len(starts) == 1 {
+						header := test.header
+						if test.dateOffset != 0 {
+							header = time.Now().Add(test.dateOffset).UTC().Format(http.TimeFormat)
+						}
+						w.Header().Set("Retry-After", header)
+						w.WriteHeader(http.StatusTooManyRequests)
+						return
+					}
+					_, _ = w.Write(llmProviderResponse("stop", `{"ok":true}`, nil))
+				}))
+				outcome, err := llm.ExecuteJSON[map[string]any](t.Context(), llm.Executor{}, client, llmProviderFailureCall())
+				if err != nil || len(starts) != 2 || outcome.Metrics.Attempts != 2 {
+					t.Fatalf("attempts=%v outcome=%#v error=%v", starts, outcome, err)
+				}
+				if delay := starts[1].Sub(starts[0]); delay != test.want {
+					t.Fatalf("retry delay=%v, want %v", delay, test.want)
+				}
+				if !bytes.Equal(bodies[0], bodies[1]) {
+					t.Fatal("retry changed prepared request bytes")
+				}
+			})
+		})
+	}
+}
+
+func TestLLMProviderRateLimitWaitCanBeCanceled(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		calls := 0
+		client := llmProviderHandlerClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			w.Header().Set("Retry-After", "90")
+			w.WriteHeader(http.StatusTooManyRequests)
+			go func() { time.Sleep(10 * time.Second); cancel() }()
+		}))
+		started := time.Now()
+		_, err := llm.ExecuteJSON[map[string]any](ctx, llm.Executor{}, client, llmProviderFailureCall())
+		if !errors.Is(err, context.Canceled) || calls != 1 || time.Since(started) != 10*time.Second {
+			t.Fatalf("cancel wait: calls=%d elapsed=%v err=%v", calls, time.Since(started), err)
+		}
+	})
+}
+
+func TestLLMProviderConcurrentRateLimitsShareLongestWaitAndRetrySerially(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		initial := make(chan struct{}, 3)
+		releaseInitial := make(chan struct{})
+		headers := map[string]string{"one": "30", "two": "90", "three": "120"}
+		var mu sync.Mutex
+		attempts := map[string]int{}
+		var retryStarts []time.Time
+		activeRetries, maxActiveRetries := 0, 0
+		client := llmProviderHandlerClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var request chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+				return
+			}
+			user := request.Messages[1].Content
+			mu.Lock()
+			attempts[user]++
+			attempt := attempts[user]
+			mu.Unlock()
+			if attempt == 1 {
+				initial <- struct{}{}
+				<-releaseInitial
+				w.Header().Set("Retry-After", headers[user])
+				w.WriteHeader(http.StatusTooManyRequests)
+				return
+			}
+			mu.Lock()
+			retryStarts = append(retryStarts, time.Now())
+			activeRetries++
+			maxActiveRetries = max(maxActiveRetries, activeRetries)
+			mu.Unlock()
+			time.Sleep(time.Second)
+			_, _ = w.Write(llmProviderResponse("stop", `{"ok":true}`, nil))
+			mu.Lock()
+			activeRetries--
+			mu.Unlock()
+		}))
+		var calls []llm.Call[map[string]any]
+		for _, user := range []string{"one", "two", "three"} {
+			call := llmProviderFailureCall()
+			call.Prompt.User = user
+			calls = append(calls, call)
+		}
+		done := make(chan error, 1)
+		go func() {
+			outcomes, err := llm.ExecuteJSONBatch(t.Context(), llm.Executor{BatchConcurrency: 3}, client, calls)
+			if err == nil && len(outcomes) != 3 {
+				t.Errorf("outcomes=%d, want 3", len(outcomes))
+			}
+			done <- err
+		}()
+		for range 3 {
+			<-initial
+		}
+		limitedAt := time.Now()
+		close(releaseInitial)
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(retryStarts) != 3 || maxActiveRetries != 1 || activeRetries != 0 {
+			t.Fatalf("starts=%v concurrent retries=%d active=%d", retryStarts, maxActiveRetries, activeRetries)
+		}
+		for user, count := range attempts {
+			if count != 2 {
+				t.Errorf("%s attempts=%d, want 2", user, count)
+			}
+		}
+		for _, start := range retryStarts {
+			if start.Sub(limitedAt) < 2*time.Minute {
+				t.Errorf("retry started after %v, before longest Retry-After", start.Sub(limitedAt))
+			}
+		}
+	})
 }
 
 func (transport failingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
