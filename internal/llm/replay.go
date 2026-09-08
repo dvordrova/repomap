@@ -28,7 +28,7 @@ func ReplayJSON(ctx context.Context, executor Executor, provider Provider, prepa
 	if _, err := SavePayload(executor.RootDir, request); err != nil {
 		return outcome, err
 	}
-	outcome, callErr := executeLive(bindExecutorAttemptGate(ctx, executor), executor, provider, prepared, DecodeJSON[json.RawMessage](nil), limits, outcome)
+	outcome, callErr := executeLive(bindExecutorAttemptGate(ctx, executor), executor, provider, prepared, DecodeJSON[json.RawMessage](nil), limits, outcome, &AdaptedResponse{})
 	if len(outcome.Response) > 0 {
 		if _, err := SavePayload(executor.RootDir, outcome.Response); err != nil {
 			return outcome, err

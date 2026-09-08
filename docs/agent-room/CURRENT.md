@@ -25,7 +25,7 @@ generation variants; the server reads a run directory and serves it. Where
 a section below still describes verification, receipts, thresholds or
 allow-lists, it describes history.
 
-Added the same day: every stage line prints `(t+…)`, every exchange record
+Added the same day: console events carry timing, every exchange record
 carries `latency_ms` and token counts, and a run closes with a `Time`
 stage per target; the page shows the authors' docstrings on cards, the
 README's own overview and quotes from every README, and gains a find box
@@ -1393,8 +1393,9 @@ format migration or alternate editor fallback. Global configuration remains
 deferred. Owner questions supplement useful product defaults and use the existing
 graph and accumulated descriptions. The reader prepares question evidence once,
 then retrieves and selects independently for each question. Configured questions
-come first; repeated --question flags append distinct, trimmed texts. Reordering
-or adding questions does not alter another question's provider request. Each
+come first; repeated --question flags append distinct, trimmed texts. At that earlier per-question stage, reordering or adding questions did not alter
+another question's provider request. The shared final-answer batch described
+below now invalidates its whole window when a question is added. Each
 question has hash-prefixed table references, so its journals cannot overwrite
 those of a neighbour. The common report contains all routes in memory and in
 JSON, with collapsed guides below the map. No automatic question collection is
@@ -1729,7 +1730,197 @@ named declaration and source location. They are collapsed by default and retain
 the original explanation, source and every map membership. The shared term
 catalog has addressable entries; following a term reveals its page even through
 an existing search filter. Name-only guesses and another type at the same source
-line cannot supply an answer's term definition. Report format is v82.
+line cannot supply an answer's term definition.
+
+On 2026-09-08 the owner extended this into one shared glossary: collect terms
+alongside analytical cube results, reduce them, bind them in the backend report,
+then translate and decorate visible text. `internal/terminology` owns the
+embedded adjunct prompt and closed source contract. Source-bearing analytical
+calls return `{result, terms}` in the same request. Each owning stage supplies
+its actual JSON `ResponseExample`; the adjunct wraps that shape rather than
+inferring it from prose. Table examples depend only on their column contract,
+so batch neighbours cannot change a row's memo identity. Calls with no usable
+source refs pass through without a terminology prompt or response protocol.
+
+A term is a name and explanation, with its closed source refs restored locally
+and the accepted request plus result row retained. It must occur in the computed answer and
+have a valid source. Go finds exact occurrences and row scopes; the model does
+not enumerate input declarations or construct JSON Pointers. Unicode script
+boundaries include names followed by Korean particles without splitting Latin
+identifiers or combining marks. Domain answers and optional terminology are
+validated independently. A bad or absent term never rejects a correct answer;
+rejected metadata is recorded separately in the existing journal and never
+enters the glossary. One parsed response also serves memo-row restoration,
+which only collects metadata for accepted rows and their original source scope.
+Exact raw exchanges remain the cache/replay authority, including a domain-accepted
+response whose optional terms were refused. Provider state remains the base
+transport state so exact saved-byte replay refreshes the same cache.
+
+Two real PyKrx Types responses placed optional `terms` inside `result` despite
+the explicit outer-sibling instruction. The adapter discards that one misplaced
+metadata field only when the owning answer example does not declare it, records
+`terminology_metadata_rejected`, and validates the remaining domain normally.
+Those definitions never enter the glossary. Legitimate owning `terms` fields,
+unknown domain fields, row fields and invalid cells keep their strict contract.
+Raw responses, request bytes and cache identities are unchanged; this is the
+same optional-metadata boundary on live responses, warm reuse and replay.
+
+The ordinary run shares one collector across analytical stages. After analysis,
+an aggregate closed-ref reducer joins compatible domain definitions and chooses
+one original explanation. Go unions original spellings and sources and retains
+all variants and request provenance. It does not classify translation policies.
+Equal names alone never establish equal meanings. Complete groups partition only
+when the provider envelope requires it; a nonshrinking round records partial
+comparison. A refused model window leaves its already accepted input definitions
+separate and stops retrying them in that reduction. Cancellation, invalid local
+inputs/configuration and persistence failures remain terminal. Existing native
+code concepts enter the final glossary directly, with whole source anchors and
+map/question destinations. There is no native-to-candidate-to-native conversion.
+Distinct declarations on one line keep their columns and identities; the same
+exact declaration can retain memberships in several components.
+`terminology.json` holds domain candidates; `glossary.json` and
+`ReportData.Glossary` hold the sealed domain catalogue. Reduction and translation
+use the base provider without recursively collecting another glossary. Saved
+`read` collects candidates without stages beyond the requested stop.
+
+Report format is v85; question readings v9 retain the accepted final-answer
+request digest and exact result row for contextual term bindings. Domain glossary
+catalogue v3 preserves those origins through reduction without sending them to
+the provider or making them part of a semantic candidate identity. Display text
+catalogue v5 uses translation contract v8.
+
+The owner's clarified 2026-09-08 design keeps every glossary name in its original
+spelling. A later clarification adds an optional English Alias beside a native
+declaration name, including in Russian reports. Symbols v6 and Types v6 request
+that short label together with the existing explanation. The accepted cell flows
+through Knowledge, atlas v3 and GroupsIndex v6 into the ordinary report. Native
+names, IDs, locations and source links are unchanged. The alias is display prose,
+not a new observation or another graph. The renderer does not infer a name from
+its alphabet or shorten a description into one. Cards show the short alias with
+the native code name; the full translated explanation belongs to the selected
+detail. Both saved names can lead to one glossary definition by literal lookup.
+
+Translation receives names and definitions as context and returns only
+translated text: definitions and surrounding prose change language, names do not.
+Go looks up exact complete names in the final text and binds UTF-16 spans to the
+existing display slots. Source-owned question context narrows the available
+entries; an otherwise ambiguous spelling offers separate definitions. This is a
+dictionary lookup, not a claim that code determined the meaning of an occurrence.
+The same lookup works in English, translated prose and literal display slots.
+Longest complete names win at a shared start, without overlapping highlights;
+identifier and script boundaries reject HMMish while allowing Korean HMM과.
+Code, commands, paths and links remain outside inline lookup. Their original
+source placeholders are restored once before matching, without recursive parsing.
+
+The preceding M-marker experiment and its per-occurrence model decisions were
+removed. Ordinary fixture translation had swapped simulation/Field hints when
+reordering words; PyKrx likewise attached ticker to DataFrame. These failures
+were caused by the translator carrying source occurrence numbers into a new word
+order. There are now no source occurrence numbers or translation-side meaning
+choices to synchronize. A translated name that violates the spelling instruction
+simply has no exact hint; the report never guesses an additional spelling or repairs prose.
+No native-name guard, morphological matcher or additional provider call remains.
+
+The static glossary supplies original names, translated definitions, source links
+and question/map destinations. Browser hints show those same definitions beside
+locally matched words. Display refs travel with prose slots and dynamic map
+content; identical text in separate slots does not cause their definitions to
+merge. Formal saved rendering uses the report and bound translations with zero
+provider calls. Ordinary PyKrx and fixture acceptance results follow below.
+
+The same-directory component collision is fixed in the shared label composition:
+when both directory and component kind coincide, navigation retains the native
+module name (for example, `pykrx.website.krx.etx.core`, `.ticker` and `.wrap`).
+Localization changes only the existing kind suffix and reuses those exact
+destinations for glossary, question and map links. It no longer reconstructs a
+short label from the shared directory and loses the distinguishing module.
+Part inspector actions stretch across their container with a transparent
+background; the earlier squeezed white strip and mismatched action baselines
+are gone. Existing SVG titles retain their font and prepared lines: the explorer
+measures those lines and expands each node to keep its horizontal padding.
+It does not add another wrapping algorithm or clip the title.
+
+Literal-name acceptance before aliases completed on PyKrx `130937` and fixture
+`132612`: exact bindings, source syntax, dynamic hints, Escape and named returns
+passed independent browser checks. Name preservation by the translator remains
+a prompt requirement, not a hard semantic validator: 14/77 inspected PyKrx name
+occurrences and 35/73 fixture occurrences became translated ordinary prose.
+They correctly have no literal hint; code and paths retained their exact bytes.
+Alias fixture `135436` subsequently completed a warm ordinary run in 7.7 seconds
+with zero provider calls, two complete target pages and 14 questions (ten answered,
+four partial). Its native English names needed no aliases; this is not positive
+evidence for the Korean-name case. Directed browser checks retained native Field,
+sources, compact cards, hints and named return.
+
+Final PyKrx `20260908-140335-pykrx-98a43799df92` completed in 618.4 seconds
+with all 22 component pages and all 56 Types rows accepted. Its 19 final answers
+shared one provider request: seventeen answered, two partial, no refused answer
+rows. The five Korean declarations in `pykrx/website/krx/items/core.py` now have
+accepted English aliases, including `Individual stock price trend` beside
+`개별종목_시세_추이`. Native names and exact declaration anchors remain intact.
+The fresh glossary reduction produced 40 domain entries; native code concepts
+still enter the report separately through their existing interpretations.
+The warm ordinary run `20260908-141435-pykrx-fdcc9785ebd9` completed in 62.1
+seconds with the same question states and zero live provider requests.
+Both runs retain every required owner and target-local publication artifact.
+
+Directed desktop browser acceptance on final PyKrx checked all five original
+Korean-name cards, their English aliases and original source lines, the selected
+Russian explanation, and Browser Back restoring the same member. The footer
+now spans its full container; the stock title fits with 11px horizontal insets.
+The glossary uses the Russian model-explanation badge, and the answer's map
+link aligns below its full-row label. No browser errors were observed on these
+paths. Screenshots and the exact part URL are recorded in
+`work/pykrx-final-alias-visual-receipt.md`. This is a directed check of the changed
+presentation, not a new exhaustive review of every answer or glossary page.
+An independent binding audit checked 510 literal spans and 875 rendered hint
+buttons across the final report, with no wrong spellings, excluded-code hints or
+broken question destinations. All five Korean/English name pairs were found
+through both report and glossary search, sharing their original identities.
+Selecting each of the five map cards retained both names, its Russian
+explanation and the exact source links. The binding receipt is
+`work/positive-alias-pykrx-bindings.json`.
+
+Formal saved render checks on final PyKrx and fixture `135436` used isolated
+copies of the saved report and response cache. Rendering before and after the
+ordinary `cache clear` command produced byte-identical HTML to the corresponding
+ordinary run, made zero provider requests and left the saved inputs unchanged.
+The original response caches were preserved. Receipts are
+`work/alias-acceptance-20260908-140335-pykrx-98a43799df92.json`,
+`work/alias-acceptance-20260908-141435-pykrx-fdcc9785ebd9.json`, and
+`work/alias-render-cache-clear-acceptance-runs-glossary-{pykrx,fixture}/acceptance.json`.
+
+The shared final-answer batch also has an explicit failure scope: exploratory
+fixture `130455` returned fifteen rows, but one `unanswered` row supplied no
+required remaining gap. The table rejected the complete window and exposed its
+fifteen answers as unavailable. No answer text was repaired or retained from
+that rejected window. That report is not acceptance evidence.
+
+Real answer exchanges also exposed ambiguity between the answer's string-valued
+`sources` and the terminology array-valued `sources`, plus an owning top-level
+shape competing with the terminology wrapper. The shared adjunct now explicitly
+places the owning shape under `result` and declares term sources as a JSON array.
+Malformed JSON is still refused unchanged. These prompt changes invalidate exact
+requests; comparisons after them must not claim unchanged retrieval or evidence
+unless those artifacts were explicitly checked. The final ordinary and warm
+acceptance runs above use the current prompt contracts.
+
+Closing provider timing includes live attempts whose transport, response, or
+validation failed. A cached response's historical latency and failures before
+any transport attempt do not add live work. The same shared observer supplies
+these counts and the existing semantic journal; rejected requests do not vanish
+from the summary merely because no answer was accepted.
+
+Console events now use `[123.456 +2.310]`: seconds since the invocation began,
+then seconds since its previous printed event. One logical event has one prefix;
+continuation lines align under its body. Child targets share the console clock
+while retaining separate provider accounting. Suppressed progress and accounting
+updates do not advance the visible delta. Ordinary, read and replay errors and
+long-call heartbeats use that same clock, preserving their existing output
+streams. Heartbeat throttling compares wall-clock instants, not elapsed durations
+from different requests: a shorter new request can no longer disappear behind
+the preceding long request's duration. No request bytes or saved metric schemas
+changed for this console presentation.
 
 Ordinary acceptance on public python-tutorial-game: `20260906-182915-…`
 completed in 146 seconds with 16 automatic questions plus two explicit ones;
@@ -1898,25 +2089,44 @@ dependency installation still unresolved. The first attempt exhausted the old
 8192-token ceiling; neither that rejection nor the successful development read
 constitutes ordinary report acceptance. The new ordinary check is pending.
 
-The question pass takes already supplied text, retrieves anchored evidence and
-selects a reading route. It now appends `atlas_answer`, a brief grounded answer
-over those selected original anchors, through the same executor and cache.
-Route artifacts are v7; retrieval is v6 and the answer table is v6.
-Route-selection v7 treats the preferred six sources as a writing preference
-in every round, not a validation limit. Complete original candidates are split
-by the configured input-byte budget, without a 24-candidate ceiling. Every
-round either shrinks the selected set, produces the final accepted reading,
-or ends at a fixed point with separate accepted reading parts. The parts keep
-their own order, gap and model/cache provenance; the report does not imply an
-order between them. Their exact union supplies original evidence to the answer.
-Missing or rejected windows remain distinct from these valid independent
-readings. Answer table v6 retains labelled prior hypotheses alongside original
-evidence. `read --through answer` isolates that final stage. An answer records
-its text, basis, source locations, remaining gap and status independently of the
-reading route. Missing evidence is unanswered; a rejected model window is
-unavailable. A substantive answer or not-applicable explanation needs source
-refs, and incomplete coverage cannot establish inapplicability. Multiple
-evidence windows preserve their original sources as partial answer parts.
+The question pass retrieves anchored evidence for all questions together, then
+answers them in one shared reasoning batch. The 2026-09-08 AI/ML, prompt and
+simplicity review removed the separate route selector: it read the same original
+evidence, while final answers already returned source refs. The supporting guide
+now projects those refs in their accepted reading order. It has no independent
+open question or reduction-round authority. Question readings are v9 and the
+answer contract is v7. `read --through question` isolates retrieval;
+`--through answer` runs the combined final stage. `--through route` fails with
+explicit migration guidance rather than silently selecting another operation.
+
+The batch carries exact original source records once, each question's own allowed
+refs, scope and retrieval coverage. It does not borrow another question's
+sources or reinterpret existing file connections as symbol calls. Canonical
+question/source ordering preserves exact-request reuse on reordering; output
+returns in the user's order. Exact shared-request caching remains authoritative:
+adding a question regenerates the changed answer window. Per-question answer
+memos are deliberately absent until their independence and cost justify them.
+This differs from retrieval's existing per-question memo.
+
+Ordinary preparation uses the actual provider envelope with no question quota
+or 64 KiB planning cap. Resource refusals split independent questions first and
+recompute each child's complete source union. Only an oversized singleton
+question partitions its original evidence into separately anchored answer parts.
+Every successful sibling survives. A malformed model response refuses its whole
+window; it is not repaired or used as a reason for speculative retries. Local
+preparation, configuration, cancellation and persistence failures remain errors.
+Missing evidence is unanswered; a refused model window is unavailable. A
+substantive answer or not-applicable explanation needs its own source refs;
+incomplete retrieval or partial evidence cannot establish inapplicability.
+
+The exact baseline on PyKrx `20260908-113211-pykrx-04f78dfccdec` had 17 route
+calls and 17 answer calls: 139,343 input and 137,638 output tokens, with summed
+provider latency 19m04.929s. Fifteen final answers were accepted and two had
+malformed JSON; 93.9% of accepted answer output tokens were reasoning. Shared
+retrieval was one additional call (136,470 input, 15,220 output, 126.764s).
+The run failed later on malformed orientation JSON, so these are stage baselines,
+not a successfully published report. Combined-batch acceptance is in progress.
+
 The final answer table requests provider-supported deliberate reasoning. On
 2026-09-07 the owner rejected the arbitrary small generation ceilings after a
 valid answer request exhausted its 8192-token reasoning/output allowance.
@@ -1935,10 +2145,8 @@ its status. The original question determines both coverage and depth: an overvie
 does not require exact payload fields or internal branches, while a question
 explicitly asking for those details does. Silent omission of a requested part
 cannot become a complete answer merely because the remaining prose is useful.
-The route's open question remains in the saved supporting reading, but is no
-longer included as an extra task in the final answer input. Its earlier model
-uncertainty must not overrule positive source evidence, such as an observed
-Python script entrypoint. The answer briefly explains unfamiliar names needed
+Prior model uncertainty must not overrule positive source evidence, such as an
+observed Python script entrypoint. The answer briefly explains unfamiliar names needed
 for the requested action. No second review stage, new graph or local semantic
 status repair is added.
 
@@ -2121,9 +2329,10 @@ Interface methods have no invented direct-call nodes or implementation edges.
 Claims now capture documentation attached to those explicit declarations, and
 type context keeps the existing bounded author quote rather than reducing it
 again to its first sentence. Ordinary file/callable context remains unchanged.
-Atlas graph and saved reading input are version 8. The independent type table
-`repomap.atlas.types.v5` returns an explanation and key flag; ordinary callable
-rows retain their previous prompt and memo contract. A type's file hypothesis
+Atlas graph and saved reading input are version 9. The independent type table
+`repomap.atlas.types.v6` returns an explanation, key flag and optional English
+alias; callable Symbols v6 shares the alias cell in its existing review.
+A type's file hypothesis
 is not supplied as factual evidence. Bare names without owned declarations or
 author documentation remain source entries without a generated definition.
 An initial ordinary run demonstrated why: the model invented active/completed
@@ -3677,15 +3886,17 @@ extra `protected` field. The first wire format subsequently tolerated that
 irrelevant echo while retaining text/placeholder/completeness checks. Larger
 chi and jieba responses then exposed malformed JSON in repeated `ref` fields;
 these are not envelope refusals and remain rejected without local repair.
-The current translation contract v4 sends and receives one flat JSON object,
-`{"t1":"text","t2":"text"}`. Input preserves the catalogue's original order;
-role labels and original protected-source metadata remain local. Every text,
-closed ref and placeholder still crosses the wire. This avoids redundant
-wrappers and repeated entry fields; it does not trim the catalogue or impose a
-row count. The decoder preserves duplicate keys until it can reject conflicting
-values, discards unknown refs, and rejects missing or non-string known values,
-altered placeholders and trailing JSON. A 600-entry regression verifies one
-complete request without a row-count cap.
+The historical translation contract v4 sent and received one flat JSON object,
+`{"t1":"text","t2":"text"}`. Input preserved the catalogue's original order;
+role labels and original protected-source metadata remained local. Every text,
+closed ref and placeholder still crossed the wire. This avoided redundant
+wrappers and repeated entry fields without trimming the catalogue or imposing a
+row count. The decoder preserved duplicate keys to reject conflicting values,
+discarded unknown refs, and rejected missing or non-string known values,
+altered placeholders and trailing JSON. A 600-entry regression covered one
+complete request without a row-count cap. Current v8, described in the shared
+glossary section above, supplies ordered entries with role and terminology
+context and accepts one text object per ref.
 
 Earlier v2/v3 live calls succeeded on several complete catalogues but sometimes
 returned an extra closing delimiter. These malformed responses were rejected,

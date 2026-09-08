@@ -174,7 +174,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			boxOfFile[file.Path] = box
 			for _, symbol := range file.Symbols {
 				if symbol.Line != "" {
-					interpretations[sourceRefs[symbol.ObjectID]] = Interpretation{Line: symbol.Line, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary}
+					interpretations[sourceRefs[symbol.ObjectID]] = Interpretation{Line: symbol.Line, Alias: symbol.Alias, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary}
 				}
 			}
 		}

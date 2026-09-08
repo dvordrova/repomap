@@ -170,6 +170,9 @@ func publishRepositoryReport(
 	data.Questions = outcome.Questions
 	data.Learning = outcome.Learning
 	data.CapturedRevision = owner.Source.Repository.Head
+	if err := reduceReportGlossary(ctx, options, owner.RunDir, data); err != nil {
+		return report.RunReceipt{}, err
+	}
 	renderOptions, err := translateReportDisplay(ctx, options, owner.RunDir, data)
 	if err != nil {
 		return report.RunReceipt{}, err

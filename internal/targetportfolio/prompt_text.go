@@ -11,6 +11,12 @@ var promptSystemFile string
 //go:embed prompts/user.md
 var promptUserShapeFile string
 
+//go:embed prompts/response-example.json
+var responseExample string
+
+//go:embed prompts/default-response-example.json
+var defaultResponseExample string
+
 //go:embed prompts/default_system.md
 var defaultPromptSystemFile string
 

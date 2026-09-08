@@ -36,7 +36,7 @@ func Run(
 		batch := batch
 		calls[index] = llm.Call[Result]{
 			State:  state,
-			Prompt: llm.Prompt{System: prompt.System, User: prompt.User, ResponseFormatJSON: false},
+			Prompt: llm.Prompt{System: prompt.System, User: prompt.User, ResponseFormatJSON: false, ResponseExample: responseExample},
 			Limits: llm.Limits{
 				MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: MaxResponseBytes,
 				MaxOutputTokens: MaxOutputTokens,

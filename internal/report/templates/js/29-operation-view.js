@@ -23,7 +23,7 @@
     var nearOf={};nodes.forEach(function(n){nearOf[n.id]=(n.dataset.near||'').split(/\s+/).filter(Boolean);});
     var ops=nodes.filter(function(n){return n.dataset.activation;}), groups=nodes.filter(function(n){return !n.dataset.activation;});
     var roots=displayedSet(groups.filter(function(n){return !parents[n.id];}).map(function(n){return n.id;}));
-    var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,toSource:e.dataset.toSource,toText:e.dataset.toText,operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),label:(e.querySelector('title')||{}).textContent||''};});
+    var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,toSource:e.dataset.toSource,toText:e.dataset.toText,operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),label:(e.querySelector('title')||{}).textContent||''};});
     svg.querySelector('.map-frames').replaceChildren();svg.querySelector('.map-lanes').replaceChildren();svg.querySelector('.map-edge-labels').replaceChildren();
     var oldControls=map.querySelector('[data-operation-controls]');if(oldControls)oldControls.remove();
     var bar=document.createElement('div');bar.className='explorer-controls';
@@ -166,8 +166,9 @@
       selected.hidden=!member||member.owner!==scope;if(selected.hidden)return;
       var item=repomapMembers.items(byID[scope]).find(function(item){return member.href&&item.source.Href===member.href||member.open&&item.source.Open===member.open;});
       if(!item)return;
-      var name=document.createElement('strong');name.textContent=item.name;
-      selected.append(name,repomapMembers.sourceLink(item.source));
+      var name=document.createElement('strong');name.textContent=item.alias||item.name;selected.appendChild(name);
+      if(item.alias&&item.alias!==item.name){var nativeName=document.createElement('code');nativeName.textContent=item.name;selected.appendChild(nativeName);}
+      selected.appendChild(repomapMembers.sourceLink(item.source));
     }
     function placeInspection(inFocus){
       var inspector=map.querySelector('.map-inspector'),destination=inFocus?focusView.querySelector('.map-focus-center'):map.querySelector('.map-workspace');
@@ -178,8 +179,8 @@
       var list=document.createElement('ul');list.className='map-focus-relations';
       relations.forEach(function(relation){
         var row=document.createElement('li');
-        var label=document.createElement('p');label.className='map-focus-relation-label';label.textContent=relation.label;row.appendChild(label);
-        if(relation.summary&&relation.summary!==relation.label){var summary=document.createElement('p');summary.textContent=relation.summary;row.appendChild(summary);}
+        var label=document.createElement('p');label.className='map-focus-relation-label';label.textContent=relation.label;label.dataset.displayRef=relation.labelRef||'';row.appendChild(label);
+        if(relation.summary&&relation.summary!==relation.label){var summary=document.createElement('p');summary.textContent=relation.summary;summary.dataset.displayRef=relation.summaryRef||'';row.appendChild(summary);}
         if(relation.possible){var possible=document.createElement('span');possible.className='map-focus-relation-kind';possible.textContent=rmT('Interpreted connection or possible dispatch');row.appendChild(possible);}
         var sources=document.createElement('div');sources.className='map-focus-sources';
         [['fromSource','fromText'],['toSource','toText']].forEach(function(fields){
@@ -246,7 +247,7 @@
       var center=document.createElement('section');center.className='map-focus-center';
       var kind=document.createElement('span');kind.className='map-focus-kind';kind.textContent=rmT('Part')+(node.dataset.remote==='true'?' · '+partOwner(node):'');center.appendChild(kind);
       var title=document.createElement('h3');title.textContent=node.dataset.title;center.appendChild(title);
-      if(node.dataset.summary){var purpose=document.createElement('p');purpose.className='map-focus-purpose';purpose.textContent=node.dataset.summary;center.appendChild(purpose);}
+      if(node.dataset.summary){var purpose=document.createElement('p');purpose.className='map-focus-purpose';purpose.textContent=node.dataset.summary;purpose.dataset.displayRef=node.dataset.summaryRef||'';center.appendChild(purpose);}
       var selection=document.createElement('div');selection.className='map-focus-selection';selection.hidden=true;center.appendChild(selection);
       var members=repomapMembers.items(node);
       if(members.length){var label=document.createElement('h4');label.textContent=rmT('Key code')+' · '+members.length;center.appendChild(label);center.appendChild(repomapMembers.grid(map,node));}
@@ -271,7 +272,7 @@
       var base=scope?(children(byID[scope]).length?children(byID[scope]):[scope]):roots.filter(function(id){return byID[id].dataset.remote!=='true';});
       base=base.filter(function(id){return applicable(id,limit);});
       var term=search.value.trim().toLowerCase();
-      if(term)base=groups.filter(function(n){return applicable(n.id,limit)&&(!scopeLeaves||leaves(n.id).some(function(id){return scopeLeaves.has(id);}))&&(n.dataset.title+' '+n.dataset.summary).toLowerCase().indexOf(term)>=0;}).map(function(n){return n.id;});
+      if(term)base=groups.filter(function(n){return applicable(n.id,limit)&&(!scopeLeaves||leaves(n.id).some(function(id){return scopeLeaves.has(id);}))&&(n.dataset.title+' '+n.dataset.summary+' '+repomapMembers.items(n).map(repomapMembers.displayName).join(' ')).toLowerCase().indexOf(term)>=0;}).map(function(n){return n.id;});
       base=displayedSet(base);
       var inside=scopeLeaves||(term?new Set(base.flatMap(function(id){return leaves(id);})):null);
       var relevant=edges.filter(function(e){return !inside||inside.has(e.from)||inside.has(e.to);});
@@ -314,6 +315,12 @@
       if(expanded){
         repomapPreview.freeze(map);drawFocus(expanded,edges);
       }else{
+      visible.forEach(function(id){
+        var node=byID[id],display=node.style.display,visibility=node.style.visibility;
+        node.style.display='';node.style.visibility='hidden';
+        node.querySelectorAll('.map-node-title').forEach(function(title){boxes[id].w=Math.max(boxes[id].w,Math.ceil(title.getComputedTextLength())+22);});
+        node.style.display=display;node.style.visibility=visibility;
+      });
       try{layout=await repomapGraph.layout(boxes,currentEdges,null,availableWidth);}catch(error){
         if(ticket!==revision)return;map.setAttribute('aria-busy','false');
         var message=bar.querySelector('[role="alert"]');if(!message){message=document.createElement('p');message.setAttribute('role','alert');bar.appendChild(message);}message.textContent=rmT('Could not arrange this map. Try another scope.');console.error('Component map layout',error);return;

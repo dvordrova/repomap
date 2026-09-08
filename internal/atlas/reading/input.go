@@ -105,10 +105,12 @@ func StageName(name string) (string, error) {
 	switch name = strings.TrimPrefix(name, "atlas_"); name {
 	case "":
 		return "", nil
-	case "directories", "files", "symbols", "operations", "boundaries", "zones", "arrows", "targets", "joints", "learn", "question", "route", "answer":
+	case "route":
+		return "", fmt.Errorf("reading stage route was removed; use --through answer for answers with ordered supporting sources")
+	case "directories", "files", "symbols", "operations", "boundaries", "zones", "arrows", "targets", "joints", "learn", "question", "answer":
 		return "atlas_" + name, nil
 	default:
-		return "", fmt.Errorf("unknown reading stage %q; use directories, files, symbols, operations, boundaries, zones, arrows, targets, joints, learn, question, route or answer", name)
+		return "", fmt.Errorf("unknown reading stage %q; use directories, files, symbols, operations, boundaries, zones, arrows, targets, joints, learn, question or answer", name)
 	}
 }
 
@@ -133,10 +135,10 @@ func validateControls(opts Options) error {
 		}
 		seen[question] = true
 	}
-	if (opts.Through == lines.StageQuestion || opts.Through == lines.StageRoute || opts.Through == lines.StageAnswer) && len(opts.Questions) == 0 {
+	if (opts.Through == lines.StageQuestion || opts.Through == lines.StageAnswer) && len(opts.Questions) == 0 {
 		return fmt.Errorf("reading: question stage requires a question")
 	}
-	if len(opts.Questions) > 0 && opts.Through != "" && opts.Through != lines.StageQuestion && opts.Through != lines.StageRoute && opts.Through != lines.StageAnswer {
+	if len(opts.Questions) > 0 && opts.Through != "" && opts.Through != lines.StageQuestion && opts.Through != lines.StageAnswer {
 		return fmt.Errorf("reading: question cannot be combined with an earlier through stage")
 	}
 	return nil

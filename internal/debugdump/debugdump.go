@@ -111,6 +111,7 @@ const (
 	SemanticStageGroupMatching         = "group_matching"
 	SemanticStageOrientation           = "orientation"
 	SemanticStageReportTranslation     = "report_translation"
+	SemanticStageGlossary              = "glossary"
 	// The atlas tables: one stage per table, so the journal and the Time
 	// block say which table a window belonged to.
 	SemanticStageAtlasTargets     = "atlas_targets"
@@ -713,6 +714,7 @@ func validSemanticStage(stage string) bool {
 		SemanticStageAtlasJoints,
 		SemanticStageAtlasQuestion,
 		SemanticStageReportTranslation,
+		SemanticStageGlossary,
 		SemanticStageAtlasRoute,
 		SemanticStageAtlasAnswer,
 		SemanticStageAtlasLearn:

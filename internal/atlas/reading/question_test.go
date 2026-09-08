@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -319,36 +320,33 @@ func TestQuestionCanRunOnTheOrdinaryReadingPath(t *testing.T) {
 	})
 }
 
-func TestAnswerKeepsOriginalSourcesAndReusesTheReadingRoute(t *testing.T) {
+func TestAnswerKeepsOriginalSourcesAndReusesExactRequest(t *testing.T) {
 	opts, provider := questionFixture(t)
 	opts.Through = lines.StageAnswer
-	readerGuess := "Which unsupported framework import command is required?"
-	provider.routeFor = func(map[string]any) table.Answer {
-		return table.Answer{"order": "c4 c2", "open_question": readerGuess}
-	}
 	provider.answerFor = func(map[string]any) table.Answer {
 		return table.Answer{"state": "partial", "answer": "The source declares the storage interface.", "sources": "c2 c999 c1 c2", "remaining": "The persistence implementation is not present in this evidence."}
 	}
 	result, route := readQuestionResult(t, opts)
-	if len(result.Rejected) != 0 || result.Through != lines.StageAnswer || route.Version != 7 || route.Answer.State != "partial" {
+	if len(result.Rejected) != 0 || result.Through != lines.StageAnswer || route.Version != atlas.QuestionRouteVersion || route.Answer.State != "partial" {
 		t.Fatalf("answer failed: %+v", route.Answer)
 	}
 	part := route.Answer.Parts[0]
-	if len(part.Steps) != 2 || part.Steps[0].Path != route.Stops[1].Path || part.Steps[1].Path != route.Stops[3].Path {
+	if len(part.Steps) != 2 || part.Steps[0].Path != route.Stops[1].Path || part.Steps[1].Path != route.Stops[0].Path {
 		t.Fatalf("source refs not restored through selected route: %+v", part.Steps)
 	}
 	if part.Text != "The source declares the storage interface." || part.Basis != "The selected declarations and their signatures suggest this role." || part.Source != atlas.SourceModel {
 		t.Fatalf("answer changed: %+v", part)
 	}
-	if route.Guide.OpenQuestion != readerGuess {
-		t.Fatal("the reading route lost its original interpretation")
+	if !reflect.DeepEqual(route.Guide.Steps, part.Steps) {
+		t.Fatal("supporting reading does not follow the answer's own sources")
 	}
-	inputs, err := filepath.Glob(filepath.Join(opts.OwnerRunDir, atlas.TablesDir, "atlas_answer-*.input.ref.json"))
+
+	inputs, err := filepath.Glob(filepath.Join(opts.OwnerRunDir, atlas.TablesDir, "atlas_answer-r*.input.ref.json"))
 	if err != nil || len(inputs) != 1 {
 		t.Fatalf("answer inputs: %v %v", inputs, err)
 	}
 	input, err := readWindowPayload(inputs[0])
-	if err != nil || !strings.Contains(string(input), route.Question) || strings.Contains(string(input), readerGuess) {
+	if err != nil || !strings.Contains(string(input), route.Question) || strings.Contains(string(input), "open_question") {
 		t.Fatalf("the answer must judge the original question without adopting the reader's extra task: %s / %v", input, err)
 	}
 	calls := provider.calls
@@ -360,7 +358,7 @@ func TestAnswerKeepsOriginalSourcesAndReusesTheReadingRoute(t *testing.T) {
 	opts.OwnerRunDir, opts.Prompt = t.TempDir(), "Revise only the answer wording."
 	result, _ = readQuestionResult(t, opts)
 	if provider.calls != calls+1 {
-		t.Fatal("answer-only edit reran retrieval or route selection")
+		t.Fatal("answer-only edit reran retrieval")
 	}
 	for _, use := range result.Uses {
 		if use.Stage != lines.StageAnswer && use.Live != 0 {
@@ -373,14 +371,12 @@ func TestAnswerKeepsOriginalEvidenceAndLabelledModelHypotheses(t *testing.T) {
 	evidence := map[string]any{"context": map[string]any{"file_model_hypothesis": "Earlier speculation", "file_author_doc": "Author contract"},
 		"evidence": []map[string]any{{"signature": "run(code)", "prior_model_hypothesis": "Suggested effect"}}}
 	route := &atlas.QuestionRoute{Stops: []atlas.QuestionStop{{Path: "run.go", Line: 10, Evidence: evidence, Why: "Earlier route guess"}}}
-	pools, err := planRoutePools(lines.Answer(), nil, route, uniqueRouteAnchors(route.Stops))
+	window, err := makeAnswerWindow(lines.Answer(), []atlas.QuestionRoute{*route}, []answerQuestion{{index: 0, candidates: uniqueRouteAnchors(route.Stops), complete: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	input, err := table.Request(lines.Answer(), table.Window{Stage: lines.StageAnswer, Rows: []table.Row{pools[0].row}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	input := window.table.Request
+
 	for _, retained := range []string{"file_model_hypothesis", "Earlier speculation", "prior_model_hypothesis", "Suggested effect", "file_author_doc", "Author contract", "run(code)", "prior_model_suggestions", "Earlier route guess"} {
 		if !strings.Contains(string(input), retained) {
 			t.Fatalf("answer lost evidence or its attribution: %s", retained)

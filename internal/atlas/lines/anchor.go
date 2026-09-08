@@ -1,24 +1,5 @@
 package lines
 
-import (
-	_ "embed"
-	"github.com/dvordrova/repomap/internal/atlas/table"
-)
-
-const StageRoute = "atlas_route"
-const RouteSteps = 6
-
-//go:embed prompts/route.md
-var routePrompt string
-
-func Route() table.Definition {
-	return table.Definition{Stage: StageRoute, Contract: "repomap.atlas.route.v7", Window: 1, System: routePrompt,
-		Columns: []table.Column{
-			{Name: "order", Kind: table.Sequence, OptionsFrom: "candidate_options"},
-			{Name: "open_question", Kind: table.Text, MaxRunes: 240},
-		}}
-}
-
 // AnchorEvidence preserves the selected original evidence for later reading
 // decisions. A model's reason is stored separately and never becomes a fact.
 func AnchorEvidence(chunk QuestionChunk, ref string) map[string]any {

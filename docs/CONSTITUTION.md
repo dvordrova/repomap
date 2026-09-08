@@ -109,6 +109,27 @@ separate stage outputs.
   topology, code names, source excerpts and source links keep their original
   values. The localized static HTML and server-rendered report use the same
   saved display translation; JavaScript is not required to obtain translation.
+  A declaration may additionally carry a short English Alias supplied by its
+  existing interpretation request. The alias stays English in every report
+  language and appears beside the native code name; neither replaces the source
+  identity. Descriptions remain localized. The page never invents an alias from
+  a filename, script detection or a truncated description.
+  The owner's 2026-09-08 glossary design adds a shared terminology adjunct to
+  analytical requests. Each existing call may return source-anchored term
+  explanations beside its original result. One aggregate reduction joins
+  compatible meanings before the glossary enters the backend report and display
+  translation. Original spellings, definitions, sources and request provenance
+  survive that reduction; equal names alone never establish equal meanings.
+  Translation keeps glossary names and accepted English aliases in their original spelling and translates
+  their definitions and surrounding prose. Code looks up complete literal names
+  in the final display text; the model does not annotate occurrences or choose
+  tooltip positions. Equal spellings may offer separate dictionary definitions;
+  a lookup does not establish the meaning of a particular use. Optional
+  terminology errors do not invalidate an accepted main answer or translation;
+  a refused glossary merge keeps its original accepted definitions separate. Static
+  glossary entries remain readable without scripting; JavaScript may reveal
+  those same definitions beside the bound words. This adds no semantic graph,
+  per-term request or provider call during saved rendering.
 * Learn and Work are two entrances to this same report, sharing analysis,
   maps, sources and navigation. Learn is the default on first open: a short
   system explanation and a visible, progressively expanded system map, with
@@ -135,7 +156,7 @@ separate stage outputs.
   Answers are short, distinguish original evidence from model interpretation,
   explain the terms needed here, and lead into the same map and exact sources.
   Unresolved relevant questions remain visible as unresolved. This uses the
-  existing analysis, not a separate glossary or question knowledge graph.
+  existing analysis and shared glossary, not a separate question knowledge graph.
 * Overview page: what the repository is (roles with purpose + anchors), the
   targets as cards, the cross-target portals as a table
   (`GET /api/levels: front/src/service/http.ts:12 → backend/app/app.py:19`),

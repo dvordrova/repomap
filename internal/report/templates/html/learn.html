@@ -1,7 +1,7 @@
 {{define "learn.html"}}
 <div class="learn-home" data-reading-mode="learn">
 <div class="learn-intro"><h2>{{t "Understand this repository"}}</h2>
-{{if .Summary}}<p class="summary model">{{.Summary.Text}}<span class="model-sources">{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</span></p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
+{{if .Summary}}<p class="summary model"><span data-display-ref="{{.Summary.TextRef}}">{{.Summary.Text}}</span><span class="model-sources">{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</span></p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
 <p class="report-scope">{{t "This report: {0} components · {1} questions" (len .Sections) (len .Questions)}}</p>
 </div>
 {{template "learn-start-links.html" .}}
@@ -21,7 +21,7 @@
 {{if .Questions}}<a class="learn-question-entry" href="#questions">{{t "Choose from {0} questions" (len .Questions)}} <span aria-hidden="true">→</span></a>{{end}}
 <a href="#learn-parts">{{t "What is inside each part?"}} <span aria-hidden="true">→</span></a>
 <a href="{{.LearnRunHref}}">{{t "How do I run it?"}} <span aria-hidden="true">→</span></a>
-{{if .LearnConcepts}}<a href="#concepts">{{t "What does this term mean?"}} <span aria-hidden="true">→</span></a>{{end}}
+{{if .Glossary}}<a href="#concepts">{{t "What does this term mean?"}} <span aria-hidden="true">→</span></a>{{end}}
 </nav>
 {{end}}
 
@@ -31,7 +31,7 @@
 <div class="learn-bands">
 {{range $i, $band := .LearnBands}}<details class="learn-band"{{if eq $i 0}} open{{end}}><summary>{{$band.Title}} <span class="meta">{{len $band.Parts}}</span></summary><div class="learn-parts">
 {{range $band.Parts}}<article class="learn-part"><h4><a href="{{.Href}}">{{.Title}} →</a></h4><p class="meta">{{.Language}} · {{t .Kind}}</p>
-{{if .Summary}}<p class="model">{{.Summary}}</p>{{end}}
+{{if .Summary}}<p class="model"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span></p>{{end}}
 {{if .Areas}}<ul class="plain learn-area-links">{{range .Areas}}<li><a href="{{.Href}}">{{.Title}} →</a></li>{{end}}</ul>{{end}}
 </article>{{end}}
 </div></details>{{end}}
@@ -41,15 +41,17 @@
 {{end}}
 
 {{define "concepts.html"}}
-{{if .LearnConcepts}}<section id="concepts" class="concept-library" data-report-page>
-<h2>{{t "Understand a term"}}</h2><p>{{t "Short model explanations from the code read in this report. Open a term to see its source and explore where it is used."}}</p>
+{{if .Glossary}}<section id="concepts" class="concept-library" data-report-page>
+<h2>{{t "Understand a term"}}</h2><p>{{t "Saved explanations from this report, with their sources, questions and places on the map."}}</p>
 <label class="concept-search" hidden>{{t "Find a term"}} <input type="search" aria-label="{{t "Find a term"}}" placeholder="{{t "Name or description"}}"></label>
 <p class="concept-count" role="status"></p><div class="concept-results">
-{{range .LearnConcepts}}<details id="{{.ID}}" class="learn-concept"><summary>{{.Name}}{{if .Context}} <span class="meta">· {{.Context}}</span>{{end}}</summary>
-{{template "concept-explanation.html" .}}
-<ul class="plain">{{range .Places}}<li><a href="{{.Href}}">{{t "Explore {0} →" .Title}}</a></li>{{end}}</ul></details>{{end}}
+{{range .Glossary}}<details id="{{.ID}}" class="learn-concept" data-term-name="{{.Name}}" data-term-original="{{.OriginalName}}" data-term-code="{{.Code}}"><summary>{{.Name}}{{if ne .Name .OriginalName}} <span class="meta">· {{.OriginalName}}</span>{{end}}{{with .Sources}} <span class="concept-source-context meta">· {{(index . 0).Text}}</span>{{end}}</summary>
+<div class="glossary-entry-content"><p class="model glossary-explanation"><span class="badge">{{t "Model explanation"}}</span> {{.Explanation}}</p>
+{{if .Sources}}<div class="glossary-sources"><h3>{{t "Sources"}}</h3><div class="model-sources">{{range .Sources}} {{template "anchor" .}}{{end}}</div></div>{{end}}
+{{if .Questions}}<div class="glossary-questions"><h3>{{t "Questions"}}</h3><ul class="plain">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}}</a></li>{{end}}</ul></div>{{end}}
+{{if .Places}}<div class="glossary-places"><h3>{{t "On the map"}}</h3><ul class="plain">{{range .Places}}<li><a href="{{.Href}}">{{t "Explore {0} →" .Title}}</a></li>{{end}}</ul></div>{{end}}</div></details>{{end}}
 </div><div class="concept-pages" hidden><button type="button" data-prev>{{t "← Previous"}}</button><span></span><button type="button" data-next>{{t "Next →"}}</button></div>
 </section>{{end}}
 {{end}}
 
-{{define "concept-explanation.html"}}<p class="model">{{.Explanation}}<span class="model-sources"> {{template "anchor" .Source}}</span></p>{{end}}
+{{define "concept-explanation.html"}}<p class="model"><span data-display-ref="{{.ExplanationRef}}">{{.Explanation}}</span><span class="model-sources"> {{template "anchor" .Source}}</span></p>{{end}}

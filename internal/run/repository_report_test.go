@@ -87,8 +87,8 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	question := &atlas.QuestionRoute{Version: 7, Question: "Where is state stored?", Revision: strings.Repeat("a", 40), Stops: []atlas.QuestionStop{{Path: "part-00/main.go", Line: 1, Name: "Open", Why: "Inspect the storage entry."}}, Guide: &atlas.QuestionGuide{State: "partial", Steps: []atlas.QuestionStep{{Path: "part-00/main.go", Line: 1, StopIndexes: []int{0}}}}}
-	receipt, err := publishRepositoryReport(ctx, portfolio, inventory, runs, atlasOutcome{Questions: []atlas.QuestionRoute{*question, {Version: 7, Question: "How do I run it?", Revision: question.Revision}}}, repositoryTargetDispatchOptions{Output: newRunOutput(io.Discard)})
+	question := &atlas.QuestionRoute{Version: atlas.QuestionRouteVersion, Question: "Where is state stored?", Revision: strings.Repeat("a", 40), Stops: []atlas.QuestionStop{{Path: "part-00/main.go", Line: 1, Name: "Open", Why: "Inspect the storage entry."}}, Guide: &atlas.QuestionGuide{State: "partial", Steps: []atlas.QuestionStep{{Path: "part-00/main.go", Line: 1, StopIndexes: []int{0}}}}}
+	receipt, err := publishRepositoryReport(ctx, portfolio, inventory, runs, atlasOutcome{Questions: []atlas.QuestionRoute{*question, {Version: atlas.QuestionRouteVersion, Question: "How do I run it?", Revision: question.Revision}}}, repositoryTargetDispatchOptions{Output: newRunOutput(io.Discard)})
 	if err != nil {
 		t.Fatal(err)
 	}

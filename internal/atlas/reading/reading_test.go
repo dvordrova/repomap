@@ -85,7 +85,6 @@ type tableProvider struct {
 	questionBatchFor   func(questionBatchRequest, questionbatch.Response) questionbatch.Response
 	questionRequests   [][]byte
 	maxQuestionBytes   int
-	routeFor           func(map[string]any) table.Answer
 	answerFor          func(map[string]any) table.Answer
 	learningFor        func(learningRequest) learningResponse
 	learningSelectNone bool
@@ -243,25 +242,13 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 			}
 		case lines.StageAnswer:
 			answer["basis"] = "The selected declarations and their signatures suggest this role."
-			answer["state"], answer["answer"], answer["sources"], answer["remaining"] = "partial", "The declarations describe the available functions.", "c1", "Their implementation was not inspected."
+			answer["state"], answer["answer"], answer["sources"], answer["remaining"] = "partial", "The declarations describe the available functions.", row["candidate_options"].([]any)[0].(string), "Their implementation was not inspected."
 			if provider.answerFor != nil {
 				for key, value := range provider.answerFor(row) {
 					answer[key] = value
 				}
 			}
-		case lines.StageRoute:
-			options := row["candidate_options"].([]any)
-			limit := int(row["preferred_steps"].(float64))
-			var selected []string
-			for _, option := range options[:min(limit, len(options))] {
-				selected = append(selected, option.(string))
-			}
-			answer["order"], answer["open_question"] = strings.Join(selected, " "), "none"
-			if provider.routeFor != nil {
-				for key, value := range provider.routeFor(row) {
-					answer[key] = value
-				}
-			}
+
 		case lines.StageDirectories:
 			answer["title"] = "Title " + filepath.Base(path)
 			answer["line"] = "Directory " + path + " does things."

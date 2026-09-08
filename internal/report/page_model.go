@@ -23,6 +23,7 @@ import (
 type pageView struct {
 	Language         DisplayLanguage
 	UIVocabularyJSON template.JS
+	TermMentionsJSON template.JS
 	RepoName         string
 	Revision         string
 	ShortRevision    string
@@ -46,6 +47,7 @@ type pageView struct {
 	LearningSelections  []pageLearningReview
 	LearnBands          []pageLearnBand
 	LearnConcepts       []pageLearnConcept
+	Glossary            []pageGlossaryTerm
 	LearnQuestionTopics []pageLearnQuestionTopic
 	// Figures are the few counts worth reading before anything else: how much
 	// of the repository was read, how big it is, and what it exposes. They
@@ -72,6 +74,7 @@ type pageView struct {
 }
 
 type pageSentence struct {
+	TextRef string
 	Text    string
 	Anchors []pageAnchor
 }
@@ -96,17 +99,18 @@ type pageClaim struct {
 }
 
 type pageTargetCard struct {
-	SectionID   string
-	Name        string
-	ShortName   string
-	Language    string
-	Kind        string
-	Root        string
-	Manifest    *pageAnchor
-	Entrypoints []pageAnchor
-	Routes      int
-	Calls       int
-	Dynamic     int
+	PurposeRef, RoleRef string
+	SectionID           string
+	Name                string
+	ShortName           string
+	Language            string
+	Kind                string
+	Root                string
+	Manifest            *pageAnchor
+	Entrypoints         []pageAnchor
+	Routes              int
+	Calls               int
+	Dynamic             int
 	// Counts is the same numbers written out, with the zeros left off.
 	Counts      string
 	Dead        int
@@ -178,6 +182,7 @@ type pageNegative struct {
 }
 
 type pageRecipe struct {
+	NoteRef string
 	Command string
 	Cwd     string
 	Note    string
@@ -317,6 +322,9 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 	}
 	view.RepoMap = builder.buildRepoMap(view)
 	builder.learn(view)
+	if err := builder.reducedGlossary(view); err != nil {
+		return nil, err
+	}
 	builder.addresses(view)
 	for _, warning := range data.Warnings {
 		view.Notes = append(view.Notes, scrubBrowserLocalPaths(warning, localRoots))

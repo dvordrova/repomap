@@ -1,7 +1,11 @@
 // Floating previews protect a pointer moving toward their contents.
 // Docked map details follow the hovered node immediately.
 var repomapPreview = (function () {
-  var active = null, pointer = {x:0,y:0}, waiting = null, bindings = new WeakMap();
+  var active = null, pointer = {x:0,y:0}, waiting = null, bindings = new WeakMap(), restoringFocus = false;
+  function ownerOf(target) {
+    for(var node=target;node instanceof Element;node=node.parentElement)if(bindings.has(node))return node;
+    return null;
+  }
   function stationary(map, point) {
     var held=map && map.previewStationaryPoint;
     if(!held) return false;
@@ -41,19 +45,24 @@ var repomapPreview = (function () {
     if(active && active.exit) active.exit=protectedPath ? next : null;
     pointer=next;
     if(active && active.trigger.contains(event.target)) active.lastInside=pointer;
-    if (waiting && !protectedPath) { var show=waiting; waiting=null; show(); }
-    if(active && !active.docked && !protectedPath && !active.trigger.contains(event.target) && !active.card.contains(event.target)) active.hide();
+    if (waiting && !protectedPath && !active?.pinned) { var show=waiting; waiting=null; show(); }
+    if(active && !active.pinned && !active.docked && !protectedPath && !active.trigger.contains(event.target) && !active.card.contains(event.target)) active.hide();
   });
-  function bind(trigger,card,prepare) {
+  function bind(trigger,card,prepare,options) {
+    options=options||{};
     if (!card.parentNode) { card.hidden=true; document.body.appendChild(card); }
     var inspector=card.closest('.map-inspector');
-    var timer, item={card:card,trigger:trigger,docked:!!inspector,exit:null,lastInside:null,hide:hide};
-    function hide() {
+    var timer, item={card:card,trigger:trigger,docked:!!inspector,pinned:false,exit:null,lastInside:null,hide:hide,place:place};
+    function hide(returnFocus) {
       clearTimeout(timer);
       if (active !== item) return;
+      waiting=null;
       trigger.classList.remove('preview-active'); card.hidden=true; active=null;
+      item.pinned=false;card.classList.remove('preview-pinned');
+      if(options.pinOnClick)trigger.setAttribute('aria-expanded','false');
       if (inspector) inspector.classList.remove('has-preview');
       trigger.dispatchEvent(new Event('repomap:previewend'));
+      if(returnFocus&&options.returnFocus&&trigger.isConnected){restoringFocus=true;trigger.focus({preventScroll:true});restoringFocus=false;}
     }
     function place() {
       if (inspector) return;
@@ -64,26 +73,32 @@ var repomapPreview = (function () {
       card.style.left=Math.max(12,Math.min(left,window.innerWidth-card.offsetWidth-12))+'px';
       card.style.top=Math.max(12,Math.min(top,window.innerHeight-card.offsetHeight-12))+'px';
     }
-    function show() {
+    function show(force) {
+      if(restoringFocus)return;
+      if(active&&active!==item&&!force&&(active.pinned||trigger.contains(active.trigger)))return;
       clearTimeout(timer); waiting=null;
+      if(active===item&&options.pinOnClick){place();return;}
       if (active && active!==item) active.hide();
       if (prepare) prepare();
       card.hidden=false; active=item; item.exit=null; item.lastInside=pointer;
       if (inspector) inspector.classList.add('has-preview');
+      if(options.pinOnClick)trigger.setAttribute('aria-expanded','true');
       trigger.classList.add('preview-active'); place();
       trigger.dispatchEvent(new Event('repomap:preview'));
     }
     function enter(event) {
+      if(ownerOf(event.target)!==trigger)return;
+      if(active?.pinned&&active!==item)return;
       // Enter/leave may be synthesized after layout, with rounded positions.
       // Only pointermove resumes a hover after layout, never mouseenter alone.
       if(event.type==='mouseenter' && trigger.closest('[data-map]')?.previewStationaryPoint) return;
       if(event.type==='mouseenter') pointer={x:event.clientX,y:event.clientY};
       if (active && active!==item && event.type==='mouseenter' && towardCard()) {
         waiting=function(){ if(trigger.matches(':hover')) show(); };
-      } else show();
+      } else show(false);
     }
     function leave(event) {
-      if (active!==item) return;
+      if (active!==item||item.pinned) return;
       if (inspector) {
         // The description stays readable, but leaving the node ends its
         // transient graph emphasis. Card lifetime must not pin the arrows.
@@ -95,23 +110,30 @@ var repomapPreview = (function () {
       }
       clearTimeout(timer);
       timer=setTimeout(function close() {
-        if (active!==item || trigger.matches(':hover,:focus-within') || card.matches(':hover,:focus-within')) return;
+        if (active!==item || item.pinned || trigger.matches(':hover,:focus-within') || card.matches(':hover,:focus-within')) return;
         if (towardCard()) return;
         hide();
       },220);
     }
     trigger.addEventListener('mouseenter',enter); trigger.addEventListener('mouseleave',leave);
-    trigger.addEventListener('focusin',show); trigger.addEventListener('focusout',leave);
-    trigger.addEventListener('click',function(event){ waiting=null; if(event.target.closest('a')) hide(); else show(); });
+    trigger.addEventListener('focusin',function(event){if(ownerOf(event.target)===trigger)show(false);}); trigger.addEventListener('focusout',leave);
+    trigger.addEventListener('click',function(event){
+      if(ownerOf(event.target)!==trigger)return;
+      waiting=null;
+      if(options.pinOnClick){show(true);item.pinned=true;card.classList.add('preview-pinned');place();if(options.focusOnPin)card.focus({preventScroll:true});}
+      else if(event.target.closest('a'))hide();else show(true);
+    });
     // A shared map card gets these handlers only once.
     if (!card.dataset.previewBound) {
       card.dataset.previewBound='yes';
       card.addEventListener('mouseenter',function(){waiting=null; if(active) active.exit=null;});
-      card.addEventListener('mouseleave',function(){ if(inspector) return; var current=active; setTimeout(function(){if(active===current && current && !current.trigger.matches(':hover,:focus-within') && !card.matches(':hover,:focus-within')) current.hide();},220); });
+      card.addEventListener('mouseleave',function(){ if(inspector) return; var current=active; setTimeout(function(){if(active===current && current && !current.pinned && !current.trigger.matches(':hover,:focus-within') && !card.matches(':hover,:focus-within')) current.hide();},220); });
+      card.addEventListener('focusout',function(){var current=active;setTimeout(function(){if(active===current&&current&&!current.pinned&&!current.docked&&!current.trigger.matches(':focus-within,:hover')&&!card.matches(':focus-within,:hover'))current.hide();},0);});
+      card.addEventListener('click',function(event){if(active?.card===card&&event.target.closest('a')&&active.pinned)active.hide();});
     }
     var binding={show:show,hide:hide};bindings.set(trigger,binding);return binding;
   }
-  document.addEventListener('keydown',function(e){if(e.key==='Escape' && active){waiting=null;active.hide();}});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape' && active){waiting=null;active.hide(true);e.preventDefault();e.stopImmediatePropagation();}},true);
   document.addEventListener('pointerdown',function(e){
     pointer={x:e.clientX,y:e.clientY};
     // Map controls keep the current reading; selection or navigation replaces
@@ -119,13 +141,15 @@ var repomapPreview = (function () {
     var inMap=active&&active.docked&&e.target.closest('[data-map]')===active.card.closest('[data-map]');
     if(active&&!inMap&&!(active.docked&&e.target.closest('.reading-modes'))&&!e.target.closest('.preview-active,.map-card,.map-inspector,.source-card'))active.hide();
   });
-  document.addEventListener('scroll',function(e){if(active && !active.card.closest('.map-inspector') && !(e.target.closest && e.target.closest('.map-card,.source-card')))active.hide();},true);
-  window.addEventListener('resize',function(){if(active&&!active.docked)active.hide();});
+  document.addEventListener('scroll',function(e){if(active && !active.pinned && !active.card.closest('.map-inspector') && !(e.target.closest && e.target.closest('.map-card,.source-card')))active.hide();},true);
+  window.addEventListener('resize',function(){if(active&&!active.docked){if(active.pinned)active.place();else active.hide();}});
   return {bind:bind,freeze:function(map){map.previewStationaryPoint={x:pointer.x,y:pointer.y};},showFor:function(trigger){var b=bindings.get(trigger);if(b)b.show();return !!b;}};
 })();
 
 (function () {
   document.querySelectorAll('.model').forEach(function (text, index) {
+    // Glossary definitions already keep their complete sources beside them.
+    if(text.closest('.learn-concept'))return;
     var card = document.createElement('aside');
     card.className = 'source-card';
     card.id = 'model-sources-' + index;

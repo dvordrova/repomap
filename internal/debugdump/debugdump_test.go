@@ -82,6 +82,7 @@ func TestSemanticExchangeAcceptsOnlyLiveStages(t *testing.T) {
 		SemanticStageAtlasRoute,
 		SemanticStageAtlasAnswer,
 		SemanticStageAtlasLearn,
+		SemanticStageGlossary,
 	}
 	for _, stage := range live {
 		exchange := validExchange(stage)

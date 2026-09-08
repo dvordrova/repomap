@@ -10,6 +10,12 @@ import (
 // source phrase is the stable key shared by Go templates and browser code.
 // Parameters are inserted as text, once; source names and links are not translated.
 var russianUI = map[string]string{
+	"Saved explanations from this report, with their sources, questions and places on the map.": "Сохранённые объяснения из этого отчёта: с источниками, вопросами и местами на карте.",
+	"Sources":            "Источники",
+	"On the map":         "На карте",
+	"Open in glossary":   "Открыть в словаре",
+	"Explanation pinned": "Объяснение закреплено",
+	"This name has {0} definitions in this report.":              "В этом отчёте у этого имени несколько объяснений: {0}.",
 	"Connections of {0}":                                         "Связи: {0}",
 	"Part connections":                                           "Связи части",
 	"← Back to {0}":                                              "← Назад: {0}",

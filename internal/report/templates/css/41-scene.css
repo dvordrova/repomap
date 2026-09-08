@@ -105,6 +105,7 @@ body[data-reading-mode=work][data-reading-page=overview] .nav .find{display:none
 .answer-term>a{display:inline-block;margin-top:.25rem;text-decoration:none}
 .answer-term>a:hover{text-decoration:underline}
 .reading-map-links{gap:.5rem .75rem;align-items:baseline;margin:1rem 0 1.5rem;color:var(--muted);font-size:.825rem}
+.reading-map-label{flex-basis:100%}
 .reading-map-links>a{display:inline-block;padding:.45rem .65rem;border:1px solid var(--line);border-radius:7px;background:var(--paper);font-size:.875rem;text-decoration:none}
 .reading-map-links>a:hover{border-color:var(--accent);background:var(--soft)}
 .answer-check{padding-top:1rem;border-top:1px solid var(--line)}

@@ -7,7 +7,7 @@
 {{if or .Cards .MutedCards}}<div class="cards">
 {{range .Cards}}<div class="card"><h3><a href="#{{.SectionID}}">{{.ShortName}}</a></h3>
 <p class="meta">{{.Language}}{{if .Kind}} · {{t .Kind}}{{end}}</p>
-{{if .Role}}<p class="model"><strong>{{.Role}}</strong> — {{.Purpose}}<span class="model-sources">{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span></p>{{end}}
+{{if .Role}}<p class="model"><strong data-display-ref="{{.RoleRef}}">{{.Role}}</strong> — <span data-display-ref="{{.PurposeRef}}">{{.Purpose}}</span><span class="model-sources">{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span></p>{{end}}
 <details class="target-facts"><summary>{{t "Code and entrypoints"}}</summary><p><code>{{.Name}}</code></p><dl>{{if .Manifest}}<dt>{{t "Source"}}</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>{{t "Entrypoints"}}</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}{{if .Counts}}<dt>{{t "Found"}}</dt><dd class="fact">{{.Counts}}</dd>{{end}}</dl></details></div>
 {{end}}</div>{{else}}<p class="empty">{{.CardsMissing}}</p>{{end}}
 {{if .MutedCards}}<h4>{{t "This run could not read {0} targets" (len .MutedCards)}}</h4>
@@ -27,7 +27,7 @@
 <h3>{{t "What is missing"}}</h3>
 {{if .Negatives}}<ul class="plain fact">{{range .Negatives}}<li>{{.Text}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{.NegativesMissing}}</p>{{end}}
 <h3 id="how-to-run">{{t "How to run"}}</h3>
-{{if .Recipe}}<ul class="plain">{{range .Recipe}}<li class="{{if .Model}}model{{else}}fact{{end}}"><code>{{.Command}}</code>{{if .Cwd}} <span class="meta">{{t "(in"}} <code>{{.Cwd}}</code>)</span>{{end}}{{if .Note}} — {{.Note}}{{end}}<span class="{{if .Model}}model-sources{{end}}">{{range .Anchors}} {{template "anchor" .}}{{end}}</span></li>{{end}}</ul>{{else}}<p class="empty">{{.RecipeMissing}}</p>{{end}}
+{{if .Recipe}}<ul class="plain">{{range .Recipe}}<li class="{{if .Model}}model{{else}}fact{{end}}"><code>{{.Command}}</code>{{if .Cwd}} <span class="meta">{{t "(in"}} <code>{{.Cwd}}</code>)</span>{{end}}{{if .Note}} — <span{{if .Model}} data-display-ref="{{.NoteRef}}"{{end}}>{{.Note}}</span>{{end}}<span class="{{if .Model}}model-sources{{end}}">{{range .Anchors}} {{template "anchor" .}}{{end}}</span></li>{{end}}</ul>{{else}}<p class="empty">{{.RecipeMissing}}</p>{{end}}
 <h3>{{t "What the people who wrote it said"}}</h3>
 {{if .Claims}}<div class="claims">{{range .Claims}}<blockquote class="claim"><p>{{.Text}}</p><span class="src">{{.Source}}{{if .Date}} · {{.Date}} · {{t "{0} days ago" .AgeDays}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</span></blockquote>{{end}}</div>
 {{if .MoreClaims}}<p class="meta">{{t "The README says {0} more things this page does not quote." .MoreClaims}}</p>{{end}}{{else}}<p class="empty">{{t "Nothing quotable was found in the README, comments or commit messages."}}</p>{{end}}

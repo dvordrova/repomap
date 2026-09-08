@@ -119,20 +119,23 @@ type pageTodo struct {
 }
 
 type pageFlow struct {
-	Title string
-	Steps []pageFlowStep
+	TitleRef string
+	Title    string
+	Steps    []pageFlowStep
 }
 
 type pageFlowStep struct {
-	Label       string
-	Target      string
-	Explanation string
-	Anchor      *pageAnchor
+	ExplanationRef string
+	Label          string
+	Target         string
+	Explanation    string
+	Anchor         *pageAnchor
 }
 
 // pageGroup is one responsibility card. Members are grouped by file so the
 // path is printed once and each chip carries only its line.
 type pageGroup struct {
+	SummaryRef  string
 	ID          string
 	Members     int
 	Share       int
@@ -155,9 +158,11 @@ type pageChipRow struct {
 }
 
 type pageChip struct {
-	Name   string
-	Line   int
-	Anchor pageAnchor
+	SummaryRef string
+	Name       string
+	Alias      string
+	Line       int
+	Anchor     pageAnchor
 	// Doc is what the author wrote above this symbol, when they wrote
 	// anything. A hundred and ninety docstrings of chi were quoted into the
 	// claims layer and none reached the page; a card that shows a symbol
@@ -167,6 +172,7 @@ type pageChip struct {
 }
 
 type pageGroupOperation struct {
+	SummaryRef                string
 	Name, Kind, Summary, Href string
 	Source                    string
 	Anchor                    pageAnchor
@@ -181,6 +187,7 @@ type pageDoc struct {
 // pageConnection is one model sentence between two groups. A connection to
 // another target renders as a stub that links to that target's section.
 type pageConnection struct {
+	LabelRef, SummaryRef string
 	Arrow                string
 	Title                string
 	OtherTarget          string
@@ -255,9 +262,11 @@ func (builder *pageBuilder) createSections() {
 func labelSections(sections []*pageSection) {
 	count := make(map[string]int, len(sections))
 	roots := make(map[string]int, len(sections))
+	rootKinds := make(map[string]int, len(sections))
 	for _, section := range sections {
 		count[section.Name]++
 		roots[section.Root]++
+		rootKinds[section.Root+"\x00"+section.Kind]++
 	}
 	for _, section := range sections {
 		section.ShortLabel = section.Root
@@ -268,6 +277,9 @@ func labelSections(sections []*pageSection) {
 			section.ShortLabel = section.Name
 		}
 		if roots[section.Root] > 1 {
+			if rootKinds[section.Root+"\x00"+section.Kind] > 1 {
+				section.ShortLabel = section.Name
+			}
 			section.ShortLabel += " (" + section.Kind + ")"
 		}
 		section.Label = section.Name
@@ -685,6 +697,7 @@ func (builder *pageBuilder) memberChips(memberIDs []string) ([]pageChipRow, []pa
 		}
 		if ref.subject.Interpretation != nil {
 			chip.Summary = ref.subject.Interpretation.Line
+			chip.Alias = ref.subject.Interpretation.Alias
 		}
 		byPath[anchor.Path] = append(byPath[anchor.Path], chip)
 	}

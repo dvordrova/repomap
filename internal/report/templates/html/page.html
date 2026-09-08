@@ -25,10 +25,11 @@
 {{range .Sections}}{{template "target.html" .}}{{end}}
 <section id="notes" data-report-page><h2>{{t "About this run"}}</h2>{{if .Figures}}<ul class="figures fact">{{range .Figures}}<li{{if .Warn}} class="figure-warn"{{end}}><strong>{{.Value}}</strong><span>{{.Label}}</span></li>{{end}}</ul>{{end}}{{if .Timing}}<ul class="plain fact timing">{{range .Timing}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Notes}}<ul class="plain notes">{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}</section>
 </main>
-<footer class="report-footer"><a href="#notes">{{t "About this run"}}</a>{{if .LearnConcepts}} · <a href="#concepts">{{t "Terms"}}</a>{{end}}</footer>
+<footer class="report-footer"><a href="#notes">{{t "About this run"}}</a>{{if .Glossary}} · <a href="#concepts">{{t "Terms"}}</a>{{end}}</footer>
 {{if .Served}}<div class="status" id="rm-status" role="status" hidden></div>
 <script type="application/json" id="rm-source-ids">{{.SourceIDsJSON}}</script>{{end}}
 <script type="application/json" id="rm-ui-vocabulary">{{.UIVocabularyJSON}}</script>
+<script type="application/json" id="rm-term-mentions">{{.TermMentionsJSON}}</script>
 <script id="rm-report-app-js">{{.JS}}</script>
 </body>
 </html>

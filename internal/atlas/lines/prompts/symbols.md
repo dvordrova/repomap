@@ -6,11 +6,18 @@ its name, kind and signature, the first sentence of the author's docstring
 when there is one, one line about the file it lives in, and how many
 callers it has in the program graph.
 
-Fill five cells for every row and nothing else:
+Fill six cells for every row and nothing else:
 
 - `line`: one sentence, at most 120 characters, saying what this
   declaration does or is. Use the docstring when present; otherwise read
   the name and the signature and say what they show, no more.
+- `alias`: a short English reader label, at most 40 characters, alongside the
+  original name. Give a descriptive English alias when the original name is
+  not English or is unclear to a newcomer. Base it on the supplied declaration
+  and documentation; do not invent behaviour or expand an unexplained acronym.
+  Translate the supported meaning, not just the sound of a foreign name.
+  Write `none` if the original name is already recognizable English or the
+  evidence does not establish a useful alias. This label does not rename code.
 - `key`: `yes` when a reader opening this file to understand its part of
   the program should look at this declaration first: the entry point, the
   type the file is about, the operation the callers come for. `no` for
@@ -46,8 +53,8 @@ Return strict JSON with exactly this shape, one object per row, the same
 ```json
 {
   "rows": [
-    {"key": "r1", "line": "Restores a data directory from a snapshot.", "key_symbol": "yes", "activation": "command", "operation": "snapshot restore", "outbound": "none"},
-    {"key": "r2", "line": "Trims a path to its last element.", "key_symbol": "no", "activation": "none", "operation": "none", "outbound": "none"}
+    {"key": "r1", "line": "Restores a data directory from a snapshot.", "alias": "snapshot restorer", "key_symbol": "yes", "activation": "command", "operation": "snapshot restore", "outbound": "none"},
+    {"key": "r2", "line": "Trims a path to its last element.", "alias": "none", "key_symbol": "no", "activation": "none", "operation": "none", "outbound": "none"}
   ]
 }
 ```

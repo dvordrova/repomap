@@ -47,6 +47,9 @@ func TestReadCommandStartsFromSavedInputAndStopsBeforeReport(t *testing.T) {
 		t.Fatal("existing experiment overwritten")
 	}
 	factoryCalls = 0
+	if err := runReadWithProvider(context.Background(), []string{args[0], "--through", "route", "--question", "Where is state?"}, &stdout, factory); err == nil || !strings.Contains(err.Error(), "use --through answer") || factoryCalls != 0 {
+		t.Fatalf("removed selector needs an explicit migration diagnostic before provider setup: %v", err)
+	}
 	if err := runReadWithProvider(context.Background(), []string{args[0], "--through", "typo"}, &stdout, factory); err == nil || factoryCalls != 0 {
 		t.Fatal("bad controls reached provider")
 	}

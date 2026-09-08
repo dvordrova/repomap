@@ -75,6 +75,59 @@ func TestMapConceptsUseExactTypeInterpretations(t *testing.T) {
 	}
 }
 
+func TestConceptColumnsKeepSameLineDeclarationsAndCrossTargetMembership(t *testing.T) {
+	b := pageBuilder{data: &ReportData{}, subjects: map[string]subjectRef{}, links: pageLinks{sourceIDs: map[string]string{"types.ts": "source-id"}}}
+	for id, column := range map[string]int{"application-left": 7, "application-right": 41, "library-left": 7} {
+		b.subjects[id] = subjectRef{subject: groupindex.Subject{ID: id,
+			Object:         &groupindex.ObjectFacts{Name: "Value", Kind: programindex.ObjectType, Location: &programindex.Location{Path: "types.ts", Line: 4, Column: column}},
+			Interpretation: &groupindex.Interpretation{Key: true, Line: "A value used by the program."}}}
+	}
+	application := b.groupConcepts(groupindex.Group{MemberSubjectIDs: []string{"application-left", "application-right"}})
+	library := b.groupConcepts(groupindex.Group{MemberSubjectIDs: []string{"library-left"}})
+	var a, shared []pageMapConcept
+	if err := json.Unmarshal([]byte(application), &a); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(library), &shared); err != nil {
+		t.Fatal(err)
+	}
+	if len(a) != 2 || len(shared) != 1 || a[0].Column != 7 || a[1].Column != 41 || a[0].Kind != "type" ||
+		a[0].Source.Text != "types.ts:4:7" || a[1].Source.Open != "types.ts:4:41" || !reflect.DeepEqual(a[0], shared[0]) {
+		t.Fatalf("map concept lost exact native position or acquired target identity: %+v / %+v", a, shared)
+	}
+	selected, err := b.questionStep(atlas.QuestionRoute{Stops: []atlas.QuestionStop{{Path: "types.ts", Line: 4, Column: 41, Name: "Value"}}},
+		atlas.QuestionStep{Path: "types.ts", Line: 4, Column: 41, StopIndexes: []int{0}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := &pageView{Sections: []*pageSection{
+		{ID: "application", ShortLabel: "App", Kind: "application", Map: &pageMap{Nodes: []pageMapNode{{ID: "app-values", FullTitle: "Values", Concepts: application}}}},
+		{ID: "library", ShortLabel: "Library", Kind: "library", Map: &pageMap{Nodes: []pageMapNode{{ID: "lib-values", FullTitle: "Values", Concepts: library}}}},
+	}, Questions: []*pageQuestion{{ID: "q-one", Question: "What does Value mean?", Answers: []pageAnswerPart{{Checks: []pageQuestionStep{selected}}}}}}
+	b.learn(view)
+	if len(view.LearnConcepts) != 2 || len(view.Glossary) != 2 || view.LearnConcepts[0].ID == view.LearnConcepts[1].ID {
+		t.Fatalf("same name, line and explanation collapsed two declarations: %+v", view.LearnConcepts)
+	}
+	for _, concept := range view.LearnConcepts {
+		switch concept.Column {
+		case 7:
+			if len(concept.Places) != 2 || concept.Places[0].Href != "#app-values" || concept.Places[1].Href != "#lib-values" || concept.Context != "types.ts:4:7" {
+				t.Fatalf("one native declaration was split by its target owners: %+v", concept)
+			}
+		case 41:
+			if len(concept.Places) != 1 || concept.Context != "types.ts:4:41" {
+				t.Fatalf("a neighbouring declaration gained the library membership: %+v", concept)
+			}
+		default:
+			t.Fatal("unknown source column")
+		}
+	}
+	terms := view.Questions[0].Answers[0].Terms
+	if selected.Column != 41 || len(terms) != 1 || terms[0].Column != 41 {
+		t.Fatalf("the answer's exact source selected its same-line neighbour: %+v", terms)
+	}
+}
+
 func TestOperationMapFollowsInvocationsButNotImportsOrSuppliedCallables(t *testing.T) {
 	section := &pageSection{ID: "client", ShortLabel: "Client"}
 	server := &pageSection{ID: "server", ShortLabel: "Server"}

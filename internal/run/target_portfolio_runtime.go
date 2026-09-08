@@ -54,33 +54,42 @@ type targetPortfolioRunOutcome struct {
 }
 
 func defaultTargetPortfolioProviderFactory() (llm.Provider, error) {
-	client, err := deepseek.NewFromEnv()
-	if err != nil {
-		return nil, err
-	}
-	client.OnWait = waitingOnTheModel(os.Stderr)
-	return client, nil
+	return deepseek.NewFromEnv()
 }
 
-// waitingOnTheModel says so on the console while a provider call runs long:
-// at thirty seconds and then every minute. A run of repomap sat twenty-seven
-// minutes on one stalled call, inside a ten-minute attempt and its retry,
-// and the console said nothing at all.
-func waitingOnTheModel(writer io.Writer) func(deepseek.WaitProgress) {
+// Bind the existing transport heartbeat before any terminology decoration.
+// This callback changes only console presentation, never prepared requests.
+func providerFactoryWithOutput(factory targetPortfolioProviderFactory, output *runOutput) targetPortfolioProviderFactory {
+	return func() (llm.Provider, error) {
+		provider, err := factory()
+		if err != nil {
+			return nil, err
+		}
+		if client, ok := provider.(*deepseek.Client); ok && client != nil {
+			client.OnWait = waitingOnTheModel(output)
+		}
+		return provider, err
+	}
+}
+
+// Long calls first report at thirty seconds. Later heartbeats are spaced by
+// real console time, even when the next call's own elapsed time starts over.
+func waitingOnTheModel(output *runOutput) func(deepseek.WaitProgress) {
 	var mu sync.Mutex
-	last := make(map[string]time.Duration)
+	last := make(map[string]time.Time)
 	return func(progress deepseek.WaitProgress) {
-		elapsed := progress.Elapsed.Round(time.Second)
-		if elapsed < 30*time.Second {
+		if progress.Elapsed < 30*time.Second {
 			return
 		}
+		elapsed := progress.Elapsed.Round(time.Second)
 		mu.Lock()
 		defer mu.Unlock()
-		if previous, seen := last[progress.Stage]; seen && elapsed-previous < time.Minute {
+		now := output.consoleTime()
+		if previous, seen := last[progress.Stage]; seen && now.Sub(previous) < time.Minute {
 			return
 		}
-		last[progress.Stage] = elapsed
-		fmt.Fprintf(writer, "  still waiting on the model: %s (%s)\n", elapsed, progress.Stage)
+		last[progress.Stage] = now
+		output.Stage("", fmt.Sprintf("still waiting on the model: %s (%s)", elapsed, progress.Stage))
 	}
 }
 

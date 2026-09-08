@@ -28,7 +28,7 @@ func Run(
 	}
 	batches, err := classificationBatchesWithFit(compilation, func(wire []byte) (bool, error) {
 		prompt := llm.Prompt{
-			System: promptSystem, User: fmt.Sprintf(promptUserShape, wire), ResponseFormatJSON: true,
+			System: promptSystem, User: fmt.Sprintf(promptUserShape, wire), ResponseFormatJSON: true, ResponseExample: responseExample,
 		}
 		_, prepareErr := llm.Prepare(provider, prompt, portfolioCallLimits())
 		return requestFitResult(prepareErr)
@@ -52,7 +52,7 @@ func Run(
 		calls[index] = llm.Call[Selection]{
 			State: state,
 			Prompt: llm.Prompt{
-				System: prompt.System, User: prompt.User, ResponseFormatJSON: true,
+				System: prompt.System, User: prompt.User, ResponseFormatJSON: true, ResponseExample: responseExample,
 			},
 			Limits: portfolioCallLimits(),
 			DecodeValidate: func(raw []byte) (Selection, error) {
@@ -127,7 +127,7 @@ func runDefaultTournament(
 		batches, err := defaultBatchesWithFit(compilation, remaining, func(wire []byte) (bool, error) {
 			_, prepareErr := llm.Prepare(provider, llm.Prompt{
 				System: defaultPromptSystem, User: fmt.Sprintf(defaultPromptUserShape, wire),
-				ResponseFormatJSON: true,
+				ResponseFormatJSON: true, ResponseExample: defaultResponseExample,
 			}, portfolioCallLimits())
 			return requestFitResult(prepareErr)
 		})

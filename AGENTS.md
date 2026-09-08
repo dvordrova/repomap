@@ -46,17 +46,27 @@ Settings are loaded once and passed as a typed value through target work and
 serving. Questions share the graph, recalled descriptions and provider input;
 each keeps independent source selections and question-keyed request references. Learn links questions
 to short source-anchored answers; supporting reading routes remain collapsed.
-The flag adds retrieval, route selection and an answer after the ordinary atlas;
-on `read` it runs those stages without the ordinary atlas. `--through question`
-stops before route selection; `--through route` edits the selector alone
-while unchanged retrieval is cached; `--through answer` changes only the final
-answer with unchanged retrieval and route inputs reused. `question-routes.json`
-v1 stores a list of v7 routes. Each retains every
-candidate and its original evidence, plus a short ordered list of source locations
-and an open question. Route table v7 does not request a redundant summary;
-selected locations retain their original reasons. Answer table v6 reads the
-selected original evidence with labelled prior model interpretations and returns
-a brief explanation, its basis, source refs and a specific remaining gap.
+The flag adds shared retrieval and a shared final-answer batch after the ordinary
+atlas; on `read` it runs those stages without the ordinary atlas.
+`--through question` stops after retrieval. `--through answer` changes the final
+answer contract while reusing unchanged retrieval. The separate `route` stage
+has been removed; requesting it returns migration guidance. `question-routes.json`
+v1 stores a list of v9 readings, retaining every candidate and its original
+evidence. The answer batch reads the complete union of those original sources
+once, with each question's own allowed refs and retrieval coverage. Each accepted
+row returns an answer, its basis, sources in useful reading order, and a specific
+remaining gap. The supporting guide projects those ordered sources; it makes no
+separate selection and requests no extra open question.
+Questions and source records are canonically ordered for exact-request reuse;
+results retain the user's question order. Adding a question changes its answer
+window and regenerates that window. There is no per-question answer memo.
+The ordinary attempt has no question quota or 64 KiB planning cap. Actual
+prepared-input, context, output or response-envelope refusals split questions
+first and rebuild each child's complete evidence union. Only a singleton question
+whose complete evidence does not fit partitions its original sources into
+separate answer parts. Malformed responses refuse their whole window without
+repair or a speculative retry; accepted sibling windows survive. Explicit
+read-stage development budgets still apply.
 Final answer prose preserves paragraphs and complete qualifications; only
 short label cells are whitespace-collapsed or length-trimmed. Source checks
 keep owned declarations together, each with its original code link.
@@ -74,9 +84,7 @@ keep it disabled. The owner clarified this stage-specific behavior on 2026-09-08
 The actual endpoint host selects native DeepSeek controls, never the variable
 prefix. Exact request
 and memo identities distinguish the preference. Other atlas tables keep their
-existing fast mode. The final answer reads the original question and evidence;
-the route's open question remains in its supporting reading and does not become
-an extra requirement for the answer. Required unfamiliar names are briefly
+existing fast mode. The final answer reads the original question and evidence. Required unfamiliar names are briefly
 explained at first use. Completeness compares the original question with the
 answer at its requested level: silent omission of a central part is partial;
 an overview does not require unasked implementation details.
@@ -87,8 +95,7 @@ unavailable remain distinct; incomplete evidence cannot establish inapplicabilit
 If selected evidence needs multiple windows, their original anchors survive in
 separate partial answer parts. No body retrieval or new semantic graph is added.
 The ordinary reading adapts eight base learning intents after the atlas using
-the configured client, then answers its proposals through the same question,
-route and answer stages. Proposal preparation starts with the complete original
+the configured client, then answers its proposals through the same question and answer stages. Proposal preparation starts with the complete original
 learning evidence and all eight intents, using the actual provider request
 envelope rather than an ordinary 64KiB fragment budget. Explicit development
 budgets remain available. Actual context/output/response resource refusals
@@ -151,12 +158,7 @@ reason is a shared relevance hint, not a separate proof about each declaration.
 The reader uses the same sealed in-memory graph that SaveInput persists, so
 ordinary and saved readings bind their question results to the same graph hash.
 Connections retain their source kind; the route is not an execution trace.
-The selector aims for six stops; extra valid anchors remain valid in every
-round. Pools partition complete original evidence by the configured input-byte
-budget, with no candidate-count ceiling. A round either reduces the source
-set or finishes with independently ordered reading parts; a fixed point never
-retries unchanged evidence, invents a global ranking, or discards sources to
-force convergence. Their exact union feeds the answer stage. The facts stage runs built-in sqlc and configured external commands through
+The facts stage runs built-in sqlc and configured external commands through
 the same nodes/links contract in docs/EXTRACTORS.md (facts format v2).
 Extensions supply source observations, not architecture role assignments.
 These rows enter the same places graph and question table, with producer
@@ -199,7 +201,7 @@ allowlist classify an operation. Wrapped function-valued declarations retain
 compiler callable identity; inline anonymous callbacks and unindexed callable
 factory results remain unresolved. A factory result never becomes a binding or
 method call on the factory itself. Calls in ordinary local value initializers
-belong to their enclosing callable. Symbol table v5 and operation table v12
+belong to their enclosing callable. Symbol table v6 and operation table v12
 can interpret these observations as user `interaction`, alongside commands,
 requests, scheduled and continuous work, using the same graph and review.
 
@@ -211,6 +213,17 @@ type-owned variable objects used by Python class fields. The same atlas members
 and question evidence carry them onward; no field creates a runtime call or an
 inherited declaration at a new owner. Comparable count-field examples live in
 the cumulative TypeScript, Python and Go testdata repositories.
+
+Symbols and Types may also return one short English `alias` beside their
+explanation, through the same existing table request. It is an optional
+reader-facing label for a name that needs explaining, especially a non-English
+identifier; `none` records no alias. Accepted aliases flow through symbol
+knowledge and the atlas into GroupsIndex interpretations. Native names, IDs and
+source anchors remain unchanged. The report keeps aliases English in every
+language, displays the original code name beside them, and localizes the
+description. Both literal spellings address the same glossary definition;
+no script detector, transliteration, per-name request or browser-generated label
+is added. Current atlas is v3, GroupsIndex v6 and report v85.
 
 Knowledge is attached to internal entities, separately from provider batches.
 Independent directory, file, symbol and boundary rows persist their accepted
@@ -280,8 +293,11 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   repartition; it never authorizes truncation or partial publication. Only
   such a provider envelope, a representation overflow, canonical
   identity/path/format validation, or an explicit user narrowing option may
-  remain terminal. Every run prints where its time went: a `(t+…)` on each
-  stage line, `latency_ms` on each exchange, and a closing `Time` stage.
+  remain terminal. Every printed console event starts with
+  `[elapsed-seconds +seconds-since-previous-event]`; multiline details align
+  underneath. Target pages, model-wait messages and terminal errors share the
+  run clock. Suppressed events never advance the visible delta. Exchanges keep
+  `latency_ms`, and a closing `Time` stage separates wall time from provider work.
 - Execute independent stage-planned batch items through the shared bounded LLM
   worker pool, with the ordinary product limit set to four. Preserve the
   caller's item index as the only in-memory result slot and replay observer
@@ -523,16 +539,17 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   interface method declarations. Interface declarations have no invented
   direct-call node. Type context retains the existing bounded author quotes,
   including later sentences; ordinary file/callable rows still use first
-  sentences. The type table v5 asks for a short explanation
-  and key flag; it cannot classify activations. Its explanation is prose, so
+  sentences. The type table v6 asks for a short explanation,
+  optional English alias and key flag; it cannot classify activations. Its explanation is prose, so
   normalization preserves complete sentences and qualifications rather than
   cutting them at 240 characters. Undocumented lifecycle topics are omitted
   instead of appending irrelevant absence claims. Bare names without owned
   declarations or author documentation stay in the source index without an
   invented definition. A file's model hypothesis is not type evidence. Ordinary
   callable rows keep their own contract and memo identity. Concept explanations
-  on maps are a projection of existing interpreted type subjects, not a glossary
-  or a second semantic graph. Effects implemented elsewhere still require their
+  on maps are a projection of existing interpreted type subjects and also seed
+  the shared glossary without new definition calls or a second semantic graph.
+  Effects implemented elsewhere still require their
   actual source contract; method ownership alone does not establish them.
   Names, signatures and argument names are useful clues for model hypotheses;
   absence of comments must not prevent orientation. Distinguish such hypotheses
@@ -543,6 +560,49 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   This is a development measurement, not ordinary report acceptance or a
   general implementation-body expansion of the product pipeline. The separate
   matching-context approval recorded in CURRENT.md remains pending.
+- The shared terminology adjunct belongs to `internal/terminology`: existing
+  analytical calls return their original domain JSON under `result`, with
+  source-anchored `terms` beside it. Each term carries its name and explanation;
+  closed source refs and the accepted request plus result row retain its provenance. Translation
+  policy is not an analytical decision. Each owning stage supplies its exact
+  answer shape through `llm.Prompt.ResponseExample`; table examples depend only
+  on the column contract. Calls without usable source refs pass through unchanged.
+  Terms explain unfamiliar names used in the computed answer, not a catalogue
+  of input declarations. Go locates exact result occurrences and their row scope;
+  the model never constructs JSON Pointers. The shared LLM adapter decodes once
+  and validates the original result independently of optional terminology.
+  Rejected metadata is journaled and cannot invalidate a correct domain answer;
+  it never enters the accepted glossary. If the owning answer example has no
+  `terms` field, misplaced `result.terms` is discarded as optional metadata
+  before strict domain validation; it is never moved into the glossary.
+  Other unknown domain fields and legitimate owning `terms` fields retain
+  their original validation. Exact raw exchanges remain cache and
+  replay authority. Row memo reuse restores only terms mentioned by accepted
+  rows with compatible source scope.
+  One aggregate closed-ref reduction joins compatible domain candidates and
+  chooses an original definition, preserving every variant, spelling, source
+  and request identity. A refused reduction window retains its already accepted
+  input definitions separately, with incomplete comparison recorded. Local input,
+  configuration, cancellation and persistence failures remain errors. Native code
+  concepts keep their existing definitions, exact anchors and destinations and
+  enter the final glossary directly; they do not round-trip through the reducer.
+  `terminology.json` and `glossary.json` retain domain candidates and the reduced
+  catalogue, bound to `ReportData` before translation. Reduction and translation
+  use the base provider without recursively collecting terms. Existing display
+  translation keeps glossary names literally unchanged, with definitions as
+  context, and translates definitions and surrounding prose. Code matches whole
+  original spellings in the final text, including English. The model supplies
+  no occurrence markers, sense decisions or hint positions. Distinct meanings
+  remain dictionary alternatives; literal lookup never proves an occurrence's
+  meaning. Matching is case-sensitive, respects identifier/script boundaries,
+  and keeps the longest overlapping name without nested highlights. Commands,
+  code, links and source placeholders remain independently protected. Exact
+  display refs bind local spans to their prose slots, including dynamic map
+  descriptions; equal text alone never identifies a slot. No aliases, morphology,
+  semantic repair or classifier call is added when translation changes a name.
+  The glossary is static; browser hints reveal those same definitions beside
+  bound prose. `repomap render` uses saved report and translation data with zero
+  provider calls.
 - `groupindex.ProjectAtlas` turns the atlas into the GroupsIndex the page,
   the orientation and the publication read: a box is a group whose members
   are the objects declared in its files, a zone is a container, an arrow is

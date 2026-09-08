@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	Version          = 5
+	Version          = 6
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -181,6 +181,7 @@ type Subject struct {
 
 type Interpretation struct {
 	Line             string `json:"line"`
+	Alias            string `json:"alias,omitempty"`
 	Key              bool   `json:"key"`
 	Activation       string `json:"activation,omitempty"`
 	Operation        string `json:"operation,omitempty"`

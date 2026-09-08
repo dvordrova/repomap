@@ -338,6 +338,18 @@ func collectOpenablePaths(data *ReportData) error {
 		paths[sourcePath] = struct{}{}
 		return nil
 	}
+	if data.Glossary != nil {
+		if err := data.Glossary.Validate(); err != nil {
+			return fmt.Errorf("report: glossary: %w", err)
+		}
+		for _, entry := range data.Glossary.Entries {
+			for _, source := range entry.Sources {
+				if err := add(source.Path); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	for _, question := range data.Questions {
 		for _, stop := range question.Stops {
 			if err := add(stop.Path); err != nil {

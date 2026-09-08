@@ -4,6 +4,9 @@ package atlas
 // a reading aid over places.json, not an alternative program graph.
 const QuestionFilename = "question-routes.json"
 
+// QuestionRouteVersion versions each complete reading and its answer metadata.
+const QuestionRouteVersion = 9
+
 // QuestionRoutes keeps independent reading results over one shared graph.
 type QuestionRoutes struct {
 	Version int             `json:"version"`
@@ -37,12 +40,16 @@ type QuestionAnswer struct {
 }
 
 type QuestionAnswerPart struct {
-	State     string         `json:"state"`
-	Text      string         `json:"text"`
-	Basis     string         `json:"basis"`
-	Remaining string         `json:"remaining"`
-	Source    string         `json:"source"`
-	Steps     []QuestionStep `json:"steps"`
+	// OriginRequest and OriginRow bind shared terminology to this accepted row.
+	// It is local provenance and never appears in a provider prompt.
+	OriginRequest string         `json:"origin_request_sha256,omitempty"`
+	OriginRow     string         `json:"origin_row,omitempty"`
+	State         string         `json:"state"`
+	Text          string         `json:"text"`
+	Basis         string         `json:"basis"`
+	Remaining     string         `json:"remaining"`
+	Source        string         `json:"source"`
+	Steps         []QuestionStep `json:"steps"`
 }
 
 type QuestionCoverage struct {
@@ -74,25 +81,22 @@ type QuestionStop struct {
 	KnowledgeIDs []string       `json:"knowledge_ids,omitempty"`
 }
 
-// QuestionGuide is MODEL reading order over the preserved candidate reservoir.
+// QuestionGuide projects the answer's ordered sources for supporting reading.
+// It makes no separate model decision over the preserved candidate reservoir.
 // StopIndexes restore all observations sharing a selected source location.
 type QuestionGuide struct {
-	State        string          `json:"state"`
-	OpenQuestion string          `json:"open_question"`
-	Source       string          `json:"source"`
-	Candidates   int             `json:"candidates"`
-	Rounds       []QuestionRound `json:"rounds"`
-	Steps        []QuestionStep  `json:"steps"`
-	// Parts are independently ordered readings when selected evidence cannot
-	// be reduced further within the input budget. Steps is their exact union
-	// for subsequent evidence reads, not an order between parts.
+	State      string         `json:"state"`
+	Source     string         `json:"source"`
+	Candidates int            `json:"candidates"`
+	Steps      []QuestionStep `json:"steps"`
+	// Parts retain independently answered evidence windows. Steps is their
+	// exact union, not a model-selected order between parts.
 	Parts []QuestionGuidePart `json:"parts,omitempty"`
 }
 
 type QuestionGuidePart struct {
-	OpenQuestion string         `json:"open_question"`
-	Source       string         `json:"source"`
-	Steps        []QuestionStep `json:"steps"`
+	Source string         `json:"source"`
+	Steps  []QuestionStep `json:"steps"`
 }
 
 type QuestionStep struct {
@@ -100,13 +104,6 @@ type QuestionStep struct {
 	Line        int    `json:"line"`
 	Column      int    `json:"column,omitempty"`
 	StopIndexes []int  `json:"stop_indexes"`
-}
-
-type QuestionRound struct {
-	Candidates      int `json:"candidates"`
-	Pools           int `json:"pools"`
-	Selected        int `json:"selected"`
-	UnresolvedPools int `json:"unresolved_pools"`
 }
 
 type QuestionConnection struct {

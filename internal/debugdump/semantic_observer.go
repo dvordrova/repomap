@@ -1,6 +1,7 @@
 package debugdump
 
 import (
+	"encoding/json"
 	"sync"
 
 	"github.com/dvordrova/repomap/internal/llm"
@@ -15,7 +16,35 @@ type SemanticObserver struct {
 	mu              sync.Mutex
 	ordinals        map[string]int
 	instanceOrdinal int
-	pending         []SemanticExchange
+	pending         []observedResponse
+}
+
+type observedResponse struct {
+	exchange   SemanticExchange
+	rejections []llm.ResponseRejection
+}
+
+// Rejections use the existing rejected.jsonl shape. ResponseRef names the
+// ordinary exchange record, which links both exact request and response bytes.
+func recordObservedResponse(writer *Writer, value observedResponse) error {
+	ref := writer.RecordSemanticExchange(value.exchange)
+	if len(value.rejections) == 0 {
+		return nil
+	}
+	var rows []byte
+	for _, rejection := range value.rejections {
+		raw, err := json.Marshal(struct {
+			Stage string `json:"stage"`
+			llm.ResponseRejection
+			ResponseRef string `json:"response_ref,omitempty"`
+		}{value.exchange.Stage, rejection, ref})
+		if err != nil {
+			return err
+		}
+		rows = append(rows, raw...)
+		rows = append(rows, '\n')
+	}
+	return writer.AppendFile("rejected.jsonl", rows)
 }
 
 func NewSemanticObserver(writer *Writer) *SemanticObserver {
@@ -46,11 +75,11 @@ func (observer *SemanticObserver) ObserveStage(stage string, event llm.Event) er
 	}
 	writer := observer.writer
 	if record && writer == nil {
-		observer.pending = append(observer.pending, exchange)
+		observer.pending = append(observer.pending, observedResponse{exchange, event.ResponseRejections})
 	}
 	observer.mu.Unlock()
 	if record && writer != nil {
-		writer.RecordSemanticExchange(exchange)
+		return recordObservedResponse(writer, observedResponse{exchange, event.ResponseRejections})
 	}
 	return nil
 }
@@ -63,11 +92,13 @@ func (observer *SemanticObserver) Flush(writer *Writer) {
 		return
 	}
 	observer.mu.Lock()
-	pending := append([]SemanticExchange(nil), observer.pending...)
+	pending := append([]observedResponse(nil), observer.pending...)
 	observer.pending = nil
 	observer.mu.Unlock()
-	for _, exchange := range pending {
-		writer.RecordSemanticExchange(exchange)
+	for _, value := range pending {
+		if err := recordObservedResponse(writer, value); err != nil {
+			writer.warnSemanticExchange(value.exchange.Stage)
+		}
 	}
 }
 

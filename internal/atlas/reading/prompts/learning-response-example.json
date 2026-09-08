@@ -1,0 +1,1 @@
+{"reviews":[{"intent":"<supplied intent>","state":"<supported closed state>","reason":"<computed reason>","sources":["<supporting evidence ref>"],"questions":[{"question":"<computed learning question>","why":"<computed selection reason>","sources":["<supporting evidence ref>"]}]}]}

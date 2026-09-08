@@ -28,10 +28,11 @@ type runOutput struct {
 	writer       io.Writer
 	currentStage string
 	now          func() time.Time
-	// started is when the run began; every stage line says how far in it
-	// is, so a reader can tell a slow stage from a slow provider without a
-	// stopwatch. modelTime is what the provider took, by stage.
+	// started and lastPrinted time the visible events. Child target outputs
+	// share only this console clock; their semantic accounting stays local.
 	started      time.Time
+	lastPrinted  time.Time
+	consoleClock *runOutput
 	modelTime    map[string]*stageModelTime
 	wallTime     map[string]time.Duration
 	lastProgress map[string]runOutputProgress
@@ -96,8 +97,7 @@ func (output *runOutput) Artifacts(path string) {
 	defer output.mu.Unlock()
 
 	output.currentStage = ""
-	fmt.Fprintln(output.writer, "Artifacts:")
-	output.writeDetailsLocked(path)
+	output.writeEventLocked(output.writer, "Artifacts:", path)
 }
 
 // Stage writes a stage header once for adjacent updates and then writes each
@@ -106,8 +106,7 @@ func (output *runOutput) Stage(name string, details ...string) {
 	output.mu.Lock()
 	defer output.mu.Unlock()
 
-	output.stageLocked(name)
-	output.writeDetailsLocked(details...)
+	output.writeEventLocked(output.writer, output.stageLocked(name), details...)
 }
 
 // State keeps a terminal or intermediate state visible below its stage rather
@@ -141,8 +140,7 @@ func (output *runOutput) TargetPage(state string, target targetPageConsoleContex
 	// produce two visible boundaries; ordinary adjacent-stage coalescing would
 	// otherwise merge their details under one header.
 	output.currentStage = ""
-	output.stageLocked("Target page")
-	output.writeDetailsLocked(
+	output.writeEventLocked(output.writer, output.stageLocked("Target page"),
 		"state: "+singleRunOutputLine(state),
 		"target: "+target.DisplayPath,
 		"scope: "+target.Scope,
@@ -156,8 +154,7 @@ func (output *runOutput) level(level, summary string, details ...string) {
 	defer output.mu.Unlock()
 
 	output.currentStage = ""
-	fmt.Fprintln(output.writer, level)
-	output.writeDetailsLocked(append([]string{summary}, details...)...)
+	output.writeEventLocked(output.writer, level, append([]string{summary}, details...)...)
 }
 
 // Progress is the adapter for the existing bounded orient.ProgressEvent
@@ -170,14 +167,14 @@ func (output *runOutput) Progress(event orient.ProgressEvent) {
 
 	switch event.Stage {
 	case orient.ProgressSnapshotStarted:
-		output.stageLocked("Repository snapshot")
+		header := output.stageLocked("Repository snapshot")
 		details := []string{"collecting tracked repository facts", "repository: " + event.RepoPath}
 		if event.GoTarget != "" {
 			details = append(details, "Go target: "+event.GoTarget, "override: --force-platform GOOS/GOARCH")
 		}
-		output.writeDetailsLocked(details...)
+		output.writeEventLocked(output.writer, header, details...)
 	case orient.ProgressSnapshotReady:
-		output.stageLocked("Repository snapshot")
+		header := output.stageLocked("Repository snapshot")
 		details := []string{
 			"state: complete",
 			fmt.Sprintf("tracked files: %d", event.FileCount),
@@ -200,17 +197,17 @@ func (output *runOutput) Progress(event orient.ProgressEvent) {
 				details = append(details, "evidence: "+strings.Join(event.GoTargetEvidencePaths, ", "))
 			}
 		}
-		output.writeDetailsLocked(details...)
+		output.writeEventLocked(output.writer, header, details...)
 	}
 }
 
-func (output *runOutput) stageLocked(name string) {
+func (output *runOutput) stageLocked(name string) string {
 	name = singleRunOutputLine(name)
 	if name == "" || name == output.currentStage {
-		return
+		return ""
 	}
 	output.currentStage = name
-	fmt.Fprintf(output.writer, "%s: (t+%s)\n", name, sinceStart(output))
+	return name + ":"
 }
 
 func sinceStart(output *runOutput) string {
@@ -276,7 +273,7 @@ func (output *runOutput) Timing() {
 	}
 	output.mu.Lock()
 	defer output.mu.Unlock()
-	output.stageLocked("Time")
+	header := output.stageLocked("Time")
 	lines := []string{"wall clock: " + sinceStart(output)}
 	walls := make([]string, 0, len(output.wallTime))
 	for name := range output.wallTime {
@@ -303,7 +300,7 @@ func (output *runOutput) Timing() {
 	if len(stages) > 0 {
 		lines = append(lines, "provider time in all: "+total.Round(time.Second).String())
 	}
-	output.writeDetailsLocked(lines...)
+	output.writeEventLocked(output.writer, header, lines...)
 }
 
 // TimingReport is the Time stage as data, for the run's metadata.
@@ -373,21 +370,71 @@ func (observer timedObserver) Observe(event llm.Event) error {
 func (observer timedObserver) ObserveStage(stage string, event llm.Event) error {
 	if event.Kind != llm.EventFailure {
 		observer.output.ModelCall(stage, event.Metrics.Latency, event.Source == llm.SourceCache)
+	} else if event.Source == llm.SourceLive && event.Metrics.Attempts > 0 {
+		switch event.Failure {
+		case llm.FailureProvider, llm.FailureResponse, llm.FailureValidation:
+			// A refused response still consumed a live provider call. Cache
+			// rejection carries the old call's metrics, while preparation or
+			// cancellation before transport has no attempt to account here.
+			observer.output.ModelCall(stage, max(0, event.Metrics.Latency), false)
+		}
 	}
 	return observer.inner.ObserveStage(stage, event)
 }
 
-func (output *runOutput) writeDetailsLocked(details ...string) {
+// One public progress event has one timestamp. Continuation lines align with
+// its body; blank or suppressed events neither sample nor advance the clock.
+// The caller holds output.mu, and a child additionally serializes its write
+// through the root console's mutex without changing either timing account.
+func (output *runOutput) writeEventLocked(writer io.Writer, header string, details ...string) {
+	var lines []string
+	if header != "" {
+		lines = append(lines, header)
+	}
 	for _, detail := range details {
-		detail = strings.ReplaceAll(detail, "\r\n", "\n")
-		detail = strings.ReplaceAll(detail, "\r", "\n")
+		detail = strings.ReplaceAll(strings.ReplaceAll(detail, "\r\n", "\n"), "\r", "\n")
 		for _, line := range strings.Split(detail, "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				fmt.Fprintf(output.writer, "  %s\n", line)
+			if line = strings.TrimSpace(line); line != "" {
+				lines = append(lines, "  "+line)
 			}
 		}
 	}
+	if len(lines) == 0 {
+		return
+	}
+	clock := output
+	if output.consoleClock != nil {
+		clock = output.consoleClock
+		clock.mu.Lock()
+		defer clock.mu.Unlock()
+	}
+	now := clock.now()
+	if now.Before(clock.started) {
+		now = clock.started
+	}
+	if now.Before(clock.lastPrinted) {
+		now = clock.lastPrinted
+	}
+	elapsed := now.Sub(clock.started)
+	delta := time.Duration(0)
+	if !clock.lastPrinted.IsZero() {
+		delta = now.Sub(clock.lastPrinted)
+	}
+	prefix := fmt.Sprintf("[%8.3f +%.3f] ", elapsed.Seconds(), delta.Seconds())
+	body := prefix + strings.Join(lines, "\n"+strings.Repeat(" ", len(prefix))) + "\n"
+	if n, _ := io.WriteString(writer, body); n > 0 {
+		clock.lastPrinted = now
+	}
+}
+
+func (output *runOutput) consoleTime() time.Time {
+	clock := output
+	if output.consoleClock != nil {
+		clock = output.consoleClock
+	}
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	return clock.now()
 }
 
 func singleRunOutputLine(value string) string {

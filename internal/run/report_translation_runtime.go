@@ -46,10 +46,14 @@ func translateReportDisplay(ctx context.Context, options repositoryTargetDispatc
 		renderOptions.Translations = &translations
 		return renderOptions, nil
 	}
-	if options.Deps.newCubeProvider == nil {
+	factory := options.Deps.newDisplayProvider
+	if factory == nil {
+		factory = options.Deps.newCubeProvider
+	}
+	if factory == nil {
 		return report.RenderOptions{}, fmt.Errorf("report translation: model provider is unavailable")
 	}
-	provider, err := options.Deps.newCubeProvider()
+	provider, err := factory()
 	if err != nil {
 		return report.RenderOptions{}, err
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -38,12 +37,13 @@ func (view *pageView) LearnRunHref() string {
 }
 
 type pageLearnPart struct {
-	Title    string
-	Href     string
-	Summary  string
-	Kind     string
-	Language string
-	Areas    []pageLearnLink
+	SummaryRef string
+	Title      string
+	Href       string
+	Summary    string
+	Kind       string
+	Language   string
+	Areas      []pageLearnLink
 }
 
 type pageLearnBand struct {
@@ -56,6 +56,18 @@ type pageLearnConcept struct {
 	ID      string
 	Context string
 	Places  []pageLearnLink
+}
+
+// A native declaration may be visible in several target maps. Keep those
+// memberships together by its exact source position and kind, without using a
+// target-local subject ID or collapsing two declarations on the same line.
+func conceptIdentity(concept pageMapConcept) string {
+	encoded, _ := json.Marshal(struct {
+		Path                    string
+		Line, Column            int
+		Kind, Name, Explanation string
+	}{concept.Source.Path, concept.Source.Line, concept.Column, concept.Kind, concept.Name, concept.Explanation})
+	return string(encoded)
 }
 
 // Learn is an entrance to the existing maps. It uses their roles, hierarchy
@@ -89,7 +101,7 @@ func (builder *pageBuilder) learn(view *pageView) {
 					continue
 				}
 				for _, concept := range concepts {
-					key := concept.Source.Path + ":" + strconv.Itoa(concept.Source.Line) + "|" + concept.Name + "|" + concept.Explanation
+					key := conceptIdentity(concept)
 					at, exists := conceptAt[key]
 					if !exists {
 						at = len(view.LearnConcepts)
@@ -125,6 +137,7 @@ func (builder *pageBuilder) learn(view *pageView) {
 		}
 	}
 	questionConcepts(view)
+	collectGlossary(view)
 	learningQuestionTopics(view, builder.data.Learning)
 }
 
@@ -176,7 +189,7 @@ func questionConcepts(view *pageView) {
 			answer := &question.Answers[i]
 			for _, concept := range view.LearnConcepts {
 				for _, check := range answer.Checks {
-					if check.Name == concept.Name && check.Source.Path == concept.Source.Path && check.Source.Line == concept.Source.Line {
+					if check.Name == concept.Name && check.Source.Path == concept.Source.Path && check.Source.Line == concept.Source.Line && check.Column == concept.Column {
 						answer.Terms = append(answer.Terms, concept)
 						break
 					}

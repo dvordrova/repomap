@@ -176,6 +176,7 @@ type pageMapLane struct {
 }
 
 type pageMapNode struct {
+	SummaryRef      string
 	InitiallyHidden bool
 	// Frame is true of an endpoint that is a zone rather than a box: an
 	// arrow to it stops short of its outline instead of landing on it.
@@ -231,16 +232,17 @@ type pageMapNode struct {
 }
 
 type pageMapEdge struct {
-	Summary    string
-	FromSource pageAnchor
-	ToSource   pageAnchor
-	Scope      string
-	Operations string
-	Path       string
-	From       string
-	To         string
-	Label      string
-	Possible   bool
+	SummaryRef, LabelRef string
+	Summary              string
+	FromSource           pageAnchor
+	ToSource             pageAnchor
+	Scope                string
+	Operations           string
+	Path                 string
+	From                 string
+	To                   string
+	Label                string
+	Possible             bool
 	// Lines is the label written beside the edge. It is empty when there is
 	// no room for it without covering another one; the whole label is on the
 	// edge's tooltip either way.
@@ -396,9 +398,13 @@ func (builder *pageBuilder) buildZoneMap(section *pageSection, index *groupindex
 const maxKeySymbols = 3
 
 type pageMapConcept struct {
-	Name        string     `json:"name"`
-	Explanation string     `json:"explanation"`
-	Source      pageAnchor `json:"source"`
+	ExplanationRef string     `json:"explanation_ref,omitempty"`
+	Name           string     `json:"name"`
+	Alias          string     `json:"alias,omitempty"`
+	Kind           string     `json:"kind"`
+	Column         int        `json:"column"`
+	Explanation    string     `json:"explanation"`
+	Source         pageAnchor `json:"source"`
 }
 
 // Concept explanations belong to existing type subjects, including overlapping
@@ -418,7 +424,13 @@ func (builder *pageBuilder) groupConcepts(group groupindex.Group) string {
 		if name == "" || anchor == nil {
 			continue
 		}
-		concepts = append(concepts, pageMapConcept{Name: name, Explanation: interpretation.Line, Source: *anchor})
+		location := ref.subject.Object.Location
+		source := *anchor
+		if location.Line > 0 && location.Column > 0 {
+			source.Text = fmt.Sprintf("%s:%d:%d", location.Path, location.Line, location.Column)
+		}
+		concepts = append(concepts, pageMapConcept{Name: name, Alias: interpretation.Alias, Kind: string(ref.subject.Object.Kind), Column: location.Column,
+			Explanation: interpretation.Line, Source: source})
 	}
 	if len(concepts) == 0 {
 		return ""
@@ -1612,6 +1624,7 @@ type pageRepoLane struct {
 }
 
 type pageRepoNode struct {
+	SummaryRef string
 	ID         string
 	Summary    string
 	NativeName string

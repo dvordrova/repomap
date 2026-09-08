@@ -24,6 +24,10 @@ type Prompt struct {
 	System             string
 	User               string
 	ResponseFormatJSON bool
+	// ResponseExample is an owner-supplied JSON example of the computed
+	// answer's shape. Response adjuncts use it without inferring a schema
+	// from prompt prose; the owning cube still validates the actual answer.
+	ResponseExample string
 	// ResponseLanguage controls generated prose, independently of the source
 	// language and provider. Empty means English. Presentation translation
 	// supplies its target language tag after the English analysis is complete.
@@ -110,6 +114,46 @@ type Provider interface {
 	Complete(context.Context, Prepared) (Completion, error)
 }
 
+// ResponseAdapter separates an owning result from optional response metadata.
+// Exact provider bytes remain unchanged in the cache and journal. An adapter
+// rejects an invalid result envelope, but reports bad optional metadata without
+// rejecting an otherwise valid domain result.
+type ResponseAdapter interface {
+	AdaptResponse(request, response []byte) (AdaptedResponse, error)
+}
+
+// ResponseRejection is a content-free explanation of discarded metadata.
+// The ordinary observer records these beside the exact exchange, without
+// treating them as another model call or as a failed domain response.
+type ResponseRejection struct {
+	Kind    string   `json:"kind"`
+	Count   int      `json:"count"`
+	Samples []string `json:"samples,omitempty"`
+	Reason  string   `json:"reason,omitempty"`
+}
+
+// AdaptedResponse is parsed once per exact exchange. Memo readers retain this
+// value alongside their decoded rows. Accept receives nil for a whole accepted
+// result, or the closed row refs whose domain values were independently accepted.
+type AdaptedResponse struct {
+	Domain     []byte
+	Rejections []ResponseRejection
+	Accept     func(rows []string)
+}
+
+func (response AdaptedResponse) Accepted(rows []string) {
+	if response.Accept != nil {
+		response.Accept(rows)
+	}
+}
+
+func AdaptResponse(provider Provider, request, response []byte) (AdaptedResponse, error) {
+	if adapter, ok := provider.(ResponseAdapter); ok {
+		return adapter.AdaptResponse(request, response)
+	}
+	return AdaptedResponse{Domain: response}, nil
+}
+
 // DecodeValidate supports domains whose accepted response is not a direct Go
 // JSON shape, for example reducers over opaque references.
 type DecodeValidate[T any] func([]byte) (T, error)
@@ -188,6 +232,7 @@ const (
 // Event contains only exact semantic request/response bytes, measurements,
 // and SHA-256 cache identity. Provider and cube state bytes are excluded.
 type Event struct {
+	ResponseRejections []ResponseRejection
 	// CacheRoot selects the shared exchange store for a run journal.
 	CacheRoot      string
 	Kind           EventKind
@@ -247,19 +292,20 @@ func (issue Issue) Unwrap() error {
 // Outcome is returned for both accepted calls and failures. A nil error from
 // ExecuteJSON means Value has passed the cube's decoder and validation.
 type Outcome[T any] struct {
-	Value          T
-	CacheKey       string
-	Cached         bool
-	Request        []byte
-	RequestSHA256  string
-	RequestBytes   int
-	Response       []byte
-	ResponseSHA256 string
-	ResponseBytes  int
-	FinishReason   FinishReason
-	ChoiceCount    int
-	Metrics        Metrics
-	Issues         []Issue
+	ResponseRejections []ResponseRejection
+	Value              T
+	CacheKey           string
+	Cached             bool
+	Request            []byte
+	RequestSHA256      string
+	RequestBytes       int
+	Response           []byte
+	ResponseSHA256     string
+	ResponseBytes      int
+	FinishReason       FinishReason
+	ChoiceCount        int
+	Metrics            Metrics
+	Issues             []Issue
 }
 
 // ProviderFailureKind is a closed, provider-neutral failure classification.

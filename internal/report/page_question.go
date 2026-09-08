@@ -11,41 +11,47 @@ import (
 )
 
 type pageQuestion struct {
-	ID, Question, OpenQuestion, Note string
-	AnswerNote                       string
-	Answers                          []pageAnswerPart
-	Readings                         []pageQuestionReading
-	Scope                            []string
-	UserQuestion                     bool
-	Origins                          []pageQuestionOrigin
+	ID, Question, Note string
+	AnswerNote         string
+	Answers            []pageAnswerPart
+	Readings           []pageQuestionReading
+	Scope              []string
+	UserQuestion       bool
+	Origins            []pageQuestionOrigin
 }
 
 type pageQuestionOrigin struct {
+	WhyRef               string
 	Title, Question, Why string
 	Checks               []pageQuestionStep
 }
 
 type pageLearningReview struct {
+	ReasonRef            string
 	Title, State, Reason string
 	PartialContext       bool
 	Checks               []pageQuestionStep
 }
 
 type pageQuestionReading struct {
-	OpenQuestion string
-	Steps        []pageQuestionStep
+	Steps []pageQuestionStep
 }
 
 type pageAnswerPart struct {
-	Text, Basis, Remaining string
-	Sources                []pageAnchor
-	MapLinks               []pageQuestionMapLink
-	Checks                 []pageQuestionStep
-	Terms                  []pageLearnConcept
+	TextRef, BasisRef, RemainingRef string
+	Text, Basis, Remaining          string
+	RequestSHA256                   string
+	OriginRow                       string
+	Sources                         []pageAnchor
+	MapLinks                        []pageQuestionMapLink
+	Checks                          []pageQuestionStep
+	Terms                           []pageLearnConcept
 }
 
 type pageQuestionStep struct {
+	WhyRef    string
 	Name, Why string
+	Column    int
 	Source    pageAnchor
 	MapLinks  []pageQuestionMapLink
 	Excerpts  []pageQuestionExcerpt
@@ -81,7 +87,7 @@ func (builder *pageBuilder) questionGuides() ([]*pageQuestion, error) {
 }
 
 func (builder *pageBuilder) questionGuide(route atlas.QuestionRoute) (*pageQuestion, error) {
-	if route.Version != 7 || route.Revision != builder.data.CapturedRevision {
+	if route.Version != atlas.QuestionRouteVersion || route.Revision != builder.data.CapturedRevision {
 		return nil, fmt.Errorf("report: question route format or revision does not match")
 	}
 	view := &pageQuestion{ID: fmt.Sprintf("question-%x", sha256.Sum256([]byte(route.Question))), Question: route.Question, Scope: route.Scope}
@@ -111,7 +117,7 @@ func (builder *pageBuilder) questionGuide(route atlas.QuestionRoute) (*pageQuest
 			if part.State == "unavailable" {
 				continue
 			}
-			answer := pageAnswerPart{Text: part.Text, Basis: part.Basis, Remaining: part.Remaining}
+			answer := pageAnswerPart{Text: part.Text, Basis: part.Basis, Remaining: part.Remaining, RequestSHA256: part.OriginRequest, OriginRow: part.OriginRow}
 			for _, step := range part.Steps {
 				bound, err := builder.questionStep(route, step)
 				if err != nil {
@@ -138,9 +144,6 @@ func (builder *pageBuilder) questionGuide(route atlas.QuestionRoute) (*pageQuest
 			view.Note = "The reading guide could not be completed because some model answers were unavailable."
 		}
 		return view, nil
-	}
-	if route.Answer == nil && guide.OpenQuestion != "none" {
-		view.OpenQuestion = guide.OpenQuestion
 	}
 	if guide.State == "partial" {
 		view.Note = "This reading route is incomplete: some model answers were unavailable."
@@ -169,9 +172,6 @@ func (builder *pageBuilder) questionGuide(route atlas.QuestionRoute) (*pageQuest
 	}
 	for _, part := range parts {
 		reading := pageQuestionReading{}
-		if part.OpenQuestion != "none" {
-			reading.OpenQuestion = part.OpenQuestion
-		}
 		for _, step := range part.Steps {
 			bound, err := builder.questionStep(route, step)
 			if err != nil {
@@ -185,7 +185,7 @@ func (builder *pageBuilder) questionGuide(route atlas.QuestionRoute) (*pageQuest
 }
 
 func (builder *pageBuilder) questionStep(route atlas.QuestionRoute, step atlas.QuestionStep) (pageQuestionStep, error) {
-	view := pageQuestionStep{Source: builder.links.anchor(step.Path, step.Line, step.Column)}
+	view := pageQuestionStep{Source: builder.links.anchor(step.Path, step.Line, step.Column), Column: step.Column}
 	if len(step.StopIndexes) == 0 {
 		return view, fmt.Errorf("report: question step has no candidate anchor")
 	}

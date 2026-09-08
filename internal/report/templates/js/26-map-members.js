@@ -17,10 +17,9 @@ var repomapMembers = (function () {
       var chip = row.querySelector('strong > .chip');
       if (!chip) return;
       var name = chip.cloneNode(true); name.querySelectorAll('.ln').forEach(function (n) { n.remove(); });
-      var summary = row.querySelector('.model'), prose = summary && summary.cloneNode(true);
-      if (prose) prose.querySelectorAll('.model-sources,.source-hint,button').forEach(function (n) { n.remove(); });
+      var prose = row.querySelector('.model [data-display-ref]');
       var anchor = row.querySelector('.anchor');
-      add({name:name.textContent.trim(), explanation:prose ? prose.textContent.trim() : '', source:{
+      add({name:name.textContent.trim(), alias:row.dataset.alias||'', explanation:prose ? prose.textContent : '', explanation_ref:prose?.dataset.displayRef||'', source:{
         Href:chip.dataset.open ? '' : chip.getAttribute('href'), Open:chip.dataset.open || '',
         Text:anchor ? anchor.textContent : (chip.closest('.key-file').querySelector('.path').textContent + (chip.querySelector('.ln')?.textContent || ''))
       }});
@@ -31,7 +30,7 @@ var repomapMembers = (function () {
     if(group&&!result.length)group.querySelectorAll('.symbol-index > li').forEach(function(row){
       var chip=row.querySelector('.chip');if(!chip)return;
       var name=chip.cloneNode(true);name.querySelectorAll('.ln').forEach(function(n){n.remove();});
-      add({name:name.textContent.trim(),explanation:'',source:{Href:chip.dataset.open?'':chip.getAttribute('href'),Open:chip.dataset.open||'',Text:chip.getAttribute('title')||name.textContent.trim()}});
+      add({name:name.textContent.trim(),alias:row.dataset.alias||'',explanation:'',source:{Href:chip.dataset.open?'':chip.getAttribute('href'),Open:chip.dataset.open||'',Text:chip.getAttribute('title')||name.textContent.trim()}});
     });
     inventories.set(node, result); return result;
   }
@@ -43,8 +42,9 @@ var repomapMembers = (function () {
     return {w:width,h:116 + Math.ceil(list.length / columns) * 62};
   }
   function label(node,item) {
-    return item.name+(items(node).some(function(other){return other!==item&&other.name===item.name;})?' · '+item.source.Text:'');
+    return displayName(item)+(items(node).some(function(other){return other!==item&&other.name===item.name;})?' · '+item.source.Text:'');
   }
+  function displayName(item){return item.alias&&item.alias!==item.name?item.alias+' · '+item.name:item.name;}
   function sourceLink(source) {
     var link=document.createElement(source.Href||source.Open?'a':'span');link.textContent=source.Text;
     if(source.Href){link.href=source.Href;link.target='_blank';link.rel='noopener';}
@@ -55,7 +55,12 @@ var repomapMembers = (function () {
     var grid = document.createElement('div'); grid.className='map-member-grid';
     items(node).forEach(function (item) {
       var b=document.createElement('button'); b.type='button'; b.className='map-member';
-      b.textContent=item.name; b.title=(item.explanation ? item.explanation+'\n' : '')+item.source.Text;
+      if(item.alias&&item.alias!==item.name){
+        var meaning=document.createElement('span');meaning.className='map-member-meaning';meaning.textContent=item.alias;b.appendChild(meaning);
+        b.classList.add('map-member-aliased');
+      }
+      var name=document.createElement('code');name.className='map-member-name';name.textContent=item.name;b.appendChild(name);
+      b.title=(item.explanation ? item.explanation+'\n' : '')+item.source.Text;
       var duplicate=items(node).some(function(other){return other!==item&&other.name===item.name;});
       if(duplicate){
         var path=document.createElement('small');path.textContent=item.source.Text;b.appendChild(path);
@@ -84,5 +89,5 @@ var repomapMembers = (function () {
     heading.textContent=rmT('Key code')+' · '+items(node).length; body.appendChild(heading);
     body.appendChild(grid(map,node)); layer.appendChild(body); svg.appendChild(layer);
   }
-  return {items:items,size:size,draw:draw,grid:grid,label:label,sourceLink:sourceLink};
+  return {items:items,size:size,draw:draw,grid:grid,label:label,displayName:displayName,sourceLink:sourceLink};
 })();

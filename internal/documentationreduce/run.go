@@ -43,6 +43,9 @@ var sourcePrompt string
 //go:embed merge_prompt.md
 var mergePrompt string
 
+//go:embed response-example.json
+var responseExample string
+
 type batchWire struct {
 	Ordinal int `json:"ordinal"`
 	Count   int `json:"count"`
@@ -165,7 +168,7 @@ func Run(
 					State: cubeState("source", snapshot.SHA256, batch.wire),
 					Prompt: llm.Prompt{
 						System: strings.TrimSpace(sourcePrompt), User: string(batch.wire),
-						ResponseFormatJSON: true,
+						ResponseFormatJSON: true, ResponseExample: responseExample,
 					},
 					Limits: limits(),
 					DecodeValidate: func(raw []byte) (normalizedReduction, error) {
@@ -393,7 +396,7 @@ func mergeTournament(
 						State: cubeState("merge", guidanceSHA, batch.wire),
 						Prompt: llm.Prompt{
 							System: strings.TrimSpace(mergePrompt), User: string(batch.wire),
-							ResponseFormatJSON: true,
+							ResponseFormatJSON: true, ResponseExample: responseExample,
 						},
 						Limits: limits(),
 						DecodeValidate: func(raw []byte) (normalizedReduction, error) {
@@ -638,7 +641,7 @@ func requestFits(provider llm.Provider, systemPrompt string, request any) (bool,
 		return false, fmt.Errorf("documentation reduce: encode provider request: %w", err)
 	}
 	_, err = llm.Prepare(provider, llm.Prompt{
-		System: strings.TrimSpace(systemPrompt), User: string(wire), ResponseFormatJSON: true,
+		System: strings.TrimSpace(systemPrompt), User: string(wire), ResponseFormatJSON: true, ResponseExample: responseExample,
 	}, limits())
 	if err == nil {
 		return true, nil

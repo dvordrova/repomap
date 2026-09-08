@@ -32,6 +32,20 @@ type responseEntry struct {
 
 type translationWindow []report.DisplayTextEntry
 
+type requestTerm struct {
+	Spelling    string `json:"spelling"`
+	Explanation string `json:"explanation"`
+}
+
+// The wire projection deliberately omits local term IDs, source links and
+// question scopes. Definitions only provide context for the surrounding prose.
+type requestEntry struct {
+	Ref   string        `json:"ref"`
+	Role  string        `json:"role"`
+	Text  string        `json:"text"`
+	Terms []requestTerm `json:"terms,omitempty"`
+}
+
 // Translate returns a complete presentation-only translation bound to catalog.
 // The caller decides whether its selected display language needs translation;
 // an empty catalogue needs no provider. Failed windows never become a partial
@@ -177,26 +191,23 @@ func translationCall(
 	window translationWindow,
 	language report.DisplayLanguage,
 ) (llm.Call[[]report.DisplayTranslationEntry], error) {
-	// Keep the catalogue's order, including t2 before t10. A Go map would
-	// reorder these keys lexicographically. Role and protected-source metadata
-	// stay local; the text already contains every required placeholder token.
-	var request bytes.Buffer
-	request.WriteByte('{')
+	// Keep catalogue order and definition context in this same request. Term
+	// spellings stay visible; only existing source syntax uses placeholders.
+	request := make([]requestEntry, len(window))
 	for i, entry := range window {
-		if i > 0 {
-			request.WriteByte(',')
+		request[i] = requestEntry{Ref: entry.Ref, Role: entry.Role, Text: entry.Text}
+		for _, term := range entry.Terms {
+			request[i].Terms = append(request[i].Terms, requestTerm{Spelling: term.Spelling, Explanation: term.Explanation})
 		}
-		ref, _ := json.Marshal(entry.Ref)
-		text, _ := json.Marshal(entry.Text)
-		request.Write(ref)
-		request.WriteByte(':')
-		request.Write(text)
 	}
-	request.WriteByte('}')
+	raw, err := json.Marshal(request)
+	if err != nil {
+		return llm.Call[[]report.DisplayTranslationEntry]{}, err
+	}
 	return llm.Call[[]report.DisplayTranslationEntry]{
-		State: []byte(`{"contract":"repomap.report-display-translation.v4"}`),
+		State: []byte(`{"contract":"repomap.report-display-translation.v8"}`),
 		Prompt: llm.Prompt{
-			System: strings.TrimSpace(translationPrompt), User: request.String(),
+			System: strings.TrimSpace(translationPrompt), User: string(raw),
 			ResponseFormatJSON: true, ResponseLanguage: string(language), Reasoning: false,
 		},
 		Limits: llm.Limits{
@@ -215,12 +226,12 @@ func translationCall(
 
 // Keep duplicate object members until normalization can compare their values.
 // Decoding straight into a map would silently give the last occurrence authority.
-func decodeTranslationResponse(raw []byte, window translationWindow) (modelResponse, error) {
-	var response modelResponse
-	known := make(map[string]bool, len(window))
-	for _, entry := range window {
-		known[entry.Ref] = true
-	}
+type wireField struct {
+	name  string
+	value json.RawMessage
+}
+
+func objectFields(raw []byte) ([]wireField, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	expect := func(delimiter json.Delim) error {
 		token, err := decoder.Token()
@@ -233,40 +244,83 @@ func decodeTranslationResponse(raw []byte, window translationWindow) (modelRespo
 		return nil
 	}
 	if err := expect('{'); err != nil {
-		return response, err
+		return nil, err
 	}
+	var fields []wireField
 	for decoder.More() {
 		token, err := decoder.Token()
 		if err != nil {
-			return response, err
+			return nil, err
 		}
-		ref, ok := token.(string)
+		name, ok := token.(string)
 		if !ok {
-			return response, fmt.Errorf("report translation: expected a translation ref")
+			return nil, fmt.Errorf("report translation: expected object field")
 		}
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
-			return response, err
+			return nil, err
 		}
-		if !known[ref] {
-			continue
-		}
-		if len(value) == 0 || value[0] != '"' {
-			return response, fmt.Errorf("report translation: translation for %s must be a string", ref)
-		}
-		var text string
-		if err := json.Unmarshal(value, &text); err != nil {
-			return response, err
-		}
-		response.Translations = append(response.Translations, responseEntry{Ref: ref, Text: text})
+		fields = append(fields, wireField{name, value})
 	}
 	if err := expect('}'); err != nil {
-		return response, err
+		return nil, err
 	}
 	if _, err := decoder.Token(); err != io.EOF {
-		return response, fmt.Errorf("report translation: unexpected data after translations object")
+		return nil, fmt.Errorf("report translation: unexpected data after object")
+	}
+	return fields, nil
+}
+
+func decodeTranslationResponse(raw []byte, window translationWindow) (modelResponse, error) {
+	var response modelResponse
+	known := make(map[string]report.DisplayTextEntry, len(window))
+	for _, entry := range window {
+		known[entry.Ref] = entry
+	}
+	fields, err := objectFields(raw)
+	if err != nil {
+		return response, err
+	}
+	for _, field := range fields {
+		entry, ok := known[field.name]
+		if !ok {
+			continue
+		}
+		translation, err := decodeTranslationValue(field.value, entry)
+		if err != nil {
+			return response, err
+		}
+		response.Translations = append(response.Translations, translation)
 	}
 	return response, nil
+}
+
+func decodeTranslationValue(raw []byte, entry report.DisplayTextEntry) (responseEntry, error) {
+	result := responseEntry{Ref: entry.Ref}
+	fields, err := objectFields(raw)
+	if err != nil {
+		return result, err
+	}
+	textSeen := false
+	for _, field := range fields {
+		switch field.name {
+		case "text":
+			var text *string
+			if err := json.Unmarshal(field.value, &text); err != nil || text == nil {
+				return result, fmt.Errorf("report translation: text for %s must be a string", entry.Ref)
+			}
+			if textSeen && result.Text != *text {
+				return result, fmt.Errorf("report translation: conflicting text fields for %s", entry.Ref)
+			}
+			result.Text, textSeen = *text, true
+		default:
+			return result, fmt.Errorf("report translation: unsupported translated entry field %q", field.name)
+		}
+	}
+	if !textSeen {
+		return result, fmt.Errorf("report translation: missing text for %s", entry.Ref)
+	}
+	return result, nil
 }
 
 func normalizeTranslations(window translationWindow, response modelResponse) ([]report.DisplayTranslationEntry, error) {
@@ -274,30 +328,31 @@ func normalizeTranslations(window translationWindow, response modelResponse) ([]
 	for _, entry := range window {
 		allowed[entry.Ref] = entry
 	}
-	byRef := make(map[string]string, len(window))
+	byRef := make(map[string]report.DisplayTranslationEntry, len(window))
 	for _, translation := range response.Translations {
 		entry, known := allowed[translation.Ref]
 		if !known {
 			continue
 		}
+		if err := entry.ValidateTranslation(translation.Text); err != nil {
+			return nil, err
+		}
+		value := report.DisplayTranslationEntry{Ref: translation.Ref, Text: translation.Text}
 		if previous, duplicate := byRef[translation.Ref]; duplicate {
-			if previous != translation.Text {
+			if previous.Text != value.Text {
 				return nil, fmt.Errorf("report translation: conflicting translations for %s", translation.Ref)
 			}
 			continue
 		}
-		if err := entry.ValidateTranslation(translation.Text); err != nil {
-			return nil, err
-		}
-		byRef[translation.Ref] = translation.Text
+		byRef[translation.Ref] = value
 	}
 	translations := make([]report.DisplayTranslationEntry, 0, len(window))
 	for _, entry := range window {
-		text, present := byRef[entry.Ref]
+		value, present := byRef[entry.Ref]
 		if !present {
 			return nil, fmt.Errorf("report translation: missing translation for %s", entry.Ref)
 		}
-		translations = append(translations, report.DisplayTranslationEntry{Ref: entry.Ref, Text: text})
+		translations = append(translations, value)
 	}
 	return translations, nil
 }

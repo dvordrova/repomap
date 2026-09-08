@@ -25,6 +25,9 @@ const Contract = "repomap.atlas.question-batch.v1"
 //go:embed prompt.md
 var systemPrompt string
 
+//go:embed response-example.json
+var responseExample string
+
 func Prompt() string { return strings.TrimSpace(systemPrompt) }
 
 type Input struct {
@@ -154,7 +157,7 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	if provider == nil {
 		return Result{}, fmt.Errorf("question batch: provider is required")
 	}
-	keys, remembered, err := data.recall(executor, provider, &result)
+	keys, remembered, err := data.recall(ctx, executor, provider, &result)
 	if err != nil {
 		return Result{}, err
 	}
@@ -213,7 +216,13 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 		}
 		planned = next
 	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	data.remember(executor, keys, remembered, &result)
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	return data.expand(result), nil
 }
 
@@ -317,7 +326,7 @@ func (data catalogue) requestCall(rows []int, questions []modelQuestion) (llm.Ca
 	}
 	return llm.Call[Response]{
 		State:          []byte(`{"contract":"` + Contract + `"}`),
-		Prompt:         llm.Prompt{System: data.opts.System, User: string(encoded), ResponseFormatJSON: true, Reasoning: true},
+		Prompt:         llm.Prompt{System: data.opts.System, User: string(encoded), ResponseFormatJSON: true, ResponseExample: responseExample, Reasoning: true},
 		Limits:         limits(),
 		DecodeValidate: func(raw []byte) (Response, error) { return data.decode(rows, questions, raw) },
 	}, nil

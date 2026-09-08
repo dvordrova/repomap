@@ -17,10 +17,19 @@ import (
 func runReplay(args []string, stdout, stderr io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return runReplayWithProvider(ctx, args, stdout, stderr, defaultTargetPortfolioProviderFactory)
+	output := newRunOutput(stderr)
+	err := runReplayConfigured(ctx, args, stdout, defaultTargetPortfolioProviderFactory, output)
+	if err != nil {
+		writeRunOutputError(output, err)
+	}
+	return err
 }
 
 func runReplayWithProvider(ctx context.Context, args []string, stdout, stderr io.Writer, factory func() (llm.Provider, error)) error {
+	return runReplayConfigured(ctx, args, stdout, factory, newRunOutput(stderr))
+}
+
+func runReplayConfigured(ctx context.Context, args []string, stdout io.Writer, factory targetPortfolioProviderFactory, output *runOutput) error {
 	fs := flag.NewFlagSet("repomap replay", flag.ContinueOnError)
 	fs.SetOutput(stdout)
 	filename := fs.String("file", "", "saved .llm-cache/payloads/<request-sha>.json")
@@ -48,7 +57,7 @@ func runReplayWithProvider(ctx context.Context, args []string, stdout, stderr io
 	if err != nil {
 		return err
 	}
-	provider, err := factory()
+	provider, err := providerFactoryWithOutput(factory, output)()
 	if err != nil {
 		return err
 	}
@@ -73,16 +82,16 @@ func runReplayWithProvider(ctx context.Context, args []string, stdout, stderr io
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stderr, "Request: %s\n", requestPath)
+	output.Stage("Request", requestPath)
 	if len(completion.Response) > 0 {
 		responsePath, err := llm.SavePayload(*cacheRoot, completion.Response)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(stderr, "Response: %s\n", responsePath)
+		output.Stage("Response", responsePath)
 	}
-	fmt.Fprintf(stderr, "Replay: %s; %d attempts; finish=%s; input=%d output=%d reasoning=%d tokens\n",
+	output.Stage("Replay", fmt.Sprintf("%s; %d attempts; finish=%s; input=%d output=%d reasoning=%d tokens",
 		metrics.Latency, metrics.Attempts, completion.FinishReason,
-		metrics.InputTokens, metrics.OutputTokens, metrics.ReasoningTokens)
+		metrics.InputTokens, metrics.OutputTokens, metrics.ReasoningTokens))
 	return callErr
 }

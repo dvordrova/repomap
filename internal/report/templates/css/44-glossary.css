@@ -1,0 +1,27 @@
+/* Term explanations are an inline reading action, not another navigation bar. */
+button.term-mention{display:inline;font:inherit;line-height:inherit;color:inherit;background:none;border:0;border-radius:0;padding:0;margin:0;box-shadow:none;text-align:inherit;text-decoration-line:underline;text-decoration-style:dotted;text-decoration-color:var(--accent);text-underline-offset:.2em;text-decoration-thickness:1px;cursor:pointer}
+.term-mention:hover,.term-mention.preview-active{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.term-mention:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+.model-inspectable:has(.term-mention:hover,.term-mention:focus,.term-mention.preview-active){background:transparent;color:inherit}
+.concept-source-context{font-size:var(--text-small);font-weight:400;overflow-wrap:anywhere}
+.glossary-entry-content{padding-top:.3rem}
+.glossary-entry-content h3{font-size:var(--text-small);font-weight:600;margin:.9rem 0 .35rem;color:var(--muted)}
+.glossary-entry-content .glossary-explanation{margin:.5rem 0;white-space:pre-line}
+.glossary-entry-content .model-sources{display:flex;flex-wrap:wrap;gap:.3rem .8rem}
+.glossary-entry-content .plain{margin:.25rem 0}
+.glossary-entry-content li{margin:.3rem 0}
+.term-popup{z-index:55;width:31rem;max-width:calc(100vw - 24px);max-height:min(42rem,calc(100vh - 24px));padding:1rem 1.15rem;border-color:color-mix(in srgb,var(--accent) 25%,var(--line));box-shadow:0 12px 40px #172b2a24}
+.term-popup[hidden]{display:none}
+.term-popup-heading{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;padding-bottom:.65rem;border-bottom:1px solid var(--line);color:var(--muted);font-size:var(--text-small)}
+.term-popup-close{font:inherit;color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
+.term-popup-close:hover{text-decoration:underline}
+.term-popup .term-popup-state{display:none;font-size:var(--text-small);color:var(--accent);margin:.6rem 0 0}
+.term-popup.preview-pinned .term-popup-state{display:block}
+.term-popup-definition{padding:.8rem 0 1rem}
+.term-popup-definition+.term-popup-definition{border-top:1px solid var(--line)}
+.term-popup-definition>h3{font-size:1.1rem;margin:0;color:var(--ink)}
+.term-popup-definition .glossary-explanation{color:var(--ink)}
+.term-popup-glossary{display:inline-block;margin-top:.6rem;font-size:var(--text-small)}
+.term-popup .term-popup-variants{margin:.8rem 0 0}
+@media print{.term-popup{display:none!important}.term-mention{text-decoration:none;background:none;color:inherit}}
+.glossary-explanation::before{display:none}

@@ -33,6 +33,7 @@ import (
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
+	"github.com/dvordrova/repomap/internal/terminology"
 )
 
 // Main is the repomap command: everything after the process's own name is
@@ -66,7 +67,6 @@ func Main() {
 	}
 	if len(os.Args) >= 2 && os.Args[1] == "read" {
 		if err := runRead(os.Args[2:], os.Stdout); err != nil {
-			writeDefaultRunError(os.Stderr, err)
 			os.Exit(defaultRunExitCode(err))
 		}
 		return
@@ -80,7 +80,6 @@ func Main() {
 	}
 	if len(os.Args) >= 2 && os.Args[1] == "replay" {
 		if err := runReplay(os.Args[2:], os.Stdout, os.Stderr); err != nil {
-			writeDefaultRunError(os.Stderr, err)
 			os.Exit(defaultRunExitCode(err))
 		}
 		return
@@ -95,18 +94,29 @@ func Main() {
 		repositoryArgumentOmitted = false
 	}
 	if err := runDefault(repo, args, repositoryArgumentOmitted); err != nil {
-		writeDefaultRunError(os.Stderr, err)
 		os.Exit(defaultRunExitCode(err))
 	}
 }
 
 func writeDefaultRunError(writer io.Writer, err error) {
-	output := newRunOutput(writer)
+	writeRunOutputError(newRunOutput(writer), err)
+}
+
+func writeRunOutputError(output *runOutput, err error) {
+	writeRunOutputErrorTo(output, output.writer, err)
+}
+
+// read keeps its existing human progress stream, while terminal errors still
+// go to stderr using that same serialized event clock.
+func writeRunOutputErrorTo(output *runOutput, writer io.Writer, err error) {
+	output.mu.Lock()
+	defer output.mu.Unlock()
 	if errors.Is(err, context.Canceled) {
-		output.State("Run", "canceled")
+		output.writeEventLocked(writer, output.stageLocked("Run"), "state: canceled")
 		return
 	}
-	output.Error("run failed", err.Error())
+	output.currentStage = ""
+	output.writeEventLocked(writer, "ERROR", "run failed", err.Error())
 }
 
 func defaultRunExitCode(err error) int {
@@ -127,7 +137,9 @@ func linkLatest(debugDir, runDir string, stderr io.Writer) {
 func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	return runDefaultWithDeps(repo, extraArgs, defaultRunDeps{
+	output := newRunOutput(os.Stderr)
+	err := runDefaultWithDeps(repo, extraArgs, defaultRunDeps{
+		consoleClock:               output,
 		ctx:                        ctx,
 		stdout:                     os.Stdout,
 		stderr:                     os.Stderr,
@@ -138,11 +150,18 @@ func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool)
 		newCubeProvider:            defaultTargetPortfolioProviderFactory,
 		llmBatchConcurrency:        llm.DefaultBatchConcurrency,
 		llmBatchController:         &llm.BatchController{},
+		collectTerminology:         true,
 		repositoryArgumentOmitted:  repositoryArgumentOmitted,
 	})
+	if err != nil {
+		writeRunOutputError(output, err)
+	}
+	return err
 }
 
 type defaultRunDeps struct {
+	// Child target consoles share elapsed/delta while keeping their own accounting.
+	consoleClock               *runOutput
 	repositoryConfig           *repoconfig.Config
 	ctx                        context.Context
 	stdout                     io.Writer
@@ -152,6 +171,9 @@ type defaultRunDeps struct {
 	captureRepo                func(context.Context, string, *corpus.Corpus) (freshness.RepositoryState, error)
 	newTargetPortfolioProvider targetPortfolioProviderFactory
 	newCubeProvider            targetPortfolioProviderFactory
+	collectTerminology         bool
+	terminology                *terminology.Collector
+	newDisplayProvider         targetPortfolioProviderFactory
 	runDocumentationReduce     documentationReduceRunner
 	runOrientation             orientationRunner
 	// One controller follows the complete repository run, including selected
@@ -260,7 +282,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			portExplicit = true
 		}
 	})
-	humanOutput := newRunOutput(deps.stderr)
+	humanOutput := deps.consoleClock
+	if humanOutput == nil || deps.siblingTargetRun {
+		humanOutput = newRunOutput(deps.stderr)
+		humanOutput.consoleClock = deps.consoleClock
+	}
+	if deps.consoleClock == nil {
+		deps.consoleClock = humanOutput
+	}
 	newTargetPortfolioProvider := deps.newTargetPortfolioProvider
 	if newTargetPortfolioProvider == nil {
 		newTargetPortfolioProvider = defaultTargetPortfolioProviderFactory
@@ -268,6 +297,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if deps.newCubeProvider == nil {
 		deps.newCubeProvider = defaultTargetPortfolioProviderFactory
 	}
+	newTargetPortfolioProvider = providerFactoryWithOutput(newTargetPortfolioProvider, humanOutput)
+	deps.newCubeProvider = providerFactoryWithOutput(deps.newCubeProvider, humanOutput)
+
 	publicationStateEmitted := false
 	defer func() {
 		if runErr != nil && !publicationStateEmitted && !deps.siblingTargetRun {
@@ -433,6 +465,26 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}()
 	}
 	languageEvidence := repositoryLanguages(repositoryCorpus)
+	if deps.collectTerminology && deps.terminology == nil {
+		var termPaths []string
+		for _, entry := range repositoryCorpus.Entries() {
+			termPaths = append(termPaths, entry.Path)
+		}
+		deps.terminology = terminology.NewCollector(termPaths)
+		deps.newDisplayProvider = deps.newCubeProvider
+		wrapFactory := func(factory targetPortfolioProviderFactory) targetPortfolioProviderFactory {
+			return func() (llm.Provider, error) {
+				provider, err := factory()
+				if err != nil {
+					return nil, err
+				}
+				return deps.terminology.Wrap(provider), nil
+			}
+		}
+		deps.newCubeProvider = wrapFactory(deps.newCubeProvider)
+		newTargetPortfolioProvider = wrapFactory(newTargetPortfolioProvider)
+		deps.newTargetPortfolioProvider = newTargetPortfolioProvider
+	}
 	targetOverride := strings.TrimSpace(*analysisTargetFlag)
 	if *noModel && targetOverride == "" {
 		return fmt.Errorf("--no-model requires --target: without the model no target is selected")
@@ -476,7 +528,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			return fmt.Errorf("capture repository state before orientation: %w", err)
 		}
 	}
-	if staticSourceHost != "" && repositoryCorpusHasWorkingTreeChanges(repositoryCorpus, initialState) {
+	if staticSourceHost != "" && repositoryCorpusHasWorkingTreeChanges(repositoryCorpus, analysisRoot, initialState) {
 		return fmt.Errorf(
 			"--no-serve cannot create exact %s source links for tracked working-tree changes; commit or stash those changes, or remove --no-serve to open code through the local VS Code server",
 			staticSourceHost,
@@ -1022,18 +1074,28 @@ func repositoryStateHasAnalyzedSubmodule(state freshness.RepositoryState) bool {
 	return false
 }
 
-func repositoryCorpusHasWorkingTreeChanges(repository *corpus.Corpus, state freshness.RepositoryState) bool {
+func repositoryCorpusHasWorkingTreeChanges(repository *corpus.Corpus, analysisRoot string, state freshness.RepositoryState) bool {
 	if repository == nil {
 		return false
 	}
-	for _, dirty := range state.Dirty {
-		if _, ok := repository.ID(filepath.ToSlash(dirty.Path)); ok {
-			return true
+	// Git status paths start at the Git root; corpus paths start at the
+	// selected analysis directory, which may be a nested repository fixture.
+	inCorpus := func(path string) bool {
+		if path == "" {
+			return false
 		}
-		if dirty.FromPath != "" {
-			if _, ok := repository.ID(filepath.ToSlash(dirty.FromPath)); ok {
-				return true
-			}
+		relative, err := filepath.Rel(analysisRoot, filepath.Join(state.Identity, filepath.FromSlash(path)))
+		if err != nil {
+			return false
+		}
+		// ID accepts only exact local corpus paths, so ../ paths outside the
+		// analysis directory cannot collide with one of its file names.
+		_, ok := repository.ID(filepath.ToSlash(relative))
+		return ok
+	}
+	for _, dirty := range state.Dirty {
+		if inCorpus(dirty.Path) || inCorpus(dirty.FromPath) {
+			return true
 		}
 	}
 	return false

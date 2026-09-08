@@ -535,11 +535,21 @@ func Call(def Definition, window Window) (llm.Call[Answers], error) {
 	if err != nil {
 		return llm.Call[Answers]{}, err
 	}
+	row := map[string]string{"key": Key(0)}
+	for _, column := range def.Columns {
+		row[column.Name] = "<computed " + column.Name + ">"
+	}
+	example, err := json.Marshal(struct {
+		Rows []map[string]string `json:"rows"`
+	}{[]map[string]string{row}})
+	if err != nil {
+		return llm.Call[Answers]{}, err
+	}
 	return llm.Call[Answers]{
 		State: state,
 		Prompt: llm.Prompt{
 			System: def.System, User: string(window.Request), ResponseFormatJSON: true,
-			Reasoning: def.Reasoning,
+			Reasoning: def.Reasoning, ResponseExample: string(example),
 		},
 		Limits: llm.Limits{
 			MaxRequestBytes:  llm.SemanticRecordByteLimit,

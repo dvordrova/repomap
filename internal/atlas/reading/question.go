@@ -39,16 +39,7 @@ func (r *reader) readQuestions(ctx context.Context) error {
 		}
 		r.question.UserQuestion = contains(r.opts.Questions, question)
 		r.question.Origins = origins[question]
-		if r.opts.Through != lines.StageQuestion {
-			if err := r.readRoute(ctx); err != nil {
-				return err
-			}
-			if r.opts.Through != lines.StageRoute {
-				if err := r.readAnswer(ctx); err != nil {
-					return err
-				}
-			}
-		}
+
 		if err := r.persistQuestion(); err != nil {
 			return err
 		}
@@ -56,7 +47,12 @@ func (r *reader) readQuestions(ctx context.Context) error {
 		r.question = nil
 	}
 	r.questionText, r.questionKey = "", ""
-	return nil
+	if r.opts.Through != lines.StageQuestion {
+		if err := r.readAnswers(ctx); err != nil {
+			return err
+		}
+	}
+	return r.persistQuestion()
 }
 
 func (r *reader) questionRows() []lines.QuestionChunk {
@@ -98,7 +94,7 @@ func (r *reader) bindQuestion(chunks []lines.QuestionChunk, answers []rowAnswer)
 		}
 	}
 	route := atlas.QuestionRoute{
-		Version: 7, Question: r.questionText, Repository: r.opts.Repository, Revision: r.opts.Revision, GraphSHA256: r.opts.Graph.SHA256,
+		Version: atlas.QuestionRouteVersion, Question: r.questionText, Repository: r.opts.Repository, Revision: r.opts.Revision, GraphSHA256: r.opts.Graph.SHA256,
 		Scope: []string{
 			"All file declarations and extracted boundaries in the saved places graph, including generated files.",
 			"Existing entrypoint and manifest observations retain their exact source locations and component context; they do not prove a successful launch.",

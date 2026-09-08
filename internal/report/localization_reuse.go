@@ -23,11 +23,11 @@ func rebindDisplayTranslations(saved, current DisplayTextCatalog, translations D
 		encoded, _ := json.Marshal(entry)
 		return string(encoded)
 	}
-	byRef := make(map[string]string, len(translations.Entries))
+	byRef := make(map[string]DisplayTranslationEntry, len(translations.Entries))
 	for _, entry := range translations.Entries {
-		byRef[entry.Ref] = entry.Text
+		byRef[entry.Ref] = entry
 	}
-	byIdentity := make(map[string]string, len(saved.Entries))
+	byIdentity := make(map[string]DisplayTranslationEntry, len(saved.Entries))
 	for _, entry := range saved.Entries {
 		identity := key(entry)
 		if _, exists := byIdentity[identity]; exists {
@@ -43,7 +43,8 @@ func rebindDisplayTranslations(saved, current DisplayTextCatalog, translations D
 			return DisplayTranslations{}, fmt.Errorf("report: current display text %s does not exactly match the saved catalogue", entry.Ref)
 		}
 		delete(byIdentity, identity)
-		result.Entries = append(result.Entries, DisplayTranslationEntry{Ref: entry.Ref, Text: translated})
+		translated.Ref = entry.Ref
+		result.Entries = append(result.Entries, translated)
 	}
 	if err := result.Validate(current); err != nil {
 		return DisplayTranslations{}, err

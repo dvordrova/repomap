@@ -103,6 +103,15 @@ model call translate the completed report's display text. Code names, commands,
 source excerpts and links retain their original values. Saved translations are
 reused on later runs and when the report server opens source links.
 
+The report also collects a shared glossary from its existing model calls.
+Glossary names keep their original spelling; definitions and surrounding prose
+are translated. A code element may have a short English Alias beside its native
+name. The Alias stays English in every report language, and both names lead to
+the same source and definition. Inline hints look up complete names locally, with separate
+definitions for ambiguous names and one highlight per definition per paragraph.
+Opening a hint, following its source, and rendering a saved report make no model
+requests.
+
 ## Work from the evidence upward
 
 A normal analysis saves `reading-input.json` before the first atlas call.
@@ -123,18 +132,15 @@ format changes; there are no readers for previous formats.
 # Run every atlas stage, producing atlas.json without orientation or HTML.
 .bin/repomap read /path/to/run/reading-input.json
 
-# Find sources, order a reading route and answer from that evidence.
+# Find sources and answer with an ordered supporting reading guide.
 .bin/repomap read /path/to/run/reading-input.json \
   --question 'Where does this program store state?' --output /tmp/reading-state
 
-# Iterate on retrieval alone, or edit only the route selector after retrieval.
+# Iterate on retrieval alone.
 .bin/repomap read /path/to/run/reading-input.json --through question \
   --question 'Where does this program store state?'
-.bin/repomap read /path/to/run/reading-input.json --through route \
-  --question 'Where does this program store state?' \
-  --prompt internal/atlas/lines/prompts/route.md
 
-# Revise only the answer, reusing retrieval and the selected route.
+# Revise the answer and its supporting source order, reusing retrieval.
 .bin/repomap read /path/to/run/reading-input.json --through answer \
   --question 'Where does this program store state?' \
   --prompt internal/atlas/lines/prompts/answer.md
@@ -143,9 +149,14 @@ format changes; there are no readers for previous formats.
 Use the same `--debug-dir` as the original run to share its model cache.
 `--no-cache` requests fresh model responses. Each reading writes a new
 output directory and reports its path. `--through` accepts `directories`,
-`files`, `symbols`, `operations`, `boundaries`, `zones`, `arrows`, `targets`, `joints`, `learn`, `question`, `route`, or `answer`.
+`files`, `symbols`, `operations`, `boundaries`, `zones`, `arrows`, `targets`, `joints`, `learn`, `question`, or `answer`.
 The prompt and budget overrides apply to that stage; budget overrides without
 `--through` apply to all stages. A prompt override requires `--through`.
+Questions share one final reasoning batch when the provider envelope permits;
+each answer uses only its own retrieved sources. Its source order also supplies
+the supporting reading guide, so there is no separate `route` stage. Repeating
+or reordering unchanged questions reuses the exact answer request. Adding a
+question reuses existing retrieval decisions but changes the common answer batch.
 
 Inspect `tables.md`, or compare `tables/*.result.json`: the latter holds
 normalized cells with source IDs, paths and lines, or an explicit rejection
@@ -180,30 +191,26 @@ readings recall available descriptions with the same ordinary row builders,
 without making description calls. They send these as labelled model hints
 beside the original facts, with used knowledge IDs restored locally on stops.
 
-`--question TEXT` runs candidate retrieval, route selection and an answer in
-`read`; the ordinary command appends them to the normal atlas run. The output
-`question-routes.json` v1 contains a list of v7 reading routes: selected stops, their original
-evidence and internal subjects, locally restored source positions, and
-connections with distinct call, declaration and inventory evidence.
-Every declaration and boundary in the graph is partitioned into complete
-chunks, including generated files. Unanswered chunks remain explicitly
-unresolved. Retrieval first prepares all questions against the complete shared
-catalogue. Only actual provider envelopes or explicit development budgets split
-it; every question keeps inspection coverage for every original chunk. Reordering
-questions or adding a new one reuses unchanged question decisions. The pass sees names, signatures and author documentation, not
-function bodies; it neither verifies implementation behavior nor turns these
-file connections into an execution trace. The `guide` selects a short list of distinct
-locations in reading order, preserving their original reasons and an open question. For many
-candidates it compares bounded pools and then their selections, always carrying
-the original evidence forward. Every candidate remains in the artifact, and
-every round records coverage and unresolved pools. Editing the route prompt
-does not invalidate unchanged retrieval. Six stops is a preference: additional
-valid selections are kept in every round. Pools split by the input-byte budget,
-without a fixed number of candidate sources. If the model keeps every source
-and another comparison cannot fit, the report keeps separate reading orders;
-it does not invent a global order or repeat the same request. The ordinary command publishes the guide in
-the common HTML report with source links and unresolved gaps. `read` prints and
-saves it without rendering HTML.
+`--question TEXT` runs shared candidate retrieval and answers in `read`; the
+ordinary command appends them to the normal atlas run. `question-routes.json`
+v1 contains v9 readings with the original candidates, evidence, internal subjects
+and locally restored source positions. Connections retain their distinct call,
+declaration and inventory evidence; they are not an execution trace.
+Retrieval first prepares all questions against the complete shared catalogue,
+including generated declarations. Only actual provider envelopes or explicit
+development budgets split it. Every question retains inspection coverage for
+every original chunk, and unresolved chunks remain visible. The pass reads
+names, signatures and author documentation, not function bodies.
+
+The final answer batch reads the union of retrieved evidence once, preserving
+each question's allowed sources and coverage. Its ordered source selections
+become the supporting `guide`; no separate model pass selects a route or an
+extra open question. Actual resource refusals split questions first. If even a
+single question's evidence cannot fit, its complete source set is partitioned
+into separate answer parts. A malformed answer window is refused whole, while
+accepted sibling windows survive. The ordinary command publishes answers,
+source links and unresolved gaps in the common HTML report. `read` saves the
+same results without rendering HTML.
 
 Ordinary independent description tables pack complete rows by system + user
 UTF-8 bytes (64 KiB by default), without an additional row-count cap. Other

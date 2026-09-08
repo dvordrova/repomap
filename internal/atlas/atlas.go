@@ -26,7 +26,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 9
-	Version      = 2
+	Version      = 3
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -401,6 +401,8 @@ type Symbol struct {
 	Column    int    `json:"column,omitempty"`
 	// Line is MODEL for candidates; Doc, then Signature, stand in.
 	Line string `json:"line,omitempty"`
+	// Alias is an optional MODEL English reader label; Name stays native.
+	Alias string `json:"alias,omitempty"`
 	// Key is MODEL; without a symbol layer the code ranks.
 	Key bool `json:"key"`
 	// Activation and Operation are model interpretations of an exposed action.

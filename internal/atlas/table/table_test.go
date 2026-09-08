@@ -43,6 +43,37 @@ func testRows() []Row {
 	}
 }
 
+func TestResponseExampleDependsOnColumnsNotBatchMembership(t *testing.T) {
+	def := testDefinition()
+	windows, err := Windows(def, 1, testRows())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := Call(def, windows[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Call(def, windows[1])
+	if err != nil || first.Prompt.ResponseExample != second.Prompt.ResponseExample {
+		t.Fatalf("the owner shape changed with batch neighbors: %v", err)
+	}
+	var example struct {
+		Rows []map[string]string `json:"rows"`
+	}
+	if err := json.Unmarshal([]byte(first.Prompt.ResponseExample), &example); err != nil || len(example.Rows) != 1 {
+		t.Fatalf("response example lost its table object: %s / %v", first.Prompt.ResponseExample, err)
+	}
+	row := example.Rows[0]
+	if len(row) != len(def.Columns)+1 || row["key"] != "r1" || row["line"] == "" || row["box"] == "" {
+		t.Fatalf("response example does not contain the owner columns: %+v", row)
+	}
+	def.Columns = append(def.Columns, Column{Name: "activation", Kind: Text})
+	changed, err := Call(def, windows[0])
+	if err != nil || changed.Prompt.ResponseExample == first.Prompt.ResponseExample || !strings.Contains(changed.Prompt.ResponseExample, `"activation"`) {
+		t.Fatalf("response example ignored a contract column change: %s / %v", changed.Prompt.ResponseExample, err)
+	}
+}
+
 func TestWindowsKeepOrderAndBytesAreStable(t *testing.T) {
 	def := testDefinition()
 	first, err := Windows(def, 1, testRows())

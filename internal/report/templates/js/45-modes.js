@@ -159,6 +159,13 @@
     }
     var readingQuestion=e.target.closest('.reading-guide');
     if(readingQuestion){question=readingQuestion;term=null;searchIntent='';showReturn();showLocation();}
+    var readingTerm=e.target.closest('.learn-concept'),termAction=e.target.closest('summary,a');
+    if(readingTerm&&termAction&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
+      // A filtered dictionary card can be selected without following its own
+      // anchor. Record that exact owner before a source or map link leaves it;
+      // browser Back must also reopen this card, not the previous URL's term.
+      term=readingTerm;showReturn();showLocation();address(readingTerm,true);
+    }
     var a=e.target.closest('a[href^="#"]');if(!a||a.closest('[data-map-explorer]')||a.hasAttribute('data-open')||a.hasAttribute('data-question-map')||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
     var node=document.getElementById(a.getAttribute('href').slice(1));if(!enclosing(node))return;
     e.preventDefault();setPage(node);address(node);

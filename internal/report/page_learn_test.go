@@ -62,7 +62,7 @@ func TestLearnRunEntranceUsesSelectedIntent(t *testing.T) {
 func TestQuestionAnswerRendersItsOwnSourcesAndKeepsTheReadingRoute(t *testing.T) {
 	data := reportProgramShellDataFixture(t, "fixture")
 	step := atlas.QuestionStep{Path: "README.md", Line: 14, StopIndexes: []int{0}}
-	data.Questions = []atlas.QuestionRoute{{Version: 7, Revision: data.CapturedRevision, Question: "How do I run it?",
+	data.Questions = []atlas.QuestionRoute{{Version: atlas.QuestionRouteVersion, Revision: data.CapturedRevision, Question: "How do I run it?",
 		Stops: []atlas.QuestionStop{{Path: "README.md", Line: 14, Name: "Running", Why: "Read the documented command.", Evidence: map[string]any{
 			"context": map[string]any{"directory_author_doc": "Unrelated directory context"},
 			"evidence": []map[string]any{
@@ -128,11 +128,11 @@ func TestQuestionAnswerRendersItsOwnSourcesAndKeepsTheReadingRoute(t *testing.T)
 func TestIndependentReadingsDoNotInventAGlobalOrder(t *testing.T) {
 	data := reportProgramShellDataFixture(t, "fixture")
 	steps := []atlas.QuestionStep{{Path: "README.md", Line: 14, StopIndexes: []int{0}}, {Path: "README.md", Line: 22, StopIndexes: []int{1}}}
-	data.Questions = []atlas.QuestionRoute{{Version: 7, Revision: data.CapturedRevision, Question: "How do I run and test it?",
+	data.Questions = []atlas.QuestionRoute{{Version: atlas.QuestionRouteVersion, Revision: data.CapturedRevision, Question: "How do I run and test it?",
 		Stops: []atlas.QuestionStop{{Path: "README.md", Line: 14, Name: "Running", Why: "Start the application."}, {Path: "README.md", Line: 22, Name: "Testing", Why: "Run the tests."}},
 		Guide: &atlas.QuestionGuide{State: "partitioned", Steps: steps, Parts: []atlas.QuestionGuidePart{
-			{Source: atlas.SourceModel, Steps: steps[:1], OpenQuestion: "Required environment is not described."},
-			{Source: atlas.SourceCache, Steps: steps[1:], OpenQuestion: "none"},
+			{Source: atlas.SourceModel, Steps: steps[:1]},
+			{Source: atlas.SourceCache, Steps: steps[1:]},
 		}},
 	}}
 	html, err := RenderHTMLWithOptions(&data, reportSingleTargetRenderOptionsFixture(t, &data))
@@ -145,7 +145,7 @@ func TestIndependentReadingsDoNotInventAGlobalOrder(t *testing.T) {
 		t.Fatal("report has no main content")
 	}
 	main, _, _ = strings.Cut(main, `</main>`)
-	if strings.Count(main, `<div class="reading-part"><ol`) != 2 || !strings.Contains(main, "separate reading orders") || !strings.Contains(main, "Required environment is not described.") || strings.Contains(main, "some model answers were unavailable") {
+	if strings.Count(main, `<div class="reading-part"><ol`) != 2 || !strings.Contains(main, "separate reading orders") || strings.Contains(main, "some model answers were unavailable") {
 		t.Fatal("separate accepted readings became one order or a provider failure")
 	}
 	data.Questions[0].Guide.Parts[1].Steps = steps[:1]
@@ -222,6 +222,7 @@ func TestQuestionTermsUseSelectedDeclarationsNotNameGuesses(t *testing.T) {
 	if strings.Contains(html.String(), other.Explanation) || strings.Contains(html.String(), neighbour.Explanation) {
 		t.Fatal("unrelated term displayed beside answer")
 	}
+	collectGlossary(view)
 	if err := templates.ExecuteTemplate(&html, "concepts.html", view); err != nil {
 		t.Fatal(err)
 	}

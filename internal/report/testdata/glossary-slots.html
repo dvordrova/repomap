@@ -1,0 +1,56 @@
+<!-- Open this fixture in a browser. PASS exercises the actual report scripts, including source previews, identical prose, cloned annotations and changed selections. -->
+<!doctype html><meta charset="utf-8">
+<section id="concepts">
+<details class="learn-concept" id="finance" data-term-name="Financial definition"><div class="glossary-entry-content">Financial definition</div></details>
+<details class="learn-concept" id="river" data-term-name="River definition"><div class="glossary-entry-content">River definition</div></details>
+</section>
+<script type="application/json" id="rm-term-mentions">[
+{"ref":"t1","text":"Same word.","spans":[{"start":5,"end":9,"ids":["finance"]}]},
+{"ref":"t2","text":"Same word.","spans":[{"start":5,"end":9,"ids":["river"]}]}
+]</script>
+<main><div data-map id="map">
+<p class="model"><span id="first" data-display-ref="t1">Same word.</span></p>
+<p class="model"><span id="second" data-display-ref="t2">Same word.</span></p>
+<p class="model"><span id="unconfirmed" data-display-ref="t3">Same word.</span></p>
+<p id="unbound">Same word.</p>
+<div id="part"><div class="group-highlights"><div class="key-symbol">
+<strong><a class="chip" href="/source/parser.go#L12">Parser</a></strong>
+<p class="model"><span data-display-ref="t1">Same word.</span><span class="model-sources"> <a class="anchor" href="/source/parser.go#L12">parser.go:12</a></span></p>
+</div></div></div>
+<a id="member-node" href="#part" data-concepts="[]"></a>
+</div></main><pre id="result">PENDING</pre>
+<script>function rmT(key){return key;}</script>
+<script src="../templates/js/25-preview.js"></script>
+<script src="../templates/js/26-map-members.js"></script>
+<script src="../templates/js/46-glossary.js"></script>
+<script>
+(async function(){
+  var output=document.getElementById('result');
+  function check(value,message){if(!value)throw new Error(message);}
+  function ids(element){return element.querySelector('.term-mention')?.dataset.termIds||'';}
+  function tick(){return new Promise(function(resolve){setTimeout(resolve,0);});}
+  try{
+    var first=document.getElementById('first'),second=document.getElementById('second'),map=document.getElementById('map');
+    check(first.closest('.model').querySelector('.source-hint'),'source preview did not initialize');
+    check(ids(first)==='finance'&&ids(second)==='river','identical text lost its distinct definitions');
+    check(!ids(document.getElementById('unconfirmed'))&&!ids(document.getElementById('unbound')),'equal text acquired an unconfirmed definition');
+    var item=repomapMembers.items(document.getElementById('member-node'))[0];
+    check(item.explanation==='Same word.'&&item.explanation_ref==='t1','declaration inventory lost its prose ref or included citations');
+    var clone=first.cloneNode(true);clone.id='cloned';clone.dataset.displayRef='t2';map.appendChild(clone);
+    await tick();
+    check(ids(clone)==='river','clone reused the old text definition');
+    clone.querySelector('.term-mention').click();
+    check(document.querySelector('.term-popup-definition h3')?.textContent==='River definition','cloned annotation did not bind its own preview');
+    first.textContent=item.explanation;first.dataset.displayRef='t2';
+    await tick();
+    check(ids(first)==='river','dynamic selection kept the prior ref for equal text');
+    first.textContent=item.explanation;first.dataset.displayRef='t3';
+    await tick();
+    check(!ids(first),'dynamic unconfirmed selection borrowed an equal-text definition');
+    clone.textContent='Changed word.';clone.dataset.displayRef='t2';
+    await tick();
+    check(!ids(clone),'offsets were applied after the slot text changed');
+    output.textContent='PASS';
+  }catch(error){output.textContent='FAIL: '+error.message;}
+})();
+</script>

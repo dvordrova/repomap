@@ -26,12 +26,27 @@ func ExecuteJSON[T any](
 	executor Executor,
 	provider Provider,
 	call Call[T],
-) (Outcome[T], error) {
-	var outcome Outcome[T]
+) (outcome Outcome[T], resultErr error) {
+	var adapted AdaptedResponse
+	defer func() {
+		if resultErr == nil && len(outcome.Response) > 0 {
+			adapted.Accepted(nil)
+		}
+	}()
 	ctx = bindExecutorAttemptGate(ctx, executor)
 	decodeValidate, err := decoderForCall(call)
 	if err != nil {
 		return outcome, err
+	}
+	domainDecode := decodeValidate
+	decodeValidate = func(raw []byte) (T, error) {
+		var zero T
+		var err error
+		adapted, err = AdaptResponse(provider, outcome.Request, raw)
+		if err != nil {
+			return zero, err
+		}
+		return domainDecode(adapted.Domain)
 	}
 	if err := validateLimits(call.Limits); err != nil {
 		return outcome, err
@@ -65,7 +80,7 @@ func ExecuteJSON[T any](
 	}
 
 	if !executor.Enabled {
-		return executeLive(ctx, executor, provider, prepared, decodeValidate, call.Limits, outcome)
+		return executeLive(ctx, executor, provider, prepared, decodeValidate, call.Limits, outcome, &adapted)
 	}
 	providerState, err := canonicalProviderState(provider.State())
 	if err != nil {
@@ -94,6 +109,7 @@ func ExecuteJSON[T any](
 		value, validateErr := decodeAcceptedJSON(decodeValidate, record.Response)
 		if validateErr == nil {
 			outcome.Value = value
+			outcome.ResponseRejections = adapted.Rejections
 			outcome.Cached = true
 			setOutcomeResponse(&outcome, record.Response)
 			outcome.FinishReason = record.FinishReason
@@ -119,7 +135,7 @@ func ExecuteJSON[T any](
 		}
 	}
 
-	return executeLive(ctx, executor, provider, prepared, decodeValidate, call.Limits, outcome)
+	return executeLive(ctx, executor, provider, prepared, decodeValidate, call.Limits, outcome, &adapted)
 }
 
 // ExecuteJSONBatch returns outcomes in caller-provided order and fails closed
@@ -364,6 +380,7 @@ func executeLive[T any](
 	decodeValidate DecodeValidate[T],
 	limits Limits,
 	outcome Outcome[T],
+	adapted *AdaptedResponse,
 ) (Outcome[T], error) {
 	completion, err := provider.Complete(ctx, prepared)
 	setOutcomeResponse(&outcome, completion.Response)
@@ -387,6 +404,7 @@ func executeLive[T any](
 		return outcome, fmt.Errorf("llm: reject response: %w", err)
 	}
 	outcome.Value = value
+	outcome.ResponseRejections = adapted.Rejections
 
 	if executor.Enabled {
 		exactRequest := prepared.Bytes()
@@ -561,7 +579,8 @@ func eventForOutcome[T any](
 	outcome Outcome[T],
 ) Event {
 	return Event{
-		Kind: kind, Source: source, Failure: failure,
+		ResponseRejections: outcome.ResponseRejections,
+		Kind:               kind, Source: source, Failure: failure,
 		CacheKey: outcome.CacheKey,
 		Request:  cloneBytes(outcome.Request), RequestSHA256: outcome.RequestSHA256,
 		RequestBytes: outcome.RequestBytes,

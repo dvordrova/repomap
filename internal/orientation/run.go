@@ -31,6 +31,9 @@ const (
 //go:embed prompt.md
 var promptText string
 
+//go:embed response-example.json
+var responseExample string
+
 // Input is everything the stage may show the model. Groups is the complete
 // matched GroupsIndex set, one index per analyzed target.
 type Input struct {
@@ -69,7 +72,7 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	outcome, err := llm.ExecuteJSON(ctx, executor, provider, llm.Call[normalized]{
 		State: cubeState(input, digests, prepared.wire),
 		Prompt: llm.Prompt{
-			System: strings.TrimSpace(promptText), User: string(prepared.wire), ResponseFormatJSON: true,
+			System: strings.TrimSpace(promptText), User: string(prepared.wire), ResponseFormatJSON: true, ResponseExample: responseExample,
 		},
 		Limits: limits(),
 		DecodeValidate: func(raw []byte) (normalized, error) {
@@ -170,7 +173,7 @@ func encodeRequest(input Input, shape requestShape) ([]byte, catalog, error) {
 func requestFits(provider llm.Provider, wire []byte) error {
 	bounds := limits()
 	prepared, err := llm.Prepare(provider, llm.Prompt{
-		System: strings.TrimSpace(promptText), User: string(wire), ResponseFormatJSON: true,
+		System: strings.TrimSpace(promptText), User: string(wire), ResponseFormatJSON: true, ResponseExample: responseExample,
 	}, bounds)
 	if err != nil {
 		return err

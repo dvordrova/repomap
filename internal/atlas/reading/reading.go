@@ -211,7 +211,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		{lines.StageTargets, r.readTargets},
 		{lines.StageJoints, r.readJoints},
 	}
-	questionOnly := opts.Through == lines.StageQuestion || opts.Through == lines.StageRoute || opts.Through == lines.StageAnswer
+	questionOnly := opts.Through == lines.StageQuestion || opts.Through == lines.StageAnswer
 	if questionOnly {
 		// Restore only descriptions whose exact current basis is remembered.
 		// Reuse the ordinary row builders; this prelude never calls a model.
@@ -273,8 +273,6 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		through = lines.StageAnswer
 		if opts.Through == lines.StageQuestion {
 			through = lines.StageQuestion
-		} else if opts.Through == lines.StageRoute {
-			through = lines.StageRoute
 		}
 		if err := os.WriteFile(filepath.Join(opts.OwnerRunDir, atlas.TablesFilename), []byte(r.tables.String()), 0o600); err != nil {
 			return Result{}, err
@@ -856,6 +854,9 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 				}
 				if line, ok := r.symbolLine[symbol.ID]; ok {
 					symbol.Line = line.value
+				}
+				if knowledge := r.knowledge[symbol.ID]; knowledge != nil && knowledge.Cells["alias"] != "none" {
+					symbol.Alias = knowledge.Cells["alias"]
 				}
 				symbol.Key = contains(r.keys[fileID], symbol.ID)
 				if operation, ok := r.operations[symbol.ID]; ok {

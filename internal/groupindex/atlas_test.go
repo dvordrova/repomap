@@ -16,7 +16,7 @@ func TestAtlasInterpretationRebindsTheSameDeclarationAcrossTargets(t *testing.T)
 		t.Fatal("fixture needs target-scoped IDs")
 	}
 	makeTarget := func(p programindex.Index) atlas.Target {
-		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "pkg", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{{ID: "pkg", Dir: "pkg", Title: "Work", Line: "Does work.", Side: atlas.SideMid, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "pkg/work.go", Line: "Work.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "symbol", ObjectID: a.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Restores a snapshot.", Activation: "command", Operation: "snapshot restore", OperationSummary: "Restores a data directory from a saved snapshot.", Key: true}}}}}}}
+		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "pkg", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{{ID: "pkg", Dir: "pkg", Title: "Work", Line: "Does work.", Side: atlas.SideMid, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "pkg/work.go", Line: "Work.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "symbol", ObjectID: a.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Restores a snapshot.", Alias: "snapshot restorer", Activation: "command", Operation: "snapshot restore", OperationSummary: "Restores a data directory from a saved snapshot.", Key: true}}}}}}}
 	}
 	result, err := ProjectAtlas(map[string]programindex.Index{a.Target.ID: a, b.Target.ID: b}, atlas.Atlas{Version: atlas.Version, Repository: "x", Revision: "abc", Targets: []atlas.Target{makeTarget(a), makeTarget(b)}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
 	if err != nil {
@@ -30,9 +30,13 @@ func TestAtlasInterpretationRebindsTheSameDeclarationAcrossTargets(t *testing.T)
 		if index.Operations[0].SubjectID != want || index.Subjects[0].Interpretation == nil {
 			t.Fatalf("operation was not rebound to %s", want)
 		}
+		if index.Subjects[0].Interpretation.Alias != "snapshot restorer" || index.Subjects[0].Object.Name != "FA" || index.Subjects[0].Object.Location.Path != "pkg/work.go" || index.Subjects[0].Object.Location.Line != 3 || index.Subjects[0].Object.Location.Column != 1 {
+			t.Fatalf("alias changed native identity or source location: %+v", index.Subjects[0])
+		}
 		copy := index.Snapshot()
 		copy.Subjects[0].Interpretation.Line = "changed"
-		if index.Subjects[0].Interpretation.Line == "changed" {
+		copy.Subjects[0].Interpretation.Alias = "changed alias"
+		if index.Subjects[0].Interpretation.Line == "changed" || index.Subjects[0].Interpretation.Alias == "changed alias" {
 			t.Fatal("snapshot shares interpretation")
 		}
 	}

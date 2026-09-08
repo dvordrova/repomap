@@ -23,36 +23,19 @@ type testWire struct {
 	Limits llm.Limits `json:"limits"`
 }
 
-// Test-only request reader retains member order so the fake provider can
-// verify complete catalogue packing without a production input decoder.
+// Test-only request reader checks the typed ordered wire and its complete texts.
 type modelRequest struct {
-	Entries []responseEntry
+	Entries []requestEntry
 }
 
 func (request *modelRequest) UnmarshalJSON(raw []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
-	token, err := decoder.Token()
-	if err != nil || token != json.Delim('{') {
-		return fmt.Errorf("test provider: input is not a flat object")
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request.Entries); err != nil {
+		return err
 	}
-	request.Entries = nil
-	for decoder.More() {
-		token, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		ref, ok := token.(string)
-		if !ok {
-			return fmt.Errorf("test provider: input key is not a string")
-		}
-		var text string
-		if err := decoder.Decode(&text); err != nil {
-			return err
-		}
-		request.Entries = append(request.Entries, responseEntry{Ref: ref, Text: text})
-	}
-	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
-		return fmt.Errorf("test provider: input object is incomplete")
+	if request.Entries == nil {
+		return fmt.Errorf("test provider: input is not an ordered entry array")
 	}
 	if _, err := decoder.Token(); err != io.EOF {
 		return fmt.Errorf("test provider: input has trailing data")
@@ -134,7 +117,9 @@ func responseWire(response modelResponse) []byte {
 			raw.WriteByte(',')
 		}
 		ref, _ := json.Marshal(entry.Ref)
-		text, _ := json.Marshal(entry.Text)
+		text, _ := json.Marshal(struct {
+			Text string `json:"text"`
+		}{entry.Text})
 		raw.Write(ref)
 		raw.WriteByte(':')
 		raw.Write(text)
@@ -239,17 +224,16 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(request.Entries) != len(entries) {
-		t.Fatal("flat provider input lost complete entries")
+		t.Fatal("typed provider input lost complete entries")
 	}
 	for i, entry := range request.Entries {
 		if entry.Ref != catalog.Entries[i].Ref || entry.Text != catalog.Entries[i].Text {
-			t.Fatalf("flat input reordered a ref or changed original text at %d: %#v", i, entry)
+			t.Fatalf("typed input reordered a ref or changed original text at %d: %#v", i, entry)
 		}
 	}
 	// Original protected source bytes are restored locally. They do not change
 	// identical translation input or authorize copying an old catalogue binding.
 	entries[0].Protected[0].Text = "DIFFERENT-SOURCE-ORIGINAL"
-	entries[0].Role = "different-local-display-role"
 	rebound := testCatalog(t, entries)
 	cached, err := Translate(t.Context(), executor, provider, rebound, report.Russian)
 	if err != nil {
@@ -324,8 +308,8 @@ func TestTranslateKeyedWirePreservesOnlyOriginalPlaceholderAuthority(t *testing.
 		{Role: "label", Text: "Start here"},
 	})
 	provider := &testProvider{rawResponse: []byte(`{
-		"t2":"Начало", "t1":"Используйте __REPOMAP_P1__ по возможности.",
-		"t\u0031":"Используйте __REPOMAP_P1__ по возможности.",
+		"t2":{"text":"Начало"}, "t1":{"text":"Используйте __REPOMAP_P1__ по возможности."},
+		"t\u0031":{"text":"Используйте __REPOMAP_P1__ по возможности."},
 		"t999":{"protected":["__REPOMAP_P999__"],"text":null}, "unknown":null
 	}`)}
 	result, err := Translate(t.Context(), llm.Executor{}, provider, catalog, report.Russian)
@@ -336,7 +320,7 @@ func TestTranslateKeyedWirePreservesOnlyOriginalPlaceholderAuthority(t *testing.
 	if err != nil || strings.Contains(string(raw), `"protected"`) || strings.Contains(string(raw), "P999") {
 		t.Fatal("unknown value acquired display or placeholder authority")
 	}
-	provider.rawResponse = []byte(`{"t1":"Без обязательного плейсхолдера.","t2":"Начало","protected":["__REPOMAP_P1__"]}`)
+	provider.rawResponse = []byte(`{"t1":{"text":"Без обязательного плейсхолдера."},"t2":{"text":"Начало"},"protected":["__REPOMAP_P1__"]}`)
 	result, err = Translate(t.Context(), llm.Executor{}, provider, catalog, report.Russian)
 	if err == nil || !reflect.DeepEqual(result, report.DisplayTranslations{}) {
 		t.Fatal("unadvertised output metadata authorized a missing source placeholder")
@@ -355,9 +339,10 @@ func TestTranslateRejectsInvalidKeyedWireBeforeCache(t *testing.T) {
 		{"known number", `{"t1":1,"t2":"two"}`},
 		{"known bool", `{"t1":true,"t2":"two"}`},
 		{"known array", `{"t1":["one"],"t2":"two"}`},
-		{"legacy entry metadata", `{"t1":{"text":"one","protected":[]},"t2":"two"}`},
-		{"missing mandatory ref", `{"t1":"one","t999":"two"}`},
-		{"conflicting parsed duplicate", `{"t1":"one","t2":"two","t\u0031":"different"}`},
+		{"unadvertised entry metadata", `{"t1":{"text":"one","protected":[]},"t2":"two"}`},
+		{"retired occurrence decisions", `{"t1":{"text":"one","mentions":{}},"t2":{"text":"two"}}`},
+		{"missing mandatory ref", `{"t1":{"text":"one"},"t999":{"text":"two"}}`},
+		{"conflicting parsed duplicate", `{"t1":{"text":"one"},"t2":{"text":"two"},"t\u0031":{"text":"different"}}`},
 		{"unclosed ref quote", `{"t1":"one","t2:"two"}`},
 		{"extra closing brace", `{"t1":"one","t2":"two"}}`},
 		{"trailing JSON", `{"t1":"one","t2":"two"} {}`},

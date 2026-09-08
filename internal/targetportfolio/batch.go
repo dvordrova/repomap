@@ -422,7 +422,7 @@ func (batch defaultBatch) buildPrompt() (llm.Prompt, error) {
 	return llm.Prompt{
 		System:             defaultPromptSystem,
 		User:               fmt.Sprintf(defaultPromptUserShape, batch.wire),
-		ResponseFormatJSON: true,
+		ResponseFormatJSON: true, ResponseExample: defaultResponseExample,
 	}, nil
 }
 

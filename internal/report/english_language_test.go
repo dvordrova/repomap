@@ -155,6 +155,7 @@ func TestReportRenderingIsEnglishOnly(t *testing.T) {
 			}
 			beforeOperation := beforeOperations[i]
 			beforeOperation.Summary = translated[i]
+			beforeOperation.SummaryRef = catalog.Entries[i].Ref
 			if operation != beforeOperation {
 				t.Fatal("translating a boundary purpose changed its route label or source anchor")
 			}
@@ -183,7 +184,7 @@ func TestReportRenderingIsEnglishOnly(t *testing.T) {
 		data.ReadmeOverview = "This unused README overview is retained only in canonical data."
 		data.Timing = &RunTiming{WallMS: 372_000, Stages: []StageTiming{{Stage: "atlas_answer", Live: 2, Cached: 1, ProviderMS: 61_000, SlowestMS: 32_000}}}
 		step := atlas.QuestionStep{Path: sourcePath, Line: 1, StopIndexes: []int{0}}
-		data.Questions = []atlas.QuestionRoute{{Version: 7, Revision: data.CapturedRevision, Question: "My original question?", UserQuestion: true,
+		data.Questions = []atlas.QuestionRoute{{Version: atlas.QuestionRouteVersion, Revision: data.CapturedRevision, Question: "My original question?", UserQuestion: true,
 			Stops:  []atlas.QuestionStop{{Path: sourcePath, Line: 1, Name: "sample", Why: "This declaration prepares a response.", Evidence: map[string]any{"evidence": []map[string]any{{"anchor_path": sourcePath, "anchor_line": 1, "signature": signature, "author_text": quote}}}}},
 			Answer: &atlas.QuestionAnswer{State: "answered", Parts: []atlas.QuestionAnswerPart{{State: "answered", Text: "It calls `sample(value)` before returning a response.", Basis: "The declaration names its argument.", Source: atlas.SourceModel, Steps: []atlas.QuestionStep{step}}}},
 		}}

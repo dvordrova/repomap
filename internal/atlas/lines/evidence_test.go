@@ -159,7 +159,7 @@ func TestTypeContextKeepsOwnedDeclarationsWithoutNativeIDs(t *testing.T) {
 		t.Fatal("type preparation mutated the native context")
 	}
 	explanation := "A ticket represents a pending job and keeps the points associated with that job together. Its Renew operation extends the ticket's validity; the declaration also exposes a Done operation.\n\nThese names describe the interface, without establishing what happens to the points when the job ends."
-	raw, _ = json.Marshal(map[string]any{"rows": []map[string]string{{"key": "r1", "line": explanation, "key_symbol": "yes"}}})
+	raw, _ = json.Marshal(map[string]any{"rows": []map[string]string{{"key": "r1", "line": explanation, "alias": "none", "key_symbol": "yes"}}})
 	answer, err := table.Decode(Types(), windows[0], raw)
 	if err != nil || len(answer) != 1 || answer[0]["line"] != explanation {
 		t.Fatalf("type explanation lost its full qualification or paragraph break: %v, %v", answer, err)

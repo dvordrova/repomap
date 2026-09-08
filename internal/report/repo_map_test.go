@@ -38,7 +38,7 @@ func TestTranslatedCrossComponentLabelsKeepTheirExactDestinations(t *testing.T) 
 			here := &pageSection{ID: "here", programTargetID: "here-id", Name: "jieba", Root: "jieba", Kind: "library"}
 			sections := []*pageSection{here, peer, sameRoot}
 			labelSections(sections)
-			const original = "test (executable) / cut"
+			const original = "test.command (executable) / cut"
 			here.Map = &pageMap{Nodes: []pageMapNode{
 				{ID: "remote", Component: "peer-id", Href: "#peer-group", FullTitle: original, CanonicalTitle: original},
 				{ID: "native", Component: "here-id", Href: "#local", FullTitle: original, CanonicalTitle: original},
@@ -50,7 +50,7 @@ func TestTranslatedCrossComponentLabelsKeepTheirExactDestinations(t *testing.T) 
 			}}}
 			page := &PreparedPage{view: &pageView{Sections: sections}}
 			page.rebuildDisplayLabels(language)
-			wantPrefix := "test (" + englishUI(language, "executable") + ")"
+			wantPrefix := "test.command (" + englishUI(language, "executable") + ")"
 			if node := here.Map.Nodes[0]; node.FullTitle != wantPrefix+" / cut" || node.CanonicalTitle != original || node.ID != "remote" || node.Component != "peer-id" || node.Href != "#peer-group" {
 				t.Fatalf("remote display lost its exact identity or native title: %+v", node)
 			}

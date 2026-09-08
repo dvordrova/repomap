@@ -10,11 +10,14 @@
 [data-map-explorer] .map-inspector:not(.has-preview){height:auto;min-height:4rem;max-height:none}
 [data-map-explorer] .map-inspector:not(.has-preview) .map-inspector-continuation{display:none}
 .map-concepts[hidden]{display:none}
-.map-member-content{box-sizing:border-box;height:100%;font-size:14px;line-height:1.3}
+.map-member-content{box-sizing:border-box;height:100%;overflow:auto;font-size:14px;line-height:1.3}
 .map-member-label{font-size:12px;color:var(--muted);margin-bottom:10px}
 .map-member-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
-.map-member{font:inherit;text-align:left;box-sizing:border-box;min-width:0;height:54px;overflow:hidden;overflow-wrap:anywhere;padding:8px 10px;border:1px solid #b5c6ba;border-radius:6px;background:var(--paper);color:var(--ink);cursor:pointer}
-.map-member::before{content:'▫';color:var(--accent);margin-right:.35em}
+.map-member{font:inherit;text-align:left;box-sizing:border-box;min-width:0;min-height:54px;overflow-wrap:anywhere;padding:8px 10px;border:1px solid #b5c6ba;border-radius:6px;background:var(--paper);color:var(--ink);cursor:pointer}
+.map-member-name{display:block;font-family:var(--mono);font-size:1em;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.map-member-aliased .map-member-name{font-size:.85em;color:var(--muted)}
+.map-member-name::before{content:'▫';color:var(--accent);margin-right:.35em}
+.map-member-meaning{display:block;margin-bottom:.4rem;font-weight:600;line-height:1.4;color:var(--ink)}
 .map-member small{display:block;font-size:10px;line-height:1.2;margin-top:2px;color:var(--muted);overflow-wrap:anywhere}
 .map-member:hover,.map-member:focus-visible{border-color:var(--accent);background:var(--soft);outline:2px solid var(--accent);outline-offset:1px}
 .map-member[aria-pressed=true]{border-color:var(--accent);background:var(--soft);box-shadow:inset 3px 0 var(--accent)}
@@ -48,8 +51,9 @@
 .map-focus-center>h3{font-size:1.45rem;line-height:1.2;margin:0 0 .85rem;overflow-wrap:anywhere}
 .map-focus-center>h4{font-size:.875rem;margin:1.6rem 0 .7rem}
 .map-focus-purpose{font-size:.95rem;line-height:1.55;margin:.65rem 0 1.25rem;overflow-wrap:anywhere;color:var(--model)}
-.map-focus .map-member-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:.5rem}
-.map-focus .map-member{height:auto;min-height:3rem;font-size:.9rem;line-height:1.3;background:var(--paper);overflow:visible}
+.map-focus .map-member-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr));gap:.65rem;align-items:stretch}
+.map-focus .map-member{display:flex;flex-direction:column;align-items:stretch;height:auto;min-height:3rem;font-size:.9rem;line-height:1.3;padding:.9rem;background:var(--paper);overflow:visible}
+.map-focus .map-member-name{margin-top:auto}
 .map-focus .map-member small{font-size:.7rem;line-height:1.3}
 .map-focus .map-member[aria-pressed=true]{background:var(--soft)}
 .map-focus-selection{display:flex;flex-direction:column;gap:.3rem;padding:.85rem 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow-wrap:anywhere}
@@ -89,11 +93,13 @@
 .map-part-focus .map-inspector-heading>div{display:none}
 .map-part-focus .map-inspector-heading>label{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--muted);padding-left:0}
 .map-part-focus .map-inspector-heading select{max-width:40rem;width:100%;min-width:0;font-size:.95rem}
-.map-part-focus .map-card-docked{display:flex;flex-direction:column;gap:.5rem;max-width:none}
+.map-part-focus .map-card-docked{display:flex;flex-direction:column;align-items:stretch;gap:.5rem;max-width:none;background:transparent}
 .map-part-focus .map-card-docked .map-concepts{order:-1;max-width:90ch;font-size:1rem;line-height:1.65;padding:0}
 .map-part-focus .map-card-docked .map-card-intro>.map-card-summary{display:none}
 .map-part-focus .map-inspector-continuation{display:none}
-.map-part-focus .map-card-actions{display:flex;align-items:flex-start;flex-wrap:wrap;gap:.75rem 1.5rem;margin-top:1rem}
-.map-part-focus .map-card-actions>details{min-width:0}
+.map-part-focus .map-card-actions{display:flex;flex-direction:column;align-items:stretch;gap:.75rem;margin-top:1rem}
+[data-map-explorer].map-part-focus .map-card-actions{padding-top:0;border-top:0}
+[data-map-explorer].map-part-focus .map-card-actions>details{min-width:0;margin:0}
+.map-part-focus .map-card-keys li{max-width:none;white-space:normal;overflow:visible;text-overflow:clip}
 .map-part-focus .map-card-hint{display:none}
 @media print{.map-member-layer{display:none}}

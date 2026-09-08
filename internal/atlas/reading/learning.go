@@ -29,6 +29,9 @@ var learningInternalRef = regexp.MustCompile(`\b[eq][0-9]+\b`)
 //go:embed prompts/learning.md
 var learningPrompt string
 
+//go:embed prompts/learning-response-example.json
+var learningResponseExample string
+
 //go:embed prompts/learning-merge.md
 var learningMergePrompt string
 
@@ -208,7 +211,7 @@ func learningCall(pool learningRequest, prompt string) (llm.Call[learningRespons
 		return llm.Call[learningResponse]{}, err
 	}
 	return llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v1"),
-		Prompt:         llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true},
+		Prompt:         llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true, ResponseExample: learningResponseExample},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
 		DecodeValidate: func(raw []byte) (learningResponse, error) { return decodeLearning(raw, pool) }}, nil
 }

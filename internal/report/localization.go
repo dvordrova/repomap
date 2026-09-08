@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"regexp"
 	"sort"
 	"strconv"
@@ -20,7 +21,7 @@ type DisplayLanguage string
 const (
 	English            DisplayLanguage = "en"
 	Russian            DisplayLanguage = "ru"
-	DisplayTextVersion                 = 1
+	DisplayTextVersion                 = 5
 )
 
 func NormalizeDisplayLanguage(value string) (DisplayLanguage, error) {
@@ -46,6 +47,10 @@ type DisplayTextEntry struct {
 	Role      string                 `json:"role"`
 	Text      string                 `json:"text"`
 	Protected []DisplayProtectedText `json:"protected,omitempty"`
+	// Scope and term IDs are local bindings; the provider sees short refs only.
+	Scope   string            `json:"scope,omitempty"`
+	Context string            `json:"context,omitempty"`
+	Terms   []DisplayTextTerm `json:"terms,omitempty"`
 }
 
 // DisplayTextCatalog contains only explicitly projected display prose. It
@@ -78,6 +83,12 @@ func (catalog DisplayTextCatalog) Validate() error {
 		if entry.Ref != fmt.Sprintf("t%d", i+1) || entry.Role == "" || strings.TrimSpace(entry.Text) == "" {
 			return fmt.Errorf("report: invalid display text entry %d", i)
 		}
+		if err := entry.validateTermBindings(); err != nil {
+			return err
+		}
+		if err := entry.ValidateTranslation(entry.Text); err != nil {
+			return err
+		}
 	}
 	if catalog.SHA256 != displayCatalogDigest(catalog.Entries) {
 		return fmt.Errorf("report: display text catalogue digest does not match")
@@ -96,27 +107,27 @@ func (translations DisplayTranslations) Validate(catalog DisplayTextCatalog) err
 	if len(translations.Entries) != len(catalog.Entries) {
 		return fmt.Errorf("report: translations do not cover every display text")
 	}
-	byRef := make(map[string]string, len(translations.Entries))
+	byRef := make(map[string]DisplayTranslationEntry, len(translations.Entries))
 	for _, entry := range translations.Entries {
 		if _, duplicate := byRef[entry.Ref]; duplicate || strings.TrimSpace(entry.Text) == "" {
 			return fmt.Errorf("report: duplicate or empty translated display text")
 		}
-		byRef[entry.Ref] = entry.Text
+		byRef[entry.Ref] = entry
 	}
 	for _, entry := range catalog.Entries {
-		text, ok := byRef[entry.Ref]
+		value, ok := byRef[entry.Ref]
 		if !ok {
 			return fmt.Errorf("report: missing translated display text %s", entry.Ref)
 		}
-		if err := entry.ValidateTranslation(text); err != nil {
+		if err := entry.ValidateTranslation(value.Text); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// ValidateTranslation is shared by the translation cube before caching and
-// the final display pass. It does not require renumbering a window's refs.
+// ValidateTranslation requires nonempty prose and exact source placeholders.
+// Glossary lookup is local and does not add a response annotation contract.
 func (entry DisplayTextEntry) ValidateTranslation(text string) error {
 	if strings.TrimSpace(text) == "" {
 		return fmt.Errorf("report: empty translated display text %s", entry.Ref)
@@ -132,6 +143,13 @@ func (entry DisplayTextEntry) ValidateTranslation(text string) error {
 		if !allowed[token] {
 			return fmt.Errorf("report: translated text %s introduced a source placeholder", entry.Ref)
 		}
+	}
+	plain, _, err := entry.finishDisplayText(text)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(plain) == "" {
+		return fmt.Errorf("report: empty translated display text %s", entry.Ref)
 	}
 	return nil
 }
@@ -150,6 +168,11 @@ type displayTextSlot struct {
 	value *string
 }
 
+type displayLiteralSlot struct {
+	entry DisplayTextEntry
+	value *string
+}
+
 // PreparedPage owns the English frontend projection, after all identity,
 // membership and source-link work. Its catalogue is safe to translate without
 // giving the translator authority over that projection's structure.
@@ -157,6 +180,7 @@ type PreparedPage struct {
 	view     *pageView
 	catalog  DisplayTextCatalog
 	slots    []displayTextSlot
+	literals []displayLiteralSlot
 	uiSlots  []*string
 	concepts []displayConcepts
 	timing   *RunTiming
@@ -172,6 +196,7 @@ func (page *PreparedPage) TextCatalog() DisplayTextCatalog {
 	catalog.Entries = append([]DisplayTextEntry{}, page.catalog.Entries...)
 	for i := range catalog.Entries {
 		catalog.Entries[i].Protected = append([]DisplayProtectedText(nil), catalog.Entries[i].Protected...)
+		catalog.Entries[i].Terms = append([]DisplayTextTerm(nil), catalog.Entries[i].Terms...)
 	}
 	return catalog
 }
@@ -207,6 +232,7 @@ var displayVerbatimSyntax = regexp.MustCompile(strings.Join([]string{
 	`[\p{L}_$][\p{L}\p{N}_$]*(?:\.[\p{L}_$][\p{L}\p{N}_$]*)*\([^()\n]*\)`,
 	`[\p{L}_$][\p{L}\p{N}_$]*(?:\.[\p{L}_$][\p{L}\p{N}_$]*)+`,
 }, "|"))
+var displayAbsolutePath = regexp.MustCompile(`(?:^|[\s\[("'])((?:/[\p{L}\p{N}_{}:.*%+@~=-]+)+/?)`)
 var displayPlaceholder = regexp.MustCompile(`__REPOMAP_P[0-9]+__`)
 
 func protectedDisplayText(text string, names []string) (string, []DisplayProtectedText) {
@@ -214,6 +240,17 @@ func protectedDisplayText(text string, names []string) (string, []DisplayProtect
 	var spans []span
 	for _, bounds := range displayVerbatimSyntax.FindAllStringIndex(text, -1) {
 		spans = append(spans, span{bounds[0], bounds[1]})
+	}
+	// Bare absolute paths are source syntax too. A leading word boundary keeps
+	// ordinary prose such as input/output outside this protection.
+	for _, bounds := range displayAbsolutePath.FindAllStringSubmatchIndex(text, -1) {
+		// Sentence punctuation is not part of a bare path. Explicit quoted
+		// or code-formatted paths retain their complete syntax above.
+		end := bounds[3]
+		for end > bounds[2] && text[end-1] == '.' {
+			end--
+		}
+		spans = append(spans, span{bounds[2], end})
 	}
 	for _, name := range names {
 		// A repository may declare Run, service or protocol. Seeing the same
@@ -347,89 +384,106 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 			userQuestions[question.Question] = true
 		}
 	}
-	add := func(role string, value *string) {
-		if strings.TrimSpace(*value) == "" || userQuestions[*value] || exactNames[*value] {
-			return
+	addLiteral := func(entry DisplayTextEntry, value *string) string {
+		entry.Ref = fmt.Sprintf("l%d", len(page.literals)+1)
+		page.literals = append(page.literals, displayLiteralSlot{entry: entry, value: value})
+		return entry.Ref
+	}
+	addEntry := func(role string, value *string, scope string, own *pageGlossaryTerm) string {
+		if strings.TrimSpace(*value) == "" {
+			return ""
+		}
+		entry := page.prepareTerminology(role, *value, scope, names, own)
+		if userQuestions[*value] || exactNames[*value] {
+			return addLiteral(entry, value)
 		}
 		page.uiSlots = append(page.uiSlots, value)
-		if _, ui := vocabulary[*value]; ui || noModel {
-			return
+		if _, ui := vocabulary[*value]; ui && own == nil {
+			return ""
 		}
-		text, protected := protectedDisplayText(*value, names)
-		if strings.IndexFunc(displayPlaceholder.ReplaceAllString(text, ""), unicode.IsLetter) < 0 {
-			return
+		if noModel {
+			return addLiteral(entry, value)
 		}
-		// Equal display text shares a translation across map,
-		// card, search, answer and Learn copies. It does not acquire membership.
-		key := *value
+		if strings.IndexFunc(displayPlaceholder.ReplaceAllString(entry.Text, ""), unicode.IsLetter) < 0 {
+			return addLiteral(entry, value)
+		}
+		// Identical prose shares a translation only with its exact glossary
+		// context. Each display slot retains its own local lookup identity.
+		identity, _ := json.Marshal(entry)
+		key := string(identity)
 		at, exists := known[key]
 		if !exists {
 			at = len(page.catalog.Entries)
 			known[key] = at
-			page.catalog.Entries = append(page.catalog.Entries, DisplayTextEntry{Ref: fmt.Sprintf("t%d", at+1), Role: role, Text: text, Protected: protected})
+			entry.Ref = fmt.Sprintf("t%d", at+1)
+			page.catalog.Entries = append(page.catalog.Entries, entry)
 		}
 		page.slots = append(page.slots, displayTextSlot{entry: at, value: value})
+		return page.catalog.Entries[at].Ref
+	}
+	add := func(role string, value *string, scopes ...string) string {
+		var scope string
+		if len(scopes) > 0 {
+			scope = scopes[0]
+		}
+		return addEntry(role, value, scope, nil)
 	}
 	// Link labels are composed from their already-bound destination after
 	// translation, not sent as competing copies of the destination's name.
-	steps := func(values []pageQuestionStep) {
+	steps := func(values []pageQuestionStep, scopes ...string) {
 		for i := range values {
-			add("reason", &values[i].Why)
+			values[i].WhyRef = add("reason", &values[i].Why, scopes...)
 		}
 	}
-	concepts := func(values []pageLearnConcept) {
+	concepts := func(values []pageLearnConcept, scopes ...string) {
 		for i := range values {
-			add("explanation", &values[i].Explanation)
+			values[i].ExplanationRef = add("explanation", &values[i].Explanation, scopes...)
 		}
 	}
 	connections := func(values []pageConnection) {
 		for i := range values {
 			add("label", &values[i].Title)
-			add("label", &values[i].Label)
-			add("summary", &values[i].Summary)
+			values[i].LabelRef = add("label", &values[i].Label)
+			values[i].SummaryRef = add("summary", &values[i].Summary)
 		}
 	}
 	if view.Summary != nil {
-		add("summary", &view.Summary.Text)
+		view.Summary.TextRef = add("summary", &view.Summary.Text)
 	}
 	for i := range view.Cards {
-		add("summary", &view.Cards[i].Purpose)
-		add("label", &view.Cards[i].Role)
+		view.Cards[i].PurposeRef = add("summary", &view.Cards[i].Purpose)
+		view.Cards[i].RoleRef = add("label", &view.Cards[i].Role)
 	}
 	for i := range view.Recipe {
 		if view.Recipe[i].Model {
-			add("explanation", &view.Recipe[i].Note)
+			view.Recipe[i].NoteRef = add("explanation", &view.Recipe[i].Note)
 		}
 	}
 	for _, question := range view.Questions {
-		if !question.UserQuestion {
-			add("question", &question.Question)
-		}
-		add("question", &question.OpenQuestion)
+		add("question", &question.Question, question.ID)
 		for i := range question.Origins {
 			origin := &question.Origins[i]
-			add("label", &origin.Title)
-			add("question", &origin.Question)
-			add("reason", &origin.Why)
-			steps(origin.Checks)
+			add("label", &origin.Title, question.ID)
+			add("question", &origin.Question, question.ID)
+			origin.WhyRef = add("reason", &origin.Why, question.ID)
+			steps(origin.Checks, question.ID)
 		}
 		for i := range question.Answers {
 			answer := &question.Answers[i]
-			add("answer", &answer.Text)
-			add("basis", &answer.Basis)
-			add("remaining", &answer.Remaining)
-			steps(answer.Checks)
-			concepts(answer.Terms)
+			answer.TextRef = add("answer", &answer.Text, question.ID)
+			answer.BasisRef = add("basis", &answer.Basis, question.ID)
+			answer.RemainingRef = add("remaining", &answer.Remaining, question.ID)
+			steps(answer.Checks, question.ID)
+			concepts(answer.Terms, question.ID)
 		}
 		for i := range question.Readings {
-			add("question", &question.Readings[i].OpenQuestion)
-			steps(question.Readings[i].Steps)
+			steps(question.Readings[i].Steps, question.ID)
 		}
 	}
 	for _, reviews := range [][]pageLearningReview{view.LearningReviews, view.LearningSelections} {
 		for i := range reviews {
 			add("label", &reviews[i].Title)
-			add("reason", &reviews[i].Reason)
+			reviews[i].ReasonRef = add("reason", &reviews[i].Reason)
 			steps(reviews[i].Checks)
 		}
 	}
@@ -440,7 +494,7 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 	for i := range view.LearnBands {
 		for j := range view.LearnBands[i].Parts {
 			part := &view.LearnBands[i].Parts[j]
-			add("summary", &part.Summary)
+			part.SummaryRef = add("summary", &part.Summary)
 		}
 	}
 	for _, section := range view.Sections {
@@ -448,12 +502,12 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 			for i := range groups {
 				group := &groups[i]
 				add("label", &group.Title)
-				add("summary", &group.Summary)
+				group.SummaryRef = add("summary", &group.Summary)
 				add("label", &group.Zone)
 				for _, chips := range [][]pageChipRow{group.Highlights, group.Inventory} {
 					for j := range chips {
 						for k := range chips[j].Members {
-							add("explanation", &chips[j].Members[k].Summary)
+							chips[j].Members[k].SummaryRef = add("explanation", &chips[j].Members[k].Summary)
 						}
 					}
 				}
@@ -463,15 +517,15 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 					}
 					// Source identifies the route name's origin. Its purpose is
 					// still display prose, including on an extracted boundary.
-					add("summary", &group.Operations[j].Summary)
+					group.Operations[j].SummaryRef = add("summary", &group.Operations[j].Summary)
 				}
 				connections(group.Connections)
 			}
 		}
 		if section.Flow != nil {
-			add("label", &section.Flow.Title)
+			section.Flow.TitleRef = add("label", &section.Flow.Title)
 			for i := range section.Flow.Steps {
-				add("explanation", &section.Flow.Steps[i].Explanation)
+				section.Flow.Steps[i].ExplanationRef = add("explanation", &section.Flow.Steps[i].Explanation)
 			}
 		}
 		for i := range section.Start {
@@ -495,7 +549,7 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 			if !composedComponentName && (node.Activation == "" || node.SourceKind != "fact") {
 				add("label", &node.FullTitle)
 			}
-			add("summary", &node.Summary)
+			node.SummaryRef = add("summary", &node.Summary)
 			add("label", &node.OperationGroup)
 			if node.Branch == "" {
 				add("label", &node.Subtitle)
@@ -506,19 +560,24 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 					return fmt.Errorf("report: invalid concept display data: %w", err)
 				}
 				for j := range entry.values {
-					add("explanation", &entry.values[j].Explanation)
+					entry.values[j].ExplanationRef = add("explanation", &entry.values[j].Explanation)
 				}
 				page.concepts = append(page.concepts, entry)
 			}
 		}
 		for i := range section.Map.Edges {
-			add("label", &section.Map.Edges[i].Label)
-			add("summary", &section.Map.Edges[i].Summary)
+			section.Map.Edges[i].LabelRef = add("label", &section.Map.Edges[i].Label)
+			section.Map.Edges[i].SummaryRef = add("summary", &section.Map.Edges[i].Summary)
 		}
 	}
+	for i := range view.Glossary {
+		term := &view.Glossary[i]
+		addEntry("term-explanation", &term.Explanation, "", term)
+	}
+
 	if view.RepoMap != nil {
 		for i := range view.RepoMap.Nodes {
-			add("summary", &view.RepoMap.Nodes[i].Summary)
+			view.RepoMap.Nodes[i].SummaryRef = add("summary", &view.RepoMap.Nodes[i].Summary)
 		}
 	}
 	return nil
@@ -538,23 +597,49 @@ func (page *PreparedPage) applyDisplay(options RenderOptions) error {
 			return err
 		}
 	}
+	translated := make(map[string]DisplayTranslationEntry)
 	if language != English && len(page.catalog.Entries) > 0 {
 		if options.Translations == nil {
 			return fmt.Errorf("report: translated display text is required for %s", language)
 		}
-		translated := make(map[string]string, len(options.Translations.Entries))
 		for _, value := range options.Translations.Entries {
-			translated[value.Ref] = value.Text
-		}
-		for _, slot := range page.slots {
-			entry := page.catalog.Entries[slot.entry]
-			pairs := make([]string, 0, 2*len(entry.Protected))
-			for _, value := range entry.Protected {
-				pairs = append(pairs, value.Ref, value.Text)
-			}
-			*slot.value = strings.NewReplacer(pairs...).Replace(translated[entry.Ref])
+			translated[value.Ref] = value
 		}
 	}
+	plans := []displayTermPlan{}
+	finalTexts := make([]string, len(page.catalog.Entries))
+	for i, entry := range page.catalog.Entries {
+		text := entry.Text
+		if language != English {
+			text = translated[entry.Ref].Text
+		}
+		plain, spans, err := entry.finishDisplayText(text)
+		if err != nil {
+			return err
+		}
+		finalTexts[i] = plain
+		if len(spans) > 0 {
+			plans = append(plans, displayTermPlan{Ref: entry.Ref, Text: plain, Spans: spans})
+		}
+	}
+	for _, slot := range page.slots {
+		*slot.value = finalTexts[slot.entry]
+	}
+	for _, slot := range page.literals {
+		plain, spans, err := slot.entry.finishDisplayText(slot.entry.Text)
+		if err != nil {
+			return err
+		}
+		*slot.value = plain
+		if len(spans) > 0 {
+			plans = append(plans, displayTermPlan{Ref: slot.entry.Ref, Text: plain, Spans: spans})
+		}
+	}
+	mentions, err := json.Marshal(plans)
+	if err != nil {
+		return err
+	}
+	page.view.TermMentionsJSON = template.JS(mentions)
 	for _, value := range page.uiSlots {
 		*value = englishUI(language, *value)
 	}
@@ -689,15 +774,9 @@ func (page *PreparedPage) rebuildDisplayLabels(language DisplayLanguage) {
 		oldShort, oldLabel := section.ShortLabel, section.Label
 		oldShortByTarget[section.programTargetID] = oldShort
 		kind := englishUI(language, section.Kind)
-		base := section.Root
-		if base == "." {
-			base = section.Name
-		}
-		if base == "" {
-			base = section.Name
-		}
+		base := oldShort
 		if strings.HasSuffix(oldShort, " ("+section.Kind+")") {
-			base += " (" + kind + ")"
+			base = strings.TrimSuffix(oldShort, " ("+section.Kind+")") + " (" + kind + ")"
 		}
 		section.ShortLabel = base
 		if oldLabel == section.Name+" ("+section.Kind+")" {
@@ -822,6 +901,10 @@ func (page *PreparedPage) rebuildDisplayLabels(language DisplayLanguage) {
 		updateLinks(view.LearnQuestionTopics[i].Questions, false)
 	}
 	updateConcepts(view.LearnConcepts)
+	for i := range view.Glossary {
+		updateLinks(view.Glossary[i].Questions, false)
+		updateLinks(view.Glossary[i].Places, true)
+	}
 	for _, question := range view.Questions {
 		for i := range question.Origins {
 			updateSteps(question.Origins[i].Checks)

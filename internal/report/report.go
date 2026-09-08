@@ -9,10 +9,11 @@ import (
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/terminology"
 )
 
 // CurrentFormatVersion is the canonical ProgramPortfolio report contract.
-const CurrentFormatVersion = 82
+const CurrentFormatVersion = 85
 
 // MaxReportJSONBytes is the former ordinary report.json threshold. It is
 // advisory only; complete validated report authority is never rejected or
@@ -51,6 +52,7 @@ type ReportData struct {
 	Orientation *orientation.Result   `json:"orientation,omitempty"`
 	Questions   []atlas.QuestionRoute `json:"questions,omitempty"`
 	Learning    *atlas.LearningPlan   `json:"learning,omitempty"`
+	Glossary    *terminology.Catalog  `json:"glossary,omitempty"`
 
 	OpenablePaths []string          `json:"openable_paths"`
 	SourceIDs     map[string]string `json:"source_ids,omitempty"`

@@ -12,6 +12,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/modeldiag"
 )
@@ -53,7 +54,10 @@ type rememberedRow struct {
 }
 
 type rememberedTable struct {
+	adapted                 llm.AdaptedResponse
+	observed                bool
 	rows                    map[string]map[string]string
+	request, response       []byte
 	requestSHA, responseSHA string
 	err                     error
 }
@@ -126,21 +130,26 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 	cached, known := r.responseTables[ref.RequestKey]
 	if !known {
 		exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, ref.RequestKey)
-		cached = rememberedTable{requestSHA: exchange.RequestSHA256, responseSHA: exchange.ResponseSHA256, err: err}
+		cached = rememberedTable{requestSHA: exchange.RequestSHA256, responseSHA: exchange.ResponseSHA256, request: exchange.Request, response: exchange.Response, err: err}
 		if err == nil && found {
-			envelope, err := llm.DecodeJSON[struct {
-				Rows []map[string]string `json:"rows"`
-			}](nil)(exchange.Response)
-			cached.err = err
-			if err == nil {
-				cached.rows = make(map[string]map[string]string, len(envelope.Rows))
-				for _, cells := range envelope.Rows {
-					key := cells["key"]
-					if key == "" || cached.rows[key] != nil {
-						cached.err = fmt.Errorf("knowledge: missing or duplicate response row key %q", key)
-						break
+			adapted, unwrapErr := llm.AdaptResponse(r.opts.Provider, exchange.Request, exchange.Response)
+			cached.adapted = adapted
+			cached.err = unwrapErr
+			if unwrapErr == nil {
+				envelope, err := llm.DecodeJSON[struct {
+					Rows []map[string]string `json:"rows"`
+				}](nil)(adapted.Domain)
+				cached.err = err
+				if err == nil {
+					cached.rows = make(map[string]map[string]string, len(envelope.Rows))
+					for _, cells := range envelope.Rows {
+						key := cells["key"]
+						if key == "" || cached.rows[key] != nil {
+							cached.err = fmt.Errorf("knowledge: missing or duplicate response row key %q", key)
+							break
+						}
+						cached.rows[key] = cells
 					}
-					cached.rows[key] = cells
 				}
 			}
 		}
@@ -165,6 +174,24 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 	answers, err := table.Decode(def, window, raw)
 	if err != nil {
 		return rowAnswer{}, false, err
+	}
+	cached.adapted.Accepted([]string{ref.RowKey})
+	if !cached.observed && len(cached.adapted.Rejections) > 0 {
+		cached.observed = true
+		r.responseTables[ref.RequestKey] = cached
+		executor := debugdump.BindStage(r.opts.Executor, def.Stage)
+		if executor.Observer != nil {
+			if err := executor.Observer.Observe(llm.Event{
+				Kind: llm.EventCacheHit, Source: llm.SourceCache, Cached: true,
+				CacheRoot: executor.RootDir, CacheKey: ref.RequestKey,
+				Request: cached.request, Response: cached.response,
+				RequestSHA256: cached.requestSHA, ResponseSHA256: cached.responseSHA,
+				RequestBytes: len(cached.request), ResponseBytes: len(cached.response),
+				ResponseRejections: cached.adapted.Rejections,
+			}); err != nil {
+				r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "metadata_observer_failed", Count: 1, Reason: err.Error()})
+			}
+		}
 	}
 	return rowAnswer{answer: answers[0], source: atlas.SourceCache, requestSHA: cached.requestSHA,
 		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil

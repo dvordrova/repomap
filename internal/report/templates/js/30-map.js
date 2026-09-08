@@ -350,7 +350,7 @@
       }
       html += '<b>' + escapeText(titleOf(node)) + '</b>';
       var summary = node.getAttribute('data-summary');
-      if (summary) html += '<p class="map-card-summary">' + escapeText(summary) + '</p>';
+      if (summary) html += '<p class="map-card-summary" data-display-ref="'+escapeText(node.dataset.summaryRef)+'">' + escapeText(summary) + '</p>';
       if (node.dataset.operationGroup) html += '<span class="map-card-meta">' + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
       if(source) html += '<p><a target="_blank" rel="noopener" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
@@ -362,7 +362,7 @@
         html += ("<div class=\"map-concepts\" hidden><label><span>"+rmT.html("Code element")+"</span> <select data-concept-picker aria-label=\""+rmT.html("Code element to explain")+"\"><option value=\"\">"+rmT.html("Choose a code element")+"</option>");
         concepts.forEach(function (concept, i) {
           var repeated=concepts.some(function(other,j){return j!==i&&other.name===concept.name;});
-          html += '<option value="'+i+'">'+escapeText(concept.name+(repeated?' · '+concept.source.Text:''))+'</option>';
+          html += '<option value="'+i+'">'+escapeText(repomapMembers.displayName(concept)+(repeated?' · '+concept.source.Text:''))+'</option>';
         });
         html += ("</select></label><span class=\"map-card-meta\">"+rmT.html("Model explanation")+"</span><p data-concept-explanation></p><span data-concept-source></span></div>");
       }
@@ -390,7 +390,9 @@
       }
       var step = map.traceIndex ? map.traceIndex(node) : -1;
       if (step >= 0) html += '<span class="map-card-meta">'+rmT.html('step {0} of {1} on the main path',step+1,map.traceLength)+'</span>';
-      var keys = (node.getAttribute('data-keys') || '').split(' | ').filter(Boolean).map(escapeText);
+      var keys = (node.getAttribute('data-keys') || '').split(' | ').filter(Boolean);
+      if(map.exploreNode&&concepts.length&&keys.every(function(key){var name=key.split(' — ')[0];return concepts.filter(function(concept){return concept.name===name;}).length===1;}))keys=[];
+      keys=keys.map(escapeText);
       if (keys.length) html += '<ul class="map-card-keys">' + keys.map(function (k) { return '<li><code>' + k.replace(/ — .*$/, '') + '</code>' + (k.indexOf(' — ') > 0 ? ' — ' + k.slice(k.indexOf(' — ') + 3) : '') + '</li>'; }).join('') + '</ul>';
       var arrows = map.classList.contains('repo-map') || map.classList.contains('map-part-focus') || witness ? [] : sentences(id);
       if (arrows.length) html += '<ul>' + arrows.map(function (a) { return '<li>' + escapeText(a) + '</li>'; }).join('') + '</ul>';
@@ -415,7 +417,9 @@
           map.explorerMember={owner:id,name:picker.selectedOptions[0].textContent,source:source.Text,href:source.Href,open:source.Open};
           map.dispatchEvent(new Event('repomap:reading'));
           map.querySelectorAll('[data-member-source]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.memberSource===(source.Href||source.Open));});
-          card.querySelector('[data-concept-explanation]').textContent=concept.explanation||rmT('No explanation saved. Open the source to inspect this element.');
+          var explanation=card.querySelector('[data-concept-explanation]');
+          explanation.textContent=concept.explanation||rmT('No explanation saved. Open the source to inspect this element.');
+          explanation.dataset.displayRef=concept.explanation?concept.explanation_ref||'':'';
           var link=document.createElement(source.Href||source.Open?'a':'span');link.textContent=source.Text;
           if(source.Href){link.href=source.Href;link.target='_blank';link.rel='noopener';}
           else if(source.Open){link.href='#';link.dataset.open=source.Open;}
@@ -466,7 +470,7 @@
       var kind=document.createElement('p');kind.textContent=edge.possible?rmT('Interpreted connection or possible dispatch'):rmT('Code connections');card.appendChild(kind);
       edge.relations.forEach(function(relation){var row=document.createElement('p');
         [relation.from,relation.to].forEach(function(id,i){if(i)row.appendChild(document.createTextNode(' → '+relation.label+' → '));var n=byId[id];if(!n)return;var a=document.createElement('button');a.type='button';a.textContent=titleOf(n);a.addEventListener('click',function(){if(map.exploreNode)map.exploreNode(id);else n.click();});row.appendChild(a);});card.appendChild(row);
-        if(relation.summary){var summary=document.createElement('p');summary.textContent=relation.summary;card.appendChild(summary);}
+        if(relation.summary){var summary=document.createElement('p');summary.textContent=relation.summary;summary.dataset.displayRef=relation.summaryRef||'';card.appendChild(summary);}
         [['fromSource','fromText'],['toSource','toText']].forEach(function(fields){if(!relation[fields[0]])return;var a=document.createElement('a');a.href=relation[fields[0]];a.textContent=relation[fields[1]];a.target='_blank';a.rel='noopener';a.className='map-details-link';card.appendChild(a);});
       });
       card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');
