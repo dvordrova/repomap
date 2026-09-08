@@ -552,22 +552,6 @@ func (capture *dynamicHandoffCapture) finish(
 	return index, nil
 }
 
-func dynamicHandoffShapeCount(common *ssa.CallCommon) int {
-	if common == nil {
-		return 0
-	}
-	count := 0
-	if common.IsInvoke() {
-		count++
-	} else if common.StaticCallee() == nil {
-		if _, builtin := common.Value.(*ssa.Builtin); !builtin {
-			count++
-		}
-	}
-	count += len(dynamicCallbackArguments(common))
-	return count
-}
-
 func dynamicCallbackArguments(common *ssa.CallCommon) []dynamicCallbackArgument {
 	if common == nil || common.Signature() == nil {
 		return nil

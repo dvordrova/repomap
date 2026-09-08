@@ -18,23 +18,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 )
 
-const (
-	Version = 2
-
-	// AdvisoryResultBytes is a diagnostic usual size for the complete sealed
-	// in-memory result. Crossing it never narrows or rejects declaration facts.
-	AdvisoryResultBytes = 64 << 20
-
-	AdvisorySources         = 4096
-	AdvisoryPackages        = 16384
-	AdvisoryStatements      = 65536
-	AdvisoryIncludes        = 16384
-	AdvisoryFrontiers       = 16384
-	AdvisoryStringBytes     = 4096
-	AdvisorySourceBytes     = 8 << 20
-	AdvisoryTotalBytes      = 64 << 20
-	AdvisoryStatementExtras = 128
-)
+const Version = 2
 
 type CoverageState string
 

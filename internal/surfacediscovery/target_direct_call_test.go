@@ -631,18 +631,19 @@ func TestTargetDirectCallDefaultsAreUnbounded(t *testing.T) {
 }
 
 func TestDirectCallBuilderRetainsPastFormerNodeAndEdgeThresholds(t *testing.T) {
+	const formerNodeThreshold, formerEdgeThreshold = 65_536, 10_000
 	builder := newDirectCallIndexBuilder(Scenario{ID: "scenario", GOOS: "linux", GOARCH: "amd64"}, 0)
-	for position := 0; position <= AdvisoryDirectCallMaxNodes; position++ {
+	for position := 0; position <= formerNodeThreshold; position++ {
 		id := fmt.Sprintf("node-%06d", position)
 		builder.nodes[id] = DirectCallNode{ID: id, Symbol: Symbol{Name: id}}
 	}
-	for position := 0; position <= AdvisoryDirectCallMaxEdges; position++ {
+	for position := 0; position <= formerEdgeThreshold; position++ {
 		id := fmt.Sprintf("edge-%06d", position)
 		builder.edges[id] = DirectCallEdge{ID: id, CallerID: id}
 	}
 	index := builder.finish()
-	if index.State != DirectCallIndexReady || len(index.Nodes) != AdvisoryDirectCallMaxNodes+1 ||
-		len(index.Edges) != AdvisoryDirectCallMaxEdges+1 {
+	if index.State != DirectCallIndexReady || len(index.Nodes) != formerNodeThreshold+1 ||
+		len(index.Edges) != formerEdgeThreshold+1 {
 		t.Fatalf("builder truncated or closed former thresholds: state=%s nodes=%d edges=%d",
 			index.State, len(index.Nodes), len(index.Edges))
 	}

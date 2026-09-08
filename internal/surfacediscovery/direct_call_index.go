@@ -23,12 +23,6 @@ const (
 	// pattern sample or truncation. The retained edges remain only actual static
 	// calls; callback execution is not inferred from an argument binding.
 	DirectCallIndexVersion = 9
-
-	// These values are diagnostics only. Crossing them emits one aggregate
-	// warning and never drops a node, drops an edge, or closes the index.
-	AdvisoryDirectCallMaxDepth = 10
-	AdvisoryDirectCallMaxEdges = 10_000
-	AdvisoryDirectCallMaxNodes = 65_536
 )
 
 type DirectCallIndexState string
@@ -252,14 +246,12 @@ type DirectCallIndex struct {
 	Coverage     DirectCallIndexCoverage     `json:"coverage"`
 	SHA256       string                      `json:"sha256"`
 
-	nodeLookup     map[string]int
-	incomingLookup map[string][]int
-	outgoingLookup map[string][]int
+	nodeLookup map[string]int
 }
 
 // Snapshot returns an independently owned in-memory copy of the complete
 // direct-call index. The public slices, nested symbol aliases, scenario tags,
-// and private lookup tables share no backing storage with index. This is the
+// and the private node lookup share no backing storage with index. This is the
 // handoff boundary between surface discovery and a later live-run consumer:
 // either side may retain or query its copy without mutating the producer's
 // result. No serialization, package loading, or SSA work is performed.
@@ -277,7 +269,7 @@ func (index DirectCallIndex) Snapshot() DirectCallIndex {
 		snapshot.Edges[position] = copyDirectCallEdge(snapshot.Edges[position])
 	}
 	snapshot.Frontiers = cloneDirectCallSlice(index.Frontiers)
-	snapshot.initializeLookups()
+	snapshot.initializeNodeLookup()
 	return snapshot
 }
 
@@ -313,63 +305,15 @@ func (index *DirectCallIndex) Node(id string) (DirectCallNode, bool) {
 	return DirectCallNode{}, false
 }
 
-func (index *DirectCallIndex) Incoming(nodeID string) []DirectCallEdge {
-	if index == nil || index.State != DirectCallIndexReady {
-		return []DirectCallEdge{}
-	}
-	if index.incomingLookup != nil {
-		return index.edgesAt(index.incomingLookup[nodeID])
-	}
-	result := make([]DirectCallEdge, 0)
-	for _, edge := range index.Edges {
-		if edge.CalleeID == nodeID {
-			result = append(result, copyDirectCallEdge(edge))
-		}
-	}
-	return result
-}
-
-func (index *DirectCallIndex) Outgoing(nodeID string) []DirectCallEdge {
-	if index == nil || index.State != DirectCallIndexReady {
-		return []DirectCallEdge{}
-	}
-	if index.outgoingLookup != nil {
-		return index.edgesAt(index.outgoingLookup[nodeID])
-	}
-	result := make([]DirectCallEdge, 0)
-	for _, edge := range index.Edges {
-		if edge.CallerID == nodeID {
-			result = append(result, copyDirectCallEdge(edge))
-		}
-	}
-	return result
-}
-
-func (index *DirectCallIndex) edgesAt(positions []int) []DirectCallEdge {
-	result := make([]DirectCallEdge, 0, len(positions))
-	for _, position := range positions {
-		if position >= 0 && position < len(index.Edges) {
-			result = append(result, copyDirectCallEdge(index.Edges[position]))
-		}
-	}
-	return result
-}
-
 func copyDirectCallEdge(value DirectCallEdge) DirectCallEdge {
 	value.Patterns = cloneExternalCallPatterns(value.Patterns)
 	return value
 }
 
-func (index *DirectCallIndex) initializeLookups() {
+func (index *DirectCallIndex) initializeNodeLookup() {
 	index.nodeLookup = make(map[string]int, len(index.Nodes))
-	index.incomingLookup = make(map[string][]int)
-	index.outgoingLookup = make(map[string][]int)
 	for position, node := range index.Nodes {
 		index.nodeLookup[node.ID] = position
-	}
-	for position, edge := range index.Edges {
-		index.incomingLookup[edge.CalleeID] = append(index.incomingLookup[edge.CalleeID], position)
-		index.outgoingLookup[edge.CallerID] = append(index.outgoingLookup[edge.CallerID], position)
 	}
 }
 
@@ -820,7 +764,7 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 		index.Coverage.EdgesIndexed = 0
 	}
 	index.SHA256, _ = directCallIndexSHA256(index)
-	index.initializeLookups()
+	index.initializeNodeLookup()
 	return index
 }
 
