@@ -26,3 +26,5 @@ export interface ExtendedResponse extends IGetLevelsResponse {
 export type LiteralResponse = { aliasOnly: number };
 const runtimeValue = { runtimeOnly: 1 };
 runtimeValue.runtimeOnly = 2;
+
+// TODO: document count validation.

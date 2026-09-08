@@ -8,10 +8,6 @@ import (
 	"strings"
 )
 
-// todoScanMaxBytes skips generated or vendored blobs; a real TODO lives in a
-// file a person edits.
-const todoScanMaxBytes = 1 << 20
-
 var todoMarker = regexp.MustCompile(`\b(TODO|FIXME|XXX|HACK)\b`)
 
 // addTODOs scans every text file of the corpus. Rows under a target root are
@@ -19,7 +15,7 @@ var todoMarker = regexp.MustCompile(`\b(TODO|FIXME|XXX|HACK)\b`)
 func (b *builder) addTODOs() {
 	for _, filePath := range b.source.paths() {
 		file, ok := b.source.file(filePath)
-		if !ok || file.binary || file.size > todoScanMaxBytes {
+		if !ok || file.binary {
 			continue
 		}
 		targetID := b.targetForPath(filePath)

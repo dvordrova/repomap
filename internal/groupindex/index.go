@@ -1928,7 +1928,8 @@ func diagnosticKey(value Diagnostic) string {
 }
 
 func indexDigest(index Index) (string, error) {
-	payload := index.Snapshot()
+	// Hashing only reads nested collections; the value copy owns its SHA field.
+	payload := index
 	payload.SHA256 = ""
 	encoded, err := json.Marshal(payload)
 	if err != nil {

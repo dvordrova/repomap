@@ -28,7 +28,6 @@ type sourceReader struct {
 type sourceFile struct {
 	lines  []string
 	binary bool
-	size   int
 }
 
 func newSourceReader(repository *corpus.Corpus, diagnose func(kind, detail string)) *sourceReader {
@@ -76,7 +75,7 @@ func (reader *sourceReader) file(filePath string) (*sourceFile, bool) {
 		reader.diagnose("source_unreadable", filePath+": "+err.Error())
 		return nil, false
 	}
-	result := &sourceFile{size: len(content.Bytes), binary: looksBinary(content.Bytes)}
+	result := &sourceFile{binary: looksBinary(content.Bytes)}
 	if !result.binary {
 		result.lines = splitLines(content.Bytes)
 	}

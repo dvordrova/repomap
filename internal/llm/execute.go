@@ -102,8 +102,10 @@ func ExecuteJSON[T any](
 		outcome.Issues = observe(executor.Observer, eventForOutcome(
 			EventFailure, SourceCache, FailureCache, outcome,
 		), outcome.Issues)
-		if evictErr := removeAcceptedCache(executor.RootDir, cacheKey); evictErr != nil {
-			outcome.Issues = append(outcome.Issues, Issue{Kind: IssueCacheEvict, Err: evictErr})
+		if isCacheCorruption(loadErr) {
+			if evictErr := removeAcceptedCache(executor.RootDir, cacheKey); evictErr != nil {
+				outcome.Issues = append(outcome.Issues, Issue{Kind: IssueCacheEvict, Err: evictErr})
+			}
 		}
 	} else if found {
 		value, validateErr := decodeAcceptedJSON(decodeValidate, record.Response)

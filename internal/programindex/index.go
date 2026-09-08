@@ -946,8 +946,9 @@ func (index Index) Validate() error {
 	if err := index.Target.Validate(); err != nil {
 		return err
 	}
+	objectScopeID := targetObjectScopeIdentity(index.Target)
 	for position, object := range index.Objects {
-		if err := validateObject(object, targetObjectScopeIdentity(index.Target)); err != nil {
+		if err := validateObject(object, objectScopeID); err != nil {
 			return err
 		}
 		if position > 0 && index.Objects[position-1].ID >= object.ID {
@@ -2160,7 +2161,8 @@ func validateCoverage(value Coverage, objectsIndexed, relationsIndexed int) erro
 }
 
 func indexDigest(index Index) (string, error) {
-	payload := index.Snapshot()
+	// Hashing only reads nested collections; the value copy owns its SHA field.
+	payload := index
 	payload.SHA256 = ""
 	encoded, err := json.Marshal(payload)
 	if err != nil {

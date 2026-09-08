@@ -282,8 +282,8 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 			if err != nil {
 				return nil, err
 			}
-			if err := llm.SaveMemo(r.opts.Executor, k.BasisID, raw); err != nil {
-				return nil, err
+			if err := llm.SaveMemo(r.opts.Executor, k.BasisID, raw); err != nil && r.opts.State != nil {
+				r.opts.State(def.Stage, "cache write failed", err.Error())
 			}
 			saved[k.BasisID] = true
 		}

@@ -4,3 +4,6 @@ class GetLevelsInfoResponse:
 
 class OtherResponse:
     count: str
+
+
+# TODO: document count validation.

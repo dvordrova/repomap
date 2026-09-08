@@ -17,3 +17,5 @@ type EmbeddedLevelsInfoResponse struct {
 
 // LevelsInfoAlias introduces no new field declaration.
 type LevelsInfoAlias = GetLevelsInfoResponse
+
+// TODO: document count validation.

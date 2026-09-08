@@ -1526,7 +1526,11 @@ seeds are checked against the current target's file membership.
 
 Go TODO extraction scans comment tokens, preserving physical source lines;
 `context.TODO()` and string literals are not comment markers. Other languages
-still use their existing line matching. Dependency facts retain the complete
+still use their existing line matching. Every readable text file is scanned;
+the former whole-file 1 MiB cutoff silently lost all markers, even at the start
+of an otherwise ordinary source file. Cumulative Go, Python and TypeScript
+examples now retain source-distinct markers on both sides of that former size
+boundary, including CRLF and Go physical-line anchors. Dependency facts retain the complete
 imported package path instead of only the short package name.
 
 The overview graph groups parts by their interpreted role, uses short
@@ -2865,6 +2869,10 @@ No-cache bypasses reusable answer reads and pointer/index writes. Diagnostic
 payloads still go to the shared cache directory. Cache clear removes payloads,
 answer pointers and memo indexes; run snapshots remain, but raw-payload links
 then stop resolving. Recalled rows are revalidated and are not rewritten.
+An optional entity-memo write failure reports its stage and exact path without
+discarding accepted cells or their current provenance. Each identical basis
+gets one write attempt per reading; mandatory knowledge and window artifacts
+still fail their owning persistence operation.
 
 `repomap replay --file REQUEST.json [--debug-dir DIR]` sends the exact prepared
 provider payload through the existing configured client, always live. It keeps
@@ -2880,6 +2888,14 @@ response payloads stored by content hash. Semantic journals v3 retain per-run
 accounting and relative links into this same store. Atlas tables likewise write
 prompt/request/response ref JSON, plus run-local normalized results. Replay
 prints the shared request and response paths, duration, attempts and usage.
+Cache reads distinguish proven corruption from operational failures. Invalid
+JSON, identity/accounting, unsafe entries and missing referenced payloads may
+evict an accepted pointer; an I/O failure, an observed inode replacement during
+opening, or a stricter current response-byte limit is a diagnosed miss and
+does not remove it. Domain validation still rejects and evicts incompatible
+answers. A subsequent provider failure therefore leaves a previously usable
+answer available for another run. This classification does not make pathname
+eviction atomic against a later concurrent writer.
 
 The shared JSON normalizer separates one complete leading
 `<think>...</think>` block before inspecting the final answer. Code fences or
@@ -3343,6 +3359,16 @@ ProgramIndex is the single typed program graph passed from language adapters
 to shared stages. There is one schema and one sealed artifact per selected
 target, plus a sealed `program-index-set.json` that binds the complete selected
 target inventory.
+
+ProgramIndex and GroupsIndex hashing use a local value copy to clear the seal;
+JSON serialization reads their nested collections without copying them first.
+Categorization's base-seal check follows the same rule. Validation computes the
+target object scope once per invocation and still rechecks every object and
+the complete seal. Public snapshots and handoff isolation are unchanged; no
+past validation is memoized for these publicly mutable structs. Paired saved
+PyKrx microbenchmarks reduced ProgramIndex validation allocation from 19.55 to
+14.58 MB/op and GroupsIndex from 9.64 to 7.69 MB/op with identical original
+hashes. This is not an end-to-end latency claim.
 
 ProgramIndex version 11 retains:
 

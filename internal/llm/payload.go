@@ -48,14 +48,14 @@ func SavePayload(rootDir string, raw []byte) (string, error) {
 
 func readPayload(cacheDir, filename string, limit int) ([]byte, error) {
 	if filename == "" || filepath.Base(filename) != filename || !filepath.IsLocal(filename) {
-		return nil, fmt.Errorf("llm: invalid payload filename")
+		return nil, corruptCache(fmt.Errorf("llm: invalid payload filename"))
 	}
 	raw, found, err := readBoundedRegularFile(filepath.Join(cacheDir, "payloads", filename), limit)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		return nil, fmt.Errorf("llm: cached payload is missing")
+		return nil, corruptCache(fmt.Errorf("llm: cached payload is missing"))
 	}
 	return raw, nil
 }

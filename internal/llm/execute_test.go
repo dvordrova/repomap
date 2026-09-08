@@ -1033,10 +1033,13 @@ func TestExecuteJSONKeepsAcceptedOutputWithOperationalIssues(t *testing.T) {
 	if err != nil || outcome.Value.Value != "ok" {
 		t.Fatalf("accepted output = %#v, err = %v", outcome, err)
 	}
-	for _, kind := range []IssueKind{IssueCacheRead, IssueCacheEvict, IssueCacheWrite, IssueObserver} {
+	for _, kind := range []IssueKind{IssueCacheRead, IssueCacheWrite, IssueObserver} {
 		if !hasIssue(outcome.Issues, kind) {
 			t.Fatalf("issues = %#v, missing %s", outcome.Issues, kind)
 		}
+	}
+	if hasIssue(outcome.Issues, IssueCacheEvict) {
+		t.Fatal("attempted to evict a cache entry after an operational failure")
 	}
 }
 

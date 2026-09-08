@@ -21,6 +21,19 @@ const (
 	maxCacheRecordBytes = SemanticRecordByteLimit
 )
 
+// Only proven corruption authorizes removing a saved response. An I/O failure,
+// a concurrent replacement or a stricter local limit is merely a cache miss.
+type cacheCorruptionError struct{ error }
+
+func (err *cacheCorruptionError) Unwrap() error { return err.error }
+
+func corruptCache(err error) error { return &cacheCorruptionError{err} }
+
+func isCacheCorruption(err error) bool {
+	var corrupt *cacheCorruptionError
+	return errors.As(err, &corrupt)
+}
+
 type acceptedCacheRecord struct {
 	Version        int          `json:"version"`
 	Contract       string       `json:"contract"`
@@ -67,7 +80,7 @@ func loadAcceptedCache(
 		return record, found, err
 	}
 	if !bytes.Equal(record.Request, request) {
-		return acceptedCacheRecord{}, false, errors.New("llm: cached request differs from prepared request")
+		return acceptedCacheRecord{}, false, corruptCache(errors.New("llm: cached request differs from prepared request"))
 	}
 	return record, true, nil
 }
@@ -87,14 +100,14 @@ func readAcceptedCache(rootDir, cacheKey string, limits Limits) (acceptedCacheRe
 	decoder.DisallowUnknownFields()
 	var record acceptedCacheRecord
 	if err := decoder.Decode(&record); err != nil {
-		return acceptedCacheRecord{}, false, fmt.Errorf("llm: decode accepted cache: %w", err)
+		return acceptedCacheRecord{}, false, corruptCache(fmt.Errorf("llm: decode accepted cache: %w", err))
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err == nil {
-			return acceptedCacheRecord{}, false, errors.New("llm: accepted cache contains multiple JSON values")
+			return acceptedCacheRecord{}, false, corruptCache(errors.New("llm: accepted cache contains multiple JSON values"))
 		}
-		return acceptedCacheRecord{}, false, fmt.Errorf("llm: decode accepted cache tail: %w", err)
+		return acceptedCacheRecord{}, false, corruptCache(fmt.Errorf("llm: decode accepted cache tail: %w", err))
 	}
 	record.Request, err = readPayload(cacheDir, record.RequestFile, SemanticRecordByteLimit)
 	if err != nil {
@@ -125,12 +138,14 @@ func validateAcceptedCacheRecord(
 		record.ResponseBytes != len(record.Response) ||
 		record.RequestBytes < 0 || record.ResponseBytes < 0 ||
 		record.FinishReason != FinishStop || record.ChoiceCount != 1 ||
-		len(record.Response) > limits.MaxResponseBytes ||
 		len(record.Response) > hardMaxResponseBytes {
-		return errors.New("llm: rejected cache identity or byte accounting")
+		return corruptCache(errors.New("llm: rejected cache identity or byte accounting"))
 	}
 	if err := validateMetrics(record.Metrics); err != nil {
-		return fmt.Errorf("llm: rejected cache metrics: %w", err)
+		return corruptCache(fmt.Errorf("llm: rejected cache metrics: %w", err))
+	}
+	if len(record.Response) > limits.MaxResponseBytes {
+		return errors.New("llm: cached response exceeds the current byte limit")
 	}
 	return nil
 }
@@ -268,8 +283,10 @@ func readBoundedRegularFile(path string, limit int) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("llm: inspect cache entry: %w", err)
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() ||
-		info.Size() < 0 || info.Size() > int64(limit) {
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, false, corruptCache(errors.New("llm: cache entry is not a regular file"))
+	}
+	if info.Size() < 0 || info.Size() > int64(limit) {
 		return nil, false, errors.New("llm: cache entry is not a bounded regular file")
 	}
 	file, err := os.Open(path)
@@ -281,9 +298,8 @@ func readBoundedRegularFile(path string, limit int) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("llm: inspect opened cache entry: %w", err)
 	}
-	if !opened.Mode().IsRegular() || !os.SameFile(info, opened) ||
-		opened.Size() < 0 || opened.Size() > int64(limit) {
-		return nil, false, errors.New("llm: cache entry changed before read")
+	if err := validateOpenedCacheFile(info, opened, limit); err != nil {
+		return nil, false, err
 	}
 	data, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
 	if err != nil {
@@ -293,6 +309,14 @@ func readBoundedRegularFile(path string, limit int) ([]byte, bool, error) {
 		return nil, false, errors.New("llm: cache entry exceeds its byte limit")
 	}
 	return data, true, nil
+}
+
+func validateOpenedCacheFile(before, opened os.FileInfo, limit int) error {
+	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) ||
+		opened.Size() < 0 || opened.Size() > int64(limit) {
+		return errors.New("llm: cache entry changed before read")
+	}
+	return nil
 }
 
 func validSHA256(value string) bool {

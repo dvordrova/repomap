@@ -175,7 +175,7 @@ func validateCategorization(index Index) error {
 		}
 	}
 
-	base := index.Snapshot()
+	base := index
 	base.Categorization = nil
 	base.SHA256 = ""
 	wantBaseSHA256, err := indexDigest(base)
