@@ -1,99 +1,85 @@
 package run
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
+	"reflect"
+	"regexp"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/report"
 )
 
-func TestStandaloneSourceGuardRejectsOnlyUncommittedCorpusPaths(t *testing.T) {
-	for _, test := range []struct {
-		name, path string
-		outside    bool
-		wantCorpus bool
-	}{
-		{name: "new source", path: "new.py", wantCorpus: true},
-		{name: "ignored source", path: "ignored.py", wantCorpus: true},
-		{name: "source with spaces", path: "new code/δelta.py", wantCorpus: true},
-		{name: "explicit analysis exclusion", path: "excluded/new.py"},
-		{name: "forbidden environment file", path: ".env.local"},
-		{name: "dependency subtree", path: "node_modules/new.js"},
-		{name: "unread local data", path: "scratch.bin"},
-		{name: "outside analysis root", path: "outside.py", outside: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			gitRoot := t.TempDir()
-			analysisRoot := filepath.Join(gitRoot, "nested")
-			write := func(path, text string) {
-				t.Helper()
-				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+func TestStandaloneReportKeepsUncommittedSourcesWithoutBrokenLinks(t *testing.T) {
+	for _, host := range []string{"github", "gitlab"} {
+		t.Run(host, func(t *testing.T) {
+			repositoryRoot := ordinaryGraphGoRepository(t)
+			for path, contents := range map[string]string{
+				"internal/work/work.go": "package work\nfunc Run() { extra() }\n",
+				"internal/work/new.go":  "package work\nfunc extra() {}\n",
+			} {
+				if err := os.WriteFile(filepath.Join(repositoryRoot, path), []byte(contents), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
-			write(filepath.Join(analysisRoot, "main.py"), "def main(): pass\n")
-			write(filepath.Join(analysisRoot, ".gitignore"), "ignored.py\n")
-			write(filepath.Join(analysisRoot, ".repomapignore"), "excluded/\n")
-			// A committed basename at the Git root cannot authorize the same
-			// name under the selected nested analysis directory.
-			write(filepath.Join(gitRoot, "new.py"), "def unrelated(): pass\n")
-			ordinaryGraphGit(t, gitRoot, "init")
-			ordinaryGraphGit(t, gitRoot, "add", ".")
-			ordinaryGraphGit(t, gitRoot, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.test", "commit", "-m", "initial")
-			pathRoot := analysisRoot
-			if test.outside {
-				pathRoot = gitRoot
+			runRoot := t.TempDir()
+			args := []string{"--no-model", "--target", "example.com/common-page@.::example.com/common-page/cmd/app",
+				"--no-serve", "--no-open", "--debug-dir", runRoot,
+				"--" + host + "-url", "https://" + host + ".com/team/project"}
+			if err := runDefaultWithDeps(repositoryRoot, args, defaultRunDeps{stdout: io.Discard, stderr: io.Discard}); err != nil {
+				t.Fatalf("ordinary standalone publication: %v", err)
 			}
-			write(filepath.Join(pathRoot, filepath.FromSlash(test.path)), "def new(): pass\n")
-			repository, err := corpus.Open(t.Context(), analysisRoot)
+			runs := ordinaryGraphRunDirs(t, runRoot)
+			if len(runs) != 1 {
+				t.Fatalf("published common reports = %v", runs)
+			}
+			receipt, err := report.ReadRunReceipt(runs[0])
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer repository.Close()
-			_, inCorpus := repository.ID(test.path)
-			if inCorpus != test.wantCorpus {
-				t.Fatalf("test source in corpus = %t, want %t", inCorpus, test.wantCorpus)
+			manifest := receipt.Manifest()
+			want := []string{"internal/work/new.go", "internal/work/work.go"}
+			if manifest.StandaloneSource == nil || !reflect.DeepEqual(manifest.StandaloneSource.UnavailablePaths, want) {
+				t.Fatalf("per-path source availability = %+v", manifest.StandaloneSource)
 			}
-			state, err := freshness.CaptureRepository(t.Context(), analysisRoot, repository)
+			html, err := os.ReadFile(filepath.Join(runs[0], receipt.HTMLFilename()))
 			if err != nil {
 				t.Fatal(err)
 			}
-			analysisRoot, err = resolveAnalysisRoot(analysisRoot)
-			if err != nil {
+			blob := "/blob/"
+			if host == "gitlab" {
+				blob = "/-/blob/"
+			}
+			prefix := "https://" + host + ".com/team/project" + blob + manifest.RepositoryState.Head + "/"
+			if !bytes.Contains(html, []byte(prefix+"cmd/app/main.go#L")) {
+				t.Fatal("clean source lost its remote link")
+			}
+			for _, sourcePath := range want {
+				if !bytes.Contains(html, []byte(sourcePath)) || bytes.Contains(html, []byte(prefix+sourcePath)) {
+					t.Fatalf("source %q was removed or still has a broken remote link", sourcePath)
+				}
+			}
+			if !bytes.Contains(html, []byte("title=\"No source\"")) {
+				t.Fatal("unavailable source has no hover explanation")
+			}
+			canonical, err := os.ReadFile(filepath.Join(runs[0], "report.json"))
+			if err != nil || bytes.Contains(canonical, []byte("unavailable_source_paths")) {
+				t.Fatalf("source link presentation leaked into semantic report: %v", err)
+			}
+			// Saved rendering must not inspect the checkout again.
+			movedRoot := repositoryRoot + "-moved"
+			if err := os.Rename(repositoryRoot, movedRoot); err != nil {
 				t.Fatal(err)
 			}
-			if repositoryCorpusHasWorkingTreeChanges(repository, analysisRoot, state) {
-				t.Fatal("test must expose a path missed by the tracked-change guard")
-			}
-			for _, host := range []string{"GitHub", "GitLab", ""} {
-				err := validateRepositorySourceLinks(t.Context(), host, repository, analysisRoot, state)
-				wantError := host != "" && test.wantCorpus
-				if !wantError {
-					if err != nil {
-						t.Fatalf("%q publication rejected unrelated file or local serving: %v", host, err)
-					}
-					continue
-				}
-				if err == nil || !strings.Contains(err.Error(), test.path) || !strings.Contains(err.Error(), state.Head) || !strings.Contains(err.Error(), "local serving") {
-					t.Fatalf("%s missing-source error = %v", host, err)
-				}
-				if test.name == "new source" {
-					// Exercise the ordinary flag path before target work. The
-					// no-model flag guarantees this regression never calls a provider.
-					args := []string{"--no-model", "--target", "python:.:guard:main", "--no-open", "--debug-dir", t.TempDir(),
-						"--" + strings.ToLower(host) + "-url", "https://" + strings.ToLower(host) + ".com/team/project"}
-					err := runDefaultWithDeps(analysisRoot, args, defaultRunDeps{stdout: io.Discard, stderr: io.Discard})
-					if err == nil || !strings.Contains(err.Error(), "absent from captured revision") || !strings.Contains(err.Error(), test.path) {
-						t.Fatalf("ordinary %s path bypassed the missing-source guard: %v", host, err)
-					}
-				}
+			t.Cleanup(func() { _ = os.Rename(movedRoot, repositoryRoot) })
+			restored, err := report.RenderSavedHTML(runs[0])
+			// The ordinary English pass assigns display refs before publishing;
+			// saved rendering may renumber those refs. Compare the source markup.
+			anchors := regexp.MustCompile(`<(?:a|span) class="anchor"[^>]*>[^<]*</(?:a|span)>`)
+			if err != nil || !reflect.DeepEqual(anchors.FindAll(html, -1), anchors.FindAll(restored, -1)) {
+				t.Fatalf("saved HTML lost exact source availability: %v", err)
 			}
 		})
 	}

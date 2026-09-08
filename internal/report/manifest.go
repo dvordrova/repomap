@@ -47,8 +47,9 @@ const (
 // sources to, so a reader of a page far from the repository still lands on
 // the right file at the right revision.
 type StandaloneSourceAuthority struct {
-	Host          string `json:"host"`
-	RepositoryURL string `json:"repository_url"`
+	Host             string   `json:"host"`
+	RepositoryURL    string   `json:"repository_url"`
+	UnavailablePaths []string `json:"unavailable_paths,omitempty"`
 }
 
 func (authority *StandaloneSourceAuthority) validate() error {
@@ -69,6 +70,13 @@ func (authority *StandaloneSourceAuthority) validate() error {
 	}
 	if err != nil || normalized == "" || normalized != authority.RepositoryURL {
 		return fmt.Errorf("report manifest: standalone source repository URL is not canonical")
+	}
+	previous := ""
+	for _, sourcePath := range authority.UnavailablePaths {
+		if validateManifestPath(sourcePath) != nil || sourcePath <= previous {
+			return fmt.Errorf("report manifest: unavailable source paths must be canonical, uniquely sorted repository paths")
+		}
+		previous = sourcePath
 	}
 	return nil
 }
@@ -103,9 +111,10 @@ func (m RunManifest) Validate() error {
 // bound to it when a multi-target page is finalized, because the graph then
 // spans runs and no single run directory holds it.
 type RunSource struct {
-	AnalysisRoot string
-	Repository   freshness.RepositoryState
-	GroupGraph   []groupindex.Index
+	AnalysisRoot           string
+	Repository             freshness.RepositoryState
+	GroupGraph             []groupindex.Index
+	UnavailableSourcePaths []string
 }
 
 // NewRunSource names the repository and the analysed directory. The root is
@@ -292,8 +301,9 @@ func prepareRunManifest(
 	var sourceAuthority *StandaloneSourceAuthority
 	if standaloneSource != nil {
 		sourceAuthority = &StandaloneSourceAuthority{
-			Host:          standaloneSource.hostName,
-			RepositoryURL: standaloneSource.repositoryURL,
+			Host:             standaloneSource.hostName,
+			RepositoryURL:    standaloneSource.repositoryURL,
+			UnavailablePaths: append([]string(nil), source.UnavailableSourcePaths...),
 		}
 	}
 	manifest := RunManifest{

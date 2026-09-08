@@ -199,6 +199,9 @@ type defaultRunDeps struct {
 	// the corpus and never close it.
 	sharedRepositoryCorpus  *corpus.Corpus
 	capturedRepositoryState *freshness.RepositoryState
+	// A non-nil slice is the complete outer run's static-link check, including
+	// an empty result. Child targets reuse it without another Git inventory.
+	unavailableSourcePaths []string
 	// coreReadmeRoleRows carries the one accepted first-layer README role
 	// catalog into every selected target page. Each run rebinds paths to its
 	// current corpus, so run-local f* identities are never reused blindly.
@@ -528,8 +531,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			return fmt.Errorf("capture repository state before orientation: %w", err)
 		}
 	}
-	if err := validateRepositorySourceLinks(ctx, staticSourceHost, repositoryCorpus, analysisRoot, initialState); err != nil {
-		return err
+	if staticSourceHost != "" && deps.unavailableSourcePaths == nil {
+		deps.unavailableSourcePaths, err = freshness.UnavailableSourcePaths(ctx, analysisRoot, repositoryCorpus, initialState)
+		if err != nil {
+			return fmt.Errorf("check standalone source links: %w", err)
+		}
 	}
 	if deps.preselectedTarget == nil && !deps.siblingTargetRun {
 		goSource, prepareErr := prepareRepositoryPlanningGoSource(
@@ -788,6 +794,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err != nil {
 		return fmt.Errorf("name the report source: %w", err)
 	}
+	source.UnavailableSourcePaths = deps.unavailableSourcePaths
 	generateReport := func() (report.RunReceipt, error) {
 		data, err := report.NewData(runDir, repositoryName, index, ownedDocumentation)
 		if err != nil {
@@ -1057,42 +1064,6 @@ func validateDirectCallControls(depth, edgeLimit int) error {
 		return fmt.Errorf("--edges-limit must be non-negative (0 keeps all exact edges)")
 	}
 	return nil
-}
-
-func repositoryStateHasAnalyzedSubmodule(state freshness.RepositoryState) bool {
-	for _, submodule := range state.Submodules {
-		if submodule.IncludedInAnalysis {
-			return true
-		}
-	}
-	return false
-}
-
-func repositoryCorpusHasWorkingTreeChanges(repository *corpus.Corpus, analysisRoot string, state freshness.RepositoryState) bool {
-	if repository == nil {
-		return false
-	}
-	// Git status paths start at the Git root; corpus paths start at the
-	// selected analysis directory, which may be a nested repository fixture.
-	inCorpus := func(path string) bool {
-		if path == "" {
-			return false
-		}
-		relative, err := filepath.Rel(analysisRoot, filepath.Join(state.Identity, filepath.FromSlash(path)))
-		if err != nil {
-			return false
-		}
-		// ID accepts only exact local corpus paths, so ../ paths outside the
-		// analysis directory cannot collide with one of its file names.
-		_, ok := repository.ID(filepath.ToSlash(relative))
-		return ok
-	}
-	for _, dirty := range state.Dirty {
-		if inCorpus(dirty.Path) || inCorpus(dirty.FromPath) {
-			return true
-		}
-	}
-	return false
 }
 
 func defaultDebugDir() string {

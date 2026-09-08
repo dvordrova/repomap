@@ -357,6 +357,7 @@
       var source=node.getAttribute('data-source');
       if(source) html += '<p><a target="_blank" rel="noopener" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
       else if(node.dataset.open) html += '<p><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</a></p>';
+      else if(node.dataset.noSource==='true') html += '<p><span title="'+escapeText(rmT('No source'))+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</span></p>';
       html += '</div>';
       var concepts = map.exploreNode ? repomapMembers.items(node) : JSON.parse(node.dataset.concepts || '[]');
       card.classList.toggle('map-card-has-concepts', concepts.length > 0);
@@ -385,6 +386,7 @@
           html += '<li>'+(step.possible?("<span class=\"possible\">"+rmT.html("possible call")+"</span> "):'')+'<strong>'+escapeText(step.name)+'</strong><br>';
           if (step.href) html += '<a target="_blank" rel="noopener" href="'+escapeText(step.href)+'">'+escapeText(step.source)+'</a>';
           else if (step.open) html += '<a href="#" data-open="'+escapeText(step.open)+'">'+escapeText(step.source)+'</a>';
+          else if(step.no_source) html += '<span title="'+escapeText(rmT('No source'))+'">'+escapeText(step.source)+'</span>';
           else html += escapeText(step.source);
           html += '</li>';
         });
@@ -416,16 +418,13 @@
           panel.hidden=picker.value==='';card.classList.toggle('map-card-has-concepts',!panel.hidden);
           if(panel.hidden){map.explorerMember=null;map.querySelectorAll('[data-member-source]').forEach(function(b){b.setAttribute('aria-pressed','false');});map.dispatchEvent(new Event('repomap:reading'));return;}
           var concept=concepts[Number(picker.value)],source=concept.source;
-          map.explorerMember={owner:id,name:picker.selectedOptions[0].textContent,source:source.Text,href:source.Href,open:source.Open};
+          map.explorerMember={owner:id,name:picker.selectedOptions[0].textContent,source:source.Text,href:source.Href,open:source.Open,key:repomapMembers.sourceKey(source)};
           map.dispatchEvent(new Event('repomap:reading'));
-          map.querySelectorAll('[data-member-source]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.memberSource===(source.Href||source.Open));});
+          map.querySelectorAll('[data-member-source]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.memberSource===repomapMembers.sourceKey(source));});
           var explanation=card.querySelector('[data-concept-explanation]');
           explanation.textContent=concept.explanation||rmT('No explanation saved. Open the source to inspect this element.');
           explanation.dataset.displayRef=concept.explanation?concept.explanation_ref||'':'';
-          var link=document.createElement(source.Href||source.Open?'a':'span');link.textContent=source.Text;
-          if(source.Href){link.href=source.Href;link.target='_blank';link.rel='noopener';}
-          else if(source.Open){link.href='#';link.dataset.open=source.Open;}
-          card.querySelector('[data-concept-source]').replaceChildren(link);
+          card.querySelector('[data-concept-source]').replaceChildren(repomapMembers.sourceLink(source));
         };
         picker.addEventListener('change',function(){inspectionRevision++;explain();content.scrollTop=0;remember();});explain();
       }
@@ -440,7 +439,7 @@
             if(users.some(function(other){return other!==op&&other.dataset.title===op.dataset.title;})&&op.dataset.sourceText)b.textContent+=' · '+op.dataset.sourceText;
             b.addEventListener('click',function(){
             var picker=heading.querySelector('[data-concept-picker]'),concept=picker&&picker.value!==''&&concepts[Number(picker.value)];
-            map.chooseOperation(op.id,{node:node,label:concept?rmT('{0} in {1}',picker.selectedOptions[0].textContent,titleOf(node)):titleOf(node),source:concept&&{href:concept.source.Href,open:concept.source.Open}});
+            map.chooseOperation(op.id,{node:node,label:concept?rmT('{0} in {1}',picker.selectedOptions[0].textContent,titleOf(node)):titleOf(node),source:concept&&{href:concept.source.Href,open:concept.source.Open,key:repomapMembers.sourceKey(concept.source)}});
           });usage.appendChild(b);});actions.prepend(usage);}
       }
       var evidence=card.querySelector('.map-card-evidence');
@@ -452,14 +451,14 @@
     map.explainSource=function(source){
       if(!inspectedNode)return;
       var concepts=map.exploreNode?repomapMembers.items(inspectedNode):JSON.parse(inspectedNode.dataset.concepts||'[]');
-      var index=concepts.findIndex(function(c){return (source.href&&source.href===c.source.Href)||(source.open&&source.open===c.source.Open);});
+      var index=concepts.findIndex(function(c){return repomapMembers.sourceKey(c.source)===(source.key||source.href||source.open);});
       var picker=heading.querySelector('[data-concept-picker]');
       if(index<0||!picker)return;
       picker.value=String(index);picker.dispatchEvent(new Event('change'));
     };
     map.showNode=function(node){if(map.exploreNode||!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');}};
     map.showMember=function(node,item){
-      map.showNode(node);map.explainSource({href:item.source.Href,open:item.source.Open});
+      map.showNode(node);map.explainSource({href:item.source.Href,open:item.source.Open,key:repomapMembers.sourceKey(item.source)});
       var frame=inspector.getBoundingClientRect();
       if(frame.bottom>window.innerHeight||frame.top<0)inspector.scrollIntoView({block:'nearest'});
     };

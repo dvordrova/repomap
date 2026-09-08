@@ -29,6 +29,9 @@ func RenderSavedHTML(runDir string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("report: restore source links: %w", err)
 	}
+	if manifest.StandaloneSource != nil {
+		data.UnavailableSourcePaths = manifest.StandaloneSource.UnavailablePaths
+	}
 	options := receipt.RenderOptions()
 	options.ReportSHA256 = receipt.savedReportSHA256
 	options.LocalRoots = []string{receipt.RunDir(), manifest.AnalysisRoot, manifest.RepositoryState.Identity}

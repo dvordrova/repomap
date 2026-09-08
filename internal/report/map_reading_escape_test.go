@@ -50,13 +50,15 @@ func TestMapReadingPreservesQuotedSourceAttributesAndNames(t *testing.T) {
 	name := `load "quoted" & <value> '한국'`
 	url := `https://example.invalid/module" data-injected="yes.py?key=a&other='b'#L7`
 	cases := []struct {
-		Source string `json:"source"`
-		Open   string `json:"open"`
-		Name   string `json:"name"`
+		Source   string `json:"source"`
+		Open     string `json:"open"`
+		Name     string `json:"name"`
+		NoSource bool   `json:"no_source"`
 	}{
 		{Open: open, Name: name},
 		{Source: url, Name: name},
 		{Open: "src/simple.py:7:3", Name: "load"},
+		{NoSource: true, Name: name},
 	}
 	input, err := json.Marshal(cases)
 	if err != nil {
@@ -77,10 +79,10 @@ function render(value) {
   let inspectedNode = null, inspectionRevision = 0;
   function remember() {}
   function sentences() {return [];}
-  const step = {name:value.name,source:value.name,open:value.open,href:value.source};
+  const step = {name:value.name,source:value.name,open:value.open,href:value.source,no_source:value.no_source};
   const map = {classList:{contains(){return false;}},inspectedOperation:{dataset:{title:'Operation',callPaths:JSON.stringify({'node-1':[step]})}}};
   const attrs = {'data-node':'node-1','data-summary':value.name,'data-source':value.source,'data-source-text':value.name};
-  const node = {dataset:{title:value.name,sourceText:value.name,open:value.open,summaryRef:'t1',concepts:'[]'},getAttribute(name){return attrs[name]||'';}};
+  const node = {dataset:{title:value.name,sourceText:value.name,open:value.open,noSource:String(value.no_source),summaryRef:'t1',concepts:'[]'},getAttribute(name){return attrs[name]||'';}};
 ` + show + `
   show(node);
   return card.innerHTML;
@@ -101,6 +103,7 @@ process.stdout.write(JSON.stringify(cases.map(render)));
 		decoder := xml.NewDecoder(strings.NewReader("<div>" + fragment + "</div>"))
 		decoder.Strict, decoder.AutoClose, decoder.Entity = false, xml.HTMLAutoClose, xml.HTMLEntity
 		var links []map[string]string
+		noSourceLabels := 0
 		var texts strings.Builder
 		for {
 			token, err := decoder.Token()
@@ -122,11 +125,21 @@ process.stdout.write(JSON.stringify(cases.map(render)));
 				if token.Name.Local == "a" {
 					links = append(links, attrs)
 				}
+				if token.Name.Local == "span" && attrs["title"] == "No source" {
+					noSourceLabels++
+				}
 			case xml.CharData:
 				texts.Write(token)
 			}
 		}
-		if len(links) != 2 {
+		wantLinks := 2
+		if cases[i].NoSource {
+			wantLinks = 0
+			if noSourceLabels != 2 {
+				t.Fatalf("variant %d lost the unavailable node or call-path label: %s", i, fragment)
+			}
+		}
+		if len(links) != wantLinks {
 			t.Fatalf("variant %d lost the node or call-path source: %+v", i, links)
 		}
 		for _, link := range links {

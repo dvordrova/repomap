@@ -3270,13 +3270,19 @@ a Git HEAD, and claims extraction and report validation still require a
 revision. A filesystem corpus works without Git; the complete ordinary command
 does not yet. Those stages need optional Git metadata and content identities
 for untracked inputs before Git-free execution is complete. Standalone GitHub
-and GitLab publication now checks every readable corpus path against the exact
-captured revision, using a single NUL-delimited Git tree inventory and the
-analysis root's repository-relative prefix. An absent path fails before target
-work with its path and revision; excluded or unrelated files do not block the
-run. Local serving still reads the analyzed working tree. This complements the
-existing tracked-change and submodule checks without removing new sources from
-the corpus. Corpus tests cover identical inventory before Git init, before the
+and GitLab publication checks every readable corpus path against the captured
+revision once, using a NUL-delimited Git tree inventory and the analysis root's
+exact repository-relative prefix. Absent paths, including submodule descendants,
+and paths in the captured tracked changes retain their report content but have
+no remote link. The owner requested plain path text with a `No source` hover
+explanation, without interrupting publication or requiring extra actions.
+Existing code cubes and their selection use source identity independently of
+link availability. Unchanged sources keep their original permalinks. Child
+targets reuse the outer check; the standalone manifest stores the unavailable
+path list, so saved HTML rendering never reopens the repository or a provider.
+This is publication metadata, not model input or an analysis exclusion. Local
+serving still opens the analyzed working tree, including these paths. Corpus
+tests cover identical inventory before Git init, before the
 first commit and after a commit; they do not stand in for that integration.
 
 Before any short file identity exists, collection excludes `.npmrc`, every

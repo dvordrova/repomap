@@ -716,7 +716,13 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
 - Repository changes during a run do not fail publication. Do not reintroduce a
   freshness gate or strict-snapshot mode.
 - `--no-serve` requires resolvable GitHub or GitLab source links and fails in
-  preflight with corrective flag guidance otherwise. Served reports may only
+  preflight with corrective flag guidance otherwise. A corpus file absent
+  from the captured revision or changed locally never blocks HTML publication:
+  keep its path and line as plain text with a `No source` hover explanation.
+  Preserve the code cube, explanation and navigation, and every unaffected
+  permalink. The outer run checks path availability once; its standalone
+  manifest retains that list for repository-free saved rendering. Served
+  reports may only
   add manifest-authorized local editor opening; do not add browser APIs for
   workspace reads, investigation, symbols, source context, or run selection.
 - Persistent caches remain part of the ordinary path. Cache hits must be

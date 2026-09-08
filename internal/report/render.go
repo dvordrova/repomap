@@ -603,6 +603,7 @@ func generate(
 	renderData := *data
 	renderData.GitLabSourceLinks = gitLabSourceLinks
 	renderData.GitHubSourceLinks = gitHubSourceLinks
+	renderData.UnavailableSourcePaths = source.UnavailableSourcePaths
 	// The page is stamped with the digest of the exact report.json bytes it
 	// was rendered from, so publication can prove the pair belongs together.
 	digest := sha256.Sum256(reportJSON)

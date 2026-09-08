@@ -23,7 +23,7 @@
     var nearOf={};nodes.forEach(function(n){nearOf[n.id]=(n.dataset.near||'').split(/\s+/).filter(Boolean);});
     var ops=nodes.filter(function(n){return n.dataset.activation;}), groups=nodes.filter(function(n){return !n.dataset.activation;});
     var roots=displayedSet(groups.filter(function(n){return !parents[n.id];}).map(function(n){return n.id;}));
-    var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,toSource:e.dataset.toSource,toText:e.dataset.toText,operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),label:(e.querySelector('title')||{}).textContent||''};});
+    var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),label:(e.querySelector('title')||{}).textContent||''};});
     svg.querySelector('.map-frames').replaceChildren();svg.querySelector('.map-lanes').replaceChildren();svg.querySelector('.map-edge-labels').replaceChildren();
     var oldControls=map.querySelector('[data-operation-controls]');if(oldControls)oldControls.remove();
     var bar=document.createElement('div');bar.className='explorer-controls';
@@ -135,7 +135,7 @@
     function snapshot(){
       var member=map.explorerMember;
       return {scope:scope,operation:operation,pinned:pinned,mode:mode,search:search.value,
-        source:member&&member.owner===scope?{href:member.href,open:member.open}:null,
+        source:member&&member.owner===scope?{href:member.href,open:member.open,key:member.key}:null,
         label:member&&member.owner===scope?rmT('{0} in {1}',member.name,byID[scope].dataset.title):scope?byID[scope].dataset.title:map.closest('[data-report-page]').dataset.componentName,
         disclosures:focusDisclosures(),viewport:map.captureViewport?.(),scroll:window.scrollY};
     }
@@ -164,7 +164,7 @@
       var selected=focusView.querySelector('.map-focus-selection');if(!selected)return;
       selected.replaceChildren();var member=map.explorerMember;
       selected.hidden=!member||member.owner!==scope;if(selected.hidden)return;
-      var item=repomapMembers.items(byID[scope]).find(function(item){return member.href&&item.source.Href===member.href||member.open&&item.source.Open===member.open;});
+      var item=repomapMembers.items(byID[scope]).find(function(item){return repomapMembers.sourceKey(item.source)===(member.key||member.href||member.open);});
       if(!item)return;
       var name=document.createElement('strong');name.textContent=item.alias||item.name;selected.appendChild(name);
       if(item.alias&&item.alias!==item.name){var nativeName=document.createElement('code');nativeName.textContent=item.name;selected.appendChild(nativeName);}
@@ -183,9 +183,9 @@
         if(relation.summary&&relation.summary!==relation.label){var summary=document.createElement('p');summary.textContent=relation.summary;summary.dataset.displayRef=relation.summaryRef||'';row.appendChild(summary);}
         if(relation.possible){var possible=document.createElement('span');possible.className='map-focus-relation-kind';possible.textContent=rmT('Interpreted connection or possible dispatch');row.appendChild(possible);}
         var sources=document.createElement('div');sources.className='map-focus-sources';
-        [['fromSource','fromText'],['toSource','toText']].forEach(function(fields){
-          if(!relation[fields[0]])return;
-          sources.appendChild(repomapMembers.sourceLink({Href:relation[fields[0]],Text:relation[fields[1]]||rmT('Source')}));
+        [['fromSource','fromText','fromNoSource'],['toSource','toText','toNoSource']].forEach(function(fields){
+          if(!relation[fields[0]]&&!relation[fields[2]])return;
+          sources.appendChild(repomapMembers.sourceLink({Href:relation[fields[0]],Text:relation[fields[1]]||rmT('Source'),NoSource:relation[fields[2]]}));
         });
         if(sources.childElementCount)row.appendChild(sources);list.appendChild(row);
       });container.appendChild(list);
@@ -391,7 +391,7 @@
     map.readingState=function(){
       var member=map.explorerMember;
       return {scope:scope,operation:operation?.id||'',pinned:pinned,mode:mode,search:search.value,
-        source:member&&member.owner===scope?{href:member.href||'',open:member.open||''}:null,
+        source:member&&member.owner===scope?{href:member.href||'',open:member.open||'',key:member.key}:null,
         disclosures:focusDisclosures(),viewport:map.captureViewport?.()||null};
     };
     map.restoreReadingState=function(saved){

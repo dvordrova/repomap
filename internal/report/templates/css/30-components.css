@@ -76,3 +76,5 @@ details>summary{cursor:pointer;font-weight:600}
 /* An author's own sentence on a card, marked as a claim: quoted, not verified. */
 .doc{margin:.2rem 0 0;padding-left:.6rem;border-left:3px solid var(--claim);font-size:.92rem}
 .doc .lbl{font-weight:600}
+
+span.anchor[data-no-source],.key-symbol span.chip[data-no-source],span.route-path[data-no-source],span.route-symbol[data-no-source]{color:var(--ink);text-decoration:none;border-bottom:0;cursor:default}

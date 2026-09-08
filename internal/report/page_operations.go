@@ -467,6 +467,7 @@ func (builder *pageBuilder) operationCallPaths(root string, destinations map[str
 		Open     string `json:"open,omitempty"`
 		Source   string `json:"source"`
 		Possible bool   `json:"possible,omitempty"`
+		NoSource bool   `json:"no_source,omitempty"`
 	}
 	paths := make(map[string][]step)
 	for node, destination := range destinations {
@@ -483,7 +484,7 @@ func (builder *pageBuilder) operationCallPaths(root string, destinations map[str
 				break
 			}
 			edge, hasParent := parents[current]
-			reversed = append(reversed, step{Name: name, Href: anchor.Href, Open: anchor.Open, Source: anchor.Text, Possible: hasParent && edge.Resolution != programindex.ResolutionExact})
+			reversed = append(reversed, step{Name: name, Href: anchor.Href, Open: anchor.Open, Source: anchor.Text, NoSource: anchor.NoSource, Possible: hasParent && edge.Resolution != programindex.ResolutionExact})
 			if current == root {
 				break
 			}

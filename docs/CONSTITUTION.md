@@ -175,7 +175,12 @@ separate stage outputs.
   muted), claim (marked with source and age). A model-written sentence must
   not look like a heading of authoritative documentation.
 * Anchors link to a permalink at the captured revision, and to the editor when
-  one is installed. A missing editor never withholds the report.
+  one is installed. A missing editor never withholds the report. The owner's
+  2026-09-08 standalone rule also keeps the HTML when an analyzed source is
+  absent from that revision or changed locally: show the same path and line as
+  ordinary non-clickable text with a `No source` hover explanation. Preserve
+  its code cube, explanation and map navigation. Other source links remain
+  active; neither committing nor running a server is required to publish.
 * Banned on-screen vocabulary: retained, source-bound, authority, projection,
   selector, outcome, target contract, and raw selector strings like
   `python:backend:guard:main`.

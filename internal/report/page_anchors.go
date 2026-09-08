@@ -13,11 +13,12 @@ import (
 // permalink at the captured revision; Open is the served-mode editor spec
 // that report.js posts to /api/open. With neither, the anchor is plain text.
 type pageAnchor struct {
-	Path string
-	Line int
-	Href string
-	Open string
-	Text string
+	Path     string
+	Line     int
+	Href     string
+	Open     string
+	Text     string
+	NoSource bool `json:"NoSource,omitempty"`
 }
 
 // pageLinks builds anchors for one render. Static reports carry one external
@@ -28,10 +29,14 @@ type pageLinks struct {
 	revision      string
 	pathPrefix    string
 	sourceIDs     map[string]string
+	unavailable   map[string]bool
 }
 
 func newPageLinks(data *ReportData) pageLinks {
-	links := pageLinks{sourceIDs: data.SourceIDs}
+	links := pageLinks{sourceIDs: data.SourceIDs, unavailable: make(map[string]bool, len(data.UnavailableSourcePaths))}
+	for _, sourcePath := range data.UnavailableSourcePaths {
+		links.unavailable[sourcePath] = true
+	}
 	switch {
 	case data.GitHubSourceLinks != nil:
 		links.repositoryURL = data.GitHubSourceLinks.RepositoryURL
@@ -60,6 +65,8 @@ func (links pageLinks) anchor(path string, line, column int) pageAnchor {
 		return anchor
 	}
 	switch {
+	case links.static() && links.unavailable[path]:
+		anchor.NoSource = true
 	case links.static():
 		anchor.Href = links.permalink(path, line)
 	case links.served():

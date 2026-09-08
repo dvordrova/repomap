@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestSavedHTMLUsesOrdinaryRendererAndPreservesPublication(t *testing.T) {
-	for _, host := range []string{"local", "GitHub", "GitLab"} {
+	for _, host := range []string{"local", "GitHub", "GitLab", "GitHub unavailable", "GitLab unavailable"} {
 		t.Run(host, func(t *testing.T) {
 			runDir := t.TempDir()
 			data := reportProgramShellDataFixture(t, "example.com/team/server")
@@ -24,7 +25,10 @@ func TestSavedHTMLUsesOrdinaryRendererAndPreservesPublication(t *testing.T) {
 				t.Fatal(err)
 			}
 			options := GenerateOptions{Data: &data, PublishHTML: true}
-			switch host {
+			if strings.HasSuffix(host, " unavailable") {
+				source.UnavailableSourcePaths = append([]string(nil), data.OpenablePaths...)
+			}
+			switch strings.TrimSuffix(host, " unavailable") {
 			case "GitHub":
 				options.GitHubURL = "https://github.com/example/project"
 			case "GitLab":
