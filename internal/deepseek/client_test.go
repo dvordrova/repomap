@@ -73,20 +73,29 @@ func TestLegacyEndpointSelectsTemplateControlByActualHost(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			prepared, err := client.Prepare(llm.Prompt{System: "system", User: "user"}, llmProviderTestLimits(400))
-			if err != nil {
-				t.Fatal(err)
-			}
-			var request chatRequest
-			if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
-				t.Fatal(err)
-			}
-			if test.official {
-				if request.ChatTemplateKwargs != nil || request.Thinking == nil || request.Thinking.Type != "disabled" {
-					t.Fatalf("official controls = %#v", request)
+			for _, reasoning := range []bool{false, true} {
+				prepared, err := client.Prepare(llm.Prompt{System: "system", User: "user", Reasoning: reasoning}, llmProviderTestLimits(400))
+				if err != nil {
+					t.Fatal(err)
 				}
-			} else if request.Thinking != nil || string(request.ChatTemplateKwargs["enable_thinking"]) != "false" {
-				t.Fatalf("compatible controls = %#v", request)
+				var request chatRequest
+				if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
+					t.Fatal(err)
+				}
+				if test.official {
+					want := "disabled"
+					if reasoning {
+						want = "enabled"
+					}
+					if request.ChatTemplateKwargs != nil || request.Thinking == nil || request.Thinking.Type != want {
+						t.Fatalf("official controls for reasoning=%v: %#v", reasoning, request)
+					}
+				} else {
+					var enabled bool
+					if err := json.Unmarshal(request.ChatTemplateKwargs["enable_thinking"], &enabled); err != nil || enabled != reasoning || request.Thinking != nil {
+						t.Fatalf("compatible controls for reasoning=%v: %#v (%v)", reasoning, request, err)
+					}
+				}
 			}
 		})
 	}

@@ -94,8 +94,14 @@ func TestLLMProviderPrepareUsesOnlyCubePromptAndEffectiveLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(prepared.Bytes(), compatible.Bytes()) {
-		t.Fatal("a table reasoning preference must not override the configured compatible-server thinking default")
+	if bytes.Equal(prepared.Bytes(), compatible.Bytes()) {
+		t.Fatal("compatible reasoning preference must change the exact request cache identity")
+	}
+	if err := json.Unmarshal(compatible.Bytes(), &request); err != nil {
+		t.Fatal(err)
+	}
+	if string(request.ChatTemplateKwargs["enable_thinking"]) != "true" || request.MaxTokens != client.MaxTokens {
+		t.Fatal("compatible request did not enable reasoning with the configured output allowance")
 	}
 }
 
@@ -104,19 +110,25 @@ func TestLLMProviderChatTemplateKwargsControlExactRequest(t *testing.T) {
 		HTTPClient: &http.Client{}, Model: "qwen-test", MaxTokens: 400,
 		Endpoint: "https://provider.example/v1/chat/completions", Auth: authNone,
 	}
-	var preparedBodies [][]byte
+	bodiesByOptions := make(map[string][]byte)
 	for _, test := range []struct {
-		name   string
-		kwargs map[string]json.RawMessage
-		want   string
+		name      string
+		reasoning bool
+		kwargs    map[string]json.RawMessage
+		want      string
 	}{
 		{name: "default off", want: `{"enable_thinking":false}`},
+		{name: "cube reasoning on", reasoning: true, want: `{"enable_thinking":true}`},
 		{name: "explicit omission", kwargs: map[string]json.RawMessage{}},
-		{name: "explicit override", kwargs: map[string]json.RawMessage{"enable_thinking": json.RawMessage("true")}, want: `{"enable_thinking":true}`},
+		{name: "explicit omission with reasoning", reasoning: true, kwargs: map[string]json.RawMessage{}},
+		{name: "explicit on overrides fast cube", kwargs: map[string]json.RawMessage{"enable_thinking": json.RawMessage("true")}, want: `{"enable_thinking":true}`},
+		{name: "explicit off overrides reasoning cube", reasoning: true, kwargs: map[string]json.RawMessage{"enable_thinking": json.RawMessage("false")}, want: `{"enable_thinking":false}`},
+		{name: "explicit object replaces all defaults", reasoning: true, kwargs: map[string]json.RawMessage{"custom_option": json.RawMessage("7")}, want: `{"custom_option":7}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			client.ChatTemplateKwargs = test.kwargs
-			prompt := llm.Prompt{System: "system", User: "user", Reasoning: true}
+			before, _ := json.Marshal(client.ChatTemplateKwargs)
+			prompt := llm.Prompt{System: "system", User: "user", Reasoning: test.reasoning}
 			prepared, err := client.Prepare(prompt, llmProviderTestLimits(400))
 			if err != nil {
 				t.Fatal(err)
@@ -128,15 +140,78 @@ func TestLLMProviderChatTemplateKwargsControlExactRequest(t *testing.T) {
 			if string(request["chat_template_kwargs"]) != test.want || request["extra_body"] != nil || request["thinking"] != nil {
 				t.Fatalf("wire template options = %s", prepared.Bytes())
 			}
-			preparedBodies = append(preparedBodies, prepared.Bytes())
+			after, _ := json.Marshal(client.ChatTemplateKwargs)
+			if !bytes.Equal(before, after) {
+				t.Fatal("preparing a cube mutated shared client configuration")
+			}
+			if previous, ok := bodiesByOptions[test.want]; ok && !bytes.Equal(previous, prepared.Bytes()) {
+				t.Fatal("identical effective kwargs must keep the same exact request identity")
+			}
+			bodiesByOptions[test.want] = prepared.Bytes()
 		})
 	}
-	for i := range preparedBodies {
-		for j := 0; j < i; j++ {
-			if bytes.Equal(preparedBodies[i], preparedBodies[j]) {
+	for options, body := range bodiesByOptions {
+		for otherOptions, otherBody := range bodiesByOptions {
+			if options != otherOptions && bytes.Equal(body, otherBody) {
 				t.Fatal("template options must change the exact request cache identity")
 			}
 		}
+	}
+}
+
+func TestCompatibleReasoningKeepsThinkingOutsideAnswerAndSeparatesCache(t *testing.T) {
+	var seenMu sync.Mutex
+	var seen []bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var request struct {
+			Kwargs struct {
+				Thinking bool `json:"enable_thinking"`
+			} `json:"chat_template_kwargs"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		seenMu.Lock()
+		seen = append(seen, request.Kwargs.Thinking)
+		seenMu.Unlock()
+		content := `{"thinking":false}`
+		if request.Kwargs.Thinking {
+			content = "<think>\n```python\ndraft = {\"thinking\": false}\n```\n</think>\n```json\n{\"thinking\":true}\n```"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(llmProviderResponse("stop", content, nil))
+	}))
+	defer server.Close()
+	client := llmProviderTestClient(server)
+	executor := llm.Executor{RootDir: t.TempDir(), Enabled: true}
+	keys := make(map[bool]string)
+	for i, reasoning := range []bool{false, true, false, true} {
+		outcome, err := llm.ExecuteJSON[map[string]bool](t.Context(), executor, client, llm.Call[map[string]bool]{
+			State:  []byte("same-cube"),
+			Prompt: llm.Prompt{System: "Return one JSON object.", User: "same evidence", ResponseFormatJSON: true, Reasoning: reasoning},
+			Limits: llmProviderTestLimits(400),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if outcome.Value["thinking"] != reasoning || outcome.Cached != (i >= 2) {
+			t.Fatalf("reasoning=%v outcome=%+v", reasoning, outcome)
+		}
+		if reasoning && !bytes.HasPrefix(outcome.Response, []byte("<think>")) {
+			t.Fatal("normalization discarded original thinking bytes from the saved response")
+		}
+		if previous := keys[reasoning]; previous != "" && previous != outcome.CacheKey {
+			t.Fatal("unchanged reasoning did not reuse its request identity")
+		}
+		keys[reasoning] = outcome.CacheKey
+	}
+	seenMu.Lock()
+	defer seenMu.Unlock()
+	if len(seen) != 2 || seen[0] || !seen[1] || keys[false] == keys[true] {
+		t.Fatalf("reasoning wire calls or cache identities differ: seen=%v keys=%v", seen, keys)
 	}
 }
 

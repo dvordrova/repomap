@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,10 +97,10 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 			request.Thinking.Type = "enabled"
 		}
 	} else if request.ChatTemplateKwargs == nil {
-		// Compatible servers commonly default to thinking. Keep the owner's
-		// default explicit; an empty configured object opts out of this field.
+		// Apply the same cube-owned preference through compatible template
+		// options. Explicit configuration, including omission, takes precedence.
 		request.ChatTemplateKwargs = map[string]json.RawMessage{
-			"enable_thinking": json.RawMessage("false"),
+			"enable_thinking": json.RawMessage(strconv.FormatBool(prompt.Reasoning)),
 		}
 	}
 	body, err := json.Marshal(request)

@@ -37,10 +37,12 @@ be HTTP(S) URLs with a host and without userinfo, query, or fragment.
 `repomap` does not source an analyzed repository's `.env` file. Configuration
 comes from the caller's environment.
 
-Custom endpoint requests default to
-`"chat_template_kwargs":{"enable_thinking":false}`. The final answer table's
-reasoning preference does not override that default. The configured JSON object
-replaces these template options; `{}` explicitly omits the field. Invalid JSON,
+Custom endpoints encode each stage's boolean reasoning preference in
+`chat_template_kwargs.enable_thinking`. Shared question
+retrieval and final answers request `true`; ordinary fast stages and final
+report translation request `false`. An explicitly configured JSON object
+replaces these defaults in full, even if it forces thinking off for a reasoning
+stage; `{}` explicitly omits the field. Invalid JSON,
 null, arrays and scalar values are rejected during configuration. The endpoint
 host, independent of the environment-variable family, selects the native
 DeepSeek behavior: exactly `api.deepseek.com` (case-insensitive) uses its

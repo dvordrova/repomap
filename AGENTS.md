@@ -49,9 +49,11 @@ have no individual output-token ceilings: they use the shared 128,000-token
 request envelope, and the configured provider ceiling still applies. Reasoning
 and visible output share that allowance; concise prose is a prompt requirement,
 not a smaller generation cutoff. The DeepSeek adapter encodes that preference on its
-official endpoint. Other compatible endpoints default to
-`chat_template_kwargs: {enable_thinking: false}`, including final answers, per
-the owner's request. `REPOMAP_LLM_CHAT_TEMPLATE_KWARGS` (or the legacy
+official endpoint. Other compatible endpoints encode the same stage preference
+in `chat_template_kwargs.enable_thinking`: shared question
+retrieval and final answers enable it; other stages, including translation,
+keep it disabled. The owner clarified this stage-specific behavior on 2026-09-08.
+`REPOMAP_LLM_CHAT_TEMPLATE_KWARGS` (or the legacy
 `DEEPSEEK_CHAT_TEMPLATE_KWARGS`) replaces that object; `{}` omits the extension.
 The actual endpoint host selects native DeepSeek controls, never the variable
 prefix. Exact request

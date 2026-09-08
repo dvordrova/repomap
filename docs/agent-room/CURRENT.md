@@ -1867,9 +1867,10 @@ All stages use the shared 128,000-token request envelope, subject to the configu
 client ceiling; the guidance classifier, target portfolio, documentation and
 orientation stages also no longer impose their former 32,768-token cutoffs.
 Short answers remain a prompt requirement rather than a smaller
-generation cutoff. The official DeepSeek adapter encodes the reasoning
-preference; other compatible endpoints receive no new vendor-specific fields.
-Other tables retain fast mode. Exact request and memo identities include the
+generation cutoff. The provider adapter encodes this reasoning preference
+with native `thinking` on official DeepSeek and default `chat_template_kwargs`
+on compatible endpoints. Shared question retrieval also opts into reasoning;
+other tables and final display translation retain fast mode. Exact request and memo identities include the
 effective output allowance and reasoning preference.
 The answer explains supported parts, names any missing central part, then chooses
 its status. The original question determines both coverage and depth: an overview
@@ -2521,17 +2522,32 @@ nested/repeated leading blocks, multiple final values or malformed final JSON
 remain rejected. The live outcome, observer and reused response retain all
 original bytes; normalization changes only the input to semantic validation.
 This compatibility handling does not itself turn thinking off at the provider.
-The owner's subsequent request makes custom endpoints send
-`chat_template_kwargs: {enable_thinking: false}` by default, including final
-answer requests. `REPOMAP_LLM_CHAT_TEMPLATE_KWARGS` or its legacy
-`DEEPSEEK_CHAT_TEMPLATE_KWARGS` alias replaces that object; an explicit empty
-object omits the extension for servers that reject it. No silent retry removes
-the control. The actual endpoint host selects native DeepSeek handling:
-`api.deepseek.com` retains its existing thinking control and final-answer opt-in.
+The owner clarified on 2026-09-08 that the earlier default-off preference must
+still honor a stage's explicit reasoning opt-in. Compatible endpoints now send
+`chat_template_kwargs: {enable_thinking: true}` for shared question retrieval
+and final answers, and `false` for ordinary fast stages and display translation.
+`REPOMAP_LLM_CHAT_TEMPLATE_KWARGS` or its legacy
+`DEEPSEEK_CHAT_TEMPLATE_KWARGS` alias explicitly replaces that object in full;
+a forced `false` therefore overrides stage reasoning, and an empty object omits
+the extension. No silent retry removes the control. The actual endpoint host
+selects native DeepSeek handling: `api.deepseek.com` encodes the same stage
+preference with its existing `thinking` control and no default kwargs.
 The configured variable prefix does not classify the endpoint. `DEEPSEEK_*`
 and `REPOMAP_LLM_*` configure the same client, with the generic namespace
 authoritative whenever any of its settings is set. These request options take
 part in exact cache identity, and replay does not reapply environment options.
+The provider regressions cover both environment families, endpoint-host routing,
+explicit on/off/omission overrides and unchanged client configuration. An HTTP
+executor regression alternates fast/reasoning requests, parses a Qwen-style
+leading think block containing a non-JSON code fence, retains the original
+response bytes and reuses each mode only from its own exact-response cache.
+Parser rules remain unchanged: a complete `</think>` terminator is required;
+a literal `<think/>`, truncation or ambiguous final JSON is refused.
+Full `make test`, `make vet` and `make build` pass. Ordinary publication on the
+Python/TypeScript fixture at `20260908-042325` retains both complete targets,
+unchanged canonical content apart from timing and all 40 cached exchanges,
+with zero provider attempts. This checks the unchanged official-DeepSeek path;
+the remote owner's custom endpoint was not available for a live validation.
 
 Question-only readings use the same independent row builders in recall-only mode:
 they restore current descriptions but make no description requests. Source rows
