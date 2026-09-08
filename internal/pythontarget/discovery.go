@@ -301,6 +301,9 @@ func isPythonInterpreterName(name string) bool {
 }
 
 func runPythonParser(ctx context.Context, executable string, files []inputFile) (helperResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return helperResponse{}, err
+	}
 	if len(files) == 0 {
 		return helperResponse{}, nil
 	}
@@ -329,13 +332,21 @@ func runPythonParser(ctx context.Context, executable string, files []inputFile) 
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return helperResponse{}, ctxErr
 		}
-		return helperResponse{}, fmt.Errorf("python target discovery: isolated parser failed: %s", strings.TrimSpace(stderr.String()))
+		processErr := fmt.Errorf("python target discovery: isolated parser failed: %w", waitErr)
+		if diagnostic := strings.TrimSpace(stderr.String()); diagnostic != "" {
+			processErr = fmt.Errorf("%w: %s", processErr, diagnostic)
+		}
+		return helperResponse{}, processErr
 	}
 	var response helperResponse
 	decoder := json.NewDecoder(bytes.NewReader(wire))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&response); err != nil {
 		return helperResponse{}, fmt.Errorf("python target discovery: decode parser output: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return helperResponse{}, fmt.Errorf("python target discovery: parser output contains trailing JSON")
 	}
 	if response.Fatal != "" {
 		return helperResponse{}, fmt.Errorf("python target discovery: %s", response.Fatal)
@@ -344,18 +355,21 @@ func runPythonParser(ctx context.Context, executable string, files []inputFile) 
 }
 
 type limitedBuffer struct {
-	bytes.Buffer
-	limit int
+	// Embedding bytes.Buffer would expose ReadFrom and bypass Write in os/exec.
+	buffer bytes.Buffer
+	limit  int
 }
+
+func (buffer *limitedBuffer) String() string { return buffer.buffer.String() }
 
 func (buffer *limitedBuffer) Write(value []byte) (int, error) {
 	original := len(value)
-	remaining := buffer.limit - buffer.Len()
+	remaining := buffer.limit - buffer.buffer.Len()
 	if remaining > 0 {
 		if len(value) > remaining {
 			value = value[:remaining]
 		}
-		_, _ = buffer.Buffer.Write(value)
+		_, _ = buffer.buffer.Write(value)
 	}
 	return original, nil
 }

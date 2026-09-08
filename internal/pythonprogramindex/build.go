@@ -704,6 +704,9 @@ func packageSourceRef(pkg pythontarget.Package) string {
 }
 
 func runParser(ctx context.Context, request parserRequest) (parserResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return parserResponse{}, err
+	}
 	wire, err := json.Marshal(request)
 	if err != nil {
 		return parserResponse{}, fmt.Errorf("python program index: encode parser request: %w", err)
@@ -723,9 +726,11 @@ func runParser(ctx context.Context, request parserRequest) (parserResponse, erro
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return parserResponse{}, ctxErr
 		}
-		return parserResponse{}, fmt.Errorf(
-			"python program index: isolated parser failed: %s", strings.TrimSpace(stderr.String()),
-		)
+		processErr := fmt.Errorf("python program index: isolated parser failed: %w", waitErr)
+		if diagnostic := strings.TrimSpace(stderr.String()); diagnostic != "" {
+			processErr = fmt.Errorf("%w: %s", processErr, diagnostic)
+		}
+		return parserResponse{}, processErr
 	}
 	return decodeParserResponse(stdout.Bytes())
 }
@@ -1047,14 +1052,17 @@ func hashCanonical(value any) (string, error) {
 }
 
 type limitedBuffer struct {
-	bytes.Buffer
+	// Embedding bytes.Buffer would expose ReadFrom and bypass Write in os/exec.
+	buffer   bytes.Buffer
 	limit    int
 	exceeded bool
 }
 
+func (buffer *limitedBuffer) String() string { return buffer.buffer.String() }
+
 func (buffer *limitedBuffer) Write(value []byte) (int, error) {
 	original := len(value)
-	remaining := buffer.limit - buffer.Len()
+	remaining := buffer.limit - buffer.buffer.Len()
 	if original > remaining {
 		buffer.exceeded = true
 	}
@@ -1062,7 +1070,7 @@ func (buffer *limitedBuffer) Write(value []byte) (int, error) {
 		if len(value) > remaining {
 			value = value[:remaining]
 		}
-		_, _ = buffer.Buffer.Write(value)
+		_, _ = buffer.buffer.Write(value)
 	}
 	return original, nil
 }

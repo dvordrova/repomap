@@ -7,10 +7,13 @@ import { pathToFileURL } from "node:url"
 
 const CONTRACT_VERSION = 17
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
+// Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
+// human diagnostic text; only this status identifies a missing compiler.
+const COMPILER_UNAVAILABLE_EXIT_CODE = 2
 
-function fail(message) {
+function fail(message, exitCode = 1) {
   process.stderr.write(`jsts helper: ${message}\n`)
-  process.exit(1)
+  process.exit(exitCode)
 }
 
 const inputChunks = []
@@ -220,7 +223,7 @@ try {
     nativeAPI = new syncAPI.API({ cwd: root })
   }
 } catch (error) {
-  fail(`load prepared TypeScript compiler: ${error instanceof Error ? error.message : "unknown error"}`)
+  fail(`load prepared TypeScript compiler: ${error instanceof Error ? error.message : "unknown error"}`, COMPILER_UNAVAILABLE_EXIT_CODE)
 }
 
 let configPath = ""

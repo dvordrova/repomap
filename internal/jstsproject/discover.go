@@ -21,6 +21,8 @@ import (
 const (
 	maxHelperStderrBytes     = 8 << 10
 	maxHelperDiagnosticBytes = 2_048
+	// The embedded helper reserves this status for compiler loading failures.
+	helperCompilerUnavailableExitCode = 2
 )
 
 //go:embed helper.mjs
@@ -1059,13 +1061,16 @@ func (writer *boundedBuffer) Write(value []byte) (int, error) {
 }
 
 func invokeHelper(ctx context.Context, repositoryRoot string, request helperRequest) (helperOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return helperOutput{}, err
+	}
 	encoded, err := json.Marshal(request)
 	if err != nil {
 		return helperOutput{}, fmt.Errorf("jsts project: encode helper request: %w", err)
 	}
 	nodePath, err := exec.LookPath("node")
 	if err != nil {
-		return helperOutput{}, fmt.Errorf("jsts project: Node.js executable is required")
+		return helperOutput{}, fmt.Errorf("%w: Node.js executable is required: %w", ErrTypeScriptCompilerUnavailable, err)
 	}
 	command := exec.CommandContext(ctx, nodePath, "--input-type=module", "--eval", nodeHelper)
 	command.Dir = repositoryRoot
@@ -1083,16 +1088,16 @@ func invokeHelper(ctx context.Context, repositoryRoot string, request helperRequ
 		if stderr.exceeded {
 			closedDiagnostic = strings.TrimSpace(closedDiagnostic + fmt.Sprintf(" (diagnostic truncated at %d bytes)", maxHelperStderrBytes))
 		}
-		if strings.Contains(closedDiagnostic, "load prepared TypeScript compiler") || strings.Contains(closedDiagnostic, "TypeScript compiler is not rooted in analyzed node_modules") {
-			if closedDiagnostic == "" {
-				return helperOutput{}, ErrTypeScriptCompilerUnavailable
-			}
-			return helperOutput{}, fmt.Errorf("%w: %s", ErrTypeScriptCompilerUnavailable, closedDiagnostic)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == helperCompilerUnavailableExitCode {
+			err = fmt.Errorf("%w: %w", ErrTypeScriptCompilerUnavailable, err)
+		} else {
+			err = fmt.Errorf("jsts project: TypeScript helper failed: %w", err)
 		}
 		if closedDiagnostic != "" {
-			return helperOutput{}, fmt.Errorf("jsts project: TypeScript helper failed: %s", closedDiagnostic)
+			err = fmt.Errorf("%w: %s", err, closedDiagnostic)
 		}
-		return helperOutput{}, fmt.Errorf("jsts project: TypeScript helper failed: %s", sanitizeDiagnostic(err.Error(), repositoryRoot))
+		return helperOutput{}, err
 	}
 	return decodeHelperOutput(stdout.Bytes())
 }

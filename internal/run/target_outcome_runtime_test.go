@@ -72,6 +72,13 @@ func TestRepositorySelectedTargetKeepsPreanalysisGoIdentity(t *testing.T) {
 
 func TestClassifyRepositoryTargetFailureUsesClosedTypedCauses(t *testing.T) {
 	stage, reason := classifyRepositoryTargetFailure(
+		targetoutcome.StageProgramAnalysis,
+		errors.New("unresolved project reference ./load prepared TypeScript compiler"),
+	)
+	if stage != targetoutcome.StageProgramAnalysis || reason != targetoutcome.ReasonAnalysisFailed {
+		t.Fatalf("source diagnostic was treated as missing compiler: %s/%s", stage, reason)
+	}
+	stage, reason = classifyRepositoryTargetFailure(
 		targetoutcome.StageTargetPreparation,
 		errors.Join(errors.New("prepare"), jstsproject.ErrTypeScriptCompilerUnavailable),
 	)

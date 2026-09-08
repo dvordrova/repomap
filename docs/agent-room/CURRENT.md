@@ -3976,6 +3976,15 @@ targets. A shared Go workspace is only an optimization: if union preparation
 fails, the current exact target is retried locally and later Go targets remain
 isolated. A target-local fallback workspace never becomes sibling authority.
 
+The embedded JS/TS helper reserves an exit status for compiler-load failures;
+stderr remains diagnostic text and cannot choose the public failure reason.
+Missing Node retains the same prerequisite cause. Both Python parsers retain
+the process exit error even with empty stderr, and enforce their existing
+stderr bound through Write without an inherited bytes.Buffer.ReadFrom bypass.
+Each helper accepts one complete JSON response; trailing values are refused.
+Context cancellation retains its original cause. These transport-error fixes
+do not change successful native results, their versions or model cache keys.
+
 Context cancellation and complete-portfolio, persistence, manifest,
 repository-overview, graph-set, or publication failures remain terminal. If at
 least one target succeeds, the successful page portfolio remains valid even
