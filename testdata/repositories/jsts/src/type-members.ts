@@ -28,3 +28,5 @@ const runtimeValue = { runtimeOnly: 1 };
 runtimeValue.runtimeOnly = 2;
 
 // TODO: document count validation.
+
+// NOTE: count describes a quantity, not a list of levels.

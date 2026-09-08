@@ -19,3 +19,5 @@ type EmbeddedLevelsInfoResponse struct {
 type LevelsInfoAlias = GetLevelsInfoResponse
 
 // TODO: document count validation.
+
+// NOTE: count describes a quantity, not a list of levels.

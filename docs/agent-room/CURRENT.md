@@ -291,6 +291,14 @@ per-question memos refer to current cached response bytes and revalidate the
 complete original shared request before reuse. Adding or reordering questions
 does not resend unchanged decisions. Replay changes are observed on the next
 read; original runs remain snapshots.
+Within one recall, questions backed by the same original window now share its
+successful preparation and full-response validation. Reuse also requires exact
+ordered equality of that memo's original row refs and question metadata; a
+request key alone cannot authorize altered sibling evidence. Invalid metadata
+does not poison a valid neighbour. Cancellation and one-time adjunct acceptance
+remain unchanged. The regression's eight questions over three original windows
+require three full preparations instead of 24, with identical current source
+bindings. This is local work saved on a cache hit, not fewer provider calls.
 
 The owner's proposal is broader than this prefix fix: one shared evidence
 catalogue with all applicable questions/independent categorization rows,
@@ -1532,6 +1540,12 @@ of an otherwise ordinary source file. Cumulative Go, Python and TypeScript
 examples now retain source-distinct markers on both sides of that former size
 boundary, including CRLF and Go physical-line anchors. Dependency facts retain the complete
 imported package path instead of only the short package name.
+Claims likewise read each eligible README/source file completely through the
+existing corpus reader; a whole file larger than 1 MiB no longer silently
+loses all its quotes. The existing quote selection, UTF-8 policy and physical
+anchors are unchanged. Cumulative README/Go/Python/TypeScript regressions keep
+their complete original claim sets, dates, ownership and seals after padding
+moves the same text past that former byte boundary.
 
 The overview graph groups parts by their interpreted role, uses short
 repository-relative labels, and distinguishes executable/library nodes by color
@@ -4137,6 +4151,10 @@ the receipt carries it in memory. The server restores the same values when it
 re-renders source links. UI translation is an embedded dictionary, not another
 model call. `--no-model` must still make zero provider calls and uses only that
 dictionary. Initial supported display languages are `en` and `ru`.
+The question's eight fixed scope explanations also use this dictionary at
+rendering time. Their canonical English route values remain unchanged and
+never enter the model's display-translation catalogue. Saved rendering applies
+the same vocabulary without analysis or provider access.
 
 Translation now reports each adaptive request-plan size and its closing count
 of new logical model calls versus accepted cache hits, using the existing

@@ -10,6 +10,15 @@ import (
 // source phrase is the stable key shared by Go templates and browser code.
 // Parameters are inserted as text, once; source names and links are not translated.
 var russianUI = map[string]string{
+	"All file declarations and extracted boundaries in the saved places graph, including generated files.":                                                   "Все объявления в файлах и извлечённые сведения о внешних взаимодействиях из сохранённой структуры репозитория, включая сгенерированные файлы.",
+	"Existing entrypoint and manifest observations retain their exact source locations and component context; they do not prove a successful launch.":        "Сведения о точках входа и манифестах сохраняют точные места в исходниках и принадлежность к компонентам; они не доказывают успешный запуск.",
+	"Names, signatures and author documentation guide reading; function bodies and field mutations were not inspected by this pass.":                         "При разборе учитываются имена, сигнатуры и документация авторов; тела функций и изменения полей на этом этапе не исследовались.",
+	"Producer observations and their corpus members are included; configured inputs and outputs do not prove execution or generated provenance.":             "Учтены сведения об инструментах обработки файлов и связанных с ними файлах репозитория; заданные входы и выходы не доказывают запуск инструмента или происхождение сгенерированных файлов.",
+	"Connections distinguish compiler call witnesses, producer declarations and corpus membership; these are not a complete execution trace.":                "В связях отдельно показаны вызовы, найденные компилятором, объявления инструментов обработки файлов и связи с файлами, вошедшими в анализ; это не полная запись выполнения программы.",
+	"No runtime observations, deployment verification, test coverage or external paper was supplied.":                                                        "Не предоставлены наблюдения за работой программы, результаты проверки развёртывания, данные о покрытии тестами или внешние научные публикации.",
+	"Markdown sections retain the author's instructions, commands and links. Linked external contents were not read; documented commands were not executed.": "В разделах Markdown сохранены инструкции, команды и ссылки авторов. Содержимое внешних ссылок не читалось; команды из документации не выполнялись.",
+	"Previously accepted entity descriptions may be reused as labelled model hints, with their original evidence and dependencies in knowledge.json.":        "Ранее принятые описания элементов репозитория могут использоваться повторно как явно отмеченные подсказки модели; их исходные сведения и зависимости сохраняются в knowledge.json.",
+
 	"Saved explanations from this report, with their sources, questions and places on the map.": "Сохранённые объяснения из этого отчёта: с источниками, вопросами и местами на карте.",
 	"Sources":            "Источники",
 	"On the map":         "На карте",

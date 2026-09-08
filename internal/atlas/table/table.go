@@ -63,8 +63,9 @@ type Column struct {
 type Definition struct {
 	// Stage is the debugdump stage of every window of this table.
 	Stage string
-	// Contract versions the prompt and the columns; it is part of the cache
-	// identity so a changed table never reads an old answer.
+	// Contract versions the prompt and columns for independent row memos.
+	// Whole responses are keyed by exact provider bytes and always revalidated
+	// against the current table, including after a contract-only change.
 	Contract string
 	// Window optionally limits rows per request. Zero uses only the byte budget.
 	Window  int
@@ -512,9 +513,9 @@ func cutRunes(text string, limit int) string {
 	return strings.TrimRight(string(runes[:cut]), " ,;:") + "…"
 }
 
-// State is the cache identity of one window: the table contract, the prompt
-// digest, request digest and reasoning preference. The run, target and clock
-// are not in it, so an unchanged window reuses the cache across runs.
+// State binds independent row memos to the table contract, prompt, request and
+// reasoning preference. Exact-response reuse follows actual provider bytes;
+// a State-only change does not invalidate that accepted response.
 func State(def Definition, window Window) ([]byte, error) {
 	return json.Marshal(struct {
 		Contract  string `json:"contract"`

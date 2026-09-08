@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/dvordrova/repomap/internal/llm"
@@ -25,6 +26,17 @@ type rememberedWindow struct {
 type questionMemo struct {
 	Version int                `json:"version"`
 	Windows []rememberedWindow `json:"windows"`
+}
+
+// One original window may back several question memos. Its accepted result
+// belongs to these exact ordered refs, not to an unchecked request key alone.
+// This value lives only inside a recall against one current catalogue/provider.
+type validatedMemoWindow struct {
+	originalRows      []string
+	originalQuestions []modelQuestion
+	rows              []int
+	call              llm.Call[Response]
+	response          Response
 }
 
 func (data catalogue) memoIdentity(provider llm.Provider, question modelQuestion) (string, error) {
@@ -71,11 +83,12 @@ func (data catalogue) recall(ctx context.Context, executor llm.Executor, provide
 		return keys, remembered, nil
 	}
 	type cachedValue struct {
-		adapted  llm.AdaptedResponse
-		accepted bool
-		exchange llm.Outcome[json.RawMessage]
-		found    bool
-		err      error
+		adapted   llm.AdaptedResponse
+		accepted  bool
+		exchange  llm.Outcome[json.RawMessage]
+		found     bool
+		err       error
+		validated *validatedMemoWindow
 	}
 	exchanges := make(map[string]cachedValue)
 	reusedExchanges := make(map[string]int)
@@ -123,29 +136,36 @@ func (data catalogue) recall(ctx context.Context, executor llm.Executor, provide
 			if !cached.found {
 				continue
 			}
-			rows := data.referenceRows(ref)
-			call, err := data.requestCall(rows, ref.Questions)
-			if err == nil {
-				var prepared llm.Prepared
-				prepared, err = llm.Prepare(provider, call.Prompt, call.Limits)
+			checked := cached.validated
+			if checked == nil || !slices.Equal(checked.originalRows, ref.Rows) || !slices.Equal(checked.originalQuestions, ref.Questions) {
+				rows := data.referenceRows(ref)
+				call, err := data.requestCall(rows, ref.Questions)
+				if err == nil {
+					var prepared llm.Prepared
+					prepared, err = llm.Prepare(provider, call.Prompt, call.Limits)
+					if ctxErr := ctx.Err(); ctxErr != nil {
+						return nil, nil, ctxErr
+					}
+					if err == nil && !bytes.Equal(prepared.Bytes(), cached.exchange.Request) {
+						err = fmt.Errorf("original request differs from current evidence, question metadata or contract")
+					}
+				}
+				var response Response
+				if err == nil {
+					response, err = call.DecodeValidate(cached.adapted.Domain)
+				}
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return nil, nil, ctxErr
 				}
-				if err == nil && !bytes.Equal(prepared.Bytes(), cached.exchange.Request) {
-					err = fmt.Errorf("original request differs from current evidence, question metadata or contract")
+				if err != nil {
+					result.Issues = append(result.Issues, fmt.Errorf("question batch: rejected cached window for %s: %w", question.Key, err))
+					continue
 				}
+				checked = &validatedMemoWindow{originalRows: slices.Clone(ref.Rows), originalQuestions: slices.Clone(ref.Questions), rows: rows, call: call, response: response}
+				cached.validated = checked
+				exchanges[ref.RequestKey] = cached
 			}
-			var response Response
-			if err == nil {
-				response, err = call.DecodeValidate(cached.adapted.Domain)
-			}
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, nil, ctxErr
-			}
-			if err != nil {
-				result.Issues = append(result.Issues, fmt.Errorf("question batch: rejected cached window for %s: %w", question.Key, err))
-				continue
-			}
+			rows, call, response := checked.rows, checked.call, checked.response
 			if !cached.accepted {
 				cached.adapted.Accepted(nil)
 				cached.accepted = true

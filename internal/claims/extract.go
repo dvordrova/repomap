@@ -14,9 +14,6 @@ import (
 const (
 	// DefaultCommitLimit is the commit window quoted when the caller passes 0.
 	DefaultCommitLimit = 20
-	// MaxSourceBytes bounds one file read for quotes; larger files are
-	// skipped whole rather than partially scanned.
-	MaxSourceBytes = int64(1 << 20)
 
 	shortCommitLength = 12
 	isoDateLength     = 10
@@ -141,18 +138,18 @@ func classifyPath(filePath string) fileKind {
 	}
 }
 
-// fileQuotes reads one corpus entry within MaxSourceBytes and runs the
-// scanners for its kind. Oversized and non-UTF-8 files yield nothing.
+// fileQuotes reads one complete corpus entry and runs the scanners for its
+// kind. Non-UTF-8 files yield nothing.
 func fileQuotes(repository *corpus.Corpus, entry corpus.Entry) ([]fileQuote, error) {
 	kind := classifyPath(entry.Path)
 	if kind == kindOther {
 		return nil, nil
 	}
-	content, err := repository.ReadFile(entry.ID, MaxSourceBytes)
+	content, err := repository.ReadFileAll(entry.ID)
 	if err != nil {
 		return nil, fmt.Errorf("claims: read %s: %w", entry.Path, err)
 	}
-	if content.Truncated || !utf8.Valid(content.Bytes) {
+	if !utf8.Valid(content.Bytes) {
 		return nil, nil
 	}
 	lines := splitLines(string(content.Bytes))
@@ -185,8 +182,8 @@ func tagged(source Source, quotes []quote) []fileQuote {
 	return result
 }
 
-// builder accumulates claims, withholding credential-shaped text and
-// collapsing exact duplicates so Seal never sees a repeated id.
+// builder accumulates claims, collapsing exact duplicates so Seal never sees
+// a repeated id.
 type builder struct {
 	asOf    string
 	targets []TargetRoot
