@@ -45,6 +45,7 @@ repomap conf [repository]
 repomap cache clear [--debug-dir DIR]
 repomap replay --file REQUEST.json [--debug-dir DIR]
 repomap read READING_INPUT.json [--through STAGE] [flags]
+repomap render RUN_DIR --output FILE.html
 ```
 
 `read` exercises the same atlas stages on saved evidence without rescanning
@@ -422,6 +423,28 @@ repository can reach those files like any other repository text. Treat a run
 directory as being as sensitive as the repository it came from.
 
 ## Development
+
+For report UI changes, reuse a completed run with the current templates:
+
+```bash
+make build
+.bin/repomap render /path/to/completed/run --output /path/to/preview.html
+```
+
+This uses the same renderer as ordinary publication. It reads the saved common
+`report.json`, `run_manifest.json` and, for a localized report, its saved display
+translations. It keeps the captured source links and all existing content.
+If a layout change only reorders the same complete set of display strings,
+the saved `report-display-texts.json` lets it match their translations by exact
+text, role and protected code spans. New or changed prose still needs a new
+completed translation; `render` never requests one.
+It does not read provider configuration, use the response cache, scan the
+repository or call a model. Missing or incompatible inputs produce an error;
+they are never regenerated. Only the requested HTML is written, after rendering
+succeeds. The output can be served with `python -m http.server`.
+Change `internal/report/templates/{html,css,js}`, rebuild and render again.
+UI experiments belong in those product templates, not a separately assembled
+copy of the report. This loop does not validate new analysis or prompt changes.
 
 The built binary on the ordinary online path is the acceptance authority:
 

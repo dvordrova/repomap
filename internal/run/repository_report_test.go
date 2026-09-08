@@ -1,6 +1,7 @@
 package run
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -125,6 +126,26 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 			t.Fatalf("reading guide omits %q", expected)
 		}
 	}
+	t.Run("render command reuses the complete saved report without provider setup", func(t *testing.T) {
+		// Invalid provider settings must be irrelevant to rendering saved data.
+		t.Setenv("REPOMAP_LLM_ENDPOINT", ":invalid")
+		t.Setenv("REPOMAP_LLM_CHAT_TEMPLATE_KWARGS", "invalid JSON")
+		output := filepath.Join(t.TempDir(), "current.html")
+		if err := runRender([]string{runs[0].RunDir, "--output", output}, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(output)
+		if err != nil || !bytes.Equal(got, html) {
+			t.Fatalf("CLI rendering changed the ordinary 27-component page: %v", err)
+		}
+		if err := runRender([]string{t.TempDir(), "--output", output}, io.Discard); err == nil {
+			t.Fatal("missing report was silently regenerated")
+		}
+		got, err = os.ReadFile(output)
+		if err != nil || !bytes.Equal(got, html) {
+			t.Fatalf("failed rendering changed the previous HTML: %v", err)
+		}
+	})
 	t.Run("Russian no-model publication keeps the common page and never opens a provider", func(t *testing.T) {
 		providerCalls := 0
 		localized, err := publishRepositoryReport(ctx, portfolio, inventory, runs, atlasOutcome{}, repositoryTargetDispatchOptions{

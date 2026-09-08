@@ -166,9 +166,26 @@ func TestLocalizedPublicationRestoresDisplayAndReplacesPreviousHTML(t *testing.T
 	if restored.HTMLFilename() != receipt.HTMLFilename() || restored.RenderOptions().Translations == nil {
 		t.Fatal("receipt lost display publication")
 	}
-	rerendered, err := RenderHTMLWithOptions(restored.Data(), restored.RenderOptions())
+	rerendered, err := RenderSavedHTML(runDir)
 	if err != nil || !bytes.Contains(rerendered, []byte("Русский текст")) {
 		t.Fatalf("restored display failed: %v", err)
+	}
+	if !bytes.Equal(rerendered, localizedHTML) {
+		t.Fatal("saved rendering differs from ordinary localized publication")
+	}
+	translationPath := filepath.Join(runDir, receipt.manifest.Display.TranslationsFilename)
+	savedTranslation, err := os.ReadFile(translationPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(translationPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RenderSavedHTML(runDir); err == nil {
+		t.Fatal("missing saved translation was silently regenerated or replaced")
+	}
+	if err := os.WriteFile(translationPath, savedTranslation, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	// A later English publication replaces the chosen display artifact too.
 	options.Render = RenderOptions{}

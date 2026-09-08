@@ -71,6 +71,13 @@ func Main() {
 		}
 		return
 	}
+	if len(os.Args) >= 2 && os.Args[1] == "render" {
+		if err := runRender(os.Args[2:], os.Stdout); err != nil {
+			writeDefaultRunError(os.Stderr, err)
+			os.Exit(defaultRunExitCode(err))
+		}
+		return
+	}
 	if len(os.Args) >= 2 && os.Args[1] == "replay" {
 		if err := runReplay(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 			writeDefaultRunError(os.Stderr, err)
@@ -1078,6 +1085,7 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "       repomap cache clear [--debug-dir DIR]\n")
 	fmt.Fprintf(writer, "       repomap replay --file REQUEST.json\n")
 	fmt.Fprintf(writer, "       repomap read READING_INPUT.json [--through STAGE] [flags]\n")
+	fmt.Fprintf(writer, "       repomap render RUN_DIR --output FILE.html\n")
 	fmt.Fprintf(writer, "\nFlags:\n")
 	fmt.Fprintf(writer, "  --target TARGET             analyze exactly one explicit target\n")
 	fmt.Fprintf(writer, "  --force-platform GOOS/GOARCH override normal Go platform selection\n")

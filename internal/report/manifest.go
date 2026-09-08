@@ -2,6 +2,8 @@ package report
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -150,12 +152,13 @@ func (source RunSource) validate() error {
 // what it recorded, which target page it is, and what the repository is
 // called. It is read from the run directory, never verified against it.
 type RunReceipt struct {
-	runDir         string
-	manifest       RunManifest
-	programPage    TargetNavigationPage
-	repositoryName string
-	data           *ReportData
-	renderOptions  RenderOptions
+	runDir            string
+	manifest          RunManifest
+	programPage       TargetNavigationPage
+	repositoryName    string
+	data              *ReportData
+	renderOptions     RenderOptions
+	savedReportSHA256 string
 }
 
 func newRunReceipt(runDir string, manifest RunManifest, data *ReportData) (RunReceipt, error) {
@@ -201,6 +204,8 @@ func ReadRunReceipt(runDir string) (RunReceipt, error) {
 	if err != nil {
 		return RunReceipt{}, err
 	}
+	digest := sha256.Sum256(raw)
+	receipt.savedReportSHA256 = hex.EncodeToString(digest[:])
 	return receipt, nil
 }
 

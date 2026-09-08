@@ -13,6 +13,22 @@ supported user-facing surface is deliberately small:
   provider bytes through the configured client and refreshes its cached answer.
 - `repomap cache clear [--debug-dir DIR]` clears persistent model-response
   caches.
+- `repomap render RUN_DIR --output FILE.html` applies the current ordinary
+  report templates to a saved common report, manifest and saved translations.
+  It performs no analysis, reads no model configuration or response cache, and
+  never invokes a provider. Missing or incompatible saved inputs fail without
+  regeneration. Only the requested HTML is replaced, after rendering succeeds.
+  A changed traversal order reuses saved translations only through a complete
+  exact match of the saved/current display catalogues by role, text and protected
+  spans. New, changed or missing entries are rejected; no translation is guessed.
+
+UI experiments change the ordinary report templates and use this render path on
+the same saved reports. The owner permits separate Git worktrees for competing
+designs. Keep them temporary: accepted implementation commits move into `main`
+through merge or cherry-pick, never by reimplementing the experiment. Remove a
+worktree and its branch after its useful work is integrated or explicitly
+discarded; preserve uncommitted work and watch disk space. Current acceptance is
+desktop with mouse and keyboard; mobile layout does not drive this redesign.
 
 `repomap read READING_INPUT.json [--through STAGE] [flags]` runs the same
 atlas reading stages from the current saved input format for development.

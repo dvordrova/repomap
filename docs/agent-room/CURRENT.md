@@ -3591,6 +3591,23 @@ are published once in the owner run from values already held in memory. A
 served report has the same complete set of target sections; it needs no sibling
 report files. Saved report restoration reads the common JSON and manifest.
 
+UI iteration uses `repomap render RUN_DIR --output FILE.html`. It restores the
+current common report and completed display translations with `ReadRunReceipt`,
+restores captured remote source links, and calls the same `RenderHTMLWithOptions`
+as ordinary publication. No provider or cache is initialized and no analysis is
+run. Missing or incompatible saved data fails without regeneration. The original
+analysis and translations stay unchanged; the chosen HTML is atomically replaced
+only after successful rendering. This is the owner-requested 2026-09-08 remedy
+for hand-assembled UI prototypes and cache-dependent analysis reruns. Editing the
+ordinary templates, building and rendering saved data is the UI acceptance loop;
+analysis changes still require ordinary pipeline acceptance.
+Adding destination-side views of existing cross-component connections exposed
+an ordering dependency in display translation refs. Saved rendering now rebinds
+only a complete bijection of the same catalogue entries (role, text and protected
+spans), using the original saved display catalogue. Both catalogues and both
+translation bindings are validated. It never translates, drops or invents an
+entry, and leaves saved files unchanged. Missing or changed prose still fails.
+
 The report is one static page rendered in Go from the run's own verified
 report data. Its overview answers what the repository is, which targets exist,
 how they talk to each other, what is missing, and how to run it; each target
