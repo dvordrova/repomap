@@ -9,6 +9,11 @@
   panel.setAttribute('aria-label',rmT('Repository search results'));box.setAttribute('aria-controls',panel.id);
   panel.innerHTML=("<div class=\"find-tools\"><label>"+rmT.html("Show")+" <select data-find-kind aria-label=\""+rmT.html("Search result type")+"\"><option value=\"all\">"+rmT.html("Everything")+"</option><option value=\"question\">"+rmT.html("Questions and answers")+"</option><option value=\"term\">"+rmT.html("Terms")+"</option><option value=\"part\">"+rmT.html("Parts")+"</option><option value=\"operation\">"+rmT.html("Operations")+"</option><option value=\"code\">"+rmT.html("Code")+"</option></select></label><label>"+rmT.html("In")+" <select data-find-component aria-label=\""+rmT.html("Search component")+"\"><option value=\"\">"+rmT.html("All components")+"</option></select></label><button type=\"button\" data-close>"+rmT.html("Close")+"</button></div><p class=\"find-status\" role=\"status\"></p><ol class=\"find-results\"></ol><div class=\"find-pages\"><button type=\"button\" data-prev>"+rmT.html("← Previous")+"</button><span></span><button type=\"button\" data-next>"+rmT.html("Next →")+"</button></div>");
   nav.append(box,panel);
+  var proxy=document.querySelector('[data-reading-query]');
+  if(proxy)proxy.setAttribute('aria-controls',panel.id);
+  // The same finder can be presented in the Work entrance or the toolbar.
+  // Focus follows the visible input; its index and results have one owner.
+  box.focusSearch=function(){var input=proxy&&proxy.getClientRects().length?proxy:box;input.focus({preventScroll:true});return input;};
   var kind=panel.querySelector('[data-find-kind]'),component=panel.querySelector('[data-find-component]'),status=panel.querySelector('.find-status'),results=panel.querySelector('ol'),pages=panel.querySelector('.find-pages'),page=0,pageSize=12;
   var entries=[],components={},groupNodes={},codeEntries=new Map(),lastQuery='';
   function modelText(node){if(!node)return '';var copy=node.cloneNode(true);copy.querySelectorAll('.source-hint,.model-sources').forEach(function(n){n.remove();});return copy.textContent;}
@@ -59,9 +64,21 @@
   document.querySelectorAll('.learn-concept').forEach(function(n){
     add({title:n.querySelector('summary').textContent,summary:modelText(n.querySelector('.model')),component:rmT('Term explanation'),section:'concepts',sections:sectionsFor(n,'a[href^="#"]'),kind:'term',type:rmT('Term'),destination:n,sourceCard:sourceCard(n,':scope')});
   });
-  function close(){panel.hidden=true;box.setAttribute('aria-expanded','false');}
+  function expanded(value){box.setAttribute('aria-expanded',value);if(proxy)proxy.setAttribute('aria-expanded',value);}
+  function changed(){box.dispatchEvent(new CustomEvent('repomap:find',{bubbles:true}));}
+  function close(record){panel.hidden=true;expanded('false');if(record!==false)changed();}
+  box.searchState=function(){return {query:box.value,kind:kind.value,component:component.value,page:page,open:!panel.hidden};};
+  box.restoreSearch=function(saved){
+    saved=saved||{};box.value=typeof saved.query==='string'?saved.query:'';
+    kind.value=Array.from(kind.options).some(function(o){return o.value===saved.kind;})?saved.kind:'all';
+    component.value=Array.from(component.options).some(function(o){return o.value===saved.component;})?saved.component:'';
+    lastQuery=box.value.trim().toLowerCase();page=Number.isInteger(saved.page)&&saved.page>=0?saved.page:0;
+    render();if(!saved.open)close();
+  };
+  function dismiss(){close();box.focusSearch();close();}
   async function go(entry){
-    close();
+    // Keep the result list in the previous history entry when opening a hit.
+    close(false);
     document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:entry.node||entry.destination}}));
     if(entry.node&&entry.map?.findNode){await entry.map.findNode(entry.node);if(entry.codeSource)entry.map.explainSource(entry.codeSource);return;}
     var destination=entry.destination;
@@ -86,13 +103,14 @@
     var hint=document.createElement('button');hint.type='button';hint.className='source-hint';hint.textContent='ⓘ';hint.setAttribute('aria-label',rmT('About this description'));text.appendChild(hint);repomapPreview.bind(text,entry.sourceCard);
   }
   function render(){
+    if(proxy)proxy.value=box.value;
     var q=box.value.trim().toLowerCase();if(q!==lastQuery){page=0;lastQuery=q;}
     if(!q){close();return;}
     var terms=q.split(/\s+/),inScope=entries.filter(function(e){return (!component.value||e.section===component.value||e.sections?.includes(component.value))&&terms.every(function(t){return e.haystack.includes(t);});});
     var matches=inScope.filter(function(e){return kind.value==='all'||e.kind===kind.value;});
     matches.sort(function(a,b){return rank(a,q)-rank(b,q)||a.title.localeCompare(b.title,document.documentElement.lang)||a.component.localeCompare(b.component,document.documentElement.lang);});
     page=Math.min(page,Math.max(0,Math.ceil(matches.length/pageSize)-1));
-    panel.hidden=false;box.setAttribute('aria-expanded','true');results.replaceChildren();
+    panel.hidden=false;expanded('true');results.replaceChildren();
     status.textContent=matches.length?rmT('{0} results · choose one to open its answer, explanation, map or source',matches.length):kind.value!=='all'?rmT('No matches in {0} with the current filters.',kind.selectedOptions[0].textContent):rmT('No matches with the current filters. Try a shorter name or another word.');
     if(!matches.length&&inScope.length){
       var other=document.createElement('button');other.type='button';other.textContent=rmT('Show other matches ({0})',inScope.length);
@@ -117,12 +135,19 @@
     results.scrollTop=0;
     pages.hidden=matches.length<=pageSize;pages.querySelector('span').textContent=rmT('{0}–{1} of {2}',page*pageSize+1,Math.min((page+1)*pageSize,matches.length),matches.length);
     pages.querySelector('[data-prev]').disabled=page===0;pages.querySelector('[data-next]').disabled=(page+1)*pageSize>=matches.length;
+    changed();
   }
   box.addEventListener('input',render);box.addEventListener('focus',function(){if(box.value)render();});
   [kind,component].forEach(function(select){select.addEventListener('change',function(){page=0;render();});});
-  panel.querySelector('[data-close]').addEventListener('click',function(){close();box.focus();close();});
+  panel.querySelector('[data-close]').addEventListener('click',dismiss);
   pages.querySelector('[data-prev]').addEventListener('click',function(){page--;render();});pages.querySelector('[data-next]').addEventListener('click',function(){page++;render();});
-  nav.addEventListener('keydown',function(e){if(e.key==='Escape'){close();box.focus();close();}if(e.target===box&&(e.key==='Enter'||e.key==='ArrowDown')){var first=results.querySelector('button')||status.querySelector('button');if(first&&!panel.hidden){e.preventDefault();first.focus();}}});
-  document.addEventListener('keydown',function(e){if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)&&!document.activeElement.isContentEditable){e.preventDefault();box.scrollIntoView({block:'center'});box.focus();}});
+  function keydown(e){if(e.key==='Escape'){e.preventDefault();e.stopPropagation();dismiss();}if((e.target===box||e.target===proxy)&&(e.key==='Enter'||e.key==='ArrowDown')){var first=results.querySelector('button')||status.querySelector('button');if(first&&!panel.hidden){e.preventDefault();first.focus();}}}
+  nav.addEventListener('keydown',keydown);panel.addEventListener('keydown',keydown);
+  if(proxy){
+    proxy.addEventListener('input',function(){box.value=proxy.value;box.dispatchEvent(new Event('input',{bubbles:true}));});
+    proxy.addEventListener('focus',function(){if(box.value)render();});
+    proxy.addEventListener('keydown',keydown);
+  }
+  document.addEventListener('keydown',function(e){if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)&&!document.activeElement.isContentEditable){e.preventDefault();box.focusSearch().scrollIntoView({block:'center'});}});
   document.addEventListener('click',function(e){var a=e.target.closest('a[data-question-map]');if(!a)return;var node=document.getElementById(a.dataset.questionMap),map=node?.closest('[data-map-explorer]');if(map?.findNode){e.preventDefault();document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:node}}));map.findNode(node);}});
 })();

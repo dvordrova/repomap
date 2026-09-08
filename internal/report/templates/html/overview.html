@@ -1,6 +1,6 @@
 <section id="overview" data-report-page>
 {{template "learn.html" .}}
-<div class="work-intro" data-reading-mode="work"><div><h2>{{t "Explore the code"}}</h2><p>{{t "Search for a component, topic, operation or symbol, or start from the map."}}</p></div><button type="button" class="reading-search-entry" data-reading-find hidden>{{t "Find in repository"}}</button></div>
+<div class="work-intro" data-reading-mode="work"><div><h2>{{t "Explore the code"}}</h2><p>{{t "Search for a component, topic, operation or symbol, or start from the map."}}</p></div><label class="work-search" hidden><span>{{t "Find in repository"}}</span><input type="search" data-reading-query placeholder="{{t "Find a question, term, part, operation or code"}}" aria-label="{{t "Find in repository"}}"></label></div>
 <div id="repository-map" class="repository-map-panel"><h3>{{t "System map"}}</h3>
 {{if .RepoMap}}{{template "repomap.html" .RepoMap}}{{end}}
 <details class="evidence-list"><summary>{{t "Component details"}} <span class="collapse-label">{{t "Collapse details"}}</span></summary>
@@ -17,7 +17,7 @@
 </div>
 {{template "learn-start.html" .}}
 </section>
-{{if or .Questions .LearningReviews}}<section id="questions" data-report-page><h2>{{t "Questions to explore"}}</h2><p>{{t "Answers from the code and documentation read in this report, with paths into the map."}}</p>
+{{if or .Questions .LearningReviews}}<section id="questions" class="reading-page" data-report-page><header class="reading-page-intro"><h2>{{t "Questions to explore"}}</h2><p>{{t "Answers from the code and documentation read in this report, with paths into the map."}}</p></header>
 {{if .Questions}}<details class="question-index" open><summary>{{t "{0} questions in this report" (len .Questions)}}</summary><ol class="question-menu">{{range .Questions}}<li><a href="#{{.ID}}">{{.Question}}</a></li>{{end}}</ol></details>{{end}}
 {{if .LearningNote}}<p>{{.LearningNote}}</p>{{end}}{{range .Questions}}{{template "question.html" .}}{{end}}{{template "learning-review.html" .}}</section>{{end}}
 <section id="repository-reference" data-report-page><h2>{{t "Repository reference"}}</h2>

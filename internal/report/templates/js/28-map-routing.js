@@ -100,118 +100,184 @@ var repomapGraph = (function () {
   return {layout:layout,layoutComponents:layoutComponents,fold:fold,draw:draw};
 })();
 
-// Existing repository roles filter one component level. The overview is a
-// direct projection of the same source nodes; only the connections view asks
-// ELK for placement. Neither view creates parents or inferred connections.
-(function(){document.querySelectorAll('.repo-map').forEach(function(map){
-  var svg=map.querySelector('svg'),nodes={},origins={},sizes={},revision=0,selectedRole='',view='components';
+// The repository is one addressable component space. Existing roles only
+// arrange its nodes; selecting one opens its saved description and neighbours.
+(function(){document.querySelectorAll('.repo-map').forEach(function(map,mapIndex){
+  var svg=map.querySelector('svg'),nodes={},cards={},facts={},neighbourOpen={},selectedRole='',selected='',pointed='',selectedConnection=-1,frame=0;
   var lanes=Array.from(svg.querySelectorAll('.map-lanes text')).map(function(n){return{role:n.dataset.role,title:n.textContent,nodes:[]};});
-  svg.querySelectorAll('.repo-node').forEach(function(n,i){
-    var r=n.querySelector('rect'),id=n.id||'repo-unread-'+i;
-    nodes[id]=n;origins[id]={x:+r.getAttribute('x'),y:+r.getAttribute('y')};sizes[id]={w:+r.getAttribute('width'),h:+r.getAttribute('height')};
-    var lane=lanes.find(function(l){return l.role===n.dataset.role;});if(lane)lane.nodes.push(id);
+  svg.querySelectorAll('.repo-node').forEach(function(node,index){
+    var id=node.id||'repo-unread-'+index;nodes[id]=node;
+    var lane=lanes.find(function(item){return item.role===node.dataset.role;});
+    if(!lane){lane={role:node.dataset.role||'',title:node.querySelector('.repo-card-role')?.textContent||'',nodes:[]};lanes.push(lane);}
+    lane.nodes.push(id);
   });
-  var edges=Array.from(svg.querySelectorAll('.map-edge')).map(function(e){return{from:e.dataset.from,to:e.dataset.to,possible:e.classList.contains('map-edge-possible'),label:(e.querySelector('title')||{}).textContent||'',operations:[]};}).filter(function(e){return nodes[e.from]&&nodes[e.to];});
-  lanes=lanes.filter(function(l){return l.role&&l.nodes.length;});
-  var total=Object.keys(nodes).length,controls=document.createElement('div');controls.className='repo-area-controls';controls.setAttribute('role','group');controls.setAttribute('aria-label',rmT('Show components'));map.prepend(controls);
-  var count=document.createElement('span');count.className='repo-filter-count';count.setAttribute('role','status');
-  var modes=document.createElement('div');modes.className='repo-view-controls';modes.setAttribute('role','group');modes.setAttribute('aria-label',rmT('Repository components and their connections'));controls.before(modes);
-  function updateURL(){
-    var url=new URL(location.href);if(nodes[url.hash.slice(1)])url.hash='repository-map';
+  lanes=lanes.filter(function(lane){return lane.nodes.length;});
+  var ids=Object.keys(nodes),edges=Array.from(svg.querySelectorAll('.map-edge')).map(function(edge){
+    return{from:edge.dataset.from,to:edge.dataset.to,possible:edge.classList.contains('map-edge-possible'),label:edge.querySelector('title')?.textContent||''};
+  }).filter(function(edge){return nodes[edge.from]&&nodes[edge.to];});
+  var componentFacts=Array.from(document.querySelectorAll('#repository-map .cards>.card'));
+  ids.forEach(function(id){
+    var href=nodes[id].getAttribute('href'),card=componentFacts.find(function(item){return item.querySelector('h3 a')?.getAttribute('href')===href;});
+    facts[id]=card?Array.from(card.querySelectorAll('.target-facts dl>dd')).filter(function(row){return row.querySelector('.anchor');}):[];
+  });
+  function el(tag,cls,text){var item=document.createElement(tag);if(cls)item.className=cls;if(text!==undefined)item.textContent=text;return item;}
+  function nameOf(id){return nodes[id].querySelector('.repo-card-name').textContent;}
+  function breakName(item){var text=item.textContent;item.replaceChildren();text.split(/([./_])/).forEach(function(part){item.appendChild(document.createTextNode(part));if(/^[./_]$/.test(part))item.appendChild(document.createElement('wbr'));});}
+  function incident(id,direction){return edges.filter(function(edge){return direction==='in'?edge.to===id:edge.from===id;});}
+  function fullSources(id){
+    var list=el('dl','repo-component-sources');
+    facts[id].forEach(function(row){var label=row.previousElementSibling;if(label&&label.tagName==='DT')list.appendChild(label.cloneNode(true));list.appendChild(row.cloneNode(true));});
+    return list;
+  }
+  var controls=el('div','repo-area-controls');controls.setAttribute('role','group');controls.setAttribute('aria-label',rmT('Show components'));
+  var count=el('span','repo-filter-count');count.setAttribute('role','status');
+  function roleButton(title,role,number){
+    var button=el('button','',title+' · '+number);button.type='button';button.dataset.role=role;
+    button.addEventListener('click',function(){if(selectedRole===role)return;selectedRole=role;selected='';pointed='';selectedConnection=-1;record();render();});controls.appendChild(button);
+  }
+  roleButton(rmT('All components'),'',ids.length);lanes.forEach(function(lane){if(lane.role)roleButton(lane.title,lane.role,lane.nodes.length);});controls.appendChild(count);map.prepend(controls);
+  var overview=el('div','repo-component-overview');
+  var hint=el('p','repo-overview-hint',rmT('Select a component to see its description and connections.'));overview.appendChild(hint);
+  var space=el('div','repo-component-space');overview.appendChild(space);
+  var links=document.createElementNS('http://www.w3.org/2000/svg','svg');links.classList.add('repo-space-links');links.setAttribute('role','group');links.setAttribute('aria-label',rmT('Repository components and their connections'));space.appendChild(links);
+  var focus=el('section','repo-component-focus');focus.id='repo-component-focus-'+mapIndex;focus.hidden=true;focus.tabIndex=-1;overview.appendChild(focus);
+  // The unmodified original SVG remains the source and the no-script map.
+  svg.after(overview);map.classList.add('repo-map-space');
+  lanes.forEach(function(lane){
+    var section=el('section','repo-role-space');section.dataset.role=lane.role;
+    if(lane.title)section.appendChild(el('h4','repo-role-heading',lane.title+' · '+lane.nodes.length));
+    var grid=el('div','repo-component-grid');section.appendChild(grid);space.appendChild(section);lane.section=section;
+    lane.nodes.forEach(function(id){
+      var node=nodes[id],href=node.getAttribute('href'),card=el('article','repo-component-card');card.dataset.component=id;card.dataset.role=node.dataset.role;
+      var button=el(href?'button':'div','repo-component-open');
+      if(href){button.type='button';button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls',focus.id);button.addEventListener('click',function(){choose(id,true);});}
+      else{card.classList.add('repo-component-unavailable');button.setAttribute('aria-disabled','true');}
+      var name=node.querySelector('.repo-card-name').cloneNode(true);breakName(name);button.appendChild(name);
+      var meta=node.querySelector('.repo-card-meta')?.cloneNode(true);if(meta)button.appendChild(meta);
+      if(href){var tally=el('span','repo-connection-tally','← '+incident(id,'in').length+'   → '+incident(id,'out').length);tally.setAttribute('aria-label',rmT('Uses this component')+': '+incident(id,'in').length+'; '+rmT('This component uses')+': '+incident(id,'out').length);button.appendChild(tally);}
+      else{var note=node.querySelector('.repo-card-note');if(note)button.appendChild(note.cloneNode(true));}
+      card.appendChild(button);
+      var sources=el('div','repo-component-source-links'),seen=new Set();
+      facts[id].forEach(function(row){row.querySelectorAll('.anchor').forEach(function(anchor){
+        var key=(anchor.getAttribute('href')||'')+'|'+(anchor.dataset.open||'')+'|'+anchor.textContent;
+        if(seen.has(key))return;seen.add(key);sources.appendChild(anchor.cloneNode(true));
+      });});
+      if(sources.childNodes.length)card.appendChild(sources);
+      else{var path=node.querySelector('.repo-card-path');if(path)card.appendChild(path.cloneNode(true));}
+      card.addEventListener('mouseenter',function(){pointed=id;emphasize();});
+      card.addEventListener('mouseleave',function(){pointed='';emphasize();});
+      card.addEventListener('focusin',function(){pointed=id;emphasize();});
+      card.addEventListener('focusout',function(event){if(!card.contains(event.relatedTarget)){pointed='';emphasize();}});
+      cards[id]=card;grid.appendChild(card);
+    });
+  });
+  function record(){
+    var url=new URL(location.href);url.hash=selected||'repository-map';
     if(selectedRole)url.searchParams.set('component-role',selectedRole);else url.searchParams.delete('component-role');
-    if(view==='connections')url.searchParams.set('component-view',view);else url.searchParams.delete('component-view');
-    history.pushState(history.state,'',url);render();
+    // Old links to either presentation now address this same component space.
+    url.searchParams.delete('component-view');
+    if(selectedConnection>=0)url.searchParams.set('component-edge',selectedConnection);else url.searchParams.delete('component-edge');
+    if(url.href!==location.href)history.pushState(history.state,'',url);
   }
-  [['components','Components'],['connections','Connections']].forEach(function(item){
-    var b=document.createElement('button');b.type='button';b.textContent=rmT(item[1]);b.dataset.view=item[0];
-    b.addEventListener('click',function(){if(view!==item[0]){view=item[0];updateURL();}});modes.appendChild(b);
-  });
-  function makeButton(title,role,number){
-    var b=document.createElement('button');b.type='button';b.textContent=title+' · '+number;b.dataset.role=role;
-    b.addEventListener('click',function(){if(selectedRole!==role){selectedRole=role;updateURL();}});controls.appendChild(b);
+  function choose(id,reveal){
+    if(!cards[id]||!nodes[id].getAttribute('href'))return;
+    if(selectedRole&&nodes[id].dataset.role!==selectedRole)selectedRole='';
+    selected=id;pointed='';selectedConnection=-1;record();render();
+    if(reveal)requestAnimationFrame(function(){focus.scrollIntoView({block:'nearest'});focus.focus({preventScroll:true});});
   }
-  makeButton(rmT('All components'),'',total);
-  lanes.forEach(function(lane){makeButton(lane.title,lane.role,lane.nodes.length);});controls.appendChild(count);
-  var overview=document.createElement('div');overview.className='repo-component-overview';overview.hidden=true;
-  var hint=document.createElement('p');hint.className='repo-overview-hint';hint.textContent=rmT('Choose a component to explore its parts.');overview.appendChild(hint);
-  var grid=document.createElement('div');grid.className='repo-component-grid';overview.appendChild(grid);svg.after(overview);
-  var cards={},componentFacts=Array.from(document.querySelectorAll('#repository-map .cards>.card'));
-  function titleOf(id){return nodes[id].dataset.title||nodes[id].querySelector('.repo-card-name').textContent;}
-  function highlight(id){
-    var near=new Set([id]);edges.forEach(function(e){if(e.from===id)near.add(e.to);if(e.to===id)near.add(e.from);});
-    Object.keys(cards).forEach(function(key){cards[key].classList.toggle('repo-component-near',near.has(key)&&key!==id);cards[key].classList.toggle('repo-component-focused',key===id);});
-  }
-  function clearHighlight(){Object.values(cards).forEach(function(card){card.classList.remove('repo-component-near','repo-component-focused');});}
-  Object.keys(nodes).forEach(function(id){
-    var node=nodes[id],card=document.createElement('article'),href=node.getAttribute('href');card.className='repo-component-card';card.dataset.component=id;card.dataset.role=node.dataset.role;
-    var open=document.createElement(href?'a':'div');open.className='repo-component-open';if(href)open.href=href;
-    else{card.classList.add('repo-component-unavailable');open.setAttribute('aria-disabled','true');}
-    var content=node.querySelector('.repo-card-content').cloneNode(true),name=content.querySelector('.repo-card-name'),nameText=name.textContent;
-    name.replaceChildren();nameText.split(/([./_])/).forEach(function(part){name.appendChild(document.createTextNode(part));if(/^[./_]$/.test(part))name.appendChild(document.createElement('wbr'));});open.appendChild(content);
-    if(href){var action=document.createElement('span');action.className='repo-component-action';action.textContent=rmT('Open component')+' →';open.appendChild(action);}
-    card.appendChild(open);
-    // Target facts already own the manifest and entrypoint anchors. Keep that
-    // source context visible beside the component, including unnamed libraries.
-    // Clone every source-bearing row, never choose a representative by name.
-    var facts=componentFacts.find(function(f){return f.querySelector('h3 a')?.getAttribute('href')===href;}),sourceRows=facts?Array.from(facts.querySelectorAll('.target-facts dl>dd')).filter(function(row){return row.querySelector('.anchor');}):[];
-    if(sourceRows.length){
-      var sources=document.createElement('dl');sources.className='repo-component-sources';
-      sourceRows.forEach(function(row){var label=row.previousElementSibling;if(label&&label.tagName==='DT')sources.appendChild(label.cloneNode(true));sources.appendChild(row.cloneNode(true));});card.appendChild(sources);
-    }
-    var incident=edges.filter(function(e){return e.from===id||e.to===id;});
-    if(incident.length){
-      var details=document.createElement('details'),summary=document.createElement('summary'),list=document.createElement('ul');details.className='repo-component-connections';summary.textContent=rmT('Connections')+' · '+incident.length;details.appendChild(summary);
-      incident.forEach(function(edge){
-        var other=edge.from===id?edge.to:edge.from,row=document.createElement('li'),otherHref=nodes[other].getAttribute('href'),link=document.createElement(otherHref?'a':'span'),direction=document.createElement('span');
-        direction.className='repo-connection-direction';direction.textContent=edge.from===id?'→':'←';direction.setAttribute('aria-hidden','true');row.appendChild(direction);
-        if(otherHref)link.href=otherHref;link.textContent=titleOf(other);link.setAttribute('aria-label',titleOf(edge.from)+' → '+titleOf(edge.to));row.appendChild(link);
-        var label=document.createElement('span');label.className='repo-connection-label';label.textContent=edge.label;row.appendChild(label);
-        if(edge.possible){var possible=document.createElement('span');possible.className='repo-connection-label';possible.textContent=rmT('Interpreted connection or possible dispatch');row.appendChild(possible);}
+  function relationList(id,direction){
+    var box=el('section','repo-component-relations'),rows=incident(id,direction);
+    box.appendChild(el('h5','',rmT(direction==='in'?'Uses this component':'This component uses')+' · '+rows.length));
+    if(!rows.length){box.appendChild(el('p','repo-component-no-connections',rmT('No connections recorded.')));return box;}
+    lanes.forEach(function(lane){
+      var matching=rows.filter(function(edge){return lane.nodes.indexOf(direction==='in'?edge.from:edge.to)>=0;});if(!matching.length)return;
+      var group=el('details','repo-neighbour-role'),summary=el('summary','',(lane.title||rmT('Components'))+' · '+matching.length),list=el('ul','repo-neighbour-list');
+      var groupKey=id+'|'+direction+'|'+lane.role;
+      group.appendChild(summary);group.open=!!neighbourOpen[groupKey]||matching.some(function(edge){return edges.indexOf(edge)===selectedConnection;});
+      group.addEventListener('toggle',function(){if(group.isConnected)neighbourOpen[groupKey]=group.open;});
+      matching.forEach(function(edge){
+        var other=direction==='in'?edge.from:edge.to,row=el('li','repo-neighbour'),available=nodes[other].getAttribute('href');
+        row.classList.toggle('repo-neighbour-selected',edges.indexOf(edge)===selectedConnection);
+        var button=el(available?'button':'span','repo-neighbour-name',nameOf(other)+(available?' →':''));
+        if(available){button.type='button';button.addEventListener('click',function(){choose(other,true);});}row.appendChild(button);
+        row.appendChild(el('p','repo-connection-label',edge.label));
+        if(edge.possible)row.appendChild(el('span','repo-connection-possible',rmT('Interpreted connection or possible dispatch')));
         list.appendChild(row);
-      });details.appendChild(list);card.appendChild(details);
-    }else{var empty=document.createElement('span');empty.className='repo-component-no-connections';empty.textContent=rmT('No connections recorded.');card.appendChild(empty);}
-    card.addEventListener('mouseenter',function(){highlight(id);});card.addEventListener('mouseleave',function(){if(!card.contains(document.activeElement))clearHighlight();});
-    card.addEventListener('focusin',function(){highlight(id);});card.addEventListener('focusout',function(event){if(!card.contains(event.relatedTarget))clearHighlight();});
-    cards[id]=card;grid.appendChild(card);
-  });
-  svg.querySelector('.map-lanes').replaceChildren();
-  async function render(){
-    if(!map.clientWidth)return;
-    var ticket=++revision,visible=Object.keys(nodes).filter(function(id){return !selectedRole||nodes[id].dataset.role===selectedRole;}),reps={},boxes={};map.setAttribute('aria-busy','true');
-    visible.forEach(function(id){boxes[id]=sizes[id];reps[id]=[id];});
-    controls.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.role===selectedRole);});
-    modes.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.view===view);});
-    count.textContent=rmT('Showing {0} of {1} components',visible.length,total);
-    map.classList.toggle('repo-map-overview',view==='components');overview.hidden=view!=='components';
-    Object.keys(cards).forEach(function(id){cards[id].hidden=!reps[id];});
-    if(view==='components'){
-      repomapPreview.freeze(map);clearHighlight();map.classList.remove('map-previewing');
-      if(map.clearInspection)map.clearInspection();map.setAttribute('aria-busy','false');return;
-    }
-    try{
-      var folded=repomapGraph.fold(edges,reps),stage=map.querySelector('[data-map-stage]'),width=stage?.clientWidth||map.clientWidth-48;
-      var result=await repomapGraph.layoutComponents(boxes,folded,width/(map.readableScale||1));
-      if(ticket!==revision)return;repomapPreview.freeze(map);
-      Object.keys(nodes).forEach(function(id){var b=result.boxes[id];nodes[id].style.display=b?'':'none';if(!b)return;nodes[id].setAttribute('transform','translate('+(b.x-origins[id].x)+' '+(b.y-origins[id].y)+')');nodes[id].dataset.near=folded.filter(function(e){return e.from===id||e.to===id;}).map(function(e){return e.from===id?e.to:e.from;}).join(' ');});
-      repomapGraph.draw(map,result.edges);svg.setAttribute('viewBox','0 0 '+result.width+' '+result.height);svg.setAttribute('width',result.width);svg.setAttribute('height',result.height);map.classList.remove('map-previewing');map.dispatchEvent(new CustomEvent('repomap:layout',{detail:{focus:visible.map(function(id){return result.boxes[id];}).filter(Boolean)}}));
-      if(map.clearInspection)map.clearInspection();
-    }catch(error){console.error('Repository map layout',error);}
-    if(ticket===revision)map.setAttribute('aria-busy','false');
+      });group.appendChild(list);box.appendChild(group);
+    });return box;
   }
-  // Existing "on the map" links still address their original SVG identity.
-  // In the overview, reveal its visible card rather than a hidden SVG anchor.
+  function describe(){
+    focus.hidden=!selected;focus.replaceChildren();if(!selected)return;
+    var id=selected,node=nodes[id],head=el('div','repo-focus-heading'),titles=el('div','');
+    titles.appendChild(el('span','repo-focus-context',rmT('Selected component')));
+    var title=el('h4','',nameOf(id));breakName(title);titles.appendChild(title);head.appendChild(titles);
+    var close=el('button','repo-focus-close',rmT('Back to components'));close.type='button';
+    close.addEventListener('click',function(){selected='';selectedConnection=-1;record();render();cards[id].scrollIntoView({block:'nearest'});cards[id].querySelector('button')?.focus({preventScroll:true});});head.appendChild(close);focus.appendChild(head);
+    if(selectedConnection>=0){var edge=edges[selectedConnection],connection=el('p','repo-selected-connection');connection.appendChild(el('strong','',nameOf(edge.from)+' → '+nameOf(edge.to)));connection.appendChild(el('span','',edge.label));if(edge.possible)connection.appendChild(el('span','',rmT('Interpreted connection or possible dispatch')));focus.appendChild(connection);}
+    var body=el('div','repo-focus-body'),description=el('div','repo-focus-description'),purpose=node.querySelector('.repo-card-purpose');
+    if(purpose){var copy=purpose.cloneNode(true);copy.classList.add('model');description.appendChild(copy);}
+    var open=el('a','repo-open-parts',rmT('Open parts')+' →');open.href=node.getAttribute('href');description.appendChild(open);body.appendChild(description);
+    if(facts[id].length)body.appendChild(fullSources(id));focus.appendChild(body);
+    var relations=el('div','repo-focus-relations');relations.appendChild(relationList(id,'in'));relations.appendChild(relationList(id,'out'));focus.appendChild(relations);
+  }
+  function emphasize(){
+    var subject=pointed||selected,near=new Set();
+    if(subject)edges.forEach(function(edge){if(edge.from===subject)near.add(edge.to);if(edge.to===subject)near.add(edge.from);});
+    space.classList.toggle('repo-space-emphasized',!!subject);
+    ids.forEach(function(id){cards[id].classList.toggle('repo-component-selected',id===selected);cards[id].classList.toggle('repo-component-pointed',id===pointed);cards[id].classList.toggle('repo-component-near',near.has(id)&&id!==subject);});
+    links.querySelectorAll('path[data-from]').forEach(function(path){path.classList.toggle('repo-space-edge-near',path.dataset.from===subject||path.dataset.to===subject);path.classList.toggle('repo-space-edge-selected',+path.dataset.edge===selectedConnection);});
+  }
+  function draw(){
+    frame=0;if(!space.clientWidth)return;
+    var bounds=space.getBoundingClientRect(),width=space.clientWidth,height=space.clientHeight,marker='repo-space-arrow-'+mapIndex;
+    links.replaceChildren();links.setAttribute('viewBox','0 0 '+width+' '+height);
+    var defs=document.createElementNS(links.namespaceURI,'defs'),arrow=document.createElementNS(links.namespaceURI,'marker');
+    arrow.id=marker;arrow.setAttribute('viewBox','0 0 10 10');arrow.setAttribute('refX','9');arrow.setAttribute('refY','5');arrow.setAttribute('markerWidth','5');arrow.setAttribute('markerHeight','5');arrow.setAttribute('orient','auto');
+    var tip=document.createElementNS(links.namespaceURI,'path');tip.setAttribute('d','M0 0 L10 5 L0 10 z');arrow.appendChild(tip);defs.appendChild(arrow);links.appendChild(defs);
+    edges.forEach(function(edge,index){
+      var from=cards[edge.from],to=cards[edge.to];if(from.hidden||to.hidden||from.closest('[hidden]')||to.closest('[hidden]'))return;
+      var a=from.getBoundingClientRect(),b=to.getBoundingClientRect(),sx,sy,tx,ty,path;
+      if(Math.abs(a.top-b.top)<Math.min(a.height,b.height)/2){
+        var right=a.left<b.left;sx=(right?a.right:a.left)-bounds.left;tx=(right?b.left:b.right)-bounds.left;sy=a.top+a.height/2-bounds.top;ty=b.top+b.height/2-bounds.top;
+        var bend=Math.max(18,Math.abs(tx-sx)/2);path='M'+sx+' '+sy+' C'+(sx+(right?bend:-bend))+' '+sy+' '+(tx+(right?-bend:bend))+' '+ty+' '+tx+' '+ty;
+      }else{
+        var down=a.top<b.top;sx=a.left+a.width/2-bounds.left;tx=b.left+b.width/2-bounds.left;sy=(down?a.bottom:a.top)-bounds.top;ty=(down?b.top:b.bottom)-bounds.top;
+        var bend=Math.max(24,Math.abs(ty-sy)/2);path='M'+sx+' '+sy+' C'+sx+' '+(sy+(down?bend:-bend))+' '+tx+' '+(ty+(down?-bend:bend))+' '+tx+' '+ty;
+      }
+      var line=document.createElementNS(links.namespaceURI,'path');line.setAttribute('d',path);line.setAttribute('class','repo-space-edge'+(edge.possible?' repo-space-edge-possible':''));line.dataset.from=edge.from;line.dataset.to=edge.to;line.dataset.edge=index;line.setAttribute('marker-end','url(#'+marker+')');
+      line.setAttribute('tabindex','0');line.setAttribute('role','button');line.setAttribute('aria-label',nameOf(edge.from)+' → '+nameOf(edge.to)+': '+edge.label);
+      function inspect(){selected=selected===edge.to?selected:edge.from;selectedConnection=index;pointed='';record();render();requestAnimationFrame(function(){focus.scrollIntoView({block:'nearest'});focus.focus({preventScroll:true});});}
+      var hit=document.createElementNS(links.namespaceURI,'path');hit.setAttribute('d',path);hit.setAttribute('class','repo-space-edge-hit');hit.setAttribute('aria-hidden','true');hit.addEventListener('click',inspect);links.appendChild(hit);
+      line.addEventListener('click',inspect);line.addEventListener('keydown',function(event){if(event.key==='Enter'||event.key===' '){event.preventDefault();inspect();}});
+      var title=document.createElementNS(links.namespaceURI,'title');title.textContent=edge.label;line.appendChild(title);links.appendChild(line);
+    });emphasize();
+  }
+  function queueDraw(){if(!frame)frame=requestAnimationFrame(draw);}
+  function render(){
+    ids.forEach(function(id){cards[id].hidden=!!selectedRole&&nodes[id].dataset.role!==selectedRole;var button=cards[id].querySelector('button');if(button)button.setAttribute('aria-expanded',id===selected?'true':'false');});
+    lanes.forEach(function(lane){lane.section.hidden=!!selectedRole&&lane.role!==selectedRole;});
+    controls.querySelectorAll('button').forEach(function(button){button.setAttribute('aria-pressed',button.dataset.role===selectedRole?'true':'false');});
+    count.textContent=rmT('Showing {0} of {1} components',ids.filter(function(id){return !cards[id].hidden;}).length,ids.length);
+    describe();emphasize();queueDraw();
+    map.dataset.readingLabel=selected?nameOf(selected):'';map.dispatchEvent(new CustomEvent('repomap:reading',{bubbles:true}));
+  }
   map.revealNode=async function(node){
     var id=node?.id;if(!cards[id])return;
-    if(selectedRole&&nodes[id].dataset.role!==selectedRole){
-      selectedRole='';var url=new URL(location.href);url.searchParams.delete('component-role');history.replaceState(history.state,'',url);
-    }
-    await render();
-    if(view==='components'){
-      cards[id].scrollIntoView({block:'center'});cards[id].querySelector('a')?.focus({preventScroll:true});highlight(id);
-    }else{node.scrollIntoView({block:'center',inline:'center'});if(map.showNode)map.showNode(node);}
+    selected=id;pointed='';selectedConnection=-1;
+    var url=new URL(location.href);url.searchParams.delete('component-edge');
+    if(selectedRole&&nodes[id].dataset.role!==selectedRole){selectedRole='';url.searchParams.delete('component-role');}
+    if(url.href!==location.href)history.replaceState(history.state,'',url);
+    render();requestAnimationFrame(function(){cards[id].scrollIntoView({block:'center'});cards[id].querySelector('button')?.focus({preventScroll:true});});
   };
-  var layoutWidth=0;
-  new ResizeObserver(function(){var width=map.clientWidth;if(width===layoutWidth)return;layoutWidth=width;if(width)render();}).observe(map);
-  function restore(){var params=new URL(location.href).searchParams,role=params.get('component-role')||'';selectedRole=lanes.some(function(l){return l.role===role;})?role:'';view=params.get('component-view')==='connections'?'connections':'components';requestAnimationFrame(function(){var node=nodes[location.hash.slice(1)];if(node)map.revealNode(node);else render();});}
+  new ResizeObserver(queueDraw).observe(space);
+  function restore(){
+    var url=new URL(location.href),role=url.searchParams.get('component-role')||'',id=url.hash.slice(1);
+    selectedRole=lanes.some(function(lane){return lane.role===role;})?role:'';
+    selected=nodes[id]&&nodes[id].getAttribute('href')?id:'';pointed='';
+    var edgeIndex=url.searchParams.has('component-edge')?Number(url.searchParams.get('component-edge')):-1;
+    selectedConnection=Number.isInteger(edgeIndex)&&edges[edgeIndex]&&(edges[edgeIndex].from===selected||edges[edgeIndex].to===selected)?edgeIndex:-1;
+    if(selected&&selectedRole&&nodes[selected].dataset.role!==selectedRole){selectedRole='';url.searchParams.delete('component-role');history.replaceState(history.state,'',url);}
+    render();
+  }
   window.addEventListener('popstate',restore);window.addEventListener('hashchange',restore);restore();
 });})();

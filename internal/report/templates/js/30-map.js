@@ -163,6 +163,7 @@
     var dragPointer = null, startX = 0, startY = 0, leftAt = 0, topAt = 0;
 
     function focusOpened() {
+      if(map.classList.contains('map-part-focus'))return;
       if (!pendingFocus || !stage.clientWidth || !stage.clientHeight) return;
       pendingFocus = false;
       if (!homeBoxes.length) { stage.scrollTo(0, 0); return; }
@@ -199,7 +200,7 @@
       updatePan();
     }
     function updatePan() {
-      var canPan = stage.clientWidth > 0 && stage.clientHeight > 0 &&
+      var canPan = !map.classList.contains('map-part-focus') && stage.clientWidth > 0 && stage.clientHeight > 0 &&
         (stage.scrollWidth > stage.clientWidth + 1 || stage.scrollHeight > stage.clientHeight + 1);
       stage.classList.toggle('map-zoomed', canPan);
       if (panHint) panHint.hidden = !canPan;
@@ -211,6 +212,17 @@
       apply();
     }
     readable();
+    map.captureViewport=function(){return {scale:scale,left:stage.scrollLeft,top:stage.scrollTop};};
+    map.restoreViewport=function(saved){
+      if(!saved)return;pendingFocus=false;
+      if(Number.isFinite(saved.scale)){scale=saved.scale;apply();}
+      stage.scrollTo(saved.left||0,saved.top||0);
+    };
+    var viewportFrame=0;
+    stage.addEventListener('scroll',function(){
+      if(viewportFrame)return;
+      viewportFrame=requestAnimationFrame(function(){viewportFrame=0;map.dispatchEvent(new Event('repomap:viewport'));});
+    });
     map.addEventListener('repomap:layout',function(event){
       baseWidth=svg.viewBox.baseVal.width;readable();
       homeBoxes=event.detail?.focus||[];
@@ -232,6 +244,7 @@
         readable();
         pendingFocus=true;focusOpened();
       }
+      map.dispatchEvent(new Event('repomap:viewport'));
     });
 
     // Dragging pans the stage. Only an explicit scope change lays out nodes.
@@ -337,7 +350,7 @@
       }
       html += '<b>' + escapeText(titleOf(node)) + '</b>';
       var summary = node.getAttribute('data-summary');
-      if (summary) html += '<p>' + escapeText(summary) + '</p>';
+      if (summary) html += '<p class="map-card-summary">' + escapeText(summary) + '</p>';
       if (node.dataset.operationGroup) html += '<span class="map-card-meta">' + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
       if(source) html += '<p><a target="_blank" rel="noopener" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
@@ -379,7 +392,7 @@
       if (step >= 0) html += '<span class="map-card-meta">'+rmT.html('step {0} of {1} on the main path',step+1,map.traceLength)+'</span>';
       var keys = (node.getAttribute('data-keys') || '').split(' | ').filter(Boolean).map(escapeText);
       if (keys.length) html += '<ul class="map-card-keys">' + keys.map(function (k) { return '<li><code>' + k.replace(/ — .*$/, '') + '</code>' + (k.indexOf(' — ') > 0 ? ' — ' + k.slice(k.indexOf(' — ') + 3) : '') + '</li>'; }).join('') + '</ul>';
-      var arrows = map.classList.contains('repo-map') || witness ? [] : sentences(id);
+      var arrows = map.classList.contains('repo-map') || map.classList.contains('map-part-focus') || witness ? [] : sentences(id);
       if (arrows.length) html += '<ul>' + arrows.map(function (a) { return '<li>' + escapeText(a) + '</li>'; }).join('') + '</ul>';
       html += '<span class="map-card-hint">'+(node.getAttribute('data-activation')?rmT('Click to keep this operation selected. Open code using the source link.'):rmT('click — explore'))+'</span>';
       card.innerHTML = html+'</details>';
@@ -397,9 +410,9 @@
         var explain=function(){
           var panel=card.querySelector('.map-concepts');
           panel.hidden=picker.value==='';card.classList.toggle('map-card-has-concepts',!panel.hidden);
-          if(panel.hidden){map.explorerMember=null;map.dispatchEvent(new Event('repomap:reading'));return;}
+          if(panel.hidden){map.explorerMember=null;map.querySelectorAll('[data-member-source]').forEach(function(b){b.setAttribute('aria-pressed','false');});map.dispatchEvent(new Event('repomap:reading'));return;}
           var concept=concepts[Number(picker.value)],source=concept.source;
-          map.explorerMember={owner:id,name:picker.selectedOptions[0].textContent,source:source.Text};
+          map.explorerMember={owner:id,name:picker.selectedOptions[0].textContent,source:source.Text,href:source.Href,open:source.Open};
           map.dispatchEvent(new Event('repomap:reading'));
           map.querySelectorAll('[data-member-source]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.memberSource===(source.Href||source.Open));});
           card.querySelector('[data-concept-explanation]').textContent=concept.explanation||rmT('No explanation saved. Open the source to inspect this element.');
@@ -479,6 +492,7 @@
 
     // A group card links back to its node on the map.
     for (var k = 0; k < nodes.length; k++) {
+      if(nodes[k].dataset.remote==='true')continue;
       var href = nodes[k].getAttribute('href') || '';
       if (href.charAt(0) !== '#') continue;
       var group = document.getElementById(href.slice(1));

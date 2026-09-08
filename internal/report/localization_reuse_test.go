@@ -68,3 +68,31 @@ func TestDisplayTranslationsReuseExactEntriesInAnotherOrder(t *testing.T) {
 		t.Fatal("unbound saved translation was reused")
 	}
 }
+
+func TestIncomingComponentNameReusesOwnerUIComposition(t *testing.T) {
+	owner := &pageSection{ID: "tests", programTargetID: "tests", Name: "test.example", Root: "test", ShortLabel: "test (executable)", Kind: "executable"}
+	section := &pageSection{ID: "service", programTargetID: "service", Name: "service", ShortLabel: "service", Map: &pageMap{Nodes: []pageMapNode{
+		{ID: "foreign-tests", Branch: "component", Component: "tests", FullTitle: owner.ShortLabel},
+		{ID: "request-part", FullTitle: "Request handling", Summary: "Handles requests."},
+	}}}
+	page := &PreparedPage{view: &pageView{Sections: []*pageSection{section, owner}}, catalog: DisplayTextCatalog{Version: DisplayTextVersion, Entries: []DisplayTextEntry{}}}
+	if err := page.collectDisplayTexts(&ReportData{}, false); err != nil {
+		t.Fatal(err)
+	}
+	page.catalog.SHA256 = displayCatalogDigest(page.catalog.Entries)
+	if len(page.catalog.Entries) != 2 || page.catalog.Entries[0].Text != "Request handling" || page.catalog.Entries[1].Text != "Handles requests." {
+		t.Fatalf("native component name acquired a new model translation: %+v", page.catalog.Entries)
+	}
+	translations := DisplayTranslations{Version: DisplayTextVersion, Language: Russian, CatalogSHA256: page.catalog.SHA256, Entries: []DisplayTranslationEntry{
+		{Ref: "t1", Text: "Обработка запросов"}, {Ref: "t2", Text: "Обрабатывает запросы."},
+	}}
+	if err := page.applyDisplay(RenderOptions{Language: Russian, Translations: &translations}); err != nil {
+		t.Fatal(err)
+	}
+	if got := section.Map.Nodes[0].FullTitle; got != owner.ShortLabel || got != "test (исполняемый компонент)" {
+		t.Fatalf("component container lost its owner's composed name: %q, owner %q", got, owner.ShortLabel)
+	}
+	if section.Map.Nodes[1].FullTitle != "Обработка запросов" || section.Map.Nodes[1].Summary != "Обрабатывает запросы." {
+		t.Fatal("existing model descriptions no longer use their translation")
+	}
+}

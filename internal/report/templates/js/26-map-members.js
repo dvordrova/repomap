@@ -42,6 +42,35 @@ var repomapMembers = (function () {
     var columns = Math.max(1, Math.floor((width - 32) / 160));
     return {w:width,h:116 + Math.ceil(list.length / columns) * 62};
   }
+  function label(node,item) {
+    return item.name+(items(node).some(function(other){return other!==item&&other.name===item.name;})?' · '+item.source.Text:'');
+  }
+  function sourceLink(source) {
+    var link=document.createElement(source.Href||source.Open?'a':'span');link.textContent=source.Text;
+    if(source.Href){link.href=source.Href;link.target='_blank';link.rel='noopener';}
+    else if(source.Open){link.href='#';link.dataset.open=source.Open;}
+    return link;
+  }
+  function grid(map,node) {
+    var grid = document.createElement('div'); grid.className='map-member-grid';
+    items(node).forEach(function (item) {
+      var b=document.createElement('button'); b.type='button'; b.className='map-member';
+      b.textContent=item.name; b.title=(item.explanation ? item.explanation+'\n' : '')+item.source.Text;
+      var duplicate=items(node).some(function(other){return other!==item&&other.name===item.name;});
+      if(duplicate){
+        var path=document.createElement('small');path.textContent=item.source.Text;b.appendChild(path);
+      }
+      b.dataset.memberSource=item.source.Href||item.source.Open;
+      b.setAttribute('aria-label',rmT('Explain {0}',label(node,item)));
+      b.setAttribute('aria-pressed','false');
+      b.addEventListener('click',function(){
+        grid.querySelectorAll('button').forEach(function(other){other.setAttribute('aria-pressed',other===b);});
+        map.showMember(node,item);
+      });
+      grid.appendChild(b);
+    });
+    return grid;
+  }
   function draw(map, node, box) {
     var svg = map.querySelector('svg'), previous = svg.querySelector('.map-member-layer');
     if (previous) previous.remove();
@@ -53,24 +82,7 @@ var repomapMembers = (function () {
     var body = document.createElement('div'); body.className='map-member-content';
     var heading = document.createElement('div'); heading.className='map-member-label';
     heading.textContent=rmT('Key code')+' · '+items(node).length; body.appendChild(heading);
-    var grid = document.createElement('div'); grid.className='map-member-grid';
-    items(node).forEach(function (item) {
-      var b=document.createElement('button'); b.type='button'; b.className='map-member';
-      b.textContent=item.name; b.title=(item.explanation ? item.explanation+'\n' : '')+item.source.Text;
-      var duplicate=items(node).some(function(other){return other!==item&&other.name===item.name;});
-      if(duplicate){
-        var path=document.createElement('small');path.textContent=item.source.Text;b.appendChild(path);
-      }
-      b.dataset.memberSource=item.source.Href||item.source.Open;
-      b.setAttribute('aria-label',rmT('Explain {0}',item.name)+(duplicate?' · '+item.source.Text:''));
-      b.setAttribute('aria-pressed','false');
-      b.addEventListener('click',function(){
-        grid.querySelectorAll('button').forEach(function(other){other.setAttribute('aria-pressed',other===b);});
-        map.showMember(node,item);
-      });
-      grid.appendChild(b);
-    });
-    body.appendChild(grid); layer.appendChild(body); svg.appendChild(layer);
+    body.appendChild(grid(map,node)); layer.appendChild(body); svg.appendChild(layer);
   }
-  return {items:items,size:size,draw:draw};
+  return {items:items,size:size,draw:draw,grid:grid,label:label,sourceLink:sourceLink};
 })();

@@ -336,7 +336,12 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 		}
 		return ""
 	}
-	for _, connection := range index.Connections {
+	// Matched connections are stored by their source target. The destination
+	// must read that same saved set to retain its incoming component stubs.
+	for _, connection := range builder.allConnections() {
+		if connection.From.TargetID != index.Target.ID && connection.To.TargetID != index.Target.ID {
+			continue
+		}
 		from, to := endpoint(connection.From), endpoint(connection.To)
 		if connection.SourceKind == "integration" && connection.ToLocation != nil {
 			if other := builder.graphIndex(connection.To.TargetID); other != nil {

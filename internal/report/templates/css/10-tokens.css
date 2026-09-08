@@ -3,12 +3,11 @@
    never where a fact came from, which stay a matter of wording and badges. */
 :root{
   --text-body:1rem;--text-small:.875rem;
-  --canvas:#eef2ef;--paper:#fff;--ink:#202923;--muted:#526057;--line:#c6d0c9;
-  --bg:#fff;--soft:#f5f8f6;--accent:#2563eb;--warn:#9a3412;
+  --canvas:#f3f6f4;--paper:#fff;--ink:#172b2a;--muted:#61716e;--line:#d5dfda;
+  --bg:#fff;--soft:#edf4f0;--accent:#176b62;--warn:#9a3412;
   --claim:#6b5300;--claim-bg:#fff8e1;--model:#3f3f46;--model-bg:#ece7f6;
-  --edge:2.5px;--rule:3px;--drop:4px;--radius:6px;
-  --shadow:var(--drop) var(--drop) 0 0 var(--ink);
-  --shadow-sm:3px 3px 0 0 var(--ink);
+  --edge:1px;--rule:1px;--drop:3px;--radius:12px;
+  --shadow:none;--shadow-sm:none;
   --zone-1:#dbeafe;--zone-2:#dcfce7;--zone-3:#fef3c7;--zone-4:#fce7f3;
   --zone-5:#e0e7ff;--zone-6:#ffedd5;--zone-7:#ccfbf1;--zone-8:#ede9fe;
 }

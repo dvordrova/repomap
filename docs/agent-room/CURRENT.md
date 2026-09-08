@@ -3624,6 +3624,24 @@ payload projection, and the per-target chunk transport were removed.
 The target picker keeps failed rows visible, red, disabled, and linkless. The
 repository overview reports analyzed versus selected coverage.
 
+The desktop redesign keeps compact components and their original connections
+in one repository space. A click expands a component's description, complete
+source context and grouped neighbours; opening its parts is explicit. Selected
+parts use the existing map stage for incoming neighbours, a centre with exact
+key-code declarations and the existing full-code inspector, and outgoing
+neighbours. Remote peers are grouped by native component with full component
+and relation counts; their complete lists expand beside the selected reading.
+Reciprocal relations remain separate directed evidence and highlight the same
+peer together. Leaf focus uses exact neighbouring parts instead of introducing
+an extra folded area. Destination pages also project incoming cross-component
+connections from the same source-owned indexes; they remain interpreted stubs
+with original anchors, never inferred native calls. Learn's full question menu
+and Work's single shared search enter this space. The compact reading address
+names the original question/search and the selected component, part and source.
+The existing browser history stores reading context and exact map state per
+visit, so visiting the same part for another question does not replace the
+earlier visit's selection. Hover never changes selected reading.
+
 The owner explicitly approved final localization on 2026-09-07/08 and supplied
 two diagrams clarifying its boundary. Analytical LLM cubes receive one shared
 English response instruction. The completed English frontend structure then

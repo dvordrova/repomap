@@ -337,3 +337,68 @@ func TestMapStructureRetainsAreasAndGroupsWithoutOperations(t *testing.T) {
 		t.Fatal("structure projection is nondeterministic")
 	}
 }
+
+func TestMapStructureRetainsIncomingCrossTargetConnectionsAtDestination(t *testing.T) {
+	backend := groupindex.Index{Target: programindex.Target{ID: "backend"}, Groups: []groupindex.Group{
+		{ID: "core", Title: "Lesson service", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"handler"}},
+	}}
+	frontend := groupindex.Index{Target: programindex.Target{ID: "frontend"}}
+	for i, name := range []string{"load", "run", "submit"} {
+		frontend.Groups = append(frontend.Groups, groupindex.Group{ID: name, Title: name + " interaction", Lane: groupindex.LaneCore})
+		frontend.Connections = append(frontend.Connections, groupindex.Connection{
+			ID: name, SourceKind: "integration", SupportResolution: programindex.PatternValuePossible,
+			From: groupindex.Endpoint{TargetID: "frontend", GroupID: name}, To: groupindex.Endpoint{TargetID: "backend", GroupID: "core"},
+			Label: name + " HTTP request", Summary: "Retained interpretation for " + name,
+			FromLocation: &programindex.Location{Path: "front/api.ts", Line: 11 + i, Column: 5 + i},
+			ToLocation:   &programindex.Location{Path: "backend/app.py", Line: 21 + i, Column: 1},
+		})
+	}
+	// A second source-owned relation incident to neither endpoint must not
+	// create a remote island while rendering this backend.
+	unrelated := groupindex.Index{Target: programindex.Target{ID: "unrelated"}, Groups: []groupindex.Group{{ID: "elsewhere", Title: "Elsewhere"}}}
+	unrelated.Connections = []groupindex.Connection{{ID: "unrelated", From: groupindex.Endpoint{TargetID: "unrelated", GroupID: "elsewhere"}, To: groupindex.Endpoint{TargetID: "frontend", GroupID: "load"}, Label: "not incident to backend"}}
+	section := &pageSection{ID: "backend-section", programTargetID: "backend"}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{backend, frontend, unrelated}, byProgram: map[string]*pageSection{
+		"backend": section, "frontend": {ID: "frontend-section", ShortLabel: "Front"}, "unrelated": {ID: "unrelated-section", ShortLabel: "Other"},
+	}, links: pageLinks{sourceIDs: map[string]string{"front/api.ts": "front", "backend/app.py": "backend"}}}
+	got := builder.buildMap(section)
+	var relations []pageMapEdge
+	for _, edge := range got.Edges {
+		if edge.Scope == "structure" {
+			relations = append(relations, edge)
+		} else if edge.Scope == "operation" {
+			t.Fatalf("matched integration became an operation path: %+v", edge)
+		}
+	}
+	if len(relations) != len(frontend.Connections) {
+		t.Fatalf("destination retained %d incoming relations, want %d: %+v", len(relations), len(frontend.Connections), relations)
+	}
+	for i, connection := range frontend.Connections {
+		edge := relations[i]
+		from := mapNodeID(section.ID + "-foreign-" + connection.From.GroupID)
+		if edge.From != from || edge.To != mapNodeID("core") || edge.Label != connection.Label || edge.Summary != connection.Summary || !edge.Possible {
+			t.Fatalf("incoming direction or interpretation changed: %+v", edge)
+		}
+		if want := builder.links.anchor(connection.FromLocation.Path, connection.FromLocation.Line, connection.FromLocation.Column); edge.FromSource != want {
+			t.Fatalf("source anchor changed: %+v, want %+v", edge.FromSource, want)
+		}
+		if want := builder.links.anchor(connection.ToLocation.Path, connection.ToLocation.Line, connection.ToLocation.Column); edge.ToSource != want {
+			t.Fatalf("destination anchor changed: %+v, want %+v", edge.ToSource, want)
+		}
+		found := false
+		for _, node := range got.Nodes {
+			if node.ID == from {
+				found = node.Remote && node.Component == "frontend" && node.FullTitle == frontend.Groups[i].Title && node.Href == "#"+groupAnchorID("frontend-section", connection.From.GroupID)
+			}
+			if node.Component == "unrelated" {
+				t.Fatalf("unrelated saved relation added a remote island: %+v", node)
+			}
+		}
+		if !found {
+			t.Fatalf("incoming source lost its original group stub: %s", from)
+		}
+	}
+	if again := builder.buildMap(section); !reflect.DeepEqual(got, again) {
+		t.Fatal("incoming cross-target projection is nondeterministic")
+	}
+}

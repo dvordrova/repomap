@@ -6,20 +6,31 @@
   var home=document.getElementById('overview'), repoMap=document.getElementById('repository-map');
   if(!bar||!home)return;
   var toolbar=bar.closest('.report-toolbar');
-  var locationLine=toolbar.querySelector('.reading-location'),locationName=document.createElement('span'),mapContext=document.createElement('a');
-  mapContext.className='reading-map-context';mapContext.dataset.readingMapReturn='';mapContext.hidden=true;locationLine.append(locationName,' ',mapContext);
-  var returnLinks=document.createElement('div');returnLinks.className='reading-return';returnLinks.hidden=true;toolbar.appendChild(returnLinks);
-  var returnLink=document.createElement('a'),termLink=document.createElement('a'),mapLink=document.createElement('a');mapLink.dataset.readingMapReturn='';returnLinks.append(returnLink,termLink,mapLink);
+  var locationLine=toolbar.querySelector('.reading-location'),locationName=document.createElement('span'),mapContext=document.createElement('a'),readingIntent=document.createElement('span');
+  readingIntent.className='reading-intent';readingIntent.hidden=true;locationName.className='reading-address';
+  mapContext.className='reading-map-context';mapContext.dataset.readingMapReturn='';mapContext.hidden=true;locationLine.append(readingIntent,locationName,mapContext);
+  var returnLinks=document.createElement('nav');returnLinks.className='reading-return';returnLinks.hidden=true;locationLine.appendChild(returnLinks);
+  var returnLink=document.createElement('a'),termLink=document.createElement('a'),mapLink=document.createElement('a'),searchLink=document.createElement('button');mapLink.dataset.readingMapReturn='';searchLink.type='button';searchLink.dataset.readingFind='';returnLinks.append(returnLink,termLink,mapLink,searchLink);
   var detailGroup=null;
   function measureToolbar(){document.documentElement.style.setProperty('--toolbar-height',getComputedStyle(toolbar).position==='sticky'?toolbar.getBoundingClientRect().height+'px':'0px');}
   new ResizeObserver(measureToolbar).observe(toolbar);measureToolbar();
-  var current=home, mode='learn', question=null, term=null;
+  var current=home, mode='learn', question=null, term=null, searchIntent='',restoring=false;
+  var globalSearch=document.querySelector('.nav .find'),workSearch=document.querySelector('[data-reading-query]');
   var questionPage=document.getElementById('questions'),guides=questionPage?Array.from(questionPage.querySelectorAll('.reading-guide')):[];
   var questionIndex=questionPage&&questionPage.querySelector('.question-index');
   function enclosing(node){return node&&node.closest('[data-report-page]');}
   function locate(){try{return document.getElementById(decodeURIComponent(location.hash.slice(1)));}catch(e){return null;}}
+  // A map may be reached from several questions. Its URL names the place;
+  // this browser history entry retains why that particular visit was opened.
+  function readingState(){
+    var map=current.querySelector('[data-map-explorer]');
+    return Object.assign({},history.state,{repomapReading:{question:question?.id||'',term:term?.id||'',search:searchIntent,find:globalSearch?.searchState(),map:map?.readingState?{page:current.id,value:map.readingState()}:null}});
+  }
+  function remember(){if(!restoring&&!current.querySelector('[data-map-explorer]')?.readingRestoring)history.replaceState(readingState(),'',location.href);}
+  function savedElement(id,selector){var node=typeof id==='string'&&document.getElementById(id);return node&&node.matches(selector)?node:null;}
   function selectQuestion(selected){
     guides.forEach(function(guide){guide.hidden=guide!==selected;guide.open=guide===selected;});
+    if(questionPage)questionPage.classList.toggle('has-selected-question',!!selected);
     if(questionIndex)questionIndex.open=!selected;
     document.querySelectorAll('.question-menu a').forEach(function(a){
       if(selected&&a.getAttribute('href')==='#'+selected.id)a.setAttribute('aria-current','true');else a.removeAttribute('aria-current');
@@ -43,7 +54,6 @@
         var node=document.getElementById(a.dataset.questionMap||(a.getAttribute('href')||'').slice(1));return enclosing(node)===page;
       });});
       var learn=document.createElement('aside');learn.className='component-reading-entry';learn.dataset.readingMode='learn';
-      learn.appendChild(textElement('strong',rmT('Learn: questions linked to this component')));
       if(linked.length){
         var menu=document.createElement('details');menu.className='component-question-menu';
         menu.appendChild(textElement('summary',rmT('{0} questions link here',linked.length)));
@@ -51,7 +61,6 @@
       }else learn.appendChild(textElement('span',rmT('No saved question links to this component.')));
       var all=textElement('a',rmT('All questions'));all.href='#questions';if(guides.length)learn.appendChild(all);
       var work=document.createElement('aside');work.className='component-reading-entry';work.dataset.readingMode='work';
-      work.appendChild(textElement('strong',rmT('Work: investigate a place in the code')));
       var button=textElement('button',rmT('Find in repository'),'reading-search-entry');button.type='button';button.dataset.readingFind='';
       var component=document.querySelector('[data-find-component]');
       if(component&&Array.from(component.options).some(function(option){return option.value===page.id;})){button.dataset.readingFind=page.id;button.textContent=rmT('Find in this component');}
@@ -63,37 +72,48 @@
   }
   function showReturn(){
     returnLink.hidden=!question||current===enclosing(question);
-    if(question){returnLink.href='#'+question.id;returnLink.textContent=rmT('← Back to question: {0}',question.querySelector('.reading-question').textContent);}
-    termLink.hidden=!term||current===enclosing(term);
-    if(term){termLink.href='#'+term.id;termLink.textContent=rmT('← Back to term: {0}',term.querySelector('summary').textContent);}
+    if(question){returnLink.href='#'+question.id;returnLink.textContent=rmT('Back to question');returnLink.title=question.querySelector('.reading-question').textContent;}
+    termLink.hidden=!!question||!term||current===enclosing(term);
+    if(term){termLink.href='#'+term.id;termLink.textContent=rmT('Back to term');termLink.title=term.querySelector('summary').textContent;}
     var map=detailGroup&&current.querySelector('[data-map-explorer]');
     mapLink.hidden=!map;
-    if(map){mapLink.href='#'+mapDestination(map).id;mapLink.textContent=rmT('← Back to map: {0}',map.explorationLabel());}
-    returnLinks.hidden=returnLink.hidden&&termLink.hidden&&mapLink.hidden;
+    if(map){mapLink.href='#'+mapDestination(map).id;mapLink.textContent=rmT('Back to map');mapLink.title=map.explorationLabel();}
+    searchLink.hidden=!searchIntent||!!question;searchLink.textContent=rmT('Back to search');
+    returnLinks.hidden=returnLink.hidden&&termLink.hidden&&mapLink.hidden&&searchLink.hidden;
   }
   function showLocation(){
-    var place=current===home?'':(current.dataset.componentName||current.querySelector('h2')?.textContent||'');
-    if(current===questionPage&&question)place=rmT('Question {0} of {1}',guides.indexOf(question)+1,guides.length)+' · '+question.querySelector('.reading-question').textContent;
+    var repositorySelection=current===home&&home.querySelector('.repo-map')?.dataset.readingLabel;
+    var place=current===home?(repositorySelection||rmT('Home')):(current.dataset.componentName||current.querySelector('h2')?.textContent||'');
+    if(current===questionPage&&question)place=rmT('Question {0} of {1}',guides.indexOf(question)+1,guides.length);
+    else if(term&&current===enclosing(term))place=term.querySelector('summary').textContent;
     var detailTitle=detailGroup&&detailGroup.querySelector('.group-head h4').cloneNode(true);
     if(detailTitle)detailTitle.querySelectorAll('button,.model-sources').forEach(function(n){n.remove();});
-    locationName.textContent=document.querySelector('.brand .repo').textContent+(place?' · '+place:'')+(detailTitle?' · '+rmT('Full details: {0}',detailTitle.textContent):'');
+    locationName.textContent=place+(detailTitle?' · '+rmT('Full details: {0}',detailTitle.textContent):'');
+    readingIntent.textContent=question?question.querySelector('.reading-question').textContent:searchIntent?rmT('Search: {0}',searchIntent):'';
+    readingIntent.hidden=!readingIntent.textContent;
     var map=!detailGroup&&current.querySelector('[data-map-explorer]');
     mapContext.hidden=!map;
-    if(map){mapContext.href='#'+mapDestination(map).id;mapContext.textContent=rmT('Map: {0}',map.explorationLabel());}
+    if(map){mapContext.href='#'+mapDestination(map).id;mapContext.textContent=map.explorationLabel();}
   }
   function mapDestination(map){return document.getElementById(map.explorerScope)||map.explorerOperation||current;}
+  function placeSearch(){
+    var panel=document.querySelector('.find-panel'),container=current===home&&mode==='work'?home.querySelector('.work-intro'):toolbar.querySelector('.nav');
+    // The existing finder owns this one result panel and all of its state.
+    // Only its presentation moves into the Work entrance while at home.
+    if(panel&&container&&panel.parentElement!==container)container.appendChild(panel);
+  }
   function setPage(node){
     var page=enclosing(node);if(!page)return;
     var nextQuestion=node.closest('.reading-guide');
     if(page===questionPage)selectQuestion(nextQuestion);
-    if(nextQuestion){question=nextQuestion;term=null;}
-    else if(page===home||node.id==='questions'){question=null;term=null;}
+    if(nextQuestion){question=nextQuestion;term=null;searchIntent='';}
+    else if(page===home||node.id==='questions'){question=null;term=null;searchIntent='';}
     var nextTerm=node.closest('.learn-concept');
     if(nextTerm)term=nextTerm;
     else if(node.id==='concepts')term=null;
     revealConcept(node);
-    current=page;detailGroup=node.closest('.group');pages.forEach(function(p){p.hidden=p!==page;});
-    showReturn();showLocation();
+    current=page;body.dataset.readingPage=page.id;detailGroup=node.closest('.group');pages.forEach(function(p){p.hidden=p!==page;});
+    placeSearch();showReturn();showLocation();
     for(var p=node;p&&p!==page;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;
     document.querySelectorAll('.target-picker').forEach(function(p){p.open=false;});
     // Navigation scrolls immediately; the return links and search panel may
@@ -103,16 +123,17 @@
   function address(node,replace){
     if(!node.id)node=enclosing(node);
     var url=new URL(location.href);url.searchParams.set('mode',mode);url.hash=node.id;
-    if(url.href!==location.href)history[replace?'replaceState':'pushState'](history.state,'',url);
+    if(url.href!==location.href)history[replace?'replaceState':'pushState'](readingState(),'',url);
   }
   function setMode(next,record){
     mode=next==='work'?'work':'learn';body.dataset.readingMode=mode;
     document.querySelectorAll('[data-reading-mode]').forEach(function(el){if(el!==body)el.hidden=el.dataset.readingMode!==mode;});
     bar.querySelectorAll('[data-mode]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.mode===mode);});
+    placeSearch();
     // A single-component report has no repository SVG; its existing card
     // remains a direct entrance instead of an empty Work home.
     if(!repoMap.querySelector('.repo-map'))repoMap.querySelector('.evidence-list').open=true;
-    if(record){var url=new URL(location.href);url.searchParams.set('mode',mode);history.pushState(history.state,'',url);}
+    if(record){var url=new URL(location.href);url.searchParams.set('mode',mode);history.pushState(readingState(),'',url);}
   }
   // All navigators (search, map deep links and ordinary anchors) reveal the
   // existing section before any map measures its available space.
@@ -120,13 +141,14 @@
   // Layout commits the explorer's operation and scope. Hidden maps and the
   // inspector's temporary hover subject must not replace this reading context.
   document.addEventListener('repomap:layout',function(e){if(!detailGroup&&enclosing(e.target)===current)showLocation();},true);
-  document.addEventListener('repomap:reading',function(e){if(!detailGroup&&enclosing(e.target)===current)showLocation();},true);
+  document.addEventListener('repomap:reading',function(e){if(!detailGroup&&enclosing(e.target)===current){showLocation();remember();}},true);
+  document.addEventListener('repomap:viewport',function(e){if(enclosing(e.target)===current)remember();},true);
   document.addEventListener('click',function(e){
     var findAction=e.target.closest('[data-reading-find]');
     if(findAction){
       var search=document.querySelector('.nav .find'),component=document.querySelector('[data-find-component]');
-      if(component){component.value=findAction.dataset.readingFind||'';component.dispatchEvent(new Event('change',{bubbles:true}));}
-      if(search)search.focus({preventScroll:true});return;
+      if(component&&findAction!==searchLink){component.value=findAction.dataset.readingFind||'';component.dispatchEvent(new Event('change',{bubbles:true}));}
+      if(search)search.focusSearch();return;
     }
     if(e.target.closest('a')===mapContext&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
       e.preventDefault();var contextMap=current.querySelector('[data-map-explorer]');contextMap.resumeExploration();contextMap.scrollIntoView({block:'start'});return;
@@ -136,8 +158,8 @@
       setPage(map);address(mapDestination(map));map.resumeExploration();map.scrollIntoView({block:'start'});return;
     }
     var readingQuestion=e.target.closest('.reading-guide');
-    if(readingQuestion){question=readingQuestion;term=null;showReturn();}
-    var a=e.target.closest('a[href^="#"]');if(!a||a.closest('[data-map-explorer]')||a.hasAttribute('data-open')||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
+    if(readingQuestion){question=readingQuestion;term=null;searchIntent='';showReturn();showLocation();}
+    var a=e.target.closest('a[href^="#"]');if(!a||a.closest('[data-map-explorer]')||a.hasAttribute('data-open')||a.hasAttribute('data-question-map')||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
     var node=document.getElementById(a.getAttribute('href').slice(1));if(!enclosing(node))return;
     e.preventDefault();setPage(node);address(node);
     // Map-node links are handled by their existing explorer. Scrolling an
@@ -145,9 +167,32 @@
     if(!node.matches('[data-node]'))node.scrollIntoView({block:'start'});
   },true);
   bar.querySelectorAll('[data-mode]').forEach(function(b){b.addEventListener('click',function(){setMode(b.dataset.mode,true);});});
-  function restore(){setMode(new URL(location.href).searchParams.get('mode'),false);setPage(locate()||home);}
-  window.addEventListener('popstate',restore);window.addEventListener('hashchange',restore);
-  prepareReadingEntrances();bar.hidden=false;body.classList.add('reading-ready');selectQuestion(null);restore();
+  function restore(){
+    restoring=true;
+    var saved=history.state?.repomapReading,node=locate()||home;
+    question=null;term=null;searchIntent='';setMode(new URL(location.href).searchParams.get('mode'),false);setPage(node);
+    if(saved){
+      if(!node.closest('.reading-guide'))question=savedElement(saved.question,'.reading-guide');
+      term=savedElement(saved.term,'.learn-concept');searchIntent=question?'':typeof saved.search==='string'?saved.search:'';
+    }
+    globalSearch?.restoreSearch(saved?.find);
+    if(saved?.map?.page===current.id)current.querySelector('[data-map-explorer]')?.restoreReadingState(saved.map.value);
+    showReturn();showLocation();restoring=false;
+  }
+  // Restore the visit before a map reacts to the new URL or emits a reading
+  // event; otherwise that event could save the visit we are leaving over it.
+  window.addEventListener('popstate',restore,true);window.addEventListener('hashchange',restore,true);
+  prepareReadingEntrances();bar.hidden=false;body.classList.add('reading-ready');selectQuestion(null);restore();remember();
+  document.addEventListener('repomap:find',remember);
+  if(globalSearch){
+    globalSearch.addEventListener('input',function(){
+      searchIntent=globalSearch.value.trim();if(searchIntent){question=null;term=null;}
+      if(workSearch)workSearch.value=globalSearch.value;showReturn();showLocation();remember();
+    });
+    if(workSearch){
+      workSearch.closest('.work-search').hidden=false;workSearch.value=globalSearch.value;
+    }
+  }
   document.querySelectorAll('.learn-band').forEach(function(band){band.addEventListener('toggle',function(){if(!band.open)return;document.querySelectorAll('.learn-band').forEach(function(other){if(other!==band)other.open=false;});});});
 
   var library=document.getElementById('concepts');if(!library)return;

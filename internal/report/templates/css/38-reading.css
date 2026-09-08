@@ -39,8 +39,8 @@
 .dependency-source{flex-basis:100%;font-size:max(var(--text-small),.8em)}
 .model-inspectable::before{display:none}
 .model,.summary.model,.group>p.model,.card .model,.flow-why{font-style:normal;color:#51406f}
-.model-inspectable{text-decoration-line:underline;text-decoration-style:dotted;text-decoration-color:#b4a2d0;text-underline-offset:.22em;cursor:help;border-radius:4px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
-.model-inspectable:hover,.model-inspectable.preview-active,.model-inspectable:focus-within{background:#e8ddfb;color:#35214e;text-decoration-color:#72569a}
+.model-inspectable{text-decoration:none;cursor:help;border-radius:4px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.model-inspectable:hover,.model-inspectable.preview-active,.model-inspectable:focus-within{background:#f0edf7;color:#35214e}
 .source-hint{font:inherit;font-size:max(var(--text-small),.8em);color:#72569a;border:0;box-shadow:none;background:transparent;padding:0 .3rem;cursor:pointer;vertical-align:baseline}
 .source-hint:hover,.source-hint:focus-visible{color:var(--accent);outline:1px solid var(--accent)}
 .source-card p{margin:.4rem 0;color:var(--muted)}

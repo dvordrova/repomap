@@ -16,7 +16,7 @@
 </header>
 <div class="report-toolbar"><div class="reading-modes" role="group" aria-label="{{t "Reading mode"}}" hidden><button type="button" data-mode="learn" aria-pressed="true">{{t "Learn"}}</button><button type="button" data-mode="work" aria-pressed="false">{{t "Work"}}</button></div>
 <nav class="nav" aria-label="{{t "Repository"}}"><a href="#overview">{{t "Home"}}</a>{{if .Questions}}<a href="#questions">{{t "Questions"}}</a>{{end}}<details class="target-picker"><summary>{{t "Components"}} · <span class="meta">{{len .Sections}}</span></summary><div class="target-options">{{range .Cards}}<a href="#{{.SectionID}}" title="{{.Name}}">{{.ShortName}}</a>{{end}}</div></details></nav>
-<span class="reading-location" aria-live="polite"></span></div>
+<div class="reading-location" aria-live="polite"></div></div>
 <noscript><p class="meta">{{if .EditorOpens}}{{t "JavaScript is optional here. Every answer and link is in the HTML; scripting adds map previews, selection, quotes, and opening source links in your editor."}}{{else}}{{t "JavaScript is optional here. Every answer and link is in the HTML; scripting adds map previews, selection, and quotes."}}{{end}}</p></noscript>
 <main>
 {{template "overview.html" .}}

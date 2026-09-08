@@ -1,6 +1,7 @@
 <section id="{{.ID}}" data-report-page data-component-name="{{.ShortLabel}}">
-<h2>{{.ShortLabel}}</h2>
+<header class="component-intro"><h2>{{.ShortLabel}}</h2>
 <p class="target-facts meta">{{t "Component"}} · {{.Language}}{{if .Kind}} · {{t .Kind}}{{end}}{{if ne .Name .ShortLabel}} · <code>{{.Name}}</code>{{end}}{{if .Root}} · {{t "Path"}}: <code>{{.Root}}</code>{{end}}</p>
+</header>
 {{if not .FactsAvailable}}<p class="empty">{{t "This run did not read the repository, so this page shows only what the model grouped."}}</p>{{end}}
 {{if .Map}}{{template "map.html" .Map}}{{end}}
 <details class="component-reference"><summary>{{t "Code, entrypoints and sources"}}</summary>

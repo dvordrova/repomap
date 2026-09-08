@@ -327,6 +327,10 @@ func displayProtectedNames(data *ReportData) []string {
 // slots. It never traverses arbitrary strings or translates an HTML document.
 func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) error {
 	view := page.view
+	componentKinds := make(map[string]string, len(view.Sections))
+	for _, section := range view.Sections {
+		componentKinds[section.programTargetID] = section.Kind
+	}
 	names := displayProtectedNames(data)
 	exactNames := make(map[string]bool, len(names))
 	for _, name := range names {
@@ -483,7 +487,12 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 		for i := range section.Map.Nodes {
 			node := &section.Map.Nodes[i]
 			node.CanonicalTitle = node.FullTitle
-			if node.Activation == "" || node.SourceKind != "fact" {
+			// A component name disambiguated by its owner's kind is UI
+			// composition. applyUI rebuilds that exact suffix from the owner;
+			// it is not a new sentence to translate for an incoming stub.
+			kind := componentKinds[node.Component]
+			composedComponentName := node.Branch == "component" && kind != "" && strings.HasSuffix(node.FullTitle, " ("+kind+")")
+			if !composedComponentName && (node.Activation == "" || node.SourceKind != "fact") {
 				add("label", &node.FullTitle)
 			}
 			add("summary", &node.Summary)
