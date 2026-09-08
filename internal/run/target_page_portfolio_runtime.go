@@ -2,11 +2,14 @@ package run
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/report"
 )
@@ -40,18 +43,31 @@ type targetPublishedRun struct {
 // validated pipelines; a later repository graph, persistence, manifest, or
 // bundle failure prevents publication without turning them into target-local
 // failures.
-func reportAnalyzedTargetPagePublicationFailure(output *runOutput, targets []targetPageConsoleContext) {
+func reportAnalyzedTargetPagePublicationFailure(output *runOutput, targets []targetPageConsoleContext, runDir string, runErr error) {
 	if output == nil {
 		return
 	}
 	for _, target := range targets {
 		output.TargetPage("analyzed", target)
 	}
-	output.State(
-		"Report publication", "failed",
-		fmt.Sprintf("analyzed target pages: %d", len(targets)),
-		"final report was not published",
-	)
+	details := []string{fmt.Sprintf("analyzed target pages: %d", len(targets))}
+	if runErr != nil {
+		details = append(details, "reason: "+runErr.Error())
+	}
+	details = append(details, "final report was not published")
+	if runDir != "" {
+		for _, artifact := range []struct{ label, name string }{
+			{"artifacts", "."},
+			{"rejections", modeldiag.Filename},
+			{"model request/response journals", debugdump.SemanticExchangesDir},
+		} {
+			path := filepath.Join(runDir, artifact.name)
+			if _, err := os.Stat(path); err == nil {
+				details = append(details, artifact.label+": "+path)
+			}
+		}
+	}
+	output.State("Report publication", "failed", details...)
 }
 
 // Restored stage inputs are loaded once. Ordinary runs already own these values.

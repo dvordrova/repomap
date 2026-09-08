@@ -43,6 +43,7 @@
 {{define "concepts.html"}}
 {{if .Glossary}}<section id="concepts" class="concept-library" data-report-page>
 <h2>{{t "Understand a term"}}</h2><p>{{t "Saved explanations from this report, with their sources, questions and places on the map."}}</p>
+{{if .GlossaryPartialComparison}}<p class="meta glossary-comparison-note">{{t "Some explanations were not compared together; similar entries may remain separate."}}</p>{{end}}
 <label class="concept-search" hidden>{{t "Find a term"}} <input type="search" aria-label="{{t "Find a term"}}" placeholder="{{t "Name or description"}}"></label>
 <p class="concept-count" role="status"></p><div class="concept-results">
 {{range .Glossary}}<details id="{{.ID}}" class="learn-concept" data-term-name="{{.Name}}" data-term-original="{{.OriginalName}}" data-term-code="{{.Code}}"><summary>{{.Name}}{{if ne .Name .OriginalName}} <span class="meta">· {{.OriginalName}}</span>{{end}}{{with .Sources}} <span class="concept-source-context meta">· {{(index . 0).Text}}</span>{{end}}</summary>

@@ -325,6 +325,19 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   refused answer is written to `rejected.jsonl` and never cached. Validation
   annotates and does not abort a run (docs/CONSTITUTION.md); accepted sibling
   calls keep their identity-bound cache entries in both forms.
+  Shared adaptive batches also memoize an actual context/output/response
+  resource refusal when the owning stage can split the complete item. The memo
+  binds exact prepared bytes, provider state and all request limits; it stores
+  no child boundaries or answers. A later run rebuilds children through the
+  current owner and validates their ordinary cached or live responses. A cached
+  whole-parent answer/replay takes precedence. Semantic refusals never create
+  this memo, NoCache bypasses it and cache clear removes it. Existing run journals
+  are not migrated into split memos.
+  Failed model exchanges show their committed request/response/journal paths
+  beside the error, with an explicit unavailable-body marker when necessary.
+  The last attempt's HTTP status and diagnostic response IDs/retry/rate-limit
+  headers accompany those diagnostics. Request authorization and cookies never
+  enter that metadata, which has no role in semantic or cache identity.
 - A model-assisted stage returns a fully validated result, a contractually
   legitimate empty result, or an error. Backend orchestration, report
   projection, and browser code must never supply semantic fallback, repair, promotion, or partial
@@ -589,9 +602,15 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   rows with compatible source scope.
   One aggregate closed-ref reduction joins compatible domain candidates and
   chooses an original definition, preserving every variant, spelling, source
-  and request identity. A refused reduction window retains its already accepted
-  input definitions separately, with incomplete comparison recorded. Local input,
-  configuration, cancellation and persistence failures remain errors. Native code
+  and request identity. Each input group chooses one advertised original variant;
+  Go joins groups that choose the same variant. Its owner must make that same
+  choice, so chains, cycles and conflicting assignments cannot repair themselves
+  into a grouping. Every input group still requires an explicit choice.
+  A refused reduction window retains its already accepted
+  input definitions separately, with incomplete comparison recorded and shown
+  in the glossary and run output. Live response refusals record their reason
+  in rejected.jsonl beside the exact exchange; provider-error text stays closed.
+  Local input, configuration, cancellation and persistence failures remain errors. Native code
   concepts keep their existing definitions, exact anchors and destinations and
   enter the final glossary directly; they do not round-trip through the reducer.
   `terminology.json` and `glossary.json` retain domain candidates and the reduced

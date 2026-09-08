@@ -66,14 +66,18 @@ func translateReportDisplay(ctx context.Context, options repositoryTargetDispatc
 		RootDir: options.DebugDir, Enabled: !options.NoCache,
 		Observer:         timed(options.Output, debugdump.NewSemanticObserver(writer)),
 		BatchConcurrency: options.Deps.llmBatchConcurrency, BatchController: options.Deps.llmBatchController,
+		PlanNotice: func(windows int) {
+			options.Output.Stage("", fmt.Sprintf("request windows this round: %d; checking cache before provider calls", windows))
+		},
 	}, debugdump.SemanticStageReportTranslation)
 	options.Output.Stage("Report translation", fmt.Sprintf("translating %d display texts into %s", len(catalog.Entries), language))
 	started := time.Now()
 	translations, err = reporttranslation.Translate(ctx, executor, provider, catalog, language)
 	if err != nil {
+		options.Output.State("Report translation", "failed", formatRunOutputWallDuration(time.Since(started)), options.Output.modelCallSummary(reporttranslation.StageName))
 		return report.RenderOptions{}, fmt.Errorf("report translation: %w", err)
 	}
-	options.Output.State("Report translation", "ready", formatRunOutputWallDuration(time.Since(started)))
+	options.Output.State("Report translation", "ready", formatRunOutputWallDuration(time.Since(started)), options.Output.modelCallSummary(reporttranslation.StageName))
 	renderOptions.Translations = &translations
 	return renderOptions, nil
 }

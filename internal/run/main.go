@@ -528,14 +528,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			return fmt.Errorf("capture repository state before orientation: %w", err)
 		}
 	}
-	if staticSourceHost != "" && repositoryCorpusHasWorkingTreeChanges(repositoryCorpus, analysisRoot, initialState) {
-		return fmt.Errorf(
-			"--no-serve cannot create exact %s source links for tracked working-tree changes; commit or stash those changes, or remove --no-serve to open code through the local VS Code server",
-			staticSourceHost,
-		)
-	}
-	if staticSourceHost != "" && repositoryStateHasAnalyzedSubmodule(initialState) {
-		return fmt.Errorf("standalone %s reports do not support analyzed submodule source because one repository URL cannot address it", staticSourceHost)
+	if err := validateRepositorySourceLinks(ctx, staticSourceHost, repositoryCorpus, analysisRoot, initialState); err != nil {
+		return err
 	}
 	if deps.preselectedTarget == nil && !deps.siblingTargetRun {
 		goSource, prepareErr := prepareRepositoryPlanningGoSource(

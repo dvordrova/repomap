@@ -55,6 +55,18 @@ func TestGlossaryHTMLKeepsAnswerTermsAndSourceDistinctDefinitions(t *testing.T) 
 			if strings.Contains(html.String(), `class="term-mention"`) {
 				t.Fatal("glossary definitions contain nested inline term controls")
 			}
+			if strings.Contains(html.String(), "glossary-comparison-note") {
+				t.Fatal("complete glossary carries an incomplete-comparison notice")
+			}
+			view.GlossaryPartialComparison = true
+			html.Reset()
+			if err := templates.ExecuteTemplate(&html, "concepts.html", view); err != nil {
+				t.Fatal(err)
+			}
+			notice, err := uiText(language, "Some explanations were not compared together; similar entries may remain separate.")
+			if err != nil || !strings.Contains(html.String(), notice) || strings.Index(html.String(), notice) > strings.Index(html.String(), `class="concept-results"`) {
+				t.Fatal("partial glossary hides its localized notice behind term expansion")
+			}
 		})
 	}
 }

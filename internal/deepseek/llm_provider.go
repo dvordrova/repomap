@@ -257,6 +257,7 @@ func llmCompletion(
 ) llm.Completion {
 	return llm.Completion{
 		Response:     append([]byte(nil), completion.Content...),
+		HTTPResponse: completion.HTTPResponse.Clone(),
 		FinishReason: llmFinishReason(completion.finishReasonClass),
 		ChoiceCount:  completion.ChoiceCount,
 		Metrics: llm.Metrics{

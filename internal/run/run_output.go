@@ -303,6 +303,20 @@ func (output *runOutput) Timing() {
 	output.writeEventLocked(output.writer, header, lines...)
 }
 
+// modelCallSummary uses the same accounting as the closing Time stage.
+func (output *runOutput) modelCallSummary(stage string) string {
+	if output == nil {
+		return ""
+	}
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	at := output.modelTime[stage]
+	if at == nil {
+		return "provider requests: 0 new, 0 reused from cache"
+	}
+	return fmt.Sprintf("provider requests: %d new, %d reused from cache", at.live, at.cached)
+}
+
 // TimingReport is the Time stage as data, for the run's metadata.
 func (output *runOutput) TimingReport() debugdump.RunTiming {
 	if output == nil {
@@ -360,6 +374,31 @@ func timed(output *runOutput, inner *debugdump.SemanticObserver) llm.Observer {
 	if output == nil {
 		return inner
 	}
+	inner.SetFailureNotice(func(receipt debugdump.SemanticFailureReceipt) {
+		details := []string{"stage: " + receipt.Stage, "reason: " + receipt.Reason,
+			fmt.Sprintf("transport attempts: %d", receipt.TransportAttempts), formatRunOutputDuration(receipt.LatencyMS),
+			"request: " + receipt.RequestPath}
+		if response := receipt.HTTPResponse; response != nil {
+			details = append(details, fmt.Sprintf("last HTTP response: %d", response.StatusCode))
+			var names []string
+			for name := range response.Headers {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				for _, value := range response.Headers[name] {
+					details = append(details, fmt.Sprintf("response header %s: %q", name, value))
+				}
+			}
+		}
+		if receipt.ResponseUnavailable != "" {
+			details = append(details, "raw response (last attempt): unavailable ("+receipt.ResponseUnavailable+")")
+		} else {
+			details = append(details, "raw response (last attempt): "+receipt.ResponsePath)
+		}
+		details = append(details, "journal: "+receipt.JournalPath)
+		output.Warn("Model request failed", details...)
+	})
 	return timedObserver{output: output, inner: inner}
 }
 

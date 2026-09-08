@@ -149,7 +149,11 @@ func dispatchRepositoryTargetPlan(
 	outcomes := make([]targetoutcome.Outcome, 0, len(ordered))
 	targetErrors := make([]error, 0, len(ordered))
 	failPublication := func(runErr error) (string, error) {
-		reportAnalyzedTargetPagePublicationFailure(options.Output, pendingTargets)
+		runDir := filepath.Join(options.DebugDir, options.RunID)
+		if len(runs) > 0 {
+			runDir = runs[0].RunDir
+		}
+		reportAnalyzedTargetPagePublicationFailure(options.Output, pendingTargets, runDir, runErr)
 		return "", runErr
 	}
 	recordFailure := func(

@@ -2,6 +2,7 @@ package debugdump
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"sync"
 
 	"github.com/dvordrova/repomap/internal/llm"
@@ -17,17 +18,48 @@ type SemanticObserver struct {
 	ordinals        map[string]int
 	instanceOrdinal int
 	pending         []observedResponse
+	failureNotice   func(SemanticFailureReceipt)
+}
+
+// SemanticFailureReceipt points at one committed diagnostic exchange. An
+// unavailable response is identified explicitly; its marker is not a raw body.
+type SemanticFailureReceipt struct {
+	Stage, Reason                          string
+	JournalPath, RequestPath, ResponsePath string
+	ResponseUnavailable                    string
+	HTTPResponse                           *llm.HTTPResponse
+	TransportAttempts                      int
+	LatencyMS                              int64
 }
 
 type observedResponse struct {
 	exchange   SemanticExchange
 	rejections []llm.ResponseRejection
+	failed     bool
+	reason     string
 }
 
 // Rejections use the existing rejected.jsonl shape. ResponseRef names the
 // ordinary exchange record, which links both exact request and response bytes.
-func recordObservedResponse(writer *Writer, value observedResponse) error {
-	ref := writer.RecordSemanticExchange(value.exchange)
+func recordObservedResponse(writer *Writer, value observedResponse, notice func(SemanticFailureReceipt)) error {
+	ref, record := writer.recordSemanticExchange(value.exchange)
+	if value.failed && record != nil && notice != nil {
+		journal, err := filepath.Abs(filepath.Join(writer.runDir, filepath.FromSlash(ref)))
+		if err == nil {
+			receipt := SemanticFailureReceipt{
+				Stage: value.exchange.Stage, Reason: value.reason, JournalPath: journal,
+				RequestPath:         filepath.Join(filepath.Dir(journal), filepath.FromSlash(record.Request.File)),
+				ResponseUnavailable: record.Response.UnavailableCode,
+				HTTPResponse:        record.HTTPResponse,
+				TransportAttempts:   record.TransportAttempts,
+				LatencyMS:           record.LatencyMS,
+			}
+			if receipt.ResponseUnavailable == "" {
+				receipt.ResponsePath = filepath.Join(filepath.Dir(journal), filepath.FromSlash(record.Response.File))
+			}
+			notice(receipt)
+		}
+	}
 	if len(value.rejections) == 0 {
 		return nil
 	}
@@ -49,6 +81,17 @@ func recordObservedResponse(writer *Writer, value observedResponse) error {
 
 func NewSemanticObserver(writer *Writer) *SemanticObserver {
 	return &SemanticObserver{writer: writer, ordinals: make(map[string]int)}
+}
+
+// SetFailureNotice installs a console-only notification after journal commit.
+// It cannot change acceptance, cache state or the result of recording.
+func (observer *SemanticObserver) SetFailureNotice(notice func(SemanticFailureReceipt)) {
+	if observer == nil {
+		return
+	}
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	observer.failureNotice = notice
 }
 
 // Observe satisfies llm.Observer. A stage owner must bind the observer before
@@ -74,12 +117,17 @@ func (observer *SemanticObserver) ObserveStage(stage string, event llm.Event) er
 		observer.instanceOrdinal = instanceOrdinal
 	}
 	writer := observer.writer
+	notice := observer.failureNotice
+	value := observedResponse{exchange: exchange, rejections: event.ResponseRejections, failed: event.Kind == llm.EventFailure, reason: string(event.Failure)}
+	if len(event.ResponseRejections) > 0 {
+		value.reason = event.ResponseRejections[0].Reason
+	}
 	if record && writer == nil {
-		observer.pending = append(observer.pending, observedResponse{exchange, event.ResponseRejections})
+		observer.pending = append(observer.pending, value)
 	}
 	observer.mu.Unlock()
 	if record && writer != nil {
-		return recordObservedResponse(writer, observedResponse{exchange, event.ResponseRejections})
+		return recordObservedResponse(writer, value, notice)
 	}
 	return nil
 }
@@ -94,9 +142,10 @@ func (observer *SemanticObserver) Flush(writer *Writer) {
 	observer.mu.Lock()
 	pending := append([]observedResponse(nil), observer.pending...)
 	observer.pending = nil
+	notice := observer.failureNotice
 	observer.mu.Unlock()
 	for _, value := range pending {
-		if err := recordObservedResponse(writer, value); err != nil {
+		if err := recordObservedResponse(writer, value, notice); err != nil {
 			writer.warnSemanticExchange(value.exchange.Stage)
 		}
 	}
@@ -141,6 +190,7 @@ func semanticExchangeForStageEventAt(
 		Stage:     stage, InstanceOrdinal: instanceOrdinal,
 		SemanticAttemptOrdinal: semanticAttemptOrdinal,
 		Request:                event.Request, Response: event.Response,
+		HTTPResponse: event.HTTPResponse.Clone(),
 		Latency:      event.Metrics.Latency,
 		InputTokens:  event.Metrics.InputTokens,
 		OutputTokens: event.Metrics.OutputTokens,

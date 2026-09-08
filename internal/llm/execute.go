@@ -277,6 +277,7 @@ func (recorder *batchFailureRecorder) first() (int, error) {
 func (buffer *batchEventBuffer) Observe(event Event) error {
 	event.Request = cloneBytes(event.Request)
 	event.Response = cloneBytes(event.Response)
+	event.HTTPResponse = event.HTTPResponse.Clone()
 	buffer.events = append(buffer.events, event)
 	return nil
 }
@@ -383,6 +384,7 @@ func executeLive[T any](
 	adapted *AdaptedResponse,
 ) (Outcome[T], error) {
 	completion, err := provider.Complete(ctx, prepared)
+	outcome.HTTPResponse = completion.HTTPResponse.Clone()
 	setOutcomeResponse(&outcome, completion.Response)
 	outcome.FinishReason = completion.FinishReason
 	outcome.ChoiceCount = completion.ChoiceCount
@@ -391,15 +393,19 @@ func executeLive[T any](
 		if isProviderOverload(err) {
 			CollapseProviderAttempts(ctx)
 		}
+		providerErr := newProviderError("complete", err, completion.Metrics.Attempts)
+		outcome.ResponseRejections = []ResponseRejection{{Kind: "provider_failed", Count: 1, Reason: providerErr.Error()}}
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureProvider, outcome.Issues)
-		return outcome, newProviderError("complete", err, completion.Metrics.Attempts)
+		return outcome, providerErr
 	}
 	if err := validateLiveCompletion(completion, limits); err != nil {
+		outcome.ResponseRejections = []ResponseRejection{{Kind: "response_envelope", Count: 1, Reason: err.Error()}}
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureResponse, outcome.Issues)
 		return outcome, err
 	}
 	value, err := decodeAcceptedJSON(decodeValidate, completion.Response)
 	if err != nil {
+		outcome.ResponseRejections = []ResponseRejection{{Kind: "response_validation", Count: 1, Reason: err.Error()}}
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureValidation, outcome.Issues)
 		return outcome, fmt.Errorf("llm: reject response: %w", err)
 	}
@@ -580,6 +586,7 @@ func eventForOutcome[T any](
 ) Event {
 	return Event{
 		ResponseRejections: outcome.ResponseRejections,
+		HTTPResponse:       outcome.HTTPResponse.Clone(),
 		Kind:               kind, Source: source, Failure: failure,
 		CacheKey: outcome.CacheKey,
 		Request:  cloneBytes(outcome.Request), RequestSHA256: outcome.RequestSHA256,
@@ -609,6 +616,7 @@ func observe(observer Observer, event Event, issues []Issue) []Issue {
 	}
 	event.Request = cloneBytes(event.Request)
 	event.Response = cloneBytes(event.Response)
+	event.HTTPResponse = event.HTTPResponse.Clone()
 	if err := observer.Observe(event); err != nil {
 		return append(issues, Issue{Kind: IssueObserver, Err: err})
 	}

@@ -173,6 +173,7 @@ type wireGroup struct {
 
 func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 	groups, variants := make(map[string]Entry), make(map[string]Candidate)
+	owners := make(map[string]string)
 	var wire []wireGroup
 	for i, entry := range window {
 		ref := fmt.Sprintf("g%d", i+1)
@@ -181,6 +182,7 @@ func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 		for _, candidate := range entry.Variants {
 			variant := fmt.Sprintf("v%d", len(variants)+1)
 			variants[variant] = candidate
+			owners[variant] = ref
 			group.Variants = append(group.Variants, wireVariant{Ref: variant, Name: candidate.Name, Explanation: candidate.Explanation,
 				Sources: candidate.Sources})
 		}
@@ -193,62 +195,50 @@ func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 		return llm.Call[[]Entry]{}, err
 	}
 	return llm.Call[[]Entry]{
-		State:  []byte(`{"stage":"glossary","version":3}`),
+		State:  []byte(`{"stage":"glossary","version":4}`),
 		Prompt: llm.Prompt{System: reducePrompt, User: string(user), ResponseFormatJSON: true},
 		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
 		DecodeValidate: func(raw []byte) ([]Entry, error) {
 			var response struct {
-				Groups []struct {
-					Members        []string `json:"members"`
-					Representative string   `json:"representative"`
-				} `json:"groups"`
+				Assignments []struct {
+					Ref            string `json:"ref"`
+					Representative string `json:"representative"`
+				} `json:"assignments"`
 			}
 			if err := json.Unmarshal(raw, &response); err != nil {
 				return nil, err
 			}
-			assigned, accepted := make(map[string]string), make(map[string]bool)
-			var result []Entry
-			for _, row := range response.Groups {
-				members := []string{}
-				for _, ref := range row.Members {
-					if _, known := groups[ref]; known && !slices.Contains(members, ref) {
-						members = append(members, ref)
-					}
-				}
-				if len(members) == 0 {
+			assigned := make(map[string]string)
+			for _, row := range response.Assignments {
+				if _, known := groups[row.Ref]; !known {
 					continue
 				}
-				sort.Strings(members)
-				representative, known := variants[row.Representative]
-				if !known {
+				if _, known := variants[row.Representative]; !known {
 					return nil, fmt.Errorf("glossary: missing representative")
 				}
-				var originals []Candidate
-				for _, ref := range members {
-					originals = append(originals, groups[ref].Variants...)
+				if previous, exists := assigned[row.Ref]; exists && previous != row.Representative {
+					return nil, fmt.Errorf("glossary: conflicting group assignment")
 				}
-				if !slices.ContainsFunc(originals, func(value Candidate) bool { return reflect.DeepEqual(value, representative) }) {
-					return nil, fmt.Errorf("glossary: representative is outside its group")
-				}
-				entry, err := makeEntry(representative.Explanation, originals)
-				if err != nil {
-					return nil, err
-				}
-				key := strings.Join(members, ",") + ":" + entry.ID
-				if accepted[key] {
-					continue
-				}
-				for _, ref := range members {
-					if previous, exists := assigned[ref]; exists && previous != key {
-						return nil, fmt.Errorf("glossary: conflicting group assignment")
-					}
-					assigned[ref] = key
-				}
-				accepted[key] = true
-				result = append(result, entry)
+				assigned[row.Ref] = row.Representative
 			}
 			if len(assigned) != len(groups) {
 				return nil, fmt.Errorf("glossary: response omits original groups")
+			}
+			joined := make(map[string][]Candidate)
+			for _, group := range wire {
+				representative := assigned[group.Ref]
+				if assigned[owners[representative]] != representative {
+					return nil, fmt.Errorf("glossary: representative is outside its group")
+				}
+				joined[representative] = append(joined[representative], groups[group.Ref].Variants...)
+			}
+			var result []Entry
+			for representative, originals := range joined {
+				entry, err := makeEntry(variants[representative].Explanation, originals)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, entry)
 			}
 			sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 			return result, nil

@@ -1768,7 +1768,16 @@ same optional-metadata boundary on live responses, warm reuse and replay.
 The ordinary run shares one collector across analytical stages. After analysis,
 an aggregate closed-ref reducer joins compatible domain definitions and chooses
 one original explanation. Go unions original spellings and sources and retains
-all variants and request provenance. It does not classify translation policies.
+all variants and request provenance. Reduction request v4 asks for one
+`{ref, representative}` assignment per input group. The representative is a
+closed original variant ref; equal choices identify one output group. The group
+owning that variant must make the same choice. Missing inputs, conflicting
+assignments, chains and cycles refuse the whole window; no transitive repair or
+local insertion supplies an omitted choice. Identical repeated assignments are
+idempotent and unknown input refs are discarded. This replaces the model's
+redundant output-members list after two PyKrx responses omitted its first
+singleton group. Earlier accepted groups stay indivisible and all original
+variants remain visible to later comparisons. It does not classify translation policies.
 Equal names alone never establish equal meanings. Complete groups partition only
 when the provider envelope requires it; a nonshrinking round records partial
 comparison. A refused model window leaves its already accepted input definitions
@@ -1782,6 +1791,15 @@ exact declaration can retain memberships in several components.
 `ReportData.Glossary` hold the sealed domain catalogue. Reduction and translation
 use the base provider without recursively collecting another glossary. Saved
 `read` collects candidates without stages beyond the requested stop.
+
+The ordinary run output and static glossary now expose the saved partial
+comparison state. The glossary uses one quiet localized explanation before its
+list; successful complete comparisons show no notice. This projects the existing
+catalogue flag and introduces no new stored report format or provider request.
+Live validation, provider and completion-envelope failures also write a rejection
+record with an exact exchange link. Domain validation retains its actual reason;
+provider failures use the existing closed error description, never raw transport
+error text. Refused responses still cannot enter the accepted response cache.
 
 Report format is v85; question readings v9 retain the accepted final-answer
 request digest and exact result row for contextual term bindings. Domain glossary
@@ -2208,10 +2226,21 @@ The final-template ordinary rerun `20260908-162337-pykrx-ecc82f67a93c` took
 56.031 seconds and reused Learn, answers and translations. It still made one
 glossary call: both runs' reduction responses omitted the first group and were
 refused, preserving all 81 original entries with partial-comparison scope.
-Rejected answers are not cached. This leaves repeated similar explanations in
-the report and an observability gap: the exchange records the rejection while
-the stage summary reports ready. A warm ordinary analysis is therefore not
-claimed to be provider-free. Saved presentation rendering remains provider-free.
+Rejected answers were not cached, leaving repeated similar explanations and a
+stage summary that incorrectly reported ready for a partial comparison. The
+v4 assignment reduction and explicit partial-comparison display above address
+those two defects. Ordinary acceptance `20260908-171343-pykrx-38058edc7fdd`
+then retained all 81 original variants in 34 domain entries, including the
+previously omitted BLD singleton and all seven KRX variants in one entry.
+The complete 22-target report published in 185.003 seconds with two live
+requests: reduction (4.962s) and translation of 746 display texts (113.497s).
+Other analysis reused its accepted cache. Saved presentation rendering remains
+provider-free.
+The subsequent ordinary warm run `20260908-173859-pykrx-9a46f8f35679`
+published all 22 targets in 69.591 seconds with zero live provider calls across
+their journals (17 accepted exchange cache hits). Its 746-text translation took
+110ms; the complete saved translation and 34-entry/81-variant glossary are
+identical to the preceding acceptance.
 
 A separate single-decision Learn menu experiment retained the same 19 candidate
 questions and all eight curated goals without a quota. It selected 14 in
@@ -3198,8 +3227,14 @@ Remaining integration work: ordinary repository-state capture still requires
 a Git HEAD, and claims extraction and report validation still require a
 revision. A filesystem corpus works without Git; the complete ordinary command
 does not yet. Those stages need optional Git metadata and content identities
-for untracked inputs before Git-free execution and static-link correctness are
-complete. Corpus tests cover identical inventory before Git init, before the
+for untracked inputs before Git-free execution is complete. Standalone GitHub
+and GitLab publication now checks every readable corpus path against the exact
+captured revision, using a single NUL-delimited Git tree inventory and the
+analysis root's repository-relative prefix. An absent path fails before target
+work with its path and revision; excluded or unrelated files do not block the
+run. Local serving still reads the analyzed working tree. This complements the
+existing tracked-change and submodule checks without removing new sources from
+the corpus. Corpus tests cover identical inventory before Git init, before the
 first commit and after a commit; they do not stand in for that integration.
 
 Before any short file identity exists, collection excludes `.npmrc`, every
@@ -3848,6 +3883,27 @@ physical HTML; the originally selected default remains the logical default in
 the outcome portfolio. If every selected target fails, diagnostics are
 retained but no targetless report is invented.
 
+The final publication-failure block preserves the successfully analyzed target
+count and shows the original wrapped failure reason. It links the owner run's
+existing `rejected.jsonl` and semantic exchange directory when available.
+These are console diagnostics, not raw-error fields in TargetOutcomePortfolio;
+the original error still propagates unchanged.
+
+After a failed model exchange is committed, the same journal recorder supplies
+direct absolute request, raw-response and journal paths to the run console.
+An unavailable body is identified explicitly rather than linking its marker as
+raw content. Buffered first-layer failures notify only after their journal is
+flushed; accepted answers with discarded optional terminology do not emit a
+failure notice. Payloads are not copied or reformatted for the console.
+The provider carries the last transport attempt's HTTP status and selected
+diagnostic response headers through the shared executor into this journal and
+notice. Request/trace/correlation IDs, retry/rate-limit headers, date and server
+are retained; request headers, authorization, cookies and arbitrary token/key
+headers are not collected. Total attempts and elapsed time still describe the
+whole completion. HTTP metadata is diagnostic only and changes neither request
+identity nor accepted-cache records; a warm hit makes no claim about a new HTTP
+response. Raw HTTP error bodies remain exact, including non-JSON 500 responses.
+
 ## Persistence and publication
 
 Manifest version 40 records the repository and publication source. Across a
@@ -4055,6 +4111,32 @@ the receipt carries it in memory. The server restores the same values when it
 re-renders source links. UI translation is an embedded dictionary, not another
 model call. `--no-model` must still make zero provider calls and uses only that
 dictionary. Initial supported display languages are `en` and `ru`.
+
+Translation now reports each adaptive request-plan size and its closing count
+of new logical model calls versus accepted cache hits, using the existing
+shared timing observer. Failed live calls count as new; HTTP transport retries
+are still recorded separately in exchange metrics. A local 1,310-text regression
+retains the complete catalogue and confirms zero new calls on exact warm reuse.
+This does not establish the cause of the owner's separate-machine failure;
+semantic refusals remain uncached and their actual reason is now journaled.
+
+The shared adaptive executor now persists only an actual context/output/response
+resource-refusal observation for an exact request that its owner can divide.
+Previously each run retried that oversized parent even when all child responses
+were already cached. The memo includes exact provider bytes, canonical provider
+state and all envelope limits in its identity; its value contains only version
+and resource kind. Current stage code always rebuilds the full child plan and
+each child still needs its own valid answer. Semantic refusals do not create a
+split observation; accepted whole-parent cache/replay takes precedence. NoCache
+bypasses the memo and ordinary cache clear removes it. This is separate from
+Learn's existing positive partition memo and does not alter that stage.
+The owning Translate regression processes all 1,310 original texts in two
+complete children after one real-shaped fake-provider resource refusal; a new
+executor/provider over the same cache makes zero calls and returns an identical
+translation. Nested shared-executor tests cover all three resource kinds,
+ordering, absent child answers, changed limits, replay, NoCache and cache clear.
+There is no migration of earlier journals: an old oversized request can still
+need one refusal after upgrading before this observation exists.
 
 Real browser checks found and corrected a filtered-search empty state that hid
 matches in other categories, indistinguishable operation choices with the same

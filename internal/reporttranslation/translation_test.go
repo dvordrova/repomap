@@ -173,7 +173,9 @@ func plainEntries(count int) []report.DisplayTextEntry {
 }
 
 func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
-	entries := plainEntries(600)
+	// Match the reported 1,310-text catalogue: its count alone must neither
+	// split the request nor prevent exact accepted-response reuse.
+	entries := plainEntries(1310)
 	entries[0].Text = "__REPOMAP_P1__ may call __REPOMAP_P1__.\n\nOnly if possible."
 	entries[0].Protected = []report.DisplayProtectedText{{Ref: "__REPOMAP_P1__", Text: "SOURCE-ORIGINAL-NEVER-SENT"}}
 	catalog := testCatalog(t, entries)
@@ -184,7 +186,7 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 		}
 		response.Translations = append(response.Translations,
 			response.Translations[0], // Exact duplicates are one set member.
-			responseEntry{Ref: "t999", Text: "__REPOMAP_P999__"},
+			responseEntry{Ref: "t999999", Text: "__REPOMAP_P999__"},
 		)
 		return response
 	}}
@@ -198,7 +200,7 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(provider.requests) != 1 {
-		t.Fatalf("requests = %d, want all 600 complete entries in one request", len(provider.requests))
+		t.Fatalf("requests = %d, want all %d complete entries in one request", len(provider.requests), len(entries))
 	}
 	if err := result.Validate(catalog); err != nil {
 		t.Fatal(err)

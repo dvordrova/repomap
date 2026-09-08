@@ -197,6 +197,7 @@ type SemanticExchange struct {
 	Request             []byte
 	Response            []byte
 	ResponseUnavailable *SemanticUnavailable
+	HTTPResponse        *llm.HTTPResponse
 	Outcome             SemanticOutcome
 }
 
@@ -236,6 +237,7 @@ type SemanticExchangeRecord struct {
 	Outcome                SemanticOutcome       `json:"outcome"`
 	Request                SemanticPayloadRecord `json:"request"`
 	Response               SemanticPayloadRecord `json:"response"`
+	HTTPResponse           *llm.HTTPResponse     `json:"http_response,omitempty"`
 }
 
 type semanticPayloadMarker struct {
@@ -466,18 +468,24 @@ func (w *Writer) writePreparedRootFile(name string, data []byte) error {
 // A write failure is deliberately not returned to semantic execution; instead
 // one bounded warning is emitted for the closed stage in this writer.
 func (w *Writer) RecordSemanticExchange(exchange SemanticExchange) string {
+	ref, _ := w.recordSemanticExchange(exchange)
+	return ref
+}
+
+func (w *Writer) recordSemanticExchange(exchange SemanticExchange) (string, *SemanticExchangeRecord) {
 	if w == nil {
-		return ""
+		return "", nil
 	}
-	if err := w.writeSemanticExchange(exchange, nil); err != nil {
+	record, err := w.writeSemanticExchange(exchange, nil)
+	if err != nil {
 		w.warnSemanticExchange(exchange.Stage)
-		return ""
+		return "", nil
 	}
 	return filepath.ToSlash(filepath.Join(
 		SemanticExchangesDir,
 		semanticExchangeKey(exchange),
 		SemanticExchangeMetaFile,
-	))
+	)), record
 }
 
 // SetWarningWriter routes bounded recorder warnings. A nil writer restores the
@@ -497,13 +505,13 @@ func (w *Writer) SetWarningWriter(writer io.Writer) {
 func (w *Writer) writeSemanticExchange(
 	exchange SemanticExchange,
 	afterPayloads func() error,
-) error {
+) (*SemanticExchangeRecord, error) {
 	if err := validateSemanticExchange(exchange); err != nil {
-		return err
+		return nil, err
 	}
 	request, err := prepareSemanticPayload("request", exchange.Request, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	response, err := prepareSemanticPayload(
 		"response",
@@ -511,7 +519,7 @@ func (w *Writer) writeSemanticExchange(
 		exchange.ResponseUnavailable,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	record := SemanticExchangeRecord{
 		Version: semanticExchangeVersion,
@@ -525,18 +533,19 @@ func (w *Writer) writeSemanticExchange(
 		InputTokens: exchange.InputTokens, OutputTokens: exchange.OutputTokens,
 		Outcome: normalizedSemanticOutcome(exchange),
 		Request: request.record, Response: response.record,
+		HTTPResponse: exchange.HTTPResponse,
 	}
 	w.semanticMu.Lock()
 	defer w.semanticMu.Unlock()
 	if w.root == nil {
-		return fmt.Errorf("debug writer is closed")
+		return nil, fmt.Errorf("debug writer is closed")
 	}
 	if err := w.root.MkdirAll(SemanticExchangesDir, 0o700); err != nil {
-		return fmt.Errorf("create semantic exchange directory: %w", err)
+		return nil, fmt.Errorf("create semantic exchange directory: %w", err)
 	}
 	directory := filepath.Join(SemanticExchangesDir, semanticExchangeKey(exchange))
 	if err := w.root.Mkdir(directory, 0o700); err != nil {
-		return fmt.Errorf("create semantic exchange: %w", err)
+		return nil, fmt.Errorf("create semantic exchange: %w", err)
 	}
 	committed := false
 	defer func() {
@@ -554,34 +563,34 @@ func (w *Writer) writeSemanticExchange(
 	}{{request.data, &record.Request}, {response.data, &record.Response}} {
 		filename, err := llm.SavePayload(cacheRoot, payload.data)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		entryDir, err := filepath.Abs(filepath.Join(w.runDir, directory))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		relative, err := filepath.Rel(entryDir, filename)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		payload.record.File = filepath.ToSlash(relative)
 	}
 	if afterPayloads != nil {
 		if err := afterPayloads(); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	// Metadata is the commit marker and is always published last.
 	metadata, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode semantic exchange metadata: %w", err)
+		return nil, fmt.Errorf("encode semantic exchange metadata: %w", err)
 	}
 	metadata = append(metadata, '\n')
 	if err := w.writePreparedRootFile(filepath.Join(directory, SemanticExchangeMetaFile), metadata); err != nil {
-		return err
+		return nil, err
 	}
 	committed = true
-	return nil
+	return &record, nil
 }
 
 func (w *Writer) warnSemanticExchange(stage string) {

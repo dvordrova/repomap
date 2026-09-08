@@ -18,9 +18,9 @@ import (
 
 // CaptureRepository records the checked-out commit plus exact content
 // identities for tracked working-tree changes. It consumes submodule index
-// authority from the already-built corpus and never inventories tracked paths
-// again. Untracked and ignored paths are outside the shared repository corpus
-// and therefore outside this authority.
+// authority from the already-built corpus. Untracked and ignored corpus paths
+// do not enter this tracked-change state; standalone links separately check
+// that every readable corpus path exists in the captured revision.
 func CaptureRepository(
 	ctx context.Context,
 	path string,

@@ -39,16 +39,17 @@ type pageView struct {
 	CSS           template.CSS
 	JS            template.JS
 
-	Summary             *pageSentence
-	SummaryMissing      string
-	Questions           []*pageQuestion
-	LearningNote        string
-	LearningReviews     []pageLearningReview
-	LearningSelections  []pageLearningReview
-	LearnBands          []pageLearnBand
-	LearnConcepts       []pageLearnConcept
-	Glossary            []pageGlossaryTerm
-	LearnQuestionTopics []pageLearnQuestionTopic
+	Summary                   *pageSentence
+	SummaryMissing            string
+	Questions                 []*pageQuestion
+	LearningNote              string
+	LearningReviews           []pageLearningReview
+	LearningSelections        []pageLearningReview
+	LearnBands                []pageLearnBand
+	LearnConcepts             []pageLearnConcept
+	Glossary                  []pageGlossaryTerm
+	GlossaryPartialComparison bool
+	LearnQuestionTopics       []pageLearnQuestionTopic
 	// Figures are the few counts worth reading before anything else: how much
 	// of the repository was read, how big it is, and what it exposes. They
 	// are the first thing on the page that is not a sentence, because a

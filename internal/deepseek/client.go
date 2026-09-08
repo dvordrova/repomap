@@ -430,6 +430,7 @@ func (c *Client) startWaitProgress(ctx context.Context, stage string) func() {
 
 type chatCompletion struct {
 	Content               []byte
+	HTTPResponse          *llm.HTTPResponse
 	ResponseBytes         int
 	UsageReported         bool
 	InputTokens           int
@@ -464,18 +465,19 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		retry := isRetryableNetworkError(err) || retryableTimeout(ctx, err)
-		return chatCompletion{}, retry, newProviderTransportError(
+		return chatCompletion{HTTPResponse: httpResponseDiagnostics(resp)}, retry, newProviderTransportError(
 			providerNetworkFailureKind(err), 0, fmt.Errorf("llm request failed: %w", err),
 		)
 	}
 	defer resp.Body.Close()
+	httpResponse := httpResponseDiagnostics(resp)
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
 		// A body that arrives too slowly hits the same per-attempt bound as a
 		// request that never answered, and is worth the same second attempt.
 		retry := isRetryableNetworkError(err) || retryableTimeout(ctx, err)
-		return chatCompletion{}, retry, newProviderTransportError(
+		return chatCompletion{HTTPResponse: httpResponse}, retry, newProviderTransportError(
 			providerNetworkFailureKind(err), 0, fmt.Errorf("read llm response: %w", err),
 		)
 	}
@@ -490,12 +492,12 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			resourceErr.HTTPStatus = resp.StatusCode
 		}
-		return chatCompletion{ResponseBytes: len(respBody)}, false, resourceErr
+		return chatCompletion{ResponseBytes: len(respBody), HTTPResponse: httpResponse}, false, resourceErr
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if resourceErr := providerContextLimit(resp.StatusCode, respBody); resourceErr != nil {
-			return chatCompletion{Content: append([]byte(nil), respBody...), ResponseBytes: len(respBody)}, false, resourceErr
+			return chatCompletion{Content: append([]byte(nil), respBody...), ResponseBytes: len(respBody), HTTPResponse: httpResponse}, false, resourceErr
 		}
 		retry := isRetryableHTTP(resp.StatusCode)
 		retryAfter := retryAfterDuration(resp.Header.Get("Retry-After"), time.Now())
@@ -505,6 +507,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		return chatCompletion{
 			Content:       append([]byte(nil), respBody...),
 			ResponseBytes: len(respBody),
+			HTTPResponse:  httpResponse,
 			retryAfter:    retryAfter,
 		}, retry, newProviderTransportError(
 			llm.ProviderFailureHTTPStatus,
@@ -518,6 +521,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		return chatCompletion{
 			Content:       append([]byte(nil), respBody...),
 			ResponseBytes: len(respBody),
+			HTTPResponse:  httpResponse,
 		}, false, newProviderTransportError(
 			llm.ProviderFailureResponse, 0, fmt.Errorf("%w: %v", errResponseEnvelopeMalformed, err),
 		)
@@ -529,6 +533,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	}
 	completion := chatCompletion{
 		ResponseBytes:         len(respBody),
+		HTTPResponse:          httpResponse,
 		ChoiceCount:           len(parsed.Choices),
 		UsageReported:         usageReported,
 		InputTokens:           usage.PromptTokens,

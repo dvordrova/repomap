@@ -8,7 +8,6 @@ import (
 	"html/template"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 
@@ -43,30 +42,22 @@ func (provider *glossaryReductionFixtureProvider) Complete(_ context.Context, pr
 		return llm.Completion{}, err
 	}
 	type row struct {
-		Members        []string `json:"members"`
-		Representative string   `json:"representative"`
+		Ref            string `json:"ref"`
+		Representative string `json:"representative"`
 	}
-	rows := make(map[string]*row)
+	representatives := make(map[string]string)
+	output := struct {
+		Assignments []row `json:"assignments"`
+	}{}
 	for _, group := range input.Groups {
 		if len(group.Variants) != 1 {
 			return llm.Completion{}, fmt.Errorf("native identity or unexpected fixture group entered meaning reduction")
 		}
 		variant := group.Variants[0]
-		if rows[variant.Name] == nil {
-			rows[variant.Name] = &row{Representative: variant.Ref}
+		if representatives[variant.Name] == "" {
+			representatives[variant.Name] = variant.Ref
 		}
-		rows[variant.Name].Members = append(rows[variant.Name].Members, group.Ref)
-	}
-	var names []string
-	for name := range rows {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	output := struct {
-		Groups []*row `json:"groups"`
-	}{}
-	for _, name := range names {
-		output.Groups = append(output.Groups, rows[name])
+		output.Assignments = append(output.Assignments, row{group.Ref, representatives[variant.Name]})
 	}
 	raw, err := json.Marshal(output)
 	return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err

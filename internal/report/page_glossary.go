@@ -78,6 +78,7 @@ func (builder *pageBuilder) reducedGlossary(view *pageView) error {
 	if err := catalog.Validate(); err != nil {
 		return fmt.Errorf("report: glossary: %w", err)
 	}
+	view.GlossaryPartialComparison = catalog.PartialComparison
 	// Native declaration entries already have their complete anchors and links.
 	// Domain reduction only adds its own accepted definitions.
 	usedIDs := make(map[string]bool)

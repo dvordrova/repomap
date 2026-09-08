@@ -98,6 +98,7 @@ const (
 // domain JSON contained in Response.
 type Completion struct {
 	Response     []byte
+	HTTPResponse *HTTPResponse
 	FinishReason FinishReason
 	ChoiceCount  int
 	Metrics      Metrics
@@ -122,9 +123,9 @@ type ResponseAdapter interface {
 	AdaptResponse(request, response []byte) (AdaptedResponse, error)
 }
 
-// ResponseRejection is a content-free explanation of discarded metadata.
-// The ordinary observer records these beside the exact exchange, without
-// treating them as another model call or as a failed domain response.
+// ResponseRejection explains a refused domain response or discarded optional
+// metadata. The ordinary observer records it beside the exact exchange without
+// copying the raw response or treating it as another model call.
 type ResponseRejection struct {
 	Kind    string   `json:"kind"`
 	Count   int      `json:"count"`
@@ -229,10 +230,12 @@ const (
 	FailureCache      FailureKind = "cache"
 )
 
-// Event contains only exact semantic request/response bytes, measurements,
-// and SHA-256 cache identity. Provider and cube state bytes are excluded.
+// Event contains exact semantic request/response bytes, measurements, SHA-256
+// cache identity and optional safe HTTP response diagnostics. Provider/cube
+// state bytes and credentials are excluded.
 type Event struct {
 	ResponseRejections []ResponseRejection
+	HTTPResponse       *HTTPResponse
 	// CacheRoot selects the shared exchange store for a run journal.
 	CacheRoot      string
 	Kind           EventKind
@@ -293,6 +296,7 @@ func (issue Issue) Unwrap() error {
 // ExecuteJSON means Value has passed the cube's decoder and validation.
 type Outcome[T any] struct {
 	ResponseRejections []ResponseRejection
+	HTTPResponse       *HTTPResponse
 	Value              T
 	CacheKey           string
 	Cached             bool

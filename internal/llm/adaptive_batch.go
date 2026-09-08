@@ -48,11 +48,11 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 	split func(Item) (Item, Item, bool),
 ) ([]Item, []Outcome[Value], AdaptiveBatchAccounting, error) {
 	plan := append([]Item(nil), items...)
-	if executor.PlanNotice != nil {
-		executor.PlanNotice(len(plan))
-	}
 	var accounting AdaptiveBatchAccounting
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, accounting, err
+		}
 		calls, err := build(plan)
 		if err != nil {
 			return nil, nil, accounting, err
@@ -63,6 +63,28 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 				len(calls), len(plan),
 			)
 		}
+		replanned := false
+		for index, call := range calls {
+			found, err := loadAdaptiveSplit(executor, provider, call)
+			if err != nil {
+				return nil, nil, accounting, err
+			}
+			if !found {
+				continue
+			}
+			left, right, ok := split(plan[index])
+			if ok {
+				plan = replaceAdaptiveItem(plan, index, left, right)
+				replanned = true
+				break // Rebuild all calls from the current owner's complete plan.
+			}
+		}
+		if replanned {
+			continue
+		}
+		if executor.PlanNotice != nil {
+			executor.PlanNotice(len(plan))
+		}
 		outcomes, err := ExecuteJSONBatch(ctx, executor, provider, calls)
 		if err == nil {
 			return plan, outcomes, accounting, nil
@@ -72,21 +94,32 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 		var resourceErr *ResourceLimitError
 		if !errors.As(err, &itemErr) || itemErr.Index < 0 || itemErr.Index >= len(plan) ||
 			!errors.As(err, &resourceErr) ||
-			(resourceErr.Kind != ResourceLimitResponseBytes &&
-				resourceErr.Kind != ResourceLimitOutputTokens &&
-				resourceErr.Kind != ResourceLimitContextTokens) {
+			!adaptiveSplitKind(resourceErr.Kind) {
+			return nil, nil, accounting, err
+		}
+		// Only a transport resource refusal authorizes a persistent split.
+		// A semantic validator returning a typed resource error is not one.
+		providerErr, providerFailure := itemErr.Err.(*ProviderError)
+		if !providerFailure || providerErr.Operation != "complete" {
 			return nil, nil, accounting, err
 		}
 		left, right, ok := split(plan[itemErr.Index])
 		if !ok {
 			return nil, nil, accounting, err
 		}
-		next := make([]Item, 0, len(plan)+1)
-		next = append(next, plan[:itemErr.Index]...)
-		next = append(next, left, right)
-		next = append(next, plan[itemErr.Index+1:]...)
-		plan = next
+		if err := saveAdaptiveSplit(executor, provider, outcomes[itemErr.Index].Request,
+			calls[itemErr.Index].Limits, resourceErr.Kind); err != nil {
+			return nil, nil, accounting, err
+		}
+		plan = replaceAdaptiveItem(plan, itemErr.Index, left, right)
 	}
+}
+
+func replaceAdaptiveItem[Item any](plan []Item, index int, left, right Item) []Item {
+	next := make([]Item, 0, len(plan)+1)
+	next = append(next, plan[:index]...)
+	next = append(next, left, right)
+	return append(next, plan[index+1:]...)
 }
 
 func addDiscardedRound[Value any](accounting *AdaptiveBatchAccounting, outcomes []Outcome[Value]) {

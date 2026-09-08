@@ -166,6 +166,20 @@ type failedConsoleWriter struct{}
 
 func (failedConsoleWriter) Write([]byte) (int, error) { return 0, errors.New("not written") }
 
+func TestModelCallSummaryIncludesCacheAndEmptyStage(t *testing.T) {
+	output := newRunOutput(&bytes.Buffer{})
+	if got := output.modelCallSummary("translation"); got != "provider requests: 0 new, 0 reused from cache" {
+		t.Fatal(got)
+	}
+	output.ModelCall("translation", time.Second, false)
+	output.ModelCall("translation", 0, true)
+	output.ModelCall("translation", 0, true)
+	output.ModelCall("other", time.Second, false)
+	if got := output.modelCallSummary("translation"); got != "provider requests: 1 new, 2 reused from cache" {
+		t.Fatal(got)
+	}
+}
+
 func TestModelWaitUsesRunClockAcrossRequestsAndConcurrentCallbacks(t *testing.T) {
 	var buffer bytes.Buffer
 	output := newRunOutput(&buffer)

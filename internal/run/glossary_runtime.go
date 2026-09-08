@@ -52,7 +52,11 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 	if err := writeGlossaryArtifact(runDir, "glossary.json", catalog); err != nil {
 		return err
 	}
-	options.Output.State("Glossary", "ready", fmt.Sprintf("%d entries", len(catalog.Entries)), formatRunOutputWallDuration(time.Since(started)))
+	state := "ready"
+	if catalog.PartialComparison {
+		state = "partial comparison; original explanations preserved"
+	}
+	options.Output.State("Glossary", state, fmt.Sprintf("%d entries", len(catalog.Entries)), formatRunOutputWallDuration(time.Since(started)))
 	return nil
 }
 

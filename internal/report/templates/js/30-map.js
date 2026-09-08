@@ -293,7 +293,9 @@
   for (var index = 0; index < maps.length; index++) {
     bindReading(maps[index]);
   }
-  function escapeText(text) {var span=document.createElement('span');span.textContent=text||'';return span.innerHTML;}
+  // These fragments contain both text and quoted attributes. Text-node HTML
+  // serialization alone leaves quotes intact and cannot protect data-open.
+  function escapeText(text) {return String(text||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function titleOf(node) {
     if (node.dataset.title) return node.dataset.title;
     var lines = node.querySelectorAll('.map-node-title');

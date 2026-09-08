@@ -12,7 +12,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/modeldiag"
 )
 
 type reductionProvider struct {
@@ -41,7 +43,7 @@ func (provider *reductionProvider) Prepare(prompt llm.Prompt, limits llm.Limits)
 	if provider.prepareError != nil {
 		return llm.Prepared{}, provider.prepareError
 	}
-	if limits.MaxOutputTokens != llm.DefaultMaxOutputTokens || limits.MaxRequestBytes != llm.SemanticRecordByteLimit || !prompt.ResponseFormatJSON {
+	if limits.MaxOutputTokens != llm.DefaultMaxOutputTokens || limits.MaxRequestBytes != llm.SemanticRecordByteLimit || !prompt.ResponseFormatJSON || !strings.Contains(strings.ToLower(prompt.System), "json") {
 		return llm.Prepared{}, fmt.Errorf("wrong shared request envelope")
 	}
 	var request struct {
@@ -83,28 +85,24 @@ func (provider *reductionProvider) Complete(_ context.Context, prepared llm.Prep
 	for _, group := range request.Groups {
 		for _, variant := range group.Variants {
 			if variant.Name == provider.rejectName {
-				response = `{"groups":[]}`
+				response = `{"assignments":[]}`
 			}
 		}
 	}
 	if response == "" {
-		type group struct {
-			Members        []string `json:"members"`
-			Representative string   `json:"representative"`
+		type assignment struct {
+			Ref            string `json:"ref"`
+			Representative string `json:"representative"`
 		}
 		result := struct {
-			Groups []group `json:"groups"`
+			Assignments []assignment `json:"assignments"`
 		}{}
-		if provider.merge {
-			joined := group{Representative: request.Groups[0].Variants[0].Ref}
-			for _, item := range request.Groups {
-				joined.Members = append(joined.Members, item.Ref)
+		for _, item := range request.Groups {
+			representative := item.Variants[0].Ref
+			if provider.merge {
+				representative = request.Groups[0].Variants[0].Ref
 			}
-			result.Groups = append(result.Groups, joined)
-		} else {
-			for _, item := range request.Groups {
-				result.Groups = append(result.Groups, group{[]string{item.Ref}, item.Variants[0].Ref})
-			}
+			result.Assignments = append(result.Assignments, assignment{item.Ref, representative})
 		}
 		encoded, _ := json.Marshal(result)
 		response = string(encoded)
@@ -171,12 +169,14 @@ func TestReduceClosedReferencesAndCompleteCoverage(t *testing.T) {
 		name, response string
 		valid          bool
 	}{
-		{"unknown members and duplicate set values", `{"groups":[{"members":["g1","g1","g999"],"representative":"v1"},{"members":["unknown"],"representative":"unknown"},{"members":["g2"],"representative":"v2"}]}`, true},
-		{"missing original", `{"groups":[{"members":["g1"],"representative":"v1"}]}`, false},
-		{"unknown representative", `{"groups":[{"members":["g1","g2"],"representative":"unknown"}]}`, false},
-		{"representative outside group", `{"groups":[{"members":["g1"],"representative":"v2"},{"members":["g2"],"representative":"v2"}]}`, false},
-		{"conflicting group assignment", `{"groups":[{"members":["g1","g2"],"representative":"v1"},{"members":["g2"],"representative":"v2"}]}`, false},
-		{"identical repeated assignment", `{"groups":[{"members":["g1"],"representative":"v1"},{"members":["g1"],"representative":"v1"},{"members":["g2"],"representative":"v2"}]}`, true},
+		{"unknown group", `{"assignments":[{"ref":"g1","representative":"v1"},{"ref":"unknown","representative":"unknown"},{"ref":"g2","representative":"v2"}]}`, true},
+		{"missing first original", `{"assignments":[{"ref":"g2","representative":"v2"}]}`, false},
+		{"missing last original", `{"assignments":[{"ref":"g1","representative":"v1"}]}`, false},
+		{"unknown representative", `{"assignments":[{"ref":"g1","representative":"unknown"},{"ref":"g2","representative":"v2"}]}`, false},
+		{"cyclic representatives", `{"assignments":[{"ref":"g1","representative":"v2"},{"ref":"g2","representative":"v1"}]}`, false},
+		{"conflicting group assignment", `{"assignments":[{"ref":"g1","representative":"v1"},{"ref":"g1","representative":"v2"},{"ref":"g2","representative":"v2"}]}`, false},
+		{"reverse conflicting assignment", `{"assignments":[{"ref":"g1","representative":"v2"},{"ref":"g1","representative":"v1"},{"ref":"g2","representative":"v2"}]}`, false},
+		{"identical repeated assignment", `{"assignments":[{"ref":"g1","representative":"v1"},{"ref":"g1","representative":"v1"},{"ref":"g2","representative":"v2"}]}`, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, decodeErr := call.DecodeValidate([]byte(test.response))
@@ -213,6 +213,87 @@ func TestReduceClosedReferencesAndCompleteCoverage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestReductionAssignmentsKeepWholeGroupsAndRepresentativeOwnership(t *testing.T) {
+	finance := []Candidate{termCandidate("bank", "A financial institution.", "finance.py"), termCandidate("banking institution", "A deposit-taking institution.", "finance.py")}
+	land := termCandidate("bank", "The land beside a river.", "river.py")
+	alias := termCandidate("river bank", "The land beside a river.", "river.py")
+	var entries []Entry
+	for _, variants := range [][]Candidate{finance, {land}, {alias}} {
+		entry, err := makeEntry(variants[0].Explanation, variants)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, entry)
+	}
+	call, err := reductionCall(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := call.DecodeValidate([]byte(`{"assignments":[{"ref":"g1","representative":"v2"},{"ref":"g2","representative":"v3"},{"ref":"g3","representative":"v3"}]}`))
+	if err != nil || len(got) != 2 {
+		t.Fatalf("same-spelling senses or alias grouping changed: %+v / %v", got, err)
+	}
+	var originals []Candidate
+	for _, entry := range got {
+		if len(entry.Variants) != 2 {
+			t.Fatal("an earlier group was split or an alias omitted")
+		}
+		originals = append(originals, entry.Variants...)
+	}
+	want, _ := normalizeCandidates(append(append([]Candidate(nil), finance...), land, alias))
+	actual, _ := normalizeCandidates(originals)
+	if !reflect.DeepEqual(want, actual) {
+		t.Fatal("assignment changed original meanings, sources or provenance")
+	}
+	for _, invalid := range []string{
+		`{"assignments":[{"ref":"g1","representative":"v3"},{"ref":"g2","representative":"v4"},{"ref":"g3","representative":"v4"}]}`,
+		`{"assignments":[{"ref":"g1","representative":"v3"},{"ref":"g2","representative":"v2"},{"ref":"g3","representative":"v4"}]}`,
+	} {
+		if _, err := call.DecodeValidate([]byte(invalid)); err == nil {
+			t.Fatal("representative chain or cycle was repaired into an accepted grouping")
+		}
+	}
+}
+
+func TestRefusedGlossaryRecordsItsReasonAndExactResponse(t *testing.T) {
+	root := t.TempDir()
+	writer, err := debugdump.NewWriter(root, "glossary-refused")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	executor := debugdump.BindStage(llm.Executor{Enabled: true, RootDir: root, Observer: debugdump.NewSemanticObserver(writer)}, StageName)
+	provider := &reductionProvider{response: `{"assignments":[{"ref":"g2","representative":"v2"}]}`}
+	items := []Candidate{termCandidate("BLD", "An endpoint identifier.", "README.md"), termCandidate("KRX", "The exchange.", "README.md")}
+	got, err := Reduce(t.Context(), executor, provider, items)
+	if err != nil || !got.PartialComparison || len(got.Entries) != 2 || len(got.Requests) != 0 {
+		t.Fatalf("refused grouping changed accepted definitions: %+v / %v", got, err)
+	}
+	runDir := filepath.Join(root, "glossary-refused")
+	rows, err := modeldiag.Read(runDir)
+	if err != nil || len(rows) != 1 || rows[0].Stage != StageName || rows[0].Kind != "response_validation" || rows[0].Reason != "glossary: response omits original groups" || rows[0].ResponseRef == "" {
+		t.Fatalf("rejection reason is not discoverable: %+v / %v", rows, err)
+	}
+	journalPath := filepath.Join(runDir, rows[0].ResponseRef)
+	raw, err := os.ReadFile(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var journal struct {
+		State    string `json:"state"`
+		Response struct {
+			File string `json:"file"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(raw, &journal); err != nil || journal.State != "rejected" {
+		t.Fatalf("rejection lost its exact exchange: %s / %v", raw, err)
+	}
+	payload, err := os.ReadFile(filepath.Join(filepath.Dir(journalPath), journal.Response.File))
+	if err != nil || string(payload) != provider.response {
+		t.Fatal("rejection no longer links the original refused bytes")
 	}
 }
 
