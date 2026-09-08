@@ -24,6 +24,7 @@
 .evidence-list>summary{padding:.65rem .8rem;cursor:pointer;font-weight:500;background:var(--paper);border-radius:6px}
 .evidence-list[open]>summary{position:sticky;top:0;z-index:7;border-bottom:1px solid var(--line)}
 .evidence-list>p,.evidence-list>ul,.evidence-list>.file-folder{margin:.6rem .9rem}
+.evidence-list>.cards{margin:.6rem .8rem}
 .collapse-label{display:none;float:right;margin-left:1rem;color:var(--accent);font-size:max(var(--text-small),.85em)}
 .evidence-list[open]>summary .collapse-label{display:inline}
 .file-folder{padding:.3rem 0;border-bottom:1px solid var(--line)}
