@@ -4,7 +4,6 @@ import (
 	"go/token"
 	"go/types"
 
-	"github.com/dvordrova/repomap/internal/godynamichandoff"
 	"golang.org/x/tools/go/ssa"
 )
 
@@ -77,55 +76,4 @@ func interfaceReceiverField(value ssa.Value) (*types.Var, types.Type) {
 			return nil, nil
 		}
 	}
-}
-
-func resolveInterfaceField(a *analyzer, value *ssa.UnOp, method *types.Func, resolved map[*ssa.Function]struct{}, assignments map[*ssa.Function][]godynamichandoff.Location, active map[ssa.Value]bool) int {
-	field, _ := interfaceReceiverField(value)
-	if field == nil || a.dynamicHandoffCapture == nil {
-		return 1
-	}
-	// A known store is not proof that this instance was created there. The
-	// remaining receiver is deliberately unresolved, even for one observed type.
-	unresolved := 1
-	for _, store := range a.dynamicHandoffCapture.interfaceFields[field] {
-		candidates := make(map[*ssa.Function]struct{})
-		origins := make(map[*ssa.Function][]godynamichandoff.Location)
-		unresolved += resolveDynamicInterfaceValue(a, store.Val, method, candidates, origins, active)
-		location := dynamicLocation(a.location(store.Pos()))
-		for function := range candidates {
-			resolved[function] = struct{}{}
-			assignments[function] = append(assignments[function], origins[function]...)
-			assignments[function] = append(assignments[function], location)
-		}
-	}
-	return unresolved
-}
-
-// A factory's concrete return expression identifies a possible value. Interface
-// parameters, external factories and recursive unresolved returns stay open.
-// This does not instantiate or execute the factory.
-func resolveInterfaceReturns(a *analyzer, call *ssa.Call, result int, method *types.Func, resolved map[*ssa.Function]struct{}, assignments map[*ssa.Function][]godynamichandoff.Location, active map[ssa.Value]bool) int {
-	callee := call.Common().StaticCallee()
-	if callee == nil || !a.isRepositoryFunction(callee) || len(callee.Blocks) == 0 {
-		return 1
-	}
-	unresolved, returns := 0, 0
-	for _, block := range callee.Blocks {
-		for _, instruction := range block.Instrs {
-			returned, ok := instruction.(*ssa.Return)
-			if !ok {
-				continue
-			}
-			returns++
-			if result >= len(returned.Results) {
-				unresolved++
-				continue
-			}
-			unresolved += resolveDynamicInterfaceValue(a, returned.Results[result], method, resolved, assignments, active)
-		}
-	}
-	if returns == 0 {
-		unresolved++
-	}
-	return unresolved
 }

@@ -6,13 +6,14 @@
     {"id": "f3", "path": "cmd/app/main.go"},
     {"id": "f4", "path": "go.mod"},
     {"id": "f5", "path": "internal/storefixture/fixtures.go"},
-    {"id": "f6", "path": "internal/storefixture/level_responses.go"},
-    {"id": "f7", "path": "internal/testhelper/helper.go"},
-    {"id": "f8", "path": "internal/testhelper/helper_test.go"},
-    {"id": "f9", "path": "root.go"},
-    {"id": "f10", "path": "root_external_test.go"},
-    {"id": "f11", "path": "root_optional_test.go"},
-    {"id": "f12", "path": "root_test.go"},
-    {"id": "f13", "path": "testonly/api_test.go"}
+    {"id": "f6", "path": "internal/storefixture/handoff_flow.go"},
+    {"id": "f7", "path": "internal/storefixture/level_responses.go"},
+    {"id": "f8", "path": "internal/testhelper/helper.go"},
+    {"id": "f9", "path": "internal/testhelper/helper_test.go"},
+    {"id": "f10", "path": "root.go"},
+    {"id": "f11", "path": "root_external_test.go"},
+    {"id": "f12", "path": "root_optional_test.go"},
+    {"id": "f13", "path": "root_test.go"},
+    {"id": "f14", "path": "testonly/api_test.go"}
   ]
 }

@@ -795,8 +795,9 @@ mechanism. The map work is part of this milestone: grouped, short overview
 names; distinct executable/library colors and language icons; compact model
 descriptions with source links; reachable previews with pointer-intent handling;
 stable layout without overlapping boxes or a permanent tangle of arrows.
-Performance optimization is paused. Existing symbol descriptions, knowledge
-records, native relations and matching stages must be used before adding stages.
+Performance fixes preserve the existing evidence and rendered information.
+Existing symbol descriptions, knowledge records, native relations and matching
+stages must be used before adding stages.
 
 The owner's morning review separates the product's base questions from optional
 agent-style investigation. The ordinary report should guide a reader through
@@ -826,6 +827,17 @@ call site and the constructor assignment survive projection; an assignment is
 support for the call, not a second call at the constructor line. This recovers
 `quotaKVServer.Put -> kvServer.Put -> EtcdServer.Put` in etcd without any
 framework-specific rule.
+
+Dynamic value traversal reuses immutable summaries within one root and exact
+interface method. The function key also retains `throughFlow`; factory result
+indices remain attached to their own SSA values. Only subtrees that completed
+without an active-path cycle enter this local memo. Cyclic results propagate
+their dependency on the current path and continue to use the original traversal.
+Merging retains child-order evidence, every exact assignment location and the
+number of unresolved paths per incoming edge. An integer representation overflow
+is a terminal extraction error, including when the same callable resolver feeds
+external-call argument facts. This adds no persistent cache, interface-method
+cap or inferred candidate, and does not promise linear traversal of cyclic graphs.
 
 Interface-valued arguments now retain the concrete methods of the declared
 interface when their implementation is resolved from the actual value, local
@@ -3314,6 +3326,20 @@ result when there is no guidance authority. Every retained source must restore
 to the exact guidance snapshot. The reduction is repository context for every
 selected target's categorization request; it is not copied into adapter facts
 or treated as source-code authority.
+
+Source and merge packing find the largest complete request prefix by probing
+exponentially growing windows, then searching within the last fit/refusal
+bracket. This avoids re-encoding every growing prefix, without repeatedly
+encoding the entire remaining reservoir when only a small window fits. Exact
+provider preparation still decides fit; UTF-8 splitting, worst-case ordinal
+reservations, materialization, request bytes and adaptive execution are unchanged.
+An indivisible merge candidate is rejected before materialization even when it
+follows a valid window. Other preparation errors retain their original cause.
+The 128-row regressions preserve all materialized bytes while reducing prepared
+source bytes from 6,524,096 to 563,303 and merge bytes from 10,296,407 to 326,170.
+These are local preparation counts, not provider-token or end-to-end speedup
+claims; tiny windows can use a few more probes while remaining linear in the
+reservoir size.
 
 ## Target discovery and selection
 

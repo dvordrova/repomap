@@ -106,9 +106,13 @@ func (a *analyzer) observeExternalCallIndex(call ssa.CallInstruction) {
 		})
 		return
 	}
+	pattern := a.externalCallPattern(common, callsite)
+	if a.externalCallIndexErr != nil {
+		return
+	}
 	a.externalCallIndexErr = a.externalCallIndex.AddWitness(ExternalCallWitness{
 		Caller: caller, Target: target, Dispatch: ExternalCallStatic, Invocation: directCallInvocation(call),
-		Callsite: callsite, Pattern: a.externalCallPattern(common, callsite),
+		Callsite: callsite, Pattern: pattern,
 	})
 }
 
@@ -151,10 +155,14 @@ func (a *analyzer) observeExternalInterfaceInvoke(call ssa.CallInstruction, comm
 		a.addExternalCallExclusionNode(caller, ExternalCallExclusion{InvalidCallsitesExcluded: 1})
 		return
 	}
+	pattern := a.externalCallPattern(common, callsite)
+	if a.externalCallIndexErr != nil {
+		return
+	}
 	a.externalCallIndexErr = a.externalCallIndex.AddWitness(ExternalCallWitness{
 		Caller: caller, Target: target, Dispatch: ExternalCallInterfaceInvoke,
 		Invocation: directCallInvocation(call), Callsite: callsite,
-		Pattern: a.externalCallPattern(common, callsite),
+		Pattern: pattern,
 	})
 }
 
@@ -404,7 +412,11 @@ func (a *analyzer) externalCallPatternArgument(
 	if !externalCallPatternMayBeCallable(value, make(map[ssa.Value]bool)) {
 		return argument
 	}
-	candidates, unresolved := dynamicFunctionCandidateFacts(a, value)
+	candidates, unresolved, err := dynamicFunctionCandidateFacts(a, value)
+	if err != nil {
+		a.externalCallIndexErr = err
+		return argument
+	}
 	objectIDs := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		if candidate.candidate.FunctionID != "" {

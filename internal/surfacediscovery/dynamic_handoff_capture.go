@@ -122,7 +122,11 @@ func (capture *dynamicHandoffCapture) observeCallableBinding(a *analyzer, store 
 		return
 	}
 
-	candidateFacts, unresolved := dynamicFunctionCandidateFacts(a, store.Val)
+	candidateFacts, unresolved, err := dynamicFunctionCandidateFacts(a, store.Val)
+	if err != nil {
+		capture.err = err
+		return
+	}
 	if len(candidateFacts) == 0 {
 		if _, callable := dynamicCallableSignature(store.Val.Type()); !callable {
 			return
@@ -348,7 +352,11 @@ func (capture *dynamicHandoffCapture) observeInterfaceInvoke(
 		capture.err = fmt.Errorf("surface discovery: Go dynamic handoff: malformed SSA interface invoke")
 		return
 	}
-	candidates, unresolved := dynamicInterfaceCandidates(a, common.Value, common.Method)
+	candidates, unresolved, err := dynamicInterfaceCandidates(a, common.Value, common.Method)
+	if err != nil {
+		capture.err = err
+		return
+	}
 	candidatesConsidered := dynamicCandidatesConsidered(candidates, unresolved)
 	resolution := dynamicResolution(candidates, unresolved)
 	if resolution == godynamichandoff.ResolutionUnresolved {
@@ -383,7 +391,11 @@ func (capture *dynamicHandoffCapture) observeFunctionValueCall(
 	callsite Location,
 ) {
 	common := call.Common()
-	candidates, unresolved := dynamicFunctionCandidates(a, common.Value)
+	candidates, unresolved, err := dynamicFunctionCandidates(a, common.Value)
+	if err != nil {
+		capture.err = err
+		return
+	}
 	candidatesConsidered := dynamicCandidatesConsidered(candidates, unresolved)
 	resolution := dynamicResolution(candidates, unresolved)
 	if resolution == godynamichandoff.ResolutionUnresolved {
@@ -423,7 +435,11 @@ func (capture *dynamicHandoffCapture) observeCallbackTransfer(
 		capture.observeInterfaceTransfer(a, call, callerID, callsite, staticTarget, staticTargetOK, argument)
 		return
 	}
-	candidateFacts, unresolved := dynamicFunctionCandidateFacts(a, argument.value)
+	candidateFacts, unresolved, err := dynamicFunctionCandidateFacts(a, argument.value)
+	if err != nil {
+		capture.err = err
+		return
+	}
 	candidates := make([]godynamichandoff.Candidate, 0, len(candidateFacts))
 	for _, candidate := range candidateFacts {
 		candidates = append(candidates, candidate.candidate)
@@ -467,7 +483,11 @@ func (capture *dynamicHandoffCapture) observeInterfaceTransfer(a *analyzer, call
 	if !capture.enabled || !targetOK {
 		return
 	}
-	candidates, unresolved := dynamicInterfaceCandidates(a, argument.value, argument.method)
+	candidates, unresolved, err := dynamicInterfaceCandidates(a, argument.value, argument.method)
+	if err != nil {
+		capture.err = err
+		return
+	}
 	if len(candidates) == 0 {
 		return
 	}
@@ -660,22 +680,31 @@ func dynamicInterfaceCandidates(
 	a *analyzer,
 	value ssa.Value,
 	method *types.Func,
-) ([]godynamichandoff.Candidate, int) {
-	resolved := make(map[*ssa.Function]struct{})
-	assignments := make(map[*ssa.Function][]godynamichandoff.Location)
-	unresolved := resolveDynamicInterfaceValue(a, value, method, resolved, assignments, make(map[ssa.Value]bool))
+) ([]godynamichandoff.Candidate, int, error) {
+	summary, err := resolveDynamicInterfaceValue(a, value, method)
+	if err != nil {
+		return nil, 0, err
+	}
+	resolved, unresolved := summary.functions, summary.unresolved
 	functionIDs := make(map[string]struct{}, len(resolved))
 	assignmentsByID := make(map[string][]godynamichandoff.Location)
 	for function := range resolved {
-		locations := assignments[function]
+		var locations []godynamichandoff.Location
+		for location := range summary.assignments[function] {
+			locations = append(locations, location)
+		}
 		function = externalCallCanonicalFunction(function)
 		if function == nil || !a.isRepositoryFunction(function) {
-			unresolved++
+			if err := addDynamicUnknown(&unresolved, 1); err != nil {
+				return nil, 0, err
+			}
 			continue
 		}
 		functionID, ok := a.directCallIndex.recordFunction(a, function)
 		if !ok {
-			unresolved++
+			if err := addDynamicUnknown(&unresolved, 1); err != nil {
+				return nil, 0, err
+			}
 			continue
 		}
 		functionIDs[functionID] = struct{}{}
@@ -700,68 +729,25 @@ func dynamicInterfaceCandidates(
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].FunctionID < candidates[j].FunctionID
 	})
-	return candidates, unresolved
-}
-
-func resolveDynamicInterfaceValue(
-	a *analyzer,
-	value ssa.Value,
-	method *types.Func,
-	resolved map[*ssa.Function]struct{},
-	assignments map[*ssa.Function][]godynamichandoff.Location,
-	active map[ssa.Value]bool,
-) int {
-	if a == nil || a.program == nil || value == nil || method == nil || active[value] {
-		return 1
+	if err := checkDynamicCandidateCount(len(candidates), unresolved); err != nil {
+		return nil, 0, err
 	}
-	active[value] = true
-	defer delete(active, value)
-	switch current := value.(type) {
-	case *ssa.MakeInterface:
-		if current.X == nil || current.X.Type() == nil {
-			return 1
-		}
-		implementation := a.program.LookupMethod(current.X.Type(), method.Pkg(), method.Name())
-		if implementation == nil {
-			return 1
-		}
-		resolved[implementation] = struct{}{}
-		return 0
-	case *ssa.ChangeInterface:
-		return resolveDynamicInterfaceValue(a, current.X, method, resolved, assignments, active)
-	case *ssa.Phi:
-		if len(current.Edges) == 0 {
-			return 1
-		}
-		unresolved := 0
-		for _, edge := range current.Edges {
-			unresolved += resolveDynamicInterfaceValue(a, edge, method, resolved, assignments, active)
-		}
-		return unresolved
-	case *ssa.UnOp:
-		return resolveInterfaceField(a, current, method, resolved, assignments, active)
-	case *ssa.Call:
-		return resolveInterfaceReturns(a, current, 0, method, resolved, assignments, active)
-	case *ssa.Extract:
-		if call, ok := current.Tuple.(*ssa.Call); ok {
-			return resolveInterfaceReturns(a, call, current.Index, method, resolved, assignments, active)
-		}
-		return 1
-	default:
-		return 1
-	}
+	return candidates, unresolved, nil
 }
 
 func dynamicFunctionCandidates(
 	a *analyzer,
 	value ssa.Value,
-) ([]godynamichandoff.Candidate, int) {
-	facts, unresolved := dynamicFunctionCandidateFacts(a, value)
+) ([]godynamichandoff.Candidate, int, error) {
+	facts, unresolved, err := dynamicFunctionCandidateFacts(a, value)
+	if err != nil {
+		return nil, 0, err
+	}
 	candidates := make([]godynamichandoff.Candidate, 0, len(facts))
 	for _, fact := range facts {
 		candidates = append(candidates, fact.candidate)
 	}
-	return candidates, unresolved
+	return candidates, unresolved, nil
 }
 
 type dynamicFunctionCandidateFact struct {
@@ -772,22 +758,29 @@ type dynamicFunctionCandidateFact struct {
 func dynamicFunctionCandidateFacts(
 	a *analyzer,
 	value ssa.Value,
-) ([]dynamicFunctionCandidateFact, int) {
-	resolved := make(map[*ssa.Function]godynamichandoff.CandidateEvidence)
-	unresolved := resolveDynamicFunctionValue(value, resolved, make(map[ssa.Value]bool), false)
+) ([]dynamicFunctionCandidateFact, int, error) {
+	summary, err := resolveDynamicFunctionValue(value)
+	if err != nil {
+		return nil, 0, err
+	}
+	resolved, unresolved := summary.functions, summary.unresolved
 	if len(resolved) == 0 {
-		return []dynamicFunctionCandidateFact{}, unresolved
+		return []dynamicFunctionCandidateFact{}, unresolved, nil
 	}
 	byFunctionID := make(map[string]dynamicFunctionCandidateFact, len(resolved))
 	for function, evidence := range resolved {
 		function = externalCallCanonicalFunction(function)
 		if function == nil || !a.isRepositoryFunction(function) {
-			unresolved++
+			if err := addDynamicUnknown(&unresolved, 1); err != nil {
+				return nil, 0, err
+			}
 			continue
 		}
 		functionID, ok := a.directCallIndex.recordFunction(a, function)
 		if !ok {
-			unresolved++
+			if err := addDynamicUnknown(&unresolved, 1); err != nil {
+				return nil, 0, err
+			}
 			continue
 		}
 		candidate := dynamicFunctionCandidateFact{
@@ -819,7 +812,10 @@ func dynamicFunctionCandidateFacts(
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].candidate.FunctionID < candidates[j].candidate.FunctionID
 	})
-	return candidates, unresolved
+	if err := checkDynamicCandidateCount(len(candidates), unresolved); err != nil {
+		return nil, 0, err
+	}
+	return candidates, unresolved, nil
 }
 
 func dynamicCandidateEvidenceRank(value godynamichandoff.CandidateEvidence) int {
@@ -834,58 +830,6 @@ func dynamicCandidateEvidenceRank(value godynamichandoff.CandidateEvidence) int 
 		return 3
 	default:
 		return 99
-	}
-}
-
-func resolveDynamicFunctionValue(
-	value ssa.Value,
-	resolved map[*ssa.Function]godynamichandoff.CandidateEvidence,
-	active map[ssa.Value]bool,
-	throughFlow bool,
-) int {
-	if value == nil || active[value] {
-		return 1
-	}
-	active[value] = true
-	defer delete(active, value)
-	switch current := value.(type) {
-	case *ssa.Function:
-		evidence := godynamichandoff.EvidenceDirectFunctionValue
-		if throughFlow {
-			evidence = godynamichandoff.EvidenceUniqueValueFlow
-		}
-		resolved[current] = evidence
-		return 0
-	case *ssa.MakeClosure:
-		function, ok := current.Fn.(*ssa.Function)
-		if !ok {
-			return 1
-		}
-		evidence := godynamichandoff.EvidenceClosureValue
-		if throughFlow {
-			evidence = godynamichandoff.EvidenceUniqueValueFlow
-		}
-		resolved[function] = evidence
-		return 0
-	case *ssa.Phi:
-		if len(current.Edges) == 0 {
-			return 1
-		}
-		unresolved := 0
-		for _, edge := range current.Edges {
-			unresolved += resolveDynamicFunctionValue(edge, resolved, active, true)
-		}
-		return unresolved
-	case *ssa.ChangeType:
-		return resolveDynamicFunctionValue(current.X, resolved, active, true)
-	case *ssa.Convert:
-		return resolveDynamicFunctionValue(current.X, resolved, active, true)
-	case *ssa.MakeInterface:
-		return resolveDynamicFunctionValue(current.X, resolved, active, true)
-	case *ssa.ChangeInterface:
-		return resolveDynamicFunctionValue(current.X, resolved, active, true)
-	default:
-		return 1
 	}
 }
 

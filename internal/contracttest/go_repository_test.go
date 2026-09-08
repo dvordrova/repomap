@@ -72,6 +72,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoRetainedCallbackSourceArgument(t, index)
 	assertGoRetainedProducerReceiverProjection(t, index, producerResultID)
 	assertGoInterfaceFieldEvidence(t, authorities, index)
+	assertGoSharedHandoffFlows(t, index)
 	assertGoCallableReceiverFields(t, authorities, index)
 	assertGoInterfaceObjectTransfer(t, authorities, index)
 	assertGoInterfaceDeclarations(t, authorities, index)
@@ -482,7 +483,7 @@ func assertGoInterfaceFieldEvidence(t *testing.T, authorities goFixtureAuthoriti
 					}
 					found = candidate.Evidence == godynamichandoff.EvidenceInterfaceFieldAssignment && len(candidate.Assignments) > 0
 					for _, at := range candidate.Assignments {
-						if at.Path != "internal/storefixture/fixtures.go" || at.Line < 1 || at.Column < 1 {
+						if (at.Path != "internal/storefixture/fixtures.go" && at.Path != "internal/storefixture/handoff_flow.go") || at.Line < 1 || at.Column < 1 {
 							t.Fatalf("unanchored receiver assignment: %+v", at)
 						}
 					}
@@ -505,13 +506,47 @@ func assertGoInterfaceFieldEvidence(t *testing.T, authorities goFixtureAuthoriti
 				continue
 			}
 			projected++
-			if relation.Kind != programindex.RelationCalls || relation.Resolution != programindex.ResolutionAlternatives || relation.TargetsOmitted < 1 || witness.Location == nil || witness.Location.Path != "internal/storefixture/fixtures.go" {
+			if relation.Kind != programindex.RelationCalls || relation.Resolution != programindex.ResolutionAlternatives || relation.TargetsOmitted < 1 || witness.Location == nil ||
+				(witness.Location.Path != "internal/storefixture/fixtures.go" && witness.Location.Path != "internal/storefixture/handoff_flow.go") {
 				t.Fatalf("ProgramIndex lost possible field assignment evidence: %+v", relation)
 			}
 		}
 	}
 	if projected == 0 {
 		t.Fatal("ProgramIndex dropped interface field assignment witnesses")
+	}
+}
+
+func assertGoSharedHandoffFlows(t *testing.T, index programindex.Index) {
+	t.Helper()
+	objects := make(map[string]programindex.Object)
+	for _, object := range index.Objects {
+		objects[object.ID] = object
+	}
+	wantUnknown := map[string]int{"SharedCallbackFlow": 4, "CyclicCallbackFlow": 1}
+	seen := make(map[string]bool)
+	assignments := make(map[int]bool)
+	for _, relation := range index.Relations {
+		if unknown, ok := wantUnknown[objects[relation.FromID].Name]; ok && relation.Kind == programindex.RelationCalls {
+			if relation.Resolution != programindex.ResolutionAlternatives || relation.TargetsOmitted != unknown || relation.TargetsObserved != unknown+1 ||
+				len(relation.ToIDs) != 1 || objects[relation.ToIDs[0]].Name != "flowAction" {
+				t.Fatalf("shared/cyclic callback changed projected authority: %+v", relation)
+			}
+			seen[objects[relation.FromID].Name] = true
+		}
+		for _, witness := range relation.Witnesses {
+			if witness.Kind == "interface_field_assignment" && witness.Location != nil && witness.Location.Path == "internal/storefixture/handoff_flow.go" {
+				assignments[witness.Location.Line] = true
+			}
+		}
+	}
+	for name := range wantUnknown {
+		if !seen[name] {
+			t.Errorf("missing callback projection for %s", name)
+		}
+	}
+	if len(assignments) != 2 || !assignments[40] || !assignments[41] {
+		t.Fatalf("shared value lost exact store locations: %v", assignments)
 	}
 }
 

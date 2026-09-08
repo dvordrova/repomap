@@ -25,15 +25,8 @@ const (
 	executionContract     = "repomap.documentation-reduce.v1"
 	preparationVersion    = 1
 	responseSchemaVersion = 1
-	// A completion reservation is subtracted from the model's context window
-	// before the request is even read, so an oversized one is input the request
-	// cannot carry. Across 2,157 recorded responses the largest was 20,444 tokens
-	// and p99 was 7,026; none reached 32,768. The old 128,000 reserved six times
-	// the largest answer ever produced and cost the same in input: repomap's own
-	// cmd/repomap was refused with "you requested 1,051,970 tokens (923,970 in
-	// the messages, 128,000 in the completion)" against a 1,048,576 window, over
-	// by 3,394. A truncated answer is not silently accepted either — a completion
-	// that did not stop is rejected and its batch is split.
+	// Use the shared output allowance; the configured provider ceiling still
+	// applies. A truncated completion is refused and its batch is split.
 	maxOutputTokens = llm.DefaultMaxOutputTokens
 )
 
@@ -239,27 +232,59 @@ func packSourceBatches(provider llm.Provider, documents []documentUnit) ([]sourc
 		units = append(units, parts...)
 	}
 	packed := make([]sourceBatch, 0)
-	current := make([]documentUnit, 0)
-	for _, unit := range units {
-		candidate := append(append([]documentUnit(nil), current...), unit)
-		fits, err := sourceUnitsFit(provider, candidate)
+	for start := 0; start < len(units); {
+		count, err := largestFittingPrefix(len(units)-start, func(count int) (bool, error) {
+			return sourceUnitsFit(provider, units[start:start+count])
+		})
 		if err != nil {
 			return nil, err
 		}
-		if fits {
-			current = candidate
-			continue
-		}
-		if len(current) == 0 {
+		if count == 0 {
 			return nil, fmt.Errorf("documentation reduce: indivisible document slice does not fit provider request")
 		}
-		packed = append(packed, sourceBatch{units: current})
-		current = []documentUnit{unit}
-	}
-	if len(current) > 0 {
-		packed = append(packed, sourceBatch{units: current})
+		packed = append(packed, sourceBatch{units: units[start : start+count]})
+		start += count
 	}
 	return materializeSourcePlan(packed)
+}
+
+// Prepared request size grows with each appended row. Bracket the first
+// refusal by doubling, then search only that bracket. Searching the complete
+// remaining tail for every small window would repeatedly encode most of the
+// reservoir, even if the number of probes looked small.
+func largestFittingPrefix(count int, fits func(int) (bool, error)) (int, error) {
+	best, probe := 0, 1
+	for probe <= count {
+		ok, err := fits(probe)
+		if err != nil {
+			return 0, err
+		}
+		if !ok {
+			break
+		}
+		best = probe
+		if best == count {
+			return best, nil
+		}
+		if probe > count/2 {
+			probe = count
+		} else {
+			probe *= 2
+		}
+	}
+	for low, high := best+1, probe-1; low <= high; {
+		middle := low + (high-low)/2
+		ok, err := fits(middle)
+		if err != nil {
+			return 0, err
+		}
+		if ok {
+			best, low = middle, middle+1
+		} else {
+			high = middle - 1
+		}
+	}
+	return best, nil
 }
 
 func splitSourceUnitToFit(provider llm.Provider, unit documentUnit) ([]documentUnit, error) {
@@ -446,25 +471,18 @@ func packMergeBatches(
 	authority map[string]documentAuthority,
 ) ([]mergeBatch, error) {
 	packed := make([]mergeBatch, 0)
-	current := make([]normalizedReduction, 0)
-	for _, candidate := range candidates {
-		proposed := append(append([]normalizedReduction(nil), current...), candidate)
-		fits, err := mergeCandidatesFit(provider, proposed, level)
+	for start := 0; start < len(candidates); {
+		count, err := largestFittingPrefix(len(candidates)-start, func(count int) (bool, error) {
+			return mergeCandidatesFit(provider, candidates[start:start+count], level)
+		})
 		if err != nil {
 			return nil, err
 		}
-		if fits {
-			current = proposed
-			continue
-		}
-		if len(current) == 0 {
+		if count == 0 {
 			return nil, fmt.Errorf("documentation reduce: indivisible merge candidate does not fit provider request; no context was truncated")
 		}
-		packed = append(packed, mergeBatch{candidates: current})
-		current = []normalizedReduction{candidate}
-	}
-	if len(current) > 0 {
-		packed = append(packed, mergeBatch{candidates: current})
+		packed = append(packed, mergeBatch{candidates: candidates[start : start+count]})
+		start += count
 	}
 	return materializeMergePlan(packed, level, authority)
 }
