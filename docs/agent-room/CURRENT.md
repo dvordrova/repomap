@@ -1624,11 +1624,17 @@ the retained etcd graph still has Storage engine, Consensus and replication,
 API and networking, and the other model-proposed areas.
 
 Drilling into an area or group must keep the selected operation, if any, with
-visible breadcrumbs, return navigation and an explicit All uses switch. A
+visible breadcrumbs, return navigation and an explicit Clear selection switch. A
 group's general source card remains available separately. Search must find
 areas and groups by their retained names and descriptions, independently of
 operation names. The storage journey must expose its actual interpreted parts,
 their code and the operations using them without starting from a command.
+Clear selection keeps a short label; its hover help names the selected operation.
+Cross-component operation links use the common explorer navigation, preserving
+the original question, reading mode and the source visit for browser Back.
+The selected code explanation aligns with its selector and uses a small
+provenance information mark beside its source, without a repeated heading or
+an inset bordered panel.
 
 Breadcrumbs follow the existing containment hierarchy, not click history. They
 distinguish Area and Part when the model gave both the same name; opening the

@@ -25,7 +25,7 @@
 <figcaption class="map-note"><span class="map-line">{{t "Open a part to see its key code. Click a code element to read its explanation below. Arrows connect parts, not the code elements inside them."}}{{if .Hidden}} {{t "{0} more groups are on the cards below." .Hidden}}{{end}}</span>
 <details class="map-legend"><summary>{{t "legend"}}</summary><ul class="plain">
 <li>{{t "Structure shows areas and parts. Click an area to open its parts, or a part to see its callers and dependencies. Back returns to the containing area or component."}}</li>
-{{if .Operations}}<li>{{t "Operations follows one command, endpoint or activity. Its context stays selected while you explore; All uses returns to the complete structure."}}</li>{{end}}
+{{if .Operations}}<li>{{t "Operations follows one command, endpoint or activity. Its context stays selected while you explore; Clear selection returns to the complete structure."}}</li>{{end}}
 <li>{{t "A connection may contain several relations between the folded areas. Click it to read the individual endpoints and evidence. These are static relations, not a recorded execution."}}</li>
 {{if .Subjects}}<li>{{t "These groups name {0} of this target's {1} symbols and connections." .Grouped .Subjects}}</li>{{end}}
 </ul></details></figcaption>

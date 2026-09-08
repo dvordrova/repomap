@@ -94,7 +94,11 @@
 .map-part-focus .map-inspector-heading>label{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--muted);padding-left:0}
 .map-part-focus .map-inspector-heading select{max-width:40rem;width:100%;min-width:0;font-size:.95rem}
 .map-part-focus .map-card-docked{display:flex;flex-direction:column;align-items:stretch;gap:.5rem;max-width:none;background:transparent}
-.map-part-focus .map-card-docked .map-concepts{order:-1;max-width:90ch;font-size:1rem;line-height:1.65;padding:0}
+.map-part-focus .map-card-docked .map-concepts{order:-1;max-width:90ch;font-size:1rem;line-height:1.65;padding:0;border:0;background:transparent}
+.map-part-focus .map-concepts>p{margin:0 0 .65rem}
+.map-concept-source{display:flex;align-items:baseline;gap:.45rem;font-size:var(--text-small);overflow-wrap:anywhere}
+.map-concept-source>[data-concept-source]{min-width:0}
+.map-concept-provenance{flex:none;color:var(--muted);cursor:help;font-style:normal}
 .map-part-focus .map-card-docked .map-card-intro>.map-card-summary{display:none}
 .map-part-focus .map-inspector-continuation{display:none}
 .map-part-focus .map-card-actions{display:flex;flex-direction:column;align-items:stretch;gap:.75rem;margin-top:1rem}

@@ -367,7 +367,7 @@
           var repeated=concepts.some(function(other,j){return j!==i&&other.name===concept.name;});
           html += '<option value="'+i+'">'+escapeText(repomapMembers.displayName(concept)+(repeated?' · '+concept.source.Text:''))+'</option>';
         });
-        html += ("</select></label><span class=\"map-card-meta\">"+rmT.html("Model explanation")+"</span><p data-concept-explanation></p><span data-concept-source></span></div>");
+        html += '</select></label><p data-concept-explanation></p><div class="map-concept-source"><span data-concept-source></span><span class="map-concept-provenance" role="img" title="'+rmT.html('Model explanation')+'" aria-label="'+rmT.html('Model explanation')+'">ⓘ</span></div></div>';
       }
       html += ("<details class=\"map-card-evidence\"><summary>"+rmT.html("Code and connections")+"</summary>");
       if (counts && !node.dataset.activation) html += '<span class="map-card-meta">' + escapeText(counts) + '</span>';
