@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"reflect"
 	"sort"
 	"strconv"
@@ -1513,7 +1514,9 @@ func validObjectFacts(facts ObjectFacts) bool {
 	}
 	return facts.Kind == programindex.ObjectExternalSymbol && facts.External.AuthorityKind.Valid() &&
 		validText(facts.External.PackagePath) &&
-		validOptionalText(facts.External.Receiver) && validText(facts.External.Name)
+		validOptionalText(facts.External.Receiver) && validText(facts.External.Name) &&
+		(facts.External.RepositoryPath == "" || (facts.External.AuthorityKind == programindex.ExternalAuthorityPackage &&
+			validText(facts.External.RepositoryPath) && !strings.Contains(facts.External.RepositoryPath, "\\") && fs.ValidPath(facts.External.RepositoryPath)))
 }
 
 func validPatternFacts(patternID string, facts PatternFacts) bool {

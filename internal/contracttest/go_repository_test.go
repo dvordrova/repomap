@@ -67,6 +67,8 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 		t.Fatal("Go ProgramIndex omitted unused private method recreateStore")
 	}
 	assertGoNeutralBoundaryPatterns(t, index)
+	assertGoListenAddresses(t, index)
+	assertGoLocalHTTPNameFacts(t, index)
 	assertGoExternalEventAndStoragePatterns(t, index)
 	assertGoChainedCallAndCallbackTraversal(t, index)
 	assertGoRetainedCallbackSourceArgument(t, index)

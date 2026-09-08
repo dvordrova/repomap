@@ -3566,6 +3566,22 @@ retaining structural evidence and any other positively supported category.
 Calls and constructions remain distinct. An unresolved property name stays
 unresolved and is never joined to a repository declaration by name alone.
 
+A compiler-resolved sibling package retains `repository_path` on each import,
+call and ProgramIndex external symbol. This is an optional origin fact, not a
+new graph or framework classification; an empty value means that no repository
+origin was established. Result v14 / helper v17 replaces the old lossy handoff.
+ProgramIndex v11 retains the optional field in its existing seal, as do
+GroupsIndex and the report view. Dependency rows distinguish the exact package
+name plus directory: two same-name siblings and an installed package coexist.
+`jsts_package_export_v2` identities include the sibling directory; installed
+packages have no repository export identity. Receiver provenance keeps the same
+scope and original call resolution. Local package names such as `got` or `fs`
+do not establish HTTP, SDK or standard-runtime behavior. The report links a
+sibling only to its exact analyzed directory, and cannot substitute another
+same-name component. Cumulative JS/TS examples retain two `got` packages and
+an installed `got`; Go and Python examples likewise keep local HTTP-looking
+names separate from actual external HTTP calls.
+
 Method/path-shaped calls retain their selector, receiver and external origin,
 positional arguments, callback refs, reconstructed values, and unresolved
 frontiers only as neutral ProgramIndex patterns. The adapter does not build a
@@ -3574,7 +3590,7 @@ deterministic HTTP join. Target-local meaning comes from categorization and
 grouping; cross-target connections come only from repository matching over the
 complete GroupsIndex set.
 
-JSTS result v13 / helper v16 retains callable JSX attributes as anchored
+JSTS result v14 / helper v17 retains callable JSX attributes as anchored
 `passes_callback` relations with `callable_binding:jsx_attribute` invocation.
 Element and attribute names remain source observations; no event-name or
 framework allowlist assigns meaning. Compiler-confirmed function-valued
@@ -3894,6 +3910,13 @@ holes as parameters and is `possible`, never exact. A portal exists only when
 one call matches exactly one route of another target; zero or several
 candidates produce a diagnostic instead of a fact. Environment files are never
 read: only the tracked path may be recorded.
+
+Listen address facts parse bracketed IPv6 host/port pairs, including scoped
+addresses such as `[fe80::1%eth0]:8080`, with the same existing port rules.
+Unix socket paths keep their existing handling. Native Go `net.Listen`
+examples preserve distinct IPv4/IPv6/Unix call sites and exact source anchors.
+The Python tuple/host-port and JS numeric-listen APIs do not use this string
+address parser; this fix adds no new API recognition.
 
 `claims` quotes human-written text with its source path and, when known, its
 date and age: README paragraphs and headings, docstrings and doc comments,

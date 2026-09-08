@@ -7,3 +7,10 @@ def fetch_level(level_id: str):
 
 def retrieve_level(level_id: str, loader):
     return loader(level_id)
+
+
+import requests
+
+
+def read_local_http_name():
+    return requests.get("/local-key")

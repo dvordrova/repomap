@@ -45,6 +45,7 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 		t.Fatalf("Python script seed object = %#v, want exact main function", seed)
 	}
 	assertCumulativePythonSemanticFacts(t, index)
+	assertPythonLocalHTTPNameFacts(t, index)
 	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index}}})
 	if err != nil {
 		t.Fatalf("build Python atlas: %v", err)

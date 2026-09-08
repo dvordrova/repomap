@@ -276,7 +276,9 @@ func validateProgramViewObject(object ProgramViewObject) error {
 			!object.External.AuthorityKind.Valid() ||
 			!validProgramViewText(object.External.PackagePath) ||
 			!validOptionalProgramViewText(object.External.Receiver) ||
-			!validProgramViewText(object.External.Name)) {
+			!validProgramViewText(object.External.Name) ||
+			(object.External.RepositoryPath != "" && (object.External.AuthorityKind != programindex.ExternalAuthorityPackage ||
+				(object.External.RepositoryPath != "." && !validProgramViewPath(object.External.RepositoryPath))))) {
 		return fmt.Errorf("invalid external object authority %q", object.ID)
 	}
 	return nil
@@ -439,7 +441,7 @@ func programViewExternalTextBytes(value *programindex.ExternalSymbol) int {
 	if value == nil {
 		return 0
 	}
-	return len(string(value.AuthorityKind)) + len(value.PackagePath) + len(value.Receiver) + len(value.Name)
+	return len(string(value.AuthorityKind)) + len(value.PackagePath) + len(value.Receiver) + len(value.Name) + len(value.RepositoryPath)
 }
 
 func cloneProgramViewExternal(value *programindex.ExternalSymbol) *programindex.ExternalSymbol {

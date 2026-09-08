@@ -95,7 +95,7 @@ func (target *targetContext) externalOrigins(relation programindex.Relation, pat
 	var result []programindex.ExternalSymbol
 	for _, id := range append(append([]string{}, pattern.ReceiverOriginIDs...), relation.ToIDs...) {
 		object, ok := target.object(id)
-		if ok && object.Kind == programindex.ObjectExternalSymbol && object.External != nil {
+		if ok && object.Kind == programindex.ObjectExternalSymbol && object.External != nil && object.External.RepositoryPath == "" {
 			result = append(result, *object.External)
 		}
 	}

@@ -109,7 +109,7 @@ func TestPackageExportIdentityJoinsTypeScriptAndJavaScriptShardsWithoutChangingR
 			caller.Declarations = append(caller.Declarations, callable)
 			caller.Calls = append(caller.Calls, Call{
 				Ref: "call:f2:3:1:serve", CallerRef: callable.Ref, Invocation: "call",
-				ExternalPackage: "shared", ExternalExport: "serve", ExternalName: "serve",
+				ExternalPackage: "shared", ExternalExport: "serve", ExternalName: "serve", RepositoryPath: ".",
 				Expression: "serve", Resolution: test.resolution,
 				PatternsObserved: 1,
 				Location:         Location{Path: caller.Files[0].Path, FileRef: caller.Files[0].FileRef, Line: 3, Column: 1},
@@ -167,14 +167,16 @@ func TestProgramIndexExternalAuthorityPreservesRawLanguageIdentity(t *testing.T)
 	}
 	result.Declarations = append(result.Declarations, caller)
 	tests := []struct {
-		ref         string
-		packagePath string
-		name        string
-		want        programindex.ExternalAuthorityKind
+		ref            string
+		packagePath    string
+		repositoryPath string
+		name           string
+		want           programindex.ExternalAuthorityKind
 	}{
 		{ref: "platform", packagePath: javascriptPlatform, name: "fetch", want: programindex.ExternalAuthorityPlatform},
 		{ref: "node-prefixed", packagePath: "node:crypto", name: "createHash", want: programindex.ExternalAuthorityPlatform},
 		{ref: "node-bare", packagePath: "fs", name: "readFile", want: programindex.ExternalAuthorityPlatform},
+		{ref: "workspace-node-name", packagePath: "fs", repositoryPath: "libs/fs", name: "readFile", want: programindex.ExternalAuthorityPackage},
 		{ref: "npm", packagePath: "axios", name: "get", want: programindex.ExternalAuthorityPackage},
 	}
 	for position, test := range tests {
@@ -184,7 +186,7 @@ func TestProgramIndexExternalAuthorityPreservesRawLanguageIdentity(t *testing.T)
 		}
 		result.Calls = append(result.Calls, Call{
 			Ref: "call:" + test.ref, CallerRef: caller.Ref, Invocation: "call",
-			ExternalPackage: test.packagePath, ExternalExport: externalExport, ExternalName: test.name,
+			RepositoryPath: test.repositoryPath, ExternalPackage: test.packagePath, ExternalExport: externalExport, ExternalName: test.name,
 			Expression: test.name, Resolution: "exact", PatternsObserved: 1,
 			Location: Location{
 				Path: result.Files[0].Path, FileRef: result.Files[0].FileRef, Line: 3 + position, Column: 1,
@@ -212,7 +214,7 @@ func TestProgramIndexExternalAuthorityPreservesRawLanguageIdentity(t *testing.T)
 			t.Fatalf("%s relation = %#v", test.ref, relation)
 		}
 		external := objectsByID[relation.ToIDs[0]].External
-		if external == nil || external.AuthorityKind != test.want || external.PackagePath != test.packagePath || external.Name != test.name {
+		if external == nil || external.AuthorityKind != test.want || external.PackagePath != test.packagePath || external.Name != test.name || external.RepositoryPath != test.repositoryPath {
 			t.Fatalf("%s external authority = %#v, want kind=%q raw package=%q", test.ref, external, test.want, test.packagePath)
 		}
 	}
@@ -726,7 +728,7 @@ func identityForObjectID(
 func identityForObject(t *testing.T, object programindex.Object, display string) programindex.SymbolLinkIdentity {
 	t.Helper()
 	for _, identity := range object.SymbolLinkIdentities {
-		if identity.Domain == "jsts_package_export_v1" && identity.Display == display {
+		if identity.Domain == "jsts_package_export_v2" && identity.Display == display {
 			return identity
 		}
 	}

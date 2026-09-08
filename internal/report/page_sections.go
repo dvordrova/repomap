@@ -531,6 +531,22 @@ func (builder *pageBuilder) siblingByPackage(packagePath string) *pageSection {
 	return ownerOfPackage(packagePath, builder.packageOwners())
 }
 
+func (builder *pageBuilder) siblingForExternal(external *programindex.ExternalSymbol, targetID string) *pageSection {
+	if external.RepositoryPath != "" {
+		for _, section := range builder.sections {
+			if section.Root == external.RepositoryPath && (section.Language == "javascript" || section.Language == "typescript") {
+				return section
+			}
+		}
+		return nil
+	}
+	if owner := builder.byProgram[targetID]; owner != nil && (owner.Language == "javascript" || owner.Language == "typescript") {
+		// A matching package name does not establish a repository origin.
+		return nil
+	}
+	return builder.siblingByPackage(external.PackagePath)
+}
+
 // packageOwner is one target and the package paths it indexed. A target owns
 // the packages it was read from, so an import is credited by what it names
 // and not by whose module root it happens to sit under.
@@ -673,13 +689,13 @@ func (builder *pageBuilder) memberChips(memberIDs []string) ([]pageChipRow, []pa
 			continue
 		}
 		if anchor == nil {
-			if _, duplicate := seen[name]; duplicate {
+			if _, duplicate := seen[id]; duplicate {
 				continue
 			}
-			seen[name] = struct{}{}
+			seen[id] = struct{}{}
 			row := pageExternal{Name: name}
 			if object := ref.subject.Object; object != nil && object.External != nil {
-				if sibling := builder.siblingByPackage(object.External.PackagePath); sibling != nil {
+				if sibling := builder.siblingForExternal(object.External, ref.programTargetID); sibling != nil {
 					row.Href = "#" + sibling.ID
 				}
 			}

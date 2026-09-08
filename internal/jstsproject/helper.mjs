@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 16
+const CONTRACT_VERSION = 17
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 
 function fail(message) {
@@ -74,7 +74,6 @@ const crossesPackageBoundary = (filePath) => packageBoundaryDirs.some(
 )
 
 const repositoryPackageBoundaries = []
-const repositoryBoundaryPackages = new Set()
 for (const candidate of request.package_boundaries) {
   const directory = candidate?.directory === "." ? "." : cleanRelative(candidate?.directory)
   const packagePath = safeBoundaryText(candidate?.package_path)
@@ -84,15 +83,15 @@ for (const candidate of request.package_boundaries) {
     fail("invalid repository package boundaries")
   }
   repositoryPackageBoundaries.push({ directory, packagePath })
-  repositoryBoundaryPackages.add(packagePath)
 }
 const repositoryPackageForFile = (filePath) => {
+  if (filePath.split("/").includes("node_modules")) return undefined
   let selected
   for (const boundary of repositoryPackageBoundaries) {
     if (boundary.directory !== "." && filePath !== boundary.directory && !filePath.startsWith(`${boundary.directory}/`)) continue
-    if (!selected || boundary.directory.split("/").length > selected.directory.split("/").length) selected = boundary
+    if (!selected || (boundary.directory === "." ? 0 : boundary.directory.split("/").length) > (selected.directory === "." ? 0 : selected.directory.split("/").length)) selected = boundary
   }
-  return selected?.packagePath || ""
+  return selected
 }
 
 const requestedCompilerPackages = []
@@ -873,14 +872,14 @@ function resolutionFor(specifier, containingFile, specifierNode) {
     if (targetPath && fileRefByPath.has(targetPath)) return { resolution: "exact", resolved_file_ref: fileRefByPath.get(targetPath), external_package: "" }
     const repositoryPath = repositoryRelative(resolvedFileName)
     const repositoryPackage = repositoryPath ? repositoryPackageForFile(repositoryPath) : ""
-    if (repositoryPackage) return { resolution: "exact", resolved_file_ref: "", external_package: repositoryPackage }
+    if (repositoryPackage) return { resolution: "exact", resolved_file_ref: "", external_package: repositoryPackage.packagePath, repository_path: repositoryPackage.directory }
     if (isExternalSpecifier(specifier)) return { resolution: "exact", resolved_file_ref: "", external_package: packageRoot(specifier) }
   }
   if (isExternalSpecifier(specifier)) return { resolution: "unresolved", resolved_file_ref: "", external_package: packageRoot(specifier) }
   return { resolution: "unresolved", resolved_file_ref: "", external_package: "" }
 }
 
-function bindImportSymbols(node, externalPackage, resolution) {
+function bindImportSymbols(node, externalPackage, resolution, repositoryPath) {
   if (!externalPackage || !node.importClause) return
   const checker = checkerForNode(node)
   if (!checker) return
@@ -896,7 +895,7 @@ function bindImportSymbols(node, externalPackage, resolution) {
   for (const binding of importBindings) {
     const symbol = checker.getSymbolAtLocation(binding.name)
     if (symbol) importAuthorityBySymbol.set(symbol, {
-      package: externalPackage, resolution, kind: binding.kind, exportName: binding.exportName,
+      package: externalPackage, resolution, repositoryPath, kind: binding.kind, exportName: binding.exportName,
     })
   }
 }
@@ -968,7 +967,7 @@ function evidencePackages(node) {
 
 function hasPackageEvidence(node, accepted) {
   const imported = externalImportForExpression(node)
-  if (imported.resolution === "exact" && accepted.has(imported.package)) return true
+  if (imported.resolution === "exact" && !imported.repositoryPath && accepted.has(imported.package)) return true
   for (const packageName of evidencePackages(node)) if (accepted.has(packageName)) return true
   return false
 }
@@ -985,7 +984,7 @@ for (const { sourceFile } of sourceFiles) {
         specifier, importer_file_ref: fileRefByPath.get(relative(sourceFile.fileName)), ...resolved, location: locationOf(node.moduleSpecifier),
       }
       imports.push(value)
-      bindImportSymbols(node, value.external_package, value.resolution)
+      bindImportSymbols(node, value.external_package, value.resolution, value.repository_path)
     }
     if (ts.isExportDeclaration(node)) {
       const specifier = node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier) ? node.moduleSpecifier.text : ""
@@ -1023,7 +1022,7 @@ for (const { sourceFile } of sourceFiles) {
 // in importing files are optional display metadata; the declarations,
 // locations, calls and package/export authority remain intact.
 const boundaryImporterRefs = new Set(imports
-  .filter((value) => repositoryBoundaryPackages.has(value.external_package))
+  .filter((value) => value.repository_path)
   .map((value) => value.importer_file_ref))
 for (const declaration of declarations) {
   if (boundaryImporterRefs.has(declaration.location.file_ref)) declaration.signature = ""
@@ -1173,9 +1172,10 @@ function exactLocalReceiverRef(node) {
   return refs.length === 1 ? refs[0] : ""
 }
 
-function externalProgramObjectRef(packagePath, receiver, name) {
+function externalProgramObjectRef(packagePath, receiver, name, repositoryPath = "") {
   const symbolName = name || packagePath
-  return `external:${packagePath}:${receiver}:${symbolName}`
+  const prefix = repositoryPath ? `workspace:${Buffer.from(repositoryPath).toString("hex")}` : "external"
+  return `${prefix}:${packagePath}:${receiver}:${symbolName}`
 }
 
 function invocationOrigin(node) {
@@ -1196,7 +1196,7 @@ function invocationOrigin(node) {
     if (exportName && name && name !== exportName) receiver = exportName
     if (exportName && name) {
       return {
-        refs: [externalProgramObjectRef(imported.package, receiver, name)],
+        refs: [externalProgramObjectRef(imported.package, receiver, name, imported.repositoryPath)],
         resolution: /\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName)) ? "alternatives" : "exact",
         observed: 1,
       }
@@ -1552,6 +1552,7 @@ for (const { sourceFile } of sourceFiles) {
       const call = {
         ref: callFactRef(node), caller_ref: callerRef, callee_refs: localRefs,
         invocation, external_package: externalPackage, external_export: externalExport,
+        repository_path: externalImport.repositoryPath,
         external_receiver: externalReceiver, external_name: externalName,
         expression: displayExpression, resolution, location: locationOf(node.expression),
       }
@@ -1572,15 +1573,15 @@ for (const { sourceFile } of sourceFiles) {
         surfaces.push({ ref: factRef("surface", node, tool ? "node-server-tool" : "node-server"), kind: tool ? "tool" : "node_server", role: tool ? "script" : "product", name: tool ? "Integration/test HTTP server" : "Node HTTP server", entry_refs: [callerRef], evidence_refs: [call.ref], location: locationOf(node) })
       }
       if ((name === "createRoot" || expressionText(node.expression).endsWith(".createRoot")) &&
-          externalImport.resolution === "exact" && externalPackage === "react-dom") {
+          externalImport.resolution === "exact" && !externalImport.repositoryPath && externalPackage === "react-dom") {
         surfaces.push({ ref: factRef("surface", node, "browser"), kind: "browser_application", role: "product", name: "React browser application", entry_refs: [callerRef], evidence_refs: [call.ref], location: locationOf(node) })
       }
       if ((name === "useQuery" || name === "useMutation") && node.arguments[0] &&
-          externalImport.resolution === "exact" && externalPackage === "@tanstack/react-query") {
+          externalImport.resolution === "exact" && !externalImport.repositoryPath && externalPackage === "@tanstack/react-query") {
         const keys = queryKeysFrom(node.arguments[0])
         if (keys.length > 0) addContract({ ref: factRef("contract", node, `query-key:${keys.join("/")}`), kind: "query_key", name: keys.join("/"), value: JSON.stringify(keys), used_by_refs: [callerRef], location: locationOf(node) })
       }
-      if (name === "schedule" && externalImport.resolution === "exact" && externalPackage === "node-cron") {
+      if (name === "schedule" && externalImport.resolution === "exact" && !externalImport.repositoryPath && externalPackage === "node-cron") {
         const schedule = staticString(node.arguments[0])
         if (schedule) addContract({ ref: factRef("contract", node, `cron:${schedule}`), kind: "cron_schedule", name: schedule, value: schedule, used_by_refs: [callerRef], location: locationOf(node) })
       }

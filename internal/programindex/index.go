@@ -317,10 +317,13 @@ func (kind ExternalAuthorityKind) Valid() bool {
 // authorities to dependencies.Catalog. Receiver is optional because free
 // functions and package variables do not have one.
 type ExternalSymbol struct {
-	AuthorityKind ExternalAuthorityKind `json:"authority_kind"`
-	PackagePath   string                `json:"package_path"`
-	Receiver      string                `json:"receiver,omitempty"`
-	Name          string                `json:"name"`
+	// RepositoryPath identifies a compiler-observed package in this repository
+	// outside this target. Empty means no repository origin was established.
+	RepositoryPath string                `json:"repository_path,omitempty"`
+	AuthorityKind  ExternalAuthorityKind `json:"authority_kind"`
+	PackagePath    string                `json:"package_path"`
+	Receiver       string                `json:"receiver,omitempty"`
+	Name           string                `json:"name"`
 }
 
 // IsExternalPackageAuthority reports exact adapter-owned package authority.
@@ -2259,7 +2262,9 @@ func validateExternalSymbolBinding(kind ObjectKind, value *ExternalSymbol) error
 		return nil
 	}
 	if kind != ObjectExternalSymbol || !value.AuthorityKind.Valid() || !validText(value.PackagePath) ||
-		!validOptionalText(value.Receiver) || !validText(value.Name) {
+		!validOptionalText(value.Receiver) || !validText(value.Name) ||
+		(value.RepositoryPath != "" && (value.AuthorityKind != ExternalAuthorityPackage ||
+			(value.RepositoryPath != "." && !validPath(value.RepositoryPath)))) {
 		return fmt.Errorf("program index: invalid external symbol authority")
 	}
 	return nil

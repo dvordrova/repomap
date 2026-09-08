@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	Version       = 13
-	HelperVersion = 16
+	Version       = 14
+	HelperVersion = 17
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20
@@ -117,6 +117,8 @@ type Declaration struct {
 }
 
 type Import struct {
+	// RepositoryPath is the compiler-resolved sibling package directory.
+	RepositoryPath  string   `json:"repository_path,omitempty"`
 	Ref             string   `json:"ref"`
 	Kind            string   `json:"kind"`
 	Specifier       string   `json:"specifier"`
@@ -139,6 +141,7 @@ type Export struct {
 }
 
 type Call struct {
+	RepositoryPath   string       `json:"repository_path,omitempty"`
 	Ref              string       `json:"ref"`
 	CallerRef        string       `json:"caller_ref"`
 	CalleeRefs       []string     `json:"callee_refs"`
@@ -517,7 +520,7 @@ func (result Result) Validate() error {
 		if value.ExternalPackage == "" || value.ExternalName == "" || value.Resolution == "unresolved" {
 			continue
 		}
-		patternExternalOrigins[externalProgramObjectRef(value.ExternalPackage, value.ExternalReceiver, value.ExternalName)] = struct{}{}
+		patternExternalOrigins[externalProgramObjectRef(value.ExternalPackage, value.ExternalReceiver, value.ExternalName, value.RepositoryPath)] = struct{}{}
 	}
 	usedPatternResults := make(map[string]struct{})
 	for _, value := range result.Calls {
@@ -573,6 +576,10 @@ func (result Result) Validate() error {
 		if unsafeURLUserinfo(value.Specifier) || strings.Contains(value.Specifier, "://") {
 			return fmt.Errorf("jsts project: credential-bearing import specifier")
 		}
+		if !validWorkspaceOrigin(value.RepositoryPath, value.ExternalPackage, value.Resolution) ||
+			(value.RepositoryPath != "" && value.ResolvedFileRef != "") {
+			return fmt.Errorf("jsts project: invalid workspace import authority")
+		}
 		if value.ExternalPackage == javascriptPlatform {
 			return fmt.Errorf("jsts project: JavaScript platform authority cannot originate from an import")
 		}
@@ -601,6 +608,9 @@ func (result Result) Validate() error {
 		}
 		if _, ok := declarations[value.CallerRef]; !ok {
 			return fmt.Errorf("jsts project: call has unknown caller")
+		}
+		if !validWorkspaceOrigin(value.RepositoryPath, value.ExternalPackage, value.Resolution) {
+			return fmt.Errorf("jsts project: invalid workspace call authority")
 		}
 		if (value.ExternalExport != "" || value.ExternalReceiver != "" || value.ExternalName != "") && value.ExternalPackage == "" {
 			return fmt.Errorf("jsts project: call has external symbol without package authority")
@@ -830,6 +840,14 @@ func validSHA(value string) bool {
 	_, err := hex.DecodeString(value)
 	return err == nil
 }
+func validWorkspaceOrigin(repositoryPath, packagePath, resolution string) bool {
+	if repositoryPath == "" {
+		return true
+	}
+	return packagePath != "" && packagePath != javascriptPlatform && resolution != "unresolved" &&
+		(repositoryPath == "." || (safeRepositoryPath(repositoryPath) && repositoryPath != ".." && !strings.HasPrefix(repositoryPath, "../")))
+}
+
 func safeRepositoryPath(value string) bool {
 	return value != "" && value == path.Clean(value) && !strings.HasPrefix(value, "/") && !strings.Contains(value, "\\") && !corpus.ForbiddenPath(value)
 }

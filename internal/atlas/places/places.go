@@ -1392,11 +1392,15 @@ func (b *builder) collectExternalCalls(target TargetInput) {
 				break
 			}
 		}
-		if external == nil || !sdkCandidate(*external) {
+		if external == nil || external.RepositoryPath != "" || !sdkCandidate(*external) {
 			continue
 		}
-		if _, own := b.workspace[external.PackagePath]; own {
-			continue
+		// JSTS carries compiler-resolved repository origins on each object.
+		// A different workspace package with the same npm name is not its origin.
+		if language := target.Index.Target.Language; language != "javascript" && language != "typescript" {
+			if _, own := b.workspace[external.PackagePath]; own {
+				continue
+			}
 		}
 		var values []string
 		line := relationLine(relation)

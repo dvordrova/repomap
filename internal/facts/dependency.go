@@ -55,7 +55,7 @@ func (target *targetContext) firstImport(packagePath string) *Anchor {
 func (target *targetContext) importsPackage(relation programindex.Relation, packagePath string) bool {
 	for _, id := range relation.ToIDs {
 		object, ok := target.object(id)
-		if !ok || object.Kind != programindex.ObjectExternalSymbol || object.External == nil {
+		if !ok || object.Kind != programindex.ObjectExternalSymbol || object.External == nil || object.External.RepositoryPath != "" {
 			continue
 		}
 		if _, matches := packageMatches(object.External.PackagePath, packagePath); matches {

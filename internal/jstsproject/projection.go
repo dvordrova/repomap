@@ -2,6 +2,7 @@ package jstsproject
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"path"
 	"reflect"
@@ -131,11 +132,15 @@ func bindProgramTargetIdentity(result *Result) error {
 	return nil
 }
 
-func externalProgramObjectRef(packagePath, receiver, name string) string {
+func externalProgramObjectRef(packagePath, receiver, name, repositoryPath string) string {
 	if name == "" {
 		name = packagePath
 	}
-	return "external:" + packagePath + ":" + receiver + ":" + name
+	prefix := "external"
+	if repositoryPath != "" {
+		prefix = "workspace:" + hex.EncodeToString([]byte(repositoryPath))
+	}
+	return prefix + ":" + packagePath + ":" + receiver + ":" + name
 }
 
 func programIndexFor(result Result, scenarioSHA string) (programindex.Index, error) {
@@ -174,7 +179,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		linkIdentities := make([]programindex.SymbolLinkIdentityInput, 0)
 		for _, exportName := range canonicalStrings(exportNamesByDeclaration[declaration.Ref]) {
 			linkIdentities = append(linkIdentities, programindex.SymbolLinkIdentityInput{
-				Domain: "jsts_package_export_v1", Parts: []string{"export", result.Project.PackagePath, exportName},
+				Domain: "jsts_package_export_v2", Parts: []string{"export", path.Dir(result.Project.ManifestPath), result.Project.PackagePath, exportName},
 				Display: result.Project.PackagePath + "#" + exportName,
 			})
 		}
@@ -197,11 +202,11 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		})
 	}
 	externalObjects := map[string]programindex.ObjectInput{}
-	externalRef := func(packagePath, exportName, receiver, name string) string {
+	externalRef := func(packagePath, exportName, receiver, name, repositoryPath string) string {
 		if name == "" {
 			name = packagePath
 		}
-		ref := externalProgramObjectRef(packagePath, receiver, name)
+		ref := externalProgramObjectRef(packagePath, receiver, name, repositoryPath)
 		if _, exists := externalObjects[ref]; !exists {
 			displayName := packagePath + "."
 			if receiver != "" {
@@ -209,9 +214,9 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			}
 			displayName += name
 			linkIdentities := []programindex.SymbolLinkIdentityInput{}
-			if packagePath != javascriptPlatform && exportName != "" {
+			if repositoryPath != "" && exportName != "" {
 				linkIdentities = append(linkIdentities, programindex.SymbolLinkIdentityInput{
-					Domain: "jsts_package_export_v1", Parts: []string{"export", packagePath, exportName},
+					Domain: "jsts_package_export_v2", Parts: []string{"export", repositoryPath, packagePath, exportName},
 					Display: packagePath + "#" + exportName,
 				})
 			}
@@ -220,10 +225,11 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 				Visibility:           programindex.VisibilityPublic,
 				SymbolLinkIdentities: linkIdentities,
 				External: &programindex.ExternalSymbol{
-					AuthorityKind: externalAuthorityKind(packagePath),
-					PackagePath:   packagePath,
-					Receiver:      receiver,
-					Name:          name,
+					AuthorityKind:  externalAuthorityKind(packagePath, repositoryPath),
+					RepositoryPath: repositoryPath,
+					PackagePath:    packagePath,
+					Receiver:       receiver,
+					Name:           name,
 				},
 			}
 		}
@@ -255,7 +261,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		if value.ResolvedFileRef != "" {
 			to = []string{moduleRefForFile(value.ResolvedFileRef)}
 		} else if value.ExternalPackage != "" && resolution == programindex.ResolutionExact {
-			to = []string{externalRef(value.ExternalPackage, "", "", value.ExternalPackage)}
+			to = []string{externalRef(value.ExternalPackage, "", "", value.ExternalPackage, value.RepositoryPath)}
 		}
 		if len(to) == 0 {
 			resolution = programindex.ResolutionUnresolved
@@ -271,7 +277,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		kind := programindex.RelationCalls
 		resolution := programResolution(value.Resolution)
 		if value.ExternalPackage != "" && resolution != programindex.ResolutionUnresolved {
-			to = []string{externalRef(value.ExternalPackage, value.ExternalExport, value.ExternalReceiver, value.ExternalName)}
+			to = []string{externalRef(value.ExternalPackage, value.ExternalExport, value.ExternalReceiver, value.ExternalName, value.RepositoryPath)}
 			kind = programindex.RelationInvokesExternal
 		}
 		if len(to) == 0 {
@@ -618,8 +624,8 @@ func declarationDisplayName(declaration Declaration, declarations map[string]Dec
 	return strings.Join(parts, ".")
 }
 
-func externalAuthorityKind(packagePath string) programindex.ExternalAuthorityKind {
-	if packagePath == javascriptPlatform || nodeStandardLibrary(packagePath) {
+func externalAuthorityKind(packagePath, repositoryPath string) programindex.ExternalAuthorityKind {
+	if repositoryPath == "" && (packagePath == javascriptPlatform || nodeStandardLibrary(packagePath)) {
 		return programindex.ExternalAuthorityPlatform
 	}
 	return programindex.ExternalAuthorityPackage
@@ -630,7 +636,8 @@ func dependencyCatalog(result Result) (dependencies.Catalog, error) {
 	if err != nil {
 		return dependencies.Catalog{}, err
 	}
-	valuesByPackage := map[string]dependencies.Dependency{}
+	type origin struct{ packagePath, repositoryPath string }
+	valuesByPackage := map[origin]dependencies.Dependency{}
 	for _, value := range result.Imports {
 		packagePath := value.ExternalPackage
 		if packagePath == "" {
@@ -638,11 +645,13 @@ func dependencyCatalog(result Result) (dependencies.Catalog, error) {
 		}
 		kind := dependencies.KindExternal
 		modulePath := packagePath
-		if nodeStandardLibrary(packagePath) {
+		if value.RepositoryPath != "" {
+			kind = dependencies.KindWorkspace
+		} else if nodeStandardLibrary(packagePath) {
 			kind = dependencies.KindStdlib
 			modulePath = ""
 		}
-		valuesByPackage[packagePath] = dependencies.Dependency{Language: result.Project.Language, Kind: kind, Name: packagePath, ModulePath: modulePath, PackagePath: packagePath, ImporterRefs: []string{importer.Ref}}
+		valuesByPackage[origin{packagePath, value.RepositoryPath}] = dependencies.Dependency{RepositoryPath: value.RepositoryPath, Language: result.Project.Language, Kind: kind, Name: packagePath, ModulePath: modulePath, PackagePath: packagePath, ImporterRefs: []string{importer.Ref}}
 	}
 	values := make([]dependencies.Dependency, 0, len(valuesByPackage))
 	for _, value := range valuesByPackage {

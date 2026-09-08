@@ -1,6 +1,7 @@
 package facts
 
 import (
+	"net"
 	"strconv"
 	"strings"
 
@@ -90,7 +91,7 @@ func listenAddress(pattern programindex.RelationPattern, position int) (string, 
 }
 
 // isListenAddress accepts what a bind call is actually given: ":8080",
-// "127.0.0.1:8080", "0.0.0.0:8080", or a unix socket path.
+// "127.0.0.1:8080", "[::1]:8080", a scoped IPv6 address, or a unix socket path.
 func isListenAddress(value string) bool {
 	if value == "" || strings.ContainsAny(value, " \t") {
 		return false
@@ -98,8 +99,8 @@ func isListenAddress(value string) bool {
 	if strings.HasPrefix(value, "/") || strings.HasPrefix(value, "./") {
 		return true
 	}
-	host, port, found := strings.Cut(value, ":")
-	if !found || !isPortNumber(port) {
+	host, port, err := net.SplitHostPort(value)
+	if err != nil || !isPortNumber(port) {
 		return false
 	}
 	return host == "" || !strings.Contains(host, "/")

@@ -202,7 +202,7 @@ the same SSA receiver, independent of framework names. These observations enter
 the callable's own review; neighbouring caller registrations omit their field
 metadata. No field observation asserts a final runtime value or callback call.
 
-JSTS result v13 / helper v16 also preserves every compiler-observed callable
+JSTS result v14 / helper v17 also preserves every compiler-observed callable
 JSX attribute as an anchored callback binding, including render props. The
 element and attribute are source facts; neither their names nor a framework
 allowlist classify an operation. Wrapped function-valued declarations retain
@@ -500,7 +500,14 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   package-origin universe (including `DepOnly`) and its `Standard` bit; Python
   derives it from the exact `sys.stdlib_module_names` set; JS/TS maps
   TypeScript default-library and Node standard-library origins to `platform`
-  and npm origins to `package`. Missing or unknown authority fails closed;
+  and npm origins to `package`. Compiler-resolved sibling JS/TS packages
+  also keep their repository directory on each import, call and external
+  symbol, and in a `workspace` dependency row. Exact directory-scoped export
+  identities join their own declarations across targets; a same-name npm
+  package or another directory never supplies that identity. Workspace calls
+  remain structural evidence but cannot be classified as known external
+  libraries by their names. Report jumps use that exact directory; an
+  unselected sibling gains no substitute destination. Missing or unknown authority fails closed;
   shared stages never infer it from a package-path prefix. A platform external
   object and an exact external invocation pattern whose complete target set is
   platform-only can never receive `dependency`, support a `dependencies`-lane

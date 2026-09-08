@@ -598,7 +598,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	if ambiguousRouteCall.Ref == "" || ambiguousRouteCall.Pattern == nil ||
 		ambiguousRouteCall.Pattern.ReceiverOriginResolution != "exact" ||
 		!reflect.DeepEqual(ambiguousRouteCall.Pattern.ReceiverOriginRefs, []string{
-			externalProgramObjectRef("express", "", "default"),
+			externalProgramObjectRef("express", "", "default", ""),
 		}) || len(ambiguousRouteCall.Pattern.Arguments) != 3 {
 		t.Fatalf("neutral ambiguous Express registration = %#v", ambiguousRouteCall)
 	}
@@ -624,13 +624,13 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	routeCall := findPatternCall(declarationRefs["startServer"], "app.get", "/products/featured")
 	assertPatternCallback(
 		routeCall,
-		externalProgramObjectRef("express", "", "default"),
+		externalProgramObjectRef("express", "", "default", ""),
 		declarationRefs["getFeaturedProduct"],
 	)
 	consumerCall := findPatternCall(declarationRefs["registerOrderConsumer"], "consumer.subscribe", "orders.created")
 	assertPatternCallback(
 		consumerCall,
-		externalProgramObjectRef("@fixture/kafka-client", "", "createConsumer"),
+		externalProgramObjectRef("@fixture/kafka-client", "", "createConsumer", ""),
 		declarationRefs["handleOrder"],
 	)
 	mixedConsumerCall := findPatternCall(ambiguityCallerRefs[0], "consumer.subscribe", "orders.mixed")
@@ -725,7 +725,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		routeCall,
 		declarationRefs["startServer"],
 		declarationRefs["getFeaturedProduct"],
-		externalProgramObjectRef("express", "", "default"),
+		externalProgramObjectRef("express", "", "default", ""),
 	)
 	var mixedCallbackRelation programindex.Relation
 	for _, relation := range index.Relations {
@@ -745,7 +745,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		consumerCall,
 		declarationRefs["registerOrderConsumer"],
 		declarationRefs["handleOrder"],
-		externalProgramObjectRef("@fixture/kafka-client", "", "createConsumer"),
+		externalProgramObjectRef("@fixture/kafka-client", "", "createConsumer", ""),
 	)
 	assertRegistration := func(name string, call Call, callerRef, originRef, callbackRef string) {
 		t.Helper()
@@ -792,12 +792,12 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	}
 	assertRegistration(
 		"TypeScript route callback registration", routeCall,
-		declarationRefs["startServer"], externalProgramObjectRef("express", "", "default"),
+		declarationRefs["startServer"], externalProgramObjectRef("express", "", "default", ""),
 		declarationRefs["getFeaturedProduct"],
 	)
 	assertRegistration(
 		"TypeScript consumer callback registration", consumerCall,
-		declarationRefs["registerOrderConsumer"], externalProgramObjectRef("@fixture/kafka-client", "", "createConsumer"),
+		declarationRefs["registerOrderConsumer"], externalProgramObjectRef("@fixture/kafka-client", "", "createConsumer", ""),
 		declarationRefs["handleOrder"],
 	)
 	directCallerRef := declarationRefs["registerDirectOrderConsumer"]
@@ -813,7 +813,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 			directConsumerCall = call
 		}
 	}
-	factoryObjectRef := externalProgramObjectRef("@fixture/kafka-client", "", "createConsumer")
+	factoryObjectRef := externalProgramObjectRef("@fixture/kafka-client", "", "createConsumer", "")
 	if directFactoryCall.Ref == "" || directFactoryCall.Pattern.ResultRef == "" ||
 		directFactoryCall.Pattern.ReceiverRef != "" || directFactoryCall.Location.Path != "src/server.ts" ||
 		directFactoryCall.Location.Line != 81 || directFactoryCall.Location.Column != 3 {
@@ -2653,7 +2653,7 @@ func assertExactSiblingPackageCalls(
 		}
 		foundIdentity := false
 		for _, identity := range target.SymbolLinkIdentities {
-			if identity.Domain == "jsts_package_export_v1" && identity.Display == packagePath+"#"+exportName {
+			if identity.Domain == "jsts_package_export_v2" && identity.Display == packagePath+"#"+exportName {
 				foundIdentity = true
 			}
 		}
