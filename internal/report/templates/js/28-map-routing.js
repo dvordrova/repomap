@@ -100,10 +100,11 @@ var repomapGraph = (function () {
   return {layout:layout,layoutComponents:layoutComponents,fold:fold,draw:draw};
 })();
 
-// Existing repository roles are filters of one component level. Filtering
-// does not create parent nodes or reinterpret connections through hidden nodes.
+// Existing repository roles filter one component level. The overview is a
+// direct projection of the same source nodes; only the connections view asks
+// ELK for placement. Neither view creates parents or inferred connections.
 (function(){document.querySelectorAll('.repo-map').forEach(function(map){
-  var svg=map.querySelector('svg'),nodes={},origins={},sizes={},revision=0,selectedRole='';
+  var svg=map.querySelector('svg'),nodes={},origins={},sizes={},revision=0,selectedRole='',view='components';
   var lanes=Array.from(svg.querySelectorAll('.map-lanes text')).map(function(n){return{role:n.dataset.role,title:n.textContent,nodes:[]};});
   svg.querySelectorAll('.repo-node').forEach(function(n,i){
     var r=n.querySelector('rect'),id=n.id||'repo-unread-'+i;
@@ -114,38 +115,82 @@ var repomapGraph = (function () {
   lanes=lanes.filter(function(l){return l.role&&l.nodes.length;});
   var total=Object.keys(nodes).length,controls=document.createElement('div');controls.className='repo-area-controls';controls.setAttribute('role','group');controls.setAttribute('aria-label',rmT('Show components'));map.prepend(controls);
   var count=document.createElement('span');count.className='repo-filter-count';count.setAttribute('role','status');
+  var modes=document.createElement('div');modes.className='repo-view-controls';modes.setAttribute('role','group');modes.setAttribute('aria-label',rmT('Repository components and their connections'));controls.before(modes);
+  function updateURL(){
+    var url=new URL(location.href);if(nodes[url.hash.slice(1)])url.hash='repository-map';
+    if(selectedRole)url.searchParams.set('component-role',selectedRole);else url.searchParams.delete('component-role');
+    if(view==='connections')url.searchParams.set('component-view',view);else url.searchParams.delete('component-view');
+    history.pushState(history.state,'',url);render();
+  }
+  [['components','Components'],['connections','Connections']].forEach(function(item){
+    var b=document.createElement('button');b.type='button';b.textContent=rmT(item[1]);b.dataset.view=item[0];
+    b.addEventListener('click',function(){if(view!==item[0]){view=item[0];updateURL();}});modes.appendChild(b);
+  });
   function makeButton(title,role,number){
     var b=document.createElement('button');b.type='button';b.textContent=title+' · '+number;b.dataset.role=role;
-    b.addEventListener('click',function(){
-      if(selectedRole===role)return;selectedRole=role;
-      var url=new URL(location.href);if(role)url.searchParams.set('component-role',role);else url.searchParams.delete('component-role');
-      history.pushState(history.state,'',url);render();
-    });controls.appendChild(b);
+    b.addEventListener('click',function(){if(selectedRole!==role){selectedRole=role;updateURL();}});controls.appendChild(b);
   }
   makeButton(rmT('All components'),'',total);
   lanes.forEach(function(lane){makeButton(lane.title,lane.role,lane.nodes.length);});controls.appendChild(count);
-  svg.querySelector('.map-lanes').replaceChildren();
-  function componentGrid(ids,width){
-    var padding=16,gap=20,maxWidth=0,maxHeight=0;
-    ids.forEach(function(id){maxWidth=Math.max(maxWidth,sizes[id].w);maxHeight=Math.max(maxHeight,sizes[id].h);});
-    if(!ids.length)return{boxes:{},edges:[],areas:[],width:padding*2,height:padding*2};
-    var columns=Math.max(1,Math.min(ids.length,Math.floor((width-padding*2+gap)/(maxWidth+gap)))),rows=Math.ceil(ids.length/columns),placed={};
-    ids.forEach(function(id,i){placed[id]={x:padding+(i%columns)*(maxWidth+gap),y:padding+Math.floor(i/columns)*(maxHeight+gap),w:sizes[id].w,h:sizes[id].h};});
-    return{boxes:placed,edges:[],areas:[],width:padding*2+columns*maxWidth+(columns-1)*gap,height:padding*2+rows*maxHeight+(rows-1)*gap};
+  var overview=document.createElement('div');overview.className='repo-component-overview';overview.hidden=true;
+  var hint=document.createElement('p');hint.className='repo-overview-hint';hint.textContent=rmT('Choose a component to explore its parts.');overview.appendChild(hint);
+  var grid=document.createElement('div');grid.className='repo-component-grid';overview.appendChild(grid);svg.after(overview);
+  var cards={},componentFacts=Array.from(document.querySelectorAll('#repository-map .cards>.card'));
+  function titleOf(id){return nodes[id].dataset.title||nodes[id].querySelector('.repo-card-name').textContent;}
+  function highlight(id){
+    var near=new Set([id]);edges.forEach(function(e){if(e.from===id)near.add(e.to);if(e.to===id)near.add(e.from);});
+    Object.keys(cards).forEach(function(key){cards[key].classList.toggle('repo-component-near',near.has(key)&&key!==id);cards[key].classList.toggle('repo-component-focused',key===id);});
   }
+  function clearHighlight(){Object.values(cards).forEach(function(card){card.classList.remove('repo-component-near','repo-component-focused');});}
+  Object.keys(nodes).forEach(function(id){
+    var node=nodes[id],card=document.createElement('article'),href=node.getAttribute('href');card.className='repo-component-card';card.dataset.component=id;card.dataset.role=node.dataset.role;
+    var open=document.createElement(href?'a':'div');open.className='repo-component-open';if(href)open.href=href;
+    else{card.classList.add('repo-component-unavailable');open.setAttribute('aria-disabled','true');}
+    var content=node.querySelector('.repo-card-content').cloneNode(true),name=content.querySelector('.repo-card-name'),nameText=name.textContent;
+    name.replaceChildren();nameText.split(/([./_])/).forEach(function(part){name.appendChild(document.createTextNode(part));if(/^[./_]$/.test(part))name.appendChild(document.createElement('wbr'));});open.appendChild(content);
+    if(href){var action=document.createElement('span');action.className='repo-component-action';action.textContent=rmT('Open component')+' →';open.appendChild(action);}
+    card.appendChild(open);
+    // Target facts already own the manifest and entrypoint anchors. Keep that
+    // source context visible beside the component, including unnamed libraries.
+    // Clone every source-bearing row, never choose a representative by name.
+    var facts=componentFacts.find(function(f){return f.querySelector('h3 a')?.getAttribute('href')===href;}),sourceRows=facts?Array.from(facts.querySelectorAll('.target-facts dl>dd')).filter(function(row){return row.querySelector('.anchor');}):[];
+    if(sourceRows.length){
+      var sources=document.createElement('dl');sources.className='repo-component-sources';
+      sourceRows.forEach(function(row){var label=row.previousElementSibling;if(label&&label.tagName==='DT')sources.appendChild(label.cloneNode(true));sources.appendChild(row.cloneNode(true));});card.appendChild(sources);
+    }
+    var incident=edges.filter(function(e){return e.from===id||e.to===id;});
+    if(incident.length){
+      var details=document.createElement('details'),summary=document.createElement('summary'),list=document.createElement('ul');details.className='repo-component-connections';summary.textContent=rmT('Connections')+' · '+incident.length;details.appendChild(summary);
+      incident.forEach(function(edge){
+        var other=edge.from===id?edge.to:edge.from,row=document.createElement('li'),otherHref=nodes[other].getAttribute('href'),link=document.createElement(otherHref?'a':'span'),direction=document.createElement('span');
+        direction.className='repo-connection-direction';direction.textContent=edge.from===id?'→':'←';direction.setAttribute('aria-hidden','true');row.appendChild(direction);
+        if(otherHref)link.href=otherHref;link.textContent=titleOf(other);link.setAttribute('aria-label',titleOf(edge.from)+' → '+titleOf(edge.to));row.appendChild(link);
+        var label=document.createElement('span');label.className='repo-connection-label';label.textContent=edge.label;row.appendChild(label);
+        if(edge.possible){var possible=document.createElement('span');possible.className='repo-connection-label';possible.textContent=rmT('Interpreted connection or possible dispatch');row.appendChild(possible);}
+        list.appendChild(row);
+      });details.appendChild(list);card.appendChild(details);
+    }else{var empty=document.createElement('span');empty.className='repo-component-no-connections';empty.textContent=rmT('No connections recorded.');card.appendChild(empty);}
+    card.addEventListener('mouseenter',function(){highlight(id);});card.addEventListener('mouseleave',function(){if(!card.contains(document.activeElement))clearHighlight();});
+    card.addEventListener('focusin',function(){highlight(id);});card.addEventListener('focusout',function(event){if(!card.contains(event.relatedTarget))clearHighlight();});
+    cards[id]=card;grid.appendChild(card);
+  });
+  svg.querySelector('.map-lanes').replaceChildren();
   async function render(){
     if(!map.clientWidth)return;
-    var ticket=++revision,visible=Object.keys(nodes).filter(function(id){return !selectedRole||nodes[id].dataset.role===selectedRole;}).sort(function(a,b){return Number(nodes[b].dataset.default==='true')-Number(nodes[a].dataset.default==='true');}),reps={},boxes={};map.setAttribute('aria-busy','true');
+    var ticket=++revision,visible=Object.keys(nodes).filter(function(id){return !selectedRole||nodes[id].dataset.role===selectedRole;}),reps={},boxes={};map.setAttribute('aria-busy','true');
     visible.forEach(function(id){boxes[id]=sizes[id];reps[id]=[id];});
     controls.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.role===selectedRole);});
+    modes.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.view===view);});
     count.textContent=rmT('Showing {0} of {1} components',visible.length,total);
+    map.classList.toggle('repo-map-overview',view==='components');overview.hidden=view!=='components';
+    Object.keys(cards).forEach(function(id){cards[id].hidden=!reps[id];});
+    if(view==='components'){
+      repomapPreview.freeze(map);clearHighlight();map.classList.remove('map-previewing');
+      if(map.clearInspection)map.clearInspection();map.setAttribute('aria-busy','false');return;
+    }
     try{
       var folded=repomapGraph.fold(edges,reps),stage=map.querySelector('[data-map-stage]'),width=stage?.clientWidth||map.clientWidth-48;
-      // Only a repository with no source connections is a component grid.
-      // Connected pictures still use the same graph layout engine, then pack
-      // side by side at readable scale instead of stacking unrelated pictures.
-      var readableWidth=width/(map.readableScale||1);
-      var result=edges.length?await repomapGraph.layoutComponents(boxes,folded,readableWidth):componentGrid(visible,readableWidth);
+      var result=await repomapGraph.layoutComponents(boxes,folded,width/(map.readableScale||1));
       if(ticket!==revision)return;repomapPreview.freeze(map);
       Object.keys(nodes).forEach(function(id){var b=result.boxes[id];nodes[id].style.display=b?'':'none';if(!b)return;nodes[id].setAttribute('transform','translate('+(b.x-origins[id].x)+' '+(b.y-origins[id].y)+')');nodes[id].dataset.near=folded.filter(function(e){return e.from===id||e.to===id;}).map(function(e){return e.from===id?e.to:e.from;}).join(' ');});
       repomapGraph.draw(map,result.edges);svg.setAttribute('viewBox','0 0 '+result.width+' '+result.height);svg.setAttribute('width',result.width);svg.setAttribute('height',result.height);map.classList.remove('map-previewing');map.dispatchEvent(new CustomEvent('repomap:layout',{detail:{focus:visible.map(function(id){return result.boxes[id];}).filter(Boolean)}}));
@@ -153,8 +198,20 @@ var repomapGraph = (function () {
     }catch(error){console.error('Repository map layout',error);}
     if(ticket===revision)map.setAttribute('aria-busy','false');
   }
+  // Existing "on the map" links still address their original SVG identity.
+  // In the overview, reveal its visible card rather than a hidden SVG anchor.
+  map.revealNode=async function(node){
+    var id=node?.id;if(!cards[id])return;
+    if(selectedRole&&nodes[id].dataset.role!==selectedRole){
+      selectedRole='';var url=new URL(location.href);url.searchParams.delete('component-role');history.replaceState(history.state,'',url);
+    }
+    await render();
+    if(view==='components'){
+      cards[id].scrollIntoView({block:'center'});cards[id].querySelector('a')?.focus({preventScroll:true});highlight(id);
+    }else{node.scrollIntoView({block:'center',inline:'center'});if(map.showNode)map.showNode(node);}
+  };
   var layoutWidth=0;
   new ResizeObserver(function(){var width=map.clientWidth;if(width===layoutWidth)return;layoutWidth=width;if(width)render();}).observe(map);
-  function restore(){var role=new URL(location.href).searchParams.get('component-role')||'';selectedRole=lanes.some(function(l){return l.role===role;})?role:'';requestAnimationFrame(render);}
-  window.addEventListener('popstate',restore);restore();
+  function restore(){var params=new URL(location.href).searchParams,role=params.get('component-role')||'';selectedRole=lanes.some(function(l){return l.role===role;})?role:'';view=params.get('component-view')==='connections'?'connections':'components';requestAnimationFrame(function(){var node=nodes[location.hash.slice(1)];if(node)map.revealNode(node);else render();});}
+  window.addEventListener('popstate',restore);window.addEventListener('hashchange',restore);restore();
 });})();

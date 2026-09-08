@@ -30,7 +30,7 @@
     content.setAttribute('aria-label', rmT('Node description and sources'));
     var hint = document.createElement('p');
     hint.className = 'map-inspector-hint';
-    hint.textContent = rmT('Hover or focus a node to read about it.');
+    hint.textContent = rmT(map.hasAttribute('data-map-explorer')?'Click a part or code element to keep its explanation here.':'Hover or focus a node to read about it.');
     content.appendChild(hint); inspector.appendChild(content); workspace.appendChild(inspector);
     var continuation = document.createElement('div');
     continuation.className = 'map-inspector-continuation';
@@ -171,7 +171,13 @@
       var box = {x:left,y:top,w:right-left,h:bottom-top};
       // An oversized area starts at its first component, without shrinking text
       // or changing ELK's placement. Neighbours remain reachable by panning.
-      if (box.w*scale > stage.clientWidth-48 || box.h*scale > stage.clientHeight-48) box=homeBoxes[0];
+      if (homeBoxes.length===1 || box.w*scale > stage.clientWidth-48 || box.h*scale > stage.clientHeight-48) {
+        box=homeBoxes[0];
+        // An expanded part can be taller than the viewport. Start at its
+        // heading, never halfway through its code cubes.
+        stage.scrollTo(Math.max(0,box.x*scale-24),Math.max(0,box.y*scale-24));
+        return;
+      }
       stage.scrollTo(Math.max(0,(box.x+box.w/2)*scale-stage.clientWidth/2),
         Math.max(0,(box.y+box.h/2)*scale-stage.clientHeight/2));
     }
@@ -318,6 +324,7 @@
     content.addEventListener('scroll',remember);
     function show(node) {
       remember();inspectedNode=node;
+      map.explorerMember=null;
       var saved=remembered.get(node), ticket=++inspectionRevision;
       content.scrollTop = 0;
       card.classList.remove('map-card-connection');
@@ -336,10 +343,10 @@
       if(source) html += '<p><a target="_blank" rel="noopener" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
       else if(node.dataset.open) html += '<p><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</a></p>';
       html += '</div>';
-      var concepts = JSON.parse(node.dataset.concepts || '[]');
+      var concepts = map.exploreNode ? repomapMembers.items(node) : JSON.parse(node.dataset.concepts || '[]');
       card.classList.toggle('map-card-has-concepts', concepts.length > 0);
       if (concepts.length) {
-        html += ("<div class=\"map-concepts\"><label><span>"+rmT.html("Concept")+"</span> <select data-concept-picker aria-label=\""+rmT.html("Concept to explain")+"\">");
+        html += ("<div class=\"map-concepts\" hidden><label><span>"+rmT.html("Code element")+"</span> <select data-concept-picker aria-label=\""+rmT.html("Code element to explain")+"\"><option value=\"\">"+rmT.html("Choose a code element")+"</option>");
         concepts.forEach(function (concept, i) {
           var repeated=concepts.some(function(other,j){return j!==i&&other.name===concept.name;});
           html += '<option value="'+i+'">'+escapeText(concept.name+(repeated?' · '+concept.source.Text:''))+'</option>';
@@ -388,8 +395,14 @@
         var picker=heading.querySelector('[data-concept-picker]');
         if(saved?.concept!==undefined)picker.value=saved.concept;
         var explain=function(){
+          var panel=card.querySelector('.map-concepts');
+          panel.hidden=picker.value==='';card.classList.toggle('map-card-has-concepts',!panel.hidden);
+          if(panel.hidden){map.explorerMember=null;map.dispatchEvent(new Event('repomap:reading'));return;}
           var concept=concepts[Number(picker.value)],source=concept.source;
-          card.querySelector('[data-concept-explanation]').textContent=concept.explanation;
+          map.explorerMember={owner:id,name:picker.selectedOptions[0].textContent,source:source.Text};
+          map.dispatchEvent(new Event('repomap:reading'));
+          map.querySelectorAll('[data-member-source]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.memberSource===(source.Href||source.Open));});
+          card.querySelector('[data-concept-explanation]').textContent=concept.explanation||rmT('No explanation saved. Open the source to inspect this element.');
           var link=document.createElement(source.Href||source.Open?'a':'span');link.textContent=source.Text;
           if(source.Href){link.href=source.Href;link.target='_blank';link.rel='noopener';}
           else if(source.Open){link.href='#';link.dataset.open=source.Open;}
@@ -407,7 +420,7 @@
           users.forEach(function(op){var b=document.createElement('button');b.type='button';b.textContent=op.dataset.title;
             if(users.some(function(other){return other!==op&&other.dataset.title===op.dataset.title;})&&op.dataset.sourceText)b.textContent+=' · '+op.dataset.sourceText;
             b.addEventListener('click',function(){
-            var picker=heading.querySelector('[data-concept-picker]'),concept=picker&&concepts[Number(picker.value)];
+            var picker=heading.querySelector('[data-concept-picker]'),concept=picker&&picker.value!==''&&concepts[Number(picker.value)];
             map.chooseOperation(op.id,{node:node,label:concept?rmT('{0} in {1}',picker.selectedOptions[0].textContent,titleOf(node)):titleOf(node),source:concept&&{href:concept.source.Href,open:concept.source.Open}});
           });usage.appendChild(b);});actions.prepend(usage);}
       }
@@ -419,14 +432,19 @@
     }
     map.explainSource=function(source){
       if(!inspectedNode)return;
-      var concepts=JSON.parse(inspectedNode.dataset.concepts||'[]');
+      var concepts=map.exploreNode?repomapMembers.items(inspectedNode):JSON.parse(inspectedNode.dataset.concepts||'[]');
       var index=concepts.findIndex(function(c){return (source.href&&source.href===c.source.Href)||(source.open&&source.open===c.source.Open);});
       var picker=heading.querySelector('[data-concept-picker]');
       if(index<0||!picker)return;
       picker.value=String(index);picker.dispatchEvent(new Event('change'));
     };
-    map.showNode=function(node){if(!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');}};
-    map.clearInspection=function(){card.hidden=true;map.querySelector('.map-inspector').classList.remove('has-preview');};
+    map.showNode=function(node){if(map.exploreNode||!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');}};
+    map.showMember=function(node,item){
+      map.showNode(node);map.explainSource({href:item.source.Href,open:item.source.Open});
+      var frame=inspector.getBoundingClientRect();
+      if(frame.bottom>window.innerHeight||frame.top<0)inspector.scrollIntoView({block:'nearest'});
+    };
+    map.clearInspection=function(){card.hidden=true;map.explorerMember=null;map.querySelector('.map-inspector').classList.remove('has-preview');map.dispatchEvent(new Event('repomap:reading'));};
     map.addEventListener('repomap:connection',function(event){
       remember();inspectionRevision++;
       content.scrollTop = 0;
@@ -443,8 +461,19 @@
     for (var n = 0; n < nodes.length; n++) {
       // The native title remains in the static HTML for readers without JS.
       var title = nodes[n].querySelector('title');
-      if (title) title.remove();
-      (function (node) { repomapPreview.bind(node, card, function () { show(node); }); })(nodes[n]);
+      if(map.hasAttribute('data-map-explorer')){
+        // Hover may emphasize neighbours; only an explicit choice changes
+        // the reading panel or the canvas. Keep the native brief preview.
+        (function(node){
+          node.addEventListener('mouseenter',function(){node.dispatchEvent(new Event('repomap:preview'));});
+          node.addEventListener('mouseleave',function(){node.dispatchEvent(new Event('repomap:previewend'));});
+          node.addEventListener('focusin',function(){node.dispatchEvent(new Event('repomap:preview'));});
+          node.addEventListener('focusout',function(){node.dispatchEvent(new Event('repomap:previewend'));});
+        })(nodes[n]);
+      }else{
+        if(title)title.remove();
+        (function (node) { repomapPreview.bind(node, card, function () { show(node); }); })(nodes[n]);
+      }
       nodes[n].addEventListener('dragstart',function(event){event.preventDefault();});
     }
 
@@ -453,7 +482,7 @@
       var href = nodes[k].getAttribute('href') || '';
       if (href.charAt(0) !== '#') continue;
       var group = document.getElementById(href.slice(1));
-      var head = group && group.querySelector('.group-head');
+      var head = group && group.matches('.group') && group.querySelector('.group-head');
       if (!head || head.querySelector('.on-map')) continue;
       var link = document.createElement('a');
       link.className = 'on-map';

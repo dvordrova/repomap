@@ -5,7 +5,7 @@
 {{if .Text}}<div class="model answer-copy"><p class="answer-prose">{{.Text}}</p><span class="model-sources">{{range .Sources}} {{template "anchor" .}}{{end}}</span></div>{{end}}
 {{if .Terms}}<div class="answer-terms"><p>{{t "Terms in these sources"}}</p>{{range .Terms}}<details class="answer-term"><summary>{{.Name}}{{if .Context}} <span class="meta">· {{.Context}}</span>{{end}}</summary>
 {{template "concept-explanation.html" .}}
-<a href="#{{.ID}}">{{t "Where this term belongs →"}}</a></details>{{end}}</div>{{end}}
+{{range .Places}}<a href="{{.Href}}">{{t "Explore {0} →" .Title}}</a> {{end}}</details>{{end}}</div>{{end}}
 {{if .MapLinks}}<div class="reading-map-links">{{t "Explore the answer on the map:"}} {{range .MapLinks}}<a href="{{.Href}}" data-question-map="{{.NodeID}}">{{.Label}} →</a> {{end}}</div>{{end}}
 {{if .Remaining}}<p class="reading-gap"><strong>{{t "Still to investigate"}}</strong> <span class="model">{{.Remaining}}</span></p>{{end}}
 {{if .Checks}}<details class="answer-check"><summary>{{t "Check this interpretation"}}</summary>

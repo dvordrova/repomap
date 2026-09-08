@@ -1,0 +1,37 @@
+/* The component overview keeps the existing source nodes in one readable level.
+   The original SVG remains the no-script picture and the connections view. */
+.repo-view-controls{display:flex;gap:.25rem;width:max-content;max-width:100%;padding:.2rem;margin:0 0 .7rem;background:var(--soft);border-radius:8px}
+.repo-view-controls button{font:inherit;font-weight:600;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:.4rem .8rem;background:transparent;color:var(--muted)}
+.repo-view-controls button[aria-pressed=true]{color:var(--ink);background:var(--paper);border-color:var(--line)}
+.repo-view-controls button:focus-visible,.repo-component-card a:focus-visible,.repo-component-connections>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.repo-map-overview [data-map-controls],.repo-map-overview .map-stage>.map-svg,.repo-map-overview .map-inspector,.repo-map-overview>.map-note{display:none}
+.repo-map-overview .map-workspace{display:block}
+.repo-map-overview .map-workspace .map-stage{max-height:none;overflow:visible;cursor:default}
+.repo-component-overview[hidden],.repo-component-card[hidden]{display:none}
+.repo-overview-hint{font-size:var(--text-small);color:var(--muted);margin:.2rem 0 .7rem}
+.repo-component-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr));gap:.75rem;align-items:stretch}
+.repo-component-card{display:flex;flex-direction:column;min-width:0;border:1px solid var(--line);border-radius:9px;background:var(--paper);overflow-wrap:anywhere;transition:border-color .12s ease,box-shadow .12s ease}
+.repo-component-open{display:flex;flex:1;flex-direction:column;text-decoration:none;color:inherit;border-radius:9px}
+.repo-component-open:hover{text-decoration:none}
+.repo-component-card .repo-card-content{height:auto;flex:1;padding:.8rem .9rem .4rem;pointer-events:none}
+.repo-component-card .repo-card-name{font-size:1rem;line-height:1.3;min-height:0;color:var(--accent);display:block;overflow:visible}
+.repo-component-card .repo-card-meta,.repo-component-card .repo-card-path,.repo-component-card .repo-card-purpose{font-size:var(--text-small)}
+.repo-component-card .repo-card-meta{margin-top:.35rem}
+.repo-component-card .repo-card-purpose{margin:.55rem 0 .25rem;line-height:1.5;display:block;overflow:visible}
+.repo-component-action{display:block;margin:.25rem .9rem .65rem;color:var(--accent);font-size:var(--text-small)}
+.repo-component-focused{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent)}
+.repo-component-near{border-color:var(--accent)}
+.repo-component-connections{padding:.5rem .9rem;border-top:1px solid var(--line);font-size:var(--text-small)}
+.repo-component-connections>summary{cursor:pointer;color:var(--ink);font-weight:500}
+.repo-component-connections ul{margin:.65rem 0 .3rem;padding:0;list-style:none}
+.repo-component-connections li{display:grid;grid-template-columns:1rem minmax(0,1fr);gap:.15rem .3rem;margin:.7rem 0}
+.repo-connection-direction{color:var(--muted)}
+.repo-connection-label{grid-column:2;font-size:var(--text-small);color:var(--muted)}
+.repo-component-no-connections{display:block;padding:.5rem .9rem;border-top:1px solid var(--line);font-size:var(--text-small);color:var(--muted)}
+.repo-component-unavailable{border-color:#b85959;background:#fff7f7}
+.repo-component-unavailable .repo-card-name{color:#9a2929}
+
+.repo-component-sources{display:grid;grid-template-columns:fit-content(35%) minmax(0,1fr);gap:.2rem .5rem;margin:0;padding:.45rem .9rem .65rem;font-size:var(--text-small);border-top:1px solid var(--line)}
+.repo-component-sources dt{font-weight:400;color:var(--muted)}
+.repo-component-sources dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.repo-component-sources dd .anchor{display:inline-block;max-width:100%;white-space:normal;overflow-wrap:anywhere;margin:0 .25rem .15rem 0}

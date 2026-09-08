@@ -2,7 +2,7 @@
 
 Status: active living ADR
 
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 
 Historical provenance: pre-cleanup commit `4e54ab3`
 
@@ -39,7 +39,65 @@ spent seventy CPU-minutes without finishing.
 
 ## Bottom-up iteration (2026-09-05)
 
-### Active goal: finish Learn/Work
+### Current goal: a comprehensible whole page (2026-09-08)
+
+The owner explicitly narrowed the current goal to the composition and
+navigation of the whole report: the finite repository must stop feeling like
+an endless succession of canvases and explanations. This continues the prior
+Learn/Work work below; it does not reopen the truth audit of all model prose.
+The chosen implementation stays in the ordinary HTML templates and reads the
+same existing report. No provider requests, semantic graph or analysis path
+are added for these UI changes.
+
+The repository map opens as a complete set of component cards. Each keeps its
+native name, role, path, full existing purpose, manifest/entrypoint anchors and
+all incident connections. The same SVG and exact connections remain under an
+explicit Connections control. Role controls filter that one level; a role is
+not another parent. Source context makes a generic Python library's setup.py
+boundary visible without locally rewriting its accepted description. Long
+source paths wrap inside their card. No component is removed or reprioritized.
+
+Learn exposes the complete saved question menu, one open answer, its position
+in that menu, a next question and an explicit return to all questions. The
+current question remains visible while scrolling or taking a map side trip.
+Work instead offers the existing repository search and an exact component
+search entrance. Mode changes retain map scope, operation, zoom, selected code,
+search and reading. Component Learn entrances use only the saved answer's
+exact map links. Inline terms now link directly to their existing map
+memberships and select that declaration by its source, without a catalogue hop.
+
+Opening a part reveals its key code as cubes inside its original group frame.
+These read existing interpreted concepts and group highlights; a part without
+either can show its original declaration index with no invented explanation.
+Equal names with different source locations stay separate and show those
+locations. There is no automatic first term or operation selection. Clicking
+a cube keeps its explanation below the map; hover only emphasizes neighbours
+or exposes the original brief title. Group arrows remain group arrows. The
+path explicitly names component, area, part and selected code; root/back
+actions address the corresponding scope. Existing full target evidence stays
+in a native disclosure in its original order. No-script source links and
+sections remain available.
+
+Ordinary final runs `20260908-052654` completed on Jieba, chi, the small Go server
+and Python/TypeScript: 30 of 30 targets and 44 saved questions, with zero live
+provider calls and zero transport attempts, including translation. Browser
+checks cover finite question returns, direct term-to-map selection, retained
+code and zoom across Learn/Work, component sources and exact connections,
+root/area/part Back/Forward, and the named map return from full details.
+Re-entering a component from Home resets to its component entrance; a named
+map return retains its precise scope and selected code.
+Long source links fit their cards; duplicate code names retain their source
+in the toolbar. Static HTML checks preserve 490 source excerpts and all
+external source links. Tests, vet and the owner build pass. Continuous pointer
+hover was not measured by the available browser automation API.
+Final receipts and report links are in `work/ui-whole-page-acceptance.json`
+and `work/repomap-review-current.md`. The owner still reviews the resulting
+composition; implementation and browser checks do not prove human
+comprehension. UX32–UX38 and all prior importance columns remain in the review
+documents. Member arrows are still an alternative, not a shipped inference;
+very narrow windows remain deferred by the owner.
+
+### Prior goal and acceptance history: finish Learn/Work
 
 On 2026-09-07 the owner asked task
 `01a07a8c-53dd-7f33-8614-d726b350680f` to inherit the previous task's still-active

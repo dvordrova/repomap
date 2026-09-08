@@ -118,6 +118,15 @@ separate stage outputs.
   operation, zoom and inspector. Structure/Operations and contextual/all uses
   remain controls within the map, not additional report modes. With scripting
   disabled all sections and source links remain available in the HTML.
+  The repository overview exposes the complete, finite component set as cards
+  with existing purposes, source context and incident connections; the same
+  graph remains available as an explicit connections view. Learn exposes the
+  complete saved question menu and one answer at a time, with position and a
+  named return. Work offers search at repository or component scope. Opening
+  a part reveals its existing key code inside that part, with the chosen
+  explanation below the map. Hover may preview or emphasize neighbours but
+  never replaces the selected reading or opens another scope. Member cubes
+  do not inherit the group's arrows.
 * Learn questions come from a curated, repository-independent set of learning
   intents. The model uses the existing concepts, core parts, integrations,
   README and documentation to turn each intent into zero, one or several

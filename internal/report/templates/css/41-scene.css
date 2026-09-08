@@ -1,0 +1,41 @@
+/* One introduction leads into the map; the optional reading entrances stay
+   alongside it instead of forming another row of competing cards. */
+.learn-home{display:grid;grid-template-columns:minmax(0,1fr) minmax(16rem,22rem);align-items:start;gap:1rem 2.5rem;padding:1.2rem 0 .5rem}
+.learn-home .learn-intro{max-width:none;padding:0}
+.learn-home .learn-intro h2,.work-intro h2{margin:0 0 .5rem;padding:0;border:0;color:var(--muted);font-size:var(--text-small);font-weight:600;letter-spacing:.03em}
+.learn-home .learn-intro .summary{max-width:58ch;margin:0;font-size:1.2rem;line-height:1.5}
+.learn-home .learn-intro .empty{margin:0}
+.learn-home .learn-start{display:flex;flex-direction:column;gap:0;margin:0;padding:0 0 0 1.25rem;border-left:1px solid var(--line)}
+.learn-home .learn-start-label{padding:0 .5rem .25rem;color:var(--muted);font-size:var(--text-small);font-weight:600}
+.learn-home .learn-start a{display:flex;align-items:baseline;justify-content:space-between;gap:.75rem;padding:.25rem .5rem;border:0;border-radius:4px;background:transparent;color:var(--accent);font-size:var(--text-body);line-height:1.5;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:.18em}
+.learn-home .learn-start a span{color:inherit}
+.learn-home .learn-start a:hover,.learn-home .learn-start a:focus-visible{background:var(--paper);text-decoration-color:currentColor}
+.repository-map-panel>h3{margin:.75rem 0 .4rem}
+.work-intro{padding:1.2rem 0 .25rem}
+.work-intro p{max-width:65ch;margin:0;font-size:1.1rem;line-height:1.5}
+.learn-home .report-scope{margin:.65rem 0 0;color:var(--muted);font-size:var(--text-small)}
+.learn-home .learn-start .learn-question-entry{font-weight:650;text-decoration-color:currentColor}
+.work-intro{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.reading-search-entry{flex-shrink:0;padding:.6rem .9rem;border:1px solid var(--accent);border-radius:6px;background:var(--accent);color:var(--paper);font:inherit;cursor:pointer}
+.reading-search-entry:hover,.reading-search-entry:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.question-menu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.2rem 2rem;padding-left:1.5rem;margin:.7rem 0 1rem}
+.question-menu li{padding:.25rem .2rem;color:var(--muted)}
+.question-menu a{display:block;line-height:1.45;overflow-wrap:anywhere;text-decoration-thickness:1px;text-underline-offset:.17em}
+.question-menu a[aria-current=true]{font-weight:650}
+.question-index{max-width:65rem;padding:.6rem 0;margin:.5rem 0 1rem;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.question-index>summary{font-size:1rem}
+.question-position{display:flex;flex-wrap:wrap;gap:.3rem 1rem;margin:.65rem 0;font-size:var(--text-small);color:var(--muted)}
+.question-position a:last-child{margin-left:auto}
+.learn-topic-menu{max-width:65rem;margin:0 0 1.5rem}
+.component-reading-entry{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem 1rem;margin:.7rem 0;padding:.65rem .8rem;border-left:3px solid var(--accent);background:var(--paper);font-size:var(--text-small)}
+.component-reading-entry>strong{color:var(--muted)}
+.component-reading-entry>span{color:var(--muted)}
+.component-question-menu{flex:1;min-width:15rem;margin:0}
+.component-question-menu>summary{font-size:var(--text-small)}
+.component-question-menu .question-menu{grid-template-columns:minmax(0,1fr);margin-bottom:.2rem}
+.component-reading-entry .reading-search-entry{padding:.35rem .65rem}
+body[data-reading-mode=work] .nav .find{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+body.reading-ready .reading-guide[hidden],.reading-search-entry[hidden]{display:none}
+@media(max-width:850px){.learn-home{grid-template-columns:minmax(0,1fr);gap:.8rem;padding-top:1rem}.learn-home .learn-start{flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:.15rem .7rem;padding:0;border-left:0}.learn-home .learn-start-label{padding:0 .5rem 0 0}.learn-home .learn-start a{gap:.4rem;padding:.2rem .3rem}.learn-home .learn-intro .summary{font-size:1.1rem}}
+@media(max-width:650px){.question-menu{grid-template-columns:minmax(0,1fr)}.work-intro{align-items:flex-start;flex-direction:column}.component-question-menu{min-width:0;flex-basis:100%}}
+@media print{.learn-home{display:block;padding:0}.learn-home .learn-start,.reading-search-entry,.component-reading-entry,.question-position{display:none}.work-intro{padding:.5rem 0}body.reading-ready .reading-guide[hidden]{display:block}}

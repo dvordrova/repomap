@@ -214,7 +214,7 @@ func TestQuestionTermsUseSelectedDeclarationsNotNameGuesses(t *testing.T) {
 	if err := templates.ExecuteTemplate(&html, "question.html", question); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Terms in these sources", "<summary>Lease</summary>", "with &lt;data&gt; intact.", `href="#concept-lease"`, "lease.go:12"} {
+	for _, want := range []string{"Terms in these sources", "<summary>Lease</summary>", "with &lt;data&gt; intact.", `href="#server-leases"`, `href="#library-leases"`, "Explore server / Leases", "lease.go:12"} {
 		if !strings.Contains(html.String(), want) {
 			t.Fatalf("missing %q", want)
 		}

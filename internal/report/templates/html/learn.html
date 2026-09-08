@@ -2,6 +2,7 @@
 <div class="learn-home" data-reading-mode="learn">
 <div class="learn-intro"><h2>{{t "Understand this repository"}}</h2>
 {{if .Summary}}<p class="summary model">{{.Summary.Text}}<span class="model-sources">{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</span></p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
+<p class="report-scope">{{t "This report: {0} components · {1} questions" (len .Sections) (len .Questions)}}</p>
 </div>
 {{template "learn-start-links.html" .}}
 </div>
@@ -9,15 +10,18 @@
 
 {{define "learn-start.html"}}
 <div data-reading-mode="learn">
-{{if .LearnQuestionTopics}}<div class="learn-questions"><h3>{{t "Questions to explore"}}</h3><div class="learn-question-topics">{{range .LearnQuestionTopics}}<details id="{{.ID}}"><summary>{{.Title}} <span class="meta">{{len .Questions}}</span></summary><ul class="plain">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}} →</a></li>{{end}}</ul></details>{{end}}</div></div>{{end}}
+{{if .Questions}}<div class="learn-questions"><h3>{{t "{0} questions in this report" (len .Questions)}}</h3><p class="meta">{{t "Choose one question. Its answer leads to the relevant parts of the map and the original sources."}}</p><ol class="question-menu">{{range .Questions}}<li><a href="#{{.ID}}">{{.Question}}</a></li>{{end}}</ol></div>{{end}}
+{{if .LearnQuestionTopics}}<details class="learn-topic-menu"><summary>{{t "Questions by topic"}}</summary><div class="learn-question-topics">{{range .LearnQuestionTopics}}<details id="{{.ID}}"><summary>{{.Title}} <span class="meta">{{len .Questions}}</span></summary><ul class="plain">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}} →</a></li>{{end}}</ul></details>{{end}}</div></details>{{end}}
 {{if .LearningNote}}<p>{{.LearningNote}} <a href="#questions">{{t "View the topic review →"}}</a></p>{{end}}
 </div>{{end}}
 
 {{define "learn-start-links.html"}}
 <nav class="learn-start" aria-label="{{t "Starting points"}}">
-<a href="#learn-parts"><strong>{{t "What is inside each part?"}}</strong><span>{{t "Explore areas and their responsibilities →"}}</span></a>
-<a href="{{.LearnRunHref}}"><strong>{{t "How do I run it?"}}</strong><span>{{if eq .LearnRunHref "#how-to-run"}}{{t "Read the commands and their sources →"}}{{else}}{{t "Read about starting the project →"}}{{end}}</span></a>
-{{if .LearnConcepts}}<a href="#concepts"><strong>{{t "What does this term mean?"}}</strong><span>{{t "Find an explanation and where it belongs →"}}</span></a>{{end}}
+<span class="learn-start-label">{{t "Starting points"}}</span>
+{{if .Questions}}<a class="learn-question-entry" href="#questions">{{t "Choose from {0} questions" (len .Questions)}} <span aria-hidden="true">→</span></a>{{end}}
+<a href="#learn-parts">{{t "What is inside each part?"}} <span aria-hidden="true">→</span></a>
+<a href="{{.LearnRunHref}}">{{t "How do I run it?"}} <span aria-hidden="true">→</span></a>
+{{if .LearnConcepts}}<a href="#concepts">{{t "What does this term mean?"}} <span aria-hidden="true">→</span></a>{{end}}
 </nav>
 {{end}}
 

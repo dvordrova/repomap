@@ -586,6 +586,19 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   before provider encoding, execution, fit checks and memo identity. Empty
   ResponseLanguage means English; the final translator supplies its language.
   Exact-byte replay does not rebuild or add this instruction.
+- The 2026-09-08 whole-page composition uses the same report and graph. The
+  repository map starts with all existing component cards, purposes, source
+  anchors and incident connections; the full connections picture is an
+  explicit view. Learn exposes the complete saved question menu, one open
+  answer with its position, and exact term-to-map links. Work offers existing
+  search at repository or component scope. Opening a part shows its existing
+  key code as source-distinct cubes inside it, with selected prose below the
+  map. Hover does not switch scope, operation or selected reading; neither
+  entering Operations nor opening a part chooses the first item for the user.
+  Group arrows keep their original endpoints. Named question and map context
+  remain visible, and mode changes preserve map and reading state. Original
+  target evidence remains in native disclosures. Display-only changes reuse
+  unchanged analysis and translations and require no new provider calls.
 - Repository changes during a run do not fail publication. Do not reintroduce a
   freshness gate or strict-snapshot mode.
 - `--no-serve` requires resolvable GitHub or GitLab source links and fails in
