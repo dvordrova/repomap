@@ -106,6 +106,25 @@ func TestQuestionAnswerRendersItsOwnSourcesAndKeepsTheReadingRoute(t *testing.T)
 			t.Fatalf("source excerpt includes context or interpretation: %s", misleading)
 		}
 	}
+	// The qualification belongs to the answer's default reading, before any
+	// optional checks. Its existing display ref and shared source control remain.
+	_, answer, found := strings.Cut(string(html), `<div class="model answer-copy">`)
+	if !found {
+		t.Fatal("answer has no visible prose")
+	}
+	answer, _, _ = strings.Cut(answer, `</div>`)
+	basis := "The Running section gives the command; this was not executed."
+	if !strings.Contains(answer, `<p class="answer-basis"><span data-display-ref="`) || !strings.Contains(answer, basis) || strings.Contains(answer, "<details") {
+		t.Fatal("answer qualification or its display binding is hidden behind a disclosure")
+	}
+	if strings.Index(answer, basis) < strings.Index(answer, "Run &lt;example&gt;") || strings.Count(answer, `class="model-sources"`) != 1 {
+		t.Fatal("answer qualification displaced the prose or duplicated source controls")
+	}
+	_, main, _ := strings.Cut(string(html), `<main>`)
+	main, _, _ = strings.Cut(main, `</main>`)
+	if strings.Count(main, basis) != 1 {
+		t.Fatal("answer qualification was duplicated instead of moved")
+	}
 	_, check, _ := strings.Cut(string(html), `<details class="answer-check">`)
 	_, check, _ = strings.Cut(check, `<ul class="reading-stops">`)
 	check, _, _ = strings.Cut(check, `</ul></details>`)

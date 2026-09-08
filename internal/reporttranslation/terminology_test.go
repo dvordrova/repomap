@@ -2,6 +2,7 @@ package reporttranslation
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -48,15 +49,16 @@ func TestTranslationKeepsTermNamesAndTranslatesDefinitionsInTheExistingWindow(t 
 			t.Fatalf("local identity, source bytes or occurrence bookkeeping entered translation: %s", forbidden)
 		}
 	}
-	var request []requestEntry
+	var request modelRequest
 	if err := json.Unmarshal([]byte(wire), &request); err != nil {
 		t.Fatal(err)
 	}
-	if request[0].Role != "answer" || request[1].Role != "term-explanation" || len(request[0].Terms) != 1 ||
-		request[0].Terms[0].Explanation != entry.Terms[0].Explanation || request[0].Terms[0].Spelling != "custom dictionary" {
+	if request.Entries[0].Role != "answer" || request.Entries[1].Role != "term-explanation" || len(request.Terms) != 1 ||
+		request.Terms[0].Explanation != entry.Terms[0].Explanation || request.Terms[0].Spelling != "custom dictionary" {
 		t.Fatal("typed request omitted the original name or definition context")
 	}
-	if request[0].Text != "Load custom dictionary with __REPOMAP_P1__." {
+	assertRequestTerms(t, request, catalog.Entries)
+	if request.Entries[0].Text != "Load custom dictionary with __REPOMAP_P1__." {
 		t.Fatal("an ordinary term acquired placeholder bookkeeping")
 	}
 	if _, err := Translate(t.Context(), executor, provider, catalog, report.Russian); err != nil || len(provider.requests) != 1 {
@@ -84,12 +86,95 @@ func TestTranslationRetainsHomonymDefinitionsWithoutRequestingAChoice(t *testing
 	if err != nil || len(result.Entries) != 1 || result.Entries[0].Text != "Описывается bank." {
 		t.Fatalf("a plain translation required choosing a meaning: %+v, %v", result, err)
 	}
-	var request []requestEntry
+	var request modelRequest
 	if err := json.Unmarshal([]byte(provider.requests[0].Prompt.User), &request); err != nil {
 		t.Fatal(err)
 	}
-	if len(request[0].Terms) != 2 || request[0].Terms[0].Spelling != "bank" || request[0].Terms[1].Spelling != "bank" || request[0].Terms[0].Explanation == request[0].Terms[1].Explanation {
-		t.Fatalf("equal names merged distinct definitions: %+v", request[0].Terms)
+	if len(request.Terms) != 2 || request.Terms[0].Spelling != "bank" || request.Terms[1].Spelling != "bank" || request.Terms[0].Explanation == request.Terms[1].Explanation {
+		t.Fatalf("equal names merged distinct definitions: %+v", request.Terms)
+	}
+	assertRequestTerms(t, request, catalog.Entries)
+}
+
+// Resolve the actual wire refs and compare the exact set of definitions for
+// each original text, including homonyms. No sibling's context may leak in.
+func assertRequestTerms(t *testing.T, request modelRequest, entries []report.DisplayTextEntry) {
+	t.Helper()
+	known := make(map[string]report.DisplayTextEntry)
+	for _, entry := range entries {
+		known[entry.Ref] = entry
+	}
+	definitions := make(map[string][2]string)
+	pairs := make(map[[2]string]bool)
+	for _, term := range request.Terms {
+		pair := [2]string{term.Spelling, term.Explanation}
+		if term.Ref == "" || pairs[pair] || definitions[term.Ref] != ([2]string{}) {
+			t.Fatalf("duplicate or missing definition identity: %+v", term)
+		}
+		pairs[pair], definitions[term.Ref] = true, pair
+	}
+	used := make(map[string]bool)
+	for _, entry := range request.Entries {
+		original, exists := known[entry.Ref]
+		if !exists || entry.Text != original.Text || entry.Role != original.Role {
+			t.Fatalf("window changed an original text: %+v", entry)
+		}
+		want, got := make(map[[2]string]bool), make(map[[2]string]bool)
+		for _, term := range original.Terms {
+			want[[2]string{term.Spelling, term.Explanation}] = true
+		}
+		for _, ref := range entry.Terms {
+			pair, exists := definitions[ref]
+			if !exists || got[pair] {
+				t.Fatalf("unknown or duplicate term ref in %s: %s", entry.Ref, ref)
+			}
+			got[pair], used[ref] = true, true
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s changed applicable definitions: got %v, want %v", entry.Ref, got, want)
+		}
+	}
+	if len(used) != len(definitions) {
+		t.Fatal("request carries definitions not used by its own entries")
+	}
+}
+
+func TestTranslationSharesExactDefinitionsWithoutChangingEntryScopeOrLocalBinding(t *testing.T) {
+	finance := report.DisplayTextTerm{ID: "local-finance", Spelling: "bank", Explanation: "A financial institution."}
+	land := report.DisplayTextTerm{ID: "local-land", Spelling: "bank", Explanation: "The land beside a river."}
+	duplicate := finance
+	duplicate.ID = "another-local-finance"
+	catalog := testCatalog(t, []report.DisplayTextEntry{
+		{Role: "answer", Text: "Use the bank.", Terms: []report.DisplayTextTerm{finance, duplicate}},
+		{Role: "answer", Text: "Walk along the bank.", Terms: []report.DisplayTextTerm{land}},
+		{Role: "answer", Text: "The bank has two meanings.", Terms: []report.DisplayTextTerm{finance, land}},
+		{Role: "label", Text: "Start here"},
+	})
+	provider := &testProvider{}
+	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
+	result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
+	if err != nil || result.Validate(catalog) != nil || len(provider.requests) != 1 {
+		t.Fatalf("shared context changed translation execution: %+v, %v", result, err)
+	}
+	var request modelRequest
+	if err := json.Unmarshal([]byte(provider.requests[0].Prompt.User), &request); err != nil {
+		t.Fatal(err)
+	}
+	if len(request.Terms) != 2 || len(request.Entries[0].Terms) != 1 || len(request.Entries[2].Terms) != 2 || len(request.Entries[3].Terms) != 0 {
+		t.Fatalf("definitions were not shared by exact pair: %+v", request)
+	}
+	assertRequestTerms(t, request, catalog.Entries)
+	// Local term identity changes rebind the same exact provider answer; they
+	// must not add context or alter an otherwise identical model request.
+	for i := range catalog.Entries {
+		for j := range catalog.Entries[i].Terms {
+			catalog.Entries[i].Terms[j].ID += "-new-owner"
+		}
+	}
+	rebound := testCatalog(t, catalog.Entries)
+	cached, err := Translate(t.Context(), executor, provider, rebound, report.Russian)
+	if err != nil || len(provider.requests) != 1 || cached.CatalogSHA256 != rebound.SHA256 || cached.CatalogSHA256 == result.CatalogSHA256 {
+		t.Fatalf("local binding changed request identity: %+v, %v", cached, err)
 	}
 }
 

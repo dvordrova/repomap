@@ -2,14 +2,15 @@
 <summary class="reading-question">{{.Question}}</summary>
 {{if .AnswerNote}}<p class="reading-answer-note">{{.AnswerNote}}</p>{{end}}
 {{range .Answers}}<div class="reading-answer">
-{{if .Text}}<div class="model answer-copy"><p class="answer-prose" data-display-ref="{{.TextRef}}">{{.Text}}</p><span class="model-sources">{{range .Sources}} {{template "anchor" .}}{{end}}</span></div>{{end}}
+{{if or .Text .Basis}}<div class="model answer-copy">{{if .Text}}<p class="answer-prose" data-display-ref="{{.TextRef}}">{{.Text}}</p>{{end}}
+{{if .Basis}}<p class="answer-basis"><span data-display-ref="{{.BasisRef}}">{{.Basis}}</span></p>{{end}}
+<span class="model-sources">{{range .Sources}} {{template "anchor" .}}{{end}}</span></div>{{end}}
 {{if .Terms}}<div class="answer-terms"><p>{{t "Terms in these sources"}}</p>{{range .Terms}}<details class="answer-term"><summary>{{if .Alias}}{{.Alias}} <code class="meta">· {{.Name}}</code>{{else}}{{.Name}}{{end}}{{if .Context}} <span class="meta">· {{.Context}}</span>{{end}}</summary>
 {{template "concept-explanation.html" .}}
 {{range .Places}}<a href="{{.Href}}">{{t "Explore {0} →" .Title}}</a> {{end}}</details>{{end}}</div>{{end}}
 {{if .MapLinks}}<div class="reading-map-links"><span class="reading-map-label">{{t "Explore the answer on the map:"}}</span>{{range .MapLinks}}<a href="{{.Href}}" data-question-map="{{.NodeID}}">{{.Label}} →</a> {{end}}</div>{{end}}
 {{if .Remaining}}<p class="reading-gap"><strong>{{t "Still to investigate"}}</strong> <span class="model"><span data-display-ref="{{.RemainingRef}}">{{.Remaining}}</span></span></p>{{end}}
 {{if .Checks}}<details class="answer-check"><summary>{{t "Check this interpretation"}}</summary>
-{{if .Basis}}<p class="model"><span data-display-ref="{{.BasisRef}}">{{.Basis}}</span><span class="model-sources">{{range .Sources}} {{template "anchor" .}}{{end}}</span></p>{{end}}
 <ul class="reading-stops">{{range .Checks}}<li><strong>{{.Name}}</strong> <span class="reading-source">{{template "anchor" .Source}}</span>
 {{template "question-excerpts.html" .Excerpts}}
 </li>{{end}}</ul></details>{{end}}

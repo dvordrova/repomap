@@ -25,17 +25,20 @@ type testWire struct {
 
 // Test-only request reader checks the typed ordered wire and its complete texts.
 type modelRequest struct {
+	Terms   []requestTerm
 	Entries []requestEntry
 }
 
 func (request *modelRequest) UnmarshalJSON(raw []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request.Entries); err != nil {
+	var value translationRequest
+	if err := decoder.Decode(&value); err != nil {
 		return err
 	}
+	request.Terms, request.Entries = value.Terms, value.Entries
 	if request.Entries == nil {
-		return fmt.Errorf("test provider: input is not an ordered entry array")
+		return fmt.Errorf("test provider: input has no ordered entry array")
 	}
 	if _, err := decoder.Token(); err != io.EOF {
 		return fmt.Errorf("test provider: input has trailing data")
@@ -366,7 +369,11 @@ func TestTranslateRejectsInvalidKeyedWireBeforeCache(t *testing.T) {
 }
 
 func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
-	catalog := testCatalog(t, plainEntries(7))
+	entries := plainEntries(7)
+	for i := range entries {
+		entries[i].Terms = termEntry().Terms
+	}
+	catalog := testCatalog(t, entries)
 	provider := &testProvider{}
 	call, err := translationCall(catalog.Entries[:3], report.Russian)
 	if err != nil {
@@ -390,6 +397,7 @@ func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
 		if err := json.Unmarshal([]byte(wire.Prompt.User), &request); err != nil {
 			t.Fatal(err)
 		}
+		assertRequestTerms(t, request, catalog.Entries)
 		if want := []int{3, 3, 1}[i]; len(request.Entries) != want {
 			t.Fatalf("window %d contains %d entries, want %d", i, len(request.Entries), want)
 		}
@@ -434,7 +442,11 @@ func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
 }
 
 func TestTranslateSplitsOnlyRealResponseResourcesWithoutPartialPublication(t *testing.T) {
-	catalog := testCatalog(t, plainEntries(7))
+	entries := plainEntries(7)
+	for i := range entries {
+		entries[i].Terms = []report.DisplayTextTerm{{ID: fmt.Sprintf("local-%d", i), Spelling: "bank", Explanation: fmt.Sprintf("Definition %d.", i%3)}}
+	}
+	catalog := testCatalog(t, entries)
 	for _, kind := range []llm.ResourceLimitKind{llm.ResourceLimitResponseBytes, llm.ResourceLimitOutputTokens} {
 		t.Run(string(kind), func(t *testing.T) {
 			provider := &testProvider{resourceKind: kind, responseRows: 2}
@@ -453,6 +465,13 @@ func TestTranslateSplitsOnlyRealResponseResourcesWithoutPartialPublication(t *te
 			}
 			if len(provider.requests) <= 4 {
 				t.Fatal("test did not exercise real failed resource envelopes and adaptive splits")
+			}
+			for _, wire := range provider.requests {
+				var request modelRequest
+				if err := json.Unmarshal([]byte(wire.Prompt.User), &request); err != nil {
+					t.Fatal(err)
+				}
+				assertRequestTerms(t, request, catalog.Entries)
 			}
 			atomicProvider := &testProvider{resourceKind: kind}
 			atomicCatalog := testCatalog(t, plainEntries(1))

@@ -87,7 +87,12 @@ and memo identities distinguish the preference. Other atlas tables keep their
 existing fast mode. The final answer reads the original question and evidence. Required unfamiliar names are briefly
 explained at first use. Completeness compares the original question with the
 answer at its requested level: silent omission of a central part is partial;
-an overview does not require unasked implementation details.
+an overview does not require unasked implementation details. Behavior supported
+only by author documentation is attributed in the answer itself; a separate
+basis sentence does not turn an unconditional implementation claim into a
+documented one. A documented responsibility alone does not prove its implementation.
+The answer's existing basis is visible directly below its prose, with the same
+display binding and shared source control; original source checks remain collapsed.
 Useful deductions are welcome, including from names and signatures; they stay
 recognizable as interpretations and can be checked beside the original excerpts.
 Answered, partial, unanswered, not-applicable and
@@ -97,7 +102,10 @@ separate partial answer parts. No body retrieval or new semantic graph is added.
 The ordinary reading adapts eight base learning intents after the atlas using
 the configured client, then answers its proposals through the same question and answer stages. Proposal preparation starts with the complete original
 learning evidence and all eight intents, using the actual provider request
-envelope rather than an ordinary 64KiB fragment budget. Explicit development
+envelope rather than an ordinary 64KiB fragment budget. Each proposal request
+encodes repeated component/area context once behind local refs while retaining
+every evidence item's complete original observations. Partitions rebuild their
+own context catalogue without relying on a parent or sibling window. Explicit development
 budgets remain available. Actual context/output/response resource refusals
 partition complete original evidence by encoded byte weight; accepted sibling
 reviews survive, children retain their partial-context scope, and failed parents
@@ -653,7 +661,10 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
 - Semantic output is canonical English. The owner approved final presentation
   localization on 2026-09-07/08: `--lang ru` translates the already-built English
   frontend structure, with an ordinary UI dictionary and a separate LLM cube
-  for generated display prose, then renders `report.<repo>.ru.html`. Source
+  for generated display prose, then renders `report.<repo>.ru.html`. Translation
+  requests carry one local dictionary of exact spelling/definition pairs and
+  each text's applicable refs. Equal spellings with different definitions stay
+  separate; each partition rebuilds its complete dictionary. Source
   excerpts, names, IDs and topology remain original. The default English file
   remains `report.html`. Ordinary publication passed on the small server,
   chi, Python/TypeScript fixture and Chinese Jieba repository; answer quality

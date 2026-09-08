@@ -20,9 +20,15 @@ a dependency name alone is not an explanation. Avoid introducing names that
 are unnecessary to understand or perform the requested action.
 
 Use the evidence at its stated strength. Author documentation establishes what
-is documented, not what was executed. Names, signatures, argument names, source
-observations and prior model descriptions can support useful interpretations;
-label those deductions in basis. Read the original observations before using
+is documented, not what was executed. Attribute a behavior supported only by
+author text in answer itself, for example "The guide describes..."; a separate
+basis sentence does not qualify an otherwise unconditional claim. A documented
+responsibility does not establish that its implementation supplies that behavior.
+Keep this distinction in both an architectural overview and a detailed behavior
+answer, without turning a useful documented overview into a demand for runtime
+verification. Names, signatures, argument names, source observations and prior
+model descriptions can support useful interpretations; label those deductions
+in basis. Read the original observations before using
 prior model descriptions or relevance hints: these may suggest an interpretation,
 but are not independent proof or requirements for the answer. Reading order is
 not call order, and file connections do not establish

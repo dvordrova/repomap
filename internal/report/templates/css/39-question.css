@@ -6,6 +6,7 @@
 .reading-answer { font-size:1rem;line-height:1.6;max-width:70ch }
 .answer-copy.model-inspectable, .answer-copy.model-inspectable:hover { color:var(--ink);background:none;text-decoration:none;cursor:auto }
 .answer-copy .answer-prose { white-space:pre-wrap;overflow-wrap:anywhere;margin:.8rem 0 .4rem }
+.answer-copy .answer-basis { margin:.25rem 0 .5rem;color:var(--muted);font-size:var(--text-small);font-style:normal;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere }
 .answer-copy .source-hint { display:block;margin:0 0 .8rem;padding:0;color:var(--muted);font-size:var(--text-small);text-decoration:underline;text-underline-offset:.15em }
 .answer-copy .source-hint:hover { color:var(--accent) }
 .reading-answer-note { color:var(--muted);font-size:var(--text-small) }

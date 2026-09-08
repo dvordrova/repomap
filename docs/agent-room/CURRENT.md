@@ -1787,7 +1787,13 @@ Report format is v85; question readings v9 retain the accepted final-answer
 request digest and exact result row for contextual term bindings. Domain glossary
 catalogue v3 preserves those origins through reduction without sending them to
 the provider or making them part of a semantic candidate identity. Display text
-catalogue v5 uses translation contract v8.
+catalogue v5 uses translation contract v9. Each actual translation request
+contains one local catalogue of exact spelling/explanation pairs and ordered
+text entries with their applicable dictionary refs. Equal spellings with
+different explanations remain separate choices in that context. No occurrence
+or sense selection is requested. Partitioning rebuilds the dictionary for each
+complete child window; accepted translation binding and source protection are
+unchanged. This removes repeated definitions without dropping their meanings.
 
 The owner's clarified 2026-09-08 design keeps every glossary name in its original
 spelling. A later clarification adds an optional English Alias beside a native
@@ -2089,13 +2095,22 @@ dependency installation still unresolved. The first attempt exhausted the old
 8192-token ceiling; neither that rejection nor the successful development read
 constitutes ordinary report acceptance. The new ordinary check is pending.
 
+Learn proposal request v3 factors only repeated component names and area-model
+hypotheses into a request-local context catalogue. Every evidence ref keeps its
+complete original observations and source binding; local graph/source values
+are unchanged. Each actual child request rebuilds its own context refs, and
+preparation measures the same encoded form that is sent. The PyKrx review's
+343 evidence items are distinct: 38 shared headers do not replace those items.
+On that saved input the owner JSON shrank from 297,580 to 262,300 bytes with
+all original contexts reconstructing exactly. Selection and merge are unchanged.
+
 The question pass retrieves anchored evidence for all questions together, then
 answers them in one shared reasoning batch. The 2026-09-08 AI/ML, prompt and
 simplicity review removed the separate route selector: it read the same original
 evidence, while final answers already returned source refs. The supporting guide
 now projects those refs in their accepted reading order. It has no independent
 open question or reduction-round authority. Question readings are v9 and the
-answer contract is v7. `read --through question` isolates retrieval;
+answer contract is v8. `read --through question` isolates retrieval;
 `--through answer` runs the combined final stage. `--through route` fails with
 explicit migration guidance rather than silently selecting another operation.
 
@@ -2149,6 +2164,61 @@ Prior model uncertainty must not overrule positive source evidence, such as an
 observed Python script entrypoint. The answer briefly explains unfamiliar names needed
 for the requested action. No second review stage, new graph or local semantic
 status repair is added.
+
+The 2026-09-08 PyKrx review found an overview presenting documentation's stated
+network responsibilities as implemented retry/timeout behavior, while the
+failure answer qualified the same source. Answer v8 requires author-only
+behavioral claims to be attributed in the answer itself, in overviews as well
+as detailed answers. A separate basis sentence does not qualify an unconditional
+claim. A documented overview can still be useful and complete without invented
+demands for runtime verification. No body retrieval or local prose repair is
+introduced by this prompt change.
+
+Acceptance does not establish that v8 enforces those semantic requirements.
+The same-evidence DeepSeek comparison returned 19 rows with thinking enabled
+in 170.132 seconds (23,235 input, 21,803 output including 18,359 reasoning
+tokens), but the overview still made unconditional documentation-only claims
+and the failure answer borrowed pagination from another question's evidence.
+With thinking disabled, the response reached the shared 128,000-token output
+envelope after 490.107 seconds: its optional glossary expanded to 3,866 complete
+term objects before truncation. That response was refused, not salvaged.
+Retrieval without thinking took 48.009 seconds versus the saved enabled
+baseline's 148.354 seconds, but omitted the failure question's only retry-policy
+document. These are individual development comparisons, not a latency benchmark
+or grounds to change either ordinary reasoning preference.
+
+The existing answer basis is now rendered directly below its prose, outside
+the collapsed original-source checks. Its display ref and translated text are
+unchanged, and one source control serves both paragraphs. This exposes the
+qualification; it does not repair an unsupported statement in the answer.
+Saved PyKrx and mixed-language fixture renders preserved all 19 and 14 bound
+basis paragraphs respectively without provider calls.
+
+Ordinary PyKrx acceptance `20260908-161339-pykrx-2f1079ca9048` analyzed all 22
+targets and published 15 questions (13 answered, two partial), using seven live
+calls in 502.699 seconds. New proposal and translation formats were accepted.
+The failure answer attributed its documented policy and retained an explicit
+implementation gap. The layers answer's basis still overstated its evidence
+as corroborating declarations although all four selected sources were author
+documentation; ordinary answer quality therefore remains under review.
+On the exact prior 745-text translation catalogue, prepared request bytes fell
+from 262,401 to 135,247 (48.46%); all texts and applicable definition pairs were
+preserved. This is a byte comparison, not a token or price estimate.
+The final-template ordinary rerun `20260908-162337-pykrx-ecc82f67a93c` took
+56.031 seconds and reused Learn, answers and translations. It still made one
+glossary call: both runs' reduction responses omitted the first group and were
+refused, preserving all 81 original entries with partial-comparison scope.
+Rejected answers are not cached. This leaves repeated similar explanations in
+the report and an observability gap: the exchange records the rejection while
+the stage summary reports ready. A warm ordinary analysis is therefore not
+claimed to be provider-free. Saved presentation rendering remains provider-free.
+
+A separate single-decision Learn menu experiment retained the same 19 candidate
+questions and all eight curated goals without a quota. It selected 14 in
+3.803 seconds, omitting development setup, HTTP sessions/authentication and
+non-business-day behavior among other topics. A shorter list did not establish
+better coverage; this experiment was not adopted. Ordinary intent selection
+and merge remain unchanged.
 
 Final-answer prose keeps its paragraph breaks and complete qualifications through
 normalization, caching and publication. The answer, basis and remaining-gap cells
@@ -3894,9 +3964,9 @@ wrappers and repeated entry fields without trimming the catalogue or imposing a
 row count. The decoder preserved duplicate keys to reject conflicting values,
 discarded unknown refs, and rejected missing or non-string known values,
 altered placeholders and trailing JSON. A 600-entry regression covered one
-complete request without a row-count cap. Current v8, described in the shared
-glossary section above, supplies ordered entries with role and terminology
-context and accepts one text object per ref.
+complete request without a row-count cap. Current v9, described in the shared
+glossary section above, supplies ordered entries with role and applicable refs
+into one request-local terminology dictionary, and accepts one text object per ref.
 
 Earlier v2/v3 live calls succeeded on several complete catalogues but sometimes
 returned an extra closing delimiter. These malformed responses were rejected,

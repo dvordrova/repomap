@@ -33,6 +33,7 @@ type responseEntry struct {
 type translationWindow []report.DisplayTextEntry
 
 type requestTerm struct {
+	Ref         string `json:"ref"`
 	Spelling    string `json:"spelling"`
 	Explanation string `json:"explanation"`
 }
@@ -40,10 +41,15 @@ type requestTerm struct {
 // The wire projection deliberately omits local term IDs, source links and
 // question scopes. Definitions only provide context for the surrounding prose.
 type requestEntry struct {
-	Ref   string        `json:"ref"`
-	Role  string        `json:"role"`
-	Text  string        `json:"text"`
-	Terms []requestTerm `json:"terms,omitempty"`
+	Ref   string   `json:"ref"`
+	Role  string   `json:"role"`
+	Text  string   `json:"text"`
+	Terms []string `json:"terms,omitempty"`
+}
+
+type translationRequest struct {
+	Terms   []requestTerm  `json:"terms,omitempty"`
+	Entries []requestEntry `json:"entries"`
 }
 
 // Translate returns a complete presentation-only translation bound to catalog.
@@ -193,11 +199,23 @@ func translationCall(
 ) (llm.Call[[]report.DisplayTranslationEntry], error) {
 	// Keep catalogue order and definition context in this same request. Term
 	// spellings stay visible; only existing source syntax uses placeholders.
-	request := make([]requestEntry, len(window))
+	request := translationRequest{Entries: make([]requestEntry, len(window))}
+	termRefs := make(map[[2]string]string)
 	for i, entry := range window {
-		request[i] = requestEntry{Ref: entry.Ref, Role: entry.Role, Text: entry.Text}
+		request.Entries[i] = requestEntry{Ref: entry.Ref, Role: entry.Role, Text: entry.Text}
+		seen := make(map[string]bool)
 		for _, term := range entry.Terms {
-			request[i].Terms = append(request[i].Terms, requestTerm{Spelling: term.Spelling, Explanation: term.Explanation})
+			key := [2]string{term.Spelling, term.Explanation}
+			ref, exists := termRefs[key]
+			if !exists {
+				ref = fmt.Sprintf("d%d", len(request.Terms)+1)
+				termRefs[key] = ref
+				request.Terms = append(request.Terms, requestTerm{Ref: ref, Spelling: term.Spelling, Explanation: term.Explanation})
+			}
+			if !seen[ref] {
+				request.Entries[i].Terms = append(request.Entries[i].Terms, ref)
+				seen[ref] = true
+			}
 		}
 	}
 	raw, err := json.Marshal(request)
@@ -205,7 +223,7 @@ func translationCall(
 		return llm.Call[[]report.DisplayTranslationEntry]{}, err
 	}
 	return llm.Call[[]report.DisplayTranslationEntry]{
-		State: []byte(`{"contract":"repomap.report-display-translation.v8"}`),
+		State: []byte(`{"contract":"repomap.report-display-translation.v9"}`),
 		Prompt: llm.Prompt{
 			System: strings.TrimSpace(translationPrompt), User: string(raw),
 			ResponseFormatJSON: true, ResponseLanguage: string(language), Reasoning: false,

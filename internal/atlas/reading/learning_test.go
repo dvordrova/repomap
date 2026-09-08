@@ -308,7 +308,8 @@ func TestLearningOrdinaryProposalsUseCompleteProviderSizedContext(t *testing.T) 
 			t.Fatalf("whole-context proposal lost curated intent %s", intent.ID)
 		}
 	}
-	for i, item := range provider.requests[0].Evidence {
+	restored := expandedLearningTestRequest(t, []byte(provider.prompts[0].User))
+	for i, item := range restored.Evidence {
 		if item.Ref != fmt.Sprintf("e%d", i+1) {
 			t.Fatal("proposal catalogue lost its closed local references")
 		}

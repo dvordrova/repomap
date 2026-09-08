@@ -65,6 +65,57 @@ type learningRequest struct {
 	PartialContext bool               `json:"partial_context"`
 	Evidence       []learningEvidence `json:"evidence"`
 }
+
+// Shared presentation context is encoded once per request. Keep the complete
+// original records in memory so partitioning and source restoration never
+// depend on another window's context refs.
+func encodeLearningPool(pool learningRequest) ([]byte, error) {
+	type evidenceRow struct {
+		Ref        string         `json:"ref"`
+		ContextRef string         `json:"context_ref,omitempty"`
+		Context    map[string]any `json:"context"`
+	}
+	wire := struct {
+		PartialContext bool                      `json:"partial_context"`
+		Contexts       map[string]map[string]any `json:"contexts,omitempty"`
+		Evidence       []evidenceRow             `json:"evidence"`
+	}{PartialContext: pool.PartialContext, Evidence: make([]evidenceRow, len(pool.Evidence))}
+	refs := make(map[string]string)
+	for i, item := range pool.Evidence {
+		row := evidenceRow{Ref: item.Ref, Context: item.Context}
+		shared := make(map[string]any)
+		for _, name := range []string{"components", "area_model_hypothesis"} {
+			if value, found := item.Context[name]; found {
+				shared[name] = value
+			}
+		}
+		if len(shared) > 0 {
+			key, err := json.Marshal(shared)
+			if err != nil {
+				return nil, err
+			}
+			ref, found := refs[string(key)]
+			if !found {
+				ref = fmt.Sprintf("h%d", len(refs)+1)
+				refs[string(key)] = ref
+				if wire.Contexts == nil {
+					wire.Contexts = make(map[string]map[string]any)
+				}
+				wire.Contexts[ref] = shared
+			}
+			row.ContextRef = ref
+			row.Context = make(map[string]any, len(item.Context)-len(shared))
+			for name, value := range item.Context {
+				if _, sharedField := shared[name]; !sharedField {
+					row.Context[name] = value
+				}
+			}
+		}
+		wire.Evidence[i] = row
+	}
+	return json.Marshal(wire)
+}
+
 type learningProposal struct {
 	Question string   `json:"question"`
 	Why      string   `json:"why"`
@@ -140,7 +191,7 @@ func learningPools(evidence []learningEvidence, budget int, prompt string) ([]le
 	var pools []learningRequest
 	var split func(learningRequest) error
 	split = func(pool learningRequest) error {
-		raw, err := json.Marshal(pool)
+		raw, err := encodeLearningPool(pool)
 		if err != nil {
 			return err
 		}
@@ -206,11 +257,11 @@ func splitLearningPool(pool learningRequest) ([]learningRequest, error) {
 }
 
 func learningCall(pool learningRequest, prompt string) (llm.Call[learningResponse], error) {
-	raw, err := json.Marshal(pool)
+	raw, err := encodeLearningPool(pool)
 	if err != nil {
 		return llm.Call[learningResponse]{}, err
 	}
-	return llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v1"),
+	return llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v3"),
 		Prompt:         llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true, ResponseExample: learningResponseExample},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
 		DecodeValidate: func(raw []byte) (learningResponse, error) { return decodeLearning(raw, pool) }}, nil
