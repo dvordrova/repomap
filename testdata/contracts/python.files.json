@@ -72,6 +72,18 @@
     {
       "id": "f18",
       "path": "tests/test_facade.py"
+    },
+    {
+      "id": "f19",
+      "path": "workspace/pyproject.toml"
+    },
+    {
+      "id": "f20",
+      "path": "workspace/src/fixture_shared/local/__init__.py"
+    },
+    {
+      "id": "f21",
+      "path": "workspace/src/fixture_shared/local/consumer.py"
     }
   ]
 }

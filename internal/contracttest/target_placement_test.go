@@ -17,7 +17,7 @@ func TestCumulativePythonDeclaredOwnershipAndSeedProjection(t *testing.T) {
 	}
 	var owner, demo, api, worker, excluded pythontarget.Target
 	for _, target := range catalog.Entries {
-		if target.Kind == pythontarget.KindLibrary {
+		if target.Kind == pythontarget.KindLibrary && target.ProjectDir == "." {
 			owner = target
 		}
 		for _, root := range target.Roots {

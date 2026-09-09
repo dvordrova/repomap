@@ -730,11 +730,16 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   the ordinary graph or fails a target. Dynamic and unresolved call frontiers
   remain represented separately. Warning derivation is diagnostic-only and
   can never reject an accepted target or publication.
-- ProgramIndex version 11 retains every source-distinct nested pattern without
+- ProgramIndex version 12 retains every source-distinct nested pattern without
   local sampling or truncation, including its exact location, neutral
   call-result/receiver provenance, any exact callback source-argument
   provenance, and reconstructed value candidates with their source-object and
   source-argument provenance. Duplicate compiler witnesses do not become pattern omissions.
+  Native package/module directories are retained separately from source locations.
+  Python namespace packages keep their exact directory without an invented
+  `__init__.py` anchor. Relative imports into another explicitly named namespace
+  portion retain their original external import authority; an unknown child of
+  an ordinary local package stays unresolved.
   The former 64 MiB aggregate-semantic-text and 128 MiB canonical-JSON sizes
   are ordinary scale warnings only. Structural JSON overhead never consumes
   semantic evidence authority, and crossing either size cannot reject or

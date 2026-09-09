@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	Version          = 11
+	Version          = 12
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -264,6 +264,9 @@ type ObjectInput struct {
 	OwnerRef     string
 	ContainerRef string
 	Location     *Location
+	// Directory is an adapter-observed repository directory for a package or
+	// module. It remains available when that boundary has no source file.
+	Directory string
 	// SymbolLinkIdentities are adapter-normalized, exact identities that may
 	// join this object to the same symbol in another sealed ProgramIndex shard.
 	// The common builder owns opaque keys, canonical order and deduplication.
@@ -350,6 +353,7 @@ type Object struct {
 	OwnerID              string               `json:"owner_id,omitempty"`
 	ContainerID          string               `json:"container_id,omitempty"`
 	Location             *Location            `json:"location,omitempty"`
+	Directory            string               `json:"directory,omitempty"`
 	SymbolLinkIdentities []SymbolLinkIdentity `json:"symbol_link_identities,omitempty"`
 	External             *ExternalSymbol      `json:"external,omitempty"`
 }
@@ -756,7 +760,7 @@ func New(input Input) (Index, error) {
 		object := Object{
 			ID: stableID("program-object", objectScopeID, value.SourceRef), SourceRef: value.SourceRef,
 			Kind: value.Kind, Name: value.Name, Visibility: value.Visibility,
-			Signature: value.Signature, Location: cloneLocation(value.Location),
+			Signature: value.Signature, Location: cloneLocation(value.Location), Directory: value.Directory,
 			SymbolLinkIdentities: linkIdentities, External: cloneExternalSymbol(value.External),
 		}
 		index.Objects = append(index.Objects, object)
@@ -1278,7 +1282,7 @@ func validateObjectInput(value ObjectInput) error {
 	}
 	if !validText(value.SourceRef) || !value.Kind.Valid() || !validText(value.Name) ||
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerRef) ||
-		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) {
+		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) {
 		return fmt.Errorf("program index: invalid object input")
 	}
 	if err := validateExternalSymbolBinding(value.Kind, value.External); err != nil {
@@ -1293,7 +1297,7 @@ func validateObject(value Object, objectScopeID string) error {
 	}
 	if !validText(value.SourceRef) || !value.Kind.Valid() || !validText(value.Name) || !value.Visibility.Valid() ||
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerID) ||
-		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) {
+		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) {
 		return fmt.Errorf("program index: invalid object")
 	}
 	if err := validateExternalSymbolBinding(value.Kind, value.External); err != nil {
@@ -2219,6 +2223,10 @@ func locationKey(value *Location) string {
 
 func validOptionalLocation(value *Location) bool {
 	return value == nil || validLocation(*value)
+}
+
+func validObjectDirectory(kind ObjectKind, directory string) bool {
+	return directory == "" || ((kind == ObjectPackage || kind == ObjectModule) && (directory == "." || validPath(directory)))
 }
 
 func validLocation(value Location) bool {

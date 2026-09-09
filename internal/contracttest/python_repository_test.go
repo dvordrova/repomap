@@ -15,6 +15,115 @@ import (
 
 const pythonFixtureSelector = "python:.:script:repomap-fixture"
 
+func TestCumulativePythonNamespaceDependencyAuthority(t *testing.T) {
+	_, repository := materializeFixtureRepository(t, "python")
+	catalog, err := pythontarget.Discover(t.Context(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var target pythontarget.Target
+	for _, candidate := range catalog.Entries {
+		if candidate.ProjectDir == "workspace" && candidate.Kind == pythontarget.KindLibrary {
+			target = candidate
+		}
+	}
+	if len(target.Packages) != 1 || !target.Packages[0].Namespace || target.Packages[0].Name != "fixture_shared" {
+		t.Fatalf("native namespace inventory = %#v", target.Packages)
+	}
+	input, err := pythonprogramindex.BuildInput(t.Context(), repository, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := programindex.New(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProgramIndexRoundTrip(t, index)
+	adaptertest.AssertSharedArtifact(t, input, index)
+	var namespace programindex.Object
+	for _, object := range index.Objects {
+		if object.Kind == programindex.ObjectPackage && object.Name == "fixture_shared" {
+			namespace = object
+		}
+		if object.Kind == programindex.ObjectExternalSymbol &&
+			(object.Name == "fixture_shared.local.missing.unavailable" || object.Name == "fixture_shared.runtime_member") {
+			t.Fatalf("invented a namespace member or ordinary-package child: %#v", object)
+		}
+	}
+	if namespace.ID == "" || namespace.Directory != target.Packages[0].Dir || namespace.Location != nil {
+		t.Fatalf("namespace lost its native directory or acquired a source anchor: %#v", namespace)
+	}
+	const source = "workspace/src/fixture_shared/local/consumer.py"
+	consumer := programIndexObjectNamed(t, index, programindex.ObjectModule, "fixture_shared.local.consumer", source)
+	assertExactPythonImportBoundary(t, index, consumer.ID, namespace.ID, "fixture_shared.runtime_member")
+	load := programIndexExternalObjectNamed(t, index, "fixture_shared.module_loading.load")
+	extensions := programIndexExternalObjectNamed(t, index, "fixture_shared.extensions")
+	for _, want := range []struct{ detail, kind, toID string }{
+		{"fixture_shared", "import", namespace.ID},
+		{"fixture_shared.module_loading.load", pythondependencies.WitnessExternalFromImport, load.ID},
+		{"fixture_shared.extensions", pythondependencies.WitnessExternalImport, extensions.ID},
+	} {
+		found := false
+		for _, relation := range index.Relations {
+			if relation.Kind != programindex.RelationImports || relation.FromID != consumer.ID ||
+				relation.Resolution != programindex.ResolutionExact || !sameSingleID(relation.ToIDs, want.toID) ||
+				relation.Location == nil || relation.Location.Path != source {
+				continue
+			}
+			for _, witness := range relation.Witnesses {
+				if witness.Detail == want.detail && witness.Kind == want.kind {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("namespace import lost its source authority: %#v", want)
+		}
+	}
+	reader := programIndexObjectNamed(t, index, programindex.ObjectFunction, "read", source)
+	foundCall := false
+	for _, relation := range index.Relations {
+		if relation.Kind == programindex.RelationInvokesExternal && relation.FromID == reader.ID && sameSingleID(relation.ToIDs, load.ID) {
+			if relation.Resolution != programindex.ResolutionAlternatives || relation.Location == nil || relation.Location.Path != source {
+				t.Fatalf("namespace import call lost its original qualified observation: %#v", relation)
+			}
+			foundCall = true
+		}
+	}
+	if !foundCall {
+		t.Fatal("namespace from-import did not retain the later call binding")
+	}
+	deps, err := pythondependencies.Build(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deps.Coverage.Omissions) != 1 || deps.Coverage.State != dependencies.CoveragePartial ||
+		deps.Coverage.Omissions[0].PackagePath != "fixture_shared.local.missing.unavailable" ||
+		deps.Coverage.Omissions[0].Reason != dependencies.OmissionDependencyIdentityMissing {
+		t.Fatalf("only the ordinary package's missing child should remain unresolved: %#v", deps.Coverage)
+	}
+	want := map[string]dependencies.Kind{
+		"fixture_shared":                dependencies.KindWorkspace,
+		"fixture_shared.module_loading": dependencies.KindExternal,
+		"fixture_shared.extensions":     dependencies.KindExternal,
+	}
+	for _, dependency := range deps.Dependencies {
+		if dependency.Kind != want[dependency.PackagePath] {
+			t.Fatalf("namespace dependency acquired an unsupported owner: %#v", dependency)
+		}
+		if dependency.PackagePath == "fixture_shared" && dependency.RepositoryPath != namespace.Directory {
+			t.Fatalf("namespace dependency lost its exact directory: %#v", dependency)
+		}
+		if dependency.Kind == dependencies.KindExternal && dependency.RepositoryPath != "" {
+			t.Fatalf("external namespace portion acquired a local path: %#v", dependency)
+		}
+		delete(want, dependency.PackagePath)
+	}
+	if len(want) != 0 {
+		t.Fatalf("namespace dependencies missing: %#v", want)
+	}
+}
+
 func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 	_, repository := materializeFixtureRepository(t, "python")
 	catalog, err := pythontarget.Discover(t.Context(), repository)

@@ -131,6 +131,7 @@ class Analyzer:
         self.stdlib_modules = frozenset(sys.stdlib_module_names)
         self.files = sorted(view.get("files", []), key=lambda value: value.get("path", ""))
         self.package_rows = sorted(view.get("packages", []), key=lambda value: value.get("name", ""))
+        self.namespace_packages = {row["name"] for row in self.package_rows if row.get("namespace", False)}
         self.parsed_sources = parsed_sources
         file_paths = [value.get("path", "") for value in self.files]
         if len(file_paths) != len(set(file_paths)) or set(file_paths) != set(parsed_sources):
@@ -321,6 +322,7 @@ class Analyzer:
                 "kind": "package",
                 "name": name,
                 "visibility": visibility(name.split(".")[-1]),
+                "directory": row["directory"],
                 **({"location": location} if location is not None else {}),
             }, name)
 
@@ -697,9 +699,24 @@ class RelationVisitor(ast.NodeVisitor):
             (base_object is not None and base_object["kind"] != "external_symbol")
         if local_base:
             return "unknown", ""
-        if not allow_external:
+        if not allow_external and not self.namespace_external_import(module_name):
             return "unknown", ""
         return "external", self.analyzer.ensure_external(qname)
+
+    def namespace_external_import(self, module_name):
+        """A declared namespace may have portions outside this parser view.
+
+        A nearer ordinary module/package still owns its own missing children;
+        reaching a namespace above it does not supply their import authority.
+        """
+        name = self.analyzer.canonical_qname(module_name)
+        while name:
+            ref = self.analyzer.objects_by_qname.get(name, "")
+            value = self.object(ref) if ref else None
+            if value is not None and value["kind"] in ("module", "package"):
+                return name in self.analyzer.namespace_packages
+            name = name.rpartition(".")[0]
+        return False
 
     def local_import_target(self, module_name):
         """Resolve only an already catalogued local module, without mutation."""

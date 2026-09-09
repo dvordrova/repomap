@@ -24,6 +24,9 @@ func TestCumulativePythonDispatchSharesParserAndPreservesEveryTarget(t *testing.
 	var targets []repositoryTypedTarget
 	want := make(map[string]string)
 	for _, native := range catalog.Entries {
+		if native.ProjectDir != "." {
+			continue // This test compares all views of the same source project.
+		}
 		target, err := newPythonRepositoryTypedTarget(native)
 		if err != nil {
 			t.Fatal(err)

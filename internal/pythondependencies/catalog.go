@@ -211,13 +211,20 @@ func dependencyFromImport(
 ) (dependencies.Dependency, error) {
 	if target.Kind != programindex.ObjectExternalSymbol {
 		module, err := resolver.moduleFor(target.ID)
-		if err != nil || module.Location == nil {
+		if err != nil {
 			return dependencies.Dependency{}, fmt.Errorf("workspace import target has no exact module")
+		}
+		directory := module.Directory
+		if directory == "" && module.Location != nil {
+			directory = path.Dir(module.Location.Path)
+		}
+		if directory == "" {
+			return dependencies.Dependency{}, fmt.Errorf("workspace import target has no exact directory")
 		}
 		return dependencies.Dependency{
 			Language: "python", Kind: dependencies.KindWorkspace, Name: module.Name,
 			ModulePath: firstPythonNamePart(module.Name), PackagePath: module.Name,
-			RepositoryPath: path.Dir(module.Location.Path),
+			RepositoryPath: directory,
 		}, nil
 	}
 

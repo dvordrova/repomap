@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	adapterVersion       = 10
+	adapterVersion       = 11
 	maxParserStderrBytes = 16 << 10
 )
 
@@ -59,6 +59,7 @@ type parserPackage struct {
 	SourceRef string `json:"source_ref"`
 	Name      string `json:"name"`
 	Path      string `json:"path,omitempty"`
+	Directory string `json:"directory"`
 	Namespace bool   `json:"namespace,omitempty"`
 }
 
@@ -82,6 +83,7 @@ type parsedObject struct {
 	OwnerRef             string                       `json:"owner_ref,omitempty"`
 	ContainerRef         string                       `json:"container_ref,omitempty"`
 	Location             *programindex.Location       `json:"location,omitempty"`
+	Directory            string                       `json:"directory,omitempty"`
 	SymbolLinkIdentities []parsedSymbolLinkIdentity   `json:"symbol_link_identities,omitempty"`
 	External             *programindex.ExternalSymbol `json:"external,omitempty"`
 }
@@ -568,7 +570,7 @@ func parseSourceGroup(
 			ref := packageSourceRef(pkg)
 			packageRefs[pkg.Name] = ref
 			view.Packages = append(view.Packages, parserPackage{
-				SourceRef: ref, Name: pkg.Name, Path: pkg.Path, Namespace: pkg.Namespace,
+				SourceRef: ref, Name: pkg.Name, Path: pkg.Path, Directory: pkg.Dir, Namespace: pkg.Namespace,
 			})
 		}
 		digests := make([]sourceDigest, len(baseDigests))
@@ -665,7 +667,7 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 		objects = append(objects, programindex.ObjectInput{
 			SourceRef: value.SourceRef, Kind: kind, Name: value.Name,
 			Visibility: programindex.Visibility(value.Visibility), Signature: value.Signature,
-			OwnerRef: value.OwnerRef, ContainerRef: value.ContainerRef, Location: cloneLocation(value.Location),
+			OwnerRef: value.OwnerRef, ContainerRef: value.ContainerRef, Location: cloneLocation(value.Location), Directory: value.Directory,
 			SymbolLinkIdentities: linkIdentities, External: cloneParsedExternalSymbol(value.External),
 		})
 	}

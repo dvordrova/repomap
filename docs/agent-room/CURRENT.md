@@ -3710,10 +3710,11 @@ PyKrx microbenchmarks reduced ProgramIndex validation allocation from 19.55 to
 14.58 MB/op and GroupsIndex from 9.64 to 7.69 MB/op with identical original
 hashes. This is not an end-to-end latency claim.
 
-ProgramIndex version 11 retains:
+ProgramIndex version 12 retains:
 
 - exact target scope and seeds;
 - objects and their stable local identities;
+- adapter-observed package/module directories, independent of source locations;
 - exact, alternatives, and unresolved relation authority as distinct states;
 - structural relation kinds such as calls, contains, imports, implements,
   decorates, passes-callback, sources, executes, reads, writes, and
@@ -3791,7 +3792,7 @@ A bad launch projection refuses only that target while its neighbours keep
 their already parsed inputs. A failed shared parser preparation retains the
 existing exact-target fallback; cancellation stops dispatch immediately.
 
-The cumulative Python regression has seven targets and fifteen source files:
+The sharing regression for the root Python project has seven targets and fifteen source files:
 one parser process, one AST per source, and two separate package contexts.
 Every restored sealed index matches the separate build byte for byte. Shared
 storage is 323,238 bytes versus 1,481,442 bytes for seven complete indexes.
@@ -3844,7 +3845,7 @@ JavaScript examples exercise native imports, distinct calls and complete
 dependency coverage. The interrupted Airflow run is not acceptance; its
 successful requests remain cached for the corrected ordinary run.
 
-Python adapter v10 also keeps an existing callable candidate consistent
+The Python adapter also keeps an existing callable candidate consistent
 between an argument and the callback transfer that cites that exact argument.
 Aliases assigned to a function or lambda remain alternatives; an inline lambda
 retains exact authority, while unknown or overwritten aliases gain no callback.
@@ -3866,7 +3867,38 @@ Cumulative Python, Go, TypeScript and JavaScript regressions preserve each
 language's existing resolution strength and both callbacks. Go and JS/TS
 already distinguished the calls and needed no production change.
 
-The current declaration experiment uses adapter v10 and question table v6.
+Python adapter v11 retains each declared package's native directory in
+ProgramIndex v12. A namespace package without `__init__.py` keeps no source
+location; its exact directory supplies the existing workspace dependency row.
+Relative named and wildcard imports into another explicitly named portion of
+an advertised namespace retain their original external import boundary. A
+nearer ordinary package/module does not authorize an unknown child. Importing
+an unknown member directly from a known namespace keeps only that known
+boundary; it does not invent a declaration or a callable.
+
+All six previously refused Airflow shared libraries and the three task-sdk
+targets now pass the real local extractor, sealed index construction and
+complete dependency coverage, with no omissions. The focused nine-target check
+took 45.36 s; it is not a new full online acceptance run. The cumulative Python
+fixture covers namespace directories without source anchors, named/wildcard
+imports, their original call resolution and the contrasting unresolved child
+of an ordinary package. Ordinary shared storage and standalone index round trips
+preserve these facts. Go and JS/TS have no direct PEP420 namespace equivalent;
+their package resolution is unchanged. The two saved acceptance-fixture indexes
+are resealed under v12 with their old observations intact, without a compatibility
+reader or regenerated model results.
+
+The ordinary mixed Python/TypeScript run `20260909-212223` published both targets
+and one Russian HTML in 7.350 s. All 23 exchanges, including eight translation
+windows, reused their exact accepted cache entries; all 374 display entries
+have translations. Artifact, target-outcome and publication checks passed.
+The earlier saved report also renders with the current templates without
+analysis or provider requests. Full product tests with the real TypeScript
+compiler, vet and the canonical build passed. The current full Airflow process
+still uses the older binary and has nineteen failed target rows; this focused
+acceptance does not turn that run into a successful full check.
+
+The current declaration experiment uses adapter v11 and question table v6.
 Native class ownership feeds the existing atlas type-member representation;
 question selection now keeps those members beside the selected type, and
 the report displays each member at its own source location. Types beyond
@@ -3943,7 +3975,7 @@ A compiler-resolved sibling package retains `repository_path` on each import,
 call and ProgramIndex external symbol. This is an optional origin fact, not a
 new graph or framework classification; an empty value means that no repository
 origin was established. Result v14 / helper v17 replaces the old lossy handoff.
-ProgramIndex v11 retains the optional field in its existing seal, as do
+ProgramIndex v12 retains the optional field in its existing seal, as do
 GroupsIndex and the report view. Dependency rows distinguish the exact package
 name plus directory: two same-name siblings and an installed package coexist.
 `jsts_package_export_v2` identities include the sibling directory; installed
