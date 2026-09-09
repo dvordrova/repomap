@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -470,5 +469,3 @@ func (h *handler) log(format string, args ...any) {
 		h.logf(format, args...)
 	}
 }
-
-var _ = strconv.Itoa

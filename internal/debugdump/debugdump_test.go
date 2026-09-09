@@ -79,7 +79,6 @@ func TestSemanticExchangeAcceptsOnlyLiveStages(t *testing.T) {
 		SemanticStageOrientation,
 		SemanticStageAtlasQuestion,
 		SemanticStageReportTranslation,
-		SemanticStageAtlasRoute,
 		SemanticStageAtlasAnswer,
 		SemanticStageAtlasLearn,
 		SemanticStageGlossary,
@@ -90,9 +89,10 @@ func TestSemanticExchangeAcceptsOnlyLiveStages(t *testing.T) {
 			t.Fatalf("live stage %q rejected: %v", stage, err)
 		}
 	}
-	exchange := validExchange("architecture_synthesis")
-	if err := validateSemanticExchange(exchange); err == nil {
-		t.Fatal("removed architecture stage was accepted")
+	for _, stage := range []string{"architecture_synthesis", "atlas_route"} {
+		if err := validateSemanticExchange(validExchange(stage)); err == nil {
+			t.Fatalf("removed stage %q was accepted", stage)
+		}
 	}
 }
 

@@ -903,14 +903,10 @@ func (builder *pageBuilder) boundaryCounts() []pageBoundary {
 		if section.factsTargetID == "" {
 			continue
 		}
-		row := pageBoundary{Target: section.Label, SectionID: section.ID}
-		for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindHTTPRoute) {
-			_ = fact
-			row.Routes++
-		}
-		for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindHTTPCall) {
-			_ = fact
-			row.Calls++
+		row := pageBoundary{
+			Target: section.Label, SectionID: section.ID,
+			Routes: len(builder.targetFacts(section.factsTargetID, facts.KindHTTPRoute)),
+			Calls:  len(builder.targetFacts(section.factsTargetID, facts.KindHTTPCall)),
 		}
 		if row.Routes == 0 && row.Calls == 0 {
 			continue

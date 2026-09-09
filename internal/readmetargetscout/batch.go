@@ -63,13 +63,8 @@ func guidanceGroups(compilation Compilation) ([][]RequestGuidanceDocument, error
 			}
 		}
 		if best == start {
-			candidate, err := compileBatchSubset(compilation, documents[start:start+1], nil)
-			if err != nil {
-				return nil, err
-			}
 			// Keep the complete document as a singleton. Run checks the exact
 			// prepared request against the shared semantic-record envelope.
-			_ = candidate
 			best = start + 1
 		}
 		groups = append(groups, append([]RequestGuidanceDocument(nil), documents[start:best]...))

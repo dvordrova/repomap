@@ -68,8 +68,8 @@ type Options struct {
 	WindowRows int
 	InputBytes int
 	// Questions ask independent reading questions over the deterministic
-	// graph. Through=atlas_question stops at candidates; atlas_route selects
-	// their reading order; atlas_answer answers from those original sources.
+	// graph. Through=atlas_question stops at candidates; atlas_answer answers
+	// from those original sources and returns their reading order.
 	// These isolated stages do not run the map wording stages.
 	Questions []string
 	// Learn adapts the base learning intents after the ordinary atlas.

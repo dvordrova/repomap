@@ -124,7 +124,6 @@ const (
 	SemanticStageAtlasArrows      = "atlas_arrows"
 	SemanticStageAtlasJoints      = "atlas_joints"
 	SemanticStageAtlasQuestion    = "atlas_question"
-	SemanticStageAtlasRoute       = "atlas_route"
 	SemanticStageAtlasAnswer      = "atlas_answer"
 	SemanticStageAtlasLearn       = "atlas_learn"
 	SemanticRequestPrepared       = "prepared_request"
@@ -724,7 +723,6 @@ func validSemanticStage(stage string) bool {
 		SemanticStageAtlasQuestion,
 		SemanticStageReportTranslation,
 		SemanticStageGlossary,
-		SemanticStageAtlasRoute,
 		SemanticStageAtlasAnswer,
 		SemanticStageAtlasLearn:
 		return true
