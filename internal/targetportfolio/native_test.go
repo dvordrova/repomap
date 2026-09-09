@@ -92,3 +92,19 @@ func TestNativeEvidenceIsOwnedAndRebuiltInEachWindow(t *testing.T) {
 		t.Fatal("mutated source authority accepted")
 	}
 }
+
+func TestSharedCodeDecisionIsLimitedToLibraryKinds(t *testing.T) {
+	for _, kind := range []string{"library", "module_library", "executable", "executable_package", "package"} {
+		t.Run(kind, func(t *testing.T) {
+			rows := []NativeCandidate{{Ref: "t1", FileRef: "f1", Language: "python", Kind: kind, Name: "candidate"}}
+			placement := nativeDecisions(rows, []NativeDecision{{Ref: "t1", Decision: "shared_code"}}, true)[0]
+			if kind == "library" || kind == "module_library" {
+				if placement.Decision != "shared_code" || placement.Rejected != "" || placement.Reason != "" {
+					t.Fatalf("library shared-code decision was rejected: %+v", placement)
+				}
+			} else if placement.Decision != "standalone" || placement.Rejected != "shared_code" || placement.Reason == "" {
+				t.Fatalf("invalid shared-code answer lost its refusal or became an accepted decision: %+v", placement)
+			}
+		})
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
@@ -191,19 +192,28 @@ func guidanceImportOpen(text string) bool {
 	return depth > 0
 }
 
-func pythonNativeEvidence(target pythontarget.Target, catalog pythontarget.Catalog) repositoryNativeEvidence {
+func pythonNativeEvidence(target pythontarget.Target, catalog pythontarget.Catalog, repository *corpus.Corpus) (repositoryNativeEvidence, error) {
 	result := repositoryNativeEvidence{Root: target.ProjectDir}
 	for _, basis := range target.Basis {
 		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: string(basis.Kind), Path: basis.Path, Line: basis.Line, Values: []string{basis.Label}})
 	}
 	for _, root := range target.Roots {
 		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "launch_root", Path: root.Path, Line: root.Line, Values: []string{string(root.Kind), root.Module, root.Qualname}})
+		fileRef, _ := repository.ID(root.Path)
+		info, ok := repository.Info(fileRef)
+		if !ok {
+			return repositoryNativeEvidence{}, fmt.Errorf("Python launch source %q is absent from corpus", root.Path)
+		}
+		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "launch_file_executable", Path: root.Path, Values: []string{strconv.FormatBool(info.Entry.Executable)}})
 		for _, module := range target.Modules {
 			if module.Path == root.Path {
 				result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "declared_distribution_membership", Path: root.Path, Values: []string{module.Name, strconv.FormatBool(target.DeclaresModule(module))}})
 				break
 			}
 		}
+	}
+	for _, imported := range target.RelativeImports {
+		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "module_level_relative_import", Path: imported.Path, Line: imported.Line, Values: []string{strings.Repeat(".", imported.Level) + imported.Module, imported.Name}})
 	}
 	for _, declaration := range target.DeclaredPackages {
 		for _, column := range []struct {
@@ -218,7 +228,7 @@ func pythonNativeEvidence(target pythontarget.Target, catalog pythontarget.Catal
 			result.SeedOwners = append(result.SeedOwners, repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: owner.Ref})
 		}
 	}
-	return result
+	return result, nil
 }
 
 func goNativeEvidence(target analysistarget.Target, facts gofacts.Facts, catalog analysistarget.TargetCatalog) repositoryNativeEvidence {

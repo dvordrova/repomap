@@ -1,12 +1,47 @@
 package report
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
+
+func TestPartsCatalogueCountsLocalMapGroupsAcrossLanes(t *testing.T) {
+	index := groupindex.Index{Target: programindex.Target{ID: "backend"}, Groups: []groupindex.Group{
+		{ID: "handler", Title: "Handle requests", Lane: groupindex.LaneTriggers},
+		{ID: "storage", Title: "Store records", Lane: groupindex.LaneDependencies},
+	}, Operations: []groupindex.Operation{{ID: "serve", Name: "Serve", Kind: "request", GroupID: "handler"}},
+		Containers: []groupindex.Container{{ID: "area", Title: "Requests", GroupIDs: []string{"handler"}}},
+		Connections: []groupindex.Connection{{
+			From: groupindex.Endpoint{TargetID: "backend", GroupID: "storage"},
+			To:   groupindex.Endpoint{TargetID: "other", GroupID: "remote"},
+		}},
+	}
+	other := groupindex.Index{Target: programindex.Target{ID: "other"}, Groups: []groupindex.Group{
+		{ID: "remote", Title: "Remote store", Lane: groupindex.LaneCore},
+	}}
+	section := &pageSection{ID: "backend-page", programTargetID: "backend", FactsAvailable: true}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index, other}, byProgram: map[string]*pageSection{
+		"backend": section, "other": {ID: "other-page"},
+	}}
+	section.Map = builder.buildMap(section)
+	if len(section.Map.Nodes) <= 2 {
+		t.Fatal("fixture must also contain an operation, area and foreign component")
+	}
+	if got := section.PartsCount(); got != 2 {
+		t.Fatalf("parts = %d, want both local groups, excluding operations, areas and remote nodes", got)
+	}
+	if missing := sectionCoverage(section); slices.Contains(missing, "Parts") || slices.Contains(missing, "Core") {
+		t.Fatalf("a component with map parts was reported as missing them: %v", missing)
+	}
+	section.Map = nil
+	if missing := sectionCoverage(section); !slices.Contains(missing, "Parts") {
+		t.Fatalf("a component without a map lost its missing-parts observation: %v", missing)
+	}
+}
 
 func TestInputCatalogueJoinsExactFactsAndRetainsUngroupedRoutes(t *testing.T) {
 	location := programindex.Location{Path: "server.go", Line: 10, Column: 1}

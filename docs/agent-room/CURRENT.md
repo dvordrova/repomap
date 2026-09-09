@@ -57,6 +57,12 @@ not another parent. Source context makes a generic Python library's setup.py
 boundary visible without locally rewriting its accepted description. Long
 source paths wrap inside their card. No component is removed or reprioritized.
 
+The component card's Parts count and missing-parts coverage use the same
+local leaf groups as the map, across all lanes. Operations, containing areas
+and foreign component nodes do not count as additional parts. Its Parts link
+opens the complete component map. The separate core-lane reference catalogue
+is labelled Core; an empty core lane cannot imply an empty component map.
+
 Learn exposes the complete saved question menu, one open answer, its position
 in that menu, a next question and an explicit return to all questions. The
 current question remains visible while scrolling or taking a map side trip.
@@ -291,6 +297,12 @@ per-question memos refer to current cached response bytes and revalidate the
 complete original shared request before reuse. Adding or reordering questions
 does not resend unchanged decisions. Replay changes are observed on the next
 read; original runs remain snapshots.
+Question-selection console events name the original question and distinguish
+accepted empty selection from incomplete or unavailable retrieval. Each shows
+selected sources, inspected/unavailable evidence groups and model/cache result
+provenance. Rejected responses list their affected questions and reasons; the
+closing summary separates questions with sources, empty selections, incomplete
+selections and unavailable questions. A zero-source failure never prints ready.
 Within one recall, questions backed by the same original window now share its
 successful preparation and full-response validation. Reuse also requires exact
 ordered equality of that memo's original row refs and question metadata; a
@@ -3493,7 +3505,7 @@ These quotations are author claims, not runtime observations. Repeated evidence
 is encoded once behind local refs; every request partition rebuilds its complete
 evidence catalogue. Native identities and compiler edges stay local.
 
-Python catalog/target v4 records static package lists in setup.py, pyproject.toml
+Python catalog/target v5 records static package lists in setup.py, pyproject.toml
 and setup.cfg and package discovery where/include/exclude rules. Full package
 names are matched, and namespace settings are respected. A project-name match
 requires a corresponding real package. Dynamic setup calls are not evaluated
@@ -3503,6 +3515,10 @@ Only a guard inside a declared library distribution is advertised as eligible
 for a seed owner. Explicit package CLIs, console scripts and shebang launches
 are not folded by this rule. JS/TS source-owning package targets retain their
 existing independent compiler boundaries, including packages without start/bin.
+Exact Python launch files also supply their corpus executable bit and direct
+module-level relative imports, including wildcard imports, with original source
+anchors. These observations do not change the native candidate's identity or
+remove an author-written shebang candidate; native identity remains v3.
 
 Each native target chooses `standalone`, `seed_of:<ref>`, `shared_code`, `tool`
 or `example`. A seed owner must be an advertised mandatory target with its own
@@ -3539,18 +3555,29 @@ roles, with other roles shown in their counted catalogues:
 | go-server-template | 1 | 1 | 1 tool, 1 shared-code library |
 | chi | 1 | 1 | 2 examples, 1 shared-code library |
 | python-tutorial-game | 2 | 2 | none |
-| jieba | 3 | 3 | 18 examples |
+| jieba | under review | 3, including a refused decision's fallback | 18 examples |
 | pykrx | 1 | 1 | 4 tools; 17 guards enter the library |
 
-The owner accepted jieba's three products on 2026-09-09: the library, the
-documented CLI and `jieba/analyse/textrank.py`, whose author-written shebang
-provides an explicit independent launch basis. The earlier expectation of two
-products is superseded; this is no longer an open acceptance failure. The first
-draft classified textrank as a tool and the other 18 launches as tools, while
-the recorded final selection retains textrank as standalone and 18 examples.
-No path-specific role or HTML suppression was introduced to force a count.
-The five repository product counts and the two required service-separation
-checks are accepted; broader fixture/tool role quality remains a review item.
+The explanation of jieba's three products was corrected on 2026-09-09.
+The owner still accepts author-written shebangs as native launch candidates. The library and documented CLI had accepted roles;
+`jieba/analyse/textrank.py` remained standalone after an invalid `shared_code`
+answer for an executable row. The first model draft had called it a tool.
+The later standalone placement is the recorded fallback, not a model decision
+that textrank is a third product. Its author-written shebang preserves the native candidate; it does not
+replace the missing model role decision. The file lacks execute permission
+and has module-level relative imports that require package context. A fresh role
+decision must read those neutral facts and the original launch mode; they
+do not authorize a local exclusion of the candidate. The prompt must
+make the existing library-only `shared_code` contract explicit. No path-specific
+role, target removal or HTML suppression is used to force a count. Jieba's
+product count remains under review; the other four counts and the two required
+service-separation checks retain their recorded acceptance. The fresh ordinary
+online selection `20260909-185307-jieba-43f79a64a266` accepts textrank as `tool`,
+with no rejected decision or fallback. It selects two products (library and
+documented CLI) and 19 tools while preserving all 21 analyses. The ordinary
+run completed in 3m31s with one common Russian HTML and eight translation
+requests. This records the accepted model role decision and completed run;
+the useful role of each test utility remains a quality-review question.
 
 The Go counterexample keeps both documented services separate and gives each
 an exact link to the common library; its existing cmd/app exercise also remains
@@ -3572,7 +3599,8 @@ one duplicate seed-eligibility check and two redundant native-catalogue copies.
 The artificial consumer-mutation test was removed; the existing Snapshot API
 continues to copy its newly added package-declaration field. All 35 targets
 across the five repositories completed with zero live provider calls, retaining
-the accepted product counts 1, 1, 2, 3 and 1. Final owner runs are
+the observed product counts 1, 1, 2, 3 and 1. The jieba count includes the
+refused-decision fallback described above. Final owner runs are
 `20260909-144526-go-http-server-a90f19009296`,
 `20260909-144532-chi-8da44377446a`,
 `20260909-144544-python-tutorial-game-0278399f361d`,
@@ -3730,7 +3758,17 @@ JavaScript examples exercise native imports, distinct calls and complete
 dependency coverage. The interrupted Airflow run is not acceptance; its
 successful requests remain cached for the corrected ordinary run.
 
-The current declaration experiment uses adapter v9 and question table v6.
+Python adapter v10 also keeps an existing callable candidate consistent
+between an argument and the callback transfer that cites that exact argument.
+Aliases assigned to a function or lambda remain alternatives; an inline lambda
+retains exact authority, while unknown or overwritten aliases gain no callback.
+The Airflow Edge3, Azure and Vertica libraries exposed the earlier mismatch:
+the argument named the assignment variable while the transfer named its callable.
+All three now pass the real local extractor and ProgramIndex construction;
+ordinary full-Airflow publication still needs completion. Cumulative Python,
+Go, TypeScript and JavaScript examples retain their native authority rules.
+
+The current declaration experiment uses adapter v10 and question table v6.
 Native class ownership feeds the existing atlas type-member representation;
 question selection now keeps those members beside the selected type, and
 the report displays each member at its own source location. Types beyond

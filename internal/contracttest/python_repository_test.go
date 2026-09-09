@@ -15,6 +15,88 @@ import (
 
 const pythonFixtureSelector = "python:.:script:repomap-fixture"
 
+func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
+	_, repository := materializeFixtureRepository(t, "python")
+	catalog, err := pythontarget.Discover(t.Context(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexes, err := pythonprogramindex.BuildMany(t.Context(), repository, []pythontarget.Target{pythonFixtureTarget(t, catalog)})
+	if err != nil {
+		t.Fatalf("build callback alias fixture: %v", err)
+	}
+	index := indexes[0]
+	const sourcePath = "src/fixture_app/models.py"
+	caller := programIndexObjectNamed(t, index, programindex.ObjectFunction, "register_callback_aliases", sourcePath)
+	named := programIndexObjectNamed(t, index, programindex.ObjectFunction, "handle_delivery", sourcePath)
+	arguments := make(map[string]programindex.PatternArgument)
+	for _, relation := range index.Relations {
+		if relation.FromID != caller.ID {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			for _, argument := range pattern.Arguments {
+				arguments[argument.ID] = argument
+			}
+		}
+	}
+	var namedCount, lambdaCount, literalCount, keywordCount int
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationPassesCallback || relation.FromID != caller.ID {
+			continue
+		}
+		argument, ok := arguments[relation.SourceArgumentID]
+		if !ok || len(relation.ToIDs) != 1 || !sameSingleID(argument.ObjectIDs, relation.ToIDs[0]) ||
+			argument.Resolution != relation.Resolution || argument.ObjectsObserved != 1 ||
+			relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 {
+			t.Fatalf("callback alias lost its argument authority: relation=%#v argument=%#v", relation, argument)
+		}
+		target := programIndexObjectByID(index, relation.ToIDs[0])
+		switch {
+		case target.ID == named.ID && relation.Resolution == programindex.ResolutionAlternatives:
+			namedCount++
+		case target.Kind == programindex.ObjectLambda && relation.Resolution == programindex.ResolutionAlternatives:
+			lambdaCount++
+		case target.Kind == programindex.ObjectLambda && relation.Resolution == programindex.ResolutionExact:
+			literalCount++
+		default:
+			t.Fatalf("callback acquired unsupported authority: target=%#v relation=%#v", target, relation)
+		}
+		if argument.Keyword == "callback" {
+			keywordCount++
+		}
+	}
+	if namedCount != 1 || lambdaCount != 2 || literalCount != 1 || keywordCount != 1 {
+		t.Fatalf("callback aliases: named=%d lambda=%d literal=%d keyword=%d", namedCount, lambdaCount, literalCount, keywordCount)
+	}
+	for _, name := range []string{"register_unknown_callback", "register_overwritten_callback"} {
+		owner := programIndexObjectNamed(t, index, programindex.ObjectFunction, name, sourcePath)
+		found := false
+		for _, relation := range index.Relations {
+			if relation.FromID != owner.ID {
+				continue
+			}
+			if relation.Kind == programindex.RelationPassesCallback {
+				t.Fatalf("%s invented a callback from an unknown value: %#v", name, relation)
+			}
+			for _, pattern := range relation.Patterns {
+				if pattern.Selector != "deliver_callback" {
+					continue
+				}
+				argument := pythonPatternArgument(t, pattern, 1)
+				if len(argument.ObjectIDs) != 1 || programIndexObjectByID(index, argument.ObjectIDs[0]).Kind != programindex.ObjectVariable ||
+					argument.Resolution != programindex.ResolutionAlternatives {
+					t.Fatalf("%s lost the original variable authority: %#v", name, argument)
+				}
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s lost its call argument", name)
+		}
+	}
+}
+
 func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	_, repository := materializeFixtureRepository(t, "python")
 	catalog, err := pythontarget.Discover(t.Context(), repository)

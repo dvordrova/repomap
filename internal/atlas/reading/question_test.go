@@ -92,6 +92,52 @@ func questionFixture(t *testing.T) (Options, *tableProvider) {
 	return opts, provider
 }
 
+func TestQuestionLogsDistinguishRejectedEmptyAndAcceptedSelections(t *testing.T) {
+	opts, provider := questionFixture(t)
+	opts.WindowRows = 0
+	opts.Questions = []string{"Where is state stored?", "Where are migrations?", "How is data encrypted?"}
+	provider.questionBatchFor = func(request questionBatchRequest, response questionbatch.Response) questionbatch.Response {
+		var accepted []questionbatch.Decision
+		for i, question := range request.Questions {
+			if question.Question == opts.Questions[2] {
+				continue // Missing response rejects this question alone.
+			}
+			decision := response.Questions[i]
+			if question.Question == opts.Questions[1] {
+				decision.Selections = []questionbatch.Selection{} // Valid inspected evidence, with nothing selected.
+			}
+			accepted = append(accepted, decision)
+		}
+		response.Questions = accepted
+		return response
+	}
+	var messages []string
+	states := make(map[string]string)
+	opts.State = func(stage, state string, details ...string) {
+		messages = append(messages, stage+": "+state+"\n"+strings.Join(details, "\n"))
+		if stage == "Question candidates" {
+			states[details[0]] = state
+		}
+	}
+	result, err := Read(t.Context(), opts)
+	if err != nil || len(result.Questions) != 3 {
+		t.Fatalf("read questions: %v / %+v", err, result.Questions)
+	}
+	for i, want := range []string{"ready", "no sources selected", "unavailable"} {
+		if got := states["question: "+opts.Questions[i]]; got != want {
+			t.Fatalf("question %q state = %q, want %q", opts.Questions[i], got, want)
+		}
+	}
+	log := strings.Join(messages, "\n")
+	for _, want := range []string{"questions in this response: 2 accepted, 1 rejected", "question: How is data encrypted?\nreason:",
+		"questions: 1 with sources, 1 with no sources selected, 0 with incomplete selection, 1 unavailable",
+		"selection results: 4 evidence groups from model, 0 from cache"} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("question log omitted %q:\n%s", want, log)
+		}
+	}
+}
+
 func readQuestionResult(t *testing.T, opts Options) (Result, atlas.QuestionRoute) {
 	t.Helper()
 	result, err := Read(context.Background(), opts)

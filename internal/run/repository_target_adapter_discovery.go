@@ -174,7 +174,7 @@ func discoverPythonRepositoryTargets(
 		if !ok {
 			return repositoryNativeEvidence{}, fmt.Errorf("invalid Python candidate")
 		}
-		return pythonNativeEvidence(native, catalog), nil
+		return pythonNativeEvidence(native, catalog, options.Repository)
 	}
 	discovery.RestoreFiles = func(fileRefs []corpus.FileID) ([]repositoryTargetFileRestoration, error) {
 		resolved, resolveErr := resolver.Resolve(fileRefs)

@@ -161,9 +161,9 @@ var repomapGraph = (function () {
       if(href){
         var purpose=node.querySelector('.repo-card-purpose');if(purpose)card.appendChild(purpose.cloneNode(true));
         var page=document.getElementById(href.slice(1)),catalog=el('ul','product-catalog');
-        [['Inputs','inputCount','inbound'],['Parts','partCount','core'],['Integrations','integrationCount','external']].forEach(function(item){
+        [['Inputs','inputCount','inbound'],['Parts','partCount',''],['Integrations','integrationCount','external']].forEach(function(item){
           var number=Number(page?.dataset[item[1]]||0);if(!number)return;
-          var value=el('li',''),link=el('a','');link.href=href+'-'+item[2];link.setAttribute('aria-label',rmT(item[0])+': '+number);
+          var value=el('li',''),link=el('a','');link.href=href+(item[2]?'-'+item[2]:'');link.setAttribute('aria-label',rmT(item[0])+': '+number);
           link.appendChild(el('span','product-catalog-label',rmT(item[0])));link.appendChild(el('span','product-catalog-count',String(number)));value.appendChild(link);catalog.appendChild(value);
         });if(catalog.childNodes.length)card.appendChild(catalog);
         var connectionCount=incident(id,'in').length+incident(id,'out').length;

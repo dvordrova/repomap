@@ -74,6 +74,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoExternalEventAndStoragePatterns(t, index)
 	assertGoChainedCallAndCallbackTraversal(t, index)
 	assertGoRetainedCallbackSourceArgument(t, index)
+	assertGoAliasedCallbackSourceArguments(t, index)
 	assertGoRetainedProducerReceiverProjection(t, index, producerResultID)
 	assertGoInterfaceFieldEvidence(t, authorities, index)
 	assertGoSharedHandoffFlows(t, index)
@@ -607,6 +608,45 @@ func assertGoSharedHandoffFlows(t *testing.T, index programindex.Index) {
 	}
 	if len(assignments) != 2 || !assignments[40] || !assignments[41] {
 		t.Fatalf("shared value lost exact store locations: %v", assignments)
+	}
+}
+
+func assertGoAliasedCallbackSourceArguments(t *testing.T, index programindex.Index) {
+	t.Helper()
+	caller := programIndexObjectNamed(t, index, programindex.ObjectFunction, "registerAliasedCallbacks", "cmd/app/main.go")
+	arguments := make(map[string]programindex.PatternArgument)
+	for _, relation := range index.Relations {
+		if relation.FromID == caller.ID {
+			for _, pattern := range relation.Patterns {
+				for _, argument := range pattern.Arguments {
+					arguments[argument.ID] = argument
+				}
+			}
+		}
+	}
+	var named, literal int
+	for _, relation := range index.Relations {
+		if relation.FromID != caller.ID || relation.Kind != programindex.RelationPassesCallback {
+			continue
+		}
+		argument, found := arguments[relation.SourceArgumentID]
+		if !found || len(relation.ToIDs) != 1 || !sameSingleID(argument.ObjectIDs, relation.ToIDs[0]) ||
+			relation.Resolution != programindex.ResolutionExact || argument.Resolution != relation.Resolution ||
+			relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 || argument.ObjectsObserved != 1 {
+			t.Fatalf("Go callable alias lost its argument authority: relation=%#v argument=%#v", relation, argument)
+		}
+		target := programIndexObjectByID(index, relation.ToIDs[0])
+		switch {
+		case target.Name == "namedCallback" && target.Kind == programindex.ObjectFunction:
+			named++
+		case target.Kind == programindex.ObjectFunction && target.Name == "registerAliasedCallbacks$1":
+			literal++
+		default:
+			t.Fatalf("Go callable alias resolved to unexpected object: %#v", target)
+		}
+	}
+	if named != 1 || literal != 1 {
+		t.Fatalf("Go callback aliases: named=%d literal=%d", named, literal)
 	}
 }
 

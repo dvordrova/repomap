@@ -337,6 +337,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		t.Fatalf("build cumulative JSTS places: %v", err)
 	}
 	assertCumulativeJSTSTypeMembers(t, result, index, lines.QuestionRows(graph))
+	assertCumulativeJSTSCallbackAliases(t, index, "src/server.ts", programindex.ResolutionExact)
 
 	// JSX supplies callbacks, including internal render props. Keep their
 	// compiler identities and source attributes without claiming execution.
@@ -990,6 +991,55 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		if dependency.PackagePath == javascriptPlatform {
 			t.Fatalf("JavaScript platform authority leaked into cumulative dependency catalog: %#v", dependency)
 		}
+	}
+}
+
+func assertCumulativeJSTSCallbackAliases(t *testing.T, index programindex.Index, source string, wantResolution programindex.Resolution) {
+	t.Helper()
+	var caller string
+	objects := make(map[string]programindex.Object)
+	for _, object := range index.Objects {
+		objects[object.ID] = object
+		if object.Name == "registerAliasedCallbacks" && object.Location != nil && object.Location.Path == source {
+			caller = object.ID
+		}
+	}
+	if caller == "" {
+		t.Fatal("missing native callback alias caller")
+	}
+	arguments := make(map[string]programindex.PatternArgument)
+	for _, relation := range index.Relations {
+		if relation.FromID == caller {
+			for _, pattern := range relation.Patterns {
+				for _, argument := range pattern.Arguments {
+					arguments[argument.ID] = argument
+				}
+			}
+		}
+	}
+	var named, literal int
+	for _, relation := range index.Relations {
+		if relation.FromID != caller || relation.Kind != programindex.RelationPassesCallback {
+			continue
+		}
+		argument, found := arguments[relation.SourceArgumentID]
+		if !found || len(relation.ToIDs) != 1 || len(argument.ObjectIDs) != 1 || argument.ObjectIDs[0] != relation.ToIDs[0] ||
+			relation.Resolution != wantResolution || argument.Resolution != relation.Resolution ||
+			relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 || argument.ObjectsObserved != 1 {
+			t.Fatalf("%s callable alias lost its argument authority: relation=%#v argument=%#v", source, relation, argument)
+		}
+		target := objects[relation.ToIDs[0]]
+		switch target.Name {
+		case "handleOrder":
+			named++
+		case "callback":
+			literal++
+		default:
+			t.Fatalf("%s callable alias resolved to unexpected object: %#v", source, target)
+		}
+	}
+	if named != 1 || literal != 1 {
+		t.Fatalf("%s callback aliases: named=%d literal=%d", source, named, literal)
 	}
 }
 

@@ -25,3 +25,31 @@ def parse_alias_inputs(text):
         second_json.loads(text),
         other_parser(text),
     )
+
+
+def deliver_callback(callback):
+    return callback("fixture")
+
+
+def handle_delivery(value):
+    return value
+
+
+def register_callback_aliases(handler, replace_handler):
+    if replace_handler:
+        handler = handle_delivery
+    deliver_callback(handler)
+    sentinel = lambda value: value
+    deliver_callback(sentinel)
+    deliver_callback(callback=sentinel)
+    deliver_callback(lambda value: value)
+
+
+def register_unknown_callback(handler):
+    deliver_callback(handler)
+
+
+def register_overwritten_callback(handler):
+    sentinel = lambda value: value
+    sentinel = handler
+    deliver_callback(sentinel)

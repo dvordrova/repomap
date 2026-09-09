@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import * as local from "../packages/local-store/src/index"
 import * as other from "../packages/second-store/src/index"
 import * as remote from "got"
@@ -14,4 +15,14 @@ import { get, get as datasetGet, get as runGet } from "../packages/local-store/s
 
 export function readAliasedImports() {
   return [get("base"), datasetGet("dataset"), runGet("run")]
+}
+
+function handleOrder(event) { return event }
+function deliverCallback(callback) { return callback("fixture") }
+
+export function registerAliasedCallbacks() {
+  const callback = (event) => event
+  deliverCallback(callback)
+  const named = handleOrder
+  deliverCallback(named)
 }

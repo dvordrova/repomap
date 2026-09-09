@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	CatalogVersion        = 4
-	TargetVersion         = 4
+	CatalogVersion        = 5
+	TargetVersion         = 5
 	TargetIdentityVersion = 3
 	// AdvisoryCatalogBytes is a diagnostic usual size for the complete sealed
 	// in-memory target catalog. Crossing it never narrows or rejects targets.
@@ -86,6 +86,16 @@ type Root struct {
 	Qualname string   `json:"qualname,omitempty"`
 	Path     string   `json:"path"`
 	Line     int      `json:"line"`
+}
+
+// RelativeImport is one name in a direct module-level relative import in an
+// exact launch file. It records syntax, not whether any execution succeeds.
+type RelativeImport struct {
+	Path   string `json:"path"`
+	Line   int    `json:"line"`
+	Level  int    `json:"level"`
+	Module string `json:"module,omitempty"`
+	Name   string `json:"name"`
 }
 
 // Package is one first-party top-level import package or module in a library
@@ -161,6 +171,7 @@ type Target struct {
 	Packages         []Package            `json:"packages,omitempty"`
 	Basis            []Basis              `json:"basis"`
 	DeclaredPackages []PackageDeclaration `json:"declared_packages,omitempty"`
+	RelativeImports  []RelativeImport     `json:"relative_imports,omitempty"`
 }
 
 // Catalog is the complete canonical Python target and module-scope inventory
@@ -184,6 +195,7 @@ func (target Target) Snapshot() Target {
 	copyTarget.Packages = append([]Package(nil), target.Packages...)
 	copyTarget.Basis = append([]Basis(nil), target.Basis...)
 	copyTarget.DeclaredPackages = cloneDeclarations(target.DeclaredPackages)
+	copyTarget.RelativeImports = append([]RelativeImport(nil), target.RelativeImports...)
 	return copyTarget
 }
 
@@ -246,6 +258,17 @@ func (target Target) Validate() error {
 	}
 	if err := validateBasis(target.Basis); err != nil {
 		return err
+	}
+	rootPaths := make(map[string]bool, len(target.Roots))
+	for _, root := range target.Roots {
+		rootPaths[root.Path] = true
+	}
+	for i, imported := range target.RelativeImports {
+		if !rootPaths[imported.Path] || imported.Line < 1 || imported.Level < 1 ||
+			(imported.Module != "" && !validModule(imported.Module)) || (imported.Name != "*" && !validModulePart(imported.Name)) ||
+			(i > 0 && !relativeImportLess(target.RelativeImports[i-1], imported)) {
+			return fmt.Errorf("python target: invalid launch-file relative import")
+		}
 	}
 	if err := validateSourceRefs(target.SourceRefs); err != nil {
 		return err
@@ -450,6 +473,7 @@ func NewCatalog(entries []Target, omissions []Omission) (Catalog, error) {
 		target.Packages = append([]Package(nil), input.Packages...)
 		target.Basis = append([]Basis(nil), input.Basis...)
 		target.DeclaredPackages = cloneDeclarations(input.DeclaredPackages)
+		target.RelativeImports = append([]RelativeImport(nil), input.RelativeImports...)
 		canonicalizeTarget(&target)
 		sealed, err := sealTarget(target)
 		if err != nil {
@@ -903,6 +927,7 @@ func cloneTarget(input Target) Target {
 	target.Packages = append([]Package(nil), input.Packages...)
 	target.Basis = append([]Basis(nil), input.Basis...)
 	target.DeclaredPackages = cloneDeclarations(input.DeclaredPackages)
+	target.RelativeImports = append([]RelativeImport(nil), input.RelativeImports...)
 	return target
 }
 

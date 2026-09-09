@@ -96,3 +96,11 @@ export function startReassignedServer(path: string): void {
 }
 
 startReassignedServer("/products/reassigned")
+
+export function registerAliasedCallbacks(): void {
+  const consumer = createConsumer()
+  const callback = (event: OrderEvent): void => { recordOrder(event) }
+  consumer.subscribe("orders.lambda", callback)
+  const named = handleOrder
+  consumer.subscribe("orders.alias", named)
+}

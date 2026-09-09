@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -43,6 +45,13 @@ func TestCumulativeNativeEvidenceSeparatesGoConsumersAndJSTSPackages(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
+			for _, candidate := range native {
+				for _, observation := range candidate.Row.Evidence {
+					if observation.Kind == "launch_file_executable" || observation.Kind == "module_level_relative_import" {
+						t.Fatalf("Python file-launch facts were invented for a %s package: %+v", language, observation)
+					}
+				}
+			}
 			if language == "jsts" {
 				if len(native) != 3 {
 					t.Fatalf("source-owning packages merged: %d", len(native))
@@ -80,6 +89,94 @@ func TestCumulativeNativeEvidenceSeparatesGoConsumersAndJSTSPackages(t *testing.
 			}
 			if !found {
 				t.Fatal("common library not analyzed")
+			}
+		})
+	}
+}
+
+func TestCumulativePythonLaunchFactsReachPortfolioWithoutRemovingShebangCandidate(t *testing.T) {
+	const source = "src/fixture_app/script_context.py"
+	var firstKey repositoryTargetKey
+	for _, executable := range []bool{false, true} {
+		t.Run(strconv.FormatBool(executable), func(t *testing.T) {
+			root, repository := cumulativeEvidenceRepository(t, "python")
+			if executable {
+				if err := os.Chmod(filepath.Join(root, source), 0755); err != nil {
+					t.Fatal(err)
+				}
+				var paths []string
+				for _, entry := range repository.Entries() {
+					paths = append(paths, entry.Path)
+				}
+				var err error
+				repository, err = corpus.New(t.Context(), root, gitfiles.Listing{Paths: paths, RegularPaths: paths, ExecutablePaths: []string{source}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = repository.Close() })
+			}
+			discovery, err := discoverRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, NoModel: true, DiscoverPython: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			native, err := repositoryNativeCandidates(discovery)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var selected repositoryNativeCandidate
+			var rows []targetportfolio.NativeCandidate
+			for _, candidate := range native {
+				rows = append(rows, candidate.Row)
+				if candidate.Target.Selector == "python:.:script-file:src/fixture_app/script_context" {
+					selected = candidate
+				}
+			}
+			if selected.Row.Ref == "" || selected.Row.Kind != "executable" {
+				t.Fatal("source facts removed the author-shebang candidate")
+			}
+			if !executable {
+				firstKey = selected.Target.Key
+			} else if selected.Target.Key != firstKey {
+				t.Fatal("executable permission changed the native launch identity")
+			}
+			adapter := discovery.adapters[0]
+			compiled, err := targetportfolio.CompileWithNativeAuthority(repository.Snapshot(), adapter.Candidates, adapter.RequiredFileRefs, rows)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var refs []string
+			for _, candidate := range compiled.Request.NativeTargets {
+				if candidate.Ref == selected.Row.Ref {
+					refs = candidate.EvidenceRefs
+				}
+			}
+			shebang, mode, permission, imports := false, false, false, 0
+			for _, observation := range compiled.Request.Observations {
+				if !slices.Contains(refs, observation.Ref) || observation.Path != source {
+					continue
+				}
+				switch observation.Kind {
+				case "python_shebang":
+					shebang = observation.Line == 1
+				case "launch_root":
+					mode = len(observation.Values) > 0 && observation.Values[0] == "script_file"
+				case "launch_file_executable":
+					permission = slices.Equal(observation.Values, []string{strconv.FormatBool(executable)})
+				case "module_level_relative_import":
+					imports++
+					name := "GetLevelsInfoResponse"
+					if observation.Line == 4 {
+						name = "*"
+					} else if observation.Line != 3 {
+						t.Fatalf("nested import gained module-level authority: %+v", observation)
+					}
+					if !slices.Equal(observation.Values, []string{".models", name}) {
+						t.Fatalf("relative import lost original names: %+v", observation)
+					}
+				}
+			}
+			if !shebang || !mode || !permission || imports != 2 {
+				t.Fatalf("incomplete source facts: shebang=%t mode=%t permission=%t imports=%d", shebang, mode, permission, imports)
 			}
 		})
 	}

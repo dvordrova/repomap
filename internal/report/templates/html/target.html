@@ -1,11 +1,11 @@
-<section id="{{.ID}}" data-report-page data-component-name="{{.ShortLabel}}" data-input-count="{{.InputsCount}}" data-part-count="{{len .Core}}" data-integration-count="{{len .DependencyGroups}}">
+<section id="{{.ID}}" data-report-page data-component-name="{{.ShortLabel}}" data-input-count="{{.InputsCount}}" data-part-count="{{.PartsCount}}" data-integration-count="{{len .DependencyGroups}}">
 <header class="component-intro"><h2>{{.ShortLabel}}</h2>
 <p class="target-facts meta">{{t "Component"}} · {{.Language}}{{if .Kind}} · {{t .Kind}}{{end}}{{if ne .Name .ShortLabel}} · <code>{{.Name}}</code>{{end}}{{if .Root}} · {{t "Path"}}: <code>{{.Root}}</code>{{end}}</p>
 </header>
 {{if not .FactsAvailable}}<p class="empty">{{t "This run did not read the repository, so this page shows only what the model grouped."}}</p>{{end}}
 {{if .Map}}{{template "map.html" .Map}}{{end}}
 <details class="component-reference"><summary>{{t "Code, entrypoints and sources"}}</summary>
-<nav class="jump" aria-label="{{t "Sections of this target"}}">{{if .InputsCount}}<a href="#{{.ID}}-inbound">{{t "Inputs"}} <b>{{.InputsCount}}</b></a>{{end}}{{if .Entrypoints}}<a href="#{{.ID}}-entrypoints">{{t "Entrypoints"}} <b>{{len .Entrypoints}}</b></a>{{end}}{{if .Core}}<a href="#{{.ID}}-core">{{t "Parts"}} <b>{{len .Core}}</b></a>{{end}}{{if or .DependencyGroups .Dependencies .Calls}}<a href="#{{.ID}}-external">{{t "Integrations"}}</a>{{end}}<a href="#{{.ID}}-flow">{{t "Main flow"}}</a></nav>
+<nav class="jump" aria-label="{{t "Sections of this target"}}">{{if .InputsCount}}<a href="#{{.ID}}-inbound">{{t "Inputs"}} <b>{{.InputsCount}}</b></a>{{end}}{{if .Entrypoints}}<a href="#{{.ID}}-entrypoints">{{t "Entrypoints"}} <b>{{len .Entrypoints}}</b></a>{{end}}{{if .PartsCount}}<a href="#{{.ID}}">{{t "Parts"}} <b>{{.PartsCount}}</b></a>{{end}}{{if or .DependencyGroups .Dependencies .Calls}}<a href="#{{.ID}}-external">{{t "Integrations"}}</a>{{end}}<a href="#{{.ID}}-flow">{{t "Main flow"}}</a></nav>
 {{if .InputsCount}}<section id="{{.ID}}-inbound" class="input-catalog"><h3>{{t "Inputs"}} · {{.InputsCount}}</h3>
 {{if .InboundCount}}<h4>{{t "Incoming requests"}} · {{.InboundCount}}</h4>{{end}}
 {{range .RouteGroups}}<h4><span class="method">{{.Method}}</span></h4><ul class="routes fact">{{range .Rows}}<li><span class="route-paths">{{range .Paths}}{{template "routepath" .}}{{end}}</span>{{if .Symbol}}<span class="route-to">{{t "handled by"}}</span>{{template "routehandler" .}}{{end}}</li>{{end}}</ul>{{end}}
@@ -14,7 +14,7 @@
 </section>{{end}}
 {{if .Entrypoints}}<h3 id="{{.ID}}-entrypoints">{{t "Entrypoints"}}</h3><ul class="plain fact">{{range .Entrypoints}}<li>{{if .Symbol}}<code>{{.Symbol}}</code>{{end}}{{if .Kind}} <span class="meta">{{.Kind}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
 {{if .Triggers}}<details class="evidence-list"><summary>{{t "Input responsibilities"}} · {{len .Triggers}}</summary>{{range .Triggers}}{{template "group" .}}{{end}}</details>{{end}}
-{{if .Core}}<h3 id="{{.ID}}-core">{{t "Parts"}}</h3>{{range .Core}}{{template "group" .}}{{end}}{{end}}
+{{if .Core}}<h3 id="{{.ID}}-core">{{t "Core"}}</h3>{{range .Core}}{{template "group" .}}{{end}}{{end}}
 {{if .SharedCode}}<h3 id="{{.ID}}-shared-code">{{t "Shared code"}}</h3><ul class="plain">{{range .SharedCode}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}</ul>{{end}}
 {{if or .Calls .DependencyGroups .Dependencies}}<h3 id="{{.ID}}-external">{{t "Integrations"}}</h3>
 {{if .Calls}}<h4>{{t "HTTP calls"}}</h4><ul class="plain fact">{{range .Calls}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}

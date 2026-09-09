@@ -399,7 +399,12 @@ def source_file(item, text):
                 local = name.asname or name.name.split(".")[0]
                 bind(local, "alias_module", node, name.name, "", 0)
     guards = [node.lineno for node in tree.body if isinstance(node, ast.If) and exact_main_guard(node.test)]
-    return {"path": path, "syntax_error": False, "bindings": bindings, "guards": guards}, tree
+    relative_imports = [
+        {"path": path, "line": node.lineno, "level": node.level, "module": node.module or "", "name": name.name}
+        for node in tree.body if isinstance(node, ast.ImportFrom) and node.level > 0
+        for name in node.names
+    ]
+    return {"path": path, "syntax_error": False, "bindings": bindings, "guards": guards, "relative_imports": relative_imports}, tree
 
 def main():
     try:

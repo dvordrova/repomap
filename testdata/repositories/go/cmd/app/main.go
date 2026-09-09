@@ -85,3 +85,12 @@ func walkFixture(values []string, visit func(string) bool) {
 		}
 	}
 }
+
+func registerAliasedCallbacks() {
+	callback := func(value string) bool { return value != "" }
+	walkFixture([]string{"fixture"}, callback)
+	named := namedCallback
+	walkFixture([]string{"fixture"}, named)
+}
+
+func namedCallback(value string) bool { return value != "" }

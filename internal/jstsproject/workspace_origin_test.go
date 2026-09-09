@@ -21,6 +21,10 @@ import (
 func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 	for _, source := range []string{"src/workspace-origins.ts", "src/workspace-origins-js.js"} {
 		t.Run(source, func(t *testing.T) {
+			lineOffset := 0
+			if strings.HasSuffix(source, ".js") {
+				lineOffset = 1 // The JS source keeps its author shebang.
+			}
 			root := preparedCompilerProject(t)
 			_, filename, _, _ := runtime.Caller(0)
 			fixture := filepath.Join(filepath.Dir(filename), "../../testdata/repositories/jsts")
@@ -66,6 +70,9 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 				t.Fatalf("sibling files entered the caller: %#v", result.Files)
 			}
 			assertRepeatedAliasedImports(t, source, result, index, catalog)
+			if strings.HasSuffix(source, ".js") {
+				assertCumulativeJSTSCallbackAliases(t, index, source, programindex.ResolutionAlternatives)
+			}
 			objects := make(map[string]programindex.Object)
 			for _, object := range index.Objects {
 				objects[object.ID] = object
@@ -165,13 +172,13 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 			for _, fact := range factResult.Facts {
 				if fact.Kind == facts.KindHTTPCall || fact.Kind == facts.KindHTTPRoute {
 					httpCount++
-					if fact.Path != "/remote-key" || fact.Method != "GET" || fact.Anchor == nil || fact.Anchor.Path != source || fact.Anchor.Line != 8 {
+					if fact.Path != "/remote-key" || fact.Method != "GET" || fact.Anchor == nil || fact.Anchor.Path != source || fact.Anchor.Line != 8+lineOffset {
 						t.Fatalf("invented or misplaced HTTP: %#v", fact)
 					}
 				}
 				if fact.Kind == facts.KindDependency && fact.Key == "got" {
 					dependencyCount++
-					if fact.Anchor == nil || fact.Anchor.Line != 3 {
+					if fact.Anchor == nil || fact.Anchor.Line != 3+lineOffset {
 						t.Fatalf("npm dependency anchored to sibling: %#v", fact)
 					}
 				}
@@ -185,6 +192,10 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 
 func assertRepeatedAliasedImports(t *testing.T, source string, result Result, index programindex.Index, catalog dependencies.Catalog) {
 	t.Helper()
+	lineOffset := 0
+	if strings.HasSuffix(source, ".js") {
+		lineOffset = 1
+	}
 	if err := index.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +207,7 @@ func assertRepeatedAliasedImports(t *testing.T, source string, result Result, in
 	}
 	importRef := ""
 	for _, imported := range result.Imports {
-		if imported.Location.Path == source && imported.Location.Line == 13 {
+		if imported.Location.Path == source && imported.Location.Line == 13+lineOffset {
 			if importRef != "" || imported.Specifier != "../packages/local-store/src/index" || imported.RepositoryPath != "packages/local-store" {
 				t.Fatalf("one repeated named import acquired duplicate or wrong authority: %+v", imported)
 			}
@@ -214,7 +225,7 @@ func assertRepeatedAliasedImports(t *testing.T, source string, result Result, in
 		imports++
 		if relation.Kind != programindex.RelationImports || relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 ||
 			relation.WitnessesObserved != 1 || relation.WitnessesOmitted != 0 || len(relation.Witnesses) != 1 ||
-			relation.Witnesses[0].Location == nil || relation.Witnesses[0].Location.Path != source || relation.Witnesses[0].Location.Line != 13 {
+			relation.Witnesses[0].Location == nil || relation.Witnesses[0].Location.Path != source || relation.Witnesses[0].Location.Line != 13+lineOffset {
 			t.Fatalf("repeated named import inflated witness count: %+v", relation)
 		}
 	}
@@ -229,7 +240,7 @@ func assertRepeatedAliasedImports(t *testing.T, source string, result Result, in
 			continue
 		}
 		if want[call.Expression] || call.ExternalPackage != "got" || call.RepositoryPath != "packages/local-store" ||
-			call.Location.Path != source || call.Location.Line != 16 || call.Location.Column <= 0 {
+			call.Location.Path != source || call.Location.Line != 16+lineOffset || call.Location.Column <= 0 {
 			t.Fatalf("aliased import call acquired wrong origin or source: %+v", call)
 		}
 		want[call.Expression] = true

@@ -431,9 +431,13 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   decision before page analysis. Author commands remain documentation claims.
   Tools, examples and shared code keep their own complete analysis; shared code
   appears in a counted catalogue with links from its observed consumers.
-  The owner accepted jieba's three products on 2026-09-09, including textrank's
-  author-written shebang launch beside the library and documented CLI; the
-  earlier expectation of two is superseded without a path-specific exception.
+  The owner accepts an author-written shebang as a native launch candidate.
+  The 2026-09-09 jieba audit corrected the explanation of its three products:
+  textrank's recorded standalone role was the fallback after a refused
+  shared_code answer, not an accepted model decision. Reevaluate its role with
+  the original launch mode, executable bit and anchored relative imports. These
+  facts inform the model; they never remove the shebang candidate locally or
+  force a product count.
   Seeds keep their original source anchors inside the owner's ProgramIndex,
   without narrowing its library API. JS/TS package ownership stays separate.
   File refs remain exact restoration addresses, and positively supported

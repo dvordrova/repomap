@@ -9,6 +9,7 @@ import (
 	"io"
 	"os/exec"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 
@@ -76,10 +77,11 @@ type parsedScript struct {
 }
 
 type parsedSource struct {
-	Path        string          `json:"path"`
-	SyntaxError bool            `json:"syntax_error"`
-	Bindings    []parsedBinding `json:"bindings"`
-	Guards      []int           `json:"guards"`
+	Path            string           `json:"path"`
+	SyntaxError     bool             `json:"syntax_error"`
+	Bindings        []parsedBinding  `json:"bindings"`
+	Guards          []int            `json:"guards"`
+	RelativeImports []RelativeImport `json:"relative_imports"`
 }
 
 type parsedBinding struct {
@@ -549,6 +551,9 @@ func buildCatalog(parsedFiles, launcherFiles []inputFile, parsed helperResponse)
 	for _, selector := range selectors {
 		build := builds[selector]
 		build.target.DeclaredPackages = cloneDeclarations(projects[build.target.ProjectDir].declarations)
+		for _, root := range build.target.Roots {
+			build.target.RelativeImports = append(build.target.RelativeImports, sourceByPath[root.Path].RelativeImports...)
+		}
 		entries = append(entries, build.target)
 	}
 	return newCatalogWithModuleScopes(entries, moduleScopes, omissions)
@@ -1123,6 +1128,24 @@ func canonicalizeTarget(target *Target) {
 	sort.Slice(target.Packages, func(i, j int) bool { return packageLess(target.Packages[i], target.Packages[j]) })
 	sort.Slice(target.Basis, func(i, j int) bool { return basisLess(target.Basis[i], target.Basis[j]) })
 	target.Basis = compactBasis(target.Basis)
+	sort.Slice(target.RelativeImports, func(i, j int) bool { return relativeImportLess(target.RelativeImports[i], target.RelativeImports[j]) })
+	target.RelativeImports = slices.Compact(target.RelativeImports)
+}
+
+func relativeImportLess(left, right RelativeImport) bool {
+	if left.Path != right.Path {
+		return left.Path < right.Path
+	}
+	if left.Line != right.Line {
+		return left.Line < right.Line
+	}
+	if left.Level != right.Level {
+		return left.Level < right.Level
+	}
+	if left.Module != right.Module {
+		return left.Module < right.Module
+	}
+	return left.Name < right.Name
 }
 
 func sortedProjects(projects map[string]*projectBuild) []*projectBuild {

@@ -46,6 +46,25 @@ func (r *reader) readQuestions(ctx context.Context) error {
 		r.questions = append(r.questions, *r.question)
 		r.question = nil
 	}
+	selected, empty, unavailable, incomplete := 0, 0, 0, 0
+	for _, route := range r.questions {
+		switch {
+		case route.Coverage.UnresolvedChunks > 0 && len(route.Stops) == 0:
+			unavailable++
+		case route.Coverage.UnresolvedChunks > 0:
+			incomplete++
+		case len(route.Stops) == 0:
+			empty++
+		default:
+			selected++
+		}
+	}
+	state := "complete"
+	if unavailable+incomplete > 0 {
+		state = "incomplete"
+	}
+	r.opts.State("Question source selection", state,
+		fmt.Sprintf("questions: %d with sources, %d with no sources selected, %d with incomplete selection, %d unavailable", selected, empty, incomplete, unavailable))
 	r.questionText, r.questionKey = "", ""
 	if r.opts.Through != lines.StageQuestion {
 		if err := r.readAnswers(ctx); err != nil {
@@ -110,12 +129,18 @@ func (r *reader) bindQuestion(chunks []lines.QuestionChunk, answers []rowAnswer)
 	}
 	selected := make(map[string]bool)
 	seen := make(map[string]int)
+	modelGroups, cachedGroups := 0, 0
 	for i, answer := range answers {
 		if answer.source == atlas.SourceGiven {
 			route.Coverage.UnresolvedChunks++
 			continue
 		}
 		route.Coverage.InspectedChunks++
+		if answer.source == atlas.SourceCache {
+			cachedGroups++
+		} else {
+			modelGroups++
+		}
 		if answer.answer["relevance"] == "none" {
 			continue
 		}
@@ -212,7 +237,29 @@ func (r *reader) bindQuestion(chunks []lines.QuestionChunk, answers []rowAnswer)
 	if err := r.persistQuestion(); err != nil {
 		return err
 	}
-	r.opts.State("Question candidates", "ready", fmt.Sprintf("reading stops: %d; connections with source evidence: %d", len(route.Stops), len(route.Connections)), "result: "+filepath.Join(r.opts.OwnerRunDir, atlas.QuestionFilename))
+	state := "ready"
+	details := []string{
+		"question: " + route.Question,
+		fmt.Sprintf("selected sources: %d; source-backed connections: %d", len(route.Stops), len(route.Connections)),
+		fmt.Sprintf("evidence groups: %d inspected, %d unavailable, %d total", route.Coverage.InspectedChunks, route.Coverage.UnresolvedChunks, route.Coverage.Chunks),
+		fmt.Sprintf("selection results: %d evidence groups from model, %d from cache", modelGroups, cachedGroups),
+	}
+	switch {
+	case route.Coverage.Chunks == 0:
+		state = "no evidence"
+		details = append(details, "No repository evidence was available for this question.")
+	case route.Coverage.UnresolvedChunks > 0:
+		state = "incomplete"
+		if len(route.Stops) == 0 {
+			state = "unavailable"
+		}
+		details = append(details, "Source selection did not complete; this is not a finding that relevant code is absent.")
+	case len(route.Stops) == 0:
+		state = "no sources selected"
+		details = append(details, "The model inspected the available evidence but selected no sources for an answer.")
+	}
+	details = append(details, "result: "+filepath.Join(r.opts.OwnerRunDir, atlas.QuestionFilename))
+	r.opts.State("Question candidates", state, details...)
 	return nil
 }
 

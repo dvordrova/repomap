@@ -90,22 +90,34 @@ func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionC
 			}
 			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageQuestion, Kind: "window_rejected", Count: len(exchange.ChunkIndexes) * len(exchange.QuestionIndexes), Reason: exchange.Err.Error(), ResponseRef: responseRef,
 				Samples: []string{fmt.Sprintf("shared window %d", i)}})
+			details := []string{fmt.Sprintf("affected questions: %d; unavailable evidence groups per question: %d", len(exchange.QuestionIndexes), len(exchange.ChunkIndexes)), "reason: " + exchange.Err.Error()}
+			for _, q := range exchange.QuestionIndexes {
+				details = append(details, "question: "+questions[q])
+			}
+			r.opts.State("Question source selection", "response rejected", details...)
 		}
 		if exchange.Err == nil && len(exchange.Outcome.Value.Rejections) > 0 {
 			rejected := 0
+			var details []string
 			for _, rejection := range exchange.Outcome.Value.Rejections {
-				for _, ref := range exchange.QuestionRefs {
+				for q, ref := range exchange.QuestionRefs {
 					if rejection.Question != ref {
 						continue
 					}
 					rejected++
+					details = append(details, "question: "+questions[exchange.QuestionIndexes[q]], "reason: "+rejection.Reason)
 					r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageQuestion, Kind: "question_rejected", Count: rejection.Chunks, Reason: rejection.Reason,
 						ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(table.Window{Stage: lines.StageQuestion, Index: i}, "response.ref.json"))), Samples: []string{rejection.Question}})
 				}
 			}
 			if rejected > 0 {
 				use.Rejected++
-				r.opts.State(lines.StageQuestion, "ready", fmt.Sprintf("%d questions unavailable, %d accepted in this response", rejected, len(exchange.QuestionRefs)-rejected))
+				state := "partly accepted"
+				if rejected == len(exchange.QuestionRefs) {
+					state = "response rejected"
+				}
+				details = append([]string{fmt.Sprintf("questions in this response: %d accepted, %d rejected", len(exchange.QuestionRefs)-rejected, rejected)}, details...)
+				r.opts.State("Question source selection", state, details...)
 			}
 		}
 		if err := r.writeQuestionExchange(i, exchange, questions); err != nil {

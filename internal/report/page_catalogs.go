@@ -49,6 +49,19 @@ func (builder *pageBuilder) fillSectionOperations(section *pageSection) {
 	section.RouteGroups = groupRouteRows(routes)
 }
 
+// Parts are the component's own leaf groups on the map, in every lane.
+func (section *pageSection) PartsCount() int {
+	count := 0
+	if section.Map != nil {
+		for _, node := range section.Map.Nodes {
+			if !node.Remote && node.Branch == "" && node.Activation == "" {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 // Empty observations belong in one coverage disclosure, not in a succession
 // of empty catalogues. Missing evidence never becomes proof of absence.
 func sectionCoverage(section *pageSection) []string {
@@ -63,7 +76,7 @@ func sectionCoverage(section *pageSection) []string {
 		{section.InboundCount == 0, "Incoming requests"},
 		{len(section.Activities) == 0, "Other operations"},
 		{len(section.Entrypoints) == 0, "Entrypoints"},
-		{len(section.Core) == 0, "Core"},
+		{section.PartsCount() == 0, "Parts"},
 		{len(section.Calls)+len(section.DependencyGroups)+len(section.Dependencies) == 0, "External calls & dependencies"},
 		{len(section.Dynamic) == 0, "Runs code it is given"},
 		{len(section.Config) == 0, "Configuration"},

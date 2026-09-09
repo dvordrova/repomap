@@ -364,6 +364,7 @@ func cloneFileResolverTarget(target Target) Target {
 	target.Packages = cloneFileResolverSlice(target.Packages)
 	target.Basis = cloneFileResolverSlice(target.Basis)
 	target.DeclaredPackages = cloneDeclarations(target.DeclaredPackages)
+	target.RelativeImports = cloneFileResolverSlice(target.RelativeImports)
 	return target
 }
 

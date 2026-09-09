@@ -893,6 +893,14 @@ class RelationVisitor(ast.NodeVisitor):
         return result
 
     def pattern_argument_authority(self, node):
+        resolved = self.resolve(node)
+        candidate = self.object(resolved[1]) if resolved[1] else None
+        # A lexical callable alias is the same possible declaration used by
+        # passes_callback. The assignment variable remains its own object, but
+        # must not replace that candidate in the argument the transfer cites.
+        if resolved[0] in ("local", "literal") and candidate and candidate["kind"] in ("function", "method", "lambda"):
+            resolution, refs = self.pattern_resolution(resolved)
+            return {"object_refs": refs, "resolution": resolution, "objects_observed": 1}
         if isinstance(node, ast.Name):
             binding = self.pattern_binding(node.id)
             if binding is not None and binding.get("ref"):
@@ -901,7 +909,7 @@ class RelationVisitor(ast.NodeVisitor):
                     "resolution": "alternatives",
                     "objects_observed": 1,
                 }
-        resolution, refs = self.pattern_resolution(self.resolve(node))
+        resolution, refs = self.pattern_resolution(resolved)
         if refs:
             return {
                 "object_refs": refs,
