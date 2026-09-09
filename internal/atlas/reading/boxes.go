@@ -157,7 +157,7 @@ func (r *reader) readTargetZones(ctx context.Context, targetID string) error {
 			r.zones[targetID] = append(r.zones[targetID], zone)
 			owner.zoneID[targetID] = zone.id
 		}
-		r.inheritZones(targetID)
+		r.inheritZones(targetID, tops)
 		return nil
 	}
 	parts, err := r.partition(ctx, targetID, tops, 1)
@@ -186,7 +186,12 @@ func (r *reader) readTargetZones(ctx context.Context, targetID string) error {
 		}
 		r.zones[targetID] = append(r.zones[targetID], sub...)
 	}
-	r.inheritZones(targetID)
+	for _, zone := range r.zones[targetID] {
+		for _, boxID := range zone.boxes {
+			r.boxes[boxID].zoneID[targetID] = zone.id
+		}
+	}
+	r.inheritZones(targetID, tops)
 	// Empty parts vanish; every remaining part gets its sentence.
 	kept := r.zones[targetID][:0]
 	for _, zone := range r.zones[targetID] {
@@ -224,14 +229,21 @@ func (r *reader) readTargetZones(ctx context.Context, targetID string) error {
 	return nil
 }
 
-// inheritZones gives every box without a part the part of its nearest
-// placed ancestor directory.
-func (r *reader) inheritZones(targetID string) {
+// inheritZones gives boxes beneath the reviewed tops the part of their nearest
+// placed ancestor. A refused top assignment remains unassigned.
+func (r *reader) inheritZones(targetID string, tops []*boxState) {
+	asked := make(map[string]bool, len(tops))
+	for _, top := range tops {
+		asked[top.id] = true
+	}
 	byID := make(map[string]*zoneState)
 	for _, zone := range r.zones[targetID] {
 		byID[zone.id] = zone
 	}
 	for _, owner := range r.boxesOfTarget(targetID) {
+		if asked[owner.id] {
+			continue
+		}
 		if _, placed := owner.zoneID[targetID]; placed {
 			continue
 		}
@@ -245,6 +257,9 @@ func (r *reader) inheritZones(targetID string) {
 			if zoneID, placed := ancestor.zoneID[targetID]; placed {
 				owner.zoneID[targetID] = zoneID
 				byID[zoneID].boxes = append(byID[zoneID].boxes, owner.id)
+				break
+			}
+			if asked[ancestor.id] {
 				break
 			}
 		}
@@ -658,7 +673,7 @@ func parentDir(filePath string) string {
 
 // partition names the parts of a set of boxes in one row and lets every box
 // choose its part from that closed list. It returns the parts with their
-// boxes and stamps each box's zone; empty parts are dropped.
+// boxes; empty parts are dropped. Only the final parts assign box zones.
 func (r *reader) partition(ctx context.Context, targetID string, tops []*boxState, round int) ([]*zoneState, error) {
 	sort.SliceStable(tops, func(i, j int) bool {
 		a, b := r.targetFiles(tops[i], targetID), r.targetFiles(tops[j], targetID)
@@ -725,12 +740,12 @@ func (r *reader) partition(ctx context.Context, targetID string, tops []*boxStat
 		if answer := assigned[i]; answer.answer != nil {
 			zone := addPart(answer.answer["part"])
 			zone.boxes = append(zone.boxes, owner.id)
-			owner.zoneID[targetID] = zone.id
 			continue
 		}
-		if zone, ok := byKey[strings.ToLower(strings.TrimSpace(owner.title))]; ok {
-			zone.boxes = append(zone.boxes, owner.id)
-			owner.zoneID[targetID] = zone.id
+		if r.dry || named[0].answer == nil {
+			if zone, ok := byKey[strings.ToLower(strings.TrimSpace(owner.title))]; ok {
+				zone.boxes = append(zone.boxes, owner.id)
+			}
 		}
 	}
 	kept := parts[:0]

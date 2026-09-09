@@ -17,7 +17,7 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-func answerCacheRecordCollision(t *testing.T, kind string) (*reader, *answerTestProvider, llm.Outcome[table.Answers]) {
+func answerCacheRecordCollision(t *testing.T, kind string) (*reader, *answerTestProvider, llm.Outcome[table.Result]) {
 	t.Helper()
 	p := &answerTestProvider{tableProvider: &tableProvider{}}
 	r := answerTestReader(t, answerTestRoutes(1), p)
@@ -34,7 +34,7 @@ func answerCacheRecordCollision(t *testing.T, kind string) (*reader, *answerTest
 	}
 	// Obtain the exact cache record key through the executor, using a mock.
 	cold, err := llm.ExecuteJSON(context.Background(), r.opts.Executor, p, call)
-	if err != nil || len(cold.Value) != 1 || cold.Value[0]["answer"] == "" {
+	if err != nil || len(cold.Value.Answers) != 1 || cold.Value.Answers[0]["answer"] == "" {
 		t.Fatalf("prime: %v / %#v", err, cold.Value)
 	}
 	cacheRecord := filepath.Join(r.opts.Executor.RootDir, llm.CacheDirectoryName, cold.CacheKey+".json")
@@ -69,7 +69,7 @@ func answerCacheRecordCollision(t *testing.T, kind string) (*reader, *answerTest
 	return r, p, cold
 }
 
-func assertAcceptedAnswerArtifacts(t *testing.T, r *reader, expected llm.Outcome[table.Answers], source string) {
+func assertAcceptedAnswerArtifacts(t *testing.T, r *reader, expected llm.Outcome[table.Result], source string) {
 	t.Helper()
 	dir := filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir)
 	results, err := filepath.Glob(filepath.Join(dir, "atlas_answer*.result.json"))
@@ -85,7 +85,7 @@ func assertAcceptedAnswerArtifacts(t *testing.T, r *reader, expected llm.Outcome
 		Reason string        `json:"reason"`
 		Rows   table.Answers `json:"rows"`
 	}
-	if err := json.Unmarshal(raw, &result); err != nil || result.Source != source || result.Reason != "" || !reflect.DeepEqual(result.Rows, expected.Value) {
+	if err := json.Unmarshal(raw, &result); err != nil || result.Source != source || result.Reason != "" || !reflect.DeepEqual(result.Rows, expected.Value.Answers) {
 		t.Fatalf("accepted result changed: %s / %v", raw, err)
 	}
 	for _, payload := range []struct {
@@ -138,7 +138,7 @@ func TestAnswerCacheRecordFailuresPreserveAcceptedAnswer(t *testing.T) {
 			if answer.State != "partial" || len(answer.Parts) != 1 {
 				t.Fatalf("accepted answer not restored: %#v", answer)
 			}
-			part, value := answer.Parts[0], expected.Value[0]
+			part, value := answer.Parts[0], expected.Value.Answers[0]
 			if part.Source != atlas.SourceModel || part.OriginRequest != expected.RequestSHA256 || part.OriginRow != "r1" || part.Text != value["answer"] || part.Basis != value["basis"] || part.Remaining != value["remaining"] {
 				t.Fatalf("accepted content or provenance changed: %+v", part)
 			}

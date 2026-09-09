@@ -38,6 +38,14 @@ func (result Result) AcceptedRowKeys() []string {
 	return keys
 }
 
+func (result Result) ResponseRejections() []llm.ResponseRejection {
+	var rejections []llm.ResponseRejection
+	for _, row := range result.Rejections {
+		rejections = append(rejections, llm.ResponseRejection{Kind: "row_rejected", Count: 1, Reason: row.Reason, Samples: []string{row.Key}})
+	}
+	return rejections
+}
+
 // DecodeResult keeps coupled decisions atomic and validates independent rows
 // one by one. Extra envelope and cell fields have no role in an independent
 // answer; a missing or invalid required cell refuses only its own row.

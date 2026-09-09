@@ -21,10 +21,6 @@ const (
 	RejectedFilename = "rejected.jsonl"
 
 	digestDomain = "repomap-orientation-v1\x00"
-
-	// MaxSentenceRunes bounds every model sentence; the constitution allows
-	// one line per purpose and one sentence per step, not essays.
-	MaxSentenceRunes = 400
 )
 
 // Role is the model's one-line description of what one target is. SubjectIDs
@@ -317,5 +313,5 @@ func validText(value string) bool {
 }
 
 func validSentence(value string) bool {
-	return validText(value) && utf8.RuneCountInString(value) <= MaxSentenceRunes
+	return value != "" && utf8.ValidString(value) && strings.TrimSpace(value) == value && !strings.ContainsRune(value, 0)
 }

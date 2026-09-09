@@ -25,6 +25,7 @@ type SemanticObserver struct {
 // unavailable response is identified explicitly; its marker is not a raw body.
 type SemanticFailureReceipt struct {
 	Stage, Reason                          string
+	State                                  string
 	JournalPath, RequestPath, ResponsePath string
 	ResponseUnavailable                    string
 	HTTPResponse                           *llm.HTTPResponse
@@ -48,6 +49,7 @@ func recordObservedResponse(writer *Writer, value observedResponse, notice func(
 		if err == nil {
 			receipt := SemanticFailureReceipt{
 				Stage: value.exchange.Stage, Reason: value.reason, JournalPath: journal,
+				State:               record.State,
 				RequestPath:         filepath.Join(filepath.Dir(journal), filepath.FromSlash(record.Request.File)),
 				ResponseUnavailable: record.Response.UnavailableCode,
 				HTTPResponse:        record.HTTPResponse,

@@ -506,7 +506,7 @@ func TestGuidanceSnapshotOwnsExactDocumentsAndIgnoresUnrelatedFileTree(t *testin
 	}
 }
 
-func TestResolveResponseRejectsAnythingOutsideExactListContract(t *testing.T) {
+func TestResolveResponseRejectsUnreadableOrEntirelyUnusableResults(t *testing.T) {
 	repository, _ := testCorpus(t, map[string]string{
 		"README.md": "Run main.go.\n",
 		"main.go":   "package main\n",
@@ -517,21 +517,16 @@ func TestResolveResponseRejectsAnythingOutsideExactListContract(t *testing.T) {
 	}
 	mainID, _ := repository.ID("main.go")
 	tests := map[string]string{
-		"top-level object":             `{}`,
-		"null top-level array":         `null`,
-		"unknown class":                fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"surface","hypotheses":["server"]}]}]`, mainID),
-		"missing classifications":      fmt.Sprintf(`[{"file_ref":%q}]`, mainID),
-		"null classifications":         fmt.Sprintf(`[{"file_ref":%q,"classifications":null}]`, mainID),
-		"empty classifications":        fmt.Sprintf(`[{"file_ref":%q,"classifications":[]}]`, mainID),
-		"missing hypotheses":           fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry"}]}]`, mainID),
-		"null hypotheses":              fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":null}]}]`, mainID),
-		"empty hypotheses":             fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":[]}]}]`, mainID),
-		"whitespace hypothesis":        fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":[" a"]}]}]`, mainID),
-		"control hypothesis":           fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a\nb"]}]}]`, mainID),
-		"unknown file field":           fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a"]}],"score":1}]`, mainID),
-		"unknown field on ignored ref": `[{"file_ref":"f999","classifications":[],"score":1}]`,
-		"unknown classification field": fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a"],"confidence":1}]}]`, mainID),
-		"trailing value":               fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a"]}]}] {}`, mainID),
+		"top-level object":        `{}`,
+		"null top-level array":    `null`,
+		"unknown class":           fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"surface","hypotheses":["server"]}]}]`, mainID),
+		"missing classifications": fmt.Sprintf(`[{"file_ref":%q}]`, mainID),
+		"null classifications":    fmt.Sprintf(`[{"file_ref":%q,"classifications":null}]`, mainID),
+		"empty classifications":   fmt.Sprintf(`[{"file_ref":%q,"classifications":[]}]`, mainID),
+		"missing hypotheses":      fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry"}]}]`, mainID),
+		"null hypotheses":         fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":null}]}]`, mainID),
+		"empty hypotheses":        fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":[]}]}]`, mainID),
+		"trailing value":          fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a"]}]}] {}`, mainID),
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {

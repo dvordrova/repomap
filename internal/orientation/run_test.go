@@ -86,61 +86,64 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 	provider.assertRequestShape(t, fixture)
 }
 
-func TestRunRejectsRowsWithUnknownRefsAndKeepsSiblings(t *testing.T) {
+func TestRunKeepsValidRefsAndCompleteProse(t *testing.T) {
 	fixture := newFixture(t)
 	refs := fixture.refs(t)
+	prose := strings.Repeat("Only when the caller supplies the documented arguments. ", 10) + "Otherwise it does not run."
 	provider := &presetProvider{respond: func([]byte) []byte {
 		return encodeResponse(t, map[string]any{
-			"summary": "Alpha and Beta.", "summary_refs": []string{"g1"},
+			"summary": "  Alpha and Beta.  ", "summary_refs": []string{refs.fact("route"), "g1", refs.fact("route")},
+			"extra": true,
 			"roles": []any{
 				map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{"f999"}},
-				map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("route"), refs.fact("route")}},
-				map[string]any{"target": refs.target("beta"), "role": "Client", "purpose": strings.Repeat("x", MaxSentenceRunes+1), "refs": []string{refs.fact("call")}},
-				map[string]any{"target": refs.target("beta"), "role": "Client", "purpose": "Fetches items.", "refs": []string{refs.fact("call")}},
+				map[string]any{"target": refs.target("alpha"), "role": " Backend\nAPI ", "purpose": "  Serves items.  ", "refs": []string{refs.fact("route"), refs.fact("route"), "f999"}, "extra": 42},
+				map[string]any{"target": refs.target("beta"), "role": "Client", "purpose": prose, "refs": []string{refs.fact("call")}},
 				map[string]any{"target": "t9", "role": "Ghost", "purpose": "Does not exist.", "refs": []string{refs.fact("call")}},
 			},
 		})
 	}}
-
-	result, rejected, err := Run(context.Background(), llm.Executor{Enabled: false}, provider, fixture.input)
+	result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatal(err)
 	}
-	if len(result.Roles) != 1 || result.Roles[0].TargetID != fixture.targetID("beta") {
-		t.Fatalf("accepted roles = %#v", result.Roles)
+	if len(result.Roles) != 2 || result.Roles[0].Role != "Backend API" || result.Roles[0].Purpose != "Serves items." || result.Roles[1].Purpose != prose {
+		t.Fatalf("valid roles or complete qualification lost: %+v", result.Roles)
 	}
-	if result.Summary != "" || len(result.SummaryRefs) != 0 {
-		t.Fatalf("summary citing a group ref was accepted: %q %v", result.Summary, result.SummaryRefs)
+	if !reflect.DeepEqual(result.Roles[0].FactIDs, []string{fixture.factID("route")}) ||
+		!reflect.DeepEqual(result.SummaryRefs, []string{fixture.factID("route")}) || result.Summary != "Alpha and Beta." {
+		t.Fatal("filtered refs or whitespace changed the accepted evidence")
 	}
-	if len(rejected) != 5 || result.RejectedCount != 5 {
-		t.Fatalf("rejected = %d rows: %#v", len(rejected), rejected)
+	if len(rejected) != 4 || result.RejectedCount != 4 {
+		t.Fatalf("unsupported rows/refs must remain recorded: %d", len(rejected))
 	}
-	expectReasons := map[string]string{
-		"summary": "not allowed here", "f999": "unknown ref", "duplicate": "duplicate ref",
-		"t9": "unknown target ref", "long": "at most",
-	}
-	seen := map[string]bool{}
-	for _, row := range rejected {
-		if row.Stage != StageName || len(row.Raw) == 0 || row.Reason == "" {
-			t.Fatalf("rejected row is incomplete: %#v", row)
+}
+
+func TestRunDeduplicatesEquivalentRolesAndRefusesConflictingTargetOnly(t *testing.T) {
+	fixture := newFixture(t)
+	refs := fixture.refs(t)
+	alpha := map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("route")}}
+	alphaWithOtherRefs := map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("entrypoint"), refs.claim("readme"), refs.subject("alpha", "core"), refs.fact("route")}}
+	beta := map[string]any{"target": refs.target("beta"), "role": "Client", "purpose": "Fetches items.", "refs": []string{refs.fact("call")}}
+	for _, conflict := range []bool{false, true} {
+		rows := []any{alpha, alphaWithOtherRefs, beta}
+		if conflict {
+			rows = append(rows, map[string]any{"target": refs.target("alpha"), "role": "Worker", "purpose": "Processes a queue.", "refs": []string{refs.fact("route")}})
 		}
-		raw := string(row.Raw)
-		switch {
-		case row.Section == "summary":
-			seen["summary"] = strings.Contains(row.Reason, expectReasons["summary"])
-		case strings.Contains(raw, "f999"):
-			seen["f999"] = strings.Contains(row.Reason, expectReasons["f999"])
-		case strings.Contains(raw, `"t9"`):
-			seen["t9"] = strings.Contains(row.Reason, expectReasons["t9"])
-		case strings.Contains(raw, "xxxx"):
-			seen["long"] = strings.Contains(row.Reason, expectReasons["long"])
-		default:
-			seen["duplicate"] = strings.Contains(row.Reason, expectReasons["duplicate"])
+		provider := &presetProvider{respond: func([]byte) []byte { return encodeResponse(t, map[string]any{"roles": rows}) }}
+		result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	for key := range expectReasons {
-		if !seen[key] {
-			t.Fatalf("rejection %q missing or has wrong reason: %#v", key, rejected)
+		if !conflict && (len(result.Roles) != 2 || len(rejected) != 0) {
+			t.Fatal("equivalent duplicate lost a valid role")
+		}
+		if !conflict && (!reflect.DeepEqual(result.Roles[0].FactIDs, []string{fixture.factID("route"), fixture.factID("entrypoint")}) ||
+			!reflect.DeepEqual(result.Roles[0].ClaimIDs, []string{fixture.claimID("readme")}) ||
+			!reflect.DeepEqual(result.Roles[0].SubjectIDs, []string{fixture.subjectID("alpha", "core")})) {
+			t.Fatal("equivalent interpretations lost or duplicated their distinct supporting references")
+		}
+		if conflict && (len(result.Roles) != 1 || result.Roles[0].TargetID != fixture.targetID("beta") || len(rejected) != 1) {
+			t.Fatal("conflict did not stay within its own target")
 		}
 	}
 }
@@ -166,7 +169,7 @@ func TestRunRejectsRecipeWithoutManifestOrEntrypointFact(t *testing.T) {
 	}
 	if len(rejected) != 2 || rejected[0].Section != "run_recipe" ||
 		!strings.Contains(rejected[0].Reason, "manifest or entrypoint") ||
-		!strings.Contains(rejected[1].Reason, "not allowed here") {
+		!strings.Contains(rejected[1].Reason, "no advertised") {
 		t.Fatalf("rejected = %#v", rejected)
 	}
 }
@@ -195,22 +198,37 @@ func TestRunRejectsFlowStepCitingMemberOfAnotherTarget(t *testing.T) {
 		t.Fatalf("flow = %#v", result.MainFlow)
 	}
 	if len(rejected) != 2 || !strings.Contains(rejected[0].Reason, "does not belong to target") ||
-		!strings.Contains(rejected[1].Reason, "not allowed here") {
+		!strings.Contains(rejected[1].Reason, "no advertised") {
 		t.Fatalf("rejected = %#v", rejected)
 	}
 }
 
-func TestRunMalformedResponseIsAnError(t *testing.T) {
+func TestRunMalformedResponseLeavesOtherReportInputsAvailable(t *testing.T) {
 	fixture := newFixture(t)
-	for name, raw := range map[string]string{
-		"not json":      `{"summary": `,
-		"unknown field": `{"summary":"x","summary_refs":[],"extra":1}`,
-		"wrong type":    `{"roles":"none"}`,
-	} {
+	for _, raw := range []string{`{"summary":`, `null`, `[]`} {
 		provider := &presetProvider{respond: func([]byte) []byte { return []byte(raw) }}
-		if _, _, err := Run(context.Background(), llm.Executor{Enabled: false}, provider, fixture.input); err == nil {
-			t.Fatalf("%s: Run accepted a malformed response", name)
+		executor := llm.Executor{RootDir: t.TempDir(), Enabled: true}
+		for attempt := 0; attempt < 2; attempt++ {
+			result, rejected, err := Run(t.Context(), executor, provider, fixture.input)
+			if err != nil || result.Validate() != nil || len(rejected) != 1 || result.Summary != "" || len(result.Roles) != 0 {
+				t.Fatalf("invalid response invented output or aborted: %v", err)
+			}
 		}
+		if provider.completions != 2 {
+			t.Fatal("malformed response cached as accepted")
+		}
+	}
+	refs := fixture.refs(t)
+	provider := &presetProvider{respond: func([]byte) []byte {
+		return encodeResponse(t, map[string]any{
+			"summary": 42, "roles": "none", "extra": true,
+			"run_recipe": []any{map[string]any{"command": "go run ./alpha", "refs": []string{refs.fact("entrypoint")}}},
+			"main_flow":  map[string]any{"title": 42, "steps": []any{map[string]any{"target": refs.target("alpha"), "ref": refs.fact("route"), "explanation": "Handles items."}}},
+		})
+	}}
+	result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
+	if err != nil || len(result.RunRecipe) != 1 || len(result.MainFlow.Steps) != 1 || len(rejected) != 3 {
+		t.Fatalf("malformed section lost unrelated sections: %v", err)
 	}
 }
 
@@ -230,7 +248,7 @@ func TestRunAllRejectedYieldsEmptySealedResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(rejected) != 5 {
+	if len(rejected) != 1 || !strings.Contains(rejected[0].Reason, "no output accepted") {
 		t.Fatalf("rejected = %#v", rejected)
 	}
 	want, err := Empty(fixture.input.Facts.SHA256, fixture.input.Claims.SHA256, groupDigests(fixture.input.Groups), len(rejected))
@@ -247,13 +265,13 @@ func TestRunAllRejectedYieldsEmptySealedResult(t *testing.T) {
 
 func TestRequestBytesAreDeterministicAndCloseOverRefs(t *testing.T) {
 	fixture := newFixture(t)
-	first, _, err := encodeRequest(fixture.input, requestShapes[0])
+	first, _, err := encodeRequest(fixture.input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	reordered := fixture.input
 	reordered.Groups = []groupindex.Index{fixture.input.Groups[1], fixture.input.Groups[0]}
-	second, _, err := encodeRequest(reordered, requestShapes[0])
+	second, _, err := encodeRequest(reordered)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,35 +288,42 @@ func TestRequestBytesAreDeterministicAndCloseOverRefs(t *testing.T) {
 	}
 }
 
-func TestRunShrinksRequestBeforeGivingUp(t *testing.T) {
+func TestRunKeepsEvidenceBeyondTwoMiBUntilActualProviderRefusal(t *testing.T) {
 	fixture := newFixture(t)
-	withoutClaims, _, err := encodeRequest(fixture.input, requestShapes[1])
+	for i := range fixture.input.Facts.Facts {
+		if fixture.input.Facts.Facts[i].Kind == facts.KindManifest {
+			fixture.input.Facts.Facts[i].Value = strings.TrimSpace(strings.Repeat("manifest argument ", 140000))
+		}
+	}
+	var err error
+	fixture.input.Facts, err = facts.Seal(fixture.input.Facts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &presetProvider{
-		maximumUserBytes: len(withoutClaims),
-		respond:          func([]byte) []byte { return encodeResponse(t, map[string]any{}) },
+	complete, _, err := encodeRequest(fixture.input)
+	if err != nil || len(complete) <= 2<<20 {
+		t.Fatalf("large complete request: %d bytes, %v", len(complete), err)
 	}
-	result, rejected, err := Run(context.Background(), llm.Executor{Enabled: false}, provider, fixture.input)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	provider := &presetProvider{respond: func([]byte) []byte { return []byte(`{}`) }}
+	result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
+	if err != nil || len(rejected) != 0 || result.RejectedCount != 0 || provider.completions != 1 {
+		t.Fatalf("valid large request was reduced or refused: %v, rejected=%d calls=%d", err, len(rejected), provider.completions)
 	}
-	if len(rejected) != 1 || rejected[0].Section != "request" || !strings.Contains(string(rejected[0].Raw), `"claims"`) {
-		t.Fatalf("dropped rows = %#v", rejected)
+	if !bytes.Equal(provider.users[0], complete) {
+		t.Fatal("size changed the evidence supplied to the model")
 	}
-	if result.RejectedCount != 1 || !bytes.Equal(provider.users[len(provider.users)-1], withoutClaims) {
-		t.Fatalf("model did not receive the claim-free request")
+	var sent request
+	if err := json.Unmarshal(provider.users[0], &sent); err != nil {
+		t.Fatal(err)
 	}
-
-	tiny := &presetProvider{maximumUserBytes: 16, respond: func([]byte) []byte { return nil }}
-	_, _, err = Run(context.Background(), llm.Executor{Enabled: false}, tiny, fixture.input)
+	if len(sent.Claims) != len(fixture.input.Claims.Claims) || len(sent.Groups) == 0 {
+		t.Fatal("large request lost claims or groups")
+	}
+	tiny := &presetProvider{maximumUserBytes: len(complete) - 1}
+	_, _, err = Run(t.Context(), llm.Executor{}, tiny, fixture.input)
 	var resourceErr *llm.ResourceLimitError
-	if err == nil || !strings.Contains(err.Error(), "no fact was truncated") || !errors.As(err, &resourceErr) {
-		t.Fatalf("oversized request error = %v", err)
-	}
-	if tiny.completions != 0 {
-		t.Fatal("provider was called with an oversized request")
+	if !errors.As(err, &resourceErr) || tiny.completions != 0 {
+		t.Fatalf("actual request limit: %v, calls=%d", err, tiny.completions)
 	}
 }
 
@@ -483,7 +508,7 @@ type refLookup struct {
 
 func (fixture *fixture) refs(t *testing.T) refLookup {
 	t.Helper()
-	_, cat, err := buildRequest(fixture.input, requestShapes[0])
+	_, cat, err := buildRequest(fixture.input)
 	if err != nil {
 		t.Fatal(err)
 	}

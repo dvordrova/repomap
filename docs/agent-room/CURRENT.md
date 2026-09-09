@@ -2063,7 +2063,8 @@ goal and closed candidate refs, while all rows share one original catalogue.
 The model composes the topic menus together, then the next round compares the
 union of the chosen original questions. The same byte-bound partitions, fixed
 point, executor and exact cache apply; there is no numeric question quota or
-local semantic ranking. A missing goal row rejects its whole window. Questions
+local semantic ranking. A missing or invalid goal row leaves that intent
+unavailable while accepted menu decisions survive. Questions
 shared across goals preserve all origins without duplicating the answer.
 The report labels menu rationales as such; an omitted candidate is not declared
 inapplicable or given an invented individual reason for exclusion.
@@ -2195,8 +2196,14 @@ Ordinary preparation uses the actual provider envelope with no question quota
 or 64 KiB planning cap. Resource refusals split independent questions first and
 recompute each child's complete source union. Only an oversized singleton
 question partitions its original evidence into separately anchored answer parts.
-Every successful sibling survives. A malformed model response refuses its whole
-window; it is not repaired or used as a reason for speculative retries. Local
+Every successful sibling survives. Each question's complete answer validates
+independently: a malformed, missing or duplicate row leaves only that question
+unavailable. Retrieval applies the same isolation to each complete question
+decision within a chunk; missing decisions never become inspected negatives.
+An unparseable model response refuses its whole window; it is not repaired or
+used as a reason for speculative retries. Exact raw responses remain the cache
+authority, and retrieval memos revalidate their original complete window before
+restoring accepted questions. Local
 preparation, configuration, cancellation and persistence failures remain errors.
 Optional response-cache read, write or eviction failures are reported without
 discarding an accepted answer or its source bindings; mandatory run artifacts
@@ -3207,13 +3214,20 @@ fields are ignored. Unparseable JSON, an entirely refused answer and incomplete
 coupled assignments still reject their request. Cached response and replay
 validation use the same row rules; optional terms follow only accepted rows.
 
-The accompanying validation audit found further work outside this urgent
-operations/translation correction: final answers and question retrieval still
-refuse neighbouring questions with a malformed row; Learn merge can remove its
-already accepted menu after a refused merge; README/documentation decoders can
-abort a run for one invalid hypothesis; orientation still reduces evidence to
-an artificial 2 MiB prepared-input limit. These remain open, not covered by the
-independent-description flag or the translation executor change.
+The same audit extended independent acceptance to final answers, retrieval
+questions, Learn intent reviews and menu decisions, arrow explanations, target
+lines, zone choices and descriptions, joint confirmations and peer choices.
+Independent validation and entity memoization are separate table flags: only
+the existing description and operation families use entity memos. A refused
+zone choice does not acquire a guessed assignment from its title or parent.
+Coupled zone-name proposals still need their complete closed catalogue.
+Learn consolidation preserves accepted original questions after a refused
+comparison, retains valid comparisons and marks the plan partial. It does not
+rewrite the scope of earlier menu decisions. Identical repeated native target
+placements are idempotent; conflicting placements still refuse that target.
+README/documentation and orientation corrections are recorded in their owning
+sections below. Optional terms follow accepted output scopes in every changed
+family, including live, cached and replayed responses.
 
 Steps 1 and 2 are in. The tables, in order: directories by depth; files by
 call-graph round (a file may move to a sibling box or start one, a box of
@@ -3409,6 +3423,17 @@ result when there is no guidance authority. Every retained source must restore
 to the exact guidance snapshot. The reduction is repository context for every
 selected target's categorization request; it is not copied into adapter facts
 or treated as source-code authority.
+
+The 2026-09-09 validation correction accepts guidance files, classifications
+and hypotheses independently. Invalid members retain a recorded reason without
+erasing valid neighbours or the native target inventory. Documentation likewise
+keeps valid source claims and concepts beside malformed ones. Independent source
+and merge requests use the shared worker pool without cancelling accepted
+siblings; real resource refusals split every affected request in the round.
+Successful input snapshots stay unchanged for exact warm-cache reuse, including
+after children are added. A failed merge preserves its already accepted input
+claims, and an incomplete merge supplies no invented whole-repository overview.
+Optional terms are collected only from fully accepted file/source scopes.
 
 Source and merge packing find the largest complete request prefix by probing
 exponentially growing windows, then searching within the last fit/refusal
@@ -4108,13 +4133,21 @@ shape is withheld and counted.
 matched GroupsIndex set. It returns one repository summary, one role per
 target, a run recipe, and one main flow. The model selects request-local refs
 that Go restores to exact fact, claim, and subject ids. Validation is a pure
-function over the response and the advertised catalog: a row with an unknown or
-wrongly typed ref, a recipe step with no manifest or entrypoint evidence, or a
-flow step naming another target's member is rejected with its raw JSON and a
-reason into `rejected.jsonl`. Rejection never aborts the run, nothing is
-repaired or promoted, and an all-rejected response yields the legitimate empty
-result. The stage caches on its stage identity, prompt version, and input
-digests through the shared executor.
+function over the response and the advertised catalog. Set refs filter unknown
+or incompatible members and deduplicate repeats, recording ignored refs; a row
+with no required evidence, a recipe step with no manifest or entrypoint evidence,
+or a flow step naming another target's member is rejected with its raw JSON and
+a reason into `rejected.jsonl`. Summary, roles, recipe and flow validate separately,
+so a wrong field type does not discard accepted sections. Equivalent target
+roles combine their evidence; conflicting roles leave only that target's role
+unavailable. Complete prose and qualifications survive; only short labels collapse
+whitespace. Unparseable responses yield the legitimate empty orientation and are
+not cached. Optional terms follow accepted sections and rows on live and cached
+responses. Rejection never aborts the run and no replacement is invented.
+Preparation keeps the original context against the actual provider envelope;
+the former 2 MiB limit and its size-triggered claim/member/fact removal are gone.
+The stage caches on its stage identity, prompt version, and input digests through
+the shared executor.
 
 ## Multi-target orchestration and failure isolation
 
@@ -4475,7 +4508,7 @@ Extra translated-entry fields such as echoed `terms` are ignored. The required
 `text` and original protected spans still validate; unused metadata neither
 authorizes a changed translation nor triggers another provider call.
 
-Ordinary online acceptance `20260909-151910-python-tutorial-game-2e3397597390`
+Ordinary fixture check `20260909-151910-python-tutorial-game-2e3397597390`
 published both targets and 380 translated texts in eight live translation
 requests; the slowest took 10 seconds and the full run took 40.6 seconds.
 The immediate repeat `20260909-152101-python-tutorial-game-7b1d13ea15c5`

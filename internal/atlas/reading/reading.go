@@ -549,7 +549,7 @@ func (r *reader) runTableWith(
 			def.MaxInputBytes = r.opts.InputBytes
 		}
 	}
-	if def.Independent && !r.dry {
+	if def.Memoize && !r.dry {
 		if check != nil {
 			return nil, fmt.Errorf("table %s: a whole-window check cannot validate independent knowledge", def.Stage)
 		}

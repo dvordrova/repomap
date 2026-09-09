@@ -98,8 +98,8 @@ func TestQuestionMemoReusesAddedQuestionIndependentlyAndRefreshesReplay(t *testi
 		t.Fatal("recalled input lost full original window")
 	}
 
-	// A replay that omits another required original question invalidates this
-	// entire old window, even when the currently requested q2 is present.
+	// Revalidate the entire original request, but a missing sibling answer
+	// cannot invalidate the currently requested question's accepted decision.
 	provider.complete = func(request modelRequest) (Response, error) {
 		response := selectFirst(request, "Not complete.")
 		response.Questions = response.Questions[1:]
@@ -111,11 +111,11 @@ func TestQuestionMemoReusesAddedQuestionIndependentlyAndRefreshesReplay(t *testi
 	provider.complete = nil
 	before = len(provider.requests)
 	revalidated, err := Run(t.Context(), executor, provider, onlySecond, Options{})
-	if err != nil || len(provider.requests) != before+1 || len(revalidated.Issues) == 0 {
-		t.Fatalf("partial original response was promoted: calls=%d issues=%v err=%v", len(provider.requests)-before, revalidated.Issues, err)
+	if err != nil || len(provider.requests) != before || len(revalidated.Issues) != 0 {
+		t.Fatalf("missing sibling invalidated an accepted memo: calls=%d issues=%v err=%v", len(provider.requests)-before, revalidated.Issues, err)
 	}
-	if revalidated.Questions[0].Chunks[0].Why == "Not complete." {
-		t.Fatal("invalid replay became question evidence")
+	if revalidated.Questions[0].Chunks[0].Why != "Not complete." || !revalidated.Questions[0].Chunks[0].Inspected {
+		t.Fatal("accepted replay did not refresh the requested question")
 	}
 }
 

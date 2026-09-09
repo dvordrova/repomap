@@ -11,109 +11,156 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
 const (
-	schemaContract  = "response is exactly one JSON array of {file_ref,classifications:[{class,hypotheses}]}; strict fields and closed classes; repeated set-valued rows are permitted; no local class, hypothesis-count, or hypothesis-byte ceiling; unknown file_ref rows are ignorable-v5"
-	reducerContract = "ignore rows whose FileID is outside request-local authority before class interpretation; discard valid non-documentation classifications for known prose refs before hypothesis validation without promotion; merge repeated known file and class rows and deduplicate identical hypotheses without local count or text ceilings; union every shard against aggregate authority; guidance-grounded multi-role rows without a repository-size quota; canonical path/class/hypothesis order-v9"
+	schemaContract  = "response is one JSON array of {file_ref,classifications:[{class,hypotheses}]}; extra fields have no authority; independently validate files, closed classes and hypotheses; repeated set-valued rows are permitted; no local class, hypothesis-count, or hypothesis-byte ceiling; unknown file_ref rows are ignorable-v6"
+	reducerContract = "ignore rows whose FileID is outside request-local authority before class interpretation; discard incompatible prose roles without promotion; retain every valid hypothesis beside rejected siblings and record reasons; normalize short hypothesis whitespace; merge repeated known file and class rows and deduplicate identical hypotheses without local count or text ceilings; union accepted shards against aggregate authority; canonical path/class/hypothesis order-v10"
 )
 
 // ResolveResponse treats valid non-documentation roles for a known prose ref
 // as unsupported set members and discards them before their hypotheses or
 // content has authority. It never repairs such a role into documentation;
 // independently valid classifications in the same response remain usable.
+type responseResult struct {
+	Result   Result
+	rejected []llm.ResponseRejection
+	accepted []string
+}
+
+func (result responseResult) ResponseRejections() []llm.ResponseRejection { return result.rejected }
+func (result responseResult) AcceptedRowKeys() []string {
+	if len(result.rejected) > 0 {
+		return result.accepted
+	}
+	return nil
+}
+
 func ResolveResponse(compilation Compilation, raw []byte) (Result, error) {
+	result, err := resolveResponse(compilation, raw)
+	return result.Result, err
+}
+
+func resolveResponse(compilation Compilation, raw []byte) (responseResult, error) {
+	result := responseResult{Result: Result{}, accepted: []string{}}
 	if err := validateReadyCompilation(compilation); err != nil {
-		return nil, err
+		return result, err
 	}
 	if len(raw) == 0 || len(raw) > MaxResponseBytes {
-		return nil, fmt.Errorf("README file classifier: response exceeds bounded envelope")
+		return result, fmt.Errorf("README file classifier: response exceeds bounded envelope")
 	}
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || trimmed[0] != '[' || bytes.Equal(trimmed, []byte("null")) {
-		return nil, fmt.Errorf("README file classifier: response must be one JSON array")
-	}
-	var wireItems []ClassifiedFile
+	var wireItems []json.RawMessage
 	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&wireItems); err != nil || wireItems == nil {
-		return nil, fmt.Errorf("README file classifier: invalid JSON response")
+		return result, fmt.Errorf("README file classifier: response must be one JSON array")
 	}
 	if err := ensureResponseEOF(decoder); err != nil {
-		return nil, err
+		return result, err
+	}
+	badFiles := make(map[corpus.FileID]bool)
+	var currentFile corpus.FileID
+	reject := func(position, reason string) {
+		if currentFile != "" {
+			badFiles[currentFile] = true
+		}
+		result.rejected = append(result.rejected, llm.ResponseRejection{Kind: "classification_rejected", Count: 1, Samples: []string{position}, Reason: reason})
 	}
 	type classSet map[FileClass]map[string]struct{}
-	files := make(map[corpus.FileID]classSet, len(wireItems))
-	for _, wireItem := range wireItems {
-		filePath, known := compilation.authority[wireItem.FileRef]
-		if !known {
+	files := make(map[corpus.FileID]classSet)
+	invalid := false
+	for i, rawFile := range wireItems {
+		currentFile = ""
+		position := fmt.Sprintf("files[%d]", i)
+		var file struct {
+			FileRef         corpus.FileID   `json:"file_ref"`
+			Classifications json.RawMessage `json:"classifications"`
+		}
+		if json.Unmarshal(rawFile, &file) != nil || file.FileRef == "" {
+			invalid = true
+			reject(position, "file row has no string file_ref")
 			continue
 		}
-		for _, classification := range wireItem.Classifications {
-			if !validFileClass(classification.Class) {
-				return nil, fmt.Errorf("README file classifier: response contains unknown file class")
+		currentFile = file.FileRef
+		filePath, known := compilation.authority[file.FileRef]
+		if !known {
+			reject(position, "file_ref was not advertised")
+			continue
+		}
+		var classes []json.RawMessage
+		if json.Unmarshal(file.Classifications, &classes) != nil || len(classes) == 0 {
+			invalid = true
+			reject(position, "classifications must be a non-empty array")
+			continue
+		}
+		for j, rawClass := range classes {
+			at := fmt.Sprintf("%s.classifications[%d]", position, j)
+			var class struct {
+				Class      FileClass       `json:"class"`
+				Hypotheses json.RawMessage `json:"hypotheses"`
 			}
-		}
-		if wireItem.Classifications == nil || len(wireItem.Classifications) == 0 {
-			return nil, fmt.Errorf("README file classifier: invalid classifications array")
-		}
-		classes := files[wireItem.FileRef]
-		for _, classification := range wireItem.Classifications {
-			// Prose membership is exact negative compatibility authority. Once a
-			// closed class is known to be incompatible, neither its hypotheses nor
-			// its contribution to per-file bounds has authority.
-			if isProseEvidencePath(filePath) && classification.Class != ClassDocumentation {
+			if json.Unmarshal(rawClass, &class) != nil || !validFileClass(class.Class) {
+				invalid = true
+				reject(at, "classification has no supported class")
 				continue
 			}
-			if classification.Hypotheses == nil || len(classification.Hypotheses) == 0 {
-				return nil, fmt.Errorf("README file classifier: invalid classification hypotheses array")
+			if isProseEvidencePath(filePath) && class.Class != ClassDocumentation {
+				reject(at, "class is incompatible with this prose file")
+				continue
 			}
-			if classes == nil {
-				classes = make(classSet)
-				files[wireItem.FileRef] = classes
+			var hypotheses []json.RawMessage
+			if json.Unmarshal(class.Hypotheses, &hypotheses) != nil || len(hypotheses) == 0 {
+				invalid = true
+				reject(at, "hypotheses must be a non-empty array")
+				continue
 			}
-			hypotheses := classes[classification.Class]
-			if hypotheses == nil {
-				hypotheses = make(map[string]struct{})
-				classes[classification.Class] = hypotheses
-			}
-			for _, hypothesis := range classification.Hypotheses {
-				if !validHypothesis(hypothesis) {
-					return nil, fmt.Errorf("README file classifier: invalid classification hypothesis")
+			for k, rawHypothesis := range hypotheses {
+				var hypothesis string
+				if json.Unmarshal(rawHypothesis, &hypothesis) != nil {
+					invalid = true
+					reject(fmt.Sprintf("%s.hypotheses[%d]", at, k), "hypothesis must be text")
+					continue
 				}
-				hypotheses[hypothesis] = struct{}{}
+				hypothesis = strings.Join(strings.Fields(hypothesis), " ")
+				if !validHypothesis(hypothesis) {
+					invalid = true
+					reject(fmt.Sprintf("%s.hypotheses[%d]", at, k), "hypothesis must be non-empty text")
+					continue
+				}
+				if files[file.FileRef] == nil {
+					files[file.FileRef] = make(classSet)
+				}
+				if files[file.FileRef][class.Class] == nil {
+					files[file.FileRef][class.Class] = make(map[string]struct{})
+				}
+				files[file.FileRef][class.Class][hypothesis] = struct{}{}
 			}
 		}
 	}
-
-	result := make(Result, 0, len(files))
 	for fileRef, classes := range files {
-		classifications := make([]Classification, 0, len(classes))
+		var classifications []Classification
 		for class, hypothesisSet := range classes {
 			hypotheses := make([]string, 0, len(hypothesisSet))
 			for hypothesis := range hypothesisSet {
 				hypotheses = append(hypotheses, hypothesis)
 			}
 			sort.Strings(hypotheses)
-			classifications = append(classifications, Classification{
-				Class: class, Hypotheses: hypotheses,
-			})
+			classifications = append(classifications, Classification{Class: class, Hypotheses: hypotheses})
 		}
-		sort.Slice(classifications, func(i, j int) bool {
-			return classifications[i].Class < classifications[j].Class
-		})
-		result = append(result, ClassifiedFile{
-			FileRef: fileRef, Classifications: classifications,
-		})
+		sort.Slice(classifications, func(i, j int) bool { return classifications[i].Class < classifications[j].Class })
+		result.Result = append(result.Result, ClassifiedFile{FileRef: fileRef, Classifications: classifications})
 	}
-	sort.Slice(result, func(left, right int) bool {
-		leftPath := compilation.authority[result[left].FileRef]
-		rightPath := compilation.authority[result[right].FileRef]
-		if leftPath != rightPath {
-			return leftPath < rightPath
-		}
-		return result[left].FileRef < result[right].FileRef
+	sort.Slice(result.Result, func(i, j int) bool {
+		return compilation.authority[result.Result[i].FileRef] < compilation.authority[result.Result[j].FileRef]
 	})
+	for _, file := range result.Result {
+		if !badFiles[file.FileRef] {
+			result.accepted = append(result.accepted, string(file.FileRef))
+		}
+	}
+	if invalid && len(result.Result) == 0 {
+		return result, fmt.Errorf("README file classifier: no usable classifications: %s", result.rejected[0].Reason)
+	}
 	return result, nil
 }
 

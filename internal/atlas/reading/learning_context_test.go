@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -159,8 +160,9 @@ func TestLearningSharedContextRefsDoNotRejectHTMLHeadings(t *testing.T) {
 	}
 	reply.Reviews[0].Questions[0].Sources = []string{"h1"}
 	raw, _ = json.Marshal(reply)
-	if _, err := call.DecodeValidate(raw); err == nil {
-		t.Fatal("question supported only by a shared context ref was accepted")
+	partial, err := call.DecodeValidate(raw)
+	if err != nil || len(partial.Rejections) != 1 || partial.Rejections[0].Intent != "purpose" || slices.Contains(partial.AcceptedRowKeys(), "purpose") {
+		t.Fatal("question supported only by a shared context ref was accepted or rejected valid siblings")
 	}
 }
 

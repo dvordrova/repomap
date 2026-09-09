@@ -189,13 +189,13 @@ func TestRunEachKeepsRefusedWindowUnavailableAndRecallsAcceptedSiblings(t *testi
 	if len(provider.requests) != 4 || len(result.Exchanges) != 4 {
 		t.Fatalf("wanted 4 shared calls, got %d/%d", len(provider.requests), len(result.Exchanges))
 	}
-	for _, question := range result.Questions {
+	for q, question := range result.Questions {
 		for row, chunk := range question.Chunks {
-			if chunk.Inspected == (row == 1) {
+			if chunk.Inspected == (q == 1 && row == 1) {
 				t.Fatalf("missing q invalidated wrong chunk: row%d %#v", row, chunk)
 			}
 		}
-		if question.Chunks[1].Relevance != "" || len(question.Chunks[1].Anchors) != 0 {
+		if q == 1 && (question.Chunks[1].Relevance != "" || len(question.Chunks[1].Anchors) != 0) {
 			t.Fatal("refusal became a none decision")
 		}
 	}
@@ -212,12 +212,16 @@ func TestRunEachKeepsRefusedWindowUnavailableAndRecallsAcceptedSiblings(t *testi
 	for _, exchange := range warm.Exchanges {
 		if exchange.Reused {
 			reused++
-			if !exchange.Outcome.Cached || len(exchange.QuestionIndexes) != 2 || len(exchange.QuestionRefs) != 2 {
+			want := 2
+			if exchange.ChunkIndexes[0] == 1 {
+				want = 1
+			}
+			if !exchange.Outcome.Cached || len(exchange.QuestionIndexes) != want || len(exchange.QuestionRefs) != want {
 				t.Fatal("shared memo exchange lost its current question audit refs")
 			}
 		}
 	}
-	if reused != 3 || len(warm.Exchanges) != 4 {
+	if reused != 4 || len(warm.Exchanges) != 5 {
 		t.Fatalf("memo exchanges not deduplicated by original request: %#v", warm.Exchanges)
 	}
 	for _, q := range warm.Questions {
@@ -258,13 +262,11 @@ func TestRunRejectsKnownPositiveWithNoAnchorsAndConflictingScalars(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(result.Exchanges) != 1 || result.Exchanges[0].Err == nil || result.Exchanges[0].Superseded {
-				t.Fatal("semantic refusal was accepted or repartitioned")
+			if len(result.Exchanges) != 1 || result.Exchanges[0].Err != nil || result.Exchanges[0].Superseded || len(result.Exchanges[0].Outcome.Value.Rejections) != 1 {
+				t.Fatal("semantic refusal lost its reason, invalidated a neighbour or repartitioned")
 			}
-			for _, q := range result.Questions {
-				if q.Chunks[0].Inspected {
-					t.Fatal("bad known choice became an inspected/none result")
-				}
+			if result.Questions[0].Chunks[0].Inspected || !result.Questions[1].Chunks[0].Inspected || len(result.Questions[1].Chunks[0].Anchors) == 0 {
+				t.Fatal("bad question became inspected/none or its accepted neighbour was lost")
 			}
 		})
 	}

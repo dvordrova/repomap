@@ -125,8 +125,30 @@ type learningReview struct {
 	Sources   []string           `json:"sources"`
 	Questions []learningProposal `json:"questions"`
 }
+type learningRejection struct {
+	Intent string `json:"intent"`
+	Reason string `json:"reason"`
+}
+
 type learningResponse struct {
-	Reviews []learningReview `json:"reviews"`
+	Reviews    []learningReview    `json:"reviews"`
+	Rejections []learningRejection `json:"rejections,omitempty"`
+}
+
+func (response learningResponse) AcceptedRowKeys() []string {
+	keys := make([]string, 0, len(response.Reviews))
+	for _, review := range response.Reviews {
+		keys = append(keys, review.Intent)
+	}
+	return keys
+}
+
+func (response learningResponse) ResponseRejections() []llm.ResponseRejection {
+	var result []llm.ResponseRejection
+	for _, rejection := range response.Rejections {
+		result = append(result, llm.ResponseRejection{Kind: "row_rejected", Count: 1, Reason: rejection.Reason, Samples: []string{rejection.Intent}})
+	}
+	return result
 }
 
 // Reuse the same original source units as question retrieval. All documents,
@@ -328,14 +350,49 @@ func (r *reader) prepareLearningPools(ctx context.Context, pools []learningReque
 }
 
 func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) {
-	var result learningResponse
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return result, err
+	var envelope struct {
+		Reviews []json.RawMessage `json:"reviews"`
 	}
-	intents := map[string]bool{}
+	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Reviews == nil {
+		return learningResponse{}, fmt.Errorf("learn: response needs a reviews array")
+	}
+	byIntent := make(map[string][]json.RawMessage)
+	for _, rawReview := range envelope.Reviews {
+		var key struct {
+			Intent string `json:"intent"`
+		}
+		if json.Unmarshal(rawReview, &key) == nil {
+			byIntent[key.Intent] = append(byIntent[key.Intent], rawReview)
+		}
+	}
+	result := learningResponse{}
 	for _, intent := range learningIntents() {
-		intents[intent.ID] = true
+		var review learningReview
+		var err error
+		switch values := byIntent[intent.ID]; len(values) {
+		case 0:
+			err = fmt.Errorf("learn: missing intent review")
+		case 1:
+			err = json.Unmarshal(values[0], &review)
+			if err == nil {
+				review, err = validateLearningReview(review, pool)
+			}
+		default:
+			err = fmt.Errorf("learn: duplicate intent review")
+		}
+		if err != nil {
+			result.Rejections = append(result.Rejections, learningRejection{Intent: intent.ID, Reason: err.Error()})
+			continue
+		}
+		result.Reviews = append(result.Reviews, review)
 	}
+	if len(result.Reviews) == 0 {
+		return result, fmt.Errorf("learn: no intent reviews accepted")
+	}
+	return result, nil
+}
+
+func validateLearningReview(review learningReview, pool learningRequest) (learningReview, error) {
 	refs := map[string]bool{}
 	for _, item := range pool.Evidence {
 		refs[item.Ref] = true
@@ -349,52 +406,36 @@ func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) 
 		}
 		return kept
 	}
-	seen := map[string]bool{}
-	var reviews []learningReview
-	for _, review := range result.Reviews {
-		if !intents[review.Intent] {
-			continue
-		}
-		if seen[review.Intent] {
-			return result, fmt.Errorf("learn: duplicate intent review")
-		}
-		seen[review.Intent] = true
-		review.Sources = filter(review.Sources)
-		if strings.TrimSpace(review.Reason) == "" {
-			return result, fmt.Errorf("learn: a review needs a reason")
-		}
-		switch review.State {
-		case "questions":
-			if len(review.Questions) == 0 {
-				return result, fmt.Errorf("learn: questions review is empty")
-			}
-		case "not_applicable":
-			if pool.PartialContext || len(review.Sources) == 0 {
-				return result, fmt.Errorf("learn: inapplicability needs complete context and positive evidence")
-			}
-			fallthrough
-		case "unknown":
-			if len(review.Questions) != 0 {
-				return result, fmt.Errorf("learn: non-question review contains questions")
-			}
-		default:
-			return result, fmt.Errorf("learn: unknown review state")
-		}
-		for i := range review.Questions {
-			q := &review.Questions[i]
-			q.Question, q.Why = strings.TrimSpace(q.Question), strings.TrimSpace(q.Why)
-			q.Sources = filter(q.Sources)
-			if q.Question == "" || q.Why == "" || len(q.Sources) == 0 {
-				return result, fmt.Errorf("learn: a proposed question needs wording, reason and original sources")
-			}
-		}
-		reviews = append(reviews, review)
+	review.Sources = filter(review.Sources)
+	if strings.TrimSpace(review.Reason) == "" {
+		return review, fmt.Errorf("learn: a review needs a reason")
 	}
-	if len(seen) != len(intents) {
-		return result, fmt.Errorf("learn: incomplete intent reviews")
+	switch review.State {
+	case "questions":
+		if len(review.Questions) == 0 {
+			return review, fmt.Errorf("learn: questions review is empty")
+		}
+	case "not_applicable":
+		if pool.PartialContext || len(review.Sources) == 0 {
+			return review, fmt.Errorf("learn: inapplicability needs complete context and positive evidence")
+		}
+		fallthrough
+	case "unknown":
+		if len(review.Questions) != 0 {
+			return review, fmt.Errorf("learn: non-question review contains questions")
+		}
+	default:
+		return review, fmt.Errorf("learn: unknown review state")
 	}
-	result.Reviews = reviews
-	return result, nil
+	for i := range review.Questions {
+		q := &review.Questions[i]
+		q.Question, q.Why = strings.TrimSpace(q.Question), strings.TrimSpace(q.Why)
+		q.Sources = filter(q.Sources)
+		if q.Question == "" || q.Why == "" || len(q.Sources) == 0 {
+			return review, fmt.Errorf("learn: a proposed question needs wording, reason and original sources")
+		}
+	}
+	return review, nil
 }
 
 func (r *reader) readLearning(ctx context.Context) error {
@@ -535,7 +576,29 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 				}
 				return sources
 			}
+			accepted := make(map[string]learningReview)
 			for _, review := range result.Outcome.Value.Reviews {
+				accepted[review.Intent] = review
+			}
+			rejected := make(map[string]string)
+			if len(result.Outcome.Value.Rejections) > 0 {
+				r.learning.State = "partial"
+				use.Rejected++
+				use.Given += len(result.Outcome.Value.Rejections)
+			}
+			for _, rejection := range result.Outcome.Value.Rejections {
+				rejected[rejection.Intent] = rejection.Reason
+				r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "row_rejected", Count: 1,
+					Reason: rejection.Reason, Samples: []string{rejection.Intent},
+					ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))})
+			}
+			for _, intent := range learningIntents() {
+				review, ok := accepted[intent.ID]
+				if !ok {
+					r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{Intent: intent.ID, Title: intent.Title,
+						Window: windowIndex, PartialContext: pool.PartialContext, State: "unavailable", Reason: rejected[intent.ID], Source: atlas.SourceGiven})
+					continue
+				}
 				r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{Intent: review.Intent, Title: titles[review.Intent],
 					Window: windowIndex, PartialContext: pool.PartialContext, State: review.State, Reason: review.Reason, Source: source, Sources: restore(review.Sources)})
 				for _, q := range review.Questions {
@@ -615,7 +678,7 @@ func (r *reader) selectLearning(ctx context.Context) error {
 		}})
 	}
 	intents := learningIntents()
-	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.select.v3", System: learningSelectPrompt,
+	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.select.v3", System: learningSelectPrompt, Independent: true,
 		Window: len(intents), Columns: []table.Column{
 			{Name: "questions", Kind: table.Sequence, OptionsFrom: "candidate_options"},
 			{Name: "reason", Kind: table.Text, MaxRunes: 600},
@@ -760,7 +823,7 @@ func (r *reader) mergeLearning(ctx context.Context) error {
 	if len(questions) < 2 {
 		return nil
 	}
-	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.merge.v1", System: learningMergePrompt, Window: len(questions),
+	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.merge.v1", System: learningMergePrompt, Independent: true, Window: len(questions),
 		Columns: []table.Column{{Name: "representative", Kind: table.Choice}}}
 	if r.opts.Through == "" || r.opts.Through == stageLearn {
 		def.MaxInputBytes = r.opts.InputBytes
@@ -851,9 +914,10 @@ func (r *reader) mergeLearning(ctx context.Context) error {
 		}
 		for i, answer := range answers {
 			if answer.source == atlas.SourceGiven {
-				r.learning.State = "unavailable"
-				r.learning.Questions = nil
-				return nil
+				r.learning.State = "partial"
+				// No accepted equality was supplied for this question. Keep its
+				// original proposal and any independently accepted comparisons.
+				continue
 			}
 			var ref int
 			if _, err := fmt.Sscanf(answer.answer["representative"], "q%d", &ref); err != nil || ref < 1 || ref > len(pool) {

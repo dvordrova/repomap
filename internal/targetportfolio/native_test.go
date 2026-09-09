@@ -21,6 +21,9 @@ func TestNativeDecisionsKeepSeparateTargetsOnOneFileAndValidateOwners(t *testing
 		refused   int
 	}{
 		{"positive seed", []NativeDecision{{"t1", "standalone"}, {"t2", "seed_of:t1"}, {"t3", "standalone"}}, []string{"standalone", "seed_of:t1", "standalone"}, 0},
+		{"identical owner and seed repetitions", []NativeDecision{{"t1", "standalone"}, {"t2", "seed_of:t1"}, {"t1", "standalone"}, {"t2", "seed_of:t1"}, {"t3", "tool"}, {"t3", "tool"}}, []string{"standalone", "seed_of:t1", "tool"}, 0},
+		{"conflicting seed leaves neighbours", []NativeDecision{{"t1", "standalone"}, {"t1", "standalone"}, {"t2", "seed_of:t1"}, {"t2", "tool"}, {"t3", "seed_of:t1"}}, []string{"standalone", "standalone", "seed_of:t1"}, 1},
+		{"conflicting owner cannot absorb", []NativeDecision{{"t1", "standalone"}, {"t1", "shared_code"}, {"t2", "seed_of:t1"}, {"t3", "tool"}}, []string{"standalone", "standalone", "tool"}, 2},
 		{"missing keeps products", nil, []string{"standalone", "standalone", "standalone"}, 3},
 		{"shared owner cannot absorb", []NativeDecision{{"t1", "shared_code"}, {"t2", "seed_of:t1"}, {"t3", "tool"}}, []string{"shared_code", "standalone", "tool"}, 1},
 		{"chain cannot absorb", []NativeDecision{{"t1", "seed_of:t3"}, {"t2", "seed_of:t1"}, {"t3", "standalone"}}, []string{"standalone", "standalone", "standalone"}, 2},

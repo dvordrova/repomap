@@ -138,8 +138,13 @@ func TestLearningAllowsZeroOneManyWithOriginalReasons(t *testing.T) {
 				bad.Reviews[0].Questions[0].Why = " \n "
 			}
 			raw, _ := json.Marshal(bad)
-			if _, err := decodeLearning(raw, context); err == nil {
-				t.Fatal("unsupported decision accepted")
+			got, err := decodeLearning(raw, context)
+			badIntent := "purpose"
+			if strings.Contains(test, "inapplicable") {
+				badIntent = "run"
+			}
+			if err != nil || len(got.Reviews) != len(learningIntents())-1 || len(got.Rejections) != 1 || got.Rejections[0].Intent != badIntent || slices.Contains(got.AcceptedRowKeys(), badIntent) {
+				t.Fatalf("bad intent was accepted or discarded a valid neighbour: %+v, %v", got, err)
 			}
 		})
 	}
@@ -560,15 +565,15 @@ func TestLearningPartitionMemoRevalidatesReplayAndExactInputs(t *testing.T) {
 	if len(provider.requests) != before || warm.learning.Reviews[0].Reason != provider.reason {
 		t.Fatal("partition memo hid a child's current replay response")
 	}
-	// Replay accepts transport JSON; Learn still rejects a missing intent.
+	// Replay accepts transport JSON; Learn rejects only the missing intent.
 	provider.invalid = func(pool learningRequest) bool { return pool.Evidence[0].Context["ordinal"] == float64(0) }
 	if _, err := llm.ReplayJSON(t.Context(), r.opts.Executor, provider, prepared); err != nil {
 		t.Fatal(err)
 	}
 	before = len(provider.requests)
 	warm = run()
-	if len(provider.requests) != before+1 || warm.use(stageLearn).Rejected != 1 || warm.use(stageLearn).Cached != 1 || warm.learning.Reviews[0].State != "unavailable" {
-		t.Fatal("invalid replay became an accepted review or reran the unchanged sibling")
+	if len(provider.requests) != before || warm.use(stageLearn).Rejected != 1 || warm.use(stageLearn).Cached != 2 || warm.learning.Reviews[7].State != "unavailable" || warm.learning.Reviews[0].Source != atlas.SourceCache {
+		t.Fatal("missing replay intent was accepted or discarded valid cached neighbours")
 	}
 	// A successful replay of the complete parent replaces its older partition.
 	provider.invalid, provider.refuse = nil, nil
@@ -596,8 +601,11 @@ func TestLearningPartitionDoesNotRememberUnavailableWindows(t *testing.T) {
 		if len(pool.Evidence) > 1 {
 			return &llm.ResourceLimitError{Kind: llm.ResourceLimitOutputTokens}
 		}
+		if pool.Evidence[0].Context["ordinal"] == float64(0) {
+			return fmt.Errorf("provider unavailable")
+		}
 		return nil
-	}, invalid: func(pool learningRequest) bool { return pool.Evidence[0].Context["ordinal"] == float64(0) }}
+	}}
 	r := isolatedLearningReader(t, t.TempDir(), provider)
 	r.learning = &atlas.LearningPlan{Version: 1, State: "ready"}
 	pool := newLearningPool([]learningEvidence{{Context: map[string]any{"ordinal": 0}}, {Context: map[string]any{"ordinal": 1}}}, false)
@@ -648,7 +656,8 @@ func TestLearningPreparedEnvelopeAndNonresourceRefusal(t *testing.T) {
 		t.Fatal("nonresource refusal was retried, split or suppressed an accepted neighbour")
 	}
 	for _, review := range r.learning.Reviews {
-		if !review.PartialContext || review.Window == 2 && (review.State != "unavailable" || len(review.Sources) != 0) {
+		missing := review.Window == 2 && review.Intent == learningIntents()[7].ID
+		if !review.PartialContext || missing && (review.State != "unavailable" || len(review.Sources) != 0) || !missing && review.State == "unavailable" {
 			t.Fatal("uninspected child became a negative or gained source authority")
 		}
 	}
@@ -848,7 +857,7 @@ func TestLearningMenuReducesCompletePoolsAndReusesTheirCache(t *testing.T) {
 	}
 }
 
-func TestLearningMenuComparesGoalsTogetherAndRequiresEveryGoalDecision(t *testing.T) {
+func TestLearningMenuKeepsValidGoalDecisionsWhenAnotherIsMissing(t *testing.T) {
 	for _, incomplete := range []bool{false, true} {
 		t.Run(fmt.Sprintf("incomplete=%v", incomplete), func(t *testing.T) {
 			provider := &learningProvider{dropMenuLast: incomplete}
@@ -882,8 +891,13 @@ func TestLearningMenuComparesGoalsTogetherAndRequiresEveryGoalDecision(t *testin
 				}
 			}
 			if incomplete {
-				if r.learning.State != "partial" || len(r.learning.Questions) != 0 || slices.ContainsFunc(r.learning.Selections, func(s atlas.LearningSelection) bool { return s.Audience != "unavailable" }) {
-					t.Fatal("missing goal decision was silently repaired or accepted")
+				if r.learning.State != "partial" || !reflect.DeepEqual(r.learning.Questions, []atlas.LearningQuestion{questions[0], questions[2]}) {
+					t.Fatal("missing goal decision discarded a valid sibling's selected questions")
+				}
+				for _, selection := range r.learning.Selections {
+					if selection.Intent == "data" && selection.Audience != "unavailable" || selection.Intent == "purpose" && selection.Audience != "first_day" {
+						t.Fatal("missing goal was promoted or a valid goal lost its decision")
+					}
 				}
 			} else if r.learning.State != "ready" || !reflect.DeepEqual(r.learning.Questions, questions) {
 				t.Fatal("complete joint menu changed question identity or duplicated a shared question")
@@ -1022,8 +1036,8 @@ func TestLearningDoesNotPublishInventedMergeAssignments(t *testing.T) {
 	if err := r.readLearning(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if r.learning.State != "unavailable" || len(r.learning.Questions) != 0 || len(r.rejected) == 0 {
-		t.Fatal("failed consolidation promoted into a completed plan")
+	if r.learning.State != "partial" || len(r.learning.Questions) != 2 || len(r.rejected) == 0 || len(r.learning.Questions[0].Origins) != 2 || r.learning.Questions[1].Question != "What does a revision identify?" {
+		t.Fatal("failed assignment erased originals or an independently accepted merge")
 	}
 	dry := isolatedLearningReader(t, t.TempDir(), nil)
 	dry.dry = true

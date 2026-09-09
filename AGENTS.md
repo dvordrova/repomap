@@ -64,8 +64,10 @@ The ordinary attempt has no question quota or 64 KiB planning cap. Actual
 prepared-input, context, output or response-envelope refusals split questions
 first and rebuild each child's complete evidence union. Only a singleton question
 whose complete evidence does not fit partitions its original sources into
-separate answer parts. Malformed responses refuse their whole window without
-repair or a speculative retry; accepted sibling windows survive. Explicit
+separate answer parts. Each question validates independently: a malformed,
+missing or duplicate answer leaves that question unavailable while accepted
+neighbours survive. An unparseable response refuses its whole window without
+repair or a speculative retry. Explicit
 read-stage development budgets still apply.
 Final answer prose preserves paragraphs and complete qualifications; only
 short label cells are whitespace-collapsed or length-trimmed. Source checks
@@ -109,7 +111,10 @@ own context catalogue without relying on a parent or sibling window. Explicit de
 budgets remain available. Actual context/output/response resource refusals
 partition complete original evidence by encoded byte weight; accepted sibling
 reviews survive, children retain their partial-context scope, and failed parents
-supply no semantic review. The owner explicitly approved this for user-selected
+supply no semantic review. Proposal and menu decisions validate per intent;
+a refused intent remains unavailable without deleting its neighbours. Failed
+consolidation preserves original accepted questions and any accepted comparisons,
+with the plan marked partial. The owner explicitly approved this for user-selected
 repositories on 2026-09-06. `read --through learn` stops after the plan.
 `learning-plan.json` retains each context review and every proposal's original
 intent, reason and sources. Overlapping automatic questions share one answer;
@@ -145,8 +150,9 @@ execution result or assertion semantics.
 The shared question cube v1 selects closed source anchors for every question
 from one evidence catalogue. Complete evidence precedes the changing questions;
 unselected rows need no separate negative explanation. Every question is
-mandatory in a response and retains per-chunk inspection coverage. Refused
-windows stay unavailable rather than becoming negative findings. Only explicit
+mandatory in a response and retains per-chunk inspection coverage. A refused
+question stays unavailable for that chunk rather than becoming a negative finding;
+accepted neighbouring questions survive, including cache and memo reuse. Only explicit
 provider context/output/response resource refusals authorize lossless partition
 of complete evidence rows or questions; there is no ordinary row-count or 64KiB
 planning cap for this cube. Output refusals split independent questions first
@@ -321,8 +327,10 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   error cancels the batch child context, prevents queued items from starting,
   and the owning stage rejects the complete batch. `ExecuteJSONEach` is the
   table form: the same pool, gate and observer, but one window's failure
-  leaves its neighbours untouched, its rows take their fallback line, and the
-  refused answer is written to `rejected.jsonl` and never cached. Validation
+  leaves its neighbours untouched, its rows take their fallback line, and a
+  wholly refused answer is written to `rejected.jsonl` and never cached.
+  Partly accepted responses retain their original bytes; every reuse revalidates
+  individual results and optional terminology follows only accepted output. Validation
   annotates and does not abort a run (docs/CONSTITUTION.md); accepted sibling
   calls keep their identity-bound cache entries in both forms.
   Shared adaptive batches also memoize an actual context/output/response
@@ -364,7 +372,9 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   incomplete result without inventing a replacement. An atlas table row asks
   one short line or one closed choice. Independent atlas rows validate separately:
   an invalid, missing or duplicate known row loses only its own model answer;
-  accepted neighbours keep their exact-response cache and row memos. Unknown
+  accepted neighbours keep their exact-response cache. Description and operation
+  rows additionally retain their entity memos; independent arrows, target lines,
+  zone choices and lines, joints and peers use the ordinary window cache. Unknown
   keys are recorded and ignored; unused extra fields do not invalidate answers.
   Unparseable envelopes and incomplete coupled assignments still refuse their
   window. Every later model call is an
@@ -726,8 +736,13 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   dependencies. `claims.json` holds quotes with their
   source path, date and age. `orientation.json` holds the model's repository
   summary, roles, run recipe, and main flow; every row cites fact, claim, or
-  subject ids, and a row whose refs do not resolve goes to `rejected.jsonl`
-  with its raw output and reason instead of being repaired. Validation
+  subject ids. Unknown or incompatible set refs are recorded and removed;
+  repeated refs are deduplicated. A row with no required evidence, an invalid
+  scalar choice or conflicting interpretation goes to `rejected.jsonl`
+  with its raw output and reason. Independent sections and rows survive a bad
+  neighbour. Complete prose is preserved; short labels normalize whitespace.
+  Orientation prepares its original input against the actual provider envelope,
+  without an artificial 2 MiB cap or size-triggered evidence removal. Validation
   annotates and never aborts the run.
 - The report is one static page rendered in Go. Its reader is a newcomer, so
   pipeline vocabulary never reaches the screen: retained, source-bound,

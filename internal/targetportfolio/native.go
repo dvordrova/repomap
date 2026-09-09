@@ -117,14 +117,16 @@ func nativeDecisions(rows []NativeCandidate, answers []NativeDecision, final boo
 		if _, ok := known[answer.Ref]; !ok {
 			continue
 		}
-		byRef[answer.Ref] = append(byRef[answer.Ref], answer.Decision)
+		if !slices.Contains(byRef[answer.Ref], answer.Decision) {
+			byRef[answer.Ref] = append(byRef[answer.Ref], answer.Decision)
+		}
 	}
 	result := make([]Placement, 0, len(rows))
 	for _, row := range rows {
 		answers := byRef[row.Ref]
 		p := Placement{Candidate: row, Decision: "standalone"}
 		if len(answers) != 1 {
-			p.Reason = "decision not received: missing or repeated target decision"
+			p.Reason = "decision not received: missing or conflicting target decision"
 			p.Rejected = strings.Join(answers, ", ")
 		} else {
 			answer := answers[0]

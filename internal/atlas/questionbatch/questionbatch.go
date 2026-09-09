@@ -59,8 +59,28 @@ type Decision struct {
 	Selections []Selection `json:"selections"`
 }
 
+type QuestionRejection struct {
+	Question string `json:"question"`
+	Reason   string `json:"reason"`
+	Chunks   int    `json:"chunks"`
+}
+
 type Response struct {
-	Questions []Decision `json:"questions"`
+	Questions    []Decision          `json:"questions"`
+	Rejections   []QuestionRejection `json:"rejections,omitempty"`
+	metadataRows []string
+}
+
+// Retrieval terms bind to evidence rows, which may be shared by questions.
+// A row mentioned by a refused question cannot authorize optional metadata.
+func (response Response) AcceptedRowKeys() []string { return response.metadataRows }
+
+func (response Response) ResponseRejections() []llm.ResponseRejection {
+	var result []llm.ResponseRejection
+	for _, rejection := range response.Rejections {
+		result = append(result, llm.ResponseRejection{Kind: "question_rejected", Count: rejection.Chunks, Reason: rejection.Reason, Samples: []string{rejection.Question}})
+	}
+	return result
 }
 
 // ChunkResult has one slot per original input chunk. Only an inspected chunk
@@ -195,8 +215,8 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 			}
 			if outcome.Err == nil {
 				for _, q := range part.questions {
-					data.apply(&result.Questions[q], part.rows, data.questions[q].Key, outcome.Outcome)
-					if outcome.Outcome.CacheKey != "" {
+					accepted := data.apply(&result.Questions[q], part.rows, data.questions[q].Key, outcome.Outcome)
+					if accepted && outcome.Outcome.CacheKey != "" {
 						remembered[q] = append(remembered[q], data.reference(part, q, outcome.Outcome.CacheKey))
 					}
 				}
@@ -461,6 +481,105 @@ func splittableResource(err error) bool {
 }
 
 func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte) (Response, error) {
+	normalized, err := llm.NormalizeJSON(raw)
+	if err != nil {
+		return Response{}, err
+	}
+	var envelope struct {
+		Questions []json.RawMessage `json:"questions"`
+	}
+	if err := json.Unmarshal(normalized, &envelope); err != nil || envelope.Questions == nil {
+		return Response{}, fmt.Errorf("question batch: response must contain a questions array")
+	}
+	allowed := make(map[string]bool, len(questions))
+	for _, question := range questions {
+		allowed[question.Key] = true
+	}
+	byQuestion := make(map[string][]Decision)
+	failures := make(map[string]string)
+	original := make(map[string][]json.RawMessage)
+	var unknown []json.RawMessage
+	for _, rawQuestion := range envelope.Questions {
+		var key struct {
+			Key string `json:"key"`
+		}
+		if json.Unmarshal(rawQuestion, &key) != nil || !allowed[key.Key] {
+			unknown = append(unknown, rawQuestion)
+			continue
+		}
+		original[key.Key] = append(original[key.Key], rawQuestion)
+		var decision Decision
+		if err := json.Unmarshal(rawQuestion, &decision); err != nil {
+			failures[key.Key] = "question has an invalid selection shape"
+			continue
+		}
+		byQuestion[key.Key] = append(byQuestion[key.Key], decision)
+	}
+	result := Response{Questions: []Decision{}}
+	unsafe := append([]json.RawMessage(nil), unknown...)
+	for _, question := range questions {
+		reason := failures[question.Key]
+		if reason == "" {
+			// Strip unknown optional fields before the existing closed-ref and
+			// scalar checks. Each question still needs one coherent selection.
+			encoded, _ := json.Marshal(Response{Questions: byQuestion[question.Key]})
+			accepted, err := data.decodeComplete(rows, []modelQuestion{question}, encoded)
+			if err == nil {
+				result.Questions = append(result.Questions, accepted.Questions...)
+				continue
+			}
+			reason = err.Error()
+		}
+		result.Rejections = append(result.Rejections, QuestionRejection{Question: question.Key, Reason: reason, Chunks: len(rows)})
+		unsafe = append(unsafe, original[question.Key]...)
+	}
+	if len(result.Questions) == 0 {
+		return result, fmt.Errorf("question batch: no questions accepted: %s", result.Rejections[0].Reason)
+	}
+	if len(result.Rejections) > 0 || len(unknown) > 0 {
+		result.metadataRows = safeQuestionMetadataRows(rows, unsafe)
+	}
+	return result, nil
+}
+
+// The glossary observes the exact raw result. Suppress source-row metadata
+// touched by a refused question, even if an accepted question shares that row.
+func safeQuestionMetadataRows(rows []int, refused []json.RawMessage) []string {
+	blocked := make(map[string]bool)
+	var visit func(any)
+	visit = func(value any) {
+		switch value := value.(type) {
+		case map[string]any:
+			for _, field := range []string{"row", "key"} {
+				if ref, ok := value[field].(string); ok {
+					blocked[ref] = true
+				}
+			}
+			for _, child := range value {
+				visit(child)
+			}
+		case []any:
+			for _, child := range value {
+				visit(child)
+			}
+		}
+	}
+	for _, raw := range refused {
+		var value any
+		if json.Unmarshal(raw, &value) == nil {
+			visit(value)
+		}
+	}
+	accepted := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if !blocked[rowRef(row)] {
+			accepted = append(accepted, rowRef(row))
+		}
+	}
+	return accepted
+}
+
+func (data catalogue) decodeComplete(rows []int, questions []modelQuestion, raw []byte) (Response, error) {
 	response, err := llm.DecodeJSON[Response](nil)(raw)
 	if err != nil {
 		return Response{}, err
@@ -558,14 +677,19 @@ func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte) 
 	return result, nil
 }
 
-func (data catalogue) apply(question *QuestionResult, rows []int, ref string, outcome llm.Outcome[Response]) {
+func (data catalogue) apply(question *QuestionResult, rows []int, ref string, outcome llm.Outcome[Response]) bool {
+	accepted := false
 	byRow := make(map[string]Selection)
 	for _, decision := range outcome.Value.Questions {
 		if decision.Key == ref {
+			accepted = true
 			for _, selection := range decision.Selections {
 				byRow[selection.Row] = selection
 			}
 		}
+	}
+	if !accepted {
+		return false
 	}
 	source := atlas.SourceModel
 	if outcome.Cached {
@@ -578,6 +702,7 @@ func (data catalogue) apply(question *QuestionResult, rows []int, ref string, ou
 			Source: source, QuestionRef: ref, RequestKey: outcome.CacheKey, RequestSHA256: outcome.RequestSHA256, ResponseSHA256: outcome.ResponseSHA256,
 		}
 	}
+	return true
 }
 
 func (data catalogue) missing(result Result) []window {

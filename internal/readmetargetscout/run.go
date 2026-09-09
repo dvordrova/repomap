@@ -3,6 +3,7 @@ package readmetargetscout
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -11,8 +12,8 @@ import (
 )
 
 // Run executes the complete deterministic batch cover and unions every
-// compatible closed-ref result. A terminal failure in any shard rejects the
-// whole semantic result; accepted sibling cache entries remain executor-owned.
+// compatible closed-ref result. A refused model shard contributes no guidance
+// classification; independent native target inventories remain untouched.
 func Run(
 	ctx context.Context,
 	executor llm.Executor,
@@ -23,7 +24,7 @@ func Run(
 	if err != nil {
 		return Execution{}, err
 	}
-	calls := make([]llm.Call[Result], len(batches))
+	calls := make([]llm.Call[responseResult], len(batches))
 	for index, batch := range batches {
 		prompt, err := BuildPrompt(batch)
 		if err != nil {
@@ -34,26 +35,44 @@ func Run(
 			return Execution{}, err
 		}
 		batch := batch
-		calls[index] = llm.Call[Result]{
+		calls[index] = llm.Call[responseResult]{
 			State:  state,
 			Prompt: llm.Prompt{System: prompt.System, User: prompt.User, ResponseFormatJSON: false, ResponseExample: responseExample},
 			Limits: llm.Limits{
 				MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: MaxResponseBytes,
 				MaxOutputTokens: MaxOutputTokens,
 			},
-			DecodeValidate: func(raw []byte) (Result, error) {
-				return ResolveResponse(batch, raw)
+			DecodeValidate: func(raw []byte) (responseResult, error) {
+				return resolveResponse(batch, raw)
 			},
 		}
 	}
-	outcomes, err := llm.ExecuteJSONBatch(ctx, executor, provider, calls)
-	execution := Execution{Outcomes: append([]llm.Outcome[Result](nil), outcomes...)}
-	if err != nil {
-		return execution, fmt.Errorf("README file classifier: exhaustive batches: %w", err)
-	}
-	results := make([]Result, len(outcomes))
-	for index, outcome := range outcomes {
-		results[index] = outcome.Value
+	responses := llm.ExecuteJSONEach(ctx, executor, provider, calls)
+	execution := Execution{Outcomes: make([]llm.Outcome[responseResult], len(responses))}
+	results := make([]Result, len(responses))
+	for index, response := range responses {
+		execution.Outcomes[index] = response.Outcome
+		if response.Err == nil {
+			results[index] = response.Outcome.Value.Result
+			continue
+		}
+		if ctx.Err() != nil {
+			return execution, ctx.Err()
+		}
+		var resource *llm.ResourceLimitError
+		if errors.As(response.Err, &resource) {
+			return execution, response.Err
+		}
+		modelFailure := false
+		for _, rejected := range response.Outcome.ResponseRejections {
+			if rejected.Kind == "response_validation" || rejected.Kind == "response_envelope" || rejected.Kind == "provider_failed" {
+				modelFailure = true
+			}
+		}
+		if !modelFailure {
+			return execution, response.Err
+		}
+		execution.UnavailableBatches++
 	}
 	result, err := MergeResults(compilation, results)
 	if err != nil {

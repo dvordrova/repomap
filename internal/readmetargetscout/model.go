@@ -16,8 +16,8 @@ const (
 	CompilationVersion = 7
 
 	PreparationVersion = "complete-readmes-agents-exhaustive-file-tree-shards-and-prose-ref-authority-v8"
-	SchemaVersion      = "readme-file-role-classifications-unbounded-set-valued-ignore-unknown-refs-v5"
-	ReducerVersion     = "readme-file-role-classifications-unbounded-known-set-union-with-incompatible-prose-filter-v9"
+	SchemaVersion      = "readme-file-role-classifications-independent-members-ignore-extra-fields-v6"
+	ReducerVersion     = "readme-file-role-classifications-independent-known-set-union-v10"
 
 	// MaxRequestBytes is a deterministic shard-packing window, not an
 	// acceptance or transport limit. Larger complete inputs are covered by
@@ -134,11 +134,12 @@ type ClassifiedFile struct {
 // before this canonical result is built.
 type Result []ClassifiedFile
 
-// Execution binds every caller-indexed model outcome to the one merged
-// complete result. Any terminal shard failure rejects the result.
+// Execution binds caller-indexed model outcomes to accepted classifications.
+// UnavailableBatches distinguishes failed inspection from a model's empty set.
 type Execution struct {
-	Result   Result
-	Outcomes []llm.Outcome[Result]
+	Result             Result
+	Outcomes           []llm.Outcome[responseResult]
+	UnavailableBatches int
 }
 
 // TargetCandidates projects only guidance-backed target_entry classifications

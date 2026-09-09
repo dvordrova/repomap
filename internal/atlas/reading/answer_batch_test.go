@@ -67,7 +67,7 @@ func (p *answerTestProvider) Complete(ctx context.Context, prepared llm.Prepared
 		if p.completeAnswer != nil {
 			raw, err := p.completeAnswer(request)
 			if raw != nil || err != nil {
-				return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1}, err
+				return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
 			}
 		}
 	}
@@ -202,8 +202,9 @@ func TestAnswerSourcesKeepIndependentObservationsAndQuestionHints(t *testing.T) 
 	}
 	response := []table.Answer{{"key": "r1", "answer": "A claim.", "basis": "Observed.", "sources": forbidden, "remaining": "none", "state": "answered"}, {"key": "r2", "answer": "none", "basis": "none", "sources": "none", "remaining": "Missing evidence.", "state": "unanswered"}}
 	encoded, _ := json.Marshal(map[string]any{"rows": response})
-	if _, err := call.DecodeValidate(encoded); err == nil {
-		t.Fatal("another question's sources became authority")
+	decoded, err := call.DecodeValidate(encoded)
+	if err != nil || decoded.Answers[0] != nil || decoded.Answers[1]["state"] != "unanswered" || len(decoded.Rejections) != 1 {
+		t.Fatalf("another question's sources became authority or its valid neighbour was rejected: %+v / %v", decoded, err)
 	}
 }
 

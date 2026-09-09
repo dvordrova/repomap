@@ -525,35 +525,98 @@ func (p *provider) AdaptResponse(request, response []byte) (llm.AdaptedResponse,
 	return adapted, nil
 }
 
-// Occurrence ownership comes from the computed answer, never model-produced
-// pointers. Nested string values inherit their containing answer row's key.
+// Occurrence ownership comes from the computed answer. Named source and
+// intent rows keep their scope throughout their prose; nested metadata cannot
+// move rejected text into a neighbouring accepted row.
 func resultTextByRow(result any, sourceRows map[string]bool) map[string][]string {
 	rows := make(map[string][]string)
-	var walk func(any, string)
-	walk = func(value any, row string) {
+	var walk func(any, string, bool)
+	walk = func(value any, row string, scoped bool) {
 		switch value := value.(type) {
 		case map[string]any:
-			if key, ok := value["key"].(string); ok {
-				row = key
-			}
-			// A question selection can explicitly cite an evidence row while
-			// nested under a question key. Only an advertised source-row ref
-			// can establish that scope; arbitrary names cannot.
-			if ref, ok := value["row"].(string); ok && sourceRows[ref] {
-				row = ref
+			if !scoped {
+				if key, ok := value["key"].(string); ok {
+					row = key
+				}
+				// A question selection may cite an advertised evidence row.
+				if ref, ok := value["row"].(string); ok && sourceRows[ref] {
+					row = ref
+				}
 			}
 			for _, child := range value {
-				walk(child, row)
+				walk(child, row, scoped)
 			}
 		case []any:
 			for _, child := range value {
-				walk(child, row)
+				walk(child, row, scoped)
 			}
 		case string:
 			rows[row] = append(rows[row], value)
 		}
 	}
-	walk(result, "")
+	walkNamedRows := func(values []any, field string) {
+		for _, value := range values {
+			object, _ := value.(map[string]any)
+			ref, ok := object[field].(string)
+			walk(value, ref, ok && ref != "")
+		}
+	}
+	walkSlots := func(value any, field string) {
+		if values, ok := value.([]any); ok {
+			for i, row := range values {
+				walk(row, fmt.Sprintf("%s[%d]", field, i), true)
+			}
+		}
+	}
+	switch value := result.(type) {
+	case []any:
+		// Repository-guidance classifications use one file_ref per item.
+		walkNamedRows(value, "file_ref")
+	case map[string]any:
+		_, reviews := value["reviews"].([]any)
+		_, sources := value["sources"].([]any)
+		orientation := false
+		for _, field := range []string{"summary_refs", "roles", "run_recipe", "main_flow"} {
+			if _, found := value[field]; found {
+				orientation = true
+			}
+		}
+		if _, keyed := value["key"]; keyed && !reviews && !sources && !orientation {
+			walk(value, "", false)
+			break
+		}
+		for field, child := range value {
+			if orientation {
+				switch field {
+				case "summary":
+					walk(child, "summary", true)
+					continue
+				case "roles", "run_recipe":
+					walkSlots(child, field)
+					continue
+				case "main_flow":
+					if flow, ok := child.(map[string]any); ok {
+						walk(flow["title"], "main_flow.title", true)
+						walkSlots(flow["steps"], "main_flow.steps")
+					}
+					continue
+				}
+			}
+			if values, ok := child.([]any); ok {
+				switch field {
+				case "reviews":
+					walkNamedRows(values, "intent")
+					continue
+				case "sources":
+					walkNamedRows(values, "ref")
+					continue
+				}
+			}
+			walk(child, "", false)
+		}
+	default:
+		walk(result, "", false)
+	}
 	return rows
 }
 

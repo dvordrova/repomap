@@ -375,9 +375,24 @@ func timed(output *runOutput, inner *debugdump.SemanticObserver) llm.Observer {
 		return inner
 	}
 	inner.SetFailureNotice(func(receipt debugdump.SemanticFailureReceipt) {
-		details := []string{"stage: " + receipt.Stage, "reason: " + receipt.Reason,
+		headline := "Model request failed"
+		if receipt.State == debugdump.SemanticStateRejected {
+			headline = "Model response rejected"
+		}
+		details := []string{"stage: " + receipt.Stage}
+		if receipt.Stage == "report_translation" {
+			details = append(details, "completed translations are kept; this failure does not cancel neighbouring requests")
+		} else if receipt.State == debugdump.SemanticStateRejected {
+			switch {
+			case receipt.Stage == "orientation":
+				details = append(details, "this response adds no overview; repository facts and maps remain available")
+			case strings.HasPrefix(receipt.Stage, "atlas_"):
+				details = append(details, "this request has no accepted model answer; accepted results from other requests are kept")
+			}
+		}
+		details = append(details, "reason: "+receipt.Reason,
 			fmt.Sprintf("transport attempts: %d", receipt.TransportAttempts), formatRunOutputDuration(receipt.LatencyMS),
-			"request: " + receipt.RequestPath}
+			"request: "+receipt.RequestPath)
 		if response := receipt.HTTPResponse; response != nil {
 			details = append(details, fmt.Sprintf("last HTTP response: %d", response.StatusCode))
 			var names []string
@@ -397,7 +412,7 @@ func timed(output *runOutput, inner *debugdump.SemanticObserver) llm.Observer {
 			details = append(details, "raw response (last attempt): "+receipt.ResponsePath)
 		}
 		details = append(details, "journal: "+receipt.JournalPath)
-		output.Warn("Model request failed", details...)
+		output.Warn(headline, details...)
 	})
 	return timedObserver{output: output, inner: inner}
 }

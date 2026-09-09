@@ -205,7 +205,7 @@ func runRepositoryOrientation(
 			formatRunOutputWallDuration(time.Since(started)),
 		}
 		if len(rejected) > 0 {
-			details = append(details, fmt.Sprintf("discarded response rows: %d", len(rejected)))
+			details = append(details, fmt.Sprintf("ignored response items: %d; accepted overview text is kept", len(rejected)))
 		}
 		options.Output.State("Orientation", "ready", details...)
 	}

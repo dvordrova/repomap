@@ -305,11 +305,14 @@ func discoverReadmeFileRolesWithGuidance(
 	)
 	if err != nil {
 		return readmeFileRoleDiscovery{}, fmt.Errorf(
-			"repository guidance classifier did not complete: %w; fix provider access and retry",
+			"repository guidance classifier did not complete: %w",
 			err,
 		)
 	}
 	result := execution.Result
+	if output != nil && execution.UnavailableBatches > 0 {
+		output.Stage("Repository guidance classifier", fmt.Sprintf("%d requests supplied no usable file classifications; continuing with accepted guidance and native target inventories", execution.UnavailableBatches))
+	}
 	if output != nil {
 		counts := readmeRoleCounts(result)
 		source := "live"
@@ -334,7 +337,7 @@ func discoverReadmeFileRolesWithGuidance(
 			fmt.Sprintf("classified files: %d", len(result)),
 			formatRunOutputWallDuration(time.Since(started)),
 			fmt.Sprintf(
-				"%s result: %d complete requests, %d request bytes, %d response bytes, %d ms",
+				"%s result: %d requests, %d request bytes, %d response bytes, %d ms",
 				source, len(execution.Outcomes), requestBytes, responseBytes, latency,
 			),
 			fmt.Sprintf(

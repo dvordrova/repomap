@@ -133,7 +133,7 @@ func answerResourceFailure(err error) bool {
 	return false
 }
 
-func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, outcome llm.Outcome[table.Answers], failure error, superseded bool) error {
+func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, outcome llm.Outcome[table.Result], failure error, superseded bool) error {
 	source, reason := atlas.SourceModel, ""
 	if outcome.Cached {
 		source = atlas.SourceCache
@@ -147,11 +147,12 @@ func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, ou
 		reason = failure.Error()
 	}
 	result, err := json.MarshalIndent(struct {
-		Source     string        `json:"source"`
-		Reason     string        `json:"reason,omitempty"`
-		Superseded bool          `json:"superseded,omitempty"`
-		Rows       table.Answers `json:"rows"`
-	}{source, reason, superseded, outcome.Value}, "", "  ")
+		Source     string               `json:"source"`
+		Reason     string               `json:"reason,omitempty"`
+		Superseded bool                 `json:"superseded,omitempty"`
+		Rows       table.Answers        `json:"rows"`
+		Rejections []table.RowRejection `json:"rejections,omitempty"`
+	}{source, reason, superseded, outcome.Value.Answers, outcome.Value.Rejections}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -191,12 +192,24 @@ func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, ou
 		}
 		r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "window_rejected", Count: len(window.parts), Reason: reason, ResponseRef: responseRef, Samples: []string{fmt.Sprintf("shared window %d", window.table.Index)}})
 	}
+	if failure == nil && len(outcome.Value.Rejections) > 0 {
+		rejected := len(window.parts) - len(outcome.Value.AcceptedRowKeys())
+		if rejected > 0 {
+			r.use(def.Stage).Rejected++
+			reason = fmt.Sprintf("%d answers rejected, %d accepted in this response", rejected, len(window.parts)-rejected)
+			r.opts.State(def.Stage, "ready", reason)
+		}
+		responseRef := filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window.table, "response.ref.json")))
+		for _, rejection := range outcome.Value.Rejections {
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "row_rejected", Count: 1, Reason: rejection.Reason, ResponseRef: responseRef, Samples: []string{rejection.Key}})
+		}
+	}
 	if superseded {
 		reason = "Provider resource refusal; complete partitions follow. This attempt supplies no answers."
 	}
 	if reason != "" {
 		source += "; " + reason
 	}
-	r.printWindow(def, window.table, outcome.Value, source, outcome.Metrics.Latency)
+	r.printWindow(def, window.table, outcome.Value.Answers, source, outcome.Metrics.Latency)
 	return nil
 }

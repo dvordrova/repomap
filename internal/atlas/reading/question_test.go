@@ -284,7 +284,7 @@ func TestQuestionCanRunOnTheOrdinaryReadingPath(t *testing.T) {
 		}
 	}
 
-	t.Run("missing question rejects the whole shared window", func(t *testing.T) {
+	t.Run("missing question preserves its accepted neighbour", func(t *testing.T) {
 		opts, provider := questionFixture(t)
 		opts.Through, opts.WindowRows = "", 0
 		opts.Questions = append(opts.Questions, "Where is the entry point?")
@@ -295,10 +295,21 @@ func TestQuestionCanRunOnTheOrdinaryReadingPath(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(result.Questions) != 2 || len(provider.questionRequests) != 1 || len(result.Rejected) != 1 || result.Rejected[0].Stage != lines.StageQuestion || result.Rejected[0].Count != 8 {
-			t.Fatalf("missing question was not one refused shared window: %+v", result.Rejected)
+		if len(result.Questions) != 2 || len(provider.questionRequests) != 1 || len(result.Rejected) != 1 || result.Rejected[0].Stage != lines.StageQuestion || result.Rejected[0].Count != 4 {
+			t.Fatalf("missing question lost its own rejected coverage: %+v", result.Rejected)
 		}
+		var request questionBatchRequest
+		if err := json.Unmarshal(provider.questionRequests[0], &request); err != nil {
+			t.Fatal(err)
+		}
+		acceptedQuestion := request.Questions[0].Question
 		for _, route := range result.Questions {
+			if route.Question == acceptedQuestion {
+				if len(route.Stops) != 4 || route.Coverage.InspectedChunks != 4 || route.Coverage.UnresolvedChunks != 0 {
+					t.Fatalf("missing neighbour invalidated accepted coverage: %+v", route)
+				}
+				continue
+			}
 			if len(route.Stops) != 0 || route.Coverage.InspectedChunks != 0 || route.Coverage.UnresolvedChunks != 4 || route.Answer == nil || route.Answer.State != "unavailable" {
 				t.Fatalf("missing decision became a negative finding or partial success: %+v", route)
 			}
@@ -313,7 +324,11 @@ func TestQuestionCanRunOnTheOrdinaryReadingPath(t *testing.T) {
 			t.Fatal("refused shared response was reused from cache")
 		}
 		for _, route := range retried.Questions {
-			if len(route.Stops) != 4 || route.Coverage.UnresolvedChunks != 0 || route.Stops[0].Source != atlas.SourceModel {
+			wantSource := atlas.SourceModel
+			if route.Question == acceptedQuestion {
+				wantSource = atlas.SourceCache
+			}
+			if len(route.Stops) != 4 || route.Coverage.UnresolvedChunks != 0 || route.Stops[0].Source != wantSource {
 				t.Fatalf("fresh complete response did not restore the question: %+v", route)
 			}
 		}

@@ -1,7 +1,6 @@
 package documentationreduce
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	_ "embed"
@@ -9,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"sort"
 	"strconv"
@@ -23,8 +21,8 @@ import (
 const (
 	requestVersion        = 1
 	executionContract     = "repomap.documentation-reduce.v1"
-	preparationVersion    = 1
-	responseSchemaVersion = 1
+	preparationVersion    = 2
+	responseSchemaVersion = 2
 	// Use the shared output allowance; the configured provider ceiling still
 	// applies. A truncated completion is refused and its batch is split.
 	maxOutputTokens = llm.DefaultMaxOutputTokens
@@ -58,10 +56,11 @@ type documentWire struct {
 }
 
 type sourceRequest struct {
-	Version      int            `json:"version"`
-	Batch        batchWire      `json:"batch"`
-	ContentTrust string         `json:"content_trust"`
-	Documents    []documentWire `json:"documents"`
+	Version        int            `json:"version"`
+	Batch          batchWire      `json:"batch"`
+	ContentTrust   string         `json:"content_trust"`
+	Documents      []documentWire `json:"documents"`
+	PartialContext bool           `json:"partial_context,omitempty"`
 }
 
 type responseSource struct {
@@ -82,11 +81,12 @@ type mergeCandidateWire struct {
 }
 
 type mergeRequest struct {
-	Version      int                  `json:"version"`
-	Level        int                  `json:"level"`
-	Batch        batchWire            `json:"batch"`
-	ContentTrust string               `json:"content_trust"`
-	Candidates   []mergeCandidateWire `json:"candidates"`
+	Version        int                  `json:"version"`
+	Level          int                  `json:"level"`
+	Batch          batchWire            `json:"batch"`
+	ContentTrust   string               `json:"content_trust"`
+	Candidates     []mergeCandidateWire `json:"candidates"`
+	PartialContext bool                 `json:"partial_context,omitempty"`
 }
 
 type documentAuthority struct {
@@ -102,6 +102,7 @@ type documentUnit struct {
 }
 
 type sourceBatch struct {
+	partial bool
 	units   []documentUnit
 	request sourceRequest
 	wire    []byte
@@ -109,11 +110,16 @@ type sourceBatch struct {
 }
 
 type normalizedReduction struct {
-	overview string
-	sources  []responseSource
+	overview        string
+	sources         []responseSource
+	rejected        []llm.ResponseRejection
+	accepted        []string
+	refusedSources  []string
+	unlocatedSource bool
 }
 
 type mergeBatch struct {
+	partial    bool
 	candidates []normalizedReduction
 	request    mergeRequest
 	wire       []byte
@@ -145,45 +151,79 @@ func Run(
 	if err != nil {
 		return Result{}, err
 	}
-	var executed []sourceBatch
-	_, outcomes, err := llm.ExecuteAdaptiveJSONBatch(
-		ctx, executor, provider, batches,
-		func(plan []sourceBatch) ([]llm.Call[normalizedReduction], error) {
-			materialized, materializeErr := materializeSourcePlan(plan)
-			if materializeErr != nil {
-				return nil, materializeErr
+	var candidates []normalizedReduction
+	unavailable := false
+	for len(batches) > 0 {
+		var fresh []sourceBatch
+		for _, batch := range batches {
+			if len(batch.wire) == 0 {
+				fresh = append(fresh, batch)
 			}
-			executed = materialized
-			calls := make([]llm.Call[normalizedReduction], len(materialized))
-			for position := range materialized {
-				batch := materialized[position]
-				calls[position] = llm.Call[normalizedReduction]{
-					State: cubeState("source", snapshot.SHA256, batch.wire),
-					Prompt: llm.Prompt{
-						System: strings.TrimSpace(sourcePrompt), User: string(batch.wire),
-						ResponseFormatJSON: true, ResponseExample: responseExample,
-					},
-					Limits: limits(),
-					DecodeValidate: func(raw []byte) (normalizedReduction, error) {
-						return normalizeResponse(raw, batch.allowed)
-					},
+		}
+		fresh, err = materializeSourcePlan(fresh)
+		if err != nil {
+			return Result{}, err
+		}
+		// Existing requests keep their original context and exact cache key;
+		// only new complete children acquire the current partial-window scope.
+		for i := range batches {
+			if len(batches[i].wire) == 0 {
+				batches[i], fresh = fresh[0], fresh[1:]
+			}
+		}
+		calls := make([]llm.Call[normalizedReduction], len(batches))
+		var hinted []sourceBatch
+		replanned := false
+		for i, batch := range batches {
+			calls[i] = reductionCall("source", snapshot.SHA256, sourcePrompt, batch.wire, batch.allowed)
+			found, err := llm.RecallAdaptiveSplit(executor, provider, calls[i])
+			if err != nil {
+				return Result{}, err
+			}
+			if found {
+				if left, right, ok := splitSourceBatch(batch); ok {
+					hinted = append(hinted, left, right)
+					replanned = true
+					continue
 				}
 			}
-			return calls, nil
-		},
-		splitSourceBatch,
-	)
-	if err != nil {
-		return Result{}, fmt.Errorf("documentation reduce: source batches: %w", err)
-	}
-	if len(executed) != len(outcomes) {
-		return Result{}, fmt.Errorf("documentation reduce: source execution plan was not materialized")
-	}
-	candidates := make([]normalizedReduction, 0, len(outcomes))
-	for _, outcome := range outcomes {
-		if !emptyReduction(outcome.Value) {
-			candidates = append(candidates, outcome.Value)
+			hinted = append(hinted, batch)
 		}
+		if replanned {
+			batches = hinted
+			continue
+		}
+		if executor.PlanNotice != nil {
+			executor.PlanNotice(len(calls))
+		}
+		responses := llm.ExecuteJSONEach(ctx, executor, provider, calls)
+		if ctx.Err() != nil {
+			return Result{}, ctx.Err()
+		}
+		var next []sourceBatch
+		for i, response := range responses {
+			if response.Err == nil {
+				if !emptyReduction(response.Outcome.Value) {
+					candidates = append(candidates, response.Outcome.Value)
+				}
+				continue
+			}
+			if left, right, ok := splitSourceBatch(batches[i]); ok {
+				eligible, err := llm.RememberAdaptiveSplit(executor, provider, calls[i], response.Outcome, response.Err)
+				if err != nil {
+					return Result{}, err
+				}
+				if eligible {
+					next = append(next, left, right)
+					continue
+				}
+			}
+			if !unavailableReduction(response) {
+				return Result{}, response.Err
+			}
+			unavailable = true
+		}
+		batches = next
 	}
 	if len(candidates) == 0 {
 		return sealResult(snapshot, "", nil)
@@ -197,14 +237,15 @@ func Run(
 	if len(candidates) == 0 {
 		return sealResult(snapshot, "", nil)
 	}
-	if len(candidates) != 1 {
-		return Result{}, fmt.Errorf("documentation reduce: convergent reduction did not produce one result")
+	combined := joinReductions(candidates)
+	if unavailable {
+		combined.overview = ""
 	}
-	sources, err := restoreSources(candidates[0].sources, authority)
+	sources, err := restoreSources(combined.sources, authority)
 	if err != nil {
 		return Result{}, err
 	}
-	return sealResult(snapshot, candidates[0].overview, sources)
+	return sealResult(snapshot, combined.overview, sources)
 }
 
 func compileAuthority(
@@ -326,7 +367,7 @@ func sourceUnitsFit(provider llm.Provider, units []documentUnit) (bool, error) {
 	request := sourceRequest{
 		Version:      requestVersion,
 		Batch:        batchWire{Ordinal: math.MaxInt, Count: math.MaxInt},
-		ContentTrust: "untrusted_repository_text", Documents: documents,
+		ContentTrust: "untrusted_repository_text", Documents: documents, PartialContext: true,
 	}
 	return requestFits(provider, sourcePrompt, request)
 }
@@ -355,13 +396,14 @@ func materializeSourcePlan(plan []sourceBatch) ([]sourceBatch, error) {
 		request := sourceRequest{
 			Version:      requestVersion,
 			Batch:        batchWire{Ordinal: batchPosition + 1, Count: len(plan)},
-			ContentTrust: "untrusted_repository_text", Documents: documents,
+			ContentTrust: "untrusted_repository_text", Documents: documents, PartialContext: planned.partial,
 		}
 		wire, err := json.Marshal(request)
 		if err != nil {
 			return nil, fmt.Errorf("documentation reduce: encode source batch: %w", err)
 		}
 		result[batchPosition] = sourceBatch{
+			partial: planned.partial,
 			units:   append([]documentUnit(nil), planned.units...),
 			request: request, wire: wire, allowed: allowed,
 		}
@@ -372,8 +414,8 @@ func materializeSourcePlan(plan []sourceBatch) ([]sourceBatch, error) {
 func splitSourceBatch(batch sourceBatch) (sourceBatch, sourceBatch, bool) {
 	if len(batch.units) > 1 {
 		middle := len(batch.units) / 2
-		return sourceBatch{units: append([]documentUnit(nil), batch.units[:middle]...)},
-			sourceBatch{units: append([]documentUnit(nil), batch.units[middle:]...)}, true
+		return sourceBatch{partial: true, units: append([]documentUnit(nil), batch.units[:middle]...)},
+			sourceBatch{partial: true, units: append([]documentUnit(nil), batch.units[middle:]...)}, true
 	}
 	if len(batch.units) != 1 {
 		return sourceBatch{}, sourceBatch{}, false
@@ -384,17 +426,79 @@ func splitSourceBatch(batch sourceBatch) (sourceBatch, sourceBatch, bool) {
 	}
 	left, right := batch.units[0], batch.units[0]
 	left.content, right.content = leftContent, rightContent
-	return sourceBatch{units: []documentUnit{left}}, sourceBatch{units: []documentUnit{right}}, true
+	return sourceBatch{partial: true, units: []documentUnit{left}}, sourceBatch{partial: true, units: []documentUnit{right}}, true
 }
 
-func mergeTournament(
-	ctx context.Context,
-	executor llm.Executor,
-	provider llm.Provider,
-	guidanceSHA string,
-	authority map[string]documentAuthority,
-	candidates []normalizedReduction,
-) ([]normalizedReduction, error) {
+func reductionCall(phase, guidanceSHA, prompt string, wire []byte, allowed map[string]documentAuthority) llm.Call[normalizedReduction] {
+	return llm.Call[normalizedReduction]{State: cubeState(phase, guidanceSHA, wire),
+		Prompt: llm.Prompt{System: strings.TrimSpace(prompt), User: string(wire), ResponseFormatJSON: true, ResponseExample: responseExample},
+		Limits: limits(), DecodeValidate: func(raw []byte) (normalizedReduction, error) { return normalizeResponse(raw, allowed) }}
+}
+
+func unavailableReduction(response llm.EachResult[normalizedReduction]) bool {
+	var resource *llm.ResourceLimitError
+	if errors.As(response.Err, &resource) || errors.Is(response.Err, context.Canceled) || errors.Is(response.Err, context.DeadlineExceeded) {
+		return false
+	}
+	for _, rejected := range response.Outcome.ResponseRejections {
+		if rejected.Kind == "response_validation" || rejected.Kind == "response_envelope" || rejected.Kind == "provider_failed" {
+			return true
+		}
+	}
+	return false
+}
+
+// Joining keeps accepted source statements. Only one accepted reduction can
+// supply an overview; concatenation must not invent a repository-wide summary.
+func joinReductions(candidates []normalizedReduction) normalizedReduction {
+	if len(candidates) == 1 {
+		return candidates[0]
+	}
+	result := normalizedReduction{}
+	byRef := make(map[string]responseSource)
+	for _, candidate := range candidates {
+		for _, source := range candidate.sources {
+			kept := byRef[source.Ref]
+			kept.Ref = source.Ref
+			kept.Claims, kept.Concepts = append(kept.Claims, source.Claims...), append(kept.Concepts, source.Concepts...)
+			byRef[source.Ref] = kept
+		}
+	}
+	for _, source := range byRef {
+		source.Claims, _ = canonicalizeText(source.Claims)
+		source.Concepts, _ = canonicalizeText(source.Concepts)
+		result.sources = append(result.sources, source)
+	}
+	sort.Slice(result.sources, func(i, j int) bool { return result.sources[i].Ref < result.sources[j].Ref })
+	return result
+}
+
+func keepRejectedMergeSources(result normalizedReduction, originals []normalizedReduction) normalizedReduction {
+	if len(result.refusedSources) == 0 && !result.unlocatedSource {
+		return result
+	}
+	refused := make(map[string]bool)
+	for _, ref := range result.refusedSources {
+		refused[ref] = true
+	}
+	kept := normalizedReduction{}
+	for _, original := range originals {
+		for _, source := range original.sources {
+			if result.unlocatedSource || refused[source.Ref] {
+				kept.sources = append(kept.sources, source)
+			}
+		}
+	}
+	// These are previously accepted statements, not a replacement interpretation
+	// of raw source. The new overview, if any, is still the model's own answer.
+	result.sources = joinReductions([]normalizedReduction{result, kept}).sources
+	if result.unlocatedSource {
+		result.overview = ""
+	}
+	return result
+}
+
+func mergeTournament(ctx context.Context, executor llm.Executor, provider llm.Provider, guidanceSHA string, authority map[string]documentAuthority, candidates []normalizedReduction) ([]normalizedReduction, error) {
 	candidates = canonicalCandidates(candidates)
 	for level := 1; len(candidates) > 1; level++ {
 		before, err := candidateFootprint(candidates)
@@ -405,61 +509,93 @@ func mergeTournament(
 		if err != nil {
 			return nil, err
 		}
-		var executed []mergeBatch
-		_, outcomes, err := llm.ExecuteAdaptiveJSONBatch(
-			ctx, executor, provider, batches,
-			func(plan []mergeBatch) ([]llm.Call[normalizedReduction], error) {
-				materialized, materializeErr := materializeMergePlan(plan, level, authority)
-				if materializeErr != nil {
-					return nil, materializeErr
+		var accepted, retained []normalizedReduction
+		for len(batches) > 0 {
+			var fresh []mergeBatch
+			for _, batch := range batches {
+				if len(batch.wire) == 0 {
+					fresh = append(fresh, batch)
 				}
-				executed = materialized
-				calls := make([]llm.Call[normalizedReduction], len(materialized))
-				for position := range materialized {
-					batch := materialized[position]
-					calls[position] = llm.Call[normalizedReduction]{
-						State: cubeState("merge", guidanceSHA, batch.wire),
-						Prompt: llm.Prompt{
-							System: strings.TrimSpace(mergePrompt), User: string(batch.wire),
-							ResponseFormatJSON: true, ResponseExample: responseExample,
-						},
-						Limits: limits(),
-						DecodeValidate: func(raw []byte) (normalizedReduction, error) {
-							return normalizeResponse(raw, batch.allowed)
-						},
+			}
+			fresh, err = materializeMergePlan(fresh, level, authority)
+			if err != nil {
+				return nil, err
+			}
+			for i := range batches {
+				if len(batches[i].wire) == 0 {
+					batches[i], fresh = fresh[0], fresh[1:]
+				}
+			}
+			calls := make([]llm.Call[normalizedReduction], len(batches))
+			var hinted []mergeBatch
+			replanned := false
+			for i, batch := range batches {
+				calls[i] = reductionCall("merge", guidanceSHA, mergePrompt, batch.wire, batch.allowed)
+				found, err := llm.RecallAdaptiveSplit(executor, provider, calls[i])
+				if err != nil {
+					return nil, err
+				}
+				if found {
+					if left, right, ok := splitMergeBatch(batch); ok {
+						hinted = append(hinted, left, right)
+						replanned = true
+						continue
 					}
 				}
-				return calls, nil
-			},
-			splitMergeBatch,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("documentation reduce: merge level %d: %w", level, err)
-		}
-		if len(executed) != len(outcomes) {
-			return nil, fmt.Errorf("documentation reduce: merge execution plan was not materialized")
-		}
-		next := make([]normalizedReduction, 0, len(outcomes))
-		for _, outcome := range outcomes {
-			if !emptyReduction(outcome.Value) {
-				next = append(next, outcome.Value)
+				hinted = append(hinted, batch)
 			}
+			if replanned {
+				batches = hinted
+				continue
+			}
+			if executor.PlanNotice != nil {
+				executor.PlanNotice(len(calls))
+			}
+			responses := llm.ExecuteJSONEach(ctx, executor, provider, calls)
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			var next []mergeBatch
+			for i, response := range responses {
+				if response.Err == nil {
+					value := keepRejectedMergeSources(response.Outcome.Value, batches[i].candidates)
+					if !emptyReduction(value) {
+						accepted = append(accepted, value)
+					}
+					continue
+				}
+				if left, right, ok := splitMergeBatch(batches[i]); ok {
+					eligible, err := llm.RememberAdaptiveSplit(executor, provider, calls[i], response.Outcome, response.Err)
+					if err != nil {
+						return nil, err
+					}
+					if eligible {
+						next = append(next, left, right)
+						continue
+					}
+				}
+				if !unavailableReduction(response) {
+					return nil, response.Err
+				}
+				for _, original := range batches[i].candidates {
+					original.overview = ""
+					retained = append(retained, original)
+				}
+			}
+			batches = next
 		}
-		if len(next) == 0 {
-			return nil, nil
+		if len(retained) > 0 {
+			return append(accepted, retained...), nil
 		}
-		next = canonicalCandidates(next)
-		after, err := candidateFootprint(next)
+		accepted = canonicalCandidates(accepted)
+		after, err := candidateFootprint(accepted)
 		if err != nil {
 			return nil, err
 		}
-		if len(next) >= len(candidates) && after >= before {
-			return nil, fmt.Errorf(
-				"documentation reduce: merge level %d made no count or byte progress; no context was truncated",
-				level,
-			)
+		if len(accepted) >= len(candidates) && after >= before {
+			return accepted, nil
 		}
-		candidates = next
+		candidates = accepted
 	}
 	return candidates, nil
 }
@@ -495,8 +631,8 @@ func mergeCandidatesFit(
 	request := mergeRequest{
 		Version: requestVersion, Level: level,
 		Batch:        batchWire{Ordinal: math.MaxInt, Count: math.MaxInt},
-		ContentTrust: "untrusted_repository_summary",
-		Candidates:   mergeCandidateWires(candidates),
+		ContentTrust: "untrusted_repository_summary", PartialContext: true,
+		Candidates: mergeCandidateWires(candidates),
 	}
 	return requestFits(provider, mergePrompt, request)
 }
@@ -511,8 +647,8 @@ func materializeMergePlan(
 		request := mergeRequest{
 			Version: requestVersion, Level: level,
 			Batch:        batchWire{Ordinal: position + 1, Count: len(plan)},
-			ContentTrust: "untrusted_repository_summary",
-			Candidates:   mergeCandidateWires(planned.candidates),
+			ContentTrust: "untrusted_repository_summary", PartialContext: planned.partial,
+			Candidates: mergeCandidateWires(planned.candidates),
 		}
 		wire, err := json.Marshal(request)
 		if err != nil {
@@ -527,6 +663,7 @@ func materializeMergePlan(
 			}
 		}
 		result[position] = mergeBatch{
+			partial:    planned.partial,
 			candidates: append([]normalizedReduction(nil), planned.candidates...),
 			request:    request, wire: wire, allowed: allowed,
 		}
@@ -539,8 +676,8 @@ func splitMergeBatch(batch mergeBatch) (mergeBatch, mergeBatch, bool) {
 		return mergeBatch{}, mergeBatch{}, false
 	}
 	middle := len(batch.candidates) / 2
-	return mergeBatch{candidates: append([]normalizedReduction(nil), batch.candidates[:middle]...)},
-		mergeBatch{candidates: append([]normalizedReduction(nil), batch.candidates[middle:]...)}, true
+	return mergeBatch{partial: true, candidates: append([]normalizedReduction(nil), batch.candidates[:middle]...)},
+		mergeBatch{partial: true, candidates: append([]normalizedReduction(nil), batch.candidates[middle:]...)}, true
 }
 
 func mergeCandidateWires(candidates []normalizedReduction) []mergeCandidateWire {
@@ -554,84 +691,137 @@ func mergeCandidateWires(candidates []normalizedReduction) []mergeCandidateWire 
 	return result
 }
 
-func normalizeResponse(
-	raw []byte,
-	allowed map[string]documentAuthority,
-) (normalizedReduction, error) {
-	if len(raw) == 0 || len(raw) > llm.ProviderResponseByteLimit {
-		return normalizedReduction{}, fmt.Errorf("documentation reduce: response exceeds bounded envelope")
+func (result normalizedReduction) ResponseRejections() []llm.ResponseRejection {
+	return result.rejected
+}
+func (result normalizedReduction) AcceptedRowKeys() []string {
+	if len(result.rejected) > 0 {
+		return result.accepted
 	}
-	normalizedJSON, err := llm.NormalizeJSON(raw)
-	if err != nil {
-		return normalizedReduction{}, fmt.Errorf("documentation reduce: invalid response JSON: %w", err)
-	}
-	var response modelResponse
-	decoder := json.NewDecoder(bytes.NewReader(normalizedJSON))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&response); err != nil {
-		return normalizedReduction{}, fmt.Errorf("documentation reduce: decode response: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return normalizedReduction{}, fmt.Errorf("documentation reduce: response has trailing data")
-	}
-	if response.Sources == nil {
-		return normalizedReduction{}, fmt.Errorf("documentation reduce: response sources are missing")
-	}
-	if response.Overview != "" && !validText(response.Overview) {
-		return normalizedReduction{}, fmt.Errorf("documentation reduce: response overview is invalid")
-	}
+	return nil
+}
 
-	type sourceSets struct {
-		claims   []string
-		concepts []string
+func normalizeResponse(raw []byte, allowed map[string]documentAuthority) (normalizedReduction, error) {
+	result := normalizedReduction{accepted: []string{}}
+	if len(raw) == 0 || len(raw) > llm.ProviderResponseByteLimit {
+		return result, fmt.Errorf("documentation reduce: response exceeds bounded envelope")
 	}
-	byRef := make(map[string]sourceSets)
-	for _, source := range response.Sources {
-		if _, known := allowed[source.Ref]; !known {
+	normalized, err := llm.NormalizeJSON(raw)
+	if err != nil {
+		return result, err
+	}
+	var response struct {
+		Overview json.RawMessage   `json:"overview"`
+		Sources  []json.RawMessage `json:"sources"`
+	}
+	if json.Unmarshal(normalized, &response) != nil || response.Sources == nil {
+		return result, fmt.Errorf("documentation reduce: response sources must be an array")
+	}
+	badSources := make(map[string]bool)
+	currentRef := ""
+	invalid := false
+	reject := func(position, reason string) {
+		if currentRef == "" {
+			invalid = true
+		} else if _, known := allowed[currentRef]; known {
+			badSources[currentRef] = true
+			invalid = true
+		}
+		result.rejected = append(result.rejected, llm.ResponseRejection{Kind: "documentation_rejected", Count: 1, Samples: []string{position}, Reason: reason})
+	}
+	if json.Unmarshal(response.Overview, &result.overview) != nil {
+		reject("overview", "overview must be text")
+		result.overview = ""
+	}
+	result.overview = strings.TrimSpace(result.overview)
+	if result.overview != "" && !validText(result.overview) {
+		reject("overview", "overview has invalid text")
+		result.overview = ""
+	}
+	textSet := func(raw json.RawMessage, position string) []string {
+		var entries []json.RawMessage
+		if json.Unmarshal(raw, &entries) != nil || entries == nil {
+			reject(position, "source text set must be an array")
+			return nil
+		}
+		var values []string
+		for i, rawEntry := range entries {
+			var text string
+			if json.Unmarshal(rawEntry, &text) != nil {
+				reject(fmt.Sprintf("%s[%d]", position, i), "claim or concept must be text")
+				continue
+			}
+			text = strings.TrimSpace(text)
+			if !validText(text) {
+				reject(fmt.Sprintf("%s[%d]", position, i), "claim or concept must be non-empty text")
+				continue
+			}
+			values = append(values, text)
+		}
+		return values
+	}
+	byRef := make(map[string]responseSource)
+	for i, rawSource := range response.Sources {
+		currentRef = ""
+		position := fmt.Sprintf("sources[%d]", i)
+		var source struct {
+			Ref      string          `json:"ref"`
+			Claims   json.RawMessage `json:"claims"`
+			Concepts json.RawMessage `json:"concepts"`
+		}
+		if json.Unmarshal(rawSource, &source) != nil || source.Ref == "" {
+			result.unlocatedSource = true
+			reject(position, "source must have a string ref")
 			continue
 		}
-		if source.Claims == nil || source.Concepts == nil {
-			return normalizedReduction{}, fmt.Errorf("documentation reduce: response source sets are missing")
+		currentRef = source.Ref
+		if _, known := allowed[source.Ref]; !known {
+			reject(position, "source ref was not advertised")
+			continue
 		}
-		claims, err := canonicalizeText(source.Claims)
-		if err != nil {
-			return normalizedReduction{}, fmt.Errorf("documentation reduce: response claims: %w", err)
-		}
-		concepts, err := canonicalizeText(source.Concepts)
-		if err != nil {
-			return normalizedReduction{}, fmt.Errorf("documentation reduce: response concepts: %w", err)
-		}
+		claims, concepts := textSet(source.Claims, position+".claims"), textSet(source.Concepts, position+".concepts")
 		if len(claims)+len(concepts) == 0 {
 			continue
 		}
-		sets := byRef[source.Ref]
-		sets.claims = append(sets.claims, claims...)
-		sets.concepts = append(sets.concepts, concepts...)
-		byRef[source.Ref] = sets
+		value := byRef[source.Ref]
+		value.Ref = source.Ref
+		value.Claims, value.Concepts = append(value.Claims, claims...), append(value.Concepts, concepts...)
+		byRef[source.Ref] = value
 	}
-	refs := make([]string, 0, len(byRef))
-	for ref := range byRef {
-		refs = append(refs, ref)
-	}
-	sort.Slice(refs, func(i, j int) bool {
-		left, right := allowed[refs[i]], allowed[refs[j]]
-		if left.path != right.path {
-			return left.path < right.path
+	for ref, source := range byRef {
+		source.Claims, _ = canonicalizeText(source.Claims)
+		source.Concepts, _ = canonicalizeText(source.Concepts)
+		result.sources = append(result.sources, source)
+		if !badSources[ref] {
+			result.accepted = append(result.accepted, ref)
 		}
-		return refs[i] < refs[j]
+	}
+	for ref := range badSources {
+		if _, known := allowed[ref]; known {
+			result.refusedSources = append(result.refusedSources, ref)
+		}
+	}
+	sort.Strings(result.refusedSources)
+	sort.Strings(result.accepted)
+	sort.Slice(result.sources, func(i, j int) bool {
+		a, b := allowed[result.sources[i].Ref].path, allowed[result.sources[j].Ref].path
+		if a != b {
+			return a < b
+		}
+		return result.sources[i].Ref < result.sources[j].Ref
 	})
-	sources := make([]responseSource, 0, len(refs))
-	for _, ref := range refs {
-		sets := byRef[ref]
-		claims, _ := canonicalizeText(sets.claims)
-		concepts, _ := canonicalizeText(sets.concepts)
-		sources = append(sources, responseSource{Ref: ref, Claims: claims, Concepts: concepts})
+	currentRef = ""
+	if result.overview != "" && len(result.sources) == 0 {
+		reject("overview", "overview has no accepted source")
+		result.overview = ""
 	}
-	if response.Overview != "" && len(sources) == 0 {
-		return normalizedReduction{}, fmt.Errorf("documentation reduce: response overview has no known source")
+	if result.overview != "" {
+		result.accepted = append(result.accepted, "")
 	}
-	return normalizedReduction{overview: response.Overview, sources: sources}, nil
+	if invalid && result.overview == "" && len(result.sources) == 0 {
+		return result, fmt.Errorf("documentation reduce: no usable response: %s", result.rejected[0].Reason)
+	}
+	return result, nil
 }
 
 func restoreSources(

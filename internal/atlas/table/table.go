@@ -77,9 +77,11 @@ type Definition struct {
 	// encoding for isolated readings. Zero uses DefaultInputBytes as a packing
 	// target and keeps an oversized row whole in its own request.
 	MaxInputBytes int
-	// Independent validates and reuses each row separately from its neighbours.
+	// Independent validates each row separately from its neighbours.
 	// The prompt must restrict each answer to that row and its context.
 	Independent bool
+	// Memoize reuses independent description rows through entity knowledge.
+	Memoize bool
 	// ContextAfterRows keeps repeated evidence ahead of changing context in
 	// the request prefix. The default preserves context before rows.
 	ContextAfterRows bool

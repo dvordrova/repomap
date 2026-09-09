@@ -167,17 +167,18 @@ func (data catalogue) recall(ctx context.Context, executor llm.Executor, provide
 			}
 			rows, call, response := checked.rows, checked.call, checked.response
 			if !cached.accepted {
-				cached.adapted.Accepted(nil)
+				cached.adapted.Accepted(response.AcceptedRowKeys())
 				cached.accepted = true
 				exchanges[ref.RequestKey] = cached
-				if len(cached.adapted.Rejections) > 0 && executor.Observer != nil {
+				rejections := append(slices.Clone(cached.adapted.Rejections), response.ResponseRejections()...)
+				if len(rejections) > 0 && executor.Observer != nil {
 					if err := executor.Observer.Observe(llm.Event{
 						Kind: llm.EventCacheHit, Source: llm.SourceCache, Cached: true,
 						CacheRoot: executor.RootDir, CacheKey: ref.RequestKey,
 						Request: cached.exchange.Request, Response: cached.exchange.Response,
 						RequestSHA256: cached.exchange.RequestSHA256, ResponseSHA256: cached.exchange.ResponseSHA256,
 						RequestBytes: len(cached.exchange.Request), ResponseBytes: len(cached.exchange.Response),
-						ResponseRejections: cached.adapted.Rejections,
+						ResponseRejections: rejections,
 					}); err != nil {
 						result.Issues = append(result.Issues, err)
 					}
@@ -192,7 +193,9 @@ func (data catalogue) recall(ctx context.Context, executor llm.Executor, provide
 				RequestSHA256: cached.exchange.RequestSHA256, ResponseSHA256: cached.exchange.ResponseSHA256,
 				RequestBytes: len(cached.exchange.Request), ResponseBytes: len(cached.exchange.Response),
 			}
-			data.apply(&result.Questions[q], rows, ref.QuestionRef, outcome)
+			if !data.apply(&result.Questions[q], rows, ref.QuestionRef, outcome) {
+				continue
+			}
 			remembered[q] = append(remembered[q], ref)
 			position, reused := reusedExchanges[ref.RequestKey]
 			if !reused {

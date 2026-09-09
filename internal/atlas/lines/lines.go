@@ -54,7 +54,7 @@ var filesPrompt string
 func Directories() table.Definition {
 	return table.Definition{
 		Stage: StageDirectories, Contract: directoriesContract,
-		System: directoriesPrompt, Independent: true,
+		System: directoriesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "title", Kind: table.Text, MaxRunes: TitleRunes, Note: "two to four words for the box"},
 			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what the directory's code does"},
@@ -66,7 +66,7 @@ func Directories() table.Definition {
 func Files() table.Definition {
 	return table.Definition{
 		Stage: StageFiles, Contract: filesContract,
-		System: filesPrompt, Independent: true,
+		System: filesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what the file does"},
 			{

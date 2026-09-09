@@ -96,3 +96,20 @@ func saveAdaptiveSplit(executor Executor, provider Provider, request []byte, lim
 	}
 	return nil
 }
+
+// RecallAdaptiveSplit lets a stage-owned independent loop reuse the same
+// exact-request refusal hint and whole-parent replay precedence as the shared
+// adaptive executors. The owner still prepares every complete child.
+func RecallAdaptiveSplit[T any](executor Executor, provider Provider, call Call[T]) (bool, error) {
+	return loadAdaptiveSplit(executor, provider, call)
+}
+
+// RememberAdaptiveSplit records only an eligible refusal. The owner calls it
+// after establishing that the failed item has complete, lossless children.
+func RememberAdaptiveSplit[T any](executor Executor, provider Provider, call Call[T], outcome Outcome[T], err error) (bool, error) {
+	memo, eligible := adaptiveFailureMemo(call, outcome, err)
+	if !eligible {
+		return false, nil
+	}
+	return true, saveAdaptiveSplit(executor, provider, outcome.Request, call.Limits, memo)
+}

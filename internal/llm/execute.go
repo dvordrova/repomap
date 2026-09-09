@@ -132,7 +132,7 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 		value, validateErr := decodeAcceptedJSON(decodeValidate, record.Response)
 		if validateErr == nil {
 			outcome.Value = value
-			outcome.ResponseRejections = adapted.Rejections
+			outcome.ResponseRejections = acceptedResponseRejections(value, adapted.Rejections)
 			outcome.Cached = true
 			setOutcomeResponse(&outcome, record.Response)
 			outcome.FinishReason = record.FinishReason
@@ -436,7 +436,7 @@ func executeLive[T any](
 		return outcome, fmt.Errorf("llm: reject response: %w", err)
 	}
 	outcome.Value = value
-	outcome.ResponseRejections = adapted.Rejections
+	outcome.ResponseRejections = acceptedResponseRejections(value, adapted.Rejections)
 
 	if executor.Enabled {
 		exactRequest := prepared.Bytes()
@@ -463,6 +463,13 @@ func executeLive[T any](
 		EventLive, SourceLive, FailureNone, outcome,
 	), outcome.Issues)
 	return outcome, nil
+}
+
+func acceptedResponseRejections[T any](value T, metadata []ResponseRejection) []ResponseRejection {
+	if domain, ok := any(value).(interface{ ResponseRejections() []ResponseRejection }); ok {
+		return append(append([]ResponseRejection(nil), metadata...), domain.ResponseRejections()...)
+	}
+	return metadata
 }
 
 func decoderForCall[T any](call Call[T]) (DecodeValidate[T], error) {

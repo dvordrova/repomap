@@ -71,7 +71,7 @@ const MaxKeysPerFile = 5
 func Symbols() table.Definition {
 	return table.Definition{
 		Stage: StageSymbols, Contract: symbolsContract,
-		System: symbolsPrompt, Independent: true,
+		System: symbolsPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what this declaration does or is"},
 			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
@@ -88,7 +88,7 @@ func Symbols() table.Definition {
 func Types() table.Definition {
 	return table.Definition{
 		Stage: StageSymbols, Contract: "repomap.atlas.types.v6",
-		System: typesPrompt, Independent: true,
+		System: typesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Prose, Note: "briefly explain what this represents or controls and any consequential documented rule, preserving its conditions; no method inventory or invented effects"},
 			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
@@ -152,7 +152,7 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 func Boundaries() table.Definition {
 	return table.Definition{
 		Stage: StageBoundaries, Contract: boundariesContract,
-		System: boundariesPrompt, Independent: true,
+		System: boundariesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what crosses this boundary"},
 			{Name: "kind", Kind: table.Choice, Options: atlas.BoundaryKinds(), Note: "repeat kind_given when present"},
@@ -225,7 +225,7 @@ func PartName(answer map[string]string, i int) string {
 func ZoneAssign(parts []string) table.Definition {
 	return table.Definition{
 		Stage: StageZones, Contract: zonesContract + ".assign", Window: WindowRows,
-		System:  zonesPrompt,
+		System: zonesPrompt, Independent: true,
 		Columns: []table.Column{{Name: "part", Kind: table.Choice, Options: parts, Note: "one of context.parts"}},
 	}
 }
@@ -233,7 +233,7 @@ func ZoneAssign(parts []string) table.Definition {
 func ZoneLines() table.Definition {
 	return table.Definition{
 		Stage: StageZones, Contract: zonesContract + ".lines", Window: WindowRows,
-		System:  zonesPrompt,
+		System: zonesPrompt, Independent: true,
 		Columns: []table.Column{{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what this part does"}},
 	}
 }
@@ -295,7 +295,7 @@ func WantZones(n int) int {
 func Arrows() table.Definition {
 	return table.Definition{
 		Stage: StageArrows, Contract: arrowsContract, Window: WindowRows,
-		System:  arrowsPrompt,
+		System: arrowsPrompt, Independent: true,
 		Columns: []table.Column{{Name: "sentence", Kind: table.Text, MaxRunes: LineRunes, Note: "what the first box does with the second"}},
 	}
 }
@@ -336,7 +336,7 @@ func FallbackSentence(from, to BoxSummary, witnesses []atlas.Witness) string {
 func Targets(rolesBound ...bool) table.Definition {
 	definition := table.Definition{
 		Stage: StageTargets, Contract: targetsContract, Window: WindowRows,
-		System: targetsPrompt,
+		System: targetsPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what this target is and does"},
 			{Name: "role", Kind: table.Choice, Options: atlas.Roles()},
@@ -429,7 +429,7 @@ func FallbackRole(root, kind string) string {
 func Joints() table.Definition {
 	return table.Definition{
 		Stage: StageJoints, Contract: jointsContract + ".joints", Window: WindowRows,
-		System: jointsPrompt,
+		System: jointsPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "same", Kind: table.Choice, Options: []string{"yes", "no"}},
 			{Name: "label", Kind: table.Text, MaxRunes: LabelRunes, Note: "at most six words, or - when same is no"},
@@ -440,7 +440,7 @@ func Joints() table.Definition {
 func Peers() table.Definition {
 	return table.Definition{
 		Stage: StageJoints, Contract: jointsContract + ".peers", Window: WindowRows,
-		System: jointsPrompt,
+		System: jointsPrompt, Independent: true,
 		Columns: []table.Column{
 			{Name: "peer", Kind: table.Choice, OptionsFrom: "peer_options", Note: "a ref from context.peers, or none"},
 			{Name: "label", Kind: table.Text, MaxRunes: LabelRunes, Note: "at most six words, or - when peer is none"},

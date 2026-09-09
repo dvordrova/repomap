@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -46,7 +45,6 @@ type Input struct {
 type preparedRequest struct {
 	wire    []byte
 	catalog catalog
-	dropped []RejectedRow
 }
 
 // Run makes exactly one model call, validates every returned row against the
@@ -80,9 +78,20 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 		},
 	})
 	if err != nil {
+		// A rejected model response supplies no orientation, but the facts
+		// and report remain useful. Local/transport/resource errors retain
+		// their existing error path.
+		for _, refusal := range outcome.ResponseRejections {
+			if refusal.Kind == "response_validation" && ctx.Err() == nil {
+				raw, _ := json.Marshal(string(outcome.Response))
+				rejected := []RejectedRow{{Stage: StageName, Section: "response", Raw: raw, Reason: err.Error()}}
+				result, sealErr := Empty(input.Facts.SHA256, input.Claims.SHA256, digests, len(rejected))
+				return result, rejected, sealErr
+			}
+		}
 		return Result{}, nil, fmt.Errorf("orientation: model call: %w", err)
 	}
-	rejected := append(append([]RejectedRow{}, prepared.dropped...), outcome.Value.rejected...)
+	rejected := outcome.Value.rejected
 	result, err := Seal(Result{
 		FactsSHA256:   input.Facts.SHA256,
 		ClaimsSHA256:  input.Claims.SHA256,
@@ -130,34 +139,22 @@ func groupDigests(indexes []groupindex.Index) []string {
 	return digests
 }
 
-// prepareRequest walks the shape levels from complete to smallest and keeps
-// the first one the provider accepts. The chosen level is deterministic for
-// one input, so the request bytes and the cache key are too.
+// prepareRequest retains the stage's complete evidence catalogue. Only the
+// actual prepared provider envelope can refuse it; size never selects a
+// different set of claims, members or fact kinds.
 func prepareRequest(provider llm.Provider, input Input) (preparedRequest, error) {
-	var lastLimit error
-	for level, shape := range requestShapes {
-		wire, cat, err := encodeRequest(input, shape)
-		if err != nil {
-			return preparedRequest{}, err
-		}
-		fitErr := requestFits(provider, wire)
-		if fitErr == nil {
-			return preparedRequest{wire: wire, catalog: cat, dropped: droppedRows(input, level)}, nil
-		}
-		var resourceErr *llm.ResourceLimitError
-		if !errors.As(fitErr, &resourceErr) || resourceErr.Kind != llm.ResourceLimitRequestBytes {
-			return preparedRequest{}, fmt.Errorf("orientation: provider request preparation: %w", fitErr)
-		}
-		lastLimit = fitErr
+	wire, cat, err := encodeRequest(input)
+	if err != nil {
+		return preparedRequest{}, err
 	}
-	return preparedRequest{}, fmt.Errorf(
-		"orientation: request does not fit the provider request limit after dropping claims, group members, and bulk fact kinds; no fact was truncated: %w",
-		lastLimit,
-	)
+	if err := requestFits(provider, wire); err != nil {
+		return preparedRequest{}, fmt.Errorf("orientation: provider request preparation: %w", err)
+	}
+	return preparedRequest{wire: wire, catalog: cat}, nil
 }
 
-func encodeRequest(input Input, shape requestShape) ([]byte, catalog, error) {
-	wire, cat, err := buildRequest(input, shape)
+func encodeRequest(input Input) ([]byte, catalog, error) {
+	wire, cat, err := buildRequest(input)
 	if err != nil {
 		return nil, catalog{}, err
 	}
@@ -178,22 +175,14 @@ func requestFits(provider llm.Provider, wire []byte) error {
 	if err != nil {
 		return err
 	}
-	// The shape shrinks against what the model can read, not against the
-	// record limit: kubernetes' complete request was under the record limit
-	// and over the model's context, and the provider answered 400.
-	if prepared.Len() > MaxRequestBytes {
+	if prepared.Len() > bounds.MaxRequestBytes {
 		return llm.NewResourceLimitError(llm.ResourceLimitError{
 			Stage: StageName + "_prepare", Kind: llm.ResourceLimitRequestBytes,
-			Limit: MaxRequestBytes, Observed: prepared.Len(), ObservedKnown: true,
+			Limit: bounds.MaxRequestBytes, Observed: prepared.Len(), ObservedKnown: true,
 		})
 	}
 	return nil
 }
-
-// MaxRequestBytes is the largest orientation request sent: about half a
-// million tokens of a one-million-token context, leaving the model room to
-// answer.
-const MaxRequestBytes = 2 << 20
 
 func cubeState(input Input, groupDigests []string, wire []byte) []byte {
 	requestDigest := sha256.Sum256(wire)

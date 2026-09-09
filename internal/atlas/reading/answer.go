@@ -51,7 +51,7 @@ func (r *reader) readAnswers(ctx context.Context) error {
 	}
 	windowIndex := 0
 	for len(planned) > 0 {
-		calls := make([]llm.Call[table.Answers], len(planned))
+		calls := make([]llm.Call[table.Result], len(planned))
 		for i := range planned {
 			planned[i].table.Index = windowIndex
 			windowIndex++
@@ -60,7 +60,7 @@ func (r *reader) readAnswers(ctx context.Context) error {
 				return err
 			}
 		}
-		outcomes := make([]llm.Outcome[table.Answers], len(planned))
+		outcomes := make([]llm.Outcome[table.Result], len(planned))
 		failures := make([]error, len(planned))
 		failureKinds := make(map[string]llm.FailureKind)
 		if !r.dry {
@@ -153,12 +153,12 @@ func (r *reader) readAnswers(ctx context.Context) error {
 			}
 			for j, partInput := range window.parts {
 				part := atlas.QuestionAnswerPart{State: "unavailable", Source: atlas.SourceGiven, Steps: []atlas.QuestionStep{}}
-				if failure == nil && !r.dry {
+				if failure == nil && !r.dry && outcome.Value.Answers[j] != nil {
 					part.Source = atlas.SourceModel
 					if outcome.Cached {
 						part.Source = atlas.SourceCache
 					}
-					value := outcome.Value[j]
+					value := outcome.Value.Answers[j]
 					part.OriginRequest, part.OriginRow = outcome.RequestSHA256, table.Key(j)
 					part.State = value["state"]
 					part.Text = answerProse(value["answer"])
@@ -190,43 +190,60 @@ func (r *reader) readAnswers(ctx context.Context) error {
 	return nil
 }
 
-func answerCall(def table.Definition, window answerWindow) (llm.Call[table.Answers], error) {
+func answerCall(def table.Definition, window answerWindow) (llm.Call[table.Result], error) {
 	call, err := table.Call(def, window.table)
 	if err != nil {
-		return call, err
+		return llm.Call[table.Result]{}, err
 	}
-	decode := call.DecodeValidate
-	call.DecodeValidate = func(raw []byte) (table.Answers, error) {
-		values, err := decode(raw)
-		if err != nil {
-			return nil, err
-		}
-		for i, value := range values {
-			state, text, refs, gap := value["state"], value["answer"], value["sources"], value["remaining"]
-			if state == "unanswered" {
-				if text != "none" || refs != "" || gap == "none" || value["basis"] != "none" {
-					return nil, fmt.Errorf("unanswered needs no answer, basis or sources and must name the missing evidence")
+	// Questions share source bytes, but each answer has its own allowed refs
+	// and completeness. A refused neighbour cannot invalidate its answer.
+	def.Independent = true
+	return llm.Call[table.Result]{State: call.State, Prompt: call.Prompt, Limits: call.Limits,
+		DecodeValidate: func(raw []byte) (table.Result, error) {
+			result, err := table.DecodeResult(def, window.table, raw)
+			if err != nil {
+				return result, err
+			}
+			for i, value := range result.Answers {
+				if value == nil {
+					continue
 				}
-			} else if text == "none" || refs == "" || value["basis"] == "none" {
-				return nil, fmt.Errorf("a substantive answer needs text, its basis and original source refs")
-			}
-			if (state == "answered" || state == "not_applicable") && gap != "none" {
-				return nil, fmt.Errorf("a settled answer cannot have an unresolved part")
-			}
-			if state == "partial" && gap == "none" {
-				return nil, fmt.Errorf("a partial answer must identify the unanswered part")
-			}
-			if state == "not_applicable" {
-				for _, field := range window.table.Rows[i].Fields {
-					if (field.Name == "retrieval_complete" || field.Name == "evidence_complete") && field.Value == false {
-						return nil, fmt.Errorf("incomplete evidence cannot establish inapplicability")
-					}
+				if err := validateAnswerRow(value, window.table.Rows[i]); err != nil {
+					result.Answers[i] = nil
+					result.Rejections = append(result.Rejections, table.RowRejection{Key: table.Key(i), Reason: err.Error()})
 				}
 			}
+			if len(result.AcceptedRowKeys()) == 0 {
+				return result, fmt.Errorf("answer: no rows accepted: %s", result.Rejections[0].Reason)
+			}
+			return result, nil
+		},
+	}, nil
+}
+
+func validateAnswerRow(value table.Answer, row table.Row) error {
+	state, text, refs, gap := value["state"], value["answer"], value["sources"], value["remaining"]
+	if state == "unanswered" {
+		if text != "none" || refs != "" || gap == "none" || value["basis"] != "none" {
+			return fmt.Errorf("unanswered needs no answer, basis or sources and must name the missing evidence")
 		}
-		return values, nil
+	} else if text == "none" || refs == "" || value["basis"] == "none" {
+		return fmt.Errorf("a substantive answer needs text, its basis and original source refs")
 	}
-	return call, nil
+	if (state == "answered" || state == "not_applicable") && gap != "none" {
+		return fmt.Errorf("a settled answer cannot have an unresolved part")
+	}
+	if state == "partial" && gap == "none" {
+		return fmt.Errorf("a partial answer must identify the unanswered part")
+	}
+	if state == "not_applicable" {
+		for _, field := range row.Fields {
+			if (field.Name == "retrieval_complete" || field.Name == "evidence_complete") && field.Value == false {
+				return fmt.Errorf("incomplete evidence cannot establish inapplicability")
+			}
+		}
+	}
+	return nil
 }
 
 func answerProse(value string) string {
