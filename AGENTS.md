@@ -796,7 +796,16 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   Group arrows keep their original endpoints. Named question and map context
   remain visible; the browser history retains the original question/search and
   exact map selection, while mode changes preserve map and reading state. Original
-  target evidence remains in native disclosures. Display-only changes reuse
+  target evidence remains in native disclosures. The owner’s 2026-09-10 entrance
+  correction exposes every existing request, command, scheduled/continuous
+  activity and interaction by name on component rows and before the component
+  map. Exact route FactIDs retain all their operation links; ungrouped facts keep
+  source links only. Choosing an operation shows all its existing leaf parts and
+  original connections. Opening a part keeps that complete operation diagram,
+  ordering and viewport above its code reading; no automatic main/first-part
+  selection or one-neighbour replacement is used in operation context.
+  The unselected operation picker is a complete searchable grid.
+  Display-only changes reuse
   unchanged analysis and translations and require no new provider calls.
 - Repository changes during a run do not fail publication. Do not reintroduce a
   freshness gate or strict-snapshot mode.

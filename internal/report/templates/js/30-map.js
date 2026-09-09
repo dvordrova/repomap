@@ -163,7 +163,7 @@
     var dragPointer = null, startX = 0, startY = 0, leftAt = 0, topAt = 0;
 
     function focusOpened() {
-      if(map.classList.contains('map-part-focus'))return;
+      if(map.classList.contains('map-part-focus')&&!map.classList.contains('map-operation-context'))return;
       if (!pendingFocus || !stage.clientWidth || !stage.clientHeight) return;
       pendingFocus = false;
       if (!homeBoxes.length) { stage.scrollTo(0, 0); return; }
@@ -200,7 +200,7 @@
       updatePan();
     }
     function updatePan() {
-      var canPan = !map.classList.contains('map-part-focus') && stage.clientWidth > 0 && stage.clientHeight > 0 &&
+      var canPan = (!map.classList.contains('map-part-focus')||map.classList.contains('map-operation-context')) && stage.clientWidth > 0 && stage.clientHeight > 0 &&
         (stage.scrollWidth > stage.clientWidth + 1 || stage.scrollHeight > stage.clientHeight + 1);
       stage.classList.toggle('map-zoomed', canPan);
       if (panHint) panHint.hidden = !canPan;

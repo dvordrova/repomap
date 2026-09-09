@@ -161,11 +161,25 @@ var repomapGraph = (function () {
       if(href){
         var purpose=node.querySelector('.repo-card-purpose');if(purpose)card.appendChild(purpose.cloneNode(true));
         var page=document.getElementById(href.slice(1)),catalog=el('ul','product-catalog');
-        [['Inputs','inputCount','inbound'],['Parts','partCount',''],['Integrations','integrationCount','external']].forEach(function(item){
+        [['Inputs','inputCount','inbound'],['Parts','partCount','parts'],['Integrations','integrationCount','external']].forEach(function(item){
           var number=Number(page?.dataset[item[1]]||0);if(!number)return;
           var value=el('li',''),link=el('a','');link.href=href+(item[2]?'-'+item[2]:'');link.setAttribute('aria-label',rmT(item[0])+': '+number);
           link.appendChild(el('span','product-catalog-label',rmT(item[0])));link.appendChild(el('span','product-catalog-count',String(number)));value.appendChild(link);catalog.appendChild(value);
         });if(catalog.childNodes.length)card.appendChild(catalog);
+        var inputs=page?.querySelector('.input-catalog');
+        if(inputs){
+          var entrance=el('div','repo-inputs');
+          inputs.querySelectorAll('[data-input-group]').forEach(function(group){
+            var block=el('section',''),heading=group.querySelector('h4');
+            block.appendChild(el('h5','',heading.textContent));
+            var list=el('ul','');
+            group.querySelectorAll('[data-input-item]').forEach(function(item){
+              var row=el('li','');row.appendChild(item.querySelector('.input-title').cloneNode(true));
+              var provenance=item.querySelector('.meta');if(provenance)row.appendChild(provenance.cloneNode(true));
+              list.appendChild(row);
+            });block.appendChild(list);entrance.appendChild(block);
+          });card.appendChild(entrance);
+        }
         var connectionCount=incident(id,'in').length+incident(id,'out').length;
         var inspect=el(connectionCount?'button':'span','repo-row-connections'+(connectionCount?'':' repo-row-connections-empty'));inspect.setAttribute('aria-label',rmT('Connections')+': '+connectionCount);
         inspect.appendChild(el('span','product-catalog-label',rmT('Connections')));inspect.appendChild(el('span','product-catalog-count',String(connectionCount)));

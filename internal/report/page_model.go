@@ -147,11 +147,12 @@ type pageBoundary struct {
 }
 
 type pageHTTPRow struct {
-	Method string
-	Path   string
-	Symbol string
-	Target string
-	Anchor *pageAnchor
+	Method         string
+	Path           string
+	Symbol         string
+	Target         string
+	Anchor         *pageAnchor
+	OperationHrefs []string
 	// SymbolAnchor points at where the handler itself is written, which is a
 	// different place from where the route is registered. A reader following
 	// a route wants one or the other and should not have to guess which of
@@ -170,8 +171,9 @@ type pageRouteRow struct {
 }
 
 type pageRoutePath struct {
-	Path   string
-	Anchor *pageAnchor
+	Path           string
+	Anchor         *pageAnchor
+	OperationHrefs []string
 	// Possible marks a path the code builds rather than writes out, so the
 	// exact string is a reading of the code and not a quote from it.
 	Possible bool

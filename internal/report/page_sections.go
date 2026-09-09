@@ -478,7 +478,7 @@ func mergeRoutesByHandler(rows []pageHTTPRow) []pageRouteRow {
 		if row.SymbolAnchor != nil {
 			identity.anchor = row.SymbolAnchor.Text
 		}
-		path := pageRoutePath{Path: row.Path, Anchor: row.Anchor, Possible: row.Possible}
+		path := pageRoutePath{Path: row.Path, Anchor: row.Anchor, Possible: row.Possible, OperationHrefs: row.OperationHrefs}
 		if row.Symbol == "" {
 			// Paths whose handler the code does not name go together at the
 			// end. One a line, each under a row that does name a handler,

@@ -169,7 +169,12 @@ separate stage outputs.
   a part reveals its existing key code inside that part, with the chosen
   explanation below the map. Hover may preview or emphasize neighbours but
   never replaces the selected reading or opens another scope. Member cubes
-  do not inherit the group's arrows.
+  do not inherit the group's arrows. The owner's 2026-09-10 entrance correction
+  exposes all existing requests, commands and background activities by name at
+  the component entrance and on its repository row. Their original kinds and
+  provenance remain visible. An operation opens its complete existing parts and
+  relations; choosing one part retains that diagram and viewport beside its
+  reading. This adds no execution trace, classification or model call.
 * Learn questions come from a curated, repository-independent set of learning
   intents. The model uses the existing concepts, core parts, integrations,
   README and documentation to turn each intent into zero, one or several

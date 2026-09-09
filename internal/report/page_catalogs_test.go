@@ -72,11 +72,37 @@ func TestInputCatalogueJoinsExactFactsAndRetainsUngroupedRoutes(t *testing.T) {
 	if got := section.RouteGroups[1].Rows[0].Paths[0].Anchor; got == nil || got.Line != 22 {
 		t.Fatalf("ungrouped route lost its original anchor: %+v", got)
 	}
+	if got := section.RouteGroups[0].Rows[0].Paths[0].OperationHrefs; !slices.Equal(got, []string{"#" + operationNodeID("section", "bound"), "#" + operationNodeID("section", "bound-also")}) {
+		t.Fatalf("route did not retain every exact operation membership: %v", got)
+	}
+	if got := section.RouteGroups[1].Rows[0].Paths[0].OperationHrefs; len(got) != 0 {
+		t.Fatalf("ungrouped route acquired an invented operation link: %v", got)
+	}
 	// Model-only reading must not suppress requests or borrow all repository facts.
 	section = &pageSection{ID: "section", programTargetID: "program"}
 	builder.fillSectionOperations(section)
 	if len(section.RouteGroups) != 0 || len(section.Requests) != 3 {
 		t.Fatalf("model-only catalogue fabricated facts: %+v", section)
+	}
+}
+
+func TestInputActivityGroupsRetainOriginalKindsAndDisplayBindings(t *testing.T) {
+	section := &pageSection{Activities: []pageGroupOperation{
+		{Name: "worker", Kind: "continuous", SummaryRef: "worker-ref", Source: "model"},
+		{Name: "scheduled", Kind: "scheduled", SummaryRef: "scheduled-ref", Source: "model"},
+		{Name: "command", Kind: "command", SummaryRef: "command-ref", Source: "fact"},
+		{Name: "click", Kind: "interaction", SummaryRef: "click-ref", Source: "model"},
+	}}
+	groups := section.ActivityGroups()
+	if len(groups[0].Rows) != 1 || len(groups[1].Rows) != 2 || len(groups[2].Rows) != 1 {
+		t.Fatalf("activity kinds not grouped for reading: %+v", groups)
+	}
+	for _, group := range groups {
+		for _, row := range group.Rows {
+			if !slices.Contains(section.Activities, row) {
+				t.Fatalf("display grouping changed the operation or its translation binding: %+v", row)
+			}
+		}
 	}
 }
 

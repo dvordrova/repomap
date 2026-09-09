@@ -63,6 +63,31 @@ and foreign component nodes do not count as additional parts. Its Parts link
 opens the complete component map. The separate core-lane reference catalogue
 is labelled Core; an empty core lane cannot imply an empty component map.
 
+The 2026-09-10 entrance correction makes every existing request, command,
+scheduled/continuous activity and interaction visible by name on that row and
+before the component map. Static grouping uses the existing activation kinds;
+it neither classifies new workers nor adds a translation request. A route keeps
+all operation links joined by its exact FactID and its original code link;
+an ungrouped route gains no invented explanation. The operation picker is a
+complete searchable grid. Selecting an operation opens all its original leaf
+parts and connections at once. Opening a part keeps that operation diagram,
+its node order and viewport above the code reading, rather than replacing it
+with immediate neighbours. Entering a component does not select main or the
+first part automatically.
+
+Saved-render verification used the complete current-format Python/TypeScript
+run `20260909-200202-python-tutorial-game-a06614d5d228` and chi run
+`20260909-144532-chi-8da44377446a`, with zero provider calls and unchanged
+translation catalogues. Browser checks retained all 12 and 35 input rows,
+respectively, exact route destinations, the full operation graph and viewport
+when opening a part, selected code across Learn/Work, and Back navigation.
+The complete operation picker filters without horizontal paging. A regression
+uses a longer chain and two source-distinct relations between the same parts
+to prevent both one-hop collapse and duplicate entry relations. `make test`
+with the installed TypeScript compiler, `make vet`, `make build` and the final
+report-package checks passed. Receipts: `work/ui-entrance-20260910/checks.json`.
+This UI check does not claim completion of the separate full Airflow run.
+
 Learn exposes the complete saved question menu, one open answer, its position
 in that menu, a next question and an explicit return to all questions. The
 current question remains visible while scrolling or taking a map side trip.
@@ -4397,9 +4422,9 @@ payload projection, and the per-target chunk transport were removed.
 The target picker keeps failed rows visible, red, disabled, and linkless. The
 repository overview reports analyzed versus selected coverage.
 
-The desktop overview presents each product as a row with its existing purpose
-and links to complete Inputs, Parts and Integrations catalogues (all N), without
-selecting a top-N subset. Tools, examples and fixtures retain complete expandable
+The desktop overview presents each product as a row with its existing purpose,
+the complete named request/command/activity list, and links to Parts and
+Integrations catalogues (all N), without selecting a top-N subset. Tools, examples and fixtures retain complete expandable
 role inventories with counts. Rows retain the repository map's original nodes
 and connections; a product name opens its component directly, while a separate
 action shows its complete source context and grouped neighbours. Selected

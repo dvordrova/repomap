@@ -19,14 +19,11 @@ func (builder *pageBuilder) fillSectionOperations(section *pageSection) {
 			byFact[fact.ID] = rows[i]
 		}
 	}
-	seen := make(map[string]bool)
 	if index := builder.graphIndex(section.programTargetID); index != nil {
 		for _, operation := range index.Operations {
 			if row, ok := byFact[operation.FactID]; ok && operation.Kind == "request" {
-				if !seen[operation.FactID] {
-					routes = append(routes, row)
-					seen[operation.FactID] = true
-				}
+				row.OperationHrefs = append(row.OperationHrefs, "#"+operationNodeID(section.ID, operation.ID))
+				byFact[operation.FactID] = row
 				continue
 			}
 			row := pageGroupOperation{
@@ -42,11 +39,33 @@ func (builder *pageBuilder) fillSectionOperations(section *pageSection) {
 		}
 	}
 	for _, fact := range routeFacts {
-		if !seen[fact.ID] {
-			routes = append(routes, byFact[fact.ID])
-		}
+		routes = append(routes, byFact[fact.ID])
 	}
 	section.RouteGroups = groupRouteRows(routes)
+}
+
+type pageActivityGroup struct {
+	Title string
+	Rows  []pageGroupOperation
+}
+
+// Group existing, already localized operations for reading. This makes no new
+// classification and adds no entries to the saved translation catalogue.
+func (section *pageSection) ActivityGroups() []pageActivityGroup {
+	groups := []pageActivityGroup{{Title: "Commands"}, {Title: "Background work"}, {Title: "User interactions"}, {Title: "Other operations"}}
+	for _, row := range section.Activities {
+		i := 3
+		switch row.Kind {
+		case "command":
+			i = 0
+		case "scheduled", "continuous":
+			i = 1
+		case "interaction":
+			i = 2
+		}
+		groups[i].Rows = append(groups[i].Rows, row)
+	}
+	return groups
 }
 
 // Parts are the component's own leaf groups on the map, in every lane.

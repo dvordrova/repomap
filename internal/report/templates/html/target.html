@@ -3,15 +3,10 @@
 <p class="target-facts meta">{{t "Component"}} · {{.Language}}{{if .Kind}} · {{t .Kind}}{{end}}{{if ne .Name .ShortLabel}} · <code>{{.Name}}</code>{{end}}{{if .Root}} · {{t "Path"}}: <code>{{.Root}}</code>{{end}}</p>
 </header>
 {{if not .FactsAvailable}}<p class="empty">{{t "This run did not read the repository, so this page shows only what the model grouped."}}</p>{{end}}
-{{if .Map}}{{template "map.html" .Map}}{{end}}
+{{template "input-catalog" .}}
+{{if .Map}}<div id="{{.ID}}-parts" class="component-parts">{{template "map.html" .Map}}</div>{{end}}
 <details class="component-reference"><summary>{{t "Code, entrypoints and sources"}}</summary>
-<nav class="jump" aria-label="{{t "Sections of this target"}}">{{if .InputsCount}}<a href="#{{.ID}}-inbound">{{t "Inputs"}} <b>{{.InputsCount}}</b></a>{{end}}{{if .Entrypoints}}<a href="#{{.ID}}-entrypoints">{{t "Entrypoints"}} <b>{{len .Entrypoints}}</b></a>{{end}}{{if .PartsCount}}<a href="#{{.ID}}">{{t "Parts"}} <b>{{.PartsCount}}</b></a>{{end}}{{if or .DependencyGroups .Dependencies .Calls}}<a href="#{{.ID}}-external">{{t "Integrations"}}</a>{{end}}<a href="#{{.ID}}-flow">{{t "Main flow"}}</a></nav>
-{{if .InputsCount}}<section id="{{.ID}}-inbound" class="input-catalog"><h3>{{t "Inputs"}} · {{.InputsCount}}</h3>
-{{if .InboundCount}}<h4>{{t "Incoming requests"}} · {{.InboundCount}}</h4>{{end}}
-{{range .RouteGroups}}<h4><span class="method">{{.Method}}</span></h4><ul class="routes fact">{{range .Rows}}<li><span class="route-paths">{{range .Paths}}{{template "routepath" .}}{{end}}</span>{{if .Symbol}}<span class="route-to">{{t "handled by"}}</span>{{template "routehandler" .}}{{end}}</li>{{end}}</ul>{{end}}
-{{if .Requests}}{{template "operation-catalog" .Requests}}{{end}}
-{{if .Activities}}<h4>{{t "Other operations"}} · {{len .Activities}}</h4>{{template "operation-catalog" .Activities}}{{end}}
-</section>{{end}}
+<nav class="jump" aria-label="{{t "Sections of this target"}}">{{if .InputsCount}}<a href="#{{.ID}}-inbound">{{t "Inputs"}} <b>{{.InputsCount}}</b></a>{{end}}{{if .Entrypoints}}<a href="#{{.ID}}-entrypoints">{{t "Entrypoints"}} <b>{{len .Entrypoints}}</b></a>{{end}}{{if .PartsCount}}<a href="#{{.ID}}-parts">{{t "Parts"}} <b>{{.PartsCount}}</b></a>{{end}}{{if or .DependencyGroups .Dependencies .Calls}}<a href="#{{.ID}}-external">{{t "Integrations"}}</a>{{end}}<a href="#{{.ID}}-flow">{{t "Main flow"}}</a></nav>
 {{if .Entrypoints}}<h3 id="{{.ID}}-entrypoints">{{t "Entrypoints"}}</h3><ul class="plain fact">{{range .Entrypoints}}<li>{{if .Symbol}}<code>{{.Symbol}}</code>{{end}}{{if .Kind}} <span class="meta">{{.Kind}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
 {{if .Triggers}}<details class="evidence-list"><summary>{{t "Input responsibilities"}} · {{len .Triggers}}</summary>{{range .Triggers}}{{template "group" .}}{{end}}</details>{{end}}
 {{if .Core}}<h3 id="{{.ID}}-core">{{t "Core"}}</h3>{{range .Core}}{{template "group" .}}{{end}}{{end}}
@@ -33,5 +28,14 @@
 </details>
 </section>
 
-{{define "operation-catalog"}}<ul class="plain operation-catalog">{{range .}}<li><strong><a href="{{.Href}}">{{.Name}}</a></strong> <span class="meta">{{t .Kind}} · {{if eq .Source "fact"}}{{t "Observed in source"}}{{else}}{{t "Model interpretation"}}{{end}}</span>
+{{define "operation-catalog"}}<ul class="plain operation-catalog">{{range .}}<li data-input-item><strong class="input-title"><a href="{{.Href}}">{{.Name}}</a></strong> <span class="meta">{{t .Kind}} · {{if eq .Source "fact"}}{{t "Observed in source"}}{{else}}{{t "Model interpretation"}}{{end}}</span>
 {{if .Summary}}<p class="model"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span><span class="model-sources">{{template "anchor" .Anchor}}</span></p>{{end}}<nav class="local-reading-actions"><a href="{{.Href}}">{{t "To explanation"}}</a> <span>{{t "To code"}}: {{template "anchor" .Anchor}}</span></nav></li>{{end}}</ul>{{end}}
+
+{{define "input-catalog"}}{{if .InputsCount}}<section id="{{.ID}}-inbound" class="input-catalog"><h3>{{t "Requests, commands and background work"}} <span class="meta">· {{.InputsCount}}</span></h3>
+<div class="input-groups">
+{{if .InboundCount}}<section data-input-group><h4>{{t "Incoming requests"}} · {{.InboundCount}}</h4>
+<ul class="plain route-catalog">{{range .RouteGroups}}{{$method := .Method}}{{range .Rows}}{{$row := .}}{{range .Paths}}<li data-input-item><strong class="input-title"><span class="method">{{$method}}</span> {{template "routepath" .}}{{range $i, $href := .OperationHrefs}} <a class="input-explanation" href="{{$href}}">{{t "To explanation"}}</a>{{end}}</strong>
+<span class="meta">{{t "Observed in source"}}</span>{{if $row.Symbol}}<div class="input-handler">{{t "handled by"}} {{template "routehandler" $row}}</div>{{end}}</li>{{end}}{{end}}{{end}}</ul>
+{{if .Requests}}{{template "operation-catalog" .Requests}}{{end}}</section>{{end}}
+{{range .ActivityGroups}}{{if .Rows}}<section data-input-group><h4>{{t .Title}} · {{len .Rows}}</h4>{{template "operation-catalog" .Rows}}</section>{{end}}{{end}}
+</div></section>{{end}}{{end}}

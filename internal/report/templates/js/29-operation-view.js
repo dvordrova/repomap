@@ -35,18 +35,14 @@
     operationPicker.innerHTML=("<label>"+rmT.html("Find an operation")+" <input type=\"search\" placeholder=\""+rmT.html("Command, endpoint, activity")+"\" aria-label=\""+rmT.html("Find an operation")+"\"></label><div class=\"operation-choices\"></div>");
     bar.after(operationPicker);
     var choices=operationPicker.querySelector('.operation-choices'), opSearch=operationPicker.querySelector('input');
-    var choiceNav=document.createElement('div');choiceNav.className='operation-choice-nav';
-    var previousChoices=button(rmT('← Previous operations'),function(){choices.scrollBy({left:-choices.clientWidth});});
-    var nextChoices=button(rmT('More operations →'),function(){choices.scrollBy({left:choices.clientWidth});});
     var choiceCount=document.createElement('span');choiceCount.className='operation-choice-count';
     operationPicker.querySelector('label').appendChild(choiceCount);
-    choiceNav.append(previousChoices,nextChoices);operationPicker.appendChild(choiceNav);
     var visit=null, returnPath=document.createElement('div');returnPath.className='explorer-return';returnPath.hidden=true;bar.appendChild(returnPath);
     var trail=[], operation=null, pinned=false, mode='structure', scope='', visibleIDs=[], currentEdges=[], revision=0;
     var focusHistory=[], focusOrigin=null;
     var historyRestoreHash='', historyRestoreKey='', historyRestorePromise=null, historyRevision=0;
     function abandonHistoryRestore(){historyRestoreHash='';historyRestoreKey='';historyRevision++;map.readingRestoring=false;}
-    var focusView=document.createElement('section');focusView.className='map-focus';focusView.hidden=true;stage.prepend(focusView);
+    var focusView=document.createElement('section');focusView.className='map-focus';focusView.hidden=true;stage.after(focusView);
     var hoveredPeer='', focusedPeer='';
     function peerAt(target){return target?.closest?.('.map-focus-neighbor')?.querySelector('[data-focus-neighbor]')?.dataset.focusNeighbor||'';}
     function emphasizePeer(){
@@ -57,10 +53,6 @@
     focusView.addEventListener('pointerout',function(e){hoveredPeer=focusView.contains(e.relatedTarget)?peerAt(e.relatedTarget):'';emphasizePeer();});
     focusView.addEventListener('focusin',function(e){focusedPeer=peerAt(e.target);emphasizePeer();});
     focusView.addEventListener('focusout',function(e){focusedPeer=focusView.contains(e.relatedTarget)?peerAt(e.relatedTarget):'';emphasizePeer();});
-    var localRoots=roots.filter(function(id){return byID[id].dataset.remote!=='true';});
-    // A component containing one leaf has no intermediate choice to make.
-    // Start with that leaf's key code, rather than asking for an empty drill-in.
-    if(localRoots.length===1&&!byID[localRoots[0]].dataset.branch)scope=localRoots[0];
     function button(text,fn){var b=document.createElement('button');b.type='button';b.textContent=text;b.addEventListener('click',fn);return b;}
     function show(n){if(map.showNode)map.showNode(n);}
     function partOwner(node){
@@ -91,27 +83,12 @@
     function updateChoices(){
       var matching=Array.from(choices.children).filter(function(b){return !b.hidden;}).length;
       choiceCount.textContent=matching===ops.length?rmT('{0} operations',matching):rmT('{0} of {1} operations',matching,ops.length);
-      previousChoices.disabled=choices.scrollLeft<=0;
-      nextChoices.disabled=Math.ceil(choices.scrollLeft+choices.clientWidth)>=choices.scrollWidth;
-      choiceNav.hidden=choices.scrollWidth<=choices.clientWidth;
     }
     function filterChoices(){var term=opSearch.value.toLowerCase();choices.querySelectorAll('button').forEach(function(b){var n=byID[b.dataset.operationChoice];b.hidden=(n.dataset.title+' '+n.dataset.summary+' '+n.dataset.activation+' '+n.dataset.sourceText).toLowerCase().indexOf(term)<0;});updateChoices();}
     function revealChoice(keepFilter){
-      var selected=operation&&Array.from(choices.children).find(function(b){return b.dataset.operationChoice===operation.id;});
-      if(!selected||operationPicker.hidden)return;
-      if(selected.hidden){if(keepFilter)return;opSearch.value='';filterChoices();}
-      var item=selected.getBoundingClientRect(),frame=choices.getBoundingClientRect();
-      if(item.left<frame.left)choices.scrollLeft+=item.left-frame.left;
-      else if(item.right>frame.right)choices.scrollLeft+=item.right-frame.right;
-      updateChoices();
+      if(operation&&!keepFilter){opSearch.value='';filterChoices();}
     }
-    opSearch.addEventListener('input',function(){filterChoices();revealChoice(true);});
-    choices.addEventListener('scroll',updateChoices);
-    var choiceWidth=0;new ResizeObserver(function(){
-      var width=choices.clientWidth;
-      if(width&&width!==choiceWidth&&pinned)revealChoice(true);
-      choiceWidth=width;updateChoices();
-    }).observe(choices);
+    opSearch.addEventListener('input',filterChoices);
     function allowed(){return operation?new Set(nearOf[operation.id].concat(operation.id)):null;}
     function applicable(id,limit){return !limit||leaves(id).some(function(leaf){return limit.has(leaf);});}
     function scopePath(id,seen){
@@ -275,6 +252,7 @@
     }
     async function render(){
       var ticket=++revision;map.setAttribute('aria-busy','true');
+      var previousViewport=operation&&map.explorerOperation===operation?map.captureViewport?.():null;
       var limit=allowed(), scopeLeaves=scope?new Set(leaves(scope)):null;
       var edges=rawEdges.filter(function(e){return operation?e.scope==='operation'&&e.operations.indexOf(operation.id)>=0:e.scope==='structure';});
       var base=scope?(children(byID[scope]).length?children(byID[scope]):[scope]):roots.filter(function(id){return byID[id].dataset.remote!=='true';});
@@ -283,6 +261,10 @@
       if(term)base=groups.filter(function(n){return applicable(n.id,limit)&&(!scopeLeaves||leaves(n.id).some(function(id){return scopeLeaves.has(id);}))&&(n.dataset.title+' '+n.dataset.summary+' '+repomapMembers.items(n).map(repomapMembers.displayName).join(' ')).toLowerCase().indexOf(term)>=0;}).map(function(n){return n.id;});
       base=displayedSet(base);
       var inside=scopeLeaves||(term?new Set(base.flatMap(function(id){return leaves(id);})):null);
+      if(operation&&!term){
+        base=groups.filter(function(n){return !children(n).length&&applicable(n.id,limit);}).map(function(n){return n.id;});
+        inside=null;
+      }
       var relevant=edges.filter(function(e){return !inside||inside.has(e.from)||inside.has(e.to);});
       var endpoints=new Set(relevant.flatMap(function(e){return [e.from,e.to];}));
       // A boundary is folded at the nearest unopened area/component. Edges
@@ -302,7 +284,7 @@
       var leafFocus=scope&&!term&&!byID[scope].dataset.branch&&!byID[scope].dataset.activation;
       var boundary=leafFocus?Array.from(endpoints).filter(function(id){return byID[id]&&!represented.has(id);}):roots.flatMap(boundaryAt);
       var visible=Array.from(new Set(base.concat(boundary))).filter(function(id){return applicable(id,limit);});
-      if(operation&&!scope&&!term)visible.unshift(operation.id);
+      if(operation&&!term)visible=[operation.id].concat(visible.filter(function(id){return id!==operation.id;}));
       var representatives={};
       visible.forEach(function(id){leaves(id).forEach(function(leaf){
         if(represented.has(leaf)&&base.indexOf(id)<0)return;
@@ -311,18 +293,19 @@
       currentEdges=repomapGraph.fold(relevant,representatives,inside);
       // Standalone scope: order incoming peers, the subject, outgoing peers.
       // Areas use a compact grid, retaining their own original child names.
-      visible.sort(function(a,b){if(a===scope)return -1;if(b===scope)return 1;if(a===operation?.id)return -1;if(b===operation?.id)return 1;var ai=base.indexOf(a)>=0,bi=base.indexOf(b)>=0;if(ai!==bi)return ai?-1:1;return byID[a].dataset.title.localeCompare(byID[b].dataset.title);});
+      visible.sort(function(a,b){if(!operation){if(a===scope)return -1;if(b===scope)return 1;}if(a===operation?.id)return -1;if(b===operation?.id)return 1;var ai=base.indexOf(a)>=0,bi=base.indexOf(b)>=0;if(ai!==bi)return ai?-1:1;return byID[a].dataset.title.localeCompare(byID[b].dataset.title);});
       var boxes={};visible.forEach(function(id){boxes[id]={w:220,h:80};});
       var layout;
       // The shared inspector mounts after this script. Its temporary stage
       // width must not turn a wide map into a vertical layout on first open.
       var mapStyle=getComputedStyle(map),availableWidth=map.clientWidth-parseFloat(mapStyle.paddingLeft)-parseFloat(mapStyle.paddingRight);
       var opened=scope&&byID[scope], expanded=!term&&opened&&!opened.dataset.branch&&!opened.dataset.activation?opened:null;
-      map.classList.toggle('map-part-focus',!!expanded);focusView.hidden=!expanded;
+      map.classList.toggle('map-part-focus',!!expanded);map.classList.toggle('map-operation-context',!!operation);focusView.hidden=!expanded;
       if(!expanded)placeInspection(false);
       if(expanded){
         repomapPreview.freeze(map);drawFocus(expanded,edges);
-      }else{
+      }
+      if(!expanded||operation){
       visible.forEach(function(id){
         var node=byID[id],display=node.style.display,visibility=node.style.visibility;
         node.style.display='';node.style.visibility='hidden';
@@ -344,20 +327,23 @@
         if(!subtitle){subtitle=document.createElementNS('http://www.w3.org/2000/svg','text');subtitle.setAttribute('x',origins[n.id].x);subtitle.setAttribute('y',origins[n.id].y);subtitle.setAttribute('dx','11');subtitle.setAttribute('dy','56');subtitle.setAttribute('class','map-node-context');n.appendChild(subtitle);}
         subtitle.textContent=n.dataset.branch?rmT('Open parts · {0}',children(n).length):n.id===scope?rmT('Part'):repomapMembers.items(n).length?rmT('Open key code · {0}',repomapMembers.items(n).length):rmT('Explore connections');
       });
-      repomapMembers.draw(map,expanded,expanded&&boxes[scope]);
+      repomapMembers.draw(map,null,null);
       var width=Math.max(300,layout.width),height=Math.max(160,layout.height);
       svg.setAttribute('viewBox','0 0 '+width+' '+height);svg.setAttribute('width',width);svg.setAttribute('height',height);svg.style.width=width+'px';svg.style.minWidth='0';svg.style.maxWidth='none';
       }
       visibleIDs=visible;map.inspectedOperation=operation;map.dataset.operationPinned=pinned?'true':'false';map.classList.remove('map-previewing');
       map.explorerScope=scope;map.explorerOperation=operation;
-      structure.setAttribute('aria-pressed',mode==='structure');operationMode.setAttribute('aria-pressed',mode==='operations');operationPicker.hidden=mode!=='operations';
+      structure.setAttribute('aria-pressed',mode==='structure');operationMode.setAttribute('aria-pressed',mode==='operations');operationPicker.hidden=mode!=='operations'||!!operation;
       allUses.hidden=!operation;allUses.textContent=rmT('Clear selection');
       allUses.title=operation?rmT('Clear selection: {0}',operation.dataset.title):'';
       choices.querySelectorAll('button').forEach(function(b){var selected=operation&&b.dataset.operationChoice===operation.id;b.setAttribute('aria-pressed',!!selected);});
+      updateChoices();
       crumbs.replaceChildren();
       var repository=document.createElement('a');repository.href='#repository-map';repository.className='explorer-repository';repository.textContent=rmT('← Repository');crumbs.appendChild(repository);
       crumbs.appendChild(button(map.closest('[data-report-page]').dataset.componentName,function(){visit=null;open('');}));
-      if(operation){var label=document.createElement('strong');label.textContent='→ '+operation.dataset.title+' · '+rmT(pinned?'selected':'preview');crumbs.appendChild(label);}
+      if(operation){
+        var choose=document.createElement('a');choose.href='#'+map.closest('[data-report-page]').id+'-inbound';choose.textContent=rmT('Choose another operation');crumbs.appendChild(choose);
+        var label=document.createElement('strong');label.textContent='→ '+operation.dataset.title+' · '+rmT(pinned?'selected':'preview');crumbs.appendChild(label);}
       trail.concat(scope?[scope]:[]).forEach(function(id){
         var item=button(byID[id].dataset.title,function(){open(id);});
         item.className='explorer-crumb';
@@ -367,13 +353,14 @@
       });
       if(!expanded&&focusHistory.length)crumbs.prepend(button(rmT('← Back to {0}',focusHistory[focusHistory.length-1].label),previousFocus));
       else if(scope&&!expanded)crumbs.prepend(button(rmT('← Back'),function(){open(trail[trail.length-1]||'');}));
-      var selfCount=expanded?edges.filter(function(edge){return edge.from===scope&&edge.to===scope;}).length:0;
-      var status=document.createElement('span');status.className='explorer-status';status.textContent=rmT('{0} parts · {1} connections',visible.length,currentEdges.reduce(function(count,edge){return count+edge.relations.length;},selfCount));crumbs.appendChild(status);
+      var selfCount=edges.filter(function(edge){return edge.from===edge.to&&(operation||expanded&&edge.from===scope);}).length;
+      var status=document.createElement('span');status.className='explorer-status';status.textContent=rmT('{0} parts · {1} connections',visible.filter(function(id){return !byID[id].dataset.activation;}).length,currentEdges.reduce(function(count,edge){return count+edge.relations.length;},selfCount));crumbs.appendChild(status);
       showReturnPath();
-      if(!expanded){
-        stage.scrollTo(0,0);
+      if(!expanded||operation){
+        if(!previousViewport)stage.scrollTo(0,0);
         var focused=base.map(function(id){return boxes[id];}).filter(Boolean);
         map.dispatchEvent(new CustomEvent('repomap:layout',{detail:{focus:focused}}));
+        if(previousViewport)map.restoreViewport?.(previousViewport);
       }
       function read(){if(ticket!==revision||!map.showNode)return;placeInspection(!!expanded);if(scope)show(byID[scope]);else if(operation)show(operation);else map.clearInspection();map.dispatchEvent(new Event('repomap:reading'));}
       if(map.showNode)read();else requestAnimationFrame(read);
@@ -448,7 +435,7 @@
     map.revealNode=reveal;
     map.findNode=function(n,source){return reveal(n,true,source);};
     map.operationChoices=function(id){var members=new Set(leaves(id));return ops.filter(function(op){return nearOf[op.id].some(function(near){return members.has(near);});});};
-    map.chooseOperation=async function(id,origin){var op=byID[id];if(!op)return;visit=origin?{origin:origin,operation:op}:null;operation=op;pinned=true;mode='operations';address(op);await render();revealChoice();orient();};
+    map.chooseOperation=async function(id,origin){var op=byID[id];if(!op)return;visit=origin?{origin:origin,operation:op}:null;operation=op;pinned=true;mode='operations';setScope('');search.value='';address(op);await render();revealChoice();orient();};
     function resetScope(){abandonHistoryRestore();setScope('');operation=null;pinned=false;mode='structure';visit=null;focusHistory=[];focusOrigin=null;search.value='';}
     function hashChanged(){
       if(historyRestoreHash===location.hash){historyRestoreHash='';return;}
@@ -463,7 +450,7 @@
       var destination=document.getElementById(a.getAttribute('href').slice(1));
       // A component card/picker promises that component's entrance. A named
       // return to an existing reading uses its exact scope through 45-modes.
-      if(destination===map.closest('[data-report-page]')){resetScope();address(destination);render().then(function(){map.scrollIntoView({block:'start'});});return;}
+      if(destination===map.closest('[data-report-page]')||destination===map.closest('.component-parts')){resetScope();address(destination);render().then(function(){destination.scrollIntoView({block:'start'});});return;}
       var source=a.closest('.learn-concept,.answer-term')?.querySelector('.model-sources a');
       reveal(destination,!!a.closest('#learn-parts,.concept-library,.answer-term'),source&&{href:source.getAttribute('href'),open:source.dataset.open});
     },true);
