@@ -84,11 +84,11 @@ backend.map={state:null,readingState(){return clone(this.state);},restoreReading
   closest(){return backend;},classList:{contains(){return false;}},scrollIntoView(){}};
 function installBackend(){
   const map=backend.map,nodes=[destination],byID={[destination.id]:destination};
-  let visit,focusHistory,focusOrigin,mode='structure',operation=null,pinned=false,scope='',trail=[],search={value:''},historyRestoreHash='';
+  let visit,focusHistory,focusOrigin,mode='structure',operation=null,pinned=false,scope='',trail=[],search={value:''},historyRestoreHash='',revision=0;
   function followForeign(){return false;}function abandonHistoryRestore(){}function snapshot(){return {};}
   function displayed(id){return id;}function setScope(id){scope=id;}function revealChoice(){}
   function show(node){map.shown=node;}
-  async function render(){map.state={scope,operation:operation?.id||'',pinned,mode};document.dispatchEvent({type:'repomap:reading'});}
+  async function render(){var ticket=++revision;map.state={scope,operation:operation?.id||'',pinned,mode};document.dispatchEvent({type:'repomap:reading'});return ticket;}
 ` + part(operations, "async function reveal(n,allUses,source){", "    map.exploreNode=") +
 		part(operations, "function resetScope(){", "    document.addEventListener('click'") + `
   map.revealNode=reveal;

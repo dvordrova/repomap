@@ -199,7 +199,8 @@
       var context=document.createElement('span');context.className='map-focus-context';context.textContent=map.closest('[data-report-page]').dataset.componentName+' · '+rmT('Part connections');heading.appendChild(context);
       var navigation=document.createElement('nav');navigation.setAttribute('aria-label',rmT('Map path'));
       if(focusHistory.length)navigation.appendChild(button(rmT('← Back to {0}',focusHistory[focusHistory.length-1].label),previousFocus));
-      var origin=focusOrigin?.scope?byID[focusOrigin.scope].dataset.title:map.closest('[data-report-page]').dataset.componentName;
+      var originScope=focusOrigin?focusOrigin.scope:trail[trail.length-1];
+      var origin=originScope?byID[originScope].dataset.title:map.closest('[data-report-page]').dataset.componentName;
       navigation.appendChild(button(rmT('All parts in {0}',origin),collapseFocus));heading.appendChild(navigation);focusView.appendChild(heading);
       var scene=document.createElement('div');scene.className='map-focus-scene';focusView.appendChild(scene);
       function side(incoming){
@@ -377,6 +378,7 @@
       function read(){if(ticket!==revision||!map.showNode)return;placeInspection(!!expanded);if(scope)show(byID[scope]);else if(operation)show(operation);else map.clearInspection();map.dispatchEvent(new Event('repomap:reading'));}
       if(map.showNode)read();else requestAnimationFrame(read);
       map.setAttribute('aria-busy','false');
+      return ticket;
     }
     structure.addEventListener('click',function(){mode='structure';operation=null;pinned=false;visit=null;address(byID[scope]);render();});
     operationMode.addEventListener('click',async function(){mode='operations';await render();revealChoice();});
@@ -397,7 +399,8 @@
       // Record the destination state before layout can yield, and reveal its
       // page before the map measures the space available to it.
       document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:destination}}));
-      await render();
+      var rendered=await render();
+      if(rendered!==revision)return;
       if(n.dataset.activation)revealChoice();
       map.scrollIntoView({block:'start'});show(n);
       if(source)map.explainSource(source);
@@ -443,7 +446,7 @@
     map.displayedNode=function(node){return byID[displayed(node.id)];};
     map.areaDescriptions=function(node){return areaDescriptions[node.id]||[];};
     map.revealNode=reveal;
-    map.findNode=function(n){return reveal(n,true);};
+    map.findNode=function(n,source){return reveal(n,true,source);};
     map.operationChoices=function(id){var members=new Set(leaves(id));return ops.filter(function(op){return nearOf[op.id].some(function(near){return members.has(near);});});};
     map.chooseOperation=async function(id,origin){var op=byID[id];if(!op)return;visit=origin?{origin:origin,operation:op}:null;operation=op;pinned=true;mode='operations';address(op);await render();revealChoice();orient();};
     function resetScope(){abandonHistoryRestore();setScope('');operation=null;pinned=false;mode='structure';visit=null;focusHistory=[];focusOrigin=null;search.value='';}

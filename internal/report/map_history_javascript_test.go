@@ -61,7 +61,7 @@ function setMode(value){mode=value==='work'?'work':'learn';}
 function setPage(n){current=enclosing(n);}
 function savedElement(){return null;}function showReturn(){}function showLocation(){}
 function close(){}
-let layouts=[],renderRevision=0;
+let layouts=[];
 const map={explorerScope:'part',explorerMember:null,readingRestoring:false,visible:'part',
   classList:{contains(){return map.visible==='part';}},
   captureViewport(){return {scale:1,left:0,top:0};},restoreViewport(){},scrollIntoView(){},
@@ -76,6 +76,7 @@ const requestAnimationFrame=fn=>setImmediate(fn);
 function install(){
   const byID={area,part:leaf,'direct-area':directArea,request:operationNode},nodes=[area,leaf,directArea,operationNode];
   let scope='part',operation=operationNode,pinned=true,mode='operations',search={value:'run_level'},trail=[],visit=null,focusHistory=[],focusOrigin=null;
+  let revision=0;
   let historyRestoreHash='',historyRestoreKey='',historyRestorePromise=null,historyRevision=0;
   function abandonHistoryRestore(){historyRestoreHash='';historyRestoreKey='';historyRevision++;map.readingRestoring=false;}
   function displayed(id){return id==='direct-area'?'part':id;}function setScope(id){scope=displayed(id);}
@@ -87,16 +88,18 @@ function install(){
   map.querySelector=()=>picker;
   map.explainSource=source=>{map.explorerMember={owner:scope,...source};picker.value='0';map.dispatchEvent(new Event('repomap:reading'));};
   async function render(){
-    const ticket=++renderRevision,wanted=scope;
+    const ticket=++revision,wanted=scope;
     if(wanted==='area')await new Promise(resolve=>layouts.push(resolve));
-    if(ticket!==renderRevision)return;
+    if(ticket!==revision)return;
     map.visible=wanted;map.explorerScope=scope;
+    if(scope)show(byID[scope]);
     map.dispatchEvent(new Event('repomap:reading'));
+    return ticket;
   }
 ` + part(operations, "async function open(id,neighbor){", "    function updateFocusSelection(") +
 		part(operations, "async function reveal(n,allUses,source){", "    map.exploreNode=") +
 		part(operations, "map.readingState=function(){", "    map.displayedNode=") +
-		part(operations, "map.findNode=function(n){", "    map.operationChoices=") +
+		part(operations, "map.findNode=function(n,source){", "    map.operationChoices=") +
 		part(operations, "function hashChanged(){", "    document.addEventListener('click'") + `
   map.revealNode=reveal;map.openNode=open;map.hashChanged=hashChanged;
 }
@@ -131,6 +134,21 @@ async function traverse(step){
     assert.equal(location.hash,'#area');assert.equal(map.visible,'area');assert.equal(map.readingState().scope,'area');
     assert.equal(map.readingState().source,null);assert.equal(map.readingRestoring,false);
     assert.equal(history.state.repomapReading.map.value.scope,'area');
+  }
+  // A layout abandoned by Back must not replace the restored inspector or
+  // declaration when its delayed completion eventually arrives.
+  for(const caller of ['reveal','search']){
+    url=new URL('https://report.invalid/?mode=work#part');entries=[{url:url.href,state:null}];position=0;layouts=[];install();
+    const original={href:'https://example.invalid/blob/rev/backend/app.py#L75',open:'',key:'backend/app.py:75'};
+    const obsolete={href:'https://example.invalid/blob/rev/backend/other.py#L9',open:'',key:'backend/other.py:9'};
+    map.explainSource(original);remember();
+    const opening=caller==='search'?go({node:area,map,codeSource:obsolete}):map.revealNode(area,true,obsolete);
+    await traverse(-1);assert.equal(map.shown,'part');assert.deepEqual(map.readingState().source,original);
+    layouts.splice(0).forEach(done=>done());await opening;await settle();
+    assert.equal(location.hash,'#part');assert.equal(map.visible,'part');
+    assert.equal(map.shown,'part',caller+': abandoned reveal cannot replace the inspector');
+    assert.deepEqual(map.readingState().source,original,caller+': abandoned reveal cannot replace its declaration');
+    assert.deepEqual(history.state.repomapReading.map.value.source,original);
   }
   // Ordinary direct-node opening follows the same destination-first contract.
   url=new URL('https://report.invalid/?mode=work#part');entries=[{url:url.href,state:null}];position=0;layouts=[];install();remember();

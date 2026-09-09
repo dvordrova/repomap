@@ -79,7 +79,7 @@
   async function go(entry){
     // Keep the result list in the previous history entry when opening a hit.
     close(false);
-    if(entry.node&&entry.map?.findNode){await entry.map.findNode(entry.node);if(entry.codeSource)entry.map.explainSource(entry.codeSource);return;}
+    if(entry.node&&entry.map?.findNode){await entry.map.findNode(entry.node,entry.codeSource);return;}
     document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:entry.node||entry.destination}}));
     var destination=entry.destination;
     if(destination){for(var parent=destination.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;destination.scrollIntoView({block:'start'});}
