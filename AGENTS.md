@@ -362,8 +362,12 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   owns exhaustive batching, completeness, and identity. If filtering leaves a
   mandatory scalar choice or complete assignment unresolved, reject that
   incomplete result without inventing a replacement. An atlas table row asks
-  one short line or one closed choice; every key the code sent comes back
-  exactly once, and a window that does not is refused whole. Every later model call is an
+  one short line or one closed choice. Independent atlas rows validate separately:
+  an invalid, missing or duplicate known row loses only its own model answer;
+  accepted neighbours keep their exact-response cache and row memos. Unknown
+  keys are recorded and ignored; unused extra fields do not invalidate answers.
+  Unparseable envelopes and incomplete coupled assignments still refuse their
+  window. Every later model call is an
   LLM cube — a simple prepared format in, one decision, a simple validated
   format out: consolidation returns `{ref, cluster}` labels and Go unions the
   members; parts are named first and then chosen from that closed list;
@@ -573,9 +577,10 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   The actual prepared provider request still obeys the shared transport envelope.
   The model writes one line or one closed choice per
   cell; the code owns membership, arrows and their direction, joints by
-  matched values, counts and identities. A refused window falls back on its
-  rows' deterministic lines and is written to `rejected.jsonl`, never
-  cached. Every row and answer is printed to `tables.md`, with prompts, requests, raw
+  matched values, counts and identities. Rejected independent rows fall back on
+  their own deterministic lines and are written to `rejected.jsonl`; valid
+  neighbours survive in the original exact-response cache. An entirely refused
+  window is never cached. Every row and answer is printed to `tables.md`, with prompts, requests, raw
   responses and normalized source-bound results under `tables/`. The ordinary
   path saves `reading-input.json` before its first atlas call; `read` consumes
   exactly that format and runs the same reader. Above two thousand files the directory and
@@ -665,9 +670,15 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   memo records this as `response_validation`, not a provider resource limit,
   and applies it only while the owning stage opts in. Valid child windows keep
   their ordinary cache entries; an invalid singleton remains a concrete error.
-- Display translation fills the existing worker pool with complete windows
-  balanced by original text bytes, after checking for an accepted whole-window
-  answer. Each child retains its own complete term dictionary. Per the owner's
+- Display translation starts with at least eight complete windows (or one per
+  text for a smaller catalogue), balanced by original text bytes, after checking
+  for an accepted whole-window answer. The existing four-worker pool executes
+  them. Unused translated-entry fields such as `terms` are ignored; the required
+  text and original placeholders still validate. Each child retains its own
+  complete term dictionary. A failed window does not cancel its neighbours:
+  all divisible failures from the round split together, while successful
+  windows remain in memory even with the cache disabled. Only unfinished
+  windows run again, through the same shared pool and rate-limit gate. Per the owner's
   2026-09-09 endpoint timeout report, translation attempts have a local four-minute
   deadline. Its expiry returns directly to the lossless splitter and is memoized
   with that deadline; it never retries identical bytes. The owner also approved

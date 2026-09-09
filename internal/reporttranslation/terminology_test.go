@@ -21,15 +21,12 @@ func termEntry() report.DisplayTextEntry {
 	}
 }
 
-func TestTranslationKeepsTermNamesAndTranslatesDefinitionsInTheExistingWindow(t *testing.T) {
+func TestTranslationKeepsTermNamesAndFullDefinitionsInEveryWindow(t *testing.T) {
 	entry := termEntry()
 	catalog := testCatalog(t, []report.DisplayTextEntry{entry, {
 		Role: "term-explanation", Text: entry.Terms[0].Explanation, Context: "LOCAL-TERM-ID", Terms: entry.Terms,
 	}})
 	provider := &testProvider{respond: func(request modelRequest) modelResponse {
-		if len(request.Entries) != 2 {
-			t.Fatal("dictionary context created a separate request")
-		}
 		return modelResponse{Translations: []responseEntry{
 			{Ref: "t1", Text: "Через __REPOMAP_P1__ загружается custom dictionary."},
 			{Ref: "t2", Text: "Словарь, добавленный пользователем."},
@@ -40,34 +37,31 @@ func TestTranslationKeepsTermNamesAndTranslatesDefinitionsInTheExistingWindow(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.requests) != 1 || len(translated.Entries) != 2 || translated.Entries[0].Text != "Через __REPOMAP_P1__ загружается custom dictionary." || translated.Entries[1].Text != "Словарь, добавленный пользователем." {
+	if len(provider.requests) != 2 || len(translated.Entries) != 2 || translated.Entries[0].Text != "Через __REPOMAP_P1__ загружается custom dictionary." || translated.Entries[1].Text != "Словарь, добавленный пользователем." {
 		t.Fatalf("literal term names or full definitions changed: %+v", translated)
 	}
-	wire := provider.requests[0].Prompt.User
-	for _, forbidden := range []string{"LOCAL-QUESTION-ID", "LOCAL-CONTEXT-ID", "LOCAL-TERM-ID", "SOURCE-CODE-NEVER-SENT", catalog.SHA256, `"mentions"`, "__REPOMAP_M", `"g1"`} {
-		if strings.Contains(wire, forbidden) {
-			t.Fatalf("local identity, source bytes or occurrence bookkeeping entered translation: %s", forbidden)
+	for _, wire := range provider.requests {
+		for _, forbidden := range []string{"LOCAL-QUESTION-ID", "LOCAL-CONTEXT-ID", "LOCAL-TERM-ID", "SOURCE-CODE-NEVER-SENT", catalog.SHA256, `"mentions"`, "__REPOMAP_M", `"g1"`} {
+			if strings.Contains(wire.Prompt.User, forbidden) {
+				t.Fatalf("local identity, source bytes or occurrence bookkeeping entered translation: %s", forbidden)
+			}
 		}
+		var request modelRequest
+		if err := json.Unmarshal([]byte(wire.Prompt.User), &request); err != nil {
+			t.Fatal(err)
+		}
+		if len(request.Entries) != 1 || len(request.Terms) != 1 || request.Terms[0].Explanation != entry.Terms[0].Explanation || request.Terms[0].Spelling != "custom dictionary" {
+			t.Fatal("window omitted the original name or full definition context")
+		}
+		assertRequestTerms(t, request, catalog.Entries)
 	}
-	var request modelRequest
-	if err := json.Unmarshal([]byte(wire), &request); err != nil {
-		t.Fatal(err)
-	}
-	if request.Entries[0].Role != "answer" || request.Entries[1].Role != "term-explanation" || len(request.Terms) != 1 ||
-		request.Terms[0].Explanation != entry.Terms[0].Explanation || request.Terms[0].Spelling != "custom dictionary" {
-		t.Fatal("typed request omitted the original name or definition context")
-	}
-	assertRequestTerms(t, request, catalog.Entries)
-	if request.Entries[0].Text != "Load custom dictionary with __REPOMAP_P1__." {
-		t.Fatal("an ordinary term acquired placeholder bookkeeping")
-	}
-	if _, err := Translate(t.Context(), executor, provider, catalog, report.Russian); err != nil || len(provider.requests) != 1 {
+	if _, err := Translate(t.Context(), executor, provider, catalog, report.Russian); err != nil || len(provider.requests) != 2 {
 		t.Fatal("exact request was not reused through the shared cache")
 	}
 	entry.Terms = append([]report.DisplayTextTerm(nil), entry.Terms...)
 	entry.Terms[0].Explanation = "A replacement vocabulary for a particular domain."
 	changed := testCatalog(t, []report.DisplayTextEntry{entry, catalog.Entries[1]})
-	if _, err := Translate(t.Context(), executor, provider, changed, report.Russian); err != nil || len(provider.requests) != 2 {
+	if _, err := Translate(t.Context(), executor, provider, changed, report.Russian); err != nil || len(provider.requests) != 3 {
 		t.Fatal("changed definition context reused the previous prepared request")
 	}
 }
@@ -153,11 +147,24 @@ func TestTranslationSharesExactDefinitionsWithoutChangingEntryScopeOrLocalBindin
 	provider := &testProvider{}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
 	result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
-	if err != nil || result.Validate(catalog) != nil || len(provider.requests) != 1 {
+	if err != nil || result.Validate(catalog) != nil || len(provider.requests) != 4 {
 		t.Fatalf("shared context changed translation execution: %+v, %v", result, err)
 	}
+	for _, wire := range provider.requests {
+		var request modelRequest
+		if err := json.Unmarshal([]byte(wire.Prompt.User), &request); err != nil {
+			t.Fatal(err)
+		}
+		assertRequestTerms(t, request, catalog.Entries)
+	}
+	// Definitions also deduplicate when a provider-sized window contains all
+	// entries, without assigning one entry's homonym context to its neighbour.
+	call, err := translationCall(catalog.Entries, report.Russian)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var request modelRequest
-	if err := json.Unmarshal([]byte(provider.requests[0].Prompt.User), &request); err != nil {
+	if err := json.Unmarshal([]byte(call.Prompt.User), &request); err != nil {
 		t.Fatal(err)
 	}
 	if len(request.Terms) != 2 || len(request.Entries[0].Terms) != 1 || len(request.Entries[2].Terms) != 2 || len(request.Entries[3].Terms) != 0 {
@@ -173,7 +180,7 @@ func TestTranslationSharesExactDefinitionsWithoutChangingEntryScopeOrLocalBindin
 	}
 	rebound := testCatalog(t, catalog.Entries)
 	cached, err := Translate(t.Context(), executor, provider, rebound, report.Russian)
-	if err != nil || len(provider.requests) != 1 || cached.CatalogSHA256 != rebound.SHA256 || cached.CatalogSHA256 == result.CatalogSHA256 {
+	if err != nil || len(provider.requests) != 4 || cached.CatalogSHA256 != rebound.SHA256 || cached.CatalogSHA256 == result.CatalogSHA256 {
 		t.Fatalf("local binding changed request identity: %+v, %v", cached, err)
 	}
 }

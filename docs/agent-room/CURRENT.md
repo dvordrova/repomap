@@ -1805,7 +1805,10 @@ the explicit outer-sibling instruction. The adapter discards that one misplaced
 metadata field only when the owning answer example does not declare it, records
 `terminology_metadata_rejected`, and validates the remaining domain normally.
 Those definitions never enter the glossary. Legitimate owning `terms` fields,
-unknown domain fields, row fields and invalid cells keep their strict contract.
+unknown domain fields and coupled assignments keep their owning contract.
+Independent atlas rows now isolate missing or invalid cells to their own row;
+unused extra fields do not reject valid neighbours. Only accepted row keys
+reach the terminology collector, including on cache reuse and memo recall.
 Raw responses, request bytes and cache identities are unchanged; this is the
 same optional-metadata boundary on live responses, warm reuse and replay.
 
@@ -3188,12 +3191,29 @@ remains as the projection of the atlas the page reads
 one line per place, context one step up, boxes by directory, arrows and
 joints derived by code. `places` builds `places.json` from the program
 indexes, claims, facts and corpus; `table` is the keyed request shape with
-strict decoding; `lines` holds the tables and their prompts; `reading`
+owning validation; `lines` holds the tables and their prompts; `reading`
 walks them and prints every row to `tables.md` with the request bytes under
 `tables/`. `--atlas` runs it after facts and claims and stops before the
 report; `--no-model` walks it dry. Under `--atlas` the child run persists
 the base index, the reduced documentation and an empty groups index and asks
 no categorization or grouping.
+
+The owner's 2026-09-09 validation correction preserves independent atlas rows
+when a neighbour has an invalid closed choice, a missing cell or a duplicate
+key. Each rejected row keeps its deterministic line and a recorded reason;
+accepted rows retain their exact original response and independent row memos.
+Unknown row keys are recorded without acquiring an identity, and unused extra
+fields are ignored. Unparseable JSON, an entirely refused answer and incomplete
+coupled assignments still reject their request. Cached response and replay
+validation use the same row rules; optional terms follow only accepted rows.
+
+The accompanying validation audit found further work outside this urgent
+operations/translation correction: final answers and question retrieval still
+refuse neighbouring questions with a malformed row; Learn merge can remove its
+already accepted menu after a refused merge; README/documentation decoders can
+abort a run for one invalid hypothesis; orientation still reduces evidence to
+an artificial 2 MiB prepared-input limit. These remain open, not covered by the
+independent-description flag or the translation executor change.
 
 Steps 1 and 2 are in. The tables, in order: directories by depth; files by
 call-graph round (a file may move to a sibling box or start one, a box of
@@ -4435,14 +4455,39 @@ never enter the model's display-translation catalogue. Saved rendering applies
 the same vocabulary without analysis or provider access.
 
 Translation reports each adaptive request-plan size and its closing count of
-new logical model calls versus accepted cache hits. Before new calls it fills
-the existing four-worker pool by balancing complete entries by original UTF-8
+new logical model calls versus accepted cache hits. Before new calls it plans
+at least eight windows (fewer when there are fewer texts), using the existing
+four-worker pool and balancing complete entries by original UTF-8
 text bytes. This is work distribution, with no row quota or smaller provider
 envelope. Every child rebuilds its complete term dictionary. A validated cached
 whole-window answer takes precedence, so an upgrade does not retranslate it.
 Failed live calls count as new; HTTP retries remain separate exchange metrics.
-A 1,585-text regression verifies four requests start before any response,
+A 1,585-text regression verifies eight initial windows, four requests starting before any response,
 complete ordered output, protected spans, dictionaries and zero-call warm reuse.
+
+Independent translation windows use the shared adaptive `Each` executor. One
+failed request no longer cancels its running neighbours or restarts the complete
+plan. All divisible failures in a round split together; successful windows
+remain in memory even with the persistent cache disabled. Each child builds
+only from its own complete original entries. Progress reports the unfinished
+requests, and original exchange observers run once per executed request.
+Extra translated-entry fields such as echoed `terms` are ignored. The required
+`text` and original protected spans still validate; unused metadata neither
+authorizes a changed translation nor triggers another provider call.
+
+Ordinary online acceptance `20260909-151910-python-tutorial-game-2e3397597390`
+published both targets and 380 translated texts in eight live translation
+requests; the slowest took 10 seconds and the full run took 40.6 seconds.
+The immediate repeat `20260909-152101-python-tutorial-game-7b1d13ea15c5`
+made zero live calls, reused all eight translation windows and published
+identical saved translations in 6.9 seconds. Both target index/dependency/group
+sets and the common graph, atlas, manifest and sole HTML were checked. Ordinary
+cache clear removed an isolated copy of those eight exact exchanges and their
+payloads. Concurrent regression tests additionally exercise two refused parents
+alongside a slow successful sibling, all refusals split in one round, no repeated
+successes with caching disabled, replay and cancellation. Independent operation
+regressions retain good neighbours through row rejection, reordered memo reuse
+and replay; their optional terms follow only the accepted rows.
 
 The owner confirmed from their server logs on 2026-09-09 that a long generation
 ends in HTTP 500 after four minutes; the response has no reliable timeout marker.

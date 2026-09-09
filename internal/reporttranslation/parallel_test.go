@@ -28,7 +28,7 @@ func (provider *parallelTranslationProvider) Complete(ctx context.Context, prepa
 	}
 }
 
-func TestTranslateStartsFourCompletePartitionsAndReusesTheirCache(t *testing.T) {
+func TestTranslatePlansEightPartitionsWithFourWorkersAndReusesTheirCache(t *testing.T) {
 	entries := plainEntries(1585)
 	entries[0].Text = "Use __REPOMAP_P1__.\n\nKeep its full qualification."
 	entries[0].Protected = []report.DisplayProtectedText{{Ref: "__REPOMAP_P1__", Text: "private-source"}}
@@ -58,7 +58,7 @@ func TestTranslateStartsFourCompletePartitionsAndReusesTheirCache(t *testing.T) 
 	}
 	close(provider.release)
 	cold := <-finished
-	if cold.err != nil || cold.value.Validate(catalog) != nil || len(provider.requests) != 4 {
+	if cold.err != nil || cold.value.Validate(catalog) != nil || len(provider.requests) != 8 {
 		t.Fatalf("parallel translation failed: %v; requests %d", cold.err, len(provider.requests))
 	}
 	seen := make(map[string]int)

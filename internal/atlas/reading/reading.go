@@ -594,26 +594,27 @@ func (r *reader) runPreparedTable(ctx context.Context, def table.Definition, rou
 		}
 		return answers, nil
 	}
-	calls := make([]llm.Call[table.Answers], len(windows))
+	calls := make([]llm.Call[table.Result], len(windows))
 	for i, window := range windows {
 		call, err := table.Call(def, window)
 		if err != nil {
 			return nil, err
 		}
-		if check != nil {
-			decode := call.DecodeValidate
-			call.DecodeValidate = func(raw []byte) (table.Answers, error) {
-				value, err := decode(raw)
+		calls[i] = llm.Call[table.Result]{
+			State: call.State, Prompt: call.Prompt, Limits: call.Limits,
+			DecodeValidate: func(raw []byte) (table.Result, error) {
+				value, err := table.DecodeResult(def, window, raw)
 				if err != nil {
-					return nil, err
+					return table.Result{}, err
 				}
-				if err := check(value); err != nil {
-					return nil, fmt.Errorf("table %s: %w", def.Stage, err)
+				if check != nil {
+					if err := check(value.Answers); err != nil {
+						return table.Result{}, fmt.Errorf("table %s: %w", def.Stage, err)
+					}
 				}
 				return value, nil
-			}
+			},
 		}
-		calls[i] = call
 	}
 	executor := debugdump.BindStage(r.opts.Executor, def.Stage)
 	results := llm.ExecuteJSONEach(ctx, executor, r.opts.Provider, calls)
@@ -630,6 +631,7 @@ func (r *reader) runPreparedTable(ctx context.Context, def table.Definition, rou
 			}
 		}
 		if result.Err == nil {
+			value := result.Outcome.Value
 			source := atlas.SourceModel
 			if result.Outcome.Cached {
 				source = atlas.SourceCache
@@ -637,13 +639,44 @@ func (r *reader) runPreparedTable(ctx context.Context, def table.Definition, rou
 			} else {
 				use.Live++
 			}
+			rejectedRows := 0
 			for j := range window.Rows {
-				answers[offsets[i]+j] = rowAnswer{answer: result.Outcome.Value[j], source: source, requestSHA: result.Outcome.RequestSHA256, responseSHA: result.Outcome.ResponseSHA256, requestKey: result.Outcome.CacheKey, rowKey: table.Key(j)}
+				if value.Answers[j] == nil {
+					answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven}
+					rejectedRows++
+					continue
+				}
+				answers[offsets[i]+j] = rowAnswer{answer: value.Answers[j], source: source, requestSHA: result.Outcome.RequestSHA256, responseSHA: result.Outcome.ResponseSHA256, requestKey: result.Outcome.CacheKey, rowKey: table.Key(j)}
 			}
-			if err := r.writeWindowResult(window, result.Outcome.Value, source, ""); err != nil {
+			use.Given += rejectedRows
+			reason := ""
+			if rejectedRows > 0 {
+				use.Rejected++
+				reason = fmt.Sprintf("%d rows rejected, %d accepted in this response", rejectedRows, len(window.Rows)-rejectedRows)
+				if r.opts.State != nil {
+					r.opts.State(def.Stage, "ready", reason)
+				}
+			}
+			for _, rejection := range value.Rejections {
+				samples := []string{rejection.Key}
+				for j, row := range window.Rows {
+					if rejection.Key == table.Key(j) {
+						samples = append(samples, row.ID)
+						break
+					}
+				}
+				r.rejected = append(r.rejected, modeldiag.Row{
+					Stage: def.Stage, Kind: "row_rejected", Count: 1, Reason: rejection.Reason, Samples: samples,
+					ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))),
+				})
+			}
+			if err := r.writeWindowResult(window, value.Answers, source, reason); err != nil {
 				return nil, err
 			}
-			r.printWindow(def, window, result.Outcome.Value, source, result.Outcome.Metrics.Latency)
+			r.printWindow(def, window, value.Answers, source, result.Outcome.Metrics.Latency)
+			for _, rejection := range value.Rejections {
+				fmt.Fprintf(&r.tables, "- Rejected %s: %s\n", rejection.Key, rejection.Reason)
+			}
 			continue
 		}
 		if errors.Is(result.Err, context.Canceled) || ctx.Err() != nil {
@@ -768,7 +801,7 @@ func (r *reader) printWindow(def table.Definition, window table.Window, answers 
 		if place, ok := r.places[row.ID]; ok {
 			fmt.Fprintf(&r.tables, "  - given: %s\n", place.Given)
 		}
-		if answers != nil {
+		if answers != nil && answers[i] != nil {
 			for _, column := range def.Columns {
 				fmt.Fprintf(&r.tables, "  - %s → %s\n", column.Name, answers[i][column.Name])
 			}

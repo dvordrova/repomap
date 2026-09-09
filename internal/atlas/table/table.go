@@ -1,9 +1,8 @@
 // Package table is the one request shape the atlas asks the model with: a
 // keyed table. Rows go in with keys the code assigned; the same keys come
-// back with one to three short cells each. The code checks that every key
-// returned exactly once, that no cell is missing or extra, that closed
-// choices are in their list, and rejects the whole window otherwise. Nothing
-// here knows what a directory or a file is.
+// back with short cells. Independent rows are accepted or rejected separately;
+// coupled tables require a complete valid window. Nothing here knows what a
+// directory or a file is.
 package table
 
 import (
@@ -78,8 +77,8 @@ type Definition struct {
 	// encoding for isolated readings. Zero uses DefaultInputBytes as a packing
 	// target and keeps an oversized row whole in its own request.
 	MaxInputBytes int
-	// Independent allows accepted rows to be reused outside their original
-	// batch. The prompt must restrict each answer to that row and its context.
+	// Independent validates and reuses each row separately from its neighbours.
+	// The prompt must restrict each answer to that row and its context.
 	Independent bool
 	// ContextAfterRows keeps repeated evidence ahead of changing context in
 	// the request prefix. The default preserves context before rows.
@@ -301,9 +300,29 @@ type Answer map[string]string
 // Answers are the window's rows in request order.
 type Answers []Answer
 
-// Decode reads a window's response and checks it against the definition and
-// the rows: every key exactly once, every column filled, nothing else.
+// AcceptedRowKeys preserves whole-response metadata for complete tables and
+// limits a partial independent result to the rows whose required cells passed.
+func (answers Answers) AcceptedRowKeys() []string {
+	keys := make([]string, 0, len(answers))
+	for i, answer := range answers {
+		if answer != nil {
+			keys = append(keys, Key(i))
+		}
+	}
+	if len(keys) == len(answers) {
+		return nil
+	}
+	return keys
+}
+
+// Decode returns accepted cells in request order, with nil for an independently
+// rejected row. DecodeResult additionally reports each rejection's reason.
 func Decode(def Definition, window Window, raw []byte) (Answers, error) {
+	result, err := DecodeResult(def, window, raw)
+	return result.Answers, err
+}
+
+func decodeWindow(def Definition, window Window, raw []byte) (Answers, error) {
 	normalized, err := llm.NormalizeJSON(raw)
 	if err != nil {
 		return nil, err

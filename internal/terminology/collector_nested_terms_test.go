@@ -84,23 +84,47 @@ func TestMisplacedOptionalTermsKeepValidatedTypeRowsAndRawCache(t *testing.T) {
 	}
 }
 
-func TestMisplacedTermsDoNotRelaxOtherOwningFields(t *testing.T) {
+func TestIndependentTypeRowsKeepOnlyAcceptedRowTerminology(t *testing.T) {
 	for name, domain := range map[string]string{
 		"other result field": `{"rows":` + nestedTermsTypeRows + `,"terms":[],"unexpected":true}`,
-		"row terms field":    `{"rows":[{"key":"r1","line":"HTTP carries the quote.","alias":"Stock Quote","key_symbol":"yes","terms":[]},{"key":"r2","line":"Represents a stock price.","alias":"Stock Price","key_symbol":"yes"}],"terms":[]}`,
+		"row extra field":    `{"rows":[{"key":"r1","line":"HTTP carries the quote.","alias":"Stock Quote","key_symbol":"yes","extra":{}},{"key":"r2","line":"Represents a stock price.","alias":"Stock Price","key_symbol":"yes"}],"terms":[]}`,
 		"invalid alias cell": `{"rows":[{"key":"r1","line":"HTTP carries the quote.","alias":42,"key_symbol":"yes"},{"key":"r2","line":"Represents a stock price.","alias":"Stock Price","key_symbol":"yes"}],"terms":[]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			base := &testProvider{response: []byte(`{"result":` + domain + `,"terms":[]}`)}
-			collector := NewCollector([]string{"api.py"})
+			base := &testProvider{}
 			executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
 			for attempt := 0; attempt < 2; attempt++ {
-				if _, err := llm.ExecuteJSON(t.Context(), executor, collector.Wrap(base), typesCallForNestedTerms(t)); err == nil {
-					t.Fatal("optional metadata filtering admitted an invalid owning result")
+				collector := NewCollector([]string{"api.py"})
+				wrapped := collector.Wrap(base)
+				call := typesCallForNestedTerms(t)
+				prepared, err := llm.Prepare(wrapped, call.Prompt, call.Limits)
+				if err != nil {
+					t.Fatal(err)
+				}
+				base.response = responseJSON(json.RawMessage(domain),
+					termJSON("HTTP", "A transfer protocol.", sourceRef(t, collector, prepared.Bytes(), "api.py", "r1")),
+					termJSON("stock price", "The amount paid for one share.", sourceRef(t, collector, prepared.Bytes(), "api.py", "r2")),
+				)
+				outcome, err := llm.ExecuteJSON(t.Context(), executor, wrapped, call)
+				if err != nil || outcome.Cached != (attempt == 1) || outcome.Value[1]["alias"] != "Stock Price" {
+					t.Fatalf("valid neighbouring type lost: %+v / %v", outcome, err)
+				}
+				wantTerms := 2
+				if name == "invalid alias cell" {
+					wantTerms = 1
+					if outcome.Value[0] != nil {
+						t.Fatal("invalid alias acquired accepted cells")
+					}
+				} else if outcome.Value[0]["alias"] != "Stock Quote" {
+					t.Fatal("extra field rejected a valid type")
+				}
+				terms := collector.Snapshot()
+				if len(terms) != wantTerms || wantTerms == 1 && (terms[0].Name != "stock price" || !reflect.DeepEqual(terms[0].Origins, []Origin{{RequestSHA256: outcome.RequestSHA256, Row: "r2"}})) {
+					t.Fatalf("rejected row metadata entered the glossary or valid neighbour was lost: %+v", terms)
 				}
 			}
-			if base.calls != 2 || len(collector.Snapshot()) != 0 {
-				t.Fatal("invalid main result was cached or collected glossary metadata")
+			if base.calls != 1 {
+				t.Fatal("accepted independent neighbours did not reuse their original response")
 			}
 		})
 	}

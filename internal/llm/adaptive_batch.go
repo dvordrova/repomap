@@ -98,17 +98,8 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 		if !errors.As(err, &itemErr) || itemErr.Index < 0 || itemErr.Index >= len(plan) {
 			return nil, nil, accounting, err
 		}
-		memo := adaptiveSplitMemo{Version: 1}
-		var resourceErr *ResourceLimitError
-		providerErr, providerFailure := itemErr.Err.(*ProviderError)
-		if providerFailure && providerErr.Operation == "complete" && errors.As(err, &resourceErr) && adaptiveSplitKind(resourceErr.Kind) {
-			memo.Kind = resourceErr.Kind
-		} else if providerFailure && providerErr.Operation == "complete" && calls[itemErr.Index].SplitHTTP500 &&
-			providerErr.ProviderFailure().Kind == ProviderFailureHTTPStatus && providerErr.ProviderFailure().HTTPStatus == 500 {
-			memo.RejectionReason = adaptiveHTTP500
-		} else if calls[itemErr.Index].SplitRejectedResponse && rejectedAdaptiveResponse(outcomes[itemErr.Index]) {
-			memo.RejectionReason = adaptiveResponseRejected
-		} else {
+		memo, eligible := adaptiveFailureMemo(calls[itemErr.Index], outcomes[itemErr.Index], itemErr.Err)
+		if !eligible {
 			return nil, nil, accounting, err
 		}
 		left, right, ok := split(plan[itemErr.Index])
@@ -121,6 +112,23 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 		}
 		plan = replaceAdaptiveItem(plan, itemErr.Index, left, right)
 	}
+}
+
+func adaptiveFailureMemo[Value any](call Call[Value], outcome Outcome[Value], err error) (adaptiveSplitMemo, bool) {
+	memo := adaptiveSplitMemo{Version: 1}
+	var resourceErr *ResourceLimitError
+	providerErr, providerFailure := err.(*ProviderError)
+	if providerFailure && providerErr.Operation == "complete" && errors.As(err, &resourceErr) && adaptiveSplitKind(resourceErr.Kind) {
+		memo.Kind = resourceErr.Kind
+	} else if providerFailure && providerErr.Operation == "complete" && call.SplitHTTP500 &&
+		providerErr.ProviderFailure().Kind == ProviderFailureHTTPStatus && providerErr.ProviderFailure().HTTPStatus == 500 {
+		memo.RejectionReason = adaptiveHTTP500
+	} else if call.SplitRejectedResponse && rejectedAdaptiveResponse(outcome) {
+		memo.RejectionReason = adaptiveResponseRejected
+	} else {
+		return memo, false
+	}
+	return memo, true
 }
 
 func rejectedAdaptiveResponse[Value any](outcome Outcome[Value]) bool {

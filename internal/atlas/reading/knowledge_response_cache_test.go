@@ -57,7 +57,7 @@ func (provider *parsedRowAdapter) AdaptResponse(_, response []byte) (llm.Adapted
 	return llm.AdaptedResponse{Domain: response, Rejections: []llm.ResponseRejection{{Kind: "metadata_rejected", Count: 1, Reason: "test metadata"}}, Accept: func(rows []string) { provider.accepted = append(provider.accepted, append([]string(nil), rows...)) }}, nil
 }
 func TestKnowledgeParsesSharedAdjunctOnceAndAcceptsOnlyValidatedRows(t *testing.T) {
-	base := &replacementProvider{response: []byte(`{"rows":[{"key":"r1","line":"First."},{"key":"r2","line":"Second."},{"key":"r3","wrong":"Invalid domain row."}]}`)}
+	base := &replacementProvider{response: []byte(`{"extra":true,"rows":[{"key":"r1","line":"First.","extra":{"ignored":true}},{"key":"r2","line":"Second."},{"key":"r3","line":42},{"key":"r4","line":"Duplicate."},{"key":"r4","line":"Duplicate."},{"key":42}]}`)}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
 	outcome, err := llm.ExecuteJSON(t.Context(), executor, base, llm.Call[json.RawMessage]{State: []byte(`{"test":"parsed-memo"}`), Prompt: llm.Prompt{User: `{}`}, Limits: llm.Limits{MaxRequestBytes: 100000, MaxResponseBytes: 100000, MaxOutputTokens: 1000}})
 	if err != nil {
@@ -67,11 +67,11 @@ func TestKnowledgeParsesSharedAdjunctOnceAndAcceptsOnlyValidatedRows(t *testing.
 	executor.Observer = llm.ObserverFunc(func(event llm.Event) error { events = append(events, event); return nil })
 	adapter := &parsedRowAdapter{Provider: base}
 	reader := &reader{opts: Options{Executor: executor, Provider: adapter}, responseTables: make(map[string]rememberedTable)}
-	def := table.Definition{Stage: "atlas_files", Columns: []table.Column{{Name: "line", Kind: table.Text}}}
+	def := table.Definition{Stage: "atlas_files", Independent: true, Columns: []table.Column{{Name: "line", Kind: table.Text}}}
 	window := table.Window{Rows: []table.Row{{ID: "current-source"}}}
-	for _, key := range []string{"r1", "r3", "r2", "r1"} {
+	for _, key := range []string{"r1", "r3", "r4", "r2", "r1"} {
 		_, found, err := reader.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: key})
-		if key == "r3" {
+		if key == "r3" || key == "r4" {
 			if found || err == nil {
 				t.Fatal("invalid domain row accepted")
 			}

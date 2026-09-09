@@ -22,6 +22,8 @@ const StageName = "report_translation"
 // this deadline and has its own explicit split policy on divisible windows.
 const attemptTimeout = 4 * time.Minute
 
+const initialWindows = 8
+
 //go:embed prompt.md
 var translationPrompt string
 
@@ -90,7 +92,8 @@ func Translate(
 	if err != nil {
 		return report.DisplayTranslations{}, err
 	}
-	if len(windows) < executor.BatchConcurrency {
+	windowCount := max(initialWindows, executor.BatchConcurrency)
+	if len(windows) < windowCount {
 		var pending []translationWindow
 		for _, window := range windows {
 			call, err := translationCall(window, language)
@@ -107,23 +110,15 @@ func Translate(
 				pending = append(pending, window)
 			}
 		}
-		windows = parallelWindows(pending, executor.BatchConcurrency)
+		windows = parallelWindows(pending, windowCount)
 	}
 	if len(windows) == 0 {
 		return result, result.Validate(catalog)
 	}
-	_, outcomes, err := llm.ExecuteAdaptiveJSONBatch(
+	_, outcomes, err := llm.ExecuteAdaptiveJSONEach(
 		ctx, executor, provider, windows,
-		func(plan []translationWindow) ([]llm.Call[[]report.DisplayTranslationEntry], error) {
-			calls := make([]llm.Call[[]report.DisplayTranslationEntry], len(plan))
-			for i, window := range plan {
-				call, err := translationCall(window, language)
-				if err != nil {
-					return nil, err
-				}
-				calls[i] = call
-			}
-			return calls, nil
+		func(window translationWindow) (llm.Call[[]report.DisplayTranslationEntry], error) {
+			return translationCall(window, language)
 		},
 		func(window translationWindow) (translationWindow, translationWindow, bool) {
 			if len(window) <= 1 {
@@ -152,11 +147,11 @@ func Translate(
 	return result, nil
 }
 
-// Fill the existing worker pool before asking for new translations. UTF-8
+// Plan smaller requests before asking for new translations. UTF-8
 // text bytes balance generation work; they are not a token estimate or a size
 // cutoff. Every entry stays whole and translationCall rebuilds each child's
 // complete term dictionary. Provider-envelope limits still apply separately.
-func parallelWindows(windows []translationWindow, workers int) []translationWindow {
+func parallelWindows(windows []translationWindow, count int) []translationWindow {
 	weight := func(window translationWindow) int {
 		total := 0
 		for _, entry := range window {
@@ -164,7 +159,7 @@ func parallelWindows(windows []translationWindow, workers int) []translationWind
 		}
 		return total
 	}
-	for len(windows) < workers {
+	for len(windows) < count {
 		largest, size := -1, 0
 		for i, window := range windows {
 			if len(window) > 1 {
@@ -374,26 +369,21 @@ func decodeTranslationResponse(raw []byte, window translationWindow) (modelRespo
 
 func decodeTranslationValue(raw []byte, entry report.DisplayTextEntry) (responseEntry, error) {
 	result := responseEntry{Ref: entry.Ref}
-	fields, err := objectFields(raw)
-	if err != nil {
+	var fields map[string]json.RawMessage
+	// Only text is consumed. Echoed input metadata, including terms, has no
+	// bearing on whether that text is a usable translation.
+	if err := json.Unmarshal(raw, &fields); err != nil {
 		return result, err
 	}
-	textSeen := false
-	for _, field := range fields {
-		switch field.name {
-		case "text":
-			var text *string
-			if err := json.Unmarshal(field.value, &text); err != nil || text == nil {
-				return result, fmt.Errorf("report translation: text for %s must be a string", entry.Ref)
-			}
-			result.Text, textSeen = *text, true
-		default:
-			return result, fmt.Errorf("report translation: unsupported translated entry field %q", field.name)
-		}
-	}
-	if !textSeen {
+	value, present := fields["text"]
+	if !present {
 		return result, fmt.Errorf("report translation: missing text for %s", entry.Ref)
 	}
+	var text *string
+	if err := json.Unmarshal(value, &text); err != nil || text == nil {
+		return result, fmt.Errorf("report translation: text for %s must be a string", entry.Ref)
+	}
+	result.Text = *text
 	return result, nil
 }
 

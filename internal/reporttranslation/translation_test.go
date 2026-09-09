@@ -199,9 +199,17 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 		Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 1,
 		Observer: llm.ObserverFunc(func(event llm.Event) error { events = append(events, event); return nil }),
 	}
-	result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
+	whole, err := translationCall(catalog.Entries, report.Russian)
 	if err != nil {
 		t.Fatal(err)
+	}
+	seeded, err := llm.ExecuteJSON(t.Context(), executor, provider, whole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := report.DisplayTranslations{
+		Version: report.DisplayTextVersion, Language: report.Russian,
+		CatalogSHA256: catalog.SHA256, Entries: seeded.Value,
 	}
 	if len(provider.requests) != 1 {
 		t.Fatalf("requests = %d, want all %d complete entries in one request", len(provider.requests), len(entries))
@@ -260,7 +268,7 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 	if _, err := Translate(t.Context(), executor, provider, rebound, report.English); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.requests) != 2 || provider.requests[1].Prompt.ResponseLanguage != "en" {
+	if len(provider.requests) != 9 || provider.requests[1].Prompt.ResponseLanguage != "en" {
 		t.Fatal("different translation language reused the old exact request")
 	}
 }
@@ -302,15 +310,17 @@ func TestTranslateRejectsIncompleteOrChangedPlaceholders(t *testing.T) {
 			if err == nil || !reflect.DeepEqual(result, report.DisplayTranslations{}) {
 				t.Fatalf("failed translation became a partial artifact: %#v, %v", result, err)
 			}
-			if len(events) < 2 || events[0].Failure != llm.FailureValidation {
-				t.Fatalf("refused whole window did not reach singleton validation: %#v", events)
-			}
+			refused := 0
 			for _, event := range events {
 				if event.Failure == llm.FailureValidation {
+					refused++
 					if _, found, err := llm.CachedExchange(executor.RootDir, event.CacheKey); err != nil || found {
 						t.Fatalf("refused translation entered accepted cache: %v", err)
 					}
 				}
+			}
+			if refused != 1 {
+				t.Fatalf("expected one refused singleton, got %d validation failures", refused)
 			}
 			provider.respond = nil
 			before := len(provider.requests)
@@ -377,8 +387,6 @@ func TestTranslateRejectsInvalidKeyedWireBeforeCache(t *testing.T) {
 		{"known number", `{"t1":1,"t2":"two"}`},
 		{"known bool", `{"t1":true,"t2":"two"}`},
 		{"known array", `{"t1":["one"],"t2":"two"}`},
-		{"unadvertised entry metadata", `{"t1":{"text":"one","protected":[]},"t2":"two"}`},
-		{"retired occurrence decisions", `{"t1":{"text":"one","mentions":{}},"t2":{"text":"two"}}`},
 		{"missing mandatory ref", `{"t1":{"text":"one"},"t999":{"text":"two"}}`},
 		{"last parsed duplicate is invalid", `{"t1":{"text":"one"},"t2":{"text":"two"},"t\u0031":null}`},
 		{"unclosed ref quote", `{"t1":"one","t2:"two"}`},
@@ -404,6 +412,31 @@ func TestTranslateRejectsInvalidKeyedWireBeforeCache(t *testing.T) {
 	}
 }
 
+func TestTranslateIgnoresExtraEntryMetadataWithoutRepeatingTheRequest(t *testing.T) {
+	catalog := testCatalog(t, []report.DisplayTextEntry{termEntry()})
+	raw := []byte(`{"t1":{"text":"Загрузите custom dictionary через __REPOMAP_P1__.","terms":["d1"],"mentions":{},"protected":["__REPOMAP_P999__"]}}`)
+	provider := &testProvider{rawResponse: raw}
+	var events []llm.Event
+	executor := llm.Executor{Enabled: true, RootDir: t.TempDir(), Observer: llm.ObserverFunc(func(event llm.Event) error {
+		events = append(events, event)
+		return nil
+	})}
+	for run := 0; run < 2; run++ {
+		result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
+		if err != nil || result.Validate(catalog) != nil || len(result.Entries) != 1 || result.Entries[0].Text != "Загрузите custom dictionary через __REPOMAP_P1__." {
+			t.Fatalf("extra metadata changed valid translation on run %d: %+v, %v", run, result, err)
+		}
+	}
+	if len(provider.requests) != 1 || len(events) != 2 || events[0].Kind != llm.EventLive || events[1].Kind != llm.EventCacheHit {
+		t.Fatalf("extra terms caused repeated translation: requests=%d events=%d", len(provider.requests), len(events))
+	}
+	for _, event := range events {
+		if event.Failure != "" || !bytes.Equal(event.Response, raw) {
+			t.Fatal("extra metadata rejected or changed the original cached response")
+		}
+	}
+}
+
 func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
 	entries := plainEntries(7)
 	for i := range entries {
@@ -420,12 +453,19 @@ func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider.requestBytes = prepared.Len()
+	windows, err := planWindows(t.Context(), provider, catalog.Entries, report.Russian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(windows) != 3 || len(windows[0]) != 3 || len(windows[1]) != 3 || len(windows[2]) != 1 {
+		t.Fatalf("provider envelope did not pack complete entries as 3+3+1: %v", windows)
+	}
 	result, err := Translate(t.Context(), llm.Executor{}, provider, catalog, report.Russian)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.requests) != 3 {
-		t.Fatalf("windows = %d, want 3+3+1 under exact prepared byte budget", len(provider.requests))
+	if len(provider.requests) != 7 {
+		t.Fatalf("windows = %d, want seven initial singleton partitions", len(provider.requests))
 	}
 	var refs []string
 	for i, wire := range provider.requests {
@@ -434,8 +474,8 @@ func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertRequestTerms(t, request, catalog.Entries)
-		if want := []int{3, 3, 1}[i]; len(request.Entries) != want {
-			t.Fatalf("window %d contains %d entries, want %d", i, len(request.Entries), want)
+		if len(request.Entries) != 1 {
+			t.Fatalf("window %d contains %d entries, want one", i, len(request.Entries))
 		}
 		for _, entry := range request.Entries {
 			refs = append(refs, entry.Ref)
@@ -482,7 +522,7 @@ func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
 }
 
 func TestTranslateSplitsRealResponseResourcesWithoutPartialPublication(t *testing.T) {
-	entries := plainEntries(7)
+	entries := plainEntries(32)
 	for i := range entries {
 		entries[i].Terms = []report.DisplayTextTerm{{ID: fmt.Sprintf("local-%d", i), Spelling: "bank", Explanation: fmt.Sprintf("Definition %d.", i%3)}}
 	}
@@ -503,7 +543,7 @@ func TestTranslateSplitsRealResponseResourcesWithoutPartialPublication(t *testin
 					t.Fatalf("adaptive window lost complete source identity at %d: %#v", i, entry)
 				}
 			}
-			if len(provider.requests) <= 4 {
+			if len(provider.requests) <= 16 {
 				t.Fatal("test did not exercise real failed resource envelopes and adaptive splits")
 			}
 			for _, wire := range provider.requests {
@@ -526,9 +566,7 @@ func TestTranslateSplitsRealResponseResourcesWithoutPartialPublication(t *testin
 }
 
 func TestTranslateRejectedWindowHalvesAndWarmRunReusesOnlyCompleteChildren(t *testing.T) {
-	entries := plainEntries(4)
-	entries[0].Text = "Use __REPOMAP_P1__."
-	entries[0].Protected = []report.DisplayProtectedText{{Ref: "__REPOMAP_P1__", Text: "source.go"}}
+	entries := plainEntries(32)
 	catalog := testCatalog(t, entries)
 	bad := []byte(`{"t1":{"text":"Do not salvage this prefix"},"t2,"}`)
 	provider := &testProvider{rawRespond: func(request modelRequest) []byte {
@@ -550,16 +588,27 @@ func TestTranslateRejectedWindowHalvesAndWarmRunReusesOnlyCompleteChildren(t *te
 				t.Fatalf("refused parent supplied a value or a child lost identity: %+v", entry)
 			}
 		}
-		if len(provider.requests) != 3 {
-			t.Fatalf("run %d used %d calls; want one refused parent and two accepted halves in total", run, len(provider.requests))
+		if len(provider.requests) != 24 {
+			t.Fatalf("run %d used %d calls; want eight refused windows and sixteen accepted halves in total", run, len(provider.requests))
 		}
 	}
-	if len(events) != 5 || events[0].Failure != llm.FailureValidation || !bytes.Equal(events[0].Response, bad) ||
-		events[3].Kind != llm.EventCacheHit || events[4].Kind != llm.EventCacheHit {
-		t.Fatalf("raw refusal or warm cache provenance changed: %+v", events)
+	refused, warm := 0, 0
+	for _, event := range events {
+		if event.Kind == llm.EventCacheHit {
+			warm++
+		}
+		if event.Failure == llm.FailureValidation {
+			refused++
+			if !bytes.Equal(event.Response, bad) {
+				t.Fatal("validation failure lost the original refused response")
+			}
+			if _, found, err := llm.CachedExchange(executor.RootDir, event.CacheKey); err != nil || found {
+				t.Fatalf("refused parent became an accepted cache entry: %v", err)
+			}
+		}
 	}
-	if _, found, err := llm.CachedExchange(executor.RootDir, events[0].CacheKey); err != nil || found {
-		t.Fatalf("refused parent became an accepted cache entry: %v", err)
+	if refused != 8 || warm < 16 {
+		t.Fatalf("raw refusals or warm child cache provenance changed: refused=%d cached=%d", refused, warm)
 	}
 }
 

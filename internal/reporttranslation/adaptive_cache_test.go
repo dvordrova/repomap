@@ -13,21 +13,21 @@ import (
 func TestTranslateReusesResourcePartitionsFromPersistentCache(t *testing.T) {
 	for _, kind := range []llm.ResourceLimitKind{llm.ResourceLimitOutputTokens, llm.ResourceLimitContextTokens, llm.ResourceLimitAttemptTime} {
 		t.Run(string(kind), func(t *testing.T) {
-			entries := plainEntries(1310)
+			entries := plainEntries(32)
 			for i := range entries {
 				entries[i].Text = fmt.Sprintf("Entry %d. %s", i+1, entries[i].Text)
 			}
 			catalog := testCatalog(t, entries)
 			cacheRoot := t.TempDir()
-			provider := &testProvider{resourceKind: kind, responseRows: 700}
+			provider := &testProvider{resourceKind: kind, responseRows: 2}
 			cold, err := Translate(t.Context(), llm.Executor{
 				Enabled: true, RootDir: cacheRoot, BatchConcurrency: 1,
 			}, provider, catalog, report.Russian)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(provider.requests) != 3 {
-				t.Fatalf("cold calls = %d, want one refused parent and two accepted children", len(provider.requests))
+			if len(provider.requests) != 24 {
+				t.Fatalf("cold calls = %d, want eight refused windows and sixteen accepted children", len(provider.requests))
 			}
 			// The owner must rebuild complete child requests. Check their union,
 			// not just the output length, so duplicated or missing texts fail.
@@ -36,15 +36,14 @@ func TestTranslateReusesResourcePartitionsFromPersistentCache(t *testing.T) {
 			for _, entry := range catalog.Entries {
 				original[entry.Ref] = entry.Text
 			}
-			for call, wire := range provider.requests {
+			refused := 0
+			for _, wire := range provider.requests {
 				var request modelRequest
 				if err := json.Unmarshal([]byte(wire.Prompt.User), &request); err != nil {
 					t.Fatal(err)
 				}
-				if call == 0 {
-					if len(request.Entries) != len(entries) {
-						t.Fatalf("initial request omitted catalogue entries: %d", len(request.Entries))
-					}
+				if len(request.Entries) > provider.responseRows {
+					refused++
 					continue
 				}
 				for _, entry := range request.Entries {
@@ -54,6 +53,9 @@ func TestTranslateReusesResourcePartitionsFromPersistentCache(t *testing.T) {
 					}
 					seen[entry.Ref]++
 				}
+			}
+			if refused != 8 {
+				t.Fatalf("initial resource refusals = %d, want eight", refused)
 			}
 			if err := cold.Validate(catalog); err != nil {
 				t.Fatal(err)
@@ -67,7 +69,7 @@ func TestTranslateReusesResourcePartitionsFromPersistentCache(t *testing.T) {
 			// New provider and executor values rule out reuse of process-local
 			// state. Only persisted split observations and exact child responses
 			// can avoid repeating the known oversized parent.
-			warmProvider := &testProvider{resourceKind: kind, responseRows: 700}
+			warmProvider := &testProvider{resourceKind: kind, responseRows: 2}
 			warm, err := Translate(t.Context(), llm.Executor{
 				Enabled: true, RootDir: cacheRoot, BatchConcurrency: 1,
 			}, warmProvider, catalog, report.Russian)

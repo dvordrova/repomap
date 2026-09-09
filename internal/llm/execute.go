@@ -41,7 +41,13 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 	var adapted AdaptedResponse
 	defer func() {
 		if resultErr == nil && len(outcome.Response) > 0 && (!cacheOnly || outcome.Cached) {
-			adapted.Accepted(nil)
+			var rows []string
+			// An independent domain may accept only some response rows. Preserve
+			// nil (all rows) versus an empty slice (none) for optional metadata.
+			if accepted, ok := any(outcome.Value).(interface{ AcceptedRowKeys() []string }); ok {
+				rows = accepted.AcceptedRowKeys()
+			}
+			adapted.Accepted(rows)
 		}
 	}()
 	ctx = bindExecutorAttemptGate(ctx, executor)

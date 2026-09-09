@@ -41,15 +41,15 @@ func TestTranslateLastObjectValueWinsBeforeValidationAndCache(t *testing.T) {
 					t.Fatalf("run %d did not validate final values in catalogue order: %+v, %v", run, result, err)
 				}
 			}
-			if len(provider.requests) != 1 || len(events) != 2 || events[0].Kind != llm.EventLive || events[1].Kind != llm.EventCacheHit {
-				t.Fatalf("last values did not reuse one exact accepted request: calls=%d events=%+v", len(provider.requests), events)
+			if len(provider.requests) != 2 || len(events) != 4 || events[0].Kind != llm.EventLive || events[2].Kind != llm.EventCacheHit {
+				t.Fatalf("last values did not reuse accepted requests: calls=%d events=%d", len(provider.requests), len(events))
 			}
 			cached, found, err := llm.CachedExchange(executor.RootDir, events[0].CacheKey)
 			if err != nil || !found || !bytes.Equal(cached.Response, raw) || !bytes.Equal(cached.Request, events[0].Request) {
 				t.Fatalf("cache changed the original exchange: found=%v, %v", found, err)
 			}
-			for _, event := range events {
-				if !bytes.Equal(event.Response, raw) || event.CacheKey != events[0].CacheKey || event.Failure != "" {
+			for i, event := range events {
+				if !bytes.Equal(event.Response, raw) || event.CacheKey != events[i%2].CacheKey || event.Failure != "" {
 					t.Fatal("observer lost the original response or used a shadowed value")
 				}
 			}
@@ -64,7 +64,6 @@ func TestTranslateLastObjectValueStillMustValidate(t *testing.T) {
 	for _, test := range []struct{ name, last string }{
 		{"null", `null`},
 		{"missing text", `{}`},
-		{"unknown field", `{"text":"__REPOMAP_P1__","protected":[]}`},
 		{"missing placeholder", `{"text":"Нет ссылки."}`},
 		{"unknown placeholder", `{"text":"__REPOMAP_P1__ __REPOMAP_P999__"}`},
 		{"empty text", `{"text":""}`},

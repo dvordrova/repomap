@@ -56,7 +56,7 @@ type rememberedRow struct {
 type rememberedTable struct {
 	adapted                 llm.AdaptedResponse
 	observed                bool
-	rows                    map[string]map[string]string
+	rows                    map[string]map[string]json.RawMessage
 	request, response       []byte
 	requestSHA, responseSHA string
 	err                     error
@@ -136,21 +136,7 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 			cached.adapted = adapted
 			cached.err = unwrapErr
 			if unwrapErr == nil {
-				envelope, err := llm.DecodeJSON[struct {
-					Rows []map[string]string `json:"rows"`
-				}](nil)(adapted.Domain)
-				cached.err = err
-				if err == nil {
-					cached.rows = make(map[string]map[string]string, len(envelope.Rows))
-					for _, cells := range envelope.Rows {
-						key := cells["key"]
-						if key == "" || cached.rows[key] != nil {
-							cached.err = fmt.Errorf("knowledge: missing or duplicate response row key %q", key)
-							break
-						}
-						cached.rows[key] = cells
-					}
-				}
+				cached.rows, cached.err = rememberedResponseRows(adapted.Domain)
 			}
 		}
 		r.responseTables[ref.RequestKey] = cached
@@ -162,12 +148,15 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 	if !found {
 		return rowAnswer{}, false, nil
 	}
-	cells := make(map[string]string, len(original))
+	if original == nil {
+		return rowAnswer{}, false, fmt.Errorf("knowledge: duplicate response row key %q", ref.RowKey)
+	}
+	cells := make(map[string]json.RawMessage, len(original))
 	for key, value := range original {
 		cells[key] = value
 	}
-	cells["key"] = table.Key(0)
-	raw, err := json.Marshal(map[string]any{"rows": []map[string]string{cells}})
+	cells["key"], _ = json.Marshal(table.Key(0))
+	raw, err := json.Marshal(map[string]any{"rows": []map[string]json.RawMessage{cells}})
 	if err != nil {
 		return rowAnswer{}, false, err
 	}
@@ -195,6 +184,36 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 	}
 	return rowAnswer{answer: answers[0], source: atlas.SourceCache, requestSHA: cached.requestSHA,
 		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
+}
+
+// Index response rows without letting an invalid neighbour invalidate an
+// independently memoized answer. Required cells are checked when that row is
+// recalled against its current definition and exact input.
+func rememberedResponseRows(raw []byte) (map[string]map[string]json.RawMessage, error) {
+	normalized, err := llm.NormalizeJSON(raw)
+	if err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		Rows []json.RawMessage `json:"rows"`
+	}
+	if err := json.Unmarshal(normalized, &envelope); err != nil || envelope.Rows == nil {
+		return nil, fmt.Errorf("knowledge: response is not {\"rows\": [...]}")
+	}
+	rows := make(map[string]map[string]json.RawMessage, len(envelope.Rows))
+	for _, rawRow := range envelope.Rows {
+		var cells map[string]json.RawMessage
+		var key string
+		if json.Unmarshal(rawRow, &cells) != nil || json.Unmarshal(cells["key"], &key) != nil || key == "" {
+			continue
+		}
+		if _, duplicate := rows[key]; duplicate {
+			rows[key] = nil
+		} else {
+			rows[key] = cells
+		}
+	}
+	return rows, nil
 }
 
 // runIndependent removes known entities and coalesces identical missing inputs
