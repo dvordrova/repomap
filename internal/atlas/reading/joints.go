@@ -23,6 +23,9 @@ func (r *reader) readTargets(ctx context.Context) error {
 	r.targets = make(map[string]*targetState)
 	for _, target := range r.opts.Targets {
 		state := &targetState{role: lines.FallbackRole(target.Root, target.Kind)}
+		if target.SelectedRole != "" {
+			state.role = target.SelectedRole
+		}
 		if line, ok := r.lines[atlas.DirectoryID(target.Root)]; ok {
 			state.line = line.value
 		}
@@ -31,7 +34,11 @@ func (r *reader) readTargets(ctx context.Context) error {
 	if len(r.opts.Targets) < 2 {
 		return nil
 	}
-	def := lines.Targets()
+	rolesBound := true
+	for _, target := range r.opts.Targets {
+		rolesBound = rolesBound && target.SelectedRole != ""
+	}
+	def := lines.Targets(rolesBound)
 	rows := make([]table.Row, 0, len(r.opts.Targets))
 	ordered := append([]TargetMeta(nil), r.opts.Targets...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Name < ordered[j].Name })
@@ -46,7 +53,9 @@ func (r *reader) readTargets(ctx context.Context) error {
 	for i, target := range ordered {
 		if answer := answers[i]; answer.answer != nil {
 			r.targets[target.ID].line = answer.answer["line"]
-			r.targets[target.ID].role = answer.answer["role"]
+			if target.SelectedRole == "" {
+				r.targets[target.ID].role = answer.answer["role"]
+			}
 		}
 	}
 	r.reportStage(def.Stage)
@@ -56,7 +65,8 @@ func (r *reader) readTargets(ctx context.Context) error {
 func (r *reader) targetSummary(target TargetMeta) lines.TargetSummary {
 	summary := lines.TargetSummary{
 		ID: target.ID, Name: target.Name, Root: target.Root, Language: target.Language, Kind: target.Kind,
-		Boundaries: make(map[string]int),
+		SelectedRole: target.SelectedRole,
+		Boundaries:   make(map[string]int),
 	}
 	if root, ok := r.places[atlas.DirectoryID(target.Root)]; ok {
 		summary.Readme = root.Directory.Readme

@@ -110,6 +110,17 @@ func Run(
 	if err != nil {
 		return execution, err
 	}
+	var decisions []NativeDecision
+	for _, outcome := range classificationOutcomes {
+		for _, placement := range outcome.Value.Placements {
+			decision := placement.Decision
+			if placement.Reason != "" {
+				decision = placement.Rejected
+			}
+			decisions = append(decisions, NativeDecision{Ref: placement.Candidate.Ref, Decision: decision})
+		}
+	}
+	selection.Placements = nativeDecisions(compilation.native, decisions, true)
 	execution.Selection = selection
 	return execution, nil
 }

@@ -108,6 +108,14 @@ func (plan repositoryTargetPlan) validateWith(registry repositoryTargetAdapterRe
 			return fmt.Errorf("repository target plan: target %q uses an unregistered adapter", target.Key)
 		}
 		if descriptor.ValidatePlanAuthority != nil {
+			for _, seed := range target.Seeds {
+				if seed.Key.Adapter != target.Key.Adapter || target.Placement != "standalone" || len(seed.Seeds) != 0 {
+					return fmt.Errorf("invalid nested seed placement")
+				}
+				if err := descriptor.ValidatePlanAuthority(plan.Authorities[target.Key.Adapter], seed); err != nil {
+					return err
+				}
+			}
 			if err := descriptor.ValidatePlanAuthority(plan.Authorities[target.Key.Adapter], target); err != nil {
 				return fmt.Errorf("repository target plan: target %q: %w", target.Key, err)
 			}
@@ -262,6 +270,10 @@ func selectRepositoryTargetPlanForRun(
 		return repositoryTargetPlan{}, fmt.Errorf("bind exact repository target authority: %w", err)
 	}
 
+	native, err := repositoryNativeCandidates(discovery)
+	if err != nil {
+		return repositoryTargetPlan{}, fmt.Errorf("native target evidence: %w", err)
+	}
 	portfolio, outcome, err := selectTargetPortfolioForRun(
 		ctx,
 		options.Repository.Snapshot(),
@@ -270,6 +282,7 @@ func selectRepositoryTargetPlanForRun(
 		options.Output,
 		options.Providers,
 		options.Executor,
+		nativeCandidateRows(native),
 	)
 	outcome.ReadmeRoles = cloneReadmeRoleLog(readmeRows)
 	if err != nil {
@@ -280,10 +293,16 @@ func selectRepositoryTargetPlanForRun(
 		return repositoryTargetPlan{Outcome: outcome}, withTargetPortfolioChoices(err, groups...)
 	}
 	plan, err := restoreRepositoryTargetPortfolio(discovery, portfolio, outcome)
+	if err == nil {
+		plan, err = applyRepositoryPlacements(plan, native, portfolio.Placements)
+	}
 	if err != nil {
 		return repositoryTargetPlan{Outcome: outcome}, err
 	}
 	if options.Output != nil {
+		for _, row := range plan.Outcome.Placements {
+			options.Output.Stage("Target placement", row.Selector+": "+row.Decision, row.Reason)
+		}
 		options.Output.State(
 			"Repository target plan", "ready",
 			fmt.Sprintf("typed targets: %d", len(plan.Targets)),

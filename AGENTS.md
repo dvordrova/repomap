@@ -171,7 +171,7 @@ the same nodes/links contract in docs/EXTRACTORS.md (facts format v2).
 Extensions supply source observations, not architecture role assignments.
 These rows enter the same places graph and question table, with producer
 declarations and corpus membership distinguished from compiler call edges.
-Graph and saved reading input are v9; there are no old-format readers.
+Graph is v9 and saved reading input is v10; there are no old-format readers.
 Observed entrypoint seeds and manifest values from the existing facts result
 also enter this graph, with their exact source and component context. They are
 available to both Learn proposals and question retrieval without requiring a
@@ -231,7 +231,7 @@ source anchors remain unchanged. The report keeps aliases English in every
 language, displays the original code name beside them, and localizes the
 description. Both literal spellings address the same glossary definition;
 no script detector, transliteration, per-name request or browser-generated label
-is added. Current atlas is v3, GroupsIndex v7 and report v86.
+is added. Current atlas is v4, GroupsIndex v8 and report v87.
 
 Knowledge is attached to internal entities, separately from provider batches.
 Independent directory, file, symbol and boundary rows persist their accepted
@@ -403,11 +403,30 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   language must never suppress another. Bind one canonical required file
   representative for every exact native target, deduplicating a shared
   representative and never requiring every alternative file for the same
-  target. The portfolio must retain every
-  required representative, chooses one retained file as the repository default,
-  and may additionally retain positively supported guidance candidates. Restore
-  every positive file ref through exactly one language adapter into one typed
-  target plan. An exact `--target` bypasses the model portfolio but must still
+  target. Each native target has a separate closed target ref, even when several
+  targets share a file. Every native ref must receive a placement decision:
+  `standalone`, `seed_of:<ref>`, `shared_code`, `tool`, or `example`.
+  Missing or invalid decisions retain `standalone` with the original evidence
+  and rejection reason in `target-placements.json`; there is no default seed
+  owner. Only a positive guard-to-library decision may fold a launch into an
+  advertised mandatory owner with an explicit `standalone` decision. Chains
+  and cycles are invalid. Python ownership uses static declared packages,
+  including `packages.find` where/include/exclude, separately from the full
+  importable inventory. Launch bases, Go own-main consumers and other-module
+  imports, and source-addressed fenced README commands/imports reach this
+  decision before page analysis. Author commands remain documentation claims.
+  Tools, examples and shared code keep their own complete analysis; shared code
+  appears in a counted catalogue with links from its observed consumers.
+  The owner accepted jieba's three products on 2026-09-09, including textrank's
+  author-written shebang launch beside the library and documented CLI; the
+  earlier expectation of two is superseded without a path-specific exception.
+  Seeds keep their original source anchors inside the owner's ProgramIndex,
+  without narrowing its library API. JS/TS package ownership stays separate.
+  File refs remain exact restoration addresses, and positively supported
+  guidance-only candidates may additionally be selected. Restore each file
+  through exactly one adapter and apply validated placements to the typed plan.
+  The portfolio chooses a retained repository default. An exact `--target`
+  bypasses the model portfolio but must still
   resolve unambiguously through that same typed adapter boundary. Target scouts
   may not execute an adapter's page-local ProgramIndex, dependency, or semantic
   path. A compiler projection used to build that page, including the JSTS
@@ -467,7 +486,7 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   source contributes one required target representative. A source-less
   manifest is tooling rather than target authority and cannot suppress sibling,
   child, or ancestor package targets. TargetPortfolio retains all exact package
-  targets and chooses only their repository default; an explicit
+  targets for full analysis and decides their roles and repository default; an explicit
   `jsts:<manifest>` narrows the typed plan to that one owned package before
   TypeScript compiler execution. `package.json#name` is optional: an exact
   top-level npm lockfile name is the secondary package identity, otherwise the
@@ -564,7 +583,7 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   fallback line.
 - Type descriptions use the existing symbol stage and symbol knowledge, with
   the active `lines/prompts/types.md` prompt embedded by `lines/tables.go`.
-  Atlas graph and saved reading input version 8 retain a type's declarations
+  Atlas graph v9 and saved reading input v10 retain a type's declarations
   through exact native owner IDs, including cross-file methods and explicit Go
   interface method declarations. Interface declarations have no invented
   direct-call node. Type context retains the existing bounded author quotes,

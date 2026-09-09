@@ -15,6 +15,7 @@
 {{if .Entrypoints}}<h3 id="{{.ID}}-entrypoints">{{t "Entrypoints"}}</h3><ul class="plain fact">{{range .Entrypoints}}<li>{{if .Symbol}}<code>{{.Symbol}}</code>{{end}}{{if .Kind}} <span class="meta">{{.Kind}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
 {{if .Triggers}}<details class="evidence-list"><summary>{{t "Input responsibilities"}} · {{len .Triggers}}</summary>{{range .Triggers}}{{template "group" .}}{{end}}</details>{{end}}
 {{if .Core}}<h3 id="{{.ID}}-core">{{t "Parts"}}</h3>{{range .Core}}{{template "group" .}}{{end}}{{end}}
+{{if .SharedCode}}<h3 id="{{.ID}}-shared-code">{{t "Shared code"}}</h3><ul class="plain">{{range .SharedCode}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}</ul>{{end}}
 {{if or .Calls .DependencyGroups .Dependencies}}<h3 id="{{.ID}}-external">{{t "Integrations"}}</h3>
 {{if .Calls}}<h4>{{t "HTTP calls"}}</h4><ul class="plain fact">{{range .Calls}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
 {{range .DependencyGroups}}{{template "group" .}}{{end}}

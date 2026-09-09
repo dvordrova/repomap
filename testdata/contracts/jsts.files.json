@@ -3,54 +3,58 @@
   "entries": [
     {
       "id": "f1",
-      "path": "package.json"
+      "path": "README.md"
     },
     {
       "id": "f2",
-      "path": "packages/local-store/package.json"
+      "path": "package.json"
     },
     {
       "id": "f3",
-      "path": "packages/local-store/src/index.ts"
+      "path": "packages/local-store/package.json"
     },
     {
       "id": "f4",
-      "path": "packages/second-store/package.json"
+      "path": "packages/local-store/src/index.ts"
     },
     {
       "id": "f5",
-      "path": "packages/second-store/src/index.ts"
+      "path": "packages/second-store/package.json"
     },
     {
       "id": "f6",
-      "path": "shared/contracts.ts"
+      "path": "packages/second-store/src/index.ts"
     },
     {
       "id": "f7",
-      "path": "src/ambiguity.tsx"
+      "path": "shared/contracts.ts"
     },
     {
       "id": "f8",
-      "path": "src/platform.ts"
+      "path": "src/ambiguity.tsx"
     },
     {
       "id": "f9",
-      "path": "src/server.ts"
+      "path": "src/platform.ts"
     },
     {
       "id": "f10",
-      "path": "src/type-members.ts"
+      "path": "src/server.ts"
     },
     {
       "id": "f11",
-      "path": "src/workspace-origins-js.js"
+      "path": "src/type-members.ts"
     },
     {
       "id": "f12",
-      "path": "src/workspace-origins.ts"
+      "path": "src/workspace-origins-js.js"
     },
     {
       "id": "f13",
+      "path": "src/workspace-origins.ts"
+    },
+    {
+      "id": "f14",
       "path": "tsconfig.json"
     }
   ]

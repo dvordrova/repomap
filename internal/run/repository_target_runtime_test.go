@@ -503,7 +503,7 @@ func TestRepositoryTargetPlanRetainsEveryJSTSPackageByDefault(t *testing.T) {
 				t.Fatal(err)
 			}
 			provider := &targetPortfolioClientStub{response: response}
-			_, err = selectRepositoryTargetPlanForRun(context.Background(), repositoryTargetRuntimeOptions{
+			plan, err := selectRepositoryTargetPlanForRun(context.Background(), repositoryTargetRuntimeOptions{
 				RepoName: "multi-jsts", Repository: repository, DiscoverJSTS: true,
 				ScoutJSTSFn: jstsproject.ScoutTargets,
 				Providers: func() (llm.Provider, error) {
@@ -511,8 +511,13 @@ func TestRepositoryTargetPlanRetainsEveryJSTSPackageByDefault(t *testing.T) {
 				},
 				Executor: llm.Executor{Enabled: false},
 			})
-			if err == nil || !strings.Contains(err.Error(), "omits exact required target authority") {
-				t.Fatalf("omitted JSTS package error = %v", err)
+			if err != nil || len(plan.Targets) != 2 {
+				t.Fatalf("missing decision must retain both packages: %v", err)
+			}
+			for _, placement := range plan.Outcome.Placements {
+				if placement.Decision != "standalone" || placement.Reason == "" {
+					t.Fatalf("missing decision not journalled: %#v", placement)
+				}
 			}
 		})
 	}
@@ -1208,7 +1213,7 @@ func TestRepositoryTargetDiscoveryPassesExactJSTSSelectorBeforeProjectDiscovery(
 	}
 }
 
-func TestRepositoryTargetPlanRejectsSuppressionOfNativeGoTargets(t *testing.T) {
+func TestRepositoryTargetPlanRetainsNativeTargetsWhenDecisionMissing(t *testing.T) {
 	repository, goSource, project := repositoryTargetRuntimeInlineInputs(t)
 	libraryFileRef := repositoryTargetRuntimeFileRef(t, repository, "pkg/client/client.go")
 	pythonFileRef := repositoryTargetRuntimeFileRef(t, repository, "native/runtime.py")
@@ -1224,15 +1229,29 @@ func TestRepositoryTargetPlanRejectsSuppressionOfNativeGoTargets(t *testing.T) {
 	portfolioProvider := &targetPortfolioClientStub{response: response}
 	providerCalls := 0
 	discoveryCalls := 0
-	_, err = selectRepositoryTargetPlanForRun(
+	plan, err := selectRepositoryTargetPlanForRun(
 		context.Background(),
 		repositoryTargetRuntimeTestOptions(
 			t, repository, &goSource, project, "", &providerCalls,
 			&discoveryCalls, readmeProvider, portfolioProvider,
 		),
 	)
-	if err == nil || !strings.Contains(err.Error(), "omits exact required target authority") {
-		t.Fatalf("mixed native-target suppression error = %v", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retainedGo int
+	for _, target := range plan.Targets {
+		if target.Key.Adapter == repositoryTargetAdapterGo {
+			retainedGo++
+		}
+	}
+	if retainedGo != len(goSource.TargetCatalog.Entries) {
+		t.Fatalf("native Go target lost: %d", retainedGo)
+	}
+	for _, placement := range plan.Outcome.Placements {
+		if placement.Decision != "standalone" || placement.Reason == "" {
+			t.Fatalf("missing decision not journalled: %#v", placement)
+		}
 	}
 	if providerCalls != 2 || readmeProvider.calls != 1 || portfolioProvider.calls != 1 {
 		t.Fatalf("mixed authority model requests = %d / %d / %d", providerCalls, readmeProvider.calls, portfolioProvider.calls)

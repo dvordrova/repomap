@@ -57,6 +57,9 @@ var arrowsPrompt string
 //go:embed prompts/targets.md
 var targetsPrompt string
 
+//go:embed prompts/target_descriptions.md
+var targetDescriptionsPrompt string
+
 //go:embed prompts/joints.md
 var jointsPrompt string
 
@@ -330,8 +333,8 @@ func FallbackSentence(from, to BoxSummary, witnesses []atlas.Witness) string {
 }
 
 // Targets is the portfolio table.
-func Targets() table.Definition {
-	return table.Definition{
+func Targets(rolesBound ...bool) table.Definition {
+	definition := table.Definition{
 		Stage: StageTargets, Contract: targetsContract, Window: WindowRows,
 		System: targetsPrompt,
 		Columns: []table.Column{
@@ -339,21 +342,28 @@ func Targets() table.Definition {
 			{Name: "role", Kind: table.Choice, Options: atlas.Roles()},
 		},
 	}
+	if len(rolesBound) > 0 && rolesBound[0] {
+		definition.Contract += ".selected-role-v1"
+		definition.Columns = definition.Columns[:1]
+		definition.System = targetDescriptionsPrompt
+	}
+	return definition
 }
 
 // TargetSummary is what a portfolio row says about a target.
 type TargetSummary struct {
-	ID         string
-	Name       string
-	Root       string
-	Language   string
-	Kind       string
-	Readme     string
-	Entrypoint string
-	Files      int
-	Dirs       int
-	Boundaries map[string]int
-	Operations []string
+	SelectedRole string
+	ID           string
+	Name         string
+	Root         string
+	Language     string
+	Kind         string
+	Readme       string
+	Entrypoint   string
+	Files        int
+	Dirs         int
+	Boundaries   map[string]int
+	Operations   []string
 }
 
 // TargetRow builds the row of one target.
@@ -363,6 +373,9 @@ func TargetRow(target TargetSummary) table.Row {
 		{Name: "root", Value: target.Root},
 		{Name: "language", Value: target.Language},
 		{Name: "kind", Value: target.Kind},
+	}
+	if target.SelectedRole != "" {
+		fields = append(fields, table.Field{Name: "selected_role", Value: target.SelectedRole})
 	}
 	if target.Readme != "" {
 		fields = append(fields, table.Field{Name: "readme", Value: target.Readme})

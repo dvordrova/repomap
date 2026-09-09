@@ -2508,7 +2508,7 @@ Interface methods have no invented direct-call nodes or implementation edges.
 Claims now capture documentation attached to those explicit declarations, and
 type context keeps the existing bounded author quote rather than reducing it
 again to its first sentence. Ordinary file/callable context remains unchanged.
-Atlas graph and saved reading input are version 9. The independent type table
+Atlas graph is version 9 and saved reading input is version 10. The independent type table
 `repomap.atlas.types.v6` returns an explanation, key flag and optional English
 alias; callable Symbols v6 shares the alias cell in its existing review.
 A type's file hypothesis
@@ -3413,9 +3413,112 @@ request. Discovering one supported language never suppresses another.
 
 Each exact native target contributes one canonical required file
 representative. A shared representative is deduplicated; alternatives for the
-same target are not all made mandatory. The portfolio retains every required
-representative, chooses one retained file as the repository default, and may
-also retain positively supported guidance candidates.
+same target are not all made mandatory. Required now means that every native
+target must receive a decision, not that every candidate must survive as an
+independent product. The selection request assigns a closed target ref to each
+native target, separately from its file address; one file can represent several
+decisions. File refs still restore exact candidates and positively supported
+guidance-only starts. The same portfolio chooses a retained repository default.
+
+Stage B, authorized on 2026-09-09, sends adapter observations before selection:
+Python launch bases and declared distribution membership; Go own-main counts,
+own-main consumers and imports from another repository module; and exact fenced
+README command/import quotations with their source path, line and heading.
+These quotations are author claims, not runtime observations. Repeated evidence
+is encoded once behind local refs; every request partition rebuilds its complete
+evidence catalogue. Native identities and compiler edges stay local.
+
+Python catalog/target v4 records static package lists in setup.py, pyproject.toml
+and setup.cfg and package discovery where/include/exclude rules. Full package
+names are matched, and namespace settings are respected. A project-name match
+requires a corresponding real package. Dynamic setup calls are not evaluated
+and supply no package declaration. This authority is separate from the complete
+importable module inventory and does not itself classify a guard as an example.
+Only a guard inside a declared library distribution is advertised as eligible
+for a seed owner. Explicit package CLIs, console scripts and shebang launches
+are not folded by this rule. JS/TS source-owning package targets retain their
+existing independent compiler boundaries, including packages without start/bin.
+
+Each native target chooses `standalone`, `seed_of:<ref>`, `shared_code`, `tool`
+or `example`. A seed owner must be an advertised mandatory target with its own
+explicit `standalone` decision. Missing, duplicate, invalid or chained decisions
+retain a standalone candidate and a `decision not received` reason. Unknown refs
+have no authority. `target-placements.json` records every native decision with
+its original columns, source quotations and any rejected answer. It is a journal
+of this selection, not another analysis graph. A complete response-envelope or
+transport failure keeps the existing portfolio error behavior.
+
+Tools, examples and shared code all execute their complete ordinary target path.
+Shared code keeps its library API and a counted catalogue, with exact target
+links from observed consumers. Only positively accepted seeds lose their
+separate run: their original launch identities and source locations enter the
+owner's ProgramIndex without narrowing its objects or library API. Selected
+roles pass through atlas v4 and GroupsIndex v8 into report v87. The later atlas
+target table describes an already selected role rather than making a second
+role decision. Saved reading input v10 retains that role and shared-code links;
+the places graph remains v9. The code validates that every shared-code link
+resolves to an actual shared-code target in the complete portfolio.
+
+Ordinary online checks on 2026-09-09 completed all five repositories and both
+cumulative counterexamples. The final four review reports are owner runs
+`20260909-140836-go-http-server-7f09fe1266a4`,
+`20260909-140836-chi-6a3ecb6770b7`,
+`20260909-140839-python-tutorial-game-df98276c38d2`, and
+`20260909-140841-jieba-c81bacdf4ba7`; pykrx is
+`20260909-140441-pykrx-188c04b5299c`. Their complete target artifacts and the
+single owner publication were checked. Products mean application and library
+roles, with other roles shown in their counted catalogues:
+
+| Repository | Expected products | Observed products | Other full analyses |
+| --- | ---: | ---: | --- |
+| go-server-template | 1 | 1 | 1 tool, 1 shared-code library |
+| chi | 1 | 1 | 2 examples, 1 shared-code library |
+| python-tutorial-game | 2 | 2 | none |
+| jieba | 3 | 3 | 18 examples |
+| pykrx | 1 | 1 | 4 tools; 17 guards enter the library |
+
+The owner accepted jieba's three products on 2026-09-09: the library, the
+documented CLI and `jieba/analyse/textrank.py`, whose author-written shebang
+provides an explicit independent launch basis. The earlier expectation of two
+products is superseded; this is no longer an open acceptance failure. The first
+draft classified textrank as a tool and the other 18 launches as tools, while
+the recorded final selection retains textrank as standalone and 18 examples.
+No path-specific role or HTML suppression was introduced to force a count.
+The five repository product counts and the two required service-separation
+checks are accepted; broader fixture/tool role quality remains a review item.
+
+The Go counterexample keeps both documented services separate and gives each
+an exact link to the common library; its existing cmd/app exercise also remains
+standalone (3 products, 5 full analyses). Python keeps acme.api and acme.worker
+separate, folds only acme.demo into the library with its original line-5 anchor,
+and leaves acme.excluded.check outside that ownership. Its library and existing
+fixture console remain standalone too (4 products, 5 full analyses). The two
+required service-separation checks pass; fixture/tool role quality remains a
+review item. The cumulative JS/TS check retains all three source-owning packages.
+
+On pykrx, report.json fell from 120,741,024 to 35,150,500 bytes (70.89%) while the
+library retained the same 2,833 native objects with identical names, kinds and
+source locations. Every one of the 17 accepted guards retains its exact launch
+anchor. Native decisions, current decoder validation, the full test/vet suite,
+and browser navigation were checked; no defaultRunDeps field was added.
+
+The closing Stage B check on 2026-09-09 reran the ordinary path after removing
+one duplicate seed-eligibility check and two redundant native-catalogue copies.
+The artificial consumer-mutation test was removed; the existing Snapshot API
+continues to copy its newly added package-declaration field. All 35 targets
+across the five repositories completed with zero live provider calls, retaining
+the accepted product counts 1, 1, 2, 3 and 1. Final owner runs are
+`20260909-144526-go-http-server-a90f19009296`,
+`20260909-144532-chi-8da44377446a`,
+`20260909-144544-python-tutorial-game-0278399f361d`,
+`20260909-144600-jieba-b3e42e7feb7c`, and
+`20260909-145104-pykrx-c754c7b04fce`. Full tests, vet and the owner build passed.
+Focused desktop browser checks covered the final count links, role catalogues,
+mode-preserving navigation and the frontend/backend connection inspector.
+The before/Stage A/after reports, receipts and independent simplicity review
+are in `work/overview-implementation-20260909/final-review` in the desktop
+project. This closes the implementation and count checks, not editorial
+acceptance of every generated answer.
 
 Every positive file ref restores through exactly one language adapter into a
 typed target plan. An exact `--target` bypasses model portfolio selection but
@@ -4180,7 +4283,7 @@ toolbar ending at 102.52 px. Jieba's 19 tool rows all expand; connections to
 closed rows are drawn only after expansion, while their original evidence stays
 available in the component's connections. The full product test/vet check and
 focused publication/navigation checks passed. Native-target decisions and
-documented fenced commands remain Stage B work.
+documented fenced commands are recorded under Target discovery and selection.
 
 The owner explicitly approved final localization on 2026-09-07/08 and supplied
 two diagrams clarifying its boundary. Analytical LLM cubes receive one shared

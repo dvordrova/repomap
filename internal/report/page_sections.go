@@ -48,6 +48,7 @@ type pageSection struct {
 	Calls            []pageHTTPRow
 	DependencyGroups []pageGroup
 	Dependencies     []pageDependency
+	SharedCode       []pageExternal
 	Flow             *pageFlow
 	// Start is where to start reading when no model flow passes through
 	// this target: each entrypoint, the group it lands in, and what that
@@ -262,6 +263,17 @@ func (builder *pageBuilder) createSections() {
 		builder.sections = append(builder.sections, section)
 	}
 	labelSections(builder.sections)
+	for _, section := range builder.sections {
+		index := builder.graphIndex(section.programTargetID)
+		if index == nil {
+			continue
+		}
+		for _, id := range index.SharedCode {
+			if peer := builder.byProgram[id]; peer != nil {
+				section.SharedCode = append(section.SharedCode, pageExternal{Name: peer.Label, Href: "#" + peer.ID})
+			}
+		}
+	}
 }
 
 // labelSections keeps every target distinguishable in the navigation. Two

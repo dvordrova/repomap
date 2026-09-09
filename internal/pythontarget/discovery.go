@@ -51,13 +51,14 @@ type helperResponse struct {
 }
 
 type parsedConfig struct {
-	Path         string         `json:"path"`
-	Scripts      []parsedScript `json:"scripts"`
-	SourceRoots  []string       `json:"source_roots"`
-	Packages     []string       `json:"packages"`
-	Distribution bool           `json:"distribution"`
-	Dynamic      bool           `json:"dynamic"`
-	Errors       []helperError  `json:"errors"`
+	Path         string               `json:"path"`
+	Declarations []PackageDeclaration `json:"declarations"`
+	Scripts      []parsedScript       `json:"scripts"`
+	SourceRoots  []string             `json:"source_roots"`
+	Packages     []string             `json:"packages"`
+	Distribution bool                 `json:"distribution"`
+	Dynamic      bool                 `json:"dynamic"`
+	Errors       []helperError        `json:"errors"`
 }
 
 type helperError struct {
@@ -96,6 +97,7 @@ type projectBuild struct {
 	packagingPaths    []string
 	rawSourceRoots    []string
 	explicitPackages  []string
+	declarations      []PackageDeclaration
 	sourceRoots       []string
 	scripts           []parsedScript
 	modules           []Module
@@ -425,6 +427,7 @@ func buildCatalog(parsedFiles, launcherFiles []inputFile, parsed helperResponse)
 		}
 		project.rawSourceRoots = append(project.rawSourceRoots, config.SourceRoots...)
 		project.explicitPackages = append(project.explicitPackages, config.Packages...)
+		project.declarations = append(project.declarations, config.Declarations...)
 		project.scripts = append(project.scripts, config.Scripts...)
 		if config.Dynamic {
 			project.dynamicSetup = append(project.dynamicSetup, config.Path)
@@ -545,6 +548,7 @@ func buildCatalog(parsedFiles, launcherFiles []inputFile, parsed helperResponse)
 	sort.Strings(selectors)
 	for _, selector := range selectors {
 		build := builds[selector]
+		build.target.DeclaredPackages = cloneDeclarations(projects[build.target.ProjectDir].declarations)
 		entries = append(entries, build.target)
 	}
 	return newCatalogWithModuleScopes(entries, moduleScopes, omissions)

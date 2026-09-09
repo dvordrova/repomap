@@ -70,11 +70,12 @@ func TestDisplayTranslationsReuseExactEntriesInAnotherOrder(t *testing.T) {
 }
 
 func TestIncomingComponentNameReusesOwnerUIComposition(t *testing.T) {
-	owner := &pageSection{ID: "tests", programTargetID: "tests", Name: "test.example", Root: "test", ShortLabel: "test (executable)", Kind: "executable"}
+	owner := &pageSection{ID: "tests", programTargetID: "tests", Name: "test.example", Label: "test.example (executable)", Root: "test", ShortLabel: "test (executable)", Kind: "executable"}
 	section := &pageSection{ID: "service", programTargetID: "service", Name: "service", ShortLabel: "service", Map: &pageMap{Nodes: []pageMapNode{
 		{ID: "foreign-tests", Branch: "component", Component: "tests", FullTitle: owner.ShortLabel},
 		{ID: "request-part", FullTitle: "Request handling", Summary: "Handles requests."},
 	}}}
+	section.SharedCode = []pageExternal{{Name: owner.Label, Href: "#tests"}}
 	page := &PreparedPage{view: &pageView{Sections: []*pageSection{section, owner}}, catalog: DisplayTextCatalog{Version: DisplayTextVersion, Entries: []DisplayTextEntry{}}}
 	if err := page.collectDisplayTexts(&ReportData{}, false); err != nil {
 		t.Fatal(err)
@@ -94,5 +95,8 @@ func TestIncomingComponentNameReusesOwnerUIComposition(t *testing.T) {
 	}
 	if section.Map.Nodes[1].FullTitle != "Обработка запросов" || section.Map.Nodes[1].Summary != "Обрабатывает запросы." {
 		t.Fatal("existing model descriptions no longer use their translation")
+	}
+	if section.SharedCode[0].Name != "test.example (исполняемый компонент)" || section.SharedCode[0].Href != "#tests" {
+		t.Fatal("shared code link lost its owner's localized label or destination")
 	}
 }

@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	PreparationVersion    = 4
-	ResponseSchemaVersion = 7
+	PreparationVersion    = 5
+	ResponseSchemaVersion = 8
 
 	// MaxRequestBytes is one classification-batch packing window, not an
 	// aggregate candidate-authority bound. Run forms as many deterministic
@@ -30,7 +30,7 @@ const (
 	MaxOutputTokens         = llm.DefaultMaxOutputTokens
 )
 
-const executionContract = "positive-file-target-portfolio-selection-with-native-authority-v8"
+const executionContract = "native-target-placement-with-file-guidance-v9"
 
 // Candidate is the common output of the initial scouts after their dumb
 // FileRef merge. Keep the alias so the portfolio does not invent a second
@@ -50,7 +50,9 @@ type VisibleCandidate struct {
 // provider-visible classification projection. Corpus identity and cache
 // identity remain private.
 type Request struct {
-	Candidates []VisibleCandidate `json:"candidates"`
+	Candidates    []VisibleCandidate `json:"candidates"`
+	NativeTargets []NativeCandidate  `json:"native_targets,omitempty"`
+	Observations  []NamedObservation `json:"observations,omitempty"`
 
 	// RequiredTargetFileRefs is present when deterministic language adapters
 	// have established exact native targets. It contains one canonical
@@ -76,6 +78,7 @@ type Compilation struct {
 	state      []byte
 	corpus     corpus.Snapshot
 	candidates []Candidate
+	native     []NativeCandidate
 	sealed     string
 
 	executableAuthorityBound bool
@@ -94,8 +97,9 @@ type Prompt struct {
 // fields; unlike private execution state, it exposes no version or request
 // identity to the model.
 type Response struct {
-	DefaultFileRef *corpus.FileID  `json:"default_file_ref"`
-	TargetFileRefs []corpus.FileID `json:"target_file_refs"`
+	DefaultFileRef  *corpus.FileID   `json:"default_file_ref"`
+	TargetFileRefs  []corpus.FileID  `json:"target_file_refs"`
+	NativeDecisions []NativeDecision `json:"native_decisions,omitempty"`
 }
 
 // DefaultRequest compares already accepted target candidates. It may choose
@@ -117,6 +121,7 @@ type DefaultResponse struct {
 // when Targets is non-empty, and then always points to a Target.
 type Selection struct {
 	Default      *VisibleCandidate
+	Placements   []Placement
 	Targets      []VisibleCandidate
 	Unclassified []VisibleCandidate
 }

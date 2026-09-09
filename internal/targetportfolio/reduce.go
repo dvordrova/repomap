@@ -9,9 +9,9 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 )
 
-// ResolveResponse validates the exact positive target selection and restores
-// every omitted input as unclassified. There is no complement acceptance,
-// fuzzy matching, or repair.
+// ResolveResponse validates guidance selections and native decisions. Omitted
+// guidance stays unclassified; native candidates always retain their exact
+// restoration file and an explicit placement or recorded standalone fallback.
 func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 	if err := validateCompilation(compilation); err != nil {
 		return Selection{}, err
@@ -33,9 +33,9 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 		return Selection{}, fmt.Errorf("target portfolio: response must contain target_file_refs as an array")
 	}
 	var exactFields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &exactFields); err != nil || len(exactFields) != 2 ||
+	if err := json.Unmarshal(raw, &exactFields); err != nil || (len(exactFields) != 2 && !(len(exactFields) == 3 && exactFields["native_decisions"] != nil)) ||
 		exactFields["default_file_ref"] == nil || exactFields["target_file_refs"] == nil {
-		return Selection{}, fmt.Errorf("target portfolio: response must contain exactly default_file_ref and target_file_refs")
+		return Selection{}, fmt.Errorf("target portfolio: response must contain default_file_ref, target_file_refs and optional native_decisions only")
 	}
 
 	authority := make(map[corpus.FileID]VisibleCandidate, len(compilation.Request.Candidates))
@@ -48,6 +48,11 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 			continue
 		}
 		targetSet[fileRef] = struct{}{}
+	}
+	if len(compilation.native) != 0 {
+		for _, ref := range compilation.requiredTargetFileRefs {
+			targetSet[ref] = struct{}{}
+		}
 	}
 	if compilation.requiredAuthorityBound {
 		for _, fileRef := range compilation.requiredTargetFileRefs {
@@ -101,6 +106,7 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 
 	defaultCopy := cloneVisibleCandidate(defaultCandidate)
 	result := Selection{
+		Placements:   nativeDecisions(compilation.native, response.NativeDecisions, false),
 		Default:      &defaultCopy,
 		Targets:      make([]VisibleCandidate, 0, len(targetSet)),
 		Unclassified: make([]VisibleCandidate, 0, len(compilation.Request.Candidates)-len(targetSet)),

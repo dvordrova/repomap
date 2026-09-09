@@ -1894,6 +1894,8 @@ func (builder *pageBuilder) repoRole(section *pageSection) string {
 			return "4 Examples"
 		case "fixture":
 			return "5 Tests and fixtures"
+		case "shared_code":
+			return "6 Shared code"
 		}
 	}
 	return "2 Libraries"

@@ -222,6 +222,7 @@ func BuildInput(
 	ctx context.Context,
 	repository *corpus.Corpus,
 	target pythontarget.Target,
+	seeds ...pythontarget.Target,
 ) (programindex.Input, error) {
 	inputs, err := buildInputs(ctx, repository, []pythontarget.Target{target}, runParser)
 	if err != nil {
@@ -230,7 +231,35 @@ func BuildInput(
 	if len(inputs) != 1 {
 		return programindex.Input{}, fmt.Errorf("python program index: parser returned no exact target input")
 	}
-	return inputs[0], nil
+	input := inputs[0]
+	objects := make(map[string]parsedObject, len(input.Objects))
+	for _, object := range input.Objects {
+		objects[object.SourceRef] = parsedObject{SourceRef: object.SourceRef, Kind: string(object.Kind), Name: object.Name, Location: object.Location}
+	}
+	for _, seed := range seeds {
+		if err := seed.Validate(); err != nil {
+			return programindex.Input{}, err
+		}
+		if !pythontarget.CanSeed(target, seed) {
+			return programindex.Input{}, fmt.Errorf("Python seed is outside its declared owner")
+		}
+		projected, err := projectTarget(repository, seed, objects)
+		if err != nil {
+			return programindex.Input{}, err
+		}
+		input.Target.Seeds = append(input.Target.Seeds, projected.Seeds...)
+		known := make(map[string]bool, len(input.Target.Sources))
+		for _, source := range input.Target.Sources {
+			known[source.FileRef] = true
+		}
+		for _, source := range projected.Sources {
+			if !known[source.FileRef] {
+				input.Target.Sources = append(input.Target.Sources, source)
+				known[source.FileRef] = true
+			}
+		}
+	}
+	return input, nil
 }
 
 func buildMany(

@@ -61,6 +61,13 @@ func discoverGoRepositoryTargets(
 		RequiredFileRefs: required, Authority: owned,
 		ResolvesFile: resolver.ResolvesOne,
 	}
+	discovery.NativeEvidence = func(target repositoryTypedTarget) (repositoryNativeEvidence, error) {
+		native, ok := repositoryGoTarget(target)
+		if !ok {
+			return repositoryNativeEvidence{}, fmt.Errorf("invalid Go candidate")
+		}
+		return goNativeEvidence(native, *owned.GoFacts, *owned.TargetCatalog), nil
+	}
 	discovery.RestoreFiles = func(fileRefs []corpus.FileID) ([]repositoryTargetFileRestoration, error) {
 		refs, resolveErr := resolver.Resolve(fileRefs)
 		if resolveErr != nil {
@@ -161,6 +168,13 @@ func discoverPythonRepositoryTargets(
 		Key: repositoryTargetAdapterPython, Candidates: candidates,
 		RequiredFileRefs: required, Authority: catalog,
 		ResolvesFile: resolver.Resolves,
+	}
+	discovery.NativeEvidence = func(target repositoryTypedTarget) (repositoryNativeEvidence, error) {
+		native, ok := repositoryPythonTarget(target)
+		if !ok {
+			return repositoryNativeEvidence{}, fmt.Errorf("invalid Python candidate")
+		}
+		return pythonNativeEvidence(native, catalog), nil
 	}
 	discovery.RestoreFiles = func(fileRefs []corpus.FileID) ([]repositoryTargetFileRestoration, error) {
 		resolved, resolveErr := resolver.Resolve(fileRefs)
@@ -305,6 +319,13 @@ func discoverJSTSRepositoryTargets(
 			_, ok := byManifest[fileRef]
 			return ok
 		},
+	}
+	discovery.NativeEvidence = func(target repositoryTypedTarget) (repositoryNativeEvidence, error) {
+		native, ok := repositoryJSTSTarget(target)
+		if !ok {
+			return repositoryNativeEvidence{}, fmt.Errorf("invalid JS/TS candidate")
+		}
+		return repositoryNativeEvidence{Root: native.ProjectDir}, nil
 	}
 	discovery.RestoreFiles = func(fileRefs []corpus.FileID) ([]repositoryTargetFileRestoration, error) {
 		result := make([]repositoryTargetFileRestoration, 0, len(fileRefs))

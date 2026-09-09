@@ -102,6 +102,14 @@ separate stage outputs.
 * Language adapters extract structure; framework knowledge comes first from
   manifests (`package.json`, `pyproject`/`Pipfile`, `go.mod`) and only then
   from heuristics.
+* Every native target receives an explicit independence decision before page
+  analysis. Adapters supply launch, package-ownership and import observations;
+  source-addressed author commands remain claims. Only a positive, locally
+  validated decision can place an incidental launch inside a standalone owner;
+  missing or invalid decisions preserve independent analysis and are recorded.
+  Shared code, tools and examples retain their complete analyses and source
+  links. Presentation roles never substitute for analysis or hide duplicates
+  after the fact. This separation was approved by the owner on 2026-09-09.
 
 ## Report invariants (UI)
 

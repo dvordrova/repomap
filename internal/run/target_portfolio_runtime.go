@@ -38,6 +38,7 @@ type targetPortfolioRunOutcome struct {
 	SelectedFileRefs    int
 	UnclassifiedFiles   int
 	ReadmeRoles         []readmeRoleLogRow
+	Placements          []repositoryPlacement
 	Cached              bool
 	Request             []byte
 	Response            []byte
@@ -127,6 +128,7 @@ func selectTargetPortfolioForRun(
 	output *runOutput,
 	providers targetPortfolioProviderFactory,
 	executor llm.Executor,
+	native ...[]targetportfolio.NativeCandidate,
 ) (targetportfolio.Selection, targetPortfolioRunOutcome, error) {
 	if output == nil {
 		output = newRunOutput(io.Discard)
@@ -137,9 +139,13 @@ func selectTargetPortfolioForRun(
 
 	started := time.Now()
 	outcome := targetPortfolioRunOutcome{}
-	compilation, err := targetportfolio.CompileWithRequiredTargetAuthority(
-		corpusSnapshot, candidates, requiredTargetFileRefs,
-	)
+	var compilation targetportfolio.Compilation
+	var err error
+	if len(native) > 0 {
+		compilation, err = targetportfolio.CompileWithNativeAuthority(corpusSnapshot, candidates, requiredTargetFileRefs, native[0])
+	} else {
+		compilation, err = targetportfolio.CompileWithRequiredTargetAuthority(corpusSnapshot, candidates, requiredTargetFileRefs)
+	}
 	if err != nil {
 		failed, failErr := failTargetPortfolioSelection(
 			outcome, "request_build_failed",
@@ -629,6 +635,9 @@ func recordTargetPortfolioOutcome(
 	outcome targetPortfolioRunOutcome,
 	output *runOutput,
 ) error {
+	if err := persistRepositoryPlacements(runDir, outcome.Placements); err != nil {
+		return err
+	}
 	if outcome.SemanticState == "" {
 		return nil
 	}

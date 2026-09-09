@@ -1,22 +1,89 @@
 {
   "version": 1,
   "entries": [
-    {"id": "f1", "path": "_examples/published/go.mod"},
-    {"id": "f2", "path": "_examples/published/main.go"},
-    {"id": "f3", "path": "cmd/app/main.go"},
-    {"id": "f4", "path": "go.mod"},
-    {"id": "f5", "path": "internal/localstore/store.go"},
-    {"id": "f6", "path": "internal/storefixture/fixtures.go"},
-    {"id": "f7", "path": "internal/storefixture/handoff_flow.go"},
-    {"id": "f8", "path": "internal/storefixture/level_responses.go"},
-    {"id": "f9", "path": "internal/storefixture/listen_addresses.go"},
-    {"id": "f10", "path": "internal/storefixture/local_http_names.go"},
-    {"id": "f11", "path": "internal/testhelper/helper.go"},
-    {"id": "f12", "path": "internal/testhelper/helper_test.go"},
-    {"id": "f13", "path": "root.go"},
-    {"id": "f14", "path": "root_external_test.go"},
-    {"id": "f15", "path": "root_optional_test.go"},
-    {"id": "f16", "path": "root_test.go"},
-    {"id": "f17", "path": "testonly/api_test.go"}
+    {
+      "id": "f1",
+      "path": "README.md"
+    },
+    {
+      "id": "f2",
+      "path": "_examples/published/go.mod"
+    },
+    {
+      "id": "f3",
+      "path": "_examples/published/main.go"
+    },
+    {
+      "id": "f4",
+      "path": "cmd/api/main.go"
+    },
+    {
+      "id": "f5",
+      "path": "cmd/app/main.go"
+    },
+    {
+      "id": "f6",
+      "path": "cmd/worker/main.go"
+    },
+    {
+      "id": "f7",
+      "path": "go.mod"
+    },
+    {
+      "id": "f8",
+      "path": "internal/localstore/store.go"
+    },
+    {
+      "id": "f9",
+      "path": "internal/storefixture/fixtures.go"
+    },
+    {
+      "id": "f10",
+      "path": "internal/storefixture/handoff_flow.go"
+    },
+    {
+      "id": "f11",
+      "path": "internal/storefixture/level_responses.go"
+    },
+    {
+      "id": "f12",
+      "path": "internal/storefixture/listen_addresses.go"
+    },
+    {
+      "id": "f13",
+      "path": "internal/storefixture/local_http_names.go"
+    },
+    {
+      "id": "f14",
+      "path": "internal/testhelper/helper.go"
+    },
+    {
+      "id": "f15",
+      "path": "internal/testhelper/helper_test.go"
+    },
+    {
+      "id": "f16",
+      "path": "pkg/servicecfg/settings.go"
+    },
+    {
+      "id": "f17",
+      "path": "root.go"
+    },
+    {
+      "id": "f18",
+      "path": "root_external_test.go"
+    },
+    {
+      "id": "f19",
+      "path": "root_optional_test.go"
+    },
+    {
+      "id": "f20",
+      "path": "root_test.go"
+    },
+    {
+      "id": "f21",
+      "path": "testonly/api_test.go"
+    }
   ]
 }

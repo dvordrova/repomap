@@ -82,10 +82,16 @@ button.repo-component-open::after{content:'⌄';position:absolute;right:.8rem;to
 .repo-component-card{display:grid;grid-template-columns:minmax(12rem,1fr) minmax(18rem,2fr) minmax(10rem,1fr);column-gap:1rem;align-items:start;padding:.75rem 1rem;border-radius:.4rem;scroll-margin-top:calc(var(--toolbar-height,0px) + 1rem)}
 .repo-component-open{padding:0;text-decoration:none}
 .repo-component-card>.repo-card-purpose{display:block;margin:0;font-size:.92rem;line-height:1.5;-webkit-line-clamp:unset;overflow:visible;min-height:0}
-.product-catalog{display:grid;grid-template-columns:1fr auto;gap:.2rem .8rem;margin:0;font-size:.85rem}
-.product-catalog dt{font-weight:400;color:var(--muted)}
-.product-catalog dd{margin:0;white-space:nowrap}
-.repo-row-connections{grid-column:1;padding:.2rem 0 0;border:0;text-align:left;background:transparent;color:var(--muted);font:inherit;font-size:.75rem;cursor:pointer;text-decoration:underline}
+.product-catalog{display:flex;flex-direction:column;align-items:flex-start;gap:.2rem;margin:0;padding:0;list-style:none;font-size:.85rem}
+.product-catalog li{margin:0;white-space:nowrap}
+.product-catalog a{display:inline-flex;align-items:flex-end;text-decoration:none}
+.product-catalog-label{border-bottom:1px solid currentColor;padding:0 .5em .12em 0;line-height:1.35}
+.product-catalog-count{display:inline-flex;align-items:center;justify-content:center;min-width:1.6em;padding:.15em .45em;border-radius:.65em .65em .65em 0;background:var(--accent);color:#fff;font-size:.9em;font-weight:600;line-height:1.25}
+.product-catalog a:hover .product-catalog-count{filter:brightness(.9)}
+.repo-row-connections{display:inline-flex;align-items:flex-end;justify-self:start;grid-column:1;padding:.2rem 0 0;border:0;text-align:left;background:transparent;color:var(--muted);font:inherit;font-size:.75rem;cursor:pointer}
+.repo-row-connections .product-catalog-count{background:var(--line);color:var(--muted)}
+.repo-row-connections .product-catalog-label{border-color:var(--muted)}
+.repo-row-connections-empty{cursor:default}
 .repo-component-source-links,.repo-component-card>.repo-card-path{grid-column:2 / -1;padding:.35rem 0 0}
 .repo-role-space>summary{pointer-events:auto;cursor:pointer;width:100%}
 .repo-role-space[open]>.repo-role-heading{margin-bottom:.7rem}

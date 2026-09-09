@@ -34,11 +34,13 @@ const BudgetThreshold = 2000
 
 // TargetMeta names one analyzed target of the run.
 type TargetMeta struct {
-	ID       string `json:"id"`
-	Language string `json:"language"`
-	Kind     string `json:"kind"`
-	Name     string `json:"name"`
-	Root     string `json:"root"`
+	ID           string   `json:"id"`
+	Language     string   `json:"language"`
+	Kind         string   `json:"kind"`
+	Name         string   `json:"name"`
+	Root         string   `json:"root"`
+	SelectedRole string   `json:"selected_role,omitempty"`
+	SharedCode   []string `json:"shared_code,omitempty"`
 }
 
 // Options is everything the reading needs.
@@ -821,7 +823,8 @@ func (r *reader) atlas(files int) atlas.Atlas {
 func (r *reader) target(meta TargetMeta) atlas.Target {
 	target := atlas.Target{
 		ID: meta.ID, Language: meta.Language, Kind: meta.Kind, Name: meta.Name, Root: meta.Root,
-		Zones: []atlas.Zone{}, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{},
+		SharedCode: append([]string(nil), meta.SharedCode...),
+		Zones:      []atlas.Zone{}, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{},
 		Boundaries: []atlas.Boundary{}, Trace: []string{},
 	}
 	if state, ok := r.targets[meta.ID]; ok {

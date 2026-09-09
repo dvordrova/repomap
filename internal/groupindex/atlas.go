@@ -359,6 +359,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		index: Index{
 			Version:            Version,
 			Role:               target.Role,
+			SharedCode:         append([]string(nil), target.SharedCode...),
 			Summary:            target.Line,
 			Target:             program.Target.Snapshot(),
 			ProgramIndexSHA256: program.SHA256,

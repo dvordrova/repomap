@@ -129,7 +129,15 @@ func buildPythonRepositoryProgramInput(
 		facts.Target.Selector != selected.Selector || !facts.Catalog.OwnsTarget(facts.Target) {
 		return programindex.Input{}, fmt.Errorf("invalid Python parser fact snapshot")
 	}
-	input, err := pythonprogramindex.BuildInput(request.Context, request.Corpus, facts.Target)
+	var seeds []pythontarget.Target
+	for _, seed := range request.Target.Seeds {
+		native, ok := repositoryPythonTarget(seed)
+		if !ok || !facts.Catalog.OwnsTarget(native) {
+			return programindex.Input{}, fmt.Errorf("seed outside Python target catalogue")
+		}
+		seeds = append(seeds, native)
+	}
+	input, err := pythonprogramindex.BuildInput(request.Context, request.Corpus, facts.Target, seeds...)
 	if err != nil {
 		return programindex.Input{}, fmt.Errorf("isolated parser: %w", err)
 	}

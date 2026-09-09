@@ -1,1 +1,1 @@
-{"default_file_ref":"<retained file ref>","target_file_refs":["<selected file ref>"]}
+{"default_file_ref":"f1","target_file_refs":["f1"],"native_decisions":[{"ref":"t1","decision":"standalone"}]}

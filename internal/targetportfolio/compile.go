@@ -52,7 +52,12 @@ func compile(
 	executableFileRefs []corpus.FileID,
 	requiredAuthorityBound bool,
 	requiredTargetFileRefs []corpus.FileID,
+	nativeAuthority ...[]NativeCandidate,
 ) (Compilation, error) {
+	var native []NativeCandidate
+	if len(nativeAuthority) > 0 {
+		native = cloneNative(nativeAuthority[0])
+	}
 	ownedCorpus, err := snapshot.Owned()
 	if err != nil {
 		return Compilation{}, fmt.Errorf("target portfolio: corpus: %w", err)
@@ -85,7 +90,10 @@ func compile(
 		requestRefs := cloneFileRefs(canonicalRequiredTargetFileRefs)
 		requestRequiredTargetFileRefs = &requestRefs
 	}
+	nativeRows, nativeObservations := nativeRequest(native)
 	request := Request{
+		NativeTargets:          nativeRows,
+		Observations:           nativeObservations,
 		Candidates:             visible,
 		ExecutableFileRefs:     requestExecutableFileRefs,
 		RequiredTargetFileRefs: requestRequiredTargetFileRefs,
@@ -108,6 +116,7 @@ func compile(
 		state:         append([]byte(nil), state...),
 		corpus:        ownedCorpus,
 		candidates:    cloneCandidates(canonical),
+		native:        native,
 
 		executableAuthorityBound: executableAuthorityBound,
 		executableFileRefs:       cloneFileRefs(canonicalExecutableFileRefs),
@@ -133,6 +142,9 @@ func ExecutionState(compilation Compilation) ([]byte, error) {
 }
 
 func validateCompilation(compilation Compilation) error {
+	if err := validateNative(compilation); err != nil {
+		return err
+	}
 	if err := compilation.corpus.Validate(); err != nil {
 		return fmt.Errorf("target portfolio: private corpus: %w", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -55,6 +56,18 @@ func readRepositoryAtlas(
 
 	targets := make([]places.TargetInput, 0, len(runs))
 	metas := make([]reading.TargetMeta, 0, len(runs))
+	targetIDs := make(map[string]string)
+	for i := range runs {
+		index, err := runs[i].programIndex()
+		if err != nil {
+			return atlasOutcome{}, err
+		}
+		targetIDs[runs[i].SelectedTargetKey] = index.Target.ID
+	}
+	planned := make(map[string]repositoryTypedTarget)
+	for _, target := range options.Plan.Targets {
+		planned[target.Key.String()] = target
+	}
 	for position := range runs {
 		run := &runs[position]
 		index, err := run.programIndex()
@@ -69,10 +82,25 @@ func readRepositoryAtlas(
 		}
 		target.Dependencies = catalog
 		targets = append(targets, target)
-		metas = append(metas, reading.TargetMeta{
+		meta := reading.TargetMeta{
 			ID: index.Target.ID, Language: index.Target.Language, Kind: index.Target.Kind,
 			Name: index.Target.Name, Root: root,
-		})
+		}
+		if target, ok := planned[run.SelectedTargetKey]; ok {
+			meta.SelectedRole = target.Placement
+			if meta.SelectedRole == "standalone" {
+				meta.SelectedRole = atlas.RoleProduct
+				if strings.Contains(index.Target.Kind, "library") {
+					meta.SelectedRole = atlas.RoleLibrary
+				}
+			}
+			for _, shared := range target.SharedCode {
+				if id := targetIDs[shared.String()]; id != "" {
+					meta.SharedCode = append(meta.SharedCode, id)
+				}
+			}
+		}
+		metas = append(metas, meta)
 	}
 	options.Output.Stage("Atlas places", "building the places graph from the program indexes, claims and corpus")
 	started := time.Now()

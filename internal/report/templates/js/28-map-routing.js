@@ -156,17 +156,20 @@ var repomapGraph = (function () {
       else{card.classList.add('repo-component-unavailable');button.setAttribute('aria-disabled','true');}
       var name=node.querySelector('.repo-card-name').cloneNode(true);breakName(name);button.appendChild(name);
       var meta=node.querySelector('.repo-card-meta')?.cloneNode(true);if(meta)button.appendChild(meta);
-      if(href){var tally=el('span','repo-connection-tally','← '+incident(id,'in').length+'   → '+incident(id,'out').length);tally.setAttribute('aria-label',rmT('Uses this component')+': '+incident(id,'in').length+'; '+rmT('This component uses')+': '+incident(id,'out').length);button.appendChild(tally);}
-      else{var note=node.querySelector('.repo-card-note');if(note)button.appendChild(note.cloneNode(true));}
+      if(!href){var note=node.querySelector('.repo-card-note');if(note)button.appendChild(note.cloneNode(true));}
       card.appendChild(button);
       if(href){
         var purpose=node.querySelector('.repo-card-purpose');if(purpose)card.appendChild(purpose.cloneNode(true));
-        var page=document.getElementById(href.slice(1)),catalog=el('dl','product-catalog');
+        var page=document.getElementById(href.slice(1)),catalog=el('ul','product-catalog');
         [['Inputs','inputCount','inbound'],['Parts','partCount','core'],['Integrations','integrationCount','external']].forEach(function(item){
           var number=Number(page?.dataset[item[1]]||0);if(!number)return;
-          catalog.appendChild(el('dt','',rmT(item[0])));var value=el('dd',''),link=el('a','',rmT('All {0} →',number));link.href=href+'-'+item[2];value.appendChild(link);catalog.appendChild(value);
+          var value=el('li',''),link=el('a','');link.href=href+'-'+item[2];link.setAttribute('aria-label',rmT(item[0])+': '+number);
+          link.appendChild(el('span','product-catalog-label',rmT(item[0])));link.appendChild(el('span','product-catalog-count',String(number)));value.appendChild(link);catalog.appendChild(value);
         });if(catalog.childNodes.length)card.appendChild(catalog);
-        var inspect=el('button','repo-row-connections',rmT('Connections'));inspect.type='button';inspect.setAttribute('aria-controls',focus.id);inspect.addEventListener('click',function(){choose(id,true);});card.appendChild(inspect);
+        var connectionCount=incident(id,'in').length+incident(id,'out').length;
+        var inspect=el(connectionCount?'button':'span','repo-row-connections'+(connectionCount?'':' repo-row-connections-empty'));inspect.setAttribute('aria-label',rmT('Connections')+': '+connectionCount);
+        inspect.appendChild(el('span','product-catalog-label',rmT('Connections')));inspect.appendChild(el('span','product-catalog-count',String(connectionCount)));
+        if(connectionCount){inspect.type='button';inspect.setAttribute('aria-controls',focus.id);inspect.addEventListener('click',function(){choose(id,true);});}card.appendChild(inspect);
       }
       var sources=el('div','repo-component-source-links'),seen=new Set();
       facts[id].forEach(function(row){row.querySelectorAll('.anchor').forEach(function(anchor){

@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version          = 7
+	Version          = 8
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -254,6 +254,7 @@ type StructuralEdge struct {
 type Index struct {
 	Version            int                 `json:"version"`
 	Role               string              `json:"role,omitempty"`
+	SharedCode         []string            `json:"shared_code,omitempty"`
 	Summary            string              `json:"summary,omitempty"`
 	Target             programindex.Target `json:"target"`
 	ProgramIndexSHA256 string              `json:"program_index_sha256"`
@@ -582,6 +583,7 @@ func WithConnections(indexes []Index, accepted []ConnectionInput) ([]Index, []Di
 // Snapshot returns a consumer-owned deep copy.
 func (index Index) Snapshot() Index {
 	result := index
+	result.SharedCode = cloneStrings(index.SharedCode)
 	result.Operations = append([]Operation(nil), index.Operations...)
 	result.Target = index.Target.Snapshot()
 	result.Subjects = make([]Subject, len(index.Subjects))
@@ -767,6 +769,7 @@ func Decode(encoded []byte) (Index, error) {
 func ValidateSet(indexes []Index) error {
 	groupsByTarget := make(map[string]map[string]struct{}, len(indexes))
 	subjectsByTarget := make(map[string]map[string]struct{}, len(indexes))
+	roles := make(map[string]string, len(indexes))
 	for _, index := range indexes {
 		if err := index.Validate(); err != nil {
 			return err
@@ -784,8 +787,16 @@ func ValidateSet(indexes []Index) error {
 			subjects[subject.ID] = struct{}{}
 		}
 		subjectsByTarget[index.Target.ID] = subjects
+		roles[index.Target.ID] = index.Role
 	}
 	for _, index := range indexes {
+		seenShared := make(map[string]bool)
+		for _, id := range index.SharedCode {
+			if id == index.Target.ID || seenShared[id] || roles[id] != "shared_code" {
+				return fmt.Errorf("group index: invalid shared code target %q", id)
+			}
+			seenShared[id] = true
+		}
 		for _, connection := range index.Connections {
 			for _, endpoint := range []Endpoint{connection.From, connection.To} {
 				groups, ok := groupsByTarget[endpoint.TargetID]

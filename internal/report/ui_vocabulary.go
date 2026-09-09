@@ -455,6 +455,7 @@ var russianUI = map[string]string{
 	"scheduled":                          "запуск по расписанию",
 	"continuous":                         "постоянная работа",
 	"Applications":                       "Приложения",
+	"Shared code":                        "Общий код",
 	"Libraries":                          "Библиотеки",
 	"Tools":                              "Инструменты",
 	"Examples":                           "Примеры",

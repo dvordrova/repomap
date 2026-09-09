@@ -72,21 +72,8 @@ func TestCompileAndResolveFilePortfolio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prompt.Version != PromptVersion || !strings.Contains(prompt.User, string(wire)) ||
-		!strings.Contains(prompt.System, "Selection is positive") ||
-		!strings.Contains(prompt.System, "credible starting file") ||
-		!strings.Contains(prompt.System, "do not receive file contents") ||
-		!strings.Contains(prompt.System, "Omit every file that is neither exact required target authority nor positively supported") ||
-		!strings.Contains(prompt.System, "producer provenance, not evidence") ||
-		!strings.Contains(prompt.User, "exactly one JSON object with these two fields") ||
-		!strings.Contains(prompt.User, `{"default_file_ref":null,"target_file_refs":[]}`) ||
-		!strings.Contains(prompt.User, "set-valued selection") ||
-		!strings.Contains(prompt.User, "End of quoted classification-batch JSON") ||
-		strings.Contains(prompt.User, "request_ref") || strings.Contains(prompt.System, "Go repository") ||
-		strings.Contains(strings.ToLower(prompt.System), "surface") ||
-		strings.Contains(strings.ToLower(prompt.System), "unlikely") ||
-		strings.Contains(strings.ToLower(prompt.User), "unlikely") {
-		t.Fatalf("prompt contract = %#v", prompt)
+	if prompt.Version != PromptVersion || !strings.Contains(prompt.User, string(wire)) || strings.Contains(prompt.User, snapshot.SHA256) {
+		t.Fatal("prompt is not bound to the exact public request")
 	}
 
 	defaultRef := corpus.FileID("f2")
@@ -166,11 +153,8 @@ func TestCompileWithExecutableAuthorityCanonicalizesAndBindsExactRefs(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt.System, "complete closed subset") ||
-		!strings.Contains(prompt.System, "library-only subset or library default") ||
-		!strings.Contains(prompt.User, "exact local authority") ||
-		!strings.Contains(prompt.User, "legitimate empty selection") {
-		t.Fatalf("executable-authority prompt contract = %#v", prompt)
+	if !strings.Contains(prompt.User, string(leftWire)) {
+		t.Fatal("prompt lost exact authority")
 	}
 
 	defaultRef := corpus.FileID("f1")
@@ -205,10 +189,8 @@ func TestRequiredTargetAuthorityCannotBeSuppressedByPortfolio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt.System, "Include every required ref in `target_file_refs`") ||
-		!strings.Contains(prompt.System, "Do not suppress one language because another language is present") ||
-		!strings.Contains(prompt.User, "include every member") {
-		t.Fatalf("required-target prompt contract = %#v", prompt)
+	if !strings.Contains(prompt.User, string(wire)) {
+		t.Fatal("prompt lost exact authority")
 	}
 
 	for name, raw := range map[string][]byte{

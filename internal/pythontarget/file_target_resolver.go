@@ -363,6 +363,7 @@ func cloneFileResolverTarget(target Target) Target {
 	target.Roots = cloneFileResolverSlice(target.Roots)
 	target.Packages = cloneFileResolverSlice(target.Packages)
 	target.Basis = cloneFileResolverSlice(target.Basis)
+	target.DeclaredPackages = cloneDeclarations(target.DeclaredPackages)
 	return target
 }
 

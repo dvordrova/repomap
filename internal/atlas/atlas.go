@@ -26,7 +26,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 9
-	Version      = 3
+	Version      = 4
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -332,6 +332,7 @@ type Target struct {
 	Line string `json:"line"`
 	// Role is MODEL: product, library, fixture, tool or example.
 	Role       string     `json:"role,omitempty"`
+	SharedCode []string   `json:"shared_code,omitempty"`
 	Zones      []Zone     `json:"zones"`
 	Boxes      []Box      `json:"boxes"`
 	Arrows     []Arrow    `json:"arrows"`
@@ -933,6 +934,19 @@ func Validate(value Atlas) error {
 			}
 		}
 	}
+	roles := make(map[string]string, len(value.Targets))
+	for _, target := range value.Targets {
+		roles[target.ID] = target.Role
+	}
+	for _, target := range value.Targets {
+		seenShared := make(map[string]bool)
+		for _, id := range target.SharedCode {
+			if id == target.ID || seenShared[id] || roles[id] != RoleSharedCode {
+				return fmt.Errorf("atlas: target %q cites invalid shared code %q", target.ID, id)
+			}
+			seenShared[id] = true
+		}
+	}
 	for _, joint := range value.Joints {
 		for _, endpoint := range []Endpoint{joint.From, joint.To} {
 			owned, ok := boundaries[endpoint.TargetID]
@@ -964,11 +978,12 @@ func Validate(value Atlas) error {
 
 // Roles, sides, directions and boundary kinds are closed lists.
 const (
-	RoleProduct = "product"
-	RoleLibrary = "library"
-	RoleFixture = "fixture"
-	RoleTool    = "tool"
-	RoleExample = "example"
+	RoleProduct    = "product"
+	RoleLibrary    = "library"
+	RoleFixture    = "fixture"
+	RoleTool       = "tool"
+	RoleExample    = "example"
+	RoleSharedCode = "shared_code"
 
 	SideIn  = "in"
 	SideMid = "mid"
@@ -994,7 +1009,7 @@ const (
 
 // Roles lists the target roles in the order the model sees them.
 func Roles() []string {
-	return []string{RoleProduct, RoleLibrary, RoleFixture, RoleTool, RoleExample}
+	return []string{RoleProduct, RoleLibrary, RoleFixture, RoleTool, RoleExample, RoleSharedCode}
 }
 
 // BoundaryKinds lists the boundary kinds in the order the model sees them.

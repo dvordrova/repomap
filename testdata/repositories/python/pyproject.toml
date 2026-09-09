@@ -10,3 +10,9 @@ dependencies = [
 
 [project.scripts]
 repomap-fixture = "fixture_app.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["fixture_app*", "acme", "acme.*"]
+exclude = ["acme.excluded", "acme.excluded.*"]
+namespaces = false

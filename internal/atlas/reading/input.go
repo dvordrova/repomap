@@ -15,7 +15,7 @@ import (
 )
 
 const InputFilename = "reading-input.json"
-const InputVersion = 9
+const InputVersion = 10
 
 // Input is the complete deterministic boundary before the first atlas call.
 // No repository files, manifests, report schema or compiler are needed to read it.
@@ -88,7 +88,23 @@ func LoadInput(filename string) (Input, error) {
 		if target.ID == "" || targets[target.ID] || target.Language == "" || target.Kind == "" || target.Root == "" {
 			return Input{}, fmt.Errorf("reading input: incomplete or duplicate target %q", target.ID)
 		}
+		if target.SelectedRole != "" && !atlas.ValidRole(target.SelectedRole) {
+			return Input{}, fmt.Errorf("reading input: invalid selected role for target %q", target.ID)
+		}
 		targets[target.ID] = true
+	}
+	roles := make(map[string]string, len(input.Targets))
+	for _, target := range input.Targets {
+		roles[target.ID] = target.SelectedRole
+	}
+	for _, target := range input.Targets {
+		seen := make(map[string]bool)
+		for _, id := range target.SharedCode {
+			if id == target.ID || seen[id] || roles[id] != atlas.RoleSharedCode {
+				return Input{}, fmt.Errorf("reading input: invalid shared code for target %q", target.ID)
+			}
+			seen[id] = true
+		}
 	}
 	for _, place := range input.Graph.Places {
 		for _, id := range place.TargetIDs {

@@ -808,6 +808,11 @@ func (page *PreparedPage) rebuildDisplayLabels(language DisplayLanguage) {
 	byDestination := make(map[string]*pageSection)
 	for _, section := range view.Sections {
 		byDestination["#"+section.ID] = section
+		for i := range section.SharedCode {
+			if owner := bySection[strings.TrimPrefix(section.SharedCode[i].Href, "#")]; owner != nil {
+				section.SharedCode[i].Name = owner.Label
+			}
+		}
 		for _, groups := range [][]pageGroup{section.Triggers, section.Core, section.DependencyGroups} {
 			for i := range groups {
 				byDestination["#"+groups[i].ID] = section

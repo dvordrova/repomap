@@ -225,6 +225,7 @@ func compileSubset(compilation Compilation, candidates []Candidate) (Compilation
 		executableRefs,
 		compilation.requiredAuthorityBound,
 		requiredRefs,
+		nativeSubset(compilation, candidates),
 	)
 }
 

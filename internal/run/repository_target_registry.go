@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -100,6 +101,7 @@ type repositoryTargetAdapterDiscovery struct {
 	Candidates       []analysistarget.FileCandidate
 	RequiredFileRefs []corpus.FileID
 	Authority        any
+	NativeEvidence   func(repositoryTypedTarget) (repositoryNativeEvidence, error)
 
 	ResolvesFile      func(corpus.FileID) bool
 	RestoreFiles      func([]corpus.FileID) ([]repositoryTargetFileRestoration, error)
@@ -239,10 +241,15 @@ func equalRepositoryTargetLanguages(left, right []string) bool {
 func sameRepositoryPlannedTarget(left, right repositoryTypedTarget) bool {
 	// Display may be refreshed from a materialized manifest after discovery;
 	// selector, scope, language family, and file authority may not drift.
-	if left.Key != right.Key || left.Selector != right.Selector || left.Scope != right.Scope ||
+	if left.Key != right.Key || left.Selector != right.Selector || left.Scope != right.Scope || left.Placement != right.Placement || len(left.Seeds) != len(right.Seeds) || !slices.Equal(left.SharedCode, right.SharedCode) ||
 		!equalRepositoryTargetLanguages(left.AllowedLanguages, right.AllowedLanguages) ||
 		len(left.FileRefs) != len(right.FileRefs) {
 		return false
+	}
+	for i := range left.Seeds {
+		if !sameRepositoryPlannedTarget(left.Seeds[i], right.Seeds[i]) {
+			return false
+		}
 	}
 	for index := range left.FileRefs {
 		if left.FileRefs[index] != right.FileRefs[index] {
@@ -280,6 +287,9 @@ type repositoryTypedTarget struct {
 	Scope            targetoutcome.ScopeKind
 	AllowedLanguages []string
 	FileRefs         []corpus.FileID
+	Placement        string
+	Seeds            []repositoryTypedTarget
+	SharedCode       []repositoryTargetKey
 
 	native any
 }

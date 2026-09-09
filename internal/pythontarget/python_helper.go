@@ -89,6 +89,7 @@ def pyproject(item, text):
         scripts.extend(script_rows(poetry.get("scripts"), "poetry", path, text, "tool.poetry.scripts", errors))
     roots = []
     packages_out = []
+    declarations = []
     setuptools = tool.get("setuptools", {})
     if isinstance(setuptools, dict):
         package_dir = setuptools.get("package-dir", {})
@@ -96,11 +97,17 @@ def pyproject(item, text):
             root = package_dir.get("")
             if isinstance(root, str):
                 roots.append(root.strip())
-        packages = setuptools.get("packages", {})
+        packages = setuptools.get("packages")
+        if isinstance(packages, list) and all(isinstance(value, str) for value in packages):
+            packages_out.extend(packages)
+            declarations.append({"path": path, "line": toml_line(text, "tool.setuptools", "packages"), "kind": "packages", "packages": packages})
         if isinstance(packages, dict):
-            find = packages.get("find", {})
+            find = packages.get("find")
             if isinstance(find, dict):
                 where = find.get("where")
+                include, exclude = find.get("include", ["*"]), find.get("exclude", [])
+                if isinstance(include, list) and isinstance(exclude, list) and all(isinstance(v, str) for v in include + exclude):
+                    declarations.append({"path": path, "line": toml_line(text, "tool.setuptools.packages.find", "include") or toml_line(text, "tool.setuptools.packages.find", "where") or toml_line(text, "tool.setuptools.packages", "find") or next((n for n, row in enumerate(text.splitlines(), 1) if row.strip() == "[tool.setuptools.packages.find]"), 0), "kind": "find", "where": [where] if isinstance(where, str) else where or ["."], "include": include, "exclude": exclude, "namespaces": find.get("namespaces", True) is True})
                 if isinstance(where, str):
                     roots.append(where.strip())
                 elif isinstance(where, list):
@@ -116,8 +123,10 @@ def pyproject(item, text):
             for value in hatch_packages:
                 if isinstance(value, str) and "/" in value.strip("/"):
                     roots.append(value.strip("/").rsplit("/", 1)[0])
+    if not declarations and isinstance(project.get("name"), str):
+        declarations.append({"path": path, "line": toml_line(text, "project", "name"), "kind": "project_name", "packages": [project["name"]]})
     distribution = bool(project) or bool(poetry) or bool(packages_out)
-    return {"path": path, "scripts": scripts, "source_roots": roots, "packages": packages_out, "distribution": distribution, "errors": errors}
+    return {"path": path, "scripts": scripts, "source_roots": roots, "packages": packages_out, "declarations": declarations, "distribution": distribution, "errors": errors}
 
 def setup_cfg(item, text):
     path = item["path"]
@@ -146,8 +155,23 @@ def setup_cfg(item, text):
             row = row.strip()
             if row.startswith("="):
                 roots.append(row[1:].strip())
+    declarations = []
+    packages_out = []
+    if parser.has_option("options", "packages"):
+        value = parser.get("options", "packages").strip()
+        if value in ("find:", "find_namespace:"):
+            def patterns(key, default):
+                if not parser.has_option("options.packages.find", key):
+                    return default
+                return [v.strip() for v in parser.get("options.packages.find", key).splitlines() if v.strip()]
+            declarations.append({"path": path, "line": cfg_line(text, "options.packages.find", "include") or cfg_line(text, "options", "packages"), "kind": "find", "where": patterns("where", roots or ["."]), "include": patterns("include", ["*"]), "exclude": patterns("exclude", []), "namespaces": value == "find_namespace:"})
+        else:
+            packages_out = [v.strip() for v in value.splitlines() if v.strip()]
+            declarations.append({"path": path, "line": cfg_line(text, "options", "packages"), "kind": "packages", "packages": packages_out})
+    if not declarations and parser.has_option("metadata", "name"):
+        declarations.append({"path": path, "line": cfg_line(text, "metadata", "name"), "kind": "project_name", "packages": [parser.get("metadata", "name")]})
     distribution = parser.has_section("metadata") or parser.has_section("options") or parser.has_section("options.entry_points")
-    return {"path": path, "scripts": scripts, "source_roots": roots, "packages": [], "distribution": distribution, "errors": errors}
+    return {"path": path, "scripts": scripts, "source_roots": roots, "packages": packages_out, "declarations": declarations, "distribution": distribution, "errors": errors}
 
 class UnsafeLiteral(Exception):
     pass
@@ -173,6 +197,7 @@ def setup_py(item, text, tree):
     roots = []
     dynamic = False
     packages_out = []
+    declarations = []
     distribution = False
     setup_names = set()
     setup_modules = set()
@@ -273,6 +298,8 @@ def setup_py(item, text, tree):
                 package_values = safe_literal(keywords["packages"], env)
                 if isinstance(package_values, list):
                     packages_out.extend(value.strip() for value in package_values if isinstance(value, str))
+                    if all(isinstance(value, str) for value in package_values):
+                        declarations.append({"path": path, "line": keywords["packages"].lineno, "kind": "packages", "packages": package_values})
             except (UnsafeLiteral, TypeError):
                 pass
         if "py_modules" in keywords:
@@ -280,6 +307,8 @@ def setup_py(item, text, tree):
                 module_values = safe_literal(keywords["py_modules"], env)
                 if isinstance(module_values, list):
                     packages_out.extend(value.strip() for value in module_values if isinstance(value, str))
+                    if all(isinstance(value, str) for value in module_values):
+                        declarations.append({"path": path, "line": keywords["py_modules"].lineno, "kind": "modules", "packages": module_values})
             except (UnsafeLiteral, TypeError):
                 pass
         if "entry_points" not in keywords:
@@ -301,7 +330,7 @@ def setup_py(item, text, tree):
                 continue
             for value in values:
                 scripts.append({"name_value": value.strip(), "kind": kind, "path": path, "line": node.lineno})
-    return {"path": path, "scripts": scripts, "source_roots": roots, "packages": packages_out, "distribution": distribution, "dynamic": dynamic, "errors": []}
+    return {"path": path, "scripts": scripts, "source_roots": roots, "packages": packages_out, "declarations": declarations, "distribution": distribution, "dynamic": dynamic, "errors": []}
 
 def exact_main_guard(test):
     if not isinstance(test, ast.Compare) or len(test.ops) != 1 or not isinstance(test.ops[0], ast.Eq) or len(test.comparators) != 1:

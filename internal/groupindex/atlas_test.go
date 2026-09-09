@@ -63,6 +63,45 @@ func TestObservedRoutesReplaceTheDeclarationOperationAndKeepAliases(t *testing.T
 	}
 }
 
+func TestSharedCodeLinksRemainBoundToTheirCompleteTarget(t *testing.T) {
+	app := atlasTestProgram(t, "app", "cmd/app.go")
+	shared := atlasTestProgram(t, "shared", "pkg/shared.go")
+	makeTarget := func(p programindex.Index, role string) atlas.Target {
+		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Role: role, Root: ".", Zones: []atlas.Zone{}, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}}
+	}
+	value := atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{makeTarget(app, atlas.RoleProduct), makeTarget(shared, atlas.RoleSharedCode)}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}}
+	value.Targets[0].SharedCode = []string{shared.Target.ID}
+	indexes, err := ProjectAtlas(map[string]programindex.Index{app.Target.ID: app, shared.Target.ID: shared}, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var consumer Index
+	for _, index := range indexes {
+		if index.Target.ID == app.Target.ID {
+			consumer = index
+			copy := index.Snapshot()
+			copy.SharedCode[0] = "changed"
+			if index.SharedCode[0] != shared.Target.ID {
+				t.Fatal("snapshot aliases shared code ownership")
+			}
+		}
+	}
+	if err := ValidateSet([]Index{consumer}); err == nil {
+		t.Fatal("missing shared analysis accepted")
+	}
+	for _, ids := range [][]string{{"unknown"}, {app.Target.ID}, {shared.Target.ID, shared.Target.ID}} {
+		value.Targets[0].SharedCode = ids
+		if atlas.Validate(value) == nil {
+			t.Fatalf("invalid shared code link accepted: %v", ids)
+		}
+	}
+	value.Targets[0].SharedCode = []string{shared.Target.ID}
+	value.Targets[1].Role = atlas.RoleTool
+	if atlas.Validate(value) == nil {
+		t.Fatal("tool promoted into shared code")
+	}
+}
+
 func atlasTestProgram(t *testing.T, name string, files ...string) programindex.Index {
 	t.Helper()
 	objects := make([]programindex.ObjectInput, 0, len(files))

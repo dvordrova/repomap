@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	CatalogVersion        = 3
-	TargetVersion         = 3
+	CatalogVersion        = 4
+	TargetVersion         = 4
 	TargetIdentityVersion = 3
 	// AdvisoryCatalogBytes is a diagnostic usual size for the complete sealed
 	// in-memory target catalog. Crossing it never narrows or rejects targets.
@@ -145,21 +145,22 @@ type Omission struct {
 // Target is a sealed Python target. Executables have exact Roots; libraries
 // have an exact discovered top-level Packages inventory.
 type Target struct {
-	Version       int             `json:"version"`
-	Ref           string          `json:"ref"`
-	IdentityRef   string          `json:"identity_ref"`
-	Kind          Kind            `json:"kind"`
-	Selector      string          `json:"selector"`
-	DisplayName   string          `json:"display_name"`
-	ProjectDir    string          `json:"project_dir"`
-	ScopeRef      string          `json:"scope_ref,omitempty"`
-	SourceRoots   []string        `json:"source_roots"`
-	SourceRefs    []corpus.FileID `json:"source_refs"`
-	AnchorFileRef corpus.FileID   `json:"anchor_file_ref"`
-	Modules       []Module        `json:"modules"`
-	Roots         []Root          `json:"roots,omitempty"`
-	Packages      []Package       `json:"packages,omitempty"`
-	Basis         []Basis         `json:"basis"`
+	Version          int                  `json:"version"`
+	Ref              string               `json:"ref"`
+	IdentityRef      string               `json:"identity_ref"`
+	Kind             Kind                 `json:"kind"`
+	Selector         string               `json:"selector"`
+	DisplayName      string               `json:"display_name"`
+	ProjectDir       string               `json:"project_dir"`
+	ScopeRef         string               `json:"scope_ref,omitempty"`
+	SourceRoots      []string             `json:"source_roots"`
+	SourceRefs       []corpus.FileID      `json:"source_refs"`
+	AnchorFileRef    corpus.FileID        `json:"anchor_file_ref"`
+	Modules          []Module             `json:"modules"`
+	Roots            []Root               `json:"roots,omitempty"`
+	Packages         []Package            `json:"packages,omitempty"`
+	Basis            []Basis              `json:"basis"`
+	DeclaredPackages []PackageDeclaration `json:"declared_packages,omitempty"`
 }
 
 // Catalog is the complete canonical Python target and module-scope inventory
@@ -182,6 +183,7 @@ func (target Target) Snapshot() Target {
 	copyTarget.Roots = append([]Root(nil), target.Roots...)
 	copyTarget.Packages = append([]Package(nil), target.Packages...)
 	copyTarget.Basis = append([]Basis(nil), target.Basis...)
+	copyTarget.DeclaredPackages = cloneDeclarations(target.DeclaredPackages)
 	return copyTarget
 }
 
@@ -227,6 +229,16 @@ func (target Target) Validate() error {
 		}
 		if module.Importable && longestContainingPath(target.SourceRoots, module.Path) == "" {
 			return fmt.Errorf("python target: module %q is outside source roots", module.Name)
+		}
+	}
+	for _, declaration := range target.DeclaredPackages {
+		if validateRepoPath(declaration.Path, true) != nil || declaration.Line < 1 || !pathWithin(target.ProjectDir, declaration.Path) {
+			return fmt.Errorf("invalid package declaration address")
+		}
+		switch declaration.Kind {
+		case "packages", "modules", "find", "project_name":
+		default:
+			return fmt.Errorf("invalid package declaration kind")
 		}
 	}
 	if len(target.Basis) == 0 {
@@ -437,6 +449,7 @@ func NewCatalog(entries []Target, omissions []Omission) (Catalog, error) {
 		target.Roots = append([]Root(nil), input.Roots...)
 		target.Packages = append([]Package(nil), input.Packages...)
 		target.Basis = append([]Basis(nil), input.Basis...)
+		target.DeclaredPackages = cloneDeclarations(input.DeclaredPackages)
 		canonicalizeTarget(&target)
 		sealed, err := sealTarget(target)
 		if err != nil {
@@ -889,6 +902,7 @@ func cloneTarget(input Target) Target {
 	target.Roots = append([]Root(nil), input.Roots...)
 	target.Packages = append([]Package(nil), input.Packages...)
 	target.Basis = append([]Basis(nil), input.Basis...)
+	target.DeclaredPackages = cloneDeclarations(input.DeclaredPackages)
 	return target
 }
 
