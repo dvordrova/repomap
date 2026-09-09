@@ -2808,11 +2808,14 @@ explicit errors instead of compatibility readers.
 File rows now use deterministic direct-caller evidence (path, documentation,
 leading declaration names), alongside the directory's model description.
 They no longer consume other files' generated lines, so all file windows
-can run independently. The file prompt contract is v2. Tables also split
-complete rows under a 64 KiB system+user UTF-8 planning budget. This is
+can run independently. The file prompt contract is v2. Tables also pack
+complete rows toward a 64 KiB system+user UTF-8 planning size. This is
 independent of provider envelope limits and does not claim to measure tokens
-or comprehension. A singleton exceeding the budget is an explicit error;
-its owner must change the evidence representation. Per-window prompts and
+or comprehension. A larger singleton retains its complete evidence and shared
+context in a request of its own; ordinary packing cannot refuse it merely for
+exceeding 64 KiB. Explicit development `read --input-bytes` budgets retain their
+hard bound for stage-planning experiments. The actual prepared request still
+passes the shared provider envelope checks. Per-window prompts and
 normalized results with source bindings accompany the raw exchanges.
 
 Validation proceeds from deterministic fixture expectations, to frozen-input

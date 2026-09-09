@@ -546,11 +546,13 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   the drawn arrows, the portfolio, the joints. A row carries the place's own facts and its directory's line, one step up.
   File callers contribute deterministic facts, never another file's model
   line. Independent directory, file, callable, type, boundary and operation
-  tables pack consecutive complete rows by their input-byte budget (64 KiB
-  default), without artificial 8/40-row caps. Explicit read-stage row budgets
+  tables pack consecutive complete rows toward a 64 KiB default input size,
+  without artificial 8/40-row caps. A larger complete row, including its shared
+  context, runs alone; the default packing size never rejects its evidence.
+  Explicit read-stage input and row budgets
   remain available. Other tables retain their owning context and round bounds.
-  An oversized singleton is an explicit preparation
-  error requiring a different evidence representation in its owning stage. The model writes one line or one closed choice per
+  The actual prepared provider request still obeys the shared transport envelope.
+  The model writes one line or one closed choice per
   cell; the code owns membership, arrows and their direction, joints by
   matched values, counts and identities. A refused window falls back on its
   rows' deterministic lines and is written to `rejected.jsonl`, never

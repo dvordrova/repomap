@@ -278,6 +278,63 @@ func TestWindowsSplitByInputBytesWithoutLosingRowsOrContext(t *testing.T) {
 	}
 }
 
+func TestWindowsKeepOversizedRowsWholeBetweenOrdinaryBatches(t *testing.T) {
+	for _, largeContext := range []bool{false, true} {
+		t.Run(fmt.Sprintf("large-context-%t", largeContext), func(t *testing.T) {
+			def := testDefinition()
+			def.Window = 0
+			shared := []Field{{Name: "purpose", Value: "All original evidence."}}
+			large := strings.Repeat("ю\"<&\n", 20_000)
+			rows := []Row{
+				{ID: "before-1", Fields: []Field{{Name: "doc", Value: "before"}}},
+				{ID: "before-2", Fields: []Field{{Name: "doc", Value: "before"}}},
+				{ID: "large", Fields: []Field{{Name: "doc", Value: large}}},
+				{ID: "after-1", Fields: []Field{{Name: "doc", Value: "after"}}},
+				{ID: "after-2", Fields: []Field{{Name: "doc", Value: "after"}}},
+			}
+			wantSizes := []int{2, 1, 2}
+			if largeContext {
+				shared[0].Value = large
+				wantSizes = []int{1, 1, 1, 1, 1}
+			}
+			windows, err := WindowsWithContext(def, 2, shared, rows)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var sizes []int
+			offset := 0
+			for i, window := range windows {
+				sizes = append(sizes, len(window.Rows))
+				if window.Index != i || window.Round != 2 || !reflect.DeepEqual(window.Rows, rows[offset:offset+len(window.Rows)]) {
+					t.Fatal("packing changed row identity, order or evidence")
+				}
+				if len(def.System)+len(window.Request) > DefaultInputBytes && len(window.Rows) != 1 {
+					t.Fatal("an oversized row absorbed its neighbours")
+				}
+				var decoded struct {
+					Context map[string]string   `json:"context"`
+					Rows    []map[string]string `json:"rows"`
+				}
+				if err := json.Unmarshal(window.Request, &decoded); err != nil {
+					t.Fatal(err)
+				}
+				if decoded.Context["purpose"] != shared[0].Value || len(decoded.Rows) != len(window.Rows) {
+					t.Fatal("request lost complete shared context or rows")
+				}
+				for j, row := range decoded.Rows {
+					if row["key"] != Key(j) || row["doc"] != rows[offset+j].Fields[0].Value {
+						t.Fatal("request changed escaped UTF-8 evidence or its local key")
+					}
+				}
+				offset += len(window.Rows)
+			}
+			if offset != len(rows) || !reflect.DeepEqual(sizes, wantSizes) {
+				t.Fatalf("window sizes %v, want %v; kept %d rows", sizes, wantSizes, offset)
+			}
+		})
+	}
+}
+
 func TestWindowsGreedilyFillByteBudgetWithExactLocalKeys(t *testing.T) {
 	doc := strings.Repeat("ю\"<&\n", 20)
 	var rows []Row

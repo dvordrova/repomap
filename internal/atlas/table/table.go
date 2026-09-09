@@ -20,8 +20,9 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-// DefaultInputBytes is a starting context budget, tunable in isolated readings.
-// The model still needs to be evaluated on the resulting evidence, not its size.
+// DefaultInputBytes is the packing target for consecutive complete rows.
+// A row with its context may exceed it in a request of its own; the shared
+// provider envelope still applies. Isolated readings may set a hard budget.
 const DefaultInputBytes = 64 * 1024
 
 // Kind is what a cell may hold.
@@ -73,8 +74,9 @@ type Definition struct {
 	Columns []Column
 	// Reasoning opts this table into provider-supported deliberate reasoning.
 	Reasoning bool
-	// MaxInputBytes bounds system + user UTF-8 bytes before provider encoding.
-	// It is a context planning budget, not a token count or transport ceiling.
+	// MaxInputBytes optionally bounds system + user UTF-8 bytes before provider
+	// encoding for isolated readings. Zero uses DefaultInputBytes as a packing
+	// target and keeps an oversized row whole in its own request.
 	MaxInputBytes int
 	// Independent allows accepted rows to be reused outside their original
 	// batch. The prompt must restrict each answer to that row and its context.
@@ -182,7 +184,7 @@ func WindowsWithContext(def Definition, round int, context []Field, rows []Row) 
 			}
 			additional = encoded.Len()
 		}
-		if size+additional > limit {
+		if def.MaxInputBytes > 0 && size+additional > limit {
 			return nil, fmt.Errorf("table %s: row %s needs %d input bytes, budget %d; reduce this row's evidence or shared context", def.Stage, row.ID, size+additional, limit)
 		}
 		size += additional
