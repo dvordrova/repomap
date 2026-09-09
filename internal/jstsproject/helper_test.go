@@ -322,6 +322,11 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	if err := ValidateProgramIndex(result, index); err != nil {
 		t.Fatalf("validate cumulative JSTS ProgramIndex: %v", err)
 	}
+	input, err := BuildInputFromResult(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.AssertSharedArtifact(t, input, index)
 	encoded, err := programindex.Encode(index)
 	if err != nil {
 		t.Fatalf("encode cumulative JSTS ProgramIndex: %v", err)
@@ -1030,9 +1035,15 @@ func assertCumulativeJSTSCallbackAliases(t *testing.T, index programindex.Index,
 		}
 		target := objects[relation.ToIDs[0]]
 		switch target.Name {
-		case "handleOrder":
+		case "registerAliasedCallbacks.named":
+			if target.OwnerID != caller || target.Kind != programindex.ObjectFunction {
+				t.Fatalf("%s named callable lost its native owner: %#v", source, target)
+			}
 			named++
-		case "callback":
+		case "registerAliasedCallbacks.callback":
+			if target.OwnerID != caller || target.Kind != programindex.ObjectFunction {
+				t.Fatalf("%s lambda lost its native owner: %#v", source, target)
+			}
 			literal++
 		default:
 			t.Fatalf("%s callable alias resolved to unexpected object: %#v", source, target)

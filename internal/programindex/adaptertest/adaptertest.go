@@ -3,12 +3,31 @@
 package adaptertest
 
 import (
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/programindex"
 )
+
+// AssertSharedArtifact exercises the ordinary storage path using the real
+// adapter's complete input, including nested provenance and omission counts.
+func AssertSharedArtifact(t testing.TB, input programindex.Input, index programindex.Index) {
+	t.Helper()
+	dir := t.TempDir()
+	store := programindex.NewArtifactStore(filepath.Join(dir, "program-facts"))
+	if err := store.Persist(dir, index, input); err != nil {
+		t.Fatalf("persist shared ProgramIndex: %v", err)
+	}
+	restored, err := programindex.ReadFile(filepath.Join(dir, programindex.ArtifactFilename))
+	if err != nil {
+		t.Fatalf("restore shared ProgramIndex: %v", err)
+	}
+	if !reflect.DeepEqual(index, restored) {
+		t.Fatal("shared storage changed the adapter's sealed ProgramIndex")
+	}
+}
 
 // Adapter is deliberately one atomic operation. A language adapter captures
 // one consistent compiler/extractor snapshot and returns all five logical

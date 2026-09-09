@@ -70,7 +70,7 @@ func validateFileProjectionInputs(
 	if err != nil {
 		return corpus.Snapshot{}, fmt.Errorf("python target file projection: repository corpus: %w", err)
 	}
-	if err := catalog.Validate(); err != nil {
+	if _, err := catalog.Check(); err != nil {
 		return corpus.Snapshot{}, fmt.Errorf("python target file projection: catalog: %w", err)
 	}
 	if err := validateCatalogCorpus(catalog, repository); err != nil {

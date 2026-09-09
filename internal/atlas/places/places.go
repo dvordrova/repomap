@@ -39,10 +39,24 @@ const (
 // TargetInput is one analyzed target: its program index and, for Go, the
 // dependency catalog that carries package imports.
 type TargetInput struct {
-	Index        programindex.Index
+	Index programindex.Index
+	// ReadIndex loads one saved index; Index then carries only its Target.
+	ReadIndex    func() (programindex.Index, error)
 	Dependencies *dependencies.Catalog
 	// Root is the target's root directory, repository-relative.
 	Root string
+}
+
+func (target TargetInput) read() (TargetInput, error) {
+	if target.ReadIndex == nil {
+		return target, nil
+	}
+	index, err := target.ReadIndex()
+	if err != nil {
+		return TargetInput{}, err
+	}
+	target.Index = index
+	return target, nil
 }
 
 // Input is everything places reads.
@@ -121,20 +135,23 @@ func Build(input Input) (atlas.Graph, error) {
 		return atlas.Graph{}, fmt.Errorf("atlas places: no targets")
 	}
 	b := &builder{
-		input:     input,
-		files:     make(map[string]*fileState),
-		dirs:      make(map[string]*dirState),
-		byID:      make(map[string]programindex.Object),
-		fileOf:    make(map[string]string),
-		fanIn:     make(map[string]int),
-		edges:     make(map[edgeKey]*atlas.Edge),
-		docs:      make(map[string][]claims.Claim),
-		readmes:   make(map[string]corpus.Entry),
-		entries:   make(map[string]corpus.Entry),
-		seeds:     make(map[string]struct{}),
-		targetOf:  make(map[string]map[string]struct{}),
-		bounds:    make(map[boundaryKey]*boundaryState),
-		workspace: make(map[string]struct{}),
+		input:             input,
+		files:             make(map[string]*fileState),
+		dirs:              make(map[string]*dirState),
+		byID:              make(map[string]programindex.Object),
+		fileOf:            make(map[string]string),
+		fanIn:             make(map[string]int),
+		edges:             make(map[edgeKey]*atlas.Edge),
+		docs:              make(map[string][]claims.Claim),
+		readmes:           make(map[string]corpus.Entry),
+		entries:           make(map[string]corpus.Entry),
+		seeds:             make(map[string]struct{}),
+		targetOf:          make(map[string]map[string]struct{}),
+		bounds:            make(map[boundaryKey]*boundaryState),
+		workspace:         make(map[string]struct{}),
+		symbolCallerRows:  make(map[string]map[string]atlas.SymbolCaller),
+		symbolBindingRows: make(map[string]map[string]atlas.SymbolBinding),
+		symbolCallRows:    make(map[string]map[string]atlas.SymbolCall),
 	}
 	for _, target := range input.Targets {
 		if target.Dependencies == nil {
@@ -151,18 +168,32 @@ func Build(input Input) (atlas.Graph, error) {
 	}
 	b.indexClaims()
 	b.indexCorpus()
-	for _, target := range input.Targets {
+	for _, saved := range input.Targets {
+		target, err := saved.read()
+		if err != nil {
+			return atlas.Graph{}, err
+		}
 		if err := target.Index.Validate(); err != nil {
 			return atlas.Graph{}, fmt.Errorf("atlas places: target %s: %w", target.Index.Target.Name, err)
 		}
 		b.collectObjects(target)
 	}
+	b.releaseTargetObjects()
 	b.claimByRoot()
-	for _, target := range input.Targets {
+	for _, saved := range input.Targets {
+		target, err := saved.read()
+		if err != nil {
+			return atlas.Graph{}, err
+		}
+		b.useTargetObjects(target.Index)
 		b.collectEdges(target)
 		b.collectImports(target)
 		b.collectSeeds(target)
+		b.collectSymbolCallers(b.symbolCallerRows, target)
+		b.collectSymbolBindings(b.symbolBindingRows, target)
+		b.collectSymbolCalls(b.symbolCallRows, target)
 	}
+	b.releaseTargetObjects()
 	if err := b.readFiles(); err != nil {
 		return atlas.Graph{}, err
 	}
@@ -170,9 +201,15 @@ func Build(input Input) (atlas.Graph, error) {
 	b.assignDepths()
 	b.collectSymbols()
 	b.collectBoundaries()
-	for _, target := range input.Targets {
+	for _, saved := range input.Targets {
+		target, err := saved.read()
+		if err != nil {
+			return atlas.Graph{}, err
+		}
+		b.useTargetObjects(target.Index)
 		b.collectExternalCalls(target)
 	}
+	b.releaseTargetObjects()
 	return b.graph()
 }
 
@@ -212,24 +249,34 @@ type boundaryState struct {
 }
 
 type builder struct {
-	input    Input
-	files    map[string]*fileState
-	dirs     map[string]*dirState
-	byID     map[string]programindex.Object
-	symbolOf map[string]string // native object -> shared, compiler-located symbol place
-	fileOf   map[string]string
-	fanIn    map[string]int
-	edges    map[edgeKey]*atlas.Edge
-	docs     map[string][]claims.Claim
-	readmes  map[string]corpus.Entry
-	entries  map[string]corpus.Entry
-	seeds    map[string]struct{}
-	targetOf map[string]map[string]struct{}
-	bounds   map[boundaryKey]*boundaryState
-	symbols  []atlas.Place
+	input             Input
+	files             map[string]*fileState
+	dirs              map[string]*dirState
+	byID              map[string]programindex.Object
+	symbolOf          map[string]string // native object -> shared, compiler-located symbol place
+	fileOf            map[string]string
+	fanIn             map[string]int
+	edges             map[edgeKey]*atlas.Edge
+	docs              map[string][]claims.Claim
+	readmes           map[string]corpus.Entry
+	entries           map[string]corpus.Entry
+	seeds             map[string]struct{}
+	targetOf          map[string]map[string]struct{}
+	bounds            map[boundaryKey]*boundaryState
+	symbols           []atlas.Place
+	symbolCallerRows  map[string]map[string]atlas.SymbolCaller
+	symbolBindingRows map[string]map[string]atlas.SymbolBinding
+	symbolCallRows    map[string]map[string]atlas.SymbolCall
+	memberOwners      map[string]string // retained declaration -> native owner's symbol place
+	typeFields        map[string]typeField
 	// workspace lists the package paths of the repository's own modules, from
 	// the dependency catalogs: a call into one of them is not an integration.
 	workspace map[string]struct{}
+}
+
+type typeField struct {
+	owner  string
+	member atlas.TypeMember
 }
 
 func (b *builder) indexClaims() {
@@ -283,12 +330,12 @@ func declaration(object programindex.Object, byID map[string]programindex.Object
 	}
 }
 
-func (b *builder) collectObjects(target TargetInput) {
-	if b.symbolOf == nil {
-		b.symbolOf = make(map[string]string)
-	}
-	index := target.Index
-	targetID := index.Target.ID
+// Only the current target needs native-object lookups. Cross-target consumers
+// keep the source-located declarations and observations they actually publish.
+func (b *builder) useTargetObjects(index programindex.Index) {
+	b.byID = make(map[string]programindex.Object, len(index.Objects))
+	b.fileOf = make(map[string]string)
+	b.symbolOf = make(map[string]string)
 	callbacks := make(map[string]bool)
 	for _, relation := range index.Relations {
 		if relation.Kind == programindex.RelationPassesCallback {
@@ -306,11 +353,6 @@ func (b *builder) collectObjects(target TargetInput) {
 		}
 		filePath := atlasPath(object.Location.Path)
 		b.fileOf[object.ID] = filePath
-		state := b.file(filePath)
-		state.targets[targetID] = struct{}{}
-		if state.language == "" {
-			state.language = index.Target.Language
-		}
 		if !declaration(object, b.byID) && !(object.Kind == programindex.ObjectFunction && callbacks[object.ID]) {
 			continue
 		}
@@ -322,6 +364,40 @@ func (b *builder) collectObjects(target TargetInput) {
 		}
 		// A file two targets index carries each declaration in both indexes.
 		b.symbolOf[object.ID] = atlas.SymbolID(filePath, object.Location.Line, name)
+	}
+}
+
+func (b *builder) releaseTargetObjects() {
+	b.byID, b.fileOf, b.symbolOf = nil, nil, nil
+}
+
+func (b *builder) collectObjects(target TargetInput) {
+	index := target.Index
+	targetID := index.Target.ID
+	b.useTargetObjects(index)
+	if b.memberOwners == nil {
+		b.memberOwners = make(map[string]string)
+		b.typeFields = make(map[string]typeField)
+	}
+	for _, object := range index.Objects {
+		filePath, located := b.fileOf[object.ID]
+		if !located {
+			continue
+		}
+		state := b.file(filePath)
+		state.targets[targetID] = struct{}{}
+		if state.language == "" {
+			state.language = index.Target.Language
+		}
+		if b.symbolOf[object.ID] == "" {
+			continue
+		}
+		name := object.Name
+		if object.Kind == programindex.ObjectMethod && !strings.Contains(name, ".") {
+			if owner, ok := b.byID[object.OwnerID]; ok && owner.Kind == programindex.ObjectType {
+				name = owner.Name + "." + name
+			}
+		}
 		if state.hasDecl(object.Location.Line, name) {
 			continue
 		}
@@ -334,6 +410,31 @@ func (b *builder) collectObjects(target TargetInput) {
 			Exported:  object.Visibility == programindex.VisibilityPublic,
 			ObjectID:  object.ID,
 		})
+		if owner := b.byID[object.OwnerID]; owner.Kind == programindex.ObjectType && owner.Location != nil {
+			b.memberOwners[object.ID] = b.symbolOf[owner.ID]
+		}
+	}
+	for _, object := range index.Objects {
+		owner := b.byID[object.OwnerID]
+		if object.Kind != programindex.ObjectVariable || object.Location == nil || owner.Kind != programindex.ObjectType || object.ContainerID != owner.ID {
+			continue
+		}
+		id := b.symbolOf[owner.ID]
+		filePath := atlasPath(object.Location.Path)
+		file := b.files[filePath]
+		if id == "" || file == nil {
+			continue
+		}
+		key := fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s", id, filePath, object.Location.Line, object.Location.Column, object.Name)
+		// The previous all-object pass sorted native IDs before deduplicating
+		// fields. Preserve that representative independently of target order.
+		if previous, exists := b.typeFields[key]; exists && previous.member.Decl.ObjectID <= object.ID {
+			continue
+		}
+		b.typeFields[key] = typeField{owner: id, member: atlas.TypeMember{Path: filePath, Decl: atlas.Decl{
+			ObjectID: object.ID, Name: object.Name, Kind: string(object.Kind), Signature: languageSignature(object.Signature, file.language),
+			LineNo: object.Location.Line, Column: object.Location.Column, Exported: object.Visibility == programindex.VisibilityPublic,
+		}}}
 	}
 	if root := atlasPath(target.Root); root != "" {
 		b.targetOf[targetID] = map[string]struct{}{root: {}}
@@ -1021,12 +1122,7 @@ func (b *builder) typeMembers() map[string][]atlas.TypeMember {
 	result := make(map[string][]atlas.TypeMember)
 	for path, file := range b.files {
 		for _, decl := range file.decls {
-			object := b.byID[decl.ObjectID]
-			owner, known := b.byID[object.OwnerID]
-			if !known || owner.Kind != programindex.ObjectType || owner.Location == nil {
-				continue
-			}
-			id := b.symbolOf[owner.ID]
+			id := b.memberOwners[decl.ObjectID]
 			if id != "" {
 				decl.Doc = b.quotedDocstringFor(path, decl.LineNo, file.decls)
 				result[id] = append(result[id], atlas.TypeMember{Path: path, Decl: decl})
@@ -1036,32 +1132,8 @@ func (b *builder) typeMembers() map[string][]atlas.TypeMember {
 	// Class attributes are native declarations owned by the type, without
 	// becoming unrelated top-level symbol candidates. Local variables and
 	// assignments to an arbitrary instance never acquire type ownership here.
-	seen := make(map[string]bool)
-	var objects []programindex.Object
-	for _, object := range b.byID {
-		owner, known := b.byID[object.OwnerID]
-		if object.Kind == programindex.ObjectVariable && object.Location != nil && known && owner.Kind == programindex.ObjectType && object.ContainerID == owner.ID {
-			objects = append(objects, object)
-		}
-	}
-	sort.Slice(objects, func(i, j int) bool { return objects[i].ID < objects[j].ID })
-	for _, object := range objects {
-		owner := b.byID[object.OwnerID]
-		id := b.symbolOf[owner.ID]
-		path := atlasPath(object.Location.Path)
-		file := b.files[path]
-		if id == "" || file == nil {
-			continue
-		}
-		key := fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s", id, path, object.Location.Line, object.Location.Column, object.Name)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		result[id] = append(result[id], atlas.TypeMember{Path: path, Decl: atlas.Decl{
-			ObjectID: object.ID, Name: object.Name, Kind: string(object.Kind), Signature: languageSignature(object.Signature, file.language),
-			LineNo: object.Location.Line, Column: object.Location.Column, Exported: object.Visibility == programindex.VisibilityPublic,
-		}})
+	for _, field := range b.typeFields {
+		result[field.owner] = append(result[field.owner], field.member)
 	}
 	for id := range result {
 		sort.Slice(result[id], func(i, j int) bool {
@@ -1081,33 +1153,41 @@ func (b *builder) typeMembers() map[string][]atlas.TypeMember {
 	return result
 }
 
+func (b *builder) collectSymbolCallers(rows map[string]map[string]atlas.SymbolCaller, target TargetInput) {
+	for _, relation := range target.Index.Relations {
+		if relation.Kind != programindex.RelationCalls && relation.Kind != programindex.RelationExecutes {
+			continue
+		}
+		from, ok := b.byID[relation.FromID]
+		if !ok || from.Location == nil {
+			continue
+		}
+		row := atlas.SymbolCaller{ObjectID: from.ID, PlaceID: b.symbolOf[from.ID], Name: displayName(from, b.byID), Signature: languageSignature(from.Signature, target.Index.Target.Language), Path: from.Location.Path, Line: relationLine(relation), Kind: string(relation.Kind), Invocation: relation.Invocation, Resolution: string(relation.Resolution)}
+		key := row
+		if key.PlaceID != "" {
+			key.ObjectID = ""
+		}
+		raw, _ := json.Marshal(key)
+		for _, nativeID := range relation.ToIDs {
+			id := b.symbolOf[nativeID]
+			if id == "" {
+				continue
+			}
+			if rows[id] == nil {
+				rows[id] = make(map[string]atlas.SymbolCaller)
+			}
+			rows[id][string(raw)] = row
+		}
+	}
+}
+
 func (b *builder) symbolCallers() map[string][]atlas.SymbolCaller {
-	rows := make(map[string]map[string]atlas.SymbolCaller)
-	for _, target := range b.input.Targets {
-		for _, relation := range target.Index.Relations {
-			if relation.Kind != programindex.RelationCalls && relation.Kind != programindex.RelationExecutes {
-				continue
-			}
-			from, ok := b.byID[relation.FromID]
-			if !ok || from.Location == nil {
-				continue
-			}
-			row := atlas.SymbolCaller{ObjectID: from.ID, PlaceID: b.symbolOf[from.ID], Name: displayName(from, b.byID), Signature: languageSignature(from.Signature, target.Index.Target.Language), Path: from.Location.Path, Line: relationLine(relation), Kind: string(relation.Kind), Invocation: relation.Invocation, Resolution: string(relation.Resolution)}
-			key := row
-			if key.PlaceID != "" {
-				key.ObjectID = ""
-			}
-			raw, _ := json.Marshal(key)
-			for _, nativeID := range relation.ToIDs {
-				id := b.symbolOf[nativeID]
-				if id == "" {
-					continue
-				}
-				if rows[id] == nil {
-					rows[id] = make(map[string]atlas.SymbolCaller)
-				}
-				rows[id][string(raw)] = row
-			}
+	rows := b.symbolCallerRows
+	if rows == nil {
+		rows = make(map[string]map[string]atlas.SymbolCaller)
+		for _, target := range b.input.Targets {
+			b.useTargetObjects(target.Index)
+			b.collectSymbolCallers(rows, target)
 		}
 	}
 	result := make(map[string][]atlas.SymbolCaller)
@@ -1124,49 +1204,57 @@ func (b *builder) symbolCallers() map[string][]atlas.SymbolCaller {
 	return result
 }
 
-func (b *builder) symbolBindings() map[string][]atlas.SymbolBinding {
-	rows := make(map[string]map[string]atlas.SymbolBinding)
-	for _, target := range b.input.Targets {
-		for _, relation := range target.Index.Relations {
-			if relation.Kind != programindex.RelationPassesCallback {
-				continue
+func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolBinding, target TargetInput) {
+	for _, relation := range target.Index.Relations {
+		if relation.Kind != programindex.RelationPassesCallback {
+			continue
+		}
+		from, known := b.byID[relation.FromID]
+		if !known {
+			continue
+		}
+		var evidence []atlas.EdgeEvidence
+		for _, witness := range relation.Witnesses {
+			if (witness.Kind == "callable_receiver_field" || witness.Kind == "interface_field_assignment") && witness.Location != nil {
+				evidence = append(evidence, atlas.EdgeEvidence{Extractor: witness.Kind, Label: witness.Detail, Path: witness.Location.Path, LineNo: witness.Location.Line})
 			}
-			from, known := b.byID[relation.FromID]
+		}
+		for _, id := range relation.ToIDs {
+			to, known := b.byID[id]
 			if !known {
 				continue
 			}
-			var evidence []atlas.EdgeEvidence
 			for _, witness := range relation.Witnesses {
-				if (witness.Kind == "callable_receiver_field" || witness.Kind == "interface_field_assignment") && witness.Location != nil {
-					evidence = append(evidence, atlas.EdgeEvidence{Extractor: witness.Kind, Label: witness.Detail, Path: witness.Location.Path, LineNo: witness.Location.Line})
-				}
-			}
-			for _, id := range relation.ToIDs {
-				to, known := b.byID[id]
-				if !known {
+				if witness.Kind == "callable_receiver_field" || witness.Kind == "interface_field_assignment" {
 					continue
 				}
-				for _, witness := range relation.Witnesses {
-					if witness.Kind == "callable_receiver_field" || witness.Kind == "interface_field_assignment" {
+				row := atlas.SymbolBinding{From: displayName(from, b.byID), To: displayName(to, b.byID), Detail: witness.Detail, Invocation: relation.Invocation, Resolution: string(relation.Resolution)}
+				row.Evidence = evidence
+				if witness.Location != nil {
+					row.Path, row.Line = witness.Location.Path, witness.Location.Line
+				}
+				raw, _ := json.Marshal(row)
+				for _, owner := range []string{b.symbolOf[relation.FromID], b.symbolOf[id]} {
+					if owner == "" {
 						continue
 					}
-					row := atlas.SymbolBinding{From: displayName(from, b.byID), To: displayName(to, b.byID), Detail: witness.Detail, Invocation: relation.Invocation, Resolution: string(relation.Resolution)}
-					row.Evidence = evidence
-					if witness.Location != nil {
-						row.Path, row.Line = witness.Location.Path, witness.Location.Line
+					if rows[owner] == nil {
+						rows[owner] = make(map[string]atlas.SymbolBinding)
 					}
-					raw, _ := json.Marshal(row)
-					for _, owner := range []string{b.symbolOf[relation.FromID], b.symbolOf[id]} {
-						if owner == "" {
-							continue
-						}
-						if rows[owner] == nil {
-							rows[owner] = make(map[string]atlas.SymbolBinding)
-						}
-						rows[owner][string(raw)] = row
-					}
+					rows[owner][string(raw)] = row
 				}
 			}
+		}
+	}
+}
+
+func (b *builder) symbolBindings() map[string][]atlas.SymbolBinding {
+	rows := b.symbolBindingRows
+	if rows == nil {
+		rows = make(map[string]map[string]atlas.SymbolBinding)
+		for _, target := range b.input.Targets {
+			b.useTargetObjects(target.Index)
+			b.collectSymbolBindings(rows, target)
 		}
 	}
 	result := make(map[string][]atlas.SymbolBinding)
@@ -1185,17 +1273,17 @@ func (b *builder) symbolBindings() map[string][]atlas.SymbolBinding {
 
 // symbolCalls preserves call-site evidence without a framework vocabulary.
 // Multiple target indexes may contain the same declaration and witness.
-func (b *builder) symbolCalls() map[string][]atlas.SymbolCall {
-	byObject := make(map[string]map[string]atlas.SymbolCall)
-	keyFor := func(call atlas.SymbolCall) string {
-		// Keep the existing evidence order independent of a local source
-		// column. The column distinguishes otherwise identical source sites,
-		// but must not reorder provider facts and invalidate unrelated answers.
-		column := call.Column
-		call.Column = 0
-		raw, _ := json.Marshal(call)
-		return fmt.Sprintf("%s:%d", raw, column)
-	}
+func symbolCallKey(call atlas.SymbolCall) string {
+	// Keep the existing evidence order independent of a local source
+	// column. The column distinguishes otherwise identical source sites,
+	// but must not reorder provider facts and invalidate unrelated answers.
+	column := call.Column
+	call.Column = 0
+	raw, _ := json.Marshal(call)
+	return fmt.Sprintf("%s:%d", raw, column)
+}
+
+func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.SymbolCall, target TargetInput) {
 	add := func(id string, call atlas.SymbolCall) {
 		id = b.symbolOf[id]
 		if id == "" {
@@ -1204,83 +1292,92 @@ func (b *builder) symbolCalls() map[string][]atlas.SymbolCall {
 		if byObject[id] == nil {
 			byObject[id] = make(map[string]atlas.SymbolCall)
 		}
-		byObject[id][keyFor(call)] = call
+		byObject[id][symbolCallKey(call)] = call
 	}
-	for _, target := range b.input.Targets {
-		for _, relation := range target.Index.Relations {
-			if relation.Kind == programindex.RelationImports || relation.Kind == programindex.RelationContains {
-				continue
-			}
-			// Compiler dispatch and direct-call witnesses need not have a value
-			// pattern. Dropping them removed the call into an implementation from
-			// handler evidence, especially for interface dispatch.
-			if len(relation.Patterns) == 0 && (relation.Kind == programindex.RelationCalls || relation.Kind == programindex.RelationExecutes || relation.Kind == programindex.RelationInvokesExternal) {
-				var evidence []atlas.EdgeEvidence
-				for _, witness := range relation.Witnesses {
-					if witness.Kind == "interface_field_assignment" && witness.Location != nil {
-						evidence = append(evidence, atlas.EdgeEvidence{Extractor: witness.Kind, Label: witness.Detail, Path: witness.Location.Path, LineNo: witness.Location.Line})
-					}
+	for _, relation := range target.Index.Relations {
+		if relation.Kind == programindex.RelationImports || relation.Kind == programindex.RelationContains {
+			continue
+		}
+		// Compiler dispatch and direct-call witnesses need not have a value
+		// pattern. Dropping them removed the call into an implementation from
+		// handler evidence, especially for interface dispatch.
+		if len(relation.Patterns) == 0 && (relation.Kind == programindex.RelationCalls || relation.Kind == programindex.RelationExecutes || relation.Kind == programindex.RelationInvokesExternal) {
+			var evidence []atlas.EdgeEvidence
+			for _, witness := range relation.Witnesses {
+				if witness.Kind == "interface_field_assignment" && witness.Location != nil {
+					evidence = append(evidence, atlas.EdgeEvidence{Extractor: witness.Kind, Label: witness.Detail, Path: witness.Location.Path, LineNo: witness.Location.Line})
 				}
-				for _, witness := range relation.Witnesses {
-					// A receiver assignment supports this call; it is not another
-					// call at the constructor's source line.
-					if witness.Kind == "interface_field_assignment" {
-						continue
-					}
-					call := atlas.SymbolCall{Kind: string(relation.Kind), Invocation: relation.Invocation, Resolution: string(relation.Resolution), Detail: witness.Detail, Evidence: evidence}
-					if witness.Location != nil {
-						call.Line = witness.Location.Line
-						call.Column = witness.Location.Column
-					}
-					for _, id := range relation.ToIDs {
-						if object, ok := b.byID[id]; ok {
-							call.Name = displayName(object, b.byID)
-							call.CalleeIDs = nil
-							if symbolID := b.symbolOf[id]; symbolID != "" {
-								call.CalleeIDs = []string{symbolID}
-							}
-							add(relation.FromID, call)
+			}
+			for _, witness := range relation.Witnesses {
+				// A receiver assignment supports this call; it is not another
+				// call at the constructor's source line.
+				if witness.Kind == "interface_field_assignment" {
+					continue
+				}
+				call := atlas.SymbolCall{Kind: string(relation.Kind), Invocation: relation.Invocation, Resolution: string(relation.Resolution), Detail: witness.Detail, Evidence: evidence}
+				if witness.Location != nil {
+					call.Line = witness.Location.Line
+					call.Column = witness.Location.Column
+				}
+				for _, id := range relation.ToIDs {
+					if object, ok := b.byID[id]; ok {
+						call.Name = displayName(object, b.byID)
+						call.CalleeIDs = nil
+						if symbolID := b.symbolOf[id]; symbolID != "" {
+							call.CalleeIDs = []string{symbolID}
 						}
-					}
-					if len(relation.ToIDs) == 0 && call.Detail != "" {
 						add(relation.FromID, call)
 					}
 				}
+				if len(relation.ToIDs) == 0 && call.Detail != "" {
+					add(relation.FromID, call)
+				}
 			}
-			for _, pattern := range relation.Patterns {
-				call := atlas.SymbolCall{Kind: string(relation.Kind), Name: pattern.Selector, Invocation: relation.Invocation}
-				for _, id := range relation.ToIDs {
-					if symbolID := b.symbolOf[id]; symbolID != "" {
-						call.CalleeIDs = appendUnique(call.CalleeIDs, symbolID)
-					}
+		}
+		for _, pattern := range relation.Patterns {
+			call := atlas.SymbolCall{Kind: string(relation.Kind), Name: pattern.Selector, Invocation: relation.Invocation}
+			for _, id := range relation.ToIDs {
+				if symbolID := b.symbolOf[id]; symbolID != "" {
+					call.CalleeIDs = appendUnique(call.CalleeIDs, symbolID)
 				}
-				sort.Strings(call.CalleeIDs)
-				// The selector alone loses the receiver/package: context.Background
-				// and a remote client's Background would become the same evidence.
-				if len(relation.ToIDs) == 1 {
-					if object, ok := b.byID[relation.ToIDs[0]]; ok && object.External != nil {
-						call.Name = externalName(*object.External)
-					}
-				}
-				if pattern.Location != nil {
-					call.Line = pattern.Location.Line
-					call.Column = pattern.Location.Column
-				}
-				for _, argument := range pattern.Arguments {
-					if value, ok := literalArgument(argument); ok {
-						call.Values = appendUnique(call.Values, value)
-					}
-					for _, id := range argument.ObjectIDs {
-						if object, ok := b.byID[id]; ok {
-							call.Arguments = appendUnique(call.Arguments, displayName(object, b.byID))
-						}
-					}
-				}
-				if call.Name == "" {
-					continue
-				}
-				add(relation.FromID, call)
 			}
+			sort.Strings(call.CalleeIDs)
+			// The selector alone loses the receiver/package: context.Background
+			// and a remote client's Background would become the same evidence.
+			if len(relation.ToIDs) == 1 {
+				if object, ok := b.byID[relation.ToIDs[0]]; ok && object.External != nil {
+					call.Name = externalName(*object.External)
+				}
+			}
+			if pattern.Location != nil {
+				call.Line = pattern.Location.Line
+				call.Column = pattern.Location.Column
+			}
+			for _, argument := range pattern.Arguments {
+				if value, ok := literalArgument(argument); ok {
+					call.Values = appendUnique(call.Values, value)
+				}
+				for _, id := range argument.ObjectIDs {
+					if object, ok := b.byID[id]; ok {
+						call.Arguments = appendUnique(call.Arguments, displayName(object, b.byID))
+					}
+				}
+			}
+			if call.Name == "" {
+				continue
+			}
+			add(relation.FromID, call)
+		}
+	}
+}
+
+func (b *builder) symbolCalls() map[string][]atlas.SymbolCall {
+	byObject := b.symbolCallRows
+	if byObject == nil {
+		byObject = make(map[string]map[string]atlas.SymbolCall)
+		for _, target := range b.input.Targets {
+			b.useTargetObjects(target.Index)
+			b.collectSymbolCalls(byObject, target)
 		}
 	}
 	result := make(map[string][]atlas.SymbolCall)
@@ -1297,7 +1394,7 @@ func (b *builder) symbolCalls() map[string][]atlas.SymbolCall {
 			}
 			call.Name, call.Resolution = "", string(programindex.ResolutionUnresolved)
 			call.CalleeIDs, call.Evidence = nil, nil
-			delete(rows, keyFor(call))
+			delete(rows, symbolCallKey(call))
 		}
 		keys := make([]string, 0, len(rows))
 		for key := range rows {

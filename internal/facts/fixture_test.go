@@ -47,6 +47,17 @@ func TestFixturePythonTutorialGame(t *testing.T) {
 		},
 	}
 	first := mustBuild(t, input)
+	lazy := input
+	lazy.Targets = append([]TargetInput(nil), input.Targets...)
+	for i, original := range input.Targets {
+		original := original
+		lazy.Targets[i].Index = programindex.Index{Target: original.Index.Target}
+		lazy.Targets[i].ReadIndex = func() (programindex.Index, error) { return original.Index, nil }
+	}
+	fromSaved := mustBuild(t, lazy)
+	if first.SHA256 != fromSaved.SHA256 {
+		t.Fatal("reading targets individually changed anchored facts or cross-target portals")
+	}
 	second := mustBuild(t, input)
 	if first.SHA256 != second.SHA256 {
 		t.Fatalf("Build is not deterministic: %s vs %s", first.SHA256, second.SHA256)

@@ -2,6 +2,7 @@ package groupindex
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -169,6 +170,18 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 	}
 	if len(indexes) != 2 {
 		t.Fatalf("indexes: %d", len(indexes))
+	}
+	loaded, err := ProjectAtlasFrom(value, func(id string) (programindex.Index, error) {
+		if id == svc.Target.ID {
+			return svc, nil
+		}
+		if id == web.Target.ID {
+			return web, nil
+		}
+		return programindex.Index{}, fmt.Errorf("unknown target %s", id)
+	})
+	if err != nil || !reflect.DeepEqual(indexes, loaded) {
+		t.Fatalf("individual target reads changed groups or cross-target connections: %v", err)
 	}
 	byTarget := make(map[string]Index)
 	for _, index := range indexes {

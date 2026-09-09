@@ -258,16 +258,7 @@ func restoreProgramPortfolio(runDir string, data *ReportData) error {
 	}
 	indexes := make([]programindex.Index, 0, len(set.Entries))
 	for _, entry := range set.Entries {
-		indexBytes, _, readErr := readBoundedProgramArtifact(
-			filepath.Join(runDir, entry.Filename),
-			programindex.MaxIndexBytes,
-			"program index "+entry.TargetID,
-			false,
-		)
-		if readErr != nil {
-			return readErr
-		}
-		index, decodeErr := programindex.Decode(indexBytes)
+		index, decodeErr := programindex.ReadFile(filepath.Join(runDir, entry.Filename))
 		if decodeErr != nil {
 			return fmt.Errorf("report: decode program index %q: %w", entry.TargetID, decodeErr)
 		}

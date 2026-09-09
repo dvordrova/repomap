@@ -183,6 +183,16 @@ type Catalog struct {
 	Entries      []Target      `json:"entries"`
 	ModuleScopes []ModuleScope `json:"module_scopes"`
 	Omissions    []Omission    `json:"omissions,omitempty"`
+	index        *catalogIndex
+}
+
+// The index belongs to one checked, immutable catalog value. Positions avoid
+// retaining a second copy of the inventories when the catalog is snapshotted.
+type catalogIndex struct {
+	native    map[string]int
+	selectors map[string]int
+	scopes    map[string]int
+	modules   []map[corpus.FileID]int
 }
 
 // Snapshot returns a fully consumer-owned copy of one exact Python target.
@@ -370,6 +380,48 @@ func (catalog Catalog) Validate() error {
 	return nil
 }
 
+// Check validates an incoming catalog once and returns its immutable indexed
+// handoff. Constructed and decoded catalogs are already checked. Validate is
+// the explicit full check for callers that edit public serialized fields.
+func (catalog Catalog) Check() (Catalog, error) {
+	if catalog.index != nil {
+		return catalog, nil
+	}
+	if err := catalog.Validate(); err != nil {
+		return Catalog{}, err
+	}
+	index := &catalogIndex{
+		native: make(map[string]int, len(catalog.Entries)), selectors: make(map[string]int, len(catalog.Entries)),
+		scopes: make(map[string]int, len(catalog.ModuleScopes)), modules: make([]map[corpus.FileID]int, len(catalog.ModuleScopes)),
+	}
+	for i, target := range catalog.Entries {
+		index.native[target.Ref], index.selectors[target.Selector] = i, i
+	}
+	for i, scope := range catalog.ModuleScopes {
+		index.scopes[scope.Ref] = i
+		index.modules[i] = make(map[corpus.FileID]int, len(scope.Modules))
+		for j, module := range scope.Modules {
+			index.modules[i][module.FileID] = j
+		}
+	}
+	catalog.index = index
+	return catalog, nil
+}
+
+func (catalog *Catalog) UnmarshalJSON(raw []byte) error {
+	type wireCatalog Catalog
+	var value wireCatalog
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	checked, err := Catalog(value).Check()
+	if err != nil {
+		return err
+	}
+	*catalog = checked
+	return nil
+}
+
 func (catalog Catalog) Snapshot() Catalog {
 	copyCatalog := catalog
 	copyCatalog.Omissions = append([]Omission(nil), catalog.Omissions...)
@@ -383,35 +435,34 @@ func (catalog Catalog) Snapshot() Catalog {
 
 // OwnsTarget reports whether target is either an exact native catalog entry
 // or the unique framework-neutral module-execution view derivable from one of
-// the catalog's sealed module scopes. It never accepts an independently
-// constructed semantic target merely because its fields look plausible.
+// the catalog's sealed module scopes. Native target contents must already be
+// validated at their creation or planning boundary. Resolver-only targets are
+// validated and reconstructed here because they are not native entries.
 func (catalog Catalog) OwnsTarget(target Target) bool {
-	if catalog.Validate() != nil || target.Validate() != nil {
+	checked, err := catalog.Check()
+	if err != nil {
 		return false
 	}
+	// Native targets were validated when created/decoded and at the planning
+	// boundary. Their exact ref is sufficient for this membership lookup.
 	if target.ScopeRef == "" {
-		for _, entry := range catalog.Entries {
-			if entry.Ref == target.Ref {
-				return true
-			}
-		}
+		_, found := checked.index.native[target.Ref]
+		return found
+	}
+	if target.Validate() != nil || !resolverOnlyModuleExecutionTarget(target) {
 		return false
 	}
-	if !resolverOnlyModuleExecutionTarget(target) || !catalogScopeOwnsTarget(catalog.ModuleScopes, target) {
+	scopeIndex, ok := checked.index.scopes[target.ScopeRef]
+	if !ok {
 		return false
 	}
-	for _, scope := range catalog.ModuleScopes {
-		if scope.Ref != target.ScopeRef {
-			continue
-		}
-		for _, module := range scope.Modules {
-			if module.FileID == target.AnchorFileRef {
-				want, err := newModuleExecutionTarget(scope, module)
-				return err == nil && want.Ref == target.Ref
-			}
-		}
+	moduleIndex, found := checked.index.modules[scopeIndex][target.AnchorFileRef]
+	if !found {
+		return false
 	}
-	return false
+	scope := checked.ModuleScopes[scopeIndex]
+	want, err := newModuleExecutionTarget(scope, scope.Modules[moduleIndex])
+	return err == nil && want.Ref == target.Ref
 }
 
 // ResolveSelector restores one exact catalog-owned target without requiring
@@ -419,13 +470,12 @@ func (catalog Catalog) OwnsTarget(target Target) bool {
 // entry; module-execution selectors are deterministically rebuilt from the
 // catalog's sealed module scope. Paths and display names are never aliases.
 func (catalog Catalog) ResolveSelector(selector string) (Target, bool, error) {
-	if err := catalog.Validate(); err != nil {
+	checked, err := catalog.Check()
+	if err != nil {
 		return Target{}, false, err
 	}
-	for _, entry := range catalog.Entries {
-		if entry.Selector == selector {
-			return cloneFileResolverTarget(entry), true, nil
-		}
+	if index, found := checked.index.selectors[selector]; found {
+		return cloneFileResolverTarget(checked.Entries[index]), true, nil
 	}
 	const prefix = "python:module-execution:"
 	if !strings.HasPrefix(selector, prefix) {
@@ -437,25 +487,23 @@ func (catalog Catalog) ResolveSelector(selector string) (Target, bool, error) {
 		return Target{}, false, nil
 	}
 	fileRef := corpus.FileID(fileKey)
-	for _, scope := range catalog.ModuleScopes {
-		if strings.TrimPrefix(scope.Ref, "pys-") != scopeKey {
-			continue
-		}
-		for _, module := range scope.Modules {
-			if module.FileID != fileRef {
-				continue
-			}
-			target, err := newModuleExecutionTarget(scope, module)
-			if err != nil {
-				return Target{}, false, err
-			}
-			if target.Selector != selector || !catalog.OwnsTarget(target) {
-				return Target{}, false, nil
-			}
-			return cloneFileResolverTarget(target), true, nil
-		}
+	scopeIndex, found := checked.index.scopes["pys-"+scopeKey]
+	if !found {
+		return Target{}, false, nil
 	}
-	return Target{}, false, nil
+	moduleIndex, known := checked.index.modules[scopeIndex][fileRef]
+	if !known {
+		return Target{}, false, nil
+	}
+	scope := checked.ModuleScopes[scopeIndex]
+	target, err := newModuleExecutionTarget(scope, scope.Modules[moduleIndex])
+	if err != nil {
+		return Target{}, false, err
+	}
+	if target.Selector != selector {
+		return Target{}, false, nil
+	}
+	return target, true, nil
 }
 
 // NewCatalog canonicalizes and seals adapter-owned Python target facts into
@@ -847,10 +895,7 @@ func sealCatalog(entries []Target, scopes []ModuleScope, omissions []Omission) (
 	if err != nil {
 		return Catalog{}, err
 	}
-	if err := catalog.Validate(); err != nil {
-		return Catalog{}, err
-	}
-	return catalog, nil
+	return catalog.Check()
 }
 
 func sealModuleScopes(values []ModuleScope) ([]ModuleScope, error) {

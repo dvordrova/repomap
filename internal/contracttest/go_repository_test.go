@@ -16,6 +16,7 @@ import (
 	"github.com/dvordrova/repomap/internal/godynamichandoff"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
@@ -48,7 +49,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertUnusedPrivateMethodHasNoDanglingDirectNode(t, authorities)
 	producerResultID := assertGoRetainedProducerReceiverAuthority(t, authorities)
 
-	index, err := goadapter.Build(
+	input, err := goadapter.BuildInput(
 		repository,
 		authorities.target,
 		authorities.origins,
@@ -61,6 +62,11 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build Go ProgramIndex: %v", err)
 	}
+	index, err := programindex.New(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adaptertest.AssertSharedArtifact(t, input, index)
 	assertProgramIndexRoundTrip(t, index)
 	if index.Target.Language != "go" || index.Target.Selector == "" || index.Target.Name != goFixtureAppPackage {
 		t.Fatalf("Go ProgramIndex target = %#v", index.Target)

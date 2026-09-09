@@ -2763,12 +2763,17 @@ Many historical run paths mentioned above no longer exist; their measurements
 are historical records, not promises to retain their full artifacts. The latest
 small and full report cohorts passed their bindings/link audit after deletion.
 
-Publication now passes the completed ProgramIndex and dependency catalogue
-through facts, claims, places and group projection in memory. A restored target
-loads its missing value once. The owner projects the shared report once and
+Publication retains the small target/dependency catalogue and releases each
+completed child ProgramIndex after persistence. Facts, places and group
+projection restore one target at a time; restored indexes are not attached to
+the portfolio. Places retains current-target native lookups, then only the
+deduplicated graph observations and exact declaration owners across targets.
+This supersedes the earlier load-once retention rule after the 2026-09-09
+Airflow run exhausted memory and disk. The owner projects the shared report once and
 writes one `report.json`, `run_manifest.json` and `report.html`; facts, claims,
 orientation, atlas and both portfolios are also repository-wide owner artifacts.
-Target directories retain target-specific indexes. The server receives the
+Target directories retain thin bindings to shared project facts (see
+ProgramIndex below). The server receives the
 in-memory report, while a new process restores only the common JSON and manifest.
 Report format is 77, without an old-format adapter. The former per-target report
 generation and subsequent owner JSON reload/render step have been removed.
@@ -3655,9 +3660,20 @@ deterministic adapter execution.
 ## ProgramIndex
 
 ProgramIndex is the single typed program graph passed from language adapters
-to shared stages. There is one schema and one sealed artifact per selected
-target, plus a sealed `program-index-set.json` that binds the complete selected
-target inventory.
+to shared stages. The sealed in-memory graph remains version 11, with unchanged
+target, object, relation and nested provenance identities. Each target retains
+its sealed `program-index-set.json` binding.
+
+The owner approved shared project storage on 2026-09-09. Ordinary persistence
+stores one complete common-builder input per exact parser view under the initial
+run's `program-facts/<digest>.json`. A target's `program-index.json` is a storage-v1
+reference containing its original TargetInput (including seeds), relative facts
+path, facts digest and expected sealed index digest. Reading this reference
+uses the existing `programindex.New` and checks its original seal; it invokes
+no parser, repository read or provider. The standalone Encode/Decode format is
+still the same complete version-11 Index. A complete cohort may move together;
+missing shared facts fail without reconstruction from source. No automatic
+target merging or alternate graph is introduced.
 
 ProgramIndex and GroupsIndex hashing use a local value copy to clear the seal;
 JSON serialization reads their nested collections without copying them first.
@@ -3737,6 +3753,41 @@ to `platform`. An external target absent from that universe fails the adapter
 closed rather than being guessed from its import path.
 
 ### Python
+
+The checked Python catalogue validates once when built or decoded and retains
+exact native-target, selector and scoped-module lookups. Explicit Validate
+still checks a supplied edited catalogue completely; lookups do not rescan it.
+Selected targets with the same root/module inventory enter the existing
+BuildMany parser core together. It parses each source AST once, then produces
+each distinct package/alias view independently. Identical views share one
+immutable common input and one stored facts payload. Each target retains its
+original scope, launch seeds, complete dependencies and model analysis.
+A bad launch projection refuses only that target while its neighbours keep
+their already parsed inputs. A failed shared parser preparation retains the
+existing exact-target fallback; cancellation stops dispatch immediately.
+
+The cumulative Python regression has seven targets and fifteen source files:
+one parser process, one AST per source, and two separate package contexts.
+Every restored sealed index matches the separate build byte for byte. Shared
+storage is 323,238 bytes versus 1,481,442 bytes for seven complete indexes.
+This is fixture evidence; full Airflow time and peak memory remain unmeasured.
+Final GroupsIndex subjects and the final report still scale with the complete
+selected portfolio; these changes do not make the entire run constant-memory.
+
+Ordinary mixed Python/TypeScript acceptance at `20260909-200202` completed
+in 5.689 s, publishing both selected targets and one Russian HTML. All 23
+exchanges reused their exact cache entries. Compared with `20260909-195105`,
+both native index seals, both GroupsIndexes, places, facts, claims, atlas,
+orientation, Learn plan, question routes and terminology are identical.
+All 374 display entries have saved translations; artifact/link checks and
+browser opening passed. Full product tests with the installed real TypeScript
+compiler and vet passed. Two older callback tests were corrected to assert
+the compiler's qualified local alias declarations and native owners; compiler
+resolution was unchanged. Receipts are in the desktop work directory's
+`airflow-performance-review-20260909/fixture-after.json` and
+`fixture-comparison.json`. The interrupted Airflow run has no published HTML
+and is not accepted. Combining tool/example model analyses remains a separate,
+unapproved A5 proposal; sharing project facts does not combine those decisions.
 
 The Python adapter owns package/module scope, import restoration, call and
 registration facts, decorators, arguments, target seeds, external origins,
@@ -4298,7 +4349,7 @@ successful repository run the following artifacts are persisted, as applicable:
 
 - repository corpus and repository-guidance authority;
 - `reduced-documentation.json`;
-- the enriched ProgramIndex artifact and `program-index-set.json`;
+- the target ProgramIndex reference, shared `program-facts` input and `program-index-set.json`;
 - the target-scoped `dependency-catalog.json` artifact;
 - the matched `groups-index.json` artifact;
 - `program-page-portfolio.json`;

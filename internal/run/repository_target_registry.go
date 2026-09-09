@@ -84,8 +84,19 @@ type repositoryDependencyBuildRequest struct {
 
 type repositoryProgramPageAuthority struct {
 	ProgramIndex programindex.Index
+	ProgramInput *programindex.Input
 	Dependencies dependencies.Catalog
 	Label        string
+}
+
+func persistProgramPageIndex(runDir string, page repositoryProgramPageAuthority, store *programindex.ArtifactStore) error {
+	if store == nil {
+		return programindex.Persist(runDir, programindex.ArtifactFilename, page.ProgramIndex)
+	}
+	if page.ProgramInput == nil {
+		return fmt.Errorf("program index: shared persistence requires the original common input")
+	}
+	return store.Persist(runDir, page.ProgramIndex, *page.ProgramInput)
 }
 
 type repositoryTargetFileRestoration struct {
@@ -450,13 +461,13 @@ func buildRepositoryProgramPageAuthority(
 		)
 	}
 	return repositoryProgramPageAuthority{
-		ProgramIndex: index, Dependencies: catalog, Label: descriptor.Label,
+		ProgramIndex: index, ProgramInput: &input, Dependencies: catalog, Label: descriptor.Label,
 	}, nil
 }
 
-// ownRepositoryProgramPageAuthority validates and snapshots the already-built
-// page boundary before the child run persists it. No adapter-native compiler
-// facts survive this point.
+// ownRepositoryProgramPageAuthority validates the already-owned page boundary
+// before persistence. Only the common input survives for shared storage; no
+// adapter-native compiler facts cross this point.
 func ownRepositoryProgramPageAuthority(
 	registry repositoryTargetAdapterRegistry,
 	target repositoryTypedTarget,
@@ -501,7 +512,8 @@ func ownRepositoryProgramPageAuthority(
 		return repositoryProgramPageAuthority{}, fmt.Errorf("own dependencies: %w", err)
 	}
 	return repositoryProgramPageAuthority{
-		ProgramIndex: page.ProgramIndex.Snapshot(),
+		ProgramIndex: page.ProgramIndex,
+		ProgramInput: page.ProgramInput,
 		Dependencies: ownedDependencies,
 		Label:        page.Label,
 	}, nil
@@ -718,7 +730,7 @@ func pythonRepositoryTargetAdapterDescriptor() repositoryTargetAdapterDescriptor
 		ValidatePlanAuthority: func(authority any, target repositoryTypedTarget) error {
 			catalog, ok := authority.(pythontarget.Catalog)
 			value, valueOK := repositoryPythonTarget(target)
-			if !ok || !valueOK || catalog.Validate() != nil || !catalog.OwnsTarget(value) {
+			if !ok || !valueOK || !catalog.OwnsTarget(value) {
 				return fmt.Errorf("target is outside exact catalog authority")
 			}
 			return nil

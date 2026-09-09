@@ -58,11 +58,7 @@ func readRepositoryAtlas(
 	metas := make([]reading.TargetMeta, 0, len(runs))
 	targetIDs := make(map[string]string)
 	for i := range runs {
-		index, err := runs[i].programIndex()
-		if err != nil {
-			return atlasOutcome{}, err
-		}
-		targetIDs[runs[i].SelectedTargetKey] = index.Target.ID
+		targetIDs[runs[i].SelectedTargetKey] = runs[i].programTarget().ID
 	}
 	planned := make(map[string]repositoryTypedTarget)
 	for _, target := range options.Plan.Targets {
@@ -70,12 +66,9 @@ func readRepositoryAtlas(
 	}
 	for position := range runs {
 		run := &runs[position]
-		index, err := run.programIndex()
-		if err != nil {
-			return atlasOutcome{}, err
-		}
+		index := programindex.Index{Target: run.programTarget()}
 		root := filepath.ToSlash(filepath.Dir(runTargetAnchorPath(index)))
-		target := places.TargetInput{Index: index, Root: root}
+		target := places.TargetInput{Index: index, Root: root, ReadIndex: run.programIndex}
 		catalog, err := run.dependencyCatalog()
 		if err != nil {
 			return atlasOutcome{}, err
@@ -187,16 +180,18 @@ func readRepositoryAtlas(
 // from the atlas: boxes as groups, zones as containers, arrows and joints as
 // connections. The projected index replaces the empty one the child wrote.
 func projectAtlasRuns(runs []targetPublishedRun, outcome atlasOutcome, output *runOutput) ([]targetPublishedRun, error) {
-	programs := make(map[string]programindex.Index, len(runs))
+	programs := make(map[string]*targetPublishedRun, len(runs))
 	for position := range runs {
 		run := &runs[position]
-		index, err := run.programIndex()
-		if err != nil {
-			return nil, err
-		}
-		programs[index.Target.ID] = index
+		programs[run.programTarget().ID] = run
 	}
-	projected, err := groupindex.ProjectAtlas(programs, outcome.Atlas)
+	projected, err := groupindex.ProjectAtlasFrom(outcome.Atlas, func(id string) (programindex.Index, error) {
+		run, ok := programs[id]
+		if !ok {
+			return programindex.Index{}, fmt.Errorf("atlas: target %s has no program index", id)
+		}
+		return run.programIndex()
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +207,7 @@ func projectAtlasRuns(runs []targetPublishedRun, outcome atlasOutcome, output *r
 			return nil, fmt.Errorf("atlas: target %s has no projected groups", run.ProgramPage.ProgramTarget.Name)
 		}
 		result[position] = run
-		result[position].GroupIndex = index.Snapshot()
+		result[position].GroupIndex = index
 		if err := groupindex.Persist(run.RunDir, index); err != nil {
 			return nil, fmt.Errorf("atlas: persist projected groups for %s: %w", run.RunID, err)
 		}

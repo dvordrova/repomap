@@ -10,7 +10,9 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/jstsproject"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
@@ -144,6 +146,7 @@ func dispatchRepositoryTargetPlan(
 	}
 
 	runs := make([]targetPublishedRun, 0, len(ordered))
+	programStore := programindex.NewArtifactStore(filepath.Join(options.DebugDir, options.RunID, "program-facts"))
 	attemptedRunDirs := make([]string, 0, len(ordered))
 	pendingTargets := make([]targetPageConsoleContext, 0, len(ordered))
 	outcomes := make([]targetoutcome.Outcome, 0, len(ordered))
@@ -182,6 +185,9 @@ func dispatchRepositoryTargetPlan(
 		return nil
 	}
 	for index := range ordered {
+		if err := ctx.Err(); err != nil {
+			return failPublication(err)
+		}
 		target := ordered[index]
 		runID := options.RunID
 		role := "default"
@@ -274,6 +280,7 @@ func dispatchRepositoryTargetPlan(
 		childDeps.capturedRepositoryState = &state
 		childDeps.preselectedTarget = &target
 		childDeps.preselectedProgramPage = &programPage
+		childDeps.programIndexStore = programStore
 		childDeps.coreReadmeRoleRows = cloneReadmeRoleLog(options.Plan.Outcome.ReadmeRoles)
 		childDeps.runIDOverride = runID
 		childDeps.siblingTargetRun = true
@@ -349,6 +356,10 @@ func dispatchRepositoryTargetPlan(
 			return failPublication(analyzedErr)
 		}
 		outcomes = append(outcomes, analyzed)
+		// The saved child artifacts are complete. Keep only its navigation
+		// identity until the shared atlas needs this index again.
+		published.ProgramIndex = nil
+		published.GroupIndex = groupindex.Index{}
 		runs = append(runs, published)
 		pendingTargets = append(pendingTargets, consoleTarget)
 	}

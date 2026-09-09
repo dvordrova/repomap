@@ -16,7 +16,10 @@ import (
 // portfolio selected. Root and Manifest may be empty; Build then derives the
 // root from the target's anchor file.
 type TargetInput struct {
-	Index        programindex.Index
+	Index programindex.Index
+	// ReadIndex supplies a saved index when Index carries only its Target.
+	// Build releases the loaded index after extracting this target's facts.
+	ReadIndex    func() (programindex.Index, error)
 	Dependencies *dependencies.Catalog
 	Root         string
 	Manifest     string
@@ -42,6 +45,17 @@ func Build(input Input) (Result, error) {
 		return Result{}, err
 	}
 	for _, target := range builder.targets {
+		if target.input.ReadIndex != nil {
+			loaded := target.input
+			loaded.Index, err = loaded.ReadIndex()
+			if err != nil {
+				return Result{}, err
+			}
+			target, err = newTargetContext(loaded)
+			if err != nil {
+				return Result{}, err
+			}
+		}
 		builder.addEntrypoints(target)
 		builder.addHTTP(target)
 		builder.addConfigReads(target)

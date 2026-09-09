@@ -83,6 +83,14 @@ separate stage outputs.
   is keyed by the stage contract, parameters and input content: reuse memory
   first, restore disk only when absent, compute on a miss. Deterministic stages
   never depend on LLM stages.
+  The owner approved shared project facts on 2026-09-09: identical parser
+  views share one immutable common ProgramIndex input and its saved artifact;
+  each launch keeps its exact target and seeds. Parse identical source
+  inventories once, retaining distinct package/import interpretations.
+  The portfolio releases completed child indexes and restores one target at a
+  time for shared stages instead of retaining every full target projection.
+  Shared facts and thin target bindings use the existing ProgramIndex builder;
+  this changes storage and lifetime, not target selection or semantic authority.
 * Validation is a pure function `(model_output, facts) -> (accepted,
   rejected_with_reason)`. It annotates; it never aborts a run. No thresholds
   like "fail if < 80% valid". Rejected items go to `rejected.jsonl` with the

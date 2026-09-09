@@ -17,6 +17,31 @@ import (
 // Programs maps a target ID to its program index; every atlas target needs
 // one. The result is a validated set.
 func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]Index, error) {
+	ids := make([]string, 0, len(programs))
+	for id := range programs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return projectAtlasFrom(ids, value, func(id string) (programindex.Index, error) {
+		program, ok := programs[id]
+		if !ok {
+			return programindex.Index{}, fmt.Errorf("group index: project atlas: target %s has no program index", id)
+		}
+		return program, nil
+	})
+}
+
+// ProjectAtlasFrom reads saved programs one at a time. Only declaration keys
+// used by the atlas survive between the lookup and projection passes.
+func ProjectAtlasFrom(value atlas.Atlas, read func(string) (programindex.Index, error)) ([]Index, error) {
+	ids := make([]string, 0, len(value.Targets))
+	for _, target := range value.Targets {
+		ids = append(ids, target.ID)
+	}
+	return projectAtlasFrom(ids, value, read)
+}
+
+func projectAtlasFrom(ids []string, value atlas.Atlas, read func(string) (programindex.Index, error)) ([]Index, error) {
 	if err := atlas.Validate(value); err != nil {
 		return nil, fmt.Errorf("group index: project atlas: %w", err)
 	}
@@ -27,18 +52,33 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 	// Native IDs and source refs are scoped by target. A declaration's source
 	// anchor and kind identify it across a library and its executable.
 	sourceRefs := make(map[string]string)
-	localRefs := make(map[string]map[string]string)
-	for targetID, program := range programs {
-		localRefs[targetID] = make(map[string]string)
+	for _, target := range value.Targets {
+		for _, box := range target.Boxes {
+			for _, file := range box.Files {
+				for _, symbol := range file.Symbols {
+					sourceRefs[symbol.ObjectID] = ""
+				}
+			}
+		}
+		for _, boundary := range target.Boundaries {
+			sourceRefs[boundary.ObjectID] = ""
+		}
+	}
+	for _, id := range ids {
+		program, err := read(id)
+		if err != nil {
+			return nil, err
+		}
 		for _, object := range program.Objects {
-			sourceRefs[object.ID] = declarationKey(object)
-			localRefs[targetID][declarationKey(object)] = object.ID
+			if _, needed := sourceRefs[object.ID]; needed {
+				sourceRefs[object.ID] = declarationKey(object)
+			}
 		}
 	}
 	for _, target := range value.Targets {
-		program, ok := programs[target.ID]
-		if !ok {
-			return nil, fmt.Errorf("group index: project atlas: target %s has no program index", target.Name)
+		program, err := read(target.ID)
+		if err != nil {
+			return nil, err
 		}
 		if err := program.Validate(); err != nil {
 			return nil, fmt.Errorf("group index: project atlas: target %s: %w", target.Name, err)
@@ -51,8 +91,18 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 		groupIDs[target.ID] = one.groupOfBox
 		boxes := make(map[string]string, len(target.Boundaries))
 		boundaries[target.ID] = make(map[string]atlas.Boundary)
+		localRefs := make(map[string]string)
 		for _, boundary := range target.Boundaries {
-			boundary.ObjectID = localRefs[target.ID][sourceRefs[boundary.ObjectID]]
+			localRefs[sourceRefs[boundary.ObjectID]] = ""
+		}
+		for _, object := range program.Objects {
+			key := declarationKey(object)
+			if _, needed := localRefs[key]; needed {
+				localRefs[key] = object.ID
+			}
+		}
+		for _, boundary := range target.Boundaries {
+			boundary.ObjectID = localRefs[sourceRefs[boundary.ObjectID]]
 			boxes[boundary.ID] = boundary.BoxID
 			boundaries[target.ID][boundary.ID] = boundary
 		}

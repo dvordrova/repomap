@@ -2,6 +2,7 @@ package places
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"io/fs"
 	"os"
@@ -160,6 +161,24 @@ func TestTypeMembersFollowNativeOwnershipAcrossFiles(t *testing.T) {
 	python := TargetInput{Index: programindex.Index{Target: programindex.Target{ID: "python", Language: "python"}, Objects: objects}, Root: "."}
 	b = builder{input: Input{Targets: []TargetInput{python}}, files: map[string]*fileState{}, byID: map[string]programindex.Object{}, fileOf: map[string]string{}, targetOf: map[string]map[string]struct{}{}}
 	b.collectObjects(python)
+	duplicate := python
+	duplicate.Index = python.Index.Snapshot()
+	duplicate.Index.Target.ID = "other-python-target"
+	for i := range duplicate.Index.Objects {
+		object := &duplicate.Index.Objects[i]
+		object.ID = "0-" + object.ID
+		if object.OwnerID != "" {
+			object.OwnerID = "0-" + object.OwnerID
+		}
+		if object.ContainerID != "" {
+			object.ContainerID = "0-" + object.ContainerID
+		}
+	}
+	b.input.Targets = append(b.input.Targets, duplicate)
+	b.collectObjects(duplicate)
+	if len(b.byID) != len(duplicate.Index.Objects) {
+		t.Fatal("native object lookup retained the previous complete target")
+	}
 	b.collectSymbols()
 	if len(b.symbols) != MaxSymbolCandidates+2 || len(b.files["models.py"].decls) != MaxSymbolCandidates+2 {
 		t.Fatal("type evidence was ranked out or fields leaked into the file's declarations")
@@ -167,6 +186,9 @@ func TestTypeMembersFollowNativeOwnershipAcrossFiles(t *testing.T) {
 	for _, symbol := range b.symbols {
 		if len(symbol.Symbol.Members) != 1 || symbol.Symbol.Members[0].Decl.Signature != "items: list[Point]" {
 			t.Fatalf("class field was omitted or duplicated across target copies: %+v", symbol)
+		}
+		if got, want := symbol.Symbol.Members[0].Decl.ObjectID, "0-"+symbol.Symbol.Decl.Name+"-copy"; got != want {
+			t.Fatalf("class field representative = %s, want original native-ID ordering %s", got, want)
 		}
 	}
 }
@@ -202,11 +224,31 @@ func TestFixturePlaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Build(input)
+	firstEncoded, err := atlas.EncodeGraph(first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.SHA256 != second.SHA256 {
+	// This mixed saved fixture predates target-local lookup storage. Keeping
+	// its canonical bytes prevents a memory optimization from changing evidence.
+	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "dc80c619404b08713d20229c66abdec61a4fcc4fd0d9af56d3fc46c363733b1c" {
+		t.Fatalf("saved mixed fixture graph changed: %s", got)
+	}
+	lazy := input
+	lazy.Targets = append([]TargetInput(nil), input.Targets...)
+	for i, original := range input.Targets {
+		original := original
+		lazy.Targets[i].Index = programindex.Index{Target: original.Index.Target}
+		lazy.Targets[i].ReadIndex = func() (programindex.Index, error) { return original.Index, nil }
+	}
+	second, err := Build(lazy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondEncoded, err := atlas.EncodeGraph(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstEncoded, secondEncoded) {
 		t.Fatalf("Build is not deterministic")
 	}
 	if err := atlas.Validate(atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}}); err != nil {

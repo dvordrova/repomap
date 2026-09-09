@@ -189,7 +189,7 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 	}
 }
 
-func TestRestoredTargetIndexIsLoadedOnlyOnce(t *testing.T) {
+func TestRestoredTargetIndexIsReleasedAfterReading(t *testing.T) {
 	index := runtimeProgramIndex(t, "api", "go:api", "main.go", "main")
 	run := targetPublishedRun{RunDir: t.TempDir()}
 	if err := programindex.Persist(run.RunDir, programindex.ArtifactFilename, index); err != nil {
@@ -199,11 +199,13 @@ func TestRestoredTargetIndexIsLoadedOnlyOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if first.SHA256 != index.SHA256 || run.ProgramIndex != nil {
+		t.Fatal("saved index changed or remained attached to the portfolio run")
+	}
 	if err := os.Remove(filepath.Join(run.RunDir, programindex.ArtifactFilename)); err != nil {
 		t.Fatal(err)
 	}
-	second, err := run.programIndex()
-	if err != nil || first.SHA256 != second.SHA256 {
-		t.Fatalf("second read: %s, %v", second.SHA256, err)
+	if _, err := run.programIndex(); err == nil {
+		t.Fatal("reading a removed index reused a retained child index")
 	}
 }

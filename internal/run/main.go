@@ -160,6 +160,7 @@ func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool)
 }
 
 type defaultRunDeps struct {
+	programIndexStore *programindex.ArtifactStore
 	// Child target consoles share elapsed/delta while keeping their own accounting.
 	consoleClock               *runOutput
 	repositoryConfig           *repoconfig.Config
@@ -712,7 +713,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err := persistReadmeRoleAuthority(runDir, coreReadmeRoleRows); err != nil {
 		return err
 	}
-	index := genericProgramPage.ProgramIndex.Snapshot()
+	index := genericProgramPage.ProgramIndex
 	catalog, catalogErr := dependencies.BuildWithOmissions(
 		genericProgramPage.Dependencies.Importers,
 		genericProgramPage.Dependencies.Dependencies,
@@ -750,7 +751,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if setErr != nil {
 		return setErr
 	}
-	if err := programindex.Persist(runDir, programindex.ArtifactFilename, index); err != nil {
+	if err := persistProgramPageIndex(runDir, genericProgramPage, deps.programIndexStore); err != nil {
 		return err
 	}
 	if err := programindex.PersistArtifactSet(runDir, indexSet); err != nil {

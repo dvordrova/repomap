@@ -470,8 +470,16 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   catalogue and GroupsIndex artifacts. Publish repository-wide facts, claims,
   orientation, atlas, portfolios, manifest, `report.json` and `report.html` once
   in the successful owner run. Stages pass typed values in memory; persistence
-  is separate from computation. Load a saved artifact only when its value is
-  absent from memory. The report server consumes the generated result directly,
+  is separate from computation. Identical project/parser views share their
+  complete common ProgramIndex input; target-local `program-index.json` stores
+  only the target, seeds and a relative binding to `program-facts/<digest>.json`
+  in the initial run directory. The existing common builder restores the exact
+  sealed target index without parsing code. Distinct package/import contexts
+  remain separate facts even when they share ASTs. The owner approved this
+  shared storage on 2026-09-09, independently of tools/examples' full analyses.
+  Release completed child indexes after persistence; facts, places and group
+  projection load one target at a time, without memoizing all children. Other
+  handoffs reuse a value in memory when available. The report server consumes the generated result directly,
   or restores one common report and manifest in another process. Every target
   is a section of that common page.
   Single-target publication uses the same one-page `ProgramPagePortfolio` and

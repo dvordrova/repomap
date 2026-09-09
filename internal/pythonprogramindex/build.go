@@ -214,6 +214,19 @@ func BuildMany(
 	return buildMany(ctx, repository, targets, runParser)
 }
 
+// InputResult keeps a target-local launch projection failure separate from
+// the shared parse. Healthy launches keep that original parsed input.
+type InputResult struct {
+	Input programindex.Input
+	Err   error
+}
+
+// BuildInputResults uses the same parser core as BuildMany, while allowing the
+// dispatcher to seal and release each target independently.
+func BuildInputResults(ctx context.Context, repository *corpus.Corpus, targets []pythontarget.Target) ([]InputResult, error) {
+	return buildInputResults(ctx, repository, targets, runParser)
+}
+
 // BuildInput runs the complete isolated Python parser for one exact target and
 // returns the adapter-owned facts before common ProgramIndex identity sealing.
 // The ordinary repository dispatcher passes this value through the same
@@ -231,7 +244,15 @@ func BuildInput(
 	if len(inputs) != 1 {
 		return programindex.Input{}, fmt.Errorf("python program index: parser returned no exact target input")
 	}
-	input := inputs[0]
+	return WithSeeds(repository, inputs[0], target, seeds...)
+}
+
+// WithSeeds binds the selected owner's original launch seeds to an already
+// parsed input. It does not parse source or change the owner's library surface.
+func WithSeeds(repository *corpus.Corpus, input programindex.Input, target pythontarget.Target, seeds ...pythontarget.Target) (programindex.Input, error) {
+	if len(seeds) == 0 {
+		return input, nil
+	}
 	objects := make(map[string]parsedObject, len(input.Objects))
 	for _, object := range input.Objects {
 		objects[object.SourceRef] = parsedObject{SourceRef: object.SourceRef, Kind: string(object.Kind), Name: object.Name, Location: object.Location}
@@ -293,6 +314,26 @@ func buildInputs(
 	targets []pythontarget.Target,
 	runner parserRunner,
 ) ([]programindex.Input, error) {
+	results, err := buildInputResults(ctx, repository, targets, runner)
+	if err != nil {
+		return nil, err
+	}
+	inputs := make([]programindex.Input, len(results))
+	for i, result := range results {
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		inputs[i] = result.Input
+	}
+	return inputs, nil
+}
+
+func buildInputResults(
+	ctx context.Context,
+	repository *corpus.Corpus,
+	targets []pythontarget.Target,
+	runner parserRunner,
+) ([]InputResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -306,7 +347,7 @@ func buildInputs(
 		return nil, fmt.Errorf("python program index: parser runner is required")
 	}
 	if len(targets) == 0 {
-		return []programindex.Input{}, nil
+		return []InputResult{}, nil
 	}
 
 	groups := make([]*targetGroup, 0)
@@ -346,7 +387,7 @@ func buildInputs(
 		batch.views = append(batch.views, group)
 	}
 
-	inputs := make([]programindex.Input, len(targets))
+	inputs := make([]InputResult, len(targets))
 	for _, batch := range sourceGroups {
 		parsedViews, err := parseSourceGroup(ctx, repository, batch, runner)
 		if err != nil {
@@ -354,12 +395,20 @@ func buildInputs(
 		}
 		for viewPosition, group := range batch.views {
 			parsed := parsedViews[viewPosition]
+			shared := programindex.ShareInput(programindex.Input{
+				ScenarioSHA256: parsed.scenarioSHA256, SourceSHA256: parsed.sourceSHA256,
+				Objects: parsed.objects, Relations: parsed.relations,
+				Coverage: programindex.CoverageInput{
+					Measured: true, ObjectsObserved: len(parsed.objects), RelationsObserved: len(parsed.relations),
+				},
+			})
 			for offset, target := range group.targets {
-				input, err := inputForTarget(repository, target, parsed)
+				programTarget, err := projectTarget(repository, target, parsed.objectRefs)
 				if err != nil {
-					return nil, fmt.Errorf("python program index: target %q: %w", target.Selector, err)
+					inputs[group.positions[offset]].Err = fmt.Errorf("python program index: target %q: %w", target.Selector, err)
+					continue
 				}
-				inputs[group.positions[offset]] = input
+				inputs[group.positions[offset]].Input = shared.ForTarget(programTarget)
 			}
 		}
 	}
@@ -709,23 +758,6 @@ func cloneParsedExternalSymbol(value *programindex.ExternalSymbol) *programindex
 	}
 	copyValue := *value
 	return &copyValue
-}
-
-func inputForTarget(repository *corpus.Corpus, target pythontarget.Target, parsed parsedGroup) (programindex.Input, error) {
-	programTarget, err := projectTarget(repository, target, parsed.objectRefs)
-	if err != nil {
-		return programindex.Input{}, err
-	}
-	return programindex.Input{
-		ScenarioSHA256: parsed.scenarioSHA256,
-		SourceSHA256:   parsed.sourceSHA256,
-		Target:         programTarget,
-		Objects:        parsed.objects,
-		Relations:      parsed.relations,
-		Coverage: programindex.CoverageInput{
-			Measured: true, ObjectsObserved: len(parsed.objects), RelationsObserved: len(parsed.relations),
-		},
-	}, nil
 }
 
 func packageSourceRef(pkg pythontarget.Package) string {

@@ -661,6 +661,7 @@ type Input struct {
 	Objects        []ObjectInput
 	Relations      []RelationInput
 	Coverage       CoverageInput
+	shared         *SharedInput
 }
 
 // Index is the canonical, bounded and SHA-sealed language-neutral handoff.

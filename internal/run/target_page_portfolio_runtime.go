@@ -70,16 +70,20 @@ func reportAnalyzedTargetPagePublicationFailure(output *runOutput, targets []tar
 	output.State("Report publication", "failed", details...)
 }
 
-// Restored stage inputs are loaded once. Ordinary runs already own these values.
+// Deferred portfolio stages read one saved index at a time. Do not attach it
+// back to the run: that would retain every child's index until publication.
 func (run *targetPublishedRun) programIndex() (programindex.Index, error) {
 	if run.ProgramIndex == nil {
-		index, err := readRunProgramIndex(run.RunDir)
-		if err != nil {
-			return programindex.Index{}, err
-		}
-		run.ProgramIndex = &index
+		return readRunProgramIndex(run.RunDir)
 	}
 	return *run.ProgramIndex, nil
+}
+
+func (run *targetPublishedRun) programTarget() programindex.Target {
+	if run.ProgramIndex != nil {
+		return run.ProgramIndex.Target
+	}
+	return run.ProgramPage.ProgramTarget
 }
 
 func (run *targetPublishedRun) dependencyCatalog() (*dependencies.Catalog, error) {

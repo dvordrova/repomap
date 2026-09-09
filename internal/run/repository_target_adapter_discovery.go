@@ -134,7 +134,8 @@ func discoverPythonRepositoryTargets(
 	if err != nil {
 		return repositoryTargetAdapterDiscovery{}, false, fmt.Errorf("discover Python targets: %w", err)
 	}
-	if err := catalog.Validate(); err != nil {
+	catalog, err = catalog.Check()
+	if err != nil {
 		return repositoryTargetAdapterDiscovery{}, false, fmt.Errorf("validate Python target catalog: %w", err)
 	}
 	catalog = catalog.Snapshot()

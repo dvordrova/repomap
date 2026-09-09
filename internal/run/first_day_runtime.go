@@ -74,11 +74,7 @@ func buildRepositoryFacts(ctx context.Context, options firstDayOptions) (facts.R
 	targets := make([]facts.TargetInput, 0, len(options.Runs))
 	for position := range options.Runs {
 		run := &options.Runs[position]
-		index, err := run.programIndex()
-		if err != nil {
-			return facts.Result{}, err
-		}
-		target := facts.TargetInput{Index: index}
+		target := facts.TargetInput{Index: programindex.Index{Target: run.programTarget()}, ReadIndex: run.programIndex}
 		catalog, err := run.dependencyCatalog()
 		if err != nil {
 			return facts.Result{}, err
@@ -127,10 +123,7 @@ func buildRepositoryClaims(ctx context.Context, options firstDayOptions) (claims
 	roots := make([]claims.TargetRoot, 0, len(options.Runs))
 	for position := range options.Runs {
 		run := &options.Runs[position]
-		index, err := run.programIndex()
-		if err != nil {
-			return claims.Result{}, err
-		}
+		index := programindex.Index{Target: run.programTarget()}
 		roots = append(roots, claims.TargetRoot{
 			ID: index.Target.ID, Root: filepath.ToSlash(filepath.Dir(runTargetAnchorPath(index))),
 		})
@@ -213,11 +206,7 @@ func runRepositoryOrientation(
 }
 
 func readRunProgramIndex(runDir string) (programindex.Index, error) {
-	raw, err := os.ReadFile(filepath.Join(runDir, programindex.ArtifactFilename))
-	if err != nil {
-		return programindex.Index{}, fmt.Errorf("first-day layers: read program index: %w", err)
-	}
-	index, err := programindex.Decode(raw)
+	index, err := programindex.ReadFile(filepath.Join(runDir, programindex.ArtifactFilename))
 	if err != nil {
 		return programindex.Index{}, fmt.Errorf("first-day layers: decode program index: %w", err)
 	}
