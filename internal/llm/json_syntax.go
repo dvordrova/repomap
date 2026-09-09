@@ -98,6 +98,7 @@ func balanceJSONRoot(raw []byte) ([]byte, bool) {
 	}
 	out := make([]byte, 0, len(raw))
 	var stack []byte
+	objects, arrays := 0, 0
 	quoted, escaped := false, false
 	for _, ch := range raw {
 		if quoted {
@@ -114,14 +115,22 @@ func balanceJSONRoot(raw []byte) ([]byte, bool) {
 				quoted = true
 			case '{', '[':
 				stack = append(stack, ch)
+				if ch == '{' {
+					objects++
+				} else {
+					arrays++
+				}
 			case '}', ']':
 				opener := byte('{')
+				open := &objects
 				if ch == ']' {
 					opener = '['
+					open = &arrays
 				}
 				if len(stack) > 0 && stack[len(stack)-1] == opener {
 					stack = stack[:len(stack)-1]
-				} else if bytes.IndexByte(stack, opener) >= 0 {
+					*open--
+				} else if *open > 0 {
 					return nil, false
 				} else {
 					// Keep tokens separated: [1}2] must not become [12].
