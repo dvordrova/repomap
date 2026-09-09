@@ -2,7 +2,7 @@
 
 Status: active living ADR
 
-Last updated: 2026-09-08
+Last updated: 2026-09-09
 
 Historical provenance: pre-cleanup commit `4e54ab3`
 
@@ -3717,6 +3717,18 @@ or unresolved authority; shared stages never repair it by matching names.
 It maps an exact top-level import root in `sys.stdlib_module_names` to
 `platform` and every other external root to `package`; an invalid or missing
 authority kind fails the adapter boundary.
+
+Repeated aliases in one import retain one witness for the same declaration
+at the same source site; the observed count includes that witness once.
+Distinct import statements and calls through each alias retain their own
+locations. The 2026-09-09 ordinary Airflow check exposed a false omission:
+`BaseFacet`, `BaseFacet as DatasetFacet`, and `BaseFacet as RunFacet` produced
+one witness but an observed count of three, refusing the Python dependency
+catalog and target. Counting only distinct witnesses fixes the producer while
+keeping the complete-coverage check. Cumulative Python, Go, TypeScript and
+JavaScript examples exercise native imports, distinct calls and complete
+dependency coverage. The interrupted Airflow run is not acceptance; its
+successful requests remain cached for the corrected ordinary run.
 
 The current declaration experiment uses adapter v9 and question table v6.
 Native class ownership feeds the existing atlas type-member representation;

@@ -9,3 +9,9 @@ export function compareOrigins() {
   const store = local.createClient()
   store.get("/factory-local-key")
 }
+
+import { get, get as datasetGet, get as runGet } from "../packages/local-store/src/index"
+
+export function readAliasedImports() {
+  return [get("base"), datasetGet("dataset"), runGet("run")]
+}

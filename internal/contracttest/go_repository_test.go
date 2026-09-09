@@ -11,6 +11,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/gocoreobject"
 	"github.com/dvordrova/repomap/internal/godynamichandoff"
 	"github.com/dvordrova/repomap/internal/gofacts"
@@ -27,13 +28,14 @@ const (
 )
 
 type goFixtureAuthorities struct {
-	target   analysistarget.Target
-	origins  []gofacts.PackageOrigin
-	direct   surfacediscovery.DirectCallIndex
-	external surfacediscovery.ExternalCallIndex
-	core     gocoreobject.Index
-	dynamic  godynamichandoff.Index
-	tests    []gofacts.TestSource
+	target       analysistarget.Target
+	origins      []gofacts.PackageOrigin
+	direct       surfacediscovery.DirectCallIndex
+	external     surfacediscovery.ExternalCallIndex
+	core         gocoreobject.Index
+	dynamic      godynamichandoff.Index
+	tests        []gofacts.TestSource
+	dependencies *dependencies.Catalog
 }
 
 func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
@@ -108,8 +110,64 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertProgramIndexRoundTrip(t, libraryIndex)
+	assertGoRepeatedAliasedImports(t, library, libraryIndex)
 	assertGoTestDeclarationProjection(t, repository, libraryIndex)
 	assertGoTestSourceBuildSelection(t, repositoryPath, repository)
+}
+
+func assertGoRepeatedAliasedImports(t *testing.T, authorities goFixtureAuthorities, index programindex.Index) {
+	t.Helper()
+	caller := programIndexObjectNamed(t, index, programindex.ObjectFunction, "ReadAliasedImports", "root.go")
+	callee := programIndexObjectNamed(t, index, programindex.ObjectFunction, "Get", "internal/localstore/store.go")
+	count := 0
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationCalls || relation.FromID != caller.ID {
+			continue
+		}
+		count++
+		if !sameSingleID(relation.ToIDs, callee.ID) || relation.Resolution != programindex.ResolutionExact ||
+			relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 ||
+			relation.WitnessesObserved != 3 || relation.WitnessesOmitted != 0 || len(relation.Witnesses) != 3 {
+			t.Fatalf("aliased Go imports changed the target or witness coverage: %+v", relation)
+		}
+		columns := make(map[int]bool)
+		for _, witness := range relation.Witnesses {
+			if witness.Location == nil || witness.Location.Path != "root.go" || witness.Location.Line != 21 || witness.Location.Column <= 0 {
+				t.Fatalf("aliased Go call lost its exact location: %+v", witness)
+			}
+			columns[witness.Location.Column] = true
+		}
+		if len(columns) != 3 {
+			t.Fatalf("three same-line Go calls collapsed: %+v", relation.Witnesses)
+		}
+	}
+	if count != 1 {
+		t.Fatalf("aliased Go call relations = %d, want one relation with three distinct witnesses", count)
+	}
+	catalog := authorities.dependencies
+	if catalog == nil || catalog.Coverage.State != dependencies.CoverageComplete || len(catalog.Coverage.Omissions) != 0 {
+		t.Fatalf("aliased Go imports invented missing dependency evidence: %+v", catalog)
+	}
+	rootImporter := ""
+	for _, importer := range catalog.Importers {
+		if importer.PackagePath == goFixtureRootPackage {
+			rootImporter = importer.Ref
+		}
+	}
+	count = 0
+	for _, dependency := range catalog.Dependencies {
+		if dependency.PackagePath != goFixtureRootPackage+"/internal/localstore" {
+			continue
+		}
+		for _, importer := range dependency.ImporterRefs {
+			if importer == rootImporter {
+				count++
+			}
+		}
+	}
+	if rootImporter == "" || count != 1 {
+		t.Fatalf("three Go aliases must retain one exact package dependency, found %d", count)
+	}
 }
 
 func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, authorities goFixtureAuthorities, index programindex.Index) {
@@ -995,13 +1053,14 @@ func analyzeGoFixture(
 		t.Fatalf("Go fixture analysis omitted producer authority: %#v", result)
 	}
 	authorities := goFixtureAuthorities{
-		target:   scoped.AnalysisTarget.Snapshot(),
-		origins:  append([]gofacts.PackageOrigin(nil), scoped.GoFacts.PackageOrigins...),
-		direct:   result.DirectCallIndex.Snapshot(),
-		external: result.ExternalCallIndex.Snapshot(),
-		core:     result.CoreObjectIndex.Snapshot(),
-		dynamic:  result.DynamicHandoffIndex.Snapshot(),
-		tests:    gofacts.CloneTestSources(scoped.GoFacts.TestSources),
+		target:       scoped.AnalysisTarget.Snapshot(),
+		origins:      append([]gofacts.PackageOrigin(nil), scoped.GoFacts.PackageOrigins...),
+		direct:       result.DirectCallIndex.Snapshot(),
+		external:     result.ExternalCallIndex.Snapshot(),
+		core:         result.CoreObjectIndex.Snapshot(),
+		dynamic:      result.DynamicHandoffIndex.Snapshot(),
+		tests:        gofacts.CloneTestSources(scoped.GoFacts.TestSources),
+		dependencies: scoped.GoFacts.Dependencies,
 	}
 	if authorities.target.Ref == "" || authorities.direct.SHA256 == "" ||
 		authorities.external.SHA256 == "" || authorities.core.SHA256 == "" ||

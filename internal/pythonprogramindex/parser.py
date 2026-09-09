@@ -223,7 +223,7 @@ class Analyzer:
         return canonical + value[len(alias):]
 
     def add_relation(self, kind, from_ref, to_refs, resolution, node, witness_kind,
-                     detail="", invocation="", targets_observed=None, witnesses_observed=1,
+                     detail="", invocation="", targets_observed=None,
                      source_expression="", witness_callee=None, patterns=None,
                      patterns_observed=0, source_argument=None):
         path = self.current_path
@@ -249,7 +249,6 @@ class Analyzer:
             witness["location"] = witness_location
         existing = self.relations_by_key.get(key)
         if existing is not None:
-            existing["witnesses_observed"] += witnesses_observed
             existing["patterns_observed"] += patterns_observed
             candidate = json.dumps(witness, sort_keys=True, separators=(",", ":"))
             known = {
@@ -258,6 +257,7 @@ class Analyzer:
             }
             if candidate not in known:
                 existing["witnesses"].append(witness)
+                existing["witnesses_observed"] += 1
             known_patterns = {
                 value.get("source_ref", "") for value in existing.get("patterns", [])
             }
@@ -283,7 +283,7 @@ class Analyzer:
             "resolution": resolution,
             "targets_observed": targets_observed,
             "witnesses": [witness],
-            "witnesses_observed": witnesses_observed,
+            "witnesses_observed": 1,
             "patterns": list(patterns or []),
             "patterns_observed": patterns_observed,
         }

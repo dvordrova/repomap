@@ -46,6 +46,7 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 	}
 	assertCumulativePythonSemanticFacts(t, index)
 	assertPythonLocalHTTPNameFacts(t, index)
+	assertPythonRepeatedImportAliases(t, index)
 	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index}}})
 	if err != nil {
 		t.Fatalf("build Python atlas: %v", err)
@@ -135,6 +136,45 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 	if dependencyCatalog.Coverage.State != dependencies.CoverageComplete ||
 		len(dependencyCatalog.Coverage.Omissions) != 0 {
 		t.Fatalf("Python dependency coverage = %#v, want complete", dependencyCatalog.Coverage)
+	}
+}
+
+func assertPythonRepeatedImportAliases(t *testing.T, index programindex.Index) {
+	t.Helper()
+	const path = "src/fixture_app/models.py"
+	module := programIndexObjectNamed(t, index, programindex.ObjectModule, "fixture_app.models", path)
+	caller := programIndexObjectNamed(t, index, programindex.ObjectFunction, "parse_alias_inputs", path)
+	loads := programIndexExternalObjectNamed(t, index, "json.loads")
+	jsonModule := programIndexExternalObjectNamed(t, index, "json")
+	imports, calls := 0, 0
+	callLines := make(map[int]bool)
+	for _, relation := range index.Relations {
+		if relation.Location == nil || relation.Location.Path != path {
+			continue
+		}
+		if relation.Kind == programindex.RelationImports && relation.FromID == module.ID {
+			imports++
+			if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 ||
+				(relation.ToIDs[0] != loads.ID && relation.ToIDs[0] != jsonModule.ID) ||
+				relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 ||
+				relation.WitnessesObserved != 1 || relation.WitnessesOmitted != 0 || len(relation.Witnesses) != 1 {
+				t.Fatalf("repeated import aliases became missing evidence: %#v", relation)
+			}
+		}
+		if relation.Kind == programindex.RelationInvokesExternal && relation.FromID == caller.ID {
+			calls++
+			callLines[relation.Location.Line] = true
+			if !sameSingleID(relation.ToIDs, loads.ID) || relation.Resolution != programindex.ResolutionAlternatives ||
+				relation.WitnessesObserved != 1 || relation.WitnessesOmitted != 0 || len(relation.Witnesses) != 1 {
+				t.Fatalf("import alias lost its independently anchored call: %#v", relation)
+			}
+		}
+	}
+	if imports != 3 || calls != 6 || len(callLines) != 6 {
+		t.Fatalf("import aliases have %d import sites and %d calls at %d locations; want 3, 6, 6", imports, calls, len(callLines))
+	}
+	if index.Coverage.WitnessesOmitted != 0 {
+		t.Fatalf("duplicate import aliases made the index incomplete: %#v", index.Coverage)
 	}
 }
 

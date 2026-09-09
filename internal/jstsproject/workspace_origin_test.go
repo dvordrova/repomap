@@ -65,6 +65,7 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 			if len(result.Files) != 1 || result.Files[0].Path != source {
 				t.Fatalf("sibling files entered the caller: %#v", result.Files)
 			}
+			assertRepeatedAliasedImports(t, source, result, index, catalog)
 			objects := make(map[string]programindex.Object)
 			for _, object := range index.Objects {
 				objects[object.ID] = object
@@ -179,5 +180,85 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 				t.Fatalf("HTTP=%d dependency=%d", httpCount, dependencyCount)
 			}
 		})
+	}
+}
+
+func assertRepeatedAliasedImports(t *testing.T, source string, result Result, index programindex.Index, catalog dependencies.Catalog) {
+	t.Helper()
+	if err := index.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if catalog.Coverage.State != dependencies.CoverageComplete || len(catalog.Coverage.Omissions) != 0 {
+		t.Fatalf("repeated named imports invented missing dependency evidence: %+v", catalog.Coverage)
+	}
+	importRef := ""
+	for _, imported := range result.Imports {
+		if imported.Location.Path == source && imported.Location.Line == 13 {
+			if importRef != "" || imported.Specifier != "../packages/local-store/src/index" || imported.RepositoryPath != "packages/local-store" {
+				t.Fatalf("one repeated named import acquired duplicate or wrong authority: %+v", imported)
+			}
+			importRef = "program:" + imported.Ref
+		}
+	}
+	if importRef == "" {
+		t.Fatal("repeated named import disappeared from compiler result")
+	}
+	imports := 0
+	for _, relation := range index.Relations {
+		if relation.SourceRef != importRef {
+			continue
+		}
+		imports++
+		if relation.Kind != programindex.RelationImports || relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 ||
+			relation.WitnessesObserved != 1 || relation.WitnessesOmitted != 0 || len(relation.Witnesses) != 1 ||
+			relation.Witnesses[0].Location == nil || relation.Witnesses[0].Location.Path != source || relation.Witnesses[0].Location.Line != 13 {
+			t.Fatalf("repeated named import inflated witness count: %+v", relation)
+		}
+	}
+	if imports != 1 {
+		t.Fatalf("repeated named import relations = %d, want one", imports)
+	}
+	want := map[string]bool{"get": false, "datasetGet": false, "runGet": false}
+	columns := make(map[int]bool)
+	target := ""
+	for _, call := range result.Calls {
+		if _, known := want[call.Expression]; !known {
+			continue
+		}
+		if want[call.Expression] || call.ExternalPackage != "got" || call.RepositoryPath != "packages/local-store" ||
+			call.Location.Path != source || call.Location.Line != 16 || call.Location.Column <= 0 {
+			t.Fatalf("aliased import call acquired wrong origin or source: %+v", call)
+		}
+		want[call.Expression] = true
+		columns[call.Location.Column] = true
+		found := false
+		for _, relation := range index.Relations {
+			if relation.SourceRef != "program:"+call.Ref {
+				continue
+			}
+			found = true
+			if relation.Kind != programindex.RelationInvokesExternal || len(relation.ToIDs) != 1 ||
+				relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 || relation.WitnessesObserved != 1 || relation.WitnessesOmitted != 0 || len(relation.Witnesses) != 1 {
+				t.Fatalf("aliased import call lost exact witness coverage: %+v", relation)
+			}
+			if target != "" && target != relation.ToIDs[0] {
+				t.Fatalf("aliases of one export acquired different declaration identities: %s / %s", target, relation.ToIDs[0])
+			}
+			target = relation.ToIDs[0]
+		}
+		if !found {
+			t.Fatalf("aliased import call %s disappeared at adapter boundary", call.Expression)
+		}
+	}
+	for expression, found := range want {
+		if !found {
+			t.Fatalf("aliased import call %s missing", expression)
+		}
+	}
+	if len(columns) != 3 {
+		t.Fatalf("three same-line aliased calls collapsed: %v", columns)
 	}
 }
