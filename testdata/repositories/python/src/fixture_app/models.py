@@ -53,3 +53,8 @@ def register_overwritten_callback(handler):
     sentinel = lambda value: value
     sentinel = handler
     deliver_callback(sentinel)
+
+
+def register_chained_callbacks(stream):
+    # Both calls start at stream, but each owns a different lambda argument.
+    return stream.map(lambda value: value * 2).map(lambda value: {"value": value})

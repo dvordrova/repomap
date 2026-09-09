@@ -27,6 +27,8 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 	}
 	index := indexes[0]
 	const sourcePath = "src/fixture_app/models.py"
+	chain := programIndexObjectNamed(t, index, programindex.ObjectFunction, "register_chained_callbacks", sourcePath)
+	assertChainedCallbackArguments(t, index, chain.ID, "map", programindex.ResolutionExact)
 	caller := programIndexObjectNamed(t, index, programindex.ObjectFunction, "register_callback_aliases", sourcePath)
 	named := programIndexObjectNamed(t, index, programindex.ObjectFunction, "handle_delivery", sourcePath)
 	arguments := make(map[string]programindex.PatternArgument)
@@ -94,6 +96,45 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 		if !found {
 			t.Fatalf("%s lost its call argument", name)
 		}
+	}
+}
+
+func assertChainedCallbackArguments(t *testing.T, index programindex.Index, callerID, selector string, resolution programindex.Resolution) {
+	t.Helper()
+	arguments := make(map[string]programindex.PatternArgument)
+	calls := 0
+	for _, relation := range index.Relations {
+		if relation.FromID != callerID {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			if pattern.Selector != selector {
+				continue
+			}
+			calls++
+			if relation.PatternsObserved != len(relation.Patterns) || relation.PatternsOmitted != 0 {
+				t.Fatalf("chained calls merged their original argument patterns: %#v", relation)
+			}
+			for _, argument := range pattern.Arguments {
+				arguments[argument.ID] = argument
+			}
+		}
+	}
+	seenArguments, seenCallbacks := make(map[string]bool), make(map[string]bool)
+	for _, relation := range index.Relations {
+		if relation.FromID != callerID || relation.Kind != programindex.RelationPassesCallback {
+			continue
+		}
+		argument, ok := arguments[relation.SourceArgumentID]
+		if !ok || len(relation.ToIDs) != 1 || !sameSingleID(argument.ObjectIDs, relation.ToIDs[0]) ||
+			relation.Resolution != resolution || argument.Resolution != resolution ||
+			argument.ObjectsObserved != 1 || relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 {
+			t.Fatalf("chained callback lost its own source argument: relation=%#v argument=%#v", relation, argument)
+		}
+		seenArguments[argument.ID], seenCallbacks[relation.ToIDs[0]] = true, true
+	}
+	if calls != 2 || len(seenArguments) != 2 || len(seenCallbacks) != 2 {
+		t.Fatalf("chained callbacks: calls=%d arguments=%d callbacks=%d", calls, len(seenArguments), len(seenCallbacks))
 	}
 }
 
@@ -510,8 +551,8 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 			callResults++
 		}
 	}
-	if callResults != 1 {
-		t.Fatalf("Python synthetic call-result objects = %d, want only the directly consumed factory result", callResults)
+	if callResults != 2 {
+		t.Fatalf("Python synthetic call-result objects = %d, want the factory and chained map results", callResults)
 	}
 
 	adaptertest.AssertRegistration(t, index, adaptertest.Registration{

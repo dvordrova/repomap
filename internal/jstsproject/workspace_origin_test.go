@@ -72,6 +72,7 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 			assertRepeatedAliasedImports(t, source, result, index, catalog)
 			if strings.HasSuffix(source, ".js") {
 				assertCumulativeJSTSCallbackAliases(t, index, source, programindex.ResolutionAlternatives)
+				assertCumulativeJSTSChainedCallbacks(t, index, source, programindex.ResolutionAlternatives)
 			}
 			objects := make(map[string]programindex.Object)
 			for _, object := range index.Objects {

@@ -343,6 +343,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	}
 	assertCumulativeJSTSTypeMembers(t, result, index, lines.QuestionRows(graph))
 	assertCumulativeJSTSCallbackAliases(t, index, "src/server.ts", programindex.ResolutionExact)
+	assertCumulativeJSTSChainedCallbacks(t, index, "src/server.ts", programindex.ResolutionExact)
 
 	// JSX supplies callbacks, including internal render props. Keep their
 	// compiler identities and source attributes without claiming execution.
@@ -849,8 +850,8 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 			callResults++
 		}
 	}
-	if callResults != 1 {
-		t.Fatalf("TypeScript synthetic call-result objects = %d, want only the directly consumed factory result", callResults)
+	if callResults != 2 {
+		t.Fatalf("TypeScript synthetic call-result objects = %d, want the factory and chained map results", callResults)
 	}
 	directContinuation := adaptertest.Relation{
 		Kind: programindex.RelationCalls, FromID: directCaller.ID,
@@ -996,6 +997,51 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		if dependency.PackagePath == javascriptPlatform {
 			t.Fatalf("JavaScript platform authority leaked into cumulative dependency catalog: %#v", dependency)
 		}
+	}
+}
+
+func assertCumulativeJSTSChainedCallbacks(t *testing.T, index programindex.Index, source string, resolution programindex.Resolution) {
+	t.Helper()
+	var caller string
+	for _, object := range index.Objects {
+		if object.Name == "registerChainedCallbacks" && object.Location != nil && object.Location.Path == source {
+			caller = object.ID
+		}
+	}
+	arguments := make(map[string]programindex.PatternArgument)
+	calls := 0
+	for _, relation := range index.Relations {
+		if relation.FromID != caller {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			if pattern.Selector != "map" {
+				continue
+			}
+			calls++
+			if relation.PatternsObserved != len(relation.Patterns) || relation.PatternsOmitted != 0 {
+				t.Fatalf("chained calls merged their original argument patterns: %#v", relation)
+			}
+			for _, argument := range pattern.Arguments {
+				arguments[argument.ID] = argument
+			}
+		}
+	}
+	seenArguments, seenCallbacks := make(map[string]bool), make(map[string]bool)
+	for _, relation := range index.Relations {
+		if relation.FromID != caller || relation.Kind != programindex.RelationPassesCallback {
+			continue
+		}
+		argument, ok := arguments[relation.SourceArgumentID]
+		if !ok || len(relation.ToIDs) != 1 || len(argument.ObjectIDs) != 1 || argument.ObjectIDs[0] != relation.ToIDs[0] ||
+			relation.Resolution != resolution || argument.Resolution != relation.Resolution ||
+			argument.ObjectsObserved != 1 || relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 {
+			t.Fatalf("chained callback lost its own source argument: relation=%#v argument=%#v", relation, argument)
+		}
+		seenArguments[argument.ID], seenCallbacks[relation.ToIDs[0]] = true, true
+	}
+	if caller == "" || calls != 2 || len(seenArguments) != 2 || len(seenCallbacks) != 2 {
+		t.Fatalf("chained callbacks: calls=%d arguments=%d callbacks=%d", calls, len(seenArguments), len(seenCallbacks))
 	}
 }
 

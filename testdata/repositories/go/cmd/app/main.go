@@ -94,3 +94,12 @@ func registerAliasedCallbacks() {
 }
 
 func namedCallback(value string) bool { return value != "" }
+
+type fixtureMapper struct{}
+
+func (mapper *fixtureMapper) Map(_ func(int) int) *fixtureMapper { return mapper }
+
+func registerChainedCallbacks() {
+	mapper := &fixtureMapper{}
+	mapper.Map(func(value int) int { return value * 2 }).Map(func(value int) int { return value + 1 })
+}

@@ -26,3 +26,14 @@ export function registerAliasedCallbacks() {
   const named = handleOrder
   deliverCallback(named)
 }
+
+function recordOrder(event) { return event }
+
+class CallbackChain {
+  map(callback) { return this }
+}
+
+export function registerChainedCallbacks() {
+  const stream = new CallbackChain()
+  stream.map(handleOrder).map(recordOrder)
+}

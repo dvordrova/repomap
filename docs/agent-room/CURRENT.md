@@ -3844,6 +3844,18 @@ All three now pass the real local extractor and ProgramIndex construction;
 ordinary full-Airflow publication still needs completion. Cumulative Python,
 Go, TypeScript and JavaScript examples retain their native authority rules.
 
+Nested Python calls now use their complete native AST span in local relation
+and argument-pattern identities. A chain such as `push().map(first).map(second)`
+shares its starting position but retains two distinct calls, each with its own
+arguments and callback candidates. Original source locations are unchanged;
+the source-argument consistency check is unchanged. This fixes the three
+Airflow task-sdk targets that previously failed with an argument-authority
+mismatch. All three pass the real local extractor and sealed ProgramIndex
+construction; the running older full-Airflow attempt remains a partial check.
+Cumulative Python, Go, TypeScript and JavaScript regressions preserve each
+language's existing resolution strength and both callbacks. Go and JS/TS
+already distinguished the calls and needed no production change.
+
 The current declaration experiment uses adapter v10 and question table v6.
 Native class ownership feeds the existing atlas type-member representation;
 question selection now keeps those members beside the selected type, and

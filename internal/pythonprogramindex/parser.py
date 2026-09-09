@@ -23,6 +23,18 @@ def source_location(path, node):
     return {"path": path, "line": line, "column": column}
 
 
+def source_identity(path, node):
+    location = source_location(path, node)
+    if location is None:
+        return ""
+    key = "%s:%d:%d" % (location["path"], location["line"], location["column"])
+    if isinstance(node, ast.Call):
+        # Nested fluent calls share their starting position. Their complete
+        # AST spans distinguish the calls and each call's original arguments.
+        key += ":%d:%d" % (node.end_lineno, node.end_col_offset)
+    return key
+
+
 def callee_location(path, node):
     if isinstance(node, ast.Attribute):
         line = getattr(node, "end_lineno", 0)
@@ -233,9 +245,7 @@ class Analyzer:
         to_refs = sorted(set(to_refs))
         if targets_observed is None:
             targets_observed = len(to_refs) if to_refs else 1
-        location_key = ""
-        if location is not None:
-            location_key = "%s:%d:%d" % (location["path"], location["line"], location["column"])
+        location_key = source_identity(path, node)
         source_argument_key = ""
         if source_argument is not None:
             source_argument_key = json.dumps(source_argument, sort_keys=True, separators=(",", ":"))
@@ -974,11 +984,7 @@ class RelationVisitor(ast.NodeVisitor):
             # candidate. Relation.PatternsObserved exposes this one omission.
             return None, 1
         location = source_location(self.module["path"], call)
-        location_key = ""
-        if location is not None:
-            location_key = "%s:%d:%d" % (
-                location["path"], location["line"], location["column"],
-            )
+        location_key = source_identity(self.module["path"], call)
         arguments = []
         for position, argument in enumerate(call.args, 1):
             if isinstance(argument, ast.Starred):

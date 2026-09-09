@@ -81,6 +81,8 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoChainedCallAndCallbackTraversal(t, index)
 	assertGoRetainedCallbackSourceArgument(t, index)
 	assertGoAliasedCallbackSourceArguments(t, index)
+	chain := programIndexObjectNamed(t, index, programindex.ObjectFunction, "registerChainedCallbacks", "cmd/app/main.go")
+	assertChainedCallbackArguments(t, index, chain.ID, "Map", programindex.ResolutionExact)
 	assertGoRetainedProducerReceiverProjection(t, index, producerResultID)
 	assertGoInterfaceFieldEvidence(t, authorities, index)
 	assertGoSharedHandoffFlows(t, index)

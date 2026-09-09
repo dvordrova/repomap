@@ -104,3 +104,12 @@ export function registerAliasedCallbacks(): void {
   const named = handleOrder
   consumer.subscribe("orders.alias", named)
 }
+
+class CallbackChain {
+  map(_callback: (event: OrderEvent) => void): this { return this }
+}
+
+export function registerChainedCallbacks(): void {
+  const stream = new CallbackChain()
+  stream.map(handleOrder).map(recordOrder)
+}
