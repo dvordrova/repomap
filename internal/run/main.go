@@ -850,7 +850,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		ProgramIndex:     &index,
 		Dependencies:     dependencyCatalog,
 		Documentation:    &ownedDocumentation,
-		RepoName:         repositoryName,
+		RepoName:         repoRunLabel(repo),
 		Timing:           humanOutput.TimingReport(),
 		Source:           source,
 		SelectedRevision: initialState.Head,

@@ -137,26 +137,37 @@ var repomapGraph = (function () {
   }
   roleButton(rmT('All components'),'',ids.length);lanes.forEach(function(lane){if(lane.role)roleButton(lane.title,lane.role,lane.nodes.length);});controls.appendChild(count);map.prepend(controls);
   var overview=el('div','repo-component-overview');
-  var hint=el('p','repo-overview-hint',rmT('Select a component to see its description and connections.'));overview.appendChild(hint);
+  var hint=el('p','repo-overview-hint',rmT('Open a product or its complete list of inputs, parts and integrations.'));overview.appendChild(hint);
   var space=el('div','repo-component-space');overview.appendChild(space);
   var links=document.createElementNS('http://www.w3.org/2000/svg','svg');links.classList.add('repo-space-links');links.setAttribute('role','group');links.setAttribute('aria-label',rmT('Repository components and their connections'));space.appendChild(links);
   var focus=el('section','repo-component-focus');focus.id='repo-component-focus-'+mapIndex;focus.hidden=true;focus.tabIndex=-1;overview.appendChild(focus);
   // The unmodified original SVG remains the source and the no-script map.
   svg.after(overview);map.classList.add('repo-map-space');
   lanes.forEach(function(lane){
-    var section=el('section','repo-role-space');section.dataset.role=lane.role;
-    if(lane.title)section.appendChild(el('h4','repo-role-heading',lane.title+' · '+lane.nodes.length));
+    var auxiliary=!['Applications','Libraries'].includes(lane.role);
+    var section=el(auxiliary?'details':'section','repo-role-space');section.dataset.role=lane.role;
+    if(lane.title)section.appendChild(el(auxiliary?'summary':'h4','repo-role-heading',lane.title+' · '+lane.nodes.length));
+    if(auxiliary)section.addEventListener('toggle',queueDraw);
     var grid=el('div','repo-component-grid');section.appendChild(grid);space.appendChild(section);lane.section=section;
     lane.nodes.forEach(function(id){
       var node=nodes[id],href=node.getAttribute('href'),card=el('article','repo-component-card');card.dataset.component=id;card.dataset.role=node.dataset.role;
-      var button=el(href?'button':'div','repo-component-open');
-      if(href){button.type='button';button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls',focus.id);button.addEventListener('click',function(){choose(id,true);});}
+      var button=el(href?'a':'div','repo-component-open');
+      if(href)button.href=href;
       else{card.classList.add('repo-component-unavailable');button.setAttribute('aria-disabled','true');}
       var name=node.querySelector('.repo-card-name').cloneNode(true);breakName(name);button.appendChild(name);
       var meta=node.querySelector('.repo-card-meta')?.cloneNode(true);if(meta)button.appendChild(meta);
       if(href){var tally=el('span','repo-connection-tally','← '+incident(id,'in').length+'   → '+incident(id,'out').length);tally.setAttribute('aria-label',rmT('Uses this component')+': '+incident(id,'in').length+'; '+rmT('This component uses')+': '+incident(id,'out').length);button.appendChild(tally);}
       else{var note=node.querySelector('.repo-card-note');if(note)button.appendChild(note.cloneNode(true));}
       card.appendChild(button);
+      if(href){
+        var purpose=node.querySelector('.repo-card-purpose');if(purpose)card.appendChild(purpose.cloneNode(true));
+        var page=document.getElementById(href.slice(1)),catalog=el('dl','product-catalog');
+        [['Inputs','inputCount','inbound'],['Parts','partCount','core'],['Integrations','integrationCount','external']].forEach(function(item){
+          var number=Number(page?.dataset[item[1]]||0);if(!number)return;
+          catalog.appendChild(el('dt','',rmT(item[0])));var value=el('dd',''),link=el('a','',rmT('All {0} →',number));link.href=href+'-'+item[2];value.appendChild(link);catalog.appendChild(value);
+        });if(catalog.childNodes.length)card.appendChild(catalog);
+        var inspect=el('button','repo-row-connections',rmT('Connections'));inspect.type='button';inspect.setAttribute('aria-controls',focus.id);inspect.addEventListener('click',function(){choose(id,true);});card.appendChild(inspect);
+      }
       var sources=el('div','repo-component-source-links'),seen=new Set();
       facts[id].forEach(function(row){row.querySelectorAll('.anchor').forEach(function(anchor){
         var key=(anchor.getAttribute('href')||'')+'|'+(anchor.dataset.open||'')+'|'+anchor.textContent;
@@ -235,7 +246,7 @@ var repomapGraph = (function () {
     arrow.id=marker;arrow.setAttribute('viewBox','0 0 10 10');arrow.setAttribute('refX','9');arrow.setAttribute('refY','5');arrow.setAttribute('markerWidth','5');arrow.setAttribute('markerHeight','5');arrow.setAttribute('orient','auto');
     var tip=document.createElementNS(links.namespaceURI,'path');tip.setAttribute('d','M0 0 L10 5 L0 10 z');arrow.appendChild(tip);defs.appendChild(arrow);links.appendChild(defs);
     edges.forEach(function(edge,index){
-      var from=cards[edge.from],to=cards[edge.to];if(from.hidden||to.hidden||from.closest('[hidden]')||to.closest('[hidden]'))return;
+      var from=cards[edge.from],to=cards[edge.to];if(from.hidden||to.hidden||from.closest('[hidden],details:not([open])')||to.closest('[hidden],details:not([open])'))return;
       var a=from.getBoundingClientRect(),b=to.getBoundingClientRect(),sx,sy,tx,ty,path;
       if(Math.abs(a.top-b.top)<Math.min(a.height,b.height)/2){
         var right=a.left<b.left;sx=(right?a.right:a.left)-bounds.left;tx=(right?b.left:b.right)-bounds.left;sy=a.top+a.height/2-bounds.top;ty=b.top+b.height/2-bounds.top;
@@ -267,7 +278,7 @@ var repomapGraph = (function () {
     var url=new URL(location.href);url.searchParams.delete('component-edge');
     if(selectedRole&&nodes[id].dataset.role!==selectedRole){selectedRole='';url.searchParams.delete('component-role');}
     if(url.href!==location.href)history.replaceState(history.state,'',url);
-    render();requestAnimationFrame(function(){cards[id].scrollIntoView({block:'center'});cards[id].querySelector('button')?.focus({preventScroll:true});});
+    render();requestAnimationFrame(function(){var lane=cards[id].closest('details');if(lane)lane.open=true;cards[id].scrollIntoView({block:'start'});cards[id].querySelector('a')?.focus({preventScroll:true});});
   };
   new ResizeObserver(queueDraw).observe(space);
   function restore(){
@@ -277,6 +288,7 @@ var repomapGraph = (function () {
     var edgeIndex=url.searchParams.has('component-edge')?Number(url.searchParams.get('component-edge')):-1;
     selectedConnection=Number.isInteger(edgeIndex)&&edges[edgeIndex]&&(edges[edgeIndex].from===selected||edges[edgeIndex].to===selected)?edgeIndex:-1;
     if(selected&&selectedRole&&nodes[selected].dataset.role!==selectedRole){selectedRole='';url.searchParams.delete('component-role');history.replaceState(history.state,'',url);}
+    if(selected){var lane=cards[selected].closest('details');if(lane)lane.open=true;}
     render();
   }
   window.addEventListener('popstate',restore);window.addEventListener('hashchange',restore);restore();

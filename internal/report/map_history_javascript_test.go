@@ -36,6 +36,8 @@ func TestMapRevealRecordsDestinationBeforeLayout(t *testing.T) {
 	operations, modes, finder := read("29-operation-view.js"), read("45-modes.js"), read("40-find.js")
 	harness := `
 const assert=require('node:assert/strict');
+// Layout is exercised in browser acceptance; this harness checks destination history.
+function rmScrollToReading(node){node.scrollIntoView({block:'start'});}
 const clone=value=>value==null?value:JSON.parse(JSON.stringify(value));
 const page={id:'backend',querySelector(){return map;}},home=page;
 function node(id,dataset){return {id,dataset,closest(selector){return selector==='[data-report-page]'?page:selector==='[data-map-explorer]'?map:null;}};}

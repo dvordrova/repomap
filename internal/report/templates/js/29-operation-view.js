@@ -258,7 +258,7 @@
       }
       var selection=document.createElement('div');selection.className='map-focus-selection';selection.hidden=true;center.appendChild(selection);
       var members=repomapMembers.items(node);
-      if(members.length){var label=document.createElement('h4');label.textContent=rmT('Key code')+' · '+members.length;center.appendChild(label);center.appendChild(repomapMembers.grid(map,node));}
+      if(members.length){rmLocalReadingActions(center,center,function(){center.querySelector('.map-member')?.scrollIntoView({block:'nearest'});center.querySelector('.map-member a')?.focus({preventScroll:true});});var label=document.createElement('h4');label.textContent=rmT('Key code')+' · '+members.length;center.appendChild(label);center.appendChild(repomapMembers.grid(map,node));}
       // Only an original self relation belongs here. Folding a group's own
       // contents together must never manufacture an arrow on a code element.
       var self=edges.filter(function(edge){return edge.from===scope&&edge.to===scope;});
@@ -402,7 +402,7 @@
       var rendered=await render();
       if(rendered!==revision)return;
       if(n.dataset.activation)revealChoice();
-      map.scrollIntoView({block:'start'});show(n);
+      rmScrollToReading(map);show(n);
       if(source)map.explainSource(source);
     }
     map.exploreNode=function(id){open(id);};

@@ -158,7 +158,7 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 		if err != nil || providerCalls != 0 {
 			t.Fatalf("no-model translation: calls=%d, error=%v", providerCalls, err)
 		}
-		expectedFilename, filenameErr := report.ReportHTMLFilename(filepath.Base(runs[0].Source.Repository.Identity), report.Russian)
+		expectedFilename, filenameErr := report.ReportHTMLFilename(filepath.Base(runs[0].Source.AnalysisRoot), report.Russian)
 		if filenameErr != nil || localized.HTMLFilename() != expectedFilename || len(localized.RenderOptions().Translations.Entries) != 0 {
 			t.Fatal("no-model publication lost its localized dictionary-only display")
 		}

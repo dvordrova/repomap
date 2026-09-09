@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version          = 6
+	Version          = 7
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -193,6 +193,7 @@ type Interpretation struct {
 // distinguishes model interpretation from a directly extracted boundary.
 type Operation struct {
 	ID        string                `json:"id"`
+	FactID    string                `json:"fact_id,omitempty"`
 	SubjectID string                `json:"subject_id,omitempty"`
 	GroupID   string                `json:"group_id"`
 	Kind      string                `json:"kind"`

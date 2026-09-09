@@ -18,3 +18,21 @@ var rmT = (function () {
   text.html=function(){var value=text.apply(null,arguments);return value.replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
   return text;
 })();
+
+// SVG hash anchors have no reliable scroll margin. Scroll the containing
+// reading surface after its layout and the toolbar have settled instead.
+function rmScrollToReading(node) {
+  if(!node)return;
+  if(node.matches('[data-node]'))node=node.closest('[data-map]');
+  requestAnimationFrame(function(){requestAnimationFrame(function(){
+    if(!node.isConnected||node.closest('[hidden]'))return;
+    var toolbar=document.querySelector('.report-toolbar'),inset=toolbar&&getComputedStyle(toolbar).position==='sticky'?toolbar.getBoundingClientRect().height:0;
+    window.scrollTo({top:Math.max(0,window.scrollY+node.getBoundingClientRect().top-inset-16),behavior:'instant'});
+  });});
+}
+function rmLocalReadingActions(parent,explanation,toCode) {
+  var actions=document.createElement('nav');actions.className='local-reading-actions';
+  [['To explanation',function(){explanation.scrollIntoView({block:'nearest'});}],['To code',toCode]].forEach(function(item){
+    var button=document.createElement('button');button.type='button';button.textContent=rmT(item[0]);button.addEventListener('click',item[1]);actions.appendChild(button);
+  });parent.appendChild(actions);return actions;
+}

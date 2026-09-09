@@ -36,6 +36,8 @@ func TestCrossTargetOperationKeepsQuestionAndBackHistory(t *testing.T) {
 	operations, modes := read("29-operation-view.js"), read("45-modes.js")
 	harness := `
 const assert=require('node:assert/strict');
+// Layout is exercised in browser acceptance; this harness checks destination history.
+function rmScrollToReading(node){node.scrollIntoView({block:'start'});}
 function element(id,page){return {id,dataset:{},children:[],events:{},hidden:false,
   classList:{contains(){return false;},toggle(){}},
   appendChild(n){this.children.push(n);return n;},

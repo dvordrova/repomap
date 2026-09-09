@@ -499,6 +499,14 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 		}
 	}
 	for _, section := range view.Sections {
+		for _, operations := range [][]pageGroupOperation{section.Requests, section.Activities} {
+			for i := range operations {
+				if operations[i].Source != "fact" {
+					add("label", &operations[i].Name)
+				}
+				operations[i].SummaryRef = add("summary", &operations[i].Summary)
+			}
+		}
 		for _, groups := range [][]pageGroup{section.Triggers, section.Core, section.DependencyGroups} {
 			for i := range groups {
 				group := &groups[i]

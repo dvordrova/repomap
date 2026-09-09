@@ -4110,7 +4110,7 @@ how they talk to each other, what is missing, and how to run it; each target
 then reads inbound routes, entrypoints, core responsibilities, external calls
 and dependencies, the main flow, risks, configuration, dead code, and TODOs.
 Provenance is visible: facts are plain, model sentences have a distinct colour
-and dotted underline with an inspectable source explanation, and claims are
+and an explicit source button when sources exist, and claims are
 quoted with their source and age. Anchors are `path:line` links
 to the captured revision on GitHub or GitLab, or to the local editor opener in
 served mode. The page embeds no analysis payload; it is stamped with the digest
@@ -4120,9 +4120,12 @@ payload projection, and the per-target chunk transport were removed.
 The target picker keeps failed rows visible, red, disabled, and linkless. The
 repository overview reports analyzed versus selected coverage.
 
-The desktop redesign keeps compact components and their original connections
-in one repository space. A click expands a component's description, complete
-source context and grouped neighbours; opening its parts is explicit. Selected
+The desktop overview presents each product as a row with its existing purpose
+and links to complete Inputs, Parts and Integrations catalogues (all N), without
+selecting a top-N subset. Tools, examples and fixtures retain complete expandable
+role inventories with counts. Rows retain the repository map's original nodes
+and connections; a product name opens its component directly, while a separate
+action shows its complete source context and grouped neighbours. Selected
 parts use the existing map stage for incoming neighbours, a centre with exact
 key-code declarations and the existing full-code inspector, and outgoing
 neighbours. Remote peers are grouped by native component with full component
@@ -4141,6 +4144,43 @@ names the original question/search and the selected component, part and source.
 The existing browser history stores reading context and exact map state per
 visit, so visiting the same part for another question does not replace the
 earlier visit's selection. Hover never changes selected reading.
+
+Incoming requests project request operations from the sealed GroupsIndex v7.
+An operation's exact FactID links it to the observed HTTP route; each such fact
+appears once, and observed routes without a map group retain their own anchors.
+Unbound model requests remain explicitly labelled interpretations. Other
+operations keep their activation kinds, including scheduled and continuous work.
+Missing categories occupy one component coverage disclosure; no missing HTTP
+fact is presented as absence of model-observed requests. Report v86 names the
+analysis directory rather than the surrounding repository/module identity,
+including the localized HTML filename.
+The current run recipe cites entrypoint or manifest facts and is explicitly
+labelled inferred; a citation to an entrypoint is not a documented command.
+
+Local explanation/code actions retain the current question, part or operation.
+Code names link directly to exact original sources, with a separate explanation
+button. Learn/Work switches preserve the current reading. Hash navigation aligns
+the containing reading surface after layout, accounting for the actual toolbar
+height; it does not depend on scroll margins on SVG anchors.
+
+Stage A acceptance on 2026-09-09 used new ordinary online runs, with the final
+template fixes included: `20260909-124955-go-http-server-a1bac5da50e7`,
+`20260909-124955-chi-ce7667722810`,
+`20260909-124955-python-tutorial-game-4c879511b3f3`, and
+`20260909-124955-jieba-63a23a9229ae`. All four exited zero. Their common
+manifest/report/HTML, complete shared places and atlas, and each target's sealed
+ProgramIndex, dependency catalogue, reduced documentation and GroupsIndex were
+checked. The targets remain 3, 4, 2 and 21 respectively: this stage changes
+presentation, not target independence. The final ordinary runs reused provider
+responses; the initial Stage A runs also exercised live analysis and translation.
+Desktop browser checks at 1280 by 720 confirmed the complete input catalogue,
+direct code links, question/part/code return paths, and mode changes retaining
+the selected place. A fresh operation link placed the map at 118.49 px below a
+toolbar ending at 102.52 px. Jieba's 19 tool rows all expand; connections to
+closed rows are drawn only after expansion, while their original evidence stays
+available in the component's connections. The full product test/vet check and
+focused publication/navigation checks passed. Native-target decisions and
+documented fenced commands remain Stage B work.
 
 The owner explicitly approved final localization on 2026-09-07/08 and supplied
 two diagrams clarifying its boundary. Analytical LLM cubes receive one shared

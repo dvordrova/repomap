@@ -57,7 +57,7 @@ func TestObservedRoutesReplaceTheDeclarationOperationAndKeepAliases(t *testing.T
 		t.Fatalf("routes were duplicated or aliases lost: %+v", operations)
 	}
 	for _, operation := range operations {
-		if operation.Source != "fact" || operation.SubjectID != p.Objects[0].ID || !strings.HasPrefix(operation.Name, "GET /") {
+		if operation.Source != "fact" || operation.FactID != "fact" || operation.SubjectID != p.Objects[0].ID || !strings.HasPrefix(operation.Name, "GET /") {
 			t.Fatalf("route lost native binding: %+v", operation)
 		}
 	}

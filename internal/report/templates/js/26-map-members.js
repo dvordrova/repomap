@@ -56,16 +56,16 @@ var repomapMembers = (function () {
   function grid(map,node) {
     var grid = document.createElement('div'); grid.className='map-member-grid';
     items(node).forEach(function (item) {
-      var b=document.createElement('button'); b.type='button'; b.className='map-member';
+      var row=document.createElement('div');row.className='map-member';
+      var b=document.createElement('button'); b.type='button'; b.className='map-member-explain';b.textContent='ⓘ';
       if(item.alias&&item.alias!==item.name){
-        var meaning=document.createElement('span');meaning.className='map-member-meaning';meaning.textContent=item.alias;b.appendChild(meaning);
-        b.classList.add('map-member-aliased');
+        var meaning=document.createElement('span');meaning.className='map-member-meaning';meaning.textContent=item.alias;row.appendChild(meaning);
+        row.classList.add('map-member-aliased');
       }
-      var name=document.createElement('code');name.className='map-member-name';name.textContent=item.name;b.appendChild(name);
-      b.title=(item.explanation ? item.explanation+'\n' : '')+item.source.Text+(item.source.NoSource?'\n'+rmT('No source'):'');
+      var name=sourceLink(item.source);name.className='map-member-name';name.textContent=item.name;name.title=item.source.Text+(item.source.NoSource?'\n'+rmT('No source'):'');row.appendChild(name);
       var duplicate=items(node).some(function(other){return other!==item&&other.name===item.name;});
       if(duplicate){
-        var path=document.createElement('small');path.textContent=item.source.Text;b.appendChild(path);
+        var path=document.createElement('small');path.textContent=item.source.Text;row.appendChild(path);
       }
       b.dataset.memberSource=sourceKey(item.source);
       b.setAttribute('aria-label',rmT('Explain {0}',label(node,item)));
@@ -74,7 +74,7 @@ var repomapMembers = (function () {
         grid.querySelectorAll('button').forEach(function(other){other.setAttribute('aria-pressed',other===b);});
         map.showMember(node,item);
       });
-      grid.appendChild(b);
+      row.appendChild(b);grid.appendChild(row);
     });
     return grid;
   }

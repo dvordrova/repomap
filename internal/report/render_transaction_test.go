@@ -115,6 +115,7 @@ func TestLocalizedPublicationRestoresDisplayAndReplacesPreviousHTML(t *testing.T
 	data.ReadmeOverview = "This server prepares a response."
 	data.defaultProgramIndexArtifactFilename = "program-index.json"
 	manifest := validRunManifestFixture(t)
+	manifest.AnalysisRoot = filepath.Join(manifest.RepositoryState.Identity, "tutorial-game")
 	source, err := NewRunSource(manifest.AnalysisRoot, manifest.RepositoryState)
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +146,7 @@ func TestLocalizedPublicationRestoresDisplayAndReplacesPreviousHTML(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.HTMLFilename() != "report."+filepath.Base(source.Repository.Identity)+".ru.html" {
+	if receipt.HTMLFilename() != "report.tutorial-game.ru.html" {
 		t.Fatalf("localized filename = %q", receipt.HTMLFilename())
 	}
 	if _, err := os.Stat(filepath.Join(runDir, "report.html")); !os.IsNotExist(err) {

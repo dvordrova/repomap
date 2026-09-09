@@ -409,6 +409,12 @@
       if(kindHeading)objectHeading.appendChild(kindHeading);
       objectHeading.appendChild(card.querySelector('.map-card-intro>b'));heading.appendChild(objectHeading);
       heading.classList.toggle('has-concepts',concepts.length>0);
+      rmLocalReadingActions(heading,card.querySelector('.map-card-intro'),function(){
+        var direct=card.querySelector('.map-card-intro a');
+        if(direct){direct.click();return;}
+        var evidence=card.querySelector('.map-card-evidence');evidence.open=true;
+        evidence.scrollIntoView({block:'nearest'});
+      });
       if (concepts.length) {
         heading.appendChild(card.querySelector('.map-concepts label'));
         var picker=heading.querySelector('[data-concept-picker]');
@@ -443,7 +449,8 @@
       if(map.exploreNode && !node.dataset.activation){
         if(map.explorerScope!==id){var explore=document.createElement('button');explore.type='button';explore.textContent=node.dataset.branch?rmT('Explore these parts'):rmT('Explore connections');explore.addEventListener('click',function(){map.exploreNode(id);});actions.appendChild(explore);}
         var href=node.getAttribute('href')||'';
-        if(href.charAt(0)==='#'&&href!=='#'+id){var detail=document.createElement('a');detail.href=href;detail.textContent=node.dataset.branch?rmT('Open component'):rmT('Code and all group details');detail.className='map-details-link';actions.appendChild(detail);}
+        var destination=href.charAt(0)==='#'&&document.getElementById(href.slice(1));
+        if(destination&&href!=='#'+id&&destination!==map.closest('[data-report-page]')){var detail=document.createElement('a');detail.href=href;detail.textContent=node.dataset.branch?rmT('Open component'):rmT('Code and all group details');detail.className='map-details-link';actions.appendChild(detail);}
         var users=map.operationChoices(id);
         if(users.length){var usage=document.createElement('details'),summary=document.createElement('summary');summary.textContent=rmT('Related operations for {0} · {1}',titleOf(node),users.length);usage.appendChild(summary);
           users.forEach(function(op){var b=document.createElement('button');b.type='button';b.textContent=op.dataset.title;

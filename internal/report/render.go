@@ -579,9 +579,9 @@ func generate(
 	if err != nil {
 		return RunReceipt{}, err
 	}
-	// The module display name may end in a language version suffix (chi/v5).
-	// Name the file after the selected repository, independently of its modules.
-	display, translationsJSON, err := prepareDisplayPublication(filepath.Base(source.Repository.Identity), renderOptions)
+	// A nested analysis has its own name, independently of the containing Git
+	// repository and module version suffixes such as chi/v5.
+	display, translationsJSON, err := prepareDisplayPublication(filepath.Base(source.AnalysisRoot), renderOptions)
 	if err != nil {
 		return RunReceipt{}, err
 	}

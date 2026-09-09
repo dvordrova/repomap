@@ -35,6 +35,10 @@ type pageSection struct {
 	FactsAvailable bool
 	Map            *pageMap
 	RouteGroups    []pageRouteGroup
+	Requests       []pageGroupOperation
+	Activities     []pageGroupOperation
+	InputsCount    int
+	Coverage       []string
 	// InboundCount is how many route rows this target shows, so the jump bar
 	// can say what is behind a link before it is followed.
 	InboundCount     int
@@ -211,9 +215,13 @@ func (builder *pageBuilder) buildSections() {
 		builder.fillSectionFacts(section)
 		section.Map = builder.buildMap(section)
 		builder.fillSectionGroups(section)
+		builder.fillSectionOperations(section)
 		for _, group := range section.RouteGroups {
 			section.InboundCount += group.Paths
 		}
+		section.InboundCount += len(section.Requests)
+		section.InputsCount = section.InboundCount + len(section.Activities)
+		section.Coverage = sectionCoverage(section)
 		section.Flow = builder.flow(section)
 		if section.Flow == nil {
 			if index := builder.graphIndex(section.programTargetID); index != nil {
@@ -339,11 +347,10 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 	if !section.FactsAvailable {
 		return
 	}
-	section.RouteGroups = builder.routeGroups(section.factsTargetID)
 	section.Calls = builder.httpRows(facts.KindHTTPCall, section.factsTargetID)
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindEntrypoint) {
 		section.Entrypoints = append(section.Entrypoints, pageEntrypoint{
-			Symbol: fact.Symbol,
+			Symbol: shortEntrypointName(fact.Symbol),
 			Kind:   strings.ReplaceAll(fact.Key, "_", " "),
 			Anchor: builder.links.factAnchor(fact),
 		})
@@ -423,8 +430,7 @@ func groupTodos(rows []pageTodo) []pageTodoFile {
 
 // routeGroups buckets the target's routes by method so a reader scans one
 // verb at a time instead of a flat list.
-func (builder *pageBuilder) routeGroups(targetID string) []pageRouteGroup {
-	rows := builder.httpRows(facts.KindHTTPRoute, targetID)
+func groupRouteRows(rows []pageHTTPRow) []pageRouteGroup {
 	if len(rows) == 0 {
 		return nil
 	}

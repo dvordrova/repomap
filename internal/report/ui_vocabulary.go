@@ -10,6 +10,25 @@ import (
 // source phrase is the stable key shared by Go templates and browser code.
 // Parameters are inserted as text, once; source names and links are not translated.
 var russianUI = map[string]string{
+	"Inputs":                 "Входы",
+	"Integrations":           "Интеграции",
+	"Incoming requests":      "Входящие обращения",
+	"Other operations":       "Другие операции",
+	"Input responsibilities": "Ответственность за входы",
+	"Traversal coverage":     "Покрытие обхода",
+	"Analysis coverage":      "Покрытие анализа",
+	"No observations were recorded for these categories; this does not prove their absence:": "По этим категориям нет наблюдений; это не доказывает их отсутствие:",
+	"Observed in source":   "Наблюдается в коде",
+	"Model interpretation": "Интерпретация модели",
+	"To explanation":       "К объяснению",
+	"To code":              "К коду",
+	"Open a product or its complete list of inputs, parts and integrations.": "Откройте продукт или полный список его входов, частей и интеграций.",
+	"All {0} →":                            "все {0} →",
+	"Inferred from an entrypoint":          "Выведено из точки входа",
+	"Inferred from manifest settings":      "Выведено из манифеста",
+	"Documented command":                   "Документировано",
+	"Repository facts were not available.": "Факты репозитория недоступны.",
+
 	"All file declarations and extracted boundaries in the saved places graph, including generated files.":                                                   "Все объявления в файлах и извлечённые сведения о внешних взаимодействиях из сохранённой структуры репозитория, включая сгенерированные файлы.",
 	"Existing entrypoint and manifest observations retain their exact source locations and component context; they do not prove a successful launch.":        "Сведения о точках входа и манифестах сохраняют точные места в исходниках и принадлежность к компонентам; они не доказывают успешный запуск.",
 	"Names, signatures and author documentation guide reading; function bodies and field mutations were not inspected by this pass.":                         "При разборе учитываются имена, сигнатуры и документация авторов; тела функций и изменения полей на этом этапе не исследовались.",

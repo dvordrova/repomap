@@ -231,7 +231,7 @@ source anchors remain unchanged. The report keeps aliases English in every
 language, displays the original code name beside them, and localizes the
 description. Both literal spellings address the same glossary definition;
 no script detector, transliteration, per-name request or browser-generated label
-is added. Current atlas is v3, GroupsIndex v6 and report v85.
+is added. Current atlas is v3, GroupsIndex v7 and report v86.
 
 Knowledge is attached to internal entities, separately from provider batches.
 Independent directory, file, symbol and boundary rows persist their accepted

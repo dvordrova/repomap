@@ -1,5 +1,5 @@
-// Two entrances, one report. Maps stay mounted: changing reading mode must
-// never clear a selected operation, the scope, search, zoom or reading path.
+// Two entrances, one report. Changing entrance preserves the selected place;
+// local reading actions and browser Back retain the preceding reading path.
 (function(){
   var body=document.body, bar=document.querySelector('.reading-modes');
   var pages=Array.from(document.querySelectorAll('main > [data-report-page]'));
@@ -45,6 +45,10 @@
       var all=textElement('a',rmT('← All questions'));all.href='#questions';position.appendChild(all);
       if(index+1<guides.length){var next=textElement('a',rmT('Next question →'));next.href='#'+guides[index+1].id;position.appendChild(next);}
       guide.querySelector('.reading-question').after(position);
+      guide.querySelectorAll('.reading-answer').forEach(function(answer){
+        var explanation=answer.querySelector('.answer-copy'),checks=answer.querySelector('.answer-check');
+        if(explanation&&checks){var actions=rmLocalReadingActions(answer,explanation,function(){checks.open=true;checks.querySelector('summary').focus({preventScroll:true});rmScrollToReading(checks);});explanation.before(actions);}
+      });
     });
     pages.filter(function(page){return page.hasAttribute('data-component-name');}).forEach(function(page){
       var map=page.querySelector('[data-map-explorer]');if(!map)return;
@@ -173,7 +177,9 @@
     // SVG node directly would pan the page to an offscreen graph coordinate.
     if(!node.matches('[data-node]'))node.scrollIntoView({block:'start'});
   },true);
-  bar.querySelectorAll('[data-mode]').forEach(function(b){b.addEventListener('click',function(){setMode(b.dataset.mode,true);});});
+  bar.querySelectorAll('[data-mode]').forEach(function(b){b.addEventListener('click',function(){
+    remember();setMode(b.dataset.mode,true);
+  });});
   function restore(){
     restoring=true;
     var saved=history.state?.repomapReading,node=locate()||home;
@@ -190,6 +196,7 @@
   // event; otherwise that event could save the visit we are leaving over it.
   window.addEventListener('popstate',restore,true);window.addEventListener('hashchange',restore,true);
   prepareReadingEntrances();bar.hidden=false;body.classList.add('reading-ready');selectQuestion(null);restore();remember();
+  var initialHash=location.hash;window.addEventListener('load',function(){document.fonts.ready.then(function(){if(initialHash&&location.hash===initialHash)rmScrollToReading(locate());});},{once:true});
   document.addEventListener('repomap:find',remember);
   if(globalSearch){
     globalSearch.addEventListener('input',function(){

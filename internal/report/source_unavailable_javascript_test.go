@@ -85,10 +85,13 @@ assert.equal(repomapMembers.sourceLink(local.source).dataset.open,local.source.O
 const map={exploreNode(){},showMember(node,item){this.picked=item;}};
 const grid=repomapMembers.grid(map,node);
 assert.equal(grid.children.length,4);
-grid.children[1].events.click();
+const explainButtons=grid.children.map(row=>row.children.find(child=>child.tag==='button'));
+explainButtons[1].events.click();
 assert.equal(map.picked.source.Text,second.source.Text);
-assert.notEqual(grid.children[0].dataset.memberSource,grid.children[1].dataset.memberSource);
-assert.match(grid.children[1].title,/Нет ссылки на исходник/);
+assert.notEqual(explainButtons[0].dataset.memberSource,explainButtons[1].dataset.memberSource);
+assert.match(grid.children[1].children[0].title,/Нет ссылки на исходник/);
+assert.equal(grid.children[2].children[0].href,remote.source.Href,'the code name links directly to its source');
+assert.equal(grid.children[3].children[0].dataset.open,local.source.Open,'the local code name retains its editor destination');
 let inspectedNode=node;
 const picker={value:'',dispatchEvent(){this.selected=items[Number(this.value)];}};
 const heading={querySelector(){return picker;}};

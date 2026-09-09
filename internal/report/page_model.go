@@ -183,6 +183,7 @@ type pageNegative struct {
 }
 
 type pageRecipe struct {
+	Basis   string
 	NoteRef string
 	Command string
 	Cwd     string
@@ -595,6 +596,7 @@ func (builder *pageBuilder) factsCard(target facts.Target) pageTargetCard {
 		card.SectionID = section.ID
 		card.Name = section.Label
 		card.ShortName = section.ShortLabel
+		card.Routes = section.InboundCount
 	}
 	if target.Manifest != "" {
 		card.Manifest = builder.links.anchorPointer(target.Manifest, 0, 0)
@@ -606,7 +608,6 @@ func (builder *pageBuilder) factsCard(target facts.Target) pageTargetCard {
 			card.Entrypoints = append(card.Entrypoints, *anchor)
 		}
 	}
-	card.Routes = len(builder.targetFacts(target.ID, facts.KindHTTPRoute))
 	card.Calls = len(builder.targetFacts(target.ID, facts.KindHTTPCall))
 	card.Dynamic = len(builder.targetFacts(target.ID, facts.KindDynamicExecution))
 	card.Dead = len(builder.targetFacts(target.ID, facts.KindDeadModule))
@@ -744,6 +745,7 @@ func (builder *pageBuilder) recipe(view *pageView) {
 		for _, step := range orient.RunRecipe {
 			view.Recipe = append(view.Recipe, pageRecipe{
 				Command: step.Command, Cwd: step.Cwd, Note: step.Note, Model: true,
+				Basis:   recipeBasis(step.FactIDs, builder.factsByID),
 				Anchors: builder.refAnchors(step.FactIDs),
 			})
 		}
@@ -905,7 +907,7 @@ func (builder *pageBuilder) boundaryCounts() []pageBoundary {
 		}
 		row := pageBoundary{
 			Target: section.Label, SectionID: section.ID,
-			Routes: len(builder.targetFacts(section.factsTargetID, facts.KindHTTPRoute)),
+			Routes: section.InboundCount,
 			Calls:  len(builder.targetFacts(section.factsTargetID, facts.KindHTTPCall)),
 		}
 		if row.Routes == 0 && row.Calls == 0 {

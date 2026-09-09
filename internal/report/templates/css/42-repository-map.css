@@ -75,3 +75,25 @@ button.repo-component-open::after{content:'⌄';position:absolute;right:.8rem;to
 .repo-selected-connection{display:flex;flex-direction:column;gap:.25rem;margin:.2rem 0 1rem;padding:.6rem 0;color:var(--accent);font-size:var(--text-small);border-bottom:1px solid var(--line)}
 .repo-selected-connection strong{font-weight:600}
 .repo-neighbour-selected{border-left:2px solid var(--accent)}
+
+/* Product rows share the retained connection map. Auxiliary roles disclose
+   their complete inventory, with no top-N selection. */
+.repo-component-grid{grid-template-columns:minmax(0,1fr);gap:.65rem}
+.repo-component-card{display:grid;grid-template-columns:minmax(12rem,1fr) minmax(18rem,2fr) minmax(10rem,1fr);column-gap:1rem;align-items:start;padding:.75rem 1rem;border-radius:.4rem;scroll-margin-top:calc(var(--toolbar-height,0px) + 1rem)}
+.repo-component-open{padding:0;text-decoration:none}
+.repo-component-card>.repo-card-purpose{display:block;margin:0;font-size:.92rem;line-height:1.5;-webkit-line-clamp:unset;overflow:visible;min-height:0}
+.product-catalog{display:grid;grid-template-columns:1fr auto;gap:.2rem .8rem;margin:0;font-size:.85rem}
+.product-catalog dt{font-weight:400;color:var(--muted)}
+.product-catalog dd{margin:0;white-space:nowrap}
+.repo-row-connections{grid-column:1;padding:.2rem 0 0;border:0;text-align:left;background:transparent;color:var(--muted);font:inherit;font-size:.75rem;cursor:pointer;text-decoration:underline}
+.repo-component-source-links,.repo-component-card>.repo-card-path{grid-column:2 / -1;padding:.35rem 0 0}
+.repo-role-space>summary{pointer-events:auto;cursor:pointer;width:100%}
+.repo-role-space[open]>.repo-role-heading{margin-bottom:.7rem}
+.recipe-basis{font-size:.78rem;color:var(--muted);border:1px solid var(--line);border-radius:1rem;padding:.1rem .45rem}
+.local-reading-actions{display:flex;gap:.9rem;align-items:center;margin:.6rem 0;font-size:.85rem}
+.input-catalog,.component-coverage{scroll-margin-top:calc(var(--toolbar-height,0px) + 1rem)}
+.operation-catalog>li{margin:1rem 0;border-bottom:1px solid var(--line);padding-bottom:.75rem}
+.operation-catalog>li>p{margin:.35rem 0}
+@media(max-width:850px){.repo-component-card{grid-template-columns:minmax(10rem,1fr) minmax(16rem,2fr)}.product-catalog{grid-column:2}.repo-row-connections{grid-row:2}}
+
+.local-reading-actions button{padding:.2rem 0;border:0;background:transparent;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}

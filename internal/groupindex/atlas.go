@@ -337,7 +337,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				}
 			}
 		}
-		operations = append(operations, Operation{ID: boundary.ID, SubjectID: subjectID, GroupID: groupID, Kind: "request", Name: name, Summary: boundary.Line, Source: source, Location: programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)}})
+		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: "request", Name: name, Summary: boundary.Line, Source: source, Location: programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)}})
 		if subjectID != "" {
 			boundRequests[subjectID] = true
 		}

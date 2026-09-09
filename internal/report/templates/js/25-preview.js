@@ -150,6 +150,10 @@ var repomapPreview = (function () {
   document.querySelectorAll('.model').forEach(function (text, index) {
     // Glossary definitions already keep their complete sources beside them.
     if(text.closest('.learn-concept'))return;
+    var source = text.querySelector('.model-sources');
+    // An empty citation control offers no action. Keep the prose readable and
+    // expose actual saved sources only through the dedicated icon.
+    if(!source || !source.children.length)return;
     var card = document.createElement('aside');
     card.className = 'source-card';
     card.id = 'model-sources-' + index;
@@ -157,9 +161,8 @@ var repomapPreview = (function () {
     var title = document.createElement('strong');
     title.textContent = rmT('Model response');
     card.appendChild(title);
-    var source = text.querySelector('.model-sources');
     var note = document.createElement('p');
-    note.textContent = source && source.children.length ? rmT('The model cited these sources:') : rmT('No citations were saved for this text.');
+    note.textContent = rmT('The model cited these sources:');
     card.appendChild(note);
     if (source) {
       var links = source.cloneNode(true);
@@ -174,7 +177,7 @@ var repomapPreview = (function () {
     var answer = text.classList.contains('answer-copy');
     if (answer) hint.textContent = rmT('Model explanation · sources');
     text.appendChild(hint);
-    repomapPreview.bind(answer ? hint : text, card);
+    repomapPreview.bind(hint, card);
     text.classList.add('model-inspectable');
   });
   document.querySelectorAll('.evidence-list').forEach(function (list) {
