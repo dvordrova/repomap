@@ -235,10 +235,14 @@ func TestFixturePlaces(t *testing.T) {
 	}
 	lazy := input
 	lazy.Targets = append([]TargetInput(nil), input.Targets...)
+	loads := make([]int, len(input.Targets))
 	for i, original := range input.Targets {
 		original := original
 		lazy.Targets[i].Index = programindex.Index{Target: original.Index.Target}
-		lazy.Targets[i].ReadIndex = func() (programindex.Index, error) { return original.Index, nil }
+		lazy.Targets[i].ReadIndex = func() (programindex.Index, error) {
+			loads[i]++
+			return original.Index, nil
+		}
 	}
 	second, err := Build(lazy)
 	if err != nil {
@@ -250,6 +254,11 @@ func TestFixturePlaces(t *testing.T) {
 	}
 	if !bytes.Equal(firstEncoded, secondEncoded) {
 		t.Fatalf("Build is not deterministic")
+	}
+	for i, count := range loads {
+		if count != 2 {
+			t.Fatalf("target %d loaded %d times, want one facts pass and one external-boundary pass", i, count)
+		}
 	}
 	if err := atlas.Validate(atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}}); err != nil {
 		t.Fatal(err)

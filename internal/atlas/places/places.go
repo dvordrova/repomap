@@ -177,15 +177,6 @@ func Build(input Input) (atlas.Graph, error) {
 			return atlas.Graph{}, fmt.Errorf("atlas places: target %s: %w", target.Index.Target.Name, err)
 		}
 		b.collectObjects(target)
-	}
-	b.releaseTargetObjects()
-	b.claimByRoot()
-	for _, saved := range input.Targets {
-		target, err := saved.read()
-		if err != nil {
-			return atlas.Graph{}, err
-		}
-		b.useTargetObjects(target.Index)
 		b.collectEdges(target)
 		b.collectImports(target)
 		b.collectSeeds(target)
@@ -194,6 +185,15 @@ func Build(input Input) (atlas.Graph, error) {
 		b.collectSymbolCalls(b.symbolCallRows, target)
 	}
 	b.releaseTargetObjects()
+	// A located seed may refer to a file supplied by a later target. Resolve
+	// that membership after collecting the complete file inventory, without
+	// loading every target again just to read its relations and seeds.
+	for filePath := range b.seeds {
+		if _, exists := b.files[filePath]; !exists {
+			delete(b.seeds, filePath)
+		}
+	}
+	b.claimByRoot()
 	if err := b.readFiles(); err != nil {
 		return atlas.Graph{}, err
 	}
@@ -627,9 +627,7 @@ func (b *builder) collectSeeds(target TargetInput) {
 			continue
 		}
 		if seed.Location != nil {
-			if _, ok := b.files[atlasPath(seed.Location.Path)]; ok {
-				b.seeds[atlasPath(seed.Location.Path)] = struct{}{}
-			}
+			b.seeds[atlasPath(seed.Location.Path)] = struct{}{}
 		}
 	}
 }

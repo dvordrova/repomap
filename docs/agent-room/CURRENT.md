@@ -3799,6 +3799,16 @@ This is fixture evidence; full Airflow time and peak memory remain unmeasured.
 Final GroupsIndex subjects and the final report still scale with the complete
 selected portfolio; these changes do not make the entire run constant-memory.
 
+The running Airflow sample also exposed an avoidable restore during atlas
+construction. Places now collects each target's declarations, relations and
+seeds together, then makes one later pass for external boundaries after source
+documentation and fact boundaries are ready. Each saved target loads twice
+instead of three times, retaining only one target's native lookup maps.
+Seed locations are resolved against the complete file inventory before depths
+are assigned. The saved mixed fixture's canonical graph bytes are unchanged.
+The live Airflow process predates this change, so its elapsed time cannot
+measure this additional reduction.
+
 Ordinary mixed Python/TypeScript acceptance at `20260909-200202` completed
 in 5.689 s, publishing both selected targets and one Russian HTML. All 23
 exchanges reused their exact cache entries. Compared with `20260909-195105`,
