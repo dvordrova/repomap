@@ -12,8 +12,9 @@ import (
 // NormalizeJSON accepts one complete object or array, optionally surrounded
 // by whitespace, one Markdown JSON fence, or non-structural leading prose.
 // One complete leading <think>...</think> block is separate from the answer.
-// It rejects multiple values, trailing prose or delimiters, and truncated roots.
-// It does not repair fields, refs, schemas, values, or malformed JSON.
+// It may remove unmatched closing brackets and append missing closing brackets
+// at EOF, outside strings. Values, fields, refs and schemas remain unchanged;
+// crossed nesting, multiple values and trailing prose are still refused.
 func NormalizeJSON(raw []byte) ([]byte, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if bytes.HasPrefix(trimmed, []byte("<think>")) {
@@ -36,34 +37,20 @@ func NormalizeJSON(raw []byte) ([]byte, error) {
 		return cloneBytes(trimmed), nil
 	}
 
-	if bytes.Contains(trimmed, []byte("```")) {
+	start := bytes.IndexAny(trimmed, "{[")
+	if fence := bytes.Index(trimmed, []byte("```")); fence >= 0 && (start < 0 || fence < start) {
 		return normalizeFencedJSON(trimmed)
 	}
 
-	start := bytes.IndexAny(trimmed, "{[")
 	if start < 0 {
 		return nil, errors.New("llm: response contains no JSON object or array")
 	}
-	// Once the first structural opener appears, its complete value is the
-	// only candidate. Hunting inside a malformed outer value would turn
-	// truncation into implicit semantic repair.
-	decoder := json.NewDecoder(bytes.NewReader(trimmed[start:]))
-	var candidate json.RawMessage
-	if err := decoder.Decode(&candidate); err != nil {
-		return nil, errors.New("llm: response contains an incomplete or invalid JSON value")
+	// Keep the entire first candidate, including its tail. Never hunt for a
+	// valid nested value inside a malformed outer answer.
+	if candidate, ok := balanceJSONRoot(trimmed[start:]); ok {
+		return candidate, nil
 	}
-	candidate = bytes.TrimSpace(candidate)
-	if !validJSONRoot(candidate) {
-		return nil, errors.New("llm: response JSON root must be an object or array")
-	}
-	consumed := int(decoder.InputOffset())
-	if consumed < 0 || consumed > len(trimmed[start:]) {
-		return nil, errors.New("llm: response JSON boundary is invalid")
-	}
-	if len(bytes.TrimSpace(trimmed[start+consumed:])) != 0 {
-		return nil, errors.New("llm: response contains trailing or ambiguous data")
-	}
-	return cloneBytes(candidate), nil
+	return nil, errors.New("llm: response contains an incomplete or invalid JSON value")
 }
 
 func normalizeFencedJSON(raw []byte) ([]byte, error) {
@@ -87,39 +74,80 @@ func normalizeFencedJSON(raw []byte) ([]byte, error) {
 	}
 	contentAndClose := afterOpen[lineEnd+1:]
 	closeOffset := bytes.Index(contentAndClose, []byte("```"))
-	if closeOffset < 0 {
-		// Some providers omit only the closing Markdown delimiter while still
-		// returning one complete JSON root. Accept that harmless presentation
-		// defect, but never infer a missing JSON byte or discard trailing prose.
-		content := bytes.TrimSpace(contentAndClose)
-		if bytes.Contains(content, []byte("```")) || !validJSONRoot(content) {
-			return nil, errors.New("llm: JSON fence is incomplete")
+	content := contentAndClose
+	if closeOffset >= 0 {
+		content = contentAndClose[:closeOffset]
+		if len(bytes.TrimSpace(contentAndClose[closeOffset+3:])) != 0 {
+			return nil, errors.New("llm: fenced response contains trailing or ambiguous data")
 		}
-		return cloneBytes(content), nil
 	}
-	content := bytes.TrimSpace(contentAndClose[:closeOffset])
-	suffix := contentAndClose[closeOffset+3:]
-	if len(bytes.TrimSpace(suffix)) != 0 {
-		return nil, errors.New("llm: fenced response contains trailing or ambiguous data")
+	if normalized, ok := balanceJSONRoot(bytes.TrimSpace(content)); ok {
+		return normalized, nil
 	}
-	if bytes.Contains(content, []byte("```")) || !validJSONRoot(content) {
-		return nil, errors.New("llm: fenced response does not contain one complete JSON object or array")
+	return nil, errors.New("llm: fenced response does not contain one complete JSON object or array")
+}
+
+// Balance only delimiters whose role is unambiguous. A mismatched closer with
+// an opener deeper in the stack is crossed nesting, not an extra delimiter.
+func balanceJSONRoot(raw []byte) ([]byte, bool) {
+	if validJSONRoot(raw) {
+		return cloneBytes(raw), true
 	}
-	return cloneBytes(content), nil
+	if len(raw) == 0 || (raw[0] != '{' && raw[0] != '[') {
+		return nil, false
+	}
+	out := make([]byte, 0, len(raw))
+	var stack []byte
+	quoted, escaped := false, false
+	for _, ch := range raw {
+		if quoted {
+			if escaped {
+				escaped = false
+			} else if ch == '\\' {
+				escaped = true
+			} else if ch == '"' {
+				quoted = false
+			}
+		} else {
+			switch ch {
+			case '"':
+				quoted = true
+			case '{', '[':
+				stack = append(stack, ch)
+			case '}', ']':
+				opener := byte('{')
+				if ch == ']' {
+					opener = '['
+				}
+				if len(stack) > 0 && stack[len(stack)-1] == opener {
+					stack = stack[:len(stack)-1]
+				} else if bytes.IndexByte(stack, opener) >= 0 {
+					return nil, false
+				} else {
+					// Keep tokens separated: [1}2] must not become [12].
+					out = append(out, ' ')
+					continue
+				}
+			}
+		}
+		out = append(out, ch)
+	}
+	if quoted {
+		return nil, false
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		closer := byte('}')
+		if stack[i] == '[' {
+			closer = ']'
+		}
+		out = append(out, closer)
+	}
+	return out, validJSONRoot(out)
 }
 
 func validJSONRoot(raw []byte) bool {
 	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') || !json.Valid(trimmed) {
-		return false
-	}
-	decoder := json.NewDecoder(bytes.NewReader(trimmed))
-	var value json.RawMessage
-	if err := decoder.Decode(&value); err != nil {
-		return false
-	}
-	var trailing any
-	return errors.Is(decoder.Decode(&trailing), io.EOF)
+	return len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') && json.Valid(trimmed)
 }
 
 func decodeJSONValue[T any](raw []byte, validate func(T) error) (T, error) {

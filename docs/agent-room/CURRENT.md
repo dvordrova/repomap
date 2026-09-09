@@ -4396,6 +4396,19 @@ accounting, and journal events. Current stages share a 32 MiB request envelope,
 a 16 MiB decoded-response ceiling, and request up to 128,000 output tokens;
 the configured provider ceiling remains authoritative when lower.
 
+The owner's 2026-09-09 syntax rule permits balancing JSON brackets before the
+ordinary decoder: outside quoted strings, a closing bracket with no matching
+open bracket anywhere in the active stack becomes whitespace; missing closing
+brackets are appended at EOF. Whitespace prevents separate tokens from merging
+(`1}2` must not become `12`). Crossed nesting, unfinished strings and values,
+multiple roots and trailing prose are still refused. The same rule applies
+inside the existing JSON fence and after the existing complete thinking block.
+The entire resulting object or array must pass JSON decoding and the owning
+stage's unchanged completeness, schema and closed-ref validation. This does not
+override provider-reported truncation or resource limits. Raw responses in
+cache and journals remain original; normalization needs no model call and does
+not change request identity.
+
 Complete reservoirs are processed through as many deterministic disjoint
 batches and convergent closed-ref merge rounds as needed. Composite input is
 exhaustively repartitioned when a prepared request does not fit. An indivisible
