@@ -10,7 +10,7 @@
 {{range .Places}}<a href="{{.Href}}">{{t "Explore {0} →" .Title}}</a> {{end}}</details>{{end}}</div>{{end}}
 {{if .MapLinks}}<div class="reading-map-links"><span class="reading-map-label">{{t "Explore the answer on the map:"}}</span>{{range .MapLinks}}<a href="{{.Href}}" data-question-map="{{.NodeID}}">{{.Label}} →</a> {{end}}</div>{{end}}
 {{if .Remaining}}<p class="reading-gap"><strong>{{t "Still to investigate"}}</strong> <span class="model"><span data-display-ref="{{.RemainingRef}}">{{.Remaining}}</span></span></p>{{end}}
-{{if .Checks}}<details class="answer-check"><summary>{{t "Check this interpretation"}}</summary>
+{{if .Checks}}<details class="answer-check"><summary{{if .CheckID}} id="{{.CheckID}}"{{end}}>{{t "Check this interpretation"}}</summary>
 <ul class="reading-stops">{{range .Checks}}<li><strong>{{.Name}}</strong> <span class="reading-source">{{template "anchor" .Source}}</span>
 {{template "question-excerpts.html" .Excerpts}}
 </li>{{end}}</ul></details>{{end}}
@@ -30,14 +30,15 @@
 </details>{{end}}
 
 {{define "question-checks.html"}}{{if .}}<details><summary>{{t "Check the sources"}}</summary><ul class="reading-stops">{{range .}}<li><strong>{{.Name}}</strong> {{template "anchor" .Source}}
+{{range .ExcerptCheckIDs}}<p><a href="#{{.}}">{{t "Show excerpt"}}</a></p>{{end}}
 {{template "question-excerpts.html" .Excerpts}}</li>{{end}}</ul></details>{{end}}{{end}}
 
-{{define "question-excerpts.html"}}{{range .}}<div class="reading-excerpt">
+{{define "question-excerpts.html"}}{{range .}}{{if not .AnswerCheckID}}<div class="reading-excerpt">
 {{if .Members}}<table class="reading-members"><caption>{{t .Kind}}{{if .ShowSource}} · {{template "anchor" .Source}}{{end}}</caption>
 <thead><tr><th scope="col">{{t "Declaration"}}</th><th scope="col">{{t "Source"}}</th></tr></thead>
 <tbody>{{range .Members}}<tr><td><code>{{.Text}}</code>{{if .Doc}}<p class="member-doc"><span>{{t "Author's documentation"}}</span>{{.Doc}}</p>{{end}}</td><td>{{template "anchor" .Source}}</td></tr>{{end}}</tbody></table>
 {{else}}<span>{{t .Kind}}{{if .ShowSource}} · {{template "anchor" .Source}}{{end}}</span><pre>{{.Text}}</pre>{{end}}
-</div>{{end}}{{end}}
+</div>{{end}}{{end}}{{end}}
 
 {{define "learning-review.html"}}{{if .LearningReviews}}<details class="learning-review"><summary>{{t "How were these questions chosen?"}}</summary><p>{{t "The model adapted general learning topics to this repository. These decisions can be checked against the original sources."}}</p>
 {{if .LearningSelections}}<details><summary>{{t "Which questions belong in the introduction? · {0} considered" (len .LearningSelections)}}</summary><p>{{t "The model chose a menu of questions for each topic. Its rationale describes that menu; it is not a separate judgment of each omitted question. All candidates remain here with their original sources."}}</p>{{template "learning-decisions.html" .LearningSelections}}</details>{{end}}

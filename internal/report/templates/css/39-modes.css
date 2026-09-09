@@ -21,7 +21,7 @@
 .reading-return[hidden]{display:none}
 body.reading-ready [data-report-page][hidden],body.reading-ready [data-reading-mode][hidden],.reading-modes[hidden],.concept-search[hidden],.concept-pages[hidden],.learn-concept[hidden]{display:none}
 [data-report-page],[data-report-page] .map,[data-report-page] .group{scroll-margin-top:calc(var(--toolbar-height,6rem) + 1rem)}
-[data-report-page] h2,[data-report-page] h3,[data-report-page] details[id]{scroll-margin-top:calc(var(--toolbar-height,6rem) + 1rem)}
+[data-report-page] h2,[data-report-page] h3,[data-report-page] details[id],[data-report-page] summary[id]{scroll-margin-top:calc(var(--toolbar-height,6rem) + 1rem)}
 .learn-intro{max-width:55rem;padding:.7rem 0 .2rem}
 .learn-intro h2{border:0;font-size:1.7rem;margin:1rem 0 .65rem;padding:0}
 .learn-intro .summary{font-size:1.15rem;line-height:1.6;margin:0 0 1rem}

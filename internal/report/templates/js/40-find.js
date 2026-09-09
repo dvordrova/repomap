@@ -79,8 +79,8 @@
   async function go(entry){
     // Keep the result list in the previous history entry when opening a hit.
     close(false);
-    document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:entry.node||entry.destination}}));
     if(entry.node&&entry.map?.findNode){await entry.map.findNode(entry.node);if(entry.codeSource)entry.map.explainSource(entry.codeSource);return;}
+    document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:entry.node||entry.destination}}));
     var destination=entry.destination;
     if(destination){for(var parent=destination.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;destination.scrollIntoView({block:'start'});}
   }
@@ -149,5 +149,5 @@
     proxy.addEventListener('keydown',keydown);
   }
   document.addEventListener('keydown',function(e){if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)&&!document.activeElement.isContentEditable){e.preventDefault();box.focusSearch().scrollIntoView({block:'center'});}});
-  document.addEventListener('click',function(e){var a=e.target.closest('a[data-question-map]');if(!a)return;var node=document.getElementById(a.dataset.questionMap),map=node?.closest('[data-map-explorer]');if(map?.findNode){e.preventDefault();document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:node}}));map.findNode(node);}});
+  document.addEventListener('click',function(e){var a=e.target.closest('a[data-question-map]');if(!a)return;var node=document.getElementById(a.dataset.questionMap),map=node?.closest('[data-map-explorer]');if(map?.findNode){e.preventDefault();map.findNode(node);}});
 })();

@@ -76,6 +76,8 @@ var russianUI = map[string]string{
 	"Code element":            "Элемент кода",
 	"Code element to explain": "Элемент кода для объяснения",
 	"Choose a code element":   "Выберите элемент кода",
+	"← Back to part":          "← К части",
+	"Show excerpt":            "Показать фрагмент",
 	"No explanation saved. Open the source to inspect this element.": "Объяснения пока нет. Этот элемент можно посмотреть в исходнике.",
 	"Components":                    "Компоненты",
 	"Show components":               "Показать компоненты",

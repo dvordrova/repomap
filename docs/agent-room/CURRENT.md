@@ -1635,15 +1635,23 @@ the original question, reading mode and the source visit for browser Back.
 The selected code explanation aligns with its selector and uses a small
 provenance information mark beside its source, without a repeated heading or
 an inset bordered panel.
+In a selected part, the short Back to part action clears only the selected
+code explanation through the existing picker event. It preserves the part,
+operation and question, and returns keyboard focus to that exact source's code
+button. It is not a browser-history step or a reset of the map.
 
 Breadcrumbs follow the existing containment hierarchy, not click history. They
 distinguish Area and Part when the model gave both the same name; opening the
 current node is idempotent. A boundary peer never contains an already displayed
 part: shared ancestors are expanded just far enough to show disjoint peers.
-Map-local navigation does not scroll the document. Explicit links into the map
+Changing map scope does not scroll the document. Explicit links into the map
 reserve the measured sticky toolbar height, and the breadcrumb row scrolls
 horizontally rather than changing the map's vertical position. Initial layout
 uses the map's available width, independent of when the shared inspector mounts.
+Explicit map destinations set their intended scope, operation and search state
+before recording the browser address. Search and question links use that same
+transition. The destination page is revealed before asynchronous layout measures
+it, so Back and Forward retain the intended map state while layout is pending.
 
 The reading canvas is now a light mineral grey-green with white content and map
 surfaces. The toolbar has one background; Home, Questions and the part picker
@@ -2379,6 +2387,17 @@ answer before the supporting reading route, with links to existing map nodes.
 declarations or author excerpts with their own exact source links. It does not
 relabel directory context or earlier model prose as a declaration's documentation.
 No implementation bodies or additional evidence category is sent by this step.
+When a question's selection reason contains an exact source excerpt already
+shown in that same question's answer checks, it links to that existing check
+instead of printing the body twice. Source location, column, excerpt kind,
+text and ordered member declarations must all match. The reason, source link
+and unique prerequisites remain beside the question origin. Other questions
+and the global Learn review keep their own excerpts. The destination is the
+existing check's visible summary, so native HTML can reach it without scripts;
+the ordinary navigator opens the disclosure while retaining the question.
+Summary anchors reserve the same measured toolbar inset as other destinations.
+This changes only page metadata and markup, not saved analysis or the exact
+translation catalogue.
 The owner explicitly reaffirmed that useful model interpretations are welcome:
 the operator must be able to check them quickly. Names, signatures and argument
 names can support an interpretation without bodies; do not automatically turn
@@ -4105,6 +4124,10 @@ parts use the existing map stage for incoming neighbours, a centre with exact
 key-code declarations and the existing full-code inspector, and outgoing
 neighbours. Remote peers are grouped by native component with full component
 and relation counts; their complete lists expand beside the selected reading.
+An empty incoming or outgoing side does not reserve a blank column: the centre
+uses that space and retains a compact zero count with the original explanation
+that no such connections were recorded. Both nonempty sides retain their
+original left/right positions and all original relations.
 Reciprocal relations remain separate directed evidence and highlight the same
 peer together. Leaf focus uses exact neighbouring parts instead of introducing
 an extra folded area. Destination pages also project incoming cross-component

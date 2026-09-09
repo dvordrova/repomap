@@ -412,10 +412,21 @@
       if (concepts.length) {
         heading.appendChild(card.querySelector('.map-concepts label'));
         var picker=heading.querySelector('[data-concept-picker]');
+        var backToPart=document.createElement('button');backToPart.type='button';backToPart.className='map-concept-back';
+        backToPart.textContent=rmT('← Back to part');backToPart.setAttribute('aria-label',rmT('← Back to {0}',titleOf(node)));
+        heading.prepend(backToPart);
+        backToPart.addEventListener('click',function(){
+          var selectedKey=map.explorerMember?.key;
+          picker.value='';picker.dispatchEvent(new Event('change'));
+          var part=map.querySelector('.map-focus-center');
+          var member=part&&Array.from(part.querySelectorAll('[data-member-source]')).find(function(b){return b.dataset.memberSource===selectedKey;});
+          if(member){member.focus({preventScroll:true});member.scrollIntoView({block:'nearest'});}else picker.focus({preventScroll:true});
+        });
         if(saved?.concept!==undefined)picker.value=saved.concept;
         var explain=function(){
           var panel=card.querySelector('.map-concepts');
           panel.hidden=picker.value==='';card.classList.toggle('map-card-has-concepts',!panel.hidden);
+          backToPart.hidden=panel.hidden||!map.classList.contains('map-part-focus');
           if(panel.hidden){map.explorerMember=null;map.querySelectorAll('[data-member-source]').forEach(function(b){b.setAttribute('aria-pressed','false');});map.dispatchEvent(new Event('repomap:reading'));return;}
           var concept=concepts[Number(picker.value)],source=concept.source;
           map.explorerMember={owner:id,name:picker.selectedOptions[0].textContent,source:source.Text,href:source.Href,open:source.Open,key:repomapMembers.sourceKey(source)};

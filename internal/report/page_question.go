@@ -39,6 +39,7 @@ type pageQuestionReading struct {
 
 type pageAnswerPart struct {
 	TextRef, BasisRef, RemainingRef string
+	CheckID                         string
 	Text, Basis, Remaining          string
 	RequestSHA256                   string
 	OriginRow                       string
@@ -58,10 +59,11 @@ type pageQuestionStep struct {
 }
 
 type pageQuestionExcerpt struct {
-	Kind, Text string
-	Source     pageAnchor
-	Members    []pageQuestionMember
-	ShowSource bool
+	Kind, Text    string
+	AnswerCheckID string
+	Source        pageAnchor
+	Members       []pageQuestionMember
+	ShowSource    bool
 }
 
 type pageQuestionMember struct {
@@ -71,6 +73,16 @@ type pageQuestionMember struct {
 
 type pageQuestionMapLink struct {
 	Label, Href, NodeID string
+}
+
+func (step pageQuestionStep) ExcerptCheckIDs() []string {
+	var ids []string
+	for _, excerpt := range step.Excerpts {
+		if excerpt.AnswerCheckID != "" && !slices.Contains(ids, excerpt.AnswerCheckID) {
+			ids = append(ids, excerpt.AnswerCheckID)
+		}
+	}
+	return ids
 }
 
 // Preserve the reading route and separately grounded model answer verbatim.
@@ -137,6 +149,7 @@ func (builder *pageBuilder) questionGuide(route atlas.QuestionRoute) (*pageQuest
 			view.Answers = append(view.Answers, answer)
 		}
 	}
+	linkQuestionOriginExcerpts(view)
 	guide := route.Guide
 	if guide == nil || len(guide.Steps) == 0 {
 		view.Note = "No reading route was selected for this question."
@@ -182,6 +195,39 @@ func (builder *pageBuilder) questionGuide(route atlas.QuestionRoute) (*pageQuest
 		view.Readings = append(view.Readings, reading)
 	}
 	return view, nil
+}
+
+// Keep every original observation and display binding. Only an exact copy
+// within this question may refer to its existing answer disclosure.
+func linkQuestionOriginExcerpts(question *pageQuestion) {
+	for i := range question.Answers {
+		if len(question.Answers[i].Checks) > 0 {
+			question.Answers[i].CheckID = fmt.Sprintf("%s-answer-check-%d", question.ID, i+1)
+		}
+	}
+	for i := range question.Origins {
+		for j := range question.Origins[i].Checks {
+			check := &question.Origins[i].Checks[j]
+			for k := range check.Excerpts {
+				excerpt := &check.Excerpts[k]
+			findAnswer:
+				for _, answer := range question.Answers {
+					for _, original := range answer.Checks {
+						if original.Source != check.Source || original.Column != check.Column {
+							continue
+						}
+						if slices.ContainsFunc(original.Excerpts, func(saved pageQuestionExcerpt) bool {
+							return saved.Kind == excerpt.Kind && saved.Text == excerpt.Text && saved.Source == excerpt.Source &&
+								saved.ShowSource == excerpt.ShowSource && slices.Equal(saved.Members, excerpt.Members)
+						}) {
+							excerpt.AnswerCheckID = answer.CheckID
+							break findAnswer
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 func (builder *pageBuilder) questionStep(route atlas.QuestionRoute, step atlas.QuestionStep) (pageQuestionStep, error) {

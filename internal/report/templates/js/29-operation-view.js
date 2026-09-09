@@ -205,9 +205,9 @@
       function side(incoming){
         var column=document.createElement('section');column.className='map-focus-side '+(incoming?'map-focus-incoming':'map-focus-outgoing');
         var connections=currentEdges.filter(function(edge){return incoming?edge.to===scope:edge.from===scope;});
+        if(!connections.length)return null;
         var total=connections.reduce(function(n,edge){return n+edge.relations.length;},0);
         var h=document.createElement('h3');h.textContent=rmT(incoming?'Incoming connections · {0}':'Outgoing connections · {0}',total);column.appendChild(h);
-        if(!connections.length){var empty=document.createElement('p');empty.className='map-focus-empty';empty.textContent=rmT(incoming?'No incoming connections recorded.':'No outgoing connections recorded.');column.appendChild(empty);}
         var peers=new Map();connections.forEach(function(edge){var id=incoming?edge.from:edge.to;(peers.get(id)||peers.set(id,[]).get(id)).push.apply(peers.get(id),edge.relations);});
         var remote=new Map();
         function neighbor(relations,id){
@@ -242,11 +242,19 @@
         }
         return column;
       }
-      scene.appendChild(side(true));
+      var incoming=side(true),outgoing=side(false);
+      scene.classList.toggle('has-incoming',!!incoming);scene.classList.toggle('has-outgoing',!!outgoing);
+      if(incoming)scene.appendChild(incoming);
       var center=document.createElement('section');center.className='map-focus-center';
       var kind=document.createElement('span');kind.className='map-focus-kind';kind.textContent=rmT('Part')+(node.dataset.remote==='true'?' · '+partOwner(node):'');center.appendChild(kind);
       var title=document.createElement('h3');title.textContent=node.dataset.title;center.appendChild(title);
       if(node.dataset.summary){var purpose=document.createElement('p');purpose.className='map-focus-purpose';purpose.textContent=node.dataset.summary;purpose.dataset.displayRef=node.dataset.summaryRef||'';center.appendChild(purpose);}
+      if(!incoming||!outgoing){
+        var empty=document.createElement('p');empty.className='map-focus-empty';
+        empty.textContent=!incoming&&!outgoing?rmT('No connections recorded.'):rmT(!incoming?'Incoming connections · {0}':'Outgoing connections · {0}',0);
+        if(incoming||outgoing)empty.title=rmT(!incoming?'No incoming connections recorded.':'No outgoing connections recorded.');
+        center.appendChild(empty);
+      }
       var selection=document.createElement('div');selection.className='map-focus-selection';selection.hidden=true;center.appendChild(selection);
       var members=repomapMembers.items(node);
       if(members.length){var label=document.createElement('h4');label.textContent=rmT('Key code')+' · '+members.length;center.appendChild(label);center.appendChild(repomapMembers.grid(map,node));}
@@ -254,7 +262,7 @@
       // contents together must never manufacture an arrow on a code element.
       var self=edges.filter(function(edge){return edge.from===scope&&edge.to===scope;});
       if(self.length){var own=document.createElement('section');own.className='map-focus-self';var ownTitle=document.createElement('h4');ownTitle.textContent=rmT('Connections within this part · {0}',self.length);own.appendChild(ownTitle);focusRelations(own,self);center.appendChild(own);}
-      scene.append(center,side(false));updateFocusSelection();
+      scene.appendChild(center);if(outgoing)scene.appendChild(outgoing);updateFocusSelection();
     }
     function showReturnPath(){
       returnPath.replaceChildren();returnPath.hidden=!visit;if(!visit)return;
@@ -376,7 +384,24 @@
     search.addEventListener('input',function(){visit=null;render();});
     ops.forEach(function(n){n.addEventListener('click',async function(e){e.preventDefault();e.stopImmediatePropagation();if(operation!==n)visit=null;operation=n;pinned=true;address(n);await render();revealChoice();show(n);orient();});});
     groups.forEach(function(n){n.addEventListener('click',function(e){e.preventDefault();e.stopImmediatePropagation();open(n.id);});});
-    async function reveal(n,allUses,source){if(!n||nodes.indexOf(n)<0)return;if(followForeign(n,allUses,source))return;abandonHistoryRestore();visit=null;focusHistory=[];if(!map.classList.contains('map-part-focus'))focusOrigin=snapshot();document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:n}}));n=byID[displayed(n.id)];if(allUses){mode='structure';operation=null;pinned=false;}if(n.dataset.activation){mode='operations';operation=n;pinned=true;scope='';trail=[];}else{setScope(n.id);}search.value='';await render();if(n.dataset.activation)revealChoice();map.scrollIntoView({block:'start'});show(n);if(source)map.explainSource(source);}
+    async function reveal(n,allUses,source){
+      if(!n||nodes.indexOf(n)<0)return;
+      if(followForeign(n,allUses,source))return;
+      abandonHistoryRestore();visit=null;focusHistory=[];
+      if(!map.classList.contains('map-part-focus'))focusOrigin=snapshot();
+      var destination=n;n=byID[displayed(n.id)];
+      if(allUses){mode='structure';operation=null;pinned=false;}
+      if(n.dataset.activation){mode='operations';operation=n;pinned=true;scope='';trail=[];}
+      else setScope(n.id);
+      search.value='';
+      // Record the destination state before layout can yield, and reveal its
+      // page before the map measures the space available to it.
+      document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:destination}}));
+      await render();
+      if(n.dataset.activation)revealChoice();
+      map.scrollIntoView({block:'start'});show(n);
+      if(source)map.explainSource(source);
+    }
     map.exploreNode=function(id){open(id);};
     map.explorationLabel=function(){
       var labels=[mode==='operations'?rmT('Operations'):rmT('Structure')];
