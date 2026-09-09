@@ -89,7 +89,13 @@ separate stage outputs.
   raw model output and the reason.
 * Rate limits, retries, batching, and cost controls live only in the
   orchestrator.
-* LLM calls are cached by `(stage, prompt_version, input_content_hash)`.
+* Raw LLM responses are cached by provider configuration and exact prepared
+  request bytes. Every reuse passes the owning stage's current decoder and
+  validator. Independent row memos additionally include the stage contract
+  and exact input; they resolve the current raw response rather than retaining
+  a second accepted value. Model-facing changes belong in the prompt or
+  request shape; a local contract-only change does not force another identical
+  provider request.
 * LLM stages work on aggregates (file with imports + signatures), not per
   symbol, and receive extracted literals (route strings, env keys, ports)
   rather than hunting for them.

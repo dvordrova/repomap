@@ -2167,6 +2167,9 @@ open question or reduction-round authority. Question readings are v9 and the
 answer contract is v8. `read --through question` isolates retrieval;
 `--through answer` runs the combined final stage. `--through route` fails with
 explicit migration guidance rather than silently selecting another operation.
+The semantic journal accepts only active stages; `atlas_route` is no longer
+a producer stage or an accepted new exchange. Existing saved journals remain
+unchanged.
 
 The batch carries exact original source records once, each question's own allowed
 refs, scope and retrieval coverage. It does not borrow another question's
@@ -2184,6 +2187,16 @@ question partitions its original evidence into separately anchored answer parts.
 Every successful sibling survives. A malformed model response refuses its whole
 window; it is not repaired or used as a reason for speculative retries. Local
 preparation, configuration, cancellation and persistence failures remain errors.
+Optional response-cache read, write or eviction failures are reported without
+discarding an accepted answer or its source bindings; mandatory run artifacts
+and observer failures remain terminal. Prose is not classified as an internal
+reference by its spelling: source names such as `c1` and `c99` remain valid in
+answer, basis and gap text. The prompt keeps candidate refs out of prose, while
+the structured sources column alone resolves and validates those refs. No prose
+repair, extra name catalogue or changed request/cache identity is introduced.
+The same distinction applies to Learn proposal and review prose: native names
+such as `e1` and `q1` are valid wording. Nonempty reasons and questions, complete
+intent decisions and closed structured source refs remain required.
 Missing evidence is unanswered; a refused model window is unavailable. A
 substantive answer or not-applicable explanation needs its own source refs;
 incomplete retrieval or partial evidence cannot establish inapplicability.
@@ -2377,12 +2390,24 @@ Learn presents the system map and a manageable set of useful questions, with
 further questions inside the selected topic. Its separate term search remains
 an alternative entrance, not the learning sequence.
 
+Review 2 acceptance gap (2026-09-09): the ordinary fixture report
+`20260909-054542-python-tutorial-game-4e37ca2333e7` calls the source-length
+constant an active guard. At fixture revision `78714d34`, the corresponding
+branch in `backend/app/app.py:76` contains only `TODO` and `pass`. The original
+answer evidence includes the named constant and a prior model description,
+but not that implementation. This is a confirmed overstatement in one answer;
+successful publication, cache reuse and local validation do not resolve it.
+Improving that evidence/attribution remains open; it does not authorize a
+browser-side correction or a general rejection of useful name-based deductions.
+
 Answer-stage acceptance on 2026-09-06: the ordinary two-component report
 `20260906-170233-python-tutorial-game-83677a41a877` completed in 8 seconds with
 zero live provider calls after an answer-only reading took 4.175 seconds.
 The browser showed the short answer, its one-sentence basis, original excerpts
 and exact map links. Earlier output leaked request-local candidate numbers in
-prose; these are now rejected at the answer boundary rather than published.
+prose, prompting a lexical rejection that was later removed because legitimate
+source names could have the same spelling. The current boundary is described
+in the combined answer-stage contract above.
 Focused reading/report/run tests and vet passed. The ordinary 27-component
 etcd report `20260906-170227-etcd-5cd6bdae2281` completed in 2m51s with an
 accepted Lease explanation and inspectable sources, also checked in the browser.
@@ -3235,6 +3260,10 @@ The supported commands are deliberately small:
 Report serving is part of the ordinary run and is controlled by `--no-serve`
 and `--port`; `--no-open` controls only automatic opening. The `read` development command above reuses the atlas reader. There is no
 second analysis implementation, developer server, or sidecar entrypoint.
+`read --output` prepares its shared cache root even when the output directory
+is elsewhere. This also applies to `--no-cache`: accepted-response reuse is
+disabled, but the required exact request/response journal payloads still need
+their shared directory on a first run.
 
 The graph has one semantic data path. Language adapters provide deterministic
 program facts. Repository documentation is reduced once and supplies context

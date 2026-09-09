@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -23,8 +22,6 @@ import (
 )
 
 const stageLearn = "atlas_learn"
-
-var learningInternalRef = regexp.MustCompile(`\b[eq][0-9]+\b`)
 
 //go:embed prompts/learning.md
 var learningPrompt string
@@ -363,7 +360,7 @@ func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) 
 		}
 		seen[review.Intent] = true
 		review.Sources = filter(review.Sources)
-		if strings.TrimSpace(review.Reason) == "" || learningInternalRef.MatchString(review.Reason) {
+		if strings.TrimSpace(review.Reason) == "" {
 			return result, fmt.Errorf("learn: a review needs a reason")
 		}
 		switch review.State {
@@ -387,7 +384,7 @@ func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) 
 			q := &review.Questions[i]
 			q.Question, q.Why = strings.TrimSpace(q.Question), strings.TrimSpace(q.Why)
 			q.Sources = filter(q.Sources)
-			if q.Question == "" || q.Why == "" || len(q.Sources) == 0 || learningInternalRef.MatchString(q.Question) || learningInternalRef.MatchString(q.Why) {
+			if q.Question == "" || q.Why == "" || len(q.Sources) == 0 {
 				return result, fmt.Errorf("learn: a proposed question needs wording, reason and original sources")
 			}
 		}

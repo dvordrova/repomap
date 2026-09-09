@@ -114,7 +114,7 @@ func TestLearningAllowsZeroOneManyWithOriginalReasons(t *testing.T) {
 	if refs := got.Reviews[0].Questions[0].Sources; len(refs) != 1 || refs[0] != "e1" {
 		t.Fatalf("refs: %v", refs)
 	}
-	for _, test := range []string{"missing-intent", "duplicate-intent", "no-source", "partial-inapplicable", "unsupported-inapplicable", "internal-ref"} {
+	for _, test := range []string{"missing-intent", "duplicate-intent", "no-source", "partial-inapplicable", "unsupported-inapplicable", "blank-reason", "blank-question", "blank-why"} {
 		t.Run(test, func(t *testing.T) {
 			bad := learningReply()
 			context := pool
@@ -130,14 +130,55 @@ func TestLearningAllowsZeroOneManyWithOriginalReasons(t *testing.T) {
 				bad.Reviews[1] = learningReview{Intent: "run", State: "not_applicable", Reason: "Not a program.", Sources: []string{"e1"}}
 			case "unsupported-inapplicable":
 				bad.Reviews[1] = learningReview{Intent: "run", State: "not_applicable", Reason: "Not found."}
-			case "internal-ref":
-				bad.Reviews[0].Questions[0].Why = "e1 proves this."
+			case "blank-reason":
+				bad.Reviews[0].Reason = " \n "
+			case "blank-question":
+				bad.Reviews[0].Questions[0].Question = " \n "
+			case "blank-why":
+				bad.Reviews[0].Questions[0].Why = " \n "
 			}
 			raw, _ := json.Marshal(bad)
 			if _, err := decodeLearning(raw, context); err == nil {
 				t.Fatal("unsupported decision accepted")
 			}
 		})
+	}
+}
+
+func TestLearningPreservesSourceNamesThatLookLikeInternalReferences(t *testing.T) {
+	for _, name := range []string{"e1", "q1"} {
+		for _, field := range []string{"reason", "question", "why"} {
+			t.Run(name+"/"+field, func(t *testing.T) {
+				pool := learningRequest{Evidence: []learningEvidence{{
+					Ref: "e1", Source: atlas.QuestionStop{Name: name, Path: "math.go", Line: 1},
+					Context: map[string]any{"original": map[string]any{"signature": "func " + name + "()"}},
+				}}}
+				encoded, err := encodeLearningPool(pool)
+				if err != nil || !strings.Contains(string(encoded), "func "+name+"()") {
+					t.Fatalf("native name is missing from original evidence: %v", err)
+				}
+				result := learningReply()
+				switch field {
+				case "reason":
+					result.Reviews[0].Reason = "The role of " + name + " helps explain the project."
+				case "question":
+					result.Reviews[0].Questions[0].Question = "What does " + name + " control?"
+				case "why":
+					result.Reviews[0].Questions[0].Why = "The declaration of " + name + " introduces this concept."
+				}
+				raw, err := json.Marshal(result)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := decodeLearning(raw, pool)
+				if err != nil {
+					t.Fatalf("native name rejected the complete review: %v", err)
+				}
+				if !reflect.DeepEqual(got, result) {
+					t.Fatalf("native prose, original source selections or sibling reviews changed: %+v", got)
+				}
+			})
+		}
 	}
 }
 

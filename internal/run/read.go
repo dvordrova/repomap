@@ -135,10 +135,10 @@ func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.W
 		termCollector = terminology.NewCollector(readingTerminologyPaths(opts.Graph))
 		provider = termCollector.Wrap(provider)
 	}
+	if err := os.MkdirAll(*cacheRoot, 0o700); err != nil {
+		return err
+	}
 	if *outputDir == "" {
-		if err := os.MkdirAll(*cacheRoot, 0o700); err != nil {
-			return err
-		}
 		*outputDir, err = os.MkdirTemp(*cacheRoot, "reading-")
 	} else {
 		if err := os.MkdirAll(filepath.Dir(*outputDir), 0o700); err != nil {

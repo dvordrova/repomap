@@ -445,19 +445,58 @@ func TestAnswerDoesNotTurnMissingEvidenceIntoInapplicability(t *testing.T) {
 	}
 }
 
-func TestAnswerKeepsInternalReferencesOutOfExplanations(t *testing.T) {
-	for _, field := range []string{"answer", "basis", "remaining"} {
-		t.Run(field, func(t *testing.T) {
-			opts, provider := questionFixture(t)
-			opts.Through = lines.StageAnswer
-			provider.answerFor = func(map[string]any) table.Answer {
-				return table.Answer{field: "See c1 to c2 for this."}
-			}
-			result, route := readQuestionResult(t, opts)
-			if len(result.Rejected) != 1 || route.Answer.State != "unavailable" {
-				t.Fatal("request-local source numbers escaped into user-facing prose")
-			}
-		})
+func TestAnswerPreservesSourceNamesThatLookLikeInternalReferences(t *testing.T) {
+	// c99 is not advertised; c1 also collides with an actual candidate ref.
+	// Neither spelling establishes that reader-facing prose contains a ref.
+	for _, name := range []string{"c99", "c1"} {
+		for _, field := range []string{"answer", "basis", "remaining"} {
+			t.Run(name+"/"+field, func(t *testing.T) {
+				routes := answerTestRoutes(2)
+				routes[0].Stops[0].Name = name
+				routes[0].Stops[0].Evidence = map[string]any{"signature": "func " + name + "()"}
+				prose := "The source declares " + name + "; its implementation was not inspected."
+				provider := &answerTestProvider{tableProvider: &tableProvider{}}
+				provider.answerFor = func(row map[string]any) table.Answer {
+					if row["question"] == routes[0].Question {
+						return table.Answer{field: prose}
+					}
+					return nil
+				}
+				first := answerTestReader(t, append([]atlas.QuestionRoute(nil), routes...), provider)
+				if err := first.readAnswers(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				if len(provider.requests) != 1 || len(first.rejected) != 0 || !strings.Contains(string(provider.requests[0]), "func "+name+"()") {
+					t.Fatalf("native source name rejected its window: calls=%d rejected=%+v", len(provider.requests), first.rejected)
+				}
+				part := first.questions[0].Answer.Parts[0]
+				got := map[string]string{"answer": part.Text, "basis": part.Basis, "remaining": part.Remaining}[field]
+				if got != prose {
+					t.Fatalf("native name was changed: %q", got)
+				}
+				for i, question := range first.questions {
+					part := question.Answer.Parts[0]
+					if question.Answer.State != "partial" || part.Source != atlas.SourceModel || len(part.Steps) != 1 || part.Steps[0].Path != routes[i].Stops[0].Path {
+						t.Fatalf("answer or its sibling lost original source authority: %+v", question.Answer)
+					}
+				}
+				warm := answerTestReader(t, append([]atlas.QuestionRoute(nil), routes...), provider)
+				warm.opts.Executor = first.opts.Executor
+				if err := warm.readAnswers(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				if len(provider.requests) != 1 || warm.use(lines.StageAnswer).Cached != 1 || len(warm.rejected) != 0 {
+					t.Fatal("unchanged accepted window was bought again")
+				}
+				for i, question := range warm.questions {
+					expected := first.questions[i].Answer.Parts[0]
+					expected.Source = atlas.SourceCache
+					if !reflect.DeepEqual(question.Answer.Parts[0], expected) {
+						t.Fatalf("cached answer lost exact prose, row origin or sources: %+v", question.Answer)
+					}
+				}
+			})
+		}
 	}
 }
 

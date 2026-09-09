@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -15,8 +14,6 @@ import (
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/llm"
 )
-
-var answerCandidateRef = regexp.MustCompile(`\bc[0-9]+\b`)
 
 func (r *reader) readAnswers(ctx context.Context) error {
 	if len(r.questions) == 0 {
@@ -93,9 +90,18 @@ func (r *reader) readAnswers(ctx context.Context) error {
 		var next []answerWindow
 		for i, window := range planned {
 			outcome, failure := outcomes[i], failures[i]
-			// Local persistence failures cannot become missing semantic answers.
+			// Optional cache failures do not invalidate an accepted answer.
+			// Mandatory artifact and observer failures still stop the reading.
 			for _, issue := range outcome.Issues {
-				if issue.Kind != llm.IssueCacheValidate {
+				switch issue.Kind {
+				case llm.IssueCacheValidate:
+				case llm.IssueCacheRead:
+					r.opts.State(lines.StageAnswer, "cache read failed", issue.Error())
+				case llm.IssueCacheWrite:
+					r.opts.State(lines.StageAnswer, "cache write failed", issue.Error())
+				case llm.IssueCacheEvict:
+					r.opts.State(lines.StageAnswer, "cache eviction failed", issue.Error())
+				default:
 					return fmt.Errorf("answer: %w", issue)
 				}
 			}
@@ -196,11 +202,6 @@ func answerCall(def table.Definition, window answerWindow) (llm.Call[table.Answe
 			return nil, err
 		}
 		for i, value := range values {
-			for _, field := range []string{"answer", "basis", "remaining"} {
-				if answerCandidateRef.MatchString(value[field]) {
-					return nil, fmt.Errorf("answer prose contains an internal source ref in %s", field)
-				}
-			}
 			state, text, refs, gap := value["state"], value["answer"], value["sources"], value["remaining"]
 			if state == "unanswered" {
 				if text != "none" || refs != "" || gap == "none" || value["basis"] != "none" {
