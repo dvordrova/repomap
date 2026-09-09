@@ -57,7 +57,7 @@ const (
 )
 
 // Client is safe for concurrent llm.Provider calls after configuration. Its
-// exported fields and OnWait hook must not be mutated once execution starts.
+// exported fields and progress hooks must not be mutated once execution starts.
 type Client struct {
 	HTTPClient         *http.Client
 	APIKey             string
@@ -69,8 +69,22 @@ type Client struct {
 	// OnWait is called from a heartbeat goroutine during long semantic stages.
 	// Set it before starting a request; it must be concurrency-safe, return
 	// promptly, and never log prompt, response, source, or credential content.
-	OnWait       func(WaitProgress)
+	OnWait func(WaitProgress)
+	// OnRetry reports transport retries immediately, independently of throttled
+	// wait heartbeats. It has the same concurrency/content rules as OnWait.
+	OnRetry      func(RetryProgress)
 	waitInterval time.Duration
+}
+
+type RetryProgress struct {
+	RequestSHA256 string
+	Attempt       int
+	MaxAttempts   int
+	Starting      bool
+	Failure       llm.ProviderFailureKind
+	HTTPStatus    int
+	Delay         time.Duration
+	Elapsed       time.Duration
 }
 
 type WaitProgress struct {

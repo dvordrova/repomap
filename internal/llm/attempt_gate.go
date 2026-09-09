@@ -6,6 +6,15 @@ import (
 	"time"
 )
 
+type attemptTimeoutKey struct{}
+
+// ProviderAttemptTimeout is the owning call's per-attempt deadline. Providers
+// must return its expiration without retry so the owner can split its input.
+func ProviderAttemptTimeout(ctx context.Context) time.Duration {
+	duration, _ := ctx.Value(attemptTimeoutKey{}).(time.Duration)
+	return duration
+}
+
 // BatchController carries one adaptive provider-attempt gate across batches
 // that use the same Provider. Its zero value is ready for use. The gate starts
 // at the concurrency of the first bound batch and permanently collapses to one

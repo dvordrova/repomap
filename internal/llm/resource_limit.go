@@ -23,6 +23,8 @@ const (
 	ResourceLimitOutputTokens  ResourceLimitKind = "output_tokens"
 	ResourceLimitContextTokens ResourceLimitKind = "context_tokens"
 	ResourceLimitSemanticCalls ResourceLimitKind = "semantic_calls"
+	// Attempt time is measured in milliseconds, including response-body reading.
+	ResourceLimitAttemptTime ResourceLimitKind = "attempt_time_ms"
 )
 
 // ResourceLimitError is a terminal, non-retryable model resource outcome.

@@ -177,8 +177,8 @@ func plainEntries(count int) []report.DisplayTextEntry {
 }
 
 func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
-	// Match the reported 1,310-text catalogue: its count alone must neither
-	// split the request nor prevent exact accepted-response reuse.
+	// A serial caller may already have cached the whole 1,310-text catalogue.
+	// Enabling parallel execution must reuse that complete validated answer.
 	entries := plainEntries(1310)
 	entries[0].Text = "__REPOMAP_P1__ may call __REPOMAP_P1__.\n\nOnly if possible."
 	entries[0].Protected = []report.DisplayProtectedText{{Ref: "__REPOMAP_P1__", Text: "SOURCE-ORIGINAL-NEVER-SENT"}}
@@ -196,7 +196,7 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 	}}
 	var events []llm.Event
 	executor := llm.Executor{
-		Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 4,
+		Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 1,
 		Observer: llm.ObserverFunc(func(event llm.Event) error { events = append(events, event); return nil }),
 	}
 	result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
@@ -221,7 +221,7 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 	}
 	if wire.Limits != (llm.Limits{
 		MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit,
-		MaxOutputTokens: llm.DefaultMaxOutputTokens,
+		MaxOutputTokens: llm.DefaultMaxOutputTokens, AttemptTimeout: attemptTimeout,
 	}) {
 		t.Fatalf("translation introduced a smaller request allowance: %#v", wire.Limits)
 	}
@@ -244,6 +244,7 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 	// identical translation input or authorize copying an old catalogue binding.
 	entries[0].Protected[0].Text = "DIFFERENT-SOURCE-ORIGINAL"
 	rebound := testCatalog(t, entries)
+	executor.BatchConcurrency = 4
 	cached, err := Translate(t.Context(), executor, provider, rebound, report.Russian)
 	if err != nil {
 		t.Fatal(err)
@@ -255,6 +256,7 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 	if len(events) != 2 || events[0].Kind != llm.EventLive || events[1].Kind != llm.EventCacheHit {
 		t.Fatalf("translation bypassed shared cache/observer: %#v", events)
 	}
+	executor.BatchConcurrency = 1
 	if _, err := Translate(t.Context(), executor, provider, rebound, report.English); err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +481,7 @@ func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
 	}
 }
 
-func TestTranslateSplitsOnlyRealResponseResourcesWithoutPartialPublication(t *testing.T) {
+func TestTranslateSplitsRealResponseResourcesWithoutPartialPublication(t *testing.T) {
 	entries := plainEntries(7)
 	for i := range entries {
 		entries[i].Terms = []report.DisplayTextTerm{{ID: fmt.Sprintf("local-%d", i), Spelling: "bank", Explanation: fmt.Sprintf("Definition %d.", i%3)}}
@@ -488,7 +490,7 @@ func TestTranslateSplitsOnlyRealResponseResourcesWithoutPartialPublication(t *te
 	for _, kind := range []llm.ResourceLimitKind{llm.ResourceLimitResponseBytes, llm.ResourceLimitOutputTokens} {
 		t.Run(string(kind), func(t *testing.T) {
 			provider := &testProvider{resourceKind: kind, responseRows: 2}
-			executor := llm.Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 4}
+			executor := llm.Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 1}
 			result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
 			if err != nil {
 				t.Fatal(err)
@@ -536,7 +538,7 @@ func TestTranslateRejectedWindowHalvesAndWarmRunReusesOnlyCompleteChildren(t *te
 		return responseWire(translatedResponse(request))
 	}}
 	var events []llm.Event
-	executor := llm.Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 4,
+	executor := llm.Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 1,
 		Observer: llm.ObserverFunc(func(event llm.Event) error { events = append(events, event); return nil })}
 	for run := 0; run < 2; run++ {
 		result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)

@@ -69,7 +69,7 @@ func translateReportDisplay(ctx context.Context, options repositoryTargetDispatc
 		BatchConcurrency: options.Deps.llmBatchConcurrency, BatchController: options.Deps.llmBatchController,
 		PlanNotice: func(windows int) {
 			if translationRound > 0 {
-				options.Output.Stage("", fmt.Sprintf("continuing automatically in %d smaller requests after the previous response was refused", windows))
+				options.Output.Stage("", fmt.Sprintf("continuing automatically in %d smaller requests after the previous request timed out or its response was refused", windows))
 			} else {
 				options.Output.Stage("", fmt.Sprintf("request windows this round: %d; checking cache before provider calls", windows))
 			}
@@ -77,6 +77,7 @@ func translateReportDisplay(ctx context.Context, options repositoryTargetDispatc
 		},
 	}, debugdump.SemanticStageReportTranslation)
 	options.Output.Stage("Report translation", fmt.Sprintf("translating %d display texts into %s", len(catalog.Entries), language))
+	options.Output.Stage("", fmt.Sprintf("up to %d parallel requests; a 4m attempt timeout splits complete texts into smaller requests", max(1, options.Deps.llmBatchConcurrency)))
 	started := time.Now()
 	translations, err = reporttranslation.Translate(ctx, executor, provider, catalog, language)
 	if err != nil {

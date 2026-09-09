@@ -646,6 +646,14 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   memo records this as `response_validation`, not a provider resource limit,
   and applies it only while the owning stage opts in. Valid child windows keep
   their ordinary cache entries; an invalid singleton remains a concrete error.
+- Display translation fills the existing worker pool with complete windows
+  balanced by original text bytes, after checking for an accepted whole-window
+  answer. Each child retains its own complete term dictionary. Per the owner's
+  2026-09-09 endpoint timeout report, translation attempts have a local four-minute
+  deadline. Its expiry returns directly to the lossless splitter and is memoized
+  with that deadline; it never retries identical bytes. Earlier HTTP 500 errors
+  keep ordinary transport retries. Parent cancellation stays terminal. Retry
+  reasons, attempt numbers and actual retry starts are printed immediately.
 - `groupindex.ProjectAtlas` turns the atlas into the GroupsIndex the page,
   the orientation and the publication read: a box is a group whose members
   are the objects declared in its files, a zone is a container, an arrow is

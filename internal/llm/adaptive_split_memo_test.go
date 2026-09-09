@@ -230,6 +230,7 @@ func TestAdaptiveSplitMemoIdentityIncludesCanonicalProviderExactBytesAndAllLimit
 		{name: "request limit", change: func(c *Call[testValue]) { c.Limits.MaxRequestBytes++ }},
 		{name: "response limit", change: func(c *Call[testValue]) { c.Limits.MaxResponseBytes-- }},
 		{name: "output limit", change: func(c *Call[testValue]) { c.Limits.MaxOutputTokens++ }},
+		{name: "attempt deadline", change: func(c *Call[testValue]) { c.Limits.AttemptTimeout++ }},
 		{name: "local validator version", change: func(c *Call[testValue]) { c.State = []byte("new local state") }, want: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {

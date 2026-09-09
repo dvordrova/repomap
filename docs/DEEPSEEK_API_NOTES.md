@@ -70,6 +70,16 @@ saved request bytes rather than applying new environment settings to them.
 - The serialized request is immutable across transport retries. Retryable
   network errors and HTTP statuses receive at most three retries after the
   first attempt; schema or semantic rejection never triggers a new model call.
+- An owning stage may set a local attempt deadline through the shared executor.
+  Translation uses four minutes. The timer starts after acquiring the shared
+  attempt gate; its expiry returns an `attempt_time_ms` resource refusal directly
+  to the owner's lossless splitter without retrying identical bytes. Parent
+  cancellation remains cancellation. HTTP 500 before that deadline and a shorter
+  configured HTTP-client timeout keep the ordinary transport retry policy.
+  The deadline is local and does not change provider request bytes or accepted
+  response-cache identity; adaptive split observations include it in their key.
+  Retry progress immediately reports the closed failure class or HTTP status,
+  attempt number and delay, then the actual retry start after the gate opens.
 - After HTTP 429, each retry waits at least one minute. A longer `Retry-After`
   delay, expressed in seconds or as an HTTP date, is honored. An absent,
   invalid, expired or shorter header retains the one-minute minimum. The

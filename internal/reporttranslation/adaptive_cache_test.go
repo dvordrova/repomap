@@ -11,7 +11,7 @@ import (
 )
 
 func TestTranslateReusesResourcePartitionsFromPersistentCache(t *testing.T) {
-	for _, kind := range []llm.ResourceLimitKind{llm.ResourceLimitOutputTokens, llm.ResourceLimitContextTokens} {
+	for _, kind := range []llm.ResourceLimitKind{llm.ResourceLimitOutputTokens, llm.ResourceLimitContextTokens, llm.ResourceLimitAttemptTime} {
 		t.Run(string(kind), func(t *testing.T) {
 			entries := plainEntries(1310)
 			for i := range entries {
@@ -21,7 +21,7 @@ func TestTranslateReusesResourcePartitionsFromPersistentCache(t *testing.T) {
 			cacheRoot := t.TempDir()
 			provider := &testProvider{resourceKind: kind, responseRows: 700}
 			cold, err := Translate(t.Context(), llm.Executor{
-				Enabled: true, RootDir: cacheRoot, BatchConcurrency: 4,
+				Enabled: true, RootDir: cacheRoot, BatchConcurrency: 1,
 			}, provider, catalog, report.Russian)
 			if err != nil {
 				t.Fatal(err)
@@ -69,7 +69,7 @@ func TestTranslateReusesResourcePartitionsFromPersistentCache(t *testing.T) {
 			// can avoid repeating the known oversized parent.
 			warmProvider := &testProvider{resourceKind: kind, responseRows: 700}
 			warm, err := Translate(t.Context(), llm.Executor{
-				Enabled: true, RootDir: cacheRoot, BatchConcurrency: 4,
+				Enabled: true, RootDir: cacheRoot, BatchConcurrency: 1,
 			}, warmProvider, catalog, report.Russian)
 			if err != nil {
 				t.Fatal(err)

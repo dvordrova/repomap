@@ -18,7 +18,7 @@ type adaptiveSplitMemo struct {
 
 func adaptiveSplitKind(kind ResourceLimitKind) bool {
 	return kind == ResourceLimitResponseBytes || kind == ResourceLimitOutputTokens ||
-		kind == ResourceLimitContextTokens
+		kind == ResourceLimitContextTokens || kind == ResourceLimitAttemptTime
 }
 
 func adaptiveSplitKey(providerState, request []byte, limits Limits) string {

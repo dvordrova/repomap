@@ -225,7 +225,7 @@ func TestModelWaitFactoryBindsExistingClientWithoutPreparingARequest(t *testing.
 	output.now = func() time.Time { return clock }
 	client := &deepseek.Client{}
 	provider, err := providerFactoryWithOutput(func() (llm.Provider, error) { return client, nil }, output)()
-	if err != nil || provider != client || client.OnWait == nil {
+	if err != nil || provider != client || client.OnWait == nil || client.OnRetry == nil {
 		t.Fatalf("client heartbeat was not bound: %v", err)
 	}
 	client.OnWait(deepseek.WaitProgress{Stage: "model completion", Elapsed: 30 * time.Second})
@@ -235,6 +235,28 @@ func TestModelWaitFactoryBindsExistingClientWithoutPreparingARequest(t *testing.
 	cause := errors.New("configuration invalid")
 	if _, err := providerFactoryWithOutput(func() (llm.Provider, error) { return (*deepseek.Client)(nil), cause }, output)(); !errors.Is(err, cause) {
 		t.Fatal("factory error changed")
+	}
+}
+
+func TestRetryProgressUsesRunClockAndIsNeverHeartbeatThrottled(t *testing.T) {
+	var buffer bytes.Buffer
+	output := newRunOutput(&buffer)
+	clock := output.started
+	output.now = func() time.Time { return clock }
+	wait := waitingOnTheModel(output)
+	retry := retryingTheModel(output)
+	clock = clock.Add(4 * time.Minute)
+	wait(deepseek.WaitProgress{Stage: "model completion", Elapsed: 4 * time.Minute})
+	retry(deepseek.RetryProgress{RequestSHA256: strings.Repeat("a", 64), Attempt: 1, MaxAttempts: 4, Failure: llm.ProviderFailureTimeout, Delay: time.Second})
+	clock = clock.Add(time.Second)
+	retry(deepseek.RetryProgress{RequestSHA256: strings.Repeat("a", 64), Attempt: 2, MaxAttempts: 4, Starting: true})
+	for _, want := range []string{
+		"[ 240.000 +0.000]   model request aaaaaaaaaaaa: attempt 1/4 failed (timeout); retry 2/4 after at least 1s",
+		"[ 241.000 +1.000]   model request aaaaaaaaaaaa: starting retry, attempt 2/4",
+	} {
+		if !strings.Contains(buffer.String(), want) {
+			t.Fatalf("retry was hidden by a heartbeat or used a separate clock:\n%s", buffer.String())
+		}
 	}
 }
 

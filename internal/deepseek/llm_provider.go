@@ -2,6 +2,7 @@ package deepseek
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -147,6 +148,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 	stopWaiting := c.startWaitProgress(ctx, llmProviderHeartbeat)
 	defer stopWaiting()
 	started := time.Now()
+	requestDigest := fmt.Sprintf("%x", sha256.Sum256(body))
 	var (
 		last          chatCompletion
 		lastErr       error
@@ -168,10 +170,23 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 			completion := llmCompletion(last, attempts, responseBytes, time.Since(started))
 			return completion, closedLLMProviderError("complete", acquireErr, attempts, false)
 		}
+		if attempt > 1 && c.OnRetry != nil {
+			c.OnRetry(RetryProgress{RequestSHA256: requestDigest, Attempt: attempt, MaxAttempts: maxRetries + 1, Starting: true, Elapsed: time.Since(started)})
+		}
 
+		attemptCtx := ctx
+		cancelAttempt := func() {}
+		attemptTimeout := llm.ProviderAttemptTimeout(ctx)
+		if attemptTimeout > 0 {
+			attemptCtx, cancelAttempt = context.WithTimeout(ctx, attemptTimeout)
+		}
+		attemptStarted := time.Now()
 		completion, retryable, err := doChatMeasured(
-			ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body,
+			attemptCtx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body,
 		)
+		attemptExpired := attemptTimeout > 0 && ctx.Err() == nil &&
+			errors.Is(attemptCtx.Err(), context.DeadlineExceeded)
+		cancelAttempt()
 		if providerRateLimited(err) {
 			retryDelay = max(minimumRateLimitBackoff, completion.retryAfter)
 			llm.BackoffProviderAttempts(ctx, retryDelay)
@@ -182,6 +197,13 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		attempts = attempt
 		responseBytes += completion.ResponseBytes
 		last = completion
+		if attemptExpired {
+			cause := llm.NewResourceLimitError(llm.ResourceLimitError{
+				Stage: llmProviderStage, Kind: llm.ResourceLimitAttemptTime,
+				Limit: int(attemptTimeout.Milliseconds()), Observed: int(time.Since(attemptStarted).Milliseconds()), ObservedKnown: true,
+			})
+			return llmCompletion(last, attempts, responseBytes, time.Since(started)), closedLLMProviderError("complete", cause, attempts, false)
+		}
 		if err == nil {
 			if completionErr := requireSingleStoppedCompletion(llmProviderStage, completion); completionErr != nil {
 				result := llmCompletion(completion, attempts, responseBytes, time.Since(started))
@@ -194,6 +216,11 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		if !retryable {
 			result := llmCompletion(completion, attempts, responseBytes, time.Since(started))
 			return result, closedLLMProviderError("complete", lastErr, attempts, false)
+		}
+		if attempt <= maxRetries && ctx.Err() == nil && c.OnRetry != nil {
+			failure := (&llmProviderError{cause: lastErr}).ProviderFailure()
+			c.OnRetry(RetryProgress{RequestSHA256: requestDigest, Attempt: attempt, MaxAttempts: maxRetries + 1,
+				Failure: failure.Kind, HTTPStatus: failure.HTTPStatus, Delay: retryDelay, Elapsed: time.Since(started)})
 		}
 	}
 

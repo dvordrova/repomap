@@ -10,12 +10,18 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
 const StageName = "report_translation"
+
+// The owner's endpoint expires long generations after four minutes. Return
+// that refusal to the complete-entry splitter instead of resending the same
+// oversized translation through the provider's ordinary retry loop.
+const attemptTimeout = 4 * time.Minute
 
 //go:embed prompt.md
 var translationPrompt string
@@ -85,6 +91,28 @@ func Translate(
 	if err != nil {
 		return report.DisplayTranslations{}, err
 	}
+	if len(windows) < executor.BatchConcurrency {
+		var pending []translationWindow
+		for _, window := range windows {
+			call, err := translationCall(window, language)
+			if err != nil {
+				return report.DisplayTranslations{}, err
+			}
+			cached, err := llm.RecallJSON(ctx, executor, provider, call)
+			if err != nil {
+				return report.DisplayTranslations{}, err
+			}
+			if cached.Cached {
+				result.Entries = append(result.Entries, cached.Value...)
+			} else {
+				pending = append(pending, window)
+			}
+		}
+		windows = parallelWindows(pending, executor.BatchConcurrency)
+	}
+	if len(windows) == 0 {
+		return result, result.Validate(catalog)
+	}
 	_, outcomes, err := llm.ExecuteAdaptiveJSONBatch(
 		ctx, executor, provider, windows,
 		func(plan []translationWindow) ([]llm.Call[[]report.DisplayTranslationEntry], error) {
@@ -112,10 +140,61 @@ func Translate(
 	for _, outcome := range outcomes {
 		result.Entries = append(result.Entries, outcome.Value...)
 	}
+	// Whole cached windows and new windows may interleave. Restore the original
+	// catalogue order before validating the single complete display artifact.
+	order := make(map[string]int, len(catalog.Entries))
+	for i, entry := range catalog.Entries {
+		order[entry.Ref] = i
+	}
+	sort.Slice(result.Entries, func(i, j int) bool { return order[result.Entries[i].Ref] < order[result.Entries[j].Ref] })
 	if err := result.Validate(catalog); err != nil {
 		return report.DisplayTranslations{}, err
 	}
 	return result, nil
+}
+
+// Fill the existing worker pool before asking for new translations. UTF-8
+// text bytes balance generation work; they are not a token estimate or a size
+// cutoff. Every entry stays whole and translationCall rebuilds each child's
+// complete term dictionary. Provider-envelope limits still apply separately.
+func parallelWindows(windows []translationWindow, workers int) []translationWindow {
+	weight := func(window translationWindow) int {
+		total := 0
+		for _, entry := range window {
+			total += max(1, len(entry.Text))
+		}
+		return total
+	}
+	for len(windows) < workers {
+		largest, size := -1, 0
+		for i, window := range windows {
+			if len(window) > 1 {
+				if n := weight(window); n > size {
+					largest, size = i, n
+				}
+			}
+		}
+		if largest < 0 {
+			break
+		}
+		window := windows[largest]
+		middle, distance, left := 1, size, 0
+		for i := 1; i < len(window); i++ {
+			left += max(1, len(window[i-1].Text))
+			delta := size - 2*left
+			if delta < 0 {
+				delta = -delta
+			}
+			if delta < distance {
+				middle, distance = i, delta
+			}
+		}
+		next := make([]translationWindow, 0, len(windows)+1)
+		next = append(next, windows[:largest]...)
+		next = append(next, window[:middle], window[middle:])
+		windows = append(next, windows[largest+1:]...)
+	}
+	return windows
 }
 
 // planWindows grows each consecutive prefix until the actual prepared request
@@ -230,7 +309,7 @@ func translationCall(
 		},
 		Limits: llm.Limits{
 			MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit,
-			MaxOutputTokens: llm.DefaultMaxOutputTokens,
+			MaxOutputTokens: llm.DefaultMaxOutputTokens, AttemptTimeout: attemptTimeout,
 		},
 		DecodeValidate: func(raw []byte) ([]report.DisplayTranslationEntry, error) {
 			response, err := decodeTranslationResponse(raw, window)

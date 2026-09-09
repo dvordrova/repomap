@@ -26,10 +26,21 @@ func ExecuteJSON[T any](
 	executor Executor,
 	provider Provider,
 	call Call[T],
-) (outcome Outcome[T], resultErr error) {
+) (Outcome[T], error) {
+	return executeJSON(ctx, executor, provider, call, false)
+}
+
+// RecallJSON uses the same preparation, cache diagnostics and current owning
+// validator as ExecuteJSON, but never calls Provider.Complete. Cached is false
+// on a miss; an adaptive owner may then choose a different complete partition.
+func RecallJSON[T any](ctx context.Context, executor Executor, provider Provider, call Call[T]) (Outcome[T], error) {
+	return executeJSON(ctx, executor, provider, call, true)
+}
+
+func executeJSON[T any](ctx context.Context, executor Executor, provider Provider, call Call[T], cacheOnly bool) (outcome Outcome[T], resultErr error) {
 	var adapted AdaptedResponse
 	defer func() {
-		if resultErr == nil && len(outcome.Response) > 0 {
+		if resultErr == nil && len(outcome.Response) > 0 && (!cacheOnly || outcome.Cached) {
 			adapted.Accepted(nil)
 		}
 	}()
@@ -80,6 +91,9 @@ func ExecuteJSON[T any](
 	}
 
 	if !executor.Enabled {
+		if cacheOnly {
+			return outcome, nil
+		}
 		return executeLive(ctx, executor, provider, prepared, decodeValidate, call.Limits, outcome, &adapted)
 	}
 	providerState, err := canonicalProviderState(provider.State())
@@ -137,6 +151,9 @@ func ExecuteJSON[T any](
 		}
 	}
 
+	if cacheOnly {
+		return outcome, nil
+	}
 	return executeLive(ctx, executor, provider, prepared, decodeValidate, call.Limits, outcome, &adapted)
 }
 
@@ -385,7 +402,7 @@ func executeLive[T any](
 	outcome Outcome[T],
 	adapted *AdaptedResponse,
 ) (Outcome[T], error) {
-	completion, err := provider.Complete(ctx, prepared)
+	completion, err := provider.Complete(context.WithValue(ctx, attemptTimeoutKey{}, limits.AttemptTimeout), prepared)
 	outcome.HTTPResponse = completion.HTTPResponse.Clone()
 	setOutcomeResponse(&outcome, completion.Response)
 	outcome.FinishReason = completion.FinishReason
@@ -463,6 +480,9 @@ func validateLimits(limits Limits) error {
 	}
 	if limits.MaxOutputTokens <= 0 {
 		return errors.New("llm: MaxOutputTokens must be positive")
+	}
+	if limits.AttemptTimeout < 0 {
+		return errors.New("llm: AttemptTimeout must not be negative")
 	}
 	return nil
 }

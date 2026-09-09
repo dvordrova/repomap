@@ -67,8 +67,34 @@ func providerFactoryWithOutput(factory targetPortfolioProviderFactory, output *r
 		}
 		if client, ok := provider.(*deepseek.Client); ok && client != nil {
 			client.OnWait = waitingOnTheModel(output)
+			client.OnRetry = retryingTheModel(output)
 		}
 		return provider, err
+	}
+}
+
+func retryingTheModel(output *runOutput) func(deepseek.RetryProgress) {
+	return func(progress deepseek.RetryProgress) {
+		request := progress.RequestSHA256
+		if len(request) > 12 {
+			request = request[:12]
+		}
+		if progress.Starting {
+			output.Stage("", fmt.Sprintf("model request %s: starting retry, attempt %d/%d", request, progress.Attempt, progress.MaxAttempts))
+			return
+		}
+		reason := "transport failure"
+		switch progress.Failure {
+		case llm.ProviderFailureTimeout:
+			reason = "timeout"
+		case llm.ProviderFailureNetwork:
+			reason = "network failure"
+		}
+		if progress.HTTPStatus >= 100 && progress.HTTPStatus <= 599 {
+			reason = fmt.Sprintf("HTTP %d", progress.HTTPStatus)
+		}
+		output.Stage("", fmt.Sprintf("model request %s: attempt %d/%d failed (%s); retry %d/%d after at least %s",
+			request, progress.Attempt, progress.MaxAttempts, reason, progress.Attempt+1, progress.MaxAttempts, progress.Delay.Round(time.Millisecond)))
 	}
 }
 

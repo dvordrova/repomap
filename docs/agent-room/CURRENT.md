@@ -4291,13 +4291,36 @@ rendering time. Their canonical English route values remain unchanged and
 never enter the model's display-translation catalogue. Saved rendering applies
 the same vocabulary without analysis or provider access.
 
-Translation now reports each adaptive request-plan size and its closing count
-of new logical model calls versus accepted cache hits, using the existing
-shared timing observer. Failed live calls count as new; HTTP transport retries
-are still recorded separately in exchange metrics. A local 1,310-text regression
-retains the complete catalogue and confirms zero new calls on exact warm reuse.
-This does not establish the cause of the owner's separate-machine failure;
-semantic refusals remain uncached and their actual reason is now journaled.
+Translation reports each adaptive request-plan size and its closing count of
+new logical model calls versus accepted cache hits. Before new calls it fills
+the existing four-worker pool by balancing complete entries by original UTF-8
+text bytes. This is work distribution, with no row quota or smaller provider
+envelope. Every child rebuilds its complete term dictionary. A validated cached
+whole-window answer takes precedence, so an upgrade does not retranslate it.
+Failed live calls count as new; HTTP retries remain separate exchange metrics.
+A 1,585-text regression verifies four requests start before any response,
+complete ordered output, protected spans, dictionaries and zero-call warm reuse.
+
+The owner confirmed from their server logs on 2026-09-09 that a long generation
+ends in HTTP 500 after four minutes; the response has no reliable timeout marker.
+Translation therefore sets a local four-minute deadline per transport attempt,
+starting after the shared gate opens. Expiry returns directly to the existing
+complete-entry splitter as `attempt_time_ms`, without an identical retry.
+The exact split memo includes the deadline and retains no failed display text.
+Accepted siblings and children keep their usual cache entries; a timed-out
+singleton remains an error. Parent cancellation stays terminal. An HTTP 500
+before the local deadline and a shorter configured client timeout retain ordinary
+transport retries. Virtual-clock provider tests cover a four-minute expiry,
+accepted siblings, warm reuse, cancellation and ordinary 500/429 retries.
+Ordinary fixture acceptance on 2026-09-09 translated the same 364 display texts
+in four live calls, with the slowest at 19 seconds (the preceding single call
+took 61 seconds). Owner `20260909-085757-python-tutorial-game-ee546a49429f`
+published both targets. The next owner `20260909-085902-python-tutorial-game-34b0b7ab268b`
+made no live calls and retained identical saved translations. Graph, facts,
+orientation and glossary matched the baseline. Full tests, vet and changed-package
+race checks passed; cache clear succeeded on the isolated acceptance cache.
+The private endpoint's four-minute behavior is covered by the local transport
+test, not established by this successful online run.
 
 The shared adaptive executor persists an actual context/output/response
 resource-refusal observation for an exact request that its owner can divide.
@@ -4325,8 +4348,9 @@ text. Every smaller request uses the same original entries and must pass the
 unchanged owning validation. Halving stops at one entry, whose actual error
 remains terminal. Successful windows and exact split observations survive a
 new run through the same cache. Other stages keep their existing refusal rules;
-transport, configuration, cancellation and persistence failures do not gain
-this behavior. Progress output explicitly announces automatic continuation.
+apart from the explicit translation attempt deadline, transport, configuration,
+cancellation and persistence failures do not gain this behavior. Progress output
+explicitly announces automatic continuation.
 
 Real browser checks found and corrected a filtered-search empty state that hid
 matches in other categories, indistinguishable operation choices with the same
@@ -4375,6 +4399,12 @@ Static reports use hosted source URLs derived from the same exact locations.
 No successful report contains deliberately inert source links.
 
 ## Model execution contract
+
+Transport retry progress is independent of wait-heartbeat throttling. Each
+retryable failure immediately prints its request digest, attempt number, closed
+reason or HTTP status and planned minimum delay. A second event marks the actual
+retry start after the shared gate permits it. Both use the ordinary run clock;
+request, response and credential contents never enter these messages.
 
 The owner's 2026-09-07 transport rule requires at least one minute before a
 retry after HTTP 429. The provider now uses that floor and honors a longer

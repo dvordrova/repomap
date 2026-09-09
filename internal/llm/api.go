@@ -44,6 +44,11 @@ type Limits struct {
 	MaxRequestBytes  int
 	MaxResponseBytes int
 	MaxOutputTokens  int
+	// AttemptTimeout is an optional owner deadline for one transport attempt.
+	// Expiration returns control to an adaptive owner instead of retrying the
+	// same request. Zero keeps the provider's ordinary timeout/retry policy.
+	// It is not encoded in provider bytes, but binds adaptive split observations.
+	AttemptTimeout time.Duration `json:",omitempty"`
 }
 
 // Prepared holds one exact immutable provider request. Bytes returns a copy so
@@ -455,7 +460,7 @@ func normalizeProviderFailure(failure ProviderFailure) ProviderFailure {
 func validResourceLimitKind(kind ResourceLimitKind) bool {
 	switch kind {
 	case ResourceLimitRequestBytes, ResourceLimitResponseBytes, ResourceLimitRecordBytes,
-		ResourceLimitCatalogItems, ResourceLimitOutputTokens, ResourceLimitContextTokens, ResourceLimitSemanticCalls:
+		ResourceLimitCatalogItems, ResourceLimitOutputTokens, ResourceLimitContextTokens, ResourceLimitSemanticCalls, ResourceLimitAttemptTime:
 		return true
 	default:
 		return false
@@ -482,6 +487,8 @@ func providerFailureGuidance(failure ProviderFailure) string {
 		return "check network access and the configured provider endpoint"
 	case ProviderFailureResource:
 		switch failure.ResourceKind {
+		case ResourceLimitAttemptTime:
+			return "model attempt timed out; split the complete input into smaller requests"
 		case ResourceLimitOutputTokens:
 			return "reduce the requested result, or raise the output-token limit where configurable"
 		case ResourceLimitContextTokens:
