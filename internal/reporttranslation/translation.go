@@ -3,13 +3,12 @@
 package reporttranslation
 
 import (
-	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"sort"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/llm"
@@ -243,49 +242,29 @@ func translationCall(
 	}, nil
 }
 
-// Keep duplicate object members until normalization can compare their values.
-// Decoding straight into a map would silently give the last occurrence authority.
 type wireField struct {
 	name  string
 	value json.RawMessage
 }
 
 func objectFields(raw []byte) ([]wireField, error) {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	expect := func(delimiter json.Delim) error {
-		token, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		if token != delimiter {
-			return fmt.Errorf("report translation: expected JSON %q", delimiter)
-		}
-		return nil
-	}
-	if err := expect('{'); err != nil {
+	// Keep only the last raw value of each object key before validating its
+	// shape or text. A shadowed value has no translation authority.
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &values); err != nil {
 		return nil, err
 	}
-	var fields []wireField
-	for decoder.More() {
-		token, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		name, ok := token.(string)
-		if !ok {
-			return nil, fmt.Errorf("report translation: expected object field")
-		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return nil, err
-		}
-		fields = append(fields, wireField{name, value})
+	if values == nil {
+		return nil, fmt.Errorf("report translation: expected JSON object")
 	}
-	if err := expect('}'); err != nil {
-		return nil, err
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
 	}
-	if _, err := decoder.Token(); err != io.EOF {
-		return nil, fmt.Errorf("report translation: unexpected data after object")
+	sort.Strings(names)
+	fields := make([]wireField, 0, len(names))
+	for _, name := range names {
+		fields = append(fields, wireField{name, values[name]})
 	}
 	return fields, nil
 }
@@ -328,9 +307,6 @@ func decodeTranslationValue(raw []byte, entry report.DisplayTextEntry) (response
 			if err := json.Unmarshal(field.value, &text); err != nil || text == nil {
 				return result, fmt.Errorf("report translation: text for %s must be a string", entry.Ref)
 			}
-			if textSeen && result.Text != *text {
-				return result, fmt.Errorf("report translation: conflicting text fields for %s", entry.Ref)
-			}
 			result.Text, textSeen = *text, true
 		default:
 			return result, fmt.Errorf("report translation: unsupported translated entry field %q", field.name)
@@ -357,12 +333,6 @@ func normalizeTranslations(window translationWindow, response modelResponse) ([]
 			return nil, err
 		}
 		value := report.DisplayTranslationEntry{Ref: translation.Ref, Text: translation.Text}
-		if previous, duplicate := byRef[translation.Ref]; duplicate {
-			if previous.Text != value.Text {
-				return nil, fmt.Errorf("report translation: conflicting translations for %s", translation.Ref)
-			}
-			continue
-		}
 		byRef[translation.Ref] = value
 	}
 	translations := make([]report.DisplayTranslationEntry, 0, len(window))

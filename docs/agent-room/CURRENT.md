@@ -4188,6 +4188,11 @@ altered placeholders and trailing JSON. A 600-entry regression covered one
 complete request without a row-count cap. Current v9, described in the shared
 glossary section above, supplies ordered entries with role and applicable refs
 into one request-local terminology dictionary, and accepts one text object per ref.
+Under the owner's 2026-09-09 rule, repeated JSON object keys keep their last
+value, including nested `text` keys. Translation validates only that final raw
+value: a shadowed invalid value cannot reject it, and an earlier valid value
+cannot repair an invalid final one. Original response/cache/journal bytes remain
+unchanged. This does not change completeness or repeated-row checks on arrays.
 Source-placeholder validation preserves every original occurrence and rejects
 unknown refs, while allowing extra occurrences of the same known placeholder
 for natural phrasing. Every occurrence restores the same original source bytes.

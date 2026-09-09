@@ -189,7 +189,7 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 			response.Translations[left], response.Translations[right] = response.Translations[right], response.Translations[left]
 		}
 		response.Translations = append(response.Translations,
-			response.Translations[0], // Exact duplicates are one set member.
+			response.Translations[0], // A repeated object key keeps its last value.
 			responseEntry{Ref: "t999999", Text: "__REPOMAP_P999__"},
 		)
 		return response
@@ -263,7 +263,7 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 	}
 }
 
-func TestTranslateRejectsIncompleteAmbiguousOrChangedPlaceholders(t *testing.T) {
+func TestTranslateRejectsIncompleteOrChangedPlaceholders(t *testing.T) {
 	catalog := testCatalog(t, []report.DisplayTextEntry{
 		{Role: "answer", Text: "Use __REPOMAP_P1__ if possible.", Protected: []report.DisplayProtectedText{{Ref: "__REPOMAP_P1__", Text: "code"}}},
 		{Role: "label", Text: "Start here"},
@@ -283,14 +283,6 @@ func TestTranslateRejectsIncompleteAmbiguousOrChangedPlaceholders(t *testing.T) 
 		{"blank", editTranslationRef("t2", func(entry *responseEntry) { entry.Text = " \n " })},
 		{"removed placeholder", editTranslationRef("t1", func(entry *responseEntry) { entry.Text = "Translated text" })},
 		{"invented placeholder", editTranslationRef("t2", func(entry *responseEntry) { entry.Text += " __REPOMAP_P2__" })},
-		{"conflicting duplicate", func(response *modelResponse) {
-			for _, entry := range response.Translations {
-				if entry.Ref == "t2" {
-					response.Translations = append(response.Translations, responseEntry{Ref: "t2", Text: "Different text"})
-					break
-				}
-			}
-		}},
 		{"unknown cannot replace known", editTranslationRef("t2", func(entry *responseEntry) { entry.Ref = "t999" })},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -386,7 +378,7 @@ func TestTranslateRejectsInvalidKeyedWireBeforeCache(t *testing.T) {
 		{"unadvertised entry metadata", `{"t1":{"text":"one","protected":[]},"t2":"two"}`},
 		{"retired occurrence decisions", `{"t1":{"text":"one","mentions":{}},"t2":{"text":"two"}}`},
 		{"missing mandatory ref", `{"t1":{"text":"one"},"t999":{"text":"two"}}`},
-		{"conflicting parsed duplicate", `{"t1":{"text":"one"},"t2":{"text":"two"},"t\u0031":{"text":"different"}}`},
+		{"last parsed duplicate is invalid", `{"t1":{"text":"one"},"t2":{"text":"two"},"t\u0031":null}`},
 		{"unclosed ref quote", `{"t1":"one","t2:"two"}`},
 		{"extra closing brace", `{"t1":"one","t2":"two"}}`},
 		{"trailing JSON", `{"t1":"one","t2":"two"} {}`},
