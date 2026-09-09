@@ -3322,8 +3322,21 @@ original input, cache and journals preserved, before spending further calls on
 that invalid contract; no HTML was published. Both prompt examples now pass the
 ordinary table preparation and validation in each mode. Missing `open` remains
 a refused row while a complete neighbouring row survives. Full product tests,
-vet and build pass; saved-input online reading is the focused check for this
-repair and does not replace full Airflow publication acceptance.
+vet and build pass. The full saved Airflow input then ran through directories
+and files on `f0c5ee5c`, without rebuilding native facts or the map. All 1,472
+asked directory rows in 13 windows were accepted; 1,234 descendants under closed
+directories remained unasked. Files accepted 3,122 of 3,160 asked rows in 79 of
+80 windows, with no missing-open refusals. One 38-row response completed its
+table and then repeated optional terminology until the 128,000-token provider
+ceiling: its incomplete envelope was refused, while all accepted neighbours
+and their exact-response caches survived. That request took 460.401 seconds;
+the saved reading took 861.406 seconds and exited zero with one rejected
+window, not with complete model coverage. The copied input is byte-identical
+to the original. Payload hashes, normalized cells, journal outcomes and cache
+bindings pass the artifact audit in
+`airflow-validation-20260909/followup-2142/reading-open-final-audit.json` in the
+external project work directory. This focused check creates no HTML and does
+not replace full Airflow publication acceptance.
 
 Measured on 2026-09-04, repomap on itself, seven targets: 30 windows plus
 33 symbol windows for 1,613 candidates (55 s), of which cmd/repomap's 47
@@ -3700,7 +3713,7 @@ deterministic adapter execution.
 ## ProgramIndex
 
 ProgramIndex is the single typed program graph passed from language adapters
-to shared stages. The sealed in-memory graph remains version 11, with unchanged
+to shared stages. The sealed in-memory graph is version 12, with unchanged
 target, object, relation and nested provenance identities. Each target retains
 its sealed `program-index-set.json` binding.
 
@@ -3711,7 +3724,7 @@ reference containing its original TargetInput (including seeds), relative facts
 path, facts digest and expected sealed index digest. Reading this reference
 uses the existing `programindex.New` and checks its original seal; it invokes
 no parser, repository read or provider. The standalone Encode/Decode format is
-still the same complete version-11 Index. A complete cohort may move together;
+still the same complete version-12 Index. A complete cohort may move together;
 missing shared facts fail without reconstruction from source. No automatic
 target merging or alternate graph is introduced.
 
@@ -3811,18 +3824,19 @@ The sharing regression for the root Python project has seven targets and fifteen
 one parser process, one AST per source, and two separate package contexts.
 Every restored sealed index matches the separate build byte for byte. Shared
 storage is 323,238 bytes versus 1,481,442 bytes for seven complete indexes.
-This is fixture evidence; full Airflow time and peak memory remain unmeasured.
+This is fixture evidence; full Airflow completion time and peak memory remain
+unmeasured.
 Final GroupsIndex subjects and the final report still scale with the complete
 selected portfolio; these changes do not make the entire run constant-memory.
 
-The running Airflow sample also exposed an avoidable restore during atlas
+The Airflow sample also exposed an avoidable restore during atlas
 construction. Places now collects each target's declarations, relations and
 seeds together, then makes one later pass for external boundaries after source
 documentation and fact boundaries are ready. Each saved target loads twice
 instead of three times, retaining only one target's native lookup maps.
 Seed locations are resolved against the complete file inventory before depths
 are assigned. The saved mixed fixture's canonical graph bytes are unchanged.
-The live Airflow process predates this change, so its elapsed time cannot
+The stopped Airflow process predates this change, so its elapsed time cannot
 measure this additional reduction.
 
 Ordinary mixed Python/TypeScript acceptance at `20260909-200202` completed
