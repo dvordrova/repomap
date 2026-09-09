@@ -20,7 +20,8 @@ type AdaptiveBatchAccounting struct {
 // ExecuteAdaptiveJSONBatch executes a complete caller-ordered plan. When the
 // real provider context, response or output-token envelope rejects one non-atomic item,
 // split deterministically replaces that item and the complete plan is retried.
-// Accepted sibling requests may be served from their identity-bound cache;
+// An owner may also opt a call into splitting a refused response. Accepted
+// sibling requests may be served from their identity-bound cache;
 // no partial outcomes are returned as semantic authority.
 func ExecuteAdaptiveJSONBatch[Item any, Value any](
 	ctx context.Context,
@@ -91,16 +92,17 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 		}
 		addDiscardedRound(&accounting, outcomes)
 		var itemErr *BatchItemError
-		var resourceErr *ResourceLimitError
-		if !errors.As(err, &itemErr) || itemErr.Index < 0 || itemErr.Index >= len(plan) ||
-			!errors.As(err, &resourceErr) ||
-			!adaptiveSplitKind(resourceErr.Kind) {
+		if !errors.As(err, &itemErr) || itemErr.Index < 0 || itemErr.Index >= len(plan) {
 			return nil, nil, accounting, err
 		}
-		// Only a transport resource refusal authorizes a persistent split.
-		// A semantic validator returning a typed resource error is not one.
+		memo := adaptiveSplitMemo{Version: 1}
+		var resourceErr *ResourceLimitError
 		providerErr, providerFailure := itemErr.Err.(*ProviderError)
-		if !providerFailure || providerErr.Operation != "complete" {
+		if providerFailure && providerErr.Operation == "complete" && errors.As(err, &resourceErr) && adaptiveSplitKind(resourceErr.Kind) {
+			memo.Kind = resourceErr.Kind
+		} else if calls[itemErr.Index].SplitRejectedResponse && rejectedAdaptiveResponse(outcomes[itemErr.Index]) {
+			memo.RejectionReason = adaptiveResponseRejected
+		} else {
 			return nil, nil, accounting, err
 		}
 		left, right, ok := split(plan[itemErr.Index])
@@ -108,11 +110,23 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 			return nil, nil, accounting, err
 		}
 		if err := saveAdaptiveSplit(executor, provider, outcomes[itemErr.Index].Request,
-			calls[itemErr.Index].Limits, resourceErr.Kind); err != nil {
+			calls[itemErr.Index].Limits, memo); err != nil {
 			return nil, nil, accounting, err
 		}
 		plan = replaceAdaptiveItem(plan, itemErr.Index, left, right)
 	}
+}
+
+func rejectedAdaptiveResponse[Value any](outcome Outcome[Value]) bool {
+	// This reason is set by ExecuteJSON only after the provider envelope passed
+	// and the original response failed JSON/domain validation. Metadata-only,
+	// preparation, transport and cancellation failures never acquire it.
+	for _, rejection := range outcome.ResponseRejections {
+		if rejection.Kind == adaptiveResponseRejected {
+			return true
+		}
+	}
+	return false
 }
 
 func replaceAdaptiveItem[Item any](plan []Item, index int, left, right Item) []Item {

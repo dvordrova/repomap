@@ -4185,12 +4185,17 @@ altered placeholders and trailing JSON. A 600-entry regression covered one
 complete request without a row-count cap. Current v9, described in the shared
 glossary section above, supplies ordered entries with role and applicable refs
 into one request-local terminology dictionary, and accepts one text object per ref.
+Source-placeholder validation preserves every original occurrence and rejects
+unknown refs, while allowing extra occurrences of the same known placeholder
+for natural phrasing. Every occurrence restores the same original source bytes.
+The prompt continues to prefer the original multiplicity; accepting a harmless
+repeat does not change request bytes or invalidate accepted translations.
 
 Earlier v2/v3 live calls succeeded on several complete catalogues but sometimes
 returned an extra closing delimiter. These malformed responses were rejected,
 never repaired or cached, and their runs published no HTML. The transport path
 was checked for local suffix insertion; the extra delimiter was already in the
-extracted provider message. There is no automatic malformed-JSON retry. A
+extracted provider message. At that time there was no automatic malformed-JSON retry. A
 bounded v4 control on the problematic server catalogue accepted all 148 texts
 and every protected occurrence on its first attempt: 5,424 input and 7,110 output
 tokens in 32.073s. Its prepared request shrank from 33,070 to 25,556 bytes. This
@@ -4286,14 +4291,13 @@ retains the complete catalogue and confirms zero new calls on exact warm reuse.
 This does not establish the cause of the owner's separate-machine failure;
 semantic refusals remain uncached and their actual reason is now journaled.
 
-The shared adaptive executor now persists only an actual context/output/response
+The shared adaptive executor persists an actual context/output/response
 resource-refusal observation for an exact request that its owner can divide.
 Previously each run retried that oversized parent even when all child responses
 were already cached. The memo includes exact provider bytes, canonical provider
 state and all envelope limits in its identity; its value contains only version
-and resource kind. Current stage code always rebuilds the full child plan and
-each child still needs its own valid answer. Semantic refusals do not create a
-split observation; accepted whole-parent cache/replay takes precedence. NoCache
+and the refusal kind. Current stage code always rebuilds the full child plan and
+each child still needs its own valid answer. Accepted whole-parent cache/replay takes precedence. NoCache
 bypasses the memo and ordinary cache clear removes it. This is separate from
 Learn's existing positive partition memo and does not alter that stage.
 The owning Translate regression processes all 1,310 original texts in two
@@ -4303,6 +4307,18 @@ translation. Nested shared-executor tests cover all three resource kinds,
 ordering, absent child answers, changed limits, replay, NoCache and cache clear.
 There is no migration of earlier journals: an old oversized request can still
 need one refusal after upgrading before this observation exists.
+
+The owner's 2026-09-09 request for automatic halving also applies to refused
+translation responses: translation alone opts into splitting a whole window
+after JSON or translation validation fails. Such an observation is recorded as
+`response_validation`, never as a provider token limit. The original refused
+response remains refused and uncached; none of its fragments supply display
+text. Every smaller request uses the same original entries and must pass the
+unchanged owning validation. Halving stops at one entry, whose actual error
+remains terminal. Successful windows and exact split observations survive a
+new run through the same cache. Other stages keep their existing refusal rules;
+transport, configuration, cancellation and persistence failures do not gain
+this behavior. Progress output explicitly announces automatic continuation.
 
 Real browser checks found and corrected a filtered-search empty state that hid
 matches in other categories, indistinguishable operation choices with the same

@@ -214,7 +214,7 @@ func TestAdaptiveSplitMemoIdentityIncludesCanonicalProviderExactBytesAndAllLimit
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := saveAdaptiveSplit(executor, p, prepared.Bytes(), call.Limits, ResourceLimitOutputTokens); err != nil {
+	if err := saveAdaptiveSplit(executor, p, prepared.Bytes(), call.Limits, adaptiveSplitMemo{Version: 1, Kind: ResourceLimitOutputTokens}); err != nil {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
@@ -331,5 +331,82 @@ func TestAdaptiveSplitMemoReadErrorIsVisibleButAcceptedParentStillWins(t *testin
 	plan, outcomes, err := ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, adaptiveBatchTestBuild, adaptiveBatchTestSplit)
 	if err != nil || len(plan) != 1 || len(outcomes) != 1 || !outcomes[0].Cached || outcomes[0].Value.Value != "whole" || len(p.calls) != 0 {
 		t.Fatalf("corrupt hint hid valid parent replay: %#v / %#v / %v", plan, outcomes, err)
+	}
+}
+
+func TestAdaptiveRejectedResponseMemoRequiresOwnerOptInAndParentReplayWins(t *testing.T) {
+	p := &adaptiveSplitTestProvider{response: func(values []string) ([]byte, error, bool) {
+		return []byte(`{"value":`), nil, len(values) > 1
+	}}
+	executor := Executor{Enabled: true, RootDir: t.TempDir()}
+	items := [][]string{{"a", "b"}}
+	optIn := true
+	build := func(items [][]string) ([]Call[testValue], error) {
+		calls, err := adaptiveBatchTestBuild(items)
+		for i := range calls {
+			calls[i].SplitRejectedResponse = optIn
+		}
+		return calls, err
+	}
+	run := func() ([][]string, []Outcome[testValue], error) {
+		p.calls = nil
+		return ExecuteAdaptiveJSONBatch(t.Context(), executor, p, items, build, adaptiveBatchTestSplit)
+	}
+	if plan, outcomes, err := run(); err != nil || len(plan) != 2 || len(outcomes) != 2 || len(p.calls) != 3 {
+		t.Fatalf("cold rejected response split: plan=%v calls=%v error=%v", plan, p.calls, err)
+	}
+	paths, err := filepath.Glob(filepath.Join(executor.RootDir, CacheDirectoryName, "memo-*.json"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("one existing-directory refusal memo expected: %v %v", paths, err)
+	}
+	raw, _ := os.ReadFile(paths[0])
+	var record memoRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(record.Value, &value); err != nil || len(value) != 2 || value["rejection_reason"] != adaptiveResponseRejected || value["resource_kind"] != nil {
+		t.Fatalf("response rejection masquerades as provider resource: %s, %v", record.Value, err)
+	}
+	if _, outcomes, err := run(); err != nil || len(p.calls) != 0 || !outcomes[0].Cached || !outcomes[1].Cached {
+		t.Fatalf("warm children not reused: calls=%v error=%v", p.calls, err)
+	}
+	calls, _ := build(items)
+	for _, change := range []func(*Call[testValue]){
+		func(call *Call[testValue]) { call.Prompt.User = `["changed","input"]` },
+		func(call *Call[testValue]) { call.Limits.MaxRequestBytes++ },
+		func(call *Call[testValue]) { call.Limits.MaxResponseBytes-- },
+		func(call *Call[testValue]) { call.Limits.MaxOutputTokens++ },
+	} {
+		current := calls[0]
+		change(&current)
+		if found, err := loadAdaptiveSplit(executor, p, current); err != nil || found {
+			t.Fatalf("rejected-response hint leaked across changed input/envelope: %v", err)
+		}
+	}
+	optIn = false
+	if plan, outcomes, err := run(); err == nil || plan != nil || outcomes != nil || len(p.calls) != 1 {
+		t.Fatalf("non-opted owner inherited rejected-response splitting: calls=%v error=%v", p.calls, err)
+	}
+	optIn = true
+	for _, state := range []string{`{"provider":"changed"}`, `{"provider":"adaptive-split-test","model":"one"}`} {
+		p.state = []byte(state)
+		_, _, err := run()
+		wantCalls := 0
+		if state == `{"provider":"changed"}` {
+			wantCalls = 3
+		}
+		if err != nil || len(p.calls) != wantCalls {
+			t.Fatalf("provider identity lost: calls=%v error=%v", p.calls, err)
+		}
+	}
+	wire, _ := json.Marshal(items[0])
+	prepared, _ := NewPrepared(wire)
+	p.response = func([]string) ([]byte, error, bool) { return []byte(`{"value":"whole replay"}`), nil, true }
+	if _, err := ReplayJSON(t.Context(), executor, p, prepared); err != nil {
+		t.Fatal(err)
+	}
+	if plan, outcomes, err := run(); err != nil || len(plan) != 1 || len(p.calls) != 0 || !outcomes[0].Cached || outcomes[0].Value.Value != "whole replay" {
+		t.Fatalf("rejected-response memo hid accepted parent replay: plan=%v calls=%v error=%v", plan, p.calls, err)
 	}
 }

@@ -55,6 +55,7 @@ type testProvider struct {
 	requests       []testWire
 	respond        func(modelRequest) modelResponse
 	rawResponse    []byte
+	rawRespond     func(modelRequest) []byte
 }
 
 func (*testProvider) State() []byte {
@@ -103,6 +104,9 @@ func (provider *testProvider) Complete(_ context.Context, prepared llm.Prepared)
 	raw := responseWire(response)
 	if provider.rawResponse != nil {
 		raw = provider.rawResponse
+	}
+	if provider.rawRespond != nil {
+		raw = provider.rawRespond(request)
 	}
 	return llm.Completion{
 		Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1,
@@ -268,15 +272,26 @@ func TestTranslateRejectsIncompleteAmbiguousOrChangedPlaceholders(t *testing.T) 
 		name string
 		edit func(*modelResponse)
 	}{
-		{"missing", func(response *modelResponse) { response.Translations = response.Translations[:1] }},
-		{"blank", func(response *modelResponse) { response.Translations[1].Text = " \n " }},
-		{"removed placeholder", func(response *modelResponse) { response.Translations[0].Text = "Translated text" }},
-		{"repeated placeholder", func(response *modelResponse) { response.Translations[0].Text += " __REPOMAP_P1__" }},
-		{"invented placeholder", func(response *modelResponse) { response.Translations[1].Text += " __REPOMAP_P2__" }},
-		{"conflicting duplicate", func(response *modelResponse) {
-			response.Translations = append(response.Translations, responseEntry{Ref: "t2", Text: "Different text"})
+		{"missing", func(response *modelResponse) {
+			for i, entry := range response.Translations {
+				if entry.Ref == "t2" {
+					response.Translations = append(response.Translations[:i], response.Translations[i+1:]...)
+					break
+				}
+			}
 		}},
-		{"unknown cannot replace known", func(response *modelResponse) { response.Translations[1].Ref = "t999" }},
+		{"blank", editTranslationRef("t2", func(entry *responseEntry) { entry.Text = " \n " })},
+		{"removed placeholder", editTranslationRef("t1", func(entry *responseEntry) { entry.Text = "Translated text" })},
+		{"invented placeholder", editTranslationRef("t2", func(entry *responseEntry) { entry.Text += " __REPOMAP_P2__" })},
+		{"conflicting duplicate", func(response *modelResponse) {
+			for _, entry := range response.Translations {
+				if entry.Ref == "t2" {
+					response.Translations = append(response.Translations, responseEntry{Ref: "t2", Text: "Different text"})
+					break
+				}
+			}
+		}},
+		{"unknown cannot replace known", editTranslationRef("t2", func(entry *responseEntry) { entry.Ref = "t999" })},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			provider := &testProvider{respond: func(request modelRequest) modelResponse {
@@ -293,17 +308,41 @@ func TestTranslateRejectsIncompleteAmbiguousOrChangedPlaceholders(t *testing.T) 
 			if err == nil || !reflect.DeepEqual(result, report.DisplayTranslations{}) {
 				t.Fatalf("failed translation became a partial artifact: %#v, %v", result, err)
 			}
-			if len(events) != 1 || events[0].Failure != llm.FailureValidation || len(provider.requests) != 1 {
-				t.Fatalf("failure was not rejected by shared executor before caching: %#v", events)
+			if len(events) < 2 || events[0].Failure != llm.FailureValidation {
+				t.Fatalf("refused whole window did not reach singleton validation: %#v", events)
+			}
+			for _, event := range events {
+				if event.Failure == llm.FailureValidation {
+					if _, found, err := llm.CachedExchange(executor.RootDir, event.CacheKey); err != nil || found {
+						t.Fatalf("refused translation entered accepted cache: %v", err)
+					}
+				}
 			}
 			provider.respond = nil
+			before := len(provider.requests)
 			if _, err := Translate(t.Context(), executor, provider, catalog, report.Russian); err != nil {
 				t.Fatal(err)
 			}
-			if len(provider.requests) != 2 || len(events) != 2 || events[1].Kind != llm.EventLive {
-				t.Fatal("refused translation was reused instead of obtaining a complete answer")
+			if len(provider.requests) <= before || len(provider.requests) > before+2 {
+				t.Fatal("missing singleton translations were not requested")
+			}
+			for _, wire := range provider.requests[before:] {
+				var request modelRequest
+				if err := json.Unmarshal([]byte(wire.Prompt.User), &request); err != nil || len(request.Entries) != 1 {
+					t.Fatalf("saved refusal was retried as a whole window: %v", err)
+				}
 			}
 		})
+	}
+}
+
+func editTranslationRef(ref string, edit func(*responseEntry)) func(*modelResponse) {
+	return func(response *modelResponse) {
+		for i := range response.Translations {
+			if response.Translations[i].Ref == ref {
+				edit(&response.Translations[i])
+			}
+		}
 	}
 }
 
@@ -313,12 +352,12 @@ func TestTranslateKeyedWirePreservesOnlyOriginalPlaceholderAuthority(t *testing.
 		{Role: "label", Text: "Start here"},
 	})
 	provider := &testProvider{rawResponse: []byte(`{
-		"t2":{"text":"Начало"}, "t1":{"text":"Используйте __REPOMAP_P1__ по возможности."},
-		"t\u0031":{"text":"Используйте __REPOMAP_P1__ по возможности."},
+		"t2":{"text":"Начало"}, "t1":{"text":"Используйте __REPOMAP_P1__ и затем __REPOMAP_P1__ по возможности."},
+		"t\u0031":{"text":"Используйте __REPOMAP_P1__ и затем __REPOMAP_P1__ по возможности."},
 		"t999":{"protected":["__REPOMAP_P999__"],"text":null}, "unknown":null
 	}`)}
 	result, err := Translate(t.Context(), llm.Executor{}, provider, catalog, report.Russian)
-	if err != nil || len(result.Entries) != 2 || result.Entries[0].Text != "Используйте __REPOMAP_P1__ по возможности." || result.Entries[1].Text != "Начало" {
+	if err != nil || len(result.Entries) != 2 || result.Entries[0].Text != "Используйте __REPOMAP_P1__ и затем __REPOMAP_P1__ по возможности." || result.Entries[1].Text != "Начало" {
 		t.Fatalf("equal parsed duplicates or unknown refs changed the known translations: %#v %v", result, err)
 	}
 	raw, err := json.Marshal(result)
@@ -356,15 +395,16 @@ func TestTranslateRejectsInvalidKeyedWireBeforeCache(t *testing.T) {
 			provider := &testProvider{rawResponse: []byte(test.raw)}
 			executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
 			result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
-			if err == nil || !reflect.DeepEqual(result, report.DisplayTranslations{}) || len(provider.requests) != 1 {
-				t.Fatalf("invalid wire became a partial result, JSON repair or retry: %#v %v", result, err)
+			if err == nil || !reflect.DeepEqual(result, report.DisplayTranslations{}) {
+				t.Fatalf("invalid singleton wire became a partial result or semantic repair: %#v %v", result, err)
 			}
+			before := len(provider.requests)
 			provider.rawResponse = nil
 			if _, err := Translate(t.Context(), executor, provider, catalog, report.Russian); err != nil {
 				t.Fatal(err)
 			}
-			if len(provider.requests) != 2 {
-				t.Fatal("invalid keyed response entered the accepted cache")
+			if len(provider.requests) <= before || len(provider.requests) > before+2 {
+				t.Fatal("invalid keyed response was cached or its refused whole window was retried")
 			}
 		})
 	}
@@ -419,18 +459,22 @@ func TestTranslatePacksByPreparedProviderEnvelope(t *testing.T) {
 	}
 
 	// An accepted first window is not enough for a publishable translation.
-	// A missing scalar in the next window must not return those earlier texts.
+	// A missing scalar that remains absent at singleton scope must not return
+	// those earlier texts as a complete translation.
 	provider.requests = nil
 	provider.respond = func(request modelRequest) modelResponse {
 		response := translatedResponse(request)
-		if request.Entries[0].Ref == "t4" {
-			response.Translations = response.Translations[:1]
+		for i, entry := range response.Translations {
+			if entry.Ref == "t5" {
+				response.Translations = append(response.Translations[:i], response.Translations[i+1:]...)
+				break
+			}
 		}
 		return response
 	}
 	failed, err := Translate(t.Context(), llm.Executor{Enabled: true, RootDir: t.TempDir()}, provider, catalog, report.Russian)
-	if err == nil || !reflect.DeepEqual(failed, report.DisplayTranslations{}) || len(provider.requests) != 2 {
-		t.Fatalf("a refused sibling window produced a partial translation or a semantic retry: %#v, %v", failed, err)
+	if err == nil || !strings.Contains(err.Error(), "missing translation for t5") || !reflect.DeepEqual(failed, report.DisplayTranslations{}) {
+		t.Fatalf("a refused singleton produced a partial translation: %#v, %v", failed, err)
 	}
 	provider.respond = nil
 	provider.requests = nil
@@ -484,6 +528,44 @@ func TestTranslateSplitsOnlyRealResponseResourcesWithoutPartialPublication(t *te
 				t.Fatalf("atomic resource failure was repaired or partially published: %#v, %v", failed, err)
 			}
 		})
+	}
+}
+
+func TestTranslateRejectedWindowHalvesAndWarmRunReusesOnlyCompleteChildren(t *testing.T) {
+	entries := plainEntries(4)
+	entries[0].Text = "Use __REPOMAP_P1__."
+	entries[0].Protected = []report.DisplayProtectedText{{Ref: "__REPOMAP_P1__", Text: "source.go"}}
+	catalog := testCatalog(t, entries)
+	bad := []byte(`{"t1":{"text":"Do not salvage this prefix"},"t2,"}`)
+	provider := &testProvider{rawRespond: func(request modelRequest) []byte {
+		if len(request.Entries) > 2 {
+			return bad
+		}
+		return responseWire(translatedResponse(request))
+	}}
+	var events []llm.Event
+	executor := llm.Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 4,
+		Observer: llm.ObserverFunc(func(event llm.Event) error { events = append(events, event); return nil })}
+	for run := 0; run < 2; run++ {
+		result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
+		if err != nil || result.Validate(catalog) != nil {
+			t.Fatalf("run %d did not produce the complete validated catalogue: %v", run, err)
+		}
+		for i, entry := range result.Entries {
+			if entry.Ref != catalog.Entries[i].Ref || entry.Text != "Перевод: "+catalog.Entries[i].Text {
+				t.Fatalf("refused parent supplied a value or a child lost identity: %+v", entry)
+			}
+		}
+		if len(provider.requests) != 3 {
+			t.Fatalf("run %d used %d calls; want one refused parent and two accepted halves in total", run, len(provider.requests))
+		}
+	}
+	if len(events) != 5 || events[0].Failure != llm.FailureValidation || !bytes.Equal(events[0].Response, bad) ||
+		events[3].Kind != llm.EventCacheHit || events[4].Kind != llm.EventCacheHit {
+		t.Fatalf("raw refusal or warm cache provenance changed: %+v", events)
+	}
+	if _, found, err := llm.CachedExchange(executor.RootDir, events[0].CacheKey); err != nil || found {
+		t.Fatalf("refused parent became an accepted cache entry: %v", err)
 	}
 }
 

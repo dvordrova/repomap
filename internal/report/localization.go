@@ -126,7 +126,8 @@ func (translations DisplayTranslations) Validate(catalog DisplayTextCatalog) err
 	return nil
 }
 
-// ValidateTranslation requires nonempty prose and exact source placeholders.
+// ValidateTranslation requires nonempty prose and retains every original source
+// placeholder. A translation may repeat an exact source for natural phrasing.
 // Glossary lookup is local and does not add a response annotation contract.
 func (entry DisplayTextEntry) ValidateTranslation(text string) error {
 	if strings.TrimSpace(text) == "" {
@@ -135,7 +136,7 @@ func (entry DisplayTextEntry) ValidateTranslation(text string) error {
 	allowed := make(map[string]bool, len(entry.Protected))
 	for _, protected := range entry.Protected {
 		allowed[protected.Ref] = true
-		if strings.Count(text, protected.Ref) != strings.Count(entry.Text, protected.Ref) {
+		if strings.Count(text, protected.Ref) < strings.Count(entry.Text, protected.Ref) {
 			return fmt.Errorf("report: translated text %s changed a source placeholder", entry.Ref)
 		}
 	}

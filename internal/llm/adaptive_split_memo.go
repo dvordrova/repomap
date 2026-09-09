@@ -5,12 +5,15 @@ import (
 	"fmt"
 )
 
-// This is a resource observation, not an accepted partition or model answer.
+const adaptiveResponseRejected = "response_validation"
+
+// This is a refusal observation, not an accepted partition or model answer.
 // The current owner must still split the complete item and execute/validate
 // every child. No child boundaries, payloads or semantic decisions live here.
 type adaptiveSplitMemo struct {
-	Version int               `json:"version"`
-	Kind    ResourceLimitKind `json:"resource_kind"`
+	Version         int               `json:"version"`
+	Kind            ResourceLimitKind `json:"resource_kind,omitempty"`
+	RejectionReason string            `json:"rejection_reason,omitempty"`
 }
 
 func adaptiveSplitKind(kind ResourceLimitKind) bool {
@@ -45,13 +48,18 @@ func loadAdaptiveSplit[T any](executor Executor, provider Provider, call Call[T]
 	}
 	request := prepared.Bytes()
 	key := adaptiveSplitKey(providerState, request, call.Limits)
-	_, found, err := LoadMemo(executor, key, DecodeJSON(func(memo adaptiveSplitMemo) error {
-		if memo.Version != 1 || !adaptiveSplitKind(memo.Kind) {
-			return fmt.Errorf("llm: invalid adaptive resource split memo")
+	memo, found, err := LoadMemo(executor, key, DecodeJSON(func(memo adaptiveSplitMemo) error {
+		resource := adaptiveSplitKind(memo.Kind) && memo.RejectionReason == ""
+		rejected := memo.Kind == "" && memo.RejectionReason == adaptiveResponseRejected
+		if memo.Version != 1 || (!resource && !rejected) {
+			return fmt.Errorf("llm: invalid adaptive split memo")
 		}
 		return nil
 	}))
 	if !found && err == nil {
+		return false, nil
+	}
+	if found && memo.RejectionReason != "" && !call.SplitRejectedResponse {
 		return false, nil
 	}
 	// A successful whole-parent replay supersedes the old split. Even a
@@ -63,12 +71,12 @@ func loadAdaptiveSplit[T any](executor Executor, provider Provider, call Call[T]
 		return false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("llm: read adaptive resource split memo: %w", err)
+		return false, fmt.Errorf("llm: read adaptive split memo: %w", err)
 	}
 	return found, nil
 }
 
-func saveAdaptiveSplit(executor Executor, provider Provider, request []byte, limits Limits, kind ResourceLimitKind) error {
+func saveAdaptiveSplit(executor Executor, provider Provider, request []byte, limits Limits, memo adaptiveSplitMemo) error {
 	if !executor.Enabled {
 		return nil
 	}
@@ -76,13 +84,13 @@ func saveAdaptiveSplit(executor Executor, provider Provider, request []byte, lim
 	if err != nil {
 		return err
 	}
-	value, err := json.Marshal(adaptiveSplitMemo{Version: 1, Kind: kind})
+	value, err := json.Marshal(memo)
 	if err != nil {
 		return err
 	}
 	// Use the exact failed request, never a second preparation of it.
 	if err := SaveMemo(executor, adaptiveSplitKey(providerState, request, limits), value); err != nil {
-		return fmt.Errorf("llm: save adaptive resource split memo: %w", err)
+		return fmt.Errorf("llm: save adaptive split memo: %w", err)
 	}
 	return nil
 }

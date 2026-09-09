@@ -637,6 +637,13 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   The glossary is static; browser hints reveal those same definitions beside
   bound prose. `repomap render` uses saved report and translation data with zero
   provider calls.
+- Display translation alone also halves a whole refused response window after
+  JSON or translation validation fails, per the owner's 2026-09-09 request for
+  automatic recovery. Original entries remain complete; no refused fragments
+  are published or cached as accepted answers. The same exact-request split
+  memo records this as `response_validation`, not a provider resource limit,
+  and applies it only while the owning stage opts in. Valid child windows keep
+  their ordinary cache entries; an invalid singleton remains a concrete error.
 - `groupindex.ProjectAtlas` turns the atlas into the GroupsIndex the page,
   the orientation and the publication read: a box is a group whose members
   are the objects declared in its files, a zone is a container, an arrow is

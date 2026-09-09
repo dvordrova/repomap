@@ -172,11 +172,16 @@ func DecodeJSON[T any](validate func(T) error) DecodeValidate[T] {
 // Set DecodeValidate for a custom reducer, or set Validate to use the default
 // JSON decoder. Setting both is an error.
 type Call[T any] struct {
-	State          []byte
-	Prompt         Prompt
-	Limits         Limits
-	DecodeValidate DecodeValidate[T]
-	Validate       func(T) error
+	// SplitRejectedResponse lets an adaptive owner replace a syntactically or
+	// semantically refused response with smaller complete input windows. The
+	// refused response supplies no values; an atomic window still fails. Only
+	// owners with independent, exhaustively validated output entries opt in.
+	SplitRejectedResponse bool
+	State                 []byte
+	Prompt                Prompt
+	Limits                Limits
+	DecodeValidate        DecodeValidate[T]
+	Validate              func(T) error
 }
 
 // BatchItemError identifies the exact caller-order item that failed in one

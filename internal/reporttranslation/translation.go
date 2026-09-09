@@ -223,7 +223,8 @@ func translationCall(
 		return llm.Call[[]report.DisplayTranslationEntry]{}, err
 	}
 	return llm.Call[[]report.DisplayTranslationEntry]{
-		State: []byte(`{"contract":"repomap.report-display-translation.v9"}`),
+		SplitRejectedResponse: true,
+		State:                 []byte(`{"contract":"repomap.report-display-translation.v9"}`),
 		Prompt: llm.Prompt{
 			System: strings.TrimSpace(translationPrompt), User: string(raw),
 			ResponseFormatJSON: true, ResponseLanguage: string(language), Reasoning: false,

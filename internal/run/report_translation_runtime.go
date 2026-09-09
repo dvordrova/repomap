@@ -69,7 +69,7 @@ func translateReportDisplay(ctx context.Context, options repositoryTargetDispatc
 		BatchConcurrency: options.Deps.llmBatchConcurrency, BatchController: options.Deps.llmBatchController,
 		PlanNotice: func(windows int) {
 			if translationRound > 0 {
-				options.Output.Stage("", fmt.Sprintf("provider limit reached; continuing automatically in %d smaller requests", windows))
+				options.Output.Stage("", fmt.Sprintf("continuing automatically in %d smaller requests after the previous response was refused", windows))
 			} else {
 				options.Output.Stage("", fmt.Sprintf("request windows this round: %d; checking cache before provider calls", windows))
 			}
