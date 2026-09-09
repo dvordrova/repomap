@@ -62,12 +62,18 @@ func translateReportDisplay(ctx context.Context, options repositoryTargetDispatc
 		return report.RenderOptions{}, err
 	}
 	defer writer.Close()
+	translationRound := 0
 	executor := debugdump.BindStage(llm.Executor{
 		RootDir: options.DebugDir, Enabled: !options.NoCache,
 		Observer:         timed(options.Output, debugdump.NewSemanticObserver(writer)),
 		BatchConcurrency: options.Deps.llmBatchConcurrency, BatchController: options.Deps.llmBatchController,
 		PlanNotice: func(windows int) {
-			options.Output.Stage("", fmt.Sprintf("request windows this round: %d; checking cache before provider calls", windows))
+			if translationRound > 0 {
+				options.Output.Stage("", fmt.Sprintf("provider limit reached; continuing automatically in %d smaller requests", windows))
+			} else {
+				options.Output.Stage("", fmt.Sprintf("request windows this round: %d; checking cache before provider calls", windows))
+			}
+			translationRound++
 		},
 	}, debugdump.SemanticStageReportTranslation)
 	options.Output.Stage("Report translation", fmt.Sprintf("translating %d display texts into %s", len(catalog.Entries), language))
