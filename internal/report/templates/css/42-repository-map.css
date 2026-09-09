@@ -46,6 +46,7 @@ button.repo-component-open::after{content:'⌄';position:absolute;right:.8rem;to
 .repo-focus-close{padding:.25rem 0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:var(--text-small);white-space:nowrap;text-decoration:underline;text-underline-offset:.2em;cursor:pointer}
 .repo-focus-body{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:1.5rem;align-items:start}
 .repo-focus-description .repo-card-purpose{display:block;margin:0 0 .8rem;font-size:1rem;line-height:1.6;overflow:visible;color:var(--ink);max-width:76ch}
+.repo-focus-description .repo-card-purpose.model::before{display:none}
 .repo-open-parts{display:inline-block;margin:.1rem 0 .4rem;font-weight:600;text-decoration:none;color:var(--accent)}
 .repo-component-sources{display:grid;grid-template-columns:fit-content(35%) minmax(0,1fr);gap:.3rem .6rem;margin:0;font-size:var(--text-small);line-height:1.5}
 .repo-component-sources dt{font-weight:400;color:var(--muted)}

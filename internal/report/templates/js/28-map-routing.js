@@ -215,7 +215,7 @@ var repomapGraph = (function () {
     close.addEventListener('click',function(){selected='';selectedConnection=-1;record();render();cards[id].scrollIntoView({block:'nearest'});cards[id].querySelector('button')?.focus({preventScroll:true});});head.appendChild(close);focus.appendChild(head);
     if(selectedConnection>=0){var edge=edges[selectedConnection],connection=el('p','repo-selected-connection');connection.appendChild(el('strong','',nameOf(edge.from)+' → '+nameOf(edge.to)));connection.appendChild(el('span','',edge.label));if(edge.possible)connection.appendChild(el('span','',rmT('Interpreted connection or possible dispatch')));focus.appendChild(connection);}
     var body=el('div','repo-focus-body'),description=el('div','repo-focus-description'),purpose=node.querySelector('.repo-card-purpose');
-    if(purpose){var copy=purpose.cloneNode(true);copy.classList.add('model');description.appendChild(copy);}
+    if(purpose){var copy=purpose.cloneNode(true);copy.classList.add('model');copy.title=rmT('Model explanation');description.appendChild(copy);}
     var open=el('a','repo-open-parts',rmT('Open parts')+' →');open.href=node.getAttribute('href');description.appendChild(open);body.appendChild(description);
     if(facts[id].length)body.appendChild(fullSources(id));focus.appendChild(body);
     var relations=el('div','repo-focus-relations');relations.appendChild(relationList(id,'in'));relations.appendChild(relationList(id,'out'));focus.appendChild(relations);
