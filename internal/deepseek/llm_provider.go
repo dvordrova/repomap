@@ -213,12 +213,14 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		}
 		lastErr = annotateIncompleteCompletion(err, llmProviderStage)
 		lastErr = annotateResourceLimit(lastErr, llmProviderStage, c.MaxTokens)
-		if !retryable {
+		failure := (&llmProviderError{cause: lastErr}).ProviderFailure()
+		splitHTTP500 := llm.ProviderSplitsHTTP500(ctx) &&
+			failure.Kind == llm.ProviderFailureHTTPStatus && failure.HTTPStatus == http.StatusInternalServerError
+		if !retryable || splitHTTP500 {
 			result := llmCompletion(completion, attempts, responseBytes, time.Since(started))
 			return result, closedLLMProviderError("complete", lastErr, attempts, false)
 		}
 		if attempt <= maxRetries && ctx.Err() == nil && c.OnRetry != nil {
-			failure := (&llmProviderError{cause: lastErr}).ProviderFailure()
 			c.OnRetry(RetryProgress{RequestSHA256: requestDigest, Attempt: attempt, MaxAttempts: maxRetries + 1,
 				Failure: failure.Kind, HTTPStatus: failure.HTTPStatus, Delay: retryDelay, Elapsed: time.Since(started)})
 		}

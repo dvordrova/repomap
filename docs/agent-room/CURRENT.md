@@ -4303,15 +4303,26 @@ complete ordered output, protected spans, dictionaries and zero-call warm reuse.
 
 The owner confirmed from their server logs on 2026-09-09 that a long generation
 ends in HTTP 500 after four minutes; the response has no reliable timeout marker.
-Translation therefore sets a local four-minute deadline per transport attempt,
-starting after the shared gate opens. Expiry returns directly to the existing
-complete-entry splitter as `attempt_time_ms`, without an identical retry.
+The four-minute local attempt deadline starts after the shared gate opens.
+Expiry returns directly to the complete-entry splitter as `attempt_time_ms`,
+without an identical retry.
 The exact split memo includes the deadline and retains no failed display text.
 Accepted siblings and children keep their usual cache entries; a timed-out
-singleton remains an error. Parent cancellation stays terminal. An HTTP 500
-before the local deadline and a shorter configured client timeout retain ordinary
-transport retries. Virtual-clock provider tests cover a four-minute expiry,
-accepted siblings, warm reuse, cancellation and ordinary 500/429 retries.
+singleton remains an error. Parent cancellation stays terminal. A shorter
+configured client timeout retains ordinary transport retries.
+
+The server subsequently returned HTTP 500 before that local deadline. The owner
+explicitly chose to split on HTTP 500 itself instead of estimating an earlier
+deadline. Divisible translation windows now opt into `SplitHTTP500`: transport
+returns the first 500 without an identical retry, then the shared adaptive owner
+halves the complete input. It does not infer that every 500 proves a timeout.
+The exact-request memo records `http_500`, distinct from a resource limit, and
+is used only while the owning call keeps this opt-in. Accepted whole-parent
+cache/replay takes precedence; NoCache bypasses the observation and cache clear
+removes it. Singleton HTTP 500 responses retain ordinary retries. Other stages
+and other HTTP statuses keep their existing policies. Virtual-clock tests cover
+immediate 500, 500 at 3m45s, local expiry at 4m, accepted siblings, warm reuse,
+cancellation, and ordinary singleton-500/429/503 retries.
 Ordinary fixture acceptance on 2026-09-09 translated the same 364 display texts
 in four live calls, with the slowest at 19 seconds (the preceding single call
 took 61 seconds). Owner `20260909-085757-python-tutorial-game-ee546a49429f`
@@ -4348,7 +4359,7 @@ text. Every smaller request uses the same original entries and must pass the
 unchanged owning validation. Halving stops at one entry, whose actual error
 remains terminal. Successful windows and exact split observations survive a
 new run through the same cache. Other stages keep their existing refusal rules;
-apart from the explicit translation attempt deadline, transport, configuration,
+apart from the explicit translation attempt deadline and HTTP 500 policy, transport, configuration,
 cancellation and persistence failures do not gain this behavior. Progress output
 explicitly announces automatic continuation.
 

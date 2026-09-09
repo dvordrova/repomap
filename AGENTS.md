@@ -651,8 +651,12 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   answer. Each child retains its own complete term dictionary. Per the owner's
   2026-09-09 endpoint timeout report, translation attempts have a local four-minute
   deadline. Its expiry returns directly to the lossless splitter and is memoized
-  with that deadline; it never retries identical bytes. Earlier HTTP 500 errors
-  keep ordinary transport retries. Parent cancellation stays terminal. Retry
+  with that deadline; it never retries identical bytes. The owner also approved
+  immediate splitting on HTTP 500 for divisible translation windows, regardless
+  of elapsed time or response wording. This exact-request observation is stored
+  as `http_500`, not a resource limit, and reused only while that policy is enabled.
+  Singleton HTTP 500 responses and all other stages keep ordinary transport
+  retries. Parent cancellation stays terminal. Retry
   reasons, attempt numbers and actual retry starts are printed immediately.
 - `groupindex.ProjectAtlas` turns the atlas into the GroupsIndex the page,
   the orientation and the publication read: a box is a group whose members

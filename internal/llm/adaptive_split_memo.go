@@ -6,6 +6,7 @@ import (
 )
 
 const adaptiveResponseRejected = "response_validation"
+const adaptiveHTTP500 = "http_500"
 
 // This is a refusal observation, not an accepted partition or model answer.
 // The current owner must still split the complete item and execute/validate
@@ -50,7 +51,7 @@ func loadAdaptiveSplit[T any](executor Executor, provider Provider, call Call[T]
 	key := adaptiveSplitKey(providerState, request, call.Limits)
 	memo, found, err := LoadMemo(executor, key, DecodeJSON(func(memo adaptiveSplitMemo) error {
 		resource := adaptiveSplitKind(memo.Kind) && memo.RejectionReason == ""
-		rejected := memo.Kind == "" && memo.RejectionReason == adaptiveResponseRejected
+		rejected := memo.Kind == "" && (memo.RejectionReason == adaptiveResponseRejected || memo.RejectionReason == adaptiveHTTP500)
 		if memo.Version != 1 || (!resource && !rejected) {
 			return fmt.Errorf("llm: invalid adaptive split memo")
 		}
@@ -59,7 +60,8 @@ func loadAdaptiveSplit[T any](executor Executor, provider Provider, call Call[T]
 	if !found && err == nil {
 		return false, nil
 	}
-	if found && memo.RejectionReason != "" && !call.SplitRejectedResponse {
+	if found && ((memo.RejectionReason == adaptiveResponseRejected && !call.SplitRejectedResponse) ||
+		(memo.RejectionReason == adaptiveHTTP500 && !call.SplitHTTP500)) {
 		return false, nil
 	}
 	// A successful whole-parent replay supersedes the old split. Even a

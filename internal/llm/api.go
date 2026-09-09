@@ -182,17 +182,21 @@ type Call[T any] struct {
 	// refused response supplies no values; an atomic window still fails. Only
 	// owners with independent, exhaustively validated output entries opt in.
 	SplitRejectedResponse bool
-	State                 []byte
-	Prompt                Prompt
-	Limits                Limits
-	DecodeValidate        DecodeValidate[T]
-	Validate              func(T) error
+	// SplitHTTP500 returns HTTP 500 directly to the adaptive owner instead of
+	// repeating identical transport bytes. Only a complete, divisible input
+	// opts in; singleton calls retain the provider's ordinary retry policy.
+	SplitHTTP500   bool
+	State          []byte
+	Prompt         Prompt
+	Limits         Limits
+	DecodeValidate DecodeValidate[T]
+	Validate       func(T) error
 }
 
 // BatchItemError identifies the exact caller-order item that failed in one
-// batch execution. Domain planners may use the index to deterministically
-// re-shard only response/output-resource failures; every other item error
-// remains terminal to the complete domain result.
+// batch execution. Adaptive owners may use the index to split resource
+// refusals or explicitly opted-in failures. Other errors remain terminal to
+// the complete domain result.
 type BatchItemError struct {
 	Index int
 	Err   error

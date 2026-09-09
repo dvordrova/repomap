@@ -20,7 +20,7 @@ type AdaptiveBatchAccounting struct {
 // ExecuteAdaptiveJSONBatch executes a complete caller-ordered plan. When the
 // real provider context, response or output-token envelope rejects one non-atomic item,
 // split deterministically replaces that item and the complete plan is retried.
-// An owner may also opt a call into splitting a refused response. Accepted
+// An owner may also opt a call into splitting a refused response or HTTP 500. Accepted
 // sibling requests may be served from their identity-bound cache;
 // no partial outcomes are returned as semantic authority.
 func ExecuteAdaptiveJSONBatch[Item any, Value any](
@@ -91,6 +91,9 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 			return plan, outcomes, accounting, nil
 		}
 		addDiscardedRound(&accounting, outcomes)
+		if err := ctx.Err(); err != nil {
+			return nil, nil, accounting, err
+		}
 		var itemErr *BatchItemError
 		if !errors.As(err, &itemErr) || itemErr.Index < 0 || itemErr.Index >= len(plan) {
 			return nil, nil, accounting, err
@@ -100,6 +103,9 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 		providerErr, providerFailure := itemErr.Err.(*ProviderError)
 		if providerFailure && providerErr.Operation == "complete" && errors.As(err, &resourceErr) && adaptiveSplitKind(resourceErr.Kind) {
 			memo.Kind = resourceErr.Kind
+		} else if providerFailure && providerErr.Operation == "complete" && calls[itemErr.Index].SplitHTTP500 &&
+			providerErr.ProviderFailure().Kind == ProviderFailureHTTPStatus && providerErr.ProviderFailure().HTTPStatus == 500 {
+			memo.RejectionReason = adaptiveHTTP500
 		} else if calls[itemErr.Index].SplitRejectedResponse && rejectedAdaptiveResponse(outcomes[itemErr.Index]) {
 			memo.RejectionReason = adaptiveResponseRejected
 		} else {

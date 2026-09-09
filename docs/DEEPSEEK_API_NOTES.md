@@ -74,12 +74,19 @@ saved request bytes rather than applying new environment settings to them.
   Translation uses four minutes. The timer starts after acquiring the shared
   attempt gate; its expiry returns an `attempt_time_ms` resource refusal directly
   to the owner's lossless splitter without retrying identical bytes. Parent
-  cancellation remains cancellation. HTTP 500 before that deadline and a shorter
-  configured HTTP-client timeout keep the ordinary transport retry policy.
+  cancellation remains cancellation. A shorter configured HTTP-client timeout
+  keeps the ordinary transport retry policy.
   The deadline is local and does not change provider request bytes or accepted
   response-cache identity; adaptive split observations include it in their key.
   Retry progress immediately reports the closed failure class or HTTP status,
   attempt number and delay, then the actual retry start after the gate opens.
+- Divisible translation calls also opt into returning HTTP 500 immediately to
+  the adaptive owner without an identical transport retry. This applies to any
+  HTTP 500, including one arriving before the local deadline; no response-body
+  wording or elapsed-time heuristic is required. The failure stays HTTP 500 in
+  diagnostics and is not labelled a proven resource limit. Singleton translation
+  calls and other stages retain ordinary HTTP 500 retries. HTTP 429 and other
+  statuses keep their existing policies. Exact request bytes remain unchanged.
 - After HTTP 429, each retry waits at least one minute. A longer `Retry-After`
   delay, expressed in seconds or as an HTTP date, is honored. An absent,
   invalid, expired or shorter header retains the one-minute minimum. The

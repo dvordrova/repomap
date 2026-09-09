@@ -7,6 +7,14 @@ import (
 )
 
 type attemptTimeoutKey struct{}
+type splitHTTP500Key struct{}
+
+// ProviderSplitsHTTP500 tells a transport to return HTTP 500 without retry so
+// the owning adaptive call can rebuild smaller, complete input windows.
+func ProviderSplitsHTTP500(ctx context.Context) bool {
+	enabled, _ := ctx.Value(splitHTTP500Key{}).(bool)
+	return enabled
+}
 
 // ProviderAttemptTimeout is the owning call's per-attempt deadline. Providers
 // must return its expiration without retry so the owner can split its input.

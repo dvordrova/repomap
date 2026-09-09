@@ -45,6 +45,7 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 		}
 	}()
 	ctx = bindExecutorAttemptGate(ctx, executor)
+	ctx = context.WithValue(ctx, splitHTTP500Key{}, call.SplitHTTP500)
 	decodeValidate, err := decoderForCall(call)
 	if err != nil {
 		return outcome, err

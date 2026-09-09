@@ -18,9 +18,8 @@ import (
 
 const StageName = "report_translation"
 
-// The owner's endpoint expires long generations after four minutes. Return
-// that refusal to the complete-entry splitter instead of resending the same
-// oversized translation through the provider's ordinary retry loop.
+// Expiry returns to the complete-entry splitter. HTTP 500 may arrive before
+// this deadline and has its own explicit split policy on divisible windows.
 const attemptTimeout = 4 * time.Minute
 
 //go:embed prompt.md
@@ -302,6 +301,7 @@ func translationCall(
 	}
 	return llm.Call[[]report.DisplayTranslationEntry]{
 		SplitRejectedResponse: true,
+		SplitHTTP500:          len(window) > 1,
 		State:                 []byte(`{"contract":"repomap.report-display-translation.v9"}`),
 		Prompt: llm.Prompt{
 			System: strings.TrimSpace(translationPrompt), User: string(raw),
