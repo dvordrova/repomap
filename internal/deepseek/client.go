@@ -550,7 +550,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	choice := parsed.Choices[0]
 	completion.FinishReason = knownFinishReason(choice.FinishReason)
 	completion.finishReasonClass = closedFinishReason(choice.FinishReason)
-	content := strings.TrimSpace(choice.Message.Content)
+	content := choice.Message.Content
 	completion.Content = []byte(content)
 	if choice.FinishReason == "length" {
 		return completion, false, newResourceLimitError(ResourceLimitError{
@@ -563,7 +563,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 			FinishReason:    "length",
 		})
 	}
-	if content == "" {
+	if strings.TrimSpace(content) == "" {
 		details := make([]string, 0, 4)
 		if finishReason := knownFinishReason(choice.FinishReason); finishReason != "" {
 			details = append(details, "finish_reason="+finishReason)

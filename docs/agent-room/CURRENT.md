@@ -4400,8 +4400,12 @@ The owner's 2026-09-09 syntax rule permits balancing JSON brackets before the
 ordinary decoder: outside quoted strings, a closing bracket with no matching
 open bracket anywhere in the active stack becomes whitespace; missing closing
 brackets are appended at EOF. Whitespace prevents separate tokens from merging
-(`1}2` must not become `12`). Crossed nesting, unfinished strings and values,
-multiple roots and trailing prose are still refused. The same rule applies
+(`1}2` must not become `12`). An unfinished quoted string may receive its
+closing quote at EOF before those brackets, preserving its original contents,
+including trailing spaces and literal bracket characters. An unfinished escape,
+invalid string character, missing value, crossed nesting, multiple roots or
+trailing prose is still refused; interior quotes and commas are never inserted.
+The same rule applies
 inside the existing JSON fence and after the existing complete thinking block.
 The entire resulting object or array must pass JSON decoding and the owning
 stage's unchanged completeness, schema and closed-ref validation. This does not

@@ -100,7 +100,7 @@ func TestNormalizeJSONBalancesOnlyStructuralBrackets(t *testing.T) {
 		"missing mixed closers":     {`{"rows":[{"values":[1,true,null`, `{"rows":[{"values":[1,true,null]}]}`},
 		"extra and missing closers": {`{"a":1],"b":[2`, `{"a":1 ,"b":[2]}`},
 		"empty nested structures":   {`{"rows":[{`, `{"rows":[{}]}`},
-		"fenced":                    {"```json\n{\"value\":1\n```", "{\"value\":1}"},
+		"fenced":                    {"```json\n{\"value\":1\n```", "{\"value\":1\n}"},
 		"unclosed fence":            {"```json\n{\"value\":1", `{"value":1}`},
 		"thinking":                  {"<think>{\"draft\":1}</think>\n{\"value\":1", `{"value":1}`},
 		"literal brackets and escaped quotes": {
@@ -125,7 +125,7 @@ func TestNormalizeJSONBalancesOnlyStructuralBrackets(t *testing.T) {
 
 func TestNormalizeJSONBracketBalanceCannotInventValues(t *testing.T) {
 	for _, raw := range []string{
-		`{"a":`, `[tru`, `[1e`, `{"a":"unfinished`, `{"a":"unfinished\`,
+		`{"a":`, `[tru`, `[1e`, `{"a":"unfinished\`,
 		`{"a":[1}`, `{"a":[{"b":1]}`, `{"a":1,`,
 		`[1}2]`, `[t}rue]`, `[1}e2]`, `[n}ull]`,
 		`{"a":1 "b":2`, `{"a":1}]} done`, `{}]}[]`,
@@ -135,6 +135,38 @@ func TestNormalizeJSONBracketBalanceCannotInventValues(t *testing.T) {
 				t.Fatalf("accepted %q as %q", raw, normalized)
 			}
 		})
+	}
+}
+
+func TestNormalizeJSONClosesOnlyAnEOFString(t *testing.T) {
+	for _, raw := range []string{
+		`{"value":"text  `,
+		"<think>draft</think>\n{\"value\":\"text  ",
+		"```json\n{\"value\":\"text  ",
+	} {
+		value, err := DecodeJSON[struct{ Value string }](nil)([]byte(raw))
+		if err != nil || value.Value != "text  " {
+			t.Fatalf("lost unfinished string bytes in %q: %#v, %v", raw, value, err)
+		}
+	}
+	for _, raw := range []string{
+		`{"value":"`, `{"value":"brackets }]`, `{"value":"escaped \"quote`,
+		`{"value":"backslash \\`, `{"value":"unicode \u0041`,
+	} {
+		normalized, err := NormalizeJSON([]byte(raw))
+		if err != nil || string(normalized) != raw+`"}` {
+			t.Fatalf("EOF normalization of %q = %q, %v", raw, normalized, err)
+		}
+	}
+	for _, raw := range []string{
+		`{"value":"escape\`, `{"value":"unicode \u12`, `{"value":"bad \q`,
+		`{"key`, `{"value":"text "other":1}`, `{"value":"text" "other":1}`,
+		"{\"value\":\"text\n", "<think>draft</think>\n{\"value\":\"text\n",
+		"```json\n{\"value\":\"text\n```",
+	} {
+		if normalized, err := NormalizeJSON([]byte(raw)); err == nil {
+			t.Fatalf("guessed missing contents or interior punctuation in %q: %q", raw, normalized)
+		}
 	}
 }
 
@@ -160,42 +192,49 @@ func TestNormalizeJSONDoesNotRepairRefsSchemaOrValues(t *testing.T) {
 		}
 		return nil
 	})
-	for _, raw := range []string{`{"ref":"t999"}`, `{"ref":"t999"`, `{`} {
+	for _, raw := range []string{`{"ref":"t999"}`, `{"ref":"t999"`, `{"ref":"t999`, `{`} {
 		if _, err := decode([]byte(raw)); err == nil {
 			t.Fatalf("validator repaired unknown or missing ref in %q", raw)
 		}
 	}
 }
 
-func TestExecuteJSONBalancesBracketsWithoutChangingRawCache(t *testing.T) {
-	provider := baseTestProvider()
-	raw := []byte(`{"value":"ok"}]`)
-	provider.responses = [][]byte{raw}
-	call := baseTestCall("brackets", "complete value with an extra closer")
-	executor := Executor{RootDir: t.TempDir(), Enabled: true}
-	for i := range 2 {
-		out, err := ExecuteJSON(t.Context(), executor, provider, call)
-		if err != nil || out.Value.Value != "ok" || out.Cached != (i == 1) {
-			t.Fatalf("run %d: %#v, %v", i, out, err)
-		}
-		if !bytes.Equal(out.Response, raw) {
-			t.Fatalf("run %d changed the original response: %q", i, out.Response)
-		}
-	}
-	if provider.completeCalls != 1 {
-		t.Fatalf("syntax normalization needed %d provider calls", provider.completeCalls)
-	}
-	// A valid bracket shape cannot supply a missing required value.
-	provider.responses = [][]byte{[]byte(`{`)}
-	call.Prompt.User = "missing required value"
-	if _, err := ExecuteJSON(t.Context(), executor, provider, call); err == nil {
-		t.Fatal("accepted missing value after closing its root")
-	}
-	// A provider-reported output cutoff is not a successful completion.
-	provider.responses = [][]byte{[]byte(`{"value":"ok"`)}
-	provider.finishReasons = []FinishReason{FinishLength}
-	call.Prompt.User = "provider reported truncation"
-	if _, err := ExecuteJSON(t.Context(), executor, provider, call); err == nil {
-		t.Fatal("bracket balancing overrode the provider's output limit")
+func TestExecuteJSONBalancesDelimitersWithoutChangingRawCache(t *testing.T) {
+	for name, response := range map[string]string{
+		"brackets": `{"value":"ok"}]`,
+		"quote":    `{"value":"ok`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			provider := baseTestProvider()
+			raw := []byte(response)
+			provider.responses = [][]byte{raw}
+			call := baseTestCall("brackets", "complete value with an extra closer")
+			executor := Executor{RootDir: t.TempDir(), Enabled: true}
+			for i := range 2 {
+				out, err := ExecuteJSON(t.Context(), executor, provider, call)
+				if err != nil || out.Value.Value != "ok" || out.Cached != (i == 1) {
+					t.Fatalf("run %d: %#v, %v", i, out, err)
+				}
+				if !bytes.Equal(out.Response, raw) {
+					t.Fatalf("run %d changed the original response: %q", i, out.Response)
+				}
+			}
+			if provider.completeCalls != 1 {
+				t.Fatalf("syntax normalization needed %d provider calls", provider.completeCalls)
+			}
+			// A valid bracket shape cannot supply a missing required value.
+			provider.responses = [][]byte{[]byte(`{`)}
+			call.Prompt.User = "missing required value"
+			if _, err := ExecuteJSON(t.Context(), executor, provider, call); err == nil {
+				t.Fatal("accepted missing value after closing its root")
+			}
+			// A provider-reported output cutoff is not a successful completion.
+			provider.responses = [][]byte{[]byte(`{"value":"ok`)}
+			provider.finishReasons = []FinishReason{FinishLength}
+			call.Prompt.User = "provider reported truncation"
+			if _, err := ExecuteJSON(t.Context(), executor, provider, call); err == nil {
+				t.Fatal("bracket balancing overrode the provider's output limit")
+			}
+		})
 	}
 }

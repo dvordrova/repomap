@@ -252,6 +252,32 @@ func TestLLMProviderStateIsStableAndCredentialFree(t *testing.T) {
 	}
 }
 
+func TestLLMProviderPreservesEOFStringBytesThroughDecodeAndCache(t *testing.T) {
+	const content = `{"value":"text  `
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = w.Write(llmProviderResponse("stop", content, nil))
+	}))
+	defer server.Close()
+	client := llmProviderTestClient(server)
+	executor := llm.Executor{RootDir: t.TempDir(), Enabled: true}
+	call := llm.Call[map[string]string]{
+		State:  []byte("eof-string"),
+		Prompt: llm.Prompt{System: "Return one JSON object.", User: "evidence"},
+		Limits: llmProviderTestLimits(400),
+	}
+	for i := range 2 {
+		out, err := llm.ExecuteJSON(t.Context(), executor, client, call)
+		if err != nil || out.Value["value"] != "text  " || string(out.Response) != content || out.Cached != (i == 1) {
+			t.Fatalf("run %d: provider/decoder/cache changed string bytes: %+v, %v", i, out, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("cache reuse needed %d provider calls", calls)
+	}
+}
+
 func TestLLMProviderCompleteAuthNoneMetricsAndHeartbeat(t *testing.T) {
 	response := llmProviderResponse(
 		"stop",
@@ -299,7 +325,7 @@ func TestLLMProviderCompleteAuthNoneMetricsAndHeartbeat(t *testing.T) {
 	if gotAuth != "" || !bytes.Equal(gotBody, exact) {
 		t.Fatalf("auth/body = %q / %s", gotAuth, gotBody)
 	}
-	if string(completion.Response) != "```json\n{\"ok\":true}\n```" ||
+	if string(completion.Response) != "  ```json\n{\"ok\":true}\n```  " ||
 		completion.FinishReason != llm.FinishStop || completion.ChoiceCount != 1 ||
 		completion.Metrics.Attempts != 1 ||
 		completion.Metrics.ProviderResponseBytes != len(response) ||

@@ -7,16 +7,18 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 )
 
 // NormalizeJSON accepts one complete object or array, optionally surrounded
 // by whitespace, one Markdown JSON fence, or non-structural leading prose.
 // One complete leading <think>...</think> block is separate from the answer.
 // It may remove unmatched closing brackets and append missing closing brackets
-// at EOF, outside strings. Values, fields, refs and schemas remain unchanged;
+// at EOF, outside strings, and close an unfinished string at EOF without
+// completing escapes. Values, fields, refs and schemas remain unchanged;
 // crossed nesting, multiple values and trailing prose are still refused.
 func NormalizeJSON(raw []byte) ([]byte, error) {
-	trimmed := bytes.TrimSpace(raw)
+	trimmed := bytes.TrimLeftFunc(raw, unicode.IsSpace)
 	if bytes.HasPrefix(trimmed, []byte("<think>")) {
 		end := bytes.Index(trimmed, []byte("</think>"))
 		if end < 0 {
@@ -25,7 +27,7 @@ func NormalizeJSON(raw []byte) ([]byte, error) {
 		if bytes.Contains(trimmed[len("<think>"):end], []byte("<think>")) {
 			return nil, errors.New("llm: response thinking blocks are nested")
 		}
-		trimmed = bytes.TrimSpace(trimmed[end+len("</think>"):])
+		trimmed = bytes.TrimLeftFunc(trimmed[end+len("</think>"):], unicode.IsSpace)
 		if bytes.HasPrefix(trimmed, []byte("<think>")) {
 			return nil, errors.New("llm: response contains multiple thinking blocks")
 		}
@@ -34,7 +36,7 @@ func NormalizeJSON(raw []byte) ([]byte, error) {
 		return nil, errors.New("llm: JSON response is empty")
 	}
 	if validJSONRoot(trimmed) {
-		return cloneBytes(trimmed), nil
+		return cloneBytes(bytes.TrimSpace(trimmed)), nil
 	}
 
 	start := bytes.IndexAny(trimmed, "{[")
@@ -81,7 +83,7 @@ func normalizeFencedJSON(raw []byte) ([]byte, error) {
 			return nil, errors.New("llm: fenced response contains trailing or ambiguous data")
 		}
 	}
-	if normalized, ok := balanceJSONRoot(bytes.TrimSpace(content)); ok {
+	if normalized, ok := balanceJSONRoot(bytes.TrimLeftFunc(content, unicode.IsSpace)); ok {
 		return normalized, nil
 	}
 	return nil, errors.New("llm: fenced response does not contain one complete JSON object or array")
@@ -91,7 +93,7 @@ func normalizeFencedJSON(raw []byte) ([]byte, error) {
 // an opener deeper in the stack is crossed nesting, not an extra delimiter.
 func balanceJSONRoot(raw []byte) ([]byte, bool) {
 	if validJSONRoot(raw) {
-		return cloneBytes(raw), true
+		return cloneBytes(bytes.TrimSpace(raw)), true
 	}
 	if len(raw) == 0 || (raw[0] != '{' && raw[0] != '[') {
 		return nil, false
@@ -142,7 +144,12 @@ func balanceJSONRoot(raw []byte) ([]byte, bool) {
 		out = append(out, ch)
 	}
 	if quoted {
-		return nil, false
+		if escaped {
+			return nil, false
+		}
+		// Complete only the EOF delimiter. Never choose a quote position
+		// inside the text or reinterpret bracket-looking string contents.
+		out = append(out, '"')
 	}
 	for i := len(stack) - 1; i >= 0; i-- {
 		closer := byte('}')
