@@ -3229,6 +3229,26 @@ README/documentation and orientation corrections are recorded in their owning
 sections below. Optional terms follow accepted output scopes in every changed
 family, including live, cached and replayed responses.
 
+Ordinary online acceptance used the real `python-tutorial-game` checkout on
+2026-09-09. Owner `20260909-154859-python-tutorial-game-cf229063d519` published
+both targets despite an HTTP 200 answer response with no content: its 12 answers
+remained unavailable and that response was not cached. The next owner
+`20260909-155409-python-tutorial-game-2a335e2d360f` reused the accepted analysis,
+obtained eight answered and four partial answers, and translated the resulting
+374 display texts in eight requests. Only that previously failed answer and its
+dependent glossary/translation work made new calls. Owner
+`20260909-155840-python-tutorial-game-5c85f175c915` then completed in 6.18 seconds
+with zero live requests and byte-identical saved translations. Target-local
+indexes, reduced documentation, dependency catalogues and GroupsIndexes, the
+common graph/atlas/portfolios/manifest and sole HTML all passed artifact checks.
+Cache clear removed an isolated copy of 205 cache records while preserving the
+original acceptance cache. Full `make test`, `make vet`, build and focused race
+checks passed. Independent regressions cover partially rejected responses,
+multiple simultaneous resource refusals, NoCache, replay and refused merge
+originals. These checks establish failure isolation and reuse, not universal
+model answer quality. Receipts are `work/validation-final-*-receipt.json` and
+`work/validation-final-cache-clear.json` in the external project work directory.
+
 Steps 1 and 2 are in. The tables, in order: directories by depth; files by
 call-graph round (a file may move to a sibling box or start one, a box of
 one file is cancelled); boundaries from facts and from SDK calls with
