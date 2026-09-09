@@ -608,6 +608,10 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   exactly that format and runs the same reader. Above two thousand files the directory and
   file rows carry an `open` cell and what the model closes keeps its
   fallback line.
+  The directories/files owner prompts follow the complete request `fill`
+  catalogue and demonstrate both modes. If requested, `open` is a mandatory
+  `yes`/`no` string; prompts must not forbid it by prescribing only the base
+  two cells. A missing choice still refuses only its own row.
 - Type descriptions use the existing symbol stage and symbol knowledge, with
   the active `lines/prompts/types.md` prompt embedded by `lines/tables.go`.
   Atlas graph v9 and saved reading input v10 retain a type's declarations

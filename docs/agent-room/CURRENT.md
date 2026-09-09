@@ -3310,6 +3310,21 @@ then by callers) to symbol places, the model gives each a line and a yes or
 no as a key symbol, the code keeps at most five keys per file by rank and a
 box shows three. Without the model the keys are the code's ranking.
 
+Directories v3 and files v4 use the complete request-local `fill` catalogue
+as their response contract. Both owner prompts show the base and optional-open
+modes; an advertised `open` requires the existing `yes`/`no` choice. The earlier
+system instructions incorrectly required only two base cells and forbade other
+fields even when the request required `open`. The ordinary Airflow run exposed
+this contradiction in all 18 directory windows: 17 refused missing `open`, one
+returned invalid JSON, and all 2,706 rows remained without model answers.
+The same contradiction affected the file prompt. The run was canceled with its
+original input, cache and journals preserved, before spending further calls on
+that invalid contract; no HTML was published. Both prompt examples now pass the
+ordinary table preparation and validation in each mode. Missing `open` remains
+a refused row while a complete neighbouring row survives. Full product tests,
+vet and build pass; saved-input online reading is the focused check for this
+repair and does not replace full Airflow publication acceptance.
+
 Measured on 2026-09-04, repomap on itself, seven targets: 30 windows plus
 33 symbol windows for 1,613 candidates (55 s), of which cmd/repomap's 47
 directories, 199 files, 10 boundaries, 7 zones and 106 arrows; the three fixture joints on `/api/levels` confirmed and the

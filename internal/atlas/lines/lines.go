@@ -21,8 +21,8 @@ const (
 	StageDirectories = "atlas_directories"
 	StageFiles       = "atlas_files"
 
-	directoriesContract = "repomap.atlas.directories.v2"
-	filesContract       = "repomap.atlas.files.v3"
+	directoriesContract = "repomap.atlas.directories.v3"
+	filesContract       = "repomap.atlas.files.v4"
 
 	// WindowRows is the row budget of the dependent table definitions.
 	WindowRows = 40

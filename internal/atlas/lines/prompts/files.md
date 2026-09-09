@@ -9,7 +9,7 @@ its declarations (name, kind, signature, and the first sentence of the
 author's docstring when there is one), and `box_options`: the boxes on the
 map this file may belong to.
 
-Fill two cells for every row and nothing else:
+Fill every cell listed in the request's `fill` for every row. The base cells are:
 
 - `line`: one sentence, at most 160 characters, saying what this file does.
   Read the declarations and their docstrings; use the directory line and caller
@@ -23,8 +23,16 @@ Fill two cells for every row and nothing else:
   responsibility that its directory's box does not cover and no listed box
   does either.
 
-Return strict JSON with exactly this shape, one object per row, the same
-`key` values as the request, each exactly once:
+When `fill` also lists `open`, that cell is mandatory: return `yes` when an
+architecture reader should look inside this file, or `no` for vendored,
+generated, test or trivial code. Use these string choices, not booleans. Omit
+`open` only when it is absent from `fill`.
+
+Return strict JSON with a `rows` array, one object per row, the same `key`
+values as the request, each exactly once. Each object contains `key` and all
+the cells listed in `fill`.
+
+When `fill` lists only `line` and `box`:
 
 ```json
 {
@@ -35,13 +43,24 @@ Return strict JSON with exactly this shape, one object per row, the same
 }
 ```
 
+When `fill` also lists `open`:
+
+```json
+{
+  "rows": [
+    {"key": "r1", "line": "Reads the run's timing and prints where the time went.", "box": "here", "open": "yes"},
+    {"key": "r2", "line": "Renders the map's boxes and arrows into SVG.", "box": "new: Map drawing", "open": "yes"}
+  ]
+}
+```
+
 Rules:
 
 - Each row is independent. Use only that row and the explicit shared context;
   neighbouring rows are batching neighbours, not evidence about this file.
 
 - Every key from the request appears exactly once. Do not add, drop, rename
-  or reorder keys, and do not add other fields.
+  or reorder keys, omit requested cells, or add unrequested fields.
 - Describe this file using its own declarations and documentation. Directory
   and caller context explain its surroundings; do not copy their responsibilities
   onto the file. A file containing one constant or data object should be described
