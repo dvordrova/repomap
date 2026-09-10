@@ -2,7 +2,8 @@
 
 An extractor returns nodes and labeled links. It does not assign architecture
 roles, create report sections, or implement another LLM pipeline. Built-in
-sqlc and external commands use the same contract and normalization.
+sqlc, source database observations and external commands use the same contract
+and normalization.
 
 Put `.repomap.json` at the analyzed repository root:
 
@@ -47,7 +48,7 @@ That is the public data model:
 
 | Object | Required | Optional |
 |---|---|---|
-| node | `id`, plus `path` or `name` | `line`, the other of `path` / `name` |
+| node | `id`, plus `path` or `name` | `line`, the other of `path` / `name`, source `data` |
 | link | `from`, `to`, `label` | `path`, `line` for more precise evidence |
 
 Node IDs belong to this one extractor. Links use those IDs. Paths are
@@ -61,6 +62,17 @@ producer's name, and lists current corpus files beneath a directory. An
 output directory can be absent. No model classifications, confidence
 numbers, symbol IDs, target IDs, file lists or special generator types are
 required from the plugin.
+
+An optional `data` object describes source database evidence. It requires
+`kind` (`table` or `query`), `origin` (`ddl`, `orm` or `query`), a source `scope`
+and `name`. A query also carries its original `sql` and `statement` kind.
+Optional fields include `schema`, `connection`, `expression`, `partial`,
+mentioned `tables`, and `columns`. Each column has `name` and an `anchor`
+(`path`, `line`, optional `column`), with optional written `type`, `primary_key`
+and `foreign_key`. An optional `owner` source anchor associates a declaration
+with its native code owner. Unknown connection identity is left absent.
+Scopes distinguish independently declared schemas; a query mention does not
+prove schema ownership, and a join does not establish a foreign key.
 
 Only protocol version 1 is accepted. Unknown fields, duplicate node IDs,
 missing link endpoints, invalid paths and command failures produce explicit
@@ -77,6 +89,13 @@ version 2, returns one node per config block and referenced path, and labels
 the declared schema/query inputs and outputs. The same response decoder and
 fact normalizer handle it and command plugins. It does not run sqlc, apply
 migrations, or claim generated files are current.
+
+The built-in database extractor reads source SQL and supported SQLAlchemy model
+declarations, reusing sqlc's configured source scopes. It preserves table/column
+declarations, SQL text and table mentions. Interpolated or concatenated SQL keeps
+its original expression and partial status. It never connects to a database or
+establishes that a statement executed. These source observations feed the
+ordinary Data catalogue and question evidence through the same facts graph.
 
 `examples/extractors/generator.py` is a small standalone example using only
 Python's standard library. It reads a company-specific `codegen.json`:
@@ -101,8 +120,7 @@ restored locally, including a configuration anchor for an output that was not
 collected. Producer observations and corpus membership keep their own edge
 kinds; neither becomes a compiler-proved call.
 
-This does not create language targets, execute a generator, inspect migration
-contents, or automatically build a change recipe. The regular report layout
-is unchanged. Saved places and reading input now use format v2; old analysis
-inputs must be regenerated. The external plugin protocol remains v1 with the
-same two small objects above.
+This does not create language targets, execute a generator, apply migrations,
+or automatically build a change recipe. Saved places use graph v11 and reading
+input v12; incompatible analysis inputs must be regenerated. The external plugin
+protocol remains v1 with the nodes and links above.
