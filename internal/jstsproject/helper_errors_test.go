@@ -60,9 +60,7 @@ func TestHelperSourceFailureDoesNotInferMissingCompilerFromPath(t *testing.T) {
 }
 
 func TestHelperCompilerFailureKeepsTypedCauseDespiteDiagnosticClipping(t *testing.T) {
-	if _, err := exec.LookPath("node"); err != nil {
-		t.Skip("Node is required to execute the embedded helper")
-	}
+	isolatedNodeEnvironment(t)
 	for _, kind := range []string{"missing", "load_error", "long_load_error"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()

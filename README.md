@@ -248,9 +248,11 @@ adapter requires the runtime's exact standard-library module catalog and does
 not guess when that authority is unavailable.
 
 A selected JavaScript/TypeScript target additionally requires Node.js on
-`PATH` and an owner-prepared, repository-local TypeScript compiler in
-`node_modules`. Prepare dependencies with the repository's normal package
-manager before running repomap; repomap never installs packages.
+`PATH` and an available TypeScript compiler. A usable project compiler in
+`node_modules` takes priority; otherwise repomap uses an existing compiler from
+the selected Node installation or `tsc` on `PATH`, including when the project
+does not declare TypeScript. Prepare project dependencies with the repository's
+normal package manager for import resolution; repomap never installs packages.
 
 ```bash
 make build

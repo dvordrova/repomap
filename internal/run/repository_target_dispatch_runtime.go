@@ -464,7 +464,7 @@ func materializeSelectedJSTSProjects(
 		if err != nil {
 			if jsTSOwnerPreparationError(err) {
 				return nil, fmt.Errorf(
-					"materialize selected JavaScript/TypeScript package project %s (manifest %s): %w; the owner must prepare the manifest-declared TypeScript compiler in repository-local node_modules with the project's normal install command before running repomap; repomap never installs packages",
+					"materialize selected JavaScript/TypeScript package project %s (manifest %s): %w; make a TypeScript compiler available in project node_modules, the selected Node installation, or through tsc on PATH; repomap never installs packages",
 					jstsTarget.Selector, jstsTarget.ManifestPath, err,
 				)
 			}

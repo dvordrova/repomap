@@ -27,7 +27,7 @@ func (builder *pageBuilder) fillSectionOperations(section *pageSection) {
 				continue
 			}
 			row := pageGroupOperation{
-				Name: operation.Name, Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
+				Name: builder.operationDisplayName(operation), Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
 				Href:   "#" + operationNodeID(section.ID, operation.ID),
 				Anchor: builder.links.anchor(operation.Location.Path, operation.Location.Line, operation.Location.Column),
 			}

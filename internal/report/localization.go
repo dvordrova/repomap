@@ -366,8 +366,16 @@ func displayProtectedNames(data *ReportData) []string {
 func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) error {
 	view := page.view
 	componentKinds := make(map[string]string, len(view.Sections))
+	operationLinks := make(map[string]bool)
 	for _, section := range view.Sections {
 		componentKinds[section.programTargetID] = section.Kind
+		if section.Map != nil {
+			for _, node := range section.Map.Nodes {
+				if node.Activation != "" {
+					operationLinks["#"+node.ID] = true
+				}
+			}
+		}
 	}
 	names := displayProtectedNames(data)
 	exactNames := make(map[string]bool, len(names))
@@ -443,7 +451,9 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 	}
 	connections := func(values []pageConnection) {
 		for i := range values {
-			add("label", &values[i].Title)
+			if !operationLinks[values[i].Href] {
+				add("label", &values[i].Title)
+			}
 			values[i].LabelRef = add("label", &values[i].Label)
 			values[i].SummaryRef = add("summary", &values[i].Summary)
 		}
@@ -499,11 +509,10 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 		}
 	}
 	for _, section := range view.Sections {
+		// Action names are stable English labels or exact command/path syntax.
+		// Their descriptions remain prose, regardless of the name's origin.
 		for _, operations := range [][]pageGroupOperation{section.Requests, section.Activities} {
 			for i := range operations {
-				if operations[i].Source != "fact" {
-					add("label", &operations[i].Name)
-				}
 				operations[i].SummaryRef = add("summary", &operations[i].Summary)
 			}
 		}
@@ -521,9 +530,6 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 					}
 				}
 				for j := range group.Operations {
-					if group.Operations[j].Source != "fact" {
-						add("label", &group.Operations[j].Name)
-					}
 					// Source identifies the route name's origin. Its purpose is
 					// still display prose, including on an extracted boundary.
 					group.Operations[j].SummaryRef = add("summary", &group.Operations[j].Summary)
@@ -555,7 +561,7 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 			// it is not a new sentence to translate for an incoming stub.
 			kind := componentKinds[node.Component]
 			composedComponentName := node.Branch == "component" && kind != "" && strings.HasSuffix(node.FullTitle, " ("+kind+")")
-			if !composedComponentName && (node.Activation == "" || node.SourceKind != "fact") {
+			if !composedComponentName && node.Activation == "" && !operationLinks[node.Href] {
 				add("label", &node.FullTitle)
 			}
 			node.SummaryRef = add("summary", &node.Summary)

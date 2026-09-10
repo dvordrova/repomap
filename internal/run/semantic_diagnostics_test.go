@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,6 +19,25 @@ import (
 )
 
 func TestRepositoryTargetDispatchPreflightFailureFlushesFirstLayerSemanticJournal(t *testing.T) {
+	// Keep the real Node helper available, with neither a local nor an
+	// active-environment TypeScript package. A symlink would retain Node's
+	// installed prefix and could expose the machine's global compiler.
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node is required for the real missing-compiler preflight")
+	}
+	node, err = filepath.EvalSymlinks(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(node, filepath.Join(bin, filepath.Base(node))); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
 	repositoryRoot := t.TempDir()
 	paths := []string{"README.md", "package.json", "src/main.ts"}
 	contents := map[string]string{
@@ -81,6 +101,9 @@ func TestRepositoryTargetDispatchPreflightFailureFlushesFirstLayerSemanticJourna
 	})
 	if err == nil || !strings.Contains(err.Error(), "materialize selected JavaScript/TypeScript package project") {
 		t.Fatalf("selected JSTS preflight error = %v", err)
+	}
+	if !strings.Contains(err.Error(), "no usable local or active-environment TypeScript compiler is prepared") {
+		t.Fatalf("preflight did not fail at the real missing-compiler boundary: %v", err)
 	}
 	if strings.Contains(err.Error(), "semantic diagnostics: inspect metadata") ||
 		strings.Contains(err.Error(), "lstat") || !strings.Contains(err.Error(), "package.json") {

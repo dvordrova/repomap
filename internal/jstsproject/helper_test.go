@@ -1684,9 +1684,7 @@ func TestPreparedCompilerLoadsThroughPackageExportsBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(manifestPath, encoded, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeTestFile(t, root, "node_modules/typescript/package.json", string(encoded))
 
 	tracked := []string{"package.json", "src/main.ts", "tsconfig.json"}
 	repository, err := corpus.New(context.Background(), root, gitfiles.Listing{Paths: tracked, RegularPaths: tracked})
@@ -2265,9 +2263,10 @@ func TestNestedProjectUsesPreparedCompilerOnlyFromAnalyzedRepository(t *testing.
 		t.Fatalf("workspace-root compiler project = %#v; files = %d", result.Project, len(result.Files))
 	}
 
+	isolatedNodeEnvironment(t)
 	// The same prepared compiler is deliberately outside this second analyzed
 	// repository. Node package lookup can see it through the parent directory,
-	// but the helper must reject that authority.
+	// but it is neither a local nor an active-environment compiler.
 	nestedRepositoryRoot := filepath.Join(repositoryRoot, "outside-check")
 	files := map[string]string{
 		"package.json":        `{"name":"outside-check","workspaces":["front"],"scripts":{"dev":"bun run --cwd front src/main.ts"}}`,
@@ -2936,6 +2935,11 @@ func writeTestFile(t *testing.T, root, filePath, content string) {
 	t.Helper()
 	absolute := filepath.Join(root, filepath.FromSlash(filePath))
 	if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Prepared compiler fixtures may be hard-linked to the installed package.
+	// Replacing a test file must not modify that original installation.
+	if err := os.Remove(absolute); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(absolute, []byte(content), 0o600); err != nil {

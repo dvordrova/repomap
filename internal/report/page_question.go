@@ -436,7 +436,7 @@ func (builder *pageBuilder) questionStepMapLinks(stop atlas.QuestionStop) []page
 		for _, op := range index.Operations {
 			if stop.SubjectID != "" && (op.SubjectID == stop.SubjectID || op.ID == stop.SubjectID) {
 				id := operationNodeID(section.ID, op.ID)
-				links = append(links, pageQuestionMapLink{Label: section.ShortLabel + " / " + op.Name, Href: "#" + id, NodeID: id})
+				links = append(links, pageQuestionMapLink{Label: section.ShortLabel + " / " + builder.operationDisplayName(op), Href: "#" + id, NodeID: id})
 				foundOperation = true
 			}
 		}

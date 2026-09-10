@@ -1,14 +1,134 @@
 package report
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	stdhtml "html"
+	"html/template"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
+
+func TestOperationLabelsKeepEnglishNamesAndExactDeclarationAliases(t *testing.T) {
+	const purpose = "Handles the user's input."
+	const translated = "Обрабатывает ввод пользователя."
+	cases := []struct{ name, native, alias, kind, source, want string }{
+		{"키누름", "키누름", "Handle key press", "interaction", "model", "Handle key press (키누름)"},
+		{"Submit selected order", "제출", "Order submission", "interaction", "model", "Submit selected order"},
+		{"animate", "animate", "", "interaction", "model", "animate"},
+		{"onSlownessChange", "onSlownessChange", "", "interaction", "model", "onSlownessChange"},
+		{"Open", "Open", "", "interaction", "model", "Open"},
+		{"앱 --start", "앱 --start", "Start application", "command", "model", "앱 --start"},
+		{"POST /게임", "POST /게임", "Start game", "request", "fact", "POST /게임"},
+	}
+	for _, language := range []DisplayLanguage{English, Russian} {
+		t.Run(string(language), func(t *testing.T) {
+			section := &pageSection{ID: "app", ShortLabel: "app", programTargetID: "program"}
+			other := &pageSection{ID: "other", ShortLabel: "other", programTargetID: "other"}
+			index := groupindex.Index{Target: programindex.Target{ID: "program"}}
+			peer := groupindex.Index{Target: programindex.Target{ID: "other"}, Groups: []groupindex.Group{{ID: "peer"}}}
+			group := groupindex.Group{ID: "actions", Lane: groupindex.LaneTriggers}
+			builder := pageBuilder{data: &ReportData{}, subjects: map[string]subjectRef{}, byProgram: map[string]*pageSection{"program": section, "other": other}}
+			for i, value := range cases {
+				id := fmt.Sprintf("subject-%d", i)
+				location := programindex.Location{Path: "app.py", Line: 10 + i, Column: 1}
+				subject := groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: value.native, Kind: programindex.ObjectFunction, Location: &location}, Interpretation: &groupindex.Interpretation{Alias: value.alias}}
+				builder.subjects[id] = subjectRef{subject: subject, programTargetID: "program"}
+				index.Subjects = append(index.Subjects, subject)
+				group.MemberSubjectIDs = append(group.MemberSubjectIDs, id)
+				index.Operations = append(index.Operations, groupindex.Operation{ID: id, SubjectID: id, GroupID: group.ID, Name: value.name, Kind: value.kind, Source: value.source, Summary: purpose, Location: location})
+				peer.Connections = append(peer.Connections, groupindex.Connection{ID: id, SourceKind: "integration", From: groupindex.Endpoint{TargetID: "other", GroupID: "peer"}, To: groupindex.Endpoint{TargetID: "program", GroupID: group.ID}, ToLocation: &location})
+			}
+			index.Groups = []groupindex.Group{group}
+			builder.indexes = []groupindex.Index{index, peer}
+			section.Map = builder.buildOperationMap(section, &index)
+			other.Map = builder.buildOperationMap(other, &peer)
+			builder.fillSectionOperations(section)
+			section.Triggers = []pageGroup{builder.groupCard(section.ID, index, group)}
+			other.Core = []pageGroup{builder.groupCard(other.ID, peer, groupindex.Group{ID: "peer"})}
+			question := &pageQuestion{ID: "q", Answers: []pageAnswerPart{{MapLinks: builder.questionStepMapLinks(atlas.QuestionStop{SubjectID: "subject-0"})}}}
+			page := &PreparedPage{view: &pageView{Sections: []*pageSection{other, section}, Questions: []*pageQuestion{question}}, catalog: DisplayTextCatalog{Version: DisplayTextVersion}}
+			if err := page.collectDisplayTexts(&ReportData{}, false); err != nil {
+				t.Fatal(err)
+			}
+			page.catalog.SHA256 = displayCatalogDigest(page.catalog.Entries)
+			translations := DisplayTranslations{Version: DisplayTextVersion, Language: language, CatalogSHA256: page.catalog.SHA256}
+			for _, entry := range page.catalog.Entries {
+				if entry.Role != "summary" || entry.Text != purpose {
+					t.Fatalf("operation name or source entered translation: %+v", entry)
+				}
+				translations.Entries = append(translations.Entries, DisplayTranslationEntry{Ref: entry.Ref, Text: translated})
+			}
+			if len(translations.Entries) != 1 {
+				t.Fatalf("operation descriptions were not collected once: %+v", page.catalog)
+			}
+			if err := page.applyDisplay(RenderOptions{Language: language, Translations: &translations}); err != nil {
+				t.Fatal(err)
+			}
+			wantPurpose := purpose
+			if language == Russian {
+				wantPurpose = translated
+			}
+			for i, value := range cases {
+				operation := section.Triggers[0].Operations[i]
+				if operation.Name != value.want || operation.Summary != wantPurpose || other.Core[0].Connections[i].Title != value.want {
+					t.Fatalf("card or cross-target action changed: %+v / %+v", operation, other.Core[0].Connections[i])
+				}
+				id := operationNodeID(section.ID, index.Operations[i].ID)
+				found := false
+				for _, node := range section.Map.Nodes {
+					if node.ID == id {
+						found = node.FullTitle == value.want && node.CanonicalTitle == value.want && node.Summary == wantPurpose
+					}
+				}
+				if !found || index.Operations[i].Name != value.name || index.Subjects[i].Object.Name != value.native {
+					t.Fatalf("map name or native authority changed for %q", value.name)
+				}
+				remoteFound := false
+				for _, node := range other.Map.Nodes {
+					if node.Href == "#"+id {
+						remoteFound = node.Remote && node.Activation == "" && node.FullTitle == "app / "+value.want &&
+							node.CanonicalTitle == "app / "+value.want && node.Summary == wantPurpose
+					}
+				}
+				if !remoteFound {
+					t.Fatalf("remote map peer lost its exact operation alias or description: %q", value.want)
+				}
+			}
+			if got := question.Answers[0].MapLinks[0].Label; got != "app / "+cases[0].want {
+				t.Fatalf("question link lost the accepted alias: %q", got)
+			}
+			parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(language, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+			if err != nil {
+				t.Fatal(err)
+			}
+			section.InputsCount = len(cases)
+			section.InboundCount = len(section.Requests)
+			for _, templateName := range []string{"input-catalog", "map.html"} {
+				var out bytes.Buffer
+				var view any = section
+				if templateName == "map.html" {
+					view = section.Map
+				}
+				if err := parsed.ExecuteTemplate(&out, templateName, view); err != nil {
+					t.Fatal(err)
+				}
+				html := stdhtml.UnescapeString(out.String())
+				for _, value := range cases {
+					if !strings.Contains(html, value.want) || !strings.Contains(html, wantPurpose) {
+						t.Fatalf("%s lost an action name or description: %q", templateName, value.want)
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestDeclarationAliasKeepsNativeCodeAndOneGlossaryDefinition(t *testing.T) {
 	const native = "개별종목_시세_추이"

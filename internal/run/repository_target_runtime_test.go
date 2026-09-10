@@ -751,7 +751,7 @@ func TestJSTSMaterializationProgressAndErrorsNameExactManifest(t *testing.T) {
 				!strings.Contains(err.Error(), "manifest "+scout.ManifestPath) {
 				t.Fatalf("materialization error = %v", err)
 			}
-			if strings.Contains(err.Error(), "owner must prepare") != test.wantGuidance {
+			if strings.Contains(err.Error(), "make a TypeScript compiler available in project node_modules, the selected Node installation, or through tsc on PATH; repomap never installs packages") != test.wantGuidance {
 				t.Fatalf("owner guidance mismatch: %v", err)
 			}
 			output := console.String()

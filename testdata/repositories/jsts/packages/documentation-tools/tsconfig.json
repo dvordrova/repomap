@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["../local-store/src/*.ts"],
+  "compilerOptions": { "allowJs": false }
+}

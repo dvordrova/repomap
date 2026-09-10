@@ -10,6 +10,24 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
+// Reuse a declaration's accepted alias only when the interaction repeats its
+// native name. A distinct action label or command/path has its own meaning.
+func (builder *pageBuilder) operationDisplayName(operation groupindex.Operation) string {
+	if operation.Source != "model" || operation.Kind != "interaction" {
+		return operation.Name
+	}
+	ref, ok := builder.subjects[operation.SubjectID]
+	if !ok || ref.subject.Object == nil || ref.subject.Interpretation == nil ||
+		operation.Name != ref.subject.Object.Name {
+		return operation.Name
+	}
+	alias := ref.subject.Interpretation.Alias
+	if alias == "" || alias == operation.Name {
+		return operation.Name
+	}
+	return alias + " (" + operation.Name + ")"
+}
+
 // Operations are interpretations on existing subjects. Paths use native call
 // relations only; a box's imports never become the operation's execution path.
 func (builder *pageBuilder) buildOperationMap(section *pageSection, index *groupindex.Index) *pageMap {
@@ -129,7 +147,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		for _, peer := range otherIndex.Operations {
 			if destination.ToLocation != nil && operationLocationKey(peer.Location) == operationLocationKey(*destination.ToLocation) {
 				node.Href = "#" + operationNodeID(otherSection.ID, peer.ID)
-				node.FullTitle = otherSection.ShortLabel + " / " + peer.Name
+				node.FullTitle = otherSection.ShortLabel + " / " + builder.operationDisplayName(peer)
 				node.Summary = peer.Summary
 				break
 			}
@@ -207,8 +225,9 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		if runes := []rune(subtitle); len(runes) > 28 {
 			subtitle = string(runes[:27]) + "…"
 		}
+		name := builder.operationDisplayName(operation)
 		result.Nodes = append(result.Nodes, pageMapNode{
-			ID: id, Href: source.Href, Title: mapTitle(operation.Name), FullTitle: operation.Name,
+			ID: id, Href: source.Href, Title: mapTitle(name), FullTitle: name,
 			Summary: operation.Summary, Activation: operation.Kind, Source: source, SourceKind: operation.Source,
 			OperationGroup: groups[operation.GroupID].Title,
 			CallPaths:      builder.operationCallPaths(operation.SubjectID, firstInGroup, parents),

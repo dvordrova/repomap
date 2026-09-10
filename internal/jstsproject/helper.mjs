@@ -1,11 +1,11 @@
 import path from "node:path"
 import process from "node:process"
 import { createRequire } from "node:module"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 17
+const CONTRACT_VERSION = 18
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -115,7 +115,9 @@ for (const candidate of request.compiler_packages) {
   }
   requestedCompilerPackages.push({ packageName, resolutionBase, key: candidateKey })
 }
-if (requestedCompilerPackages.length === 0) fail("no manifest-declared TypeScript compiler package candidate")
+if (requestedCompilerPackages.length === 0) {
+  requestedCompilerPackages.push({ packageName: "typescript", resolutionBase: "project" })
+}
 
 const fileRefByPath = new Map()
 for (const file of request.files) {
@@ -139,31 +141,19 @@ try {
   ])]
   const candidatesByPath = new Map()
   const rejected = []
-  for (const requestedCompiler of requestedCompilerPackages) {
-    const { packageName, resolutionBase } = requestedCompiler
-    const compilerRequire = resolutionBase === "repository_root" ? repositoryRootRequire : projectRequire
-    let packagePath
-    try {
-      packagePath = path.resolve(compilerRequire.resolve(`${packageName}/package.json`))
-    } catch {
-      rejected.push(`${packageName}: package is not installed`)
-      continue
-    }
-    if (!allowedCompilerRoots.some((nodeModulesRoot) => packagePath.startsWith(`${nodeModulesRoot}${path.sep}`))) {
-      rejected.push(`${packageName}: package is outside analyzed node_modules`)
-      continue
-    }
+  const compilerCandidate = (packagePath, packageName, compilerRequire) => {
+    if (!existsSync(packagePath)) return undefined
     const packageRoot = path.dirname(packagePath)
     let packageDocument
     try {
       packageDocument = JSON.parse(readFileSync(packagePath, "utf8"))
     } catch {
       rejected.push(`${packageName}: package.json is invalid`)
-      continue
+      return undefined
     }
     if (packageDocument?.name !== "typescript") {
       rejected.push(`${packageName}: installed package name is not typescript`)
-      continue
+      return undefined
     }
     const exportedFile = (key) => {
       const target = packageDocument?.exports?.[key]
@@ -178,49 +168,110 @@ try {
     const astPath = legacy ? "" : exportedFile("./unstable/ast")
     if (!legacy && (!syncPath || !astPath)) {
       rejected.push(`${packageName}: package exposes no supported Compiler API`)
+      return undefined
+    }
+    return {
+      packageName, packagePath, packageRoot, packageDocument,
+      flavor: legacy ? "legacy" : "native", legacyPath, syncPath, astPath, compilerRequire,
+    }
+  }
+  for (const requestedCompiler of requestedCompilerPackages) {
+    const { packageName, resolutionBase } = requestedCompiler
+    const compilerRequire = resolutionBase === "repository_root" ? repositoryRootRequire : projectRequire
+    let packagePath
+    try {
+      packagePath = path.resolve(compilerRequire.resolve(`${packageName}/package.json`))
+    } catch {
+      rejected.push(`${packageName}: package is not installed`)
       continue
     }
-    if (!candidatesByPath.has(packagePath)) {
-      candidatesByPath.set(packagePath, {
-        packageName, packagePath, packageRoot, packageDocument,
-        flavor: legacy ? "legacy" : "native", legacyPath, syncPath, astPath, compilerRequire,
-      })
+    if (!allowedCompilerRoots.some((nodeModulesRoot) => packagePath.startsWith(`${nodeModulesRoot}${path.sep}`))) {
+      rejected.push(`${packageName}: package is outside analyzed node_modules`)
+      continue
     }
+    const candidate = compilerCandidate(packagePath, packageName, compilerRequire)
+    if (candidate && !candidatesByPath.has(packagePath)) candidatesByPath.set(packagePath, candidate)
   }
   const candidates = [...candidatesByPath.values()].sort((left, right) => compareText(left.packageName, right.packageName))
-  const legacyCandidates = candidates.filter((candidate) => candidate.flavor === "legacy")
-  const preferred = legacyCandidates.length > 0 ? legacyCandidates : candidates
-  if (preferred.length === 0) {
-    const detail = rejected.length > 0 ? `: ${rejected.join("; ")}` : ""
-    throw new Error(`no supported manifest-declared TypeScript compiler is prepared${detail}`)
-  }
-  if (preferred.length > 1) {
-    throw new Error(`ambiguous supported TypeScript compiler packages: ${preferred.map((candidate) => candidate.packageName).join(", ")}`)
-  }
-  const selectedCompiler = preferred[0]
-  if (selectedCompiler.flavor === "legacy") {
-    // Resolve the package root first, then load the compiler-owned file. A
-    // package may legitimately export only its public root while retaining
-    // the backwards-compatible Compiler API file on disk; asking Node to
-    // resolve the private subpath would incorrectly reject that package.
-    ts = selectedCompiler.compilerRequire(selectedCompiler.legacyPath)
-  } else {
-    const [syncAPI, astAPI] = await Promise.all([
-      import(pathToFileURL(selectedCompiler.syncPath).href),
-      import(pathToFileURL(selectedCompiler.astPath).href),
-    ])
-    if (typeof syncAPI.API !== "function" || !astAPI.SyntaxKind) throw new Error("prepared TypeScript native API is incomplete")
-    compilerFlavor = "native"
-    ts = {
-      ...astAPI,
-      ...syncAPI,
-      forEachChild: (node, visitor) => node.forEachChild(visitor),
-      isFunctionLike: (node) => astAPI.isFunctionDeclaration(node) || astAPI.isMethodDeclaration(node) ||
-        astAPI.isConstructorDeclaration(node) || astAPI.isGetAccessorDeclaration(node) ||
-        astAPI.isSetAccessorDeclaration(node) || astAPI.isFunctionExpression(node) ||
-        astAPI.isArrowFunction(node),
+  const loadCompiler = async (selectedCompiler) => {
+    if (selectedCompiler.flavor === "legacy") {
+      // Resolve the package root first, then load the compiler-owned file. A
+      // package may legitimately export only its public root while retaining
+      // the backwards-compatible Compiler API file on disk; asking Node to
+      // resolve the private subpath would incorrectly reject that package.
+      const loaded = selectedCompiler.compilerRequire(selectedCompiler.legacyPath)
+      if (typeof loaded.createProgram !== "function" || typeof loaded.readConfigFile !== "function" ||
+          !loaded.SyntaxKind || !loaded.sys || typeof loaded.sys.readFile !== "function") {
+        throw new Error("prepared TypeScript Compiler API is incomplete")
+      }
+      compilerFlavor = "legacy"
+      ts = loaded
+    } else {
+      const [syncAPI, astAPI] = await Promise.all([
+        import(pathToFileURL(selectedCompiler.syncPath).href),
+        import(pathToFileURL(selectedCompiler.astPath).href),
+      ])
+      if (typeof syncAPI.API !== "function" || !astAPI.SyntaxKind) throw new Error("prepared TypeScript native API is incomplete")
+      compilerFlavor = "native"
+      ts = {
+        ...astAPI,
+        ...syncAPI,
+        forEachChild: (node, visitor) => node.forEachChild(visitor),
+        isFunctionLike: (node) => astAPI.isFunctionDeclaration(node) || astAPI.isMethodDeclaration(node) ||
+          astAPI.isConstructorDeclaration(node) || astAPI.isGetAccessorDeclaration(node) ||
+          astAPI.isSetAccessorDeclaration(node) || astAPI.isFunctionExpression(node) ||
+          astAPI.isArrowFunction(node),
+      }
+      nativeAPI = new syncAPI.API({ cwd: root })
     }
-    nativeAPI = new syncAPI.API({ cwd: root })
+  }
+  const tryCompiler = async (candidate) => {
+    if (!candidate) return false
+    try {
+      await loadCompiler(candidate)
+      return true
+    } catch (error) {
+      ts = undefined
+      nativeAPI = undefined
+      compilerFlavor = "legacy"
+      rejected.push(`${candidate.packageName}: ${error instanceof Error ? error.message : "load failed"}`)
+      return false
+    }
+  }
+  for (const flavor of ["legacy", "native"]) {
+    const preferred = candidates.filter((candidate) => candidate.flavor === flavor)
+    if (preferred.length > 1) {
+      throw new Error(`ambiguous supported TypeScript compiler packages: ${preferred.map((candidate) => candidate.packageName).join(", ")}`)
+    }
+    if (await tryCompiler(preferred[0])) break
+  }
+  if (!ts) {
+    // Use only the selected Node installation and the first tsc on PATH.
+    // An environment compiler is intentionally outside the analyzed project.
+    const nodeDirectory = path.dirname(process.execPath)
+    const environmentPackages = [
+      path.resolve(nodeDirectory, "../lib/node_modules/typescript/package.json"),
+      path.join(nodeDirectory, "node_modules/typescript/package.json"),
+    ]
+    findTSC: for (const directory of (process.env.PATH || "").split(path.delimiter)) {
+      if (!directory) continue
+      for (const command of process.platform === "win32" ? ["tsc.cmd", "tsc"] : ["tsc"]) {
+        const executable = path.resolve(directory, command)
+        if (!existsSync(executable)) continue
+        const resolved = realpathSync(executable)
+        environmentPackages.push(path.resolve(path.dirname(resolved), "../package.json"))
+        environmentPackages.push(path.join(path.dirname(resolved), "node_modules/typescript/package.json"))
+        break findTSC
+      }
+    }
+    for (const packagePath of new Set(environmentPackages)) {
+      const candidate = compilerCandidate(packagePath, "environment typescript", projectRequire)
+      if (await tryCompiler(candidate)) break
+    }
+  }
+  if (!ts) {
+    const detail = rejected.length > 0 ? `: ${rejected.join("; ")}` : ""
+    throw new Error(`no usable local or active-environment TypeScript compiler is prepared${detail}`)
   }
 } catch (error) {
   fail(`load prepared TypeScript compiler: ${error instanceof Error ? error.message : "unknown error"}`, COMPILER_UNAVAILABLE_EXIT_CODE)
@@ -408,8 +459,11 @@ if (compilerFlavor === "legacy") {
       compilerProjects.push({ key: record.path, options, program, checker: program.getTypeChecker(), rootFiles })
     }
     const additionalRoots = additionalFiles.filter((filePath) => !compilerProjects.some((project) => project.rootFiles.has(filePath)))
-    if (additionalRoots.length > 0 && compilerProjects.length > 0) {
-      const options = compilerProjects[0].options
+    if (additionalRoots.length > 0) {
+      // These exact script/config files are additional roots even when the
+      // written config selects only another package. In that case use the
+      // same inferred options as a project without a config.
+      const options = { ...(compilerProjects[0]?.options || defaults), allowJs: true }
       const program = ts.createProgram({ rootNames: additionalRoots.map(absolute), options })
       compilerProjects.push({ key: "~additional-files", options, program, checker: program.getTypeChecker(), rootFiles: new Set(additionalRoots) })
     }

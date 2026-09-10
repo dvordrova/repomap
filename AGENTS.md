@@ -208,14 +208,14 @@ the same SSA receiver, independent of framework names. These observations enter
 the callable's own review; neighbouring caller registrations omit their field
 metadata. No field observation asserts a final runtime value or callback call.
 
-JSTS result v14 / helper v17 also preserves every compiler-observed callable
+JSTS result v14 / helper v18 also preserves every compiler-observed callable
 JSX attribute as an anchored callback binding, including render props. The
 element and attribute are source facts; neither their names nor a framework
 allowlist classify an operation. Wrapped function-valued declarations retain
 compiler callable identity; inline anonymous callbacks and unindexed callable
 factory results remain unresolved. A factory result never becomes a binding or
 method call on the factory itself. Calls in ordinary local value initializers
-belong to their enclosing callable. Symbol table v6 and operation table v12
+belong to their enclosing callable. Symbol table v6 and operation table v13
 can interpret these observations as user `interaction`, alongside commands,
 requests, scheduled and continuous work, using the same graph and review.
 
@@ -522,14 +522,19 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   manifest/source-ownership catalog, target identities, and package candidates
   without invoking Node or the TypeScript compiler; it participates in the same
   portfolio and typed execution plan as Go and Python. Each retained or
-  explicitly selected package target receives its own page, which uses an
-  owner-prepared, repository-local TypeScript Compiler API to honor
+  explicitly selected package target receives its own page, which uses
+  an available TypeScript Compiler API, preferring the project compiler, to honor
   `tsconfig.json` or `jsconfig.json`, repository-confined solution-style
   project references, aliases, and module resolution. A project reference that
   stays inside the owning package extends that page's complete compiler graph;
   an exact repository-local reference outside the package is a cross-target
   boundary and does not pull the sibling package into the page. Missing
   references and references outside the analyzed repository still fail closed.
+  Exact owned manifest script inputs and supported tool-config files remain
+  additional compiler roots. If a config selects no owned roots, those explicit
+  sources use the compiler's existing inferred defaults; JavaScript inputs are
+  enabled for that additional program. This does not admit other excluded files
+  or the sibling sources selected by a documentation config.
   Repomap never installs npm, yarn, pnpm, or other packages. Browser and Node
   server surfaces plus
   canonical safe, package-owned, tracked `package.json#bin` command/path pairs
@@ -562,14 +567,18 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   constructions retain their distinct exact invocation authority; an
   unresolved property name remains an unresolved frontier and is never matched
   to repository declarations by name alone.
-  Compiler authority comes only from `typescript` or an exact npm alias to it
-  declared by the selected manifest; a nested package may inherit candidates
-  from the repository-root manifest only when it declares none itself. Each
-  candidate resolves from the package.json scope that declared it. The
-  installed package must identify itself as `typescript`. Distinct compatible
-  candidates in the selected API tier fail closed; one stable legacy Compiler
-  API candidate is preferred over a native-preview candidate when both are
-  deliberately declared.
+  Local compiler candidates come from `typescript` or exact npm aliases to it
+  declared by the selected manifest; a nested package inherits repository-root
+  candidates only when it declares none itself. Each resolves from its declaring
+  package scope. Without declarations, ordinary local `typescript` resolution
+  still applies. If no usable local compiler exists, helper v18 uses an existing
+  TypeScript package from the selected Node installation or the first `tsc` on
+  `PATH`; it does not search other Node installations. The installed package
+  must identify itself as `typescript` and expose a supported Compiler API.
+  Distinct compatible local candidates in the selected API tier fail closed;
+  one stable legacy API candidate is preferred over a native-preview candidate
+  when both are deliberately declared. Compiler availability does not supply
+  missing project dependencies or call-target authority.
   Shared contracts are supporting code, build/migration scripts remain tools,
   and a runtime script, library, or tool-only root must never promote itself
   into an application.
@@ -778,7 +787,12 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   requests carry one local dictionary of exact spelling/definition pairs and
   each text's applicable refs. Equal spellings with different definitions stay
   separate; each partition rebuilds its complete dictionary. Source
-  excerpts, names, IDs and topology remain original. The default English file
+  excerpts, names, IDs and topology remain original. Operation names stay
+  English in every display language; exact command/path labels remain verbatim,
+  while descriptions and UI labels are localized. When a model interaction's
+  name is exactly its native declaration name, the report uses that subject's
+  existing English alias with the native name beside it. A distinct action
+  label is never replaced with its function's alias. The default English file
   remains `report.html`. Ordinary publication passed on the small server,
   chi, Python/TypeScript fixture and Chinese Jieba repository; answer quality
   and the retained visual alternatives remain explicit owner-review items in

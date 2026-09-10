@@ -102,8 +102,8 @@ type helperOutput struct {
 // Discover is the compatibility exact-one compiler path. Ordinary repository
 // discovery catalogs every package with ScoutTargets, then calls
 // DiscoverSelected with each exact selector. It never installs packages: the
-// selected manifest, or its repository-root fallback, must declare a compiler
-// already prepared in repository-local node_modules.
+// local compiler takes priority over an existing compiler from the active
+// Node.js environment. Neither source requires repomap to install packages.
 func Discover(ctx context.Context, repository *corpus.Corpus, root string) (Result, error) {
 	return DiscoverSelected(ctx, repository, root, "")
 }
@@ -206,12 +206,6 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 			}
 			compilerPackages = typeScriptCompilerPackagesForProject(manifest, &rootCompilerManifest)
 		}
-	}
-	if len(compilerPackages) == 0 {
-		return Result{}, fmt.Errorf(
-			"%w: selected manifest %q and its repository root declare neither the typescript package nor an npm alias to it",
-			ErrTypeScriptCompilerUnavailable, manifestPath,
-		)
 	}
 	request := newHelperRequest(compilerPackages, nestedPackageDirs)
 	request.PackageBoundaries, err = helperPackageBoundaries(repository, entries, manifestPath)
@@ -1074,7 +1068,7 @@ func invokeHelper(ctx context.Context, repositoryRoot string, request helperRequ
 	}
 	command := exec.CommandContext(ctx, nodePath, "--input-type=module", "--eval", nodeHelper)
 	command.Dir = repositoryRoot
-	command.Env = []string{}
+	command.Env = []string{"PATH=" + os.Getenv("PATH")}
 	command.Stdin = bytes.NewReader(encoded)
 	stdout := &bytes.Buffer{}
 	stderr := &boundedBuffer{limit: maxHelperStderrBytes}

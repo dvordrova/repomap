@@ -672,7 +672,7 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 			continue
 		}
 		card.Operations = append(card.Operations, pageGroupOperation{
-			Name: operation.Name, Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
+			Name: builder.operationDisplayName(operation), Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
 			Href:   "#" + operationNodeID(sectionID, operation.ID),
 			Anchor: builder.links.anchor(operation.Location.Path, operation.Location.Line, operation.Location.Column),
 		})
@@ -806,7 +806,7 @@ func (builder *pageBuilder) groupConnections(
 					for _, operation := range otherIndex.Operations {
 						if operationLocationKey(operation.Location) == operationLocationKey(*location) {
 							row.Href = "#" + operationNodeID(section.ID, operation.ID)
-							row.Title = operation.Name
+							row.Title = builder.operationDisplayName(operation)
 							break
 						}
 					}

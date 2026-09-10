@@ -1,0 +1,7 @@
+{
+  "name": "documentation-tools",
+  "private": true,
+  "scripts": {
+    "prebuild": "node scripts/prepare-readme.mjs && node scripts/check-links.ts"
+  }
+}

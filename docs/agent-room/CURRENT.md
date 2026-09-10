@@ -924,13 +924,14 @@ operation; different route aliases remain separate. These interpretations still
 need evaluation: a source anchor proves the declaration exists, not that the
 model's classification or explanation is correct.
 
-Symbol table v5 and operation table v12 admit `interaction` for user-facing
+Symbol table v6 and operation table v13 admit `interaction` for user-facing
 handlers. A callable JSX attribute is evidence for review, not an automatic
 interaction classification: render props and internal callbacks use the same
 neutral binding observations. The model reads the exact element/attribute,
 declaration and existing calls. Labels come from that evidence, not invented
 button text. The original declaration and its native paths remain the map's
-operation identity.
+operation identity. Interaction labels are short English names grounded in the
+supplied evidence. Literal commands and paths retain their exact spelling.
 
 Repeated source observations use a row-local evidence dictionary. Callable
 bindings use shared columns plus association rows. An operation row receives
@@ -1907,6 +1908,15 @@ not a new observation or another graph. The renderer does not infer a name from
 its alphabet or shorten a description into one. Cards show the short alias with
 the native code name; the full translated explanation belongs to the selected
 detail. Both saved names can lead to one glossary definition by literal lookup.
+
+The 2026-09-10 correction extends the same alias binding to an interaction that
+repeats its native declaration name: cards, map nodes and operation links show
+the accepted English alias beside that original name. A distinct action label
+keeps its own meaning. Operation names are excluded from translation, including
+remote map references; descriptions still change language. The regression uses
+a Korean declaration and checks both English and Russian rendered reports with
+the original source and operation links. An ordinary run rebuilds the changed
+display catalogue; old saved translations are not silently adapted.
 
 Translation receives names and definitions as context and returns only
 translated text: definitions and surrounding prose change language, names do not.
@@ -3969,20 +3979,38 @@ authorize an implicit string-form `package.json#bin` command.
 
 An explicit `jsts:<manifest>` narrows the typed plan before compiler
 execution. Each retained package target receives its own compiler projection.
-The owner-prepared repository-local TypeScript Compiler API honors
+The selected TypeScript Compiler API honors
 `tsconfig.json` or `jsconfig.json`, repository-confined solution project
 references, aliases, and module resolution. An in-package project reference
 extends the page graph; an exact reference into another selected package is a
 cross-target boundary. Missing references and references outside the analyzed
 repository fail closed.
 
-Repomap never installs npm, yarn, pnpm, or other packages. Compiler authority
-comes only from `typescript` or an exact npm alias declared by the selected
+Repomap never installs npm, yarn, pnpm, or other packages. Local compiler
+candidates come from `typescript` or exact npm aliases declared by the selected
 manifest. A nested package inherits root candidates only when it declares none.
-Each candidate resolves from its declaring package scope and must identify
-itself as TypeScript. Distinct compatible candidates in the selected API tier
-fail closed; one stable legacy Compiler API candidate is preferred when a
-native-preview candidate is also deliberately declared.
+Each candidate resolves from its declaring package scope; without declarations,
+ordinary local `typescript` resolution still applies. A usable local compiler
+takes priority. Otherwise helper v18 checks the selected Node installation and
+the first `tsc` on `PATH` for an existing TypeScript package, without searching
+other Node installations. Both sources must identify themselves as TypeScript
+and expose a supported Compiler API. Distinct compatible local candidates in
+the selected API tier fail closed; one stable legacy Compiler API candidate is
+preferred when a native-preview candidate is also deliberately declared.
+The cumulative fixture has no TypeScript declaration and exercises both
+environment discovery paths, unusable-local fallback and local priority through
+the real extractor. Identical compilers produce identical results, indexes and
+dependency catalogues from either location; compiler availability does not
+supply missing project imports or create calls. Result v14 retains its shape;
+helper v18 records the discovery-contract change, without storing host paths.
+
+Exact owned manifest script inputs and supported tool-config files retain their
+additional compiler program even if the written config selects only sibling
+sources. With no owned configured program, it uses the existing inferred
+defaults and admits the explicitly listed JavaScript inputs. Other excluded
+files and the sibling's source inventory stay outside that target. The
+cumulative documentation-tools package checks this with JavaScript and
+TypeScript scripts, a sibling-only config and an unlisted script.
 
 Browser, Node server, and canonical safe package-owned `package.json#bin`
 command/path pairs are product surfaces inside the owning target. A CLI entry
@@ -4003,7 +4031,7 @@ unresolved and is never joined to a repository declaration by name alone.
 A compiler-resolved sibling package retains `repository_path` on each import,
 call and ProgramIndex external symbol. This is an optional origin fact, not a
 new graph or framework classification; an empty value means that no repository
-origin was established. Result v14 / helper v17 replaces the old lossy handoff.
+origin was established. Result v14 / helper v18 replaces the old lossy handoff.
 ProgramIndex v12 retains the optional field in its existing seal, as do
 GroupsIndex and the report view. Dependency rows distinguish the exact package
 name plus directory: two same-name siblings and an installed package coexist.
@@ -4024,7 +4052,7 @@ deterministic HTTP join. Target-local meaning comes from categorization and
 grouping; cross-target connections come only from repository matching over the
 complete GroupsIndex set.
 
-JSTS result v14 / helper v17 retains callable JSX attributes as anchored
+JSTS result v14 / helper v18 retains callable JSX attributes as anchored
 `passes_callback` relations with `callable_binding:jsx_attribute` invocation.
 Element and attribute names remain source observations; no event-name or
 framework allowlist assigns meaning. Compiler-confirmed function-valued

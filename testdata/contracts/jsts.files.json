@@ -11,50 +11,70 @@
     },
     {
       "id": "f3",
-      "path": "packages/local-store/package.json"
+      "path": "packages/documentation-tools/package.json"
     },
     {
       "id": "f4",
-      "path": "packages/local-store/src/index.ts"
+      "path": "packages/documentation-tools/scripts/check-links.ts"
     },
     {
       "id": "f5",
-      "path": "packages/second-store/package.json"
+      "path": "packages/documentation-tools/scripts/prepare-readme.mjs"
     },
     {
       "id": "f6",
-      "path": "packages/second-store/src/index.ts"
+      "path": "packages/documentation-tools/scripts/unused.mjs"
     },
     {
       "id": "f7",
-      "path": "shared/contracts.ts"
+      "path": "packages/documentation-tools/tsconfig.json"
     },
     {
       "id": "f8",
-      "path": "src/ambiguity.tsx"
+      "path": "packages/local-store/package.json"
     },
     {
       "id": "f9",
-      "path": "src/platform.ts"
+      "path": "packages/local-store/src/index.ts"
     },
     {
       "id": "f10",
-      "path": "src/server.ts"
+      "path": "packages/second-store/package.json"
     },
     {
       "id": "f11",
-      "path": "src/type-members.ts"
+      "path": "packages/second-store/src/index.ts"
     },
     {
       "id": "f12",
-      "path": "src/workspace-origins-js.js"
+      "path": "shared/contracts.ts"
     },
     {
       "id": "f13",
-      "path": "src/workspace-origins.ts"
+      "path": "src/ambiguity.tsx"
     },
     {
       "id": "f14",
+      "path": "src/platform.ts"
+    },
+    {
+      "id": "f15",
+      "path": "src/server.ts"
+    },
+    {
+      "id": "f16",
+      "path": "src/type-members.ts"
+    },
+    {
+      "id": "f17",
+      "path": "src/workspace-origins-js.js"
+    },
+    {
+      "id": "f18",
+      "path": "src/workspace-origins.ts"
+    },
+    {
+      "id": "f19",
       "path": "tsconfig.json"
     }
   ]

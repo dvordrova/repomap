@@ -53,13 +53,19 @@ func TestCumulativeNativeEvidenceSeparatesGoConsumersAndJSTSPackages(t *testing.
 				}
 			}
 			if language == "jsts" {
-				if len(native) != 3 {
+				if len(native) != 4 {
 					t.Fatalf("source-owning packages merged: %d", len(native))
 				}
+				var roots []string
 				for _, row := range native {
+					roots = append(roots, row.Row.Root)
 					if len(row.Row.SeedOwners) != 0 {
 						t.Fatal("invented JS/TS seed ownership")
 					}
+				}
+				slices.Sort(roots)
+				if !slices.Equal(roots, []string{".", "packages/documentation-tools", "packages/local-store", "packages/second-store"}) {
+					t.Fatalf("native JS/TS package roots = %v", roots)
 				}
 				return
 			}

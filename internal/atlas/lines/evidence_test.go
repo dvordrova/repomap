@@ -166,6 +166,18 @@ func TestTypeContextKeepsOwnedDeclarationsWithoutNativeIDs(t *testing.T) {
 	}
 }
 
+func TestOperationPromptNamesInteractionsInEnglishAndPreservesCommandSyntax(t *testing.T) {
+	def := Operations()
+	if def.Contract != "repomap.atlas.operations.v13" {
+		t.Fatalf("interaction naming change reused the previous contract: %s", def.Contract)
+	}
+	for _, instruction := range []string{"short English name", "rather than copying an unexplained", "Do not translate observed command/path syntax"} {
+		if !strings.Contains(def.System, instruction) {
+			t.Fatalf("ordinary operation prompt omitted %q", instruction)
+		}
+	}
+}
+
 func TestIndependentTablesPackCompleteRowsWithoutCountCaps(t *testing.T) {
 	var rows []table.Row
 	for i := 0; i < 41; i++ {
