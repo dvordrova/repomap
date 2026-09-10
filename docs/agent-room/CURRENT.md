@@ -4312,7 +4312,7 @@ a demo operation and the unavailable-answer card was checked. The native
 TypeScript regression and the full legacy-compiler `make check` passed;
 implementation is committed as `af543d96`.
 
-This is not successful answer-quality acceptance: all 31 answers are
+That first run is not successful answer-quality acceptance: all 31 answers are
 unavailable because the provider emitted two JSON objects consecutively in
 one response. They were not repaired or retried. Learn recovered from an
 output-token refusal by partitioning its original evidence; question retrieval
@@ -4322,6 +4322,28 @@ the raw empty-name decisions were `none` or an upstream caller, never `self`.
 Requiring placeholder prose on those negative decisions remains a validation
 issue. The report's operation classifications also remain model interpretations;
 successful projection does not establish their semantic correctness.
+
+The ordinary repeat `20260910-112213-webernetes-a4e3d7fd1ad9` completed in
+14m24s against the same repository revision, with the one-shape prompt
+preparation subsequently committed in `09ac5608`. Its manifest identifies
+`224ae9ed8f90+dirty`, the working build used when that run started. Both targets
+were analyzed; the portfolio retained the library and classified the demo as
+an example. All 28 generated questions received accepted answers from one live
+response containing one `result`/`terms` object. Retrieval inspected all 1,075
+source groups for each question after a context-refusal split. All 1,965 display
+texts were translated in eight accepted windows. The common publication and
+all target artifacts passed the same consistency audit; browser checks opened
+the question menu, an answer with its basis and original-source disclosure, and
+the library map. These are prompt-contract and artifact checks, not acceptance
+of every answer or operation classification. The new questions and selected
+evidence differ, so the shorter wall time is not a controlled speed comparison.
+Operation review still left 362 rows without accepted answers; 343 raw rows had
+an empty name, all with `none` or an upstream entry. The library entrance still
+shows test-suite lifecycle hooks as scheduled work. Its structure map starts
+with seven areas, but an expanded 55-operation inventory precedes it, and
+opening an area replaces the other areas with its children. These remain
+separate validation, interpretation and navigation issues. Receipts are in
+`work/webernetes-prompt-audit-20260910/acceptance.json` and `REVIEW.md`.
 
 Go core objects v3 similarly retain explicitly declared struct fields with
 their native locations and signatures, including tags and embedded fields.
