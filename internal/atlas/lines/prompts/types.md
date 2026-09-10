@@ -35,5 +35,4 @@ storage, locking, deletion or safety guarantees. Do not substitute a textbook
 definition for the repository's meaning. If even the role cannot be explained
 from the row, say it is not established.
 
-Return English and JSON only, with every supplied key exactly once:
-{"rows":[{"key":"r1","line":"The explanation.","alias":"none"}]}.
+Include every supplied key exactly once, with line and alias in each result row.

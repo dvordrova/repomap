@@ -925,8 +925,12 @@ func TestLearnPromptKeepsAudienceAndMergeContracts(t *testing.T) {
 		if !strings.Contains(prompt.System, "prose in English.") {
 			t.Fatal("learning request lost the shared English response policy")
 		}
-		seenAudience = seenAudience || strings.HasSuffix(prompt.System, "\n\n"+learningSelectPrompt)
-		seenMerge = seenMerge || strings.HasSuffix(prompt.System, "\n\n"+learningMergePrompt)
+		if !json.Valid([]byte(prompt.ResponseExample)) || !strings.HasSuffix(prompt.System, prompt.ResponseExample) ||
+			strings.Count(prompt.System, `"rows"`)+strings.Count(prompt.System, `"reviews"`) != 1 {
+			t.Fatal("learning request must have one valid response example for its current stage")
+		}
+		seenAudience = seenAudience || strings.Contains(prompt.System, "\n\n"+learningSelectPrompt)
+		seenMerge = seenMerge || strings.Contains(prompt.System, "\n\n"+learningMergePrompt)
 	}
 	if !seenAudience || !seenMerge {
 		t.Fatal("missing independent subtable prompts")

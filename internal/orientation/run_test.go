@@ -353,7 +353,7 @@ func TestPersistRejectedRoundTrip(t *testing.T) {
 
 func TestPromptKeepsRepositoryTextUntrustedAndAvoidsInternalVocabulary(t *testing.T) {
 	lower := strings.ToLower(promptText)
-	for _, fragment := range []string{"untrusted", "one sentence", "manifest", "entrypoint", `"main_flow"`, "never invent a ref"} {
+	for _, fragment := range []string{"untrusted", "one sentence", "manifest", "entrypoint", "`main_flow`", "never invent a ref"} {
 		if !strings.Contains(lower, fragment) {
 			t.Fatalf("prompt lacks %q", fragment)
 		}
@@ -385,7 +385,8 @@ func (provider *presetProvider) State() []byte {
 }
 
 func (provider *presetProvider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
-	if !prompt.ResponseFormatJSON || !strings.HasSuffix(prompt.System, "\n\n"+strings.TrimSpace(promptText)) || !strings.Contains(prompt.System, "prose in English.") || prompt.User == "" ||
+	if !prompt.ResponseFormatJSON || !strings.Contains(prompt.System, "\n\n"+strings.TrimSpace(promptText)) || !strings.Contains(prompt.System, "prose in English.") || prompt.User == "" ||
+		!strings.HasSuffix(prompt.System, prompt.ResponseExample) || strings.Count(prompt.System, `"main_flow"`) != 1 ||
 		limits.MaxRequestBytes != llm.SemanticRecordByteLimit ||
 		limits.MaxResponseBytes != llm.ProviderResponseByteLimit || limits.MaxOutputTokens != maxOutputTokens {
 		return llm.Prepared{}, fmt.Errorf("preset received invalid request contract")

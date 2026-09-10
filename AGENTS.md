@@ -376,6 +376,12 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   compile it with `go:embed`. Go owns complete dynamic reservoirs and their
   provider-sized request partitions, not long prompt string literals; the
   provider layer does not own domain prompts or schemas.
+  Analytical owners supply their computed result shape through `ResponseExample`;
+  stage prose describes fields and decisions without a second output example or
+  competing root-format instruction. Shared preparation applies the terminology
+  adjunct before emitting the one final shape: the direct owner example without
+  terms, or its `result/terms` envelope in the source catalogue. Table examples
+  derive from the current `fill` columns, including the current mode.
 - Models select only closed request-local short refs. Catalog rows may show
   exact repository-relative paths, file names, symbol names/signatures, and
   dependency names because that context has semantic value. The model is

@@ -11,21 +11,6 @@ claim or concept bound to one of its advertised `d*` source refs. Do not
 classify code, files, targets, symbols, entrypoints, triggers, dependencies,
 groups, graph nodes, or graph edges.
 
-Return strict JSON with exactly this shape:
-
-```json
-{
-  "overview": "Concise repository purpose supported by the retained sources",
-  "sources": [
-    {
-      "ref": "d1",
-      "claims": ["One concise repository-authored product claim"],
-      "concepts": ["One product or domain concept"]
-    }
-  ]
-}
-```
-
 The result must be more compact than redundant input while retaining useful
 distinct context. Reuse only `d*` refs present inside the supplied candidates.
 If no useful source-bound context remains, return an empty overview and an

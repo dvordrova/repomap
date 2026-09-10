@@ -85,33 +85,40 @@ type sourceCatalog struct {
 }
 
 func (p *provider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
+	return p.base.Prepare(prompt, limits)
+}
+
+func (p *provider) AdaptPrompt(prompt llm.Prompt) (llm.Prompt, error) {
 	input, _ := jsonValue([]byte(prompt.User))
 	catalog := sourceCatalog{Version: adjunctVersion, Sources: sourcesIn(input, p.collector.paths)}
 	if len(catalog.Sources) == 0 {
 		// No source-backed terms can exist. Preserve the owner's exact request,
 		// including an array response and its original provider controls.
-		return p.base.Prepare(prompt, limits)
+		return prompt, nil
 	}
 	if prompt.ResponseExample == "" || !json.Valid([]byte(prompt.ResponseExample)) {
-		return llm.Prepared{}, fmt.Errorf("terminology: owning task must supply a valid JSON response example")
+		return llm.Prompt{}, fmt.Errorf("terminology: owning task must supply a valid JSON response example")
 	}
 	example, err := json.Marshal(struct {
 		Result json.RawMessage `json:"result"`
 		Terms  []termWire      `json:"terms"`
 	}{json.RawMessage(prompt.ResponseExample), []termWire{}})
 	if err != nil {
-		return llm.Prepared{}, err
+		return llm.Prompt{}, err
 	}
 	catalog.ResponseContract = strings.TrimSpace(responseContract)
 	catalog.ResponseExample = example
 	prompt.System += "\n\n" + strings.TrimSpace(adjunctPrompt)
 	prompt.ResponseFormatJSON = true
+	// The catalogue carries the sole final shape, including the owner's exact
+	// result container. Do not also emit a bare-domain response example.
+	prompt.ResponseExample = ""
 	raw, err := json.Marshal(catalog)
 	if err != nil {
-		return llm.Prepared{}, err
+		return llm.Prompt{}, err
 	}
 	prompt.User += catalogDelimiter + string(raw)
-	return p.base.Prepare(prompt, limits)
+	return prompt, nil
 }
 
 func (p *provider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {

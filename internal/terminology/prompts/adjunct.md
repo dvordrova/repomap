@@ -1,10 +1,13 @@
 # Response envelope and repository terminology
 
-The original task's response schema defines the value of result. Return the
-single outer object shown in response_example, with terms beside result.
+The task instructions above describe only the computed value of result.
+The final response_example supplies the single response shape, with terms
+beside result. Write the task answer only inside result, never as a separate
+JSON value before or after that object. Field restrictions in the task apply
+inside result; term sources use only the separate catalogue below.
 
-After answering the original task, define unfamiliar terms needed to read that
-computed answer. Each name must occur verbatim in its prose; an input-only name
+Within that same response, define unfamiliar terms needed to read the computed
+result. Each name must occur verbatim in its prose; an input-only name
 has no glossary authority. Preserve the task's distinction between observations
 and interpretations. Use an empty terms array when no supported definition is
 needed.

@@ -25,4 +25,4 @@ For requests without native_targets, required_target_file_refs are exact native 
 
 Choose default_file_ref from the retained file refs, preferably the primary standalone run entry, then the primary standalone import entry. This is a provisional batch default. The complete candidate reservoir may require disjoint batches; local code preserves every accepted decision and later chooses one repository-wide default. Batch boundaries, order and counts have no semantic authority. Seed-owner summaries are closed context even if the owner's own decision is in another batch; local code validates that decision against the complete result.
 
-Return one JSON object with default_file_ref, target_file_refs, and native_decisions. Use only supplied file refs and target refs. No paths, explanations, scores, confidence or extra fields.
+The result contains default_file_ref, target_file_refs, and native_decisions. Use only supplied file refs and target refs. No paths, explanations, scores, confidence or extra fields.

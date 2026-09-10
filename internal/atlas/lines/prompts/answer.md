@@ -118,9 +118,8 @@ An answer with sources="none" must be unanswered with answer="none" and
 basis="none". Prefer a partial answer from the available refs over replacing
 it with unsupported general background.
 
-Return only {"rows":[...]} with every supplied row key once. Each row contains
+Include every supplied row key once in the result. Each row contains
 exactly key, answer, basis, sources, remaining and state. Write sources as a
 string, never an array. Check answer, basis and remaining contain no candidate
 refs; all supporting refs go only in sources. Choose state after checking answer
-and remaining:
-{"rows":[{"key":"r1","answer":"...","basis":"...","sources":"c1 c2","remaining":"...","state":"partial"}]}
+and remaining.

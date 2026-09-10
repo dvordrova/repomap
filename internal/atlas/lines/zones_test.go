@@ -65,7 +65,7 @@ func TestZoneModesKeepRowsAndCellsInPreparedRequests(t *testing.T) {
 			if err := json.Unmarshal(prepared.Bytes(), &wire); err != nil {
 				t.Fatal(err)
 			}
-			if len(wire.Messages) != 2 || wire.Messages[0].Role != "system" || !strings.HasSuffix(wire.Messages[0].Content, call.Prompt.System) || wire.Messages[1].Content != string(windows[0].Request) {
+			if len(wire.Messages) != 2 || wire.Messages[0].Role != "system" || !strings.Contains(wire.Messages[0].Content, call.Prompt.System) || !strings.HasSuffix(wire.Messages[0].Content, call.Prompt.ResponseExample) || wire.Messages[1].Content != string(windows[0].Request) {
 				t.Fatal("provider request changed the owning prompt or complete table input")
 			}
 			var input struct {

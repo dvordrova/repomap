@@ -27,10 +27,6 @@ and source refs that prompted it. Split independently useful learning needs;
 combine subclauses only when they belong to the same explanation. Preserve
 useful unanswered questions. Do not create a separate question for every file.
 
-Return one JSON object, no Markdown:
-{"reviews":[{"intent":"purpose","state":"questions","reason":"...",
-"sources":["e1"],"questions":[{"question":"... ?","why":"...",
-"sources":["e1","e2"]}]}]}
 Only advertised intent IDs and e refs may be selected. Use empty arrays for
 questions when state is not questions. No internal refs in reader-facing prose.
 

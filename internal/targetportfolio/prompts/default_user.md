@@ -1,6 +1,3 @@
-Return exactly one JSON object with this field:
-{"default_file_ref":"f1"}
-
 `default_file_ref` must be one supplied candidate ref. These candidates are already accepted target entries; choose only their repository-wide default.
 
 Exact bounded default-comparison JSON:

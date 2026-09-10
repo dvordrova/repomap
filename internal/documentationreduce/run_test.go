@@ -120,7 +120,7 @@ func TestNormalizeResponseDiscardsUnknownRefsBeforeTheirValues(t *testing.T) {
 
 func TestPromptsKeepDocumentationUntrustedAndOutOfGraphClassification(t *testing.T) {
 	for name, prompt := range map[string]string{"source": sourcePrompt, "merge": mergePrompt} {
-		for _, fragment := range []string{"untrusted", "Do not", "entrypoints", "graph edges", `"sources"`} {
+		for _, fragment := range []string{"untrusted", "Do not", "entrypoints", "graph edges", "`sources`"} {
 			if !strings.Contains(prompt, fragment) {
 				t.Fatalf("%s prompt does not contain %q", name, fragment)
 			}
@@ -169,6 +169,7 @@ func (provider *documentationPresetProvider) State() []byte {
 
 func (provider *documentationPresetProvider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
 	if !prompt.ResponseFormatJSON || prompt.System == "" || prompt.User == "" ||
+		!strings.HasSuffix(prompt.System, prompt.ResponseExample) || strings.Count(prompt.System, `"overview"`) != 1 ||
 		limits.MaxRequestBytes != llm.SemanticRecordByteLimit ||
 		limits.MaxResponseBytes != llm.ProviderResponseByteLimit || limits.MaxOutputTokens != maxOutputTokens {
 		return llm.Prepared{}, fmt.Errorf("preset received invalid request contract")
@@ -201,7 +202,7 @@ func (provider *documentationPresetProvider) Complete(
 	var response modelResponse
 	switch {
 	case raw["documents"] != nil:
-		if !strings.HasSuffix(prompt.System, "\n\n"+strings.TrimSpace(sourcePrompt)) || !strings.Contains(prompt.System, "prose in English.") {
+		if !strings.Contains(prompt.System, "\n\n"+strings.TrimSpace(sourcePrompt)) || !strings.Contains(prompt.System, "prose in English.") {
 			return llm.Completion{}, fmt.Errorf("preset source prompt mismatch")
 		}
 		var request sourceRequest
@@ -238,7 +239,7 @@ func (provider *documentationPresetProvider) Complete(
 		}
 		response.Sources = append(response.Sources, responseSource{Ref: "d999"})
 	case raw["candidates"] != nil:
-		if !strings.HasSuffix(prompt.System, "\n\n"+strings.TrimSpace(mergePrompt)) || !strings.Contains(prompt.System, "prose in English.") {
+		if !strings.Contains(prompt.System, "\n\n"+strings.TrimSpace(mergePrompt)) || !strings.Contains(prompt.System, "prose in English.") {
 			return llm.Completion{}, fmt.Errorf("preset merge prompt mismatch")
 		}
 		var request mergeRequest

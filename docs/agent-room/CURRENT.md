@@ -1992,10 +1992,16 @@ alongside analytical cube results, reduce them, bind them in the backend report,
 then translate and decorate visible text. `internal/terminology` owns the
 embedded adjunct prompt and closed source contract. Source-bearing analytical
 calls return `{result, terms}` in the same request. Each owning stage supplies
-its actual JSON `ResponseExample`; the adjunct wraps that shape rather than
-inferring it from prose. Table examples depend only on their column contract,
-so batch neighbours cannot change a row's memo identity. Calls with no usable
-source refs pass through without a terminology prompt or response protocol.
+its actual JSON `ResponseExample`; shared preparation applies optional metadata
+before emitting the final response shape. Stage prose describes the result's
+fields without a parallel output example or root-format instruction. With
+source refs, the catalogue carries the sole `result/terms` example; without
+them, preparation emits the direct owner example. Table examples derive from
+the current column contract, including the current mode, so batch neighbours
+cannot change a row's memo identity. Calls with no usable source refs acquire
+no terminology prompt or response protocol. Replay bypasses preparation and
+preserves its exact saved request, and the existing catalogue contract remains
+readable without rewriting old responses.
 
 A term is a name and explanation, with its closed source refs restored locally
 and the accepted request plus result row retained. It must occur in the computed answer and
@@ -2200,12 +2206,21 @@ that rejected window. That report is not acceptance evidence.
 
 Real answer exchanges also exposed ambiguity between the answer's string-valued
 `sources` and the terminology array-valued `sources`, plus an owning top-level
-shape competing with the terminology wrapper. The shared adjunct now explicitly
-places the owning shape under `result` and declares term sources as a JSON array.
-Malformed JSON is still refused unchanged. These prompt changes invalidate exact
-requests; comparisons after them must not claim unchanged retrieval or evidence
-unless those artifacts were explicitly checked. The final ordinary and warm
-acceptance runs above use the current prompt contracts.
+shape competing with the terminology wrapper. Merely clarifying the wrapper
+did not remove that competition: the 2026-09-10 Webernetes audit found it in
+150 of 184 distinct used requests (159 live, 25 reused) across 22 assembled
+instruction families. Its single final-answer response emitted two JSON roots
+with identical 31-row answers and was refused. The same audit found an
+unconditional `same` example in seven `peer` requests, and an invalid JSON
+example in learning selection; those actual responses were accepted.
+The one-shape preparation described above removes the duplicated owner examples
+and scopes prose restrictions and term source refs explicitly. Tests inspect
+complete provider-prepared requests for table modes with and without terms.
+Malformed JSON is still refused unchanged. These prompt changes alter exact
+requests; comparisons must not claim unchanged retrieval or evidence unless
+those artifacts were explicitly checked. Earlier acceptance runs above precede
+this preparation change. The audit, exact request index and verification are in
+`work/webernetes-prompt-audit-20260910/REVIEW.md`.
 
 Closing provider timing includes live attempts whose transport, response, or
 validation failed. A cached response's historical latency and failures before

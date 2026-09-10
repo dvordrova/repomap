@@ -19,39 +19,14 @@ is a directory of code with a title and one line about it. The request's
   boxes it holds. For each, write `line`: one sentence, at most 160
   characters, saying what this part of the program does.
 
-Return a JSON object with `rows`: one output object for each input row.
+The result rows contain one object for each input row.
 Each output object contains its original `key` and every column listed in
 `fill`, with no other fields. The number of output rows comes from the
 input rows, not from the number of cells or parts.
-
-The modes have different cells. These examples illustrate the distinction;
-use the actual keys and complete `fill` columns from your request.
-
-For `names`, when `fill` asks for `part_1` and `part_2`, both names belong
-inside the single `r1` object:
-
-```json
-{"rows":[{"key":"r1","part_1":"Report rendering","part_2":"Program indexing"}]}
-```
-
-For `assign`, when the input has two boxes and those names are offered in
-`context.parts`, each box receives one `part` cell:
-
-```json
-{"rows":[{"key":"r1","part":"Report rendering"},{"key":"r2","part":"Program indexing"}]}
-```
-
-For `lines`, when the input has two parts, each part receives one `line`
-cell:
-
-```json
-{"rows":[{"key":"r1","line":"Renders the repository report."},{"key":"r2","line":"Indexes program declarations and calls."}]}
-```
 
 Rules:
 
 - Every key from the request appears exactly once. Do not add, drop, rename
   or reorder keys, and do not add other fields.
 - Names are English, plain and specific: what the part does, not what the
-  directory is called. No paths, no keys, no markdown.
-- Return JSON only.
+  directory is called. No paths, internal refs or Markdown in prose cells.

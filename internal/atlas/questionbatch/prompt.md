@@ -11,12 +11,6 @@ code. Documentation is author guidance, not runtime proof. Selected anchors
 must be advertised in that evidence row's anchor_options. Owned declarations
 remain evidence of their original owner.
 
-Return JSON only:
-
-```json
-{"questions":[{"key":"q1","selections":[{"row":"r1","anchors":["a1"],"relevance":"direct","why":"Short reason this source is useful for this question."}]}]}
-```
-
 Return every supplied question key. For each question, selections contains only
 useful evidence rows. relevance is direct or context. anchors is a nonempty set
 of that row's advertised refs. why is a concise relevance hint shared by those

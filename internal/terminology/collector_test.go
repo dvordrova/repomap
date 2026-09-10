@@ -721,7 +721,7 @@ func TestArrayAnswerOwnerKeepsItsSchemaWithoutGenericTableExample(t *testing.T) 
 	c := NewCollector([]string{"api.py"})
 	base := &testProvider{}
 	wrapped := c.Wrap(base)
-	owner := llm.Prompt{ResponseExample: `[{"file_ref":"<supplied ref>","classifications":[]}]`, System: "Classify the supplied file references. Return exactly one JSON array with file_ref and classifications at each file level, and no markdown.", User: `{"path":"api.py","file_ref":"f1"}`}
+	owner := llm.Prompt{ResponseExample: `[{"file_ref":"<supplied ref>","classifications":[]}]`, System: "Classify the supplied file references. Each file has file_ref and classifications.", User: `{"path":"api.py","file_ref":"f1"}`}
 	call := llm.Call[[]map[string]any]{Prompt: owner, Limits: llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 1000}}
 	answer := []map[string]any{{"file_ref": "f1", "classifications": []any{map[string]any{"class": "documentation", "hypotheses": []string{"The guidance documents this source."}}}}}
 	// A misplaced table wrapper stays invalid for the owning array decoder.
@@ -830,6 +830,7 @@ func TestSourceBackedRequestIsDeterministicOwnerEnvelope(t *testing.T) {
 	previous.System += "\n\n" + strings.TrimSpace(adjunctPrompt)
 	previous.User += catalogDelimiter + string(catalog)
 	previous.ResponseFormatJSON = true
+	previous.ResponseExample = ""
 	expected, err := llm.Prepare(base, previous, limits)
 	if err != nil || !bytes.Equal(current.Bytes(), expected.Bytes()) || !reflect.DeepEqual(currentPrompt, base.prompt) {
 		t.Fatalf("source-backed prepared bytes or provider controls changed: %v", err)

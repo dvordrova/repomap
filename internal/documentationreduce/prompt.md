@@ -15,21 +15,6 @@ of a larger file, so make claims only from the visible part. Return a sparse
 response: omit a document when the supplied part has no useful product
 context. Never copy paths or invent refs.
 
-Return strict JSON with exactly this shape:
-
-```json
-{
-  "overview": "Concise repository purpose supported by the retained sources",
-  "sources": [
-    {
-      "ref": "d1",
-      "claims": ["One concise repository-authored product claim"],
-      "concepts": ["One product or domain concept"]
-    }
-  ]
-}
-```
-
 `claims` and `concepts` are sets of concise strings. Reuse only advertised
 `d*` refs. If no useful source-bound context exists, return an empty overview
 and an empty `sources` array. Never return quotations, instructions, secrets,

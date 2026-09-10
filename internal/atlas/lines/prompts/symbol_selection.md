@@ -29,6 +29,5 @@ Do not invent execution, call edges or effects from a name or signature.
 Types in a signature establish an association, not a read or write.
 An operation need not be a key symbol. Select only advertised call refs.
 
-Return strict JSON, one object per supplied key:
-{"rows":[{"key":"r1","key_symbol":"yes","activation":"request","outbound":"none"}]}
-For a types-only request return just key and key_symbol.
+The result rows contain every supplied key exactly once and only the columns
+advertised by fill. For a types-only request include just key and key_symbol.

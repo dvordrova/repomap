@@ -25,8 +25,9 @@ type Prompt struct {
 	User               string
 	ResponseFormatJSON bool
 	// ResponseExample is an owner-supplied JSON example of the computed
-	// answer's shape. Response adjuncts use it without inferring a schema
-	// from prompt prose; the owning cube still validates the actual answer.
+	// answer's shape. Shared preparation renders it once, after any response
+	// adjunct. Owners describe fields in prose, without a second output example
+	// or root-format instruction. The owning cube still validates the answer.
 	ResponseExample string
 	// ResponseLanguage controls generated prose, independently of the source
 	// language and provider. Empty means English. Presentation translation
@@ -118,6 +119,12 @@ type Provider interface {
 	State() []byte
 	Prepare(Prompt, Limits) (Prepared, error)
 	Complete(context.Context, Prepared) (Completion, error)
+}
+
+// PromptAdapter adds optional request metadata before the shared response
+// format is written. Provider.Prepare only encodes the resulting prompt.
+type PromptAdapter interface {
+	AdaptPrompt(Prompt) (Prompt, error)
 }
 
 // ResponseAdapter separates an owning result from optional response metadata.

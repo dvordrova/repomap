@@ -2,6 +2,7 @@ package llm
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -9,12 +10,28 @@ import (
 //go:embed prompts/response-language.md
 var responseLanguagePrompt string
 
-// Prepare applies the shared prose-language instruction before the provider
-// encodes its request. Execution, fit checks and memo identities all use this
-// boundary. Replay deliberately bypasses it to send the saved bytes unchanged.
+//go:embed prompts/response-format.md
+var responseFormatPrompt string
+
+// Prepare applies optional metadata, the final response shape and the shared
+// prose language before provider encoding. Execution, fit checks and memo
+// identities all use this boundary. Replay sends saved bytes unchanged.
 func Prepare(provider Provider, prompt Prompt, limits Limits) (Prepared, error) {
 	if provider == nil {
 		return Prepared{}, fmt.Errorf("llm: provider is nil")
+	}
+	if adapter, ok := provider.(PromptAdapter); ok {
+		var err error
+		prompt, err = adapter.AdaptPrompt(prompt)
+		if err != nil {
+			return Prepared{}, err
+		}
+	}
+	if prompt.ResponseExample != "" {
+		if !json.Valid([]byte(prompt.ResponseExample)) {
+			return Prepared{}, fmt.Errorf("llm: invalid response example")
+		}
+		prompt.System += "\n\n" + strings.TrimSpace(responseFormatPrompt) + "\n" + prompt.ResponseExample
 	}
 	language := strings.ToLower(prompt.ResponseLanguage)
 	if language == "" {

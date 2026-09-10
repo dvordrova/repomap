@@ -14,20 +14,11 @@ Fill one cell for every row and nothing else:
   boxes by what they do, not by their paths. State only what the witnesses
   show.
 
-Return strict JSON with exactly this shape, one object per row, the same
-`key` values as the request, each exactly once:
-
-```json
-{
-  "rows": [
-    {"key": "r1", "sentence": "The command entry hands the parsed flags to the run orchestration."}
-  ]
-}
-```
+The result rows contain every supplied `key` exactly once and only the
+columns advertised by `fill` for this request.
 
 Rules:
 
 - Every key from the request appears exactly once. Do not add, drop, rename
   or reorder keys, and do not add other fields.
-- Write English, plain and specific. No paths, no keys, no markdown.
-- Return JSON only.
+- Write English, plain and specific. No paths, internal refs or Markdown in prose cells.
