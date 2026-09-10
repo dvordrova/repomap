@@ -1203,6 +1203,41 @@ func (b *builder) symbolCallers() map[string][]atlas.SymbolCaller {
 }
 
 func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolBinding, target TargetInput) {
+	// Callback provenance already identifies its exact argument at one call
+	// site. Retain that registration's neighbouring literal arguments so a
+	// handler can see its path/topic without reading unrelated factory calls.
+	registrations := make(map[string][]atlas.RegistrationArgument)
+	for _, relation := range target.Index.Relations {
+		if relation.Kind == programindex.RelationPassesCallback && relation.SourceArgumentID != "" {
+			registrations[relation.SourceArgumentID] = nil
+		}
+	}
+	for _, relation := range target.Index.Relations {
+		for _, pattern := range relation.Patterns {
+			if pattern.Location == nil {
+				continue
+			}
+			var selected []string
+			for _, argument := range pattern.Arguments {
+				if _, needed := registrations[argument.ID]; needed {
+					selected = append(selected, argument.ID)
+				}
+			}
+			if len(selected) == 0 {
+				continue
+			}
+			var arguments []atlas.RegistrationArgument
+			for _, argument := range pattern.Arguments {
+				if value, ok := literalArgument(argument); ok {
+					arguments = append(arguments, atlas.RegistrationArgument{Position: argument.Position, Keyword: argument.Keyword,
+						Kind: string(argument.Kind), Value: value, Path: pattern.Location.Path, Line: pattern.Location.Line})
+				}
+			}
+			for _, id := range selected {
+				registrations[id] = arguments
+			}
+		}
+	}
 	for _, relation := range target.Index.Relations {
 		if relation.Kind != programindex.RelationPassesCallback {
 			continue
@@ -1228,6 +1263,7 @@ func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolB
 				}
 				row := atlas.SymbolBinding{From: displayName(from, b.byID), To: displayName(to, b.byID), Detail: witness.Detail, Invocation: relation.Invocation, Resolution: string(relation.Resolution)}
 				row.Evidence = evidence
+				row.Arguments = registrations[relation.SourceArgumentID]
 				if witness.Location != nil {
 					row.Path, row.Line = witness.Location.Path, witness.Location.Line
 				}
@@ -1334,6 +1370,11 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 		}
 		for _, pattern := range relation.Patterns {
 			call := atlas.SymbolCall{Kind: string(relation.Kind), Name: pattern.Selector, Invocation: relation.Invocation}
+			for _, witness := range pattern.Context {
+				if witness.Location != nil {
+					call.Evidence = append(call.Evidence, atlas.EdgeEvidence{Extractor: witness.Kind, Label: witness.Detail, Path: witness.Location.Path, LineNo: witness.Location.Line})
+				}
+			}
 			for _, id := range relation.ToIDs {
 				if symbolID := b.symbolOf[id]; symbolID != "" {
 					call.CalleeIDs = appendUnique(call.CalleeIDs, symbolID)

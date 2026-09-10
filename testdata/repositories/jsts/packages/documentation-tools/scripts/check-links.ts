@@ -3,3 +3,7 @@ export function checkLinks(link: string): boolean {
 }
 
 checkLinks("https://example.com/guide")
+
+for (const link of ["https://example.com/reference"]) {
+  checkLinks(link)
+}

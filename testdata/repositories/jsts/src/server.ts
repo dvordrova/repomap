@@ -128,3 +128,37 @@ export function registerInheritedRoutes(): void {
   const local = new OverriddenRouter()
   local.get("/products/overridden-lookalike", () => {})
 }
+
+function processPendingJobs(): void {
+  console.log("checking pending jobs")
+}
+
+export function runWorker(): void {
+  processPendingJobs() // startup: once before the loop
+  while (true) {
+    processPendingJobs()
+  }
+}
+
+export function processOncePerItem(items: string[]): void {
+  for (const item of items) {
+    processPendingJobs()
+  }
+}
+
+export function registerWorkerCallbacks(items: string[]): Array<() => void> {
+  const callbacks: Array<() => void> = []
+  for (const item of items) {
+    function callback(): void {
+      processPendingJobs() // callback body has no enclosing execution loop
+    }
+    callbacks.push(callback)
+  }
+  return callbacks
+}
+
+export async function consumeJobs(jobs: AsyncIterable<string>): Promise<void> {
+  for await (const job of jobs) {
+    processPendingJobs()
+  }
+}

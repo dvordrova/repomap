@@ -22,7 +22,7 @@ const (
 	// compiler witnesses remain only in WitnessCount; there is no per-edge
 	// pattern sample or truncation. The retained edges remain only actual static
 	// calls; callback execution is not inferred from an argument binding.
-	DirectCallIndexVersion = 9
+	DirectCallIndexVersion = 10
 )
 
 type DirectCallIndexState string

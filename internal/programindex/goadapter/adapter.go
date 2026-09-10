@@ -700,7 +700,16 @@ func (projection *goProjection) callPatterns(
 				receiverResolution = programindex.ResolutionAlternatives
 			}
 		}
+		var control []programindex.Witness
+		for _, context := range pattern.Context {
+			location, err := projection.surfaceLocation(context.Location)
+			if err != nil {
+				return nil, err
+			}
+			control = append(control, programindex.Witness{Kind: "control_context", Detail: context.Kind, Location: location})
+		}
 		result = append(result, programindex.RelationPatternInput{
+			Context:   control,
 			SourceRef: pattern.ID, Form: programindex.PatternCall, Selector: selector,
 			Location:  location,
 			ResultRef: resultRef, ReceiverRef: receiverRef,

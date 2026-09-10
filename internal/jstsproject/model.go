@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	Version       = 14
-	HelperVersion = 20
+	Version       = 15
+	HelperVersion = 21
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20
@@ -174,7 +174,13 @@ type Binding struct {
 // pattern classification. It deliberately carries no framework or protocol
 // meaning: the adapter records the terminal selector, exact local receiver
 // authority when the compiler has it, and every ordered positional argument.
+type CallControl struct {
+	Kind     string   `json:"kind"`
+	Location Location `json:"location"`
+}
+
 type CallPattern struct {
+	Context                  []CallControl         `json:"context,omitempty"`
 	Selector                 string                `json:"selector"`
 	ResultRef                string                `json:"result_ref,omitempty"`
 	ReceiverRef              string                `json:"receiver_ref,omitempty"`
@@ -637,6 +643,11 @@ func (result Result) Validate() error {
 				return fmt.Errorf("jsts project: invalid call pattern")
 			}
 			if value.Pattern != nil {
+				for _, control := range value.Pattern.Context {
+					if strings.TrimSpace(control.Kind) == "" || !validLocation(control.Location, fileRefs) {
+						return fmt.Errorf("jsts project: invalid call control context")
+					}
+				}
 				if _, callResult := patternResults[value.Pattern.ReceiverRef]; callResult {
 					usedPatternResults[value.Pattern.ReceiverRef] = struct{}{}
 				}
@@ -772,6 +783,9 @@ func canonicalize(result *Result) {
 		result.Calls[i].CalleeRefs = canonicalStrings(result.Calls[i].CalleeRefs)
 		if result.Calls[i].Pattern != nil {
 			pattern := result.Calls[i].Pattern
+			if len(pattern.Context) == 0 {
+				pattern.Context = nil
+			}
 			pattern.ReceiverOriginRefs = canonicalStrings(pattern.ReceiverOriginRefs)
 			if pattern.Arguments == nil {
 				pattern.Arguments = []CallPatternArgument{}

@@ -25,7 +25,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 9
+	GraphVersion = 10
 	Version      = 4
 
 	GraphFilename    = "places.json"
@@ -243,14 +243,26 @@ type SymbolCaller struct {
 // SymbolBinding describes where a callable is supplied or received. It does
 // not claim that registration itself executes the callback.
 type SymbolBinding struct {
-	Evidence   []EdgeEvidence `json:"evidence,omitempty"`
-	From       string         `json:"from"`
-	To         string         `json:"to"`
-	Detail     string         `json:"detail"`
-	Invocation string         `json:"invocation"`
-	Resolution string         `json:"resolution"`
-	Path       string         `json:"path"`
-	Line       int            `json:"line"`
+	Arguments  []RegistrationArgument `json:"arguments,omitempty"`
+	Evidence   []EdgeEvidence         `json:"evidence,omitempty"`
+	From       string                 `json:"from"`
+	To         string                 `json:"to"`
+	Detail     string                 `json:"detail"`
+	Invocation string                 `json:"invocation"`
+	Resolution string                 `json:"resolution"`
+	Path       string                 `json:"path"`
+	Line       int                    `json:"line"`
+}
+
+// RegistrationArgument is a literal at the exact call that receives this
+// callback. It is not an argument of the callback or a runtime value.
+type RegistrationArgument struct {
+	Position int    `json:"position,omitempty"`
+	Keyword  string `json:"keyword,omitempty"`
+	Kind     string `json:"kind"`
+	Value    string `json:"value"`
+	Path     string `json:"path"`
+	Line     int    `json:"line"`
 }
 
 // BoundaryFacts is one integration point: a call into an external symbol with

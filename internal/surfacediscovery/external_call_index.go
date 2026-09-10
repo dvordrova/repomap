@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	ExternalCallIndexVersion = 3
+	ExternalCallIndexVersion = 4
 	// ExternalCallCgoPackagePath is the Go toolchain's pseudo-package identity
 	// for an exact handoff to a generated cgo wrapper. It does not identify a
 	// repository package or claim execution beyond that wrapper boundary.
@@ -86,8 +86,9 @@ const (
 // identity and invocation authority, so the pattern deliberately does not
 // duplicate them.
 type ExternalCallPattern struct {
-	ID       string   `json:"id"`
-	Callsite Location `json:"callsite"`
+	Context  []ControlContext `json:"context,omitempty"`
+	ID       string           `json:"id"`
+	Callsite Location         `json:"callsite"`
 	// ResultID is an exact, source-bound SSA call-result identity. It is not a
 	// declaration and does not claim that the call executes. A later method
 	// pattern may cite the same identity as its receiver, preserving neutral
@@ -617,6 +618,7 @@ func externalCallPatternLess(left, right ExternalCallPattern) bool {
 
 func cloneExternalCallPattern(value ExternalCallPattern) ExternalCallPattern {
 	result := value
+	result.Context = append([]ControlContext(nil), value.Context...)
 	result.ReceiverResultIDs = append([]string{}, value.ReceiverResultIDs...)
 	result.Arguments = make([]ExternalCallPatternArgument, len(value.Arguments))
 	copy(result.Arguments, value.Arguments)
@@ -636,6 +638,11 @@ func cloneExternalCallPatterns(values []ExternalCallPattern) []ExternalCallPatte
 }
 
 func validateExternalCallPattern(value ExternalCallPattern) error {
+	for _, control := range value.Context {
+		if control.Kind == "" || !validRepositoryDirectCallLocation(control.Location) {
+			return fmt.Errorf("invalid call control context")
+		}
+	}
 	if value.ID != externalCallPatternID(value.Callsite) || !validRepositoryDirectCallLocation(value.Callsite) {
 		return fmt.Errorf("invalid pattern identity")
 	}

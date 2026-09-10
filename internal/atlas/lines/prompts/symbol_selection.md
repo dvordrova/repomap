@@ -29,5 +29,14 @@ Do not invent execution, call edges or effects from a name or signature.
 Types in a signature establish an association, not a read or write.
 An operation need not be a key symbol. Select only advertised call refs.
 
+Call evidence may include `control_context`: the source statement whose body
+contains that exact call, such as a channel range, an unconditional loop or a
+select. This is lexical control context, not proof that execution reaches the
+call, never stops, or runs in the background. A collection loop can be ordinary
+finite work. Interpret the owning declaration together with its calls and
+activation observations; a helper called in a loop does not itself own the loop.
+Test setup/teardown callbacks are lifecycle hooks, not scheduled work merely
+because they run before or after another callback.
+
 The result rows contain every supplied key exactly once and only the columns
 advertised by fill. For a types-only request include just key and key_symbol.

@@ -369,6 +369,7 @@ func TestRelationPatternsResolveCanonicalizeCoverAndSeal(t *testing.T) {
 			{
 				SourceRef: "route-call", Form: PatternCall, Selector: "get",
 				Location:  &Location{Path: "main.go", Line: 14, Column: 3},
+				Context:   []Witness{{Kind: "control_context", Detail: "for body", Location: &Location{Path: "main.go", Line: 12, Column: 2}}},
 				ResultRef: "target-b", ReceiverRef: "caller",
 				ReceiverOriginRefs:       []string{"target-b", "target-a"},
 				ReceiverOriginResolution: ResolutionAlternatives, ReceiverOriginsObserved: 3,
@@ -496,10 +497,11 @@ func TestRelationPatternsResolveCanonicalizeCoverAndSeal(t *testing.T) {
 	snapshotPattern := patternPositionWithSourceRef(t, snapshot.Relations[snapshotRelation], "route-call")
 	snapshot.Relations[snapshotRelation].Patterns[snapshotPattern].ReceiverOriginIDs[0] = "changed"
 	snapshot.Relations[snapshotRelation].Patterns[snapshotPattern].Location.Line = 999
+	snapshot.Relations[snapshotRelation].Patterns[snapshotPattern].Context[0].Location.Line = 999
 	snapshot.Relations[snapshotRelation].Patterns[snapshotPattern].Arguments[1].Parts[0].Text = "changed"
 	snapshot.Relations[snapshotRelation].Patterns[snapshotPattern].Arguments[2].ObjectIDs[0] = "changed"
 	original := patternWithSourceRef(t, relationWithSourceRef(t, index, "pattern-relation"), "route-call")
-	if original.Location.Line == 999 || original.ReceiverOriginIDs[0] == "changed" || original.Arguments[1].Parts[0].Text == "changed" ||
+	if original.Location.Line == 999 || original.Context[0].Location.Line != 12 || original.ReceiverOriginIDs[0] == "changed" || original.Arguments[1].Parts[0].Text == "changed" ||
 		original.Arguments[2].ObjectIDs[0] == "changed" {
 		t.Fatal("Snapshot aliases nested pattern storage")
 	}

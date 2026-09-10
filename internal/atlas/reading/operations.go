@@ -41,6 +41,7 @@ func (r *reader) readOperations(ctx context.Context) error {
 	}
 	var rows []table.Row
 	var subjects []string
+	names := make(map[string]map[string]string)
 	for _, place := range r.opts.Graph.Places {
 		if !candidates[place.ID] {
 			continue
@@ -68,6 +69,8 @@ func (r *reader) readOperations(ctx context.Context) error {
 			calls = append(calls, evidence.Call(call))
 		}
 		callers := operationCallerEvidence(place, declarations)
+		nameFields, registeredNames := operationRegisteredNames(receivedBindings)
+		names[place.ID] = registeredNames
 		entries := []string{"self", "none"}
 		for _, caller := range callers {
 			entries = append(entries, caller["ref"].(string))
@@ -81,6 +84,7 @@ func (r *reader) readOperations(ctx context.Context) error {
 			{Name: "entry_options", Value: entries},
 		}}
 		row.Fields = append(row.Fields, evidence.Fields()...)
+		row.Fields = append(row.Fields, nameFields...)
 		rows = append(rows, row)
 		subjects = append(subjects, place.ID)
 	}
@@ -97,6 +101,9 @@ func (r *reader) readOperations(ctx context.Context) error {
 		}
 		operation := r.operations[id]
 		operation[0], operation[1], operation[2] = answer["activation"], answer["name"], answer["description"]
+		if answer["name_kind"] == "http" {
+			operation[1] = answer["http_method"] + " " + names[id][answer["http_path"]]
+		}
 		r.operations[id] = operation
 	}
 	r.reportStage(def.Stage)
@@ -109,6 +116,50 @@ func operationCalls(place atlas.Place) []atlas.SymbolCall {
 		calls = append(calls, atlas.SymbolCall{Name: call.Name, Kind: call.Kind, Line: call.Line, Invocation: call.Invocation, Detail: call.Detail, Resolution: call.Resolution, Evidence: call.Evidence})
 	}
 	return calls
+}
+
+func operationRegisteredNames(bindings []atlas.SymbolBinding) ([]table.Field, map[string]string) {
+	seen := make(map[atlas.RegistrationArgument]bool)
+	var arguments []atlas.RegistrationArgument
+	for _, binding := range bindings {
+		for _, argument := range binding.Arguments {
+			if argument.Kind == "literal_string" && !seen[argument] {
+				seen[argument] = true
+				arguments = append(arguments, argument)
+			}
+		}
+	}
+	sort.Slice(arguments, func(i, j int) bool {
+		a, b := arguments[i], arguments[j]
+		if a.Path != b.Path {
+			return a.Path < b.Path
+		}
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
+		if a.Position != b.Position {
+			return a.Position < b.Position
+		}
+		if a.Keyword != b.Keyword {
+			return a.Keyword < b.Keyword
+		}
+		return a.Value < b.Value
+	})
+	var catalogue []map[string]any
+	var refs []string
+	names := make(map[string]string)
+	for i, argument := range arguments {
+		ref := fmt.Sprintf("p%d", i+1)
+		refs = append(refs, ref)
+		names[ref] = argument.Value
+		catalogue = append(catalogue, map[string]any{"ref": ref, "argument": argument})
+	}
+	kinds := []string{"label"}
+	if len(refs) > 0 {
+		kinds = append(kinds, "http")
+	}
+	return []table.Field{{Name: "registered_names", Value: catalogue}, {Name: "registered_name_options", Value: refs},
+		{Name: "name_kind_options", Value: kinds}}, names
 }
 
 // Supply immediate native callers only. Each declaration appears once with
@@ -140,6 +191,7 @@ func operationCallerEvidence(place atlas.Place, declarations map[string]atlas.Pl
 						continue
 					}
 					binding.Evidence = nil
+					binding.Arguments = nil
 					bindings = append(bindings, binding)
 				}
 				var evidence lines.EvidenceCatalog

@@ -9,16 +9,16 @@ import (
 func TestOperationDecisionOwnsRequiredCells(t *testing.T) {
 	rows := make([]table.Row, 7)
 	for i := range rows {
-		rows[i].Fields = []table.Field{{Name: "entry_options", Value: []string{"self", "none", "u1"}}}
+		rows[i].Fields = []table.Field{{Name: "entry_options", Value: []string{"self", "none", "u1"}}, {Name: "name_kind_options", Value: []string{"label"}}}
 	}
 	result, err := table.DecodeResult(Operations(), table.Window{Rows: rows}, []byte(`{"rows":[
 		{"key":"r1","entry":"none","activation":"none","name":"","description":""},
 		{"key":"r2","entry":"u1"},
 		{"key":"r3","entry":"none","name":42,"description":{}},
-		{"key":"r4","entry":"self","activation":"continuous","name":"worker","description":"Consumes updates until cancellation."},
-		{"key":"r5","entry":"self","activation":"continuous","name":"","description":"Runs."},
+		{"key":"r4","entry":"self","name_kind":"label","activation":"continuous","name":"worker","description":"Consumes updates until cancellation."},
+		{"key":"r5","entry":"self","name_kind":"label","activation":"continuous","name":"","description":"Runs."},
 		{"key":"r6","entry":"u2"},
-		{"key":"r7","entry":"self","activation":"none","name":"worker","description":"Runs."}
+		{"key":"r7","entry":"self","name_kind":"label","activation":"none","name":"worker","description":"Runs."}
 	]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -42,5 +42,25 @@ func TestNegativeOperationWindowIsAccepted(t *testing.T) {
 	result, err := table.DecodeResult(Operations(), table.Window{Rows: []table.Row{{Fields: []table.Field{{Name: "entry_options", Value: []string{"self", "none"}}}}}}, []byte(`{"rows":[{"key":"r1","entry":"none"}]}`))
 	if err != nil || len(result.AcceptedRowKeys()) != 1 {
 		t.Fatalf("negative window refused: %#v, %v", result, err)
+	}
+}
+
+func TestHTTPNamesSelectClosedRegistrationWithoutFreeText(t *testing.T) {
+	row := table.Row{Fields: []table.Field{
+		{Name: "entry_options", Value: []string{"self", "none"}},
+		{Name: "name_kind_options", Value: []string{"label", "http"}},
+		{Name: "registered_name_options", Value: []string{"p1"}},
+	}}
+	result, err := table.DecodeResult(Operations(), table.Window{Rows: []table.Row{row, row, row}}, []byte(`{"rows":[
+		{"key":"r1","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"p1","name":"/invented","description":"Returns a greeting."},
+		{"key":"r2","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"/invented","description":"Returns a greeting."},
+		{"key":"r3","entry":"none","name_kind":42,"http_path":[]}
+	]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Answers[0]["http_path"] != "p1" || result.Answers[0]["name"] != "" ||
+		result.Answers[1] != nil || len(result.Answers[2]) != 1 || len(result.Rejections) != 1 {
+		t.Fatalf("HTTP ref validation or independent negative decision changed: %#v", result)
 	}
 }

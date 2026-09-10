@@ -179,7 +179,7 @@ func (a *analyzer) externalCallPattern(
 	arguments, receiver := externalCallSourceArguments(common)
 	observed := len(arguments)
 	pattern := &ExternalCallPattern{
-		ID: externalCallPatternID(callsite), Callsite: callsite,
+		ID: externalCallPatternID(callsite), Callsite: callsite, Context: a.callControlContext(callsite),
 		ReceiverResultIDs: []string{},
 		Arguments:         make([]ExternalCallPatternArgument, 0, len(arguments)),
 		ArgumentsObserved: observed,

@@ -546,8 +546,12 @@ func programCallPatterns(value Call) []programindex.RelationPatternInput {
 			ValueCandidates: valueCandidates, ValueCandidatesObserved: argument.ValueCandidatesObserved,
 		})
 	}
+	var control []programindex.Witness
+	for _, context := range value.Pattern.Context {
+		control = append(control, programindex.Witness{Kind: "control_context", Detail: context.Kind, Location: programLocation(context.Location)})
+	}
 	return []programindex.RelationPatternInput{{
-		SourceRef:                "pattern:" + value.Ref,
+		Context: control, SourceRef: "pattern:" + value.Ref,
 		Form:                     programindex.PatternCall,
 		Selector:                 value.Pattern.Selector,
 		Location:                 programLocation(value.Location),

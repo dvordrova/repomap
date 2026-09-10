@@ -10,7 +10,77 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/llm"
 )
+
+type registeredHTTPProvider struct{ tableProvider }
+
+func (p *registeredHTTPProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	response, err := p.tableProvider.Complete(ctx, prepared)
+	if err != nil {
+		return response, err
+	}
+	var request struct {
+		Table string
+		Rows  []map[string]any
+	}
+	if err = json.Unmarshal(prepared.Bytes(), &request); err != nil {
+		return response, err
+	}
+	if request.Table != lines.StageOperations {
+		return response, nil
+	}
+	var output struct{ Rows []map[string]string }
+	if err = json.Unmarshal(response.Response, &output); err != nil {
+		return response, err
+	}
+	for i, row := range request.Rows {
+		if row["name"] == "Op01" {
+			output.Rows[i]["entry"] = "self"
+			output.Rows[i]["activation"] = "request"
+			output.Rows[i]["name_kind"] = "http"
+			output.Rows[i]["http_method"] = "GET"
+			output.Rows[i]["http_path"] = "p1"
+			output.Rows[i]["name"] = "GET /invented"
+		}
+	}
+	response.Response, err = json.Marshal(output)
+	return response, err
+}
+
+func TestOperationRestoresOriginalHTTPPathWithoutTrimmingOrTranslation(t *testing.T) {
+	graph := withSymbols(t, twoTargetGraph(t))
+	path := "/고객/" + strings.Repeat("long-segment/", 8) + "%20status"
+	for i := range graph.Places {
+		place := &graph.Places[i]
+		if place.Symbol != nil && place.Symbol.Decl.Name == "Op01" {
+			place.Symbol.Bindings = []atlas.SymbolBinding{{From: "Install", To: "Op01", Detail: "Router.Get", Path: place.Path, Line: 5,
+				Arguments: []atlas.RegistrationArgument{{Position: 1, Kind: "literal_string", Value: path, Path: place.Path, Line: 5}}}}
+		}
+	}
+	provider := &registeredHTTPProvider{}
+	opts := twoTargetOptions(t, graph, &provider.tableProvider)
+	opts.Provider, opts.Through = provider, lines.StageJoints
+	result, err := Read(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range result.Atlas.Targets {
+		for _, box := range target.Boxes {
+			for _, file := range box.Files {
+				for _, symbol := range file.Symbols {
+					if symbol.Name == "Op01" {
+						if symbol.Operation != "GET "+path {
+							t.Fatalf("HTTP path was generated or changed: %q", symbol.Operation)
+						}
+						return
+					}
+				}
+			}
+		}
+	}
+	t.Fatal("HTTP operation disappeared from atlas")
+}
 
 // Same names are common across transports, client adapters and stores. Only
 // the native caller identity may select a declaration, and expansion must not

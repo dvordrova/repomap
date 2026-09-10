@@ -283,6 +283,14 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 	if err != nil {
 		t.Fatalf("build Python atlas: %v", err)
 	}
+	adaptertest.AssertCallControls(t, index, graph, "src/fixture_app/events.py", "process_pending_jobs", map[int][]adaptertest.Control{
+		33: nil,
+		35: {{Line: 34, Kind: "while body with constant true condition"}},
+		40: {{Line: 39, Kind: "for body"}},
+		47: nil,
+		54: {{Line: 53, Kind: "async for body"}},
+	})
+	adaptertest.AssertRegistrationArgument(t, graph, "src/fixture_app/events.py", "handle_order", map[int]string{13: "orders.created", 21: "orders.direct"})
 	for _, want := range []struct {
 		name      string
 		signature string

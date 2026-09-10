@@ -138,6 +138,22 @@ func TestCumulativeJSTSExplicitScriptsSurviveSiblingOnlyConfig(t *testing.T) {
 		catalog.Coverage.State != dependencies.CoverageComplete {
 		t.Fatalf("script/config facts or complete dependency authority lost: project=%#v coverage=%#v", result.Project, catalog.Coverage)
 	}
+	controlFound := false
+	for _, relation := range index.Relations {
+		for _, pattern := range relation.Patterns {
+			if pattern.Location != nil && pattern.Location.Path == project+"scripts/check-links.ts" && pattern.Location.Line == 8 {
+				if len(pattern.Context) != 1 || pattern.Context[0].Location == nil ||
+					pattern.Context[0].Location.Path != pattern.Location.Path || pattern.Context[0].Location.Line != 7 ||
+					pattern.Context[0].Detail != "for-of body" {
+					t.Fatalf("nested package call lost its original loop anchor: %#v", pattern.Context)
+				}
+				controlFound = true
+			}
+		}
+	}
+	if !controlFound {
+		t.Fatal("nested package loop call was omitted")
+	}
 	for name, source := range map[string]string{"checkLinks": "scripts/check-links.ts", "prepareReadme": "scripts/prepare-readme.mjs"} {
 		var objectID string
 		for _, object := range index.Objects {

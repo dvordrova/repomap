@@ -346,6 +346,14 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	assertCumulativeJSTSTypeMembers(t, result, index, lines.QuestionRows(graph))
 	assertCumulativeJSTSCallbackAliases(t, index, "src/server.ts", programindex.ResolutionExact)
 	assertCumulativeJSTSChainedCallbacks(t, index, "src/server.ts", programindex.ResolutionExact)
+	adaptertest.AssertCallControls(t, index, graph, "src/server.ts", "processPendingJobs", map[int][]adaptertest.Control{
+		137: nil,
+		139: {{Line: 138, Kind: "while body with constant true condition"}},
+		145: {{Line: 144, Kind: "for-of body"}},
+		153: nil,
+		162: {{Line: 161, Kind: "for-await-of body"}},
+	})
+	adaptertest.AssertRegistrationArgument(t, graph, "src/server.ts", "handleOrder", map[int]string{57: "orders.created", 81: "orders.direct"})
 
 	// JSX supplies callbacks, including internal render props. Keep their
 	// compiler identities and source attributes without claiming execution.

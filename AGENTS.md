@@ -177,7 +177,7 @@ the same nodes/links contract in docs/EXTRACTORS.md (facts format v2).
 Extensions supply source observations, not architecture role assignments.
 These rows enter the same places graph and question table, with producer
 declarations and corpus membership distinguished from compiler call edges.
-Graph is v9 and saved reading input is v10; there are no old-format readers.
+Graph is v10 and saved reading input is v11; there are no old-format readers.
 Observed entrypoint seeds and manifest values from the existing facts result
 also enter this graph, with their exact source and component context. They are
 available to both Learn proposals and question retrieval without requiring a
@@ -203,12 +203,17 @@ becomes exact. Generated callables retain facts without becoming description or
 operation-review candidates. These local keys and call columns never enter provider rows.
 The operation review sends immediate caller declarations once with
 their distinct call sites; it does not join names or recursively expand callers.
+It also retains literal arguments of the exact registration that receives each
+callback, through the native argument identity. Operation table v16 uses a
+closed registration ref plus a method choice for an HTTP name; Go restores the
+original path verbatim. Other work uses a descriptive label. Generated HTTP
+path text is not a name cell in the HTTP branch.
 Go callable bindings retain anchored literal assignments to other fields of
 the same SSA receiver, independent of framework names. These observations enter
 the callable's own review; neighbouring caller registrations omit their field
 metadata. No field observation asserts a final runtime value or callback call.
 
-JSTS result v14 / helper v20 also preserves every compiler-observed callable
+JSTS result v15 / helper v21 also preserves every compiler-observed callable
 JSX attribute as an anchored callback binding, including render props. The
 element and attribute are source facts; neither their names nor a framework
 allowlist classify an operation. Wrapped function-valued declarations retain
@@ -663,7 +668,7 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   two cells. A missing choice still refuses only its own row.
 - Type descriptions use the existing symbol stage and symbol knowledge, with
   the active `lines/prompts/types.md` prompt embedded by `lines/tables.go`.
-  Atlas graph v9 and saved reading input v10 retain a type's declarations
+  Atlas graph v10 and saved reading input v11 retain a type's declarations
   through exact native owner IDs, including cross-file methods and explicit Go
   interface method declarations. Interface declarations have no invented
   direct-call node. Type context retains the existing bounded author quotes,
@@ -783,7 +788,7 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   the ordinary graph or fails a target. Dynamic and unresolved call frontiers
   remain represented separately. Warning derivation is diagnostic-only and
   can never reject an accepted target or publication.
-- ProgramIndex version 12 retains every source-distinct nested pattern without
+- ProgramIndex version 13 retains every source-distinct nested pattern without
   local sampling or truncation, including its exact location, neutral
   call-result/receiver provenance, any exact callback source-argument
   provenance, and reconstructed value candidates with their source-object and

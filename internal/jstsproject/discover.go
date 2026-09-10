@@ -989,6 +989,11 @@ func rebaseHelperOutput(projectDir string, output *helperOutput) {
 	}
 	for index := range output.Calls {
 		rebaseLocation(&output.Calls[index].Location)
+		if pattern := output.Calls[index].Pattern; pattern != nil {
+			for i := range pattern.Context {
+				rebaseLocation(&pattern.Context[i].Location)
+			}
+		}
 	}
 	for index := range output.Bindings {
 		rebaseLocation(&output.Bindings[index].Location)

@@ -228,9 +228,9 @@ func TestFixturePlaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// This mixed saved fixture predates target-local lookup storage. Keeping
-	// its canonical bytes prevents a memory optimization from changing evidence.
-	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "dc80c619404b08713d20229c66abdec61a4fcc4fd0d9af56d3fc46c363733b1c" {
+	// Graph v10 includes exact callback registration literals. Keep the same
+	// canonical bytes for eager and lazy target storage below.
+	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "8e5c23081da0e96fdde2d76006ad100ae9c166c05f9989321e8894d1688955e3" {
 		t.Fatalf("saved mixed fixture graph changed: %s", got)
 	}
 	lazy := input

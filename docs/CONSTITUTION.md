@@ -174,6 +174,13 @@ separate stage outputs.
   the component entrance and on its repository row. Their original kinds and
   provenance remain visible. The 2026-09-10 review keeps five initial rows per
   group with All N disclosures, beside the existing integration groups.
+  A service entrance should let the reader scan its HTTP methods and paths,
+  the responsibilities of its workers, and its observed external destinations
+  without opening the map. An integration code group or an imported package
+  alone is not an external destination; unavailable observations stay explicit.
+  HTTP operation paths come verbatim from selected source registrations. The
+  model selects their references and interprets the method and responsibility;
+  it does not rewrite the path as a display name.
   Opening an area preserves its frame and peers; a part reveals source labels
   inside that frame. Collapse and Back retain the prior view. Grouped arrows
   preserve every original directed relation and its evidence on inspection.

@@ -39,7 +39,8 @@ type analyzer struct {
 	scenario         Scenario
 	result           Result
 
-	functionIDs map[*ssa.Function]string
+	functionIDs  map[*ssa.Function]string
+	callControls map[Location][]ControlContext
 
 	currentPhase        string
 	currentPhaseStarted time.Time

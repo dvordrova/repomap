@@ -62,11 +62,11 @@ func (c *EvidenceCatalog) Bindings(bindings []atlas.SymbolBinding) any {
 	if len(bindings) == 0 {
 		return nil
 	}
-	columns := []string{"from", "to", "detail", "invocation", "resolution", "path", "line", "evidence_refs"}
+	columns := []string{"from", "to", "detail", "invocation", "resolution", "path", "line", "arguments", "evidence_refs"}
 	var rows [][]any
 	for _, binding := range bindings {
 		refs := c.references(binding.Evidence)
-		rows = append(rows, []any{binding.From, binding.To, binding.Detail, binding.Invocation, binding.Resolution, binding.Path, binding.Line, refs})
+		rows = append(rows, []any{binding.From, binding.To, binding.Detail, binding.Invocation, binding.Resolution, binding.Path, binding.Line, binding.Arguments, refs})
 	}
 	result := BindingTable{Note: "Each row is one binding. Read values in columns order; shared fields apply to every row. Row numbers start at 1.", Shared: make(map[string]any), Rows: make([][]any, len(rows))}
 	for j, name := range columns {

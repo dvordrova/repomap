@@ -107,15 +107,18 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 
 func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMessage) (Answer, error) {
 	answer := make(Answer, len(def.Columns))
+	processed := make(map[string]bool, len(def.Columns))
 	for _, column := range def.Columns {
 		active := true
 		for name, expected := range column.When {
 			value, known := answer[name]
-			if !known {
+			if !processed[name] {
 				return nil, fmt.Errorf("cell %q depends on unvalidated %q", column.Name, name)
 			}
-			active = active && value == expected
+			// An earlier inactive cell cannot activate a dependent branch.
+			active = active && known && value == expected
 		}
+		processed[column.Name] = true
 		if !active {
 			continue
 		}

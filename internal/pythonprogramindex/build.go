@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	adapterVersion       = 11
+	adapterVersion       = 12
 	maxParserStderrBytes = 16 << 10
 )
 
@@ -118,6 +118,7 @@ type parsedPatternArgumentRef struct {
 }
 
 type parsedRelationPattern struct {
+	Context                  []programindex.Witness   `json:"context,omitempty"`
 	SourceRef                string                   `json:"source_ref"`
 	Form                     programindex.PatternForm `json:"form"`
 	Selector                 string                   `json:"selector"`
@@ -688,6 +689,11 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 		}
 		patterns := make([]programindex.RelationPatternInput, len(value.Patterns))
 		for patternPosition, pattern := range value.Patterns {
+			for _, control := range pattern.Context {
+				if err := validateHelperLocation(control.Location, allowedPaths); err != nil {
+					return parsedGroup{}, fmt.Errorf("relation %q control context: %w", value.SourceRef, err)
+				}
+			}
 			if err := validateHelperLocation(pattern.Location, allowedPaths); err != nil {
 				return parsedGroup{}, fmt.Errorf("relation %q pattern: %w", value.SourceRef, err)
 			}
@@ -719,7 +725,7 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 				}
 			}
 			patterns[patternPosition] = programindex.RelationPatternInput{
-				SourceRef: pattern.SourceRef, Form: pattern.Form, Selector: pattern.Selector,
+				SourceRef: pattern.SourceRef, Form: pattern.Form, Selector: pattern.Selector, Context: pattern.Context,
 				Location:                 cloneLocation(pattern.Location),
 				ResultRef:                pattern.ResultRef,
 				ReceiverRef:              pattern.ReceiverRef,

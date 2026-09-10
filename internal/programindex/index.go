@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	Version          = 12
+	Version          = 13
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -533,6 +533,9 @@ type PatternArgument struct {
 // RelationPatternInput retains one bounded syntactic candidate nested in its
 // owning relation. Object refs are temporary joins within the same Input.
 type RelationPatternInput struct {
+	// Context contains source-anchored enclosing control statements for this
+	// exact call site. It neither classifies the callable nor changes the call.
+	Context                  []Witness
 	SourceRef                string
 	Form                     PatternForm
 	Selector                 string
@@ -549,6 +552,7 @@ type RelationPatternInput struct {
 // RelationPattern is a sealed source-syntax candidate. Its identity is local
 // to the owning relation; SourceRef therefore needs to be unique only there.
 type RelationPattern struct {
+	Context                  []Witness         `json:"context,omitempty"`
 	ID                       string            `json:"id"`
 	SourceRef                string            `json:"source_ref"`
 	Form                     PatternForm       `json:"form"`
@@ -1447,8 +1451,15 @@ func canonicalizeRelationPatterns(
 		if err != nil {
 			return nil, fmt.Errorf("pattern %q arguments: %w", value.SourceRef, err)
 		}
+		control, err := canonicalWitnesses(value.Context)
+		if err != nil {
+			return nil, fmt.Errorf("pattern %q context: %w", value.SourceRef, err)
+		}
+		if len(control) == 0 {
+			control = nil
+		}
 		pattern := RelationPattern{
-			ID: id, SourceRef: value.SourceRef, Form: value.Form, Selector: value.Selector,
+			ID: id, SourceRef: value.SourceRef, Form: value.Form, Selector: value.Selector, Context: control,
 			Location: cloneLocation(value.Location),
 			ResultID: resultID, ReceiverID: receiverID, ReceiverOriginIDs: receiverOriginIDs,
 			ReceiverOriginResolution: value.ReceiverOriginResolution,
@@ -1713,6 +1724,14 @@ func resolvePatternObjectRefs(bindings []objectBinding, refs []string, resolutio
 }
 
 func validateRelationPatternShape(value RelationPattern, relationID string) error {
+	for i, witness := range value.Context {
+		if err := validateWitness(witness); err != nil {
+			return err
+		}
+		if i > 0 && witnessKey(value.Context[i-1]) >= witnessKey(witness) {
+			return fmt.Errorf("program index: noncanonical pattern context")
+		}
+	}
 	if !validText(value.ID) || !validText(value.SourceRef) || !value.Form.Valid() || !validText(value.Selector) ||
 		!validOptionalLocation(value.Location) ||
 		!validOptionalText(value.ResultID) || !validOptionalText(value.ReceiverID) ||
@@ -2445,6 +2464,11 @@ func cloneRelationPatterns(values []RelationPattern) []RelationPattern {
 	copy(result, values)
 	for position := range result {
 		result[position].Location = cloneLocation(values[position].Location)
+		if len(values[position].Context) > 0 {
+			result[position].Context = cloneWitnesses(values[position].Context)
+		} else {
+			result[position].Context = nil
+		}
 		result[position].ReceiverOriginIDs = cloneStrings(values[position].ReceiverOriginIDs)
 		result[position].Arguments = clonePatternArguments(values[position].Arguments)
 	}

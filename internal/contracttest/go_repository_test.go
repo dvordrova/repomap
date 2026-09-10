@@ -232,6 +232,7 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	adaptertest.AssertRegistrationArgument(t, graph, "cmd/app/main.go", "getLevel", map[int]string{21: "/api/levels", 115: "/api/embedded", 117: "/api/overridden-lookalike"})
 	seen := make(map[string]bool)
 	for _, chunk := range lines.QuestionRows(graph) {
 		for _, field := range chunk.Row.Fields {

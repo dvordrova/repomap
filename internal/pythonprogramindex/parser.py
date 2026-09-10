@@ -1022,6 +1022,8 @@ class RelationVisitor(ast.NodeVisitor):
             "arguments": arguments,
             "arguments_observed": len(call.args) + len(call.keywords),
         }
+        if getattr(call, "repomap_control_context", None):
+            pattern["context"] = call.repomap_control_context
         if location is not None:
             pattern["location"] = location
         result_ref = self.analyzer.call_result_refs.get(id(call), "")
@@ -1442,6 +1444,35 @@ class RelationVisitor(ast.NodeVisitor):
                 self._attribute_write(value)
 
 
+def attach_control_context(tree, path):
+    # Reuse the parsed tree across target views. Bodies of newly declared
+    # callables do not inherit the loop in which the callable was created.
+    def walk(node, context):
+        if isinstance(node, ast.Call) and context:
+            node.repomap_control_context = context
+        if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+            if isinstance(node, ast.While):
+                walk(node.test, context)
+                kind = "while body with constant true condition" if isinstance(node.test, ast.Constant) and node.test.value is True else "while body"
+            else:
+                walk(node.iter, context)
+                kind = "async for body" if isinstance(node, ast.AsyncFor) else "for body"
+            nested = context + [{"kind": "control_context", "detail": kind, "location": source_location(path, node)}]
+            for child in node.body:
+                walk(child, nested)
+            for child in node.orelse:
+                walk(child, context)
+            return
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            body = node.body if isinstance(node.body, list) else [node.body]
+            for child in ast.iter_child_nodes(node):
+                walk(child, [] if child in body else context)
+            return
+        for child in ast.iter_child_nodes(node):
+            walk(child, context)
+    walk(tree, [])
+
+
 def parse_sources(rows):
     parsed = {}
     for item in sorted(rows, key=lambda value: value.get("path", "")):
@@ -1454,6 +1485,7 @@ def parse_sources(rows):
             raise ValueError("module %s is not valid base64 UTF-8" % path)
         try:
             parsed[path] = ast.parse(content, filename=path, type_comments=True)
+            attach_control_context(parsed[path], path)
         except (SyntaxError, ValueError):
             raise ValueError("module %s has invalid Python syntax" % path)
     if not parsed:

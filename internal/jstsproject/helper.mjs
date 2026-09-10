@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 20
+const CONTRACT_VERSION = 21
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -1542,6 +1542,23 @@ function callPatternArgument(node, position) {
   }
 }
 
+function callControlContext(node) {
+  const result = []
+  for (let child = node, parent = node.parent; parent; child = parent, parent = parent.parent) {
+    if (ts.isFunctionLike(parent) || ts.isClassDeclaration(parent) || ts.isClassExpression(parent)) break
+    let kind = ""
+    if (parent.statement === child) {
+      if (ts.isForStatement(parent)) kind = parent.condition ? "for body" : "for body without condition"
+      else if (ts.isForOfStatement(parent)) kind = parent.awaitModifier ? "for-await-of body" : "for-of body"
+      else if (ts.isForInStatement(parent)) kind = "for-in body"
+      else if (ts.isWhileStatement(parent)) kind = parent.expression.kind === ts.SyntaxKind.TrueKeyword ? "while body with constant true condition" : "while body"
+      else if (ts.isDoStatement(parent)) kind = "do-while body"
+    }
+    if (kind) result.push({kind, location:locationOf(parent)})
+  }
+  return result
+}
+
 function callPattern(node) {
   const selector = terminalSelector(node.expression)
   if (!selector) return undefined
@@ -1638,7 +1655,7 @@ for (const { sourceFile } of sourceFiles) {
       if (ts.isCallExpression(node)) {
         const pattern = callPattern(node)
         call.patterns_observed = 1
-        if (pattern) call.pattern = pattern
+        if (pattern) {pattern.context = callControlContext(node); call.pattern = pattern}
       } else {
         call.patterns_observed = 0
       }

@@ -168,7 +168,7 @@ func TestTypeContextKeepsOwnedDeclarationsWithoutNativeIDs(t *testing.T) {
 
 func TestOperationPromptNamesInteractionsInEnglishAndPreservesCommandSyntax(t *testing.T) {
 	def := Operations()
-	if def.Contract != "repomap.atlas.operations.v14" {
+	if def.Contract != "repomap.atlas.operations.v16" {
 		t.Fatalf("interaction naming change reused the previous contract: %s", def.Contract)
 	}
 	for _, instruction := range []string{"short English name", "rather than copying an unexplained", "Do not translate observed command/path syntax"} {

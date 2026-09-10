@@ -265,8 +265,15 @@ its generated-model area keeps 15 parts and six peers; 85 original relations
 use 23 displayed arrows. Real clicks verified the source destination, Collapse,
 original viewport and browser Back with the exact selected declaration.
 The older server run's saved translation catalogue is incompatible; no
-translation was guessed or regenerated. Its new ordinary acceptance remains
-pending, as do worker and library-API classification and full Airflow.
+translation was guessed or regenerated. New ordinary server runs completed on
+2026-09-10. The final `20260910-135426-go-http-server-3d4d5625b17f` took 197.471 s:
+three targets, one common publication and 272 translations pass artifact
+consistency checks. At 1280×720, both original `GET /hello` and `GET /proxy`
+appear in the first viewport; its input catalogue is 223 px high and browser
+JavaScript reports no errors. This is not full quality acceptance: seven of
+23 questions were unavailable after conflicting source selections, and two
+internal callback reviews used an unadvertised `u*`. Worker/library-API
+classification, external-destination completeness and full Airflow remain open.
 
 Operation v14 revalidation of the same saved provider bytes accepted 780/782
 original Webernetes rows versus 535, and 767/771 subsequent rows versus 425.
@@ -3834,8 +3841,8 @@ separate run: their original launch identities and source locations enter the
 owner's ProgramIndex without narrowing its objects or library API. Selected
 roles pass through atlas v4 and GroupsIndex v8 into report v87. The later atlas
 target table describes an already selected role rather than making a second
-role decision. Saved reading input v10 retains that role and shared-code links;
-the places graph remains v9. The code validates that every shared-code link
+role decision. Saved reading input v11 retains that role and shared-code links;
+the places graph is v10. The code validates that every shared-code link
 resolves to an actual shared-code target in the complete portfolio.
 
 Ordinary online checks on 2026-09-09 completed all five repositories and both
@@ -3978,7 +3985,7 @@ PyKrx microbenchmarks reduced ProgramIndex validation allocation from 19.55 to
 14.58 MB/op and GroupsIndex from 9.64 to 7.69 MB/op with identical original
 hashes. This is not an end-to-end latency claim.
 
-ProgramIndex version 12 retains:
+ProgramIndex version 13 retains:
 
 - exact target scope and seeds;
 - objects and their stable local identities;
@@ -3990,6 +3997,7 @@ ProgramIndex version 12 retains:
 - complete witnesses and coverage counts;
 - every source-distinct neutral relation pattern;
 - call/decorator form, selector, invocation text, and exact source location;
+- source-anchored enclosing control statements on individual call patterns;
 - call-result and receiver identity;
 - receiver-origin provenance and its resolution;
 - positional and keyword arguments;
@@ -4291,7 +4299,7 @@ deterministic HTTP join. Target-local meaning comes from categorization and
 grouping; cross-target connections come only from repository matching over the
 complete GroupsIndex set.
 
-JSTS result v14 / helper v20 retains callable JSX attributes as anchored
+JSTS result v15 / helper v21 retains callable JSX attributes as anchored
 `passes_callback` relations with `callable_binding:jsx_attribute` invocation.
 Element and attribute names remain source observations; no event-name or
 framework allowlist assigns meaning. Compiler-confirmed function-valued
@@ -4302,6 +4310,44 @@ Bindings are rebased with the rest of the helper output for nested packages.
 Calls in non-callable local value initializers belong to the enclosing callable,
 while those values retain separate receiver/argument identities. An imported
 factory does not give exact import authority to a method on its result.
+
+Go direct calls v10 / external calls v4, Python adapter v12 and JSTS helper v21
+retain neutral `control_context` witnesses on the existing call pattern. Go
+uses the already loaded AST and types, Python annotates each parsed tree once
+before its target views, and JSTS walks compiler parent nodes. Loop bodies and
+Go select statements retain their original locations; channel ranges and
+unconditional conditions remain syntax/type observations. One-time loop input
+evaluation is outside the body context, and nested callable bodies start a new
+context. These witnesses enter the existing atlas call evidence and shared
+source catalogue in symbol selection v2 and operation review v16. There is no
+new graph, reparsing stage, worker detector or local activation promotion.
+Calls inside a finite traversal do not thereby become workers. A loop without
+retained calls still has no call-context observation. Go/Python/TypeScript
+cumulative examples check startup, finite and persistent loops, nested callback
+bodies, source locations and provider-row projection; Go additionally checks
+channel/select context and JSTS checks nested-package rebasing.
+
+The same native `SourceArgumentID` joins a callback to its exact registration
+arguments in graph v10 / saved reading input v11. Those anchored literal values
+enter the callback's own symbol and operation rows; another registration or
+the factory's other calls cannot supply them. Operation v16 separates HTTP
+names from descriptive labels. HTTP rows select a closed p* registration ref
+and a method; Go restores the selected literal path without translation,
+whitespace normalization or length trimming. Non-HTTP work, or a handler with
+no observed literal path, uses a descriptive label and must not invent a URL.
+The service check exposed the former loss: `/hello` and `/proxy` were present in
+ProgramIndex but absent from callback review, which generated `/hello-world`.
+The ordinary repeat selects the original paths. Cumulative Go, Python and JSTS
+tests check route/topic registration ownership; the reader test retains a long
+Korean path and ignores free-text `name` in an accepted HTTP row. Unknown
+registration refs reject their row only. The existing one-declaration operation
+review is not a new exhaustive per-mount endpoint inventory.
+
+A focused online `read --through operations` of the cumulative Go worker
+completed in 11.216 s with no refused windows. Its `time.Tick` main loop is now
+`continuous`, named “Process pending jobs on ticker”; the separate unused
+wait helper receives `none`. This is fixture/model evidence, not acceptance of
+the owner's unavailable websocket/Kubernetes worker service.
 
 Direct interface property declarations now enter the same native declaration
 catalogue. Their written signatures preserve optional/readonly modifiers and
