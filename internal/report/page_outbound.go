@@ -1,5 +1,7 @@
 package report
 
+import "strings"
+
 // pageOutbound is one accepted communication record. Destination and Summary
 // are display prose; Address, NativeLabel and External retain source spelling.
 // No dependency-group membership is required and no package import creates one.
@@ -24,6 +26,35 @@ type pageOutboundStep struct {
 	Name   string
 	Anchor pageAnchor
 }
+
+// AddressText expands the destination reader's leading configuration notation
+// for display only. It never resolves a setting or changes the saved address.
+type pageOutboundAddress struct {
+	Text, Setting, SettingLabel, Suffix string
+}
+
+func outboundAddressText(address string) pageOutboundAddress {
+	result := pageOutboundAddress{Text: address}
+	prefix, label := "{--", "Address from command-line option"
+	if strings.HasPrefix(address, "{env:") {
+		prefix, label = "{env:", "Address from environment variable"
+	}
+	if !strings.HasPrefix(address, prefix) {
+		return result
+	}
+	name, suffix, found := strings.Cut(strings.TrimPrefix(address, prefix), "}")
+	if !found || name == "" || strings.ContainsAny(name, "{} \t\r\n") || strings.ContainsAny(suffix, "{}") {
+		return result
+	}
+	result.Setting, result.SettingLabel, result.Suffix = name, label, suffix
+	if prefix == "{--" {
+		result.Setting = "--" + name
+	}
+	return result
+}
+
+func (row pageOutbound) AddressText() pageOutboundAddress    { return outboundAddressText(row.Address) }
+func (use pageOutboundUse) AddressText() pageOutboundAddress { return outboundAddressText(use.Address) }
 
 func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 	index := builder.graphIndex(section.programTargetID)

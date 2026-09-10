@@ -1215,7 +1215,7 @@ class RelationVisitor(ast.NodeVisitor):
                     "parts": [self.source_value(node.body), self.source_value(node.orelse)]}
         return unknown
 
-    def bind_source_parameters(self, node, arguments):
+    def bind_source_parameters(self, node, arguments, annotation_origins):
         owner = self.object(self.scope.ref).get("location")
         positional = list(node.args.posonlyargs) + list(node.args.args)
         decorators = [safe_expression_name(value) for value in getattr(node, "decorator_list", [])]
@@ -1233,9 +1233,10 @@ class RelationVisitor(ast.NodeVisitor):
                 origin = {"kind": "parameter", "text": argument.arg,
                           "position": position, "owner": owner,
                           "anchor": source_location(self.module["path"], argument)}
+            resolution, origins = annotation_origins.get(argument.arg, ("", []))
             self.current_pattern_bindings()[argument.arg] = {
-                "ref": ref, "origin_refs": [], "origin_resolution": "",
-                "origins_observed": 0,
+                "ref": ref, "origin_refs": origins, "origin_resolution": resolution,
+                "origins_observed": len(origins),
                 "binding_observed": True, "value_invalidated": True,
                 "value_candidate": None, "source_origin": origin,
             }
@@ -1472,9 +1473,19 @@ class RelationVisitor(ast.NodeVisitor):
             arguments.append(node.args.vararg)
         if node.args.kwarg is not None:
             arguments.append(node.args.kwarg)
+        annotation_origins = {}
         for argument in arguments:
             if argument.annotation is not None:
                 self.visit(argument.annotation)
+                # A written parameter type supplies a possible receiver origin,
+                # not a runtime value or call edge. Resolve it in the defining
+                # scope before parameter names can shadow the annotation.
+                if (argument not in (node.args.vararg, node.args.kwarg)
+                        and isinstance(argument.annotation, (ast.Name, ast.Attribute))):
+                    resolved = self.resolve(argument.annotation)
+                    candidate = self.object(resolved[1]) if resolved[1] else None
+                    if candidate and candidate["kind"] in ("type", "external_symbol"):
+                        annotation_origins[argument.arg] = self.pattern_resolution(resolved)
         if node.returns is not None:
             self.visit(node.returns)
         for parameter in getattr(node, "type_params", []):
@@ -1482,7 +1493,7 @@ class RelationVisitor(ast.NodeVisitor):
         previous = self.scope
         self.scope = self.analyzer.node_scopes[id(node)]
         self.pattern_bindings[id(self.scope)] = {}
-        self.bind_source_parameters(node, arguments)
+        self.bind_source_parameters(node, arguments, annotation_origins)
         for statement in node.body:
             self.visit(statement)
         self.scope = previous
@@ -1537,7 +1548,7 @@ class RelationVisitor(ast.NodeVisitor):
         previous = self.scope
         self.scope = self.analyzer.node_scopes[id(node)]
         self.pattern_bindings[id(self.scope)] = {}
-        self.bind_source_parameters(node, arguments)
+        self.bind_source_parameters(node, arguments, {})
         self.visit(node.body)
         self.scope = previous
 

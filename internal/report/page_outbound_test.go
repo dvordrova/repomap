@@ -17,6 +17,28 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
+func TestOutboundAddressExplainsConfigurationWithoutResolvingIt(t *testing.T) {
+	for _, tc := range []struct {
+		address, setting, label, suffix string
+	}{
+		{"{--proxy-endpoint}/hello", "--proxy-endpoint", "Address from command-line option", "/hello"},
+		{"{env:거래소_URL}/가격", "거래소_URL", "Address from environment variable", "/가격"},
+		{"{--trace-endpoint}", "--trace-endpoint", "Address from command-line option", ""},
+		{"https://prices.example/{market}", "", "", ""},
+		{"https://prices.example/{--literal}", "", "", ""},
+		{"{--host}/{env:PATH}", "", "", ""},
+		{"{--}", "", "", ""},
+		{"", "", "", ""},
+	} {
+		t.Run(tc.address, func(t *testing.T) {
+			got := outboundAddressText(tc.address)
+			if got.Text != tc.address || got.Setting != tc.setting || got.SettingLabel != tc.label || got.Suffix != tc.suffix {
+				t.Fatalf("address notation lost source spelling or acquired a value: %+v", got)
+			}
+		})
+	}
+}
+
 func TestOutboundSourceUsesDoNotHideBehindOneSelectedAddress(t *testing.T) {
 	index := groupindex.Index{Target: programindex.Target{ID: "service"}, Outbound: []groupindex.OutboundCall{{
 		ID: "shared-send", Kind: "http_client", Source: "model", Address: "https://prices.example",

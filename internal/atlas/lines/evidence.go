@@ -34,23 +34,29 @@ func (c *EvidenceCatalog) references(evidence []atlas.EdgeEvidence) []string {
 	return refs
 }
 
+type callEvidence struct {
+	atlas.SymbolCall
+	HasRepositoryCalleeCandidate bool     `json:"has_repository_callee_candidate,omitempty"`
+	EvidenceRefs                 []string `json:"evidence_refs,omitempty"`
+}
+
 func (c *EvidenceCatalog) Call(call atlas.SymbolCall) any {
+	return c.call(call)
+}
+
+func (c *EvidenceCatalog) call(call atlas.SymbolCall) callEvidence {
 	// This only establishes that at least one observed callee candidate is
 	// indexed in the repository. Resolution still distinguishes exact and
 	// possible dispatch; other candidates may remain external or unresolved.
 	hasRepositoryCallee := len(call.CalleeIDs) > 0
 	call.CalleeIDs = nil
 	call.SourceArguments = nil // Read by destination traversal with source anchors.
-	call.API = nil // Exact package authority is used by local mechanism matching.
+	call.API = nil             // Exact package authority is used by local mechanism matching.
 	call.ReceiverValue, call.ResultValue = nil, nil
 	call.Column = 0 // The exact native identity stays local.
 	refs := c.references(call.Evidence)
 	call.Evidence = nil
-	return struct {
-		atlas.SymbolCall
-		HasRepositoryCalleeCandidate bool     `json:"has_repository_callee_candidate,omitempty"`
-		EvidenceRefs                 []string `json:"evidence_refs,omitempty"`
-	}{call, hasRepositoryCallee, refs}
+	return callEvidence{call, hasRepositoryCallee, refs}
 }
 
 // BindingTable factors shared fields out of a registration list. A row still

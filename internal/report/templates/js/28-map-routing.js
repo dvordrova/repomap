@@ -196,7 +196,7 @@ var repomapGraph = (function () {
             items.slice(0,5).forEach(function(item){
               var row=el('li','');row.appendChild(item.querySelector('.input-title').cloneNode(true));
               if(item.hasAttribute('data-integration-item')){
-                ['.outbound-purpose','.outbound-address','.outbound-basis','.outbound-source','.input-source'].forEach(function(selector){var detail=item.querySelector(selector);if(detail)row.appendChild(detail.cloneNode(true));});
+                ['.outbound-purpose','.outbound-address','.outbound-basis','.outbound-details'].forEach(function(selector){var detail=item.querySelector(selector);if(detail)row.appendChild(detail.cloneNode(true));});
               }
               row.dataset.sourceKind=item.dataset.sourceKind||'fact';
               list.appendChild(row);

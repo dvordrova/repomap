@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	adapterVersion       = 13
+	adapterVersion       = 14
 	maxParserStderrBytes = 16 << 10
 )
 

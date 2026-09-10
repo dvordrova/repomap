@@ -2476,6 +2476,28 @@ adding a question regenerates the changed answer window. Per-question answer
 memos are deliberately absent until their independence and cost justify them.
 This differs from retrieval's existing per-question memo.
 
+Question declaration evidence also carries its existing native calls and short
+immediate-caller records. Native identities bind each declaration to its symbol
+locally; only names, source anchors, call kind, invocation, resolution, observed
+literals and external API identity enter the provider. Possible or unresolved
+calls retain their uncertainty. Incoming columns come only from outgoing records
+matching location, callee, kind, invocation and resolution; distinct same-line
+sites remain distinct. A caller supplies its own declaration and call site, not
+its other calls or a recursive neighbourhood. API origin describes resolver
+identity, not a remote-system classification. Each declaration owns its evidence
+catalogue, so selecting one cannot import another declaration's observations.
+The selected original evidence reaches the shared answer unchanged. Bodies,
+full source-value trees and canonical IDs remain excluded. No graph or saved
+input format changes; exact changed request bytes govern cache reuse.
+
+The saved service input from 20260910-180332 retains all 28 evidence rows and
+16 questions. Adding 105 original calls and 14 incoming sites to 21 declarations
+changes the Go-encoded owner JSON from 20,931 to 47,320 bytes, shared once across
+questions. This is an input-size measurement, not a provider cost or speed result.
+Final-request checks distinguish main's separate InitHandler/ReinitHandler calls,
+retain the trace HTTP exporter's API, and preserve ambiguous and same-line calls.
+Online answer quality after this evidence change remains under acceptance.
+
 Ordinary preparation uses the actual provider envelope with no question quota
 or 64 KiB planning cap. Resource refusals split independent questions first and
 recompute each child's complete source union. Only an oversized singleton
@@ -4342,7 +4364,7 @@ Calls in non-callable local value initializers belong to the enclosing callable,
 while those values retain separate receiver/argument identities. An imported
 factory does not give exact import authority to a method on its result.
 
-Go direct calls v11 / external calls v5, Python adapter v13 and JSTS helper v22
+Go direct calls v11 / external calls v5, Python adapter v14 and JSTS helper v23
 retain neutral `control_context` witnesses on the existing call pattern. Go
 uses the already loaded AST and types, Python annotates each parsed tree once
 before its target views, and JSTS walks compiler parent nodes. Loop bodies and
@@ -4377,8 +4399,15 @@ review is not a new exhaustive per-mount endpoint inventory.
 The 2026-09-10 review also joins native HTTP facts to the original symbol
 place before operation review. Observed mounted paths from chi, FastAPI,
 Flask, Express and Django retain their exact source spelling and router identity;
-an unrelated same-named router supplies no prefix. Native HTTP facts remain
-visible independently of a semantic operation label. Python thread/schedule
+an unrelated same-named router supplies no prefix. Mounts on directly annotated
+Python parameters retain their prefix: the existing native
+pattern carries the written type as a possible receiver origin, resolved in its
+defining scope. Function-local imports retain their original router identity;
+untyped, locally shadowed or reassigned receivers supply no framework authority
+by name, and annotations add no native call edge. This closes the Freqtrade
+`configure_app(app: FastAPI)` loss of `/api/v1` before ordinary model acceptance.
+Native HTTP facts remain visible independently of a semantic operation label.
+Python thread/schedule
 registrations retain the receiving call, result identity, time/field observations
 and source anchors; a later start on the same result does not become a callback
 call edge. Worker/scheduled classification still belongs to model review, with
@@ -4403,8 +4432,15 @@ known deployed address. A possible field initializer stays labelled as such.
 Only the existing boundary review assigns communication meaning. Request
 builders, local timers and imports are not locally promoted into integrations.
 Boundary uses survive atlas v6, GroupsIndex v10 and report v89. The first-screen
-row shows the protocol and address or an explicit unknown, with complete source
-chains and purpose under disclosure; a selected address never hides another use.
+row shows the accepted destination label and localized purpose, then the address
+or an explicit unknown. The destination reader's leading flag/environment
+notation is explained as a setting and a literal suffix, never resolved to a
+deployed address. Protocol and configuration/dispatch basis remain secondary;
+the complete call and source chain open under "Show in code". A selected address
+never hides another use. Model provenance appears once per catalogue, and these
+presentation changes reuse the same saved description translations through the
+ordinary render command. Nonempty repository connection counters use the same
+active accent as other navigation controls, rather than resembling disabled ones.
 
 The source facts pipeline also extracts SQL text and table declarations from
 SQL/sqlc and supported SQLAlchemy declarations. It retains source scope,

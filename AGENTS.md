@@ -202,7 +202,13 @@ unresolved target view is subsumed only by possible receiver observations at
 the same exact call site with otherwise identical call facts; distinct sites,
 dispatch details and independent evidence remain. Possible dispatch never
 becomes exact. Generated callables retain facts without becoming description or
-operation-review candidates. These local keys and call columns never enter provider rows.
+operation-review candidates. These canonical local keys never enter provider rows. Other atlas tables keep
+their compact call projection without native call columns. Question declaration
+evidence retains each original call's line, column and native API identity;
+known callee/caller IDs are restored locally to source anchors. Short immediate
+caller records preserve their native relationship and separate same-line sites
+without importing the caller's other calls. Each declaration owns its source
+evidence catalogue, carried with its selected original evidence into the answer.
 The operation review sends immediate caller declarations once with
 their distinct call sites; it does not join names or recursively expand callers.
 It also retains literal arguments of the exact registration that receives each
@@ -255,10 +261,14 @@ Python HTTP facts follow observed single base-class chains to external methods,
 stopping at local overrides and incomplete or multiple bases. TypeScript uses
 the compiler-resolved original external class method. These facts do not add
 native call edges; Go's promoted embedded methods use existing compiler evidence.
+Direct written Python parameter types also retain possible receiver origins,
+resolved in the defining scope. This preserves router mounts through typed
+parameters and function-local imports. Untyped or reassigned parameters and
+unrelated local classes do not acquire framework authority from a method name.
 
 ProgramIndex v14 retains source expressions for non-callable arguments,
 receivers and locally observed return values. Go direct calls v11/external
-calls v5, Python v13 and JSTS v16/helper v22 extract these in their existing
+calls v5, Python v14 and JSTS v16/helper v23 extract these in their existing
 parse. Parameter/capture owners, call-result anchors, constructors, field
 initializers and concatenations remain source observations. The existing atlas
 calls carry them locally; ordinary provider call rows do not repeat expression

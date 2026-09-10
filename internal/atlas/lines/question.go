@@ -47,9 +47,13 @@ func QuestionRows(graph atlas.Graph) []QuestionChunk {
 	places := make(map[string]atlas.Place, len(graph.Places))
 	boundaries := make(map[string][]atlas.Place)
 	typeDeclarations := make(map[string][]atlas.TypeMember)
+	symbols := make(map[string]atlas.Place)
 	var files []atlas.Place
 	for _, place := range graph.Places {
 		places[place.ID] = place
+		if place.Symbol != nil && place.Symbol.Decl.ObjectID != "" {
+			symbols[place.Symbol.Decl.ObjectID] = place
+		}
 		if place.Symbol != nil && place.Symbol.Decl.Kind == "type" {
 			typeDeclarations[place.Symbol.Decl.ObjectID] = place.Symbol.Members
 		}
@@ -67,6 +71,9 @@ func QuestionRows(graph atlas.Graph) []QuestionChunk {
 		var units []questionUnit
 		for _, decl := range file.File.Decls {
 			facts := map[string]any{"name": decl.Name, "kind": decl.Kind, "signature": decl.Signature, "author_doc": decl.Doc}
+			if symbol, ok := symbols[decl.ObjectID]; ok {
+				questionCallableEvidence(facts, symbol, places, symbols)
+			}
 			if members := typeDeclarations[decl.ObjectID]; len(members) > 0 {
 				facts["owned_declarations"] = ownedDeclarations(members)
 			}
@@ -211,6 +218,9 @@ func questionChunks(place atlas.Place, units []questionUnit, context []table.Fie
 			item.facts["ref"] = ref
 			item.facts["anchor_path"] = item.anchor.Path
 			item.facts["anchor_line"] = item.anchor.Line
+			if item.anchor.Column > 0 {
+				item.facts["anchor_column"] = item.anchor.Column
+			}
 			facts = append(facts, item.facts)
 		}
 		fields := []table.Field{

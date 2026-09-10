@@ -169,12 +169,35 @@ func TestCumulativePythonRoutesRetainRouterValuesAcrossDeclarations(t *testing.T
 	if route != 1 || mounts != 3 {
 		t.Fatalf("router observations route=%d mounts=%d; local lookalike stays a raw observation", route, mounts)
 	}
+	var typedParameterMount bool
+	for _, relation := range index.Relations {
+		for _, pattern := range relation.Patterns {
+			if pattern.Selector != "include_router" {
+				continue
+			}
+			for _, arg := range pattern.Arguments {
+				if arg.Keyword != "prefix" || arg.Value != "/configured" {
+					continue
+				}
+				typedParameterMount = true
+				if pattern.ReceiverOriginResolution != programindex.ResolutionAlternatives || len(pattern.ReceiverOriginIDs) != 1 || pattern.ReceiverOriginsObserved != 1 {
+					t.Fatalf("written parameter type lost possible receiver authority: %+v", pattern)
+				}
+				if relation.Resolution != programindex.ResolutionUnresolved || len(relation.ToIDs) != 0 {
+					t.Fatalf("parameter annotation invented a native call edge: %+v", relation)
+				}
+			}
+		}
+	}
+	if !typedParameterMount {
+		t.Fatal("function-local import mount on typed parameter was not observed")
+	}
 	result, err := facts.Build(facts.Input{Revision: strings.Repeat("a", 40), Repository: repository,
 		TrackedPaths: repository.VisiblePaths(), Targets: []facts.TargetInput{{Index: index}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wanted := map[string]bool{"/api/v1/ping": false, "/alternate/v1/ping": false, "/private/ping": false, "/flask/health": false, "/django/health": false}
+	wanted := map[string]bool{"/api/v1/ping": false, "/alternate/v1/ping": false, "/private/ping": false, "/configured/ping": false, "/flask/health": false, "/django/health": false}
 	for _, route := range result.OfKind(facts.KindHTTPRoute) {
 		if _, ok := wanted[route.Path]; !ok {
 			t.Fatalf("unexpected route or lost prefix: %+v", route)
