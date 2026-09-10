@@ -1918,6 +1918,16 @@ a Korean declaration and checks both English and Russian rendered reports with
 the original source and operation links. An ordinary run rebuilds the changed
 display catalogue; old saved translations are not silently adapted.
 
+Ordinary acceptance `20260910-052059` on `33c29c5c` published both fixture
+components and one Russian HTML in 236.618 s, with 31 live exchanges and three
+cache hits. All 416 display entries have translations from eight initial
+windows, with no rejected exchanges. Browser checks retained the English
+operation labels on the entrance and selected map, Russian descriptions and
+exact source/navigation links. The Korean alias binding is separately covered
+by the report regression; this English-named fixture is not positive Korean
+model evidence. Receipts are under
+`work/airflow-validation-20260909/followup-20260910/ordinary-alias-*`.
+
 Translation receives names and definitions as context and returns only
 translated text: definitions and surrounding prose change language, names do not.
 Go looks up exact complete names in the final text and binds UTF-16 spans to the
@@ -3933,9 +3943,18 @@ windows, reused their exact accepted cache entries; all 374 display entries
 have translations. Artifact, target-outcome and publication checks passed.
 The earlier saved report also renders with the current templates without
 analysis or provider requests. Full product tests with the real TypeScript
-compiler, vet and the canonical build passed. The current full Airflow process
-still uses the older binary and has nineteen failed target rows; this focused
-acceptance does not turn that run into a successful full check.
+compiler, vet and the canonical build passed. That older full Airflow process
+was stopped with nineteen failed target rows; this focused acceptance does not
+turn that historical run into a successful full check.
+
+On 2026-09-10 the owner explicitly authorized a new full current-main check.
+All ten previously refused JS/TS targets passed their real compiler/index and
+complete dependency checks after helper v18, alongside the nine Python targets
+above. Full tests with the installed TypeScript 6.0.3, vet and build passed.
+The new full ordinary run `20260910-052204-airflow-28821b3e997f` started on
+`33c29c5c` at 05:22:04 UTC. Its live state and log are under
+`work/airflow-validation-20260909/followup-20260910/`; full elapsed time,
+coverage and HTML remain unaccepted until that run finishes and is audited.
 
 The current declaration experiment uses adapter v11 and question table v6.
 Native class ownership feeds the existing atlas type-member representation;
