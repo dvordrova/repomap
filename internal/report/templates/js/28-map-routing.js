@@ -1,3 +1,22 @@
+// Disclosures change the first view only; the complete original rows stay in HTML.
+document.querySelectorAll('[data-input-group],[data-integration-group]').forEach(function(group){
+  var items=Array.from(group.querySelectorAll('[data-input-item],[data-integration-item]'));
+  var kinds=new Set(items.map(function(item){return item.querySelector('.input-kind')?.textContent||'';}));
+  if(kinds.size===1)group.querySelectorAll('.input-kind').forEach(function(kind){kind.hidden=true;});
+  var sources=new Set(items.map(function(item){return item.dataset.sourceKind||'fact';}));
+  if(sources.size>1)items.forEach(function(item){var label=document.createElement('span');label.className='input-source';label.textContent=rmT(item.dataset.sourceKind==='model'?'Model interpretation':'Observed in source');item.appendChild(label);});
+  if(items.length<=5)return;
+  var lists=Array.from(group.querySelectorAll('ul.operation-catalog,ul.route-catalog'));
+  var preview=document.createElement('ul');preview.className='plain operation-catalog';
+  var rest=document.createElement('ul');rest.className=preview.className;
+  items.forEach(function(item,index){(index<5?preview:rest).appendChild(item);});
+  lists.forEach(function(list){list.remove();});group.querySelectorAll('.input-more').forEach(function(more){more.remove();});
+  group.appendChild(preview);
+  var more=document.createElement('details');more.className='input-more';
+  var summary=document.createElement('summary');summary.textContent=rmT('All {0} →',items.length);
+  more.append(summary,rest);group.appendChild(more);
+});
+
 // Folding retains evidence; ELK owns placement, ports and obstacle-free routing.
 // The pinned engine is embedded in the report: no network or analysis is needed.
 var repomapGraph = (function () {
@@ -7,7 +26,7 @@ var repomapGraph = (function () {
     var options={'elk.algorithm':'layered','elk.direction':'RIGHT','elk.edgeRouting':'ORTHOGONAL','elk.randomSeed':'1','elk.hierarchyHandling':'INCLUDE_CHILDREN','elk.padding':'[top=36,left=36,bottom=36,right=36]','elk.spacing.nodeNode':'44','elk.spacing.edgeNode':'24','elk.spacing.edgeEdge':'12','elk.layered.spacing.nodeNodeBetweenLayers':'90','elk.layered.spacing.edgeNodeBetweenLayers':'28','elk.layered.spacing.edgeEdgeBetweenLayers':'12','elk.layered.mergeEdges':'false','elk.separateConnectedComponents':'true'};
     if(areas && areas.length){
       var assigned=new Set();
-      var compound=areas.map(function(area){var members=children.filter(function(n){return area.nodes.indexOf(n.id)>=0;});members.forEach(function(n){assigned.add(n.id);});return{id:area.id,children:members,layoutOptions:Object.assign({},options,{'elk.padding':'[top=44,left=24,bottom=24,right=24]'})};}).filter(function(a){return a.children.length;});
+      var compound=areas.map(function(area){var members=children.filter(function(n){return area.nodes.indexOf(n.id)>=0;});members.forEach(function(n){assigned.add(n.id);});return{id:area.id,children:members,layoutOptions:Object.assign({},options,{'elk.padding':'[top=64,left=24,bottom=24,right=24]'})};}).filter(function(a){return a.children.length;});
       children=compound.concat(children.filter(function(n){return !assigned.has(n.id);}));
     }
     var input={id:'root',layoutOptions:options,children:children,edges:edges.map(function(e,i){return{id:'edge-'+i,sources:[e.from],targets:[e.to]};})};
@@ -23,7 +42,8 @@ var repomapGraph = (function () {
     var placed={}, offsets={root:{x:0,y:0}},frames=[];
     function collect(parent,x,y){(parent.children||[]).forEach(function(n){var px=x+n.x,py=y+n.y;offsets[n.id]={x:px,y:py};if(n.children){frames.push({id:n.id,x:px,y:py,w:n.width,h:n.height});collect(n,px,py);}else placed[n.id]={x:px,y:py,w:n.width,h:n.height};});}
     collect(graph,0,0);
-    var routed=(graph.edges||[]).map(function(e){var original=edges[+e.id.slice(5)],offset=offsets[e.container||'root'];
+    var allEdges=[];function collectEdges(parent){(parent.edges||[]).forEach(function(e){allEdges.push({edge:e,container:parent.id});});(parent.children||[]).forEach(collectEdges);}collectEdges(graph);
+    var routed=allEdges.map(function(item){var e=item.edge,original=edges[+e.id.slice(5)],offset=offsets[e.container||item.container];
       var segments=(e.sections||[]).map(function(s){return [s.startPoint].concat(s.bendPoints||[],[s.endPoint]).map(function(p){return{x:p.x+offset.x,y:p.y+offset.y};});});
       return Object.assign({},original,{segments:segments,points:segments.flat(),path:pathFor(segments)});
     });
@@ -68,9 +88,9 @@ var repomapGraph = (function () {
       if(inside && !inside.has(e.from) && !inside.has(e.to))return;
       (representatives[e.from]||[]).forEach(function(from){(representatives[e.to]||[]).forEach(function(to){
         if(from===to)return;
-        var key=from+'\x00'+to+'\x00'+e.possible;
+        var key=from+'\x00'+to;
         if(!result.has(key))result.set(key,{from:from,to:to,possible:e.possible,relations:[]});
-        result.get(key).relations.push(e);
+        var folded=result.get(key);folded.possible=folded.possible||e.possible;folded.relations.push(e);
       });});
     });
     return Array.from(result.values()).sort(function(a,b){return (a.from+a.to+a.possible).localeCompare(b.from+b.to+b.possible);});
@@ -137,7 +157,6 @@ var repomapGraph = (function () {
   }
   roleButton(rmT('All components'),'',ids.length);lanes.forEach(function(lane){if(lane.role)roleButton(lane.title,lane.role,lane.nodes.length);});controls.appendChild(count);map.prepend(controls);
   var overview=el('div','repo-component-overview');
-  var hint=el('p','repo-overview-hint',rmT('Open a product or its complete list of inputs, parts and integrations.'));overview.appendChild(hint);
   var space=el('div','repo-component-space');overview.appendChild(space);
   var links=document.createElementNS('http://www.w3.org/2000/svg','svg');links.classList.add('repo-space-links');links.setAttribute('role','group');links.setAttribute('aria-label',rmT('Repository components and their connections'));space.appendChild(links);
   var focus=el('section','repo-component-focus');focus.id='repo-component-focus-'+mapIndex;focus.hidden=true;focus.tabIndex=-1;overview.appendChild(focus);
@@ -169,20 +188,24 @@ var repomapGraph = (function () {
         var inputs=page?.querySelector('.input-catalog');
         if(inputs){
           var entrance=el('div','repo-inputs');
-          inputs.querySelectorAll('[data-input-group]').forEach(function(group){
+          inputs.querySelectorAll('[data-input-group],[data-integration-group]').forEach(function(group){
             var block=el('section',''),heading=group.querySelector('h4');
             block.appendChild(el('h5','',heading.textContent));
             var list=el('ul','');
-            group.querySelectorAll('[data-input-item]').forEach(function(item){
+            var items=Array.from(group.querySelectorAll('[data-input-item],[data-integration-item]'));
+            items.slice(0,5).forEach(function(item){
               var row=el('li','');row.appendChild(item.querySelector('.input-title').cloneNode(true));
-              var provenance=item.querySelector('.meta');if(provenance)row.appendChild(provenance.cloneNode(true));
+              row.dataset.sourceKind=item.dataset.sourceKind||'fact';
               list.appendChild(row);
-            });block.appendChild(list);entrance.appendChild(block);
+            });block.appendChild(list);
+            var provenance=group.querySelector('.input-provenance');if(provenance)block.appendChild(provenance.cloneNode(true));
+            if(items.length>5){var more=el('a','input-all',rmT('All {0} →',items.length));more.href='#'+inputs.id;more.addEventListener('click',function(){group.querySelector('.input-more')?.setAttribute('open','');});block.appendChild(more);}
+            entrance.appendChild(block);
           });card.appendChild(entrance);
         }
         var connectionCount=incident(id,'in').length+incident(id,'out').length;
         var inspect=el(connectionCount?'button':'span','repo-row-connections'+(connectionCount?'':' repo-row-connections-empty'));inspect.setAttribute('aria-label',rmT('Connections')+': '+connectionCount);
-        inspect.appendChild(el('span','product-catalog-label',rmT('Connections')));inspect.appendChild(el('span','product-catalog-count',String(connectionCount)));
+        inspect.appendChild(el('span','product-catalog-label',rmT('Connections')));inspect.appendChild(el('span','product-catalog-count',String(connectionCount)));inspect.hidden=!connectionCount;
         if(connectionCount){inspect.type='button';inspect.setAttribute('aria-controls',focus.id);inspect.addEventListener('click',function(){choose(id,true);});}card.appendChild(inspect);
       }
       var sources=el('div','repo-component-source-links'),seen=new Set();
@@ -285,6 +308,7 @@ var repomapGraph = (function () {
     ids.forEach(function(id){cards[id].hidden=!!selectedRole&&nodes[id].dataset.role!==selectedRole;var button=cards[id].querySelector('button');if(button)button.setAttribute('aria-expanded',id===selected?'true':'false');});
     lanes.forEach(function(lane){lane.section.hidden=!!selectedRole&&lane.role!==selectedRole;});
     controls.querySelectorAll('button').forEach(function(button){button.setAttribute('aria-pressed',button.dataset.role===selectedRole?'true':'false');});
+    count.hidden=!selectedRole;
     count.textContent=rmT('Showing {0} of {1} components',ids.filter(function(id){return !cards[id].hidden;}).length,ids.length);
     describe();emphasize();queueDraw();
     map.dataset.readingLabel=selected?nameOf(selected):'';map.dispatchEvent(new CustomEvent('repomap:reading',{bubbles:true}));

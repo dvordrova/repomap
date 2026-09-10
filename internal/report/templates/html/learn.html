@@ -2,7 +2,6 @@
 <div class="learn-home" data-reading-mode="learn">
 <div class="learn-intro"><h2>{{t "Understand this repository"}}</h2>
 {{if .Summary}}<p class="summary model"><span data-display-ref="{{.Summary.TextRef}}">{{.Summary.Text}}</span><span class="model-sources">{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</span></p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
-<p class="report-scope">{{t "This report: {0} components · {1} questions" (len .Sections) (len .Questions)}}</p>
 </div>
 {{template "learn-start-links.html" .}}
 </div>
@@ -19,7 +18,7 @@
 <nav class="learn-start" aria-label="{{t "Starting points"}}">
 <span class="learn-start-label">{{t "Starting points"}}</span>
 {{if .Questions}}<a class="learn-question-entry" href="#questions">{{t "Choose from {0} questions" (len .Questions)}} <span aria-hidden="true">→</span></a>{{end}}
-<a href="#learn-parts">{{t "What is inside each part?"}} <span aria-hidden="true">→</span></a>
+<a href="#repository-map">{{t "Inputs"}} <span aria-hidden="true">→</span></a>
 <a href="{{.LearnRunHref}}">{{t "How do I run it?"}} <span aria-hidden="true">→</span></a>
 {{if .Glossary}}<a href="#concepts">{{t "What does this term mean?"}} <span aria-hidden="true">→</span></a>{{end}}
 </nav>

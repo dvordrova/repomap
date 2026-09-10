@@ -48,10 +48,15 @@ const search={value:''},directParts={};
 		part(ops, "function allowed()", "    function scopePath(") +
 		part(read("28-map-routing.js"), "function fold(", "  function draw(") + `
 const repomapGraph={fold};
+const originalRelations=[{from:'a',to:'b',possible:false,label:'exact'}, {from:'a',to:'b',possible:true,label:'possible'}, {from:'b',to:'a',possible:false,label:'reverse'}];
+const folded=fold(originalRelations,{a:['A'],b:['B']});
+assert.equal(folded.length,2,'one arrow per direction, retaining mixed evidence');
+assert.equal(folded.find(e=>e.from==='A').relations.length,2);
+assert.deepEqual(folded.flatMap(e=>e.relations).map(e=>e.label).sort(),['exact','possible','reverse']);
 const rawEdges=[['op','a','entry'],['a','b','ab'],['b','c','bc'],['c','remote','external'],['b','c','second-source']].map(([from,to,label])=>({from,to,label,scope:'operation',operations:['op']}));
 rawEdges.push({from:'c',to:'unrelated',label:'other-operation',scope:'operation',operations:['other']});
 function projection(scope){
- let currentEdges=[];
+ let currentEdges=[];const area=null,viewScope=scope;
 ` + part(ops, "var limit=allowed()", "      var boxes={}") + `
  return {visible,edges:currentEdges};
 }

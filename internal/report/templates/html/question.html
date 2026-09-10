@@ -10,12 +10,14 @@
 {{range .Places}}<a href="{{.Href}}">{{t "Explore {0} →" .Title}}</a> {{end}}</details>{{end}}</div>{{end}}
 {{if .MapLinks}}<div class="reading-map-links"><span class="reading-map-label">{{t "Explore the answer on the map:"}}</span>{{range .MapLinks}}<a href="{{.Href}}" data-question-map="{{.NodeID}}">{{.Label}} →</a> {{end}}</div>{{end}}
 {{if .Remaining}}<p class="reading-gap"><strong>{{t "Still to investigate"}}</strong> <span class="model"><span data-display-ref="{{.RemainingRef}}">{{.Remaining}}</span></span></p>{{end}}
-{{if .Checks}}<details class="answer-check"><summary{{if .CheckID}} id="{{.CheckID}}"{{end}}>{{t "Check this interpretation"}}</summary>
-<ul class="reading-stops">{{range .Checks}}<li><strong>{{.Name}}</strong> <span class="reading-source">{{template "anchor" .Source}}</span>
-{{template "question-excerpts.html" .Excerpts}}
-</li>{{end}}</ul></details>{{end}}
+
 </div>{{end}}
 {{if .Note}}<p class="meta">{{.Note}}</p>{{end}}
+<details class="question-evidence"><summary>{{t "Check the sources"}}</summary>
+{{range .Answers}}{{if .Checks}}<details class="answer-check"><summary{{if .CheckID}} id="{{.CheckID}}"{{end}}>{{t "Check this interpretation"}}</summary>
+<ul class="reading-stops">{{range .Checks}}<li><strong>{{.Name}}</strong> <span class="reading-source">{{template "anchor" .Source}}</span>
+{{template "question-excerpts.html" .Excerpts}}
+</li>{{end}}</ul></details>{{end}}{{end}}
 {{if .Readings}}<details class="answer-reading"><summary>{{t "Read the supporting code and documentation"}}</summary>{{range .Readings}}<div class="reading-part"><ol class="reading-stops">{{range .Steps}}<li>
 <div><strong>{{.Name}}</strong> <span class="reading-source">{{template "anchor" .Source}}</span></div>
 <p class="model"><span data-display-ref="{{.WhyRef}}">{{.Why}}</span><span class="model-sources">{{template "anchor" .Source}}</span></p>
@@ -27,7 +29,7 @@
 {{if ne .Question $.Question}}<p>{{t "Combined with: {0}" .Question}}</p>{{end}}
 {{template "question-checks.html" .Checks}}</div>{{end}}</details>{{end}}
 <details><summary>{{t "What this guide was based on"}}</summary><ul>{{range .Scope}}<li>{{t .}}</li>{{end}}</ul></details>
-</details>{{end}}
+</details></details>{{end}}
 
 {{define "question-checks.html"}}{{if .}}<details><summary>{{t "Check the sources"}}</summary><ul class="reading-stops">{{range .}}<li><strong>{{.Name}}</strong> {{template "anchor" .Source}}
 {{range .ExcerptCheckIDs}}<p><a href="#{{.}}">{{t "Show excerpt"}}</a></p>{{end}}

@@ -172,7 +172,12 @@ separate stage outputs.
   do not inherit the group's arrows. The owner's 2026-09-10 entrance correction
   exposes all existing requests, commands and background activities by name at
   the component entrance and on its repository row. Their original kinds and
-  provenance remain visible. An operation opens its complete existing parts and
+  provenance remain visible. The 2026-09-10 review keeps five initial rows per
+  group with All N disclosures, beside the existing integration groups.
+  Opening an area preserves its frame and peers; a part reveals source labels
+  inside that frame. Collapse and Back retain the prior view. Grouped arrows
+  preserve every original directed relation and its evidence on inspection.
+  An operation opens its complete existing parts and
   relations; choosing one part retains that diagram and viewport beside its
   reading. This adds no execution trace, classification or model call.
 * Learn questions come from a curated, repository-independent set of learning

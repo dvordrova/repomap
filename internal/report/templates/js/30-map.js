@@ -163,7 +163,6 @@
     var dragPointer = null, startX = 0, startY = 0, leftAt = 0, topAt = 0;
 
     function focusOpened() {
-      if(map.classList.contains('map-part-focus')&&!map.classList.contains('map-operation-context'))return;
       if (!pendingFocus || !stage.clientWidth || !stage.clientHeight) return;
       pendingFocus = false;
       if (!homeBoxes.length) { stage.scrollTo(0, 0); return; }
@@ -200,7 +199,7 @@
       updatePan();
     }
     function updatePan() {
-      var canPan = (!map.classList.contains('map-part-focus')||map.classList.contains('map-operation-context')) && stage.clientWidth > 0 && stage.clientHeight > 0 &&
+      var canPan = stage.clientWidth > 0 && stage.clientHeight > 0 &&
         (stage.scrollWidth > stage.clientWidth + 1 || stage.scrollHeight > stage.clientHeight + 1);
       stage.classList.toggle('map-zoomed', canPan);
       if (panHint) panHint.hidden = !canPan;
@@ -333,8 +332,7 @@
     var inspectedNode=null, inspectionRevision=0, remembered=new Map();
     function remember(){
       if(!inspectedNode||card.classList.contains('map-card-connection'))return;
-      var picker=heading.querySelector('[data-concept-picker]');
-      remembered.set(inspectedNode,{concept:picker?.value,scroll:content.scrollTop});
+      remembered.set(inspectedNode,{concept:map.explorerMember?.key,scroll:content.scrollTop});
     }
     content.addEventListener('scroll',remember);
     function show(node) {
@@ -362,12 +360,7 @@
       var concepts = map.exploreNode ? repomapMembers.items(node) : JSON.parse(node.dataset.concepts || '[]');
       card.classList.toggle('map-card-has-concepts', concepts.length > 0);
       if (concepts.length) {
-        html += ("<div class=\"map-concepts\" hidden><label><span>"+rmT.html("Code element")+"</span> <select data-concept-picker aria-label=\""+rmT.html("Code element to explain")+"\"><option value=\"\">"+rmT.html("Choose a code element")+"</option>");
-        concepts.forEach(function (concept, i) {
-          var repeated=concepts.some(function(other,j){return j!==i&&other.name===concept.name;});
-          html += '<option value="'+i+'">'+escapeText(repomapMembers.displayName(concept)+(repeated?' · '+concept.source.Text:''))+'</option>';
-        });
-        html += '</select></label><p data-concept-explanation></p><div class="map-concept-source"><span data-concept-source></span><span class="map-concept-provenance" role="img" title="'+rmT.html('Model explanation')+'" aria-label="'+rmT.html('Model explanation')+'">ⓘ</span></div></div>';
+        html+='<div class="map-concepts" hidden><strong data-concept-name></strong><p data-concept-explanation></p><div data-concept-source></div></div>';
       }
       html += ("<details class=\"map-card-evidence\"><summary>"+rmT.html("Code and connections")+"</summary>");
       if (counts && !node.dataset.activation) html += '<span class="map-card-meta">' + escapeText(counts) + '</span>';
@@ -398,7 +391,7 @@
       if(map.exploreNode&&concepts.length&&keys.every(function(key){var name=key.split(' — ')[0];return concepts.filter(function(concept){return concept.name===name;}).length===1;}))keys=[];
       keys=keys.map(escapeText);
       if (keys.length) html += '<ul class="map-card-keys">' + keys.map(function (k) { return '<li><code>' + k.replace(/ — .*$/, '') + '</code>' + (k.indexOf(' — ') > 0 ? ' — ' + k.slice(k.indexOf(' — ') + 3) : '') + '</li>'; }).join('') + '</ul>';
-      var arrows = map.classList.contains('repo-map') || map.classList.contains('map-part-focus') || witness ? [] : sentences(id);
+      var arrows = map.classList.contains('repo-map') || witness ? [] : sentences(id);
       if (arrows.length) html += '<ul>' + arrows.map(function (a) { return '<li>' + escapeText(a) + '</li>'; }).join('') + '</ul>';
       html += '<span class="map-card-hint">'+(node.getAttribute('data-activation')?rmT('Click to keep this operation selected. Open code using the source link.'):rmT('click — explore'))+'</span>';
       card.innerHTML = html+'</details>';
@@ -415,35 +408,24 @@
         var evidence=card.querySelector('.map-card-evidence');evidence.open=true;
         evidence.scrollIntoView({block:'nearest'});
       });
-      if (concepts.length) {
-        heading.appendChild(card.querySelector('.map-concepts label'));
-        var picker=heading.querySelector('[data-concept-picker]');
-        var backToPart=document.createElement('button');backToPart.type='button';backToPart.className='map-concept-back';
-        backToPart.textContent=rmT('← Back to part');backToPart.setAttribute('aria-label',rmT('← Back to {0}',titleOf(node)));
-        heading.prepend(backToPart);
-        backToPart.addEventListener('click',function(){
-          var selectedKey=map.explorerMember?.key;
-          picker.value='';picker.dispatchEvent(new Event('change'));
-          var part=map.querySelector('.map-focus-center');
-          var member=part&&Array.from(part.querySelectorAll('[data-member-source]')).find(function(b){return b.dataset.memberSource===selectedKey;});
-          if(member){member.focus({preventScroll:true});member.scrollIntoView({block:'nearest'});}else picker.focus({preventScroll:true});
-        });
-        if(saved?.concept!==undefined)picker.value=saved.concept;
-        var explain=function(){
-          var panel=card.querySelector('.map-concepts');
-          panel.hidden=picker.value==='';card.classList.toggle('map-card-has-concepts',!panel.hidden);
-          backToPart.hidden=panel.hidden||!map.classList.contains('map-part-focus');
-          if(panel.hidden){map.explorerMember=null;map.querySelectorAll('[data-member-source]').forEach(function(b){b.setAttribute('aria-pressed','false');});map.dispatchEvent(new Event('repomap:reading'));return;}
-          var concept=concepts[Number(picker.value)],source=concept.source;
-          map.explorerMember={owner:id,name:picker.selectedOptions[0].textContent,source:source.Text,href:source.Href,open:source.Open,key:repomapMembers.sourceKey(source)};
-          map.dispatchEvent(new Event('repomap:reading'));
-          map.querySelectorAll('[data-member-source]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.memberSource===repomapMembers.sourceKey(source));});
-          var explanation=card.querySelector('[data-concept-explanation]');
-          explanation.textContent=concept.explanation||rmT('No explanation saved. Open the source to inspect this element.');
-          explanation.dataset.displayRef=concept.explanation?concept.explanation_ref||'':'';
-          card.querySelector('[data-concept-source]').replaceChildren(repomapMembers.sourceLink(source));
-        };
-        picker.addEventListener('change',function(){inspectionRevision++;explain();content.scrollTop=0;remember();});explain();
+      map.inspectConcept=function(index){
+        var panel=card.querySelector('.map-concepts');if(!panel)return;
+        panel.hidden=index<0;card.classList.toggle('map-card-has-concepts',index>=0);
+        if(index<0){map.explorerMember=null;map.dispatchEvent(new Event('repomap:reading'));return;}
+        var concept=concepts[index],source=concept.source;
+        map.explorerMember={owner:id,name:repomapMembers.displayName(concept),source:source.Text,href:source.Href,open:source.Open,key:repomapMembers.sourceKey(source)};
+        panel.querySelector('[data-concept-name]').textContent=repomapMembers.displayName(concept);
+        var explanation=panel.querySelector('[data-concept-explanation]');
+        explanation.textContent=concept.explanation||rmT('No explanation saved. Open the source to inspect this element.');
+        explanation.dataset.displayRef=concept.explanation?concept.explanation_ref||'':'';
+        panel.querySelector('[data-concept-source]').replaceChildren(repomapMembers.sourceLink(source));
+        map.dispatchEvent(new Event('repomap:reading'));remember();
+      };
+      if(concepts.length){
+        var list=document.createElement('details');list.className='map-all-members';
+        var label=document.createElement('summary');label.textContent=rmT('All {0} →',concepts.length);list.appendChild(label);
+        list.appendChild(repomapMembers.grid(map,node));card.appendChild(list);
+        if(saved?.concept){var selected=concepts.findIndex(function(c){return repomapMembers.sourceKey(c.source)===saved.concept;});map.inspectConcept(selected);}
       }
       var actions=document.createElement('div');actions.className='map-card-actions';card.querySelector('.map-card-intro').appendChild(actions);
       if(map.exploreNode && !node.dataset.activation){
@@ -456,8 +438,8 @@
           users.forEach(function(op){var b=document.createElement('button');b.type='button';b.textContent=op.dataset.title;
             if(users.some(function(other){return other!==op&&other.dataset.title===op.dataset.title;})&&op.dataset.sourceText)b.textContent+=' · '+op.dataset.sourceText;
             b.addEventListener('click',function(){
-            var picker=heading.querySelector('[data-concept-picker]'),concept=picker&&picker.value!==''&&concepts[Number(picker.value)];
-            map.chooseOperation(op.id,{node:node,label:concept?rmT('{0} in {1}',picker.selectedOptions[0].textContent,titleOf(node)):titleOf(node),source:concept&&{href:concept.source.Href,open:concept.source.Open,key:repomapMembers.sourceKey(concept.source)}});
+            var concept=concepts.find(function(c){return repomapMembers.sourceKey(c.source)===map.explorerMember?.key;});
+            map.chooseOperation(op.id,{node:node,label:concept?rmT('{0} in {1}',repomapMembers.displayName(concept),titleOf(node)):titleOf(node),source:concept&&{href:concept.source.Href,open:concept.source.Open,key:repomapMembers.sourceKey(concept.source)}});
           });usage.appendChild(b);});actions.prepend(usage);}
       }
       var evidence=card.querySelector('.map-card-evidence');
@@ -470,10 +452,9 @@
       if(!inspectedNode)return;
       var concepts=map.exploreNode?repomapMembers.items(inspectedNode):JSON.parse(inspectedNode.dataset.concepts||'[]');
       var index=concepts.findIndex(function(c){return repomapMembers.sourceKey(c.source)===(source.key||source.href||source.open);});
-      var picker=heading.querySelector('[data-concept-picker]');
-      if(index<0||!picker)return;
-      picker.value=String(index);picker.dispatchEvent(new Event('change'));
+      if(index>=0)map.inspectConcept(index);
     };
+    map.showAllMembers=function(node){map.showNode(node);var list=card.querySelector('.map-all-members');if(list){list.open=true;list.scrollIntoView({block:'nearest'});}};
     map.showNode=function(node){if(map.exploreNode||!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');}};
     map.showMember=function(node,item){
       map.showNode(node);map.explainSource({href:item.source.Href,open:item.source.Open,key:repomapMembers.sourceKey(item.source)});
@@ -490,7 +471,8 @@
       edge.relations.forEach(function(relation){var row=document.createElement('p');
         [relation.from,relation.to].forEach(function(id,i){if(i)row.appendChild(document.createTextNode(' → '+relation.label+' → '));var n=byId[id];if(!n)return;var a=document.createElement('button');a.type='button';a.textContent=titleOf(n);a.addEventListener('click',function(){if(map.exploreNode)map.exploreNode(id);else n.click();});row.appendChild(a);});card.appendChild(row);
         if(relation.summary){var summary=document.createElement('p');summary.textContent=relation.summary;summary.dataset.displayRef=relation.summaryRef||'';card.appendChild(summary);}
-        [['fromSource','fromText'],['toSource','toText']].forEach(function(fields){if(!relation[fields[0]])return;var a=document.createElement('a');a.href=relation[fields[0]];a.textContent=relation[fields[1]];a.target='_blank';a.rel='noopener';a.className='map-details-link';card.appendChild(a);});
+        var evidenceKind=document.createElement('span');evidenceKind.className='map-card-meta';evidenceKind.textContent=relation.possible?rmT('Interpreted connection or possible dispatch'):rmT('Code connections');row.appendChild(evidenceKind);
+        [['fromSource','fromText','fromNoSource'],['toSource','toText','toNoSource']].forEach(function(fields){if(!relation[fields[0]]&&!relation[fields[2]])return;var link=repomapMembers.sourceLink({Href:relation[fields[0]],Text:relation[fields[1]],NoSource:relation[fields[2]]});link.className='map-details-link';card.appendChild(link);});
       });
       card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');
     });

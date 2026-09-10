@@ -57,16 +57,16 @@
     // its offsets still describe the displayed bytes, including after cloning.
     var value=textNodes(element);
     if(plan.text!==value.text)return;
-    var selected=[],seen=new Set(),previousParagraph=1,paragraph=element.closest('p,li');
+    var selected=[],seen=new Set(),previousParagraph=1,answer=element.closest('.reading-guide'),paragraph=answer||element.closest('p,li');
     if(paragraph&&paragraph!==element)paragraph.querySelectorAll('.term-mention').forEach(function(mention){seen.add(mention.dataset.termIds.split(' ').sort().join('|'));});
     plan.spans.forEach(function(span){
       if(!Number.isInteger(span.start)||!Number.isInteger(span.end)||span.start<0||span.end<=span.start||span.end>value.text.length||!Array.isArray(span.ids)||!span.ids.length||span.ids.some(function(id){return !entries.has(id);}))return;
       var parts=value.nodes.filter(function(row){return row.end>span.start&&row.start<span.end;});
       if(!parts.length||parts.some(function(row){return !row.eligible;}))return;
       var paragraph=value.text.slice(0,span.start).split(/\n\s*\n/).length;
-      if(paragraph!==previousParagraph){seen.clear();previousParagraph=paragraph;}
+      if(!answer&&paragraph!==previousParagraph){seen.clear();previousParagraph=paragraph;}
       // All source-distinct variants stay together. Repeating the same set in
-      // one paragraph adds no new explanation and needs no second underline.
+      // one answer adds no new explanation and needs no second underline.
       var key=span.ids.slice().sort().join('|');if(seen.has(key))return;seen.add(key);
       selected.push({span:span,parts:parts});
     });

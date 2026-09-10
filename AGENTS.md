@@ -215,7 +215,7 @@ allowlist classify an operation. Wrapped function-valued declarations retain
 compiler callable identity; inline anonymous callbacks and unindexed callable
 factory results remain unresolved. A factory result never becomes a binding or
 method call on the factory itself. Calls in ordinary local value initializers
-belong to their enclosing callable. Symbol table v6 and operation table v13
+belong to their enclosing callable. Symbol table v6 and operation table v14
 can interpret these observations as user `interaction`, alongside commands,
 requests, scheduled and continuous work, using the same graph and review.
 
@@ -254,6 +254,11 @@ language, displays the original code name beside them, and localizes the
 description. Both literal spellings address the same glossary definition;
 no script detector, transliteration, per-name request or browser-generated label
 is added. Current atlas is v4, GroupsIndex v8 and report v87.
+
+Operation table v14 validates `entry` first. Only `self` requires activation,
+name and description; unused cells of accepted `none` and advertised `u*`
+decisions are ignored. Unknown callers and incomplete self decisions still
+refuse only their own row.
 
 Knowledge is attached to internal entities, separately from provider batches.
 Independent directory, file, symbol and boundary rows persist their accepted
@@ -843,12 +848,10 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   separate explicit action. Learn exposes the complete saved question menu, one open
   answer with its position, and exact term-to-map links. Work offers existing
   search at repository or component scope. Opening a part shows its existing
-  key code as source-distinct cubes in the centre, with original incoming peers
-  on the left, outgoing peers on the right, and the same selected-code inspector
-  below the cubes in the centre. Remote peers are grouped by their exact native
-  component with complete visible counts and all original relations inside;
-  expanding their lists cannot push the selected explanation below the scene.
-  Reciprocal connections retain both original directions and labels. Existing
+  key code as source links inside the selected part. The containing area stays
+  as a frame with its peers; Collapse and Back restore the prior viewport.
+  A single displayed arrow per direction retains every original relation,
+  endpoint, source and possibility marker in its inspection. Existing
   incoming cross-component connections are projected from their source-owned
   indexes too. Hover does not switch scope, operation or selected reading; neither
   entering Operations nor opening a part chooses the first item for the user.
@@ -858,7 +861,10 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   target evidence remains in native disclosures. The owner’s 2026-09-10 entrance
   correction exposes every existing request, command, scheduled/continuous
   activity and interaction by name on component rows and before the component
-  map. Exact route FactIDs retain all their operation links; ungrouped facts keep
+  map, beside the existing integration groups. Each group initially shows five
+  rows and an All N disclosure containing the rest, without selecting or
+  dropping evidence. Kind and provenance repeat only when rows differ.
+  Exact route FactIDs retain all their operation links; ungrouped facts keep
   source links only. Choosing an operation shows all its existing leaf parts and
   original connections. Opening a part keeps that complete operation diagram,
   ordering and viewport above its code reading; no automatic main/first-part

@@ -236,30 +236,48 @@ and foreign component nodes do not count as additional parts. Its Parts link
 opens the complete component map. The separate core-lane reference catalogue
 is labelled Core; an empty core lane cannot imply an empty component map.
 
-The 2026-09-10 entrance correction makes every existing request, command,
-scheduled/continuous activity and interaction visible by name on that row and
-before the component map. Static grouping uses the existing activation kinds;
-it neither classifies new workers nor adds a translation request. A route keeps
-all operation links joined by its exact FactID and its original code link;
-an ungrouped route gains no invented explanation. The operation picker is a
-complete searchable grid. Selecting an operation opens all its original leaf
-parts and connections at once. Opening a part keeps that operation diagram,
-its node order and viewport above the code reading, rather than replacing it
-with immediate neighbours. Entering a component does not select main or the
-first part automatically.
+The 2026-09-10 entrance correction exposes the existing requests, commands,
+scheduled/continuous activity and interactions beside integration groups on
+component and repository rows. Each group shows five initial rows and an All N
+disclosure; every original row, route/operation link and code anchor remains.
+Homogeneous groups label kind/provenance once; mixed rows retain their labels.
+This is presentation, not worker or library-API classification.
 
-Saved-render verification used the complete current-format Python/TypeScript
-run `20260909-200202-python-tutorial-game-a06614d5d228` and chi run
-`20260909-144532-chi-8da44377446a`, with zero provider calls and unchanged
-translation catalogues. Browser checks retained all 12 and 35 input rows,
-respectively, exact route destinations, the full operation graph and viewport
-when opening a part, selected code across Learn/Work, and Back navigation.
-The complete operation picker filters without horizontal paging. A regression
-uses a longer chain and two source-distinct relations between the same parts
-to prevent both one-hop collapse and duplicate entry relations. `make test`
-with the installed TypeScript compiler, `make vet`, `make build` and the final
-report-package checks passed. Receipts: `work/ui-entrance-20260910/checks.json`.
-This UI check does not claim completion of the separate full Airflow run.
+Opening an area keeps a frame containing its parts and keeps connected peers
+outside. Boundary relations fold into one visible arrow per direction with all
+original endpoints, kinds and source evidence on inspection. Opening a part
+shows up to five existing source labels inside it and an explicit full list;
+there is no code selector or separate focus screen. Collapse and Back restore
+the earlier scope and viewport. An operation still exposes its complete graph
+while a part is open. No first part is selected automatically.
+
+Answer provenance, checks, supporting readings and question origins share one
+collapsed apparatus; existing source IDs and excerpts survive. Terms receive
+one underline per answer, and source-unavailable labels remain inspectable.
+Header revision noise, redundant answer actions and root Path:. are removed;
+run information remains linked from the footer.
+
+Saved rendering passed on Webernetes `20260910-112213` and the game
+`20260910-092040`, with unchanged translation catalogues and zero provider calls.
+At 1280×720, Webernetes keeps all 55 inputs and 15 integration groups in a
+418 px initial inventory (previous input-only catalogue: 6,691 px). Opening
+its generated-model area keeps 15 parts and six peers; 85 original relations
+use 23 displayed arrows. Real clicks verified the source destination, Collapse,
+original viewport and browser Back with the exact selected declaration.
+The older server run's saved translation catalogue is incompatible; no
+translation was guessed or regenerated. Its new ordinary acceptance remains
+pending, as do worker and library-API classification and full Airflow.
+
+Operation v14 revalidation of the same saved provider bytes accepted 780/782
+original Webernetes rows versus 535, and 767/771 subsequent rows versus 425.
+Whole-window refusals went from seven/eleven to zero. All remaining rows cite
+unadvertised caller refs. These are decoder measurements, not new model runs.
+The ordinary game run `20260910-130429-python-tutorial-game-776aea07b2d2` exited
+zero in 270.469 s: two targets, both operation windows accepted, 23 answers and
+421 translations published in one common report. Artifact audit passed.
+`make check`, final report tests and `make build` passed. Receipts are in
+`work/ui-review-a17-20260910` and `work/webernetes-prompt-audit-20260910`.
+
 
 Learn exposes the complete saved question menu, one open answer, its position
 in that menu, a next question and an explicit return to all questions. The
@@ -1071,7 +1089,7 @@ inherit every command's help text. Canonical sealing, independent copies,
 source anchors and a two-object fixture verify the underlying facts.
 
 Symbol rows propose activation and selected outgoing calls using local refs.
-The independent `atlas_operations` v12 table reviews the candidate declarations
+The independent `atlas_operations` v14 table reviews the candidate declarations
 against registration evidence and their immediate native callers. Caller object
 identities remain in Graph/reading-input v6 for local retrieval, then disappear
 from provider rows. Each caller is represented once with its source signature,
@@ -1085,7 +1103,9 @@ Its compact calls also omit unrelated literal and log-message payloads. It keeps
 action name and short result description on the original symbol, with a separate
 knowledge record for this decision. It can reject a helper without deleting its
 function description. A closed entry choice now distinguishes this declaration,
-an advertised immediate caller, and no supported entry. Only a self choice can
+an advertised immediate caller, and no supported entry. Only self requires activation, name and description; unused cells of accepted
+none/caller decisions have no authority and are ignored. Unknown caller refs
+and incomplete self decisions still refuse their row. Only a self choice can
 publish this declaration as an operation; choosing a caller does not promote
 that caller without its own review. A registered callback or an observed asynchronous entry
 is reviewed even if the first symbol pass did not propose an operation. Native
@@ -1097,7 +1117,7 @@ operation; different route aliases remain separate. These interpretations still
 need evaluation: a source anchor proves the declaration exists, not that the
 model's classification or explanation is correct.
 
-Symbol table v6 and operation table v13 admit `interaction` for user-facing
+Symbol table v6 and operation table v14 admit `interaction` for user-facing
 handlers. A callable JSX attribute is evidence for review, not an automatic
 interaction classification: render props and internal callbacks use the same
 neutral binding observations. The model reads the exact element/attribute,
@@ -4810,22 +4830,13 @@ The target picker keeps failed rows visible, red, disabled, and linkless. The
 repository overview reports analyzed versus selected coverage.
 
 The desktop overview presents each product as a row with its existing purpose,
-the complete named request/command/activity list, and links to Parts and
-Integrations catalogues (all N), without selecting a top-N subset. Tools, examples and fixtures retain complete expandable
-role inventories with counts. Rows retain the repository map's original nodes
-and connections; a product name opens its component directly, while a separate
-action shows its complete source context and grouped neighbours. Selected
-parts use the existing map stage for incoming neighbours, a centre with exact
-key-code declarations and the existing full-code inspector, and outgoing
-neighbours. Remote peers are grouped by native component with full component
-and relation counts; their complete lists expand beside the selected reading.
-An empty incoming or outgoing side does not reserve a blank column: the centre
-uses that space and retains a compact zero count with the original explanation
-that no such connections were recorded. Both nonempty sides retain their
-original left/right positions and all original relations.
-Reciprocal relations remain separate directed evidence and highlight the same
-peer together. Leaf focus uses exact neighbouring parts instead of introducing
-an extra folded area. Destination pages also project incoming cross-component
+compact named request/command/activity and integration inventories, with all
+remaining rows behind All N. Tools, examples and fixtures keep their complete
+role inventories. Component maps open an area as a frame with its parts and
+connected peers; selected parts contain source labels. Complete member lists
+and original directed relations remain explicitly accessible. Collapse and
+Back restore the prior viewport; no separate code selector is used.
+Destination pages also project incoming cross-component
 connections from the same source-owned indexes; they remain interpreted stubs
 with original anchors, never inferred native calls. Learn's full question menu
 and Work's single shared search enter this space. The compact reading address

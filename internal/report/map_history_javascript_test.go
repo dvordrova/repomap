@@ -77,17 +77,17 @@ const requestAnimationFrame=fn=>setImmediate(fn);
 		part(finder, "document.addEventListener('click',function(e){var a=e.target.closest('a[data-question-map]')", "\n})();") + `
 function install(){
   const byID={area,part:leaf,'direct-area':directArea,request:operationNode},nodes=[area,leaf,directArea,operationNode];
-  let scope='part',operation=operationNode,pinned=true,mode='operations',search={value:'run_level'},trail=[],visit=null,focusHistory=[],focusOrigin=null;
+  let scope='part',operation=operationNode,pinned=true,mode='operations',search={value:'run_level'},trail=[],visit=null,scopeVisits=new Map();
   let revision=0;
   let historyRestoreHash='',historyRestoreKey='',historyRestorePromise=null,historyRevision=0;
   function abandonHistoryRestore(){historyRestoreHash='';historyRestoreKey='';historyRevision++;map.readingRestoring=false;}
   function displayed(id){return id==='direct-area'?'part':id;}function setScope(id){scope=displayed(id);}
   function followForeign(){return false;}function snapshot(){return {};}
-  function focusDisclosures(){return null;}function restoreFocusDisclosures(){}function revealChoice(){}function orient(){}
+  function readingDisclosures(){return null;}function restoreDisclosures(){}function revealChoice(){}function orient(){}
   function show(n){map.shown=n.id;}function resetScope(){scope='';}
   function address(n){document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:n}}));}
   const picker={value:'',dispatchEvent(){if(!this.value)map.explorerMember=null;map.dispatchEvent(new Event('repomap:reading'));}};
-  map.querySelector=()=>picker;
+  map.querySelector=()=>picker;map.inspectConcept=()=>{map.explorerMember=null;};
   map.explainSource=source=>{map.explorerMember={owner:scope,...source};picker.value='0';map.dispatchEvent(new Event('repomap:reading'));};
   async function render(){
     const ticket=++revision,wanted=scope;
@@ -98,7 +98,7 @@ function install(){
     map.dispatchEvent(new Event('repomap:reading'));
     return ticket;
   }
-` + part(operations, "async function open(id,neighbor){", "    function updateFocusSelection(") +
+` + part(operations, "function scopeKey(id){", "    function showReturnPath(") +
 		part(operations, "async function reveal(n,allUses,source){", "    map.exploreNode=") +
 		part(operations, "map.readingState=function(){", "    map.displayedNode=") +
 		part(operations, "map.findNode=function(n,source){", "    map.operationChoices=") +

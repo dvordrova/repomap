@@ -108,6 +108,17 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMessage) (Answer, error) {
 	answer := make(Answer, len(def.Columns))
 	for _, column := range def.Columns {
+		active := true
+		for name, expected := range column.When {
+			value, known := answer[name]
+			if !known {
+				return nil, fmt.Errorf("cell %q depends on unvalidated %q", column.Name, name)
+			}
+			active = active && value == expected
+		}
+		if !active {
+			continue
+		}
 		raw, found := cells[column.Name]
 		if !found {
 			return nil, fmt.Errorf("missing %q cell", column.Name)

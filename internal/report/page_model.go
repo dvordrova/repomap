@@ -456,7 +456,7 @@ func thousands(value int) string {
 	var out []byte
 	for position, digit := range []byte(digits) {
 		if position > 0 && (len(digits)-position)%3 == 0 {
-			out = append(out, ',')
+			out = append(out, []byte("\u202f")...)
 		}
 		out = append(out, digit)
 	}

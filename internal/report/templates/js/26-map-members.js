@@ -35,12 +35,8 @@ var repomapMembers = (function () {
     });
     inventories.set(node, result); return result;
   }
-  function size(node, availableWidth) {
-    var list = items(node);
-    if (!list.length) return {w:220,h:80};
-    var width = Math.max(280, Math.min(560, availableWidth - 72));
-    var columns = Math.max(1, Math.floor((width - 32) / 160));
-    return {w:width,h:116 + Math.ceil(list.length / columns) * 62};
+  function size(node) {
+    return {w:360,h:112 + Math.min(items(node).length,5)*66 + (items(node).length>5?32:0)};
   }
   function label(node,item) {
     return displayName(item)+(items(node).some(function(other){return other!==item&&other.name===item.name;})?' · '+item.source.Text:'');
@@ -53,28 +49,16 @@ var repomapMembers = (function () {
     else if(source.NoSource)link.title=rmT('No source');
     return link;
   }
-  function grid(map,node) {
-    var grid = document.createElement('div'); grid.className='map-member-grid';
-    items(node).forEach(function (item) {
+  function grid(map,node,limit) {
+    var grid=document.createElement('div');grid.className='map-member-grid';
+    items(node).slice(0,limit===undefined?items(node).length:limit).forEach(function(item){
       var row=document.createElement('div');row.className='map-member';
-      var b=document.createElement('button'); b.type='button'; b.className='map-member-explain';b.textContent='ⓘ';
-      if(item.alias&&item.alias!==item.name){
-        var meaning=document.createElement('span');meaning.className='map-member-meaning';meaning.textContent=item.alias;row.appendChild(meaning);
-        row.classList.add('map-member-aliased');
-      }
-      var name=sourceLink(item.source);name.className='map-member-name';name.textContent=item.name;name.title=item.source.Text+(item.source.NoSource?'\n'+rmT('No source'):'');row.appendChild(name);
-      var duplicate=items(node).some(function(other){return other!==item&&other.name===item.name;});
-      if(duplicate){
-        var path=document.createElement('small');path.textContent=item.source.Text;row.appendChild(path);
-      }
-      b.dataset.memberSource=sourceKey(item.source);
-      b.setAttribute('aria-label',rmT('Explain {0}',label(node,item)));
-      b.setAttribute('aria-pressed','false');
-      b.addEventListener('click',function(){
-        grid.querySelectorAll('button').forEach(function(other){other.setAttribute('aria-pressed',other===b);});
-        map.showMember(node,item);
-      });
-      row.appendChild(b);grid.appendChild(row);
+      var name=sourceLink(item.source);name.className='map-member-name';name.textContent=displayName(item);
+      name.dataset.memberSource=sourceKey(item.source);
+      name.title=(item.explanation||rmT('No explanation saved. Open the source to inspect this element.'))+'\n'+item.source.Text+(item.source.NoSource?'\n'+rmT('No source'):'');
+      name.addEventListener('click',function(e){e.stopPropagation();map.showMember(node,item);});
+      if(item.source.NoSource){name.setAttribute('tabindex','0');name.setAttribute('role','button');name.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();map.showMember(node,item);}});}
+      row.appendChild(name);grid.appendChild(row);
     });
     return grid;
   }
@@ -89,7 +73,12 @@ var repomapMembers = (function () {
     var body = document.createElement('div'); body.className='map-member-content';
     var heading = document.createElement('div'); heading.className='map-member-label';
     heading.textContent=rmT('Key code')+' · '+items(node).length; body.appendChild(heading);
-    body.appendChild(grid(map,node)); layer.appendChild(body); svg.appendChild(layer);
+    body.appendChild(grid(map,node,5));
+    if(items(node).length>5){
+      var more=document.createElement('button');more.type='button';more.className='map-members-all';more.textContent=rmT('All {0} →',items(node).length);
+      more.addEventListener('click',function(e){e.stopPropagation();map.showAllMembers(node);});body.appendChild(more);
+    }
+    layer.appendChild(body); svg.appendChild(layer);
   }
   return {sourceKey:sourceKey,items:items,size:size,draw:draw,grid:grid,label:label,displayName:displayName,sourceLink:sourceLink};
 })();

@@ -12,7 +12,7 @@
 <body>
 <header class="top">
 <div class="brand"><span class="mark">repomap</span><span class="repo">{{.RepoName}}</span>
-<span class="meta">{{t "rev"}} <code title="{{.Revision}}">{{.ShortRevision}}</code>{{if .RepositoryURL}} · <a href="{{.RepositoryURL}}" target="_blank" rel="noopener">{{t "repository"}}</a>{{end}}</span></div>
+{{if .RepositoryURL}}<a class="meta" href="{{.RepositoryURL}}" target="_blank" rel="noopener">{{t "repository"}}</a>{{end}}</div>
 </header>
 <div class="report-toolbar"><div class="reading-modes" role="group" aria-label="{{t "Reading mode"}}" hidden><button type="button" data-mode="learn" aria-pressed="true">{{t "Learn"}}</button><button type="button" data-mode="work" aria-pressed="false">{{t "Work"}}</button></div>
 <nav class="nav" aria-label="{{t "Repository"}}"><a href="#overview">{{t "Home"}}</a>{{if .Questions}}<a href="#questions">{{t "Questions"}}</a>{{end}}<details class="target-picker"><summary>{{t "Components"}} · <span class="meta">{{len .Sections}}</span></summary><div class="target-options">{{range .Cards}}<a href="#{{.SectionID}}" title="{{.Name}}">{{.ShortName}}</a>{{end}}</div></details></nav>

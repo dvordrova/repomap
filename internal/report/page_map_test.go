@@ -48,8 +48,8 @@ func TestQuestionMapLinksKeepExactMembershipAndOverlappingOwners(t *testing.T) {
 	stop.SubjectID, stop.Kind = "exec-boundary", "boundary"
 	b.indexes[0].Subjects = []groupindex.Subject{{ID: "write", Object: &groupindex.ObjectFacts{Location: &location}}}
 	wantFiles := []pageQuestionMapLink{
-		{Label: "store (library) / file in Storage", Href: want[0].Href, NodeID: want[0].NodeID},
-		{Label: "store (library) / file in Transactions", Href: want[1].Href, NodeID: want[1].NodeID},
+		{Label: "store (library) / Storage", Href: want[0].Href, NodeID: want[0].NodeID},
+		{Label: "store (library) / Transactions", Href: want[1].Href, NodeID: want[1].NodeID},
 	}
 	if got := b.questionStepMapLinks(stop); !reflect.DeepEqual(got, wantFiles) {
 		t.Fatalf("boundary file ownership lost or presented as exact execution: %+v", got)

@@ -86,7 +86,7 @@ backend.map={state:null,readingState(){return clone(this.state);},restoreReading
   closest(){return backend;},classList:{contains(){return false;}},scrollIntoView(){}};
 function installBackend(){
   const map=backend.map,nodes=[destination],byID={[destination.id]:destination};
-  let visit,focusHistory,focusOrigin,mode='structure',operation=null,pinned=false,scope='',trail=[],search={value:''},historyRestoreHash='',revision=0;
+  let visit,scopeVisits=new Map(),mode='structure',operation=null,pinned=false,scope='',trail=[],search={value:''},historyRestoreHash='',revision=0;
   function followForeign(){return false;}function abandonHistoryRestore(){}function snapshot(){return {};}
   function displayed(id){return id;}function setScope(id){scope=id;}function revealChoice(){}
   function show(node){map.shown=node;}
@@ -101,13 +101,12 @@ function frontHandlers(){
   function button(text,fn){const result=element('');result.textContent=text;result.addEventListener('click',fn);return result;}
   function focusRelations(){}
 ` + part(operations, "function followForeign(node,allUses,source){", "    ops.forEach(") +
-		part(operations, "async function open(id,neighbor){", "    function updateFocusSelection(") +
-		part(operations, "function neighbor(relations,id){", "        peers.forEach(") +
+		part(operations, "function scopeKey(id){", "    function showReturnPath(") +
 		part(operations, "groups.forEach(function(n){", "    async function reveal(") + `
-  return {relation:neighbor([],remote.id).children[1].events.click,svg:remote.events.click};
+  return {explore:()=>open(remote.id),svg:remote.events.click};
 }
 (async function(){
-  for(const handlerName of ['relation','svg']){
+  for(const handlerName of ['explore','svg']){
     current=front;question=guide;term=null;searchIntent='';mode='work';restoring=false;
     activeURL=new URL('https://report.invalid/?mode=work#front-http');entries=[{url:activeURL.href,state:null}];position=0;
     const original={scope:partNode.id,operation:'front-request',pinned:true,mode:'operations',

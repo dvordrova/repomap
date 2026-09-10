@@ -45,10 +45,7 @@
       var all=textElement('a',rmT('← All questions'));all.href='#questions';position.appendChild(all);
       if(index+1<guides.length){var next=textElement('a',rmT('Next question →'));next.href='#'+guides[index+1].id;position.appendChild(next);}
       guide.querySelector('.reading-question').after(position);
-      guide.querySelectorAll('.reading-answer').forEach(function(answer){
-        var explanation=answer.querySelector('.answer-copy'),checks=answer.querySelector('.answer-check');
-        if(explanation&&checks){var actions=rmLocalReadingActions(answer,explanation,function(){checks.open=true;checks.querySelector('summary').focus({preventScroll:true});rmScrollToReading(checks);});explanation.before(actions);}
-      });
+
     });
     pages.filter(function(page){return page.hasAttribute('data-component-name');}).forEach(function(page){
       var map=page.querySelector('[data-map-explorer]');if(!map)return;

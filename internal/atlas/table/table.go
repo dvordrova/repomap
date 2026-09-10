@@ -57,6 +57,9 @@ type Column struct {
 	FreeMaxRunes int    `json:"free_max_runes,omitempty"`
 	// Note is one sentence the model reads about this cell.
 	Note string `json:"note,omitempty"`
+	// When limits this cell to a previously validated choice in the same row.
+	// Inactive cells have no authority and are not required or retained.
+	When map[string]string `json:"when,omitempty"`
 }
 
 // Definition is one table: its stage name, window size, prompt and columns.
@@ -237,6 +240,9 @@ func Request(def Definition, window Window) ([]byte, error) {
 		}
 		if column.Note != "" {
 			spec["note"] = column.Note
+		}
+		if len(column.When) != 0 {
+			spec["when"] = column.When
 		}
 		writeJSON(&out, spec)
 	}

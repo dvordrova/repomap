@@ -891,9 +891,6 @@ func (page *PreparedPage) rebuildDisplayLabels(language DisplayLanguage) {
 			link := &values[i]
 			if target, ok := byNode[link.NodeID]; ok {
 				prefix := target.section.ShortLabel + " / "
-				if strings.Contains(link.Label, " / file in ") {
-					prefix += englishUI(language, "file in") + " "
-				}
 				link.Label = prefix + target.node.FullTitle
 			}
 		}

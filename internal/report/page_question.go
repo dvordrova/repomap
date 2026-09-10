@@ -463,7 +463,7 @@ func (builder *pageBuilder) questionStepMapLinks(stop atlas.QuestionStop) []page
 		}
 		for _, group := range index.Groups {
 			if slices.ContainsFunc(group.MemberSubjectIDs, func(id string) bool { return inFile[id] }) {
-				links = append(links, pageQuestionMapLink{Label: section.ShortLabel + " / file in " + group.Title, Href: "#" + groupAnchorID(section.ID, group.ID), NodeID: mapNodeID(group.ID)})
+				links = append(links, pageQuestionMapLink{Label: section.ShortLabel + " / " + group.Title, Href: "#" + groupAnchorID(section.ID, group.ID), NodeID: mapNodeID(group.ID)})
 			}
 		}
 	}

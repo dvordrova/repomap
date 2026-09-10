@@ -43,7 +43,6 @@ func TestUnavailableSourcesKeepCodeMembersAndSelection(t *testing.T) {
 	operations := read("29-operation-view.js")
 	reading := read("30-map.js")
 	snapshot := between(operations, "function snapshot(){", "    async function restore(saved)")
-	selection := between(operations, "function updateFocusSelection(){", "    function placeInspection(")
 	explain := between(reading, "map.explainSource=function(source){", "    map.showNode=")
 	harness := `
 const assert = require('node:assert/strict');
@@ -85,34 +84,28 @@ assert.equal(repomapMembers.sourceLink(local.source).dataset.open,local.source.O
 const map={exploreNode(){},showMember(node,item){this.picked=item;}};
 const grid=repomapMembers.grid(map,node);
 assert.equal(grid.children.length,4);
-const explainButtons=grid.children.map(row=>row.children.find(child=>child.tag==='button'));
-explainButtons[1].events.click();
+const explainButtons=grid.children.map(row=>row.children[0]);
+explainButtons[1].events.click({stopPropagation(){}});
 assert.equal(map.picked.source.Text,second.source.Text);
 assert.notEqual(explainButtons[0].dataset.memberSource,explainButtons[1].dataset.memberSource);
 assert.match(grid.children[1].children[0].title,/Нет ссылки на исходник/);
 assert.equal(grid.children[2].children[0].href,remote.source.Href,'the code name links directly to its source');
 assert.equal(grid.children[3].children[0].dataset.open,local.source.Open,'the local code name retains its editor destination');
 let inspectedNode=node;
-const picker={value:'',dispatchEvent(){this.selected=items[Number(this.value)];}};
-const heading={querySelector(){return picker;}};
+map.inspectConcept=index=>{map.selected=items[index];};
 ` + explain + `
 map.explainSource({key:repomapMembers.sourceKey(second.source)});
-assert.equal(picker.selected.source.Text,second.source.Text);
+assert.equal(map.selected.source.Text,second.source.Text);
 const scope='part',operation=null,pinned=false,mode='structure',search={value:''};
 const byID={part:node},window={scrollY:50};
-function focusDisclosures(){return null;}
+function readingDisclosures(){return null;}
 map.explorerMember={owner:scope,name:'Same',key:repomapMembers.sourceKey(second.source),href:'',open:''};
 ` + snapshot + `
 const saved=JSON.parse(JSON.stringify(snapshot()));
-picker.value='0';picker.selected=items[0];
+map.selected=items[0];
 map.explainSource(saved.source);
-assert.equal(picker.selected.source.Text,second.source.Text,'Back restores exact missing-source member');
-const selected=element('div'),focusView={querySelector(){return selected;}};
-` + selection + `
-updateFocusSelection();
-assert.equal(selected.children.at(-1).textContent,second.source.Text);
-assert.equal(selected.children.at(-1).tag,'span');
-assert.equal(selected.children.at(-1).title,'Нет ссылки на исходник');
+assert.equal(map.selected.source.Text,second.source.Text,'Back restores exact missing-source member');
+
 `
 	command := exec.CommandContext(t.Context(), node, "--eval", harness)
 	if output, err := command.CombinedOutput(); err != nil {

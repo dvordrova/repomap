@@ -50,7 +50,7 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 	var messages []string
 	r.opts.State = func(_, _ string, details ...string) { messages = append(messages, details...) }
 	first, err := r.runIndependent(t.Context(), def, 1, nil, rows)
-	if err != nil || first[0].answer["name"] != "First" || first[1].answer != nil || first[1].source != atlas.SourceGiven || first[2].answer["name"] != "Third" {
+	if err != nil || first[0].answer["name"] != "First" || first[1].answer != nil || first[1].source != atlas.SourceGiven || first[2].answer["entry"] != "none" {
 		t.Fatalf("one unsupported u1 removed valid operations: %+v / %v; rejected=%+v", first, err, r.rejected)
 	}
 	if len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || !strings.Contains(r.rejected[0].Reason, `"u1"`) || r.rejected[0].Samples[0] != "r2" || r.rejected[0].ResponseRef == "" {
@@ -95,7 +95,7 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 	recalled := newReader(recallProvider)
 	recalled.recallOnly = true
 	updated, err := recalled.runIndependent(t.Context(), def, 1, nil, rows)
-	if err != nil || recallProvider.calls != 0 || updated[0].answer["name"] != "Updated first" || updated[1].answer["name"] != "Second" || updated[2].answer["name"] != "Third" {
+	if err != nil || recallProvider.calls != 0 || updated[0].answer["name"] != "Updated first" || updated[1].answer["name"] != "Second" || updated[2].answer["entry"] != "none" {
 		t.Fatalf("replay lost accepted rows or invoked a provider: %+v / %v", updated, err)
 	}
 	if updated[0].responseSHA == first[0].responseSHA || updated[2].responseSHA != updated[0].responseSHA {

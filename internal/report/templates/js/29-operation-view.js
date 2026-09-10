@@ -39,20 +39,9 @@
     operationPicker.querySelector('label').appendChild(choiceCount);
     var visit=null, returnPath=document.createElement('div');returnPath.className='explorer-return';returnPath.hidden=true;bar.appendChild(returnPath);
     var trail=[], operation=null, pinned=false, mode='structure', scope='', visibleIDs=[], currentEdges=[], revision=0;
-    var focusHistory=[], focusOrigin=null;
+    var scopeVisits=new Map();
     var historyRestoreHash='', historyRestoreKey='', historyRestorePromise=null, historyRevision=0;
     function abandonHistoryRestore(){historyRestoreHash='';historyRestoreKey='';historyRevision++;map.readingRestoring=false;}
-    var focusView=document.createElement('section');focusView.className='map-focus';focusView.hidden=true;stage.after(focusView);
-    var hoveredPeer='', focusedPeer='';
-    function peerAt(target){return target?.closest?.('.map-focus-neighbor')?.querySelector('[data-focus-neighbor]')?.dataset.focusNeighbor||'';}
-    function emphasizePeer(){
-      var selected=hoveredPeer||focusedPeer;
-      focusView.querySelectorAll('.map-focus-neighbor').forEach(function(row){row.classList.toggle('map-focus-peer-emphasis',!!selected&&peerAt(row)===selected);});
-    }
-    focusView.addEventListener('pointerover',function(e){hoveredPeer=peerAt(e.target);emphasizePeer();});
-    focusView.addEventListener('pointerout',function(e){hoveredPeer=focusView.contains(e.relatedTarget)?peerAt(e.relatedTarget):'';emphasizePeer();});
-    focusView.addEventListener('focusin',function(e){focusedPeer=peerAt(e.target);emphasizePeer();});
-    focusView.addEventListener('focusout',function(e){focusedPeer=focusView.contains(e.relatedTarget)?peerAt(e.relatedTarget):'';emphasizePeer();});
     function button(text,fn){var b=document.createElement('button');b.type='button';b.textContent=text;b.addEventListener('click',fn);return b;}
     function show(n){if(map.showNode)map.showNode(n);}
     function partOwner(node){
@@ -102,145 +91,32 @@
       if(bar.getBoundingClientRect().top<inset)map.scrollIntoView({block:'start'});
     }
     function address(node){document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:node||map.closest('[data-report-page]')}}));}
-    function focusDisclosures(){
-      if(!scope||focusView.dataset.scope!==scope)return null;
-      return {incoming:!!focusView.querySelector('.map-focus-incoming .map-focus-remote')?.open,outgoing:!!focusView.querySelector('.map-focus-outgoing .map-focus-remote')?.open};
-    }
-    function restoreFocusDisclosures(saved){
-      ['incoming','outgoing'].forEach(function(side){var disclosure=focusView.querySelector('.map-focus-'+side+' .map-focus-remote');if(disclosure)disclosure.open=!!saved?.[side];});
-    }
+    function readingDisclosures(){return {members:!!map.querySelector('.map-all-members')?.open};}
+    function restoreDisclosures(saved){var members=map.querySelector('.map-all-members');if(members)members.open=!!saved?.members;}
     function snapshot(){
       var member=map.explorerMember;
       return {scope:scope,operation:operation,pinned:pinned,mode:mode,search:search.value,
         source:member&&member.owner===scope?{href:member.href,open:member.open,key:member.key}:null,
         label:member&&member.owner===scope?rmT('{0} in {1}',member.name,byID[scope].dataset.title):scope?byID[scope].dataset.title:map.closest('[data-report-page]').dataset.componentName,
-        disclosures:focusDisclosures(),viewport:map.captureViewport?.(),scroll:window.scrollY};
+        disclosures:readingDisclosures(),viewport:map.captureViewport?.(),scroll:window.scrollY};
     }
     async function restore(saved){
       setScope(saved.scope);operation=saved.operation;pinned=saved.pinned;mode=saved.mode;search.value=saved.search;
-      address(byID[scope]);await render();restoreFocusDisclosures(saved.disclosures);if(saved.source)map.explainSource(saved.source);
-      requestAnimationFrame(function(){if(saved.viewport)map.restoreViewport?.(saved.viewport);window.scrollTo({top:saved.scroll,behavior:'instant'});});
+      address(byID[scope]);await render();restoreDisclosures(saved.disclosures);if(saved.source)map.explainSource(saved.source);
+      if(saved.viewport)map.restoreViewport?.(saved.viewport);window.scrollTo({top:saved.scroll,behavior:'instant'});
     }
-    function previousFocus(){var previous=focusHistory.pop();if(previous)restore(previous);}
-    function collapseFocus(){
-      var previous=focusOrigin;focusHistory=[];focusOrigin=null;
-      if(previous)restore(previous);else open(trail[trail.length-1]||'');
-    }
-    async function open(id,neighbor){
+    function scopeKey(id){return [mode,operation?.id||'',id].join('\0');}
+    async function open(id){
       id=displayed(id);if((id&&!byID[id])||scope===id)return;
       if(followForeign(byID[id]))return;
       abandonHistoryRestore();
-      var wasFocus=map.classList.contains('map-part-focus'), next=byID[id], willFocus=next&&!next.dataset.branch&&!next.dataset.activation;
-      if(neighbor){focusHistory.push(snapshot());}
-      else {focusHistory=[];if(willFocus&&!wasFocus)focusOrigin=snapshot();else if(!willFocus)focusOrigin=null;}
+      scopeVisits.set(scopeKey(scope),snapshot());
+      var previous=(!id||trail.indexOf(id)>=0)&&scopeVisits.get(scopeKey(id));
+      if(previous){await restore(previous);return;}
+      var next=byID[id];
       if(!operation)visit=null;
       if(next?.dataset.activation){operation=next;pinned=true;mode='operations';setScope('');}else setScope(id);
-      search.value='';address(next);await render();if(!neighbor)orient();
-    }
-    function updateFocusSelection(){
-      var selected=focusView.querySelector('.map-focus-selection');if(!selected)return;
-      selected.replaceChildren();var member=map.explorerMember;
-      selected.hidden=!member||member.owner!==scope;if(selected.hidden)return;
-      var item=repomapMembers.items(byID[scope]).find(function(item){return repomapMembers.sourceKey(item.source)===(member.key||member.href||member.open);});
-      if(!item)return;
-      var name=document.createElement('strong');name.textContent=item.alias||item.name;selected.appendChild(name);
-      if(item.alias&&item.alias!==item.name){var nativeName=document.createElement('code');nativeName.textContent=item.name;selected.appendChild(nativeName);}
-      selected.appendChild(repomapMembers.sourceLink(item.source));
-    }
-    function placeInspection(inFocus){
-      var inspector=map.querySelector('.map-inspector'),destination=inFocus?focusView.querySelector('.map-focus-center'):map.querySelector('.map-workspace');
-      if(inspector&&destination&&inspector.parentElement!==destination)destination.appendChild(inspector);
-    }
-    map.addEventListener('repomap:reading',updateFocusSelection);
-    function focusRelations(container,relations){
-      var list=document.createElement('ul');list.className='map-focus-relations';
-      relations.forEach(function(relation){
-        var row=document.createElement('li');
-        var label=document.createElement('p');label.className='map-focus-relation-label';label.textContent=relation.label;label.dataset.displayRef=relation.labelRef||'';row.appendChild(label);
-        if(relation.summary&&relation.summary!==relation.label){var summary=document.createElement('p');summary.textContent=relation.summary;summary.dataset.displayRef=relation.summaryRef||'';row.appendChild(summary);}
-        if(relation.possible){var possible=document.createElement('span');possible.className='map-focus-relation-kind';possible.textContent=rmT('Interpreted connection or possible dispatch');row.appendChild(possible);}
-        var sources=document.createElement('div');sources.className='map-focus-sources';
-        [['fromSource','fromText','fromNoSource'],['toSource','toText','toNoSource']].forEach(function(fields){
-          if(!relation[fields[0]]&&!relation[fields[2]])return;
-          sources.appendChild(repomapMembers.sourceLink({Href:relation[fields[0]],Text:relation[fields[1]]||rmT('Source'),NoSource:relation[fields[2]]}));
-        });
-        if(sources.childElementCount)row.appendChild(sources);list.appendChild(row);
-      });container.appendChild(list);
-    }
-    function drawFocus(node,edges){
-      var disclosures=focusDisclosures();
-      hoveredPeer='';focusedPeer='';
-      placeInspection(false);
-      focusView.replaceChildren();focusView.dataset.scope=node.id;focusView.setAttribute('aria-label',rmT('Connections of {0}',node.dataset.title));
-      var heading=document.createElement('div');heading.className='map-focus-heading';
-      var context=document.createElement('span');context.className='map-focus-context';context.textContent=map.closest('[data-report-page]').dataset.componentName+' · '+rmT('Part connections');heading.appendChild(context);
-      var navigation=document.createElement('nav');navigation.setAttribute('aria-label',rmT('Map path'));
-      if(focusHistory.length)navigation.appendChild(button(rmT('← Back to {0}',focusHistory[focusHistory.length-1].label),previousFocus));
-      var originScope=focusOrigin?focusOrigin.scope:trail[trail.length-1];
-      var origin=originScope?byID[originScope].dataset.title:map.closest('[data-report-page]').dataset.componentName;
-      navigation.appendChild(button(rmT('All parts in {0}',origin),collapseFocus));heading.appendChild(navigation);focusView.appendChild(heading);
-      var scene=document.createElement('div');scene.className='map-focus-scene';focusView.appendChild(scene);
-      function side(incoming){
-        var column=document.createElement('section');column.className='map-focus-side '+(incoming?'map-focus-incoming':'map-focus-outgoing');
-        var connections=currentEdges.filter(function(edge){return incoming?edge.to===scope:edge.from===scope;});
-        if(!connections.length)return null;
-        var total=connections.reduce(function(n,edge){return n+edge.relations.length;},0);
-        var h=document.createElement('h3');h.textContent=rmT(incoming?'Incoming connections · {0}':'Outgoing connections · {0}',total);column.appendChild(h);
-        var peers=new Map();connections.forEach(function(edge){var id=incoming?edge.from:edge.to;(peers.get(id)||peers.set(id,[]).get(id)).push.apply(peers.get(id),edge.relations);});
-        var remote=new Map();
-        function neighbor(relations,id){
-          var peer=byID[id], item=document.createElement('article');item.className='map-focus-neighbor';
-          var kind=document.createElement('span');kind.className='map-focus-peer-kind';kind.textContent=peer.dataset.branch==='component'?rmT('Component'):peer.dataset.branch?rmT('Area'):peer.dataset.activation?rmT('Operation'):rmT('Part');item.appendChild(kind);
-          var link=button(peer.dataset.title+' →',function(){
-            open(id,true);
-          });link.className='map-focus-neighbor-link';link.dataset.focusNeighbor=id;item.appendChild(link);
-          if(currentEdges.some(function(edge){return incoming?edge.from===scope&&edge.to===id:edge.to===scope&&edge.from===id;})){
-            var reciprocal=document.createElement('span');reciprocal.className='map-focus-reciprocal';reciprocal.textContent=rmT('Also connected in the opposite direction');item.appendChild(reciprocal);
-          }
-          focusRelations(item,relations);return item;
-        }
-        peers.forEach(function(relations,id){
-          var peer=byID[id];
-          if(peer.dataset.remote!=='true'){column.appendChild(neighbor(relations,id));return;}
-          var owner=peer.dataset.component||id;
-          if(!remote.has(owner))remote.set(owner,[]);remote.get(owner).push({id:id,relations:relations});
-        });
-        if(remote.size){
-          var outside=document.createElement('details');outside.className='map-focus-remote';outside.open=!!disclosures?.[incoming?'incoming':'outgoing'];
-          outside.addEventListener('toggle',function(){if(focusView.contains(outside))map.dispatchEvent(new Event('repomap:reading'));});
-          var remoteCount=Array.from(remote.values()).reduce(function(count,rows){return count+rows.reduce(function(n,row){return n+row.relations.length;},0);},0);
-          var summary=document.createElement('summary');summary.textContent=rmT('Other components · {0} · {1} connections',remote.size,remoteCount);outside.appendChild(summary);
-          remote.forEach(function(rows){
-            var group=document.createElement('section');group.className='map-focus-remote-owner';
-            var peer=byID[rows[0].id],href=peer.getAttribute('href')||'',destination=href[0]==='#'&&document.getElementById(href.slice(1));
-            var owner=destination&&destination.closest('[data-report-page]'),native=owner?.querySelector('.target-facts code')?.textContent;
-            var ownerTitle=document.createElement('h4');ownerTitle.textContent=partOwner(peer)+(native?' · '+native:'');group.appendChild(ownerTitle);
-            rows.forEach(function(row){group.appendChild(neighbor(row.relations,row.id));});outside.appendChild(group);
-          });column.appendChild(outside);
-        }
-        return column;
-      }
-      var incoming=side(true),outgoing=side(false);
-      scene.classList.toggle('has-incoming',!!incoming);scene.classList.toggle('has-outgoing',!!outgoing);
-      if(incoming)scene.appendChild(incoming);
-      var center=document.createElement('section');center.className='map-focus-center';
-      var kind=document.createElement('span');kind.className='map-focus-kind';kind.textContent=rmT('Part')+(node.dataset.remote==='true'?' · '+partOwner(node):'');center.appendChild(kind);
-      var title=document.createElement('h3');title.textContent=node.dataset.title;center.appendChild(title);
-      if(node.dataset.summary){var purpose=document.createElement('p');purpose.className='map-focus-purpose';purpose.textContent=node.dataset.summary;purpose.dataset.displayRef=node.dataset.summaryRef||'';center.appendChild(purpose);}
-      if(!incoming||!outgoing){
-        var empty=document.createElement('p');empty.className='map-focus-empty';
-        empty.textContent=!incoming&&!outgoing?rmT('No connections recorded.'):rmT(!incoming?'Incoming connections · {0}':'Outgoing connections · {0}',0);
-        if(incoming||outgoing)empty.title=rmT(!incoming?'No incoming connections recorded.':'No outgoing connections recorded.');
-        center.appendChild(empty);
-      }
-      var selection=document.createElement('div');selection.className='map-focus-selection';selection.hidden=true;center.appendChild(selection);
-      var members=repomapMembers.items(node);
-      if(members.length){rmLocalReadingActions(center,center,function(){center.querySelector('.map-member')?.scrollIntoView({block:'nearest'});center.querySelector('.map-member a')?.focus({preventScroll:true});});var label=document.createElement('h4');label.textContent=rmT('Key code')+' · '+members.length;center.appendChild(label);center.appendChild(repomapMembers.grid(map,node));}
-      // Only an original self relation belongs here. Folding a group's own
-      // contents together must never manufacture an arrow on a code element.
-      var self=edges.filter(function(edge){return edge.from===scope&&edge.to===scope;});
-      if(self.length){var own=document.createElement('section');own.className='map-focus-self';var ownTitle=document.createElement('h4');ownTitle.textContent=rmT('Connections within this part · {0}',self.length);own.appendChild(ownTitle);focusRelations(own,self);center.appendChild(own);}
-      scene.appendChild(center);if(outgoing)scene.appendChild(outgoing);updateFocusSelection();
+      search.value='';address(next);await render();orient();
     }
     function showReturnPath(){
       returnPath.replaceChildren();returnPath.hidden=!visit;if(!visit)return;
@@ -253,14 +129,16 @@
     async function render(){
       var ticket=++revision;map.setAttribute('aria-busy','true');
       var previousViewport=operation&&map.explorerOperation===operation?map.captureViewport?.():null;
-      var limit=allowed(), scopeLeaves=scope?new Set(leaves(scope)):null;
+      var area=!operation&&!search.value.trim()?scopePath(scope).map(function(id){return byID[id];}).filter(function(n){return n?.dataset.branch==='area';}).pop():null;
+      var viewScope=area?area.id:scope;
+      var limit=allowed(), scopeLeaves=viewScope?new Set(leaves(viewScope)):null;
       var edges=rawEdges.filter(function(e){return operation?e.scope==='operation'&&e.operations.indexOf(operation.id)>=0:e.scope==='structure';});
-      var base=scope?(children(byID[scope]).length?children(byID[scope]):[scope]):roots.filter(function(id){return byID[id].dataset.remote!=='true';});
+      var base=viewScope&&children(byID[viewScope]).length?children(byID[viewScope]):roots.filter(function(id){return byID[id].dataset.remote!=='true';});
       base=base.filter(function(id){return applicable(id,limit);});
       var term=search.value.trim().toLowerCase();
       if(term)base=groups.filter(function(n){return applicable(n.id,limit)&&(!scopeLeaves||leaves(n.id).some(function(id){return scopeLeaves.has(id);}))&&(n.dataset.title+' '+n.dataset.summary+' '+repomapMembers.items(n).map(repomapMembers.displayName).join(' ')).toLowerCase().indexOf(term)>=0;}).map(function(n){return n.id;});
       base=displayedSet(base);
-      var inside=scopeLeaves||(term?new Set(base.flatMap(function(id){return leaves(id);})):null);
+      var inside=area?scopeLeaves:term?new Set(base.flatMap(function(id){return leaves(id);})):null;
       if(operation&&!term){
         base=groups.filter(function(n){return !children(n).length&&applicable(n.id,limit);}).map(function(n){return n.id;});
         inside=null;
@@ -278,11 +156,7 @@
         if(members.some(function(leaf){return represented.has(leaf);}))return children(byID[id]).flatMap(boundaryAt);
         return [id];
       }
-      // Once a part is open, its immediate neighbours are exact edge
-      // endpoints. Folding them back into areas would add an unrelated
-      // drill-in between a connection label and the part that owns it.
-      var leafFocus=scope&&!term&&!byID[scope].dataset.branch&&!byID[scope].dataset.activation;
-      var boundary=leafFocus?Array.from(endpoints).filter(function(id){return byID[id]&&!represented.has(id);}):roots.flatMap(boundaryAt);
+      var boundary=roots.flatMap(boundaryAt);
       var visible=Array.from(new Set(base.concat(boundary))).filter(function(id){return applicable(id,limit);});
       if(operation&&!term)visible=[operation.id].concat(visible.filter(function(id){return id!==operation.id;}));
       var representatives={};
@@ -291,6 +165,11 @@
         (representatives[leaf]||(representatives[leaf]=[])).push(id);
       });});
       currentEdges=repomapGraph.fold(relevant,representatives,inside);
+      if(area&&!term){
+        var outer={};Object.keys(representatives).forEach(function(id){outer[id]=inside.has(id)?[area.id]:representatives[id];});
+        currentEdges=repomapGraph.fold(relevant.filter(function(e){return inside.has(e.from)&&inside.has(e.to);}),representatives,inside)
+          .concat(repomapGraph.fold(relevant.filter(function(e){return !inside.has(e.from)||!inside.has(e.to);}),outer,inside));
+      }
       // Standalone scope: order incoming peers, the subject, outgoing peers.
       // Areas use a compact grid, retaining their own original child names.
       visible.sort(function(a,b){if(!operation){if(a===scope)return -1;if(b===scope)return 1;}if(a===operation?.id)return -1;if(b===operation?.id)return 1;var ai=base.indexOf(a)>=0,bi=base.indexOf(b)>=0;if(ai!==bi)return ai?-1:1;return byID[a].dataset.title.localeCompare(byID[b].dataset.title);});
@@ -300,34 +179,39 @@
       // width must not turn a wide map into a vertical layout on first open.
       var mapStyle=getComputedStyle(map),availableWidth=map.clientWidth-parseFloat(mapStyle.paddingLeft)-parseFloat(mapStyle.paddingRight);
       var opened=scope&&byID[scope], expanded=!term&&opened&&!opened.dataset.branch&&!opened.dataset.activation?opened:null;
-      map.classList.toggle('map-part-focus',!!expanded);map.classList.toggle('map-operation-context',!!operation);focusView.hidden=!expanded;
-      if(!expanded)placeInspection(false);
-      if(expanded){
-        repomapPreview.freeze(map);drawFocus(expanded,edges);
-      }
-      if(!expanded||operation){
+      map.classList.toggle('map-part-expanded',!!expanded);map.classList.toggle('map-operation-context',!!operation);
+      if(expanded&&boxes[expanded.id])boxes[expanded.id]=repomapMembers.size(expanded);
+      {
       visible.forEach(function(id){
         var node=byID[id],display=node.style.display,visibility=node.style.visibility;
         node.style.display='';node.style.visibility='hidden';
         node.querySelectorAll('.map-node-title').forEach(function(title){boxes[id].w=Math.max(boxes[id].w,Math.ceil(title.getComputedTextLength())+22);});
         node.style.display=display;node.style.visibility=visibility;
       });
-      try{layout=await repomapGraph.layout(boxes,currentEdges,null,availableWidth);}catch(error){
+      try{layout=await repomapGraph.layout(boxes,currentEdges,area?[{id:area.id,nodes:base}]:null,availableWidth);}catch(error){
         if(ticket!==revision)return;map.setAttribute('aria-busy','false');
         var message=bar.querySelector('[role="alert"]');if(!message){message=document.createElement('p');message.setAttribute('role','alert');bar.appendChild(message);}message.textContent=rmT('Could not arrange this map. Try another scope.');console.error('Component map layout',error);return;
       }
       if(ticket!==revision)return;
       repomapPreview.freeze(map);boxes=layout.boxes;
+      var frameLayer=svg.querySelector('.map-frames');frameLayer.replaceChildren();
+      (layout.areas||[]).forEach(function(frame){
+        var group=document.createElementNS('http://www.w3.org/2000/svg','g');group.classList.add('map-expanded-area');group.dataset.areaFrame=frame.id;
+        var rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
+        Object.entries({x:frame.x,y:frame.y,width:frame.w,height:frame.h,rx:12}).forEach(function(pair){rect.setAttribute(pair[0],pair[1]);});group.appendChild(rect);
+        var label=document.createElementNS('http://www.w3.org/2000/svg','text');label.setAttribute('x',frame.x+20);label.setAttribute('y',frame.y+27);label.textContent=byID[frame.id].dataset.title;group.appendChild(label);
+        frameLayer.appendChild(group);
+      });
       var routed=repomapGraph.draw(map,layout.edges);
       nodes.forEach(function(n){var b=boxes[n.id];n.style.display=b?'':'none';if(!b)return;var origin=origins[n.id];n.setAttribute('transform','translate('+(b.x-origin.x)+' '+(b.y-origin.y)+')');var rect=n.querySelector('rect');rect.setAttribute('width',b.w);rect.setAttribute('height',b.h);n.classList.toggle('map-area',!!n.dataset.branch);n.classList.toggle('operation-selected',n===operation);if(!n.dataset.activation)n.dataset.near=currentEdges.filter(function(e){return e.from===n.id||e.to===n.id;}).map(function(e){return e.from===n.id?e.to:e.from;}).join(' ');});
       nodes.forEach(function(n){
-        n.classList.toggle('map-scope-selected',n.id===scope);
+        n.classList.toggle('map-scope-selected',n.id===scope);n.classList.toggle('map-context-node',!!area&&base.indexOf(n.id)<0);
         if(n.dataset.activation)return;
         var subtitle=n.querySelector('.map-node-context');
         if(!subtitle){subtitle=document.createElementNS('http://www.w3.org/2000/svg','text');subtitle.setAttribute('x',origins[n.id].x);subtitle.setAttribute('y',origins[n.id].y);subtitle.setAttribute('dx','11');subtitle.setAttribute('dy','56');subtitle.setAttribute('class','map-node-context');n.appendChild(subtitle);}
         subtitle.textContent=n.dataset.branch?rmT('Open parts · {0}',children(n).length):n.id===scope?rmT('Part'):repomapMembers.items(n).length?rmT('Open key code · {0}',repomapMembers.items(n).length):rmT('Explore connections');
       });
-      repomapMembers.draw(map,null,null);
+      repomapMembers.draw(map,expanded,expanded&&boxes[expanded.id]);
       var width=Math.max(300,layout.width),height=Math.max(160,layout.height);
       svg.setAttribute('viewBox','0 0 '+width+' '+height);svg.setAttribute('width',width);svg.setAttribute('height',height);svg.style.width=width+'px';svg.style.minWidth='0';svg.style.maxWidth='none';
       }
@@ -351,18 +235,18 @@
         if(id===scope){item.setAttribute('aria-current','location');item.disabled=true;}
         crumbs.appendChild(item);
       });
-      if(!expanded&&focusHistory.length)crumbs.prepend(button(rmT('← Back to {0}',focusHistory[focusHistory.length-1].label),previousFocus));
-      else if(scope&&!expanded)crumbs.prepend(button(rmT('← Back'),function(){open(trail[trail.length-1]||'');}));
+      if(scope)crumbs.prepend(button(rmT('← Back'),function(){open(trail[trail.length-1]||'');}));
+      if(area){var collapse=button(rmT('Collapse details'),function(){open(scopePath(area.id).slice(0,-1).pop()||'');});collapse.className='explorer-collapse';crumbs.appendChild(collapse);}
       var selfCount=edges.filter(function(edge){return edge.from===edge.to&&(operation||expanded&&edge.from===scope);}).length;
       var status=document.createElement('span');status.className='explorer-status';status.textContent=rmT('{0} parts · {1} connections',visible.filter(function(id){return !byID[id].dataset.activation;}).length,currentEdges.reduce(function(count,edge){return count+edge.relations.length;},selfCount));crumbs.appendChild(status);
       showReturnPath();
-      if(!expanded||operation){
+      {
         if(!previousViewport)stage.scrollTo(0,0);
-        var focused=base.map(function(id){return boxes[id];}).filter(Boolean);
+        var focused=expanded&&boxes[expanded.id]?[boxes[expanded.id]]:base.map(function(id){return boxes[id];}).filter(Boolean);
         map.dispatchEvent(new CustomEvent('repomap:layout',{detail:{focus:focused}}));
         if(previousViewport)map.restoreViewport?.(previousViewport);
       }
-      function read(){if(ticket!==revision||!map.showNode)return;placeInspection(!!expanded);if(scope)show(byID[scope]);else if(operation)show(operation);else map.clearInspection();map.dispatchEvent(new Event('repomap:reading'));}
+      function read(){if(ticket!==revision||!map.showNode)return;if(scope)show(byID[scope]);else if(operation)show(operation);else map.clearInspection();map.dispatchEvent(new Event('repomap:reading'));}
       if(map.showNode)read();else requestAnimationFrame(read);
       map.setAttribute('aria-busy','false');
       return ticket;
@@ -376,8 +260,7 @@
     async function reveal(n,allUses,source){
       if(!n||nodes.indexOf(n)<0)return;
       if(followForeign(n,allUses,source))return;
-      abandonHistoryRestore();visit=null;focusHistory=[];
-      if(!map.classList.contains('map-part-focus'))focusOrigin=snapshot();
+      abandonHistoryRestore();visit=null;scopeVisits.clear();
       var destination=n;n=byID[displayed(n.id)];
       if(allUses){mode='structure';operation=null;pinned=false;}
       if(n.dataset.activation){mode='operations';operation=n;pinned=true;scope='';trail=[];}
@@ -407,7 +290,7 @@
       var member=map.explorerMember;
       return {scope:scope,operation:operation?.id||'',pinned:pinned,mode:mode,search:search.value,
         source:member&&member.owner===scope?{href:member.href||'',open:member.open||'',key:member.key}:null,
-        disclosures:focusDisclosures(),viewport:map.captureViewport?.()||null};
+        disclosures:readingDisclosures(),viewport:map.captureViewport?.()||null};
     };
     map.restoreReadingState=function(saved){
       if(!saved||(saved.scope&&!byID[saved.scope])||(saved.operation&&!byID[saved.operation]?.dataset.activation))return Promise.resolve();
@@ -415,14 +298,14 @@
       if(key===historyRestoreKey&&(map.readingRestoring||JSON.stringify(map.readingState())===JSON.stringify(saved)))return historyRestorePromise||Promise.resolve();
       var ticket=++historyRevision;historyRestoreKey=key;historyRestoreHash=location.hash;map.readingRestoring=true;
       setScope(saved.scope||'');operation=byID[saved.operation]||null;pinned=!!saved.pinned;mode=saved.mode==='operations'?'operations':'structure';search.value=saved.search||'';
-      focusHistory=[];focusOrigin=null;visit=null;map.explorerScope=scope;map.explorerOperation=operation;
+      scopeVisits.clear();visit=null;map.explorerScope=scope;map.explorerOperation=operation;
       historyRestorePromise=(async function(){
         try{
-          await render();if(ticket!==historyRevision)return;restoreFocusDisclosures(saved.disclosures);
+          await render();if(ticket!==historyRevision)return;restoreDisclosures(saved.disclosures);
           if(saved.source)map.explainSource(saved.source);
           // A previously selected term must also be clearable when the
           // historical visit had no declaration selected.
-          else {var picker=map.querySelector('[data-concept-picker]');if(picker&&picker.value){picker.value='';picker.dispatchEvent(new Event('change'));}}
+          else map.inspectConcept?.(-1);
           await new Promise(requestAnimationFrame);if(ticket!==historyRevision)return;
           if(saved.viewport)map.restoreViewport?.(saved.viewport);
         }finally{
@@ -436,7 +319,7 @@
     map.findNode=function(n,source){return reveal(n,true,source);};
     map.operationChoices=function(id){var members=new Set(leaves(id));return ops.filter(function(op){return nearOf[op.id].some(function(near){return members.has(near);});});};
     map.chooseOperation=async function(id,origin){var op=byID[id];if(!op)return;visit=origin?{origin:origin,operation:op}:null;operation=op;pinned=true;mode='operations';setScope('');search.value='';address(op);await render();revealChoice();orient();};
-    function resetScope(){abandonHistoryRestore();setScope('');operation=null;pinned=false;mode='structure';visit=null;focusHistory=[];focusOrigin=null;search.value='';}
+    function resetScope(){abandonHistoryRestore();setScope('');operation=null;pinned=false;mode='structure';visit=null;scopeVisits.clear();search.value='';}
     function hashChanged(){
       if(historyRestoreHash===location.hash){historyRestoreHash='';return;}
       historyRestoreHash='';
