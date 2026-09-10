@@ -4285,6 +4285,29 @@ existing legacy compiler check, retaining the original field signatures,
 owners and question evidence. The native regression was reproduced and checked
 with TypeScript 7.0.2 while preparing the ordinary Webernetes acceptance run.
 
+The ordinary Webernetes run at repository revision `ccf55325db72` completed
+on 2026-09-10 in 19m25s (`20260910-101348-webernetes-4f01bb88c02e`), with
+its frozen pnpm dependencies installed. Both targets were analyzed: the root
+library and React demo application, including the demo's native launch seed.
+The single 12.1 MB Russian HTML, common report/manifest, sealed target indexes,
+dependencies, graph and translations passed artifact consistency checks.
+All 98 library and 12 demo operations survived atlas-to-GroupsIndex-to-report
+projection, including 108 operations without captions. Browser navigation to
+a demo operation and the unavailable-answer card was checked. The native
+TypeScript regression and the full legacy-compiler `make check` passed;
+implementation is committed as `af543d96`.
+
+This is not successful answer-quality acceptance: all 31 answers are
+unavailable because the provider emitted two JSON objects consecutively in
+one response. They were not repaired or retried. Learn recovered from an
+output-token refusal by partitioning its original evidence; question retrieval
+likewise recovered from a context refusal and inspected every evidence group
+for all 31 questions. Operation review reported 262 rows without answers;
+the raw empty-name decisions were `none` or an upstream caller, never `self`.
+Requiring placeholder prose on those negative decisions remains a validation
+issue. The report's operation classifications also remain model interpretations;
+successful projection does not establish their semantic correctness.
+
 Go core objects v3 similarly retain explicitly declared struct fields with
 their native locations and signatures, including tags and embedded fields.
 The Go adapter projects them into the same type-owned variable objects already
