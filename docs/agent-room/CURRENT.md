@@ -114,7 +114,13 @@ with several sources became several variants when restored through individual
 row memos. The collector now accumulates accepted fragments under that original
 term identity. Refused row sources remain excluded; different original meanings
 remain separate. This preserves the same glossary input for batch acceptance
-and row-by-row reuse.
+and row-by-row reuse. The subsequent ordinary run completed in 7.388 seconds
+with no new provider calls, including glossary and all eight translation
+windows. Its saved artifact consistency checks passed. The current binary's
+`cache clear` also removed a temporary copy of real response, payload and memo
+files while retaining the publication and the original cache. Full tests, vet
+and the ordinary binary build passed; the warm time is not a cold Airflow
+estimate.
 
 ### How to judge an optimization against these results
 
