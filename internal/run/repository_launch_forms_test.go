@@ -55,7 +55,7 @@ func TestCumulativePythonLaunchFormsReachPortfolioAndRetainAllSeeds(t *testing.T
 	for _, launch := range alternatives {
 		advertised, callable, site := false, false, false
 		for _, eligible := range launch.Row.SeedOwners {
-			advertised = advertised || eligible.Ref == owner.Row.Ref
+			advertised = advertised || eligible.Ref == owner.Row.Ref && eligible.SameLaunch
 		}
 		for _, evidence := range launch.Row.Evidence {
 			callable = callable || evidence.Kind == "launch_callable" && evidence.Path == "src/fixture_app/cli.py" && evidence.Line > 0

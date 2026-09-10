@@ -23,6 +23,9 @@ type NativeOwner struct {
 	Ref  string `json:"ref"`
 	Name string `json:"name"`
 	Kind string `json:"kind"`
+	// SameLaunch is adapter-observed equality of the complete argument-free
+	// launch callable. The original declarations remain in row evidence.
+	SameLaunch bool `json:"same_launch,omitempty"`
 }
 
 // NativeCandidate is one exact native target, even when its representative

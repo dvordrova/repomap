@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	PreparationVersion    = 5
+	PreparationVersion    = 6
 	ResponseSchemaVersion = 8
 
 	// MaxRequestBytes is one classification-batch packing window, not an
@@ -30,7 +30,7 @@ const (
 	MaxOutputTokens         = llm.DefaultMaxOutputTokens
 )
 
-const executionContract = "native-target-placement-with-file-guidance-v9"
+const executionContract = "native-target-placement-with-file-guidance-v10"
 
 // Candidate is the common output of the initial scouts after their dumb
 // FileRef merge. Keep the alias so the portfolio does not invent a second

@@ -140,12 +140,8 @@ func containsString(values []string, value string) bool {
 // guards and executable forms with the same exact launch callable are eligible;
 // whether they belong to one product remains a portfolio decision.
 func CanSeed(owner, seed Target) bool {
-	if owner.Ref != seed.Ref && owner.ProjectDir == seed.ProjectDir && owner.Kind == KindExecutable && seed.Kind == KindExecutable {
-		ownerEntry, ownerOK := LaunchEntry(owner)
-		seedEntry, seedOK := LaunchEntry(seed)
-		if ownerOK && seedOK && ownerEntry == seedEntry {
-			return true
-		}
+	if SameLaunch(owner, seed) {
+		return true
 	}
 	if owner.Kind != KindLibrary || seed.Kind != KindExecutable || owner.ProjectDir != seed.ProjectDir || len(seed.Roots) == 0 {
 		return false
@@ -171,6 +167,17 @@ func CanSeed(owner, seed Target) bool {
 		}
 	}
 	return true
+}
+
+// SameLaunch records identical argument-free callable entry evidence. It does
+// not decide whether the targets are independently used products.
+func SameLaunch(owner, seed Target) bool {
+	if owner.Ref == seed.Ref || owner.ProjectDir != seed.ProjectDir || owner.Kind != KindExecutable || seed.Kind != KindExecutable {
+		return false
+	}
+	ownerEntry, ownerOK := LaunchEntry(owner)
+	seedEntry, seedOK := LaunchEntry(seed)
+	return ownerOK && seedOK && ownerEntry == seedEntry
 }
 
 // LaunchEntry identifies the one argument-free callable named by a console

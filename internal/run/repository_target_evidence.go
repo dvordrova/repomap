@@ -17,10 +17,11 @@ import (
 )
 
 type repositoryNativeEvidence struct {
-	Root         string
-	Observations []targetportfolio.Observation
-	SeedOwners   []repositoryTargetKey
-	Consumers    []repositoryTargetKey
+	Root             string
+	Observations     []targetportfolio.Observation
+	SeedOwners       []repositoryTargetKey
+	SameLaunchOwners []repositoryTargetKey
+	Consumers        []repositoryTargetKey
 }
 
 type repositoryNativeCandidate struct {
@@ -79,6 +80,7 @@ func repositoryNativeCandidates(discovery repositoryTargetDiscovery) ([]reposito
 			if !ok {
 				return nil, fmt.Errorf("seed owner is outside the exact native catalogue")
 			}
+			owner.SameLaunch = slices.Contains(facts.SameLaunchOwners, key)
 			candidate.Row.SeedOwners = append(candidate.Row.SeedOwners, owner)
 		}
 		for _, document := range documents {
@@ -238,6 +240,9 @@ func pythonNativeEvidence(target pythontarget.Target, catalog pythontarget.Catal
 	for _, owner := range catalog.Entries {
 		if pythontarget.CanSeed(owner, target) {
 			result.SeedOwners = append(result.SeedOwners, repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: owner.Ref})
+			if pythontarget.SameLaunch(owner, target) {
+				result.SameLaunchOwners = append(result.SameLaunchOwners, repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: owner.Ref})
+			}
 		}
 	}
 	return result, nil

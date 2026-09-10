@@ -126,3 +126,30 @@ func TestAlternativeExecutableLaunchesNeedAcceptedStandaloneOwner(t *testing.T) 
 		}
 	}
 }
+
+func TestSameLaunchEvidenceSurvivesOwnerOutsideRequestWindow(t *testing.T) {
+	snapshot := testSnapshot(t, []string{"main.py", "__main__.py"})
+	entry := Observation{Kind: "launch_callable", Path: "main.py", Line: 12, Values: []string{"app.main", "main", "arguments=none"}}
+	rows := []NativeCandidate{
+		{Ref: "t1", FileRef: "f1", Language: "python", Kind: "executable", Name: "app", Evidence: []Observation{entry}},
+		{Ref: "t2", FileRef: "f2", Language: "python", Kind: "executable", Name: "python -m app", Evidence: []Observation{entry, {Kind: "launch_call_site", Path: "__main__.py", Line: 3}}, SeedOwners: []NativeOwner{{Ref: "t1", Name: "app", Kind: "executable", SameLaunch: true}}},
+	}
+	c, err := CompileWithNativeAuthority(snapshot, []Candidate{{FileRef: "f1", Hypotheses: []string{"console script"}}, {FileRef: "f2", Hypotheses: []string{"module"}}}, []corpus.FileID{"f1", "f2"}, rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := compileSubset(c, c.candidates[1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(child.Request.NativeTargets) != 1 || !child.Request.NativeTargets[0].SeedOwners[0].SameLaunch || len(child.Request.Observations) != 2 {
+		t.Fatal("partition lost the exact launch relationship or original anchors")
+	}
+	// Evidence alone never performs the product decision locally.
+	for _, answer := range [][]NativeDecision{nil, {{Ref: "t1", Decision: "standalone"}, {Ref: "t2", Decision: "standalone"}}} {
+		got := nativeDecisions(rows, answer, true)
+		if got[0].Decision != "standalone" || got[1].Decision != "standalone" {
+			t.Fatal("native equality became a local product merge")
+		}
+	}
+}
