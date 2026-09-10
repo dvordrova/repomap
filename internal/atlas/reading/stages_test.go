@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
 func TestInterpretedOperationsBindCallsWithoutFrameworkRules(t *testing.T) {
@@ -571,5 +573,108 @@ func TestBudgetClosesDirectories(t *testing.T) {
 	// The fake provider answers the first option, "yes": everything opens.
 	if result.Atlas.Budget.DirsOpened == 0 || result.Atlas.Budget.FilesOpened != 7 {
 		t.Fatalf("budget: %+v", result.Atlas.Budget)
+	}
+}
+
+func TestClosedScopesSkipDescriptionsButRemainQuestionSources(t *testing.T) {
+	for _, budget := range []bool{true, false} {
+		t.Run(fmt.Sprintf("budget=%v", budget), func(t *testing.T) {
+			graph := twoTargetGraph(t)
+			var symbols []atlas.Place
+			for i := range graph.Places {
+				file := &graph.Places[i]
+				if file.File == nil {
+					continue
+				}
+				for rank, kind := range []string{"function", "type"} {
+					decl := atlas.Decl{ObjectID: file.ID + ":" + kind, Name: "Example" + kind, Kind: kind, LineNo: 10 + rank, Doc: "Original declaration documentation."}
+					file.File.Decls = append(file.File.Decls, decl)
+					symbols = append(symbols, atlas.Place{ID: atlas.SymbolID(file.Path, decl.LineNo, decl.Name), Kind: atlas.PlaceSymbol,
+						Path: file.Path, LineNo: decl.LineNo, Parent: file.ID, TargetIDs: file.TargetIDs,
+						Symbol: &atlas.SymbolFacts{Decl: decl, Candidate: true, Rank: rank}})
+				}
+			}
+			graph.Places = append(graph.Places, symbols...)
+			atlas.SortPlaces(graph.Places)
+			before, err := atlas.EncodeGraph(graph)
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider := &tableProvider{openFor: map[string]string{
+				"web": "no", "svc/core/c.go": "no", // Closed ancestor and closed file.
+				"svc/db/d.go": "", "svc/jobs/j.go": "invalid", "svc/util": "", // Refusals must not close children.
+			}, questionFor: make(map[string]table.Answer)}
+			opts := twoTargetOptions(t, graph, provider)
+			opts.Budget, opts.Through = budget, lines.StageSymbols
+			opts.Executor.Enabled, opts.Executor.RootDir = true, t.TempDir()
+			result, err := Read(context.Background(), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			closed := func(path string) bool {
+				return budget && (strings.HasPrefix(path, "web/") || path == "svc/core/c.go")
+			}
+			for _, target := range result.Atlas.Targets {
+				for _, box := range target.Boxes {
+					for _, file := range box.Files {
+						wantRequests := 3 // One file row, one callable row, one type row.
+						if closed(file.Path) {
+							wantRequests = 1
+							if strings.HasPrefix(file.Path, "web/") {
+								wantRequests = 0
+							}
+						}
+						if got := provider.answers[file.Path]; got != wantRequests {
+							t.Errorf("%s: sent %d rows, want %d", file.Path, got, wantRequests)
+						}
+						for _, symbol := range file.Symbols {
+							if symbol.ObjectID == "" {
+								continue
+							}
+							if described := strings.HasPrefix(symbol.Line, "Text for"); described == closed(file.Path) {
+								t.Errorf("%s %s: closed=%v, description=%q", file.Path, symbol.Name, closed(file.Path), symbol.Line)
+							}
+						}
+					}
+				}
+			}
+			// Question-only reading recalls the same accepted decisions, yet its
+			// original evidence still includes every closed callable and type.
+			for _, chunk := range lines.QuestionRows(graph) {
+				var refs []string
+				for ref := range chunk.Anchors {
+					refs = append(refs, ref)
+				}
+				sort.Strings(refs)
+				provider.questionFor[chunk.Place.Path] = table.Answer{"relevance": "direct", "anchors": strings.Join(refs, " "), "why": "Inspect these original declarations."}
+			}
+			asked := make(map[string]int)
+			for path, count := range provider.answers {
+				asked[path] = count
+			}
+			opts.OwnerRunDir, opts.Through, opts.Questions = t.TempDir(), lines.StageQuestion, []string{"What declarations are available?"}
+			questions, err := Read(context.Background(), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(provider.answers, asked) {
+				t.Fatal("question-only reading made new description requests")
+			}
+			selected := make(map[string]bool)
+			for _, question := range questions.Questions {
+				for _, stop := range question.Stops {
+					selected[stop.SubjectID] = true
+				}
+			}
+			for _, symbol := range symbols {
+				if !selected[symbol.Symbol.Decl.ObjectID] {
+					t.Errorf("question lost original source: %s", symbol.ID)
+				}
+			}
+			after, err := atlas.EncodeGraph(graph)
+			if err != nil || string(before) != string(after) {
+				t.Fatalf("reading changed original graph: %v", err)
+			}
+		})
 	}
 }

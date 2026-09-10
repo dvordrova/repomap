@@ -77,6 +77,7 @@ type tableProvider struct {
 	refuse             map[string]bool
 	boxFor             map[string]string
 	fileLineFor        map[string]string
+	openFor            map[string]string
 	partFor            map[string]string
 	partNames          []string
 	sameFor            map[string]string
@@ -281,6 +282,16 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 					if same, ok := provider.sameFor[value]; ok {
 						answer["same"] = same
 						answer["label"] = "reads " + value
+					}
+				}
+			}
+		}
+		if request.Table == lines.StageDirectories || request.Table == lines.StageFiles {
+			if _, asked := answer["open"]; asked {
+				if open, specified := provider.openFor[path]; specified {
+					answer["open"] = open
+					if open == "" {
+						delete(answer, "open")
 					}
 				}
 			}

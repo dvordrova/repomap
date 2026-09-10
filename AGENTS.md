@@ -590,7 +590,8 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
 - The atlas (`internal/atlas`) is the model path. `places` builds
   `places.json` from the program indexes, claims, facts and corpus: every
   directory and file, the declarations of a file with the first sentence of
-  their docstrings, up to ten candidate symbols per file, the boundaries
+  their docstrings, every callable and type symbol plus other declarations
+  within the first ten ranked candidates per file, the boundaries
   (routes, client calls, listeners, configuration reads, dynamic execution,
   and calls into non-platform packages with a literal argument), the
   file-to-file edges and the seeds. `reading` walks them in rounds and asks
@@ -599,7 +600,13 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   exactly `want` names, then every top box choosing from that closed list),
   the drawn arrows, the portfolio, the joints. A row carries the place's own facts and its directory's line, one step up.
   File callers contribute deterministic facts, never another file's model
-  line. Independent directory, file, callable, type, boundary and operation
+  line. Description candidates include every callable and the first ten ranked
+  declarations; additional types remain available to question reading. An
+  accepted directory or file `open=no` suppresses descendant callable/type
+  description rows before request preparation. Missing or refused decisions
+  do not close descendants. The complete graph and question evidence remain;
+  observed activation evidence still enters its independent operation review.
+  Independent directory, file, callable, type, boundary and operation
   tables pack consecutive complete rows toward a 64 KiB default input size,
   without artificial 8/40-row caps. A larger complete row, including its shared
   context, runs alone; the default packing size never rejects its evidence.

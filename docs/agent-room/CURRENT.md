@@ -3326,10 +3326,33 @@ matched method and path or equal literal, confirmed yes or no, and a blind
 peer choice for outgoing calls nothing matched. Side and trace are code.
 Above 2,000 files the directory and file rows carry an `open` cell and what
 the model closes keeps its fallback line. Step 3 adds the symbol table: the
-code lifts up to ten declarations per file (exported and documented first,
-then by callers) to symbol places, the model gives each a line and a yes or
-no as a key symbol, the code keeps at most five keys per file by rank and a
-box shows three. Without the model the keys are the code's ranking.
+code ranks declarations per file (exported and documented first, then by
+callers). Every callable and the first ten ranked declarations are description
+candidates; additional type places remain available to questions. The model
+gives each asked candidate a line and a yes or no as a key symbol, the code
+keeps at most five keys per file by rank and a box shows three. Without the
+model the keys are the code's ranking.
+
+Callable and type descriptions now honor accepted directory/file `open=no`
+decisions before preparing provider rows. The file stage already propagates a
+closed directory to its files. Missing, invalid and refused decisions remain
+eligible; they are not negative scope decisions. The symbol stage reports how
+many otherwise eligible descriptions it left unasked. No symbol is removed
+from the graph or question evidence, and observed activation evidence still
+receives its independent operation review. A question-only reading recalls
+the same saved decisions without new description requests and can select the
+original closed-scope declarations. Non-budget readings are unchanged.
+
+The 2026-09-10 saved Airflow audit found 76,881 unique description candidates
+across 5,700 files, with no duplicate source anchors or native object IDs.
+After excluding 105 bare undocumented types, 52,393 of 76,776 prospective
+description rows lay under accepted closed scopes. Honoring those decisions
+leaves 24,383 eligible rows before cache reuse. These are counts from the older
+438-target saved graph, not measured provider traffic or the newer 457-target
+run. The latter was paused during graph construction before atlas model
+reading to avoid using the old selection logic. Its native preparation alone
+took about 33 minutes and facts another 17; preparation performance and full
+Airflow publication remain unaccepted.
 
 Directories v3 and files v4 use the complete request-local `fill` catalogue
 as their response contract. Both owner prompts show the base and optional-open

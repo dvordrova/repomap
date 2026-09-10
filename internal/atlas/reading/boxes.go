@@ -410,19 +410,17 @@ func (r *reader) readArrows(ctx context.Context) error {
 	return nil
 }
 
-// budgetSymbolCandidates is how many of a file's candidates are asked
-// about under a budget.
-const budgetSymbolCandidates = 6
-
 // readSymbols asks one line and a key flag per candidate symbol of every
-// open, asked file; the code keeps at most MaxKeysPerFile keys per file, by
-// rank. Without the model the keys are the code's ranking.
+// file not closed by an accepted open decision. The code keeps at most
+// MaxKeysPerFile keys per file, by rank. Without the model the keys are the
+// code's ranking.
 func (r *reader) readSymbols(ctx context.Context) error {
 	def := lines.Symbols()
 	var rows []table.Row
 	var order []atlas.Place
 	var typeRows []table.Row
 	var typeOrder []atlas.Place
+	closed := 0
 	for _, place := range r.opts.Graph.Places {
 		if place.Kind != atlas.PlaceSymbol || !place.Symbol.Candidate {
 			continue
@@ -431,21 +429,33 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		if file.File == nil || file.File.Generated {
 			continue
 		}
-		fileLine, _ := r.Line(place.Parent)
-		if place.Symbol.Decl.Kind == "type" {
-			// A bare name and a file hypothesis do not establish what the type
-			// means. Retain its source entry without asking for an invented gloss.
-			if len(place.Symbol.Members) == 0 && place.Symbol.Decl.Doc == "" {
+		// A bare name and a file hypothesis do not establish what the type
+		// means. Retain its source entry without asking for an invented gloss.
+		if place.Symbol.Decl.Kind == "type" && len(place.Symbol.Members) == 0 && place.Symbol.Decl.Doc == "" {
+			continue
+		}
+		if r.budget {
+			// readFiles also closes files beneath accepted closed directories.
+			// Missing or refused decisions never authorize closing their symbols.
+			if open, decided := r.openFiles[file.ID]; decided && !open {
+				closed++
 				continue
 			}
+		}
+		if place.Symbol.Decl.Kind == "type" {
 			typeRows = append(typeRows, lines.TypeRow(place))
 			typeOrder = append(typeOrder, place)
 			continue
 		}
+		fileLine, _ := r.Line(place.Parent)
 		rows = append(rows, lines.SymbolRow(place, fileLine))
 		order = append(order, place)
 	}
-	r.opts.Stage(def.Stage, fmt.Sprintf("%d candidate symbols, including %d types with their owned declarations", len(rows)+len(typeRows), len(typeRows)))
+	details := []string{fmt.Sprintf("%d candidate symbols, including %d types with their owned declarations", len(rows)+len(typeRows), len(typeRows))}
+	if closed > 0 {
+		details = append(details, fmt.Sprintf("symbols in closed files left unasked: %d", closed))
+	}
+	r.opts.Stage(def.Stage, details...)
 	answers, err := r.runTable(ctx, def, 1, rows)
 	if err != nil {
 		return err
