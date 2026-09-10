@@ -109,7 +109,7 @@ func TestClosedScopeAndRefusedCaptionKeepIndependentRoles(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("closed non-key operation disappeared from the report")
+		t.Fatal("closed non-key operation disappeared from the atlas")
 	}
 }
 

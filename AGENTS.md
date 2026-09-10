@@ -233,7 +233,9 @@ of directory/file closure. It keeps insufficient activation evidence as
 `unassessed`. Symbols and Types then describe only the selected keys displayed
 by the existing per-file/per-box overview rules. Selection and caption retain
 separate exact-input memos and knowledge records; refused prose cannot erase
-accepted roles or Learn evidence. Full original declarations remain available
+accepted roles or Learn evidence. GroupsIndex projects those independent fields
+even without a caption; operations never require a symbol description or key
+selection to reach the report. Full original declarations remain available
 to question retrieval, and question-only readings recall both records without
 new description or selection requests.
 

@@ -100,7 +100,9 @@ and contrasting local methods. The saved Airflow core index yields 120 productio
 still need separate acceptance. The earlier claim that multiline decorators
 were lost was false: the Python adapter already reads their AST.
 
-Full Airflow remains paused before atlas reading. These local changes do not
+The obsolete full Airflow attempt was terminated before atlas reading; its
+saved indexes, facts and model cache remain. Full acceptance is pending.
+These local changes do not
 reduce the measured 33-minute native preparation or 17-minute facts stage.
 
 The ordinary online check on `python-tutorial-game` at `78714d34ee` completed
@@ -121,6 +123,15 @@ windows. Its saved artifact consistency checks passed. The current binary's
 files while retaining the publication and the original cache. Full tests, vet
 and the ordinary binary build passed; the warm time is not a cold Airflow
 estimate.
+
+A12 corrected that acceptance: the saved atlas held eight frontend operations
+(seven interactions and one continuous activity), but GroupsIndex projected
+only the one whose symbol had a caption. Checking the atlas and clicking the
+surviving operation missed this downstream loss. The projection now retains
+every nonempty interpretation independently of its caption, and its validator
+allows an absent caption. The regression test checks uncaptioned non-key
+actions, background work, keys and aliases, retaining original operation names,
+summaries and source anchors without inventing operations for other fields.
 
 ### How to judge an optimization against these results
 

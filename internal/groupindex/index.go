@@ -1168,7 +1168,7 @@ func compileStructuralEdges(index programindex.Index, retained map[string]struct
 }
 
 func validateSubject(subject Subject) error {
-	if subject.Interpretation != nil && !validText(subject.Interpretation.Line) {
+	if subject.Interpretation != nil && subject.Interpretation.Line != "" && !validText(subject.Interpretation.Line) {
 		return fmt.Errorf("group index: invalid subject interpretation")
 	}
 	if !validDirectSubjectID(subject.ID) || !subject.Kind.Valid() || subject.Categories == nil ||

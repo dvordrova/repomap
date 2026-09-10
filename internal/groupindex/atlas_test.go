@@ -64,6 +64,57 @@ func TestObservedRoutesReplaceTheDeclarationOperationAndKeepAliases(t *testing.T
 	}
 }
 
+func TestAtlasProjectsIndependentInterpretationWithoutCaption(t *testing.T) {
+	p := atlasTestProgram(t, "app", "app/work.go")
+	for _, test := range []struct {
+		name string
+		want Interpretation
+	}{
+		{name: "uncaptioned non-key action", want: Interpretation{Activation: "interaction", Operation: "Edit code", OperationSummary: "Updates the program from the editor."}},
+		{name: "uncaptioned background work", want: Interpretation{Activation: "continuous", Operation: "Animate field", OperationSummary: "Advances the displayed simulation."}},
+		{name: "uncaptioned key", want: Interpretation{Key: true}},
+		{name: "alias", want: Interpretation{Alias: "work runner"}},
+		{name: "caption", want: Interpretation{Line: "Runs the work."}},
+		{name: "no interpretation"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			want := test.want
+			symbol := atlas.Symbol{ID: "work", ObjectID: p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1,
+				Line: want.Line, Alias: want.Alias, Key: want.Key, Activation: want.Activation, Operation: want.Operation, OperationSummary: want.OperationSummary}
+			target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "app",
+				Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{},
+				Boxes: []atlas.Box{{ID: "app", Dir: "app", Title: "Work", Line: "Does work.", Side: atlas.SideMid, Keys: []atlas.Key{},
+					Files: []atlas.File{{Path: "app/work.go", Line: "Work.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{symbol}}}}}}
+			indexes, err := ProjectAtlas(map[string]programindex.Index{p.Target.ID: p}, atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			index := indexes[0]
+			got := index.Subjects[0].Interpretation
+			if want == (Interpretation{}) {
+				if got != nil {
+					t.Fatalf("invented an interpretation: %+v", got)
+				}
+			} else if got == nil || *got != want {
+				t.Fatalf("independent interpretation lost: got %+v want %+v", got, want)
+			}
+			if want.Activation == "" {
+				if len(index.Operations) != 0 {
+					t.Fatalf("invented an operation: %+v", index.Operations)
+				}
+				return
+			}
+			if len(index.Operations) != 1 {
+				t.Fatalf("uncaptioned operation lost: %+v", index.Operations)
+			}
+			op := index.Operations[0]
+			if op.SubjectID != p.Objects[0].ID || op.Kind != want.Activation || op.Name != want.Operation || op.Summary != want.OperationSummary || op.Source != "model" || op.Location != *p.Objects[0].Location {
+				t.Fatalf("operation changed its meaning or source: %+v", op)
+			}
+		})
+	}
+}
+
 func TestSharedCodeLinksRemainBoundToTheirCompleteTarget(t *testing.T) {
 	app := atlasTestProgram(t, "app", "cmd/app.go")
 	shared := atlasTestProgram(t, "shared", "pkg/shared.go")

@@ -223,8 +223,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		for _, file := range box.Files {
 			boxOfFile[file.Path] = box
 			for _, symbol := range file.Symbols {
-				if symbol.Line != "" {
-					interpretations[sourceRefs[symbol.ObjectID]] = Interpretation{Line: symbol.Line, Alias: symbol.Alias, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary}
+				interpretation := Interpretation{Line: symbol.Line, Alias: symbol.Alias, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary}
+				if interpretation != (Interpretation{}) {
+					interpretations[sourceRefs[symbol.ObjectID]] = interpretation
 				}
 			}
 		}
