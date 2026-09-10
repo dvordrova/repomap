@@ -8,11 +8,60 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
+
+func TestCumulativeJSTSNativeCompilerTypeMembers(t *testing.T) {
+	tsc, err := exec.LookPath("tsc")
+	if err != nil {
+		t.Skip("a prepared native TypeScript tsc is required on PATH")
+	}
+	tsc, err = filepath.EvalSymlinks(tsc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiler := filepath.Dir(filepath.Dir(tsc))
+	if _, err := os.Stat(filepath.Join(compiler, "dist", "api", "sync", "api.js")); err != nil {
+		t.Skip("active tsc does not belong to a prepared native TypeScript compiler")
+	}
+	prefix := isolatedNodeEnvironment(t)
+	if err := os.Symlink(tsc, filepath.Join(prefix, "bin", "tsc")); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	_, file, _, _ := runtime.Caller(0)
+	fixture := filepath.Join(filepath.Dir(file), "../../testdata/repositories/jsts")
+	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/platform.ts", "src/server.ts", "src/type-members.ts", "tsconfig.json"}
+	for _, name := range tracked {
+		data, err := os.ReadFile(filepath.Join(fixture, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestFile(t, root, name, string(data))
+	}
+	materializeCumulativeJSTSDependencyTypes(t, root)
+	repository, err := corpus.New(t.Context(), root, gitfiles.Listing{Paths: tracked, RegularPaths: tracked})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	result, index, catalog, err := Build(t.Context(), repository, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := places.Build(places.Input{Repository: repository,
+		Targets: []places.TargetInput{{Index: index, Dependencies: &catalog}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCumulativeJSTSTypeMembers(t, result, index, lines.QuestionRows(graph))
+}
 
 // A real Node executable in an empty prefix makes missing-compiler checks
 // independent of the machine's global installation. The hard link avoids a

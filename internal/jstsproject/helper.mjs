@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 19
+const CONTRACT_VERSION = 20
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -216,6 +216,13 @@ try {
       ts = {
         ...astAPI,
         ...syncAPI,
+        SyntaxKind: { ...astAPI.SyntaxKind, EndOfFileToken: astAPI.SyntaxKind.EndOfFile },
+        // The native AST exports these predicates under declaration/node names.
+        isPropertySignature: astAPI.isPropertySignatureDeclaration,
+        isStringLiteralLike: astAPI.isStringLiteralLikeNode,
+        isParameter: astAPI.isParameterDeclaration,
+        createScanner: (_target, skipTrivia, languageVariant, text) =>
+          astAPI.createScanner(skipTrivia, languageVariant, text),
         forEachChild: (node, visitor) => node.forEachChild(visitor),
         isFunctionLike: (node) => astAPI.isFunctionDeclaration(node) || astAPI.isMethodDeclaration(node) ||
           astAPI.isConstructorDeclaration(node) || astAPI.isGetAccessorDeclaration(node) ||

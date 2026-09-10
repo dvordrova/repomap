@@ -208,7 +208,7 @@ the same SSA receiver, independent of framework names. These observations enter
 the callable's own review; neighbouring caller registrations omit their field
 metadata. No field observation asserts a final runtime value or callback call.
 
-JSTS result v14 / helper v19 also preserves every compiler-observed callable
+JSTS result v14 / helper v20 also preserves every compiler-observed callable
 JSX attribute as an anchored callback binding, including render props. The
 element and attribute are source facts; neither their names nor a framework
 allowlist classify an operation. Wrapped function-valued declarations retain

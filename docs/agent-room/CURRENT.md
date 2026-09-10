@@ -4256,7 +4256,7 @@ deterministic HTTP join. Target-local meaning comes from categorization and
 grouping; cross-target connections come only from repository matching over the
 complete GroupsIndex set.
 
-JSTS result v14 / helper v19 retains callable JSX attributes as anchored
+JSTS result v14 / helper v20 retains callable JSX attributes as anchored
 `passes_callback` relations with `callable_binding:jsx_attribute` invocation.
 Element and attribute names remain source observations; no event-name or
 framework allowlist assigns meaning. Compiler-confirmed function-valued
@@ -4277,6 +4277,13 @@ type-owned variables, not callable implementations. The existing atlas member
 projection carries them into question evidence. This repairs the deterministic
 loss that left IGetLevelsResponse without count before any question selection;
 it does not establish that a later model answer selects or explains the field.
+
+Helper v20 adapts the native TypeScript 7 AST predicate names and scanner
+signature/end token to the same extraction contract. The cumulative JSTS
+type-member check runs against a prepared native `tsc` on PATH as well as the
+existing legacy compiler check, retaining the original field signatures,
+owners and question evidence. The native regression was reproduced and checked
+with TypeScript 7.0.2 while preparing the ordinary Webernetes acceptance run.
 
 Go core objects v3 similarly retain explicitly declared struct fields with
 their native locations and signatures, including tags and embedded fields.
