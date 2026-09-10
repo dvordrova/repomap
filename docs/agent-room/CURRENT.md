@@ -2,13 +2,128 @@
 
 Status: active living ADR
 
-Last updated: 2026-09-09
+Last updated: 2026-09-10
 
 Historical provenance: pre-cleanup commit `4e54ab3`
 
 This is the only current architectural decision record. Change the affected
 section here when the ordinary product path changes. Older decisions and
 planning notes are history in Git, not current requirements.
+
+## Required analysis results before optimization (2026-09-10)
+
+The owner requires defining what information repomap needs before choosing how
+to obtain it more cheaply. This working specification makes the existing
+constitution and eight Learn intents concrete. It does not implement a new
+selection policy, authorize excluding target roles, or claim that the current
+pipeline satisfies every outcome below.
+
+The result lets a newcomer locate relevant code, understand its responsibility,
+and follow a useful scenario with checkable sources. Completeness concerns
+those outcomes and the explicitly selected repository scope. It does not
+require a separate model-written sentence for every indexed declaration.
+
+### What information the result needs
+
+| Reader outcome | Required information | Evidence and sufficiency check |
+| --- | --- | --- |
+| Understand the repository and its parts | Component identities, purpose, role, ownership, the division of responsibilities, and where to start for a concrete task. | Account for every eligible selected target, including tools, examples and shared code. Bind interpreted responsibilities to declarations, manifests or attributed author documentation. Unavailable analysis remains visible. |
+| Run or use it | Exposed commands, requests, interactions and background activities; their implementations, prerequisites and documented ways to try them. | Preserve observed launch and registration identities and exact anchors. Explain an operation once with its source; a thin entry wrapper need not have another caption if that explanation already covers it. A documented command is not a verified successful run. |
+| Follow a useful scenario | Its trigger, participating parts, their responsibilities, observed connections, result and unresolved steps. | Every asserted connection needs its own supporting observation or explicitly attributed documentation. An ordered reading route is not proof of runtime execution; a missing connection remains a gap. |
+| Understand data and essential concepts | Meaning of the concepts needed for the scenario, relevant fields/interfaces, storage and consequential lifecycle rules. | Declarations and owned members establish structure. Author prose can describe rules with attribution. Names or signatures alone do not prove mutations, persistence or runtime state transitions. |
+| Understand integrations | Both sides when known, direction, protocol or interface, transported values, and possible or unresolved matches. | Retain original call sites, literals and endpoint observations. An imported library alone does not establish remote communication. Do not lose an observed boundary because its containing file lacks a prose description. |
+| Configure or vary behavior | Settings and build choices that affect use, where they are supplied/read, and supported defaults or conditions. | Source-linked manifest values, reads, declarations and author instructions. Distinguish a declared setting from evidence that an operation uses it. |
+| Understand failure and recovery | Evidence of errors, cancellation, timeouts, retries, cleanup and what the user can observe along the selected scenario. | Describe only supported behavior. A suggestive name is a lead for investigation; absent body/runtime evidence leaves a specific gap. |
+| Change and check behavior | Relevant implementation locations, associated tests/examples, instructions for checking a change, dynamic execution and known missing evidence. | Keep test/configuration/example sources discoverable. Test discovery establishes an inventory, not tested behavior or coverage. State the scope of negative findings; lack of a model answer cannot establish absence. |
+
+Each explanation keeps its subject, exact source locations and component
+context. Facts, author claims and model interpretations remain distinguishable;
+interpretations retain qualifications and gaps. Shared source identity may have
+several owners without creating several copies of the declaration or erasing
+its distinct uses. These are information requirements within the existing
+ProgramIndex, atlas, knowledge and report, not new storage schemas.
+
+There are two different completeness questions. The source inventory must keep
+the eligible evidence required for later investigation. The initial explanation
+must cover the responsibilities and scenarios it presents. A source can remain
+available without a dedicated caption; availability alone does not prove that
+the initial map or automatically proposed questions introduce it adequately.
+
+### What the current implementation actually obtains
+
+Code inspection at `ec981a11` found these dependencies:
+
+- `internal/atlas/lines/tables.go:Symbols` asks for prose, an English alias,
+  key-symbol selection, an activation proposal and outbound-call selections in
+  the same row. Omitting that row omits every one of those decisions. Counting
+  all skipped rows as unnecessary descriptions therefore overstates what was
+  established by the selection fix.
+- `reading.readOperations` independently reviews observed callback and
+  asynchronous activation evidence as well as symbol-stage proposals.
+  `readBoundaries` retains native boundary observations. These preserve some
+  operation and integration evidence after a symbol row is skipped; they do
+  not demonstrate that all omitted proposals or outbound interpretations are
+  redundant. `bindInterpretedBoundaries` consumes those outbound selections.
+- `reading.questionRows` starts from the full graph; final answers consume the
+  selected original evidence. They do not require a fresh symbol description
+  first. `learningEvidence`, however, admits ordinary symbol anchors through
+  accepted `key_symbol=yes` knowledge, alongside file descriptions,
+  documentation, boundaries and source facts. Closing a scope can therefore
+  remove learning topics even though explicit question retrieval still sees
+  their declarations.
+- Directory rows expose names, bounded child lists, counts and available
+  documentation, without a catalogue of descendant launches or operations.
+  File rows expose leading declarations and direct caller facts. The current
+  `open` prompt permits closing "trivial" code without defining which of the
+  reader outcomes must survive that choice. Its input and decision are not
+  enough to establish that downstream semantic work is unnecessary.
+
+The `ec981a11` regression establishes execution of accepted close decisions,
+preservation of the original question graph, and refusal isolation. It does
+not establish overview, integration or Learn quality. The saved Airflow count
+of 52,393 skipped symbol/type rows is an impact count, not a count of proven
+unnecessary work. The full Airflow process remains paused before atlas reading.
+
+### How to judge an optimization against these results
+
+For each expensive computation or request family, first identify the required
+information it produces and its downstream reader outcome. Then evaluate
+removal, reuse or batching against that dependency. Share identical evidence
+and exact accepted answers while preserving source and ownership context. A
+separate caption is justified by the explanation it adds; selecting an
+operation, boundary or learning concept has its own information requirement,
+even when the implementation currently obtains all of them in one request.
+
+A structural observation is not an importance decision. A project-configured
+test inventory helps distinguish tests from production declarations; it does
+not justify discarding the evidence needed to explain how to check a change.
+An exact compatibility redirect can explain where an API moved, whereas a
+short file, `internal` path or an Airflow-specific helper name is not a general
+exclusion rule. The existing requirement to analyze tools/examples remains.
+In the reviewed Airflow snapshot, `pyproject.toml` configures `python_files`
+as `test_*.py` and `example_*.py`; copying pytest's default filename patterns
+would not reproduce even that declared selection. Pytest explicitly supports
+[configured discovery patterns](https://docs.pytest.org/en/stable/example/pythoncollection.html#changing-naming-conventions).
+This configuration observation is not an executed test collection or a proof
+that every declaration in those files is irrelevant to orientation.
+Any later eligibility rule must specify its evidence and effect before request
+preparation. A response violating that declared rule is recorded as refused,
+without rewriting the original answer into a model-approved positive decision.
+
+Compare the same snapshot by preserved launches, operations, integrations,
+concepts, useful question topics, original anchors and explicit unresolved
+coverage. Counts alone are insufficient: inspect which subjects disappeared
+and whether their responsibilities remain explained elsewhere. Then compare
+elapsed time, provider tokens/requests, native preparation work and disk use.
+No percentage of closed code or file-length cutoff is an acceptance rule.
+
+Saved Airflow input permits inspection without another AST build. It does not
+make two complete model readings free: the verified saved run ends after files,
+and complete symbol, operation and Learn answers have not been established in
+the cache. Changed Learn evidence also changes its exact request. Establish
+available baseline answers and missing work before calling a comparison cheap;
+an offline comparison can establish structural impact, not the quality of model
+answers that were never obtained.
 
 ## Removed on 2026-09-04
 

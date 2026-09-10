@@ -268,6 +268,12 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   other file is corrected.
 - [docs/agent-room/CURRENT.md](docs/agent-room/CURRENT.md) is the single living
   ADR. Change the relevant section in place when the product changes.
+- The owner's 2026-09-10 optimization direction is to specify required reader
+  outcomes and their evidence before choosing extraction or model-selection
+  shortcuts. The working specification is CURRENT.md, "Required analysis
+  results before optimization". Skipped symbol rows also remove key-symbol,
+  activation and outbound decisions; their count alone does not establish
+  saved unnecessary work or retained report quality.
 - Historical decisions and deleted planning documents remain available in Git
   at the pre-cleanup commit `4e54ab3`; they are not current requirements.
 - [docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md) owns only the live
