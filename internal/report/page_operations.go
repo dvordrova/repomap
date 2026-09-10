@@ -10,10 +10,10 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// Reuse a declaration's accepted alias only when the interaction repeats its
+// Reuse a declaration's accepted alias only when an operation repeats its
 // native name. A distinct action label or command/path has its own meaning.
 func (builder *pageBuilder) operationDisplayName(operation groupindex.Operation) string {
-	if operation.Source != "model" || operation.Kind != "interaction" {
+	if operation.Source != "model" || operation.Kind == "command" || operation.Kind == "request" {
 		return operation.Name
 	}
 	ref, ok := builder.subjects[operation.SubjectID]

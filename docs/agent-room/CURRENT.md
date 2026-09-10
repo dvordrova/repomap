@@ -1909,10 +1909,11 @@ its alphabet or shorten a description into one. Cards show the short alias with
 the native code name; the full translated explanation belongs to the selected
 detail. Both saved names can lead to one glossary definition by literal lookup.
 
-The 2026-09-10 correction extends the same alias binding to an interaction that
+The 2026-09-10 correction extends the same alias binding to an operation that
 repeats its native declaration name: cards, map nodes and operation links show
-the accepted English alias beside that original name. A distinct action label
-keeps its own meaning. Operation names are excluded from translation, including
+the accepted English alias beside that original name. This includes continuous
+and scheduled work. A distinct action label keeps its own meaning; commands and
+paths retain their literal spelling. Operation names are excluded from translation, including
 remote map references; descriptions still change language. The regression uses
 a Korean declaration and checks both English and Russian rendered reports with
 the original source and operation links. An ordinary run rebuilds the changed

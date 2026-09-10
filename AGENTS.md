@@ -789,10 +789,11 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   separate; each partition rebuilds its complete dictionary. Source
   excerpts, names, IDs and topology remain original. Operation names stay
   English in every display language; exact command/path labels remain verbatim,
-  while descriptions and UI labels are localized. When a model interaction's
+  while descriptions and UI labels are localized. When an interpreted action's
   name is exactly its native declaration name, the report uses that subject's
   existing English alias with the native name beside it. A distinct action
-  label is never replaced with its function's alias. The default English file
+  label is never replaced with its function's alias; literal commands and paths
+  remain verbatim even if they match a declaration name. The default English file
   remains `report.html`. Ordinary publication passed on the small server,
   chi, Python/TypeScript fixture and Chinese Jieba repository; answer quality
   and the retained visual alternatives remain explicit owner-review items in

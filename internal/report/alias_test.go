@@ -20,6 +20,8 @@ func TestOperationLabelsKeepEnglishNamesAndExactDeclarationAliases(t *testing.T)
 	const translated = "Обрабатывает ввод пользователя."
 	cases := []struct{ name, native, alias, kind, source, want string }{
 		{"키누름", "키누름", "Handle key press", "interaction", "model", "Handle key press (키누름)"},
+		{"애니메이션", "애니메이션", "Animate simulation", "continuous", "model", "Animate simulation (애니메이션)"},
+		{"예약작업", "예약작업", "Scheduled refresh", "scheduled", "model", "Scheduled refresh (예약작업)"},
 		{"Submit selected order", "제출", "Order submission", "interaction", "model", "Submit selected order"},
 		{"animate", "animate", "", "interaction", "model", "animate"},
 		{"onSlownessChange", "onSlownessChange", "", "interaction", "model", "onSlownessChange"},
