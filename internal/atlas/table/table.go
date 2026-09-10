@@ -57,6 +57,9 @@ type Column struct {
 	FreeMaxRunes int    `json:"free_max_runes,omitempty"`
 	// Note is one sentence the model reads about this cell.
 	Note string `json:"note,omitempty"`
+	// EmptyValue is an owner-defined spelling for absent prose. It stays in
+	// the response contract but does not become text for the optional glossary.
+	EmptyValue string `json:"empty_value,omitempty"`
 	// When limits this cell to a previously validated choice in the same row.
 	// Inactive cells have no authority and are not required or retained.
 	When map[string]string `json:"when,omitempty"`
@@ -243,6 +246,9 @@ func Request(def Definition, window Window) ([]byte, error) {
 		}
 		if column.Note != "" {
 			spec["note"] = column.Note
+		}
+		if column.EmptyValue != "" {
+			spec["empty_value"] = column.EmptyValue
 		}
 		if len(column.When) != 0 {
 			spec["when"] = column.When

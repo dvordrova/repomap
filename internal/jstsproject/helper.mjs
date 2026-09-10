@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 22
+const CONTRACT_VERSION = 23
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -739,12 +739,17 @@ function signatureOf(node) {
   try {
     const checker = checkerForNode(node)
     if (!checker) return ""
-    // Preserve optional/readonly modifiers and the written field type rather
-    // than reducing a field declaration to its inferred value type.
-    if (ts.isPropertySignature(node) && ts.isInterfaceDeclaration(node.parent)) {
+    // Keep declaration kind and heritage in type headers, and optional/readonly
+    // modifiers in interface fields. Inferred type names erase these facts.
+    const typeHeader = ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)
+    if (typeHeader || ts.isPropertySignature(node) && ts.isInterfaceDeclaration(node.parent)) {
       const source = node.getSourceFile()
+      const openingBrace = typeHeader ? node.getChildren(source).find((child) => child.kind === ts.SyntaxKind.OpenBraceToken) : undefined
+      if (typeHeader && !openingBrace) return ""
+      const end = typeHeader ? openingBrace.getStart(source) : node.end
       const literals = []
       const visit = (child) => {
+        if (child.getStart(source) >= end) return
         if (ts.isStringLiteral(child) || ts.isNoSubstitutionTemplateLiteral(child) ||
             child.kind === ts.SyntaxKind.TemplateHead || child.kind === ts.SyntaxKind.TemplateMiddle ||
             child.kind === ts.SyntaxKind.TemplateTail) {
@@ -785,7 +790,7 @@ function signatureOf(node) {
         signature += text
         cursor = literal.end
       }
-      return (signature + compactTrivia(source.text.slice(cursor, node.end))).trim()
+      return (signature + compactTrivia(source.text.slice(cursor, end))).trim()
     }
     if (ts.isFunctionLike(node) && typeof checker.signatureToString === "function") {
       const signature = checker.getSignatureFromDeclaration(node)
@@ -828,7 +833,8 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
         name,
         qualified_name: `${moduleName(filePath)}#${ownerName ? `${ownerName}.` : ""}${name}`,
         signature: signatureOf(node),
-        signature_is_source: ts.isPropertySignature(node) && ts.isInterfaceDeclaration(node.parent) || undefined,
+        signature_is_source: ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node) ||
+          ts.isPropertySignature(node) && ts.isInterfaceDeclaration(node.parent) || undefined,
         exported: declarationExported(node),
         owner_ref: ownerRef,
         location: locationOf(node.name || node),

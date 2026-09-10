@@ -73,8 +73,9 @@ type catalogSource struct {
 	Row  string `json:"row,omitempty"`
 }
 type sourceCatalog struct {
-	Version string          `json:"version"`
-	Sources []catalogSource `json:"sources"`
+	Version     string          `json:"version"`
+	Sources     []catalogSource `json:"sources"`
+	ProseFields []string        `json:"prose_fields,omitempty"`
 }
 
 func (p *provider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
@@ -83,7 +84,7 @@ func (p *provider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, 
 
 func (p *provider) AdaptPrompt(prompt llm.Prompt) (llm.Prompt, error) {
 	input, _ := jsonValue([]byte(prompt.User))
-	catalog := sourceCatalog{Version: adjunctVersion, Sources: sourcesIn(input, p.collector.paths)}
+	catalog := sourceCatalog{Version: adjunctVersion, Sources: sourcesIn(input, p.collector.paths), ProseFields: prompt.ProseFields}
 	if len(catalog.Sources) == 0 {
 		return prompt, nil
 	}
@@ -235,6 +236,7 @@ type requestContext struct {
 	sources       map[string]catalogSource
 	noTerminology bool
 	input         any
+	proseFields   []string
 }
 
 // The suffix is read from an actual string leaf in the saved provider request,
@@ -293,7 +295,7 @@ func (c *Collector) requestContext(request []byte) (requestContext, error) {
 	for _, source := range sourcesIn(input, paths) {
 		original[sourceKey(source)] = true
 	}
-	ctx := requestContext{sources: make(map[string]catalogSource), input: input}
+	ctx := requestContext{sources: make(map[string]catalogSource), input: input, proseFields: catalog.ProseFields}
 	for i, source := range catalog.Sources {
 		if source.Ref != fmt.Sprintf("g%d", i+1) || !original[sourceKey(source)] {
 			return requestContext{}, fmt.Errorf("terminology: source catalogue is not original evidence")
@@ -308,11 +310,11 @@ func (c *Collector) requestContext(request []byte) (requestContext, error) {
 type termWire struct {
 	Name        *string   `json:"name"`
 	Explanation *string   `json:"explanation"`
-	Sources     []*string `json:"sources"`
+	Rows        []*string `json:"rows"`
 }
 type validatedTerm struct {
 	candidate Candidate
-	sources   []catalogSource
+	sources   []Source
 	rows      []string
 }
 
@@ -334,6 +336,9 @@ func (p *provider) AdaptResponse(request, response []byte) (llm.AdaptedResponse,
 		return llm.AdaptedResponse{}, err
 	}
 	result = tableProse(result, ctx.input)
+	if ctx.proseFields != nil {
+		result = selectedProseFields(result, ctx.proseFields)
+	}
 	sourceRows := make(map[string]bool)
 	for _, source := range ctx.sources {
 		if source.Row != "" {
@@ -386,7 +391,7 @@ func tableProse(result, input any) any {
 				}
 			}
 			if name, ok := column["name"].(string); ok && active {
-				if text, ok := row[name].(string); ok {
+				if text, ok := row[name].(string); ok && text != column["empty_value"] {
 					prose[name] = text
 				}
 			}
@@ -396,96 +401,49 @@ func tableProse(result, input any) any {
 	return map[string]any{"rows": projected}
 }
 
-// validateTermMetadata owns only the later optional glossary response. It can
-// reject a definition, never the already accepted analysis that supplied prose.
-func validateTermMetadata(result any, sources map[string]catalogSource, wire []json.RawMessage) ([]validatedTerm, []llm.ResponseRejection) {
-	var rejections []llm.ResponseRejection
-	rejectionByReason := make(map[string]int)
-	reject := func(reason, position string) {
-		index, found := rejectionByReason[reason]
-		if !found {
-			index = len(rejections)
-			rejectionByReason[reason] = index
-			rejections = append(rejections, llm.ResponseRejection{Kind: "glossary_term_rejected", Reason: reason})
-		}
-		rejections[index].Count++
-		if len(rejections[index].Samples) < 5 {
-			rejections[index].Samples = append(rejections[index].Samples, position)
-		}
+// Field selection is supplied by the analytical owner. Values are never
+// classified by spelling: "direct" remains prose when written in a why cell.
+func selectedProseFields(result any, fields []string) any {
+	allowed := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		allowed[field] = true
 	}
-	terms := make([]validatedTerm, 0, len(wire))
-	sourceRows := make(map[string]bool)
-	for _, source := range sources {
-		if source.Row != "" {
-			sourceRows[source.Row] = true
-		}
-	}
-	textByRow := resultTextByRow(result, sourceRows)
-	matchesByName := make(map[string][]string)
-	for index, rawTerm := range wire {
-		position := fmt.Sprintf("terms[%d]", index)
-		var term termWire
-		if err := strictJSON(rawTerm, &term); err != nil || term.Name == nil || term.Explanation == nil || term.Sources == nil {
-			reject("invalid optional term shape", position)
-			continue
-		}
-		name, explanation := *term.Name, strings.TrimSpace(*term.Explanation)
-		if name == "" || name != strings.TrimSpace(name) || explanation == "" || explanation == "none" {
-			reject("invalid optional term fields", position)
-			continue
-		}
-		validated := validatedTerm{candidate: Candidate{Name: name, Explanation: explanation}}
-		matches, known := matchesByName[name]
-		if !known {
-			for row, texts := range textByRow {
-				for _, text := range texts {
-					if mentionsTerm(text, name) {
-						matches = append(matches, row)
-						break
+	var project func(any, string) any
+	project = func(value any, path string) any {
+		switch value := value.(type) {
+		case map[string]any:
+			object := make(map[string]any)
+			for field, child := range value {
+				switch field {
+				case "key", "row", "intent", "file_ref", "ref":
+					object[field] = child
+				default:
+					childPath := field
+					if path != "" {
+						childPath = path + "." + field
+					}
+					if text := project(child, childPath); text != nil {
+						object[field] = text
 					}
 				}
 			}
-			sort.Strings(matches)
-			matchesByName[name] = matches
-		}
-		seen := make(map[string]bool)
-		matchedRows := make(map[string]bool)
-		for _, ref := range term.Sources {
-			if ref == nil {
-				reject("invalid optional source ref", position)
-				continue
-			}
-			source, ok := sources[*ref]
-			if !ok {
-				reject("unsupported optional source ref", position)
-				continue
-			}
-			if seen[*ref] {
-				continue
-			}
-			seen[*ref] = true
-			supported := false
-			for _, row := range matches {
-				if source.Row == "" || source.Row == row {
-					matchedRows[row] = true
-					supported = true
+			return object
+		case []any:
+			var values []any
+			for _, child := range value {
+				if text := project(child, path+"[]"); text != nil {
+					values = append(values, text)
 				}
 			}
-			if supported {
-				validated.sources = append(validated.sources, source)
+			return values
+		case string:
+			if allowed[path] {
+				return value
 			}
 		}
-		for row := range matchedRows {
-			validated.rows = append(validated.rows, row)
-		}
-		sort.Strings(validated.rows)
-		if len(validated.sources) == 0 || len(validated.rows) == 0 {
-			reject("term has no source-backed occurrence in the computed result", position)
-			continue
-		}
-		terms = append(terms, validated)
+		return nil
 	}
-	return terms, rejections
+	return project(result, "")
 }
 
 // Occurrence ownership comes from the computed answer. Named source and

@@ -112,13 +112,18 @@ func classificationBatchesWithFit(
 	if fits == nil {
 		return nil, fmt.Errorf("target portfolio: provider request envelope is missing")
 	}
+	units := classificationUnits(compilation)
 	result := make([]classificationBatch, 0)
-	for start := 0; start < len(compilation.candidates); {
-		low, high, accepted := 1, len(compilation.candidates)-start, 0
+	for start := 0; start < len(units); {
+		low, high, accepted := 1, len(units)-start, 0
 		var acceptedCompilation Compilation
 		for low <= high {
 			count := low + (high-low)/2
-			probe, err := compileSubset(compilation, compilation.candidates[start:start+count])
+			var candidates []Candidate
+			for _, unit := range units[start : start+count] {
+				candidates = append(candidates, unit...)
+			}
+			probe, err := compileSubset(compilation, candidates)
 			if err != nil {
 				return nil, err
 			}
@@ -136,8 +141,8 @@ func classificationBatchesWithFit(
 		}
 		if accepted == 0 {
 			return nil, fmt.Errorf(
-				"target portfolio: exact candidate %s is indivisible in the provider request envelope",
-				compilation.candidates[start].FileRef,
+				"target portfolio: complete candidate/launch-group unit containing %s is indivisible in the provider request envelope",
+				units[start][0].FileRef,
 			)
 		}
 		result = append(result, classificationBatch{compilation: acceptedCompilation})
@@ -216,6 +221,9 @@ func (packing *classificationPacking) add(ref corpus.FileID, rowBytes int) {
 }
 
 func compileSubset(compilation Compilation, candidates []Candidate) (Compilation, error) {
+	if err := validateLaunchSubset(compilation, candidates); err != nil {
+		return Compilation{}, err
+	}
 	executableRefs := authorityRefsInCandidates(compilation.executableFileRefs, candidates)
 	requiredRefs := authorityRefsInCandidates(compilation.requiredTargetFileRefs, candidates)
 	return compile(

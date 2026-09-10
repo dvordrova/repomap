@@ -230,7 +230,7 @@ func TestFixturePlaces(t *testing.T) {
 	}
 	// Graph v11 includes native route subjects and source-value origins. Keep the same
 	// canonical bytes for eager and lazy target storage below.
-	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "111ac5f345c0f1a55eb5a7584dc7dc34a631d337993758ce173fc37cfbec449b" {
+	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "004b27a07ad5cc284aea61d29380afda9ed934b60ddcd91f42a1cfd5c8c9c8e8" {
 		t.Fatalf("saved mixed fixture graph changed: %s", got)
 	}
 	lazy := input

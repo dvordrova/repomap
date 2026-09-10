@@ -61,7 +61,7 @@ func (data catalogue) memoIdentity(provider llm.Provider, question modelQuestion
 		return "", err
 	}
 	return llm.MemoIdentity(provider, state, llm.Prompt{
-		System: data.opts.System, User: string(encoded), ResponseFormatJSON: true, ResponseExample: responseExample, Reasoning: true,
+		System: data.opts.System, User: string(encoded), ResponseFormatJSON: true, ResponseExample: responseExample, Reasoning: true, ProseFields: []string{"questions[].selections[].why"},
 	}, limits())
 }
 

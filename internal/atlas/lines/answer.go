@@ -13,10 +13,10 @@ var answerPrompt string
 func Answer() table.Definition {
 	return table.Definition{Stage: StageAnswer, Contract: "repomap.atlas.answer.v8", System: answerPrompt, Reasoning: true,
 		Columns: []table.Column{
-			{Name: "answer", Kind: table.Prose},
-			{Name: "basis", Kind: table.Prose},
+			{Name: "answer", Kind: table.Prose, EmptyValue: "none"},
+			{Name: "basis", Kind: table.Prose, EmptyValue: "none"},
 			{Name: "sources", Kind: table.Sequence, OptionsFrom: "candidate_options"},
-			{Name: "remaining", Kind: table.Prose},
+			{Name: "remaining", Kind: table.Prose, EmptyValue: "none"},
 			{Name: "state", Kind: table.Choice, Options: []string{"answered", "partial", "unanswered", "not_applicable"}},
 		}}
 }

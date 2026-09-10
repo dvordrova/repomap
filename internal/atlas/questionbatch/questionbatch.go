@@ -347,7 +347,7 @@ func (data catalogue) requestCall(rows []int, questions []modelQuestion) (llm.Ca
 	}
 	return llm.Call[Response]{
 		State:          []byte(`{"contract":"` + Contract + `"}`),
-		Prompt:         llm.Prompt{System: data.opts.System, User: string(encoded), ResponseFormatJSON: true, ResponseExample: responseExample, Reasoning: true},
+		Prompt:         llm.Prompt{System: data.opts.System, User: string(encoded), ResponseFormatJSON: true, ResponseExample: responseExample, Reasoning: true, ProseFields: []string{"questions[].selections[].why"}},
 		Limits:         limits(),
 		DecodeValidate: func(raw []byte) (Response, error) { return data.decode(rows, questions, raw) },
 	}, nil

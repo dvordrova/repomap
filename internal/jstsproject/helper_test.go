@@ -346,6 +346,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		t.Fatalf("build cumulative JSTS places: %v", err)
 	}
 	assertCumulativeJSTSTypeMembers(t, result, index, lines.QuestionRows(graph))
+	assertCumulativeJSTSTypeHeaders(t, result, index, lines.QuestionRows(graph))
 	assertCumulativeJSTSCallbackAliases(t, index, "src/server.ts", programindex.ResolutionExact)
 	assertCumulativeJSTSChainedCallbacks(t, index, "src/server.ts", programindex.ResolutionExact)
 	adaptertest.AssertCallControls(t, index, graph, "src/server.ts", "processPendingJobs", map[int][]adaptertest.Control{
@@ -2848,6 +2849,53 @@ func assertExactSiblingPackageCalls(
 		if !foundIdentity {
 			t.Fatalf("sibling call target %q lacks package/export identity: %#v", expression, target)
 		}
+	}
+}
+
+func assertCumulativeJSTSTypeHeaders(t *testing.T, result Result, index programindex.Index, questions []lines.QuestionChunk) {
+	t.Helper()
+	expected := map[string]string{
+		"src/type-members.ts#IGetLevelsResponse": "export interface IGetLevelsResponse",
+		"src/type-members.ts#OtherResponse":      "export interface OtherResponse",
+		"src/type-members.ts#ExtendedResponse":   "export interface ExtendedResponse<T extends { id: string } = { id: string }> extends IGetLevelsResponse",
+		"src/platform.ts#LevelDrawer":            "export class LevelDrawer",
+		"src/server.ts#ApplicationRouter":        "class ApplicationRouter extends BaseRouter",
+	}
+	byRef := make(map[string]string)
+	for _, declaration := range result.Declarations {
+		if want, ok := expected[declaration.Location.Path+"#"+declaration.Name]; ok {
+			if declaration.Kind != "type" || !declaration.SignatureIsSource || declaration.Signature != want {
+				t.Fatalf("native type header lost kind/heritage or contains a body: %+v, want %q", declaration, want)
+			}
+			byRef[declaration.Ref] = want
+		}
+	}
+	if len(byRef) != len(expected) {
+		t.Fatal("native type header fixture missing")
+	}
+	byID := make(map[string]string)
+	for _, object := range index.Objects {
+		if want := byRef[object.SourceRef]; want != "" {
+			if object.Kind != programindex.ObjectType || object.Signature != want {
+				t.Fatalf("ProgramIndex erased type header: %+v", object)
+			}
+			byID[object.ID] = want
+		}
+	}
+	found := make(map[string]bool)
+	for _, chunk := range questions {
+		for ref, anchor := range chunk.Anchors {
+			if want := byID[anchor.SubjectID]; want != "" {
+				evidence := lines.AnchorEvidence(chunk, ref)["evidence"].([]map[string]any)[0]
+				if evidence["signature"] != want {
+					t.Fatalf("question provider evidence erased type kind: %+v", evidence)
+				}
+				found[anchor.SubjectID] = true
+			}
+		}
+	}
+	if len(found) != len(expected) {
+		t.Fatalf("type header question coverage %d, want %d", len(found), len(expected))
 	}
 }
 

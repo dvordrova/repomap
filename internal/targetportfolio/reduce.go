@@ -33,9 +33,9 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 		return Selection{}, fmt.Errorf("target portfolio: response must contain target_file_refs as an array")
 	}
 	var exactFields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &exactFields); err != nil || (len(exactFields) != 2 && !(len(exactFields) == 3 && exactFields["native_decisions"] != nil)) ||
+	if err := json.Unmarshal(raw, &exactFields); err != nil ||
 		exactFields["default_file_ref"] == nil || exactFields["target_file_refs"] == nil {
-		return Selection{}, fmt.Errorf("target portfolio: response must contain default_file_ref, target_file_refs and optional native_decisions only")
+		return Selection{}, fmt.Errorf("target portfolio: response must contain default_file_ref, target_file_refs and optional native_decisions and launch_decisions only")
 	}
 
 	authority := make(map[corpus.FileID]VisibleCandidate, len(compilation.Request.Candidates))
@@ -106,7 +106,7 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 
 	defaultCopy := cloneVisibleCandidate(defaultCandidate)
 	result := Selection{
-		Placements:   nativeDecisions(compilation.native, response.NativeDecisions, false),
+		Placements:   resolveNativeLaunchDecisions(compilation.native, response.NativeDecisions, response.LaunchDecisions),
 		Default:      &defaultCopy,
 		Targets:      make([]VisibleCandidate, 0, len(targetSet)),
 		Unclassified: make([]VisibleCandidate, 0, len(compilation.Request.Candidates)-len(targetSet)),

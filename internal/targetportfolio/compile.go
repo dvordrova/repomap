@@ -94,6 +94,7 @@ func compile(
 	request := Request{
 		NativeTargets:          nativeRows,
 		Observations:           nativeObservations,
+		LaunchGroups:           nativeLaunchGroups(native),
 		Candidates:             visible,
 		ExecutableFileRefs:     requestExecutableFileRefs,
 		RequiredTargetFileRefs: requestRequiredTargetFileRefs,

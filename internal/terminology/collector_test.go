@@ -107,7 +107,7 @@ func TestSeparateGlossaryKeepsAcceptedRowsMainOriginsAndWarmCache(t *testing.T) 
 		if strings.Contains(user, "BadTerm") {
 			t.Fatal("refused prose entered glossary")
 		}
-		return completed(`{"terms":[{"name":"OHLCV","explanation":"Open, high, low, close and volume market values.","sources":["g1"]}]}`)
+		return completed(`{"terms":[{"name":"OHLCV","explanation":"Open, high, low, close and volume market values.","rows":["p1"]}]}`)
 	}
 	call := llm.Call[acceptedRows]{State: []byte(`{"contract":"test.rows.v1"}`), Limits: llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 16000}, Prompt: llm.Prompt{User: `{"rows":[{"key":"r1","path":"api.py"},{"key":"r2","path":"bad.py"}]}`, ResponseExample: `{"rows":[{"key":"r1","line":"<computed>"}]}`}}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
@@ -147,9 +147,9 @@ func TestGlossaryReplayUsesUpdatedAcceptedProseAndOriginalRequestOrigin(t *testi
 			return completed(main)
 		}
 		if strings.Contains(user, "Beta") {
-			return completed(`{"terms":[{"name":"Beta","explanation":"The updated concept.","sources":["g1"]}]}`)
+			return completed(`{"terms":[{"name":"Beta","explanation":"The updated concept.","rows":["p1"]}]}`)
 		}
-		return completed(`{"terms":[{"name":"Alpha","explanation":"The original concept.","sources":["g1"]}]}`)
+		return completed(`{"terms":[{"name":"Alpha","explanation":"The original concept.","rows":["p1"]}]}`)
 	}
 	call := llm.Call[acceptedRows]{State: []byte(`{"contract":"replay.prose.v1"}`), Limits: llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 16000}, Prompt: llm.Prompt{User: `{"rows":[{"key":"r1","path":"api.py"}]}`, ResponseExample: `{"rows":[{"key":"r1","line":"<computed>"}]}`}}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
@@ -245,7 +245,7 @@ func TestOptionalOutputFailureSplitsCompleteProseAndKeepsSibling(t *testing.T) {
 		}
 		if strings.Contains(user, "Alpha") {
 			seen.Store("Alpha", true)
-			return completed(`{"terms":[{"name":"Alpha","explanation":"The first concept.","sources":["g1"]}]}`)
+			return completed(`{"terms":[{"name":"Alpha","explanation":"The first concept.","rows":["p1"]}]}`)
 		}
 		seen.Store("Beta", true)
 		return completed(`{"terms":[`)
@@ -265,7 +265,7 @@ func TestTermsRequireExactOccurrenceAndScopedSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := call.DecodeValidate([]byte(`{"terms":[{"name":"Matcher","explanation":"A configurable comparison concept.","sources":["g1","g1","g999"]},{"name":"Storage","explanation":"Wrong source.","sources":["g1"]},{"name":"Missing","explanation":"Not in prose.","sources":["g2"]},{"name":"Matcher","explanation":"A different meaning.","sources":["g1"]}]}`))
+	got, err := call.DecodeValidate([]byte(`{"terms":[{"name":"Matcher","explanation":"A configurable comparison concept.","rows":["p1","p1","p999"]},{"name":"Storage","explanation":"Wrong source.","rows":["p1"]},{"name":"Missing","explanation":"Not in prose.","rows":["p2"]},{"name":"Matcher","explanation":"A different meaning.","rows":["p1"]}]}`))
 	if err != nil || len(got.Terms) != 2 || len(got.Rejections) != 2 || len(got.Terms[0].sources) != 1 {
 		t.Fatalf("metadata authority: %+v %v", got, err)
 	}
@@ -276,6 +276,89 @@ func TestTermsRequireExactOccurrenceAndScopedSource(t *testing.T) {
 	}
 	if empty, err := call.DecodeValidate([]byte(`{"terms":[]}`)); err != nil || len(empty.Terms) != 0 {
 		t.Fatal("valid empty glossary refused")
+	}
+}
+
+func TestGenerationSelectsProseAndRestoresEveryOriginalSourceAndOrigin(t *testing.T) {
+	items := []proseSource{
+		{Texts: []string{"The OTLP trace collector receives spans."}, Sources: []Source{{Path: "otel.go", Line: 91}, {Path: "main.go", Line: 21}, {Path: "README.md", Line: 62}}, Origin: Origin{RequestSHA256: strings.Repeat("a", 64), Row: "r26"}},
+		{Texts: []string{"The OTLP trace collector is configurable."}, Sources: []Source{{Path: "main.go", Line: 16}}, Origin: Origin{RequestSHA256: strings.Repeat("b", 64), Row: "r15"}},
+		{Texts: []string{"Unrelated storage."}, Sources: []Source{{Path: "storage.go", Line: 7}}, Origin: Origin{RequestSHA256: strings.Repeat("c", 64), Row: "r1"}},
+	}
+	call, err := generationCall(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input struct {
+		Prose []struct {
+			Ref  string
+			Text []string
+		}
+	}
+	if json.Unmarshal([]byte(call.Prompt.User), &input) != nil || len(input.Prose) != 3 || input.Prose[0].Ref != "p1" ||
+		strings.Contains(call.Prompt.User, "source_options") || strings.Contains(call.Prompt.User, `"g1"`) || strings.Contains(call.Prompt.ResponseExample, `"sources"`) {
+		t.Fatalf("generation retained competing source namespace: %s / %s", call.Prompt.User, call.Prompt.ResponseExample)
+	}
+	got, err := call.DecodeValidate([]byte(`{"terms":[{"name":"OTLP trace collector","explanation":"The configured trace destination.","rows":["p2","p1","p2","p3","g1"]},{"name":"Unrelated","explanation":"Legacy source refs must not be repaired.","sources":["g3"]}]}`))
+	if err != nil || len(got.Terms) != 1 || len(got.Rejections) != 2 {
+		t.Fatalf("closed prose selection: %+v %v", got, err)
+	}
+	collector := NewCollector([]string{"otel.go", "main.go", "README.md", "storage.go"})
+	collector.acceptDefinitions(items, got.Terms)
+	definitions := collector.Snapshot()
+	wantSources := normalizeSources(append(append([]Source{}, items[0].Sources...), items[1].Sources...))
+	if len(definitions) != 1 || !reflect.DeepEqual(definitions[0].Sources, wantSources) ||
+		!reflect.DeepEqual(definitions[0].Origins, normalizeOrigins([]Origin{items[0].Origin, items[1].Origin})) {
+		t.Fatalf("a selected prose row lost original sources or borrowed another row: %+v", definitions)
+	}
+}
+
+func TestSavedNonTableOwnerProsePathsExcludeTechnicalAndExtraCells(t *testing.T) {
+	collector := NewCollector([]string{"a.py", "b.py"})
+	prompt := llm.Prompt{User: `{"rows":[{"key":"r1","path":"a.py"},{"key":"r2","path":"b.py"}]}`,
+		ProseFields: []string{"questions[].selections[].why"}}
+	prepared, err := llm.Prepare(collector.Wrap(&testProvider{}), prompt, llm.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A fresh collector learns the owner contract from exact saved bytes.
+	current := NewCollector([]string{"a.py", "b.py"})
+	response := []byte(`{"questions":[{"key":"q1","selections":[{"row":"r1","anchors":["a1"],"relevance":"direct","why":"Read the direct context associated with a1.","extra":{"why":"Do not collect extra prose."}},{"row":"r2","anchors":["a2"],"relevance":"context","why":"Rejected source prose."}]}]}`)
+	adapted, err := llm.AdaptResponse(current.Wrap(&testProvider{}), prepared.Bytes(), response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapted.Accepted([]string{"r1"})
+	if len(current.pending) != 1 {
+		t.Fatalf("source scope: %+v", current.pending)
+	}
+	for _, item := range current.pending {
+		if !reflect.DeepEqual(item.Texts, []string{"Read the direct context associated with a1."}) || item.Origin.Row != "r1" {
+			t.Fatalf("owner prose path collected technical/extra cells or blacklisted words: %+v", item)
+		}
+	}
+}
+
+func TestTableEmptyProseIsAnOwnerDescriptorNotAStringBlacklist(t *testing.T) {
+	collector := NewCollector([]string{"a.py"})
+	provider := collector.Wrap(&testProvider{})
+	prompt := llm.Prompt{User: `{"fill":[{"name":"remaining","kind":"prose","empty_value":"none"},{"name":"meaning","kind":"prose"}],"rows":[{"key":"r1","path":"a.py"}]}`}
+	prepared, err := llm.Prepare(provider, prompt, llm.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapted, err := llm.AdaptResponse(provider, prepared.Bytes(), []byte(`{"rows":[{"key":"r1","remaining":"none","meaning":"none"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapted.Accepted([]string{"r1"})
+	for _, item := range collector.pending {
+		if !reflect.DeepEqual(item.Texts, []string{"none"}) {
+			t.Fatalf("ordinary prose spelling was filtered: %+v", item)
+		}
+	}
+	if len(collector.pending) != 1 {
+		t.Fatalf("ordinary prose lost: %+v", collector.pending)
 	}
 }
 

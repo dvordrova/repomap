@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	PreparationVersion    = 6
-	ResponseSchemaVersion = 8
+	PreparationVersion    = 7
+	ResponseSchemaVersion = 9
 
 	// MaxRequestBytes is one classification-batch packing window, not an
 	// aggregate candidate-authority bound. Run forms as many deterministic
@@ -30,7 +30,7 @@ const (
 	MaxOutputTokens         = llm.DefaultMaxOutputTokens
 )
 
-const executionContract = "native-target-placement-with-file-guidance-v10"
+const executionContract = "native-target-placement-with-file-guidance-v11"
 
 // Candidate is the common output of the initial scouts after their dumb
 // FileRef merge. Keep the alias so the portfolio does not invent a second
@@ -50,9 +50,10 @@ type VisibleCandidate struct {
 // provider-visible classification projection. Corpus identity and cache
 // identity remain private.
 type Request struct {
-	Candidates    []VisibleCandidate `json:"candidates"`
-	NativeTargets []NativeCandidate  `json:"native_targets,omitempty"`
-	Observations  []NamedObservation `json:"observations,omitempty"`
+	Candidates    []VisibleCandidate  `json:"candidates"`
+	NativeTargets []NativeCandidate   `json:"native_targets,omitempty"`
+	Observations  []NamedObservation  `json:"observations,omitempty"`
+	LaunchGroups  []NativeLaunchGroup `json:"launch_groups,omitempty"`
 
 	// RequiredTargetFileRefs is present when deterministic language adapters
 	// have established exact native targets. It contains one canonical
@@ -97,9 +98,10 @@ type Prompt struct {
 // fields; unlike private execution state, it exposes no version or request
 // identity to the model.
 type Response struct {
-	DefaultFileRef  *corpus.FileID   `json:"default_file_ref"`
-	TargetFileRefs  []corpus.FileID  `json:"target_file_refs"`
-	NativeDecisions []NativeDecision `json:"native_decisions,omitempty"`
+	DefaultFileRef  *corpus.FileID         `json:"default_file_ref"`
+	TargetFileRefs  []corpus.FileID        `json:"target_file_refs"`
+	NativeDecisions []NativeDecision       `json:"native_decisions,omitempty"`
+	LaunchDecisions []NativeLaunchDecision `json:"launch_decisions,omitempty"`
 }
 
 // DefaultRequest compares already accepted target candidates. It may choose

@@ -18,7 +18,7 @@ ${number}  last`;
 }
 
 // Inherited fields are not new declarations owned by the derived interface.
-export interface ExtendedResponse extends IGetLevelsResponse {
+export interface ExtendedResponse<T extends { id: string } = { id: string }> extends IGetLevelsResponse {
   own: boolean;
 }
 

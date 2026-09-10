@@ -301,6 +301,9 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 	} {
 		t.Run(want.name+" owns its count field", func(t *testing.T) {
 			owner := programIndexObjectNamed(t, index, programindex.ObjectType, want.name, "src/fixture_app/models.py")
+			if owner.Signature != "class "+want.name {
+				t.Fatalf("Python type lost its written class kind: %+v", owner)
+			}
 			var field programindex.Object
 			for _, object := range index.Objects {
 				if object.Name == "count" && object.OwnerID == owner.ID {
@@ -338,6 +341,9 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 						for _, row := range evidence.Value.([]map[string]any) {
 							if row["ref"] != ref {
 								continue
+							}
+							if row["signature"] != "class "+want.name {
+								t.Fatalf("Python question lost its class kind: %+v", row)
 							}
 							members, ok := row["owned_declarations"].([]map[string]any)
 							if !ok || len(members) != 1 || members[0]["name"] != "count" ||

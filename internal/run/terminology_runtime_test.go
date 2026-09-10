@@ -17,8 +17,8 @@ import (
 	"github.com/dvordrova/repomap/internal/terminology"
 )
 
-// This provider understands the original table and the common envelope, as
-// the configured online provider must. No production runtime seam is replaced.
+// This provider understands the original table and separate prose-row glossary,
+// as the configured online provider must. No production runtime seam is replaced.
 type terminologyRuntimeProvider struct {
 	calls  int
 	stages map[string]int
@@ -56,20 +56,17 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 	if err := json.Unmarshal([]byte(parts[0]), &input); err != nil {
 		return llm.Completion{}, err
 	}
-	var catalogue struct {
-		Sources []struct{ Ref, Path, Row string } `json:"sources"`
-	}
 	if len(parts) == 2 {
+		var catalogue json.RawMessage
 		if err := json.Unmarshal([]byte(parts[1]), &catalogue); err != nil {
 			return llm.Completion{}, err
 		}
 	} else {
 		var request struct {
 			Prose []struct {
-				Key  string
+				Ref  string
 				Text []string
 			}
-			Sources []struct{ Ref, Path, Row string }
 		}
 		if err := json.Unmarshal([]byte(parts[0]), &request); err != nil {
 			return llm.Completion{}, err
@@ -84,12 +81,7 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 			if !strings.Contains(strings.Join(row.Text, " "), "OHLCV") {
 				continue
 			}
-			for _, source := range request.Sources {
-				if source.Row == row.Key {
-					terms = append(terms, map[string]any{"name": "OHLCV", "explanation": "The named group of market-data values described here.", "sources": []string{source.Ref}})
-					break
-				}
-			}
+			terms = append(terms, map[string]any{"name": "OHLCV", "explanation": "The named group of market-data values described here.", "rows": []string{row.Ref}})
 		}
 		raw, err := json.Marshal(map[string]any{"terms": terms})
 		return llm.Completion{Response: raw, ChoiceCount: 1, FinishReason: llm.FinishStop, Metrics: llm.Metrics{Attempts: 1}}, err
@@ -100,7 +92,6 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 	}
 	p.stages[input.Table]++
 	rows := make([]map[string]string, 0, len(input.Rows))
-	terms := make([]map[string]any, 0)
 	for _, row := range input.Rows {
 		key, _ := row["key"].(string)
 		answer := map[string]string{"key": key}
@@ -122,14 +113,6 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 				}
 				if len(options) > 0 {
 					answer[column.Name] = options[0]
-				}
-			}
-		}
-		if answer["line"] != "" {
-			for _, source := range catalogue.Sources {
-				if source.Row == key || source.Row == "" {
-					terms = append(terms, map[string]any{"name": "OHLCV", "explanation": "The named group of market-data values described here.", "sources": []string{source.Ref}})
-					break
 				}
 			}
 		}

@@ -279,6 +279,7 @@ func (projection *goProjection) projectObjects() error {
 		projection.typeRefs[typeKey(declaration.Package, declaration.Name)] = declaration.ID
 		if err := projection.addObject(programindex.ObjectInput{
 			SourceRef: declaration.ID, Kind: programindex.ObjectType, Name: declaration.Name,
+			Signature:  declaration.Signature,
 			Visibility: visibility(declaration.Exported), OwnerRef: packageRef, ContainerRef: packageRef,
 			Location: location,
 		}); err != nil {

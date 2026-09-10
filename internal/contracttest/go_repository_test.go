@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -234,6 +235,7 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertGoTypeFormsInQuestionEvidence(t, index, graph)
 	adaptertest.AssertRegistrationArgument(t, graph, "cmd/app/main.go", "getLevel", map[int]string{21: "/api/levels", 115: "/api/embedded", 117: "/api/overridden-lookalike"})
 	seen := make(map[string]bool)
 	for _, chunk := range lines.QuestionRows(graph) {
@@ -264,6 +266,56 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 	for name := range want {
 		if !seen[name] {
 			t.Fatalf("Go type %s did not reach the ordinary question evidence", name)
+		}
+	}
+}
+
+func assertGoTypeFormsInQuestionEvidence(t *testing.T, index programindex.Index, graph atlas.Graph) {
+	t.Helper()
+	// Existing cumulative examples contrast a struct's callable field with an
+	// interface's method. Both must keep their declaration shape before a model
+	// is asked to explain them; a callable field is not an interface method.
+	want := map[string]struct{ shape, member, memberKind string }{
+		"actionSpec":      {"struct", "Run", "variable"},
+		"serviceContract": {"interface", "serviceContract.Apply", "method"},
+	}
+	for _, object := range index.Objects {
+		if expected, ok := want[object.Name]; ok && object.Kind == programindex.ObjectType {
+			if !strings.Contains(object.Signature, " "+expected.shape+"{") {
+				t.Fatalf("Go %s lost its native type form: %q", object.Name, object.Signature)
+			}
+		}
+	}
+	seen := make(map[string]bool)
+	for _, chunk := range lines.QuestionRows(graph) {
+		for _, field := range chunk.Row.Fields {
+			if field.Name != "evidence" {
+				continue
+			}
+			for _, evidence := range field.Value.([]map[string]any) {
+				name, _ := evidence["name"].(string)
+				expected, ok := want[name]
+				if !ok {
+					continue
+				}
+				signature, _ := evidence["signature"].(string)
+				if !strings.Contains(signature, " "+expected.shape+"{") {
+					t.Fatalf("Go %s question evidence lost type form: %+v", name, evidence)
+				}
+				for _, member := range evidence["owned_declarations"].([]map[string]any) {
+					if member["name"] == expected.member {
+						if member["kind"] != expected.memberKind {
+							t.Fatalf("Go %s.%s changed field/method identity: %+v", name, expected.member, member)
+						}
+						seen[name] = true
+					}
+				}
+			}
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Fatalf("Go %s type and owned declaration did not reach question evidence", name)
 		}
 	}
 }

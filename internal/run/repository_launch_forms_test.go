@@ -1,6 +1,8 @@
 package run
 
 import (
+	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/pythonprogramindex"
@@ -42,15 +44,36 @@ func TestCumulativePythonLaunchFormsReachPortfolioAndRetainAllSeeds(t *testing.T
 	if owner.Row.Ref == "" || len(alternatives) != 2 {
 		t.Fatal("cumulative launch forms missing")
 	}
-	var placements []targetportfolio.Placement
+	var rows []targetportfolio.NativeCandidate
+	var decisions []targetportfolio.NativeDecision
 	for _, candidate := range native {
-		decision := "standalone"
-		for _, launch := range alternatives {
-			if candidate.Row.Ref == launch.Row.Ref {
-				decision = "seed_of:" + owner.Row.Ref
+		rows = append(rows, candidate.Row)
+		decisions = append(decisions, targetportfolio.NativeDecision{Ref: candidate.Row.Ref, Decision: "standalone"})
+	}
+	adapter := discovery.adapters[0]
+	compiled, err := targetportfolio.CompileWithNativeAuthority(repository.Snapshot(), adapter.Candidates, adapter.RequiredFileRefs, rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var choices []targetportfolio.NativeLaunchDecision
+	for _, group := range compiled.Request.LaunchGroups {
+		if slices.Contains(group.Members, owner.Row.Ref) {
+			if len(group.Members) != 3 {
+				t.Fatal("exact native launch group lost a form")
 			}
+			choices = append(choices, targetportfolio.NativeLaunchDecision{Ref: group.Ref, Owner: owner.Row.Ref})
 		}
-		placements = append(placements, targetportfolio.Placement{Candidate: candidate.Row, Decision: decision})
+	}
+	if len(choices) != 1 {
+		t.Fatal("native callable equality did not become one model decision")
+	}
+	raw, err := json.Marshal(targetportfolio.Response{DefaultFileRef: &owner.Row.FileRef, TargetFileRefs: adapter.RequiredFileRefs, NativeDecisions: decisions, LaunchDecisions: choices})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := targetportfolio.ResolveResponse(compiled, raw)
+	if err != nil {
+		t.Fatal(err)
 	}
 	for _, launch := range alternatives {
 		advertised, callable, site := false, false, false
@@ -69,7 +92,7 @@ func TestCumulativePythonLaunchFormsReachPortfolioAndRetainAllSeeds(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err = applyRepositoryPlacements(plan, native, placements)
+	plan, err = applyRepositoryPlacements(plan, native, selection.Placements)
 	if err != nil {
 		t.Fatal(err)
 	}

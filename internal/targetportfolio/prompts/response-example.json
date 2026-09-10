@@ -1,1 +1,1 @@
-{"default_file_ref":"f1","target_file_refs":["f1"],"native_decisions":[{"ref":"t1","decision":"standalone"}]}
+{"default_file_ref":"f1","target_file_refs":["f1"],"native_decisions":[{"ref":"t1","decision":"standalone"}],"launch_decisions":[{"ref":"g1","owner":"t2"}]}

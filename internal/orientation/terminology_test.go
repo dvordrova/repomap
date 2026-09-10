@@ -38,26 +38,20 @@ func (p *terminologyProvider) Complete(_ context.Context, prepared llm.Prepared)
 	}
 	var request struct {
 		Prose []struct {
-			Key  string
+			Ref  string
 			Text []string
 		}
-		Sources []struct{ Ref, Path, Row string }
 	}
 	if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
 		return llm.Completion{}, err
 	}
-	var terms []map[string]any
+	terms := []map[string]any{}
 	for _, name := range p.names {
 		for _, row := range request.Prose {
 			if !strings.Contains(strings.Join(row.Text, " "), name) {
 				continue
 			}
-			for _, source := range request.Sources {
-				if source.Row == row.Key {
-					terms = append(terms, map[string]any{"name": name, "explanation": "The source-backed meaning of " + name + ".", "sources": []string{source.Ref}})
-					break
-				}
-			}
+			terms = append(terms, map[string]any{"name": name, "explanation": "The source-backed meaning of " + name + ".", "rows": []string{row.Ref}})
 		}
 	}
 	raw, err := json.Marshal(map[string]any{"terms": terms})

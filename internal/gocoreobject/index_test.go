@@ -19,8 +19,8 @@ func TestNewCanonicalizesSealsAndSnapshotsExactDeclarations(t *testing.T) {
 			{ModuleID: "direct-module", Module: "example.com/product", ModuleDir: ".", Path: "example.com/product", RepresentativeSource: "engine.go"},
 		},
 		Types: []TypeDeclaration{
-			{Kind: TypeInterface, Package: "example.com/product/client", Name: "Transport", Exported: true, Location: Location{Path: "client/client.go", Line: 8, Column: 6}},
-			{Kind: TypeStruct, Package: "example.com/product", Name: "Engine", Exported: true, Location: Location{Path: "engine.go", Line: 5, Column: 6}, Fields: []FieldDeclaration{
+			{Kind: TypeInterface, Package: "example.com/product/client", Name: "Transport", Signature: "type Transport interface{}", Exported: true, Location: Location{Path: "client/client.go", Line: 8, Column: 6}},
+			{Kind: TypeStruct, Package: "example.com/product", Name: "Engine", Signature: "type Engine struct{Count int}", Exported: true, Location: Location{Path: "engine.go", Line: 5, Column: 6}, Fields: []FieldDeclaration{
 				{Name: "Count", Signature: "Count int", Exported: true, Location: Location{Path: "engine.go", Line: 6, Column: 2}},
 			}},
 		},
@@ -50,6 +50,11 @@ func TestNewCanonicalizesSealsAndSnapshotsExactDeclarations(t *testing.T) {
 	tampered.Callables[0].Signature = "func()"
 	if err := tampered.Validate(); err == nil {
 		t.Fatal("tampered signature retained the producer seal")
+	}
+	tampered = index.Snapshot()
+	tampered.Types[0].Signature = "type Engine interface{}"
+	if err := tampered.Validate(); err == nil {
+		t.Fatal("tampered type signature retained the producer seal")
 	}
 	tampered = index.Snapshot()
 	tampered.Types[0].Fields[0].Signature = "Count string"

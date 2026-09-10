@@ -111,8 +111,10 @@ func Run(
 		return execution, err
 	}
 	var decisions []NativeDecision
+	original := make(map[string]Placement)
 	for _, outcome := range classificationOutcomes {
 		for _, placement := range outcome.Value.Placements {
+			original[placement.Candidate.Ref] = placement
 			decision := placement.Decision
 			if placement.Reason != "" {
 				decision = placement.Rejected
@@ -121,6 +123,14 @@ func Run(
 		}
 	}
 	selection.Placements = nativeDecisions(compilation.native, decisions, true)
+	for i := range selection.Placements {
+		prior := original[selection.Placements[i].Candidate.Ref]
+		selection.Placements[i].LaunchDecision = prior.LaunchDecision
+		if prior.Reason != "" {
+			selection.Placements[i].Reason = prior.Reason
+			selection.Placements[i].Rejected = prior.Rejected
+		}
+	}
 	execution.Selection = selection
 	return execution, nil
 }

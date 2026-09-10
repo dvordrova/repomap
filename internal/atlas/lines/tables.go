@@ -74,7 +74,7 @@ func Symbols() table.Definition {
 		System: symbolsPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what this declaration does or is"},
-			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
+			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, EmptyValue: "none", Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
 		},
 	}
 }
@@ -87,7 +87,7 @@ func Types() table.Definition {
 		System: typesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Prose, Note: "briefly explain what this represents or controls and any consequential documented rule, preserving its conditions; no method inventory or invented effects"},
-			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
+			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, EmptyValue: "none", Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
 		},
 	}
 }

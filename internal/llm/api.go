@@ -33,6 +33,12 @@ type Prompt struct {
 	// computed result has no prose to explain. Exact prepared bytes retain the
 	// decision; transport configuration and response validation are unchanged.
 	NoResponseAdjunct bool
+	// ProseFields identifies explanatory response paths for non-table owners,
+	// using [] for array elements, e.g. questions[].selections[].why.
+	// Optional glossary collection retains these fields and original row scope;
+	// closed choices and source refs are not prose. Nil keeps the owner's
+	// existing generic prose contract. This does not change response validation.
+	ProseFields []string
 	// ResponseLanguage controls generated prose, independently of the source
 	// language and provider. Empty means English. Presentation translation
 	// supplies its target language tag after the English analysis is complete.

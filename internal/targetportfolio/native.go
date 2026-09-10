@@ -52,10 +52,11 @@ type NativeDecision struct {
 // journal. Missing or invalid answers retain a standalone target; only a
 // positive, structurally valid seed_of can remove an independent run.
 type Placement struct {
-	Candidate NativeCandidate `json:"candidate"`
-	Decision  string          `json:"decision"`
-	Rejected  string          `json:"rejected,omitempty"`
-	Reason    string          `json:"reason,omitempty"`
+	Candidate      NativeCandidate       `json:"candidate"`
+	Decision       string                `json:"decision"`
+	Rejected       string                `json:"rejected,omitempty"`
+	Reason         string                `json:"reason,omitempty"`
+	LaunchDecision *NativeLaunchDecision `json:"launch_decision,omitempty"`
 }
 
 func CompileWithNativeAuthority(snapshot corpus.Snapshot, candidates []Candidate, required []corpus.FileID, native []NativeCandidate) (Compilation, error) {
@@ -76,6 +77,9 @@ func validateNative(compilation Compilation) error {
 	rows, evidence := nativeRequest(compilation.native)
 	if !reflect.DeepEqual(rows, compilation.Request.NativeTargets) || !reflect.DeepEqual(evidence, compilation.Request.Observations) {
 		return fmt.Errorf("target portfolio: native evidence authority mismatch")
+	}
+	if !reflect.DeepEqual(nativeLaunchGroups(compilation.native), compilation.Request.LaunchGroups) {
+		return fmt.Errorf("target portfolio: launch group authority mismatch")
 	}
 	files := make(map[corpus.FileID]bool)
 	for _, candidate := range compilation.candidates {

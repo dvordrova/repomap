@@ -15,7 +15,7 @@ import (
 	"unicode/utf8"
 )
 
-const Version = 3
+const Version = 4
 
 type TypeKind string
 
@@ -86,13 +86,14 @@ type Location struct {
 }
 
 type TypeDeclaration struct {
-	ID       string             `json:"id"`
-	Kind     TypeKind           `json:"kind"`
-	Package  string             `json:"package"`
-	Name     string             `json:"name"`
-	Exported bool               `json:"exported"`
-	Location Location           `json:"location"`
-	Fields   []FieldDeclaration `json:"fields,omitempty"`
+	ID        string             `json:"id"`
+	Kind      TypeKind           `json:"kind"`
+	Package   string             `json:"package"`
+	Name      string             `json:"name"`
+	Signature string             `json:"signature"`
+	Exported  bool               `json:"exported"`
+	Location  Location           `json:"location"`
+	Fields    []FieldDeclaration `json:"fields,omitempty"`
 }
 
 // FieldDeclaration belongs to the enclosing native type declaration. Embedded
@@ -295,7 +296,7 @@ func (index Index) Validate() error {
 	fieldIDs := make(map[string]struct{})
 	for position, declaration := range index.Types {
 		if _, exists := packages[declaration.Package]; !exists || !declaration.Kind.Valid() ||
-			!validText(declaration.ID) || !validIdentifier(declaration.Name) || !validLocation(declaration.Location) ||
+			!validText(declaration.ID) || !validIdentifier(declaration.Name) || !validText(declaration.Signature) || !validLocation(declaration.Location) ||
 			position > 0 && typeKey(index.Types[position-1]) >= typeKey(declaration) {
 			return fmt.Errorf("go core object index: invalid type declaration")
 		}

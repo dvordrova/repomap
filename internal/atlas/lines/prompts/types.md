@@ -24,9 +24,11 @@ Fill exactly two cells:
   Use none when the original name is already recognizable English or the
   evidence does not establish a useful alias. The native code name stays intact.
 
-Ground every detail in the row. Names and signatures establish interface
-structure, not runtime effects. When no data or lifecycle rule is documented,
-describe only that supported interface; do not invent a consequence to fill
+Ground every detail in the row. Preserve the native declaration kind and member
+kinds: a struct with a function-valued field is not an interface with a method.
+Names and signatures establish declaration structure, not runtime effects.
+When no data or lifecycle rule is documented, describe only that supplied
+structure; do not invent a consequence to fill
 the second sentence. Omit an undocumented lifecycle topic entirely, rather than
 adding "no deletion or expiration rule is documented" to an unrelated concept.
 Explain a necessary unfamiliar term with familiar words instead of substituting

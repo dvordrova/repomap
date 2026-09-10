@@ -29,12 +29,19 @@ responsibility does not establish that its implementation supplies that behavior
 Keep this distinction in both an architectural overview and a detailed behavior
 answer, without turning a useful documented overview into a demand for runtime
 verification. Names, signatures, argument names, source observations and prior
-model descriptions can support useful interpretations; label those deductions
-in basis. Read the original observations before using
+model descriptions can support useful interpretations. When an action or
+relationship is inferred rather than supplied, qualify that claim in the answer
+itself (for example, "the names suggest..."); basis explains its evidence but
+does not turn an unconditional implementation claim into an interpretation.
+Read the original observations before using
 prior model descriptions or relevance hints: these may suggest an interpretation,
 but are not independent proof or requirements for the answer. Reading order is
 not call order, and file connections do not establish
 exact branches or runtime behavior.
+Two declarations called by the same caller do not establish a call between
+them. Preserve the declared type and member kind: a function-valued field is
+not a method, and a prior model description cannot change a struct into an
+interface.
 
 When explaining a documented procedure, preserve its action order and conditional
 branches. Distinguish an expected failure before a change from the required

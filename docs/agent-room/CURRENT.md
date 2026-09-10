@@ -2039,11 +2039,23 @@ mode. This removes the competing completion protocol and prevents optional
 terminology from consuming a Learn or answer completion.
 
 Separate aggregate glossary requests read complete accepted prose records and
-closed source refs. Generation and reduction each request at most 8,000 output
+closed prose-row refs. Generation v2 uses one `p*` catalogue; a definition
+selects the rows where its exact name occurs. Go preserves every original
+source and analytical origin of those selected rows instead of asking the
+model to select finer source anchors without their contents. The fresh Go
+service check exposed why: its earlier 111-row/472-source request produced 37
+refusals when the model confused `pN` with `gN`, losing useful definitions such
+as OpenTelemetry and context.Context. Old source refs are never repaired.
+Non-table owners now declare the exact response paths containing prose, and
+table owners advertise prose columns and their empty-value spellings. This
+removes retrieval anchor/relevance cells and absent-answer markers by their
+schema role, without classifying words or identifiers by spelling.
+
+Generation and reduction each request at most 8,000 output
 tokens, subject to the configured client ceiling. Preparation begins with the
 complete reservoir, and actual provider preparation/resource refusals split
 complete records without an ordinary 64 KiB boundary. Definitions must occur in
-the original accepted prose and select its original sources. Go restores the
+the original accepted prose and select its original prose rows. Go restores the
 analytical request and result row as provenance; a dictionary request is not a
 new source for the analytical claim. Refused analytical rows contribute nothing,
 including during memo reuse. Unicode occurrence checks retain the existing
@@ -3812,23 +3824,37 @@ These quotations are author claims, not runtime observations. Repeated evidence
 is encoded once behind local refs; every request partition rebuilds its complete
 evidence catalogue. Native identities and compiler edges stay local.
 
-Python catalog/target v5 records static package lists in setup.py, pyproject.toml
+Python catalog/target v6 records static package lists in setup.py, pyproject.toml
 and setup.cfg and package discovery where/include/exclude rules. Full package
 names are matched, and namespace settings are respected. A project-name match
 requires a corresponding real package. Dynamic setup calls are not evaluated
 and supply no package declaration. This authority is separate from the complete
 importable module inventory and does not itself classify a guard as an example.
-Only a guard inside a declared library distribution is advertised as eligible
-for a seed owner. Explicit package CLIs, console scripts and shebang launches
-are not folded by this rule. JS/TS source-owning package targets retain their
+For library ownership, only a guard inside the declared distribution is
+advertised as eligible for a seed owner. Independently, executable forms with
+the same complete argument-free launch callable can belong to one launch group:
+console scripts, module launches and simple direct guards retain their original
+anchors while the model chooses one owner. A shebang alone supplies no callable
+equivalence. JS/TS source-owning package targets retain their
 existing independent compiler boundaries, including packages without start/bin.
 Exact Python launch files also supply their corpus executable bit and direct
 module-level relative imports, including wildcard imports, with original source
 anchors. These observations do not change the native candidate's identity or
 remove an author-written shebang candidate; native identity remains v3.
 
-Each native target chooses `standalone`, `seed_of:<ref>`, `shared_code`, `tool`
-or `example`. A seed owner must be an advertised mandatory target with its own
+Each native target receives `standalone`, `seed_of:<ref>`, `shared_code`, `tool`
+or `example`. Exact equivalent argument-free Python launch forms share one
+closed owner choice in the same portfolio call: `launch_groups` retains all
+native member refs and the shared exact callable observation; `launch_decisions`
+selects an advertised member or explicit `separate`. A positive owner choice
+restores that member as standalone and every other original form as its seed.
+There is no local merge based solely on equality. Missing, malformed or
+conflicting group choices retain every member standalone with a refusal;
+independent member answers cannot replace that group decision, and accepted
+neighbours survive. `separate` retains ordinary member classification, including
+tool/example. Complete group membership and original evidence stay together in
+each provider partition, including when forms share a file representative.
+A seed owner must be an advertised mandatory target with its own
 explicit `standalone` decision. Missing, duplicate, invalid or chained decisions
 retain a standalone candidate and a `decision not received` reason. Unknown refs
 have no authority. `target-placements.json` records every native decision with
@@ -4399,9 +4425,13 @@ The same review adds exact-input row memos to joints: a row's full boundary,
 complete peers and target context determine reuse. The saved Freqtrade baseline
 contained 11,104 rows but 4,177 distinct complete row inputs, so 6,927 were repeated
 (62.4%). Its 313 prepared windows were different; the earlier estimate of 84
-identical windows was not a measurement. Native launch-call facts let portfolio
-consider the three Freqtrade wrappers as one app with three seeds, but only an
-accepted positive placement can merge them. Fresh ordinary acceptance of this
+identical windows was not a measurement. Two ordinary Freqtrade portfolios still
+selected two products after native launch equality reached the provider, even
+with explicit `same_launch` owner evidence. The decision unit was therefore
+changed to one closed owner choice over the complete native launch group; only
+that accepted positive choice can restore one app with all three original
+seeds. Independent tool/example classification remains available through the
+group's explicit `separate` branch. Fresh ordinary acceptance of this
 whole review wave remains pending; local tests alone establish neither model
 quality nor a full Airflow runtime.
 
@@ -4420,6 +4450,15 @@ type-owned variables, not callable implementations. The existing atlas member
 projection carries them into question evidence. This repairs the deterministic
 loss that left IGetLevelsResponse without count before any question selection;
 it does not establish that a later model answer selects or explains the field.
+
+JSTS helper v23 retains the written class/interface declaration header in the
+existing signature, including modifiers, type parameters and heritage. The
+compiler's body token ends the header; object-type braces inside generic
+parameters are retained, while member bodies are excluded. Previously the
+compiler-rendered type at the declaration name erased the class/interface
+distinction before model input. The raw declaration, ProgramIndex and question
+evidence now retain that source distinction. Python already writes its class
+header; the cumulative boundary check confirms that it reaches question rows.
 
 Helper v20 adapts the native TypeScript 7 AST predicate names and scanner
 signature/end token to the same extraction contract. The cumulative JSTS
@@ -4478,7 +4517,14 @@ canvas. These remain separate validation, interpretation and navigation issues.
 Browser measurements are in `work/webernetes-prompt-audit-20260910/map-review-correction.json`. Other receipts are in
 `work/webernetes-prompt-audit-20260910/acceptance.json` and `REVIEW.md`.
 
-Go core objects v3 similarly retain explicitly declared struct fields with
+Go core objects v4 retain the compiler's full type declaration signature, so
+the existing struct/interface/alias distinction reaches the ProgramIndex and
+question evidence instead of being discarded at projection. This fixes the
+missing type shape observed when the ordinary service answer called a struct
+with a function-valued field an interface. Original field and method identities
+remain distinct; function bodies are not retrieved. Existing cumulative Go
+examples contrast actionSpec.Run with serviceContract.Apply.
+They also retain explicitly declared struct fields with
 their native locations and signatures, including tags and embedded fields.
 The Go adapter projects them into the same type-owned variable objects already
 used by Python class declarations; no shared graph kind or body retrieval is

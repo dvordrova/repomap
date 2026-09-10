@@ -228,12 +228,17 @@ requests, scheduled and continuous work, using the same graph and review.
 
 Direct TypeScript interface property declarations retain their written type,
 optional/readonly modifiers, exact source location and native owner. Go core
-objects v3 retain explicitly declared struct fields, including tags and embedded
+objects v4 retain compiler type signatures and explicitly declared struct fields, including tags and embedded
 field declarations, under their native type. Both project into the existing
 type-owned variable objects used by Python class fields. The same atlas members
 and question evidence carry them onward; no field creates a runtime call or an
 inherited declaration at a new owner. Comparable count-field examples live in
 the cumulative TypeScript, Python and Go testdata repositories.
+JSTS helper v23 also preserves written class/interface headers, including type
+parameters and heritage, in the existing signature. Their compiler-owned body
+boundary excludes member bodies while keeping braces inside generic types.
+This native kind reaches the same ProgramIndex and question evidence; Python
+already preserves its class header.
 
 Symbol selection reviews key roles, activation and outgoing calls independently
 of directory/file closure. It keeps insufficient activation evidence as
@@ -490,8 +495,17 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   `standalone`, `seed_of:<ref>`, `shared_code`, `tool`, or `example`.
   Missing or invalid decisions retain `standalone` with the original evidence
   and rejection reason in `target-placements.json`; there is no default seed
-  owner. Only a positive guard-to-library decision may fold a launch into an
-  advertised mandatory owner with an explicit `standalone` decision. Chains
+  owner. Exact equivalent argument-free Python launch forms receive one
+  `launch_groups` owner choice in the same portfolio call. The group retains
+  every original member, complete callable identity and source evidence in one
+  provider window. A positive advertised owner choice restores one standalone
+  owner and all original `seed_of` placements; missing or invalid choices keep
+  every member standalone with their refusal, regardless of independent member
+  answers. An explicit `separate` choice uses ordinary per-member classifications,
+  including tool/example; equivalent utility forms do not become a product.
+  Other targets retain the ordinary individual decision contract. A positive
+  guard-to-library decision may also fold a launch into an advertised mandatory
+  owner with an explicit `standalone` decision. Chains
   and cycles are invalid. Python ownership uses static declared packages,
   including `packages.find` where/include/exclude, separately from the full
   importable inventory. Launch bases, Go own-main consumers and other-module
@@ -732,8 +746,14 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   provider request envelope; no ordinary prose byte cap creates extra windows.
   Resource refusals partition complete original prose records. A failed glossary
   request cannot invalidate an accepted analytical answer. Terms must occur in
-  accepted prose and select its advertised source refs. Go preserves the original
-  analytical request and row beside each definition, including warm row reuse.
+  accepted prose and select its advertised prose-row refs. Generation v2 has
+  one `p*` catalogue and no separate source-ref namespace; Go restores the
+  complete original source scope of every selected row, plus its analytical
+  request and row, including warm reuse. A same-numbered old `g*` ref has no
+  authority and is never repaired into a prose ref. Non-table owners declare
+  their explanatory response paths; tables use their current prose columns
+  and explicit empty-value spellings. Closed refs, states and unused fields
+  do not become glossary text, while those same words remain valid in prose.
   Rejected rows contribute no prose or source authority. Exact request bytes and
   provider responses remain the cache/replay authority.
   One aggregate closed-ref reduction joins compatible domain candidates and

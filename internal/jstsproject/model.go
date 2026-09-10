@@ -22,7 +22,7 @@ import (
 
 const (
 	Version       = 16
-	HelperVersion = 22
+	HelperVersion = 23
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20
@@ -110,7 +110,7 @@ type Declaration struct {
 	// present, it remains covered by the enclosing Result byte seal.
 	QualifiedName string `json:"qualified_name,omitempty"`
 	Signature     string `json:"signature,omitempty"`
-	// SignatureIsSource distinguishes the written interface field from a
+	// SignatureIsSource distinguishes a written class/interface header or field from a
 	// compiler-rendered type, whose inferred imports can contain host paths.
 	SignatureIsSource bool     `json:"signature_is_source,omitempty"`
 	Exported          bool     `json:"exported"`
@@ -462,8 +462,8 @@ func (result Result) Validate() error {
 		if declaration.Ref == "" || declaration.Name == "" {
 			return fmt.Errorf("jsts project: invalid declaration identity")
 		}
-		if declaration.SignatureIsSource && (declaration.Kind != "variable" || declaration.OwnerRef == "") {
-			return fmt.Errorf("jsts project: invalid source field signature for %q", declaration.Ref)
+		if declaration.SignatureIsSource && declaration.Kind != "type" && (declaration.Kind != "variable" || declaration.OwnerRef == "") {
+			return fmt.Errorf("jsts project: invalid source declaration signature for %q", declaration.Ref)
 		}
 		if unsafeDeclarationSignature(declaration.Signature, declaration.SignatureIsSource) {
 			return fmt.Errorf("jsts project: invalid declaration signature for %q", declaration.Ref)
