@@ -145,6 +145,25 @@ func (store *ArtifactStore) Persist(runDir string, index Index, input Input) err
 // existing target/object/relation identity, coverage value and nested link.
 // No parser, repository access or provider is involved.
 func ReadFile(filename string) (Index, error) {
+	return new(FileReader).ReadFile(filename)
+}
+
+// FileReader belongs to one sequential consumer. Consecutive target views
+// reuse their already decoded common adapter input, while New still restores
+// each target's own sealed identities. Only one shared projection is retained;
+// changing projects releases it instead of accumulating child indexes.
+type FileReader struct {
+	factsPath   string
+	factsSHA256 string
+	facts       *sharedFactsArtifact
+}
+
+// Release drops the shared input when a consumer has finished its pass.
+func (reader *FileReader) Release() {
+	reader.factsPath, reader.factsSHA256, reader.facts = "", "", nil
+}
+
+func (reader *FileReader) ReadFile(filename string) (Index, error) {
 	wire, err := os.ReadFile(filename)
 	if err != nil {
 		return Index{}, err
@@ -156,6 +175,7 @@ func ReadFile(filename string) (Index, error) {
 		return Index{}, err
 	}
 	if kind.StorageVersion == nil {
+		reader.Release()
 		return Decode(wire)
 	}
 	var view targetArtifact
@@ -167,20 +187,29 @@ func ReadFile(filename string) (Index, error) {
 		view.Facts == "" || filepath.IsAbs(view.Facts) {
 		return Index{}, fmt.Errorf("program index: invalid shared target artifact")
 	}
-	factsWire, err := os.ReadFile(filepath.Join(filepath.Dir(filename), filepath.FromSlash(view.Facts)))
+	factsPath, err := filepath.Abs(filepath.Join(filepath.Dir(filename), filepath.FromSlash(view.Facts)))
 	if err != nil {
-		return Index{}, fmt.Errorf("program index: read shared facts: %w", err)
-	}
-	if artifactBytesDigest(factsWire) != view.FactsSHA256 {
-		return Index{}, fmt.Errorf("program index: shared facts digest mismatch")
-	}
-	var facts sharedFactsArtifact
-	if err := decodeSharedArtifact(factsWire, &facts); err != nil {
 		return Index{}, err
 	}
-	if facts.Version != 1 || facts.IndexVersion != Version {
-		return Index{}, fmt.Errorf("program index: unsupported shared facts version")
+	if reader.facts == nil || reader.factsPath != factsPath || reader.factsSHA256 != view.FactsSHA256 {
+		reader.Release()
+		factsWire, err := os.ReadFile(factsPath)
+		if err != nil {
+			return Index{}, fmt.Errorf("program index: read shared facts: %w", err)
+		}
+		if artifactBytesDigest(factsWire) != view.FactsSHA256 {
+			return Index{}, fmt.Errorf("program index: shared facts digest mismatch")
+		}
+		var facts sharedFactsArtifact
+		if err := decodeSharedArtifact(factsWire, &facts); err != nil {
+			return Index{}, err
+		}
+		if facts.Version != 1 || facts.IndexVersion != Version {
+			return Index{}, fmt.Errorf("program index: unsupported shared facts version")
+		}
+		reader.factsPath, reader.factsSHA256, reader.facts = factsPath, view.FactsSHA256, &facts
 	}
+	facts := reader.facts
 	index, err := New(Input{
 		ScenarioSHA256: facts.ScenarioSHA256, SourceSHA256: facts.SourceSHA256,
 		Target: view.Target, Objects: facts.Objects, Relations: facts.Relations, Coverage: facts.Coverage,

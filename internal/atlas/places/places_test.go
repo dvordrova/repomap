@@ -228,9 +228,39 @@ func TestFixturePlaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Graph v11 includes native route subjects and source-value origins. Keep the same
-	// canonical bytes for eager and lazy target storage below.
-	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "004b27a07ad5cc284aea61d29380afda9ed934b60ddcd91f42a1cfd5c8c9c8e8" {
+	// Native HTTP facts keep their actual declarations after target release;
+	// local execution remains a source call, not a runtime boundary.
+	wantOwners := map[string]string{
+		"bnd:backend/app/app.py:18:http_server":        "sym:backend/app/app.py:19:get_levels_info",
+		"bnd:backend/app/app.py:59:http_server":        "sym:backend/app/app.py:60:get_level",
+		"bnd:backend/app/app.py:74:http_server":        "sym:backend/app/app.py:75:run_level",
+		"bnd:front/src/service/http.ts:12:http_client": "sym:front/src/service/http.ts:10:getLevels",
+		"bnd:front/src/service/http.ts:21:http_client": "sym:front/src/service/http.ts:19:getLevel",
+		"bnd:front/src/service/http.ts:34:http_client": "sym:front/src/service/http.ts:30:runLevel",
+	}
+	dynamicFacts := make(map[string]bool)
+	for _, fact := range input.Facts.OfKind(facts.KindDynamicExecution) {
+		dynamicFacts[fact.ID] = true
+	}
+	for _, place := range first.Places {
+		if place.Boundary == nil {
+			continue
+		}
+		if dynamicFacts[place.Boundary.FactID] {
+			t.Fatalf("local code execution became an external runtime boundary: %+v", place)
+		}
+		if owner, expected := wantOwners[place.ID]; expected {
+			if place.Boundary.SubjectID != owner {
+				t.Fatalf("native boundary owner changed: %+v", place)
+			}
+			delete(wantOwners, place.ID)
+		}
+	}
+	if len(wantOwners) != 0 {
+		t.Fatalf("native fixture boundaries missing: %+v", wantOwners)
+	}
+	// Keep identical canonical bytes for eager and lazy target storage below.
+	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "da210da7ad934396463e9c246507fc9d190d8c1997620387e930823cd95a7ed2" {
 		t.Fatalf("saved mixed fixture graph changed: %s", got)
 	}
 	lazy := input
@@ -256,8 +286,8 @@ func TestFixturePlaces(t *testing.T) {
 		t.Fatalf("Build is not deterministic")
 	}
 	for i, count := range loads {
-		if count != 2 {
-			t.Fatalf("target %d loaded %d times, want one facts pass and one external-boundary pass", i, count)
+		if count != 1 {
+			t.Fatalf("target %d loaded %d times, want one shared facts and external-boundary pass", i, count)
 		}
 	}
 	if err := atlas.Validate(atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}}); err != nil {

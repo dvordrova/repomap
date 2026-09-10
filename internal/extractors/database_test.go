@@ -189,3 +189,112 @@ func TestEmbeddedSQLAnchorsFollowPhysicalLiteralLines(t *testing.T) {
 		}
 	}
 }
+
+func TestEmbeddedSQLRequiresStructureBeyondALeadingEnglishVerb(t *testing.T) {
+	for _, source := range []string{
+		"SELECT 1", "SELECT -1", "SELECT 'ready'", `SELECT "거래"`, "SELECT count(*)", "SELECT {projection}", "SELECT ${projection}",
+		"SELECT id FROM trades", "SELECT id alias FROM trades", "SELECT id AS alias",
+		"SELECT DISTINCT id, pair FROM trades", "SELECT CASE WHEN x=1 THEN 2 ELSE 3 END",
+		"SELECT CASE status WHEN 1 THEN 'open' ELSE 'closed' END FROM public.orders",
+		`SELECT note COLLATE "C" FROM public.orders`, "SELECT CURRENT_USER UNION SELECT note FROM public.orders",
+		"CREATE TABLE trades(id INT PRIMARY KEY)", "CREATE TABLE backup AS SELECT * FROM trades",
+		"CREATE UNIQUE INDEX trade_idx ON trades(id)", "CREATE OR REPLACE VIEW active AS SELECT * FROM trades",
+		"CREATE TABLE IF NOT EXISTS {table}(id INT)", `CREATE TABLE "unterminated`,
+		"ALTER SEQUENCE trades_id_seq RESTART WITH 10", `ALTER SEQUENCE "{sequence}" RENAME TO "{backup}"`,
+		"ALTER TABLE trades ADD COLUMN note TEXT", "DROP INDEX IF EXISTS trade_idx",
+		"INSERT INTO trades VALUES(1)", "INSERT OR REPLACE INTO {table} SELECT * FROM trades",
+		"DELETE FROM trades WHERE id=1", "UPDATE trades SET id=2", "UPDATE {table} SET id=2",
+		"UPDATE public.orders AS o SET id=2", "UPDATE public.orders o SET id=2",
+		"WITH recent AS (SELECT id FROM trades) SELECT * FROM recent",
+		"WITH RECURSIVE recent(id) AS NOT MATERIALIZED (SELECT id FROM trades) SELECT * FROM recent",
+		"PRAGMA journal_mode", "PRAGMA journal_mode=wal", "PRAGMA table_info(trades)",
+	} {
+		if !embeddedSQLStatement(source) {
+			t.Errorf("supported SQL source rejected: %s", source)
+		}
+	}
+	for _, source := range []string{
+		"create-userdir", "Create a new strategy from a template", "Create user-data directory.",
+		"Select Trading mode", "SELECT id", "Insert Exchange API Key", "Insert values from Arguments",
+		"Update trades from arguments", "Delete files from cache", "With values from Arguments",
+		"CREATE", "INSERT", "UPDATE", "DELETE", "WITH", "SELECT", "PRAGMA some ordinary words",
+		"CREATE 'TABLE' trades", "INSERT 'INTO' trades", "WITH name 'AS' (SELECT 1)",
+		`SELECT + ""`, "SELECT - ``", "SELECT - []",
+	} {
+		if embeddedSQLStatement(source) {
+			t.Errorf("unbound prose/ambiguous literal acquired SQL authority: %s", source)
+		}
+	}
+}
+
+func TestCumulativeSQLAdmissionRetainsSourcesAndDropsProseBeforeRelations(t *testing.T) {
+	for _, language := range []string{"go", "python", "jsts"} {
+		t.Run(language, func(t *testing.T) {
+			response, err := Database(t.Context(), cumulativeDataRequest(t, language))
+			if err != nil {
+				t.Fatal(err)
+			}
+			queries := map[string]facts.ExtractionNode{}
+			explicitBare := false
+			for _, node := range response.Nodes {
+				if node.Path == "data/schema.sql" && node.Data.Kind == "query" && strings.Contains(node.Data.SQL, "SELECT trading mode") {
+					explicitBare = true
+				}
+				if !strings.Contains(node.Path, "sql_literals") && !strings.Contains(node.Path, "sql-literals") {
+					continue
+				}
+				if node.Data.Kind == "query" {
+					queries[node.Data.SQL] = node
+				} else if node.Name != "public.orders" {
+					t.Fatalf("literal prose/value invented a table: %+v", node)
+				}
+			}
+			if language != "python" && !explicitBare || len(queries) != 11 {
+				t.Fatalf("SQL source context lost or prose admitted: explicit=%v queries=%+v", explicitBare, queries)
+			}
+			joined := queries["SELECT id FROM public.orders WHERE note = 'JOIN imaginary_table'"]
+			if joined.ID == "" || joined.Line < 1 || joined.Data.Expression == "" || joined.Data.Partial || !reflect.DeepEqual(joined.Data.Tables, []string{"public.orders"}) {
+				t.Fatalf("joined statement/physical anchor/value isolation lost: %+v", joined)
+			}
+			malformed := queries[`SELECT * FROM "unterminated`]
+			if malformed.ID == "" || !malformed.Data.Partial || len(malformed.Data.Tables) != 0 {
+				t.Fatalf("recognized malformed SQL lost its partial source: %+v", malformed)
+			}
+			projection := queries["SELECT {projection}"]
+			if projection.ID == "" || !projection.Data.Partial || len(projection.Data.Tables) != 0 {
+				t.Fatalf("dynamic projection lost its partial source: %+v", projection)
+			}
+			for _, source := range []string{
+				"SELECT 1", "SELECT 'ready'", "WITH recent AS (SELECT id FROM public.orders) SELECT id FROM recent", "UPDATE public.orders SET note = 'updated'",
+				"UPDATE public.orders AS o SET id=2", "SELECT CASE status WHEN 1 THEN 'open' ELSE 'closed' END FROM public.orders",
+				`SELECT note COLLATE "C" FROM public.orders`, "SELECT CURRENT_USER UNION SELECT note FROM public.orders",
+			} {
+				if queries[source].ID == "" {
+					t.Errorf("supported source missing: %s", source)
+				}
+			}
+		})
+	}
+}
+
+func TestSQLCSourceScopeRetainsAmbiguousBareQuery(t *testing.T) {
+	request := cumulativeDataRequest(t, "python")
+	file := "src/fixture_app/sql_literals.py"
+	request.Files = []string{file}
+	// sqlc owns the explicit input assignment; the database producer consumes
+	// that existing contract without reclassifying its declared source.
+	sqlc := Response{
+		Nodes: []facts.ExtractionNode{{ID: "config", Path: "sqlc.yaml"}, {ID: "input", Path: file}},
+		Links: []facts.ExtractionLink{{From: "config", To: "input", Label: "configured queries input"}},
+	}
+	response, err := database(t.Context(), request, sqlc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range response.Nodes {
+		if node.Data.Kind == "query" && node.Data.SQL == "SELECT id" && node.Data.Scope == "sqlc:config" {
+			return
+		}
+	}
+	t.Fatal("sqlc's explicit source authority was replaced by unbound-literal admission")
+}

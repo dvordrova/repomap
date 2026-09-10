@@ -20,3 +20,7 @@ export function createOnce(): Promise<void> {
 
 const localTimer = {setInterval(callback: () => void): void {callback()}}
 localTimer.setInterval(boundedRetry)
+
+export function evaluateLocal(expression: string): unknown {
+  return eval(expression)
+}

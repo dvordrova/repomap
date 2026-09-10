@@ -61,6 +61,8 @@ func readRepositoryAtlas(
 		targetIDs[runs[i].SelectedTargetKey] = runs[i].programTarget().ID
 	}
 	planned := make(map[string]repositoryTypedTarget)
+	var indexReader programindex.FileReader
+	defer indexReader.Release()
 	for _, target := range options.Plan.Targets {
 		planned[target.Key.String()] = target
 	}
@@ -68,7 +70,12 @@ func readRepositoryAtlas(
 		run := &runs[position]
 		index := programindex.Index{Target: run.programTarget()}
 		root := filepath.ToSlash(filepath.Dir(runTargetAnchorPath(index)))
-		target := places.TargetInput{Index: index, Root: root, ReadIndex: run.programIndex}
+		readIndex := run.programIndex
+		if run.ProgramIndex == nil {
+			filename := filepath.Join(run.RunDir, programindex.ArtifactFilename)
+			readIndex = func() (programindex.Index, error) { return indexReader.ReadFile(filename) }
+		}
+		target := places.TargetInput{Index: index, Root: root, ReadIndex: readIndex}
 		catalog, err := run.dependencyCatalog()
 		if err != nil {
 			return atlasOutcome{}, err
@@ -101,6 +108,7 @@ func readRepositoryAtlas(
 		Revision: options.RepositoryState.Head, Repository: options.Corpus,
 		Targets: targets, Claims: claimsResult, Facts: factsResult,
 	})
+	indexReader.Release()
 	if err != nil {
 		return atlasOutcome{}, err
 	}

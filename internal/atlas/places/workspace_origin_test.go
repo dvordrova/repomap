@@ -35,7 +35,9 @@ func TestExternalCallsUseJSTSWorkspaceOriginInsteadOfSharedPackageName(t *testin
 					}},
 				})
 			}
-			b.collectExternalCalls(TargetInput{Index: index})
+			b.collectExternalCallCandidates(TargetInput{Index: index})
+			b.releaseTargetObjects()
+			b.collectExternalCalls()
 			wantCount := 1
 			if language == "javascript" || language == "typescript" {
 				wantCount = 2

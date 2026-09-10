@@ -222,8 +222,12 @@ Go callable bindings retain anchored literal assignments to other fields of
 the same SSA receiver, independent of framework names. These observations enter
 the callable's own review; neighbouring caller registrations omit their field
 metadata. No field observation asserts a final runtime value or callback call.
+The atlas canonically orders each binding's source-evidence set before its
+identity key is built. Reordered or exactly repeated witnesses across target
+views do not create duplicate bindings; argument order, distinct source sites,
+field values and callback targets remain separate.
 
-JSTS result v16 / helper v22 also preserves every compiler-observed callable
+JSTS result v16 / helper v23 also preserves every compiler-observed callable
 JSX attribute as an anchored callback binding, including render props. The
 element and attribute are source facts; neither their names nor a framework
 allowlist classify an operation. Wrapped function-valued declarations retain
@@ -293,6 +297,10 @@ scope and anchors. Query table mentions do not establish owned schema, a foreign
 key or runtime I/O. Dynamic expressions remain partial; unknown connection
 identity stays unknown. These observations enter the same atlas entity graph,
 question evidence and compact Data catalogue with exact source links.
+Unbound source literals need supported SQL statement structure after literal
+concatenation; a leading English verb alone is insufficient. Explicit SQL/sqlc
+sources retain their authority. Unsupported or ambiguous strings stay original
+source text, never a claim that SQL or database access is absent.
 
 Symbols and Types may also return one short English `alias` beside their
 explanation, through the same existing table request. It is an optional
@@ -572,7 +580,11 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   remain separate facts even when they share ASTs. The owner approved this
   shared storage on 2026-09-09, independently of tools/examples' full analyses.
   Release completed child indexes after persistence; facts, places and group
-  projection load one target at a time, without memoizing all children. Other
+  projection load one target at a time, without memoizing all children. Places
+  loads each target once, retaining only its boundary observations for the
+  later source-documentation pass. Its sequential file reader reuses one
+  decoded shared input until the project binding changes and releases it
+  after graph construction; it never stores the complete child indexes. Other
   handoffs reuse a value in memory when available. The report server consumes the generated result directly,
   or restores one common report and manifest in another process. Every target
   is a section of that common page.

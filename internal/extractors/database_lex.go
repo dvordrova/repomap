@@ -229,10 +229,11 @@ func sqlStatements(source string) []sourceLiteral {
 }
 
 type sqlToken struct {
-	text   string
-	line   int
-	quoted bool
-	offset int
+	text    string
+	line    int
+	quoted  bool
+	literal bool
+	offset  int
 }
 
 func sqlTokens(source string, startLine int) ([]sqlToken, bool) {
@@ -266,6 +267,7 @@ func sqlTokens(source string, startLine int) ([]sqlToken, bool) {
 			continue
 		}
 		if source[i] == '\'' {
+			start, startLine := i, line
 			i++
 			closed := false
 			for i < len(source) {
@@ -284,6 +286,7 @@ func sqlTokens(source string, startLine int) ([]sqlToken, bool) {
 				i++
 			}
 			partial = partial || !closed
+			tokens = append(tokens, sqlToken{text: source[start:i], line: startLine, literal: true, offset: start})
 			continue
 		}
 		if source[i] == '"' || source[i] == '`' || source[i] == '[' {
@@ -335,7 +338,7 @@ func sqlTokens(source string, startLine int) ([]sqlToken, bool) {
 	return tokens, partial
 }
 func sqlIdentifier(tokens []sqlToken, index int) (string, int) {
-	if index >= len(tokens) {
+	if index >= len(tokens) || tokens[index].literal {
 		return "", index
 	}
 	name := tokens[index].text

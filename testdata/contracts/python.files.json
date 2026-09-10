@@ -83,34 +83,38 @@
     },
     {
       "id": "f21",
-      "path": "src/fixture_app/storage.py"
+      "path": "src/fixture_app/sql_literals.py"
     },
     {
       "id": "f22",
-      "path": "src/fixture_app/test_market.py"
+      "path": "src/fixture_app/storage.py"
     },
     {
       "id": "f23",
-      "path": "src/requests.py"
+      "path": "src/fixture_app/test_market.py"
     },
     {
       "id": "f24",
-      "path": "tests/__init__.py"
+      "path": "src/requests.py"
     },
     {
       "id": "f25",
-      "path": "tests/test_facade.py"
+      "path": "tests/__init__.py"
     },
     {
       "id": "f26",
-      "path": "workspace/pyproject.toml"
+      "path": "tests/test_facade.py"
     },
     {
       "id": "f27",
-      "path": "workspace/src/fixture_shared/local/__init__.py"
+      "path": "workspace/pyproject.toml"
     },
     {
       "id": "f28",
+      "path": "workspace/src/fixture_shared/local/__init__.py"
+    },
+    {
+      "id": "f29",
       "path": "workspace/src/fixture_shared/local/consumer.py"
     }
   ]

@@ -91,30 +91,34 @@
     },
     {
       "id": "f23",
-      "path": "src/test-setup.ts"
+      "path": "src/sql-literals.ts"
     },
     {
       "id": "f24",
-      "path": "src/testing/real-service.ts"
+      "path": "src/test-setup.ts"
     },
     {
       "id": "f25",
-      "path": "src/type-members.ts"
+      "path": "src/testing/real-service.ts"
     },
     {
       "id": "f26",
-      "path": "src/workspace-origins-js.js"
+      "path": "src/type-members.ts"
     },
     {
       "id": "f27",
-      "path": "src/workspace-origins.ts"
+      "path": "src/workspace-origins-js.js"
     },
     {
       "id": "f28",
-      "path": "tsconfig.json"
+      "path": "src/workspace-origins.ts"
     },
     {
       "id": "f29",
+      "path": "tsconfig.json"
+    },
+    {
+      "id": "f30",
       "path": "vitest.config.ts"
     }
   ]

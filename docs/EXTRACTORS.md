@@ -93,8 +93,17 @@ migrations, or claim generated files are current.
 The built-in database extractor reads source SQL and supported SQLAlchemy model
 declarations, reusing sqlc's configured source scopes. It preserves table/column
 declarations, SQL text and table mentions. Interpolated or concatenated SQL keeps
-its original expression and partial status. It never connects to a database or
-establishes that a statement executed. These source observations feed the
+its original expression and partial status. An unbound source literal must have
+a supported SQL statement structure after literal concatenation; an English
+verb such as `create-userdir` or `Create a new strategy from a template` does not
+supply that evidence. The check retains table-free expressions such as
+`SELECT 1`, string probes and function calls. Bare column/alias forms such as
+`SELECT trading mode` are ambiguous in an ordinary string and are not admitted
+there; explicit `.sql` and sqlc source inputs keep their existing authority.
+This supported subset does not establish that other SQL is absent, and the
+original code and documentation remain available as source evidence. ORM model
+declarations are extracted independently. The producer never connects to a
+database or establishes that a statement executed. These source observations feed the
 ordinary Data catalogue and question evidence through the same facts graph.
 
 `examples/extractors/generator.py` is a small standalone example using only

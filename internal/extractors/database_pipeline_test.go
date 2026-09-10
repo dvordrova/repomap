@@ -104,7 +104,15 @@ func TestCumulativeDataSurvivesNativeGraphReadingAndSavedGroupsIndex(t *testing.
 	}
 	index := indexes[0]
 	owners := 0
+	literalQueries := 0
 	for _, row := range index.Data {
+		if row.Path == "src/fixture_app/sql_literals.py" {
+			if row.Data.Kind == "query" {
+				literalQueries++
+			} else if row.Data.Name != "orders" || row.Data.Schema != "public" {
+				t.Fatalf("prose/value became a persisted table: %+v", row)
+			}
+		}
 		if row.Data.Origin == "orm" {
 			if row.OwnerSubjectID == "" {
 				t.Fatal("native owner lost in GroupsIndex")
@@ -114,6 +122,9 @@ func TestCumulativeDataSurvivesNativeGraphReadingAndSavedGroupsIndex(t *testing.
 	}
 	if owners != 2 {
 		t.Fatalf("ORM owners=%d", owners)
+	}
+	if literalQueries != 11 {
+		t.Fatalf("persisted SQL literals=%d; expected eleven supported source statements", literalQueries)
 	}
 	copy := index.Snapshot()
 	copy.Data[0].Data.Name = "changed"

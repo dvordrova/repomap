@@ -2,6 +2,7 @@ package pythonprogramindex
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,51 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
+
+func TestCumulativePythonThreadBindingMergesTargetObservationOrders(t *testing.T) {
+	repository := pythonCorpus(t, cumulativePythonSources(t, "src/fixture_app/runtime_registrations.py"))
+	input, err := BuildInput(t.Context(), repository, targetOfKind(t, repository, pythontarget.KindLibrary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var targets []places.TargetInput
+	// Reuse the actual native projection under four target-local identities.
+	// Sealing changes relation order, which must not multiply the one binding.
+	for i := 0; i < 4; i++ {
+		view := input
+		view.Target.Selector += fmt.Sprintf("/observation-view-%d", i)
+		index, err := programindex.New(view)
+		if err != nil {
+			t.Fatal(err)
+		}
+		targets = append(targets, places.TargetInput{Index: index})
+	}
+	graph, err := places.Build(places.Input{Revision: strings.Repeat("a", 40), Repository: repository, Targets: targets})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, place := range graph.Places {
+		if place.Symbol == nil || place.Symbol.Decl.Name != "MarketFeed.receive_prices" {
+			continue
+		}
+		bindings := place.Symbol.Bindings
+		if len(bindings) != 1 || bindings[0].Resolution != "alternatives" || bindings[0].Path != "src/fixture_app/runtime_registrations.py" || bindings[0].Line != 11 || len(bindings[0].Arguments) != 1 || bindings[0].Arguments[0].Value != "market-feed" || bindings[0].Arguments[0].Keyword != "name" || bindings[0].Arguments[0].Line != 11 {
+			t.Fatalf("same Thread registration multiplied or lost literal/authority: %+v", bindings)
+		}
+		want := map[string]int{"receiving call: threading.Thread": 11, "call on the registration result: start": 12, "call on the registration result: join": 15, "call on the registration result: is_alive": 16}
+		if len(bindings[0].Evidence) != len(want) {
+			t.Fatalf("Thread observations lost or multiplied: %+v", bindings)
+		}
+		for _, observation := range bindings[0].Evidence {
+			if want[observation.Label] == 0 || observation.Path != "src/fixture_app/runtime_registrations.py" || observation.LineNo != want[observation.Label] {
+				t.Fatalf("Thread source observation changed: %+v", observation)
+			}
+			delete(want, observation.Label)
+		}
+		return
+	}
+	t.Fatal("native callback declaration is missing from graph")
+}
 
 func cumulativePythonSources(t *testing.T, names ...string) map[string]string {
 	t.Helper()

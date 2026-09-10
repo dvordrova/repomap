@@ -78,7 +78,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoNeutralBoundaryPatterns(t, index)
 	assertGoSourceValues(t, repository, index)
 	assertGoRuntimeRegistrations(t, index)
-	assertGoListenAddresses(t, index)
+	assertGoListenAddresses(t, index, repository)
 	assertGoLocalHTTPNameFacts(t, index)
 	assertGoExternalEventAndStoragePatterns(t, index)
 	assertGoChainedCallAndCallbackTraversal(t, index)

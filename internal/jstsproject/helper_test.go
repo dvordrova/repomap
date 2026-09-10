@@ -324,7 +324,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		t.Fatalf("validate cumulative JSTS ProgramIndex: %v", err)
 	}
 	assertInheritedHTTPRoutes(t, index)
-	assertCumulativeJSTSRuntimeRegistrations(t, result, index)
+	assertCumulativeJSTSRuntimeRegistrations(t, result, index, repository)
 	assertCumulativeJSTSSourceValues(t, repository, index)
 	input, err := BuildInputFromResult(result)
 	if err != nil {
@@ -2569,7 +2569,7 @@ func assertInheritedHTTPRoutes(t *testing.T, index programindex.Index) {
 	}
 }
 
-func assertCumulativeJSTSRuntimeRegistrations(t *testing.T, result Result, index programindex.Index) {
+func assertCumulativeJSTSRuntimeRegistrations(t *testing.T, result Result, index programindex.Index, repository *corpus.Corpus) {
 	t.Helper()
 	factsResult, err := facts.Build(facts.Input{Targets: []facts.TargetInput{{Index: index, Root: "."}}})
 	if err != nil {
@@ -2609,6 +2609,41 @@ func assertCumulativeJSTSRuntimeRegistrations(t *testing.T, result Result, index
 	}
 	if !timer || !worker || !local {
 		t.Fatalf("runtime observations timer=%v worker=%v local=%v", timer, worker, local)
+	}
+	var evalFact facts.Fact
+	for _, fact := range factsResult.OfKind(facts.KindDynamicExecution) {
+		if fact.Key == "eval" && fact.Anchor != nil && fact.Anchor.Path == "src/runtime-registrations.ts" {
+			evalFact = fact
+		}
+	}
+	if evalFact.ID == "" {
+		t.Fatal("local eval lost its original native fact")
+	}
+	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index}}, Facts: factsResult})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var linkedRoute, retainedEval bool
+	for _, place := range graph.Places {
+		if place.Symbol != nil && place.Symbol.Decl.Name == "evaluateLocal" {
+			for _, call := range place.Symbol.Calls {
+				retainedEval = retainedEval || call.API != nil && call.API.Name == "eval" && call.API.Package == javascriptPlatform && call.Line == evalFact.Anchor.Line
+			}
+		}
+		if place.Boundary == nil {
+			continue
+		}
+		if place.Boundary.FactID == evalFact.ID {
+			t.Fatalf("local eval became an external runtime boundary: %+v", place)
+		}
+		for _, value := range place.Boundary.Values {
+			if value == "/api/v1/ping" && place.Boundary.Source == "fact" {
+				linkedRoute = place.Boundary.SubjectID != ""
+			}
+		}
+	}
+	if !linkedRoute || !retainedEval {
+		t.Fatalf("native route/call observations lost: route=%v eval=%v", linkedRoute, retainedEval)
 	}
 }
 

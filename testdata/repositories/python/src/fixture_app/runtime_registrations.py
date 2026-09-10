@@ -8,8 +8,12 @@ from fastapi import FastAPI
 
 class MarketFeed:
     def __init__(self):
-        self.thread = Thread(target=self.receive_prices)
+        self.thread = Thread(target=self.receive_prices, name="market-feed")
         self.thread.start()
+
+    def close(self):
+        self.thread.join()
+        return self.thread.is_alive()
 
     def receive_prices(self):
         """Receive market updates for as long as the event loop runs."""
@@ -85,3 +89,7 @@ class UnknownWalletOwner:
     def __init__(self, replacement):
         self.wallets = replacement
         Scheduler().every().day.do(self.wallets.record_wallet_state)
+
+
+def evaluate_local(expression):
+    return eval(expression)

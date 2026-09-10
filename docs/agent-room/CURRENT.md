@@ -253,11 +253,24 @@ a local rejection rule. Standard-library transports remain eligible. No package
 blacklist, API catalogue, semantic deduplication or new reading stage is added.
 Accepted observations keep their source column and native fact provenance through
 atlas v6, GroupsIndex v10 and report v89. They do not require an outgoing-only
-group or a key-symbol caption. The entrance displays protocol and known address,
-with source chains and purpose under disclosure. Its count describes
+group or a key-symbol caption. The entrance displays the accepted destination
+and purpose, with configuration-derived addresses explained beside their exact
+setting and suffix. Original calls and complete source chains remain under
+disclosure; nonempty Connections controls use the same active accent as the
+other navigation counters. Its count describes
 communication observations, not unique systems. Native known HTTP addresses
 survive missing model descriptions. Source expression traversal belongs to graph
 v11 / saved reading input v12; the report never reconstructs unknown addresses.
+Native boundary facts now retain their exact object's existing symbol place
+before each target's temporary lookup maps are released. Only native IDs
+actually requested by facts are retained, and unresolved or unlifted subjects
+remain unbound. This also covers repeated declarations with different native
+IDs in overlapping target views; matching a name is insufficient.
+A dynamic-execution fact no longer creates a fixed outgoing boundary by
+itself: running code locally does not establish another runtime participant.
+The original facts and callable observations remain. This projection correction
+does not repair the separate selector-based `eval`/`load` false positives in
+the dynamic-execution fact producer; those remain an explicit native-fact gap.
 
 Opening an area keeps a frame containing its parts and keeps connected peers
 outside. Boundary relations fold into one visible arrow per direction with all
@@ -1110,6 +1123,15 @@ The own callback sees its object's fields; a neighbouring caller's registration
 retains just the binding shape and source, so a shared error helper does not
 inherit every command's help text. Canonical sealing, independent copies,
 source anchors and a two-object fixture verify the underlying facts.
+The atlas now canonically orders and exactly deduplicates each binding's
+source-evidence set before deriving its identity key. The same Freqtrade Thread
+registration occurred four times solely because target views ordered its
+start/join/is_alive observations differently. Canonicalization produces one
+binding while retaining every source anchor and the literal thread name.
+Argument order, different field values, callback targets and source sites are
+unchanged. A real cumulative Python extraction across four target views and
+generic contrasting cases cover this correction. It changes affected graph
+and exact-request hashes, independently of the byte-preserving loading change.
 
 Symbol rows propose activation and selected outgoing calls using local refs.
 The independent `atlas_operations` v14 table reviews the candidate declarations
@@ -4145,15 +4167,28 @@ unmeasured.
 Final GroupsIndex subjects and the final report still scale with the complete
 selected portfolio; these changes do not make the entire run constant-memory.
 
-The Airflow sample also exposed an avoidable restore during atlas
-construction. Places now collects each target's declarations, relations and
-seeds together, then makes one later pass for external boundaries after source
-documentation and fact boundaries are ready. Each saved target loads twice
-instead of three times, retaining only one target's native lookup maps.
+The Airflow and Freqtrade samples exposed avoidable restores during atlas
+construction. Places collects each target's declarations, relations, seeds and
+compact external-call observations together. After source documentation and
+native boundaries are ready, it applies the retained observations through the
+same boundary path. Each saved target loads once, retaining only one target's
+native lookup maps. A sequential ProgramIndex file reader reuses one decoded
+shared input across consecutive target views; switching project bindings or
+finishing construction releases it. Each view still restores its complete
+sealed identities through the same builder. No child-index array, persistent
+cache, format change or new analysis path is introduced.
 Seed locations are resolved against the complete file inventory before depths
-are assigned. The saved mixed fixture's canonical graph bytes are unchanged.
-The stopped Airflow process predates this change, so its elapsed time cannot
-measure this additional reduction.
+are assigned. The saved mixed fixture and isolated Freqtrade performance
+comparison retain byte-identical canonical graph output. The stopped Airflow
+process predates this change, so its elapsed time cannot measure this reduction.
+One saved Freqtrade before/after profile under Go 1.27.0 measured graph build
+and persistence at 136.07 versus 61.87 seconds. Target materializations fell
+from twenty to ten; their summed loading time fell from 113.30 to 42.35 seconds.
+Cumulative allocations fell from 40.40 to 20.98 GB. The isolated performance
+change preserved all 86,129,818 graph bytes and their SHA-256. Each timing is
+one sample, with possible brief overlap from focused extractor tests; these
+are local-construction measurements, not whole-run model latency. An earlier
+after measurement under Go 1.26.4 is excluded from this comparison.
 
 Ordinary mixed Python/TypeScript acceptance at `20260909-200202` completed
 in 5.689 s, publishing both selected targets and one Russian HTML. All 23
@@ -4465,6 +4500,18 @@ connection identity remains unknown. These observations enter existing entity
 sources, question evidence and the Data catalogue; native call paths can link
 an operation to a model method without proving database I/O. There is no new
 semantic graph or runtime database inspection.
+Unbound embedded literals now pass a statement-structure check after literal
+concatenation. This prevents CLI names, documentation sentences and assertion
+needles such as `create-userdir` or `CREATE TABLE` from becoming query facts.
+Explicit `.sql`/sqlc input remains distinct from unbound strings; table-free
+expressions, quoted literals and supported partial dynamic expressions survive.
+Ambiguous bare column/alias strings and unsupported forms stay source text;
+the extractor does not establish that no other SQL exists. The same saved
+Freqtrade input initially yielded 138 query facts and 34 table mentions; the
+corrected extraction yields 43 and 17. All six ORM tables, their 109 columns
+and six DDL tables retain their original data and anchors. The removed set was
+79 prose/docs/prompt/output strings, 15 CLI/framework/HTTP tokens and one SQL
+assertion needle; generated SQL is not claimed to be covered by that comparison.
 
 Target.TestSources carries exact native Go tests and authored pytest/Vitest
 configuration. Only the orientation view suppresses known test-only parts and

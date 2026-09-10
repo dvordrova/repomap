@@ -84,7 +84,9 @@ func database(ctx context.Context, request Request, sqlc Response) (Response, er
 			owners = b.addPythonModels(file, source, mask, literals)
 		}
 		for _, literal := range joinSQLLiterals(source, mask, literals, extension == ".py") {
-			if !sqlStart.MatchString(literal.text) {
+			// Explicit sqlc inputs already have SQL source authority. An
+			// otherwise unbound literal needs more than a leading English verb.
+			if len(scopes[file]) == 0 && !embeddedSQLStatement(literal.text) {
 				continue
 			}
 			scope := fileScopes[0]

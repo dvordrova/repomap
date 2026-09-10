@@ -23,78 +23,82 @@
     },
     {
       "id": "f6",
-      "path": "cmd/worker/main.go"
+      "path": "cmd/app/sql_literals.go"
     },
     {
       "id": "f7",
-      "path": "data/schema.sql"
+      "path": "cmd/worker/main.go"
     },
     {
       "id": "f8",
-      "path": "go.mod"
+      "path": "data/schema.sql"
     },
     {
       "id": "f9",
-      "path": "internal/localstore/store.go"
+      "path": "go.mod"
     },
     {
       "id": "f10",
-      "path": "internal/storefixture/destinations.go"
+      "path": "internal/localstore/store.go"
     },
     {
       "id": "f11",
-      "path": "internal/storefixture/fixtures.go"
+      "path": "internal/storefixture/destinations.go"
     },
     {
       "id": "f12",
-      "path": "internal/storefixture/handoff_flow.go"
+      "path": "internal/storefixture/fixtures.go"
     },
     {
       "id": "f13",
-      "path": "internal/storefixture/level_responses.go"
+      "path": "internal/storefixture/handoff_flow.go"
     },
     {
       "id": "f14",
-      "path": "internal/storefixture/listen_addresses.go"
+      "path": "internal/storefixture/level_responses.go"
     },
     {
       "id": "f15",
-      "path": "internal/storefixture/local_http_names.go"
+      "path": "internal/storefixture/listen_addresses.go"
     },
     {
       "id": "f16",
-      "path": "internal/storefixture/runtime_registrations.go"
+      "path": "internal/storefixture/local_http_names.go"
     },
     {
       "id": "f17",
-      "path": "internal/testhelper/helper.go"
+      "path": "internal/storefixture/runtime_registrations.go"
     },
     {
       "id": "f18",
-      "path": "internal/testhelper/helper_test.go"
+      "path": "internal/testhelper/helper.go"
     },
     {
       "id": "f19",
-      "path": "pkg/servicecfg/settings.go"
+      "path": "internal/testhelper/helper_test.go"
     },
     {
       "id": "f20",
-      "path": "root.go"
+      "path": "pkg/servicecfg/settings.go"
     },
     {
       "id": "f21",
-      "path": "root_external_test.go"
+      "path": "root.go"
     },
     {
       "id": "f22",
-      "path": "root_optional_test.go"
+      "path": "root_external_test.go"
     },
     {
       "id": "f23",
-      "path": "root_test.go"
+      "path": "root_optional_test.go"
     },
     {
       "id": "f24",
+      "path": "root_test.go"
+    },
+    {
+      "id": "f25",
       "path": "testonly/api_test.go"
     }
   ]

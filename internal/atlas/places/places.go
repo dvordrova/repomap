@@ -154,6 +154,12 @@ func Build(input Input) (atlas.Graph, error) {
 		symbolCallerRows:  make(map[string]map[string]atlas.SymbolCaller),
 		symbolBindingRows: make(map[string]map[string]atlas.SymbolBinding),
 		symbolCallRows:    make(map[string]map[string]atlas.SymbolCall),
+		factSubjects:      make(map[string]string),
+	}
+	for _, fact := range input.Facts.Facts {
+		if fact.ObjectID != "" {
+			b.factSubjects[fact.ObjectID] = ""
+		}
 	}
 	for _, target := range input.Targets {
 		if target.Dependencies == nil {
@@ -185,6 +191,7 @@ func Build(input Input) (atlas.Graph, error) {
 		b.collectSymbolCallers(b.symbolCallerRows, target)
 		b.collectSymbolBindings(b.symbolBindingRows, target)
 		b.collectSymbolCalls(b.symbolCallRows, target)
+		b.collectExternalCallCandidates(target)
 	}
 	b.releaseTargetObjects()
 	// A located seed may refer to a file supplied by a later target. Resolve
@@ -203,15 +210,7 @@ func Build(input Input) (atlas.Graph, error) {
 	b.assignDepths()
 	b.collectSymbols()
 	b.collectBoundaries()
-	for _, saved := range input.Targets {
-		target, err := saved.read()
-		if err != nil {
-			return atlas.Graph{}, err
-		}
-		b.useTargetObjects(target.Index)
-		b.collectExternalCalls(target)
-	}
-	b.releaseTargetObjects()
+	b.collectExternalCalls()
 	return b.graph()
 }
 
@@ -256,6 +255,7 @@ type builder struct {
 	dirs              map[string]*dirState
 	byID              map[string]programindex.Object
 	symbolOf          map[string]string // native object -> shared, compiler-located symbol place
+	factSubjects      map[string]string // only native object IDs requested by saved facts
 	fileOf            map[string]string
 	fanIn             map[string]int
 	edges             map[edgeKey]*atlas.Edge
@@ -269,6 +269,7 @@ type builder struct {
 	symbolCallerRows  map[string]map[string]atlas.SymbolCaller
 	symbolBindingRows map[string]map[string]atlas.SymbolBinding
 	symbolCallRows    map[string]map[string]atlas.SymbolCall
+	externalCalls     []externalCallCandidate
 	memberOwners      map[string]string // retained declaration -> native owner's symbol place
 	typeFields        map[string]typeField
 	// workspace lists the package paths of the repository's own modules, from
@@ -399,6 +400,11 @@ func (b *builder) collectObjects(target TargetInput) {
 		}
 		if b.symbolOf[object.ID] == "" {
 			continue
+		}
+		// Keep the fact's exact target-local identity before declarations from
+		// overlapping targets merge and the current native lookups are released.
+		if _, needed := b.factSubjects[object.ID]; needed {
+			b.factSubjects[object.ID] = b.symbolOf[object.ID]
 		}
 		name := object.Name
 		if object.Kind == programindex.ObjectMethod && !strings.Contains(name, ".") {
@@ -1103,6 +1109,11 @@ func (b *builder) collectSymbols() {
 	for _, place := range b.symbols {
 		known[place.ID] = true
 	}
+	for objectID, subjectID := range b.factSubjects {
+		if !known[subjectID] {
+			delete(b.factSubjects, objectID)
+		}
+	}
 	for i := range b.symbols {
 		symbol := b.symbols[i].Symbol
 		for j := range symbol.Calls {
@@ -1329,6 +1340,7 @@ func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolB
 				}
 				row := atlas.SymbolBinding{From: displayName(from, b.byID), To: displayName(to, b.byID), Detail: witness.Detail, Invocation: relation.Invocation, Resolution: string(relation.Resolution)}
 				row.Evidence = append(append([]atlas.EdgeEvidence{}, evidence...), registrationEvidence[relation.SourceArgumentID]...)
+				row.Evidence = canonicalBindingEvidence(row.Evidence)
 				row.Arguments = registrations[relation.SourceArgumentID]
 				if witness.Location != nil {
 					row.Path, row.Line = witness.Location.Path, witness.Location.Line
@@ -1346,6 +1358,32 @@ func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolB
 			}
 		}
 	}
+}
+
+// Binding evidence is a set of native observations. Target-local relation
+// order must not create different binding identities for the same set.
+func canonicalBindingEvidence(evidence []atlas.EdgeEvidence) []atlas.EdgeEvidence {
+	sort.Slice(evidence, func(i, j int) bool {
+		a, b := evidence[i], evidence[j]
+		if a.Extractor != b.Extractor {
+			return a.Extractor < b.Extractor
+		}
+		if a.Label != b.Label {
+			return a.Label < b.Label
+		}
+		if a.Path != b.Path {
+			return a.Path < b.Path
+		}
+		return a.LineNo < b.LineNo
+	})
+	n := 0
+	for _, observation := range evidence {
+		if n == 0 || evidence[n-1] != observation {
+			evidence[n] = observation
+			n++
+		}
+	}
+	return evidence[:n]
 }
 
 func (b *builder) symbolBindings() map[string][]atlas.SymbolBinding {
@@ -1551,8 +1589,6 @@ func (b *builder) collectBoundaries() {
 			if fact.Value != "" {
 				values = append(values, "default "+fact.Value)
 			}
-		case facts.KindDynamicExecution:
-			direction, kind, values = atlas.DirectionOut, atlas.BoundaryOther, []string{fact.Key}
 		default:
 			continue
 		}
@@ -1573,7 +1609,7 @@ func (b *builder) collectBoundaries() {
 			LineNo: fact.Anchor.Line, Column: fact.Anchor.Column, Depth: file.depth, TargetIDs: []string{targetID},
 			Parent: atlas.FileID(filePath),
 			Boundary: &atlas.BoundaryFacts{
-				Source: "fact", FactID: fact.ID, ObjectID: fact.ObjectID, SubjectID: b.symbolOf[fact.ObjectID],
+				Source: "fact", FactID: fact.ID, ObjectID: fact.ObjectID, SubjectID: b.factSubjects[fact.ObjectID],
 				Caller: caller, CallerDoc: callerDoc, Method: method, Values: values,
 				Direction: direction, GivenKind: kind,
 			},
@@ -1584,7 +1620,16 @@ func (b *builder) collectBoundaries() {
 // collectExternalCalls lifts calls into non-platform packages that carry a
 // literal argument: an SDK client method called with a topic, a table, a
 // bucket. The model says what kind of integration it is.
-func (b *builder) collectExternalCalls(target TargetInput) {
+type externalCallCandidate struct {
+	path, objectID, caller, external, targetID string
+	line                                       int
+	values                                     []string
+}
+
+// Retain only the boundary observation while this target's index is loaded.
+// File docstrings, depths and native boundaries become available after the
+// complete file inventory; none of them requires retaining the target index.
+func (b *builder) collectExternalCallCandidates(target TargetInput) {
 	for _, relation := range target.Index.Relations {
 		if relation.Kind != programindex.RelationInvokesExternal {
 			continue
@@ -1628,6 +1673,17 @@ func (b *builder) collectExternalCalls(target TargetInput) {
 		if len(values) > 8 {
 			values = values[:8]
 		}
+		b.externalCalls = append(b.externalCalls, externalCallCandidate{
+			path: from, line: line, objectID: relation.FromID,
+			caller:   displayName(b.byID[relation.FromID], b.byID),
+			external: externalName(*external), values: values, targetID: target.Index.Target.ID,
+		})
+	}
+}
+
+func (b *builder) collectExternalCalls() {
+	for _, call := range b.externalCalls {
+		from, line, values := call.path, call.line, call.values
 		claimed := false
 		for key := range b.bounds {
 			if key.path == from && key.line == line {
@@ -1641,23 +1697,23 @@ func (b *builder) collectExternalCalls(target TargetInput) {
 		key := boundaryKey{path: from, line: line, kind: "sdk"}
 		if state, exists := b.bounds[key]; exists {
 			state.place.Boundary.Values = appendUnique(state.place.Boundary.Values, values...)
-			state.place.TargetIDs = appendUnique(state.place.TargetIDs, target.Index.Target.ID)
+			state.place.TargetIDs = appendUnique(state.place.TargetIDs, call.targetID)
 			continue
 		}
-		caller := b.byID[relation.FromID]
-		callerName, callerDoc := b.callerOf(b.files[from], relation.FromID, displayName(caller, b.byID), line)
+		callerName, callerDoc := b.callerOf(b.files[from], call.objectID, call.caller, line)
 		b.bounds[key] = &boundaryState{place: atlas.Place{
 			ID: boundaryID(from, line, "sdk"), Kind: atlas.PlaceBoundary, Path: from,
-			LineNo: line, Depth: b.files[from].depth, TargetIDs: []string{target.Index.Target.ID},
+			LineNo: line, Depth: b.files[from].depth, TargetIDs: []string{call.targetID},
 			Parent: atlas.FileID(from),
 			Boundary: &atlas.BoundaryFacts{
-				Source: "external_call", ObjectID: relation.FromID,
+				Source: "external_call", ObjectID: call.objectID,
 				Caller: callerName, CallerDoc: callerDoc,
-				External: externalName(*external), Values: values,
+				External: call.external, Values: values,
 				Direction: atlas.DirectionOut,
 			},
 		}}
 	}
+	b.externalCalls = nil
 }
 
 func sdkCandidate(external programindex.ExternalSymbol) bool {
