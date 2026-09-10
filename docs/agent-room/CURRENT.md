@@ -132,6 +132,15 @@ every nonempty interpretation independently of its caption, and its validator
 allows an absent caption. The regression test checks uncaptioned non-key
 actions, background work, keys and aliases, retaining original operation names,
 summaries and source anchors without inventing operations for other fields.
+The correcting ordinary run at `ac15b95a` completed in 18.182 seconds. All eight
+frontend operations retain their exact names, summaries and locations in the
+atlas, saved GroupsIndex, common report and HTML anchors. Browser inspection
+confirmed seven interactions plus one background activity on the first screen
+and the previously missing non-key resize operation's map and source at
+`simulation_field.tsx:114`. Analysis reused saved responses; four translation
+windows were regenerated for the restored visible text. Full tests and vet
+passed. This replaces the earlier operation-preservation acceptance, without
+changing the unresolved full-Airflow performance or route-coverage limits.
 
 ### How to judge an optimization against these results
 
