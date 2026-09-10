@@ -292,6 +292,28 @@ func TestTermsFilterUnknownRefsDeduplicateExactlyAndKeepDifferentMeanings(t *tes
 	}
 }
 
+func TestRowMemoPartitionKeepsOriginalTermVariant(t *testing.T) {
+	paths := []string{"a.py", "b.py", "c.py"}
+	cold := NewCollector(paths)
+	wrapped, request := prepareForTest(t, cold, `{"rows":[{"key":"r1","path":"a.py"},{"key":"r2","path":"b.py"},{"key":"r3","path":"c.py"}]}`)
+	term := termJSON("Interaction", "A user action.", sourceRef(t, cold, request, "a.py", "r1"))
+	term["sources"] = []string{sourceRef(t, cold, request, "a.py", "r1"), sourceRef(t, cold, request, "b.py", "r2"), sourceRef(t, cold, request, "c.py", "r3")}
+	response := responseJSON(map[string]any{"rows": []map[string]string{
+		{"key": "r1", "line": "Interaction"}, {"key": "r2", "line": "Interaction"}, {"key": "r3", "line": "Interaction"},
+	}}, term)
+	// r3 is refused in both paths; its source must stay absent even though it
+	// belongs to the original term's identity.
+	acceptRowsForTest(wrapped, request, response, []string{"r1", "r2"})
+	warm := NewCollector(paths)
+	for _, row := range []string{"r2", "r1", "r2"} {
+		acceptRowsForTest(warm.Wrap(&testProvider{}), request, response, []string{row})
+	}
+	first, second := cold.Snapshot(), warm.Snapshot()
+	if len(first) != 1 || !reflect.DeepEqual(first, second) || !reflect.DeepEqual(first[0].Sources, []Source{{Path: "a.py"}, {Path: "b.py"}}) || len(first[0].Origins) != 2 {
+		t.Fatalf("row reuse changed the original accepted term: cold=%+v warm=%+v", first, second)
+	}
+}
+
 func TestSharedEvidenceRetainsExactAcceptedAnswerRowOrigins(t *testing.T) {
 	paths := []string{"README.md"}
 	preparedBy := NewCollector(paths)

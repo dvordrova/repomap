@@ -103,6 +103,19 @@ were lost was false: the Python adapter already reads their AST.
 Full Airflow remains paused before atlas reading. These local changes do not
 reduce the measured 33-minute native preparation or 17-minute facts stage.
 
+The ordinary online check on `python-tutorial-game` at `78714d34ee` completed
+both targets with 121 symbol/type candidates and 21 captions, 24 questions and
+419 translated display texts. Its 285.594-second wall time was dominated by
+question answering; this is evidence of successful publication, not a measured
+speedup over the prior run. The generated Russian report was inspected through
+an original question, its concept explanation and its linked operation map.
+Warm inspection also exposed a terminology reuse defect: a single explanation
+with several sources became several variants when restored through individual
+row memos. The collector now accumulates accepted fragments under that original
+term identity. Refused row sources remain excluded; different original meanings
+remain separate. This preserves the same glossary input for batch acceptance
+and row-by-row reuse.
+
 ### How to judge an optimization against these results
 
 For each expensive computation or request family, first identify the required

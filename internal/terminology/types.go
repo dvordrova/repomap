@@ -27,6 +27,14 @@ type Candidate struct {
 	Origins     []Origin `json:"origins"`
 }
 
+func normalizeSources(sources []Source) []Source {
+	result := append([]Source(nil), sources...)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Path < result[j].Path || result[i].Path == result[j].Path && result[i].Line < result[j].Line
+	})
+	return slices.Compact(result)
+}
+
 func normalizeOrigins(origins []Origin) []Origin {
 	result := append([]Origin(nil), origins...)
 	sort.Slice(result, func(i, j int) bool {

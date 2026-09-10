@@ -685,6 +685,16 @@ func (c *Collector) accept(requestID string, terms []validatedTerm, rows []strin
 			continue
 		}
 		candidate := term.candidate
+		// Keep the original term identity while separate row memos restore its
+		// accepted sources. The same answer collected as one batch must produce
+		// the same variant as that answer collected one row at a time.
+		original := term.candidate
+		for _, source := range term.sources {
+			original.Sources = append(original.Sources, Source{Path: source.Path, Line: source.Line})
+		}
+		original.Sources = normalizeSources(original.Sources)
+		raw, _ := json.Marshal(original)
+		key := string(raw)
 		seen := make(map[Source]bool)
 		for _, source := range term.sources {
 			if rows != nil && source.Row != "" && !allowed[source.Row] {
@@ -699,16 +709,13 @@ func (c *Collector) accept(requestID string, terms []validatedTerm, rows []strin
 		if len(candidate.Sources) == 0 {
 			continue
 		}
-		sort.Slice(candidate.Sources, func(i, j int) bool {
-			a, b := candidate.Sources[i], candidate.Sources[j]
-			return a.Path < b.Path || a.Path == b.Path && a.Line < b.Line
-		})
-		raw, _ := json.Marshal(candidate)
-		key := string(raw)
 		stored, ok := c.values[key]
 		if !ok {
 			stored = candidate
+		} else {
+			stored.Sources = append(stored.Sources, candidate.Sources...)
 		}
+		stored.Sources = normalizeSources(stored.Sources)
 		stored.Origins = normalizeOrigins(append(origins, stored.Origins...))
 		c.values[key] = stored
 	}
