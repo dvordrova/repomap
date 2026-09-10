@@ -43,7 +43,7 @@ func (provider *reductionProvider) Prepare(prompt llm.Prompt, limits llm.Limits)
 	if provider.prepareError != nil {
 		return llm.Prepared{}, provider.prepareError
 	}
-	if limits.MaxOutputTokens != llm.DefaultMaxOutputTokens || limits.MaxRequestBytes != llm.SemanticRecordByteLimit || !prompt.ResponseFormatJSON || !strings.Contains(strings.ToLower(prompt.System), "json") {
+	if limits.MaxOutputTokens != glossaryOutputTokens || limits.MaxRequestBytes != llm.SemanticRecordByteLimit || !prompt.ResponseFormatJSON || !strings.Contains(strings.ToLower(prompt.System), "json") {
 		return llm.Prepared{}, fmt.Errorf("wrong shared request envelope")
 	}
 	var request struct {

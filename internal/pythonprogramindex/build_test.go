@@ -390,7 +390,8 @@ version = "1.0.0"
 		sort.Ints(columnsByCallee[callee])
 	}
 	want := map[string][]int{
-		"join": {16}, "str": {21}, "replace": {38, 57}, "split": {76},
+		"join": {16}, "str": {21}, "str().replace": {38},
+		"str().replace().replace": {57}, "str().replace().replace().split": {76},
 	}
 	if !reflect.DeepEqual(columnsByCallee, want) {
 		t.Fatalf("nested call callee columns = %#v, want %#v", columnsByCallee, want)
@@ -464,7 +465,7 @@ def load_through_arbitrary_member(loader):
 	assertAlternativeWitness(t, index, programindex.RelationDecorates, run.ID, decorate.ID, "alias_pkg.hooks.decorate -> decorate")
 	assertAlternativeWitness(t, index, programindex.RelationCalls, run.ID, callback.ID, "alias_pkg.plugin.callback -> callback")
 	assertAlternativeWitnessExpression(t, index, programindex.RelationCalls, run.ID, callback.ID, "callback_alias")
-	assertAlternativeWitness(t, index, programindex.RelationPassesCallback, patch.ID, callback.ID, "installed -> callback")
+	assertAlternativeWitness(t, index, programindex.RelationPassesCallback, patch.ID, callback.ID, "argument 3 of monkeypatch.setattr -> callback")
 	assertExactRelation(t, index, programindex.RelationImports, loadLocal.ID, plugin.ID)
 	assertUnresolvedFrom(t, index, programindex.RelationImports, loadUnknown.ID)
 	assertUnresolvedFrom(t, index, programindex.RelationImports, loadMissingLiteral.ID)

@@ -66,7 +66,7 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(result.Files) != 1 || result.Files[0].Path != source {
+			if len(result.Files) != 2 || result.Files[0].Path != source || result.Files[1].Path != "vitest.config.ts" {
 				t.Fatalf("sibling files entered the caller: %#v", result.Files)
 			}
 			assertRepeatedAliasedImports(t, source, result, index, catalog)

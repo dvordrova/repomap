@@ -398,13 +398,45 @@ def source_file(item, text):
             for name in node.names:
                 local = name.asname or name.name.split(".")[0]
                 bind(local, "alias_module", node, name.name, "", 0)
+    def direct_launch(statements):
+        # A single direct zero-argument invocation has the same calling form as
+        # a console-script entry. Setup, multiple calls and parameterized modes
+        # remain unresolved; their launch targets stay independent candidates.
+        if len(statements) != 1 or not isinstance(statements[0], ast.Expr):
+            return None
+        call = statements[0].value
+        if not isinstance(call, ast.Call) or call.args or call.keywords:
+            return None
+        parts = []
+        callee = call.func
+        while isinstance(callee, ast.Attribute):
+            parts.insert(0, callee.attr)
+            callee = callee.value
+        if not isinstance(callee, ast.Name):
+            return None
+        parts.insert(0, callee.id)
+        return {"name": ".".join(parts), "line": call.lineno}
+    launches = []
+    for node in tree.body:
+        if isinstance(node, ast.If) and exact_main_guard(node.test) and not node.orelse:
+            call = direct_launch(node.body)
+            if call:
+                call["guard"] = node.lineno
+                launches.append(call)
+    if not launches:
+        executable = [node for node in tree.body if not isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                      and not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str))]
+        call = direct_launch(executable)
+        if call:
+            call["guard"] = 0
+            launches.append(call)
     guards = [node.lineno for node in tree.body if isinstance(node, ast.If) and exact_main_guard(node.test)]
     relative_imports = [
         {"path": path, "line": node.lineno, "level": node.level, "module": node.module or "", "name": name.name}
         for node in tree.body if isinstance(node, ast.ImportFrom) and node.level > 0
         for name in node.names
     ]
-    return {"path": path, "syntax_error": False, "bindings": bindings, "guards": guards, "relative_imports": relative_imports}, tree
+    return {"path": path, "syntax_error": False, "bindings": bindings, "guards": guards, "launches": launches, "relative_imports": relative_imports}, tree
 
 def main():
     try:

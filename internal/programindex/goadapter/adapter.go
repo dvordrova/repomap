@@ -22,6 +22,7 @@ import (
 	"github.com/dvordrova/repomap/internal/godynamichandoff"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
@@ -102,6 +103,9 @@ func BuildInput(
 	targetInput, err := projection.targetInput()
 	if err != nil {
 		return programindex.Input{}, err
+	}
+	for _, source := range testSources {
+		targetInput.TestSources = append(targetInput.TestSources, source.Path)
 	}
 	scenarioSHA256, err := scenarioIdentity(direct.Scenario)
 	if err != nil {
@@ -709,6 +713,7 @@ func (projection *goProjection) callPatterns(
 			control = append(control, programindex.Witness{Kind: "control_context", Detail: context.Kind, Location: location})
 		}
 		result = append(result, programindex.RelationPatternInput{
+			ReceiverValue: sourcevalue.Clone(pattern.ReceiverValue), ResultValue: sourcevalue.Clone(pattern.ResultValue),
 			Context:   control,
 			SourceRef: pattern.ID, Form: programindex.PatternCall, Selector: selector,
 			Location:  location,
@@ -745,6 +750,7 @@ func (projection *goProjection) externalCallPatternArgument(
 		}
 	}
 	return programindex.PatternArgumentInput{
+		Origin:   sourcevalue.Clone(argument.Origin),
 		Position: argument.Position, Kind: programindex.PatternValueKind(argument.Kind),
 		Value: argument.Value, ObjectRefs: objectRefs, Resolution: resolution,
 		ObjectsObserved: argument.ObjectsObserved,

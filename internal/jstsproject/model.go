@@ -17,11 +17,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 const (
-	Version       = 15
-	HelperVersion = 21
+	Version       = 16
+	HelperVersion = 22
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20
@@ -91,6 +92,7 @@ type Project struct {
 }
 
 type File struct {
+	Test     bool   `json:"test,omitempty"`
 	FileRef  string `json:"file_ref"`
 	Path     string `json:"path"`
 	Language string `json:"language"`
@@ -180,6 +182,8 @@ type CallControl struct {
 }
 
 type CallPattern struct {
+	ReceiverValue            *sourcevalue.Value    `json:"receiver_value,omitempty"`
+	ResultValue              *sourcevalue.Value    `json:"result_value,omitempty"`
 	Context                  []CallControl         `json:"context,omitempty"`
 	Selector                 string                `json:"selector"`
 	ResultRef                string                `json:"result_ref,omitempty"`
@@ -192,6 +196,7 @@ type CallPattern struct {
 }
 
 type CallPatternArgument struct {
+	Origin                  *sourcevalue.Value          `json:"origin,omitempty"`
 	Position                int                         `json:"position"`
 	Kind                    string                      `json:"kind"`
 	Value                   string                      `json:"value,omitempty"`
@@ -514,14 +519,16 @@ func (result Result) Validate() error {
 	for _, value := range result.Calls {
 		callsByRef[value.Ref] = value
 		if value.Pattern != nil && value.Pattern.ResultRef != "" {
-			expected := "call-result:" + value.Ref
-			if value.Pattern.ResultRef != expected {
-				return fmt.Errorf("jsts project: call has invalid result identity")
+			if _, assignedDeclaration := declarations[value.Pattern.ResultRef]; !assignedDeclaration {
+				expected := "call-result:" + value.Ref
+				if value.Pattern.ResultRef != expected {
+					return fmt.Errorf("jsts project: call has invalid result identity")
+				}
+				if _, duplicate := patternResults[value.Pattern.ResultRef]; duplicate {
+					return fmt.Errorf("jsts project: duplicate call result identity")
+				}
+				patternResults[value.Pattern.ResultRef] = struct{}{}
 			}
-			if _, duplicate := patternResults[value.Pattern.ResultRef]; duplicate {
-				return fmt.Errorf("jsts project: duplicate call result identity")
-			}
-			patternResults[value.Pattern.ResultRef] = struct{}{}
 		}
 		if value.ExternalPackage == "" || value.ExternalName == "" || value.Resolution == "unresolved" {
 			continue
@@ -636,7 +643,7 @@ func (result Result) Validate() error {
 				return fmt.Errorf("jsts project: call has unknown callee")
 			}
 		}
-		if value.Invocation == "call" {
+		if value.Invocation == "call" || value.Invocation == "construct" {
 			if value.PatternsObserved != 1 || !validCallPattern(
 				value.Ref, value.Pattern, declarations, patternExternalOrigins, patternResults, callsByRef,
 			) {
@@ -652,8 +659,6 @@ func (result Result) Validate() error {
 					usedPatternResults[value.Pattern.ReceiverRef] = struct{}{}
 				}
 			}
-		} else if value.PatternsObserved != 0 || value.Pattern != nil {
-			return fmt.Errorf("jsts project: constructor has call pattern authority")
 		}
 	}
 	if len(usedPatternResults) != len(patternResults) {
@@ -918,12 +923,16 @@ func validCallPattern(
 	if value == nil {
 		return true
 	}
+	if sourcevalue.Validate(value.ReceiverValue) != nil || sourcevalue.Validate(value.ResultValue) != nil {
+		return false
+	}
 	if strings.TrimSpace(value.Selector) == "" ||
 		value.ArgumentsObserved < len(value.Arguments) || value.ArgumentsObserved < 0 {
 		return false
 	}
 	if value.ResultRef != "" {
-		if _, ok := callResults[value.ResultRef]; !ok {
+		_, assigned := declarations[value.ResultRef]
+		if _, ok := callResults[value.ResultRef]; !ok && !assigned {
 			return false
 		}
 	}
@@ -954,6 +963,9 @@ func validCallPattern(
 		}
 	}
 	for index, argument := range value.Arguments {
+		if sourcevalue.Validate(argument.Origin) != nil {
+			return false
+		}
 		if argument.Position != index+1 ||
 			argument.ObjectsObserved < len(argument.ObjectRefs) || argument.ObjectsObserved < 0 {
 			return false

@@ -664,12 +664,13 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 	}
 	callResults := 0
 	for _, object := range index.Objects {
-		if object.Kind == programindex.ObjectVariable && object.Name == "call result" {
+		if object.Kind == programindex.ObjectVariable && object.Name == "call result" && object.Location != nil &&
+			(object.Location.Path == "src/fixture_app/events.py" || object.Location.Path == "src/fixture_app/models.py") {
 			callResults++
 		}
 	}
 	if callResults != 2 {
-		t.Fatalf("Python synthetic call-result objects = %d, want the factory and chained map results", callResults)
+		t.Fatalf("Python callback source call-result objects = %d, want the factory and chained map results", callResults)
 	}
 
 	adaptertest.AssertRegistration(t, index, adaptertest.Registration{
@@ -774,7 +775,9 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 			TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
 			Patterns: []adaptertest.Pattern{{
 				Form: programindex.PatternCall, Selector: "subscribe", ReceiverID: directResult.ID,
-				Path: "src/fixture_app/events.py", Line: 21, Column: 5,
+				// The registration addresses the terminal selector; its receiver
+				// remains the factory's result at column 5 on this same line.
+				Path: "src/fixture_app/events.py", Line: 21, Column: 21,
 				Observed: 2,
 				Arguments: []adaptertest.Argument{
 					{Position: 1, Kind: programindex.PatternLiteralString, Value: "orders.direct"},

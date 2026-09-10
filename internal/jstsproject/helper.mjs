@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 21
+const CONTRACT_VERSION = 22
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -569,9 +569,81 @@ const sourceByteSHA = new Map(sourceFiles.map(({ path: filePath }) => [
   createHash("sha256").update(readFileSync(absolute(filePath))).digest("hex"),
 ]))
 
+// Test-file metadata comes only from an authored, literal Vitest configuration.
+// The config is parsed with the compiler already loaded above, never imported.
+// Unsupported expressions/globs leave files unclassified instead of guessing.
+function declaredVitestFiles() {
+  const selected = new Set()
+  if (request.vitest !== true) return selected
+  const glob = (value) => {
+    if (typeof value !== "string" || /[{}[\]\\!()]/.test(value) || value.startsWith("/") || value.split("/").includes("..")) return undefined
+    let result = "^"
+    value = value.replace(/^\.\//, "")
+    for (let i = 0; i < value.length; i++) {
+      if (value[i] === "*" && value[i + 1] === "*") {
+        if (i !== 0 && value[i - 1] !== "/" || i + 2 < value.length && value[i + 2] !== "/") return undefined
+        result += value[i + 2] === "/" ? "(?:.*/)?" : ".*"
+        i += value[i + 2] === "/" ? 2 : 1
+      } else if (value[i] === "*") result += "[^/]*"
+      else if (value[i] === "?") result += "[^/]"
+      else result += value[i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    }
+    return new RegExp(result + "$")
+  }
+  const object = (node) => {
+    if (!node || !ts.isObjectLiteralExpression(node)) return undefined
+    const values = new Map()
+    for (const property of node.properties) {
+      if (!ts.isPropertyAssignment(property) || !property.name || !(ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) return undefined
+      const key = property.name.text
+      if (values.has(key)) return undefined
+      values.set(key, property.initializer)
+    }
+    return values
+  }
+  const strings = (node) => node && ts.isArrayLiteralExpression(node) && node.elements.every(ts.isStringLiteral)
+    ? node.elements.map((element) => element.text) : undefined
+  for (const filePath of [...fileRefByPath.keys()].sort(compareText)) {
+    if (path.posix.dirname(filePath) !== "." || !/^vitest(?:\.[\w-]+)?\.config\.[cm]?[jt]s$/.test(filePath)) continue
+    const syntax = sourceByPath.get(filePath)?.sourceFile
+    if (!syntax || syntax.parseDiagnostics?.length) continue
+    const bindings = new Set()
+    for (const statement of syntax.statements) {
+      if (!ts.isImportDeclaration(statement) || statement.moduleSpecifier?.text !== "vitest/config") continue
+      const named = statement.importClause?.namedBindings
+      if (named && ts.isNamedImports(named)) for (const item of named.elements) {
+        if ((item.propertyName || item.name).text === "defineConfig") bindings.add(item.name.text)
+      }
+    }
+    const exports = syntax.statements.filter((statement) => ts.isExportAssignment(statement) && !statement.isExportEquals)
+    if (exports.length !== 1) continue
+    const call = exports[0].expression
+    if (!ts.isCallExpression(call) || !ts.isIdentifier(call.expression) || !bindings.has(call.expression.text) || call.arguments.length !== 1) continue
+    const config = object(call.arguments[0]), test = object(config?.get("test"))
+    if (!test || config.has("root") || test.has("root") || test.has("dir") || test.has("projects") || test.has("includeSource")) continue
+    const includes = strings(test.get("include")), excludes = test.has("exclude") ? strings(test.get("exclude")) : []
+    if (!includes || !excludes) continue
+    const include = includes.map(glob), exclude = excludes.map(glob)
+    if (include.some((item) => !item) || exclude.some((item) => !item)) continue
+    for (const { path: sourcePath } of sourceFiles) {
+      if (include.some((item) => item.test(sourcePath)) && !exclude.some((item) => item.test(sourcePath))) selected.add(sourcePath)
+    }
+    for (const field of ["globalSetup", "setupFiles"]) {
+      const node = test.get(field), names = node && ts.isStringLiteral(node) ? [node.text] : strings(node) || []
+      for (const name of names) {
+        const relativePath = name.replace(/^\.\//, "")
+        if (cleanRelative(relativePath) && fileRefByPath.has(relativePath)) selected.add(relativePath)
+      }
+    }
+  }
+  return selected
+}
+const declaredTests = declaredVitestFiles()
+
 const files = sourceFiles.map(({ path: filePath }) => ({
   file_ref: fileRefByPath.get(filePath),
   path: filePath,
+  test: declaredTests.has(filePath),
   language: /\.(?:ts|tsx)$/.test(filePath) ? "typescript" : "javascript",
   module: filePath.replace(/\.(?:d\.)?[cm]?[jt]sx?$/, ""),
   sha256: sourceByteSHA.get(filePath) || "",
@@ -1513,6 +1585,7 @@ function callPatternArgument(node, position) {
   const resolution = objectRefs.length === 0 ? hasObjectCandidate ? "unresolved" : "" :
     javascript || objectRefs.length > 1 ? "alternatives" : "exact"
   const common = {
+    origin: sourceValue(node),
     position,
     parts: [],
     object_refs: objectRefs,
@@ -1542,6 +1615,185 @@ function callPatternArgument(node, position) {
   }
 }
 
+function sourceAnchor(node) {
+  const location = locationOf(node)
+  if (!location.path || !fileRefByPath.has(location.path)) return undefined
+  return { path: location.path, line: location.line, column: location.column }
+}
+
+// Syntax provenance is separate from literal-value authority. In particular,
+// a call result records its producer, not a guessed string returned by it.
+function sourceValue(expression, active = new Set()) {
+  const node = unwrapPatternValue(expression)
+  if (!node) return { kind: "unknown" }
+  const anchor = sourceAnchor(node)
+  const unknown = { kind: "unknown", ...(anchor ? { anchor } : {}) }
+  if (!anchor || active.has(node)) return unknown
+  const next = new Set(active)
+  next.add(node)
+  if (ts.isStringLiteralLike(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isNumericLiteral(node)) {
+    return { kind: "literal", text: node.text, anchor }
+  }
+  if ([ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(node.kind)) {
+    return { kind: "literal", text: node.getText(), anchor }
+  }
+  if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
+    return { kind: "call_result", text: terminalSelector(node.expression), anchor: sourceAnchor(node.expression) }
+  }
+  if (ts.isIdentifier(node)) {
+    let symbol
+    try { symbol = checkerForNode(node)?.getSymbolAtLocation(node) } catch {}
+    const declarations = symbolDeclarations(symbol)
+    if (declarations.length === 1) {
+      const declaration = declarations[0]
+      if (ts.isParameter(declaration)) {
+        const key = formalParameterKey(declaration)
+        if (key && !reassignedFormalParameters.has(key)) {
+          const [ref, position] = key.split("\0")
+          const ownerNode = declarationNodeByRef.get(ref)
+          const owner = ownerNode ? sourceAnchor(ownerNode.name || ownerNode) : undefined
+          if (owner) return { kind: "parameter", text: node.text, position: Number(position), owner, anchor: sourceAnchor(declaration.name) }
+        }
+      }
+      if (ts.isVariableDeclaration(declaration) && declaration.initializer && ts.isIdentifier(declaration.name)) {
+        const ref = declarationRefByNode.get(declaration)
+        if (ref && !reassignedPatternReceivers.has(ref)) return sourceValue(declaration.initializer, next)
+      }
+    }
+    return { ...unknown, text: node.text }
+  }
+  if (node.kind === ts.SyntaxKind.ThisKeyword) {
+    for (let current = node.parent; current; current = current.parent) {
+      if (ts.isArrowFunction(current)) continue
+      if (!ts.isFunctionLike(current)) continue
+      const ref = declarationRefByNode.get(current)
+      if (!ref) break
+      const owner = sourceAnchor(current.name || current)
+      if (owner) return { kind: "receiver", text: "this", owner, anchor }
+      break
+    }
+    return { ...unknown, text: "this" }
+  }
+  if (ts.isPropertyAccessExpression(node)) {
+    const field = { kind: "field", text: node.name.text, anchor, parts: [sourceValue(node.expression, next)] }
+    if (node.expression.kind === ts.SyntaxKind.ThisKeyword) {
+      for (let owner = node.parent; owner; owner = owner.parent) {
+        if (!ts.isClassDeclaration(owner)) continue
+        const record = sourceConstructorRecord(declarationRefByNode.get(owner))
+        const initializer = record?.parts.find((part) => part.text === node.name.text)
+        if (initializer) { field.initializer = initializer; field.owner = record.owner }
+        break
+      }
+    }
+    return field
+  }
+  if (ts.isElementAccessExpression(node) && node.argumentExpression) {
+    return { kind: "index", anchor, parts: [sourceValue(node.expression, next), sourceValue(node.argumentExpression, next)] }
+  }
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    return { kind: "concat", anchor, parts: [sourceValue(node.left, next), sourceValue(node.right, next)] }
+  }
+  if (ts.isTemplateExpression(node)) {
+    const parts = []
+    if (node.head.text) parts.push({ kind: "literal", text: node.head.text, anchor: sourceAnchor(node.head) })
+    for (const span of node.templateSpans) {
+      parts.push(sourceValue(span.expression, next))
+      if (span.literal.text) parts.push({ kind: "literal", text: span.literal.text, anchor: sourceAnchor(span.literal) })
+    }
+    return parts.length === 1 ? parts[0] : { kind: "concat", anchor, parts }
+  }
+  if (ts.isConditionalExpression(node)) {
+    return { kind: "alternatives", anchor, parts: [sourceValue(node.whenTrue, next), sourceValue(node.whenFalse, next)] }
+  }
+  return unknown
+}
+
+const sourceReturnsByRef = new Map()
+const sourceRecordsByRef = new Map()
+function sourceConstructorRecord(ref) {
+  let declaration = declarationNodeByRef.get(ref)
+  if (ts.isConstructorDeclaration(declaration)) declaration = declaration.parent
+  if (!declaration || !ts.isClassDeclaration(declaration)) return undefined
+  const classRef = declarationRefByNode.get(declaration)
+  if (sourceRecordsByRef.has(classRef)) return sourceRecordsByRef.get(classRef)
+  // Self-references inside a constructor remain field observations. Do not
+  // recursively manufacture an infinite instance value while reading them.
+  sourceRecordsByRef.set(classRef, undefined)
+  const constructor = declaration.members.find((member) => ts.isConstructorDeclaration(member))
+  const fields = new Map()
+  const writes = new Map()
+  const put = (name, value, assignment) => {
+    fields.set(name, { kind: "field_value", text: name, anchor: sourceAnchor(assignment), parts: [value] })
+    writes.set(name, (writes.get(name) || 0) + 1)
+  }
+  for (const member of declaration.members) {
+    if (ts.isPropertyDeclaration(member) && member.initializer && member.name && ts.isIdentifier(member.name)) {
+      put(member.name.text, sourceValue(member.initializer), member.name)
+    }
+  }
+  for (const parameter of constructor?.parameters || []) {
+    if (ts.isIdentifier(parameter.name) && parameter.modifiers?.some((modifier) =>
+        [ts.SyntaxKind.PublicKeyword, ts.SyntaxKind.PrivateKeyword, ts.SyntaxKind.ProtectedKeyword, ts.SyntaxKind.ReadonlyKeyword].includes(modifier.kind))) {
+      put(parameter.name.text, sourceValue(parameter.name), parameter.name)
+    }
+  }
+  const visitWrites = (node) => {
+    if (node !== declaration && (ts.isClassDeclaration(node) || ts.isClassExpression(node))) return
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+        ts.isPropertyAccessExpression(node.left) && node.left.expression.kind === ts.SyntaxKind.ThisKeyword) {
+      const name = node.left.name.text
+      if (constructor && node.pos >= constructor.pos && node.end <= constructor.end && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        put(name, sourceValue(node.right), node.left)
+      } else writes.set(name, (writes.get(name) || 0) + 1)
+    }
+    ts.forEachChild(node, visitWrites)
+  }
+  visitWrites(declaration)
+  for (const [name, field] of fields) {
+    if (writes.get(name) > 1) field.parts = [{ kind: "unknown", text: "reassigned field", anchor: field.anchor }]
+  }
+  const record = fields.size ? { kind: "record", owner: sourceAnchor(constructor || declaration.name || declaration), parts: [...fields.values()].sort((a, b) => compareText(a.text, b.text)) } : undefined
+  sourceRecordsByRef.set(classRef, record)
+  return record
+}
+
+function sourceReturnValue(node) {
+  if (ts.isNewExpression(node)) {
+    const records = expressionRefs(node.expression).map(sourceConstructorRecord).filter(Boolean)
+    return records.length === 0 ? undefined : records.length === 1 ? records[0] : { kind: "alternatives", parts: records }
+  }
+  const refs = expressionRefs(node.expression)
+    .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
+  const values = []
+  for (const ref of refs) {
+    if (!sourceReturnsByRef.has(ref)) {
+      let declaration = declarationNodeByRef.get(ref)
+      if (ts.isVariableDeclaration(declaration)) declaration = unwrapPatternValue(declaration.initializer)
+      if (declaration?.asteriskToken || declaration?.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword)) {
+        sourceReturnsByRef.set(ref, [])
+        continue
+      }
+      const body = declaration?.body
+      const returns = []
+      if (body && !ts.isBlock(body)) returns.push(sourceValue(body))
+      else if (body) {
+        const visitReturn = (child) => {
+          if (child !== body && ts.isFunctionLike(child)) return
+          if (ts.isReturnStatement(child)) {
+            if (child.expression) returns.push(sourceValue(child.expression))
+            return
+          }
+          ts.forEachChild(child, visitReturn)
+        }
+        visitReturn(body)
+      }
+      sourceReturnsByRef.set(ref, returns)
+    }
+    values.push(...sourceReturnsByRef.get(ref))
+  }
+  return values.length === 0 ? undefined : values.length === 1 ? values[0] : { kind: "alternatives", parts: values }
+}
+
 function callControlContext(node) {
   const result = []
   for (let child = node, parent = node.parent; parent; child = parent, parent = parent.parent) {
@@ -1563,15 +1815,18 @@ function callPattern(node) {
   const selector = terminalSelector(node.expression)
   if (!selector) return undefined
   const receiver = patternReceiver(node)
+  const receiverExpression = callReceiverExpression(node)
   return {
+    receiver_value: receiverExpression ? sourceValue(receiverExpression) : undefined,
+    result_value: sourceReturnValue(node),
     selector,
-    result_ref: chainedCallResultRefs.get(node) || "",
+    result_ref: (ts.isVariableDeclaration(node.parent) && node.parent.initializer === node ? declarationRefByNode.get(node.parent) : "") || chainedCallResultRefs.get(node) || "",
     receiver_ref: receiver.ref,
     receiver_origin_refs: receiver.originRefs,
     receiver_origin_resolution: receiver.originResolution,
     receiver_origins_observed: receiver.originsObserved,
-    arguments: node.arguments.map((argument, index) => callPatternArgument(argument, index + 1)),
-    arguments_observed: node.arguments.length,
+    arguments: (node.arguments || []).map((argument, index) => callPatternArgument(argument, index + 1)),
+    arguments_observed: (node.arguments || []).length,
   }
 }
 
@@ -1652,12 +1907,10 @@ for (const { sourceFile } of sourceFiles) {
         external_receiver: externalReceiver, external_name: externalName,
         expression: displayExpression, resolution, location: locationOf(node.expression),
       }
-      if (ts.isCallExpression(node)) {
+      if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
         const pattern = callPattern(node)
         call.patterns_observed = 1
         if (pattern) {pattern.context = callControlContext(node); call.pattern = pattern}
-      } else {
-        call.patterns_observed = 0
       }
       calls.push(call)
 

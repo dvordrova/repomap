@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 const (
@@ -49,6 +50,7 @@ type packageManifest struct {
 }
 
 type helperRequest struct {
+	Vitest              bool                    `json:"vitest,omitempty"`
 	Version             int                     `json:"version"`
 	ProjectDir          string                  `json:"project_dir,omitempty"`
 	ConfigPath          string                  `json:"config_path,omitempty"`
@@ -208,6 +210,7 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 		}
 	}
 	request := newHelperRequest(compilerPackages, nestedPackageDirs)
+	request.Vitest = manifest.Dependencies["vitest"] != "" || manifest.DevDependencies["vitest"] != ""
 	request.PackageBoundaries, err = helperPackageBoundaries(repository, entries, manifestPath)
 	if err != nil {
 		return Result{}, err
@@ -975,6 +978,26 @@ func rebaseHelperOutput(projectDir string, output *helperOutput) {
 	rebaseLocation := func(location *Location) {
 		location.Path = repositoryProjectPath(projectDir, location.Path)
 	}
+	var rebaseValue func(*sourcevalue.Value)
+	rebaseValue = func(value *sourcevalue.Value) {
+		if value == nil {
+			return
+		}
+		for _, anchor := range []*sourcevalue.Anchor{value.Anchor, value.Owner} {
+			if anchor != nil {
+				anchor.Path = repositoryProjectPath(projectDir, anchor.Path)
+			}
+		}
+		rebaseValue(value.Initializer)
+		for i := range value.Parts {
+			rebaseValue(&value.Parts[i])
+		}
+	}
+	projectValue := func(value *sourcevalue.Value) *sourcevalue.Value {
+		result := sourcevalue.Clone(value)
+		rebaseValue(result)
+		return result
+	}
 	for index := range output.Files {
 		output.Files[index].Path = repositoryProjectPath(projectDir, output.Files[index].Path)
 	}
@@ -990,6 +1013,11 @@ func rebaseHelperOutput(projectDir string, output *helperOutput) {
 	for index := range output.Calls {
 		rebaseLocation(&output.Calls[index].Location)
 		if pattern := output.Calls[index].Pattern; pattern != nil {
+			pattern.ReceiverValue = projectValue(pattern.ReceiverValue)
+			pattern.ResultValue = projectValue(pattern.ResultValue)
+			for i := range pattern.Arguments {
+				pattern.Arguments[i].Origin = projectValue(pattern.Arguments[i].Origin)
+			}
 			for i := range pattern.Context {
 				rebaseLocation(&pattern.Context[i].Location)
 			}

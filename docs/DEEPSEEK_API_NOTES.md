@@ -106,7 +106,10 @@ saved request bytes rather than applying new environment settings to them.
   also wait; another 429 may extend, but never shorten, the cooldown.
   Attempts already on the wire are not
   replayed or canceled merely because of the 429; once they finish, that retry
-  and all later attempts in the run are serialized. If retries are exhausted,
+  and new attempts are initially serialized. After the cooldown, four successful
+  attempts from the current gate epoch raise concurrency to two, and four more
+  restore the configured limit of four. A later 429 starts a new epoch; older
+  in-flight successes cannot restore that gate. If retries are exhausted,
   the terminal batch item cancels the batch child context, stops queued work,
   and asks in-flight HTTP requests to terminate through their request context.
   Client cancellation is a fail-fast transport mechanism, not a guarantee

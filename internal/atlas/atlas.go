@@ -20,13 +20,16 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 10
-	Version      = 5
+	GraphVersion = 11
+	Version      = 6
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -119,10 +122,11 @@ type DocumentFacts struct {
 // EntityFacts retains a producer's observation without assigning an
 // architecture role. Files is corpus membership, not generated provenance.
 type EntityFacts struct {
-	Name      string   `json:"name"`
-	Extractor string   `json:"extractor"`
-	Status    string   `json:"status"`
-	Files     []string `json:"files"`
+	Data      *facts.DataObject `json:"data,omitempty"`
+	Name      string            `json:"name"`
+	Extractor string            `json:"extractor"`
+	Status    string            `json:"status"`
+	Files     []string          `json:"files"`
 }
 
 // EdgeEvidence is the declared source of an observation, or the exact file
@@ -210,19 +214,38 @@ type TypeMember struct {
 }
 
 type SymbolCall struct {
-	Kind       string         `json:"kind"`
-	Name       string         `json:"name"`
-	Line       int            `json:"line"`
-	Column     int            `json:"column,omitempty"`
-	Invocation string         `json:"invocation,omitempty"`
-	Detail     string         `json:"detail,omitempty"`
-	Resolution string         `json:"resolution,omitempty"`
-	Values     []string       `json:"values,omitempty"`
-	Arguments  []string       `json:"arguments,omitempty"`
-	Evidence   []EdgeEvidence `json:"evidence,omitempty"`
+	ReceiverValue *sourcevalue.Value `json:"receiver_value,omitempty"`
+	ResultValue   *sourcevalue.Value `json:"result_value,omitempty"`
+	API           *CallAPI           `json:"api,omitempty"`
+	// SourceArguments retain value provenance for local destination traversal.
+	// They are not appended wholesale to every description request.
+	SourceArguments []SourceArgument `json:"source_arguments,omitempty"`
+	Kind            string           `json:"kind"`
+	Name            string           `json:"name"`
+	Line            int              `json:"line"`
+	Column          int              `json:"column,omitempty"`
+	Invocation      string           `json:"invocation,omitempty"`
+	Detail          string           `json:"detail,omitempty"`
+	Resolution      string           `json:"resolution,omitempty"`
+	Values          []string         `json:"values,omitempty"`
+	Arguments       []string         `json:"arguments,omitempty"`
+	Evidence        []EdgeEvidence   `json:"evidence,omitempty"`
 	// CalleeIDs refer to compiler-located symbol places, shared across target
 	// indexes. They are local retrieval keys and never enter provider prose.
 	CalleeIDs []string `json:"callee_ids,omitempty"`
+}
+
+// CallAPI is the exact native external symbol, before display shortening.
+type CallAPI struct {
+	Package  string `json:"package"`
+	Receiver string `json:"receiver,omitempty"`
+	Name     string `json:"name"`
+}
+
+type SourceArgument struct {
+	Position int                `json:"position,omitempty"`
+	Keyword  string             `json:"keyword,omitempty"`
+	Origin   *sourcevalue.Value `json:"origin,omitempty"`
 }
 
 // SymbolCaller is an observed incoming call, not a inferred registration.
@@ -273,6 +296,7 @@ type BoundaryFacts struct {
 	FactID string `json:"fact_id,omitempty"`
 	// ObjectID is the enclosing object; Caller its display name.
 	ObjectID  string `json:"object_id,omitempty"`
+	SubjectID string `json:"subject_id,omitempty"`
 	Caller    string `json:"caller"`
 	CallerDoc string `json:"caller_doc,omitempty"`
 	// External is the external symbol as package.Receiver.Name; Method and
@@ -334,11 +358,12 @@ type Atlas struct {
 
 // Target is one analyzed program target with its boxes.
 type Target struct {
-	ID       string `json:"id"`
-	Language string `json:"language"`
-	Kind     string `json:"kind"`
-	Name     string `json:"name"`
-	Root     string `json:"root"`
+	Data     []DataRecord `json:"data,omitempty"`
+	ID       string       `json:"id"`
+	Language string       `json:"language"`
+	Kind     string       `json:"kind"`
+	Name     string       `json:"name"`
+	Root     string       `json:"root"`
 	// Line is MODEL: the portfolio table's line for this target, or the root
 	// directory's line when the run has one target.
 	Line string `json:"line"`
@@ -445,16 +470,17 @@ type Arrow struct {
 
 // Boundary is one integration point drawn beside its box.
 type Boundary struct {
-	ID        string `json:"id"`
-	ObjectID  string `json:"object_id,omitempty"`
-	BoxID     string `json:"box_id"`
-	Path      string `json:"path"`
-	LineNo    int    `json:"line_no"`
-	Column    int    `json:"column,omitempty"`
-	Caller    string `json:"caller"`
-	Direction string `json:"direction"`
-	Kind      string `json:"kind"`
-	External  string `json:"external,omitempty"`
+	Uses      []DestinationUse `json:"uses,omitempty"`
+	ID        string           `json:"id"`
+	ObjectID  string           `json:"object_id,omitempty"`
+	BoxID     string           `json:"box_id"`
+	Path      string           `json:"path"`
+	LineNo    int              `json:"line_no"`
+	Column    int              `json:"column,omitempty"`
+	Caller    string           `json:"caller"`
+	Direction string           `json:"direction"`
+	Kind      string           `json:"kind"`
+	External  string           `json:"external,omitempty"`
 	// Source preserves whether the anchor is a native fact or an interpretation.
 	Source string `json:"source,omitempty"`
 	// Destination and Basis are MODEL. Address is one original observed value
@@ -467,6 +493,25 @@ type Boundary struct {
 	// Line is MODEL.
 	Line   string `json:"line"`
 	FactID string `json:"fact_id,omitempty"`
+}
+
+// DestinationUse is one observed argument chain reaching a communication
+// mechanism. Address may be a configuration expression rather than a host.
+// A frontier records where the original source no longer resolves the value.
+type DestinationUse struct {
+	Address   string            `json:"address,omitempty"`
+	Frontier  string            `json:"frontier,omitempty"`
+	Method    string            `json:"method,omitempty"`
+	TargetIDs []string          `json:"target_ids,omitempty"`
+	Steps     []DestinationStep `json:"steps"`
+}
+
+type DestinationStep struct {
+	SubjectID string `json:"subject_id,omitempty"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Line      int    `json:"line"`
+	Column    int    `json:"column,omitempty"`
 }
 
 // Joint is one integration between two targets.
@@ -720,6 +765,11 @@ func validateGraph(graph Graph) error {
 			return fmt.Errorf("atlas: places are not sorted at %q", place.ID)
 		}
 		seen[place.ID] = place.Kind
+		if place.Entity != nil {
+			if err := place.Entity.Data.Validate(); err != nil {
+				return err
+			}
+		}
 		if place.Kind == PlaceEntity && (place.Entity == nil || place.Entity.Extractor == "" || place.Entity.Files == nil) {
 			return fmt.Errorf("atlas: entity %q lacks its observation", place.ID)
 		}
@@ -784,10 +834,13 @@ func validateGraph(graph Graph) error {
 		if edge.Count < 1 || edge.Kind == "" {
 			return fmt.Errorf("atlas: edge %q -> %q is empty", edge.From, edge.To)
 		}
-		if edge.Kind == "observation" || edge.Kind == "inventory" {
+		if edge.Kind == "observation" || edge.Kind == "inventory" || edge.Kind == "data_source" {
 			e := edge.Evidence
 			if e == nil || e.Path == "" || e.LineNo < 1 || e.Label == "" || len(edge.Witnesses) != 0 || seen[edge.From] != PlaceEntity {
 				return fmt.Errorf("atlas: edge %q -> %q lacks source evidence", edge.From, edge.To)
+			}
+			if edge.Kind == "data_source" && (seen[edge.To] != PlaceSymbol || e.Extractor == "") {
+				return fmt.Errorf("atlas: data source edge has incompatible endpoint")
 			}
 			if edge.Kind == "observation" && (seen[edge.To] != PlaceEntity || e.Extractor == "") || edge.Kind == "inventory" && seen[edge.To] != PlaceFile {
 				return fmt.Errorf("atlas: edge %q -> %q has incompatible endpoints", edge.From, edge.To)
@@ -843,6 +896,9 @@ func Validate(value Atlas) error {
 			return fmt.Errorf("atlas: target %q appears twice", target.ID)
 		}
 		targets[target.ID] = struct{}{}
+		if err := ValidateDataRecords(target.Data); err != nil {
+			return err
+		}
 		if invalidText(target.Line) || invalidText(target.Root) {
 			return fmt.Errorf("atlas: target %q has invalid text", target.ID)
 		}

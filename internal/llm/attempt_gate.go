@@ -25,8 +25,9 @@ func ProviderAttemptTimeout(ctx context.Context) time.Duration {
 
 // BatchController carries one adaptive provider-attempt gate across batches
 // that use the same Provider. Its zero value is ready for use. The gate starts
-// at the concurrency of the first bound batch and permanently collapses to one
-// lease when a provider reports an explicit transport rate limit.
+// at the concurrency of the first bound batch and collapses to one lease after
+// a rate limit. Four successful completions from the current cooldown epoch
+// double capacity, up to that original limit.
 type BatchController struct {
 	mu   sync.Mutex
 	gate *attemptGate
@@ -48,18 +49,21 @@ func (controller *BatchController) bind(configured int) *attemptGate {
 }
 
 type attemptGate struct {
-	mu      sync.Mutex
-	limit   int
-	active  int
-	changed chan struct{}
-	retryAt time.Time
+	mu         sync.Mutex
+	limit      int
+	active     int
+	changed    chan struct{}
+	retryAt    time.Time
+	configured int
+	epoch      uint64
+	successes  int
 }
 
 func newAttemptGate(limit int) *attemptGate {
 	if limit < 1 {
 		limit = 1
 	}
-	return &attemptGate{limit: limit, changed: make(chan struct{})}
+	return &attemptGate{limit: limit, configured: limit, changed: make(chan struct{})}
 }
 
 func (gate *attemptGate) acquire(ctx context.Context) (func(), error) {
@@ -124,6 +128,8 @@ func (gate *attemptGate) collapse() {
 func (gate *attemptGate) backoff(delay time.Duration) {
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
+	gate.epoch++
+	gate.successes = 0
 	changed := false
 	if gate.limit > 1 {
 		gate.limit = 1
@@ -134,6 +140,26 @@ func (gate *attemptGate) backoff(delay time.Duration) {
 		changed = true
 	}
 	if changed {
+		gate.signalLocked()
+	}
+}
+
+func (gate *attemptGate) recoveryEpoch() uint64 {
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	return gate.epoch
+}
+
+func (gate *attemptGate) completed(epoch uint64) {
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	if epoch != gate.epoch || gate.limit >= gate.configured || time.Now().Before(gate.retryAt) {
+		return
+	}
+	gate.successes++
+	if gate.successes == 4 {
+		gate.successes = 0
+		gate.limit = min(gate.configured, gate.limit*2)
 		gate.signalLocked()
 	}
 }
@@ -185,7 +211,7 @@ func AcquireProviderAttempt(ctx context.Context) (func(), error) {
 	return gate.acquire(ctx)
 }
 
-// CollapseProviderAttempts permanently reduces the request's shared attempt
+// CollapseProviderAttempts reduces the request's shared attempt
 // gate to one lease. A provider should call this only for an explicit transport
 // overload such as HTTP 429, before releasing the attempt lease.
 func CollapseProviderAttempts(ctx context.Context) {

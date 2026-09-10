@@ -2,13 +2,17 @@ package reading
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/modeldiag"
 )
 
 // targetState is what the portfolio table said about a target.
@@ -212,7 +216,7 @@ func (r *reader) readJoints(ctx context.Context) error {
 		for _, candidate := range candidates {
 			rows = append(rows, lines.JointRow(candidate.joint.ID, candidate.joint.Value, r.sideOf(candidate.from, byTarget), r.sideOf(candidate.to, byTarget)))
 		}
-		answers, err := r.runTableWith(ctx, def, 1, []table.Field{{Name: "question", Value: "joints"}}, rows, nil)
+		answers, err := r.runJointTable(ctx, def, 1, []table.Field{{Name: "question", Value: "joints"}}, rows)
 		if err != nil {
 			return err
 		}
@@ -289,6 +293,7 @@ func (r *reader) chooseBlindPeers(ctx context.Context, batches []peerBatch, targ
 		var next []peerBatch
 		byPeers := make(map[string]int)
 		for _, batch := range batches {
+			batch.ins = r.canonicalPeers(batch.ins, targets)
 			candidates := make(map[string][]peerChoice)
 			for start := 0; start < len(batch.ins); start += peerWindow {
 				window := batch.ins[start:min(start+peerWindow, len(batch.ins))]
@@ -308,7 +313,7 @@ func (r *reader) chooseBlindPeers(ctx context.Context, batches []peerBatch, targ
 						rows = append(rows, lines.PeerRow(out.place.ID, r.sideOf(out, targets), refs))
 					}
 					r.opts.Stage(lines.StageJoints, fmt.Sprintf("%d outgoing boundaries, %d candidate counterparts", len(rows), len(peers)))
-					answers, err := r.runTableWith(ctx, lines.Peers(), *round, []table.Field{{Name: "question", Value: "peers"}, lines.PeerContext(refs, sides)}, rows, nil)
+					answers, err := r.runJointTable(ctx, lines.Peers(), *round, []table.Field{{Name: "question", Value: "peers"}, lines.PeerContext(refs, sides)}, rows)
 					*round++
 					if err != nil {
 						return nil, err
@@ -588,4 +593,129 @@ func isRouteParameter(segment string) bool {
 	default:
 		return false
 	}
+}
+
+// canonicalPeers assigns local p refs by complete displayed evidence before
+// windowing. Ownership and exact graph endpoints stay on the returned peers;
+// a remembered p ref is restored only through this run's corresponding list.
+func (r *reader) canonicalPeers(peers []*boundaryState, targets map[string]TargetMeta) []*boundaryState {
+	ordered := append([]*boundaryState(nil), peers...)
+	keys := make(map[*boundaryState]string, len(peers))
+	for _, peer := range peers {
+		wire, _ := json.Marshal(r.sideOf(peer, targets))
+		keys[peer] = string(wire)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if keys[ordered[i]] != keys[ordered[j]] {
+			return keys[ordered[i]] < keys[ordered[j]]
+		}
+		return ordered[i].place.ID < ordered[j].place.ID
+	})
+	return ordered
+}
+
+// runJointTable memoizes independent protocol decisions by their complete
+// isolated prepared request, including every advertised peer and target/source
+// context. The memo points at an original response row, never copied cells or
+// graph endpoints. A changed peer catalogue, prompt or provider changes its key.
+func (r *reader) runJointTable(ctx context.Context, def table.Definition, round int, shared []table.Field, rows []table.Row) ([]rowAnswer, error) {
+	if r.dry || len(rows) == 0 {
+		return r.runTableWith(ctx, def, round, shared, rows, nil)
+	}
+	if _, started := r.started[def.Stage]; !started {
+		r.started[def.Stage] = time.Now()
+	}
+	if r.opts.Through == "" || r.opts.Through == def.Stage {
+		if r.opts.Prompt != "" {
+			def.System = r.opts.Prompt
+		}
+		if r.opts.WindowRows > 0 {
+			def.Window = r.opts.WindowRows
+		}
+		if r.opts.InputBytes > 0 {
+			def.MaxInputBytes = r.opts.InputBytes
+		}
+	}
+	if r.responseTables == nil {
+		r.responseTables = make(map[string]rememberedTable)
+	}
+	answers := make([]rowAnswer, len(rows))
+	basis := make([]string, len(rows))
+	var missing []table.Row
+	var positions [][]int
+	byBasis := make(map[string]int)
+	for i, row := range rows {
+		window := table.Window{Stage: def.Stage, Context: shared, Rows: []table.Row{row}}
+		input, err := table.Request(def, window)
+		if err != nil {
+			return nil, err
+		}
+		window.Request = input
+		call, err := table.Call(def, window)
+		if err != nil {
+			return nil, err
+		}
+		basis[i], err = llm.MemoIdentity(r.opts.Provider, call.State, call.Prompt, call.Limits)
+		if err != nil {
+			return nil, err
+		}
+		ref, found, err := llm.LoadMemo(r.opts.Executor, basis[i], llm.DecodeJSON(func(ref rememberedRow) error {
+			if len(ref.RequestKey) != 64 || ref.RowKey == "" {
+				return fmt.Errorf("joints: invalid response row reference")
+			}
+			return nil
+		}))
+		var answer rowAnswer
+		if found {
+			answer, found, err = r.recallRow(def, window, ref)
+		}
+		if err != nil {
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "joint_memo_rejected", Count: 1, Reason: err.Error(), Samples: []string{row.ID}})
+		}
+		if found {
+			answers[i] = answer
+			r.use(def.Stage).Rows++
+			r.use(def.Stage).Reused++
+			fmt.Fprintf(&r.tables, "- Reused joint input %s · request %s · row %s\n", row.ID, answer.requestKey, answer.rowKey)
+			continue
+		}
+		if group, exists := byBasis[basis[i]]; exists {
+			positions[group] = append(positions[group], i)
+		} else {
+			byBasis[basis[i]] = len(missing)
+			missing = append(missing, row)
+			positions = append(positions, []int{i})
+		}
+	}
+	if len(missing) == 0 {
+		return answers, nil
+	}
+	fresh, err := r.runTableWith(ctx, def, round, shared, missing, nil)
+	if err != nil {
+		return nil, err
+	}
+	for j, group := range positions {
+		answer := fresh[j]
+		for alias, position := range group {
+			answers[position] = answer
+			if alias > 0 {
+				r.use(def.Stage).Rows++
+				if answer.answer == nil {
+					r.use(def.Stage).Given++
+				}
+				fmt.Fprintf(&r.tables, "- Shared joint input %s · request %s · row %s\n", rows[position].ID, answer.requestKey, answer.rowKey)
+			}
+		}
+		if answer.answer == nil {
+			continue
+		}
+		wire, err := json.Marshal(rememberedRow{RequestKey: answer.requestKey, RowKey: answer.rowKey})
+		if err != nil {
+			return nil, err
+		}
+		if err := llm.SaveMemo(r.opts.Executor, basis[group[0]], wire); err != nil && r.opts.State != nil {
+			r.opts.State(def.Stage, "cache write failed", err.Error())
+		}
+	}
+	return answers, nil
 }

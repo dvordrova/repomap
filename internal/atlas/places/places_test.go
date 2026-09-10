@@ -228,9 +228,9 @@ func TestFixturePlaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Graph v10 includes exact callback registration literals. Keep the same
+	// Graph v11 includes native route subjects and source-value origins. Keep the same
 	// canonical bytes for eager and lazy target storage below.
-	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "8e5c23081da0e96fdde2d76006ad100ae9c166c05f9989321e8894d1688955e3" {
+	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "111ac5f345c0f1a55eb5a7584dc7dc34a631d337993758ce173fc37cfbec449b" {
 		t.Fatalf("saved mixed fixture graph changed: %s", got)
 	}
 	lazy := input

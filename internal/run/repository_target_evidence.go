@@ -212,6 +212,18 @@ func pythonNativeEvidence(target pythontarget.Target, catalog pythontarget.Catal
 			}
 		}
 	}
+	if entry, found := pythontarget.LaunchEntry(target); found {
+		result.Observations = append(result.Observations, targetportfolio.Observation{
+			Kind: "launch_callable", Path: entry.Path, Line: entry.Line,
+			Values: []string{entry.Module, entry.Qualname, "arguments=none"},
+		})
+		for _, call := range target.LaunchCalls {
+			result.Observations = append(result.Observations, targetportfolio.Observation{
+				Kind: "launch_call_site", Path: call.Path, Line: call.Line,
+				Values: []string{call.Entry.Module, call.Entry.Qualname, "arguments=none"},
+			})
+		}
+	}
 	for _, imported := range target.RelativeImports {
 		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "module_level_relative_import", Path: imported.Path, Line: imported.Line, Values: []string{strings.Repeat(".", imported.Level) + imported.Module, imported.Name}})
 	}

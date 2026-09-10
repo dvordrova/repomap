@@ -21,10 +21,6 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 	if collector == nil || options.NoModel {
 		return nil
 	}
-	candidates := collector.Snapshot()
-	if err := writeGlossaryArtifact(runDir, "terminology.json", candidates); err != nil {
-		return err
-	}
 	factory := options.Deps.newDisplayProvider
 	if factory == nil {
 		return fmt.Errorf("glossary: base provider factory is missing")
@@ -42,6 +38,14 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 		Observer:         timed(options.Output, debugdump.NewSemanticObserver(writer)),
 		BatchConcurrency: options.Deps.llmBatchConcurrency, BatchController: options.Deps.llmBatchController,
 	}, debugdump.SemanticStageGlossary)
+	options.Output.Stage("Glossary", "explaining unfamiliar names from accepted prose")
+	if err := collector.Generate(ctx, executor, provider); err != nil {
+		return fmt.Errorf("glossary: %w", err)
+	}
+	candidates := collector.Snapshot()
+	if err := writeGlossaryArtifact(runDir, "terminology.json", candidates); err != nil {
+		return err
+	}
 	options.Output.Stage("Glossary", fmt.Sprintf("combining %d source-backed term explanations", len(candidates)))
 	started := time.Now()
 	catalog, err := terminology.Reduce(ctx, executor, provider, candidates)

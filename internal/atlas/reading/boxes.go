@@ -551,6 +551,7 @@ func (r *reader) readSymbols(ctx context.Context) error {
 
 // boundaryState is one accepted fact or candidate awaiting its own review.
 type boundaryState struct {
+	uses        []atlas.DestinationUse
 	place       atlas.Place
 	line        string
 	kind        string
@@ -584,6 +585,26 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		r.boundaries[place.ID] = state
 	}
 	r.bindInterpretedBoundaries()
+	destinations := NewDestinationReader(r.opts.Graph.Places)
+	for _, state := range r.boundaries {
+		facts := state.place.Boundary
+		if facts.Direction != atlas.DirectionOut {
+			continue
+		}
+		owner := owners[facts.ObjectID]
+		if owner.Symbol == nil {
+			continue
+		}
+		for _, call := range owner.Symbol.Calls {
+			if call.Line == state.place.LineNo && call.Column == state.place.Column {
+				state.uses = append(state.uses, destinations.Read(owner, call)...)
+			}
+		}
+		state.uses = canonicalDestinationUses(state.uses)
+		if len(state.uses) == 1 && state.uses[0].Address != "" {
+			state.address = state.uses[0].Address
+		}
+	}
 	var ids []string
 	for id := range r.boundaries {
 		ids = append(ids, id)
@@ -612,8 +633,27 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			}
 			row := lines.BoundaryRow(state.place, "", original...)
 			row.Fields = append(row.Fields, lines.BoundarySourceContext(state.place, owners[facts.ObjectID], r.places, owners)...)
+			if len(state.uses) > 0 {
+				row.Fields = append(row.Fields, table.Field{Name: "destination_chains", Value: destinationEvidence(state.uses)})
+				addresses := destinationAddresses(state.uses)
+				options := []string{"unknown"}
+				for _, address := range addresses {
+					options = append(options, address.Ref)
+				}
+				for i := range row.Fields {
+					switch row.Fields[i].Name {
+					case "address_catalog":
+						row.Fields[i].Value = addresses
+					case "address_options":
+						row.Fields[i].Value = options
+					}
+				}
+			}
 			rows = append(rows, row)
 			addressValues[id] = lines.BoundaryAddresses(state.place, original...)
+			if len(state.uses) > 0 {
+				addressValues[id] = destinationAddresses(state.uses)
+			}
 			order = append(order, state)
 			r.places[id] = state.place
 		}
@@ -654,12 +694,18 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 // selected call is not yet an accepted SDK relationship. Source columns and
 // native call identities distinguish calls sharing a line or declaration.
 func (r *reader) bindInterpretedBoundaries() {
+	nativeRoutes := make(map[string]bool)
+	for _, place := range r.opts.Graph.Places {
+		if b := place.Boundary; b != nil && b.SubjectID != "" && b.Source == "fact" && b.Direction == atlas.DirectionIn && b.GivenKind == atlas.BoundaryHTTPServer && b.Method != "" {
+			nativeRoutes[b.SubjectID] = true
+		}
+	}
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil {
 			continue
 		}
 		decl := place.Symbol.Decl
-		if operation := r.operations[place.ID]; operation[0] == "request" {
+		if operation := r.operations[place.ID]; operation[0] == "request" && !nativeRoutes[place.ID] {
 			id := "in:" + place.ID
 			p := atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: place.LineNo, Column: decl.Column,
 				Parent: place.Parent, TargetIDs: append([]string(nil), place.TargetIDs...), Boundary: &atlas.BoundaryFacts{

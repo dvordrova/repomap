@@ -24,6 +24,19 @@ condition in `fill` identifies cells used only for `entry=self`. For `self`, cho
   by itself: interpret the recipient attribute, declaration and observed calls.
 - `continuous`: a persistent background loop, not its individual helper calls.
 
+An observed goroutine/thread/task launch separates the launcher from the work:
+the declaration running the persistent loop is `self`; its constructor or
+startup function is not the continuous action. Creating a Thread/Process or
+Worker, supplying a target, and starting it are distinct source observations.
+A timer/scheduler registration identifies the callback it will activate;
+`setInterval`, a scheduler job or a timed callback can support `scheduled` when
+the recipient and task are observed. A finite retry, an ordinary collection
+loop, or one awaitable task does not by itself support `continuous`.
+Server lifespan/startup/shutdown hooks organize lifecycle work; yielding during
+the server lifetime does not make the hook a worker. Describe the worker's
+responsibility (for example refreshing market candles or committing pending
+batches), rather than "Run worker loop".
+
 The same rule applies to every language and framework. Public visibility,
 request/response types and an action-like name are insufficient. A callback
 used for parsing, comparison, error handling or another library calculation
@@ -63,8 +76,12 @@ returns in one short `description` (up to 180 characters).
   Choose `http_path` by its closed p* ref and choose `http_method` from the
   registration evidence. Use ANY only for a registration that accepts any
   method. Do not fill `name`: code restores the selected path verbatim. The
-  catalogue contains neutral literal arguments, including topics and other
-  values; only select an argument established as this handler's HTTP path.
+  catalogue contains either native `http_route` facts for this exact handler,
+  including any observed router prefixes, or neutral literal arguments when
+  no native route is available. Use the native method/path as supplied; never
+  replace a composed path with its decorator's shorter suffix. A neutral
+  argument may instead be a topic or other value: only choose it when the
+  observations establish it as this handler's HTTP path.
 - `label`: other work, or a handler whose literal path is unavailable. Fill
   `name` with a short descriptive label, up to 60 characters. Do not invent
   a URL from a handler name, return type or description. An HTTP handler with

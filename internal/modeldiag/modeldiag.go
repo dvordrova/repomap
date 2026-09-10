@@ -27,14 +27,17 @@ const MaxSamples = 5
 // a bounded illustration. Raw carries the model's own output when a whole
 // response section was refused.
 type Row struct {
-	Stage       string          `json:"stage"`
-	Target      string          `json:"target,omitempty"`
-	Kind        string          `json:"kind"`
-	Count       int             `json:"count"`
-	Samples     []string        `json:"samples,omitempty"`
-	Reason      string          `json:"reason,omitempty"`
-	Raw         json.RawMessage `json:"raw,omitempty"`
-	ResponseRef string          `json:"response_ref,omitempty"`
+	// AlreadyJournaled preserves the owner's diagnostic summary while avoiding
+	// a second append after the shared observer recorded this exact rejection.
+	AlreadyJournaled bool            `json:"-"`
+	Stage            string          `json:"stage"`
+	Target           string          `json:"target,omitempty"`
+	Kind             string          `json:"kind"`
+	Count            int             `json:"count"`
+	Samples          []string        `json:"samples,omitempty"`
+	Reason           string          `json:"reason,omitempty"`
+	Raw              json.RawMessage `json:"raw,omitempty"`
+	ResponseRef      string          `json:"response_ref,omitempty"`
 }
 
 // Append adds rows to the run's log without disturbing what earlier stages
@@ -46,6 +49,9 @@ func Append(runDir string, rows []Row) error {
 	}
 	var buffer bytes.Buffer
 	for _, row := range rows {
+		if row.AlreadyJournaled {
+			continue
+		}
 		if strings.TrimSpace(row.Stage) == "" || strings.TrimSpace(row.Kind) == "" {
 			return fmt.Errorf("model diagnostics: stage and kind are required")
 		}
@@ -58,6 +64,9 @@ func Append(runDir string, rows []Row) error {
 		}
 		buffer.Write(encoded)
 		buffer.WriteByte('\n')
+	}
+	if buffer.Len() == 0 {
+		return nil
 	}
 	writer, err := debugdump.OpenWriter(runDir)
 	if err != nil {

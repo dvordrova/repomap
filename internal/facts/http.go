@@ -9,6 +9,7 @@ import (
 var routeSelectors = map[string]struct{}{
 	"get": {}, "post": {}, "put": {}, "patch": {}, "delete": {}, "head": {}, "options": {},
 	"route": {}, "mount": {}, "handle": {}, "handlefunc": {}, "method": {}, "websocket": {}, "api_route": {},
+	"path": {},
 }
 
 var callSelectors = map[string]struct{}{
@@ -96,7 +97,8 @@ func containsFold(values []string, wanted string) bool {
 }
 
 func (b *builder) addHTTP(target *targetContext) {
-	prefixes := target.prefixesByObject()
+	originsByValue := target.routeValueOrigins()
+	prefixes := target.prefixesByObject(originsByValue)
 	for _, relation := range target.input.Index.Relations {
 		for _, pattern := range relation.Patterns {
 			selector := strings.ToLower(pattern.Selector)
@@ -106,6 +108,7 @@ func (b *builder) addHTTP(target *targetContext) {
 				continue
 			}
 			origins := target.externalOrigins(relation, pattern)
+			origins = append(origins, originsByValue[pattern.ReceiverID]...)
 			for _, id := range pattern.ReceiverOriginIDs {
 				if origin, ok := target.inheritedMethodOrigin(id, pattern.Selector); ok {
 					origins = append(origins, origin)
@@ -114,7 +117,15 @@ func (b *builder) addHTTP(target *targetContext) {
 			side := classifyHTTP(origins, pattern.Form, selector)
 			switch {
 			case side.server && isRoute:
-				b.addRoute(target, relation, pattern, selector, prefixes[relation.FromID])
+				// Mount registrations describe a router, not another handler.
+				if target.isRouterMount(relation, pattern, origins) {
+					continue
+				}
+				owner := pattern.ReceiverID
+				if len(prefixes[owner]) == 0 {
+					owner = relation.FromID
+				}
+				b.addRoute(target, relation, pattern, selector, prefixes[owner])
 			case side.client && isCall && pattern.Form == programindex.PatternCall:
 				b.addCall(target, relation, pattern, selector)
 			}
@@ -157,9 +168,15 @@ func (b *builder) addRoute(
 	relation programindex.Relation,
 	pattern programindex.RelationPattern,
 	selector string,
-	prefixes []string,
+	prefixes []routePrefix,
 ) {
 	method, pathValue, templated, ok := routeMethodAndPath(pattern, selector)
+	if selector == "path" {
+		if _, django := packageMatches(classifyHTTP(target.externalOrigins(relation, pattern), pattern.Form, selector).pkgPath, "django"); !django {
+			return
+		}
+		pathValue = "/" + strings.TrimPrefix(pathValue, "/")
+	}
 	if !ok || !strings.HasPrefix(pathValue, "/") {
 		return
 	}
@@ -172,15 +189,15 @@ func (b *builder) addRoute(
 	if templated {
 		resolution = ResolutionPossible
 	}
-	paths := []string{pathValue}
+	paths := []routePrefix{{path: pathValue}}
 	if len(prefixes) > 0 {
 		paths = paths[:0]
 		for _, prefix := range prefixes {
-			paths = append(paths, joinRoutePath(prefix, pathValue))
+			paths = append(paths, routePrefix{path: joinRoutePath(prefix.path, pathValue), evidence: prefix.evidence})
 		}
 	}
-	for _, path := range paths {
-		if !b.once(strings.Join([]string{string(KindHTTPRoute), anchor.String(), method, path}, "\x00")) {
+	for _, resolved := range paths {
+		if !b.once(strings.Join([]string{string(KindHTTPRoute), anchor.String(), method, resolved.path}, "\x00")) {
 			continue
 		}
 		b.add(target.root, Fact{
@@ -188,11 +205,12 @@ func (b *builder) addRoute(
 			TargetID:   target.target.ID,
 			Anchor:     anchor,
 			Method:     method,
-			Path:       path,
+			Path:       resolved.path,
 			Symbol:     symbol,
 			ObjectID:   objectID,
 			Resolution: resolution,
-		}, method, path)
+			Evidence:   resolved.evidence,
+		}, method, resolved.path)
 	}
 }
 

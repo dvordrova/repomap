@@ -427,7 +427,11 @@ func (builder *pageBuilder) questionStepMapLinks(stop atlas.QuestionStop) []page
 	// Preserve every known owner/membership; same names or nearby lines do not
 	// establish group membership. Documentation remains a source-only stop.
 	var links []pageQuestionMapLink
-	for _, index := range builder.indexes {
+	indexes := builder.indexes
+	if builder.overviewIndexes != nil {
+		indexes = builder.overviewIndexes
+	}
+	for _, index := range indexes {
 		section := builder.byProgram[index.Target.ID]
 		if section == nil || section.Map == nil {
 			continue

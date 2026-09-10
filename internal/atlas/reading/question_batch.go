@@ -98,6 +98,10 @@ func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionC
 		}
 		if exchange.Err == nil && len(exchange.Outcome.Value.Rejections) > 0 {
 			rejected := 0
+			journaled := false
+			if observer, ok := r.opts.Executor.Observer.(interface{ JournalsRejections() bool }); ok {
+				journaled = observer.JournalsRejections()
+			}
 			var details []string
 			for _, rejection := range exchange.Outcome.Value.Rejections {
 				for q, ref := range exchange.QuestionRefs {
@@ -106,7 +110,7 @@ func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionC
 					}
 					rejected++
 					details = append(details, "question: "+questions[exchange.QuestionIndexes[q]], "reason: "+rejection.Reason)
-					r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageQuestion, Kind: "question_rejected", Count: rejection.Chunks, Reason: rejection.Reason,
+					r.rejected = append(r.rejected, modeldiag.Row{AlreadyJournaled: journaled, Stage: lines.StageQuestion, Kind: "question_rejected", Count: rejection.Chunks, Reason: rejection.Reason,
 						ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(table.Window{Stage: lines.StageQuestion, Index: i}, "response.ref.json"))), Samples: []string{rejection.Question}})
 				}
 			}

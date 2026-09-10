@@ -29,6 +29,13 @@ Explain the component's work, not generic API mechanics such as "Do performs
 HTTP". If a shared helper has several supported uses, describe those uses with
 their qualifications; if its purpose remains unclear, say what is still unknown.
 These clues do not create an exchange, an address or an unobserved call chain.
+When `destination_chains` is supplied, it records locally followed argument
+expressions and their source sites. `address` may be an exact literal or a
+configuration expression such as `{--proxy-endpoint}/hello`, not a deployed host.
+`unresolved_expression` is the source frontier where tracing stopped. Each
+`source_chain` has its own callable name, repository path and line; different
+chains at one transport call are different uses of the same adapter. Do not
+merge them by a similar role or infer an address from nearby documentation.
 
 Fill only the columns requested by `fill`:
 
@@ -53,9 +60,10 @@ Fill only the columns requested by `fill`:
   `configuration` for setting up a remote client/exporter whose exchanges occur
   through its library. A configured relationship does not assert that the
   constructor itself sends the business payload.
-- `address`, when requested: an `a*` ref only when that supplied value identifies
-  this destination. Use `unknown` for runtime variables, unavailable addresses,
-  or values that name something else. Restore no missing expression. A method
+- `address`, when requested: one supplied address ref only when that value
+  identifies this destination. A supplied configuration expression is a valid
+  source expression even though its deployed value is unknown. Use `unknown`
+  when the source value is unavailable or names something else. Restore no missing expression. A method
   name, payload, SQL text or arbitrary string is not an address. A literal from
   another call in the owner is usable only when the observations connect it to
   this client/configuration; lexical proximity alone does not connect values.

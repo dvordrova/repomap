@@ -40,6 +40,9 @@ func (c *EvidenceCatalog) Call(call atlas.SymbolCall) any {
 	// possible dispatch; other candidates may remain external or unresolved.
 	hasRepositoryCallee := len(call.CalleeIDs) > 0
 	call.CalleeIDs = nil
+	call.SourceArguments = nil // Read by destination traversal with source anchors.
+	call.API = nil // Exact package authority is used by local mechanism matching.
+	call.ReceiverValue, call.ResultValue = nil, nil
 	call.Column = 0 // The exact native identity stays local.
 	refs := c.references(call.Evidence)
 	call.Evidence = nil
@@ -69,6 +72,13 @@ func (c *EvidenceCatalog) Bindings(bindings []atlas.SymbolBinding) any {
 	for _, binding := range bindings {
 		refs := c.references(binding.Evidence)
 		rows = append(rows, []any{binding.From, binding.To, binding.Detail, binding.Invocation, binding.Resolution, binding.Path, binding.Line, binding.Arguments, refs})
+	}
+	if len(rows) == 1 {
+		binding := make(map[string]any, len(columns))
+		for i, name := range columns {
+			binding[name] = rows[0][i]
+		}
+		return binding
 	}
 	result := BindingTable{Note: "Each row is one binding. Read values in columns order; shared fields apply to every row. Row numbers start at 1.", Shared: make(map[string]any), Rows: make([][]any, len(rows))}
 	for j, name := range columns {

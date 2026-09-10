@@ -81,7 +81,14 @@ type parsedSource struct {
 	SyntaxError     bool             `json:"syntax_error"`
 	Bindings        []parsedBinding  `json:"bindings"`
 	Guards          []int            `json:"guards"`
+	Launches        []parsedLaunch   `json:"launches"`
 	RelativeImports []RelativeImport `json:"relative_imports"`
+}
+
+type parsedLaunch struct {
+	Name  string `json:"name"`
+	Line  int    `json:"line"`
+	Guard int    `json:"guard"`
 }
 
 type parsedBinding struct {
@@ -107,6 +114,7 @@ type projectBuild struct {
 	moduleFiles       map[string][]Module
 	bindings          map[string]map[string]parsedBinding
 	guards            map[string][]int
+	launches          map[string][]parsedLaunch
 	shebangs          map[string]int
 	syntaxErrors      map[string]bool
 	dynamicSetup      []string
@@ -416,7 +424,7 @@ func buildCatalog(parsedFiles, launcherFiles []inputFile, parsed helperResponse)
 	for dir := range projectDirs {
 		projects[dir] = &projectBuild{
 			dir: dir, moduleFiles: make(map[string][]Module), bindings: make(map[string]map[string]parsedBinding),
-			guards: make(map[string][]int), shebangs: make(map[string]int), syntaxErrors: make(map[string]bool),
+			guards: make(map[string][]int), launches: make(map[string][]parsedLaunch), shebangs: make(map[string]int), syntaxErrors: make(map[string]bool),
 			fileIDs: fileIDs,
 		}
 	}
@@ -496,6 +504,7 @@ func buildCatalog(parsedFiles, launcherFiles []inputFile, parsed helperResponse)
 			}
 			owner.bindings[filePath] = bindings
 			owner.guards[filePath] = canonicalInts(source.Guards)
+			owner.launches[filePath] = source.Launches
 		}
 	}
 
@@ -928,12 +937,19 @@ func resolveEntrypointRoot(project *projectBuild, moduleName, qualname string, s
 		}
 		return Root{Kind: RootBoundObject, Module: moduleName, Qualname: binding.Name, Path: module.Path, Line: binding.Line}, 1
 	case "alias":
-		if len(parts) != 1 {
-			return Root{}, 0
-		}
 		targetModule, ok := resolveAliasModule(module, binding)
 		if !ok || !validModulePart(binding.Target) {
 			return Root{}, 0
+		}
+		if len(parts) > 1 {
+			// An explicitly imported package attribute can name a submodule.
+			// A local binding with that name wins over a sibling module.
+			if sources := project.moduleFiles[targetModule]; len(sources) != 1 {
+				return Root{}, 0
+			} else if _, bound := project.bindings[sources[0].Path][binding.Target]; bound {
+				return Root{}, 0
+			}
+			return resolveEntrypointRoot(project, targetModule+"."+binding.Target, strings.Join(parts[1:], "."), seen)
 		}
 		return resolveEntrypointRoot(project, targetModule, binding.Target, seen)
 	case "alias_module":
@@ -978,6 +994,24 @@ func resolveAliasModule(current Module, alias parsedBinding) (string, bool) {
 	return value, validModule(value)
 }
 
+func (project *projectBuild) launchCalls(module Module, guards []int, moduleLaunch bool) []LaunchCall {
+	var calls []LaunchCall
+	for _, call := range project.launches[module.Path] {
+		if call.Line < 1 || (!moduleLaunch && (call.Guard == 0 || len(guards) != 1 || guards[0] != call.Guard)) {
+			continue
+		}
+		local, bound := project.bindings[module.Path][strings.Split(call.Name, ".")[0]]
+		if !bound || local.Line >= call.Line {
+			continue
+		}
+		root, count := resolveEntrypointRoot(project, module.Name, call.Name, nil)
+		if count == 1 && root.Kind == RootCallable {
+			calls = append(calls, LaunchCall{Path: module.Path, Line: call.Line, Entry: root})
+		}
+	}
+	return calls
+}
+
 func buildModuleTargets(project *projectBuild, builds map[string]*targetBuild) {
 	for _, module := range project.modules {
 		if project.syntaxErrors[module.Path] {
@@ -998,8 +1032,9 @@ func buildModuleTargets(project *projectBuild, builds map[string]*targetBuild) {
 			target := Target{
 				Version: TargetVersion, Kind: KindExecutable, Selector: selector, DisplayName: "python -m " + name,
 				ProjectDir: project.dir, SourceRoots: cloneStrings(project.sourceRoots), Modules: cloneModules(project.modules),
-				Roots: []Root{{Kind: RootModule, Module: name, Path: module.Path, Line: 1}},
-				Basis: basis,
+				Roots:       []Root{{Kind: RootModule, Module: name, Path: module.Path, Line: 1}},
+				LaunchCalls: project.launchCalls(module, guards, true),
+				Basis:       basis,
 			}
 			builds[selector] = &targetBuild{target: target}
 			continue
@@ -1018,7 +1053,7 @@ func buildModuleTargets(project *projectBuild, builds map[string]*targetBuild) {
 			builds[selector] = &targetBuild{target: Target{
 				Version: TargetVersion, Kind: KindExecutable, Selector: selector, DisplayName: module.Name,
 				ProjectDir: project.dir, SourceRoots: cloneStrings(project.sourceRoots), Modules: cloneModules(project.modules),
-				Roots: roots, Basis: basis,
+				Roots: roots, Basis: basis, LaunchCalls: project.launchCalls(module, guards, false),
 			}}
 			continue
 		}
@@ -1125,6 +1160,7 @@ func canonicalizeTarget(target *Target) {
 	target.SourceRoots = compactStrings(target.SourceRoots)
 	sort.Slice(target.Modules, func(i, j int) bool { return moduleLess(target.Modules[i], target.Modules[j]) })
 	sort.Slice(target.Roots, func(i, j int) bool { return rootLess(target.Roots[i], target.Roots[j]) })
+	sort.Slice(target.LaunchCalls, func(i, j int) bool { return launchCallLess(target.LaunchCalls[i], target.LaunchCalls[j]) })
 	sort.Slice(target.Packages, func(i, j int) bool { return packageLess(target.Packages[i], target.Packages[j]) })
 	sort.Slice(target.Basis, func(i, j int) bool { return basisLess(target.Basis[i], target.Basis[j]) })
 	target.Basis = compactBasis(target.Basis)
@@ -1308,4 +1344,14 @@ func launchOmissions(files []inputFile) []Omission {
 		}
 	}
 	return omissions
+}
+
+func launchCallLess(a, b LaunchCall) bool {
+	if a.Path != b.Path {
+		return a.Path < b.Path
+	}
+	if a.Line != b.Line {
+		return a.Line < b.Line
+	}
+	return rootLess(a.Entry, b.Entry)
 }

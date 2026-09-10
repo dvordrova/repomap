@@ -197,7 +197,7 @@ func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 	return llm.Call[[]Entry]{
 		State:  []byte(`{"stage":"glossary","version":4}`),
 		Prompt: llm.Prompt{System: reducePrompt, User: string(user), ResponseFormatJSON: true},
-		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
+		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: glossaryOutputTokens},
 		DecodeValidate: func(raw []byte) ([]Entry, error) {
 			var response struct {
 				Assignments []struct {

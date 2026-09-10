@@ -11,6 +11,7 @@
     "wouter": "3.7.1"
   },
   "devDependencies": {
+	"vitest": "4.1.10",
     "@types/express": "4.17.21"
   }
 }

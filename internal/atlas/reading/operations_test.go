@@ -82,6 +82,70 @@ func TestOperationRestoresOriginalHTTPPathWithoutTrimmingOrTranslation(t *testin
 	t.Fatal("HTTP operation disappeared from atlas")
 }
 
+func TestNativeHTTPRouteSuppliesOperationNameWithoutCallbackBinding(t *testing.T) {
+	graph := withSymbols(t, twoTargetGraph(t))
+	want := "/api/v1/고객/%20status"
+	for _, place := range graph.Places {
+		if place.Symbol == nil || place.Symbol.Decl.Name != "Op01" {
+			continue
+		}
+		graph.Places = append(graph.Places, atlas.Place{
+			ID: "bnd:customer", Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: 9, Column: 3,
+			Parent: place.Parent, TargetIDs: place.TargetIDs,
+			Boundary: &atlas.BoundaryFacts{SubjectID: place.ID, Source: "fact", FactID: "native:customer",
+				GivenKind: atlas.BoundaryHTTPServer, Direction: atlas.DirectionIn, Method: "GET", Values: []string{want}},
+		})
+		break
+	}
+	atlas.SortPlaces(graph.Places)
+	provider := &registeredHTTPProvider{}
+	opts := twoTargetOptions(t, graph, &provider.tableProvider)
+	opts.Provider, opts.Through = provider, lines.StageJoints
+	result, err := Read(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range result.Atlas.Targets {
+		for _, box := range target.Boxes {
+			for _, file := range box.Files {
+				for _, symbol := range file.Symbols {
+					if symbol.Name == "Op01" {
+						if symbol.Operation != "GET "+want {
+							t.Fatalf("native composed path was lost: %q", symbol.Operation)
+						}
+						return
+					}
+				}
+			}
+		}
+	}
+	t.Fatal("native-route operation disappeared")
+}
+
+func TestNativeHTTPRouteCatalogueUsesSubjectIdentityAndRetainsMounts(t *testing.T) {
+	first := atlas.Place{ID: "route:first", Path: "routes.py", LineNo: 11, Column: 2,
+		Boundary: &atlas.BoundaryFacts{Source: "fact", SubjectID: "handler:first", Caller: "same_name", GivenKind: atlas.BoundaryHTTPServer,
+			Direction: atlas.DirectionIn, Method: "GET", Values: []string{"/api/one", "/api/two"}}}
+	second := first
+	second.ID, second.Boundary = "route:second", &atlas.BoundaryFacts{Source: "fact", SubjectID: "handler:second", Caller: "same_name",
+		GivenKind: atlas.BoundaryHTTPServer, Direction: atlas.DirectionIn, Method: "POST", Values: []string{"/other"}}
+	listener := first
+	listener.ID, listener.Boundary = "listener", &atlas.BoundaryFacts{Source: "fact", SubjectID: "handler:first", GivenKind: atlas.BoundaryHTTPServer,
+		Direction: atlas.DirectionIn, Values: []string{":8080"}}
+	routes := operationNativeRoutes(atlas.Graph{Places: []atlas.Place{first, second, listener}})
+	if len(routes["handler:first"]) != 1 || len(routes["handler:second"]) != 1 {
+		t.Fatalf("route identity confused with name/listener: %+v", routes)
+	}
+	fields, names := operationRegisteredNames([]atlas.SymbolBinding{{Arguments: []atlas.RegistrationArgument{{Kind: "literal_string", Value: "/suffix"}}}}, routes["handler:first"]...)
+	if len(names) != 2 || names["p1"] != "/api/one" || names["p2"] != "/api/two" {
+		t.Fatalf("mounts were replaced by callback suffix: %+v", names)
+	}
+	encoded, _ := json.Marshal(fields)
+	if !strings.Contains(string(encoded), `"column":2`) || strings.Contains(string(encoded), "/other") || strings.Contains(string(encoded), "/suffix") {
+		t.Fatalf("native catalogue lost source or mixed owners: %s", encoded)
+	}
+}
+
 // Same names are common across transports, client adapters and stores. Only
 // the native caller identity may select a declaration, and expansion must not
 // recursively copy the entire program into every operation row.

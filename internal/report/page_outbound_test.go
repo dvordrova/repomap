@@ -12,9 +12,40 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
+
+func TestOutboundSourceUsesDoNotHideBehindOneSelectedAddress(t *testing.T) {
+	index := groupindex.Index{Target: programindex.Target{ID: "service"}, Outbound: []groupindex.OutboundCall{{
+		ID: "shared-send", Kind: "http_client", Source: "model", Address: "https://prices.example",
+		Uses: []atlas.DestinationUse{
+			{Address: "https://prices.example", Steps: []atlas.DestinationStep{{Name: "GetPrices", Path: "prices.go", Line: 12, Column: 3}}},
+			{Address: "https://audit.example", Steps: []atlas.DestinationStep{{Name: "WriteAudit", Path: "audit.go", Line: 22, Column: 3}}},
+		},
+	}}}
+	section := &pageSection{ID: "service", programTargetID: "service"}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
+	builder.fillSectionOutbound(section)
+	row := section.Outbound[0]
+	if row.Address != "" || row.DestinationCount != 2 || len(row.Uses) != 2 || row.Uses[1].Steps[0].Name != "WriteAudit" {
+		t.Fatalf("shared helper lost a distinct source use: %+v", row)
+	}
+	parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(Russian, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := parsed.ExecuteTemplate(&out, "outbound-row", row); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"https://prices.example", "https://audit.example", "GetPrices", "WriteAudit", "prices.go:12", "audit.go:22"} {
+		if !strings.Contains(out.String(), text) {
+			t.Fatalf("destination disclosure lost %q", text)
+		}
+	}
+}
 
 func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing.T) {
 	const address = "https://거래소.example/가격/%ED%95%9C?시장=KRW&limit=10"
@@ -50,8 +81,8 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 	}
 	page.catalog.SHA256 = displayCatalogDigest(page.catalog.Entries)
 	wanted := map[string]string{
-		"Pricing service": "Сервис котировок", "Reads the latest market prices.": "Получает свежие рыночные цены.",
-		"Trace collector": "Приёмник трассировок", "Configures trace export.": "Настраивает экспорт трассировок.",
+		"Reads the latest market prices.": "Получает свежие рыночные цены.",
+		"Configures trace export.":        "Настраивает экспорт трассировок.",
 	}
 	translations := DisplayTranslations{Version: DisplayTextVersion, Language: Russian, CatalogSHA256: page.catalog.SHA256}
 	for _, entry := range page.catalog.Entries {
@@ -61,13 +92,13 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 		}
 		translations.Entries = append(translations.Entries, DisplayTranslationEntry{Ref: entry.Ref, Text: translated})
 	}
-	if len(page.catalog.Entries) != 4 {
+	if len(page.catalog.Entries) != 2 {
 		t.Fatalf("shared destination and purpose did not retain their display bindings: %+v", page.catalog)
 	}
 	if err := page.applyDisplay(RenderOptions{Language: Russian, Translations: &translations}); err != nil {
 		t.Fatal(err)
 	}
-	if section.Outbound[0].Destination != "Сервис котировок" || section.Outbound[0].Address != address || section.Outbound[0].External != "가격조회.Get" {
+	if section.Outbound[0].Summary != "Получает свежие рыночные цены." || section.Outbound[0].Address != address || section.Outbound[0].External != "가격조회.Get" {
 		t.Fatalf("translation changed source values or lost destination prose: %+v", section.Outbound[0])
 	}
 	parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(Russian, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
@@ -91,8 +122,8 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 	if !found || strings.Count(preview, "data-integration-item") != 5 || strings.Count(rest, "data-integration-item") != 2 {
 		t.Fatal("first five/full disclosure lost or duplicated accepted communication records")
 	}
-	if !strings.Contains(html, `data-display-ref="`+section.Outbound[0].DestinationRef+`"`) || !strings.Contains(html, `data-display-ref="`+section.Outbound[0].SummaryRef+`"`) {
-		t.Fatal("rendered destination or purpose lost its exact display binding")
+	if !strings.Contains(html, `data-display-ref="`+section.Outbound[0].SummaryRef+`"`) {
+		t.Fatal("rendered purpose lost its exact display binding")
 	}
 	if slices.Contains(sectionCoverage(section), "External communication") {
 		t.Fatal("outbound calls required a dependency lane to count as observed")

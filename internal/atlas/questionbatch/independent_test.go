@@ -2,6 +2,7 @@ package questionbatch
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -9,6 +10,49 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/llm"
 )
+
+func TestRepeatedRelevancePreservesAllHintsWithoutFirstWins(t *testing.T) {
+	data, err := prepareCatalogue(testInput(1, 2), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selections := []Selection{
+		{Row: "r1", Anchors: []string{"a2"}, Relevance: "context", Why: "Original setup instructions."},
+		{Row: "r1", Anchors: []string{"a1"}, Relevance: "context", Why: "Count field suggests response shape.\n\nIt does not prove runtime values."},
+	}
+	var previous Response
+	for i := range 2 {
+		if i == 1 {
+			selections[0], selections[1] = selections[1], selections[0]
+		}
+		raw, _ := json.Marshal(Response{Questions: []Decision{
+			{Key: "q1", Selections: append(append([]Selection{}, selections...), selections[0])},
+			{Key: "q2", Selections: []Selection{}},
+		}})
+		result, err := data.decode([]int{0}, data.questions, raw)
+		if err != nil || len(result.Questions) != 2 || len(result.Rejections) != 0 {
+			t.Fatalf("compatible hints refused a question: %+v / %v", result, err)
+		}
+		selection := result.Questions[0].Selections[0]
+		if !reflect.DeepEqual(selection.Anchors, []string{"a1", "a2"}) || selection.Why != "Count field suggests response shape.\n\nIt does not prove runtime values.\n\nOriginal setup instructions." {
+			t.Fatalf("original anchors or qualified hints lost: %+v", selection)
+		}
+		if i == 1 && !reflect.DeepEqual(previous, result) {
+			t.Fatal("response ordering changed the normalized decision")
+		}
+		previous = result
+	}
+}
+
+func TestRetrievalPlansItsOwnOutputAllowance(t *testing.T) {
+	provider := &testProvider{}
+	if _, err := Run(t.Context(), llm.Executor{}, provider, testInput(3, 2), Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.requests) != 1 || provider.requests[0].Limits.MaxOutputTokens != 16000 {
+		t.Fatalf("retrieval did not prepare its own output allowance: %+v", provider.requests)
+	}
+}
 
 type rawQuestionProvider struct {
 	*testProvider

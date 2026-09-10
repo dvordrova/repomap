@@ -8,6 +8,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 func TestBoundaryReviewOwnsRuntimeRelationshipsAndKeepsIndependentRows(t *testing.T) {
@@ -21,6 +22,15 @@ func TestBoundaryReviewOwnsRuntimeRelationshipsAndKeepsIndependentRows(t *testin
 	}
 	send := owner("send", call("http.NewRequestWithContext", 20, 9, address), call("http.Client.Do", 21, 11), call("time.Sleep", 21, 44))
 	exporter := owner("exporter", call("otlptracehttp.New", 12, 4), call("otlptracehttp.WithEndpoint", 12, 30, "collector.internal:4318"))
+	send.Symbol.Calls[0].API = &atlas.CallAPI{Package: "net/http", Name: "NewRequestWithContext"}
+	send.Symbol.Calls[0].SourceArguments = []atlas.SourceArgument{{Position: 3, Origin: &sourcevalue.Value{Kind: "literal", Text: address}}}
+	send.Symbol.Calls[1].API = &atlas.CallAPI{Package: "net/http", Receiver: "Client", Name: "Do"}
+	send.Symbol.Calls[1].SourceArguments = []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "send.go", Line: 20, Column: 9}}}}
+	const otlp = "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	exporter.Symbol.Calls[0].API = &atlas.CallAPI{Package: otlp, Name: "New"}
+	exporter.Symbol.Calls[0].SourceArguments = []atlas.SourceArgument{{Position: 2, Origin: &sourcevalue.Value{Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "exporter.go", Line: 12, Column: 30}}}}
+	exporter.Symbol.Calls[1].API = &atlas.CallAPI{Package: otlp, Name: "WithEndpoint"}
+	exporter.Symbol.Calls[1].SourceArguments = []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: "collector.internal:4318"}}}
 	setup := owner("setup", call("http.NewRequest", 12, 7, "https://unused.example"))
 	unknown := owner("unknown", call("Opaque.Apply", 12, 5))
 	bad := owner("bad", call("http.Client.Do", 12, 8))

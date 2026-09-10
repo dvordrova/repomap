@@ -39,6 +39,9 @@ func (builder *pageBuilder) fillSectionOperations(section *pageSection) {
 		}
 	}
 	for _, fact := range routeFacts {
+		if fact.Anchor != nil && builder.testPaths[fact.Anchor.Path] {
+			continue
+		}
 		routes = append(routes, byFact[fact.ID])
 	}
 	section.RouteGroups = groupRouteRows(routes)

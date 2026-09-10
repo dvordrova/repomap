@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	CatalogVersion        = 5
-	TargetVersion         = 5
+	CatalogVersion        = 6
+	TargetVersion         = 6
 	TargetIdentityVersion = 3
 	// AdvisoryCatalogBytes is a diagnostic usual size for the complete sealed
 	// in-memory target catalog. Crossing it never narrows or rejects targets.
@@ -152,6 +152,15 @@ type Omission struct {
 	Label string       `json:"label,omitempty"`
 }
 
+// LaunchCall is a direct, argument-free call at a native launch site, resolved
+// through explicit imports to its declaration. It is evidence for portfolio
+// placement, not a replacement execution root or an observed runtime call.
+type LaunchCall struct {
+	Path  string `json:"path"`
+	Line  int    `json:"line"`
+	Entry Root   `json:"entry"`
+}
+
 // Target is a sealed Python target. Executables have exact Roots; libraries
 // have an exact discovered top-level Packages inventory.
 type Target struct {
@@ -168,6 +177,7 @@ type Target struct {
 	AnchorFileRef    corpus.FileID        `json:"anchor_file_ref"`
 	Modules          []Module             `json:"modules"`
 	Roots            []Root               `json:"roots,omitempty"`
+	LaunchCalls      []LaunchCall         `json:"launch_calls,omitempty"`
 	Packages         []Package            `json:"packages,omitempty"`
 	Basis            []Basis              `json:"basis"`
 	DeclaredPackages []PackageDeclaration `json:"declared_packages,omitempty"`
@@ -202,6 +212,7 @@ func (target Target) Snapshot() Target {
 	copyTarget.SourceRefs = append([]corpus.FileID(nil), target.SourceRefs...)
 	copyTarget.Modules = append([]Module(nil), target.Modules...)
 	copyTarget.Roots = append([]Root(nil), target.Roots...)
+	copyTarget.LaunchCalls = append([]LaunchCall(nil), target.LaunchCalls...)
 	copyTarget.Packages = append([]Package(nil), target.Packages...)
 	copyTarget.Basis = append([]Basis(nil), target.Basis...)
 	copyTarget.DeclaredPackages = cloneDeclarations(target.DeclaredPackages)
@@ -272,6 +283,13 @@ func (target Target) Validate() error {
 	rootPaths := make(map[string]bool, len(target.Roots))
 	for _, root := range target.Roots {
 		rootPaths[root.Path] = true
+	}
+	for i, call := range target.LaunchCalls {
+		if !rootPaths[call.Path] || call.Line < 1 || call.Entry.Kind != RootCallable ||
+			validateRoots([]Root{call.Entry}) != nil || validateRootsAgainstModules([]Root{call.Entry}, target.Modules) != nil ||
+			(i > 0 && !launchCallLess(target.LaunchCalls[i-1], call)) {
+			return fmt.Errorf("python target: invalid launch call")
+		}
 	}
 	for i, imported := range target.RelativeImports {
 		if !rootPaths[imported.Path] || imported.Line < 1 || imported.Level < 1 ||
@@ -518,6 +536,7 @@ func NewCatalog(entries []Target, omissions []Omission) (Catalog, error) {
 		target.SourceRefs = append([]corpus.FileID(nil), input.SourceRefs...)
 		target.Modules = append([]Module(nil), input.Modules...)
 		target.Roots = append([]Root(nil), input.Roots...)
+		target.LaunchCalls = append([]LaunchCall(nil), input.LaunchCalls...)
 		target.Packages = append([]Package(nil), input.Packages...)
 		target.Basis = append([]Basis(nil), input.Basis...)
 		target.DeclaredPackages = cloneDeclarations(input.DeclaredPackages)
@@ -969,6 +988,7 @@ func cloneTarget(input Target) Target {
 	target.SourceRefs = append([]corpus.FileID(nil), input.SourceRefs...)
 	target.Modules = cloneModules(input.Modules)
 	target.Roots = append([]Root(nil), input.Roots...)
+	target.LaunchCalls = append([]LaunchCall(nil), input.LaunchCalls...)
 	target.Packages = append([]Package(nil), input.Packages...)
 	target.Basis = append([]Basis(nil), input.Basis...)
 	target.DeclaredPackages = cloneDeclarations(input.DeclaredPackages)

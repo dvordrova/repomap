@@ -829,7 +829,9 @@ func (r *reader) atlas(files int) atlas.Atlas {
 		}
 	}
 	for _, target := range r.opts.Targets {
-		result.Targets = append(result.Targets, r.target(target))
+		projected := r.target(target)
+		projected.Data = r.dataForTarget(target.ID)
+		result.Targets = append(result.Targets, projected)
 	}
 	sort.Slice(result.Targets, func(i, j int) bool { return result.Targets[i].Name < result.Targets[j].Name })
 	byKind := make(map[string]*atlas.Diagnostic)
@@ -939,7 +941,14 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			continue
 		}
 		facts := state.place.Boundary
+		var uses []atlas.DestinationUse
+		for _, use := range state.uses {
+			if contains(use.TargetIDs, meta.ID) {
+				uses = append(uses, cloneDestinationUse(use))
+			}
+		}
 		target.Boundaries = append(target.Boundaries, atlas.Boundary{
+			Uses:     uses,
 			ObjectID: facts.ObjectID,
 			ID:       state.place.ID, BoxID: boxID, Path: state.place.Path, LineNo: state.place.LineNo, Column: state.place.Column,
 			Caller: facts.Caller, Direction: facts.Direction, Kind: state.kind, External: facts.External, Method: facts.Method,

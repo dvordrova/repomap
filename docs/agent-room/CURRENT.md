@@ -252,12 +252,12 @@ callee candidate exists, preserving possible or unresolved dispatch; this is not
 a local rejection rule. Standard-library transports remain eligible. No package
 blacklist, API catalogue, semantic deduplication or new reading stage is added.
 Accepted observations keep their source column and native fact provenance through
-atlas v5, GroupsIndex v9 and report v88. They no longer require an outgoing-only
-group or a key-symbol caption. The entrance displays participant, purpose,
-known address, configuration/dispatch basis and source link. Its count describes
+atlas v6, GroupsIndex v10 and report v89. They do not require an outgoing-only
+group or a key-symbol caption. The entrance displays protocol and known address,
+with source chains and purpose under disclosure. Its count describes
 communication observations, not unique systems. Native known HTTP addresses
-survive missing model descriptions; unavailable dynamic address expressions are
-not reconstructed by the report. Graph v10 and saved reading input v11 stay unchanged.
+survive missing model descriptions. Source expression traversal belongs to graph
+v11 / saved reading input v12; the report never reconstructs unknown addresses.
 
 Opening an area keeps a frame containing its parts and keeps connected peers
 outside. Boundary relations fold into one visible arrow per direction with all
@@ -2030,49 +2030,32 @@ catalog has addressable entries; following a term reveals its page even through
 an existing search filter. Name-only guesses and another type at the same source
 line cannot supply an answer's term definition.
 
-On 2026-09-08 the owner extended this into one shared glossary: collect terms
-alongside analytical cube results, reduce them, bind them in the backend report,
-then translate and decorate visible text. `internal/terminology` owns the
-embedded adjunct prompt and closed source contract. Source-bearing analytical
-calls return `{result, terms}` in the same request. Each owning stage supplies
-its actual JSON `ResponseExample`; shared preparation applies optional metadata
-before emitting the final response shape. Stage prose describes the result's
-fields without a parallel output example or root-format instruction. With
-source refs, the catalogue carries the sole `result/terms` example; without
-them, preparation emits the direct owner example. Table examples derive from
-the current column contract, including the current mode, so batch neighbours
-cannot change a row's memo identity. Calls with no usable source refs acquire
-no terminology prompt or response protocol. Replay bypasses preparation and
-preserves its exact saved request, and the existing catalogue contract remains
-readable without rewriting old responses.
+The owner-approved 2026-09-10 correction separates glossary generation from
+analytical completions. `internal/terminology` collects only accepted prose and
+its original source scope across the ordinary run. Analytical requests return
+the direct owning response example; they do not ask for `terms` or a
+`result/terms` wrapper. Table examples depend only on their column contract and
+mode. This removes the competing completion protocol and prevents optional
+terminology from consuming a Learn or answer completion.
 
-A term is a name and explanation, with its closed source refs restored locally
-and the accepted request plus result row retained. It must occur in the computed answer and
-have a valid source. Go finds exact occurrences and row scopes; the model does
-not enumerate input declarations or construct JSON Pointers. Unicode script
-boundaries include names followed by Korean particles without splitting Latin
-identifiers or combining marks. Domain answers and optional terminology are
-validated independently. A bad or absent term never rejects a correct answer;
-rejected metadata is recorded separately in the existing journal and never
-enters the glossary. One parsed response also serves memo-row restoration,
-which only collects metadata for accepted rows and their original source scope.
-Exact raw exchanges remain the cache/replay authority, including a domain-accepted
-response whose optional terms were refused. Provider state remains the base
-transport state so exact saved-byte replay refreshes the same cache.
+Separate aggregate glossary requests read complete accepted prose records and
+closed source refs. Generation and reduction each request at most 8,000 output
+tokens, subject to the configured client ceiling. Preparation begins with the
+complete reservoir, and actual provider preparation/resource refusals split
+complete records without an ordinary 64 KiB boundary. Definitions must occur in
+the original accepted prose and select its original sources. Go restores the
+analytical request and result row as provenance; a dictionary request is not a
+new source for the analytical claim. Refused analytical rows contribute nothing,
+including during memo reuse. Unicode occurrence checks retain the existing
+identifier/script boundaries.
 
-Two real PyKrx Types responses placed optional `terms` inside `result` despite
-the explicit outer-sibling instruction. The adapter discards that one misplaced
-metadata field only when the owning answer example does not declare it, records
-`terminology_metadata_rejected`, and validates the remaining domain normally.
-Those definitions never enter the glossary. Legitimate owning `terms` fields,
-unknown domain fields and coupled assignments keep their owning contract.
-Independent atlas rows now isolate missing or invalid cells to their own row;
-unused extra fields do not reject valid neighbours. Only accepted row keys
-reach the terminology collector, including on cache reuse and memo recall.
-Raw responses, request bytes and cache identities are unchanged; this is the
-same optional-metadata boundary on live responses, warm reuse and replay.
+A glossary refusal is journaled separately and cannot invalidate an accepted
+analytical answer. Exact raw requests and responses remain the cache/replay
+authority. Old published runs remain snapshots; this does not rewrite their
+optional inline terms or claim their former defects never happened. Native code
+concepts retain their existing source-backed definitions.
 
-The ordinary run shares one collector across analytical stages. After analysis,
+After separate generation,
 an aggregate closed-ref reducer joins compatible domain definitions and chooses
 one original explanation. Go unions original spellings and sources and retains
 all variants and request provenance. Reduction request v4 asks for one
@@ -2108,7 +2091,7 @@ record with an exact exchange link. Domain validation retains its actual reason;
 provider failures use the existing closed error description, never raw transport
 error text. Refused responses still cannot enter the accepted response cache.
 
-Report format is v85; question readings v9 retain the accepted final-answer
+Report format is v89; question readings v9 retain the accepted final-answer
 request digest and exact result row for contextual term bindings. Domain glossary
 catalogue v3 preserves those origins through reduction without sending them to
 the provider or making them part of a semantic candidate identity. Display text
@@ -2520,11 +2503,14 @@ The final answer table requests provider-supported deliberate reasoning. On
 2026-09-07 the owner rejected the arbitrary small generation ceilings after a
 valid answer request exhausted its 8192-token reasoning/output allowance.
 Table definitions no longer carry individual 2048/4096/8192-token ceilings.
-All stages use the shared 128,000-token request envelope, subject to the configured
-client ceiling; the guidance classifier, target portfolio, documentation and
-orientation stages also no longer impose their former 32,768-token cutoffs.
-Short answers remain a prompt requirement rather than a smaller
-generation cutoff. The provider adapter encodes this reasoning preference
+The 2026-09-10 review changes only the compact decision/generation contracts:
+Learn proposal/selection and question retrieval request 16,000 output tokens;
+separate glossary generation/reduction request 8,000. Final answers retain the
+shared 128,000-token allowance. A lower configured client ceiling still applies.
+Input preparation uses the actual output reservation and complete original
+evidence; a context refusal can still occur when input alone exceeds the
+provider window, and then authorizes lossless partitioning. This does not
+promise that reducing output alone makes the former Freqtrade input fit. The provider adapter encodes this reasoning preference
 with native `thinking` on official DeepSeek and default `chat_template_kwargs`
 on compatible endpoints. Shared question retrieval also opts into reasoning;
 other tables and final display translation retain fast mode. Exact request and memo identities include the
@@ -4001,7 +3987,7 @@ PyKrx microbenchmarks reduced ProgramIndex validation allocation from 19.55 to
 14.58 MB/op and GroupsIndex from 9.64 to 7.69 MB/op with identical original
 hashes. This is not an end-to-end latency claim.
 
-ProgramIndex version 13 retains:
+ProgramIndex version 14 retains:
 
 - exact target scope and seeds;
 - objects and their stable local identities;
@@ -4318,7 +4304,7 @@ deterministic HTTP join. Target-local meaning comes from categorization and
 grouping; cross-target connections come only from repository matching over the
 complete GroupsIndex set.
 
-JSTS result v15 / helper v21 retains callable JSX attributes as anchored
+JSTS result v16 / helper v22 retains callable JSX attributes as anchored
 `passes_callback` relations with `callable_binding:jsx_attribute` invocation.
 Element and attribute names remain source observations; no event-name or
 framework allowlist assigns meaning. Compiler-confirmed function-valued
@@ -4330,7 +4316,7 @@ Calls in non-callable local value initializers belong to the enclosing callable,
 while those values retain separate receiver/argument identities. An imported
 factory does not give exact import authority to a method on its result.
 
-Go direct calls v10 / external calls v4, Python adapter v12 and JSTS helper v21
+Go direct calls v11 / external calls v5, Python adapter v13 and JSTS helper v22
 retain neutral `control_context` witnesses on the existing call pattern. Go
 uses the already loaded AST and types, Python annotates each parsed tree once
 before its target views, and JSTS walks compiler parent nodes. Loop bodies and
@@ -4347,7 +4333,7 @@ bodies, source locations and provider-row projection; Go additionally checks
 channel/select context and JSTS checks nested-package rebasing.
 
 The same native `SourceArgumentID` joins a callback to its exact registration
-arguments in graph v10 / saved reading input v11. Those anchored literal values
+arguments in graph v11 / saved reading input v12. Those anchored literal values
 enter the callback's own symbol and operation rows; another registration or
 the factory's other calls cannot supply them. Operation v16 separates HTTP
 names from descriptive labels. HTTP rows select a closed p* registration ref
@@ -4361,6 +4347,63 @@ tests check route/topic registration ownership; the reader test retains a long
 Korean path and ignores free-text `name` in an accepted HTTP row. Unknown
 registration refs reject their row only. The existing one-declaration operation
 review is not a new exhaustive per-mount endpoint inventory.
+
+The 2026-09-10 review also joins native HTTP facts to the original symbol
+place before operation review. Observed mounted paths from chi, FastAPI,
+Flask, Express and Django retain their exact source spelling and router identity;
+an unrelated same-named router supplies no prefix. Native HTTP facts remain
+visible independently of a semantic operation label. Python thread/schedule
+registrations retain the receiving call, result identity, time/field observations
+and source anchors; a later start on the same result does not become a callback
+call edge. Worker/scheduled classification still belongs to model review, with
+finite loops and lifecycle setup remaining explicit negative controls.
+
+### Source-linked destinations and data (2026-09-10 review)
+
+ProgramIndex v14 carries neutral argument, receiver and local return expressions
+from the existing Go SSA/Python AST/TypeScript compiler projection. These include
+literal text, parameter and captured owners, exact call results, concatenations,
+field/index accesses and constructor records. Unknown assignments and Go control
+joins stay explicit; extracting expressions does not execute code. Full trees
+stay in local graph v11 / saved reading input v12 rather than being copied into
+every provider call row.
+
+Destination reading traverses those existing native calls and retained owners,
+keeping each call site's arguments correlated. One helper may yield several
+source-linked destination uses; no hop or caller quota silently truncates them.
+Cycles, unresolved factory results and dynamic field values retain a frontier
+and its source. Flag/environment expressions identify configuration, not a
+known deployed address. A possible field initializer stays labelled as such.
+Only the existing boundary review assigns communication meaning. Request
+builders, local timers and imports are not locally promoted into integrations.
+Boundary uses survive atlas v6, GroupsIndex v10 and report v89. The first-screen
+row shows the protocol and address or an explicit unknown, with complete source
+chains and purpose under disclosure; a selected address never hides another use.
+
+The source facts pipeline also extracts SQL text and table declarations from
+SQL/sqlc and supported SQLAlchemy declarations. It retains source scope,
+columns, written keys, query table mentions and exact anchors. A mention is not
+an owned table, JOIN is not a foreign key, and dynamic SQL is partial. Unknown
+connection identity remains unknown. These observations enter existing entity
+sources, question evidence and the Data catalogue; native call paths can link
+an operation to a model method without proving database I/O. There is no new
+semantic graph or runtime database inspection.
+
+Target.TestSources carries exact native Go tests and authored pytest/Vitest
+configuration. Only the orientation view suppresses known test-only parts and
+edges; mixed/unknown evidence stays visible, and the complete saved graph,
+question evidence and source checks survive. This does not skip test analysis
+or assert test coverage.
+
+The same review adds exact-input row memos to joints: a row's full boundary,
+complete peers and target context determine reuse. The saved Freqtrade baseline
+contained 11,104 rows but 4,177 distinct complete row inputs, so 6,927 were repeated
+(62.4%). Its 313 prepared windows were different; the earlier estimate of 84
+identical windows was not a measurement. Native launch-call facts let portfolio
+consider the three Freqtrade wrappers as one app with three seeds, but only an
+accepted positive placement can merge them. Fresh ordinary acceptance of this
+whole review wave remains pending; local tests alone establish neither model
+quality nor a full Airflow runtime.
 
 A focused online `read --through operations` of the cumulative Go worker
 completed in 11.216 s with no refused windows. Its `time.Tick` main loop is now

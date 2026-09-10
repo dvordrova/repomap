@@ -16,10 +16,11 @@ type Extraction struct {
 }
 
 type ExtractionNode struct {
-	ID   string `json:"id"`
-	Name string `json:"name,omitempty"`
-	Path string `json:"path,omitempty"`
-	Line int    `json:"line,omitempty"`
+	Data *DataObject `json:"data,omitempty"`
+	ID   string      `json:"id"`
+	Name string      `json:"name,omitempty"`
+	Path string      `json:"path,omitempty"`
+	Line int         `json:"line,omitempty"`
 }
 
 type ExtractionLink struct {
@@ -52,7 +53,10 @@ func (b *builder) addExtractions() error {
 					return err
 				}
 			}
-			row := Fact{Kind: KindEntity, Key: node.ID, Symbol: node.Name, Path: node.Path, Extractor: extraction.Name, Value: "reference"}
+			if err := node.Data.Validate(); err != nil {
+				return fmt.Errorf("extractor %s: %w", extraction.Name, err)
+			}
+			row := Fact{Data: CloneData(node.Data), Kind: KindEntity, Key: node.ID, Symbol: node.Name, Path: node.Path, Extractor: extraction.Name, Value: "reference"}
 			if node.Path != "" {
 				row.Value = "not_in_corpus"
 				row.TargetID = b.targetForPath(node.Path)

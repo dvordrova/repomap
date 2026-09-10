@@ -186,7 +186,8 @@ func TestRefusedJointAndPeerRowsDoNotCreateConnections(t *testing.T) {
 				if mode == "peers" {
 					value = fmt.Sprintf("distinct-%d", i)
 				}
-				r.boundaries[id] = &boundaryState{kind: kind, place: atlas.Place{ID: id, TargetIDs: []string{target}, Boundary: &atlas.BoundaryFacts{Direction: direction, Values: []string{value}}}}
+				// Distinct semantic inputs keep two independently rejectable rows.
+				r.boundaries[id] = &boundaryState{line: id + " behavior", kind: kind, place: atlas.Place{ID: id, TargetIDs: []string{target}, Boundary: &atlas.BoundaryFacts{Direction: direction, Values: []string{value}}}}
 			}
 			if err := r.readJoints(t.Context()); err != nil {
 				t.Fatal(err)

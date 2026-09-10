@@ -7,75 +7,115 @@
     },
     {
       "id": "f2",
-      "path": "package.json"
+      "path": "data/schema.sql"
     },
     {
       "id": "f3",
-      "path": "packages/documentation-tools/package.json"
+      "path": "package.json"
     },
     {
       "id": "f4",
-      "path": "packages/documentation-tools/scripts/check-links.ts"
+      "path": "packages/documentation-tools/package.json"
     },
     {
       "id": "f5",
-      "path": "packages/documentation-tools/scripts/prepare-readme.mjs"
+      "path": "packages/documentation-tools/scripts/check-links.ts"
     },
     {
       "id": "f6",
-      "path": "packages/documentation-tools/scripts/unused.mjs"
+      "path": "packages/documentation-tools/scripts/prepare-readme.mjs"
     },
     {
       "id": "f7",
-      "path": "packages/documentation-tools/tsconfig.json"
+      "path": "packages/documentation-tools/scripts/unused.mjs"
     },
     {
       "id": "f8",
-      "path": "packages/local-store/package.json"
+      "path": "packages/documentation-tools/tsconfig.json"
     },
     {
       "id": "f9",
-      "path": "packages/local-store/src/index.ts"
+      "path": "packages/local-store/package.json"
     },
     {
       "id": "f10",
-      "path": "packages/second-store/package.json"
+      "path": "packages/local-store/src/index.ts"
     },
     {
       "id": "f11",
-      "path": "packages/second-store/src/index.ts"
+      "path": "packages/second-store/package.json"
     },
     {
       "id": "f12",
-      "path": "shared/contracts.ts"
+      "path": "packages/second-store/src/index.ts"
     },
     {
       "id": "f13",
-      "path": "src/ambiguity.tsx"
+      "path": "shared/contracts.ts"
     },
     {
       "id": "f14",
-      "path": "src/platform.ts"
+      "path": "src/ambiguity.tsx"
     },
     {
       "id": "f15",
-      "path": "src/server.ts"
+      "path": "src/destinations.ts"
     },
     {
       "id": "f16",
-      "path": "src/type-members.ts"
+      "path": "src/excluded/retained.test.ts"
     },
     {
       "id": "f17",
-      "path": "src/workspace-origins-js.js"
+      "path": "src/market-worker.js"
     },
     {
       "id": "f18",
-      "path": "src/workspace-origins.ts"
+      "path": "src/market.test.ts"
     },
     {
       "id": "f19",
+      "path": "src/platform.ts"
+    },
+    {
+      "id": "f20",
+      "path": "src/route-mounts.ts"
+    },
+    {
+      "id": "f21",
+      "path": "src/runtime-registrations.ts"
+    },
+    {
+      "id": "f22",
+      "path": "src/server.ts"
+    },
+    {
+      "id": "f23",
+      "path": "src/test-setup.ts"
+    },
+    {
+      "id": "f24",
+      "path": "src/testing/real-service.ts"
+    },
+    {
+      "id": "f25",
+      "path": "src/type-members.ts"
+    },
+    {
+      "id": "f26",
+      "path": "src/workspace-origins-js.js"
+    },
+    {
+      "id": "f27",
+      "path": "src/workspace-origins.ts"
+    },
+    {
+      "id": "f28",
       "path": "tsconfig.json"
+    },
+    {
+      "id": "f29",
+      "path": "vitest.config.ts"
     }
   ]
 }

@@ -110,6 +110,9 @@ func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMe
 	processed := make(map[string]bool, len(def.Columns))
 	for _, column := range def.Columns {
 		active := true
+		if column.WhenOptionsFrom != "" {
+			active = len(rowOptions(row, column.WhenOptionsFrom)) > 0
+		}
 		for name, expected := range column.When {
 			value, known := answer[name]
 			if !processed[name] {

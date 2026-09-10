@@ -67,6 +67,12 @@ func TestExtractionGraphPreservesDeclarationsAndInventorySeparately(t *testing.T
 		if len(edge.Witnesses) != 0 {
 			t.Fatal("producer observation became a call")
 		}
+		if edge.Evidence != nil && edge.Evidence.Extractor == "database" {
+			if edge.Evidence.Path == "" || edge.Evidence.LineNo < 1 {
+				t.Fatal("data relation lost its SQL source")
+			}
+			continue
+		}
 		counts[edge.Kind]++
 		if edge.Kind == "observation" && (edge.Evidence.Path != "sqlc.yaml" || edge.Evidence.LineNo < 4) {
 			t.Fatalf("lost exact source: %+v", edge)

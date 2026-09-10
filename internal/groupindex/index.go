@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version          = 9
+	Version          = 10
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -252,6 +252,7 @@ type StructuralEdge struct {
 // Index is the single sealed group-graph authority for one enriched
 // ProgramIndex target.
 type Index struct {
+	Data               []DataRecord        `json:"data,omitempty"`
 	Version            int                 `json:"version"`
 	Role               string              `json:"role,omitempty"`
 	SharedCode         []string            `json:"shared_code,omitempty"`
@@ -584,11 +585,13 @@ func WithConnections(indexes []Index, accepted []ConnectionInput) ([]Index, []Di
 // Snapshot returns a consumer-owned deep copy.
 func (index Index) Snapshot() Index {
 	result := index
+	result.Data = cloneData(index.Data)
 	result.SharedCode = cloneStrings(index.SharedCode)
 	result.Operations = append([]Operation(nil), index.Operations...)
 	result.Outbound = append([]OutboundCall(nil), index.Outbound...)
 	for i := range result.Outbound {
 		result.Outbound[i].Values = cloneStrings(index.Outbound[i].Values)
+		result.Outbound[i].Uses = cloneDestinationUses(index.Outbound[i].Uses)
 	}
 	result.Target = index.Target.Snapshot()
 	result.Subjects = make([]Subject, len(index.Subjects))
@@ -669,6 +672,9 @@ func (index Index) Validate() error {
 		if i > 0 && index.Operations[i-1].ID >= operation.ID {
 			return fmt.Errorf("group index: operations are not canonical")
 		}
+	}
+	if err := index.validateData(subjectsByID); err != nil {
+		return err
 	}
 	if err := index.validateOutbound(subjectsByID, groupsByID); err != nil {
 		return err

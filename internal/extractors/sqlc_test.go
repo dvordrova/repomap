@@ -36,7 +36,12 @@ func TestSQLCConnectsConfigInputsAndOutputsWithoutGit(t *testing.T) {
 	if nodes["path:client"].Value != "not_in_corpus" {
 		t.Fatal("missing output disappeared")
 	}
-	links := result.OfKind(facts.KindRelation)
+	var links []facts.Fact
+	for _, row := range result.OfKind(facts.KindRelation) {
+		if row.Extractor == "sqlc" {
+			links = append(links, row)
+		}
+	}
 	if len(links) != 7 {
 		t.Fatalf("links = %+v", links)
 	}

@@ -10,10 +10,12 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 const (
-	ExternalCallIndexVersion = 4
+	ExternalCallIndexVersion = 5
 	// ExternalCallCgoPackagePath is the Go toolchain's pseudo-package identity
 	// for an exact handoff to a generated cgo wrapper. It does not identify a
 	// repository package or claim execution beyond that wrapper boundary.
@@ -68,12 +70,13 @@ type ExternalCallWitness struct {
 // expression remains dynamic. ObjectIDs contain compiler-resolved
 // repository-callable identities, not a semantic handler claim.
 type ExternalCallPatternArgument struct {
-	Position        int      `json:"position"`
-	Kind            string   `json:"kind"`
-	Value           string   `json:"value,omitempty"`
-	ObjectIDs       []string `json:"object_ids"`
-	ObjectsObserved int      `json:"objects_observed"`
-	ObjectsOmitted  int      `json:"objects_omitted"`
+	Origin          *sourcevalue.Value `json:"origin,omitempty"`
+	Position        int                `json:"position"`
+	Kind            string             `json:"kind"`
+	Value           string             `json:"value,omitempty"`
+	ObjectIDs       []string           `json:"object_ids"`
+	ObjectsObserved int                `json:"objects_observed"`
+	ObjectsOmitted  int                `json:"objects_omitted"`
 }
 
 const (
@@ -86,9 +89,11 @@ const (
 // identity and invocation authority, so the pattern deliberately does not
 // duplicate them.
 type ExternalCallPattern struct {
-	Context  []ControlContext `json:"context,omitempty"`
-	ID       string           `json:"id"`
-	Callsite Location         `json:"callsite"`
+	ReceiverValue *sourcevalue.Value `json:"receiver_value,omitempty"`
+	ResultValue   *sourcevalue.Value `json:"result_value,omitempty"`
+	Context       []ControlContext   `json:"context,omitempty"`
+	ID            string             `json:"id"`
+	Callsite      Location           `json:"callsite"`
 	// ResultID is an exact, source-bound SSA call-result identity. It is not a
 	// declaration and does not claim that the call executes. A later method
 	// pattern may cite the same identity as its receiver, preserving neutral
@@ -619,10 +624,13 @@ func externalCallPatternLess(left, right ExternalCallPattern) bool {
 func cloneExternalCallPattern(value ExternalCallPattern) ExternalCallPattern {
 	result := value
 	result.Context = append([]ControlContext(nil), value.Context...)
+	result.ReceiverValue = sourcevalue.Clone(value.ReceiverValue)
+	result.ResultValue = sourcevalue.Clone(value.ResultValue)
 	result.ReceiverResultIDs = append([]string{}, value.ReceiverResultIDs...)
 	result.Arguments = make([]ExternalCallPatternArgument, len(value.Arguments))
 	copy(result.Arguments, value.Arguments)
 	for position := range result.Arguments {
+		result.Arguments[position].Origin = sourcevalue.Clone(value.Arguments[position].Origin)
 		result.Arguments[position].ObjectIDs = make([]string, len(value.Arguments[position].ObjectIDs))
 		copy(result.Arguments[position].ObjectIDs, value.Arguments[position].ObjectIDs)
 	}
@@ -638,6 +646,12 @@ func cloneExternalCallPatterns(values []ExternalCallPattern) []ExternalCallPatte
 }
 
 func validateExternalCallPattern(value ExternalCallPattern) error {
+	if err := sourcevalue.Validate(value.ReceiverValue); err != nil {
+		return err
+	}
+	if err := sourcevalue.Validate(value.ResultValue); err != nil {
+		return err
+	}
 	for _, control := range value.Context {
 		if control.Kind == "" || !validRepositoryDirectCallLocation(control.Location) {
 			return fmt.Errorf("invalid call control context")
@@ -664,6 +678,9 @@ func validateExternalCallPattern(value ExternalCallPattern) error {
 		}
 	}
 	for position, argument := range value.Arguments {
+		if err := sourcevalue.Validate(argument.Origin); err != nil {
+			return err
+		}
 		if argument.Position != position+1 ||
 			!sort.StringsAreSorted(argument.ObjectIDs) || !uniqueStrings(argument.ObjectIDs) ||
 			argument.ObjectsObserved < len(argument.ObjectIDs) ||

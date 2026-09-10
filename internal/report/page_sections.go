@@ -2,12 +2,12 @@ package report
 
 import (
 	"fmt"
-	"github.com/dvordrova/repomap/internal/claims"
 	"path"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -17,7 +17,8 @@ import (
 // where execution starts, what the core does, what it calls out to, the main
 // flow, and then the warnings.
 type pageSection struct {
-	ID string
+	Data pageDataCatalog
+	ID   string
 	// Name is what the reader calls this target; Label additionally
 	// distinguishes two targets that share a name.
 	Name       string
@@ -213,12 +214,16 @@ type pageConnection struct {
 // every later builder can link a fact or a connection to its owning section.
 func (builder *pageBuilder) buildSections() {
 	builder.createSections()
+	overview := builder.overviewBuilder()
+	builder.overviewIndexes = overview.indexes
+	builder.testPaths = overview.testPaths
 	for _, section := range builder.sections {
 		builder.fillSectionFacts(section)
-		section.Map = builder.buildMap(section)
-		builder.fillSectionGroups(section)
-		builder.fillSectionOperations(section)
-		builder.fillSectionOutbound(section)
+		section.Map = overview.buildMap(section)
+		overview.fillSectionGroups(section)
+		overview.fillSectionOperations(section)
+		overview.fillSectionOutbound(section)
+		overview.fillSectionData(section)
 		for _, group := range section.RouteGroups {
 			section.InboundCount += group.Paths
 		}

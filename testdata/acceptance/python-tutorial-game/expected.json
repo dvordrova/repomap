@@ -13,7 +13,7 @@
       "kind": "target",
       "language": "typescript",
       "root": "front",
-      "anchor": "front/src/index.tsx:7"
+      "anchor": "front/src/index.tsx:1"
     },
     {
       "kind": "entrypoint",
@@ -23,10 +23,10 @@
     },
     {
       "kind": "entrypoint",
-      "anchor": "front/src/index.tsx:7",
-      "key": "bound_object",
-      "symbol": "root",
-      "note": "ReactDOM.createRoot"
+      "anchor": "front/src/index.tsx:1",
+      "key": "module",
+      "symbol": "src/index",
+      "note": "ReactDOM.createRoot executes in the module initializer; root is its produced value, not the executing callable"
     },
     {
       "kind": "http_route",

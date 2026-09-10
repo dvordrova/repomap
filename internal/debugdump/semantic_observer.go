@@ -85,6 +85,15 @@ func NewSemanticObserver(writer *Writer) *SemanticObserver {
 	return &SemanticObserver{writer: writer, ordinals: make(map[string]int)}
 }
 
+// JournalsRejections lets an owner retain its summary without appending rows
+// already written by this observer. A collector without a writer does not
+// claim that diagnostics have reached a run journal.
+func (observer *SemanticObserver) JournalsRejections() bool {
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	return observer.writer != nil
+}
+
 // SetFailureNotice installs a console-only notification after journal commit.
 // It cannot change acceptance, cache state or the result of recording.
 func (observer *SemanticObserver) SetFailureNotice(notice func(SemanticFailureReceipt)) {

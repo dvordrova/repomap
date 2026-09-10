@@ -27,62 +27,74 @@
     },
     {
       "id": "f7",
-      "path": "go.mod"
+      "path": "data/schema.sql"
     },
     {
       "id": "f8",
-      "path": "internal/localstore/store.go"
+      "path": "go.mod"
     },
     {
       "id": "f9",
-      "path": "internal/storefixture/fixtures.go"
+      "path": "internal/localstore/store.go"
     },
     {
       "id": "f10",
-      "path": "internal/storefixture/handoff_flow.go"
+      "path": "internal/storefixture/destinations.go"
     },
     {
       "id": "f11",
-      "path": "internal/storefixture/level_responses.go"
+      "path": "internal/storefixture/fixtures.go"
     },
     {
       "id": "f12",
-      "path": "internal/storefixture/listen_addresses.go"
+      "path": "internal/storefixture/handoff_flow.go"
     },
     {
       "id": "f13",
-      "path": "internal/storefixture/local_http_names.go"
+      "path": "internal/storefixture/level_responses.go"
     },
     {
       "id": "f14",
-      "path": "internal/testhelper/helper.go"
+      "path": "internal/storefixture/listen_addresses.go"
     },
     {
       "id": "f15",
-      "path": "internal/testhelper/helper_test.go"
+      "path": "internal/storefixture/local_http_names.go"
     },
     {
       "id": "f16",
-      "path": "pkg/servicecfg/settings.go"
+      "path": "internal/storefixture/runtime_registrations.go"
     },
     {
       "id": "f17",
-      "path": "root.go"
+      "path": "internal/testhelper/helper.go"
     },
     {
       "id": "f18",
-      "path": "root_external_test.go"
+      "path": "internal/testhelper/helper_test.go"
     },
     {
       "id": "f19",
-      "path": "root_optional_test.go"
+      "path": "pkg/servicecfg/settings.go"
     },
     {
       "id": "f20",
-      "path": "root_test.go"
+      "path": "root.go"
     },
     {
       "id": "f21",
+      "path": "root_external_test.go"
+    },
+    {
+      "id": "f22",
+      "path": "root_optional_test.go"
+    },
+    {
+      "id": "f23",
+      "path": "root_test.go"
+    },
+    {
+      "id": "f24",
       "path": "testonly/api_test.go"
     }
   ]

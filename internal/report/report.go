@@ -13,7 +13,7 @@ import (
 )
 
 // CurrentFormatVersion is the canonical ProgramPortfolio report contract.
-const CurrentFormatVersion = 88
+const CurrentFormatVersion = 89
 
 // MaxReportJSONBytes is the former ordinary report.json threshold. It is
 // advisory only; complete validated report authority is never rejected or

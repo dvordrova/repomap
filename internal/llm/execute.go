@@ -409,6 +409,11 @@ func executeLive[T any](
 	outcome Outcome[T],
 	adapted *AdaptedResponse,
 ) (Outcome[T], error) {
+	gate := attemptGateForContext(ctx)
+	var epoch uint64
+	if gate != nil {
+		epoch = gate.recoveryEpoch()
+	}
 	completion, err := provider.Complete(context.WithValue(ctx, attemptTimeoutKey{}, limits.AttemptTimeout), prepared)
 	outcome.HTTPResponse = completion.HTTPResponse.Clone()
 	setOutcomeResponse(&outcome, completion.Response)
@@ -428,6 +433,9 @@ func executeLive[T any](
 		outcome.ResponseRejections = []ResponseRejection{{Kind: "response_envelope", Count: 1, Reason: err.Error()}}
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureResponse, outcome.Issues)
 		return outcome, err
+	}
+	if gate != nil {
+		gate.completed(epoch)
 	}
 	value, err := decodeAcceptedJSON(decodeValidate, completion.Response)
 	if err != nil {

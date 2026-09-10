@@ -5,6 +5,7 @@ dependencies = [
   "fastapi",
   "httpx",
   "kafka-python",
+	"pytest",
   "uvicorn",
 ]
 
@@ -16,3 +17,6 @@ where = ["src"]
 include = ["fixture_app*", "acme", "acme.*"]
 exclude = ["acme.excluded", "acme.excluded.*"]
 namespaces = false
+
+[tool.pytest]
+python_files = ["test_*.py"]

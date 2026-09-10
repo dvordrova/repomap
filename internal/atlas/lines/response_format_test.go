@@ -56,32 +56,13 @@ func TestPreparedTablesHaveOneResponseShapeWithCurrentColumns(t *testing.T) {
 					t.Fatal(err)
 				}
 				system, user := sent.Messages[0].Content, sent.Messages[1].Content
-				var example json.RawMessage
-				if withTerms && !call.Prompt.NoResponseAdjunct {
-					if strings.Contains(system, `"rows"`) || strings.Contains(system, "Return only {") {
-						t.Fatal("bare task response competes with the terminology envelope")
-					}
-					var catalog struct {
-						ResponseExample json.RawMessage `json:"response_example"`
-					}
-					_, suffix, ok := strings.Cut(user, "\n\nREPOMAP_TERMINOLOGY_CATALOG_V3\n")
-					if !ok || json.Unmarshal([]byte(suffix), &catalog) != nil {
-						t.Fatal("missing response catalogue")
-					}
-					var envelope map[string]json.RawMessage
-					if json.Unmarshal(catalog.ResponseExample, &envelope) != nil || len(envelope) != 2 || string(envelope["terms"]) != "[]" {
-						t.Fatal("response example lost the single result/terms object")
-					}
-					example = envelope["result"]
-				} else {
-					if strings.Contains(user, "REPOMAP_TERMINOLOGY_CATALOG") || strings.Contains(system, "# Response envelope and repository terminology") {
-						t.Fatal("closed result or undecorated request gained optional terminology")
-					}
-					if strings.Count(system, `"rows"`) != 1 {
-						t.Fatal("more than one task response example")
-					}
-					example = json.RawMessage(system[strings.LastIndex(system, "\n")+1:])
+				if strings.Count(system, `"rows"`) != 1 || strings.Contains(system, `"terms"`) || strings.Contains(system, `"result"`) {
+					t.Fatal("main response gained an optional metadata envelope")
 				}
+				if strings.Contains(user, "REPOMAP_PROSE_SOURCES_V1") != (withTerms && !call.Prompt.NoResponseAdjunct) {
+					t.Fatal("prose source catalogue eligibility changed")
+				}
+				example := json.RawMessage(system[strings.LastIndex(system, "\n")+1:])
 				var result struct{ Rows []map[string]string }
 				if json.Unmarshal(example, &result) != nil || len(result.Rows) != 1 {
 					t.Fatal("invalid final result example")

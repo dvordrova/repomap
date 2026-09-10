@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -20,7 +21,7 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-const Contract = "repomap.atlas.question-batch.v1"
+const Contract = "repomap.atlas.question-batch.v2"
 
 //go:embed prompt.md
 var systemPrompt string
@@ -353,7 +354,10 @@ func (data catalogue) requestCall(rows []int, questions []modelQuestion) (llm.Ca
 }
 
 func limits() llm.Limits {
-	return llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens}
+	// Closed source selections and short relevance explanations use a smaller
+	// output allowance. Actual refusals split questions first, without dropping
+	// their complete original evidence or limiting the number of questions.
+	return llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: 16000}
 }
 
 func (data catalogue) plan(ctx context.Context, provider llm.Provider, part window) ([]window, error) {
@@ -601,6 +605,7 @@ func (data catalogue) decodeComplete(rows []int, questions []modelQuestion, raw 
 			return Response{}, fmt.Errorf("question batch: missing selections for %s", decision.Key)
 		}
 		byRow := make(map[string]Selection)
+		reasons := make(map[string]map[string]bool)
 		for _, selection := range decision.Selections {
 			row, known := allowedRows[selection.Row]
 			if !known {
@@ -632,7 +637,7 @@ func (data catalogue) decodeComplete(rows []int, questions []modelQuestion, raw 
 				}
 			}
 			if previous, duplicate := byRow[selection.Row]; duplicate {
-				if previous.Relevance != selection.Relevance || previous.Why != selection.Why {
+				if previous.Relevance != selection.Relevance {
 					return Response{}, fmt.Errorf("question batch: conflicting selection for %s/%s", decision.Key, selection.Row)
 				}
 				for _, ref := range previous.Anchors {
@@ -649,11 +654,24 @@ func (data catalogue) decodeComplete(rows []int, questions []modelQuestion, raw 
 					}
 				}
 			}
+			if reasons[selection.Row] == nil {
+				reasons[selection.Row] = make(map[string]bool)
+			}
+			reasons[selection.Row][selection.Why] = true
 			byRow[selection.Row] = selection
 		}
 		normalized := Decision{Key: decision.Key, Selections: []Selection{}}
 		for _, row := range rows {
 			if selection, selected := byRow[rowRef(row)]; selected {
+				// Different explanations of the same relevance decision are
+				// independent hints. Preserve every original hint in stable order;
+				// neither the first nor the last response row wins.
+				var hints []string
+				for reason := range reasons[selection.Row] {
+					hints = append(hints, reason)
+				}
+				sort.Strings(hints)
+				selection.Why = strings.Join(hints, "\n\n")
 				normalized.Selections = append(normalized.Selections, selection)
 			}
 		}

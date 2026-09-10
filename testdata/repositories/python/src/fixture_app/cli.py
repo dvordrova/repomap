@@ -105,3 +105,7 @@ def overridden_level():
 @mixed_router.get("/api/mixed-lookalike")
 def mixed_level():
     return None
+
+
+if __name__ == "__main__":
+    main()

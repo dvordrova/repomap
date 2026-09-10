@@ -89,7 +89,7 @@ func Run(ctx context.Context, root string, repository *corpus.Corpus) (Result, e
 			return result, fmt.Errorf("%s: unsupported version %d", ConfigFilename, configuration.Version)
 		}
 	}
-	names := map[string]bool{"sqlc": true}
+	names := map[string]bool{"sqlc": true, "database": true}
 	for _, command := range configuration.Extractors {
 		if strings.TrimSpace(command.Name) == "" || names[command.Name] || len(command.Command) == 0 || command.Command[0] == "" {
 			return result, fmt.Errorf("%s: each extractor needs a unique name and nonempty command", ConfigFilename)
@@ -107,6 +107,17 @@ func Run(ctx context.Context, root string, repository *corpus.Corpus) (Result, e
 		return result, err
 	}
 	if err := result.accept(Exchange{Name: "sqlc", Request: request, Stdout: string(raw)}); err != nil {
+		return result, err
+	}
+	databaseResponse, err := database(ctx, request, response)
+	if err != nil {
+		return result, err
+	}
+	databaseRaw, err := json.Marshal(databaseResponse)
+	if err != nil {
+		return result, err
+	}
+	if err := result.accept(Exchange{Name: "database", Request: request, Stdout: string(databaseRaw)}); err != nil {
 		return result, err
 	}
 	for _, command := range configuration.Extractors {

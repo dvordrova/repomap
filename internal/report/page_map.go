@@ -1704,6 +1704,9 @@ func (builder *pageBuilder) repoOutgoingCounts() map[string]int {
 		if !callKnown || !routeKnown || call.TargetID == route.TargetID {
 			continue
 		}
+		if call.Anchor != nil && builder.testPaths[call.Anchor.Path] || route.Anchor != nil && builder.testPaths[route.Anchor.Path] {
+			continue
+		}
 		key := [2]string{call.TargetID, route.TargetID}
 		if _, repeated := seen[key]; repeated {
 			continue
@@ -1743,6 +1746,11 @@ func (builder *pageBuilder) repoSymbolCounts() map[string]int {
 // portal connects, labelled with how many crossings that pair carries. One
 // arrow per portal would redraw the table that is already on the page.
 func (builder *pageBuilder) buildRepoMap(view *pageView) *pageRepoMap {
+	if builder.overviewIndexes != nil {
+		overview := *builder
+		overview.indexes = builder.overviewIndexes
+		builder = &overview
+	}
 	unread := builder.unreadTargets()
 	if len(builder.sections)+len(unread) < 2 {
 		return nil
@@ -2053,6 +2061,9 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) ([]pageRep
 		call, callKnown := builder.factsByID[portal.Refs[0]]
 		route, routeKnown := builder.factsByID[portal.Refs[1]]
 		if !callKnown || !routeKnown || call.TargetID == route.TargetID {
+			continue
+		}
+		if call.Anchor != nil && builder.testPaths[call.Anchor.Path] || route.Anchor != nil && builder.testPaths[route.Anchor.Path] {
 			continue
 		}
 		key := pair{call.TargetID, route.TargetID}

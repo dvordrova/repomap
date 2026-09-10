@@ -414,6 +414,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			Summary:            target.Line,
 			Target:             program.Target.Snapshot(),
 			ProgramIndexSHA256: program.SHA256,
+			Data:               projectData(program, target.Data),
 			Subjects:           subjects,
 			Groups:             groups,
 			Operations:         operations,

@@ -72,11 +72,13 @@ read-stage development budgets still apply.
 Final answer prose preserves paragraphs and complete qualifications; only
 short label cells are whitespace-collapsed or length-trimmed. Source checks
 keep owned declarations together, each with its original code link.
-The shared question retrieval and final answer opt into provider-supported reasoning. Tables
-have no individual output-token ceilings: they use the shared 128,000-token
-request envelope, and the configured provider ceiling still applies. Reasoning
-and visible output share that allowance; concise prose is a prompt requirement,
-not a smaller generation cutoff. The DeepSeek adapter encodes that preference on its
+The shared question retrieval and final answer opt into provider-supported reasoning.
+The owner-approved 2026-09-10 cost correction gives Learn proposal/selection and
+question retrieval a 16,000-token output allowance, and separate glossary
+generation/reduction 8,000. Final answers retain the shared 128,000-token
+allowance. A lower configured provider ceiling still applies; reasoning and
+visible output share it. Complete input is prepared first, with lossless
+partitioning on actual provider preparation/resource refusals. The DeepSeek adapter encodes that preference on its
 official endpoint. Other compatible endpoints encode the same stage preference
 in `chat_template_kwargs.enable_thinking`: shared question
 retrieval and final answers enable it; other stages, including translation,
@@ -177,7 +179,7 @@ the same nodes/links contract in docs/EXTRACTORS.md (facts format v2).
 Extensions supply source observations, not architecture role assignments.
 These rows enter the same places graph and question table, with producer
 declarations and corpus membership distinguished from compiler call edges.
-Graph is v10 and saved reading input is v11; there are no old-format readers.
+Graph is v11 and saved reading input is v12; there are no old-format readers.
 Observed entrypoint seeds and manifest values from the existing facts result
 also enter this graph, with their exact source and component context. They are
 available to both Learn proposals and question retrieval without requiring a
@@ -213,7 +215,7 @@ the same SSA receiver, independent of framework names. These observations enter
 the callable's own review; neighbouring caller registrations omit their field
 metadata. No field observation asserts a final runtime value or callback call.
 
-JSTS result v15 / helper v21 also preserves every compiler-observed callable
+JSTS result v16 / helper v22 also preserves every compiler-observed callable
 JSX attribute as an anchored callback binding, including render props. The
 element and attribute are source facts; neither their names nor a framework
 allowlist classify an operation. Wrapped function-valued declarations retain
@@ -249,6 +251,32 @@ stopping at local overrides and incomplete or multiple bases. TypeScript uses
 the compiler-resolved original external class method. These facts do not add
 native call edges; Go's promoted embedded methods use existing compiler evidence.
 
+ProgramIndex v14 retains source expressions for non-callable arguments,
+receivers and locally observed return values. Go direct calls v11/external
+calls v5, Python v13 and JSTS v16/helper v22 extract these in their existing
+parse. Parameter/capture owners, call-result anchors, constructors, field
+initializers and concatenations remain source observations. The existing atlas
+calls carry them locally; ordinary provider call rows do not repeat expression
+trees. Destination reading follows those native sites within retained owners,
+preserves separate uses and correlated arguments, and stops explicitly at
+unknown values or cycles. Flag/environment expressions are not deployed values;
+possible initializers never become proven final field values. No hop/caller
+quota silently drops a chain. Existing boundaries expose these anchored uses;
+imports, request builders and local timers do not become communication locally.
+
+Exact Go test inventories and authored pytest/Vitest configuration populate
+Target.TestSources. The overview omits known test-only nodes and edges while
+retaining mixed/unknown regions and the complete saved graph, questions and
+source checks. Names alone do not authorize exclusion. This is presentation,
+not deletion from analysis or a claim about test coverage.
+
+The existing facts extractor also records SQL text and source table declarations
+(SQL/sqlc and supported SQLAlchemy declarations), with columns, keys, source
+scope and anchors. Query table mentions do not establish owned schema, a foreign
+key or runtime I/O. Dynamic expressions remain partial; unknown connection
+identity stays unknown. These observations enter the same atlas entity graph,
+question evidence and compact Data catalogue with exact source links.
+
 Symbols and Types may also return one short English `alias` beside their
 explanation, through the same existing table request. It is an optional
 reader-facing label for a name that needs explaining, especially a non-English
@@ -258,7 +286,7 @@ source anchors remain unchanged. The report keeps aliases English in every
 language, displays the original code name beside them, and localizes the
 description. Both literal spellings address the same glossary definition;
 no script detector, transliteration, per-name request or browser-generated label
-is added. Current atlas is v5, GroupsIndex v9 and report v88.
+is added. Current atlas is v6, GroupsIndex v10 and report v89.
 
 Operation table v14 validates `entry` first. Only `self` requires activation,
 name and description; unused cells of accepted `none` and advertised `u*`
@@ -354,6 +382,9 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   relative `retry after`/`reset after` duration in its error message. Later
   429s can extend but never shorten that shared cooldown. Already-started
   attempts finish while retries and new calls wait and then become serial.
+  After cooldown, four successes in the current gate epoch raise concurrency
+  from one to two; four more restore four. A new 429 resets recovery, and older
+  in-flight successes cannot shorten that new cooldown or restore concurrency.
   Cancellation interrupts the wait; other retryable failures retain their
   short backoff. `ExecuteJSONBatch` fails closed: a terminal item
   error cancels the batch child context, prevents queued items from starting,
@@ -388,10 +419,9 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   provider layer does not own domain prompts or schemas.
   Analytical owners supply their computed result shape through `ResponseExample`;
   stage prose describes fields and decisions without a second output example or
-  competing root-format instruction. Shared preparation applies the terminology
-  adjunct before emitting the one final shape: the direct owner example without
-  terms, or its `result/terms` envelope in the source catalogue. Table examples
-  derive from the current `fill` columns, including the current mode.
+  competing root-format instruction. Analytical responses use that direct owner
+  shape; glossary work has a separate request and cannot add a `result/terms`
+  wrapper. Table examples derive from the current `fill` columns and mode.
 - Models select only closed request-local short refs. Catalog rows may show
   exact repository-relative paths, file names, symbol names/signatures, and
   dependency names because that context has semantic value. The model is
@@ -694,25 +724,18 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   This is a development measurement, not ordinary report acceptance or a
   general implementation-body expansion of the product pipeline. The separate
   matching-context approval recorded in CURRENT.md remains pending.
-- The shared terminology adjunct belongs to `internal/terminology`: existing
-  analytical calls return their original domain JSON under `result`, with
-  source-anchored `terms` beside it. Each term carries its name and explanation;
-  closed source refs and the accepted request plus result row retain its provenance. Translation
-  policy is not an analytical decision. Each owning stage supplies its exact
-  answer shape through `llm.Prompt.ResponseExample`; table examples depend only
-  on the column contract. Calls without usable source refs pass through unchanged.
-  Terms explain unfamiliar names used in the computed answer, not a catalogue
-  of input declarations. Go locates exact result occurrences and their row scope;
-  the model never constructs JSON Pointers. The shared LLM adapter decodes once
-  and validates the original result independently of optional terminology.
-  Rejected metadata is journaled and cannot invalidate a correct domain answer;
-  it never enters the accepted glossary. If the owning answer example has no
-  `terms` field, misplaced `result.terms` is discarded as optional metadata
-  before strict domain validation; it is never moved into the glossary.
-  Other unknown domain fields and legitimate owning `terms` fields retain
-  their original validation. Exact raw exchanges remain cache and
-  replay authority. Row memo reuse restores only terms mentioned by accepted
-  rows with compatible source scope.
+- Shared terminology belongs to `internal/terminology`. The owner-approved
+  2026-09-10 correction collects accepted analytical prose and its complete
+  source scope, then generates terms in separate aggregate requests. Main
+  answers carry only their owning JSON contract, without optional terms or a
+  wrapper. Generation and reduction use 8,000 output tokens and the actual
+  provider request envelope; no ordinary prose byte cap creates extra windows.
+  Resource refusals partition complete original prose records. A failed glossary
+  request cannot invalidate an accepted analytical answer. Terms must occur in
+  accepted prose and select its advertised source refs. Go preserves the original
+  analytical request and row beside each definition, including warm row reuse.
+  Rejected rows contribute no prose or source authority. Exact request bytes and
+  provider responses remain the cache/replay authority.
   One aggregate closed-ref reduction joins compatible domain candidates and
   chooses an original definition, preserving every variant, spelling, source
   and request identity. Each input group chooses one advertised original variant;

@@ -19,6 +19,7 @@ func (r *reader) readOperations(ctx context.Context) error {
 	// evidence. Callbacks and asynchronous entrants are reviewed even when the
 	// description table missed them. This selects candidates, never a role.
 	candidates := make(map[string]bool)
+	nativeRoutes := operationNativeRoutes(r.opts.Graph)
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil {
 			continue
@@ -27,7 +28,7 @@ func (r *reader) readOperations(ctx context.Context) error {
 			continue
 		}
 		_, proposed := r.operations[place.ID]
-		candidates[place.ID] = proposed || observedActivation(place)
+		candidates[place.ID] = proposed || observedActivation(place) || len(nativeRoutes[place.ID]) > 0
 	}
 	declarations := make(map[string]atlas.Place)
 	for _, place := range r.opts.Graph.Places {
@@ -69,7 +70,7 @@ func (r *reader) readOperations(ctx context.Context) error {
 			calls = append(calls, evidence.Call(call))
 		}
 		callers := operationCallerEvidence(place, declarations)
-		nameFields, registeredNames := operationRegisteredNames(receivedBindings)
+		nameFields, registeredNames := operationRegisteredNames(receivedBindings, nativeRoutes[place.ID]...)
 		names[place.ID] = registeredNames
 		entries := []string{"self", "none"}
 		for _, caller := range callers {
@@ -118,7 +119,23 @@ func operationCalls(place atlas.Place) []atlas.SymbolCall {
 	return calls
 }
 
-func operationRegisteredNames(bindings []atlas.SymbolBinding) ([]table.Field, map[string]string) {
+// Native routes already identify their handler through the canonical symbol
+// place. A decorator does not have to masquerade as a callback binding to make
+// its source path available to operation review.
+func operationNativeRoutes(graph atlas.Graph) map[string][]atlas.Place {
+	result := make(map[string][]atlas.Place)
+	for _, place := range graph.Places {
+		b := place.Boundary
+		if b == nil || b.Source != "fact" || b.SubjectID == "" || b.Direction != atlas.DirectionIn ||
+			b.GivenKind != atlas.BoundaryHTTPServer || b.Method == "" || len(b.Values) == 0 {
+			continue
+		}
+		result[b.SubjectID] = append(result[b.SubjectID], place)
+	}
+	return result
+}
+
+func operationRegisteredNames(bindings []atlas.SymbolBinding, routes ...atlas.Place) ([]table.Field, map[string]string) {
 	seen := make(map[atlas.RegistrationArgument]bool)
 	var arguments []atlas.RegistrationArgument
 	for _, binding := range bindings {
@@ -148,6 +165,23 @@ func operationRegisteredNames(bindings []atlas.SymbolBinding) ([]table.Field, ma
 	var catalogue []map[string]any
 	var refs []string
 	names := make(map[string]string)
+	// Prefer the complete native path, including source-observed router mounts.
+	// Raw callback literals remain useful when no native HTTP fact is available.
+	sort.Slice(routes, func(i, j int) bool { return routes[i].ID < routes[j].ID })
+	for _, route := range routes {
+		for _, path := range route.Boundary.Values {
+			ref := fmt.Sprintf("p%d", len(refs)+1)
+			refs = append(refs, ref)
+			names[ref] = path
+			catalogue = append(catalogue, map[string]any{"ref": ref, "http_route": map[string]any{
+				"method": route.Boundary.Method, "path": path, "source_path": route.Path,
+				"line": route.LineNo, "column": route.Column,
+			}})
+		}
+	}
+	if len(routes) > 0 {
+		arguments = nil
+	}
 	for i, argument := range arguments {
 		ref := fmt.Sprintf("p%d", i+1)
 		refs = append(refs, ref)
@@ -222,7 +256,7 @@ func observedActivation(place atlas.Place) bool {
 		}
 	}
 	for _, caller := range place.Symbol.CalledBy {
-		if caller.Kind == "executes" || strings.Contains(caller.Invocation, "goroutine") || strings.Contains(caller.Invocation, "asynchronous") {
+		if caller.Kind == "executes" || strings.Contains(caller.Invocation, "goroutine") || strings.Contains(caller.Invocation, "asynchronous") || strings.HasPrefix(caller.Invocation, "coroutine_result_argument:") {
 			return true
 		}
 	}

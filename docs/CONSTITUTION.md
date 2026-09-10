@@ -136,11 +136,12 @@ separate stage outputs.
   language and appears beside the native code name; neither replaces the source
   identity. Descriptions remain localized. The page never invents an alias from
   a filename, script detection or a truncated description.
-  The owner's 2026-09-08 glossary design adds a shared terminology adjunct to
-  analytical requests. Each existing call may return source-anchored term
-  explanations beside its original result. One aggregate reduction joins
-  compatible meanings before the glossary enters the backend report and display
-  translation. Original spellings, definitions, sources and request provenance
+  The owner's 2026-09-10 glossary correction collects accepted analytical prose
+  and its source scope, then asks for source-anchored definitions in separate
+  aggregate requests. Main analytical answers keep their original response
+  contract. One aggregate reduction joins compatible meanings before the
+  glossary enters the backend report and display translation. Original
+  spellings, definitions, sources and analytical request provenance
   survive that reduction; equal names alone never establish equal meanings.
   Translation keeps glossary names and accepted English aliases in their original spelling and translates
   their definitions and surrounding prose. Code looks up complete literal names

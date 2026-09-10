@@ -370,6 +370,10 @@ type timedObserver struct {
 	inner  *debugdump.SemanticObserver
 }
 
+func (observer timedObserver) JournalsRejections() bool {
+	return observer.inner != nil && observer.inner.JournalsRejections()
+}
+
 func timed(output *runOutput, inner *debugdump.SemanticObserver) llm.Observer {
 	if output == nil {
 		return inner

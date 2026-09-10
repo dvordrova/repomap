@@ -108,3 +108,21 @@ func TestSharedCodeDecisionIsLimitedToLibraryKinds(t *testing.T) {
 		})
 	}
 }
+
+func TestAlternativeExecutableLaunchesNeedAcceptedStandaloneOwner(t *testing.T) {
+	rows := []NativeCandidate{
+		{Ref: "t1", FileRef: "f1", Kind: "executable", Name: "app"},
+		{Ref: "t2", FileRef: "f2", Kind: "executable", Name: "python -m app", SeedOwners: []NativeOwner{{Ref: "t1", Kind: "executable", Name: "app"}}},
+		{Ref: "t3", FileRef: "f1", Kind: "executable", Name: "direct main", SeedOwners: []NativeOwner{{Ref: "t1", Kind: "executable", Name: "app"}}},
+	}
+	accepted := nativeDecisions(rows, []NativeDecision{{"t1", "standalone"}, {"t2", "seed_of:t1"}, {"t3", "seed_of:t1"}}, true)
+	if accepted[1].Decision != "seed_of:t1" || accepted[2].Decision != "seed_of:t1" {
+		t.Fatalf("valid native alternative rejected: %+v", accepted)
+	}
+	refused := nativeDecisions(rows, []NativeDecision{{"t2", "seed_of:t1"}, {"t3", "seed_of:t1"}}, true)
+	for _, row := range refused {
+		if row.Decision != "standalone" || row.Reason == "" {
+			t.Fatalf("absent owner gained authority: %+v", refused)
+		}
+	}
+}

@@ -16,6 +16,10 @@ useful evidence rows. relevance is direct or context. anchors is a nonempty set
 of that row's advertised refs. why is a concise relevance hint shared by those
 selected anchors, not a proof about each declaration. Do not copy source text,
 source paths or question text into the response.
+Multiple useful aspects of one row may share one selection and reason. If you
+repeat a row, keep its relevance decision consistent; its selected anchors and
+distinct relevance hints are combined, without choosing one explanation over
+another. Conflicting relevance decisions leave that question unavailable.
 
 An empty selections array explicitly means no useful sources were selected from
 this supplied catalogue for that question. Do not write explanations for

@@ -11,6 +11,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -21,6 +22,7 @@ import (
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 const (
@@ -338,6 +340,12 @@ func (b *builder) useTargetObjects(index programindex.Index) {
 	b.symbolOf = make(map[string]string)
 	callbacks := make(map[string]bool)
 	for _, relation := range index.Relations {
+		// A source-located closure can own a real call even when returned
+		// from a factory rather than registered as a callback. Its caller
+		// identity must survive for argument provenance and question evidence.
+		if relation.Kind == programindex.RelationCalls || relation.Kind == programindex.RelationInvokesExternal || relation.Kind == programindex.RelationExecutes {
+			callbacks[relation.FromID] = true
+		}
 		if relation.Kind == programindex.RelationPassesCallback {
 			for _, id := range relation.ToIDs {
 				callbacks[id] = true
@@ -1207,6 +1215,23 @@ func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolB
 	// site. Retain that registration's neighbouring literal arguments so a
 	// handler can see its path/topic without reading unrelated factory calls.
 	registrations := make(map[string][]atlas.RegistrationArgument)
+	registrationEvidence := make(map[string][]atlas.EdgeEvidence)
+	valueUses := make(map[string][]atlas.EdgeEvidence)
+	producers := make(map[string][]programindex.RelationPattern)
+	for _, relation := range target.Index.Relations {
+		for _, pattern := range relation.Patterns {
+			if pattern.ResultID != "" {
+				producers[pattern.ResultID] = append(producers[pattern.ResultID], pattern)
+			}
+			if pattern.ReceiverID == "" || pattern.Location == nil {
+				continue
+			}
+			valueUses[pattern.ReceiverID] = append(valueUses[pattern.ReceiverID], atlas.EdgeEvidence{
+				Extractor: "registration_result_use", Label: "call on the registration result: " + pattern.Selector,
+				Path: pattern.Location.Path, LineNo: pattern.Location.Line,
+			})
+		}
+	}
 	for _, relation := range target.Index.Relations {
 		if relation.Kind == programindex.RelationPassesCallback && relation.SourceArgumentID != "" {
 			registrations[relation.SourceArgumentID] = nil
@@ -1235,6 +1260,47 @@ func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolB
 			}
 			for _, id := range selected {
 				registrations[id] = arguments
+				label := "receiving call: " + pattern.Selector
+				if len(relation.ToIDs) == 1 {
+					if recipient, ok := b.byID[relation.ToIDs[0]]; ok {
+						label = "receiving call: " + displayName(recipient, b.byID)
+					}
+				}
+				registrationEvidence[id] = append(registrationEvidence[id], atlas.EdgeEvidence{
+					Extractor: "callback_registration", Label: label,
+					Path: pattern.Location.Path, LineNo: pattern.Location.Line,
+				})
+				if pattern.ResultID != "" {
+					registrationEvidence[id] = append(registrationEvidence[id], valueUses[pattern.ResultID]...)
+				}
+				// Fluent registration arguments belong to the exact receiver
+				// producer, e.g. job.at("00:07").do(callback). Keep that syntax
+				// beside the callback without interpreting a schedule locally.
+				seen := map[string]bool{}
+				var receiverEvidence func(string)
+				receiverEvidence = func(receiverID string) {
+					if receiverID == "" || seen[receiverID] {
+						return
+					}
+					seen[receiverID] = true
+					for _, producer := range producers[receiverID] {
+						if producer.Location == nil {
+							continue
+						}
+						var literals []string
+						for _, argument := range producer.Arguments {
+							if value, ok := literalArgument(argument); ok {
+								literals = append(literals, strconv.Quote(value))
+							}
+						}
+						registrationEvidence[id] = append(registrationEvidence[id], atlas.EdgeEvidence{
+							Extractor: "registration_receiver_call", Label: producer.Selector + "(" + strings.Join(literals, ", ") + ")",
+							Path: producer.Location.Path, LineNo: producer.Location.Line,
+						})
+						receiverEvidence(producer.ReceiverID)
+					}
+				}
+				receiverEvidence(pattern.ReceiverID)
 			}
 		}
 	}
@@ -1262,7 +1328,7 @@ func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolB
 					continue
 				}
 				row := atlas.SymbolBinding{From: displayName(from, b.byID), To: displayName(to, b.byID), Detail: witness.Detail, Invocation: relation.Invocation, Resolution: string(relation.Resolution)}
-				row.Evidence = evidence
+				row.Evidence = append(append([]atlas.EdgeEvidence{}, evidence...), registrationEvidence[relation.SourceArgumentID]...)
 				row.Arguments = registrations[relation.SourceArgumentID]
 				if witness.Location != nil {
 					row.Path, row.Line = witness.Location.Path, witness.Location.Line
@@ -1369,7 +1435,7 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 			}
 		}
 		for _, pattern := range relation.Patterns {
-			call := atlas.SymbolCall{Kind: string(relation.Kind), Name: pattern.Selector, Invocation: relation.Invocation}
+			call := atlas.SymbolCall{Kind: string(relation.Kind), Name: pattern.Selector, Invocation: relation.Invocation, ReceiverValue: sourcevalue.Clone(pattern.ReceiverValue), ResultValue: sourcevalue.Clone(pattern.ResultValue)}
 			for _, witness := range pattern.Context {
 				if witness.Location != nil {
 					call.Evidence = append(call.Evidence, atlas.EdgeEvidence{Extractor: witness.Kind, Label: witness.Detail, Path: witness.Location.Path, LineNo: witness.Location.Line})
@@ -1386,6 +1452,9 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 			if len(relation.ToIDs) == 1 {
 				if object, ok := b.byID[relation.ToIDs[0]]; ok && object.External != nil {
 					call.Name = externalName(*object.External)
+					if object.External.RepositoryPath == "" {
+						call.API = &atlas.CallAPI{Package: object.External.PackagePath, Receiver: object.External.Receiver, Name: object.External.Name}
+					}
 				}
 			}
 			if pattern.Location != nil {
@@ -1395,6 +1464,9 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 			for _, argument := range pattern.Arguments {
 				if value, ok := literalArgument(argument); ok {
 					call.Values = appendUnique(call.Values, value)
+				}
+				if argument.Origin != nil {
+					call.SourceArguments = append(call.SourceArguments, atlas.SourceArgument{Position: argument.Position, Keyword: argument.Keyword, Origin: sourcevalue.Clone(argument.Origin)})
 				}
 				for _, id := range argument.ObjectIDs {
 					if object, ok := b.byID[id]; ok {
@@ -1501,7 +1573,7 @@ func (b *builder) collectBoundaries() {
 			LineNo: fact.Anchor.Line, Column: fact.Anchor.Column, Depth: file.depth, TargetIDs: []string{targetID},
 			Parent: atlas.FileID(filePath),
 			Boundary: &atlas.BoundaryFacts{
-				Source: "fact", FactID: fact.ID, ObjectID: fact.ObjectID,
+				Source: "fact", FactID: fact.ID, ObjectID: fact.ObjectID, SubjectID: b.symbolOf[fact.ObjectID],
 				Caller: caller, CallerDoc: callerDoc, Method: method, Values: values,
 				Direction: direction, GivenKind: kind,
 			},

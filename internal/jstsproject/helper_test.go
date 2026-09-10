@@ -263,7 +263,7 @@ func TestCumulativeJSTSActualToFormalValueProvenance(t *testing.T) {
 		t.Fatal("resolve JSTS contract-test source path")
 	}
 	fixtureRoot := filepath.Join(filepath.Dir(filename), "..", "..", "testdata", "repositories", "jsts")
-	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/platform.ts", "src/server.ts", "src/type-members.ts", "tsconfig.json"}
+	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/platform.ts", "src/server.ts", "src/type-members.ts", "src/route-mounts.ts", "src/runtime-registrations.ts", "src/market-worker.js", "src/destinations.ts", "tsconfig.json"}
 	for _, relative := range tracked {
 		contents, err := os.ReadFile(filepath.Join(fixtureRoot, filepath.FromSlash(relative)))
 		if err != nil {
@@ -294,7 +294,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		t.Fatal("resolve JSTS contract-test source path")
 	}
 	fixtureRoot := filepath.Join(filepath.Dir(filename), "..", "..", "testdata", "repositories", "jsts")
-	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/platform.ts", "src/server.ts", "src/type-members.ts", "tsconfig.json"}
+	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/platform.ts", "src/server.ts", "src/type-members.ts", "src/route-mounts.ts", "src/runtime-registrations.ts", "src/market-worker.js", "src/destinations.ts", "tsconfig.json"}
 	for _, relative := range tracked {
 		contents, err := os.ReadFile(filepath.Join(fixtureRoot, filepath.FromSlash(relative)))
 		if err != nil {
@@ -324,6 +324,8 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		t.Fatalf("validate cumulative JSTS ProgramIndex: %v", err)
 	}
 	assertInheritedHTTPRoutes(t, index)
+	assertCumulativeJSTSRuntimeRegistrations(t, result, index)
+	assertCumulativeJSTSSourceValues(t, repository, index)
 	input, err := BuildInputFromResult(result)
 	if err != nil {
 		t.Fatal(err)
@@ -2566,6 +2568,49 @@ func assertInheritedHTTPRoutes(t *testing.T, index programindex.Index) {
 	}
 }
 
+func assertCumulativeJSTSRuntimeRegistrations(t *testing.T, result Result, index programindex.Index) {
+	t.Helper()
+	factsResult, err := facts.Build(facts.Input{Targets: []facts.TargetInput{{Index: index, Root: "."}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wanted := map[string]bool{"/api/v1/ping": false, "/alternate/ping": false, "/private/ping": false}
+	for _, route := range factsResult.OfKind(facts.KindHTTPRoute) {
+		if route.Anchor == nil || route.Anchor.Path != "src/route-mounts.ts" {
+			continue
+		}
+		if _, expected := wanted[route.Path]; !expected || wanted[route.Path] {
+			t.Fatalf("unexpected mounted route: %+v", route)
+		}
+		if route.ObjectID == "" || len(route.Evidence) != 1 {
+			t.Fatalf("mounted route lost identity/source: %+v", route)
+		}
+		wanted[route.Path] = true
+	}
+	for path, found := range wanted {
+		if !found {
+			t.Errorf("missing mounted route %s", path)
+		}
+	}
+	var timer, worker, local bool
+	for _, call := range result.Calls {
+		if call.Location.Path != "src/runtime-registrations.ts" {
+			continue
+		}
+		switch call.Expression {
+		case "setInterval":
+			timer = call.ExternalPackage == javascriptPlatform && call.Pattern != nil && len(call.Pattern.Arguments) == 2 && len(call.Pattern.Arguments[0].ObjectRefs) == 1
+		case "new Worker":
+			worker = call.Invocation == "construct" && call.ExternalPackage == javascriptPlatform && call.Pattern != nil && call.Pattern.Arguments[0].Value == "./market-worker.js"
+		case "localTimer.setInterval":
+			local = call.ExternalPackage == "" && len(call.CalleeRefs) > 0
+		}
+	}
+	if !timer || !worker || !local {
+		t.Fatalf("runtime observations timer=%v worker=%v local=%v", timer, worker, local)
+	}
+}
+
 func materializeCumulativeJSTSDependencyTypes(t *testing.T, root string) {
 	t.Helper()
 	writeTestFile(t, root, "node_modules/hono/package.json", `{"name":"hono","version":"4.0.0","types":"index.d.ts"}`)
@@ -2585,10 +2630,12 @@ export default axios
 export interface Request {}
 export interface Response { json(value: unknown): void }
 export interface Application {
+      use(prefix: string, router: Application): void
 	  get(path: string, ...handlers: Array<(request: Request, response: Response) => void | Promise<void>>): void
 	  listen(port: number): void
 	}
 export default function express(): Application
+export function Router(): Application
 `)
 	writeTestFile(t, root, "node_modules/@fixture/kafka-client/package.json", `{"name":"@fixture/kafka-client","version":"1.0.0","types":"index.d.ts"}`)
 	writeTestFile(t, root, "node_modules/@fixture/kafka-client/index.d.ts", `

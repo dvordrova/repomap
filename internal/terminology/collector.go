@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -20,26 +19,22 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-const adjunctVersion = "repomap.terminology.adjunct.v3"
-const catalogDelimiter = "\n\nREPOMAP_TERMINOLOGY_CATALOG_V3\n"
+const adjunctVersion = "repomap.terminology.deferred.v1"
+const catalogDelimiter = "\n\nREPOMAP_PROSE_SOURCES_V1\n"
 
-//go:embed prompts/adjunct.md
-var adjunctPrompt string
-
-//go:embed prompts/response-contract.md
-var responseContract string
-
-// Collector accepts metadata only after the original cube validates its result.
+// Collector retains prose only after the original cube validates its result;
+// optional definitions are generated separately from that accepted prose.
 // Prepared requests carry their catalogue, so cache and memo reuse need no
 // process-local preparation registry and remain safe under parallel execution.
 type Collector struct {
-	paths  map[string]bool
-	mu     sync.Mutex
-	values map[string]Candidate
+	paths   map[string]bool
+	mu      sync.Mutex
+	values  map[string]Candidate
+	pending map[string]proseSource
 }
 
 func NewCollector(paths []string) *Collector {
-	c := &Collector{paths: make(map[string]bool), values: make(map[string]Candidate)}
+	c := &Collector{paths: make(map[string]bool), values: make(map[string]Candidate), pending: make(map[string]proseSource)}
 	for _, name := range paths {
 		if canonicalPath(name) {
 			c.paths[name] = true
@@ -65,7 +60,7 @@ func (c *Collector) Wrap(base llm.Provider) llm.Provider {
 }
 
 func (p *provider) State() []byte {
-	// The adjunct contract is already in the exact prepared request. Keep the
+	// The source-catalogue contract is already in the exact prepared request. Keep the
 	// transport identity unchanged so replay through the base provider refreshes
 	// the same cache entry that ordinary decorated calls subsequently read.
 	return append([]byte(nil), p.base.State()...)
@@ -78,10 +73,8 @@ type catalogSource struct {
 	Row  string `json:"row,omitempty"`
 }
 type sourceCatalog struct {
-	Version          string          `json:"version"`
-	Sources          []catalogSource `json:"sources"`
-	ResponseContract string          `json:"response_contract"`
-	ResponseExample  json.RawMessage `json:"response_example"`
+	Version string          `json:"version"`
+	Sources []catalogSource `json:"sources"`
 }
 
 func (p *provider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
@@ -92,27 +85,10 @@ func (p *provider) AdaptPrompt(prompt llm.Prompt) (llm.Prompt, error) {
 	input, _ := jsonValue([]byte(prompt.User))
 	catalog := sourceCatalog{Version: adjunctVersion, Sources: sourcesIn(input, p.collector.paths)}
 	if len(catalog.Sources) == 0 {
-		// No source-backed terms can exist. Preserve the owner's exact request,
-		// including an array response and its original provider controls.
 		return prompt, nil
 	}
-	if prompt.ResponseExample == "" || !json.Valid([]byte(prompt.ResponseExample)) {
-		return llm.Prompt{}, fmt.Errorf("terminology: owning task must supply a valid JSON response example")
-	}
-	example, err := json.Marshal(struct {
-		Result json.RawMessage `json:"result"`
-		Terms  []termWire      `json:"terms"`
-	}{json.RawMessage(prompt.ResponseExample), []termWire{}})
-	if err != nil {
-		return llm.Prompt{}, err
-	}
-	catalog.ResponseContract = strings.TrimSpace(responseContract)
-	catalog.ResponseExample = example
-	prompt.System += "\n\n" + strings.TrimSpace(adjunctPrompt)
-	prompt.ResponseFormatJSON = true
-	// The catalogue carries the sole final shape, including the owner's exact
-	// result container. Do not also emit a bare-domain response example.
-	prompt.ResponseExample = ""
+	// Keep the owner's sole response shape unchanged. This source catalogue
+	// records provenance for a later glossary pass; it asks for no metadata.
 	raw, err := json.Marshal(catalog)
 	if err != nil {
 		return llm.Prompt{}, err
@@ -256,9 +232,9 @@ func sourcesIn(input any, paths map[string]bool) []catalogSource {
 }
 
 type requestContext struct {
-	sources             map[string]catalogSource
-	noTerminology       bool
-	termsOnlyInEnvelope bool
+	sources       map[string]catalogSource
+	noTerminology bool
+	input         any
 }
 
 // The suffix is read from an actual string leaf in the saved provider request,
@@ -302,7 +278,7 @@ func (c *Collector) requestContext(request []byte) (requestContext, error) {
 	if catalog.Version != adjunctVersion || catalog.Sources == nil {
 		return requestContext{}, fmt.Errorf("terminology: unsupported source catalogue")
 	}
-	if len(catalog.Sources) == 0 || catalog.ResponseContract != strings.TrimSpace(responseContract) || !validResponseExample(catalog.ResponseExample) {
+	if len(catalog.Sources) == 0 {
 		return requestContext{}, fmt.Errorf("terminology: unsupported response contract")
 	}
 	input, _ := jsonValue([]byte(leaves[0][:index]))
@@ -317,14 +293,7 @@ func (c *Collector) requestContext(request []byte) (requestContext, error) {
 	for _, source := range sourcesIn(input, paths) {
 		original[sourceKey(source)] = true
 	}
-	ctx := requestContext{sources: make(map[string]catalogSource)}
-	// The owner supplied this exact result shape before the adjunct existed.
-	// A legitimate result.terms field keeps its original domain authority.
-	example, _ := jsonValue(catalog.ResponseExample)
-	if object, ok := example.(map[string]any)["result"].(map[string]any); ok {
-		_, ownsTerms := object["terms"]
-		ctx.termsOnlyInEnvelope = !ownsTerms
-	}
+	ctx := requestContext{sources: make(map[string]catalogSource), input: input}
 	for i, source := range catalog.Sources {
 		if source.Ref != fmt.Sprintf("g%d", i+1) || !original[sourceKey(source)] {
 			return requestContext{}, fmt.Errorf("terminology: source catalogue is not original evidence")
@@ -334,14 +303,6 @@ func (c *Collector) requestContext(request []byte) (requestContext, error) {
 		}
 	}
 	return ctx, nil
-}
-
-func validResponseExample(raw []byte) bool {
-	var example struct {
-		Result json.RawMessage `json:"result"`
-		Terms  []termWire      `json:"terms"`
-	}
-	return strictJSON(raw, &example) == nil && len(example.Result) > 0 && example.Terms != nil && len(example.Terms) == 0
 }
 
 type termWire struct {
@@ -356,80 +317,105 @@ type validatedTerm struct {
 }
 
 func (p *provider) AdaptResponse(request, response []byte) (llm.AdaptedResponse, error) {
-	c := p.collector
-	ctx, err := c.requestContext(request)
+	ctx, err := p.collector.requestContext(request)
 	if err != nil {
 		return llm.AdaptedResponse{}, err
 	}
+	adapted := llm.AdaptedResponse{Domain: response}
 	if ctx.noTerminology {
-		return llm.AdaptedResponse{Domain: response}, nil
+		return adapted, nil
 	}
 	raw, err := llm.NormalizeJSON(response)
 	if err != nil {
 		return llm.AdaptedResponse{}, err
 	}
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return llm.AdaptedResponse{}, fmt.Errorf("terminology: invalid response envelope")
-	}
-	domain := envelope["result"]
-	if len(domain) == 0 || bytes.Equal(bytes.TrimSpace(domain), []byte("null")) {
-		return llm.AdaptedResponse{}, fmt.Errorf("terminology: computed result is required")
-	}
-	result, err := jsonValue(domain)
+	result, err := jsonValue(raw)
 	if err != nil {
-		return llm.AdaptedResponse{}, fmt.Errorf("terminology: invalid original result")
+		return llm.AdaptedResponse{}, err
 	}
-	adapted := llm.AdaptedResponse{Domain: domain}
-	// Metadata never supplies domain authority. Keep one exact rejection count
-	// per reason, with short positions pointing into the saved raw response.
+	result = tableProse(result, ctx.input)
+	sourceRows := make(map[string]bool)
+	for _, source := range ctx.sources {
+		if source.Row != "" {
+			sourceRows[source.Row] = true
+		}
+	}
+	texts := resultTextByRow(result, sourceRows)
+	digest := sha256.Sum256(request)
+	requestID := hex.EncodeToString(digest[:])
+	adapted.Accept = func(rows []string) { p.collector.collectProse(requestID, texts, ctx.sources, rows) }
+	return adapted, nil
+}
+
+// Table owners advertise their actual prose cells and conditional branches.
+// Unused cells, extra fields and closed choices are not glossary text merely
+// because the containing row's independent decision was accepted.
+func tableProse(result, input any) any {
+	request, ok := input.(map[string]any)
+	if !ok {
+		return result
+	}
+	fill, table := request["fill"].([]any)
+	if !table {
+		return result
+	}
+	object, ok := result.(map[string]any)
+	if !ok {
+		return result
+	}
+	rows, ok := object["rows"].([]any)
+	if !ok {
+		return result
+	}
+	var projected []any
+	for _, value := range rows {
+		row, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		prose := map[string]any{"key": row["key"]}
+		for _, item := range fill {
+			column, ok := item.(map[string]any)
+			if !ok || (column["kind"] != "text" && column["kind"] != "prose") {
+				continue
+			}
+			active := true
+			if when, ok := column["when"].(map[string]any); ok {
+				for key, expected := range when {
+					active = active && row[key] == expected
+				}
+			}
+			if name, ok := column["name"].(string); ok && active {
+				if text, ok := row[name].(string); ok {
+					prose[name] = text
+				}
+			}
+		}
+		projected = append(projected, prose)
+	}
+	return map[string]any{"rows": projected}
+}
+
+// validateTermMetadata owns only the later optional glossary response. It can
+// reject a definition, never the already accepted analysis that supplied prose.
+func validateTermMetadata(result any, sources map[string]catalogSource, wire []json.RawMessage) ([]validatedTerm, []llm.ResponseRejection) {
+	var rejections []llm.ResponseRejection
 	rejectionByReason := make(map[string]int)
 	reject := func(reason, position string) {
 		index, found := rejectionByReason[reason]
 		if !found {
-			index = len(adapted.Rejections)
+			index = len(rejections)
 			rejectionByReason[reason] = index
-			adapted.Rejections = append(adapted.Rejections, llm.ResponseRejection{Kind: "terminology_metadata_rejected", Reason: reason})
+			rejections = append(rejections, llm.ResponseRejection{Kind: "glossary_term_rejected", Reason: reason})
 		}
-		rejection := &adapted.Rejections[index]
-		rejection.Count++
-		if len(rejection.Samples) < 5 {
-			rejection.Samples = append(rejection.Samples, position)
+		rejections[index].Count++
+		if len(rejections[index].Samples) < 5 {
+			rejections[index].Samples = append(rejections[index].Samples, position)
 		}
-	}
-	if object, ok := result.(map[string]any); ok && ctx.termsOnlyInEnvelope {
-		if _, misplaced := object["terms"]; misplaced {
-			// Discard only adjunct metadata misplaced beside the owner's fields.
-			// Never move these definitions into the glossary, or relax validation
-			// of another field. The exchange's raw response remains unchanged.
-			delete(object, "terms")
-			adapted.Domain, err = json.Marshal(object)
-			if err != nil {
-				return llm.AdaptedResponse{}, err
-			}
-			reject("misplaced optional terms field", "result.terms")
-		}
-	}
-	var extra []string
-	for field := range envelope {
-		if field != "result" && field != "terms" {
-			extra = append(extra, field)
-		}
-	}
-	sort.Strings(extra)
-	for range extra {
-		reject("unknown optional envelope field", "envelope")
-	}
-	var wire []json.RawMessage
-	if len(envelope["terms"]) == 0 {
-		reject("missing optional terms array", "terms")
-	} else if err := json.Unmarshal(envelope["terms"], &wire); err != nil || wire == nil {
-		reject("invalid optional terms array", "terms")
-		wire = nil
 	}
 	terms := make([]validatedTerm, 0, len(wire))
 	sourceRows := make(map[string]bool)
-	for _, source := range ctx.sources {
+	for _, source := range sources {
 		if source.Row != "" {
 			sourceRows[source.Row] = true
 		}
@@ -469,7 +455,7 @@ func (p *provider) AdaptResponse(request, response []byte) (llm.AdaptedResponse,
 				reject("invalid optional source ref", position)
 				continue
 			}
-			source, ok := ctx.sources[*ref]
+			source, ok := sources[*ref]
 			if !ok {
 				reject("unsupported optional source ref", position)
 				continue
@@ -499,37 +485,7 @@ func (p *provider) AdaptResponse(request, response []byte) (llm.AdaptedResponse,
 		}
 		terms = append(terms, validated)
 	}
-	digest := sha256.Sum256(request)
-	requestID := hex.EncodeToString(digest[:])
-	byRow := make(map[string][]int)
-	for index, term := range terms {
-		for _, row := range term.rows {
-			byRow[row] = append(byRow[row], index)
-		}
-	}
-	adapted.Accept = func(rows []string) {
-		if rows == nil {
-			c.accept(requestID, terms, nil)
-			return
-		}
-		seen := make(map[int]bool)
-		for _, row := range rows {
-			for _, index := range byRow[row] {
-				seen[index] = true
-			}
-		}
-		indexes := make([]int, 0, len(seen))
-		for index := range seen {
-			indexes = append(indexes, index)
-		}
-		sort.Ints(indexes)
-		selected := make([]validatedTerm, 0, len(indexes))
-		for _, index := range indexes {
-			selected = append(selected, terms[index])
-		}
-		c.accept(requestID, selected, rows)
-	}
-	return adapted, nil
+	return terms, rejections
 }
 
 // Occurrence ownership comes from the computed answer. Named source and
@@ -550,7 +506,12 @@ func resultTextByRow(result any, sourceRows map[string]bool) map[string][]string
 					row = ref
 				}
 			}
-			for _, child := range value {
+			for field, child := range value {
+				switch field {
+				case "key", "row", "intent", "file_ref", "ref":
+					// Request-local ownership is not accepted explanatory prose.
+					continue
+				}
 				walk(child, row, scoped)
 			}
 		case []any:
@@ -672,60 +633,6 @@ func ScriptBoundary(left, right rune) bool {
 	}
 	leftScript, rightScript := script(left), script(right)
 	return leftScript != nil && rightScript != nil && leftScript != rightScript
-}
-
-func (c *Collector) accept(requestID string, terms []validatedTerm, rows []string) {
-	allowed := make(map[string]bool)
-	for _, row := range rows {
-		allowed[row] = true
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, term := range terms {
-		var origins []Origin
-		for _, row := range term.rows {
-			if rows == nil || allowed[row] {
-				origins = append(origins, Origin{RequestSHA256: requestID, Row: row})
-			}
-		}
-		if len(origins) == 0 {
-			continue
-		}
-		candidate := term.candidate
-		// Keep the original term identity while separate row memos restore its
-		// accepted sources. The same answer collected as one batch must produce
-		// the same variant as that answer collected one row at a time.
-		original := term.candidate
-		for _, source := range term.sources {
-			original.Sources = append(original.Sources, Source{Path: source.Path, Line: source.Line})
-		}
-		original.Sources = normalizeSources(original.Sources)
-		raw, _ := json.Marshal(original)
-		key := string(raw)
-		seen := make(map[Source]bool)
-		for _, source := range term.sources {
-			if rows != nil && source.Row != "" && !allowed[source.Row] {
-				continue
-			}
-			anchor := Source{Path: source.Path, Line: source.Line}
-			if !seen[anchor] {
-				candidate.Sources = append(candidate.Sources, anchor)
-				seen[anchor] = true
-			}
-		}
-		if len(candidate.Sources) == 0 {
-			continue
-		}
-		stored, ok := c.values[key]
-		if !ok {
-			stored = candidate
-		} else {
-			stored.Sources = append(stored.Sources, candidate.Sources...)
-		}
-		stored.Sources = normalizeSources(stored.Sources)
-		stored.Origins = normalizeOrigins(append(origins, stored.Origins...))
-		c.values[key] = stored
-	}
 }
 
 func (c *Collector) Snapshot() []Candidate {

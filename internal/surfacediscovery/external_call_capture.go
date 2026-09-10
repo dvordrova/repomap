@@ -106,7 +106,7 @@ func (a *analyzer) observeExternalCallIndex(call ssa.CallInstruction) {
 		})
 		return
 	}
-	pattern := a.externalCallPattern(common, callsite)
+	pattern := a.externalCallPattern(call, callsite)
 	if a.externalCallIndexErr != nil {
 		return
 	}
@@ -155,7 +155,7 @@ func (a *analyzer) observeExternalInterfaceInvoke(call ssa.CallInstruction, comm
 		a.addExternalCallExclusionNode(caller, ExternalCallExclusion{InvalidCallsitesExcluded: 1})
 		return
 	}
-	pattern := a.externalCallPattern(common, callsite)
+	pattern := a.externalCallPattern(call, callsite)
 	if a.externalCallIndexErr != nil {
 		return
 	}
@@ -170,12 +170,13 @@ func (a *analyzer) observeExternalInterfaceInvoke(call ssa.CallInstruction, comm
 // callable values already present on the SSA instruction. It neither knows nor
 // classifies frameworks, protocols, routes, handlers, or bootstrap semantics.
 func (a *analyzer) externalCallPattern(
-	common *ssa.CallCommon,
+	call ssa.CallInstruction,
 	callsite Location,
 ) *ExternalCallPattern {
-	if a == nil || common == nil || !validRepositoryDirectCallLocation(callsite) {
+	if a == nil || call == nil || call.Common() == nil || !validRepositoryDirectCallLocation(callsite) {
 		return nil
 	}
+	common := call.Common()
 	arguments, receiver := externalCallSourceArguments(common)
 	observed := len(arguments)
 	pattern := &ExternalCallPattern{
@@ -189,6 +190,7 @@ func (a *analyzer) externalCallPattern(
 		pattern.ResultType = resultType
 	}
 	if receiver != nil {
+		pattern.ReceiverValue = a.sourceValue(receiver, make(map[ssa.Value]bool), call)
 		resultIDs, unresolved := a.externalCallReceiverResults(receiver, make(map[ssa.Value]bool))
 		sort.Strings(resultIDs)
 		resultIDs = compactStrings(resultIDs)
@@ -199,8 +201,9 @@ func (a *analyzer) externalCallPattern(
 		pattern.ReceiversOmitted = unresolved
 	}
 	for position, argument := range arguments {
-		pattern.Arguments = append(pattern.Arguments, a.externalCallPatternArgument(position+1, argument))
+		pattern.Arguments = append(pattern.Arguments, a.externalCallPatternArgument(position+1, argument, call))
 	}
+	pattern.ResultValue = a.sourceReturn(common.StaticCallee())
 	return pattern
 }
 
@@ -401,6 +404,7 @@ func (a *analyzer) externalCallReceiverResults(
 func (a *analyzer) externalCallPatternArgument(
 	position int,
 	value ssa.Value,
+	readAt ssa.Instruction,
 ) ExternalCallPatternArgument {
 	argument := ExternalCallPatternArgument{
 		Position: position, Kind: ExternalCallPatternDynamic, ObjectIDs: []string{},
@@ -410,6 +414,7 @@ func (a *analyzer) externalCallPatternArgument(
 		argument.Value = literal
 	}
 	if !externalCallPatternMayBeCallable(value, make(map[ssa.Value]bool)) {
+		argument.Origin = a.sourceValue(value, make(map[ssa.Value]bool), readAt)
 		return argument
 	}
 	candidates, unresolved, err := dynamicFunctionCandidateFacts(a, value)

@@ -225,13 +225,24 @@ func questionChunks(place atlas.Place, units []questionUnit, context []table.Fie
 }
 
 func entityDescription(place atlas.Place) map[string]any {
-	return map[string]any{"name": place.Entity.Name, "path": place.Path, "extractor": place.Entity.Extractor, "corpus_status": place.Entity.Status}
+	value := map[string]any{"name": place.Entity.Name, "path": place.Path, "extractor": place.Entity.Extractor, "corpus_status": place.Entity.Status}
+	if place.Entity.Data != nil {
+		value["data_kind"], value["data_scope"] = place.Entity.Data.Kind, place.Entity.Data.Scope
+	}
+	return value
 }
 
 // Every observation remains independent. Related file rows receive the same
 // source declaration, never another model's interpretation or a guessed call.
 func questionObservations(graph atlas.Graph, places map[string]atlas.Place) map[string][]questionUnit {
 	result := make(map[string][]questionUnit)
+	for _, place := range graph.Places {
+		if place.Entity == nil || place.Entity.Data == nil {
+			continue
+		}
+		unit := questionUnit{anchor: QuestionAnchor{SubjectID: place.ID, Path: place.Path, Line: place.LineNo, Name: place.Entity.Name, Kind: "data_source"}, facts: map[string]any{"kind": "data_source", "data": place.Entity.Data}}
+		result[place.ID] = append(result[place.ID], unit)
+	}
 	for _, edge := range graph.Edges {
 		if edge.Kind != "observation" {
 			continue

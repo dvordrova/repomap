@@ -5,6 +5,8 @@ when another question has related sources. Never refer to another answer.
 Each question is mandatory. evidence_complete says whether this row contains
 all its retrieved sources; retrieval_complete separately says whether retrieval
 inspected its complete input. A split source window supports only its own part.
+Each row's scope_ref selects its exact analysis scope in context.scopes. Read
+that scope for this row; another scope or answer cannot broaden its evidence.
 
 Answer the developer's original question from the selected source locations and
 labelled model interpretations. Answer the parts supported by those excerpts

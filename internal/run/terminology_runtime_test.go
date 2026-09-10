@@ -28,8 +28,8 @@ func (*terminologyRuntimeProvider) State() []byte {
 	return []byte(`{"model":"terminology-runtime-test"}`)
 }
 func (*terminologyRuntimeProvider) Prepare(prompt llm.Prompt, _ llm.Limits) (llm.Prepared, error) {
-	if strings.Count(prompt.System, "# Response envelope and repository terminology") != 1 {
-		return llm.Prepared{}, fmt.Errorf("analysis factory must apply the terminology adjunct exactly once")
+	if strings.Contains(prompt.System, "# Response envelope and repository terminology") {
+		return llm.Prepared{}, fmt.Errorf("main analysis must not request inline glossary metadata")
 	}
 	raw, err := json.Marshal(map[string]string{"system": prompt.System, "user": prompt.User})
 	if err != nil {
@@ -42,11 +42,8 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 	if err := json.Unmarshal(prepared.Bytes(), &message); err != nil {
 		return llm.Completion{}, err
 	}
-	const delimiter = "\n\nREPOMAP_TERMINOLOGY_CATALOG_V3\n"
+	const delimiter = "\n\nREPOMAP_PROSE_SOURCES_V1\n"
 	parts := strings.Split(message["user"], delimiter)
-	if len(parts) != 2 {
-		return llm.Completion{}, fmt.Errorf("missing prepared catalogue")
-	}
 	var input struct {
 		Table string `json:"table"`
 		Fill  []struct {
@@ -62,8 +59,40 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 	var catalogue struct {
 		Sources []struct{ Ref, Path, Row string } `json:"sources"`
 	}
-	if err := json.Unmarshal([]byte(parts[1]), &catalogue); err != nil {
-		return llm.Completion{}, err
+	if len(parts) == 2 {
+		if err := json.Unmarshal([]byte(parts[1]), &catalogue); err != nil {
+			return llm.Completion{}, err
+		}
+	} else {
+		var request struct {
+			Prose []struct {
+				Key  string
+				Text []string
+			}
+			Sources []struct{ Ref, Path, Row string }
+		}
+		if err := json.Unmarshal([]byte(parts[0]), &request); err != nil {
+			return llm.Completion{}, err
+		}
+		p.calls++
+		if p.stages == nil {
+			p.stages = make(map[string]int)
+		}
+		p.stages["glossary"]++
+		terms := []map[string]any{}
+		for _, row := range request.Prose {
+			if !strings.Contains(strings.Join(row.Text, " "), "OHLCV") {
+				continue
+			}
+			for _, source := range request.Sources {
+				if source.Row == row.Key {
+					terms = append(terms, map[string]any{"name": "OHLCV", "explanation": "The named group of market-data values described here.", "sources": []string{source.Ref}})
+					break
+				}
+			}
+		}
+		raw, err := json.Marshal(map[string]any{"terms": terms})
+		return llm.Completion{Response: raw, ChoiceCount: 1, FinishReason: llm.FinishStop, Metrics: llm.Metrics{Attempts: 1}}, err
 	}
 	p.calls++
 	if p.stages == nil {
@@ -106,11 +135,11 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 		}
 		rows = append(rows, answer)
 	}
-	raw, err := json.Marshal(map[string]any{"result": map[string]any{"rows": rows}, "terms": terms})
+	raw, err := json.Marshal(map[string]any{"rows": rows})
 	return llm.Completion{Response: raw, ChoiceCount: 1, FinishReason: llm.FinishStop, Metrics: llm.Metrics{Attempts: 1}}, err
 }
 
-func TestReadEnabledTerminologyUsesOrdinaryFactoryAndSameAcceptedCalls(t *testing.T) {
+func TestReadEnabledTerminologyUsesOrdinaryFactoryAndSeparateAcceptedProsePass(t *testing.T) {
 	source := t.TempDir()
 	opts := reading.Options{OwnerRunDir: source, Repository: "example", Revision: "abc",
 		Targets: []reading.TargetMeta{{ID: "t1", Language: "go", Kind: "library", Name: "example", Root: "."}},
@@ -131,7 +160,7 @@ func TestReadEnabledTerminologyUsesOrdinaryFactoryAndSameAcceptedCalls(t *testin
 	if err := runReadConfigured(context.Background(), args, &stdout, factory, true); err != nil {
 		t.Fatal(err)
 	}
-	if factoryCalls != 1 || provider.calls == 0 || provider.stages["atlas_directories"] == 0 || provider.stages["atlas_files"] == 0 {
+	if factoryCalls != 1 || provider.calls == 0 || provider.stages["atlas_directories"] == 0 || provider.stages["atlas_files"] == 0 || provider.stages["glossary"] == 0 {
 		t.Fatalf("ordinary stages were not wrapped: calls=%d stages=%v factories=%d", provider.calls, provider.stages, factoryCalls)
 	}
 	raw, err := os.ReadFile(filepath.Join(output, "terminology.json"))

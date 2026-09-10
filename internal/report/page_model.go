@@ -221,20 +221,25 @@ type subjectRef struct {
 }
 
 type pageBuilder struct {
-	data        *ReportData
-	links       pageLinks
-	sections    []*pageSection
-	byProgram   map[string]*pageSection
-	byFacts     map[string]*pageSection
-	factsByID   map[string]facts.Fact
-	claimsByID  map[string]claims.Claim
-	subjects    map[string]subjectRef
-	groupTitles map[groupindex.Endpoint]string
+	overviewIndexes []groupindex.Index
+	sourceIndexes   []groupindex.Index
+	data            *ReportData
+	links           pageLinks
+	sections        []*pageSection
+	byProgram       map[string]*pageSection
+	byFacts         map[string]*pageSection
+	factsByID       map[string]facts.Fact
+	claimsByID      map[string]claims.Claim
+	subjects        map[string]subjectRef
+	groupTitles     map[groupindex.Endpoint]string
 	// owners is built once: which target indexed which packages.
 	owners []packageOwner
 	// indexes is the group graph as the page shows it: one group per title
 	// in a target, see foldIndexes.
 	indexes []groupindex.Index
+	// testPaths exists only on the production overview projection. Sources
+	// come from native inventories or authored framework configuration.
+	testPaths map[string]bool
 	// docstrings is what the authors wrote above their symbols, by file, in
 	// line order, so a chip can carry the sentence that explains it;
 	// declarations is where every symbol of a file is declared, so a

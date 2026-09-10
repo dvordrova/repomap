@@ -75,6 +75,8 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 		t.Fatal("Go ProgramIndex omitted unused private method recreateStore")
 	}
 	assertGoNeutralBoundaryPatterns(t, index)
+	assertGoSourceValues(t, repository, index)
+	assertGoRuntimeRegistrations(t, index)
 	assertGoListenAddresses(t, index)
 	assertGoLocalHTTPNameFacts(t, index)
 	assertGoExternalEventAndStoragePatterns(t, index)
@@ -904,10 +906,11 @@ func assertGoNeutralBoundaryPatterns(t *testing.T, index programindex.Index) {
 	if handlerID == "" {
 		t.Fatal("cumulative Go fixture omitted exact HTTP handler object")
 	}
-	relationFor := func(name string) programindex.Relation {
+	relationFor := func(name, caller string) programindex.Relation {
 		t.Helper()
+		source := programIndexObjectNamed(t, index, programindex.ObjectFunction, caller, "cmd/app/main.go")
 		for _, relation := range index.Relations {
-			if relation.Kind != programindex.RelationInvokesExternal || len(relation.ToIDs) != 1 {
+			if relation.FromID != source.ID || relation.Kind != programindex.RelationInvokesExternal || len(relation.ToIDs) != 1 {
 				continue
 			}
 			target := objects[relation.ToIDs[0]]
@@ -919,17 +922,17 @@ func assertGoNeutralBoundaryPatterns(t *testing.T, index programindex.Index) {
 				return relation
 			}
 		}
-		t.Fatalf("cumulative Go fixture omitted net/http.%s", name)
+		t.Fatalf("cumulative Go fixture omitted %s → net/http.%s", caller, name)
 		return programindex.Relation{}
 	}
-	client := relationFor("Get")
+	client := relationFor("Get", "fetchLevels")
 	if len(client.Patterns) != 1 || client.Patterns[0].Selector != "Get" ||
 		len(client.Patterns[0].Arguments) != 1 ||
 		client.Patterns[0].Arguments[0].Kind != programindex.PatternLiteralString ||
 		client.Patterns[0].Arguments[0].Value != "/api/levels" {
 		t.Fatalf("cumulative Go client pattern = %#v", client)
 	}
-	route := relationFor("HandleFunc")
+	route := relationFor("HandleFunc", "registerLevelRoute")
 	if len(route.Patterns) != 1 || len(route.Patterns[0].Arguments) != 2 ||
 		route.Patterns[0].Arguments[0].Value != "/api/levels" ||
 		route.Patterns[0].Arguments[1].Resolution != programindex.ResolutionExact ||
@@ -937,7 +940,7 @@ func assertGoNeutralBoundaryPatterns(t *testing.T, index programindex.Index) {
 		route.Patterns[0].Arguments[1].ObjectIDs[0] != handlerID {
 		t.Fatalf("cumulative Go route pattern = %#v", route)
 	}
-	bootstrap := relationFor("ListenAndServe")
+	bootstrap := relationFor("ListenAndServe", "registerLevelRoute")
 	if len(bootstrap.Patterns) != 1 || len(bootstrap.Patterns[0].Arguments) != 2 ||
 		bootstrap.Patterns[0].Arguments[0].Value != ":8080" ||
 		bootstrap.Patterns[0].Arguments[1].Kind != programindex.PatternDynamic {

@@ -12,6 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 // Build performs discovery once and projects its sealed authority into the
@@ -193,6 +194,9 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		if value.Pattern == nil || value.Pattern.ResultRef == "" {
 			continue
 		}
+		if _, declared := declarationByRef[value.Pattern.ResultRef]; declared {
+			continue
+		}
 		objects = append(objects, programindex.ObjectInput{
 			SourceRef:  value.Pattern.ResultRef,
 			Kind:       programindex.ObjectVariable,
@@ -336,6 +340,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 				value.Expression,
 				"",
 			)
+			relations[callbackRelation].Witnesses[0].Detail = fmt.Sprintf("argument %d of %s", argument.Position, value.Expression)
 			relations[callbackRelation].TargetsObserved = argument.ObjectsObserved
 			relations[callbackRelation].SourceArgument = &programindex.PatternArgumentRefInput{
 				RelationSourceRef: "program:" + value.Ref,
@@ -422,7 +427,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 	}
 	return programindex.Input{
 		ScenarioSHA256: scenarioSHA, SourceSHA256: result.SourceSHA256,
-		Target:  programindex.TargetInput{Language: result.Project.Language, Kind: TargetKind(result), Name: result.Project.Name, Selector: result.Project.Selector, Sources: targetSources(result), AnchorFileRef: result.Project.ManifestFileRef, Seeds: seeds},
+		Target:  programindex.TargetInput{Language: result.Project.Language, Kind: TargetKind(result), Name: result.Project.Name, Selector: result.Project.Selector, Sources: targetSources(result), TestSources: testSources(result), AnchorFileRef: result.Project.ManifestFileRef, Seeds: seeds},
 		Objects: objects, Relations: relations, Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: len(objects), RelationsObserved: len(relations)},
 	}
 }
@@ -477,6 +482,16 @@ func targetSources(result Result) []programindex.TargetSource {
 		return values[i].Path < values[j].Path
 	})
 	return values
+}
+
+func testSources(result Result) []string {
+	var sources []string
+	for _, file := range result.Files {
+		if file.Test {
+			sources = append(sources, file.Path)
+		}
+	}
+	return sources
 }
 
 func programLocation(value Location) *programindex.Location {
@@ -536,6 +551,7 @@ func programCallPatterns(value Call) []programindex.RelationPatternInput {
 			})
 		}
 		arguments = append(arguments, programindex.PatternArgumentInput{
+			Origin:          sourcevalue.Clone(argument.Origin),
 			Position:        argument.Position,
 			Kind:            programindex.PatternValueKind(argument.Kind),
 			Value:           argument.Value,
@@ -551,7 +567,9 @@ func programCallPatterns(value Call) []programindex.RelationPatternInput {
 		control = append(control, programindex.Witness{Kind: "control_context", Detail: context.Kind, Location: programLocation(context.Location)})
 	}
 	return []programindex.RelationPatternInput{{
-		Context: control, SourceRef: "pattern:" + value.Ref,
+		ReceiverValue: sourcevalue.Clone(value.Pattern.ReceiverValue),
+		ResultValue:   sourcevalue.Clone(value.Pattern.ResultValue),
+		Context:       control, SourceRef: "pattern:" + value.Ref,
 		Form:                     programindex.PatternCall,
 		Selector:                 value.Pattern.Selector,
 		Location:                 programLocation(value.Location),

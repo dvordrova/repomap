@@ -20,7 +20,7 @@ func TestExternalCommandAndSQLCUseTheSameFactBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(extracted.Exchanges) != 2 || len(extracted.Extractions) != 2 {
+	if len(extracted.Exchanges) != 3 || len(extracted.Extractions) != 3 {
 		t.Fatalf("producers: %+v", extracted)
 	}
 	result, err := facts.Build(facts.Input{Repository: repository, Extractions: extracted.Extractions})
@@ -36,22 +36,25 @@ func TestExternalCommandAndSQLCUseTheSameFactBoundary(t *testing.T) {
 	if len(byProducer) != 2 {
 		t.Fatalf("generation sources: %+v", byProducer)
 	}
-	if !reflect.DeepEqual(extracted.Extractions[0].Nodes, extracted.Extractions[1].Nodes) || !reflect.DeepEqual(extracted.Extractions[0].Links, extracted.Extractions[1].Links) {
+	if !reflect.DeepEqual(extracted.Extractions[0].Nodes, extracted.Extractions[2].Nodes) || !reflect.DeepEqual(extracted.Extractions[0].Links, extracted.Extractions[2].Links) {
 		t.Fatal("same plugin result normalized differently")
 	}
 	if byProducer["company"].ID == byProducer["sqlc"].ID {
 		t.Fatal("producer-local identities collided")
 	}
-	if extracted.Exchanges[1].Stderr != "plugin diagnostic\n" {
+	if extracted.Exchanges[2].Stderr != "plugin diagnostic\n" {
 		t.Fatal("stderr not recorded")
 	}
 	for _, row := range result.OfKind(facts.KindRelation) {
+		if row.Extractor == "database" {
+			continue
+		}
 		if len(row.Refs) != 2 || row.Refs[0] != byProducer[row.Extractor].ID || result.ByID()[row.Refs[1]].Extractor != row.Extractor {
 			t.Fatalf("reference not restored: %+v", row)
 		}
 	}
 	// The raw response must keep local IDs; normalization may not mutate it.
-	if extracted.Extractions[1].Nodes[0].ID != "sqlc.yaml#sql[0]" {
+	if extracted.Extractions[2].Nodes[0].ID != "sqlc.yaml#sql[0]" {
 		t.Fatal("producer input mutated")
 	}
 }
@@ -67,7 +70,7 @@ func TestCommandFailuresKeepTheirExchangeAndHaveNoReplacement(t *testing.T) {
 			if err == nil {
 				t.Fatal("failed extractor silently replaced")
 			}
-			if len(extracted.Exchanges) != 2 || extracted.Exchanges[1].Stdout == "" {
+			if len(extracted.Exchanges) != 3 || extracted.Exchanges[2].Stdout == "" {
 				t.Fatal("failed exchange lost")
 			}
 			if _, err := json.Marshal(extracted); err != nil {

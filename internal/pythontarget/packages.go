@@ -136,10 +136,17 @@ func containsString(values []string, value string) bool {
 	return false
 }
 
-// CanSeed preserves the owner's complete module view and library API. Only
-// guards inside its declared distribution are structurally eligible; whether
-// they are demonstrations or independent services is a model decision.
+// CanSeed preserves the owner's complete module view and API. Declared library
+// guards and executable forms with the same exact launch callable are eligible;
+// whether they belong to one product remains a portfolio decision.
 func CanSeed(owner, seed Target) bool {
+	if owner.Ref != seed.Ref && owner.ProjectDir == seed.ProjectDir && owner.Kind == KindExecutable && seed.Kind == KindExecutable {
+		ownerEntry, ownerOK := LaunchEntry(owner)
+		seedEntry, seedOK := LaunchEntry(seed)
+		if ownerOK && seedOK && ownerEntry == seedEntry {
+			return true
+		}
+	}
 	if owner.Kind != KindLibrary || seed.Kind != KindExecutable || owner.ProjectDir != seed.ProjectDir || len(seed.Roots) == 0 {
 		return false
 	}
@@ -164,4 +171,20 @@ func CanSeed(owner, seed Target) bool {
 		}
 	}
 	return true
+}
+
+// LaunchEntry identifies the one argument-free callable named by a console
+// script or directly invoked by a simple guard/module launcher. It does not
+// say whether two launches are the same product; portfolio owns that choice.
+func LaunchEntry(target Target) (Root, bool) {
+	if target.Kind != KindExecutable || len(target.Roots) != 1 {
+		return Root{}, false
+	}
+	if target.Roots[0].Kind == RootCallable {
+		return target.Roots[0], true
+	}
+	if len(target.LaunchCalls) == 1 {
+		return target.LaunchCalls[0].Entry, true
+	}
+	return Root{}, false
 }

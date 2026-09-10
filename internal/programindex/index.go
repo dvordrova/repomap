@@ -19,10 +19,12 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 const (
-	Version          = 13
+	Version          = 14
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -204,6 +206,7 @@ type TargetSeed struct {
 // adapter-owned declaration key that distinguishes otherwise identical target
 // views, such as Python console_scripts and gui_scripts aliases.
 type TargetInput struct {
+	TestSources   []string
 	Language      string
 	Kind          string
 	Name          string
@@ -219,6 +222,9 @@ type TargetInput struct {
 // Target is one exact selected program scope. It remains independent of a
 // provider request and can cover several executable roots or library sources.
 type Target struct {
+	// TestSources contains adapter-observed testing files from the full index,
+	// independently of the native target's smaller root/manifest Sources set.
+	TestSources   []string       `json:"test_sources,omitempty"`
 	ID            string         `json:"id"`
 	Language      string         `json:"language"`
 	Kind          string         `json:"kind"`
@@ -232,6 +238,7 @@ type Target struct {
 // Snapshot returns a consumer-owned copy of the selected target boundary.
 func (target Target) Snapshot() Target {
 	result := target
+	result.TestSources = slices.Clone(target.TestSources)
 	result.Sources = cloneTargetSources(target.Sources)
 	result.Seeds = cloneTargetSeeds(target.Seeds)
 	return result
@@ -488,6 +495,7 @@ type PatternValueCandidate struct {
 // PatternArgumentInput is one adapter-observed positional or keyword
 // argument. Exactly one of Position (one-based) and Keyword is set.
 type PatternArgumentInput struct {
+	Origin                  *sourcevalue.Value
 	Position                int
 	Keyword                 string
 	Kind                    PatternValueKind
@@ -515,6 +523,7 @@ type PatternArgumentRefInput struct {
 // PatternArgument is one sealed argument. ID is stable under input ordering
 // and is derived from its owning pattern plus its positional or keyword key.
 type PatternArgument struct {
+	Origin                  *sourcevalue.Value      `json:"origin,omitempty"`
 	ID                      string                  `json:"id"`
 	Position                int                     `json:"position,omitempty"`
 	Keyword                 string                  `json:"keyword,omitempty"`
@@ -533,6 +542,8 @@ type PatternArgument struct {
 // RelationPatternInput retains one bounded syntactic candidate nested in its
 // owning relation. Object refs are temporary joins within the same Input.
 type RelationPatternInput struct {
+	ReceiverValue *sourcevalue.Value
+	ResultValue   *sourcevalue.Value
 	// Context contains source-anchored enclosing control statements for this
 	// exact call site. It neither classifies the callable nor changes the call.
 	Context                  []Witness
@@ -552,21 +563,23 @@ type RelationPatternInput struct {
 // RelationPattern is a sealed source-syntax candidate. Its identity is local
 // to the owning relation; SourceRef therefore needs to be unique only there.
 type RelationPattern struct {
-	Context                  []Witness         `json:"context,omitempty"`
-	ID                       string            `json:"id"`
-	SourceRef                string            `json:"source_ref"`
-	Form                     PatternForm       `json:"form"`
-	Selector                 string            `json:"selector"`
-	Location                 *Location         `json:"location,omitempty"`
-	ResultID                 string            `json:"result_id,omitempty"`
-	ReceiverID               string            `json:"receiver_id,omitempty"`
-	ReceiverOriginIDs        []string          `json:"receiver_origin_ids"`
-	ReceiverOriginResolution Resolution        `json:"receiver_origin_resolution,omitempty"`
-	ReceiverOriginsObserved  int               `json:"receiver_origins_observed"`
-	ReceiverOriginsOmitted   int               `json:"receiver_origins_omitted"`
-	Arguments                []PatternArgument `json:"arguments"`
-	ArgumentsObserved        int               `json:"arguments_observed"`
-	ArgumentsOmitted         int               `json:"arguments_omitted"`
+	ReceiverValue            *sourcevalue.Value `json:"receiver_value,omitempty"`
+	ResultValue              *sourcevalue.Value `json:"result_value,omitempty"`
+	Context                  []Witness          `json:"context,omitempty"`
+	ID                       string             `json:"id"`
+	SourceRef                string             `json:"source_ref"`
+	Form                     PatternForm        `json:"form"`
+	Selector                 string             `json:"selector"`
+	Location                 *Location          `json:"location,omitempty"`
+	ResultID                 string             `json:"result_id,omitempty"`
+	ReceiverID               string             `json:"receiver_id,omitempty"`
+	ReceiverOriginIDs        []string           `json:"receiver_origin_ids"`
+	ReceiverOriginResolution Resolution         `json:"receiver_origin_resolution,omitempty"`
+	ReceiverOriginsObserved  int                `json:"receiver_origins_observed"`
+	ReceiverOriginsOmitted   int                `json:"receiver_origins_omitted"`
+	Arguments                []PatternArgument  `json:"arguments"`
+	ArgumentsObserved        int                `json:"arguments_observed"`
+	ArgumentsOmitted         int                `json:"arguments_omitted"`
 }
 
 // RelationInput cites ObjectInput.SourceRef values. Invocation is optional,
@@ -736,13 +749,16 @@ func New(input Input) (Index, error) {
 		ScenarioSHA256: input.ScenarioSHA256,
 		SourceSHA256:   input.SourceSHA256,
 		Target: Target{
-			Language: input.Target.Language, Kind: input.Target.Kind, Name: input.Target.Name,
+			TestSources: slices.Clone(input.Target.TestSources),
+			Language:    input.Target.Language, Kind: input.Target.Kind, Name: input.Target.Name,
 			Selector: input.Target.Selector, Sources: targetSources, AnchorFileRef: input.Target.AnchorFileRef,
 			Seeds: []TargetSeed{},
 		},
 		Objects:   make([]Object, 0, len(input.Objects)),
 		Relations: make([]Relation, 0, len(input.Relations)),
 	}
+	sort.Strings(index.Target.TestSources)
+	index.Target.TestSources = slices.Compact(index.Target.TestSources)
 	if err := validateTargetShape(index.Target); err != nil {
 		return Index{}, err
 	}
@@ -1250,6 +1266,11 @@ func validateTargetShape(target Target) error {
 		target.Seeds == nil {
 		return fmt.Errorf("program index: invalid target")
 	}
+	for position, source := range target.TestSources {
+		if !validPath(source) || position > 0 && target.TestSources[position-1] >= source {
+			return fmt.Errorf("program index: invalid or noncanonical test sources")
+		}
+	}
 	pathsByRef := make(map[string]string, len(target.Sources))
 	refsByPath := make(map[string]string, len(target.Sources))
 	for position, source := range target.Sources {
@@ -1462,6 +1483,7 @@ func canonicalizeRelationPatterns(
 			ID: id, SourceRef: value.SourceRef, Form: value.Form, Selector: value.Selector, Context: control,
 			Location: cloneLocation(value.Location),
 			ResultID: resultID, ReceiverID: receiverID, ReceiverOriginIDs: receiverOriginIDs,
+			ReceiverValue: sourcevalue.Clone(value.ReceiverValue), ResultValue: sourcevalue.Clone(value.ResultValue),
 			ReceiverOriginResolution: value.ReceiverOriginResolution,
 			ReceiverOriginsObserved:  value.ReceiverOriginsObserved, ReceiverOriginsOmitted: receiverOriginsOmitted,
 			Arguments: arguments, ArgumentsObserved: value.ArgumentsObserved,
@@ -1488,6 +1510,9 @@ func canonicalizePatternArguments(
 	for _, value := range values {
 		if !validPatternArgumentKey(value.Position, value.Keyword) || !value.Kind.Valid() {
 			return nil, fmt.Errorf("invalid argument input")
+		}
+		if err := sourcevalue.Validate(value.Origin); err != nil {
+			return nil, err
 		}
 		switch value.Kind {
 		case PatternLiteralString:
@@ -1519,6 +1544,7 @@ func canonicalizePatternArguments(
 			return nil, fmt.Errorf("argument %q value candidates: %w", patternArgumentKey(value.Position, value.Keyword), err)
 		}
 		argument := PatternArgument{
+			Origin:   sourcevalue.Clone(value.Origin),
 			ID:       argumentID,
 			Position: value.Position, Keyword: value.Keyword, Kind: value.Kind, Value: value.Value, Parts: parts,
 			ObjectIDs: objectIDs, Resolution: value.Resolution,
@@ -1724,6 +1750,12 @@ func resolvePatternObjectRefs(bindings []objectBinding, refs []string, resolutio
 }
 
 func validateRelationPatternShape(value RelationPattern, relationID string) error {
+	if err := sourcevalue.Validate(value.ReceiverValue); err != nil {
+		return err
+	}
+	if err := sourcevalue.Validate(value.ResultValue); err != nil {
+		return err
+	}
 	for i, witness := range value.Context {
 		if err := validateWitness(witness); err != nil {
 			return err
@@ -1762,6 +1794,9 @@ func validateRelationPatternShape(value RelationPattern, relationID string) erro
 }
 
 func validatePatternArgumentShape(value PatternArgument, patternID string) error {
+	if err := sourcevalue.Validate(value.Origin); err != nil {
+		return err
+	}
 	if !validText(value.ID) || !validPatternArgumentKey(value.Position, value.Keyword) || !value.Kind.Valid() ||
 		value.Parts == nil || value.ObjectIDs == nil || value.ValueCandidates == nil ||
 		!canonicalStringsAllowEmpty(value.ObjectIDs) {
@@ -2463,6 +2498,8 @@ func cloneRelationPatterns(values []RelationPattern) []RelationPattern {
 	result := make([]RelationPattern, len(values))
 	copy(result, values)
 	for position := range result {
+		result[position].ReceiverValue = sourcevalue.Clone(values[position].ReceiverValue)
+		result[position].ResultValue = sourcevalue.Clone(values[position].ResultValue)
 		result[position].Location = cloneLocation(values[position].Location)
 		if len(values[position].Context) > 0 {
 			result[position].Context = cloneWitnesses(values[position].Context)
@@ -2482,6 +2519,7 @@ func clonePatternArguments(values []PatternArgument) []PatternArgument {
 		result[position].Parts = clonePatternParts(values[position].Parts)
 		result[position].ObjectIDs = cloneStrings(values[position].ObjectIDs)
 		result[position].ValueCandidates = clonePatternValueCandidates(values[position].ValueCandidates)
+		result[position].Origin = sourcevalue.Clone(values[position].Origin)
 	}
 	return result
 }

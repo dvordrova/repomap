@@ -515,7 +515,6 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 	for _, section := range view.Sections {
 		for i := range section.Outbound {
 			row := &section.Outbound[i]
-			row.DestinationRef = add("label", &row.Destination)
 			row.SummaryRef = add("summary", &row.Summary)
 		}
 		// Action names are stable English labels or exact command/path syntax.

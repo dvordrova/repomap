@@ -135,8 +135,28 @@ func makeAnswerWindow(def table.Definition, routes []atlas.QuestionRoute, parts 
 		refs[key] = source.Ref
 	}
 	connections := make(map[string]map[string]any)
+	scopes := make(map[string][]string)
+	for _, part := range parts {
+		scope := routes[part.index].Scope
+		raw, err := json.Marshal(scope)
+		if err != nil {
+			return result, err
+		}
+		scopes[string(raw)] = scope
+	}
+	scopeKeys := make([]string, 0, len(scopes))
+	for key := range scopes {
+		scopeKeys = append(scopeKeys, key)
+	}
+	sort.Strings(scopeKeys)
+	scopeRefs, scopeCatalog := make(map[string]string), make(map[string][]string)
+	for i, key := range scopeKeys {
+		ref := fmt.Sprintf("s%d", i+1)
+		scopeRefs[key], scopeCatalog[ref] = ref, scopes[key]
+	}
 	for i, part := range parts {
 		route := routes[part.index]
+		scopeKey, _ := json.Marshal(route.Scope)
 		options := make([]string, 0, len(part.candidates))
 		hints := make([]map[string]any, 0, len(part.candidates))
 		places := make(map[string][]string)
@@ -189,7 +209,7 @@ func makeAnswerWindow(def table.Definition, routes []atlas.QuestionRoute, parts 
 			}
 		}
 		result.table.Rows = append(result.table.Rows, table.Row{ID: route.Question, Fields: []table.Field{
-			{Name: "question", Value: route.Question}, {Name: "scope", Value: route.Scope},
+			{Name: "question", Value: route.Question}, {Name: "scope_ref", Value: scopeRefs[string(scopeKey)]},
 			{Name: "retrieval_complete", Value: route.Coverage.UnresolvedChunks == 0}, {Name: "evidence_complete", Value: part.complete},
 			{Name: "candidate_options", Value: options}, {Name: "prior_model_suggestions", Value: hints},
 		}})
@@ -204,7 +224,7 @@ func makeAnswerWindow(def table.Definition, routes []atlas.QuestionRoute, parts 
 		joined = append(joined, connections[key])
 	}
 	result.table.Stage = def.Stage
-	result.table.Context = []table.Field{{Name: "candidates", Value: sources}, {Name: "connections", Value: joined}}
+	result.table.Context = []table.Field{{Name: "candidates", Value: sources}, {Name: "connections", Value: joined}, {Name: "scopes", Value: scopeCatalog}}
 	raw, err := table.Request(def, result.table)
 	if err != nil {
 		return result, err

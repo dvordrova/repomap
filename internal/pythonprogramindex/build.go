@@ -22,10 +22,11 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 const (
-	adapterVersion       = 12
+	adapterVersion       = 13
 	maxParserStderrBytes = 16 << 10
 )
 
@@ -118,6 +119,8 @@ type parsedPatternArgumentRef struct {
 }
 
 type parsedRelationPattern struct {
+	ReceiverValue            *sourcevalue.Value       `json:"receiver_value,omitempty"`
+	ResultValue              *sourcevalue.Value       `json:"result_value,omitempty"`
 	Context                  []programindex.Witness   `json:"context,omitempty"`
 	SourceRef                string                   `json:"source_ref"`
 	Form                     programindex.PatternForm `json:"form"`
@@ -133,6 +136,7 @@ type parsedRelationPattern struct {
 }
 
 type parsedPatternArgument struct {
+	Origin                  *sourcevalue.Value            `json:"origin,omitempty"`
 	Position                int                           `json:"position,omitempty"`
 	Keyword                 string                        `json:"keyword,omitempty"`
 	Kind                    programindex.PatternValueKind `json:"kind"`
@@ -391,6 +395,10 @@ func buildInputResults(
 	}
 
 	inputs := make([]InputResult, len(targets))
+	testSources, err := configuredPythonTests(repository)
+	if err != nil {
+		return nil, err
+	}
 	for _, batch := range sourceGroups {
 		parsedViews, err := parseSourceGroup(ctx, repository, batch, runner)
 		if err != nil {
@@ -410,6 +418,11 @@ func buildInputResults(
 				if err != nil {
 					inputs[group.positions[offset]].Err = fmt.Errorf("python program index: target %q: %w", target.Selector, err)
 					continue
+				}
+				for _, module := range group.modules {
+					if testSources[module.Path] {
+						programTarget.TestSources = append(programTarget.TestSources, module.Path)
+					}
 				}
 				inputs[group.positions[offset]].Input = shared.ForTarget(programTarget)
 			}
@@ -717,6 +730,7 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 					}
 				}
 				arguments[argumentPosition] = programindex.PatternArgumentInput{
+					Origin:   sourcevalue.Clone(argument.Origin),
 					Position: argument.Position, Keyword: argument.Keyword, Kind: argument.Kind,
 					Value: argument.Value, Parts: parts,
 					ObjectRefs: append([]string(nil), argument.ObjectRefs...),
@@ -725,7 +739,9 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 				}
 			}
 			patterns[patternPosition] = programindex.RelationPatternInput{
-				SourceRef: pattern.SourceRef, Form: pattern.Form, Selector: pattern.Selector, Context: pattern.Context,
+				ReceiverValue: sourcevalue.Clone(pattern.ReceiverValue),
+				ResultValue:   sourcevalue.Clone(pattern.ResultValue),
+				SourceRef:     pattern.SourceRef, Form: pattern.Form, Selector: pattern.Selector, Context: pattern.Context,
 				Location:                 cloneLocation(pattern.Location),
 				ResultRef:                pattern.ResultRef,
 				ReceiverRef:              pattern.ReceiverRef,

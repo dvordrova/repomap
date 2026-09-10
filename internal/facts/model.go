@@ -163,21 +163,22 @@ type Target struct {
 //	entity      Key (local id), Symbol (name), Path, Value (corpus presence)
 //	relation    Key (label), Refs [from entity id, to entity id], Anchor
 type Fact struct {
-	ID           string     `json:"id"`
-	Kind         Kind       `json:"kind"`
-	TargetID     string     `json:"target_id,omitempty"`
-	PeerTargetID string     `json:"peer_target_id,omitempty"`
-	Anchor       *Anchor    `json:"anchor,omitempty"`
-	Symbol       string     `json:"symbol,omitempty"`
-	ObjectID     string     `json:"object_id,omitempty"`
-	Method       string     `json:"method,omitempty"`
-	Path         string     `json:"path,omitempty"`
-	Key          string     `json:"key,omitempty"`
-	Value        string     `json:"value,omitempty"`
-	Text         string     `json:"text,omitempty"`
-	Resolution   Resolution `json:"resolution,omitempty"`
-	Refs         []string   `json:"refs,omitempty"`
-	Evidence     []Anchor   `json:"evidence,omitempty"`
+	Data         *DataObject `json:"data,omitempty"`
+	ID           string      `json:"id"`
+	Kind         Kind        `json:"kind"`
+	TargetID     string      `json:"target_id,omitempty"`
+	PeerTargetID string      `json:"peer_target_id,omitempty"`
+	Anchor       *Anchor     `json:"anchor,omitempty"`
+	Symbol       string      `json:"symbol,omitempty"`
+	ObjectID     string      `json:"object_id,omitempty"`
+	Method       string      `json:"method,omitempty"`
+	Path         string      `json:"path,omitempty"`
+	Key          string      `json:"key,omitempty"`
+	Value        string      `json:"value,omitempty"`
+	Text         string      `json:"text,omitempty"`
+	Resolution   Resolution  `json:"resolution,omitempty"`
+	Refs         []string    `json:"refs,omitempty"`
+	Evidence     []Anchor    `json:"evidence,omitempty"`
 	// Extractor names the producer of an extension fact, including built-ins.
 	Extractor string `json:"extractor,omitempty"`
 }
@@ -456,6 +457,9 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 			return fmt.Errorf("entrypoint requires anchor")
 		}
 	case KindEntity:
+		if err := fact.Data.Validate(); err != nil {
+			return err
+		}
 		if fact.Key == "" || fact.Extractor == "" || fact.Path == "" && fact.Symbol == "" {
 			return fmt.Errorf("entity requires local identity, producer and path or name")
 		}
@@ -560,6 +564,7 @@ func clone(result Result) Result {
 	owned.Facts = make([]Fact, len(result.Facts))
 	for position, fact := range result.Facts {
 		copied := fact
+		copied.Data = CloneData(fact.Data)
 		if fact.Anchor != nil {
 			anchor := *fact.Anchor
 			copied.Anchor = &anchor

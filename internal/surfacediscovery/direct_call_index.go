@@ -22,7 +22,7 @@ const (
 	// compiler witnesses remain only in WitnessCount; there is no per-edge
 	// pattern sample or truncation. The retained edges remain only actual static
 	// calls; callback execution is not inferred from an argument binding.
-	DirectCallIndexVersion = 10
+	DirectCallIndexVersion = 11
 )
 
 type DirectCallIndexState string
@@ -644,7 +644,7 @@ func (builder *directCallIndexBuilder) recordCall(a *analyzer, call ssa.CallInst
 		Invocation: directCallInvocation(call), RepresentativeCallsite: callsite,
 		WitnessCount: 1, Patterns: []ExternalCallPattern{},
 	}
-	if pattern := a.externalCallPattern(common, callsite); pattern != nil {
+	if pattern := a.externalCallPattern(call, callsite); pattern != nil {
 		edge.Patterns = appendDirectCallPattern(edge.Patterns, *pattern)
 	}
 	edge.PatternsObserved = len(edge.Patterns)
@@ -654,7 +654,7 @@ func (builder *directCallIndexBuilder) recordCall(a *analyzer, call ssa.CallInst
 		if directCallLocationLess(callsite, existing.RepresentativeCallsite) {
 			existing.RepresentativeCallsite = callsite
 		}
-		if pattern := a.externalCallPattern(common, callsite); pattern != nil {
+		if pattern := a.externalCallPattern(call, callsite); pattern != nil {
 			existing.Patterns = appendDirectCallPattern(existing.Patterns, *pattern)
 		}
 		existing.PatternsObserved = len(existing.Patterns)

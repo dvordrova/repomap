@@ -60,6 +60,9 @@ type Column struct {
 	// When limits this cell to a previously validated choice in the same row.
 	// Inactive cells have no authority and are not required or retained.
 	When map[string]string `json:"when,omitempty"`
+	// WhenOptionsFrom requires this cell only when the named input field has
+	// advertised choices. Empty choices have no decision to request or validate.
+	WhenOptionsFrom string `json:"when_options_from,omitempty"`
 }
 
 // Definition is one table: its stage name, window size, prompt and columns.
@@ -243,6 +246,9 @@ func Request(def Definition, window Window) ([]byte, error) {
 		}
 		if len(column.When) != 0 {
 			spec["when"] = column.When
+		}
+		if column.WhenOptionsFrom != "" {
+			spec["when_options_nonempty"] = column.WhenOptionsFrom
 		}
 		writeJSON(&out, spec)
 	}

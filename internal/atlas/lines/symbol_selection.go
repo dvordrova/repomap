@@ -13,7 +13,7 @@ var symbolSelectionPrompt string
 // Its complete evidence is unchanged by directory/file presentation choices.
 func SymbolSelection(types bool) table.Definition {
 	def := table.Definition{
-		Stage: StageSymbols, Contract: "repomap.atlas.symbol-selection.v3",
+		Stage: StageSymbols, Contract: "repomap.atlas.symbol-selection.v4",
 		System: symbolSelectionPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "key_symbol", Kind: table.Choice, Options: []string{"yes", "no"}, Note: "a declaration a newcomer needs to understand this file"},
@@ -25,7 +25,7 @@ func SymbolSelection(types bool) table.Definition {
 	}
 	def.Columns = append(def.Columns,
 		table.Column{Name: "activation", Kind: table.Choice, Options: []string{"none", "unassessed", "command", "request", "interaction", "scheduled", "continuous"}, Note: "supported external activation; unassessed when the evidence cannot establish a role"},
-		table.Column{Name: "outbound", Kind: table.Sequence, OptionsFrom: "call_options", LimitFrom: "call_count", Note: "evidence for boundary review: communication or an explicitly configured remote client/exporter; none when unsupported"},
+		table.Column{Name: "outbound", Kind: table.Sequence, OptionsFrom: "call_options", WhenOptionsFrom: "call_options", LimitFrom: "call_count", Note: "evidence for boundary review: communication or an explicitly configured remote client/exporter; none when unsupported"},
 	)
 	return def
 }
