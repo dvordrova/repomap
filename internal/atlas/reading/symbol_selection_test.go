@@ -112,3 +112,33 @@ func TestClosedScopeAndRefusedCaptionKeepIndependentRoles(t *testing.T) {
 		t.Fatal("closed non-key operation disappeared from the report")
 	}
 }
+
+func TestLearnRetainsUncaptionedKeyWithItsOriginalSelection(t *testing.T) {
+	graph := knowledgeGraph(t)
+	var symbol atlas.Place
+	for _, place := range graph.Places {
+		if place.Symbol != nil && place.Symbol.Decl.Name == "Main" {
+			symbol = place
+			break
+		}
+	}
+	if symbol.ID == "" {
+		t.Fatal("missing fixture symbol")
+	}
+	choice := &Knowledge{ID: "selection-evidence", SubjectID: symbol.Symbol.Decl.ObjectID, Cells: table.Answer{"key_symbol": "yes"}}
+	r := reader{opts: Options{Graph: graph}, places: map[string]atlas.Place{},
+		knowledgeSubjects: map[string]*Knowledge{choice.SubjectID: choice}, symbolSelections: map[string]*Knowledge{choice.SubjectID: choice}}
+	for _, place := range graph.Places {
+		r.places[place.ID] = place
+	}
+	for _, item := range r.learningEvidence() {
+		if item.Source.SubjectID != choice.SubjectID {
+			continue
+		}
+		if len(item.Source.KnowledgeIDs) != 1 || item.Source.KnowledgeIDs[0] != choice.ID || item.Source.Path != symbol.Path || item.Source.Evidence == nil {
+			t.Fatalf("uncaptioned key lost its original evidence or duplicated knowledge: %+v", item.Source)
+		}
+		return
+	}
+	t.Fatal("uncaptioned key disappeared from Learn")
+}

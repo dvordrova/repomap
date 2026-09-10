@@ -197,7 +197,7 @@ func (r *reader) learningEvidence() []learningEvidence {
 			if known != nil {
 				stop.KnowledgeIDs = []string{known.ID}
 			}
-			if description := r.knowledgeSubjects[anchor.SubjectID]; description != nil {
+			if description := r.knowledgeSubjects[anchor.SubjectID]; description != nil && !contains(stop.KnowledgeIDs, description.ID) {
 				stop.KnowledgeIDs = append(stop.KnowledgeIDs, description.ID)
 			}
 			appendSource(stop)
