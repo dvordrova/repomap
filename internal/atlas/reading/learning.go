@@ -23,10 +23,6 @@ import (
 
 const stageLearn = "atlas_learn"
 
-// Eight intent reviews and their concise proposals have an owner-sized output
-// allowance. A real output refusal still partitions complete original evidence.
-const learningOutputTokens = 16000
-
 //go:embed prompts/learning.md
 var learningPrompt string
 
@@ -289,7 +285,7 @@ func learningCall(pool learningRequest, prompt string) (llm.Call[learningRespons
 	}
 	return llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v3"),
 		Prompt:         llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true, ResponseExample: learningResponseExample, ProseFields: []string{"reviews[].reason", "reviews[].questions[].question", "reviews[].questions[].why"}},
-		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: learningOutputTokens},
+		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
 		DecodeValidate: func(raw []byte) (learningResponse, error) { return decodeLearning(raw, pool) }}, nil
 }
 

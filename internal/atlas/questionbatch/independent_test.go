@@ -44,13 +44,13 @@ func TestRepeatedRelevancePreservesAllHintsWithoutFirstWins(t *testing.T) {
 	}
 }
 
-func TestRetrievalPlansItsOwnOutputAllowance(t *testing.T) {
+func TestRetrievalReservesSharedAllowanceForReasoningAndSelections(t *testing.T) {
 	provider := &testProvider{}
 	if _, err := Run(t.Context(), llm.Executor{}, provider, testInput(3, 2), Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.requests) != 1 || provider.requests[0].Limits.MaxOutputTokens != 16000 {
-		t.Fatalf("retrieval did not prepare its own output allowance: %+v", provider.requests)
+	if len(provider.requests) != 1 || provider.requests[0].Limits.MaxOutputTokens != llm.DefaultMaxOutputTokens || !provider.requests[0].Prompt.Reasoning {
+		t.Fatalf("retrieval did not reserve the shared allowance for reasoning and selections: %+v", provider.requests)
 	}
 }
 

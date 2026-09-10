@@ -354,10 +354,10 @@ func (data catalogue) requestCall(rows []int, questions []modelQuestion) (llm.Ca
 }
 
 func limits() llm.Limits {
-	// Closed source selections and short relevance explanations use a smaller
-	// output allowance. Actual refusals split questions first, without dropping
-	// their complete original evidence or limiting the number of questions.
-	return llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: 16000}
+	// Reasoning shares the output allowance with the source selections. Short
+	// visible answers do not justify a smaller reservation for a complete
+	// evidence catalogue. The provider still applies its configured ceiling.
+	return llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens}
 }
 
 func (data catalogue) plan(ctx context.Context, provider llm.Provider, part window) ([]window, error) {

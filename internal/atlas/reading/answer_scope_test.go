@@ -8,6 +8,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
 func TestAnswerScopesAreSharedExactlyWithoutBroadeningPartialParts(t *testing.T) {
@@ -40,9 +41,9 @@ func TestAnswerScopesAreSharedExactlyWithoutBroadeningPartialParts(t *testing.T)
 	}
 }
 
-func TestLearnOwnsItsSmallerOutputAllowance(t *testing.T) {
+func TestLearnReservesSharedAllowanceForCompleteEvidenceReviews(t *testing.T) {
 	call, err := learningCall(learningRequest{}, learningPrompt)
-	if err != nil || call.Limits.MaxOutputTokens != 16000 {
+	if err != nil || call.Limits.MaxOutputTokens != llm.DefaultMaxOutputTokens {
 		t.Fatalf("learn output planning: %+v %v", call.Limits, err)
 	}
 }

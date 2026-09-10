@@ -2537,14 +2537,29 @@ The final answer table requests provider-supported deliberate reasoning. On
 2026-09-07 the owner rejected the arbitrary small generation ceilings after a
 valid answer request exhausted its 8192-token reasoning/output allowance.
 Table definitions no longer carry individual 2048/4096/8192-token ceilings.
-The 2026-09-10 review changes only the compact decision/generation contracts:
-Learn proposal/selection and question retrieval request 16,000 output tokens;
-separate glossary generation/reduction request 8,000. Final answers retain the
-shared 128,000-token allowance. A lower configured client ceiling still applies.
+The attempted 2026-09-10 cap of 16,000 tokens for Learn proposals and question
+retrieval failed on real Freqtrade evidence. The stopped ordinary run
+`20260910-183218-freqtrade-30b33803636c` recorded 31 retrieval attempts:
+19 output-limit refusals, six context refusals, one no-content refusal, three
+cancellations at stop and only two accepted partial windows. Retrieval did not
+finish. A 585,603-input-token window with 102 evidence rows and 45 questions
+exhausted all 16,000 output tokens. A separate Learn proposal exhausted the same
+cap without requesting optional terms. Lossless splitting preserved evidence
+but repeatedly bought its reading; this was not an accepted cost optimization.
+Learn proposals and question retrieval now use the shared 128,000-token
+allowance, as final answers already did. Separate glossary generation/reduction
+retains its 8,000-token allowance. A lower configured client ceiling still applies.
+A controlled saved-request probe changed only `max_tokens` from 16,000 to
+128,000 for that same 102-row/45-question window. It completed in one attempt
+after 126.971 seconds, using 32,903 output tokens, including 20,890 reasoning
+tokens. The ordinary question decoder accepted all 45 decisions, 278 selections
+and 864 anchor references, with no refused question. This demonstrates the cap
+failure on unchanged evidence; it is not full Freqtrade report acceptance or a
+measurement of whole-run acceleration.
 Input preparation uses the actual output reservation and complete original
 evidence; a context refusal can still occur when input alone exceeds the
 provider window, and then authorizes lossless partitioning. This does not
-promise that reducing output alone makes the former Freqtrade input fit. The provider adapter encodes this reasoning preference
+promise that an increased output reservation makes every large input fit. The provider adapter encodes this reasoning preference
 with native `thinking` on official DeepSeek and default `chat_template_kwargs`
 on compatible endpoints. Shared question retrieval also opts into reasoning;
 other tables and final display translation retain fast mode. Exact request and memo identities include the

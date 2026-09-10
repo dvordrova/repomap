@@ -73,11 +73,13 @@ Final answer prose preserves paragraphs and complete qualifications; only
 short label cells are whitespace-collapsed or length-trimmed. Source checks
 keep owned declarations together, each with its original code link.
 The shared question retrieval and final answer opt into provider-supported reasoning.
-The owner-approved 2026-09-10 cost correction gives Learn proposal/selection and
-question retrieval a 16,000-token output allowance, and separate glossary
-generation/reduction 8,000. Final answers retain the shared 128,000-token
-allowance. A lower configured provider ceiling still applies; reasoning and
-visible output share it. Complete input is prepared first, with lossless
+Learn proposals, question retrieval and final answers use the shared
+128,000-token output allowance. The attempted 2026-09-10 16,000-token cap
+exhausted retrieval reasoning and Learn output on real Freqtrade evidence;
+short visible decisions do not justify that smaller reservation. Separate
+glossary generation/reduction retains its 8,000-token allowance. A lower
+configured provider ceiling still applies; reasoning and visible output share
+it. Complete input is prepared first, with lossless
 partitioning on actual provider preparation/resource refusals. The DeepSeek adapter encodes that preference on its
 official endpoint. Other compatible endpoints encode the same stage preference
 in `chat_template_kwargs.enable_thinking`: shared question

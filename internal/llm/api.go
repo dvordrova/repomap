@@ -14,8 +14,8 @@ import (
 // fixtures, and callers that have not opted in retain their original behavior.
 const DefaultBatchConcurrency = 4
 
-// DefaultMaxOutputTokens is the shared request allowance. Stages do not set
-// smaller generation cutoffs; the provider applies its configured ceiling.
+// DefaultMaxOutputTokens is the shared request allowance for analytical output.
+// The provider applies its configured ceiling.
 const DefaultMaxOutputTokens = 128000
 
 // Prompt is provider-neutral model input. A Provider is responsible for
