@@ -208,7 +208,7 @@ the same SSA receiver, independent of framework names. These observations enter
 the callable's own review; neighbouring caller registrations omit their field
 metadata. No field observation asserts a final runtime value or callback call.
 
-JSTS result v14 / helper v18 also preserves every compiler-observed callable
+JSTS result v14 / helper v19 also preserves every compiler-observed callable
 JSX attribute as an anchored callback binding, including render props. The
 element and attribute are source facts; neither their names nor a framework
 allowlist classify an operation. Wrapped function-valued declarations retain
@@ -227,6 +227,20 @@ type-owned variable objects used by Python class fields. The same atlas members
 and question evidence carry them onward; no field creates a runtime call or an
 inherited declaration at a new owner. Comparable count-field examples live in
 the cumulative TypeScript, Python and Go testdata repositories.
+
+Symbol selection reviews key roles, activation and outgoing calls independently
+of directory/file closure. It keeps insufficient activation evidence as
+`unassessed`. Symbols and Types then describe only the selected keys displayed
+by the existing per-file/per-box overview rules. Selection and caption retain
+separate exact-input memos and knowledge records; refused prose cannot erase
+accepted roles or Learn evidence. Full original declarations remain available
+to question retrieval, and question-only readings recall both records without
+new description or selection requests.
+
+Python HTTP facts follow observed single base-class chains to external methods,
+stopping at local overrides and incomplete or multiple bases. TypeScript uses
+the compiler-resolved original external class method. These facts do not add
+native call edges; Go's promoted embedded methods use existing compiler evidence.
 
 Symbols and Types may also return one short English `alias` beside their
 explanation, through the same existing table request. It is an optional

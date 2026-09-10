@@ -2,7 +2,9 @@ package reading
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -179,9 +181,9 @@ func TestSymbolsGetLinesAndAtMostFiveKeysPerFile(t *testing.T) {
 			lined++
 		}
 	}
-	// c.go declares F (not a candidate) plus eight candidates: eight lines,
-	// five keys by rank.
-	if lined != 8 || keys != lines.MaxKeysPerFile {
+	// c.go declares F (not a candidate) plus eight candidates: five keys
+	// by rank, with captions only for the three displayed keys.
+	if lined != 3 || keys != lines.MaxKeysPerFile {
 		t.Fatalf("lined %d keys %d: %+v", lined, keys, core.Symbols)
 	}
 	for _, symbol := range core.Symbols {
@@ -198,7 +200,7 @@ func TestSymbolsGetLinesAndAtMostFiveKeysPerFile(t *testing.T) {
 			use = candidate
 		}
 	}
-	if use.Rows != 8 || use.Windows != 1 {
+	if use.Rows != 11 || use.Windows != 2 {
 		t.Fatalf("symbol use: %+v", use)
 	}
 }
@@ -576,7 +578,7 @@ func TestBudgetClosesDirectories(t *testing.T) {
 	}
 }
 
-func TestClosedScopesSkipDescriptionsButRemainQuestionSources(t *testing.T) {
+func TestClosedScopesKeepSelectionsAndQuestionSources(t *testing.T) {
 	for _, budget := range []bool{true, false} {
 		t.Run(fmt.Sprintf("budget=%v", budget), func(t *testing.T) {
 			graph := twoTargetGraph(t)
@@ -611,33 +613,32 @@ func TestClosedScopesSkipDescriptionsButRemainQuestionSources(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			closed := func(path string) bool {
-				return budget && (strings.HasPrefix(path, "web/") || path == "svc/core/c.go")
+			// Read the persisted choices directly: a partial reading has no
+			// published atlas, so checking result.Atlas would be vacuous.
+			_ = result
+			raw, err := os.ReadFile(filepath.Join(opts.OwnerRunDir, KnowledgeFilename))
+			if err != nil {
+				t.Fatal(err)
 			}
-			for _, target := range result.Atlas.Targets {
-				for _, box := range target.Boxes {
-					for _, file := range box.Files {
-						wantRequests := 3 // One file row, one callable row, one type row.
-						if closed(file.Path) {
-							wantRequests = 1
-							if strings.HasPrefix(file.Path, "web/") {
-								wantRequests = 0
-							}
-						}
-						if got := provider.answers[file.Path]; got != wantRequests {
-							t.Errorf("%s: sent %d rows, want %d", file.Path, got, wantRequests)
-						}
-						for _, symbol := range file.Symbols {
-							if symbol.ObjectID == "" {
-								continue
-							}
-							if described := strings.HasPrefix(symbol.Line, "Text for"); described == closed(file.Path) {
-								t.Errorf("%s %s: closed=%v, description=%q", file.Path, symbol.Name, closed(file.Path), symbol.Line)
-							}
-						}
+			var saved struct{ Records []Knowledge }
+			if err := json.Unmarshal(raw, &saved); err != nil {
+				t.Fatal(err)
+			}
+			selectedSubjects := make(map[string]bool)
+			for _, record := range saved.Records {
+				if strings.HasPrefix(record.PlaceID, "selection:") {
+					if record.Cells["key_symbol"] != "yes" {
+						t.Fatalf("lost choice: %+v", record)
 					}
+					selectedSubjects[record.SubjectID] = true
 				}
 			}
+			for _, symbol := range symbols {
+				if !selectedSubjects[symbol.Symbol.Decl.ObjectID] {
+					t.Errorf("closed presentation scope suppressed selection: %s", symbol.ID)
+				}
+			}
+
 			// Question-only reading recalls the same accepted decisions, yet its
 			// original evidence still includes every closed callable and type.
 			for _, chunk := range lines.QuestionRows(graph) {

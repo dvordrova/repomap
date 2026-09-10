@@ -105,7 +105,13 @@ func (b *builder) addHTTP(target *targetContext) {
 			if !isRoute && !isCall {
 				continue
 			}
-			side := classifyHTTP(target.externalOrigins(relation, pattern), pattern.Form, selector)
+			origins := target.externalOrigins(relation, pattern)
+			for _, id := range pattern.ReceiverOriginIDs {
+				if origin, ok := target.inheritedMethodOrigin(id, pattern.Selector); ok {
+					origins = append(origins, origin)
+				}
+			}
+			side := classifyHTTP(origins, pattern.Form, selector)
 			switch {
 			case side.server && isRoute:
 				b.addRoute(target, relation, pattern, selector, prefixes[relation.FromID])
@@ -114,6 +120,33 @@ func (b *builder) addHTTP(target *targetContext) {
 			}
 		}
 	}
+}
+
+// inheritedMethodOrigin follows the adapter's observed Python base classes.
+// A local override, incomplete base or multiple inheritance needs method
+// resolution evidence we do not have. Neither a class name nor an interface
+// implementation is evidence that a method belongs to an external framework.
+func (target *targetContext) inheritedMethodOrigin(id, selector string) (programindex.ExternalSymbol, bool) {
+	seen := make(map[string]bool)
+	for !seen[id] {
+		seen[id] = true
+		object, ok := target.objects[id]
+		if !ok {
+			break
+		}
+		if object.Kind == programindex.ObjectExternalSymbol && object.External != nil && object.External.RepositoryPath == "" {
+			return *object.External, true
+		}
+		if object.Kind != programindex.ObjectType || target.classMembers[id][selector] {
+			break
+		}
+		bases := target.classBases[id]
+		if len(bases) != 1 {
+			break
+		}
+		id = bases[0]
+	}
+	return programindex.ExternalSymbol{}, false
 }
 
 // addRoute emits one fact per path this registration answers on. A router

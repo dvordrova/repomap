@@ -132,6 +132,7 @@ type reader struct {
 	learningRound     int
 	knowledge         map[string]*Knowledge
 	knowledgeSubjects map[string]*Knowledge
+	symbolSelections  map[string]*Knowledge // native subject -> independent selection evidence
 	responseTables    map[string]rememberedTable
 	recallOnly        bool
 }

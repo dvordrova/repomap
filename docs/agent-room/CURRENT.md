@@ -51,38 +51,57 @@ the initial map or automatically proposed questions introduce it adequately.
 
 ### What the current implementation actually obtains
 
-Code inspection at `ec981a11` found these dependencies:
+The ordinary symbol stage now separates discovery from display prose:
 
-- `internal/atlas/lines/tables.go:Symbols` asks for prose, an English alias,
-  key-symbol selection, an activation proposal and outbound-call selections in
-  the same row. Omitting that row omits every one of those decisions. Counting
-  all skipped rows as unnecessary descriptions therefore overstates what was
-  established by the selection fix.
-- `reading.readOperations` independently reviews observed callback and
-  asynchronous activation evidence as well as symbol-stage proposals.
-  `readBoundaries` retains native boundary observations. These preserve some
-  operation and integration evidence after a symbol row is skipped; they do
-  not demonstrate that all omitted proposals or outbound interpretations are
-  redundant. `bindInterpretedBoundaries` consumes those outbound selections.
-- `reading.questionRows` starts from the full graph; final answers consume the
-  selected original evidence. They do not require a fresh symbol description
-  first. `learningEvidence`, however, admits ordinary symbol anchors through
-  accepted `key_symbol=yes` knowledge, alongside file descriptions,
-  documentation, boundaries and source facts. Closing a scope can therefore
-  remove learning topics even though explicit question retrieval still sees
-  their declarations.
-- Directory rows expose names, bounded child lists, counts and available
-  documentation, without a catalogue of descendant launches or operations.
-  File rows expose leading declarations and direct caller facts. The current
-  `open` prompt permits closing "trivial" code without defining which of the
-  reader outcomes must survive that choice. Its input and decision are not
-  enough to establish that downstream semantic work is unnecessary.
+- `SymbolSelection` reviews every eligible candidate's key-symbol choice,
+  activation and outgoing calls. A types-only row asks for the key choice.
+  Accepted directory/file `open=no` decisions do not suppress these rows.
+  `unassessed` preserves insufficient activation evidence; it is not `none`.
+- `Symbols` and `Types` then explain only the model-selected keys that the
+  existing overview displays: at most five ranked keys per file and three per
+  box, with each selected source described once across owners. Selection uses
+  original documentation before captions can affect the display order.
+  Refused selection never supplies a caption through the native ranking fallback.
+- Selection and caption have separate exact-input memos and knowledge records,
+  both bound to the original subject and file context. A refused caption cannot
+  delete accepted activation, outgoing-call or key choices. `readOperations`
+  still independently reviews proposed and observed callback/async activations
+  and writes operation names and descriptions. Native boundaries stay independent.
+- `learningEvidence` uses accepted key-selection knowledge even when the symbol
+  has no caption. Explicit question retrieval retains the full original graph;
+  final answers already read original evidence without buying a description
+  first. Question-only runs recall both kinds of knowledge without new selection
+  or caption requests. The static report never calls a model.
 
-The `ec981a11` regression establishes execution of accepted close decisions,
-preservation of the original question graph, and refusal isolation. It does
-not establish overview, integration or Learn quality. The saved Airflow count
-of 52,393 skipped symbol/type rows is an impact count, not a count of proven
-unnecessary work. The full Airflow process remains paused before atlas reading.
+This supersedes `ec981a11`'s broad closure of symbol rows. Its 52,393 skipped
+rows were an impact count, not proof that the omitted roles were unnecessary.
+The replacement regression checks persisted selection records directly,
+including closed files and ancestors, rather than the empty atlas of a partial
+reading. It also checks refusal isolation, non-key operations, original question
+sources, replay and exact-input reuse.
+
+The saved 438-target Airflow graph has 76,776 eligible selection rows, 2,405
+boxes and 1,823 distinct box/target candidate pools after restoring the saved
+file placements. The existing three-key display rule bounds captions by 4,601
+for these pools; this is an upper bound before model selection, not an observed
+caption count. Only 1,722 candidates have the existing callback/async hint, which
+is not evidence that all other activations are absent. Broad role selection
+therefore remains in this first change. These counts do not promise a runtime
+ratio or acceptance of the newer 457-target graph.
+
+Python HTTP facts now follow an observed single base-class chain to an external
+framework method, stopping at a local override, missing base or multiple bases.
+No native call edge is invented. TypeScript uses the compiler-resolved original
+external class method; a local override keeps its local origin. The cumulative
+Go fixture checks its distinct language equivalent, promoted methods through
+embedding, with no extra Go production rule. All three retain source anchors
+and contrasting local methods. The saved Airflow core index yields 120 production
+`api_fastapi` route facts after this change (148 including 28 test routes); completeness and composed prefixes
+still need separate acceptance. The earlier claim that multiline decorators
+were lost was false: the Python adapter already reads their AST.
+
+Full Airflow remains paused before atlas reading. These local changes do not
+reduce the measured 33-minute native preparation or 17-minute facts stage.
 
 ### How to judge an optimization against these results
 
@@ -3444,30 +3463,18 @@ the model closes keeps its fallback line. Step 3 adds the symbol table: the
 code ranks declarations per file (exported and documented first, then by
 callers). Every callable and the first ten ranked declarations are description
 candidates; additional type places remain available to questions. The model
-gives each asked candidate a line and a yes or no as a key symbol, the code
-keeps at most five keys per file by rank and a box shows three. Without the
-model the keys are the code's ranking.
+first selects each candidate's key role, activation and outgoing calls without
+writing a caption. The code keeps at most five keys per file by rank and a box
+shows three. Only those displayed selected keys receive symbol/type prose.
+Without the model the keys keep their original native ranking and source text.
 
-Callable and type descriptions now honor accepted directory/file `open=no`
-decisions before preparing provider rows. The file stage already propagates a
-closed directory to its files. Missing, invalid and refused decisions remain
-eligible; they are not negative scope decisions. The symbol stage reports how
-many otherwise eligible descriptions it left unasked. No symbol is removed
-from the graph or question evidence, and observed activation evidence still
-receives its independent operation review. A question-only reading recalls
-the same saved decisions without new description requests and can select the
-original closed-scope declarations. Non-budget readings are unchanged.
-
-The 2026-09-10 saved Airflow audit found 76,881 unique description candidates
-across 5,700 files, with no duplicate source anchors or native object IDs.
-After excluding 105 bare undocumented types, 52,393 of 76,776 prospective
-description rows lay under accepted closed scopes. Honoring those decisions
-leaves 24,383 eligible rows before cache reuse. These are counts from the older
-438-target saved graph, not measured provider traffic or the newer 457-target
-run. The latter was paused during graph construction before atlas model
-reading to avoid using the old selection logic. Its native preparation alone
-took about 33 minutes and facts another 17; preparation performance and full
-Airflow publication remain unaccepted.
+Directory/file `open=no` controls presentation exploration, never symbol role
+selection. Accepted selections have their own knowledge and exact-input memo;
+caption refusal does not erase them. All original symbol/type places remain
+available to questions, including types beyond the initial candidate ranking.
+Question-only reading recalls the same selections and captions without new
+requests. See "Required analysis results before optimization" above for the
+current Airflow scope measurement and its limits.
 
 Directories v3 and files v4 use the complete request-local `fill` catalogue
 as their response contract. Both owner prompts show the base and optional-open
@@ -4210,7 +4217,7 @@ deterministic HTTP join. Target-local meaning comes from categorization and
 grouping; cross-target connections come only from repository matching over the
 complete GroupsIndex set.
 
-JSTS result v14 / helper v18 retains callable JSX attributes as anchored
+JSTS result v14 / helper v19 retains callable JSX attributes as anchored
 `passes_callback` relations with `callable_binding:jsx_attribute` invocation.
 Element and attribute names remain source observations; no event-name or
 framework allowlist assigns meaning. Compiler-confirmed function-valued

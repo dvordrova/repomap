@@ -13,6 +13,7 @@ func assertGoLocalHTTPNameFacts(t *testing.T, index programindex.Index) {
 	callee := programIndexObjectNamed(t, index, programindex.ObjectFunction, "Get", "internal/localstore/store.go")
 	assertNativeHTTPNameFacts(t, index, caller, callee, 6, programindex.ResolutionExact,
 		facts.Fact{Anchor: &facts.Anchor{Path: "cmd/app/main.go", Line: 17}, Symbol: "fetchLevels", Path: "/api/levels", Resolution: facts.ResolutionExact})
+	assertInheritedRouteFacts(t, index, "/api/embedded", "cmd/app/main.go", 115, "/api/overridden-lookalike")
 }
 
 func assertPythonLocalHTTPNameFacts(t *testing.T, index programindex.Index) {
@@ -21,6 +22,32 @@ func assertPythonLocalHTTPNameFacts(t *testing.T, index programindex.Index) {
 	callee := programIndexObjectNamed(t, index, programindex.ObjectFunction, "get", "src/requests.py")
 	assertNativeHTTPNameFacts(t, index, caller, callee, 16, programindex.ResolutionAlternatives,
 		facts.Fact{Anchor: &facts.Anchor{Path: "src/fixture_app/levels.py", Line: 5}, Symbol: "fetch_level", Path: "https://catalog.example/levels/{param}", Resolution: facts.ResolutionPossible})
+	assertInheritedRouteFacts(t, index, "/api/inherited", "src/fixture_app/cli.py", 92, "/api/overridden-lookalike", "/api/mixed-lookalike", "/api/lookalike")
+}
+
+func assertInheritedRouteFacts(t *testing.T, index programindex.Index, route, source string, line int, absent ...string) {
+	t.Helper()
+	result, err := facts.Build(facts.Input{Targets: []facts.TargetInput{{Index: index, Root: "."}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, fact := range result.OfKind(facts.KindHTTPRoute) {
+		for _, path := range absent {
+			if fact.Path == path {
+				t.Fatalf("local override acquired a route: %+v", fact)
+			}
+		}
+		if fact.Path == route {
+			found++
+			if fact.Anchor == nil || fact.Anchor.Path != source || fact.Anchor.Line != line || fact.Anchor.Column <= 0 || fact.Method != "GET" && fact.Method != "ANY" {
+				t.Fatalf("inherited method lost registration anchor: %+v", fact)
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatalf("inherited route %s appeared %d times", route, found)
+	}
 }
 
 // Absence of HTTP facts is meaningful only if the native call and its precise

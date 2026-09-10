@@ -24,6 +24,11 @@ func TestKnowledgeMemoWriteFailureKeepsAcceptedBindingsAndArtifacts(t *testing.T
 		other.ID, other.LineNo, other.Symbol = secondID, 8, &facts
 		other.Symbol.Decl.LineNo = 8
 		other.Symbol.Decl.ObjectID = "second-native-object"
+		for j := range graph.Places {
+			if graph.Places[j].ID == other.Parent {
+				graph.Places[j].File.Decls = append(graph.Places[j].File.Decls, other.Symbol.Decl)
+			}
+		}
 		graph.Places = append(graph.Places, other)
 		break
 	}

@@ -112,8 +112,8 @@ func TestSymbolAndTypeAliasesFollowExistingKnowledgeWithoutRenamingDeclarations(
 	}
 	assertAliases(first)
 	for _, use := range first.Uses {
-		if use.Stage == lines.StageSymbols && (use.Rows != 3 || use.Windows != 2) {
-			t.Fatalf("alias created another request instead of using symbol/type cells: %+v", use)
+		if use.Stage == lines.StageSymbols && (use.Rows != 6 || use.Windows != 4) {
+			t.Fatalf("selection and caption accounting: %+v", use)
 		}
 	}
 	raw, err := os.ReadFile(filepath.Join(opts.OwnerRunDir, KnowledgeFilename))

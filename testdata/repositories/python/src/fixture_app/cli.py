@@ -60,3 +60,48 @@ reassigned_path = "/api/reassigned"
 @app.get(reassigned_path)
 def reassigned_level():
     return None
+
+
+# A local router keeps inherited framework methods, including multiline calls.
+from fastapi import APIRouter as BaseRouter
+
+
+class ApplicationRouter(BaseRouter):
+    def api_route(self, path, **kwargs):
+        return lambda handler: handler
+
+
+class ChildRouter(ApplicationRouter):
+    pass
+
+
+class OverriddenRouter(ApplicationRouter):
+    def get(self, path):
+        return lambda handler: handler
+
+
+class MixedRouter(LocalRouter, ApplicationRouter):
+    pass
+
+
+inherited_router = ChildRouter()
+overridden_router = OverriddenRouter()
+mixed_router = MixedRouter()
+
+
+@inherited_router.get(
+    "/api/inherited",
+    tags=["fixture"],
+)
+def inherited_level():
+    return None
+
+
+@overridden_router.get("/api/overridden-lookalike")
+def overridden_level():
+    return None
+
+
+@mixed_router.get("/api/mixed-lookalike")
+def mixed_level():
+    return None

@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 18
+const CONTRACT_VERSION = 19
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -995,6 +995,20 @@ function packageForDeclarationFile(filename) {
   return parts[0] || ""
 }
 
+// A compiler-resolved inherited method belongs to its original declaration,
+// even when the receiver was constructed through a local subclass. A local
+// override has a local declaration and never gains its base's package here.
+function externalMethodForInvocation(node) {
+  const checker = checkerForNode(node)
+  const declaration = checker && resolvedSignatureDeclaration(node, checker)
+  const owner = declaration?.parent
+  if (!declaration || !ts.isMethodDeclaration(declaration) || !owner || !ts.isClassDeclaration(owner)) return null
+  const packageName = packageForDeclarationFile(declaration.getSourceFile().fileName)
+  const exportName = canonicalDeclarationName(owner)
+  if (!packageName || !exportName) return null
+  return { package: packageName, exportName, resolution: "exact", repositoryPath: "" }
+}
+
 function declarationPackages(symbol) {
   const packages = new Set()
   if (!symbol) return packages
@@ -1581,7 +1595,8 @@ for (const { sourceFile } of sourceFiles) {
       const callerRef = refForDeclarationNode(node)
       let localRefs = (ts.isNewExpression(node) ? localRefsForInvocation(node) : expressionRefs(node.expression))
         .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
-      const externalImport = localRefs.length === 0 ? externalImportForExpression(node.expression) : { package: "", resolution: "unresolved" }
+      let externalImport = localRefs.length === 0 ? externalImportForExpression(node.expression) : { package: "", resolution: "unresolved" }
+      if (localRefs.length === 0 && !externalImport.package) externalImport = externalMethodForInvocation(node) || externalImport
       let externalPackage = externalImport.package
       let externalExport = externalPackage ? externalImport.exportName : ""
       let externalReceiver = ""

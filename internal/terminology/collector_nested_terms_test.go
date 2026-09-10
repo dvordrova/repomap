@@ -42,8 +42,8 @@ func TestMisplacedOptionalTermsKeepValidatedTypeRowsAndRawCache(t *testing.T) {
 			})}
 			call := typesCallForNestedTerms(t)
 			want := table.Answers{
-				{"line": "HTTP carries the quote.", "alias": "Stock Quote", "key_symbol": "yes"},
-				{"line": "Represents a stock price.", "alias": "Stock Price", "key_symbol": "yes"},
+				{"line": "HTTP carries the quote.", "alias": "Stock Quote"},
+				{"line": "Represents a stock price.", "alias": "Stock Price"},
 			}
 			var originalRequest []byte
 			for attempt := 0; attempt < 2; attempt++ {

@@ -1,12 +1,12 @@
 # Describe the key symbols of a repository
 
-You receive a table of declarations: functions, methods and types the code
-chose as possible key symbols of their files. Each row is one declaration:
+You receive declarations already selected for the repository overview.
+Each row is one declaration:
 its name, kind and signature, the first sentence of the author's docstring
 when there is one, one line about the file it lives in, and how many
 callers it has in the program graph.
 
-Fill six cells for every row and nothing else:
+Fill two cells for every row and nothing else:
 
 - `line`: one sentence, at most 120 characters, saying what this
   declaration does or is. Use the docstring when present; otherwise read
@@ -18,34 +18,12 @@ Fill six cells for every row and nothing else:
   Translate the supported meaning, not just the sound of a foreign name.
   Write `none` if the original name is already recognizable English or the
   evidence does not establish a useful alias. This label does not rename code.
-- `key`: `yes` when a reader opening this file to understand its part of
-  the program should look at this declaration first: the entry point, the
-  type the file is about, the operation the callers come for. `no` for
-  helpers, adapters, accessors and glue. Most rows are `no`.
-- `activation`: `command` for a CLI command implementation, `request` for an
-  incoming request/message handler or service operation, `interaction` for a
-  user action handled by an interface callback (not a rendering function), `scheduled` for
-  periodic work, `continuous` for a long-running background loop, `none` for
-  internal functions, types and factories that only construct/register an
-  operation. Public visibility alone does not imply an exposed operation.
-- `operation`: a short reader-facing action name, such as `snapshot restore`,
-  `GET /health`, `consume orders` or `renew leases`. Use observed literal names
-  when supplied; otherwise describe the action without inventing a route.
-  Write `none` when activation is `none`.
-- `outbound`: space-separated `c*` refs of observed calls that invoke another
-  service, database, queue or remote API. Select the SDK/client/transport call,
-  not an ordinary local helper that might eventually call it. No logging,
-  formatting, flag setup, serialization or registration. Use `none` if no
-  such call is supported. A declaration can have both an activation and
-  outgoing calls. Select only refs in this row's `call_options`.
 
 `calls`, when present, are neutral extracted observations: call names, literal
 values, callback argument names and source lines. Interpret them regardless of
 framework or language. They are not a complete function body or execution trace.
 A function returning a command/router object constructs an operation; the
-callback doing its work implements it. Classify the implementation as the
-operation, not its factory. An operation need not be a key symbol. If the
-evidence is insufficient, choose `none`. Never invent a call edge.
+callback doing its work implements it. Describe only the supplied declaration. Never invent a call edge.
 
 Return strict JSON with exactly this shape, one object per row, the same
 `key` values as the request, each exactly once:
@@ -53,13 +31,11 @@ Return strict JSON with exactly this shape, one object per row, the same
 ```json
 {
   "rows": [
-    {"key": "r1", "line": "Restores a data directory from a snapshot.", "alias": "snapshot restorer", "key_symbol": "yes", "activation": "command", "operation": "snapshot restore", "outbound": "none"},
-    {"key": "r2", "line": "Trims a path to its last element.", "alias": "none", "key_symbol": "no", "activation": "none", "operation": "none", "outbound": "none"}
+    {"key": "r1", "line": "Restores a data directory from a snapshot.", "alias": "snapshot restorer"},
+    {"key": "r2", "line": "Trims a path to its last element.", "alias": "none"}
   ]
 }
 ```
-
-The cell is named `key_symbol` in the answer because `key` names the row.
 
 Rules:
 

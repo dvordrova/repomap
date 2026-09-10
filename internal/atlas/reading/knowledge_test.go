@@ -46,6 +46,9 @@ func (p *distinctDescriptionProvider) Complete(ctx context.Context, prepared llm
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, row := range response.Rows {
+		if _, caption := row["line"]; !caption {
+			continue
+		}
 		p.symbolRows++
 		row["line"] = fmt.Sprintf("Accepted description number %d.", p.symbolRows)
 	}
@@ -66,6 +69,11 @@ func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) 
 		other.ID, other.LineNo, other.Symbol = secondID, 8, &facts
 		other.Symbol.Decl.LineNo = 8
 		other.Symbol.Decl.ObjectID = "different-native-object"
+		for j := range graph.Places {
+			if graph.Places[j].ID == other.Parent {
+				graph.Places[j].File.Decls = append(graph.Places[j].File.Decls, other.Symbol.Decl)
+			}
+		}
 		graph.Places = append(graph.Places, other)
 		break
 	}
@@ -147,8 +155,8 @@ func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) 
 	changedOpts := readOptions(t, graph, changedProvider, cache)
 	changedOpts.Through = lines.StageSymbols
 	changed := readKnowledge(t, changedOpts)
-	if changedProvider.calls != 1 || changedProvider.symbolRows != 1 {
-		t.Fatalf("changed parent input requires one new shared decision: calls=%d rows=%d", changedProvider.calls, changedProvider.symbolRows)
+	if changedProvider.calls != 2 || changedProvider.symbolRows != 1 {
+		t.Fatalf("changed parent input requires one selection and one shared caption: calls=%d rows=%d", changedProvider.calls, changedProvider.symbolRows)
 	}
 	for _, id := range []string{firstID, secondID} {
 		if changed[id].BasisID == updated[id].BasisID || !strings.Contains(string(changed[id].Input), "A different parent-file purpose.") {
@@ -171,7 +179,7 @@ func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) 
 			symbols = use
 		}
 	}
-	if symbols.Rows != 4 || symbols.Given != 2 || symbols.Windows != 3 || symbols.Rejected != 1 {
+	if symbols.Rows != 6 || symbols.Given != 2 || symbols.Windows != 5 || symbols.Rejected != 1 {
 		t.Fatalf("refused shared row lost original source accounting: %+v", symbols)
 	}
 }
@@ -224,6 +232,19 @@ func TestKnowledgeReadsReplayedRowsWithoutRepeatingAnalysis(t *testing.T) {
 	}
 	// Invalid row choices are checked by the owning table when resolving the
 	// memo, even though replay itself only knows the provider/JSON contract.
+	selectionID := "selection:" + symbolID
+	ref, found, err = llm.LoadMemo(opts.Executor, first[selectionID].BasisID, llm.DecodeJSON[rememberedRow](nil))
+	if err != nil || !found {
+		t.Fatalf("selection memo: %v", err)
+	}
+	exchange, found, err = llm.CachedExchange(cache, ref.RequestKey)
+	if err != nil || !found {
+		t.Fatalf("selection exchange: %v", err)
+	}
+	if err := json.Unmarshal(exchange.Response, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	prepared, _ = llm.NewPrepared(exchange.Request)
 	for _, row := range envelope.Rows {
 		if row["key"] == ref.RowKey {
 			row["key_symbol"] = "invented-choice"
@@ -237,7 +258,7 @@ func TestKnowledgeReadsReplayedRowsWithoutRepeatingAnalysis(t *testing.T) {
 	opts = readOptions(t, graph, provider, cache)
 	opts.Through, opts.WindowRows = lines.StageSymbols, 1
 	corrected := readKnowledge(t, opts)
-	if provider.calls != 1 || corrected[symbolID].Cells["key_symbol"] == "invented-choice" {
+	if provider.calls != 1 || corrected[selectionID].Cells["key_symbol"] == "invented-choice" {
 		t.Fatal("invalid replay row bypassed table validation")
 	}
 }
@@ -266,7 +287,7 @@ func knowledgeGraph(t *testing.T) atlas.Graph {
 	return graph
 }
 
-func TestTypeMemberDocumentationInvalidatesOnlyItsDescription(t *testing.T) {
+func TestTypeMemberDocumentationInvalidatesOnlyItsSelectionAndCaption(t *testing.T) {
 	graph := knowledgeGraph(t)
 	id := atlas.SymbolID("pkg/a/y.go", 3, "help")
 	var typePlace *atlas.Place
@@ -289,11 +310,11 @@ func TestTypeMemberDocumentationInvalidatesOnlyItsDescription(t *testing.T) {
 	opts = readOptions(t, graph, provider, cache)
 	opts.Through = lines.StageSymbols
 	second := readKnowledge(t, opts)
-	if provider.calls != 1 || first[id].BasisID == second[id].BasisID {
+	if provider.calls != 2 || first[id].BasisID == second[id].BasisID {
 		t.Fatal("changed member documentation did not invalidate exactly the type row")
 	}
 	for key, record := range first {
-		if key != id && second[key].ID != record.ID {
+		if key != id && key != "selection:"+id && second[key].ID != record.ID {
 			t.Fatalf("unrelated knowledge changed: %s", key)
 		}
 	}
@@ -328,7 +349,7 @@ func readKnowledge(t *testing.T, opts Options) map[string]Knowledge {
 	ids := make(map[string]bool)
 	for _, record := range artifact.Records {
 		result[record.PlaceID], ids[record.ID] = record, true
-		if record.SubjectID == "" || record.BasisID == "" || len(record.Input) == 0 || record.Cells["line"] == "" || record.OriginRequest == "" {
+		if record.SubjectID == "" || record.BasisID == "" || len(record.Input) == 0 || (record.Cells["line"] == "" && record.Cells["key_symbol"] == "") || record.OriginRequest == "" {
 			t.Fatalf("unbound interpretation: %+v", record)
 		}
 	}
@@ -349,8 +370,8 @@ func TestKnowledgeSurvivesBatchChangesAndInvalidatesOnlyChangedBasis(t *testing.
 	opts := readOptions(t, graph, provider, cache)
 	opts.Through, opts.WindowRows = lines.StageSymbols, 2
 	first := readKnowledge(t, opts)
-	if len(first) != 10 || provider.calls == 0 {
-		t.Fatalf("expected four directories, three files and three symbols: %d records, %d calls", len(first), provider.calls)
+	if len(first) != 13 || provider.calls == 0 {
+		t.Fatalf("expected four directories, three files, three selections and three captions: %d records, %d calls", len(first), provider.calls)
 	}
 	// The same entities move from two rows per batch to one, under a different
 	// context budget. Their previously accepted interpretations survive intact.
@@ -385,7 +406,7 @@ func TestKnowledgeSurvivesBatchChangesAndInvalidatesOnlyChangedBasis(t *testing.
 		t.Fatalf("change did not stay with its affected entities: %v", changed.answers)
 	}
 	for id, record := range first {
-		shouldChange := id == changedFile || id == changedSymbol
+		shouldChange := id == changedFile || id == changedSymbol || id == "selection:"+changedSymbol
 		if (updated[id].ID != record.ID) != shouldChange {
 			t.Fatalf("unexpected invalidation for %s: changed=%v", id, updated[id].ID != record.ID)
 		}
@@ -407,7 +428,7 @@ func TestKnowledgeSurvivesBatchChangesAndInvalidatesOnlyChangedBasis(t *testing.
 	opts = readOptions(t, graph, newWording, cache)
 	opts.Through = lines.StageSymbols
 	reworded := readKnowledge(t, opts)
-	if newWording.answers["pkg/a/y.go"] != 2 || reworded[changedSymbol].BasisID == symbol.BasisID || reworded[changedSymbol].Source != atlas.SourceModel {
+	if newWording.answers["pkg/a/y.go"] != 3 || reworded[changedSymbol].BasisID == symbol.BasisID || reworded[changedSymbol].Source != atlas.SourceModel {
 		t.Fatal("changed parent text did not invalidate its dependent symbol answer")
 	}
 }
@@ -483,7 +504,7 @@ func TestQuestionReusesEntityKnowledgeWithoutDescriptionCalls(t *testing.T) {
 		t.Fatalf("request lost labelled knowledge or leaked internal IDs: %s", raw)
 	}
 	for _, stop := range route.Stops {
-		if stop.Path == "pkg/a/x.go" && len(stop.KnowledgeIDs) != 2 {
+		if stop.Path == "pkg/a/x.go" && len(stop.KnowledgeIDs) != 3 {
 			t.Fatalf("question lost function and file knowledge bindings: %+v", stop)
 		}
 	}

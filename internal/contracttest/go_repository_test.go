@@ -789,7 +789,12 @@ func assertGoChainedCallAndCallbackTraversal(t *testing.T, index programindex.In
 		objectIDs[object.Name] = object.ID
 	}
 	registerID := objectIDs["registerProductRoutes"]
-	handleID := objectIDs["HandleFunc"]
+	handleID := ""
+	for _, object := range index.Objects {
+		if object.Name == "HandleFunc" && objects[object.OwnerID].Name == "fixtureRouter" {
+			handleID = object.ID
+		}
+	}
 	methodsID := objectIDs["Methods"]
 	if registerID == "" || handleID == "" || methodsID == "" {
 		t.Fatalf("cumulative chained-call objects = register:%q handle:%q methods:%q", registerID, handleID, methodsID)

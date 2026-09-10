@@ -410,17 +410,14 @@ func (r *reader) readArrows(ctx context.Context) error {
 	return nil
 }
 
-// readSymbols asks one line and a key flag per candidate symbol of every
-// file not closed by an accepted open decision. The code keeps at most
-// MaxKeysPerFile keys per file, by rank. Without the model the keys are the
-// code's ranking.
+// readSymbols first selects roles from every candidate, then writes only the
+// explanations used by the overview. Closing a presentation scope does not
+// erase activation, integration or key-symbol decisions.
 func (r *reader) readSymbols(ctx context.Context) error {
-	def := lines.Symbols()
-	var rows []table.Row
+	r.symbolSelections = make(map[string]*Knowledge)
 	var order []atlas.Place
-	var typeRows []table.Row
+	var rows, typeRows []table.Row
 	var typeOrder []atlas.Place
-	closed := 0
 	for _, place := range r.opts.Graph.Places {
 		if place.Kind != atlas.PlaceSymbol || !place.Symbol.Candidate {
 			continue
@@ -429,38 +426,37 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		if file.File == nil || file.File.Generated {
 			continue
 		}
-		// A bare name and a file hypothesis do not establish what the type
-		// means. Retain its source entry without asking for an invented gloss.
 		if place.Symbol.Decl.Kind == "type" && len(place.Symbol.Members) == 0 && place.Symbol.Decl.Doc == "" {
 			continue
 		}
-		if r.budget {
-			// readFiles also closes files beneath accepted closed directories.
-			// Missing or refused decisions never authorize closing their symbols.
-			if open, decided := r.openFiles[file.ID]; decided && !open {
-				closed++
-				continue
-			}
+		id := "selection:" + place.ID
+		selection := place
+		selection.ID = id
+		symbol := *place.Symbol
+		selection.Symbol = &symbol
+		if symbol.Decl.ObjectID == "" {
+			symbol.Decl.ObjectID = place.ID
 		}
+		r.places[id] = selection
 		if place.Symbol.Decl.Kind == "type" {
-			typeRows = append(typeRows, lines.TypeRow(place))
+			row := lines.TypeRow(place)
+			row.ID = id
+			typeRows = append(typeRows, row)
 			typeOrder = append(typeOrder, place)
-			continue
+		} else {
+			fileLine, _ := r.Line(place.Parent)
+			row := lines.SymbolRow(place, fileLine)
+			row.ID = id
+			rows = append(rows, row)
+			order = append(order, place)
 		}
-		fileLine, _ := r.Line(place.Parent)
-		rows = append(rows, lines.SymbolRow(place, fileLine))
-		order = append(order, place)
 	}
-	details := []string{fmt.Sprintf("%d candidate symbols, including %d types with their owned declarations", len(rows)+len(typeRows), len(typeRows))}
-	if closed > 0 {
-		details = append(details, fmt.Sprintf("symbols in closed files left unasked: %d", closed))
-	}
-	r.opts.Stage(def.Stage, details...)
-	answers, err := r.runTable(ctx, def, 1, rows)
+	r.opts.Stage(lines.StageSymbols, fmt.Sprintf("selecting key declarations, activations and outgoing calls: %d candidates; no descriptions yet", len(rows)+len(typeRows)))
+	answers, err := r.runTable(ctx, lines.SymbolSelection(false), 1, rows)
 	if err != nil {
 		return err
 	}
-	typeAnswers, err := r.runTable(ctx, lines.Types(), 2, typeRows)
+	typeAnswers, err := r.runTable(ctx, lines.SymbolSelection(true), 2, typeRows)
 	if err != nil {
 		return err
 	}
@@ -476,22 +472,26 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		if answer.answer == nil {
 			continue
 		}
-		r.symbolLine[place.ID] = cell{value: answer.answer["line"], source: answer.source}
+		subject := place.Symbol.Decl.ObjectID
+		if subject == "" {
+			subject = place.ID
+		}
+		r.symbolSelections[subject] = r.knowledge["selection:"+place.ID]
 		for _, ref := range strings.Fields(answer.answer["outbound"]) {
 			n, err := strconv.Atoi(strings.TrimPrefix(ref, "c"))
 			if err == nil && n > 0 && n <= len(place.Symbol.Calls) {
 				r.outbound[place.ID] = append(r.outbound[place.ID], place.Symbol.Calls[n-1])
 			}
 		}
-		if activation := answer.answer["activation"]; activation != "" && activation != "none" {
-			r.operations[place.ID] = [3]string{activation, answer.answer["operation"]}
+		if activation := answer.answer["activation"]; activation != "" && activation != "none" && activation != "unassessed" {
+			r.operations[place.ID] = [3]string{activation}
 		}
 		if answer.answer["key_symbol"] == "yes" {
 			byFile[place.Parent] = append(byFile[place.Parent], marked{id: place.ID, rank: place.Symbol.Rank})
 		}
 	}
 	for fileID, list := range byFile {
-		sort.Slice(list, func(i, j int) bool { return list[i].rank < list[j].rank })
+		sort.SliceStable(list, func(i, j int) bool { return list[i].rank < list[j].rank })
 		if len(list) > lines.MaxKeysPerFile {
 			list = list[:lines.MaxKeysPerFile]
 		}
@@ -499,7 +499,52 @@ func (r *reader) readSymbols(ctx context.Context) error {
 			r.keys[fileID] = append(r.keys[fileID], item.id)
 		}
 	}
-	r.reportStage(def.Stage)
+	r.assignBoxes()
+	// Use the existing overview key selection, before model wording can affect
+	// its order. Shared declarations receive one caption across their owners.
+	selected := make(map[string]bool)
+	for _, target := range r.opts.Targets {
+		for _, box := range r.target(target).Boxes {
+			for _, key := range box.Keys {
+				place := r.places[key.SymbolID]
+				if contains(r.keys[place.Parent], key.SymbolID) {
+					selected[key.SymbolID] = true
+				}
+			}
+		}
+	}
+	rows, typeRows = nil, nil
+	order, typeOrder = nil, nil
+	for _, place := range r.opts.Graph.Places {
+		if !selected[place.ID] {
+			continue
+		}
+		if place.Symbol.Decl.Kind == "type" {
+			typeRows = append(typeRows, lines.TypeRow(place))
+			typeOrder = append(typeOrder, place)
+		} else {
+			fileLine, _ := r.Line(place.Parent)
+			rows = append(rows, lines.SymbolRow(place, fileLine))
+			order = append(order, place)
+		}
+	}
+	r.opts.Stage(lines.StageSymbols, fmt.Sprintf("describing %d overview declarations (%d types); all original sources remain available to questions", len(rows)+len(typeRows), len(typeRows)))
+	answers, err = r.runTable(ctx, lines.Symbols(), 3, rows)
+	if err != nil {
+		return err
+	}
+	typeAnswers, err = r.runTable(ctx, lines.Types(), 4, typeRows)
+	if err != nil {
+		return err
+	}
+	order = append(order, typeOrder...)
+	answers = append(answers, typeAnswers...)
+	for i, place := range order {
+		if answers[i].answer != nil {
+			r.symbolLine[place.ID] = cell{value: answers[i].answer["line"], source: answers[i].source}
+		}
+	}
+	r.reportStage(lines.StageSymbols)
 	return nil
 }
 

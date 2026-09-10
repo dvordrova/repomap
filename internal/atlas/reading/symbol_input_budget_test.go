@@ -20,11 +20,14 @@ type symbolInputProvider struct {
 }
 
 func (p *symbolInputProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
-	var request struct{ Table string }
+	var request struct {
+		Table string
+		Fill  []table.Column
+	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
 	}
-	if request.Table == lines.StageSymbols {
+	if request.Table == lines.StageSymbols && len(request.Fill) > 0 && request.Fill[0].Name == "key_symbol" {
 		p.mu.Lock()
 		p.symbolRequests = append(p.symbolRequests, append([]byte(nil), prepared.Bytes()...))
 		p.mu.Unlock()
@@ -60,7 +63,7 @@ func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T)
 	if large.ID == "" {
 		t.Fatal("missing large symbol fixture")
 	}
-	def := lines.Symbols()
+	def := lines.SymbolSelection(false)
 	input, err := table.Request(def, table.Window{Rows: []table.Row{lines.SymbolRow(large, "File svc/core/c.go does things.")}})
 	if err != nil {
 		t.Fatal(err)
@@ -130,8 +133,8 @@ func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T)
 			t.Fatal("ordinary neighbours stopped respecting the packing target")
 		}
 	}
-	if len(seen) != 8 || cold[largeID].Cells["line"] == "" || cold[largeID].Source != atlas.SourceModel {
-		t.Fatalf("not every declaration received an accepted interpretation: %d symbols, large source %q", len(seen), cold[largeID].Source)
+	if len(seen) != 8 || cold["selection:"+largeID].Cells["key_symbol"] == "" || cold["selection:"+largeID].Source != atlas.SourceModel {
+		t.Fatalf("not every declaration received an accepted interpretation: %d symbols, large source %q", len(seen), cold["selection:"+largeID].Source)
 	}
 	warmProvider := &symbolInputProvider{}
 	warmOpts := readOptions(t, graph, warmProvider, cache)

@@ -18,7 +18,7 @@ const (
 	StageTargets    = "atlas_targets"
 	StageJoints     = "atlas_joints"
 
-	symbolsContract    = "repomap.atlas.symbols.v6"
+	symbolsContract    = "repomap.atlas.symbols.v7"
 	boundariesContract = "repomap.atlas.boundaries.v2"
 	zonesContract      = "repomap.atlas.zones.v1"
 	arrowsContract     = "repomap.atlas.arrows.v1"
@@ -67,7 +67,7 @@ var jointsPrompt string
 // file; the code keeps the first by rank.
 const MaxKeysPerFile = 5
 
-// Symbols is the symbol table.
+// Symbols explains the selected declarations displayed in the overview.
 func Symbols() table.Definition {
 	return table.Definition{
 		Stage: StageSymbols, Contract: symbolsContract,
@@ -75,10 +75,6 @@ func Symbols() table.Definition {
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what this declaration does or is"},
 			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
-			{Name: "key_symbol", Kind: table.Choice, Options: []string{"yes", "no"}, Note: "yes for the declarations a reader looks at first"},
-			{Name: "activation", Kind: table.Choice, Options: []string{"none", "command", "request", "interaction", "scheduled", "continuous"}, Note: "externally activated operation; none for internal helpers and registration factories"},
-			{Name: "operation", Kind: table.Text, MaxRunes: 60, Note: "short reader-facing action name; use none when activation is none"},
-			{Name: "outbound", Kind: table.Sequence, OptionsFrom: "call_options", LimitFrom: "call_count", Note: "refs of calls to another service, database or message transport; none for ordinary in-process helpers"},
 		},
 	}
 }
@@ -87,12 +83,11 @@ func Symbols() table.Definition {
 // It shares symbol knowledge and publication; it does not classify operations.
 func Types() table.Definition {
 	return table.Definition{
-		Stage: StageSymbols, Contract: "repomap.atlas.types.v6",
+		Stage: StageSymbols, Contract: "repomap.atlas.types.v7",
 		System: typesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Prose, Note: "briefly explain what this represents or controls and any consequential documented rule, preserving its conditions; no method inventory or invented effects"},
 			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
-			{Name: "key_symbol", Kind: table.Choice, Options: []string{"yes", "no"}, Note: "yes for a concept a newcomer needs to understand this file"},
 		},
 	}
 }

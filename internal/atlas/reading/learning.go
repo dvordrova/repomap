@@ -187,7 +187,7 @@ func (r *reader) learningEvidence() []learningEvidence {
 		sort.Strings(refs)
 		for _, ref := range refs {
 			anchor := chunk.Anchors[ref]
-			known := r.knowledgeSubjects[anchor.SubjectID]
+			known := r.symbolSelections[anchor.SubjectID]
 			if anchor.Kind != "documentation" && anchor.Kind != "boundary" && chunk.Place.Entity == nil && chunk.Place.SourceFact == nil && (known == nil || known.Cells["key_symbol"] != "yes") {
 				continue
 			}
@@ -196,6 +196,9 @@ func (r *reader) learningEvidence() []learningEvidence {
 				TargetIDs: chunk.Place.TargetIDs, Evidence: lines.AnchorEvidence(chunk, ref)}
 			if known != nil {
 				stop.KnowledgeIDs = []string{known.ID}
+			}
+			if description := r.knowledgeSubjects[anchor.SubjectID]; description != nil {
+				stop.KnowledgeIDs = append(stop.KnowledgeIDs, description.ID)
 			}
 			appendSource(stop)
 		}

@@ -113,3 +113,18 @@ export function registerChainedCallbacks(): void {
   const stream = new CallbackChain()
   stream.map(handleOrder).map(recordOrder)
 }
+
+import { Hono as BaseRouter } from "hono"
+
+class ApplicationRouter extends BaseRouter {}
+class ChildRouter extends ApplicationRouter {}
+class OverriddenRouter extends ApplicationRouter {
+  get(_path: string, _handler: () => void): void {}
+}
+
+export function registerInheritedRoutes(): void {
+  const router = new ChildRouter()
+  router.get("/products/inherited", () => {})
+  const local = new OverriddenRouter()
+  local.get("/products/overridden-lookalike", () => {})
+}

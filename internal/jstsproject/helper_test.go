@@ -20,6 +20,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
@@ -322,6 +323,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	if err := ValidateProgramIndex(result, index); err != nil {
 		t.Fatalf("validate cumulative JSTS ProgramIndex: %v", err)
 	}
+	assertInheritedHTTPRoutes(t, index)
 	input, err := BuildInputFromResult(result)
 	if err != nil {
 		t.Fatal(err)
@@ -2533,8 +2535,33 @@ func preparedCompilerProject(t *testing.T) string {
 	return root
 }
 
+func assertInheritedHTTPRoutes(t *testing.T, index programindex.Index) {
+	t.Helper()
+	result, err := facts.Build(facts.Input{Targets: []facts.TargetInput{{Index: index, Root: "."}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, fact := range result.OfKind(facts.KindHTTPRoute) {
+		if fact.Path == "/products/overridden-lookalike" {
+			t.Fatalf("overridden local method became a route: %+v", fact)
+		}
+		if fact.Path == "/products/inherited" {
+			found++
+			if fact.Method != "GET" || fact.Anchor == nil || fact.Anchor.Path != "src/server.ts" || fact.Anchor.Line != 127 || fact.Anchor.Column <= 0 {
+				t.Fatalf("inherited route lost source: %+v", fact)
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatalf("inherited route appeared %d times", found)
+	}
+}
+
 func materializeCumulativeJSTSDependencyTypes(t *testing.T, root string) {
 	t.Helper()
+	writeTestFile(t, root, "node_modules/hono/package.json", `{"name":"hono","version":"4.0.0","types":"index.d.ts"}`)
+	writeTestFile(t, root, "node_modules/hono/index.d.ts", `export class Hono { get(path: string, handler: () => void): void }`)
 	writeTestFile(t, root, "node_modules/axios/package.json", `{"name":"axios","version":"1.0.0","types":"index.d.ts"}`)
 	writeTestFile(t, root, "node_modules/axios/index.d.ts", `
 export interface AxiosResponse<T> { data: T }

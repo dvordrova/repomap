@@ -88,7 +88,7 @@ func (r *reader) questionRows() []lines.QuestionChunk {
 			}
 			for _, unit := range field.Value.([]map[string]any) {
 				ref, _ := unit["ref"].(string)
-				if known := r.knowledgeSubjects[chunk.Anchors[ref].SubjectID]; known != nil {
+				if known := r.knowledgeSubjects[chunk.Anchors[ref].SubjectID]; known != nil && known.Cells["line"] != "" {
 					unit["prior_model_hypothesis"] = known.Cells["line"]
 				}
 			}
@@ -157,7 +157,7 @@ func (r *reader) bindQuestion(chunks []lines.QuestionChunk, answers []rowAnswer)
 				TargetIDs: append([]string{}, chunk.Place.TargetIDs...), Relevance: answer.answer["relevance"], Why: answer.answer["why"], Source: answer.source,
 			}
 			key := fmt.Sprintf("%s:%s:%d:%d:%s:%s", stop.PlaceID, stop.Path, stop.Line, stop.Column, stop.Kind, stop.Name)
-			for _, known := range []*Knowledge{r.knowledge[chunk.Place.ID], r.knowledgeSubjects[anchor.SubjectID]} {
+			for _, known := range []*Knowledge{r.knowledge[chunk.Place.ID], r.knowledgeSubjects[anchor.SubjectID], r.symbolSelections[anchor.SubjectID]} {
 				if known != nil && !contains(stop.KnowledgeIDs, known.ID) {
 					stop.KnowledgeIDs = append(stop.KnowledgeIDs, known.ID)
 				}

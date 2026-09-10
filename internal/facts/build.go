@@ -185,11 +185,13 @@ func underRoot(filePath, root string) bool {
 
 // targetContext is one target with its object map and derived identity.
 type targetContext struct {
-	input     TargetInput
-	target    Target
-	root      string
-	objects   map[string]programindex.Object
-	callbacks map[string]string
+	input        TargetInput
+	target       Target
+	root         string
+	objects      map[string]programindex.Object
+	callbacks    map[string]string
+	classBases   map[string][]string
+	classMembers map[string]map[string]bool
 }
 
 func newTargetContext(input TargetInput) (*targetContext, error) {
@@ -206,19 +208,45 @@ func newTargetContext(input TargetInput) (*targetContext, error) {
 		manifest = deriveManifest(index.Target)
 	}
 	result := &targetContext{
-		input:     input,
-		root:      root,
-		objects:   make(map[string]programindex.Object, len(index.Objects)),
-		callbacks: make(map[string]string),
+		input:        input,
+		root:         root,
+		objects:      make(map[string]programindex.Object, len(index.Objects)),
+		callbacks:    make(map[string]string),
+		classBases:   make(map[string][]string),
+		classMembers: make(map[string]map[string]bool),
 	}
 	for _, object := range index.Objects {
 		result.objects[object.ID] = object
 	}
 	for _, relation := range index.Relations {
+		if relation.Kind == programindex.RelationImplements {
+			for _, witness := range relation.Witnesses {
+				if witness.Kind == "base_class" || witness.Kind == "base_class_candidate" {
+					// An unresolved or omitted base must not disappear when
+					// deciding whether a method has one inherited origin.
+					bases := relation.ToIDs
+					if len(bases) == 0 || relation.TargetsOmitted > 0 {
+						bases = append(append([]string{}, bases...), "")
+					}
+					result.classBases[relation.FromID] = append(result.classBases[relation.FromID], bases...)
+					break
+				}
+			}
+		}
 		if relation.Kind == programindex.RelationPassesCallback && relation.SourceArgumentID != "" && len(relation.ToIDs) > 0 {
 			result.callbacks[relation.SourceArgumentID] = relation.ToIDs[0]
 		}
 	}
+	for _, object := range index.Objects {
+		if len(result.classBases[object.OwnerID]) == 0 {
+			continue
+		}
+		if result.classMembers[object.OwnerID] == nil {
+			result.classMembers[object.OwnerID] = make(map[string]bool)
+		}
+		result.classMembers[object.OwnerID][object.Name] = true
+	}
+
 	result.target = Target{
 		ID:              NewTargetID(index.Target.Language, root, manifest, index.Target.ID),
 		ProgramTargetID: index.Target.ID,

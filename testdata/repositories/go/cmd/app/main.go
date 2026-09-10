@@ -103,3 +103,16 @@ func registerChainedCallbacks() {
 	mapper := &fixtureMapper{}
 	mapper.Map(func(value int) int { return value * 2 }).Map(func(value int) int { return value + 1 })
 }
+
+// Go promotes the embedded method; it has no class inheritance.
+type applicationMux struct{ *http.ServeMux }
+type overriddenMux struct{ *http.ServeMux }
+
+func (*overriddenMux) HandleFunc(string, func(http.ResponseWriter, *http.Request)) {}
+
+func registerEmbeddedRoutes() {
+	mux := &applicationMux{http.NewServeMux()}
+	mux.HandleFunc("/api/embedded", getLevel)
+	local := &overriddenMux{http.NewServeMux()}
+	local.HandleFunc("/api/overridden-lookalike", getLevel)
+}
