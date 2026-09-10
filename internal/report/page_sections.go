@@ -38,6 +38,7 @@ type pageSection struct {
 	Requests       []pageGroupOperation
 	Activities     []pageGroupOperation
 	InputsCount    int
+	Outbound       []pageOutbound
 	Coverage       []string
 	// InboundCount is how many route rows this target shows, so the jump bar
 	// can say what is behind a link before it is followed.
@@ -217,6 +218,7 @@ func (builder *pageBuilder) buildSections() {
 		section.Map = builder.buildMap(section)
 		builder.fillSectionGroups(section)
 		builder.fillSectionOperations(section)
+		builder.fillSectionOutbound(section)
 		for _, group := range section.RouteGroups {
 			section.InboundCount += group.Paths
 		}

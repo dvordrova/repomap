@@ -1,4 +1,4 @@
-<section id="{{.ID}}" data-report-page data-component-name="{{.ShortLabel}}" data-input-count="{{.InputsCount}}" data-part-count="{{.PartsCount}}" data-integration-count="{{len .DependencyGroups}}">
+<section id="{{.ID}}" data-report-page data-component-name="{{.ShortLabel}}" data-input-count="{{.InputsCount}}" data-part-count="{{.PartsCount}}" data-integration-count="{{len .Outbound}}">
 <header class="component-intro"><h2>{{.ShortLabel}}</h2>
 <p class="target-facts meta">{{t "Component"}} · {{.Language}}{{if .Kind}} · {{t .Kind}}{{end}}{{if and .Root (ne .Root ".")}} · <code>{{.Root}}</code>{{end}}</p>
 </header>
@@ -6,12 +6,12 @@
 {{template "input-catalog" .}}
 {{if .Map}}<div id="{{.ID}}-parts" class="component-parts">{{template "map.html" .Map}}</div>{{end}}
 <details class="component-reference"><summary>{{t "Code, entrypoints and sources"}}</summary>
-<nav class="jump" aria-label="{{t "Sections of this target"}}">{{if .InputsCount}}<a href="#{{.ID}}-inbound">{{t "Inputs"}} <b>{{.InputsCount}}</b></a>{{end}}{{if .Entrypoints}}<a href="#{{.ID}}-entrypoints">{{t "Entrypoints"}} <b>{{len .Entrypoints}}</b></a>{{end}}{{if .PartsCount}}<a href="#{{.ID}}-parts">{{t "Parts"}} <b>{{.PartsCount}}</b></a>{{end}}{{if or .DependencyGroups .Dependencies .Calls}}<a href="#{{.ID}}-external">{{t "Integrations"}}</a>{{end}}<a href="#{{.ID}}-flow">{{t "Main flow"}}</a></nav>
+<nav class="jump" aria-label="{{t "Sections of this target"}}">{{if .InputsCount}}<a href="#{{.ID}}-inbound">{{t "Inputs"}} <b>{{.InputsCount}}</b></a>{{end}}{{if .Entrypoints}}<a href="#{{.ID}}-entrypoints">{{t "Entrypoints"}} <b>{{len .Entrypoints}}</b></a>{{end}}{{if .PartsCount}}<a href="#{{.ID}}-parts">{{t "Parts"}} <b>{{.PartsCount}}</b></a>{{end}}{{if .Outbound}}<a href="#{{.ID}}-external">{{t "External communication"}} <b>{{len .Outbound}}</b></a>{{end}}{{if or .DependencyGroups .Dependencies .Calls}}<a href="#{{.ID}}-dependencies">{{t "Code dependencies"}}</a>{{end}}<a href="#{{.ID}}-flow">{{t "Main flow"}}</a></nav>
 {{if .Entrypoints}}<h3 id="{{.ID}}-entrypoints">{{t "Entrypoints"}}</h3><ul class="plain fact">{{range .Entrypoints}}<li>{{if .Symbol}}<code>{{.Symbol}}</code>{{end}}{{if .Kind}} <span class="meta">{{.Kind}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
 {{if .Triggers}}<details class="evidence-list"><summary>{{t "Input responsibilities"}} · {{len .Triggers}}</summary>{{range .Triggers}}{{template "group" .}}{{end}}</details>{{end}}
 {{if .Core}}<h3 id="{{.ID}}-core">{{t "Core"}}</h3>{{range .Core}}{{template "group" .}}{{end}}{{end}}
 {{if .SharedCode}}<h3 id="{{.ID}}-shared-code">{{t "Shared code"}}</h3><ul class="plain">{{range .SharedCode}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}</ul>{{end}}
-{{if or .Calls .DependencyGroups .Dependencies}}<h3 id="{{.ID}}-external">{{t "Integrations"}}</h3>
+{{if or .Calls .DependencyGroups .Dependencies}}<h3 id="{{.ID}}-dependencies">{{t "Code dependencies"}}</h3>
 {{if .Calls}}<h4>{{t "HTTP calls"}}</h4><ul class="plain fact">{{range .Calls}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
 {{range .DependencyGroups}}{{template "group" .}}{{end}}
 {{if .Dependencies}}<details class="evidence-list"><summary>{{t "{0} imported packages" (len .Dependencies)}}</summary><ul class="plain fact dependency-inventory">{{range .Dependencies}}<li><code>{{.Name}}</code>{{if .Version}} <span class="version">{{.Version}}</span>{{end}}{{if .Anchor}} <span class="dependency-source">{{template "anchor" .Anchor}}</span>{{end}}</li>{{end}}</ul></details>{{end}}{{end}}
@@ -34,7 +34,12 @@
 {{define "operation-catalog"}}{{$model := false}}{{$fact := false}}{{range .}}{{if eq .Source "fact"}}{{$fact = true}}{{else}}{{$model = true}}{{end}}{{end}}<p class="input-provenance meta">{{if $fact}}{{t "Observed in source"}}{{end}}{{if and $fact $model}} · {{end}}{{if $model}}{{t "Model interpretation"}}{{end}}</p>
 <ul class="plain operation-catalog">{{range $i, $row := .}}{{if lt $i 5}}{{template "operation-row" $row}}{{end}}{{end}}</ul>{{if gt (len .) 5}}<details class="input-more"><summary>{{t "All {0} →" (len .)}}</summary><ul class="plain operation-catalog">{{range $i, $row := .}}{{if ge $i 5}}{{template "operation-row" $row}}{{end}}{{end}}</ul></details>{{end}}{{end}}
 
-{{define "input-catalog"}}{{if or .InputsCount .DependencyGroups}}<section id="{{.ID}}-inbound" class="input-catalog"><h3>{{t "Inputs"}} <span class="meta">· {{.InputsCount}}</span>{{if .DependencyGroups}} · {{t "Integrations"}} <span class="meta">· {{len .DependencyGroups}}</span>{{end}}</h3>
+{{define "outbound-row"}}<li id="{{.ID}}" data-integration-item data-source-kind="{{.Source}}" data-communication-basis="{{.Basis}}"><strong class="input-title">{{if .Destination}}<span data-display-ref="{{.DestinationRef}}">{{.Destination}}</span>{{else if .NativeLabel}}<code>{{.NativeLabel}}</code>{{else}}{{t "External communication"}}{{end}}</strong>{{if .Summary}}<p class="outbound-purpose"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span></p>{{end}}<div class="outbound-address">{{if .Address}}<code>{{.Address}}</code>{{else}}<span class="meta">{{t "Address not determined"}}</span>{{end}}</div>{{if .BasisLabel}}<span class="outbound-basis meta">{{t .BasisLabel}}</span>{{end}}<div class="outbound-source">{{if .External}}<code class="outbound-callable">{{.External}}</code> · {{end}}{{template "anchor" .Anchor}}</div></li>{{end}}
+
+{{define "outbound-catalog"}}{{$model := false}}{{$fact := false}}{{range .}}{{if eq .Source "fact"}}{{$fact = true}}{{else}}{{$model = true}}{{end}}{{end}}<p class="input-provenance meta">{{if $fact}}{{t "Observed in source"}}{{end}}{{if and $fact $model}} · {{end}}{{if $model}}{{t "Model interpretation"}}{{end}}</p>
+<ul class="plain operation-catalog">{{range $i, $row := .}}{{if lt $i 5}}{{template "outbound-row" $row}}{{end}}{{end}}</ul>{{if gt (len .) 5}}<details class="input-more"><summary>{{t "All {0} →" (len .)}}</summary><ul class="plain operation-catalog">{{range $i, $row := .}}{{if ge $i 5}}{{template "outbound-row" $row}}{{end}}{{end}}</ul></details>{{end}}{{end}}
+
+{{define "input-catalog"}}{{if or .InputsCount .Outbound}}<section id="{{.ID}}-inbound" class="input-catalog"><h3>{{if .InputsCount}}{{t "Inputs"}} <span class="meta">· {{.InputsCount}}</span>{{end}}{{if .Outbound}}{{if .InputsCount}} · {{end}}{{t "External communication"}} <span class="meta">· {{len .Outbound}}</span>{{end}}</h3>
 <div class="input-groups">
 {{if .InboundCount}}<section data-input-group><h4>{{t "Incoming requests"}} · {{.InboundCount}}</h4>
 {{if .RouteGroups}}<p class="input-provenance meta">{{t "Observed in source"}}</p>{{end}}
@@ -42,5 +47,5 @@
 {{if $row.Symbol}}<div class="input-handler">{{t "handled by"}} {{template "routehandler" $row}}</div>{{end}}</li>{{end}}{{end}}{{end}}</ul>
 {{if .Requests}}{{template "operation-catalog" .Requests}}{{end}}</section>{{end}}
 {{range .ActivityGroups}}{{if .Rows}}<section data-input-group><h4>{{t .Title}} · {{len .Rows}}</h4>{{template "operation-catalog" .Rows}}</section>{{end}}{{end}}
-{{if .DependencyGroups}}<section data-integration-group><h4>{{t "Integrations"}} · {{len .DependencyGroups}}</h4><p class="input-provenance meta">{{t "Model interpretation"}}</p><ul class="plain operation-catalog">{{range .DependencyGroups}}<li data-integration-item><strong class="input-title"><a href="#{{.ID}}">{{.Title}}</a></strong></li>{{end}}</ul></section>{{end}}
+{{if .Outbound}}<section id="{{.ID}}-external" data-integration-group><h4 title="{{t "Communication records, not unique services."}}">{{t "Where this service connects"}} · {{len .Outbound}}</h4>{{template "outbound-catalog" .Outbound}}</section>{{end}}
 </div></section>{{end}}{{end}}

@@ -44,8 +44,8 @@ func TestBuildRetainsCompleteProgramFactsAndBuildsSparseOverlappingGroups(t *tes
 	if len(diagnostics) != 6 {
 		t.Fatalf("diagnostics = %#v, want 6 rejected rows", diagnostics)
 	}
-	if Version != 8 {
-		t.Fatalf("GroupsIndex version = %d, want 8", Version)
+	if Version != 9 {
+		t.Fatalf("GroupsIndex version = %d, want 9", Version)
 	}
 	if index.Version != Version || index.ProgramIndexSHA256 != program.SHA256 || index.Target.ID != program.Target.ID {
 		t.Fatalf("producer binding = %#v", index)

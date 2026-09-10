@@ -94,3 +94,12 @@
 .input-kind[hidden]{display:none}
 .input-catalog .input-handler>.anchor{font-size:12px}
 .input-source{font-size:12px;color:var(--muted)}
+.input-catalog [data-integration-item]{border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.input-catalog [data-integration-item] .input-title{display:block;white-space:normal;overflow:visible}
+.outbound-purpose{margin:2px 0;font-size:14px;line-height:1.45}
+.outbound-address,.outbound-source,.outbound-basis{font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.outbound-address,.outbound-source{display:block}
+.input-catalog .outbound-address .meta,.input-catalog .outbound-basis{margin:2px 0}
+.outbound-source{color:var(--muted)}
+.repo-inputs .outbound-purpose{font-size:13px}
+.repo-inputs .outbound-address,.repo-inputs .outbound-source,.repo-inputs .outbound-basis{font-size:11px}

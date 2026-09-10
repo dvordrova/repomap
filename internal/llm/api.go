@@ -29,6 +29,10 @@ type Prompt struct {
 	// adjunct. Owners describe fields in prose, without a second output example
 	// or root-format instruction. The owning cube still validates the answer.
 	ResponseExample string
+	// NoResponseAdjunct lets the owner omit optional response metadata when its
+	// computed result has no prose to explain. Exact prepared bytes retain the
+	// decision; transport configuration and response validation are unchanged.
+	NoResponseAdjunct bool
 	// ResponseLanguage controls generated prose, independently of the source
 	// language and provider. Empty means English. Presentation translation
 	// supplies its target language tag after the English analysis is complete.

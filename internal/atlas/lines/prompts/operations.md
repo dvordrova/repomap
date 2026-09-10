@@ -4,13 +4,15 @@ Each row describes ONE declaration. Decide whether it directly handles a CLI
 command, an incoming protocol request, a user interaction, scheduled work, or a persistent process.
 Most candidates are internal code and should not become action-map nodes.
 
-Fill `entry` first:
+Fill `entry` first, choosing exactly one value from this row's `entry_options`:
 - `self`: this declaration handles the action at its external activation point.
-- `u*`: an advertised caller handles that action; this declaration is its internal
-  implementation. It does not become a second action.
+- An exact ref from this row's `observed_callers`, when advertised in
+  `entry_options`: that caller handles the action and this declaration is its
+  internal implementation. It does not become a second action. When no caller
+  refs are advertised, this choice is unavailable; do not invent a caller ref.
 - `none`: no such action is supported here.
 
-For `u*` or `none`, omit the other cells: they are not used. The `when`
+For a caller ref or `none`, omit the other cells: they are not used. The `when`
 condition in `fill` identifies cells used only for `entry=self`. For `self`, choose:
 - `command`: the command's executing callback, not its constructor or CLI launcher.
 - `request`: a handler receiving HTTP, RPC or message traffic from outside the
@@ -42,7 +44,7 @@ not execute the command, even when its documentation describes the command.
 `observed_callers` contains exact native caller declarations and call sites,
 not name matches. Their registrations describe how THEY are activated. When a
 registered Wrapper.Save calls Handler.Save which calls Store.Save, the wrapper
-is the external action and the inner methods choose their caller's `u*` ref.
+is the external action and the inner methods choose their advertised caller ref.
 A generated transport dispatcher calling its user handler is infrastructure;
 the user handler is the action. A missing caller means unknown, not external.
 An inner declaration can be `self` only if it has separate external exposure.

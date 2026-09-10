@@ -258,7 +258,7 @@ source anchors remain unchanged. The report keeps aliases English in every
 language, displays the original code name beside them, and localizes the
 description. Both literal spellings address the same glossary definition;
 no script detector, transliteration, per-name request or browser-generated label
-is added. Current atlas is v4, GroupsIndex v8 and report v87.
+is added. Current atlas is v5, GroupsIndex v9 and report v88.
 
 Operation table v14 validates `entry` first. Only `self` requires activation,
 name and description; unused cells of accepted `none` and advertised `u*`
@@ -779,6 +779,18 @@ Old runs remain snapshots. Clearing the cache also removes raw journal payloads.
   literal values and the model's own earlier lines cross the wire. Question
   excerpts preserve Markdown-authored command/code examples; implementation
   source-file bodies are not sent.
+- Outgoing call selections are candidates for the existing boundaries table,
+  not accepted integrations. That table records the other runtime participant,
+  purpose, dispatch or client-configuration basis, and a closed original address
+  ref or unknown. Internal delegation, local mechanisms and package membership
+  do not themselves establish external communication. A call's observed indexed
+  callee candidate is neutral resolution evidence, never an automatic veto.
+  Accepted communication retains its exact call site and reaches GroupsIndex
+  independently of the containing group's lane or key descriptions. The entrance
+  shows those observations and source links, not a count of unique remote systems.
+  Native HTTP addresses survive missing or refused prose. Standard-library
+  transports may establish communication; this does not promote their package
+  objects into remote participants. No package blacklist or API handbook is added.
 - The ordinary Go direct-call traversal is complete for the selected target:
   `--depth 0` and `--edges-limit 0` are the defaults and mean retain every
   exact call and edge across loaded repository declarations, including functions

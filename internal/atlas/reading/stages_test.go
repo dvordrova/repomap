@@ -24,7 +24,13 @@ func TestInterpretedOperationsBindCallsWithoutFrameworkRules(t *testing.T) {
 	if len(r.boundaries) != 2 {
 		t.Fatalf("wanted two bound endpoints, got %v", r.boundaries)
 	}
-	out, in := r.boundaries["out:send:0"], r.boundaries["in:handle"]
+	var out *boundaryState
+	in := r.boundaries["in:handle"]
+	for _, state := range r.boundaries {
+		if state.place.Boundary.Direction == atlas.DirectionOut {
+			out = state
+		}
+	}
 	if out.place.Boundary.ObjectID != "sender" || out.place.LineNo != 11 || in.place.Boundary.ObjectID != "receiver" || in.place.Column != 17 {
 		t.Fatal("lost source identity")
 	}
@@ -36,9 +42,11 @@ func TestInterpretedOperationsBindCallsWithoutFrameworkRules(t *testing.T) {
 	if len(published.Boundaries) != 1 || published.Boundaries[0].Column != 17 {
 		t.Fatalf("boundary lost the declaration column before map matching: %+v", published.Boundaries)
 	}
-	value, _, ok := valuesJoin(out.place.Boundary, in.place.Boundary)
-	if !ok || value != "Submit" {
-		t.Fatalf("method candidate lost: %q %v", value, ok)
+	if out.kind != "" || out.line != "" {
+		t.Fatal("selected call gained a relationship before its boundary review")
+	}
+	if value, _, ok := valuesJoin(out.place.Boundary, in.place.Boundary); ok {
+		t.Fatalf("synthetic method name became an observed matching value: %q", value)
 	}
 }
 

@@ -173,11 +173,15 @@ separate stage outputs.
   exposes all existing requests, commands and background activities by name at
   the component entrance and on its repository row. Their original kinds and
   provenance remain visible. The 2026-09-10 review keeps five initial rows per
-  group with All N disclosures, beside the existing integration groups.
+  group with All N disclosures, beside the observed external communications.
   A service entrance should let the reader scan its HTTP methods and paths,
   the responsibilities of its workers, and its observed external destinations
   without opening the map. An integration code group or an imported package
   alone is not an external destination; unavailable observations stay explicit.
+  A communication names the other runtime participant, its purpose and original
+  source evidence. A configured remote client is distinguished from a sending
+  call. Local delegation through several functions does not make each function
+  another external participant; equal destination labels do not prove identity.
   HTTP operation paths come verbatim from selected source registrations. The
   model selects their references and interprets the method and responsibility;
   it does not rewrite the path as a display name.

@@ -20,7 +20,7 @@ func Prepare(provider Provider, prompt Prompt, limits Limits) (Prepared, error) 
 	if provider == nil {
 		return Prepared{}, fmt.Errorf("llm: provider is nil")
 	}
-	if adapter, ok := provider.(PromptAdapter); ok {
+	if adapter, ok := provider.(PromptAdapter); ok && !prompt.NoResponseAdjunct {
 		var err error
 		prompt, err = adapter.AdaptPrompt(prompt)
 		if err != nil {

@@ -566,8 +566,12 @@ func Call(def Definition, window Window) (llm.Call[Answers], error) {
 		return llm.Call[Answers]{}, err
 	}
 	row := map[string]string{"key": Key(0)}
+	hasProse := false
 	for _, column := range def.Columns {
 		row[column.Name] = "<computed " + column.Name + ">"
+		// A conditional prose branch is still eligible: the model decides which
+		// branch applies, so row preparation must not erase its glossary support.
+		hasProse = hasProse || column.Kind == Text || column.Kind == Prose
 	}
 	example, err := json.Marshal(struct {
 		Rows []map[string]string `json:"rows"`
@@ -579,7 +583,7 @@ func Call(def Definition, window Window) (llm.Call[Answers], error) {
 		State: state,
 		Prompt: llm.Prompt{
 			System: def.System, User: string(window.Request), ResponseFormatJSON: true,
-			Reasoning: def.Reasoning, ResponseExample: string(example),
+			Reasoning: def.Reasoning, ResponseExample: string(example), NoResponseAdjunct: !hasProse,
 		},
 		Limits: llm.Limits{
 			MaxRequestBytes:  llm.SemanticRecordByteLimit,

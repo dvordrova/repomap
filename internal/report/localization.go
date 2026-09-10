@@ -338,6 +338,10 @@ func displayProtectedNames(data *ReportData) []string {
 	if data.GroupGraph != nil {
 		for _, index := range data.GroupGraph.Indexes {
 			add(index.Target.Name)
+			for _, call := range index.Outbound {
+				add(call.Address)
+				add(call.External)
+			}
 			for _, subject := range index.Subjects {
 				if subject.Object != nil {
 					add(subject.Object.Name)
@@ -509,6 +513,11 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 		}
 	}
 	for _, section := range view.Sections {
+		for i := range section.Outbound {
+			row := &section.Outbound[i]
+			row.DestinationRef = add("label", &row.Destination)
+			row.SummaryRef = add("summary", &row.Summary)
+		}
 		// Action names are stable English labels or exact command/path syntax.
 		// Their descriptions remain prose, regardless of the name's origin.
 		for _, operations := range [][]pageGroupOperation{section.Requests, section.Activities} {

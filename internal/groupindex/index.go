@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version          = 8
+	Version          = 9
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -261,6 +261,7 @@ type Index struct {
 	Subjects           []Subject           `json:"subjects"`
 	Groups             []Group             `json:"groups"`
 	Operations         []Operation         `json:"operations,omitempty"`
+	Outbound           []OutboundCall      `json:"outbound,omitempty"`
 	// Containers are the level above the groups: a handful of named parts,
 	// each holding several groups. chi's router package really does hold
 	// thirty groups — one per middleware file — and thirty is the truth and
@@ -585,6 +586,10 @@ func (index Index) Snapshot() Index {
 	result := index
 	result.SharedCode = cloneStrings(index.SharedCode)
 	result.Operations = append([]Operation(nil), index.Operations...)
+	result.Outbound = append([]OutboundCall(nil), index.Outbound...)
+	for i := range result.Outbound {
+		result.Outbound[i].Values = cloneStrings(index.Outbound[i].Values)
+	}
 	result.Target = index.Target.Snapshot()
 	result.Subjects = make([]Subject, len(index.Subjects))
 	for position, subject := range index.Subjects {
@@ -664,6 +669,9 @@ func (index Index) Validate() error {
 		if i > 0 && index.Operations[i-1].ID >= operation.ID {
 			return fmt.Errorf("group index: operations are not canonical")
 		}
+	}
+	if err := index.validateOutbound(subjectsByID, groupsByID); err != nil {
+		return err
 	}
 	for position, edge := range index.StructuralEdges {
 		if err := validateStructuralEdge(subjectsByID, edge); err != nil {

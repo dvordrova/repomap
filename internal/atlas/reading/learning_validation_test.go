@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -65,5 +66,27 @@ func TestLearningRefusedMergeKeepsOriginalQuestionsWithoutInventingLinks(t *test
 	}
 	if r.learning.State != "partial" || !reflect.DeepEqual(r.learning.Questions, questions) || len(r.rejected) == 0 {
 		t.Fatal("invalid representatives erased, rewrote or joined original questions")
+	}
+}
+
+func TestLearningQuestionReviewNeedsItsOwnReasonApartFromQuestionWhy(t *testing.T) {
+	pool := learningRequest{Evidence: []learningEvidence{{Ref: "e1"}}}
+	reply := learningReply()
+	reply.Reviews[0].State = "questions"
+	reply.Reviews[0].Reason = ""
+	reply.Reviews[0].Questions = []learningProposal{{Question: "How does the service start?", Why: "A newcomer needs the startup path.", Sources: []string{"e1"}}}
+	raw, _ := json.Marshal(reply)
+	decoded, err := decodeLearning(raw, pool)
+	if err != nil || len(decoded.Reviews) != 7 || len(decoded.Rejections) != 1 || decoded.Rejections[0].Intent != reply.Reviews[0].Intent || decoded.Rejections[0].Reason != "learn: a review needs a reason" {
+		t.Fatalf("a question's reason substituted for its review or refused siblings: %+v / %v", decoded, err)
+	}
+	call, err := learningCall(pool, learningPrompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, instruction := range []string{"Every review must contain a nonempty", "including a review whose state is `questions`", "per-question\nreasons do not replace the review's reason"} {
+		if !strings.Contains(call.Prompt.System, instruction) {
+			t.Fatalf("actual proposal prompt omits reason contract %q", instruction)
+		}
 	}
 }

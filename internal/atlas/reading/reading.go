@@ -944,6 +944,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			ID:       state.place.ID, BoxID: boxID, Path: state.place.Path, LineNo: state.place.LineNo, Column: state.place.Column,
 			Caller: facts.Caller, Direction: facts.Direction, Kind: state.kind, External: facts.External, Method: facts.Method,
 			Values: append([]string{}, facts.Values...), Line: state.line, FactID: facts.FactID,
+			Source: facts.Source, Destination: state.destination, Address: state.address, Basis: state.basis,
 		})
 	}
 	target.Trace = r.trace(meta.ID)

@@ -180,7 +180,7 @@ var repomapGraph = (function () {
       if(href){
         var purpose=node.querySelector('.repo-card-purpose');if(purpose)card.appendChild(purpose.cloneNode(true));
         var page=document.getElementById(href.slice(1)),catalog=el('ul','product-catalog');
-        [['Inputs','inputCount','inbound'],['Parts','partCount','parts'],['Integrations','integrationCount','external']].forEach(function(item){
+        [['Inputs','inputCount','inbound'],['Parts','partCount','parts'],['External communication','integrationCount','external']].forEach(function(item){
           var number=Number(page?.dataset[item[1]]||0);if(!number)return;
           var value=el('li',''),link=el('a','');link.href=href+(item[2]?'-'+item[2]:'');link.setAttribute('aria-label',rmT(item[0])+': '+number);
           link.appendChild(el('span','product-catalog-label',rmT(item[0])));link.appendChild(el('span','product-catalog-count',String(number)));value.appendChild(link);catalog.appendChild(value);
@@ -195,6 +195,9 @@ var repomapGraph = (function () {
             var items=Array.from(group.querySelectorAll('[data-input-item],[data-integration-item]'));
             items.slice(0,5).forEach(function(item){
               var row=el('li','');row.appendChild(item.querySelector('.input-title').cloneNode(true));
+              if(item.hasAttribute('data-integration-item')){
+                ['.outbound-purpose','.outbound-address','.outbound-basis','.outbound-source','.input-source'].forEach(function(selector){var detail=item.querySelector(selector);if(detail)row.appendChild(detail.cloneNode(true));});
+              }
               row.dataset.sourceKind=item.dataset.sourceKind||'fact';
               list.appendChild(row);
             });block.appendChild(list);

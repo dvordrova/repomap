@@ -2,6 +2,7 @@ package reading
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path"
 	"sort"
@@ -548,89 +549,149 @@ func (r *reader) readSymbols(ctx context.Context) error {
 	return nil
 }
 
-// boundaryState is one boundary after its row.
+// boundaryState is one accepted fact or candidate awaiting its own review.
 type boundaryState struct {
-	place atlas.Place
-	line  string
-	kind  string
+	place       atlas.Place
+	line        string
+	kind        string
+	destination string
+	address     string
+	basis       string
 }
 
-// readBoundaries asks one line per boundary; the kind the code knows wins
-// over the model's.
+// readBoundaries is the one semantic owner of candidate runtime relationships.
+// Source facts survive refused prose; a refused candidate gains no boundary.
 func (r *reader) readBoundaries(ctx context.Context) error {
-	def := lines.Boundaries()
 	r.boundaries = make(map[string]*boundaryState)
-	var rows []table.Row
-	var order []atlas.Place
+	owners := make(map[string]atlas.Place)
 	for _, place := range r.opts.Graph.Places {
+		if place.Symbol != nil {
+			owners[place.ID] = place
+			if place.Symbol.Decl.ObjectID != "" {
+				owners[place.Symbol.Decl.ObjectID] = place
+			}
+		}
 		if place.Kind != atlas.PlaceBoundary {
 			continue
 		}
 		state := &boundaryState{place: place, line: place.Given, kind: place.Boundary.GivenKind}
-		if state.kind == "" {
-			state.kind = atlas.BoundaryOther
+		if place.Boundary.GivenKind == atlas.BoundaryHTTPClient {
+			state.basis = "dispatch"
+			if len(place.Boundary.Values) == 1 {
+				state.address = place.Boundary.Values[0]
+			}
 		}
 		r.boundaries[place.ID] = state
-		fileLine, _ := r.Line(place.Parent)
-		rows = append(rows, lines.BoundaryRow(place, fileLine))
-		order = append(order, place)
-	}
-	r.opts.Stage(def.Stage, fmt.Sprintf("%d integration points", len(rows)))
-	answers, err := r.runTable(ctx, def, 1, rows)
-	if err != nil {
-		return err
-	}
-	disagreed := 0
-	for i, place := range order {
-		answer := answers[i]
-		if answer.answer == nil {
-			continue
-		}
-		state := r.boundaries[place.ID]
-		state.line = answer.answer["line"]
-		if place.Boundary.GivenKind == "" {
-			state.kind = answer.answer["kind"]
-		} else if answer.answer["kind"] != place.Boundary.GivenKind {
-			disagreed++
-		}
-	}
-	if disagreed > 0 {
-		r.opts.Stage(def.Stage, fmt.Sprintf("kinds the model answered differently from the code: %d, the code's kept", disagreed))
 	}
 	r.bindInterpretedBoundaries()
-	r.reportStage(def.Stage)
+	var ids []string
+	for id := range r.boundaries {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	r.opts.Stage(lines.StageBoundaries, fmt.Sprintf("reviewing runtime relationships: %d source candidates and facts", len(ids)))
+	for mode := 0; mode < 2; mode++ {
+		outgoing := mode == 1
+		var rows []table.Row
+		var order []*boundaryState
+		addressValues := make(map[string][]lines.BoundaryAddress)
+		for _, id := range ids {
+			state := r.boundaries[id]
+			// An accepted operation already owns its incoming interpretation.
+			if strings.HasPrefix(id, "in:") {
+				continue
+			}
+			facts := state.place.Boundary
+			isOutgoing := facts.Direction == atlas.DirectionOut && facts.GivenKind != atlas.BoundaryConfig && facts.GivenKind != atlas.BoundaryOther
+			if isOutgoing != outgoing {
+				continue
+			}
+			var original []atlas.Place
+			if owner, ok := owners[facts.ObjectID]; ok {
+				original = append(original, owner)
+			}
+			row := lines.BoundaryRow(state.place, "", original...)
+			row.Fields = append(row.Fields, lines.BoundarySourceContext(state.place, owners[facts.ObjectID], r.places, owners)...)
+			rows = append(rows, row)
+			addressValues[id] = lines.BoundaryAddresses(state.place, original...)
+			order = append(order, state)
+			r.places[id] = state.place
+		}
+		answers, err := r.runTable(ctx, lines.Boundaries(outgoing), mode+1, rows)
+		if err != nil {
+			return err
+		}
+		for i, state := range order {
+			answer := answers[i].answer
+			if answer == nil || answer["decision"] != "boundary" {
+				if state.place.Boundary.GivenKind == "" {
+					delete(r.boundaries, state.place.ID)
+				}
+				continue
+			}
+			state.line, state.kind = answer["line"], answer["kind"]
+			if outgoing {
+				state.destination = answer["destination"]
+				if state.basis == "" {
+					state.basis = answer["basis"]
+				}
+				if state.address == "" {
+					for _, address := range addressValues[state.place.ID] {
+						if address.Ref == answer["address"] {
+							state.address = address.Value
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	r.reportStage(lines.StageBoundaries)
 	return nil
 }
 
-// Interpretation becomes a boundary on the same declaration, not a second
-// analyzer. The selected call retains its source line and literal arguments.
+// Interpretation adds candidate source calls before the boundary review. A
+// selected call is not yet an accepted SDK relationship. Source columns and
+// native call identities distinguish calls sharing a line or declaration.
 func (r *reader) bindInterpretedBoundaries() {
-	claimed := make(map[string]bool)
-	key := func(path string, line int, direction string) string {
-		return fmt.Sprintf("%s:%d:%s", path, line, direction)
-	}
-	for _, boundary := range r.boundaries {
-		claimed[key(boundary.place.Path, boundary.place.LineNo, boundary.place.Boundary.Direction)] = true
-	}
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil {
 			continue
 		}
 		decl := place.Symbol.Decl
-		add := func(id string, line, column int, direction, kind, external, description string, values []string) {
-			if line < 1 || claimed[key(place.Path, line, direction)] {
-				return
-			}
-			p := atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: line, Column: column, Parent: place.Parent, TargetIDs: append([]string(nil), place.TargetIDs...), Boundary: &atlas.BoundaryFacts{Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, CallerDoc: decl.Doc, External: external, Values: values, Direction: direction}}
-			r.boundaries[id] = &boundaryState{place: p, line: description, kind: kind}
-		}
 		if operation := r.operations[place.ID]; operation[0] == "request" {
-			add("in:"+place.ID, place.LineNo, decl.Column, atlas.DirectionIn, atlas.BoundaryOther, decl.Name, operation[2], []string{operation[1], operationIdentifier(decl.Name)})
+			id := "in:" + place.ID
+			p := atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: place.LineNo, Column: decl.Column,
+				Parent: place.Parent, TargetIDs: append([]string(nil), place.TargetIDs...), Boundary: &atlas.BoundaryFacts{
+					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, CallerDoc: decl.Doc, External: decl.Name,
+					Values: []string{}, Direction: atlas.DirectionIn}}
+			r.boundaries[id] = &boundaryState{place: p, line: operation[2], kind: atlas.BoundaryOther}
 		}
-		for i, call := range r.outbound[place.ID] {
-			values := append([]string(nil), call.Values...)
-			values = append(values, operationIdentifier(call.Name))
-			add(fmt.Sprintf("out:%s:%d", place.ID, i), call.Line, 0, atlas.DirectionOut, atlas.BoundarySDK, call.Name, r.symbolLine[place.ID].value, values)
+		for _, call := range r.outbound[place.ID] {
+			if call.Line < 1 {
+				continue
+			}
+			claimed := false
+			for _, existing := range r.boundaries {
+				p := existing.place
+				if p.Boundary.Source == "fact" && p.Path == place.Path && p.LineNo == call.Line && p.Column > 0 && p.Column == call.Column && p.Boundary.Direction == atlas.DirectionOut {
+					claimed = true
+					break
+				}
+			}
+			if claimed {
+				continue
+			}
+			identity, _ := json.Marshal(struct {
+				Kind, Name, Invocation, Resolution string
+				Callees                            []string
+			}{call.Kind, call.Name, call.Invocation, call.Resolution, call.CalleeIDs})
+			id := fmt.Sprintf("out:%s:%d:%d:%s", place.ID, call.Line, call.Column, digest(identity))
+			p := atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: call.Line, Column: call.Column,
+				Parent: place.Parent, TargetIDs: append([]string(nil), place.TargetIDs...), Boundary: &atlas.BoundaryFacts{
+					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, CallerDoc: decl.Doc, External: call.Name,
+					Values: append([]string{}, call.Values...), Direction: atlas.DirectionOut}}
+			r.boundaries[id] = &boundaryState{place: p}
 		}
 	}
 }

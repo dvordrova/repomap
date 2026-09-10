@@ -57,7 +57,7 @@ func TestPreparedTablesHaveOneResponseShapeWithCurrentColumns(t *testing.T) {
 				}
 				system, user := sent.Messages[0].Content, sent.Messages[1].Content
 				var example json.RawMessage
-				if withTerms {
+				if withTerms && !call.Prompt.NoResponseAdjunct {
 					if strings.Contains(system, `"rows"`) || strings.Contains(system, "Return only {") {
 						t.Fatal("bare task response competes with the terminology envelope")
 					}
@@ -74,6 +74,9 @@ func TestPreparedTablesHaveOneResponseShapeWithCurrentColumns(t *testing.T) {
 					}
 					example = envelope["result"]
 				} else {
+					if strings.Contains(user, "REPOMAP_TERMINOLOGY_CATALOG") || strings.Contains(system, "# Response envelope and repository terminology") {
+						t.Fatal("closed result or undecorated request gained optional terminology")
+					}
 					if strings.Count(system, `"rows"`) != 1 {
 						t.Fatal("more than one task response example")
 					}
@@ -98,5 +101,32 @@ func TestPreparedTablesHaveOneResponseShapeWithCurrentColumns(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestTableOwnerKeepsProseMetadataAndOmitsClosedDecisionMetadata(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		def     table.Definition
+		omitted bool
+	}{
+		{"selection", SymbolSelection(false), true},
+		{"type-selection", SymbolSelection(true), true},
+		{"closed-assignments", ZoneAssign([]string{"Storage"}), true},
+		{"captions", Symbols(), false},
+		{"long-prose", Types(), false},
+		{"conditional-operation-prose", Operations(), false},
+		{"conditional-boundary-prose", Boundaries(true), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			windows, err := table.Windows(test.def, 1, []table.Row{{ID: "local", Fields: []table.Field{{Name: "path", Value: "service.go"}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			call, err := table.Call(test.def, windows[0])
+			if err != nil || call.Prompt.NoResponseAdjunct != test.omitted {
+				t.Fatalf("owner metadata eligibility changed: %+v / %v", call.Prompt, err)
+			}
+		})
 	}
 }

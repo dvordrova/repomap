@@ -237,11 +237,27 @@ opens the complete component map. The separate core-lane reference catalogue
 is labelled Core; an empty core lane cannot imply an empty component map.
 
 The 2026-09-10 entrance correction exposes the existing requests, commands,
-scheduled/continuous activity and interactions beside integration groups on
+scheduled/continuous activity and interactions beside external communications on
 component and repository rows. Each group shows five initial rows and an All N
 disclosure; every original row, route/operation link and code anchor remains.
 Homogeneous groups label kind/provenance once; mixed rows retain their labels.
 This is presentation, not worker or library-API classification.
+
+Outgoing selections now enter the existing boundary review as source candidates.
+It interprets the runtime participant and purpose, distinguishes dispatch from
+remote-client configuration, and selects an original address or explicitly leaves
+it unknown. A local helper call establishes delegation, not the eventual external
+effect of its unseen implementation. The provider receives whether an indexed
+callee candidate exists, preserving possible or unresolved dispatch; this is not
+a local rejection rule. Standard-library transports remain eligible. No package
+blacklist, API catalogue, semantic deduplication or new reading stage is added.
+Accepted observations keep their source column and native fact provenance through
+atlas v5, GroupsIndex v9 and report v88. They no longer require an outgoing-only
+group or a key-symbol caption. The entrance displays participant, purpose,
+known address, configuration/dispatch basis and source link. Its count describes
+communication observations, not unique systems. Native known HTTP addresses
+survive missing model descriptions; unavailable dynamic address expressions are
+not reconstructed by the report. Graph v10 and saved reading input v11 stay unchanged.
 
 Opening an area keeps a frame containing its parts and keeps connected peers
 outside. Boundary relations fold into one visible arrow per direction with all
@@ -4011,7 +4027,10 @@ ordinary external package that may support dependency categorization and a
 cross-target integration boundary. `platform` means standard-library or
 runtime authority. Its raw `package_path` is still retained exactly, but it
 cannot receive `dependency`, support a dependencies-lane group, or become a
-cross-target boundary. Other positively supported categories remain allowed.
+cross-target boundary as a package object. A source call through a standard-library
+transport can independently support runtime communication in the atlas review;
+the package itself is not a remote participant. Other positively supported
+categories remain allowed.
 Adapters derive this distinction from language-owned deterministic authority;
 shared stages never infer it from a path prefix or dependency-name heuristic.
 

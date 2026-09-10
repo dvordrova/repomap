@@ -30,6 +30,11 @@ func foldIndexes(indexes []groupindex.Index) []groupindex.Index {
 			op := &folded[position].Operations[i]
 			op.GroupID = canonical[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: op.GroupID}].GroupID
 		}
+		folded[position].Outbound = append([]groupindex.OutboundCall(nil), index.Outbound...)
+		for i := range folded[position].Outbound {
+			call := &folded[position].Outbound[i]
+			call.GroupID = canonical[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: call.GroupID}].GroupID
+		}
 	}
 	for position := range folded {
 		folded[position].Connections = foldConnections(folded[position].Connections, canonical)

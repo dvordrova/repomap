@@ -97,21 +97,34 @@ func TestSharedEvidenceKeepsEveryCallAndBindingAssociation(t *testing.T) {
 	}
 }
 
-func TestCallContextKeysStayLocalWithoutChangingProviderInput(t *testing.T) {
-	call := atlas.SymbolCall{Name: "Client.Submit", Kind: "calls", Line: 12, Column: 31, CalleeIDs: []string{"sym:private-source-key"}}
-	var catalog EvidenceCatalog
-	raw, err := json.Marshal(catalog.Call(call))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), "callee_ids") || strings.Contains(string(raw), "private-source-key") || strings.Contains(string(raw), "column") || len(call.CalleeIDs) != 1 || call.Column != 31 {
-		t.Fatalf("local traversal keys leaked or were mutated: %s %+v", raw, call)
-	}
-	call.CalleeIDs = nil
-	call.Column = 0
-	want, _ := json.Marshal(call)
-	if string(raw) != string(want) {
-		t.Fatalf("adding local identity changed description input: %s != %s", raw, want)
+func TestCallContextExposesRepositoryOriginWithoutLeakingNativeKeys(t *testing.T) {
+	for _, resolution := range []string{"exact", "alternatives", "unresolved"} {
+		t.Run(resolution, func(t *testing.T) {
+			call := atlas.SymbolCall{Name: "Client.Submit", Kind: "calls", Line: 12, Column: 31,
+				Resolution: resolution, CalleeIDs: []string{"sym:private-source-key"}}
+			var catalog EvidenceCatalog
+			raw, err := json.Marshal(catalog.Call(call))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(raw), "callee_ids") || strings.Contains(string(raw), "private-source-key") || strings.Contains(string(raw), "column") || len(call.CalleeIDs) != 1 || call.Column != 31 {
+				t.Fatalf("local traversal keys leaked or were mutated: %s %+v", raw, call)
+			}
+			var projected map[string]any
+			if json.Unmarshal(raw, &projected) != nil || projected["has_repository_callee_candidate"] != true || projected["resolution"] != resolution {
+				t.Fatalf("origin observation lost or dispatch certainty changed: %s", raw)
+			}
+			call.CalleeIDs = []string{"sym:renamed-key", "sym:second-possible-key"}
+			changedIDs, _ := json.Marshal(catalog.Call(call))
+			if string(raw) != string(changedIDs) {
+				t.Fatal("native ID/count changes altered the existential origin observation")
+			}
+			call.CalleeIDs = nil
+			withoutOrigin, _ := json.Marshal(catalog.Call(call))
+			if strings.Contains(string(withoutOrigin), "has_repository_callee_candidate") {
+				t.Fatal("missing native callee evidence became a claim about origin")
+			}
+		})
 	}
 }
 

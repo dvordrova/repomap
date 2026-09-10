@@ -19,7 +19,7 @@ const (
 	StageJoints     = "atlas_joints"
 
 	symbolsContract    = "repomap.atlas.symbols.v7"
-	boundariesContract = "repomap.atlas.boundaries.v2"
+	boundariesContract = "repomap.atlas.boundaries.v3"
 	zonesContract      = "repomap.atlas.zones.v1"
 	arrowsContract     = "repomap.atlas.arrows.v1"
 	targetsContract    = "repomap.atlas.targets.v2"
@@ -143,45 +143,188 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 	return table.Row{ID: place.ID, Fields: fields}
 }
 
-// Boundaries is the boundary table.
-func Boundaries() table.Definition {
-	return table.Definition{
+// Boundaries interprets candidate relationships. Native facts keep their known
+// decision and kind; outgoing mode adds the runtime-system explanation.
+func Boundaries(outgoing ...bool) table.Definition {
+	positive := map[string]string{"decision": "boundary"}
+	def := table.Definition{
 		Stage: StageBoundaries, Contract: boundariesContract,
 		System: boundariesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
-			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what crosses this boundary"},
-			{Name: "kind", Kind: table.Choice, Options: atlas.BoundaryKinds(), Note: "repeat kind_given when present"},
+			{Name: "decision", Kind: table.Choice, OptionsFrom: "decision_options", Note: "boundary for supported runtime exchange, none for local mechanisms, unassessed for insufficient evidence"},
+			{Name: "kind", Kind: table.Choice, OptionsFrom: "kind_options", When: positive},
+			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, When: positive, Note: "why this component exchanges with the runtime system"},
 		},
 	}
+	if len(outgoing) > 0 && outgoing[0] {
+		def.Contract += ".outbound"
+		def.Columns[2].Kind, def.Columns[2].MaxRunes = table.Prose, 0
+		def.Columns = append(def.Columns,
+			table.Column{Name: "destination", Kind: table.Text, MaxRunes: 80, When: positive, Note: "short English role of the other runtime system; never invent a host or address"},
+			table.Column{Name: "basis", Kind: table.Choice, Options: []string{"dispatch", "configuration"}, When: positive, Note: "observed exchange call, or configured client/exporter whose sending is inside its library"},
+			table.Column{Name: "address", Kind: table.Choice, OptionsFrom: "address_options", When: positive, Note: "one supplied a* address value, or unknown when no observed value identifies the destination"},
+		)
+	}
+	return def
 }
 
-// BoundaryRow builds the row of one boundary place.
-func BoundaryRow(place atlas.Place, fileLine string) table.Row {
+// BoundaryAddress keeps the original supplied bytes and their source context.
+// These observations are choices, not locally assigned destination semantics.
+type BoundaryAddress struct {
+	Ref   string `json:"ref"`
+	Value string `json:"value"`
+	Call  string `json:"call,omitempty"`
+	Line  int    `json:"line,omitempty"`
+}
+
+func BoundaryAddresses(place atlas.Place, owners ...atlas.Place) []BoundaryAddress {
+	var values []BoundaryAddress
+	seen := make(map[string]bool)
+	add := func(value, call string, line int) {
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		values = append(values, BoundaryAddress{Ref: fmt.Sprintf("a%d", len(values)+1), Value: value, Call: call, Line: line})
+	}
+	for _, value := range place.Boundary.Values {
+		add(value, place.Boundary.External, place.LineNo)
+	}
+	for _, owner := range owners {
+		if owner.Symbol == nil {
+			continue
+		}
+		for _, call := range owner.Symbol.Calls {
+			for _, value := range call.Values {
+				add(value, call.Name, call.Line)
+			}
+		}
+	}
+	return values
+}
+
+// BoundaryRow uses original callable observations, independent of its caption.
+// Shared evidence refs preserve associations inside this row; neighbouring
+// boundary rows have no implied relationship.
+func BoundaryRow(place atlas.Place, _ string, owners ...atlas.Place) table.Row {
 	facts := place.Boundary
+	decisions := []string{"boundary", "none", "unassessed"}
+	kinds := atlas.BoundaryKinds()
+	if facts.GivenKind != "" {
+		decisions = []string{"boundary"}
+		kinds = []string{facts.GivenKind}
+	}
 	fields := []table.Field{
-		{Name: "path", Value: place.Path},
-		{Name: "caller", Value: facts.Caller},
+		{Name: "path", Value: place.Path}, {Name: "line", Value: place.LineNo},
+		{Name: "caller", Value: facts.Caller}, {Name: "caller_doc", Value: facts.CallerDoc},
+		{Name: "external", Value: facts.External}, {Name: "method", Value: facts.Method},
+		{Name: "values", Value: facts.Values}, {Name: "direction", Value: facts.Direction},
+		{Name: "decision_options", Value: decisions}, {Name: "kind_options", Value: kinds},
 	}
-	if facts.CallerDoc != "" {
-		fields = append(fields, table.Field{Name: "caller_doc", Value: facts.CallerDoc})
-	}
-	if fileLine != "" {
-		fields = append(fields, table.Field{Name: "file_hypothesis", Value: fileLine})
-	}
-	if facts.External != "" {
-		fields = append(fields, table.Field{Name: "external", Value: facts.External})
-	}
-	if facts.Method != "" {
-		fields = append(fields, table.Field{Name: "method", Value: facts.Method})
-	}
-	fields = append(fields,
-		table.Field{Name: "values", Value: bounded(facts.Values, maxValues)},
-		table.Field{Name: "direction", Value: facts.Direction},
-	)
 	if facts.GivenKind != "" {
 		fields = append(fields, table.Field{Name: "kind_given", Value: facts.GivenKind})
 	}
+	addresses := BoundaryAddresses(place, owners...)
+	options := []string{"unknown"}
+	for _, address := range addresses {
+		options = append(options, address.Ref)
+	}
+	fields = append(fields, table.Field{Name: "address_catalog", Value: addresses}, table.Field{Name: "address_options", Value: options})
+	for _, owner := range owners {
+		if owner.Symbol == nil {
+			continue
+		}
+		var evidence EvidenceCatalog
+		decl := owner.Symbol.Decl
+		calls := make([]any, 0, len(owner.Symbol.Calls))
+		for _, call := range owner.Symbol.Calls {
+			calls = append(calls, evidence.Call(call))
+		}
+		value := map[string]any{"path": owner.Path, "line": owner.LineNo, "name": decl.Name, "kind": decl.Kind,
+			"signature": decl.Signature, "author_doc": decl.Doc, "calls": calls,
+			"callable_bindings": evidence.Bindings(owner.Symbol.Bindings), "owned_declarations": ownedDeclarations(owner.Symbol.Members)}
+		for _, field := range evidence.Fields() {
+			value[field.Name] = field.Value
+		}
+		fields = append(fields, table.Field{Name: "owner", Value: value})
+		break
+	}
 	return table.Row{ID: place.ID, Fields: fields}
+}
+
+// BoundarySourceContext supplies purpose clues from the same source graph.
+// Parent and native caller identities are the only joins; names and nearby
+// paths cannot attach another declaration or README. Caller context stops at
+// that declaration, without expanding its calls or following its own callers.
+func BoundarySourceContext(place, owner atlas.Place, places, declarations map[string]atlas.Place) []table.Field {
+	context := make(map[string]any)
+	file := places[place.Parent]
+	if owner.Symbol != nil {
+		file = places[owner.Parent]
+	}
+	if file.File != nil {
+		context["file"] = map[string]any{"path": file.Path, "author_doc": file.File.Doc}
+		var ancestors []map[string]any
+		for parent := file.Parent; parent != ""; {
+			directory, found := places[parent]
+			if !found || directory.Directory == nil {
+				break
+			}
+			if directory.Directory.Doc != "" || directory.Directory.Readme != "" {
+				ancestors = append(ancestors, map[string]any{"path": directory.Path,
+					"author_doc": directory.Directory.Doc, "readme_claim": directory.Directory.Readme})
+			}
+			parent = directory.Parent
+		}
+		if len(ancestors) > 0 {
+			context["ancestor_directories"] = ancestors
+		}
+	}
+	if owner.Symbol != nil {
+		byID := make(map[string]map[string]any)
+		for i, caller := range owner.Symbol.CalledBy {
+			id := caller.ObjectID
+			if caller.PlaceID != "" {
+				id = caller.PlaceID
+			}
+			if id == "" {
+				id = fmt.Sprintf("observation:%d", i)
+			}
+			row := byID[id]
+			if row == nil {
+				row = map[string]any{"name": caller.Name, "signature": caller.Signature, "path": caller.Path}
+				if declaration, found := declarations[id]; found && declaration.Symbol != nil {
+					row["author_doc"] = declaration.Symbol.Decl.Doc
+					row["declaration_line"] = declaration.LineNo
+					var evidence EvidenceCatalog
+					row["callable_bindings"] = evidence.Bindings(declaration.Symbol.Bindings)
+					for _, field := range evidence.Fields() {
+						row[field.Name] = field.Value
+					}
+				}
+				byID[id] = row
+			}
+			sites, _ := row["call_sites"].([]map[string]any)
+			row["call_sites"] = append(sites, map[string]any{"line": caller.Line, "kind": caller.Kind,
+				"invocation": caller.Invocation, "resolution": caller.Resolution})
+		}
+		ids := make([]string, 0, len(byID))
+		for id := range byID {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		var callers []map[string]any
+		for _, id := range ids {
+			callers = append(callers, byID[id])
+		}
+		if len(callers) > 0 {
+			context["immediate_callers"] = callers
+		}
+	}
+	if len(context) == 0 {
+		return nil
+	}
+	return []table.Field{{Name: "source_context", Value: context}}
 }
 
 // ZoneNames asks for exactly want part names of one target in one row: a

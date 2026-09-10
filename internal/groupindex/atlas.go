@@ -417,6 +417,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			Subjects:           subjects,
 			Groups:             groups,
 			Operations:         operations,
+			Outbound:           projectOutbound(program, target, groupOfBox, sourceRefs),
 			Containers:         containers,
 			StructuralEdges:    compileStructuralEdges(program, retained),
 			Connections:        connections,

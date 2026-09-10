@@ -90,6 +90,9 @@ func (view *GroupGraphView) SourcePaths() ([]string, error) {
 		for _, operation := range index.Operations {
 			paths = append(paths, operation.Location.Path)
 		}
+		for _, call := range index.Outbound {
+			paths = append(paths, call.Location.Path)
+		}
 		for _, connection := range index.Connections {
 			if connection.FromLocation != nil {
 				paths = append(paths, connection.FromLocation.Path)

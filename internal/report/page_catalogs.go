@@ -96,7 +96,7 @@ func sectionCoverage(section *pageSection) []string {
 		{len(section.Activities) == 0, "Other operations"},
 		{len(section.Entrypoints) == 0, "Entrypoints"},
 		{section.PartsCount() == 0, "Parts"},
-		{len(section.Calls)+len(section.DependencyGroups)+len(section.Dependencies) == 0, "External calls & dependencies"},
+		{len(section.Outbound) == 0, "External communication"},
 		{len(section.Dynamic) == 0, "Runs code it is given"},
 		{len(section.Config) == 0, "Configuration"},
 		{len(section.Todos) == 0, "TODOs"},

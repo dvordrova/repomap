@@ -15,7 +15,14 @@ Do not infer that a topic is irrelevant because the answer is absent.
 Each evidence entry's context_ref adds its shared context from contexts; read
 that together with the entry's own context. Only e refs are source choices.
 
-For each intent, return exactly one review:
+For each intent, return exactly one review. Every review must contain a nonempty
+`reason`, including a review whose state is `questions`. This reason explains
+why this intent leads to its proposed questions, is not applicable, or remains
+unknown in the supplied context. It is distinct from each proposed question's
+`why`, which explains that individual question's usefulness; those per-question
+reasons do not replace the review's reason.
+
+Review states:
 - questions: one or more useful questions grounded in advertised source refs.
 - not_applicable: positive evidence establishes that the intent does not apply;
   only valid when partial_context is false. Include sources and an explanation.

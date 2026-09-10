@@ -26,7 +26,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 10
-	Version      = 4
+	Version      = 5
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -445,18 +445,25 @@ type Arrow struct {
 
 // Boundary is one integration point drawn beside its box.
 type Boundary struct {
-	ID        string   `json:"id"`
-	ObjectID  string   `json:"object_id,omitempty"`
-	BoxID     string   `json:"box_id"`
-	Path      string   `json:"path"`
-	LineNo    int      `json:"line_no"`
-	Column    int      `json:"column,omitempty"`
-	Caller    string   `json:"caller"`
-	Direction string   `json:"direction"`
-	Kind      string   `json:"kind"`
-	External  string   `json:"external,omitempty"`
-	Method    string   `json:"method,omitempty"`
-	Values    []string `json:"values"`
+	ID        string `json:"id"`
+	ObjectID  string `json:"object_id,omitempty"`
+	BoxID     string `json:"box_id"`
+	Path      string `json:"path"`
+	LineNo    int    `json:"line_no"`
+	Column    int    `json:"column,omitempty"`
+	Caller    string `json:"caller"`
+	Direction string `json:"direction"`
+	Kind      string `json:"kind"`
+	External  string `json:"external,omitempty"`
+	// Source preserves whether the anchor is a native fact or an interpretation.
+	Source string `json:"source,omitempty"`
+	// Destination and Basis are MODEL. Address is one original observed value
+	// selected by a closed ref; empty means its runtime address is unknown.
+	Destination string   `json:"destination,omitempty"`
+	Address     string   `json:"address,omitempty"`
+	Basis       string   `json:"basis,omitempty"`
+	Method      string   `json:"method,omitempty"`
+	Values      []string `json:"values"`
 	// Line is MODEL.
 	Line   string `json:"line"`
 	FactID string `json:"fact_id,omitempty"`
@@ -934,7 +941,13 @@ func Validate(value Atlas) error {
 			if !ValidDirection(boundary.Direction) || !ValidBoundaryKind(boundary.Kind) {
 				return fmt.Errorf("atlas: boundary %q has direction %q kind %q", boundary.ID, boundary.Direction, boundary.Kind)
 			}
-			if invalidText(boundary.Line) || boundary.Values == nil {
+			if invalidText(boundary.Destination) || (boundary.Basis != "" && boundary.Basis != "dispatch" && boundary.Basis != "configuration") {
+				return fmt.Errorf("atlas: boundary %q has invalid runtime relationship", boundary.ID)
+			}
+			if boundary.Source != "" && boundary.Source != "fact" && boundary.Source != "model" && boundary.Source != "external_call" {
+				return fmt.Errorf("atlas: boundary %q has invalid source %q", boundary.ID, boundary.Source)
+			}
+			if invalidText(strings.ReplaceAll(strings.ReplaceAll(boundary.Line, "\n", ""), "\r", "")) || boundary.Values == nil {
 				return fmt.Errorf("atlas: boundary %q is invalid", boundary.ID)
 			}
 		}
