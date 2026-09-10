@@ -4340,9 +4340,14 @@ evidence differ, so the shorter wall time is not a controlled speed comparison.
 Operation review still left 362 rows without accepted answers; 343 raw rows had
 an empty name, all with `none` or an upstream entry. The library entrance still
 shows test-suite lifecycle hooks as scheduled work. Its structure map starts
-with seven areas, but an expanded 55-operation inventory precedes it, and
-opening an area replaces the other areas with its children. These remain
-separate validation, interpretation and navigation issues. Receipts are in
+with seven areas, but an expanded 55-operation inventory precedes it. A further
+1280x720 browser check measured that inventory at 6,691 px high. Opening the
+15-part area retains all six connected neighbouring areas: the earlier claim
+that they disappear was wrong. The selected area's own node disappears without
+a containing frame; the view has 21 nodes and 85 retained relations. Opening
+one part switches to a focus view with a code selector and hides the structure
+canvas. These remain separate validation, interpretation and navigation issues.
+Browser measurements are in `work/webernetes-prompt-audit-20260910/map-review-correction.json`. Other receipts are in
 `work/webernetes-prompt-audit-20260910/acceptance.json` and `REVIEW.md`.
 
 Go core objects v3 similarly retain explicitly declared struct fields with
