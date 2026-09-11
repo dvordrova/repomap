@@ -8,6 +8,12 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The operation view says what it shows. After the first jump into
+  "Операции › criar-filme" the owner liked the picture and asked what he
+  was looking at. One muted line under the crumbs now reads "criar-filme:
+  the dark box is the operation; below it the part with its handler and
+  the parts that handler reaches. A solid arrow is a call in code, a dashed
+  one an interpretation." (`.explorer-caption`, hidden in structure mode).
 - "Where this service connects" on a real broker/database service (Morfeu:
   Echo + sqlc + PostgreSQL + Redis + RabbitMQ). Destination groups are
   keyed by the known system a destination names: one run called one broker

@@ -161,6 +161,7 @@
 .explorer-return[hidden]{display:none}
 .explorer-return button{padding:.15rem .3rem;border:0;background:transparent;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
 .explorer-status{margin-left:auto;color:var(--muted)}
+.explorer-caption{flex-basis:100%;margin:.15rem 0 0;font-size:var(--text-small);color:var(--muted)}.explorer-caption[hidden]{display:none}
 .explorer-breadcrumbs .explorer-crumb{display:flex;align-items:baseline;gap:.4rem;border:0;background:transparent;padding:.4rem;color:var(--accent)}
 .explorer-breadcrumbs .explorer-crumb::before{content:'›';color:var(--muted);margin-right:.2rem}
 .explorer-crumb-kind{font-size:var(--text-small);color:var(--muted);font-weight:400}

@@ -269,6 +269,12 @@
       if(area){var collapse=button(rmT('Collapse details'),function(){open(scopePath(area.id).slice(0,-1).pop()||'');});collapse.className='explorer-collapse';crumbs.appendChild(collapse);}
       var selfCount=edges.filter(function(edge){return edge.from===edge.to&&(operation||expanded&&edge.from===scope);}).length;
       var status=document.createElement('span');status.className='explorer-status';status.textContent=rmT('{0} parts · {1} connections',visible.filter(function(id){return !byID[id].dataset.activation;}).length,currentEdges.reduce(function(count,edge){return count+edge.relations.length;},selfCount));crumbs.appendChild(status);
+      // One line says what the operation view shows: the reader asked "what am
+      // I looking at" after the first jump into it.
+      var caption=bar.querySelector('.explorer-caption');
+      if(!caption){caption=document.createElement('p');caption.className='explorer-caption';bar.appendChild(caption);}
+      caption.hidden=!operation;
+      if(operation)caption.textContent=rmT('{0}: the dark box is the operation; below it the part with its handler and the parts that handler reaches. A solid arrow is a call in code, a dashed one an interpretation.',operation.dataset.title);
       showReturnPath();
       {
         if(!previousViewport)stage.scrollTo(0,0);
