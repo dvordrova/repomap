@@ -17,6 +17,7 @@ type pageDataRow struct {
 	Anchor                                                          pageAnchor
 	Columns                                                         []pageDataColumn
 	References                                                      []pageDataReference
+	Queries                                                         []pageDataReference
 	Operations                                                      []pageDataOperation
 }
 type pageDataColumn struct {
@@ -29,9 +30,9 @@ type pageDataReference struct {
 	Source     *pageAnchor
 }
 type pageDataOperation struct {
-	Name, Href, Via string
-	Anchor          pageAnchor
-	Possible        bool
+	Name, Href, Via, ViaHref string
+	Anchor                   pageAnchor
+	Possible                 bool
 }
 
 func (builder *pageBuilder) fillSectionData(section *pageSection) {
@@ -40,6 +41,7 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 		return
 	}
 	refs := map[string]pageDataReference{}
+	queries := map[string][]pageDataReference{}
 	for _, original := range builder.sourceIndexes {
 		if original.Target.ID != index.Target.ID {
 			continue
@@ -51,7 +53,20 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 		}
 	}
 	for _, record := range index.Data {
-		refs[record.ID] = pageDataReference{Name: record.Data.Name, Href: "#" + section.ID + "-data-" + record.ID}
+		if record.Data != nil {
+			name := record.Data.Name
+			if record.Data.Schema != "" {
+				name = record.Data.Schema + "." + name
+			}
+			refs[record.ID] = pageDataReference{Name: name, Href: "#" + section.ID + "-data-" + record.ID}
+		}
+	}
+	for _, record := range index.Data {
+		if record.Data != nil && record.Data.Kind == "query" {
+			for _, target := range record.References {
+				queries[target] = append(queries[target], refs[record.ID])
+			}
+		}
 	}
 	operations := dataOperationLinks(index)
 	for _, record := range index.Data {
@@ -80,6 +95,7 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 		for _, column := range data.Columns {
 			row.Columns = append(row.Columns, pageDataColumn{Name: column.Name, Type: column.Type, ForeignKey: column.ForeignKey, PrimaryKey: column.PrimaryKey, Anchor: builder.links.anchor(column.Anchor.Path, column.Anchor.Line, column.Anchor.Column)})
 		}
+		row.Queries = queries[record.ID]
 		for _, ref := range record.References {
 			if linked, ok := refs[ref]; ok {
 				row.References = append(row.References, linked)
@@ -89,6 +105,51 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 			row.Operations = append(row.Operations, pageDataOperation{Name: builder.operationDisplayName(link.operation), Href: "#" + operationNodeID(section.ID, link.operation.ID), Via: link.subject.Object.Name, Possible: link.possible, Anchor: builder.links.anchor(link.subject.Object.Location.Path, link.subject.Object.Location.Line, link.subject.Object.Location.Column)})
 		}
 		section.Data.Rows = append(section.Data.Rows, row)
+	}
+	// Reference identities already carry SQL scope. Never link tables by name.
+	rows := map[string]*pageDataRow{}
+	for i := range section.Data.Rows {
+		rows[section.Data.Rows[i].ID] = &section.Data.Rows[i]
+	}
+	for _, record := range index.Data {
+		if record.Data == nil || record.Data.Kind != "query" {
+			continue
+		}
+		query := rows[section.ID+"-data-"+record.ID]
+		for _, ref := range record.References {
+			table := rows[section.ID+"-data-"+ref]
+			if table == nil {
+				continue
+			}
+			for _, operation := range query.Operations {
+				operation.Via, operation.ViaHref, operation.Anchor = query.Name, "#"+query.ID, query.Anchor
+				table.Operations = append(table.Operations, operation)
+			}
+		}
+	}
+	byOperation := map[string][]pageDataReference{}
+	for _, row := range section.Data.Rows {
+		for _, operation := range row.Operations {
+			byOperation[operation.Href] = appendDataReference(byOperation[operation.Href], pageDataReference{Name: row.Name, Href: "#" + row.ID})
+		}
+	}
+	for i := range section.Requests {
+		section.Requests[i].Data = byOperation[section.Requests[i].Href]
+	}
+	for i := range section.Activities {
+		section.Activities[i].Data = byOperation[section.Activities[i].Href]
+	}
+	for i := range section.RouteGroups {
+		for j := range section.RouteGroups[i].Rows {
+			for k := range section.RouteGroups[i].Rows[j].Paths {
+				route := &section.RouteGroups[i].Rows[j].Paths[k]
+				for _, href := range route.OperationHrefs {
+					for _, ref := range byOperation[href] {
+						route.Data = appendDataReference(route.Data, ref)
+					}
+				}
+			}
+		}
 	}
 	sort.SliceStable(section.Data.Rows, func(i, j int) bool {
 		a, b := section.Data.Rows[i], section.Data.Rows[j]
@@ -108,14 +169,27 @@ type dataOperationLink struct {
 	possible  bool
 }
 
-// These are source call paths into declarations owned by a model. They are
-// explicitly code associations, not an assertion that every method does I/O.
+func appendDataReference(rows []pageDataReference, ref pageDataReference) []pageDataReference {
+	for _, row := range rows {
+		if row.Href == ref.Href {
+			return rows
+		}
+	}
+	return append(rows, ref)
+}
+
+// These are source call paths into model declarations or the exact callable
+// containing a SQL occurrence, not an assertion that every method does I/O.
 func dataOperationLinks(index *groupindex.Index) map[string][]dataOperationLink {
 	result := map[string][]dataOperationLink{}
 	owners := map[string]bool{}
+	tables := map[string]bool{}
 	for _, row := range index.Data {
 		if row.OwnerSubjectID != "" {
 			owners[row.OwnerSubjectID] = true
+			if row.Data != nil && row.Data.Kind == "table" {
+				tables[row.OwnerSubjectID] = true
+			}
 		}
 	}
 	if len(owners) == 0 {
@@ -147,10 +221,20 @@ func dataOperationLinks(index *groupindex.Index) map[string][]dataOperationLink 
 			}
 			seen[current.id] = true
 			subject := subjects[current.id]
-			if subject.Object != nil && subject.Object.Location != nil && owners[subject.Object.OwnerID] && !matched[subject.Object.OwnerID] {
-				owner := subject.Object.OwnerID
-				matched[owner] = true
-				result[owner] = append(result[owner], dataOperationLink{operation: operation, subject: subject, possible: current.possible})
+			if subject.Object != nil && subject.Object.Location != nil {
+				var matches []string
+				if owners[current.id] && (subject.Object.Kind == programindex.ObjectFunction || subject.Object.Kind == programindex.ObjectMethod || subject.Object.Kind == programindex.ObjectLambda) {
+					matches = append(matches, current.id)
+				}
+				if tables[subject.Object.OwnerID] {
+					matches = append(matches, subject.Object.OwnerID)
+				}
+				for _, owner := range matches {
+					if !matched[owner] {
+						matched[owner] = true
+						result[owner] = append(result[owner], dataOperationLink{operation: operation, subject: subject, possible: current.possible})
+					}
+				}
 			}
 			for _, edge := range calls[current.id] {
 				queue = append(queue, step{id: edge.ToSubjectID, possible: current.possible || edge.Resolution != programindex.ResolutionExact})

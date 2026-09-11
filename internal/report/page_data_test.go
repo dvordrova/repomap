@@ -72,3 +72,58 @@ func TestDataCataloguePreservesScopeSourceAndActualModelCallAssociations(t *test
 		t.Fatal("internal source scope leaked into reader details")
 	}
 }
+
+func TestDataCatalogueLinksQueryOperationsAndScopedTablesBothWays(t *testing.T) {
+	index := groupindex.Index{Target: programindex.Target{ID: "service"}}
+	location := &programindex.Location{Path: "queries.py", Line: 10, Column: 1}
+	index.Subjects = []groupindex.Subject{
+		{ID: "query-owner", Object: &groupindex.ObjectFacts{Kind: programindex.ObjectFunction, Name: "readTrades", Location: location}},
+		{ID: "unrelated", Object: &groupindex.ObjectFacts{Kind: programindex.ObjectMethod, Name: "other", OwnerID: "query-class", Location: location}},
+		{ID: "query-class", Object: &groupindex.ObjectFacts{Kind: programindex.ObjectType, Name: "LegacyQueryClass", Location: location}},
+	}
+	index.Data = []groupindex.DataRecord{
+		{DataRecord: atlas.DataRecord{ID: "table", Path: "schema.sql", Line: 2, Data: &facts.DataObject{Kind: "table", Origin: "ddl", Scope: "schema:main", Name: "trades"}}},
+		{DataRecord: atlas.DataRecord{ID: "other-table", Path: "archive.sql", Line: 2, Data: &facts.DataObject{Kind: "table", Origin: "ddl", Scope: "schema:archive", Name: "trades"}}},
+		{DataRecord: atlas.DataRecord{ID: "query", Path: "queries.py", Line: 11, References: []string{"table"}, Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "schema:main", Name: "ReadTrades", SQL: "SELECT id FROM trades", Statement: "SELECT"}}, OwnerSubjectID: "query-owner"},
+		{DataRecord: atlas.DataRecord{ID: "legacy-query", Path: "queries.py", Line: 12, Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "unknown", Name: "DifferentQuery", SQL: "SELECT id FROM trades"}}, OwnerSubjectID: "query-class"},
+	}
+	index.Operations = []groupindex.Operation{{ID: "get", Name: "GET /trades", SubjectID: "handler", Kind: "request"}}
+	index.StructuralEdges = []groupindex.StructuralEdge{
+		{FromSubjectID: "handler", ToSubjectID: "query-owner", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionAlternatives},
+		{FromSubjectID: "handler", ToSubjectID: "unrelated", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact},
+	}
+	href := "#" + operationNodeID("service", "get")
+	section := &pageSection{ID: "service", programTargetID: "service", Requests: []pageGroupOperation{{Name: "GET /trades", Kind: "request", Href: href}}, RouteGroups: []pageRouteGroup{{Rows: []pageRouteRow{{Paths: []pageRoutePath{{Path: "/trades", OperationHrefs: []string{href}}}}}}}}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}, links: pageLinks{sourceIDs: map[string]string{"queries.py": "queries", "schema.sql": "schema"}}}
+	builder.fillSectionData(section)
+	rows := map[string]pageDataRow{}
+	for _, row := range section.Data.Rows {
+		rows[row.ID] = row
+	}
+	query, table := rows["service-data-query"], rows["service-data-table"]
+	if len(query.Operations) != 1 || !query.Operations[0].Possible || len(query.References) != 1 || query.References[0].Href != "#service-data-table" {
+		t.Fatalf("query links lost: %+v", query)
+	}
+	if len(table.Queries) != 1 || table.Queries[0].Href != "#service-data-query" || len(table.Operations) != 1 || table.Operations[0].ViaHref != "#service-data-query" || !table.Operations[0].Possible {
+		t.Fatalf("table inverse/source links lost: %+v", table)
+	}
+	if len(rows["service-data-other-table"].Operations) != 0 || len(rows["service-data-other-table"].Queries) != 0 || len(rows["service-data-legacy-query"].Operations) != 0 {
+		t.Fatal("name or class membership invented query ownership")
+	}
+	if len(section.Requests[0].Data) != 2 || len(section.RouteGroups[0].Rows[0].Paths[0].Data) != 2 {
+		t.Fatal("first-screen operations lost query/table links")
+	}
+	parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(Russian, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var html bytes.Buffer
+	if err := parsed.ExecuteTemplate(&html, "operation-row", section.Requests[0]); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"Данные", `href="#service-data-query"`, `href="#service-data-table"`} {
+		if !strings.Contains(html.String(), expected) {
+			t.Fatalf("input row lacks %q", expected)
+		}
+	}
+}

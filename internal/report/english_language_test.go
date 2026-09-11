@@ -156,7 +156,7 @@ func TestReportRenderingIsEnglishOnly(t *testing.T) {
 			beforeOperation := beforeOperations[i]
 			beforeOperation.Summary = translated[i]
 			beforeOperation.SummaryRef = catalog.Entries[i].Ref
-			if operation != beforeOperation {
+			if !reflect.DeepEqual(operation, beforeOperation) {
 				t.Fatal("translating a boundary purpose changed its route label or source anchor")
 			}
 		}

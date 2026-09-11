@@ -25,6 +25,12 @@ func ReplayJSON(ctx context.Context, executor Executor, provider Provider, prepa
 	}
 	setOutcomeRequest(&outcome, request)
 	outcome.CacheKey = executionCacheKey(state, nil, request)
+	// Exact replay has no owning prompt. Preserve the local context already
+	// bound to this request instead of deriving provenance from provider bytes.
+	if original, found, err := readAcceptedCache(executor.RootDir, outcome.CacheKey, limits); err == nil && found {
+		prepared.responseContext = cloneBytes(original.ResponseContext)
+	}
+	outcome.ResponseContext = prepared.ResponseContext()
 	if _, err := SavePayload(executor.RootDir, request); err != nil {
 		return outcome, err
 	}

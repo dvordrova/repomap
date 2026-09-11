@@ -215,7 +215,19 @@ func TestQuestionKeepsComplementaryDeclarationsFromOneChunk(t *testing.T) {
 		place.File.Decls[0].ObjectID = "start-declaration"
 		place.File.Decls = append(place.File.Decls, atlas.Decl{ObjectID: "stop-declaration", Name: "Stop", Kind: "function", Signature: "func()", Doc: "Stop cancels the worker.", LineNo: 8})
 	}
-	provider.questionFor["pkg/a/x.go"] = table.Answer{"relevance": "direct", "anchors": "a2 a1 a2 a999", "why": "Inspect the worker lifecycle declarations."}
+	provider.questionBatchFor = func(request questionBatchRequest, response questionbatch.Response) questionbatch.Response {
+		for _, row := range request.Evidence {
+			if row["path"] != "pkg/a/x.go" {
+				continue
+			}
+			key := row["key"].(string)
+			response.Questions[0].Selections = []questionbatch.Selection{
+				{Row: key, Anchors: []string{"a2", "a2", "a999"}, Relevance: "context", Why: "Cancellation complements the entry declaration."},
+				{Row: key, Anchors: []string{"a1"}, Relevance: "direct", Why: "The entry declaration starts the work."},
+			}
+		}
+		return response
+	}
 	result, route := readQuestionResult(t, opts)
 	if len(result.Rejected) != 0 || route.Coverage.InspectedChunks != 4 || len(route.Stops) != 5 {
 		t.Fatalf("context partition discarded a useful declaration: %+v", route)
@@ -229,6 +241,9 @@ func TestQuestionKeepsComplementaryDeclarationsFromOneChunk(t *testing.T) {
 	if len(selected) != 2 || selected[0].SubjectID != "start-declaration" || selected[0].Line != 3 || selected[1].SubjectID != "stop-declaration" || selected[1].Line != 8 {
 		t.Fatalf("selected declarations lost their own identities: %+v", selected)
 	}
+	if selected[0].Relevance != "direct" || selected[0].Why != "The entry declaration starts the work." || selected[1].Relevance != "context" || selected[1].Why != "Cancellation complements the entry declaration." {
+		t.Fatalf("one file's declarations lost their own relevance and hints: %+v", selected)
+	}
 	for _, stop := range selected {
 		evidence, ok := stop.Evidence["evidence"].([]any)
 		if !ok || len(evidence) != 1 {
@@ -237,6 +252,18 @@ func TestQuestionKeepsComplementaryDeclarationsFromOneChunk(t *testing.T) {
 		declaration, ok := evidence[0].(map[string]any)
 		if !ok || declaration["name"] != stop.Name {
 			t.Fatalf("another declaration's evidence attached to %s: %+v", stop.Name, stop.Evidence)
+		}
+	}
+	opts.OwnerRunDir = t.TempDir()
+	_, recalled := readQuestionResult(t, opts)
+	if provider.calls != 4 || recalled.Coverage.UnresolvedChunks != 0 || len(recalled.Stops) != len(route.Stops) {
+		t.Fatalf("memo recall changed per-anchor selection: calls=%d route=%+v", provider.calls, recalled)
+	}
+	for i := range route.Stops {
+		want := route.Stops[i]
+		want.Source = atlas.SourceCache
+		if !reflect.DeepEqual(recalled.Stops[i], want) {
+			t.Fatalf("memo lost original selected source %d: got %+v want %+v", i, recalled.Stops[i], want)
 		}
 	}
 }

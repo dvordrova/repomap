@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -20,13 +19,10 @@ import (
 // readQuestionBatch finishes the shared retrieval before any question's route
 // or answer is read. Source restoration still uses the original chunks and
 // each question's separate result; batching changes neither graph nor identity.
-func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionChunk, questions []string) ([][]rowAnswer, error) {
-	answers := make([][]rowAnswer, len(questions))
+func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionChunk, questions []string) ([][]questionbatch.ChunkResult, error) {
+	answers := make([][]questionbatch.ChunkResult, len(questions))
 	for q := range questions {
-		answers[q] = make([]rowAnswer, len(chunks))
-		for i := range chunks {
-			answers[q][i] = rowAnswer{source: atlas.SourceGiven}
-		}
+		answers[q] = make([]questionbatch.ChunkResult, len(chunks))
 	}
 	if len(questions) == 0 {
 		return answers, nil
@@ -64,12 +60,7 @@ func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionC
 				use.Given++
 				continue
 			}
-			relevance := chunk.Relevance
-			if len(chunk.Anchors) == 0 {
-				relevance = "none"
-			}
-			answers[q][i] = rowAnswer{answer: table.Answer{"relevance": relevance, "anchors": strings.Join(chunk.Anchors, " "), "why": chunk.Why}, source: chunk.Source,
-				requestSHA: chunk.RequestSHA256, responseSHA: chunk.ResponseSHA256, requestKey: chunk.RequestKey, rowKey: chunk.QuestionRef}
+			answers[q][i] = chunk
 		}
 	}
 	for i, exchange := range result.Exchanges {

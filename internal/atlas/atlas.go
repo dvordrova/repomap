@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -28,8 +29,8 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 11
-	Version      = 6
+	GraphVersion = 14
+	Version      = 7
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -114,9 +115,17 @@ type SourceFact struct {
 // commands, links and later paragraphs verbatim; it is a claim, not verified
 // behavior. The section's identity and starting line belong to its Place.
 type DocumentFacts struct {
-	Title   string `json:"title"`
-	Text    string `json:"text"`
-	EndLine int    `json:"end_line"`
+	Title    string            `json:"title"`
+	Text     string            `json:"text"`
+	EndLine  int               `json:"end_line"`
+	Headings []DocumentHeading `json:"headings,omitempty"`
+}
+
+// DocumentHeading retains a section's written ancestry in the same document.
+// It describes author scope, never runtime or target ownership.
+type DocumentHeading struct {
+	Title string `json:"title"`
+	Line  int    `json:"line"`
 }
 
 // EntityFacts retains a producer's observation without assigning an
@@ -214,9 +223,12 @@ type TypeMember struct {
 }
 
 type SymbolCall struct {
-	ReceiverValue *sourcevalue.Value `json:"receiver_value,omitempty"`
-	ResultValue   *sourcevalue.Value `json:"result_value,omitempty"`
-	API           *CallAPI           `json:"api,omitempty"`
+	// DispatchObservations preserve the original native views when a declared
+	// external interface and unresolved runtime dispatch address one call site.
+	DispatchObservations []DispatchObservation `json:"dispatch_observations,omitempty"`
+	ReceiverValue        *sourcevalue.Value    `json:"receiver_value,omitempty"`
+	ResultValue          *sourcevalue.Value    `json:"result_value,omitempty"`
+	API                  *CallAPI              `json:"api,omitempty"`
 	// SourceArguments retain value provenance for local destination traversal.
 	// They are not appended wholesale to every description request.
 	SourceArguments []SourceArgument `json:"source_arguments,omitempty"`
@@ -233,6 +245,23 @@ type SymbolCall struct {
 	// CalleeIDs refer to compiler-located symbol places, shared across target
 	// indexes. They are local retrieval keys and never enter provider prose.
 	CalleeIDs []string `json:"callee_ids,omitempty"`
+}
+
+type DispatchObservation struct {
+	Kind       string            `json:"kind"`
+	Invocation string            `json:"invocation"`
+	Resolution string            `json:"resolution"`
+	Detail     string            `json:"detail,omitempty"`
+	Witnesses  []DispatchWitness `json:"witnesses,omitempty"`
+}
+
+type DispatchWitness struct {
+	Kind             string `json:"kind"`
+	Detail           string `json:"detail,omitempty"`
+	SourceExpression string `json:"source_expression,omitempty"`
+	Path             string `json:"path,omitempty"`
+	Line             int    `json:"line,omitempty"`
+	Column           int    `json:"column,omitempty"`
 }
 
 // CallAPI is the exact native external symbol, before display shortening.
@@ -293,7 +322,9 @@ type RegistrationArgument struct {
 type BoundaryFacts struct {
 	// Source says where the boundary came from: "fact" or "external_call".
 	Source string `json:"source"`
-	FactID string `json:"fact_id,omitempty"`
+	// Origins retain each target's original fact and declaration identities.
+	// They are local projection metadata, never model evidence.
+	Origins []BoundaryOrigin `json:"origins,omitempty"`
 	// ObjectID is the enclosing object; Caller its display name.
 	ObjectID  string `json:"object_id,omitempty"`
 	SubjectID string `json:"subject_id,omitempty"`
@@ -308,6 +339,29 @@ type BoundaryFacts struct {
 	// GivenKind is the kind the code already knows from facts; empty when the
 	// model has to say.
 	GivenKind string `json:"given_kind,omitempty"`
+}
+
+// BoundaryOrigin binds a shared source observation to an original target fact.
+type BoundaryOrigin struct {
+	TargetID string `json:"target_id"`
+	FactID   string `json:"fact_id"`
+	ObjectID string `json:"object_id,omitempty"`
+}
+
+// CanonicalBoundaryOrigins preserves each distinct original identity once.
+func CanonicalBoundaryOrigins(origins []BoundaryOrigin) []BoundaryOrigin {
+	result := append([]BoundaryOrigin(nil), origins...)
+	sort.Slice(result, func(i, j int) bool {
+		a, b := result[i], result[j]
+		if a.TargetID != b.TargetID {
+			return a.TargetID < b.TargetID
+		}
+		if a.FactID != b.FactID {
+			return a.FactID < b.FactID
+		}
+		return a.ObjectID < b.ObjectID
+	})
+	return slices.Compact(result)
 }
 
 // Witness is one call site behind an edge.
@@ -606,6 +660,16 @@ func Slug(title string) string {
 
 // EncodeGraph seals and encodes places.json.
 func EncodeGraph(graph Graph) ([]byte, error) {
+	// Seal a canonical, independent copy of local native bindings. Caller
+	// iteration order and duplicate observations do not change provider input.
+	graph.Places = append([]Place(nil), graph.Places...)
+	for i := range graph.Places {
+		if graph.Places[i].Boundary != nil {
+			boundary := *graph.Places[i].Boundary
+			boundary.Origins = CanonicalBoundaryOrigins(boundary.Origins)
+			graph.Places[i].Boundary = &boundary
+		}
+	}
 	graph.Version = GraphVersion
 	graph.SHA256 = ""
 	if err := validateGraph(graph); err != nil {
@@ -765,6 +829,23 @@ func validateGraph(graph Graph) error {
 			return fmt.Errorf("atlas: places are not sorted at %q", place.ID)
 		}
 		seen[place.ID] = place.Kind
+		if boundary := place.Boundary; boundary != nil && len(boundary.Origins) > 0 {
+			owned := make(map[string]BoundaryOrigin, len(boundary.Origins))
+			for _, origin := range boundary.Origins {
+				if boundary.Source != "fact" || origin.TargetID == "" || origin.FactID == "" || !slices.Contains(place.TargetIDs, origin.TargetID) {
+					return fmt.Errorf("atlas: boundary %q has an invalid native origin", place.ID)
+				}
+				if previous, exists := owned[origin.TargetID]; exists && previous != origin {
+					return fmt.Errorf("atlas: boundary %q has conflicting native origins for target %q", place.ID, origin.TargetID)
+				}
+				owned[origin.TargetID] = origin
+			}
+			for _, target := range place.TargetIDs {
+				if _, exists := owned[target]; !exists {
+					return fmt.Errorf("atlas: boundary %q lacks the native origin for target %q", place.ID, target)
+				}
+			}
+		}
 		if place.Entity != nil {
 			if err := place.Entity.Data.Validate(); err != nil {
 				return err
@@ -1073,8 +1154,10 @@ const (
 	DirectionIn  = "in"
 	DirectionOut = "out"
 
-	BoundaryHTTPClient    = "http_client"
-	BoundaryHTTPServer    = "http_server"
+	BoundaryHTTPClient = "http_client"
+	BoundaryHTTPServer = "http_server"
+	// BoundaryListenAddress is a fixed source fact, never a model kind choice.
+	BoundaryListenAddress = "listen_address"
 	BoundaryDB            = "db"
 	BoundaryQueueProducer = "queue_producer"
 	BoundaryQueueConsumer = "queue_consumer"
@@ -1111,6 +1194,9 @@ func ValidRole(role string) bool {
 }
 
 func ValidBoundaryKind(kind string) bool {
+	if kind == BoundaryListenAddress {
+		return true
+	}
 	for _, known := range BoundaryKinds() {
 		if kind == known {
 			return true

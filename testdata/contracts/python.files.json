@@ -51,70 +51,122 @@
     },
     {
       "id": "f13",
-      "path": "src/fixture_app/destinations.py"
+      "path": "src/fixture_app/data_sources.py"
     },
     {
       "id": "f14",
-      "path": "src/fixture_app/django_urls.py"
+      "path": "src/fixture_app/destinations.py"
     },
     {
       "id": "f15",
-      "path": "src/fixture_app/events.py"
+      "path": "src/fixture_app/django_urls.py"
     },
     {
       "id": "f16",
-      "path": "src/fixture_app/levels.py"
+      "path": "src/fixture_app/events.py"
     },
     {
       "id": "f17",
-      "path": "src/fixture_app/models.py"
+      "path": "src/fixture_app/http_registrations.py"
     },
     {
       "id": "f18",
-      "path": "src/fixture_app/route_mounts.py"
+      "path": "src/fixture_app/import_facades/__init__.py"
     },
     {
       "id": "f19",
-      "path": "src/fixture_app/runtime_registrations.py"
+      "path": "src/fixture_app/import_facades/consumer.py"
     },
     {
       "id": "f20",
-      "path": "src/fixture_app/script_context.py"
+      "path": "src/fixture_app/import_facades/cycle_a.py"
     },
     {
       "id": "f21",
-      "path": "src/fixture_app/sql_literals.py"
+      "path": "src/fixture_app/import_facades/cycle_b.py"
     },
     {
       "id": "f22",
-      "path": "src/fixture_app/storage.py"
+      "path": "src/fixture_app/import_facades/exchange/__init__.py"
     },
     {
       "id": "f23",
-      "path": "src/fixture_app/test_market.py"
+      "path": "src/fixture_app/import_facades/exchange_impl.py"
     },
     {
       "id": "f24",
-      "path": "src/requests.py"
+      "path": "src/fixture_app/import_facades/invalidated.py"
     },
     {
       "id": "f25",
-      "path": "tests/__init__.py"
+      "path": "src/fixture_app/import_facades/resolver_impl.py"
     },
     {
       "id": "f26",
-      "path": "tests/test_facade.py"
+      "path": "src/fixture_app/import_facades/resolvers/__init__.py"
     },
     {
       "id": "f27",
-      "path": "workspace/pyproject.toml"
+      "path": "src/fixture_app/import_facades/star.py"
     },
     {
       "id": "f28",
-      "path": "workspace/src/fixture_shared/local/__init__.py"
+      "path": "src/fixture_app/import_facades/typed_parameters.py"
     },
     {
       "id": "f29",
+      "path": "src/fixture_app/levels.py"
+    },
+    {
+      "id": "f30",
+      "path": "src/fixture_app/models.py"
+    },
+    {
+      "id": "f31",
+      "path": "src/fixture_app/route_mounts.py"
+    },
+    {
+      "id": "f32",
+      "path": "src/fixture_app/runtime_registrations.py"
+    },
+    {
+      "id": "f33",
+      "path": "src/fixture_app/script_context.py"
+    },
+    {
+      "id": "f34",
+      "path": "src/fixture_app/sql_literals.py"
+    },
+    {
+      "id": "f35",
+      "path": "src/fixture_app/storage.py"
+    },
+    {
+      "id": "f36",
+      "path": "src/fixture_app/test_market.py"
+    },
+    {
+      "id": "f37",
+      "path": "src/requests.py"
+    },
+    {
+      "id": "f38",
+      "path": "tests/__init__.py"
+    },
+    {
+      "id": "f39",
+      "path": "tests/test_facade.py"
+    },
+    {
+      "id": "f40",
+      "path": "workspace/pyproject.toml"
+    },
+    {
+      "id": "f41",
+      "path": "workspace/src/fixture_shared/local/__init__.py"
+    },
+    {
+      "id": "f42",
       "path": "workspace/src/fixture_shared/local/consumer.py"
     }
   ]

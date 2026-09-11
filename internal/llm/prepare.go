@@ -13,18 +13,22 @@ var responseLanguagePrompt string
 //go:embed prompts/response-format.md
 var responseFormatPrompt string
 
-// Prepare applies optional metadata, the final response shape and the shared
+// Prepare retains local response context and applies the final shape and shared
 // prose language before provider encoding. Execution, fit checks and memo
 // identities all use this boundary. Replay sends saved bytes unchanged.
 func Prepare(provider Provider, prompt Prompt, limits Limits) (Prepared, error) {
 	if provider == nil {
 		return Prepared{}, fmt.Errorf("llm: provider is nil")
 	}
-	if adapter, ok := provider.(PromptAdapter); ok && !prompt.NoResponseAdjunct {
+	var responseContext []byte
+	if owner, ok := provider.(ResponseContextProvider); ok && !prompt.NoResponseAdjunct {
 		var err error
-		prompt, err = adapter.AdaptPrompt(prompt)
+		responseContext, err = owner.ResponseContext(prompt)
 		if err != nil {
 			return Prepared{}, err
+		}
+		if len(responseContext) > 0 && !json.Valid(responseContext) {
+			return Prepared{}, fmt.Errorf("llm: invalid local response context")
 		}
 	}
 	if prompt.ResponseExample != "" {
@@ -57,5 +61,7 @@ func Prepare(provider Provider, prompt Prompt, limits Limits) (Prepared, error) 
 	}
 	prompt.System = strings.ReplaceAll(strings.TrimSpace(responseLanguagePrompt), "{{language}}", name) + "\n\n" + prompt.System
 	prompt.ResponseLanguage = language
-	return provider.Prepare(prompt, limits)
+	prepared, err := provider.Prepare(prompt, limits)
+	prepared.responseContext = cloneBytes(responseContext)
+	return prepared, err
 }

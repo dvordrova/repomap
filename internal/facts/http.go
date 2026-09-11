@@ -1,6 +1,8 @@
 package facts
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -97,6 +99,7 @@ func containsFold(values []string, wanted string) bool {
 }
 
 func (b *builder) addHTTP(target *targetContext) {
+	values := newRouteValueReader(target)
 	originsByValue := target.routeValueOrigins()
 	prefixes := target.prefixesByObject(originsByValue)
 	for _, relation := range target.input.Index.Relations {
@@ -125,7 +128,7 @@ func (b *builder) addHTTP(target *targetContext) {
 				if len(prefixes[owner]) == 0 {
 					owner = relation.FromID
 				}
-				b.addRoute(target, relation, pattern, selector, prefixes[owner])
+				b.addRoute(target, relation, pattern, selector, prefixes[owner], values)
 			case side.client && isCall && pattern.Form == programindex.PatternCall:
 				b.addCall(target, relation, pattern, selector)
 			}
@@ -169,15 +172,56 @@ func (b *builder) addRoute(
 	pattern programindex.RelationPattern,
 	selector string,
 	prefixes []routePrefix,
+	values *routeValueReader,
 ) {
-	method, pathValue, templated, ok := routeMethodAndPath(pattern, selector)
+	method, position, ok := routeMethod(pattern, selector)
+	if !ok {
+		return
+	}
+	argument, found := positionalArgument(pattern, position)
+	if !found {
+		return
+	}
+	paths := make(map[string]routeLiteral)
+	for _, path := range values.argument(argument) {
+		if previous, exists := paths[path.text]; exists {
+			path.evidence = mergeRouteEvidence(previous.evidence, path.evidence)
+			path.possible = path.possible || previous.possible
+		}
+		paths[path.text] = path
+	}
+	keys := make([]string, 0, len(paths))
+	for path := range paths {
+		keys = append(keys, path)
+	}
+	sort.Strings(keys)
+	for _, path := range keys {
+		b.addResolvedRoute(target, relation, pattern, selector, prefixes, method, paths[path])
+	}
+}
+
+func (b *builder) addResolvedRoute(target *targetContext, relation programindex.Relation, pattern programindex.RelationPattern, selector string, prefixes []routePrefix, method string, observed routeLiteral) {
+	pathValue := observed.text
+	serveMux := false
+	if target.target.Language == "go" && (selector == "handle" || selector == "handlefunc") {
+		for _, origin := range target.externalOrigins(relation, pattern) {
+			serveMux = serveMux || origin.PackagePath == "net/http"
+		}
+	}
+	if serveMux {
+		var ok bool
+		method, pathValue, ok = goServeMuxMethodAndPath(pathValue)
+		if !ok {
+			return
+		}
+	}
 	if selector == "path" {
 		if _, django := packageMatches(classifyHTTP(target.externalOrigins(relation, pattern), pattern.Form, selector).pkgPath, "django"); !django {
 			return
 		}
 		pathValue = "/" + strings.TrimPrefix(pathValue, "/")
 	}
-	if !ok || !strings.HasPrefix(pathValue, "/") {
+	if !serveMux && !strings.HasPrefix(pathValue, "/") {
 		return
 	}
 	anchor := target.patternAnchor(relation, pattern)
@@ -186,18 +230,18 @@ func (b *builder) addRoute(
 	}
 	symbol, objectID := target.routeHandler(relation, pattern)
 	resolution := ResolutionExact
-	if templated {
+	if observed.possible {
 		resolution = ResolutionPossible
 	}
-	paths := []routePrefix{{path: pathValue}}
+	paths := []routePrefix{{path: pathValue, evidence: observed.evidence}}
 	if len(prefixes) > 0 {
 		paths = paths[:0]
 		for _, prefix := range prefixes {
-			paths = append(paths, routePrefix{path: joinRoutePath(prefix.path, pathValue), evidence: prefix.evidence})
+			paths = append(paths, routePrefix{path: joinRoutePath(prefix.path, pathValue), evidence: mergeRouteEvidence(prefix.evidence, observed.evidence)})
 		}
 	}
 	for _, resolved := range paths {
-		if !b.once(strings.Join([]string{string(KindHTTPRoute), anchor.String(), method, resolved.path}, "\x00")) {
+		if !b.once(strings.Join([]string{string(KindHTTPRoute), target.target.ID, anchor.String(), strconv.Itoa(anchor.Column), method, resolved.path}, "\x00")) {
 			continue
 		}
 		b.add(target.root, Fact{
@@ -214,12 +258,46 @@ func (b *builder) addRoute(
 	}
 }
 
+// net/http's ServeMux owns the optional method prefix. Keep host/path and
+// wildcards exactly as written; a GET pattern also serves HEAD by its native
+// contract, without manufacturing a second registration. Other routers do not
+// inherit this syntax merely because their method is named Handle.
+func goServeMuxMethodAndPath(pattern string) (method, path string, ok bool) {
+	method, path = "ANY", pattern
+	if i := strings.IndexAny(pattern, " \t"); i >= 0 {
+		method, path = pattern[:i], strings.TrimLeft(pattern[i+1:], " \t")
+		if method == "" {
+			return "", "", false
+		}
+		for _, r := range method {
+			if !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", r)) {
+				return "", "", false
+			}
+		}
+	}
+	i := strings.IndexByte(path, '/')
+	return method, path, i >= 0 && !strings.Contains(path[:i], "{")
+}
+
 // routeMethodAndPath maps a selector to its HTTP method. Registration
 // selectors without a verb (route, handle, mount...) accept any method, and
 // a Go "Method(verb, path, handler)" call carries the verb as its first
 // literal argument.
 func routeMethodAndPath(pattern programindex.RelationPattern, selector string) (method, pathValue string, templated, ok bool) {
-	pathPosition := 1
+	method, pathPosition, ok := routeMethod(pattern, selector)
+	if !ok {
+		return "", "", false, false
+	}
+	argument, found := positionalArgument(pattern, pathPosition)
+	if !found {
+		return "", "", false, false
+	}
+	pathValue, templated, ok = literalValue(argument)
+	return method, pathValue, templated, ok
+}
+
+func routeMethod(pattern programindex.RelationPattern, selector string) (method string, pathPosition int, ok bool) {
+	pathPosition = 1
 	switch selector {
 	case "get", "post", "put", "patch", "delete", "head", "options":
 		method = strings.ToUpper(selector)
@@ -229,19 +307,14 @@ func routeMethodAndPath(pattern programindex.RelationPattern, selector string) (
 		verb, verbOK := positionalArgument(pattern, 1)
 		verbValue, _, literal := literalValue(verb)
 		if !verbOK || !literal || !isHTTPVerb(verbValue) {
-			return "", "", false, false
+			return "", 0, false
 		}
 		method = strings.ToUpper(verbValue)
 		pathPosition = 2
 	default:
 		method = "ANY"
 	}
-	argument, found := positionalArgument(pattern, pathPosition)
-	if !found {
-		return "", "", false, false
-	}
-	pathValue, templated, ok = literalValue(argument)
-	return method, pathValue, templated, ok
+	return method, pathPosition, true
 }
 
 func isHTTPVerb(value string) bool {
@@ -263,19 +336,27 @@ func (target *targetContext) routeHandler(relation programindex.Relation, patter
 		}
 		return "", ""
 	}
-	for _, argument := range pattern.Arguments {
-		if handlerID, ok := target.callbacks[argument.ID]; ok {
-			if object, found := target.object(handlerID); found {
-				return object.Name, object.ID
-			}
+	candidates := make(map[string]programindex.Object)
+	add := func(id string) {
+		object, found := target.object(id)
+		if found && (object.Kind == programindex.ObjectFunction || object.Kind == programindex.ObjectMethod || object.Kind == programindex.ObjectLambda) {
+			candidates[id] = object
 		}
 	}
 	for _, argument := range pattern.Arguments {
-		if len(argument.ObjectIDs) != 1 {
+		if handlerID, observed := target.callbacks[argument.ID]; observed {
+			if handlerID == "" {
+				return "", ""
+			}
+			add(handlerID)
+		}
+		if len(argument.ObjectIDs) != 1 || argument.ObjectsOmitted != 0 {
 			continue
 		}
-		object, found := target.object(argument.ObjectIDs[0])
-		if found && (object.Kind == programindex.ObjectFunction || object.Kind == programindex.ObjectMethod || object.Kind == programindex.ObjectLambda) {
+		add(argument.ObjectIDs[0])
+	}
+	if len(candidates) == 1 {
+		for _, object := range candidates {
 			return object.Name, object.ID
 		}
 	}

@@ -174,6 +174,9 @@ func documentQuestionChunks(place atlas.Place) []QuestionChunk {
 		part := text[:end]
 		anchor := QuestionAnchor{SubjectID: place.ID, Path: place.Path, Name: place.Document.Title, Kind: "documentation", Line: line, Column: column}
 		facts := map[string]any{"kind": "documentation", "section_title": place.Document.Title, "section_line": place.LineNo, "author_text": part}
+		if len(place.Document.Headings) > 0 {
+			facts["heading_path"] = place.Document.Headings
+		}
 		chunks := questionChunks(place, []questionUnit{{anchor: anchor, facts: facts}}, nil)
 		row := chunks[0]
 		row.Row.ID = fmt.Sprintf("%s#%d", place.ID, len(result)+1)

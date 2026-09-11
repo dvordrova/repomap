@@ -171,6 +171,7 @@ type pageRouteRow struct {
 }
 
 type pageRoutePath struct {
+	Data           []pageDataReference
 	Path           string
 	Anchor         *pageAnchor
 	OperationHrefs []string
@@ -603,7 +604,7 @@ func (builder *pageBuilder) factsCard(target facts.Target) pageTargetCard {
 		card.SectionID = section.ID
 		card.Name = section.Label
 		card.ShortName = section.ShortLabel
-		card.Routes = section.InboundCount
+		card.Routes = section.NativeRouteCount()
 	}
 	if target.Manifest != "" {
 		card.Manifest = builder.links.anchorPointer(target.Manifest, 0, 0)
@@ -914,7 +915,7 @@ func (builder *pageBuilder) boundaryCounts() []pageBoundary {
 		}
 		row := pageBoundary{
 			Target: section.Label, SectionID: section.ID,
-			Routes: section.InboundCount,
+			Routes: section.NativeRouteCount(),
 			Calls:  len(builder.targetFacts(section.factsTargetID, facts.KindHTTPCall)),
 		}
 		if row.Routes == 0 && row.Calls == 0 {

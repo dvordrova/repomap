@@ -14,7 +14,7 @@ type testResponseAdapter struct {
 	invalidEnvelope bool
 }
 
-func (adapter *testResponseAdapter) AdaptResponse(request, response []byte) (AdaptedResponse, error) {
+func (adapter *testResponseAdapter) AdaptResponse(_ []byte, request, response []byte) (AdaptedResponse, error) {
 	adapter.unwrapped++
 	if len(request) == 0 {
 		return AdaptedResponse{}, errors.New("adapter did not receive the exact request")

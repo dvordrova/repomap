@@ -19,11 +19,11 @@ func projectData(program programindex.Index, rows []atlas.DataRecord) []DataReco
 		path string
 		line int
 	}
-	owners := make(map[sourceKey][]string)
+	owners := make(map[sourceKey][]programindex.Object)
 	for _, object := range program.Objects {
-		if object.Kind == programindex.ObjectType && object.Location != nil {
+		if (object.Kind == programindex.ObjectType || object.Kind == programindex.ObjectFunction || object.Kind == programindex.ObjectMethod || object.Kind == programindex.ObjectLambda) && object.Location != nil {
 			key := sourceKey{object.Location.Path, object.Location.Line}
-			owners[key] = append(owners[key], object.ID)
+			owners[key] = append(owners[key], object)
 		}
 	}
 	out := make([]DataRecord, 0, len(rows))
@@ -31,7 +31,16 @@ func projectData(program programindex.Index, rows []atlas.DataRecord) []DataReco
 		record := DataRecord{DataRecord: row}
 		if row.Data != nil && row.Data.Owner != nil {
 			anchor := row.Data.Owner
-			matches := owners[sourceKey{anchor.Path, anchor.Line}]
+			var matches []string
+			for _, object := range owners[sourceKey{anchor.Path, anchor.Line}] {
+				if anchor.Column > 0 && object.Location.Column != anchor.Column {
+					continue
+				}
+				if row.Data.Kind == "table" && object.Kind != programindex.ObjectType {
+					continue
+				}
+				matches = append(matches, object.ID)
+			}
 			if len(matches) == 1 {
 				record.OwnerSubjectID = matches[0]
 			}
@@ -60,7 +69,7 @@ func (index Index) validateData(subjects map[string]Subject) error {
 		known[row.ID] = true
 		if row.OwnerSubjectID != "" {
 			subject, ok := subjects[row.OwnerSubjectID]
-			if !ok || subject.Object == nil || subject.Object.Location == nil || row.Data.Owner == nil || subject.Object.Location.Path != row.Data.Owner.Path || subject.Object.Location.Line != row.Data.Owner.Line {
+			if !ok || subject.Object == nil || subject.Object.Location == nil || row.Data.Owner == nil || subject.Object.Location.Path != row.Data.Owner.Path || subject.Object.Location.Line != row.Data.Owner.Line || row.Data.Owner.Column > 0 && subject.Object.Location.Column != row.Data.Owner.Column {
 				return fmt.Errorf("group index: data owner is not its exact source declaration")
 			}
 		}

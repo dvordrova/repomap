@@ -9,7 +9,7 @@ import (
 func TestOperationDecisionOwnsRequiredCells(t *testing.T) {
 	rows := make([]table.Row, 7)
 	for i := range rows {
-		rows[i].Fields = []table.Field{{Name: "entry_options", Value: []string{"self", "none", "u1"}}, {Name: "name_kind_options", Value: []string{"label"}}}
+		rows[i].Fields = []table.Field{{Name: "name_kind_options", Value: []string{"label"}}}
 	}
 	result, err := table.DecodeResult(Operations(), table.Window{Rows: rows}, []byte(`{"rows":[
 		{"key":"r1","entry":"none","activation":"none","name":"","description":""},
@@ -23,15 +23,15 @@ func TestOperationDecisionOwnsRequiredCells(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, entry := range []string{"none", "u1", "none"} {
-		if len(result.Answers[i]) != 1 || result.Answers[i]["entry"] != entry {
+	for _, i := range []int{0, 2} {
+		if len(result.Answers[i]) != 1 || result.Answers[i]["entry"] != "none" {
 			t.Fatalf("negative decision lost or unused cells retained: %#v", result.Answers[i])
 		}
 	}
-	if result.Answers[3]["name"] != "worker" || len(result.Rejections) != 3 {
+	if result.Answers[3]["name"] != "worker" || len(result.Rejections) != 4 {
 		t.Fatalf("self or rejection scope changed: %#v", result)
 	}
-	for _, i := range []int{4, 5, 6} {
+	for _, i := range []int{1, 4, 5, 6} {
 		if result.Answers[i] != nil {
 			t.Fatalf("invalid operation accepted: %#v", result.Answers[i])
 		}
@@ -39,7 +39,7 @@ func TestOperationDecisionOwnsRequiredCells(t *testing.T) {
 }
 
 func TestNegativeOperationWindowIsAccepted(t *testing.T) {
-	result, err := table.DecodeResult(Operations(), table.Window{Rows: []table.Row{{Fields: []table.Field{{Name: "entry_options", Value: []string{"self", "none"}}}}}}, []byte(`{"rows":[{"key":"r1","entry":"none"}]}`))
+	result, err := table.DecodeResult(Operations(), table.Window{Rows: []table.Row{{}}}, []byte(`{"rows":[{"key":"r1","entry":"none"}]}`))
 	if err != nil || len(result.AcceptedRowKeys()) != 1 {
 		t.Fatalf("negative window refused: %#v, %v", result, err)
 	}
@@ -47,7 +47,6 @@ func TestNegativeOperationWindowIsAccepted(t *testing.T) {
 
 func TestHTTPNamesSelectClosedRegistrationWithoutFreeText(t *testing.T) {
 	row := table.Row{Fields: []table.Field{
-		{Name: "entry_options", Value: []string{"self", "none"}},
 		{Name: "name_kind_options", Value: []string{"label", "http"}},
 		{Name: "registered_name_options", Value: []string{"p1"}},
 	}}

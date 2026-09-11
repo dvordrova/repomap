@@ -1,8 +1,12 @@
 # Explain the component's runtime relationships
 
-The reader needs to see WITH WHICH runtime systems this component exchanges,
-WHY, and WHERE the source supports the relationship. A package dependency or
-any call to a library is not by itself a runtime relationship.
+For a candidate outgoing call, the reader needs to see WITH WHICH runtime
+systems this component exchanges, WHY, and WHERE the source supports it.
+A package dependency or any library call is not itself a runtime relationship.
+For a fixed native observation (`kind_given`), explain that observation at its
+stated kind. A configuration read describes an input to this component; an
+incoming route describes its exposed interface. Neither needs to establish an
+outgoing runtime relationship to receive an explanation.
 
 Each independent row supplies one candidate source call or a known fact. Its
 `owner`, when present, contains the original declaration, complete extracted
@@ -20,6 +24,9 @@ callable registrations. Callers are joined by native identity, not matching name
 their own calls and callers have not been expanded. A possible call remains
 possible. Separate callers may use the same helper for different purposes: do
 not combine them into one proven scenario or invent one common destination.
+An immediate caller's call_sites may retain the receiver and argument origins
+of its call to this owner only. Match a parameter to that exact call, preserving
+different client fields and optional values; do not borrow another call's client.
 
 Once the selected call establishes an exchange, use its owning declaration,
 file/path, author documentation and immediate caller names/signatures as clues
@@ -39,27 +46,34 @@ merge them by a similar role or infer an address from nearby documentation.
 
 Fill only the columns requested by `fill`:
 
-- `decision`: `boundary` when the observations support an exchange with another
-  runtime system, including a configured remote client/exporter; `none` for local
+- `decision`: `boundary` when this call itself dispatches an exchange with another
+  runtime system or creates/configures the actual remote client/exporter instance;
+  `none` for local
   mechanisms or ordinary helpers; `unassessed` when evidence is insufficient.
-  Fixed native facts advertise only `boundary` and their known kind: retain that
-  source fact rather than reclassifying it.
+  This choice is requested only for candidates, never fixed native facts.
 - `kind`: the advertised kind of accepted relationship. Remote database access
   is `db`, publishing to a broker `queue_producer`, consuming from it
   `queue_consumer`, HTTP sending `http_client`, a remote vendor client `sdk`.
   `other` does not rescue an unsupported relationship. Configuration reads and
   known inbound facts keep their supplied kind.
-- `line`: one short sentence explaining why this component exchanges with that
-  system and what crosses the boundary. Describe this relationship, not the
-  whole function. Preserve uncertainty supported by the evidence.
+- `line`: for a candidate exchange, explain why this component exchanges with
+  that system and what crosses the boundary. For a fixed native observation,
+  explain its supplied kind: what configuration value is read or which request
+  is received, for example. Do not turn a config read into a remote exchange.
+  Describe this observation, not the whole function; preserve uncertainty.
 - `destination`, when requested: a short English role of the other runtime
   system, such as a peer service, trace collector, broker or remote database.
   Use a specific supplied system name when supported. Do not invent a hostname,
   URL, table, topic or configuration key. A role is not an observed address.
-- `basis`, when requested: `dispatch` for a supplied exchange call;
-  `configuration` for setting up a remote client/exporter whose exchanges occur
-  through its library. A configured relationship does not assert that the
+- `basis`, when requested: `dispatch` when this call sends the exchange;
+  `remote_client_instance` when this call itself creates or configures the actual
+  remote client/exporter instance whose exchanges occur through its library.
+  A configured relationship does not assert that the
   constructor itself sends the business payload.
+  A function that only returns an option for a later constructor (for example,
+  WithBaseURL returning a client option) does not itself establish another
+  relationship. Explain that configuration at the client constructor or actual
+  exchange supported by the supplied observations, not as a separate contact.
 - `address`, when requested: one supplied address ref only when that value
   identifies this destination. A supplied configuration expression is a valid
   source expression even though its deployed value is unknown. Use `unknown`
@@ -68,8 +82,11 @@ Fill only the columns requested by `fill`:
   another call in the owner is usable only when the observations connect it to
   this client/configuration; lexical proximity alone does not connect values.
 
-Only positive decisions need the other output cells. Negative or unassessed
-rows need no invented purpose, destination or address.
+For candidate rows, only positive decisions need the other output cells.
+Negative or unassessed rows need no invented purpose, destination or address.
+Fixed-fact requests contain no decision or kind cell: their original properties
+remain facts, and only the requested explanation/destination cells are model
+work. Do not emit a classification for a fixed fact.
 
 Read these distinctions semantically, not as name allowlists:
 

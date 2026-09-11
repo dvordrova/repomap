@@ -15,7 +15,7 @@ type answerRowsAdapter struct {
 	accepted [][]string
 }
 
-func (p *answerRowsAdapter) AdaptResponse(_, response []byte) (llm.AdaptedResponse, error) {
+func (p *answerRowsAdapter) AdaptResponse(_, _, response []byte) (llm.AdaptedResponse, error) {
 	return llm.AdaptedResponse{Domain: response, Accept: func(rows []string) { p.accepted = append(p.accepted, rows) }}, nil
 }
 

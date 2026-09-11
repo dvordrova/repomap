@@ -19,6 +19,7 @@ func TestRepeatedRelevancePreservesAllHintsWithoutFirstWins(t *testing.T) {
 	selections := []Selection{
 		{Row: "r1", Anchors: []string{"a2"}, Relevance: "context", Why: "Original setup instructions."},
 		{Row: "r1", Anchors: []string{"a1"}, Relevance: "context", Why: "Count field suggests response shape.\n\nIt does not prove runtime values."},
+		{Row: "r1", Anchors: []string{"a1"}, Relevance: "context", Why: "Another observation of that field."},
 	}
 	var previous Response
 	for i := range 2 {
@@ -34,13 +35,36 @@ func TestRepeatedRelevancePreservesAllHintsWithoutFirstWins(t *testing.T) {
 			t.Fatalf("compatible hints refused a question: %+v / %v", result, err)
 		}
 		selection := result.Questions[0].Selections[0]
-		if !reflect.DeepEqual(selection.Anchors, []string{"a1", "a2"}) || selection.Why != "Count field suggests response shape.\n\nIt does not prove runtime values.\n\nOriginal setup instructions." {
+		if !reflect.DeepEqual(selection.Anchors, []string{"a1"}) || selection.Why != "Another observation of that field.\n\nCount field suggests response shape.\n\nIt does not prove runtime values." ||
+			len(result.Questions[0].Selections) != 2 || result.Questions[0].Selections[1].Why != "Original setup instructions." {
 			t.Fatalf("original anchors or qualified hints lost: %+v", selection)
 		}
 		if i == 1 && !reflect.DeepEqual(previous, result) {
 			t.Fatal("response ordering changed the normalized decision")
 		}
 		previous = result
+	}
+}
+
+func TestDifferentAnchorsInOneChunkKeepTheirOwnRelevanceThroughMemo(t *testing.T) {
+	input := testInput(1, 2)
+	provider := &rawQuestionProvider{testProvider: &testProvider{}, raw: []byte(`{"questions":[{"key":"q1","selections":[{"row":"r1","anchors":["a2"],"relevance":"context","why":"The helper provides context."},{"row":"r1","anchors":["a1"],"relevance":"direct","why":"Main orders the flow."}]},{"key":"q2","selections":[]}]}`)}
+	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
+	for attempt := range 2 {
+		result, err := Run(t.Context(), executor, provider, input, Options{})
+		if err != nil || len(result.Questions) != 2 || !result.Questions[0].Chunks[0].Inspected {
+			t.Fatalf("distinct sources were treated as conflicting: %+v / %v", result, err)
+		}
+		want := []Selection{
+			{Row: "r1", Anchors: []string{"a1"}, Relevance: "direct", Why: "Main orders the flow."},
+			{Row: "r1", Anchors: []string{"a2"}, Relevance: "context", Why: "The helper provides context."},
+		}
+		if got := result.Questions[0].Chunks[0].Selections; !reflect.DeepEqual(got, want) {
+			t.Fatalf("source relevance or explanation changed: %+v", got)
+		}
+		if attempt == 1 && (provider.completed != 1 || result.Questions[0].Chunks[0].Source != atlas.SourceCache) {
+			t.Fatal("accepted anchor decisions failed exact memo reuse")
+		}
 	}
 }
 
@@ -66,7 +90,7 @@ func (p *rawQuestionProvider) Complete(context.Context, llm.Prepared) (llm.Compl
 	return llm.Completion{Response: p.raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, nil
 }
 
-func (p *rawQuestionProvider) AdaptResponse(_, raw []byte) (llm.AdaptedResponse, error) {
+func (p *rawQuestionProvider) AdaptResponse(_, _, raw []byte) (llm.AdaptedResponse, error) {
 	return llm.AdaptedResponse{Domain: raw, Accept: func(rows []string) { p.accepted = append(p.accepted, rows) }}, nil
 }
 
@@ -81,11 +105,11 @@ func TestQuestionMalformedSiblingKeepsExactMemoReplayAndMetadataScope(t *testing
 		t.Fatalf("malformed neighbour refused the entire window: %+v / %v", first, err)
 	}
 	for _, chunk := range first.Questions[0].Chunks {
-		if chunk.Inspected || len(chunk.Anchors) != 0 {
+		if chunk.Inspected || len(chunk.Selections) != 0 {
 			t.Fatal("unavailable question became a negative or positive finding")
 		}
 	}
-	if !first.Questions[1].Chunks[0].Inspected || len(first.Questions[1].Chunks[0].Anchors) != 0 || !first.Questions[1].Chunks[1].Inspected || first.Questions[1].Chunks[1].Why != "Accepted original reason." {
+	if !first.Questions[1].Chunks[0].Inspected || len(first.Questions[1].Chunks[0].Selections) != 0 || !first.Questions[1].Chunks[1].Inspected || first.Questions[1].Chunks[1].Selections[0].Why != "Accepted original reason." {
 		t.Fatal("valid question lost its complete per-chunk coverage")
 	}
 	if !reflect.DeepEqual(provider.accepted, [][]string{{"r2"}}) {
@@ -124,7 +148,7 @@ func TestQuestionMalformedSiblingKeepsExactMemoReplayAndMetadataScope(t *testing
 		t.Fatal(err)
 	}
 	replayed, err := Run(t.Context(), executor, provider, retained, Options{})
-	if err != nil || provider.completed != 2 || replayed.Questions[0].Chunks[1].Why != "Accepted replay reason." || replayed.Questions[0].Chunks[1].QuestionRef != "q2" {
+	if err != nil || provider.completed != 2 || replayed.Questions[0].Chunks[1].Selections[0].Why != "Accepted replay reason." || replayed.Questions[0].Chunks[1].QuestionRef != "q2" {
 		t.Fatalf("replay did not update the retained original question: %+v / %v", replayed, err)
 	}
 	for _, rows := range provider.accepted {

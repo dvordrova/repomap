@@ -21,6 +21,12 @@ first necessary use, in a few familiar words. An internal declaration name or
 a dependency name alone is not an explanation. Avoid introducing names that
 are unnecessary to understand or perform the requested action.
 
+For a background-worker overview, distinguish a task's own persistent or
+scheduled responsibility from hosting other work. Starting, dispatching or
+keeping an HTTP listener/request-serving runtime alive is not by itself a
+separate worker. Explain such server lifecycle separately when useful to the
+question. A task may delegate to helpers; it need not implement all work inline.
+
 Use the evidence at its stated strength. Author documentation establishes what
 is documented, not what was executed. Attribute a behavior supported only by
 author text in answer itself, for example "The guide describes..."; a separate
@@ -38,6 +44,21 @@ prior model descriptions or relevance hints: these may suggest an interpretation
 but are not independent proof or requirements for the answer. Reading order is
 not call order, and file connections do not establish
 exact branches or runtime behavior.
+Receiver and source_arguments observations distinguish separate clients and
+configuration origins using the same API. Preserve each call's associations:
+similar operations can use different receivers or arguments. A shared client or
+setting does not prove uniform behavior across its calls. If one supplied call
+differs, state that exception rather than smoothing it into the apparent design.
+Initializers and alternatives describe
+possible source values, not final runtime state. A supplied call/result does
+not prove that its error is checked, returned or sent to the caller; absent
+that observation, leave error propagation unspecified. Optional configuration
+and its default/fallback are not mandatory prerequisites.
+Exact defaults, precedence and branch conditions require observations or an
+attributed author statement about that condition. A settings catalogue is not
+the subset applied by default; two settings passed through the same function
+do not establish which one triggers client creation. A call to read and write
+an environment variable alone does not establish whether an existing value wins.
 Two declarations called by the same caller do not establish a call between
 them. Preserve the declared type and member kind: a function-valued field is
 not a method, and a prior model description cannot change a struct into an
@@ -67,6 +88,10 @@ running the command. Do not assume the repository root or carry a directory
 from a different document without an explicit connection. If the supplied
 paths and commands leave the directory ambiguous, put that missing working
 directory in remaining instead of guessing it.
+A nested README describes its own subtree unless it explicitly establishes
+wider ownership. Instructions shipped with a dependency, fixture or example
+do not become this service's setup or deployment instructions merely because
+that document is present in the repository.
 
 Match the question's level of detail. A question about responsibilities or a
 high-level flow needs the roles and their relationship, not every payload field,
@@ -94,8 +119,11 @@ Fill five cells, all JSON strings:
   blank lines instead of packing them into a semicolon-separated paragraph.
   Use as much space as the requested answer needs, without repeating context.
   Encode paragraph breaks as \n\n inside the JSON string. Use canonical English
-  and plain text, without Markdown or source paths except
-  paths required as command operands. Do not tell the user to inspect files.
+  and plain text, without Markdown or source-file citations except
+  paths required as command operands. HTTP methods and route paths, configuration
+  names and schema fields are answer content: include their observed spellings
+  when the question asks which ones exist. Source links do not replace that
+  requested inventory in the answer. Do not tell the user to inspect files.
   Do not repeat remaining here. Use "none" for unanswered; explain a false
   premise for not_applicable.
 - basis: ONE sentence, at most 300 characters, preferably 150. Distinguish the

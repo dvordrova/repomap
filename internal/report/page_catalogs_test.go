@@ -1,7 +1,11 @@
 package report
 
 import (
+	"bytes"
+	"html/template"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/facts"
@@ -78,10 +82,47 @@ func TestInputCatalogueJoinsExactFactsAndRetainsUngroupedRoutes(t *testing.T) {
 	if got := section.RouteGroups[1].Rows[0].Paths[0].OperationHrefs; len(got) != 0 {
 		t.Fatalf("ungrouped route acquired an invented operation link: %v", got)
 	}
+	// Two original registrations and one unmatched interpretation produce three
+	// request records, even though the interpretation has the same name/site.
+	// The factual HTTP summaries must still count exactly two registrations.
+	section.InboundCount, section.InputsCount = 3, 4
+	builder.sections = []*pageSection{section}
+	builder.byFacts = map[string]*pageSection{"facts": section}
+	card := builder.factsCard(facts.Target{ID: "facts"})
+	boundaries := builder.boundaryCounts()
+	if section.NativeRouteCount() != 2 || card.Routes != 2 || card.Counts != "2 routes" || len(boundaries) != 1 || boundaries[0].Routes != 2 {
+		t.Fatalf("request interpretations inflated native HTTP counts: section=%d card=%+v boundaries=%+v", section.NativeRouteCount(), card, boundaries)
+	}
+	for _, language := range []DisplayLanguage{English, Russian} {
+		parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) {
+			return uiText(language, key, args...)
+		}}).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rendered bytes.Buffer
+		if err := parsed.ExecuteTemplate(&rendered, "input-catalog", section); err != nil {
+			t.Fatal(err)
+		}
+		for _, counted := range []struct {
+			label string
+			count string
+		}{{"Incoming request records", "3"}, {"HTTP registrations in source", "2"}, {"Handlers without a matched route", "1"}} {
+			label, err := uiText(language, counted.label)
+			if err != nil || !strings.Contains(rendered.String(), label+" · "+counted.count) {
+				t.Fatalf("%s catalogue lost the distinction %s/%s: %s", language, counted.label, counted.count, rendered.String())
+			}
+		}
+		for _, kept := range []string{"/a", "/outside-map", "#" + operationNodeID("section", "bound"), "#" + operationNodeID("section", "bound-also"), "#" + operationNodeID("section", "model"), `data-source-kind="model"`} {
+			if !strings.Contains(rendered.String(), kept) {
+				t.Fatalf("display count correction discarded original record/link %q", kept)
+			}
+		}
+	}
 	// Model-only reading must not suppress requests or borrow all repository facts.
 	section = &pageSection{ID: "section", programTargetID: "program"}
 	builder.fillSectionOperations(section)
-	if len(section.RouteGroups) != 0 || len(section.Requests) != 3 {
+	if section.NativeRouteCount() != 0 || len(section.RouteGroups) != 0 || len(section.Requests) != 3 {
 		t.Fatalf("model-only catalogue fabricated facts: %+v", section)
 	}
 }
@@ -99,7 +140,7 @@ func TestInputActivityGroupsRetainOriginalKindsAndDisplayBindings(t *testing.T) 
 	}
 	for _, group := range groups {
 		for _, row := range group.Rows {
-			if !slices.Contains(section.Activities, row) {
+			if !slices.ContainsFunc(section.Activities, func(original pageGroupOperation) bool { return reflect.DeepEqual(original, row) }) {
 				t.Fatalf("display grouping changed the operation or its translation binding: %+v", row)
 			}
 		}

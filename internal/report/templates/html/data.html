@@ -2,10 +2,14 @@
 <p class="meta">{{t "Source declarations and SQL text; database execution is not established."}}</p>
 <ul class="plain fact">{{range $i,$row := .Data.Rows}}{{if lt $i 5}}{{template "data-row" $row}}{{end}}{{end}}</ul>
 {{if gt (len .Data.Rows) 5}}<details><summary>{{t "All {0} →" (len .Data.Rows)}}</summary><ul class="plain fact">{{range $i,$row := .Data.Rows}}{{if ge $i 5}}{{template "data-row" $row}}{{end}}{{end}}</ul></details>{{end}}</section>{{end}}
-{{define "data-row"}}<li id="{{.ID}}"><strong><code>{{.Name}}</code></strong> · {{t .Origin}}{{if .Partial}} · <span class="meta">{{t "Partial SQL evidence"}}</span>{{end}} · {{template "anchor" .Anchor}}
+{{define "data-row"}}<li id="{{.ID}}"><strong><code>{{.Name}}</code></strong> · {{t .Origin}}{{if .Statement}} · <code>{{.Statement}}</code>{{end}}{{if .Partial}} · <span class="meta">{{t "Partial SQL evidence"}}</span>{{end}} · {{template "anchor" .Anchor}}
 <details><summary>{{t "Source details"}}{{if .Columns}} · {{len .Columns}}{{end}}</summary><p class="meta">{{if .Connection}}<code>{{.Connection}}</code>{{else}}{{t "Connection not determined"}}{{end}}</p>
 {{if .Columns}}<ul class="plain">{{range .Columns}}<li><code>{{.Name}}{{if .Type}}: {{.Type}}{{end}}</code>{{if .PrimaryKey}} · PK{{end}}{{if .ForeignKey}} · FK → <code>{{.ForeignKey}}</code>{{end}} · {{template "anchor" .Anchor}}</li>{{end}}</ul>{{end}}
 {{if .SQL}}<pre class="source"><code>{{.SQL}}</code></pre>{{end}}
 {{if .Expression}}<pre class="source"><code>{{.Expression}}</code></pre>{{end}}
 {{if .References}}<p>{{t "Mentioned tables"}}: {{range $i,$ref := .References}}{{if $i}} · {{end}}{{if $ref.Href}}<a href="{{$ref.Href}}"><code>{{$ref.Name}}</code></a>{{else}}<code>{{$ref.Name}}</code>{{if $ref.Source}} · {{template "anchor" $ref.Source}}{{end}}{{end}}{{end}}</p>{{end}}
-{{if .Operations}}<p class="meta">{{t "Calls into this model; not proof of database I/O."}}</p><ul class="plain">{{range .Operations}}<li><a href="{{.Href}}">{{.Name}}</a> → <code>{{.Via}}</code> · {{template "anchor" .Anchor}}{{if .Possible}} · {{t "Possible call"}}{{end}}</li>{{end}}</ul>{{end}}</details></li>{{end}}
+{{if .Queries}}<p>{{t "SQL texts"}}: {{template "data-references" .Queries}}</p>{{end}}
+{{if .Operations}}<p class="meta">{{t "Source call associations; not proof of database I/O."}}</p><ul class="plain">{{range .Operations}}<li><a href="{{.Href}}">{{.Name}}</a> → {{if .ViaHref}}<a href="{{.ViaHref}}"><code>{{.Via}}</code></a>{{else}}<code>{{.Via}}</code>{{end}} · {{template "anchor" .Anchor}}{{if .Possible}} · {{t "Possible call"}}{{end}}</li>{{end}}</ul>{{end}}</details></li>{{end}}
+
+{{define "data-links"}}{{if .}}<div class="input-data">{{t "Data"}}: {{template "data-references" .}}</div>{{end}}{{end}}
+{{define "data-references"}}{{range $i,$ref := .}}{{if $i}} · {{end}}{{if $ref.Href}}<a href="{{$ref.Href}}"><code>{{$ref.Name}}</code></a>{{else}}<code>{{$ref.Name}}</code>{{if $ref.Source}} · {{template "anchor" $ref.Source}}{{end}}{{end}}{{end}}{{end}}

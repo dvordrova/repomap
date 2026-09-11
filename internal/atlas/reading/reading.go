@@ -941,6 +941,18 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			continue
 		}
 		facts := state.place.Boundary
+		objectID, factID := facts.ObjectID, ""
+		if len(facts.Origins) > 0 {
+			for _, origin := range facts.Origins {
+				if origin.TargetID == meta.ID {
+					objectID, factID = origin.ObjectID, origin.FactID
+					break
+				}
+			}
+			if factID == "" {
+				continue
+			}
+		}
 		var uses []atlas.DestinationUse
 		for _, use := range state.uses {
 			if contains(use.TargetIDs, meta.ID) {
@@ -949,10 +961,10 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		}
 		target.Boundaries = append(target.Boundaries, atlas.Boundary{
 			Uses:     uses,
-			ObjectID: facts.ObjectID,
+			ObjectID: objectID,
 			ID:       state.place.ID, BoxID: boxID, Path: state.place.Path, LineNo: state.place.LineNo, Column: state.place.Column,
 			Caller: facts.Caller, Direction: facts.Direction, Kind: state.kind, External: facts.External, Method: facts.Method,
-			Values: append([]string{}, facts.Values...), Line: state.line, FactID: facts.FactID,
+			Values: append([]string{}, facts.Values...), Line: state.line, FactID: factID,
 			Source: facts.Source, Destination: state.destination, Address: state.address, Basis: state.basis,
 		})
 	}

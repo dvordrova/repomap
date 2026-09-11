@@ -41,8 +41,8 @@ type pageSection struct {
 	InputsCount    int
 	Outbound       []pageOutbound
 	Coverage       []string
-	// InboundCount is how many route rows this target shows, so the jump bar
-	// can say what is behind a link before it is followed.
+	// InboundCount counts native route records plus unmatched request
+	// interpretations. They can describe the same endpoint.
 	InboundCount     int
 	Triggers         []pageGroup
 	Entrypoints      []pageEntrypoint
@@ -179,6 +179,7 @@ type pageChip struct {
 }
 
 type pageGroupOperation struct {
+	Data                      []pageDataReference
 	SummaryRef                string
 	Name, Kind, Summary, Href string
 	Source                    string
@@ -224,10 +225,7 @@ func (builder *pageBuilder) buildSections() {
 		overview.fillSectionOperations(section)
 		overview.fillSectionOutbound(section)
 		overview.fillSectionData(section)
-		for _, group := range section.RouteGroups {
-			section.InboundCount += group.Paths
-		}
-		section.InboundCount += len(section.Requests)
+		section.InboundCount = section.NativeRouteCount() + len(section.Requests)
 		section.InputsCount = section.InboundCount + len(section.Activities)
 		section.Coverage = sectionCoverage(section)
 		section.Flow = builder.flow(section)

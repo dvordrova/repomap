@@ -30,3 +30,18 @@ func TestDataOwnerUsesExactUniqueNativeTypeSource(t *testing.T) {
 		t.Fatal("ambiguous source invented one owner or removed schema")
 	}
 }
+
+func TestDataQueryOwnerKeepsExactNativeCallableColumn(t *testing.T) {
+	program := programindex.Index{Objects: []programindex.Object{
+		{ID: "first", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "query.ts", Line: 3, Column: 1}},
+		{ID: "second", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "query.ts", Line: 3, Column: 30}},
+	}}
+	rows := []atlas.DataRecord{{ID: "query", Path: "query.ts", Line: 3, Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "source:query.ts", Name: "read", SQL: "SELECT 1", Owner: &facts.Anchor{Path: "query.ts", Line: 3, Column: 30}}}}
+	if got := projectData(program, rows); len(got) != 1 || got[0].OwnerSubjectID != "second" {
+		t.Fatalf("precise query owner lost: %+v", got)
+	}
+	rows[0].Data.Owner.Column = 0
+	if got := projectData(program, rows); len(got) != 1 || got[0].OwnerSubjectID != "" {
+		t.Fatal("ambiguous same-line query picked one owner")
+	}
+}

@@ -27,7 +27,7 @@ func (provider *cancelingMemoProvider) Prepare(prompt llm.Prompt, limits llm.Lim
 	return prepared, err
 }
 
-func (provider *cancelingMemoProvider) AdaptResponse(_, response []byte) (llm.AdaptedResponse, error) {
+func (provider *cancelingMemoProvider) AdaptResponse(_, _, response []byte) (llm.AdaptedResponse, error) {
 	provider.unwraps++
 	if provider.point == "cached decoder" {
 		provider.cancel()

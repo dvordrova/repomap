@@ -591,7 +591,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		if facts.Direction != atlas.DirectionOut {
 			continue
 		}
-		owner := owners[facts.ObjectID]
+		owner := boundaryOwner(facts, owners)
 		if owner.Symbol == nil {
 			continue
 		}
@@ -611,8 +611,8 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	}
 	sort.Strings(ids)
 	r.opts.Stage(lines.StageBoundaries, fmt.Sprintf("reviewing runtime relationships: %d source candidates and facts", len(ids)))
-	for mode := 0; mode < 2; mode++ {
-		outgoing := mode == 1
+	for mode := 0; mode < 4; mode++ {
+		outgoing, fixed := mode%2 == 1, mode < 2
 		var rows []table.Row
 		var order []*boundaryState
 		addressValues := make(map[string][]lines.BoundaryAddress)
@@ -624,15 +624,15 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			}
 			facts := state.place.Boundary
 			isOutgoing := facts.Direction == atlas.DirectionOut && facts.GivenKind != atlas.BoundaryConfig && facts.GivenKind != atlas.BoundaryOther
-			if isOutgoing != outgoing {
+			if isOutgoing != outgoing || (facts.GivenKind != "") != fixed {
 				continue
 			}
 			var original []atlas.Place
-			if owner, ok := owners[facts.ObjectID]; ok {
+			if owner := boundaryOwner(facts, owners); owner.Symbol != nil {
 				original = append(original, owner)
 			}
 			row := lines.BoundaryRow(state.place, "", original...)
-			row.Fields = append(row.Fields, lines.BoundarySourceContext(state.place, owners[facts.ObjectID], r.places, owners)...)
+			row.Fields = append(row.Fields, lines.BoundarySourceContext(state.place, boundaryOwner(facts, owners), r.places, owners)...)
 			if len(state.uses) > 0 {
 				row.Fields = append(row.Fields, table.Field{Name: "destination_chains", Value: destinationEvidence(state.uses)})
 				addresses := destinationAddresses(state.uses)
@@ -657,23 +657,33 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			order = append(order, state)
 			r.places[id] = state.place
 		}
-		answers, err := r.runTable(ctx, lines.Boundaries(outgoing), mode+1, rows)
+		def := lines.Boundaries(outgoing)
+		if fixed {
+			def = lines.FixedBoundaries(outgoing)
+		}
+		answers, err := r.runTable(ctx, def, mode+1, rows)
 		if err != nil {
 			return err
 		}
 		for i, state := range order {
 			answer := answers[i].answer
-			if answer == nil || answer["decision"] != "boundary" {
+			if answer == nil || (!fixed && answer["decision"] != "boundary") {
 				if state.place.Boundary.GivenKind == "" {
 					delete(r.boundaries, state.place.ID)
 				}
 				continue
 			}
-			state.line, state.kind = answer["line"], answer["kind"]
+			state.line = answer["line"]
+			if !fixed {
+				state.kind = answer["kind"]
+			}
 			if outgoing {
 				state.destination = answer["destination"]
-				if state.basis == "" {
+				if !fixed && state.basis == "" {
 					state.basis = answer["basis"]
+					if state.basis == "remote_client_instance" {
+						state.basis = "configuration"
+					}
 				}
 				if state.address == "" {
 					for _, address := range addressValues[state.place.ID] {
@@ -688,6 +698,15 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	}
 	r.reportStage(lines.StageBoundaries)
 	return nil
+}
+
+// Native SubjectID names the shared compiler-located declaration even when
+// the row's original ObjectID belongs to another target's native view.
+func boundaryOwner(facts *atlas.BoundaryFacts, owners map[string]atlas.Place) atlas.Place {
+	if owner := owners[facts.SubjectID]; owner.Symbol != nil {
+		return owner
+	}
+	return owners[facts.ObjectID]
 }
 
 // Interpretation adds candidate source calls before the boundary review. A

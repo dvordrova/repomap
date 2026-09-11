@@ -32,7 +32,7 @@ func (p *terminologyProvider) Complete(_ context.Context, prepared llm.Prepared)
 	if err := json.Unmarshal(prepared.Bytes(), &prompt); err != nil {
 		return llm.Completion{}, err
 	}
-	if strings.Contains(prompt.User, "REPOMAP_PROSE_SOURCES_V1") {
+	if !strings.Contains(prompt.User, `"prose":`) {
 		raw, err := json.Marshal(p.result)
 		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
 	}

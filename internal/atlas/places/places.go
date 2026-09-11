@@ -6,6 +6,7 @@ package places
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -240,9 +241,13 @@ type dirState struct {
 type edgeKey struct{ from, to, kind string }
 
 type boundaryKey struct {
-	path string
-	line int
-	kind string
+	path    string
+	line    int
+	kind    string
+	column  int
+	method  string
+	values  string
+	subject string
 }
 
 type boundaryState struct {
@@ -350,6 +355,13 @@ func (b *builder) useTargetObjects(index programindex.Index) {
 		if relation.Kind == programindex.RelationPassesCallback {
 			for _, id := range relation.ToIDs {
 				callbacks[id] = true
+			}
+		}
+		for _, pattern := range relation.Patterns {
+			for _, argument := range pattern.Arguments {
+				for _, id := range argument.ObjectIDs {
+					callbacks[id] = true
+				}
 			}
 		}
 	}
@@ -1422,20 +1434,19 @@ func symbolCallKey(call atlas.SymbolCall) string {
 }
 
 func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.SymbolCall, target TargetInput) {
+	var observed []nativeSymbolCall
+	var source *nativeDispatchSource
 	add := func(id string, call atlas.SymbolCall) {
-		id = b.symbolOf[id]
-		if id == "" {
+		if b.symbolOf[id] == "" {
 			return
 		}
-		if byObject[id] == nil {
-			byObject[id] = make(map[string]atlas.SymbolCall)
-		}
-		byObject[id][symbolCallKey(call)] = call
+		observed = append(observed, nativeSymbolCall{owner: id, path: b.fileOf[id], call: call, source: source})
 	}
 	for _, relation := range target.Index.Relations {
 		if relation.Kind == programindex.RelationImports || relation.Kind == programindex.RelationContains {
 			continue
 		}
+		source = dispatchSource(relation)
 		// Compiler dispatch and direct-call witnesses need not have a value
 		// pattern. Dropping them removed the call into an implementation from
 		// handler evidence, especially for interface dispatch.
@@ -1473,7 +1484,7 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 			}
 		}
 		for _, pattern := range relation.Patterns {
-			call := atlas.SymbolCall{Kind: string(relation.Kind), Name: pattern.Selector, Invocation: relation.Invocation, ReceiverValue: sourcevalue.Clone(pattern.ReceiverValue), ResultValue: sourcevalue.Clone(pattern.ResultValue)}
+			call := atlas.SymbolCall{Kind: string(relation.Kind), Name: pattern.Selector, Invocation: relation.Invocation, Resolution: string(relation.Resolution), ReceiverValue: sourcevalue.Clone(pattern.ReceiverValue), ResultValue: sourcevalue.Clone(pattern.ResultValue)}
 			for _, witness := range pattern.Context {
 				if witness.Location != nil {
 					call.Evidence = append(call.Evidence, atlas.EdgeEvidence{Extractor: witness.Kind, Label: witness.Detail, Path: witness.Location.Path, LineNo: witness.Location.Line})
@@ -1518,6 +1529,15 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 			add(relation.FromID, call)
 		}
 	}
+	// Reconcile native views while their exact target and object scope is
+	// still available. Cross-target observations are not counterpart evidence.
+	for _, row := range mergeDeclaredDispatchPairs(observed) {
+		id := b.symbolOf[row.owner]
+		if byObject[id] == nil {
+			byObject[id] = make(map[string]atlas.SymbolCall)
+		}
+		byObject[id][symbolCallKey(row.call)] = row.call
+	}
 }
 
 func (b *builder) symbolCalls() map[string][]atlas.SymbolCall {
@@ -1558,8 +1578,8 @@ func (b *builder) symbolCalls() map[string][]atlas.SymbolCall {
 }
 
 // collectBoundaries lifts the facts the code already knows as integration
-// points into boundary places, one per anchor and kind. A route registered
-// under three prefixes is one boundary with three values.
+// points into boundary places. Only the same anchored observation is shared
+// across targets; different methods, paths and registration columns stay separate.
 func (b *builder) collectBoundaries() {
 	// Facts name their own target rows; the atlas speaks in program target
 	// IDs, so a fact's target is translated before it names a place.
@@ -1583,7 +1603,7 @@ func (b *builder) collectBoundaries() {
 		case facts.KindHTTPCall:
 			direction, kind, method, values = atlas.DirectionOut, atlas.BoundaryHTTPClient, fact.Method, []string{fact.Path}
 		case facts.KindListenAddress:
-			direction, kind, values = atlas.DirectionIn, atlas.BoundaryHTTPServer, []string{fact.Value}
+			direction, kind, values = atlas.DirectionIn, atlas.BoundaryListenAddress, []string{fact.Value}
 		case facts.KindConfigRead:
 			direction, kind, values = atlas.DirectionOut, atlas.BoundaryConfig, []string{fact.Key}
 			if fact.Value != "" {
@@ -1597,19 +1617,22 @@ func (b *builder) collectBoundaries() {
 		if !ok {
 			continue
 		}
-		key := boundaryKey{path: filePath, line: fact.Anchor.Line, kind: kind}
+		encodedValues, _ := json.Marshal(values)
+		key := boundaryKey{path: filePath, line: fact.Anchor.Line, column: fact.Anchor.Column, kind: kind,
+			method: method, values: string(encodedValues), subject: b.factSubjects[fact.ObjectID]}
+		origin := atlas.BoundaryOrigin{TargetID: targetID, FactID: fact.ID, ObjectID: fact.ObjectID}
 		if state, exists := b.bounds[key]; exists {
-			state.place.Boundary.Values = appendUnique(state.place.Boundary.Values, values...)
+			state.place.Boundary.Origins = append(state.place.Boundary.Origins, origin)
 			state.place.TargetIDs = appendUnique(state.place.TargetIDs, targetID)
 			continue
 		}
 		caller, callerDoc := b.callerOf(file, fact.ObjectID, fact.Symbol, fact.Anchor.Line)
 		b.bounds[key] = &boundaryState{place: atlas.Place{
-			ID: boundaryID(filePath, fact.Anchor.Line, kind), Kind: atlas.PlaceBoundary, Path: filePath,
+			ID: nativeBoundaryID(key), Kind: atlas.PlaceBoundary, Path: filePath,
 			LineNo: fact.Anchor.Line, Column: fact.Anchor.Column, Depth: file.depth, TargetIDs: []string{targetID},
 			Parent: atlas.FileID(filePath),
 			Boundary: &atlas.BoundaryFacts{
-				Source: "fact", FactID: fact.ID, ObjectID: fact.ObjectID, SubjectID: b.factSubjects[fact.ObjectID],
+				Source: "fact", Origins: []atlas.BoundaryOrigin{origin}, ObjectID: fact.ObjectID, SubjectID: b.factSubjects[fact.ObjectID],
 				Caller: caller, CallerDoc: callerDoc, Method: method, Values: values,
 				Direction: direction, GivenKind: kind,
 			},
@@ -1823,6 +1846,11 @@ func boundaryID(filePath string, line int, kind string) string {
 	return fmt.Sprintf("bnd:%s:%d:%s", filePath, line, kind)
 }
 
+func nativeBoundaryID(key boundaryKey) string {
+	encoded, _ := json.Marshal([]any{key.path, key.line, key.column, key.kind, key.method, key.values, key.subject})
+	return fmt.Sprintf("%s:%x", boundaryID(key.path, key.line, key.kind), sha256.Sum256(encoded))
+}
+
 func appendUnique(values []string, more ...string) []string {
 	for _, value := range more {
 		if value == "" {
@@ -1902,9 +1930,18 @@ func (b *builder) graph() (atlas.Graph, error) {
 	graph.Places = append(graph.Places, b.symbols...)
 	for _, state := range b.bounds {
 		place := state.place
-		// A boundary belongs to whoever owns its file, claimed by root.
-		if file, ok := b.files[place.Path]; ok {
-			place.TargetIDs = sortedKeys(file.targets)
+		// Native observations retain only their original target scopes. An
+		// external candidate follows its file's ownership as before.
+		if place.Boundary.Source != "fact" {
+			if file, ok := b.files[place.Path]; ok {
+				place.TargetIDs = sortedKeys(file.targets)
+			}
+		}
+		place.Boundary.Origins = atlas.CanonicalBoundaryOrigins(place.Boundary.Origins)
+		// This is only the shared row's representative. Target projection uses
+		// Origins; semantic context uses the compiler-located SubjectID.
+		if len(place.Boundary.Origins) > 0 {
+			place.Boundary.ObjectID = place.Boundary.Origins[0].ObjectID
 		}
 		sort.Strings(place.TargetIDs)
 		if place.Boundary.Values == nil {

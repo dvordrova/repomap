@@ -30,7 +30,7 @@
 </section>
 
 {{define "operation-row"}}<li data-input-item data-source-kind="{{.Source}}"><strong class="input-title"><a href="{{.Href}}">{{.Name}}</a></strong><span class="input-kind">{{t .Kind}}</span><span class="input-handler">{{template "anchor" .Anchor}}</span>
-{{if .Summary}}<details class="input-description"><summary>{{t "To explanation"}}</summary><p class="model"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span><span class="model-sources">{{template "anchor" .Anchor}}</span></p><a href="{{.Href}}">{{t "Parts"}} →</a></details>{{end}}</li>{{end}}
+{{template "data-links" .Data}}{{if .Summary}}<details class="input-description"><summary>{{t "To explanation"}}</summary><p class="model"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span><span class="model-sources">{{template "anchor" .Anchor}}</span></p><a href="{{.Href}}">{{t "Parts"}} →</a></details>{{end}}</li>{{end}}
 
 {{define "operation-catalog"}}{{$model := false}}{{$fact := false}}{{range .}}{{if eq .Source "fact"}}{{$fact = true}}{{else}}{{$model = true}}{{end}}{{end}}<p class="input-provenance meta">{{if $fact}}{{t "Observed in source"}}{{end}}{{if and $fact $model}} · {{end}}{{if $model}}{{t "Model interpretation"}}{{end}}</p>
 <ul class="plain operation-catalog">{{range $i, $row := .}}{{if lt $i 5}}{{template "operation-row" $row}}{{end}}{{end}}</ul>{{if gt (len .) 5}}<details class="input-more"><summary>{{t "All {0} →" (len .)}}</summary><ul class="plain operation-catalog">{{range $i, $row := .}}{{if ge $i 5}}{{template "operation-row" $row}}{{end}}{{end}}</ul></details>{{end}}{{end}}
@@ -50,11 +50,11 @@
 
 {{define "input-catalog"}}{{if or .InputsCount .Outbound}}<section id="{{.ID}}-inbound" class="input-catalog"><h3>{{if .InputsCount}}{{t "Inputs"}} <span class="meta">· {{.InputsCount}}</span>{{end}}{{if .Outbound}}{{if .InputsCount}} · {{end}}{{t "External communication"}} <span class="meta">· {{len .Outbound}}</span>{{end}}</h3>
 <div class="input-groups">
-{{if .InboundCount}}<section data-input-group><h4>{{t "Incoming requests"}} · {{.InboundCount}}</h4>
-{{if .RouteGroups}}<p class="input-provenance meta">{{t "Observed in source"}}</p>{{end}}
+{{if .InboundCount}}<section data-input-group><h4 title="{{t "Request records can describe the same endpoint."}}">{{t "Incoming request records"}} · {{.InboundCount}}</h4>
+{{if .RouteGroups}}<p class="input-provenance meta">{{t "HTTP registrations in source"}} · {{.NativeRouteCount}}</p>{{end}}
 <ul class="plain route-catalog">{{range .RouteGroups}}{{$method := .Method}}{{range .Rows}}{{$row := .}}{{range .Paths}}<li data-input-item><strong class="input-title"><span class="method">{{$method}}</span> {{template "routepath" .}}{{range $i, $href := .OperationHrefs}} <a class="input-explanation" href="{{$href}}">{{t "To explanation"}}</a>{{end}}</strong>
-{{if $row.Symbol}}<div class="input-handler">{{t "handled by"}} {{template "routehandler" $row}}</div>{{end}}</li>{{end}}{{end}}{{end}}</ul>
-{{if .Requests}}{{template "operation-catalog" .Requests}}{{end}}</section>{{end}}
+{{if $row.Symbol}}<div class="input-handler">{{t "handled by"}} {{template "routehandler" $row}}</div>{{end}}{{template "data-links" .Data}}</li>{{end}}{{end}}{{end}}</ul>
+{{if .Requests}}<p class="meta">{{t "Handlers without a matched route"}} · {{len .Requests}}</p>{{template "operation-catalog" .Requests}}{{end}}</section>{{end}}
 {{range .ActivityGroups}}{{if .Rows}}<section data-input-group><h4>{{t .Title}} · {{len .Rows}}</h4>{{template "operation-catalog" .Rows}}</section>{{end}}{{end}}
 {{if .Outbound}}<section id="{{.ID}}-external" data-integration-group><h4 title="{{t "Communication records, not unique services."}}">{{t "Where this service connects"}} · {{len .Outbound}}</h4>{{template "outbound-catalog" .Outbound}}</section>{{end}}
 </div></section>{{end}}{{end}}

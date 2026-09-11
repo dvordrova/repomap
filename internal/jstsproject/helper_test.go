@@ -17,6 +17,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -2575,6 +2576,7 @@ func assertCumulativeJSTSRuntimeRegistrations(t *testing.T, result Result, index
 	if err != nil {
 		t.Fatal(err)
 	}
+	var pingRoute facts.Fact
 	wanted := map[string]bool{"/api/v1/ping": false, "/alternate/ping": false, "/private/ping": false}
 	for _, route := range factsResult.OfKind(facts.KindHTTPRoute) {
 		if route.Anchor == nil || route.Anchor.Path != "src/route-mounts.ts" {
@@ -2587,6 +2589,9 @@ func assertCumulativeJSTSRuntimeRegistrations(t *testing.T, result Result, index
 			t.Fatalf("mounted route lost identity/source: %+v", route)
 		}
 		wanted[route.Path] = true
+		if route.Path == "/api/v1/ping" {
+			pingRoute = route
+		}
 	}
 	for path, found := range wanted {
 		if !found {
@@ -2633,12 +2638,18 @@ func assertCumulativeJSTSRuntimeRegistrations(t *testing.T, result Result, index
 		if place.Boundary == nil {
 			continue
 		}
-		if place.Boundary.FactID == evalFact.ID {
-			t.Fatalf("local eval became an external runtime boundary: %+v", place)
+		for _, origin := range place.Boundary.Origins {
+			if origin.TargetID != index.Target.ID {
+				t.Fatalf("native boundary borrowed a foreign target origin: %+v", origin)
+			}
+			if origin.FactID == evalFact.ID {
+				t.Fatalf("local eval became an external runtime boundary: %+v", place)
+			}
 		}
 		for _, value := range place.Boundary.Values {
 			if value == "/api/v1/ping" && place.Boundary.Source == "fact" {
-				linkedRoute = place.Boundary.SubjectID != ""
+				linkedRoute = place.Boundary.SubjectID != "" && len(place.Boundary.Origins) == 1 &&
+					place.Boundary.Origins[0] == (atlas.BoundaryOrigin{TargetID: index.Target.ID, FactID: pingRoute.ID, ObjectID: pingRoute.ObjectID})
 			}
 		}
 	}

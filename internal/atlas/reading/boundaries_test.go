@@ -67,7 +67,7 @@ func TestBoundaryReviewOwnsRuntimeRelationshipsAndKeepsIndependentRows(t *testin
 				if len(original["calls"].([]any)) != 2 {
 					t.Error("exporter lost its configuration observation")
 				}
-				row["destination"], row["basis"], row["line"], row["address"] = "Trace collector", "configuration", "Configures trace export to the collector.", "a1"
+				row["destination"], row["basis"], row["line"], row["address"] = "Trace collector", "remote_client_instance", "Configures trace export to the collector.", "a1"
 			case "setup":
 				row["decision"] = "none"
 				row["destination"] = false
@@ -126,14 +126,18 @@ func TestBoundaryReviewOwnsRuntimeRelationshipsAndKeepsIndependentRows(t *testin
 }
 
 func TestBoundaryNativeFactSurvivesRefusedProseAndSameLineCallsKeepColumns(t *testing.T) {
-	native := atlas.Place{ID: "native", Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 20, Column: 9, Parent: "file:main", TargetIDs: []string{"service"}, Given: "GET https://native.example", Boundary: &atlas.BoundaryFacts{Source: "fact", FactID: "fact", ObjectID: "caller", Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryHTTPClient, Method: "GET", Values: []string{"https://native.example"}}}
+	native := atlas.Place{ID: "native", Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 20, Column: 9, Parent: "file:main", TargetIDs: []string{"service"}, Given: "GET https://native.example", Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "fact"}}, ObjectID: "caller", Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryHTTPClient, Method: "GET", Values: []string{"https://native.example"}}}
 	first := atlas.SymbolCall{Name: "http.Get", Kind: "invokes_external", Line: 20, Column: 9}
 	second := atlas.SymbolCall{Name: "http.Get", Kind: "invokes_external", Line: 20, Column: 42}
 	symbol := atlas.Place{ID: "owner", Kind: atlas.PlaceSymbol, Path: "main.go", LineNo: 10, Parent: "file:main", TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "caller", Name: "send"}, Calls: []atlas.SymbolCall{first, second}}}
 	provider := &mutatedTableProvider{}
 	provider.mutate = func(input map[string]any, rows []map[string]any) {
-		for _, row := range rows {
+		sources := input["rows"].([]any)
+		for i, row := range rows {
 			row["decision"] = "none"
+			if sources[i].(map[string]any)["kind_given"] != nil {
+				row["line"] = 42 // Refused prose must not remove the fixed fact.
+			}
 		}
 	}
 	r := answerTestReader(t, nil, provider)
@@ -171,9 +175,9 @@ func TestBoundaryNativeFactSurvivesRefusedProseAndSameLineCallsKeepColumns(t *te
 	if len(r.boundaries) != 1 || !reflect.DeepEqual(r.boundaries[native.ID].place, native) || r.boundaries[native.ID].kind != atlas.BoundaryHTTPClient || r.boundaries[native.ID].line != native.Given || r.boundaries[native.ID].address != native.Boundary.Values[0] || r.boundaries[native.ID].basis != "dispatch" {
 		t.Fatalf("refused prose deleted source fact: %+v", r.boundaries)
 	}
-	if len(r.rejected) != 1 || !strings.Contains(r.rejected[0].Reason, "decision") {
+	if len(r.rejected) != 1 || !strings.Contains(r.rejected[0].Reason, "line") {
 		raw, _ := json.Marshal(r.rejected)
-		t.Fatalf("fixed fact decision was not locally validated: %s", raw)
+		t.Fatalf("fixed fact prose was not locally validated: %s", raw)
 	}
 }
 
@@ -188,17 +192,62 @@ func TestBoundaryDefinitionsKeepPositiveAndNegativeCellsConditional(t *testing.T
 	}
 }
 
+func TestFixedConfigurationAndIncomingFactsNeedOnlyTheirExplanation(t *testing.T) {
+	config := atlas.Place{ID: "config", Kind: atlas.PlaceBoundary, Path: "config.py", LineNo: 12, Parent: "file:config",
+		Given: "SOURCE_CONFIG", Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "source:config"}}, Direction: atlas.DirectionOut,
+			GivenKind: atlas.BoundaryConfig, Values: []string{"SOURCE_CONFIG"}}}
+	route := atlas.Place{ID: "route", Kind: atlas.PlaceBoundary, Path: "routes.ts", LineNo: 21, Parent: "file:routes",
+		Given: "GET /metrics", Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "source:route"}}, Direction: atlas.DirectionIn,
+			GivenKind: atlas.BoundaryHTTPServer, Method: "GET", Values: []string{"/metrics"}}}
+	provider := &mutatedTableProvider{}
+	inspected := 0
+	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		fill := input["fill"].([]any)
+		if len(fill) != 1 || fill[0].(map[string]any)["name"] != "line" {
+			t.Fatalf("fixed native facts asked to establish an external exchange: %+v", fill)
+		}
+		for i, source := range input["rows"].([]any) {
+			row := source.(map[string]any)
+			if row["decision_options"] != nil || row["kind_options"] != nil {
+				t.Fatalf("fixed native choices reached provider: %+v", row)
+			}
+			inspected++
+			rows[i]["line"] = "Explains the supplied observation."
+			// Unrequested extra cells cannot override the native properties.
+			rows[i]["decision"], rows[i]["kind"] = "none", "sdk"
+		}
+	}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through = ""
+	r.opts.Graph.Places = []atlas.Place{config, route}
+	r.places = map[string]atlas.Place{config.ID: config, route.ID: route}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if inspected != 2 || len(r.boundaries) != 2 || len(r.rejected) != 0 {
+		t.Fatalf("native prose coverage lost: inspected=%d boundaries=%+v rejected=%+v", inspected, r.boundaries, r.rejected)
+	}
+	for _, original := range []atlas.Place{config, route} {
+		state := r.boundaries[original.ID]
+		if !reflect.DeepEqual(state.place, original) || state.kind != original.Boundary.GivenKind || state.line != "Explains the supplied observation." {
+			t.Fatalf("model classified a fixed fact: %+v", state)
+		}
+	}
+}
+
 func TestBoundaryKnownHTTPAddressSurvivesAcceptedUnknownAndPreservesSourceAnchor(t *testing.T) {
 	const address = "https://실제.example/경로/%2F"
 	native := atlas.Place{ID: "native", Kind: atlas.PlaceBoundary, Path: "client.go", LineNo: 27, Column: 19,
 		Parent: "file:client", TargetIDs: []string{"service"}, Given: "GET " + address,
-		Boundary: &atlas.BoundaryFacts{Source: "fact", FactID: "original-http", Direction: atlas.DirectionOut,
+		Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "original-http"}}, Direction: atlas.DirectionOut,
 			GivenKind: atlas.BoundaryHTTPClient, Method: "GET", Values: []string{address}}}
 	provider := &mutatedTableProvider{}
 	provider.mutate = func(_ map[string]any, rows []map[string]any) {
 		for _, row := range rows {
 			row["decision"], row["kind"], row["line"] = "boundary", "http_client", "Requests the configured peer."
-			row["destination"], row["basis"], row["address"] = "Peer service", "configuration", "unknown"
+			row["destination"], row["basis"], row["address"] = "Peer service", "remote_client_instance", "unknown"
 		}
 	}
 	r := answerTestReader(t, nil, provider)

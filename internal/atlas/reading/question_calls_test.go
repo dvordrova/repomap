@@ -40,9 +40,9 @@ func TestQuestionCallableFactsReachFinalAnswerWithoutInventingWiring(t *testing.
 	trace.Symbol.Calls = []atlas.SymbolCall{{Name: "otlptracehttp.New", Kind: "invokes_external", Line: 97, Column: 41,
 		API:             &atlas.CallAPI{Package: "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp", Name: "New"},
 		Evidence:        []atlas.EdgeEvidence{{Extractor: "compiler", Path: "otel.go", LineNo: 97, Label: "selected observation"}},
-		ReceiverValue:   &sourcevalue.Value{Kind: "unknown", Text: "private-receiver-tree"},
-		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "unknown", Text: "private-source-tree"}}},
-		ResultValue:     &sourcevalue.Value{Kind: "unknown", Text: "private-result-tree"}},
+		ReceiverValue:   &sourcevalue.Value{Kind: "unknown", Text: "traceExporter", Anchor: &sourcevalue.Anchor{Path: "otel.go", Line: 97, Column: 3}},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "field", Text: "TraceEndpoint", Anchor: &sourcevalue.Anchor{Path: "otel.go", Line: 97, Column: 52}, Parts: []sourcevalue.Value{{Kind: "unknown", Text: "config"}}}}},
+		ResultValue:     &sourcevalue.Value{Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "otel.go", Line: 97, Column: 41}}},
 		{Name: "otlptracehttp.WithEndpoint", Kind: "invokes_external", Line: 100, Column: 29, Values: []string{"observed-endpoint"}, API: &atlas.CallAPI{Package: "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp", Name: "WithEndpoint"}}}
 	other.Symbol.Calls = []atlas.SymbolCall{{Name: "NeighbourCall", Line: 121, Column: 12, Evidence: []atlas.EdgeEvidence{{Extractor: "compiler", Path: "otel.go", LineNo: 121, Label: "unselected-neighbour-evidence"}}}}
 	symbols := []atlas.Place{main, init, reinit, trace, other}
@@ -77,7 +77,7 @@ func TestQuestionCallableFactsReachFinalAnswerWithoutInventingWiring(t *testing.
 			t.Fatal(err)
 		}
 		raw := string(window.table.Request)
-		for _, forbidden := range []string{"private-", "callee_ids", "source_arguments", "receiver_value", "result_value", "object_id", "place_id"} {
+		for _, forbidden := range []string{"private-", "callee_ids", "object_id", "place_id"} {
 			if strings.Contains(raw, forbidden) {
 				t.Fatalf("provider source exposed %q: %s", forbidden, raw)
 			}
@@ -91,24 +91,17 @@ func TestQuestionCallableFactsReachFinalAnswerWithoutInventingWiring(t *testing.
 			t.Fatal(err)
 		}
 		collector := terminology.NewCollector([]string{"main.go", "handlers.go", "otel.go"})
-		adapted, err := collector.Wrap(&tableProvider{}).(llm.PromptAdapter).AdaptPrompt(call.Prompt)
-		if err != nil || !strings.HasPrefix(adapted.User, raw) || adapted.ResponseExample != call.Prompt.ResponseExample {
-			t.Fatalf("deferred glossary adaptation changed original evidence or the owner response: %v", err)
-		}
-		decoder := json.NewDecoder(strings.NewReader(adapted.User))
-		var original any
-		if err := decoder.Decode(&original); err != nil {
+		prepared, err := llm.Prepare(collector.Wrap(&tableProvider{}), call.Prompt, call.Limits)
+		if err != nil {
 			t.Fatal(err)
 		}
-		suffix := adapted.User[decoder.InputOffset():]
-		start := strings.IndexByte(suffix, '{')
-		if start < 0 {
-			t.Fatal("deferred glossary source catalogue is missing")
+		if strings.Contains(string(prepared.Bytes()), "REPOMAP_PROSE_SOURCES_V1") {
+			t.Fatal("local source context leaked into provider input")
 		}
 		var sourceCatalog struct {
 			Sources []struct{ Ref, Path, Row string }
 		}
-		if err := json.Unmarshal([]byte(suffix[start:]), &sourceCatalog); err != nil {
+		if err := json.Unmarshal(prepared.ResponseContext(), &sourceCatalog); err != nil {
 			t.Fatal(err)
 		}
 		for _, source := range sourceCatalog.Sources {
@@ -158,7 +151,7 @@ func TestQuestionCallableFactsReachFinalAnswerWithoutInventingWiring(t *testing.
 		t.Fatalf("same-line native callsites collapsed: %v", columns)
 	}
 	traceRaw, traceRequest := selected("newTraceProvider")
-	for _, want := range []string{"otlptracehttp", "selected observation", "observed-endpoint", `"line":97`, `"column":41`, `"line":100`, `"column":29`} {
+	for _, want := range []string{"otlptracehttp", "selected observation", "observed-endpoint", `"line":97`, `"column":41`, `"line":100`, `"column":29`, `"receiver_value"`, `"source_arguments"`, `"result_value"`, `"TraceEndpoint"`, `"kind":"unknown"`, `"kind":"call_result"`} {
 		if !strings.Contains(traceRaw, want) {
 			t.Fatalf("final source lost %q", want)
 		}

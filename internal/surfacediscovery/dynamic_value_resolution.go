@@ -2,6 +2,7 @@ package surfacediscovery
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
 
 	"github.com/dvordrova/repomap/internal/godynamichandoff"
@@ -37,8 +38,12 @@ func newDynamicValueResolver(a *analyzer, method *types.Func) *dynamicValueResol
 		active: make(map[ssa.Value]bool), memo: make(map[dynamicValueKey]dynamicValueSummary)}
 }
 
-func resolveDynamicFunctionValue(value ssa.Value) (dynamicValueSummary, error) {
-	r := newDynamicValueResolver(nil, nil)
+func resolveDynamicFunctionValue(value ssa.Value, analyzers ...*analyzer) (dynamicValueSummary, error) {
+	var a *analyzer
+	if len(analyzers) > 0 {
+		a = analyzers[0]
+	}
+	r := newDynamicValueResolver(a, nil)
 	result := r.functionValue(value, false)
 	return result, r.err
 }
@@ -138,8 +143,136 @@ func (r *dynamicValueResolver) functionValue(value ssa.Value, throughFlow bool) 
 		result = r.functionValue(current.X, true)
 	case *ssa.ChangeInterface:
 		result = r.functionValue(current.X, true)
+	case *ssa.Call:
+		result = r.functionReturns(current, 0)
+	case *ssa.Extract:
+		if call, ok := current.Tuple.(*ssa.Call); ok {
+			result = r.functionReturns(call, current.Index)
+		}
+	case *ssa.UnOp:
+		if current.Op == token.MUL {
+			if address, ok := current.X.(*ssa.FieldAddr); ok {
+				if field := dynamicSourceField(address.X, address.Field); field != nil {
+					result = r.functionField(address.X, field, current, make(map[ssa.Value]bool))
+				}
+			}
+		}
+	case *ssa.Field:
+		if field := dynamicSourceField(current.X, current.Field); field != nil {
+			result = r.functionField(current.X, field, current, make(map[ssa.Value]bool))
+		}
 	}
 	return r.finish(key, result)
+}
+
+func dynamicSourceField(receiver ssa.Value, index int) *types.Var {
+	if receiver == nil {
+		return nil
+	}
+	typ := receiver.Type().Underlying()
+	if pointer, ok := typ.(*types.Pointer); ok {
+		typ = pointer.Elem().Underlying()
+	}
+	if structure, ok := typ.(*types.Struct); ok && index >= 0 && index < structure.NumFields() {
+		return structure.Field(index)
+	}
+	return nil
+}
+
+// Callable fields follow the actual allocated receiver and its source factory
+// return. A unique initialization before the read is required; stores to other
+// instances of the same type never supply a handler for this one.
+func (r *dynamicValueResolver) functionField(receiver ssa.Value, field *types.Var, read ssa.Instruction, active map[ssa.Value]bool) dynamicValueSummary {
+	unknown := dynamicValueSummary{unresolved: 1}
+	if receiver == nil || active[receiver] || r.analyzer == nil {
+		return unknown
+	}
+	active[receiver] = true
+	defer delete(active, receiver)
+	switch value := receiver.(type) {
+	case *ssa.Alloc:
+		var stores []*ssa.Store
+		if refs := value.Referrers(); refs != nil {
+			for _, ref := range *refs {
+				address, ok := ref.(*ssa.FieldAddr)
+				if !ok || address.X != value || dynamicSourceField(value, address.Field) != field || address.Referrers() == nil {
+					continue
+				}
+				for _, observation := range *address.Referrers() {
+					if store, ok := observation.(*ssa.Store); ok && store.Addr == address {
+						stores = append(stores, store)
+					}
+				}
+			}
+		}
+		if len(stores) == 1 && stores[0].Block() == value.Block() && sourceStoreBeforeRead(stores[0], read) {
+			return r.functionValue(stores[0].Val, true)
+		}
+	case *ssa.Call:
+		// A caller-side write to this returned instance makes its constructor
+		// initialization insufficient. Do not substitute an old callback.
+		if refs := value.Referrers(); refs != nil {
+			for _, ref := range *refs {
+				if address, ok := ref.(*ssa.FieldAddr); ok && dynamicSourceField(value, address.Field) == field && address.Referrers() != nil {
+					for _, use := range *address.Referrers() {
+						if store, ok := use.(*ssa.Store); ok && store.Addr == address {
+							return unknown
+						}
+					}
+				}
+			}
+		}
+		callee := value.Common().StaticCallee()
+		if callee == nil || !r.analyzer.isRepositoryFunction(callee) || len(callee.Blocks) == 0 {
+			return unknown
+		}
+		result, found := dynamicValueSummary{}, false
+		for _, block := range callee.Blocks {
+			for _, instruction := range block.Instrs {
+				if returned, ok := instruction.(*ssa.Return); ok && len(returned.Results) > 0 {
+					found = true
+					r.merge(&result, r.functionField(returned.Results[0], field, returned, active))
+				}
+			}
+		}
+		if found {
+			return result
+		}
+	case *ssa.ChangeType:
+		return r.functionField(value.X, field, read, active)
+	case *ssa.Convert:
+		return r.functionField(value.X, field, read, active)
+	}
+	return unknown
+}
+
+// A source factory can supply a callable without calling it. Only the actual
+// repository callee's retained return values participate; dependency bodies,
+// unresolved calls and parameter substitution remain open frontiers.
+func (r *dynamicValueResolver) functionReturns(call *ssa.Call, index int) dynamicValueSummary {
+	callee := call.Common().StaticCallee()
+	if r.analyzer == nil || callee == nil || !r.analyzer.isRepositoryFunction(callee) || len(callee.Blocks) == 0 {
+		return dynamicValueSummary{unresolved: 1}
+	}
+	result, found := dynamicValueSummary{}, false
+	for _, block := range callee.Blocks {
+		for _, instruction := range block.Instrs {
+			returned, ok := instruction.(*ssa.Return)
+			if !ok {
+				continue
+			}
+			found = true
+			if index >= len(returned.Results) {
+				r.merge(&result, dynamicValueSummary{unresolved: 1})
+			} else {
+				r.merge(&result, r.functionValue(returned.Results[index], true))
+			}
+		}
+	}
+	if !found {
+		result.unresolved = 1
+	}
+	return result
 }
 
 func (r *dynamicValueResolver) interfaceValue(value ssa.Value) dynamicValueSummary {

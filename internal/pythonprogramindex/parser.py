@@ -119,6 +119,8 @@ class Scope:
         self.class_ref = class_ref or (parent.class_ref if parent else "")
         self.class_qname = class_qname or (parent.class_qname if parent else "")
         self.bindings = {}
+        self.export_bindings = {}
+        self.export_star_import = False
 
     def binding(self, name):
         current = self
@@ -496,6 +498,23 @@ class Collector(ast.NodeVisitor):
         self.analyzer = analyzer
         self.module = module
         self.scope = scope
+        self.conditional_depth = 0
+
+    def record_export(self, name, binding=None):
+        if self.scope.kind != "module":
+            return
+        # Re-exports follow one unconditional written binding. A second write
+        # or a conditional import does not establish a module member's value.
+        if name in self.scope.export_bindings or self.conditional_depth:
+            self.scope.export_bindings[name] = None
+        else:
+            self.scope.export_bindings[name] = binding or {"kind": "declaration"}
+
+    def generic_visit(self, node):
+        conditional = isinstance(node, (ast.If, ast.Try, ast.While, ast.With, ast.AsyncWith, ast.Match)) or type(node).__name__ == "TryStar"
+        self.conditional_depth += int(conditional)
+        super().generic_visit(node)
+        self.conditional_depth -= int(conditional)
 
     def object_ref(self, kind, qname, node):
         return stable_ref(
@@ -506,6 +525,7 @@ class Collector(ast.NodeVisitor):
     def add_variable(self, name, node, forced_internal=False, signature=""):
         if not name or name == "_":
             return ""
+        self.record_export(name)
         qname = self.scope.qname + "." + name
         ref = self.object_ref("variable", qname, node)
         self.analyzer.add_object({
@@ -605,6 +625,7 @@ class Collector(ast.NodeVisitor):
 
     def _visit_function(self, node):
         parent = self.scope
+        self.record_export(node.name)
         kind = "method" if parent.kind == "type" else "function"
         qname = parent.qname + "." + node.name
         ref = self.object_ref(kind, qname, node)
@@ -648,6 +669,7 @@ class Collector(ast.NodeVisitor):
 
     def visit_ClassDef(self, node):
         parent = self.scope
+        self.record_export(node.name)
         qname = parent.qname + "." + node.name
         ref = self.object_ref("type", qname, node)
         self.analyzer.add_object({
@@ -741,11 +763,52 @@ class Collector(ast.NodeVisitor):
 
     def visit_For(self, node):
         self.visit(node.iter)
+        self.conditional_depth += 1
         self.bind_targets(node.target, True)
         for statement in node.body + node.orelse:
             self.visit(statement)
+        self.conditional_depth -= 1
 
     visit_AsyncFor = visit_For
+
+    def visit_AugAssign(self, node):
+        if isinstance(node.target, ast.Name):
+            self.record_export(node.target.id)
+        self.generic_visit(node)
+
+    def visit_Delete(self, node):
+        for target in node.targets:
+            for child in ast.walk(target):
+                if isinstance(child, ast.Name):
+                    self.record_export(child.id)
+        self.generic_visit(node)
+
+    def visit_With(self, node):
+        for item in node.items:
+            if item.optional_vars is not None:
+                for target in ast.walk(item.optional_vars):
+                    if isinstance(target, ast.Name):
+                        self.record_export(target.id)
+        self.generic_visit(node)
+
+    visit_AsyncWith = visit_With
+
+    def visit_ExceptHandler(self, node):
+        if node.name:
+            self.record_export(node.name)
+        self.generic_visit(node)
+
+    def visit_MatchAs(self, node):
+        if node.name:
+            self.record_export(node.name)
+        self.generic_visit(node)
+
+    visit_MatchStar = visit_MatchAs
+
+    def visit_MatchMapping(self, node):
+        if node.rest:
+            self.record_export(node.rest)
+        self.generic_visit(node)
 
     def visit_Import(self, node):
         for alias in node.names:
@@ -754,19 +817,26 @@ class Collector(ast.NodeVisitor):
             external = module_name not in self.analyzer.modules and module_name not in self.analyzer.objects_by_qname
             if external:
                 self.analyzer.ensure_external(module_name)
-            self.scope.bindings[bound] = {
+            binding = {
                 "kind": "module", "module": module_name, "external": external,
             }
+            self.record_export(bound, binding)
+            self.scope.bindings[bound] = binding
 
     def visit_ImportFrom(self, node):
         base = relative_module(self.module["name"], self.module["package"], node.level, node.module)
         for alias in node.names:
             if alias.name == "*":
+                if self.scope.kind == "module":
+                    self.scope.export_star_import = True
                 continue
-            self.scope.bindings[alias.asname or alias.name] = {
+            name = alias.asname or alias.name
+            binding = {
                 "kind": "from", "module": base, "name": alias.name,
                 "relative": node.level > 0,
             }
+            self.record_export(name, binding)
+            self.scope.bindings[name] = binding
 
 
 class RelationVisitor(ast.NodeVisitor):
@@ -783,8 +853,27 @@ class RelationVisitor(ast.NodeVisitor):
     def object(self, ref):
         return self.analyzer.objects_by_ref.get(ref)
 
-    def import_target(self, module_name, imported_name="", allow_external=True):
+    def import_target(self, module_name, imported_name="", allow_external=True, seen=None):
         qname = module_name + (("." + imported_name) if imported_name else "")
+        canonical_module = self.analyzer.canonical_qname(module_name)
+        scope = self.analyzer.module_scopes.get(canonical_module)
+        if imported_name and scope is not None:
+            key = (canonical_module, imported_name)
+            seen = set() if seen is None else seen
+            if key in seen or scope.export_star_import:
+                return "unknown", ""
+            binding = scope.export_bindings.get(imported_name)
+            if imported_name in scope.export_bindings and binding is None:
+                return "unknown", ""
+            if binding and binding["kind"] in ("from", "module"):
+                # `from . import child` names an indexed child module, not a
+                # cycle through the package's own member binding.
+                if binding["kind"] == "from" and binding["module"] == canonical_module and binding["name"] == imported_name and qname in self.analyzer.modules:
+                    return "local", self.analyzer.modules[qname]["source_ref"]
+                return self.import_target(
+                    binding["module"], binding.get("name", ""),
+                    allow_external=not binding.get("relative", False), seen=seen | {key},
+                )
         if qname in self.analyzer.objects_by_qname:
             ref = self.analyzer.objects_by_qname[qname]
             value = self.object(ref)
@@ -807,6 +896,21 @@ class RelationVisitor(ast.NodeVisitor):
         if not allow_external and not self.namespace_external_import(module_name):
             return "unknown", ""
         return "external", self.analyzer.ensure_external(qname)
+
+    def imported_attribute(self, module_name, parts, allow_external=True):
+        authority, ref = self.import_target(module_name, parts[0], allow_external)
+        for part in parts[1:]:
+            value = self.object(ref) if ref else None
+            if not value:
+                return "unknown", ""
+            if value["kind"] in ("module", "package", "external_symbol"):
+                authority, ref = self.import_target(self.analyzer.object_qname(ref), part, authority == "external")
+            elif value["kind"] == "type":
+                ref = self.analyzer.objects_by_qname.get(self.analyzer.object_qname(ref) + "." + part, "")
+                authority = "local" if ref else "unknown"
+            else:
+                return "unknown", ""
+        return authority, ref
 
     def namespace_external_import(self, module_name):
         """A declared namespace may have portions outside this parser view.
@@ -880,21 +984,10 @@ class RelationVisitor(ast.NodeVisitor):
             if isinstance(current, ast.Name):
                 binding = self.scope.binding(current.id)
                 if binding and binding["kind"] == "module":
-                    qname = binding["module"] + "." + ".".join(parts)
-                    if qname in self.analyzer.objects_by_qname:
-                        ref = self.analyzer.objects_by_qname[qname]
-                        value = self.object(ref)
-                        return ("external" if value and value["kind"] == "external_symbol" else "local"), ref
-                    canonical = self.analyzer.canonical_qname(qname)
-                    if canonical in self.analyzer.objects_by_qname:
-                        ref = self.analyzer.objects_by_qname[canonical]
-                        value = self.object(ref)
-                        return ("external" if value and value["kind"] == "external_symbol" else "local"), ref
-                    if binding.get("external"):
-                        return "external", self.analyzer.ensure_external(qname)
-                    return "unknown", ""
+                    return self.imported_attribute(binding["module"], parts, binding.get("external", False))
                 value_binding = self.pattern_binding(current.id)
-                origins = value_binding.get("origin_refs", []) if value_binding and not value_binding.get("value_invalidated") else []
+                typed_parameter = value_binding and value_binding.get("annotation_origin") and len(parts) == 1
+                origins = value_binding.get("origin_refs", []) if value_binding and (not value_binding.get("value_invalidated") or typed_parameter) else []
                 if len(origins) == 1:
                     owner_ref = self.produced_class(origins[0])
                     if owner_ref:
@@ -904,6 +997,8 @@ class RelationVisitor(ast.NodeVisitor):
                             return "local", target
                 base_kind, base_ref = self.resolve(current)
                 base = self.object(base_ref) if base_ref else None
+                if base_kind == "local" and base and base["kind"] in ("module", "package"):
+                    return self.imported_attribute(self.analyzer.object_qname(base_ref), parts, False)
                 if base_kind == "local" and base and base["kind"] in ("module", "package", "type"):
                     for qname, ref in self.analyzer.objects_by_qname.items():
                         if ref == base_ref:
@@ -1238,6 +1333,9 @@ class RelationVisitor(ast.NodeVisitor):
                 "ref": ref, "origin_refs": origins, "origin_resolution": resolution,
                 "origins_observed": len(origins),
                 "binding_observed": True, "value_invalidated": True,
+                # Type evidence is independent of literal-value authority.
+                # Any later assignment replaces this source-ordered binding.
+                "annotation_origin": bool(origins),
                 "value_candidate": None, "source_origin": origin,
             }
 
@@ -1420,15 +1518,17 @@ class RelationVisitor(ast.NodeVisitor):
                 continue
             resolved = self.import_target(base, alias.name, allow_external=node.level == 0)
             witness = self.import_witness(resolved[0], base, from_import=True)
-            if resolved[0] == "unknown":
+            scope = self.analyzer.module_scopes.get(self.analyzer.canonical_qname(base))
+            exported = scope.export_bindings.get(alias.name) if scope else None
+            reexport = exported is not None and exported["kind"] in ("from", "module")
+            if resolved[0] == "unknown" or reexport:
                 boundary_ref = self.local_import_target(base)
                 boundary = self.object(boundary_ref) if boundary_ref else None
                 if boundary is not None and boundary["kind"] in ("module", "package"):
                     # A package facade may expose a mutable or re-exported
-                    # member whose declaration identity is not locally exact.
-                    # The named import still establishes its local module
-                    # boundary, just as a wildcard import does. Retain only
-                    # that boundary and do not invent the imported member.
+                    # member. Preserve the written module boundary, including
+                    # when later calls can follow that explicit re-export to a
+                    # possible declaration; the import did not skip the facade.
                     resolved = "local", boundary_ref
                     witness = "from_import_module_boundary"
             self.emit_resolved(

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ExternalCallIndexVersion = 5
+	ExternalCallIndexVersion = 8
 	// ExternalCallCgoPackagePath is the Go toolchain's pseudo-package identity
 	// for an exact handoff to a generated cgo wrapper. It does not identify a
 	// repository package or claim execution beyond that wrapper boundary.

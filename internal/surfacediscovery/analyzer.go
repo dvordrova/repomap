@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/gotarget"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
@@ -39,8 +40,9 @@ type analyzer struct {
 	scenario         Scenario
 	result           Result
 
-	functionIDs  map[*ssa.Function]string
-	callControls map[Location][]ControlContext
+	functionIDs     map[*ssa.Function]string
+	callControls    map[Location][]ControlContext
+	methodArguments map[Location][]*sourcevalue.Value
 
 	currentPhase        string
 	currentPhaseStarted time.Time

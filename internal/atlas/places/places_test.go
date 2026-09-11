@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -86,6 +87,9 @@ func TestDocumentSectionsKeepCommandsLinksAndExactLines(t *testing.T) {
 	if len(sections) != 3 || sections[1].LineNo != 3 || sections[2].LineNo != 14 {
 		t.Fatalf("fenced examples split or section anchors moved: %+v", sections)
 	}
+	if len(sections[0].Document.Headings) != 0 || !reflect.DeepEqual(sections[2].Document.Headings, []atlas.DocumentHeading{{Title: "Development", Line: 3}, {Title: "More tests", Line: 14}}) {
+		t.Fatalf("nested section lost author scope: %+v", sections[2].Document.Headings)
+	}
 	var joined strings.Builder
 	for _, section := range sections {
 		if section.Kind != atlas.PlaceDocument || section.File != nil || section.Parent != "" || len(section.TargetIDs) != 0 {
@@ -108,6 +112,13 @@ func TestDocumentSectionsKeepCommandsLinksAndExactLines(t *testing.T) {
 	loaded, err := atlas.DecodeGraph(encoded)
 	if err != nil || len(loaded.Places) != len(sections) {
 		t.Fatalf("documentation did not survive graph persistence: %v", err)
+	}
+}
+
+func TestDocumentHeadingScopeEndsAtSiblingOrParent(t *testing.T) {
+	sections := documentSections("dependency/README.md", "# Dependency example\n## Configure\n### Token\n## Use\n# Another example\n## Start\n")
+	if len(sections) != 6 || !reflect.DeepEqual(sections[3].Document.Headings, []atlas.DocumentHeading{{Title: "Dependency example", Line: 1}, {Title: "Use", Line: 4}}) || !reflect.DeepEqual(sections[5].Document.Headings, []atlas.DocumentHeading{{Title: "Another example", Line: 5}, {Title: "Start", Line: 6}}) {
+		t.Fatalf("section scope crossed author headings: %+v", sections)
 	}
 }
 
@@ -246,21 +257,24 @@ func TestFixturePlaces(t *testing.T) {
 		if place.Boundary == nil {
 			continue
 		}
-		if dynamicFacts[place.Boundary.FactID] {
-			t.Fatalf("local code execution became an external runtime boundary: %+v", place)
+		for _, origin := range place.Boundary.Origins {
+			if dynamicFacts[origin.FactID] {
+				t.Fatalf("local code execution became an external runtime boundary: %+v", place)
+			}
 		}
-		if owner, expected := wantOwners[place.ID]; expected {
+		key := boundaryID(place.Path, place.LineNo, place.Boundary.GivenKind)
+		if owner, expected := wantOwners[key]; expected {
 			if place.Boundary.SubjectID != owner {
 				t.Fatalf("native boundary owner changed: %+v", place)
 			}
-			delete(wantOwners, place.ID)
+			delete(wantOwners, key)
 		}
 	}
 	if len(wantOwners) != 0 {
 		t.Fatalf("native fixture boundaries missing: %+v", wantOwners)
 	}
 	// Keep identical canonical bytes for eager and lazy target storage below.
-	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "da210da7ad934396463e9c246507fc9d190d8c1997620387e930823cd95a7ed2" {
+	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "ded06f4a626388e0a80db4b12d788d570057c2197802ef702a8e800d4995d19a" {
 		t.Fatalf("saved mixed fixture graph changed: %s", got)
 	}
 	lazy := input

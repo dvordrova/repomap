@@ -1,23 +1,33 @@
 # Select actions a developer can explore
 
 Each row describes ONE declaration. Decide whether it directly handles a CLI
-command, an incoming protocol request, a user interaction, scheduled work, or a persistent process.
+command, an incoming protocol request, a user interaction, scheduled work, or
+a persistent background responsibility.
 Most candidates are internal code and should not become action-map nodes.
 
-Fill `entry` first, choosing exactly one value from this row's `entry_options`:
-- `self`: this declaration handles the action at its external activation point.
-- An exact ref from this row's `observed_callers`, when advertised in
-  `entry_options`: that caller handles the action and this declaration is its
-  internal implementation. It does not become a second action. When no caller
-  refs are advertised, this choice is unavailable; do not invent a caller ref.
+Fill `entry` first, deciding only about this declaration:
+- `self`: evidence supports both the task this declaration fulfils and its
+  independent activation. The task may delegate work to helpers.
 - `none`: no such action is supported here.
 
-For a caller ref or `none`, omit the other cells: they are not used. The `when`
+Process entry, asynchronous launch or staying alive alone does not establish a
+task. Starting or dispatching the host runtime is `none`. Classify the supported
+responsibility, not whether its implementation is inline.
+
+Callers are source context, never a choice of another operation owner. Choosing
+`none` does not transfer work to a caller or establish any other operation.
+Do not suppress independently started work because a setup function launches it.
+
+For `none`, omit the other cells: they are not used. The `when`
 condition in `fill` identifies cells used only for `entry=self`. For `self`, choose:
-- `command`: the command's executing callback, not its constructor or CLI launcher.
+- `command`: the command's executing action. A standalone one-shot main may
+  perform that action; main that only dispatches a CLI framework is its launcher.
+  Command constructors and PreRun/validation/setup hooks are not separate commands.
 - `request`: a handler receiving HTTP, RPC or message traffic from outside the
-  running component, not an internal service, client wrapper or store method.
-- `scheduled`: the work a timer or scheduler activates.
+  running component. Middleware that wraps or continues the same request is a
+  step within that entry, not another incoming operation.
+- `scheduled`: the task a timer or scheduler activates, including a supported
+  one-shot delayed action. The timer-registration function is not that task.
 - `interaction`: a handler for a user's action in an interface, such as submitting,
   selecting or editing. Rendering a component or computing a display value is
   not a user action. A function-valued prop is evidence of a binding, not enough
@@ -33,7 +43,9 @@ A timer/scheduler registration identifies the callback it will activate;
 the recipient and task are observed. A finite retry, an ordinary collection
 loop, or one awaitable task does not by itself support `continuous`.
 Server lifespan/startup/shutdown hooks organize lifecycle work; yielding during
-the server lifetime does not make the hook a worker. Describe the worker's
+the server lifetime does not make the hook a worker. Starting or blocking in an
+HTTP listener is server lifecycle, not a background responsibility; the request
+handlers own the incoming operations. Describe the worker's
 responsibility (for example refreshing market candles or committing pending
 batches), rather than "Run worker loop".
 
@@ -56,11 +68,31 @@ not execute the command, even when its documentation describes the command.
 
 `observed_callers` contains exact native caller declarations and call sites,
 not name matches. Their registrations describe how THEY are activated. When a
-registered Wrapper.Save calls Handler.Save which calls Store.Save, the wrapper
-is the external action and the inner methods choose their advertised caller ref.
+registered request endpoint calls an internal service method which calls Store.Save
+synchronously, the endpoint owns the external action and the inner implementation
+methods choose `none` unless they have independent activation.
 A generated transport dispatcher calling its user handler is infrastructure;
 the user handler is the action. A missing caller means unknown, not external.
-An inner declaration can be `self` only if it has separate external exposure.
+An inner declaration can be `self` when it has independent activation, including
+an observed asynchronous launch of its own persistent task. A launcher's lack of
+an operation does not make its worker an internal synchronous helper.
+
+Distinguish the requested operation from steps around it. A middleware callback
+that receives a continuation/next handler and passes along the same request
+chooses `none` for that activity, including when it logs, authenticates, changes
+headers, recovers a panic or short-circuits an error. Merely being invoked for
+each request is insufficient. The actual endpoint or message consumer may call
+helpers or delegate transport work and still own the operation. An independently
+registered endpoint or separately started persistent consumer is not middleware
+merely because it uses another handler. Registration and native receiver/argument
+observations establish the context; a callback's name or signature alone does not.
+
+Use each call's `api`, `receiver_value` and `source_arguments` to identify the
+object and values involved. They preserve native source observations, not proof
+of runtime execution. For example, `r.Header.Set(...)` changes a request header;
+`w.Header().Set(...)` changes response headers when r is the request and w the
+response writer. The shared Header.Set API alone cannot distinguish these effects.
+If the receiver's origin is unknown, preserve that uncertainty in the description.
 
 `control_context` in a call's source evidence identifies its enclosing statement
 body. Distinguish a channel-consuming or unconditional loop from an ordinary
@@ -68,6 +100,32 @@ collection traversal using the declaration's other observations. These facts
 do not prove reachability, an infinite lifetime or background execution. The
 loop belongs to its containing declaration, not each called helper. Test
 setup/teardown callbacks are lifecycle hooks, not timer-scheduled work.
+
+Use the source observations in these contrasting cases, not function names as
+an allowlist:
+- Go: a setup function starts `go sendNotifications(n)`; the recipient ranges
+  over a message channel and sends queued notifications until shutdown. The
+  recipient is continuous/self; AddLogHook-style setup is none. A synchronous
+  helper that formats one batch inside that loop is none, even if it has a loop.
+- A Go wrapper calls `next.ServeHTTP(w, r)`, a Python request middleware awaits
+  `call_next(request)`, or JavaScript middleware passes the same request through
+  its `next` continuation: that callback is none for the wrapped request. A
+  registered endpoint that fulfils a proxy request by forwarding it upstream
+  can be request/self; delegation alone does not turn an endpoint into middleware.
+- Python: `Thread(target=receive_prices).start()` activates a persistent consumer;
+  that consumer is continuous/self. A FastAPI lifespan hook that starts it,
+  yields and later joins it is none. `asyncio.create_task` alone does not prove
+  persistence: a task that sends one message and returns is not continuous.
+- JavaScript: a timer registered with `setInterval(refreshMetrics, ...)` supports
+  scheduled/self for refreshMetrics, while the registering initializer is none.
+  A Worker message-consumer loop can be continuous/self; constructing the Worker
+  is setup. Likewise cron work and a one-shot Go AfterFunc callback can be
+  scheduled/self when their distinct timed responsibility is supported.
+
+These examples do not require every channel consumer to be a worker: local
+iteration, bounded retries, parsing callbacks and lifecycle hooks remain none
+unless their own operation is supported. State the observed responsibility,
+such as exporting metrics or sending queued notifications, not its API mechanics.
 
 For `self`, choose `name_kind` and explain what the action reads, changes or
 returns in one short `description` (up to 180 characters).

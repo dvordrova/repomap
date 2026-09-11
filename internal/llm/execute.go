@@ -60,7 +60,7 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 	decodeValidate = func(raw []byte) (T, error) {
 		var zero T
 		var err error
-		adapted, err = AdaptResponse(provider, outcome.Request, raw)
+		adapted, err = AdaptResponse(provider, outcome.ResponseContext, outcome.Request, raw)
 		if err != nil {
 			return zero, err
 		}
@@ -83,6 +83,7 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 		}, outcome.Issues)
 		return outcome, newProviderError("prepare", err, 0)
 	}
+	outcome.ResponseContext = prepared.ResponseContext()
 	request := prepared.Bytes()
 	setOutcomeRequest(&outcome, request)
 	if len(request) == 0 {
@@ -449,19 +450,20 @@ func executeLive[T any](
 	if executor.Enabled {
 		exactRequest := prepared.Bytes()
 		record := acceptedCacheRecord{
-			Version:        cacheRecordVersion,
-			Contract:       executorContract,
-			CacheKey:       outcome.CacheKey,
-			Accepted:       true,
-			RequestSHA256:  sha256Hex(exactRequest),
-			ResponseSHA256: sha256Hex(completion.Response),
-			RequestBytes:   len(exactRequest),
-			ResponseBytes:  len(completion.Response),
-			Request:        exactRequest,
-			Response:       cloneBytes(completion.Response),
-			FinishReason:   outcome.FinishReason,
-			ChoiceCount:    outcome.ChoiceCount,
-			Metrics:        outcome.Metrics,
+			ResponseContext: prepared.ResponseContext(),
+			Version:         cacheRecordVersion,
+			Contract:        executorContract,
+			CacheKey:        outcome.CacheKey,
+			Accepted:        true,
+			RequestSHA256:   sha256Hex(exactRequest),
+			ResponseSHA256:  sha256Hex(completion.Response),
+			RequestBytes:    len(exactRequest),
+			ResponseBytes:   len(completion.Response),
+			Request:         exactRequest,
+			Response:        cloneBytes(completion.Response),
+			FinishReason:    outcome.FinishReason,
+			ChoiceCount:     outcome.ChoiceCount,
+			Metrics:         outcome.Metrics,
 		}
 		if err := saveAcceptedCache(executor.RootDir, record); err != nil {
 			outcome.Issues = append(outcome.Issues, Issue{Kind: IssueCacheWrite, Err: err})

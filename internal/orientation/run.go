@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -22,7 +23,7 @@ const (
 
 	executionContract     = "repomap.orientation.v1"
 	preparationVersion    = 1
-	promptVersion         = 1
+	promptVersion         = 2
 	responseSchemaVersion = 1
 	maxOutputTokens       = llm.DefaultMaxOutputTokens
 )
@@ -40,6 +41,9 @@ type Input struct {
 	Facts          facts.Result
 	Claims         claims.Result
 	Groups         []groupindex.Index
+	// Graph is the already-built source graph used by atlas reading. Only
+	// advertised members' observations enter the orientation request.
+	Graph atlas.Graph
 }
 
 type preparedRequest struct {

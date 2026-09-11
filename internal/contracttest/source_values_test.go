@@ -16,6 +16,7 @@ func assertGoSourceValues(t *testing.T, repository *corpus.Corpus, index program
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertGoOperationSourceValues(t, graph)
 	seen := map[string]bool{}
 	destinations := reading.NewDestinationReader(graph.Places)
 	var visit func(*sourcevalue.Value)

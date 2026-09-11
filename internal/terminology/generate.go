@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -13,9 +12,9 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-// Glossary work has its own small output allowance and complete prose windows.
-// Neither a refusal nor a runaway here can consume an analysis completion.
-const glossaryOutputTokens = 8000
+// Glossary work uses the shared output allowance and complete prose windows.
+// It remains a separate optional completion with independent validation.
+const glossaryOutputTokens = llm.DefaultMaxOutputTokens
 
 //go:embed prompts/generate.md
 var generatePrompt string
@@ -245,12 +244,24 @@ func (c *Collector) Generate(ctx context.Context, executor llm.Executor, provide
 		return err
 	}
 	for len(windows) > 0 {
-		calls := make([]llm.Call[generationResult], len(windows))
-		for i, window := range windows {
-			calls[i], err = generationCall(window)
+		var calls []llm.Call[generationResult]
+		for i := 0; i < len(windows); i++ {
+			call, err := generationCall(windows[i])
 			if err != nil {
 				return err
 			}
+			refused, err := llm.RecallAdaptiveSplit(executor, provider, call)
+			if err != nil {
+				return err
+			}
+			if refused {
+				if left, right, ok := splitProse(windows[i]); ok {
+					windows = slices.Concat(windows[:i], [][]proseSource{left, right}, windows[i+1:])
+					i-- // Rebuild complete children through the current owner.
+					continue
+				}
+			}
+			calls = append(calls, call)
 		}
 		if executor.PlanNotice != nil {
 			executor.PlanNotice(len(calls))
@@ -281,11 +292,17 @@ func (c *Collector) Generate(ctx context.Context, executor llm.Executor, provide
 				c.acceptDefinitions(windows[i], outcome.Outcome.Value.Terms)
 				continue
 			}
-			if errors.Is(outcome.Err, context.Canceled) || errors.Is(outcome.Err, context.DeadlineExceeded) {
-				return outcome.Err
+			// A provider-local timeout can wrap DeadlineExceeded while the run
+			// remains alive. It takes the same optional refusal path as other
+			// exhausted provider failures; only this run's context cancels it.
+			if err := ctx.Err(); err != nil {
+				return err
 			}
 			if reductionResource(outcome.Err) {
 				if left, right, ok := splitProse(windows[i]); ok {
+					if _, err := llm.RememberAdaptiveSplit(executor, provider, calls[i], outcome.Outcome, outcome.Err); err != nil {
+						return err
+					}
 					for _, child := range [][]proseSource{left, right} {
 						parts, err := planProse(ctx, provider, child)
 						if err != nil {

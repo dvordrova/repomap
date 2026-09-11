@@ -63,26 +63,22 @@ func (r *reader) readOperations(ctx context.Context) error {
 		}
 		// Review source evidence, not the previous model's answer. Repeating
 		// that answer encouraged confirmation instead of separating callbacks
-		// from their helpers. Calls omit unrelated literal/log-message payloads.
+		// from their helpers. Keep each own call's receiver and arguments: a
+		// request mutation and a response mutation may use the same native API.
 		var evidence lines.EvidenceCatalog
 		var calls []any
-		for _, call := range operationCalls(place) {
-			calls = append(calls, evidence.Call(call))
+		for _, call := range place.Symbol.Calls {
+			calls = append(calls, evidence.CallWithOrigins(call))
 		}
 		callers := operationCallerEvidence(place, declarations)
 		nameFields, registeredNames := operationRegisteredNames(receivedBindings, nativeRoutes[place.ID]...)
 		names[place.ID] = registeredNames
-		entries := []string{"self", "none"}
-		for _, caller := range callers {
-			entries = append(entries, caller["ref"].(string))
-		}
 		row := table.Row{ID: id, Fields: []table.Field{
 			{Name: "path", Value: place.Path}, {Name: "name", Value: decl.Name},
 			{Name: "signature", Value: decl.Signature}, {Name: "author_doc", Value: decl.Doc},
 			{Name: "registrations_of_this_declaration", Value: evidence.Bindings(receivedBindings)},
 			{Name: "registers_other_callables", Value: suppliedCallbacks},
 			{Name: "calls", Value: calls}, {Name: "observed_callers", Value: callers},
-			{Name: "entry_options", Value: entries},
 		}}
 		row.Fields = append(row.Fields, evidence.Fields()...)
 		row.Fields = append(row.Fields, nameFields...)
@@ -109,14 +105,6 @@ func (r *reader) readOperations(ctx context.Context) error {
 	}
 	r.reportStage(def.Stage)
 	return nil
-}
-
-func operationCalls(place atlas.Place) []atlas.SymbolCall {
-	var calls []atlas.SymbolCall
-	for _, call := range place.Symbol.Calls {
-		calls = append(calls, atlas.SymbolCall{Name: call.Name, Kind: call.Kind, Line: call.Line, Invocation: call.Invocation, Detail: call.Detail, Resolution: call.Resolution, Evidence: call.Evidence})
-	}
-	return calls
 }
 
 // Native routes already identify their handler through the canonical symbol
@@ -243,7 +231,6 @@ func operationCallerEvidence(place atlas.Place, declarations map[string]atlas.Pl
 	sort.Strings(keys)
 	var rows []map[string]any
 	for _, id := range keys {
-		byID[id]["ref"] = fmt.Sprintf("u%d", len(rows)+1)
 		rows = append(rows, byID[id])
 	}
 	return rows

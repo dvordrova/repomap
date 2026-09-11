@@ -19,13 +19,12 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-const adjunctVersion = "repomap.terminology.deferred.v1"
-const catalogDelimiter = "\n\nREPOMAP_PROSE_SOURCES_V1\n"
+const contextVersion = "repomap.terminology.context.v1"
 
 // Collector retains prose only after the original cube validates its result;
 // optional definitions are generated separately from that accepted prose.
-// Prepared requests carry their catalogue, so cache and memo reuse need no
-// process-local preparation registry and remain safe under parallel execution.
+// Prepared windows carry local source context, so cache and memo reuse need no
+// process-local registry or provider-visible provenance appendix.
 type Collector struct {
 	paths   map[string]bool
 	mu      sync.Mutex
@@ -60,9 +59,9 @@ func (c *Collector) Wrap(base llm.Provider) llm.Provider {
 }
 
 func (p *provider) State() []byte {
-	// The source-catalogue contract is already in the exact prepared request. Keep the
-	// transport identity unchanged so replay through the base provider refreshes
-	// the same cache entry that ordinary decorated calls subsequently read.
+	// Local response context does not change provider state. Replay through
+	// the base provider refreshes the same entry that ordinary decorated calls
+	// subsequently read.
 	return append([]byte(nil), p.base.State()...)
 }
 
@@ -76,26 +75,41 @@ type sourceCatalog struct {
 	Version     string          `json:"version"`
 	Sources     []catalogSource `json:"sources"`
 	ProseFields []string        `json:"prose_fields,omitempty"`
+	Fill        json.RawMessage `json:"fill,omitempty"`
 }
 
 func (p *provider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
 	return p.base.Prepare(prompt, limits)
 }
 
-func (p *provider) AdaptPrompt(prompt llm.Prompt) (llm.Prompt, error) {
+func (p *provider) ResponseContext(prompt llm.Prompt) ([]byte, error) {
 	input, _ := jsonValue([]byte(prompt.User))
-	catalog := sourceCatalog{Version: adjunctVersion, Sources: sourcesIn(input, p.collector.paths), ProseFields: prompt.ProseFields}
+	catalog := sourceCatalog{Version: contextVersion, Sources: sourcesIn(input, p.collector.paths), ProseFields: prompt.ProseFields}
 	if len(catalog.Sources) == 0 {
-		return prompt, nil
+		return nil, nil
 	}
-	// Keep the owner's sole response shape unchanged. This source catalogue
-	// records provenance for a later glossary pass; it asks for no metadata.
-	raw, err := json.Marshal(catalog)
-	if err != nil {
-		return llm.Prompt{}, err
+	if object, ok := input.(map[string]any); ok {
+		if fill, ok := object["fill"].([]any); ok {
+			// Only descriptors used to select prose belong in local context;
+			// choice options, notes and complete input rows are already elsewhere.
+			columns := make([]map[string]any, 0)
+			for _, value := range fill {
+				column, ok := value.(map[string]any)
+				if !ok || column["kind"] != "text" && column["kind"] != "prose" {
+					continue
+				}
+				kept := make(map[string]any)
+				for _, field := range []string{"name", "kind", "when", "empty_value"} {
+					if value, exists := column[field]; exists {
+						kept[field] = value
+					}
+				}
+				columns = append(columns, kept)
+			}
+			catalog.Fill, _ = json.Marshal(columns)
+		}
 	}
-	prompt.User += catalogDelimiter + string(raw)
-	return prompt, nil
+	return json.Marshal(catalog)
 }
 
 func (p *provider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
@@ -239,66 +253,31 @@ type requestContext struct {
 	proseFields   []string
 }
 
-// The suffix is read from an actual string leaf in the saved provider request,
-// not a remembered current Prepare call. The original input remains the sole
-// source authority, and paths no longer in the current corpus are unsupported.
-func (c *Collector) requestContext(request []byte) (requestContext, error) {
-	var leaves []string
-	var walk func(any)
-	walk = func(value any) {
-		switch value := value.(type) {
-		case map[string]any:
-			for _, child := range value {
-				walk(child)
-			}
-		case []any:
-			for _, child := range value {
-				walk(child)
-			}
-		case string:
-			if strings.Contains(value, catalogDelimiter) {
-				leaves = append(leaves, value)
-			}
-		}
-	}
-	if value, err := jsonValue(request); err == nil {
-		walk(value)
-	} else if strings.Contains(string(request), catalogDelimiter) {
-		leaves = append(leaves, string(request))
-	}
-	if len(leaves) == 0 {
+// Context comes from the owning prepared window, including on entity memo
+// reuse. It contains no full prompt or duplicate evidence catalogue, and paths
+// removed from the current corpus cannot regain authority through a cache hit.
+func (c *Collector) requestContext(local []byte) (requestContext, error) {
+	if len(local) == 0 {
 		return requestContext{noTerminology: true}, nil
 	}
-	if len(leaves) != 1 {
-		return requestContext{}, fmt.Errorf("terminology: exact request has no unique source catalogue")
-	}
-	index := strings.LastIndex(leaves[0], catalogDelimiter)
 	var catalog sourceCatalog
-	if err := strictJSON([]byte(leaves[0][index+len(catalogDelimiter):]), &catalog); err != nil {
+	if err := strictJSON(local, &catalog); err != nil {
 		return requestContext{}, err
 	}
-	if catalog.Version != adjunctVersion || catalog.Sources == nil {
-		return requestContext{}, fmt.Errorf("terminology: unsupported source catalogue")
+	if catalog.Version != contextVersion || len(catalog.Sources) == 0 {
+		return requestContext{}, fmt.Errorf("terminology: unsupported local response context")
 	}
-	if len(catalog.Sources) == 0 {
-		return requestContext{}, fmt.Errorf("terminology: unsupported response contract")
-	}
-	input, _ := jsonValue([]byte(leaves[0][:index]))
-	paths := make(map[string]bool)
-	for _, source := range catalog.Sources {
-		if !canonicalPath(source.Path) {
-			return requestContext{}, fmt.Errorf("terminology: invalid source path")
+	ctx := requestContext{sources: make(map[string]catalogSource), proseFields: catalog.ProseFields}
+	if len(catalog.Fill) > 0 {
+		fill, err := jsonValue(catalog.Fill)
+		if _, ok := fill.([]any); err != nil || !ok {
+			return requestContext{}, fmt.Errorf("terminology: invalid local prose descriptors")
 		}
-		paths[source.Path] = true
+		ctx.input = map[string]any{"fill": fill}
 	}
-	original := make(map[string]bool)
-	for _, source := range sourcesIn(input, paths) {
-		original[sourceKey(source)] = true
-	}
-	ctx := requestContext{sources: make(map[string]catalogSource), input: input, proseFields: catalog.ProseFields}
 	for i, source := range catalog.Sources {
-		if source.Ref != fmt.Sprintf("g%d", i+1) || !original[sourceKey(source)] {
-			return requestContext{}, fmt.Errorf("terminology: source catalogue is not original evidence")
+		if source.Ref != fmt.Sprintf("g%d", i+1) || !canonicalPath(source.Path) || source.Line < 0 {
+			return requestContext{}, fmt.Errorf("terminology: invalid local source context")
 		}
 		if c.paths[source.Path] {
 			ctx.sources[source.Ref] = source
@@ -318,8 +297,8 @@ type validatedTerm struct {
 	rows      []string
 }
 
-func (p *provider) AdaptResponse(request, response []byte) (llm.AdaptedResponse, error) {
-	ctx, err := p.collector.requestContext(request)
+func (p *provider) AdaptResponse(localContext, request, response []byte) (llm.AdaptedResponse, error) {
+	ctx, err := p.collector.requestContext(localContext)
 	if err != nil {
 		return llm.AdaptedResponse{}, err
 	}

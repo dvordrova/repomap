@@ -37,7 +37,7 @@ func (p *selectionProvider) Complete(ctx context.Context, prepared llm.Prepared)
 		if request.Table == lines.StageSymbols {
 			if request.Fill[0].Name == "key_symbol" {
 				if name == "Op08" {
-					row["key_symbol"], row["activation"], row["outbound"] = "no", "request", "c1"
+					row["key_symbol"], row["activation"], row["outbound"] = "no", "request", "c1 c2"
 				}
 				if name == "Op07" {
 					row["activation"] = "unassessed"
@@ -59,7 +59,10 @@ func TestClosedScopeAndRefusedCaptionKeepIndependentRoles(t *testing.T) {
 	for i := range graph.Places {
 		place := &graph.Places[i]
 		if place.Symbol != nil && place.Symbol.Decl.Name == "Op08" {
-			place.Symbol.Calls = []atlas.SymbolCall{{Name: "Client.Submit", Kind: "invokes_external", Line: 25, Values: []string{"jobs"}}}
+			place.Symbol.Calls = []atlas.SymbolCall{
+				{Name: "Op07", Kind: "calls", Resolution: "exact", CalleeIDs: []string{atlas.SymbolID("svc/core/c.go", 17, "Op07")}, Line: 24},
+				{Name: "Client.Submit", Kind: "invokes_external", Line: 25, Values: []string{"jobs"}},
+			}
 		}
 	}
 	provider := &selectionProvider{tableProvider: tableProvider{openFor: map[string]string{"svc/core": "no"}}}
@@ -93,7 +96,7 @@ func TestClosedScopeAndRefusedCaptionKeepIndependentRoles(t *testing.T) {
 		t.Fatal("missing role became a negative finding")
 	}
 	operation := atlas.SymbolID("svc/core/c.go", 18, "Op08")
-	if known["selection:"+operation].Cells["outbound"] != "c1" || known[operation].ID != "" {
+	if known["selection:"+operation].Cells["outbound"] != "c2" || known[operation].ID != "" {
 		t.Fatal("non-key operation lost its independent outgoing call")
 	}
 	found := false

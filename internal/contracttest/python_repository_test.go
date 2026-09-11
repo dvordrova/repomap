@@ -248,7 +248,7 @@ func assertChainedCallbackArguments(t *testing.T, index programindex.Index, call
 }
 
 func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
-	_, repository := materializeFixtureRepository(t, "python")
+	repositoryPath, repository := materializeFixtureRepository(t, "python")
 	catalog, err := pythontarget.Discover(t.Context(), repository)
 	if err != nil {
 		t.Fatalf("discover cumulative Python fixture: %v", err)
@@ -278,6 +278,8 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 	}
 	assertCumulativePythonSemanticFacts(t, index)
 	assertPythonLocalHTTPNameFacts(t, index)
+	assertPythonHTTPRegistrations(t, repository, index)
+	adaptertest.AssertQueryOccurrenceOwners(t, repositoryPath, repository, index, "src/fixture_app/data_sources.py")
 	assertPythonRepeatedImportAliases(t, index)
 	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index}}})
 	if err != nil {

@@ -21,7 +21,7 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-const Contract = "repomap.atlas.question-batch.v2"
+const Contract = "repomap.atlas.question-batch.v3"
 
 //go:embed prompt.md
 var systemPrompt string
@@ -89,9 +89,7 @@ func (response Response) ResponseRejections() []llm.ResponseRejection {
 // is unavailable and must never become a negative relevance decision.
 type ChunkResult struct {
 	Inspected      bool
-	Anchors        []string
-	Relevance      string
-	Why            string
+	Selections     []Selection
 	Source         string
 	QuestionRef    string
 	RequestKey     string
@@ -604,7 +602,7 @@ func (data catalogue) decodeComplete(rows []int, questions []modelQuestion, raw 
 		if decision.Selections == nil {
 			return Response{}, fmt.Errorf("question batch: missing selections for %s", decision.Key)
 		}
-		byRow := make(map[string]Selection)
+		byAnchor := make(map[string]Selection)
 		reasons := make(map[string]map[string]bool)
 		for _, selection := range decision.Selections {
 			row, known := allowedRows[selection.Row]
@@ -627,47 +625,33 @@ func (data catalogue) decodeComplete(rows []int, questions []modelQuestion, raw 
 			if selection.Relevance != "direct" && selection.Relevance != "context" || strings.TrimSpace(selection.Why) == "" {
 				return Response{}, fmt.Errorf("question batch: invalid relevance or reason for %s/%s", decision.Key, selection.Row)
 			}
-			selection.Anchors = nil
-			// Preserve the source row's advertised order, independent of output
-			// ordering or duplicate set members.
-			for _, ref := range data.anchorOptions[row] {
-				if anchors[ref] {
-					selection.Anchors = append(selection.Anchors, ref)
-					delete(anchors, ref)
+			// Relevance belongs to the selected source, not the arbitrary file
+			// chunk containing it. Preserve each hint only at its own anchors.
+			for ref := range anchors {
+				key := selection.Row + "/" + ref
+				if previous, duplicate := byAnchor[key]; duplicate && previous.Relevance != selection.Relevance {
+					return Response{}, fmt.Errorf("question batch: conflicting selection for %s/%s", decision.Key, key)
 				}
+				if reasons[key] == nil {
+					reasons[key] = make(map[string]bool)
+				}
+				reasons[key][selection.Why] = true
+				byAnchor[key] = Selection{Row: selection.Row, Anchors: []string{ref}, Relevance: selection.Relevance}
 			}
-			if previous, duplicate := byRow[selection.Row]; duplicate {
-				if previous.Relevance != selection.Relevance {
-					return Response{}, fmt.Errorf("question batch: conflicting selection for %s/%s", decision.Key, selection.Row)
-				}
-				for _, ref := range previous.Anchors {
-					anchors[ref] = true
-				}
-				for _, ref := range selection.Anchors {
-					anchors[ref] = true
-				}
-				selection.Anchors = nil
-				for _, ref := range data.anchorOptions[row] {
-					if anchors[ref] {
-						selection.Anchors = append(selection.Anchors, ref)
-						delete(anchors, ref)
-					}
-				}
-			}
-			if reasons[selection.Row] == nil {
-				reasons[selection.Row] = make(map[string]bool)
-			}
-			reasons[selection.Row][selection.Why] = true
-			byRow[selection.Row] = selection
 		}
 		normalized := Decision{Key: decision.Key, Selections: []Selection{}}
 		for _, row := range rows {
-			if selection, selected := byRow[rowRef(row)]; selected {
+			for _, ref := range data.anchorOptions[row] {
+				key := rowRef(row) + "/" + ref
+				selection, selected := byAnchor[key]
+				if !selected {
+					continue
+				}
 				// Different explanations of the same relevance decision are
 				// independent hints. Preserve every original hint in stable order;
 				// neither the first nor the last response row wins.
 				var hints []string
-				for reason := range reasons[selection.Row] {
+				for reason := range reasons[key] {
 					hints = append(hints, reason)
 				}
 				sort.Strings(hints)
@@ -697,12 +681,12 @@ func (data catalogue) decodeComplete(rows []int, questions []modelQuestion, raw 
 
 func (data catalogue) apply(question *QuestionResult, rows []int, ref string, outcome llm.Outcome[Response]) bool {
 	accepted := false
-	byRow := make(map[string]Selection)
+	byRow := make(map[string][]Selection)
 	for _, decision := range outcome.Value.Questions {
 		if decision.Key == ref {
 			accepted = true
 			for _, selection := range decision.Selections {
-				byRow[selection.Row] = selection
+				byRow[selection.Row] = append(byRow[selection.Row], selection)
 			}
 		}
 	}
@@ -714,9 +698,8 @@ func (data catalogue) apply(question *QuestionResult, rows []int, ref string, ou
 		source = atlas.SourceCache
 	}
 	for _, row := range rows {
-		selection := byRow[rowRef(row)]
 		question.Chunks[row] = ChunkResult{
-			Inspected: true, Anchors: append([]string{}, selection.Anchors...), Relevance: selection.Relevance, Why: selection.Why,
+			Inspected: true, Selections: cloneSelections(byRow[rowRef(row)]),
 			Source: source, QuestionRef: ref, RequestKey: outcome.CacheKey, RequestSHA256: outcome.RequestSHA256, ResponseSHA256: outcome.ResponseSHA256,
 		}
 	}
@@ -754,10 +737,19 @@ func (data catalogue) expand(result Result) Result {
 	for i, q := range data.inputQuestions {
 		questions[i] = QuestionResult{Question: data.input.Questions[i], Chunks: append([]ChunkResult(nil), result.Questions[q].Chunks...)}
 		for j := range questions[i].Chunks {
-			questions[i].Chunks[j].Anchors = append([]string(nil), questions[i].Chunks[j].Anchors...)
+			questions[i].Chunks[j].Selections = cloneSelections(questions[i].Chunks[j].Selections)
 		}
 	}
 	result.Questions = questions
+	return result
+}
+
+func cloneSelections(selections []Selection) []Selection {
+	result := make([]Selection, len(selections))
+	for i, selection := range selections {
+		result[i] = selection
+		result[i].Anchors = append([]string(nil), selection.Anchors...)
+	}
 	return result
 }
 

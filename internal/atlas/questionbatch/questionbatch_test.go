@@ -148,7 +148,7 @@ func TestRunSharesCompleteCatalogueAndPreservesOriginalRefs(t *testing.T) {
 	if len(row.Evidence) != 2 || row.Evidence[0]["owned_declarations"] == nil || row.Evidence[1]["author_text"] != "Read the original instructions.\n\nThen verify the result." {
 		t.Fatal("original owned declarations or paragraphs were lost")
 	}
-	if !reflect.DeepEqual(result.Questions[0].Chunks[0].Anchors, []string{"a1", "a2"}) {
+	if !reflect.DeepEqual(result.Questions[0].Chunks[0].Selections, []Selection{{Row: "r1", Anchors: []string{"a1"}, Relevance: "direct", Why: "Names suggest a useful place; no test was executed."}, {Row: "r1", Anchors: []string{"a2"}, Relevance: "direct", Why: "Names suggest a useful place; no test was executed."}}) {
 		t.Fatalf("closed anchor normalization: %#v", result.Questions[0].Chunks[0])
 	}
 	for q, question := range result.Questions {
@@ -161,7 +161,7 @@ func TestRunSharesCompleteCatalogueAndPreservesOriginalRefs(t *testing.T) {
 			}
 		}
 	}
-	if len(result.Questions[1].Chunks[0].Anchors) != 0 || !result.Questions[1].Chunks[0].Inspected {
+	if len(result.Questions[1].Chunks[0].Selections) != 0 || !result.Questions[1].Chunks[0].Inspected {
 		t.Fatal("explicit empty selection is not an inspected result")
 	}
 	if !reflect.DeepEqual(result.Questions[0].Chunks, result.Questions[8].Chunks) {
@@ -195,7 +195,7 @@ func TestRunEachKeepsRefusedWindowUnavailableAndRecallsAcceptedSiblings(t *testi
 				t.Fatalf("missing q invalidated wrong chunk: row%d %#v", row, chunk)
 			}
 		}
-		if q == 1 && (question.Chunks[1].Relevance != "" || len(question.Chunks[1].Anchors) != 0) {
+		if q == 1 && (len(question.Chunks[1].Selections) != 0) {
 			t.Fatal("refusal became a none decision")
 		}
 	}
@@ -265,7 +265,7 @@ func TestRunRejectsKnownPositiveWithNoAnchorsAndConflictingScalars(t *testing.T)
 			if len(result.Exchanges) != 1 || result.Exchanges[0].Err != nil || result.Exchanges[0].Superseded || len(result.Exchanges[0].Outcome.Value.Rejections) != 1 {
 				t.Fatal("semantic refusal lost its reason, invalidated a neighbour or repartitioned")
 			}
-			if result.Questions[0].Chunks[0].Inspected || !result.Questions[1].Chunks[0].Inspected || len(result.Questions[1].Chunks[0].Anchors) == 0 {
+			if result.Questions[0].Chunks[0].Inspected || !result.Questions[1].Chunks[0].Inspected || len(result.Questions[1].Chunks[0].Selections) == 0 {
 				t.Fatal("bad question became inspected/none or its accepted neighbour was lost")
 			}
 		})

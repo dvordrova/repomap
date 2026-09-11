@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 23
+const CONTRACT_VERSION = 24
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -1415,6 +1415,13 @@ function patternReceiver(node) {
 }
 
 function patternObjectRefs(node) {
+  const value = unwrapPatternValue(ts.isSpreadElement(node) ? node.expression : node)
+  // A call-target reference does not identify the value it returns. Reuse
+  // an already retained result object or leave that value unresolved; the
+  // producer remains a separate native call with its own source anchor.
+  if (ts.isCallExpression(value) || ts.isNewExpression(value)) {
+    return chainedCallResultRefs.has(value) ? [chainedCallResultRefs.get(value)] : []
+  }
   let refs = expressionRefs(node)
   if (ts.isTemplateExpression(node)) {
     refs = node.templateSpans.flatMap((span) => expressionRefs(span.expression))
@@ -1580,6 +1587,7 @@ function patternHasObjectCandidate(node) {
     current = current.expression
   }
   return ts.isIdentifier(current) || ts.isPropertyAccessExpression(current) ||
+    ts.isCallExpression(current) || ts.isNewExpression(current) ||
     (typeof ts.isElementAccessExpression === "function" && ts.isElementAccessExpression(current)) ||
     ts.isArrowFunction(current) || ts.isFunctionExpression(current)
 }

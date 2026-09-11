@@ -69,12 +69,24 @@ func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, c
 		var next []Entry
 		acceptedInputs, finishedWindows := 0, 0
 		for len(windows) > 0 {
-			calls := make([]llm.Call[[]Entry], len(windows))
-			for i, window := range windows {
-				calls[i], err = reductionCall(window)
+			var calls []llm.Call[[]Entry]
+			for i := 0; i < len(windows); i++ {
+				call, err := reductionCall(windows[i])
 				if err != nil {
 					return Catalog{}, err
 				}
+				refused, err := llm.RecallAdaptiveSplit(executor, provider, call)
+				if err != nil {
+					return Catalog{}, err
+				}
+				if refused {
+					if left, right, ok := splitReduction(windows[i]); ok {
+						windows = slices.Concat(windows[:i], [][]Entry{left, right}, windows[i+1:])
+						i-- // Rebuild complete children through the current owner.
+						continue
+					}
+				}
+				calls = append(calls, call)
 			}
 			if executor.PlanNotice != nil {
 				executor.PlanNotice(len(windows))
@@ -110,11 +122,16 @@ func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, c
 					}
 					continue
 				}
-				if errors.Is(outcome.Err, context.Canceled) || errors.Is(outcome.Err, context.DeadlineExceeded) {
-					return Catalog{}, outcome.Err
+				// A provider-local deadline is an optional refusal. Only the
+				// owning run context makes cancellation terminal.
+				if err := ctx.Err(); err != nil {
+					return Catalog{}, err
 				}
 				if reductionResource(outcome.Err) {
 					if left, right, ok := splitReduction(windows[i]); ok {
+						if _, err := llm.RememberAdaptiveSplit(executor, provider, calls[i], outcome.Outcome, outcome.Err); err != nil {
+							return Catalog{}, err
+						}
 						for _, child := range [][]Entry{left, right} {
 							parts, err := planReduction(ctx, provider, child)
 							if err != nil {
@@ -160,10 +177,10 @@ func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, c
 }
 
 type wireVariant struct {
-	Ref         string   `json:"ref"`
-	Name        string   `json:"name"`
-	Explanation string   `json:"explanation"`
-	Sources     []Source `json:"sources"`
+	Ref         string `json:"ref"`
+	Name        string `json:"name"`
+	Explanation string `json:"explanation"`
+	SourceSet   string `json:"source_set"`
 }
 
 type wireGroup struct {
@@ -171,10 +188,30 @@ type wireGroup struct {
 	Variants []wireVariant `json:"variants"`
 }
 
+type wireSource struct {
+	Ref string `json:"ref"`
+	Source
+}
+
+type wireSourceSet struct {
+	Ref     string   `json:"ref"`
+	Sources []string `json:"sources"`
+}
+
+// Every window owns complete catalogues. Repeated provenance is referenced,
+// not sampled, and no child depends on a parent window's ref allocation.
+type reductionRequest struct {
+	Sources    []wireSource    `json:"sources"`
+	SourceSets []wireSourceSet `json:"source_sets"`
+	Groups     []wireGroup     `json:"groups"`
+}
+
 func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 	groups, variants := make(map[string]Entry), make(map[string]Candidate)
 	owners := make(map[string]string)
-	var wire []wireGroup
+	var request reductionRequest
+	sourceRefs := make(map[Source]string)
+	setRefs := make(map[string]string)
 	for i, entry := range window {
 		ref := fmt.Sprintf("g%d", i+1)
 		groups[ref] = entry
@@ -183,19 +220,34 @@ func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 			variant := fmt.Sprintf("v%d", len(variants)+1)
 			variants[variant] = candidate
 			owners[variant] = ref
+			var sources []string
+			for _, source := range candidate.Sources {
+				sourceRef, exists := sourceRefs[source]
+				if !exists {
+					sourceRef = fmt.Sprintf("s%d", len(sourceRefs)+1)
+					sourceRefs[source] = sourceRef
+					request.Sources = append(request.Sources, wireSource{Ref: sourceRef, Source: source})
+				}
+				sources = append(sources, sourceRef)
+			}
+			key := strings.Join(sources, " ") // Allocated s* refs cannot contain spaces.
+			setRef, exists := setRefs[key]
+			if !exists {
+				setRef = fmt.Sprintf("p%d", len(setRefs)+1)
+				setRefs[key] = setRef
+				request.SourceSets = append(request.SourceSets, wireSourceSet{Ref: setRef, Sources: sources})
+			}
 			group.Variants = append(group.Variants, wireVariant{Ref: variant, Name: candidate.Name, Explanation: candidate.Explanation,
-				Sources: candidate.Sources})
+				SourceSet: setRef})
 		}
-		wire = append(wire, group)
+		request.Groups = append(request.Groups, group)
 	}
-	user, err := json.Marshal(struct {
-		Groups []wireGroup `json:"groups"`
-	}{wire})
+	user, err := json.Marshal(request)
 	if err != nil {
 		return llm.Call[[]Entry]{}, err
 	}
 	return llm.Call[[]Entry]{
-		State:  []byte(`{"stage":"glossary","version":4}`),
+		State:  []byte(`{"stage":"glossary","version":5}`),
 		Prompt: llm.Prompt{System: reducePrompt, User: string(user), ResponseFormatJSON: true},
 		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: glossaryOutputTokens},
 		DecodeValidate: func(raw []byte) ([]Entry, error) {
@@ -225,7 +277,7 @@ func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 				return nil, fmt.Errorf("glossary: response omits original groups")
 			}
 			joined := make(map[string][]Candidate)
-			for _, group := range wire {
+			for _, group := range request.Groups {
 				representative := assigned[group.Ref]
 				if assigned[owners[representative]] != representative {
 					return nil, fmt.Errorf("glossary: representative is outside its group")

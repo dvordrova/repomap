@@ -121,9 +121,6 @@ func (data catalogue) recall(ctx context.Context, executor llm.Executor, provide
 			cached, exists := exchanges[ref.RequestKey]
 			if !exists {
 				cached.exchange, cached.found, cached.err = llm.CachedExchange(executor.RootDir, ref.RequestKey)
-				if cached.err == nil && cached.found {
-					cached.adapted, cached.err = llm.AdaptResponse(provider, cached.exchange.Request, cached.exchange.Response)
-				}
 				exchanges[ref.RequestKey] = cached
 			}
 			if err := ctx.Err(); err != nil {
@@ -148,6 +145,13 @@ func (data catalogue) recall(ctx context.Context, executor llm.Executor, provide
 					}
 					if err == nil && !bytes.Equal(prepared.Bytes(), cached.exchange.Request) {
 						err = fmt.Errorf("original request differs from current evidence, question metadata or contract")
+					}
+					if err == nil {
+						cached.adapted, err = llm.AdaptResponse(provider, prepared.ResponseContext(), cached.exchange.Request, cached.exchange.Response)
+						if err != nil {
+							cached.err = err
+							exchanges[ref.RequestKey] = cached
+						}
 					}
 				}
 				var response Response

@@ -14,7 +14,7 @@ type rowAcceptanceAdapter struct {
 	accepted [][]string
 }
 
-func (adapter *rowAcceptanceAdapter) AdaptResponse(_, response []byte) (AdaptedResponse, error) {
+func (adapter *rowAcceptanceAdapter) AdaptResponse(_, _, response []byte) (AdaptedResponse, error) {
 	return AdaptedResponse{Domain: response, Accept: func(rows []string) {
 		adapter.accepted = append(adapter.accepted, rows)
 	}}, nil

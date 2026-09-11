@@ -13,6 +13,115 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
+// These roles are a local response preset, not a test of model judgement.
+// The real regression is that a setup-only caller cannot be offered as a
+// fictitious destination for its recipient's independent operation decision.
+// Equivalent source observations live in the cumulative runtime_registrations
+// fixtures for Go, Python and JavaScript/TypeScript.
+func TestOperationOwnershipKeepsLaunchedWorkIndependentOfSetup(t *testing.T) {
+	cases := []struct {
+		name, path, activation, binding, invocation, doc string
+	}{
+		{"AddLogHook", "notifications.go", "", "", "", "Installs logging and starts the notification sender."},
+		{"sendNotifications", "notifications.go", "continuous", "", "goroutine", "Consumes queued notifications until the channel closes."},
+		{"formatBatch", "notifications.go", "", "", "synchronous", "Formats the current notification batch."},
+		{"HandleUpdate", "metrics.go", "continuous", "", "goroutine", "Receives metric updates from the channel until shutdown."},
+		{"updateContainers", "jobs.go", "scheduled", "cron.AddFunc", "", "Updates containers when the registered cron schedule fires."},
+		{"notifyUpgrade", "jobs.go", "scheduled", "time.AfterFunc", "", "Sends one upgrade notice after the configured delay."},
+		{"PreRun", "command.go", "", "cobra.Command.PreRun", "", "Prepares flags and logging before the command action."},
+		{"serve", "server.go", "", "", "synchronous", "Configures and starts the HTTP listener."},
+		{"lifespan", "server.py", "", "FastAPI.lifespan", "", "Starts background tasks, yields, then joins them at shutdown."},
+		{"refreshMetrics", "metrics.ts", "scheduled", "setInterval", "", "Publishes current counters on the configured timer."},
+	}
+	provider := &mutatedTableProvider{}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through = ""
+	r.opts.Graph.Places = nil
+	r.places = map[string]atlas.Place{}
+	r.operations = map[string][3]string{}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	wants := map[string]string{}
+	for _, test := range cases {
+		p := atlas.Place{ID: test.name, Kind: atlas.PlaceSymbol, Path: test.path, LineNo: 10,
+			Parent: "file:" + test.path, TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{
+				Decl: atlas.Decl{ObjectID: "object:" + test.name, Name: test.name, Doc: test.doc},
+			}}
+		if test.binding != "" {
+			p.Symbol.Bindings = []atlas.SymbolBinding{{From: "install", To: test.name, Detail: test.binding, Path: test.path, Line: 8}}
+		}
+		if test.invocation != "" {
+			caller := "AddLogHook"
+			if test.name == "formatBatch" {
+				caller = "sendNotifications"
+			}
+			p.Symbol.CalledBy = []atlas.SymbolCaller{{PlaceID: caller, Name: caller, Kind: "calls", Path: "notifications.go", Line: 20, Invocation: test.invocation, Resolution: "exact"}}
+		}
+		if test.activation == "continuous" {
+			p.Symbol.Calls = []atlas.SymbolCall{{Name: "dispatch", Kind: "calls", Line: 12, Invocation: "synchronous",
+				Evidence: []atlas.EdgeEvidence{{Extractor: "control_context", Label: "range body over channel", Path: test.path, LineNo: 11}}}}
+		}
+		r.opts.Graph.Places = append(r.opts.Graph.Places, p)
+		r.places[p.ID] = p
+		// Force the negative candidates through review as if selection had
+		// proposed them. Independent activation evidence supplies the workers.
+		if test.activation == "" {
+			r.operations[p.ID] = [3]string{"command", "Earlier hypothesis", ""}
+		}
+		wants[test.name] = test.activation
+	}
+	inspected := 0
+	provider.mutate = func(input map[string]any, answers []map[string]any) {
+		if input["table"] != lines.StageOperations {
+			t.Fatalf("unexpected table: %v", input["table"])
+		}
+		for _, field := range input["fill"].([]any) {
+			column := field.(map[string]any)
+			if column["name"] == "entry" {
+				raw, _ := json.Marshal(column["options"])
+				if string(raw) != `["self","none"]` || column["options_from"] != nil {
+					t.Fatalf("entry depends on a caller decision: %s", raw)
+				}
+			}
+		}
+		for i, source := range input["rows"].([]any) {
+			row := source.(map[string]any)
+			name := row["name"].(string)
+			inspected++
+			if row["entry_options"] != nil {
+				t.Fatal("caller assignment options leaked into own-operation row")
+			}
+			if name == "sendNotifications" {
+				callers := row["observed_callers"].([]any)
+				caller := callers[0].(map[string]any)
+				if caller["name"] != "AddLogHook" || caller["ref"] != nil {
+					t.Fatalf("launcher evidence lost or made an assignment ref: %+v", caller)
+				}
+				raw, _ := json.Marshal(row)
+				if !strings.Contains(string(raw), "goroutine") || !strings.Contains(string(raw), "range body over channel") {
+					t.Fatalf("worker source context lost: %s", raw)
+				}
+			}
+			answers[i]["entry"] = "none"
+			if activation := wants[name]; activation != "" {
+				answers[i]["entry"], answers[i]["activation"] = "self", activation
+				answers[i]["name_kind"], answers[i]["name"], answers[i]["description"] = "label", name, row["author_doc"]
+			}
+		}
+	}
+	if err := r.readOperations(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if inspected != len(cases) || len(r.rejected) != 0 {
+		t.Fatalf("review coverage=%d rejected=%+v", inspected, r.rejected)
+	}
+	for name, activation := range wants {
+		if got := r.operations[name][0]; got != activation {
+			t.Errorf("%s operation=%q, want %q", name, got, activation)
+		}
+	}
+}
+
 type registeredHTTPProvider struct{ tableProvider }
 
 func (p *registeredHTTPProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
@@ -92,7 +201,7 @@ func TestNativeHTTPRouteSuppliesOperationNameWithoutCallbackBinding(t *testing.T
 		graph.Places = append(graph.Places, atlas.Place{
 			ID: "bnd:customer", Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: 9, Column: 3,
 			Parent: place.Parent, TargetIDs: place.TargetIDs,
-			Boundary: &atlas.BoundaryFacts{SubjectID: place.ID, Source: "fact", FactID: "native:customer",
+			Boundary: &atlas.BoundaryFacts{SubjectID: place.ID, Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: place.TargetIDs[0], FactID: "native:customer"}},
 				GivenKind: atlas.BoundaryHTTPServer, Direction: atlas.DirectionIn, Method: "GET", Values: []string{want}},
 		})
 		break

@@ -68,11 +68,19 @@ func TestCumulativePythonBoundaryOwnersSurviveTargetRelease(t *testing.T) {
 			if place.Boundary == nil {
 				continue
 			}
-			if place.Boundary.FactID == localEval.ID {
-				t.Fatalf("local execution was promoted to a runtime boundary: %+v", place)
+			for _, origin := range place.Boundary.Origins {
+				if origin.TargetID != first.Target.ID {
+					t.Fatalf("native boundary borrowed the second view's scope: %+v", origin)
+				}
+				if origin.FactID == localEval.ID {
+					t.Fatalf("local execution was promoted to a runtime boundary: %+v", place)
+				}
 			}
-			if place.Boundary.ObjectID == route.ObjectID && place.Path == route.Anchor.Path && place.LineNo == route.Anchor.Line {
-				linked = place.Boundary.SubjectID == wantSubject && place.Boundary.GivenKind == atlas.BoundaryHTTPServer
+			if len(place.Boundary.Origins) == 1 && place.Boundary.Origins[0].TargetID == first.Target.ID && place.Boundary.Origins[0].FactID == route.ID {
+				linked = place.Boundary.ObjectID == route.ObjectID && place.Path == route.Anchor.Path && place.LineNo == route.Anchor.Line &&
+					place.Boundary.SubjectID == wantSubject && place.Boundary.GivenKind == atlas.BoundaryHTTPServer &&
+					len(place.Boundary.Origins) == 1 && place.Boundary.Origins[0] == (atlas.BoundaryOrigin{TargetID: first.Target.ID, FactID: route.ID, ObjectID: route.ObjectID}) &&
+					len(place.TargetIDs) == 1 && place.TargetIDs[0] == first.Target.ID
 				if !linked {
 					t.Fatalf("native handler ownership lost after target release: %+v", place)
 				}
@@ -106,7 +114,8 @@ func TestCumulativePythonBoundaryOwnersSurviveTargetRelease(t *testing.T) {
 	}
 	var keptUnknown bool
 	for _, place := range graph.Places {
-		if place.Boundary != nil && place.Boundary.FactID == route.ID {
+		if place.Boundary != nil && len(place.Boundary.Origins) == 1 &&
+			place.Boundary.Origins[0] == (atlas.BoundaryOrigin{TargetID: first.Target.ID, FactID: route.ID, ObjectID: route.ObjectID}) {
 			keptUnknown = true
 			if place.Boundary.SubjectID != "" || place.Boundary.ObjectID != route.ObjectID {
 				t.Fatalf("unknown handler was guessed from its name/location: %+v", place)

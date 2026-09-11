@@ -28,6 +28,36 @@ func TestEmptyCallCatalogueDoesNotAskOutboundOrRemoveKeyAndActivation(t *testing
 	}
 }
 
+func TestOutgoingOptionsRetainUncertainCallsAndOriginalPositions(t *testing.T) {
+	calls := []atlas.SymbolCall{
+		{Name: "local", Kind: "calls", Resolution: "exact", CalleeIDs: []string{"private-local"}},
+		{Name: "possible", Kind: "calls", Resolution: "alternatives", CalleeIDs: []string{"private-local"}},
+		{Name: "unresolved", Kind: "calls", Resolution: "unresolved", CalleeIDs: []string{"private-local"}},
+		{Name: "missing resolution", Kind: "calls", CalleeIDs: []string{"private-local"}},
+		{Name: "external", Kind: "invokes_external", Resolution: "exact", API: &atlas.CallAPI{Package: "net/http", Name: "Get"}},
+		{Name: "declared API", Kind: "calls", Resolution: "exact", CalleeIDs: []string{"private-local"}, API: &atlas.CallAPI{Name: "Send"}},
+		{Name: "unknown target", Kind: "calls", Resolution: "exact"},
+	}
+	row := SymbolRow(atlas.Place{Symbol: &atlas.SymbolFacts{Calls: calls}}, "")
+	for _, field := range row.Fields {
+		switch field.Name {
+		case "call_options":
+			if !reflect.DeepEqual(field.Value, []string{"c2", "c3", "c4", "c5", "c6", "c7"}) {
+				t.Fatalf("lost uncertainty or renumbered calls: %+v", field.Value)
+			}
+		case "calls":
+			if len(field.Value.([]map[string]any)) != len(calls) {
+				t.Fatal("local delegation disappeared from source context")
+			}
+		}
+	}
+	window := table.Window{Rows: []table.Row{row}}
+	result, err := table.DecodeResult(SymbolSelection(false), window, []byte(`{"rows":[{"key":"r1","key_symbol":"yes","activation":"none","outbound":"c1 c5 c2"}]}`))
+	if err != nil || result.Answers[0]["outbound"] != "c5 c2" {
+		t.Fatalf("unsupported local choice displaced accepted choices: %+v %v", result, err)
+	}
+}
+
 func TestSingletonBindingIsOneCompleteObject(t *testing.T) {
 	binding := atlas.SymbolBinding{From: "Routes", To: "Proxy", Path: "server/routes.go", Line: 19, Invocation: "callback_transfer", Resolution: "alternatives",
 		Arguments: []atlas.RegistrationArgument{{Kind: "literal_string", Value: "/proxy", Path: "server/routes.go", Line: 19}}, Evidence: []atlas.EdgeEvidence{{Path: "server/routes.go", LineNo: 19, Extractor: "binding"}}}

@@ -743,7 +743,7 @@ func dynamicFunctionCandidateFacts(
 	a *analyzer,
 	value ssa.Value,
 ) ([]dynamicFunctionCandidateFact, int, error) {
-	summary, err := resolveDynamicFunctionValue(value)
+	summary, err := resolveDynamicFunctionValue(value, a)
 	if err != nil {
 		return nil, 0, err
 	}

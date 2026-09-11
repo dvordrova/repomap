@@ -305,7 +305,8 @@ func TestReduceAdaptiveWindowsRetainEvidenceAndReportFixedPoint(t *testing.T) {
 	for _, kind := range []llm.ResourceLimitKind{llm.ResourceLimitContextTokens, llm.ResourceLimitOutputTokens, llm.ResourceLimitResponseBytes} {
 		t.Run(string(kind), func(t *testing.T) {
 			provider := &reductionProvider{merge: true, maxGroups: 2, refusal: kind}
-			got, err := Reduce(t.Context(), llm.Executor{RootDir: t.TempDir(), Enabled: true, BatchConcurrency: 2}, provider, items)
+			root := t.TempDir()
+			got, err := Reduce(t.Context(), llm.Executor{RootDir: root, Enabled: true, BatchConcurrency: 2}, provider, items)
 			if err != nil || len(got.Entries) != 1 || len(got.Entries[0].Variants) != 4 || got.PartialComparison {
 				t.Fatalf("adaptive lossless reduction = %+v, %v", got, err)
 			}
@@ -321,6 +322,11 @@ func TestReduceAdaptiveWindowsRetainEvidenceAndReportFixedPoint(t *testing.T) {
 			}
 			if len(final.Groups) != 2 || count != 4 {
 				t.Fatal("next round discarded original evidence instead of carrying its full groups")
+			}
+			calls := provider.calls
+			warm, err := Reduce(t.Context(), llm.Executor{RootDir: root, Enabled: true, BatchConcurrency: 2}, provider, items)
+			if err != nil || provider.calls != calls || !reflect.DeepEqual(warm, got) {
+				t.Fatalf("warm reduction repeated refused parent or changed originals: calls=%d->%d, err=%v", calls, provider.calls, err)
 			}
 		})
 	}

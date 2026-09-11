@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 	"golang.org/x/tools/go/ssa"
 )
 
@@ -200,8 +201,13 @@ func (a *analyzer) externalCallPattern(
 		pattern.ReceiversObserved = len(resultIDs) + unresolved
 		pattern.ReceiversOmitted = unresolved
 	}
+	written := a.sourceMethodArguments(callsite, len(arguments))
 	for position, argument := range arguments {
-		pattern.Arguments = append(pattern.Arguments, a.externalCallPatternArgument(position+1, argument, call))
+		observed := a.externalCallPatternArgument(position+1, argument, call)
+		if observed.Origin == nil && written != nil {
+			observed.Origin = sourcevalue.Clone(written[position])
+		}
+		pattern.Arguments = append(pattern.Arguments, observed)
 	}
 	pattern.ResultValue = a.sourceReturn(common.StaticCallee())
 	return pattern
@@ -413,13 +419,30 @@ func (a *analyzer) externalCallPatternArgument(
 		argument.Kind = ExternalCallPatternLiteralString
 		argument.Value = literal
 	}
-	if !externalCallPatternMayBeCallable(value, make(map[ssa.Value]bool)) {
+	callable := externalCallPatternMayBeCallable(value, make(map[ssa.Value]bool))
+	interfaceValue := false
+	if value != nil && value.Type() != nil {
+		_, interfaceValue = types.Unalias(value.Type()).Underlying().(*types.Interface)
+	}
+	if !callable && !interfaceValue {
 		argument.Origin = a.sourceValue(value, make(map[ssa.Value]bool), readAt)
 		return argument
+	}
+	if !callable {
+		// Keep the original factory/value expression beside any callable
+		// identity subsequently discovered behind its interface result.
+		argument.Origin = a.sourceValue(value, make(map[ssa.Value]bool), readAt)
 	}
 	candidates, unresolved, err := dynamicFunctionCandidateFacts(a, value)
 	if err != nil {
 		a.externalCallIndexErr = err
+		return argument
+	}
+	// A repository factory may return a named function through an interface.
+	// Its declared interface alone is not callable evidence: use only the
+	// resolver's actual source function values, and preserve the ordinary
+	// value expression for interfaces with no observed callable candidate.
+	if !callable && len(candidates) == 0 {
 		return argument
 	}
 	objectIDs := make([]string, 0, len(candidates))

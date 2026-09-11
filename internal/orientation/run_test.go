@@ -32,7 +32,7 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 					"purpose": "Fetches items from Alpha.", "refs": []string{refs.fact("call"), refs.subject("beta", "core")}},
 			},
 			"run_recipe": []any{
-				map[string]any{"target": refs.target("alpha"), "command": "go run ./alpha", "cwd": "alpha",
+				map[string]any{"target": refs.target("alpha"), "command": "go run .", "cwd": "alpha",
 					"note": "Listens on PORT.", "refs": []string{refs.fact("manifest"), refs.fact("config")}},
 			},
 			"main_flow": map[string]any{
@@ -156,7 +156,7 @@ func TestRunRejectsRecipeWithoutManifestOrEntrypointFact(t *testing.T) {
 			"run_recipe": []any{
 				map[string]any{"command": "go run ./alpha", "refs": []string{refs.fact("route")}},
 				map[string]any{"command": "go run ./alpha", "refs": []string{refs.claim("readme")}},
-				map[string]any{"command": "go run ./alpha", "cwd": "alpha", "refs": []string{refs.fact("entrypoint")}},
+				map[string]any{"command": "go run .", "cwd": "alpha", "refs": []string{refs.fact("entrypoint")}},
 			},
 		})
 	}}
@@ -432,7 +432,7 @@ func (provider *presetProvider) assertRequestShape(t *testing.T, fixture *fixtur
 		t.Fatalf("facts = %d rows, omitted %v", len(seen.Facts), seen.OmittedFactCounts)
 	}
 	if len(seen.Claims) != 2 || seen.Claims[1].Source != "readme" ||
-		seen.Claims[1].Text != strings.Repeat("a", MaxRequestClaimRunes-1)+"…" {
+		seen.Claims[1].Text != strings.Repeat("a", 350)+" This setting is optional." {
 		t.Fatalf("claims = %#v", seen.Claims)
 	}
 	if len(seen.Groups) != 6 || len(seen.Connections) != 3 || seen.Groups[0].Target != "t1" || seen.Groups[3].Target != "t2" {
@@ -647,7 +647,7 @@ func (fixture *fixture) claims(t *testing.T) claims.Result {
 	t.Helper()
 	readme := claims.Claim{
 		Source: claims.SourceReadme, Path: "README.md", Line: 1, Date: "2024-02-26", AgeDays: 10,
-		Text: strings.Repeat("a", MaxRequestClaimRunes+50), TargetID: fixture.targetID("alpha"),
+		Text: strings.Repeat("a", 350) + " This setting is optional.", TargetID: fixture.targetID("alpha"),
 	}
 	readme.ID = claims.NewClaimID(readme.Source, "README.md:1", readme.Text)
 	commit := claims.Claim{Source: claims.SourceCommit, Commit: "abc1234", Text: "Add items route", Date: "2024-03-01"}

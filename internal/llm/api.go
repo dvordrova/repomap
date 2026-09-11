@@ -30,8 +30,8 @@ type Prompt struct {
 	// or root-format instruction. The owning cube still validates the answer.
 	ResponseExample string
 	// NoResponseAdjunct lets the owner omit optional response metadata when its
-	// computed result has no prose to explain. Exact prepared bytes retain the
-	// decision; transport configuration and response validation are unchanged.
+	// computed result has no prose to explain. Local response context is omitted;
+	// transport configuration and response validation are unchanged.
 	NoResponseAdjunct bool
 	// ProseFields identifies explanatory response paths for non-table owners,
 	// using [] for array elements, e.g. questions[].selections[].why.
@@ -65,7 +65,8 @@ type Limits struct {
 // Prepared holds one exact immutable provider request. Bytes returns a copy so
 // neither an adapter nor an observer can mutate the cache identity.
 type Prepared struct {
-	exact []byte
+	exact           []byte
+	responseContext []byte
 }
 
 func NewPrepared(exact []byte) (Prepared, error) {
@@ -77,6 +78,11 @@ func NewPrepared(exact []byte) (Prepared, error) {
 
 func (prepared Prepared) Bytes() []byte {
 	return cloneBytes(prepared.exact)
+}
+
+// ResponseContext returns local owning-response metadata, never provider input.
+func (prepared Prepared) ResponseContext() []byte {
+	return cloneBytes(prepared.responseContext)
 }
 
 func (prepared Prepared) Len() int {
@@ -131,18 +137,18 @@ type Provider interface {
 	Complete(context.Context, Prepared) (Completion, error)
 }
 
-// PromptAdapter adds optional request metadata before the shared response
-// format is written. Provider.Prepare only encodes the resulting prompt.
-type PromptAdapter interface {
-	AdaptPrompt(Prompt) (Prompt, error)
+// ResponseContextProvider prepares compact local provenance from the complete
+// owning prompt. It is kept with Prepared and accepted cache records, never
+// encoded by Provider.Prepare or included in exact-request identity.
+type ResponseContextProvider interface {
+	ResponseContext(Prompt) ([]byte, error)
 }
 
-// ResponseAdapter separates an owning result from optional response metadata.
-// Exact provider bytes remain unchanged in the cache and journal. An adapter
-// rejects an invalid result envelope, but reports bad optional metadata without
-// rejecting an otherwise valid domain result.
+// ResponseAdapter parses an owning result and optional metadata. Collection
+// happens only after the owner validates the domain result. Local context belongs to this exact prepared window;
+// request/response bytes remain unchanged in the cache and journal.
 type ResponseAdapter interface {
-	AdaptResponse(request, response []byte) (AdaptedResponse, error)
+	AdaptResponse(localContext, request, response []byte) (AdaptedResponse, error)
 }
 
 // ResponseRejection explains a refused domain response or discarded optional
@@ -170,9 +176,9 @@ func (response AdaptedResponse) Accepted(rows []string) {
 	}
 }
 
-func AdaptResponse(provider Provider, request, response []byte) (AdaptedResponse, error) {
+func AdaptResponse(provider Provider, localContext, request, response []byte) (AdaptedResponse, error) {
 	if adapter, ok := provider.(ResponseAdapter); ok {
-		return adapter.AdaptResponse(request, response)
+		return adapter.AdaptResponse(localContext, request, response)
 	}
 	return AdaptedResponse{Domain: response}, nil
 }
@@ -326,6 +332,8 @@ func (issue Issue) Unwrap() error {
 // Outcome is returned for both accepted calls and failures. A nil error from
 // ExecuteJSON means Value has passed the cube's decoder and validation.
 type Outcome[T any] struct {
+	// ResponseContext is compact local provenance for the owning prepared window.
+	ResponseContext    []byte `json:"-"`
 	ResponseRejections []ResponseRejection
 	HTTPResponse       *HTTPResponse
 	Value              T

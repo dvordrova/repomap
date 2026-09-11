@@ -8,6 +8,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/terminology"
 )
 
 type rejectedRowAdapter struct {
@@ -16,7 +17,7 @@ type rejectedRowAdapter struct {
 	failure           error
 }
 
-func (provider *rejectedRowAdapter) AdaptResponse(_, _ []byte) (llm.AdaptedResponse, error) {
+func (provider *rejectedRowAdapter) AdaptResponse(_, _, _ []byte) (llm.AdaptedResponse, error) {
 	provider.unwraps++
 	return llm.AdaptedResponse{}, provider.failure
 }
@@ -52,7 +53,7 @@ type parsedRowAdapter struct {
 	accepted [][]string
 }
 
-func (provider *parsedRowAdapter) AdaptResponse(_, response []byte) (llm.AdaptedResponse, error) {
+func (provider *parsedRowAdapter) AdaptResponse(_, _, response []byte) (llm.AdaptedResponse, error) {
 	provider.parses++
 	return llm.AdaptedResponse{Domain: response, Rejections: []llm.ResponseRejection{{Kind: "metadata_rejected", Count: 1, Reason: "test metadata"}}, Accept: func(rows []string) { provider.accepted = append(provider.accepted, append([]string(nil), rows...)) }}, nil
 }
@@ -86,5 +87,50 @@ func TestKnowledgeParsesSharedAdjunctOnceAndAcceptsOnlyValidatedRows(t *testing.
 	}
 	if len(events) != 1 || events[0].Kind != llm.EventCacheHit || events[0].Source != llm.SourceCache || len(events[0].ResponseRejections) != 1 {
 		t.Fatalf("duplicate/live metadata event: %+v", events)
+	}
+}
+
+func TestKnowledgeMemoCollectsOnlyAcceptedRowFromOriginalLocalContext(t *testing.T) {
+	base := &replacementProvider{response: []byte(`{"rows":[{"key":"r1","line":"Alpha is unrelated."},{"key":"r2","line":"Beta is the accepted concept."},{"key":"r3","line":42}]}`)}
+	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
+	def := table.Definition{Stage: "atlas_files", Contract: "local-context-test", System: "Describe each original source.", Independent: true, Columns: []table.Column{{Name: "line", Kind: table.Prose}}}
+	rows := []table.Row{
+		{ID: "a", Fields: []table.Field{{Name: "path", Value: "a.py"}, {Name: "line", Value: 3}}},
+		{ID: "b", Fields: []table.Field{{Name: "path", Value: "b.py"}, {Name: "line", Value: 9}}},
+		{ID: "bad", Fields: []table.Field{{Name: "path", Value: "bad.py"}}},
+	}
+	original := table.Window{Rows: rows}
+	var err error
+	original.Request, err = table.Request(def, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call, err := table.Call(def, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cold := terminology.NewCollector([]string{"a.py", "b.py", "bad.py"})
+	outcome, err := llm.ExecuteJSON(t.Context(), executor, cold.Wrap(base), call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A fresh reader knows only its current isolated row. Memo r2 still belongs
+	// to b.py:9 in the original complete window, never to an invented r1 scope.
+	current := terminology.NewCollector([]string{"a.py", "b.py", "bad.py"})
+	r := &reader{opts: Options{Executor: executor, Provider: current.Wrap(base)}, responseTables: make(map[string]rememberedTable)}
+	window := table.Window{Rows: []table.Row{rows[1]}}
+	if _, found, err := r.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: "r3"}); err == nil || found {
+		t.Fatal("refused row became memo prose")
+	}
+	if _, found, err := r.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: "r2"}); err != nil || !found {
+		t.Fatalf("valid original row lost: %v", err)
+	}
+	base.response = []byte(`{"terms":[{"name":"Beta","explanation":"The concept in the accepted original row.","rows":["p1"]}]}`)
+	if err := current.Generate(t.Context(), executor, base); err != nil {
+		t.Fatal(err)
+	}
+	terms := current.Snapshot()
+	if len(terms) != 1 || !reflect.DeepEqual(terms[0].Sources, []terminology.Source{{Path: "b.py", Line: 9}}) || !reflect.DeepEqual(terms[0].Origins, []terminology.Origin{{RequestSHA256: outcome.RequestSHA256, Row: "r2"}}) {
+		t.Fatalf("memo glossary lost original row, anchor or request: %+v", terms)
 	}
 }

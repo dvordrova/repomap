@@ -103,3 +103,5 @@
 .outbound-source{color:var(--muted)}
 .repo-inputs .outbound-purpose{font-size:13px}
 .repo-inputs .outbound-address,.repo-inputs .outbound-source,.repo-inputs .outbound-basis{font-size:11px}
+
+.input-catalog .input-data{grid-column:1 / -1;font-size:12px;overflow-wrap:anywhere}

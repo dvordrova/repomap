@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -73,7 +74,7 @@ func TestMainResponseKeepsSoleShapeAndExactSourceScope(t *testing.T) {
 	if !base.prompt.Reasoning || strings.Count(base.prompt.System, `"rows"`) != 1 || strings.Contains(base.prompt.System, `"terms"`) || strings.Contains(base.prompt.System, `"result"`) {
 		t.Fatalf("second response shape: %s", base.prompt.System)
 	}
-	ctx, err := c.requestContext(first.Bytes())
+	ctx, err := c.requestContext(first.ResponseContext())
 	if err != nil || len(ctx.sources) != 3 {
 		t.Fatalf("source catalogue: %+v %v", ctx, err)
 	}
@@ -89,7 +90,7 @@ func TestMainResponseKeepsSoleShapeAndExactSourceScope(t *testing.T) {
 		t.Fatal("invented source or provider work")
 	}
 	for _, raw := range []string{`[]`, `{"terms":["domain-owned"]}`} {
-		adapted, err := llm.AdaptResponse(wrapper, first.Bytes(), []byte(raw))
+		adapted, err := llm.AdaptResponse(wrapper, first.ResponseContext(), first.Bytes(), []byte(raw))
 		if err != nil || string(adapted.Domain) != raw || len(adapted.Rejections) != 0 {
 			t.Fatalf("owner result rewritten: %+v %v", adapted, err)
 		}
@@ -101,7 +102,7 @@ func TestSeparateGlossaryKeepsAcceptedRowsMainOriginsAndWarmCache(t *testing.T) 
 	main := `{"rows":[{"key":"r1","line":"OHLCV gives market values."},{"key":"r2","line":"BadTerm belongs to a refused row."}]}`
 	base.complete = func(prepared llm.Prepared) (llm.Completion, error) {
 		user := inputUser(t, prepared)
-		if strings.Contains(user, catalogDelimiter) {
+		if strings.Contains(user, `"rows":`) {
 			return completed(main)
 		}
 		if strings.Contains(user, "BadTerm") {
@@ -138,12 +139,77 @@ func TestSeparateGlossaryKeepsAcceptedRowsMainOriginsAndWarmCache(t *testing.T) 
 	}
 }
 
+func TestParallelWindowsKeepLocalOwnershipAcrossWarmAndMemoCollection(t *testing.T) {
+	base := &testProvider{}
+	base.complete = func(prepared llm.Prepared) (llm.Completion, error) {
+		if strings.Contains(inputUser(t, prepared), "REPOMAP_PROSE_SOURCES_V1") {
+			t.Fatal("local provenance entered the request")
+		}
+		return completed(`{"rows":[{"key":"r1","line":"AcceptedConcept is explained."},{"key":"r2","line":"RefusedConcept must not survive."}]}`)
+	}
+	var paths []string
+	var calls []llm.Call[acceptedRows]
+	for i := 0; i < 8; i++ {
+		name := fmt.Sprintf("module%d.py", i)
+		paths = append(paths, name)
+		calls = append(calls, llm.Call[acceptedRows]{State: []byte(`{"contract":"parallel-prose"}`),
+			Prompt: llm.Prompt{User: fmt.Sprintf(`{"rows":[{"key":"r1","path":%q,"line":%d},{"key":"r2","path":"refused.py"}]}`, name, i+3)},
+			Limits: llm.Limits{MaxRequestBytes: 100000, MaxResponseBytes: 100000, MaxOutputTokens: llm.DefaultMaxOutputTokens}})
+	}
+	paths = append(paths, "refused.py")
+	executor := llm.Executor{Enabled: true, RootDir: t.TempDir(), BatchConcurrency: 4}
+	var cachedKeys []string
+	var want map[string]proseSource
+	for run := 0; run < 2; run++ {
+		collector := NewCollector(paths)
+		outcomes := llm.ExecuteJSONEach(t.Context(), executor, collector.Wrap(base), calls)
+		for i, outcome := range outcomes {
+			if outcome.Err != nil || outcome.Outcome.Cached != (run == 1) {
+				t.Fatalf("window %d run %d: %+v", i, run, outcome)
+			}
+			if run == 0 {
+				cachedKeys = append(cachedKeys, outcome.Outcome.CacheKey)
+			}
+		}
+		if len(collector.pending) != 8 {
+			t.Fatalf("parallel windows overwrote or borrowed another window: %+v", collector.pending)
+		}
+		for _, prose := range collector.pending {
+			if !reflect.DeepEqual(prose.Texts, []string{"AcceptedConcept is explained."}) || len(prose.Sources) != 1 || prose.Sources[0].Path == "refused.py" || prose.Origin.Row != "r1" {
+				t.Fatalf("refused neighbour gained prose/source authority: %+v", prose)
+			}
+		}
+		if run == 0 {
+			want = collector.pending
+		} else if !reflect.DeepEqual(collector.pending, want) || base.calls != 8 {
+			t.Fatal("warm collection changed ownership or bought more completions")
+		}
+	}
+	// Entity memo reuse has only the shared exchange and original local context;
+	// the current collector has never seen any Prepare call for these windows.
+	memo := NewCollector(paths)
+	for _, key := range cachedKeys {
+		exchange, found, err := llm.CachedExchange(executor.RootDir, key)
+		if err != nil || !found {
+			t.Fatal("original exchange unavailable")
+		}
+		adapted, err := llm.AdaptResponse(memo.Wrap(base), exchange.ResponseContext, exchange.Request, exchange.Response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		adapted.Accepted([]string{"r1"})
+	}
+	if !reflect.DeepEqual(memo.pending, want) || base.calls != 8 {
+		t.Fatal("fresh memo collection lost original row ownership")
+	}
+}
+
 func TestGlossaryReplayUsesUpdatedAcceptedProseAndOriginalRequestOrigin(t *testing.T) {
 	base := &testProvider{}
 	main := `{"rows":[{"key":"r1","line":"Alpha is the original concept."}]}`
 	base.complete = func(prepared llm.Prepared) (llm.Completion, error) {
 		user := inputUser(t, prepared)
-		if strings.Contains(user, catalogDelimiter) {
+		if strings.Contains(user, `"rows":`) {
 			return completed(main)
 		}
 		if strings.Contains(user, "Beta") {
@@ -192,7 +258,7 @@ func TestDeferredTableProseExcludesClosedUnusedAndExtraCells(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := []byte(`{"rows":[{"key":"r1","decision":"no","line":"UnusedTerm","alias":"ActiveAlias","extra":"ExtraTerm"},{"key":"r2","decision":"yes","line":"AcceptedTerm has a qualification.\n\nKeep it complete.","alias":"OtherAlias"}]}`)
-	adapted, err := llm.AdaptResponse(wrapper, prepared.Bytes(), response)
+	adapted, err := llm.AdaptResponse(wrapper, prepared.ResponseContext(), prepared.Bytes(), response)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,28 +273,27 @@ func TestDeferredTableProseExcludesClosedUnusedAndExtraCells(t *testing.T) {
 	}
 }
 
-func TestDeferredSourceAuthoritySurvivesCurrentCorpusAndRejectsTampering(t *testing.T) {
+func TestLocalSourceAuthoritySurvivesCurrentCorpusAndContextCopies(t *testing.T) {
 	old := NewCollector([]string{"a.py", "b.py"})
-	prepared, err := llm.Prepare(old.Wrap(&testProvider{}), llm.Prompt{User: `{"rows":[{"key":"r1","path":"a.py","line":7},{"key":"r2","path":"b.py","line":9}]}`}, llm.Limits{})
+	prompt := llm.Prompt{User: `{"rows":[{"key":"r1","path":"a.py","line":7},{"key":"r2","path":"b.py","line":9}]}`}
+	base := &testProvider{}
+	prepared, err := llm.Prepare(old.Wrap(base), prompt, llm.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	current := NewCollector([]string{"a.py"})
-	ctx, err := current.requestContext(prepared.Bytes())
-	if err != nil || len(ctx.sources) != 1 || ctx.sources["g1"].Path != "a.py" {
+	ctx, err := current.requestContext(prepared.ResponseContext())
+	if err != nil || len(ctx.sources) != 1 || ctx.sources["g1"].Path != "a.py" || ctx.sources["g1"].Line != 7 {
 		t.Fatalf("removed file retained current authority: %+v / %v", ctx, err)
 	}
-	var wire map[string]any
-	if err := json.Unmarshal(prepared.Bytes(), &wire); err != nil {
-		t.Fatal(err)
+	local := prepared.ResponseContext()
+	local[0] = '!'
+	ctx, err = current.requestContext(prepared.ResponseContext())
+	if err != nil || ctx.sources["g1"].Line != 7 {
+		t.Fatal("mutable context escaped Prepared")
 	}
-	message := wire["messages"].([]any)[1].(map[string]any)
-	user := message["content"].(string)
-	parts := strings.Split(user, catalogDelimiter)
-	message["content"] = parts[0] + catalogDelimiter + strings.Replace(parts[1], `"line":7`, `"line":8`, 1)
-	altered, _ := json.Marshal(wire)
-	if _, err := current.requestContext(altered); err == nil {
-		t.Fatal("a manufactured source line acquired authority")
+	if base.prompt.User != prompt.User || strings.Contains(string(prepared.Bytes()), "REPOMAP_PROSE_SOURCES_V1") {
+		t.Fatal("local source context entered provider input")
 	}
 }
 
@@ -255,7 +320,7 @@ func TestOptionalOutputFailureSplitsCompleteProseAndKeepsSibling(t *testing.T) {
 	}
 	count := 0
 	seen.Range(func(_, _ any) bool { count++; return true })
-	if count != 2 || len(c.pending) != 2 || len(c.Snapshot()) != 1 || base.calls != 3 || base.limits.MaxOutputTokens != 8000 {
+	if count != 2 || len(c.pending) != 2 || len(c.Snapshot()) != 1 || base.calls != 3 || base.limits.MaxOutputTokens != llm.DefaultMaxOutputTokens {
 		t.Fatalf("optional refusal lost sibling: seen=%d %+v", count, c.Snapshot())
 	}
 }
@@ -321,10 +386,10 @@ func TestSavedNonTableOwnerProsePathsExcludeTechnicalAndExtraCells(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A fresh collector learns the owner contract from exact saved bytes.
+	// A fresh collector uses the original prepared context, without any registry.
 	current := NewCollector([]string{"a.py", "b.py"})
 	response := []byte(`{"questions":[{"key":"q1","selections":[{"row":"r1","anchors":["a1"],"relevance":"direct","why":"Read the direct context associated with a1.","extra":{"why":"Do not collect extra prose."}},{"row":"r2","anchors":["a2"],"relevance":"context","why":"Rejected source prose."}]}]}`)
-	adapted, err := llm.AdaptResponse(current.Wrap(&testProvider{}), prepared.Bytes(), response)
+	adapted, err := llm.AdaptResponse(current.Wrap(&testProvider{}), prepared.ResponseContext(), prepared.Bytes(), response)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +412,7 @@ func TestTableEmptyProseIsAnOwnerDescriptorNotAStringBlacklist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapted, err := llm.AdaptResponse(provider, prepared.Bytes(), []byte(`{"rows":[{"key":"r1","remaining":"none","meaning":"none"}]}`))
+	adapted, err := llm.AdaptResponse(provider, prepared.ResponseContext(), prepared.Bytes(), []byte(`{"rows":[{"key":"r1","remaining":"none","meaning":"none"}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +439,7 @@ func TestNamedAndNestedRowsCannotMoveRefusedProse(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		adapted, err := llm.AdaptResponse(provider, prepared.Bytes(), []byte(test.result))
+		adapted, err := llm.AdaptResponse(provider, prepared.ResponseContext(), prepared.Bytes(), []byte(test.result))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -394,7 +459,7 @@ func TestNoSourceModeAndEmptyAcceptancePreserveDomain(t *testing.T) {
 	c := NewCollector([]string{"api.py"})
 	provider := c.Wrap(&testProvider{})
 	for _, raw := range []string{`[]`, `{"terms":["domain-owned"]}`} {
-		adapted, err := llm.AdaptResponse(provider, []byte(`{"user":"no catalogue"}`), []byte(raw))
+		adapted, err := llm.AdaptResponse(provider, nil, []byte(`{"user":"no catalogue"}`), []byte(raw))
 		if err != nil || string(adapted.Domain) != raw || adapted.Accept != nil {
 			t.Fatal("no-source owner changed")
 		}
@@ -403,7 +468,7 @@ func TestNoSourceModeAndEmptyAcceptancePreserveDomain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapted, err := llm.AdaptResponse(provider, prepared.Bytes(), []byte(`{"answer":"API"}`))
+	adapted, err := llm.AdaptResponse(provider, prepared.ResponseContext(), prepared.Bytes(), []byte(`{"answer":"API"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

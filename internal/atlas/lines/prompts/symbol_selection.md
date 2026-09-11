@@ -14,7 +14,8 @@ Fill only the columns requested for the row:
   understand this file's responsibility; no for incidental helpers or glue.
 - activation: command for a CLI command implementation, request for an incoming
   request/message handler, interaction for an interface action callback,
-  scheduled for periodic work, continuous for a long-running background loop.
+  scheduled for timer/scheduler-activated work (including a supported one-shot
+  delayed action), continuous for a long-running background loop.
   none means the observations support an internal helper or registration
   factory. Use unassessed when the supplied evidence cannot establish the role.
   Missing registrations or callers are not proof of none. A public declaration
@@ -52,6 +53,9 @@ Examples illustrate the distinction, not a list of supported APIs:
 - An exporter configured to send traces to a collector is communication
   evidence even when sends occur inside the SDK; adding trace attributes or
   constructing local instrumentation alone is not.
+- A client constructor receiving an endpoint option can establish a configured
+  relationship; the option-producing call alone (such as WithBaseURL returning
+  a value for that constructor) is context, not another outgoing contact.
 
 Keep configuration distinct from dispatch: configuring a remote client does
 not prove that a request was sent. A generic constructor or settings read
@@ -60,6 +64,9 @@ Do not invent execution or call edges. API interpretation is not proof that
 the call actually ran or succeeded.
 Types in a signature establish an association, not a read or write.
 An operation need not be a key symbol. Select only advertised call refs.
+`calls` retains local delegation as context. Only `call_options` can be selected
+as outgoing candidates: a complete exact repository callee at that site is
+internal delegation. Possible or unresolved dispatch still requires review.
 
 Call evidence may include `control_context`: the source statement whose body
 contains that exact call, such as a channel range, an unconditional loop or a

@@ -42,8 +42,6 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 	if err := json.Unmarshal(prepared.Bytes(), &message); err != nil {
 		return llm.Completion{}, err
 	}
-	const delimiter = "\n\nREPOMAP_PROSE_SOURCES_V1\n"
-	parts := strings.Split(message["user"], delimiter)
 	var input struct {
 		Table string `json:"table"`
 		Fill  []struct {
@@ -53,22 +51,17 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 		} `json:"fill"`
 		Rows []map[string]any `json:"rows"`
 	}
-	if err := json.Unmarshal([]byte(parts[0]), &input); err != nil {
+	if err := json.Unmarshal([]byte(message["user"]), &input); err != nil {
 		return llm.Completion{}, err
 	}
-	if len(parts) == 2 {
-		var catalogue json.RawMessage
-		if err := json.Unmarshal([]byte(parts[1]), &catalogue); err != nil {
-			return llm.Completion{}, err
-		}
-	} else {
+	if input.Table == "" {
 		var request struct {
 			Prose []struct {
 				Ref  string
 				Text []string
 			}
 		}
-		if err := json.Unmarshal([]byte(parts[0]), &request); err != nil {
+		if err := json.Unmarshal([]byte(message["user"]), &request); err != nil {
 			return llm.Completion{}, err
 		}
 		p.calls++

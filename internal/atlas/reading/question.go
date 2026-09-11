@@ -8,10 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/questionbatch"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
@@ -98,7 +98,7 @@ func (r *reader) questionRows() []lines.QuestionChunk {
 	return chunks
 }
 
-func (r *reader) bindQuestion(chunks []lines.QuestionChunk, answers []rowAnswer) error {
+func (r *reader) bindQuestion(chunks []lines.QuestionChunk, answers []questionbatch.ChunkResult) error {
 	files, entities, documents := make(map[string]bool), make(map[string]bool), make(map[string]bool)
 	sourceFacts := 0
 	for _, chunk := range chunks {
@@ -131,46 +131,45 @@ func (r *reader) bindQuestion(chunks []lines.QuestionChunk, answers []rowAnswer)
 	seen := make(map[string]int)
 	modelGroups, cachedGroups := 0, 0
 	for i, answer := range answers {
-		if answer.source == atlas.SourceGiven {
+		if !answer.Inspected {
 			route.Coverage.UnresolvedChunks++
 			continue
 		}
 		route.Coverage.InspectedChunks++
-		if answer.source == atlas.SourceCache {
+		if answer.Source == atlas.SourceCache {
 			cachedGroups++
 		} else {
 			modelGroups++
 		}
-		if answer.answer["relevance"] == "none" {
-			continue
-		}
 		chunk := chunks[i]
-		for _, ref := range strings.Fields(answer.answer["anchors"]) {
-			anchor, known := chunk.Anchors[ref]
-			if !known {
-				return fmt.Errorf("question: validated anchor is absent from its row")
-			}
-			stop := atlas.QuestionStop{
-				SubjectID: anchor.SubjectID,
-				Evidence:  lines.AnchorEvidence(chunk, ref),
-				PlaceID:   chunk.Place.ID, Path: anchor.Path, Line: anchor.Line, Column: anchor.Column, Name: anchor.Name, Kind: anchor.Kind,
-				TargetIDs: append([]string{}, chunk.Place.TargetIDs...), Relevance: answer.answer["relevance"], Why: answer.answer["why"], Source: answer.source,
-			}
-			key := fmt.Sprintf("%s:%s:%d:%d:%s:%s", stop.PlaceID, stop.Path, stop.Line, stop.Column, stop.Kind, stop.Name)
-			for _, known := range []*Knowledge{r.knowledge[chunk.Place.ID], r.knowledgeSubjects[anchor.SubjectID], r.symbolSelections[anchor.SubjectID]} {
-				if known != nil && !contains(stop.KnowledgeIDs, known.ID) {
-					stop.KnowledgeIDs = append(stop.KnowledgeIDs, known.ID)
+		for _, selection := range answer.Selections {
+			for _, ref := range selection.Anchors {
+				anchor, known := chunk.Anchors[ref]
+				if !known {
+					return fmt.Errorf("question: validated anchor is absent from its row")
 				}
-			}
-			if index, exists := seen[key]; exists {
-				if stop.Relevance == "direct" && route.Stops[index].Relevance != "direct" {
-					route.Stops[index] = stop
+				stop := atlas.QuestionStop{
+					SubjectID: anchor.SubjectID,
+					Evidence:  lines.AnchorEvidence(chunk, ref),
+					PlaceID:   chunk.Place.ID, Path: anchor.Path, Line: anchor.Line, Column: anchor.Column, Name: anchor.Name, Kind: anchor.Kind,
+					TargetIDs: append([]string{}, chunk.Place.TargetIDs...), Relevance: selection.Relevance, Why: selection.Why, Source: answer.Source,
 				}
-				continue
+				key := fmt.Sprintf("%s:%s:%d:%d:%s:%s", stop.PlaceID, stop.Path, stop.Line, stop.Column, stop.Kind, stop.Name)
+				for _, known := range []*Knowledge{r.knowledge[chunk.Place.ID], r.knowledgeSubjects[anchor.SubjectID], r.symbolSelections[anchor.SubjectID]} {
+					if known != nil && !contains(stop.KnowledgeIDs, known.ID) {
+						stop.KnowledgeIDs = append(stop.KnowledgeIDs, known.ID)
+					}
+				}
+				if index, exists := seen[key]; exists {
+					if stop.Relevance == "direct" && route.Stops[index].Relevance != "direct" {
+						route.Stops[index] = stop
+					}
+					continue
+				}
+				seen[key] = len(route.Stops)
+				route.Stops = append(route.Stops, stop)
+				selected[chunk.Place.ID] = true
 			}
-			seen[key] = len(route.Stops)
-			route.Stops = append(route.Stops, stop)
-			selected[chunk.Place.ID] = true
 		}
 	}
 	sort.Slice(route.Stops, func(i, j int) bool {

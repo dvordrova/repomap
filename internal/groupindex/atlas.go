@@ -358,7 +358,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 	boundRequests := make(map[string]bool)
 	for _, boundary := range target.Boundaries {
-		if boundary.Direction != atlas.DirectionIn || boundary.Kind == atlas.BoundaryConfig {
+		if boundary.Direction != atlas.DirectionIn || boundary.Kind == atlas.BoundaryConfig || boundary.Kind == atlas.BoundaryListenAddress {
 			continue
 		}
 		groupID := groupOfBox[boundary.BoxID]

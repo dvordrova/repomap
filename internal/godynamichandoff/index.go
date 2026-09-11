@@ -19,7 +19,7 @@ import (
 	"unicode/utf8"
 )
 
-const Version = 6
+const Version = 7
 
 type Scenario struct {
 	ID     string   `json:"id"`

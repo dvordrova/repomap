@@ -59,66 +59,94 @@
     },
     {
       "id": "f15",
-      "path": "src/destinations.ts"
+      "path": "src/data-sources.ts"
     },
     {
       "id": "f16",
-      "path": "src/excluded/retained.test.ts"
+      "path": "src/destinations.ts"
     },
     {
       "id": "f17",
-      "path": "src/market-worker.js"
+      "path": "src/excluded/retained.test.ts"
     },
     {
       "id": "f18",
-      "path": "src/market.test.ts"
+      "path": "src/facade-exports/consumer.ts"
     },
     {
       "id": "f19",
-      "path": "src/platform.ts"
+      "path": "src/facade-exports/exchange-index.ts"
     },
     {
       "id": "f20",
-      "path": "src/route-mounts.ts"
+      "path": "src/facade-exports/exchange.ts"
     },
     {
       "id": "f21",
-      "path": "src/runtime-registrations.ts"
+      "path": "src/facade-exports/index.ts"
     },
     {
       "id": "f22",
-      "path": "src/server.ts"
+      "path": "src/facade-exports/resolver.ts"
     },
     {
       "id": "f23",
-      "path": "src/sql-literals.ts"
+      "path": "src/http-registrations.ts"
     },
     {
       "id": "f24",
-      "path": "src/test-setup.ts"
+      "path": "src/market-worker.js"
     },
     {
       "id": "f25",
-      "path": "src/testing/real-service.ts"
+      "path": "src/market.test.ts"
     },
     {
       "id": "f26",
-      "path": "src/type-members.ts"
+      "path": "src/platform.ts"
     },
     {
       "id": "f27",
-      "path": "src/workspace-origins-js.js"
+      "path": "src/route-mounts.ts"
     },
     {
       "id": "f28",
-      "path": "src/workspace-origins.ts"
+      "path": "src/runtime-registrations.ts"
     },
     {
       "id": "f29",
-      "path": "tsconfig.json"
+      "path": "src/server.ts"
     },
     {
       "id": "f30",
+      "path": "src/sql-literals.ts"
+    },
+    {
+      "id": "f31",
+      "path": "src/test-setup.ts"
+    },
+    {
+      "id": "f32",
+      "path": "src/testing/real-service.ts"
+    },
+    {
+      "id": "f33",
+      "path": "src/type-members.ts"
+    },
+    {
+      "id": "f34",
+      "path": "src/workspace-origins-js.js"
+    },
+    {
+      "id": "f35",
+      "path": "src/workspace-origins.ts"
+    },
+    {
+      "id": "f36",
+      "path": "tsconfig.json"
+    },
+    {
+      "id": "f37",
       "path": "vitest.config.ts"
     }
   ]

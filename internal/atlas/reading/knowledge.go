@@ -132,7 +132,7 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 		exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, ref.RequestKey)
 		cached = rememberedTable{requestSHA: exchange.RequestSHA256, responseSHA: exchange.ResponseSHA256, request: exchange.Request, response: exchange.Response, err: err}
 		if err == nil && found {
-			adapted, unwrapErr := llm.AdaptResponse(r.opts.Provider, exchange.Request, exchange.Response)
+			adapted, unwrapErr := llm.AdaptResponse(r.opts.Provider, exchange.ResponseContext, exchange.Request, exchange.Response)
 			cached.adapted = adapted
 			cached.err = unwrapErr
 			if unwrapErr == nil {

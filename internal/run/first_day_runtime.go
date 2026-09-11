@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
@@ -32,6 +33,7 @@ type orientationRunner func(
 // firstDayOptions carries what the three first-day stages read. Every value is
 // already validated repository authority; the stages add no new inputs.
 type firstDayOptions struct {
+	Graph            atlas.Graph
 	RepoPath         string
 	RepositoryName   string
 	Revision         string
@@ -186,6 +188,7 @@ func runRepositoryOrientation(
 		Facts:          factsResult,
 		Claims:         claimsResult,
 		Groups:         indexes,
+		Graph:          options.Graph,
 	})
 	if err != nil {
 		return orientation.Result{}, nil, fmt.Errorf("orientation: %w", err)

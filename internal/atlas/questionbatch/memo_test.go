@@ -88,7 +88,7 @@ func TestQuestionMemoReusesAddedQuestionIndependentlyAndRefreshesReplay(t *testi
 		t.Fatal(err)
 	}
 	chunk := refreshed.Questions[0].Chunks[0]
-	if len(provider.requests) != before || chunk.Source != atlas.SourceCache || chunk.QuestionRef != "q2" || chunk.Why != "New reason from the current replay." {
+	if len(provider.requests) != before || chunk.Source != atlas.SourceCache || chunk.QuestionRef != "q2" || chunk.Selections[0].Why != "New reason from the current replay." {
 		t.Fatalf("memo did not read refreshed exact response: %#v", chunk)
 	}
 	if len(refreshed.Exchanges) != 1 || !reflect.DeepEqual(refreshed.Exchanges[0].QuestionIndexes, []int{0}) || !reflect.DeepEqual(refreshed.Exchanges[0].QuestionRefs, []string{"q2"}) {
@@ -114,7 +114,7 @@ func TestQuestionMemoReusesAddedQuestionIndependentlyAndRefreshesReplay(t *testi
 	if err != nil || len(provider.requests) != before || len(revalidated.Issues) != 0 {
 		t.Fatalf("missing sibling invalidated an accepted memo: calls=%d issues=%v err=%v", len(provider.requests)-before, revalidated.Issues, err)
 	}
-	if revalidated.Questions[0].Chunks[0].Why != "Not complete." || !revalidated.Questions[0].Chunks[0].Inspected {
+	if revalidated.Questions[0].Chunks[0].Selections[0].Why != "Not complete." || !revalidated.Questions[0].Chunks[0].Inspected {
 		t.Fatal("accepted replay did not refresh the requested question")
 	}
 }

@@ -23,6 +23,7 @@ import (
 // atlasOutcome is what the atlas path hands to publication: the atlas, the
 // facts and claims it was read over, and where the owner's tables are.
 type atlasOutcome struct {
+	Graph       atlas.Graph
 	TablesPath  string
 	Atlas       atlas.Atlas
 	Facts       facts.Result
@@ -181,7 +182,7 @@ func readRepositoryAtlas(
 		))
 	}
 	options.Output.State("Atlas", "ready", details...)
-	return atlasOutcome{TablesPath: result.TablesPath, Atlas: result.Atlas, Facts: factsResult, Claims: claimsResult, Questions: result.Questions, Learning: result.Learning}, nil
+	return atlasOutcome{Graph: graph, TablesPath: result.TablesPath, Atlas: result.Atlas, Facts: factsResult, Claims: claimsResult, Questions: result.Questions, Learning: result.Learning}, nil
 }
 
 // projectAtlasRuns gives every run the GroupsIndex the page reads, built
@@ -238,6 +239,7 @@ func orientAtlasRuns(
 	outcome *atlasOutcome,
 ) error {
 	firstDay := firstDayOptions{
+		Graph:            outcome.Graph,
 		RepoPath:         options.Repo,
 		RepositoryName:   repoRunLabel(options.Repo),
 		Revision:         options.RepositoryState.Head,
@@ -252,6 +254,7 @@ func orientAtlasRuns(
 		Output:           options.Output,
 	}
 	orientationResult, rejected, err := runRepositoryOrientation(ctx, firstDay, outcome.Facts, outcome.Claims)
+	outcome.Graph = atlas.Graph{}
 	if err != nil {
 		return err
 	}

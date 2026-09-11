@@ -16,7 +16,7 @@ const (
 	// this directory as one explicit persistent cache target.
 	CacheDirectoryName = ".llm-cache"
 	cacheDirectoryName = CacheDirectoryName
-	cacheRecordVersion = 2
+	cacheRecordVersion = 3
 	// Accepted records reference exact request/response files in payloads/.
 	maxCacheRecordBytes = SemanticRecordByteLimit
 )
@@ -35,21 +35,22 @@ func isCacheCorruption(err error) bool {
 }
 
 type acceptedCacheRecord struct {
-	Version        int          `json:"version"`
-	Contract       string       `json:"contract"`
-	CacheKey       string       `json:"cache_key"`
-	Accepted       bool         `json:"accepted"`
-	RequestSHA256  string       `json:"request_sha256"`
-	ResponseSHA256 string       `json:"response_sha256"`
-	RequestBytes   int          `json:"request_bytes"`
-	ResponseBytes  int          `json:"response_bytes"`
-	RequestFile    string       `json:"request_file"`
-	ResponseFile   string       `json:"response_file"`
-	Request        []byte       `json:"-"`
-	Response       []byte       `json:"-"`
-	FinishReason   FinishReason `json:"finish_reason"`
-	ChoiceCount    int          `json:"choice_count"`
-	Metrics        Metrics      `json:"metrics"`
+	ResponseContext json.RawMessage `json:"response_context,omitempty"`
+	Version         int             `json:"version"`
+	Contract        string          `json:"contract"`
+	CacheKey        string          `json:"cache_key"`
+	Accepted        bool            `json:"accepted"`
+	RequestSHA256   string          `json:"request_sha256"`
+	ResponseSHA256  string          `json:"response_sha256"`
+	RequestBytes    int             `json:"request_bytes"`
+	ResponseBytes   int             `json:"response_bytes"`
+	RequestFile     string          `json:"request_file"`
+	ResponseFile    string          `json:"response_file"`
+	Request         []byte          `json:"-"`
+	Response        []byte          `json:"-"`
+	FinishReason    FinishReason    `json:"finish_reason"`
+	ChoiceCount     int             `json:"choice_count"`
+	Metrics         Metrics         `json:"metrics"`
 }
 
 // CachedExchange reads the current answer behind an entity's request reference.
@@ -63,6 +64,7 @@ func CachedExchange(rootDir, key string) (Outcome[json.RawMessage], bool, error)
 	if err != nil || !found {
 		return outcome, false, err
 	}
+	outcome.ResponseContext = cloneBytes(record.ResponseContext)
 	outcome.CacheKey = key
 	setOutcomeRequest(&outcome, record.Request)
 	outcome.Response, outcome.ResponseSHA256 = record.Response, record.ResponseSHA256

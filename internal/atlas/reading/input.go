@@ -15,7 +15,7 @@ import (
 )
 
 const InputFilename = "reading-input.json"
-const InputVersion = 12
+const InputVersion = 15
 
 // Input is the complete deterministic boundary before the first atlas call.
 // No repository files, manifests, report schema or compiler are needed to read it.

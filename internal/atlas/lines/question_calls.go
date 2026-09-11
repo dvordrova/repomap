@@ -35,6 +35,36 @@ type questionCaller struct {
 	Declaration *questionDeclaration `json:"caller_declaration,omitempty"`
 }
 
+// CallableEvidence projects existing observations for exactly the requested
+// native declarations. Keys stay local; the owner binds them to its advertised
+// refs. This is the same evidence used by questions, without another graph walk
+// per declaration or any recursive caller/body expansion.
+func CallableEvidence(graph atlas.Graph, subjects map[string]bool) map[string]map[string]any {
+	result := make(map[string]map[string]any)
+	if len(subjects) == 0 {
+		return result
+	}
+	places := make(map[string]atlas.Place, len(graph.Places))
+	symbols := make(map[string]atlas.Place)
+	for _, place := range graph.Places {
+		places[place.ID] = place
+		if place.Symbol != nil && place.Symbol.Decl.ObjectID != "" {
+			symbols[place.Symbol.Decl.ObjectID] = place
+		}
+	}
+	for subject := range subjects {
+		place, found := symbols[subject]
+		if !found {
+			continue
+		}
+		facts := map[string]any{"name": place.Symbol.Decl.Name, "path": place.Path, "line": place.LineNo,
+			"signature": place.Symbol.Decl.Signature, "author_doc": place.Symbol.Decl.Doc}
+		questionCallableEvidence(facts, place, places, symbols)
+		result[subject] = facts
+	}
+	return result
+}
+
 // Attach only this declaration's observations. In particular a selected type
 // does not recursively pull in its methods' calls, and an incoming caller does
 // not donate its other calls to the selected declaration.
@@ -42,10 +72,7 @@ func questionCallableEvidence(facts map[string]any, place atlas.Place, places, s
 	var evidence EvidenceCatalog
 	var calls []questionCall
 	for _, call := range place.Symbol.Calls {
-		projected := questionCall{callEvidence: evidence.call(call)}
-		// Question reading needs exact source sites and native API identity.
-		// Other tables keep their existing compact Call projection.
-		projected.Column, projected.API = call.Column, call.API
+		projected := questionCall{callEvidence: evidence.callWithOrigins(call)}
 		for _, id := range call.CalleeIDs {
 			if declaration := questionDeclarationOf(places[id]); declaration != nil {
 				projected.CalleeCandidates = append(projected.CalleeCandidates, *declaration)

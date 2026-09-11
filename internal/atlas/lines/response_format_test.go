@@ -59,8 +59,11 @@ func TestPreparedTablesHaveOneResponseShapeWithCurrentColumns(t *testing.T) {
 				if strings.Count(system, `"rows"`) != 1 || strings.Contains(system, `"terms"`) || strings.Contains(system, `"result"`) {
 					t.Fatal("main response gained an optional metadata envelope")
 				}
-				if strings.Contains(user, "REPOMAP_PROSE_SOURCES_V1") != (withTerms && !call.Prompt.NoResponseAdjunct) {
-					t.Fatal("prose source catalogue eligibility changed")
+				if strings.Contains(user, "REPOMAP_PROSE_SOURCES_V1") || user != call.Prompt.User {
+					t.Fatal("local prose context entered provider input")
+				}
+				if (len(prepared.ResponseContext()) > 0) != (withTerms && !call.Prompt.NoResponseAdjunct) {
+					t.Fatal("local prose context eligibility changed")
 				}
 				example := json.RawMessage(system[strings.LastIndex(system, "\n")+1:])
 				var result struct{ Rows []map[string]string }

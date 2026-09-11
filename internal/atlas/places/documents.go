@@ -36,6 +36,8 @@ func documentSections(filePath, text string) []atlas.Place {
 	lines := strings.SplitAfter(text, "\n")
 	var result []atlas.Place
 	start, title := 0, filePath
+	var headings []atlas.DocumentHeading
+	var levels []int
 	fence := ""
 	emit := func(end int) {
 		body := strings.Join(lines[start:end], "")
@@ -49,7 +51,7 @@ func documentSections(filePath, text string) []atlas.Place {
 		result = append(result, atlas.Place{
 			ID: fmt.Sprintf("doc:%s:%d", filePath, start+1), Kind: atlas.PlaceDocument,
 			Path: filePath, LineNo: start + 1, TargetIDs: []string{}, Given: title,
-			Document: &atlas.DocumentFacts{Title: title, Text: body, EndLine: last},
+			Document: &atlas.DocumentFacts{Title: title, Text: body, EndLine: last, Headings: append([]atlas.DocumentHeading(nil), headings...)},
 		})
 	}
 	for i, raw := range lines {
@@ -77,6 +79,11 @@ func documentSections(filePath, text string) []atlas.Place {
 		if title == "" {
 			title = filePath
 		}
+		for len(levels) > 0 && levels[len(levels)-1] >= prefix {
+			levels, headings = levels[:len(levels)-1], headings[:len(headings)-1]
+		}
+		levels = append(levels, prefix)
+		headings = append(headings, atlas.DocumentHeading{Title: title, Line: i + 1})
 	}
 	emit(len(lines))
 	return result

@@ -49,6 +49,9 @@ func TestObservedRoutesReplaceTheDeclarationOperationAndKeepAliases(t *testing.T
 	for i, route := range []string{"/status", "/health"} {
 		target.Boundaries = append(target.Boundaries, atlas.Boundary{ID: fmt.Sprintf("route%d", i), ObjectID: p.Objects[0].ID, BoxID: "api", Path: "api/handler.go", LineNo: 2 + i, Column: 1, Direction: atlas.DirectionIn, Kind: atlas.BoundaryHTTPServer, Method: "GET", Values: []string{route}, Line: "Returns status.", FactID: "fact"})
 	}
+	target.Boundaries = append(target.Boundaries, atlas.Boundary{ID: "listener", ObjectID: p.Objects[0].ID, BoxID: "api", Path: "api/handler.go", LineNo: 9, Column: 1,
+		Direction: atlas.DirectionIn, Kind: atlas.BoundaryListenAddress, Values: []string{":8080"}, Line: "Listens for HTTP connections.", FactID: "listen-fact"})
+
 	indexes, err := ProjectAtlas(map[string]programindex.Index{p.Target.ID: p}, atlas.Atlas{Version: atlas.Version, Repository: "test", Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
 	if err != nil {
 		t.Fatal(err)

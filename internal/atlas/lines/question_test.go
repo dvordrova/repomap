@@ -48,7 +48,8 @@ func TestQuestionSourceFactsKeepLaunchContextAndExistingRequestPrefix(t *testing
 
 func TestQuestionDocumentationIsLosslessAndAnchoredAcrossLongLines(t *testing.T) {
 	text := "## Tests\nRead [the guide](docs/testing.md).\n\n```sh\nmake test-unit\nmake test-integration\nmake test-e2e\n```\n" + strings.Repeat("пример", DocumentChunkBytes) + "\nThe final instruction.\n"
-	place := atlas.Place{ID: "doc:private-document-id", Kind: atlas.PlaceDocument, Path: "CONTRIBUTING.md", LineNo: 133, Document: &atlas.DocumentFacts{Title: "Tests", Text: text}}
+	headings := []atlas.DocumentHeading{{Title: "Installed provider example", Line: 1}, {Title: "Tests", Line: 133}}
+	place := atlas.Place{ID: "doc:private-document-id", Kind: atlas.PlaceDocument, Path: "dependency/CONTRIBUTING.md", LineNo: 133, Document: &atlas.DocumentFacts{Title: "Tests", Text: text, Headings: headings}}
 	rows := QuestionRows(atlas.Graph{Places: []atlas.Place{place}})
 	var joined strings.Builder
 	var input []table.Row
@@ -60,6 +61,9 @@ func TestQuestionDocumentationIsLosslessAndAnchoredAcrossLongLines(t *testing.T)
 			t.Fatalf("source anchor lost across a partition: %+v", anchor)
 		}
 		evidence := AnchorEvidence(row, "a1")["evidence"].([]map[string]any)[0]
+		if !reflect.DeepEqual(evidence["heading_path"], headings) || evidence["anchor_path"] != place.Path {
+			t.Fatalf("source partition lost the author's document scope: %+v", evidence)
+		}
 		part := evidence["author_text"].(string)
 		if !utf8.ValidString(part) || len(part) > DocumentChunkBytes {
 			t.Fatal("partition split UTF-8 or exceeded its input allocation")

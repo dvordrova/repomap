@@ -2,7 +2,13 @@ Consolidate a glossary of already accepted source-bound explanations.
 
 Input `groups` contains closed `g*` refs. Each is one already accepted group;
 its `variants` contain every original explanation, spelling
-and source, each with a closed `v*` ref. Earlier groups are indivisible. Compare
+and source scope, each with a closed `v*` ref. A variant's `source_set` selects
+one p* row from `source_sets`; that row's `sources` selects s* rows from `sources`,
+each giving its exact repository path and line (zero means whole-file scope).
+These catalogues encode repeated sources once; follow the full selected set for
+every variant. Each request supplies its own complete catalogues, with no refs
+to another window. Source refs identify observations, not semantic equivalence.
+Earlier groups are indivisible. Compare
 their complete original evidence, not only their first or shortest member.
 
 Join groups only when their meanings and source scope agree. Equal spellings

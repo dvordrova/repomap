@@ -52,6 +52,17 @@ type pageActivityGroup struct {
 	Rows  []pageGroupOperation
 }
 
+// NativeRouteCount counts the original HTTP registrations in this catalogue.
+// Several operation links may describe one registration; unmatched model
+// handlers remain separate request records, without inventing an identity join.
+func (section *pageSection) NativeRouteCount() int {
+	count := 0
+	for _, group := range section.RouteGroups {
+		count += group.Paths
+	}
+	return count
+}
+
 // Group existing, already localized operations for reading. This makes no new
 // classification and adds no entries to the saved translation catalogue.
 func (section *pageSection) ActivityGroups() []pageActivityGroup {

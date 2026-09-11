@@ -3,6 +3,7 @@ package lines
 import (
 	_ "embed"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -19,7 +20,7 @@ const (
 	StageJoints     = "atlas_joints"
 
 	symbolsContract    = "repomap.atlas.symbols.v7"
-	boundariesContract = "repomap.atlas.boundaries.v3"
+	boundariesContract = "repomap.atlas.boundaries.v5"
 	zonesContract      = "repomap.atlas.zones.v1"
 	arrowsContract     = "repomap.atlas.arrows.v1"
 	targetsContract    = "repomap.atlas.targets.v2"
@@ -135,7 +136,12 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 	refs := make([]string, 0, len(place.Symbol.Calls))
 	for i, call := range place.Symbol.Calls {
 		ref := fmt.Sprintf("c%d", i+1)
-		refs = append(refs, ref)
+		// A complete exact repository callee is internal delegation at this
+		// site. Keep the call as context and retain its original c* position;
+		// possible or unresolved dispatch is still eligible for review.
+		if call.Kind != "calls" || call.Resolution != "exact" || len(call.CalleeIDs) != 1 || call.API != nil {
+			refs = append(refs, ref)
+		}
 		calls = append(calls, map[string]any{"ref": ref, "evidence": evidence.Call(call)})
 	}
 	fields = append(fields, table.Field{Name: "calls", Value: calls}, table.Field{Name: "call_options", Value: refs}, table.Field{Name: "call_count", Value: len(refs)})
@@ -143,15 +149,15 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 	return table.Row{ID: place.ID, Fields: fields}
 }
 
-// Boundaries interprets candidate relationships. Native facts keep their known
-// decision and kind; outgoing mode adds the runtime-system explanation.
+// Boundaries interprets candidate relationships whose role is not a native fact.
+// Outgoing mode adds the runtime-system explanation.
 func Boundaries(outgoing ...bool) table.Definition {
 	positive := map[string]string{"decision": "boundary"}
 	def := table.Definition{
 		Stage: StageBoundaries, Contract: boundariesContract,
 		System: boundariesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
-			{Name: "decision", Kind: table.Choice, OptionsFrom: "decision_options", Note: "boundary for supported runtime exchange, none for local mechanisms, unassessed for insufficient evidence"},
+			{Name: "decision", Kind: table.Choice, OptionsFrom: "decision_options", Note: "boundary when this call itself dispatches an exchange or creates/configures the actual remote client instance; none for local helpers, options and preparation; unassessed for insufficient evidence"},
 			{Name: "kind", Kind: table.Choice, OptionsFrom: "kind_options", When: positive},
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, When: positive, Note: "why this component exchanges with the runtime system"},
 		},
@@ -161,8 +167,29 @@ func Boundaries(outgoing ...bool) table.Definition {
 		def.Columns[2].Kind, def.Columns[2].MaxRunes = table.Prose, 0
 		def.Columns = append(def.Columns,
 			table.Column{Name: "destination", Kind: table.Text, MaxRunes: 80, When: positive, Note: "short English role of the other runtime system; never invent a host or address"},
-			table.Column{Name: "basis", Kind: table.Choice, Options: []string{"dispatch", "configuration"}, When: positive, Note: "observed exchange call, or configured client/exporter whose sending is inside its library"},
+			table.Column{Name: "basis", Kind: table.Choice, Options: []string{"dispatch", "remote_client_instance"}, When: positive, Note: "dispatch: this call sends the exchange; remote_client_instance: this call itself creates or configures the actual remote client/exporter instance, not an option for a later constructor"},
 			table.Column{Name: "address", Kind: table.Choice, OptionsFrom: "address_options", When: positive, Note: "one supplied a* address value, or unknown when no observed value identifies the destination"},
+		)
+	}
+	return def
+}
+
+// FixedBoundaries explains an existing native observation. Its existence and
+// kind are input facts, not mandatory one-option model decisions. An outgoing
+// HTTP fact may still need a purpose and a source-supported destination label.
+func FixedBoundaries(outgoing bool) table.Definition {
+	def := table.Definition{
+		Stage: StageBoundaries, Contract: boundariesContract + ".fixed",
+		System: boundariesPrompt, Independent: true, Memoize: true,
+		Columns: []table.Column{{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes,
+			Note: "explain the supplied native observation at its known kind; a configuration read is not itself a remote exchange"}},
+	}
+	if outgoing {
+		def.Contract += ".outbound"
+		def.Columns[0].Kind, def.Columns[0].MaxRunes = table.Prose, 0
+		def.Columns = append(def.Columns,
+			table.Column{Name: "destination", Kind: table.Text, MaxRunes: 80, Note: "short English role of the other runtime system; never invent a host or address"},
+			table.Column{Name: "address", Kind: table.Choice, OptionsFrom: "address_options", Note: "one supplied a* address value, or unknown when no observed value identifies the destination"},
 		)
 	}
 	return def
@@ -208,21 +235,17 @@ func BoundaryAddresses(place atlas.Place, owners ...atlas.Place) []BoundaryAddre
 // boundary rows have no implied relationship.
 func BoundaryRow(place atlas.Place, _ string, owners ...atlas.Place) table.Row {
 	facts := place.Boundary
-	decisions := []string{"boundary", "none", "unassessed"}
-	kinds := atlas.BoundaryKinds()
-	if facts.GivenKind != "" {
-		decisions = []string{"boundary"}
-		kinds = []string{facts.GivenKind}
-	}
 	fields := []table.Field{
 		{Name: "path", Value: place.Path}, {Name: "line", Value: place.LineNo},
 		{Name: "caller", Value: facts.Caller}, {Name: "caller_doc", Value: facts.CallerDoc},
 		{Name: "external", Value: facts.External}, {Name: "method", Value: facts.Method},
 		{Name: "values", Value: facts.Values}, {Name: "direction", Value: facts.Direction},
-		{Name: "decision_options", Value: decisions}, {Name: "kind_options", Value: kinds},
 	}
 	if facts.GivenKind != "" {
 		fields = append(fields, table.Field{Name: "kind_given", Value: facts.GivenKind})
+	} else {
+		fields = append(fields, table.Field{Name: "decision_options", Value: []string{"boundary", "none", "unassessed"}},
+			table.Field{Name: "kind_options", Value: atlas.BoundaryKinds()})
 	}
 	addresses := BoundaryAddresses(place, owners...)
 	options := []string{"unknown"}
@@ -238,7 +261,7 @@ func BoundaryRow(place atlas.Place, _ string, owners ...atlas.Place) table.Row {
 		decl := owner.Symbol.Decl
 		calls := make([]any, 0, len(owner.Symbol.Calls))
 		for _, call := range owner.Symbol.Calls {
-			calls = append(calls, evidence.Call(call))
+			calls = append(calls, evidence.CallWithOrigins(call))
 		}
 		value := map[string]any{"path": owner.Path, "line": owner.LineNo, "name": decl.Name, "kind": decl.Kind,
 			"signature": decl.Signature, "author_doc": decl.Doc, "calls": calls,
@@ -305,8 +328,25 @@ func BoundarySourceContext(place, owner atlas.Place, places, declarations map[st
 				byID[id] = row
 			}
 			sites, _ := row["call_sites"].([]map[string]any)
-			row["call_sites"] = append(sites, map[string]any{"line": caller.Line, "kind": caller.Kind,
-				"invocation": caller.Invocation, "resolution": caller.Resolution})
+			var matched []map[string]any
+			if declaration := declarations[id]; declaration.Symbol != nil {
+				for _, call := range declaration.Symbol.Calls {
+					if call.Line != caller.Line || call.Kind != caller.Kind || call.Invocation != caller.Invocation || call.Resolution != caller.Resolution || !slices.Contains(call.CalleeIDs, owner.ID) {
+						continue
+					}
+					var evidence EvidenceCatalog
+					site := map[string]any{"call": evidence.CallWithOrigins(call)}
+					for _, field := range evidence.Fields() {
+						site[field.Name] = field.Value
+					}
+					matched = append(matched, site)
+				}
+			}
+			if len(matched) == 0 {
+				matched = append(matched, map[string]any{"line": caller.Line, "kind": caller.Kind,
+					"invocation": caller.Invocation, "resolution": caller.Resolution})
+			}
+			row["call_sites"] = append(sites, matched...)
 		}
 		ids := make([]string, 0, len(byID))
 		for id := range byID {

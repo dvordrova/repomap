@@ -101,7 +101,7 @@ func TestCallContextExposesRepositoryOriginWithoutLeakingNativeKeys(t *testing.T
 	for _, resolution := range []string{"exact", "alternatives", "unresolved"} {
 		t.Run(resolution, func(t *testing.T) {
 			call := atlas.SymbolCall{Name: "Client.Submit", Kind: "calls", Line: 12, Column: 31,
-				Resolution: resolution, CalleeIDs: []string{"sym:private-source-key"}}
+				Resolution: resolution, CalleeIDs: []string{"sym:private-source-key"}, API: &atlas.CallAPI{Package: "example.com/vendor-client", Receiver: "Client", Name: "Submit"}}
 			var catalog EvidenceCatalog
 			raw, err := json.Marshal(catalog.Call(call))
 			if err != nil {
@@ -113,6 +113,9 @@ func TestCallContextExposesRepositoryOriginWithoutLeakingNativeKeys(t *testing.T
 			var projected map[string]any
 			if json.Unmarshal(raw, &projected) != nil || projected["has_repository_callee_candidate"] != true || projected["resolution"] != resolution {
 				t.Fatalf("origin observation lost or dispatch certainty changed: %s", raw)
+			}
+			if !strings.Contains(string(raw), `"package":"example.com/vendor-client"`) || !strings.Contains(string(raw), `"receiver":"Client"`) {
+				t.Fatalf("selection lost its native API identity: %s", raw)
 			}
 			call.CalleeIDs = []string{"sym:renamed-key", "sym:second-possible-key"}
 			changedIDs, _ := json.Marshal(catalog.Call(call))
@@ -181,8 +184,8 @@ func TestTypeContextKeepsOwnedDeclarationsWithoutNativeIDs(t *testing.T) {
 
 func TestOperationPromptNamesInteractionsInEnglishAndPreservesCommandSyntax(t *testing.T) {
 	def := Operations()
-	if def.Contract != "repomap.atlas.operations.v16" {
-		t.Fatalf("interaction naming change reused the previous contract: %s", def.Contract)
+	if def.Contract != "repomap.atlas.operations.v19" {
+		t.Fatalf("unexpected operation contract: %s", def.Contract)
 	}
 	for _, instruction := range []string{"short English name", "rather than copying an unexplained", "Do not translate observed command/path syntax"} {
 		if !strings.Contains(def.System, instruction) {

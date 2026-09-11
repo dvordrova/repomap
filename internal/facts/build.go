@@ -234,7 +234,14 @@ func newTargetContext(input TargetInput) (*targetContext, error) {
 			}
 		}
 		if relation.Kind == programindex.RelationPassesCallback && relation.SourceArgumentID != "" && len(relation.ToIDs) > 0 {
-			result.callbacks[relation.SourceArgumentID] = relation.ToIDs[0]
+			candidate := ""
+			if len(relation.ToIDs) == 1 && relation.TargetsOmitted == 0 {
+				candidate = relation.ToIDs[0]
+			}
+			if previous, exists := result.callbacks[relation.SourceArgumentID]; exists && previous != candidate {
+				candidate = ""
+			}
+			result.callbacks[relation.SourceArgumentID] = candidate
 		}
 	}
 	for _, object := range index.Objects {

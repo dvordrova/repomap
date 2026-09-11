@@ -44,6 +44,21 @@ func (c *EvidenceCatalog) Call(call atlas.SymbolCall) any {
 	return c.call(call)
 }
 
+// CallWithOrigins retains the source-addressed receiver, arguments and result
+// needed to distinguish uses of the same API. These are syntax observations,
+// including unknowns and alternatives, not resolved runtime values.
+func (c *EvidenceCatalog) CallWithOrigins(call atlas.SymbolCall) any {
+	return c.callWithOrigins(call)
+}
+
+func (c *EvidenceCatalog) callWithOrigins(call atlas.SymbolCall) callEvidence {
+	projected := c.call(call)
+	projected.SourceArguments = call.SourceArguments
+	projected.ReceiverValue, projected.ResultValue = call.ReceiverValue, call.ResultValue
+	projected.API, projected.Column = call.API, call.Column
+	return projected
+}
+
 func (c *EvidenceCatalog) call(call atlas.SymbolCall) callEvidence {
 	// This only establishes that at least one observed callee candidate is
 	// indexed in the repository. Resolution still distinguishes exact and
@@ -51,7 +66,6 @@ func (c *EvidenceCatalog) call(call atlas.SymbolCall) callEvidence {
 	hasRepositoryCallee := len(call.CalleeIDs) > 0
 	call.CalleeIDs = nil
 	call.SourceArguments = nil // Read by destination traversal with source anchors.
-	call.API = nil             // Exact package authority is used by local mechanism matching.
 	call.ReceiverValue, call.ResultValue = nil, nil
 	call.Column = 0 // The exact native identity stays local.
 	refs := c.references(call.Evidence)
