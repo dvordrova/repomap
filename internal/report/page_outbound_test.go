@@ -132,7 +132,7 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 		t.Fatal(err)
 	}
 	html := stdhtml.UnescapeString(out.String())
-	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "Адрес не определён", "Настройка взаимодействия", "Вызов взаимодействия", `data-open="client.go:21:17"`, "가격조회.Get", address, "Развернуть · ещё 2", "GET /prices"} {
+	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "Адрес не установлен", "настройка клиента", "вызов в коде", `data-open="client.go:21:17"`, "가격조회.Get", address, "Развернуть · ещё 2", "GET /prices"} {
 		if !strings.Contains(html, text) {
 			t.Fatalf("first-screen inventory lost %q", text)
 		}
@@ -235,5 +235,13 @@ func TestOutboundGroupsByDestinationWithSharedAddressAndPreview(t *testing.T) {
 	}
 	if groups[0].Rows[0].ID != "b" || groups[0].Rows[2].ID != "e" {
 		t.Fatalf("record order inside a group changed: %+v", groups[0].Rows)
+	}
+}
+
+func TestDisplayCallableDropsPlatformNotation(t *testing.T) {
+	for name, want := range map[string]string{"platform:javascript.WebSocket": "WebSocket", "platform:python": "python", "websocket.Codec.Receive": "websocket.Codec.Receive", "": ""} {
+		if got := displayCallable(name); got != want {
+			t.Fatalf("displayCallable(%q) = %q, want %q", name, got, want)
+		}
 	}
 }

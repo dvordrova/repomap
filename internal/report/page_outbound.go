@@ -36,6 +36,20 @@ type pageOutboundAddress struct {
 	Text, Setting, SettingLabel, Suffix string
 }
 
+// displayCallable drops the program index's platform notation from a
+// callable's name: "platform:javascript.WebSocket" reads WebSocket on the
+// page while the saved atlas keeps the original spelling.
+func displayCallable(name string) string {
+	rest, ok := strings.CutPrefix(name, "platform:")
+	if !ok {
+		return name
+	}
+	if _, after, found := strings.Cut(rest, "."); found && after != "" {
+		return after
+	}
+	return rest
+}
+
 func outboundAddressText(address string) pageOutboundAddress {
 	result := pageOutboundAddress{Text: address}
 	prefix, label := "{--", "Address from command-line option"
@@ -69,7 +83,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 			KindLabel:   outboundKindLabel(call.Kind),
 			ID:          section.ID + "-out-" + call.ID,
 			Destination: call.Destination, Summary: call.Summary,
-			Address: call.Address, External: call.External, Basis: call.Basis, Source: call.Source,
+			Address: call.Address, External: displayCallable(call.External), Basis: call.Basis, Source: call.Source,
 			Anchor: builder.links.anchor(call.Location.Path, call.Location.Line, call.Location.Column),
 		}
 		destinations := make(map[string]bool)
@@ -103,7 +117,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 		if call.Method != "" && call.Address != "" {
 			row.NativeLabel = call.Method + " " + call.Address
 		} else {
-			row.NativeLabel = call.External
+			row.NativeLabel = displayCallable(call.External)
 		}
 		section.Outbound = append(section.Outbound, row)
 	}

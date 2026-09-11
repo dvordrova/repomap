@@ -280,7 +280,7 @@
     structure.addEventListener('click',function(){mode='structure';operation=null;pinned=false;visit=null;address(byID[scope]);render();});
     operationMode.addEventListener('click',async function(){mode='operations';await render();revealChoice();});
     allUses.addEventListener('click',function(){operation=null;pinned=false;mode='structure';address(byID[scope]);render();});
-    search.addEventListener('input',function(){visit=null;render();});
+    var searchTimer=0;search.addEventListener('input',function(){visit=null;clearTimeout(searchTimer);searchTimer=setTimeout(render,200);});
     ops.forEach(function(n){n.addEventListener('click',async function(e){e.preventDefault();e.stopImmediatePropagation();if(operation!==n)visit=null;operation=n;pinned=true;address(n);await render();revealChoice();show(n);orient();});});
     groups.forEach(function(n){n.addEventListener('click',function(e){e.preventDefault();e.stopImmediatePropagation();open(n.id);});});
     async function reveal(n,allUses,source){

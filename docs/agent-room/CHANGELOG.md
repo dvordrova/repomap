@@ -8,6 +8,17 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Interface words a newcomer can read, from the audit's list of seventeen
+  unexplained labels: "Входящие запросы" (was "Записи входящих обращений"),
+  "Внешние вызовы", "вызов в коде" / "настройка клиента" (was "Вызов
+  взаимодействия" / "Настройка взаимодействия"), "Кто обрабатывает входы",
+  "Выполняет переданный код (eval/exec)", "Обработчики, для которых маршрут
+  не найден в коде", "Адрес не установлен"; an address that passes through
+  a frontier reads "Адрес приходит через `v5.Connect`" instead of "не
+  определён · v5.Connect". The program index's platform notation stays off
+  the page (`platform:javascript.WebSocket` reads WebSocket;
+  `displayCallable`). The part search re-lays the map 200 ms after typing
+  pauses instead of on every keystroke.
 - Long lists read in groups the data already had. Operation lists longer
   than seven rows from more than one file are grouped by source file
   (gop: 17 user actions → six files), each file compacting to five rows on

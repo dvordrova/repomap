@@ -45,7 +45,7 @@
 <div class="outbound-address">{{if gt .DestinationCount 1}}{{t "Destinations"}} · {{.DestinationCount}}{{else}}{{template "outbound-address" .AddressText}}{{end}}</div>
 <div class="outbound-basis meta">{{t .KindLabel}}{{if .BasisLabel}} · {{t .BasisLabel}}{{end}}</div>
 <div class="outbound-source">{{if .External}}<code class="outbound-callable">{{.External}}</code> · {{end}}{{template "anchor" .Anchor}}</div>
-{{if .Uses}}<p class="meta">{{t "Destination sources"}} · {{len .Uses}}</p>{{range .Uses}}<div class="outbound-chain">{{if .Method}}<code>{{.Method}}</code> · {{end}}{{template "outbound-address" .AddressText}}{{if and (not .Address) .Frontier}} · <code>{{.Frontier}}</code>{{end}}<ol class="plain">{{range .Steps}}<li><code>{{.Name}}</code> · {{template "anchor" .Anchor}}</li>{{end}}</ol></div>{{end}}{{end}}</div></details></li>{{end}}
+{{if .Uses}}<p class="meta">{{t "Destination sources"}} · {{len .Uses}}</p>{{range .Uses}}<div class="outbound-chain">{{if .Method}}<code>{{.Method}}</code> · {{end}}{{if and (not .Address) .Frontier}}{{t "Address passes through"}} <code>{{.Frontier}}</code>{{else}}{{template "outbound-address" .AddressText}}{{end}}<ol class="plain">{{range .Steps}}<li><code>{{.Name}}</code> · {{template "anchor" .Anchor}}</li>{{end}}</ol></div>{{end}}{{end}}</div></details></li>{{end}}
 
 {{define "outbound-group"}}<li data-integration-item data-source-kind="{{.Source}}">
 <strong class="input-title">{{if .Destination}}{{.Destination}}{{else if .NativeLabel}}<code>{{.NativeLabel}}</code>{{else}}{{t .KindLabel}}{{end}} <span class="meta">· {{len .Rows}}</span></strong>
