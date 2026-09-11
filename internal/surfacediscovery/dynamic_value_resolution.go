@@ -1,10 +1,10 @@
 package surfacediscovery
 
 import (
-	"strings"
 	"fmt"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/godynamichandoff"
 	"golang.org/x/tools/go/ssa"
