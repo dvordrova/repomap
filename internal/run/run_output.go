@@ -36,6 +36,39 @@ type runOutput struct {
 	modelTime    map[string]*stageModelTime
 	wallTime     map[string]time.Duration
 	lastProgress map[string]runOutputProgress
+	// abort cancels the whole run with a cause. It is set on the root console
+	// only; child consoles reach it through consoleClock.
+	abort func(cause error)
+}
+
+// abortRun stops the run for a cause no retry or partition can cure. Child
+// consoles share the root's cancellation through their console clock.
+func (output *runOutput) abortRun(cause error) bool {
+	for current := output; current != nil; current = current.consoleClock {
+		if current.abort != nil {
+			current.abort(cause)
+			return true
+		}
+		if current.consoleClock == current {
+			break
+		}
+	}
+	return false
+}
+
+// accessRefusal names a provider answer that no retry, split or later stage
+// can change: the credentials are refused or the balance is exhausted.
+func accessRefusal(receipt debugdump.SemanticFailureReceipt) (error, bool) {
+	if receipt.HTTPResponse == nil {
+		return nil, false
+	}
+	switch receipt.HTTPResponse.StatusCode {
+	case 401, 403:
+		return fmt.Errorf("the provider refused the credentials: HTTP %d at stage %s; check the API key and model access, then rerun (accepted work is cached)", receipt.HTTPResponse.StatusCode, receipt.Stage), true
+	case 402:
+		return fmt.Errorf("the provider refused for balance: HTTP 402 at stage %s; top up the account, then rerun (accepted work is cached)", receipt.Stage), true
+	}
+	return nil, false
 }
 
 // runOutputWarningSink adapts bounded warning writers to the ordinary console
@@ -414,6 +447,12 @@ func timed(output *runOutput, inner *debugdump.SemanticObserver) llm.Observer {
 		}
 		details = append(details, "journal: "+receipt.JournalPath)
 		output.Warn(headline, details...)
+		// Every later request would fail the same way; stop now instead of
+		// walking every stage with a refused window each (Freqtrade
+		// 20260911-070651 ran 41 minutes into a 402 at translation).
+		if cause, refused := accessRefusal(receipt); refused && output.abortRun(cause) {
+			output.Warn("Stopping the run", cause.Error())
+		}
 	})
 	return timedObserver{output: output, inner: inner}
 }

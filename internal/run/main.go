@@ -137,7 +137,10 @@ func linkLatest(debugDir, runDir string, stderr io.Writer) {
 func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	ctx, abort := context.WithCancelCause(ctx)
+	defer abort(nil)
 	output := newRunOutput(os.Stderr)
+	output.abort = abort
 	err := runDefaultWithDeps(repo, extraArgs, defaultRunDeps{
 		consoleClock:               output,
 		ctx:                        ctx,
@@ -154,6 +157,11 @@ func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool)
 		repositoryArgumentOmitted:  repositoryArgumentOmitted,
 	})
 	if err != nil {
+		// A run stopped for a provider access or balance refusal reports that
+		// cause, not the cancellation every stage saw afterwards.
+		if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) && errors.Is(err, context.Canceled) {
+			err = cause
+		}
 		writeRunOutputError(output, err)
 	}
 	return err

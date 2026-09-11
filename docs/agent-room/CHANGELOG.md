@@ -8,6 +8,12 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- A run stops at the first provider refusal by credentials or balance
+  (HTTP 401, 402, 403) with the cause in the console and as the final error,
+  instead of walking every remaining stage with a refused window each:
+  Freqtrade `20260911-070651` ran into a 402 at translation, and a later
+  service run failed every request for its first minutes. Accepted work
+  stays cached for the rerun.
 - The finder script referenced the removed second search field after the
   Learn/Work switch was taken out (`proxy is not defined` at load), which
   stopped every script bundled after it: reading navigation, glossary and
