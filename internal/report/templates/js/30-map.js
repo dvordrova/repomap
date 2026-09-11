@@ -315,6 +315,9 @@
   }
   function bindReading(map) {
     var nodes = map.querySelectorAll('[data-node]');
+    var hoverCard = document.createElement('div');
+    hoverCard.className = 'map-card map-hover-card';
+    hoverCard.setAttribute('role', 'tooltip');
     var byId = {};
     for (var i = 0; i < nodes.length; i++) byId[nodes[i].getAttribute('data-node')] = nodes[i];
     var edges = map.querySelectorAll('.map-edge');
@@ -491,13 +494,20 @@
       // The native title remains in the static HTML for readers without JS.
       var title = nodes[n].querySelector('title');
       if(map.hasAttribute('data-map-explorer')){
-        // Hover may emphasize neighbours; only an explicit choice changes
-        // the reading panel or the canvas. Keep the native brief preview.
+        // Hover may emphasize neighbours and answers "what is this" in a
+        // readable card beside the pointer; only an explicit choice changes
+        // the reading panel or the canvas. The native title tooltip, which
+        // cannot be read at leisure or selected, is replaced by that card.
+        if(title)title.remove();
         (function(node){
-          node.addEventListener('mouseenter',function(){node.dispatchEvent(new Event('repomap:preview'));});
-          node.addEventListener('mouseleave',function(){node.dispatchEvent(new Event('repomap:previewend'));});
-          node.addEventListener('focusin',function(){node.dispatchEvent(new Event('repomap:preview'));});
-          node.addEventListener('focusout',function(){node.dispatchEvent(new Event('repomap:previewend'));});
+          repomapPreview.bind(node,hoverCard,function(){
+            var kind=node.dataset.activation||(node.dataset.branch==='area'?'Area':node.dataset.branch==='component'?'Component':node.dataset.branch==='components'?'Connected components':'Part');
+            var label=document.createElement('span');label.className='map-card-kind';label.textContent=rmT(kind);
+            var name=document.createElement('b');name.textContent=node.dataset.title||'';
+            var summary=document.createElement('p');summary.textContent=node.dataset.summary||'';
+            var hint=document.createElement('span');hint.className='map-card-hint';hint.textContent=rmT('click — explore');
+            hoverCard.replaceChildren(label,name,summary,hint);
+          });
         })(nodes[n]);
       }else{
         if(title)title.remove();

@@ -85,7 +85,7 @@ const map={exploreNode(){},showMember(node,item){this.picked=item;}};
 const grid=repomapMembers.grid(map,node);
 assert.equal(grid.children.length,4);
 const explainButtons=grid.children.map(row=>row.children[0]);
-explainButtons[1].events.click({stopPropagation(){}});
+explainButtons[1].events.click({stopPropagation(){},preventDefault(){}});
 assert.equal(map.picked.source.Text,second.source.Text);
 assert.notEqual(explainButtons[0].dataset.memberSource,explainButtons[1].dataset.memberSource);
 assert.match(grid.children[1].children[0].title,/Нет ссылки на исходник/);

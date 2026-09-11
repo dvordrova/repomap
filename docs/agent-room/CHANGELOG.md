@@ -8,6 +8,18 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The map opens on its parts, and hovering a node answers "what is this"
+  in a readable card. A root view whose only own node was one area showed a
+  single box reading "Open parts · N" (gop, meetup, python-dotenv): that
+  area is now open from the start, its crumbs still name it. Explorer nodes
+  carried their sentence only in the native SVG `<title>` tooltip (delayed,
+  vanishing, unselectable); the title is gone and `repomapPreview.bind`
+  shows a floating card beside the pointer with the node's kind, name,
+  sentence and "click — explore"; the panel still changes only on a click.
+  A code cube click reads in the panel instead of also following its link
+  (a new tab in static reports, the overview in served ones). Verified at
+  1280×900 on meetup: parts visible on load, no `<title>` left, card shown
+  on a real hover and hidden on the next pointer move away.
 - The map's explanation stands beside the map. The component map explorer
   put its inspector under a stage capped at 58vh, fixed the inspector at
   16rem and scrolled the page back to the map top after every click, so an

@@ -133,3 +133,8 @@
 .component-entrypoints{flex-basis:100%;margin:.35rem 0 0;font-size:14px;color:var(--muted)}.component-entrypoints code{font-size:14px}
 .component-flow,.component-config{margin:1.25rem 0}.component-flow>h3,.component-config>h3{font-size:20px;line-height:1.4;margin:0 0 .5rem}
 .component-config table{font-size:14px}
+/* The hover card answers "what is this" beside the pointer; the panel keeps the chosen node. */
+.map-hover-card{max-width:min(26rem,calc(100vw - 24px));font-size:14px;line-height:1.45;pointer-events:none}
+.map-hover-card .map-card-kind{display:block;font-size:12px;color:var(--muted);margin-bottom:.15rem}
+.map-hover-card b{display:block;margin-bottom:.25rem}.map-hover-card p{margin:0 0 .35rem;color:var(--ink)}
+.map-hover-card .map-card-hint{display:block;font-size:12px;color:var(--muted)}

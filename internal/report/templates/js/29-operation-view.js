@@ -139,6 +139,13 @@
     }
     async function render(){
       var ticket=++revision;map.setAttribute('aria-busy','true');
+      // A root view whose only own node is one area would show a single box
+      // reading "Open parts · N". Its parts are the first thing worth seeing,
+      // so that area is open from the start; the crumbs still name it.
+      if(!scope&&!operation&&!search.value.trim()){
+        var own=roots.filter(function(id){return byID[id].dataset.remote!=='true';});
+        if(own.length===1&&byID[own[0]].dataset.branch==='area')setScope(own[0]);
+      }
       var previousViewport=operation&&map.explorerOperation===operation?map.captureViewport?.():null;
       var area=!operation&&!search.value.trim()?scopePath(scope).map(function(id){return byID[id];}).filter(function(n){return n?.dataset.branch==='area';}).pop():null;
       var viewScope=area?area.id:scope;

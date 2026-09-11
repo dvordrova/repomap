@@ -56,7 +56,7 @@ var repomapMembers = (function () {
       var name=sourceLink(item.source);name.className='map-member-name';name.textContent=displayName(item);
       name.dataset.memberSource=sourceKey(item.source);
       name.title=(item.explanation||rmT('No explanation saved. Open the source to inspect this element.'))+'\n'+item.source.Text+(item.source.NoSource?'\n'+rmT('No source'):'');
-      name.addEventListener('click',function(e){e.stopPropagation();map.showMember(node,item);});
+      name.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();map.showMember(node,item);});
       if(item.source.NoSource){name.setAttribute('tabindex','0');name.setAttribute('role','button');name.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();map.showMember(node,item);}});}
       row.appendChild(name);grid.appendChild(row);
     });
