@@ -68,7 +68,7 @@ Ordinary analytical prompts carry no `REPOMAP_PROSE_SOURCES_V1` appendix and no 
 After separate generation,
 an aggregate closed-ref reducer joins compatible domain definitions and chooses
 one original explanation. Go unions original spellings and sources and retains
-all variants and request provenance. Reduction request v5 asks for one
+all variants and request provenance. A reduction window lists at most six sample observations per variant beside `count`, the real number; the catalog entry keeps every source (Freqtrade `20260911-053911` sent 137 windows of 1.9–3.1 MB, 114 million input tokens, when every anchor of a common term rode into every window). Reduction request v6 asks for one
 `{ref, representative}` assignment per input group. The representative is a
 closed original variant ref; equal choices identify one output group. The group
 owning that variant must make the same choice. Missing inputs, conflicting

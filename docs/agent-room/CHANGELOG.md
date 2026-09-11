@@ -8,6 +8,12 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Glossary reduction windows list at most six sample observations per
+  variant beside the real `count`; the catalog entry keeps every source.
+  Freqtrade `20260911-053911` sent 137 reduction windows of 1.9–3.1 MB,
+  114 million input tokens for 90 thousand output tokens, because every
+  anchor of a common term rode into every window; the fourth run paid
+  102 million more for the same stage. Reduction state version 6.
 - Orientation walks a packing ladder after a size or context refusal, local
   or remote: 40 members per group with 6+6 observations, then 20 with 3+3,
   then 12 without observations (Freqtrade saved input: 1.74 → 1.18 → 0.92 MB). A 524,288-token

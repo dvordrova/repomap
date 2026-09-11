@@ -141,3 +141,29 @@ func TestReductionRepeatedProvenanceIsEncodedOnce(t *testing.T) {
 		t.Fatal("factoring introduced a quota or copied shared provenance for each variant")
 	}
 }
+
+func TestReductionSamplesSourcesOnTheWireAndKeepsThemInTheEntry(t *testing.T) {
+	var scope []Source
+	for i := 0; i < 50; i++ {
+		scope = append(scope, Source{Path: "service.py", Line: i + 1})
+	}
+	candidate := Candidate{Name: "trade", Explanation: "An original explanation.", Sources: scope}
+	entry, err := makeEntry(candidate.Explanation, []Candidate{candidate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call, err := reductionCall([]Entry{entry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request reductionRequest
+	if err := json.Unmarshal([]byte(call.Prompt.User), &request); err != nil {
+		t.Fatal(err)
+	}
+	if len(request.Sources) != maxReductionSourcesPerVariant || len(request.SourceSets) != 1 || request.SourceSets[0].Count != 50 || len(request.SourceSets[0].Sources) != maxReductionSourcesPerVariant {
+		t.Fatalf("wire did not sample sources beside the real count: %+v", request)
+	}
+	if len(entry.Variants) != 1 || len(entry.Variants[0].Sources) != 50 {
+		t.Fatalf("the entry lost sources: %+v", entry)
+	}
+}

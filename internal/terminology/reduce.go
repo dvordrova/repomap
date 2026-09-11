@@ -204,10 +204,22 @@ type wireSource struct {
 type wireSourceSet struct {
 	Ref     string   `json:"ref"`
 	Sources []string `json:"sources"`
+	// Count is the real number of observations behind the variant; Sources
+	// lists at most maxReductionSourcesPerVariant of them.
+	Count int `json:"count"`
 }
 
-// Every window owns complete catalogues. Repeated provenance is referenced,
-// not sampled, and no child depends on a parent window's ref allocation.
+// maxReductionSourcesPerVariant bounds the observations a window lists per
+// variant. The model chooses a representative explanation from the variants'
+// text and their weight of evidence; it does not need every anchor. Freqtrade
+// run 20260911-053911 sent 137 reduction windows of 1.9–3.1 MB, 114 million
+// input tokens for 90 thousand output tokens, because a common term carried
+// thousands of anchors into every window. The catalog entry keeps every
+// source; only the wire is sampled.
+const maxReductionSourcesPerVariant = 6
+
+// Every window owns its own catalogues and no child depends on a parent
+// window's ref allocation.
 type reductionRequest struct {
 	Sources    []wireSource    `json:"sources"`
 	SourceSets []wireSourceSet `json:"source_sets"`
@@ -229,7 +241,11 @@ func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 			variants[variant] = candidate
 			owners[variant] = ref
 			var sources []string
-			for _, source := range candidate.Sources {
+			sampled := candidate.Sources
+			if len(sampled) > maxReductionSourcesPerVariant {
+				sampled = sampled[:maxReductionSourcesPerVariant]
+			}
+			for _, source := range sampled {
 				sourceRef, exists := sourceRefs[source]
 				if !exists {
 					sourceRef = fmt.Sprintf("s%d", len(sourceRefs)+1)
@@ -238,12 +254,12 @@ func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 				}
 				sources = append(sources, sourceRef)
 			}
-			key := strings.Join(sources, " ") // Allocated s* refs cannot contain spaces.
+			key := fmt.Sprintf("%d %s", len(candidate.Sources), strings.Join(sources, " ")) // Allocated s* refs cannot contain spaces.
 			setRef, exists := setRefs[key]
 			if !exists {
 				setRef = fmt.Sprintf("p%d", len(setRefs)+1)
 				setRefs[key] = setRef
-				request.SourceSets = append(request.SourceSets, wireSourceSet{Ref: setRef, Sources: sources})
+				request.SourceSets = append(request.SourceSets, wireSourceSet{Ref: setRef, Sources: sources, Count: len(candidate.Sources)})
 			}
 			group.Variants = append(group.Variants, wireVariant{Ref: variant, Name: candidate.Name, Explanation: candidate.Explanation,
 				SourceSet: setRef})
@@ -255,7 +271,7 @@ func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 		return llm.Call[[]Entry]{}, err
 	}
 	return llm.Call[[]Entry]{
-		State:  []byte(`{"stage":"glossary","version":5}`),
+		State:  []byte(`{"stage":"glossary","version":6}`),
 		Prompt: llm.Prompt{System: reducePrompt, User: string(user), ResponseFormatJSON: true},
 		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: glossaryOutputTokens},
 		DecodeValidate: func(raw []byte) ([]Entry, error) {
