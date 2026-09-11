@@ -33,6 +33,9 @@ var learningResponseExample string
 //go:embed prompts/learning-merge.md
 var learningMergePrompt string
 
+//go:embed prompts/learning-merge-response-example.json
+var learningMergeResponseExample string
+
 //go:embed prompts/learning-select.md
 var learningSelectPrompt string
 
@@ -195,7 +198,7 @@ func (r *reader) learningEvidence() []learningEvidence {
 			seenFiles[chunk.Place.ID] = true
 			appendSource(atlas.QuestionStop{PlaceID: chunk.Place.ID, SubjectID: chunk.Place.ID,
 				Path: chunk.Place.Path, Line: 1, Kind: "file", Name: chunk.Place.Path, TargetIDs: chunk.Place.TargetIDs,
-				Evidence: map[string]any{"evidence": []map[string]any{{"anchor_path": chunk.Place.Path, "anchor_line": 1,
+				Evidence: map[string]any{"evidence": []map[string]any{{"anchor_line": 1,
 					"author_doc": chunk.Place.File.Doc, "prior_model_hypothesis": line}}}})
 		}
 		refs := make([]string, 0, len(chunk.Anchors))
@@ -301,7 +304,7 @@ func learningCall(pool learningRequest, prompt string) (llm.Call[learningRespons
 	if err != nil {
 		return llm.Call[learningResponse]{}, err
 	}
-	return llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v3"),
+	return llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v4"),
 		Prompt:         llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true, ResponseExample: learningResponseExample, ProseFields: []string{"reviews[].reason", "reviews[].questions[].question", "reviews[].questions[].why"}},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
 		DecodeValidate: func(raw []byte) (learningResponse, error) { return decodeLearning(raw, pool) }}, nil
@@ -815,9 +818,18 @@ func consolidateLearningReviews(reviews []atlas.LearningReview, state string) ([
 	return kept, state
 }
 
+// learningMenuLimit bounds one intent's menu. Morfeu 20260911-153538 with a
+// 262,144-token provider window: Learn split into eight windows, each
+// proposing without a quota, the menus then chose 11–14 questions per
+// intent and the report offered 100 questions where the two-window run
+// offered 40, at twice the tokens. The number of questions must not follow
+// the number of Learn windows.
+const learningMenuLimit = 5
+
 // Proposals from evidence fragments are not yet a repository curriculum.
 // Compose the topic menus together against existing component roles before answering.
-// There is no local score, quota or removal based on answer availability.
+// There is no local score or removal based on answer availability; each
+// intent's menu is bounded by learningMenuLimit.
 func (r *reader) selectLearning(ctx context.Context) error {
 	var rows []table.Row
 	for i, question := range r.learning.Questions {
@@ -853,9 +865,15 @@ func (r *reader) selectLearning(ctx context.Context) error {
 		}})
 	}
 	intents := learningIntents()
-	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.select.v3", System: learningSelectPrompt, Independent: true,
+	// A menu over the limit is refused as any malformed known row: the table
+	// rule for a sequence past limit_from. Cutting the tail instead would make
+	// the code choose which five of seven the model meant as the clearest,
+	// completing its decision, and the cut menu would carry a rationale
+	// written for the full one. The refusal names the count; the intent's
+	// candidates stay inspectable as unavailable and the plan says partial.
+	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.select.v4", System: learningSelectPrompt, Independent: true,
 		Window: len(intents), Columns: []table.Column{
-			{Name: "questions", Kind: table.Sequence, OptionsFrom: "candidate_options"},
+			{Name: "questions", Kind: table.Sequence, OptionsFrom: "candidate_options", LimitFrom: "limit"},
 			{Name: "reason", Kind: table.Text, MaxRunes: 600},
 		}}
 	if r.opts.Through == "" || r.opts.Through == stageLearn {
@@ -888,7 +906,8 @@ func (r *reader) selectLearning(ctx context.Context) error {
 			}
 			if len(options) > 0 {
 				batch = append(batch, table.Row{ID: intent.ID, Fields: []table.Field{
-					{Name: "learning_intent", Value: intent.Title}, {Name: "learning_goal", Value: intent.Goal}, {Name: "candidate_options", Value: options},
+					{Name: "learning_intent", Value: intent.Title}, {Name: "learning_goal", Value: intent.Goal},
+					{Name: "candidate_options", Value: options}, {Name: "limit", Value: learningMenuLimit},
 				}})
 			}
 		}
@@ -990,8 +1009,9 @@ func spellCandidateRefs(reason string, pool []int, questions []atlas.LearningQue
 	})
 }
 
-// --prompt customizes proposal generation. Audience and consolidation each
-// retain their own schemas and prompts within the same Learn stage.
+// --prompt customizes proposal generation. The audience table keeps its own
+// schema and prompt within the same Learn stage; consolidation is its own
+// call below, with its own prompt.
 func (r *reader) runLearningTable(ctx context.Context, def table.Definition, round int, shared []table.Field, rows []table.Row) ([]rowAnswer, error) {
 	if len(rows) == 0 {
 		return nil, nil
@@ -1007,42 +1027,153 @@ func (r *reader) runLearningTable(ctx context.Context, def table.Definition, rou
 	return r.runPreparedTable(ctx, def, round, shared, rows, nil)
 }
 
-// Compare every pair of proposals when the catalogue needs partitioning.
-// Each response groups, never drops, questions. All parent intents and their
-// original reasons/anchors survive consolidation into a shared answer.
+// learningMergeContract versions the group request and its decoder. Morfeu
+// 20260911-153538: the row-per-question form with a representative choice
+// returned 100 representatives for 100 questions, none merged, on the saved
+// window r4-w0 as well, even with the criterion loosened; the group form on
+// the same window returned 78 groups with 16 real merges (what this service
+// is, what must be running, the path that creates a film, the -mode flag).
+// One call per pool: the model returns membership only, refs in groups; the
+// code owns the union of members across pools, the wording of a merged
+// question and its origins.
+const learningMergeContract = "repomap.atlas.learn.merge.v2"
+
+// learningGroup is one information need: the refs whose questions the same
+// answer would satisfy, and the representative the report asks.
+type learningGroup struct {
+	Representative string   `json:"representative"`
+	Members        []string `json:"members"`
+}
+
+// learningGrouping is one accepted merge window: every advertised ref in
+// exactly one group. Notes are decoder-owned: what the response wrote that
+// the reading rules changed, kept beside the response in the journal.
+type learningGrouping struct {
+	Groups []learningGroup `json:"groups"`
+	Notes  []string        `json:"notes,omitempty"`
+}
+
+// learningMergeCall asks one pool for its groups. The user message is the
+// closed catalogue of refs and wordings; the response names refs only and
+// reasoning stays off: one grouping decision, no prose.
+func learningMergeCall(refs, wordings []string) (llm.Call[learningGrouping], error) {
+	type item struct {
+		Ref      string `json:"ref"`
+		Question string `json:"question"`
+	}
+	items := make([]item, len(refs))
+	for i := range refs {
+		items[i] = item{Ref: refs[i], Question: wordings[i]}
+	}
+	raw, err := json.Marshal(struct {
+		Task      string `json:"task"`
+		Questions []item `json:"questions"`
+	}{learningMergeContract, items})
+	if err != nil {
+		return llm.Call[learningGrouping]{}, err
+	}
+	return llm.Call[learningGrouping]{State: []byte(learningMergeContract),
+		Prompt:         llm.Prompt{System: learningMergePrompt, User: string(raw), ResponseFormatJSON: true, ResponseExample: learningMergeResponseExample, NoResponseAdjunct: true},
+		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
+		DecodeValidate: func(raw []byte) (learningGrouping, error) { return decodeLearningGroups(raw, refs) }}, nil
+}
+
+// decodeLearningGroups reads one merge response against the pool's refs. An
+// unadvertised ref is ignored; a ref in two groups stays in the first; a
+// representative outside its members gives way to the first member; a ref
+// no group named is its own group, as q5 was in the probe; a malformed
+// group is skipped and its refs stay their own groups. A response without a
+// groups array, or naming no advertised ref, decided nothing and is refused
+// rather than cached as "no repeats".
+func decodeLearningGroups(raw []byte, refs []string) (learningGrouping, error) {
+	var envelope struct {
+		Groups []json.RawMessage `json:"groups"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Groups == nil {
+		return learningGrouping{}, fmt.Errorf("learn: response needs a groups array")
+	}
+	known := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		known[ref] = true
+	}
+	placed := make(map[string]int)
+	var result learningGrouping
+	for i, rawGroup := range envelope.Groups {
+		number := i + 1
+		var group learningGroup
+		if err := json.Unmarshal(rawGroup, &group); err != nil {
+			result.Notes = append(result.Notes, fmt.Sprintf("group %d is malformed and was skipped", number))
+			continue
+		}
+		var members []string
+		for _, ref := range group.Members {
+			if !known[ref] {
+				result.Notes = append(result.Notes, fmt.Sprintf("group %d names the unadvertised ref %q, ignored", number, ref))
+				continue
+			}
+			if slices.Contains(members, ref) {
+				continue
+			}
+			if at, taken := placed[ref]; taken {
+				result.Notes = append(result.Notes, fmt.Sprintf("%s appears in groups %d and %d, kept in group %d", ref, at, number, at))
+				continue
+			}
+			members = append(members, ref)
+		}
+		if len(members) == 0 {
+			result.Notes = append(result.Notes, fmt.Sprintf("group %d names no advertised ref and was skipped", number))
+			continue
+		}
+		for _, ref := range members {
+			placed[ref] = number
+		}
+		if !slices.Contains(members, group.Representative) {
+			result.Notes = append(result.Notes, fmt.Sprintf("group %d representative %q is not a member, %s taken", number, group.Representative, members[0]))
+			group.Representative = members[0]
+		}
+		result.Groups = append(result.Groups, learningGroup{Representative: group.Representative, Members: members})
+	}
+	if len(placed) == 0 {
+		return learningGrouping{}, fmt.Errorf("learn: response names no advertised ref")
+	}
+	for _, ref := range refs {
+		if _, taken := placed[ref]; !taken {
+			result.Notes = append(result.Notes, fmt.Sprintf("%s is in no group, its own", ref))
+			result.Groups = append(result.Groups, learningGroup{Representative: ref, Members: []string{ref}})
+		}
+	}
+	return result, nil
+}
+
+// Compare every pair of proposals when the catalogue needs partitioning: a
+// pool is one grouping decision over a closed catalogue that fits whole, and
+// each pool is grouped on its own. Each response groups, never drops,
+// questions. All parent intents and their original reasons/anchors survive
+// consolidation into a shared answer.
 func (r *reader) mergeLearning(ctx context.Context) error {
 	questions := r.learning.Questions
 	if len(questions) < 2 {
 		return nil
 	}
-	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.merge.v1", System: learningMergePrompt, Independent: true, Window: len(questions),
-		Columns: []table.Column{{Name: "representative", Kind: table.Choice}}}
-	if r.opts.Through == "" || r.opts.Through == stageLearn {
-		def.MaxInputBytes = r.opts.InputBytes
+	budget := table.DefaultInputBytes
+	if (r.opts.Through == "" || r.opts.Through == stageLearn) && r.opts.InputBytes > 0 {
+		budget = r.opts.InputBytes
 	}
-	prepare := func(ids []int) (table.Definition, []table.Field, []table.Row) {
-		var catalog []map[string]string
-		var refs []string
+	prepare := func(ids []int) (llm.Call[learningGrouping], error) {
+		refs := make([]string, len(ids))
+		wordings := make([]string, len(ids))
 		for i, id := range ids {
-			ref := fmt.Sprintf("q%d", i+1)
-			refs = append(refs, ref)
-			catalog = append(catalog, map[string]string{"ref": ref, "question": questions[id].Question})
+			refs[i] = fmt.Sprintf("q%d", i+1)
+			wordings[i] = questions[id].Question
 		}
-		var rows []table.Row
-		for i, id := range ids {
-			rows = append(rows, table.Row{ID: fmt.Sprint(id), Fields: []table.Field{{Name: "question", Value: questions[id].Question}, {Name: "own_ref", Value: refs[i]}}})
-		}
-		prepared := def
-		prepared.Columns = []table.Column{{Name: "representative", Kind: table.Choice, Options: refs}}
-		return prepared, []table.Field{{Name: "questions", Value: catalog}}, rows
+		return learningMergeCall(refs, wordings)
 	}
 	var pools [][]int
 	fits := func(ids []int) bool {
-		prepared, shared, rows := prepare(ids)
-		windows, err := table.WindowsWithContext(prepared, 1, shared, rows)
-		// The catalogue and all its assignments must fit together. Accepting
-		// a catalogue that leaves room for just one row multiplies requests.
-		return err == nil && len(windows) == 1
+		// The catalogue must fit whole: a pool is one decision, and a
+		// catalogue divided further multiplies the pair comparisons.
+		call, err := prepare(ids)
+		return err == nil && len(call.Prompt.System)+len(call.Prompt.User) <= budget
 	}
 	var cross func([]int, []int) error
 	cross = func(a, b []int) error {
@@ -1097,25 +1228,109 @@ func (r *reader) mergeLearning(ctx context.Context) error {
 		}
 		return parent[i]
 	}
-	for _, pool := range pools {
-		prepared, shared, rows := prepare(pool)
-		r.learningRound++
-		answers, err := r.runLearningTable(ctx, prepared, r.learningRound, shared, rows)
+	// Every pool is one request; the pools run together through the ordinary
+	// executor and their groups are applied in pool order.
+	use := r.use(stageLearn)
+	type mergeWindow struct {
+		pool     []int
+		wordings []string
+		window   table.Window
+	}
+	windows := make([]mergeWindow, len(pools))
+	calls := make([]llm.Call[learningGrouping], len(pools))
+	for i, pool := range pools {
+		call, err := prepare(pool)
 		if err != nil {
 			return err
 		}
-		for i, answer := range answers {
-			if answer.source == atlas.SourceGiven {
-				r.learning.State = "partial"
-				// No accepted equality was supplied for this question. Keep its
-				// original proposal and any independently accepted comparisons.
-				continue
+		r.learningRound++
+		calls[i] = call
+		windows[i] = mergeWindow{pool: pool, wordings: make([]string, len(pool)), window: table.Window{Stage: stageLearn, Round: r.learningRound, Index: 0}}
+		for position, id := range pool {
+			windows[i].wordings[position] = questions[id].Question
+		}
+		use.Rows += len(pool)
+		use.Windows++
+		if err := r.writeWindowFile(windows[i].window, "prompt.md", []byte(call.Prompt.System)); err != nil {
+			return err
+		}
+		if err := r.writeWindowFile(windows[i].window, "input.json", []byte(call.Prompt.User)); err != nil {
+			return err
+		}
+	}
+	results := make([]llm.EachResult[learningGrouping], len(calls))
+	if !r.dry {
+		results = llm.ExecuteJSONEach(ctx, debugdump.BindStage(r.opts.Executor, stageLearn), r.opts.Provider, calls)
+	}
+	for i, result := range results {
+		current := windows[i]
+		for _, item := range []struct {
+			name string
+			data []byte
+		}{{"request.json", result.Outcome.Request}, {"response.json", result.Outcome.Response}} {
+			if len(item.data) > 0 {
+				if err := r.writeWindowFile(current.window, item.name, item.data); err != nil {
+					return err
+				}
 			}
-			var ref int
-			if _, err := fmt.Sscanf(answer.answer["representative"], "q%d", &ref); err != nil || ref < 1 || ref > len(pool) {
-				return fmt.Errorf("learn: unknown accepted representative")
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if errors.Is(result.Err, context.Canceled) {
+			return result.Err
+		}
+		if r.dry || result.Err != nil {
+			// No accepted grouping for this pool: its questions keep their own
+			// groups and whatever another pool accepted about them.
+			r.learning.State = "partial"
+			use.Given += len(current.pool)
+			reason := "no provider"
+			if result.Err != nil {
+				reason = result.Err.Error()
+				use.Rejected++
+				if !result.Outcome.Cached {
+					use.Live++
+				}
+				responseRef := ""
+				if len(result.Outcome.Response) > 0 {
+					responseRef = filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(current.window, "response.ref.json")))
+				}
+				r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "window_rejected", Count: len(current.pool), Reason: reason,
+					ResponseRef: responseRef, Samples: []string{fmt.Sprintf("round %d window %d", current.window.Round, current.window.Index)}})
 			}
-			parent[root(pool[i])] = root(pool[ref-1])
+			if err := r.journalLearningGroups(current.window, current.wordings, nil, atlas.SourceGiven, reason, result.Outcome.Metrics.Latency); err != nil {
+				return err
+			}
+			continue
+		}
+		source := atlas.SourceModel
+		if result.Outcome.Cached {
+			source = atlas.SourceCache
+			use.Cached++
+		} else {
+			use.Live++
+		}
+		index := make(map[string]int, len(current.pool))
+		for position, id := range current.pool {
+			index[fmt.Sprintf("q%d", position+1)] = id
+		}
+		for _, group := range result.Outcome.Value.Groups {
+			representative := index[group.Representative]
+			members := make([]string, 0, len(group.Members))
+			for _, ref := range group.Members {
+				id := index[ref]
+				members = append(members, questions[id].Question)
+				if id != representative {
+					parent[root(id)] = root(representative)
+				}
+			}
+			if len(members) > 1 {
+				r.learning.Groups = append(r.learning.Groups, atlas.LearningGroup{Representative: questions[representative].Question, Members: members, Source: source, Round: current.window.Round})
+			}
+		}
+		if err := r.journalLearningGroups(current.window, current.wordings, &result.Outcome.Value, source, "", result.Outcome.Metrics.Latency); err != nil {
+			return err
 		}
 	}
 	var merged []atlas.LearningQuestion
@@ -1131,5 +1346,73 @@ func (r *reader) mergeLearning(ctx context.Context) error {
 		merged[position].Origins = append(merged[position].Origins, q.Origins...)
 	}
 	r.learning.Questions = merged
+	return nil
+}
+
+// journalLearningGroups writes one merge window's result.json and its
+// tables.md section: the groups with their wordings after an accepted
+// response, the questions asked after a refused one, and the decoder's notes.
+func (r *reader) journalLearningGroups(window table.Window, wordings []string, grouping *learningGrouping, source, reason string, latency time.Duration) error {
+	result := struct {
+		Stage  string          `json:"stage"`
+		Round  int             `json:"round"`
+		Source string          `json:"source"`
+		Reason string          `json:"reason,omitempty"`
+		Groups []learningGroup `json:"groups"`
+		Notes  []string        `json:"notes,omitempty"`
+	}{Stage: window.Stage, Round: window.Round, Source: source, Reason: reason, Groups: []learningGroup{}}
+	if grouping != nil {
+		result.Groups, result.Notes = grouping.Groups, grouping.Notes
+	}
+	raw, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := r.writeWindowFile(window, "result.json", raw); err != nil {
+		return err
+	}
+	fmt.Fprintf(&r.tables, "## %s · round %d · window %d · %s\n\n", window.Stage, window.Round, window.Index,
+		filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "request.ref.json"))))
+	fmt.Fprintf(&r.tables, "source: %s", source)
+	if latency > 0 {
+		fmt.Fprintf(&r.tables, " · %s", latency.Round(time.Millisecond))
+	}
+	r.tables.WriteString("\n")
+	spell := func(ref string) string {
+		for i, text := range wordings {
+			if ref == fmt.Sprintf("q%d", i+1) {
+				return ref + " «" + text + "»"
+			}
+		}
+		return ref
+	}
+	if grouping == nil {
+		fmt.Fprintf(&r.tables, "rejected: %s\n\n", reason)
+		for i := range wordings {
+			fmt.Fprintf(&r.tables, "- %s\n", spell(fmt.Sprintf("q%d", i+1)))
+		}
+		r.tables.WriteString("\n")
+		return nil
+	}
+	joined := 0
+	for _, group := range grouping.Groups {
+		if len(group.Members) > 1 {
+			joined++
+		}
+	}
+	fmt.Fprintf(&r.tables, "questions: %d · groups: %d · joined: %d\n\n", len(wordings), len(grouping.Groups), joined)
+	for _, group := range grouping.Groups {
+		line := "- " + spell(group.Representative)
+		for _, ref := range group.Members {
+			if ref != group.Representative {
+				line += " ← " + spell(ref)
+			}
+		}
+		fmt.Fprintln(&r.tables, line)
+	}
+	for _, note := range grouping.Notes {
+		fmt.Fprintf(&r.tables, "- note: %s\n", note)
+	}
+	r.tables.WriteString("\n")
 	return nil
 }

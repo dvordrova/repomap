@@ -20,9 +20,9 @@ import (
 
 const (
 	requestVersion        = 1
-	executionContract     = "repomap.documentation-reduce.v1"
-	preparationVersion    = 2
-	responseSchemaVersion = 2
+	executionContract     = "repomap.documentation-reduce.v2"
+	preparationVersion    = 3
+	responseSchemaVersion = 3
 	// Use the shared output allowance; the configured provider ceiling still
 	// applies. A truncated completion is refused and its batch is split.
 	maxOutputTokens = llm.DefaultMaxOutputTokens
@@ -65,7 +65,6 @@ type sourceRequest struct {
 
 type responseSource struct {
 	Ref      string   `json:"ref"`
-	Claims   []string `json:"claims"`
 	Concepts []string `json:"concepts"`
 }
 
@@ -460,13 +459,12 @@ func joinReductions(candidates []normalizedReduction) normalizedReduction {
 		for _, source := range candidate.sources {
 			kept := byRef[source.Ref]
 			kept.Ref = source.Ref
-			kept.Claims, kept.Concepts = append(kept.Claims, source.Claims...), append(kept.Concepts, source.Concepts...)
+			kept.Concepts = append(kept.Concepts, source.Concepts...)
 			byRef[source.Ref] = kept
 		}
 	}
 	for _, source := range byRef {
-		source.Claims, _ = canonicalizeText(source.Claims)
-		source.Concepts, _ = canonicalizeText(source.Concepts)
+		source.Concepts = capConcepts(source.Concepts)
 		result.sources = append(result.sources, source)
 	}
 	sort.Slice(result.sources, func(i, j int) bool { return result.sources[i].Ref < result.sources[j].Ref })
@@ -741,19 +739,19 @@ func normalizeResponse(raw []byte, allowed map[string]documentAuthority) (normal
 	textSet := func(raw json.RawMessage, position string) []string {
 		var entries []json.RawMessage
 		if json.Unmarshal(raw, &entries) != nil || entries == nil {
-			reject(position, "source text set must be an array")
+			reject(position, "source concepts must be an array")
 			return nil
 		}
 		var values []string
 		for i, rawEntry := range entries {
 			var text string
 			if json.Unmarshal(rawEntry, &text) != nil {
-				reject(fmt.Sprintf("%s[%d]", position, i), "claim or concept must be text")
+				reject(fmt.Sprintf("%s[%d]", position, i), "concept must be text")
 				continue
 			}
 			text = strings.TrimSpace(text)
 			if !validText(text) {
-				reject(fmt.Sprintf("%s[%d]", position, i), "claim or concept must be non-empty text")
+				reject(fmt.Sprintf("%s[%d]", position, i), "concept must be non-empty text")
 				continue
 			}
 			values = append(values, text)
@@ -766,7 +764,6 @@ func normalizeResponse(raw []byte, allowed map[string]documentAuthority) (normal
 		position := fmt.Sprintf("sources[%d]", i)
 		var source struct {
 			Ref      string          `json:"ref"`
-			Claims   json.RawMessage `json:"claims"`
 			Concepts json.RawMessage `json:"concepts"`
 		}
 		if json.Unmarshal(rawSource, &source) != nil || source.Ref == "" {
@@ -779,18 +776,28 @@ func normalizeResponse(raw []byte, allowed map[string]documentAuthority) (normal
 			reject(position, "source ref was not advertised")
 			continue
 		}
-		claims, concepts := textSet(source.Claims, position+".claims"), textSet(source.Concepts, position+".concepts")
-		if len(claims)+len(concepts) == 0 {
+		concepts := textSet(source.Concepts, position+".concepts")
+		if len(concepts) == 0 {
 			continue
 		}
 		value := byRef[source.Ref]
 		value.Ref = source.Ref
-		value.Claims, value.Concepts = append(value.Claims, claims...), append(value.Concepts, concepts...)
+		value.Concepts = append(value.Concepts, concepts...)
 		byRef[source.Ref] = value
 	}
 	for ref, source := range byRef {
-		source.Claims, _ = canonicalizeText(source.Claims)
-		source.Concepts, _ = canonicalizeText(source.Concepts)
+		distinct := distinctConcepts(source.Concepts)
+		if dropped := len(distinct) - MaxConceptsPerSource; dropped > 0 {
+			// A ceiling, not a refusal: the document keeps its first concepts
+			// and stays accepted; the drop is journaled beside real rejections.
+			result.rejected = append(result.rejected, llm.ResponseRejection{
+				Kind: "documentation_concepts_capped", Count: dropped, Samples: []string{ref},
+				Reason: fmt.Sprintf("concepts beyond %d per document are dropped", MaxConceptsPerSource),
+			})
+			distinct = distinct[:MaxConceptsPerSource]
+		}
+		sort.Strings(distinct)
+		source.Concepts = distinct
 		result.sources = append(result.sources, source)
 		if !badSources[ref] {
 			result.accepted = append(result.accepted, ref)
@@ -836,7 +843,6 @@ func restoreSources(
 		}
 		result = append(result, Source{
 			Path: document.path, Kind: document.kind,
-			Claims:   append([]string(nil), value.Claims...),
 			Concepts: append([]string(nil), value.Concepts...),
 		})
 	}
@@ -914,7 +920,6 @@ func cloneResponseSources(values []responseSource) []responseSource {
 	for position, value := range values {
 		result[position] = responseSource{
 			Ref:      value.Ref,
-			Claims:   append([]string(nil), value.Claims...),
 			Concepts: append([]string(nil), value.Concepts...),
 		}
 	}

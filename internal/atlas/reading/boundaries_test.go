@@ -13,7 +13,7 @@ import (
 
 func TestBoundaryReviewOwnsRuntimeRelationshipsAndKeepsIndependentRows(t *testing.T) {
 	const address = "  https://거래.example/시세/%2F  "
-	const purpose = "Sends requests to the peer service with a destination resolved from runtime configuration, preserving the request context and payload.\n\nThe supplied declaration does not establish the final host or deployment topology."
+	const purpose = "sends requests to the peer service · not established: final host"
 	owner := func(id string, calls ...atlas.SymbolCall) atlas.Place {
 		return atlas.Place{ID: id, Kind: atlas.PlaceSymbol, Path: id + ".go", Parent: "file:" + id, LineNo: 10, TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:" + id, Name: id, Kind: "function", Signature: "func()", Doc: "Original author documentation."}, Calls: calls}}
 	}
@@ -39,18 +39,26 @@ func TestBoundaryReviewOwnsRuntimeRelationshipsAndKeepsIndependentRows(t *testin
 	var inspected int
 	provider.mutate = func(input map[string]any, rows []map[string]any) {
 		sourceRows := input["rows"].([]any)
+		// The rows of one declaration share one window; the declaration is
+		// sent once, in the context, and every row names it by owner_ref.
+		original := windowOwner(input)
+		if original["author_doc"] != "Original author documentation." {
+			t.Error("author evidence lost")
+		}
+		if strings.Count(string(mustJSON(input)), "Original author documentation.") != 1 {
+			t.Error("owner repeated inside the window")
+		}
 		for i, row := range rows {
 			source := sourceRows[i].(map[string]any)
-			original := source["owner"].(map[string]any)
-			if original["author_doc"] != "Original author documentation." {
-				t.Error("author evidence lost")
+			if source["owner_ref"] != original["ref"] || source["owner"] != nil {
+				t.Errorf("row does not name the shared owner: %+v", source)
 			}
 			if _, present := source["file_hypothesis"]; present {
 				t.Error("boundary depends on a caption")
 			}
 			inspected++
 			row["decision"], row["kind"], row["line"] = "boundary", "http_client", purpose
-			row["destination"], row["basis"], row["address"] = "Peer service", "dispatch", "unknown"
+			row["destination"], row["basis"], row["address"] = "other: Peer service", "dispatch", "unknown"
 			switch source["caller"] {
 			case "send":
 				if len(original["calls"].([]any)) != 3 {
@@ -63,11 +71,15 @@ func TestBoundaryReviewOwnsRuntimeRelationshipsAndKeepsIndependentRows(t *testin
 				} else {
 					row["address"] = "a1"
 				}
+				// The code knows the traced address: no address cell is asked.
+				if source["address_options"] != nil {
+					t.Errorf("known address asked again: %+v", source)
+				}
 			case "exporter":
 				if len(original["calls"].([]any)) != 2 {
 					t.Error("exporter lost its configuration observation")
 				}
-				row["destination"], row["basis"], row["line"], row["address"] = "Trace collector", "remote_client_instance", "Configures trace export to the collector.", "a1"
+				row["destination"], row["basis"], row["line"], row["address"] = destinationRef(input, "OpenTelemetry collector"), "remote_client_instance", "Configures trace export to the collector.", "a1"
 			case "setup":
 				row["decision"] = "none"
 				row["destination"] = false
@@ -108,7 +120,7 @@ func TestBoundaryReviewOwnsRuntimeRelationshipsAndKeepsIndependentRows(t *testin
 	if b := byCaller["send"]; b.Address != address || b.Column != 11 || b.Source != "model" || b.Kind != "http_client" || b.Destination != "Peer service" || b.Basis != "dispatch" || b.Line != purpose || len(b.Values) != 0 {
 		t.Fatalf("source or positive claim lost: %+v", b)
 	}
-	if b := byCaller["exporter"]; b.Address != "collector.internal:4318" || b.Basis != "configuration" || b.Destination != "Trace collector" {
+	if b := byCaller["exporter"]; b.Address != "collector.internal:4318" || b.Basis != "configuration" || b.Destination != "OpenTelemetry collector" {
 		t.Fatalf("configuration became dispatch: %+v", b)
 	}
 	if b := byCaller["dynamic"]; b.Address != "" || b.Basis != "dispatch" {
@@ -249,7 +261,7 @@ func TestBoundaryKnownHTTPAddressSurvivesAcceptedUnknownAndPreservesSourceAnchor
 	provider.mutate = func(_ map[string]any, rows []map[string]any) {
 		for _, row := range rows {
 			row["decision"], row["kind"], row["line"] = "boundary", "http_client", "Requests the configured peer."
-			row["destination"], row["basis"], row["address"] = "Peer service", "remote_client_instance", "unknown"
+			row["destination"], row["basis"], row["address"] = "other: Peer service", "remote_client_instance", "unknown"
 		}
 	}
 	r := answerTestReader(t, nil, provider)
@@ -299,7 +311,7 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 			t.Fatalf("caller contexts created extra boundaries: %d", len(rows))
 		}
 		source := input["rows"].([]any)[0].(map[string]any)
-		context := source["source_context"].(map[string]any)
+		context := windowOwner(input)["source_context"].(map[string]any)
 		ownFile := context["file"].(map[string]any)
 		if ownFile["path"] != file.Path || ownFile["author_doc"] != file.File.Doc {
 			t.Fatalf("own file evidence lost: %+v", ownFile)
@@ -342,11 +354,14 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 				t.Errorf("unrelated source or native identity leaked: %s", forbidden)
 			}
 		}
-		if options := source["address_options"].([]any); len(options) != 1 || options[0] != "unknown" {
-			t.Fatalf("caller/README clues became address choices: %+v", options)
+		if source["address_options"] != nil || source["address_catalog"] != nil {
+			t.Fatalf("caller/README clues became address choices: %+v", source)
 		}
-		rows[0]["decision"], rows[0]["kind"], rows[0]["line"] = "boundary", "http_client", "The caller documentation suggests forwarding requests and refreshing snapshots; the final destination remains unknown."
-		rows[0]["destination"], rows[0]["basis"], rows[0]["address"] = "Remote endpoints", "dispatch", "unknown"
+		if strings.Contains(string(mustJSON(context["immediate_callers"])), "result_value") {
+			t.Fatal("caller call sites carried result value trees")
+		}
+		rows[0]["decision"], rows[0]["kind"], rows[0]["line"] = "boundary", "http_client", "forwards requests and refreshes snapshots · not established: destination"
+		rows[0]["destination"], rows[0]["basis"], rows[0]["address"] = "other: Remote endpoints", "dispatch", "unknown"
 	}
 	r := answerTestReader(t, nil, provider)
 	r.opts.Through, r.opts.Graph.Places = "", graph
@@ -368,6 +383,35 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 	}
 }
 
+// windowOwner is the one declaration a boundary window shares.
+func windowOwner(input map[string]any) map[string]any {
+	context, _ := input["context"].(map[string]any)
+	owners, _ := context["owners"].([]any)
+	if len(owners) != 1 {
+		return nil
+	}
+	owner, _ := owners[0].(map[string]any)
+	return owner
+}
+
+// destinationRef finds the window's ref of a listed runtime system.
+func destinationRef(input map[string]any, system string) string {
+	context, _ := input["context"].(map[string]any)
+	catalog, _ := context["destination_catalog"].([]any)
+	for _, item := range catalog {
+		entry, _ := item.(map[string]any)
+		if entry["value"] == system {
+			return entry["ref"].(string)
+		}
+	}
+	return ""
+}
+
+func mustJSON(value any) []byte {
+	raw, _ := json.Marshal(value)
+	return raw
+}
+
 func TestColumnlessNativeFactClaimsItsLineAndColumnedFactKeepsOtherCalls(t *testing.T) {
 	// An SDK boundary from an external_call observation carries no column.
 	// Morfeu 20260911-152759 reviewed internal/broker/client.go:166 twice,
@@ -376,9 +420,12 @@ func TestColumnlessNativeFactClaimsItsLineAndColumnedFactKeepsOtherCalls(t *test
 	call := atlas.SymbolCall{Name: "amqp091.Channel.PublishWithDeferredConfirm", Kind: "invokes_external", Line: 166, Column: 42}
 	symbol := atlas.Place{ID: "owner", Kind: atlas.PlaceSymbol, Path: "client.go", LineNo: 143, Parent: "file:client", TargetIDs: []string{"service"},
 		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "caller", Name: "Client.PublicarComConfirm"}, Calls: []atlas.SymbolCall{call}}}
+	// The SDK observation itself arrives with source "external_call", not
+	// "fact" (places.go); run 20260911-171727 kept all four duplicates while
+	// the claim matched "fact" alone.
 	fact := func(column int) atlas.Place {
 		return atlas.Place{ID: "native", Kind: atlas.PlaceBoundary, Path: "client.go", LineNo: 166, Column: column, Parent: "file:client", TargetIDs: []string{"service"},
-			Given: "RabbitMQ broker", Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "sdk"}},
+			Given: "RabbitMQ broker", Boundary: &atlas.BoundaryFacts{Source: "external_call", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "sdk"}},
 				ObjectID: "caller", Direction: atlas.DirectionOut, GivenKind: atlas.BoundarySDK}}
 	}
 	for _, test := range []struct {

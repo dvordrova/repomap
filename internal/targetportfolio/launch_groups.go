@@ -42,7 +42,7 @@ func nativeLaunchGroups(native []NativeCandidate) []NativeLaunchGroup {
 	rows, observations := nativeRequest(native)
 	entries := make(map[string]bool)
 	for _, observation := range observations {
-		if observation.Kind == "launch_callable" && observation.Path != "" && observation.Line > 0 && len(observation.Values) == 3 && observation.Values[2] == "arguments=none" {
+		if observation.Kind == "launch_callable" && observation.Path != "" && observation.Line > 0 && observation.Fields["module"] != "" && observation.Fields["qualname"] != "" && observation.Fields["arguments"] == "none" {
 			entries[observation.Ref] = true
 		}
 	}

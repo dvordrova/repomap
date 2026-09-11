@@ -88,7 +88,11 @@ It also retains literal arguments of the exact registration that receives each
 callback, through the native argument identity. The operation table uses a
 closed registration ref plus a method choice for an HTTP name; Go restores the
 original path verbatim. Other work uses a descriptive label. Generated HTTP
-path text is not a name cell in the HTTP branch.
+path text is not a name cell in the HTTP branch. A declaration whose native
+route already is its operation is not sent to the operation table: the route
+fact carries the method and path, and the group index dropped the model's
+duplicate anyway. An arrow without witnesses (an import-only edge) takes its
+fallback sentence "A uses B." without a model row.
 
 The current operation table asks only `self` or `none` for this declaration. Immediate caller declarations and distinct sites are evidence, never an assignment destination. `none` transfers nothing. Only a complete `self` decision publishes the declaration’s activation, name and description. A real independently launched notification/metrics consumer may be `self` while its AddLogHook/PreRun/constructor/lifespan launcher is `none`. Synchronous helpers within the same responsibility are not separate work. Listener blocking alone is not a worker. Cron, persistent consumers and source-supported one-shot delayed work remain legitimate. Registration, callback and control evidence are interpreted by the model; projection never invents a semantic promotion. Native HTTP registration refs restore their original path and method verbatim; free text does not replace a known route. A `label` row whose `name` comes back empty, null or missing keeps the model's own `description` as its label (first sentence, at most 60 runes) and records `name_from: description`; an empty description still refuses the row.
 
@@ -125,7 +129,7 @@ remain model decisions with `self`/`none`, not local middleware classification.
   transports may establish communication; this does not promote their package
   objects into remote participants. No package blacklist or API handbook is added.
 
-A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell (27 Freqtrade rows were refused for it). Fixed native boundaries request explanation rather than pointless existence/kind choices. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems.
+A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell (27 Freqtrade rows were refused for it). Fixed native boundaries request explanation rather than pointless existence/kind choices. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems. The address catalogue lists only literals that can be addresses (no format templates, nothing from formatting, logging, time or string packages) and is sent only for outgoing rows whose address the code does not know; `destination` is a closed choice from the shared known-systems list (`internal/atlas/destinations`) annotated with the target's dependencies, with `other: ` for a system outside it; an owner's calls near the line and its source context are sent once per window and rows reference them. A native outbound fact without a column claims every selected call on its path and line, so the same call is not reviewed a second time as a candidate; a fact with a known column claims only that call.
 
 Boundary v5 names the candidate basis `dispatch` or `remote_client_instance`.
 The latter requires this call itself to create or configure the actual remote
@@ -266,7 +270,11 @@ consolidation preserves original accepted questions and any accepted comparisons
 with the plan marked partial. The owner explicitly approved this for user-selected
 repositories on 2026-09-06. `read --through learn` stops after the plan.
 `learning-plan.json` retains each context review and every proposal's original
-intent, reason and sources. Overlapping automatic questions share one answer;
+intent, reason and sources. Each intent's menu selects at most five of its candidates; the merge step
+groups the selected questions by information need in one call per pool
+(`groups` of members with a representative), an unplaced question staying its
+own group and a refused window keeping every question.
+Overlapping automatic questions share one answer;
 explicit questions remain visible. Exact duplicate explicit/generated wording
 shares a result carrying both origins. Questions expose their selection reasons
 and original excerpts. Answers offer existing term explanations when they
@@ -318,6 +326,11 @@ Replay is revalidated against that complete original window before reuse.
 Adding or reordering questions reuses existing decisions; canonical ownership
 is restored from the current graph. This implementation is under ordinary
 quality acceptance; its measured drafts and limitations are in CURRENT.md.
+A retrieval row states each fact once: a unit's `heading_path` lists only its
+parent section titles, `anchor_path` appears only when it differs from the
+row's path, and a type member that is itself a unit of the same chunk is
+referenced by its `a*` ref instead of copied; the stored evidence restores the
+complete record.
 Selected type anchors keep their native owned declarations and exact member
 locations, also shown under the answer's source checks. Types beyond the
 description-candidate budget remain available for question reading.

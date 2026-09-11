@@ -51,7 +51,7 @@ func (p *terminologyProvider) Complete(_ context.Context, prepared llm.Prepared)
 			if !strings.Contains(strings.Join(row.Text, " "), name) {
 				continue
 			}
-			terms = append(terms, map[string]any{"name": name, "explanation": "The source-backed meaning of " + name + ".", "rows": []string{row.Ref}})
+			terms = append(terms, map[string]any{"name": name, "kind": "domain", "explanation": "The source-backed meaning of " + name + ".", "rows": []string{row.Ref}})
 		}
 	}
 	raw, err := json.Marshal(map[string]any{"terms": terms})

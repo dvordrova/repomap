@@ -163,6 +163,23 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1,
 			Metrics: llm.Metrics{Attempts: 1, UsageReported: true, InputTokens: 10, OutputTokens: 5}}, err
 	}
+	if batch.Task == learningMergeContract {
+		// Every question is a group of one.
+		var merge struct {
+			Questions []struct {
+				Ref string `json:"ref"`
+			} `json:"questions"`
+		}
+		if err := json.Unmarshal(prepared.Bytes(), &merge); err != nil {
+			return llm.Completion{}, err
+		}
+		var groups []map[string]any
+		for _, question := range merge.Questions {
+			groups = append(groups, map[string]any{"representative": question.Ref, "members": []string{question.Ref}})
+		}
+		raw, err := json.Marshal(map[string]any{"groups": groups})
+		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
+	}
 	var learning learningRequest
 	if json.Unmarshal(prepared.Bytes(), &learning) == nil && learning.Evidence != nil && provider.learningFor != nil {
 		raw, err := json.Marshal(provider.learningFor(learning))
@@ -176,7 +193,8 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 			Options     []string `json:"options"`
 			OptionsFrom string   `json:"options_from"`
 		} `json:"fill"`
-		Rows []map[string]any `json:"rows"`
+		Context map[string]any   `json:"context"`
+		Rows    []map[string]any `json:"rows"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
@@ -208,10 +226,13 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 			case "choice":
 				options := column.Options
 				if column.OptionsFrom != "" {
-					if list, ok := row[column.OptionsFrom].([]any); ok {
-						for _, item := range list {
-							options = append(options, fmt.Sprint(item))
-						}
+					// A row's own list, else the window's shared one.
+					list, ok := row[column.OptionsFrom].([]any)
+					if !ok {
+						list, _ = request.Context[column.OptionsFrom].([]any)
+					}
+					for _, item := range list {
+						options = append(options, fmt.Sprint(item))
 					}
 				}
 				if len(options) > 0 {
@@ -230,16 +251,15 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 		}
 		switch request.Table {
 		case stageLearn:
-			_, merging := answer["representative"]
-			if ref, ok := row["own_ref"].(string); ok && merging {
-				answer["representative"] = ref
-			}
 			if candidates, ok := row["candidate_options"].([]any); ok {
 				var selected []string
 				if !provider.learningSelectNone {
 					for _, candidate := range candidates {
 						selected = append(selected, candidate.(string))
 					}
+				}
+				if limit, ok := row["limit"].(float64); ok && len(selected) > int(limit) {
+					selected = selected[:int(limit)]
 				}
 				answer["questions"] = "none"
 				if len(selected) > 0 {
@@ -352,6 +372,11 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("tables.md lacks %q", want)
 		}
+	}
+	// pkg/a and pkg/b are one window whose context names their parent once;
+	// no row repeats it, and the root has no parent.
+	if strings.Count(text, `context parent: {"line":"4 files","path":"pkg"}`) != 1 || strings.Contains(text, "  - parent:") || strings.Count(text, "context parent:") != 2 {
+		t.Errorf("directory parent is not the window's shared context:\n%s", text)
 	}
 	if strings.Contains(text, "pkg/b/gen.go\"") {
 		t.Error("a generated file was asked about")

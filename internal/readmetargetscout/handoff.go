@@ -109,7 +109,7 @@ func guidanceSnapshotDigest(documents []GuidanceDocument) (string, error) {
 	return sha256Hex(raw), nil
 }
 
-// SnapshotAgainstCorpus validates that result is an accepted, canonical role
+// SnapshotAgainstCorpus validates that result is an accepted, canonical entry
 // catalog for repository and returns an independently owned copy. It resolves
 // only sealed corpus metadata; it never reads repository file contents.
 func (result Result) SnapshotAgainstCorpus(repository *corpus.Corpus) (Result, error) {
@@ -130,42 +130,27 @@ func (result Result) SnapshotAgainstCorpus(repository *corpus.Corpus) (Result, e
 			return nil, fmt.Errorf("README file classifier: result handoff files are not in canonical order")
 		}
 		previousPath = info.Entry.Path
-		if len(file.Classifications) == 0 {
+		if !isCandidateEntryPath(info.Entry.Path) {
+			return nil, fmt.Errorf("README file classifier: result handoff retained a non-candidate file")
+		}
+		if len(file.Classifications) != 1 || !validFileClass(file.Classifications[0].Class) {
 			return nil, fmt.Errorf("README file classifier: result handoff has invalid classifications")
 		}
-
-		classifications := make([]Classification, len(file.Classifications))
-		var previousClass FileClass
-		for classIndex, classification := range file.Classifications {
-			if !validFileClass(classification.Class) {
-				return nil, fmt.Errorf("README file classifier: result handoff contains unknown file class")
+		hypotheses := append([]string(nil), file.Classifications[0].Hypotheses...)
+		if len(hypotheses) == 0 {
+			return nil, fmt.Errorf("README file classifier: result handoff has invalid hypotheses")
+		}
+		for hypothesisIndex, hypothesis := range hypotheses {
+			if !validHypothesis(hypothesis) {
+				return nil, fmt.Errorf("README file classifier: result handoff contains an invalid hypothesis")
 			}
-			if classIndex > 0 && classification.Class <= previousClass {
-				return nil, fmt.Errorf("README file classifier: result handoff classes are not in canonical order")
-			}
-			previousClass = classification.Class
-			if isProseEvidencePath(info.Entry.Path) && classification.Class != ClassDocumentation {
-				return nil, fmt.Errorf("README file classifier: result handoff retained a non-documentation prose role")
-			}
-			if len(classification.Hypotheses) == 0 {
-				return nil, fmt.Errorf("README file classifier: result handoff has invalid hypotheses")
-			}
-
-			hypotheses := append([]string(nil), classification.Hypotheses...)
-			for hypothesisIndex, hypothesis := range hypotheses {
-				if !validHypothesis(hypothesis) {
-					return nil, fmt.Errorf("README file classifier: result handoff contains an invalid hypothesis")
-				}
-				if hypothesisIndex > 0 && hypothesis <= hypotheses[hypothesisIndex-1] {
-					return nil, fmt.Errorf("README file classifier: result handoff hypotheses are not in canonical order")
-				}
-			}
-			classifications[classIndex] = Classification{
-				Class: classification.Class, Hypotheses: hypotheses,
+			if hypothesisIndex > 0 && hypothesis <= hypotheses[hypothesisIndex-1] {
+				return nil, fmt.Errorf("README file classifier: result handoff hypotheses are not in canonical order")
 			}
 		}
 		owned[fileIndex] = ClassifiedFile{
-			FileRef: file.FileRef, Classifications: classifications,
+			FileRef:         file.FileRef,
+			Classifications: []Classification{{Class: ClassTargetEntry, Hypotheses: hypotheses}},
 		}
 	}
 	return owned, nil

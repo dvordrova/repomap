@@ -27,6 +27,27 @@ type Candidate struct {
 	Origins     []Origin `json:"origins"`
 }
 
+// TermKind is the closed choice the model makes for every definition. Code
+// reads only one of them: an identifier is a machine name, not glossary
+// vocabulary, so such a term is accepted but never published.
+type TermKind string
+
+const (
+	KindAcronym    TermKind = "acronym"
+	KindDomain     TermKind = "domain"
+	KindProtocol   TermKind = "protocol"
+	KindFormat     TermKind = "format"
+	KindIdentifier TermKind = "identifier"
+)
+
+func validTermKind(value TermKind) bool {
+	switch value {
+	case KindAcronym, KindDomain, KindProtocol, KindFormat, KindIdentifier:
+		return true
+	}
+	return false
+}
+
 func normalizeSources(sources []Source) []Source {
 	result := append([]Source(nil), sources...)
 	sort.Slice(result, func(i, j int) bool {

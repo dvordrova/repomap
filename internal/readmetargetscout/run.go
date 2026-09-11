@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/llm"
@@ -37,7 +36,7 @@ func Run(
 		batch := batch
 		calls[index] = llm.Call[responseResult]{
 			State:  state,
-			Prompt: llm.Prompt{System: prompt.System, User: prompt.User, ResponseFormatJSON: false, ResponseExample: responseExample},
+			Prompt: llm.Prompt{System: prompt.System, User: prompt.User, ResponseFormatJSON: true, ResponseExample: responseExample},
 			Limits: llm.Limits{
 				MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: MaxResponseBytes,
 				MaxOutputTokens: MaxOutputTokens,
@@ -106,68 +105,33 @@ func MergeResults(compilation Compilation, results []Result) (Result, error) {
 	if err := validateReadyCompilation(compilation); err != nil {
 		return nil, err
 	}
-	type classSet map[FileClass]map[string]struct{}
-	files := make(map[corpus.FileID]classSet)
+	files := make(map[corpus.FileID]map[string]struct{})
 	for _, result := range results {
 		for _, file := range result {
-			filePath, known := compilation.authority[file.FileRef]
-			if !known || len(file.Classifications) == 0 {
+			if _, known := compilation.authority[file.FileRef]; !known || len(file.Classifications) != 1 {
 				return nil, fmt.Errorf("README file classifier: merged result has invalid file authority")
 			}
-			classes := files[file.FileRef]
-			if classes == nil {
-				classes = make(classSet)
-				files[file.FileRef] = classes
+			classification := file.Classifications[0]
+			if !validFileClass(classification.Class) || len(classification.Hypotheses) == 0 {
+				return nil, fmt.Errorf("README file classifier: merged result has invalid classification")
 			}
-			for _, classification := range file.Classifications {
-				if !validFileClass(classification.Class) || len(classification.Hypotheses) == 0 {
-					return nil, fmt.Errorf("README file classifier: merged result has invalid classification")
+			hypotheses := files[file.FileRef]
+			if hypotheses == nil {
+				hypotheses = make(map[string]struct{})
+				files[file.FileRef] = hypotheses
+			}
+			for _, hypothesis := range classification.Hypotheses {
+				if !validHypothesis(hypothesis) {
+					return nil, fmt.Errorf("README file classifier: merged result has invalid hypothesis")
 				}
-				if isProseEvidencePath(filePath) && classification.Class != ClassDocumentation {
-					continue
-				}
-				hypotheses := classes[classification.Class]
-				if hypotheses == nil {
-					hypotheses = make(map[string]struct{})
-					classes[classification.Class] = hypotheses
-				}
-				for _, hypothesis := range classification.Hypotheses {
-					if !validHypothesis(hypothesis) {
-						return nil, fmt.Errorf("README file classifier: merged result has invalid hypothesis")
-					}
-					hypotheses[hypothesis] = struct{}{}
-				}
+				hypotheses[hypothesis] = struct{}{}
 			}
 		}
 	}
 	merged := make(Result, 0, len(files))
-	for fileRef, classes := range files {
-		if len(classes) == 0 {
-			continue
-		}
-		classifications := make([]Classification, 0, len(classes))
-		for class, hypothesisSet := range classes {
-			hypotheses := make([]string, 0, len(hypothesisSet))
-			for hypothesis := range hypothesisSet {
-				hypotheses = append(hypotheses, hypothesis)
-			}
-			sort.Strings(hypotheses)
-			classifications = append(classifications, Classification{Class: class, Hypotheses: hypotheses})
-		}
-		sort.Slice(classifications, func(i, j int) bool {
-			return classifications[i].Class < classifications[j].Class
-		})
-		merged = append(merged, ClassifiedFile{FileRef: fileRef, Classifications: classifications})
+	for fileRef, hypotheses := range files {
+		merged = append(merged, entryFile(fileRef, hypotheses))
 	}
-	sort.Slice(merged, func(i, j int) bool {
-		left, right := compilation.authority[merged[i].FileRef], compilation.authority[merged[j].FileRef]
-		if left != right {
-			return left < right
-		}
-		return merged[i].FileRef < merged[j].FileRef
-	})
-	if merged == nil {
-		return Result{}, nil
-	}
+	sortByPath(merged, compilation.authority)
 	return merged, nil
 }

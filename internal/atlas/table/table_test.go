@@ -20,17 +20,25 @@ func testDefinition() Definition {
 }
 
 func TestSequencePreservesOrderAndFiltersOnlyExactKnownRefs(t *testing.T) {
-	column := Column{Name: "order", Kind: Sequence, OptionsFrom: "options"}
-	row := Row{Fields: []Field{{Name: "options", Value: []string{"c1", "c2", "c3"}}}}
+	column := Column{Name: "order", Kind: Sequence, OptionsFrom: "options", LimitFrom: "limit"}
+	row := Row{Fields: []Field{{Name: "options", Value: []string{"c1", "c2", "c3"}}, {Name: "limit", Value: 2}}}
 	// Unknown refs were never selectable and drop out; a selection of only
 	// unknown refs is an empty selection, not a refused row. Commas separate
-	// refs as whitespace does. The options list is the only bound: a
-	// selection can never hold more refs than it offers.
-	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": "", "": "", "c999": "", "c01": "", "c1,c2": "c1 c2", "c1 c2 c3 c1": "c1 c2 c3"} {
-		value, err := normalizeCell(column, row, input)
+	// refs as whitespace does. Only exceeding the limit refuses the cell.
+	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": "", "": "", "c999": "", "c01": "", "c1,c2": "c1 c2"} {
+		value, err := normalizeCell(column, nil, row, input)
 		if err != nil || value != expected {
 			t.Fatalf("%q -> %q, %v", input, value, err)
 		}
+	}
+	if _, err := normalizeCell(column, nil, row, "c1 c2 c3"); err == nil {
+		t.Fatal("accepted a selection over the limit")
+	}
+	// An options list without a limit is its own bound: a selection can never
+	// hold more refs than it offers, and a repeated ref counts once.
+	unbounded := Column{Name: "outbound", Kind: Sequence, OptionsFrom: "options"}
+	if value, err := normalizeCell(unbounded, nil, row, "c1 c2 c3 c1"); err != nil || value != "c1 c2 c3" {
+		t.Fatalf("unbounded selection changed: %q / %v", value, err)
 	}
 }
 
@@ -453,14 +461,14 @@ func TestRequestDoesNotReplaceUnencodableEvidenceWithNull(t *testing.T) {
 func TestChoiceWithOnlyUnknownAcceptsAnyAnswerAsUnknown(t *testing.T) {
 	column := Column{Name: "address", Kind: Choice, OptionsFrom: "address_options"}
 	only := Row{Fields: []Field{{Name: "address_options", Value: []string{"unknown"}}}}
-	if got, err := normalizeCell(column, only, "{param}/health"); err != nil || got != "unknown" {
+	if got, err := normalizeCell(column, nil, only, "{param}/health"); err != nil || got != "unknown" {
 		t.Fatalf("the only possible address was refused: %q / %v", got, err)
 	}
 	offered := Row{Fields: []Field{{Name: "address_options", Value: []string{"a1", "unknown"}}}}
-	if _, err := normalizeCell(column, offered, "{param}/health"); err == nil || !strings.Contains(err.Error(), "not one of the options") {
+	if _, err := normalizeCell(column, nil, offered, "{param}/health"); err == nil || !strings.Contains(err.Error(), "not one of the options") {
 		t.Fatalf("a copied path replaced an offered address ref: %v", err)
 	}
-	if got, err := normalizeCell(column, offered, "a1"); err != nil || got != "a1" {
+	if got, err := normalizeCell(column, nil, offered, "a1"); err != nil || got != "a1" {
 		t.Fatalf("an offered ref was refused: %q / %v", got, err)
 	}
 }
@@ -469,19 +477,50 @@ func TestSequenceEmptyOrNullIsAnEmptySelection(t *testing.T) {
 	column := Column{Name: "outbound", Kind: Sequence, OptionsFrom: "call_options"}
 	row := Row{Fields: []Field{{Name: "call_options", Value: []string{"c1", "c2"}}}}
 	for _, cell := range []string{"none", "", "  "} {
-		if got, err := normalizeCell(column, row, cell); err != nil || got != "" {
+		if got, err := normalizeCell(column, nil, row, cell); err != nil || got != "" {
 			t.Fatalf("empty selection %q refused: %q / %v", cell, got, err)
 		}
 	}
-	if got, err := normalizeCell(column, row, "c9 c12"); err != nil || got != "" {
+	if got, err := normalizeCell(column, nil, row, "c9 c12"); err != nil || got != "" {
 		t.Fatalf("refs outside the options did not settle as an empty selection: %q / %v", got, err)
 	}
-	if got, err := normalizeCell(column, row, "c9 c2"); err != nil || got != "c2" {
+	if got, err := normalizeCell(column, nil, row, "c9 c2"); err != nil || got != "c2" {
 		t.Fatalf("a known ref beside an unknown one was lost: %q / %v", got, err)
 	}
 	def := Definition{Stage: "atlas_symbols", Independent: true, Columns: []Column{column}}
 	result, err := DecodeResult(def, Window{Rows: []Row{row}}, []byte(`{"rows":[{"key":"r1","outbound":null}]}`))
 	if err != nil || result.Answers[0] == nil || result.Answers[0]["outbound"] != "" {
 		t.Fatalf("null selection refused the row: %+v / %v", result, err)
+	}
+}
+
+func TestOptionsFromReadsTheWindowContextWhenTheRowHasNoList(t *testing.T) {
+	// A catalogue every row chooses from is sent once, in the context; the
+	// row's own field still wins when both carry the name.
+	column := Column{Name: "destination", Kind: Choice, OptionsFrom: "destination_options", Free: "other: ", FreeMaxRunes: 10}
+	context := []Field{{Name: "destination_options", Value: []string{"d1", "d2"}}}
+	bare := Row{Fields: []Field{{Name: "path", Value: "client.go"}}}
+	if got, err := normalizeCell(column, context, bare, "d2"); err != nil || got != "d2" {
+		t.Fatalf("context options were not consulted: %q / %v", got, err)
+	}
+	if got, err := normalizeCell(column, context, bare, "other: Twilio"); err != nil || got != "other: Twilio" {
+		t.Fatalf("free text beside context options was refused: %q / %v", got, err)
+	}
+	if _, err := normalizeCell(column, context, bare, "d9"); err == nil {
+		t.Fatal("a ref outside the context list was accepted")
+	}
+	own := Row{Fields: []Field{{Name: "destination_options", Value: []string{"d9"}}}}
+	if got, err := normalizeCell(column, context, own, "d9"); err != nil || got != "d9" {
+		t.Fatalf("the row's own list did not shadow the context: %q / %v", got, err)
+	}
+	address := Column{Name: "address", Kind: Choice, OptionsFrom: "address_options", WhenOptionsFrom: "address_options"}
+	def := Definition{Stage: "atlas_boundaries", Independent: true, Columns: []Column{column, address}}
+	window := Window{Context: context, Rows: []Row{bare, {Fields: []Field{{Name: "address_options", Value: []string{"unknown", "a1"}}}}}}
+	result, err := DecodeResult(def, window, []byte(`{"rows":[{"key":"r1","destination":"d1"},{"key":"r2","destination":"d1","address":"a1"}]}`))
+	if err != nil || len(result.Rejections) != 0 {
+		t.Fatalf("a row without address candidates was required to choose one: %+v / %v", result, err)
+	}
+	if _, asked := result.Answers[0]["address"]; asked || result.Answers[1]["address"] != "a1" {
+		t.Fatalf("inactive address cell gained authority or the active one lost it: %+v", result.Answers)
 	}
 }

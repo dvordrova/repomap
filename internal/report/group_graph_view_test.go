@@ -287,7 +287,7 @@ func reportReducedDocumentationFixture(t *testing.T) documentationreduce.Result 
 		Overview:       "Explains the fixture service.",
 		Sources: []documentationreduce.Source{{
 			Path: "README.md", Kind: readmetargetscout.GuidanceReadme,
-			Claims: []string{"The fixture processes work."}, Concepts: []string{"Work"},
+			Concepts: []string{"Work"},
 		}},
 	}
 	wire, err := json.Marshal(struct {

@@ -83,10 +83,10 @@ func TestCumulativeNativeEvidenceSeparatesGoConsumersAndJSTSPackages(t *testing.
 				for _, row := range candidate.Row.Evidence {
 					observations[row.Kind] = row
 					if row.Kind == "documented_command" && row.Path == "README.md" && row.Line > 0 {
-						commands[row.Values[1]] = true
+						commands[row.Fields["text"]] = true
 					}
 				}
-				if observations["own_main_packages"].Values[0] != "count=3" || observations["own_main_consumers"].Values[0] != "count=2" || observations["other_module_imports"].Values[0] != "count=0" {
+				if observations["own_main_packages"].Fields["count"] != "3" || len(observations["own_main_packages"].Values) != 3 || observations["own_main_consumers"].Fields["count"] != "2" || observations["other_module_imports"].Fields["count"] != "0" {
 					t.Fatalf("incorrect Go import evidence: %#v", observations)
 				}
 				if !commands["go run ./cmd/api"] || !commands["go run ./cmd/worker"] {
@@ -165,9 +165,9 @@ func TestCumulativePythonLaunchFactsReachPortfolioWithoutRemovingShebangCandidat
 				case "python_shebang":
 					shebang = observation.Line == 1
 				case "launch_root":
-					mode = len(observation.Values) > 0 && observation.Values[0] == "script_file"
+					mode = observation.Fields["launch_kind"] == "script_file" && observation.Fields["module"] != ""
 				case "launch_file_executable":
-					permission = slices.Equal(observation.Values, []string{strconv.FormatBool(executable)})
+					permission = observation.Fields["executable"] == strconv.FormatBool(executable) && len(observation.Values) == 0
 				case "module_level_relative_import":
 					imports++
 					name := "GetLevelsInfoResponse"
@@ -176,7 +176,7 @@ func TestCumulativePythonLaunchFactsReachPortfolioWithoutRemovingShebangCandidat
 					} else if observation.Line != 3 {
 						t.Fatalf("nested import gained module-level authority: %+v", observation)
 					}
-					if !slices.Equal(observation.Values, []string{".models", name}) {
+					if observation.Fields["module"] != ".models" || observation.Fields["name"] != name {
 						t.Fatalf("relative import lost original names: %+v", observation)
 					}
 				}
@@ -249,7 +249,7 @@ func cumulativeEvidenceRepository(t *testing.T, language string) (string, *corpu
 
 func TestGuidanceCommandsKeepContinuationAndIgnoreProse(t *testing.T) {
 	rows := guidanceCommandObservations(readmetargetscout.GuidanceSnapshot{Documents: []readmetargetscout.GuidanceDocument{{Path: "README.md", Content: "# Run\nDo not execute this prose.\n~~~~sh\npython -m acme.api \\\n  --port 8000\n~~~~\n```python\nimport acme\nvalue = 2\n```\n"}}})
-	if len(rows) != 2 || rows[0].Line != 4 || rows[0].Kind != "documented_command" || !strings.Contains(rows[0].Values[1], "\n  --port 8000") || rows[1].Line != 8 || rows[1].Kind != "documented_import" {
+	if len(rows) != 2 || rows[0].Line != 4 || rows[0].Kind != "documented_command" || rows[0].Fields["heading"] != "# Run" || !strings.Contains(rows[0].Fields["text"], "\n  --port 8000") || rows[1].Line != 8 || rows[1].Kind != "documented_import" {
 		t.Fatalf("guidance source boundaries: %#v", rows)
 	}
 }
@@ -257,7 +257,7 @@ func TestGuidanceCommandsKeepContinuationAndIgnoreProse(t *testing.T) {
 func TestGuidanceImportsKeepTheirMultilineModuleNames(t *testing.T) {
 	for _, statement := range []string{"import(\n  \"example.com/acme/service\" // comment with (\n)", "from acme import (\n  api,\n  worker,\n)", "import {\n  start,\n  stop\n} from 'acme'"} {
 		rows := guidanceCommandObservations(readmetargetscout.GuidanceSnapshot{Documents: []readmetargetscout.GuidanceDocument{{Path: "README.md", Content: "# Use\n```\n" + statement + "\n```\n"}}})
-		if len(rows) != 1 || rows[0].Kind != "documented_import" || rows[0].Line != 3 || rows[0].Values[1] != statement {
+		if len(rows) != 1 || rows[0].Kind != "documented_import" || rows[0].Line != 3 || rows[0].Fields["text"] != statement {
 			t.Fatalf("import lost its original module or source extent: %#v", rows)
 		}
 	}

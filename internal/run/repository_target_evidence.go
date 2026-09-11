@@ -208,7 +208,7 @@ func guidanceCommandObservations(guidance readmetargetscout.GuidanceSnapshot) []
 			if isImport {
 				kind = "documented_import"
 			}
-			result = append(result, targetportfolio.Observation{Kind: kind, Path: document.Path, Line: start, Values: []string{heading, text}})
+			result = append(result, targetportfolio.Observation{Kind: kind, Path: document.Path, Line: start, Fields: map[string]string{"heading": heading, "text": text}})
 		}
 	}
 	return result
@@ -258,19 +258,19 @@ func guidanceImportOpen(text string) bool {
 func pythonNativeEvidence(target pythontarget.Target, catalog pythontarget.Catalog, repository *corpus.Corpus) (repositoryNativeEvidence, error) {
 	result := repositoryNativeEvidence{Root: target.ProjectDir}
 	for _, basis := range target.Basis {
-		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: string(basis.Kind), Path: basis.Path, Line: basis.Line, Values: []string{basis.Label}})
+		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: string(basis.Kind), Path: basis.Path, Line: basis.Line, Fields: map[string]string{"label": basis.Label}})
 	}
 	for _, root := range target.Roots {
-		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "launch_root", Path: root.Path, Line: root.Line, Values: []string{string(root.Kind), root.Module, root.Qualname}})
+		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "launch_root", Path: root.Path, Line: root.Line, Fields: map[string]string{"launch_kind": string(root.Kind), "module": root.Module, "qualname": root.Qualname}})
 		fileRef, _ := repository.ID(root.Path)
 		info, ok := repository.Info(fileRef)
 		if !ok {
 			return repositoryNativeEvidence{}, fmt.Errorf("Python launch source %q is absent from corpus", root.Path)
 		}
-		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "launch_file_executable", Path: root.Path, Values: []string{strconv.FormatBool(info.Entry.Executable)}})
+		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "launch_file_executable", Path: root.Path, Fields: map[string]string{"executable": strconv.FormatBool(info.Entry.Executable)}})
 		for _, module := range target.Modules {
 			if module.Path == root.Path {
-				result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "declared_distribution_membership", Path: root.Path, Values: []string{module.Name, strconv.FormatBool(target.DeclaresModule(module))}})
+				result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "declared_distribution_membership", Path: root.Path, Fields: map[string]string{"module": module.Name, "declared": strconv.FormatBool(target.DeclaresModule(module))}})
 				break
 			}
 		}
@@ -278,17 +278,17 @@ func pythonNativeEvidence(target pythontarget.Target, catalog pythontarget.Catal
 	if entry, found := pythontarget.LaunchEntry(target); found {
 		result.Observations = append(result.Observations, targetportfolio.Observation{
 			Kind: "launch_callable", Path: entry.Path, Line: entry.Line,
-			Values: []string{entry.Module, entry.Qualname, "arguments=none"},
+			Fields: map[string]string{"module": entry.Module, "qualname": entry.Qualname, "arguments": "none"},
 		})
 		for _, call := range target.LaunchCalls {
 			result.Observations = append(result.Observations, targetportfolio.Observation{
 				Kind: "launch_call_site", Path: call.Path, Line: call.Line,
-				Values: []string{call.Entry.Module, call.Entry.Qualname, "arguments=none"},
+				Fields: map[string]string{"module": call.Entry.Module, "qualname": call.Entry.Qualname, "arguments": "none"},
 			})
 		}
 	}
 	for _, imported := range target.RelativeImports {
-		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "module_level_relative_import", Path: imported.Path, Line: imported.Line, Values: []string{strings.Repeat(".", imported.Level) + imported.Module, imported.Name}})
+		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "module_level_relative_import", Path: imported.Path, Line: imported.Line, Fields: map[string]string{"module": strings.Repeat(".", imported.Level) + imported.Module, "name": imported.Name}})
 	}
 	for _, declaration := range target.DeclaredPackages {
 		for _, column := range []struct {
@@ -312,7 +312,7 @@ func pythonNativeEvidence(target pythontarget.Target, catalog pythontarget.Catal
 func goNativeEvidence(target analysistarget.Target, facts gofacts.Facts, catalog analysistarget.TargetCatalog) repositoryNativeEvidence {
 	result := repositoryNativeEvidence{Root: target.ModuleDir}
 	for _, root := range target.Roots {
-		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "go_main", Path: root.Path, Line: root.Line, Values: []string{target.PackagePath}})
+		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "go_main", Path: root.Path, Line: root.Line, Fields: map[string]string{"package": target.PackagePath}})
 	}
 	if target.Kind != analysistarget.KindModuleLibrary {
 		return result
@@ -370,7 +370,7 @@ func goNativeEvidence(target analysistarget.Target, facts gofacts.Facts, catalog
 		values []string
 	}{{"own_main_packages", mains}, {"own_main_consumers", consumers}, {"other_module_imports", external}} {
 		sort.Strings(row.values)
-		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: row.name, Path: path.Join(target.ModuleDir, "go.mod"), Values: append([]string{"count=" + strconv.Itoa(len(row.values))}, row.values...)})
+		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: row.name, Path: path.Join(target.ModuleDir, "go.mod"), Fields: map[string]string{"count": strconv.Itoa(len(row.values))}, Values: row.values})
 	}
 	return result
 }

@@ -79,9 +79,9 @@ func generationCall(items []proseSource) (llm.Call[generationResult], error) {
 	// Validation checks occurrence in the original accepted prose; the model
 	// cannot supply or rewrite that prose in its glossary response.
 	return llm.Call[generationResult]{
-		State: []byte(`{"contract":"repomap.glossary.generate.v2"}`),
+		State: []byte(`{"contract":"repomap.glossary.generate.v3"}`),
 		Prompt: llm.Prompt{System: generatePrompt, User: string(input), ResponseFormatJSON: true, NoResponseAdjunct: true,
-			ResponseExample: `{"terms":[{"name":"<exact name in accepted prose>","explanation":"<prose-context definition>","rows":["<supporting p ref>"]}]}`},
+			ResponseExample: `{"terms":[{"name":"<exact name in accepted prose>","kind":"<acronym, domain, protocol, format or identifier>","explanation":"<prose-context definition>","rows":["<supporting p ref>"]}]}`},
 		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: glossaryOutputTokens},
 		DecodeValidate: func(raw []byte) (generationResult, error) {
 			normalized, err := llm.NormalizeJSON(raw)
@@ -94,9 +94,9 @@ func generationCall(items []proseSource) (llm.Call[generationResult], error) {
 			if err := json.Unmarshal(normalized, &envelope); err != nil || envelope.Terms == nil {
 				return generationResult{}, fmt.Errorf("glossary: a terms array is required")
 			}
-			terms, rejections := validateGeneration(items, envelope.Terms)
+			terms, accepted, rejections := validateGeneration(items, envelope.Terms)
 			result := generationResult{Terms: terms, Rejections: rejections}
-			if len(envelope.Terms) > 0 && len(terms) == 0 {
+			if len(envelope.Terms) > 0 && accepted == 0 {
 				return result, fmt.Errorf("glossary: no supported definitions accepted")
 			}
 			return result, nil
@@ -106,31 +106,41 @@ func generationCall(items []proseSource) (llm.Call[generationResult], error) {
 
 // A definition selects accepted prose, whose source scope remains complete.
 // Neither a row-number coincidence nor a rejected neighbour supplies provenance.
-func validateGeneration(items []proseSource, wire []json.RawMessage) ([]validatedTerm, []llm.ResponseRejection) {
+// The returned count includes accepted identifier terms, which are journaled
+// and omitted from the published terms: a window of nothing but identifiers
+// is an accepted answer, not a refusal.
+func validateGeneration(items []proseSource, wire []json.RawMessage) ([]validatedTerm, int, []llm.ResponseRejection) {
 	var rejections []llm.ResponseRejection
 	rejectionByReason := make(map[string]int)
-	reject := func(reason, position string) {
-		index, found := rejectionByReason[reason]
+	journal := func(kind, reason, position string) {
+		index, found := rejectionByReason[kind+"\x00"+reason]
 		if !found {
 			index = len(rejections)
-			rejectionByReason[reason] = index
-			rejections = append(rejections, llm.ResponseRejection{Kind: "glossary_term_rejected", Reason: reason})
+			rejectionByReason[kind+"\x00"+reason] = index
+			rejections = append(rejections, llm.ResponseRejection{Kind: kind, Reason: reason})
 		}
 		rejections[index].Count++
 		if len(rejections[index].Samples) < 5 {
 			rejections[index].Samples = append(rejections[index].Samples, position)
 		}
 	}
+	reject := func(reason, position string) { journal("glossary_term_rejected", reason, position) }
 	rows := make(map[string]proseSource, len(items))
 	for i, item := range items {
 		rows[fmt.Sprintf("p%d", i+1)] = item
 	}
 	var terms []validatedTerm
+	accepted := 0
 	for index, raw := range wire {
 		position := fmt.Sprintf("terms[%d]", index)
 		var term termWire
-		if err := strictJSON(raw, &term); err != nil || term.Name == nil || term.Explanation == nil || term.Rows == nil {
+		if err := strictJSON(raw, &term); err != nil || term.Name == nil || term.Kind == nil || term.Explanation == nil || term.Rows == nil {
 			reject("invalid optional term shape", position)
+			continue
+		}
+		kind := TermKind(*term.Kind)
+		if !validTermKind(kind) {
+			reject("unknown optional term kind", position)
 			continue
 		}
 		name, explanation := *term.Name, strings.TrimSpace(*term.Explanation)
@@ -138,7 +148,7 @@ func validateGeneration(items []proseSource, wire []json.RawMessage) ([]validate
 			reject("invalid optional term fields", position)
 			continue
 		}
-		validated := validatedTerm{candidate: Candidate{Name: name, Explanation: explanation}}
+		validated := validatedTerm{candidate: Candidate{Name: name, Explanation: explanation}, kind: kind}
 		seen := make(map[string]bool)
 		for _, ref := range term.Rows {
 			if ref == nil {
@@ -164,11 +174,18 @@ func validateGeneration(items []proseSource, wire []json.RawMessage) ([]validate
 			reject("term has no source-backed occurrence in the computed result", position)
 			continue
 		}
+		accepted++
+		if validated.kind == KindIdentifier {
+			// The model's closed choice is read, not second-guessed: a code
+			// name is an accepted decision that the glossary does not publish.
+			journal("glossary_identifier_omitted", "identifier terms are not published", position)
+			continue
+		}
 		sort.Strings(validated.rows)
 		validated.sources = normalizeSources(validated.sources)
 		terms = append(terms, validated)
 	}
-	return terms, rejections
+	return terms, accepted, rejections
 }
 
 func splitProse(items []proseSource) ([]proseSource, []proseSource, bool) {

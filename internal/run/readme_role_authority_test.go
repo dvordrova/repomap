@@ -15,10 +15,10 @@ func TestPersistReadmeRoleAuthorityIsExactAndEmptyMeansAbsent(t *testing.T) {
 	runDir := t.TempDir()
 	rows := []readmeRoleLogRow{{
 		FileRef: corpus.FileID("f1"),
-		Path:    "README.md",
+		Path:    "cmd/main.go",
 		Classifications: []readmetargetscout.Classification{{
-			Class:      readmetargetscout.ClassDocumentation,
-			Hypotheses: []string{"explains the repository"},
+			Class:      readmetargetscout.ClassTargetEntry,
+			Hypotheses: []string{"README names the executable entry"},
 		}},
 	}}
 
@@ -60,10 +60,10 @@ func TestPersistReadmeRoleAuthorityFailureIsTerminal(t *testing.T) {
 	}
 	rows := []readmeRoleLogRow{{
 		FileRef: corpus.FileID("f1"),
-		Path:    "README.md",
+		Path:    "cmd/main.go",
 		Classifications: []readmetargetscout.Classification{{
-			Class:      readmetargetscout.ClassDocumentation,
-			Hypotheses: []string{"explains the repository"},
+			Class:      readmetargetscout.ClassTargetEntry,
+			Hypotheses: []string{"README names the executable entry"},
 		}},
 	}}
 	if err := persistReadmeRoleAuthority(runDir, rows); err == nil {

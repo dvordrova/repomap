@@ -81,21 +81,7 @@ func decodeReadmeFileRoleAuthority(raw []byte) (map[string]string, error) {
 }
 
 func validReadmeFileClass(value readmetargetscout.FileClass) bool {
-	switch value {
-	case readmetargetscout.ClassTargetEntry,
-		readmetargetscout.ClassExampleEntry,
-		readmetargetscout.ClassTestEntry,
-		readmetargetscout.ClassSupportToolEntry,
-		readmetargetscout.ClassConfiguration,
-		readmetargetscout.ClassDatabaseAsset,
-		readmetargetscout.ClassClientEntry,
-		readmetargetscout.ClassDocumentation,
-		readmetargetscout.ClassDeployment,
-		readmetargetscout.ClassInterfaceContract:
-		return true
-	default:
-		return false
-	}
+	return value == readmetargetscout.ClassTargetEntry
 }
 
 func validReadmeRoleHypothesis(value string) bool {

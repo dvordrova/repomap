@@ -125,7 +125,7 @@ func TestKnowledgeMemoCollectsOnlyAcceptedRowFromOriginalLocalContext(t *testing
 	if _, found, err := r.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: "r2"}); err != nil || !found {
 		t.Fatalf("valid original row lost: %v", err)
 	}
-	base.response = []byte(`{"terms":[{"name":"Beta","explanation":"The concept in the accepted original row.","rows":["p1"]}]}`)
+	base.response = []byte(`{"terms":[{"name":"Beta","kind":"domain","explanation":"The concept in the accepted original row.","rows":["p1"]}]}`)
 	if err := current.Generate(t.Context(), executor, base); err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -143,11 +144,17 @@ func TestRefusedZoneAssignmentDoesNotAcquireMatchingNameOrAncestor(t *testing.T)
 		}
 		r.boxes[dir] = &boxState{id: dir, dir: dir, title: title, top: i < 4, files: []string{fileID}, zoneID: make(map[string]string)}
 	}
+	var journal []string
+	r.opts.State = func(_, _ string, details ...string) { journal = append(journal, details...) }
 	if err := r.readTargetZones(t.Context(), "t"); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.zones["t"]) != 1 || r.zones["t"][0].title != "Accepted title" || len(r.zones["t"][0].boxes) != 4 || r.boxes["a/b"].zoneID["t"] != "" || r.boxes["a/b/child"].zoneID["t"] != "" {
 		t.Fatalf("refused row gained a semantic zone: %+v / %v", r.zones["t"], r.boxes["a/b"].zoneID)
+	}
+	// The three named parts no box chose are dropped, and the run says so.
+	if text := strings.Join(journal, "\n"); !strings.Contains(text, "target t: 3 named parts held no box after assignment and were dropped: Rejected title, Other part, Spare part") {
+		t.Fatalf("dropped parts are not journaled: %v", journal)
 	}
 	if r.boxes["a"].zoneID["t"] != "accepted-title" || len(r.rejected) != 1 || r.rejected[0].Samples[0] != "r2" {
 		t.Fatal("valid neighbouring assignments or local rejection lost")

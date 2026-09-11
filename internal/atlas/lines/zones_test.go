@@ -15,6 +15,13 @@ import (
 	"github.com/dvordrova/repomap/internal/terminology"
 )
 
+func TestZoneNamesRowSpellsOneFile(t *testing.T) {
+	row := ZoneNamesRow("t", []BoxSummary{{Title: "Entry", Line: "Starts.", Files: 1}, {Title: "Core", Line: "Works.", Files: 12}})
+	if got := row.Fields[0].Value.([]string); got[0] != "Entry: Starts. (1 file)" || got[1] != "Core: Works. (12 files)" {
+		t.Fatalf("box sizes: %v", got)
+	}
+}
+
 func TestZoneModesKeepRowsAndCellsInPreparedRequests(t *testing.T) {
 	boxes := []BoxSummary{
 		{ID: "local-render", Title: "Report rendering", Line: "Renders the report.", Files: 3},

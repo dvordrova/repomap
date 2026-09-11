@@ -8,6 +8,83 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Boundary, file, directory, zone, target and portfolio requests state
+  each fact once and offer only real choices (schema review, cold fixes;
+  boundaries v7, files v5, directories v4, zones v2, targets v3, portfolio
+  preparation 8). Boundaries: the address catalogue no longer lists format
+  strings or literals from `fmt`/`errors`/`log`/`time`/`strings`/`strconv`
+  calls (Morfeu: `unknown` in 25 of 29 answers, the catalogue being error
+  templates) and is sent only when the code does not know the address; the
+  out-kind options are the kinds the group index keeps (no `http_server`,
+  `config`); `destination` is a closed `d*` choice from the shared known
+  systems list annotated with the target's dependencies, with `other: `
+  for a system outside it, so the page no longer normalises four spellings
+  of one broker; the outgoing `line` is a 120-rune text; the owner's calls
+  (line ±3 and client constructors) and source context are sent once per
+  window in `context.owners`, rows referencing `owner_ref` (51 % of a
+  Morfeu window was that repetition); fixed native facts get their own
+  24-line prompt. Files: `box` is asked only when there is more than one
+  option (`Missing: "here"`), callers name the declarations that witness
+  the file edge. Directories share the parent's line in the window context;
+  a zone part may hold one box. Targets define `shared_code`, target kinds
+  and boundary labels; portfolio observations carry named fields instead
+  of positional values.
+- Three small stages ask one decision each (schema review, cold fixes).
+  The README classifier asked ten classes over 14 KB of rules while only
+  `target_entry` was consumed, and on Morfeu classified exactly the README
+  files whose text it was given; it now asks which files the guidance names
+  as entries, sends candidate files only (no prose, nothing under
+  `.claude`/`.github`/`.vscode`), and answers `{"files":[…]}` in JSON mode
+  (system prompt 13.6 → 4.8 KB). `documentation_reduce` drops `claims`
+  (read by nothing but the glossary collector, where governance-template
+  phrases entered the report) and caps `concepts` at twelve per document.
+  The glossary labels each term with a closed `kind`; `identifier` terms
+  (54 of Morfeu's 122: env names, file names, `RF01`, skill names) are
+  accepted but not published. Contracts of all three stages bumped.
+- The learning menu is bounded and questions are merged as groups (learn
+  select v4, merge v2). Morfeu with the owner's 524,288-token window split
+  Learn into 8 windows, each proposing "without quota"; select kept 11–14
+  questions per intent and the row-form merge (each question choosing its
+  own representative) merged none of 100, so a run's question count
+  depended on how many windows Learn needed (40 vs 100, tokens ×2). Each
+  intent's menu now chooses at most five questions (`limit: 5`, an
+  over-limit choice refuses that intent's row); the merge is one call per
+  pool that partitions the catalogue into groups of one information need
+  (`{"groups":[{"representative","members"}]}`): on the saved 100-question
+  catalogue the row form merged nothing twice while the group form gave 78
+  groups with 16 sensible merges. Unplaced refs stay their own group, a
+  refused window keeps every question.
+- Question evidence sends each row fact once (question-batch v4, answer
+  v9, learn v4). On the Morfeu retrieval window (2.07 MB for 24
+  questions) `heading_path` cost 191 KB, its last element repeating the
+  unit's own `section_title`/`section_line` and the parents repeating per
+  unit; `anchor_path` (98 KB) equalled the row's `path` for 1,807 of 1,834
+  units; `owned_declarations` copied type members that were already units
+  of the same chunk (274 KB on the Freqtrade code window). A unit now
+  carries `heading_path` as its parent titles only, `anchor_path` only
+  when it differs from the row, and a member that is a unit of the same
+  chunk as `{"ref":"aN"}`; `AnchorEvidence` restores the full record for
+  routes, Learn and answers. Morfeu window −10 % (2,074,710 → 1,864,461
+  bytes); memos and exact cache of these stages go cold once.
+- Six places where the model was asked without a decision to make, or asked
+  twice (schema review, warm fixes; request bytes of the remaining rows
+  unchanged). A column-less native outbound fact now claims every selected
+  call on its line (Morfeu `152759`: 4 of 29 outbound records were the same
+  call twice, `bnd:…:sdk` beside `out:…:166:42`); the claim matches every
+  native source, since an SDK observation arrives as `external_call`, not
+  `fact` (run `171727` still showed the four duplicates while the claim
+  matched `fact` alone). Orientation numbers groups
+  and members in an order the graph fixes (sorted member ids, then lane,
+  title, summary) so one group's changed lane no longer renumbers every
+  `g*`/`s*`. An arrow without witnesses (an import-only edge) gets its
+  fallback sentence "A uses B." without a model row (Morfeu arrows r7/r10
+  had invented sentences). A declaration whose native route is its
+  operation is not reviewed by the operations table (its model row was
+  dropped by the group index anyway). The glossary comparison round is
+  skipped when every group is a singleton whose lowercased names never meet
+  (Morfeu: 121 self-assignments, 36 KB). Files under `.claude/`, `.github/`
+  and `.vscode/` are never portfolio candidates (Morfeu asked about a hook
+  script every run and warned "Target not analyzed").
 - Retrieval asks at most eight questions per window and re-asks the ones
   the model omitted. Freqtrade `20260910-144751`, window w1: 64 questions
   over 460 code rows (4,661 anchors, 2.1 MB) came back with four keys and

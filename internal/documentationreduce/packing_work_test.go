@@ -149,7 +149,7 @@ func packingEvidence(count int) ([]documentUnit, []normalizedReduction, map[stri
 		path := fmt.Sprintf("docs/%04d/README.md", index+1)
 		text := fmt.Sprintf("Original source %04d: ", index+1) + strings.Repeat("evidence α with \"quotes\". ", 16)
 		units = append(units, documentUnit{ref: ref, path: path, kind: readmetargetscout.GuidanceReadme, content: text})
-		candidates = append(candidates, normalizedReduction{overview: text, sources: []responseSource{{Ref: ref, Claims: []string{text}, Concepts: []string{"Evidence"}}}})
+		candidates = append(candidates, normalizedReduction{overview: text, sources: []responseSource{{Ref: ref, Concepts: []string{text}}}})
 		authority[ref] = documentAuthority{path: path, kind: readmetargetscout.GuidanceReadme}
 	}
 	return units, candidates, authority

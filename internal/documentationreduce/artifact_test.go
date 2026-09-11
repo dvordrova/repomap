@@ -2,9 +2,11 @@ package documentationreduce
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
@@ -64,6 +66,7 @@ func TestDecodeRejectsCorruptAndNonCanonicalArtifacts(t *testing.T) {
 		"empty":          nil,
 		"broken seal":    brokenDigest,
 		"unknown field":  append([]byte(`{"unexpected":true,`), encoded[1:]...),
+		"retired claims": []byte(strings.Replace(string(encoded), `"concepts":[`, `"claims":["Retired."],"concepts":[`, 1)),
 		"trailing value": append(append([]byte(nil), encoded...), []byte(`{}`)...),
 		"non-canonical":  append(append([]byte(nil), encoded...), '\n'),
 	}
@@ -83,21 +86,45 @@ func TestPersistAndReadOwnReductionMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result.Sources[0].Claims[0] = "mutated caller"
+	result.Sources[0].Concepts[0] = "mutated caller"
 	first, err := Read(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Sources[0].Claims[0] == "mutated caller" {
+	if first.Sources[0].Concepts[0] == "mutated caller" {
 		t.Fatal("persisted reduction aliases caller memory")
 	}
-	first.Sources[0].Claims[0] = "mutated read"
+	first.Sources[0].Concepts[0] = "mutated read"
 	second, err := Read(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.Sources[0].Claims[0] == "mutated read" {
+	if second.Sources[0].Concepts[0] == "mutated read" {
 		t.Fatal("Read results alias each other")
+	}
+}
+
+func TestSealCapsConceptsAndValidateRejectsAnOverfullSource(t *testing.T) {
+	guidance := guidanceFixture(t, []readmetargetscout.GuidanceDocument{{
+		Path: "README.md", Kind: readmetargetscout.GuidanceReadme, Content: "Vocabulary.\n",
+	}})
+	concepts := make([]string, 0, MaxConceptsPerSource+3)
+	for index := range MaxConceptsPerSource + 3 {
+		concepts = append(concepts, fmt.Sprintf("Concept %02d", index))
+	}
+	result, err := sealResult(guidance, "", []Source{{
+		Path: "README.md", Kind: readmetargetscout.GuidanceReadme, Concepts: concepts,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Sources) != 1 || !reflect.DeepEqual(result.Sources[0].Concepts, concepts[:MaxConceptsPerSource]) {
+		t.Fatalf("sealed concepts = %v, want the first %d", result.Sources[0].Concepts, MaxConceptsPerSource)
+	}
+	overfull := result
+	overfull.Sources = []Source{{Path: "README.md", Kind: readmetargetscout.GuidanceReadme, Concepts: concepts}}
+	if err := overfull.Validate(); err == nil || !strings.Contains(err.Error(), "source 0 is invalid") {
+		t.Fatalf("Validate accepted %d concepts: %v", len(concepts), err)
 	}
 }
 
@@ -112,7 +139,7 @@ func artifactTestResult(t *testing.T) Result {
 	result, err := sealResult(guidance, "Order service overview.", []Source{
 		{
 			Path: "README.md", Kind: readmetargetscout.GuidanceReadme,
-			Claims: []string{"Reconciles merchant orders."}, Concepts: []string{"Order service"},
+			Concepts: []string{"Order service"},
 		},
 	})
 	if err != nil {

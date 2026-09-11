@@ -95,7 +95,7 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 		case 0:
 			reason = "row was not answered"
 		case 1:
-			answer, err := decodeIndependentCells(def, row, cells[0])
+			answer, err := decodeIndependentCells(def, window.Context, row, cells[0])
 			if err == nil {
 				result.Answers[i] = answer
 				continue
@@ -135,7 +135,7 @@ func keylessInAskedOrder(rows []json.RawMessage, asked int) bool {
 	return true
 }
 
-func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMessage) (Answer, error) {
+func decodeIndependentCells(def Definition, context []Field, row Row, cells map[string]json.RawMessage) (Answer, error) {
 	answer := make(Answer, len(def.Columns))
 	processed := make(map[string]bool, len(def.Columns))
 	var deferred []Column
@@ -153,13 +153,13 @@ func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMe
 		if !active {
 			continue
 		}
-		if column.WhenOptionsFrom != "" && len(rowOptions(row, column.WhenOptionsFrom)) == 0 {
+		if column.WhenOptionsFrom != "" && len(optionsFrom(context, row, column.WhenOptionsFrom)) == 0 {
 			// Empty choices have no decision to request or validate. A cell
 			// that was never asked still has one reading when the column
 			// names it: an operation without registered names is labelled,
 			// so its name cell stays required through the same branch.
-			if column.Missing != "" {
-				answer[column.Name] = column.Missing
+			if column.Unasked != "" {
+				answer[column.Name] = column.Unasked
 			}
 			continue
 		}
@@ -179,7 +179,7 @@ func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMe
 		if err := json.Unmarshal(raw, &cell); err != nil {
 			return nil, fmt.Errorf("cell %q is not a string", column.Name)
 		}
-		value, err := normalizeCell(column, row, cell)
+		value, err := normalizeCell(column, context, row, cell)
 		if err != nil {
 			if column.EmptyFrom != "" && strings.TrimSpace(cell) == "" {
 				deferred = append(deferred, column)

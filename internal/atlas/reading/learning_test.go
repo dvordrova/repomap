@@ -691,8 +691,13 @@ type learningProvider struct {
 	specialist   bool
 	menuFirst    bool
 	dropMenuLast bool
+	// menuRefs, when positive, is how many refs every menu names whatever
+	// its row's limit says; zero keeps the menus within their limit.
+	menuRefs int
 	// reply replaces learningReply as the proposal response when set.
 	reply func() learningResponse
+	// mergeReply replaces the computed grouping as the merge response when set.
+	mergeReply []byte
 }
 
 type learningMenuRequest struct {
@@ -707,6 +712,7 @@ type learningMenuRequest struct {
 		Intent  string   `json:"learning_intent"`
 		Goal    string   `json:"learning_goal"`
 		Options []string `json:"candidate_options"`
+		Limit   int      `json:"limit"`
 	} `json:"rows"`
 }
 
@@ -738,6 +744,11 @@ func (p *learningProvider) Complete(_ context.Context, prepared llm.Prepared) (l
 				}
 				selected = append(selected, candidate.Ref)
 			}
+			if p.menuRefs > 0 {
+				selected = selected[:min(p.menuRefs, len(selected))]
+			} else if row.Limit > 0 && len(selected) > row.Limit {
+				selected = selected[:row.Limit]
+			}
 			choice := strings.Join(selected, " ")
 			if choice == "" {
 				choice = "none"
@@ -748,32 +759,38 @@ func (p *learningProvider) Complete(_ context.Context, prepared llm.Prepared) (l
 			rows = rows[:len(rows)-1]
 		}
 		raw, _ = json.Marshal(map[string]any{"rows": rows})
-	} else if strings.Contains(prompt.System, "Consolidate learning") {
+	} else if strings.Contains(prompt.System, "Group the learning questions") {
 		var request struct {
-			Rows []map[string]any `json:"rows"`
+			Questions []struct {
+				Ref      string `json:"ref"`
+				Question string `json:"question"`
+			} `json:"questions"`
 		}
 		if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
 			return llm.Completion{}, err
 		}
-		var rows []map[string]string
-		leaseRef := ""
-		for _, row := range request.Rows {
-			if strings.Contains(row["question"].(string), "lease") {
-				leaseRef = row["own_ref"].(string)
-				break
-			}
-		}
-		for _, row := range request.Rows {
-			ref := row["own_ref"].(string)
+		// Every lease question joins the first lease question's group; the
+		// rest are groups of one. A refusing provider names nothing advertised.
+		var groups []map[string]any
+		lease := -1
+		for _, question := range request.Questions {
+			ref := question.Ref
 			if p.refuseMerge {
 				ref = "unadvertised"
 			}
-			if strings.Contains(row["question"].(string), "lease") {
-				ref = leaseRef
+			if strings.Contains(question.Question, "lease") && lease >= 0 {
+				groups[lease]["members"] = append(groups[lease]["members"].([]string), ref)
+				continue
 			}
-			rows = append(rows, map[string]string{"key": row["key"].(string), "representative": ref})
+			if strings.Contains(question.Question, "lease") {
+				lease = len(groups)
+			}
+			groups = append(groups, map[string]any{"representative": ref, "members": []string{ref}})
 		}
-		raw, _ = json.Marshal(map[string]any{"rows": rows})
+		raw, _ = json.Marshal(map[string]any{"groups": groups})
+		if p.mergeReply != nil {
+			raw = p.mergeReply
+		}
 	} else {
 		reply := learningReply()
 		if p.reply != nil {
@@ -877,6 +894,63 @@ func TestLearningMenuReducesCompletePoolsAndReusesTheirCache(t *testing.T) {
 	}
 }
 
+// Morfeu 20260911-153538: eight Learn windows proposed without a quota, the
+// menus chose 11–14 questions per intent and the report offered 100
+// questions against 40 from the two-window run. A menu now names at most
+// learningMenuLimit refs per intent: one over the ceiling is refused as a
+// malformed row, with the count in the journal and the intent's candidates
+// left inspectable; a smaller menu is read as before.
+func TestLearningMenuRefusesAnIntentOverItsCeiling(t *testing.T) {
+	for _, refs := range []int{learningMenuLimit + 2, learningMenuLimit - 2} {
+		t.Run(fmt.Sprintf("refs=%d", refs), func(t *testing.T) {
+			provider := &learningProvider{menuRefs: refs}
+			r := isolatedLearningReader(t, t.TempDir(), provider)
+			// Seven purpose candidates, and one data candidate whose menu of one
+			// stays within the ceiling beside the refused purpose menu.
+			var questions []atlas.LearningQuestion
+			for i := 0; i < learningMenuLimit+2; i++ {
+				q := fmt.Sprintf("How does part %d start?", i)
+				questions = append(questions, atlas.LearningQuestion{Question: q, Origins: []atlas.LearningOrigin{{Intent: "purpose", Title: "Purpose", Question: q, Why: "It owns a startup path."}}})
+			}
+			data := atlas.LearningQuestion{Question: "What does a lease control?", Origins: []atlas.LearningOrigin{{Intent: "data", Title: "Data", Question: "What does a lease control?", Why: "It bounds stored data."}}}
+			questions = append(questions, data)
+			r.learning = &atlas.LearningPlan{State: "ready", Questions: append([]atlas.LearningQuestion{}, questions...)}
+			if err := r.selectLearning(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if provider.calls != 1 || len(r.learning.Selections) != len(questions) {
+				t.Fatalf("one menu over one catalogue expected: %d calls, %d selections", provider.calls, len(r.learning.Selections))
+			}
+			var prompt llm.Prompt
+			_ = json.Unmarshal(provider.requests[0], &prompt)
+			var request learningMenuRequest
+			if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(prompt.User, `"limit_from":"limit"`) || len(request.Rows) != 2 || request.Rows[0].Limit != learningMenuLimit || request.Rows[1].Limit != learningMenuLimit || !strings.Contains(prompt.System, "Choose at most five per topic") {
+				t.Fatalf("the request does not carry the menu ceiling:\n%s", prompt.User)
+			}
+			audiences := map[string]int{}
+			for _, selection := range r.learning.Selections {
+				audiences[selection.Intent+"/"+selection.Audience]++
+			}
+			if refs > learningMenuLimit {
+				if r.learning.State != "partial" || !reflect.DeepEqual(r.learning.Questions, []atlas.LearningQuestion{data}) || audiences["purpose/unavailable"] != learningMenuLimit+2 || audiences["data/first_day"] != 1 {
+					t.Fatalf("a menu over the ceiling was read or refused its neighbour: state %q, audiences %v, questions %+v", r.learning.State, audiences, r.learning.Questions)
+				}
+				if len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || !reflect.DeepEqual(r.rejected[0].Samples, []string{"r1", "purpose"}) || !strings.Contains(r.rejected[0].Reason, fmt.Sprintf("chooses %d items, limit %d", refs, learningMenuLimit)) {
+					t.Fatalf("journal does not name the refused menu and its count: %+v", r.rejected)
+				}
+				return
+			}
+			want := append(append([]atlas.LearningQuestion{}, questions[:refs]...), data)
+			if r.learning.State != "ready" || len(r.rejected) != 0 || audiences["purpose/first_day"] != refs || audiences["purpose/not_selected"] != learningMenuLimit+2-refs || audiences["data/first_day"] != 1 || !reflect.DeepEqual(r.learning.Questions, want) {
+				t.Fatalf("a menu within the ceiling changed: state %q, audiences %v, questions %+v", r.learning.State, audiences, r.learning.Questions)
+			}
+		})
+	}
+}
+
 func TestLearningMenuKeepsValidGoalDecisionsWhenAnotherIsMissing(t *testing.T) {
 	for _, incomplete := range []bool{false, true} {
 		t.Run(fmt.Sprintf("incomplete=%v", incomplete), func(t *testing.T) {
@@ -946,7 +1020,7 @@ func TestLearnPromptKeepsAudienceAndMergeContracts(t *testing.T) {
 			t.Fatal("learning request lost the shared English response policy")
 		}
 		if !json.Valid([]byte(prompt.ResponseExample)) || !strings.HasSuffix(prompt.System, prompt.ResponseExample) ||
-			strings.Count(prompt.System, `"rows"`)+strings.Count(prompt.System, `"reviews"`) != 1 {
+			strings.Count(prompt.System, `"rows"`)+strings.Count(prompt.System, `"reviews"`)+strings.Count(prompt.System, `"groups"`) != 1 {
 			t.Fatal("learning request must have one valid response example for its current stage")
 		}
 		seenAudience = seenAudience || strings.Contains(prompt.System, "\n\n"+learningSelectPrompt)
@@ -1017,7 +1091,7 @@ func TestLearningConsolidatesAnswersAndRetainsAllIntentSources(t *testing.T) {
 func TestLearningMergeReviewsEveryPairAcrossContextWindows(t *testing.T) {
 	provider := &learningProvider{}
 	r := isolatedLearningReader(t, t.TempDir(), provider)
-	r.opts.InputBytes = 8000
+	r.opts.InputBytes = 4000
 	r.learning = &atlas.LearningPlan{State: "ready"}
 	for i := 0; i < 9; i++ {
 		r.learning.Questions = append(r.learning.Questions, atlas.LearningQuestion{Question: fmt.Sprintf("Topic %d: %s?", i, strings.Repeat("context ", 70)), Origins: []atlas.LearningOrigin{{Intent: fmt.Sprint(i)}}})
@@ -1025,25 +1099,24 @@ func TestLearningMergeReviewsEveryPairAcrossContextWindows(t *testing.T) {
 	if err := r.mergeLearning(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if r.learning.State != "ready" || len(r.learning.Questions) != 9 {
-		t.Fatal("partitioning discarded questions")
+	if r.learning.State != "ready" || len(r.learning.Questions) != 9 || len(provider.requests) < 2 {
+		t.Fatalf("partitioning discarded questions or did not divide: %d requests", len(provider.requests))
 	}
 	pairs := map[string]bool{}
 	for _, raw := range provider.requests {
 		var prompt llm.Prompt
 		_ = json.Unmarshal(raw, &prompt)
 		var request struct {
-			Context struct {
-				Questions []struct {
-					Question string `json:"question"`
-				} `json:"questions"`
-			} `json:"context"`
+			Task      string `json:"task"`
+			Questions []struct {
+				Question string `json:"question"`
+			} `json:"questions"`
 		}
-		if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
-			t.Fatal(err)
+		if err := json.Unmarshal([]byte(prompt.User), &request); err != nil || request.Task != learningMergeContract {
+			t.Fatalf("merge request form: %v\n%s", err, prompt.User)
 		}
-		for _, a := range request.Context.Questions {
-			for _, b := range request.Context.Questions {
+		for _, a := range request.Questions {
+			for _, b := range request.Questions {
 				if a.Question < b.Question {
 					pairs[a.Question+"|"+b.Question] = true
 				}
@@ -1055,13 +1128,26 @@ func TestLearningMergeReviewsEveryPairAcrossContextWindows(t *testing.T) {
 	}
 }
 
-func TestLearningDoesNotPublishInventedMergeAssignments(t *testing.T) {
+// A refused merge window decides nothing: every question of the pool stays
+// its own group with its own origins, the plan says partial and the journal
+// names the window. There are no independent rows to accept beside it.
+func TestLearningRefusedMergeWindowKeepsEveryQuestion(t *testing.T) {
 	r := isolatedLearningReader(t, t.TempDir(), &learningProvider{refuseMerge: true})
 	if err := r.readLearning(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if r.learning.State != "partial" || len(r.learning.Questions) != 2 || len(r.rejected) == 0 || len(r.learning.Questions[0].Origins) != 2 || r.learning.Questions[1].Question != "What does a revision identify?" {
-		t.Fatal("failed assignment erased originals or an independently accepted merge")
+	var wordings []string
+	for _, question := range r.learning.Questions {
+		if len(question.Origins) != 1 {
+			t.Fatalf("a refused window joined questions: %+v", question)
+		}
+		wordings = append(wordings, question.Question)
+	}
+	if r.learning.State != "partial" || len(r.learning.Groups) != 0 || !reflect.DeepEqual(wordings, []string{"What does a lease control?", "Which data does a lease control?", "What does a revision identify?"}) {
+		t.Fatalf("refused window changed the questions: state %q, %v", r.learning.State, wordings)
+	}
+	if len(r.rejected) != 1 || r.rejected[0].Kind != "window_rejected" || r.rejected[0].Count != 3 || !strings.Contains(r.rejected[0].Reason, "names no advertised ref") {
+		t.Fatalf("journal: %+v", r.rejected)
 	}
 	dry := isolatedLearningReader(t, t.TempDir(), nil)
 	dry.dry = true

@@ -41,6 +41,10 @@ type TargetMeta struct {
 	Root         string   `json:"root"`
 	SelectedRole string   `json:"selected_role,omitempty"`
 	SharedCode   []string `json:"shared_code,omitempty"`
+	// Dependencies are the external packages the target imports, as the
+	// dependency catalogue names them. They annotate the closed list of
+	// runtime systems a boundary may name; none of them is a destination.
+	Dependencies []string `json:"dependencies,omitempty"`
 }
 
 // Options is everything the reading needs.
@@ -322,7 +326,10 @@ func (r *reader) readDirectories(ctx context.Context) error {
 	for round, depth := range depths {
 		dirs := byDepth[depth]
 		sort.Slice(dirs, func(i, j int) bool { return dirs[i].Path < dirs[j].Path })
-		rows := make([]table.Row, 0, len(dirs))
+		// The children of one parent share a window; the parent is its
+		// context, sent once. Rows keep their path order across groups.
+		var groups rowGroups
+		byParent := make(map[string]int)
 		var asked []atlas.Place
 		for _, place := range dirs {
 			if r.budget && r.closedAbove(place) {
@@ -331,16 +338,27 @@ func (r *reader) readDirectories(ctx context.Context) error {
 				r.openDirs[place.ID] = false
 				continue
 			}
-			var parent *atlas.Place
-			if place.Parent != "" {
-				if p, ok := r.places[place.Parent]; ok {
+			at, known := byParent[place.Parent]
+			if !known {
+				var parent *atlas.Place
+				if p, ok := r.places[place.Parent]; ok && place.Parent != "" {
 					parent = &p
 				}
+				at = len(groups)
+				byParent[place.Parent] = at
+				groups = append(groups, rowGroup{shared: lines.DirectoryContext(parent)})
 			}
-			rows = append(rows, lines.DirectoryRow(place, parent))
+			groups[at].rows = append(groups[at].rows, lines.DirectoryRow(place))
 			asked = append(asked, place)
 		}
-		answers, err := r.runTable(ctx, def, round+1, rows)
+		// asked follows path order; answers follow group order.
+		sort.SliceStable(asked, func(i, j int) bool {
+			if byParent[asked[i].Parent] != byParent[asked[j].Parent] {
+				return byParent[asked[i].Parent] < byParent[asked[j].Parent]
+			}
+			return asked[i].Path < asked[j].Path
+		})
+		answers, err := r.runTableGroups(ctx, def, round+1, groups, nil)
 		if err != nil {
 			return err
 		}
@@ -406,11 +424,12 @@ func (r *reader) readFiles(ctx context.Context) error {
 	}
 	r.opts.Stage(def.Stage, details...)
 	siblings := r.siblingBoxes()
+	calling := r.fileCallers()
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	rows := make([]table.Row, 0, len(files))
 	for _, place := range files {
 		directory := r.places[place.Parent]
-		rows = append(rows, lines.FileRow(place, directory, r.rankedSiblings(place, siblings[directory.Path]), r, r.places))
+		rows = append(rows, lines.FileRow(place, directory, r.rankedSiblings(place, siblings[directory.Path]), r, r.places, calling[place.ID]))
 	}
 	answers, err := r.runTable(ctx, def, 1, rows)
 	if err != nil {
@@ -433,6 +452,32 @@ func (r *reader) readFiles(ctx context.Context) error {
 	r.cancelLonelyBoxes()
 	r.reportStage(def.Stage)
 	return nil
+}
+
+// fileCallers reads, per file, which declarations of each calling file the
+// graph saw calling into it: the witnesses of the file-to-file edges, each
+// name once, in edge order.
+func (r *reader) fileCallers() map[string]lines.FileCallers {
+	result := make(map[string]lines.FileCallers)
+	for _, edge := range r.opts.Graph.Edges {
+		if r.places[edge.From].File == nil || r.places[edge.To].File == nil {
+			continue
+		}
+		for _, witness := range edge.Witnesses {
+			if witness.Caller == "" {
+				continue
+			}
+			callers := result[edge.To]
+			if callers == nil {
+				callers = make(lines.FileCallers)
+				result[edge.To] = callers
+			}
+			if !contains(callers[edge.From], witness.Caller) {
+				callers[edge.From] = append(callers[edge.From], witness.Caller)
+			}
+		}
+	}
+	return result
 }
 
 // siblingBoxes lists, per directory, the paths of its sibling directories
@@ -525,6 +570,25 @@ func (r *reader) runTable(ctx context.Context, def table.Definition, round int, 
 	return r.runTableWith(ctx, def, round, nil, rows, nil)
 }
 
+// rowGroup is a run of rows that share one window context: the boundary
+// candidates of one declaration with that declaration sent once, the
+// directories of one parent with the parent's line sent once. The groups of
+// one round still go to the provider together.
+type rowGroup struct {
+	shared []table.Field
+	rows   []table.Row
+}
+
+type rowGroups []rowGroup
+
+func (groups rowGroups) count() int {
+	total := 0
+	for _, group := range groups {
+		total += len(group.rows)
+	}
+	return total
+}
+
 // runTableWith asks one round of one table: windows in parallel, each window
 // its own request, a rejected window falling back on its own. The optional
 // check runs over an accepted window's answers and may refuse it.
@@ -532,8 +596,14 @@ func (r *reader) runTableWith(
 	ctx context.Context, def table.Definition, round int, shared []table.Field,
 	rows []table.Row, check func(table.Answers) error,
 ) ([]rowAnswer, error) {
-	answers := make([]rowAnswer, len(rows))
-	if len(rows) == 0 {
+	return r.runTableGroups(ctx, def, round, rowGroups{{shared: shared, rows: rows}}, check)
+}
+
+// runTableGroups is runTableWith over several groups, each with its own
+// shared context; the answers come back in the groups' row order.
+func (r *reader) runTableGroups(ctx context.Context, def table.Definition, round int, groups rowGroups, check func(table.Answers) error) ([]rowAnswer, error) {
+	answers := make([]rowAnswer, groups.count())
+	if len(answers) == 0 {
 		return answers, nil
 	}
 	if _, started := r.started[def.Stage]; !started {
@@ -554,19 +624,35 @@ func (r *reader) runTableWith(
 		if check != nil {
 			return nil, fmt.Errorf("table %s: a whole-window check cannot validate independent knowledge", def.Stage)
 		}
-		return r.runIndependent(ctx, def, round, shared, rows)
+		return r.runIndependent(ctx, def, round, groups)
 	}
-	return r.runPreparedTable(ctx, def, round, shared, rows, check)
+	return r.runPreparedGroups(ctx, def, round, groups, check)
 }
 
 func (r *reader) runPreparedTable(ctx context.Context, def table.Definition, round int, shared []table.Field, rows []table.Row, check func(table.Answers) error) ([]rowAnswer, error) {
-	answers := make([]rowAnswer, len(rows))
-	windows, err := table.WindowsWithContext(def, round, shared, rows)
-	if err != nil {
-		return nil, err
+	return r.runPreparedGroups(ctx, def, round, rowGroups{{shared: shared, rows: rows}}, check)
+}
+
+// runPreparedGroups packs every group into its own windows and sends all of
+// them as one batch; window indexes run across the groups.
+func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, round int, groups rowGroups, check func(table.Answers) error) ([]rowAnswer, error) {
+	answers := make([]rowAnswer, groups.count())
+	var windows []table.Window
+	for _, group := range groups {
+		if len(group.rows) == 0 {
+			continue
+		}
+		packed, err := table.WindowsWithContext(def, round, group.shared, group.rows)
+		if err != nil {
+			return nil, err
+		}
+		for _, window := range packed {
+			window.Index = len(windows)
+			windows = append(windows, window)
+		}
 	}
 	use := r.use(def.Stage)
-	use.Rows += len(rows)
+	use.Rows += len(answers)
 	use.Windows += len(windows)
 	for _, window := range windows {
 		if err := r.writeWindowFile(window, "prompt.md", []byte(def.System)); err != nil {

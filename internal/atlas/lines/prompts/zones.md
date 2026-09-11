@@ -7,12 +7,12 @@ is a directory of code with a title and one line about it. The request's
 - `names`: there is one row: the target's largest boxes, each with its
   title, one line and its size. Fill every `part_N` cell with the name of
   one part of the program, two to four words, so that every box listed
-  belongs to one of the parts and each part holds several boxes. The
-  number of cells is the number of parts asked for; all of them are
-  filled, all distinct, none a copy of a single box's title unless that box
-  is a part on its own. Name what a part does, not where it is. Return one
-  row with key `r1`, containing every requested `part_N` cell together.
-  A part name is a cell in that row, never a separate row.
+  belongs to one of the parts; a part may hold one box. The number of
+  cells is the number of parts asked for; all of them are filled, all
+  distinct, none a copy of a single box's title unless that box is a part
+  on its own. Name what a part does, not where it is. Return one row with
+  key `r1`, containing every requested `part_N` cell together. A part name
+  is a cell in that row, never a separate row.
 - `assign`: the rows are boxes not yet placed. For each, write `part`: one
   of the names in `context.parts`, the part this box belongs to.
 - `lines`: the rows are the parts themselves, each with the titles of the

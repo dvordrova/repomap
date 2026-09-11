@@ -11,8 +11,8 @@ import (
 // batches returns a deterministic exhaustive provider-request cover. Guidance
 // documents are grouped only when their complete bytes fit together. Every
 // guidance group is then paired with a complete disjoint cover of the global
-// file authority, so no tracked file or guidance byte disappears at a request
-// boundary. Guidance refs are repeated as request-local authority where needed.
+// candidate file authority, so no candidate file or guidance byte disappears
+// at a request boundary.
 func batches(compilation Compilation) ([]Compilation, error) {
 	if err := validateReadyCompilation(compilation); err != nil {
 		return nil, err
@@ -45,13 +45,16 @@ func batches(compilation Compilation) ([]Compilation, error) {
 
 func guidanceGroups(compilation Compilation) ([][]RequestGuidanceDocument, error) {
 	documents := compilation.Request.GuidanceDocuments
+	// The smallest file window measures a document group: one candidate leaf
+	// keeps the request shape complete while the documents decide the size.
+	probe := canonicalAuthorityRefs(compilation.authority)[:1]
 	groups := make([][]RequestGuidanceDocument, 0)
 	for start := 0; start < len(documents); {
 		low, high := start+1, len(documents)
 		best := start
 		for low <= high {
 			middle := low + (high-low)/2
-			candidate, err := compileBatchSubset(compilation, documents[start:middle], nil)
+			candidate, err := compileBatchSubset(compilation, documents[start:middle], probe)
 			if err != nil {
 				return nil, err
 			}
@@ -111,7 +114,7 @@ func compileBatchSubset(
 	documents []RequestGuidanceDocument,
 	fileRefs []corpus.FileID,
 ) (Compilation, error) {
-	authority := make(map[corpus.FileID]string, len(fileRefs)+len(documents))
+	authority := make(map[corpus.FileID]string, len(fileRefs))
 	for _, ref := range fileRefs {
 		filePath, known := aggregate.authority[ref]
 		if !known {
@@ -119,25 +122,24 @@ func compileBatchSubset(
 		}
 		authority[ref] = filePath
 	}
+	if len(authority) == 0 {
+		return Compilation{}, fmt.Errorf("README file classifier: batch has no candidate files")
+	}
+	knownDocuments := make(map[corpus.FileID]string, len(aggregate.Request.GuidanceDocuments))
+	for _, document := range aggregate.Request.GuidanceDocuments {
+		knownDocuments[document.FileRef] = document.Path
+	}
 	for _, document := range documents {
-		filePath, known := aggregate.authority[document.FileRef]
-		if !known || filePath != document.Path {
+		if filePath, known := knownDocuments[document.FileRef]; !known || filePath != document.Path {
 			return Compilation{}, fmt.Errorf("README file classifier: batch guidance authority mismatch")
 		}
-		authority[document.FileRef] = filePath
 	}
-	entries := make([]corpus.Entry, 0, len(authority))
-	for fileRef, filePath := range authority {
-		entries = append(entries, corpus.Entry{ID: fileRef, Path: filePath})
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
-	fileTree, err := buildFileTree(entries)
+	fileTree, err := buildFileTree(authorityEntries(authority))
 	if err != nil {
 		return Compilation{}, fmt.Errorf("README file classifier: build batch file tree: %w", err)
 	}
 	request := Request{
-		RepoName: aggregate.Request.RepoName, FileCount: len(entries), FileTree: fileTree,
-		ProseFileRefs:     canonicalProseFileRefs(authority),
+		RepoName: aggregate.Request.RepoName, FileCount: len(authority), FileTree: fileTree,
 		GuidanceDocuments: append([]RequestGuidanceDocument(nil), documents...),
 	}
 	wire, err := json.Marshal(request)

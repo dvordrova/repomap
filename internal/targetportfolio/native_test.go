@@ -52,7 +52,7 @@ func TestNativeDecisionsKeepSeparateTargetsOnOneFileAndValidateOwners(t *testing
 
 func TestNativeEvidenceIsOwnedAndRebuiltInEachWindow(t *testing.T) {
 	snapshot := testSnapshot(t, []string{"package.py", "worker.py"})
-	evidence := Observation{Kind: "documented_command", Path: "README.md", Line: 5, Values: []string{"python -m acme.worker"}}
+	evidence := Observation{Kind: "documented_command", Path: "README.md", Line: 5, Fields: map[string]string{"heading": "# Run", "text": "python -m acme.worker"}}
 	rows := []NativeCandidate{
 		{Ref: "t1", FileRef: "f1", Language: "python", Kind: "library", Name: "package", Evidence: []Observation{evidence}},
 		{Ref: "t2", FileRef: "f2", Language: "python", Kind: "executable", Name: "worker", Evidence: []Observation{evidence}, SeedOwners: []NativeOwner{{Ref: "t1", Name: "package", Kind: "library"}}},
@@ -61,11 +61,11 @@ func TestNativeEvidenceIsOwnedAndRebuiltInEachWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows[0].Evidence[0].Values[0] = "changed input"
+	rows[0].Evidence[0].Fields["text"] = "changed input"
 	if err := validateCompilation(c); err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Request.Observations) != 1 || c.Request.Observations[0].Values[0] != "python -m acme.worker" {
+	if len(c.Request.Observations) != 1 || c.Request.Observations[0].Fields["text"] != "python -m acme.worker" {
 		t.Fatal("evidence copied or not owned")
 	}
 	child, err := compileSubset(c, c.candidates[1:])
@@ -87,7 +87,7 @@ func TestNativeEvidenceIsOwnedAndRebuiltInEachWindow(t *testing.T) {
 	if strings.Count(string(encoded), "python -m acme.worker") != 1 {
 		t.Fatal("window duplicated source quotation")
 	}
-	child.Request.Observations[0].Values[0] = "mutated wire"
+	child.Request.Observations[0].Fields["text"] = "mutated wire"
 	if validateCompilation(child) == nil {
 		t.Fatal("mutated source authority accepted")
 	}
@@ -129,7 +129,7 @@ func TestAlternativeExecutableLaunchesNeedAcceptedStandaloneOwner(t *testing.T) 
 
 func TestSameLaunchGroupCannotLoseOwnerAcrossRequestWindows(t *testing.T) {
 	snapshot := testSnapshot(t, []string{"main.py", "__main__.py"})
-	entry := Observation{Kind: "launch_callable", Path: "main.py", Line: 12, Values: []string{"app.main", "main", "arguments=none"}}
+	entry := Observation{Kind: "launch_callable", Path: "main.py", Line: 12, Fields: map[string]string{"module": "app.main", "qualname": "main", "arguments": "none"}}
 	rows := []NativeCandidate{
 		{Ref: "t1", FileRef: "f1", Language: "python", Kind: "executable", Name: "app", Evidence: []Observation{entry}},
 		{Ref: "t2", FileRef: "f2", Language: "python", Kind: "executable", Name: "python -m app", Evidence: []Observation{entry, {Kind: "launch_call_site", Path: "__main__.py", Line: 3}}, SeedOwners: []NativeOwner{{Ref: "t1", Name: "app", Kind: "executable", SameLaunch: true}}},

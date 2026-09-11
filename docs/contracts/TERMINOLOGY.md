@@ -33,7 +33,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   NoCache bypasses it, and an indivisible refusal is not a split memo. Old run
   journals are not imported into this cache.
   One aggregate closed-ref reduction joins compatible domain candidates and
-  chooses an original definition, preserving every variant, spelling, source
+  chooses an original definition; when every group is a singleton and no two
+  lowercased names meet, the reduction round is skipped and the catalogue is
+  sealed as generated. It otherwise joins candidates and chooses a definition, preserving every variant, spelling, source
   and request identity. Each input group chooses one advertised original variant;
   Go joins groups that choose the same variant. Its owner must make that same
   choice, so chains, cycles and conflicting assignments cannot repair themselves
@@ -86,7 +88,10 @@ Equal names alone never establish equal meanings. Complete groups partition only
 when the provider envelope requires it; a nonshrinking round records partial
 comparison. A refused model window leaves its already accepted input definitions
 separate and stops retrying them in that reduction. Cancellation, invalid local
-inputs/configuration and persistence failures remain terminal. Existing native
+inputs/configuration and persistence failures remain terminal. Each generated term carries a closed `kind` (`acronym`, `domain`,
+`protocol`, `format` or `identifier`); a term without a known kind refuses that
+term alone, and `identifier` terms (environment names, file names, codes) are
+accepted but not published, counted in the journal. Existing native
 code concepts enter the final glossary directly, with whole source anchors and
 map/question destinations. There is no native-to-candidate-to-native conversion.
 Distinct declarations on one line keep their columns and identities; the same

@@ -1,7 +1,8 @@
 // Package readmetargetscout sends complete repository guidance documents and
-// the complete shared-corpus FileID/path authority through an exhaustive set
-// of bounded model calls, then reduces one sparse file-role catalog. It is
-// language-neutral and runs in parallel with language target discovery.
+// the candidate entry files of the shared corpus through an exhaustive set of
+// bounded model calls, then reduces one sparse catalog of guidance-named entry
+// files. It is language-neutral and runs in parallel with language target
+// discovery.
 package readmetargetscout
 
 import (
@@ -13,11 +14,11 @@ import (
 )
 
 const (
-	CompilationVersion = 7
+	CompilationVersion = 8
 
-	PreparationVersion = "complete-readmes-agents-exhaustive-file-tree-shards-and-prose-ref-authority-v8"
-	SchemaVersion      = "readme-file-role-classifications-independent-members-ignore-extra-fields-v6"
-	ReducerVersion     = "readme-file-role-classifications-independent-known-set-union-v10"
+	PreparationVersion = "complete-readmes-agents-exhaustive-candidate-file-tree-shards-v9"
+	SchemaVersion      = "readme-entry-files-object-independent-members-ignore-extra-fields-v7"
+	ReducerVersion     = "readme-entry-files-independent-known-set-union-v11"
 
 	// MaxRequestBytes is a deterministic shard-packing window, not an
 	// acceptance or transport limit. Larger complete inputs are covered by
@@ -32,15 +33,14 @@ const (
 
 	// Former local acceptance thresholds are retained only as scale-warning
 	// baselines. Crossing one never truncates or rejects accepted data.
-	AdvisoryAtomicRequestBytes     = 1536 << 10
-	AdvisoryResponseBytes          = 64 << 10
-	AdvisoryHypothesisBytes        = 160
-	AdvisoryClassificationsPerFile = 3
-	AdvisoryHypothesesPerClass     = 2
-	AdvisoryArtifactBytes          = 1 << 20
+	AdvisoryAtomicRequestBytes = 1536 << 10
+	AdvisoryResponseBytes      = 64 << 10
+	AdvisoryHypothesisBytes    = 160
+	AdvisoryHypothesesPerClass = 2
+	AdvisoryArtifactBytes      = 1 << 20
 )
 
-const executionContract = "repository-guidance-file-classifier-v13"
+const executionContract = "repository-guidance-entry-file-classifier-v14"
 
 const ArtifactFilename = "readme-file-roles.json"
 
@@ -53,17 +53,20 @@ const (
 
 type NotApplicableReason string
 
-const NoGuidanceFiles NotApplicableReason = "no_guidance_files"
+const (
+	NoGuidanceFiles  NotApplicableReason = "no_guidance_files"
+	NoCandidateFiles NotApplicableReason = "no_candidate_files"
+)
 
 // Request is either the complete aggregate first-layer evidence identity or
-// one provider-visible shard. The aggregate FileTree contains every tracked
-// regular corpus file; a shard contains an exact subset and complete
-// request-local prose authority. Non-guidance source contents are absent.
+// one provider-visible shard. The aggregate FileTree contains every candidate
+// entry file of the corpus: tracked regular code and manifest files outside
+// prose and outside the excluded configuration trees. A shard contains an
+// exact subset. Non-guidance source contents are absent.
 type Request struct {
 	RepoName          string                    `json:"repo_name"`
 	FileCount         int                       `json:"file_count"`
 	FileTree          FileTree                  `json:"file_tree"`
-	ProseFileRefs     []corpus.FileID           `json:"prose_file_refs"`
 	GuidanceDocuments []RequestGuidanceDocument `json:"guidance_documents"`
 }
 
@@ -106,18 +109,10 @@ type Prompt struct {
 
 type FileClass string
 
-const (
-	ClassTargetEntry       FileClass = "target_entry"
-	ClassExampleEntry      FileClass = "example_entry"
-	ClassTestEntry         FileClass = "test_entry"
-	ClassSupportToolEntry  FileClass = "support_tool_entry"
-	ClassConfiguration     FileClass = "configuration"
-	ClassDatabaseAsset     FileClass = "database_asset"
-	ClassClientEntry       FileClass = "client_entry"
-	ClassDocumentation     FileClass = "documentation"
-	ClassDeployment        FileClass = "deployment"
-	ClassInterfaceContract FileClass = "interface_contract"
-)
+// ClassTargetEntry is the only role the classifier decides: the repository
+// guidance names this exact file as the entry of an independently built, run,
+// deployed, invoked or imported product.
+const ClassTargetEntry FileClass = "target_entry"
 
 type Classification struct {
 	Class      FileClass `json:"class"`
@@ -129,9 +124,9 @@ type ClassifiedFile struct {
 	Classifications []Classification `json:"classifications"`
 }
 
-// Result is a sparse repository-guidance-backed role catalog. One file may have
-// several orthogonal roles. Repeated set-valued response rows are normalized
-// before this canonical result is built.
+// Result is a sparse repository-guidance-backed entry catalog. Every file
+// carries exactly one target_entry classification. Repeated set-valued
+// response rows are normalized before this canonical result is built.
 type Result []ClassifiedFile
 
 // Execution binds caller-indexed model outcomes to accepted classifications.
@@ -142,10 +137,8 @@ type Execution struct {
 	UnavailableBatches int
 }
 
-// TargetCandidates projects only guidance-backed target_entry classifications
-// into the common target-hypothesis merger. All other roles remain available
-// in Result for logging and future cubes, but cannot become analysis targets
-// through complement semantics.
+// TargetCandidates projects the guidance-backed target_entry classifications
+// into the common target-hypothesis merger.
 func (result Result) TargetCandidates() []analysistarget.FileCandidate {
 	candidates := make([]analysistarget.FileCandidate, 0)
 	for _, file := range result {
@@ -196,8 +189,8 @@ func executionStateValue() any {
 	}
 }
 
-// ExecutionState binds prompt, complete input preparation, strict list schema,
-// and reducer semantics for the shared executor/cache.
+// ExecutionState binds prompt, complete input preparation, strict object
+// schema, and reducer semantics for the shared executor/cache.
 func ExecutionState() []byte {
 	state, err := json.Marshal(executionStateValue())
 	if err != nil {

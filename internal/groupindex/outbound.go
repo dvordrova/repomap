@@ -2,6 +2,7 @@ package groupindex
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -85,13 +86,10 @@ func cloneDestinationUses(uses []atlas.DestinationUse) []atlas.DestinationUse {
 	return result
 }
 
+// communicationKind is the same closed list the boundaries table offers an
+// outgoing candidate, so no accepted kind is silently dropped here.
 func communicationKind(kind string) bool {
-	switch kind {
-	case atlas.BoundaryHTTPClient, atlas.BoundaryDB, atlas.BoundaryQueueProducer, atlas.BoundaryQueueConsumer, atlas.BoundarySDK, atlas.BoundaryOther:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(atlas.OutgoingBoundaryKinds(), kind)
 }
 
 func (index Index) validateOutbound(subjects map[string]Subject, groups map[string]struct{}) error {

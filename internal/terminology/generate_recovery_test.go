@@ -47,8 +47,8 @@ func TestGenerationResourceMemoKeepsOriginalProseAndWholeParentReplay(t *testing
 			}
 			parent := prepare(items)
 			responses[string(parent.Bytes())] = "refuse"
-			responses[string(prepare(items[:1]).Bytes())] = `{"terms":[{"name":"Alpha","explanation":"The first concept.","rows":["p1"]}]}`
-			responses[string(prepare(items[1:]).Bytes())] = `{"terms":[{"name":"Beta","explanation":"The second concept.","rows":["p1"]}]}`
+			responses[string(prepare(items[:1]).Bytes())] = `{"terms":[{"name":"Alpha","kind":"domain","explanation":"The first concept.","rows":["p1"]}]}`
+			responses[string(prepare(items[1:]).Bytes())] = `{"terms":[{"name":"Beta","kind":"domain","explanation":"The second concept.","rows":["p1"]}]}`
 			provider.complete = func(prepared llm.Prepared) (llm.Completion, error) {
 				response, known := responses[string(prepared.Bytes())]
 				if !known {
@@ -95,7 +95,7 @@ func TestGenerationResourceMemoKeepsOriginalProseAndWholeParentReplay(t *testing
 			if !reflect.DeepEqual(run(uncached, items), cold) || provider.calls != 8 {
 				t.Fatalf("NoCache retained refusal or child answers: calls=%d", provider.calls)
 			}
-			responses[string(parent.Bytes())] = `{"terms":[{"name":"Alpha","explanation":"Whole-parent replay definition.","rows":["p1"]},{"name":"Beta","explanation":"The second concept.","rows":["p2"]}]}`
+			responses[string(parent.Bytes())] = `{"terms":[{"name":"Alpha","kind":"domain","explanation":"Whole-parent replay definition.","rows":["p1"]},{"name":"Beta","kind":"domain","explanation":"The second concept.","rows":["p2"]}]}`
 			if _, err := llm.ReplayJSON(t.Context(), executor, provider, parent); err != nil {
 				t.Fatal(err)
 			}

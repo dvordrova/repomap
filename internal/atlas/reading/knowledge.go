@@ -219,69 +219,85 @@ func rememberedResponseRows(raw []byte) (map[string]map[string]json.RawMessage, 
 // runIndependent removes known entities and coalesces identical missing inputs
 // before planning provider windows. Every original entity keeps its own binding
 // to the one accepted answer, independent of its provider batch key.
-func (r *reader) runIndependent(ctx context.Context, def table.Definition, round int, shared []table.Field, rows []table.Row) ([]rowAnswer, error) {
-	answers := make([]rowAnswer, len(rows))
-	inputs := make([]Knowledge, len(rows))
-	reused := make([]bool, len(rows))
-	var missing []table.Row
-	var positions [][]int
-	missingByBasis := make(map[string]int)
-	for i, row := range rows {
-		k, window, err := r.knowledgeInput(def, shared, row)
-		if err != nil {
-			return nil, err
-		}
-		inputs[i] = k
-		ref, found, err := llm.LoadMemo(r.opts.Executor, k.BasisID, llm.DecodeJSON(func(value rememberedRow) error {
-			if len(value.RequestKey) != 64 || value.RowKey == "" {
-				return fmt.Errorf("knowledge: invalid response row reference")
+func (r *reader) runIndependent(ctx context.Context, def table.Definition, round int, groups rowGroups) ([]rowAnswer, error) {
+	answers := make([]rowAnswer, groups.count())
+	rows := make([]table.Row, 0, len(answers))
+	inputs := make([]Knowledge, len(answers))
+	reused := make([]bool, len(answers))
+	// A row the cache does not answer is asked once per exact basis, in its
+	// own group's window; rows sharing that basis take the same answer.
+	type missingRef struct{ group, position int }
+	missing := make(rowGroups, len(groups))
+	missingByBasis := make(map[string]missingRef)
+	var order []missingRef
+	sharing := make(map[missingRef][]int)
+	for g, group := range groups {
+		missing[g].shared = group.shared
+		for _, row := range group.rows {
+			i := len(rows)
+			rows = append(rows, row)
+			k, window, err := r.knowledgeInput(def, group.shared, row)
+			if err != nil {
+				return nil, err
 			}
-			return nil
-		}))
-		var answer rowAnswer
-		if found {
-			answer, found, err = r.recallRow(def, window, ref)
-		}
-		if err != nil {
-			r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "knowledge_rejected", Count: 1, Reason: err.Error(), Samples: []string{row.ID}})
-		}
-		if found {
-			reused[i] = true
-			answers[i] = answer
-			r.use(def.Stage).Reused++
-			r.use(def.Stage).Rows++
-			fmt.Fprintf(&r.tables, "- Reused %s · %s\n", row.ID, answer.answer["line"])
-		} else if r.recallOnly {
-			answers[i] = rowAnswer{source: atlas.SourceGiven}
-			r.use(def.Stage).Rows++
-			r.use(def.Stage).Given++
-		} else {
-			if group, found := missingByBasis[k.BasisID]; found {
-				positions[group] = append(positions[group], i)
+			inputs[i] = k
+			ref, found, err := llm.LoadMemo(r.opts.Executor, k.BasisID, llm.DecodeJSON(func(value rememberedRow) error {
+				if len(value.RequestKey) != 64 || value.RowKey == "" {
+					return fmt.Errorf("knowledge: invalid response row reference")
+				}
+				return nil
+			}))
+			var answer rowAnswer
+			if found {
+				answer, found, err = r.recallRow(def, window, ref)
+			}
+			if err != nil {
+				r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "knowledge_rejected", Count: 1, Reason: err.Error(), Samples: []string{row.ID}})
+			}
+			if found {
+				reused[i] = true
+				answers[i] = answer
+				r.use(def.Stage).Reused++
+				r.use(def.Stage).Rows++
+				fmt.Fprintf(&r.tables, "- Reused %s · %s\n", row.ID, answer.answer["line"])
+			} else if r.recallOnly {
+				answers[i] = rowAnswer{source: atlas.SourceGiven}
+				r.use(def.Stage).Rows++
+				r.use(def.Stage).Given++
 			} else {
-				missingByBasis[k.BasisID] = len(missing)
-				missing = append(missing, row)
-				positions = append(positions, []int{i})
+				at, found := missingByBasis[k.BasisID]
+				if !found {
+					at = missingRef{g, len(missing[g].rows)}
+					missing[g].rows = append(missing[g].rows, row)
+					missingByBasis[k.BasisID] = at
+					order = append(order, at)
+				}
+				sharing[at] = append(sharing[at], i)
 			}
 		}
 	}
-	if len(missing) > 0 {
-		fresh, err := r.runPreparedTable(ctx, def, round, shared, missing, nil)
+	if len(order) > 0 {
+		fresh, err := r.runPreparedGroups(ctx, def, round, missing, nil)
 		if err != nil {
 			return nil, err
 		}
-		for j, group := range positions {
-			for alias, position := range group {
-				answers[position] = fresh[j]
+		offsets := make([]int, len(missing))
+		for g := 1; g < len(missing); g++ {
+			offsets[g] = offsets[g-1] + len(missing[g-1].rows)
+		}
+		for _, at := range order {
+			flat := offsets[at.group] + at.position
+			for alias, position := range sharing[at] {
+				answers[position] = fresh[flat]
 				if alias == 0 {
 					continue
 				}
 				r.use(def.Stage).Rows++
-				if fresh[j].answer == nil {
+				if fresh[flat].answer == nil {
 					r.use(def.Stage).Given++
 				}
 				fmt.Fprintf(&r.tables, "- Shared exact input %s · representative %s · request %s · row %s\n",
-					rows[position].ID, missing[j].ID, fresh[j].requestKey, fresh[j].rowKey)
+					rows[position].ID, missing[at.group].rows[at.position].ID, fresh[flat].requestKey, fresh[flat].rowKey)
 			}
 		}
 	}

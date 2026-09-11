@@ -46,9 +46,15 @@ type Column struct {
 	// MaxRunes bounds a text cell.
 	MaxRunes int `json:"max_runes,omitempty"`
 	// Options is a closed list shared by every row; OptionsFrom names the row
-	// field that carries the row's own list instead.
+	// field that carries the row's own list instead, or the window context
+	// field when the row has none: a catalogue every row chooses from is
+	// sent once, not once per row.
 	Options     []string `json:"options,omitempty"`
 	OptionsFrom string   `json:"options_from,omitempty"`
+	// LimitFrom names the row or context field bounding a Sequence's number
+	// of choices below the options it offers, such as a learning menu of
+	// five questions; an options list is already its own bound.
+	LimitFrom string `json:"limit_from,omitempty"`
 	// Free is a prefix after which the model may write its own short text,
 	// such as "new: " for a title the code has not seen. Empty means no.
 	Free         string `json:"free,omitempty"`
@@ -70,13 +76,20 @@ type Column struct {
 	EmptyFrom string `json:"-"`
 	// Missing is the value a closed choice takes when the model omits the
 	// cell or sends null: a choice that already means "no decision", such as
-	// no. A cell never asked because its WhenOptionsFrom field advertises no
-	// choices takes the same value, so a branch conditioned on it can still
-	// follow. A decoder rule, not part of the request or the memo state; a
-	// written choice is still validated as before.
+	// no. A decoder rule, not part of the request or the memo state;
+	// a written choice is still validated as before.
 	Missing string `json:"-"`
-	// WhenOptionsFrom requires this cell only when the named input field has
-	// advertised choices. Empty choices have no decision to request or validate.
+	// Unasked is the value a closed choice takes when the cell was never
+	// asked because its WhenOptionsFrom field advertises no choices, so a
+	// branch conditioned on it can still follow: an operation without
+	// registered names is a label operation and its name cell stays
+	// required. Empty leaves an unasked cell without a value, as a file's
+	// box that may not move. A decoder rule like Missing.
+	Unasked string `json:"-"`
+	// WhenOptionsFrom requires this cell only when the named input field, in
+	// the row or the window context, has advertised choices. A row without
+	// the field has no decision to request or validate: an address cell is
+	// asked only where the code has address candidates to choose from.
 	WhenOptionsFrom string `json:"when_options_from,omitempty"`
 }
 
@@ -250,6 +263,9 @@ func Request(def Definition, window Window) ([]byte, error) {
 		if column.OptionsFrom != "" {
 			spec["options_from"] = column.OptionsFrom
 		}
+		if column.LimitFrom != "" {
+			spec["limit_from"] = column.LimitFrom
+		}
 		if column.Free != "" {
 			spec["free_prefix"] = column.Free
 		}
@@ -399,7 +415,7 @@ func decodeWindow(def Definition, window Window, raw []byte) (Answers, error) {
 			if err := json.Unmarshal(cellRaw, &cell); err != nil {
 				return nil, fmt.Errorf("table %s: row %s cell %q is not a string", def.Stage, key, column.Name)
 			}
-			value, err := normalizeCell(column, window.Rows[index], cell)
+			value, err := normalizeCell(column, window.Context, window.Rows[index], cell)
 			if err != nil {
 				return nil, fmt.Errorf("table %s: row %s: %w", def.Stage, key, err)
 			}
@@ -424,7 +440,7 @@ func keyIndex(key string, count int) (int, bool) {
 	return index - 1, true
 }
 
-func normalizeCell(column Column, row Row, cell string) (string, error) {
+func normalizeCell(column Column, context []Field, row Row, cell string) (string, error) {
 	if column.Kind == Prose {
 		text := strings.TrimSpace(cell)
 		if text == "" {
@@ -443,7 +459,7 @@ func normalizeCell(column Column, row Row, cell string) (string, error) {
 			return "", nil
 		}
 		options := make(map[string]bool)
-		for _, option := range rowOptions(row, column.OptionsFrom) {
+		for _, option := range optionsFrom(context, row, column.OptionsFrom) {
 			options[option] = true
 		}
 		var selected []string
@@ -457,10 +473,16 @@ func normalizeCell(column Column, row Row, cell string) (string, error) {
 		// Refs outside the row's options were never selectable: a row citing
 		// only such refs (calls listed as context beside call_options, or
 		// invented ones) selects nothing, and its other cells keep their
-		// decisions. The raw response keeps what was written. The options
-		// list itself bounds the selection; no separate count is needed.
+		// decisions. The raw response keeps what was written.
 		if len(selected) == 0 {
 			return "", nil
+		}
+		limit := 0
+		if field, ok := fieldFrom(context, row, column.LimitFrom); ok {
+			limit, _ = field.Value.(int)
+		}
+		if column.LimitFrom != "" && (limit < 1 || len(selected) > limit) {
+			return "", fmt.Errorf("cell %q chooses %d items, limit %d", column.Name, len(selected), limit)
 		}
 		return strings.Join(selected, " "), nil
 	case Text:
@@ -474,7 +496,7 @@ func normalizeCell(column Column, row Row, cell string) (string, error) {
 	case Choice:
 		options := column.Options
 		if column.OptionsFrom != "" {
-			options = rowOptions(row, column.OptionsFrom)
+			options = optionsFrom(context, row, column.OptionsFrom)
 		}
 		for _, option := range options {
 			if strings.EqualFold(text, option) {
@@ -523,23 +545,42 @@ func normalizeCell(column Column, row Row, cell string) (string, error) {
 	}
 }
 
-func rowOptions(row Row, name string) []string {
+// fieldFrom finds a named input: the row's own field first, then the window
+// context's. A row field shadows a context field of the same name.
+func fieldFrom(context []Field, row Row, name string) (Field, bool) {
+	if name == "" {
+		return Field{}, false
+	}
 	for _, field := range row.Fields {
-		if field.Name != name {
-			continue
+		if field.Name == name {
+			return field, true
 		}
-		switch value := field.Value.(type) {
-		case []string:
-			return value
-		case []any:
-			result := make([]string, 0, len(value))
-			for _, item := range value {
-				if text, ok := item.(string); ok {
-					result = append(result, text)
-				}
+	}
+	for _, field := range context {
+		if field.Name == name {
+			return field, true
+		}
+	}
+	return Field{}, false
+}
+
+// optionsFrom reads the closed list a named row or context field carries.
+func optionsFrom(context []Field, row Row, name string) []string {
+	field, ok := fieldFrom(context, row, name)
+	if !ok {
+		return nil
+	}
+	switch value := field.Value.(type) {
+	case []string:
+		return value
+	case []any:
+		result := make([]string, 0, len(value))
+		for _, item := range value {
+			if text, ok := item.(string); ok {
+				result = append(result, text)
 			}
-			return result
 		}
+		return result
 	}
 	return nil
 }
