@@ -27,8 +27,24 @@ func (r *reader) readOperations(ctx context.Context) error {
 		if file := r.places[place.Parent]; file.File != nil && file.File.Generated {
 			continue
 		}
+		// A declaration with an observed route is not reviewed: the route
+		// fact already is its operation (kind, name and location), and the
+		// group index drops a model "request" on the same declaration as a
+		// second copy of that route, so the row's description was never
+		// shown. This holds when the declaration has other grounds too. A
+		// selection proposal restates what the registration proved; the
+		// bindings behind observedActivation are that same registration
+		// call; and an asynchronous caller of a handler does not make the
+		// handler something other than the route's handler, so a second
+		// activation beside the route would draw one declaration twice.
+		// The proposal goes with the row: a hypothesis left without its
+		// review would reach the atlas as an activation without a name.
+		if len(nativeRoutes[place.ID]) > 0 {
+			delete(r.operations, place.ID)
+			continue
+		}
 		_, proposed := r.operations[place.ID]
-		candidates[place.ID] = proposed || observedActivation(place) || len(nativeRoutes[place.ID]) > 0
+		candidates[place.ID] = proposed || observedActivation(place)
 	}
 	declarations := make(map[string]atlas.Place)
 	for _, place := range r.opts.Graph.Places {

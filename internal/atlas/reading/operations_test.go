@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -191,7 +192,9 @@ func TestOperationRestoresOriginalHTTPPathWithoutTrimmingOrTranslation(t *testin
 	t.Fatal("HTTP operation disappeared from atlas")
 }
 
-func TestNativeHTTPRouteSuppliesOperationNameWithoutCallbackBinding(t *testing.T) {
+// The route fact is the handler's operation; the reading adds no model
+// operation beside it, so the group index shows the route once.
+func TestNativeHTTPRouteHandlerKeepsItsRouteAndGetsNoModelOperation(t *testing.T) {
 	graph := withSymbols(t, twoTargetGraph(t))
 	want := "/api/v1/고객/%20status"
 	for _, place := range graph.Places {
@@ -214,21 +217,30 @@ func TestNativeHTTPRouteSuppliesOperationNameWithoutCallbackBinding(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	var handler *atlas.Symbol
+	routes := 0
 	for _, target := range result.Atlas.Targets {
+		for _, boundary := range target.Boundaries {
+			if boundary.ID == "bnd:customer" && len(boundary.Values) == 1 && boundary.Values[0] == want {
+				routes++
+			}
+		}
 		for _, box := range target.Boxes {
 			for _, file := range box.Files {
-				for _, symbol := range file.Symbols {
-					if symbol.Name == "Op01" {
-						if symbol.Operation != "GET "+want {
-							t.Fatalf("native composed path was lost: %q", symbol.Operation)
-						}
-						return
+				for i := range file.Symbols {
+					if file.Symbols[i].Name == "Op01" {
+						handler = &file.Symbols[i]
 					}
 				}
 			}
 		}
 	}
-	t.Fatal("native-route operation disappeared")
+	if handler == nil || routes != 1 {
+		t.Fatalf("native route or its handler disappeared: handler=%+v routes=%d", handler, routes)
+	}
+	if handler.Activation != "" || handler.Operation != "" || handler.OperationSummary != "" {
+		t.Fatalf("route handler received a model operation beside its route: %+v", handler)
+	}
 }
 
 func TestNativeHTTPRouteCatalogueUsesSubjectIdentityAndRetainsMounts(t *testing.T) {
@@ -411,5 +423,52 @@ func TestOperationReviewKeepsRegistrationMetadataOnItsRecipient(t *testing.T) {
 	}
 	if !strings.Contains(inputs[second], "second-action-help") || strings.Contains(inputs[second], "first-action-help") {
 		t.Fatalf("callback lost or borrowed its registration evidence: %s", inputs[second])
+	}
+}
+
+// A declaration with an observed route is not reviewed even when the
+// selection proposed it and a registration binds it: the route fact is its
+// operation, and the group index would drop the model's request on the
+// same declaration as a second copy of that route.
+func TestNativeRouteHandlersAreNotReviewedWhileOtherHandlersAre(t *testing.T) {
+	provider := &mutatedTableProvider{}
+	var asked []string
+	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		if input["table"] != lines.StageOperations {
+			return
+		}
+		for i, source := range input["rows"].([]any) {
+			row := source.(map[string]any)
+			asked = append(asked, row["name"].(string))
+			rows[i]["entry"], rows[i]["activation"], rows[i]["name_kind"] = "self", "request", "label"
+			rows[i]["name"], rows[i]["description"] = row["name"], "Handles the request."
+		}
+	}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through = ""
+	handler := func(name string) atlas.Place {
+		return atlas.Place{ID: name, Kind: atlas.PlaceSymbol, Path: "api.py", LineNo: 10, Parent: "file:api", TargetIDs: []string{"service"},
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:" + name, Name: name},
+				Bindings: []atlas.SymbolBinding{{From: "install", To: name, Detail: "app.get", Path: "api.py", Line: 8}}}}
+	}
+	routed, plain := handler("routed"), handler("plain")
+	route := atlas.Place{ID: "bnd:api.py:8:http_server", Kind: atlas.PlaceBoundary, Path: "api.py", LineNo: 8, Parent: "file:api", TargetIDs: []string{"service"},
+		Boundary: &atlas.BoundaryFacts{Source: "fact", SubjectID: routed.ID, GivenKind: atlas.BoundaryHTTPServer, Direction: atlas.DirectionIn, Method: "GET", Values: []string{"/items"}}}
+	r.opts.Graph.Places = []atlas.Place{routed, plain, route}
+	r.places = map[string]atlas.Place{routed.ID: routed, plain.ID: plain, route.ID: route}
+	r.operations = map[string][3]string{routed.ID: {"request"}, plain.ID: {"request"}}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	if err := r.readOperations(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(asked, []string{"plain"}) {
+		t.Fatalf("reviewed rows = %v, want only the handler without a route", asked)
+	}
+	if _, proposed := r.operations[routed.ID]; proposed {
+		t.Fatalf("route handler kept a hypothesis without its review: %v", r.operations[routed.ID])
+	}
+	if operation := r.operations[plain.ID]; operation[0] != "request" || operation[1] != "plain" {
+		t.Fatalf("handler without a route lost its review: %v", operation)
 	}
 }
