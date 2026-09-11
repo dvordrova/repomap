@@ -375,6 +375,11 @@ func (builder *pageBuilder) questionExcerpts(stop atlas.QuestionStop) ([]pageQue
 	}
 	var excerpts []pageQuestionExcerpt
 	for _, original := range originals {
+		// Preserved evidence names anchor_path only when the observation opens
+		// outside the stop's own file.
+		if original.Path == "" {
+			original.Path = stop.Path
+		}
 		if original.Path == "" || original.Line < 1 {
 			continue
 		}

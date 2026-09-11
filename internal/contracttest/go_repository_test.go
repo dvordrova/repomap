@@ -295,7 +295,12 @@ func assertGoTypeFormsInQuestionEvidence(t *testing.T, index programindex.Index,
 			if field.Name != "evidence" {
 				continue
 			}
-			for _, evidence := range field.Value.([]map[string]any) {
+			units := field.Value.([]map[string]any)
+			byRef := make(map[string]map[string]any, len(units))
+			for _, unit := range units {
+				byRef[unit["ref"].(string)] = unit
+			}
+			for _, evidence := range units {
 				name, _ := evidence["name"].(string)
 				expected, ok := want[name]
 				if !ok {
@@ -305,7 +310,12 @@ func assertGoTypeFormsInQuestionEvidence(t *testing.T, index programindex.Index,
 				if !strings.Contains(signature, " "+expected.shape+"{") {
 					t.Fatalf("Go %s question evidence lost type form: %+v", name, evidence)
 				}
+				// Question-batch v4 names a member that is an anchor of the same
+				// row by ref; the declaration is that anchor's own entry.
 				for _, member := range evidence["owned_declarations"].([]map[string]any) {
+					if ref, named := member["ref"].(string); named {
+						member = byRef[ref]
+					}
 					if member["name"] == expected.member {
 						if member["kind"] != expected.memberKind {
 							t.Fatalf("Go %s.%s changed field/method identity: %+v", name, expected.member, member)

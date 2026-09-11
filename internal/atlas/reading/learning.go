@@ -195,7 +195,7 @@ func (r *reader) learningEvidence() []learningEvidence {
 			seenFiles[chunk.Place.ID] = true
 			appendSource(atlas.QuestionStop{PlaceID: chunk.Place.ID, SubjectID: chunk.Place.ID,
 				Path: chunk.Place.Path, Line: 1, Kind: "file", Name: chunk.Place.Path, TargetIDs: chunk.Place.TargetIDs,
-				Evidence: map[string]any{"evidence": []map[string]any{{"anchor_path": chunk.Place.Path, "anchor_line": 1,
+				Evidence: map[string]any{"evidence": []map[string]any{{"anchor_line": 1,
 					"author_doc": chunk.Place.File.Doc, "prior_model_hypothesis": line}}}})
 		}
 		refs := make([]string, 0, len(chunk.Anchors))
@@ -301,7 +301,7 @@ func learningCall(pool learningRequest, prompt string) (llm.Call[learningRespons
 	if err != nil {
 		return llm.Call[learningResponse]{}, err
 	}
-	return llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v3"),
+	return llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v4"),
 		Prompt:         llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true, ResponseExample: learningResponseExample, ProseFields: []string{"reviews[].reason", "reviews[].questions[].question", "reviews[].questions[].why"}},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
 		DecodeValidate: func(raw []byte) (learningResponse, error) { return decodeLearning(raw, pool) }}, nil

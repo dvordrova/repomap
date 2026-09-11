@@ -11,7 +11,7 @@ const StageAnswer = "atlas_answer"
 var answerPrompt string
 
 func Answer() table.Definition {
-	return table.Definition{Stage: StageAnswer, Contract: "repomap.atlas.answer.v8", System: answerPrompt, Reasoning: true,
+	return table.Definition{Stage: StageAnswer, Contract: "repomap.atlas.answer.v9", System: answerPrompt, Reasoning: true,
 		Columns: []table.Column{
 			{Name: "answer", Kind: table.Prose, EmptyValue: "none"},
 			{Name: "basis", Kind: table.Prose, EmptyValue: "none"},

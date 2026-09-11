@@ -21,7 +21,7 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-const Contract = "repomap.atlas.question-batch.v3"
+const Contract = "repomap.atlas.question-batch.v4"
 
 //go:embed prompt.md
 var systemPrompt string

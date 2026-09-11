@@ -35,6 +35,10 @@ type QuestionAnchor struct {
 type questionUnit struct {
 	anchor QuestionAnchor
 	facts  map[string]any
+	// members are the declarations a type owns. They are rendered per chunk,
+	// once its refs are known: a member that is an anchor of the same chunk
+	// is named by that ref instead of being repeated.
+	members []atlas.TypeMember
 }
 
 type QuestionChunk struct {
@@ -74,12 +78,10 @@ func QuestionRows(graph atlas.Graph) []QuestionChunk {
 			if symbol, ok := symbols[decl.ObjectID]; ok {
 				questionCallableEvidence(facts, symbol, places, symbols, EvidenceLimits{})
 			}
-			if members := typeDeclarations[decl.ObjectID]; len(members) > 0 {
-				facts["owned_declarations"] = ownedDeclarations(members)
-			}
 			units = append(units, questionUnit{
-				anchor: QuestionAnchor{SubjectID: decl.ObjectID, Path: file.Path, Name: decl.Name, Kind: decl.Kind, Line: decl.LineNo, Column: decl.Column},
-				facts:  facts,
+				anchor:  QuestionAnchor{SubjectID: decl.ObjectID, Path: file.Path, Name: decl.Name, Kind: decl.Kind, Line: decl.LineNo, Column: decl.Column},
+				facts:   facts,
+				members: typeDeclarations[decl.ObjectID],
 			})
 		}
 		for _, boundary := range boundaries[file.ID] {
@@ -174,8 +176,8 @@ func documentQuestionChunks(place atlas.Place) []QuestionChunk {
 		part := text[:end]
 		anchor := QuestionAnchor{SubjectID: place.ID, Path: place.Path, Name: place.Document.Title, Kind: "documentation", Line: line, Column: column}
 		facts := map[string]any{"kind": "documentation", "section_title": place.Document.Title, "section_line": place.LineNo, "author_text": part}
-		if len(place.Document.Headings) > 0 {
-			facts["heading_path"] = place.Document.Headings
+		if headings := documentHeadingPath(place); len(headings) > 0 {
+			facts["heading_path"] = headings
 		}
 		chunks := questionChunks(place, []questionUnit{{anchor: anchor, facts: facts}}, nil)
 		row := chunks[0]
@@ -202,6 +204,58 @@ func documentQuestionChunks(place atlas.Place) []QuestionChunk {
 	return result
 }
 
+// documentHeadingPath is the written ancestry above a section: the titles of
+// its enclosing headings, outermost first. The section's own heading closes
+// the saved ancestry and is already the unit's section_title/section_line
+// (Morfeu: all 1,495 heading paths, 66 KB of repetition); the parents' lines
+// are not locations the model can select.
+func documentHeadingPath(place atlas.Place) []string {
+	headings := place.Document.Headings
+	if last := len(headings) - 1; last >= 0 && headings[last].Title == place.Document.Title && headings[last].Line == place.LineNo {
+		headings = headings[:last]
+	}
+	titles := make([]string, 0, len(headings))
+	for _, heading := range headings {
+		titles = append(titles, heading.Title)
+	}
+	return titles
+}
+
+// ownedDeclaration is the record a type's member shows in question evidence.
+// A member and a chunk anchor with equal records are one declaration.
+type ownedDeclaration struct {
+	path, name, kind, signature, doc string
+	line                             int
+}
+
+func unitDeclaration(unit questionUnit) ownedDeclaration {
+	signature, _ := unit.facts["signature"].(string)
+	doc, _ := unit.facts["author_doc"].(string)
+	return ownedDeclaration{path: unit.anchor.Path, name: unit.anchor.Name, kind: unit.anchor.Kind, signature: signature, doc: doc, line: unit.anchor.Line}
+}
+
+func memberDeclaration(member atlas.TypeMember) ownedDeclaration {
+	return ownedDeclaration{path: member.Path, name: member.Decl.Name, kind: member.Decl.Kind, signature: member.Decl.Signature, doc: member.Decl.Doc, line: member.Decl.LineNo}
+}
+
+// chunkOwnedDeclarations renders a type's members for one chunk in their
+// source order. A member whose exact record is an anchor of the same chunk is
+// given by that ref: the anchor's own entry carries the declaration, and
+// AnchorEvidence restores the record for a preserved selection. A member
+// with the type's fuller author quote, in another file or in another chunk
+// keeps its record. Freqtrade 20260911-070651: 1,280 of 4,100 members
+// repeated an anchor of their chunk record for record (282 KB); 41 shared
+// the location but carried a longer quote.
+func chunkOwnedDeclarations(members []atlas.TypeMember, declared map[ownedDeclaration]string) []map[string]any {
+	result := ownedDeclarations(members)
+	for i, member := range members {
+		if ref, ok := declared[memberDeclaration(member)]; ok {
+			result[i] = map[string]any{"ref": ref}
+		}
+	}
+	return result
+}
+
 func questionChunks(place atlas.Place, units []questionUnit, context []table.Field) []QuestionChunk {
 	var result []QuestionChunk
 	count := max(1, (len(units)+QuestionChunkAnchors-1)/QuestionChunkAnchors)
@@ -214,17 +268,29 @@ func questionChunks(place atlas.Place, units []questionUnit, context []table.Fie
 		}
 		facts := make([]map[string]any, 0)
 		start := chunk * QuestionChunkAnchors
-		for i, item := range units[start:min(start+QuestionChunkAnchors, len(units))] {
+		part := units[start:min(start+QuestionChunkAnchors, len(units))]
+		declared := make(map[ownedDeclaration]string, len(part))
+		for i, item := range part {
 			ref := fmt.Sprintf("a%d", i+1)
 			anchors[ref] = item.anchor
 			options = append(options, ref)
 			item.facts["ref"] = ref
-			item.facts["anchor_path"] = item.anchor.Path
+			// An anchor opens in the row's file unless anchor_path says
+			// otherwise (Morfeu: 1,807 of 1,834 anchors, 95 KB of repetition).
+			if item.anchor.Path != place.Path {
+				item.facts["anchor_path"] = item.anchor.Path
+			}
 			item.facts["anchor_line"] = item.anchor.Line
 			if item.anchor.Column > 0 {
 				item.facts["anchor_column"] = item.anchor.Column
 			}
+			declared[unitDeclaration(item)] = ref
 			facts = append(facts, item.facts)
+		}
+		for _, item := range part {
+			if len(item.members) > 0 {
+				item.facts["owned_declarations"] = chunkOwnedDeclarations(item.members, declared)
+			}
 		}
 		fields := []table.Field{
 			{Name: "path", Value: place.Path}, {Name: "place_kind", Value: string(place.Kind)},

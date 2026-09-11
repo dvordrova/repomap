@@ -60,9 +60,16 @@ func TestQuestionDocumentationIsLosslessAndAnchoredAcrossLongLines(t *testing.T)
 		if anchor.Line != line || anchor.Column != column || anchor.SubjectID != place.ID || anchor.Kind != "documentation" {
 			t.Fatalf("source anchor lost across a partition: %+v", anchor)
 		}
-		evidence := AnchorEvidence(row, "a1")["evidence"].([]map[string]any)[0]
-		if !reflect.DeepEqual(evidence["heading_path"], headings) || evidence["anchor_path"] != place.Path {
+		preserved := AnchorEvidence(row, "a1")
+		evidence := preserved["evidence"].([]map[string]any)[0]
+		// Question-batch v4: the section's own heading is section_title and
+		// section_line, so heading_path holds only the enclosing titles, and
+		// an anchor names its file only when it is not the row's path.
+		if !reflect.DeepEqual(evidence["heading_path"], []string{"Installed provider example"}) || evidence["section_title"] != "Tests" || evidence["section_line"] != 133 {
 			t.Fatalf("source partition lost the author's document scope: %+v", evidence)
+		}
+		if _, named := evidence["anchor_path"]; named || preserved["context"].(map[string]any)["path"] != place.Path {
+			t.Fatalf("anchor repeated or lost the row's path: %+v", preserved)
 		}
 		part := evidence["author_text"].(string)
 		if !utf8.ValidString(part) || len(part) > DocumentChunkBytes {
@@ -151,6 +158,137 @@ func TestObservationInputKeepsAllMembersAndNeverOffersAMissingPath(t *testing.T)
 			t.Fatal("internal identity reached question fields")
 		}
 	}
+}
+
+// Question-batch v4 stops repeating what a row already says: a section's own
+// heading closes no heading_path, an anchor names its file only when it is
+// not the row's, and a type member that is an anchor of the same chunk is
+// given by that ref. The preserved evidence of a selection reads on its own.
+func TestQuestionEvidenceOmitsWhatItsRowAlreadySays(t *testing.T) {
+	guide, install := atlas.DocumentHeading{Title: "Guide", Line: 1}, atlas.DocumentHeading{Title: "Install", Line: 4}
+	sections := []atlas.Place{
+		{ID: "doc:README.md:1", Kind: atlas.PlaceDocument, Path: "README.md", LineNo: 1, Document: &atlas.DocumentFacts{Title: "Guide", Text: "# Guide\n\n", Headings: []atlas.DocumentHeading{guide}}},
+		{ID: "doc:README.md:4", Kind: atlas.PlaceDocument, Path: "README.md", LineNo: 4, Document: &atlas.DocumentFacts{Title: "Install", Text: "## Install\n\n", Headings: []atlas.DocumentHeading{guide, install}}},
+		{ID: "doc:README.md:7", Kind: atlas.PlaceDocument, Path: "README.md", LineNo: 7, Document: &atlas.DocumentFacts{Title: "Linux", Text: "### Linux\nRun make.\n", Headings: []atlas.DocumentHeading{guide, install, {Title: "Linux", Line: 7}}}},
+	}
+	path := "queue/ticket.go"
+	decls := []atlas.Decl{
+		{Name: "Ticket", Kind: "type", LineNo: 3, ObjectID: "private-ticket", Signature: "type Ticket struct{}", Doc: "Tracks a pending job."},
+		{Name: "Ticket.Renew", Kind: "method", LineNo: 9, ObjectID: "private-renew", Signature: "func() error", Doc: "Renew extends the ticket."},
+		{Name: "Ticket.Done", Kind: "method", LineNo: 24, ObjectID: "private-done", Signature: "func()", Doc: "Done releases the ticket."},
+		{Name: "Ticket.Close", Kind: "method", LineNo: 30, ObjectID: "private-close", Signature: "func()"},
+	}
+	members := []atlas.TypeMember{
+		// A class attribute is never a declaration of the file: its record stays.
+		{Path: path, Decl: atlas.Decl{Name: "items", Kind: "variable", LineNo: 4, Signature: "items []Point"}},
+		// The same record as anchor a2.
+		{Path: path, Decl: atlas.Decl{Name: "Ticket.Renew", Kind: "method", LineNo: 9, Signature: "func() error", Doc: "Renew extends the ticket."}},
+		// Type context keeps the fuller author quote; the file row keeps its first sentence.
+		{Path: path, Decl: atlas.Decl{Name: "Ticket.Done", Kind: "method", LineNo: 24, Signature: "func()", Doc: "Done releases the ticket. The job is then forgotten."}},
+		// The same record as anchor a4, with no documentation either.
+		{Path: path, Decl: atlas.Decl{Name: "Ticket.Close", Kind: "method", LineNo: 30, Signature: "func()"}},
+		// Declared in another file: not an anchor of this row.
+		{Path: "queue/renew.go", Decl: atlas.Decl{Name: "Ticket.Reset", Kind: "method", LineNo: 5, Signature: "func()"}},
+	}
+	file := atlas.Place{ID: atlas.FileID(path), Kind: atlas.PlaceFile, Path: path, File: &atlas.FileFacts{Decls: decls}}
+	ticket := atlas.Place{ID: "sym:private-ticket", Kind: atlas.PlaceSymbol, Path: path, LineNo: 3, Parent: file.ID, Symbol: &atlas.SymbolFacts{Decl: decls[0], Members: members}}
+	output := atlas.Place{ID: "entity:private-output", Kind: atlas.PlaceEntity, Path: "generated", Entity: &atlas.EntityFacts{Name: "output", Extractor: "company", Status: "present", Files: []string{path}}}
+	graph := atlas.Graph{Places: append([]atlas.Place{file, ticket, output}, sections...),
+		Edges: []atlas.Edge{{From: output.ID, To: output.ID, Kind: "observation", Evidence: &atlas.EdgeEvidence{Extractor: "company", Label: "configured output", Path: "codegen.json", LineNo: 7}}}}
+	rows := QuestionRows(graph)
+	var fileRow QuestionChunk
+	wantHeadings := map[string]any{sections[0].ID: nil, sections[1].ID: []string{"Guide"}, sections[2].ID: []string{"Guide", "Install"}}
+	for _, row := range rows {
+		if row.Place.ID == file.ID {
+			fileRow = row
+		}
+		want, isSection := wantHeadings[row.Place.ID]
+		if !isSection {
+			continue
+		}
+		unit := rowEvidence(t, row)[0]
+		if !reflect.DeepEqual(unit["heading_path"], want) || unit["section_title"] != row.Place.Document.Title || unit["section_line"] != row.Place.LineNo {
+			t.Fatalf("section %s: heading path repeats its own heading or lost its parents: %+v", row.Place.ID, unit)
+		}
+		if _, named := unit["anchor_path"]; named {
+			t.Fatalf("section %s repeats the row's path: %+v", row.Place.ID, unit)
+		}
+	}
+	if fileRow.Place.ID == "" {
+		t.Fatal("file row is missing")
+	}
+	byRef := make(map[string]map[string]any)
+	for _, unit := range rowEvidence(t, fileRow) {
+		byRef[unit["ref"].(string)] = unit
+	}
+	wantOwned := []map[string]any{
+		{"path": path, "line": 4, "name": "items", "kind": "variable", "signature": "items []Point", "author_doc": ""},
+		{"ref": "a2"},
+		{"path": path, "line": 24, "name": "Ticket.Done", "kind": "method", "signature": "func()", "author_doc": "Done releases the ticket. The job is then forgotten."},
+		{"ref": "a4"},
+		{"path": "queue/renew.go", "line": 5, "name": "Ticket.Reset", "kind": "method", "signature": "func()", "author_doc": ""},
+	}
+	if byRef["a1"]["name"] != "Ticket" || !reflect.DeepEqual(byRef["a1"]["owned_declarations"], wantOwned) {
+		t.Fatalf("owned declarations of the type: %+v", byRef["a1"]["owned_declarations"])
+	}
+	for ref, unit := range byRef {
+		named := unit["anchor_path"] != nil
+		if observation := unit["kind"] == "observation"; named != observation || observation && unit["anchor_path"] != "codegen.json" {
+			t.Fatalf("anchor %s repeats the row's path or lost its own: %+v", ref, unit)
+		}
+	}
+	encoded := string(questionFieldJSON(t, []table.Row{fileRow.Row}))
+	if strings.Count(encoded, "func() error") != 1 || strings.Count(encoded, `"anchor_path"`) != 1 || strings.Contains(encoded, "private-") {
+		t.Fatalf("the row repeats a member declaration or a path, or leaks an identity: %s", encoded)
+	}
+	for _, ref := range []string{"a1", "file"} {
+		preserved := AnchorEvidence(fileRow, ref)
+		original := preserved["evidence"].([]map[string]any)[0]
+		if !reflect.DeepEqual(original["owned_declarations"], ownedDeclarations(members)) {
+			t.Fatalf("preserved evidence of %s did not restore the type's members: %+v", ref, original["owned_declarations"])
+		}
+		raw, err := json.Marshal(preserved)
+		if err != nil || strings.Contains(string(raw), `"ref"`) || strings.Contains(string(raw), "private-") || preserved["context"].(map[string]any)["path"] != path {
+			t.Fatalf("preserved evidence of %s carries a row-local ref or an identity, or lost the row's path: %s (%v)", ref, raw, err)
+		}
+	}
+	observed := AnchorEvidence(fileRow, "a5")["evidence"].([]map[string]any)[0]
+	if observed["kind"] != "observation" || observed["anchor_path"] != "codegen.json" {
+		t.Fatalf("preserved observation lost its own file: %+v", observed)
+	}
+}
+
+// A ref is local to its chunk: a member declared in another chunk of the
+// same file keeps its complete record.
+func TestQuestionOwnedDeclarationRefsStayWithinTheirChunk(t *testing.T) {
+	path := "queue/many.go"
+	decls := []atlas.Decl{{Name: "Ticket", Kind: "type", LineNo: 1, ObjectID: "private-ticket", Signature: "type Ticket struct{}"}}
+	for i := 1; i < QuestionChunkAnchors; i++ {
+		decls = append(decls, atlas.Decl{Name: fmt.Sprintf("helper%d", i), Kind: "function", LineNo: i + 1, ObjectID: fmt.Sprintf("private-helper-%d", i)})
+	}
+	last := atlas.Decl{Name: "Ticket.Done", Kind: "method", LineNo: QuestionChunkAnchors + 1, ObjectID: "private-done", Signature: "func()"}
+	decls = append(decls, last)
+	members := []atlas.TypeMember{{Path: path, Decl: atlas.Decl{Name: last.Name, Kind: last.Kind, LineNo: last.LineNo, Signature: last.Signature}}}
+	file := atlas.Place{ID: atlas.FileID(path), Kind: atlas.PlaceFile, Path: path, File: &atlas.FileFacts{Decls: decls}}
+	ticket := atlas.Place{ID: "sym:private-ticket", Kind: atlas.PlaceSymbol, Path: path, LineNo: 1, Parent: file.ID, Symbol: &atlas.SymbolFacts{Decl: decls[0], Members: members}}
+	rows := QuestionRows(atlas.Graph{Places: []atlas.Place{file, ticket}})
+	if len(rows) != 2 || rows[1].Anchors["a1"].Name != last.Name {
+		t.Fatalf("chunks = %d, second chunk = %+v", len(rows), rows[1].Anchors)
+	}
+	if owned := rowEvidence(t, rows[0])[0]["owned_declarations"]; !reflect.DeepEqual(owned, ownedDeclarations(members)) {
+		t.Fatalf("a member of another chunk was named by a ref this row cannot resolve: %+v", owned)
+	}
+}
+
+func rowEvidence(t *testing.T, chunk QuestionChunk) []map[string]any {
+	t.Helper()
+	for _, field := range chunk.Row.Fields {
+		if field.Name == "evidence" {
+			return field.Value.([]map[string]any)
+		}
+	}
+	t.Fatalf("row %s has no evidence", chunk.Row.ID)
+	return nil
 }
 
 // The owning question cube serializes these fields; local Row.ID and the
