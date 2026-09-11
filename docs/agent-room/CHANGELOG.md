@@ -8,6 +8,12 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Selecting a code member no longer sets the part's summary vertically.
+  With a member chosen the docked card gained a second column for the
+  member panel (`.map-card-has-concepts`, 1fr + 1.35fr), which in the
+  384 px side panel left the summary about 160 px wide; the member panel
+  now stacks under the summary in the explorer. Verified: summary 367 px,
+  member panel 367 px beneath it.
 - Call lines keep their type when it tells records apart, and carry the
   note. The member-only line read "Patch, Patch, Patch" on a Kubernetes
   client: a member used by several types within one destination now keeps

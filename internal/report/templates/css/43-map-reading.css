@@ -151,3 +151,7 @@
 .data-kind{font-size:14px;margin:12px 0 4px}.data-kind .meta{display:inline;font-size:12px}
 /* The telegraphic note sits on the call line itself; the click keeps the address, basis and source. */
 .outbound-note{font-family:inherit;font-weight:400;color:var(--ink)}
+/* In the side panel the selected code member's panel stacks under the part's summary; two columns in 384 px set the summary vertically. */
+[data-map-explorer] .map-card-has-concepts{grid-template-columns:minmax(0,1fr)}
+[data-map-explorer] .map-card-has-concepts .map-card-intro{grid-column:1;grid-row:auto}
+[data-map-explorer] .map-card-has-concepts .map-concepts{grid-column:1;grid-row:auto;margin-top:.5rem}
