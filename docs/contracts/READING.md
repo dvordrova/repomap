@@ -264,8 +264,13 @@ a refused intent remains unavailable without deleting its neighbours. Within a
 only when none survive. A `questions` review that arrives without a reason takes
 the first sentence of its first accepted question's why and records
 `reason_from: why`; `not_applicable` and `unknown` reviews still need their own
-reason. After all windows, an intent reviewed by any window is not marked
-unavailable by the windows that skipped it. Failed
+reason. An intent with no entry at all in an accepted response is re-asked over the
+same evidence — first together with the other omitted intents, then alone —
+before it is unavailable (`intent_omitted` journal rows, `recovered` when a
+later window reviewed it); the intents are listed in the request after the
+evidence so every re-ask shares its parent's request prefix. After all
+windows, an intent reviewed by any window is not marked unavailable by the
+windows that skipped it. Failed
 consolidation preserves original accepted questions and any accepted comparisons,
 with the plan marked partial. The owner explicitly approved this for user-selected
 repositories on 2026-09-06. `read --through learn` stops after the plan.

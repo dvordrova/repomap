@@ -8,6 +8,20 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Learn re-asks the intents a response left out and lists the intents
+  after the evidence (learn v5). The owner's run (524,288-token provider)
+  split Learn into four windows: two answered only the first intent
+  (`purpose`) and stopped, two answered nothing, so seven intents were
+  "missing intent review" with no other entries in the response and the
+  report had two questions. Like retrieval, an intent with no entry in an
+  accepted response is now `intent_omitted` and re-asked over the same
+  evidence, first together with the other omitted intents, then one per
+  window, before it is unavailable; a refused first window goes straight
+  to single-intent windows. The intent catalogue moved from the system
+  prompt to `"intents":[…]` after `evidence`, so a re-ask shares the
+  request prefix with its parent window and the provider's prefix cache
+  serves it; the prompt says `sources` are `e*` evidence refs only (the
+  owner's model cited `h1 h2 h4` context refs and lost a question).
 - Symbol and operation requests carry one decision per cell and define
   every value they render (schema review, cold fixes; symbol-selection v5,
   symbols v8, operations v20). `activation` (seven options consumed as a
