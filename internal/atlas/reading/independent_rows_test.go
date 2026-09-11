@@ -52,7 +52,7 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 	r := newReader(provider)
 	var messages []string
 	r.opts.State = func(_, _ string, details ...string) { messages = append(messages, details...) }
-	first, err := r.runIndependent(t.Context(), def, 1, nil, rows)
+	first, err := r.runIndependent(t.Context(), def, 1, rowGroups{{rows: rows}})
 	if err != nil || first[0].answer["name"] != "First" || first[1].answer != nil || first[1].source != atlas.SourceGiven || first[2].answer["entry"] != "none" {
 		t.Fatalf("one unsupported u1 removed valid operations: %+v / %v; rejected=%+v", first, err, r.rejected)
 	}
@@ -80,7 +80,7 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 	// reordering. Only the previously refused row is requested again.
 	warmProvider := &independentResponseProvider{response: []byte(`{"rows":[{"key":"r1","entry":"self","name_kind":"label","activation":"command","name":"Second","description":"Runs second."}]}`)}
 	warm := newReader(warmProvider)
-	warmed, err := warm.runIndependent(t.Context(), def, 1, nil, []table.Row{rows[2], rows[1], rows[0]})
+	warmed, err := warm.runIndependent(t.Context(), def, 1, rowGroups{{rows: []table.Row{rows[2], rows[1], rows[0]}}})
 	if err != nil || warmProvider.calls != 1 || warmed[0].source != atlas.SourceCache || warmed[1].source != atlas.SourceModel || warmed[2].source != atlas.SourceCache {
 		t.Fatalf("valid neighbours were requested again: %+v / calls=%d / %v", warmed, warmProvider.calls, err)
 	}
@@ -97,7 +97,7 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 	recallProvider := &independentResponseProvider{}
 	recalled := newReader(recallProvider)
 	recalled.recallOnly = true
-	updated, err := recalled.runIndependent(t.Context(), def, 1, nil, rows)
+	updated, err := recalled.runIndependent(t.Context(), def, 1, rowGroups{{rows: rows}})
 	if err != nil || recallProvider.calls != 0 || updated[0].answer["name"] != "Updated first" || updated[1].answer["name"] != "Second" || updated[2].answer["entry"] != "none" {
 		t.Fatalf("replay lost accepted rows or invoked a provider: %+v / %v", updated, err)
 	}

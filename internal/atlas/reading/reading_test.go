@@ -193,7 +193,8 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 			Options     []string `json:"options"`
 			OptionsFrom string   `json:"options_from"`
 		} `json:"fill"`
-		Rows []map[string]any `json:"rows"`
+		Context map[string]any   `json:"context"`
+		Rows    []map[string]any `json:"rows"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
@@ -225,10 +226,13 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 			case "choice":
 				options := column.Options
 				if column.OptionsFrom != "" {
-					if list, ok := row[column.OptionsFrom].([]any); ok {
-						for _, item := range list {
-							options = append(options, fmt.Sprint(item))
-						}
+					// A row's own list, else the window's shared one.
+					list, ok := row[column.OptionsFrom].([]any)
+					if !ok {
+						list, _ = request.Context[column.OptionsFrom].([]any)
+					}
+					for _, item := range list {
+						options = append(options, fmt.Sprint(item))
 					}
 				}
 				if len(options) > 0 {

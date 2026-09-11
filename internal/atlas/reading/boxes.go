@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/atlas/destinations"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 )
@@ -592,7 +593,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		r.boundaries[place.ID] = state
 	}
 	r.bindInterpretedBoundaries()
-	destinations := NewDestinationReader(r.opts.Graph.Places)
+	tracer := NewDestinationReader(r.opts.Graph.Places)
 	for _, state := range r.boundaries {
 		facts := state.place.Boundary
 		if facts.Direction != atlas.DirectionOut {
@@ -604,7 +605,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		}
 		for _, call := range owner.Symbol.Calls {
 			if call.Line == state.place.LineNo && call.Column == state.place.Column {
-				state.uses = append(state.uses, destinations.Read(owner, call)...)
+				state.uses = append(state.uses, tracer.Read(owner, call)...)
 			}
 		}
 		state.uses = canonicalDestinationUses(state.uses)
@@ -620,9 +621,20 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	r.opts.Stage(lines.StageBoundaries, fmt.Sprintf("reviewing runtime relationships: %d source candidates and facts", len(ids)))
 	for mode := 0; mode < 4; mode++ {
 		outgoing, fixed := mode%2 == 1, mode < 2
-		var rows []table.Row
-		var order []*boundaryState
-		addressValues := make(map[string][]lines.BoundaryAddress)
+		def := lines.Boundaries(outgoing)
+		if fixed {
+			def = lines.FixedBoundaries(outgoing)
+		}
+		// The rows of one declaration share one window: the declaration, its
+		// source context and the destination catalogue are sent once, and a
+		// row names the declaration by owner_ref. Rows without a declaration
+		// share a window without owners.
+		type ownerGroup struct {
+			owner  atlas.Place
+			states []*boundaryState
+		}
+		byOwner := make(map[string]*ownerGroup)
+		var keys []string
 		for _, id := range ids {
 			state := r.boundaries[id]
 			// An accepted operation already owns its incoming interpretation.
@@ -634,41 +646,74 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			if isOutgoing != outgoing || (facts.GivenKind != "") != fixed {
 				continue
 			}
-			var original []atlas.Place
-			if owner := boundaryOwner(facts, owners); owner.Symbol != nil {
-				original = append(original, owner)
+			owner := boundaryOwner(facts, owners)
+			key := ""
+			if owner.Symbol != nil {
+				key = owner.ID
 			}
-			row := lines.BoundaryRow(state.place, "", original...)
-			row.Fields = append(row.Fields, lines.BoundarySourceContext(state.place, boundaryOwner(facts, owners), r.places, owners)...)
-			if len(state.uses) > 0 {
-				row.Fields = append(row.Fields, table.Field{Name: "destination_chains", Value: destinationEvidence(state.uses)})
-				addresses := destinationAddresses(state.uses)
-				options := []string{"unknown"}
-				for _, address := range addresses {
-					options = append(options, address.Ref)
-				}
-				for i := range row.Fields {
-					switch row.Fields[i].Name {
-					case "address_catalog":
-						row.Fields[i].Value = addresses
-					case "address_options":
-						row.Fields[i].Value = options
-					}
-				}
+			group, known := byOwner[key]
+			if !known {
+				group = &ownerGroup{owner: owner}
+				byOwner[key] = group
+				keys = append(keys, key)
 			}
-			rows = append(rows, row)
-			addressValues[id] = lines.BoundaryAddresses(state.place, original...)
-			if len(state.uses) > 0 {
-				addressValues[id] = destinationAddresses(state.uses)
-			}
-			order = append(order, state)
+			group.states = append(group.states, state)
 			r.places[id] = state.place
 		}
-		def := lines.Boundaries(outgoing)
-		if fixed {
-			def = lines.FixedBoundaries(outgoing)
+		sort.Strings(keys)
+		var groups rowGroups
+		var order []*boundaryState
+		addressValues := make(map[string][]lines.BoundaryAddress)
+		catalogs := make(map[string][]destinations.Entry)
+		for _, key := range keys {
+			group := byOwner[key]
+			ownerRef := ""
+			var original []atlas.Place
+			if group.owner.Symbol != nil {
+				ownerRef = "o1"
+				original = append(original, group.owner)
+			}
+			var rows []table.Row
+			var rowLines []int
+			var catalog []destinations.Entry
+			if outgoing {
+				catalog = destinations.Catalog(r.targetDependencies(group.states))
+			}
+			for _, state := range group.states {
+				addresses := lines.BoundaryAddresses(state.place, original...)
+				if len(state.uses) > 0 {
+					addresses = destinationAddresses(state.uses)
+				}
+				// The code knows the address of a native HTTP fact with one
+				// value and of a call whose traced chains end in one value;
+				// such a row has no address decision.
+				askAddress := outgoing && state.address == ""
+				row := lines.BoundaryRow(state.place, ownerRef, addresses, askAddress)
+				if len(state.uses) > 0 {
+					row.Fields = append(row.Fields, table.Field{Name: "destination_chains", Value: destinationEvidence(state.uses)})
+				}
+				rows = append(rows, row)
+				rowLines = append(rowLines, state.place.LineNo)
+				if askAddress {
+					addressValues[state.place.ID] = addresses
+				}
+				catalogs[state.place.ID] = catalog
+				order = append(order, state)
+			}
+			var shared []table.Field
+			if group.owner.Symbol != nil {
+				var sourceContext []table.Field
+				if outgoing {
+					sourceContext = lines.BoundarySourceContext(group.states[0].place, group.owner, r.places, owners)
+				}
+				shared = append(shared, lines.BoundaryOwnerContext(lines.BoundaryOwner(ownerRef, group.owner, rowLines, sourceContext)))
+			}
+			if outgoing {
+				shared = append(shared, lines.DestinationFields(catalog)...)
+			}
+			groups = append(groups, rowGroup{shared: shared, rows: rows})
 		}
-		answers, err := r.runTable(ctx, def, mode+1, rows)
+		answers, err := r.runTableGroups(ctx, def, mode+1, groups, nil)
 		if err != nil {
 			return err
 		}
@@ -685,7 +730,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				state.kind = answer["kind"]
 			}
 			if outgoing {
-				state.destination = answer["destination"]
+				state.destination = destinationChoice(def, catalogs[state.place.ID], answer["destination"])
 				if !fixed && state.basis == "" {
 					state.basis = answer["basis"]
 					if state.basis == "remote_client_instance" {
@@ -705,6 +750,48 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	}
 	r.reportStage(lines.StageBoundaries)
 	return nil
+}
+
+// destinationChoice reads a destination cell: the system a d* ref names in
+// the window's catalogue, or the text the model wrote after the free prefix.
+// A new atlas thus stores the canonical system name; the report folds only
+// older free text onto it.
+func destinationChoice(def table.Definition, catalog []destinations.Entry, cell string) string {
+	for _, column := range def.Columns {
+		if column.Name != "destination" {
+			continue
+		}
+		if text, ok := table.IsFree(column, cell); ok {
+			return strings.TrimSpace(text)
+		}
+	}
+	return destinations.Value(catalog, cell)
+}
+
+// targetDependencies are the external packages imported by the targets the
+// rows belong to, the evidence the destination catalogue is annotated with.
+func (r *reader) targetDependencies(states []*boundaryState) []string {
+	wanted := make(map[string]bool)
+	for _, state := range states {
+		for _, id := range state.place.TargetIDs {
+			wanted[id] = true
+		}
+	}
+	seen := make(map[string]bool)
+	var result []string
+	for _, target := range r.opts.Targets {
+		if !wanted[target.ID] {
+			continue
+		}
+		for _, dependency := range target.Dependencies {
+			if !seen[dependency] {
+				seen[dependency] = true
+				result = append(result, dependency)
+			}
+		}
+	}
+	sort.Strings(result)
+	return result
 }
 
 // Native SubjectID names the shared compiler-located declaration even when

@@ -95,7 +95,7 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 		case 0:
 			reason = "row was not answered"
 		case 1:
-			answer, err := decodeIndependentCells(def, row, cells[0])
+			answer, err := decodeIndependentCells(def, window.Context, row, cells[0])
 			if err == nil {
 				result.Answers[i] = answer
 				continue
@@ -135,14 +135,14 @@ func keylessInAskedOrder(rows []json.RawMessage, asked int) bool {
 	return true
 }
 
-func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMessage) (Answer, error) {
+func decodeIndependentCells(def Definition, context []Field, row Row, cells map[string]json.RawMessage) (Answer, error) {
 	answer := make(Answer, len(def.Columns))
 	processed := make(map[string]bool, len(def.Columns))
 	var deferred []Column
 	for _, column := range def.Columns {
 		active := true
 		if column.WhenOptionsFrom != "" {
-			active = len(rowOptions(row, column.WhenOptionsFrom)) > 0
+			active = len(optionsFrom(context, row, column.WhenOptionsFrom)) > 0
 		}
 		for name, expected := range column.When {
 			value, known := answer[name]
@@ -172,7 +172,7 @@ func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMe
 		if err := json.Unmarshal(raw, &cell); err != nil {
 			return nil, fmt.Errorf("cell %q is not a string", column.Name)
 		}
-		value, err := normalizeCell(column, row, cell)
+		value, err := normalizeCell(column, context, row, cell)
 		if err != nil {
 			if column.EmptyFrom != "" && strings.TrimSpace(cell) == "" {
 				deferred = append(deferred, column)

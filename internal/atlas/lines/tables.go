@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/atlas/destinations"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
@@ -20,7 +21,7 @@ const (
 	StageJoints     = "atlas_joints"
 
 	symbolsContract    = "repomap.atlas.symbols.v7"
-	boundariesContract = "repomap.atlas.boundaries.v6"
+	boundariesContract = "repomap.atlas.boundaries.v7"
 	zonesContract      = "repomap.atlas.zones.v1"
 	arrowsContract     = "repomap.atlas.arrows.v1"
 	targetsContract    = "repomap.atlas.targets.v2"
@@ -48,6 +49,9 @@ var typesPrompt string
 
 //go:embed prompts/boundaries.md
 var boundariesPrompt string
+
+//go:embed prompts/fixed_boundaries.md
+var fixedBoundariesPrompt string
 
 //go:embed prompts/zones.md
 var zonesPrompt string
@@ -149,50 +153,71 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 	return table.Row{ID: place.ID, Fields: fields}
 }
 
-// Boundaries interprets candidate relationships whose role is not a native fact.
-// Outgoing mode adds the runtime-system explanation.
+// Boundaries interprets candidate relationships whose role is not a native
+// fact. Outgoing mode adds the runtime-system cells. The decision and kind
+// lists are column options: every row chooses from the same list, so no row
+// repeats it, and an outgoing candidate is offered only the kinds the group
+// index keeps as communication.
 func Boundaries(outgoing ...bool) table.Definition {
 	positive := map[string]string{"decision": "boundary"}
 	def := table.Definition{
 		Stage: StageBoundaries, Contract: boundariesContract,
 		System: boundariesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
-			{Name: "decision", Kind: table.Choice, OptionsFrom: "decision_options", Note: "boundary when this call itself dispatches an exchange or creates/configures the actual remote client instance; none for local helpers, options and preparation; unassessed for insufficient evidence"},
-			{Name: "kind", Kind: table.Choice, OptionsFrom: "kind_options", When: positive},
-			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, When: positive, Note: "why this component exchanges with the runtime system"},
+			{Name: "decision", Kind: table.Choice, Options: []string{"boundary", "none", "unassessed"}, Note: "boundary when this call itself dispatches an exchange or creates/configures the actual remote client instance; none for local helpers, options and preparation; unassessed for insufficient evidence"},
+			{Name: "kind", Kind: table.Choice, Options: atlas.BoundaryKinds(), When: positive},
+			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, When: positive, Note: "at most ten words, no subject: why this component exchanges with the runtime system"},
 		},
 	}
 	if len(outgoing) > 0 && outgoing[0] {
 		def.Contract += ".outbound"
-		def.Columns[2].Kind, def.Columns[2].MaxRunes = table.Prose, 0
+		def.Columns[1].Options = atlas.OutgoingBoundaryKinds()
 		def.Columns = append(def.Columns,
-			table.Column{Name: "destination", Kind: table.Text, MaxRunes: 80, When: positive, Note: "short English role of the other runtime system; never invent a host or address"},
+			destinationColumn(positive),
 			table.Column{Name: "basis", Kind: table.Choice, Options: []string{"dispatch", "remote_client_instance"}, When: positive, Note: "dispatch: this call sends the exchange; remote_client_instance: this call itself creates or configures the actual remote client/exporter instance, not an option for a later constructor"},
-			table.Column{Name: "address", Kind: table.Choice, OptionsFrom: "address_options", When: positive, Note: "one supplied a* address value, or unknown when no observed value identifies the destination"},
+			addressColumn(positive),
 		)
 	}
 	return def
 }
 
 // FixedBoundaries explains an existing native observation. Its existence and
-// kind are input facts, not mandatory one-option model decisions. An outgoing
-// HTTP fact may still need a purpose and a source-supported destination label.
+// kind are input facts, not mandatory one-option model decisions, and the
+// short prompt asks for the line alone. An outgoing HTTP fact whose address
+// the code does not know may still need a destination and an address choice.
 func FixedBoundaries(outgoing bool) table.Definition {
 	def := table.Definition{
 		Stage: StageBoundaries, Contract: boundariesContract + ".fixed",
-		System: boundariesPrompt, Independent: true, Memoize: true,
+		System: fixedBoundariesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes,
-			Note: "explain the supplied native observation at its known kind; a configuration read is not itself a remote exchange"}},
+			Note: "at most ten words, no subject: what this native observation reads, receives or sends; a configuration read is not itself a remote exchange"}},
 	}
 	if outgoing {
 		def.Contract += ".outbound"
-		def.Columns[0].Kind, def.Columns[0].MaxRunes = table.Prose, 0
-		def.Columns = append(def.Columns,
-			table.Column{Name: "destination", Kind: table.Text, MaxRunes: 80, Note: "short English role of the other runtime system; never invent a host or address"},
-			table.Column{Name: "address", Kind: table.Choice, OptionsFrom: "address_options", Note: "one supplied a* address value, or unknown when no observed value identifies the destination"},
-		)
+		def.Columns = append(def.Columns, destinationColumn(nil), addressColumn(nil))
 	}
 	return def
+}
+
+// DestinationOther prefixes a destination the catalogue does not list.
+const DestinationOther = "other: "
+
+func destinationColumn(when map[string]string) table.Column {
+	return table.Column{Name: "destination", Kind: table.Choice, OptionsFrom: "destination_options", Free: DestinationOther, FreeMaxRunes: LabelRunes, When: when,
+		Note: "one d* ref from context.destination_catalog, or other: followed by the runtime system's short name; never a host, URL or address"}
+}
+
+// addressColumn is asked only where the row carries address candidates: a
+// row whose address the code already knows, or that has no candidate
+// literal, has no address decision.
+func addressColumn(when map[string]string) table.Column {
+	return table.Column{Name: "address", Kind: table.Choice, OptionsFrom: "address_options", WhenOptionsFrom: "address_options", When: when,
+		Note: "one supplied a* address value, or unknown when no observed value identifies the destination"}
+}
+
+// DestinationFields are the window's closed list of runtime systems.
+func DestinationFields(catalog []destinations.Entry) []table.Field {
+	return []table.Field{{Name: "destination_catalog", Value: catalog}, {Name: "destination_options", Value: destinations.Refs(catalog)}}
 }
 
 // BoundaryAddress keeps the original supplied bytes and their source context.
@@ -204,11 +229,17 @@ type BoundaryAddress struct {
 	Line  int    `json:"line,omitempty"`
 }
 
+// BoundaryAddresses lists the address candidates of one candidate call: its
+// own observed values and the literals of the owner's other calls. Format
+// templates and the literals of formatting, error, logging, time, string and
+// number-conversion calls are not addresses: Morfeu offered every fmt.Errorf
+// message and time.Format layout of the owner, and 25 of 29 accepted rows
+// chose unknown.
 func BoundaryAddresses(place atlas.Place, owners ...atlas.Place) []BoundaryAddress {
 	var values []BoundaryAddress
 	seen := make(map[string]bool)
 	add := func(value, call string, line int) {
-		if value == "" || seen[value] {
+		if value == "" || seen[value] || FormatTemplate(value) {
 			return
 		}
 		seen[value] = true
@@ -222,6 +253,9 @@ func BoundaryAddresses(place atlas.Place, owners ...atlas.Place) []BoundaryAddre
 			continue
 		}
 		for _, call := range owner.Symbol.Calls {
+			if !AddressCandidateCall(call) {
+				continue
+			}
 			for _, value := range call.Values {
 				add(value, call.Name, call.Line)
 			}
@@ -230,55 +264,173 @@ func BoundaryAddresses(place atlas.Place, owners ...atlas.Place) []BoundaryAddre
 	return values
 }
 
-// BoundaryRow uses original callable observations, independent of its caption.
-// Shared evidence refs preserve associations inside this row; neighbouring
-// boundary rows have no implied relationship.
-func BoundaryRow(place atlas.Place, _ string, owners ...atlas.Place) table.Row {
-	facts := place.Boundary
-	fields := []table.Field{
-		{Name: "path", Value: place.Path}, {Name: "line", Value: place.LineNo},
-		{Name: "caller", Value: facts.Caller}, {Name: "caller_doc", Value: facts.CallerDoc},
-		{Name: "external", Value: facts.External}, {Name: "method", Value: facts.Method},
-		{Name: "values", Value: facts.Values}, {Name: "direction", Value: facts.Direction},
+// AddressCandidateCall reports a call whose literals may be addresses: one
+// outside the formatting, error, logging, time, string and number-conversion
+// packages. The call's package decides, never the literal's text.
+func AddressCandidateCall(call atlas.SymbolCall) bool {
+	pkg := ""
+	if call.API != nil {
+		pkg = call.API.Package
+	} else if dot := strings.Index(call.Name, "."); dot > 0 {
+		pkg = call.Name[:dot]
 	}
-	if facts.GivenKind != "" {
-		fields = append(fields, table.Field{Name: "kind_given", Value: facts.GivenKind})
-	} else {
-		fields = append(fields, table.Field{Name: "decision_options", Value: []string{"boundary", "none", "unassessed"}},
-			table.Field{Name: "kind_options", Value: atlas.BoundaryKinds()})
+	if slash := strings.LastIndex(pkg, "/"); slash >= 0 {
+		pkg = pkg[slash+1:]
 	}
-	addresses := BoundaryAddresses(place, owners...)
-	options := []string{"unknown"}
-	for _, address := range addresses {
-		options = append(options, address.Ref)
+	switch pkg = strings.ToLower(pkg); {
+	case pkg == "fmt", pkg == "errors", pkg == "time", pkg == "strings", pkg == "strconv", pkg == "console", strings.HasPrefix(pkg, "log"):
+		return false
 	}
-	fields = append(fields, table.Field{Name: "address_catalog", Value: addresses}, table.Field{Name: "address_options", Value: options})
-	for _, owner := range owners {
-		if owner.Symbol == nil {
+	return true
+}
+
+// FormatTemplate reports a literal that is a formatting template rather than
+// an observed value: a % verb with optional flags, width and precision, as
+// in "%s: %w", "node-%03d" or "%(name)s". A percent-encoded octet keeps a
+// URL an address: %2F is two hex digits, and only a pair of decimal digits
+// followed by a letter ("%03d") is read as a width and verb instead. The
+// package rule catches the usual sources of templates; this one catches a
+// template in a call the package rule keeps.
+func FormatTemplate(value string) bool {
+	isDigit := func(c byte) bool { return c >= '0' && c <= '9' }
+	isHex := func(c byte) bool { return isDigit(c) || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' }
+	isLetter := func(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
+	for i := 0; i < len(value); i++ {
+		if value[i] != '%' {
 			continue
 		}
-		var evidence EvidenceCatalog
-		decl := owner.Symbol.Decl
-		calls := make([]any, 0, len(owner.Symbol.Calls))
-		for _, call := range owner.Symbol.Calls {
-			calls = append(calls, evidence.CallWithOrigins(call))
+		rest := value[i+1:]
+		switch {
+		case rest == "":
+			return false
+		case rest[0] == '%':
+			i++
+			continue
+		case len(rest) >= 2 && isHex(rest[0]) && isHex(rest[1]) && !(isDigit(rest[0]) && isDigit(rest[1]) && len(rest) >= 3 && isLetter(rest[2])):
+			i += 2
+			continue
 		}
-		value := map[string]any{"path": owner.Path, "line": owner.LineNo, "name": decl.Name, "kind": decl.Kind,
-			"signature": decl.Signature, "author_doc": decl.Doc, "calls": calls,
-			"callable_bindings": evidence.Bindings(owner.Symbol.Bindings), "owned_declarations": ownedDeclarations(owner.Symbol.Members)}
-		for _, field := range evidence.Fields() {
-			value[field.Name] = field.Value
+		j := 0
+		if rest[0] == '(' {
+			if j = strings.IndexByte(rest, ')'); j < 0 {
+				continue
+			}
+			j++
 		}
-		fields = append(fields, table.Field{Name: "owner", Value: value})
-		break
+		for j < len(rest) && strings.IndexByte("-+# 0", rest[j]) >= 0 {
+			j++
+		}
+		for j < len(rest) && rest[j] >= '0' && rest[j] <= '9' {
+			j++
+		}
+		if j < len(rest) && rest[j] == '.' {
+			j++
+			for j < len(rest) && rest[j] >= '0' && rest[j] <= '9' {
+				j++
+			}
+		}
+		if j < len(rest) && isLetter(rest[j]) {
+			return true
+		}
+	}
+	return false
+}
+
+func addressCandidateLiterals(call atlas.SymbolCall) bool {
+	if !AddressCandidateCall(call) {
+		return false
+	}
+	for _, value := range call.Values {
+		if value != "" && !FormatTemplate(value) {
+			return true
+		}
+	}
+	return false
+}
+
+// BoundaryRow uses original callable observations, independent of its caption.
+// The owner is shared by the window (context.owners) and named by owner_ref;
+// the address catalogue appears only where an address decision is asked and
+// candidates exist. Neighbouring boundary rows have no implied relationship.
+func BoundaryRow(place atlas.Place, ownerRef string, addresses []BoundaryAddress, askAddress bool) table.Row {
+	facts := place.Boundary
+	fields := []table.Field{{Name: "path", Value: place.Path}, {Name: "line", Value: place.LineNo}, {Name: "caller", Value: facts.Caller}}
+	if ownerRef == "" && facts.CallerDoc != "" {
+		fields = append(fields, table.Field{Name: "caller_doc", Value: facts.CallerDoc})
+	}
+	fields = append(fields, table.Field{Name: "external", Value: facts.External})
+	if facts.Method != "" {
+		fields = append(fields, table.Field{Name: "method", Value: facts.Method})
+	}
+	fields = append(fields, table.Field{Name: "values", Value: facts.Values}, table.Field{Name: "direction", Value: facts.Direction})
+	if facts.GivenKind != "" {
+		fields = append(fields, table.Field{Name: "kind_given", Value: facts.GivenKind})
+	}
+	if ownerRef != "" {
+		fields = append(fields, table.Field{Name: "owner_ref", Value: ownerRef})
+	}
+	if askAddress && len(addresses) > 0 {
+		options := []string{"unknown"}
+		for _, address := range addresses {
+			options = append(options, address.Ref)
+		}
+		fields = append(fields, table.Field{Name: "address_catalog", Value: addresses}, table.Field{Name: "address_options", Value: options})
 	}
 	return table.Row{ID: place.ID, Fields: fields}
+}
+
+// OwnerCallSpan is how far from a row's line an owner call still appears in
+// the shared owner: the calls beside the candidate, not the whole body.
+const OwnerCallSpan = 3
+
+// BoundaryOwner is the window's one view of the declaration whose calls the
+// rows are: the declaration, its calls within OwnerCallSpan lines of a row
+// and every call whose literals are address candidates (a client constructor
+// with its endpoint), its callable bindings, its owned declarations and the
+// supplied source context. Morfeu repeated the owner's twelve calls, bindings
+// and declarations in each of its rows: four rows spent 51% of a window on
+// that repetition.
+func BoundaryOwner(ref string, owner atlas.Place, rowLines []int, sourceContext []table.Field) map[string]any {
+	var evidence EvidenceCatalog
+	decl := owner.Symbol.Decl
+	calls := []any{}
+	for _, call := range owner.Symbol.Calls {
+		near := false
+		for _, line := range rowLines {
+			if call.Line >= line-OwnerCallSpan && call.Line <= line+OwnerCallSpan {
+				near = true
+				break
+			}
+		}
+		if !near && !addressCandidateLiterals(call) {
+			continue
+		}
+		calls = append(calls, evidence.CallWithOrigins(call))
+	}
+	value := map[string]any{"ref": ref, "path": owner.Path, "line": owner.LineNo, "name": decl.Name, "kind": decl.Kind,
+		"signature": decl.Signature, "author_doc": decl.Doc, "call_span": OwnerCallSpan, "calls": calls,
+		"callable_bindings": evidence.Bindings(owner.Symbol.Bindings), "owned_declarations": ownedDeclarations(owner.Symbol.Members)}
+	for _, field := range evidence.Fields() {
+		value[field.Name] = field.Value
+	}
+	for _, field := range sourceContext {
+		value[field.Name] = field.Value
+	}
+	return value
+}
+
+// BoundaryOwnerContext is the context field carrying one window's owners.
+func BoundaryOwnerContext(owners ...map[string]any) table.Field {
+	return table.Field{Name: "owners", Value: owners}
 }
 
 // BoundarySourceContext supplies purpose clues from the same source graph.
 // Parent and native caller identities are the only joins; names and nearby
 // paths cannot attach another declaration or README. Caller context stops at
 // that declaration, without expanding its calls or following its own callers.
+// A call site keeps its receiver and argument origins, not its result value:
+// the result trees of six Errorf alternatives explained nothing about the
+// owner and filled the window.
 func BoundarySourceContext(place, owner atlas.Place, places, declarations map[string]atlas.Place) []table.Field {
 	context := make(map[string]any)
 	file := places[place.Parent]
@@ -335,11 +487,13 @@ func BoundarySourceContext(place, owner atlas.Place, places, declarations map[st
 						continue
 					}
 					var evidence EvidenceCatalog
-					site := map[string]any{"call": evidence.CallWithOrigins(call)}
+					site := call
+					site.ResultValue = nil
+					entry := map[string]any{"call": evidence.CallWithOrigins(site)}
 					for _, field := range evidence.Fields() {
-						site[field.Name] = field.Value
+						entry[field.Name] = field.Value
 					}
-					matched = append(matched, site)
+					matched = append(matched, entry)
 				}
 			}
 			if len(matched) == 0 {

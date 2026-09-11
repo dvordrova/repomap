@@ -41,6 +41,10 @@ type TargetMeta struct {
 	Root         string   `json:"root"`
 	SelectedRole string   `json:"selected_role,omitempty"`
 	SharedCode   []string `json:"shared_code,omitempty"`
+	// Dependencies are the external packages the target imports, as the
+	// dependency catalogue names them. They annotate the closed list of
+	// runtime systems a boundary may name; none of them is a destination.
+	Dependencies []string `json:"dependencies,omitempty"`
 }
 
 // Options is everything the reading needs.
@@ -525,6 +529,25 @@ func (r *reader) runTable(ctx context.Context, def table.Definition, round int, 
 	return r.runTableWith(ctx, def, round, nil, rows, nil)
 }
 
+// rowGroup is a run of rows that share one window context: the boundary
+// candidates of one declaration with that declaration sent once, the
+// directories of one parent with the parent's line sent once. The groups of
+// one round still go to the provider together.
+type rowGroup struct {
+	shared []table.Field
+	rows   []table.Row
+}
+
+type rowGroups []rowGroup
+
+func (groups rowGroups) count() int {
+	total := 0
+	for _, group := range groups {
+		total += len(group.rows)
+	}
+	return total
+}
+
 // runTableWith asks one round of one table: windows in parallel, each window
 // its own request, a rejected window falling back on its own. The optional
 // check runs over an accepted window's answers and may refuse it.
@@ -532,8 +555,14 @@ func (r *reader) runTableWith(
 	ctx context.Context, def table.Definition, round int, shared []table.Field,
 	rows []table.Row, check func(table.Answers) error,
 ) ([]rowAnswer, error) {
-	answers := make([]rowAnswer, len(rows))
-	if len(rows) == 0 {
+	return r.runTableGroups(ctx, def, round, rowGroups{{shared: shared, rows: rows}}, check)
+}
+
+// runTableGroups is runTableWith over several groups, each with its own
+// shared context; the answers come back in the groups' row order.
+func (r *reader) runTableGroups(ctx context.Context, def table.Definition, round int, groups rowGroups, check func(table.Answers) error) ([]rowAnswer, error) {
+	answers := make([]rowAnswer, groups.count())
+	if len(answers) == 0 {
 		return answers, nil
 	}
 	if _, started := r.started[def.Stage]; !started {
@@ -554,19 +583,35 @@ func (r *reader) runTableWith(
 		if check != nil {
 			return nil, fmt.Errorf("table %s: a whole-window check cannot validate independent knowledge", def.Stage)
 		}
-		return r.runIndependent(ctx, def, round, shared, rows)
+		return r.runIndependent(ctx, def, round, groups)
 	}
-	return r.runPreparedTable(ctx, def, round, shared, rows, check)
+	return r.runPreparedGroups(ctx, def, round, groups, check)
 }
 
 func (r *reader) runPreparedTable(ctx context.Context, def table.Definition, round int, shared []table.Field, rows []table.Row, check func(table.Answers) error) ([]rowAnswer, error) {
-	answers := make([]rowAnswer, len(rows))
-	windows, err := table.WindowsWithContext(def, round, shared, rows)
-	if err != nil {
-		return nil, err
+	return r.runPreparedGroups(ctx, def, round, rowGroups{{shared: shared, rows: rows}}, check)
+}
+
+// runPreparedGroups packs every group into its own windows and sends all of
+// them as one batch; window indexes run across the groups.
+func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, round int, groups rowGroups, check func(table.Answers) error) ([]rowAnswer, error) {
+	answers := make([]rowAnswer, groups.count())
+	var windows []table.Window
+	for _, group := range groups {
+		if len(group.rows) == 0 {
+			continue
+		}
+		packed, err := table.WindowsWithContext(def, round, group.shared, group.rows)
+		if err != nil {
+			return nil, err
+		}
+		for _, window := range packed {
+			window.Index = len(windows)
+			windows = append(windows, window)
+		}
 	}
 	use := r.use(def.Stage)
-	use.Rows += len(rows)
+	use.Rows += len(answers)
 	use.Windows += len(windows)
 	for _, window := range windows {
 		if err := r.writeWindowFile(window, "prompt.md", []byte(def.System)); err != nil {

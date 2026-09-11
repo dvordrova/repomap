@@ -1184,6 +1184,13 @@ func BoundaryKinds() []string {
 	}
 }
 
+// OutgoingBoundaryKinds lists the kinds an outgoing candidate may take: the
+// communication kinds the group index keeps. A route or a configuration
+// read is never the kind of a call this component makes.
+func OutgoingBoundaryKinds() []string {
+	return []string{BoundaryHTTPClient, BoundaryDB, BoundaryQueueProducer, BoundaryQueueConsumer, BoundarySDK, BoundaryOther}
+}
+
 func ValidRole(role string) bool {
 	for _, known := range Roles() {
 		if role == known {

@@ -3,6 +3,8 @@ package report
 import (
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/atlas/destinations"
 )
 
 // pageOutbound is one accepted communication record. Destination and Summary
@@ -349,42 +351,12 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 	return groups
 }
 
-// knownSystems maps a word found in a destination to the name its group
-// carries. One run named one broker "RabbitMQ broker", "AMQP broker
-// (RabbitMQ)", "RabbitMQ broker (queue topology)" and four more ways; the
-// reader wants one row per system. Records keep their own wording.
-var knownSystems = []struct{ word, name string }{
-	{"rabbitmq", "RabbitMQ"}, {"amqp", "RabbitMQ"}, {"kafka", "Kafka"}, {"nats", "NATS"},
-	{"redis", "Redis"}, {"memcache", "Memcached"},
-	{"postgres", "PostgreSQL"}, {"pgx", "PostgreSQL"}, {"mysql", "MySQL"}, {"mariadb", "MariaDB"},
-	{"sqlite", "SQLite"}, {"mongo", "MongoDB"}, {"clickhouse", "ClickHouse"}, {"elasticsearch", "Elasticsearch"},
-	{"minio", "S3 storage"}, {"s3", "S3 storage"}, {"github", "GitHub"}, {"google", "Google"},
-	{"slack", "Slack"}, {"telegram", "Telegram"}, {"stripe", "Stripe"}, {"sentry", "Sentry"},
-	{"otlp", "OpenTelemetry collector"}, {"opentelemetry", "OpenTelemetry collector"},
-	{"kubernetes", "Kubernetes API server"}, {"docker", "Docker daemon"},
-}
-
-// canonicalDestination is the group name for a destination text: the known
-// system it names, else the text without its parenthetical qualifier.
-// "remote PostgreSQL database" and "PostgreSQL database" are one group;
-// "Cache store (concrete implementation unresolved)" stays "Cache store",
-// not Redis, because nothing in it names Redis.
+// canonicalDestination is the group name for a destination text. A new
+// atlas already stores the closed system name the model chose; an older
+// atlas's free text ("RabbitMQ broker (queue topology)") is folded onto the
+// same vocabulary by the words it contains. Records keep their own wording.
 func canonicalDestination(text string) string {
-	base := strings.TrimSpace(text)
-	if i := strings.Index(base, "("); i > 0 {
-		base = strings.TrimSpace(base[:i])
-	}
-	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
-	})
-	for _, system := range knownSystems {
-		for _, word := range words {
-			if word == system.word || len(system.word) >= 5 && strings.HasPrefix(word, system.word) {
-				return system.name
-			}
-		}
-	}
-	return base
+	return destinations.Canonical(text)
 }
 
 func outboundKindLabel(kind string) string {

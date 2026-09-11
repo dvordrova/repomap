@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/llm"
@@ -90,7 +92,7 @@ func readRepositoryAtlas(
 		targets = append(targets, target)
 		meta := reading.TargetMeta{
 			ID: index.Target.ID, Language: index.Target.Language, Kind: index.Target.Kind,
-			Name: index.Target.Name, Root: root,
+			Name: index.Target.Name, Root: root, Dependencies: externalDependencyPaths(catalog),
 		}
 		if target, ok := planned[run.SelectedTargetKey]; ok {
 			meta.SelectedRole = target.Placement
@@ -273,4 +275,24 @@ func orientAtlasRuns(
 		}
 	}
 	return nil
+}
+
+// externalDependencyPaths lists the package paths of a target's external
+// dependencies once each, in order: what the boundaries table annotates its
+// destination catalogue with.
+func externalDependencyPaths(catalog *dependencies.Catalog) []string {
+	if catalog == nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var paths []string
+	for _, dependency := range catalog.Dependencies {
+		if dependency.Kind != dependencies.KindExternal || dependency.PackagePath == "" || seen[dependency.PackagePath] {
+			continue
+		}
+		seen[dependency.PackagePath] = true
+		paths = append(paths, dependency.PackagePath)
+	}
+	sort.Strings(paths)
+	return paths
 }
