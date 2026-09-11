@@ -22,7 +22,7 @@ const (
 	StageFiles       = "atlas_files"
 
 	directoriesContract = "repomap.atlas.directories.v3"
-	filesContract       = "repomap.atlas.files.v4"
+	filesContract       = "repomap.atlas.files.v5"
 
 	// WindowRows is the row budget of the dependent table definitions.
 	WindowRows = 40
@@ -37,6 +37,8 @@ const (
 	maxDoc       = 200
 	maxCallers   = 3
 	maxSiblings  = 8
+	// maxCallerDecls bounds the calling declarations named per caller file.
+	maxCallerDecls = 3
 
 	// BoxHere is the box choice that keeps a file in its own directory;
 	// BoxNew is the prefix that starts a new box.
@@ -62,7 +64,9 @@ func Directories() table.Definition {
 	}
 }
 
-// Files is the file table.
+// Files is the file table. The box cell is asked only for a file that may
+// move: a row without box_options has no placement decision (its directory
+// is the box), and an omitted or null box on an asked row means here.
 func Files() table.Definition {
 	return table.Definition{
 		Stage: StageFiles, Contract: filesContract,
@@ -70,8 +74,8 @@ func Files() table.Definition {
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what the file does"},
 			{
-				Name: "box", Kind: table.Choice, OptionsFrom: "box_options",
-				Free: BoxNew, FreeMaxRunes: TitleRunes,
+				Name: "box", Kind: table.Choice, OptionsFrom: "box_options", WhenOptionsFrom: "box_options",
+				Free: BoxNew, FreeMaxRunes: TitleRunes, Missing: BoxHere,
 				Note: "one of box_options, or new: followed by a title",
 			},
 		},
@@ -121,12 +125,19 @@ func DirectoryRow(place atlas.Place, parent *atlas.Place) table.Row {
 	return table.Row{ID: place.ID, Fields: fields}
 }
 
+// FileCallers names, per calling file, the declarations the graph saw
+// calling into a file: the witnesses of the file-to-file edges, in edge
+// order. A caller without witnesses is named by its path alone; the file's
+// leading declarations said nothing about the call (Morfeu's rows named the
+// same three declarations for eight of nine callers).
+type FileCallers map[string][]string
+
 // FileRow uses the directory's model line and direct caller facts. Caller
 // evidence never contains another file's model output, so file requests are
 // independent and a reworded file does not propagate through the call graph.
 func FileRow(
 	place atlas.Place, directory atlas.Place, siblings []string,
-	lines Lines, places map[string]atlas.Place,
+	lines Lines, places map[string]atlas.Place, calling FileCallers,
 ) table.Row {
 	facts := place.File
 	fields := []table.Field{{Name: "path", Value: place.Path}}
@@ -148,12 +159,9 @@ func FileRow(
 		if caller.File.Doc != "" {
 			entry["doc"] = cut(caller.File.Doc, maxDoc)
 		}
-		decls := rankedDecls(caller.File.Decls)
-		names := make([]string, 0, min(len(decls), 3))
-		for _, decl := range decls[:min(len(decls), 3)] {
-			names = append(names, decl.Name)
+		if names := bounded(calling[callerID], maxCallerDecls); len(names) > 0 {
+			entry["declarations"] = names
 		}
-		entry["declarations"] = names
 		callers = append(callers, entry)
 		if len(callers) == maxCallers {
 			break
@@ -178,9 +186,13 @@ func FileRow(
 		}
 	}
 	fields = append(fields, table.Field{Name: "declaration_count", Value: len(facts.Decls)}, table.Field{Name: "declarations", Value: decls})
-	options := []string{BoxHere}
-	options = append(options, bounded(siblings, maxSiblings)...)
-	fields = append(fields, table.Field{Name: "box_options", Value: options})
+	// A file without a sibling box has no placement to decide: here is the
+	// only answer, so the cell is not asked (all ten Morfeu answers were here).
+	if len(siblings) > 0 {
+		options := []string{BoxHere}
+		options = append(options, bounded(siblings, maxSiblings)...)
+		fields = append(fields, table.Field{Name: "box_options", Value: options})
+	}
 	return table.Row{ID: place.ID, Fields: fields}
 }
 

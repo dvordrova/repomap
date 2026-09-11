@@ -410,11 +410,12 @@ func (r *reader) readFiles(ctx context.Context) error {
 	}
 	r.opts.Stage(def.Stage, details...)
 	siblings := r.siblingBoxes()
+	calling := r.fileCallers()
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	rows := make([]table.Row, 0, len(files))
 	for _, place := range files {
 		directory := r.places[place.Parent]
-		rows = append(rows, lines.FileRow(place, directory, r.rankedSiblings(place, siblings[directory.Path]), r, r.places))
+		rows = append(rows, lines.FileRow(place, directory, r.rankedSiblings(place, siblings[directory.Path]), r, r.places, calling[place.ID]))
 	}
 	answers, err := r.runTable(ctx, def, 1, rows)
 	if err != nil {
@@ -437,6 +438,32 @@ func (r *reader) readFiles(ctx context.Context) error {
 	r.cancelLonelyBoxes()
 	r.reportStage(def.Stage)
 	return nil
+}
+
+// fileCallers reads, per file, which declarations of each calling file the
+// graph saw calling into it: the witnesses of the file-to-file edges, each
+// name once, in edge order.
+func (r *reader) fileCallers() map[string]lines.FileCallers {
+	result := make(map[string]lines.FileCallers)
+	for _, edge := range r.opts.Graph.Edges {
+		if r.places[edge.From].File == nil || r.places[edge.To].File == nil {
+			continue
+		}
+		for _, witness := range edge.Witnesses {
+			if witness.Caller == "" {
+				continue
+			}
+			callers := result[edge.To]
+			if callers == nil {
+				callers = make(lines.FileCallers)
+				result[edge.To] = callers
+			}
+			if !contains(callers[edge.From], witness.Caller) {
+				callers[edge.From] = append(callers[edge.From], witness.Caller)
+			}
+		}
+	}
+	return result
 }
 
 // siblingBoxes lists, per directory, the paths of its sibling directories

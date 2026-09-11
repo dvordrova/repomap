@@ -3,11 +3,14 @@
 You receive a table of code files from one repository. Each row is one file:
 its path, its own documentation line if it has one, one line about the
 directory it lives in (`directory_hypothesis` is an earlier model description;
-`directory_facts` is an extracted description), facts about up to three files that call into it
-(their paths, documentation and declaration names),
-its declarations (name, kind, signature, and the first sentence of the
-author's docstring when there is one), and `box_options`: the boxes on the
-map this file may belong to.
+`directory_facts` is an extracted description), facts about up to three files
+that call into it (`callers`: their paths, documentation and `declarations`,
+the names of their declarations the graph saw making the calls; a caller
+without that list is known by its path alone), its declarations (name, kind,
+signature, and the first sentence of the author's docstring when there is
+one), and, for a file that may move, `box_options`: the boxes on the map it
+may belong to. A name written `name$N` is the N-th closure inside the
+declaration `name`, not a declaration of its own.
 
 Fill every cell listed in the request's `fill` for every row. The base cells are:
 
@@ -15,13 +18,13 @@ Fill every cell listed in the request's `fill` for every row. The base cells are
   Read the declarations and their docstrings; use the directory line and caller
   facts to say what the file is for. State only what the row shows. Do not
   guess frameworks, protocols or behaviour the declarations do not mention.
-- `box`: which box on the map this file belongs to, chosen from the row's
-  `box_options`. `here` means the box of its own directory and is the right
-  answer for almost every file. Choose a sibling directory only when the
-  file clearly belongs with that directory's code and not with its own.
-  Write `new: ` followed by two to four words only when the file is one
-  responsibility that its directory's box does not cover and no listed box
-  does either.
+- `box`: asked only for a row that carries `box_options`; a row without them
+  stays in its directory's box and needs no `box` cell. Choose `here`, the
+  box of its own directory, for almost every file. Choose a sibling directory
+  only when the file clearly belongs with that directory's code and not with
+  its own. Write `new: ` followed by two to four words only when the file is
+  one responsibility that its directory's box does not cover and no listed
+  box does either.
 
 When `fill` also lists `open`, that cell is mandatory: return `yes` when an
 architecture reader should look inside this file, or `no` for vendored,
