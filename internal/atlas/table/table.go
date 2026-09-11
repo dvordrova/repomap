@@ -433,7 +433,11 @@ func normalizeCell(column Column, row Row, cell string) (string, error) {
 	text := collapse(cell)
 	switch column.Kind {
 	case Sequence:
-		if text == "none" {
+		// none is the contract's empty selection. A provider that fills every
+		// schema key sends null, which arrives here as an empty string; an
+		// empty selection is the only reading of an empty sequence, so it
+		// is not a refused row.
+		if text == "none" || text == "" {
 			return "", nil
 		}
 		options := make(map[string]bool)
@@ -442,14 +446,18 @@ func normalizeCell(column Column, row Row, cell string) (string, error) {
 		}
 		var selected []string
 		seen := make(map[string]bool)
-		for _, ref := range strings.Fields(text) {
+		for _, ref := range strings.Fields(strings.ReplaceAll(text, ",", " ")) {
 			if options[ref] && !seen[ref] {
 				selected = append(selected, ref)
 				seen[ref] = true
 			}
 		}
+		// Refs outside the row's options were never selectable: a row citing
+		// only such refs (calls listed as context beside call_options, or
+		// invented ones) selects nothing, and its other cells keep their
+		// decisions. The raw response keeps what was written.
 		if len(selected) == 0 {
-			return "", fmt.Errorf("cell %q has no known choices; use none for an empty selection", column.Name)
+			return "", nil
 		}
 		limit := 0
 		for _, field := range row.Fields {

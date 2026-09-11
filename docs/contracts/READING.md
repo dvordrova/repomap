@@ -62,7 +62,10 @@ new description or selection requests.
   matched values, counts and identities. Rejected independent rows fall back on
   their own deterministic lines and are written to `rejected.jsonl`; valid
   neighbours survive in the original exact-response cache. An entirely refused
-  window is never cached. A response that answers exactly one row per asked row with no key on any
+  window is never cached. A sequence cell citing only refs outside its row's options, or nothing at
+  all (a provider may send null), is an empty selection and keeps the row's
+  other cells; commas separate refs like spaces; exceeding the limit still
+  refuses the cell. A response that answers exactly one row per asked row with no key on any
   of them is read in asked order; a partial or partly keyed response keeps the
   strict rule, every row names its key or is refused. Every row and answer is printed to `tables.md`, with prompts, requests, raw
   responses and normalized source-bound results under `tables/`. The ordinary

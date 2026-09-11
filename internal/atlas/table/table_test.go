@@ -22,16 +22,17 @@ func testDefinition() Definition {
 func TestSequencePreservesOrderAndFiltersOnlyExactKnownRefs(t *testing.T) {
 	column := Column{Name: "order", Kind: Sequence, OptionsFrom: "options", LimitFrom: "limit"}
 	row := Row{Fields: []Field{{Name: "options", Value: []string{"c1", "c2", "c3"}}, {Name: "limit", Value: 2}}}
-	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": ""} {
+	// Unknown refs were never selectable and drop out; a selection of only
+	// unknown refs is an empty selection, not a refused row. Commas separate
+	// refs as whitespace does. Only exceeding the limit refuses the cell.
+	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": "", "": "", "c999": "", "c01": "", "c1,c2": "c1 c2"} {
 		value, err := normalizeCell(column, row, input)
 		if err != nil || value != expected {
 			t.Fatalf("%q -> %q, %v", input, value, err)
 		}
 	}
-	for _, input := range []string{"", "c999", "c01", "c1 c2 c3", "c1,c2"} {
-		if _, err := normalizeCell(column, row, input); err == nil {
-			t.Fatalf("accepted %q", input)
-		}
+	if _, err := normalizeCell(column, row, "c1 c2 c3"); err == nil {
+		t.Fatal("accepted a selection over the limit")
 	}
 }
 
@@ -437,5 +438,26 @@ func TestChoiceWithOnlyUnknownAcceptsAnyAnswerAsUnknown(t *testing.T) {
 	}
 	if got, err := normalizeCell(column, offered, "a1"); err != nil || got != "a1" {
 		t.Fatalf("an offered ref was refused: %q / %v", got, err)
+	}
+}
+
+func TestSequenceEmptyOrNullIsAnEmptySelection(t *testing.T) {
+	column := Column{Name: "outbound", Kind: Sequence, OptionsFrom: "call_options", LimitFrom: "call_count"}
+	row := Row{Fields: []Field{{Name: "call_options", Value: []string{"c1", "c2"}}, {Name: "call_count", Value: 2}}}
+	for _, cell := range []string{"none", "", "  "} {
+		if got, err := normalizeCell(column, row, cell); err != nil || got != "" {
+			t.Fatalf("empty selection %q refused: %q / %v", cell, got, err)
+		}
+	}
+	if got, err := normalizeCell(column, row, "c9 c12"); err != nil || got != "" {
+		t.Fatalf("refs outside the options did not settle as an empty selection: %q / %v", got, err)
+	}
+	if got, err := normalizeCell(column, row, "c9 c2"); err != nil || got != "c2" {
+		t.Fatalf("a known ref beside an unknown one was lost: %q / %v", got, err)
+	}
+	def := Definition{Stage: "atlas_symbols", Independent: true, Columns: []Column{column}}
+	result, err := DecodeResult(def, Window{Rows: []Row{row}}, []byte(`{"rows":[{"key":"r1","outbound":null}]}`))
+	if err != nil || result.Answers[0] == nil || result.Answers[0]["outbound"] != "" {
+		t.Fatalf("null selection refused the row: %+v / %v", result, err)
 	}
 }

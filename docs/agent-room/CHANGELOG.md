@@ -8,6 +8,21 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Go handlers registered as method values or method expressions
+  (`mux.HandleFunc("/items", s.handleList)`, `http.HandlerFunc(s.handleCreate)`)
+  now resolve to their methods: the callable resolver follows a synthetic
+  bound-method wrapper or thunk to the method it delegates to. Before, the
+  route fact had no handler and the handler no route, so a page listed
+  `GET /test` under registrations and a separately labelled operation for
+  the same handler. A wrapper around an interface method keeps resolving to
+  nothing static; a middleware's returned closure still resolves to that
+  closure.
+- A sequence cell citing only refs outside its row's options, or nothing
+  at all, is an empty selection and no longer refuses the row: an owner's
+  symbol window answered `outbound: "c9 c12"` where those refs were context
+  calls, not options, and lost its key-symbol and activation decisions with
+  the row. Commas now separate refs like spaces. Exceeding the limit still
+  refuses the cell.
 - The "Where this service connects" catalogue groups communication records by
   destination: one row per destination text (case-insensitive; native label
   or kind when the model named none) with the record count, the shared kind,
