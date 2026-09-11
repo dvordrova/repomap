@@ -177,7 +177,15 @@ func TestRunEachKeepsRefusedWindowUnavailableAndRecallsAcceptedSiblings(t *testi
 	provider := &testProvider{complete: func(request modelRequest) (Response, error) {
 		response := selectFirst(request, "Inspect this declaration.")
 		if requestRowRef(request.Evidence[0]) == "r2" {
-			response.Questions = response.Questions[:1]
+			// The model never names q2 over r2: omitted from the shared window
+			// and omitted again when re-asked alone, so that cell stays unavailable.
+			kept := []Decision{}
+			for _, decision := range response.Questions {
+				if decision.Key != "q2" {
+					kept = append(kept, decision)
+				}
+			}
+			response.Questions = kept
 		}
 		return response, nil
 	}}
@@ -186,8 +194,9 @@ func TestRunEachKeepsRefusedWindowUnavailableAndRecallsAcceptedSiblings(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.requests) != 4 || len(result.Exchanges) != 4 {
-		t.Fatalf("wanted 4 shared calls, got %d/%d", len(provider.requests), len(result.Exchanges))
+	// Four shared windows, then one re-ask of the omitted question over r2.
+	if len(provider.requests) != 5 || len(result.Exchanges) != 5 || !result.Exchanges[4].Reask || result.Exchanges[4].Err == nil {
+		t.Fatalf("wanted 4 shared calls and one refused re-ask, got %d/%d", len(provider.requests), len(result.Exchanges))
 	}
 	for q, question := range result.Questions {
 		for row, chunk := range question.Chunks {

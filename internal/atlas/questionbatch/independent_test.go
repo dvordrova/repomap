@@ -30,7 +30,7 @@ func TestRepeatedRelevancePreservesAllHintsWithoutFirstWins(t *testing.T) {
 			{Key: "q1", Selections: append(append([]Selection{}, selections...), selections[0])},
 			{Key: "q2", Selections: []Selection{}},
 		}})
-		result, err := data.decode([]int{0}, data.questions, raw)
+		result, err := data.decode([]int{0}, data.questions, raw, false)
 		if err != nil || len(result.Questions) != 2 || len(result.Rejections) != 0 {
 			t.Fatalf("compatible hints refused a question: %+v / %v", result, err)
 		}
@@ -171,7 +171,7 @@ func TestRetrievalMetadataSharedWithRefusedQuestionIsDiscarded(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := []byte(`{"questions":[{"key":"q1","selections":[{"row":"r1","anchors":["a999"],"relevance":"direct","why":"Invalid interpretation."}]},{"key":"q2","selections":[{"row":"r1","anchors":["a1"],"relevance":"direct","why":"Accepted interpretation."}]}]}`)
-	result, err := data.decode([]int{0, 1}, data.questions, raw)
+	result, err := data.decode([]int{0, 1}, data.questions, raw, false)
 	if err != nil || len(result.Questions) != 1 || result.Questions[0].Key != "q2" || !reflect.DeepEqual(result.AcceptedRowKeys(), []string{"r2"}) {
 		t.Fatalf("shared r1 metadata acquired accepted question authority: %+v / %v", result, err)
 	}

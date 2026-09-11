@@ -129,7 +129,10 @@ func TestQuestionLogsDistinguishRejectedEmptyAndAcceptedSelections(t *testing.T)
 		}
 	}
 	log := strings.Join(messages, "\n")
-	for _, want := range []string{"questions in this response: 2 accepted, 1 rejected", "question: How is data encrypted?\nreason:",
+	// The omitted question is re-asked alone and omitted again, so its first
+	// round is an omission and the re-ask is the refused response.
+	for _, want := range []string{"questions in this response: 2 accepted, 0 rejected, 1 omitted by the model and re-asked (0 recovered)", "question: How is data encrypted?\nomitted by the model:",
+		"re-asked 1 questions omitted by the model in 1 windows; 0 recovered, 1 still unavailable",
 		"questions: 1 with sources, 1 with no sources selected, 0 with incomplete selection, 1 unavailable",
 		"selection results: 4 evidence groups from model, 0 from cache"} {
 		if !strings.Contains(log, want) {
@@ -361,14 +364,22 @@ func TestQuestionCanRunOnTheOrdinaryReadingPath(t *testing.T) {
 		opts, provider := questionFixture(t)
 		opts.Through, opts.WindowRows = "", 0
 		opts.Questions = append(opts.Questions, "Where is the entry point?")
-		provider.questionBatchFor = func(_ questionBatchRequest, response questionbatch.Response) questionbatch.Response {
-			return questionbatch.Response{Questions: response.Questions[:1]}
+		// The model never names the entry question: omitted from the shared
+		// window, then refused when re-asked alone over the same rows.
+		provider.questionBatchFor = func(request questionBatchRequest, response questionbatch.Response) questionbatch.Response {
+			kept := []questionbatch.Decision{}
+			for i, question := range request.Questions {
+				if question.Question != "Where is the entry point?" {
+					kept = append(kept, response.Questions[i])
+				}
+			}
+			return questionbatch.Response{Questions: kept}
 		}
 		result, err := Read(context.Background(), opts)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(result.Questions) != 2 || len(provider.questionRequests) != 1 || len(result.Rejected) != 1 || result.Rejected[0].Stage != lines.StageQuestion || result.Rejected[0].Count != 4 {
+		if len(result.Questions) != 2 || len(provider.questionRequests) != 2 || len(result.Rejected) != 1 || result.Rejected[0].Stage != lines.StageQuestion || result.Rejected[0].Count != 4 || result.Rejected[0].Kind != "window_rejected" {
 			t.Fatalf("missing question lost its own rejected coverage: %+v", result.Rejected)
 		}
 		var request questionBatchRequest
@@ -393,7 +404,7 @@ func TestQuestionCanRunOnTheOrdinaryReadingPath(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(provider.questionRequests) != 2 || len(retried.Rejected) != 0 {
+		if len(provider.questionRequests) != 3 || len(retried.Rejected) != 0 {
 			t.Fatal("refused shared response was reused from cache")
 		}
 		for _, route := range retried.Questions {

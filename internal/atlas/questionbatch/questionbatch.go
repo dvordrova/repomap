@@ -64,6 +64,13 @@ type QuestionRejection struct {
 	Question string `json:"question"`
 	Reason   string `json:"reason"`
 	Chunks   int    `json:"chunks"`
+	// Omitted marks a question an accepted first-round response did not name
+	// at all. That is no decision and not yet a loss: the cube asks it once
+	// more over the same rows, and the re-asking window's own result counts.
+	Omitted bool `json:"omitted,omitempty"`
+	// Recovered marks an omitted question whose second round then decided
+	// every row of this window.
+	Recovered bool `json:"recovered,omitempty"`
 }
 
 type Response struct {
@@ -76,10 +83,16 @@ type Response struct {
 // A row mentioned by a refused question cannot authorize optional metadata.
 func (response Response) AcceptedRowKeys() []string { return response.metadataRows }
 
+// An omission is journaled under its own kind so rejected.jsonl does not
+// count a question the second round answers as a loss.
 func (response Response) ResponseRejections() []llm.ResponseRejection {
 	var result []llm.ResponseRejection
 	for _, rejection := range response.Rejections {
-		result = append(result, llm.ResponseRejection{Kind: "question_rejected", Count: rejection.Chunks, Reason: rejection.Reason, Samples: []string{rejection.Question}})
+		kind := "question_rejected"
+		if rejection.Omitted {
+			kind = "question_omitted"
+		}
+		result = append(result, llm.ResponseRejection{Kind: kind, Count: rejection.Chunks, Reason: rejection.Reason, Samples: []string{rejection.Question}})
 	}
 	return result
 }
@@ -105,6 +118,8 @@ type QuestionResult struct {
 // Exchange includes failed resource attempts as operational history.
 // Superseded exchanges have no semantic authority; only their later children
 // can inspect chunks. QuestionIndexes refer to the original input positions.
+// A Reask exchange asked only questions an earlier accepted response omitted,
+// over that response's rows.
 type Exchange struct {
 	ChunkIndexes    []int
 	QuestionIndexes []int
@@ -115,6 +130,7 @@ type Exchange struct {
 	Err             error
 	Superseded      bool
 	Reused          bool
+	Reask           bool
 }
 
 type Result struct {
@@ -140,7 +156,31 @@ type modelRequest struct {
 type window struct {
 	rows      []int
 	questions []int
+	// reask marks the second round: only questions an accepted shared
+	// response omitted, over its rows. A question this window omits is refused.
+	reask bool
 }
+
+func (part window) with(rows, questions []int) window {
+	return window{rows: rows, questions: questions, reask: part.reask}
+}
+
+// maxQuestionsPerWindow bounds the independent decisions one request asks
+// for. Freqtrade 20260910-144751, atlas_question window w1: 64 questions ×
+// 460 code rows × 4,661 advertised anchors (2.14 MB) came back with q1, q2,
+// q3 and q64 only at finish=stop (33,963 output tokens, about 31,000 of them
+// reasoning); the decoder refused 60 questions and 60 × 460 = 27,600 cells
+// stayed unavailable while the answer stage worked on its fallback. Window
+// w2 of the same run (64 questions × 1,241 document rows × 2,575 anchors)
+// answered 64/64, and w1 with reasoning off enumerated anchors for q3
+// (a3 … a31892 …) up to the 128,000-token ceiling: the cause is the number
+// of decisions per answer, not the keys. Probes on the saved w1 with
+// reasoning on: 8 questions × all 460 rows gave 8/8 answers, 97 selections,
+// 48 s, 9,970 output tokens (4,745 reasoning), finish=stop; 8 questions ×
+// the rows up to 3,000 anchors (318 rows) gave 8/8, 76 selections, 64 s.
+// The question ceiling alone repairs the window, so no anchor ceiling is
+// imposed: none was measured to be needed.
+const maxQuestionsPerWindow = 8
 
 type catalogue struct {
 	input          Input
@@ -180,6 +220,7 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	if err != nil {
 		return Result{}, err
 	}
+	rounds := &execution{data: data, executor: executor, provider: provider, result: &result, remembered: remembered, warm: make(map[string]bool)}
 	var planned []window
 	for _, missing := range data.missing(result) {
 		parts, err := data.plan(ctx, provider, missing)
@@ -191,58 +232,143 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	if executor.PlanNotice != nil {
 		executor.PlanNotice(len(planned))
 	}
-	for len(planned) > 0 {
-		calls := make([]llm.Call[Response], len(planned))
-		for i, part := range planned {
-			calls[i], err = data.call(part)
-			if err != nil {
-				return Result{}, err
-			}
-		}
-		outcomes := llm.ExecuteJSONEach(ctx, executor, provider, calls)
-		if err := ctx.Err(); err != nil {
-			return Result{}, err
-		}
-		var next []window
-		for i, outcome := range outcomes {
-			part := planned[i]
-			exchange := Exchange{ChunkIndexes: append([]int(nil), part.rows...), Outcome: outcome.Outcome, Err: outcome.Err,
-				Input: json.RawMessage(calls[i].Prompt.User), System: calls[i].Prompt.System}
-			for _, q := range part.questions {
-				exchange.QuestionIndexes = append(exchange.QuestionIndexes, data.questionInputs[q])
-				exchange.QuestionRefs = append(exchange.QuestionRefs, data.questions[q].Key)
-			}
-			if outcome.Err == nil {
-				for _, q := range part.questions {
-					accepted := data.apply(&result.Questions[q], part.rows, data.questions[q].Key, outcome.Outcome)
-					if accepted && outcome.Outcome.CacheKey != "" {
-						remembered[q] = append(remembered[q], data.reference(part, q, outcome.Outcome.CacheKey))
-					}
-				}
-			} else if splittableResource(outcome.Err) {
-				if left, right, ok := data.splitResource(part, outcome.Err); ok {
-					exchange.Superseded = true
-					for _, child := range []window{left, right} {
-						parts, err := data.plan(ctx, provider, child)
-						if err != nil {
-							return Result{}, err
-						}
-						next = append(next, parts...)
-					}
-				}
-			}
-			result.Exchanges = append(result.Exchanges, exchange)
-		}
-		planned = next
-	}
-	if err := ctx.Err(); err != nil {
+	first := len(result.Exchanges)
+	if err := rounds.run(ctx, planned); err != nil {
 		return Result{}, err
 	}
+	// An accepted response that named only some of its questions decided
+	// nothing about the others. Ask those once more over the same rows, without
+	// the questions the model did answer; a question omitted twice stays refused.
+	planned = nil
+	for _, omitted := range data.omittedWindows(result.Exchanges[first:]) {
+		parts, err := data.plan(ctx, provider, omitted)
+		if err != nil {
+			return Result{}, err
+		}
+		planned = append(planned, parts...)
+	}
+	if len(planned) > 0 {
+		if executor.PlanNotice != nil {
+			executor.PlanNotice(len(planned))
+		}
+		if err := rounds.run(ctx, planned); err != nil {
+			return Result{}, err
+		}
+	}
+	data.markRecovered(&result, first)
 	data.remember(executor, keys, remembered, &result)
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
 	return data.expand(result), nil
+}
+
+// execution carries one reading's state across rounds: accepted decisions
+// land in result, an accepted question remembers its window, and warm names
+// the row sets whose request prefix the provider has already processed.
+type execution struct {
+	data       catalogue
+	executor   llm.Executor
+	provider   llm.Provider
+	result     *Result
+	remembered [][]rememberedWindow
+	warm       map[string]bool
+}
+
+// run executes windows until every resource refusal has been repartitioned.
+func (e *execution) run(ctx context.Context, planned []window) error {
+	for len(planned) > 0 {
+		var next []window
+		for _, wave := range e.waves(planned) {
+			children, err := e.execute(ctx, wave)
+			if err != nil {
+				return err
+			}
+			next = append(next, children...)
+		}
+		planned = next
+	}
+	return ctx.Err()
+}
+
+// waves orders one round for the provider's prompt cache. Windows over the
+// same rows share their system + evidence prefix (the questions come last),
+// and DeepSeek serves that prefix from its cache only once a request carrying
+// it has completed: in the probes of the saved Freqtrade w1 the windows ran
+// in parallel and prompt_cache_hit_tokens was 1,408 of 516,842, so eight
+// windows cost eight times the input of one. The first window of each row
+// set not yet seen by the provider goes alone; its siblings and every window
+// over already-processed rows follow together, in parallel as before.
+func (e *execution) waves(planned []window) [][]window {
+	var leads, rest []window
+	led := make(map[string]bool)
+	for _, part := range planned {
+		key := rowsKey(part.rows)
+		if e.warm[key] || led[key] {
+			rest = append(rest, part)
+			continue
+		}
+		led[key] = true
+		leads = append(leads, part)
+	}
+	var waves [][]window
+	for _, wave := range [][]window{leads, rest} {
+		if len(wave) > 0 {
+			waves = append(waves, wave)
+		}
+	}
+	return waves
+}
+
+// execute runs one wave and returns the complete partitions that replace
+// its resource refusals.
+func (e *execution) execute(ctx context.Context, wave []window) ([]window, error) {
+	data := e.data
+	calls := make([]llm.Call[Response], len(wave))
+	for i, part := range wave {
+		var err error
+		if calls[i], err = data.call(part); err != nil {
+			return nil, err
+		}
+	}
+	outcomes := llm.ExecuteJSONEach(ctx, e.executor, e.provider, calls)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var next []window
+	for i, outcome := range outcomes {
+		part := wave[i]
+		if !outcome.Outcome.Cached && outcome.Outcome.RequestBytes > 0 {
+			e.warm[rowsKey(part.rows)] = true
+		}
+		exchange := Exchange{ChunkIndexes: append([]int(nil), part.rows...), Reask: part.reask, Outcome: outcome.Outcome, Err: outcome.Err,
+			Input: json.RawMessage(calls[i].Prompt.User), System: calls[i].Prompt.System}
+		for _, q := range part.questions {
+			exchange.QuestionIndexes = append(exchange.QuestionIndexes, data.questionInputs[q])
+			exchange.QuestionRefs = append(exchange.QuestionRefs, data.questions[q].Key)
+		}
+		if outcome.Err == nil {
+			for _, q := range part.questions {
+				accepted := data.apply(&e.result.Questions[q], part.rows, data.questions[q].Key, outcome.Outcome)
+				if accepted && outcome.Outcome.CacheKey != "" {
+					e.remembered[q] = append(e.remembered[q], data.reference(part, q, outcome.Outcome.CacheKey))
+				}
+			}
+		} else if splittableResource(outcome.Err) {
+			if left, right, ok := data.splitResource(part, outcome.Err); ok {
+				exchange.Superseded = true
+				for _, child := range []window{left, right} {
+					parts, err := data.plan(ctx, e.provider, child)
+					if err != nil {
+						return nil, err
+					}
+					next = append(next, parts...)
+				}
+			}
+		}
+		e.result.Exchanges = append(e.result.Exchanges, exchange)
+	}
+	return next, nil
 }
 
 func prepareCatalogue(input Input, opts Options) (catalogue, error) {
@@ -335,10 +461,13 @@ func (data catalogue) windowQuestions(part window) []modelQuestion {
 }
 
 func (data catalogue) call(part window) (llm.Call[Response], error) {
-	return data.requestCall(part.rows, data.windowQuestions(part))
+	return data.requestCall(part.rows, data.windowQuestions(part), part.reask)
 }
 
-func (data catalogue) requestCall(rows []int, questions []modelQuestion) (llm.Call[Response], error) {
+// requestCall prepares one window. The request bytes do not depend on reask;
+// only the decoder's diagnostics do, so a first-round omission is re-asked
+// while a re-asking window's omission is refused.
+func (data catalogue) requestCall(rows []int, questions []modelQuestion, reask bool) (llm.Call[Response], error) {
 	encoded, err := json.Marshal(data.request(rows, questions))
 	if err != nil {
 		return llm.Call[Response]{}, fmt.Errorf("question batch: encode request: %w", err)
@@ -347,7 +476,7 @@ func (data catalogue) requestCall(rows []int, questions []modelQuestion) (llm.Ca
 		State:          []byte(`{"contract":"` + Contract + `"}`),
 		Prompt:         llm.Prompt{System: data.opts.System, User: string(encoded), ResponseFormatJSON: true, ResponseExample: responseExample, Reasoning: true, ProseFields: []string{"questions[].selections[].why"}},
 		Limits:         limits(),
-		DecodeValidate: func(raw []byte) (Response, error) { return data.decode(rows, questions, raw) },
+		DecodeValidate: func(raw []byte) (Response, error) { return data.decode(rows, questions, raw, reask) },
 	}, nil
 }
 
@@ -365,7 +494,20 @@ func (data catalogue) plan(ctx context.Context, provider llm.Provider, part wind
 	if maximum := data.opts.MaxRows; maximum > 0 && len(part.rows) > maximum {
 		var planned []window
 		for start := 0; start < len(part.rows); start += maximum {
-			children, err := data.plan(ctx, provider, window{rows: part.rows[start:min(start+maximum, len(part.rows))], questions: part.questions})
+			children, err := data.plan(ctx, provider, part.with(part.rows[start:min(start+maximum, len(part.rows))], part.questions))
+			if err != nil {
+				return nil, err
+			}
+			planned = append(planned, children...)
+		}
+		return planned, nil
+	}
+	// Every question group reads the same complete rows; only the decisions
+	// asked of one answer are fewer.
+	if len(part.questions) > maxQuestionsPerWindow {
+		var planned []window
+		for start := 0; start < len(part.questions); start += maxQuestionsPerWindow {
+			children, err := data.plan(ctx, provider, part.with(part.rows, part.questions[start:min(start+maxQuestionsPerWindow, len(part.questions))]))
 			if err != nil {
 				return nil, err
 			}
@@ -421,7 +563,7 @@ func (data catalogue) splitResource(part window, err error) (window, window, boo
 			weights[i] = len(encoded)
 		}
 		at := balanced(weights)
-		return window{rows: part.rows, questions: part.questions[:at]}, window{rows: part.rows, questions: part.questions[at:]}, true
+		return part.with(part.rows, part.questions[:at]), part.with(part.rows, part.questions[at:]), true
 	}
 	return data.split(part)
 }
@@ -441,11 +583,11 @@ func (data catalogue) split(part window) (window, window, bool) {
 	}
 	if len(part.rows) > 1 && (len(part.questions) <= 1 || rowBytes >= questionBytes) {
 		at := balanced(rowWeights)
-		return window{rows: part.rows[:at], questions: part.questions}, window{rows: part.rows[at:], questions: part.questions}, true
+		return part.with(part.rows[:at], part.questions), part.with(part.rows[at:], part.questions), true
 	}
 	if len(part.questions) > 1 {
 		at := balanced(questionWeights)
-		return window{rows: part.rows, questions: part.questions[:at]}, window{rows: part.rows, questions: part.questions[at:]}, true
+		return part.with(part.rows, part.questions[:at]), part.with(part.rows, part.questions[at:]), true
 	}
 	return window{}, window{}, false
 }
@@ -482,7 +624,7 @@ func splittableResource(err error) bool {
 	}
 }
 
-func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte) (Response, error) {
+func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte, reask bool) (Response, error) {
 	normalized, err := llm.NormalizeJSON(raw)
 	if err != nil {
 		return Response{}, err
@@ -526,6 +668,7 @@ func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte) 
 	unsafe := append([]json.RawMessage(nil), unknown...)
 	for _, question := range questions {
 		reason := failures[question.Key]
+		omitted := false
 		if reason == "" {
 			// Strip unknown optional fields before the existing closed-ref and
 			// scalar checks. Each question still needs one coherent selection.
@@ -536,11 +679,16 @@ func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte) 
 				continue
 			}
 			reason = err.Error()
-			if len(byQuestion[question.Key]) == 0 && shape != "" {
-				reason += " (" + shape + ")"
+			if len(byQuestion[question.Key]) == 0 {
+				// Named nowhere in an accepted response: no decision was made.
+				// The first round asks it again; a re-asking window's gap is final.
+				omitted = !reask
+				if shape != "" {
+					reason += " (" + shape + ")"
+				}
 			}
 		}
-		result.Rejections = append(result.Rejections, QuestionRejection{Question: question.Key, Reason: reason, Chunks: len(rows)})
+		result.Rejections = append(result.Rejections, QuestionRejection{Question: question.Key, Reason: reason, Chunks: len(rows), Omitted: omitted})
 		unsafe = append(unsafe, original[question.Key]...)
 	}
 	if len(result.Questions) == 0 {
@@ -776,8 +924,7 @@ func (data catalogue) missing(result Result) []window {
 		if len(rows) == 0 {
 			continue
 		}
-		encoded, _ := json.Marshal(rows)
-		key := string(encoded)
+		key := rowsKey(rows)
 		at, found := byRows[key]
 		if !found {
 			at = len(windows)
@@ -787,6 +934,76 @@ func (data catalogue) missing(result Result) []window {
 		windows[at].questions = append(windows[at].questions, q)
 	}
 	return windows
+}
+
+// omittedWindows plans the second round: for every accepted first-round
+// response, its rows with only the questions it did not name. A refused
+// window decided nothing that could be re-asked without repeating a request.
+func (data catalogue) omittedWindows(exchanges []Exchange) []window {
+	byRows := make(map[string]int)
+	seen := make(map[string]bool)
+	var windows []window
+	for _, exchange := range exchanges {
+		if exchange.Err != nil {
+			continue
+		}
+		for _, rejection := range exchange.Outcome.Value.Rejections {
+			q, known := data.exchangeQuestion(exchange, rejection.Question)
+			key := rowsKey(exchange.ChunkIndexes)
+			if !rejection.Omitted || !known || seen[key+" "+rejection.Question] {
+				continue
+			}
+			seen[key+" "+rejection.Question] = true
+			at, found := byRows[key]
+			if !found {
+				at = len(windows)
+				byRows[key] = at
+				windows = append(windows, window{rows: append([]int(nil), exchange.ChunkIndexes...), reask: true})
+			}
+			windows[at].questions = append(windows[at].questions, q)
+		}
+	}
+	for i := range windows {
+		sort.Ints(windows[i].questions)
+	}
+	return windows
+}
+
+// markRecovered annotates each first-round omission whose question the
+// second round then decided for every row of that window, so a journal
+// reader can tell a repaired gap from a loss.
+func (data catalogue) markRecovered(result *Result, first int) {
+	for i := first; i < len(result.Exchanges); i++ {
+		exchange := &result.Exchanges[i]
+		if exchange.Err != nil {
+			continue
+		}
+		for j := range exchange.Outcome.Value.Rejections {
+			rejection := &exchange.Outcome.Value.Rejections[j]
+			q, known := data.exchangeQuestion(*exchange, rejection.Question)
+			if !rejection.Omitted || !known {
+				continue
+			}
+			rejection.Recovered = true
+			for _, row := range exchange.ChunkIndexes {
+				if !result.Questions[q].Chunks[row].Inspected {
+					rejection.Recovered = false
+					break
+				}
+			}
+		}
+	}
+}
+
+// exchangeQuestion resolves a response key to the catalogue question this
+// exchange asked under it.
+func (data catalogue) exchangeQuestion(exchange Exchange, key string) (int, bool) {
+	for i, ref := range exchange.QuestionRefs {
+		if ref == key && i < len(exchange.QuestionIndexes) {
+			return data.inputQuestions[exchange.QuestionIndexes[i]], true
+		}
+	}
+	return 0, false
 }
 
 func (data catalogue) expand(result Result) Result {
@@ -812,3 +1029,7 @@ func cloneSelections(selections []Selection) []Selection {
 
 func rowRef(index int) string  { return "r" + strconv.Itoa(index+1) }
 func digest(raw []byte) string { sum := sha256.Sum256(raw); return hex.EncodeToString(sum[:]) }
+
+// rowsKey identifies one ordered row set, the shared prefix of every window
+// over it.
+func rowsKey(rows []int) string { encoded, _ := json.Marshal(rows); return string(encoded) }

@@ -63,10 +63,18 @@ func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionC
 			answers[q][i] = chunk
 		}
 	}
+	// A first-round omission is re-asked over the same rows; the re-asking
+	// window's own exchange carries any loss, so the omission is reported
+	// but never journaled or counted as a rejection.
+	omitted, unrecovered := make(map[int]bool), make(map[int]bool)
+	reaskWindows := 0
 	for i, exchange := range result.Exchanges {
 		use.Windows++
 		if exchange.Reused {
 			use.Reused += len(exchange.ChunkIndexes) * len(exchange.QuestionIndexes)
+		}
+		if exchange.Reask && !exchange.Superseded {
+			reaskWindows++
 		}
 		if exchange.Outcome.Cached {
 			use.Cached++
@@ -91,7 +99,7 @@ func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionC
 			r.opts.State("Question source selection", "response rejected", details...)
 		}
 		if exchange.Err == nil && len(exchange.Outcome.Value.Rejections) > 0 {
-			rejected := 0
+			rejected, reasked, recovered := 0, 0, 0
 			journaled := false
 			if observer, ok := r.opts.Executor.Observer.(interface{ JournalsRejections() bool }); ok {
 				journaled = observer.JournalsRejections()
@@ -102,25 +110,50 @@ func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionC
 					if rejection.Question != ref {
 						continue
 					}
+					question := exchange.QuestionIndexes[q]
+					if rejection.Omitted {
+						reasked++
+						omitted[question] = true
+						if rejection.Recovered {
+							recovered++
+						} else {
+							unrecovered[question] = true
+						}
+						details = append(details, "question: "+questions[question], "omitted by the model: "+rejection.Reason)
+						continue
+					}
 					rejected++
-					details = append(details, "question: "+questions[exchange.QuestionIndexes[q]], "reason: "+rejection.Reason)
+					details = append(details, "question: "+questions[question], "reason: "+rejection.Reason)
 					r.rejected = append(r.rejected, modeldiag.Row{AlreadyJournaled: journaled, Stage: lines.StageQuestion, Kind: "question_rejected", Count: rejection.Chunks, Reason: rejection.Reason,
 						ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(table.Window{Stage: lines.StageQuestion, Index: i}, "response.ref.json"))), Samples: []string{rejection.Question}})
 				}
 			}
-			if rejected > 0 {
-				use.Rejected++
+			if rejected+reasked > 0 {
+				if rejected > 0 {
+					use.Rejected++
+				}
 				state := "partly accepted"
 				if rejected == len(exchange.QuestionRefs) {
 					state = "response rejected"
 				}
-				details = append([]string{fmt.Sprintf("questions in this response: %d accepted, %d rejected", len(exchange.QuestionRefs)-rejected, rejected)}, details...)
+				summary := fmt.Sprintf("questions in this response: %d accepted, %d rejected", len(exchange.QuestionRefs)-rejected-reasked, rejected)
+				if reasked > 0 {
+					summary += fmt.Sprintf(", %d omitted by the model and re-asked (%d recovered)", reasked, recovered)
+				}
+				details = append([]string{summary}, details...)
 				r.opts.State("Question source selection", state, details...)
 			}
 		}
 		if err := r.writeQuestionExchange(i, exchange, questions); err != nil {
 			return nil, err
 		}
+	}
+	if len(omitted) > 0 {
+		summary := fmt.Sprintf("re-asked %d questions omitted by the model in %d windows; %d recovered", len(omitted), reaskWindows, len(omitted)-len(unrecovered))
+		if len(unrecovered) > 0 {
+			summary += fmt.Sprintf(", %d still unavailable", len(unrecovered))
+		}
+		r.opts.State("Question source selection", "re-asked", summary)
 	}
 	for _, issue := range result.Issues {
 		r.opts.State(lines.StageQuestion, "cache miss", issue.Error())
@@ -159,8 +192,9 @@ func (r *reader) writeQuestionExchange(index int, exchange questionbatch.Exchang
 		Source     string                 `json:"source"`
 		Reason     string                 `json:"reason,omitempty"`
 		Superseded bool                   `json:"superseded,omitempty"`
+		Reask      bool                   `json:"reask,omitempty"`
 		Result     questionbatch.Response `json:"result"`
-	}{source, reason, exchange.Superseded, exchange.Outcome.Value}, "", "  ")
+	}{source, reason, exchange.Superseded, exchange.Reask, exchange.Outcome.Value}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -186,6 +220,9 @@ func (r *reader) writeQuestionExchange(index int, exchange questionbatch.Exchang
 	fmt.Fprintf(&r.tables, "## %s · shared window %d · %s\n\nsource: %s\n", lines.StageQuestion, index, filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "request.ref.json"))), source)
 	if exchange.Superseded {
 		r.tables.WriteString("Provider resource refusal; complete partitions follow. This attempt supplies no source decisions.\n")
+	}
+	if exchange.Reask {
+		r.tables.WriteString("Re-asks only the questions an earlier accepted response over these rows omitted.\n")
 	}
 	if reason != "" {
 		fmt.Fprintf(&r.tables, "reason: %s\n", reason)

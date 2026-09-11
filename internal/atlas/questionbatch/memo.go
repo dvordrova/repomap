@@ -21,6 +21,9 @@ type rememberedWindow struct {
 	QuestionRef string          `json:"question_ref"`
 	Rows        []string        `json:"rows"`
 	Questions   []modelQuestion `json:"questions"`
+	// Reask records a second-round window, so a recall decodes its sibling
+	// omissions under the same rule as the original reading did.
+	Reask bool `json:"reask,omitempty"`
 }
 
 type questionMemo struct {
@@ -34,6 +37,7 @@ type questionMemo struct {
 type validatedMemoWindow struct {
 	originalRows      []string
 	originalQuestions []modelQuestion
+	reask             bool
 	rows              []int
 	call              llm.Call[Response]
 	response          Response
@@ -66,7 +70,7 @@ func (data catalogue) memoIdentity(provider llm.Provider, question modelQuestion
 }
 
 func (data catalogue) reference(part window, q int, requestKey string) rememberedWindow {
-	ref := rememberedWindow{RequestKey: requestKey, QuestionRef: data.questions[q].Key, Questions: data.windowQuestions(part)}
+	ref := rememberedWindow{RequestKey: requestKey, QuestionRef: data.questions[q].Key, Questions: data.windowQuestions(part), Reask: part.reask}
 	for _, row := range part.rows {
 		ref.Rows = append(ref.Rows, rowRef(row))
 	}
@@ -134,9 +138,9 @@ func (data catalogue) recall(ctx context.Context, executor llm.Executor, provide
 				continue
 			}
 			checked := cached.validated
-			if checked == nil || !slices.Equal(checked.originalRows, ref.Rows) || !slices.Equal(checked.originalQuestions, ref.Questions) {
+			if checked == nil || !slices.Equal(checked.originalRows, ref.Rows) || !slices.Equal(checked.originalQuestions, ref.Questions) || checked.reask != ref.Reask {
 				rows := data.referenceRows(ref)
-				call, err := data.requestCall(rows, ref.Questions)
+				call, err := data.requestCall(rows, ref.Questions, ref.Reask)
 				if err == nil {
 					var prepared llm.Prepared
 					prepared, err = llm.Prepare(provider, call.Prompt, call.Limits)
@@ -165,7 +169,7 @@ func (data catalogue) recall(ctx context.Context, executor llm.Executor, provide
 					result.Issues = append(result.Issues, fmt.Errorf("question batch: rejected cached window for %s: %w", question.Key, err))
 					continue
 				}
-				checked = &validatedMemoWindow{originalRows: slices.Clone(ref.Rows), originalQuestions: slices.Clone(ref.Questions), rows: rows, call: call, response: response}
+				checked = &validatedMemoWindow{originalRows: slices.Clone(ref.Rows), originalQuestions: slices.Clone(ref.Questions), reask: ref.Reask, rows: rows, call: call, response: response}
 				cached.validated = checked
 				exchanges[ref.RequestKey] = cached
 			}
