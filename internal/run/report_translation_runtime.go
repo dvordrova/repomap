@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reporttranslation"
 )
@@ -79,12 +81,44 @@ func translateReportDisplay(ctx context.Context, options repositoryTargetDispatc
 	options.Output.Stage("Report translation", fmt.Sprintf("translating %d display texts into %s", len(catalog.Entries), language))
 	options.Output.Stage("", fmt.Sprintf("up to %d parallel requests; HTTP 500 or a 4m attempt timeout splits complete texts into smaller requests", max(1, options.Deps.llmBatchConcurrency)))
 	started := time.Now()
-	translations, err = reporttranslation.Translate(ctx, executor, provider, catalog, language)
+	translations, untranslated, err := reporttranslation.Translate(ctx, executor, provider, catalog, language)
 	if err != nil {
 		options.Output.State("Report translation", "failed", formatRunOutputWallDuration(time.Since(started)), options.Output.modelCallSummary(reporttranslation.StageName))
 		return report.RenderOptions{}, fmt.Errorf("report translation: %w", err)
 	}
-	options.Output.State("Report translation", "ready", formatRunOutputWallDuration(time.Since(started)), options.Output.modelCallSummary(reporttranslation.StageName))
+	details := []string{formatRunOutputWallDuration(time.Since(started)), options.Output.modelCallSummary(reporttranslation.StageName)}
+	if len(untranslated) > 0 {
+		details = append(details, recordUntranslatedTexts(options.Output, runDir, untranslated))
+	}
+	options.Output.State("Report translation", "ready", details...)
 	renderOptions.Translations = &translations
 	return renderOptions, nil
+}
+
+// recordUntranslatedTexts journals every text the translation kept in its
+// source language beside the stage's other rejections, one row per text with
+// its final refusal, and returns the one console line that names them.
+func recordUntranslatedTexts(output *runOutput, runDir string, untranslated []reporttranslation.Untranslated) string {
+	rows := make([]modeldiag.Row, 0, len(untranslated))
+	refs := make([]string, 0, len(untranslated))
+	for _, entry := range untranslated {
+		rows = append(rows, modeldiag.Row{
+			Stage: reporttranslation.StageName, Kind: "entry_untranslated", Count: 1,
+			Samples: []string{entry.Ref}, Reason: entry.Reason,
+		})
+		refs = append(refs, entry.Ref)
+	}
+	if err := modeldiag.Append(runDir, rows); err != nil {
+		output.Warn("could not record report translation diagnostics", err.Error())
+	}
+	noun := "texts"
+	if len(refs) == 1 {
+		noun = "text"
+	}
+	const shown = 10
+	listed := strings.Join(refs, ", ")
+	if len(refs) > shown {
+		listed = fmt.Sprintf("%s … and %d more in %s", strings.Join(refs[:shown], ", "), len(refs)-shown, modeldiag.Filename)
+	}
+	return fmt.Sprintf("%d %s kept in the source language: %s", len(refs), noun, listed)
 }

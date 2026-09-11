@@ -20,7 +20,7 @@ func TestTranslateReusesResourcePartitionsFromPersistentCache(t *testing.T) {
 			catalog := testCatalog(t, entries)
 			cacheRoot := t.TempDir()
 			provider := &testProvider{resourceKind: kind, responseRows: 2}
-			cold, err := Translate(t.Context(), llm.Executor{
+			cold, _, err := Translate(t.Context(), llm.Executor{
 				Enabled: true, RootDir: cacheRoot, BatchConcurrency: 1,
 			}, provider, catalog, report.Russian)
 			if err != nil {
@@ -70,7 +70,7 @@ func TestTranslateReusesResourcePartitionsFromPersistentCache(t *testing.T) {
 			// state. Only persisted split observations and exact child responses
 			// can avoid repeating the known oversized parent.
 			warmProvider := &testProvider{resourceKind: kind, responseRows: 2}
-			warm, err := Translate(t.Context(), llm.Executor{
+			warm, _, err := Translate(t.Context(), llm.Executor{
 				Enabled: true, RootDir: cacheRoot, BatchConcurrency: 1,
 			}, warmProvider, catalog, report.Russian)
 			if err != nil {

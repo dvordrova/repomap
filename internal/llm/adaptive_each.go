@@ -5,6 +5,16 @@ import (
 	"fmt"
 )
 
+// AdaptiveEachResult is one leaf of ExecuteAdaptiveJSONEachResults: the
+// complete item it covers, that item's outcome and, when the item could
+// neither be completed nor split further, its terminal error. Whether such a
+// leaf is acceptable is the owning stage's decision, as with EachResult.
+type AdaptiveEachResult[Item any, Value any] struct {
+	Item    Item
+	Outcome Outcome[Value]
+	Err     error
+}
+
 // ExecuteAdaptiveJSONEach completes independent items without canceling or
 // repeating successful siblings when an item must split. Build owns one item,
 // not the changing plan: accepted calls and outcomes stay unchanged in memory,
@@ -19,10 +29,47 @@ func ExecuteAdaptiveJSONEach[Item any, Value any](
 	build func(Item) (Call[Value], error),
 	split func(Item) (Item, Item, bool),
 ) ([]Item, []Outcome[Value], error) {
+	results, err := executeAdaptiveJSONEach(ctx, executor, provider, items, build, split, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	final := make([]Item, len(results))
+	outcomes := make([]Outcome[Value], len(results))
+	for i, result := range results {
+		final[i], outcomes[i] = result.Item, result.Outcome
+	}
+	return final, outcomes, nil
+}
+
+// ExecuteAdaptiveJSONEachResults runs the same rounds, but an item that can
+// neither be completed nor split further stays as its own terminal leaf beside
+// the completed cover while the remaining items continue. Cancellation, build,
+// split-memo and executor errors still fail the whole call.
+func ExecuteAdaptiveJSONEachResults[Item any, Value any](
+	ctx context.Context,
+	executor Executor,
+	provider Provider,
+	items []Item,
+	build func(Item) (Call[Value], error),
+	split func(Item) (Item, Item, bool),
+) ([]AdaptiveEachResult[Item, Value], error) {
+	return executeAdaptiveJSONEach(ctx, executor, provider, items, build, split, true)
+}
+
+func executeAdaptiveJSONEach[Item any, Value any](
+	ctx context.Context,
+	executor Executor,
+	provider Provider,
+	items []Item,
+	build func(Item) (Call[Value], error),
+	split func(Item) (Item, Item, bool),
+	keepTerminal bool,
+) ([]AdaptiveEachResult[Item, Value], error) {
 	type node struct {
 		item    Item
 		call    Call[Value]
 		outcome Outcome[Value]
+		err     error
 		done    bool
 	}
 	makeNode := func(item Item) (node, error) {
@@ -49,12 +96,12 @@ func ExecuteAdaptiveJSONEach[Item any, Value any](
 		var err error
 		plan[i], err = makeNode(item)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		// A whole-parent cached answer/replay still takes precedence over a
 		// split memo. Successful in-memory siblings need neither lookup.
@@ -64,14 +111,14 @@ func ExecuteAdaptiveJSONEach[Item any, Value any](
 			}
 			found, err := loadAdaptiveSplit(executor, provider, plan[i].call)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			if !found {
 				continue
 			}
 			parts, err := children(plan[i].item)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			if len(parts) > 0 {
 				remaining := append(parts, plan[i+1:]...)
@@ -86,19 +133,18 @@ func ExecuteAdaptiveJSONEach[Item any, Value any](
 			}
 		}
 		if len(calls) == 0 {
-			final := make([]Item, len(plan))
-			outcomes := make([]Outcome[Value], len(plan))
+			results := make([]AdaptiveEachResult[Item, Value], len(plan))
 			for i, item := range plan {
-				final[i], outcomes[i] = item.item, item.outcome
+				results[i] = AdaptiveEachResult[Item, Value]{Item: item.item, Outcome: item.outcome, Err: item.err}
 			}
-			return final, outcomes, nil
+			return results, nil
 		}
 		if executor.PlanNotice != nil {
 			executor.PlanNotice(len(calls))
 		}
 		results := ExecuteJSONEach(ctx, executor, provider, calls)
 		if err := ctx.Err(); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		var next []node
 		var terminal error
@@ -119,22 +165,27 @@ func ExecuteAdaptiveJSONEach[Item any, Value any](
 			if eligible {
 				parts, err := children(item.item)
 				if err != nil {
-					return nil, nil, err
+					return nil, err
 				}
 				if len(parts) > 0 {
 					if err := saveAdaptiveSplit(executor, provider, result.Outcome.Request, item.call.Limits, memo); err != nil {
-						return nil, nil, err
+						return nil, err
 					}
 					next = append(next, parts...)
 					continue
 				}
+			}
+			if keepTerminal {
+				item.outcome, item.err, item.done = result.Outcome, result.Err, true
+				next = append(next, item)
+				continue
 			}
 			if terminal == nil {
 				terminal = &BatchItemError{Index: i, Err: result.Err}
 			}
 		}
 		if terminal != nil {
-			return nil, nil, fmt.Errorf("llm: adaptive independent item: %w", terminal)
+			return nil, fmt.Errorf("llm: adaptive independent item: %w", terminal)
 		}
 		plan = next
 	}

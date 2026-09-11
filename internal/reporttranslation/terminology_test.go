@@ -33,7 +33,7 @@ func TestTranslationKeepsTermNamesAndFullDefinitionsInEveryWindow(t *testing.T) 
 		}}
 	}}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
-	translated, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
+	translated, _, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,13 +55,13 @@ func TestTranslationKeepsTermNamesAndFullDefinitionsInEveryWindow(t *testing.T) 
 		}
 		assertRequestTerms(t, request, catalog.Entries)
 	}
-	if _, err := Translate(t.Context(), executor, provider, catalog, report.Russian); err != nil || len(provider.requests) != 2 {
+	if _, _, err := Translate(t.Context(), executor, provider, catalog, report.Russian); err != nil || len(provider.requests) != 2 {
 		t.Fatal("exact request was not reused through the shared cache")
 	}
 	entry.Terms = append([]report.DisplayTextTerm(nil), entry.Terms...)
 	entry.Terms[0].Explanation = "A replacement vocabulary for a particular domain."
 	changed := testCatalog(t, []report.DisplayTextEntry{entry, catalog.Entries[1]})
-	if _, err := Translate(t.Context(), executor, provider, changed, report.Russian); err != nil || len(provider.requests) != 3 {
+	if _, _, err := Translate(t.Context(), executor, provider, changed, report.Russian); err != nil || len(provider.requests) != 3 {
 		t.Fatal("changed definition context reused the previous prepared request")
 	}
 }
@@ -76,7 +76,7 @@ func TestTranslationRetainsHomonymDefinitionsWithoutRequestingAChoice(t *testing
 	}
 	catalog := testCatalog(t, []report.DisplayTextEntry{entry})
 	provider := &testProvider{rawResponse: []byte(`{"t1":{"text":"Описывается bank."}}`)}
-	result, err := Translate(t.Context(), llm.Executor{}, provider, catalog, report.Russian)
+	result, _, err := Translate(t.Context(), llm.Executor{}, provider, catalog, report.Russian)
 	if err != nil || len(result.Entries) != 1 || result.Entries[0].Text != "Описывается bank." {
 		t.Fatalf("a plain translation required choosing a meaning: %+v, %v", result, err)
 	}
@@ -146,7 +146,7 @@ func TestTranslationSharesExactDefinitionsWithoutChangingEntryScopeOrLocalBindin
 	})
 	provider := &testProvider{}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
-	result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
+	result, _, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
 	if err != nil || result.Validate(catalog) != nil || len(provider.requests) != 4 {
 		t.Fatalf("shared context changed translation execution: %+v, %v", result, err)
 	}
@@ -179,7 +179,7 @@ func TestTranslationSharesExactDefinitionsWithoutChangingEntryScopeOrLocalBindin
 		}
 	}
 	rebound := testCatalog(t, catalog.Entries)
-	cached, err := Translate(t.Context(), executor, provider, rebound, report.Russian)
+	cached, _, err := Translate(t.Context(), executor, provider, rebound, report.Russian)
 	if err != nil || len(provider.requests) != 4 || cached.CatalogSHA256 != rebound.SHA256 || cached.CatalogSHA256 == result.CatalogSHA256 {
 		t.Fatalf("local binding changed request identity: %+v, %v", cached, err)
 	}
@@ -189,12 +189,12 @@ func TestTranslationDoesNotRepairAChangedOrdinaryTermSpelling(t *testing.T) {
 	catalog := testCatalog(t, []report.DisplayTextEntry{termEntry()})
 	provider := &testProvider{rawResponse: []byte(`{"t1":{"text":"Загрузите пользовательский словарь через __REPOMAP_P1__."}}`)}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
-	result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
+	result, _, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
 	if err != nil || len(result.Entries) != 1 || result.Entries[0].Text != "Загрузите пользовательский словарь через __REPOMAP_P1__." {
 		t.Fatalf("term spelling was repaired or rejected instead of leaving exact matching to the report: %+v, %v", result, err)
 	}
 	provider.rawResponse = nil
-	if _, err := Translate(t.Context(), executor, provider, catalog, report.Russian); err != nil || len(provider.requests) != 1 {
+	if _, _, err := Translate(t.Context(), executor, provider, catalog, report.Russian); err != nil || len(provider.requests) != 1 {
 		t.Fatalf("plain translated text lost its existing cache contract: %v", err)
 	}
 }

@@ -176,6 +176,42 @@ func (*adaptiveEachReplayProvider) Complete(context.Context, Prepared) (Completi
 	return Completion{Response: []byte(`{"value":"replayed parent"}`), FinishReason: FinishStop, ChoiceCount: 1, Metrics: Metrics{Attempts: 1}}, nil
 }
 
+// The results variant hands a terminal leaf back to its owner beside the
+// completed cover and keeps splitting the other items; the plain variant
+// keeps failing closed (the test below).
+func TestAdaptiveEachResultsKeepTerminalLeafBesideCompletedCover(t *testing.T) {
+	p := &adaptiveEachProvider{atomic: true}
+	results, err := ExecuteAdaptiveJSONEachResults(t.Context(), Executor{BatchConcurrency: 2}, p,
+		[][]string{{"bad"}, {"a", "b"}, {"good"}}, adaptiveEachBuild, adaptiveBatchTestSplit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"bad", "a", "b", "good"}
+	if len(results) != len(want) {
+		t.Fatalf("leaves: %+v", results)
+	}
+	for i, result := range results {
+		if len(result.Item) != 1 || result.Item[0] != want[i] {
+			t.Fatalf("leaf %d covers %v, want %s", i, result.Item, want[i])
+		}
+		if want[i] == "bad" {
+			var resourceErr *ResourceLimitError
+			if !errors.As(result.Err, &resourceErr) || len(result.Outcome.ResponseRejections) == 0 || result.Outcome.RequestBytes == 0 {
+				t.Fatalf("terminal leaf lost its refusal or outcome: %+v", result)
+			}
+			continue
+		}
+		if result.Err != nil || result.Outcome.Value.Value != want[i] {
+			t.Fatalf("completed leaf %s: %+v", want[i], result)
+		}
+	}
+	for _, key := range []string{"bad", "a,b", "a", "b", "good"} {
+		if p.requests[key] != 1 {
+			t.Fatalf("request %q made %d times: %v", key, p.requests[key], p.requests)
+		}
+	}
+}
+
 func TestAdaptiveEachTerminalFailureWaitsForSiblingsWithoutPartialCover(t *testing.T) {
 	p := &adaptiveEachProvider{atomic: true}
 	plan, outcomes, err := ExecuteAdaptiveJSONEach(t.Context(), Executor{BatchConcurrency: 2}, p,

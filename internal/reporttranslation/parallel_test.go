@@ -46,7 +46,7 @@ func TestTranslatePlansEightPartitionsWithFourWorkersAndReusesTheirCache(t *test
 	}
 	finished := make(chan result, 1)
 	go func() {
-		value, err := Translate(ctx, executor, provider, catalog, report.Russian)
+		value, _, err := Translate(ctx, executor, provider, catalog, report.Russian)
 		finished <- result{value, err}
 	}()
 	for i := 0; i < 4; i++ {
@@ -81,7 +81,7 @@ func TestTranslatePlansEightPartitionsWithFourWorkersAndReusesTheirCache(t *test
 		}
 	}
 	warmProvider := &testProvider{}
-	warm, err := Translate(t.Context(), executor, warmProvider, catalog, report.Russian)
+	warm, _, err := Translate(t.Context(), executor, warmProvider, catalog, report.Russian)
 	if err != nil || len(warmProvider.requests) != 0 || !reflect.DeepEqual(warm, cold.value) {
 		t.Fatal("warm execution retranslated an accepted child or changed its binding")
 	}

@@ -36,7 +36,7 @@ func TestTranslateLastObjectValueWinsBeforeValidationAndCache(t *testing.T) {
 			})}
 			want := []report.DisplayTranslationEntry{{Ref: "t1", Text: "Итог __REPOMAP_P1__."}, {Ref: "t2", Text: "Начало"}}
 			for run := 0; run < 2; run++ {
-				result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
+				result, _, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
 				if err != nil || !reflect.DeepEqual(result.Entries, want) || result.Validate(catalog) != nil {
 					t.Fatalf("run %d did not validate final values in catalogue order: %+v, %v", run, result, err)
 				}
@@ -79,9 +79,9 @@ func TestTranslateLastObjectValueStillMustValidate(t *testing.T) {
 				events = append(events, event)
 				return nil
 			})}
-			result, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
-			if err == nil || !reflect.DeepEqual(result, report.DisplayTranslations{}) {
-				t.Fatalf("earlier valid value repaired invalid final value: %+v, %v", result, err)
+			result, untranslated, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
+			if err != nil || len(untranslated) != 1 || untranslated[0].Ref != "t1" || len(result.Entries) != 1 || result.Entries[0].Text != "Use __REPOMAP_P1__." {
+				t.Fatalf("earlier valid value repaired invalid final value: %+v, %+v, %v", result, untranslated, err)
 			}
 			if len(events) != 1 || events[0].Failure != llm.FailureValidation || !bytes.Equal(events[0].Response, raw) {
 				t.Fatalf("singleton rejection lost original response: %+v", events)

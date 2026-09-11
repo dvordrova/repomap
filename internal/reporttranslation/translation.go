@@ -58,10 +58,20 @@ type translationRequest struct {
 	Entries []requestEntry `json:"entries"`
 }
 
+// Untranslated names one display text that keeps its source language: after
+// every split its one-text request was still refused, and the executor has
+// journaled that refusal. Reason is that final refusal.
+type Untranslated struct {
+	Ref    string
+	Reason string
+}
+
 // Translate returns a complete presentation-only translation bound to catalog.
 // The caller decides whether its selected display language needs translation;
 // an empty catalogue needs no provider. Failed windows never become a partial
-// display artifact. Exact requests, cache, journals and concurrency belong to
+// display artifact: a refused window divides until one text remains, and a
+// text refused on its own keeps its source language and is named in the
+// returned list. Exact requests, cache, journals and concurrency belong to
 // the supplied shared executor.
 func Translate(
 	ctx context.Context,
@@ -69,16 +79,16 @@ func Translate(
 	provider llm.Provider,
 	catalog report.DisplayTextCatalog,
 	language report.DisplayLanguage,
-) (report.DisplayTranslations, error) {
+) (report.DisplayTranslations, []Untranslated, error) {
 	if err := catalog.Validate(); err != nil {
-		return report.DisplayTranslations{}, err
+		return report.DisplayTranslations{}, nil, err
 	}
 	language, err := report.NormalizeDisplayLanguage(string(language))
 	if err != nil {
-		return report.DisplayTranslations{}, err
+		return report.DisplayTranslations{}, nil, err
 	}
 	if err := ctx.Err(); err != nil {
-		return report.DisplayTranslations{}, err
+		return report.DisplayTranslations{}, nil, err
 	}
 	result := report.DisplayTranslations{
 		Version: report.DisplayTextVersion, Language: language,
@@ -86,11 +96,11 @@ func Translate(
 		Entries:       make([]report.DisplayTranslationEntry, 0, len(catalog.Entries)),
 	}
 	if len(catalog.Entries) == 0 {
-		return result, result.Validate(catalog)
+		return result, nil, result.Validate(catalog)
 	}
 	windows, err := planWindows(ctx, provider, catalog.Entries, language)
 	if err != nil {
-		return report.DisplayTranslations{}, err
+		return report.DisplayTranslations{}, nil, err
 	}
 	windowCount := max(initialWindows, executor.BatchConcurrency)
 	if len(windows) < windowCount {
@@ -98,11 +108,11 @@ func Translate(
 		for _, window := range windows {
 			call, err := translationCall(window, language)
 			if err != nil {
-				return report.DisplayTranslations{}, err
+				return report.DisplayTranslations{}, nil, err
 			}
 			cached, err := llm.RecallJSON(ctx, executor, provider, call)
 			if err != nil {
-				return report.DisplayTranslations{}, err
+				return report.DisplayTranslations{}, nil, err
 			}
 			if cached.Cached {
 				result.Entries = append(result.Entries, cached.Value...)
@@ -113,9 +123,9 @@ func Translate(
 		windows = parallelWindows(pending, windowCount)
 	}
 	if len(windows) == 0 {
-		return result, result.Validate(catalog)
+		return result, nil, result.Validate(catalog)
 	}
-	_, outcomes, err := llm.ExecuteAdaptiveJSONEach(
+	leaves, err := llm.ExecuteAdaptiveJSONEachResults(
 		ctx, executor, provider, windows,
 		func(window translationWindow) (llm.Call[[]report.DisplayTranslationEntry], error) {
 			return translationCall(window, language)
@@ -129,10 +139,26 @@ func Translate(
 		},
 	)
 	if err != nil {
-		return report.DisplayTranslations{}, fmt.Errorf("report translation: %w", err)
+		return report.DisplayTranslations{}, nil, fmt.Errorf("report translation: %w", err)
 	}
-	for _, outcome := range outcomes {
-		result.Entries = append(result.Entries, outcome.Value...)
+	var untranslated []Untranslated
+	for _, leaf := range leaves {
+		if leaf.Err == nil {
+			result.Entries = append(result.Entries, leaf.Outcome.Value...)
+			continue
+		}
+		// After every split only one complete text can remain in a refused
+		// request. Its final refusal (a missing or invalid translation, an
+		// unusable response, a failed provider call) is already journaled by
+		// the executor; the text keeps its source language instead of costing
+		// the whole report. A failure before any provider answer, or of a
+		// window that could still divide, remains the stage's error.
+		if len(leaf.Item) != 1 || len(leaf.Outcome.ResponseRejections) == 0 {
+			return report.DisplayTranslations{}, nil, fmt.Errorf("report translation: %w", leaf.Err)
+		}
+		entry := leaf.Item[0]
+		result.Entries = append(result.Entries, report.DisplayTranslationEntry{Ref: entry.Ref, Text: entry.Text})
+		untranslated = append(untranslated, Untranslated{Ref: entry.Ref, Reason: leaf.Err.Error()})
 	}
 	// Whole cached windows and new windows may interleave. Restore the original
 	// catalogue order before validating the single complete display artifact.
@@ -141,10 +167,11 @@ func Translate(
 		order[entry.Ref] = i
 	}
 	sort.Slice(result.Entries, func(i, j int) bool { return order[result.Entries[i].Ref] < order[result.Entries[j].Ref] })
+	sort.Slice(untranslated, func(i, j int) bool { return order[untranslated[i].Ref] < order[untranslated[j].Ref] })
 	if err := result.Validate(catalog); err != nil {
-		return report.DisplayTranslations{}, err
+		return report.DisplayTranslations{}, nil, err
 	}
-	return result, nil
+	return result, untranslated, nil
 }
 
 // Plan smaller requests before asking for new translations. UTF-8
