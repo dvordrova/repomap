@@ -1,5 +1,9 @@
 # Атлас: чтение репозитория таблицами
 
+> Historical document, not current instructions or acceptance. Original wording
+> and historical line numbers are preserved. Use [CURRENT](CURRENT.md) for the
+> active decision and [AGENTS](../../AGENTS.md) for work-specific contracts.
+
 Предложение от 2026-09-04. Собрано по коду на ead56d70: пять карт подсистем, три независимых плана, три судьи, синтез с критикой. Не принято, пока владелец не сказал слово по разделу «Решения за владельцем».
 
 ## Суть решения

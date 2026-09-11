@@ -130,6 +130,7 @@ collected. Producer observations and corpus membership keep their own edge
 kinds; neither becomes a compiler-proved call.
 
 This does not create language targets, execute a generator, apply migrations,
-or automatically build a change recipe. Saved places use graph v11 and reading
-input v12; incompatible analysis inputs must be regenerated. The external plugin
+or automatically build a change recipe. Saved places and reading inputs use the
+[current owning formats](agent-room/CURRENT.md#formats); incompatible analysis
+inputs must be regenerated. The external plugin
 protocol remains v1 with the nodes and links above.

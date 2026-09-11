@@ -1,5 +1,9 @@
 # Handoff: what is known, what is open
 
+> Historical document, not current instructions or acceptance. Original wording
+> and historical line numbers are preserved. Use [CURRENT](CURRENT.md) for the
+> active decision and [AGENTS](../../AGENTS.md) for work-specific contracts.
+
 Rewritten 2026-09-03 after a night of work. Everything here is measured, not
 remembered. Authority for the product is
 [docs/CONSTITUTION.md](../CONSTITUTION.md); the architecture is

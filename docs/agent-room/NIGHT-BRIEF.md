@@ -1,5 +1,9 @@
 # Night brief: make the data worth looking at, fast, on a real repository
 
+> Historical document, not current instructions or acceptance. Original wording
+> and historical line numbers are preserved. Use [CURRENT](CURRENT.md) for the
+> active decision and [AGENTS](../../AGENTS.md) for work-specific contracts.
+
 You are working alone. The owner is asleep and will judge this in the morning
 by opening a report, not by reading a diff.
 

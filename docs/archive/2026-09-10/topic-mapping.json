@@ -1,0 +1,98 @@
+{
+  "DEVELOPMENT.md": [
+    "Mandatory fixtures and checks",
+    "Before full expensive runs",
+    "Evidence before optimization"
+  ],
+  "DISCOVERY.md": [
+    "Corpus",
+    "File identity",
+    "Repository guidance",
+    "Target selection",
+    "Python package and launch observations",
+    "Typed adapter boundary",
+    "Scope in documentation evidence"
+  ],
+  "EXECUTION.md": [
+    "Stage ownership and limits",
+    "Parallelism and provider failures",
+    "Results and prompt ownership",
+    "Independent validation",
+    "JSON syntax and reasoning controls",
+    "Exact cache and replay",
+    "Local response context",
+    "Transport diagnostics",
+    "Budget-change acceptance"
+  ],
+  "GO.md": [
+    "Build-selected scope",
+    "Traversal and explicit narrowing",
+    "Dynamic receivers and callable transfers",
+    "Receiver fields and bindings",
+    "Owned declarations",
+    "Source-aware diagnostics"
+  ],
+  "JSTS.md": [
+    "Package ownership, compiler and dependency authority",
+    "Callable JSX and declaration headers",
+    "Owned fields",
+    "Native compiler compatibility",
+    "Framework-neutral registrations"
+  ],
+  "PROGRAM_INDEX.md": [
+    "Typed graph",
+    "Shared storage and sequential restoration",
+    "Callable identity and observations",
+    "Source values and destination reading",
+    "Declared interfaces and dispatch observations",
+    "Native operation evidence",
+    "Facts and authored documents",
+    "External package authority",
+    "Test source scope",
+    "Ownership and source protection"
+  ],
+  "PYTHON.md": [
+    "Catalogue and shared parsing",
+    "Imports and callable identity",
+    "Typed parameters and explicit re-exports",
+    "Framework-neutral registrations",
+    "No execution for inference"
+  ],
+  "READING.md": [
+    "Selection and captions",
+    "Operation ownership",
+    "Boundaries",
+    "Type and concept descriptions",
+    "Questions and Learn",
+    "Question evidence and per-anchor relevance",
+    "Entity knowledge",
+    "Matching and operation paths",
+    "Orientation",
+    "Optimization acceptance"
+  ],
+  "REPORT.md": [
+    "Projection and first-screen overview",
+    "Reader context",
+    "External communication and data",
+    "English identities and display translation",
+    "Translation persistence",
+    "One publication",
+    "Source links and serving",
+    "Three layers of truth",
+    "UI iteration and review"
+  ],
+  "SURFACE.md": [
+    "Supported commands",
+    "One computation and publication path",
+    "Target failure isolation",
+    "Helper and publication errors",
+    "Settings and questions"
+  ],
+  "TERMINOLOGY.md": [
+    "Separate generation and reduction",
+    "Local owning context",
+    "Reducer completeness",
+    "Visible comparison scope",
+    "Literal lookup"
+  ]
+}
