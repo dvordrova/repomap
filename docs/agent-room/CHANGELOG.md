@@ -8,6 +8,11 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- A symbol row whose `activation` cell is missing or null settles as
+  `unassessed` instead of refusing the row: python-dotenv's ordinary run
+  lost four rows to `missing "activation" cell` while their `key_symbol`
+  and `outbound` were valid. Only a choice whose options already contain a
+  no-decision value declares such a default.
 - A run stops at the first provider refusal by credentials or balance
   (HTTP 401, 402, 403) with the cause in the console and as the final error,
   instead of walking every remaining stage with a refused window each:

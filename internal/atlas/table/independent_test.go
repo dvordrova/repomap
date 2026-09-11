@@ -133,3 +133,25 @@ func TestIndependentEmptyLabelFallsBackToItsOwnDescription(t *testing.T) {
 		t.Fatalf("blank prose became a label: %+v / %v", result, err)
 	}
 }
+
+func TestIndependentMissingChoiceTakesItsDeclaredNoDecisionValue(t *testing.T) {
+	def := Definition{Stage: "atlas_symbols", Independent: true, Columns: []Column{
+		{Name: "key_symbol", Kind: Choice, Options: []string{"yes", "no"}},
+		{Name: "activation", Kind: Choice, Options: []string{"none", "unassessed", "request"}, Missing: "unassessed"},
+	}}
+	window := Window{Rows: []Row{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}}}
+	result, err := DecodeResult(def, window, []byte(`{"rows":[
+		{"key":"r1","key_symbol":"no"},
+		{"key":"r2","key_symbol":"no","activation":null},
+		{"key":"r3","key_symbol":"yes","activation":"request"},
+		{"key":"r4","activation":"request"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Answers[0]["activation"] != "unassessed" || result.Answers[1]["activation"] != "unassessed" || result.Answers[2]["activation"] != "request" {
+		t.Fatalf("missing or null activation did not settle as unassessed: %+v", result.Answers[:3])
+	}
+	if result.Answers[3] != nil || len(result.Rejections) != 1 || !strings.Contains(result.Rejections[0].Reason, `missing "key_symbol" cell`) {
+		t.Fatalf("a missing choice without a declared no-decision value was accepted: %+v / %+v", result.Answers[3], result.Rejections)
+	}
+}

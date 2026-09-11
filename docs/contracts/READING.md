@@ -62,7 +62,9 @@ new description or selection requests.
   matched values, counts and identities. Rejected independent rows fall back on
   their own deterministic lines and are written to `rejected.jsonl`; valid
   neighbours survive in the original exact-response cache. An entirely refused
-  window is never cached. A sequence cell citing only refs outside its row's options, or nothing at
+  window is never cached. A symbol row whose `activation` is missing or null settles as `unassessed`,
+  the choice that already means no decision; a written choice is validated
+  as before. A sequence cell citing only refs outside its row's options, or nothing at
   all (a provider may send null), is an empty selection and keeps the row's
   other cells; commas separate refs like spaces; exceeding the limit still
   refuses the cell. A response that answers exactly one row per asked row with no key on any

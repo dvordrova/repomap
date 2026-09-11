@@ -157,6 +157,10 @@ func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMe
 			continue
 		}
 		raw, found := cells[column.Name]
+		if (!found || string(raw) == "null") && column.Missing != "" {
+			answer[column.Name] = column.Missing
+			continue
+		}
 		if !found {
 			if column.EmptyFrom != "" {
 				deferred = append(deferred, column)

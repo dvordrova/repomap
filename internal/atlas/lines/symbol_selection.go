@@ -24,7 +24,7 @@ func SymbolSelection(types bool) table.Definition {
 		return def
 	}
 	def.Columns = append(def.Columns,
-		table.Column{Name: "activation", Kind: table.Choice, Options: []string{"none", "unassessed", "command", "request", "interaction", "scheduled", "continuous"}, Note: "supported external activation; unassessed when the evidence cannot establish a role"},
+		table.Column{Name: "activation", Kind: table.Choice, Options: []string{"none", "unassessed", "command", "request", "interaction", "scheduled", "continuous"}, Missing: "unassessed", Note: "supported external activation; unassessed when the evidence cannot establish a role"},
 		table.Column{Name: "outbound", Kind: table.Sequence, OptionsFrom: "call_options", WhenOptionsFrom: "call_options", LimitFrom: "call_count", Note: "evidence for boundary review: communication or an explicitly configured remote client/exporter; none when unsupported"},
 	)
 	return def
