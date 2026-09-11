@@ -56,11 +56,15 @@ Fill only the columns requested by `fill`:
   `queue_consumer`, HTTP sending `http_client`, a remote vendor client `sdk`.
   `other` does not rescue an unsupported relationship. Configuration reads and
   known inbound facts keep their supplied kind.
-- `line`: for a candidate exchange, explain why this component exchanges with
-  that system and what crosses the boundary. For a fixed native observation,
-  explain its supplied kind: what configuration value is read or which request
-  is received, for example. Do not turn a config read into a remote exchange.
-  Describe this observation, not the whole function; preserve uncertainty.
+- `line`: a telegraphic note a newcomer reads in two seconds, at most ten
+  words, no subject: "stores events in PostgreSQL", "signs users in through
+  GitHub", "publishes catalog events to morfeu.events with confirmation".
+  Never narrate the call ("through the codec", "reading the frame into the
+  buffer"), never repeat the callable's name, never qualify inside the note;
+  when an unknown matters, add " · not established: …" after it. For a fixed
+  native observation: which configuration value is read or which request is
+  received. Do not turn a config read into a remote exchange. Describe this
+  observation, not the whole function.
 - `destination`, when requested: a short English role of the other runtime
   system, such as a peer service, trace collector, broker or remote database.
   Use a specific supplied system name when supported. Do not invent a hostname,

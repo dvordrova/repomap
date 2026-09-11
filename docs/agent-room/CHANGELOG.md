@@ -26,11 +26,14 @@ runs instead of growing the entry pages again.
   On the first screen the sixth and later rows of a long group open in
   place ("Развернуть · ещё N") instead of sending the reader to the
   component page ("all 13 → flung me upward").
-- Boundaries prompt v6: the `line` cell is one plain sentence a newcomer
-  understands (what the component gets from or gives to that system, for
-  what purpose of its own), no narration of the call, unknowns in a second
-  "Not established:" sentence. Probe on Morfeu (27 records, same code):
-  average 28 → 11 words; "declareTopology issues an AMQP QueueDeclare on
+- Boundaries prompt v6: the `line` cell is a telegraphic note of at most
+  ten words without a subject ("stores events in PostgreSQL"), no narration
+  of the call, an unknown appended as " · not established: …" only when it
+  matters. Two probes on Morfeu (same code): a one-sentence wording gave
+  average 28 → 11 words, the telegraphic wording 6 words (max 8):
+  "publishes catalog events to morfeu.events with confirmation", "applies
+  pending schema migrations to PostgreSQL", "checks Redis connectivity at
+  startup". With the first wording "declareTopology issues an AMQP QueueDeclare on
   the broker channel to idempotently declare the DLQ … a broker management
   exchange, not a business publish" became "Declares the dead-letter queue
   for failed movie-created events on the broker"; "createDBPool builds the

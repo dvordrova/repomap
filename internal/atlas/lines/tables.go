@@ -20,7 +20,7 @@ const (
 	StageJoints     = "atlas_joints"
 
 	symbolsContract    = "repomap.atlas.symbols.v7"
-	boundariesContract = "repomap.atlas.boundaries.v5"
+	boundariesContract = "repomap.atlas.boundaries.v6"
 	zonesContract      = "repomap.atlas.zones.v1"
 	arrowsContract     = "repomap.atlas.arrows.v1"
 	targetsContract    = "repomap.atlas.targets.v2"
