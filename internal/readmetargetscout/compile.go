@@ -15,7 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 )
 
-const preparationContract = "complete canonical corpus FileID-to-path authority; complete closed prose FileID set; complete current bytes of every tracked regular README and AGENTS.md; aggregate compilation never size-rejected; deterministic guidance-group by file-group product covers every guidance byte against every tracked file through lossless path-component-tree requests; former packing windows never reject an indivisible document or file row; an indivisible prepared request is terminal only after crossing the shared semantic-record envelope; no semantic filtering, truncation, prefix selection, or partial result-v8"
+const preparationContract = "complete canonical corpus FileID-to-path authority restricted to candidate entry files: no prose file and no .claude, .github or .vscode tree; complete current bytes of every tracked regular README and AGENTS.md; aggregate compilation never size-rejected; deterministic guidance-group by file-group product covers every guidance byte against every candidate file through lossless path-component-tree requests; former packing windows never reject an indivisible document or file row; an indivisible prepared request is terminal only after crossing the shared semantic-record envelope; no semantic filtering, truncation, prefix selection, or partial result-v9"
 
 // HasGuidanceFiles is the cheap metadata-only applicability check. Compile
 // repeats the authoritative check while building its exact request.
@@ -34,6 +34,8 @@ func HasGuidanceFiles(repository *corpus.Corpus) bool {
 // Compile captures the complete aggregate evidence authority. It never drops
 // or rejects repository facts merely because their combined encoding is larger
 // than one provider request; Batches creates the exhaustive bounded exchange.
+// Only candidate entry files enter the authority: prose files and the
+// excluded configuration trees can never be the entry the guidance names.
 func Compile(
 	repoName string,
 	repository *corpus.Corpus,
@@ -51,37 +53,36 @@ func Compile(
 	authority := make(map[corpus.FileID]string, len(snapshot.Entries))
 	documents := make([]RequestGuidanceDocument, 0)
 	for _, entry := range snapshot.Entries {
-		authority[entry.ID] = entry.Path
-		kind, ok := guidanceKind(entry.Path)
-		if !ok {
+		if kind, ok := guidanceKind(entry.Path); ok {
+			content, err := repository.ReadFileAll(entry.ID)
+			if err != nil {
+				return Compilation{}, fmt.Errorf("readme target scout: read complete repository guidance %s: %w", entry.ID, err)
+			}
+			if !utf8.Valid(content.Bytes) {
+				return Compilation{}, fmt.Errorf("readme target scout: repository guidance %q is not valid UTF-8; no provider request was made", entry.Path)
+			}
+			documents = append(documents, RequestGuidanceDocument{
+				FileRef: entry.ID, Path: entry.Path, Kind: kind, Content: string(content.Bytes),
+			})
 			continue
 		}
-		content, err := repository.ReadFileAll(entry.ID)
-		if err != nil {
-			return Compilation{}, fmt.Errorf("readme target scout: read complete repository guidance %s: %w", entry.ID, err)
+		if isCandidateEntryPath(entry.Path) {
+			authority[entry.ID] = entry.Path
 		}
-		if !utf8.Valid(content.Bytes) {
-			return Compilation{}, fmt.Errorf("readme target scout: repository guidance %q is not valid UTF-8; no provider request was made", entry.Path)
-		}
-		documents = append(documents, RequestGuidanceDocument{
-			FileRef: entry.ID, Path: entry.Path, Kind: kind, Content: string(content.Bytes),
-		})
 	}
 	if len(documents) == 0 {
-		compilation := Compilation{
-			Version: CompilationVersion, State: StateNotApplicable,
-			Reason: NoGuidanceFiles, corpusRef: repository.Ref(),
-		}
-		compilation.seal = compilationSeal(compilation)
-		return compilation, nil
+		return notApplicableCompilation(repository, NoGuidanceFiles), nil
 	}
-	fileTree, err := buildFileTree(snapshot.Entries)
+	if len(authority) == 0 {
+		return notApplicableCompilation(repository, NoCandidateFiles), nil
+	}
+	fileTree, err := buildFileTree(authorityEntries(authority))
 	if err != nil {
-		return Compilation{}, fmt.Errorf("readme target scout: build complete file tree: %w", err)
+		return Compilation{}, fmt.Errorf("readme target scout: build candidate file tree: %w", err)
 	}
 	request := Request{
-		RepoName: repoName, FileCount: len(snapshot.Entries), FileTree: cloneFileTree(fileTree),
-		ProseFileRefs: canonicalProseFileRefs(authority), GuidanceDocuments: documents,
+		RepoName: repoName, FileCount: len(authority), FileTree: cloneFileTree(fileTree),
+		GuidanceDocuments: documents,
 	}
 	wire, err := json.Marshal(request)
 	if err != nil {
@@ -99,11 +100,19 @@ func Compile(
 	return compilation, nil
 }
 
+func notApplicableCompilation(repository *corpus.Corpus, reason NotApplicableReason) Compilation {
+	compilation := Compilation{
+		Version: CompilationVersion, State: StateNotApplicable,
+		Reason: reason, corpusRef: repository.Ref(),
+	}
+	compilation.seal = compilationSeal(compilation)
+	return compilation
+}
+
 func validateReadyCompilation(compilation Compilation) error {
 	if compilation.Version != CompilationVersion || compilation.State != StateReady || compilation.Reason != "" ||
 		compilation.RequestSHA256 == "" || compilation.corpusRef == "" || len(compilation.Request.GuidanceDocuments) == 0 ||
-		compilation.Request.FileCount != len(compilation.authority) || compilation.Request.FileTree == nil ||
-		compilation.Request.ProseFileRefs == nil {
+		compilation.Request.FileCount != len(compilation.authority) || compilation.Request.FileTree == nil {
 		return fmt.Errorf("readme target scout: invalid ready compilation identity")
 	}
 	if err := validateRepoName(compilation.Request.RepoName); err != nil {
@@ -114,28 +123,31 @@ func validateReadyCompilation(compilation Compilation) error {
 		compilation.Request.FileCount,
 	)
 	if err != nil {
-		return fmt.Errorf("readme target scout: complete file tree: %w", err)
+		return fmt.Errorf("readme target scout: candidate file tree: %w", err)
 	}
 	if len(treeAuthority) != len(compilation.authority) {
-		return fmt.Errorf("readme target scout: complete file tree authority mismatch")
+		return fmt.Errorf("readme target scout: candidate file tree authority mismatch")
 	}
 	for id, filePath := range treeAuthority {
 		if id == "" || validateRepoPath(filePath) != nil || compilation.authority[id] != filePath {
-			return fmt.Errorf("readme target scout: complete file tree authority mismatch")
+			return fmt.Errorf("readme target scout: candidate file tree authority mismatch")
 		}
-	}
-	if !reflect.DeepEqual(compilation.Request.ProseFileRefs, canonicalProseFileRefs(compilation.authority)) {
-		return fmt.Errorf("readme target scout: prose file authority mismatch")
+		if !isCandidateEntryPath(filePath) {
+			return fmt.Errorf("readme target scout: candidate file tree contains a non-candidate path")
+		}
 	}
 	seenDocuments := make(map[corpus.FileID]struct{}, len(compilation.Request.GuidanceDocuments))
 	for _, document := range compilation.Request.GuidanceDocuments {
 		kind, ok := guidanceKind(document.Path)
-		if document.FileRef == "" || compilation.authority[document.FileRef] != document.Path ||
+		if document.FileRef == "" || validateRepoPath(document.Path) != nil ||
 			!ok || kind != document.Kind || !utf8.ValidString(document.Content) {
 			return fmt.Errorf("readme target scout: invalid complete guidance row")
 		}
 		if _, duplicate := seenDocuments[document.FileRef]; duplicate {
 			return fmt.Errorf("readme target scout: duplicate guidance FileID")
+		}
+		if _, candidate := compilation.authority[document.FileRef]; candidate {
+			return fmt.Errorf("readme target scout: guidance row is also a candidate file")
 		}
 		seenDocuments[document.FileRef] = struct{}{}
 	}
@@ -160,35 +172,27 @@ func cloneDictionary(source map[corpus.FileID]string) map[corpus.FileID]string {
 	return result
 }
 
-func compilationSeal(compilation Compilation) string {
-	return sha256Hex([]byte(strings.Join([]string{
-		"readme-target-scout-compilation-v7", compilation.corpusRef,
-		string(compilation.State), string(compilation.Reason), compilation.RequestSHA256,
-	}, "\x00")))
+// authorityEntries lists one exact dictionary in canonical path order for the
+// lossless tree builder.
+func authorityEntries(authority map[corpus.FileID]string) []corpus.Entry {
+	entries := make([]corpus.Entry, 0, len(authority))
+	for fileRef, filePath := range authority {
+		entries = append(entries, corpus.Entry{ID: fileRef, Path: filePath})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Path != entries[j].Path {
+			return entries[i].Path < entries[j].Path
+		}
+		return entries[i].ID < entries[j].ID
+	})
+	return entries
 }
 
-func canonicalProseFileRefs(authority map[corpus.FileID]string) []corpus.FileID {
-	type proseFile struct {
-		ref  corpus.FileID
-		path string
-	}
-	files := make([]proseFile, 0)
-	for fileRef, filePath := range authority {
-		if isProseEvidencePath(filePath) {
-			files = append(files, proseFile{ref: fileRef, path: filePath})
-		}
-	}
-	sort.Slice(files, func(left, right int) bool {
-		if files[left].path != files[right].path {
-			return files[left].path < files[right].path
-		}
-		return files[left].ref < files[right].ref
-	})
-	refs := make([]corpus.FileID, len(files))
-	for index, file := range files {
-		refs[index] = file.ref
-	}
-	return refs
+func compilationSeal(compilation Compilation) string {
+	return sha256Hex([]byte(strings.Join([]string{
+		"readme-target-scout-compilation-v8", compilation.corpusRef,
+		string(compilation.State), string(compilation.Reason), compilation.RequestSHA256,
+	}, "\x00")))
 }
 
 func sha256Hex(value []byte) string {
@@ -211,6 +215,49 @@ func validateRepoPath(value string) error {
 		return fmt.Errorf("invalid repository-relative path")
 	}
 	return nil
+}
+
+// excludedTreeComponents name editor and agent configuration trees. Their
+// files are never launched, built, deployed or imported as a repository
+// product, so they are outside the candidate authority.
+var excludedTreeComponents = map[string]bool{".claude": true, ".github": true, ".vscode": true}
+
+// isCandidateEntryPath reports whether a tracked regular file could be the
+// entry the guidance names: code or a manifest outside prose and outside the
+// excluded configuration trees. It bounds request preparation; it never
+// establishes a role.
+func isCandidateEntryPath(value string) bool {
+	if isProseEvidencePath(value) {
+		return false
+	}
+	for _, component := range strings.Split(value, "/") {
+		if excludedTreeComponents[component] {
+			return false
+		}
+	}
+	return true
+}
+
+func isProseEvidencePath(value string) bool {
+	if isReadmePath(value) {
+		return true
+	}
+	name := strings.ToLower(path.Base(value))
+	for _, prefix := range []string{
+		"license", "copying", "changelog", "changes", "contributing", "code_of_conduct",
+	} {
+		if name == prefix || strings.HasPrefix(name, prefix+".") {
+			return true
+		}
+	}
+	switch strings.ToLower(path.Ext(name)) {
+	case ".md", ".markdown", ".mdown", ".mkd", ".mkdn",
+		".rst", ".rest", ".txt", ".textile", ".rdoc", ".org",
+		".creole", ".mediawiki", ".wiki", ".adoc", ".asciidoc":
+		return true
+	default:
+		return false
+	}
 }
 
 func isReadmePath(value string) bool {

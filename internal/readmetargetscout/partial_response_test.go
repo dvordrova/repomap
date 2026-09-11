@@ -28,13 +28,11 @@ func TestClassifierKeepsGoodHypothesesAndFilesWithExactCachedDiagnostics(t *test
 	}
 	mainID, _ := repository.ID("main.go")
 	toolID, _ := repository.ID("tools.go")
-	raw := []byte(fmt.Sprintf(`[
- {"file_ref":%q,"score":3,"classifications":[
-  {"class":"target_entry","hypotheses":["  Runs\nthe app.  ",42,""],"confidence":1},
-  {"class":"invented","hypotheses":["Do not retain this."]}]},
- {"file_ref":%q,"classifications":[{"class":"support_tool_entry","hypotheses":["Builds assets."]}]},
- {"file_ref":"f999999","classifications":"ignored"}, 7
-]`, mainID, toolID))
+	raw := []byte(fmt.Sprintf(`{"files":[
+ {"file_ref":%q,"score":3,"hypotheses":["  Runs\nthe app.  ",42,""],"confidence":1},
+ {"file_ref":%q,"hypotheses":["Builds assets."]},
+ {"file_ref":"f999999","hypotheses":"ignored"}, 7
+],"notes":"unused"}`, mainID, toolID))
 	provider := &classificationResponseProvider{raw: raw}
 	var events []llm.Event
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir(), Observer: llm.ObserverFunc(func(event llm.Event) error { events = append(events, event); return nil })}
@@ -47,14 +45,14 @@ func TestClassifierKeepsGoodHypothesesAndFilesWithExactCachedDiagnostics(t *test
 			t.Fatalf("independent hypothesis lost or guessed: %v", got)
 		}
 		outcome := execution.Outcomes[0]
-		if outcome.Cached != (run == 1) || len(outcome.ResponseRejections) != 5 || !bytes.Equal(outcome.Response, raw) {
+		if outcome.Cached != (run == 1) || len(outcome.ResponseRejections) != 4 || !bytes.Equal(outcome.Response, raw) {
 			t.Fatalf("exact response/diagnostics: %+v", outcome)
 		}
 		if !reflect.DeepEqual(outcome.Value.AcceptedRowKeys(), []string{string(toolID)}) {
 			t.Fatalf("terms allowed outside a fully accepted file: %v", outcome.Value.AcceptedRowKeys())
 		}
 	}
-	if provider.calls.Load() != 1 || len(events) != 2 || len(events[0].ResponseRejections) != 5 || len(events[1].ResponseRejections) != 5 {
+	if provider.calls.Load() != 1 || len(events) != 2 || len(events[0].ResponseRejections) != 4 || len(events[1].ResponseRejections) != 4 {
 		t.Fatalf("repeated calls/events or lost rejections: %d / %+v", provider.calls.Load(), events)
 	}
 }
@@ -65,15 +63,22 @@ func TestMalformedClassifierDoesNotBlockNativeDiscoveryOrCacheAResult(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &classificationResponseProvider{raw: []byte(`{"wrong":"shape"}`)}
-	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
-	for range 2 {
-		execution, err := Run(t.Context(), executor, provider, compilation)
-		if err != nil || execution.UnavailableBatches != 1 || len(execution.Result) != 0 || len(execution.Result.TargetCandidates()) != 0 || execution.Outcomes[0].Cached {
-			t.Fatalf("bad guidance blocked discovery or invented a target: %+v / %v", execution, err)
-		}
-	}
-	if provider.calls.Load() != 2 {
-		t.Fatal("malformed response was cached as a successful empty classification")
+	for name, raw := range map[string]string{
+		"wrong object": `{"wrong":"shape"}`,
+		"legacy array": `[{"file_ref":"f1","classifications":[{"class":"target_entry","hypotheses":["old shape"]}]}]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			provider := &classificationResponseProvider{raw: []byte(raw)}
+			executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
+			for range 2 {
+				execution, err := Run(t.Context(), executor, provider, compilation)
+				if err != nil || execution.UnavailableBatches != 1 || len(execution.Result) != 0 || len(execution.Result.TargetCandidates()) != 0 || execution.Outcomes[0].Cached {
+					t.Fatalf("bad guidance blocked discovery or invented a target: %+v / %v", execution, err)
+				}
+			}
+			if provider.calls.Load() != 2 {
+				t.Fatal("malformed response was cached as a successful empty classification")
+			}
+		})
 	}
 }

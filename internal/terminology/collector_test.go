@@ -432,6 +432,7 @@ func TestNamedAndNestedRowsCannotMoveRefusedProse(t *testing.T) {
 		{`{"reviews":[{"intent":"purpose","reason":"BadReview","questions":[{"key":"structure","why":"BadNested"}]},{"intent":"structure","reason":"GoodReview"}]}`, "structure"},
 		{`{"summary":"BadSummary","roles":[{"purpose":"BadRole","key":"roles[1]"},{"purpose":"GoodRole"}],"main_flow":{"title":"BadTitle","steps":[]}}`, "roles[1]"},
 		{`{"sources":[{"ref":"e1","text":"BadSource","extra":{"key":"e2","text":"BadNested"}},{"ref":"e2","text":"GoodSource"}]}`, "e2"},
+		{`{"files":[{"file_ref":"f1","hypotheses":["BadEntry"],"extra":{"key":"f2","hypotheses":["BadNested"]}},{"file_ref":"f2","hypotheses":["GoodEntry"]}]}`, "f2"},
 	} {
 		c := NewCollector([]string{"README.md"})
 		provider := c.Wrap(&testProvider{})

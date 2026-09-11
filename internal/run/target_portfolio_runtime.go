@@ -293,7 +293,7 @@ func discoverReadmeFileRolesWithGuidance(
 	}
 	if output != nil {
 		output.Stage("Repository guidance classifier", fmt.Sprintf(
-			"asking the model to classify sparse repository file roles across %d tracked files",
+			"asking the model which of %d candidate files the repository guidance names as entries",
 			compilation.Request.FileCount,
 		))
 	}
@@ -314,7 +314,6 @@ func discoverReadmeFileRolesWithGuidance(
 		output.Stage("Repository guidance classifier", fmt.Sprintf("%d requests supplied no usable file classifications; continuing with accepted guidance and native target inventories", execution.UnavailableBatches))
 	}
 	if output != nil {
-		counts := readmeRoleCounts(result)
 		source := "live"
 		requestBytes, responseBytes, latency := 0, 0, int64(0)
 		cached := 0
@@ -334,33 +333,15 @@ func discoverReadmeFileRolesWithGuidance(
 		}
 		output.Stage(
 			"Repository guidance classifier",
-			fmt.Sprintf("classified files: %d", len(result)),
+			fmt.Sprintf("guidance-named entry files: %d", len(result)),
 			formatRunOutputWallDuration(time.Since(started)),
 			fmt.Sprintf(
 				"%s result: %d requests, %d request bytes, %d response bytes, %d ms",
 				source, len(execution.Outcomes), requestBytes, responseBytes, latency,
 			),
-			fmt.Sprintf(
-				"roles: target %d, example %d, test %d, support tool %d, config %d, database %d, client %d, docs %d, deployment %d, contract %d",
-				counts[readmetargetscout.ClassTargetEntry], counts[readmetargetscout.ClassExampleEntry],
-				counts[readmetargetscout.ClassTestEntry], counts[readmetargetscout.ClassSupportToolEntry],
-				counts[readmetargetscout.ClassConfiguration], counts[readmetargetscout.ClassDatabaseAsset],
-				counts[readmetargetscout.ClassClientEntry], counts[readmetargetscout.ClassDocumentation],
-				counts[readmetargetscout.ClassDeployment], counts[readmetargetscout.ClassInterfaceContract],
-			),
 		)
 	}
 	return readmeFileRoleDiscovery{Roles: result, Guidance: guidance}, nil
-}
-
-func readmeRoleCounts(result readmetargetscout.Result) map[readmetargetscout.FileClass]int {
-	counts := make(map[readmetargetscout.FileClass]int)
-	for _, file := range result {
-		for _, classification := range file.Classifications {
-			counts[classification.Class]++
-		}
-	}
-	return counts
 }
 
 func compileReadmeRoleLog(
@@ -861,21 +842,7 @@ func validateReadmeRoleLog(raw []byte) error {
 }
 
 func validReadmeRoleClass(value readmetargetscout.FileClass) bool {
-	switch value {
-	case readmetargetscout.ClassTargetEntry,
-		readmetargetscout.ClassExampleEntry,
-		readmetargetscout.ClassTestEntry,
-		readmetargetscout.ClassSupportToolEntry,
-		readmetargetscout.ClassConfiguration,
-		readmetargetscout.ClassDatabaseAsset,
-		readmetargetscout.ClassClientEntry,
-		readmetargetscout.ClassDocumentation,
-		readmetargetscout.ClassDeployment,
-		readmetargetscout.ClassInterfaceContract:
-		return true
-	default:
-		return false
-	}
+	return value == readmetargetscout.ClassTargetEntry
 }
 
 func targetPortfolioDiagnostic(outcome targetPortfolioRunOutcome) semanticStageDiagnostic {

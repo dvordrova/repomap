@@ -483,19 +483,18 @@ func resultTextByRow(result any, sourceRows map[string]bool) map[string][]string
 		}
 	}
 	switch value := result.(type) {
-	case []any:
-		// Repository-guidance classifications use one file_ref per item.
-		walkNamedRows(value, "file_ref")
 	case map[string]any:
 		_, reviews := value["reviews"].([]any)
 		_, sources := value["sources"].([]any)
+		// Repository-guidance entry files use one file_ref per row.
+		_, files := value["files"].([]any)
 		orientation := false
 		for _, field := range []string{"summary_refs", "roles", "run_recipe", "main_flow"} {
 			if _, found := value[field]; found {
 				orientation = true
 			}
 		}
-		if _, keyed := value["key"]; keyed && !reviews && !sources && !orientation {
+		if _, keyed := value["key"]; keyed && !reviews && !sources && !files && !orientation {
 			walk(value, "", false)
 			break
 		}
@@ -523,6 +522,9 @@ func resultTextByRow(result any, sourceRows map[string]bool) map[string][]string
 					continue
 				case "sources":
 					walkNamedRows(values, "ref")
+					continue
+				case "files":
+					walkNamedRows(values, "file_ref")
 					continue
 				}
 			}

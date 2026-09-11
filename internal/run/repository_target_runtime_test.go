@@ -854,12 +854,10 @@ app = Whatever()
 		t.Fatalf("resolver control target = %#v, want one module-execution root", want)
 	}
 
-	readmeResponse, err := json.Marshal([]any{map[string]any{
-		"file_ref": mainRef,
-		"classifications": []any{map[string]any{
-			"class": "target_entry", "hypotheses": []string{"README names this module as the service start"},
-		}},
-	}})
+	readmeResponse, err := json.Marshal(map[string]any{"files": []any{map[string]any{
+		"file_ref":   mainRef,
+		"hypotheses": []string{"README names this module as the service start"},
+	}}})
 	if err != nil {
 		t.Fatal(err)
 	}
