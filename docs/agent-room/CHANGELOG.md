@@ -8,6 +8,19 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- A "Where this service connects" section with more than five destinations
+  is compacted to five rows and an "All N" disclosure. The compaction removed
+  every `ul.operation-catalog` inside the section, which included the record
+  list nested inside each destination row, so every "Records · N" disclosure
+  opened to nothing (the owner's service: "Kubernetes API server · 156"). Only
+  the group's own lists and disclosure move now; a destination row keeps its
+  records, and the first-screen copy of the row inherits them. Reproduced on
+  the real script with a synthetic six-destination section in the browser
+  (six disclosures, zero record lists before; six lists and twelve records
+  after). Node regression: `TestCatalogDisclosureKeepsDestinationRecords`
+  fails on the previous script. Reports with at most five destinations were
+  never affected, which is why the four small-repository reports checked
+  earlier today did not show it.
 - A symbol row whose `activation` cell is missing or null settles as
   `unassessed` instead of refusing the row: python-dotenv's ordinary run
   lost four rows to `missing "activation" cell` while their `key_symbol`

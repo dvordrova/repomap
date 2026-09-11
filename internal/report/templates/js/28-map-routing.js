@@ -6,11 +6,14 @@ document.querySelectorAll('[data-input-group],[data-integration-group]').forEach
   var sources=new Set(items.map(function(item){return item.dataset.sourceKind||'fact';}));
   if(sources.size>1)items.forEach(function(item){var label=document.createElement('span');label.className='input-source';label.textContent=rmT(item.dataset.sourceKind==='model'?'Model interpretation':'Observed in source');item.appendChild(label);});
   if(items.length<=5)return;
-  var lists=Array.from(group.querySelectorAll('ul.operation-catalog,ul.route-catalog'));
+  // Only the group's own lists move to the preview and the remainder. A
+  // destination group keeps its record list nested inside its own row.
+  var own=function(node){return !node.closest('[data-input-item],[data-integration-item]');};
+  var lists=Array.from(group.querySelectorAll('ul.operation-catalog,ul.route-catalog')).filter(own);
   var preview=document.createElement('ul');preview.className='plain operation-catalog';
   var rest=document.createElement('ul');rest.className=preview.className;
   items.forEach(function(item,index){(index<5?preview:rest).appendChild(item);});
-  lists.forEach(function(list){list.remove();});group.querySelectorAll('.input-more').forEach(function(more){more.remove();});
+  lists.forEach(function(list){list.remove();});group.querySelectorAll('.input-more').forEach(function(more){if(own(more))more.remove();});
   group.appendChild(preview);
   var more=document.createElement('details');more.className='input-more';
   var summary=document.createElement('summary');summary.textContent=rmT('All {0} →',items.length);
