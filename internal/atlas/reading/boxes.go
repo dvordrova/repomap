@@ -377,6 +377,13 @@ func (r *reader) readArrows(ctx context.Context) error {
 			if !arrow.drawn || !r.boxes[arrow.from].open || !r.boxes[arrow.to].open {
 				continue
 			}
+			// An arrow made only of import edges has no witness call to
+			// describe; asked anyway, the model invents one (Morfeu arrows
+			// r7 and r10 became "store or fetch cached data"). Such an
+			// arrow keeps its fallback sentence and costs no row.
+			if len(arrow.witnesses) == 0 {
+				continue
+			}
 			key := arrow.from + "\x00" + arrow.to
 			if _, ok := seen[key]; ok {
 				continue

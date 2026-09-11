@@ -369,8 +369,9 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 		}
 	}
 	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "*.input.ref.json"))
-	// three directory rounds, one independent file round, one arrow window
-	if len(requests) != 3+1+1 {
+	// three directory rounds, one independent file round; the one arrow has
+	// no witness call and takes its fallback sentence without a window
+	if len(requests) != 3+1 {
 		t.Fatalf("request files: %d", len(requests))
 	}
 	if err := atlas.Validate(result.Atlas); err != nil {
