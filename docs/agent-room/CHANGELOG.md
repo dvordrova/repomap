@@ -8,6 +8,12 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The console now says when a refused request is partitioned: after the
+  WARN for a provider resource refusal, the answer, question and learn stages
+  print a `partitioned` state with the number of questions or evidence groups
+  and the number of smaller requests that follow. The owner could not tell a
+  split from a lost window; `tables.md` and `rejected.jsonl` recorded it, the
+  console did not.
 - A Go module library whose only consumer is one standalone executable is
   folded into that executable. An owner's service with `cmd/app` and
   `internal/app` (plus exported packages that make the module a library

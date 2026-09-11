@@ -73,6 +73,9 @@ func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionC
 		} else if exchange.Outcome.RequestBytes > 0 {
 			use.Live++
 		}
+		if exchange.Superseded && r.opts.State != nil {
+			r.opts.State("Question source selection", "partitioned", fmt.Sprintf("the provider refused %d questions with %d evidence groups in one request by resources; complete partitions follow", len(exchange.QuestionIndexes), len(exchange.ChunkIndexes)))
+		}
 		if exchange.Err != nil && !exchange.Superseded {
 			use.Rejected++
 			responseRef := ""

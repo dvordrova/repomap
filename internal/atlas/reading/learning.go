@@ -527,6 +527,9 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 					return err
 				}
 				partitions.split[current.Root] = true
+				if r.opts.State != nil {
+					r.opts.State(stageLearn, "partitioned", fmt.Sprintf("window %d was refused by resources; the complete evidence continues in %d partitions", windowIndex, len(children)))
+				}
 				start := current.Start
 				for _, child := range children {
 					end := start + len(child.Evidence)

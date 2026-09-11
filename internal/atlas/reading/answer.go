@@ -144,6 +144,9 @@ func (r *reader) readAnswers(ctx context.Context) error {
 					next = append(next, prepared...)
 				}
 				superseded = true
+				if r.opts.State != nil {
+					r.opts.State(def.Stage, "partitioned", fmt.Sprintf("the provider refused %d questions in one request by resources; the complete input continues in %d smaller requests", len(window.parts), len(children)))
+				}
 			}
 			if err := r.writeAnswerWindow(def, window, outcome, failure, superseded); err != nil {
 				return err
