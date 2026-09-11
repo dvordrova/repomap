@@ -424,3 +424,18 @@ func TestRequestDoesNotReplaceUnencodableEvidenceWithNull(t *testing.T) {
 		}
 	}
 }
+
+func TestChoiceWithOnlyUnknownAcceptsAnyAnswerAsUnknown(t *testing.T) {
+	column := Column{Name: "address", Kind: Choice, OptionsFrom: "address_options"}
+	only := Row{Fields: []Field{{Name: "address_options", Value: []string{"unknown"}}}}
+	if got, err := normalizeCell(column, only, "{param}/health"); err != nil || got != "unknown" {
+		t.Fatalf("the only possible address was refused: %q / %v", got, err)
+	}
+	offered := Row{Fields: []Field{{Name: "address_options", Value: []string{"a1", "unknown"}}}}
+	if _, err := normalizeCell(column, offered, "{param}/health"); err == nil || !strings.Contains(err.Error(), "not one of the options") {
+		t.Fatalf("a copied path replaced an offered address ref: %v", err)
+	}
+	if got, err := normalizeCell(column, offered, "a1"); err != nil || got != "a1" {
+		t.Fatalf("an offered ref was refused: %q / %v", got, err)
+	}
+}

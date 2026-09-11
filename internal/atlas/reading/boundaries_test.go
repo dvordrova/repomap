@@ -75,7 +75,9 @@ func TestBoundaryReviewOwnsRuntimeRelationshipsAndKeepsIndependentRows(t *testin
 				row["decision"] = "unassessed"
 				row["line"] = nil
 			case "bad":
-				row["address"] = "a999"
+				// An invented kind still refuses the row; an invented address
+				// ref alone would now settle as unknown.
+				row["kind"], row["address"] = "teleport", "a999"
 			}
 		}
 	}

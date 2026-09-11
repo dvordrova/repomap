@@ -18,6 +18,11 @@ runs instead of growing the entry pages again.
 - A one-row independent window accepts its only answered row without a key:
   seven single-question answer windows of the same Freqtrade run were refused
   as `response row has no string key` and their answers lost.
+- A closed choice whose only option is `unknown` accepts any answer as
+  `unknown`. Freqtrade `20260911-040254` refused 27 outgoing boundary rows
+  (7 whole windows) because the model copied the observed path into
+  `address` where `address_options` was `["unknown"]`; their kind, line and
+  destination were lost with them. An offered `a*` ref still has to be chosen.
 - Restoring an empty selected file set no longer fails a run: a Go repository
   whose only Python file is a test script (air) has a Python catalog but no
   required Python target. Both adapter restorers return nothing for an empty

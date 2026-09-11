@@ -472,6 +472,13 @@ func normalizeCell(column Column, row Row, cell string) (string, error) {
 				return option, nil
 			}
 		}
+		// A closed choice whose only option is unknown has nothing else to
+		// choose: any other answer establishes nothing and is unknown. An
+		// outgoing candidate without an a* address catalogue is the usual
+		// case; the model copies the observed path into the address cell.
+		if column.Free == "" && len(options) == 1 && options[0] == "unknown" {
+			return "unknown", nil
+		}
 		// A cut answer that begins exactly one option is that option: the
 		// model wrote "Utilities and" for "Utilities and configuration".
 		if len(text) >= 4 {
