@@ -2,6 +2,7 @@ package orientation
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -307,13 +308,53 @@ func (builder *requestBuilder) claims() []claimWire {
 }
 
 // orderedIndexes lists the GroupsIndexes in facts-target order so refs do not
-// depend on the caller's slice order.
+// depend on the caller's slice order; targets without a ref follow by their
+// own identity.
 func (builder *requestBuilder) orderedIndexes() []groupindex.Index {
 	indexes := append([]groupindex.Index(nil), builder.input.Groups...)
 	sort.SliceStable(indexes, func(i, j int) bool {
-		return refOrdinal(builder.programRefs[indexes[i].Target.ID]) < refOrdinal(builder.programRefs[indexes[j].Target.ID])
+		a, b := refOrdinal(builder.programRefs[indexes[i].Target.ID]), refOrdinal(builder.programRefs[indexes[j].Target.ID])
+		if a != b {
+			return a < b
+		}
+		return indexes[i].Target.ID < indexes[j].Target.ID
 	})
 	return indexes
+}
+
+// orderedGroups fixes the order in which one index's groups and their
+// members receive g* and s* refs. The key is what the graph settled: the
+// sorted member subjects, then lane, title, summary and ID as tie-breaks.
+// A group's ID hashes its lane and prose as well, so the index's own ID
+// order moves every later group, and every member ref inside it, when one
+// group's lane or wording changes: Morfeu builds 20260911-110335 and
+// 20260911-152759 differ only in "Catalog feature" being dependencies or
+// core, yet g5 named different groups and the same five cited members
+// carried different s* refs. Member order likewise never depends on how
+// the caller listed them.
+func orderedGroups(groups []groupindex.Group) []groupindex.Group {
+	ordered := make([]groupindex.Group, 0, len(groups))
+	for _, group := range groups {
+		group.MemberSubjectIDs = slices.Sorted(slices.Values(group.MemberSubjectIDs))
+		ordered = append(ordered, group)
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		a, b := ordered[i], ordered[j]
+		if c := slices.Compare(a.MemberSubjectIDs, b.MemberSubjectIDs); c != 0 {
+			return c < 0
+		}
+		if a.Lane != b.Lane {
+			return a.Lane < b.Lane
+		}
+		if a.Title != b.Title {
+			return a.Title < b.Title
+		}
+		if a.Summary != b.Summary {
+			return a.Summary < b.Summary
+		}
+		return a.ID < b.ID
+	})
+	return ordered
 }
 
 func (builder *requestBuilder) groups(index groupindex.Index) []groupWire {
@@ -323,7 +364,7 @@ func (builder *requestBuilder) groups(index groupindex.Index) []groupWire {
 		subjects[subject.ID] = subject
 	}
 	rows := make([]groupWire, 0, len(index.Groups))
-	for _, group := range index.Groups {
+	for _, group := range orderedGroups(index.Groups) {
 		ref := "g" + strconv.Itoa(len(builder.groupRefs)+1)
 		builder.groupRefs[groupKey{targetID: index.Target.ID, groupID: group.ID}] = ref
 		rows = append(rows, groupWire{
@@ -396,6 +437,24 @@ func (builder *requestBuilder) connections(index groupindex.Index) ([]connection
 			From: from, To: to, Kind: connection.SemanticKind, Label: connection.Label, Summary: connection.Summary,
 		})
 	}
+	// Connections carry no refs of their own; their order follows the refs
+	// they cite, not the caller's slice.
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		if refOrdinal(a.From) != refOrdinal(b.From) {
+			return refOrdinal(a.From) < refOrdinal(b.From)
+		}
+		if refOrdinal(a.To) != refOrdinal(b.To) {
+			return refOrdinal(a.To) < refOrdinal(b.To)
+		}
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		if a.Label != b.Label {
+			return a.Label < b.Label
+		}
+		return a.Summary < b.Summary
+	})
 	return rows, nil
 }
 

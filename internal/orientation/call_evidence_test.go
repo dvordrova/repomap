@@ -16,8 +16,10 @@ func TestOrientationKeepsLateGroupMemberAndItsWorkerEvidence(t *testing.T) {
 	index := &fixture.input.Groups[0]
 	group := &index.Groups[0]
 	group.MemberSubjectIDs = nil
+	// Members are listed in subject order, as a sealed index stores them;
+	// zero padding keeps the late worker last.
 	for i := 0; i < 25; i++ {
-		id := fmt.Sprintf("local-member-%d", i)
+		id := fmt.Sprintf("local-member-%02d", i)
 		name := fmt.Sprintf("Handler%d", i)
 		if i == 24 {
 			name = "ConsumeNotifications"
