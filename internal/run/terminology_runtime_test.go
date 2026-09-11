@@ -74,7 +74,7 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 			if !strings.Contains(strings.Join(row.Text, " "), "OHLCV") {
 				continue
 			}
-			terms = append(terms, map[string]any{"name": "OHLCV", "explanation": "The named group of market-data values described here.", "rows": []string{row.Ref}})
+			terms = append(terms, map[string]any{"name": "OHLCV", "kind": "acronym", "explanation": "The named group of market-data values described here.", "rows": []string{row.Ref}})
 		}
 		raw, err := json.Marshal(map[string]any{"terms": terms})
 		return llm.Completion{Response: raw, ChoiceCount: 1, FinishReason: llm.FinishStop, Metrics: llm.Metrics{Attempts: 1}}, err

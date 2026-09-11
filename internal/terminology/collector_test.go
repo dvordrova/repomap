@@ -108,7 +108,7 @@ func TestSeparateGlossaryKeepsAcceptedRowsMainOriginsAndWarmCache(t *testing.T) 
 		if strings.Contains(user, "BadTerm") {
 			t.Fatal("refused prose entered glossary")
 		}
-		return completed(`{"terms":[{"name":"OHLCV","explanation":"Open, high, low, close and volume market values.","rows":["p1"]}]}`)
+		return completed(`{"terms":[{"name":"OHLCV","kind":"acronym","explanation":"Open, high, low, close and volume market values.","rows":["p1"]}]}`)
 	}
 	call := llm.Call[acceptedRows]{State: []byte(`{"contract":"test.rows.v1"}`), Limits: llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 16000}, Prompt: llm.Prompt{User: `{"rows":[{"key":"r1","path":"api.py"},{"key":"r2","path":"bad.py"}]}`, ResponseExample: `{"rows":[{"key":"r1","line":"<computed>"}]}`}}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
@@ -213,9 +213,9 @@ func TestGlossaryReplayUsesUpdatedAcceptedProseAndOriginalRequestOrigin(t *testi
 			return completed(main)
 		}
 		if strings.Contains(user, "Beta") {
-			return completed(`{"terms":[{"name":"Beta","explanation":"The updated concept.","rows":["p1"]}]}`)
+			return completed(`{"terms":[{"name":"Beta","kind":"domain","explanation":"The updated concept.","rows":["p1"]}]}`)
 		}
-		return completed(`{"terms":[{"name":"Alpha","explanation":"The original concept.","rows":["p1"]}]}`)
+		return completed(`{"terms":[{"name":"Alpha","kind":"domain","explanation":"The original concept.","rows":["p1"]}]}`)
 	}
 	call := llm.Call[acceptedRows]{State: []byte(`{"contract":"replay.prose.v1"}`), Limits: llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 16000}, Prompt: llm.Prompt{User: `{"rows":[{"key":"r1","path":"api.py"}]}`, ResponseExample: `{"rows":[{"key":"r1","line":"<computed>"}]}`}}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
@@ -310,7 +310,7 @@ func TestOptionalOutputFailureSplitsCompleteProseAndKeepsSibling(t *testing.T) {
 		}
 		if strings.Contains(user, "Alpha") {
 			seen.Store("Alpha", true)
-			return completed(`{"terms":[{"name":"Alpha","explanation":"The first concept.","rows":["p1"]}]}`)
+			return completed(`{"terms":[{"name":"Alpha","kind":"domain","explanation":"The first concept.","rows":["p1"]}]}`)
 		}
 		seen.Store("Beta", true)
 		return completed(`{"terms":[`)
@@ -330,7 +330,7 @@ func TestTermsRequireExactOccurrenceAndScopedSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := call.DecodeValidate([]byte(`{"terms":[{"name":"Matcher","explanation":"A configurable comparison concept.","rows":["p1","p1","p999"]},{"name":"Storage","explanation":"Wrong source.","rows":["p1"]},{"name":"Missing","explanation":"Not in prose.","rows":["p2"]},{"name":"Matcher","explanation":"A different meaning.","rows":["p1"]}]}`))
+	got, err := call.DecodeValidate([]byte(`{"terms":[{"name":"Matcher","kind":"domain","explanation":"A configurable comparison concept.","rows":["p1","p1","p999"]},{"name":"Storage","kind":"domain","explanation":"Wrong source.","rows":["p1"]},{"name":"Missing","kind":"domain","explanation":"Not in prose.","rows":["p2"]},{"name":"Matcher","kind":"domain","explanation":"A different meaning.","rows":["p1"]}]}`))
 	if err != nil || len(got.Terms) != 2 || len(got.Rejections) != 2 || len(got.Terms[0].sources) != 1 {
 		t.Fatalf("metadata authority: %+v %v", got, err)
 	}
@@ -364,7 +364,7 @@ func TestGenerationSelectsProseAndRestoresEveryOriginalSourceAndOrigin(t *testin
 		strings.Contains(call.Prompt.User, "source_options") || strings.Contains(call.Prompt.User, `"g1"`) || strings.Contains(call.Prompt.ResponseExample, `"sources"`) {
 		t.Fatalf("generation retained competing source namespace: %s / %s", call.Prompt.User, call.Prompt.ResponseExample)
 	}
-	got, err := call.DecodeValidate([]byte(`{"terms":[{"name":"OTLP trace collector","explanation":"The configured trace destination.","rows":["p2","p1","p2","p3","g1"]},{"name":"Unrelated","explanation":"Legacy source refs must not be repaired.","sources":["g3"]}]}`))
+	got, err := call.DecodeValidate([]byte(`{"terms":[{"name":"OTLP trace collector","kind":"protocol","explanation":"The configured trace destination.","rows":["p2","p1","p2","p3","g1"]},{"name":"Unrelated","kind":"domain","explanation":"Legacy source refs must not be repaired.","sources":["g3"]}]}`))
 	if err != nil || len(got.Terms) != 1 || len(got.Rejections) != 2 {
 		t.Fatalf("closed prose selection: %+v %v", got, err)
 	}
@@ -538,5 +538,52 @@ func TestUnicodePhrasesAndScriptBoundaries(t *testing.T) {
 		if got := mentionsTerm(test.text, test.name); got != test.want {
 			t.Errorf("%q in %q: %v", test.name, test.text, got)
 		}
+	}
+}
+
+func TestIdentifierTermsAreAcceptedCountedAndNotPublished(t *testing.T) {
+	call, err := generationCall([]proseSource{{Texts: []string{"Set RABBITMQ_URL before the OHLCV import."}, Sources: []Source{{Path: "a.py"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(call.Prompt.ResponseExample, `"kind"`) {
+		t.Fatalf("response example has no kind cell: %s", call.Prompt.ResponseExample)
+	}
+	got, err := call.DecodeValidate([]byte(`{"terms":[
+		{"name":"RABBITMQ_URL","kind":"identifier","explanation":"The broker address variable.","rows":["p1"]},
+		{"name":"OHLCV","kind":"acronym","explanation":"Open, high, low, close and volume.","rows":["p1"]},
+		{"name":"import","kind":"verb","explanation":"An unknown kind.","rows":["p1"]},
+		{"name":"OHLCV","explanation":"No kind at all.","rows":["p1"]}]}`))
+	if err != nil || len(got.Terms) != 1 || got.Terms[0].candidate.Name != "OHLCV" || got.Terms[0].kind != KindAcronym {
+		t.Fatalf("published terms: %+v %v", got, err)
+	}
+	byKind := make(map[string]llm.ResponseRejection)
+	for _, rejection := range got.Rejections {
+		byKind[rejection.Kind+"/"+rejection.Reason] = rejection
+	}
+	omitted := byKind["glossary_identifier_omitted/identifier terms are not published"]
+	if len(got.Rejections) != 3 || omitted.Count != 1 || !reflect.DeepEqual(omitted.Samples, []string{"terms[0]"}) ||
+		byKind["glossary_term_rejected/unknown optional term kind"].Count != 1 ||
+		byKind["glossary_term_rejected/invalid optional term shape"].Count != 1 {
+		t.Fatalf("journal: %+v", got.Rejections)
+	}
+
+	only, err := call.DecodeValidate([]byte(`{"terms":[{"name":"RABBITMQ_URL","kind":"identifier","explanation":"The broker address variable.","rows":["p1"]}]}`))
+	if err != nil || len(only.Terms) != 0 || len(only.Rejections) != 1 || only.Rejections[0].Kind != "glossary_identifier_omitted" {
+		t.Fatalf("an all-identifier window must be accepted and publish nothing: %+v %v", only, err)
+	}
+	if _, err := call.DecodeValidate([]byte(`{"terms":[{"name":"OHLCV","explanation":"No kind at all.","rows":["p1"]}]}`)); err == nil {
+		t.Fatal("a window whose only term has no kind was accepted")
+	}
+}
+
+func TestGeneratePromptDefinesEveryKindOnce(t *testing.T) {
+	for _, kind := range []TermKind{KindAcronym, KindDomain, KindProtocol, KindFormat, KindIdentifier} {
+		if strings.Count(generatePrompt, "- "+string(kind)+":") != 1 {
+			t.Fatalf("generate prompt does not define %q exactly once", kind)
+		}
+	}
+	if !strings.Contains(generatePrompt, "choose exactly one kind") {
+		t.Fatal("generate prompt does not ask for one closed kind")
 	}
 }

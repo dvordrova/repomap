@@ -297,11 +297,13 @@ func (c *Collector) requestContext(local []byte) (requestContext, error) {
 
 type termWire struct {
 	Name        *string   `json:"name"`
+	Kind        *string   `json:"kind"`
 	Explanation *string   `json:"explanation"`
 	Rows        []*string `json:"rows"`
 }
 type validatedTerm struct {
 	candidate Candidate
+	kind      TermKind
 	sources   []Source
 	rows      []string
 }

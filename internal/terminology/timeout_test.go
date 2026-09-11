@@ -51,7 +51,7 @@ func TestGlossaryClientTimeoutPreservesOptionalWorkButRunCancellationAborts(t *t
 							if err != nil {
 								t.Fatal(err)
 							}
-							prepare(call.Prompt, call.Limits, []string{"length", `{"terms":[{"name":"Alpha","explanation":"Accepted sibling definition.","rows":["p1"]}]}`, "timeout"}[i])
+							prepare(call.Prompt, call.Limits, []string{"length", `{"terms":[{"name":"Alpha","kind":"domain","explanation":"Accepted sibling definition.","rows":["p1"]}]}`, "timeout"}[i])
 						}
 						collector := recoveryCollector(items)
 						run = func(ctx context.Context, executor llm.Executor) error {
