@@ -1,6 +1,7 @@
 package surfacediscovery
 
 import (
+	"strings"
 	"fmt"
 	"go/token"
 	"go/types"
@@ -107,6 +108,30 @@ func (result *dynamicValueSummary) assign(function *ssa.Function, location godyn
 	result.assignments[function][location] = struct{}{}
 }
 
+// wrapperTarget returns the method a synthetic bound method wrapper or thunk
+// delegates to: the closure made for a method value such as s.handleList,
+// or a method expression such as (*Server).handleList. A handler registered
+// that way is then the method itself, not a wrapper no repository package
+// owns; before this, mux.HandleFunc("/items", s.handleList) left the route
+// without a handler and the handler without a route. Other functions return
+// unchanged, as does a wrapper around an interface method, whose tail call
+// has no static callee.
+func wrapperTarget(function *ssa.Function) *ssa.Function {
+	if function == nil || !(strings.HasPrefix(function.Synthetic, "bound method wrapper") || strings.HasPrefix(function.Synthetic, "thunk")) {
+		return function
+	}
+	for _, block := range function.Blocks {
+		for _, instruction := range block.Instrs {
+			if call, ok := instruction.(*ssa.Call); ok {
+				if callee := call.Common().StaticCallee(); callee != nil {
+					return callee
+				}
+			}
+		}
+	}
+	return function
+}
+
 func (r *dynamicValueResolver) functionValue(value ssa.Value, throughFlow bool) dynamicValueSummary {
 	key := dynamicValueKey{value, throughFlow}
 	if result, done := r.start(key); done {
@@ -119,14 +144,14 @@ func (r *dynamicValueResolver) functionValue(value ssa.Value, throughFlow bool) 
 		if throughFlow {
 			evidence = godynamichandoff.EvidenceUniqueValueFlow
 		}
-		result = dynamicValueSummary{functions: map[*ssa.Function]godynamichandoff.CandidateEvidence{current: evidence}}
+		result = dynamicValueSummary{functions: map[*ssa.Function]godynamichandoff.CandidateEvidence{wrapperTarget(current): evidence}}
 	case *ssa.MakeClosure:
 		if function, ok := current.Fn.(*ssa.Function); ok {
 			evidence := godynamichandoff.EvidenceClosureValue
 			if throughFlow {
 				evidence = godynamichandoff.EvidenceUniqueValueFlow
 			}
-			result = dynamicValueSummary{functions: map[*ssa.Function]godynamichandoff.CandidateEvidence{function: evidence}}
+			result = dynamicValueSummary{functions: map[*ssa.Function]godynamichandoff.CandidateEvidence{wrapperTarget(function): evidence}}
 		}
 	case *ssa.Phi:
 		if len(current.Edges) > 0 {

@@ -22,6 +22,14 @@ func assertGoMethodArgumentExpressions(t *testing.T, index programindex.Index, g
 		t.Fatal(err)
 	}
 	sourceLines := strings.Split(string(source), "\n")
+	// A method value names its method exactly: app.first is the method first
+	// with app as its receiver, not an execution of it. The written expression
+	// and its order survive beside that identity.
+	methods := map[string]string{
+		"app.first":    programIndexObjectNamed(t, index, programindex.ObjectMethod, "first", path).ID,
+		"app.second":   programIndexObjectNamed(t, index, programindex.ObjectMethod, "second", path).ID,
+		"(app.second)": programIndexObjectNamed(t, index, programindex.ObjectMethod, "second", path).ID,
+	}
 	var sequences [][]string
 	var sameLineColumns []int
 	negative := 0
@@ -44,8 +52,8 @@ func assertGoMethodArgumentExpressions(t *testing.T, index programindex.Index, g
 					t.Fatalf("written method value lost its position/source: %+v", argument)
 				}
 				written := sourceLines[origin.Anchor.Line-1][origin.Anchor.Column-1:]
-				if !strings.HasPrefix(written, origin.Text) || len(argument.ObjectIDs) != 0 || argument.Resolution != programindex.ResolutionUnresolved {
-					t.Fatalf("source expression changed or promoted an unresolved wrapper: %+v", argument)
+				if !strings.HasPrefix(written, origin.Text) || len(argument.ObjectIDs) != 1 || argument.ObjectIDs[0] != methods[origin.Text] || argument.Resolution != programindex.ResolutionExact || argument.ObjectsOmitted != 0 {
+					t.Fatalf("source expression changed or the method value lost its exact method: %+v", argument)
 				}
 				sequence = append(sequence, origin.Text)
 			}

@@ -402,3 +402,39 @@ func BenchmarkDynamicValueDiamonds(b *testing.B) {
 		}
 	}
 }
+
+func TestMethodValueHandlersResolveToTheirMethods(t *testing.T) {
+	a, pkg := resolutionTestAnalyzer(t, `package fixture
+type Server struct{}
+func (s *Server) handleList(w int)   {}
+func (s *Server) handleCreate(w int) {}
+type Handler func(int)
+func register(path string, handler Handler) {}
+func main() {
+	s := &Server{}
+	register("/items", s.handleList)
+	register("/items/create", Handler(s.handleCreate))
+}`)
+	want := map[string]string{"/items": "handleList", "/items/create": "handleCreate"}
+	seen := 0
+	for _, block := range pkg.Func("main").Blocks {
+		for _, instruction := range block.Instrs {
+			call, ok := instruction.(*ssa.Call)
+			if !ok || call.Common().StaticCallee() == nil || call.Common().StaticCallee().Name() != "register" {
+				continue
+			}
+			path := strings.Trim(call.Common().Args[0].(*ssa.Const).Value.String(), `"`)
+			candidates, unresolved, err := dynamicFunctionCandidateFacts(a, call.Common().Args[1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(candidates) != 1 || unresolved != 0 || candidates[0].function.Name() != want[path] || candidates[0].function.Synthetic != "" {
+				t.Fatalf("%s: method value did not resolve to its method: %+v unresolved=%d", path, candidates, unresolved)
+			}
+			seen++
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("registrations seen: %d", seen)
+	}
+}
