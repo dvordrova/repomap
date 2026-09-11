@@ -322,6 +322,11 @@ Replay is revalidated against that complete original window before reuse.
 Adding or reordering questions reuses existing decisions; canonical ownership
 is restored from the current graph. This implementation is under ordinary
 quality acceptance; its measured drafts and limitations are in CURRENT.md.
+A retrieval row states each fact once: a unit's `heading_path` lists only its
+parent section titles, `anchor_path` appears only when it differs from the
+row's path, and a type member that is itself a unit of the same chunk is
+referenced by its `a*` ref instead of copied; the stored evidence restores the
+complete record.
 Selected type anchors keep their native owned declarations and exact member
 locations, also shown under the answer's source checks. Types beyond the
 description-candidate budget remain available for question reading.

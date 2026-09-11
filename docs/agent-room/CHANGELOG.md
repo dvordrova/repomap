@@ -8,6 +8,18 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Question evidence sends each row fact once (question-batch v4, answer
+  v9, learn v4). On the Morfeu retrieval window (2.07 MB for 24
+  questions) `heading_path` cost 191 KB, its last element repeating the
+  unit's own `section_title`/`section_line` and the parents repeating per
+  unit; `anchor_path` (98 KB) equalled the row's `path` for 1,807 of 1,834
+  units; `owned_declarations` copied type members that were already units
+  of the same chunk (274 KB on the Freqtrade code window). A unit now
+  carries `heading_path` as its parent titles only, `anchor_path` only
+  when it differs from the row, and a member that is a unit of the same
+  chunk as `{"ref":"aN"}`; `AnchorEvidence` restores the full record for
+  routes, Learn and answers. Morfeu window −10 % (2,074,710 → 1,864,461
+  bytes); memos and exact cache of these stages go cold once.
 - Six places where the model was asked without a decision to make, or asked
   twice (schema review, warm fixes; request bytes of the remaining rows
   unchanged). A column-less native outbound fact now claims every selected
