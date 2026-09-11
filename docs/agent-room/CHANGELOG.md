@@ -8,6 +8,23 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Retrieval asks at most eight questions per window and re-asks the ones
+  the model omitted. Freqtrade `20260910-144751`, window w1: 64 questions
+  over 460 code rows (4,661 anchors, 2.1 MB) came back with four keys and
+  `finish=stop`; 60 questions became "missing question" and 27,600 cells
+  unavailable with no second request, while the same 64 questions over
+  1,241 document rows came back complete. Probes on that saved window:
+  eight questions over the same 460 rows → 8/8 in 48 s; with thinking off
+  the 64-question window degenerated into counting anchors up to the
+  128,000-token cap, so reasoning is not the lever. `plan()` now cuts a
+  window's questions into groups of eight over the same rows; the first
+  window of each row set runs before its siblings so DeepSeek's prefix
+  cache serves the rest (parallel probes hit 1,408 of 516,842 prompt
+  tokens); after the first round the questions absent from an accepted
+  response are re-asked once over the same rows (`question_omitted`
+  journal rows, `recovered` when the second round answers, one console
+  line naming the counts). Prompt and contract unchanged; per-question
+  memos survive; whole-window cache entries of the old packing go cold.
 - A refused answer window divides by questions before giving up. Morfeu
   `20260911-112125`: one empty provider response (`provider_no_content`)
   made all 22 questions of a window unavailable; only resource refusals

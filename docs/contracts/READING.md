@@ -299,10 +299,19 @@ mandatory in a response and retains per-chunk inspection coverage. A refused
 question stays unavailable for that chunk rather than becoming a negative finding;
 accepted neighbouring questions survive, including cache and memo reuse. Only explicit
 provider context/output/response resource refusals authorize lossless partition
-of complete evidence rows or questions; there is no ordinary row-count or 64KiB
-planning cap for this cube. Output refusals split independent questions first
-while retaining their complete evidence; input/context refusals split by actual
-encoded input weight. Explicit development budgets remain available.
+of complete evidence rows; there is no ordinary row-count or 64KiB planning cap
+for this cube. A window asks at most eight questions over its complete rows:
+the saved Freqtrade window that asked 64 questions over 460 code rows (4,661
+anchors) got four back, the same rows with eight questions got eight, and the
+same 64 questions over document rows got 64 — density of decisions per response,
+not key names, loses answers. Windows over the same rows share a request prefix;
+the first of them runs before its siblings so the provider's prefix cache serves
+the rest. A question the model left out of an accepted response is asked once
+more over the same rows with the other omitted questions (`question_omitted`
+journal rows, marked recovered when the second round answers); a question
+omitted twice stays unavailable. Output refusals split independent questions
+first while retaining their complete evidence; input/context refusals split by
+actual encoded input weight. Explicit development budgets remain available.
 Per-question memos store references to the original shared response, with the
 input metadata needed to reconstruct and compare its exact prepared request.
 Replay is revalidated against that complete original window before reuse.
