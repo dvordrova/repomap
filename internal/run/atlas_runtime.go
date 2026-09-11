@@ -71,6 +71,11 @@ func readRepositoryAtlas(
 		run := &runs[position]
 		index := programindex.Index{Target: run.programTarget()}
 		root := filepath.ToSlash(filepath.Dir(runTargetAnchorPath(index)))
+		if target, ok := planned[run.SelectedTargetKey]; ok && target.AbsorbedRoot != "" {
+			// The executable absorbed its module library: its page claims the
+			// module root, so internal and pkg packages are its own boxes.
+			root = target.AbsorbedRoot
+		}
 		readIndex := run.programIndex
 		if run.ProgramIndex == nil {
 			filename := filepath.Join(run.RunDir, programindex.ArtifactFilename)

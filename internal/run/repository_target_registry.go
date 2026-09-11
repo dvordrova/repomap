@@ -301,6 +301,13 @@ type repositoryTypedTarget struct {
 	Placement        string
 	Seeds            []repositoryTypedTarget
 	SharedCode       []repositoryTargetKey
+	// Absorbed lists module libraries folded into this executable: a library
+	// whose only consumer is this standalone executable is its own code, not
+	// a second component beside it. AbsorbedRoot is that library's module
+	// root, which this executable's page then claims instead of its own
+	// package directory, so internal packages land on the product page.
+	Absorbed     []repositoryTargetKey
+	AbsorbedRoot string
 
 	native any
 }

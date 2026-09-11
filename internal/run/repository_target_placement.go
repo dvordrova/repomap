@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/targetportfolio"
 )
 
@@ -21,9 +22,11 @@ func applyRepositoryPlacements(plan repositoryTargetPlan, native []repositoryNat
 		return repositoryTargetPlan{}, fmt.Errorf("incomplete native placement result")
 	}
 	keys := make(map[string]repositoryTargetKey)
+	refs := make(map[repositoryTargetKey]string)
 	positions := make(map[repositoryTargetKey]int)
 	for _, candidate := range native {
 		keys[candidate.Row.Ref] = candidate.Target.Key
+		refs[candidate.Target.Key] = candidate.Row.Ref
 	}
 	for i, target := range plan.Targets {
 		positions[target.Key] = i
@@ -58,8 +61,28 @@ func applyRepositoryPlacements(plan repositoryTargetPlan, native []repositoryNat
 		}
 	}
 	for _, candidate := range native {
-		if plan.Targets[positions[candidate.Target.Key]].Placement != "shared_code" {
+		position := positions[candidate.Target.Key]
+		if plan.Targets[position].Placement != "shared_code" {
 			continue
+		}
+		// A Go module library whose only consumer is one standalone
+		// executable is that executable's own code: cmd/app beside internal/
+		// and pkg/ packages is one program, not a program and a library. The
+		// model's shared_code decision stays in the journal; the page is the
+		// code's to compose. Two or more consumers keep the shared library.
+		if owner, folds := soleStandaloneConsumer(plan, positions, candidate); folds {
+			if library, isGo := repositoryGoTarget(candidate.Target); isGo && library.Kind == analysistarget.KindModuleLibrary {
+				ownerRef := refs[plan.Targets[owner].Key]
+				plan.Targets[owner].Absorbed = append(plan.Targets[owner].Absorbed, candidate.Target.Key)
+				plan.Targets[owner].AbsorbedRoot = library.ModuleDir
+				plan.Targets[position].Placement = "folded_into:" + ownerRef
+				plan.Outcome.Placements = append(plan.Outcome.Placements, repositoryPlacement{
+					Target: candidate.Target.Key.String(), Selector: plan.Targets[position].Selector,
+					Placement: targetportfolio.Placement{Candidate: candidate.Row, Decision: "folded_into:" + ownerRef,
+						Reason: "a module library whose only consumer is one standalone executable is that executable's own code"},
+				})
+				continue
+			}
 		}
 		for _, consumer := range candidate.Consumers {
 			if position, ok := positions[consumer]; ok {
@@ -69,7 +92,7 @@ func applyRepositoryPlacements(plan repositoryTargetPlan, native []repositoryNat
 	}
 	retained := make([]repositoryTypedTarget, 0, len(plan.Targets))
 	for _, target := range plan.Targets {
-		if !strings.HasPrefix(target.Placement, "seed_of:") {
+		if !strings.HasPrefix(target.Placement, "seed_of:") && !strings.HasPrefix(target.Placement, "folded_into:") {
 			retained = append(retained, target)
 		}
 	}
@@ -93,6 +116,19 @@ func applyRepositoryPlacements(plan repositoryTargetPlan, native []repositoryNat
 	plan.Outcome.SelectedTargets = len(plan.Targets)
 	plan.Outcome.SelectedTargetRefs = repositoryTargetRefs(plan.Targets)
 	return plan, plan.Validate()
+}
+
+// soleStandaloneConsumer returns the position of the one standalone target
+// that consumes this library, when there is exactly one.
+func soleStandaloneConsumer(plan repositoryTargetPlan, positions map[repositoryTargetKey]int, candidate repositoryNativeCandidate) (int, bool) {
+	if len(candidate.Consumers) != 1 {
+		return 0, false
+	}
+	position, ok := positions[candidate.Consumers[0]]
+	if !ok || plan.Targets[position].Placement != "standalone" {
+		return 0, false
+	}
+	return position, true
 }
 
 func persistRepositoryPlacements(runDir string, placements []repositoryPlacement) error {

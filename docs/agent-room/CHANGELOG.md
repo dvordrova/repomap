@@ -8,6 +8,14 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- A Go module library whose only consumer is one standalone executable is
+  folded into that executable. An owner's service with `cmd/app` and
+  `internal/app` (plus exported packages that make the module a library
+  candidate) showed a "shared code" component holding every handler, worker
+  and outbound call, while the product page listed only the routes: file
+  ownership goes to the deepest root, and the library's root `.` owned all
+  of `internal/`. The executable now claims the module root; the model's
+  `shared_code` decision stays journaled with the fold beside it.
 - Destination groups on the first screen carry their records disclosure
   (ids stripped from the copy), so a group expands there too; a group of
   several records shows no single record's purpose as its lead. Both were
