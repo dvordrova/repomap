@@ -249,7 +249,15 @@ budgets remain available. Actual context/output/response resource refusals
 partition complete original evidence by encoded byte weight; accepted sibling
 reviews survive, children retain their partial-context scope, and failed parents
 supply no semantic review. Proposal and menu decisions validate per intent;
-a refused intent remains unavailable without deleting its neighbours. Failed
+a refused intent remains unavailable without deleting its neighbours. Within a
+`questions` review each proposed question validates alone: one that fails a rule
+(blank wording or why, no or only unadvertised sources) is dropped with a
+`question_rejected` journal row and the review keeps the rest; a review is refused
+only when none survive. A `questions` review that arrives without a reason takes
+the first sentence of its first accepted question's why and records
+`reason_from: why`; `not_applicable` and `unknown` reviews still need their own
+reason. After all windows, an intent reviewed by any window is not marked
+unavailable by the windows that skipped it. Failed
 consolidation preserves original accepted questions and any accepted comparisons,
 with the plan marked partial. The owner explicitly approved this for user-selected
 repositories on 2026-09-06. `read --through learn` stops after the plan.

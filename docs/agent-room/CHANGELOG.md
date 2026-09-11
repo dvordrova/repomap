@@ -8,6 +8,21 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Learn reads a review without a reason and drops bad questions singly.
+  Freqtrade run 20260910-144751, Learn window w3: eight `questions` reviews
+  with 26 questions and `"reason": ""` on every one were all refused
+  ("learn: a review needs a reason") and the window was lost as "no intent
+  reviews accepted" with eight unavailable intents; the owner's provider
+  produced the same message. A questions review with a blank reason and at
+  least one accepted question now takes the first sentence of that
+  question's `why` as its reason and records `reason_from: why` in
+  learning-plan.json and the tables journal; `not_applicable`/`unknown`
+  reviews still need their own reason. A proposed question that fails a
+  rule (blank wording or why, no or only unadvertised sources) is dropped
+  alone with a `question_rejected` journal row naming the intent, the
+  question's beginning and the rule; the review keeps its other questions,
+  and is refused only when none survive. Prompt, request bytes and cache
+  keys unchanged.
 - A missing question or Learn intent review says what the response held
   instead of only the gap: the rejection reason lists the field names of
   the entries that named no asked question or intent and the values under
