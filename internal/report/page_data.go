@@ -2,6 +2,7 @@ package report
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -35,6 +36,14 @@ type pageDataOperation struct {
 	Possible                 bool
 }
 
+// dataRowID is the page-level id of one data record. Record ids carry a
+// kind prefix such as "entity:" or "query:"; a colon inside a fragment href
+// reads as a URL scheme to html/template, which then replaces the link with
+// #ZgotmplZ, so the page id keeps a hyphen there instead.
+func dataRowID(sectionID, recordID string) string {
+	return sectionID + "-data-" + strings.ReplaceAll(recordID, ":", "-")
+}
+
 func (builder *pageBuilder) fillSectionData(section *pageSection) {
 	index := builder.graphIndex(section.programTargetID)
 	if index == nil {
@@ -58,7 +67,7 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 			if record.Data.Schema != "" {
 				name = record.Data.Schema + "." + name
 			}
-			refs[record.ID] = pageDataReference{Name: name, Href: "#" + section.ID + "-data-" + record.ID}
+			refs[record.ID] = pageDataReference{Name: name, Href: "#" + dataRowID(section.ID, record.ID)}
 		}
 	}
 	for _, record := range index.Data {
@@ -74,7 +83,7 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 		if data == nil {
 			continue
 		}
-		row := pageDataRow{ID: section.ID + "-data-" + record.ID, Name: data.Name, Scope: data.Scope, Connection: data.Connection, SQL: data.SQL, Expression: data.Expression, Statement: data.Statement, Partial: data.Partial, Anchor: builder.links.anchor(record.Path, record.Line, 0)}
+		row := pageDataRow{ID: dataRowID(section.ID, record.ID), Name: data.Name, Scope: data.Scope, Connection: data.Connection, SQL: data.SQL, Expression: data.Expression, Statement: data.Statement, Partial: data.Partial, Anchor: builder.links.anchor(record.Path, record.Line, 0)}
 		if data.Schema != "" {
 			row.Name = data.Schema + "." + data.Name
 		}
@@ -115,9 +124,9 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 		if record.Data == nil || record.Data.Kind != "query" {
 			continue
 		}
-		query := rows[section.ID+"-data-"+record.ID]
+		query := rows[dataRowID(section.ID, record.ID)]
 		for _, ref := range record.References {
-			table := rows[section.ID+"-data-"+ref]
+			table := rows[dataRowID(section.ID, ref)]
 			if table == nil {
 				continue
 			}

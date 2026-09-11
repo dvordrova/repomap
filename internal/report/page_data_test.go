@@ -127,3 +127,35 @@ func TestDataCatalogueLinksQueryOperationsAndScopedTablesBothWays(t *testing.T) 
 		}
 	}
 }
+
+// Record ids carry kind prefixes with a colon ("query:…"). Inside a fragment
+// href html/template reads the text before the colon as a URL scheme and
+// replaces the whole link with #ZgotmplZ; the meetup report shipped 82 such
+// dead "SQL texts" links. Page ids therefore never contain a colon.
+func TestDataRowIDsAreSafeFragmentTargets(t *testing.T) {
+	index := groupindex.Index{Target: programindex.Target{ID: "service"}, Data: []groupindex.DataRecord{
+		{DataRecord: atlas.DataRecord{ID: "entity:f-1", Path: "schema.sql", Line: 2, Data: &facts.DataObject{Kind: "table", Origin: "ddl", Scope: "schema:main", Name: "events"}}},
+		{DataRecord: atlas.DataRecord{ID: "query:q-1", Path: "queries.sql", Line: 5, References: []string{"entity:f-1"},
+			Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "schema:main", Name: "CreateEvent", SQL: "INSERT INTO events VALUES (1)", Statement: "INSERT"}}},
+	}}
+	section := &pageSection{ID: "service", programTargetID: "service"}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
+	builder.fillSectionData(section)
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := parsed.ExecuteTemplate(&out, "data.html", section); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	if strings.Contains(html, "ZgotmplZ") {
+		t.Fatal("a data link was rejected by html/template")
+	}
+	for _, text := range []string{`id="service-data-entity-f-1"`, `id="service-data-query-q-1"`, `href="#service-data-query-q-1"`, `href="#service-data-entity-f-1"`} {
+		if !strings.Contains(html, text) {
+			t.Fatalf("data catalog lost %q", text)
+		}
+	}
+}

@@ -8,6 +8,13 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Data catalog links are live again. Record ids carry a kind prefix with a
+  colon (`entity:f-…`, `query:q-…`); inside a fragment href html/template
+  read the text before the colon as a URL scheme and replaced the link with
+  `#ZgotmplZ` (meetup: 82 dead "SQL texts" links found by the static DOM
+  audit). Page ids for data rows now come from `dataRowID`, which swaps the
+  colon for a hyphen in both `id` and `href`; regression
+  `TestDataRowIDsAreSafeFragmentTargets`.
 - "Where this service connects" records are compact lines beneath their
   destination instead of full cards under a "Records · N" disclosure. The
   owner opened the meetup report and expected the destination title, then
