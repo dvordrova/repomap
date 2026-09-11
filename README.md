@@ -281,7 +281,9 @@ export REPOMAP_LLM_AUTH=bearer
 
 Optional settings are `REPOMAP_LLM_TIMEOUT` (default `10m`, the bound on one
 provider attempt; an attempt that hits it is retried) and
-`REPOMAP_LLM_MAX_TOKENS` (default `128000`). An explicitly unauthenticated
+`REPOMAP_LLM_MAX_TOKENS` (default `128000`), and `REPOMAP_LLM_CONTEXT_TOKENS`
+(or `DEEPSEEK_CONTEXT_TOKENS`), the provider's context window, which refuses
+an oversized request locally instead of after a round trip. An explicitly unauthenticated
 endpoint uses `REPOMAP_LLM_AUTH=none` and still requires
 `REPOMAP_LLM_ENDPOINT`.
 

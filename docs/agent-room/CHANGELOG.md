@@ -8,6 +8,13 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- `REPOMAP_LLM_CONTEXT_TOKENS` / `DEEPSEEK_CONTEXT_TOKENS` declare the
+  provider's context window. A request whose estimated prompt tokens (bytes
+  ÷ 3, below DeepSeek's measured 3.5) plus the output reservation exceed it
+  is refused at preparation with the usual context refusal and partitioned
+  by its stage, before any transport attempt; run 20260911-053911 spent
+  36 s per remote refusal, 52 times at the answer stage alone. Unset keeps
+  the check remote. No request bytes or cache keys change.
 - The console now says when a refused request is partitioned: after the
   WARN for a provider resource refusal, the answer, question and learn stages
   print a `partitioned` state with the number of questions or evidence groups

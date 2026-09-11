@@ -87,6 +87,21 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 	}
 
 	maxOutputTokens := min(limits.MaxOutputTokens, c.MaxTokens)
+	if c.ContextTokens > 0 {
+		// A declared context window refuses an oversized request here, with
+		// the refusal the provider would send after tokenizing it; run
+		// 20260911-053911 spent 36 s per such refusal, 52 times. The
+		// estimate is conservative: DeepSeek tokenized 1,160,656 bytes of
+		// English JSON as 330,422 tokens, 3.5 bytes per token.
+		estimate := estimatedPromptTokens(prompt)
+		if estimate+maxOutputTokens > c.ContextTokens {
+			return llm.Prepared{}, newResourceLimitError(ResourceLimitError{
+				Stage: llmProviderStage, Kind: ResourceLimitContextTokens,
+				Limit: c.ContextTokens, Observed: estimate + maxOutputTokens, ObservedKnown: true,
+				InputTokens: estimate, ConfiguredMaxTokens: maxOutputTokens,
+			})
+		}
+	}
 	request := c.semanticRequest(prompt.User, prompt.System, prompt.ResponseFormatJSON)
 	request.MaxTokens = maxOutputTokens
 	request.ChatTemplateKwargs = c.ChatTemplateKwargs
@@ -117,6 +132,17 @@ func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, er
 		})
 	}
 	return llm.NewPrepared(body)
+}
+
+// estimatedBytesPerToken is deliberately below the 3.5 bytes per token
+// DeepSeek measured on English JSON, so the local check refuses before the
+// provider would; a request it lets through can still be refused remotely and
+// is then partitioned the same way.
+const estimatedBytesPerToken = 3
+
+func estimatedPromptTokens(prompt llm.Prompt) int {
+	size := len(prompt.System) + len(prompt.User)
+	return (size + estimatedBytesPerToken - 1) / estimatedBytesPerToken
 }
 
 // Complete sends exactly the immutable bytes returned by Prepare. Only

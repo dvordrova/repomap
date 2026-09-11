@@ -47,6 +47,11 @@ const (
 	envTimeout            = "REPOMAP_LLM_TIMEOUT"
 	envAuth               = "REPOMAP_LLM_AUTH"
 	envChatTemplateKwargs = "REPOMAP_LLM_CHAT_TEMPLATE_KWARGS"
+	// envContextTokens declares the provider's context window. Either name
+	// is accepted with either configuration family: it changes no request,
+	// only how early an oversized one is refused locally.
+	envContextTokens       = "REPOMAP_LLM_CONTEXT_TOKENS"
+	legacyEnvContextTokens = "DEEPSEEK_CONTEXT_TOKENS"
 
 	legacyEnvEndpoint           = "DEEPSEEK_ENDPOINT"
 	legacyEnvModel              = "DEEPSEEK_MODEL"
@@ -59,10 +64,16 @@ const (
 // Client is safe for concurrent llm.Provider calls after configuration. Its
 // exported fields and progress hooks must not be mutated once execution starts.
 type Client struct {
-	HTTPClient         *http.Client
-	APIKey             string
-	Model              string
-	MaxTokens          int
+	HTTPClient *http.Client
+	APIKey     string
+	Model      string
+	MaxTokens  int
+	// ContextTokens is the provider's context window when known. Prepare
+	// then refuses a request whose estimated prompt tokens plus the output
+	// reservation exceed it, before any transport attempt, with the same
+	// context resource refusal the provider would send; the owning stage
+	// partitions it as usual. Zero leaves the check to the provider.
+	ContextTokens      int
 	Endpoint           string
 	Auth               string
 	ChatTemplateKwargs map[string]json.RawMessage
@@ -160,6 +171,22 @@ func NewFromEnv() (*Client, error) {
 		maxTokens = n
 	}
 
+	contextTokens := 0
+	if s := strings.TrimSpace(os.Getenv(envContextTokens)); s != "" || strings.TrimSpace(os.Getenv(legacyEnvContextTokens)) != "" {
+		name := envContextTokens
+		if s == "" {
+			name, s = legacyEnvContextTokens, strings.TrimSpace(os.Getenv(legacyEnvContextTokens))
+		}
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return nil, fmt.Errorf("%s must be an integer: %w", name, err)
+		}
+		if n <= maxTokens {
+			return nil, fmt.Errorf("%s must exceed the output-token limit %d", name, maxTokens)
+		}
+		contextTokens = n
+	}
+
 	timeout := defaultTimeout
 	if s := value(envTimeout, legacyEnvTimeout); s != "" {
 		parsed, err := time.ParseDuration(s)
@@ -206,10 +233,10 @@ func NewFromEnv() (*Client, error) {
 	}
 
 	return &Client{
-		HTTPClient:         &http.Client{Timeout: timeout},
-		APIKey:             key,
-		Model:              model,
-		MaxTokens:          maxTokens,
+		HTTPClient: &http.Client{Timeout: timeout},
+		APIKey:     key,
+		Model:      model,
+		MaxTokens:  maxTokens, ContextTokens: contextTokens,
 		Endpoint:           endpoint,
 		Auth:               auth,
 		ChatTemplateKwargs: chatTemplateKwargs,

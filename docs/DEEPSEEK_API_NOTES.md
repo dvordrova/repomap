@@ -15,6 +15,7 @@ REPOMAP_LLM_MODEL         model name (default: deepseek-v4-flash)
 REPOMAP_LLM_API_KEY       bearer credential
 REPOMAP_LLM_AUTH          bearer (default) or none
 REPOMAP_LLM_MAX_TOKENS    positive integer (default: 128000)
+REPOMAP_LLM_CONTEXT_TOKENS  provider context window in tokens (default: unset)
 REPOMAP_LLM_TIMEOUT       positive Go duration (default: 10m)
 REPOMAP_LLM_CHAT_TEMPLATE_KWARGS  JSON object overriding template options
 ```
@@ -29,6 +30,16 @@ When no generic variable is present, the legacy `DEEPSEEK_ENDPOINT`,
 `DEEPSEEK_TIMEOUT` and `DEEPSEEK_CHAT_TEMPLATE_KWARGS` names remain accepted. Their default endpoint is
 `https://api.deepseek.com/chat/completions`. There is no legacy max-token
 override; `REPOMAP_LLM_MAX_TOKENS` is the only one.
+
+`REPOMAP_LLM_CONTEXT_TOKENS` (or `DEEPSEEK_CONTEXT_TOKENS`, accepted with either
+family) declares the provider's context window, for example `524288` for a
+server that hosts the same model family with half the official window. With
+it set, a request whose estimated prompt tokens (bytes ÷ 3) plus the output
+reservation exceed the window is refused locally before any transport
+attempt, with the same context refusal the provider would send; the owning
+stage partitions it as usual. It changes no request bytes and no cache key.
+Unset, the check is left to the provider, whose refusal is recognised and
+partitioned the same way after a round trip.
 
 `bearer` requires a key and sends `Authorization: Bearer ...`. `none`
 requires an explicit endpoint and sends no Authorization header. Endpoints must

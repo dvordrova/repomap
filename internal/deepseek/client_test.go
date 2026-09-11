@@ -185,6 +185,7 @@ func clearLLMConfigEnv(t *testing.T) {
 		legacyEnvEndpoint, legacyEnvModel, legacyEnvAPIKey, "DEEPSEEK_MAX_TOKENS",
 		legacyEnvTimeout, legacyEnvAuth,
 		legacyEnvChatTemplateKwargs,
+		envContextTokens, legacyEnvContextTokens,
 	} {
 		value, present := os.LookupEnv(name)
 		if err := os.Unsetenv(name); err != nil {
@@ -197,5 +198,32 @@ func clearLLMConfigEnv(t *testing.T) {
 			}
 			_ = os.Unsetenv(name)
 		})
+	}
+}
+
+func TestNewFromEnvReadsTheContextWindowUnderEitherName(t *testing.T) {
+	clearLLMConfigEnv(t)
+	for _, name := range []string{envContextTokens, legacyEnvContextTokens} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(legacyEnvAPIKey, "secret")
+	t.Setenv(legacyEnvContextTokens, "524288")
+	client, err := NewFromEnv()
+	if err != nil || client.ContextTokens != 524288 || client.Endpoint != defaultEndpoint {
+		t.Fatalf("legacy context window: %+v / %v", client, err)
+	}
+	if err := os.Unsetenv(legacyEnvContextTokens); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envContextTokens, "1048576")
+	if client, err = NewFromEnv(); err != nil || client.ContextTokens != 1048576 || client.Endpoint != defaultEndpoint {
+		t.Fatalf("generic context window beside a legacy family must not switch families: %+v / %v", client, err)
+	}
+	t.Setenv(envContextTokens, "1000")
+	if _, err = NewFromEnv(); err == nil || !strings.Contains(err.Error(), "must exceed the output-token limit") {
+		t.Fatalf("a context window below the output limit was accepted: %v", err)
 	}
 }

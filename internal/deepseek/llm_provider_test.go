@@ -1095,3 +1095,23 @@ func llmProviderResponse(finishReason, content string, usage map[string]any) []b
 	}
 	return encoded
 }
+
+func TestLLMProviderPrepareRefusesByDeclaredContextBeforeSending(t *testing.T) {
+	client := &Client{
+		HTTPClient: &http.Client{}, Model: "test", MaxTokens: 100, ContextTokens: 400,
+		Endpoint: "https://provider.example/v1/chat/completions", Auth: authNone,
+	}
+	limits := llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 100}
+	_, err := client.Prepare(llm.Prompt{System: "system", User: strings.Repeat("x", 1200), ResponseFormatJSON: true}, limits)
+	var limitErr *ResourceLimitError
+	if !errors.As(err, &limitErr) || limitErr.Kind != ResourceLimitContextTokens || limitErr.Limit != 400 || limitErr.InputTokens < 400 || limitErr.ConfiguredMaxTokens != 100 {
+		t.Fatalf("declared context did not refuse locally: %#v / %v", limitErr, err)
+	}
+	if _, err := client.Prepare(llm.Prompt{System: "system", User: strings.Repeat("x", 600), ResponseFormatJSON: true}, limits); err != nil {
+		t.Fatalf("a fitting request was refused: %v", err)
+	}
+	client.ContextTokens = 0
+	if _, err := client.Prepare(llm.Prompt{System: "system", User: strings.Repeat("x", 1200), ResponseFormatJSON: true}, limits); err != nil {
+		t.Fatalf("an undeclared context refused locally: %v", err)
+	}
+}
