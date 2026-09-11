@@ -191,7 +191,7 @@ func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMe
 		if source == "" {
 			return nil, fmt.Errorf("cell %q is empty", column.Name)
 		}
-		answer[column.Name] = labelFromProse(source, column.MaxRunes)
+		answer[column.Name] = LabelFromProse(source, column.MaxRunes)
 		answer[column.Name+"_from"] = column.EmptyFrom
 	}
 	return answer, nil

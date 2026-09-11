@@ -41,12 +41,16 @@ type LearningOrigin struct {
 // Review is explicitly local to one context window. A local lack of evidence
 // must never become a repository-wide assertion that a topic does not apply.
 type LearningReview struct {
-	Intent         string         `json:"intent"`
-	Title          string         `json:"title"`
-	Window         int            `json:"window"`
-	PartialContext bool           `json:"partial_context"`
-	State          string         `json:"state"`
-	Reason         string         `json:"reason"`
-	Source         string         `json:"source"`
-	Sources        []QuestionStop `json:"sources,omitempty"`
+	Intent         string `json:"intent"`
+	Title          string `json:"title"`
+	Window         int    `json:"window"`
+	PartialContext bool   `json:"partial_context"`
+	State          string `json:"state"`
+	Reason         string `json:"reason"`
+	// ReasonFrom names the response field the reason was taken from when the
+	// review came back without one: "why" is the first sentence of its first
+	// accepted question's why. Empty when the model wrote the reason itself.
+	ReasonFrom string         `json:"reason_from,omitempty"`
+	Source     string         `json:"source"`
+	Sources    []QuestionStop `json:"sources,omitempty"`
 }

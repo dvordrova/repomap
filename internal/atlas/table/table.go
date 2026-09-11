@@ -569,9 +569,10 @@ func collapse(text string) string {
 	return strings.Join(fields, " ")
 }
 
-// labelFromProse takes the first sentence of a prose cell as a short label,
-// or the prose cut to the limit when that sentence is still too long.
-func labelFromProse(text string, limit int) string {
+// LabelFromProse takes the first sentence of a prose cell as a short label,
+// or the prose cut to the limit when that sentence is still too long. A
+// nonpositive limit keeps the whole first sentence.
+func LabelFromProse(text string, limit int) string {
 	text = strings.TrimSpace(text)
 	if end := strings.Index(text, ". "); end > 0 {
 		text = text[:end]

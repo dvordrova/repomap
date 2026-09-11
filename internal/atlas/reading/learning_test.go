@@ -131,7 +131,10 @@ func TestLearningAllowsZeroOneManyWithOriginalReasons(t *testing.T) {
 			case "unsupported-inapplicable":
 				bad.Reviews[1] = learningReview{Intent: "run", State: "not_applicable", Reason: "Not found."}
 			case "blank-reason":
-				bad.Reviews[0].Reason = " \n "
+				// A questions review without a reason takes its first question's
+				// why (learning_validation_test.go); an unknown review has no
+				// other content, so a blank reason still refuses it.
+				bad.Reviews[1].Reason = " \n "
 			case "blank-question":
 				bad.Reviews[0].Questions[0].Question = " \n "
 			case "blank-why":
@@ -140,7 +143,7 @@ func TestLearningAllowsZeroOneManyWithOriginalReasons(t *testing.T) {
 			raw, _ := json.Marshal(bad)
 			got, err := decodeLearning(raw, context)
 			badIntent := "purpose"
-			if strings.Contains(test, "inapplicable") {
+			if strings.Contains(test, "inapplicable") || test == "blank-reason" {
 				badIntent = "run"
 			}
 			if err != nil || len(got.Reviews) != len(learningIntents())-1 || len(got.Rejections) != 1 || got.Rejections[0].Intent != badIntent || slices.Contains(got.AcceptedRowKeys(), badIntent) {
@@ -576,8 +579,12 @@ func TestLearningPartitionMemoRevalidatesReplayAndExactInputs(t *testing.T) {
 	// the consolidated plan carries no "unavailable" review for it.
 	missingIntent := learningIntents()[7].ID
 	if len(provider.requests) != before || warm.use(stageLearn).Rejected != 1 || warm.use(stageLearn).Cached != 2 || warm.learning.Reviews[0].Source != atlas.SourceCache ||
-		slices.ContainsFunc(warm.learning.Reviews, func(review atlas.LearningReview) bool { return review.Intent == missingIntent && review.State == "unavailable" }) ||
-		!slices.ContainsFunc(warm.learning.Reviews, func(review atlas.LearningReview) bool { return review.Intent == missingIntent && review.State != "unavailable" }) {
+		slices.ContainsFunc(warm.learning.Reviews, func(review atlas.LearningReview) bool {
+			return review.Intent == missingIntent && review.State == "unavailable"
+		}) ||
+		!slices.ContainsFunc(warm.learning.Reviews, func(review atlas.LearningReview) bool {
+			return review.Intent == missingIntent && review.State != "unavailable"
+		}) {
 		t.Fatal("missing replay intent was accepted or discarded valid cached neighbours")
 	}
 	// A successful replay of the complete parent replaces its older partition.
@@ -684,6 +691,8 @@ type learningProvider struct {
 	specialist   bool
 	menuFirst    bool
 	dropMenuLast bool
+	// reply replaces learningReply as the proposal response when set.
+	reply func() learningResponse
 }
 
 type learningMenuRequest struct {
@@ -766,7 +775,11 @@ func (p *learningProvider) Complete(_ context.Context, prepared llm.Prepared) (l
 		}
 		raw, _ = json.Marshal(map[string]any{"rows": rows})
 	} else {
-		raw, _ = json.Marshal(learningReply())
+		reply := learningReply()
+		if p.reply != nil {
+			reply = p.reply()
+		}
+		raw, _ = json.Marshal(reply)
 	}
 	return llm.Completion{Response: raw, FinishReason: "stop", ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, nil
 }

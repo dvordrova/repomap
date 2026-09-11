@@ -120,20 +120,34 @@ type learningProposal struct {
 	Sources  []string `json:"sources"`
 }
 type learningReview struct {
-	Intent    string             `json:"intent"`
-	State     string             `json:"state"`
-	Reason    string             `json:"reason"`
-	Sources   []string           `json:"sources"`
-	Questions []learningProposal `json:"questions"`
+	Intent string `json:"intent"`
+	State  string `json:"state"`
+	Reason string `json:"reason"`
+	// ReasonFrom is decoder-owned: "why" when a questions review came back
+	// without a reason and took its first accepted question's why. A value
+	// the model writes here is discarded.
+	ReasonFrom string             `json:"reason_from,omitempty"`
+	Sources    []string           `json:"sources"`
+	Questions  []learningProposal `json:"questions"`
 }
 type learningRejection struct {
 	Intent string `json:"intent"`
 	Reason string `json:"reason"`
 }
 
+// learningQuestionRejection is one proposed question dropped from a review
+// that is otherwise read. Question is the beginning of its wording; Reason
+// names the intent, that beginning and the rule the question failed.
+type learningQuestionRejection struct {
+	Intent   string `json:"intent"`
+	Question string `json:"question"`
+	Reason   string `json:"reason"`
+}
+
 type learningResponse struct {
-	Reviews    []learningReview    `json:"reviews"`
-	Rejections []learningRejection `json:"rejections,omitempty"`
+	Reviews            []learningReview            `json:"reviews"`
+	Rejections         []learningRejection         `json:"rejections,omitempty"`
+	QuestionRejections []learningQuestionRejection `json:"question_rejections,omitempty"`
 }
 
 func (response learningResponse) AcceptedRowKeys() []string {
@@ -148,6 +162,9 @@ func (response learningResponse) ResponseRejections() []llm.ResponseRejection {
 	var result []llm.ResponseRejection
 	for _, rejection := range response.Rejections {
 		result = append(result, llm.ResponseRejection{Kind: "row_rejected", Count: 1, Reason: rejection.Reason, Samples: []string{rejection.Intent}})
+	}
+	for _, rejection := range response.QuestionRejections {
+		result = append(result, llm.ResponseRejection{Kind: "question_rejected", Count: 1, Reason: rejection.Reason, Samples: []string{rejection.Intent}})
 	}
 	return result
 }
@@ -392,7 +409,9 @@ func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) 
 		case 1:
 			err = json.Unmarshal(values[0], &review)
 			if err == nil {
-				review, err = validateLearningReview(review, pool)
+				var questions []learningQuestionRejection
+				review, questions, err = validateLearningReview(review, pool)
+				result.QuestionRejections = append(result.QuestionRejections, questions...)
 			}
 		default:
 			err = fmt.Errorf("learn: duplicate intent review")
@@ -445,7 +464,22 @@ func learningReviewShape(unkeyed []json.RawMessage) string {
 	return shape
 }
 
-func validateLearningReview(review learningReview, pool learningRequest) (learningReview, error) {
+// learningReasonRunes bounds a review reason taken from a question's why;
+// learningQuestionStartRunes bounds the wording a rejection quotes.
+const (
+	learningReasonRunes        = 200
+	learningQuestionStartRunes = 60
+)
+
+// validateLearningReview reads one intent review down to its smallest unit.
+// A proposed question that fails a rule is dropped with its own rejection;
+// the review keeps the questions that passed and is refused only when none
+// did. A questions review without a reason takes the first sentence of its
+// first accepted question's why and records reason_from, the way an
+// operation label is taken from its own description: the two fields explain
+// the same choice. A not_applicable or unknown review has no other content
+// than its reason, so it still needs one.
+func validateLearningReview(review learningReview, pool learningRequest) (learningReview, []learningQuestionRejection, error) {
 	refs := map[string]bool{}
 	for _, item := range pool.Evidence {
 		refs[item.Ref] = true
@@ -460,35 +494,62 @@ func validateLearningReview(review learningReview, pool learningRequest) (learni
 		return kept
 	}
 	review.Sources = filter(review.Sources)
-	if strings.TrimSpace(review.Reason) == "" {
-		return review, fmt.Errorf("learn: a review needs a reason")
-	}
+	review.ReasonFrom = ""
 	switch review.State {
 	case "questions":
 		if len(review.Questions) == 0 {
-			return review, fmt.Errorf("learn: questions review is empty")
+			return review, nil, fmt.Errorf("learn: questions review is empty")
 		}
 	case "not_applicable":
 		if pool.PartialContext || len(review.Sources) == 0 {
-			return review, fmt.Errorf("learn: inapplicability needs complete context and positive evidence")
+			return review, nil, fmt.Errorf("learn: inapplicability needs complete context and positive evidence")
 		}
 		fallthrough
 	case "unknown":
 		if len(review.Questions) != 0 {
-			return review, fmt.Errorf("learn: non-question review contains questions")
+			return review, nil, fmt.Errorf("learn: non-question review contains questions")
 		}
+		if strings.TrimSpace(review.Reason) == "" {
+			return review, nil, fmt.Errorf("learn: a review needs a reason")
+		}
+		return review, nil, nil
 	default:
-		return review, fmt.Errorf("learn: unknown review state")
+		return review, nil, fmt.Errorf("learn: unknown review state")
 	}
-	for i := range review.Questions {
-		q := &review.Questions[i]
+	var kept []learningProposal
+	var rejected []learningQuestionRejection
+	for i, q := range review.Questions {
 		q.Question, q.Why = strings.TrimSpace(q.Question), strings.TrimSpace(q.Why)
+		given := q.Sources
 		q.Sources = filter(q.Sources)
-		if q.Question == "" || q.Why == "" || len(q.Sources) == 0 {
-			return review, fmt.Errorf("learn: a proposed question needs wording, reason and original sources")
+		rule := ""
+		switch {
+		case q.Question == "":
+			rule = "needs wording"
+		case q.Why == "":
+			rule = "needs a reason"
+		case len(given) == 0:
+			rule = "needs original sources"
+		case len(q.Sources) == 0:
+			rule = fmt.Sprintf("names no advertised source in %v", given[:min(len(given), 4)])
 		}
+		if rule != "" {
+			start := table.LabelFromProse(q.Question, learningQuestionStartRunes)
+			rejected = append(rejected, learningQuestionRejection{Intent: review.Intent, Question: start,
+				Reason: fmt.Sprintf("learn: %s question %d %q %s", review.Intent, i+1, start, rule)})
+			continue
+		}
+		kept = append(kept, q)
 	}
-	return review, nil
+	review.Questions = kept
+	if len(kept) == 0 {
+		return review, rejected, fmt.Errorf("learn: questions review kept none of its %d proposed questions", len(rejected))
+	}
+	if strings.TrimSpace(review.Reason) == "" {
+		review.Reason = table.LabelFromProse(kept[0].Why, learningReasonRunes)
+		review.ReasonFrom = "why"
+	}
+	return review, rejected, nil
 }
 
 func (r *reader) readLearning(ctx context.Context) error {
@@ -637,14 +698,23 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 				accepted[review.Intent] = review
 			}
 			rejected := make(map[string]string)
+			if len(result.Outcome.Value.Rejections) > 0 || len(result.Outcome.Value.QuestionRejections) > 0 {
+				use.Rejected++
+			}
 			if len(result.Outcome.Value.Rejections) > 0 {
 				r.learning.State = "partial"
-				use.Rejected++
 				use.Given += len(result.Outcome.Value.Rejections)
 			}
 			for _, rejection := range result.Outcome.Value.Rejections {
 				rejected[rejection.Intent] = rejection.Reason
 				r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "row_rejected", Count: 1,
+					Reason: rejection.Reason, Samples: []string{rejection.Intent},
+					ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))})
+			}
+			// A dropped question leaves its review and the plan state as they
+			// are; the journal names it so the loss is visible without the response.
+			for _, rejection := range result.Outcome.Value.QuestionRejections {
+				r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "question_rejected", Count: 1,
 					Reason: rejection.Reason, Samples: []string{rejection.Intent},
 					ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))})
 			}
@@ -656,7 +726,7 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 					continue
 				}
 				r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{Intent: review.Intent, Title: titles[review.Intent],
-					Window: windowIndex, PartialContext: pool.PartialContext, State: review.State, Reason: review.Reason, Source: source, Sources: restore(review.Sources)})
+					Window: windowIndex, PartialContext: pool.PartialContext, State: review.State, Reason: review.Reason, ReasonFrom: review.ReasonFrom, Source: source, Sources: restore(review.Sources)})
 				for _, q := range review.Questions {
 					origin := atlas.LearningOrigin{Intent: review.Intent, Title: titles[review.Intent], Question: q.Question, Why: q.Why, Source: source, Sources: restore(q.Sources)}
 					index := slices.IndexFunc(r.learning.Questions, func(old atlas.LearningQuestion) bool { return old.Question == q.Question })
@@ -675,6 +745,18 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 				return err
 			}
 			fmt.Fprintf(&r.tables, "## %s · window %d · %s\n\n%s\n\n", stageLearn, windowIndex, source, raw)
+			var notes []string
+			for _, review := range result.Outcome.Value.Reviews {
+				if review.ReasonFrom != "" {
+					notes = append(notes, fmt.Sprintf("- Reason for %s taken from its first question's %s", review.Intent, review.ReasonFrom))
+				}
+			}
+			for _, rejection := range result.Outcome.Value.QuestionRejections {
+				notes = append(notes, "- Rejected question: "+rejection.Reason)
+			}
+			if len(notes) > 0 {
+				fmt.Fprintf(&r.tables, "%s\n\n", strings.Join(notes, "\n"))
+			}
 		}
 		planned = next
 	}
