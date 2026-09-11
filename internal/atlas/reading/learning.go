@@ -815,9 +815,18 @@ func consolidateLearningReviews(reviews []atlas.LearningReview, state string) ([
 	return kept, state
 }
 
+// learningMenuLimit bounds one intent's menu. Morfeu 20260911-153538 with a
+// 262,144-token provider window: Learn split into eight windows, each
+// proposing without a quota, the menus then chose 11–14 questions per
+// intent and the report offered 100 questions where the two-window run
+// offered 40, at twice the tokens. The number of questions must not follow
+// the number of Learn windows.
+const learningMenuLimit = 5
+
 // Proposals from evidence fragments are not yet a repository curriculum.
 // Compose the topic menus together against existing component roles before answering.
-// There is no local score, quota or removal based on answer availability.
+// There is no local score or removal based on answer availability; each
+// intent's menu is bounded by learningMenuLimit.
 func (r *reader) selectLearning(ctx context.Context) error {
 	var rows []table.Row
 	for i, question := range r.learning.Questions {
@@ -853,9 +862,15 @@ func (r *reader) selectLearning(ctx context.Context) error {
 		}})
 	}
 	intents := learningIntents()
-	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.select.v3", System: learningSelectPrompt, Independent: true,
+	// A menu over the limit is refused as any malformed known row: the table
+	// rule for a sequence past limit_from. Cutting the tail instead would make
+	// the code choose which five of seven the model meant as the clearest,
+	// completing its decision, and the cut menu would carry a rationale
+	// written for the full one. The refusal names the count; the intent's
+	// candidates stay inspectable as unavailable and the plan says partial.
+	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.select.v4", System: learningSelectPrompt, Independent: true,
 		Window: len(intents), Columns: []table.Column{
-			{Name: "questions", Kind: table.Sequence, OptionsFrom: "candidate_options"},
+			{Name: "questions", Kind: table.Sequence, OptionsFrom: "candidate_options", LimitFrom: "limit"},
 			{Name: "reason", Kind: table.Text, MaxRunes: 600},
 		}}
 	if r.opts.Through == "" || r.opts.Through == stageLearn {
@@ -888,7 +903,8 @@ func (r *reader) selectLearning(ctx context.Context) error {
 			}
 			if len(options) > 0 {
 				batch = append(batch, table.Row{ID: intent.ID, Fields: []table.Field{
-					{Name: "learning_intent", Value: intent.Title}, {Name: "learning_goal", Value: intent.Goal}, {Name: "candidate_options", Value: options},
+					{Name: "learning_intent", Value: intent.Title}, {Name: "learning_goal", Value: intent.Goal},
+					{Name: "candidate_options", Value: options}, {Name: "limit", Value: learningMenuLimit},
 				}})
 			}
 		}

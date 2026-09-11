@@ -691,6 +691,9 @@ type learningProvider struct {
 	specialist   bool
 	menuFirst    bool
 	dropMenuLast bool
+	// menuRefs, when positive, is how many refs every menu names whatever
+	// its row's limit says; zero keeps the menus within their limit.
+	menuRefs int
 	// reply replaces learningReply as the proposal response when set.
 	reply func() learningResponse
 }
@@ -707,6 +710,7 @@ type learningMenuRequest struct {
 		Intent  string   `json:"learning_intent"`
 		Goal    string   `json:"learning_goal"`
 		Options []string `json:"candidate_options"`
+		Limit   int      `json:"limit"`
 	} `json:"rows"`
 }
 
@@ -737,6 +741,11 @@ func (p *learningProvider) Complete(_ context.Context, prepared llm.Prepared) (l
 					continue
 				}
 				selected = append(selected, candidate.Ref)
+			}
+			if p.menuRefs > 0 {
+				selected = selected[:min(p.menuRefs, len(selected))]
+			} else if row.Limit > 0 && len(selected) > row.Limit {
+				selected = selected[:row.Limit]
 			}
 			choice := strings.Join(selected, " ")
 			if choice == "" {
@@ -872,6 +881,63 @@ func TestLearningMenuReducesCompletePoolsAndReusesTheirCache(t *testing.T) {
 			}
 			if provider.calls != calls || !reflect.DeepEqual(warm.learning, r.learning) {
 				t.Fatal("same menu comparison failed to reuse its cache or changed the result")
+			}
+		})
+	}
+}
+
+// Morfeu 20260911-153538: eight Learn windows proposed without a quota, the
+// menus chose 11–14 questions per intent and the report offered 100
+// questions against 40 from the two-window run. A menu now names at most
+// learningMenuLimit refs per intent: one over the ceiling is refused as a
+// malformed row, with the count in the journal and the intent's candidates
+// left inspectable; a smaller menu is read as before.
+func TestLearningMenuRefusesAnIntentOverItsCeiling(t *testing.T) {
+	for _, refs := range []int{learningMenuLimit + 2, learningMenuLimit - 2} {
+		t.Run(fmt.Sprintf("refs=%d", refs), func(t *testing.T) {
+			provider := &learningProvider{menuRefs: refs}
+			r := isolatedLearningReader(t, t.TempDir(), provider)
+			// Seven purpose candidates, and one data candidate whose menu of one
+			// stays within the ceiling beside the refused purpose menu.
+			var questions []atlas.LearningQuestion
+			for i := 0; i < learningMenuLimit+2; i++ {
+				q := fmt.Sprintf("How does part %d start?", i)
+				questions = append(questions, atlas.LearningQuestion{Question: q, Origins: []atlas.LearningOrigin{{Intent: "purpose", Title: "Purpose", Question: q, Why: "It owns a startup path."}}})
+			}
+			data := atlas.LearningQuestion{Question: "What does a lease control?", Origins: []atlas.LearningOrigin{{Intent: "data", Title: "Data", Question: "What does a lease control?", Why: "It bounds stored data."}}}
+			questions = append(questions, data)
+			r.learning = &atlas.LearningPlan{State: "ready", Questions: append([]atlas.LearningQuestion{}, questions...)}
+			if err := r.selectLearning(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if provider.calls != 1 || len(r.learning.Selections) != len(questions) {
+				t.Fatalf("one menu over one catalogue expected: %d calls, %d selections", provider.calls, len(r.learning.Selections))
+			}
+			var prompt llm.Prompt
+			_ = json.Unmarshal(provider.requests[0], &prompt)
+			var request learningMenuRequest
+			if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(prompt.User, `"limit_from":"limit"`) || len(request.Rows) != 2 || request.Rows[0].Limit != learningMenuLimit || request.Rows[1].Limit != learningMenuLimit || !strings.Contains(prompt.System, "Choose at most five per topic") {
+				t.Fatalf("the request does not carry the menu ceiling:\n%s", prompt.User)
+			}
+			audiences := map[string]int{}
+			for _, selection := range r.learning.Selections {
+				audiences[selection.Intent+"/"+selection.Audience]++
+			}
+			if refs > learningMenuLimit {
+				if r.learning.State != "partial" || !reflect.DeepEqual(r.learning.Questions, []atlas.LearningQuestion{data}) || audiences["purpose/unavailable"] != learningMenuLimit+2 || audiences["data/first_day"] != 1 {
+					t.Fatalf("a menu over the ceiling was read or refused its neighbour: state %q, audiences %v, questions %+v", r.learning.State, audiences, r.learning.Questions)
+				}
+				if len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || !reflect.DeepEqual(r.rejected[0].Samples, []string{"r1", "purpose"}) || !strings.Contains(r.rejected[0].Reason, fmt.Sprintf("chooses %d items, limit %d", refs, learningMenuLimit)) {
+					t.Fatalf("journal does not name the refused menu and its count: %+v", r.rejected)
+				}
+				return
+			}
+			want := append(append([]atlas.LearningQuestion{}, questions[:refs]...), data)
+			if r.learning.State != "ready" || len(r.rejected) != 0 || audiences["purpose/first_day"] != refs || audiences["purpose/not_selected"] != learningMenuLimit+2-refs || audiences["data/first_day"] != 1 || !reflect.DeepEqual(r.learning.Questions, want) {
+				t.Fatalf("a menu within the ceiling changed: state %q, audiences %v, questions %+v", r.learning.State, audiences, r.learning.Questions)
 			}
 		})
 	}

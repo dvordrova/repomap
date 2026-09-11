@@ -236,6 +236,9 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 						selected = append(selected, candidate.(string))
 					}
 				}
+				if limit, ok := row["limit"].(float64); ok && len(selected) > int(limit) {
+					selected = selected[:int(limit)]
+				}
 				answer["questions"] = "none"
 				if len(selected) > 0 {
 					answer["questions"] = strings.Join(selected, " ")
