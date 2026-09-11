@@ -746,14 +746,17 @@ func (r *reader) bindInterpretedBoundaries() {
 			claimed := false
 			for _, existing := range r.boundaries {
 				p := existing.place
-				if p.Boundary.Source == "fact" && p.Path == place.Path && p.LineNo == call.Line && p.Boundary.Direction == atlas.DirectionOut {
-					// A fact with a column claims exactly its own call, so two
-					// calls on one line stay apart. A fact without a column,
-					// such as an SDK boundary from an external_call
-					// observation, claims the whole line: Morfeu
-					// 20260911-152759 otherwise reviewed the same call twice
-					// (bnd:internal/broker/client.go:166:sdk beside
-					// out:…PublicarComConfirm:166:42) and listed it twice.
+				if p.Boundary.Source != "model" && p.Path == place.Path && p.LineNo == call.Line && p.Boundary.Direction == atlas.DirectionOut {
+					// Every native source counts ("fact" from route/config/http
+					// facts, "external_call" from SDK observations); only the
+					// model's own interpreted boundaries are not facts. A fact
+					// with a column claims exactly its own call, so two calls on
+					// one line stay apart. A fact without a column, such as an
+					// SDK boundary from an external_call observation, claims the
+					// whole line: Morfeu 20260911-152759 and 171727 otherwise
+					// reviewed the same call twice (bnd:internal/broker/
+					// client.go:166:sdk beside out:…PublicarComConfirm:166:42)
+					// and listed it twice.
 					if p.Column == 0 || p.Column == call.Column {
 						claimed = true
 						break

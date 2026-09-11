@@ -376,9 +376,12 @@ func TestColumnlessNativeFactClaimsItsLineAndColumnedFactKeepsOtherCalls(t *test
 	call := atlas.SymbolCall{Name: "amqp091.Channel.PublishWithDeferredConfirm", Kind: "invokes_external", Line: 166, Column: 42}
 	symbol := atlas.Place{ID: "owner", Kind: atlas.PlaceSymbol, Path: "client.go", LineNo: 143, Parent: "file:client", TargetIDs: []string{"service"},
 		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "caller", Name: "Client.PublicarComConfirm"}, Calls: []atlas.SymbolCall{call}}}
+	// The SDK observation itself arrives with source "external_call", not
+	// "fact" (places.go); run 20260911-171727 kept all four duplicates while
+	// the claim matched "fact" alone.
 	fact := func(column int) atlas.Place {
 		return atlas.Place{ID: "native", Kind: atlas.PlaceBoundary, Path: "client.go", LineNo: 166, Column: column, Parent: "file:client", TargetIDs: []string{"service"},
-			Given: "RabbitMQ broker", Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "sdk"}},
+			Given: "RabbitMQ broker", Boundary: &atlas.BoundaryFacts{Source: "external_call", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "sdk"}},
 				ObjectID: "caller", Direction: atlas.DirectionOut, GivenKind: atlas.BoundarySDK}}
 	}
 	for _, test := range []struct {
