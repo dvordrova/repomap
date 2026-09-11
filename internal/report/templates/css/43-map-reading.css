@@ -105,3 +105,15 @@
 .repo-inputs .outbound-address,.repo-inputs .outbound-source,.repo-inputs .outbound-basis{font-size:11px}
 
 .input-catalog .input-data{grid-column:1 / -1;font-size:12px;overflow-wrap:anywhere}
+/* One destination: its call records as compact nested lines. Each line opens its purpose, address, basis and source; after three lines the rest wait under one expansion. */
+.outbound-calls{margin:4px 0 0 4px;padding:0 0 0 12px;border-left:2px solid var(--line)}
+.outbound-calls>li{margin:0;padding:3px 0;border:0}
+.outbound-call>summary{font-size:13px;font-weight:500;color:var(--ink);cursor:pointer;overflow-wrap:anywhere}
+.outbound-call>summary .meta{font-weight:400;white-space:nowrap}
+/* Record counts and source locations stay on their line; the catalog's block-level .meta is for standalone lines. */
+.input-catalog [data-integration-item]>.input-title .meta,.repo-inputs .input-title .meta,.input-catalog .outbound-call>summary .meta,.repo-inputs .outbound-call>summary .meta{display:inline;margin:0 0 0 6px}
+.outbound-call-body{margin:4px 0 6px 18px}
+.outbound-more{margin:2px 0 0 16px}.outbound-more>summary{list-style:none;font-size:13px;font-weight:500;color:var(--accent);cursor:pointer}
+.outbound-more>summary::-webkit-details-marker{display:none}
+.outbound-more>summary::before{content:'\25BE\00A0'}.outbound-more[open]>summary::before{content:'\25B4\00A0'}
+.repo-inputs .outbound-call>summary,.repo-inputs .outbound-more>summary{font-size:12px}

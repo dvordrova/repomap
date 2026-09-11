@@ -146,7 +146,9 @@ function rmBuildEntrance(inputs){
     items.slice(0,5).forEach(function(item){
       var row=rmEl('li','');row.appendChild(item.querySelector('.input-title').cloneNode(true));
       if(item.hasAttribute('data-integration-item')){
-        ['.outbound-purpose','.outbound-address','.outbound-basis','.outbound-records'].forEach(function(selector){var detail=item.querySelector(selector);if(!detail)return;var copy=detail.cloneNode(true);copy.querySelectorAll('[id]').forEach(function(node){node.removeAttribute('id');});row.appendChild(copy);});
+        // The group's own lines and its nested call records; a record's
+        // purpose or address never stands in for the group's.
+        Array.from(item.children).forEach(function(child){if(child.classList.contains('input-title')||child.classList.contains('input-source'))return;var copy=child.cloneNode(true);copy.querySelectorAll('[id]').forEach(function(node){node.removeAttribute('id');});row.appendChild(copy);});
       }
       row.dataset.sourceKind=item.dataset.sourceKind||'fact';
       list.appendChild(row);

@@ -132,7 +132,7 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 		t.Fatal(err)
 	}
 	html := stdhtml.UnescapeString(out.String())
-	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "Адрес не определён", "Настройка взаимодействия", "Вызов взаимодействия", `data-open="client.go:21:17"`, "가격조회.Get", address, "Записи · 5", "Записи · 1", "GET /prices"} {
+	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "Адрес не определён", "Настройка взаимодействия", "Вызов взаимодействия", `data-open="client.go:21:17"`, "가격조회.Get", address, "Развернуть · ещё 2", "GET /prices"} {
 		if !strings.Contains(html, text) {
 			t.Fatalf("first-screen inventory lost %q", text)
 		}
@@ -144,6 +144,15 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 	// the page, every record beneath its group, no second disclosure needed.
 	if strings.Count(html, "data-integration-item") != 3 || strings.Count(html, "data-integration-record") != 7 || strings.Contains(html, `<details class="input-more">`) {
 		t.Fatal("destination groups lost or duplicated accepted communication records")
+	}
+	// Five records of one destination: three compact lines in view, two under
+	// one expansion; the destination is named once, by the group.
+	if strings.Count(html, `<details class="outbound-call">`) != 7 || strings.Count(html, `<details class="outbound-more">`) != 1 || strings.Count(html, `<strong class="input-title">Pricing service`) != 1 {
+		t.Fatal("destination records are not compact nested lines with one expansion after three")
+	}
+	// Pricing service records sit at client.go:21, :23, :24, :25 and :26.
+	if at := strings.Index(html, "Развернуть · ещё 2"); at < strings.LastIndex(html, "client.go:24") || at > strings.Index(html, "client.go:25") {
+		t.Fatal("the expansion does not separate the fourth record from the third")
 	}
 	if first := strings.Index(html, `Pricing service <span class="meta">· 5</span>`); first < 0 || first > strings.Index(html, "Trace collector") {
 		t.Fatal("the destination with the most records is not the first group")
@@ -195,7 +204,7 @@ func TestOutboundSourcePathsAndFoldKeepOriginalEvidence(t *testing.T) {
 	}
 }
 
-func TestOutboundGroupsByDestinationWithSharedAddressAndLead(t *testing.T) {
+func TestOutboundGroupsByDestinationWithSharedAddressAndPreview(t *testing.T) {
 	rows := []pageOutbound{
 		{ID: "a", Destination: "Kubernetes API server", Summary: "Lists pods in the namespace. Then filters them.", KindLabel: "SDK", Basis: "dispatch", Source: "model", Address: "{env:KUBECONFIG}"},
 		{ID: "b", Destination: "Postgres", Summary: "Stores events.", KindLabel: "Database", Basis: "dispatch", Source: "model", Address: "{env:DATABASE_URL}"},
@@ -214,11 +223,15 @@ func TestOutboundGroupsByDestinationWithSharedAddressAndLead(t *testing.T) {
 	if groups[1].Basis != "" || groups[0].Basis != "dispatch" || groups[1].KindLabel != "SDK" {
 		t.Fatalf("mixed basis or kind not neutralised: %+v", groups[:2])
 	}
-	if groups[1].Lead() != "" || groups[2].Lead() != "" {
-		t.Fatalf("a group of several records spoke with one record's sentence: %q / %q", groups[1].Lead(), groups[2].Lead())
+	if first, rest := groups[0].First(), groups[0].Rest(); len(first) != 3 || len(rest) != 0 {
+		t.Fatalf("three records need no expansion: %d / %d", len(first), len(rest))
 	}
-	if single := groupOutbound(rows[:1]); len(single) != 1 || single[0].Lead() != "Lists pods in the namespace." {
-		t.Fatalf("a single record lost its lead sentence: %+v", single)
+	five := groupOutbound(append(slices.Clone(rows[:5]), pageOutbound{ID: "g", Destination: "Postgres"}, pageOutbound{ID: "h", Destination: "Postgres"}))
+	if first, rest := five[0].First(), five[0].Rest(); len(first) != 3 || first[2].ID != "e" || len(rest) != 2 || rest[1].ID != "h" {
+		t.Fatalf("records beyond three wait under one expansion in order: %+v / %+v", first, rest)
+	}
+	if rows[0].Brief() != "Lists pods in the namespace." || rows[5].Brief() != "" {
+		t.Fatalf("a record's line is its first sentence, or nothing when it has no purpose: %q / %q", rows[0].Brief(), rows[5].Brief())
 	}
 	if groups[0].Rows[0].ID != "b" || groups[0].Rows[2].ID != "e" {
 		t.Fatalf("record order inside a group changed: %+v", groups[0].Rows)

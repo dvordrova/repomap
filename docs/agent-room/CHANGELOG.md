@@ -8,6 +8,23 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- "Where this service connects" records are compact lines beneath their
+  destination instead of full cards under a "Records · N" disclosure. The
+  owner opened the meetup report and expected the destination title, then
+  visually nested call blocks, brief, each opening its description on click,
+  and an expansion after three. Each line now shows the native method and
+  address, else the callable, else the first sentence of the purpose, with
+  the source location; its purpose, address, basis, source anchor and
+  destination chain open under it. Three lines stay in view, the rest wait
+  under "Развернуть · ещё N" (`First`/`Rest` on the group, preview constant
+  3). The group-level lead sentence is gone; the destination is named once.
+  The first-screen copy clones the group's own children, which also stops a
+  record's purpose and "address not determined" from standing in for the
+  group's (the copy used `querySelector`, which descended into the first
+  record). Counts and locations no longer break onto their own line under
+  the catalog's block-level `.meta`. Contract sentence in REPORT.md; tests:
+  five records render as three lines and one expansion between the third
+  and fourth record, the destination named once.
 - A "Where this service connects" section with more than five destinations
   is compacted to five rows and an "All N" disclosure. The compaction removed
   every `ul.operation-catalog` inside the section, which included the record

@@ -111,9 +111,9 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 
 // pageOutboundGroup presents every record naming one destination as one
 // row: the destination, how many records name it, their shared kind, basis
-// and address, and one lead sentence. The records keep their own rows
-// beneath it. Ten records reading "Kubernetes API server" with a paragraph
-// each are one line on the page; nothing is merged in the data.
+// and address. The records are compact lines nested beneath it, three in
+// view and the rest under one disclosure; each opens its own purpose,
+// address and source. Nothing is merged in the data.
 type pageOutboundGroup struct {
 	Destination, NativeLabel, KindLabel string
 	Basis, Source, Address              string
@@ -129,17 +129,30 @@ func (group pageOutboundGroup) AddressText() pageOutboundAddress {
 	return outboundAddressText(group.Address)
 }
 
-// Lead is the first sentence of a single record's purpose, at most 160
-// runes. A group of several records has no one purpose to speak with; each
-// record keeps its own beneath the group.
-func (group pageOutboundGroup) Lead() string {
-	if len(group.Rows) != 1 {
-		return ""
+// outboundGroupPreview is how many call records a destination shows before
+// the rest wait under one "Expand" disclosure. Every record is rendered.
+const outboundGroupPreview = 3
+
+func (group pageOutboundGroup) First() []pageOutbound {
+	if len(group.Rows) <= outboundGroupPreview {
+		return group.Rows
 	}
-	for _, row := range group.Rows {
-		if text := strings.TrimSpace(row.Summary); text != "" {
-			return leadSentence(text, 160)
-		}
+	return group.Rows[:outboundGroupPreview]
+}
+
+func (group pageOutboundGroup) Rest() []pageOutbound {
+	if len(group.Rows) <= outboundGroupPreview {
+		return nil
+	}
+	return group.Rows[outboundGroupPreview:]
+}
+
+// Brief is one record's line beneath its destination when the source names
+// no method, address or callable: the first sentence of its purpose, at most
+// 90 runes. The full purpose, address, basis and source chain open under it.
+func (row pageOutbound) Brief() string {
+	if text := strings.TrimSpace(row.Summary); text != "" {
+		return leadSentence(text, 90)
 	}
 	return ""
 }

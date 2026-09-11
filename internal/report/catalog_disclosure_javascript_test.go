@@ -9,8 +9,8 @@ import (
 // A "Where this service connects" section with more than five destinations is
 // compacted to five rows and an "All N" disclosure. The destination rows carry
 // their own nested record lists; compaction must move the rows, not strip the
-// lists inside them. The owner's service (more than five destinations) opened
-// every "Records · N" disclosure to nothing.
+// lists inside them. The owner's service (more than five destinations) once
+// opened every destination to nothing.
 func TestCatalogDisclosureKeepsDestinationRecords(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -56,11 +56,9 @@ function element(tag,className,attrs){
 function destination(i){
   var item=element('li','',{'data-integration-item':'','data-source-kind':'model'});
   var title=element('strong','input-title');title.textContent='Destination '+i;item.appendChild(title);
-  var records=element('details','input-description outbound-records');
-  var summary=element('summary');summary.textContent='Records · 2';records.appendChild(summary);
-  var list=element('ul','plain operation-catalog');
+  var list=element('ul','plain outbound-calls');
   for(var j=0;j<2;j++){var row=element('li','',{'data-integration-record':''});row.textContent='record '+i+'.'+j;list.appendChild(row);}
-  records.appendChild(list);item.appendChild(records);return item;
+  item.appendChild(list);return item;
 }
 const root=element('div');
 const group=element('section','',{'data-integration-group':''});root.appendChild(group);
@@ -74,9 +72,9 @@ function rmT(key,n){return String(key).replace('{0}',n);}
 const items=group.querySelectorAll('[data-integration-item]');
 assert.equal(items.length,6,'every destination row survives compaction');
 assert.equal(group.querySelectorAll('[data-integration-record]').length,12,'every nested record survives compaction');
-group.querySelectorAll('.outbound-records').forEach(function(records,index){
-  assert.ok(records.querySelector('ul'),'destination '+(index+1)+' keeps its record list');
-  assert.equal(records.querySelectorAll('[data-integration-record]').length,2);
+items.forEach(function(item,index){
+  assert.ok(item.querySelector('ul.outbound-calls'),'destination '+(index+1)+' keeps its record list');
+  assert.equal(item.querySelectorAll('[data-integration-record]').length,2);
 });
 const ownLists=group.children.filter(function(n){return n.tag==='ul';});
 assert.equal(ownLists.length,1,'one preview list at the group level');
