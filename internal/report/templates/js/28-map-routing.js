@@ -120,6 +120,41 @@ var repomapGraph = (function () {
   return {layout:layout,layoutComponents:layoutComponents,fold:fold,draw:draw};
 })();
 
+function rmEl(tag,cls,text){var item=document.createElement(tag);if(cls)item.className=cls;if(text!==undefined)item.textContent=text;return item;}
+// The product's counted inventory links: inputs, parts and communication.
+function rmProductCatalog(page,href){
+  var catalog=rmEl('ul','product-catalog');
+  [['Inputs','inputCount','inbound'],['Parts','partCount','parts'],['External communication','integrationCount','external']].forEach(function(item){
+    var number=Number(page?.dataset[item[1]]||0);if(!number)return;
+    var value=rmEl('li',''),link=rmEl('a','');link.href=href+(item[2]?'-'+item[2]:'');link.setAttribute('aria-label',rmT(item[0])+': '+number);
+    link.appendChild(rmEl('span','product-catalog-label',rmT(item[0])));link.appendChild(rmEl('span','product-catalog-count',String(number)));value.appendChild(link);catalog.appendChild(value);
+  });
+  return catalog.childNodes.length?catalog:null;
+}
+// The first-screen entrance of one product: its input, activity and
+// communication groups, five rows each, copied from the component page.
+function rmBuildEntrance(inputs){
+  var entrance=rmEl('div','repo-inputs');
+  inputs.querySelectorAll('[data-input-group],[data-integration-group]').forEach(function(group){
+    var block=rmEl('section',''),heading=group.querySelector('h4');
+    block.appendChild(rmEl('h5','',heading.textContent));
+    var list=rmEl('ul','');
+    var items=Array.from(group.querySelectorAll('[data-input-item],[data-integration-item]'));
+    items.slice(0,5).forEach(function(item){
+      var row=rmEl('li','');row.appendChild(item.querySelector('.input-title').cloneNode(true));
+      if(item.hasAttribute('data-integration-item')){
+        ['.outbound-purpose','.outbound-address','.outbound-basis','.outbound-records'].forEach(function(selector){var detail=item.querySelector(selector);if(!detail)return;var copy=detail.cloneNode(true);copy.querySelectorAll('[id]').forEach(function(node){node.removeAttribute('id');});row.appendChild(copy);});
+      }
+      row.dataset.sourceKind=item.dataset.sourceKind||'fact';
+      list.appendChild(row);
+    });block.appendChild(list);
+    var provenance=group.querySelector('.input-provenance');if(provenance)block.appendChild(provenance.cloneNode(true));
+    if(items.length>5){var more=rmEl('a','input-all',rmT('All {0} →',items.length));more.href='#'+inputs.id;more.addEventListener('click',function(){group.querySelector('.input-more')?.setAttribute('open','');});block.appendChild(more);}
+    entrance.appendChild(block);
+  });
+  return entrance;
+}
+
 // The repository is one addressable component space. Existing roles only
 // arrange its nodes; selecting one opens its saved description and neighbours.
 (function(){document.querySelectorAll('.repo-map').forEach(function(map,mapIndex){
@@ -179,33 +214,10 @@ var repomapGraph = (function () {
       card.appendChild(button);
       if(href){
         var purpose=node.querySelector('.repo-card-purpose');if(purpose)card.appendChild(purpose.cloneNode(true));
-        var page=document.getElementById(href.slice(1)),catalog=el('ul','product-catalog');
-        [['Inputs','inputCount','inbound'],['Parts','partCount','parts'],['External communication','integrationCount','external']].forEach(function(item){
-          var number=Number(page?.dataset[item[1]]||0);if(!number)return;
-          var value=el('li',''),link=el('a','');link.href=href+(item[2]?'-'+item[2]:'');link.setAttribute('aria-label',rmT(item[0])+': '+number);
-          link.appendChild(el('span','product-catalog-label',rmT(item[0])));link.appendChild(el('span','product-catalog-count',String(number)));value.appendChild(link);catalog.appendChild(value);
-        });if(catalog.childNodes.length)card.appendChild(catalog);
+        var page=document.getElementById(href.slice(1)),catalog=rmProductCatalog(page,href);
+        if(catalog)card.appendChild(catalog);
         var inputs=page?.querySelector('.input-catalog');
-        if(inputs){
-          var entrance=el('div','repo-inputs');
-          inputs.querySelectorAll('[data-input-group],[data-integration-group]').forEach(function(group){
-            var block=el('section',''),heading=group.querySelector('h4');
-            block.appendChild(el('h5','',heading.textContent));
-            var list=el('ul','');
-            var items=Array.from(group.querySelectorAll('[data-input-item],[data-integration-item]'));
-            items.slice(0,5).forEach(function(item){
-              var row=el('li','');row.appendChild(item.querySelector('.input-title').cloneNode(true));
-              if(item.hasAttribute('data-integration-item')){
-                ['.outbound-purpose','.outbound-address','.outbound-basis','.outbound-records'].forEach(function(selector){var detail=item.querySelector(selector);if(!detail)return;var copy=detail.cloneNode(true);copy.querySelectorAll('[id]').forEach(function(node){node.removeAttribute('id');});row.appendChild(copy);});
-              }
-              row.dataset.sourceKind=item.dataset.sourceKind||'fact';
-              list.appendChild(row);
-            });block.appendChild(list);
-            var provenance=group.querySelector('.input-provenance');if(provenance)block.appendChild(provenance.cloneNode(true));
-            if(items.length>5){var more=el('a','input-all',rmT('All {0} →',items.length));more.href='#'+inputs.id;more.addEventListener('click',function(){group.querySelector('.input-more')?.setAttribute('open','');});block.appendChild(more);}
-            entrance.appendChild(block);
-          });card.appendChild(entrance);
-        }
+        if(inputs)card.appendChild(rmBuildEntrance(inputs));
         var connectionCount=incident(id,'in').length+incident(id,'out').length;
         var inspect=el(connectionCount?'button':'span','repo-row-connections'+(connectionCount?'':' repo-row-connections-empty'));inspect.setAttribute('aria-label',rmT('Connections')+': '+connectionCount);
         inspect.appendChild(el('span','product-catalog-label',rmT('Connections')));inspect.appendChild(el('span','product-catalog-count',String(connectionCount)));inspect.hidden=!connectionCount;
@@ -337,3 +349,26 @@ var repomapGraph = (function () {
   }
   window.addEventListener('popstate',restore);window.addEventListener('hashchange',restore);restore();
 });})();
+
+// A report with one component has no repository map. Its product still opens
+// the first screen the same way: name, purpose, counts and the inputs,
+// commands and communication entrance, ahead of the question list.
+(function(){
+  if(document.querySelector('.repo-map'))return;
+  var panel=document.getElementById('repository-map');if(!panel)return;
+  var sources=Array.from(panel.querySelectorAll('.cards>.card'));if(!sources.length)return;
+  var grid=rmEl('div','repo-component-grid repo-single-product');
+  sources.forEach(function(source){
+    var link=source.querySelector('h3 a');if(!link)return;
+    var href=link.getAttribute('href'),page=document.getElementById(href.slice(1));
+    var card=rmEl('article','repo-component-card');
+    var open=rmEl('a','repo-component-open');open.href=href;open.appendChild(rmEl('span','repo-card-name',link.textContent));
+    var meta=source.querySelector('.meta');if(meta)open.appendChild(rmEl('span','repo-card-meta',meta.textContent));
+    card.appendChild(open);
+    var purpose=source.querySelector('p.model');if(purpose){var text=purpose.cloneNode(true);text.className='repo-card-purpose';card.appendChild(text);}
+    var catalog=rmProductCatalog(page,href);if(catalog)card.appendChild(catalog);
+    var inputs=page?.querySelector('.input-catalog');if(inputs)card.appendChild(rmBuildEntrance(inputs));
+    grid.appendChild(card);
+  });
+  panel.insertBefore(grid,panel.querySelector('.evidence-list'));
+})();

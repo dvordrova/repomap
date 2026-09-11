@@ -8,6 +8,11 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- A single-component report gets the same first-screen product card as a
+  repository map would give it: name, purpose, counts and the inputs,
+  commands and communication entrance, placed before the question list. The
+  owner's one-service report showed the summary, then all questions, and
+  the three inventory columns only on the component page.
 - Glossary reduction windows list at most six sample observations per
   variant beside the real `count`; the catalog entry keeps every source.
   Freqtrade `20260911-053911` sent 137 reduction windows of 1.9–3.1 MB,
