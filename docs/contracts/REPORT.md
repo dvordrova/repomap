@@ -286,7 +286,11 @@ A report without a remote source link retains the original code, explanation and
   dependencies. `claims.json` holds quotes with their
   source path, date and age. `orientation.json` holds the model's repository
   summary, roles, run recipe, and main flow; every row cites fact, claim, or
-  subject ids. Unknown or incompatible set refs are recorded and removed;
+  subject ids. The orientation request lists at most 40 members per group
+  beside the real `member_count` and bounds each listed member's observation
+  lists (6 calls, 6 callers, with `calls_omitted` / `called_by_omitted`); a
+  request the provider refuses by size or context leaves an empty orientation
+  with the refusal in `rejected.jsonl` instead of failing publication. Unknown or incompatible set refs are recorded and removed;
   repeated refs are deduplicated. A row with no required evidence, an invalid
   scalar choice or conflicting interpretation goes to `rejected.jsonl`
   with its raw output and reason. Independent sections and rows survive a bad

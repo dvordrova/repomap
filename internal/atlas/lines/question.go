@@ -72,7 +72,7 @@ func QuestionRows(graph atlas.Graph) []QuestionChunk {
 		for _, decl := range file.File.Decls {
 			facts := map[string]any{"name": decl.Name, "kind": decl.Kind, "signature": decl.Signature, "author_doc": decl.Doc}
 			if symbol, ok := symbols[decl.ObjectID]; ok {
-				questionCallableEvidence(facts, symbol, places, symbols)
+				questionCallableEvidence(facts, symbol, places, symbols, EvidenceLimits{})
 			}
 			if members := typeDeclarations[decl.ObjectID]; len(members) > 0 {
 				facts["owned_declarations"] = ownedDeclarations(members)

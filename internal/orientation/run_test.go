@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -320,10 +319,9 @@ func TestRunKeepsEvidenceBeyondTwoMiBUntilActualProviderRefusal(t *testing.T) {
 		t.Fatal("large request lost claims or groups")
 	}
 	tiny := &presetProvider{maximumUserBytes: len(complete) - 1}
-	_, _, err = Run(t.Context(), llm.Executor{}, tiny, fixture.input)
-	var resourceErr *llm.ResourceLimitError
-	if !errors.As(err, &resourceErr) || tiny.completions != 0 {
-		t.Fatalf("actual request limit: %v, calls=%d", err, tiny.completions)
+	result, rejected, err = Run(t.Context(), llm.Executor{}, tiny, fixture.input)
+	if err != nil || tiny.completions != 0 || len(rejected) != 1 || rejected[0].Section != "request" || rejected[0].Reason == "" || result.RejectedCount != 1 || len(result.Roles) != 0 {
+		t.Fatalf("a request the provider cannot hold must leave an empty, journaled orientation: %v, rejected=%+v calls=%d", err, rejected, tiny.completions)
 	}
 }
 

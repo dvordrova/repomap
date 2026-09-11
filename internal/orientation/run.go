@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -22,8 +23,8 @@ const (
 	StageName = "orientation"
 
 	executionContract     = "repomap.orientation.v1"
-	preparationVersion    = 1
-	promptVersion         = 2
+	preparationVersion    = 2
+	promptVersion         = 3
 	responseSchemaVersion = 1
 	maxOutputTokens       = llm.DefaultMaxOutputTokens
 )
@@ -69,6 +70,9 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	}
 	prepared, err := prepareRequest(provider, input)
 	if err != nil {
+		if resource, refused := refusedByResources(err); refused {
+			return emptyAfterRefusal(input, digests, 0, resource, err)
+		}
 		return Result{}, nil, err
 	}
 	outcome, err := llm.ExecuteJSON(ctx, executor, provider, llm.Call[normalized]{
@@ -83,8 +87,8 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	})
 	if err != nil {
 		// A rejected model response supplies no orientation, but the facts
-		// and report remain useful. Local/transport/resource errors retain
-		// their existing error path.
+		// and report remain useful. Local and transport errors retain their
+		// existing error path.
 		for _, refusal := range outcome.ResponseRejections {
 			if refusal.Kind == "response_validation" && ctx.Err() == nil {
 				raw, _ := json.Marshal(string(outcome.Response))
@@ -92,6 +96,9 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 				result, sealErr := Empty(input.Facts.SHA256, input.Claims.SHA256, digests, len(rejected))
 				return result, rejected, sealErr
 			}
+		}
+		if resource, refused := refusedByResources(err); refused && ctx.Err() == nil {
+			return emptyAfterRefusal(input, digests, len(prepared.wire), resource, err)
 		}
 		return Result{}, nil, fmt.Errorf("orientation: model call: %w", err)
 	}
@@ -111,6 +118,30 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 		return Result{}, nil, fmt.Errorf("orientation: seal: %w", err)
 	}
 	return result, rejected, nil
+}
+
+// refusedByResources reports a preparation or provider refusal by size or
+// context window.
+func refusedByResources(err error) (*llm.ResourceLimitError, bool) {
+	var resource *llm.ResourceLimitError
+	if errors.As(err, &resource) {
+		return resource, true
+	}
+	return nil, false
+}
+
+// emptyAfterRefusal keeps the run: a request the provider cannot hold in one
+// window leaves an empty orientation with the refusal journaled, while the
+// facts, atlas and report stay useful. A 35-minute Freqtrade run lost its
+// whole report to this refusal before (20260911-045158).
+func emptyAfterRefusal(input Input, digests []string, requestBytes int, resource *llm.ResourceLimitError, err error) (Result, []RejectedRow, error) {
+	raw, _ := json.Marshal(struct {
+		RequestBytes int    `json:"request_bytes,omitempty"`
+		Resource     string `json:"resource"`
+	}{requestBytes, fmt.Sprint(resource.Kind)})
+	rejected := []RejectedRow{{Stage: StageName, Section: "request", Raw: raw, Reason: err.Error()}}
+	result, sealErr := Empty(input.Facts.SHA256, input.Claims.SHA256, digests, len(rejected))
+	return result, rejected, sealErr
 }
 
 func validateInput(input Input) error {

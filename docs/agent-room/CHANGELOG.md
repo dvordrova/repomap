@@ -8,6 +8,16 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Orientation is bounded by construction again: at most 40 members per group
+  (`member_count` keeps the real size), 6 calls and 6 callers per listed
+  member's evidence with omitted counts. After `956e5992` removed the
+  12-member cap and added evidence for every listed member, the Freqtrade
+  orientation request grew from 1.3 MB (accepted at 330,422 tokens on
+  20260910-144751) to 22.9 MB, and the provider's context refusal failed
+  publication of a 35-minute run (20260911-045158). Bounded on the same saved
+  input: 1.82 MB (2,550 listed members, 258 evidence entries, largest 16.6 KB).
+  A provider or preparation refusal by size or context now leaves an empty
+  orientation with the refusal in `rejected.jsonl`; the report is published.
 - Native boundary scopes stay within the targets holding the file, and the
   target projection omits a boundary whose file the target does not hold.
   After `956e5992` widened native scopes to every observing index view,

@@ -40,6 +40,21 @@ type questionCaller struct {
 // refs. This is the same evidence used by questions, without another graph walk
 // per declaration or any recursive caller/body expansion.
 func CallableEvidence(graph atlas.Graph, subjects map[string]bool) map[string]map[string]any {
+	return CallableEvidenceWithin(graph, subjects, EvidenceLimits{})
+}
+
+// EvidenceLimits bounds one declaration's projected call and caller lists.
+// Zero keeps every observation. A bounded list names what it does not show
+// in calls_omitted / called_by_omitted, so a reader never mistakes the cut
+// for the complete set. The orientation request is one call against one
+// context window and needs the bound; questions keep the complete lists.
+type EvidenceLimits struct {
+	Calls   int
+	Callers int
+}
+
+// CallableEvidenceWithin is CallableEvidence with bounded lists.
+func CallableEvidenceWithin(graph atlas.Graph, subjects map[string]bool, limits EvidenceLimits) map[string]map[string]any {
 	result := make(map[string]map[string]any)
 	if len(subjects) == 0 {
 		return result
@@ -59,7 +74,7 @@ func CallableEvidence(graph atlas.Graph, subjects map[string]bool) map[string]ma
 		}
 		facts := map[string]any{"name": place.Symbol.Decl.Name, "path": place.Path, "line": place.LineNo,
 			"signature": place.Symbol.Decl.Signature, "author_doc": place.Symbol.Decl.Doc}
-		questionCallableEvidence(facts, place, places, symbols)
+		questionCallableEvidence(facts, place, places, symbols, limits)
 		result[subject] = facts
 	}
 	return result
@@ -68,10 +83,14 @@ func CallableEvidence(graph atlas.Graph, subjects map[string]bool) map[string]ma
 // Attach only this declaration's observations. In particular a selected type
 // does not recursively pull in its methods' calls, and an incoming caller does
 // not donate its other calls to the selected declaration.
-func questionCallableEvidence(facts map[string]any, place atlas.Place, places, symbols map[string]atlas.Place) {
+func questionCallableEvidence(facts map[string]any, place atlas.Place, places, symbols map[string]atlas.Place, limits EvidenceLimits) {
 	var evidence EvidenceCatalog
 	var calls []questionCall
-	for _, call := range place.Symbol.Calls {
+	for i, call := range place.Symbol.Calls {
+		if limits.Calls > 0 && i >= limits.Calls {
+			facts["calls_omitted"] = len(place.Symbol.Calls) - i
+			break
+		}
 		projected := questionCall{callEvidence: evidence.callWithOrigins(call)}
 		for _, id := range call.CalleeIDs {
 			if declaration := questionDeclarationOf(places[id]); declaration != nil {
@@ -84,7 +103,11 @@ func questionCallableEvidence(facts map[string]any, place atlas.Place, places, s
 		facts["calls"] = calls
 	}
 	var callers []questionCaller
-	for _, caller := range place.Symbol.CalledBy {
+	for i, caller := range place.Symbol.CalledBy {
+		if limits.Callers > 0 && i >= limits.Callers {
+			facts["called_by_omitted"] = len(place.Symbol.CalledBy) - i
+			break
+		}
 		original := places[caller.PlaceID]
 		if original.Symbol == nil && caller.ObjectID != "" {
 			original = symbols[caller.ObjectID]

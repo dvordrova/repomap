@@ -23,14 +23,17 @@ cite a ref of the wrong kind.
   subjects, each with a source and a date when known. Claims can be stale or
   wrong; facts win when they disagree.
 - `groups`: model interpretations of responsibilities (refs `g*`), each with a lane,
-  a title, a summary, and its complete members. Members are the code symbols you
+  a title, a summary, `member_count` and its first members (at most 40 are
+  listed; `member_count` is the real size). Members are the code symbols you
   may cite (refs `s*`), each with a name and an anchor. Group refs `g*` are
   context only; do not use them in the orientation result’s citation fields.
 - `connections`: how groups relate to each other, including links between
   targets. These interpretations do not prove execution order.
 - `member_evidence`: original observations for the cited members. Calls retain
   their source sites, invocation and resolution, receiver and argument origins,
-  and possible callee declarations. They do not contain full bodies. A call
+  and possible callee declarations. Long call and caller lists are cut;
+  `calls_omitted` and `called_by_omitted` count what is not shown. They do not
+  contain full bodies. A call
   result does not establish that its error is checked, returned or propagated.
   Source order is not proof of branch execution; preserve alternatives and
   unknown values. Setup, constructor and option calls are not data exchanges.
