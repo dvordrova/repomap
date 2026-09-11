@@ -8,6 +8,27 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Boundary, file, directory, zone, target and portfolio requests state
+  each fact once and offer only real choices (schema review, cold fixes;
+  boundaries v7, files v5, directories v4, zones v2, targets v3, portfolio
+  preparation 8). Boundaries: the address catalogue no longer lists format
+  strings or literals from `fmt`/`errors`/`log`/`time`/`strings`/`strconv`
+  calls (Morfeu: `unknown` in 25 of 29 answers, the catalogue being error
+  templates) and is sent only when the code does not know the address; the
+  out-kind options are the kinds the group index keeps (no `http_server`,
+  `config`); `destination` is a closed `d*` choice from the shared known
+  systems list annotated with the target's dependencies, with `other: `
+  for a system outside it, so the page no longer normalises four spellings
+  of one broker; the outgoing `line` is a 120-rune text; the owner's calls
+  (line ±3 and client constructors) and source context are sent once per
+  window in `context.owners`, rows referencing `owner_ref` (51 % of a
+  Morfeu window was that repetition); fixed native facts get their own
+  24-line prompt. Files: `box` is asked only when there is more than one
+  option (`Missing: "here"`), callers name the declarations that witness
+  the file edge. Directories share the parent's line in the window context;
+  a zone part may hold one box. Targets define `shared_code`, target kinds
+  and boundary labels; portfolio observations carry named fields instead
+  of positional values.
 - Three small stages ask one decision each (schema review, cold fixes).
   The README classifier asked ten classes over 14 KB of rules while only
   `target_entry` was consumed, and on Morfeu classified exactly the README
