@@ -487,11 +487,9 @@ func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte) 
 	if err != nil {
 		return Response{}, err
 	}
-	var envelope struct {
-		Questions []json.RawMessage `json:"questions"`
-	}
-	if err := json.Unmarshal(normalized, &envelope); err != nil || envelope.Questions == nil {
-		return Response{}, fmt.Errorf("question batch: response must contain a questions array")
+	entries, err := questionEntriesOf(normalized)
+	if err != nil {
+		return Response{}, err
 	}
 	allowed := make(map[string]bool, len(questions))
 	for _, question := range questions {
@@ -501,22 +499,29 @@ func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte) 
 	failures := make(map[string]string)
 	original := make(map[string][]json.RawMessage)
 	var unknown []json.RawMessage
-	for _, rawQuestion := range envelope.Questions {
-		var key struct {
+	for _, rawQuestion := range entries {
+		var named struct {
 			Key string `json:"key"`
 		}
-		if json.Unmarshal(rawQuestion, &key) != nil || !allowed[key.Key] {
+		key := ""
+		if json.Unmarshal(rawQuestion, &named) == nil && allowed[named.Key] {
+			key = named.Key
+		}
+		if key == "" {
 			unknown = append(unknown, rawQuestion)
 			continue
 		}
-		original[key.Key] = append(original[key.Key], rawQuestion)
+		original[key] = append(original[key], rawQuestion)
 		var decision Decision
 		if err := json.Unmarshal(rawQuestion, &decision); err != nil {
-			failures[key.Key] = "question has an invalid selection shape"
+			failures[key] = "question has an invalid selection shape"
 			continue
 		}
-		byQuestion[key.Key] = append(byQuestion[key.Key], decision)
+		byQuestion[key] = append(byQuestion[key], decision)
 	}
+	// A missing question says what the response did contain, so the
+	// journal and the console show the provider's shape, not only the gap.
+	shape := responseShape(unknown)
 	result := Response{Questions: []Decision{}}
 	unsafe := append([]json.RawMessage(nil), unknown...)
 	for _, question := range questions {
@@ -531,6 +536,9 @@ func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte) 
 				continue
 			}
 			reason = err.Error()
+			if len(byQuestion[question.Key]) == 0 && shape != "" {
+				reason += " (" + shape + ")"
+			}
 		}
 		result.Rejections = append(result.Rejections, QuestionRejection{Question: question.Key, Reason: reason, Chunks: len(rows)})
 		unsafe = append(unsafe, original[question.Key]...)
@@ -542,6 +550,55 @@ func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte) 
 		result.metadataRows = safeQuestionMetadataRows(rows, unsafe)
 	}
 	return result, nil
+}
+
+// questionEntriesOf reads the `questions` array of a response.
+func questionEntriesOf(normalized []byte) ([]json.RawMessage, error) {
+	var envelope struct {
+		Questions []json.RawMessage `json:"questions"`
+	}
+	if err := json.Unmarshal(normalized, &envelope); err != nil || envelope.Questions == nil {
+		return nil, fmt.Errorf("question batch: response must contain a questions array")
+	}
+	return envelope.Questions, nil
+}
+
+// responseShape describes entries that named no asked question: the field
+// names they carry and the values under key-like fields. A missing
+// question then says what the response held, not only that it lacked one:
+// the Freqtrade run that asked 64 questions in one window got q1, q2, q3
+// and q64 back with the right keys and nothing else.
+func responseShape(unknown []json.RawMessage) string {
+	if len(unknown) == 0 {
+		return ""
+	}
+	names := map[string]bool{}
+	var values []string
+	for _, raw := range unknown {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			continue
+		}
+		for name := range fields {
+			names[name] = true
+		}
+		for _, name := range []string{"key", "question", "question_key", "question_id", "ref", "id", "q"} {
+			var value string
+			if json.Unmarshal(fields[name], &value) == nil && len(values) < 4 {
+				values = append(values, name+"="+value)
+			}
+		}
+	}
+	var fieldNames []string
+	for name := range names {
+		fieldNames = append(fieldNames, name)
+	}
+	sort.Strings(fieldNames)
+	shape := fmt.Sprintf("%d unmatched entries with fields %v", len(unknown), fieldNames)
+	if len(values) > 0 {
+		shape += fmt.Sprintf(", named %v", values)
+	}
+	return shape
 }
 
 // The glossary observes the exact raw result. Suppress source-row metadata

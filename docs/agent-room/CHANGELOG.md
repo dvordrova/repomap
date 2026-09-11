@@ -8,6 +8,16 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- A missing question or Learn intent review says what the response held
+  instead of only the gap: the rejection reason lists the field names of
+  the entries that named no asked question or intent and the values under
+  key-like fields ("3 unmatched entries with fields [question_ref rows],
+  named [question_ref=q1]"). The key-synonym tolerance added for a day
+  (`question`, `question_id`, intent titles, keyed objects, keyless order)
+  is withdrawn: no saved response showed a provider naming keys another
+  way, while the Freqtrade run that asked 64 questions in one window got
+  q1, q2, q3 and q64 back with the right keys and nothing else. The gap
+  is an oversized window, not a naming mismatch. Contracts unchanged.
 - The Learn plan is read per intent, not per window. After a context
   refusal the evidence continues in several windows, each asked all eight
   intents; a window that skipped an intent another window reviewed used to
@@ -18,16 +28,6 @@ runs instead of growing the entry pages again.
   reviews when any window reviewed it and sets partial only for an intent
   no window reviewed; the journal keeps every per-window rejection. Two
   tests that encoded the per-window shape now assert the per-intent one.
-- Learn reviews are matched to intents the way a provider names them. The
-  owner's run lost every intent review to "learn: missing intent review"
-  (42 rows over three windows): the reviews were there, under a name the
-  decoder did not read. A review now resolves its intent by the advertised
-  id or the intent's title, under `intent`, `intent_id`, `id`, `name`,
-  `title` or `learning_intent`, with a leading "## " or a " | title" suffix
-  tolerated; `reviews` may be an object keyed by intent; a keyless response
-  with one review per intent is read in the asked order. Unknown intent
-  names and duplicates are rejected as before. Request bytes and cache keys
-  are unchanged.
 - Editor and tool state directories stay out of the corpus: `.history`
   (VS Code Local History keeps copies of edited files, README included,
   which the owner's run then read as documentation), `.terraform`
