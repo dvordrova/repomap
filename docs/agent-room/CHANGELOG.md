@@ -8,6 +8,19 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The learning menu is bounded and questions are merged as groups (learn
+  select v4, merge v2). Morfeu with the owner's 524,288-token window split
+  Learn into 8 windows, each proposing "without quota"; select kept 11–14
+  questions per intent and the row-form merge (each question choosing its
+  own representative) merged none of 100, so a run's question count
+  depended on how many windows Learn needed (40 vs 100, tokens ×2). Each
+  intent's menu now chooses at most five questions (`limit: 5`, an
+  over-limit choice refuses that intent's row); the merge is one call per
+  pool that partitions the catalogue into groups of one information need
+  (`{"groups":[{"representative","members"}]}`): on the saved 100-question
+  catalogue the row form merged nothing twice while the group form gave 78
+  groups with 16 sensible merges. Unplaced refs stay their own group, a
+  refused window keeps every question.
 - Question evidence sends each row fact once (question-batch v4, answer
   v9, learn v4). On the Morfeu retrieval window (2.07 MB for 24
   questions) `heading_path` cost 191 KB, its last element repeating the

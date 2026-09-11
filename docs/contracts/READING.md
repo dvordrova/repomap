@@ -270,7 +270,11 @@ consolidation preserves original accepted questions and any accepted comparisons
 with the plan marked partial. The owner explicitly approved this for user-selected
 repositories on 2026-09-06. `read --through learn` stops after the plan.
 `learning-plan.json` retains each context review and every proposal's original
-intent, reason and sources. Overlapping automatic questions share one answer;
+intent, reason and sources. Each intent's menu selects at most five of its candidates; the merge step
+groups the selected questions by information need in one call per pool
+(`groups` of members with a representative), an unplaced question staying its
+own group and a refused window keeping every question.
+Overlapping automatic questions share one answer;
 explicit questions remain visible. Exact duplicate explicit/generated wording
 shares a result carrying both origins. Questions expose their selection reasons
 and original excerpts. Answers offer existing term explanations when they
