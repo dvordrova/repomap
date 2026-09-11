@@ -131,6 +131,10 @@
       var next=byID[id];
       if(!operation)visit=null;
       if(next?.dataset.activation){operation=next;pinned=true;mode='operations';setScope('');}else setScope(id);
+      // Only a reader's own click on the map asks the page to follow the
+      // opened block; layouts that happen because a page was opened by a
+      // link must leave the page where the link put it.
+      map.followOpened=true;
       search.value='';address(next);await render();orient();
     }
     function showReturnPath(){

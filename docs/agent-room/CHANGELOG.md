@@ -8,6 +8,14 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The page follows an opened map block only after the reader's own click
+  on the map. `revealInWindow` (755383f6) ran on every layout, so a
+  component page opened through "All 6 →" or a route link scrolled past
+  its inventory to the auto-opened root area: the owner's "everything jumps
+  somewhere on click" on the first page. `open()` now marks the map before
+  it re-lays out; other layouts leave the page where the link put it.
+  Verified: "All 6 →" lands on the inventory (target at 119 px), a node
+  click still brings the opened block and the panel into view.
 - Interface words a newcomer can read, from the audit's list of seventeen
   unexplained labels: "Входящие запросы" (was "Записи входящих обращений"),
   "Внешние вызовы", "вызов в коде" / "настройка клиента" (was "Вызов

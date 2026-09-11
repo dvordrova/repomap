@@ -187,6 +187,8 @@
     // so an opened block low on a tall map is brought into the window by the
     // page itself. A stage that does scroll keeps its own framing.
     function revealInWindow(box) {
+      if (!map.followOpened) return;
+      map.followOpened = false;
       if (stage.scrollHeight > stage.clientHeight + 1) return;
       var inset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--toolbar-height')) || 0;
       var top = stage.getBoundingClientRect().top + box.y * scale - 24;
