@@ -31,9 +31,6 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 		{ID: "second", Fields: []table.Field{{Name: "path", Value: "second.go"}, {Name: "entry_options", Value: []string{"self", "none"}}}},
 		{ID: "third", Fields: []table.Field{{Name: "path", Value: "third.go"}, {Name: "entry_options", Value: []string{"self", "none"}}}},
 	}
-	for i := range rows {
-		rows[i].Fields = append(rows[i].Fields, table.Field{Name: "name_kind_options", Value: []string{"label"}})
-	}
 	newReader := func(provider llm.Provider) *reader {
 		r := answerTestReader(t, nil, provider)
 		r.opts.Executor.RootDir = cache

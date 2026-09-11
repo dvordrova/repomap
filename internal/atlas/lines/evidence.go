@@ -93,10 +93,13 @@ func (c *EvidenceCatalog) Bindings(bindings []atlas.SymbolBinding) any {
 		refs := c.references(binding.Evidence)
 		rows = append(rows, []any{binding.From, binding.To, binding.Detail, binding.Invocation, binding.Resolution, binding.Path, binding.Line, binding.Arguments, refs})
 	}
+	// A binding without arguments or evidence has no such field, not a null.
 	if len(rows) == 1 {
 		binding := make(map[string]any, len(columns))
 		for i, name := range columns {
-			binding[name] = rows[0][i]
+			if !absent(rows[0][i]) {
+				binding[name] = rows[0][i]
+			}
 		}
 		return binding
 	}
@@ -110,7 +113,9 @@ func (c *EvidenceCatalog) Bindings(bindings []atlas.SymbolBinding) any {
 			}
 		}
 		if shared {
-			result.Shared[name] = rows[0][j]
+			if !absent(rows[0][j]) {
+				result.Shared[name] = rows[0][j]
+			}
 			continue
 		}
 		result.Columns = append(result.Columns, name)
@@ -119,6 +124,19 @@ func (c *EvidenceCatalog) Bindings(bindings []atlas.SymbolBinding) any {
 		}
 	}
 	return result
+}
+
+// absent reports a value that would render as null: a nil slice of
+// arguments or refs. An empty string or zero line is still a value.
+func absent(value any) bool {
+	if value == nil {
+		return true
+	}
+	switch reflected := reflect.ValueOf(value); reflected.Kind() {
+	case reflect.Slice, reflect.Map, reflect.Pointer, reflect.Interface:
+		return reflected.IsNil()
+	}
+	return false
 }
 
 func (c *EvidenceCatalog) Fields() []table.Field {

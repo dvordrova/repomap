@@ -72,8 +72,10 @@ type Column struct {
 	EmptyFrom string `json:"-"`
 	// Missing is the value a closed choice takes when the model omits the
 	// cell or sends null: a choice that already means "no decision", such as
-	// unassessed. A decoder rule, not part of the request or the memo state;
-	// a written choice is still validated as before.
+	// no. A cell never asked because its WhenOptionsFrom field advertises no
+	// choices takes the same value, so a branch conditioned on it can still
+	// follow. A decoder rule, not part of the request or the memo state; a
+	// written choice is still validated as before.
 	Missing string `json:"-"`
 	// WhenOptionsFrom requires this cell only when the named input field has
 	// advertised choices. Empty choices have no decision to request or validate.

@@ -66,38 +66,9 @@ func (r *reader) readOperations(ctx context.Context) error {
 		id := "operation:" + place.ID
 		// The review is its own internal entity, attached to the source symbol.
 		r.places[id] = atlas.Place{ID: id, Kind: atlas.PlaceEntity, Path: place.Path, LineNo: place.LineNo, Parent: place.ID, TargetIDs: append([]string(nil), place.TargetIDs...)}
-		decl := place.Symbol.Decl
-		var receivedBindings []atlas.SymbolBinding
-		var suppliedCallbacks []string
-		for _, binding := range place.Symbol.Bindings {
-			if binding.To == decl.Name {
-				receivedBindings = append(receivedBindings, binding)
-			}
-			if binding.From == decl.Name {
-				suppliedCallbacks = append(suppliedCallbacks, binding.To)
-			}
-		}
-		// Review source evidence, not the previous model's answer. Repeating
-		// that answer encouraged confirmation instead of separating callbacks
-		// from their helpers. Keep each own call's receiver and arguments: a
-		// request mutation and a response mutation may use the same native API.
-		var evidence lines.EvidenceCatalog
-		var calls []any
-		for _, call := range place.Symbol.Calls {
-			calls = append(calls, evidence.CallWithOrigins(call))
-		}
-		callers := operationCallerEvidence(place, declarations)
-		nameFields, registeredNames := operationRegisteredNames(receivedBindings, nativeRoutes[place.ID]...)
+		row, registeredNames := OperationRow(place, declarations, nativeRoutes[place.ID])
+		row.ID = id
 		names[place.ID] = registeredNames
-		row := table.Row{ID: id, Fields: []table.Field{
-			{Name: "path", Value: place.Path}, {Name: "name", Value: decl.Name},
-			{Name: "signature", Value: decl.Signature}, {Name: "author_doc", Value: decl.Doc},
-			{Name: "registrations_of_this_declaration", Value: evidence.Bindings(receivedBindings)},
-			{Name: "registers_other_callables", Value: suppliedCallbacks},
-			{Name: "calls", Value: calls}, {Name: "observed_callers", Value: callers},
-		}}
-		row.Fields = append(row.Fields, evidence.Fields()...)
-		row.Fields = append(row.Fields, nameFields...)
 		rows = append(rows, row)
 		subjects = append(subjects, place.ID)
 	}
@@ -121,6 +92,57 @@ func (r *reader) readOperations(ctx context.Context) error {
 	}
 	r.reportStage(def.Stage)
 	return nil
+}
+
+// OperationRow is the review row of one candidate declaration: its own
+// registrations, the callbacks it supplies, its calls with receiver and
+// argument origins, its immediate native callers and the closed catalogue of
+// registered names. The row carries only what was observed: a declaration
+// without registrations, supplied callbacks, calls, callers or registered
+// names has no field for them rather than a null, and name_kind is asked only
+// where registered_name_options exists. The returned map resolves an accepted
+// http_path ref to its original path text.
+func OperationRow(place atlas.Place, declarations map[string]atlas.Place, routes []atlas.Place) (table.Row, map[string]string) {
+	decl := place.Symbol.Decl
+	var receivedBindings []atlas.SymbolBinding
+	var suppliedCallbacks []string
+	for _, binding := range place.Symbol.Bindings {
+		if binding.To == decl.Name {
+			receivedBindings = append(receivedBindings, binding)
+		}
+		if binding.From == decl.Name {
+			suppliedCallbacks = append(suppliedCallbacks, binding.To)
+		}
+	}
+	// Review source evidence, not the previous model's answer. Repeating
+	// that answer encouraged confirmation instead of separating callbacks
+	// from their helpers. Keep each own call's receiver and arguments: a
+	// request mutation and a response mutation may use the same native API.
+	var evidence lines.EvidenceCatalog
+	fields := []table.Field{
+		{Name: "path", Value: place.Path}, {Name: "name", Value: decl.Name},
+		{Name: "signature", Value: decl.Signature}, {Name: "author_doc", Value: decl.Doc},
+	}
+	if received := evidence.Bindings(receivedBindings); received != nil {
+		fields = append(fields, table.Field{Name: "registrations_of_this_declaration", Value: received})
+	}
+	if len(suppliedCallbacks) > 0 {
+		fields = append(fields, table.Field{Name: "registers_other_callables", Value: suppliedCallbacks})
+	}
+	if len(place.Symbol.Calls) > 0 {
+		calls := make([]any, 0, len(place.Symbol.Calls))
+		for _, call := range place.Symbol.Calls {
+			calls = append(calls, evidence.CallWithOrigins(call))
+		}
+		fields = append(fields, table.Field{Name: "calls", Value: calls})
+	}
+	if callers := operationCallerEvidence(place, declarations); len(callers) > 0 {
+		fields = append(fields, table.Field{Name: "observed_callers", Value: callers})
+	}
+	fields = append(fields, evidence.Fields()...)
+	nameFields, names := operationRegisteredNames(receivedBindings, routes...)
+	fields = append(fields, nameFields...)
+	return table.Row{ID: place.ID, Fields: fields}, names
 }
 
 // Native routes already identify their handler through the canonical symbol
@@ -192,12 +214,13 @@ func operationRegisteredNames(bindings []atlas.SymbolBinding, routes ...atlas.Pl
 		names[ref] = argument.Value
 		catalogue = append(catalogue, map[string]any{"ref": ref, "argument": argument})
 	}
-	kinds := []string{"label"}
-	if len(refs) > 0 {
-		kinds = append(kinds, "http")
+	// Without a registered name there is no name kind to choose: the table
+	// asks name_kind only where registered_name_options exists and reads
+	// label otherwise, so neither field is written for such a row.
+	if len(refs) == 0 {
+		return nil, names
 	}
-	return []table.Field{{Name: "registered_names", Value: catalogue}, {Name: "registered_name_options", Value: refs},
-		{Name: "name_kind_options", Value: kinds}}, names
+	return []table.Field{{Name: "registered_names", Value: catalogue}, {Name: "registered_name_options", Value: refs}}, names
 }
 
 // Supply immediate native callers only. Each declaration appears once with
@@ -233,7 +256,9 @@ func operationCallerEvidence(place atlas.Place, declarations map[string]atlas.Pl
 					bindings = append(bindings, binding)
 				}
 				var evidence lines.EvidenceCatalog
-				row["callable_bindings"] = evidence.Bindings(bindings)
+				if received := evidence.Bindings(bindings); received != nil {
+					row["callable_bindings"] = received
+				}
 			}
 			byID[id] = row
 		}

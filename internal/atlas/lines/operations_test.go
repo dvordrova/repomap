@@ -1,6 +1,7 @@
 package lines
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/table"
@@ -8,9 +9,6 @@ import (
 
 func TestOperationDecisionOwnsRequiredCells(t *testing.T) {
 	rows := make([]table.Row, 8)
-	for i := range rows {
-		rows[i].Fields = []table.Field{{Name: "name_kind_options", Value: []string{"label"}}}
-	}
 	result, err := table.DecodeResult(Operations(), table.Window{Rows: rows}, []byte(`{"rows":[
 		{"key":"r1","entry":"none","activation":"none","name":"","description":""},
 		{"key":"r2","entry":"u1"},
@@ -51,9 +49,43 @@ func TestNegativeOperationWindowIsAccepted(t *testing.T) {
 	}
 }
 
+// A row without registered names has one name kind. It is not asked: the
+// decoder reads label and requires the name, whatever the model wrote, and a
+// row with registered names that omits the cell reads label the same way.
+func TestNameKindIsAskedOnlyWithRegisteredNames(t *testing.T) {
+	def := Operations()
+	plain := table.Row{Fields: []table.Field{{Name: "path", Value: "worker.go"}}}
+	registered := table.Row{Fields: []table.Field{{Name: "registered_name_options", Value: []string{"p1"}}}}
+	window := table.Window{Rows: []table.Row{plain, registered, plain, registered}}
+	request, err := table.Request(def, window)
+	if err != nil || !strings.Contains(string(request), `"when_options_nonempty":"registered_name_options"`) || strings.Contains(string(request), "name_kind_options") {
+		t.Fatalf("name_kind is not conditioned on registered names: %s %v", request, err)
+	}
+	result, err := table.DecodeResult(def, window, []byte(`{"rows":[
+		{"key":"r1","entry":"self","activation":"continuous","name":"Send queued notifications","description":"Sends queued notifications until shutdown."},
+		{"key":"r2","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"p1","description":"Returns the status."},
+		{"key":"r3","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"p1","description":"Returns the status of one job. Then logs."},
+		{"key":"r4","entry":"self","activation":"request","http_method":"GET","http_path":"p1","description":"Returns the status."}
+	]}`))
+	if err != nil || len(result.Rejections) != 0 {
+		t.Fatalf("unasked name kind refused a row: %+v %v", result, err)
+	}
+	if got := result.Answers[0]; got["name_kind"] != "label" || got["name"] != "Send queued notifications" || got["name_from"] != "" {
+		t.Fatalf("a row without registered names did not read label with its own name: %#v", got)
+	}
+	if got := result.Answers[1]; got["name_kind"] != "http" || got["http_path"] != "p1" || got["http_method"] != "GET" || got["name"] != "" {
+		t.Fatalf("an asked and answered http kind changed: %#v", got)
+	}
+	if got := result.Answers[2]; got["name_kind"] != "label" || got["http_path"] != "" || got["http_method"] != "" || got["name"] != "Returns the status of one job" || got["name_from"] != "description" {
+		t.Fatalf("http written for a row without registered names was not read as label: %#v", got)
+	}
+	if got := result.Answers[3]; got["name_kind"] != "label" || got["http_path"] != "" || got["name"] != "Returns the status" || got["name_from"] != "description" {
+		t.Fatalf("an omitted name kind beside registered names was not read as label: %#v", got)
+	}
+}
+
 func TestHTTPNamesSelectClosedRegistrationWithoutFreeText(t *testing.T) {
 	row := table.Row{Fields: []table.Field{
-		{Name: "name_kind_options", Value: []string{"label", "http"}},
 		{Name: "registered_name_options", Value: []string{"p1"}},
 	}}
 	result, err := table.DecodeResult(Operations(), table.Window{Rows: []table.Row{row, row, row}}, []byte(`{"rows":[

@@ -141,9 +141,6 @@ func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMe
 	var deferred []Column
 	for _, column := range def.Columns {
 		active := true
-		if column.WhenOptionsFrom != "" {
-			active = len(rowOptions(row, column.WhenOptionsFrom)) > 0
-		}
 		for name, expected := range column.When {
 			value, known := answer[name]
 			if !processed[name] {
@@ -154,6 +151,16 @@ func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMe
 		}
 		processed[column.Name] = true
 		if !active {
+			continue
+		}
+		if column.WhenOptionsFrom != "" && len(rowOptions(row, column.WhenOptionsFrom)) == 0 {
+			// Empty choices have no decision to request or validate. A cell
+			// that was never asked still has one reading when the column
+			// names it: an operation without registered names is labelled,
+			// so its name cell stays required through the same branch.
+			if column.Missing != "" {
+				answer[column.Name] = column.Missing
+			}
 			continue
 		}
 		raw, found := cells[column.Name]

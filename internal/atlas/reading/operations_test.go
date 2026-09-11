@@ -11,6 +11,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
@@ -240,6 +241,56 @@ func TestNativeHTTPRouteHandlerKeepsItsRouteAndGetsNoModelOperation(t *testing.T
 	}
 	if handler.Activation != "" || handler.Operation != "" || handler.OperationSummary != "" {
 		t.Fatalf("route handler received a model operation beside its route: %+v", handler)
+	}
+}
+
+// Morfeu's operations windows spent bytes on registrations_of_this_declaration,
+// registers_other_callables, registered_names and observed_callers rendered
+// as null, and 16 of 18 rows offered name_kind_options of one option. A row
+// now carries only what was observed, and the name kind only where there is
+// a registered name to choose.
+func TestOperationRowCarriesOnlyObservedFields(t *testing.T) {
+	plain := atlas.Place{ID: "sym:run", Path: "worker.go", LineNo: 9, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:run", Name: "run", Signature: "func run()"}}}
+	rows := func(row table.Row) string {
+		t.Helper()
+		request, err := table.Request(lines.Operations(), table.Window{Rows: []table.Row{row}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(request)[strings.Index(string(request), `"rows"`):]
+	}
+	row, names := OperationRow(plain, nil, nil)
+	request := rows(row)
+	for _, forbidden := range []string{"null", "name_kind_options", "registered_name_options", "registered_names", "observed_callers", "registers_other_callables", "registrations_of_this_declaration", `"calls"`} {
+		if strings.Contains(request, forbidden) {
+			t.Fatalf("an unobserved field reached the request as %s: %s", forbidden, request)
+		}
+	}
+	if len(names) != 0 {
+		t.Fatalf("a row without registrations resolves names: %v", names)
+	}
+	handler := atlas.Place{ID: "sym:handler", Path: "api.go", LineNo: 20, Symbol: &atlas.SymbolFacts{
+		Decl: atlas.Decl{ObjectID: "object:handler", Name: "status"},
+		Bindings: []atlas.SymbolBinding{
+			{From: "install", To: "status", Detail: "mux.Handle", Path: "api.go", Line: 8, Arguments: []atlas.RegistrationArgument{{Position: 1, Kind: "literal_string", Value: "/status", Path: "api.go", Line: 8}}},
+			{From: "status", To: "render", Detail: "template.Func", Path: "api.go", Line: 22},
+		},
+		Calls:    []atlas.SymbolCall{{Name: "render", Kind: "calls", Line: 22, Resolution: "exact", CalleeIDs: []string{"sym:render"}}},
+		CalledBy: []atlas.SymbolCaller{{ObjectID: "object:install", Name: "install", Path: "api.go", Line: 8, Kind: "calls", Resolution: "exact"}},
+	}}
+	install := atlas.Place{ID: "sym:install", Path: "api.go", LineNo: 5, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:install", Name: "install"}}}
+	row, names = OperationRow(handler, map[string]atlas.Place{"object:install": install}, nil)
+	request = rows(row)
+	if strings.Contains(request, "null") || strings.Contains(request, "name_kind_options") || strings.Contains(request, "callable_bindings") {
+		t.Fatalf("observed evidence rendered a null or a one-option choice: %s", request)
+	}
+	for _, want := range []string{`"registered_name_options": ["p1"]`, `"/status"`, `"registers_other_callables": ["render"]`, `"observed_callers"`, `"name":"install"`, `"calls"`} {
+		if !strings.Contains(request, want) {
+			t.Fatalf("observed evidence lost %s: %s", want, request)
+		}
+	}
+	if names["p1"] != "/status" {
+		t.Fatalf("registered name ref does not resolve to its path: %v", names)
 	}
 }
 
