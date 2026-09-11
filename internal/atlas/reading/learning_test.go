@@ -572,7 +572,12 @@ func TestLearningPartitionMemoRevalidatesReplayAndExactInputs(t *testing.T) {
 	}
 	before = len(provider.requests)
 	warm = run()
-	if len(provider.requests) != before || warm.use(stageLearn).Rejected != 1 || warm.use(stageLearn).Cached != 2 || warm.learning.Reviews[7].State != "unavailable" || warm.learning.Reviews[0].Source != atlas.SourceCache {
+	// The intent missing from one window is reviewed by the other window, so
+	// the consolidated plan carries no "unavailable" review for it.
+	missingIntent := learningIntents()[7].ID
+	if len(provider.requests) != before || warm.use(stageLearn).Rejected != 1 || warm.use(stageLearn).Cached != 2 || warm.learning.Reviews[0].Source != atlas.SourceCache ||
+		slices.ContainsFunc(warm.learning.Reviews, func(review atlas.LearningReview) bool { return review.Intent == missingIntent && review.State == "unavailable" }) ||
+		!slices.ContainsFunc(warm.learning.Reviews, func(review atlas.LearningReview) bool { return review.Intent == missingIntent && review.State != "unavailable" }) {
 		t.Fatal("missing replay intent was accepted or discarded valid cached neighbours")
 	}
 	// A successful replay of the complete parent replaces its older partition.
@@ -652,12 +657,14 @@ func TestLearningPreparedEnvelopeAndNonresourceRefusal(t *testing.T) {
 	if err := r.executeLearning(t.Context(), pools, learningPrompt); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.requests) != 2 || len(r.learning.Reviews) != 2*len(learningIntents()) || r.learning.State != "partial" || len(r.rejected) != 1 {
-		t.Fatal("nonresource refusal was retried, split or suppressed an accepted neighbour")
+	// The second window's missing intent is reviewed by the first window: the
+	// plan is complete per intent, with one review fewer and no unavailable one.
+	if len(provider.requests) != 2 || len(r.learning.Reviews) != 2*len(learningIntents())-1 || r.learning.State != "ready" || len(r.rejected) != 1 {
+		t.Fatalf("nonresource refusal was retried, split or suppressed an accepted neighbour: %d reviews, state %s, %d rejected", len(r.learning.Reviews), r.learning.State, len(r.rejected))
 	}
 	for _, review := range r.learning.Reviews {
 		missing := review.Window == 2 && review.Intent == learningIntents()[7].ID
-		if !review.PartialContext || missing && (review.State != "unavailable" || len(review.Sources) != 0) || !missing && review.State == "unavailable" {
+		if !review.PartialContext || missing || review.State == "unavailable" {
 			t.Fatal("uninspected child became a negative or gained source authority")
 		}
 	}

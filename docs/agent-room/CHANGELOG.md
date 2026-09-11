@@ -8,6 +8,16 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The Learn plan is read per intent, not per window. After a context
+  refusal the evidence continues in several windows, each asked all eight
+  intents; a window that skipped an intent another window reviewed used to
+  add an "unavailable" review and make the whole plan "partial", so the
+  questions page said "some topics could not be reviewed" although every
+  topic had a review somewhere (the owner's run: six windows, 42 per-window
+  misses). `consolidateLearningReviews` drops an intent's unavailable
+  reviews when any window reviewed it and sets partial only for an intent
+  no window reviewed; the journal keeps every per-window rejection. Two
+  tests that encoded the per-window shape now assert the per-intent one.
 - Learn reviews are matched to intents the way a provider names them. The
   owner's run lost every intent review to "learn: missing intent review"
   (42 rows over three windows): the reviews were there, under a name the

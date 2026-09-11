@@ -704,6 +704,7 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 		planned = next
 	}
 	r.saveLearningPartitions(partitions)
+	r.learning.Reviews, r.learning.State = consolidateLearningReviews(r.learning.Reviews, r.learning.State)
 	if err := r.selectLearning(ctx); err != nil {
 		return err
 	}
@@ -719,6 +720,42 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 		return err
 	}
 	return os.WriteFile(filepath.Join(r.opts.OwnerRunDir, "learning-plan.json"), raw, 0600)
+}
+
+// consolidateLearningReviews reads the plan per intent, not per window. After
+// a context refusal the evidence continues in several windows, each asked all
+// intents; a window that skipped an intent another window reviewed adds no
+// "unavailable" review and no partial state. The plan is partial only when an
+// intent has no accepted review in any window; the journal keeps every
+// per-window rejection as it was.
+func consolidateLearningReviews(reviews []atlas.LearningReview, state string) ([]atlas.LearningReview, string) {
+	covered := map[string]bool{}
+	for _, review := range reviews {
+		if review.State != "unavailable" {
+			covered[review.Intent] = true
+		}
+	}
+	var kept []atlas.LearningReview
+	noted := map[string]bool{}
+	for _, review := range reviews {
+		if review.State == "unavailable" {
+			if covered[review.Intent] || noted[review.Intent] {
+				continue
+			}
+			noted[review.Intent] = true
+		}
+		kept = append(kept, review)
+	}
+	if state == "partial" && len(reviews) > 0 {
+		state = "ready"
+		for _, intent := range learningIntents() {
+			if !covered[intent.ID] {
+				state = "partial"
+				break
+			}
+		}
+	}
+	return kept, state
 }
 
 // Proposals from evidence fragments are not yet a repository curriculum.
