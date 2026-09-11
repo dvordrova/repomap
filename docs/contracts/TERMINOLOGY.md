@@ -11,7 +11,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   2026-09-10 correction collects accepted analytical prose and its complete
   source scope, then generates terms in separate aggregate requests. Main
   answers carry only their owning JSON contract, without optional terms or a
-  wrapper. Generation and reduction use the shared 128,000-token allowance (subject to the configured provider ceiling) and the actual
+  wrapper. Generation and reduction use their own 32,768-token output allowance (legitimate windows produced 1,276–15,278 tokens; two 128,000-token repetition loops were measured on Watchtower) and the actual
   provider request envelope; no ordinary prose byte cap creates extra windows.
   Resource refusals partition complete original prose records. A failed glossary
   request cannot invalidate an accepted analytical answer. Terms must occur in

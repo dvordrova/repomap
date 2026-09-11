@@ -320,7 +320,7 @@ func TestOptionalOutputFailureSplitsCompleteProseAndKeepsSibling(t *testing.T) {
 	}
 	count := 0
 	seen.Range(func(_, _ any) bool { count++; return true })
-	if count != 2 || len(c.pending) != 2 || len(c.Snapshot()) != 1 || base.calls != 3 || base.limits.MaxOutputTokens != llm.DefaultMaxOutputTokens {
+	if count != 2 || len(c.pending) != 2 || len(c.Snapshot()) != 1 || base.calls != 3 || base.limits.MaxOutputTokens != glossaryOutputTokens {
 		t.Fatalf("optional refusal lost sibling: seen=%d %+v", count, c.Snapshot())
 	}
 }

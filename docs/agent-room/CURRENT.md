@@ -78,7 +78,7 @@ index. Failed target outcomes and model-row refusals remain explicit.
   input/context refusals preserve and repartition complete evidence. A new
   limit/packing policy is tested on one saved complete window before a full run.
 - **Glossary:** only accepted prose enters a separate p-ref generation/reduction
-  pass, now using that same shared output allowance. Source/prose/fill context
+  pass with its own 32,768-token output allowance: legitimate windows need 1–16 thousand tokens, and two Watchtower windows looped to 128,000. Source/prose/fill context
   stays local in Prepared and the accepted cache record; no deferred g-ref
   appendix is sent. Original scope survives current warm execution, entity and
   question memos, and exact replay. Reduction v5 factors repeated source anchors

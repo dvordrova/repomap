@@ -8,6 +8,13 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Glossary generation/reduction output allowance is 32,768 tokens instead of
+  the shared 128,000. Measured legitimate windows: 1,276–15,278 output tokens
+  (Syn, issue-bot, Watchtower); measured loops: two Watchtower windows at
+  128,000/128,003 tokens, 318 s and 519 s, 15 of the run's 21 provider
+  minutes. The existing resource-refusal split still halves a refused window.
+  Saved-window probe before the change: `scratchpad/glossary-cap-probe`.
+
 - Third ordinary series (binary `664e34c`): Syn 224.602 s, issue-bot 574.736 s,
   Watchtower 306.593 s; 30/20/27 questions, all available. Source/prompt and
   provenance receipts are in external `work/small-repo-audit-20260910/next-*`.

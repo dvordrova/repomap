@@ -12,9 +12,15 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-// Glossary work uses the shared output allowance and complete prose windows.
+// Glossary work keeps complete prose windows but its own output allowance.
+// A legitimate generation window produced 1,276 to 15,278 output tokens on
+// the Syn/issue-bot/Watchtower series, while two Watchtower windows fell
+// into a repetition loop and consumed the full 128,000-token shared
+// allowance (318 s and 519 s). This ceiling bounds that loop at roughly one
+// quarter of the cost; the ordinary resource-refusal split then retries the
+// halves, exactly as it does today for context refusals.
 // It remains a separate optional completion with independent validation.
-const glossaryOutputTokens = llm.DefaultMaxOutputTokens
+const glossaryOutputTokens = 32768
 
 //go:embed prompts/generate.md
 var generatePrompt string
