@@ -8,6 +8,11 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The exchange journal records `cached_input_tokens` (DeepSeek's
+  `prompt_cache_hit_tokens`) and `reasoning_tokens` beside the token
+  counts, so a run shows whether lead-first windows over shared evidence
+  were served from the provider's prefix cache and how much of the output
+  was reasoning; the probes on the saved Freqtrade window had to infer both.
 - Learn re-asks the intents a response left out and lists the intents
   after the evidence (learn v5). The owner's run (524,288-token provider)
   split Learn into four windows: two answered only the first intent

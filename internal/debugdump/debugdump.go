@@ -190,9 +190,15 @@ type SemanticExchange struct {
 	// Latency and the token counts are what a call cost, kept beside what
 	// it said. A run of chi wrote a hundred and forty-six exchanges and not
 	// one number of seconds, so "where does the time go" had no answer.
-	Latency             time.Duration
-	InputTokens         int
-	OutputTokens        int
+	Latency      time.Duration
+	InputTokens  int
+	OutputTokens int
+	// CachedInputTokens is the part of InputTokens the provider served from
+	// its prefix cache (DeepSeek's prompt_cache_hit_tokens). Windows over the
+	// same evidence share a prefix and run lead-first for this reason; the
+	// journal shows whether the provider honoured it.
+	CachedInputTokens   int
+	ReasoningTokens     int
 	Request             []byte
 	Response            []byte
 	ResponseUnavailable *SemanticUnavailable
@@ -233,6 +239,8 @@ type SemanticExchangeRecord struct {
 	LatencyMS              int64                 `json:"latency_ms"`
 	InputTokens            int                   `json:"input_tokens"`
 	OutputTokens           int                   `json:"output_tokens"`
+	CachedInputTokens      int                   `json:"cached_input_tokens,omitempty"`
+	ReasoningTokens        int                   `json:"reasoning_tokens,omitempty"`
 	Outcome                SemanticOutcome       `json:"outcome"`
 	Request                SemanticPayloadRecord `json:"request"`
 	Response               SemanticPayloadRecord `json:"response"`
@@ -530,6 +538,7 @@ func (w *Writer) writeSemanticExchange(
 		SemanticCalls: exchange.SemanticCalls, TransportAttempts: exchange.TransportAttempts,
 		LatencyMS:   exchange.Latency.Milliseconds(),
 		InputTokens: exchange.InputTokens, OutputTokens: exchange.OutputTokens,
+		CachedInputTokens: exchange.CachedInputTokens, ReasoningTokens: exchange.ReasoningTokens,
 		Outcome: normalizedSemanticOutcome(exchange),
 		Request: request.record, Response: response.record,
 		HTTPResponse: exchange.HTTPResponse,
