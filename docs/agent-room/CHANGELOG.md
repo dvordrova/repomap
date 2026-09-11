@@ -8,6 +8,15 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Destination groups on the first screen carry their records disclosure
+  (ids stripped from the copy), so a group expands there too; a group of
+  several records shows no single record's purpose as its lead. Both were
+  reported by the owner on the first grouped report.
+- The provider refusal "The input (N tokens) is longer than the model's
+  context length (M tokens)" is recognised as a context refusal: an
+  OpenAI-compatible server in front of a 524,288-token DeepSeek worded it
+  that way, and without recognition the window would be lost instead of
+  split.
 - The Learn/Work switch is removed from the report toolbar: the owner could
   not tell the two entrances apart, and the switch only hid the intro and
   question list or moved the search field. Summary, questions, map and the

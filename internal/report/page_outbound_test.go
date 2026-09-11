@@ -214,8 +214,11 @@ func TestOutboundGroupsByDestinationWithSharedAddressAndLead(t *testing.T) {
 	if groups[1].Basis != "" || groups[0].Basis != "dispatch" || groups[1].KindLabel != "SDK" {
 		t.Fatalf("mixed basis or kind not neutralised: %+v", groups[:2])
 	}
-	if groups[1].Lead() != "Lists pods in the namespace." || groups[2].Lead() != "" {
-		t.Fatalf("lead sentence: %q / %q", groups[1].Lead(), groups[2].Lead())
+	if groups[1].Lead() != "" || groups[2].Lead() != "" {
+		t.Fatalf("a group of several records spoke with one record's sentence: %q / %q", groups[1].Lead(), groups[2].Lead())
+	}
+	if single := groupOutbound(rows[:1]); len(single) != 1 || single[0].Lead() != "Lists pods in the namespace." {
+		t.Fatalf("a single record lost its lead sentence: %+v", single)
 	}
 	if groups[0].Rows[0].ID != "b" || groups[0].Rows[2].ID != "e" {
 		t.Fatalf("record order inside a group changed: %+v", groups[0].Rows)

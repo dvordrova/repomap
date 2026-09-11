@@ -129,9 +129,13 @@ func (group pageOutboundGroup) AddressText() pageOutboundAddress {
 	return outboundAddressText(group.Address)
 }
 
-// Lead is the first sentence of the first record's purpose, at most 160
-// runes. The full purpose of every record stays in its own row.
+// Lead is the first sentence of a single record's purpose, at most 160
+// runes. A group of several records has no one purpose to speak with; each
+// record keeps its own beneath the group.
 func (group pageOutboundGroup) Lead() string {
+	if len(group.Rows) != 1 {
+		return ""
+	}
 	for _, row := range group.Rows {
 		if text := strings.TrimSpace(row.Summary); text != "" {
 			return leadSentence(text, 160)

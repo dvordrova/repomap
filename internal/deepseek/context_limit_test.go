@@ -37,6 +37,8 @@ func TestContextLimitRequiresAnExplicitContextRefusal(t *testing.T) {
 		want       bool
 	}{
 		{"closed code", `{"error":{"code":"context_length_exceeded","message":"Input does not fit"}}`, 400, true},
+		{"input longer than context", `{"error":{"message":"The input (703005 tokens) is longer than the model's context length (524288 tokens).","type":"invalid_request_error"}}`, 400, true},
+		{"input within context", `{"error":{"message":"The input (500000 tokens) is longer than the model's context length (524288 tokens)."}}`, 400, false},
 		{"DeepSeek terse", `{"error":{"code":"quota_limit_reached","message":"Input token exceed the limit (request id: example)"}}`, 400, true},
 		{"top-level numeric code", `{"code":400,"message":"This model's maximum context length is 1024 tokens. However, you requested 1200 tokens (1000 in the messages, 200 in the completion)."}`, 400, true},
 		{"quota alone", `{"error":{"code":"quota_limit_reached","message":"Balance too low"}}`, 400, false},
