@@ -8,6 +8,16 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Call lines keep their type when it tells records apart, and carry the
+  note. The member-only line read "Patch, Patch, Patch" on a Kubernetes
+  client: a member used by several types within one destination now keeps
+  its type ("PodInterface.Patch", "DeploymentInterface.Patch"), a member
+  used by one type reads alone ("ExchangeDeclare"), and the generic-name
+  list gained Patch, Watch, Apply, Scan, Push, Pull, Insert, Select,
+  Subscribe, Emit. With the telegraphic boundaries note the purpose fits
+  the line itself: "ExchangeDeclare объявляет topic exchange morfeu.events
+  и DLX morfeu.events.dlx · client.go:322"; the disclosure repeats the
+  purpose only when it is longer than the note.
 - The operation view says what it shows. After the first jump into
   "Операции › criar-filme" the owner liked the picture and asked what he
   was looking at. One muted line under the crumbs now reads "criar-filme:

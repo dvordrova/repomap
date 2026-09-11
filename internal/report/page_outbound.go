@@ -18,7 +18,11 @@ type pageOutbound struct {
 	Address, NativeLabel        string
 	External, Basis, Source     string
 	Method                      string
-	Anchor                      pageAnchor
+	// LineWithType keeps the callable's type on the line because another
+	// record of the same destination has the same member on another type:
+	// "PodInterface.Patch" and "DeploymentInterface.Patch", not "Patch, Patch".
+	LineWithType bool
+	Anchor       pageAnchor
 }
 
 type pageOutboundUse struct {
@@ -167,7 +171,8 @@ func (group pageOutboundGroup) Rest() []pageOutbound {
 var genericCallables = map[string]bool{"New": true, "Close": true, "Ping": true, "Get": true, "Set": true, "Do": true, "Run": true, "Start": true, "Stop": true,
 	"Connect": true, "Open": true, "Exec": true, "Query": true, "Call": true, "Send": true, "Write": true, "Read": true, "Begin": true, "Commit": true,
 	"Rollback": true, "Publish": true, "Consume": true, "Dial": true, "Delete": true, "Update": true, "Create": true, "List": true, "Put": true, "Post": true,
-	"Up": true, "Down": true, "Version": true, "Save": true, "Load": true, "Fetch": true, "Store": true, "Add": true, "Remove": true, "Find": true}
+	"Up": true, "Down": true, "Version": true, "Save": true, "Load": true, "Fetch": true, "Store": true, "Add": true, "Remove": true, "Find": true,
+	"Patch": true, "Watch": true, "Apply": true, "Scan": true, "Push": true, "Pull": true, "Insert": true, "Select": true, "Subscribe": true, "Unsubscribe": true, "Emit": true, "On": true}
 
 // Line is one record's line beneath its destination: a native HTTP fact
 // keeps its method and address; a callable drops the package the group
@@ -179,14 +184,14 @@ func (row pageOutbound) Line() string {
 		return row.NativeLabel
 	}
 	if row.External != "" {
-		return shortCallable(row.External)
+		return shortCallable(row.External, row.LineWithType)
 	}
 	// An unresolved interface call has no callable of its own; the function
 	// that makes it is the next best name for the line.
 	for _, use := range row.Uses {
 		for _, step := range use.Steps {
 			if step.Name != "" {
-				return shortCallable(step.Name)
+				return shortCallable(step.Name, false)
 			}
 		}
 	}
@@ -207,26 +212,43 @@ func (row pageOutbound) InformativeUses() []pageOutboundUse {
 	return uses
 }
 
-func shortCallable(external string) string {
+func shortCallable(external string, keepType bool) string {
 	parts := strings.Split(external, ".")
 	if len(parts) < 2 {
 		return external
 	}
 	member := parts[len(parts)-1]
-	if genericCallables[member] && len(parts) >= 3 {
+	if (keepType || genericCallables[member]) && len(parts) >= 3 {
 		return parts[len(parts)-2] + "." + member
 	}
 	return member
 }
 
-// Brief is one record's line beneath its destination when the source names
-// no method, address or callable: the first sentence of its purpose, at most
-// 90 runes. The full purpose, address, basis and source chain open under it.
+// callableParts splits "pkg.Type.Member" into its type (empty for a
+// package-level function) and member.
+func callableParts(external string) (string, string) {
+	parts := strings.Split(external, ".")
+	if len(parts) < 3 {
+		return "", parts[len(parts)-1]
+	}
+	return parts[len(parts)-2], parts[len(parts)-1]
+}
+
+// Brief is the note printed right after the call on its line: the first
+// sentence of the record's purpose, at most 120 runes. With the telegraphic
+// boundaries note that is the whole purpose; a longer purpose keeps its
+// full text under the disclosure (see MoreThanBrief).
 func (row pageOutbound) Brief() string {
 	if text := strings.TrimSpace(row.Summary); text != "" {
-		return leadSentence(text, 90)
+		return leadSentence(text, 120)
 	}
 	return ""
+}
+
+// MoreThanBrief reports a purpose longer than the note on the line, which
+// the disclosure then repeats in full.
+func (row pageOutbound) MoreThanBrief() bool {
+	return strings.TrimSpace(row.Summary) != row.Brief()
 }
 
 func leadSentence(text string, limit int) string {
@@ -298,6 +320,29 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 			for address := range addresses {
 				groups[i].Address = address
 			}
+		}
+	}
+	// Within one destination a member shared by several types keeps its
+	// type on the line; a member used by one type reads alone.
+	for i := range groups {
+		types := make(map[string]map[string]bool)
+		for _, row := range groups[i].Rows {
+			if row.External == "" {
+				continue
+			}
+			typ, member := callableParts(row.External)
+			if types[member] == nil {
+				types[member] = make(map[string]bool)
+			}
+			types[member][typ] = true
+		}
+		for j := range groups[i].Rows {
+			row := &groups[i].Rows[j]
+			if row.External == "" {
+				continue
+			}
+			_, member := callableParts(row.External)
+			row.LineWithType = len(types[member]) > 1
 		}
 	}
 	sort.SliceStable(groups, func(i, j int) bool { return len(groups[i].Rows) > len(groups[j].Rows) })

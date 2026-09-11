@@ -39,9 +39,9 @@
 {{define "outbound-address"}}{{if .Setting}}{{t .SettingLabel}} <code>{{.Setting}}</code>{{if .Suffix}}; {{t "append"}} <code>{{.Suffix}}</code>{{end}}{{else if .Text}}{{t "Address"}}: <code>{{.Text}}</code>{{else}}{{t "Address not determined"}}{{end}}{{end}}
 
 {{define "outbound-row"}}<li id="{{.ID}}" data-integration-record data-source-kind="{{.Source}}" data-communication-basis="{{.Basis}}">
-<details class="outbound-call"><summary>{{if .Line}}<code class="outbound-callable">{{.Line}}</code>{{else if .Brief}}{{.Brief}}{{else}}{{t .KindLabel}}{{end}} <span class="meta">{{.Anchor.Text}}</span></summary>
+<details class="outbound-call"><summary>{{if .Line}}<code class="outbound-callable">{{.Line}}</code>{{if .Brief}} <span class="outbound-note" data-display-ref="{{.SummaryRef}}">{{.Brief}}</span>{{end}}{{else if .Brief}}<span class="outbound-note" data-display-ref="{{.SummaryRef}}">{{.Brief}}</span>{{else}}{{t .KindLabel}}{{end}} <span class="meta">{{.Anchor.Text}}</span></summary>
 <div class="outbound-call-body">
-{{if .Summary}}<p class="outbound-purpose"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span></p>{{end}}
+{{if and .Summary .MoreThanBrief}}<p class="outbound-purpose"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span></p>{{end}}
 {{if or .Address (gt .DestinationCount 1)}}<div class="outbound-address">{{if gt .DestinationCount 1}}{{t "Destinations"}} · {{.DestinationCount}}{{else}}{{template "outbound-address" .AddressText}}{{end}}</div>{{end}}
 <div class="outbound-basis meta">{{t .KindLabel}}{{if .BasisLabel}} · {{t .BasisLabel}}{{end}}</div>
 <div class="outbound-source">{{if .External}}<code class="outbound-callable">{{.External}}</code> · {{end}}{{template "anchor" .Anchor}}</div>

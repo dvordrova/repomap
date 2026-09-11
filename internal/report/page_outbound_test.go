@@ -287,7 +287,7 @@ func TestOutboundLineDropsThePackageTheGroupImplies(t *testing.T) {
 		"amqp091-go.Channel.Confirm": "Confirm", "amqp091-go.Connection.NotifyClose": "NotifyClose", "amqp091-go.Channel.ExchangeDeclare": "ExchangeDeclare",
 		"pgxpool.Pool.Ping": "Pool.Ping", "v4.Migrate.Up": "Migrate.Up", "v4.New": "New", "v5.Tx.Commit": "Tx.Commit", "WebSocket": "WebSocket", "": "",
 	} {
-		if got := shortCallable(external); got != want {
+		if got := shortCallable(external, false); got != want {
 			t.Fatalf("shortCallable(%q) = %q, want %q", external, got, want)
 		}
 	}
@@ -308,5 +308,29 @@ func TestOutboundLineFallsBackToTheCallingFunction(t *testing.T) {
 	row.Uses = append(row.Uses, pageOutboundUse{Frontier: "v5.Connect", Steps: []pageOutboundStep{{Name: "main"}}}, pageOutboundUse{Address: "{env:PG_URL}"})
 	if len(row.InformativeUses()) != 2 {
 		t.Fatalf("chains with a frontier or an address were dropped: %+v", row.InformativeUses())
+	}
+}
+
+func TestOutboundLinesKeepTheTypeWhenAMemberRepeatsAcrossTypes(t *testing.T) {
+	rows := []pageOutbound{
+		{ID: "a", Destination: "Kubernetes API server", External: "v1.PodInterface.Patch"},
+		{ID: "b", Destination: "Kubernetes API server", External: "v1.DeploymentInterface.Patch"},
+		{ID: "c", Destination: "Kubernetes API server", External: "v1.PodInterface.Evict"},
+		{ID: "d", Destination: "RabbitMQ broker", External: "amqp091-go.Channel.ExchangeDeclare"},
+		{ID: "e", Destination: "RabbitMQ broker", External: "amqp091-go.Channel.Close"},
+		{ID: "f", Destination: "RabbitMQ broker", External: "amqp091-go.Connection.Close"},
+	}
+	groups := groupOutbound(rows)
+	lines := map[string]string{}
+	for _, group := range groups {
+		for _, row := range group.Rows {
+			lines[row.ID] = row.Line()
+		}
+	}
+	want := map[string]string{"a": "PodInterface.Patch", "b": "DeploymentInterface.Patch", "c": "Evict", "d": "ExchangeDeclare", "e": "Channel.Close", "f": "Connection.Close"}
+	for id, line := range want {
+		if lines[id] != line {
+			t.Fatalf("line for %s = %q, want %q (%v)", id, lines[id], line, lines)
+		}
 	}
 }

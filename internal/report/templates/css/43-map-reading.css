@@ -149,3 +149,5 @@
 [data-input-subgroup]+[data-input-subgroup]{margin-top:6px}
 .map-member-file{grid-column:1/-1;margin:8px 0 2px;font-size:12px;color:var(--muted);font-family:var(--mono,monospace)}
 .data-kind{font-size:14px;margin:12px 0 4px}.data-kind .meta{display:inline;font-size:12px}
+/* The telegraphic note sits on the call line itself; the click keeps the address, basis and source. */
+.outbound-note{font-family:inherit;font-weight:400;color:var(--ink)}
