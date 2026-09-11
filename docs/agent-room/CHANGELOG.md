@@ -8,6 +8,11 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The finder script referenced the removed second search field after the
+  Learn/Work switch was taken out (`proxy is not defined` at load), which
+  stopped every script bundled after it: reading navigation, glossary and
+  question links. The references are gone; a JavaScript smoke check of the
+  bundle is part of the report tests now.
 - A single-component report gets the same first-screen product card as a
   repository map would give it: name, purpose, counts and the inputs,
   commands and communication entrance, placed before the question list. The
