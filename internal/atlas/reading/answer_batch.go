@@ -206,6 +206,9 @@ func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, ou
 	}
 	if superseded {
 		reason = "Provider resource refusal; complete partitions follow. This attempt supplies no answers."
+		if !answerResourceFailure(failure) {
+			reason = fmt.Sprintf("Provider refusal (%s); complete partitions follow. This attempt supplies no answers.", failure)
+		}
 	}
 	if reason != "" {
 		source += "; " + reason

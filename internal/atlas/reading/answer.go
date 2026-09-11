@@ -125,7 +125,15 @@ func (r *reader) readAnswers(ctx context.Context) error {
 				use.Live++
 			}
 			superseded := false
-			if answerResourceFailure(failure) {
+			resource := answerResourceFailure(failure)
+			// A resource refusal divides the questions, then a lone question's
+			// sources. Any other refusal of a shared window (a failed provider
+			// call, an unusable envelope, a response with no accepted row) says
+			// nothing about one question either: the questions divide the same
+			// way until a request holds one question, whose refusal is then its
+			// own unavailable answer (Morfeu 20260911-112125 lost 22 questions to
+			// one empty response).
+			if resource || (failure != nil && len(window.parts) > 1) {
 				children, splitErr := r.splitAnswerWindow(def, window.parts)
 				if splitErr != nil {
 					return splitErr
@@ -145,7 +153,7 @@ func (r *reader) readAnswers(ctx context.Context) error {
 				}
 				superseded = true
 				if r.opts.State != nil {
-					r.opts.State(def.Stage, "partitioned", fmt.Sprintf("the provider refused %d questions in one request by resources; the complete input continues in %d smaller requests", len(window.parts), len(children)))
+					r.opts.State(def.Stage, "partitioned", answerPartitionNotice(resource, failureKinds[outcome.RequestSHA256], len(window.parts), len(children)))
 				}
 			}
 			if err := r.writeAnswerWindow(def, window, outcome, failure, superseded); err != nil {
@@ -191,6 +199,24 @@ func (r *reader) readAnswers(ctx context.Context) error {
 	}
 	r.reportStage(lines.StageAnswer)
 	return nil
+}
+
+// answerPartitionNotice tells the console why a shared window continues in
+// smaller requests: a resource refusal names the resource; any other refusal
+// names what the provider did instead of answering.
+func answerPartitionNotice(resource bool, kind llm.FailureKind, questions, partitions int) string {
+	var refusal string
+	switch {
+	case resource:
+		refusal = fmt.Sprintf("the provider refused %d questions in one request by resources", questions)
+	case kind == llm.FailureProvider:
+		refusal = fmt.Sprintf("the provider call for %d questions in one request failed", questions)
+	case kind == llm.FailureResponse:
+		refusal = fmt.Sprintf("the provider's envelope for %d questions in one request was refused", questions)
+	default:
+		refusal = fmt.Sprintf("the provider's response to %d questions in one request was refused", questions)
+	}
+	return fmt.Sprintf("%s; the complete input continues in %d smaller requests", refusal, partitions)
 }
 
 func answerCall(def table.Definition, window answerWindow) (llm.Call[table.Result], error) {

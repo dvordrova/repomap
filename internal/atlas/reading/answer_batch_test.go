@@ -307,6 +307,111 @@ func TestAnswerBatchMalformedWindowKeepsAcceptedSibling(t *testing.T) {
 	}
 }
 
+// Morfeu 20260911-112125: one window of 22 questions came back with no content
+// and every question became unavailable. A refused shared window now divides
+// its questions the way a resource refusal does.
+func TestAnswerBatchRefusedSharedWindowDividesQuestions(t *testing.T) {
+	noContent := errors.New("llm response content is empty")
+	provider := &answerTestProvider{tableProvider: &tableProvider{}}
+	provider.completeAnswer = func(request answerTestRequest) ([]byte, error) {
+		if len(request.Rows) > 2 {
+			return nil, noContent
+		}
+		return nil, nil
+	}
+	r := answerTestReader(t, answerTestRoutes(3), provider)
+	var partitioned []string
+	r.opts.State = func(_, state string, details ...string) {
+		if state == "partitioned" {
+			partitioned = append(partitioned, strings.Join(details, " "))
+		}
+	}
+	if err := r.readAnswers(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.requests) != 3 || len(r.rejected) != 0 {
+		t.Fatalf("attempts=%d rejected=%+v", len(provider.requests), r.rejected)
+	}
+	for _, question := range r.questions {
+		parts := question.Answer.Parts
+		if len(parts) != 1 || parts[0].Source != atlas.SourceModel || len(parts[0].Steps) != 1 || question.Answer.State != "partial" {
+			t.Fatalf("divided question lost its complete accepted answer: %+v", question.Answer)
+		}
+	}
+	use := r.use(lines.StageAnswer)
+	if use.Windows != 3 || use.Live != 3 || use.Rejected != 0 || use.Given != 0 {
+		t.Fatalf("accounting: %+v", use)
+	}
+	want := "the provider call for 3 questions in one request failed; the complete input continues in 2 smaller requests"
+	if !reflect.DeepEqual(partitioned, []string{want}) {
+		t.Fatalf("console: %q", partitioned)
+	}
+	// The journal keeps the refused attempt with its original refusal and
+	// marks it superseded, exactly as a resource refusal is recorded.
+	matches, err := filepath.Glob(filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir, "atlas_answer-r*-w0.result.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("superseded window result: %v %v", matches, err)
+	}
+	raw, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Source     string `json:"source"`
+		Reason     string `json:"reason"`
+		Superseded bool   `json:"superseded"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	// The provider's own text never enters the closed failure rendering; the
+	// journal names the failed operation and its class.
+	if result.Source != atlas.SourceGiven || !result.Superseded || !strings.Contains(result.Reason, "llm: provider complete failed") {
+		t.Fatalf("journal lost the original refusal or the division: %+v", result)
+	}
+	if !strings.Contains(r.tables.String(), "Provider refusal (") || !strings.Contains(r.tables.String(), "complete partitions follow") {
+		t.Fatalf("tables.md does not explain the division:\n%s", r.tables.String())
+	}
+}
+
+func TestAnswerBatchRefusedSingletonStaysUnavailableBesideDividedSiblings(t *testing.T) {
+	provider := &answerTestProvider{tableProvider: &tableProvider{}}
+	provider.completeAnswer = func(request answerTestRequest) ([]byte, error) {
+		if len(request.Rows) > 1 {
+			return nil, errors.New("llm response content is empty")
+		}
+		if request.Rows[0]["question"] == "Question 00?" {
+			return []byte(`{"rows":[`), nil
+		}
+		return nil, nil
+	}
+	r := answerTestReader(t, answerTestRoutes(3), provider)
+	if err := r.readAnswers(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// 3 refused, then 1+2 (the pair refused again), then 1+1: five requests,
+	// one of which is a lone question whose malformed answer stays refused.
+	if len(provider.requests) != 5 || len(r.rejected) != 1 || r.rejected[0].Kind != "window_rejected" || r.rejected[0].Count != 1 {
+		t.Fatalf("attempts=%d rejected=%+v", len(provider.requests), r.rejected)
+	}
+	for i, question := range r.questions {
+		parts := question.Answer.Parts
+		if i == 0 {
+			if question.Answer.State != "unavailable" || len(parts) != 1 || parts[0].Source != atlas.SourceGiven || question.Guide.State != "unavailable" {
+				t.Fatalf("refused lone question was repaired: %+v", question)
+			}
+			continue
+		}
+		if question.Answer.State != "partial" || len(parts) != 1 || parts[0].Source != atlas.SourceModel || len(parts[0].Steps) != 1 {
+			t.Fatalf("sibling of a refused question lost its answer: %+v", question.Answer)
+		}
+	}
+	use := r.use(lines.StageAnswer)
+	if use.Windows != 5 || use.Rejected != 1 || use.Given != 1 {
+		t.Fatalf("accounting: %+v", use)
+	}
+}
+
 func TestAnswerBatchUsesPreparedEnvelopeWithoutDefaultByteCap(t *testing.T) {
 	routes := answerTestRoutes(2)
 	for i := range routes {
