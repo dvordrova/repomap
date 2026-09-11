@@ -17,7 +17,7 @@ func Operations() table.Definition {
 		{Name: "name_kind", Kind: table.Choice, OptionsFrom: "name_kind_options", When: map[string]string{"entry": "self"}, Note: "http selects an original registered path; label describes other work or a handler without an observed literal path"},
 		{Name: "http_method", Kind: table.Choice, Options: []string{"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH", "ANY"}, When: map[string]string{"entry": "self", "name_kind": "http"}},
 		{Name: "http_path", Kind: table.Choice, OptionsFrom: "registered_name_options", When: map[string]string{"entry": "self", "name_kind": "http"}, Note: "one original registration ref, never copied or invented path text"},
-		{Name: "name", Kind: table.Text, MaxRunes: 60, When: map[string]string{"entry": "self", "name_kind": "label"}},
+		{Name: "name", Kind: table.Text, MaxRunes: 60, When: map[string]string{"entry": "self", "name_kind": "label"}, EmptyFrom: "description"},
 		{Name: "description", Kind: table.Text, MaxRunes: 180, When: map[string]string{"entry": "self"}},
 	}}
 }

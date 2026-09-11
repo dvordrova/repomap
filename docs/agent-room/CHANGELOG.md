@@ -8,6 +8,13 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- An operation label the model left empty or null takes the first sentence of
+  the row's own description (`name_from: description`). An owner's Go service
+  on another DeepSeek provider received rows with every schema key present and
+  `"name": null` beside a complete description, and each such row was refused
+  as `cell "name" is empty`; the official API writes the label. An empty
+  description still refuses the row. Decoder rule only: requests and memo
+  state are unchanged.
 - Orientation is bounded by construction again: at most 40 members per group
   (`member_count` keeps the real size), 6 calls and 6 callers per listed
   member's evidence with omitted counts. After `956e5992` removed the

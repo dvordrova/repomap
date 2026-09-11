@@ -95,3 +95,41 @@ func TestIndependentKeylessRowsAreReadInAskedOrderOnlyWhenComplete(t *testing.T)
 		t.Fatalf("a partly keyed response was read positionally: %+v / %v", result, err)
 	}
 }
+
+func TestIndependentEmptyLabelFallsBackToItsOwnDescription(t *testing.T) {
+	def := Definition{Stage: "atlas_operations", Independent: true, Columns: []Column{
+		{Name: "entry", Kind: Choice, Options: []string{"self", "none"}},
+		{Name: "name", Kind: Text, MaxRunes: 20, When: map[string]string{"entry": "self"}, EmptyFrom: "description"},
+		{Name: "description", Kind: Text, MaxRunes: 180, When: map[string]string{"entry": "self"}},
+	}}
+	window := Window{Rows: []Row{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}}}
+	raw := []byte(`{"rows":[
+		{"key":"r1","entry":"self","name":null,"description":"Runs periodic event aggregation batches until context cancellation. Emits status events."},
+		{"key":"r2","entry":"self","description":"Handles incoming WebSocket test-launcher events, starting or stopping tests."},
+		{"key":"r3","entry":"self","name":"Send batches","description":"Runs periodic event sending batches."},
+		{"key":"r4","entry":"self","name":"","description":""}]}`)
+	result, err := DecodeResult(def, window, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Answers[0]; got["name"] != "Runs periodic event…" || got["name_from"] != "description" {
+		t.Fatalf("null label did not take the first sentence of its description: %+v", got)
+	}
+	if got := result.Answers[1]; got["name"] != "Handles incoming…" || got["name_from"] != "description" {
+		t.Fatalf("missing label did not take its description: %+v", got)
+	}
+	if got := result.Answers[2]; got["name"] != "Send batches" || got["name_from"] != "" {
+		t.Fatalf("a written label was replaced: %+v", got)
+	}
+	if result.Answers[3] != nil || len(result.Rejections) != 1 || !strings.Contains(result.Rejections[0].Reason, "is empty") {
+		t.Fatalf("an empty description invented a label: %+v / %+v", result.Answers[3], result.Rejections)
+	}
+	loose := Definition{Stage: "atlas_operations", Independent: true, Columns: []Column{
+		{Name: "name", Kind: Text, MaxRunes: 20, EmptyFrom: "description"},
+		{Name: "description", Kind: Prose},
+	}}
+	result, err = DecodeResult(loose, Window{Rows: []Row{{ID: "a"}}}, []byte(`{"rows":[{"key":"r1","name":null,"description":"   "}]}`))
+	if err == nil || result.Answers[0] != nil || !strings.Contains(err.Error(), "is empty") {
+		t.Fatalf("blank prose became a label: %+v / %v", result, err)
+	}
+}

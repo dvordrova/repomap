@@ -7,7 +7,7 @@ import (
 )
 
 func TestOperationDecisionOwnsRequiredCells(t *testing.T) {
-	rows := make([]table.Row, 7)
+	rows := make([]table.Row, 8)
 	for i := range rows {
 		rows[i].Fields = []table.Field{{Name: "name_kind_options", Value: []string{"label"}}}
 	}
@@ -16,9 +16,10 @@ func TestOperationDecisionOwnsRequiredCells(t *testing.T) {
 		{"key":"r2","entry":"u1"},
 		{"key":"r3","entry":"none","name":42,"description":{}},
 		{"key":"r4","entry":"self","name_kind":"label","activation":"continuous","name":"worker","description":"Consumes updates until cancellation."},
-		{"key":"r5","entry":"self","name_kind":"label","activation":"continuous","name":"","description":"Runs."},
+		{"key":"r5","entry":"self","name_kind":"label","activation":"continuous","name":null,"description":"Runs periodic event sending batches until context cancellation. Then stops."},
 		{"key":"r6","entry":"u2"},
-		{"key":"r7","entry":"self","name_kind":"label","activation":"none","name":"worker","description":"Runs."}
+		{"key":"r7","entry":"self","name_kind":"label","activation":"none","name":"worker","description":"Runs."},
+		{"key":"r8","entry":"self","name_kind":"label","activation":"continuous","name":"","description":""}
 	]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +32,12 @@ func TestOperationDecisionOwnsRequiredCells(t *testing.T) {
 	if result.Answers[3]["name"] != "worker" || len(result.Rejections) != 4 {
 		t.Fatalf("self or rejection scope changed: %#v", result)
 	}
-	for _, i := range []int{1, 4, 5, 6} {
+	// A provider that fills every schema key returns null for a label the
+	// model skipped; the row keeps its decision under its own description.
+	if got := result.Answers[4]; got["name"] != "Runs periodic event sending batches until context…" || got["name_from"] != "description" || got["activation"] != "continuous" {
+		t.Fatalf("null label did not take the row's own description: %#v", got)
+	}
+	for _, i := range []int{1, 5, 6, 7} {
 		if result.Answers[i] != nil {
 			t.Fatalf("invalid operation accepted: %#v", result.Answers[i])
 		}

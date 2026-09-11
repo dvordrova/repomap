@@ -3,6 +3,7 @@ package table
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/llm"
 )
@@ -137,6 +138,7 @@ func keylessInAskedOrder(rows []json.RawMessage, asked int) bool {
 func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMessage) (Answer, error) {
 	answer := make(Answer, len(def.Columns))
 	processed := make(map[string]bool, len(def.Columns))
+	var deferred []Column
 	for _, column := range def.Columns {
 		active := true
 		if column.WhenOptionsFrom != "" {
@@ -156,6 +158,10 @@ func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMe
 		}
 		raw, found := cells[column.Name]
 		if !found {
+			if column.EmptyFrom != "" {
+				deferred = append(deferred, column)
+				continue
+			}
 			return nil, fmt.Errorf("missing %q cell", column.Name)
 		}
 		var cell string
@@ -164,9 +170,25 @@ func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMe
 		}
 		value, err := normalizeCell(column, row, cell)
 		if err != nil {
+			if column.EmptyFrom != "" && strings.TrimSpace(cell) == "" {
+				deferred = append(deferred, column)
+				continue
+			}
 			return nil, err
 		}
 		answer[column.Name] = value
+	}
+	// A provider that fills every schema key returns null for a label the
+	// model skipped; the model's own description of the same row is the
+	// nearest honest label. Nothing is invented: an empty source still
+	// refuses the row.
+	for _, column := range deferred {
+		source := answer[column.EmptyFrom]
+		if source == "" {
+			return nil, fmt.Errorf("cell %q is empty", column.Name)
+		}
+		answer[column.Name] = labelFromProse(source, column.MaxRunes)
+		answer[column.Name+"_from"] = column.EmptyFrom
 	}
 	return answer, nil
 }

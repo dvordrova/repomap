@@ -63,6 +63,13 @@ type Column struct {
 	// When limits this cell to a previously validated choice in the same row.
 	// Inactive cells have no authority and are not required or retained.
 	When map[string]string `json:"when,omitempty"`
+	// EmptyFrom names another text cell of the same row whose first sentence
+	// stands in when this required text cell comes back empty, null or
+	// missing; the answer records <name>_from with the source cell. It is a
+	// decoder rule, not part of the request or the memo state: an operation
+	// label taken from the model's own description keeps the row's accepted
+	// decision instead of refusing the whole row.
+	EmptyFrom string `json:"-"`
 	// WhenOptionsFrom requires this cell only when the named input field has
 	// advertised choices. Empty choices have no decision to request or validate.
 	WhenOptionsFrom string `json:"when_options_from,omitempty"`
@@ -547,6 +554,18 @@ func IsFree(column Column, value string) (string, bool) {
 func collapse(text string) string {
 	fields := strings.FieldsFunc(text, func(r rune) bool { return unicode.IsSpace(r) || r < 0x20 || r == 0x7f })
 	return strings.Join(fields, " ")
+}
+
+// labelFromProse takes the first sentence of a prose cell as a short label,
+// or the prose cut to the limit when that sentence is still too long.
+func labelFromProse(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	if end := strings.Index(text, ". "); end > 0 {
+		text = text[:end]
+	} else if strings.HasSuffix(text, ".") {
+		text = strings.TrimSuffix(text, ".")
+	}
+	return cutRunes(text, limit)
 }
 
 func cutRunes(text string, limit int) string {
