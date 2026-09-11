@@ -30,6 +30,15 @@ type Collector struct {
 	mu      sync.Mutex
 	values  map[string]Candidate
 	pending map[string]proseSource
+	// Progress, when set, receives console-worthy states such as a refused
+	// window continuing in partitions. It never changes what is generated.
+	Progress func(state, detail string)
+}
+
+func (c *Collector) progress(state, detail string) {
+	if c.Progress != nil {
+		c.Progress(state, detail)
+	}
 }
 
 func NewCollector(paths []string) *Collector {

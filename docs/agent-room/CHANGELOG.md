@@ -23,7 +23,8 @@ runs instead of growing the entry pages again.
   36 s per remote refusal, 52 times at the answer stage alone. Unset keeps
   the check remote. No request bytes or cache keys change.
 - The console now says when a refused request is partitioned: after the
-  WARN for a provider resource refusal, the answer, question and learn stages
+  WARN for a provider resource refusal, the answer, question, learn and
+  glossary stages
   print a `partitioned` state with the number of questions or evidence groups
   and the number of smaller requests that follow. The owner could not tell a
   split from a lost window; `tables.md` and `rejected.jsonl` recorded it, the

@@ -309,6 +309,7 @@ func (c *Collector) Generate(ctx context.Context, executor llm.Executor, provide
 					if _, err := llm.RememberAdaptiveSplit(executor, provider, calls[i], outcome.Outcome, outcome.Err); err != nil {
 						return err
 					}
+					c.progress("partitioned", fmt.Sprintf("the provider refused %d prose sources in one request by resources; the complete set continues in 2 partitions", len(windows[i])))
 					for _, child := range [][]proseSource{left, right} {
 						parts, err := planProse(ctx, provider, child)
 						if err != nil {

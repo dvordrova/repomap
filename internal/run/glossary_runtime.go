@@ -39,6 +39,8 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 		BatchConcurrency: options.Deps.llmBatchConcurrency, BatchController: options.Deps.llmBatchController,
 	}, debugdump.SemanticStageGlossary)
 	options.Output.Stage("Glossary", "explaining unfamiliar names from accepted prose")
+	progress := func(state, detail string) { options.Output.State("Glossary", state, detail) }
+	collector.Progress = progress
 	if err := collector.Generate(ctx, executor, provider); err != nil {
 		return fmt.Errorf("glossary: %w", err)
 	}
@@ -48,7 +50,7 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 	}
 	options.Output.Stage("Glossary", fmt.Sprintf("combining %d source-backed term explanations", len(candidates)))
 	started := time.Now()
-	catalog, err := terminology.Reduce(ctx, executor, provider, candidates)
+	catalog, err := terminology.Reduce(ctx, executor, provider, candidates, progress)
 	if err != nil {
 		return fmt.Errorf("glossary: %w", err)
 	}

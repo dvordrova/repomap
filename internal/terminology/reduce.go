@@ -41,9 +41,16 @@ type Catalog struct {
 // A refused window keeps its input entries unchanged and is not tried again.
 // Accepted siblings survive; only real envelope refusals split whole groups.
 // PartialComparison records any refusal or nonshrinking disjoint comparison.
-func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, candidates []Candidate) (Catalog, error) {
+func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, candidates []Candidate, progress ...func(state, detail string)) (Catalog, error) {
 	if err := ctx.Err(); err != nil {
 		return Catalog{}, err
+	}
+	notify := func(state, detail string) {
+		for _, fn := range progress {
+			if fn != nil {
+				fn(state, detail)
+			}
+		}
 	}
 	variants, err := normalizeCandidates(candidates)
 	if err != nil {
@@ -132,6 +139,7 @@ func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, c
 						if _, err := llm.RememberAdaptiveSplit(executor, provider, calls[i], outcome.Outcome, outcome.Err); err != nil {
 							return Catalog{}, err
 						}
+						notify("partitioned", fmt.Sprintf("the provider refused %d term entries in one request by resources; the complete set continues in 2 partitions", len(windows[i])))
 						for _, child := range [][]Entry{left, right} {
 							parts, err := planReduction(ctx, provider, child)
 							if err != nil {
