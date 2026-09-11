@@ -200,7 +200,7 @@ func TestTypeContextKeepsOwnedDeclarationsWithoutNativeIDs(t *testing.T) {
 			t.Fatalf("lost owned context %q: %s", want, request)
 		}
 	}
-	for _, forbidden := range []string{"native-type-id", "native-method-id", "native-field-id", "type-local", "activation", "outbound", "file_hypothesis"} {
+	for _, forbidden := range []string{"native-type-id", "native-method-id", "native-field-id", "type-local", "operation_candidate", "outbound", "file_hypothesis"} {
 		if strings.Contains(request, forbidden) {
 			t.Fatalf("type table exposed unrelated field %q", forbidden)
 		}

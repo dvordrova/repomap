@@ -49,8 +49,6 @@ type Column struct {
 	// field that carries the row's own list instead.
 	Options     []string `json:"options,omitempty"`
 	OptionsFrom string   `json:"options_from,omitempty"`
-	// LimitFrom names the row field bounding a Sequence's number of choices.
-	LimitFrom string `json:"limit_from,omitempty"`
 	// Free is a prefix after which the model may write its own short text,
 	// such as "new: " for a title the code has not seen. Empty means no.
 	Free         string `json:"free,omitempty"`
@@ -251,9 +249,6 @@ func Request(def Definition, window Window) ([]byte, error) {
 		}
 		if column.OptionsFrom != "" {
 			spec["options_from"] = column.OptionsFrom
-		}
-		if column.LimitFrom != "" {
-			spec["limit_from"] = column.LimitFrom
 		}
 		if column.Free != "" {
 			spec["free_prefix"] = column.Free
@@ -462,18 +457,10 @@ func normalizeCell(column Column, row Row, cell string) (string, error) {
 		// Refs outside the row's options were never selectable: a row citing
 		// only such refs (calls listed as context beside call_options, or
 		// invented ones) selects nothing, and its other cells keep their
-		// decisions. The raw response keeps what was written.
+		// decisions. The raw response keeps what was written. The options
+		// list itself bounds the selection; no separate count is needed.
 		if len(selected) == 0 {
 			return "", nil
-		}
-		limit := 0
-		for _, field := range row.Fields {
-			if field.Name == column.LimitFrom {
-				limit, _ = field.Value.(int)
-			}
-		}
-		if column.LimitFrom != "" && (limit < 1 || len(selected) > limit) {
-			return "", fmt.Errorf("cell %q chooses %d items, limit %d", column.Name, len(selected), limit)
 		}
 		return strings.Join(selected, " "), nil
 	case Text:

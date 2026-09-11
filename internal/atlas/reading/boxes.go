@@ -491,8 +491,11 @@ func (r *reader) readSymbols(ctx context.Context) error {
 				r.outbound[place.ID] = append(r.outbound[place.ID], place.Symbol.Calls[n-1])
 			}
 		}
-		if activation := answer.answer["activation"]; activation != "" && activation != "none" && activation != "unassessed" {
-			r.operations[place.ID] = [3]string{activation}
+		// A proposal only: the operations table reviews the candidate with
+		// its own evidence and either fills the activation, name and
+		// description or deletes the entry.
+		if answer.answer["operation_candidate"] == "yes" {
+			r.operations[place.ID] = [3]string{}
 		}
 		if answer.answer["key_symbol"] == "yes" {
 			byFile[place.Parent] = append(byFile[place.Parent], marked{id: place.ID, rank: place.Symbol.Rank})

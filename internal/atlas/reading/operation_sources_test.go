@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
@@ -83,6 +84,13 @@ func TestOperationRequestPreservesReceiverArgumentsAndContinuation(t *testing.T)
 			for j, got := range calls {
 				want := byName[name][j]
 				want.Evidence = nil
+				// The prompt defines the defaults; a rendered call leaves them out.
+				if want.Invocation == lines.DefaultInvocation {
+					want.Invocation = ""
+				}
+				if want.Resolution == lines.DefaultResolution {
+					want.Resolution = ""
+				}
 				want.ReceiverValue, want.ResultValue = requestOrigin(want.ReceiverValue), requestOrigin(want.ResultValue)
 				want.SourceArguments = append([]atlas.SourceArgument(nil), want.SourceArguments...)
 				for k := range want.SourceArguments {

@@ -2,6 +2,7 @@ package adaptertest
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -110,9 +111,12 @@ func AssertCallControls(t testing.TB, index programindex.Index, graph atlas.Grap
 			if err != nil {
 				t.Fatal(err)
 			}
+			// A selectable call cites its control context through the row's
+			// source_evidence; an exact repository callee is one local_calls
+			// line naming the call site and its control statements.
 			for _, control := range expected {
-				if !strings.Contains(string(row), control.Kind) || !strings.Contains(string(row), "source_evidence") {
-					t.Fatalf("provider row omitted anchored control context at %d", call.Line)
+				if !strings.Contains(string(row), control.Kind) || !(strings.Contains(string(row), "source_evidence") || strings.Contains(string(row), fmt.Sprintf("%s@%d", selector, call.Line))) {
+					t.Fatalf("provider row omitted control context at %d: %s", call.Line, row)
 				}
 			}
 		}

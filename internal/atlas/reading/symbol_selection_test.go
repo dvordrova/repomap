@@ -37,10 +37,10 @@ func (p *selectionProvider) Complete(ctx context.Context, prepared llm.Prepared)
 		if request.Table == lines.StageSymbols {
 			if request.Fill[0].Name == "key_symbol" {
 				if name == "Op08" {
-					row["key_symbol"], row["activation"], row["outbound"] = "no", "request", "c1 c2"
+					row["key_symbol"], row["operation_candidate"], row["outbound"] = "no", "yes", "c1 c2"
 				}
 				if name == "Op07" {
-					row["activation"] = "unassessed"
+					delete(row, "operation_candidate") // The model dropped the cell.
 				}
 			} else if name == "Op01" {
 				delete(row, "line")
@@ -91,9 +91,9 @@ func TestClosedScopeAndRefusedCaptionKeepIndependentRoles(t *testing.T) {
 	if known["selection:"+first].Cells["key_symbol"] != "yes" || known[first].ID != "" {
 		t.Fatal("refused caption changed its accepted selection")
 	}
-	unassessed := atlas.SymbolID("svc/core/c.go", 17, "Op07")
-	if known["selection:"+unassessed].Cells["activation"] != "unassessed" {
-		t.Fatal("missing role became a negative finding")
+	dropped := atlas.SymbolID("svc/core/c.go", 17, "Op07")
+	if known["selection:"+dropped].Cells["operation_candidate"] != "no" || known["selection:"+dropped].Cells["key_symbol"] != "yes" {
+		t.Fatal("a dropped candidate cell did not read no beside its accepted key decision")
 	}
 	operation := atlas.SymbolID("svc/core/c.go", 18, "Op08")
 	if known["selection:"+operation].Cells["outbound"] != "c2" || known[operation].ID != "" {

@@ -118,7 +118,7 @@ func OperationRow(place atlas.Place, declarations map[string]atlas.Place, routes
 	// that answer encouraged confirmation instead of separating callbacks
 	// from their helpers. Keep each own call's receiver and arguments: a
 	// request mutation and a response mutation may use the same native API.
-	var evidence lines.EvidenceCatalog
+	evidence := lines.EvidenceCatalog{OmitDefaults: true}
 	fields := []table.Field{
 		{Name: "path", Value: place.Path}, {Name: "name", Value: decl.Name},
 		{Name: "signature", Value: decl.Signature}, {Name: "author_doc", Value: decl.Doc},
@@ -263,7 +263,14 @@ func operationCallerEvidence(place atlas.Place, declarations map[string]atlas.Pl
 			byID[id] = row
 		}
 		sites, _ := row["call_sites"].([]map[string]any)
-		row["call_sites"] = append(sites, map[string]any{"line": caller.Line, "kind": caller.Kind, "invocation": caller.Invocation, "resolution": caller.Resolution})
+		site := map[string]any{"line": caller.Line, "kind": caller.Kind}
+		if caller.Invocation != "" && caller.Invocation != lines.DefaultInvocation {
+			site["invocation"] = caller.Invocation
+		}
+		if caller.Resolution != "" && caller.Resolution != lines.DefaultResolution {
+			site["resolution"] = caller.Resolution
+		}
+		row["call_sites"] = append(sites, site)
 	}
 	keys := make([]string, 0, len(byID))
 	for id := range byID {

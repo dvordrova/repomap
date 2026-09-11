@@ -13,9 +13,21 @@ import (
 // The native facts remain untouched. Refs are local to this row, allocated in
 // encounter order, and retain every source-distinct observation and association.
 type EvidenceCatalog struct {
-	refs  map[atlas.EdgeEvidence]string
-	byRef map[string]atlas.EdgeEvidence
+	// OmitDefaults drops a call's invocation when it is synchronous and its
+	// resolution when it is exact. The evidence vocabulary attached to the
+	// symbols and operations prompts defines both defaults; rows of other
+	// tables keep every value until their prompts carry it too.
+	OmitDefaults bool
+	refs         map[atlas.EdgeEvidence]string
+	byRef        map[string]atlas.EdgeEvidence
 }
+
+// DefaultInvocation and DefaultResolution are the values a rendered call
+// leaves out under OmitDefaults.
+const (
+	DefaultInvocation = "synchronous"
+	DefaultResolution = "exact"
+)
 
 func (c *EvidenceCatalog) references(evidence []atlas.EdgeEvidence) []string {
 	if c.refs == nil {
@@ -100,6 +112,14 @@ func (c *EvidenceCatalog) call(call atlas.SymbolCall) callEvidence {
 	call.Column = 0 // The exact native identity stays local.
 	refs := c.references(call.Evidence)
 	call.Evidence = nil
+	if c.OmitDefaults {
+		if call.Invocation == DefaultInvocation {
+			call.Invocation = ""
+		}
+		if call.Resolution == DefaultResolution {
+			call.Resolution = ""
+		}
+	}
 	return callEvidence{call, hasRepositoryCallee, refs}
 }
 

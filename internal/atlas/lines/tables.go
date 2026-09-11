@@ -19,7 +19,7 @@ const (
 	StageTargets    = "atlas_targets"
 	StageJoints     = "atlas_joints"
 
-	symbolsContract    = "repomap.atlas.symbols.v7"
+	symbolsContract    = "repomap.atlas.symbols.v8"
 	boundariesContract = "repomap.atlas.boundaries.v6"
 	zonesContract      = "repomap.atlas.zones.v1"
 	arrowsContract     = "repomap.atlas.arrows.v1"
@@ -110,9 +110,11 @@ func ownedDeclarations(declarations []atlas.TypeMember) []map[string]any {
 	return members
 }
 
-// SymbolRow builds the row of one candidate symbol.
+// SymbolRow builds the row of one candidate symbol. Calls the model may
+// select carry their c* ref and evidence; an exact repository callee is
+// internal delegation, one line of context under local_calls.
 func SymbolRow(place atlas.Place, fileLine string) table.Row {
-	var evidence EvidenceCatalog
+	evidence := EvidenceCatalog{OmitDefaults: true}
 	decl := place.Symbol.Decl
 	fields := []table.Field{
 		{Name: "path", Value: place.Path},
@@ -134,19 +136,47 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 	}
 	calls := make([]map[string]any, 0, len(place.Symbol.Calls))
 	refs := make([]string, 0, len(place.Symbol.Calls))
+	var local []string
 	for i, call := range place.Symbol.Calls {
-		ref := fmt.Sprintf("c%d", i+1)
 		// A complete exact repository callee is internal delegation at this
-		// site. Keep the call as context and retain its original c* position;
+		// site: one context line without a ref. Refs keep their original c*
+		// positions, so a selected ref still names the call by its index;
 		// possible or unresolved dispatch is still eligible for review.
-		if call.Kind != "calls" || call.Resolution != "exact" || len(call.CalleeIDs) != 1 || call.API != nil {
-			refs = append(refs, ref)
+		if call.Kind == "calls" && call.Resolution == DefaultResolution && len(call.CalleeIDs) == 1 && call.API == nil {
+			local = append(local, localCall(call))
+			continue
 		}
+		ref := fmt.Sprintf("c%d", i+1)
+		refs = append(refs, ref)
 		calls = append(calls, map[string]any{"ref": ref, "evidence": evidence.Call(call)})
 	}
-	fields = append(fields, table.Field{Name: "calls", Value: calls}, table.Field{Name: "call_options", Value: refs}, table.Field{Name: "call_count", Value: len(refs)})
+	fields = append(fields, table.Field{Name: "calls", Value: calls}, table.Field{Name: "call_options", Value: refs})
+	if len(local) > 0 {
+		fields = append(fields, table.Field{Name: "local_calls", Value: local})
+	}
 	fields = append(fields, evidence.Fields()...)
 	return table.Row{ID: place.ID, Fields: fields}
+}
+
+// localCall is the context line of an exact repository callee: name@line, a
+// non-default invocation, and the control statements whose bodies hold the
+// call. The callee's own operation is reviewed on its own row; this row keeps
+// what the call says about this declaration, such as a loop that launches it.
+func localCall(call atlas.SymbolCall) string {
+	line := fmt.Sprintf("%s@%d", call.Name, call.Line)
+	if call.Invocation != "" && call.Invocation != DefaultInvocation {
+		line += " " + call.Invocation
+	}
+	var statements []string
+	for _, observation := range call.Evidence {
+		if observation.Extractor == "control_context" {
+			statements = append(statements, observation.Label)
+		}
+	}
+	if len(statements) > 0 {
+		line += " (" + strings.Join(statements, "; ") + ")"
+	}
+	return line
 }
 
 // Boundaries interprets candidate relationships whose role is not a native fact.

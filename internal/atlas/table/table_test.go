@@ -20,19 +20,17 @@ func testDefinition() Definition {
 }
 
 func TestSequencePreservesOrderAndFiltersOnlyExactKnownRefs(t *testing.T) {
-	column := Column{Name: "order", Kind: Sequence, OptionsFrom: "options", LimitFrom: "limit"}
-	row := Row{Fields: []Field{{Name: "options", Value: []string{"c1", "c2", "c3"}}, {Name: "limit", Value: 2}}}
+	column := Column{Name: "order", Kind: Sequence, OptionsFrom: "options"}
+	row := Row{Fields: []Field{{Name: "options", Value: []string{"c1", "c2", "c3"}}}}
 	// Unknown refs were never selectable and drop out; a selection of only
 	// unknown refs is an empty selection, not a refused row. Commas separate
-	// refs as whitespace does. Only exceeding the limit refuses the cell.
-	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": "", "": "", "c999": "", "c01": "", "c1,c2": "c1 c2"} {
+	// refs as whitespace does. The options list is the only bound: a
+	// selection can never hold more refs than it offers.
+	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": "", "": "", "c999": "", "c01": "", "c1,c2": "c1 c2", "c1 c2 c3 c1": "c1 c2 c3"} {
 		value, err := normalizeCell(column, row, input)
 		if err != nil || value != expected {
 			t.Fatalf("%q -> %q, %v", input, value, err)
 		}
-	}
-	if _, err := normalizeCell(column, row, "c1 c2 c3"); err == nil {
-		t.Fatal("accepted a selection over the limit")
 	}
 }
 
@@ -468,8 +466,8 @@ func TestChoiceWithOnlyUnknownAcceptsAnyAnswerAsUnknown(t *testing.T) {
 }
 
 func TestSequenceEmptyOrNullIsAnEmptySelection(t *testing.T) {
-	column := Column{Name: "outbound", Kind: Sequence, OptionsFrom: "call_options", LimitFrom: "call_count"}
-	row := Row{Fields: []Field{{Name: "call_options", Value: []string{"c1", "c2"}}, {Name: "call_count", Value: 2}}}
+	column := Column{Name: "outbound", Kind: Sequence, OptionsFrom: "call_options"}
+	row := Row{Fields: []Field{{Name: "call_options", Value: []string{"c1", "c2"}}}}
 	for _, cell := range []string{"none", "", "  "} {
 		if got, err := normalizeCell(column, row, cell); err != nil || got != "" {
 			t.Fatalf("empty selection %q refused: %q / %v", cell, got, err)

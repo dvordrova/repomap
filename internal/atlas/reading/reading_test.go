@@ -221,6 +221,11 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 				if column.Name == "peer" && len(options) > 1 {
 					answer[column.Name] = options[1]
 				}
+				// The candidate gate stays closed unless a test opens it, as
+				// the first activation option, none, did before.
+				if column.Name == "operation_candidate" {
+					answer[column.Name] = "no"
+				}
 			}
 		}
 		switch request.Table {

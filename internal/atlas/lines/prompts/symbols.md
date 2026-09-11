@@ -20,8 +20,10 @@ Fill two cells for every row and nothing else:
   evidence does not establish a useful alias. This label does not rename code.
 
 `calls`, when present, are neutral extracted observations: call names, literal
-values, callback argument names and source lines. Interpret them regardless of
-framework or language. They are not a complete function body or execution trace.
+values, callback argument names and source lines. `local_calls` names exact
+repository callees as `name@line` with the control statements holding the
+call. Interpret them regardless of framework or language. They are not a
+complete function body or execution trace.
 A function returning a command/router object constructs an operation; the
 callback doing its work implements it. Describe only the supplied declaration. Never invent a call edge.
 

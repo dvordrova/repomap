@@ -12,15 +12,16 @@ Fill only the columns requested for the row:
 
 - key_symbol: yes for a concept or callable a reader should look at first to
   understand this file's responsibility; no for incidental helpers or glue.
-- activation: command for a CLI command implementation, request for an incoming
-  request/message handler, interaction for an interface action callback,
-  scheduled for timer/scheduler-activated work (including a supported one-shot
-  delayed action), continuous for a long-running background loop.
-  none means the observations support an internal helper or registration
-  factory. Use unassessed when the supplied evidence cannot establish the role.
-  Missing registrations or callers are not proof of none. A public declaration
-  alone is not an operation. The callback implements the operation; the factory
-  that constructs or registers it does not.
+- operation_candidate: yes when the observations support an externally
+  activated operation: a CLI command implementation, an incoming
+  request/message handler, an interface action callback, timer/scheduler-
+  activated work (including a supported one-shot delayed action) or a
+  long-running background loop. The operations table reviews every yes with
+  its own evidence and decides which kind. no means the observations support
+  an internal helper or registration factory. Missing registrations or
+  callers are not proof of no. A public declaration alone is not an
+  operation. The callback implements the operation; the factory that
+  constructs or registers it does not.
 - outbound: space-separated c* refs of supplied calls that provide evidence of
   communication with another service, database, message broker or remote API.
   This includes dispatching an operation and explicitly configuring a client
@@ -64,9 +65,12 @@ Do not invent execution or call edges. API interpretation is not proof that
 the call actually ran or succeeded.
 Types in a signature establish an association, not a read or write.
 An operation need not be a key symbol. Select only advertised call refs.
-`calls` retains local delegation as context. Only `call_options` can be selected
-as outgoing candidates: a complete exact repository callee at that site is
-internal delegation. Possible or unresolved dispatch still requires review.
+`calls` carries the c* refs of `call_options`, the only selectable calls.
+`local_calls` lists exact repository callees as context, one line each:
+`name@line`, a non-default invocation, and in parentheses the control
+statements holding the call. They are internal delegation, never selectable.
+Possible or unresolved dispatch stays under `calls` and still requires review.
+A call without `invocation` is synchronous; without `resolution` it is exact.
 
 Call evidence may include `control_context`: the source statement whose body
 contains that exact call, such as a channel range, an unconditional loop or a
