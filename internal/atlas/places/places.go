@@ -1851,6 +1851,33 @@ func nativeBoundaryID(key boundaryKey) string {
 	return fmt.Sprintf("%s:%x", boundaryID(key.path, key.line, key.kind), sha256.Sum256(encoded))
 }
 
+// ownedScopes keeps the observed target scopes whose page also holds the
+// file, in their observed order.
+func ownedScopes(observed []string, owners map[string]struct{}) []string {
+	kept := make([]string, 0, len(observed))
+	for _, id := range observed {
+		if _, owns := owners[id]; owns {
+			kept = append(kept, id)
+		}
+	}
+	return kept
+}
+
+// originsWithin keeps the native origins of the retained target scopes; the
+// atlas requires origins and scopes to name the same targets.
+func originsWithin(origins []atlas.BoundaryOrigin, targetIDs []string) []atlas.BoundaryOrigin {
+	kept := make([]atlas.BoundaryOrigin, 0, len(origins))
+	for _, origin := range origins {
+		for _, id := range targetIDs {
+			if origin.TargetID == id {
+				kept = append(kept, origin)
+				break
+			}
+		}
+	}
+	return kept
+}
+
 func appendUnique(values []string, more ...string) []string {
 	for _, value := range more {
 		if value == "" {
@@ -1930,11 +1957,22 @@ func (b *builder) graph() (atlas.Graph, error) {
 	graph.Places = append(graph.Places, b.symbols...)
 	for _, state := range b.bounds {
 		place := state.place
-		// Native observations retain only their original target scopes. An
-		// external candidate follows its file's ownership as before.
-		if place.Boundary.Source != "fact" {
-			if file, ok := b.files[place.Path]; ok {
+		// An external candidate follows its file's ownership as before. A
+		// native observation retains only its original target scopes, and
+		// only among the targets holding its file: a target whose page lacks
+		// the file has no box for the boundary, and the atlas refuses a
+		// boundary outside every box. Freqtrade observed one route fact from
+		// seven index views while one product held the file.
+		if file, ok := b.files[place.Path]; ok {
+			if place.Boundary.Source != "fact" {
 				place.TargetIDs = sortedKeys(file.targets)
+			} else {
+				place.TargetIDs = ownedScopes(place.TargetIDs, file.targets)
+				place.Boundary.Origins = originsWithin(place.Boundary.Origins, place.TargetIDs)
+				if len(place.TargetIDs) == 0 {
+					// No page can hold it, so no row should be bought for it.
+					continue
+				}
 			}
 		}
 		place.Boundary.Origins = atlas.CanonicalBoundaryOrigins(place.Boundary.Origins)

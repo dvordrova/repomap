@@ -69,7 +69,16 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 	for _, rawRow := range envelope.Rows {
 		var cells map[string]json.RawMessage
 		var key string
-		if json.Unmarshal(rawRow, &cells) != nil || json.Unmarshal(cells["key"], &key) != nil || key == "" {
+		if json.Unmarshal(rawRow, &cells) != nil {
+			result.Rejections = append(result.Rejections, RowRejection{Reason: "response row has no string key"})
+			continue
+		}
+		if _, keyed := cells["key"]; !keyed && len(window.Rows) == 1 && len(envelope.Rows) == 1 {
+			// One asked row answered by one row without a key can only be
+			// that row. Single-question answer windows otherwise lose their
+			// only answer when the model drops the key it was told to copy.
+			key = Key(0)
+		} else if json.Unmarshal(cells["key"], &key) != nil || key == "" {
 			result.Rejections = append(result.Rejections, RowRejection{Reason: "response row has no string key"})
 			continue
 		}

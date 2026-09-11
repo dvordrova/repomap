@@ -67,3 +67,66 @@ func TestNativeBoundariesKeepTargetOriginsAndSameLineRegistrations(t *testing.T)
 		})
 	}
 }
+
+func TestNativeBoundariesStayWithinFileOwnership(t *testing.T) {
+	// One route fact observed from the owner's view and from a tool's view
+	// whose page does not hold the file. Freqtrade observed one fact from
+	// seven views while one product held the file; the atlas then refused
+	// the boundary outside every box of the other six targets.
+	b := builder{files: map[string]*fileState{"routes.go": {targets: map[string]struct{}{"app": {}}}},
+		dirs: map[string]*dirState{}, bounds: map[boundaryKey]*boundaryState{},
+		factSubjects: map[string]string{"app-handler": "same-handler", "tool-handler": "same-handler"}}
+	b.input.Facts.Targets = []facts.Target{{ID: "facts-app", ProgramTargetID: "app"}, {ID: "facts-tool", ProgramTargetID: "tool"}}
+	for _, target := range []string{"app", "tool"} {
+		b.input.Facts.Facts = append(b.input.Facts.Facts, facts.Fact{ID: target + "-route", Kind: facts.KindHTTPRoute,
+			TargetID: "facts-" + target, ObjectID: target + "-handler", Method: "POST", Path: "/update",
+			Anchor: &facts.Anchor{Path: "routes.go", Line: 33, Column: 4}})
+	}
+	b.collectBoundaries()
+	if len(b.bounds) != 1 {
+		t.Fatalf("one anchored observation became %d boundaries", len(b.bounds))
+	}
+	graph, err := b.graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var boundaries []atlas.Place
+	for _, place := range graph.Places {
+		if place.Boundary != nil {
+			boundaries = append(boundaries, place)
+		}
+	}
+	if len(boundaries) != 1 {
+		t.Fatalf("expected one boundary place: %+v", boundaries)
+	}
+	place := boundaries[0]
+	if len(place.TargetIDs) != 1 || place.TargetIDs[0] != "app" {
+		t.Fatalf("boundary left the targets holding its file: %+v", place.TargetIDs)
+	}
+	if len(place.Boundary.Origins) != 1 || place.Boundary.Origins[0].TargetID != "app" || place.Boundary.Origins[0].FactID != "app-route" {
+		t.Fatalf("origins do not match the retained scopes: %+v", place.Boundary.Origins)
+	}
+	if place.Boundary.ObjectID != "app-handler" {
+		t.Fatalf("representative object is not the owner's: %s", place.Boundary.ObjectID)
+	}
+}
+
+func TestNativeBoundaryWithoutAnObservingOwnerIsDropped(t *testing.T) {
+	b := builder{files: map[string]*fileState{"routes.go": {targets: map[string]struct{}{"lib": {}}}},
+		dirs: map[string]*dirState{}, bounds: map[boundaryKey]*boundaryState{},
+		factSubjects: map[string]string{"tool-handler": "handler"}}
+	b.input.Facts.Targets = []facts.Target{{ID: "facts-tool", ProgramTargetID: "tool"}}
+	b.input.Facts.Facts = append(b.input.Facts.Facts, facts.Fact{ID: "tool-route", Kind: facts.KindHTTPRoute,
+		TargetID: "facts-tool", ObjectID: "tool-handler", Method: "GET", Path: "/health",
+		Anchor: &facts.Anchor{Path: "routes.go", Line: 12, Column: 4}})
+	b.collectBoundaries()
+	graph, err := b.graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, place := range graph.Places {
+		if place.Boundary != nil {
+			t.Fatalf("a boundary no page can hold reached the graph: %+v", place)
+		}
+	}
+}

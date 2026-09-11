@@ -940,6 +940,11 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		if !ok {
 			continue
 		}
+		// The target shows only the boxes holding its files; a boundary whose
+		// file this target does not hold has no box here to name.
+		if file, known := r.places[state.place.Parent]; known && !contains(file.TargetIDs, meta.ID) {
+			continue
+		}
 		facts := state.place.Boundary
 		objectID, factID := facts.ObjectID, ""
 		if len(facts.Origins) > 0 {

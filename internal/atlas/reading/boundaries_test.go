@@ -269,7 +269,7 @@ func TestBoundaryKnownHTTPAddressSurvivesAcceptedUnknownAndPreservesSourceAnchor
 func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t *testing.T) {
 	root := atlas.Place{ID: "dir:root", Kind: atlas.PlaceDirectory, Path: ".", Directory: &atlas.DirectoryFacts{Readme: "A service that proxies partner data and refreshes snapshots."}}
 	directory := atlas.Place{ID: "dir:utils", Kind: atlas.PlaceDirectory, Path: "utils", Parent: root.ID, Directory: &atlas.DirectoryFacts{Doc: "Shared request helpers."}}
-	file := atlas.Place{ID: "file:requests", Kind: atlas.PlaceFile, Path: "utils/requests.go", Parent: directory.ID, File: &atlas.FileFacts{Doc: "Preserve cancellation when forwarding a request."}}
+	file := atlas.Place{ID: "file:requests", Kind: atlas.PlaceFile, Path: "utils/requests.go", Parent: directory.ID, TargetIDs: []string{"service"}, File: &atlas.FileFacts{Doc: "Preserve cancellation when forwarding a request."}}
 	call := atlas.SymbolCall{Kind: "invokes_external", Name: "http.Client.Do", Line: 31, Column: 19}
 	owner := atlas.Place{ID: "symbol:send", Kind: atlas.PlaceSymbol, Path: file.Path, Parent: file.ID, LineNo: 10, TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{
 		Decl: atlas.Decl{ObjectID: "object:send", Name: "SendRequest", Signature: "func SendRequest(ctx Context, endpoint string)"}, Calls: []atlas.SymbolCall{call},

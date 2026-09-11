@@ -52,3 +52,25 @@ func TestSharedBoundaryContextUsesItsNativeSubjectBeforeRepresentativeObject(t *
 		t.Fatal("same-name declaration was guessed")
 	}
 }
+
+func TestTargetOmitsBoundariesWhoseFileItDoesNotHold(t *testing.T) {
+	// Membership is decided in places; the projection still refuses to name
+	// a box the target does not have, so a foreign scope cannot fail atlas
+	// validation at publication.
+	boundary := atlas.Place{ID: "bnd:shared", Kind: atlas.PlaceBoundary, Path: "api.go", LineNo: 33, Column: 4, Parent: "file:api",
+		TargetIDs: []string{"main", "tool"}, Boundary: &atlas.BoundaryFacts{Source: "fact", ObjectID: "main-handler", GivenKind: atlas.BoundaryHTTPServer,
+			Direction: atlas.DirectionIn, Method: "POST", Values: []string{"/update"}, Origins: []atlas.BoundaryOrigin{
+				{TargetID: "main", FactID: "main-route", ObjectID: "main-handler"}, {TargetID: "tool", FactID: "tool-route", ObjectID: "tool-handler"},
+			}}}
+	r := reader{
+		places:     map[string]atlas.Place{"file:api": {ID: "file:api", Kind: atlas.PlaceFile, Path: "api.go", TargetIDs: []string{"main"}}},
+		boundaries: map[string]*boundaryState{boundary.ID: {place: boundary, kind: atlas.BoundaryHTTPServer, line: "Handles updates."}},
+		boxOf:      map[string]string{boundary.Parent: "api"},
+	}
+	if got := r.target(TargetMeta{ID: "tool"}).Boundaries; len(got) != 0 {
+		t.Fatalf("boundary named a box the tool target does not have: %+v", got)
+	}
+	if got := r.target(TargetMeta{ID: "main"}).Boundaries; len(got) != 1 || got[0].BoxID != "api" || got[0].FactID != "main-route" {
+		t.Fatalf("owner lost its boundary: %+v", got)
+	}
+}

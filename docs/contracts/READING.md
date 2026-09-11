@@ -30,6 +30,9 @@ new description or selection requests.
   source observations: path, line, column, kind, method, literal values and
   compiler-located subject. Each place retains every original target's FactID
   and ObjectID behind local `origins`, sorted and deduplicated when sealed.
+  A native place keeps only the observing targets that also hold its file, with
+  their origins; an observation no holding target made is dropped before
+  reading, and a target's projection names only boxes that target has.
   Target coverage must be complete and known target origins cannot conflict.
   Target atlas projection restores those original identities; it never borrows
   a sibling target's fact. Shared source context uses the original SubjectID
@@ -59,7 +62,8 @@ new description or selection requests.
   matched values, counts and identities. Rejected independent rows fall back on
   their own deterministic lines and are written to `rejected.jsonl`; valid
   neighbours survive in the original exact-response cache. An entirely refused
-  window is never cached. Every row and answer is printed to `tables.md`, with prompts, requests, raw
+  window is never cached. A window asking one row accepts its only answered row
+  without a key as that row; every other row must carry its own key. Every row and answer is printed to `tables.md`, with prompts, requests, raw
   responses and normalized source-bound results under `tables/`. The ordinary
   path saves `reading-input.json` before its first atlas call; `read` consumes
   exactly that format and runs the same reader. Above two thousand files the directory and

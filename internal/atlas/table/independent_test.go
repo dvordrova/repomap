@@ -69,3 +69,21 @@ func TestIndependentRowsIgnoreAdditionalFields(t *testing.T) {
 		t.Fatal("coupled result narrowed its original whole-response metadata")
 	}
 }
+
+func TestIndependentSingleRowWithoutKeyIsTheAskedRow(t *testing.T) {
+	def := Definition{Stage: "atlas_answer", Independent: true, Columns: []Column{
+		{Name: "entry", Kind: Choice, OptionsFrom: "entry_options"},
+	}}
+	one := Window{Rows: []Row{{ID: "only", Fields: []Field{{Name: "entry_options", Value: []string{"self", "none"}}}}}}
+	result, err := DecodeResult(def, one, []byte(`{"rows":[{"entry":"self"}]}`))
+	if err != nil || len(result.Answers) != 1 || result.Answers[0]["entry"] != "self" || len(result.Rejections) != 0 {
+		t.Fatalf("the only asked row did not receive the only answer: %+v / %v", result, err)
+	}
+	if _, err := DecodeResult(def, one, []byte(`{"rows":[{"entry":"self"},{"entry":"none"}]}`)); err == nil || !strings.Contains(err.Error(), "no string key") {
+		t.Fatalf("two keyless rows were guessed: %v", err)
+	}
+	two := Window{Rows: []Row{one.Rows[0], {ID: "second", Fields: one.Rows[0].Fields}}}
+	if _, err := DecodeResult(def, two, []byte(`{"rows":[{"entry":"self"}]}`)); err == nil || !strings.Contains(err.Error(), "no string key") {
+		t.Fatalf("a keyless row was guessed among two asked rows: %v", err)
+	}
+}

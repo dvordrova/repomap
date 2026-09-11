@@ -8,6 +8,16 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Native boundary scopes stay within the targets holding the file, and the
+  target projection omits a boundary whose file the target does not hold.
+  After `956e5992` widened native scopes to every observing index view,
+  Freqtrade `20260911-040254` (one route fact seen from seven views, file held
+  by one product) and an owner's Go service failed at publication with
+  `atlas: boundary … names unknown box`. Regression tests in `places`,
+  `reading`.
+- A one-row independent window accepts its only answered row without a key:
+  seven single-question answer windows of the same Freqtrade run were refused
+  as `response row has no string key` and their answers lost.
 - Glossary generation/reduction output allowance is 32,768 tokens instead of
   the shared 128,000. Measured legitimate windows: 1,276–15,278 output tokens
   (Syn, issue-bot, Watchtower); measured loops: two Watchtower windows at
