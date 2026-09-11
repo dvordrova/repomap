@@ -192,7 +192,7 @@ func Boundaries(outgoing ...bool) table.Definition {
 	positive := map[string]string{"decision": "boundary"}
 	def := table.Definition{
 		Stage: StageBoundaries, Contract: boundariesContract,
-		System: boundariesPrompt, Independent: true, Memoize: true,
+		System: withVocabulary(boundariesPrompt), Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "decision", Kind: table.Choice, Options: []string{"boundary", "none", "unassessed"}, Note: "boundary when this call itself dispatches an exchange or creates/configures the actual remote client instance; none for local helpers, options and preparation; unassessed for insufficient evidence"},
 			{Name: "kind", Kind: table.Choice, Options: atlas.BoundaryKinds(), When: positive},
@@ -421,7 +421,7 @@ const OwnerCallSpan = 3
 // and declarations in each of its rows: four rows spent 51% of a window on
 // that repetition.
 func BoundaryOwner(ref string, owner atlas.Place, rowLines []int, sourceContext []table.Field) map[string]any {
-	var evidence EvidenceCatalog
+	evidence := EvidenceCatalog{OmitDefaults: true}
 	decl := owner.Symbol.Decl
 	calls := []any{}
 	for _, call := range owner.Symbol.Calls {
@@ -501,7 +501,7 @@ func BoundarySourceContext(place, owner atlas.Place, places, declarations map[st
 				if declaration, found := declarations[id]; found && declaration.Symbol != nil {
 					row["author_doc"] = declaration.Symbol.Decl.Doc
 					row["declaration_line"] = declaration.LineNo
-					var evidence EvidenceCatalog
+					evidence := EvidenceCatalog{OmitDefaults: true}
 					row["callable_bindings"] = evidence.Bindings(declaration.Symbol.Bindings)
 					for _, field := range evidence.Fields() {
 						row[field.Name] = field.Value
@@ -516,7 +516,7 @@ func BoundarySourceContext(place, owner atlas.Place, places, declarations map[st
 					if call.Line != caller.Line || call.Kind != caller.Kind || call.Invocation != caller.Invocation || call.Resolution != caller.Resolution || !slices.Contains(call.CalleeIDs, owner.ID) {
 						continue
 					}
-					var evidence EvidenceCatalog
+					evidence := EvidenceCatalog{OmitDefaults: true}
 					site := call
 					site.ResultValue = nil
 					entry := map[string]any{"call": evidence.CallWithOrigins(site)}

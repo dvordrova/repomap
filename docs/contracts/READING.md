@@ -326,6 +326,13 @@ Replay is revalidated against that complete original window before reuse.
 Adding or reordering questions reuses existing decisions; canonical ownership
 is restored from the current graph. This implementation is under ordinary
 quality acceptance; its measured drafts and limitations are in CURRENT.md.
+Symbol selection asks `key_symbol` and `operation_candidate` (yes/no; the
+operation table decides the kind) plus `outbound` call refs; rendered calls
+leave out the default `invocation`/`resolution`, collapse exact local callees
+into `local_calls`, and render origin trees two levels deep without anchors.
+Every rendered evidence value is defined in the evidence vocabulary attached
+to the symbols, operations and boundaries prompts; a contract test fails on a
+value the prompt does not name.
 A retrieval row states each fact once: a unit's `heading_path` lists only its
 parent section titles, `anchor_path` appears only when it differs from the
 row's path, and a type member that is itself a unit of the same chunk is

@@ -8,6 +8,25 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Symbol and operation requests carry one decision per cell and define
+  every value they render (schema review, cold fixes; symbol-selection v5,
+  symbols v8, operations v20). `activation` (seven options consumed as a
+  yes/no gate) is now `operation_candidate` yes/no; `call_count`/
+  `limit_from` (an unreachable check) are gone; `invocation: synchronous`
+  and `resolution: exact` are left out as defaults and exact local callees
+  collapse to one `local_calls` line; origin trees (`source_arguments`,
+  `receiver_value`, `result_value`) render as `kind`/`text`/`parts` two
+  levels deep without anchors or owners (they were 32 % of the Morfeu
+  orientation request and 90–95 % of an operations row); `name_kind` is
+  asked only when a registered name exists (`[label]` was the single
+  option in 16 of 18 rows), null fields are not rendered, the `u*`-era
+  paragraph is gone. A shared `evidence-vocabulary.md` defines every
+  rendered `invocation`, `resolution`, origin kind, witness kind,
+  extractor and control label and is attached to the symbols, operations
+  and boundaries prompts; a contract test renders every Go fixture row and
+  fails on a value the prompt does not name. The response example puts
+  `key` first, then the cells in fill order. `Column.Unasked` names the
+  value an unasked conditional cell takes, apart from `Missing`.
 - Boundary, file, directory, zone, target and portfolio requests state
   each fact once and offer only real choices (schema review, cold fixes;
   boundaries v7, files v5, directories v4, zones v2, targets v3, portfolio

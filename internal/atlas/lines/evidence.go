@@ -15,8 +15,8 @@ import (
 type EvidenceCatalog struct {
 	// OmitDefaults drops a call's invocation when it is synchronous and its
 	// resolution when it is exact. The evidence vocabulary attached to the
-	// symbols and operations prompts defines both defaults; rows of other
-	// tables keep every value until their prompts carry it too.
+	// symbols, operations and boundaries prompts defines both defaults; rows
+	// of other tables keep every value until their prompts carry it too.
 	OmitDefaults bool
 	refs         map[atlas.EdgeEvidence]string
 	byRef        map[string]atlas.EdgeEvidence
