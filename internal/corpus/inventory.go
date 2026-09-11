@@ -57,7 +57,10 @@ func inventory(ctx context.Context, root string, exclusions []string) (gitfiles.
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case ".git", ".hg", ".svn", "node_modules", "__pycache__", ".cache", ".mypy_cache", ".pytest_cache", ".ruff_cache":
+			// .history is VS Code's Local History extension (copies of edited files,
+			// README included); .terraform holds downloaded providers; .idea and
+			// .vs are IDE state. None of them is the repository's own source.
+			case ".git", ".hg", ".svn", "node_modules", "__pycache__", ".cache", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".history", ".terraform", ".idea", ".vs":
 				return fs.SkipDir
 			}
 			if marker, err := os.Stat(filepath.Join(fullPath, "pyvenv.cfg")); err == nil && marker.Mode().IsRegular() {

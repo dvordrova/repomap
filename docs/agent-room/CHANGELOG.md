@@ -8,6 +8,19 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Editor and tool state directories stay out of the corpus: `.history`
+  (VS Code Local History keeps copies of edited files, README included,
+  which the owner's run then read as documentation), `.terraform`
+  (downloaded providers with their READMEs), `.idea`, `.vs`. Corpus test
+  covers `.history/README.md` and `.terraform/providers/x/README.md`.
+- Learn selection reasons no longer show request-local keys: a model that
+  wrote "q1 and q5 cover the same idea" put "q1", "q5" on the page. The keys
+  are spelled out as the questions they stand for (`spellCandidateRefs`);
+  keys outside the window's pool stay as written.
+- A rejected response's row-level reasons reach the console. "learn: no
+  intent reviews accepted" said only that every intent review failed; the
+  WARN now lists up to four "rejected: intent: reason" lines from the same
+  journal record (`SemanticFailureReceipt.Rejections`), for every stage.
 - Selecting a code member no longer sets the part's summary vertically.
   With a member chosen the docked card gained a second column for the
   member panel (`.map-card-has-concepts`, 1fr + 1.35fr), which in the

@@ -424,7 +424,15 @@ func timed(output *runOutput, inner *debugdump.SemanticObserver) llm.Observer {
 		} else if receipt.Stage == "orientation" && receipt.State == debugdump.SemanticStateRejected {
 			details = append(details, "this response adds no overview; repository facts and maps remain available")
 		}
-		details = append(details, "reason: "+receipt.Reason,
+		details = append(details, "reason: "+receipt.Reason)
+		for i, line := range receipt.Rejections {
+			if i == 4 {
+				details = append(details, fmt.Sprintf("… %d more rejected rows in the journal", len(receipt.Rejections)-i))
+				break
+			}
+			details = append(details, "rejected: "+line)
+		}
+		details = append(details,
 			fmt.Sprintf("transport attempts: %d", receipt.TransportAttempts), formatRunOutputDuration(receipt.LatencyMS),
 			"request: "+receipt.RequestPath)
 		if response := receipt.HTTPResponse; response != nil {

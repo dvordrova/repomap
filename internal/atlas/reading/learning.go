@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -768,7 +769,7 @@ func (r *reader) selectLearning(ctx context.Context) error {
 					if answer.source == atlas.SourceGiven {
 						r.learning.State = "partial"
 					} else {
-						selection.Audience, selection.Reason = "not_selected", answer.answer["reason"]
+						selection.Audience, selection.Reason = "not_selected", spellCandidateRefs(answer.answer["reason"], pool, r.learning.Questions)
 						if slices.Contains(chosen, fmt.Sprintf("q%d", i+1)) {
 							selection.Audience = "first_day"
 							chosenIDs[id] = true
@@ -802,6 +803,23 @@ func (r *reader) selectLearning(ctx context.Context) error {
 	}
 	r.learning.Questions = kept
 	return nil
+}
+
+// candidateRef matches a request-local candidate key such as q3 in prose.
+var candidateRef = regexp.MustCompile(`\bq(\d+)\b`)
+
+// spellCandidateRefs replaces request-local candidate keys in a selection
+// reason with the question they stand for. The prompt forbids internal refs
+// in reader-facing prose; a model that writes "q1 and q5 cover the same
+// idea" is not rejected, its reason is spelled out for the reader.
+func spellCandidateRefs(reason string, pool []int, questions []atlas.LearningQuestion) string {
+	return candidateRef.ReplaceAllStringFunc(reason, func(token string) string {
+		var n int
+		if _, err := fmt.Sscanf(token, "q%d", &n); err != nil || n < 1 || n > len(pool) || pool[n-1] >= len(questions) {
+			return token
+		}
+		return "«" + strings.TrimSpace(questions[pool[n-1]].Question) + "»"
+	})
 }
 
 // --prompt customizes proposal generation. Audience and consolidation each

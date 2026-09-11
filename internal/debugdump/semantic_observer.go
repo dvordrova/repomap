@@ -2,6 +2,7 @@ package debugdump
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"sync"
 
@@ -24,13 +25,36 @@ type SemanticObserver struct {
 // SemanticFailureReceipt points at one committed diagnostic exchange. An
 // unavailable response is identified explicitly; its marker is not a raw body.
 type SemanticFailureReceipt struct {
-	Stage, Reason                          string
+	Stage, Reason string
+	// Rejections are the row-level reasons behind a rejected response, one
+	// line each ("intent_x: learn: a review needs a reason ×3"), so the
+	// console can say why and not only that.
+	Rejections                             []string
 	State                                  string
 	JournalPath, RequestPath, ResponsePath string
 	ResponseUnavailable                    string
 	HTTPResponse                           *llm.HTTPResponse
 	TransportAttempts                      int
 	LatencyMS                              int64
+}
+
+// rejectionLines renders row rejections for a console notice: the first
+// sample, the reason and the count when more than one row shares it.
+func rejectionLines(rejections []llm.ResponseRejection) []string {
+	var lines []string
+	for _, rejection := range rejections {
+		line := rejection.Reason
+		if len(rejection.Samples) > 0 {
+			line = rejection.Samples[0] + ": " + line
+		}
+		if rejection.Count > 1 {
+			line += fmt.Sprintf(" ×%d", rejection.Count)
+		}
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 type observedResponse struct {
@@ -49,6 +73,7 @@ func recordObservedResponse(writer *Writer, value observedResponse, notice func(
 		if err == nil {
 			receipt := SemanticFailureReceipt{
 				Stage: value.exchange.Stage, Reason: value.reason, JournalPath: journal,
+				Rejections:          rejectionLines(value.rejections),
 				State:               record.State,
 				RequestPath:         filepath.Join(filepath.Dir(journal), filepath.FromSlash(record.Request.File)),
 				ResponseUnavailable: record.Response.UnavailableCode,

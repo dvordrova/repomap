@@ -472,21 +472,23 @@ func TestOpenUsesCurrentRegularFilesAndPermissions(t *testing.T) {
 func TestOpenIncludesGeneratedAndUntrackedSourceWithoutGit(t *testing.T) {
 	repo := t.TempDir()
 	files := map[string]string{
-		"go.mod":                    "module example.test/generated\n\ngo 1.26\n",
-		"main.go":                   "package main\nfunc main() { generated() }\n",
-		"generated.go":              "// Code generated. DO NOT EDIT.\npackage main\nfunc generated() {}\n",
-		"build/client.ts":           "export const endpoint = '/generated';\n",
-		"dist/models.py":            "class Generated: pass\n",
-		"new/feature.py":            "def feature(): return 1\n",
-		".gitignore":                "generated.go\nbuild/\ndist/\n",
-		".repomapignore":            "# Analysis output\nreports/\n",
-		"reports/README.md":         "A previous generated report\n",
-		"node_modules/dep/index.js": "external dependency\n",
-		"custom-env/pyvenv.cfg":     "home = /python\n",
-		"custom-env/lib/dep.py":     "external dependency\n",
-		".github/workflows/ci.yml":  "on: push\n",
-		"tools/.golangci.yaml":      "linters: {}\n",
-		"state/example.bin":         "binary fixture data\n",
+		"go.mod":                           "module example.test/generated\n\ngo 1.26\n",
+		"main.go":                          "package main\nfunc main() { generated() }\n",
+		"generated.go":                     "// Code generated. DO NOT EDIT.\npackage main\nfunc generated() {}\n",
+		"build/client.ts":                  "export const endpoint = '/generated';\n",
+		"dist/models.py":                   "class Generated: pass\n",
+		"new/feature.py":                   "def feature(): return 1\n",
+		".gitignore":                       "generated.go\nbuild/\ndist/\n",
+		".repomapignore":                   "# Analysis output\nreports/\n",
+		"reports/README.md":                "A previous generated report\n",
+		"node_modules/dep/index.js":        "external dependency\n",
+		".history/README.md":               "editor local history copy of README\n",
+		".terraform/providers/x/README.md": "installed provider documentation\n",
+		"custom-env/pyvenv.cfg":            "home = /python\n",
+		"custom-env/lib/dep.py":            "external dependency\n",
+		".github/workflows/ci.yml":         "on: push\n",
+		"tools/.golangci.yaml":             "linters: {}\n",
+		"state/example.bin":                "binary fixture data\n",
 	}
 	for name, content := range files {
 		writeCorpusFile(t, repo, name, content, 0o600)
@@ -514,7 +516,7 @@ func TestOpenIncludesGeneratedAndUntrackedSourceWithoutGit(t *testing.T) {
 				t.Fatalf("%s: wrong current content for %s: %v", state, name, err)
 			}
 		}
-		for _, name := range []string{"reports/README.md", "node_modules/dep/index.js", "custom-env/lib/dep.py"} {
+		for _, name := range []string{"reports/README.md", "node_modules/dep/index.js", "custom-env/lib/dep.py", ".history/README.md", ".terraform/providers/x/README.md"} {
 			if _, ok := opened.ID(name); ok {
 				t.Fatalf("%s: included excluded input %s", state, name)
 			}
