@@ -513,6 +513,8 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 		}
 	}
 	for _, section := range view.Sections {
+		section.PurposeRef = add("summary", &section.Purpose)
+		section.RoleRef = add("label", &section.Role)
 		for i := range section.Outbound {
 			row := &section.Outbound[i]
 			row.SummaryRef = add("summary", &row.Summary)

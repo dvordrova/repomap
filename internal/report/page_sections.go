@@ -27,6 +27,12 @@ type pageSection struct {
 	Language   string
 	Kind       string
 	Root       string
+	// Role and Purpose are the orientation's one-line answer to "what is
+	// this component"; the overview card shows the same sentence, and the
+	// component page repeats it under its heading so a reader who lands
+	// here from a question or the toolbar is not left with a name only.
+	Role, Purpose       string
+	RoleRef, PurposeRef string
 
 	// programTargetID and factsTargetID join this section to the group graph
 	// and the fact layer; neither ever reaches the page.
@@ -261,6 +267,14 @@ func (builder *pageBuilder) createSections() {
 			section.factsTargetID = target.ID
 			section.FactsAvailable = true
 			section.Root = target.Root
+			if orient := builder.data.Orientation; orient != nil {
+				for _, role := range orient.Roles {
+					if role.TargetID == target.ID {
+						section.Role, section.Purpose = role.Role, role.Purpose
+						break
+					}
+				}
+			}
 			used[target.ID] = struct{}{}
 			builder.byFacts[target.ID] = section
 		}

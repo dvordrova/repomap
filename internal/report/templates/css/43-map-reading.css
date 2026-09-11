@@ -117,3 +117,8 @@
 .outbound-more>summary::-webkit-details-marker{display:none}
 .outbound-more>summary::before{content:'\25BE\00A0'}.outbound-more[open]>summary::before{content:'\25B4\00A0'}
 .repo-inputs .outbound-call>summary,.repo-inputs .outbound-more>summary{font-size:12px}
+/* The component's own sentence and its entrypoints sit in the header; the main flow and configuration follow the map instead of hiding in the reference block. */
+.component-purpose{flex-basis:100%;margin:.5rem 0 0;font-size:16px;line-height:1.5;max-width:72ch}
+.component-entrypoints{flex-basis:100%;margin:.35rem 0 0;font-size:14px;color:var(--muted)}.component-entrypoints code{font-size:14px}
+.component-flow,.component-config{margin:1.25rem 0}.component-flow>h3,.component-config>h3{font-size:20px;line-height:1.4;margin:0 0 .5rem}
+.component-config table{font-size:14px}

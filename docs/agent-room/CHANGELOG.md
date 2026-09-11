@@ -8,6 +8,16 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The component page leads with what the component is and ends the map
+  with what happens: the orientation role and purpose (the overview card's
+  sentence, same display refs) sit under the heading with the entrypoints
+  on one line, and the main flow and the configuration table follow the map
+  instead of hiding inside the "Code, entrypoints and sources" reference
+  block. A component without a flow or a start list shows no flow section
+  at all ("the model did not include this target" described the tool, not
+  the code). Found by the owner's audit: five visible words below the map on
+  every one of seven pages, no purpose sentence anywhere on the page.
+  `TestComponentPageLeadsWithPurposeAndKeepsFlowBelowTheMap`.
 - Data catalog links are live again. Record ids carry a kind prefix with a
   colon (`entity:f-…`, `query:q-…`); inside a fragment href html/template
   read the text before the colon as a URL scheme and replaced the link with
