@@ -12,7 +12,10 @@ runs instead of growing the entry pages again.
   twice (schema review, warm fixes; request bytes of the remaining rows
   unchanged). A column-less native outbound fact now claims every selected
   call on its line (Morfeu `152759`: 4 of 29 outbound records were the same
-  call twice, `bnd:…:sdk` beside `out:…:166:42`). Orientation numbers groups
+  call twice, `bnd:…:sdk` beside `out:…:166:42`); the claim matches every
+  native source, since an SDK observation arrives as `external_call`, not
+  `fact` (run `171727` still showed the four duplicates while the claim
+  matched `fact` alone). Orientation numbers groups
   and members in an order the graph fixes (sorted member ids, then lane,
   title, summary) so one group's changed lane no longer renumbers every
   `g*`/`s*`. An arrow without witnesses (an import-only edge) gets its
