@@ -8,6 +8,16 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Learn reviews are matched to intents the way a provider names them. The
+  owner's run lost every intent review to "learn: missing intent review"
+  (42 rows over three windows): the reviews were there, under a name the
+  decoder did not read. A review now resolves its intent by the advertised
+  id or the intent's title, under `intent`, `intent_id`, `id`, `name`,
+  `title` or `learning_intent`, with a leading "## " or a " | title" suffix
+  tolerated; `reviews` may be an object keyed by intent; a keyless response
+  with one review per intent is read in the asked order. Unknown intent
+  names and duplicates are rejected as before. Request bytes and cache keys
+  are unchanged.
 - Editor and tool state directories stay out of the corpus: `.history`
   (VS Code Local History keeps copies of edited files, README included,
   which the owner's run then read as documentation), `.terraform`

@@ -354,19 +354,26 @@ func (r *reader) prepareLearningPools(ctx context.Context, pools []learningReque
 }
 
 func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) {
-	var envelope struct {
-		Reviews []json.RawMessage `json:"reviews"`
+	reviews, err := learningReviewsOf(raw)
+	if err != nil {
+		return learningResponse{}, err
 	}
-	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Reviews == nil {
-		return learningResponse{}, fmt.Errorf("learn: response needs a reviews array")
-	}
+	// A review names its intent by the advertised id. A provider that
+	// answers with the intent's title, another field name, an object keyed
+	// by intent, or no key at all in the asked order is read the same way;
+	// the owner's provider lost 42 reviews to "missing intent review".
 	byIntent := make(map[string][]json.RawMessage)
-	for _, rawReview := range envelope.Reviews {
-		var key struct {
-			Intent string `json:"intent"`
+	var unkeyed []json.RawMessage
+	for _, rawReview := range reviews {
+		if id := learningIntentOf(rawReview); id != "" {
+			byIntent[id] = append(byIntent[id], rawReview)
+		} else {
+			unkeyed = append(unkeyed, rawReview)
 		}
-		if json.Unmarshal(rawReview, &key) == nil {
-			byIntent[key.Intent] = append(byIntent[key.Intent], rawReview)
+	}
+	if len(byIntent) == 0 && len(unkeyed) == len(learningIntents()) {
+		for i, intent := range learningIntents() {
+			byIntent[intent.ID] = []json.RawMessage{unkeyed[i]}
 		}
 	}
 	result := learningResponse{}
@@ -394,6 +401,73 @@ func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) 
 		return result, fmt.Errorf("learn: no intent reviews accepted")
 	}
 	return result, nil
+}
+
+// learningReviewsOf reads the reviews of a response: an array, or an object
+// keyed by intent whose keys become each review's intent.
+func learningReviewsOf(raw []byte) ([]json.RawMessage, error) {
+	var envelope struct {
+		Reviews json.RawMessage `json:"reviews"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil || len(envelope.Reviews) == 0 {
+		return nil, fmt.Errorf("learn: response needs a reviews array")
+	}
+	var list []json.RawMessage
+	if json.Unmarshal(envelope.Reviews, &list) == nil {
+		return list, nil
+	}
+	var keyed map[string]json.RawMessage
+	if json.Unmarshal(envelope.Reviews, &keyed) != nil || keyed == nil {
+		return nil, fmt.Errorf("learn: response needs a reviews array")
+	}
+	keys := make([]string, 0, len(keyed))
+	for key := range keyed {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(keyed[key], &fields) != nil || fields == nil {
+			continue
+		}
+		if _, has := fields["intent"]; !has {
+			quoted, _ := json.Marshal(key)
+			fields["intent"] = quoted
+		}
+		merged, err := json.Marshal(fields)
+		if err != nil {
+			continue
+		}
+		list = append(list, merged)
+	}
+	return list, nil
+}
+
+// learningIntentOf resolves the intent a raw review names: by its advertised
+// id or title, under the intent field or a near synonym, with a leading
+// "## " or a " | title" suffix tolerated. Empty when nothing matches.
+func learningIntentOf(rawReview json.RawMessage) string {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(rawReview, &fields) != nil {
+		return ""
+	}
+	for _, name := range []string{"intent", "intent_id", "id", "name", "title", "learning_intent"} {
+		var value string
+		if json.Unmarshal(fields[name], &value) != nil {
+			continue
+		}
+		value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "## "))
+		head, _, _ := strings.Cut(value, " | ")
+		for _, candidate := range []string{value, head} {
+			candidate = strings.ToLower(strings.TrimSpace(candidate))
+			for _, intent := range learningIntents() {
+				if candidate == strings.ToLower(intent.ID) || candidate == strings.ToLower(intent.Title) {
+					return intent.ID
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func validateLearningReview(review learningReview, pool learningRequest) (learningReview, error) {
