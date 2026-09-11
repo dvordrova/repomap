@@ -38,6 +38,8 @@ func TestContextLimitRequiresAnExplicitContextRefusal(t *testing.T) {
 	}{
 		{"closed code", `{"error":{"code":"context_length_exceeded","message":"Input does not fit"}}`, 400, true},
 		{"input longer than context", `{"error":{"message":"The input (703005 tokens) is longer than the model's context length (524288 tokens).","type":"invalid_request_error"}}`, 400, true},
+		{"gateway total wording", `{"error":{"code":"400","message":"Requested token count exceeds the model's maximum context length of 524288 tokens. You requested a total of 573542 tokens: 445542 tokens from the input messages and 128000 tokens for the completion. Please reduce the number of tokens in the input messages or the completion to fit within the limit.","type":"BadRequestError"}}`, 400, true},
+		{"gateway total wording within limit", `{"error":{"code":"400","message":"maximum context length of 524288 tokens. You requested a total of 500000 tokens: 372000 tokens from the input messages and 128000 tokens for the completion."}}`, 400, false},
 		{"input within context", `{"error":{"message":"The input (500000 tokens) is longer than the model's context length (524288 tokens)."}}`, 400, false},
 		{"DeepSeek terse", `{"error":{"code":"quota_limit_reached","message":"Input token exceed the limit (request id: example)"}}`, 400, true},
 		{"top-level numeric code", `{"code":400,"message":"This model's maximum context length is 1024 tokens. However, you requested 1200 tokens (1000 in the messages, 200 in the completion)."}`, 400, true},

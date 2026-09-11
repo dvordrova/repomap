@@ -8,6 +8,13 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- A third context-refusal wording is recognised: "Requested token count
+  exceeds the model's maximum context length of L tokens. You requested a
+  total of R tokens: I tokens from the input messages and O tokens for the
+  completion" (a gateway in front of DeepSeek, `code` "400"). It carries the
+  same four counts as DeepSeek's own wording and is parsed with the same
+  consistency checks; before this it was a generic failure and the window
+  was lost instead of partitioned.
 - `REPOMAP_LLM_CONTEXT_TOKENS` / `DEEPSEEK_CONTEXT_TOKENS` declare the
   provider's context window. A request whose estimated prompt tokens (bytes
   ÷ 3, below DeepSeek's measured 3.5) plus the output reservation exceed it

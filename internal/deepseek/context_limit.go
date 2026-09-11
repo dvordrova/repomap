@@ -10,7 +10,13 @@ import (
 
 // These are explicit provider context refusals. A generic 400, quota code or
 // mention of a context setting is not authority to split a semantic request.
-var numericContextLimit = regexp.MustCompile(`(?i)maximum context length is ([0-9]+) tokens\. However, you requested ([0-9]+) tokens \(([0-9]+) in the messages, ([0-9]+) in the completion\)`)
+// Two wordings carry the same four numbers: DeepSeek's "This model's maximum
+// context length is L tokens. However, you requested R tokens (I in the
+// messages, O in the completion)" and a gateway's "Requested token count
+// exceeds the model's maximum context length of L tokens. You requested a
+// total of R tokens: I tokens from the input messages and O tokens for the
+// completion". Both are explicit refusals with consistent counts.
+var numericContextLimit = regexp.MustCompile(`(?i)maximum context length (?:is|of) ([0-9]+) tokens\.? ?(?:However, )?you requested (?:a total of )?([0-9]+) tokens[:( ]+([0-9]+) (?:tokens )?(?:in|from) the (?:input )?messages,? (?:and )?([0-9]+) (?:tokens )?(?:in|for) the completion`)
 var inputTokenLimit = regexp.MustCompile(`(?i)^input token exceed the limit(?: \(request id: [^\r\n]*\))?\.?$`)
 
 // An OpenAI-compatible server in front of the same model family words the
