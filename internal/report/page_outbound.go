@@ -17,6 +17,7 @@ type pageOutbound struct {
 	Summary, SummaryRef         string
 	Address, NativeLabel        string
 	External, Basis, Source     string
+	Method                      string
 	Anchor                      pageAnchor
 }
 
@@ -83,7 +84,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 			KindLabel:   outboundKindLabel(call.Kind),
 			ID:          section.ID + "-out-" + call.ID,
 			Destination: call.Destination, Summary: call.Summary,
-			Address: call.Address, External: displayCallable(call.External), Basis: call.Basis, Source: call.Source,
+			Address: call.Address, External: displayCallable(call.External), Basis: call.Basis, Source: call.Source, Method: call.Method,
 			Anchor: builder.links.anchor(call.Location.Path, call.Location.Line, call.Location.Column),
 		}
 		destinations := make(map[string]bool)
@@ -161,6 +162,63 @@ func (group pageOutboundGroup) Rest() []pageOutbound {
 	return group.Rows[outboundGroupPreview:]
 }
 
+// genericCallables are member names that say nothing without their type:
+// "Ping" reads as "Pool.Ping", while "ExchangeDeclare" stands on its own.
+var genericCallables = map[string]bool{"New": true, "Close": true, "Ping": true, "Get": true, "Set": true, "Do": true, "Run": true, "Start": true, "Stop": true,
+	"Connect": true, "Open": true, "Exec": true, "Query": true, "Call": true, "Send": true, "Write": true, "Read": true, "Begin": true, "Commit": true,
+	"Rollback": true, "Publish": true, "Consume": true, "Dial": true, "Delete": true, "Update": true, "Create": true, "List": true, "Put": true, "Post": true,
+	"Up": true, "Down": true, "Version": true, "Save": true, "Load": true, "Fetch": true, "Store": true, "Add": true, "Remove": true, "Find": true}
+
+// Line is one record's line beneath its destination: a native HTTP fact
+// keeps its method and address; a callable drops the package the group
+// already implies ("amqp091-go.Channel.Confirm" under RabbitMQ reads
+// "Confirm") and keeps its type only when the member name alone is generic
+// ("Pool.Ping", "Migrate.Up"). The full callable stays in the record's body.
+func (row pageOutbound) Line() string {
+	if row.Method != "" && row.Address != "" {
+		return row.NativeLabel
+	}
+	if row.External != "" {
+		return shortCallable(row.External)
+	}
+	// An unresolved interface call has no callable of its own; the function
+	// that makes it is the next best name for the line.
+	for _, use := range row.Uses {
+		for _, step := range use.Steps {
+			if step.Name != "" {
+				return shortCallable(step.Name)
+			}
+		}
+	}
+	return ""
+}
+
+// InformativeUses are the destination chains worth a line: ones that reach
+// an address, stop at a named frontier, or pass through more than one
+// step. A chain of one step at the record's own location says nothing the
+// record's anchor does not.
+func (row pageOutbound) InformativeUses() []pageOutboundUse {
+	var uses []pageOutboundUse
+	for _, use := range row.Uses {
+		if use.Address != "" || use.Frontier != "" || len(use.Steps) > 1 {
+			uses = append(uses, use)
+		}
+	}
+	return uses
+}
+
+func shortCallable(external string) string {
+	parts := strings.Split(external, ".")
+	if len(parts) < 2 {
+		return external
+	}
+	member := parts[len(parts)-1]
+	if genericCallables[member] && len(parts) >= 3 {
+		return parts[len(parts)-2] + "." + member
+	}
+	return member
+}
+
 // Brief is one record's line beneath its destination when the source names
 // no method, address or callable: the first sentence of its purpose, at most
 // 90 runes. The full purpose, address, basis and source chain open under it.
@@ -195,9 +253,10 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 	position := make(map[string]int)
 	for _, row := range rows {
 		key := "k\x00" + row.KindLabel
+		destination := canonicalDestination(row.Destination)
 		switch {
-		case strings.TrimSpace(row.Destination) != "":
-			key = "d\x00" + strings.ToLower(strings.TrimSpace(row.Destination))
+		case destination != "":
+			key = "d\x00" + strings.ToLower(destination)
 		case row.NativeLabel != "":
 			key = "n\x00" + row.NativeLabel
 		}
@@ -205,7 +264,7 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 		if !known {
 			at = len(groups)
 			position[key] = at
-			groups = append(groups, pageOutboundGroup{Destination: strings.TrimSpace(row.Destination), NativeLabel: row.NativeLabel,
+			groups = append(groups, pageOutboundGroup{Destination: destination, NativeLabel: row.NativeLabel,
 				KindLabel: row.KindLabel, Basis: row.Basis, Source: row.Source})
 		}
 		group := &groups[at]
@@ -243,6 +302,44 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 	}
 	sort.SliceStable(groups, func(i, j int) bool { return len(groups[i].Rows) > len(groups[j].Rows) })
 	return groups
+}
+
+// knownSystems maps a word found in a destination to the name its group
+// carries. One run named one broker "RabbitMQ broker", "AMQP broker
+// (RabbitMQ)", "RabbitMQ broker (queue topology)" and four more ways; the
+// reader wants one row per system. Records keep their own wording.
+var knownSystems = []struct{ word, name string }{
+	{"rabbitmq", "RabbitMQ"}, {"amqp", "RabbitMQ"}, {"kafka", "Kafka"}, {"nats", "NATS"},
+	{"redis", "Redis"}, {"memcache", "Memcached"},
+	{"postgres", "PostgreSQL"}, {"pgx", "PostgreSQL"}, {"mysql", "MySQL"}, {"mariadb", "MariaDB"},
+	{"sqlite", "SQLite"}, {"mongo", "MongoDB"}, {"clickhouse", "ClickHouse"}, {"elasticsearch", "Elasticsearch"},
+	{"minio", "S3 storage"}, {"s3", "S3 storage"}, {"github", "GitHub"}, {"google", "Google"},
+	{"slack", "Slack"}, {"telegram", "Telegram"}, {"stripe", "Stripe"}, {"sentry", "Sentry"},
+	{"otlp", "OpenTelemetry collector"}, {"opentelemetry", "OpenTelemetry collector"},
+	{"kubernetes", "Kubernetes API server"}, {"docker", "Docker daemon"},
+}
+
+// canonicalDestination is the group name for a destination text: the known
+// system it names, else the text without its parenthetical qualifier.
+// "remote PostgreSQL database" and "PostgreSQL database" are one group;
+// "Cache store (concrete implementation unresolved)" stays "Cache store",
+// not Redis, because nothing in it names Redis.
+func canonicalDestination(text string) string {
+	base := strings.TrimSpace(text)
+	if i := strings.Index(base, "("); i > 0 {
+		base = strings.TrimSpace(base[:i])
+	}
+	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	})
+	for _, system := range knownSystems {
+		for _, word := range words {
+			if word == system.word || len(system.word) >= 5 && strings.HasPrefix(word, system.word) {
+				return system.name
+			}
+		}
+	}
+	return base
 }
 
 func outboundKindLabel(kind string) string {

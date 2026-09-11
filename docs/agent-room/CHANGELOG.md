@@ -8,6 +8,37 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- "Where this service connects" on a real broker/database service (Morfeu:
+  Echo + sqlc + PostgreSQL + Redis + RabbitMQ). Destination groups are
+  keyed by the known system a destination names: one run called one broker
+  "RabbitMQ broker", "AMQP broker (RabbitMQ)", "RabbitMQ broker (queue
+  topology)" and four more ways, thirteen groups for three systems; now
+  RabbitMQ · 17, PostgreSQL · 9, Redis · 5 (`canonicalDestination`;
+  records keep their wording, an unresolved "Cache store" stays apart).
+  A call line drops the package the group already implies and keeps the
+  type only for a generic member: "Confirm", "ExchangeDeclare", "Pool.Ping",
+  "Migrate.Up" instead of "amqp091-go.Channel.Confirm"; the full callable
+  stays in the record body. An unresolved interface call takes its calling
+  function's name for the line instead of its first sentence of prose. The
+  body no longer prints "address not determined" or a one-step chain that
+  repeats the record's own anchor. The source location sits on its own
+  line under the call; the continuation rows live inside the same list.
+  On the first screen the sixth and later rows of a long group open in
+  place ("Развернуть · ещё N") instead of sending the reader to the
+  component page ("all 13 → flung me upward").
+- Boundaries prompt v6: the `line` cell is one plain sentence a newcomer
+  understands (what the component gets from or gives to that system, for
+  what purpose of its own), no narration of the call, unknowns in a second
+  "Not established:" sentence. Probe on Morfeu (27 records, same code):
+  average 28 → 11 words; "declareTopology issues an AMQP QueueDeclare on
+  the broker channel to idempotently declare the DLQ … a broker management
+  exchange, not a business publish" became "Declares the dead-letter queue
+  for failed movie-created events on the broker"; "createDBPool builds the
+  PostgreSQL connection pool from the parsed config … actual query
+  exchanges happen through its library" became "Creates the PostgreSQL
+  connection pool used to store and read application data". Three of 30
+  candidate records were not accepted under the new wording; the boundary
+  cache for v5 windows is cold.
 - The page follows an opened map block only after the reader's own click
   on the map. `revealInWindow` (755383f6) ran on every layout, so a
   component page opened through "All 6 →" or a route link scrolled past

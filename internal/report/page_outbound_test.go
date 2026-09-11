@@ -132,7 +132,7 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 		t.Fatal(err)
 	}
 	html := stdhtml.UnescapeString(out.String())
-	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "Адрес не установлен", "настройка клиента", "вызов в коде", `data-open="client.go:21:17"`, "가격조회.Get", address, "Развернуть · ещё 2", "GET /prices"} {
+	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "настройка клиента", "вызов в коде", `data-open="client.go:21:17"`, "가격조회.Get", address, "Развернуть · ещё 2", "GET /prices"} {
 		if !strings.Contains(html, text) {
 			t.Fatalf("first-screen inventory lost %q", text)
 		}
@@ -214,7 +214,7 @@ func TestOutboundGroupsByDestinationWithSharedAddressAndPreview(t *testing.T) {
 		{ID: "f", NativeLabel: "GET https://metrics.example/push", KindLabel: "HTTP", Source: "fact"},
 	}
 	groups := groupOutbound(rows)
-	if len(groups) != 3 || groups[0].Destination != "Postgres" || len(groups[0].Rows) != 3 || groups[1].Destination != "Kubernetes API server" || len(groups[1].Rows) != 2 || groups[2].NativeLabel != "GET https://metrics.example/push" {
+	if len(groups) != 3 || groups[0].Destination != "PostgreSQL" || len(groups[0].Rows) != 3 || groups[1].Destination != "Kubernetes API server" || len(groups[1].Rows) != 2 || groups[2].NativeLabel != "GET https://metrics.example/push" {
 		t.Fatalf("groups by destination, most records first: %+v", groups)
 	}
 	if groups[0].Addresses != 2 || groups[0].Address != "" || groups[1].Addresses != 1 || groups[1].Address != "{env:KUBECONFIG}" {
@@ -243,5 +243,70 @@ func TestDisplayCallableDropsPlatformNotation(t *testing.T) {
 		if got := displayCallable(name); got != want {
 			t.Fatalf("displayCallable(%q) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+func TestOutboundGroupsNameOneSystemOnce(t *testing.T) {
+	rows := []pageOutbound{
+		{ID: "a", Destination: "RabbitMQ broker (morfeu.events exchange)", KindLabel: "Queue"},
+		{ID: "b", Destination: "AMQP broker (RabbitMQ)", KindLabel: "External communication"},
+		{ID: "c", Destination: "RabbitMQ broker (queue topology)", KindLabel: "External communication"},
+		{ID: "d", Destination: "message broker", KindLabel: "Queue"},
+		{ID: "e", Destination: "Redis cache server", KindLabel: "SDK"},
+		{ID: "f", Destination: "Redis cache store", KindLabel: "Database"},
+		{ID: "g", Destination: "remote PostgreSQL database", KindLabel: "Database"},
+		{ID: "h", Destination: "PostgreSQL database", KindLabel: "Database"},
+		{ID: "i", Destination: "Cache store (concrete implementation unresolved)", KindLabel: "Database"},
+	}
+	groups := groupOutbound(rows)
+	got := map[string]int{}
+	for _, group := range groups {
+		got[group.Destination] = len(group.Rows)
+	}
+	want := map[string]int{"RabbitMQ": 3, "message broker": 1, "Redis": 2, "PostgreSQL": 2, "Cache store": 1}
+	if len(got) != len(want) {
+		t.Fatalf("groups: %v", got)
+	}
+	for name, count := range want {
+		if got[name] != count {
+			t.Fatalf("group %q has %d rows, want %d (%v)", name, got[name], count, got)
+		}
+	}
+	if groups[0].Destination != "RabbitMQ" || groups[0].KindLabel != "External communication" {
+		t.Fatalf("mixed kinds under one system did not neutralise: %+v", groups[0])
+	}
+	for text, want := range map[string]string{"S3-compatible object storage (MinIO)": "S3 storage", "OTLP trace collector": "OpenTelemetry collector", "proxy service": "proxy service", "": ""} {
+		if got := canonicalDestination(text); got != want {
+			t.Fatalf("canonicalDestination(%q) = %q, want %q", text, got, want)
+		}
+	}
+}
+
+func TestOutboundLineDropsThePackageTheGroupImplies(t *testing.T) {
+	for external, want := range map[string]string{
+		"amqp091-go.Channel.Confirm": "Confirm", "amqp091-go.Connection.NotifyClose": "NotifyClose", "amqp091-go.Channel.ExchangeDeclare": "ExchangeDeclare",
+		"pgxpool.Pool.Ping": "Pool.Ping", "v4.Migrate.Up": "Migrate.Up", "v4.New": "New", "v5.Tx.Commit": "Tx.Commit", "WebSocket": "WebSocket", "": "",
+	} {
+		if got := shortCallable(external); got != want {
+			t.Fatalf("shortCallable(%q) = %q, want %q", external, got, want)
+		}
+	}
+	native := pageOutbound{Method: "GET", Address: "https://api.example/v1", NativeLabel: "GET https://api.example/v1", External: "http.Client.Do"}
+	if native.Line() != "GET https://api.example/v1" {
+		t.Fatalf("a native HTTP fact lost its method and address: %q", native.Line())
+	}
+}
+
+func TestOutboundLineFallsBackToTheCallingFunction(t *testing.T) {
+	row := pageOutbound{Uses: []pageOutboundUse{{Steps: []pageOutboundStep{{Name: "Relay.publicarUm"}}}}}
+	if row.Line() != "publicarUm" {
+		t.Fatalf("an unresolved interface call did not take its caller's name: %q", row.Line())
+	}
+	if len(row.InformativeUses()) != 0 {
+		t.Fatal("a one-step chain without address or frontier is not informative")
+	}
+	row.Uses = append(row.Uses, pageOutboundUse{Frontier: "v5.Connect", Steps: []pageOutboundStep{{Name: "main"}}}, pageOutboundUse{Address: "{env:PG_URL}"})
+	if len(row.InformativeUses()) != 2 {
+		t.Fatalf("chains with a frontier or an address were dropped: %+v", row.InformativeUses())
 	}
 }

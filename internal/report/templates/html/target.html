@@ -39,20 +39,19 @@
 {{define "outbound-address"}}{{if .Setting}}{{t .SettingLabel}} <code>{{.Setting}}</code>{{if .Suffix}}; {{t "append"}} <code>{{.Suffix}}</code>{{end}}{{else if .Text}}{{t "Address"}}: <code>{{.Text}}</code>{{else}}{{t "Address not determined"}}{{end}}{{end}}
 
 {{define "outbound-row"}}<li id="{{.ID}}" data-integration-record data-source-kind="{{.Source}}" data-communication-basis="{{.Basis}}">
-<details class="outbound-call"><summary>{{if .NativeLabel}}<code class="outbound-callable">{{.NativeLabel}}</code>{{else if .Brief}}{{.Brief}}{{else}}{{t .KindLabel}}{{end}} <span class="meta">{{.Anchor.Text}}</span></summary>
+<details class="outbound-call"><summary>{{if .Line}}<code class="outbound-callable">{{.Line}}</code>{{else if .Brief}}{{.Brief}}{{else}}{{t .KindLabel}}{{end}} <span class="meta">{{.Anchor.Text}}</span></summary>
 <div class="outbound-call-body">
 {{if .Summary}}<p class="outbound-purpose"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span></p>{{end}}
-<div class="outbound-address">{{if gt .DestinationCount 1}}{{t "Destinations"}} · {{.DestinationCount}}{{else}}{{template "outbound-address" .AddressText}}{{end}}</div>
+{{if or .Address (gt .DestinationCount 1)}}<div class="outbound-address">{{if gt .DestinationCount 1}}{{t "Destinations"}} · {{.DestinationCount}}{{else}}{{template "outbound-address" .AddressText}}{{end}}</div>{{end}}
 <div class="outbound-basis meta">{{t .KindLabel}}{{if .BasisLabel}} · {{t .BasisLabel}}{{end}}</div>
 <div class="outbound-source">{{if .External}}<code class="outbound-callable">{{.External}}</code> · {{end}}{{template "anchor" .Anchor}}</div>
-{{if .Uses}}<p class="meta">{{t "Destination sources"}} · {{len .Uses}}</p>{{range .Uses}}<div class="outbound-chain">{{if .Method}}<code>{{.Method}}</code> · {{end}}{{if and (not .Address) .Frontier}}{{t "Address passes through"}} <code>{{.Frontier}}</code>{{else}}{{template "outbound-address" .AddressText}}{{end}}<ol class="plain">{{range .Steps}}<li><code>{{.Name}}</code> · {{template "anchor" .Anchor}}</li>{{end}}</ol></div>{{end}}{{end}}</div></details></li>{{end}}
+{{with .InformativeUses}}<p class="meta">{{t "Destination sources"}} · {{len .}}</p>{{range .}}<div class="outbound-chain">{{if .Method}}<code>{{.Method}}</code> · {{end}}{{if and (not .Address) .Frontier}}{{t "Address passes through"}} <code>{{.Frontier}}</code>{{else}}{{template "outbound-address" .AddressText}}{{end}}<ol class="plain">{{range .Steps}}<li><code>{{.Name}}</code> · {{template "anchor" .Anchor}}</li>{{end}}</ol></div>{{end}}{{end}}</div></details></li>{{end}}
 
 {{define "outbound-group"}}<li data-integration-item data-source-kind="{{.Source}}">
 <strong class="input-title">{{if .Destination}}{{.Destination}}{{else if .NativeLabel}}<code>{{.NativeLabel}}</code>{{else}}{{t .KindLabel}}{{end}} <span class="meta">· {{len .Rows}}</span></strong>
 {{if or .Address (gt .Addresses 1)}}<div class="outbound-address">{{if gt .Addresses 1}}{{t "Destinations"}} · {{.Addresses}}{{else}}{{template "outbound-address" .AddressText}}{{end}}</div>{{end}}
 <div class="outbound-basis meta">{{t .KindLabel}}{{if .BasisLabel}} · {{t .BasisLabel}}{{end}}</div>
-<ul class="plain outbound-calls">{{range .First}}{{template "outbound-row" .}}{{end}}</ul>
-{{if .Rest}}<details class="outbound-more"><summary>{{t "Expand · {0} more" (len .Rest)}}</summary><ul class="plain outbound-calls">{{range .Rest}}{{template "outbound-row" .}}{{end}}</ul></details>{{end}}</li>{{end}}
+<ul class="plain outbound-calls">{{range .First}}{{template "outbound-row" .}}{{end}}{{if .Rest}}<li class="outbound-more-row"><details class="outbound-more"><summary>{{t "Expand · {0} more" (len .Rest)}}</summary><ul class="plain outbound-calls">{{range .Rest}}{{template "outbound-row" .}}{{end}}</ul></details></li>{{end}}</ul></li>{{end}}
 
 {{define "outbound-catalog"}}{{$model := false}}{{$fact := false}}{{range .}}{{if eq .Source "fact"}}{{$fact = true}}{{else}}{{$model = true}}{{end}}{{end}}<p class="input-provenance meta">{{if $fact}}{{t "Observed in source"}}{{end}}{{if and $fact $model}} · {{end}}{{if $model}}{{t "Model interpretation"}}{{end}}</p>
 {{$groups := outboundGroups .}}<ul class="plain operation-catalog">{{range $i, $group := $groups}}{{if lt $i 5}}{{template "outbound-group" $group}}{{end}}{{end}}</ul>{{if gt (len $groups) 5}}<details class="input-more"><summary>{{t "All {0} →" (len $groups)}}</summary><ul class="plain operation-catalog">{{range $i, $group := $groups}}{{if ge $i 5}}{{template "outbound-group" $group}}{{end}}{{end}}</ul></details>{{end}}{{end}}

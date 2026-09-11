@@ -148,7 +148,7 @@ function rmBuildEntrance(inputs){
     block.appendChild(rmEl('h5','',heading.textContent));
     var list=rmEl('ul','');
     var items=Array.from(group.querySelectorAll('[data-input-item],[data-integration-item]'));
-    items.slice(0,5).forEach(function(item){
+    function row(item){
       var row=rmEl('li','');row.appendChild(item.querySelector('.input-title').cloneNode(true));
       if(item.hasAttribute('data-integration-item')){
         // The group's own lines and its nested call records; a record's
@@ -156,10 +156,14 @@ function rmBuildEntrance(inputs){
         Array.from(item.children).forEach(function(child){if(child.classList.contains('input-title')||child.classList.contains('input-source'))return;var copy=child.cloneNode(true);copy.querySelectorAll('[id]').forEach(function(node){node.removeAttribute('id');});row.appendChild(copy);});
       }
       row.dataset.sourceKind=item.dataset.sourceKind||'fact';
-      list.appendChild(row);
-    });block.appendChild(list);
+      return row;
+    }
+    items.slice(0,5).forEach(function(item){list.appendChild(row(item));});
+    // The rest of a long group opens here, in place; the reader is not
+    // taken to another page for the sixth row.
+    if(items.length>5){var rest=rmEl('ul','');items.slice(5).forEach(function(item){rest.appendChild(row(item));});var more=rmEl('details','input-more');var summary=rmEl('summary','',rmT('Expand · {0} more',items.length-5));more.append(summary,rest);list.appendChild(rmEl('li','input-more-row')).appendChild(more);}
+    block.appendChild(list);
     var provenance=group.querySelector('.input-provenance');if(provenance)block.appendChild(provenance.cloneNode(true));
-    if(items.length>5){var more=rmEl('a','input-all',rmT('All {0} →',items.length));more.href='#'+inputs.id;more.addEventListener('click',function(){group.querySelector('.input-more')?.setAttribute('open','');});block.appendChild(more);}
     entrance.appendChild(block);
   });
   return entrance;
