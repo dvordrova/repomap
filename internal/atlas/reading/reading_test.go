@@ -368,6 +368,11 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 			t.Errorf("tables.md lacks %q", want)
 		}
 	}
+	// pkg/a and pkg/b are one window whose context names their parent once;
+	// no row repeats it, and the root has no parent.
+	if strings.Count(text, `context parent: {"line":"4 files","path":"pkg"}`) != 1 || strings.Contains(text, "  - parent:") || strings.Count(text, "context parent:") != 2 {
+		t.Errorf("directory parent is not the window's shared context:\n%s", text)
+	}
 	if strings.Contains(text, "pkg/b/gen.go\"") {
 		t.Error("a generated file was asked about")
 	}

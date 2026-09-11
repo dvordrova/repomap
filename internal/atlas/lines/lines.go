@@ -21,7 +21,7 @@ const (
 	StageDirectories = "atlas_directories"
 	StageFiles       = "atlas_files"
 
-	directoriesContract = "repomap.atlas.directories.v3"
+	directoriesContract = "repomap.atlas.directories.v4"
 	filesContract       = "repomap.atlas.files.v5"
 
 	// WindowRows is the row budget of the dependent table definitions.
@@ -99,10 +99,11 @@ type Lines interface {
 	Line(placeID string) (string, bool)
 }
 
-// DirectoryRow builds the row of one directory. The parent's line is its
-// fallback, not its model line, so a reworded root does not cold-start the
-// whole tree.
-func DirectoryRow(place atlas.Place, parent *atlas.Place) table.Row {
+// DirectoryRow builds the row of one directory. Its parent is the window's
+// shared context (DirectoryContext), not a row field: the children of one
+// parent are asked together, and the same README line no longer repeats in
+// every row.
+func DirectoryRow(place atlas.Place) table.Row {
 	facts := place.Directory
 	fields := []table.Field{
 		{Name: "path", Value: place.Path},
@@ -119,10 +120,17 @@ func DirectoryRow(place atlas.Place, parent *atlas.Place) table.Row {
 		table.Field{Name: "files", Value: bounded(facts.Files, maxChildren)},
 		table.Field{Name: "file_count", Value: facts.FileCount},
 	)
-	if parent != nil {
-		fields = append(fields, table.Field{Name: "parent", Value: parent.Given})
-	}
 	return table.Row{ID: place.ID, Fields: fields}
+}
+
+// DirectoryContext is what the rows of one parent share: the parent's path
+// and its deterministic line. The fallback, not the model line, so a
+// reworded root does not cold-start the whole tree. A root row has none.
+func DirectoryContext(parent *atlas.Place) []table.Field {
+	if parent == nil {
+		return nil
+	}
+	return []table.Field{{Name: "parent", Value: map[string]any{"path": parent.Path, "line": parent.Given}}}
 }
 
 // FileCallers names, per calling file, the declarations the graph saw

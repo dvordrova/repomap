@@ -63,3 +63,20 @@ func TestFileRowAsksBoxOnlyWhenTheFileMayMoveAndNamesCallingDeclarations(t *test
 		t.Fatalf("a box answer on a row without options gained authority: %+v", moved.Answers[0])
 	}
 }
+
+func TestDirectoryRowLeavesTheParentToTheWindowContext(t *testing.T) {
+	parent := atlas.Place{ID: atlas.DirectoryID("pkg"), Kind: atlas.PlaceDirectory, Path: "pkg", Given: "4 files", Directory: &atlas.DirectoryFacts{Readme: "Packages."}}
+	child := atlas.Place{ID: atlas.DirectoryID("pkg/a"), Kind: atlas.PlaceDirectory, Path: "pkg/a", Parent: parent.ID, Directory: &atlas.DirectoryFacts{Dirs: []string{}, Files: []string{"x.go"}, FileCount: 1}}
+	for _, field := range DirectoryRow(child).Fields {
+		if field.Name == "parent" {
+			t.Fatal("parent repeated in the row")
+		}
+	}
+	context := DirectoryContext(&parent)
+	if len(context) != 1 || context[0].Name != "parent" || !reflect.DeepEqual(context[0].Value, map[string]any{"path": "pkg", "line": "4 files"}) {
+		t.Fatalf("parent context: %+v", context)
+	}
+	if DirectoryContext(nil) != nil {
+		t.Fatal("a root row gained a parent")
+	}
+}

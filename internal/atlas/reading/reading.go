@@ -326,7 +326,10 @@ func (r *reader) readDirectories(ctx context.Context) error {
 	for round, depth := range depths {
 		dirs := byDepth[depth]
 		sort.Slice(dirs, func(i, j int) bool { return dirs[i].Path < dirs[j].Path })
-		rows := make([]table.Row, 0, len(dirs))
+		// The children of one parent share a window; the parent is its
+		// context, sent once. Rows keep their path order across groups.
+		var groups rowGroups
+		byParent := make(map[string]int)
 		var asked []atlas.Place
 		for _, place := range dirs {
 			if r.budget && r.closedAbove(place) {
@@ -335,16 +338,27 @@ func (r *reader) readDirectories(ctx context.Context) error {
 				r.openDirs[place.ID] = false
 				continue
 			}
-			var parent *atlas.Place
-			if place.Parent != "" {
-				if p, ok := r.places[place.Parent]; ok {
+			at, known := byParent[place.Parent]
+			if !known {
+				var parent *atlas.Place
+				if p, ok := r.places[place.Parent]; ok && place.Parent != "" {
 					parent = &p
 				}
+				at = len(groups)
+				byParent[place.Parent] = at
+				groups = append(groups, rowGroup{shared: lines.DirectoryContext(parent)})
 			}
-			rows = append(rows, lines.DirectoryRow(place, parent))
+			groups[at].rows = append(groups[at].rows, lines.DirectoryRow(place))
 			asked = append(asked, place)
 		}
-		answers, err := r.runTable(ctx, def, round+1, rows)
+		// asked follows path order; answers follow group order.
+		sort.SliceStable(asked, func(i, j int) bool {
+			if byParent[asked[i].Parent] != byParent[asked[j].Parent] {
+				return byParent[asked[i].Parent] < byParent[asked[j].Parent]
+			}
+			return asked[i].Path < asked[j].Path
+		})
+		answers, err := r.runTableGroups(ctx, def, round+1, groups, nil)
 		if err != nil {
 			return err
 		}

@@ -226,7 +226,7 @@ func (r *reader) readTargetZones(ctx context.Context, targetID string) error {
 				break
 			}
 		}
-		zone.line = fmt.Sprintf("%d boxes: %s", len(zone.boxes), strings.Join(names, ", "))
+		zone.line = fmt.Sprintf("%s: %s", boxCount(len(zone.boxes)), strings.Join(names, ", "))
 	}
 	return nil
 }
@@ -1036,10 +1036,25 @@ func (r *reader) partition(ctx context.Context, targetID string, tops []*boxStat
 		}
 	}
 	kept := parts[:0]
+	var empty []string
 	for _, part := range parts {
 		if len(part.boxes) > 0 {
 			kept = append(kept, part)
+		} else {
+			empty = append(empty, part.title)
 		}
 	}
+	// A named part no box chose vanishes; the journal says which, so a
+	// name the model invented and then abandoned is visible in the run.
+	if len(empty) > 0 && r.opts.State != nil {
+		r.opts.State(lines.StageZones, "ready", fmt.Sprintf("target %s: %d named parts held no box after assignment and were dropped: %s", targetID, len(empty), strings.Join(empty, ", ")))
+	}
 	return kept, nil
+}
+
+func boxCount(n int) string {
+	if n == 1 {
+		return "1 box"
+	}
+	return fmt.Sprintf("%d boxes", n)
 }

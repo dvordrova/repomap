@@ -3,8 +3,9 @@
 You receive a table of directories from one repository. Each row is one
 directory: its path, the first line of its README if it has one, the first
 sentence of its package documentation if it has one, the names of its child
-directories and files, how many code files lie beneath it, and one line
-about its parent directory.
+directories and files, and how many code files lie beneath it. The rows of
+one request share one parent directory: `context.parent` gives its path and
+one line about it, once for every row.
 
 Fill every cell listed in the request's `fill` for every row. The base cells are:
 

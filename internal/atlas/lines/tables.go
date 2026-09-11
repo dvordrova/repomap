@@ -22,7 +22,7 @@ const (
 
 	symbolsContract    = "repomap.atlas.symbols.v7"
 	boundariesContract = "repomap.atlas.boundaries.v7"
-	zonesContract      = "repomap.atlas.zones.v1"
+	zonesContract      = "repomap.atlas.zones.v2"
 	arrowsContract     = "repomap.atlas.arrows.v1"
 	targetsContract    = "repomap.atlas.targets.v2"
 	jointsContract     = "repomap.atlas.joints.v3"
@@ -544,9 +544,17 @@ func ZoneNames(want int) table.Definition {
 func ZoneNamesRow(targetID string, boxes []BoxSummary) table.Row {
 	entries := make([]string, 0, len(boxes))
 	for _, box := range boxes {
-		entries = append(entries, fmt.Sprintf("%s: %s (%d files)", box.Title, box.Line, box.Files))
+		entries = append(entries, fmt.Sprintf("%s: %s (%s)", box.Title, box.Line, FileCount(box.Files)))
 	}
 	return table.Row{ID: targetID, Fields: []table.Field{{Name: "boxes", Value: entries}}}
+}
+
+// FileCount spells a number of files: "1 file", "12 files".
+func FileCount(n int) string {
+	if n == 1 {
+		return "1 file"
+	}
+	return fmt.Sprintf("%d files", n)
 }
 
 // PartName reads the i-th part cell of a names answer.
