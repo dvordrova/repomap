@@ -5,12 +5,23 @@
 .map-controls button:active{transform:none;box-shadow:none}
 .map-node-body{stroke-width:1.5}
 .map-node:hover .map-node-body,.map-node:focus .map-node-body{stroke-width:2}
-[data-map-explorer] .map-inspector{grid-row:2;position:static;height:16rem;min-height:16rem;max-height:16rem;border-top:1px solid var(--line);border-bottom:0;padding:.8rem .4rem}
-[data-map-explorer] .map-stage{max-height:58vh}
+/* The explanation stands beside the map and follows the page; the map itself
+   grows with its content instead of scrolling inside a capped box. */
+[data-map-explorer] .map-workspace{grid-template-columns:minmax(0,1fr) clamp(17rem,32%,24rem);gap:1rem;align-items:start}
+[data-map-explorer] .map-inspector{grid-row:auto;position:sticky;top:calc(var(--toolbar-height,0px) + .75rem);z-index:1;height:auto;min-height:4rem;max-height:calc(100vh - var(--toolbar-height,0px) - 1.5rem);background:transparent;border:0;border-left:1px solid var(--line);padding:.2rem 0 .2rem 1rem}
+[data-map-explorer] .map-stage{max-height:none}
+[data-map-explorer] .map-card-docked{grid-template-columns:minmax(0,1fr)}
+[data-map-explorer] .map-inspector-heading,[data-map-explorer] .map-inspector-heading.has-concepts{grid-template-columns:minmax(0,1fr);overflow-wrap:break-word}
+[data-map-explorer] .map-inspector-heading label{padding-left:0}
 [data-map-explorer] .map-inspector:not(.has-preview){height:auto;min-height:4rem;max-height:none}
+@media(max-width:1100px){
+  [data-map-explorer] .map-workspace{grid-template-columns:minmax(0,1fr)}
+  [data-map-explorer] .map-inspector{position:static;max-height:none;border-left:0;border-top:1px solid var(--line);padding:.8rem .4rem}
+}
+[data-map-explorer] .explorer-breadcrumbs{flex-wrap:wrap;overflow:visible;row-gap:.15rem}
 [data-map-explorer] .map-inspector:not(.has-preview) .map-inspector-continuation{display:none}
 .map-concepts[hidden]{display:none}
-.map-member-content{box-sizing:border-box;height:100%;overflow:auto;font-size:14px;line-height:1.3}
+.map-member-content{box-sizing:border-box;height:100%;overflow:hidden;font-size:14px;line-height:1.3}
 .map-member-label{font-size:12px;color:var(--muted);margin-bottom:10px}
 .map-member-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .map-member{position:relative;font:inherit;text-align:left;box-sizing:border-box;min-width:0;min-height:54px;overflow-wrap:anywhere;padding:8px 32px 8px 10px;border:1px solid #b5c6ba;border-radius:6px;background:var(--paper);color:var(--ink)}
@@ -79,7 +90,7 @@
 .map-member-grid{display:block}.map-member{padding:9px 8px;margin:0 0 6px;min-height:42px;background:var(--paper)}
 .map-member-name{font-size:14px;line-height:1.4}.map-members-all{font:14px var(--sans);color:var(--accent);background:none;border:0;cursor:pointer;padding:4px 0}
 .map-all-members{margin:12px 0}.map-all-members .map-member-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px}
-[data-map-explorer].map-part-expanded .map-inspector{max-height:none;height:auto}
+[data-map-explorer] .map-member-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
 .input-catalog [data-integration-item]{padding:6px 0;font-size:14px}
 .input-catalog [data-input-item]{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px}

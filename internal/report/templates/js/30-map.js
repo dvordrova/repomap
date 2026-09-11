@@ -176,10 +176,21 @@
         // An expanded part can be taller than the viewport. Start at its
         // heading, never halfway through its code cubes.
         stage.scrollTo(Math.max(0,box.x*scale-24),Math.max(0,box.y*scale-24));
+        revealInWindow(box);
         return;
       }
       stage.scrollTo(Math.max(0,(box.x+box.w/2)*scale-stage.clientWidth/2),
         Math.max(0,(box.y+box.h/2)*scale-stage.clientHeight/2));
+      revealInWindow(box);
+    }
+    // The stage grows with the map instead of scrolling inside a capped box,
+    // so an opened block low on a tall map is brought into the window by the
+    // page itself. A stage that does scroll keeps its own framing.
+    function revealInWindow(box) {
+      if (stage.scrollHeight > stage.clientHeight + 1) return;
+      var inset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--toolbar-height')) || 0;
+      var top = stage.getBoundingClientRect().top + box.y * scale - 24;
+      if (top < inset || top > window.innerHeight - 120) window.scrollBy({top: top - inset - 16, behavior: 'instant'});
     }
     // A report opened at a question may initially hide this map. Frame it once
     // when it becomes visible; later resizing must preserve the reader's pan.
@@ -217,10 +228,10 @@
       if(Number.isFinite(saved.scale)){scale=saved.scale;apply();}
       stage.scrollTo(saved.left||0,saved.top||0);
     };
-    var viewportFrame=0;
+    var viewportTimer=0;
     stage.addEventListener('scroll',function(){
-      if(viewportFrame)return;
-      viewportFrame=requestAnimationFrame(function(){viewportFrame=0;map.dispatchEvent(new Event('repomap:viewport'));});
+      if(viewportTimer)return;
+      viewportTimer=setTimeout(function(){viewportTimer=0;map.dispatchEvent(new Event('repomap:viewport'));},250);
     });
     map.addEventListener('repomap:layout',function(event){
       baseWidth=svg.viewBox.baseVal.width;readable();

@@ -8,6 +8,25 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The map's explanation stands beside the map. The component map explorer
+  put its inspector under a stage capped at 58vh, fixed the inspector at
+  16rem and scrolled the page back to the map top after every click, so an
+  explanation appeared 210–334 px below the clicked part, outside the
+  window, and the wheel went to whichever of three nested scrollers was
+  under the pointer (the owner's "awful scroller"). Now the workspace is two
+  columns above 1100 px: the stage grows with its content (no vertical
+  cap) and the inspector is a sticky side panel with auto height, bounded
+  by the window; below 1100 px it follows the map with no fixed height.
+  `orient()` scrolls only when the map is entirely out of view; an opened
+  block low on a tall map is brought into the window by the page
+  (`revealInWindow`). The layout width is the stage's, measured one
+  microtask after the bundle has run (the first render used the figure's
+  full width and produced a 1100 px map inside an 816 px stage). Breadcrumbs
+  wrap instead of scrolling horizontally; code cube names clamp to two lines
+  instead of scrolling inside the node; viewport history entries are
+  written every 250 ms instead of every frame. Verified at 1280×900 on
+  meetup and jumping-circle: part click leaves the page in place, the
+  explanation is in view beside the map, the stage has no inner scroll.
 - The component page leads with what the component is and ends the map
   with what happens: the orientation role and purpose (the overview card's
   sentence, same display refs) sit under the heading with the entrypoints

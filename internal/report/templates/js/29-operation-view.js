@@ -86,9 +86,20 @@
       return scopePath(parent,seen).concat(directParts[id]?[]:[id]);
     }
     function setScope(id){scope=displayed(id);trail=scopePath(scope).slice(0,-1);}
+    // The explanation stands beside the map, so a click never needs the page
+    // to move; only a map that is entirely out of view (a reveal from a
+    // question or a search) is brought back.
+    function stageWidth(){
+      var stage=map.querySelector('.map-stage');
+      if(stage&&stage.clientWidth)return stage.clientWidth;
+      var mapStyle=getComputedStyle(map),width=map.clientWidth-parseFloat(mapStyle.paddingLeft)-parseFloat(mapStyle.paddingRight);
+      if(window.innerWidth>1100)width-=Math.min(24*16,Math.max(17*16,width*.32))+16;
+      return width;
+    }
     function orient(){
       var inset=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--toolbar-height'))||0;
-      if(bar.getBoundingClientRect().top<inset)map.scrollIntoView({block:'start'});
+      var rect=(map.querySelector('.map-stage')||bar).getBoundingClientRect();
+      if(rect.bottom<inset||rect.top>window.innerHeight)map.scrollIntoView({block:'start'});
     }
     function address(node){document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:node||map.closest('[data-report-page]')}}));}
     function readingDisclosures(){return {members:!!map.querySelector('.map-all-members')?.open};}
@@ -175,9 +186,13 @@
       visible.sort(function(a,b){if(!operation){if(a===scope)return -1;if(b===scope)return 1;}if(a===operation?.id)return -1;if(b===operation?.id)return 1;var ai=base.indexOf(a)>=0,bi=base.indexOf(b)>=0;if(ai!==bi)return ai?-1:1;return byID[a].dataset.title.localeCompare(byID[b].dataset.title);});
       var boxes={};visible.forEach(function(id){boxes[id]={w:220,h:80};});
       var layout;
-      // The shared inspector mounts after this script. Its temporary stage
-      // width must not turn a wide map into a vertical layout on first open.
-      var mapStyle=getComputedStyle(map),availableWidth=map.clientWidth-parseFloat(mapStyle.paddingLeft)-parseFloat(mapStyle.paddingRight);
+      // The explanation panel takes the right third of the workspace on wide
+      // screens, so the map's width is the stage's. The first render starts
+      // before the shared inspector mounts the stage; one microtask later the
+      // whole bundle has run and the stage can be measured. A hidden page
+      // takes the same split from the figure's width.
+      await Promise.resolve();if(ticket!==revision)return;
+      var availableWidth=stageWidth();
       var opened=scope&&byID[scope], expanded=!term&&opened&&!opened.dataset.branch&&!opened.dataset.activation?opened:null;
       map.classList.toggle('map-part-expanded',!!expanded);map.classList.toggle('map-operation-context',!!operation);
       if(expanded&&boxes[expanded.id])boxes[expanded.id]=repomapMembers.size(expanded);
