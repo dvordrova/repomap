@@ -99,7 +99,7 @@ func TestLearningUsesLaunchAndManifestObservationsWithoutModelDescriptions(t *te
 }
 
 func TestLearningAllowsZeroOneManyWithOriginalReasons(t *testing.T) {
-	pool := learningRequest{Evidence: []learningEvidence{{Ref: "e1"}}}
+	pool := learningRequest{Evidence: []learningEvidence{{Ref: "e1"}}, Intents: learningIntents()}
 	result := learningReply()
 	result.Reviews[0].Questions[0].Sources = []string{"invented", "e1", "e1"}
 	result.Reviews = append(result.Reviews, learningReview{Intent: "unadvertised", State: "questions"})
@@ -160,7 +160,7 @@ func TestLearningPreservesSourceNamesThatLookLikeInternalReferences(t *testing.T
 				pool := learningRequest{Evidence: []learningEvidence{{
 					Ref: "e1", Source: atlas.QuestionStop{Name: name, Path: "math.go", Line: 1},
 					Context: map[string]any{"original": map[string]any{"signature": "func " + name + "()"}},
-				}}}
+				}}, Intents: learningIntents()}
 				encoded, err := encodeLearningPool(pool)
 				if err != nil || !strings.Contains(string(encoded), "func "+name+"()") {
 					t.Fatalf("native name is missing from original evidence: %v", err)
@@ -318,11 +318,13 @@ func (p *learningResourceProvider) Complete(_ context.Context, prepared llm.Prep
 	if reason == "" {
 		reason = "The original evidence needs further reading."
 	}
-	for _, intent := range learningIntents() {
+	response.Reviews = []learningReview{}
+	for _, intent := range pool.Intents {
 		response.Reviews = append(response.Reviews, learningReview{Intent: intent.ID, State: "unknown",
 			Reason: reason, Sources: refs})
 	}
-	if p.invalid != nil && p.invalid(pool) {
+	// invalid leaves the last asked intent out of the response.
+	if p.invalid != nil && p.invalid(pool) && len(response.Reviews) > 0 {
 		response.Reviews = response.Reviews[:len(response.Reviews)-1]
 	}
 	completion.Response, _ = json.Marshal(response)
@@ -352,9 +354,14 @@ func TestLearningOrdinaryProposalsUseCompleteProviderSizedContext(t *testing.T) 
 	if !strings.Contains(provider.prompts[0].System, "prose in English.") {
 		t.Fatal("fit and execution lost the common English response preparation")
 	}
+	// The catalogue travels in the payload after the evidence, not in the
+	// system prompt, so every window over this evidence shares one prefix.
+	if !reflect.DeepEqual(provider.requests[0].Intents, learningIntents()) {
+		t.Fatalf("whole-context proposal lost the curated intents: %+v", provider.requests[0].Intents)
+	}
 	for _, intent := range learningIntents() {
-		if !strings.Contains(strings.Join(strings.Fields(provider.prompts[0].System), " "), intent.Goal) {
-			t.Fatalf("whole-context proposal lost curated intent %s", intent.ID)
+		if strings.Contains(provider.prompts[0].System, intent.Title) || strings.Contains(provider.prompts[0].System, "\n## ") {
+			t.Fatalf("system prompt carries intent %s", intent.ID)
 		}
 	}
 	restored := expandedLearningTestRequest(t, []byte(provider.prompts[0].User))
@@ -568,24 +575,33 @@ func TestLearningPartitionMemoRevalidatesReplayAndExactInputs(t *testing.T) {
 	if len(provider.requests) != before || warm.learning.Reviews[0].Reason != provider.reason {
 		t.Fatal("partition memo hid a child's current replay response")
 	}
-	// Replay accepts transport JSON; Learn rejects only the missing intent.
-	provider.invalid = func(pool learningRequest) bool { return pool.Evidence[0].Context["ordinal"] == float64(0) }
+	// Replay accepts transport JSON; Learn asks the missing intent again alone
+	// over the same evidence, live once and from the cache after.
+	provider.invalid = func(pool learningRequest) bool {
+		return pool.Evidence[0].Context["ordinal"] == float64(0) && len(pool.Intents) > 1
+	}
 	if _, err := llm.ReplayJSON(t.Context(), r.opts.Executor, provider, prepared); err != nil {
 		t.Fatal(err)
 	}
 	before = len(provider.requests)
 	warm = run()
-	// The intent missing from one window is reviewed by the other window, so
-	// the consolidated plan carries no "unavailable" review for it.
+	// The intent missing from one window is reviewed by the re-ask over that
+	// window's evidence, so the consolidated plan carries no "unavailable"
+	// review for it and the journal counts no loss.
 	missingIntent := learningIntents()[7].ID
-	if len(provider.requests) != before || warm.use(stageLearn).Rejected != 1 || warm.use(stageLearn).Cached != 2 || warm.learning.Reviews[0].Source != atlas.SourceCache ||
+	if len(provider.requests) != before+1 || warm.use(stageLearn).Rejected != 0 || warm.use(stageLearn).Cached != 2 || warm.use(stageLearn).Live != 1 || warm.learning.Reviews[0].Source != atlas.SourceCache ||
 		slices.ContainsFunc(warm.learning.Reviews, func(review atlas.LearningReview) bool {
 			return review.Intent == missingIntent && review.State == "unavailable"
 		}) ||
 		!slices.ContainsFunc(warm.learning.Reviews, func(review atlas.LearningReview) bool {
-			return review.Intent == missingIntent && review.State != "unavailable"
+			return review.Intent == missingIntent && review.Window == 3 && review.State != "unavailable"
 		}) {
-		t.Fatal("missing replay intent was accepted or discarded valid cached neighbours")
+		t.Fatal("missing replay intent was accepted, discarded valid cached neighbours or was not re-asked")
+	}
+	before = len(provider.requests)
+	warm = run()
+	if len(provider.requests) != before || warm.use(stageLearn).Cached != 3 || warm.use(stageLearn).Live != 0 {
+		t.Fatal("the accepted re-ask was not replayed from the cache")
 	}
 	// A successful replay of the complete parent replaces its older partition.
 	provider.invalid, provider.refuse = nil, nil
@@ -653,7 +669,9 @@ func TestLearningPreparedEnvelopeAndNonresourceRefusal(t *testing.T) {
 			t.Fatal("indivisible original evidence was discarded or sent beyond the provider envelope")
 		}
 	})
-	provider := &learningResourceProvider{oversize: true, invalid: func(pool learningRequest) bool { return pool.Evidence[0].Context["ordinal"] == float64(2) }}
+	provider := &learningResourceProvider{oversize: true, invalid: func(pool learningRequest) bool {
+		return pool.Evidence[0].Context["ordinal"] == float64(2) && len(pool.Intents) > 1
+	}}
 	r := isolatedLearningReader(t, t.TempDir(), provider)
 	r.opts.Executor.BatchConcurrency = 4
 	pools, err := r.prepareLearningPools(t.Context(), []learningRequest{newLearningPool(evidence, false)}, learningPrompt)
@@ -664,16 +682,23 @@ func TestLearningPreparedEnvelopeAndNonresourceRefusal(t *testing.T) {
 	if err := r.executeLearning(t.Context(), pools, learningPrompt); err != nil {
 		t.Fatal(err)
 	}
-	// The second window's missing intent is reviewed by the first window: the
-	// plan is complete per intent, with one review fewer and no unavailable one.
-	if len(provider.requests) != 2 || len(r.learning.Reviews) != 2*len(learningIntents())-1 || r.learning.State != "ready" || len(r.rejected) != 1 {
-		t.Fatalf("nonresource refusal was retried, split or suppressed an accepted neighbour: %d reviews, state %s, %d rejected", len(r.learning.Reviews), r.learning.State, len(r.rejected))
+	// The second window's missing intent is asked again alone over that
+	// window's evidence and reviewed there: the plan is complete per intent,
+	// with the re-ask's review beside the others, no unavailable one and no
+	// journaled loss; the accepted neighbour is neither retried nor split.
+	last := learningIntents()[7].ID
+	if len(provider.requests) != 3 || len(r.learning.Reviews) != 2*len(learningIntents()) || r.learning.State != "ready" || len(r.rejected) != 0 {
+		t.Fatalf("omitted intent was not re-asked once, or its omission split or suppressed an accepted neighbour: %d requests, %d reviews, state %s, %d rejected", len(provider.requests), len(r.learning.Reviews), r.learning.State, len(r.rejected))
 	}
 	for _, review := range r.learning.Reviews {
-		missing := review.Window == 2 && review.Intent == learningIntents()[7].ID
-		if !review.PartialContext || missing || review.State == "unavailable" {
+		missing := review.Window == 2 && review.Intent == last
+		reasked := review.Window == 3 && review.Intent != last
+		if !review.PartialContext || missing || reasked || review.State == "unavailable" {
 			t.Fatal("uninspected child became a negative or gained source authority")
 		}
+	}
+	if request := provider.requests[2]; len(request.Intents) != 1 || request.Intents[0].ID != last || len(request.Evidence) != 2 || !request.PartialContext {
+		t.Fatalf("re-ask did not name the omitted intent alone over the same partial evidence: %+v", request)
 	}
 	// Byte balance, rather than item count, keeps one large original section
 	// separate from three much smaller units without cutting the section.
@@ -979,7 +1004,7 @@ func TestLearningMenuKeepsValidGoalDecisionsWhenAnotherIsMissing(t *testing.T) {
 			}
 			for _, row := range request.Rows {
 				if !slices.ContainsFunc(learningIntents(), func(intent learningIntent) bool {
-					return row.Intent == intent.Title && row.Goal != "" && row.Goal == intent.Goal
+					return row.Intent == intent.Title && row.Goal != "" && row.Goal == intent.Guidance
 				}) {
 					t.Fatal("selection lost the original curated learning goal")
 				}

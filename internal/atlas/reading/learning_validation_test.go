@@ -16,7 +16,7 @@ import (
 )
 
 func TestLearningMalformedIntentKeepsSiblingReviewsAndExactCache(t *testing.T) {
-	pool := learningRequest{Evidence: []learningEvidence{{Ref: "e1"}}}
+	pool := learningRequest{Evidence: []learningEvidence{{Ref: "e1"}}, Intents: learningIntents()}
 	reply := learningReply()
 	raw, _ := json.Marshal(reply)
 	var envelope map[string][]json.RawMessage
@@ -80,7 +80,7 @@ func TestLearningRefusedMergeKeepsOriginalQuestionsWithoutInventingLinks(t *test
 // accepted why, with the substitution recorded in the plan and the journal.
 // The prompt still asks for the reason: request bytes are unchanged.
 func TestLearningQuestionReviewWithoutReasonTakesItsFirstQuestionWhy(t *testing.T) {
-	pool := learningRequest{Evidence: []learningEvidence{{Ref: "e1"}}}
+	pool := learningRequest{Evidence: []learningEvidence{{Ref: "e1"}}, Intents: learningIntents()}
 	reply := learningReply()
 	for i := range reply.Reviews {
 		reply.Reviews[i].State, reply.Reviews[i].Reason = "questions", " \n "
@@ -175,7 +175,7 @@ func TestLearningDropsOneBadQuestionAndKeepsItsReview(t *testing.T) {
 // has no content besides its reason and still needs one; a rejection quotes
 // only the beginning of a long question.
 func TestLearningReviewRefusalsAfterPerQuestionValidation(t *testing.T) {
-	pool := learningRequest{Evidence: []learningEvidence{{Ref: "e1"}}}
+	pool := learningRequest{Evidence: []learningEvidence{{Ref: "e1"}}, Intents: learningIntents()}
 	own := learningReply()
 	raw, _ := json.Marshal(own)
 	decoded, err := decodeLearning(raw, pool)

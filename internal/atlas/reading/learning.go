@@ -27,6 +27,14 @@ const stageLearn = "atlas_learn"
 //go:embed prompts/learning.md
 var learningPrompt string
 
+// learningIntentsCatalogue lists the learning intents under "## id | Title"
+// headings, each followed by its guidance. learningIntents reads it; the
+// model sees the intents in the payload after the evidence, never in the
+// system prompt, so windows over the same evidence share a request prefix.
+//
+//go:embed prompts/learning-intents.md
+var learningIntentsCatalogue string
+
 //go:embed prompts/learning-response-example.json
 var learningResponseExample string
 
@@ -39,11 +47,16 @@ var learningMergeResponseExample string
 //go:embed prompts/learning-select.md
 var learningSelectPrompt string
 
-type learningIntent struct{ ID, Title, Goal string }
+// learningIntent is one learning goal as the payload lists it.
+type learningIntent struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Guidance string `json:"guidance"`
+}
 
 func learningIntents() []learningIntent {
 	var result []learningIntent
-	for _, line := range strings.Split(learningPrompt, "\n") {
+	for _, line := range strings.Split(learningIntentsCatalogue, "\n") {
 		if strings.HasPrefix(line, "## ") {
 			id, title, ok := strings.Cut(strings.TrimPrefix(line, "## "), " | ")
 			if ok {
@@ -51,7 +64,7 @@ func learningIntents() []learningIntent {
 			}
 		} else if len(result) > 0 && strings.TrimSpace(line) != "" {
 			intent := &result[len(result)-1]
-			intent.Goal = strings.TrimSpace(intent.Goal + " " + strings.TrimSpace(line))
+			intent.Guidance = strings.TrimSpace(intent.Guidance + " " + strings.TrimSpace(line))
 		}
 	}
 	return result
@@ -62,9 +75,18 @@ type learningEvidence struct {
 	Context map[string]any     `json:"context"`
 	Source  atlas.QuestionStop `json:"-"`
 }
+
+// learningRequest is one Learn window's input: the evidence, the intents
+// asked over it, and how many times those intents were already asked over
+// this evidence and left unreviewed. Intents follow the evidence on the wire,
+// so a re-ask over the same evidence shares the provider's cached prefix up
+// to "intents"; Reask changes what the decoder makes of an omission, never
+// the request bytes.
 type learningRequest struct {
 	PartialContext bool               `json:"partial_context"`
 	Evidence       []learningEvidence `json:"evidence"`
+	Intents        []learningIntent   `json:"intents"`
+	Reask          int                `json:"-"`
 }
 
 // Shared presentation context is encoded once per request. Keep the complete
@@ -80,7 +102,11 @@ func encodeLearningPool(pool learningRequest) ([]byte, error) {
 		PartialContext bool                      `json:"partial_context"`
 		Contexts       map[string]map[string]any `json:"contexts,omitempty"`
 		Evidence       []evidenceRow             `json:"evidence"`
-	}{PartialContext: pool.PartialContext, Evidence: make([]evidenceRow, len(pool.Evidence))}
+		Intents        []learningIntent          `json:"intents"`
+	}{PartialContext: pool.PartialContext, Evidence: make([]evidenceRow, len(pool.Evidence)), Intents: pool.Intents}
+	if wire.Intents == nil {
+		wire.Intents = []learningIntent{}
+	}
 	refs := make(map[string]string)
 	for i, item := range pool.Evidence {
 		row := evidenceRow{Ref: item.Ref, Context: item.Context}
@@ -136,6 +162,13 @@ type learningReview struct {
 type learningRejection struct {
 	Intent string `json:"intent"`
 	Reason string `json:"reason"`
+	// Omitted marks an intent the response did not name at all. That is no
+	// decision and not yet a loss: the intent is asked again over the same
+	// evidence, and the re-asking window's own result counts.
+	Omitted bool `json:"omitted,omitempty"`
+	// Recovered marks an omitted intent a later window over this evidence
+	// then reviewed.
+	Recovered bool `json:"recovered,omitempty"`
 }
 
 // learningQuestionRejection is one proposed question dropped from a review
@@ -161,10 +194,16 @@ func (response learningResponse) AcceptedRowKeys() []string {
 	return keys
 }
 
+// An omission is journaled under its own kind so rejected.jsonl does not
+// count an intent the next round reviews as a loss.
 func (response learningResponse) ResponseRejections() []llm.ResponseRejection {
 	var result []llm.ResponseRejection
 	for _, rejection := range response.Rejections {
-		result = append(result, llm.ResponseRejection{Kind: "row_rejected", Count: 1, Reason: rejection.Reason, Samples: []string{rejection.Intent}})
+		kind := "row_rejected"
+		if rejection.Omitted {
+			kind = "intent_omitted"
+		}
+		result = append(result, llm.ResponseRejection{Kind: kind, Count: 1, Reason: rejection.Reason, Samples: []string{rejection.Intent}})
 	}
 	for _, rejection := range response.QuestionRejections {
 		result = append(result, llm.ResponseRejection{Kind: "question_rejected", Count: 1, Reason: rejection.Reason, Samples: []string{rejection.Intent}})
@@ -261,7 +300,7 @@ func learningPools(evidence []learningEvidence, budget int, prompt string) ([]le
 }
 
 func newLearningPool(evidence []learningEvidence, partial bool) learningRequest {
-	pool := learningRequest{PartialContext: partial, Evidence: append([]learningEvidence{}, evidence...)}
+	pool := learningRequest{PartialContext: partial, Evidence: append([]learningEvidence{}, evidence...), Intents: learningIntents()}
 	for i := range pool.Evidence {
 		pool.Evidence[i].Ref = fmt.Sprintf("e%d", i+1)
 	}
@@ -296,15 +335,24 @@ func splitLearningPool(pool learningRequest) ([]learningRequest, error) {
 			mid, best = i, difference
 		}
 	}
-	return []learningRequest{newLearningPool(pool.Evidence[:mid], true), newLearningPool(pool.Evidence[mid:], true)}, nil
+	children := []learningRequest{newLearningPool(pool.Evidence[:mid], true), newLearningPool(pool.Evidence[mid:], true)}
+	for i := range children {
+		children[i].Intents, children[i].Reask = pool.Intents, pool.Reask
+	}
+	return children, nil
 }
+
+// learningContract versions the proposal request and its decoder. v5 lists
+// the intents in the payload after the evidence instead of in the system
+// prompt, and re-asks the intents a response left out.
+const learningContract = "repomap.atlas.learn.v5"
 
 func learningCall(pool learningRequest, prompt string) (llm.Call[learningResponse], error) {
 	raw, err := encodeLearningPool(pool)
 	if err != nil {
 		return llm.Call[learningResponse]{}, err
 	}
-	return llm.Call[learningResponse]{State: []byte("repomap.atlas.learn.v4"),
+	return llm.Call[learningResponse]{State: []byte(learningContract),
 		Prompt:         llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true, ResponseExample: learningResponseExample, ProseFields: []string{"reviews[].reason", "reviews[].questions[].question", "reviews[].questions[].why"}},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
 		DecodeValidate: func(raw []byte) (learningResponse, error) { return decodeLearning(raw, pool) }}, nil
@@ -373,6 +421,31 @@ func (r *reader) prepareLearningPools(ctx context.Context, pools []learningReque
 	return prepared, nil
 }
 
+// learningRefusal refuses a response that accepted no review. Missing names
+// the asked intents no review named at all, so the executor can ask them
+// again without repeating the refused request, and the message says what
+// the response held instead.
+type learningRefusal struct {
+	Missing []string
+	Asked   int
+	Shape   string
+}
+
+func (refusal *learningRefusal) Error() string {
+	message := "learn: no intent reviews accepted"
+	if len(refusal.Missing) > 0 {
+		message += fmt.Sprintf("; %d of %d intents missing", len(refusal.Missing), refusal.Asked)
+	}
+	if refusal.Shape != "" {
+		message += " (" + refusal.Shape + ")"
+	}
+	return message
+}
+
+// decodeLearning reads one response against the intents its request asked.
+// A review for an unasked intent is unmatched; an asked intent no review
+// named is missing, which the first rounds ask again (Omitted) and the last
+// one refuses.
 func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) {
 	var envelope struct {
 		Reviews []json.RawMessage `json:"reviews"`
@@ -381,7 +454,7 @@ func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) 
 		return learningResponse{}, fmt.Errorf("learn: response needs a reviews array")
 	}
 	known := make(map[string]bool)
-	for _, intent := range learningIntents() {
+	for _, intent := range pool.Intents {
 		known[intent.ID] = true
 	}
 	byIntent := make(map[string][]json.RawMessage)
@@ -400,11 +473,15 @@ func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) 
 	// and the console show the provider's shape rather than only the gap.
 	shape := learningReviewShape(unkeyed)
 	result := learningResponse{}
-	for _, intent := range learningIntents() {
+	var missing []string
+	for _, intent := range pool.Intents {
 		var review learningReview
 		var err error
+		omitted := false
 		switch values := byIntent[intent.ID]; len(values) {
 		case 0:
+			missing = append(missing, intent.ID)
+			omitted = pool.Reask < learningReaskRounds
 			err = fmt.Errorf("learn: missing intent review")
 			if shape != "" {
 				err = fmt.Errorf("learn: missing intent review (%s)", shape)
@@ -420,13 +497,13 @@ func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) 
 			err = fmt.Errorf("learn: duplicate intent review")
 		}
 		if err != nil {
-			result.Rejections = append(result.Rejections, learningRejection{Intent: intent.ID, Reason: err.Error()})
+			result.Rejections = append(result.Rejections, learningRejection{Intent: intent.ID, Reason: err.Error(), Omitted: omitted})
 			continue
 		}
 		result.Reviews = append(result.Reviews, review)
 	}
 	if len(result.Reviews) == 0 {
-		return result, fmt.Errorf("learn: no intent reviews accepted")
+		return result, &learningRefusal{Missing: missing, Asked: len(pool.Intents), Shape: shape}
 	}
 	return result, nil
 }
@@ -579,6 +656,37 @@ func (r *reader) readLearning(ctx context.Context) error {
 	return r.executeLearning(ctx, pools, prompt)
 }
 
+// learningReaskRounds bounds how often an intent a response left out is
+// asked again over the same evidence: once together with the other omitted
+// intents of its window, then once alone. Morfeu 20260911 with a
+// 524,288-token provider window: after context partitioning, Learn windows
+// w4 and w7 came back with the purpose review only and w5, w6 with no review
+// at all, the shape of retrieval window w1 in Freqtrade 20260910-144751 (64
+// questions asked, 4 answered); the report offered two questions and said
+// some topics could not be reviewed. Fewer decisions per answer repaired
+// that window, so the omitted intents are asked again in smaller sets.
+const learningReaskRounds = 2
+
+// learningExchange is one executed Learn window. The journal is written
+// after the last round, so a first-round omission carries its recovered mark.
+type learningExchange struct {
+	window     table.Window
+	pool       learningRequest
+	root       int
+	start, end int
+	source     string
+	// value is the accepted response; nil after a refusal, or after a
+	// resource refusal whose evidence continued in partitions (superseded).
+	value      *learningResponse
+	superseded bool
+	reason     string
+	// omitted names the intents this window's response did not name at all
+	// and a later window asks again; recovered marks those a later window
+	// over this evidence then reviewed.
+	omitted   []string
+	recovered map[string]bool
+}
+
 func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, prompt string) error {
 	use := r.use(stageLearn)
 	partitions, planned := r.planLearningPartitions(pools, prompt)
@@ -586,6 +694,7 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 	for _, intent := range learningIntents() {
 		titles[intent.ID] = intent.Title
 	}
+	var exchanges, round []*learningExchange
 	windowIndex := 0
 	for len(planned) > 0 {
 		calls := make([]llm.Call[learningResponse], len(planned))
@@ -601,13 +710,16 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 			results = llm.ExecuteJSONEach(ctx, debugdump.BindStage(r.opts.Executor, stageLearn), r.opts.Provider, calls)
 		}
 		use.Windows += len(calls)
-		use.Rows += len(calls) * len(learningIntents())
 		var next []learningWindow
 		for i, result := range results {
 			current := planned[i]
 			pool := current.Pool
 			windowIndex++
 			window := table.Window{Stage: stageLearn, Index: windowIndex}
+			use.Rows += len(pool.Intents)
+			exchange := &learningExchange{window: window, pool: pool, root: current.Root, start: current.Start, end: current.End}
+			exchanges = append(exchanges, exchange)
+			round = append(round, exchange)
 			for _, item := range []struct {
 				name string
 				data []byte
@@ -640,7 +752,11 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 				if err != nil {
 					return err
 				}
-				partitions.split[current.Root] = true
+				// The partition memo remembers first-ask boundaries only; a
+				// re-ask's partitions cover evidence the memo already holds.
+				if pool.Reask == 0 {
+					partitions.split[current.Root] = true
+				}
 				if r.opts.State != nil {
 					r.opts.State(stageLearn, "partitioned", fmt.Sprintf("window %d was refused by resources; the complete evidence continues in %d partitions", windowIndex, len(children)))
 				}
@@ -652,36 +768,37 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 				}
 				// The failed request stays in operational history; only its children
 				// may produce source-bound reviews or unavailable context cells.
-				raw, err := json.MarshalIndent(struct {
-					Superseded bool   `json:"superseded"`
-					Reason     string `json:"reason"`
-				}{true, result.Err.Error()}, "", "  ")
-				if err != nil {
-					return err
-				}
-				if err := r.writeWindowFile(window, "result.json", raw); err != nil {
-					return err
-				}
-				fmt.Fprintf(&r.tables, "## %s · window %d · partitioned after resource refusal\n\n%s\n\n", stageLearn, windowIndex, raw)
+				exchange.superseded, exchange.reason = true, result.Err.Error()
 				continue
 			}
 			if result.Err != nil || r.dry {
 				r.learning.State = "partial"
-				use.Given += len(learningIntents())
+				use.Given += len(pool.Intents)
 				reason := "No model provider was available."
 				if result.Err != nil {
 					use.Rejected++
 					reason = result.Err.Error()
-					r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "window_rejected", Count: len(learningIntents()), Reason: reason,
+					r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "window_rejected", Count: len(pool.Intents), Reason: reason,
 						ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))})
+					// A response that named none of its intents decided nothing
+					// about them: they are asked again, each alone, below.
+					var refusal *learningRefusal
+					if errors.As(result.Err, &refusal) {
+						exchange.omitted = refusal.Missing
+					}
 				}
-				for _, intent := range learningIntents() {
+				exchange.reason = reason
+				for _, intent := range pool.Intents {
 					r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{
 						Intent: intent.ID, Title: intent.Title, State: "unavailable", Reason: reason, Source: atlas.SourceGiven, Window: windowIndex, PartialContext: pool.PartialContext})
 				}
 				continue
 			}
-			partitions.accept(current, result.Outcome.CacheKey)
+			if pool.Reask == 0 {
+				partitions.accept(current, result.Outcome.CacheKey)
+			}
+			value := result.Outcome.Value
+			exchange.value, exchange.source = &value, source
 			restore := func(refs []string) []atlas.QuestionStop {
 				var sources []atlas.QuestionStop
 				for _, ref := range refs {
@@ -697,31 +814,39 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 				return sources
 			}
 			accepted := make(map[string]learningReview)
-			for _, review := range result.Outcome.Value.Reviews {
+			for _, review := range value.Reviews {
 				accepted[review.Intent] = review
 			}
 			rejected := make(map[string]string)
-			if len(result.Outcome.Value.Rejections) > 0 || len(result.Outcome.Value.QuestionRejections) > 0 {
-				use.Rejected++
-			}
-			if len(result.Outcome.Value.Rejections) > 0 {
-				r.learning.State = "partial"
-				use.Given += len(result.Outcome.Value.Rejections)
-			}
-			for _, rejection := range result.Outcome.Value.Rejections {
+			ruled := 0
+			for _, rejection := range value.Rejections {
 				rejected[rejection.Intent] = rejection.Reason
+				if rejection.Omitted {
+					// Not yet a loss: asked again below over the same evidence;
+					// the re-asking window's own result counts.
+					exchange.omitted = append(exchange.omitted, rejection.Intent)
+					continue
+				}
+				ruled++
 				r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "row_rejected", Count: 1,
 					Reason: rejection.Reason, Samples: []string{rejection.Intent},
 					ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))})
 			}
+			if ruled > 0 || len(value.QuestionRejections) > 0 {
+				use.Rejected++
+			}
+			if ruled > 0 {
+				r.learning.State = "partial"
+				use.Given += ruled
+			}
 			// A dropped question leaves its review and the plan state as they
 			// are; the journal names it so the loss is visible without the response.
-			for _, rejection := range result.Outcome.Value.QuestionRejections {
+			for _, rejection := range value.QuestionRejections {
 				r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "question_rejected", Count: 1,
 					Reason: rejection.Reason, Samples: []string{rejection.Intent},
 					ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))})
 			}
-			for _, intent := range learningIntents() {
+			for _, intent := range pool.Intents {
 				review, ok := accepted[intent.ID]
 				if !ok {
 					r.learning.Reviews = append(r.learning.Reviews, atlas.LearningReview{Intent: intent.ID, Title: intent.Title,
@@ -740,28 +865,41 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 					}
 				}
 			}
-			raw, err := json.MarshalIndent(result.Outcome.Value, "", "  ")
-			if err != nil {
-				return err
-			}
-			if err := r.writeWindowFile(window, "result.json", raw); err != nil {
-				return err
-			}
-			fmt.Fprintf(&r.tables, "## %s · window %d · %s\n\n%s\n\n", stageLearn, windowIndex, source, raw)
-			var notes []string
-			for _, review := range result.Outcome.Value.Reviews {
-				if review.ReasonFrom != "" {
-					notes = append(notes, fmt.Sprintf("- Reason for %s taken from its first question's %s", review.Intent, review.ReasonFrom))
-				}
-			}
-			for _, rejection := range result.Outcome.Value.QuestionRejections {
-				notes = append(notes, "- Rejected question: "+rejection.Reason)
-			}
-			if len(notes) > 0 {
-				fmt.Fprintf(&r.tables, "%s\n\n", strings.Join(notes, "\n"))
-			}
 		}
 		planned = next
+		if len(planned) == 0 {
+			// The round is complete once its resource partitions are read:
+			// ask again what its responses left out.
+			for _, exchange := range round {
+				windows := learningReaskWindows(exchange)
+				if len(windows) == 0 {
+					exchange.omitted = nil
+				}
+				planned = append(planned, windows...)
+			}
+			round = nil
+		}
+	}
+	markLearningRecovered(exchanges)
+	reasked, recovered, reaskWindows := 0, 0, 0
+	for _, exchange := range exchanges {
+		if err := r.journalLearningExchange(exchange); err != nil {
+			return err
+		}
+		if exchange.pool.Reask > 0 && !exchange.superseded {
+			reaskWindows++
+		}
+		if exchange.pool.Reask == 0 {
+			reasked += len(exchange.omitted)
+			recovered += len(exchange.recovered)
+		}
+	}
+	if reasked > 0 && r.opts.State != nil {
+		summary := fmt.Sprintf("re-asked %d intents omitted by the model in %d windows; %d recovered", reasked, reaskWindows, recovered)
+		if reasked > recovered {
+			summary += fmt.Sprintf(", %d still unavailable", reasked-recovered)
+		}
+		r.opts.State(stageLearn, "re-asked", summary)
 	}
 	r.saveLearningPartitions(partitions)
 	r.learning.Reviews, r.learning.State = consolidateLearningReviews(r.learning.Reviews, r.learning.State)
@@ -816,6 +954,133 @@ func consolidateLearningReviews(reviews []atlas.LearningReview, state string) ([
 		}
 	}
 	return kept, state
+}
+
+// learningReaskWindows plans the windows that ask again what one exchange's
+// response left out, over the same evidence and always a strict subset of
+// the intents that exchange asked, so no request is repeated byte for byte.
+// A first ask that reviewed some intents is asked its omitted intents
+// together; a second round, or a first ask that reviewed none of them, is
+// asked each omitted intent alone; an omission after that stays unavailable.
+func learningReaskWindows(exchange *learningExchange) []learningWindow {
+	asked := exchange.pool.Intents
+	if len(exchange.omitted) == 0 || exchange.pool.Reask >= learningReaskRounds || len(asked) < 2 {
+		return nil
+	}
+	groups := [][]string{exchange.omitted}
+	reask := 1
+	if exchange.pool.Reask > 0 || len(exchange.omitted) == len(asked) {
+		groups = nil
+		for _, id := range exchange.omitted {
+			groups = append(groups, []string{id})
+		}
+		reask = learningReaskRounds
+	}
+	var windows []learningWindow
+	for _, group := range groups {
+		pool := exchange.pool
+		pool.Intents, pool.Reask = nil, reask
+		for _, intent := range asked {
+			if slices.Contains(group, intent.ID) {
+				pool.Intents = append(pool.Intents, intent)
+			}
+		}
+		windows = append(windows, learningWindow{Pool: pool, Root: exchange.root, Start: exchange.start, End: exchange.end})
+	}
+	return windows
+}
+
+// markLearningRecovered annotates each omission a later window over the
+// same evidence then reviewed, in full when that evidence was partitioned
+// again, so a journal reader can tell a repaired gap from a loss.
+func markLearningRecovered(exchanges []*learningExchange) {
+	for i, exchange := range exchanges {
+		if len(exchange.omitted) == 0 {
+			continue
+		}
+		exchange.recovered = map[string]bool{}
+		for _, id := range exchange.omitted {
+			covered := make([]bool, exchange.end-exchange.start)
+			for _, later := range exchanges[i+1:] {
+				if later.value == nil || later.root != exchange.root || later.start < exchange.start || later.end > exchange.end || later.pool.Reask <= exchange.pool.Reask {
+					continue
+				}
+				if slices.ContainsFunc(later.value.Reviews, func(review learningReview) bool { return review.Intent == id }) {
+					for at := later.start; at < later.end; at++ {
+						covered[at-exchange.start] = true
+					}
+				}
+			}
+			if len(covered) > 0 && !slices.Contains(covered, false) {
+				exchange.recovered[id] = true
+			}
+		}
+		if exchange.value == nil {
+			continue
+		}
+		for j := range exchange.value.Rejections {
+			rejection := &exchange.value.Rejections[j]
+			rejection.Recovered = rejection.Omitted && exchange.recovered[rejection.Intent]
+		}
+	}
+}
+
+// journalLearningExchange writes one window's result.json and its tables.md
+// section after the last round, so an omission a re-ask repaired says so. A
+// refused window keeps only its request and response references, as before.
+func (r *reader) journalLearningExchange(exchange *learningExchange) error {
+	if exchange.superseded {
+		raw, err := json.MarshalIndent(struct {
+			Superseded bool   `json:"superseded"`
+			Reason     string `json:"reason"`
+		}{true, exchange.reason}, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := r.writeWindowFile(exchange.window, "result.json", raw); err != nil {
+			return err
+		}
+		fmt.Fprintf(&r.tables, "## %s · window %d · partitioned after resource refusal\n\n%s\n\n", stageLearn, exchange.window.Index, raw)
+		return nil
+	}
+	if exchange.value == nil {
+		return nil
+	}
+	raw, err := json.MarshalIndent(exchange.value, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := r.writeWindowFile(exchange.window, "result.json", raw); err != nil {
+		return err
+	}
+	fmt.Fprintf(&r.tables, "## %s · window %d · %s\n\n", stageLearn, exchange.window.Index, exchange.source)
+	if exchange.pool.Reask > 0 {
+		r.tables.WriteString("Re-asks only the intents an earlier response over this evidence omitted.\n\n")
+	}
+	fmt.Fprintf(&r.tables, "%s\n\n", raw)
+	var notes []string
+	for _, review := range exchange.value.Reviews {
+		if review.ReasonFrom != "" {
+			notes = append(notes, fmt.Sprintf("- Reason for %s taken from its first question's %s", review.Intent, review.ReasonFrom))
+		}
+	}
+	for _, rejection := range exchange.value.QuestionRejections {
+		notes = append(notes, "- Rejected question: "+rejection.Reason)
+	}
+	for _, rejection := range exchange.value.Rejections {
+		if !rejection.Omitted {
+			continue
+		}
+		outcome := "still unavailable"
+		if rejection.Recovered {
+			outcome = "recovered"
+		}
+		notes = append(notes, fmt.Sprintf("- Intent %s omitted by the model and re-asked: %s", rejection.Intent, outcome))
+	}
+	if len(notes) > 0 {
+		fmt.Fprintf(&r.tables, "%s\n\n", strings.Join(notes, "\n"))
+	}
+	return nil
 }
 
 // learningMenuLimit bounds one intent's menu. Morfeu 20260911-153538 with a
@@ -906,7 +1171,7 @@ func (r *reader) selectLearning(ctx context.Context) error {
 			}
 			if len(options) > 0 {
 				batch = append(batch, table.Row{ID: intent.ID, Fields: []table.Field{
-					{Name: "learning_intent", Value: intent.Title}, {Name: "learning_goal", Value: intent.Goal},
+					{Name: "learning_intent", Value: intent.Title}, {Name: "learning_goal", Value: intent.Guidance},
 					{Name: "candidate_options", Value: options}, {Name: "limit", Value: learningMenuLimit},
 				}})
 			}

@@ -24,11 +24,17 @@ func expandedLearningTestRequest(t *testing.T, raw []byte) learningRequest {
 			ContextRef string         `json:"context_ref"`
 			Context    map[string]any `json:"context"`
 		} `json:"evidence"`
+		Intents []learningIntent `json:"intents"`
 	}
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		t.Fatal(err)
 	}
-	result := learningRequest{PartialContext: wire.PartialContext}
+	// The intents follow the evidence, so windows over the same evidence
+	// with different intent sets share their request prefix.
+	if at := strings.Index(string(raw), `"intents"`); at < 0 || at < strings.LastIndex(string(raw), `"evidence"`) {
+		t.Fatal("intents do not follow the evidence on the wire")
+	}
+	result := learningRequest{PartialContext: wire.PartialContext, Intents: wire.Intents}
 	used := map[string]bool{}
 	for i, row := range wire.Evidence {
 		if row.Ref != fmt.Sprintf("e%d", i+1) {
