@@ -8,6 +8,22 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Six places where the model was asked without a decision to make, or asked
+  twice (schema review, warm fixes; request bytes of the remaining rows
+  unchanged). A column-less native outbound fact now claims every selected
+  call on its line (Morfeu `152759`: 4 of 29 outbound records were the same
+  call twice, `bnd:…:sdk` beside `out:…:166:42`). Orientation numbers groups
+  and members in an order the graph fixes (sorted member ids, then lane,
+  title, summary) so one group's changed lane no longer renumbers every
+  `g*`/`s*`. An arrow without witnesses (an import-only edge) gets its
+  fallback sentence "A uses B." without a model row (Morfeu arrows r7/r10
+  had invented sentences). A declaration whose native route is its
+  operation is not reviewed by the operations table (its model row was
+  dropped by the group index anyway). The glossary comparison round is
+  skipped when every group is a singleton whose lowercased names never meet
+  (Morfeu: 121 self-assignments, 36 KB). Files under `.claude/`, `.github/`
+  and `.vscode/` are never portfolio candidates (Morfeu asked about a hook
+  script every run and warned "Target not analyzed").
 - Retrieval asks at most eight questions per window and re-asks the ones
   the model omitted. Freqtrade `20260910-144751`, window w1: 64 questions
   over 460 code rows (4,661 anchors, 2.1 MB) came back with four keys and

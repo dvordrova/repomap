@@ -33,7 +33,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   NoCache bypasses it, and an indivisible refusal is not a split memo. Old run
   journals are not imported into this cache.
   One aggregate closed-ref reduction joins compatible domain candidates and
-  chooses an original definition, preserving every variant, spelling, source
+  chooses an original definition; when every group is a singleton and no two
+  lowercased names meet, the reduction round is skipped and the catalogue is
+  sealed as generated. It otherwise joins candidates and chooses a definition, preserving every variant, spelling, source
   and request identity. Each input group chooses one advertised original variant;
   Go joins groups that choose the same variant. Its owner must make that same
   choice, so chains, cycles and conflicting assignments cannot repair themselves

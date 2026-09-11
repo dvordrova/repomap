@@ -126,7 +126,9 @@ Regression comparisons preserve every materialized byte while checking that repe
 - Run every active Go and Python target scout plus the JavaScript/TypeScript
   package-target catalog scout over the same repository corpus. Merge their
   exact file candidates and resolvable repository-guidance candidates into one
-  repository-wide `TargetPortfolio` request; the presence of one supported
+  repository-wide `TargetPortfolio` request, leaving out any candidate under a
+  `.claude`, `.github` or `.vscode` directory (hooks, workflows and editor
+  settings are never a product); the presence of one supported
   language must never suppress another. Bind one canonical required file
   representative for every exact native target, deduplicating a shared
   representative and never requiring every alternative file for the same
