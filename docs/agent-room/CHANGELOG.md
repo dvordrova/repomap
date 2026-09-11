@@ -25,9 +25,13 @@ runs instead of growing the entry pages again.
   by one product) and an owner's Go service failed at publication with
   `atlas: boundary … names unknown box`. Regression tests in `places`,
   `reading`.
-- A one-row independent window accepts its only answered row without a key:
-  seven single-question answer windows of the same Freqtrade run were refused
-  as `response row has no string key` and their answers lost.
+- A complete keyless response is read in asked order: the model drops the
+  `key` it was told to copy in small answer windows (seven one-question
+  windows of `20260911-040254`, then two- and three-question windows of
+  `20260911-045158`, ten of 242 windows), and each such window lost its
+  answers as `response row has no string key`. One row per asked row and no
+  key anywhere leaves the asked order as the only reading; a partial or
+  partly keyed response is still refused row by row.
 - A closed choice whose only option is `unknown` accepts any answer as
   `unknown`. Freqtrade `20260911-040254` refused 27 outgoing boundary rows
   (7 whole windows) because the model copied the observed path into

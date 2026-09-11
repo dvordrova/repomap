@@ -70,7 +70,7 @@ func TestIndependentRowsIgnoreAdditionalFields(t *testing.T) {
 	}
 }
 
-func TestIndependentSingleRowWithoutKeyIsTheAskedRow(t *testing.T) {
+func TestIndependentKeylessRowsAreReadInAskedOrderOnlyWhenComplete(t *testing.T) {
 	def := Definition{Stage: "atlas_answer", Independent: true, Columns: []Column{
 		{Name: "entry", Kind: Choice, OptionsFrom: "entry_options"},
 	}}
@@ -80,10 +80,18 @@ func TestIndependentSingleRowWithoutKeyIsTheAskedRow(t *testing.T) {
 		t.Fatalf("the only asked row did not receive the only answer: %+v / %v", result, err)
 	}
 	if _, err := DecodeResult(def, one, []byte(`{"rows":[{"entry":"self"},{"entry":"none"}]}`)); err == nil || !strings.Contains(err.Error(), "no string key") {
-		t.Fatalf("two keyless rows were guessed: %v", err)
+		t.Fatalf("two keyless rows for one asked row were guessed: %v", err)
 	}
 	two := Window{Rows: []Row{one.Rows[0], {ID: "second", Fields: one.Rows[0].Fields}}}
+	result, err = DecodeResult(def, two, []byte(`{"rows":[{"entry":"self"},{"entry":"none"}]}`))
+	if err != nil || result.Answers[0]["entry"] != "self" || result.Answers[1]["entry"] != "none" || len(result.Rejections) != 0 {
+		t.Fatalf("a complete keyless response was not read in asked order: %+v / %v", result, err)
+	}
 	if _, err := DecodeResult(def, two, []byte(`{"rows":[{"entry":"self"}]}`)); err == nil || !strings.Contains(err.Error(), "no string key") {
-		t.Fatalf("a keyless row was guessed among two asked rows: %v", err)
+		t.Fatalf("an incomplete keyless response was guessed: %v", err)
+	}
+	result, err = DecodeResult(def, two, []byte(`{"rows":[{"key":"r2","entry":"none"},{"entry":"self"}]}`))
+	if err != nil || result.Answers[0] != nil || result.Answers[1]["entry"] != "none" || len(result.Rejections) != 2 {
+		t.Fatalf("a partly keyed response was read positionally: %+v / %v", result, err)
 	}
 }

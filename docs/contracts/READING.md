@@ -62,8 +62,9 @@ new description or selection requests.
   matched values, counts and identities. Rejected independent rows fall back on
   their own deterministic lines and are written to `rejected.jsonl`; valid
   neighbours survive in the original exact-response cache. An entirely refused
-  window is never cached. A window asking one row accepts its only answered row
-  without a key as that row; every other row must carry its own key. Every row and answer is printed to `tables.md`, with prompts, requests, raw
+  window is never cached. A response that answers exactly one row per asked row with no key on any
+  of them is read in asked order; a partial or partly keyed response keeps the
+  strict rule, every row names its key or is refused. Every row and answer is printed to `tables.md`, with prompts, requests, raw
   responses and normalized source-bound results under `tables/`. The ordinary
   path saves `reading-input.json` before its first atlas call; `read` consumes
   exactly that format and runs the same reader. Above two thousand files the directory and

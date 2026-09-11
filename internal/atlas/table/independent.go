@@ -66,18 +66,16 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 	}
 	result := Result{Answers: make(Answers, len(window.Rows)), independent: true}
 	byKey := make(map[string][]map[string]json.RawMessage)
-	for _, rawRow := range envelope.Rows {
+	positional := keylessInAskedOrder(envelope.Rows, len(window.Rows))
+	for i, rawRow := range envelope.Rows {
 		var cells map[string]json.RawMessage
 		var key string
 		if json.Unmarshal(rawRow, &cells) != nil {
 			result.Rejections = append(result.Rejections, RowRejection{Reason: "response row has no string key"})
 			continue
 		}
-		if _, keyed := cells["key"]; !keyed && len(window.Rows) == 1 && len(envelope.Rows) == 1 {
-			// One asked row answered by one row without a key can only be
-			// that row. Single-question answer windows otherwise lose their
-			// only answer when the model drops the key it was told to copy.
-			key = Key(0)
+		if positional {
+			key = Key(i)
 		} else if json.Unmarshal(cells["key"], &key) != nil || key == "" {
 			result.Rejections = append(result.Rejections, RowRejection{Reason: "response row has no string key"})
 			continue
@@ -112,6 +110,28 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 		return result, fmt.Errorf("table %s: no rows accepted; row %s: %s", def.Stage, rejection.Key, rejection.Reason)
 	}
 	return result, nil
+}
+
+// keylessInAskedOrder reports a response that answers exactly one row per
+// asked row and carries no key on any of them. The model drops the key it
+// was told to copy in small answer windows (ten of 242 Freqtrade windows,
+// one to three questions each); with one row per asked row and no key
+// anywhere, the asked order is the only reading. A partial or partly keyed
+// response keeps the strict rule: every row names its key or is refused.
+func keylessInAskedOrder(rows []json.RawMessage, asked int) bool {
+	if asked == 0 || len(rows) != asked {
+		return false
+	}
+	for _, rawRow := range rows {
+		var cells map[string]json.RawMessage
+		if json.Unmarshal(rawRow, &cells) != nil {
+			return false
+		}
+		if _, keyed := cells["key"]; keyed {
+			return false
+		}
+	}
+	return true
 }
 
 func decodeIndependentCells(def Definition, row Row, cells map[string]json.RawMessage) (Answer, error) {
