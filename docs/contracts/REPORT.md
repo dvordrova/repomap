@@ -39,9 +39,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   repository map starts with compact components and all their original
   connections in one space. Selecting a component opens its purpose, exact
   source anchors and incoming/outgoing connections; entering its parts is a
-  separate explicit action. Learn exposes the complete saved question menu, one open
-  answer with its position, and exact term-to-map links. Work offers existing
-  search at repository or component scope. Opening a part shows its existing
+  separate explicit action. The page exposes the complete saved question menu,
+  one open answer with its position, exact term-to-map links, and the existing
+  search at repository or component scope from the toolbar. Opening a part shows its existing
   key code as source links inside the selected part. The containing area stays
   as a frame with its peers; Collapse and Back restore the prior viewport.
   A single displayed arrow per direction retains every original relation,
@@ -104,13 +104,15 @@ one underline per answer, and source-unavailable labels remain inspectable.
 Header revision noise, redundant answer actions and root Path:. are removed;
 run information remains linked from the footer.
 
-Learn exposes the complete saved question menu, one open answer, its position
-in that menu, a next question and an explicit return to all questions. The
-current question remains visible while scrolling or taking a map side trip.
-Work instead offers the existing repository search and an exact component
-search entrance. Mode changes retain map scope, operation, zoom, selected code,
-search and reading. Component Learn entrances use only the saved answer's
-exact map links. Inline terms now link directly to their existing map
+The page exposes the complete saved question menu, one open answer, its
+position in that menu, a next question and an explicit return to all
+questions. The current question remains visible while scrolling or taking a
+map side trip. The repository search and an exact component search entrance
+live in the toolbar on every page. The former Learn/Work switch is gone: the
+owner could not tell the two entrances apart, and the switch changed only
+the intro, the question list and where the search field stood. A `mode`
+query parameter in an old link is ignored. Component reading entrances use
+only the saved answer's exact map links. Inline terms now link directly to their existing map
 memberships and select that declaration by its source, without a catalogue hop.
 
 Opening a part reveals its key code as cubes inside its original group frame.

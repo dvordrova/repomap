@@ -1,11 +1,10 @@
-// Two entrances, one report. Changing entrance preserves the selected place;
-// local reading actions and browser Back retain the preceding reading path.
+// One entrance, one report: the summary, questions, map and search are all
+// here. Local reading actions and browser Back retain the preceding path.
 (function(){
-  var body=document.body, bar=document.querySelector('.reading-modes');
+  var body=document.body, toolbar=document.querySelector('.report-toolbar');
   var pages=Array.from(document.querySelectorAll('main > [data-report-page]'));
   var home=document.getElementById('overview'), repoMap=document.getElementById('repository-map');
-  if(!bar||!home)return;
-  var toolbar=bar.closest('.report-toolbar');
+  if(!toolbar||!home)return;
   var locationLine=toolbar.querySelector('.reading-location'),locationName=document.createElement('span'),mapContext=document.createElement('a'),readingIntent=document.createElement('span');
   readingIntent.className='reading-intent';readingIntent.hidden=true;locationName.className='reading-address';
   mapContext.className='reading-map-context';mapContext.dataset.readingMapReturn='';mapContext.hidden=true;locationLine.append(readingIntent,locationName,mapContext);
@@ -14,8 +13,8 @@
   var detailGroup=null;
   function measureToolbar(){document.documentElement.style.setProperty('--toolbar-height',getComputedStyle(toolbar).position==='sticky'?toolbar.getBoundingClientRect().height+'px':'0px');}
   new ResizeObserver(measureToolbar).observe(toolbar);measureToolbar();
-  var current=home, mode='learn', question=null, term=null, searchIntent='',restoring=false;
-  var globalSearch=document.querySelector('.nav .find'),workSearch=document.querySelector('[data-reading-query]');
+  var current=home, question=null, term=null, searchIntent='',restoring=false;
+  var globalSearch=document.querySelector('.nav .find');
   var questionPage=document.getElementById('questions'),guides=questionPage?Array.from(questionPage.querySelectorAll('.reading-guide')):[];
   var questionIndex=questionPage&&questionPage.querySelector('.question-index');
   function enclosing(node){return node&&node.closest('[data-report-page]');}
@@ -54,20 +53,19 @@
       var linked=guides.filter(function(guide){return Array.from(guide.querySelectorAll('[data-question-map]')).some(function(a){
         var node=document.getElementById(a.dataset.questionMap||(a.getAttribute('href')||'').slice(1));return enclosing(node)===page;
       });});
-      var learn=document.createElement('aside');learn.className='component-reading-entry';learn.dataset.readingMode='learn';
+      var learn=document.createElement('aside');learn.className='component-reading-entry';
       if(linked.length){
         var menu=document.createElement('details');menu.className='component-question-menu';
         menu.appendChild(textElement('summary',rmT('{0} questions link here',linked.length)));
         var list=document.createElement('ol');list.className='question-menu';linked.forEach(function(guide){var li=document.createElement('li');li.appendChild(questionLink(guide));list.appendChild(li);});menu.appendChild(list);learn.appendChild(menu);
       }else learn.appendChild(textElement('span',rmT('No saved question links to this component.')));
       var all=textElement('a',rmT('All questions'));all.href='#questions';if(guides.length)learn.appendChild(all);
-      var work=document.createElement('aside');work.className='component-reading-entry';work.dataset.readingMode='work';
       var button=textElement('button',rmT('Find in repository'),'reading-search-entry');button.type='button';button.dataset.readingFind='';
       var component=document.querySelector('[data-find-component]');
       if(component&&Array.from(component.options).some(function(option){return option.value===page.id;})){button.dataset.readingFind=page.id;button.textContent=rmT('Find in this component');}
       // Map navigation scrolls to the figure itself. Keep the reading
       // entrance inside that figure so the sticky toolbar cannot cover it.
-      work.appendChild(button);map.prepend(learn,work);
+      learn.appendChild(button);map.prepend(learn);
     });
     document.querySelectorAll('[data-reading-find]').forEach(function(button){button.hidden=false;});
   }
@@ -98,9 +96,9 @@
   }
   function mapDestination(map){return document.getElementById(map.explorerScope)||map.explorerOperation||current;}
   function placeSearch(){
-    var panel=document.querySelector('.find-panel'),container=current===home&&mode==='work'?home.querySelector('.work-intro'):toolbar.querySelector('.nav');
-    // The existing finder owns this one result panel and all of its state.
-    // Only its presentation moves into the Work entrance while at home.
+    var panel=document.querySelector('.find-panel'),container=toolbar.querySelector('.nav');
+    // The existing finder owns this one result panel and all of its state;
+    // the panel lives in the toolbar on every page.
     if(panel&&container&&panel.parentElement!==container)container.appendChild(panel);
   }
   function setPage(node){
@@ -123,18 +121,17 @@
   }
   function address(node,replace){
     if(!node.id)node=enclosing(node);
-    var url=new URL(location.href);url.searchParams.set('mode',mode);url.hash=node.id;
+    var url=new URL(location.href);url.searchParams.delete('mode');url.hash=node.id;
     if(url.href!==location.href)history[replace?'replaceState':'pushState'](readingState(),'',url);
   }
-  function setMode(next,record){
-    mode=next==='work'?'work':'learn';body.dataset.readingMode=mode;
-    document.querySelectorAll('[data-reading-mode]').forEach(function(el){if(el!==body)el.hidden=el.dataset.readingMode!==mode;});
-    bar.querySelectorAll('[data-mode]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.mode===mode);});
+  // The former Learn/Work switch changed nothing a reader could tell apart;
+  // every reading block is shown and the search stays in the toolbar.
+  function showEntrance(){
+    document.querySelectorAll('[data-reading-mode]').forEach(function(el){el.hidden=false;});
     placeSearch();
     // A single-component report has no repository SVG; its existing card
-    // remains a direct entrance instead of an empty Work home.
+    // remains a direct entrance instead of an empty home.
     if(!repoMap.querySelector('.repo-map'))repoMap.querySelector('.evidence-list').open=true;
-    if(record){var url=new URL(location.href);url.searchParams.set('mode',mode);history.pushState(readingState(),'',url);}
   }
   // All navigators (search, map deep links and ordinary anchors) reveal the
   // existing section before any map measures its available space.
@@ -174,13 +171,10 @@
     // SVG node directly would pan the page to an offscreen graph coordinate.
     if(!node.matches('[data-node]'))node.scrollIntoView({block:'start'});
   },true);
-  bar.querySelectorAll('[data-mode]').forEach(function(b){b.addEventListener('click',function(){
-    remember();setMode(b.dataset.mode,true);
-  });});
   function restore(){
     restoring=true;
     var saved=history.state?.repomapReading,node=locate()||home;
-    question=null;term=null;searchIntent='';setMode(new URL(location.href).searchParams.get('mode'),false);setPage(node);
+    question=null;term=null;searchIntent='';showEntrance();setPage(node);
     if(saved){
       if(!node.closest('.reading-guide'))question=savedElement(saved.question,'.reading-guide');
       term=savedElement(saved.term,'.learn-concept');searchIntent=question?'':typeof saved.search==='string'?saved.search:'';
@@ -192,17 +186,14 @@
   // Restore the visit before a map reacts to the new URL or emits a reading
   // event; otherwise that event could save the visit we are leaving over it.
   window.addEventListener('popstate',restore,true);window.addEventListener('hashchange',restore,true);
-  prepareReadingEntrances();bar.hidden=false;body.classList.add('reading-ready');selectQuestion(null);restore();remember();
+  prepareReadingEntrances();body.classList.add('reading-ready');selectQuestion(null);restore();remember();
   var initialHash=location.hash;window.addEventListener('load',function(){document.fonts.ready.then(function(){if(initialHash&&location.hash===initialHash)rmScrollToReading(locate());});},{once:true});
   document.addEventListener('repomap:find',remember);
   if(globalSearch){
     globalSearch.addEventListener('input',function(){
       searchIntent=globalSearch.value.trim();if(searchIntent){question=null;term=null;}
-      if(workSearch)workSearch.value=globalSearch.value;showReturn();showLocation();remember();
+      showReturn();showLocation();remember();
     });
-    if(workSearch){
-      workSearch.closest('.work-search').hidden=false;workSearch.value=globalSearch.value;
-    }
   }
   document.querySelectorAll('.learn-band').forEach(function(band){band.addEventListener('toggle',function(){if(!band.open)return;document.querySelectorAll('.learn-band').forEach(function(other){if(other!==band)other.open=false;});});});
 

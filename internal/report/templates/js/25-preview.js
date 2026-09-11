@@ -139,7 +139,7 @@ var repomapPreview = (function () {
     // Map controls keep the current reading; selection or navigation replaces
     // it explicitly. Clicking another surface still dismisses the preview.
     var inMap=active&&active.docked&&e.target.closest('[data-map]')===active.card.closest('[data-map]');
-    if(active&&!inMap&&!(active.docked&&e.target.closest('.reading-modes'))&&!e.target.closest('.preview-active,.map-card,.map-inspector,.source-card'))active.hide();
+    if(active&&!inMap&&!e.target.closest('.preview-active,.map-card,.map-inspector,.source-card'))active.hide();
   });
   document.addEventListener('scroll',function(e){if(active && !active.pinned && !active.card.closest('.map-inspector') && !(e.target.closest && e.target.closest('.map-card,.source-card')))active.hide();},true);
   window.addEventListener('resize',function(){if(active&&!active.docked){if(active.pinned)active.place();else active.hide();}});

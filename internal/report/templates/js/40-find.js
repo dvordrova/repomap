@@ -9,11 +9,7 @@
   panel.setAttribute('aria-label',rmT('Repository search results'));box.setAttribute('aria-controls',panel.id);
   panel.innerHTML=("<div class=\"find-tools\"><label>"+rmT.html("Show")+" <select data-find-kind aria-label=\""+rmT.html("Search result type")+"\"><option value=\"all\">"+rmT.html("Everything")+"</option><option value=\"question\">"+rmT.html("Questions and answers")+"</option><option value=\"term\">"+rmT.html("Terms")+"</option><option value=\"part\">"+rmT.html("Parts")+"</option><option value=\"operation\">"+rmT.html("Operations")+"</option><option value=\"code\">"+rmT.html("Code")+"</option></select></label><label>"+rmT.html("In")+" <select data-find-component aria-label=\""+rmT.html("Search component")+"\"><option value=\"\">"+rmT.html("All components")+"</option></select></label><button type=\"button\" data-close>"+rmT.html("Close")+"</button></div><p class=\"find-status\" role=\"status\"></p><ol class=\"find-results\"></ol><div class=\"find-pages\"><button type=\"button\" data-prev>"+rmT.html("← Previous")+"</button><span></span><button type=\"button\" data-next>"+rmT.html("Next →")+"</button></div>");
   nav.append(box,panel);
-  var proxy=document.querySelector('[data-reading-query]');
-  if(proxy)proxy.setAttribute('aria-controls',panel.id);
-  // The same finder can be presented in the Work entrance or the toolbar.
-  // Focus follows the visible input; its index and results have one owner.
-  box.focusSearch=function(){var input=proxy&&proxy.getClientRects().length?proxy:box;input.focus({preventScroll:true});return input;};
+  box.focusSearch=function(){box.focus({preventScroll:true});return box;};
   var kind=panel.querySelector('[data-find-kind]'),component=panel.querySelector('[data-find-component]'),status=panel.querySelector('.find-status'),results=panel.querySelector('ol'),pages=panel.querySelector('.find-pages'),page=0,pageSize=12;
   var entries=[],components={},groupNodes={},codeEntries=new Map(),lastQuery='';
   function modelText(node){if(!node)return '';var copy=node.cloneNode(true);copy.querySelectorAll('.source-hint,.model-sources').forEach(function(n){n.remove();});return copy.textContent;}

@@ -1,6 +1,5 @@
 <section id="overview" data-report-page>
 {{template "learn.html" .}}
-<div class="work-intro" data-reading-mode="work"><div><h2>{{t "Explore the code"}}</h2><p>{{t "Search for a component, topic, operation or symbol, or start from the map."}}</p></div><label class="work-search" hidden><span>{{t "Find in repository"}}</span><input type="search" data-reading-query placeholder="{{t "Find a question, term, part, operation or code"}}" aria-label="{{t "Find in repository"}}"></label></div>
 <div id="repository-map" class="repository-map-panel"><h3>{{t "System map"}}</h3>
 {{if .RepoMap}}{{template "repomap.html" .RepoMap}}{{end}}
 <details class="evidence-list"><summary>{{t "Component details"}} <span class="collapse-label">{{t "Collapse details"}}</span></summary>

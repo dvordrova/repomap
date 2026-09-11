@@ -8,6 +8,12 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The Learn/Work switch is removed from the report toolbar: the owner could
+  not tell the two entrances apart, and the switch only hid the intro and
+  question list or moved the search field. Summary, questions, map and the
+  toolbar search are always present; the per-component entrance keeps its
+  question links and the component search button; an old `?mode=` link is
+  ignored. Print and JavaScript slice tests re-anchored.
 - Go handlers registered as method values or method expressions
   (`mux.HandleFunc("/items", s.handleList)`, `http.HandlerFunc(s.handleCreate)`)
   now resolve to their methods: the callable resolver follows a synthetic

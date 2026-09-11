@@ -18,7 +18,7 @@ func TestLearnWorkKeepOneReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{`data-mode="learn"`, `data-mode="work"`, `id="learn-parts"`, `id="repository-map"`, `id="how-to-run"`, `data-component-name=`} {
+	for _, expected := range []string{`id="learn-parts"`, `id="repository-map"`, `id="how-to-run"`, `data-component-name=`} {
 		if !bytes.Contains(html, []byte(expected)) {
 			t.Fatalf("missing %s", expected)
 		}

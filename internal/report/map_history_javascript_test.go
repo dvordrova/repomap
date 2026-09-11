@@ -59,7 +59,7 @@ let current=page,mode='work',question=null,term=null,searchIntent='',restoring=f
 const globalSearch=null;
 function enclosing(n){return n===page?page:n?.closest('[data-report-page]');}
 function locate(){return elements[location.hash.slice(1)];}
-function setMode(value){mode=value==='work'?'work':'learn';}
+function showEntrance(){}
 function setPage(n){current=enclosing(n);}
 function savedElement(){return null;}function showReturn(){}function showLocation(){}
 function close(){}
@@ -70,7 +70,7 @@ const map={explorerScope:'part',explorerMember:null,readingRestoring:false,visib
   dispatchEvent(e){if(e.type==='repomap:reading')remember();}};
 const requestAnimationFrame=fn=>setImmediate(fn);
 ` + part(modes, "function readingState(){", "  function savedElement(") +
-		part(modes, "function address(node,replace){", "  function setMode(") +
+		part(modes, "function address(node,replace){", "  // The former Learn/Work switch") +
 		part(modes, "document.addEventListener('repomap:navigate'", "  // Layout commits") +
 		part(modes, "function restore(){", "  // Restore the visit") +
 		part(finder, "async function go(entry){", "  function action(") +

@@ -1,5 +1,5 @@
 {{define "learn.html"}}
-<div class="learn-home" data-reading-mode="learn">
+<div class="learn-home">
 <div class="learn-intro"><h2>{{t "Understand this repository"}}</h2>
 {{if .Summary}}<p class="summary model"><span data-display-ref="{{.Summary.TextRef}}">{{.Summary.Text}}</span><span class="model-sources">{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</span></p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
 </div>
@@ -8,7 +8,7 @@
 {{end}}
 
 {{define "learn-start.html"}}
-<div data-reading-mode="learn">
+<div>
 {{if .Questions}}<div class="learn-questions"><h3>{{t "{0} questions in this report" (len .Questions)}}</h3><p class="meta">{{t "Choose one question. Its answer leads to the relevant parts of the map and the original sources."}}</p><ol class="question-menu">{{range .Questions}}<li><a href="#{{.ID}}">{{.Question}}</a></li>{{end}}</ol></div>{{end}}
 {{if .LearnQuestionTopics}}<details class="learn-topic-menu"><summary>{{t "Questions by topic"}}</summary><div class="learn-question-topics">{{range .LearnQuestionTopics}}<details id="{{.ID}}"><summary>{{.Title}} <span class="meta">{{len .Questions}}</span></summary><ul class="plain">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}} →</a></li>{{end}}</ul></details>{{end}}</div></details>{{end}}
 {{if .LearningNote}}<p>{{.LearningNote}} <a href="#questions">{{t "View the topic review →"}}</a></p>{{end}}

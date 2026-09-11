@@ -71,11 +71,11 @@ let current=front,mode='work',question=guide,term=null,searchIntent='',restoring
 const body=document.body,pages=[home,front,backend,questionPage],guides=[guide],globalSearch=null;
 const returnLink={},termLink={},mapLink={},searchLink={},returnLinks={},readingIntent={},locationName={},mapContext={};
 function rmT(text,...values){return text.replace(/\{(\d+)\}/g,(_,n)=>values[n]);}
-function setMode(next){mode=next==='work'?'work':'learn';}
+function showEntrance(){}
 function selectQuestion(){} function revealConcept(){} function placeSearch(){} function measureToolbar(){}
 ` + part(modes, "function enclosing(node){", "  function selectQuestion(") +
 		part(modes, "function showReturn(){", "  function placeSearch(") +
-		part(modes, "function setPage(node){", "  function setMode(") +
+		part(modes, "function setPage(node){", "  // The former Learn/Work switch") +
 		part(modes, "document.addEventListener('repomap:navigate'", "  // Layout commits") +
 		part(modes, "function restore(){", "  // Restore the visit") + `
 document.addEventListener('repomap:reading',remember);
