@@ -11,12 +11,16 @@ import (
 )
 
 // Observation is source evidence supplied by an adapter or a guidance
-// extractor. It never carries an architectural decision.
+// extractor. It never carries an architectural decision. Fields are the
+// observation's named values (a launch root's launch_kind, module and
+// qualname); Values is a list whose meaning is the kind's (a packaging
+// declaration's package names). The system prompt defines every kind.
 type Observation struct {
-	Kind   string   `json:"kind"`
-	Path   string   `json:"path,omitempty"`
-	Line   int      `json:"line,omitempty"`
-	Values []string `json:"values,omitempty"`
+	Kind   string            `json:"kind"`
+	Path   string            `json:"path,omitempty"`
+	Line   int               `json:"line,omitempty"`
+	Fields map[string]string `json:"fields,omitempty"`
+	Values []string          `json:"values,omitempty"`
 }
 
 type NativeOwner struct {

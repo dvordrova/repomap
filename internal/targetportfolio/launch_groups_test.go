@@ -74,7 +74,7 @@ func launchGroupCompilation(t *testing.T) Compilation {
 	}
 	for _, group := range [][]int{{0, 1, 2}, {3, 4}} {
 		for _, member := range group {
-			rows[member].Evidence = []Observation{{Kind: "launch_callable", Path: fmt.Sprintf("app%d.py", group[0]), Line: 12, Values: []string{"app", "main", "arguments=none"}}, {Kind: "launch_call_site", Path: fmt.Sprintf("launcher%d.py", member), Line: member + 1}}
+			rows[member].Evidence = []Observation{{Kind: "launch_callable", Path: fmt.Sprintf("app%d.py", group[0]), Line: 12, Fields: map[string]string{"module": "app", "qualname": "main", "arguments": "none"}}, {Kind: "launch_call_site", Path: fmt.Sprintf("launcher%d.py", member), Line: member + 1}}
 			for _, owner := range group {
 				if owner != member {
 					rows[member].SeedOwners = append(rows[member].SeedOwners, NativeOwner{Ref: rows[owner].Ref, Name: rows[owner].Name, Kind: "executable", SameLaunch: true})

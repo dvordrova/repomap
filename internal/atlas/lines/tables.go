@@ -24,7 +24,7 @@ const (
 	boundariesContract = "repomap.atlas.boundaries.v7"
 	zonesContract      = "repomap.atlas.zones.v2"
 	arrowsContract     = "repomap.atlas.arrows.v1"
-	targetsContract    = "repomap.atlas.targets.v2"
+	targetsContract    = "repomap.atlas.targets.v3"
 	jointsContract     = "repomap.atlas.joints.v3"
 
 	// ShortLineRunes bounds the lines of boundaries and symbols; LabelRunes

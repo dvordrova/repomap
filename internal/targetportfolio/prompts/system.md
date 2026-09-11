@@ -17,7 +17,23 @@ Choose separate only when the supplied evidence supports separate product respon
 
 Adapters establish launch bases, declared package membership and imports; you interpret purpose. A Python main guard alone is not proof of either an independent service or a demonstration. Never merge because of a folder name, common module inventory, package membership, or a loop. Candidates without advertised seed owners cannot become seeds. JS/TS source-owning package targets retain their separate analysis; manifests need not contain bin, main or scripts.start. Root libraries are not automatically products or automatically shared code.
 
-Each native row cites its complete evidence through evidence_refs in the shared observations catalogue. Read those observations; all referenced rows are supplied in this request.
+Each native row cites its complete evidence through evidence_refs in the shared observations catalogue. Read those observations; all referenced rows are supplied in this request. An observation has a kind, the path and line of its source, named fields, and for list-valued kinds a values list. The kinds, one per line:
+- pep621_project_script, pep621_project_gui_script, poetry_script, setup_cfg_console_script, setup_cfg_gui_script, setup_py_console_script, setup_py_gui_script: a console or GUI script the packaging declares; fields.label is the script name.
+- package_main: a package's __main__.py; fields.label is the package name.
+- name_main_guard: an `if __name__ == "__main__"` guard on that line; fields.label is the module.
+- python_shebang: a Python shebang on that line; fields.label is the module.
+- module_execution_view: a module resolved from a file candidate as runnable on its own (`python -m` or a direct run); fields.label is the module.
+- import_package: the importable package of a library target; fields.label is the package name, empty when packaging metadata names it.
+- launch_root: how the target starts; fields.launch_kind is callable, module, module_execution, main_guard, script_file or bound_object, with fields.module and fields.qualname.
+- launch_file_executable: fields.executable is the launch file's executable permission bit.
+- declared_distribution_membership: fields.module and fields.declared, whether the distribution declares that module.
+- launch_callable: the exact declaration an argument-free console script or simple direct launch reaches; fields.module, fields.qualname, fields.arguments (none).
+- launch_call_site: the original guard or module call of that callable; the same fields.
+- module_level_relative_import: fields.module is the relative module (leading dots kept) and fields.name the imported name, `*` for a wildcard.
+- distribution_<declaration>_packages, _where, _include, _exclude: values are that packaging declaration's lists.
+- documented_command, documented_import: an exact fenced shell statement or import line from a guide; fields.heading is the nearest heading, fields.text the statement.
+- go_main: a Go main package root; fields.package is its import path.
+- own_main_packages, own_main_consumers, other_module_imports: fields.count and values list a Go module's own main packages, those of them that import its public packages, and imports of its public packages by other modules.
 
 launch_file_executable records the source file's executable permission bit; it does not determine whether an interpreter can invoke that file. module_level_relative_import records direct module-level relative import syntax, including wildcard names. These observations are source facts, not execution results or role decisions. They do not cancel an author's shebang as a native candidate basis.
 

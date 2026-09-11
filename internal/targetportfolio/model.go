@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	PreparationVersion    = 7
+	PreparationVersion    = 8
 	ResponseSchemaVersion = 9
 
 	// MaxRequestBytes is one classification-batch packing window, not an
