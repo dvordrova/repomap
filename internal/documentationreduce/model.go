@@ -1,6 +1,7 @@
 // Package documentationreduce condenses repository-authored README and
-// AGENTS.md documents into a compact, source-bound product-context handoff.
-// It does not inspect or classify program elements.
+// AGENTS.md documents into a compact, source-bound product-context handoff:
+// one overview and the product or domain concepts of each document. It does
+// not inspect or classify program elements.
 package documentationreduce
 
 import (
@@ -17,14 +18,20 @@ import (
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
 )
 
-const Version = 1
+const Version = 2
+
+// MaxConceptsPerSource bounds the vocabulary one document contributes. The
+// decoder keeps the first MaxConceptsPerSource distinct concepts of a
+// response row in the model's order and drops the rest; it never refuses
+// the row for exceeding the ceiling.
+const MaxConceptsPerSource = 12
 
 // Source is compact model-authored context restored to one exact guidance
-// document. Claims and Concepts are sets; their canonical order is local.
+// document. Concepts is a set of at most MaxConceptsPerSource entries; its
+// canonical order is local.
 type Source struct {
 	Path     string                         `json:"path"`
 	Kind     readmetargetscout.GuidanceKind `json:"kind"`
-	Claims   []string                       `json:"claims"`
 	Concepts []string                       `json:"concepts"`
 }
 
@@ -79,9 +86,8 @@ func (result Result) Validate() error {
 	}
 	for position, source := range result.Sources {
 		if !validRepositoryPath(source.Path) || !validGuidanceKind(source.Kind) ||
-			source.Claims == nil || source.Concepts == nil ||
-			len(source.Claims)+len(source.Concepts) == 0 ||
-			!canonicalTextSet(source.Claims) || !canonicalTextSet(source.Concepts) {
+			len(source.Concepts) == 0 || len(source.Concepts) > MaxConceptsPerSource ||
+			!canonicalTextSet(source.Concepts) {
 			return fmt.Errorf("documentation reduce: source %d is invalid", position)
 		}
 		if position > 0 && result.Sources[position-1].Path >= source.Path {
@@ -164,15 +170,12 @@ func canonicalSources(values []Source) ([]Source, error) {
 		if !validRepositoryPath(value.Path) || !validGuidanceKind(value.Kind) {
 			return nil, fmt.Errorf("documentation reduce: invalid restored source")
 		}
-		claims, err := canonicalizeText(value.Claims)
-		if err != nil {
-			return nil, fmt.Errorf("documentation reduce: source %q claims: %w", value.Path, err)
+		for _, concept := range value.Concepts {
+			if !validText(concept) {
+				return nil, fmt.Errorf("documentation reduce: source %q concepts: invalid compact text", value.Path)
+			}
 		}
-		concepts, err := canonicalizeText(value.Concepts)
-		if err != nil {
-			return nil, fmt.Errorf("documentation reduce: source %q concepts: %w", value.Path, err)
-		}
-		if len(claims)+len(concepts) == 0 {
+		if len(value.Concepts) == 0 {
 			continue
 		}
 		current, exists := byPath[value.Path]
@@ -181,22 +184,15 @@ func canonicalSources(values []Source) ([]Source, error) {
 		}
 		current.Path = value.Path
 		current.Kind = value.Kind
-		current.Claims = append(current.Claims, claims...)
-		current.Concepts = append(current.Concepts, concepts...)
+		current.Concepts = append(current.Concepts, value.Concepts...)
 		byPath[value.Path] = current
 	}
 	result := make([]Source, 0, len(byPath))
 	for _, source := range byPath {
-		claims, _ := canonicalizeText(source.Claims)
-		concepts, _ := canonicalizeText(source.Concepts)
-		source.Claims = claims
-		source.Concepts = concepts
+		source.Concepts = capConcepts(source.Concepts)
 		result = append(result, source)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
-	if result == nil {
-		return []Source{}, nil
-	}
 	return result, nil
 }
 
@@ -220,36 +216,36 @@ func cloneResult(result Result) Result {
 	for position, source := range result.Sources {
 		cloned.Sources[position] = Source{
 			Path: source.Path, Kind: source.Kind,
-			Claims:   append([]string(nil), source.Claims...),
 			Concepts: append([]string(nil), source.Concepts...),
 		}
-	}
-	if cloned.Sources == nil {
-		cloned.Sources = []Source{}
 	}
 	return cloned
 }
 
-func canonicalizeText(values []string) ([]string, error) {
-	result := append([]string(nil), values...)
-	for _, value := range result {
-		if !validText(value) {
-			return nil, fmt.Errorf("invalid compact text")
-		}
-	}
-	sort.Strings(result)
-	write := 0
-	for _, value := range result {
-		if write > 0 && result[write-1] == value {
+// distinctConcepts keeps the first occurrence of every concept in the order
+// the values were supplied, so a ceiling keeps the model's leading choices.
+func distinctConcepts(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if _, duplicate := seen[value]; duplicate {
 			continue
 		}
-		result[write] = value
-		write++
+		seen[value] = struct{}{}
+		result = append(result, value)
 	}
-	if write == 0 {
-		return []string{}, nil
+	return result
+}
+
+// capConcepts keeps the first MaxConceptsPerSource distinct concepts in their
+// supplied order and returns them in canonical order.
+func capConcepts(values []string) []string {
+	kept := distinctConcepts(values)
+	if len(kept) > MaxConceptsPerSource {
+		kept = kept[:MaxConceptsPerSource]
 	}
-	return result[:write], nil
+	sort.Strings(kept)
+	return kept
 }
 
 func canonicalTextSet(values []string) bool {

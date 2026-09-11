@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -47,8 +48,7 @@ func TestRunLosslesslyBatchesAndConvergentlyReducesGuidance(t *testing.T) {
 		t.Fatalf("restored sources = %#v", result.Sources)
 	}
 	for _, source := range result.Sources {
-		if len(source.Claims) != 1 || source.Claims[0] != "The repository manages merchant orders." ||
-			len(source.Concepts) != 1 || source.Concepts[0] != "Order Ledger" {
+		if !reflect.DeepEqual(source.Concepts, []string{"Order Ledger", "Settlement report"}) {
 			t.Fatalf("canonical source = %#v", source)
 		}
 	}
@@ -61,8 +61,8 @@ func TestRunLosslesslyBatchesAndConvergentlyReducesGuidance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	snapshot.Sources[0].Claims[0] = "mutated"
-	if result.Sources[0].Claims[0] == "mutated" {
+	snapshot.Sources[0].Concepts[0] = "mutated"
+	if result.Sources[0].Concepts[0] == "mutated" {
 		t.Fatal("Snapshot aliased result")
 	}
 }
@@ -106,25 +106,67 @@ func TestNormalizeResponseDiscardsUnknownRefsBeforeTheirValues(t *testing.T) {
 	result, err := normalizeResponse([]byte(`{
   "overview":"",
   "sources":[
-    {"ref":"d999","claims":null,"concepts":null},
-    {"ref":"d1","claims":["Useful fact","Useful fact"],"concepts":[]}
+    {"ref":"d999","concepts":null},
+    {"ref":"d1","concepts":["Useful concept","Useful concept"]}
   ]
 }`), authority)
 	if err != nil {
 		t.Fatalf("normalizeResponse: %v", err)
 	}
-	if len(result.sources) != 1 || len(result.sources[0].Claims) != 1 || result.sources[0].Ref != "d1" {
+	if len(result.sources) != 1 || len(result.sources[0].Concepts) != 1 || result.sources[0].Ref != "d1" {
 		t.Fatalf("normalized response = %#v", result)
+	}
+}
+
+func TestNormalizeResponseKeepsTheFirstTwelveDistinctConceptsAndJournalsTheRest(t *testing.T) {
+	authority := map[string]documentAuthority{
+		"d1": {path: "README.md", kind: readmetargetscout.GuidanceReadme},
+		"d2": {path: "docs/README.md", kind: readmetargetscout.GuidanceReadme},
+	}
+	// Fifteen entries in the model's order: the repeated leading concept
+	// counts once, so fourteen distinct concepts arrive and two are dropped.
+	supplied := []string{"Zeta ledger", "Zeta ledger"}
+	for index := range 13 {
+		supplied = append(supplied, fmt.Sprintf("Concept %02d", index))
+	}
+	raw, err := json.Marshal(map[string]any{"overview": "Ledger.", "sources": []map[string]any{
+		{"ref": "d1", "concepts": supplied},
+		{"ref": "d2", "concepts": []string{"Kept"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := normalizeResponse(raw, authority)
+	if err != nil {
+		t.Fatalf("normalizeResponse refused a capped row: %v", err)
+	}
+	want := append([]string{"Zeta ledger"}, supplied[2:2+MaxConceptsPerSource-1]...)
+	sort.Strings(want)
+	if len(result.sources) != 2 || !reflect.DeepEqual(result.sources[0].Concepts, want) || result.sources[0].Ref != "d1" {
+		t.Fatalf("capped concepts = %#v, want %v", result.sources, want)
+	}
+	if len(result.rejected) != 1 || result.rejected[0].Kind != "documentation_concepts_capped" ||
+		result.rejected[0].Count != 2 || !reflect.DeepEqual(result.rejected[0].Samples, []string{"d1"}) {
+		t.Fatalf("cap journal = %#v", result.rejected)
+	}
+	if result.overview != "Ledger." || !reflect.DeepEqual(result.AcceptedRowKeys(), []string{"d1", "d2", ""}) || len(result.refusedSources) != 0 {
+		t.Fatalf("a capped document lost acceptance: %+v", result)
 	}
 }
 
 func TestPromptsKeepDocumentationUntrustedAndOutOfGraphClassification(t *testing.T) {
 	for name, prompt := range map[string]string{"source": sourcePrompt, "merge": mergePrompt} {
-		for _, fragment := range []string{"untrusted", "Do not", "entrypoints", "graph edges", "`sources`"} {
+		for _, fragment := range []string{"untrusted", "Do not", "entrypoints", "graph edges", "`sources`", "`concepts`", "12"} {
 			if !strings.Contains(prompt, fragment) {
 				t.Fatalf("%s prompt does not contain %q", name, fragment)
 			}
 		}
+		if strings.Contains(prompt, "claim") {
+			t.Fatalf("%s prompt still asks for claims", name)
+		}
+	}
+	if strings.Contains(responseExample, "claims") {
+		t.Fatalf("response example still shows claims: %s", responseExample)
 	}
 }
 
@@ -227,12 +269,10 @@ func (provider *documentationPresetProvider) Complete(
 			response.Sources = append(response.Sources,
 				responseSource{
 					Ref:      document.Ref,
-					Claims:   []string{"The repository manages merchant orders.", "The repository manages merchant orders."},
-					Concepts: []string{"Order Ledger"},
+					Concepts: []string{"Order Ledger", "Order Ledger", "Settlement report"},
 				},
 				responseSource{
 					Ref:      document.Ref,
-					Claims:   []string{"The repository manages merchant orders."},
 					Concepts: []string{"Order Ledger"},
 				},
 			)
@@ -266,8 +306,7 @@ func (provider *documentationPresetProvider) Complete(
 		sort.Strings(ordered)
 		for _, ref := range ordered {
 			response.Sources = append(response.Sources, responseSource{
-				Ref: ref, Claims: []string{"The repository manages merchant orders."},
-				Concepts: []string{"Order Ledger"},
+				Ref: ref, Concepts: []string{"Order Ledger", "Settlement report"},
 			})
 		}
 	default:

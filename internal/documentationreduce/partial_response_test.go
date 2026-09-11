@@ -132,7 +132,7 @@ func (p *partialDocumentationProvider) Complete(_ context.Context, prepared llm.
 		var request sourceRequest
 		_ = json.Unmarshal([]byte(prompt.User), &request)
 		if len(request.Documents) == 1 && request.Documents[0].Path == "README.md" {
-			raw, _ = json.Marshal(modelResponse{Overview: "A source-local overview.", Sources: []responseSource{{Ref: request.Documents[0].Ref, Claims: []string{"A valid author claim."}, Concepts: []string{}}}})
+			raw, _ = json.Marshal(modelResponse{Overview: "A source-local overview.", Sources: []responseSource{{Ref: request.Documents[0].Ref, Concepts: []string{"A valid author concept."}}}})
 		}
 	}
 	if p.separateMerge {
@@ -147,12 +147,12 @@ func (p *partialDocumentationProvider) Complete(_ context.Context, prepared llm.
 	return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, nil
 }
 
-func TestDocumentationKeepsGoodClaimsAndSourcesWithOriginalCacheAndRejections(t *testing.T) {
+func TestDocumentationKeepsGoodConceptsAndSourcesWithOriginalCacheAndRejections(t *testing.T) {
 	authority := map[string]documentAuthority{"d1": {path: "AGENTS.md", kind: readmetargetscout.GuidanceAgents}, "d2": {path: "README.md", kind: readmetargetscout.GuidanceReadme}}
 	raw := []byte(`{"overview":17,"sources":[
- {"ref":"d1","claims":["  Good claim.  ",9,""],"concepts":["Concept"],"unused":true},
- {"ref":"d2","claims":["Another good claim."],"concepts":[]},
- {"ref":"d999","claims":null,"concepts":null}],"notes":"unused"}`)
+ {"ref":"d1","concepts":["  Good concept.  ",9,""],"claims":["Retired field."],"unused":true},
+ {"ref":"d2","concepts":["Another good concept."]},
+ {"ref":"d999","concepts":null}],"notes":"unused"}`)
 	provider := &partialDocumentationProvider{raw: raw}
 	var events []llm.Event
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir(), Observer: llm.ObserverFunc(func(event llm.Event) error { events = append(events, event); return nil })}
@@ -162,8 +162,8 @@ func TestDocumentationKeepsGoodClaimsAndSourcesWithOriginalCacheAndRejections(t 
 		if err != nil || len(outcome.Value.sources) != 2 || outcome.Value.overview != "" || outcome.Cached != (run == 1) || !bytes.Equal(outcome.Response, raw) {
 			t.Fatalf("partial reduction: %+v / %v", outcome, err)
 		}
-		if !reflect.DeepEqual(outcome.Value.sources[0].Claims, []string{"Good claim."}) || !reflect.DeepEqual(outcome.Value.AcceptedRowKeys(), []string{"d2"}) {
-			t.Fatalf("wrong accepted claims or term scopes: %+v", outcome.Value)
+		if !reflect.DeepEqual(outcome.Value.sources[0].Concepts, []string{"Good concept."}) || !reflect.DeepEqual(outcome.Value.AcceptedRowKeys(), []string{"d2"}) {
+			t.Fatalf("wrong accepted concepts or term scopes: %+v", outcome.Value)
 		}
 		if len(outcome.ResponseRejections) != 4 {
 			t.Fatalf("lost local rejection diagnostics: %+v", outcome.ResponseRejections)
@@ -195,7 +195,7 @@ func TestDocumentationRefusedSourceKeepsSiblingWithoutInventingOverview(t *testi
 	}
 }
 
-func TestDocumentationRefusedMergeKeepsOriginalClaims(t *testing.T) {
+func TestDocumentationRefusedMergeKeepsOriginalConcepts(t *testing.T) {
 	_, candidates, authority := packingEvidence(2)
 	provider := &partialDocumentationProvider{raw: []byte(`{}`)}
 	result, err := mergeTournament(t.Context(), llm.Executor{}, provider, "guidance", authority, candidates)
@@ -224,11 +224,11 @@ func TestDocumentationRefusedMergeSingletonDoesNotBecomeWholeOverview(t *testing
 func TestDocumentationMergeUnlocatedMalformedSourceKeepsOriginalContext(t *testing.T) {
 	_, candidates, authority := packingEvidence(2)
 	for i := range candidates {
-		candidates[i].sources[0].Claims[0] = strings.TrimSpace(candidates[i].sources[0].Claims[0])
+		candidates[i].sources[0].Concepts[0] = strings.TrimSpace(candidates[i].sources[0].Concepts[0])
 	}
 	provider := &partialDocumentationProvider{raw: []byte(`{"overview":"A new partial overview.","sources":[
-		{"ref":42,"claims":["An unlocatable claim."],"concepts":[]},
-		{"ref":"d0002","claims":["Accepted reduction of second source."],"concepts":[]}]}`)}
+		{"ref":42,"concepts":["An unlocatable concept."]},
+		{"ref":"d0002","concepts":["Accepted reduction of second source."]}]}`)}
 	result, err := mergeTournament(t.Context(), llm.Executor{}, provider, "guidance", authority, candidates)
 	if err != nil || len(result) != 1 || provider.calls != 1 {
 		t.Fatalf("partial merge failed: %+v / %v", result, err)
@@ -238,16 +238,16 @@ func TestDocumentationMergeUnlocatedMalformedSourceKeepsOriginalContext(t *testi
 	}
 	for i, original := range candidates {
 		found := false
-		for _, claim := range result[0].sources[i].Claims {
-			if claim == original.sources[0].Claims[0] {
+		for _, concept := range result[0].sources[i].Concepts {
+			if concept == original.sources[0].Concepts[0] {
 				found = true
 			}
-			if claim == "An unlocatable claim." {
+			if concept == "An unlocatable concept." {
 				t.Fatal("unknown identity acquired source authority")
 			}
 		}
 		if !found {
-			t.Fatal("accepted original claim disappeared after unlocatable malformed source")
+			t.Fatal("accepted original concept disappeared after unlocatable malformed source")
 		}
 	}
 }
@@ -255,26 +255,26 @@ func TestDocumentationMergeUnlocatedMalformedSourceKeepsOriginalContext(t *testi
 func TestDocumentationPartialMergeKeepsOriginalsOnlyForRefusedSource(t *testing.T) {
 	_, candidates, authority := packingEvidence(2)
 	for i := range candidates {
-		candidates[i].sources[0].Claims[0] = strings.TrimSpace(candidates[i].sources[0].Claims[0])
+		candidates[i].sources[0].Concepts[0] = strings.TrimSpace(candidates[i].sources[0].Concepts[0])
 	}
 	provider := &partialDocumentationProvider{raw: []byte(`{"overview":"","sources":[
-		{"ref":"d0001","claims":[42,"New accepted claim."],"concepts":[]},
-		{"ref":"d0002","claims":["Accepted reduction of second source."],"concepts":[]}]}`)}
+		{"ref":"d0001","concepts":[42,"New accepted concept."]},
+		{"ref":"d0002","concepts":["Accepted reduction of second source."]}]}`)}
 	result, err := mergeTournament(t.Context(), llm.Executor{}, provider, "guidance", authority, candidates)
 	if err != nil || len(result) != 1 || provider.calls != 1 {
 		t.Fatalf("partial merge failed: %+v / %v", result, err)
 	}
 	sources := result[0].sources
-	if len(sources) != 2 || len(sources[0].Claims) != 2 || len(sources[1].Claims) != 1 || sources[1].Claims[0] != "Accepted reduction of second source." {
+	if len(sources) != 2 || len(sources[0].Concepts) != 2 || len(sources[1].Concepts) != 1 || sources[1].Concepts[0] != "Accepted reduction of second source." {
 		t.Fatalf("discarded refused original or overwrote good reduction: %+v", sources)
 	}
 	found := false
-	for _, claim := range sources[0].Claims {
-		if claim == candidates[0].sources[0].Claims[0] {
+	for _, concept := range sources[0].Concepts {
+		if concept == candidates[0].sources[0].Concepts[0] {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("already accepted source claim disappeared after malformed merge claim")
+		t.Fatal("already accepted source concept disappeared after malformed merge concept")
 	}
 }
