@@ -80,8 +80,30 @@ func assertGoMethodArgumentExpressions(t *testing.T, index programindex.Index, g
 	if len(sequences) != 4 || negative != 3 || len(sameLineColumns) != 2 || sameLineColumns[0] == sameLineColumns[1] {
 		t.Fatalf("source calls collapsed or literal/spread gained guessed arguments: sequences=%v negative=%d columns=%v", sequences, negative, sameLineColumns)
 	}
+	// The graph keeps every origin anchor for the local destination pass.
+	anchored := 0
+	for _, place := range graph.Places {
+		if place.Symbol == nil || place.Symbol.Decl.ObjectID != caller.ID {
+			continue
+		}
+		for _, call := range place.Symbol.Calls {
+			if call.Name != "receiveMethodArguments" || len(call.SourceArguments) != 4 {
+				continue
+			}
+			for _, argument := range call.SourceArguments {
+				if argument.Origin == nil || argument.Origin.Anchor == nil || argument.Origin.Anchor.Path != path || argument.Origin.Anchor.Line < 1 {
+					t.Fatalf("graph call lost a method argument's source anchor: %+v", argument)
+				}
+			}
+			anchored++
+		}
+	}
+	if anchored != 1 {
+		t.Fatalf("graph calls with four anchored method arguments = %d, want 1", anchored)
+	}
 	// This is the actual declaration evidence builder used by orientation and
-	// questions. Its wire shape must retain positions without canonical IDs.
+	// questions. Its wire shape must retain positions and expressions without
+	// canonical IDs; the anchors stay local.
 	evidence := lines.CallableEvidence(graph, map[string]bool{caller.ID: true})[caller.ID]
 	raw, err := json.Marshal(evidence)
 	if err != nil {
@@ -99,8 +121,8 @@ func assertGoMethodArgumentExpressions(t *testing.T, index programindex.Index, g
 			continue
 		}
 		for i, argument := range call.SourceArguments {
-			if argument.Position != i+1 || argument.Origin.Text != want[0][i] || argument.Origin.Anchor == nil {
-				t.Fatalf("consuming request lost the original argument positions: %s", raw)
+			if argument.Position != i+1 || argument.Origin == nil || argument.Origin.Text != want[0][i] || argument.Origin.Anchor != nil {
+				t.Fatalf("consuming request lost the original argument positions or kept a source anchor: %s", raw)
 			}
 		}
 		positive++

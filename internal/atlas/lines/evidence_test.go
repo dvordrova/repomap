@@ -9,6 +9,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 // Interface field alternatives can cite the same assignments at many calls.
@@ -128,6 +129,54 @@ func TestCallContextExposesRepositoryOriginWithoutLeakingNativeKeys(t *testing.T
 				t.Fatal("missing native callee evidence became a claim about origin")
 			}
 		})
+	}
+}
+
+// A request carries each origin as kind and text with parts to OriginDepth;
+// anchors, owners, positions and deeper parts stay in the graph for the
+// destination traversal. Morfeu's orientation request spent 90 KB of 280 KB
+// on origin trees up to nine levels deep, and the answer used five nodes.
+func TestCallOriginsAreCompactInRequestsAndCompleteInTheGraph(t *testing.T) {
+	anchor := func(line, column int) *sourcevalue.Anchor {
+		return &sourcevalue.Anchor{Path: "client.go", Line: line, Column: column}
+	}
+	level3 := sourcevalue.Value{Kind: "unknown", Text: "level3-expression", Anchor: anchor(9, 6)}
+	level2 := sourcevalue.Value{Kind: "field", Text: "level2", Anchor: anchor(9, 5), Parts: []sourcevalue.Value{level3}}
+	level1 := sourcevalue.Value{Kind: "field", Text: "level1", Anchor: anchor(9, 4), Owner: anchor(1, 1), Parts: []sourcevalue.Value{level2},
+		Initializer: &sourcevalue.Value{Kind: "literal", Text: "init-value", Anchor: anchor(2, 2)}}
+	root := &sourcevalue.Value{Kind: "concat", Anchor: anchor(9, 3), Parts: []sourcevalue.Value{{Kind: "literal", Text: "https://", Anchor: anchor(9, 3)}, level1}}
+	call := atlas.SymbolCall{Kind: "invokes_external", Name: "http.Get", Line: 9, Column: 2, Resolution: "exact",
+		API:             &atlas.CallAPI{Package: "net/http", Name: "Get"},
+		ReceiverValue:   &sourcevalue.Value{Kind: "parameter", Text: "client", Position: 1, Owner: anchor(1, 1)},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: root}},
+		ResultValue:     &sourcevalue.Value{Kind: "call_result", Anchor: anchor(9, 2)}}
+	before, _ := json.Marshal(call)
+	var catalog EvidenceCatalog
+	compact, err := json.Marshal(catalog.CallWithOrigins(call))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"receiver_value":{"kind":"parameter","text":"client"}`, `"result_value":{"kind":"call_result"}`, `"kind":"concat"`, `"text":"https://"`,
+		`"kind":"field","text":"level1"`, `"initializer":{"kind":"literal","text":"init-value"}`, `"parts":[{"kind":"field","text":"level2"}]`, `"column":2`, `"position":1,"origin"`} {
+		if !strings.Contains(string(compact), want) {
+			t.Fatalf("request origin lost %s: %s", want, compact)
+		}
+	}
+	for _, forbidden := range []string{`"anchor"`, `"owner"`, "level3-expression", `"position":1,"anchor"`} {
+		if strings.Contains(string(compact), forbidden) {
+			t.Fatalf("request origin carries %s: %s", forbidden, compact)
+		}
+	}
+	if len(compact) >= len(before)/2 {
+		t.Fatalf("request form is not compact: %d bytes of %d", len(compact), len(before))
+	}
+	place := atlas.Place{ID: "sym:send", Kind: atlas.PlaceSymbol, Path: "client.go", LineNo: 1, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "obj:send", Name: "send"}, Calls: []atlas.SymbolCall{call}}}
+	question, err := json.Marshal(CallableEvidence(atlas.Graph{Places: []atlas.Place{place}}, map[string]bool{"obj:send": true})["obj:send"])
+	if err != nil || strings.Contains(string(question), `"anchor"`) || !strings.Contains(string(question), `"text":"level2"`) {
+		t.Fatalf("declaration evidence for questions and orientation is not the compact form: %s %v", question, err)
+	}
+	if after, _ := json.Marshal(call); string(before) != string(after) {
+		t.Fatal("request preparation changed the graph's complete origins")
 	}
 }
 

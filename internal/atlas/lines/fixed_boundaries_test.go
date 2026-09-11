@@ -33,13 +33,14 @@ func TestBoundaryOwnerKeepsOriginalReceiverAndArgumentRoles(t *testing.T) {
 		}
 	}
 	raw, _ := json.Marshal(projected)
-	for _, want := range []string{`"receiver_value"`, `"source_arguments"`, `"issueTrackerClient"`, `"projectID"`, `"path":"client.go"`, `"line":29`, `"column":40`, `"package":"example.com/sdk"`} {
+	for _, want := range []string{`"receiver_value":{"kind":"field","text":"issueTrackerClient"}`, `"source_arguments":[{"position":1,"origin":{"kind":"field","text":"projectID"}}]`, `"path":"client.go"`, `"line":29`, `"column":35`, `"package":"example.com/sdk"`} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("boundary owner lost source distinction %s: %s", want, raw)
 		}
 	}
-	if strings.Contains(string(raw), "private-") {
-		t.Fatalf("boundary provider context exposed internal identities: %s", raw)
+	// The call keeps its own column; origin nodes travel without anchors.
+	if strings.Contains(string(raw), "private-") || strings.Contains(string(raw), `"anchor"`) || strings.Contains(string(raw), `"column":40`) {
+		t.Fatalf("boundary provider context exposed internal identities or origin anchors: %s", raw)
 	}
 	after, _ := json.Marshal(owner)
 	if !reflect.DeepEqual(before, after) {

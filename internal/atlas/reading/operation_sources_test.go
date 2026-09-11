@@ -51,6 +51,19 @@ func TestOperationRequestPreservesReceiverArgumentsAndContinuation(t *testing.T)
 		r.places[p.ID], r.operations[p.ID] = p, [3]string{"request", "earlier proposal", ""}
 	}
 	before, _ := json.Marshal(r.opts.Graph)
+	// The request form of an origin: kind, text and parts, without anchors,
+	// owners or positions. The graph keeps the complete value.
+	var requestOrigin func(value *sourcevalue.Value) *sourcevalue.Value
+	requestOrigin = func(value *sourcevalue.Value) *sourcevalue.Value {
+		if value == nil {
+			return nil
+		}
+		result := &sourcevalue.Value{Kind: value.Kind, Text: value.Text}
+		for i := range value.Parts {
+			result.Parts = append(result.Parts, *requestOrigin(&value.Parts[i]))
+		}
+		return result
+	}
 	inspected := 0
 	provider.mutate = func(input map[string]any, answers []map[string]any) {
 		for i, raw := range input["rows"].([]any) {
@@ -70,6 +83,11 @@ func TestOperationRequestPreservesReceiverArgumentsAndContinuation(t *testing.T)
 			for j, got := range calls {
 				want := byName[name][j]
 				want.Evidence = nil
+				want.ReceiverValue, want.ResultValue = requestOrigin(want.ReceiverValue), requestOrigin(want.ResultValue)
+				want.SourceArguments = append([]atlas.SourceArgument(nil), want.SourceArguments...)
+				for k := range want.SourceArguments {
+					want.SourceArguments[k].Origin = requestOrigin(want.SourceArguments[k].Origin)
+				}
 				if !reflect.DeepEqual(got.SymbolCall, want) || len(got.EvidenceRefs) != 1 {
 					t.Fatalf("%s call %d lost its receiver, values, exact site or dispatch uncertainty:\ngot %+v\nwant %+v", name, j, got, want)
 				}

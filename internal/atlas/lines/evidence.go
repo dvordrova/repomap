@@ -6,6 +6,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 // EvidenceCatalog shares repeated source observations inside one provider row.
@@ -44,19 +45,48 @@ func (c *EvidenceCatalog) Call(call atlas.SymbolCall) any {
 	return c.call(call)
 }
 
-// CallWithOrigins retains the source-addressed receiver, arguments and result
-// needed to distinguish uses of the same API. These are syntax observations,
-// including unknowns and alternatives, not resolved runtime values.
+// CallWithOrigins retains the receiver, arguments and result origins needed
+// to distinguish uses of the same API, in their request form: kind and text
+// per node, parts nested at most OriginDepth levels. These are syntax
+// observations, including unknowns and alternatives, not resolved runtime
+// values. The complete origins, with their anchors and owners, stay in the
+// atlas structures where the destination traversal reads them.
 func (c *EvidenceCatalog) CallWithOrigins(call atlas.SymbolCall) any {
 	return c.callWithOrigins(call)
 }
 
 func (c *EvidenceCatalog) callWithOrigins(call atlas.SymbolCall) callEvidence {
 	projected := c.call(call)
-	projected.SourceArguments = call.SourceArguments
-	projected.ReceiverValue, projected.ResultValue = call.ReceiverValue, call.ResultValue
+	if len(call.SourceArguments) > 0 {
+		projected.SourceArguments = make([]atlas.SourceArgument, len(call.SourceArguments))
+		for i, argument := range call.SourceArguments {
+			projected.SourceArguments[i] = atlas.SourceArgument{Position: argument.Position, Keyword: argument.Keyword, Origin: compactOrigin(argument.Origin, 0)}
+		}
+	}
+	projected.ReceiverValue, projected.ResultValue = compactOrigin(call.ReceiverValue, 0), compactOrigin(call.ResultValue, 0)
 	projected.API, projected.Column = call.API, call.Column
 	return projected
+}
+
+// OriginDepth is how many levels of parts a request origin keeps below its
+// root node. Morfeu's orientation request carried origin trees nine levels
+// deep with an anchor and owner on every node, 90 KB of a 280 KB request,
+// and the answer used five nodes of 118.
+const OriginDepth = 2
+
+func compactOrigin(value *sourcevalue.Value, level int) *sourcevalue.Value {
+	if value == nil {
+		return nil
+	}
+	result := &sourcevalue.Value{Kind: value.Kind, Text: value.Text}
+	if level >= OriginDepth {
+		return result
+	}
+	result.Initializer = compactOrigin(value.Initializer, level+1)
+	for i := range value.Parts {
+		result.Parts = append(result.Parts, *compactOrigin(&value.Parts[i], level+1))
+	}
+	return result
 }
 
 func (c *EvidenceCatalog) call(call atlas.SymbolCall) callEvidence {
