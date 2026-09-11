@@ -3,7 +3,7 @@
 <ul class="plain fact">{{range $i,$row := .Data.Rows}}{{if lt $i 5}}{{template "data-row" $row}}{{end}}{{end}}</ul>
 {{if gt (len .Data.Rows) 5}}<details><summary>{{t "All {0} →" (len .Data.Rows)}}</summary><ul class="plain fact">{{range $i,$row := .Data.Rows}}{{if ge $i 5}}{{template "data-row" $row}}{{end}}{{end}}</ul></details>{{end}}</section>{{end}}
 {{define "data-row"}}<li id="{{.ID}}"><strong><code>{{.Name}}</code></strong> · {{t .Origin}}{{if .Statement}} · <code>{{.Statement}}</code>{{end}}{{if .Partial}} · <span class="meta">{{t "Partial SQL evidence"}}</span>{{end}} · {{template "anchor" .Anchor}}
-<details><summary>{{t "Source details"}}{{if .Columns}} · {{len .Columns}}{{end}}</summary><p class="meta">{{if .Connection}}<code>{{.Connection}}</code>{{else}}{{t "Connection not determined"}}{{end}}</p>
+<details><summary>{{t "Source details"}}{{if .Columns}} · {{len .Columns}}{{end}}</summary>{{if .Connection}}<p class="meta"><code>{{.Connection}}</code></p>{{end}}
 {{if .Columns}}<ul class="plain">{{range .Columns}}<li><code>{{.Name}}{{if .Type}}: {{.Type}}{{end}}</code>{{if .PrimaryKey}} · PK{{end}}{{if .ForeignKey}} · FK → <code>{{.ForeignKey}}</code>{{end}} · {{template "anchor" .Anchor}}</li>{{end}}</ul>{{end}}
 {{if .SQL}}<pre class="source"><code>{{.SQL}}</code></pre>{{end}}
 {{if .Expression}}<pre class="source"><code>{{.Expression}}</code></pre>{{end}}

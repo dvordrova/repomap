@@ -3,7 +3,7 @@ span.anchor{color:var(--ink)}
 .meta,.notes{color:var(--muted);font-size:.9rem}
 .fact{color:var(--ink)}
 .model{color:var(--model);font-style:italic}
-.badge,.model::before{content:"model";display:inline-block;font-style:normal;font-size:var(--text-small);line-height:1;padding:.15rem .35rem;margin-right:.4rem;border-radius:3px;background:var(--model-bg);color:var(--model);vertical-align:middle;letter-spacing:.03em;font-weight:600}
+.badge,.model::before{content:var(--model-badge,"model");display:inline-block;font-style:normal;font-size:var(--text-small);line-height:1;padding:.15rem .35rem;margin-right:.4rem;border-radius:3px;background:var(--model-bg);color:var(--model);vertical-align:middle;letter-spacing:.03em;font-weight:600}
 h4 .badge{margin-left:.4rem;margin-right:0}
 .claim{margin:.6rem 0;padding:.5rem .8rem;border-left:3px solid var(--claim);background:var(--claim-bg);color:var(--ink)}
 .claim p{margin:0;white-space:pre-line}

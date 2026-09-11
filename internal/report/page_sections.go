@@ -398,6 +398,9 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 		})
 	}
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindConfigRead) {
+		if vendoredPath(factSourcePath(fact)) {
+			continue
+		}
 		section.Config = append(section.Config, pageConfig{
 			Key: fact.Key, Default: fact.Value, Anchor: builder.links.factAnchor(fact),
 		})
@@ -405,6 +408,9 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 	// Manifest settings are configuration too: the port a proxy points at or
 	// the command a script runs answers the same reader question.
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindManifest) {
+		if vendoredPath(factSourcePath(fact)) {
+			continue
+		}
 		section.Config = append(section.Config, pageConfig{
 			Key: fact.Key, Default: fact.Value, Anchor: builder.links.factAnchor(fact),
 		})
@@ -415,12 +421,39 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 		}
 	}
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindTODO) {
+		if vendoredPath(factSourcePath(fact)) {
+			continue
+		}
 		section.Todos = append(section.Todos, pageTodo{
 			Text: fact.Text, Anchor: builder.links.factAnchor(fact),
 		})
 	}
 	section.DeadFolders = groupFiles(section.Dead)
 	section.TodoFiles = groupTodos(section.Todos)
+}
+
+// vendoredPath reports a path inside a vendored or generated dependency
+// tree. Its TODO markers, manifests and SQL-looking strings describe the
+// dependency's authors' work, not this repository's; the owner's audit found
+// TODO lists that were vendor-only (gop: 43 of 43 files, meetup: 138 of 139)
+// and a Go error string from vendor/ presented as the frontend's one SQL text.
+// factSourcePath is where a fact was observed: its anchor when it has one,
+// else the path it names.
+func factSourcePath(fact facts.Fact) string {
+	if fact.Anchor != nil && fact.Anchor.Path != "" {
+		return fact.Anchor.Path
+	}
+	return fact.Path
+}
+
+func vendoredPath(path string) bool {
+	for _, segment := range strings.Split(path, "/") {
+		switch segment {
+		case "vendor", "node_modules", "third_party", ".terraform", ".venv", "venv", "site-packages":
+			return true
+		}
+	}
+	return false
 }
 
 func groupFiles(files []pageAnchor) []pageFileFolder {

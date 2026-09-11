@@ -8,6 +8,18 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Less noise on the component page. Configuration, manifest and TODO facts
+  from vendored trees (`vendor/`, `node_modules/`, `third_party/`,
+  `.terraform/`, virtualenvs) and data records from those trees or naming a
+  database's own catalog (`pg_*`, `information_schema`) stay out of the
+  reader's lists: gop's TODO list was 43 of 43 vendor files and its one "SQL
+  text" was a Go error string from vendor/. The data catalog no longer
+  prints "Connection not determined" under every row. The legend defines
+  area, part and key code in words. Fit, zoom and reset sit in the explorer
+  bar instead of a row of their own. Secondary counters and source
+  locations in catalog rows are 12 px under 14 px titles instead of larger
+  than them. The CSS "model" badge is localized through a `--model-badge`
+  variable set from the vocabulary.
 - The map opens on its parts, and hovering a node answers "what is this"
   in a readable card. A root view whose only own node was one area showed a
   single box reading "Open parts · N" (gop, meetup, python-dotenv): that

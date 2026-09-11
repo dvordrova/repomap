@@ -29,6 +29,9 @@
     var bar=document.createElement('div');bar.className='explorer-controls';
     bar.innerHTML=("<div class=\"explorer-modes\" role=\"group\" aria-label=\""+rmT.html("Explore by")+"\"><button type=\"button\" data-structure>"+rmT.html("Structure")+"</button><button type=\"button\" data-operations>"+rmT.html("Operations")+"</button></div><label class=\"explorer-search\">"+rmT.html("Find a part")+" <input type=\"search\" placeholder=\""+rmT.html("Name or description")+"\" aria-label=\""+rmT.html("Find a part")+"\"></label><button type=\"button\" data-all-uses>"+rmT.html("Clear selection")+"</button><nav class=\"explorer-breadcrumbs\" aria-label=\""+rmT.html("Map path")+"\"></nav>");
     map.prepend(bar);
+    // Fit, zoom and reset belong with the other view controls, not on a row
+    // of their own above the map.
+    var zoomControls=map.querySelector('[data-map-controls]');if(zoomControls)bar.appendChild(zoomControls);
     var structure=bar.querySelector('[data-structure]'), operationMode=bar.querySelector('[data-operations]'), search=bar.querySelector('input'), allUses=bar.querySelector('[data-all-uses]'), crumbs=bar.querySelector('nav');
     operationMode.hidden=!ops.length;
     var operationPicker=document.createElement('div');operationPicker.className='operation-picker';operationPicker.hidden=true;

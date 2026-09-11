@@ -122,7 +122,9 @@
 .outbound-call>summary{font-size:13px;font-weight:500;color:var(--ink);cursor:pointer;overflow-wrap:anywhere}
 .outbound-call>summary .meta{font-weight:400;white-space:nowrap}
 /* Record counts and source locations stay on their line; the catalog's block-level .meta is for standalone lines. */
-.input-catalog [data-integration-item]>.input-title .meta,.repo-inputs .input-title .meta,.input-catalog .outbound-call>summary .meta,.repo-inputs .outbound-call>summary .meta{display:inline;margin:0 0 0 6px}
+.input-catalog [data-integration-item]>.input-title .meta,.repo-inputs .input-title .meta,.input-catalog .outbound-call>summary .meta,.repo-inputs .outbound-call>summary .meta{display:inline;margin:0 0 0 6px;font-size:12px}
+.outbound-call>summary{font-size:14px}
+.explorer-controls .map-controls{margin:0 0 0 auto;padding:0}.explorer-controls .map-controls[hidden]{display:none}
 .outbound-call-body{margin:4px 0 6px 18px}
 .outbound-more{margin:2px 0 0 16px}.outbound-more>summary{list-style:none;font-size:13px;font-weight:500;color:var(--accent);cursor:pointer}
 .outbound-more>summary::-webkit-details-marker{display:none}

@@ -36,6 +36,14 @@ type pageDataOperation struct {
 	Possible                 bool
 }
 
+// catalogTable reports a database's own catalog relation (pg_type,
+// information_schema.columns): SQL that reads it describes the database
+// engine, not this repository's data.
+func catalogTable(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.HasPrefix(lower, "pg_") || strings.HasPrefix(lower, "information_schema.") || lower == "information_schema" || strings.HasPrefix(lower, "sqlite_")
+}
+
 // dataRowID is the page-level id of one data record. Record ids carry a
 // kind prefix such as "entity:" or "query:"; a colon inside a fragment href
 // reads as a URL scheme to html/template, which then replaces the link with
@@ -80,7 +88,7 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 	operations := dataOperationLinks(index)
 	for _, record := range index.Data {
 		data := record.Data
-		if data == nil {
+		if data == nil || vendoredPath(record.Path) || catalogTable(data.Name) {
 			continue
 		}
 		row := pageDataRow{ID: dataRowID(section.ID, record.ID), Name: data.Name, Scope: data.Scope, Connection: data.Connection, SQL: data.SQL, Expression: data.Expression, Statement: data.Statement, Partial: data.Partial, Anchor: builder.links.anchor(record.Path, record.Line, 0)}
