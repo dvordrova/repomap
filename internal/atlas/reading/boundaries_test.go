@@ -367,3 +367,42 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 		t.Fatalf("source graph, boundary count or original call anchor changed: %+v", got)
 	}
 }
+
+func TestColumnlessNativeFactClaimsItsLineAndColumnedFactKeepsOtherCalls(t *testing.T) {
+	// An SDK boundary from an external_call observation carries no column.
+	// Morfeu 20260911-152759 reviewed internal/broker/client.go:166 twice,
+	// as bnd:…:166:sdk and as out:…PublicarComConfirm:166:42, and the
+	// outbound page listed the call twice.
+	call := atlas.SymbolCall{Name: "amqp091.Channel.PublishWithDeferredConfirm", Kind: "invokes_external", Line: 166, Column: 42}
+	symbol := atlas.Place{ID: "owner", Kind: atlas.PlaceSymbol, Path: "client.go", LineNo: 143, Parent: "file:client", TargetIDs: []string{"service"},
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "caller", Name: "Client.PublicarComConfirm"}, Calls: []atlas.SymbolCall{call}}}
+	fact := func(column int) atlas.Place {
+		return atlas.Place{ID: "native", Kind: atlas.PlaceBoundary, Path: "client.go", LineNo: 166, Column: column, Parent: "file:client", TargetIDs: []string{"service"},
+			Given: "RabbitMQ broker", Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "sdk"}},
+				ObjectID: "caller", Direction: atlas.DirectionOut, GivenKind: atlas.BoundarySDK}}
+	}
+	for _, test := range []struct {
+		name       string
+		column     int
+		boundaries int
+	}{
+		{"no column claims every call on the line", 0, 1},
+		{"the call's own column claims it", 42, 1},
+		{"another column leaves the call its own review", 9, 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			native := fact(test.column)
+			r := &reader{
+				opts:       Options{Graph: atlas.Graph{Places: []atlas.Place{native, symbol}}},
+				places:     map[string]atlas.Place{native.ID: native, symbol.ID: symbol},
+				outbound:   map[string][]atlas.SymbolCall{symbol.ID: {call}},
+				operations: map[string][3]string{},
+				boundaries: map[string]*boundaryState{native.ID: {place: native, kind: atlas.BoundarySDK}},
+			}
+			r.bindInterpretedBoundaries()
+			if len(r.boundaries) != test.boundaries {
+				t.Fatalf("boundaries = %d, want %d: %+v", len(r.boundaries), test.boundaries, r.boundaries)
+			}
+		})
+	}
+}
