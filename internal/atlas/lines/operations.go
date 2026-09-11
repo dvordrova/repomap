@@ -11,7 +11,7 @@ const StageOperations = "atlas_operations"
 var operationsPrompt string
 
 func Operations() table.Definition {
-	return table.Definition{Stage: StageOperations, Contract: "repomap.atlas.operations.v20", System: operationsPrompt, Independent: true, Memoize: true, Columns: []table.Column{
+	return table.Definition{Stage: StageOperations, Contract: "repomap.atlas.operations.v20", System: withVocabulary(operationsPrompt), Independent: true, Memoize: true, Columns: []table.Column{
 		{Name: "entry", Kind: table.Choice, Options: []string{"self", "none"}, Note: "self requires evidence of the task this declaration fulfils and its independent activation; process entry, asynchronous launch or staying alive alone is insufficient; starting or dispatching the host runtime is none; a task may delegate work to helpers; callers are evidence, never an operation assignment"},
 		{Name: "activation", Kind: table.Choice, Options: []string{"command", "request", "interaction", "scheduled", "continuous"}, When: map[string]string{"entry": "self"}},
 		// Asked only when the row carries registered name refs: a row without

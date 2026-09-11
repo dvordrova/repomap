@@ -38,4 +38,5 @@ func TestCumulativeGoWorkerControlContext(t *testing.T) {
 		29: {{Line: 24, Kind: "for body without condition"}, {Line: 25, Kind: "select without default"}},
 		38: nil,
 	})
+	assertEvidenceVocabulary(t, graph, "control_context", "range body over channel", "for body without condition", "select without default")
 }

@@ -70,7 +70,7 @@ An operation need not be a key symbol. Select only advertised call refs.
 `name@line`, a non-default invocation, and in parentheses the control
 statements holding the call. They are internal delegation, never selectable.
 Possible or unresolved dispatch stays under `calls` and still requires review.
-A call without `invocation` is synchronous; without `resolution` it is exact.
+The evidence vocabulary below defines every rendered value and its default.
 
 Call evidence may include `control_context`: the source statement whose body
 contains that exact call, such as a channel range, an unconditional loop or a

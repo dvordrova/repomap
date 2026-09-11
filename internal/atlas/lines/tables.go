@@ -72,7 +72,7 @@ const MaxKeysPerFile = 5
 func Symbols() table.Definition {
 	return table.Definition{
 		Stage: StageSymbols, Contract: symbolsContract,
-		System: symbolsPrompt, Independent: true, Memoize: true,
+		System: withVocabulary(symbolsPrompt), Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what this declaration does or is"},
 			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, EmptyValue: "none", Note: "short English reader label grounded in this declaration; none when its original name is already clear"},

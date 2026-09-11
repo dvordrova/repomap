@@ -23,6 +23,8 @@ func SymbolSelection(types bool) table.Definition {
 		def.Contract += ".types"
 		return def
 	}
+	// Symbol rows carry calls; their prompt defines every rendered value.
+	def.System = withVocabulary(symbolSelectionPrompt)
 	// The candidate cell is a gate: the operations table reviews every yes
 	// with its own evidence and decides the activation kind itself.
 	def.Columns = append(def.Columns,
