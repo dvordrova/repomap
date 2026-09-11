@@ -9,6 +9,19 @@ type LearningPlan struct {
 	Questions   []LearningQuestion  `json:"questions"`
 	Reviews     []LearningReview    `json:"reviews"`
 	Selections  []LearningSelection `json:"selections,omitempty"`
+	Groups      []LearningGroup     `json:"groups,omitempty"`
+}
+
+// LearningGroup records one consolidation: the questions a merge window
+// found to ask for the same information, folded into their representative,
+// whose entry in Questions carries every member's origins. A group of one is
+// not recorded; that question stands as it was. Round names the window's
+// files under tables/.
+type LearningGroup struct {
+	Representative string   `json:"representative"`
+	Members        []string `json:"members"`
+	Source         string   `json:"source"`
+	Round          int      `json:"round"`
 }
 
 // Selection records whether a proposal belongs to a selected introduction.

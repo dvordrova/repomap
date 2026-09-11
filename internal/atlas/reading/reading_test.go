@@ -163,6 +163,23 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1,
 			Metrics: llm.Metrics{Attempts: 1, UsageReported: true, InputTokens: 10, OutputTokens: 5}}, err
 	}
+	if batch.Task == learningMergeContract {
+		// Every question is a group of one.
+		var merge struct {
+			Questions []struct {
+				Ref string `json:"ref"`
+			} `json:"questions"`
+		}
+		if err := json.Unmarshal(prepared.Bytes(), &merge); err != nil {
+			return llm.Completion{}, err
+		}
+		var groups []map[string]any
+		for _, question := range merge.Questions {
+			groups = append(groups, map[string]any{"representative": question.Ref, "members": []string{question.Ref}})
+		}
+		raw, err := json.Marshal(map[string]any{"groups": groups})
+		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
+	}
 	var learning learningRequest
 	if json.Unmarshal(prepared.Bytes(), &learning) == nil && learning.Evidence != nil && provider.learningFor != nil {
 		raw, err := json.Marshal(provider.learningFor(learning))
@@ -225,10 +242,6 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 		}
 		switch request.Table {
 		case stageLearn:
-			_, merging := answer["representative"]
-			if ref, ok := row["own_ref"].(string); ok && merging {
-				answer["representative"] = ref
-			}
 			if candidates, ok := row["candidate_options"].([]any); ok {
 				var selected []string
 				if !provider.learningSelectNone {

@@ -696,6 +696,8 @@ type learningProvider struct {
 	menuRefs int
 	// reply replaces learningReply as the proposal response when set.
 	reply func() learningResponse
+	// mergeReply replaces the computed grouping as the merge response when set.
+	mergeReply []byte
 }
 
 type learningMenuRequest struct {
@@ -757,32 +759,38 @@ func (p *learningProvider) Complete(_ context.Context, prepared llm.Prepared) (l
 			rows = rows[:len(rows)-1]
 		}
 		raw, _ = json.Marshal(map[string]any{"rows": rows})
-	} else if strings.Contains(prompt.System, "Consolidate learning") {
+	} else if strings.Contains(prompt.System, "Group the learning questions") {
 		var request struct {
-			Rows []map[string]any `json:"rows"`
+			Questions []struct {
+				Ref      string `json:"ref"`
+				Question string `json:"question"`
+			} `json:"questions"`
 		}
 		if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
 			return llm.Completion{}, err
 		}
-		var rows []map[string]string
-		leaseRef := ""
-		for _, row := range request.Rows {
-			if strings.Contains(row["question"].(string), "lease") {
-				leaseRef = row["own_ref"].(string)
-				break
-			}
-		}
-		for _, row := range request.Rows {
-			ref := row["own_ref"].(string)
+		// Every lease question joins the first lease question's group; the
+		// rest are groups of one. A refusing provider names nothing advertised.
+		var groups []map[string]any
+		lease := -1
+		for _, question := range request.Questions {
+			ref := question.Ref
 			if p.refuseMerge {
 				ref = "unadvertised"
 			}
-			if strings.Contains(row["question"].(string), "lease") {
-				ref = leaseRef
+			if strings.Contains(question.Question, "lease") && lease >= 0 {
+				groups[lease]["members"] = append(groups[lease]["members"].([]string), ref)
+				continue
 			}
-			rows = append(rows, map[string]string{"key": row["key"].(string), "representative": ref})
+			if strings.Contains(question.Question, "lease") {
+				lease = len(groups)
+			}
+			groups = append(groups, map[string]any{"representative": ref, "members": []string{ref}})
 		}
-		raw, _ = json.Marshal(map[string]any{"rows": rows})
+		raw, _ = json.Marshal(map[string]any{"groups": groups})
+		if p.mergeReply != nil {
+			raw = p.mergeReply
+		}
 	} else {
 		reply := learningReply()
 		if p.reply != nil {
@@ -1012,7 +1020,7 @@ func TestLearnPromptKeepsAudienceAndMergeContracts(t *testing.T) {
 			t.Fatal("learning request lost the shared English response policy")
 		}
 		if !json.Valid([]byte(prompt.ResponseExample)) || !strings.HasSuffix(prompt.System, prompt.ResponseExample) ||
-			strings.Count(prompt.System, `"rows"`)+strings.Count(prompt.System, `"reviews"`) != 1 {
+			strings.Count(prompt.System, `"rows"`)+strings.Count(prompt.System, `"reviews"`)+strings.Count(prompt.System, `"groups"`) != 1 {
 			t.Fatal("learning request must have one valid response example for its current stage")
 		}
 		seenAudience = seenAudience || strings.Contains(prompt.System, "\n\n"+learningSelectPrompt)
@@ -1083,7 +1091,7 @@ func TestLearningConsolidatesAnswersAndRetainsAllIntentSources(t *testing.T) {
 func TestLearningMergeReviewsEveryPairAcrossContextWindows(t *testing.T) {
 	provider := &learningProvider{}
 	r := isolatedLearningReader(t, t.TempDir(), provider)
-	r.opts.InputBytes = 8000
+	r.opts.InputBytes = 4000
 	r.learning = &atlas.LearningPlan{State: "ready"}
 	for i := 0; i < 9; i++ {
 		r.learning.Questions = append(r.learning.Questions, atlas.LearningQuestion{Question: fmt.Sprintf("Topic %d: %s?", i, strings.Repeat("context ", 70)), Origins: []atlas.LearningOrigin{{Intent: fmt.Sprint(i)}}})
@@ -1091,25 +1099,24 @@ func TestLearningMergeReviewsEveryPairAcrossContextWindows(t *testing.T) {
 	if err := r.mergeLearning(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if r.learning.State != "ready" || len(r.learning.Questions) != 9 {
-		t.Fatal("partitioning discarded questions")
+	if r.learning.State != "ready" || len(r.learning.Questions) != 9 || len(provider.requests) < 2 {
+		t.Fatalf("partitioning discarded questions or did not divide: %d requests", len(provider.requests))
 	}
 	pairs := map[string]bool{}
 	for _, raw := range provider.requests {
 		var prompt llm.Prompt
 		_ = json.Unmarshal(raw, &prompt)
 		var request struct {
-			Context struct {
-				Questions []struct {
-					Question string `json:"question"`
-				} `json:"questions"`
-			} `json:"context"`
+			Task      string `json:"task"`
+			Questions []struct {
+				Question string `json:"question"`
+			} `json:"questions"`
 		}
-		if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
-			t.Fatal(err)
+		if err := json.Unmarshal([]byte(prompt.User), &request); err != nil || request.Task != learningMergeContract {
+			t.Fatalf("merge request form: %v\n%s", err, prompt.User)
 		}
-		for _, a := range request.Context.Questions {
-			for _, b := range request.Context.Questions {
+		for _, a := range request.Questions {
+			for _, b := range request.Questions {
 				if a.Question < b.Question {
 					pairs[a.Question+"|"+b.Question] = true
 				}
@@ -1121,13 +1128,26 @@ func TestLearningMergeReviewsEveryPairAcrossContextWindows(t *testing.T) {
 	}
 }
 
-func TestLearningDoesNotPublishInventedMergeAssignments(t *testing.T) {
+// A refused merge window decides nothing: every question of the pool stays
+// its own group with its own origins, the plan says partial and the journal
+// names the window. There are no independent rows to accept beside it.
+func TestLearningRefusedMergeWindowKeepsEveryQuestion(t *testing.T) {
 	r := isolatedLearningReader(t, t.TempDir(), &learningProvider{refuseMerge: true})
 	if err := r.readLearning(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if r.learning.State != "partial" || len(r.learning.Questions) != 2 || len(r.rejected) == 0 || len(r.learning.Questions[0].Origins) != 2 || r.learning.Questions[1].Question != "What does a revision identify?" {
-		t.Fatal("failed assignment erased originals or an independently accepted merge")
+	var wordings []string
+	for _, question := range r.learning.Questions {
+		if len(question.Origins) != 1 {
+			t.Fatalf("a refused window joined questions: %+v", question)
+		}
+		wordings = append(wordings, question.Question)
+	}
+	if r.learning.State != "partial" || len(r.learning.Groups) != 0 || !reflect.DeepEqual(wordings, []string{"What does a lease control?", "Which data does a lease control?", "What does a revision identify?"}) {
+		t.Fatalf("refused window changed the questions: state %q, %v", r.learning.State, wordings)
+	}
+	if len(r.rejected) != 1 || r.rejected[0].Kind != "window_rejected" || r.rejected[0].Count != 3 || !strings.Contains(r.rejected[0].Reason, "names no advertised ref") {
+		t.Fatalf("journal: %+v", r.rejected)
 	}
 	dry := isolatedLearningReader(t, t.TempDir(), nil)
 	dry.dry = true
