@@ -617,25 +617,17 @@ func Call(def Definition, window Window) (llm.Call[Answers], error) {
 	if err != nil {
 		return llm.Call[Answers]{}, err
 	}
-	row := map[string]string{"key": Key(0)}
 	hasProse := false
 	for _, column := range def.Columns {
-		row[column.Name] = "<computed " + column.Name + ">"
 		// A conditional prose branch is still eligible: the model decides which
 		// branch applies, so row preparation must not erase its glossary support.
 		hasProse = hasProse || column.Kind == Text || column.Kind == Prose
-	}
-	example, err := json.Marshal(struct {
-		Rows []map[string]string `json:"rows"`
-	}{[]map[string]string{row}})
-	if err != nil {
-		return llm.Call[Answers]{}, err
 	}
 	return llm.Call[Answers]{
 		State: state,
 		Prompt: llm.Prompt{
 			System: def.System, User: string(window.Request), ResponseFormatJSON: true,
-			Reasoning: def.Reasoning, ResponseExample: string(example), NoResponseAdjunct: !hasProse,
+			Reasoning: def.Reasoning, ResponseExample: ResponseExample(def), NoResponseAdjunct: !hasProse,
 		},
 		Limits: llm.Limits{
 			MaxRequestBytes:  llm.SemanticRecordByteLimit,
@@ -646,6 +638,30 @@ func Call(def Definition, window Window) (llm.Call[Answers], error) {
 			return Decode(def, window, raw)
 		},
 	}, nil
+}
+
+// ResponseExample is the one-line answer shape appended to every system
+// prompt: the row key first, then the cells in fill order. A map would
+// marshal its keys alphabetically and show the key third; the model copies
+// the shape it sees, and the decoder reads the key before anything else.
+func ResponseExample(def Definition) string {
+	var example strings.Builder
+	example.WriteString(`{"rows":[{"key":`)
+	example.Write(jsonString(Key(0)))
+	for _, column := range def.Columns {
+		example.WriteString(",")
+		example.Write(jsonString(column.Name))
+		example.WriteString(":")
+		example.Write(jsonString("<computed " + column.Name + ">"))
+	}
+	example.WriteString("}]}")
+	return example.String()
+}
+
+func jsonString(value string) []byte {
+	var out jsonBuffer
+	writeJSON(&out, value)
+	return out.Bytes()
 }
 
 func sha256Hex(value []byte) string {

@@ -75,6 +75,32 @@ func TestResponseExampleDependsOnColumnsNotBatchMembership(t *testing.T) {
 	}
 }
 
+// The example is what the model copies. Its key comes first and the cells
+// follow the fill order, on one line, whatever the column names sort to.
+func TestResponseExampleListsKeyFirstThenColumnsInFillOrder(t *testing.T) {
+	def := Definition{Columns: []Column{
+		{Name: "zone", Kind: Choice, Options: []string{"a"}},
+		{Name: "entry", Kind: Choice, Options: []string{"self", "none"}},
+		{Name: "activation", Kind: Choice, Options: []string{"command"}},
+		{Name: `na"me`, Kind: Text},
+	}}
+	example := ResponseExample(def)
+	want := `{"rows":[{"key":"r1","zone":"<computed zone>","entry":"<computed entry>","activation":"<computed activation>","na\"me":"<computed na\"me>"}]}`
+	if example != want {
+		t.Fatalf("example = %s\nwant      %s", example, want)
+	}
+	var decoded struct {
+		Rows []map[string]string `json:"rows"`
+	}
+	if err := json.Unmarshal([]byte(example), &decoded); err != nil || len(decoded.Rows) != 1 || len(decoded.Rows[0]) != 5 || strings.Contains(example, "\n") {
+		t.Fatalf("example is not one valid JSON line: %v", err)
+	}
+	call, err := Call(def, Window{})
+	if err != nil || call.Prompt.ResponseExample != example {
+		t.Fatalf("the prepared call does not carry the ordered example: %v", err)
+	}
+}
+
 func TestWindowsKeepOrderAndBytesAreStable(t *testing.T) {
 	def := testDefinition()
 	first, err := Windows(def, 1, testRows())
