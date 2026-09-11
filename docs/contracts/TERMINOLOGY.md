@@ -88,7 +88,10 @@ Equal names alone never establish equal meanings. Complete groups partition only
 when the provider envelope requires it; a nonshrinking round records partial
 comparison. A refused model window leaves its already accepted input definitions
 separate and stops retrying them in that reduction. Cancellation, invalid local
-inputs/configuration and persistence failures remain terminal. Existing native
+inputs/configuration and persistence failures remain terminal. Each generated term carries a closed `kind` (`acronym`, `domain`,
+`protocol`, `format` or `identifier`); a term without a known kind refuses that
+term alone, and `identifier` terms (environment names, file names, codes) are
+accepted but not published, counted in the journal. Existing native
 code concepts enter the final glossary directly, with whole source anchors and
 map/question destinations. There is no native-to-candidate-to-native conversion.
 Distinct declarations on one line keep their columns and identities; the same

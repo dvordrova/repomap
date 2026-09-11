@@ -72,11 +72,15 @@ first commit and after a commit; they do not stand in for that integration.
 
 ## Repository guidance
 
-The initial guidance classifier may send the complete names-only safe-corpus
-dictionary as a lossless prefix-compressed path tree with compact `f*` leaves,
-the complete closed set of prose-file refs derived from that dictionary, and
-complete textual README and AGENTS.md documents. It sends no other source-file
-contents.
+The initial guidance classifier answers one question: which files does the
+repository guidance name as entries. It sends the candidate files only (the
+names-only safe corpus without prose files and without anything under
+`.claude`, `.github` or `.vscode`) as a lossless prefix-compressed path tree
+with compact `f*` leaves, plus the complete textual README and AGENTS.md
+documents, and reads back `{"files":[{"file_ref","hypotheses"}]}` in JSON
+mode; `target_entry` is the only class, since nothing consumed the others. A
+repository with no candidate file is `not_applicable` (`no_candidate_files`).
+It sends no other source-file contents.
 
 The classifier restores accepted rows only to advertised file refs. Its
 repository-guidance result supplies exact documentation inputs and optional
@@ -87,7 +91,9 @@ identity.
 produces one sealed `reduced-documentation.json` handoff:
 
 - an optional repository overview;
-- source-bound claims and concepts;
+- source-bound concepts, at most twelve per document (the rest are dropped
+  and journaled; claims are no longer requested, nothing read them but the
+  glossary collector);
 - the exact guidance digest;
 - the exact reduction digest.
 

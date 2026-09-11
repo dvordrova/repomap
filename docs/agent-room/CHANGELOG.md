@@ -8,6 +8,18 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Three small stages ask one decision each (schema review, cold fixes).
+  The README classifier asked ten classes over 14 KB of rules while only
+  `target_entry` was consumed, and on Morfeu classified exactly the README
+  files whose text it was given; it now asks which files the guidance names
+  as entries, sends candidate files only (no prose, nothing under
+  `.claude`/`.github`/`.vscode`), and answers `{"files":[…]}` in JSON mode
+  (system prompt 13.6 → 4.8 KB). `documentation_reduce` drops `claims`
+  (read by nothing but the glossary collector, where governance-template
+  phrases entered the report) and caps `concepts` at twelve per document.
+  The glossary labels each term with a closed `kind`; `identifier` terms
+  (54 of Morfeu's 122: env names, file names, `RF01`, skill names) are
+  accepted but not published. Contracts of all three stages bumped.
 - The learning menu is bounded and questions are merged as groups (learn
   select v4, merge v2). Morfeu with the owner's 524,288-token window split
   Learn into 8 windows, each proposing "without quota"; select kept 11–14
