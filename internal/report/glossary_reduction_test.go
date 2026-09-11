@@ -128,7 +128,7 @@ func TestReducedGlossaryAddsDomainDefinitionsBesideUnchangedNativeOwners(t *test
 	if len(proxy.Sources) != 2 || len(proxy.Questions) != 1 || proxy.Questions[0].Href != "#q-proxy" {
 		t.Fatalf("union sources or original question binding lost: %+v", proxy)
 	}
-	templates, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(English, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	templates, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		t.Fatal(err)
 	}

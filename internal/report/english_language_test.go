@@ -29,7 +29,7 @@ func TestQuestionExcerptHeadingsTranslateWithoutChangingOriginalText(t *testing.
 	}
 	for _, language := range []DisplayLanguage{English, Russian} {
 		t.Run(string(language), func(t *testing.T) {
-			parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, params ...any) (string, error) { return uiText(language, key, params...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+			parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -160,7 +160,7 @@ func TestReportRenderingIsEnglishOnly(t *testing.T) {
 				t.Fatal("translating a boundary purpose changed its route label or source anchor")
 			}
 		}
-		parsed, err := template.New("map").Funcs(template.FuncMap{"t": func(key string, params ...any) (string, error) { return uiText(Russian, key, params...) }}).ParseFS(reportTemplateFS, "templates/html/map.html")
+		parsed, err := template.New("map").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/map.html")
 		if err != nil {
 			t.Fatal(err)
 		}

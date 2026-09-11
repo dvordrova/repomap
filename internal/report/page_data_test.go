@@ -51,7 +51,7 @@ func TestDataCataloguePreservesScopeSourceAndActualModelCallAssociations(t *test
 	if len(page.catalog.Entries) != 0 {
 		t.Fatal("native SQL/schema text entered translation")
 	}
-	parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(Russian, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestDataCatalogueLinksQueryOperationsAndScopedTablesBothWays(t *testing.T) 
 	if len(section.Requests[0].Data) != 2 || len(section.RouteGroups[0].Rows[0].Paths[0].Data) != 2 {
 		t.Fatal("first-screen operations lost query/table links")
 	}
-	parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(Russian, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		t.Fatal(err)
 	}

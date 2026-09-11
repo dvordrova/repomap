@@ -69,9 +69,7 @@ func TestDisplaySlotsKeepDistinctMeaningsForIdenticalTranslatedText(t *testing.T
 			t.Fatalf("one text slot acquired another slot's definition: %+v", plan)
 		}
 	}
-	parsed, err := template.New("report").Funcs(template.FuncMap{
-		"t": func(key string, args ...any) (string, error) { return uiText(Russian, key, args...) },
-	}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,9 +115,7 @@ func TestModelProseRefsExcludeTheSourcePreviewHost(t *testing.T) {
 	group := pageGroup{ID: "part", Summary: "A <bank>.", SummaryRef: "t1", Highlights: []pageChipRow{{Path: "parser.go", Members: []pageChip{{
 		Name: "Parser", Line: 12, Summary: "Reads a <bank>.", SummaryRef: "t2", Anchor: pageAnchor{Text: "parser.go:12", Href: "/source/parser.go#L12"},
 	}}}}}
-	parsed, err := template.New("report").Funcs(template.FuncMap{
-		"t": func(key string, args ...any) (string, error) { return uiText(English, key, args...) },
-	}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		t.Fatal(err)
 	}

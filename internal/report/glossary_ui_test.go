@@ -22,9 +22,7 @@ func TestGlossaryHTMLKeepsAnswerTermsAndSourceDistinctDefinitions(t *testing.T) 
 					Questions: []pageLearnLink{{Title: "How does the second parser work?", Href: "#question-second"}},
 					Places:    []pageLearnLink{{Title: "Second parser", Href: "#part-second"}}},
 			}}
-			templates, err := template.New("report").Funcs(template.FuncMap{
-				"t": func(key string, params ...any) (string, error) { return uiText(language, key, params...) },
-			}).ParseFS(reportTemplateFS, "templates/html/*.html")
+			templates, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
 			if err != nil {
 				t.Fatal(err)
 			}

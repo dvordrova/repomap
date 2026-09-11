@@ -223,9 +223,7 @@ func TestQuestionTermsUseSelectedDeclarationsNotNameGuesses(t *testing.T) {
 	if len(terms) != 1 || terms[0].ID != lease.ID || len(terms[0].Places) != 2 || terms[0].Explanation != lease.Explanation {
 		t.Fatalf("wrong or altered explanations: %+v", terms)
 	}
-	templates, err := template.New("report").Funcs(template.FuncMap{
-		"t": func(key string, params ...any) (string, error) { return uiText(English, key, params...) },
-	}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	templates, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		t.Fatal(err)
 	}

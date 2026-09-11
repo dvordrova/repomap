@@ -1,6 +1,9 @@
 package report
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // pageOutbound is one accepted communication record. Destination and Summary
 // are display prose; Address, NativeLabel and External retain source spelling.
@@ -104,6 +107,111 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 		}
 		section.Outbound = append(section.Outbound, row)
 	}
+}
+
+// pageOutboundGroup presents every record naming one destination as one
+// row: the destination, how many records name it, their shared kind, basis
+// and address, and one lead sentence. The records keep their own rows
+// beneath it. Ten records reading "Kubernetes API server" with a paragraph
+// each are one line on the page; nothing is merged in the data.
+type pageOutboundGroup struct {
+	Destination, NativeLabel, KindLabel string
+	Basis, Source, Address              string
+	Addresses                           int
+	Rows                                []pageOutbound
+}
+
+func (group pageOutboundGroup) BasisLabel() string {
+	return pageOutbound{Basis: group.Basis}.BasisLabel()
+}
+
+func (group pageOutboundGroup) AddressText() pageOutboundAddress {
+	return outboundAddressText(group.Address)
+}
+
+// Lead is the first sentence of the first record's purpose, at most 160
+// runes. The full purpose of every record stays in its own row.
+func (group pageOutboundGroup) Lead() string {
+	for _, row := range group.Rows {
+		if text := strings.TrimSpace(row.Summary); text != "" {
+			return leadSentence(text, 160)
+		}
+	}
+	return ""
+}
+
+func leadSentence(text string, limit int) string {
+	if end := strings.Index(text, ". "); end > 0 {
+		text = text[:end+1]
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	cut := limit - 1
+	for cut > limit/2 && runes[cut] != ' ' {
+		cut--
+	}
+	return strings.TrimRight(string(runes[:cut]), " ,;:") + "…"
+}
+
+// groupOutbound groups records by their destination text (case-insensitive),
+// or by native label or kind when the model named no destination. Groups
+// with more records come first; equal counts keep record order. Grouping is
+// a rendering step over translated rows, so it changes no saved data.
+func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
+	var groups []pageOutboundGroup
+	position := make(map[string]int)
+	for _, row := range rows {
+		key := "k\x00" + row.KindLabel
+		switch {
+		case strings.TrimSpace(row.Destination) != "":
+			key = "d\x00" + strings.ToLower(strings.TrimSpace(row.Destination))
+		case row.NativeLabel != "":
+			key = "n\x00" + row.NativeLabel
+		}
+		at, known := position[key]
+		if !known {
+			at = len(groups)
+			position[key] = at
+			groups = append(groups, pageOutboundGroup{Destination: strings.TrimSpace(row.Destination), NativeLabel: row.NativeLabel,
+				KindLabel: row.KindLabel, Basis: row.Basis, Source: row.Source})
+		}
+		group := &groups[at]
+		if group.KindLabel != row.KindLabel {
+			group.KindLabel = "External communication"
+		}
+		if group.Basis != row.Basis {
+			group.Basis = ""
+		}
+		if group.Source != row.Source {
+			group.Source = "model"
+		}
+		group.Rows = append(group.Rows, row)
+	}
+	for i := range groups {
+		addresses := make(map[string]bool)
+		for _, row := range groups[i].Rows {
+			if row.Address != "" {
+				addresses[row.Address] = true
+			}
+			if row.DestinationCount > 1 {
+				for _, use := range row.Uses {
+					if use.Address != "" {
+						addresses[use.Address] = true
+					}
+				}
+			}
+		}
+		groups[i].Addresses = len(addresses)
+		if len(addresses) == 1 {
+			for address := range addresses {
+				groups[i].Address = address
+			}
+		}
+	}
+	sort.SliceStable(groups, func(i, j int) bool { return len(groups[i].Rows) > len(groups[j].Rows) })
+	return groups
 }
 
 func outboundKindLabel(kind string) string {

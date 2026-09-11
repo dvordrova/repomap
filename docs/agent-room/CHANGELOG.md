@@ -8,6 +8,14 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- The "Where this service connects" catalogue groups communication records by
+  destination: one row per destination text (case-insensitive; native label
+  or kind when the model named none) with the record count, the shared kind,
+  basis and address, and the first sentence of one purpose; every record keeps
+  its own row beneath the group. An owner's Go service showed ten
+  "Kubernetes API server" paragraphs and twenty "Postgres" ones as separate
+  rows. Rendering only: no saved data changes; the first screen and the
+  section count show groups.
 - An operation label the model left empty or null takes the first sentence of
   the row's own description (`name_from: description`). An owner's Go service
   on another DeepSeek provider received rows with every schema key present and

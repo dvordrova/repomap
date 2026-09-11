@@ -106,7 +106,7 @@ func TestOperationLabelsKeepEnglishNamesAndExactDeclarationAliases(t *testing.T)
 			if got := question.Answers[0].MapLinks[0].Label; got != "app / "+cases[0].want {
 				t.Fatalf("question link lost the accepted alias: %q", got)
 			}
-			parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(language, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+			parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
 			if err != nil {
 				t.Fatal(err)
 			}

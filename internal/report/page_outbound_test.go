@@ -54,7 +54,7 @@ func TestOutboundSourceUsesDoNotHideBehindOneSelectedAddress(t *testing.T) {
 	if row.Address != "" || row.DestinationCount != 2 || len(row.Uses) != 2 || row.Uses[1].Steps[0].Name != "WriteAudit" {
 		t.Fatalf("shared helper lost a distinct source use: %+v", row)
 	}
-	parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(Russian, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 	if section.Outbound[0].Summary != "Получает свежие рыночные цены." || section.Outbound[0].Address != address || section.Outbound[0].External != "가격조회.Get" {
 		t.Fatalf("translation changed source values or lost destination prose: %+v", section.Outbound[0])
 	}
-	parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(Russian, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 		t.Fatal(err)
 	}
 	html := stdhtml.UnescapeString(out.String())
-	for _, text := range []string{`data-integration-count="7"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "Адрес не определён", "Настройка взаимодействия", "Вызов взаимодействия", `data-open="client.go:21:17"`, "가격조회.Get", address, "все 7 →", "GET /prices"} {
+	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "Адрес не определён", "Настройка взаимодействия", "Вызов взаимодействия", `data-open="client.go:21:17"`, "가격조회.Get", address, "Записи · 5", "Записи · 1", "GET /prices"} {
 		if !strings.Contains(html, text) {
 			t.Fatalf("first-screen inventory lost %q", text)
 		}
@@ -140,9 +140,13 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 	if strings.Index(html, "Куда обращается сервис") > strings.Index(html, `class="component-parts"`) {
 		t.Fatal("outbound inventory moved behind the map")
 	}
-	preview, rest, found := strings.Cut(html, `<details class="input-more">`)
-	if !found || strings.Count(preview, "data-integration-item") != 5 || strings.Count(rest, "data-integration-item") != 2 {
-		t.Fatal("first five/full disclosure lost or duplicated accepted communication records")
+	// Seven records name three destinations: one group per destination on
+	// the page, every record beneath its group, no second disclosure needed.
+	if strings.Count(html, "data-integration-item") != 3 || strings.Count(html, "data-integration-record") != 7 || strings.Contains(html, `<details class="input-more">`) {
+		t.Fatal("destination groups lost or duplicated accepted communication records")
+	}
+	if first := strings.Index(html, `Pricing service <span class="meta">· 5</span>`); first < 0 || first > strings.Index(html, "Trace collector") {
+		t.Fatal("the destination with the most records is not the first group")
 	}
 	if !strings.Contains(html, `data-display-ref="`+section.Outbound[0].SummaryRef+`"`) {
 		t.Fatal("rendered purpose lost its exact display binding")
@@ -188,5 +192,32 @@ func TestOutboundSourcePathsAndFoldKeepOriginalEvidence(t *testing.T) {
 	folded := foldIndexes([]groupindex.Index{index})[0]
 	if len(folded.Outbound) != 2 || folded.Outbound[0].GroupID != "large" || index.Outbound[0].GroupID != "small" {
 		t.Fatal("presentation group folding changed or lost communication evidence")
+	}
+}
+
+func TestOutboundGroupsByDestinationWithSharedAddressAndLead(t *testing.T) {
+	rows := []pageOutbound{
+		{ID: "a", Destination: "Kubernetes API server", Summary: "Lists pods in the namespace. Then filters them.", KindLabel: "SDK", Basis: "dispatch", Source: "model", Address: "{env:KUBECONFIG}"},
+		{ID: "b", Destination: "Postgres", Summary: "Stores events.", KindLabel: "Database", Basis: "dispatch", Source: "model", Address: "{env:DATABASE_URL}"},
+		{ID: "c", Destination: "kubernetes api server", Summary: "Watches deployments.", KindLabel: "SDK", Basis: "configuration", Source: "model", Address: "{env:KUBECONFIG}"},
+		{ID: "d", Destination: "Postgres", Summary: "Reads events.", KindLabel: "Database", Basis: "dispatch", Source: "model", Address: "{env:REPLICA_URL}"},
+		{ID: "e", Destination: "Postgres", Summary: "Deletes events.", KindLabel: "Database", Basis: "dispatch", Source: "model"},
+		{ID: "f", NativeLabel: "GET https://metrics.example/push", KindLabel: "HTTP", Source: "fact"},
+	}
+	groups := groupOutbound(rows)
+	if len(groups) != 3 || groups[0].Destination != "Postgres" || len(groups[0].Rows) != 3 || groups[1].Destination != "Kubernetes API server" || len(groups[1].Rows) != 2 || groups[2].NativeLabel != "GET https://metrics.example/push" {
+		t.Fatalf("groups by destination, most records first: %+v", groups)
+	}
+	if groups[0].Addresses != 2 || groups[0].Address != "" || groups[1].Addresses != 1 || groups[1].Address != "{env:KUBECONFIG}" {
+		t.Fatalf("shared address not aggregated: %+v", groups[:2])
+	}
+	if groups[1].Basis != "" || groups[0].Basis != "dispatch" || groups[1].KindLabel != "SDK" {
+		t.Fatalf("mixed basis or kind not neutralised: %+v", groups[:2])
+	}
+	if groups[1].Lead() != "Lists pods in the namespace." || groups[2].Lead() != "" {
+		t.Fatalf("lead sentence: %q / %q", groups[1].Lead(), groups[2].Lead())
+	}
+	if groups[0].Rows[0].ID != "b" || groups[0].Rows[2].ID != "e" {
+		t.Fatalf("record order inside a group changed: %+v", groups[0].Rows)
 	}
 }

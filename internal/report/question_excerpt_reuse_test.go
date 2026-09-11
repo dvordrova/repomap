@@ -81,7 +81,7 @@ func TestQuestionOriginExcerptsReferenceOnlyTheirOwnAnswer(t *testing.T) {
 	}
 	for _, language := range []DisplayLanguage{English, Russian} {
 		t.Run(string(language), func(t *testing.T) {
-			parsed, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, args ...any) (string, error) { return uiText(language, key, args...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+			parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
 			if err != nil {
 				t.Fatal(err)
 			}

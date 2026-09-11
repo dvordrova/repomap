@@ -191,7 +191,7 @@ func executeProgramReport(data *ReportData, options RenderOptions, localRoots []
 	}
 	view.CSS = template.CSS(styles)
 	view.JS = template.JS(scripts)
-	pageTemplate, err := template.New("report").Funcs(template.FuncMap{"t": func(key string, params ...any) (string, error) { return uiText(view.Language, key, params...) }}).ParseFS(reportTemplateFS, "templates/html/*.html")
+	pageTemplate, err := template.New("report").Funcs(pageTemplateFuncs(view.Language)).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("report: parse embedded page templates: %w", err)
 	}
@@ -882,4 +882,14 @@ func decodeStrictReportJSON(reportJSON []byte) (ReportData, error) {
 		return ReportData{}, fmt.Errorf("report: unsupported report format version %d", data.FormatVersion)
 	}
 	return data, nil
+}
+
+// pageTemplateFuncs are the functions every page template may call: t for
+// the static UI vocabulary and outboundGroups for the destination-grouped
+// communication catalogue.
+func pageTemplateFuncs(language DisplayLanguage) template.FuncMap {
+	return template.FuncMap{
+		"t":              func(key string, params ...any) (string, error) { return uiText(language, key, params...) },
+		"outboundGroups": groupOutbound,
+	}
 }
