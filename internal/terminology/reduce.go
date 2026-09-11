@@ -65,7 +65,12 @@ func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, c
 		}
 		current = append(current, entry)
 	}
-	for len(current) > 1 {
+	// A catalogue of singletons whose names never coincide leaves the model
+	// nothing to decide: every group can only be assigned to itself. Morfeu
+	// 20260911-152759 sent 121 such entries in a 36 KB window and got 121
+	// self-assignments back. Names that differ only by case are the
+	// spellings the comparison exists to join, so they still go.
+	for len(current) > 1 && !distinctSingletons(current) {
 		if err := ctx.Err(); err != nil {
 			return Catalog{}, err
 		}
@@ -182,6 +187,23 @@ func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, c
 		return Catalog{}, err
 	}
 	return result, nil
+}
+
+// distinctSingletons reports whether every entry holds one variant and no
+// two entries share a name once case is folded.
+func distinctSingletons(entries []Entry) bool {
+	seen := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if len(entry.Variants) != 1 {
+			return false
+		}
+		name := strings.ToLower(strings.TrimSpace(entry.Variants[0].Name))
+		if _, taken := seen[name]; taken {
+			return false
+		}
+		seen[name] = struct{}{}
+	}
+	return true
 }
 
 type wireVariant struct {

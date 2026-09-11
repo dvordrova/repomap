@@ -62,7 +62,7 @@ func TestGlossaryClientTimeoutPreservesOptionalWorkButRunCancellationAborts(t *t
 							return len(collector.pending) == 2 && len(got) == 1 && got[0].Name == "Alpha" && reflect.DeepEqual(got[0].Sources, items[0].Sources) && reflect.DeepEqual(got[0].Origins, []Origin{items[0].Origin})
 						}
 					} else {
-						items := []Candidate{termCandidate("Alpha", "First original definition.", "a.py"), termCandidate("Beta", "Second original definition.", "b.py")}
+						items := []Candidate{termCandidate("Alpha", "First original definition.", "a.py"), termCandidate("alpha", "Second original definition.", "b.py")}
 						var entries []Entry
 						for _, item := range items {
 							entry, err := makeEntry(item.Explanation, []Candidate{item})

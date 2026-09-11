@@ -115,11 +115,12 @@ func termCandidate(name, explanation, file string) Candidate {
 }
 
 func TestReduceAliasesRetainsEveryOriginalAndUsesExactCache(t *testing.T) {
-	items := []Candidate{termCandidate("DAG", "A directed acyclic graph.", "graph.py"), termCandidate("directed acyclic graph", "A graph with no directed cycles.", "graph.py")}
+	// The two spellings of DAG open the comparison; the alias joins them.
+	items := []Candidate{termCandidate("DAG", "A directed acyclic graph.", "graph.py"), termCandidate("dag", "The graph without directed cycles.", "graph.py"), termCandidate("directed acyclic graph", "A graph with no directed cycles.", "graph.py")}
 	provider := &reductionProvider{merge: true}
 	executor := llm.Executor{RootDir: t.TempDir(), Enabled: true}
 	got, err := Reduce(t.Context(), executor, provider, items)
-	if err != nil || len(got.Entries) != 1 || got.PartialComparison || len(got.Entries[0].Names) != 2 || len(got.Entries[0].Variants) != 2 {
+	if err != nil || len(got.Entries) != 1 || got.PartialComparison || len(got.Entries[0].Names) != 3 || len(got.Entries[0].Variants) != 3 {
 		t.Fatalf("reduction = %+v, %v", got, err)
 	}
 	if got.Entries[0].Explanation != items[0].Explanation && got.Entries[0].Explanation != items[1].Explanation {
@@ -133,7 +134,7 @@ func TestReduceAliasesRetainsEveryOriginalAndUsesExactCache(t *testing.T) {
 			t.Fatal("local canonical identity or request provenance leaked into provider input")
 		}
 	}
-	warm, err := Reduce(t.Context(), executor, provider, []Candidate{items[1], items[0]})
+	warm, err := Reduce(t.Context(), executor, provider, []Candidate{items[2], items[0], items[1]})
 	if err != nil || provider.calls != 1 || !reflect.DeepEqual(got, warm) {
 		t.Fatalf("reorder lost exact cache or canonical identity: calls=%d err=%v", provider.calls, err)
 	}
@@ -152,7 +153,7 @@ func TestReduceAliasesRetainsEveryOriginalAndUsesExactCache(t *testing.T) {
 }
 
 func TestReduceClosedReferencesAndCompleteCoverage(t *testing.T) {
-	items := []Candidate{termCandidate("alpha", "Alpha meaning.", "a.py"), termCandidate("beta", "Beta meaning.", "b.py")}
+	items := []Candidate{termCandidate("Alpha", "Alpha meaning.", "a.py"), termCandidate("alpha", "The same name in lower case.", "b.py")}
 	var originals []Entry
 	for _, item := range items {
 		entry, err := makeEntry(item.Explanation, []Candidate{item})
@@ -267,7 +268,7 @@ func TestRefusedGlossaryRecordsItsReasonAndExactResponse(t *testing.T) {
 	defer writer.Close()
 	executor := debugdump.BindStage(llm.Executor{Enabled: true, RootDir: root, Observer: debugdump.NewSemanticObserver(writer)}, StageName)
 	provider := &reductionProvider{response: `{"assignments":[{"ref":"g2","representative":"v2"}]}`}
-	items := []Candidate{termCandidate("BLD", "An endpoint identifier.", "README.md"), termCandidate("KRX", "The exchange.", "README.md")}
+	items := []Candidate{termCandidate("BLD", "An endpoint identifier.", "README.md"), termCandidate("bld", "The same identifier in lower case.", "README.md")}
 	got, err := Reduce(t.Context(), executor, provider, items)
 	if err != nil || !got.PartialComparison || len(got.Entries) != 2 || len(got.Requests) != 0 {
 		t.Fatalf("refused grouping changed accepted definitions: %+v / %v", got, err)
@@ -300,7 +301,7 @@ func TestRefusedGlossaryRecordsItsReasonAndExactResponse(t *testing.T) {
 func TestReduceAdaptiveWindowsRetainEvidenceAndReportFixedPoint(t *testing.T) {
 	var items []Candidate
 	for i := range 4 {
-		items = append(items, termCandidate(fmt.Sprintf("name-%d", i), fmt.Sprintf("Original explanation %d.", i), "terms.py"))
+		items = append(items, termCandidate([]string{"TERM", "Term", "tErm", "term"}[i], fmt.Sprintf("Original explanation %d.", i), "terms.py"))
 	}
 	for _, kind := range []llm.ResourceLimitKind{llm.ResourceLimitContextTokens, llm.ResourceLimitOutputTokens, llm.ResourceLimitResponseBytes} {
 		t.Run(string(kind), func(t *testing.T) {
@@ -352,7 +353,7 @@ func TestReduceEmptyAndAtomicResourceFailure(t *testing.T) {
 	if err != nil || len(single.Entries) != 1 || single.PartialComparison || single.Validate() != nil {
 		t.Fatal("a single accepted definition required a provider comparison")
 	}
-	items = append(items, termCandidate("Second", "Another complete original.", "second.py"))
+	items = append(items, termCandidate("only", "Another complete original under the same name.", "second.py"))
 	provider := &reductionProvider{refusal: llm.ResourceLimitOutputTokens}
 	got, err := Reduce(t.Context(), llm.Executor{}, provider, items)
 	if err != nil || len(got.Entries) != 2 || !got.PartialComparison || provider.calls != 3 {
@@ -367,12 +368,12 @@ func TestReduceEmptyAndAtomicResourceFailure(t *testing.T) {
 
 func TestReduceRefusedWindowPreservesOriginalsAndAcceptedSibling(t *testing.T) {
 	var items []Candidate
-	for _, name := range []string{"aa", "bb", "cc", "dd"} {
+	for _, name := range []string{"AA", "AB", "aa", "ab"} {
 		item := termCandidate(name, "An accepted original definition.", name+".py")
 		item.Origins = []Origin{{RequestSHA256: "original-request-" + name, Row: "r1"}}
 		items = append(items, item)
 	}
-	provider := &reductionProvider{prepareLimit: 2, merge: true, rejectName: "aa"}
+	provider := &reductionProvider{prepareLimit: 2, merge: true, rejectName: "AA"}
 	var failures, accepted int
 	executor := llm.Executor{RootDir: t.TempDir(), Enabled: true, BatchConcurrency: 2, Observer: llm.ObserverFunc(func(event llm.Event) error {
 		if event.Kind == llm.EventFailure {
@@ -414,7 +415,7 @@ func TestReduceRefusedWindowPreservesOriginalsAndAcceptedSibling(t *testing.T) {
 }
 
 func TestReduceStageRefusalDoesNotSwallowLocalOrPersistenceFailures(t *testing.T) {
-	items := []Candidate{termCandidate("alpha", "Alpha definition.", "a.py"), termCandidate("beta", "Beta definition.", "b.py")}
+	items := []Candidate{termCandidate("Alpha", "Alpha definition.", "a.py"), termCandidate("alpha", "The same name in lower case.", "b.py")}
 	t.Run("provider failure preserves accepted definitions", func(t *testing.T) {
 		provider := &reductionProvider{completeError: errors.New("service unavailable")}
 		got, err := Reduce(t.Context(), llm.Executor{}, provider, items)
@@ -468,7 +469,7 @@ func TestReduceStageRefusalDoesNotSwallowLocalOrPersistenceFailures(t *testing.T
 func TestReduceCompleteCatalogueHasNoCandidateCountQuota(t *testing.T) {
 	var items []Candidate
 	for i := range 605 {
-		items = append(items, termCandidate(fmt.Sprintf("Term%03d", i), "An original source-bound explanation.", fmt.Sprintf("sources/%03d.py", i)))
+		items = append(items, termCandidate(fmt.Sprintf("Term%03d", i/2), "An original source-bound explanation.", fmt.Sprintf("sources/%03d.py", i)))
 	}
 	provider := &reductionProvider{}
 	got, err := Reduce(t.Context(), llm.Executor{}, provider, items)
@@ -490,5 +491,27 @@ func TestReduceRejectsNoncanonicalSavedSourcesBeforeProvider(t *testing.T) {
 				t.Fatal("a noncanonical saved source acquired catalogue authority")
 			}
 		})
+	}
+}
+
+// Morfeu 20260911-152759 sent 121 singletons under 121 different names in a
+// 36 KB window and received 121 assignments of each group to itself.
+func TestReduceSkipsTheProviderWhenSingletonNamesNeverMeet(t *testing.T) {
+	items := []Candidate{termCandidate("Alpha", "The first term.", "a.py"), termCandidate("Beta", "The second term.", "b.py"), termCandidate("Gamma", "The third term.", "c.py")}
+	provider := &reductionProvider{merge: true}
+	got, err := Reduce(t.Context(), llm.Executor{}, provider, items)
+	if err != nil || provider.calls != 0 || len(got.Entries) != 3 || got.PartialComparison || len(got.Requests) != 0 || got.Validate() != nil {
+		t.Fatalf("distinct singletons reached the provider or lost entries: calls=%d got=%+v err=%v", provider.calls, got, err)
+	}
+	for _, entry := range got.Entries {
+		if len(entry.Variants) != 1 || len(entry.Sources) != 1 {
+			t.Fatalf("an unasked entry changed: %+v", entry)
+		}
+	}
+	// The same name in another case is a comparison only the model can make.
+	items[2] = termCandidate("alpha", "The first term, in lower case.", "c.py")
+	got, err = Reduce(t.Context(), llm.Executor{}, provider, items)
+	if err != nil || provider.calls != 1 || len(got.Entries) != 1 || len(got.Entries[0].Variants) != 3 {
+		t.Fatalf("case-folded duplicates skipped the provider: calls=%d got=%+v err=%v", provider.calls, got, err)
 	}
 }

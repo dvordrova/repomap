@@ -62,7 +62,7 @@ func TestReductionSourceCataloguesPreserveEveryScopeAcrossChildren(t *testing.T)
 	shared := []Source{{Path: "README.md", Line: 0}, {Path: "src/시세.py", Line: 12}, {Path: "src/시세.py", Line: 21}}
 	items := []Candidate{
 		{Name: "Price", Explanation: "The current quoted price.", Sources: shared, Origins: []Origin{{RequestSHA256: "original-price", Row: "r1"}}},
-		{Name: "Quote", Explanation: "The exchange's quote.\nIts price may change.", Sources: shared, Origins: []Origin{{RequestSHA256: "original-quote", Row: "r2"}}},
+		{Name: "price", Explanation: "The exchange's quote.\nIts price may change.", Sources: shared, Origins: []Origin{{RequestSHA256: "original-quote", Row: "r2"}}},
 		{Name: "LastTrade", Explanation: "One completed trade, not a live quote.", Sources: []Source{{Path: "src/시세.py", Line: 12}}, Origins: []Origin{{RequestSHA256: "original-trade", Row: "r3"}}},
 		{Name: "TradeHistory", Explanation: "The exchange's completed trades.", Sources: []Source{{Path: "src/시세.py", Line: 12}, {Path: "src/시세.py", Line: 38}}, Origins: []Origin{{RequestSHA256: "original-history", Row: "r4"}}},
 	}
