@@ -8,6 +8,23 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- A refused answer window divides by questions before giving up. Morfeu
+  `20260911-112125`: one empty provider response (`provider_no_content`)
+  made all 22 questions of a window unavailable; only resource refusals
+  divided a window. A failed call, an unusable envelope or a response with
+  no accepted row on a shared window now divides its questions like a
+  resource refusal until a request holds one question; the journal keeps
+  the refused attempt as superseded and the console says why the window
+  continues in smaller requests. Request bytes unchanged.
+- A text the translator refuses stays in the source language instead of
+  failing the run. The owner's run lost `t38` three times in single-entry
+  windows, and by the previous code a terminal single-entry refusal ended
+  the whole run after every stage had finished. `Translate` now keeps such
+  an entry untranslated, `rejected.jsonl` gets an `entry_untranslated` row
+  per text and the console names them once; a failure before any provider
+  answer still fails the stage. `ExecuteAdaptiveJSONEachResults` exposes a
+  terminal leaf beside the completed cover; the old entry point behaves as
+  before.
 - Learn reads a review without a reason and drops bad questions singly.
   Freqtrade run 20260910-144751, Learn window w3: eight `questions` reviews
   with 26 questions and `"reason": ""` on every one were all refused

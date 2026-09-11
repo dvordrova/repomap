@@ -164,7 +164,11 @@ An operation or native route exposes Data links only when the existing accepted 
   are published or cached as accepted answers. The same exact-request split
   memo records this as `response_validation`, not a provider resource limit,
   and applies it only while the owning stage opts in. Valid child windows keep
-  their ordinary cache entries; an invalid singleton remains a concrete error.
+  their ordinary cache entries. A singleton the provider answered but refused
+  (missing entry, placeholder mismatch, validation or envelope failure, resource
+  refusal) keeps its source-language text: the entry is published untranslated,
+  `rejected.jsonl` gets an `entry_untranslated` row per text and the console
+  names them once; a failure before any provider answer still fails the stage.
 - Display translation starts with at least eight complete windows (or one per
   text for a smaller catalogue), balanced by original text bytes, after checking
   for an accepted whole-window answer. The existing four-worker pool executes

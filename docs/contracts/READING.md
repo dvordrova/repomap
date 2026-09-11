@@ -197,9 +197,13 @@ first and rebuild each child's complete evidence union. Only a singleton questio
 whose complete evidence does not fit partitions its original sources into
 separate answer parts. Each question validates independently: a malformed,
 missing or duplicate answer leaves that question unavailable while accepted
-neighbours survive. An unparseable response refuses its whole window without
-repair or a speculative retry. Explicit
-read-stage development budgets still apply.
+neighbours survive. An unparseable response, a failed provider call or a
+response with no accepted row on a window of several questions divides the
+questions the same way a resource refusal does, rebuilding each child's complete
+evidence, until a request holds one question; that question's refusal is its
+unavailable answer. The refused attempt stays in the journal as superseded;
+nothing is repaired or retried with the same bytes. Explicit read-stage
+development budgets still apply.
 Final answer prose preserves paragraphs and complete qualifications; only
 short label cells are whitespace-collapsed or length-trimmed. Source checks
 keep owned declarations together, each with its original code link.
