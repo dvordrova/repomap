@@ -262,6 +262,10 @@ func selectRepositoryTargetPlanForRun(
 	if err != nil {
 		return repositoryTargetPlan{}, fmt.Errorf("merge repository target hypotheses: %w", err)
 	}
+	// Hooks, workflows and editor settings are not offered as targets: the
+	// same rule keeps the file hypotheses, the exact representatives and
+	// the native rows consistent for the one portfolio request.
+	merged = withoutRepositoryToolingCandidates(options.Repository, merged)
 	if len(merged) == 0 {
 		return repositoryTargetPlan{}, fmt.Errorf("repository target discovery returned no file hypotheses")
 	}
@@ -269,8 +273,9 @@ func selectRepositoryTargetPlanForRun(
 	if err != nil {
 		return repositoryTargetPlan{}, fmt.Errorf("bind exact repository target authority: %w", err)
 	}
+	requiredTargetFileRefs = withoutRepositoryToolingRefs(options.Repository, requiredTargetFileRefs)
 
-	native, err := repositoryNativeCandidates(discovery)
+	native, err := repositoryNativeCandidates(options.Repository, discovery)
 	if err != nil {
 		return repositoryTargetPlan{}, fmt.Errorf("native target evidence: %w", err)
 	}

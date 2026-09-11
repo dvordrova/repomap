@@ -47,7 +47,7 @@ func TestRepositoryNativeCandidatesAcceptAnEmptyPythonSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidates, err := repositoryNativeCandidates(discovery)
+	candidates, err := repositoryNativeCandidates(repository, discovery)
 	if err != nil {
 		t.Fatalf("an empty Python selection failed the run: %v", err)
 	}

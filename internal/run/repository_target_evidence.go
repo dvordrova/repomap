@@ -30,8 +30,62 @@ type repositoryNativeCandidate struct {
 	Consumers []repositoryTargetKey
 }
 
-func repositoryNativeCandidates(discovery repositoryTargetDiscovery) ([]repositoryNativeCandidate, error) {
+// repositoryToolingDirectories hold what surrounds a repository's programs,
+// not the programs: agent hooks, CI workflows and actions, editor settings.
+// A script found there is no target hypothesis. Morfeu's
+// .claude/hooks/obsidian-session-context.py carries a main guard, reached
+// the portfolio as a native target (launch_root, root ".") and ended every
+// run with WARN "Target not analyzed".
+var repositoryToolingDirectories = []string{".claude", ".github", ".vscode"}
+
+// repositoryToolingPath reports whether a repository-relative file lies in a
+// tooling directory at any depth.
+func repositoryToolingPath(filePath string) bool {
+	for _, segment := range strings.Split(path.Dir(filePath), "/") {
+		if slices.Contains(repositoryToolingDirectories, segment) {
+			return true
+		}
+	}
+	return false
+}
+
+func repositoryToolingFileRef(repository *corpus.Corpus, fileRef corpus.FileID) bool {
+	if repository == nil {
+		return false
+	}
+	info, ok := repository.Info(fileRef)
+	return ok && repositoryToolingPath(info.Entry.Path)
+}
+
+// withoutRepositoryToolingCandidates keeps the file hypotheses the portfolio
+// may see: none from a tooling directory.
+func withoutRepositoryToolingCandidates(repository *corpus.Corpus, candidates []analysistarget.FileCandidate) []analysistarget.FileCandidate {
+	kept := make([]analysistarget.FileCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if !repositoryToolingFileRef(repository, candidate.FileRef) {
+			kept = append(kept, candidate)
+		}
+	}
+	return kept
+}
+
+func withoutRepositoryToolingRefs(repository *corpus.Corpus, refs []corpus.FileID) []corpus.FileID {
+	kept := make([]corpus.FileID, 0, len(refs))
+	for _, ref := range refs {
+		if !repositoryToolingFileRef(repository, ref) {
+			kept = append(kept, ref)
+		}
+	}
+	return kept
+}
+
+// repositoryNativeCandidates restores every exact native target and offers
+// those whose representative file lies outside the tooling directories. A
+// kept target may still name an excluded one as a seed owner; that owner is
+// simply not offered, as it is no candidate the model could choose.
+func repositoryNativeCandidates(repository *corpus.Corpus, discovery repositoryTargetDiscovery) ([]repositoryNativeCandidate, error) {
 	var result []repositoryNativeCandidate
+	tooling := make(map[repositoryTargetKey]struct{})
 	for _, adapter := range discovery.adapters {
 		rows, err := adapter.RestoreFiles(adapter.RequiredFileRefs)
 		if err != nil {
@@ -47,6 +101,10 @@ func repositoryNativeCandidates(discovery repositoryTargetDiscovery) ([]reposito
 					representative = ref
 					break
 				}
+			}
+			if repositoryToolingFileRef(repository, representative) {
+				tooling[row.Target.Key] = struct{}{}
+				continue
 			}
 			result = append(result, repositoryNativeCandidate{Target: row.Target, Row: targetportfolio.NativeCandidate{
 				FileRef: representative, Language: string(adapter.Key), Kind: string(row.Target.Scope), Name: row.Target.Display,
@@ -76,6 +134,9 @@ func repositoryNativeCandidates(discovery repositoryTargetDiscovery) ([]reposito
 		candidate.Row.Evidence = facts.Observations
 		candidate.Consumers = facts.Consumers
 		for _, key := range facts.SeedOwners {
+			if _, excluded := tooling[key]; excluded {
+				continue
+			}
 			owner, ok := byKey[key]
 			if !ok {
 				return nil, fmt.Errorf("seed owner is outside the exact native catalogue")

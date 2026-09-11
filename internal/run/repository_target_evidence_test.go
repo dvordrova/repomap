@@ -41,7 +41,7 @@ func TestCumulativeNativeEvidenceSeparatesGoConsumersAndJSTSPackages(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			native, err := repositoryNativeCandidates(discovery)
+			native, err := repositoryNativeCandidates(repository, discovery)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -125,7 +125,7 @@ func TestCumulativePythonLaunchFactsReachPortfolioWithoutRemovingShebangCandidat
 			if err != nil {
 				t.Fatal(err)
 			}
-			native, err := repositoryNativeCandidates(discovery)
+			native, err := repositoryNativeCandidates(repository, discovery)
 			if err != nil {
 				t.Fatal(err)
 			}

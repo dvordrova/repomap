@@ -30,7 +30,7 @@ func TestSoleConsumerModuleLibraryFoldsIntoItsExecutable(t *testing.T) {
 	if discovery.guidance, err = guidance.GuidanceSnapshot(); err != nil {
 		t.Fatal(err)
 	}
-	native, err := repositoryNativeCandidates(discovery)
+	native, err := repositoryNativeCandidates(repository, discovery)
 	if err != nil {
 		t.Fatal(err)
 	}

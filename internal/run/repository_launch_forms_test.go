@@ -25,7 +25,7 @@ func TestCumulativePythonLaunchFormsReachPortfolioAndRetainAllSeeds(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	native, err := repositoryNativeCandidates(discovery)
+	native, err := repositoryNativeCandidates(repository, discovery)
 	if err != nil {
 		t.Fatal(err)
 	}
