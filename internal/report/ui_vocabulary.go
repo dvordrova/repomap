@@ -41,6 +41,7 @@ var russianUI = map[string]string{
 	"Expand · {0} more": "Развернуть · ещё {0}",
 	"An area is a directory or a group of directories with one role; a part is a group of code with one role inside it; key code is the declarations of a part that carry an explanation, the rest waits under All N.": "Область это каталог или группа каталогов с одной ролью; часть это группа кода с одной ролью внутри области; ключевой код это объявления части, у которых есть объяснение, остальное под «все N».",
 	"model":                             "модель",
+	"Other":                             "Прочее",
 	"Address not determined":            "Адрес не определён",
 	"Address":                           "Адрес",
 	"Address from command-line option":  "Адрес из параметра запуска",

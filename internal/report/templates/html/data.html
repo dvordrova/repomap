@@ -1,7 +1,8 @@
 {{if .Data.Rows}}<section id="{{.ID}}-data" class="data-catalog"><h3>{{t "Data"}} · {{t "Tables"}} {{.Data.Tables}} · {{t "SQL texts"}} {{.Data.Queries}}</h3>
 <p class="meta">{{t "Source declarations and SQL text; database execution is not established."}}</p>
-<ul class="plain fact">{{range $i,$row := .Data.Rows}}{{if lt $i 5}}{{template "data-row" $row}}{{end}}{{end}}</ul>
-{{if gt (len .Data.Rows) 5}}<details><summary>{{t "All {0} →" (len .Data.Rows)}}</summary><ul class="plain fact">{{range $i,$row := .Data.Rows}}{{if ge $i 5}}{{template "data-row" $row}}{{end}}{{end}}</ul></details>{{end}}</section>{{end}}
+{{with .Data.TableRows}}<h4 class="data-kind">{{t "Tables"}} <span class="meta">· {{len .}}</span></h4>{{template "data-rows" .}}{{end}}
+{{with .Data.QueryRows}}<h4 class="data-kind">{{t "SQL texts"}} <span class="meta">· {{len .}}</span></h4>{{template "data-rows" .}}{{end}}</section>{{end}}
+{{define "data-rows"}}<ul class="plain fact">{{range $i,$row := .}}{{if lt $i 5}}{{template "data-row" $row}}{{end}}{{end}}</ul>{{if gt (len .) 5}}<details><summary>{{t "All {0} →" (len .)}}</summary><ul class="plain fact">{{range $i,$row := .}}{{if ge $i 5}}{{template "data-row" $row}}{{end}}{{end}}</ul></details>{{end}}{{end}}
 {{define "data-row"}}<li id="{{.ID}}"><strong><code>{{.Name}}</code></strong> · {{t .Origin}}{{if .Statement}} · <code>{{.Statement}}</code>{{end}}{{if .Partial}} · <span class="meta">{{t "Partial SQL evidence"}}</span>{{end}} · {{template "anchor" .Anchor}}
 <details><summary>{{t "Source details"}}{{if .Columns}} · {{len .Columns}}{{end}}</summary>{{if .Connection}}<p class="meta"><code>{{.Connection}}</code></p>{{end}}
 {{if .Columns}}<ul class="plain">{{range .Columns}}<li><code>{{.Name}}{{if .Type}}: {{.Type}}{{end}}</code>{{if .PrimaryKey}} · PK{{end}}{{if .ForeignKey}} · FK → <code>{{.ForeignKey}}</code>{{end}} · {{template "anchor" .Anchor}}</li>{{end}}</ul>{{end}}

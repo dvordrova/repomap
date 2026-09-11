@@ -1,5 +1,10 @@
 // Disclosures change the first view only; the complete original rows stay in HTML.
-document.querySelectorAll('[data-input-group],[data-integration-group]').forEach(function(group){
+document.querySelectorAll('[data-input-group],[data-integration-group]').forEach(function(section){
+  // A long list grouped by source file compacts within each file.
+  var scopes=section.querySelectorAll('[data-input-subgroup]');
+  (scopes.length?Array.from(scopes):[section]).forEach(compactCatalog);
+});
+function compactCatalog(group){
   var items=Array.from(group.querySelectorAll('[data-input-item],[data-integration-item]'));
   var kinds=new Set(items.map(function(item){return item.querySelector('.input-kind')?.textContent||'';}));
   if(kinds.size===1)group.querySelectorAll('.input-kind').forEach(function(kind){kind.hidden=true;});
@@ -18,7 +23,7 @@ document.querySelectorAll('[data-input-group],[data-integration-group]').forEach
   var more=document.createElement('details');more.className='input-more';
   var summary=document.createElement('summary');summary.textContent=rmT('All {0} →',items.length);
   more.append(summary,rest);group.appendChild(more);
-});
+}
 
 // Folding retains evidence; ELK owns placement, ports and obstacle-free routing.
 // The pinned engine is embedded in the report: no network or analysis is needed.

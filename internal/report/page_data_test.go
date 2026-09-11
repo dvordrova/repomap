@@ -60,7 +60,7 @@ func TestDataCataloguePreservesScopeSourceAndActualModelCallAssociations(t *test
 		t.Fatal(err)
 	}
 	html := rendered.String()
-	for _, want := range []string{"trades", "GET /trades", "Trade.get_trades", "models.py:30:5", "ReadTrades", "#service-data-table-0", "&lt;script&gt;", "все 7 →"} {
+	for _, want := range []string{"trades", "GET /trades", "Trade.get_trades", "models.py:30:5", "ReadTrades", "#service-data-table-0", "&lt;script&gt;", "все 6 →"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("data overview lost %q", want)
 		}

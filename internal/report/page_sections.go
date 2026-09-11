@@ -89,6 +89,32 @@ type pageRouteGroup struct {
 	Paths int
 }
 
+// pageOperationFile is one source file's rows of a long operation list. A
+// list of seventeen user actions reads faster as six files than as one
+// column; the owner's audit asked for exactly this grouping.
+type pageOperationFile struct {
+	Path string
+	Rows []pageGroupOperation
+}
+
+// operationsByFile groups rows by the file of their anchor, in first-seen
+// order. Rows without an anchor keep a group of their own at the end.
+func operationsByFile(rows []pageGroupOperation) []pageOperationFile {
+	var files []pageOperationFile
+	position := make(map[string]int)
+	for _, row := range rows {
+		path := row.Anchor.Path
+		at, known := position[path]
+		if !known {
+			at = len(files)
+			position[path] = at
+			files = append(files, pageOperationFile{Path: path})
+		}
+		files[at].Rows = append(files[at].Rows, row)
+	}
+	return files
+}
+
 type pageEntrypoint struct {
 	Symbol string
 	Kind   string
@@ -415,6 +441,22 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 			Key: fact.Key, Default: fact.Value, Anchor: builder.links.factAnchor(fact),
 		})
 	}
+	// Settings read in code and settings declared in manifests read as one
+	// table; sorted by their source file they group themselves.
+	sort.SliceStable(section.Config, func(i, j int) bool {
+		a, b := section.Config[i], section.Config[j]
+		pa, pb := "", ""
+		if a.Anchor != nil {
+			pa = a.Anchor.Path
+		}
+		if b.Anchor != nil {
+			pb = b.Anchor.Path
+		}
+		if pa != pb {
+			return pa < pb
+		}
+		return a.Key < b.Key
+	})
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindDeadModule) {
 		if anchor := builder.links.factAnchor(fact); anchor != nil {
 			section.Dead = append(section.Dead, builder.links.anchor(anchor.Path, 0, 0))

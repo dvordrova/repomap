@@ -8,6 +8,15 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Long lists read in groups the data already had. Operation lists longer
+  than seven rows from more than one file are grouped by source file
+  (gop: 17 user actions → six files), each file compacting to five rows on
+  its own; the complete key-code list of a large part (`All N →`) carries a
+  heading per source file; the data catalog shows tables first and SQL
+  texts after, each with its own disclosure; the configuration table is
+  sorted by source file so environment reads and manifest keys group
+  themselves. `operationsByFile` template function; the first-screen copy
+  still takes the first five rows of a group.
 - Less noise on the component page. Configuration, manifest and TODO facts
   from vendored trees (`vendor/`, `node_modules/`, `third_party/`,
   `.terraform/`, virtualenvs) and data records from those trees or naming a

@@ -31,7 +31,8 @@
     map.prepend(bar);
     // Fit, zoom and reset belong with the other view controls, not on a row
     // of their own above the map.
-    var zoomControls=map.querySelector('[data-map-controls]');if(zoomControls)bar.appendChild(zoomControls);
+    var zoomControls=map.querySelector('[data-map-controls]'),crumbRow=bar.querySelector('.explorer-breadcrumbs');
+    if(zoomControls){if(crumbRow)bar.insertBefore(zoomControls,crumbRow);else bar.appendChild(zoomControls);}
     var structure=bar.querySelector('[data-structure]'), operationMode=bar.querySelector('[data-operations]'), search=bar.querySelector('input'), allUses=bar.querySelector('[data-all-uses]'), crumbs=bar.querySelector('nav');
     operationMode.hidden=!ops.length;
     var operationPicker=document.createElement('div');operationPicker.className='operation-picker';operationPicker.hidden=true;

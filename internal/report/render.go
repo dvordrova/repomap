@@ -889,7 +889,8 @@ func decodeStrictReportJSON(reportJSON []byte) (ReportData, error) {
 // communication catalogue.
 func pageTemplateFuncs(language DisplayLanguage) template.FuncMap {
 	return template.FuncMap{
-		"t":              func(key string, params ...any) (string, error) { return uiText(language, key, params...) },
-		"outboundGroups": groupOutbound,
+		"t":                func(key string, params ...any) (string, error) { return uiText(language, key, params...) },
+		"outboundGroups":   groupOutbound,
+		"operationsByFile": operationsByFile,
 	}
 }

@@ -21,7 +21,7 @@ var repomapMembers = (function () {
       var prose = row.querySelector('.model [data-display-ref]');
       var anchor = row.querySelector('.anchor');
       add({name:name.textContent.trim(), alias:row.dataset.alias||'', explanation:prose ? prose.textContent : '', explanation_ref:prose?.dataset.displayRef||'', source:{
-        Href:chip.dataset.open ? '' : chip.getAttribute('href'), Open:chip.dataset.open || '', NoSource:chip.dataset.noSource==='true', Path:chip.dataset.sourcePath, Line:Number(chip.dataset.sourceLine)||0,
+        Href:chip.dataset.open ? '' : chip.getAttribute('href'), Open:chip.dataset.open || '', NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, function(){return chip.closest('.key-file')?.querySelector('.path')?.textContent;}), Line:Number(chip.dataset.sourceLine)||0,
         Text:anchor ? anchor.textContent : (chip.closest('.key-file').querySelector('.path').textContent + (chip.querySelector('.ln')?.textContent || ''))
       }});
     });
@@ -31,13 +31,16 @@ var repomapMembers = (function () {
     if(group&&!result.length)group.querySelectorAll('.symbol-index > li').forEach(function(row){
       var chip=row.querySelector('.chip');if(!chip)return;
       var name=chip.cloneNode(true);name.querySelectorAll('.ln').forEach(function(n){n.remove();});
-      add({name:name.textContent.trim(),alias:row.dataset.alias||'',explanation:'',source:{Href:chip.dataset.open?'':chip.getAttribute('href'),Open:chip.dataset.open||'',NoSource:chip.dataset.noSource==='true', Path:chip.dataset.sourcePath, Line:Number(chip.dataset.sourceLine)||0,Text:chip.dataset.sourceText||chip.getAttribute('title')||name.textContent.trim()}});
+      add({name:name.textContent.trim(),alias:row.dataset.alias||'',explanation:'',source:{Href:chip.dataset.open?'':chip.getAttribute('href'),Open:chip.dataset.open||'',NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, function(){return row.closest('.inventory-file')?.querySelector('summary')?.textContent.split(' · ')[0];}), Line:Number(chip.dataset.sourceLine)||0,Text:chip.dataset.sourceText||chip.getAttribute('title')||name.textContent.trim()}});
     });
     inventories.set(node, result); return result;
   }
   function size(node) {
     return {w:360,h:112 + Math.min(items(node).length,5)*66 + (items(node).length>5?32:0)};
   }
+  // A member's file: the chip's own attribute, else the file heading it
+  // sits under, else its title without the line suffix.
+  function pathOf(chip,heading){if(chip.dataset.sourcePath)return chip.dataset.sourcePath;var text=typeof heading==='function'?(chip.closest?heading():''):heading;return (text||'').trim()||(chip.getAttribute('title')||'').replace(/:\d+(:\d+)?$/,'');}
   function label(node,item) {
     return displayName(item)+(items(node).some(function(other){return other!==item&&other.name===item.name;})?' · '+item.source.Text:'');
   }
@@ -51,7 +54,14 @@ var repomapMembers = (function () {
   }
   function grid(map,node,limit) {
     var grid=document.createElement('div');grid.className='map-member-grid';
-    items(node).slice(0,limit===undefined?items(node).length:limit).forEach(function(item){
+    var list=items(node).slice(0,limit===undefined?items(node).length:limit);
+    // The complete list of a large part reads by file: a heading per source
+    // file, its members beneath. The five-cube preview inside the node stays flat.
+    var paths=new Set(list.map(function(item){return item.source.Path||'';}));
+    var byFile=limit===undefined&&list.length>8&&paths.size>1;
+    var lastPath=null;
+    list.forEach(function(item){
+      if(byFile&&(item.source.Path||'')!==lastPath){lastPath=item.source.Path||'';var head=document.createElement('div');head.className='map-member-file';head.textContent=lastPath||rmT('Other');grid.appendChild(head);}
       var row=document.createElement('div');row.className='map-member';
       var name=sourceLink(item.source);name.className='map-member-name';name.textContent=displayName(item);
       name.dataset.memberSource=sourceKey(item.source);

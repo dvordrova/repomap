@@ -12,6 +12,29 @@ type pageDataCatalog struct {
 	Rows            []pageDataRow
 	Tables, Queries int
 }
+
+// TableRows and QueryRows split the catalog for display: declared and
+// mentioned tables first, SQL texts after, each with its own disclosure.
+func (catalog pageDataCatalog) TableRows() []pageDataRow {
+	var rows []pageDataRow
+	for _, row := range catalog.Rows {
+		if row.Origin != "SQL text" {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+func (catalog pageDataCatalog) QueryRows() []pageDataRow {
+	var rows []pageDataRow
+	for _, row := range catalog.Rows {
+		if row.Origin == "SQL text" {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
 type pageDataRow struct {
 	ID, Name, Origin, Scope, Connection, SQL, Expression, Statement string
 	Partial                                                         bool

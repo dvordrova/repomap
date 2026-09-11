@@ -140,3 +140,8 @@
 .map-hover-card .map-card-kind{display:block;font-size:12px;color:var(--muted);margin-bottom:.15rem}
 .map-hover-card b{display:block;margin-bottom:.25rem}.map-hover-card p{margin:0 0 .35rem;color:var(--ink)}
 .map-hover-card .map-card-hint{display:block;font-size:12px;color:var(--muted)}
+/* Long lists read by source file: a small heading per file, rows beneath. */
+.input-subgroup{margin:10px 0 2px;font-size:12px;font-weight:500;color:var(--muted)}.input-subgroup code{font-size:12px}
+[data-input-subgroup]+[data-input-subgroup]{margin-top:6px}
+.map-member-file{grid-column:1/-1;margin:8px 0 2px;font-size:12px;color:var(--muted);font-family:var(--mono,monospace)}
+.data-kind{font-size:14px;margin:12px 0 4px}.data-kind .meta{display:inline;font-size:12px}
