@@ -264,13 +264,13 @@ func TestRunAllRejectedYieldsEmptySealedResult(t *testing.T) {
 
 func TestRequestBytesAreDeterministicAndCloseOverRefs(t *testing.T) {
 	fixture := newFixture(t)
-	first, _, err := encodeRequest(fixture.input)
+	first, _, err := encodeRequest(fixture.input, packingLadder[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	reordered := fixture.input
 	reordered.Groups = []groupindex.Index{fixture.input.Groups[1], fixture.input.Groups[0]}
-	second, _, err := encodeRequest(reordered)
+	second, _, err := encodeRequest(reordered, packingLadder[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func TestRunKeepsEvidenceBeyondTwoMiBUntilActualProviderRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	complete, _, err := encodeRequest(fixture.input)
+	complete, _, err := encodeRequest(fixture.input, packingLadder[0])
 	if err != nil || len(complete) <= 2<<20 {
 		t.Fatalf("large complete request: %d bytes, %v", len(complete), err)
 	}
@@ -318,10 +318,13 @@ func TestRunKeepsEvidenceBeyondTwoMiBUntilActualProviderRefusal(t *testing.T) {
 	if len(sent.Claims) != len(fixture.input.Claims.Claims) || len(sent.Groups) == 0 {
 		t.Fatal("large request lost claims or groups")
 	}
-	tiny := &presetProvider{maximumUserBytes: len(complete) - 1}
+	// This fixture is large in facts and claims, which no rung shrinks; a
+	// provider that holds not even the smallest rung leaves an empty,
+	// journaled orientation.
+	tiny := &presetProvider{maximumUserBytes: 10}
 	result, rejected, err = Run(t.Context(), llm.Executor{}, tiny, fixture.input)
 	if err != nil || tiny.completions != 0 || len(rejected) != 1 || rejected[0].Section != "request" || rejected[0].Reason == "" || result.RejectedCount != 1 || len(result.Roles) != 0 {
-		t.Fatalf("a request the provider cannot hold must leave an empty, journaled orientation: %v, rejected=%+v calls=%d", err, rejected, tiny.completions)
+		t.Fatalf("a request no packing can fit must leave an empty, journaled orientation: %v, rejected=%+v calls=%d", err, rejected, tiny.completions)
 	}
 }
 

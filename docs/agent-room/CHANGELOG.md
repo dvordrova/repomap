@@ -8,6 +8,12 @@ runs instead of growing the entry pages again.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 
+- Orientation walks a packing ladder after a size or context refusal, local
+  or remote: 40 members per group with 6+6 observations, then 20 with 3+3,
+  then 12 without observations (Freqtrade saved input: 1.74 → 1.18 → 0.92 MB). A 524,288-token
+  provider with the 128,000 output reservation holds about 1.2 MB, so the
+  owner's reports had no written summary; the console said `ready`. It now
+  says `unavailable` with the refusal when no rung fits.
 - A third context-refusal wording is recognised: "Requested token count
   exceeds the model's maximum context length of L tokens. You requested a
   total of R tokens: I tokens from the input messages and O tokens for the

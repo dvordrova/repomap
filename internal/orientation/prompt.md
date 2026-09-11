@@ -23,8 +23,8 @@ cite a ref of the wrong kind.
   subjects, each with a source and a date when known. Claims can be stale or
   wrong; facts win when they disagree.
 - `groups`: model interpretations of responsibilities (refs `g*`), each with a lane,
-  a title, a summary, `member_count` and its first members (at most 40 are
-  listed; `member_count` is the real size). Members are the code symbols you
+  a title, a summary, `member_count` and its first members (`member_count` is
+  the real size; the list may be shorter). Members are the code symbols you
   may cite (refs `s*`), each with a name and an anchor. Group refs `g*` are
   context only; do not use them in the orientation result’s citation fields.
 - `connections`: how groups relate to each other, including links between

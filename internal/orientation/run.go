@@ -23,8 +23,8 @@ const (
 	StageName = "orientation"
 
 	executionContract     = "repomap.orientation.v1"
-	preparationVersion    = 2
-	promptVersion         = 3
+	preparationVersion    = 3
+	promptVersion         = 4
 	responseSchemaVersion = 1
 	maxOutputTokens       = llm.DefaultMaxOutputTokens
 )
@@ -68,23 +68,42 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	if provider == nil {
 		return Result{}, nil, fmt.Errorf("orientation: provider is nil")
 	}
-	prepared, err := prepareRequest(provider, input)
-	if err != nil {
-		if resource, refused := refusedByResources(err); refused {
-			return emptyAfterRefusal(input, digests, 0, resource, err)
+	// Each rung of the packing ladder is one complete request. A refusal by
+	// size or context, local or remote, moves to the next rung; the last
+	// refusal leaves an empty orientation.
+	var prepared preparedRequest
+	var outcome llm.Outcome[normalized]
+	var err error
+	var lastResource *llm.ResourceLimitError
+	for rung, bounds := range packingLadder {
+		prepared, err = prepareRequest(provider, input, bounds)
+		if err != nil {
+			if resource, refused := refusedByResources(err); refused {
+				lastResource = resource
+				continue
+			}
+			return Result{}, nil, err
 		}
-		return Result{}, nil, err
+		outcome, err = llm.ExecuteJSON(ctx, executor, provider, llm.Call[normalized]{
+			State: cubeState(input, digests, prepared.wire),
+			Prompt: llm.Prompt{
+				System: strings.TrimSpace(promptText), User: string(prepared.wire), ResponseFormatJSON: true, ResponseExample: responseExample,
+			},
+			Limits: limits(),
+			DecodeValidate: func(raw []byte) (normalized, error) {
+				return normalize(raw, prepared.catalog)
+			},
+		})
+		if resource, refused := refusedByResources(err); refused && ctx.Err() == nil && rung+1 < len(packingLadder) {
+			lastResource = resource
+			continue
+		}
+		lastResource = nil
+		break
 	}
-	outcome, err := llm.ExecuteJSON(ctx, executor, provider, llm.Call[normalized]{
-		State: cubeState(input, digests, prepared.wire),
-		Prompt: llm.Prompt{
-			System: strings.TrimSpace(promptText), User: string(prepared.wire), ResponseFormatJSON: true, ResponseExample: responseExample,
-		},
-		Limits: limits(),
-		DecodeValidate: func(raw []byte) (normalized, error) {
-			return normalize(raw, prepared.catalog)
-		},
-	})
+	if lastResource != nil {
+		return emptyAfterRefusal(input, digests, len(prepared.wire), lastResource, fmt.Errorf("orientation: every packing was refused: %w", lastResource))
+	}
 	if err != nil {
 		// A rejected model response supplies no orientation, but the facts
 		// and report remain useful. Local and transport errors retain their
@@ -174,11 +193,12 @@ func groupDigests(indexes []groupindex.Index) []string {
 	return digests
 }
 
-// prepareRequest retains the stage's complete evidence catalogue. Only the
-// actual prepared provider envelope can refuse it; size never selects a
-// different set of claims, members or fact kinds.
-func prepareRequest(provider llm.Provider, input Input) (preparedRequest, error) {
-	wire, cat, err := encodeRequest(input)
+// prepareRequest retains the stage's complete facts and claims at every rung
+// of the packing ladder; a rung bounds only the listed members and their
+// observations, and member_count stays the real size. Only the actual
+// prepared provider envelope, or a declared context window, can refuse it.
+func prepareRequest(provider llm.Provider, input Input, bounds packing) (preparedRequest, error) {
+	wire, cat, err := encodeRequest(input, bounds)
 	if err != nil {
 		return preparedRequest{}, err
 	}
@@ -188,8 +208,8 @@ func prepareRequest(provider llm.Provider, input Input) (preparedRequest, error)
 	return preparedRequest{wire: wire, catalog: cat}, nil
 }
 
-func encodeRequest(input Input) ([]byte, catalog, error) {
-	wire, cat, err := buildRequest(input)
+func encodeRequest(input Input, bounds packing) ([]byte, catalog, error) {
+	wire, cat, err := buildRequestWith(input, bounds)
 	if err != nil {
 		return nil, catalog{}, err
 	}
