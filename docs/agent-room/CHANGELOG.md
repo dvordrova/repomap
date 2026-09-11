@@ -18,6 +18,10 @@ runs instead of growing the entry pages again.
 - A one-row independent window accepts its only answered row without a key:
   seven single-question answer windows of the same Freqtrade run were refused
   as `response row has no string key` and their answers lost.
+- Restoring an empty selected file set no longer fails a run: a Go repository
+  whose only Python file is a test script (air) has a Python catalog but no
+  required Python target. Both adapter restorers return nothing for an empty
+  selection; a non-empty one still fails closed. Regression test in `run`.
 - Glossary generation/reduction output allowance is 32,768 tokens instead of
   the shared 128,000. Measured legitimate windows: 1,276–15,278 output tokens
   (Syn, issue-bot, Watchtower); measured loops: two Watchtower windows at

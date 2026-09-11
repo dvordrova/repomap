@@ -69,6 +69,12 @@ func discoverGoRepositoryTargets(
 		return goNativeEvidence(native, *owned.GoFacts, *owned.TargetCatalog), nil
 	}
 	discovery.RestoreFiles = func(fileRefs []corpus.FileID) ([]repositoryTargetFileRestoration, error) {
+		// An empty selection restores nothing: a repository can hold Go files
+		// without any selected or required Go target. Only a non-empty
+		// selection is resolved, and that resolution still fails closed.
+		if len(fileRefs) == 0 {
+			return nil, nil
+		}
 		refs, resolveErr := resolver.Resolve(fileRefs)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("restore selected Go targets: %w", resolveErr)
@@ -178,6 +184,13 @@ func discoverPythonRepositoryTargets(
 		return pythonNativeEvidence(native, catalog, options.Repository)
 	}
 	discovery.RestoreFiles = func(fileRefs []corpus.FileID) ([]repositoryTargetFileRestoration, error) {
+		// An empty selection restores nothing. A Go repository whose only
+		// Python file is a test script has a Python catalog but no required
+		// or selected Python target; that is an ordinary outcome, not a
+		// failure of the whole run. A non-empty selection still fails closed.
+		if len(fileRefs) == 0 {
+			return nil, nil
+		}
 		resolved, resolveErr := resolver.Resolve(fileRefs)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("restore selected Python targets: %w", resolveErr)
