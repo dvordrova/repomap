@@ -5,7 +5,7 @@ import {ReactFlow, Handle, Position, ViewportPortal, useViewport} from '@xyflow/
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
-import {createSemanticLayout, detailedAreas, componentDetails, componentTextSizes, communicationDetails, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport, zoomMarkPosition} from './semantic.mjs';
+import {createSemanticLayout, detailedAreas, fullyVisibleFrames, componentDetails, componentTextSizes, communicationDetails, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport, zoomMarkPosition} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {prepareCards,wrapText,overviewHeading} from './cards.mjs';
 import {HoverGate} from './hover.mjs';
@@ -153,6 +153,16 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const maximumZoom=()=>Math.max(2,...[...scales.values(),...communicationScales().values(),
     ...[...byID.values()].filter(n=>!n.children?.length).map(n=>n.contentScale||1)].map(scale=>1.8/scale));
   maxZoom=maximumZoom();
+  function updateDetail(viewport){
+    const whole=fullyVisibleFrames(layout.nodes,viewport,host.clientWidth,host.clientHeight);
+    const open=componentDetails(componentFonts,viewport.zoom,openComponents,whole);
+    const next=detailedAreas(scales,viewport.zoom,detailed,whole);
+    const communication=communicationDetails(communicationScales(),viewport.zoom,communicationsOpen,whole);
+    const changed=open.size!==openComponents.size||[...open].some(id=>!openComponents.has(id))||next.size!==detailed.size||[...next].some(id=>!detailed.has(id))||
+      communication.size!==communicationsOpen.size||[...communication].some(id=>!communicationsOpen.has(id));
+    openComponents=open;componentsOpen=!!open.size;detailed=next;communicationsOpen=communication;
+    if(changed){hoverArea='';hover.pause();update?.();}
+  }
   function parentArea(id){while(id){if(byID.get(id)?.branch==='area')return id;id=placed.get(id)?.parentId;}return '';}
   function clearHover(){hoverArea='';preview='';map.clearMapPreview?.();update?.();}
   function commitCamera(movement){
@@ -198,10 +208,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // must not place its still-selected item outside the visible viewport.
     if(!Number.isFinite(v.zoom)||v.layoutKey!==layoutKey){if(view.scope||view.operation)focus(view.scope||view.operation,true);else fitOverview();return;}
     overviewFit=false;
-    detailed=detailedAreas(scales,v.zoom,new Set(v.detailAreas||[]));
-    openComponents=componentDetails(componentFonts,v.zoom,new Set(v.openComponents||(v.componentsOpen?[...componentFonts.keys()]:[])));
+    const whole=fullyVisibleFrames(layout.nodes,v,host.clientWidth,host.clientHeight);
+    detailed=detailedAreas(scales,v.zoom,new Set(v.detailAreas||[]),whole);
+    openComponents=componentDetails(componentFonts,v.zoom,new Set(v.openComponents||(v.componentsOpen?[...componentFonts.keys()]:[])),whole);
     componentsOpen=!!openComponents.size;
-    communicationsOpen=communicationDetails(communicationScales(),v.zoom,new Set(v.communicationsOpen||[]));
+    communicationsOpen=communicationDetails(communicationScales(),v.zoom,new Set(v.communicationsOpen||[]),whole);
     zoom=v.zoom;update?.();
     hover.pause();preview='';map.clearMapPreview?.();
     if(instance)commitCamera(instance.setViewport(v));else restorePending=v;
@@ -410,23 +421,17 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         clearHover();
       }}
       onMove={(_,viewport)=>{
-        // Panning changes the camera position, not semantic detail or text size.
+        // A pan checks complete frames at gesture end, without rebuilding the
+        // drawing on every position update.
         if(paintedZoom===viewport.zoom)return;
         paintedZoom=viewport.zoom;
         zoom=viewport.zoom;
         host.style.setProperty('--flow-zoom',String(zoom));
-        const open=componentDetails(componentFonts,zoom,openComponents);
-        const next=detailedAreas(scales,viewport.zoom,detailed);
-        const communication=communicationDetails(communicationScales(),zoom,communicationsOpen);
-        const changed=open.size!==openComponents.size||[...open].some(id=>!openComponents.has(id))||next.size!==detailed.size||[...next].some(id=>!detailed.has(id))||
-          communication.size!==communicationsOpen.size||[...communication].some(id=>!communicationsOpen.has(id));
-        openComponents=open;componentsOpen=!!open.size;detailed=next;communicationsOpen=communication;
-        if(changed){hoverArea='';hover.pause();}
-        if(changed)update?.();
+        updateDetail(viewport);
         map.querySelectorAll('[data-map-zoom]').forEach(button=>{button.disabled=Number(button.dataset.mapZoom)<1&&viewport.zoom<=minZoom();});
       }}
       onMoveStart={event=>{if(event)overviewFit=false;panning=true;hover.pause();preview='';map.clearMapPreview?.();}}
-      onMoveEnd={()=>{panning=false;hover.pause();updateLocation();map.dispatchEvent(new Event('repomap:viewport'));}}>
+      onMoveEnd={()=>{panning=false;hover.pause();if(instance)updateDetail(instance.getViewport());updateLocation();map.dispatchEvent(new Event('repomap:viewport'));}}>
       <svg className="flow-defs"><defs>
         <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker>
         <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>

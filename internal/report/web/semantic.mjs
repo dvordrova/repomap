@@ -12,9 +12,16 @@ export function semanticLayout(items,relations,areas,width,height){
 }
 
 // Both part and call headings use 17px before their content and camera scales.
-// Reveal readable 14px text, retaining it until it falls below 12px on zoom-out.
-export function detailedAreas(scales, zoom, previous=new Set()) {
-  return new Set([...scales].filter(([id,scale])=>17*zoom*scale>=(previous.has(id)?12:14)).map(([id])=>id));
+// A complete frame can reveal its already readable drawing without another
+// zoom. Partly visible frames retain the ordinary entrance hysteresis.
+export function detailedAreas(scales, zoom, previous=new Set(),fullyVisible=new Set()) {
+  return new Set([...scales].filter(([id,scale])=>17*zoom*scale>=((previous.has(id)||fullyVisible.has(id))?12:14)).map(([id])=>id));
+}
+
+export function fullyVisibleFrames(nodes,viewport,width,height) {
+  const {x,y,zoom}=viewport;
+  return new Set(nodes.filter(node=>node.frame&&node.absolute.x*zoom+x>=0&&node.absolute.y*zoom+y>=0&&
+    (node.absolute.x+node.width)*zoom+x<=width&&(node.absolute.y+node.height)*zoom+y<=height).map(node=>node.id));
 }
 
 // Component overview is another view of the same frame, not a smaller graph.
@@ -32,8 +39,8 @@ export function componentTextSizes(records) {
   ]));
 }
 
-export function componentDetails(fonts,zoom,previous=new Set()) {
-  return new Set([...fonts].filter(([id,font])=>font*zoom>=(previous.has(id)?12:14)).map(([id])=>id));
+export function componentDetails(fonts,zoom,previous=new Set(),fullyVisible=new Set()) {
+  return new Set([...fonts].filter(([id,font])=>font*zoom>=((previous.has(id)||fullyVisible.has(id))?12:14)).map(([id])=>id));
 }
 
 // Replace unreadable contents before they trigger a competing root summary;
@@ -42,8 +49,8 @@ export function componentContents(zoom, previous=false, textSize=20) {
   return textSize*zoom >= (previous ? 12 : 14);
 }
 
-export function communicationDetails(scales, zoom, previous=new Set()) {
-  return detailedAreas(scales,zoom,previous);
+export function communicationDetails(scales, zoom, previous=new Set(),fullyVisible=new Set()) {
+  return detailedAreas(scales,zoom,previous,fullyVisible);
 }
 
 // Keep the same frame and camera; put its small entrance in the visible corner.

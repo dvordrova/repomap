@@ -152,6 +152,10 @@ attachments cover component/external entry and intermediate zoom-out states.
 Zoom-out checks that a root summary does not coexist with its visible interior.
 A restored close view checks that a visible part is not covered by its parent's
 summary when the intermediate area's heading has left the viewport.
+A partial-to-whole-frame pan at an unchanged readable scale must reveal the
+area's original parts and internal arrow without another zoom. Restoring the
+before/after cameras restores their corresponding detail states, with identical
+world geometry. Both states are captured in the screenshot journey.
 An additional five-participant fixture uses short component names, seven/five
 area names and eleven/three inputs in the ordinary report's 1054×580 canvas.
 Its complete initial inventories must fit, retain whole words and keep those

@@ -1,5 +1,27 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Reveal readable interiors when their complete frame is visible
+
+- Reproduced a fully visible area remaining a summary at readable text scale.
+  The new browser regression fails against the previous bundle: panning the
+  whole frame into view still leaves its original parts hidden. Complete frames
+  now enter detail at the existing 12px readability floor; partly visible frames
+  retain the 14px entrance and open frames retain the 12px exit. A pan checks
+  visibility only at gesture end. Camera coordinates, geometry and layout work
+  are unchanged, including restoration of the before/after cameras.
+- Reviewed the two changed threshold PNGs: parts appear one zoom step earlier.
+  Normal comparison passed all twenty desktop scenarios; all fifty UI unit
+  checks, asset consistency, focused report tests and vet passed. The gallery
+  contains forty actual frames across eleven journeys, including the new pan.
+- The rebuilt ordinary binary rendered the completed Python report with zero
+  provider calls. A browser pass through its backend launch/configuration area
+  verified partial-to-whole reveal, restoration and unchanged world geometry,
+  with no page errors.
+- The reported arrow disappearance was not reproduced. The separate live
+  review preserved all original outside relations and arrowheads through hover,
+  zoom and All; unrelated routes become faint on hover. No unsupported route
+  or layout change was made for that report.
+
 ## 2026-09-14 — Separate native layouts and completed desktop journeys
 
 - Replaced repeated whole-graph growth with independently prepared participant

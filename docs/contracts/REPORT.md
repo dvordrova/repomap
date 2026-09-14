@@ -129,8 +129,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   summary height and its scaled internal drawing. The compact summary lists
   every member part under its saved kind; input collections remain outside the
   component at every scale. Zoom reveals actual
-  parts when their effective heading size reaches 14px, retaining them down to
-  12px on zoom-out. External calls use the same rule, including their local
+  parts when their effective heading size reaches 14px, or 12px when the complete
+  frame is visible, retaining them down to 12px on zoom-out. External calls use the same rule, including their local
   content scale. Summaries and detailed contents occupy the same rectangle: no
   coordinates, dimensions, topology or camera centre change at that boundary.
   At distant zoom, component and external-destination frames hide all their
@@ -144,8 +144,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   The full purpose remains in the reading panel. A single toolbar hint explains
   zooming to see inside and dragging to move. The component boundary has its
   own hysteresis at the smallest immediate content font (area member names or
-  direct part headings): reveal at 14px, close below 12px. This state is saved
-  with the camera. Unreadable interiors close before the root summary returns;
+  direct part headings): reveal at 14px, or 12px for a fully visible frame; close
+  below 12px. Whole-frame visibility is checked during zoom, camera restoration
+  and at the end of a pan, without rebuilding the drawing at every pan position.
+  This state is saved with the camera. Unreadable interiors close before the root summary returns;
   the two must not overlap. No layout runs during wheel zoom.
   Every closed component, area and external collection shows that same action
   in its actual top-right corner, independently of the text column width. Its
