@@ -128,8 +128,42 @@ func TestDesignRefusalPreservesIndependentGroupsWithoutRepair(t *testing.T) {
 			}
 		}
 	}
-	if _, err := decodeDesign([]byte(`{"groups":[{"title":"Wrapper","purpose":"Wraps.","members":["r1"]}]}`), items, "areas"); err == nil {
-		t.Fatal("one-part wrapper accepted")
+}
+
+func TestDesignAreaMembershipIsNotACountHeuristic(t *testing.T) {
+	items := []designItem{{Ref: "r1"}, {Ref: "r2"}, {Ref: "r3"}}
+	result, err := decodeDesign([]byte(`{"groups":[{"title":"API surface","purpose":"Exposes the service boundary.","members":["r1","r1","outside"]}]}`), items, "areas")
+	if err != nil || len(result.Groups) != 1 || len(result.Groups[0].Members) != 1 || result.Groups[0].Members[0] != "r1" || len(result.Notes) != 1 {
+		t.Fatalf("valid single-part area refused or unknown membership repaired: %+v %v", result, err)
+	}
+	result, err = decodeDesign([]byte(`{"groups":[{"title":"Single","purpose":"Owns the API.","members":["r1"]},{"title":"Conflict","purpose":"Claims the same part.","members":["r1","r2"]},{"title":"Independent","purpose":"Owns storage.","members":["r3"]}]}`), items, "areas")
+	if err != nil || len(result.Groups) != 1 || result.Groups[0].Members[0] != "r3" || len(result.Notes) != 2 {
+		t.Fatalf("singleton escaped conflict validation: %+v %v", result, err)
+	}
+	if _, err := decodeDesign([]byte(`{"groups":[{"title":"Unknown","purpose":"Has no known member.","members":["outside"]}]}`), items, "areas"); err == nil {
+		t.Fatal("area without any known part accepted")
+	}
+}
+
+func TestDesignSinglePartAreaSurvivesReading(t *testing.T) {
+	provider := &tableProvider{designFor: func(mode string, items []designItem) designResult {
+		group := designGroup{Title: "Application", Purpose: "Provides the application boundary."}
+		for _, item := range items {
+			group.Members = append(group.Members, item.Ref)
+		}
+		return designResult{Groups: []designGroup{group}}
+	}}
+	result, err := Read(t.Context(), readOptions(t, knowledgeGraph(t), provider, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range result.Atlas.Targets {
+		if len(target.Zones) != 1 || len(target.Zones[0].BoxIDs) != 1 || len(target.Boxes) != 1 || target.Boxes[0].ZoneID != target.Zones[0].ID || target.Zones[0].BoxIDs[0] != target.Boxes[0].ID {
+			t.Fatalf("single-part area lost on the ordinary reader path: %+v", target)
+		}
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -115,8 +115,9 @@ merge decisions retain their original accepted parts. Unknown members are
 discarded. Conflicting groups are refused together, so response order cannot
 choose ownership; independent valid groups survive. Missing decisions remain
 explicit source inventory, with no inherited directory membership or invented
-area. Rejections point to the saved raw response. An area must contain at least
-two distinct accepted parts. Group IDs derive from target and exact member IDs,
+area. Rejections point to the saved raw response. An area needs known members;
+a single accepted part is valid. Architectural usefulness is the model's
+decision, not a minimum-member validation rule. Group IDs derive from target and exact member IDs,
 not generated names. A target description reads its accepted responsibilities
 even for a single-target run; it does not inherit a directory caption.
 

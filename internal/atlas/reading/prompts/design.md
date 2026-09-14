@@ -34,7 +34,8 @@ In `merge` mode the inputs are previously accepted parts from separate context
 windows. Merge only parts that implement the same responsibility. Preserve
 independent collaborators. In `areas` mode group these parts into meaningful
 larger areas. Leave a part outside an area when no larger coherent area helps.
-Do not wrap a single part in a second name. There is no required group count.
+Avoid redundant wrappers; an area may contain one or several parts. There is no
+required group count.
 
 Return exactly one object:
 {"groups":[{"title":"Short responsibility name","purpose":"One sentence explaining its job.","members":["r1","r2"]}]}

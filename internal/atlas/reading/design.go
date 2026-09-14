@@ -84,9 +84,6 @@ func decodeDesign(raw []byte, items []designItem, mode string) (designResult, er
 				members[ref] = true
 			}
 		}
-		if mode == "areas" && len(members) < 2 {
-			continue
-		}
 		for ref := range members {
 			assignments[ref]++
 		}
@@ -115,9 +112,6 @@ func decodeDesign(raw []byte, items []designItem, mode string) (designResult, er
 		}
 		if len(members) == 0 {
 			reason = "no known members"
-		}
-		if mode == "areas" && len(members) < 2 {
-			reason = "an area must contain distinct collaborating parts"
 		}
 		if reason != "" {
 			result.Notes = append(result.Notes, fmt.Sprintf("group %d refused: %s", i+1, reason))

@@ -1,5 +1,20 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Remove the new two-part area rejection
+
+- The owner reported `atlas_zones: an area must contain distinct collaborating
+  parts` on another computer. The newly added design decoder was imposing a
+  two-member minimum, not checking collaboration evidence. Removed only that
+  new restriction; title/shape, known-reference and conflicting-membership
+  validation remain intact.
+- A single known part now survives area decoding and the ordinary reader.
+  Repeated refs do not add members, unknown refs are still discarded, and
+  singleton areas participate in the same conflict check as larger areas.
+  Regression cases reproduced both the refusal and the missing saved area
+  before the fix. The prompt leaves useful area boundaries to the model.
+- Reading, GroupsIndex and report tests pass; reading vet and the owner binary
+  build pass. The Airflow online run remains in progress.
+
 ## 2026-09-14 — Airflow exposed annotated underscore parser failure
 
 - The ordinary Apache Airflow run at revision
