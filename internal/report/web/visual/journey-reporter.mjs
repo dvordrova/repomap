@@ -18,12 +18,12 @@ export default class JourneyReporter {
       const png=failure.body||await readFile(failure.path);
       frames.push({name:'Failure — final captured state',src:'data:image/png;base64,'+png.toString('base64')});
     }
-    if(frames.length)this.journeys.push({name:test.parent.project().name,status:result.status,frames});
+    if(frames.length)this.journeys.push({name:test.parent.project().name,title:test.title,status:result.status,frames});
   }
   async onEnd(){
     if(!this.journeys.length)return;
-    this.journeys.sort((a,b)=>a.name.localeCompare(b.name));
-    const sections=this.journeys.map(journey=>`<section><h2>${escape(journey.name)} · ${escape(journey.status)}</h2>
+    this.journeys.sort((a,b)=>a.name.localeCompare(b.name)||a.title.localeCompare(b.title));
+    const sections=this.journeys.map(journey=>`<section><h2>${escape(journey.name)} · ${escape(journey.status)}</h2><p>${escape(journey.title)}</p>
       ${journey.frames.map(frame=>`<figure><figcaption>${escape(frame.name)}</figcaption>
         <img src="${frame.src}" alt="${escape(frame.name)}" loading="lazy"></figure>`).join('\n')}</section>`).join('\n');
     const output=new URL('../playwright-report/',import.meta.url);

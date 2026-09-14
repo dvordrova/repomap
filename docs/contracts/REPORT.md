@@ -127,13 +127,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   part/input counts, and a compact magnifier-plus action. Group names replace the
   bare group count. Text remains at screen-readable size inside the existing
   frame; measured space gives the area list priority over role, counts and
-  purpose. Dense lists scroll within the frame without removing any names.
+  purpose. Dense lists scroll within the frame without removing any names;
+  a subtle edge shadow and thin scrollbar signal remaining entries.
   The full purpose remains in the reading panel. A single toolbar hint explains
   zooming to see inside and dragging to move. The component boundary has its
   own hysteresis, also saved with the camera. No layout runs during wheel zoom.
   Every closed component, area and external collection shows that same action
   in its actual top-right corner, independently of the text column width. Its
-  screen size stays fixed while zooming. Open frames and leaf parts do not
+  screen size stays fixed while zooming. Frames displaying their interiors and leaf parts do not
   promise another hidden layer.
   Zooming into a component or external collection animates toward its first
   content at readable scale; fitting an oversized external frame must not leave
@@ -142,8 +143,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   a first child placed far from the left edge cannot crop that content or
   remove the component name during the entrance.
   Closed summaries follow the visible portion of their own frame while
-  zooming. After opening, the persistent location row keeps the component's
-  name available when its world header leaves the viewport. These are label
+  zooming. Crossing the component threshold keeps that summary and its real
+  area entrances until an actual child heading is visible inside the canvas;
+  empty child-frame borders do not count. The persistent location row also
+  keeps the component's name available when its world header leaves the viewport. These are label
   positions only: the pointer's world point, frames and routes do not move.
   Unbound inputs, external records and unread components keep their identities.
   Routes are clipped at closed areas using their existing orthogonal segments;
@@ -154,16 +157,31 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   The initial overview fits all root component and communication frames. The
   source SVG stays hidden while the fixed world is being arranged; a loading
   indicator appears in the reserved canvas. Workspace height accounts for the
-  actual header and controls. Whole-map mode refits when that space resizes;
-  manual pan/zoom ends that mode and keeps the reader's camera. Component
-  entrance shows its title and first contents at readable scale.
+  actual header and controls. Whole-map mode remeasures the ordinary layout
+  when that space changes size, then fits the new bounds. Initial placement and
+  resize use the same inner canvas dimensions. Manual pan/zoom ends that mode
+  and keeps the reader's world and camera; choosing the whole map again may
+  remeasure for the changed space. A pending resize layout cannot replace a
+  world after a manual gesture. Saved whole-map intent survives a changed
+  geometry identity. Component entrance shows its title and first contents at
+  readable scale.
   The minimum camera scale permits the complete root bounds even in a short
   window. The initial world choice accounts for readable root-header widths and heights,
   not only its bounding rectangle. After placing the full area summaries,
   narrow root frames reserve overview text width before the final layout is
-  shown. That initial placement also measures the heading and complete area
-  list at the fitted screen size. Long words reserve enough width; a narrow
+  shown. That initial placement measures headings at the fitted screen width,
+  bounded below by a whole word's readable width. Small area lists reserve their
+  complete height; a list taller than the available canvas reserves its first
+  entrance and keeps every remaining entry in the existing scrollable frame.
+  Fitting a full oversized list must not enlarge the world repeatedly and
+  collapse its fitted width. Long words reserve enough width; a narrow
   heading can continue below its zoom mark instead of breaking a name midway.
+  Orientation comparison uses those measured minima before world size.
+  Reservations continue until the fitted text fits; repeated physical-pixel
+  root geometry with the same text requirements stops unproductive growth and
+  keeps the best complete placement. Individual-size and minimum-area bounds
+  also stop growth when the viewport cannot physically contain the minima.
+  This fallback preserves all content but does not certify readable fit.
   Compact component purposes use the remaining whole lines, with an
   ellipsis when shortened, and stay hidden if fewer than two lines fit; the complete
   purpose remains in the reading column. External frames reserve summary space.
@@ -174,6 +192,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   packing or replacement path. Orientation candidates receive independent graph
   objects: ELK mutates its input, so reusing a computed candidate can retain stale
   bends. React Flow owns pan/zoom and camera restoration.
+  Screen-sized overview labels follow the viewport independently of graph
+  props. Ordinary camera movement must not rebuild the graph or remeasure
+  unchanged displayed text whose available width has not changed. Detail and
+  content-visibility boundaries still update the displayed contents.
   Selection and hover never change box positions or sizes. Normal part clicks
   update the reading column without centering; explicit destination clicks and
   Find move to their exact result.

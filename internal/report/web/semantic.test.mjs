@@ -29,6 +29,19 @@ test('asymmetric summary minimums fit in vertical and horizontal layouts',async(
   }
 });
 
+test('an impossible overview fit terminates with every root and relation intact',{timeout:5000},async()=>{
+  const items=['left','right'].flatMap(id=>[
+    {id,title:id,branch:'component',width:260,height:180,overviewMinWidth:200,overviewHeightAtWidth:()=>180},
+    {id:id+'-part',title:id+' part',width:260,height:80},
+  ]);
+  const relations=[{from:'left-part',to:'right-part'}];
+  const areas=['left','right'].map(id=>({id,nodes:[id+'-part']}));
+  const {layout}=await semanticLayout(items,relations,areas,300,200);
+  assert.deepEqual(layout.nodes.map(n=>n.id).sort(),items.map(n=>n.id).sort());
+  assert.deepEqual(layout.edges.map(e=>[e.from,e.to]),[['left-part','right-part']]);
+  assert.ok(layout.nodes.every(n=>[n.width,n.height,n.absolute.x,n.absolute.y].every(Number.isFinite)));
+});
+
 test('an oversized overview opens on readable content rather than empty root padding',()=>{
   const nodes=[
     {id:'root',frame:true,absolute:{x:0,y:0},width:4000,height:3000},

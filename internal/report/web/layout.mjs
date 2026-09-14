@@ -61,7 +61,7 @@ export async function arrange(items, relations, areas, availableWidth = 1200, av
   let graph;
   {
     graph = await elk.layout(structuredClone(input));
-    // Choose once, before displaying. Resizing and selecting never re-layout.
+    // Choose before displaying; ordinary camera gestures retain this layout.
     if (availableHeight || graph.width > availableWidth * 1.4) {
       function horizontal() {
         const candidate=structuredClone(input);
@@ -83,14 +83,18 @@ export async function arrange(items, relations, areas, availableWidth = 1200, av
         // enough target headers to read. Raw bounding area alone favours thin
         // towers whose hidden interiors leave no room for their descriptions.
         const readable=(g.children||[]).map(n=>{
-          const branch=byID.get(n.id)?.branch;
-          return branch==='component'?Math.min(n.width*fit/200,n.height*fit/180)
-            :branch==='communication'?Math.min(n.width*fit/160,n.height*fit/40):1;
+          const record=byID.get(n.id),branch=record?.branch;
+          if(!['component','communication'].includes(branch))return 1;
+          const needed=record.overviewHeightAtWidth?.(Math.max(record.overviewMinWidth||0,n.width*fit),{availableHeight:height-48})
+            ||(branch==='component'?180:40);
+          return Math.min(n.width*fit/(record.overviewMinWidth||(branch==='component'?200:160)),n.height*fit/needed);
         });
-        return overflow/Math.min(1,...readable);
+        return {readable:Math.min(1,...readable),overflow};
       };
       const candidate=await elk.layout(horizontal());
-      if(score(candidate)<score(graph))graph=candidate;
+      const candidateScore=score(candidate),currentScore=score(graph);
+      if(candidateScore.readable>currentScore.readable||
+        (candidateScore.readable===currentScore.readable&&candidateScore.overflow<currentScore.overflow))graph=candidate;
     }
   }
   const nodes = [], offsets = {root:{x:0,y:0}}, paths = [], placedLabels=[];

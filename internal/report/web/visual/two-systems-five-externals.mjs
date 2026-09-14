@@ -49,3 +49,21 @@ export const relations = [
   ['queue','publish'], ['worker','claim'], ['worker','put-object'],
   ['worker','get-object'], ['worker','export'], ['routes','export'],
 ].map(([from,to])=>({from,to}));
+
+// The same participants with a dense internal inventory. No geometry is
+// supplied: production measurement and fitting must keep the overview usable.
+export function denseInventory() {
+  const nodes=structuredClone(records),edges=structuredClone(relations),containers=structuredClone(areas);
+  for(const root of ['front','backend']){
+    const component=nodes.find(n=>n.id===root),container=containers.find(n=>n.id===root);
+    for(let index=0;index<40;index++){
+      const id=`${root}-workflow-${index+1}`,part=`${id}-part`;
+      component.children.push(id);container.nodes.push(id);
+      nodes.push({id,title:`Additional workflow ${index+1}`,branch:'area',children:[part]},
+        {id:part,title:`Workflow responsibility ${index+1}`,kind:'Part',lane:'core'});
+      containers.push({id,nodes:[part]});
+      edges.push({from:root==='front'?'submission':'worker',to:part});
+    }
+  }
+  return {records:nodes,relations:edges,areas:containers,inputOwner};
+}

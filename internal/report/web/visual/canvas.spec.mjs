@@ -27,17 +27,18 @@ const componentHeading=(page,id,title)=>page.locator(`[data-component-overview="
 const areaHeading=(page,id,title)=>page.locator(`[data-summary-area="${id}"] .flow-overview-card>strong`)
   .or(page.locator('.flow-area-title>strong').filter({hasText:new RegExp(`^${title}$`)}));
 
-async function openFixture(page){
+async function openFixture(page,url='/'){
   const errors=[];
   page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/');
+  await page.goto(url);
   await expect(page.locator('[data-fixture-ready]')).toHaveAttribute('data-fixture-ready','true');
+  await expect.poll(()=>page.locator('[data-map]').evaluate(map=>map.captureViewport())).not.toBeNull();
   await expect(page.locator('[data-component-overview]')).toHaveCount(7);
   await expect(page.locator('.flow-location')).toHaveText('System map');
   return errors;
 }
 
-async function assertOverviewReadable(page){
+async function assertOverviewReadable(page,{allowInventoryScroll=false}={}){
   const stage=await page.locator('.flow-root').boundingBox();
   for(const item of roots){
     const label=page.locator(`[data-component-overview="${item.id}"] strong`);
@@ -61,6 +62,10 @@ async function assertOverviewReadable(page){
     });
     expect(splitWords,`${item.title} keeps its words readable`).toEqual([]);
     await expect(page.getByRole('button',{name:`Zoom into ${item.title}`,exact:true})).toBeVisible();
+    if(item.branch==='component'&&!allowInventoryScroll){
+      const list=page.locator(`[data-component-overview="${item.id}"] .flow-component-areas`);
+      expect(await list.evaluate(el=>el.scrollHeight<=el.clientHeight+1),`${item.title}'s short area list is fully visible`).toBe(true);
+    }
     for(const child of records.filter(n=>n.branch==='area'&&item.children.includes(n.id))){
       const area=page.locator(`[data-component-overview="${item.id}"] [data-overview-area="${child.id}"]`);
       await expect(area).toBeVisible();
@@ -79,6 +84,65 @@ test('overview keeps two systems and five external participants readable',async(
   expect(await page.locator('.map-stage').boundingBox()).toEqual(before);
   await page.getByRole('heading',{name:'Two systems · five external participants'}).hover();
   await expect(page.locator('.map-workspace')).toHaveScreenshot('overview.png');
+  expect(errors).toEqual([]);
+});
+
+test('dense internal inventory keeps whole-map headings and zoom controls readable',async({page},testInfo)=>{
+  await page.addInitScript(()=>{
+    const original=CanvasRenderingContext2D.prototype.measureText;
+    window.panTextMeasurements=0;
+    CanvasRenderingContext2D.prototype.measureText=function(...args){window.panTextMeasurements++;return original.apply(this,args);};
+  });
+  const errors=await openFixture(page,'/?dense');
+  const workspace=page.locator('.map-workspace');
+  const geometry=await worldGeometry(page);
+  await testInfo.attach('journey-01 — Dense inventory: default overview',{body:await workspace.screenshot(),contentType:'image/png'});
+  await assertOverviewReadable(page,{allowInventoryScroll:true});
+  const buttons=[];
+  for(const item of roots){
+    const button=page.getByRole('button',{name:`Zoom into ${item.title}`,exact:true});
+    const bounds=await button.boundingBox();
+    const frame=await page.locator(`.react-flow__node[data-id="${item.id}"]`).boundingBox();
+    expect(inside(bounds,frame),`${item.title} zoom control fits its frame`).toBe(true);
+    for(const other of buttons){
+      const overlap=Math.min(bounds.x+bounds.width,other.x+other.width)>Math.max(bounds.x,other.x)&&
+        Math.min(bounds.y+bounds.height,other.y+other.height)>Math.max(bounds.y,other.y);
+      expect(overlap,'Zoom controls for different participants do not overlap').toBe(false);
+    }
+    buttons.push(bounds);
+  }
+  await expect(workspace).toHaveScreenshot('dense-overview.png');
+  const camera=()=>page.locator('.react-flow__viewport').evaluate(el=>{
+    const m=new DOMMatrixReadOnly(getComputedStyle(el).transform);return {x:m.e,y:m.f,zoom:m.a};
+  });
+  const stage=await page.locator('.flow-root').boundingBox();
+  await page.mouse.move(stage.x+8,stage.y+stage.height/2);
+  const beforePan=await camera();
+  await page.evaluate(()=>{window.panTextMeasurements=0;});
+  await page.mouse.wheel(0,80);
+  await expect.poll(async()=>(await camera()).y,'The ordinary wheel gesture pans the canvas').not.toBe(beforePan.y);
+  await page.evaluate(()=>new Promise(requestAnimationFrame));
+  expect(await page.evaluate(()=>window.panTextMeasurements),'Panning does not remeasure unchanged text').toBe(0);
+  expect((await camera()).zoom,'Panning preserves zoom').toBe(beforePan.zoom);
+  expect(await worldGeometry(page),'Panning preserves world geometry').toEqual(geometry);
+  await page.getByRole('button',{name:'Show whole map',exact:true}).click();
+  await assertOverviewReadable(page,{allowInventoryScroll:true});
+  for(const id of ['front','backend']){
+    await expect(page.locator(`[data-component-overview="${id}"] [data-overview-area]`)).toHaveCount(42);
+    const area=page.locator(`[data-component-overview="${id}"] [data-overview-area="${id}-workflow-40"]`);
+    await expect(area).toHaveText('Additional workflow 40');
+    await area.scrollIntoViewIfNeeded();
+    await assertInsideCanvas(page,area,'The final area stays reachable in its frame',{text:true,container:`.react-flow__node[data-id="${id}"]`});
+  }
+  await testInfo.attach('journey-02 — Scroll to the final entries',{body:await workspace.screenshot(),contentType:'image/png'});
+  await page.locator('[data-overview-area="backend-workflow-40"]').click();
+  await expect(page.locator('[data-reading-title]')).toHaveText('Additional workflow 40');
+  await assertInsideCanvas(page,page.locator('.react-flow__node[data-id="backend-workflow-40-part"]'),'The final workflow opens its actual part');
+  await testInfo.attach('journey-03 — Open the final workflow and its part',{body:await workspace.screenshot(),contentType:'image/png'});
+  await page.getByRole('button',{name:'Show whole map',exact:true}).click();
+  await assertOverviewReadable(page,{allowInventoryScroll:true});
+  expect(await worldGeometry(page),'Dense overview return keeps the same fixed world').toEqual(geometry);
+  await testInfo.attach('journey-04 — Return to the same whole map',{body:await workspace.screenshot(),contentType:'image/png'});
   expect(errors).toEqual([]);
 });
 
@@ -104,7 +168,51 @@ test('external zoom reveals calls and returns to the same overview',async({page}
   expect(errors).toEqual([]);
 });
 
+test('whole map remeasures readable headings after the window becomes narrower',async({page},testInfo)=>{
+  if(testInfo.project.name==='desktop')await page.setViewportSize({width:1280,height:720});
+  const errors=await openFixture(page);
+  const savedOverview=await page.locator('[data-map]').evaluate(map=>map.captureViewport());
+  await page.getByRole('button',{name:'Zoom into Backend API',exact:true}).click();
+  await expect(page.locator('[data-reading-title]')).toHaveText('Backend API');
+  let previousCamera,stable=0;
+  await expect.poll(async()=>{
+    const current=JSON.stringify(await page.locator('[data-map]').evaluate(map=>map.captureViewport()));
+    stable=current===previousCamera?stable+1:0;previousCamera=current;return stable;
+  },{message:'The reading camera finishes its entrance before resizing',intervals:[100]}).toBeGreaterThanOrEqual(2);
+  const before=await worldGeometry(page);
+  const readingCamera=await page.locator('[data-map]').evaluate(map=>map.captureViewport());
+  await page.setViewportSize({width:934,height:1024});
+  // Resizing while reading must not replace the reader's world or camera.
+  expect(await worldGeometry(page)).toEqual(before);
+  expect(await page.locator('[data-map]').evaluate(map=>map.captureViewport())).toEqual(readingCamera);
+  await page.getByRole('button',{name:'Show whole map',exact:true}).click();
+  await expect.poll(()=>worldGeometry(page),'Whole-map fit remeasures the changed viewport').not.toEqual(before);
+  await expect(page.locator('[data-component-overview]')).toHaveCount(7);
+  await testInfo.attach('journey-01 — Whole map after narrowing the window',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  await assertOverviewReadable(page);
+  for(const item of roots){
+    const button=await page.getByRole('button',{name:`Zoom into ${item.title}`,exact:true}).boundingBox();
+    const frame=await page.locator(`.react-flow__node[data-id="${item.id}"]`).boundingBox();
+    expect(inside(button,frame),`${item.title} zoom control stays in its resized frame`).toBe(true);
+  }
+  await expect(page.locator('.map-workspace')).toHaveScreenshot('resized-overview.png');
+  await page.getByRole('button',{name:'Zoom into Backend API',exact:true}).click();
+  await expect(page.locator('[data-component-overview="api"]')).toHaveCount(0);
+  await assertInsideCanvas(page,page.locator('.react-flow__node[data-id="download"] .flow-part>strong'),'The resized API entrance reveals its actual call',{text:true});
+  await page.locator('[data-map]').evaluate((map,viewport)=>map.restoreReadingState({scope:'',viewport}),savedOverview);
+  await expect(page.locator('[data-component-overview]')).toHaveCount(7);
+  await assertOverviewReadable(page);
+  await expect(page.locator('.map-workspace')).toHaveScreenshot('resized-overview.png');
+  const narrow=await worldGeometry(page);
+  await page.setViewportSize({width:1280,height:720});
+  await expect.poll(()=>worldGeometry(page),'Resizing the whole map updates its placement').not.toEqual(narrow);
+  await expect.poll(()=>page.locator('[data-map]').evaluate(map=>map.captureViewport().fit)).toBe(true);
+  await assertOverviewReadable(page);
+  expect(errors).toEqual([]);
+});
+
 test('visual journey: aim, zoom through both detail levels, return',async({page},testInfo)=>{
+  test.setTimeout(60000);
   const errors=await openFixture(page);
   const geometry=await worldGeometry(page);
   const workspace=page.locator('.map-workspace');
@@ -180,7 +288,7 @@ test('visual journey: aim, zoom through both detail levels, return',async({page}
         y:(pointer.y-stage.y-before.metadata.camera.y)/before.metadata.camera.zoom};
       const revision=await page.locator('[data-map]').getAttribute('data-camera-revision');
       await page.keyboard.down('Control');
-      try{await page.mouse.wheel(0,-24);}finally{await page.keyboard.up('Control');}
+      try{await page.mouse.wheel(0,-8);}finally{await page.keyboard.up('Control');}
       await expect.poll(()=>page.locator('[data-map]').getAttribute('data-camera-revision')).not.toBe(revision);
       gesture++;
       const after=await capture('Zoom gesture '+gesture+' toward '+description);
@@ -215,6 +323,12 @@ test('visual journey: aim, zoom through both detail levels, return',async({page}
         const location=page.locator('.flow-location');
         await expect(location).toHaveText('Web application');
         await assertInsideCanvas(page,location,'The component context remains visible after detail opens',{text:true,container:'.map-stage'});
+        const child=await textBounds(editingHeading);
+        const canvas=await page.locator('.flow-root').boundingBox();
+        if(!inside(child,canvas)){
+          await assertInsideCanvas(page,frontHeading,'The component heading remains visible until its interior arrives',{text:true});
+          await assertInsideCanvas(page,page.locator('[data-component-overview="front"] [data-overview-area="editing"]'),'The actual Job editing entrance remains visible',{text:true});
+        }
       },
       'Component detail threshold crossed; pan to the area follows');
   });
@@ -254,7 +368,7 @@ test('component zoom reveals its named areas without losing the heading',async({
   }
   await expect(page.locator('.flow-component-title').filter({hasText:'Web application'})).toBeInViewport();
   await page.getByRole('heading',{name:'Two systems · five external participants'}).hover();
-  // Local macOS and CI differ at one antialiased glyph-edge pixel in this view.
-  await expect(page.locator('.map-workspace')).toHaveScreenshot('component.png',{maxDiffPixels:1});
+  // Repeated local Chromium captures differ at up to three glyph-edge pixels.
+  await expect(page.locator('.map-workspace')).toHaveScreenshot('component.png',{maxDiffPixels:3});
   expect(errors).toEqual([]);
 });

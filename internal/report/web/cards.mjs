@@ -64,11 +64,16 @@ export function prepareCards(records, inputOwner, measure, translate) {
     const subtitle=n.category==='external'&&!n.title.endsWith(n.subtitle||'')?n.subtitle:'';
     const subtitleLines=subtitle?wrap(subtitle,228,'13px system-ui'):[];
     const names=n.branch==='component'?areaNames(n.id):[];
-    const overviewMinWidth=Math.max(0,...String(n.title).split(/\s+/).map(word=>measure(word,n.branch==='communication'?'700 13px system-ui':'700 18px system-ui')))+(n.branch==='communication'?16:32);
-    const overviewHeightAtWidth=['component','communication'].includes(n.branch)?width=>{
+    const overviewMinWidth=Math.max(0,...String(n.title).split(/\s+/).map(word=>measure(word,n.branch==='communication'?'700 13px system-ui':'700 18px system-ui')))+(n.branch==='communication'?16:64);
+    const overviewHeightAtWidth=['component','communication'].includes(n.branch)?(width,{availableHeight=Infinity}={})=>{
       const heading=overviewHeading(n,width,measure);
-      const list=names.length?17+names.reduce((h,name)=>h+10+wrap(name,Math.max(1,Math.min(304,width-32)),'500 13px system-ui').length*18,0):0;
-      return Math.max(52,(n.branch==='communication'?16:32)+heading.height+list);
+      // The inventory remains complete in the scrollable summary. Its first
+      // entrance sets the minimum usable height; fitting the entire list would
+      // enlarge the world and make its fitted text smaller again.
+      const rows=names.map(name=>10+wrap(name,Math.max(1,Math.min(304,width-32)),'500 13px system-ui').length*18);
+      const base=(n.branch==='communication'?16:32)+heading.height;
+      const list=rows.length?17+rows.reduce((sum,row)=>sum+row,0):0;
+      return Math.max(52,base+(base+list>availableHeight&&rows.length?17+rows[0]:list));
     }:undefined;
     return {...n,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputs,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,
       kindLabel:communicationChildren.has(n.id)?'':kind(n),description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),

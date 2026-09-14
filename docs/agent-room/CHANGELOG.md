@@ -1,5 +1,80 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Dense overview, wheel work and window-size regression
+
+- Reproduced the reported thin-strip failure on a desktop prepared input:
+  two systems and five external participants, with forty additional areas per
+  system. Fitting complete wrapped inventories repeatedly increased world
+  height and decreased their available text width. The resulting world reached
+  38.8 million by 1.34 billion units; no root heading was readable.
+- Initial placement now measures at least a whole word's width and reserves
+  a usable entrance for oversized inventories. Small lists still reserve their
+  complete height; every entry in a long list remains scrollable and selectable.
+  Tests reach the final area and its actual part and return to the same world.
+- Closed overview movement used to rebuild all graph props and remeasure its
+  text on every event. Overview labels now subscribe to the camera separately.
+  On the same dense fixture, median JS CPU work across three runs dropped from
+  645 to 53 ms for thirty wheel-pan events and from 413 to 49 ms for twenty
+  zoom events. These are CPU measurements, not FPS. Actual camera displacement
+  was checked; the permanent pan regression requires zero remeasurements when
+  text width stays unchanged and preserves zoom/world geometry.
+- Manual verification of the saved Python report then exposed a separate
+  failure after the window narrowed from 1280×720 to 934×1024: a fixed external
+  frame became shorter than its screen-sized title and zoom mark. A new resize
+  journey fails against the preceding bundle (heading bottom 605.90, frame
+  bottom 590.97). Whole-map placement must be measured for the new viewport;
+  ordinary zoom and resizing during selected reading keep the current world.
+  Long inventories also show a subtle scrolling edge and a thin scrollbar.
+- The smaller viewport also exposed a fixed four-pass reservation stopping
+  before short lists fitted. Orientation scoring now uses measured text;
+  reservation continues to a readable fit, with repeated screen geometry and
+  necessary physical-space bounds stopping unproductive growth. That fallback
+  retains the complete graph and does not claim its text is readable. Startup
+  capture waits for the inner canvas fit; Back honors saved whole-map intent
+  before comparing the old geometry identity.
+- Visual inspection rejected another existing reference: after a wheel zoom
+  crossed the component boundary, only empty borders remained in view. A
+  component keeps its title and actual area entrances until a child heading is
+  visible. The journey now requires that visible content and uses smaller real
+  pinch steps to capture both detail transitions separately. Camera coordinates
+  and the world stay fixed through these display changes.
+- Acceptance: 24 UI unit checks and the generated-bundle check passed; the final
+  normal screenshot comparison passed all 12 scenarios in 2 minutes without
+  updating references. Reviewed the dense and resized defaults and both complete
+  zoom journeys. Only the component entrance permits three observed glyph-edge
+  pixels; geometry, clipping, text visibility and all other image checks remain
+  strict. Focused report tests and vet passed; `make build` produced the ordinary
+  binary. Rendering the completed `20260914-075635-python-tutorial-game-7ca39618e06e`
+  run completed with zero provider requests.
+- In the actual Python report at 934×1024, the whole backend API name and all
+  seven frontend/five backend area entrances fit. Opened Simulation domain and
+  its four parts, opened backend API and all three calls, and used browser Back
+  to recover the complete overview. The earlier source journey reached the
+  original `backend/app/field.py:10` and returned. Reloaded the HTML screenshot
+  gallery and confirmed all six displayed sequences report `passed`.
+
+## 2026-09-14 — Audit question and answer request counts
+
+- `live` counts prepared provider windows, including refused parents replaced
+  by adaptive splitting. Network attempts within one window are separate.
+  The completed Python run obtained 16 answers with two `atlas_question`
+  requests and one `atlas_answer`; a high count is not required per question.
+- Question preparation still splits at eight questions before checking the
+  provider envelope. Commit `570a3fcd2` introduced that bound after a 64-question
+  Freqtrade response omitted most answers. It is an empirical quality workaround,
+  not a provider limit. The answer stage has no equivalent eight-question bound.
+- The two saved Python retrieval windows repeat identical 51-row evidence
+  (182,439 bytes). Combining all 16 questions with all those sources produces
+  about 224 KB of prepared input instead of the two windows' combined 445 KB.
+  This establishes duplicated input, not the quality of a combined response.
+  No batching policy was changed without the saved-window replay comparison.
+- The older Airflow run supplies a different reason for high counts: initial
+  retrieval/answer requests contained about 24/29 MB, received `context_tokens`
+  refusals and were subsequently divided. The reported other-machine counts
+  of 17/11 cannot be assigned to either cause without that run's evidence.
+  This audit used local code, history and saved requests only; no provider
+  calls or additional response caches were created.
+
 ## 2026-09-14 — Preserve Python author descriptions at their declarations
 
 - Following the boundary input audit found two existing losses: the claims

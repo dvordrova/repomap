@@ -1,4 +1,7 @@
-import {records,relations,areas,inputOwner} from './two-systems-five-externals.mjs';
+import * as prepared from './two-systems-five-externals.mjs';
+
+const {records,relations,areas,inputOwner}=new URLSearchParams(location.search).has('dense')
+  ?prepared.denseInventory():prepared;
 
 // Only the host callbacks and prepared English labels are supplied here.
 // Rendering, measurement, layout, zoom, hover and controls are production code.
@@ -26,4 +29,10 @@ const flow=await window.rmCreateFlow(map,stage,records,relations,areas,inputOwne
   connection(){},
 });
 map.showWholeMap=()=>{flow.update({});showReading('');return flow.overview();};
+map.captureViewport=()=>flow.capture();
+map.restoreReadingState=saved=>{
+  flow.update({scope:saved.scope||'',selected:saved.scope?selected(saved.scope):new Set()});
+  showReading(saved.scope);
+  flow.restore(saved.viewport);
+};
 map.dataset.fixtureReady='true';

@@ -31,18 +31,43 @@ export async function semanticLayout(items, relations, areas, width, height) {
     if(node.width*overviewZoom<minimum){record.minimumWidth=minimum/overviewZoom;widened=true;}
   }
   if(widened)layout=await arrange(records,relations,areas,width,height);
-  // Compound routing may leave a short root even though its nested drawing is
-  // large. Reserve its measured overview heading and complete area list before
-  // showing the fixed world. Recheck after fitting because added space changes
-  // the whole-map scale. Bounded placement work never runs during a gesture.
-  for(let pass=0;pass<4;pass++){
-    const zoom=systemViewport(layout.nodes,width,height||700).zoom;
-    let resized=false;
-    for(const node of layout.nodes.filter(n=>!n.parentId)){
+  // Reserve readable headings and a usable entrance to the complete, scrollable
+  // inventory. Measure at the width being reserved, never a collapsing fitted
+  // width: wrapping a long list there creates a height/fit feedback loop.
+  // Continue until the fitted text fits, or further growth produces the same
+  // visible geometry. World-coordinate growth alone is not visual progress.
+  const availableWidth=Math.max(1,width-48),availableHeight=Math.max(1,(height||700)-48);
+  const rootRecords=records.filter(n=>!parent.has(n.id)&&n.overviewHeightAtWidth);
+  const minimums=rootRecords.map(record=>({
+    width:record.overviewMinWidth||0,
+    height:record.overviewHeightAtWidth?.(availableWidth,{availableHeight:0})||0,
+  }));
+  const impossible=minimums.some(n=>n.width>availableWidth||n.height>availableHeight)||
+    minimums.reduce((sum,n)=>sum+n.width*n.height,0)>availableWidth*availableHeight;
+  const pixel=value=>Math.round(value*(globalThis.devicePixelRatio||1));
+  const seen=new Set();let best;
+  for(;;){
+    const viewport=systemViewport(layout.nodes,width,height||700),zoom=viewport.zoom;
+    const constraints=layout.nodes.filter(n=>!n.parentId).map(node=>{
       const record=records.find(n=>n.id===node.id);
-      const needed=record.overviewHeightAtWidth?.(node.width*zoom)||0;
-      if(needed&&record.overviewMinWidth>node.width*zoom){record.minimumWidth=(record.overviewMinWidth+2)/zoom;resized=true;}
-      if(needed>node.height*zoom+1){record.minimumHeight=(needed+2)/zoom;resized=true;}
+      const minimum=record.overviewMinWidth||(record.branch==='component'?200:record.branch==='communication'?150:0);
+      const needed=record.overviewHeightAtWidth?.(Math.max(minimum,node.width*zoom),{availableHeight})||0;
+      return {node,record,minimum,needed};
+    });
+    const deficit=Math.max(0,...constraints.flatMap(({node,minimum,needed})=>[minimum-node.width*zoom,needed-node.height*zoom-1]));
+    if(!best||deficit<best.deficit)best={deficit,layout,records:records.map(n=>({...n}))};
+    if(deficit<=0)break;
+    const geometry=JSON.stringify(constraints.map(({node,minimum,needed})=>[
+      node.id,pixel(node.absolute.x*zoom+viewport.x),pixel(node.absolute.y*zoom+viewport.y),
+      pixel(node.width*zoom),pixel(node.height*zoom),minimum,needed,
+    ]));
+    if(impossible||seen.has(geometry))return {layout:best.layout,records:best.records,scales,owner,summaries:summaryByID};
+    seen.add(geometry);
+    let resized=false;
+    for(const {node,record,minimum,needed} of constraints){
+      if(minimum>node.width*zoom){record.minimumWidth=(minimum+2)/zoom;resized=true;}
+      // Retain one content inset when the final compound fit changes scale.
+      if(needed>node.height*zoom+1){record.minimumHeight=(needed+8)/zoom;resized=true;}
     }
     if(!resized)break;
     layout=await arrange(records,relations,areas,width,height);

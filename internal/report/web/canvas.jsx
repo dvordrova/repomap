@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useLayoutEffect, useMemo, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {ReactFlow, Handle, Position, ViewportPortal, useViewport} from '@xyflow/react';
@@ -58,6 +58,7 @@ function FrameTitle({node,item,focused,enter,select}) {
   const component=item.branch==='component',communication=item.branch==='communication';
   const x=component||communication?Math.max(node.absolute.x+18,Math.min(node.absolute.x+node.width-260,(24-viewport.x)/viewport.zoom)):node.absolute.x+18;
   return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${component?'flow-component-title':communication?'flow-communication-title':''}`}
+    data-frame-title={node.id}
     style={{transform:`translate(${x}px,${node.absolute.y+12}px)`,maxWidth:node.width-36}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
     {communication&&<div className="flow-kind">{t('External communication')}</div>}
@@ -90,13 +91,17 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const context=document.createElement('canvas').getContext('2d');
   const measure=(text,font)=>{context.font=font;return context.measureText(text).width;};
   const items=prepareCards(records,inputOwner,measure,t);
+  const initialSize={width:host.clientWidth||1200,height:host.clientHeight||700};
   let semantic;
-  try{semantic=await semanticLayout(items,relations,areas,stage.clientWidth||1200,stage.clientHeight||700);}catch(error){host.remove();map.classList.remove('flow-enabled');source.style.display='';source.removeAttribute('aria-hidden');throw error;}
-  const {layout,scales}=semantic;
-  const byID=new Map(semantic.records.map(n=>[n.id,n])), placed=new Map(layout.nodes.map(n=>[n.id,n]));
-  const geometry=JSON.stringify(layout.nodes.map(n=>[n.id,n.absolute.x,n.absolute.y,n.width,n.height]));
-  let geometryHash=0;for(let i=0;i<geometry.length;i++)geometryHash=(Math.imul(31,geometryHash)+geometry.charCodeAt(i))|0;
-  const layoutKey=String(geometryHash);
+  try{semantic=await semanticLayout(items,relations,areas,initialSize.width,initialSize.height);}catch(error){host.remove();map.classList.remove('flow-enabled');source.style.display='';source.removeAttribute('aria-hidden');throw error;}
+  let {layout,scales}=semantic;
+  let byID=new Map(semantic.records.map(n=>[n.id,n])), placed=new Map(layout.nodes.map(n=>[n.id,n]));
+  const geometryKey=nodes=>{
+    const geometry=JSON.stringify(nodes.map(n=>[n.id,n.absolute.x,n.absolute.y,n.width,n.height]));
+    let hash=0;for(let i=0;i<geometry.length;i++)hash=(Math.imul(31,hash)+geometry.charCodeAt(i))|0;
+    return String(hash);
+  };
+  let layoutKey=geometryKey(layout.nodes),layoutSize=initialSize,fitting;
   const initial={scope:'',operation:'',entry:'',selected:new Set(),matched:new Set(),searching:false,numbered:true};
   let cameraRevision=0;
   let update, instance, view=initial, hoverArea='', preview='', restorePending, pendingFocus, panning=false, initializing=true;
@@ -119,7 +124,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     location.textContent=names.filter(Boolean).join(' / ')||t('System map');
   }
   const isOverview=()=>!detailed.size;
-  const maxZoom=Math.max(2,...[...scales.values()].map(s=>1.8/s));
+  let maxZoom=Math.max(2,...[...scales.values()].map(s=>1.8/s));
   const minZoom=()=>Math.min(.15,systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom);
   const hover=new HoverGate();
   const remember=event=>hover.remember(event.clientX,event.clientY);
@@ -164,13 +169,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const zoom=1/contentScale;
     commitCamera(instance.setCenter(x+n.width/2,y+Math.min(n.height/2,rect.height/(2*zoom)-24),{zoom,duration:smooth?420:0}));
   }
-  function capture(){return instance?{...instance.getViewport(),layoutKey,overview:isOverview(),detailAreas:[...detailed],componentsOpen,fit:overviewFit}:restorePending||null;}
+  function capture(){return instance&&!initializing?{...instance.getViewport(),layoutKey,overview:isOverview(),detailAreas:[...detailed],componentsOpen,fit:overviewFit}:restorePending||null;}
   function restore(v){if(!v)return;
     if(!instance||initializing){restorePending=v;return;}
+    if(v.fit===true||(v.fit===undefined&&v.componentsOpen===false&&!view.scope&&!view.operation)){fitOverview();return;}
     // A regenerated report can have different geometry. Old screen coordinates
     // must not place its still-selected item outside the visible viewport.
-    if(!Number.isFinite(v.zoom)||v.layoutKey!==layoutKey){focus(view.scope||view.operation,true);return;}
-    if(v.fit===true||(v.fit===undefined&&v.componentsOpen===false&&!view.scope&&!view.operation)){fitOverview();return;}
+    if(!Number.isFinite(v.zoom)||v.layoutKey!==layoutKey){if(view.scope||view.operation)focus(view.scope||view.operation,true);else fitOverview();return;}
     overviewFit=false;
     detailed=v.detailAreas?new Set(v.detailAreas.filter(id=>scales.has(id))):detailedAreas(scales,v.zoom);
     componentsOpen=componentContents(v.zoom,v.componentsOpen);zoom=v.zoom;update?.();
@@ -178,15 +183,111 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(instance)commitCamera(instance.setViewport(v));else restorePending=v;
   }
   function resetView(){if(!instance)return;if(isOverview()){fitOverview();return;}const first=layout.nodes.filter(n=>!n.frame).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];focus(view.scope||view.operation||first?.id,true);}
-  async function fitOverview(duration=0){
+  function fitOverview(duration=0){
     overviewFit=true;
-    detailed=new Set();componentsOpen=false;hoverArea='';update?.();
-    const v=systemViewport(layout.nodes,host.clientWidth,host.clientHeight);
-    hover.pause();
-    await commitCamera(instance.setViewport(v,{duration}));
+    if(fitting)return fitting;
+    fitting=(async()=>{
+      while(overviewFit){
+        const width=host.clientWidth,height=host.clientHeight;
+        // Screen-sized labels need a new initial placement after the window
+        // changes shape. Ordinary pan/zoom and selection retain the fixed world.
+        if(width!==layoutSize.width||height!==layoutSize.height){
+          const next=await semanticLayout(items,relations,areas,width,height);
+          if(!overviewFit)return;
+          if(width!==host.clientWidth||height!==host.clientHeight)continue;
+          semantic=next;({layout,scales}=next);
+          byID=new Map(next.records.map(n=>[n.id,n]));placed=new Map(layout.nodes.map(n=>[n.id,n]));
+          layoutKey=geometryKey(layout.nodes);
+          maxZoom=Math.max(2,...[...scales.values()].map(s=>1.8/s));
+        }
+        layoutSize={width,height};
+        detailed=new Set();componentsOpen=false;hoverArea='';update?.();
+        const v=systemViewport(layout.nodes,width,height);
+        hover.pause();
+        await commitCamera(instance.setViewport(v,{duration}));
+        if(width===host.clientWidth&&height===host.clientHeight)break;
+      }
+    })().finally(()=>{fitting=null;});
+    return fitting;
   }
   function select(id,event,center=false){
     hover.remember(event.clientX,event.clientY);hover.pause();hoverArea='';preview='';map.clearMapPreview?.();callbacks.select(id,center);
+  }
+  // Screen-sized summaries follow the camera without rebuilding graph props.
+  function ComponentOverview({node:n}){
+    const viewport=useViewport(),zoom=viewport.zoom;
+    const left=Math.max(0,n.absolute.x*zoom+viewport.x),right=Math.min(host.clientWidth,(n.absolute.x+n.width)*zoom+viewport.x);
+    const item=byID.get(n.id),inventory=inventories.get(n.id),screenWidth=right-left,screenHeight=n.height*zoom;
+    const visible=screenWidth>32,width=Math.min(320,screenWidth-16),contentWidth=Math.max(1,width-16);
+    const heading=useMemo(()=>visible?overviewHeading(item,screenWidth,measure):null,[screenWidth]);
+    const text=useMemo(()=>{
+      if(!visible)return null;
+      const communication=item.branch==='communication',areaIDs=communication?[]:inventory.areaIDs;
+      const textHeight=(text,font,lineHeight)=>wrapText(text,contentWidth,font,measure).length*lineHeight;
+      const listHeight=areaIDs.length?7+areaIDs.reduce((h,id)=>h+10+textHeight(byID.get(id).name||byID.get(id).title,'500 13px system-ui',18),0):0;
+      const counts=[inventory.parts?t('{0} parts',inventory.parts):'',inventory.inputs?t('{0} inputs',inventory.inputs):''].filter(Boolean).join(' · ');
+      const roleHeight=item.role?textHeight(item.role,'600 13px system-ui',18)+10:0;
+      const countsHeight=textHeight(counts,'500 12px system-ui',17)+10;
+      return {communication,areaIDs,listHeight,counts,roleHeight,countsHeight};
+    },[visible,contentWidth]);
+    if(!heading)return null;
+    const {communication,areaIDs,listHeight,counts,roleHeight,countsHeight}=text,scale=1/zoom;
+    let remaining=screenHeight-32-heading.height-listHeight-(areaIDs.length?10:0);
+    const listOverflow=remaining<0;
+    const showRole=!communication&&roleHeight>0&&remaining>=roleHeight;
+    if(showRole)remaining-=roleHeight;
+    const showCounts=!communication&&remaining>=countsHeight;
+    if(showCounts)remaining-=countsHeight;
+    const descriptionLines=Math.floor((remaining-10)/18);
+    // Screen-sized summaries must stay in the visible part of their own
+    // frame while approaching its contents. Their world corner can leave
+    // the viewport long before the interior reaches readable scale.
+    const x=(left+8-viewport.x)/zoom;
+    const y=Math.max(n.absolute.y+8/zoom,Math.min(n.absolute.y+n.height-(heading.height+24)/zoom,(8-viewport.y)/zoom));
+    return <div key={'component-'+n.id} className={`flow-component-overview nopan ${item.branch==='communication'?'flow-communication-overview':''}`}
+      data-component-overview={n.id} style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width,maxHeight:(n.absolute.y+n.height-y)*zoom-8}}
+      onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,true);}}>
+      <div className="flow-component-overview-heading" style={{maxWidth:heading.width,paddingTop:heading.clearZoom?32:undefined}}><strong>{item.name}</strong></div>
+      {showRole&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
+      {!communication&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description.replace(/\n/g,' ')}</p>}
+      {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'nowheel':''}`}>{areaIDs.map(id=><li key={id}>
+        <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,true);}}>{byID.get(id).name||byID.get(id).title}</button>
+      </li>)}</ul>}
+      {showCounts&&<div className="flow-inside-counts">{counts}</div>}
+    </div>;
+  }
+  function ComponentPresentation({node,focused}){
+    const viewport=useViewport();
+    const [fallback,setFallback]=useState(!componentsOpen);
+    const left=node.absolute.x*viewport.zoom+viewport.x,top=node.absolute.y*viewport.zoom+viewport.y;
+    const intersects=left<host.clientWidth&&top<host.clientHeight&&
+      left+node.width*viewport.zoom>0&&top+node.height*viewport.zoom>0;
+    useLayoutEffect(()=>{
+      if(!componentsOpen||!intersects){setFallback(!componentsOpen);return;}
+      const inspect=()=>{
+        const canvas=host.getBoundingClientRect();
+        // Large compound frames can cross the camera while all their text is
+        // still outside it. Inspect real child headings, not those empty bounds.
+        const visibleHeading=(children.get(node.id)||[]).some(id=>{
+          const key=CSS.escape(id);
+          const heading=host.querySelector(`[data-summary-area="${key}"] .flow-part>strong, [data-frame-title="${key}"]>strong, .react-flow__node[data-id="${key}"] .flow-part>strong`);
+          if(!heading||getComputedStyle(heading).visibility==='hidden')return false;
+          const range=document.createRange();range.selectNodeContents(heading);
+          const box=range.getBoundingClientRect();
+          return box.width>0&&box.height>0&&box.left>=canvas.left&&box.top>=canvas.top&&box.right<=canvas.right&&box.bottom<=canvas.bottom;
+        });
+        setFallback(!visibleHeading);
+      };
+      inspect();
+      // React Flow can publish the newly visible nodes in the next commit.
+      const frame=requestAnimationFrame(inspect);
+      map.addEventListener('repomap:viewport',inspect);
+      return()=>{cancelAnimationFrame(frame);map.removeEventListener('repomap:viewport',inspect);};
+    },[viewport.x,viewport.y,viewport.zoom,componentsOpen,detailed,layoutKey,intersects]);
+    const item=byID.get(node.id);
+    return fallback&&(!componentsOpen||intersects)?<>
+      <ComponentOverview node={node}/><ZoomMark node={node} item={item} enter={enter} select={select}/>
+    </>:componentsOpen?<FrameTitle node={node} item={item} focused={focused} enter={enter} select={select}/>:null;
   }
   function App(){
     const [,setVersion]=useState(0);update=()=>setVersion(v=>v+1);
@@ -266,7 +367,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         const changed=open!==componentsOpen||next.size!==detailed.size||[...next].some(id=>!detailed.has(id));
         componentsOpen=open;detailed=next;
         if(changed){hoverArea='';hover.pause();}
-        if(changed||!componentsOpen)update?.();
+        if(changed)update?.();
         map.querySelectorAll('[data-map-zoom]').forEach(button=>{button.disabled=Number(button.dataset.mapZoom)<1&&viewport.zoom<=minZoom();});
       }}
       onMoveStart={event=>{if(event)overviewFit=false;panning=true;hover.pause();preview='';map.clearMapPreview?.();}}
@@ -276,54 +377,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
       </defs></svg>
       <ViewportPortal>
-        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&(componentsOpen||scales.has(n.id))&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
-        {!componentsOpen&&drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication'].includes(byID.get(n.id).branch)).map(n=>{
-          const viewport=instance?.getViewport()||{x:0,y:0};
-          const left=Math.max(0,n.absolute.x*zoom+viewport.x),right=Math.min(host.clientWidth,(n.absolute.x+n.width)*zoom+viewport.x);
-          const item=byID.get(n.id),inventory=inventories.get(n.id),screenWidth=right-left,screenHeight=n.height*zoom;
-          if(screenWidth<=32)return null;
-          const heading=overviewHeading(item,screenWidth,measure);
-          const communication=item.branch==='communication',scale=1/zoom,width=Math.min(320,screenWidth-16);
-          const contentWidth=Math.max(1,width-16),areaIDs=communication?[]:inventory.areaIDs;
-          const textHeight=(text,font,lineHeight,w=contentWidth)=>wrapText(text,w,font,measure).length*lineHeight;
-          const listHeight=areaIDs.length?7+areaIDs.reduce((h,id)=>h+10+textHeight(byID.get(id).name||byID.get(id).title,'500 13px system-ui',18),0):0;
-          const counts=[inventory.parts?t('{0} parts',inventory.parts):'',inventory.inputs?t('{0} inputs',inventory.inputs):''].filter(Boolean).join(' · ');
-          let remaining=screenHeight-32-heading.height-listHeight-(areaIDs.length?10:0);
-          const listOverflow=remaining<0;
-          const roleHeight=item.role?textHeight(item.role,'600 13px system-ui',18)+10:0;
-          const showRole=!communication&&roleHeight>0&&remaining>=roleHeight;
-          if(showRole)remaining-=roleHeight;
-          const countsHeight=textHeight(counts,'500 12px system-ui',17)+10;
-          const showCounts=!communication&&remaining>=countsHeight;
-          if(showCounts)remaining-=countsHeight;
-          const descriptionLines=Math.floor((remaining-10)/18);
-          // Screen-sized summaries must stay in the visible part of their own
-          // frame while approaching its contents. Their world corner can leave
-          // the viewport long before the interior reaches readable scale.
-          const x=(left+8-viewport.x)/zoom;
-          const y=Math.max(n.absolute.y+8/zoom,Math.min(n.absolute.y+n.height-(heading.height+24)/zoom,(40-viewport.y)/zoom));
-          return <div key={'component-'+n.id} className={`flow-component-overview nopan ${item.branch==='communication'?'flow-communication-overview':''}`}
-            data-component-overview={n.id} style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width,maxHeight:(n.absolute.y+n.height-y)*zoom-8}}
-            onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,true);}}>
-            <div className="flow-component-overview-heading" style={{maxWidth:heading.width,paddingTop:heading.clearZoom?32:undefined}}><strong>{item.name}</strong></div>
-            {showRole&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
-            {!communication&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description.replace(/\n/g,' ')}</p>}
-            {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'nowheel':''}`}>{areaIDs.map(id=><li key={id}>
-              <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,true);}}>{byID.get(id).name||byID.get(id).title}</button>
-            </li>)}</ul>}
-            {showCounts&&<div className="flow-inside-counts">{counts}</div>}
-          </div>;
-        })}
+        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&!['component','communication'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id))&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
+        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)}/>)}
         {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><div key={'summary-'+n.id}
           className={`flow-area-summary nopan ${state.focus.has(n.id)?'flow-node-focus':''} ${state.participants.has(n.id)?'flow-node-connected':''}`}
           data-summary-area={n.id} style={{transform:`translate(${n.absolute.x}px,${n.absolute.y}px)`,width:n.width,height:n.height}}
           onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,true);}}>
           <OverviewCard data={{...semantic.summaries.get(n.id),reading:view.scope,operation:view.operation,open:(id,event)=>select(id,event,true)}}/>
         </div>)}
-        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&(
-          (!componentsOpen&&['component','communication'].includes(byID.get(n.id).branch))||
-          (scales.has(n.id)&&!detailed.has(n.id))
-        )).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} enter={enter} select={select}/>)}
+        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} enter={enter} select={select}/>)}
         {area&&visible(area)&&detailed.has(area)&&view.numbered&&labels.map(label=><div key={label.id}
           className="flow-connection-label nopan" data-connection-outside={label.outside} data-connection-label={label.id}
           style={{transform:`translate(${label.x}px,${label.y}px) scale(${label.scale||1})`,transformOrigin:'top left',width:label.width/(label.scale||1),minHeight:label.height/(label.scale||1)}}
@@ -353,7 +415,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     else if(button.hasAttribute('data-map-reset'))resetView();
     else if(button.hasAttribute('data-map-zoom')){overviewFit=false;commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom)));}
   });
-  return {layout,focus,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
+  return {get layout(){return layout;},focus,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
     view={...initial,...next};update();
   }};

@@ -146,12 +146,15 @@ directory. Missing references fail normal runs. The checked-in PNGs cover
 1440×900 and 1024×768 at DPR 1 on macOS 15 Intel with the Chromium version
 selected by the pinned Playwright dependency. Other operating systems need
 their own reviewed references, not automatically accepted images.
-The component entrance comparison allows one differing pixel for the observed
+The component entrance comparison allows three differing pixels for the observed
 macOS glyph-edge rasterization difference; all others allow none. No canvas
 region is masked, and bounds, readability and pointer checks remain strict.
 
 The suite checks readable names, complete area lists, external call focus,
 stable geometry and the successive stages of pointer-anchored zoom. PNG
+checks at the component threshold require a visible child heading or the
+retained component heading with a real area entrance; empty frame borders and
+the location row alone are insufficient. PNG
 attachments show the aim and action for each journey step. Open the review
 page with `npx playwright show-report --host 127.0.0.1`; its HTML is a viewer for
 the screenshots and, on mismatch, expected/actual/diff images. Actual output
@@ -160,3 +163,18 @@ Failed sequences are explicitly marked as diagnostic output. The images
 and the viewer are ignored build artifacts; only reviewed reference PNGs are
 committed. CI compares references without updating them and publishes the
 review report as `canvas-screenshots`.
+
+The same prepared participants also have a dense inventory variant with forty
+additional areas per system. Its default screenshot must keep all seven root
+headings and zoom controls readable without overlap. Every area stays in the
+scrollable list; the journey scrolls to its last entry, opens that area's actual
+part and returns to the same whole-map geometry. This catches repeated
+height-reservation and fit calculations collapsing a dense world into a strip.
+A real vertical wheel pan must move the camera without changing zoom or world
+geometry, and must not remeasure text whose visible width is unchanged. This
+checks redundant work directly, without a machine-dependent timing threshold.
+The resize journey narrows the window while reading an external collection:
+its world remains fixed until the whole map is requested. The fitted result
+must keep every full heading and zoom control inside its own frame. Returning
+to a whole-map camera saved before remeasurement must honor that intent rather
+than restore stale coordinates or retain the detail view.
