@@ -145,6 +145,55 @@ func TestDesignAreaMembershipIsNotACountHeuristic(t *testing.T) {
 	}
 }
 
+func TestDesignAcceptsExplicitAbstention(t *testing.T) {
+	for _, mode := range []string{"parts", "merge", "areas"} {
+		t.Run(mode, func(t *testing.T) {
+			result, err := decodeDesign([]byte(`{"groups":[]}`), []designItem{{Ref: "r1"}}, mode)
+			if err != nil || len(result.Groups) != 0 {
+				t.Fatalf("explicit ungrouped decision refused: %+v %v", result, err)
+			}
+			if _, err := decodeDesign([]byte(`{"groups":[{"title":"Unknown","purpose":"Reads.","members":["outside"]}]}`), []designItem{{Ref: "r1"}}, mode); err == nil {
+				t.Fatal("wholly invalid response became an accepted abstention")
+			}
+		})
+	}
+}
+
+func TestDesignWrappedCaptionsKeepTheirMeaning(t *testing.T) {
+	result, err := decodeDesign([]byte(`{"groups":[{"title":" HTTP\nAPI ","purpose":"Receives\r\nrequests\tand responds.","members":["r1"]}]}`), []designItem{{Ref: "r1"}}, "parts")
+	if err != nil || len(result.Groups) != 1 || result.Groups[0].Title != "HTTP API" || result.Groups[0].Purpose != "Receives requests and responds." {
+		t.Fatalf("formatting discarded an understood responsibility: %+v %v", result, err)
+	}
+}
+
+func TestDesignOmissionsDoNotCountAsRefusedGroups(t *testing.T) {
+	for _, empty := range []bool{false, true} {
+		provider := &tableProvider{designFor: func(mode string, items []designItem) designResult {
+			if mode == "areas" || empty {
+				return designResult{Groups: []designGroup{}}
+			}
+			return designResult{Groups: []designGroup{{Title: "Known", Purpose: "Reads.", Members: []string{items[0].Ref, "outside"}}}}
+		}}
+		result, err := Read(t.Context(), readOptions(t, knowledgeGraph(t), provider, ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, use := range result.Atlas.Budget.Stages {
+			if use.Stage == "atlas_zones" && use.Rejected != 0 {
+				t.Fatalf("valid omission/unknown member counted as rejected window: %+v", use)
+			}
+		}
+		for _, note := range result.Rejected {
+			if note.Stage == "atlas_zones" && (note.Kind == "group_rejected" || note.Kind == "window_rejected") {
+				t.Fatalf("valid omission/unknown member counted as refused group: %+v", note)
+			}
+		}
+		if err := atlas.Validate(result.Atlas); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestDesignSinglePartAreaSurvivesReading(t *testing.T) {
 	provider := &tableProvider{designFor: func(mode string, items []designItem) designResult {
 		group := designGroup{Title: "Application", Purpose: "Provides the application boundary."}

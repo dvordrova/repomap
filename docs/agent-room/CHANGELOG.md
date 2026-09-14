@@ -1,5 +1,46 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Audit recent refusals and remove design-only strictness
+
+- Inspected 23 `rejected.jsonl` files from September 13–14 under the existing
+  system run root and task run roots, plus their saved responses and stage
+  accounting. Their 142 diagnostic records are not 142 failed model calls:
+  cached responses recur and omission summaries contain multiple items.
+- The removed area minimum produced 62 group refusals across 12 runs. In the
+  latest complete Python report it removed 7 of 13 proposed areas; in Othello,
+  2 of 8. Revalidating all six complete saved design windows with the current
+  decoder accepts all 21 areas, recovering those nine without provider calls.
+- Another 13 `group_rejected` records were merely omitted declaration refs,
+  allowed by the prompt. Design diagnostics now distinguish `ungrouped_input`,
+  `unknown_member` and `group_rejected`; the stage counts affected windows once.
+  Removed two further new restrictions: explicit empty groups are accepted in
+  every mode, and caption whitespace is normalized like the preexisting table
+  decoder. Empty required fields, malformed rows, groups without known members,
+  and conflicting known ownership remain refused; independent groups survive.
+- Compared production refusal additions against `1ecad4db`. The remaining
+  additions bind native Clojure/project inputs, JS/TS value-read refs and source
+  locations, structural-edge locations, and unique declaration membership.
+  No new boundary-choice validator or boundary prompt was introduced. The
+  reported `remote_client_instance` decision failure was not present in these
+  local journals; this does not establish what the other machine was sent.
+- Existing glossary diagnostics dominate item counts. The last Othello glossary
+  response has 684 entries: 639 identifiers, 44 domain terms and one malformed
+  row. It omits 482 valid identifiers and refuses 158 terms without an exact
+  supported occurrence (157 identifiers and one capitalization mismatch), plus
+  the malformed row. There is also one earlier whole glossary output-limit
+  refusal. These predate this change; their diagnostics are not evidence of
+  hundreds of failed primary-analysis calls. The old documentation reducer
+  also drops concepts after twelve per document (79 counted across repeated
+  runs); its rule is unchanged here.
+- The in-progress Airflow run has one malformed JSON response among 863 symbol
+  windows: `r25` lacks its closing quote, losing 30 of 4,090 descriptions.
+  All 137 operation windows were accepted. Final Airflow and browser acceptance
+  remain pending; the running process predates these design fixes.
+- Regressions reproduced empty-response, wrapped-caption and diagnostic-count
+  failures before the change. Reading, GroupsIndex and report tests, reading
+  vet, saved-response revalidation and `make build` pass. No cache was added or
+  cleared, and no model answer was rewritten.
+
 ## 2026-09-14 — Remove the new two-part area rejection
 
 - The owner reported `atlas_zones: an area must contain distinct collaborating

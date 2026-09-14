@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
@@ -56,7 +57,28 @@ type designGroup struct {
 
 type designResult struct {
 	Groups []designGroup `json:"groups"`
-	Notes  []string      `json:"notes,omitempty"`
+	Notes  []designNote  `json:"notes,omitempty"`
+}
+
+type designNote struct {
+	Kind   string `json:"kind"`
+	Reason string `json:"reason"`
+}
+
+func decodeDesignGroup(raw []byte) (designGroup, string) {
+	var group designGroup
+	if json.Unmarshal(raw, &group) != nil {
+		return group, "malformed group"
+	}
+	// Captions follow the existing table text convention: formatting does
+	// not change a membership decision or discard an otherwise valid group.
+	space := func(r rune) bool { return unicode.IsSpace(r) || r < 0x20 || r == 0x7f }
+	group.Title = strings.Join(strings.FieldsFunc(group.Title, space), " ")
+	group.Purpose = strings.Join(strings.FieldsFunc(group.Purpose, space), " ")
+	if group.Title == "" || group.Purpose == "" {
+		return group, "missing title/purpose"
+	}
+	return group, ""
 }
 
 func decodeDesign(raw []byte, items []designItem, mode string) (designResult, error) {
@@ -74,8 +96,8 @@ func decodeDesign(raw []byte, items []designItem, mode string) (designResult, er
 	// order decide which responsibility acquires a declaration.
 	assignments := map[string]int{}
 	for _, rawGroup := range envelope.Groups {
-		var group designGroup
-		if json.Unmarshal(rawGroup, &group) != nil || strings.TrimSpace(group.Title) == "" || strings.TrimSpace(group.Purpose) == "" || strings.ContainsAny(group.Title+group.Purpose, "\n\r\x00") {
+		group, reason := decodeDesignGroup(rawGroup)
+		if reason != "" {
 			continue
 		}
 		members := map[string]bool{}
@@ -90,17 +112,11 @@ func decodeDesign(raw []byte, items []designItem, mode string) (designResult, er
 	}
 	result := designResult{Groups: []designGroup{}}
 	for i, rawGroup := range envelope.Groups {
-		var group designGroup
-		reason := ""
-		if err := json.Unmarshal(rawGroup, &group); err != nil {
-			reason = "malformed group"
-		} else if strings.TrimSpace(group.Title) == "" || strings.TrimSpace(group.Purpose) == "" || strings.ContainsAny(group.Title+group.Purpose, "\n\r\x00") {
-			reason = "missing or malformed title/purpose"
-		}
+		group, reason := decodeDesignGroup(rawGroup)
 		var members []string
 		for _, ref := range group.Members {
 			if !known[ref] {
-				result.Notes = append(result.Notes, fmt.Sprintf("group %d: unknown member %q discarded", i+1, ref))
+				result.Notes = append(result.Notes, designNote{Kind: "unknown_member", Reason: fmt.Sprintf("group %d: unknown member %q discarded", i+1, ref)})
 				continue
 			}
 			if assignments[ref] > 1 {
@@ -114,24 +130,28 @@ func decodeDesign(raw []byte, items []designItem, mode string) (designResult, er
 			reason = "no known members"
 		}
 		if reason != "" {
-			result.Notes = append(result.Notes, fmt.Sprintf("group %d refused: %s", i+1, reason))
+			result.Notes = append(result.Notes, designNote{Kind: "group_rejected", Reason: fmt.Sprintf("group %d refused: %s", i+1, reason)})
 			continue
 		}
 		for _, ref := range members {
 			used[ref] = true
 		}
-		group.Title, group.Purpose, group.Members = strings.TrimSpace(group.Title), strings.TrimSpace(group.Purpose), members
+		group.Members = members
 		result.Groups = append(result.Groups, group)
 	}
 	if mode != "areas" {
 		for _, item := range items {
 			if !used[item.Ref] {
-				result.Notes = append(result.Notes, "no accepted membership for "+item.Ref)
+				result.Notes = append(result.Notes, designNote{Kind: "ungrouped_input", Reason: "no accepted membership for " + item.Ref})
 			}
 		}
 	}
-	if len(result.Groups) == 0 && (mode != "areas" || len(envelope.Groups) != 0) {
-		return designResult{}, fmt.Errorf("design: no valid grouping decision: %s", strings.Join(result.Notes, "; "))
+	if len(result.Groups) == 0 && len(envelope.Groups) != 0 {
+		var reasons []string
+		for _, note := range result.Notes {
+			reasons = append(reasons, note.Reason)
+		}
+		return designResult{}, fmt.Errorf("design: no valid grouping decision: %s", strings.Join(reasons, "; "))
 	}
 	return result, nil
 }
@@ -232,9 +252,13 @@ func (r *reader) askDesign(ctx context.Context, items []designItem, documents []
 			continue
 		}
 		value := result.Outcome.Value
+		refused := false
 		for _, note := range value.Notes {
+			refused = refused || note.Kind == "group_rejected"
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Kind: note.Kind, Count: 1, Reason: note.Reason, ResponseRef: responseRef})
+		}
+		if refused {
 			use.Rejected++
-			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Kind: "group_rejected", Count: 1, Reason: note, ResponseRef: responseRef})
 		}
 		raw, err := json.MarshalIndent(value, "", "  ")
 		if err != nil {

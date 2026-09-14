@@ -117,7 +117,12 @@ choose ownership; independent valid groups survive. Missing decisions remain
 explicit source inventory, with no inherited directory membership or invented
 area. Rejections point to the saved raw response. An area needs known members;
 a single accepted part is valid. Architectural usefulness is the model's
-decision, not a minimum-member validation rule. Group IDs derive from target and exact member IDs,
+decision, not a minimum-member validation rule. An explicit empty groups array
+is a valid abstention in parts, merge and areas modes; a nonempty response whose
+groups are all invalid remains refused. Caption whitespace follows the ordinary
+table text normalization. Diagnostics distinguish ungrouped inputs and discarded
+unknown members from refused groups. Stage rejection counts count affected
+windows once, not each group or omitted input. Group IDs derive from target and exact member IDs,
 not generated names. A target description reads its accepted responsibilities
 even for a single-target run; it does not inherit a directory caption.
 
