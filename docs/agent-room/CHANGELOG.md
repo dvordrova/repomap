@@ -1,5 +1,28 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Reveal the target before its smallest text becomes readable
+
+- Reproduced centre-aimed pinch on both saved Python targets: even at 9.82 zoom,
+  the component state was open but every inner card remained offscreen behind
+  a persistent summary. The previous star journey aimed at its first area and
+  missed this entrance. Two new near-frame-size regressions failed before the
+  correction and check actual on-screen inner cards.
+- A real approach now reveals the first level at 75% of a canvas dimension,
+  retaining it down to 65%; whole-map mode stays summarized. Compact area names
+  precede full member lists. Unreadable names and oversized zoom controls do not
+  paint over tiny boxes; the location row retains a parent name when its world
+  header is too short. Camera and world geometry remain unchanged during zoom.
+- Rejected extending the input collection's native column comparison to
+  components: it raised an ELK exception on the saved Python report. The
+  correction keeps the existing placement and adds no layout work or variant.
+- Validation: 52 UI unit tests and all 25 desktop browser scenarios passed
+  against the existing references and two reviewed new near-frame PNGs.
+  Report tests/vet, embedded asset verification and the canonical build passed.
+  Saved rendering made zero provider calls. Centre pinch on the real Python
+  report exposed all five backend areas after four small wheel steps and all
+  seven frontend areas after two, with no zoom-button click. Its separate
+  pan/restore probe retained camera scale and world geometry without page errors.
+
 ## 2026-09-14 — Pinch, participant boundaries and overlapping summaries
 
 - Reproduced a scrolling inventory intercepting pinch and a one-target,

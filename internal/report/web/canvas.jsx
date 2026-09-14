@@ -5,7 +5,7 @@ import {ReactFlow, Handle, Position, ViewportPortal, useViewport} from '@xyflow/
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
-import {createSemanticLayout, detailedAreas, fullyVisibleFrames, componentDetails, componentTextSizes, communicationDetails, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport, zoomMarkPosition} from './semantic.mjs';
+import {createSemanticLayout, detailedAreas, fullyVisibleFrames, framedComponents, componentDetails, componentTextSizes, communicationDetails, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport, zoomMarkPosition} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {prepareCards,wrapText,overviewHeading} from './cards.mjs';
 import {HoverGate} from './hover.mjs';
@@ -34,6 +34,7 @@ function Area({data}) {
   </div>;
 }
 function OverviewCard({data}){
+  if(data.compact)return <div className="flow-part flow-overview-card flow-overview-compact"><strong>{data.title}</strong></div>;
   if(data.single)return <Part data={{...data,reading:data.reading===data.id}}/>;
   return <div className="flow-part flow-overview-card">
     <Handle type="target" position={Position.Top} isConnectable={false}/>
@@ -42,11 +43,26 @@ function OverviewCard({data}){
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
 }
+function AreaSummary({node,item,data,className,enter,select}){
+  const {zoom}=useViewport(),nativeScale=item.summaryScale||1;
+  const compact=20*nativeScale*zoom<12,scale=compact?1/zoom:nativeScale;
+  return <div className={`flow-area-summary nopan ${className}`} data-summary-area={node.id}
+    style={{transform:`translate(${node.absolute.x}px,${node.absolute.y}px) scale(${scale})`,transformOrigin:'top left',
+      width:node.width/scale,height:node.height/scale,'--flow-zoom':zoom*scale}}
+    onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
+    <OverviewCard data={{...data,compact}}/>
+  </div>;
+}
 function ZoomMark({node,item,enter,select,width,height}) {
   const viewport=useViewport(),{zoom}=viewport;
   const inset=['communication','inputs'].includes(item.branch)?8:12;
+  if(item.branch==='area'&&(node.width*zoom<28+2*inset||node.height*zoom<28+2*inset))return null;
   const point=width?zoomMarkPosition(node,viewport,width,height,inset):{x:node.absolute.x+node.width-(28+inset)/zoom,y:node.absolute.y+inset/zoom};
   if(!point)return null;
+  if(item.branch==='area'&&20*(item.summaryScale||1)*zoom<12){
+    const bottom=(node.absolute.y+node.height)*zoom+viewport.y;
+    point.y=(bottom-28-inset-viewport.y)/zoom;
+  }
   const name=item.branch==='inputs'?`${t('Inputs')} · ${item.name||item.title}`:item.name||item.title;
   return <button type="button" className="flow-zoom-mark nopan" data-zoom-into={node.id}
     style={{transform:`translate(${point.x}px,${point.y}px) scale(${1/zoom})`}}
@@ -61,6 +77,9 @@ function FrameTitle({node,item,focused,enter,select}) {
   const viewport=useViewport();
   const scale=item.summaryScale||1;
   const component=item.branch==='component',communication=item.branch==='communication',inputs=item.branch==='inputs';
+  // The location row keeps the parent name available while its reserved world
+  // header is too small for a screen-sized title above the revealed children.
+  if(component&&64*scale*viewport.zoom<24)return null;
   const x=component||communication||inputs?Math.max(node.absolute.x+18*scale,Math.min(node.absolute.x+node.width-260*scale,(24-viewport.x)/viewport.zoom)):node.absolute.x+18*scale;
   return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${component?'flow-component-title':communication?'flow-communication-title':inputs?'flow-input-collection':''}`}
     data-frame-title={node.id}
@@ -155,7 +174,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   maxZoom=maximumZoom();
   function updateDetail(viewport){
     const whole=fullyVisibleFrames(layout.nodes,viewport,host.clientWidth,host.clientHeight);
-    const open=componentDetails(componentFonts,viewport.zoom,openComponents,whole);
+    const framed=framedComponents(layout.nodes,viewport,host.clientWidth,host.clientHeight,openComponents);
+    const open=componentDetails(componentFonts,viewport.zoom,openComponents,whole,framed);
     const next=detailedAreas(scales,viewport.zoom,detailed,whole);
     const communication=communicationDetails(communicationScales(),viewport.zoom,communicationsOpen,whole);
     const changed=open.size!==openComponents.size||[...open].some(id=>!openComponents.has(id))||next.size!==detailed.size||[...next].some(id=>!detailed.has(id))||
@@ -211,7 +231,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     overviewFit=false;
     const whole=fullyVisibleFrames(layout.nodes,v,host.clientWidth,host.clientHeight);
     detailed=detailedAreas(scales,v.zoom,new Set(v.detailAreas||[]),whole);
-    openComponents=componentDetails(componentFonts,v.zoom,new Set(v.openComponents||(v.componentsOpen?[...componentFonts.keys()]:[])),whole);
+    const previous=new Set(v.openComponents||(v.componentsOpen?[...componentFonts.keys()]:[]));
+    openComponents=componentDetails(componentFonts,v.zoom,previous,whole,framedComponents(layout.nodes,v,host.clientWidth,host.clientHeight,previous));
     componentsOpen=!!openComponents.size;
     communicationsOpen=communicationDetails(communicationScales(),v.zoom,new Set(v.communicationsOpen||[]),whole);
     zoom=v.zoom;update?.();
@@ -435,12 +456,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       <ViewportPortal>
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id))&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)}/>)}
-        {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><div key={'summary-'+n.id}
-          className={`flow-area-summary nopan ${state.focus.has(n.id)?'flow-node-focus':''} ${state.participants.has(n.id)?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${view.scope===n.id?'flow-node-reading':''}`}
-          data-summary-area={n.id} style={{transform:`translate(${n.absolute.x}px,${n.absolute.y}px) scale(${byID.get(n.id).summaryScale||1})`,transformOrigin:'top left',width:n.width/(byID.get(n.id).summaryScale||1),height:n.height/(byID.get(n.id).summaryScale||1)}}
-          onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,true);}}>
-          <OverviewCard data={{...semantic.summaries.get(n.id),reading:view.scope,operation:view.operation,open:(id,event)=>select(id,event,true)}}/>
-        </div>)}
+        {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
+          node={n} item={byID.get(n.id)} enter={enter} select={select}
+          className={`${state.focus.has(n.id)?'flow-node-focus':''} ${state.participants.has(n.id)?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${view.scope===n.id?'flow-node-reading':''}`}
+          data={{...semantic.summaries.get(n.id),reading:view.scope,operation:view.operation,open:(id,event)=>select(id,event,true)}}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} enter={enter} select={select}/>)}
         {area&&visible(area)&&detailed.has(area)&&view.numbered&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
       </ViewportPortal>

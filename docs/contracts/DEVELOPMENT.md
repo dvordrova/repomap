@@ -156,6 +156,11 @@ A partial-to-whole-frame pan at an unchanged readable scale must reveal the
 area's original parts and internal arrow without another zoom. Restoring the
 before/after cameras restores their corresponding detail states, with identical
 world geometry. Both states are captured in the screenshot journey.
+Pinch aimed at the centre of a target must reveal its diagram by the time the
+frame occupies 85% of a canvas dimension, including a dense group inventory
+and one target with twenty external systems. The regression checks complete
+cards actually inside the canvas, not just visible DOM outside the viewport.
+The before/after frames are captured; the same world geometry must survive.
 An additional five-participant fixture uses short component names, seven/five
 area names and eleven/three inputs in the ordinary report's 1054×580 canvas.
 Its complete initial inventories must fit, retain whole words and keep those

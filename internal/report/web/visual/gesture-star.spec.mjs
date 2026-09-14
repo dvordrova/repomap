@@ -1,6 +1,50 @@
 import {test,expect} from '@playwright/test';
 import {singleTargetInventory} from './two-systems-five-externals.mjs';
 
+for(const [query,id] of [['dense','front'],['single-target','backend']]){
+  test(`${id} reveals its diagram when pinch brings the frame near viewport size (${query})`,async({page},testInfo)=>{
+    test.setTimeout(60000);
+    await page.goto(`/?${query}`);
+    const map=page.locator('[data-map]');
+    await expect(map).toHaveAttribute('data-fixture-ready','true',{timeout:30000});
+    const canvas=await page.locator('.flow-root').boundingBox();
+    const frame=page.locator(`.react-flow__node[data-id="${id}"]`),box=await frame.boundingBox();
+    const initial=await map.evaluate(map=>map.captureViewport());
+    // Centre the same frame at overview scale, then use only real pinch events.
+    await map.evaluate((map,viewport)=>map.restoreReadingState({viewport}),{...initial,fit:false,
+      x:initial.x+canvas.x+canvas.width/2-box.x-box.width/2,
+      y:initial.y+canvas.y+canvas.height/2-box.y-box.height/2});
+    const world=await page.locator('.react-flow__node').evaluateAll(nodes=>nodes.map(n=>[n.dataset.id,n.style.transform,n.style.width,n.style.height]));
+    await page.mouse.move(canvas.x+canvas.width/2,canvas.y+canvas.height/2);
+    await testInfo.attach('journey-01 — Aim at the centre of the target',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+    for(let step=0;step<32;step++){
+      const b=await frame.boundingBox();
+      if(step>0&&Math.max(b.width/canvas.width,b.height/canvas.height)>=.85)break;
+      const zoom=await map.evaluate(map=>map.captureViewport().zoom);
+      await page.keyboard.down('Control');try{await page.mouse.wheel(0,-4);}finally{await page.keyboard.up('Control');}
+      await expect.poll(()=>map.evaluate(map=>map.captureViewport().zoom)).toBeGreaterThan(zoom);
+    }
+    await testInfo.attach('journey-02 — The target nearly fills the frame · its diagram must be visible',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+    await expect(page.locator(`[data-component-overview="${id}"]`)).toHaveCount(0);
+    const count=await page.evaluate(root=>{
+      const canvas=document.querySelector('.flow-root').getBoundingClientRect();
+      const frame=document.querySelector(`.react-flow__node[data-id="${root}"]`).getBoundingClientRect();
+      return [...document.querySelectorAll('[data-summary-area] .flow-part,.react-flow__node .flow-part')].filter(el=>{
+        const box=el.getBoundingClientRect();
+        return getComputedStyle(el).visibility!=='hidden'&&box.left>=Math.max(canvas.left,frame.left)&&box.right<=Math.min(canvas.right,frame.right)&&box.top>=Math.max(canvas.top,frame.top)&&box.bottom<=Math.min(canvas.bottom,frame.bottom);
+      }).length;
+    },id);
+    expect(count,'At least one complete inner card is on screen, not merely present in the DOM').toBeGreaterThan(0);
+    await expect(page.locator('.map-workspace')).toHaveScreenshot(`near-frame-${id}-${query}.png`);
+    const opened=await map.evaluate(map=>map.captureViewport());
+    await map.evaluate(map=>map.showWholeMap());
+    await expect(page.locator(`[data-component-overview="${id}"]`)).toHaveCount(1);
+    await map.evaluate((map,viewport)=>map.restoreReadingState({viewport}),opened);
+    await expect(page.locator(`[data-component-overview="${id}"]`)).toHaveCount(0);
+    expect(await page.locator('.react-flow__node').evaluateAll(nodes=>nodes.map(n=>[n.dataset.id,n.style.transform,n.style.width,n.style.height]))).toEqual(world);
+  });
+}
+
 test('pinch over a scrolling target inventory zooms the map',async({page},testInfo)=>{
   await page.goto('/?dense');
   const map=page.locator('[data-map]');

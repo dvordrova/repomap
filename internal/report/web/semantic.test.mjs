@@ -1,6 +1,20 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {semanticLayout,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,communicationDetails,componentViewport,communicationViewport,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
+import {semanticLayout,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,componentViewport,communicationViewport,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
+
+test('approaching a target reveals its diagram before its smallest descendant text is readable',()=>{
+  const nodes=[{id:'target',frame:true,absolute:{x:0,y:0},width:900,height:600}];
+  const original=JSON.stringify(nodes),fonts=new Map([['target',1]]);
+  const detail=(zoom,previous=new Set())=>componentDetails(fonts,zoom,previous,new Set(),
+    framedComponents(nodes,{x:0,y:0,zoom},1000,700,previous));
+  assert.deepEqual([...detail(.44)],[],'the original whole map keeps its summary');
+  assert.deepEqual([...detail(.73)],[],'a smaller target has not yet reached the entrance');
+  const open=detail(.9);
+  assert.deepEqual([...open],['target'],'a nearly framed target exposes its diagram even with 0.9px member text');
+  assert.deepEqual([...detail(.73,open)],['target'],'restoration and retreat retain the same open side of hysteresis');
+  assert.deepEqual([...detail(.7,open)],[],'retreat returns to the summary before the frame becomes small');
+  assert.equal(JSON.stringify(nodes),original);
+});
 import {prepareInteriors,layoutPrepared} from './split-layout.mjs';
 
 test('a search destination must be revealed even when its hidden bounds fit the overview',()=>{

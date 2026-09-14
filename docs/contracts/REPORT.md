@@ -152,10 +152,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   ordinary wheel scrolling stays in an overflowing inventory.
   a subtle edge shadow and thin scrollbar signal remaining entries.
   The full purpose remains in the reading panel. A single toolbar hint explains
-  zooming to see inside and dragging to move. The component boundary has its
-  own hysteresis at the smallest immediate content font (area member names or
-  direct part headings): reveal at 14px, or 12px for a fully visible frame; close
-  below 12px. Whole-frame visibility is checked during zoom, camera restoration
+  zooming to see inside and dragging to move. A component also reveals its
+  first-level diagram once an approach brings its longest screen dimension to
+  75% of the corresponding canvas dimension, retaining it down to 65% on retreat.
+  The whole-map camera keeps root summaries. This entrance does not wait for the
+  smallest descendant font: area boxes initially show compact 12px names, then
+  their original member lists when those names reach readable scale. Boxes too
+  small for a name or zoom control keep their shape and original click/hover
+  interaction; controls never spill outside them. The font-based entrance also
+  remains available at 14px, or 12px for a fully visible frame, retaining readable
+  contents down to 12px. Whole-frame visibility is checked during zoom, camera restoration
   and at the end of a pan, without rebuilding the drawing at every pan position.
   This state is saved with the camera. Unreadable interiors close before the root summary returns;
   the two must not overlap. No layout runs during wheel zoom.
@@ -175,7 +181,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   part card, area summary or descendant heading removes that fallback, including
   one clipped by the viewport. An opened child's background must never cover a
   simultaneously displayed root summary. Empty compound frames do not count.
-  Secondary frame text stays hidden
+  A component's world heading stays hidden while its reserved header is too
+  short for screen-sized text; the location row retains its name. Secondary frame text stays hidden
   below a readable 12px without changing the reserved header dimensions.
   The persistent location row also
   keeps the component's name available when its world header leaves the viewport. These are label

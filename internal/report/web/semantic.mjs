@@ -39,8 +39,18 @@ export function componentTextSizes(records) {
   ]));
 }
 
-export function componentDetails(fonts,zoom,previous=new Set(),fullyVisible=new Set()) {
-  return new Set([...fonts].filter(([id,font])=>font*zoom>=((previous.has(id)||fullyVisible.has(id))?12:14)).map(([id])=>id));
+// Reveal the first level when a reader approaches the participant itself.
+// Its smallest descendant font must not keep the entire diagram concealed.
+// The whole-map camera retains summaries; the first real approach can reveal
+// a frame already occupying most of the viewport. Geometry never changes.
+export function framedComponents(nodes,viewport,width,height,previous=new Set()) {
+  if(viewport.zoom<=systemViewport(nodes,width,height).zoom)return new Set();
+  return new Set(nodes.filter(node=>!node.parentId&&node.frame&&
+    Math.max(node.width*viewport.zoom/width,node.height*viewport.zoom/height)>=(previous.has(node.id)?.65:.75)).map(node=>node.id));
+}
+
+export function componentDetails(fonts,zoom,previous=new Set(),fullyVisible=new Set(),framed=new Set()) {
+  return new Set([...fonts].filter(([id,font])=>framed.has(id)||font*zoom>=((previous.has(id)||fullyVisible.has(id))?12:14)).map(([id])=>id));
 }
 
 // Replace unreadable contents before they trigger a competing root summary;

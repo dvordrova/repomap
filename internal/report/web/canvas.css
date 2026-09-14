@@ -135,6 +135,9 @@
 .flow-area-summary .flow-overview-card>.flow-kind,.flow-area-summary .flow-overview-card>strong{padding-right:calc(32px / var(--flow-zoom,1))}
 .flow-area-summary .react-flow__handle{display:none}
 .flow-area-summary .flow-part{animation:flow-reveal 160ms ease-out}
+.flow-area-summary>.flow-overview-compact{padding:8px;border-width:1px;border-radius:6px;overflow:hidden;container-type:size}
+.flow-area-summary .flow-overview-compact>strong{font:600 12px/16px system-ui;padding-right:0}
+@container (max-width:48px) or (max-height:24px){.flow-overview-compact>strong{visibility:hidden}}
 .flow-component-overview{position:absolute;transform-origin:top left;pointer-events:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:8px;overflow:hidden;color:#243044;background:#f8fafc;border-radius:8px;cursor:zoom-in}
 .flow-component-overview-heading{display:flex;flex-shrink:0;gap:8px;align-items:center;width:100%}
 .flow-component-overview-heading>strong{font:700 18px/23px system-ui;overflow-wrap:anywhere;flex:1;min-width:0}
