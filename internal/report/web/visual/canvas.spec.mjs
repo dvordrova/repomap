@@ -422,6 +422,24 @@ test('visual journey: aim, zoom through both detail levels, return',async({page}
   });
   let pointer=null,gesture=0;
   async function capture(action){
+    await expect.poll(()=>page.evaluate(()=>{
+      const canvas=document.querySelector('.flow-root').getBoundingClientRect();
+      const nodes=[...document.querySelectorAll('.react-flow__node')];
+      const overlapping=[];
+      const intersect=(a,b)=>Math.min(a.right,b.right,canvas.right)-Math.max(a.left,b.left,canvas.left)>1&&
+        Math.min(a.bottom,b.bottom,canvas.bottom)-Math.max(a.top,b.top,canvas.top)>1;
+      for(const summary of document.querySelectorAll('[data-component-overview]')){
+        const frame=nodes.find(node=>node.dataset.id===summary.dataset.componentOverview)?.getBoundingClientRect();
+        if(!frame)continue;
+        for(const card of document.querySelectorAll('.react-flow__node>.flow-part')){
+          if(getComputedStyle(card).visibility==='hidden')continue;
+          const box=card.getBoundingClientRect();
+          if(box.left>=frame.left&&box.right<=frame.right&&box.top>=frame.top&&box.bottom<=frame.bottom&&intersect(box,summary.getBoundingClientRect()))
+            overlapping.push({summary:summary.dataset.componentOverview,child:card.parentElement.dataset.id});
+        }
+      }
+      return overlapping;
+    }),{message:'A revealed child card must not cover the component summary'}).toEqual([]);
     // Unlike toHaveScreenshot, a raw buffer comparison has no stability wait.
     let image=await workspace.screenshot({animations:'disabled'});
     for(let attempt=0;attempt<5;attempt++){
@@ -457,7 +475,9 @@ test('visual journey: aim, zoom through both detail levels, return',async({page}
   async function panToHeading(locator,label){
     const stage=await page.locator('.flow-root').boundingBox();
     const box=await textBounds(locator);
-    if(inside(box,stage))return;
+    // Leave room below the heading for the parts the next pinch will reveal.
+    const ready=box=>inside(box,stage)&&box.y<=stage.y+stage.height/3;
+    if(ready(box))return;
     await test.step('Pan to the '+label+' heading',async()=>{
       await attach('journey-04a-before-pan',await capture('The '+label+' heading needs a pan'));
       await page.locator('#visual-aim').evaluate(el=>{el.hidden=true;});
@@ -470,7 +490,7 @@ test('visual journey: aim, zoom through both detail levels, return',async({page}
       // instead of assuming a wheel delta equals a screen-pixel displacement.
       for(let movement=0;movement<8;movement++){
         const current=await textBounds(locator);
-        if(inside(current,stage))break;
+        if(ready(current))break;
         const revision=await page.locator('[data-map]').getAttribute('data-camera-revision');
         await page.mouse.wheel(current.x+current.width/2-destination.x,current.y+current.height/2-destination.y);
         await expect.poll(()=>page.locator('[data-map]').getAttribute('data-camera-revision')).not.toBe(revision);

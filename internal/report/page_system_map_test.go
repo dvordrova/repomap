@@ -215,19 +215,108 @@ func TestSystemOutboundGroupingRetainsRecordsAndTheirExactPeerInputs(t *testing.
 		nodes[n.ID] = n
 	}
 	group := nodes["system-get-destination"]
-	if group.Branch != "communication" || group.FullTitle != "backend API" || group.Children != "system-get system-post system-unmatched" {
+	if group.Branch != "communication" || group.FullTitle != "backend API" || group.Children != "system-get system-unmatched" {
 		t.Fatalf("external catalogue grouping lost: %+v", group)
 	}
 	if nodes["system-other-get-destination"].Owner != "other" {
 		t.Fatal("equal destination in another component lost its scope")
 	}
-	if nodes["system-post"].FullTitle != "POST /items" || nodes["system-post"].Source.Text != "http.ts:20" {
-		t.Fatal("record lost its own method or source")
+	if _, exists := nodes["system-post"]; exists {
+		t.Fatal("known backend input was drawn as another external participant")
 	}
-	if len(got.Edges) != 1 || got.Edges[0].From != "system-post" || got.Edges[0].To != "post" || !got.Edges[0].Possible || got.Edges[0].Operations != "click" {
+	if len(got.Edges) != 1 || got.Edges[0].From != "n-http" || got.Edges[0].To != "post" || !got.Edges[0].Possible || got.Edges[0].Operations != "click" || got.Edges[0].FromSource.Text != "http.ts:20" {
 		t.Fatalf("communication gained a peer by name or lost its exact connection: %+v", got.Edges)
 	}
 	if view.Sections[0].Map.Edges[0].From != "n-http" {
 		t.Fatal("display changed the saved component map")
+	}
+}
+
+func TestSystemMatchedOutboundKeepsReadingWithoutAnotherParticipant(t *testing.T) {
+	for _, endpoint := range []string{"input", "target"} {
+		t.Run(endpoint, func(t *testing.T) {
+			peer := pageMapNode{ID: "post", Activation: "request", FullTitle: "Run", Source: pageAnchor{Text: "server.py:30", Href: "server.py#L30"}}
+			peerHref, peerID := "#post", peer.ID
+			if endpoint == "target" {
+				peerHref, peerID = "#backend", "system-component-backend"
+			}
+			row := pageOutbound{ID: "send", Destination: "Run service", Summary: "Submits a run to the backend.", KindLabel: outboundKindLabel("http_client"),
+				Connections: []string{"run-match"}, Method: "POST", Address: "/run", Source: "fact",
+				Anchor: pageAnchor{Text: "http.ts:20", Href: "http.ts#L20"}, MapGroup: "http"}
+			view := pageView{Sections: []*pageSection{
+				{ID: "front", Outbound: []pageOutbound{row}, Map: &pageMap{Nodes: []pageMapNode{
+					{ID: "click", Activation: "interaction"}, {ID: "n-http", FullTitle: "Client"}, {ID: "remote", Remote: true, Href: peerHref},
+				}, Edges: []pageMapEdge{{ConnectionID: "run-match", From: "n-http", To: "remote", Scope: "operation", Operations: "click", Possible: true, ToSource: peer.Source}}}},
+				{ID: "backend", Map: &pageMap{Nodes: []pageMapNode{peer}}},
+			}}
+			before, _ := json.Marshal(view.Sections)
+			got := view.SystemMap()
+			for _, node := range got.Nodes {
+				if node.ItemKind == "External communication" {
+					t.Fatalf("matched participant still has an external copy: %+v", node)
+				}
+			}
+			if len(got.Edges) != 1 || got.Edges[0].From != "n-http" || got.Edges[0].To != peerID ||
+				got.Edges[0].ConnectionID != "run-match" || got.Edges[0].Operations != "click" || !got.Edges[0].Possible ||
+				got.Edges[0].FromSource != row.Anchor || got.Edges[0].ToSource != peer.Source {
+				t.Fatalf("direct integration lost its exact endpoint, input path or sources: %+v", got.Edges)
+			}
+			after, _ := json.Marshal(view.Sections)
+			if !bytes.Equal(before, after) {
+				t.Fatal("canvas folding changed the saved outbound reading or component map")
+			}
+			parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var html bytes.Buffer
+			if err := parsed.ExecuteTemplate(&html, "outbound-row", view.Sections[0].Outbound[0]); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(html.String(), `id="send"`) || !strings.Contains(html.String(), row.Summary) || !strings.Contains(html.String(), row.Anchor.Href) {
+				t.Fatal("matched outbound record lost its original reading and source link")
+			}
+		})
+	}
+}
+
+func TestSystemOutboundWithoutOneExactPeerRemainsExternal(t *testing.T) {
+	for _, mismatch := range []string{"missing peer", "same owner", "two inputs", "two owners", "two records", "incomplete matches", "two matches"} {
+		t.Run(mismatch, func(t *testing.T) {
+			row := pageOutbound{ID: "send", Destination: "Run service", Connections: []string{"match"}}
+			front := &pageSection{ID: "front", Map: &pageMap{Nodes: []pageMapNode{{ID: "caller"}}, Edges: []pageMapEdge{{ConnectionID: "match", From: "caller", To: "peer", Scope: "operation"}}}, Outbound: []pageOutbound{row}}
+			backend := &pageSection{ID: "backend", Map: &pageMap{Nodes: []pageMapNode{{ID: "peer", Activation: "request"}}}}
+			view := pageView{Sections: []*pageSection{front, backend}}
+			switch mismatch {
+			case "missing peer":
+				backend.Map.Nodes = nil
+			case "same owner":
+				front.Map.Nodes = append(front.Map.Nodes, backend.Map.Nodes...)
+				backend.Map.Nodes = nil
+			case "two inputs", "two matches":
+				backend.Map.Nodes = append(backend.Map.Nodes, pageMapNode{ID: "other", Activation: "request"})
+				edge := pageMapEdge{ConnectionID: "match", From: "caller", To: "other", Scope: "operation"}
+				if mismatch == "two matches" {
+					edge.ConnectionID = "another-match"
+					front.Outbound[0].Connections = append(front.Outbound[0].Connections, edge.ConnectionID)
+				}
+				front.Map.Edges = append(front.Map.Edges, edge)
+			case "two owners":
+				view.Sections = append(view.Sections, &pageSection{ID: "worker", Map: &pageMap{Nodes: []pageMapNode{{ID: "other"}}}})
+				front.Map.Edges = append(front.Map.Edges, pageMapEdge{ConnectionID: "match", From: "caller", To: "other", Scope: "operation"})
+			case "two records":
+				other := row
+				other.ID = "other-send"
+				front.Outbound = append(front.Outbound, other)
+			case "incomplete matches":
+				front.Outbound[0].Connections = append(front.Outbound[0].Connections, "missing")
+			}
+			got := view.SystemMap()
+			if !slices.ContainsFunc(got.Nodes, func(node pageMapNode) bool {
+				return node.ID == "system-send" && node.ItemKind == "External communication"
+			}) {
+				t.Fatalf("%s incorrectly removed the independent communication record", mismatch)
+			}
+		})
 	}
 }

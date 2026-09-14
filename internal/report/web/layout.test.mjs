@@ -19,8 +19,9 @@ test('outer orientation candidates never feed a previous layout back into ELK',a
   const original=ELK.prototype.layout,inputs=[];
   ELK.prototype.layout=function(graph,...args){inputs.push(structuredClone(graph));return original.call(this,graph,...args);};
   try{await layoutPrepared(prepared,1200,700);}finally{ELK.prototype.layout=original;}
-  assert.deepEqual(inputs.map(input=>[input.layoutOptions['elk.direction'],input.layoutOptions['elk.layered.layerUnzipping.strategy']||'NONE']),[
-    ['DOWN','NONE'],['RIGHT','NONE'],['DOWN','ALTERNATING'],['RIGHT','ALTERNATING'],
+  assert.equal(inputs.length,8,'a bounded comparison of native ports, orientation and layer packing');
+  assert.deepEqual([...new Set(inputs.map(input=>JSON.stringify([input.layoutOptions['elk.direction'],input.layoutOptions['elk.layered.layerUnzipping.strategy']||'NONE'])))].map(s=>JSON.parse(s)).sort(),[
+    ['DOWN','ALTERNATING'],['DOWN','NONE'],['RIGHT','ALTERNATING'],['RIGHT','NONE'],
   ],'compare native orientations and outer-layer alternatives with the real library');
   for(const input of inputs){
     for(const child of input.children){
@@ -51,7 +52,8 @@ test('the ordinary composed layout routes the real endpoints, retaining every or
   for(const n of result.nodes){assert.ok(!n.parentId||seen.has(n.parentId),'parents precede their children for React Flow');seen.add(n.id);}
   for(const edge of result.edges){
     assert.ok(edge.path,'every edge has a route');
-    const from=result.nodes.find(n=>n.id===edge.from),to=result.nodes.find(n=>n.id===edge.to);
+    const drawnNode=id=>{let n=result.nodes.find(n=>n.id===id);if(edge.outerSegments)while(n.parentId)n=result.nodes.find(p=>p.id===n.parentId);return n;};
+    const from=drawnNode(edge.from),to=drawnNode(edge.to);
     function onBorder(p,n){const {x,y}=n.absolute;return p.x>=x-.01&&p.x<=x+n.width+.01&&p.y>=y-.01&&p.y<=y+n.height+.01&&(Math.abs(p.x-x)<.01||Math.abs(p.x-x-n.width)<.01||Math.abs(p.y-y)<.01||Math.abs(p.y-y-n.height)<.01);}
     assert.ok(onBorder(edge.segments[0][0],from),`start at ${edge.from}`);
     assert.ok(onBorder(edge.segments.at(-1).at(-1),to),`end at ${edge.to}`);
@@ -70,8 +72,9 @@ test('grouped destinations keep direction, actual inner numbers and all sources'
   assert.deepEqual(incoming.numbers,[1,2]);assert.equal(incoming.relations.length,3);
   const outgoing=groups.find(g=>g.outside==='caller'&&!g.incoming);
   assert.deepEqual(outgoing.numbers,[2]);assert.equal(outgoing.relations[0].possible,true);
-  assert.equal(result.labels.length,5,'three outside/direction groups on the left, two on the right');
-  for(const label of result.labels)assert.ok(Number.isFinite(label.x)&&Number.isFinite(label.y),'ELK reserves label positions');
+  assert.equal(result.labels.length,4,'one boundary label per participant and direction on each side');
+  for(const label of result.labels)assert.ok(Number.isFinite(label.point.x)&&Number.isFinite(label.point.y),'numbers use the native boundary endpoint');
+  assert.deepEqual(result.labels.find(l=>l.area==='right'&&l.incoming).numbers,[1,2]);
 });
 
 

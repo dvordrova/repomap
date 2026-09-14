@@ -3,6 +3,7 @@ import {connections} from './layout.mjs';
 import {overviewRecords} from './overview.mjs';
 
 let engine;
+export const overviewInset=16;
 const native=graph=>(engine ||= new ELK()).layout(graph);
 const options={
   'elk.algorithm':'layered','elk.direction':'RIGHT','elk.edgeRouting':'ORTHOGONAL',
@@ -42,9 +43,8 @@ function localGeometry(root){
   return {nodes,edges,labels,ports:root.ports||[],width:root.width,height:root.height};
 }
 
-// Prepare each saved participant independently of the viewport and the other
-// participants' geometry. The boundary ports carry the existing directed refs;
-// they are layout joins, not new report items or inferred relations.
+// ELK prepares each participant and its original boundary ports independently.
+// Cross-root continuations provide placement evidence but are not painted.
 export async function prepareInteriors(items,relations,areas,{availableHeight=Infinity}={}){
   const byID=new Map(items.map(item=>[item.id,item]));
   const children=new Map(areas.map(area=>[area.id,area.nodes.filter(id=>byID.has(id))]));
@@ -80,6 +80,10 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
   const leaves=id=>children.has(id)?children.get(id).flatMap(leaves):[id];
   for(const area of areas.filter(area=>byID.get(area.id)?.branch==='area')){
     for(const group of connections(area.id,leaves(area.id),edges)){
+      // Cross-participant labels are numbered at the outer boundary. Reserving
+      // their full titles inside the participant creates empty corridors that
+      // push its actual contents away from the reader's zoom target.
+      if(rootOf(group.outside)!==rootOf(area.id))continue;
       const outside=byID.get(group.outside),id=`label${labels.size}`;
       labels.set(id,{...group,id,root:rootOf(area.id),title:outside.name||outside.title,
         labelTitle:outside.labelTitle||outside.title,width:outside.labelWidth||180,height:(outside.labelHeight||40)+38});
@@ -173,7 +177,7 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
 }
 
 // Resizing only places ready participant rectangles. Every interior is reused
-// exactly, including its routes and boundary ports, with one uniform transform.
+// exactly with one uniform transform. Outer arrows end at these rectangles.
 export async function layoutPrepared(prepared,width=1200,height=700){
   if(!prepared.roots.length)return {layout:{nodes:[],edges:[],labels:[],width:0,height:0},records:prepared.records,
     scales:prepared.scales,owner:prepared.owner,summaries:prepared.summaries};
@@ -186,25 +190,35 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     'elk.layered.spacing.edgeNodeBetweenLayers':'8','elk.layered.spacing.edgeEdgeBetweenLayers':'4'};
   const input={id:'world',layoutOptions:outerOptions,children:prepared.roots.map(root=>{
     const interior=prepared.interiors.get(root.id);
-    return {id:root.id,width:interior.width,height:interior.height,ports:structuredClone(interior.ports),
-      layoutOptions:{'elk.portConstraints':'FIXED_POS'}};
-  }),edges:prepared.aggregates.map(edge=>({id:edge.id,sources:[edge.sourcePort],targets:[edge.targetPort]}))};
+    return {id:root.id,width:interior.width,height:interior.height,layoutOptions:{}};
+  }),edges:prepared.aggregates.map(edge=>({id:edge.id,sources:[edge.from],targets:[edge.to]}))};
   let graph,best;
-  for(const unzip of [false,true])for(const direction of ['DOWN','RIGHT']){
+  // Both choices belong to ELK. Free boundary endpoints avoid a star collapsing
+  // into one strip; the prepared native ports can pack several connected
+  // targets more compactly. Compare only these eight flat candidates. Neither
+  // alternative adds rendered continuations through the participants.
+  for(const nativePorts of [false,true])for(const direction of ['DOWN','RIGHT']){
+   for(const unzip of [false,true]){
     const candidate=structuredClone(input);candidate.layoutOptions['elk.direction']=direction;
+    if(nativePorts){
+      for(const node of candidate.children){node.ports=structuredClone(prepared.interiors.get(node.id).ports);node.layoutOptions['elk.portConstraints']='FIXED_POS';}
+      for(const edge of candidate.edges){const original=prepared.aggregates.find(a=>a.id===edge.id);edge.sources=[original.sourcePort];edge.targets=[original.targetPort];}
+    }
     if(unzip)candidate.layoutOptions['elk.layered.layerUnzipping.strategy']='ALTERNATING';
     const placed=await native(candidate),roots=placed.children;
     const minX=Math.min(...roots.map(node=>node.x)),minY=Math.min(...roots.map(node=>node.y));
     const maxX=Math.max(...roots.map(node=>node.x+node.width)),maxY=Math.max(...roots.map(node=>node.y+node.height));
-    const zoom=Math.min(.44,Math.max(1,width-48)/(maxX-minX),Math.max(1,height-48)/(maxY-minY));
+    const zoom=Math.min(.44,Math.max(1,width-2*overviewInset)/(maxX-minX),Math.max(1,height-2*overviewInset)/(maxY-minY));
     const readable=Math.min(1,...roots.map(node=>{
       const record=byID.get(node.id),minimum=record.overviewMinWidth||0;
-      const needed=record.overviewHeightAtWidth?.(Math.max(minimum,node.width*zoom),{availableHeight:height-48})||0;
+      const needed=record.overviewHeightAtWidth?.(node.width*zoom,{availableHeight:height-2*overviewInset})||0;
       return Math.min(minimum?node.width*zoom/minimum:1,needed?node.height*zoom/needed:1);
     }));
     const overflow=Math.max((maxX-minX)/width,(maxY-minY)/height);
     if(!best||readable>best.readable||readable===best.readable&&overflow<best.overflow){graph=placed;best={readable,overflow};}
+   }
   }
+  const rootOf=new Map();for(const [root,interior] of prepared.interiors)for(const node of interior.local.nodes)rootOf.set(node.id,root);
   const nodes=[],labels=[],rootOffsets=new Map(graph.children.map(node=>[node.id,{x:node.x,y:node.y}]));
   const routes=new Map((graph.edges||[]).map(edge=>[edge.id,(edge.sections||[]).map(section=>[section.startPoint,...section.bendPoints||[],section.endPoint])]));
   for(const root of graph.children){
@@ -214,21 +228,32 @@ export async function layoutPrepared(prepared,width=1200,height=700){
       absolute:transform(node.absolute,scale,offset),width:node.width*scale,height:node.height*scale});
     for(const label of interior.local.labels){
       const original=prepared.labels.get(label.id),areaScale=byID.get(original.area)?.contentScale||scale;
+      if(rootOf.get(original.outside)!==root.id)continue;
       labels.push({...original,x:offset.x+label.x*scale,y:offset.y+label.y*scale,width:label.width*scale,height:label.height*scale,scale:areaScale});
     }
   }
-  const rootOf=new Map();for(const [root,interior] of prepared.interiors)for(const node of interior.local.nodes)rootOf.set(node.id,root);
   const localRoute=(root,id)=>{
     const interior=prepared.interiors.get(root),offset=rootOffsets.get(root);
     return (interior.local.edges.get(id)||[]).map(segment=>segment.map(point=>transform(point,interior.scale,offset)));
   };
   const edges=prepared.edges.map(edge=>{
     const from=rootOf.get(edge.from),to=rootOf.get(edge.to);
-    const segments=from===to?localRoute(from,edge.id):[
-      ...localRoute(from,edge.id),...routes.get(`outer:${edge.aggregate}`)||[],...localRoute(to,edge.id),
-    ];
-    return {...edge,segments,path:path(segments)};
+    const segments=from===to?localRoute(from,edge.id):routes.get(`outer:${edge.aggregate}`)||[];
+    return {...edge,segments,outerSegments:from!==to?routes.get(`outer:${edge.aggregate}`):undefined,path:path(segments)};
   });
+  const children=new Map();
+  for(const node of nodes)if(node.parentId){if(!children.has(node.parentId))children.set(node.parentId,[]);children.get(node.parentId).push(node.id);}
+  const leaves=id=>children.has(id)?children.get(id).flatMap(leaves):[id];
+  for(const area of prepared.records.filter(record=>record.branch==='area')){
+    const root=rootOf.get(area.id);
+    for(const group of connections(area.id,leaves(area.id),edges,id=>rootOf.get(id)===root?id:rootOf.get(id))){
+      if(rootOf.get(group.outside)===root)continue;
+      const edge=edges.find(edge=>edge.id===group.edges[0]),route=edge?.outerSegments;
+      const outside=byID.get(group.outside);
+      if(route?.length)labels.push({...group,id:`boundary:${area.id}:${group.key}`,boundary:true,root,
+        title:outside.name||outside.title,point:group.incoming?route.at(-1).at(-1):route[0][0]});
+    }
+  }
   return {layout:{nodes,edges,labels,width:graph.width,height:graph.height},records:prepared.records,
     scales:prepared.scales,owner:prepared.owner,summaries:prepared.summaries};
 }

@@ -143,7 +143,7 @@
 .flow-component-overview .flow-description-compact{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .flow-inside-counts{font:500 12px/17px system-ui;color:#536176;flex-shrink:0}
 .flow-component-areas{list-style:none;margin:0;padding:6px 0 0;border-top:1px solid #dce2ea;min-height:0;overflow:auto;flex:0 1 auto}
-.flow-component-areas.nowheel{scrollbar-width:thin;scrollbar-color:#9caabd transparent;background:linear-gradient(#f8fafc 30%,#f8fafc00) center top,linear-gradient(#f8fafc00,#f8fafc 70%) center bottom,radial-gradient(farthest-side at 50% 0,#53617650,#53617600) center top,radial-gradient(farthest-side at 50% 100%,#53617650,#53617600) center bottom;background-repeat:no-repeat;background-size:100% 32px,100% 32px,100% 10px,100% 10px;background-attachment:local,local,scroll,scroll}
+.flow-component-areas.flow-scrollable{scrollbar-width:thin;scrollbar-color:#9caabd transparent;background:linear-gradient(#f8fafc 30%,#f8fafc00) center top,linear-gradient(#f8fafc00,#f8fafc 70%) center bottom,radial-gradient(farthest-side at 50% 0,#53617650,#53617600) center top,radial-gradient(farthest-side at 50% 100%,#53617650,#53617600) center bottom;background-repeat:no-repeat;background-size:100% 32px,100% 32px,100% 10px,100% 10px;background-attachment:local,local,scroll,scroll}
 .flow-component-areas li{margin:0;padding:0}
 .flow-enabled .flow-component-areas button{display:block;width:100%;padding:5px 0;border:0;border-radius:0;background:transparent;text-align:left;font:500 13px/18px system-ui;color:#243044;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
 .flow-enabled .flow-component-areas button:hover{color:#176f68;text-decoration:underline;text-underline-offset:3px;background:transparent}

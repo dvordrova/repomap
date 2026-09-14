@@ -198,14 +198,24 @@ height-reservation and fit calculations collapsing a dense world into a strip.
 Both nineteen-root and twenty-one-root journeys instrument real Worker layout
 requests. Pan, wheel, zoom, selection and same-size All perform no native layout;
 a real desktop resize places only the outer frames. Every original item and
-the affine geometry of each interior survive. Native ports join the original
-internal routes to their shared outer routes, preserving source references.
+the affine geometry of each interior survive. Outer arrows stop at participant
+frames at every zoom while retaining their original endpoint/source records.
 These structural work assertions have no machine-dependent timing limit.
 Connection-size checks combine actual SVG screen transforms with raster
 samples at different zooms. Frame checks cover the browser’s minimum CSS border
 width as well as the visible corner radius. A partly offscreen input collection
 keeps its complete type list within the frame; scrolling that list leaves the
 camera and world unchanged.
+
+A one-target/twenty-destination fixture has twenty parts and six calls per
+destination. Its default screenshot must keep every full heading in its own
+frame, and no native outer segment may intersect any participant interior.
+Trackpad pinch over a scrolling target inventory must change camera scale
+without scrolling the text. A gesture journey opens the twenty-part target
+without using its zoom button or changing world geometry. Numbered-boundary
+checks match an inner part's number to its external arrow endpoint and capture
+the part followed by a pan to the actual boundary badge. Each gesture frame also
+checks that a partly visible child card cannot cover a retained root summary.
 
 A real vertical wheel pan must move the camera without changing zoom or world
 geometry, and must not remeasure text whose visible width is unchanged. This

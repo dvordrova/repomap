@@ -6,8 +6,11 @@ import {visibleRoute} from './semantic.mjs';
 export function routeDrawing(edges, closed, activeEdges, dim=false) {
   const drawing=new Map();
   for(const edge of edges){
-    const from=closed(edge.from),to=closed(edge.to);
-    const paths=edge.segments.map(segment=>visibleRoute({...edge,segments:[segment]},from,to)).filter(Boolean);
+    // Cross-system arrows belong to the outer map, even when one frame opens.
+    // The original inner endpoints remain on the relation for source reading
+    // and emphasis; they do not add a line through another level's drawing.
+    const from=edge.outerSegments?null:closed(edge.from),to=edge.outerSegments?null:closed(edge.to);
+    const paths=(edge.outerSegments||edge.segments).map(segment=>visibleRoute({...edge,segments:[segment]},from,to)).filter(Boolean);
     paths.forEach((path,index)=>{
       const key=JSON.stringify([path,!!edge.possible]);
       let route=drawing.get(key);

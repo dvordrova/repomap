@@ -9,7 +9,7 @@ import {createSemanticLayout, detailedAreas, fullyVisibleFrames, componentDetail
 import {routeDrawing} from './route-drawing.mjs';
 import {prepareCards,wrapText,overviewHeading} from './cards.mjs';
 import {HoverGate} from './hover.mjs';
-import {InputTypes, OverviewMembers} from './card-content.jsx';
+import {InputTypes, OverviewMembers, scrollInventory} from './card-content.jsx';
 import '@xyflow/react/dist/style.css';
 import './canvas.css';
 
@@ -164,6 +164,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(changed){hoverArea='';hover.pause();update?.();}
   }
   function parentArea(id){while(id){if(byID.get(id)?.branch==='area')return id;id=placed.get(id)?.parentId;}return '';}
+  function rootOf(id){while(placed.get(id)?.parentId)id=placed.get(id).parentId;return id;}
   function clearHover(){hoverArea='';preview='';map.clearMapPreview?.();update?.();}
   function commitCamera(movement){
     // React Flow's imperative camera methods need not emit onMoveEnd. Save
@@ -295,7 +296,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {showRole&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
       {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description.replace(/\n/g,' ')}</p>}
       {inputs&&<InputTypes groups={item.inputGroups}/>}
-      {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'nowheel':''}`}>{areaIDs.map(id=><li key={id}>
+      {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'flow-scrollable':''}`} onWheelCapture={scrollInventory}>{areaIDs.map(id=><li key={id}>
         <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,true);}}>{byID.get(id).name||byID.get(id).title}</button>
       </li>)}</ul>}
       {showCounts&&<div className="flow-inside-counts">{counts}</div>}
@@ -313,29 +314,24 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       if(!open||!intersects){setFallback(!open);return;}
       const inspect=()=>{
         const canvas=host.getBoundingClientRect();
-        // Large compound frames can cross the camera while all their text is
-        // still outside it. Inspect real child headings, not those empty bounds.
-        const visibleHeading=(contained.get(node.id)||[]).some(id=>{
+        // Keep a fallback only while the camera sees empty compound padding.
+        // Once any real child card is visible, its background already competes
+        // with the summary, even if its own heading is clipped by the viewport.
+        const visibleContent=(contained.get(node.id)||[]).some(id=>{
           const child=placed.get(id);
           if(!child||closed(id))return false;
           const x=child.absolute.x*viewport.zoom+viewport.x,y=child.absolute.y*viewport.zoom+viewport.y;
           if(x>host.clientWidth||y>host.clientHeight||x+child.width*viewport.zoom<0||y+child.height*viewport.zoom<0)return false;
           const key=CSS.escape(id);
-          // A summary's real part names still identify its contents when the
-          // area heading has moved above the viewport.
-          const headings=host.querySelectorAll(`[data-summary-area="${key}"] .flow-part>strong, [data-summary-area="${key}"] [data-overview-member], [data-frame-title="${key}"]>strong, .react-flow__node[data-id="${key}"] .flow-part>strong`);
-          return [...headings].some(heading=>{
-            const style=getComputedStyle(heading);
+          const content=host.querySelectorAll(`[data-summary-area="${key}"] .flow-part, [data-frame-title="${key}"]>strong, .react-flow__node[data-id="${key}"] .flow-part`);
+          return [...content].some(element=>{
+            const style=getComputedStyle(element);
             if(style.visibility==='hidden')return false;
-            const rendered=heading.getBoundingClientRect();
-            const fontSize=parseFloat(style.fontSize)*rendered.width/heading.offsetWidth;
-            if(fontSize<12)return false;
-            const range=document.createRange();range.selectNodeContents(heading);
-            const box=range.getBoundingClientRect();
-            return box.width>0&&box.height>0&&box.left>=canvas.left&&box.top>=canvas.top&&box.right<=canvas.right&&box.bottom<=canvas.bottom;
+            const box=element.getBoundingClientRect();
+            return box.width>0&&box.height>0&&box.right>canvas.left&&box.bottom>canvas.top&&box.left<canvas.right&&box.top<canvas.bottom;
           });
         });
-        setFallback(!visibleHeading);
+        setFallback(!visibleContent);
       };
       inspect();
       // React Flow can publish newly revealed nodes in the next commit. A pan
@@ -361,7 +357,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const area=state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):'';
     const number=new Map(area&&view.numbered?leaves(area).map((id,i)=>[id,i+1]):[]);
     const dim=state.mode!=='all';
-    const labelGroups=area?connections(area,leaves(area),layout.edges.filter(e=>state.activeEdges.has(e.id))):[];
+    const labelGroups=area?connections(area,leaves(area),layout.edges.filter(e=>state.activeEdges.has(e.id)),id=>rootOf(id)===rootOf(area)?id:rootOf(id)):[];
     const labels=labelGroups.map(group=>({...layout.labels.find(l=>l.area===area&&l.key===group.key),...group}));
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
     const nodes=drawing.nodes.map(n=>{
@@ -446,17 +442,31 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
           <OverviewCard data={{...semantic.summaries.get(n.id),reading:view.scope,operation:view.operation,open:(id,event)=>select(id,event,true)}}/>
         </div>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} enter={enter} select={select}/>)}
-        {area&&visible(area)&&detailed.has(area)&&view.numbered&&labels.map(label=><div key={label.id}
-          className="flow-connection-label nopan" data-connection-outside={label.outside} data-connection-label={label.id}
-          style={{transform:`translate(${label.x}px,${label.y}px) scale(${label.scale||1})`,transformOrigin:'top left',width:label.width/(label.scale||1),minHeight:label.height/(label.scale||1)}}
+        {area&&visible(area)&&detailed.has(area)&&view.numbered&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
+      </ViewportPortal>
+    </ReactFlow>;
+  }
+  function ConnectionLabel({label}){
+    const {zoom}=useViewport();
+    let style={transform:`translate(${label.x}px,${label.y}px) scale(${label.scale||1})`,transformOrigin:'top left',width:label.width/(label.scale||1),minHeight:label.height/(label.scale||1)};
+    if(label.boundary){
+      const frame=placed.get(label.root),p=label.point;
+      const sides=[{dx:-1,dy:-1,tx:-100,ty:-100,d:Math.abs(p.x-frame.absolute.x)},
+        {dx:1,dy:-1,tx:0,ty:-100,d:Math.abs(p.x-frame.absolute.x-frame.width)},
+        {dx:1,dy:-1,tx:0,ty:-100,d:Math.abs(p.y-frame.absolute.y)},
+        {dx:1,dy:1,tx:0,ty:0,d:Math.abs(p.y-frame.absolute.y-frame.height)}];
+      const side=sides.sort((a,b)=>a.d-b.d)[0];
+      style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${1/zoom}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
+    }
+    return <div
+          className={`flow-connection-label nopan ${label.boundary?'flow-boundary-label':''}`} data-connection-outside={label.outside} data-connection-label={label.id}
+          style={style}
           onMouseEnter={()=>{if(hover.allowed){preview=label.id;callbacks.connection(label);}}}>
-          <span>{label.incoming?'← ':'→ '}{label.labelTitle}</span>
+          {!label.boundary&&<span>{label.incoming?'← ':'→ '}{label.labelTitle}</span>}
           <button type="button" aria-label={t('Go to {0}',label.title)} onClick={event=>{event.stopPropagation();clearHover();select(label.outside,event,true);}}>
             {label.numbers.join(' · ')}
           </button>
-        </div>)}
-      </ViewportPortal>
-    </ReactFlow>;
+        </div>;
   }
   map.classList.add('flow-enabled');source.style.display='none';source.setAttribute('aria-hidden','true');
   const root=createRoot(host);flushSync(()=>root.render(<App/>));

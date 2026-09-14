@@ -1,10 +1,11 @@
 import * as prepared from './two-systems-five-externals.mjs';
 
 const options=new URLSearchParams(location.search);
-const {records,relations,areas,inputOwner}=options.has('short-names')?prepared.shortNamedInventory():options.has('many-external')
+const {records,relations,areas,inputOwner}=options.has('single-target')?prepared.singleTargetInventory():options.has('short-names')?prepared.shortNamedInventory():options.has('many-external')
   ?prepared.manyExternalInventory({inputs:!options.has('no-inputs')}):options.has('dense')?prepared.denseInventory():prepared;
 if(options.has('many-external'))document.querySelector('h1').textContent='Two systems · seventeen external participants';
 if(options.has('short-names'))document.querySelector('h1').textContent='Short component names · complete initial inventories';
+if(options.has('single-target'))document.querySelector('h1').textContent='One system · twenty external participants';
 
 // Only the host callbacks and prepared English labels are supplied here.
 // Rendering, measurement, layout, zoom, hover and controls are production code.
@@ -35,6 +36,7 @@ const flow=await window.rmCreateFlow(map,stage,records,relations,areas,inputOwne
     if(center)flow.focus(id);
   },
   connection(){},
+  emphasis(state){map.dataset.emphasis=state.mode;map.dataset.subject=state.subject;},
 });
 map.showWholeMap=()=>{operation='';flow.update({});showReading('');return flow.overview();};
 map.captureViewport=()=>flow.capture();

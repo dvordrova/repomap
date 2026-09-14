@@ -57,12 +57,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   not replaced by their part or duplicated inside it. An unbound operation or
   native HTTP registration keeps its original absence of an implementation
   attachment. Selecting an input opens the same saved path and sources. External
-  communication records retain separate selectable nodes inside amber
-  destination frames, using the same grouping as the external catalogue.
-  Each keeps its original source, description and known address. Integration
-  arrows attach to the exact communication through its saved connection ID
-  (bound by caller subject and complete call location), and continue to the
-  original peer input. Equal destination text never establishes this link.
+  communication records without an exact local peer retain selectable nodes
+  inside amber destination frames, using the external catalogue's grouping.
+  When a saved connection identifies one already displayed peer in another
+  target, the canvas connects the original caller directly to that peer/input
+  instead of adding a third participant. Its outbound catalogue and source
+  reading remain intact. Missing, partial or ambiguous matches stay separate;
+  equal destination text never establishes this link. Both endpoint sources,
+  operation membership and possible status survive the display projection.
   The frame is a display collection, not a newly inferred component. They use amber cards; ordinary parts and area
   frames use neutral tones. Core parts use purple, inputs blue and external
   communications amber; the saved lane supplies the core identity at both zoom
@@ -112,17 +114,23 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   shows all original relations, sources and possible-call marks in a separate
   section of the reading column; selected details and their links stay present.
   Moving into that column keeps the connection evidence available. Clicking its
-  number pans to the named outside participant. The name
-  is plain text. Lines have no click target or native tooltip. These numbers
+  number pans to the named outside participant. Internal connection labels show
+  the name as plain text; cross-participant endpoints use compact number badges
+  with that name available to assistive navigation and the reading column.
+  Lines have no click target or native tooltip. These numbers
   identify parts, never execution order. The toolbar has no connection-style
   selector; the same real endpoints remain connected across zoom levels.
 
 - ELK first places each saved outer participant independently, including its
   internal parts, native boundary ports and connection labels. A separate flat
   ELK call places those participant rectangles and routes their aggregated
-  outside connections. Uniform transforms join the native interior routes to
-  the native outer ports in one fixed world before setting the viewport. The
-  original endpoints, possible status and source relations remain available for
+  outside connections. Uniform transforms place their interior drawings in
+  one fixed world before setting the viewport. Outer arrows stop at the
+  participant frames even while their contents are open; continuations from
+  boundary ports to inner parts are not painted. At the outer participant's
+  boundary, compact numbers correspond to the explored area's actual inner parts;
+  shared participant/direction labels retain every matching number and source.
+  The original endpoints, possible status and source relations remain available for
   reading and operation paths. Aggregated outside strokes are drawn once; they
   are display geometry, not new semantic relations. Natural area sizes
   determine a local content scale; the final layout reserves each area's full
@@ -140,6 +148,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   bare group count. Text remains at screen-readable size inside the existing
   frame; measured space gives the area list priority over role, counts and
   purpose. Dense lists scroll within the frame without removing any names;
+  trackpad pinch events pass through these inventories to the map, while
+  ordinary wheel scrolling stays in an overflowing inventory.
   a subtle edge shadow and thin scrollbar signal remaining entries.
   The full purpose remains in the reading panel. A single toolbar hint explains
   zooming to see inside and dragging to move. The component boundary has its
@@ -161,10 +171,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   remove the component name during the entrance.
   Closed summaries follow the visible portion of their own frame while
   zooming. Crossing the component threshold keeps that summary and its real
-  area entrances until an actual descendant heading or a saved part name in an
-  area summary is readable inside the canvas. A visible grandchild must not be
-  covered merely because its area's heading is outside the viewport;
-  empty child-frame borders do not count. Secondary frame text stays hidden
+  area entrances while the camera sees only empty compound padding. Any visible
+  part card, area summary or descendant heading removes that fallback, including
+  one clipped by the viewport. An opened child's background must never cover a
+  simultaneously displayed root summary. Empty compound frames do not count.
+  Secondary frame text stays hidden
   below a readable 12px without changing the reserved header dimensions.
   The persistent location row also
   keeps the component's name available when its world header leaves the viewport. These are label
@@ -211,11 +222,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   purpose remains in the reading column. External frames reserve summary space.
   The fixed world places frames, parts, complete input cards, component
   purposes and grouped labels. Interior routes retain the actual part-to-part
-  endpoints through compound containers; outer routes connect the corresponding
-  native boundary ports. Label positions belong to those routes; there is no additional boundary route planner, A* layer, custom marker
+  endpoints through compound containers; outer routes stop at participant
+  boundaries. ELK chooses the actual endpoints. Number badges sit beside those
+  native endpoints without moving them. There is no additional boundary route planner, A* layer, custom marker
   packing or replacement path. Ordinary and natively unzipped outer layers are
-  compared in both directions using fitted text readability, then world size;
-  unzipping is not forced on small maps. Each input collection also compares
+  compared in both directions with free endpoints and with the prepared native
+  ports: eight flat candidates, ranked by fitted text readability then world size.
+  Unzipping is not forced on small maps. Cross-participant labels reserve no
+  interior space: their number badges belong to the outer endpoints, so their
+  former title corridors cannot push real contents away from a pinch target.
+  Each input collection also compares
   the ordinary and natively unzipped interior against its own measured summary
   aspect, avoiding empty padding around a long column while retaining compact
   short catalogues. Other internal containers retain the ordinary layout

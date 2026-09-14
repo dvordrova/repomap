@@ -70,10 +70,10 @@ test('the first visit frames all targets and communications without selecting a 
   const v=systemViewport(roots,width,height);
   assert.equal(componentContents(v.zoom),false);
   for(const n of roots){
-    assert.ok(n.absolute.x*v.zoom+v.x>=23.99);
-    assert.ok(n.absolute.y*v.zoom+v.y>=23.99);
-    assert.ok((n.absolute.x+n.width)*v.zoom+v.x<=width-23.99);
-    assert.ok((n.absolute.y+n.height)*v.zoom+v.y<=height-23.99);
+    assert.ok(n.absolute.x*v.zoom+v.x>=15.99);
+    assert.ok(n.absolute.y*v.zoom+v.y>=15.99);
+    assert.ok((n.absolute.x+n.width)*v.zoom+v.x<=width-15.99);
+    assert.ok((n.absolute.y+n.height)*v.zoom+v.y<=height-15.99);
   }
   }
 });
@@ -100,9 +100,9 @@ test('root summaries reserve readable width after tall area summaries are placed
   const v=systemViewport(world.layout.nodes,width,height);
   for(const node of world.layout.nodes.filter(n=>!n.parentId)){
     assert.ok(node.width*v.zoom>=(node.id==='api'?150:200),`${node.id} must have room for its name and summary`);
-    assert.ok(node.absolute.x*v.zoom+v.x>=23.99);
-    assert.ok((node.absolute.x+node.width)*v.zoom+v.x<=width-23.99);
-    assert.ok((node.absolute.y+node.height)*v.zoom+v.y<=height-23.99);
+    assert.ok(node.absolute.x*v.zoom+v.x>=15.99);
+    assert.ok((node.absolute.x+node.width)*v.zoom+v.x<=width-15.99);
+    assert.ok((node.absolute.y+node.height)*v.zoom+v.y<=height-15.99);
   }
   assert.equal(world.layout.nodes.length,items.length);
   assert.deepEqual(world.layout.edges.flatMap(e=>e.relations),relations);

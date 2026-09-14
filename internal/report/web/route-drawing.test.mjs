@@ -44,6 +44,16 @@ test('closed frames expose one shared outer arrow and hide both sets of inner ro
   assert.equal(drawing[0].dim,false);
 });
 
+test('opening a participant never extends a cross-system arrow into its interior',()=>{
+  const original=edges().map(edge=>({...edge,outerSegments:[shared]}));
+  const result=routeDrawing(original,()=>null,new Set(['first']),true);
+  assert.equal(result.length,1);
+  assert.equal(result[0].path,'M 100 50 L 200 50');
+  assert.equal(result[0].arrow,true);
+  assert.deepEqual(result[0].edgeIDs,['first','second']);
+  assert.equal(result[0].on,true);
+});
+
 test('a shared outer route is not painted again for every original relation',()=>{
   const original=Array.from({length:102},(_,index)=>({id:`edge-${index}`,from:`input-${index}`,to:`part-${index}`,
     relations:[{id:`relation-${index}`}],segments:[shared]}));

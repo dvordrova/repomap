@@ -11,6 +11,10 @@ test('connection strokes and arrowheads keep their screen size while zooming',as
   await expect(map).not.toHaveAttribute('data-camera-revision',entranceRevision);
   await expect(page.locator('.flow-location')).toHaveText('Web application');
   await expect.poll(()=>page.locator('[data-map]').evaluate(map=>map.captureViewport().componentsOpen)).toBe(true);
+  // The component entrance now has boundary-only outer arrows. Inspect the
+  // real internal arrow in an opened area rather than a removed continuation.
+  await page.locator('[data-zoom-into="editing"]').click();
+  await expect(page.locator('.react-flow__node[data-id="editor"]')).toBeVisible();
   await page.mouse.move(1430,890);
   const measurements=[];
   for(const step of ['component entrance','closer']){
@@ -37,7 +41,7 @@ test('connection strokes and arrowheads keep their screen size while zooming',as
             const ax=numbers[i-2]*matrix.a+matrix.e,ay=numbers[i-1]*matrix.d+matrix.f;
             const bx=numbers[i]*matrix.a+matrix.e,by=numbers[i+1]*matrix.d+matrix.f;
             const left=Math.max(Math.min(ax,bx),host.left+24),right=Math.min(Math.max(ax,bx),host.right-24);
-            if(Math.abs(ay-by)<.01&&right-left>100&&ay>host.top+24&&ay<host.bottom-24)samples.push({x:Math.round((left+right)/2),y:ay});
+            if(Math.abs(ay-by)<.01&&right-left>32&&ay>host.top+24&&ay<host.bottom-24)samples.push({x:Math.round((left+right)/2),y:ay});
           }
         }
         return {expected,width,dash:css.strokeDasharray==='none'?[]:css.strokeDasharray.split(',').map(value=>parseFloat(value)*scale),
@@ -83,7 +87,8 @@ test('area frames keep thin outlines and small corners at close zoom',async({pag
   const saved=await map.evaluate(map=>map.captureViewport());
   const node=page.locator('.react-flow__node[data-id="tracking"]'),frame=node.locator('>.flow-area');
   const world=await node.evaluate(node=>({transform:node.style.transform,width:node.style.width,height:node.style.height}));
-  for(const zoom of [10.72,13.4]){
+  const readableZoom=await page.locator('.react-flow__node[data-id="status"]>.flow-part').evaluate(el=>1/new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
+  for(const zoom of [readableZoom,readableZoom*1.25]){
     await map.evaluate((map,{saved,zoom})=>{
       const node=map.querySelector('.react-flow__node[data-id="tracking"]'),position=new DOMMatrixReadOnly(node.style.transform);
       map.restoreReadingState({scope:'tracking',viewport:{...saved,zoom,x:24-position.e*zoom,y:24-position.f*zoom,fit:false,
@@ -114,7 +119,7 @@ test('area frames keep thin outlines and small corners at close zoom',async({pag
     },{png:screenshot.toString('base64'),x:measured.x,y:measured.y});
     expect(painted,'The actual frame edge paints a thin stroke').toBeGreaterThanOrEqual(1);
     expect(painted).toBeLessThanOrEqual(3);
-    await testInfo.attach(`journey-${zoom===10.72?1:2} — Area frame at zoom ${zoom}`,{body:screenshot,contentType:'image/png'});
+    await testInfo.attach(`journey-${zoom===readableZoom?1:2} — Area frame at zoom ${zoom}`,{body:screenshot,contentType:'image/png'});
   }
   expect(errors).toEqual([]);
 });

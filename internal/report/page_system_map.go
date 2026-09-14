@@ -107,10 +107,82 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 		}
 	}
-	// Reuse the external catalogue's display grouping. Each original record
-	// remains a separate selectable endpoint inside a communication frame.
+	// A saved integration may already name a participant in this same map.
+	// Keep the outbound catalogue intact, but do not draw that known participant
+	// again as a third, external system. Ambiguous identities stay separate.
 	outboundByConnection := map[string]string{}
 	ambiguousConnections := map[string]bool{}
+	outboundRows := map[string]pageOutbound{}
+	for _, section := range view.Sections {
+		for _, row := range section.Outbound {
+			id := "system-" + row.ID
+			outboundRows[id] = row
+			for _, connection := range row.Connections {
+				if previous := outboundByConnection[connection]; previous != "" && previous != id {
+					ambiguousConnections[connection] = true
+				}
+				outboundByConnection[connection] = id
+			}
+		}
+	}
+	peers := map[string]map[string]bool{}
+	for _, section := range view.Sections {
+		if section.Map == nil {
+			continue
+		}
+		for _, edge := range section.Map.Edges {
+			from, fromKnown := positions[canonical(edge.From)]
+			to, toKnown := positions[canonical(edge.To)]
+			if edge.ConnectionID == "" || edge.Scope == "static" || !fromKnown || !toKnown ||
+				result.Nodes[from].Remote || result.Nodes[to].Remote || result.Nodes[from].Owner == "" ||
+				result.Nodes[to].Owner == "" || result.Nodes[from].Owner == result.Nodes[to].Owner {
+				continue
+			}
+			if peers[edge.ConnectionID] == nil {
+				peers[edge.ConnectionID] = map[string]bool{}
+			}
+			peers[edge.ConnectionID][result.Nodes[to].ID] = result.Nodes[to].Activation != ""
+		}
+	}
+	peerByConnection := map[string]string{}
+	for connection, candidates := range peers {
+		var inputs []string
+		owners := map[string]bool{}
+		for id, input := range candidates {
+			owners[result.Nodes[positions[id]].Owner] = true
+			if input {
+				inputs = append(inputs, id)
+			}
+		}
+		if len(owners) != 1 {
+			continue
+		}
+		if len(inputs) == 1 {
+			peerByConnection[connection] = inputs[0]
+		} else if len(inputs) == 0 && len(candidates) == 1 {
+			for id := range candidates {
+				peerByConnection[connection] = id
+			}
+		}
+	}
+	localOutbound := map[string]string{}
+	for _, section := range view.Sections {
+		for _, row := range section.Outbound {
+			peer := ""
+			for _, connection := range row.Connections {
+				candidate := peerByConnection[connection]
+				if candidate == "" || ambiguousConnections[connection] || result.Nodes[positions[candidate]].Owner == section.ID || peer != "" && peer != candidate {
+					peer = ""
+					break
+				}
+				peer = candidate
+			}
+			if peer != "" {
+				localOutbound["system-"+row.ID] = peer
+			}
+		}
+	}
+	// Reuse the external catalogue's display grouping for unmatched records.
 	for _, section := range view.Sections {
 		for _, group := range groupOutbound(section.Outbound) {
 			var children []string
@@ -123,6 +195,9 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 			for _, row := range group.Rows {
 				id := "system-" + row.ID
+				if localOutbound[id] != "" {
+					continue
+				}
 				title := row.Line()
 				if title == "" {
 					title = row.Brief()
@@ -132,36 +207,18 @@ func (view *pageView) SystemMap() *pageMap {
 				}
 				add(pageMapNode{ID: id, Owner: section.ID, ItemKind: "External communication", FullTitle: title, Summary: row.Summary, SummaryRef: row.SummaryRef, Source: row.Anchor, SourceKind: row.Source, DetailsID: row.ID, Href: "#" + row.ID, Subtitle: row.Address, Lane: "dependencies"})
 				children = append(children, id)
-				for _, connection := range row.Connections {
-					if previous := outboundByConnection[connection]; previous != "" && previous != id {
-						ambiguousConnections[connection] = true
-					}
-					outboundByConnection[connection] = id
-				}
 				from := mapNodeID(row.MapGroup)
 				if _, ok := positions[from]; row.MapGroup != "" && ok {
 					result.Edges = append(result.Edges, pageMapEdge{From: from, To: id, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor})
 				}
 			}
 			if len(children) > 0 {
-				add(pageMapNode{ID: children[0] + "-destination", Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies"})
+				add(pageMapNode{ID: "system-" + group.Rows[0].ID + "-destination", Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies"})
 			}
 		}
 	}
 	// Exact duplicate display copies (e.g. a cross-component arrow seen from
 	// each end) share one line. Its original source endpoints stay intact.
-	inputByConnection := map[string]string{}
-	for _, section := range view.Sections {
-		if section.Map == nil {
-			continue
-		}
-		for _, edge := range section.Map.Edges {
-			to := canonical(edge.To)
-			if at, ok := positions[to]; ok && edge.ConnectionID != "" && result.Nodes[at].Activation != "" {
-				inputByConnection[edge.ConnectionID] = to
-			}
-		}
-	}
 	seenEdges := map[string]bool{}
 	for _, section := range view.Sections {
 		if section.Map != nil {
@@ -171,10 +228,17 @@ func (view *pageView) SystemMap() *pageMap {
 				}
 				edge.From, edge.To = canonical(edge.From), canonical(edge.To)
 				if from := outboundByConnection[edge.ConnectionID]; from != "" && !ambiguousConnections[edge.ConnectionID] {
-					edge.From = from
+					if localOutbound[from] == "" {
+						edge.From = from
+					} else if edge.FromSource == (pageAnchor{}) {
+						edge.FromSource = outboundRows[from].Anchor
+					}
 				}
-				if to := inputByConnection[edge.ConnectionID]; to != "" {
+				if to := peerByConnection[edge.ConnectionID]; to != "" {
 					edge.To = to
+					if edge.ToSource == (pageAnchor{}) {
+						edge.ToSource = result.Nodes[positions[to]].Source
+					}
 				}
 				if _, ok := positions[edge.From]; !ok {
 					continue

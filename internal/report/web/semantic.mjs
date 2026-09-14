@@ -1,10 +1,10 @@
-import {prepareInteriors,layoutPrepared} from './split-layout.mjs';
+import {prepareInteriors,layoutPrepared,overviewInset} from './split-layout.mjs';
 
 // Interior geometry belongs to this mounted report. A resize places those same
 // prepared frames again; camera gestures do not enter either layout stage.
 export function createSemanticLayout(items,relations,areas){
   let prepared;
-  return async(width,height)=>layoutPrepared(await(prepared ||= prepareInteriors(items,relations,areas,{availableHeight:height-48})),width,height);
+  return async(width,height)=>layoutPrepared(await(prepared ||= prepareInteriors(items,relations,areas,{availableHeight:height-2*overviewInset})),width,height);
 }
 
 export function semanticLayout(items,relations,areas,width,height){
@@ -67,8 +67,8 @@ export function systemViewport(nodes,width,height) {
   if(!roots.length)return {x:24,y:24,zoom:.4};
   const left=Math.min(...roots.map(n=>n.absolute.x)),top=Math.min(...roots.map(n=>n.absolute.y));
   const right=Math.max(...roots.map(n=>n.absolute.x+n.width)),bottom=Math.max(...roots.map(n=>n.absolute.y+n.height));
-  const zoom=Math.min(.44,Math.max(1,width-48)/(right-left),Math.max(1,height-48)/(bottom-top));
-  return {x:Math.max(24,(width-(right-left)*zoom)/2)-left*zoom,y:Math.max(24,(height-(bottom-top)*zoom)/2)-top*zoom,zoom};
+  const zoom=Math.min(.44,Math.max(1,width-2*overviewInset)/(right-left),Math.max(1,height-2*overviewInset)/(bottom-top));
+  return {x:Math.max(overviewInset,(width-(right-left)*zoom)/2)-left*zoom,y:Math.max(overviewInset,(height-(bottom-top)*zoom)/2)-top*zoom,zoom};
 }
 
 export function componentViewport(node,nodes,width,contentScale=1) {

@@ -127,6 +127,24 @@ export function manyExternalInventory({inputs=true}={}) {
   return {records:retained,relations:retainedEdges,areas:retained.filter(n=>n.children).map(n=>({id:n.id,nodes:n.children})),inputOwner:inputs?inputOwner:{}};
 }
 
+// One analysed service with twenty remote destinations, six calls each. A
+// star must remain a usable overview rather than one long layer of boxes.
+export function singleTargetInventory() {
+  const source=manyExternalInventory({inputs:false}),byID=new Map(source.records.map(n=>[n.id,n]));
+  const members=id=>[id,...(byID.get(id).children||[]).flatMap(members)];
+  const ids=new Set(members('backend'));
+  const nodes=source.records.filter(n=>ids.has(n.id)||n.category==='external');
+  for(const [index,title] of ['Run service','Event archive','Artifact registry'].entries()){
+    const id=`remote-${index+1}`,children=Array.from({length:6},(_,i)=>`${id}-call-${i+1}`);
+    nodes.push({id,title,branch:'communication',category:'external',children},
+      ...children.map((id,i)=>({id,title:`${title} request ${i+1}`,category:'external'})));
+  }
+  const parts=nodes.filter(n=>ids.has(n.id)&&!n.children),destinations=nodes.filter(n=>n.branch==='communication');
+  const edges=source.relations.filter(e=>ids.has(e.from)&&ids.has(e.to));
+  destinations.forEach((destination,i)=>destination.children.forEach((to,j)=>edges.push({from:parts[(i+j)%parts.length].id,to})));
+  return {records:nodes,relations:edges,areas:nodes.filter(n=>n.children).map(n=>({id:n.id,nodes:n.children})),inputOwner:{}};
+}
+
 // Ordinary reports have less vertical canvas space than the standalone fixture.
 // Short component names must still reserve room for their longer inventories.
 export function shortNamedInventory() {

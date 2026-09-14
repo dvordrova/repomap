@@ -1,5 +1,36 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Pinch, participant boundaries and overlapping summaries
+
+- Reproduced a scrolling inventory intercepting pinch and a one-target,
+  twenty-destination map retaining its summary through repeated pinch gestures.
+  Ctrl+wheel now reaches the canvas. Removed interior space reserved for
+  cross-participant label titles after those labels moved to the outer boundary;
+  the original local boundary routes still guide ELK placement.
+- Outer arrows end at participant frames at every detail level. Numbered
+  endpoints retain their exact inner parts, directions, possible status and
+  complete source relations. The screenshot journey shows an inner number,
+  then pans to its matching native outer endpoint without changing scale.
+- Compared free outer endpoints with the prepared native ports in the existing
+  two orientations and ordinary/unzipped layers. Fitted height uses the actual
+  rendered width. A shared 16px overview inset avoids losing a readable fit to
+  empty margins. The wider-external-title experiment was rejected because it
+  regressed the scenario with input collections; no extra variant was added.
+- Screenshot review reproduced the reported “inner border” as an opened
+  child's background covering the root summary. A partly visible child now
+  removes that fallback even if its heading is offscreen. Every captured zoom
+  step checks this exclusion, alongside stable world and pointer anchoring.
+- A saved cross-owner connection with a unique known peer no longer draws that
+  same peer again as an external system. Original outbound reading and source
+  anchors remain; partial and ambiguous matches stay explicit. The private
+  repository's reported `run service` cannot be diagnosed from the name alone.
+- Validation: all 51 UI unit tests and all 23 desktop browser scenarios passed,
+  including the normal comparison against the reviewed PNG references. Focused
+  report Go tests and vet, embedded asset verification and `make build` passed.
+  The canonical binary rendered the saved Python report with zero provider
+  calls; its browser probe confirmed readable interior reveal, restored camera,
+  unchanged world geometry and no page errors. No new online analysis was run.
+
 ## 2026-09-14 — Optional question cascade
 
 - Added ordinary `--no-questions`. It overrides configured and explicit
