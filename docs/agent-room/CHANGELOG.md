@@ -38,6 +38,17 @@
   correctness. Further live comparison and Airflow publication need provider
   balance. The previously completed ordinary Python acceptance remains valid
   for the current production changes.
+- Source inspection also found a separate input gap: Airflow's nested
+  `setup_mock_aws` at `test_log_handlers.py:679` has a docstring and runs inside
+  `with mock_aws()`, but request `atlas_boundaries-r4-w1024` supplies an empty
+  owner doc and no enclosing mock context for `boto3.client` at line 681. The
+  current Python producer does not extract docstrings. This needs native input
+  work, not a boundary rejection rule; no mock classification was invented.
+  A frozen next-comparison manifest selects eight unseen complete windows
+  (23 rows) by source categories/order plus five known regression windows:
+  `/private/tmp/repomap-boundary-prompt-probe-20260914/next-boundary-evaluation-manifest.json`.
+  Their expected distinctions and source sufficiency were recorded without
+  reading the unseen responses. No new requests or response caches were made.
 
 ## 2026-09-14 — CI prerequisites and screenshot rasterization
 
