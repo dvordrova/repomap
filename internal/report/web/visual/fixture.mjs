@@ -1,7 +1,7 @@
 import * as prepared from './two-systems-five-externals.mjs';
 
 const options=new URLSearchParams(location.search);
-const {records,relations,areas,inputOwner}=options.has('single-target')?prepared.singleTargetInventory():options.has('short-names')?prepared.shortNamedInventory():options.has('many-external')
+const {records,relations,areas,inputOwner}=options.has('single-target')?prepared.singleTargetInventory():options.has('short-names')?prepared.shortNamedInventory({matchedPeer:options.has('matched-peer')}):options.has('many-external')
   ?prepared.manyExternalInventory({inputs:!options.has('no-inputs')}):options.has('dense')?prepared.denseInventory():prepared;
 if(options.has('many-external'))document.querySelector('h1').textContent='Two systems · seventeen external participants';
 if(options.has('short-names'))document.querySelector('h1').textContent='Short component names · complete initial inventories';

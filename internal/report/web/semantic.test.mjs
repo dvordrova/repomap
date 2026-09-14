@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {semanticLayout,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,componentViewport,communicationViewport,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
+import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,componentViewport,communicationViewport,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
 
 test('approaching a target reveals its diagram before its smallest descendant text is readable',()=>{
   const nodes=[{id:'target',frame:true,absolute:{x:0,y:0},width:900,height:600}];
@@ -149,7 +149,7 @@ test('zoom detail changes contents without mutating any world coordinates or rou
   const before=JSON.stringify(world.layout);
   const area=world.layout.nodes.find(n=>n.id==='ui');
   const summaryScale=world.records.find(n=>n.id==='ui').summaryScale;
-  assert.ok(area.width/summaryScale>=400-1e-9&&area.height/summaryScale>=world.summaries.get('ui').height-1e-9,'the scaled summary must fit the very same area');
+  assert.ok(area.width/summaryScale>=400-1e-9,'the native group keeps its measured heading width');
   assert.ok(world.layout.nodes.every(n=>Number.isFinite(n.width)&&Number.isFinite(n.height)));
   let previous=new Set();
   for(const zoom of [.6,1,4,1,.4,2,.6]){
@@ -399,4 +399,36 @@ test('the component zoom mark follows the visible corner without moving the worl
   assert.equal(zoomMarkPosition(node,{x:1050,y:24,zoom:1},1054,578),null,'do not draw an icon beyond a nearly offscreen frame');
   const collection={absolute:{x:0,y:0},width:160,height:44};
   assert.deepEqual(zoomMarkPosition(collection,{x:24,y:24,zoom:1},1054,578,8),{x:124,y:8},'the 28px entrance fits the collection’s measured 44px height and 8px insets');
+});
+
+
+test('detail switches every frame at the same depth together, led by its first readable interior',()=>{
+  const records=[
+    {id:'large',branch:'component',children:['large-area']},
+    {id:'small',branch:'component',children:['small-area']},
+    {id:'external',branch:'communication',children:['call']},
+    {id:'inputs',branch:'inputs',children:['request']},
+    {id:'large-area',branch:'area',summaryScale:.1,children:['large-part']},
+    {id:'small-area',branch:'area',summaryScale:.01,children:['small-part']},
+    {id:'large-part',contentScale:.4},{id:'small-part',contentScale:.01},
+    {id:'call',contentScale:.1},{id:'request',contentScale:.01},
+  ];
+  const nodes=records.map((record,i)=>({id:record.id,frame:!!record.children,
+    parentId:records.find(parent=>parent.children?.includes(record.id))?.id,
+    absolute:{x:i*100,y:0},width:record.id==='large'?900:100,height:400}));
+  const original=structuredClone(nodes);
+  const state=(zoom,previous=new Set(),x=0)=>detailLayers(nodes,records,{x,y:0,zoom},1000,700,previous);
+  assert.equal(state(.44).size,0,'whole map keeps all root summaries');
+  const entrance=firstDetailZoom(nodes,records,1000,700);
+  assert.ok(Math.abs(entrance-.75/.9)<1e-9,'all closed group labels use the first root entrance as their fixed reading scale');
+  assert.equal(state(entrance-1e-5).size,0);
+  assert.equal(state(entrance+1e-5).size,4);
+  const first=state(.9);
+  assert.deepEqual([...first].sort(),['external','inputs','large','small']);
+  const second=state(2.1,first);
+  assert.deepEqual([...second].sort(),['external','inputs','large','large-area','small','small-area']);
+  assert.deepEqual(state(2.1,first,-99999),second,'panning cannot split or change the detail layer');
+  assert.deepEqual([...state(1.7,second)].sort(),['external','inputs','large','small'],'retreat closes all groups together');
+  assert.equal(state(.44,second).size,0,'All closes every layer');
+  assert.deepEqual(nodes,original,'layer changes never modify native geometry');
 });

@@ -2,7 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {prepareCards,wrapText} from './cards.mjs';
-import {prepareInteriors,layoutPrepared} from './split-layout.mjs';
+import {prepareInteriors,layoutPrepared,overviewInset} from './split-layout.mjs';
+import {denseInventory,manyExternalInventory,records as ordinaryRecords,relations as ordinaryRelations,areas as ordinaryAreas} from './visual/two-systems-five-externals.mjs';
 
 const raw=[
   {id:'app',title:'Application',branch:'component',children:['area']},
@@ -65,6 +66,7 @@ test('native outer routes stop at frames while local routes retain exact parts a
   for(const edge of layout.edges){
     assert.ok(edge.segments.length,'each original edge has a native route');
     const from=edge.outerSegments?root(edge.from):nodes.get(edge.from),to=edge.outerSegments?root(edge.to):nodes.get(edge.to);
+    if(edge.outerSegments){assert.equal(edge.outerFrom,from.id);assert.equal(edge.outerTo,to.id);}
     assert.ok(border(edge.segments[0][0],from),`start at visible endpoint ${from.id}`);
     assert.ok(border(edge.segments.at(-1).at(-1),to),`end at visible endpoint ${to.id}`);
     for(let i=0;i<edge.segments.length;i++){
@@ -74,9 +76,12 @@ test('native outer routes stop at frames while local routes retain exact parts a
     }
   }
   const areaRecord=result.records.find(record=>record.id==='area'),areaNode=nodes.get('area');
-  assert.ok(areaNode.width/areaRecord.summaryScale>=400-1e-7,'the complete area summary has its original width');
-  assert.ok(areaNode.height/areaRecord.summaryScale>=result.summaries.get('area').height-1e-7,'the complete area summary has its original height');
-  assert.ok(areaRecord.contentScale<areaRecord.summaryScale,'area summaries and original parts keep distinct zoom levels');
+  assert.ok(areaNode.width/areaRecord.summaryScale>=400-1e-7,'the area retains its heading width');
+  for(const child of layout.nodes.filter(node=>node.parentId==='area')){
+    assert.ok(child.absolute.y>=areaNode.absolute.y+64*areaRecord.summaryScale-1e-7,'native children follow the area heading');
+    assert.ok(child.absolute.y+child.height<=areaNode.absolute.y+areaNode.height+1e-7,'native children remain inside the area');
+  }
+  assert.ok(areaRecord.contentScale<areaRecord.summaryScale,'area headings and original parts keep their own scales');
   assert.ok(layout.labels.length,'source-backed connection labels retain native placement');
   for(const label of layout.labels){const p=label.point||label;assert.ok(Number.isFinite(p.x)&&Number.isFinite(p.y));}
 });
@@ -139,7 +144,10 @@ test('an inventory taller than the initial canvas keeps every area behind a read
   assert.equal(prepared.records.length,items.length,'all original areas and parts survive');
   assert.equal(prepared.summaries.size,areaIDs.length);
   const interior=prepared.interiors.get('component');
-  assert.ok(interior.height*.44<availableHeight,'the overview reserves the first entrance without stretching to the entire list');
+  const root=interior.local.nodes.find(node=>node.id==='component');
+  const children=interior.local.nodes.filter(node=>node.parentId==='component');
+  const bottom=Math.max(...children.map(node=>node.absolute.y+node.height));
+  assert.ok(root.height-bottom<=33,'the component ends at native child bounds plus its bottom padding');
   assert.ok(interior.height*.44>=component.overviewHeightAtWidth(component.overviewMinWidth,{availableHeight})-1e-7);
 });
 
@@ -163,5 +171,217 @@ test('input catalogues choose native columns by their own shape without spreadin
   for(const edge of result.layout.edges)for(let i=1;i<edge.segments.length;i++){
     const a=edge.segments[i-1].at(-1),b=edge.segments[i][0];
     assert.ok(close(a.x,b.x)&&close(a.y,b.y),'column alternatives preserve native boundary joins');
+  }
+});
+
+test('an area reserves its native contents and heading without a second member-list height',async()=>{
+  const records=cards(raw.filter(item=>['app','area','caller','helper'].includes(item.id)));
+  const prepared=await prepareInteriors(records,[{from:'caller',to:'helper'}],areas(records));
+  const interior=prepared.interiors.get('app'),frame=interior.local.nodes.find(node=>node.id==='area');
+  const children=interior.local.nodes.filter(node=>node.parentId==='area');
+  const bottom=Math.max(...children.map(node=>node.absolute.y+node.height));
+  const record=prepared.records.find(item=>item.id==='area'),areaScale=record.contentScale/record.summaryScale;
+  assert.ok(close(frame.absolute.y+frame.height-bottom,32*areaScale),
+    'only native bottom padding remains below the actual objects');
+  assert.ok(frame.height<prepared.summaries.get('area').height,'the removed member list no longer expands the native frame');
+});
+
+test('connected dense component inventories keep All readable without stretching the component frame',async()=>{
+  const fixture=denseInventory(),records=cards(fixture.records),width=1054,height=581;
+  const prepared=await prepareInteriors(records,fixture.relations,fixture.areas,{availableHeight:height-2*overviewInset});
+  for(const id of ['front','backend']){
+    const {local}=prepared.interiors.get(id),children=local.nodes.filter(node=>node.parentId===id);
+    const root=local.nodes.find(node=>node.id===id);
+    const bends=[...local.edges.values()].flat(2).filter(point=>!border(point,root));
+    assert.equal(children.length,42,'every connected area remains in the component');
+    assert.ok(local.height-Math.max(...children.map(node=>node.absolute.y+node.height),...bends.map(point=>point.y))<=33,
+      'the frame ends at its native children/routes and bottom padding');
+  }
+  const {layout}=await layoutPrepared(prepared,width,height),roots=layout.nodes.filter(node=>!node.parentId);
+  const span=axis=>Math.max(...roots.map(node=>node.absolute[axis]+node[axis==='x'?'width':'height']))-Math.min(...roots.map(node=>node.absolute[axis]));
+  const zoom=Math.min(.44,(width-2*overviewInset)/span('x'),(height-2*overviewInset)/span('y'));
+  for(const node of roots){
+    const record=records.find(record=>record.id===node.id),physicalWidth=node.width*zoom,physicalHeight=node.height*zoom;
+    assert.ok(physicalWidth+1e-7>=record.overviewMinWidth,`${node.id}: the complete heading fits at All`);
+    assert.ok(physicalHeight+1e-7>=record.overviewHeightAtWidth(physicalWidth,{availableHeight:height-2*overviewInset}),
+      `${node.id}: the heading and inventory entrance fit at All`);
+  }
+  assert.equal(layout.nodes.length,fixture.records.length);
+  assert.equal(layout.edges.flatMap(edge=>edge.relations).length,fixture.relations.length);
+});
+
+test('component placement moves ready area interiors intact and bundles only matching boundary relations',async()=>{
+  const records=cards([
+    {id:'component',title:'Application',branch:'component',children:['first','second','direct']},
+    {id:'first',title:'Accept work',branch:'area',children:['request','authorize']},
+    {id:'second',title:'Execute work',branch:'area',children:['schedule','run']},
+    {id:'request',title:'Accept a request'},{id:'authorize',title:'Check permissions'},
+    {id:'schedule',title:'Schedule execution'},{id:'run',title:'Execute the work'},
+    {id:'direct',title:'Shared helper'},
+  ]);
+  const relations=[
+    {from:'request',to:'authorize',fromSource:'request:1'},
+    {from:'schedule',to:'run',fromSource:'schedule:2'},
+    {from:'request',to:'schedule',fromSource:'request:3'},
+    {from:'authorize',to:'run',fromSource:'authorize:4'},
+    {from:'request',to:'run',possible:true,fromSource:'request:5'},
+    {from:'run',to:'request',fromSource:'run:6'},
+    {from:'run',to:'direct',fromSource:'run:7'},
+  ];
+  const original=ELK.prototype.layout;
+  let ready;
+  ELK.prototype.layout=function(graph,...args){
+    return original.call(this,graph,...args).then(placed=>{if(graph.id==='interior:component')ready=structuredClone(placed.children[0]);return placed;});
+  };
+  let prepared;
+  try{prepared=await prepareInteriors(records,relations,areas(records));}finally{ELK.prototype.layout=original;}
+  const {local}=prepared.interiors.get('component'),nodes=new Map(local.nodes.map(node=>[node.id,node]));
+  const offsets=new Map([[ready.id,{x:0,y:0}]]),nativeEdges=new Map();
+  function index(node){
+    const offset=offsets.get(node.id);
+    for(const child of node.children||[]){offsets.set(child.id,{x:offset.x+child.x,y:offset.y+child.y});index(child);}
+  }
+  index(ready);
+  function nativeRoutes(node){
+    for(const edge of node.edges||[]){
+      const offset=offsets.get(edge.container||node.id);
+      nativeEdges.set(edge.id,(edge.sections||[]).map(section=>[section.startPoint,...section.bendPoints||[],section.endPoint]
+        .map(point=>({x:point.x+offset.x,y:point.y+offset.y}))));
+    }
+    for(const child of node.children||[])nativeRoutes(child);
+  }
+  nativeRoutes(ready);
+  for(const area of ready.children.filter(node=>node.children)){
+    const placed=nodes.get(area.id);
+    assert.ok(placed.frame,'a ready area remains a frame after the flat placement');
+    assert.equal(placed.width,area.width);assert.equal(placed.height,area.height);
+    for(const child of area.children){
+      const moved=nodes.get(child.id);
+      assert.deepEqual(moved.position,{x:child.x,y:child.y},'only the area offset changes');
+      assert.equal(moved.width,child.width);assert.equal(moved.height,child.height);
+    }
+  }
+  const routes=Object.fromEntries(prepared.edges.map(edge=>[edge.relations[0].fromSource,local.edges.get(edge.id)]));
+  for(const [source,area] of [['request:1','first'],['schedule:2','second']]){
+    const edge=prepared.edges.find(edge=>edge.relations[0].fromSource===source),a=offsets.get(area),b=nodes.get(area).absolute;
+    const expected=nativeEdges.get(edge.id).map(segment=>segment.map(point=>({x:point.x-a.x+b.x,y:point.y-a.y+b.y})));
+    assert.deepEqual(routes[source],expected,'every original area route receives only the area translation');
+  }
+  assert.deepEqual(routes['request:3'],routes['authorize:4'],'distinct original calls share the same directed area boundary route');
+  assert.deepEqual(routes['request:3'],routes['request:5'],'possible and definite source relations share one native boundary corridor');
+  assert.notDeepEqual(routes['request:3'],routes['run:6'],'the reverse direction remains separate');
+  for(const [source,from,to] of [['request:1','request','authorize'],['schedule:2','schedule','run'],
+    ['request:3','first','second'],['authorize:4','first','second'],['request:5','first','second'],
+    ['run:6','second','first'],['run:7','second','direct']]){
+    assert.ok(border(routes[source][0][0],nodes.get(from)),`${source}: native start remains on its visible boundary`);
+    assert.ok(border(routes[source].at(-1).at(-1),nodes.get(to)),`${source}: native end remains on its visible boundary`);
+  }
+  assert.deepEqual(prepared.edges.flatMap(edge=>edge.relations),relations,'the boundary grouping preserves every original source and endpoint');
+});
+
+test('a fit below .44 reserves collection minima in one correction without resizing component interiors',async()=>{
+  // A wide ready frontend and its peer fit below .44. The smaller catalogues
+  // were prepared exactly at .44, so resizing from the old fit alone would
+  // still leave their headings too small after the new outer placement.
+  const roots=[
+    {id:'front',branch:'component',width:1391,height:814,overviewMinWidth:107,overviewHeightAtWidth:()=>268},
+    {id:'backend',branch:'component',width:749,height:645,overviewMinWidth:138,overviewHeightAtWidth:()=>212},
+    {id:'front-inputs',branch:'inputs',width:91/.44,height:149/.44,overviewMinWidth:91,overviewHeightAtWidth:()=>149},
+    {id:'backend-inputs',branch:'inputs',width:73/.44,height:107/.44,overviewMinWidth:73,overviewHeightAtWidth:()=>107},
+  ].map(root=>({...root,children:[`${root.id}-part`]}));
+  const records=roots.flatMap(root=>[root,{id:`${root.id}-part`,width:96,height:80,contentScale:1}]);
+  const interiors=new Map(roots.map(root=>{
+    const ports=[['out','EAST',root.width],['in','WEST',0]].map(([id,side,x])=>({id:`${root.id}-${id}`,
+      width:0,height:0,x,y:90,layoutOptions:{'elk.port.side':side}}));
+    const local={nodes:[{id:root.id,position:{x:0,y:0},absolute:{x:0,y:0},width:root.width,height:root.height,frame:true},
+      {id:`${root.id}-part`,parentId:root.id,position:{x:32,y:64},absolute:{x:32,y:64},width:96,height:80,frame:false}],
+      edges:new Map(),labels:[],ports,width:root.width,height:root.height};
+    return [root.id,{id:root.id,local,ports,scale:1,width:root.width,height:root.height}];
+  }));
+  const aggregates=[['front-inputs','front'],['front','backend'],['backend-inputs','backend']].map(([from,to],i)=>({
+    id:`outer:${i}`,from,to,sourcePort:`${from}-out`,targetPort:`${to}-in`,edges:[`e${i}`],relations:[],
+  }));
+  const prepared={roots,records,interiors,aggregates,labels:new Map(),scales:new Map(),owner:()=>'',summaries:new Map(),
+    edges:aggregates.map((edge,i)=>({id:`e${i}`,from:`${edge.from}-part`,to:`${edge.to}-part`,aggregate:String(i),relations:[]}))};
+  const original=ELK.prototype.layout,requests=[];
+  ELK.prototype.layout=function(graph,...args){requests.push(structuredClone(graph));return original.call(this,graph,...args);};
+  let result;
+  try{result=await layoutPrepared(prepared,1054,580);}finally{ELK.prototype.layout=original;}
+  assert.equal(requests.length,9,'one measured correction follows the same eight native candidates');
+  const nodes=new Map(result.layout.nodes.map(node=>[node.id,node])),frames=roots.map(root=>nodes.get(root.id));
+  const span=axis=>Math.max(...frames.map(node=>node.absolute[axis]+node[axis==='x'?'width':'height']))-Math.min(...frames.map(node=>node.absolute[axis]));
+  const zoom=Math.min(.44,1022/span('x'),548/span('y'));
+  assert.ok(zoom<.44,'this is the sub-.44 fit that previously clipped the smaller catalogues');
+  for(const root of roots){
+    const frame=nodes.get(root.id);
+    assert.ok(frame.width*zoom+1e-7>=root.overviewMinWidth,`${root.id}: the final fit preserves heading width`);
+    assert.ok(frame.height*zoom+1e-7>=root.overviewHeightAtWidth(frame.width*zoom),`${root.id}: the final fit preserves the full input types`);
+    assert.ok(frame.width>=root.width&&frame.height>=root.height,'a measured root reserve never shrinks its native contents');
+    assert.equal(nodes.get(`${root.id}-part`).width,96);assert.equal(nodes.get(`${root.id}-part`).height,80);
+    assert.deepEqual(nodes.get(`${root.id}-part`).position,{x:32,y:64},'prepared interiors retain their own coordinates');
+  }
+  for(const node of requests.at(-1).children)for(const port of node.ports||[]){
+    if(port.layoutOptions['elk.port.side']==='EAST')assert.equal(port.x,node.width,'the fixed native port follows the enlarged frame');
+  }
+  for(const edge of result.layout.edges){
+    const aggregate=aggregates.find(item=>item.edges.includes(edge.id));
+    assert.ok(border(edge.segments[0][0],nodes.get(aggregate.from)));
+    assert.ok(border(edge.segments.at(-1).at(-1),nodes.get(aggregate.to)));
+  }
+});
+
+test('the ordinary map reserves a short component inventory as well as collection headings',async()=>{
+  const records=cards(ordinaryRecords),prepared=await prepareInteriors(records,ordinaryRelations,ordinaryAreas,{availableHeight:548});
+  const original=ELK.prototype.layout,requests=[];
+  ELK.prototype.layout=function(graph,...args){requests.push(structuredClone(graph));return original.call(this,graph,...args);};
+  let result;
+  try{result=await layoutPrepared(prepared,1054,580);}finally{ELK.prototype.layout=original;}
+  assert.equal(requests.length,9,'the existing single final correction handles all root summaries');
+  const nodes=new Map(result.layout.nodes.map(node=>[node.id,node])),roots=result.layout.nodes.filter(node=>!node.parentId);
+  const span=axis=>Math.max(...roots.map(node=>node.absolute[axis]+node[axis==='x'?'width':'height']))-Math.min(...roots.map(node=>node.absolute[axis]));
+  const zoom=Math.min(.44,1022/span('x'),548/span('y'));
+  assert.ok(zoom<.44,'the fixture exercises physical text at a smaller whole-map fit');
+  for(const root of roots){
+    const record=records.find(record=>record.id===root.id);
+    assert.ok(root.width*zoom+1e-7>=record.overviewMinWidth,`${root.id}: no heading word is split`);
+    assert.ok(root.height*zoom+1e-7>=record.overviewHeightAtWidth(root.width*zoom,{availableHeight:548}),
+      `${root.id}: the complete short inventory or input types fit`);
+    const interior=prepared.interiors.get(root.id);
+    for(const child of interior.local.nodes.filter(node=>node.parentId)){
+      const node=nodes.get(child.id);
+      assert.ok(close(node.absolute.x-root.absolute.x,child.absolute.x*interior.scale));
+      assert.ok(close(node.absolute.y-root.absolute.y,child.absolute.y*interior.scale));
+      assert.ok(close(node.width,child.width*interior.scale));assert.ok(close(node.height,child.height*interior.scale));
+    }
+  }
+});
+
+
+test('parallel rows share one measured reserve while every participant remains readable',async()=>{
+  const fixture=manyExternalInventory({inputs:true}),records=cards(fixture.records);
+  const width=1054,height=711,available={width:width-2*overviewInset,height:height-2*overviewInset};
+  const prepared=await prepareInteriors(records,fixture.relations,fixture.areas,{availableHeight:available.height});
+  const original=ELK.prototype.layout,requests=[];
+  ELK.prototype.layout=function(graph,...args){requests.push(structuredClone(graph));return original.call(this,graph,...args);};
+  let result;
+  try{result=await layoutPrepared(prepared,width,height);}finally{ELK.prototype.layout=original;}
+  assert.equal(requests.length,9,'multirow sizing still needs only one correction after the eight native candidates');
+  const nodes=new Map(result.layout.nodes.map(node=>[node.id,node])),roots=result.layout.nodes.filter(node=>!node.parentId);
+  assert.equal(roots.length,21,'both targets, both input collections and all seventeen destinations remain');
+  const span=axis=>Math.max(...roots.map(node=>node.absolute[axis]+node[axis==='x'?'width':'height']))-Math.min(...roots.map(node=>node.absolute[axis]));
+  const zoom=Math.min(.44,available.width/span('x'),available.height/span('y'));
+  assert.ok(zoom<.44,'the regression reaches a whole-map fit below the preferred camera');
+  for(const root of roots){
+    const record=records.find(record=>record.id===root.id);
+    assert.ok(root.width*zoom+1e-7>=record.overviewMinWidth,`${root.id}: its heading keeps complete words`);
+    assert.ok(root.height*zoom+1e-7>=record.overviewHeightAtWidth(root.width*zoom,{availableHeight:available.height}),
+      `${root.id}: its measured heading and complete short inventory fit`);
+    const interior=prepared.interiors.get(root.id);
+    for(const child of interior.local.nodes.filter(node=>node.parentId)){
+      const node=nodes.get(child.id);
+      assert.ok(close(node.absolute.x-root.absolute.x,child.absolute.x*interior.scale));
+      assert.ok(close(node.absolute.y-root.absolute.y,child.absolute.y*interior.scale));
+      assert.ok(close(node.width,child.width*interior.scale));assert.ok(close(node.height,child.height*interior.scale));
+    }
   }
 });

@@ -77,19 +77,6 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
   }
   const summaries=new Map(overviewRecords(items,areas).records.map(item=>[item.id,item]));
   const labels=new Map();
-  const leaves=id=>children.has(id)?children.get(id).flatMap(leaves):[id];
-  for(const area of areas.filter(area=>byID.get(area.id)?.branch==='area')){
-    for(const group of connections(area.id,leaves(area.id),edges)){
-      // Cross-participant labels are numbered at the outer boundary. Reserving
-      // their full titles inside the participant creates empty corridors that
-      // push its actual contents away from the reader's zoom target.
-      if(rootOf(group.outside)!==rootOf(area.id))continue;
-      const outside=byID.get(group.outside),id=`label${labels.size}`;
-      labels.set(id,{...group,id,root:rootOf(area.id),title:outside.name||outside.title,
-        labelTitle:outside.labelTitle||outside.title,width:outside.labelWidth||180,height:(outside.labelHeight||40)+38});
-      const edge=edges.find(edge=>edge.id===group.edges[0]);(edge.labels ||= []).push(id);
-    }
-  }
   const areaScales=new Map(),interiors=new Map(),preparedRecords=new Map();
   const owner=id=>{for(let at=parent.get(id);at;at=parent.get(at))if(byID.get(at)?.branch==='area')return at;return '';};
   for(const root of roots){
@@ -104,7 +91,7 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         for(const name of Object.keys(local))if(name.includes('spacing.'))local[name]=String(Number(local[name])*scale);
         const derived=id===root.id?minimum:null;
         const min={width:Math.max(record.minimumWidth||0,derived?.width||0,record.branch==='area'?400:0),
-          height:Math.max(record.minimumHeight||0,derived?.height||0,record.branch==='area'?summaries.get(id)?.height||0:0)};
+          height:Math.max(record.minimumHeight||0,derived?.height||0)};
         if(min.width||min.height){local['elk.nodeSize.constraints']='MINIMUM_SIZE';local['elk.nodeSize.minimum']=`(${min.width},${min.height})`;}
         const result=children.has(id)?{id,children:children.get(id).map(tree),layoutOptions:local}
           :{id,width:Math.max(record.width,min.width),height:Math.max(record.height,min.height),layoutOptions:local};
@@ -122,10 +109,7 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         const aggregate=cross?aggregates.get(edge.aggregate):null;
         const source=cross&&from!==root.id?aggregate.targetPort:edge.from;
         const target=cross&&to!==root.id?aggregate.sourcePort:edge.to;
-        return [{id:edge.id,sources:[source],targets:[target],labels:(edge.labels||[]).map(id=>labels.get(id)).filter(label=>label.root===root.id).map(label=>{
-          const scale=areaScales.get(label.area)||1;
-          return {id:label.id,text:label.title,width:label.width*scale,height:label.height*scale,layoutOptions:{'elk.edgeLabels.placement':'CENTER'}};
-        })}];
+        return [{id:edge.id,sources:[source],targets:[target]}];
       });
       return {id:`interior:${root.id}`,layoutOptions:inputUnzip?{...options,'elk.layered.layerUnzipping.strategy':'ALTERNATING'}:options,children:[actual]};
     }
@@ -155,9 +139,67 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     const preferredWidth=root.overviewPreferredWidth||root.overviewMinWidth||(root.branch==='component'?220:160);
     const preferredHeight=root.overviewHeightAtWidth?.(preferredWidth,{availableHeight})||Math.min(180,placed.height);
     const ratio=preferredWidth/preferredHeight;
-    const minimum={width:Math.max(placed.width,placed.height*ratio),height:Math.max(placed.height,placed.width/ratio)};
-    placed=(await native(graph(minimum))).children[0];
-    const local=localGeometry(placed);
+    if(root.branch!=='component'){
+      const minimum={width:Math.max(placed.width,placed.height*ratio),height:Math.max(placed.height,placed.width/ratio)};
+      placed=(await native(graph(minimum))).children[0];
+    }
+    let local=localGeometry(placed);
+    if(root.branch==='component'&&children.get(root.id)?.length){
+      // Areas already own their native interiors. Place only these ready
+      // rectangles, so an interior edge cannot stretch the whole component.
+      const immediate=id=>{
+        while(parent.has(id)&&parent.get(id)!==root.id)id=parent.get(id);
+        return id;
+      };
+      const bundled=new Map(),edgeBundle=new Map();
+      for(const edge of ownEdges){
+        const from=rootOf(edge.from),to=rootOf(edge.to),cross=from!==to;
+        if(cross&&((from===root.id&&edge.from===root.id)||(to===root.id&&edge.to===root.id)))continue;
+        const aggregate=cross?aggregates.get(edge.aggregate):null;
+        const source=cross&&from!==root.id?aggregate.targetPort:immediate(edge.from);
+        const target=cross&&to!==root.id?aggregate.sourcePort:immediate(edge.to);
+        if(source===target)continue;
+        const identity=key(source,target);
+        if(!bundled.has(identity))bundled.set(identity,{id:`component:${root.id}:${identity}`,sources:[source],targets:[target]});
+        edgeBundle.set(edge.id,bundled.get(identity).id);
+      }
+      const ready=local.nodes.filter(node=>node.parentId===root.id);
+      const componentOptions={...options,'elk.portConstraints':'FIXED_SIDE',
+        'elk.padding':`[top=${localRecords.get(root.id).headerHeight||64},left=32,bottom=32,right=32]`};
+      if(root.minimumWidth||root.minimumHeight){
+        componentOptions['elk.nodeSize.constraints']='MINIMUM_SIZE';
+        componentOptions['elk.nodeSize.minimum']=`(${root.minimumWidth||0},${root.minimumHeight||0})`;
+      }
+      let compact,filled=-Infinity;
+      for(const unzip of [false,true]){
+        const layoutOptions={...componentOptions};
+        if(unzip)layoutOptions['elk.layered.layerUnzipping.strategy']='ALTERNATING';
+        const graph={id:`component-interior:${root.id}`,layoutOptions:options,children:[{
+          id:root.id,layoutOptions,ports:structuredClone([...ports.get(root.id).values()]),
+          children:ready.map(node=>({id:node.id,width:node.width,height:node.height})),
+          edges:structuredClone([...bundled.values()]),
+        }]};
+        const candidate=localGeometry((await native(graph)).children[0]);
+        const aspect=candidate.width/candidate.height,score=Math.min(aspect/ratio,ratio/aspect);
+        if(score>filled){compact=candidate;filled=score;}
+      }
+      const before=new Map(ready.map(node=>[node.id,node]));
+      const after=new Map(compact.nodes.map(node=>[node.id,node]));
+      const offset=id=>{
+        const child=immediate(id),a=before.get(child),b=after.get(child);
+        return a&&b?{x:b.absolute.x-a.absolute.x,y:b.absolute.y-a.absolute.y}:{x:0,y:0};
+      };
+      compact.nodes=local.nodes.map(node=>after.has(node.id)?{...after.get(node.id),frame:node.frame}
+        :{...node,absolute:transform(node.absolute,1,offset(node.id))});
+      const routes=new Map();
+      for(const edge of ownEdges){
+        const bundle=edgeBundle.get(edge.id);
+        routes.set(edge.id,bundle?compact.edges.get(bundle)||[]
+          :(local.edges.get(edge.id)||[]).map(segment=>segment.map(point=>transform(point,1,offset(edge.from)))));
+      }
+      compact.edges=routes;
+      local=compact;
+    }
     // A fixed unit conversion permits the ordinary .44 overview camera to
     // display the preferred text size. It never uses the eventual fit zoom.
     const scale=Math.max(preferredWidth/local.width,preferredHeight/local.height)/.44;
@@ -192,7 +234,20 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     const interior=prepared.interiors.get(root.id);
     return {id:root.id,width:interior.width,height:interior.height,layoutOptions:{}};
   }),edges:prepared.aggregates.map(edge=>({id:edge.id,sources:[edge.from],targets:[edge.to]}))};
-  let graph,best;
+  const available={width:Math.max(1,width-2*overviewInset),height:Math.max(1,height-2*overviewInset)};
+  function metrics(placed){
+    const roots=placed.children;
+    const span={width:Math.max(...roots.map(node=>node.x+node.width))-Math.min(...roots.map(node=>node.x)),
+      height:Math.max(...roots.map(node=>node.y+node.height))-Math.min(...roots.map(node=>node.y))};
+    const zoom=Math.min(.44,available.width/span.width,available.height/span.height);
+    const readable=Math.min(1,...roots.map(node=>{
+      const record=byID.get(node.id),minimum=record.overviewMinWidth||0;
+      const needed=record.overviewHeightAtWidth?.(node.width*zoom,{availableHeight:available.height})||0;
+      return Math.min(minimum?node.width*zoom/minimum:1,needed?node.height*zoom/needed:1);
+    }));
+    return {span,zoom,readable,overflow:Math.max(span.width/width,span.height/height)};
+  }
+  let graph,best,bestInput;
   // Both choices belong to ELK. Free boundary endpoints avoid a star collapsing
   // into one strip; the prepared native ports can pack several connected
   // targets more compactly. Compare only these eight flat candidates. Neither
@@ -205,18 +260,67 @@ export async function layoutPrepared(prepared,width=1200,height=700){
       for(const edge of candidate.edges){const original=prepared.aggregates.find(a=>a.id===edge.id);edge.sources=[original.sourcePort];edge.targets=[original.targetPort];}
     }
     if(unzip)candidate.layoutOptions['elk.layered.layerUnzipping.strategy']='ALTERNATING';
-    const placed=await native(candidate),roots=placed.children;
-    const minX=Math.min(...roots.map(node=>node.x)),minY=Math.min(...roots.map(node=>node.y));
-    const maxX=Math.max(...roots.map(node=>node.x+node.width)),maxY=Math.max(...roots.map(node=>node.y+node.height));
-    const zoom=Math.min(.44,Math.max(1,width-2*overviewInset)/(maxX-minX),Math.max(1,height-2*overviewInset)/(maxY-minY));
-    const readable=Math.min(1,...roots.map(node=>{
-      const record=byID.get(node.id),minimum=record.overviewMinWidth||0;
-      const needed=record.overviewHeightAtWidth?.(node.width*zoom,{availableHeight:height-2*overviewInset})||0;
-      return Math.min(minimum?node.width*zoom/minimum:1,needed?node.height*zoom/needed:1);
-    }));
-    const overflow=Math.max((maxX-minX)/width,(maxY-minY)/height);
-    if(!best||readable>best.readable||readable===best.readable&&overflow<best.overflow){graph=placed;best={readable,overflow};}
+    const template=structuredClone(candidate),placed=await native(candidate),score=metrics(placed);
+    if(!best||score.readable>best.readable||score.readable===best.readable&&score.overflow<best.overflow){graph=placed;best=score;bestInput=template;}
    }
+  }
+  if(best.readable<1-1e-7){
+    // Root summaries use physical pixels. A fitted camera below .44 must
+    // still reserve their measured minima, including the space their growth
+    // removes from that camera. Correct the chosen native shape once; interiors
+    // keep their prepared geometry.
+    // A lower corrected fit affects every summary, including participants
+    // that were already readable in the selected candidate.
+    const growing=graph.children.flatMap(node=>{
+      const record=byID.get(node.id);
+      if(!record.overviewHeightAtWidth)return [];
+      const physicalWidth=Math.max(node.width*best.zoom,record.overviewMinWidth||0);
+      const physicalHeight=record.overviewHeightAtWidth?.(physicalWidth,{availableHeight:available.height})||0;
+      return [{id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,
+        needed:{width:Math.ceil(physicalWidth),height:Math.ceil(Math.max(node.height*best.zoom,physicalHeight))}}];
+    });
+    if(growing.length){
+      const reserve=axis=>{
+        const coordinate=axis==='width'?'x':'y';
+        const ordered=[...growing].sort((a,b)=>a[coordinate]+a[axis]-b[coordinate]-b[axis]);
+        // Parallel rows share projected space. Only a nonoverlapping chain
+        // adds growth along an axis; summing every row over-reserves the frame
+        // and can incorrectly report that no readable fit exists.
+        const extent=zoom=>{
+          const lengths=[];
+          for(const [i,node] of ordered.entries()){
+            let preceding=0;
+            for(let j=0;j<i;j++)if(ordered[j][coordinate]+ordered[j][axis]<=node[coordinate]+1e-7)
+              preceding=Math.max(preceding,lengths[j]);
+            lengths.push(preceding+Math.max(0,node.needed[axis]-node[axis]*zoom));
+          }
+          return best.span[axis]*zoom+Math.max(0,...lengths);
+        };
+        if(extent(best.zoom)<=available[axis]||extent(0)>=available[axis])return best.zoom;
+        // This monotone piecewise-linear envelope is solved in memory. It
+        // chooses the reserve for the one existing native correction pass.
+        let low=0,high=best.zoom;
+        for(let i=0;i<48;i++){
+          const middle=(low+high)/2;
+          if(extent(middle)<=available[axis])low=middle;else high=middle;
+        }
+        return low;
+      };
+      const zoom=Math.min(best.zoom,reserve('width'),reserve('height'));
+      const candidate=structuredClone(bestInput);
+      for(const node of candidate.children){
+        const minimum=growing.find(item=>item.id===node.id);if(!minimum)continue;
+        node.width=Math.max(node.width,minimum.needed.width/zoom);
+        node.height=Math.max(node.height,minimum.needed.height/zoom);
+        for(const port of node.ports||[]){
+          const side=port.layoutOptions?.['elk.port.side'];
+          if(side==='EAST')port.x=node.width;
+          if(side==='SOUTH')port.y=node.height;
+        }
+      }
+      const placed=await native(candidate),score=metrics(placed);
+      if(score.readable>best.readable){graph=placed;best=score;}
+    }
   }
   const rootOf=new Map();for(const [root,interior] of prepared.interiors)for(const node of interior.local.nodes)rootOf.set(node.id,root);
   const nodes=[],labels=[],rootOffsets=new Map(graph.children.map(node=>[node.id,{x:node.x,y:node.y}]));
@@ -225,7 +329,7 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     const interior=prepared.interiors.get(root.id),offset=rootOffsets.get(root.id),scale=interior.scale;
     for(const node of interior.local.nodes)nodes.push({...node,
       position:node.parentId?{x:node.position.x*scale,y:node.position.y*scale}:offset,
-      absolute:transform(node.absolute,scale,offset),width:node.width*scale,height:node.height*scale});
+      absolute:transform(node.absolute,scale,offset),width:node.parentId?node.width*scale:root.width,height:node.parentId?node.height*scale:root.height});
     for(const label of interior.local.labels){
       const original=prepared.labels.get(label.id),areaScale=byID.get(original.area)?.contentScale||scale;
       if(rootOf.get(original.outside)!==root.id)continue;
@@ -239,7 +343,8 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   const edges=prepared.edges.map(edge=>{
     const from=rootOf.get(edge.from),to=rootOf.get(edge.to);
     const segments=from===to?localRoute(from,edge.id):routes.get(`outer:${edge.aggregate}`)||[];
-    return {...edge,segments,outerSegments:from!==to?routes.get(`outer:${edge.aggregate}`):undefined,path:path(segments)};
+    return {...edge,segments,outerSegments:from!==to?routes.get(`outer:${edge.aggregate}`):undefined,
+      outerFrom:from!==to?from:undefined,outerTo:from!==to?to:undefined,path:path(segments)};
   });
   const children=new Map();
   for(const node of nodes)if(node.parentId){if(!children.has(node.parentId))children.set(node.parentId,[]);children.get(node.parentId).push(node.id);}

@@ -161,28 +161,6 @@ test('overview keeps two systems and five external participants readable',async(
   expect(errors).toEqual([]);
 });
 
-test('partly offscreen input types scroll inside their own collection',async({page},testInfo)=>{
-  const errors=await openFixture(page),geometry=await worldGeometry(page);
-  const stage=await page.locator('.flow-root').boundingBox();
-  const collection=page.locator('.react-flow__node[data-id="backend-inputs"]');
-  const frame=await collection.boundingBox();
-  const dx=stage.x+70-frame.x-frame.width;
-  await page.mouse.move(stage.x+stage.width/2,stage.y+stage.height-40);await page.mouse.down();
-  await page.mouse.move(stage.x+stage.width/2+dx,stage.y+stage.height-40,{steps:10});await page.mouse.up();
-  const list=page.locator('[data-component-overview="backend-inputs"] .flow-input-types');
-  await expect.poll(()=>list.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
-  const box=await list.boundingBox(),moved=await collection.boundingBox();
-  expect(box.height,'Partly visible inputs keep a usable scroll entrance').toBeGreaterThan(16);
-  expect(inside(box,moved),'The type list itself remains within its own frame').toBe(true);
-  const camera=await page.locator('[data-map]').evaluate(map=>map.captureViewport());
-  await list.hover();await page.mouse.wheel(0,180);
-  await expect.poll(()=>list.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
-  expect(await page.locator('[data-map]').evaluate(map=>map.captureViewport()),'Scrolling the catalogue does not pan the map').toEqual(camera);
-  expect(await worldGeometry(page)).toEqual(geometry);
-  await testInfo.attach('Input types stay inside the partially visible collection',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
-  expect(errors).toEqual([]);
-});
-
 test('dense internal inventory keeps whole-map headings and zoom controls readable',async({page},testInfo)=>{
   // This journey includes initial compound layout, screenshots, scrolling both
   // complete inventories, opening a part and returning. Keep the same total
@@ -251,6 +229,7 @@ test('external zoom reveals calls and returns to the same overview',async({page}
   const geometry=await worldGeometry(page);
   await page.getByRole('button',{name:'Zoom into Backend API',exact:true}).click();
   await expect(page.locator('[data-reading-title]')).toHaveText('Backend API');
+  await expect(page.locator('.flow-location')).toHaveText('Backend API');
   for(const id of ['post','get','download']){
     const call=page.locator(`.react-flow__node[data-id="${id}"]`);
     await expect(call).toBeInViewport();

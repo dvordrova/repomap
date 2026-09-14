@@ -152,10 +152,18 @@ attachments cover component/external entry and intermediate zoom-out states.
 Zoom-out checks that a root summary does not coexist with its visible interior.
 A restored close view checks that a visible part is not covered by its parent's
 summary when the intermediate area's heading has left the viewport.
-A partial-to-whole-frame pan at an unchanged readable scale must reveal the
-area's original parts and internal arrow without another zoom. Restoring the
-before/after cameras restores their corresponding detail states, with identical
-world geometry. Both states are captured in the screenshot journey.
+A pan must preserve the text's line boxes even when an input, external or target
+card is mostly clipped by either viewport edge. Hover and selection preserve
+compact title positions and wrapping. Selecting a call with no kind caption
+must not insert a new reading row above its title or move the camera.
+The short-name inventory journey covers both an external API participant and
+an already matched peer with direct input relations and no duplicate external.
+Pinch opens and closes complete hierarchy
+layers together, including offscreen siblings; restoring the camera restores
+that shared state. A requestAnimationFrame probe checks every frame of actual
+Ctrl+wheel transitions: existing outer and between-group routes must never
+vanish, and opening a group cannot extend the latter inside its contents.
+Both layer transitions and clipped-label states appear in the screenshot journey.
 Pinch aimed at the centre of a target must reveal its diagram by the time the
 frame occupies 85% of a canvas dimension, including a dense group inventory
 and one target with twenty external systems. The regression checks complete
@@ -209,8 +217,8 @@ These structural work assertions have no machine-dependent timing limit.
 Connection-size checks combine actual SVG screen transforms with raster
 samples at different zooms. Frame checks cover the browser’s minimum CSS border
 width as well as the visible corner radius. A partly offscreen input collection
-keeps its complete type list within the frame; scrolling that list leaves the
-camera and world unchanged.
+keeps the same text layout; the viewport clips it without rewrapping its words.
+Scrolling a dense inventory leaves the camera and world unchanged.
 
 A one-target/twenty-destination fixture has twenty parts and six calls per
 destination. Its default screenshot must keep every full heading in its own
@@ -230,3 +238,9 @@ its world remains fixed until the whole map is requested. The fitted result
 must keep every full heading and zoom control inside its own frame. Returning
 to a whole-map camera saved before remeasurement must honor that intent rather
 than restore stale coordinates or retain the detail view.
+
+The canvas regression set also checks compact endpoint numbers inside their
+frame at the native connection, matching the actual inner badge scale; direct
+closed-group to object reveal without a member-list presentation; and actual
+browser text/graphic contrast with a grayscale review. Native relation IDs and
+certainty survive a single displayed arrow per directed visible pair.

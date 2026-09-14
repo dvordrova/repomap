@@ -1,54 +1,57 @@
 import {test,expect} from '@playwright/test';
+import {records} from './two-systems-five-externals.mjs';
 
-const geometry=page=>page.locator('.react-flow__node').evaluateAll(nodes=>nodes.map(node=>({
-  id:node.dataset.id,transform:node.style.transform,width:node.style.width,height:node.style.height,
-})));
+const rootIDs=records.filter(r=>r.branch==='component').map(r=>r.id).sort();
+const collectionIDs=records.filter(r=>['communication','inputs'].includes(r.branch)).map(r=>r.id).sort();
+const areaIDs=records.filter(r=>r.branch==='area').map(r=>r.id).sort();
 
-test('a fully visible area reveals its already readable parts without another zoom',async({page},testInfo)=>{
+test('pinch reveals and closes the complete hierarchy layer together',async({page},testInfo)=>{
+  test.setTimeout(60000);
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/');
-  const map=page.locator('[data-map]');
-  await expect(map).toHaveAttribute('data-fixture-ready','true');
-  const original=await geometry(page),saved=await map.evaluate(map=>map.captureViewport());
-  const scene=await page.evaluate(()=>{
-    const frame=document.querySelector('.react-flow__node[data-id="editing"]');
-    const position=new DOMMatrixReadOnly(frame.style.transform);
-    const part=document.querySelector('.react-flow__node[data-id="editor"]>.flow-part');
-    const scale=new DOMMatrixReadOnly(getComputedStyle(part).transform).a;
-    const font=parseFloat(getComputedStyle(part.querySelector('strong')).fontSize)*scale;
-    return {x:position.e,y:position.f,width:parseFloat(frame.style.width),height:parseFloat(frame.style.height),zoom:12.75/font};
-  });
+  const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
+  const camera=()=>map.evaluate(map=>map.captureViewport());
+  const geometry=()=>page.locator('.react-flow__node').evaluateAll(nodes=>nodes.map(n=>[n.dataset.id,n.style.transform,n.style.width,n.style.height]));
+  const original=await geometry(),initial=await camera();
   const canvas=await page.locator('.flow-root').boundingBox();
-  expect(scene.width*scene.zoom).toBeLessThan(canvas.width-80);
-  expect(scene.height*scene.zoom).toBeLessThan(canvas.height-80);
-  const partial={...saved,zoom:scene.zoom,x:-40-scene.x*scene.zoom,
-    y:(canvas.height-scene.height*scene.zoom)/2-scene.y*scene.zoom,fit:false,
-    componentsOpen:true,openComponents:['front'],detailAreas:[],communicationsOpen:[]};
-  await map.evaluate((map,viewport)=>map.restoreReadingState({scope:'editing',viewport}),partial);
-  const summary=page.locator('[data-summary-area="editing"]');
-  const editor=page.locator('.react-flow__node[data-id="editor"]');
-  await expect(summary).toBeVisible();await expect(editor).toBeHidden();
-  await testInfo.attach('journey-01 — Partly visible area before the pan',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
-
-  const revision=await map.getAttribute('data-camera-revision');
-  // This real pan brings the complete area into view without changing scale.
-  await page.mouse.move(canvas.x+canvas.width/2,canvas.y+canvas.height-30);
-  await page.mouse.down();
-  await page.mouse.move(canvas.x+canvas.width/2+100,canvas.y+canvas.height-30,{steps:5});
-  await page.mouse.up();
-  await expect(map).not.toHaveAttribute('data-camera-revision',revision);
-  await testInfo.attach('journey-02 — Whole area at the same readable scale',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
-  await expect(editor).toBeVisible();await expect(summary).toHaveCount(0);
-  await expect(page.locator('.react-flow__node[data-id="submission"]')).toBeVisible();
-  const internal=await map.evaluate(map=>map.visibleEdges.find(edge=>edge.from==='editor'&&edge.to==='submission').id);
-  await expect(page.locator(`[data-edge-ids~="${internal}"] path[marker-end]`)).toHaveCount(1);
-  const opened=await map.evaluate(map=>map.captureViewport());
-  expect(opened.zoom).toBeCloseTo(partial.zoom,8);
-  expect(await geometry(page)).toEqual(original);
-  await map.evaluate((map,viewport)=>map.restoreReadingState({scope:'editing',viewport}),partial);
-  await expect(editor).toBeHidden();await expect(summary).toBeVisible();
-  await map.evaluate((map,viewport)=>map.restoreReadingState({scope:'editing',viewport}),opened);
-  await expect(editor).toBeVisible();await expect(summary).toHaveCount(0);
-  expect(await geometry(page)).toEqual(original);
+  const frame=await page.locator('.react-flow__node[data-id="backend"]').boundingBox();
+  await map.evaluate((map,viewport)=>map.restoreReadingState({viewport}),{...initial,fit:false,
+    x:initial.x+canvas.x+canvas.width/2-frame.x-frame.width/2,y:initial.y+canvas.y+canvas.height/2-frame.y-frame.height/2});
+  await page.mouse.move(canvas.x+canvas.width/2,canvas.y+canvas.height/2);
+  const states=[];
+  const check=async()=>{
+    const state=await camera();states.push(state);
+    expect(state.openComponents.slice().sort()).toEqual(state.openComponents.length?rootIDs:[]);
+    expect(state.communicationsOpen.slice().sort()).toEqual(state.openComponents.length?collectionIDs:[]);
+    expect(state.detailAreas.slice().sort()).toEqual(state.detailAreas.length?areaIDs:[]);
+    await expect(page.locator('[data-summary-area] .flow-overview-members'),'A group has no intermediate member-list representation').toHaveCount(0);
+    return state;
+  };
+  const wheel=async delta=>{
+    const before=(await camera()).zoom;
+    await page.keyboard.down('Control');try{await page.mouse.wheel(0,delta);}finally{await page.keyboard.up('Control');}
+    await expect.poll(async()=>(await camera()).zoom).not.toBe(before);
+    return check();
+  };
+  await check();let captured=false;
+  await testInfo.attach('journey-01 — All participants show their summaries',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  for(let step=0;step<48;step++){
+    const state=await wheel(-4);
+    if(state.openComponents.length&&!state.detailAreas.length&&!captured){
+      captured=true;
+      await testInfo.attach('journey-02 — Every participant opens its first level together',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+    }
+    if(state.detailAreas.length)break;
+  }
+  expect(captured).toBe(true);
+  expect((await camera()).detailAreas.slice().sort()).toEqual(areaIDs);
+  await testInfo.attach('journey-03 — Every group reveals its objects together',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  const close=await camera();
+  for(let step=0;step<48&&(await camera()).openComponents.length;step++)await wheel(4);
+  expect((await camera()).openComponents).toEqual([]);
+  await map.evaluate((map,viewport)=>map.restoreReadingState({viewport}),close);
+  expect((await check()).detailAreas.slice().sort()).toEqual(areaIDs);
+  expect(await geometry()).toEqual(original);
+  await testInfo.attach('Layer states across pinch and return',{body:JSON.stringify(states),contentType:'application/json'});
   expect(errors).toEqual([]);
 });

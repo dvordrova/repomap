@@ -15,7 +15,7 @@ export const records = [
     role:'API and background workers', summary:'Accepts jobs, stores their state and sends the resulting files to object storage.',
     children:['requests','execution']},
   {id:'requests', title:'Request handling', branch:'area', children:['routes','auth']},
-  {id:'routes', title:'HTTP handlers', kind:'Part'},
+  {id:'routes', title:'HTTP handlers', kind:'Entrypoints',lane:'triggers'},
   {id:'create', title:'POST /api/jobs', activation:'request',componentOwner:'backend',componentName:'Job processing service'},
   {id:'auth', title:'Authentication and permissions', kind:'Part', lane:'core'},
   {id:'execution', title:'Job execution', branch:'area', children:['queue','worker']},
@@ -147,7 +147,7 @@ export function singleTargetInventory() {
 
 // Ordinary reports have less vertical canvas space than the standalone fixture.
 // Short component names must still reserve room for their longer inventories.
-export function shortNamedInventory() {
+export function shortNamedInventory({matchedPeer=false}={}) {
   const nodes=structuredClone(records),edges=structuredClone(relations),owners={...inputOwner};
   const names={
     front:['Application shell and navigation','Page and playground views','Simulation view',
@@ -186,7 +186,13 @@ export function shortNamedInventory() {
     edges.push({from:id,to:'routes',label:'implemented in',operations:[id]});
   }
   for(const node of nodes)if(node.activation)node.componentName=node.componentOwner;
-  const omitted=new Set(nodes.filter(node=>node.branch==='communication'&&node.id!=='api')
+  if(matchedPeer)edges.push(
+    {from:'front',to:'backend',scope:'component'},
+    {from:'submission',to:'create',possible:true},
+    {from:'status',to:'backend-input-2',possible:true},
+    {from:'results',to:'backend-input-3',possible:true},
+  );
+  const omitted=new Set(nodes.filter(node=>node.branch==='communication'&&(matchedPeer||node.id!=='api'))
     .flatMap(node=>[node.id,...node.children]));omitted.add('consume');delete owners.consume;
   const retained=nodes.filter(node=>!omitted.has(node.id)),ids=new Set(retained.map(node=>node.id));
   return {records:retained,relations:edges.filter(edge=>ids.has(edge.from)&&ids.has(edge.to)),

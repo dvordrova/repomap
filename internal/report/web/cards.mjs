@@ -86,7 +86,8 @@ export function prepareCards(records, _inputOwner, measure, translate) {
       return Math.max(controlHeight,base+(base+list>availableHeight&&rows.length?17+rows[0]:list));
     }:undefined;
     return {...n,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
-      kindLabel:communicationChildren.has(n.id)?'':kind(n),description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),
+      roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
+      kindLabel:communicationChildren.has(n.id)||!input&&['core','triggers'].includes(n.lane)?'':kind(n),description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,
       headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines.length?12+descriptionLines.length*18:0)),
       width:260,height:frame?undefined:66+title.length*22+descriptionLines.length*18+

@@ -1,5 +1,37 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Stable detail layers, readable frames and one visible connection
+
+- Detail now switches for every participant or group at the same hierarchy
+  depth. Closed groups go directly from their title to actual objects; the
+  intermediate member list is removed. Compact group titles share the common
+  entrance scale. Pan, hover and selection preserve text layout, and the small
+  nested-content hint stays inside its frame.
+- Native area interiors are placed first; components wrap their ready child
+  rectangles. One bounded outer sizing correction protects measured summary
+  minima, including parallel rows and initially readable participants, without
+  rebuilding interiors or adding zoom-time layout work.
+- Reproduced duplicate exact/possible arrows on the saved Python report:
+  `Backend launch` to `Application settings` has five original source relations.
+  They now share one visible directed arrow. Original IDs, certainty and source
+  reading remain intact. Between-group routes stop at group boundaries at every
+  depth; known measured dimensions prevent React Flow from temporarily dropping
+  arrows during presentation updates.
+- Endpoint numbers sit just inside the native connection and match inner
+  badges. Core and entry cards use distinct diamond/arrow symbols and the
+  shared legend instead of repeated category captions. Darker boundaries and
+  routes retain contrast during neighbour dimming; actual browser colours and
+  a grayscale image are checked, without claiming whole-report WCAG conformance.
+- Validation: all 64 UI unit tests and 30 desktop browser scenarios passed,
+  including normal comparison against the reviewed references. The complete
+  gallery contains 65 images across 22 journeys. Focused report tests/vet,
+  embedded asset verification and `make build` passed. The canonical binary
+  rendered the saved Python report with zero provider requests; its real
+  component-to-part/source journey and camera return passed with unchanged world
+  geometry and no page errors. A separate real-report check retained all five
+  source relations behind the single launch-to-settings arrow. No new online
+  analysis was run for these UI changes.
+
 ## 2026-09-14 — Reveal the target before its smallest text becomes readable
 
 - Reproduced centre-aimed pinch on both saved Python targets: even at 9.82 zoom,

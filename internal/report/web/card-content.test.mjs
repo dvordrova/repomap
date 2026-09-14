@@ -9,7 +9,7 @@ import {prepareCards,groupInputs} from './cards.mjs';
 const bundle=await build({entryPoints:[new URL('./card-content.jsx',import.meta.url).pathname],bundle:true,write:false,format:'cjs',packages:'external',jsx:'transform'});
 const module={exports:{}};
 new Function('require','module','exports',bundle.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports);
-const {OverviewMembers,InputTypes}=module.exports;
+const {InputTypes}=module.exports;
 
 test('the closed input collection lists existing catalogue types without duplicate input buttons',()=>{
   const kinds=['request','command','interaction','scheduled','continuous','interaction'];
@@ -23,6 +23,4 @@ test('the closed input collection lists existing catalogue types without duplica
   for(const kind of ['request','command','background','interaction'])assert.equal(html.split(`data-input-group-kind="${kind}"`).length-1,1);
   assert.match(html,/Incoming requests/);assert.match(html,/Background work/);assert.match(html,/User interactions/);
   assert.doesNotMatch(html,/Same label|data-input-id/,'named inputs are the original graph children, not summary duplicates');
-  const implementation=renderToStaticMarkup(React.createElement(OverviewMembers,{members:cards.filter(n=>!n.activation)}));
-  assert.doesNotMatch(implementation,/data-input-id|Same label/,'implementation summaries do not embed the outside inputs');
 });

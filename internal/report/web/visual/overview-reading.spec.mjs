@@ -1,8 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {shortNamedInventory} from './two-systems-five-externals.mjs';
 
-const prepared=shortNamedInventory();
-
 async function readableText(locator,frame,label,{maximumLines}={}){
   await expect(locator,label).toBeVisible();
   const result=await locator.evaluate(el=>{
@@ -31,9 +29,10 @@ async function readableText(locator,frame,label,{maximumLines}={}){
   }
 }
 
-test('short component names keep complete inventories readable in ordinary report space',async({page},testInfo)=>{
+for(const matchedPeer of [false,true])test(`short component names keep complete inventories readable in ordinary report space${matchedPeer?' with a matched peer':''}`,async({page},testInfo)=>{
+  const prepared=shortNamedInventory({matchedPeer});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/?short-names');
+  await page.goto('/?short-names'+(matchedPeer?'&matched-peer':''));
   const map=page.locator('[data-map]');
   await expect(map).toHaveAttribute('data-fixture-ready','true');
   let previous='',stable=0;
@@ -44,7 +43,7 @@ test('short component names keep complete inventories readable in ordinary repor
   },{intervals:[100]}).toBeGreaterThanOrEqual(2);
   const canvas=await page.locator('.flow-root').boundingBox();
   expect(canvas.width).toBeCloseTo(1054,0);expect(canvas.height).toBeCloseTo(580,0);
-  await expect(page.locator('[data-component-overview]')).toHaveCount(5);
+  await expect(page.locator('[data-component-overview]')).toHaveCount(matchedPeer?4:5);
   await expect(page.locator('.flow-location')).toHaveText('System map');
   const screenshot=await page.locator('.map-workspace').screenshot();
   await testInfo.attach('journey-01 — Ordinary report space · complete initial inventories',{body:screenshot,contentType:'image/png'});
@@ -72,5 +71,5 @@ test('short component names keep complete inventories readable in ordinary repor
     }
   }
   expect(errors).toEqual([]);
-  await expect(page.locator('.map-workspace')).toHaveScreenshot('ordinary-space-overview.png');
+  await expect(page.locator('.map-workspace')).toHaveScreenshot(matchedPeer?'matched-peer-overview.png':'ordinary-space-overview.png');
 });

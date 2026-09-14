@@ -13,7 +13,8 @@ test('connection strokes and arrowheads keep their screen size while zooming',as
   await expect.poll(()=>page.locator('[data-map]').evaluate(map=>map.captureViewport().componentsOpen)).toBe(true);
   // The component entrance now has boundary-only outer arrows. Inspect the
   // real internal arrow in an opened area rather than a removed continuation.
-  await page.locator('[data-zoom-into="editing"]').click();
+  await expect.poll(()=>map.evaluate(map=>map.captureViewport().openComponents.includes('front'))).toBe(true);
+  await page.locator('[data-summary-area="editing"] strong,[data-frame-title="editing"]>strong').click();
   await expect(page.locator('.react-flow__node[data-id="editor"]')).toBeVisible();
   await page.mouse.move(1430,890);
   const measurements=[];

@@ -1,15 +1,15 @@
-import React, {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {ReactFlow, Handle, Position, ViewportPortal, useViewport} from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
-import {createSemanticLayout, detailedAreas, fullyVisibleFrames, framedComponents, componentDetails, componentTextSizes, communicationDetails, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport, zoomMarkPosition} from './semantic.mjs';
+import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {prepareCards,wrapText,overviewHeading} from './cards.mjs';
 import {HoverGate} from './hover.mjs';
-import {InputTypes, OverviewMembers, scrollInventory} from './card-content.jsx';
+import {InputTypes, scrollInventory} from './card-content.jsx';
 import '@xyflow/react/dist/style.css';
 import './canvas.css';
 
@@ -17,9 +17,10 @@ import './canvas.css';
 window.ELK = ELK;
 const t = (...args) => window.rmT(...args);
 function Part({data}) {
-  return <div className={`flow-part flow-${data.category} ${data.lane==='core'?'flow-core':''}`} data-input-id={data.activation?data.id:undefined} style={data.contentScale&&data.contentScale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${data.contentScale})`,transformOrigin:'top left'}:undefined}>
+  return <div className={`flow-part flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''}`} data-input-id={data.activation?data.id:undefined} style={data.contentScale&&data.contentScale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${data.contentScale})`,transformOrigin:'top left'}:undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
-    {(data.kindLabel||data.reading)&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}{data.reading&&<span className="flow-reading-badge">{t('Reading')}</span>}</div>}
+    {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
+    {data.kindLabel&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
     <strong data-input-name={data.activation?'':undefined}>{data.title}</strong>
     {data.description&&<div className="flow-description">{data.description}</div>}
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
@@ -33,43 +34,28 @@ function Area({data}) {
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
 }
-function OverviewCard({data}){
-  if(data.compact)return <div className="flow-part flow-overview-card flow-overview-compact"><strong>{data.title}</strong></div>;
-  if(data.single)return <Part data={{...data,reading:data.reading===data.id}}/>;
-  return <div className="flow-part flow-overview-card">
-    <Handle type="target" position={Position.Top} isConnectable={false}/>
-    <div className="flow-kind">{t('Area')}</div><strong>{data.title}</strong>
-    <OverviewMembers members={data.members} reading={data.reading} operation={data.operation} open={data.open}/>
-    <Handle type="source" position={Position.Bottom} isConnectable={false}/>
-  </div>;
-}
-function AreaSummary({node,item,data,className,enter,select}){
-  const {zoom}=useViewport(),nativeScale=item.summaryScale||1;
-  const compact=20*nativeScale*zoom<12,scale=compact?1/zoom:nativeScale;
+function AreaSummary({node,item,className,enter,select,compactScale:scale}){
+  const {zoom}=useViewport();
   return <div className={`flow-area-summary nopan ${className}`} data-summary-area={node.id}
     style={{transform:`translate(${node.absolute.x}px,${node.absolute.y}px) scale(${scale})`,transformOrigin:'top left',
       width:node.width/scale,height:node.height/scale,'--flow-zoom':zoom*scale}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
-    <OverviewCard data={{...data,compact}}/>
+    <div className="flow-part flow-overview-card flow-overview-compact"><strong>{item.name||item.title}</strong></div>
   </div>;
 }
-function ZoomMark({node,item,enter,select,width,height}) {
+function ZoomMark({node,item,enter,select,compactScale}) {
   const viewport=useViewport(),{zoom}=viewport;
-  const inset=['communication','inputs'].includes(item.branch)?8:12;
-  if(item.branch==='area'&&(node.width*zoom<28+2*inset||node.height*zoom<28+2*inset))return null;
-  const point=width?zoomMarkPosition(node,viewport,width,height,inset):{x:node.absolute.x+node.width-(28+inset)/zoom,y:node.absolute.y+inset/zoom};
-  if(!point)return null;
-  if(item.branch==='area'&&20*(item.summaryScale||1)*zoom<12){
-    const bottom=(node.absolute.y+node.height)*zoom+viewport.y;
-    point.y=(bottom-28-inset-viewport.y)/zoom;
-  }
+  const area=item.branch==='area',size=20,inset=area||['communication','inputs'].includes(item.branch)?8:12;
+  const scale=area?compactScale:1/zoom;
+  if(node.width<(size+2*inset)*scale||node.height<(size+2*inset)*scale)return null;
+  const point={x:node.absolute.x+node.width-(size+inset)*scale,y:node.absolute.y+inset*scale};
   const name=item.branch==='inputs'?`${t('Inputs')} · ${item.name||item.title}`:item.name||item.title;
   return <button type="button" className="flow-zoom-mark nopan" data-zoom-into={node.id}
-    style={{transform:`translate(${point.x}px,${point.y}px) scale(${1/zoom})`}}
+    style={{transform:`translate(${point.x}px,${point.y}px) scale(${scale})`,width:size,height:size}}
     aria-label={t('Zoom into {0}',name)} onMouseEnter={()=>enter(node.id)}
     onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5M10.5 7.5v6m-3-3h6"/>
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16v.1"/>
     </svg>
   </button>;
 }
@@ -100,7 +86,7 @@ function RoutedEdge({id,data}) {
     <path d={data.path} fill="none" vectorEffect="non-scaling-stroke" style={data.possible?{strokeDasharray:'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined} markerEnd={data.arrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined}/>
   </g>;
 }
-const nodeTypes={part:Part,area:Area,overview:OverviewCard}, edgeTypes={routed:RoutedEdge};
+const nodeTypes={part:Part,area:Area}, edgeTypes={routed:RoutedEdge};
 
 window.rmCreateFlow = async function(map, stage, records, relations, areas, inputOwner, callbacks) {
   const source=stage.querySelector('svg'), host=document.createElement('div');
@@ -136,22 +122,26 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const initial={scope:'',operation:'',entry:'',selected:new Set(),matched:new Set(),searching:false,numbered:true};
   let cameraRevision=0;
   let update, instance, view=initial, hoverArea='', preview='', restorePending, pendingFocus, panning=false, initializing=true;
-  let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),locationID='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
+  let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
   const closed=id=>closedContainer(id,placed,byID,detailed,componentsOpen,communicationsOpen,openComponents);
   new ResizeObserver(()=>{if(instance&&!initializing&&overviewFit)fitOverview();}).observe(host);
-  function updateLocation(){
+  function updateLocation(event,subject=locationSubject){
     if(!instance)return;
     if(layoutError){location.textContent=t('Could not arrange this map. Reload to try again.');return;}
     if(!openComponents.size&&!communicationsOpen.size){location.textContent=t('System map');return;}
     const v=instance.getViewport(),w=host.clientWidth,h=host.clientHeight;
-    const point={x:(w/2-v.x)/v.zoom,y:(h/2-v.y)/v.zoom};
+    // Pinch explores the point under the fingers. Opening the common layer
+    // must not rename that context after a different participant at centre.
+    const bounds=host.getBoundingClientRect(),pinch=event?.type==='wheel'&&event.ctrlKey;
+    const aim=pinch?{x:event.clientX-bounds.left,y:event.clientY-bounds.top}:{x:w/2,y:h/2};
+    const point={x:(aim.x-v.x)/v.zoom,y:(aim.y-v.y)/v.zoom};
     const candidates=layout.nodes.filter(n=>!closed(n.id)&&(scales.has(n.id)||byID.get(n.id)?.branch==='component'||['communication','inputs'].includes(byID.get(n.id)?.branch)||(!n.frame&&!semantic.owner(n.id)))).map(n=>{
       const x=n.absolute.x*v.zoom+v.x,y=n.absolute.y*v.zoom+v.y;
       const visible=Math.max(0,Math.min(w,x+n.width*v.zoom)-Math.max(0,x))*Math.max(0,Math.min(h,y+n.height*v.zoom)-Math.max(0,y));
       const dx=Math.max(n.absolute.x-point.x,0,point.x-n.absolute.x-n.width),dy=Math.max(n.absolute.y-point.y,0,point.y-n.absolute.y-n.height);
       return {id:n.id,visible,distance:dx*dx+dy*dy};
     }).filter(n=>n.visible>0).sort((a,b)=>a.distance-b.distance||b.visible-a.visible);
-    if(candidates[0])locationID=candidates[0].id;
+    if(candidates.length)locationID=candidates.find(n=>n.id===subject)?.id||candidates[0].id;
     const names=[];for(let id=locationID;id;id=placed.get(id)?.parentId)names.unshift(byID.get(id)?.name||byID.get(id)?.title);
     location.textContent=names.filter(Boolean).join(' / ')||t('System map');
   }
@@ -163,8 +153,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   document.addEventListener('pointermove',remember,{passive:true});
   document.addEventListener('pointerdown',remember,{passive:true});
   const children=new Map(areas.map(a=>[a.id,a.nodes]));
-  const descendants=id=>(children.get(id)||[]).flatMap(child=>[child,...descendants(child)]);
-  const contained=new Map(areas.map(a=>[a.id,descendants(a.id)]));
   const inventories=new Map(areas.map(a=>[a.id,frameInventory(a.id,children,byID)]));
   const leaves=id=>children.has(id)?children.get(id).flatMap(leaves):[id];
   const communicationScales=()=>new Map(areas.filter(a=>['communication','inputs'].includes(byID.get(a.id)?.branch))
@@ -172,25 +160,36 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const maximumZoom=()=>Math.max(2,...[...scales.values(),...communicationScales().values(),
     ...[...byID.values()].filter(n=>!n.children?.length).map(n=>n.contentScale||1)].map(scale=>1.8/scale));
   maxZoom=maximumZoom();
+  function detailState(viewport,previous){
+    const open=detailLayers(layout.nodes,semantic.records,viewport,host.clientWidth,host.clientHeight,previous);
+    return {
+      components:new Set([...open].filter(id=>byID.get(id)?.branch==='component')),
+      areas:new Set([...open].filter(id=>byID.get(id)?.branch==='area')),
+      communications:new Set([...open].filter(id=>['communication','inputs'].includes(byID.get(id)?.branch))),
+    };
+  }
   function updateDetail(viewport){
-    const whole=fullyVisibleFrames(layout.nodes,viewport,host.clientWidth,host.clientHeight);
-    const framed=framedComponents(layout.nodes,viewport,host.clientWidth,host.clientHeight,openComponents);
-    const open=componentDetails(componentFonts,viewport.zoom,openComponents,whole,framed);
-    const next=detailedAreas(scales,viewport.zoom,detailed,whole);
-    const communication=communicationDetails(communicationScales(),viewport.zoom,communicationsOpen,whole);
-    const changed=open.size!==openComponents.size||[...open].some(id=>!openComponents.has(id))||next.size!==detailed.size||[...next].some(id=>!detailed.has(id))||
-      communication.size!==communicationsOpen.size||[...communication].some(id=>!communicationsOpen.has(id));
-    openComponents=open;componentsOpen=!!open.size;detailed=next;communicationsOpen=communication;
-    if(changed){hoverArea='';hover.pause();update?.();}
+    const next=detailState(viewport,new Set([...openComponents,...detailed,...communicationsOpen]));
+    const same=(a,b)=>a.size===b.size&&[...a].every(id=>b.has(id));
+    if(same(next.components,openComponents)&&same(next.areas,detailed)&&same(next.communications,communicationsOpen))return;
+    openComponents=next.components;componentsOpen=!!openComponents.size;detailed=next.areas;communicationsOpen=next.communications;
+    hoverArea='';hover.pause();update?.();
   }
   function parentArea(id){while(id){if(byID.get(id)?.branch==='area')return id;id=placed.get(id)?.parentId;}return '';}
   function rootOf(id){while(placed.get(id)?.parentId)id=placed.get(id).parentId;return id;}
+  function boundaryBetween(id,other){
+    const shared=new Set();
+    for(let at=other;at;at=placed.get(at)?.parentId)shared.add(at);
+    for(let at=placed.get(id)?.parentId;at;at=placed.get(at)?.parentId)
+      if(byID.get(at)?.branch==='area'&&!shared.has(at))return placed.get(at);
+    return null;
+  }
   function clearHover(){hoverArea='';preview='';map.clearMapPreview?.();update?.();}
-  function commitCamera(movement){
+  function commitCamera(movement,subject){
     // React Flow's imperative camera methods need not emit onMoveEnd. Save
     // only after they finish, or Back restores the previous display's camera.
     const revision=++cameraRevision;
-    return Promise.resolve(movement).then(()=>{if(revision===cameraRevision&&!initializing){updateLocation();map.dispatchEvent(new Event('repomap:viewport'));}});
+    return Promise.resolve(movement).then(()=>{if(revision===cameraRevision&&!initializing){updateLocation(undefined,subject);map.dispatchEvent(new Event('repomap:viewport'));}});
   }
   function enter(id){
     if(!hover.allowed)return;
@@ -208,18 +207,19 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const {x,y}=n.absolute, viewport=instance.getViewport(), rect=host.getBoundingClientRect();
     const contentScale=byID.get(n.id)?.contentScale||1;
     if(!center&&readableFocus(n.id,placed,byID,detailed,componentsOpen,viewport,rect.width,rect.height,communicationsOpen,openComponents))return;
+    locationSubject=id;
     if(n.frame){
       if(['component','communication','inputs'].includes(byID.get(n.id).branch)){
         const destination=['communication','inputs'].includes(byID.get(n.id).branch)
           ?communicationViewport(n,layout.nodes,rect.width,rect.height,communicationScales().get(n.id)||1)
           :componentViewport(n,layout.nodes,rect.width,(componentFonts.get(n.id)||20)/20);
-        commitCamera(instance.setViewport(destination,{duration:smooth?420:0}));return;
+        commitCamera(instance.setViewport(destination,{duration:smooth?420:0}),id);return;
       }
       const zoom=scales.has(n.id)?1/contentScale:Math.min(1,Math.max(.6,Math.min((rect.width-48)/n.width,(rect.height-48)/n.height)));
-      commitCamera(instance.setViewport({x:24-x*zoom,y:24-y*zoom,zoom},{duration:smooth?420:0}));return;
+      commitCamera(instance.setViewport({x:24-x*zoom,y:24-y*zoom,zoom},{duration:smooth?420:0}),id);return;
     }
     const zoom=1/contentScale;
-    commitCamera(instance.setCenter(x+n.width/2,y+Math.min(n.height/2,rect.height/(2*zoom)-24),{zoom,duration:smooth?420:0}));
+    commitCamera(instance.setCenter(x+n.width/2,y+Math.min(n.height/2,rect.height/(2*zoom)-24),{zoom,duration:smooth?420:0}),id);
   }
   function capture(){return instance&&!initializing?{...instance.getViewport(),layoutKey,overview:isOverview(),detailAreas:[...detailed],componentsOpen,openComponents:[...openComponents],communicationsOpen:[...communicationsOpen],fit:overviewFit}:restorePending||null;}
   function restore(v){if(!v)return;
@@ -229,12 +229,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // must not place its still-selected item outside the visible viewport.
     if(!Number.isFinite(v.zoom)||v.layoutKey!==layoutKey){if(view.scope||view.operation)focus(view.scope||view.operation,true);else fitOverview();return;}
     overviewFit=false;
-    const whole=fullyVisibleFrames(layout.nodes,v,host.clientWidth,host.clientHeight);
-    detailed=detailedAreas(scales,v.zoom,new Set(v.detailAreas||[]),whole);
-    const previous=new Set(v.openComponents||(v.componentsOpen?[...componentFonts.keys()]:[]));
-    openComponents=componentDetails(componentFonts,v.zoom,previous,whole,framedComponents(layout.nodes,v,host.clientWidth,host.clientHeight,previous));
+    locationSubject=view.scope||view.operation||'';
+    const previous=new Set([...(v.openComponents||[]),...(v.detailAreas||[]),...(v.communicationsOpen||[])]);
+    const next=detailState(v,previous);
+    detailed=next.areas;openComponents=next.components;communicationsOpen=next.communications;
     componentsOpen=!!openComponents.size;
-    communicationsOpen=communicationDetails(communicationScales(),v.zoom,new Set(v.communicationsOpen||[]),whole);
     zoom=v.zoom;update?.();
     hover.pause();preview='';map.clearMapPreview?.();
     if(instance)commitCamera(instance.setViewport(v));else restorePending=v;
@@ -242,6 +241,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   function resetView(){if(!instance)return;if(isOverview()){fitOverview();return;}const first=layout.nodes.filter(n=>!n.frame).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];focus(view.scope||view.operation||first?.id,true);}
   function fitOverview(duration=0){
     overviewFit=true;
+    locationSubject='';
     if(fitting)return fitting;
     fitting=(async()=>{
       while(overviewFit){
@@ -278,11 +278,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   function select(id,event,center=false){
     hover.remember(event.clientX,event.clientY);hover.pause();hoverArea='';preview='';map.clearMapPreview?.();callbacks.select(id,center);
   }
-  // Screen-sized summaries follow the camera without rebuilding graph props.
+  // Lay out text once for the whole-map camera. Pan clips that fixed card;
+  // zoom scales it with the map instead of rewrapping it at every wheel tick.
   function ComponentOverview({node:n}){
-    const viewport=useViewport(),zoom=viewport.zoom;
-    const left=Math.max(0,n.absolute.x*zoom+viewport.x),right=Math.min(host.clientWidth,(n.absolute.x+n.width)*zoom+viewport.x);
-    const item=byID.get(n.id),inventory=inventories.get(n.id),screenWidth=right-left,screenHeight=n.height*zoom;
+    const zoom=systemViewport(layout.nodes,layoutSize.width,layoutSize.height).zoom;
+    const item=byID.get(n.id),inventory=inventories.get(n.id),screenWidth=n.width*zoom,screenHeight=n.height*zoom;
     const visible=screenWidth>32,width=Math.min(320,screenWidth-16),contentWidth=Math.max(1,width-16);
     const heading=useMemo(()=>visible?overviewHeading(item,screenWidth,measure):null,[screenWidth]);
     const text=useMemo(()=>{
@@ -304,12 +304,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const showCounts=!communication&&!inputs&&remaining>=countsHeight;
     if(showCounts)remaining-=countsHeight;
     const descriptionLines=Math.floor((remaining-10)/18);
-    // Screen-sized summaries must stay in the visible part of their own
-    // frame while approaching its contents. Their world corner can leave
-    // the viewport long before the interior reaches readable scale.
-    const x=(left+8-viewport.x)/zoom;
-    const summaryHeight=inputs?text.inputHeight:heading.height+24;
-    const y=Math.max(n.absolute.y+8/zoom,Math.min(n.absolute.y+n.height-summaryHeight/zoom,(8-viewport.y)/zoom));
+    const x=n.absolute.x+8*scale,y=n.absolute.y+8*scale;
     return <div key={'component-'+n.id} className={`flow-component-overview nopan ${item.branch==='communication'?'flow-communication-overview':item.branch==='inputs'?'flow-input-collection':''}`}
       data-component-overview={n.id} style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width,maxHeight:(n.absolute.y+n.height-y)*zoom-8}}
       onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,true);}}>
@@ -324,49 +319,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     </div>;
   }
   function ComponentPresentation({node,focused}){
-    const viewport=useViewport();
     const item=byID.get(node.id),open=item.branch==='component'?openComponents.has(node.id):communicationsOpen.has(node.id);
-    const [fallback,setFallback]=useState(!open);
-    const inspected=useRef(null);
-    const left=node.absolute.x*viewport.zoom+viewport.x,top=node.absolute.y*viewport.zoom+viewport.y;
-    const intersects=left<host.clientWidth&&top<host.clientHeight&&
-      left+node.width*viewport.zoom>0&&top+node.height*viewport.zoom>0;
-    useLayoutEffect(()=>{
-      if(!open||!intersects){setFallback(!open);return;}
-      const inspect=()=>{
-        const canvas=host.getBoundingClientRect();
-        // Keep a fallback only while the camera sees empty compound padding.
-        // Once any real child card is visible, its background already competes
-        // with the summary, even if its own heading is clipped by the viewport.
-        const visibleContent=(contained.get(node.id)||[]).some(id=>{
-          const child=placed.get(id);
-          if(!child||closed(id))return false;
-          const x=child.absolute.x*viewport.zoom+viewport.x,y=child.absolute.y*viewport.zoom+viewport.y;
-          if(x>host.clientWidth||y>host.clientHeight||x+child.width*viewport.zoom<0||y+child.height*viewport.zoom<0)return false;
-          const key=CSS.escape(id);
-          const content=host.querySelectorAll(`[data-summary-area="${key}"] .flow-part, [data-frame-title="${key}"]>strong, .react-flow__node[data-id="${key}"] .flow-part`);
-          return [...content].some(element=>{
-            const style=getComputedStyle(element);
-            if(style.visibility==='hidden')return false;
-            const box=element.getBoundingClientRect();
-            return box.width>0&&box.height>0&&box.right>canvas.left&&box.bottom>canvas.top&&box.left<canvas.right&&box.top<canvas.bottom;
-          });
-        });
-        setFallback(!visibleContent);
-      };
-      inspect();
-      // React Flow can publish newly revealed nodes in the next commit. A pan
-      // only translates existing text, so it needs no second DOM inspection.
-      const previous=inspected.current;
-      inspected.current={zoom:viewport.zoom,detailed,layoutKey};
-      if(!previous||previous.zoom!==viewport.zoom||previous.detailed!==detailed||previous.layoutKey!==layoutKey){
-        const frame=requestAnimationFrame(inspect);
-        return()=>cancelAnimationFrame(frame);
-      }
-    },[viewport.x,viewport.y,viewport.zoom,open,detailed,layoutKey,intersects]);
-    return fallback&&(!open||intersects)?<>
-      <ComponentOverview node={node}/><ZoomMark node={node} item={item} enter={enter} select={select} width={host.clientWidth} height={host.clientHeight}/>
-    </>:open?<FrameTitle node={node} item={item} focused={focused} enter={enter} select={select}/>:null;
+    return open?<FrameTitle node={node} item={item} focused={focused} enter={enter} select={select}/>:<>
+      <ComponentOverview node={node}/><ZoomMark node={node} item={item} enter={enter} select={select}/>
+    </>;
   }
   function App(){
     const [,setVersion]=useState(0);update=()=>setVersion(v=>v+1);
@@ -374,25 +330,35 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const context=focusAncestors(state.focus,placed);
     const visible=id=>!closed(id);
     const drawing=layout;
+    const compactScale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
     const overview=isOverview();
     const area=state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):'';
     const number=new Map(area&&view.numbered?leaves(area).map((id,i)=>[id,i+1]):[]);
     const dim=state.mode!=='all';
-    const labelGroups=area?connections(area,leaves(area),layout.edges.filter(e=>state.activeEdges.has(e.id)),id=>rootOf(id)===rootOf(area)?id:rootOf(id)):[];
-    const labels=labelGroups.map(group=>({...layout.labels.find(l=>l.area===area&&l.key===group.key),...group}));
+    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,dim,boundaryBetween);
+    const labelGroups=area?connections(area,leaves(area),layout.edges.filter(e=>state.activeEdges.has(e.id)),
+      id=>rootOf(id)!==rootOf(area)?rootOf(id):boundaryBetween(id,area)?.id||id):[];
+    const labels=labelGroups.flatMap(group=>{
+      const matching=routes.filter(route=>route.edgeIDs.some(id=>group.edges.includes(id)));
+      const route=group.incoming?matching.at(-1):matching[0];
+      const point=group.incoming?route?.end:route?.start;
+      if(!point)return [];
+      const outside=byID.get(group.outside),root=rootOf(group.outside)!==rootOf(area)?rootOf(area):boundaryBetween(group.insides[0],group.outside)?.id||area;
+      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,title:outside.name||outside.title}];
+    });
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
     const nodes=drawing.nodes.map(n=>{
       const item=byID.get(n.id),focused=state.focus.has(n.id),on=state.participants.has(n.id)||
         (overview&&leaves(n.id).some(id=>state.participants.has(id)));
       const reading=view.scope===n.id||view.operation===n.id;
       const contains=n.frame&&leaves(n.id).some(id=>state.participants.has(id));
-      return {...n,type:n.frame?'area':'part',selected:reading,
+      return {...n,type:n.frame?'area':'part',selected:reading,measured:{width:n.width,height:n.height},
         selectable:false,draggable:false,connectable:false,
         style:{width:n.width,height:n.height,visibility:visible(n.id)?'visible':'hidden'},
         className:`${on||contains||!dim?'':'flow-node-muted'} ${focused?'flow-node-focus':on?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
         data:{...item,summarized:n.frame&&scales.has(n.id)&&!detailed.has(n.id),operation:view.operation,reading,number:number.get(n.id),open:(id,event)=>select(id,event,true)}};
     });
-    const edges=routeDrawing(drawing.edges,closed,state.activeEdges,dim).map(route=>{
+    const edges=routes.map(route=>{
       return {id:route.id,source:route.from,target:route.to,type:'routed',selectable:false,focusable:false,
         ariaLabel:'',domAttributes:{'aria-hidden':true},
         data:route};
@@ -438,8 +404,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         clearHover();
       }}
       onMove={(_,viewport)=>{
-        // A pan checks complete frames at gesture end, without rebuilding the
-        // drawing on every position update.
+        // A pan moves the viewport without rebuilding the drawing.
         if(paintedZoom===viewport.zoom)return;
         paintedZoom=viewport.zoom;
         zoom=viewport.zoom;
@@ -447,20 +412,19 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         updateDetail(viewport);
         map.querySelectorAll('[data-map-zoom]').forEach(button=>{button.disabled=Number(button.dataset.mapZoom)<1&&viewport.zoom<=minZoom();});
       }}
-      onMoveStart={event=>{if(event)overviewFit=false;panning=true;hover.pause();preview='';map.clearMapPreview?.();}}
-      onMoveEnd={()=>{panning=false;hover.pause();if(instance)updateDetail(instance.getViewport());updateLocation();map.dispatchEvent(new Event('repomap:viewport'));}}>
+      onMoveStart={event=>{if(event){overviewFit=false;locationSubject='';}panning=true;hover.pause();preview='';map.clearMapPreview?.();}}
+      onMoveEnd={event=>{panning=false;hover.pause();if(instance)updateDetail(instance.getViewport());updateLocation(event);map.dispatchEvent(new Event('repomap:viewport'));}}>
       <svg className="flow-defs"><defs>
-        <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker>
+        <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker>
         <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
       </defs></svg>
       <ViewportPortal>
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id))&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)}/>)}
         {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
-          node={n} item={byID.get(n.id)} enter={enter} select={select}
-          className={`${state.focus.has(n.id)?'flow-node-focus':''} ${state.participants.has(n.id)?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${view.scope===n.id?'flow-node-reading':''}`}
-          data={{...semantic.summaries.get(n.id),reading:view.scope,operation:view.operation,open:(id,event)=>select(id,event,true)}}/>)}
-        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} enter={enter} select={select}/>)}
+          node={n} item={byID.get(n.id)} compactScale={compactScale} enter={enter} select={select}
+          className={`${state.focus.has(n.id)?'flow-node-focus':''} ${state.participants.has(n.id)?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${view.scope===n.id?'flow-node-reading':''}`}/>)}
+        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={compactScale} enter={enter} select={select}/>)}
         {area&&visible(area)&&detailed.has(area)&&view.numbered&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
       </ViewportPortal>
     </ReactFlow>;
@@ -470,12 +434,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     let style={transform:`translate(${label.x}px,${label.y}px) scale(${label.scale||1})`,transformOrigin:'top left',width:label.width/(label.scale||1),minHeight:label.height/(label.scale||1)};
     if(label.boundary){
       const frame=placed.get(label.root),p=label.point;
-      const sides=[{dx:-1,dy:-1,tx:-100,ty:-100,d:Math.abs(p.x-frame.absolute.x)},
-        {dx:1,dy:-1,tx:0,ty:-100,d:Math.abs(p.x-frame.absolute.x-frame.width)},
-        {dx:1,dy:-1,tx:0,ty:-100,d:Math.abs(p.y-frame.absolute.y)},
-        {dx:1,dy:1,tx:0,ty:0,d:Math.abs(p.y-frame.absolute.y-frame.height)}];
+      const sides=[{dx:1,dy:0,tx:0,ty:-50,d:Math.abs(p.x-frame.absolute.x)},
+        {dx:-1,dy:0,tx:-100,ty:-50,d:Math.abs(p.x-frame.absolute.x-frame.width)},
+        {dx:0,dy:1,tx:-50,ty:0,d:Math.abs(p.y-frame.absolute.y)},
+        {dx:0,dy:-1,tx:-50,ty:-100,d:Math.abs(p.y-frame.absolute.y-frame.height)}];
       const side=sides.sort((a,b)=>a.d-b.d)[0];
-      style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${1/zoom}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
+      const scale=Math.max(...label.insides.map(id=>byID.get(id)?.contentScale||1));
+      style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
     }
     return <div
           className={`flow-connection-label nopan ${label.boundary?'flow-boundary-label':''}`} data-connection-outside={label.outside} data-connection-label={label.id}

@@ -52,6 +52,7 @@ test('pinch over a scrolling target inventory zooms the map',async({page},testIn
   const list=page.locator('[data-component-overview="front"] .flow-component-areas');
   await expect(list).toBeVisible();
   expect(await list.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+  const listElement=await list.elementHandle();
   const before=await map.evaluate(map=>map.captureViewport());
   const box=await list.boundingBox();
   await page.mouse.move(box.x+box.width/2,box.y+Math.min(25,box.height/2));
@@ -59,7 +60,7 @@ test('pinch over a scrolling target inventory zooms the map',async({page},testIn
   await page.keyboard.down('Control');
   try{await page.mouse.wheel(0,-30);}finally{await page.keyboard.up('Control');}
   await expect.poll(async()=>(await map.evaluate(map=>map.captureViewport())).zoom).toBeGreaterThan(before.zoom);
-  expect(await list.evaluate(el=>el.scrollTop)).toBe(0);
+  expect(await listElement.evaluate(el=>el.scrollTop)).toBe(0);
   await testInfo.attach('journey-02 — Pinch zooms without scrolling the inventory',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 });
 
@@ -121,7 +122,8 @@ test('external arrows end at the frame with the matching inner component numbers
   await page.goto('/');
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
   await page.locator('[data-zoom-into="front"]').click();
-  await page.locator('[data-zoom-into="editing"]').click();
+  await expect.poll(()=>map.evaluate(map=>map.captureViewport().openComponents.includes('front'))).toBe(true);
+  await page.locator('[data-summary-area="editing"] strong,[data-frame-title="editing"]>strong').click();
   await expect(page.locator('.react-flow__node[data-id="submission"]')).toBeVisible();
   let previous='',stable=0;
   await expect.poll(async()=>{const v=JSON.stringify(await map.evaluate(map=>map.captureViewport()));stable=v===previous?stable+1:0;previous=v;return stable;},{intervals:[100]}).toBeGreaterThanOrEqual(2);
@@ -144,6 +146,21 @@ test('external arrows end at the frame with the matching inner component numbers
     y:viewport.y+canvas.y+canvas.height/2-marker.y-marker.height/2}});
   await expect(label).toBeInViewport();
   await expect(label).toHaveText('2');
+  const endpoint=await map.evaluate(map=>{
+    const edge=map.visibleEdges.find(e=>e.from==='submission'&&e.to==='post');
+    const m=new DOMMatrixReadOnly(getComputedStyle(map.querySelector('.react-flow__viewport')).transform);
+    const host=map.querySelector('.flow-root').getBoundingClientRect(),p=edge.outerSegments[0][0];
+    return {x:host.x+m.e+p.x*m.a,y:host.y+m.f+p.y*m.d};
+  });
+  const markerBox=await label.locator('button').boundingBox(),rootBox=await page.locator('.react-flow__node[data-id="front"]').boundingBox();
+  expect(markerBox.x).toBeGreaterThanOrEqual(rootBox.x);
+  expect(markerBox.y).toBeGreaterThanOrEqual(rootBox.y);
+  expect(markerBox.x+markerBox.width).toBeLessThanOrEqual(rootBox.x+rootBox.width);
+  expect(markerBox.y+markerBox.height).toBeLessThanOrEqual(rootBox.y+rootBox.height);
+  expect(Math.abs(markerBox.y+markerBox.height/2-endpoint.y),'The inward number is centred on its native connection').toBeLessThan(.5);
+  const innerNumber=await page.locator('.react-flow__node[data-id="submission"] .flow-number').boundingBox();
+  expect(markerBox.width).toBeCloseTo(innerNumber.width,1);
+  expect(markerBox.height).toBeCloseTo(innerNumber.height,1);
   const covered=await label.evaluate((element,segments)=>{
     const box=element.getBoundingClientRect(),canvas=document.querySelector('.flow-root').getBoundingClientRect();
     const m=new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.react-flow__viewport')).transform);

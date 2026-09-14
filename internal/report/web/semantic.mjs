@@ -25,7 +25,7 @@ export function fullyVisibleFrames(nodes,viewport,width,height) {
 }
 
 // Component overview is another view of the same frame, not a smaller graph.
-// Area summaries use 20px member names; direct part headings can be smaller.
+// Closed area headings use 20px text; direct part headings can be smaller.
 // The shared presentation threshold must keep both readable.
 export function componentTextSize(records) {
   return Math.min(20,...componentTextSizes(records).values());
@@ -61,6 +61,42 @@ export function componentContents(zoom, previous=false, textSize=20) {
 
 export function communicationDetails(scales, zoom, previous=new Set(),fullyVisible=new Set()) {
   return detailedAreas(scales,zoom,previous,fullyVisible);
+}
+
+function layerThreshold(frames,byID,width,height,depth,retaining=false){
+  const childFonts=frames.flatMap(frame=>(byID.get(frame.id)?.children||[]).map(id=>{
+    const child=byID.get(id);return child?.branch==='area'?20*(child.summaryScale||1):17*(child?.contentScale||1);
+  }));
+  const text=(retaining?12:14)/Math.max(0,...childFonts);
+  const approach=depth===0?(retaining?.65:.75)/Math.max(...frames.map(frame=>Math.max(frame.width/width,frame.height/height))):Infinity;
+  return Math.min(text,approach);
+}
+
+// Closed group labels share the same fixed reading scale as their common
+// entrance. A smaller sibling must not begin with microscopic headings.
+export function firstDetailZoom(nodes,records,width,height){
+  return Math.max(systemViewport(nodes,width,height).zoom,
+    layerThreshold(nodes.filter(node=>node.frame&&!node.parentId),new Map(records.map(record=>[record.id,record])),width,height,0));
+}
+
+// One decision per hierarchy depth. The first readable interior opens its
+// whole layer; camera position and smaller siblings cannot split that layer.
+export function detailLayers(nodes,records,viewport,width,height,previous=new Set()) {
+  const open=new Set();
+  if(viewport.zoom<=systemViewport(nodes,width,height).zoom)return open;
+  const byID=new Map(records.map(record=>[record.id,record])),placed=new Map(nodes.map(node=>[node.id,node]));
+  const layers=new Map();
+  for(const node of nodes.filter(node=>node.frame)){
+    let depth=0;for(let at=node.parentId;at;at=placed.get(at)?.parentId)depth++;
+    if(!layers.has(depth))layers.set(depth,[]);
+    layers.get(depth).push(node);
+  }
+  for(const [depth,frames] of [...layers].sort((a,b)=>a[0]-b[0])){
+    const retaining=frames.some(frame=>previous.has(frame.id));
+    if(viewport.zoom<layerThreshold(frames,byID,width,height,depth,retaining))break;
+    for(const frame of frames)open.add(frame.id);
+  }
+  return open;
 }
 
 // Keep the same frame and camera; put its small entrance in the visible corner.
@@ -166,8 +202,8 @@ function crossing(box,a,b){
 
 // Trim the existing orthogonal route at a closed area's boundary. We do not
 // route a replacement arrow or infer a new connection between its parts.
-export function visibleRoute(edge, fromBox, toBox) {
-  if(fromBox&&toBox&&fromBox.id===toBox.id)return '';
+export function visibleSegments(edge, fromBox, toBox) {
+  if(fromBox&&toBox&&fromBox.id===toBox.id)return [];
   const segments=edge.segments.map(points=>{
     let route=points.map(p=>({...p}));
     if(fromBox){
@@ -182,5 +218,9 @@ export function visibleRoute(edge, fromBox, toBox) {
     }
     return route;
   });
-  return segments.filter(s=>s.length>1).map(points=>points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')).join(' ');
+  return segments.filter(s=>s.length>1);
+}
+
+export function visibleRoute(edge,fromBox,toBox){
+  return visibleSegments(edge,fromBox,toBox).map(points=>points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')).join(' ');
 }
