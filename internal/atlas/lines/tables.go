@@ -188,8 +188,9 @@ func Boundaries(outgoing ...bool) table.Definition {
 	def := table.Definition{
 		Stage: StageBoundaries, Contract: boundariesContract,
 		System: withVocabulary(boundariesPrompt), Independent: true, Memoize: true,
+		ContextAfterRows: true,
 		Columns: []table.Column{
-			{Name: "decision", Kind: table.Choice, Options: []string{"boundary", "none", "unassessed"}, Note: "boundary when this call itself dispatches an exchange or creates/configures the actual remote client instance; none for local helpers, options and preparation; unassessed for insufficient evidence"},
+			{Name: "decision", Kind: table.Choice, Options: []string{"boundary", "none", "unassessed"}, Note: "whether this call establishes external communication; choose from these three options using the prompt's decision/basis table"},
 			{Name: "kind", Kind: table.Choice, Options: atlas.BoundaryKinds(), When: positive},
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, When: positive, Note: "at most ten words, no subject: why this component exchanges with the runtime system"},
 		},
@@ -199,7 +200,7 @@ func Boundaries(outgoing ...bool) table.Definition {
 		def.Columns[1].Options = atlas.OutgoingBoundaryKinds()
 		def.Columns = append(def.Columns,
 			destinationColumn(positive),
-			table.Column{Name: "basis", Kind: table.Choice, Options: []string{"dispatch", "remote_client_instance"}, When: positive, Note: "dispatch: this call sends the exchange; remote_client_instance: this call itself creates or configures the actual remote client/exporter instance, not an option for a later constructor"},
+			table.Column{Name: "basis", Kind: table.Choice, Options: []string{"dispatch", "remote_client_instance"}, When: positive, Note: "how the boundary is established; dispatch and remote_client_instance are values of basis, not decision"},
 			addressColumn(positive),
 		)
 	}

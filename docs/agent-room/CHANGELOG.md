@@ -1,5 +1,42 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Compare boundary prompts and preserve free-choice formatting
+
+- Replayed ten prompt/request variants on four complete saved Airflow windows
+  through official `deepseek-v4-flash`, with thinking explicitly disabled.
+  Additional windows, combined variants and three fresh repeats brought the
+  comparison to 106 live replay requests. No source evidence was sampled or
+  shortened; all requests and responses use the existing system cache. Qwen
+  on the owner's other machine was not tested locally.
+- The selected prompt is 70 lines / 593 words instead of 155 / 1,438. It puts
+  `decision` and `basis` in separate table columns and distinguishes source
+  indexing from communication with another process. Moving selected rows before
+  their complete shared context was necessary in this comparison; shortening
+  the prompt alone did not fix the SQLite examples. The response schema,
+  destination catalogue and reasoning setting are unchanged.
+- Comparing the selected ordering on 15 complete windows / 19 rows removed
+  eight false external relationships involving SQLite or an in-process HTTP
+  transport. Actual HTTP and SMTP relationships survived. One SQLite row and
+  one unsupported PostgreSQL destination remain semantic errors in this
+  diagnostic set, not schema refusals. This selected set is not an estimate of
+  accuracy across repositories. Three fresh repeats of the four seed windows
+  preserved the selected variant's decisions.
+- One minimal-prompt response wrote `other:Airflow executor`. The old shared
+  decoder refused the missing space. Free-choice tags now accept whitespace
+  around the colon while preserving the model's written value; unknown tags
+  and empty values remain unresolved. All 106 saved responses pass the owning
+  decoder after this normalization, including that semantically unsupported
+  executor relationship. Syntax acceptance and interpretation quality are
+  recorded separately; no decision or destination was inferred by the decoder.
+- The free-choice regression failed before the change and passes afterward.
+  Focused lines, table and reading tests/vet and `make build` pass. Ordinary
+  online Python acceptance at `78714d34ee` completed with exit 0 in 287.7s:
+  both targets, 16 answers, one common manifest/report JSON/HTML and the full
+  artifact chain. Both live boundary requests were accepted. Browser inspection
+  followed Backend API → POST `/api/level/run` → the exact frontend source
+  and caller, then Back. The older Airflow process remains in progress and
+  predates these changes.
+
 ## 2026-09-14 — Audit recent refusals and remove design-only strictness
 
 - Inspected 23 `rejected.jsonl` files from September 13–14 under the existing

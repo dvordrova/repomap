@@ -124,6 +124,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 
 Only complete coupled assignments can establish their shared result. Unknown set members are removed; an unresolved mandatory scalar or conflicting known assignment is refused, without first-wins repair or a manufactured semantic complement.
 
+Validation preserves unambiguous formatting variants before checking meaning.
+Table choices with an advertised free-text tag normalize whitespace around its
+colon: `other:Name` and `OTHER : Name` retain the written name as `other: Name`.
+The requested tag and a nonempty value remain necessary; this does not infer a
+closed choice or substitute a catalogue member. The original response stays in
+the exact cache, so current decoding can recover previously refused formatting
+without another provider request.
+
 ## JSON syntax and reasoning controls
 
 The owner's 2026-09-09 syntax rule permits balancing JSON brackets before the

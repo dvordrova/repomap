@@ -527,9 +527,7 @@ func normalizeCell(column Column, context []Field, row Row, cell string) (string
 				return matched, nil
 			}
 		}
-		if column.Free != "" && len(text) > len(column.Free) &&
-			strings.EqualFold(text[:len(column.Free)], column.Free) {
-			rest := collapse(text[len(column.Free):])
+		if rest, free := freeChoiceText(column.Free, text); free {
 			if rest == "" {
 				return "", fmt.Errorf("cell %q has an empty %q value", column.Name, strings.TrimSpace(column.Free))
 			}
@@ -543,6 +541,25 @@ func normalizeCell(column Column, context []Field, row Row, cell string) (string
 	default:
 		return "", fmt.Errorf("column %q has kind %q", column.Name, column.Kind)
 	}
+}
+
+// Tagged free choices keep their written name even when the model varies
+// whitespace around the colon. The tag itself must still match exactly.
+func freeChoiceText(prefix, text string) (string, bool) {
+	if prefix == "" {
+		return "", false
+	}
+	if tag := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(prefix), ":")); strings.HasSuffix(strings.TrimSpace(prefix), ":") && tag != "" {
+		colon := strings.IndexByte(text, ':')
+		if colon >= 0 && strings.EqualFold(strings.TrimSpace(text[:colon]), tag) {
+			return collapse(text[colon+1:]), true
+		}
+		return "", false
+	}
+	if len(text) >= len(prefix) && strings.EqualFold(text[:len(prefix)], prefix) {
+		return collapse(text[len(prefix):]), true
+	}
+	return "", false
 }
 
 // fieldFrom finds a named input: the row's own field first, then the window

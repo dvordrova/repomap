@@ -503,8 +503,15 @@ func TestOptionsFromReadsTheWindowContextWhenTheRowHasNoList(t *testing.T) {
 	if got, err := normalizeCell(column, context, bare, "d2"); err != nil || got != "d2" {
 		t.Fatalf("context options were not consulted: %q / %v", got, err)
 	}
-	if got, err := normalizeCell(column, context, bare, "other: Twilio"); err != nil || got != "other: Twilio" {
-		t.Fatalf("free text beside context options was refused: %q / %v", got, err)
+	for _, input := range []string{"other: Twilio", "other:Twilio", "OTHER :\n Twilio", "other:\tTwilio"} {
+		if got, err := normalizeCell(column, context, bare, input); err != nil || got != "other: Twilio" {
+			t.Fatalf("free text beside context options was refused: %q -> %q / %v", input, got, err)
+		}
+	}
+	for _, input := range []string{"other:", "other: \n", "another: Twilio", "Twilio"} {
+		if got, err := normalizeCell(column, context, bare, input); err == nil {
+			t.Fatalf("missing name or unrequested tag became a free choice: %q -> %q", input, got)
+		}
 	}
 	if _, err := normalizeCell(column, context, bare, "d9"); err == nil {
 		t.Fatal("a ref outside the context list was accepted")

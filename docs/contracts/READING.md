@@ -196,6 +196,17 @@ an explicit owning projection. Negative rows acquire no purpose, destination or
 address from their unused response cells. No API-name allowlist or later
 semantic repair enforces this distinction.
 
+The candidate prompt places the three `decision` choices beside their separate
+`basis` choices in one table. `external`, `direction: out` and
+`invokes_external` describe source indexing or call direction, not a proven
+exchange with another process. Selected rows precede the complete shared owner
+context and destination catalogue. The catalogue offers names only; no entry
+establishes a call's runtime role. The response shape, closed choices, evidence
+and stage reasoning setting are unchanged. A tagged free value keeps its written
+name when whitespace around the colon varies (`other:Name`, `other : Name`);
+the tag and a nonempty name remain required. This formatting normalization does
+not choose a destination or infer a positive decision.
+
 ## Type and concept descriptions
 
 - Type descriptions use the existing symbol stage and symbol knowledge, with
