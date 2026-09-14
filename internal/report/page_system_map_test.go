@@ -1,7 +1,9 @@
 package report
 
 import (
+	"bytes"
 	"encoding/json"
+	"html/template"
 	"slices"
 	"strings"
 	"testing"
@@ -42,11 +44,93 @@ func TestSystemMapKeepsInventoryAndExactCrossComponentDestinations(t *testing.T)
 			t.Fatalf("component %s absent", id)
 		}
 	}
-	if !strings.Contains(nodes["system-component-worker"].Children, "task") {
-		t.Fatal("ungrouped input lost its component")
+	if nodes["system-inputs-worker"].Children != "task" || nodes["system-inputs-worker"].Owner != "worker" || strings.Contains(nodes["system-component-worker"].Children, "task") {
+		t.Fatal("input lost its owning catalogue or remained inside the component")
 	}
 	if view.Sections[0].Map.Edges[0].To != "remote" {
 		t.Fatal("display mutated the original component view")
+	}
+}
+
+func TestSystemInputCataloguesKeepEveryKindOutsideItsActualComponent(t *testing.T) {
+	command := pageMapNode{ID: "command", Activation: "command", FullTitle: "Run", InputOwner: "part", SourceKind: "model", Source: pageAnchor{Text: "main.go:12"}, SummaryRef: "run-summary"}
+	section := &pageSection{ID: "first", ShortLabel: "Same name", InputsCount: 6, InboundCount: 1,
+		Map: &pageMap{Nodes: []pageMapNode{
+			{ID: "area", Branch: "area", Children: "part command"}, {ID: "part", FullTitle: "Implementation"}, command,
+			{ID: "click", Activation: "interaction"}, {ID: "scheduled", Activation: "scheduled"},
+			{ID: "worker", Activation: "continuous"}, {ID: "handler", Activation: "request"},
+		}, Edges: []pageMapEdge{{From: "command", To: "part", Label: "implemented in", Operations: "command", Scope: "operation", FromSource: command.Source}}},
+		RouteGroups: []pageRouteGroup{{Method: "GET", Rows: []pageRouteRow{{Paths: []pageRoutePath{{Path: "/unmatched", Anchor: &pageAnchor{Href: "server.py#L3", Text: "server.py:3"}}}}}}},
+		Activities:  []pageGroupOperation{{Href: "#command", Name: "Run", Kind: "command"}},
+		Outbound:    []pageOutbound{{ID: "send", Destination: "Queue", KindLabel: "HTTP"}},
+	}
+	view := pageView{Sections: []*pageSection{section,
+		{ID: "second", ShortLabel: "Same name", Map: &pageMap{Nodes: []pageMapNode{{ID: "other-command", Activation: "command", FullTitle: "Run"}}}},
+		{ID: "empty", ShortLabel: "No inputs", Outbound: []pageOutbound{{ID: "only-outbound", Destination: "Queue"}}},
+	}}
+	before, err := json.Marshal(view.Sections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := view.SystemMap()
+	nodes, parents := map[string]pageMapNode{}, map[string]string{}
+	for _, n := range got.Nodes {
+		nodes[n.ID] = n
+		for _, child := range strings.Fields(n.Children) {
+			if parent := parents[child]; parent != "" {
+				t.Fatalf("%s duplicated inside %s and %s", child, parent, n.ID)
+			}
+			parents[child] = n.ID
+		}
+	}
+	for _, owner := range []string{"first", "second"} {
+		id := "system-inputs-" + owner
+		group := nodes[id]
+		if group.Branch != "inputs" || group.ItemKind != "Inputs" || group.FullTitle != "Same name" || group.Owner != owner || parents[id] != "" {
+			t.Fatalf("input catalogue is not one root for its actual component: %+v", group)
+		}
+		if group.Href != "#"+owner+"-inbound" || group.DetailsID != owner+"-inbound" {
+			t.Fatalf("catalogue does not target its existing input section: %+v", group)
+		}
+	}
+	var native pageMapNode
+	for _, n := range got.Nodes {
+		if n.Activation != "" && parents[n.ID] != "system-inputs-"+n.Owner {
+			t.Fatalf("input %s left outside its owning catalogue: %+v", n.ID, n)
+		}
+		if n.FullTitle == "GET /unmatched" {
+			native = n
+		}
+	}
+	if native.ID == "" || native.InputOwner != "" || len(strings.Fields(nodes["system-inputs-first"].Children)) != 6 {
+		t.Fatal("unmatched native route disappeared or gained an invented implementation")
+	}
+	if _, ok := nodes["system-inputs-empty"]; ok {
+		t.Fatal("outbound communication manufactured an input catalogue")
+	}
+	if parents["system-send"] == "system-inputs-first" || nodes["area"].Children != "part" {
+		t.Fatal("outbound entered the input catalogue or an input stayed in its old frame")
+	}
+	if len(got.Edges) != 1 || got.Edges[0].From != "command" || got.Edges[0].To != "part" || got.Edges[0].FromSource.Text != "main.go:12" {
+		t.Fatalf("grouping changed or invented runtime connections: %+v", got.Edges)
+	}
+	if nodes["command"].InputOwner != command.InputOwner || nodes["command"].SummaryRef != command.SummaryRef || nodes["command"].Source != command.Source {
+		t.Fatal("grouping changed the original input's implementation or source")
+	}
+	after, _ := json.Marshal(view.Sections)
+	if !bytes.Equal(before, after) {
+		t.Fatal("display grouping mutated the original component views")
+	}
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered bytes.Buffer
+	if err := parsed.ExecuteTemplate(&rendered, "input-catalog", section); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered.String(), `id="`+nodes["system-inputs-first"].DetailsID+`"`) {
+		t.Fatal("input catalogue details point to a nonexistent HTML anchor")
 	}
 }
 

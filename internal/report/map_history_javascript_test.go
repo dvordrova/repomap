@@ -75,9 +75,33 @@ const projection={inputOwner:{input:'handler'}};
 const calls=[],surface={focus(id,center){calls.push({id,center});}};
 `+focusCode+`
 focusNode({id:'input'},true);
-assert.deepEqual(calls,[{id:'input',center:true}],'the camera receives the exact input to find its visible card inside the handler');
+assert.deepEqual(calls,[{id:'input',center:true}],'the camera receives the exact named input entrance');
 focusNode({id:'handler'},false);assert.equal(calls[1].center,false,'visible part selection preserves the camera');
 
+`)
+}
+
+func TestInputCatalogueSelectionKeepsItsActualComponent(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "map.componentSelection=function(){", "  map.selectComponent=")
+	runSystemJS(t, `
+const nodes=[{id:'component-a',dataset:{branch:'component',owner:'a',title:'Same title'}},
+ {id:'component-b',dataset:{branch:'component',owner:'b',title:'Same title'}},
+ {id:'catalogue',dataset:{branch:'inputs',owner:'a',title:'Same title'}},
+ {id:'input',dataset:{activation:'command',owner:'a'}},
+ {id:'unknown',dataset:{activation:'request',owner:'missing',title:'Same title'}},
+ {id:'not-a-component',dataset:{branch:'communication',owner:'missing'}},
+ {id:'part',dataset:{owner:'b'}}];
+const byID=Object.fromEntries(nodes.map(n=>[n.id,n])),parents={input:'catalogue',part:'component-b'};
+const before=JSON.stringify(parents),viewport={componentsOpen:false},map={captureViewport:()=>viewport};
+let scope='',operation=null;
+function path(id){return parents[id]?[parents[id],id]:[id];}
+`+code+`
+for(const id of ['input','catalogue']){scope=id;assert.equal(map.componentSelection(),'a','an input catalogue identifies its actual target even while the component contents are closed');}
+scope='';operation=byID.input;assert.equal(map.componentSelection(),'a','a pinned input retains its target');
+scope='unknown';assert.equal(map.componentSelection(),'','a matching title or non-component owner cannot establish target identity');
+scope='part';assert.equal(map.componentSelection(),'','ordinary overview selection still shows All');
+viewport.componentsOpen=true;assert.equal(map.componentSelection(),'b','an inspected part keeps its own component rather than borrowing the pinned input owner');
+assert.equal(JSON.stringify(parents),before,'selection never creates a fake containment parent');
 `)
 }
 

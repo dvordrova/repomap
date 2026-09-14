@@ -216,8 +216,33 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 		}
 	}
-	// Saved containment supplies the frames; component membership supplies
-	// the outer frame. Actions remain inputs, not invented child subsystems.
+	// One reading catalogue per component holds the existing inputs outside
+	// the component frame. This adds containment, never a runtime connection.
+	inputsByOwner := map[string][]string{}
+	inputIDs := map[string]bool{}
+	for _, node := range result.Nodes {
+		if node.Activation != "" {
+			inputsByOwner[node.Owner] = append(inputsByOwner[node.Owner], node.ID)
+			inputIDs[node.ID] = true
+		}
+	}
+	for i := range result.Nodes {
+		var children []string
+		for _, id := range strings.Fields(result.Nodes[i].Children) {
+			if !inputIDs[id] {
+				children = append(children, id)
+			}
+		}
+		result.Nodes[i].Children = strings.Join(children, " ")
+	}
+	for _, section := range view.Sections {
+		if children := inputsByOwner[section.ID]; len(children) > 0 {
+			add(pageMapNode{ID: "system-inputs-" + section.ID, Owner: section.ID, Branch: "inputs", ItemKind: "Inputs", FullTitle: section.ShortLabel,
+				Children: strings.Join(children, " "), Href: "#" + section.ID + "-inbound", DetailsID: section.ID + "-inbound", Lane: "triggers"})
+		}
+	}
+	// Saved containment supplies the remaining frames; component membership
+	// supplies the outer frame without duplicating either reading catalogue.
 	contained := map[string]bool{}
 	for _, n := range result.Nodes {
 		for _, id := range strings.Fields(n.Children) {
@@ -227,7 +252,7 @@ func (view *pageView) SystemMap() *pageMap {
 	for _, section := range view.Sections {
 		var members []string
 		for _, n := range result.Nodes {
-			if n.Owner == section.ID && n.Branch != "component" && !contained[n.ID] && n.ItemKind != "External communication" {
+			if n.Owner == section.ID && n.Branch != "component" && n.Branch != "inputs" && !contained[n.ID] && n.ItemKind != "External communication" {
 				members = append(members, n.ID)
 			}
 		}

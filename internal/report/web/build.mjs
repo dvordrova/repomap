@@ -7,6 +7,14 @@ const result = await build({
   entryPoints: ['canvas.jsx'], bundle: true, minify: true, write: false,
   format: 'iife', target: ['es2022'], outfile: 'report-ui.js', metafile:true,
   define: { 'process.env.NODE_ENV': '"production"' }, legalComments: 'inline',
+  // Only the browser build uses a real worker. Node tests retain elk.bundled
+  // and execute the same native layout engine without browser globals.
+  alias: {'elkjs/lib/elk.bundled.js':'./elk-browser.mjs'},
+  plugins: [{name:'embedded-elk-worker', setup(build) {
+    build.onLoad({filter:/elk-worker\.min\.js$/}, async ({path})=>({
+      contents:await readFile(path,'utf8'), loader:'text',
+    }));
+  }}],
 });
 const packages=new Set(Object.keys(result.metafile.inputs).filter(p=>p.startsWith('node_modules/')).map(p=>p.split('/').slice(0,p.split('/')[1].startsWith('@')?3:2).join('/')));
 let notices='';

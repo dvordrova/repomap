@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {arrange, connections} from './layout.mjs';
+import {connections} from './layout.mjs';
+import {prepareInteriors,layoutPrepared} from './split-layout.mjs';
+import {semanticLayout} from './semantic.mjs';
 import ELK from 'elkjs/lib/elk.bundled.js';
 
 const part=id=>({id,title:id,width:180,height:95,labelWidth:140,labelHeight:16});
@@ -11,15 +13,28 @@ const relation=(from,to,source,possible=false)=>({from,to,possible,fromSource:so
 const relations=[relation('caller','handler','one:1'),relation('caller','handler','one:2'),relation('caller','data','one:3'),
   relation('handler','data','two:1'),relation('helper','caller','one:4'),relation('data','caller','two:2',true)];
 
-test('orientation comparison never feeds a previous layout back into ELK',async()=>{
+test('outer orientation candidates never feed a previous layout back into ELK',async()=>{
+  const prepared=await prepareInteriors(items,relations,areas);
+  const interiors=structuredClone(prepared.interiors);
   const original=ELK.prototype.layout,inputs=[];
   ELK.prototype.layout=function(graph,...args){inputs.push(structuredClone(graph));return original.call(this,graph,...args);};
-  try{await arrange(items,relations,areas,1);}finally{ELK.prototype.layout=original;}
-  assert.equal(inputs.length,2,'exercise both orientation candidates with the real library');
+  try{await layoutPrepared(prepared,1200,700);}finally{ELK.prototype.layout=original;}
+  assert.deepEqual(inputs.map(input=>[input.layoutOptions['elk.direction'],input.layoutOptions['elk.layered.layerUnzipping.strategy']||'NONE']),[
+    ['DOWN','NONE'],['RIGHT','NONE'],['DOWN','ALTERNATING'],['RIGHT','ALTERNATING'],
+  ],'compare native orientations and outer-layer alternatives with the real library');
+  for(const input of inputs){
+    for(const child of input.children){
+      assert.equal(child.children,undefined,'outer candidates reuse ready participant rectangles');
+      assert.equal(child.layoutOptions?.['elk.layered.layerUnzipping.strategy'],undefined,'unzipping belongs only to the outer graph');
+      assert.equal(child.x,undefined,'candidate nodes have no positions from an earlier result');
+      assert.equal(child.y,undefined,'candidate nodes have no positions from an earlier result');
+    }
+  }
   for(const input of inputs)for(const edge of input.edges){
     assert.equal(edge.sections,undefined,'a previously bent edge may become straight; old bend points must not survive');
-    for(const label of edge.labels)assert.equal(label.x,undefined,'candidate positions are independent');
+    for(const label of edge.labels||[])assert.equal(label.x,undefined,'candidate positions are independent');
   }
+  assert.deepEqual(prepared.interiors,interiors,'candidate layouts cannot mutate prepared interior nodes, ports or routes');
 });
 function segmentHits(a,b,box) {
   const x=box.absolute.x,y=box.absolute.y,eps=.01;
@@ -27,10 +42,11 @@ function segmentHits(a,b,box) {
     : a.y>y+eps&&a.y<y+box.height-eps&&Math.max(a.x,b.x)>x+eps&&Math.min(a.x,b.x)<x+box.width-eps;
 }
 
-test('ELK routes the real compound endpoints, retaining every original source',async()=>{
-  const result=await arrange(items,relations,areas);
-  assert.equal(result.nodes.length,items.length);
+test('the ordinary composed layout routes the real endpoints, retaining every original source',async()=>{
+  const {layout:result}=await semanticLayout(items,relations,areas,1200,700);
+  assert.deepEqual(result.nodes.map(n=>n.id).sort(),items.map(n=>n.id).sort());
   assert.equal(result.edges.flatMap(e=>e.relations).length,relations.length);
+  assert.ok(result.nodes.every(n=>[n.width,n.height,n.absolute.x,n.absolute.y].every(Number.isFinite)));
   const seen=new Set();
   for(const n of result.nodes){assert.ok(!n.parentId||seen.has(n.parentId),'parents precede their children for React Flow');seen.add(n.id);}
   for(const edge of result.edges){
@@ -48,7 +64,7 @@ test('ELK routes the real compound endpoints, retaining every original source',a
 });
 
 test('grouped destinations keep direction, actual inner numbers and all sources',async()=>{
-  const result=await arrange(items,relations,areas);
+  const {layout:result}=await semanticLayout(items,relations,areas,1200,700);
   const groups=connections('right',['handler','data'],result.edges);
   const incoming=groups.find(g=>g.outside==='caller'&&g.incoming);
   assert.deepEqual(incoming.numbers,[1,2]);assert.equal(incoming.relations.length,3);
@@ -56,4 +72,19 @@ test('grouped destinations keep direction, actual inner numbers and all sources'
   assert.deepEqual(outgoing.numbers,[2]);assert.equal(outgoing.relations[0].possible,true);
   assert.equal(result.labels.length,5,'three outside/direction groups on the left, two on the right');
   for(const label of result.labels)assert.ok(Number.isFinite(label.x)&&Number.isFinite(label.y),'ELK reserves label positions');
+});
+
+
+test('a root leaf reserves its measured readable label dimensions before routing',async()=>{
+  const items=[{id:'unowned',activation:'request',title:'A named input',width:260,height:90,minimumWidth:420,minimumHeight:180},part('handler')];
+  const original={from:'unowned',to:'handler',fromSource:'app:12'};
+  const prepared=await prepareInteriors(items,[original],[]);
+  const {layout:result,records}=await layoutPrepared(prepared,1100,700);
+  const local=prepared.interiors.get('unowned').local;
+  assert.ok(local.width>=420&&local.height>=180,'the native interior reserves supplied minimum dimensions');
+  const input=result.nodes.find(n=>n.id==='unowned');
+  const scale=records.find(n=>n.id==='unowned').contentScale;
+  assert.ok(input.width/scale>=420-1e-7&&input.height/scale>=180-1e-7,'composition preserves the complete minimum after uniform scaling');
+  assert.equal(input.parentId,undefined);
+  assert.deepEqual(result.edges[0].relations,[original]);
 });

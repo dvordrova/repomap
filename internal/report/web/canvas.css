@@ -14,11 +14,15 @@
 .flow-enabled .map-inspector.has-map-preview>.system-map-preview{display:block}
 .flow-enabled .react-flow__node{font-family:inherit;font-size:15px;transition:none;cursor:pointer}
 .flow-enabled .react-flow__node-area{z-index:-1!important;pointer-events:none!important}
-.flow-area{height:100%;width:100%;border:1.5px solid #b8c2d2;border-radius:12px;background:#f1f4f8;pointer-events:none}
+/* Fractional CSS borders round up before the viewport transform; inset strokes do not. */
+.flow-area{--flow-frame-width:1.5px;--flow-frame-color:#b8c2d2;box-sizing:border-box;height:100%;width:100%;border:0;border-radius:calc(12px / var(--flow-zoom,1));box-shadow:inset 0 0 0 calc(var(--flow-frame-width) / var(--flow-zoom,1)) var(--flow-frame-color);background:#f1f4f8;pointer-events:none}
+.flow-area-summarized{visibility:hidden}
 .flow-area-title{position:absolute;font-size:16px;font-weight:650;line-height:21px;pointer-events:auto;cursor:pointer;background:#f1f4f8;padding:3px 6px;border-radius:4px;box-sizing:border-box}
 .flow-area-title.flow-component-title{background:#f8fafc}
-.flow-area.flow-component{background:#f8fafc;border-color:#d4dce6}
-.flow-area.flow-communication{background:#fffaf1;border-color:#d5ac66}
+.flow-area.flow-component{background:#f8fafc;--flow-frame-color:#d4dce6}
+.flow-area.flow-communication{background:#fffaf1;--flow-frame-color:#d5ac66}
+.flow-area.flow-input-collection{background:#edf5ff;--flow-frame-color:#aac9ed}
+.flow-area-title.flow-input-collection{background:#edf5ff;color:#204a7b}
 .flow-area-title.flow-communication-title{background:#fffaf1;color:#77531c}
 .flow-communication-title .flow-kind{color:#896019;margin-bottom:4px}
 .system-communication-records article{border-top:1px solid #d4dce6;padding:12px 0}
@@ -29,10 +33,11 @@
 .flow-input{color:#7252b3;font-size:13px;line-height:1.35;white-space:pre-line;overflow-wrap:anywhere;font-weight:600}
 .flow-node-focus .flow-part{border:2px solid #34445b;padding:15.5px;box-shadow:none}
 .flow-node-connected .flow-part{border-color:#52647d}
-.flow-node-focus .flow-area,.flow-node-context .flow-area{border:2px solid #52647d}
+.flow-node-focus .flow-area,.flow-node-context .flow-area{--flow-frame-width:2px;--flow-frame-color:#52647d}
 .flow-area-title.flow-area-title-focus>strong{color:#243044}
-.flow-area.flow-component,.flow-area.flow-communication{box-sizing:border-box;border-width:calc(1.25px / var(--flow-zoom,1))}
-.flow-node-focus .flow-area.flow-component,.flow-node-context .flow-area.flow-component{border-width:calc(2px / var(--flow-zoom,1))}
+.flow-area.flow-component,.flow-area.flow-communication,.flow-area.flow-input-collection{--flow-frame-width:1.25px}
+.flow-node-focus .flow-area.flow-component,.flow-node-context .flow-area.flow-component,.flow-node-focus .flow-area.flow-communication,.flow-node-context .flow-area.flow-communication,.flow-node-focus .flow-area.flow-input-collection,.flow-node-context .flow-area.flow-input-collection{--flow-frame-width:2px}
+.flow-node-reading .flow-area.flow-input-collection{--flow-frame-color:#243044;--flow-frame-width:3px}
 .flow-node-muted .flow-part{border-color:#d4dce6}
 .flow-node-reading .flow-part{border:3px solid #243044;padding:14.5px;box-shadow:none}
 .flow-reading-badge{color:#243044;font-weight:700}
@@ -44,18 +49,16 @@
 .flow-overview-member{border-bottom:1px solid #d4dce6}
 .flow-enabled .flow-member-title{display:block;width:100%;border:0;border-radius:0;background:transparent;text-align:left;padding:12px 0;font-size:20px;line-height:24px;color:#243044;min-height:48px;white-space:pre-line}
 .flow-enabled .flow-member-title:hover{background:#edf2f8}
-.flow-enabled .flow-overview-member .flow-inputs{margin:0 0 16px}
-.flow-enabled .flow-overview-member .flow-input-card>strong{font:600 18px/22px system-ui}
-.flow-enabled .flow-overview-member .flow-input-kind{font:14px/18px system-ui}
 .flow-enabled .flow-overview-members .flow-member-external{background:#fff6e7;color:#77531c}
 .flow-enabled .flow-overview-members .flow-member-input{background:#edf5ff;color:#204a7b}
 .flow-enabled .flow-overview-members .flow-overview-reading{font-weight:700;box-shadow:inset 3px 0 #243044;padding-left:8px}
 .flow-enabled .react-flow__handle{opacity:0;pointer-events:none;width:1px;height:1px;min-width:1px;min-height:1px;border:0}
 .flow-enabled .react-flow__edges,.flow-enabled .react-flow__edge,.flow-edge{pointer-events:none!important;cursor:default!important}
-.flow-edge path{stroke:#94a3b8;stroke-width:1.5;fill:none;stroke-linecap:round;stroke-linejoin:round}
-.flow-edge .flow-edge-casing{stroke:#fbfcfe;stroke-width:5}
-.flow-edge-active path{stroke:#34445b;stroke-width:2.5}
-.flow-edge-active .flow-edge-casing{stroke:#fbfcfe;stroke-width:6}
+/* React Flow scales the SVG's CSS ancestor, including non-scaling strokes. */
+.flow-edge path{stroke:#94a3b8;stroke-width:calc(1.5px / var(--flow-zoom,1));fill:none;stroke-linecap:round;stroke-linejoin:round}
+.flow-edge .flow-edge-casing{stroke:#fbfcfe;stroke-width:calc(5px / var(--flow-zoom,1))}
+.flow-edge-active path{stroke:#34445b;stroke-width:calc(2.5px / var(--flow-zoom,1))}
+.flow-edge-active .flow-edge-casing{stroke:#fbfcfe;stroke-width:calc(6px / var(--flow-zoom,1))}
 .flow-edge-muted{opacity:.3}
 .flow-defs{position:absolute;width:0;height:0}
 .flow-number{position:absolute;right:8px;bottom:8px;background:#e8edf4;border:1px solid #52647d;border-radius:7px;padding:1px 7px;font-size:12px;color:#243044}
@@ -72,20 +75,14 @@
 .flow-enabled .map-card{padding:0!important;border:0!important;box-shadow:none!important;background:transparent!important;width:auto!important}
 .flow-enabled .map-inspector.has-preview .map-inspector-hint{display:none}
 .flow-enabled .react-flow__attribution{font-size:9px;background:#ffffffb8}
-.flow-loading{padding:24px;color:#66758a}
+.flow-loading{position:absolute;inset:30px 0 0;margin:0;padding:24px;color:#66758a;background:#fbfcfe}
+.flow-initializing .react-flow{opacity:0;pointer-events:none}
 @media(max-width:1000px){.flow-enabled .map-workspace{grid-template-columns:minmax(0,1fr) 265px}.flow-enabled .map-inspector{padding:12px!important}}
 
-.flow-enabled .flow-inputs{display:flex;flex-direction:column;gap:8px;margin-top:4px}
-.flow-input-group{display:flex;flex-direction:column;gap:8px;margin:0}
-.flow-input-group>.flow-input-kind{font-weight:650;line-height:20px}
-.flow-enabled .flow-overview-member .flow-input-group>.flow-input-kind{line-height:28px}
-.flow-enabled .flow-input-card{display:flex;flex-direction:column;gap:4px;text-align:left;box-sizing:border-box;width:100%;min-height:0;padding:8px 10px;border:1px solid #aac9ed;border-radius:6px;background:#edf5ff;color:#204a7b;cursor:pointer;white-space:pre-line;overflow-wrap:anywhere;flex:none}
-.flow-enabled .flow-input-card>strong{font:600 13px/18px system-ui;white-space:pre-line}
-.flow-input-kind{font:11px/14px system-ui;color:#4e6f98}
-.flow-enabled .flow-input-card:hover{background:#e0edff;border-color:#598cc9}
-.flow-enabled .flow-input-card[aria-pressed=true]{background:#edf5ff;border:2px solid #243044;color:#204a7b;padding:7px 9px;box-shadow:none}
-.flow-part.flow-input{background:#edf5ff;border-color:#8db7e6}
+.flow-part.flow-input{background:#edf5ff;border-color:#8db7e6;color:#204a7b}
 .flow-part.flow-input .flow-kind{color:#315f96}
+.flow-node-focus .flow-part.flow-input,.flow-node-connected .flow-part.flow-input{border-color:#52647d}
+.flow-node-reading .flow-part.flow-input{border-color:#243044}
 .flow-part.flow-external{background:#fff6e7;border-color:#d5ac66}
 .flow-part.flow-external .flow-kind{color:#896019}
 .flow-part.flow-core{background:#f4effc;border-color:#b59ad9}
@@ -98,6 +95,9 @@
 .flow-description{font-size:13px;line-height:18px;font-weight:400;white-space:pre-line;overflow-wrap:anywhere;color:#536176;margin:0}
 .flow-area-title>strong{font-size:17px;line-height:22px;white-space:pre-line}
 .flow-area-title .flow-description{margin-top:12px}
+/* Retain the header footprint while its secondary text is too small to read. */
+.flow-area-title .flow-component-meta,.flow-area-title .flow-kind{visibility:var(--flow-small-text,visible)}
+.flow-area-title .flow-component-role,.flow-area-title .flow-description{visibility:var(--flow-secondary-text,visible)}
 .flow-address{font:13px/18px ui-monospace,monospace;white-space:pre-line;overflow-wrap:anywhere;color:#77531c}
 .flow-color-key{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:#536176}
 .flow-color-key span{display:inline-flex;align-items:center;gap:5px}
@@ -127,11 +127,15 @@
 .flow-enabled .flow-root{height:calc(100% - 30px)}
 .flow-location{height:30px;box-sizing:border-box;padding:6px 10px;font:600 12px/18px system-ui;color:#536176;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .flow-area-summary{position:absolute;pointer-events:auto;cursor:zoom-in}
-.flow-area-summary>.flow-part{padding:16px;border-color:#b8c2d2;background:#f1f4f8}
+.flow-area-summary>.flow-part{padding:16px;border-color:#b8c2d2;border-radius:12px;background:#f1f4f8}
+.flow-area-summary.flow-node-connected>.flow-part{border-color:#52647d}
+.flow-area-summary.flow-node-context>.flow-part{border:2px solid #52647d;padding:15.5px}
+.flow-area-summary.flow-node-focus>.flow-part{border:2px solid #34445b;padding:15.5px}
+.flow-area-summary.flow-node-reading>.flow-part{border:3px solid #243044;padding:14.5px}
 .flow-area-summary .flow-overview-card>.flow-kind,.flow-area-summary .flow-overview-card>strong{padding-right:calc(32px / var(--flow-zoom,1))}
 .flow-area-summary .react-flow__handle{display:none}
 .flow-area-summary .flow-part{animation:flow-reveal 160ms ease-out}
-.flow-component-overview{position:absolute;transform-origin:top left;pointer-events:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:8px;color:#243044;background:#f8fafc;border-radius:8px;cursor:zoom-in}
+.flow-component-overview{position:absolute;transform-origin:top left;pointer-events:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:8px;overflow:hidden;color:#243044;background:#f8fafc;border-radius:8px;cursor:zoom-in}
 .flow-component-overview-heading{display:flex;flex-shrink:0;gap:8px;align-items:center;width:100%}
 .flow-component-overview-heading>strong{font:700 18px/23px system-ui;overflow-wrap:anywhere;flex:1;min-width:0}
 .flow-component-overview .flow-component-role{margin:0;white-space:normal;flex-shrink:0}
@@ -148,6 +152,11 @@
 .flow-enabled .flow-zoom-mark:hover{background:#dce5f0;color:#243044}
 .flow-communication-overview{background:#fffaf1;flex-direction:row;align-items:center;gap:4px;padding:0}
 .flow-communication-overview strong{font-size:13px;line-height:17px;white-space:normal}
+.flow-component-overview.flow-input-collection{background:#edf5ff;color:#204a7b;padding:0;gap:6px}
+.flow-component-overview.flow-input-collection strong{font-size:13px;line-height:17px;white-space:normal}
+.flow-component-overview.flow-input-collection .flow-component-overview-heading{box-sizing:border-box}
+.flow-input-types{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto;flex:0 1 auto}
+.flow-input-types li{margin:0;font:500 13px/18px system-ui;overflow-wrap:anywhere}
 .map-object-heading{position:relative;padding-right:38px;min-height:32px}
 .flow-enabled .map-close-details{position:absolute;top:0;right:0;display:grid;place-items:center;width:32px;height:32px;padding:4px;border:1px solid #d4dce6;border-radius:6px;background:white;color:#39455a;cursor:pointer}
 .flow-enabled .map-close-details:hover{background:#edf2f8;border-color:#8c9eb8}

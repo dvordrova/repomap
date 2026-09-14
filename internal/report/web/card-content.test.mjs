@@ -9,21 +9,20 @@ import {prepareCards,groupInputs} from './cards.mjs';
 const bundle=await build({entryPoints:[new URL('./card-content.jsx',import.meta.url).pathname],bundle:true,write:false,format:'cjs',packages:'external',jsx:'transform'});
 const module={exports:{}};
 new Function('require','module','exports',bundle.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports);
-const {OverviewMembers,InputCards}=module.exports;
+const {OverviewMembers,InputTypes}=module.exports;
 
-test('both zoom levels render every named input under one heading per saved type and owner',()=>{
+test('the closed input collection lists existing catalogue types without duplicate input buttons',()=>{
   const kinds=['request','command','interaction','scheduled','continuous','interaction'];
   const records=[{id:'part',title:'Handler',kind:'Core'},...kinds.map((activation,i)=>({id:`input-${i}`,title:i>1?'Same label':`${activation} entry`,activation}))];
-  const members=prepareCards(records,Object.fromEntries(kinds.map((_,i)=>[`input-${i}`,'part'])),text=>text.length*7,text=>text);
-  const grouped=groupInputs(members[0].inputs);
-  assert.equal(grouped.length,5);
+  const cards=prepareCards(records,Object.fromEntries(kinds.map((_,i)=>[`input-${i}`,'part'])),text=>text.length*7,text=>text);
+  const grouped=groupInputs(cards.filter(n=>n.activation));
+  assert.equal(grouped.length,4);
   assert.equal(grouped.find(g=>g.kind==='interaction').inputs.length,2);
-  for(const element of [React.createElement(OverviewMembers,{members,operation:'input-2'}),React.createElement(InputCards,{inputs:members[0].inputs,operation:'input-2'})]){
-    const html=renderToStaticMarkup(element);
-    for(let i=0;i<kinds.length;i++)assert.equal(html.split(`data-input-id="input-${i}"`).length-1,1,'rendered input identity must not turn into a count');
-    assert.equal(html.split('data-input-kind="interaction"').length-1,1,'one type heading, not one per input');
-    assert.match(html,/User interactions/);
-    assert.match(html,/Same label/);
-    assert.match(html,/aria-pressed="true"/);
-  }
+  assert.equal(grouped.find(g=>g.kind==='background').inputs.length,2);
+  const html=renderToStaticMarkup(React.createElement(InputTypes,{groups:grouped}));
+  for(const kind of ['request','command','background','interaction'])assert.equal(html.split(`data-input-group-kind="${kind}"`).length-1,1);
+  assert.match(html,/Incoming requests/);assert.match(html,/Background work/);assert.match(html,/User interactions/);
+  assert.doesNotMatch(html,/Same label|data-input-id/,'named inputs are the original graph children, not summary duplicates');
+  const implementation=renderToStaticMarkup(React.createElement(OverviewMembers,{members:cards.filter(n=>!n.activation)}));
+  assert.doesNotMatch(implementation,/data-input-id|Same label/,'implementation summaries do not embed the outside inputs');
 });

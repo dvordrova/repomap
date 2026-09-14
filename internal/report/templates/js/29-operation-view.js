@@ -7,17 +7,19 @@ function rmSystemProjection(nodes, edges) {
   nodes.forEach(function(n){(n.children||[]).forEach(function(id){parents[id]=n.id;});});
   edges.forEach(function(e){if(byID[e.from]?.activation && e.label==='implemented in' && byID[e.to] && !byID[e.to].activation)inputOwner[e.from]=e.to;});
   function leaves(id,seen){seen=seen||new Set();if(seen.has(id)||!byID[id])return [];seen.add(id);var n=byID[id];return n.children?.length?n.children.flatMap(function(c){return leaves(c,new Set(seen));}):[id];}
-  var visible=nodes.filter(function(n){return !n.children?.length&&!inputOwner[n.id];}).map(function(n){return n.id;});
-  var representatives={};nodes.forEach(function(n){representatives[n.id]=[inputOwner[n.id]||n.id];});
-  var areas=nodes.filter(function(n){return n.children?.length;}).map(function(n){return {id:n.id,nodes:n.children.filter(function(id){return !inputOwner[id];})};});
+  var visible=nodes.filter(function(n){return !n.children?.length;}).map(function(n){return n.id;});
+  var representatives={};nodes.forEach(function(n){representatives[n.id]=[n.id];});
+  // Only the input catalogue contains input cards. Implementation and original
+  // ownership remain available independently for breadcrumbs and reading.
+  var areas=nodes.filter(function(n){return n.children?.length;}).map(function(n){return {id:n.id,nodes:n.children.filter(function(id){return n.branch==='inputs'||!byID[id]?.activation;})};});
   function selection(id,operation){
-    var selected=new Set(leaves(id).map(function(n){return inputOwner[n]||n;}));if(byID[id])selected.add(inputOwner[id]||id);var active=new Set(operation?[]:selected),path=[];
+    var selected=new Set(leaves(id));if(byID[id])selected.add(id);var active=new Set(operation?[]:selected),path=[];
     if(operation){
       path=edges.filter(function(e){return (e.operations||[]).includes(operation);});
-      path.forEach(function(e){active.add(inputOwner[e.from]||e.from);active.add(inputOwner[e.to]||e.to);});
-      active.add(inputOwner[operation]||operation);
+      path.forEach(function(e){active.add(e.from);active.add(e.to);});
+      active.add(operation);
     }else if(id){edges.forEach(function(e){if(selected.has(e.from)||selected.has(e.to)){active.add(e.from);active.add(e.to);}});}
-    return {selected:selected,active:active,path:path,entry:operation?(inputOwner[operation]||operation):''};
+    return {selected:selected,active:active,path:path,entry:operation||''};
   }
   return {visible:visible,areas:areas,representatives:representatives,parents:parents,inputOwner:inputOwner,leaves:leaves,selection:selection};
 }
@@ -27,7 +29,7 @@ function rmSystemProjection(nodes, edges) {
   nodes.forEach(function(n){byID[n.id]=n;});
   map.querySelectorAll('[data-map-alias]').forEach(function(n){aliases[n.id]=n.dataset.mapAlias;});
   var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).filter(function(e){return e.dataset.scope!=='static';}).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),label:e.querySelector('title')?.textContent||''};});
-  var model=nodes.map(function(n){return {id:n.id,children:(n.dataset.children||'').split(/\s+/).filter(Boolean),activation:n.dataset.activation,inputOwner:n.dataset.inputOwner};});
+  var model=nodes.map(function(n){return {id:n.id,branch:n.dataset.branch,children:(n.dataset.children||'').split(/\s+/).filter(Boolean),activation:n.dataset.activation,inputOwner:n.dataset.inputOwner};});
   var projection=rmSystemProjection(model,rawEdges),scope='',operation=null,surface=null,ready=null;
   var searchValue='',filterValue='',selectionRevision=0,visual=null;
   var numbered=true;
@@ -48,7 +50,7 @@ function rmSystemProjection(nodes, edges) {
   [bar,results,caption].forEach(function(n){measureControls.observe(n);});
   function kind(n){return n.dataset.itemKind||(n.dataset.activation?'Inputs':n.dataset.branch==='component'?'Component':n.dataset.branch?'Area':n.dataset.lane==='core'?'Core':n.dataset.lane==='dependencies'?'Code dependencies':n.dataset.lane==='triggers'?'Entrypoints':'Part');}
   map.itemKind=kind;
-  function category(n){return n.dataset.activation?'input':n.dataset.itemKind==='External communication'?'external':n.dataset.branch==='component'||n.dataset.itemKind==='Component'?'component':'part';}
+  function category(n){return n.dataset.activation||n.dataset.branch==='inputs'?'input':n.dataset.itemKind==='External communication'?'external':n.dataset.branch==='component'||n.dataset.itemKind==='Component'?'component':'part';}
   function owner(n){return document.getElementById(n.dataset.owner)?.dataset.componentName||'';}
   function emit(){map.dispatchEvent(new Event('repomap:reading'));}
   function address(n,newVisit){document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:n||document.getElementById('overview'),newVisit:!!newVisit}}));}
@@ -62,7 +64,7 @@ function rmSystemProjection(nodes, edges) {
   }
   function emphasize(){
     var state=projection.selection(scope,operation?.id),has=!!scope||!!operation||!!searchValue||!!filterValue;
-    var matched=new Set();if(searchValue||filterValue)nodes.filter(matches).forEach(function(n){projection.leaves(n.id).forEach(function(id){matched.add(projection.inputOwner[id]||id);});});
+    var matched=new Set();if(searchValue||filterValue)nodes.filter(matches).forEach(function(n){projection.leaves(n.id).forEach(function(id){matched.add(id);});});
     surface?.update({scope:scope,operation:operation?.id||'',entry:state.entry,selected:state.selected,matched:matched,searching:!!searchValue||!!filterValue,numbered:numbered});
     map.classList.toggle('system-has-selection',has);clear.disabled=!scope&&!operation;
     renderCaption();
@@ -101,6 +103,11 @@ function rmSystemProjection(nodes, edges) {
     await ready;await surface?.overview();emit();
   };
   map.componentSelection=function(){
+    var selected=byID[scope||operation?.id];
+    if(selected&&(selected.dataset.activation||selected.dataset.branch==='inputs')){
+      var owner=selected.dataset.owner,component=nodes.find(function(n){return owner&&n.dataset.branch==='component'&&n.dataset.owner===owner;});
+      return component?.dataset.owner||'';
+    }
     if(map.captureViewport?.()?.componentsOpen===false)return '';
     var ids=path(scope||operation?.id),component=ids.map(function(id){return byID[id];}).find(function(n){return n.dataset.branch==='component';});
     return component?.dataset.owner||'';
@@ -223,6 +230,10 @@ function rmSystemProjection(nodes, edges) {
       var content=n.dataset.branch==='component'?details.querySelector('.input-catalog'):details;
       if(content){
         var copy=content.cloneNode(true);copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});
+        if(n.dataset.branch==='inputs'){
+          copy.querySelector('h3')?.remove();
+          copy.querySelectorAll('[data-integration-group]').forEach(function(group){group.remove();});
+        }
         if(copy.matches('details'))copy.open=true;
         if(n.dataset.itemKind==='External communication')copy.querySelectorAll('.outbound-call').forEach(function(detail){detail.open=true;});
         copy.querySelectorAll('.outbound-caller-part').forEach(function(link){
@@ -247,13 +258,16 @@ function rmSystemProjection(nodes, edges) {
   });
   async function layout(){
     map.setAttribute('aria-busy','true');await Promise.resolve();
+    var componentsByOwner=new Map();nodes.forEach(function(n){if(n.dataset.branch==='component'&&n.dataset.owner)componentsByOwner.set(n.dataset.owner,n);});
     var items=nodes.map(function(n){
+      var component=n.dataset.activation||n.dataset.branch==='inputs'?componentsByOwner.get(n.dataset.owner):null;
       return {id:n.id,title:n.dataset.title,branch:n.dataset.branch,activation:n.dataset.activation,lane:n.dataset.lane,
         summary:n.dataset.summary,subtitle:n.dataset.subtitle,sourceKind:n.dataset.sourceKind,
         role:n.dataset.role,roleRef:n.dataset.roleRef,language:n.dataset.language,componentKind:n.dataset.componentKind,
-        children:(n.dataset.children||'').split(/\s+/).filter(Boolean),kind:kind(n),category:category(n)};
+        componentOwner:component?.id||'',componentName:component?.dataset.title||'',
+        children:(n.dataset.children||'').split(/\s+/).filter(function(id){return id&&(n.dataset.branch==='inputs'||!byID[id]?.dataset.activation);}),kind:kind(n),category:category(n)};
     });
-    var relations=rawEdges.map(function(r){return Object.assign({},r,{displayFrom:projection.inputOwner[r.from]||r.from,displayTo:projection.inputOwner[r.to]||r.to});});
+    var relations=rawEdges;
     try{
       surface=await rmCreateFlow(map,stage,items,relations,projection.areas,projection.inputOwner,{
         select:function(id,center){select(byID[id],true,null,center?'center':false);},
@@ -262,7 +276,7 @@ function rmSystemProjection(nodes, edges) {
       });
       map.visibleEdges=surface.layout.edges;
       emphasize();
-    }catch(error){caption.textContent=rmT('Could not arrange this map. Try another scope.');console.error(error);}
+    }catch(error){caption.textContent=rmT('Could not arrange this map. Reload to try again.');console.error(error);}
     map.setAttribute('aria-busy','false');
   }
   map.captureViewport=function(){return surface?.capture()||null;};

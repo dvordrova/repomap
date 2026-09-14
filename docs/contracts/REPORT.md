@@ -48,12 +48,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   graph, analysis payload or provider stage.
 
 - The ordinary entrance includes every saved request, command, activity and
-  interaction. An operation with an explicit implementing part is represented
-  by a named blue input card inside that part; all inputs are visible, with
-  their original kinds. Each owner groups its named inputs by the saved activation
-  type under one heading; the kind is not repeated on every card. Their heights
-  are reserved before layout. An unbound
-  operation or native HTTP registration remains its own input node. External
+  interaction. SystemMap collects the original input nodes into one blue
+  display frame per component owner, outside the component. Its distant summary
+  shows the actual catalogue types (requests, commands, background work,
+  interactions, other operations); zoom reveals the original named input nodes.
+  No synthetic type nodes or runtime relations are added. Bound inputs keep
+  their exact identity and existing directed implementation relation; they are
+  not replaced by their part or duplicated inside it. An unbound operation or
+  native HTTP registration keeps its original absence of an implementation
+  attachment. Selecting an input opens the same saved path and sources. External
   communication records retain separate selectable nodes inside amber
   destination frames, using the same grouping as the external catalogue.
   Each keeps its original source, description and known address. Integration
@@ -114,12 +117,21 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   identify parts, never execution order. The toolbar has no connection-style
   selector; the same real endpoints remain connected across zoom levels.
 
-- ELK computes one fixed world before setting the viewport. Natural area sizes
+- ELK first places each saved outer participant independently, including its
+  internal parts, native boundary ports and connection labels. A separate flat
+  ELK call places those participant rectangles and routes their aggregated
+  outside connections. Uniform transforms join the native interior routes to
+  the native outer ports in one fixed world before setting the viewport. The
+  original endpoints, possible status and source relations remain available for
+  reading and operation paths. Aggregated outside strokes are drawn once; they
+  are display geometry, not new semantic relations. Natural area sizes
   determine a local content scale; the final layout reserves each area's full
   summary height and its scaled internal drawing. The compact summary lists
-  every member part and named input under its saved kind. Zoom reveals actual
-  parts when their effective screen scale is readable, with hysteresis at the
-  boundary. Summaries and detailed contents occupy the same rectangle: no
+  every member part under its saved kind; input collections remain outside the
+  component at every scale. Zoom reveals actual
+  parts when their effective heading size reaches 14px, retaining them down to
+  12px on zoom-out. External calls use the same rule, including their local
+  content scale. Summaries and detailed contents occupy the same rectangle: no
   coordinates, dimensions, topology or camera centre change at that boundary.
   At distant zoom, component and external-destination frames hide all their
   descendants and internal routes. Their summaries show the saved name and
@@ -131,7 +143,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   a subtle edge shadow and thin scrollbar signal remaining entries.
   The full purpose remains in the reading panel. A single toolbar hint explains
   zooming to see inside and dragging to move. The component boundary has its
-  own hysteresis, also saved with the camera. No layout runs during wheel zoom.
+  own hysteresis at the smallest immediate content font (area member names or
+  direct part headings): reveal at 14px, close below 12px. This state is saved
+  with the camera. Unreadable interiors close before the root summary returns;
+  the two must not overlap. No layout runs during wheel zoom.
   Every closed component, area and external collection shows that same action
   in its actual top-right corner, independently of the text column width. Its
   screen size stays fixed while zooming. Frames displaying their interiors and leaf parts do not
@@ -144,8 +159,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   remove the component name during the entrance.
   Closed summaries follow the visible portion of their own frame while
   zooming. Crossing the component threshold keeps that summary and its real
-  area entrances until an actual child heading is visible inside the canvas;
-  empty child-frame borders do not count. The persistent location row also
+  area entrances until an actual descendant heading or a saved part name in an
+  area summary is readable inside the canvas. A visible grandchild must not be
+  covered merely because its area's heading is outside the viewport;
+  empty child-frame borders do not count. Secondary frame text stays hidden
+  below a readable 12px without changing the reserved header dimensions.
+  The persistent location row also
   keeps the component's name available when its world header leaves the viewport. These are label
   positions only: the pointer's world point, frames and routes do not move.
   Unbound inputs, external records and unread components keep their identities.
@@ -155,10 +174,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   diagonal clipping segment. A persistent location row names the visible area
   or standalone item and its known ancestors.
   The initial overview fits all root component and communication frames. The
-  source SVG stays hidden while the fixed world is being arranged; a loading
-  indicator appears in the reserved canvas. Workspace height accounts for the
-  actual header and controls. Whole-map mode remeasures the ordinary layout
-  when that space changes size, then fits the new bounds. Initial placement and
+  source SVG and unpositioned React drawing stay hidden until both the fixed
+  world and camera are ready; a loading indicator appears in the reserved canvas.
+  Workspace height accounts for the
+  actual header and controls. Whole-map mode remeasures the outer layout when
+  that space changes size, reusing every prepared interior and then fitting
+  the new bounds. Initial placement and
   resize use the same inner canvas dimensions. Manual pan/zoom ends that mode
   and keeps the reader's world and camera; choosing the whole map again may
   remeasure for the changed space. A pending resize layout cannot replace a
@@ -173,25 +194,41 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   bounded below by a whole word's readable width. Small area lists reserve their
   complete height; a list taller than the available canvas reserves its first
   entrance and keeps every remaining entry in the existing scrollable frame.
+  Preferred component width also measures two-line area-name entries within
+  the existing text column, so a short component name does not squeeze its
+  inventory into isolated words. This is a text measurement, not a fixed wider
+  frame applied to every participant.
   Fitting a full oversized list must not enlarge the world repeatedly and
   collapse its fitted width. Long words reserve enough width; a narrow
   heading can continue below its zoom mark instead of breaking a name midway.
+  External width minima allow that arrangement; height reserves the actual
+  wrapped heading and 28px control with their insets, without an unrelated floor.
   Orientation comparison uses those measured minima before world size.
-  Reservations continue until the fitted text fits; repeated physical-pixel
-  root geometry with the same text requirements stops unproductive growth and
-  keeps the best complete placement. Individual-size and minimum-area bounds
-  also stop growth when the viewport cannot physically contain the minima.
-  This fallback preserves all content but does not certify readable fit.
   Compact component purposes use the remaining whole lines, with an
   ellipsis when shortened, and stay hidden if fewer than two lines fit; the complete
   purpose remains in the reading column. External frames reserve summary space.
   The fixed world places frames, parts, complete input cards, component
-  purposes and grouped labels. It routes the actual part-to-part
-  endpoints through compound containers. Label positions belong to those
-  routes; there is no additional boundary route planner, A* layer, custom marker
-  packing or replacement path. Orientation candidates receive independent graph
+  purposes and grouped labels. Interior routes retain the actual part-to-part
+  endpoints through compound containers; outer routes connect the corresponding
+  native boundary ports. Label positions belong to those routes; there is no additional boundary route planner, A* layer, custom marker
+  packing or replacement path. Ordinary and natively unzipped outer layers are
+  compared in both directions using fitted text readability, then world size;
+  unzipping is not forced on small maps. Each input collection also compares
+  the ordinary and natively unzipped interior against its own measured summary
+  aspect, avoiding empty padding around a long column while retaining compact
+  short catalogues. Other internal containers retain the ordinary layout
+  options. Browser calculations run in a real Worker embedded once in
+  the self-contained HTML and reused throughout the mounted report. Worker errors
+  reject pending calculations. An initial failure leaves the ordinary report
+  available; a later failure retains the last complete world and offers reload.
+  Neither case leaves a permanent loading state or retries on the main thread.
+  Orientation candidates receive independent graph
   objects: ELK mutates its input, so reusing a computed candidate can retain stale
   bends. React Flow owns pan/zoom and camera restoration.
+  Connections retain their screen stroke, casing, dash and arrowhead sizes
+  through React Flow’s ancestor transform. Frame outlines use inset paint so
+  browser minimum-border rounding cannot turn a fractional world stroke into
+  a thick close-up border; corner radii also stay at screen size.
   Screen-sized overview labels follow the viewport independently of graph
   props. Ordinary camera movement must not rebuild the graph or remeasure
   unchanged displayed text whose available width has not changed. Detail and

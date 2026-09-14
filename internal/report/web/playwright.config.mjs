@@ -26,7 +26,6 @@ export default defineConfig({
   },
   projects: [
     {name: 'desktop', use: {viewport: {width: 1440, height: 900}}},
-    {name: 'small-desktop', use: {viewport: {width: 1024, height: 768}}},
   ],
   webServer: {
     command: 'node visual/server.mjs',

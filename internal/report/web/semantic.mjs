@@ -1,90 +1,58 @@
-import {arrange} from './layout.mjs';
-import {overviewRecords} from './overview.mjs';
+import {prepareInteriors,layoutPrepared} from './split-layout.mjs';
 
-// One world for every zoom. Area summaries and their contents occupy the same
-// fixed rectangle; switching detail never replaces its geographic layout.
-export async function semanticLayout(items, relations, areas, width, height) {
-  const natural=await arrange(items,relations,areas,width,height);
-  const summaries=overviewRecords(items,areas);
-  const byID=new Map(items.map(n=>[n.id,n])), naturalByID=new Map(natural.nodes.map(n=>[n.id,n]));
-  const parent=new Map();areas.forEach(a=>a.nodes.forEach(id=>parent.set(id,a.id)));
-  const summaryByID=new Map(summaries.records.map(n=>[n.id,n]));
-  const scales=new Map(areas.filter(a=>byID.get(a.id)?.branch==='area').map(a=>[a.id,Math.min(1,400/naturalByID.get(a.id).width)]));
-  const owner=id=>{for(let at=parent.get(id);at;at=parent.get(at))if(scales.has(at))return at;return '';};
-  const records=items.map(n=>{
-    if(n.branch==='communication')return {...n,minimumWidth:1000,minimumHeight:500};
-    if(scales.has(n.id))return {...n,contentScale:scales.get(n.id),headerHeight:64,
-      minimumWidth:400,minimumHeight:summaryByID.get(n.id)?.height||0};
-    const scale=scales.get(owner(n.id))||1;
-    return {...n,contentScale:scale,originalWidth:n.width,originalHeight:n.height,
-      width:n.width*scale,height:n.height*scale};
-  });
-  let layout=await arrange(records,relations,areas,width,height);
-  // Summary heights are only known after the scaled interiors are placed.
-  // Reserve root-header width using that complete world, before displaying it;
-  // the natural unscaled layout can substantially overestimate its fit zoom.
-  const overviewZoom=systemViewport(layout.nodes,width,height||700).zoom;
-  let widened=false;
-  for(const node of layout.nodes.filter(n=>!n.parentId)){
-    const record=records.find(n=>n.id===node.id);
-    const minimum=record.branch==='component'?220:record.branch==='communication'?160:0;
-    if(node.width*overviewZoom<minimum){record.minimumWidth=minimum/overviewZoom;widened=true;}
-  }
-  if(widened)layout=await arrange(records,relations,areas,width,height);
-  // Reserve readable headings and a usable entrance to the complete, scrollable
-  // inventory. Measure at the width being reserved, never a collapsing fitted
-  // width: wrapping a long list there creates a height/fit feedback loop.
-  // Continue until the fitted text fits, or further growth produces the same
-  // visible geometry. World-coordinate growth alone is not visual progress.
-  const availableWidth=Math.max(1,width-48),availableHeight=Math.max(1,(height||700)-48);
-  const rootRecords=records.filter(n=>!parent.has(n.id)&&n.overviewHeightAtWidth);
-  const minimums=rootRecords.map(record=>({
-    width:record.overviewMinWidth||0,
-    height:record.overviewHeightAtWidth?.(availableWidth,{availableHeight:0})||0,
-  }));
-  const impossible=minimums.some(n=>n.width>availableWidth||n.height>availableHeight)||
-    minimums.reduce((sum,n)=>sum+n.width*n.height,0)>availableWidth*availableHeight;
-  const pixel=value=>Math.round(value*(globalThis.devicePixelRatio||1));
-  const seen=new Set();let best;
-  for(;;){
-    const viewport=systemViewport(layout.nodes,width,height||700),zoom=viewport.zoom;
-    const constraints=layout.nodes.filter(n=>!n.parentId).map(node=>{
-      const record=records.find(n=>n.id===node.id);
-      const minimum=record.overviewMinWidth||(record.branch==='component'?200:record.branch==='communication'?150:0);
-      const needed=record.overviewHeightAtWidth?.(Math.max(minimum,node.width*zoom),{availableHeight})||0;
-      return {node,record,minimum,needed};
-    });
-    const deficit=Math.max(0,...constraints.flatMap(({node,minimum,needed})=>[minimum-node.width*zoom,needed-node.height*zoom-1]));
-    if(!best||deficit<best.deficit)best={deficit,layout,records:records.map(n=>({...n}))};
-    if(deficit<=0)break;
-    const geometry=JSON.stringify(constraints.map(({node,minimum,needed})=>[
-      node.id,pixel(node.absolute.x*zoom+viewport.x),pixel(node.absolute.y*zoom+viewport.y),
-      pixel(node.width*zoom),pixel(node.height*zoom),minimum,needed,
-    ]));
-    if(impossible||seen.has(geometry))return {layout:best.layout,records:best.records,scales,owner,summaries:summaryByID};
-    seen.add(geometry);
-    let resized=false;
-    for(const {node,record,minimum,needed} of constraints){
-      if(minimum>node.width*zoom){record.minimumWidth=(minimum+2)/zoom;resized=true;}
-      // Retain one content inset when the final compound fit changes scale.
-      if(needed>node.height*zoom+1){record.minimumHeight=(needed+8)/zoom;resized=true;}
-    }
-    if(!resized)break;
-    layout=await arrange(records,relations,areas,width,height);
-  }
-  return {layout,records,scales,owner,summaries:summaryByID};
+// Interior geometry belongs to this mounted report. A resize places those same
+// prepared frames again; camera gestures do not enter either layout stage.
+export function createSemanticLayout(items,relations,areas){
+  let prepared;
+  return async(width,height)=>layoutPrepared(await(prepared ||= prepareInteriors(items,relations,areas,{availableHeight:height-48})),width,height);
 }
 
-// Hysteresis avoids flicker around a detail boundary. Scale refers to actual
-// on-screen text size, not the number of items in the repository.
+export function semanticLayout(items,relations,areas,width,height){
+  return createSemanticLayout(items,relations,areas)(width,height);
+}
+
+// Both part and call headings use 17px before their content and camera scales.
+// Reveal readable 14px text, retaining it until it falls below 12px on zoom-out.
 export function detailedAreas(scales, zoom, previous=new Set()) {
-  return new Set([...scales].filter(([id,scale])=>zoom*scale>=(previous.has(id)?.52:.68)).map(([id])=>id));
+  return new Set([...scales].filter(([id,scale])=>17*zoom*scale>=(previous.has(id)?12:14)).map(([id])=>id));
 }
 
 // Component overview is another view of the same frame, not a smaller graph.
-// Keep the threshold separate from part detail and retain it through Back.
-export function componentContents(zoom, previous=false) {
-  return zoom >= (previous ? .46 : .58);
+// Area summaries use 20px member names; direct part headings can be smaller.
+// The shared presentation threshold must keep both readable.
+export function componentTextSize(records) {
+  return Math.min(20,...componentTextSizes(records).values());
+}
+
+export function componentTextSizes(records) {
+  const byID=new Map(records.map(n=>[n.id,n]));
+  return new Map(records.filter(n=>n.branch==='component').map(root=>[root.id,
+    Math.min(20,...(root.children||[]).map(id=>byID.get(id)).filter(Boolean).map(n=>
+      n.branch==='area'?20*(n.summaryScale||1):17*(n.contentScale||1))),
+  ]));
+}
+
+export function componentDetails(fonts,zoom,previous=new Set()) {
+  return new Set([...fonts].filter(([id,font])=>font*zoom>=(previous.has(id)?12:14)).map(([id])=>id));
+}
+
+// Replace unreadable contents before they trigger a competing root summary;
+// retain the readable side of hysteresis through Back.
+export function componentContents(zoom, previous=false, textSize=20) {
+  return textSize*zoom >= (previous ? 12 : 14);
+}
+
+export function communicationDetails(scales, zoom, previous=new Set()) {
+  return detailedAreas(scales,zoom,previous);
+}
+
+// Keep the same frame and camera; put its small entrance in the visible corner.
+export function zoomMarkPosition(node,viewport,width,height,inset=12) {
+  const {x,y,zoom}=viewport;
+  const left=Math.max(0,node.absolute.x*zoom+x),top=Math.max(0,node.absolute.y*zoom+y);
+  const right=Math.min(width,(node.absolute.x+node.width)*zoom+x),bottom=Math.min(height,(node.absolute.y+node.height)*zoom+y);
+  if(right-left<28+2*inset||bottom-top<28+2*inset)return null;
+  return {x:(right-28-inset-x)/zoom,y:(top+inset-y)/zoom};
 }
 
 export function systemViewport(nodes,width,height) {
@@ -96,9 +64,9 @@ export function systemViewport(nodes,width,height) {
   return {x:Math.max(24,(width-(right-left)*zoom)/2)-left*zoom,y:Math.max(24,(height-(bottom-top)*zoom)/2)-top*zoom,zoom};
 }
 
-export function componentViewport(node,nodes,width) {
+export function componentViewport(node,nodes,width,contentScale=1) {
   const first=nodes.filter(n=>n.parentId===node.id).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];
-  const zoom=Math.max(.85,Math.min(1,(width-80)/(first?.width||node.width)));
+  const zoom=Math.max(.85,1/contentScale);
   // Compound routing can put the first content far to the right. Focus that
   // content instead of empty frame padding; its component title stays visible.
   const left=first&&(first.absolute.x+first.width-node.absolute.x)*zoom>width-48
@@ -106,21 +74,36 @@ export function componentViewport(node,nodes,width) {
   return {x:24-left*zoom,y:24-node.absolute.y*zoom,zoom};
 }
 
-export function closedContainer(id, placed, records, detailed, componentsOpen) {
+// External frames can contain scaled call cards. Enter at their real text
+// scale, with the first call visible even when routing leaves a large header gap.
+export function communicationViewport(node,nodes,width,height,contentScale=1) {
+  const base=componentViewport(node,nodes,width),zoom=Math.max(base.zoom,1/contentScale);
+  const viewport={x:24+(base.x-24)*zoom/base.zoom,y:24+(base.y-24)*zoom/base.zoom,zoom};
+  const first=nodes.filter(n=>n.parentId===node.id).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];
+  if(first){
+    if(first.absolute.x*zoom+viewport.x<24||(first.absolute.x+first.width)*zoom+viewport.x>width-24)viewport.x=24-first.absolute.x*zoom;
+    if(first.absolute.y*zoom+viewport.y<24||(first.absolute.y+first.height)*zoom+viewport.y>height-24)viewport.y=24-first.absolute.y*zoom;
+  }
+  return viewport;
+}
+
+export function closedContainer(id, placed, records, detailed, componentsOpen, communicationsOpen,openComponents) {
   let closed=null;
   for(let at=placed.get(id)?.parentId;at;at=placed.get(at)?.parentId){
     const branch=records.get(at)?.branch;
     if((branch==='area'&&!detailed.has(at))||
-      (!componentsOpen&&(branch==='component'||branch==='communication')))closed=placed.get(at);
+      (['communication','inputs'].includes(branch)&&communicationsOpen&&!communicationsOpen.has(at))||
+      (branch==='component'&&(openComponents?!openComponents.has(at):!componentsOpen))||
+      (!openComponents&&!componentsOpen&&['communication','inputs'].includes(branch)))closed=placed.get(at);
   }
   return closed;
 }
 
 // A hidden child still has world bounds. Keeping those bounds on screen does
 // not reveal a search result or a destination reached from another reading.
-export function readableFocus(id, placed, records, detailed, componentsOpen, viewport, width, height) {
+export function readableFocus(id, placed, records, detailed, componentsOpen, viewport, width, height, communicationsOpen,openComponents) {
   const n=placed.get(id);
-  if(!n||closedContainer(id,placed,records,detailed,componentsOpen))return false;
+  if(!n||closedContainer(id,placed,records,detailed,componentsOpen,communicationsOpen,openComponents))return false;
   if(viewport.zoom*(records.get(id)?.contentScale||1)<.8)return false;
   const {x,y}=n.absolute,v=viewport;
   return x*v.zoom+v.x>=16&&y*v.zoom+v.y>=16&&
@@ -128,17 +111,16 @@ export function readableFocus(id, placed, records, detailed, componentsOpen, vie
 }
 
 export function frameInventory(id, children, records) {
-  const groups=new Set(),parts=new Set(),inputs=new Set();
+  const groups=new Set(),parts=new Set();
   function visit(at){
     const item=records.get(at);
     if(item?.branch==='area')groups.add(at);
     const inside=children.get(at)||[];
     if(!inside.length)parts.add(at);
-    for(const input of item?.inputs||[])inputs.add(input.id);
     inside.forEach(visit);
   }
   (children.get(id)||[]).forEach(visit);
-  return {groups:groups.size,areaIDs:[...groups],parts:parts.size,inputs:inputs.size};
+  return {groups:groups.size,areaIDs:[...groups],parts:parts.size};
 }
 
 // Fit readable content when it fits; otherwise begin at an actual area, never

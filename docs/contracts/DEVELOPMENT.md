@@ -138,13 +138,34 @@ request or saved layout is involved. This fixture supplements ordinary report
 acceptance; it does not check analysis quality or replace source/Back journeys
 in a complete generated report.
 
+Each system has one compact input collection outside its component frame on
+the initial map. Its existing input types remain readable; opening the collection
+reveals the original named inputs. Selecting an input retains its exact saved
+input-to-part relation and reading; returning preserves world geometry. An
+individual input promises a path and sources, not another hidden container.
+
+The same prepared input also covers dense area inventories and a separate
+shape with two components of twenty parts each, seventeen external participants
+and six distinct calls per participant. Assertions check actual text ranges
+inside their frames, complete words and separation from zoom controls. Journey
+attachments cover component/external entry and intermediate zoom-out states.
+Zoom-out checks that a root summary does not coexist with its visible interior.
+A restored close view checks that a visible part is not covered by its parent's
+summary when the intermediate area's heading has left the viewport.
+An additional five-participant fixture uses short component names, seven/five
+area names and eleven/three inputs in the ordinary report's 1054×580 canvas.
+Its complete initial inventories must fit, retain whole words and keep those
+area names within two lines; the PNG captures the resulting reading layout.
+
 Install the pinned browser once with `npx playwright install chromium
 --only-shell` from `internal/report/web`. Browser downloads use Playwright's
 standard shared location. Normal comparison is `make ui-visual-test`; explicitly
 review and update references with `npm run test:visual:update` in the web
-directory. Missing references fail normal runs. The checked-in PNGs cover
-1440×900 and 1024×768 at DPR 1 on macOS 15 Intel with the Chromium version
-selected by the pinned Playwright dependency. Other operating systems need
+directory. Missing references fail normal runs. The active acceptance project covers
+1440×900 at DPR 1 on macOS 15 Intel with the Chromium version
+selected by the pinned Playwright dependency. The owner excluded narrow-window
+work on 2026-09-14; earlier 1024×768 references remain historical artifacts,
+not an active acceptance project. Other operating systems need
 their own reviewed references, not automatically accepted images.
 The component entrance comparison allows three differing pixels for the observed
 macOS glyph-edge rasterization difference; all others allow none. No canvas
@@ -165,15 +186,27 @@ committed. CI compares references without updating them and publishes the
 review report as `canvas-screenshots`.
 
 The same prepared participants also have a dense inventory variant with forty
-additional areas per system. Its default screenshot must keep all seven root
+additional areas per system. Its default screenshot must keep all nine root
 headings and zoom controls readable without overlap. Every area stays in the
 scrollable list; the journey scrolls to its last entry, opens that area's actual
 part and returns to the same whole-map geometry. This catches repeated
 height-reservation and fit calculations collapsing a dense world into a strip.
+Both nineteen-root and twenty-one-root journeys instrument real Worker layout
+requests. Pan, wheel, zoom, selection and same-size All perform no native layout;
+a real desktop resize places only the outer frames. Every original item and
+the affine geometry of each interior survive. Native ports join the original
+internal routes to their shared outer routes, preserving source references.
+These structural work assertions have no machine-dependent timing limit.
+Connection-size checks combine actual SVG screen transforms with raster
+samples at different zooms. Frame checks cover the browser’s minimum CSS border
+width as well as the visible corner radius. A partly offscreen input collection
+keeps its complete type list within the frame; scrolling that list leaves the
+camera and world unchanged.
+
 A real vertical wheel pan must move the camera without changing zoom or world
 geometry, and must not remeasure text whose visible width is unchanged. This
 checks redundant work directly, without a machine-dependent timing threshold.
-The resize journey narrows the window while reading an external collection:
+The resize journey enlarges the desktop window while reading an external collection:
 its world remains fixed until the whole map is requested. The fitted result
 must keep every full heading and zoom control inside its own frame. Returning
 to a whole-map camera saved before remeasurement must honor that intent rather

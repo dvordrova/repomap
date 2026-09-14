@@ -177,8 +177,13 @@ separate stage outputs.
   The introductory labels "Understand this repository" and "Starting points"
   are removed; the repository summary and useful entrances remain.
   All existing requests, commands, background activities and interactions are
-  visible as named input cards in the common map, inside their explicit
-  implementing part when one is known, and through their component catalogue. Their original
+  available in one compact blue input collection per component, outside the
+  component frame, and through the component catalogue. The distant overview
+  shows the existing input types; zoom reveals the original named inputs inside
+  the collection. A saved implementation relation connects an input to its
+  actual part; an unbound input does not acquire an invented relation. The
+  collection is an owner-based display catalogue, not an architectural group.
+  Their original
   kinds and provenance stay visible. Observed external communications retain
   each original record; unread components retain their failure explanation.
   A service entrance should let the reader scan its HTTP methods and paths,

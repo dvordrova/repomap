@@ -1,5 +1,109 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Separate native layouts and completed desktop journeys
+
+- Replaced repeated whole-graph growth with independently prepared participant
+  interiors and a flat outer ELK layout. Native boundary ports join the original
+  routes; outside strokes shared by several calls are painted once while each
+  original endpoint, possible status and source remains available. Pan, wheel,
+  zoom, selection and same-size All perform zero ELK requests. Resize reuses
+  interiors and places only the outer rectangles. Tests measure those actual
+  Worker requests and preserve every original item and local geometry.
+- Independent layout exposed the remaining summary mismatch on the ordinary
+  Python report: short names squeezed seven/five area names into narrow columns.
+  Preferred width now comes from measured two-line area names. Constant width
+  experiments were rejected because they regressed the seventeen-destination
+  case. Input collections compare two native column arrangements against their
+  own summary shape; eleven frontend inputs use two columns and three backend
+  requests retain one. No repository or participant-count exception was added.
+- Fixed clipped input-type lists when partly offscreen. SVG strokes, dashes,
+  arrowheads and container outlines now retain screen sizes. Raster checks
+  cover the close-up frame bug: a 21px border at zoom 10.72 becomes a 2px inset
+  outline without changing its world rectangle.
+- The nineteen desktop scenarios passed with reviewed updated PNGs. They cover
+  the small, dense, nineteen/twenty-one-participant maps, both detail transitions,
+  input paths, resize, Worker failure and actual stroke pixels. A new prepared
+  1054×580 canvas reproduces the ordinary report's space: its previous bundle
+  failed on three-line area names; the corrected complete lists use one/two
+  lines. Final normal comparison passed all nineteen scenarios in 1.8 minutes
+  without updating references. All fifty UI unit checks and generated-asset
+  consistency also passed.
+- Focused report tests and vet passed. The canonical binary built with ambient
+  Go caches and rendered the existing completed Python run with zero provider
+  calls. Ordinary browser acceptance passed: all seven/five areas are visible,
+  frontend inputs occupy two columns, Run opens the saved playground.tsx:60
+  source, Robot movement retains the original operation path, and Back/All
+  restore the exact cameras and unchanged world with zero page errors.
+- Independent simplification review confirmed the split architecture. Reusing
+  unchanged outer candidates on resize, consolidating summary metrics and
+  removing a duplicate local zoom boolean are deferred; they do not expand
+  this acceptance or change saved history in this revision.
+
+## 2026-09-14 — Inputs outside components and desktop scope
+
+- The owner requested grouped inputs outside target frames: one compact
+  collection per target with the existing catalogue types, opening into its
+  named inputs. The outside shows entrances and communications, while parts
+  stay inside. This replaces the previous embedded-input presentation and
+  avoids an individual root card for every input. Existing input identities, owner
+  context and saved implementation relations remain intact; no attachment is
+  invented for an unbound input. Ordinary projection now keeps those endpoints
+  instead of substituting their implementing part.
+- The owner explicitly excluded narrow-window work. Active screenshot
+  acceptance is the 1440×900 desktop project; the previous narrow seventeen-
+  destination diagnostic is not a release criterion. No whole-map semantics
+  were changed to hide destinations outside the viewport.
+- Fixed two measured sizing mismatches: external headings may use the full
+  width below the zoom control, and two-line names reserve their actual text
+  and control height rather than a 52px floor. The dense case went from a
+  6.58px shortage to a readable fit in the isolated probe. The intermediate
+  zoom-out now closes unreadable interiors before restoring a component
+  summary. An independent PNG review confirmed the overlap was removed.
+- Input entrance implementation and its screenshot journey are covered by the
+  completed desktop and ordinary-report evidence above.
+
+## 2026-09-14 — Seventeen external participants reproduction
+
+- Added prepared input with two components of twenty parts in four areas each,
+  seventeen external collections of six actual call cards each, and a caller
+  for every call. The ordinary canvas receives 172 records and 140 relations;
+  the fixture supplies no layout or additional grouping.
+- The previous UI completed its 1440×900 baseline in 87.094 seconds, including
+  110 ELK calls taking 85.55 seconds. Root-size reservations repeatedly enlarged
+  the same external row; the world reached 917,092 by 613,409 units and fitted
+  at 0.00108. The result still split destination names and overlaid zoom marks.
+  Thirty whole-map pan events used 112 ms of script time and zero text
+  measurements in that probe, so startup and detailed movement need separate
+  measurements. These are diagnostic results, not accepted UI performance.
+- The native layer-unzipping experiment made the wide nineteen-root default
+  readable, but forcing it regressed the original small fixture: 182 native
+  calls and 11.34 seconds, compared with 34 calls and 2.06 seconds before the
+  experiment. Ordinary and unzipped native candidates are now compared in both
+  directions using the existing fitted-text score. Isolated probes retained
+  the readable wide geometry in 16.87 seconds (32 calls), while the small
+  original fixture completed in 3.19 seconds (32 calls). The narrow nineteen-root
+  result was still unreadable and was not accepted at this intermediate stage.
+  The owner subsequently excluded narrow-window work; the active desktop
+  acceptance and completed fix are recorded above.
+- Browser ELK now runs in one reusable embedded Blob Worker. A before/after
+  probe of the same sixteen-call placement had byte-identical geometry, routes,
+  camera and PNGs. The maximum observed main-thread long task fell from 668 to
+  102 ms, while total placement rose from 7.46 to 8.95 seconds. This improves
+  responsiveness, not calculation speed. Normal, early-failure and pending-call
+  failure probes confirm that worker errors reject rather than leave loading
+  pending; no main-thread retry or extra runtime asset is introduced.
+- Initial drawing remains concealed until its camera is ready. Parts and
+  external calls reveal at an actual 14px heading size and remain down to 12px.
+  Visible grandchildren and saved part-name rows count when retaining context
+  during zoom, so an offscreen area heading does not cause its parent summary
+  to cover a visible part. Tiny secondary header text stays hidden without
+  changing world geometry; closed area summaries draw one border.
+- The two restored-grandchild browser regressions and 27 UI unit checks passed;
+  focused report tests and vet passed. The ordinary binary rendered the saved
+  Python run with zero provider requests. A browser journey reached the run
+  interaction from its question, opened playground.tsx at line 60, and returned
+  to the same question. Full screenshot acceptance is still in progress.
+
 ## 2026-09-14 — Dense overview, wheel work and window-size regression
 
 - Reproduced the reported thin-strip failure on a desktop prepared input:
@@ -52,6 +156,13 @@
   to recover the complete overview. The earlier source journey reached the
   original `backend/app/field.py:10` and returned. Reloaded the HTML screenshot
   gallery and confirmed all six displayed sequences report `passed`.
+- CI on `bcd7a589` passed the full Go/native tests, vet, build and eleven visual
+  scenarios. The dense desktop journey exhausted its 30-second total while
+  capturing the opened final part, before the return action. Its trace showed
+  successful default image comparison and part navigation; initial load/fit
+  consumed most of the budget. Give this complete multi-action journey the
+  same 60-second total as the other zoom journey. Assertion timeouts and image
+  tolerances stay unchanged; this does not resolve initial-layout latency.
 
 ## 2026-09-14 — Audit question and answer request counts
 
