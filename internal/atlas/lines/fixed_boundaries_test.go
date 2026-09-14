@@ -221,6 +221,22 @@ func TestBoundaryWindowSharesOwnerAndDestinationsAndDecodesClosedDestination(t *
 	if err != nil || len(refused.Rejections) != 1 || refused.Rejections[0].Key != "r1" || refused.Answers[1]["decision"] != "none" {
 		t.Fatalf("free text without the prefix was accepted or a negative row lost: %+v / %v", refused, err)
 	}
+	for _, decision := range []string{"none", "unassessed"} {
+		inactive, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[
+			{"key":"r1","decision":"boundary","kind":"queue_producer","line":"publishes catalog events to morfeu.events","destination":"d1","basis":"dispatch","address":"a1"},
+			{"key":"r2","decision":"`+decision+`","kind":{"invalid":true},"line":false,"destination":["d999"],"basis":17,"address":{"invalid":true}}]}`))
+		if err != nil || len(inactive.Rejections) != 0 || !reflect.DeepEqual(inactive.Answers[0], result.Answers[0]) || !reflect.DeepEqual(inactive.Answers[1], table.Answer{"decision": decision}) {
+			t.Fatalf("inactive boundary cells refused or changed a useful answer for %s: %+v / %v", decision, inactive, err)
+		}
+	}
+	// A basis written into decision is not a positive decision. Its refusal
+	// must preserve the independently valid neighbouring communication.
+	mixed, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[
+		{"key":"r1","decision":"remote_client_instance","kind":"queue_producer","line":"publishes catalog events to morfeu.events","destination":"d1","basis":"dispatch","address":"a1"},
+		{"key":"r2","decision":"boundary","kind":"sdk","line":"notifies the operator","destination":"other: Twilio","basis":"dispatch"}]}`))
+	if err != nil || len(mixed.Rejections) != 1 || mixed.Rejections[0].Key != "r1" || !strings.Contains(mixed.Rejections[0].Reason, `cell "decision" is "remote_client_instance"`) || mixed.Answers[0] != nil || !reflect.DeepEqual(mixed.Answers[1], result.Answers[1]) || !reflect.DeepEqual(mixed.AcceptedRowKeys(), []string{"r2"}) {
+		t.Fatalf("invalid boundary decision was repaired or lost its valid neighbour: %+v / %v", mixed, err)
+	}
 }
 
 func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) {

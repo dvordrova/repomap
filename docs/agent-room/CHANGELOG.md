@@ -1,5 +1,44 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Independent prompt, model and validation review
+
+- Prompt, Qwen-compatible transport, DeepSeek response quality and QA reviews
+  checked the current code and saved complete requests without provider calls.
+  The boundary-specific prompt has 593 words; the full prepared system prompt
+  has about 1,309, including the shared evidence vocabulary and response shape.
+  Removing that vocabulary was already tested and did not resolve the SQLite
+  mistake. The 15-window comparison is a diagnostic regression set after its
+  results informed variant selection, not a fresh holdout or a general accuracy
+  estimate. No further wording change has demonstrated an improvement.
+- Existing wire tests confirm explicit thinking on/off/omission and separation
+  of response caches for the compatible endpoint. Qwen inference remains
+  untested locally. The response format requests JSON, not provider-enforced
+  enum constraints; current owning validation still checks each independent row.
+- Extended the existing boundary regression with the reported
+  `decision=remote_client_instance` error beside a valid positive answer, plus
+  `none` and `unassessed` carrying wrong-typed inactive cells. Only the invalid
+  decision is refused; useful neighbours survive and inactive cells have no
+  effect. Lines/table tests and vet pass. Production validation is unchanged.
+- The older Airflow binary completed atlas analysis and then stopped with HTTP
+  402 at orientation (exit 1). All three target analyses are saved, but no final
+  report was published. Its 808 diagnostic records include adaptive provider
+  refusals and omissions, not 808 failed final answers. In particular, 464
+  omitted memberships were called `group_rejected` by that older binary.
+- Revalidated all six complete saved Airflow area responses through the current
+  ordinary decoder: all 168 proposed groups are accepted, versus 18 accepted
+  by the older run, with no provider calls. This counts decisions across windows
+  (including successive grouping rounds), not 168 distinct final map areas.
+  Eighty-three groups had been lost inside accepted windows and another 67 in
+  three wholly refused windows. The temporary owning-package probe was removed;
+  its comparison is `/private/tmp/repomap-airflow-design-revalidation-20260914.json`.
+- Two known semantic errors remain in the saved DeepSeek diagnostic set: an
+  explicit local SQLite constructor labelled external, and an unsupported
+  PostgreSQL destination for a configurable SQLAlchemy constructor. They must
+  be evaluated against source evidence; schema acceptance cannot establish
+  correctness. Further live comparison and Airflow publication need provider
+  balance. The previously completed ordinary Python acceptance remains valid
+  for the current production changes.
+
 ## 2026-09-14 — CI prerequisites and screenshot rasterization
 
 - The first remote run exposed an existing CI omission: native Clojure tests
