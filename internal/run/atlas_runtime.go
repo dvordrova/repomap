@@ -161,11 +161,16 @@ func readRepositoryAtlas(
 		BatchConcurrency: options.Deps.llmBatchConcurrency,
 		BatchController:  options.Deps.llmBatchController,
 	}
+	questions := options.Questions
+	if options.NoQuestions {
+		questions = nil
+		options.Output.State("Questions", "disabled", "--no-questions: skipping generation, retrieval and answers")
+	}
 	result, err := reading.Read(ctx, reading.Options{
 		Graph: graph, Targets: metas,
 		Repository: repoRunLabel(options.Repo), Revision: options.RepositoryState.Head,
 		Executor: executor, Provider: provider, OwnerRunDir: owner.RunDir,
-		Questions: options.Questions, Learn: true,
+		Questions: questions, Learn: !options.NoQuestions,
 		Stage: options.Output.Stage, State: options.Output.State,
 	})
 	if err != nil {

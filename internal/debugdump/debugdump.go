@@ -73,6 +73,7 @@ type BuildIdentity struct {
 
 type EffectiveOptions struct {
 	NoCache                bool     `json:"no_cache"`
+	NoQuestions            bool     `json:"no_questions,omitempty"`
 	GoTarget               string   `json:"go_target,omitempty"`
 	GoTargetSource         string   `json:"go_target_source,omitempty"`
 	GoTargetBaseline       string   `json:"go_target_baseline,omitempty"`

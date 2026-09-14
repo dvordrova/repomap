@@ -253,6 +253,11 @@ Names, signatures and argument names are useful clues for model hypotheses; abse
 
 ## Questions and Learn
 
+The ordinary `--no-questions` option disables this entire optional cascade:
+`atlas_learn`, `atlas_question` and `atlas_answer`, including explicit and
+configured questions. The ordinary atlas still completes through joints and
+publishes its full map, orientation and source reading without question results.
+
 `--question TEXT` is repeatable and supplements local `.repomap.conf` questions.
 Settings are loaded once and passed as a typed value through target work and
 serving. Questions share the graph, recalled descriptions and provider input;

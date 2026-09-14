@@ -131,3 +131,10 @@ response. Raw HTTP error bodies remain exact, including non-JSON 500 responses.
 ## Settings and questions
 
 `--question TEXT` is repeatable and supplements `.repomap.conf` questions. Settings are loaded once and passed as typed values through target work and serving. The ordinary atlas, questions and report use that same configured provider. See [reading](READING.md#questions-and-learn) for question semantics and [report](REPORT.md#source-links-and-serving) for serving.
+
+`repomap REPOSITORY --no-questions` skips automatic question generation, shared
+retrieval and final answers. It overrides both configured questions and
+`--question`, regardless of flag order. Other analysis, orientation, the map
+and source navigation run normally. The run records `no_questions: true` in
+its effective options; it does not read or write question-stage response caches.
+Without the flag, question behavior is unchanged.

@@ -1,5 +1,15 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Optional question cascade
+
+- Added ordinary `--no-questions`. It overrides configured and explicit
+  questions and skips Learn, retrieval and answers at the existing reading
+  boundary. Other analysis and publication retain their ordinary path.
+  Effective run options record the choice; default behavior is unchanged.
+- The canonical binary built and focused vet passed. The owner requested an
+  immediate push without an online acceptance run; no provider calls were made
+  for this change. The unfinished test additions were removed before publication.
+
 ## 2026-09-14 — Reveal readable interiors when their complete frame is visible
 
 - Reproduced a fully visible area remaining a summary at readable text scale.

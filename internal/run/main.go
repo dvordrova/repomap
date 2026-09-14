@@ -264,6 +264,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		"maximum exact target call-graph edges (0 keeps all edges)",
 	)
 	noCache := fs.Bool("no-cache", false, "disable cross-run model response caches")
+	noQuestions := fs.Bool("no-questions", false, "skip question generation, retrieval and answers, including configured questions")
 	var questions []string
 	fs.Func("question", "add a reading question; repeat for several questions", func(value string) error { return appendQuestion(&questions, value) })
 	gitLabURLFlag := fs.String("gitlab-url", "", "create a standalone report with GitLab source links; does not select a repository")
@@ -621,7 +622,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				Corpus: repositoryCorpus, RepositoryState: initialState, Plan: plan,
 				RunID: runID, DebugDir: dDir, NoCache: *noCache, NoOpen: *noOpen,
 				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
-				NoModel: *noModel, Questions: questions, DisplayLanguage: displayLanguage,
+				NoModel: *noModel, NoQuestions: *noQuestions, Questions: questions, DisplayLanguage: displayLanguage,
 				Output: humanOutput, FirstLayer: firstLayer,
 				DiscoverJSTSFn: jstsproject.DiscoverSelected,
 				VerifiedRunsSink: func(receipts []report.RunReceipt) {
@@ -681,6 +682,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		SkipGoFacts:      true,
 		EffectiveOptions: debugdump.EffectiveOptions{
 			NoCache:                *noCache,
+			NoQuestions:            *noQuestions,
 			GoTarget:               goTarget.String(),
 			BuildTags:              append([]string(nil), goBuildTags...),
 			AnalysisTargetOverride: analysisTargetOverride,
@@ -1131,6 +1133,7 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  --gitlab-url URL            static GitLab source links; does not select a repository\n")
 	fmt.Fprintf(writer, "  --no-model                  make no model call; the atlas tables carry their fallback lines (needs --target)\n")
 	fmt.Fprintf(writer, "  --question TEXT             add a reading question (repeatable; extends .repomap.conf)\n")
+	fmt.Fprintf(writer, "  --no-questions              skip all question generation, retrieval and answers\n")
 	fmt.Fprintf(writer, "  --no-open                   do not open the report\n")
 	fmt.Fprintf(writer, "  --no-serve                  write static HTML with remote source links\n")
 	fmt.Fprintf(writer, "  --lang en|ru                translate the finished report (default: en)\n")
