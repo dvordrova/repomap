@@ -146,6 +146,9 @@ directory. Missing references fail normal runs. The checked-in PNGs cover
 1440×900 and 1024×768 at DPR 1 on macOS 15 Intel with the Chromium version
 selected by the pinned Playwright dependency. Other operating systems need
 their own reviewed references, not automatically accepted images.
+The component entrance comparison allows one differing pixel for the observed
+macOS glyph-edge rasterization difference; all others allow none. No canvas
+region is masked, and bounds, readability and pointer checks remain strict.
 
 The suite checks readable names, complete area lists, external call focus,
 stable geometry and the successive stages of pointer-anchored zoom. PNG

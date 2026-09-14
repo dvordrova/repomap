@@ -12,6 +12,12 @@ jobs:
     - uses: actions/setup-go@v5
       with:
         go-version: '1.26'
+    - name: Install native Clojure analyzer
+      run: |
+        curl --fail --location --output "$RUNNER_TEMP/clj-kondo.zip" https://github.com/clj-kondo/clj-kondo/releases/download/v2026.08.04/clj-kondo-2026.08.04-linux-amd64.zip
+        unzip -q "$RUNNER_TEMP/clj-kondo.zip" -d "$RUNNER_TEMP/clj-kondo"
+        sudo install "$RUNNER_TEMP/clj-kondo/clj-kondo" /usr/local/bin/clj-kondo
+        clj-kondo --version
     - run: make test
     - run: make vet
     - run: make build

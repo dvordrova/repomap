@@ -254,6 +254,7 @@ test('component zoom reveals its named areas without losing the heading',async({
   }
   await expect(page.locator('.flow-component-title').filter({hasText:'Web application'})).toBeInViewport();
   await page.getByRole('heading',{name:'Two systems · five external participants'}).hover();
-  await expect(page.locator('.map-workspace')).toHaveScreenshot('component.png');
+  // Local macOS and CI differ at one antialiased glyph-edge pixel in this view.
+  await expect(page.locator('.map-workspace')).toHaveScreenshot('component.png',{maxDiffPixels:1});
   expect(errors).toEqual([]);
 });

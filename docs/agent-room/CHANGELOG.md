@@ -1,5 +1,17 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — CI prerequisites and screenshot rasterization
+
+- The first remote run exposed an existing CI omission: native Clojure tests
+  require `clj-kondo`, but the Ubuntu job never installed it. CI now installs
+  the same official 2026.08.04 release used in local acceptance.
+- Seven of eight screenshot cases passed on the macOS 15 Intel runner. The
+  component entrance differed at one glyph-edge pixel near the bottom of the
+  image; actual/expected/diff inspection confirmed matching geometry and text.
+  Only that screenshot permits one pixel. Other screenshots, gesture anchors
+  and readability checks remain strict; no region is masked or reference
+  replaced by the CI output.
+
 ## 2026-09-14 — Prepared-input canvas screenshot journeys
 
 - Added pinned Playwright/Chromium screenshot checks at 1440×900 and 1024×768.
