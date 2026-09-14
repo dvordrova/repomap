@@ -15,3 +15,24 @@ jobs:
     - run: make test
     - run: make vet
     - run: make build
+  visual:
+    runs-on: macos-15-intel
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24.19.0'
+    - run: npm ci
+      working-directory: internal/report/web
+    - run: npx playwright install chromium --only-shell
+      working-directory: internal/report/web
+    - run: make ui-test
+    - run: make ui-visual-test
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: canvas-screenshots
+        path: |
+          internal/report/web/playwright-report/
+          internal/report/web/test-results/
+        retention-days: 14

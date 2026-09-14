@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canvas fixture — two systems, five external participants</title>
+<link rel="stylesheet" href="/report.css">
+<style>
+/* Test-only pointer marker: shows the gesture's aim without affecting layout. */
+#visual-aim{position:fixed;z-index:9999;width:12px;height:12px;border:2px solid #bf2765;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;box-sizing:border-box}
+</style>
+<div id="visual-aim" hidden aria-hidden="true"></div>
+<main>
+  <h1>Two systems · five external participants</h1>
+  <figure class="map system-canvas" data-map>
+    <div class="system-controls" data-map-controls hidden>
+      <button type="button" data-map-fit>Show whole map</button>
+      <button type="button" data-map-zoom="1.25" aria-label="Zoom in">+</button>
+      <button type="button" data-map-zoom="0.8" aria-label="Zoom out">−</button>
+      <button type="button" data-map-reset>reset</button>
+      <span>Zoom to see inside · Drag to move</span>
+    </div>
+    <div class="map-workspace">
+      <div class="map-stage"><svg aria-hidden="true"></svg></div>
+      <aside class="map-inspector" aria-label="Selected node details">
+        <div class="map-inspector-content">
+          <h3 data-reading-title>System map</h3>
+          <p data-reading-description>Explore the applications and their external connections.</p>
+        </div>
+      </aside>
+    </div>
+  </figure>
+</main>
+<script src="/report-ui.js"></script>
+<script type="module" src="/fixture.mjs"></script>
+</html>

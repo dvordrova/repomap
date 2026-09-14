@@ -1,5 +1,38 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Prepared-input canvas screenshot journeys
+
+- Added pinned Playwright/Chromium screenshot checks at 1440×900 and 1024×768.
+  The prepared two-system/five-external input enters the ordinary canvas bundle;
+  production card measurement, ELK placement, routes, hover and gestures run for
+  real. It makes no model calls and adds no model or Go cache.
+- Eight browser cases compare 22 reference PNGs. Each zoom journey also emits
+  ten ordered actual images: overview, aim, both detail boundaries, explicit
+  pan to the area, readable parts and return. A plain HTML image sequence sits
+  beside Playwright's expected/actual/diff report. CI uses macOS 15 Intel and
+  never updates references automatically.
+- The tests exposed clipped area lists, names broken mid-word and external
+  calls still rendered at 10.2px after an entrance. Initial placement now
+  reserves measured overview text space, narrow headings clear the zoom icon,
+  and external entrances use readable content focus. Closed summaries stay in
+  the visible portion of their own frame while approaching the detail boundary.
+- An independent screenshot-test review found that aiming was silently clamped
+  to the canvas edge and a sliver of a card satisfied the old viewport assertion.
+  The corrected scenario aims at real visible text, checks complete titles and
+  the selected card, verifies the world point under every zoom gesture, and
+  records explicit pan actions. Actual images and camera/aim metadata survive
+  a failed check; visual differences remain failures even while later frames
+  are collected. World geometry stays unchanged through the journey.
+- The narrow-window boundary frame still exposes a UX limitation: after the
+  component layer opens, its contents may require a pan. That intermediate
+  image is explicitly captioned, followed by the pan frames. Reference matching
+  records current behavior; it is not acceptance of the whole zoom experience.
+- After visual inspection, normal comparison without snapshot updates passes
+  all eight cases. All 23 web tests, bundle verification, report tests/vet and
+  `make build` pass. Saved rendering of the completed online Python run makes
+  zero provider calls. Browser inspection covers the readable external calls,
+  a scenario question, and Back to the same selected communication.
+
 ## 2026-09-14 — Compare boundary prompts and preserve free-choice formatting
 
 - Replayed ten prompt/request variants on four complete saved Airflow windows

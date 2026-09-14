@@ -22,12 +22,29 @@ export function wrapText(text,width,font,measure){
     }
     return lines;
 }
+
+// A narrow external heading may need the full card width below its zoom mark.
+// Measure the same heading for layout reservation and for the visible card.
+export function overviewHeading(item,screenWidth,measure){
+  const communication=item.branch==='communication';
+  const font=communication?'700 13px system-ui':'700 18px system-ui';
+  const lineHeight=communication?17:23;
+  const title=item.name||item.title;
+  const clearZoom=String(title).split(/\s+/).some(word=>measure(word,font)>screenWidth-64);
+  const width=Math.max(1,Math.min(304,screenWidth-(clearZoom?(communication?16:32):64)));
+  return {width,clearZoom,height:wrapText(title,width,font,measure).length*lineHeight+(clearZoom?32:0)};
+}
+
 export function prepareCards(records, inputOwner, measure, translate) {
   const kind=n=>translate(({request:'Request',command:'Command',interaction:'UI action',scheduled:'Scheduled task',continuous:'Background activity'})[n.activation]||n.kind||'Input');
   const groupKind=n=>translate(({request:'Incoming requests',command:'Commands',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[n.activation]||n.kind||'Inputs');
   const wrap=(text,width,font)=>wrapText(text,width,font,measure);
   const communicationChildren=new Set(records.filter(n=>n.branch==='communication').flatMap(n=>n.children||[]));
   const owners=new Map();
+  const byID=new Map(records.map(n=>[n.id,n]));
+  const areaNames=id=>(byID.get(id)?.children||[]).flatMap(child=>[
+    ...(byID.get(child)?.branch==='area'?[byID.get(child).title]:[]),...areaNames(child),
+  ]);
   for(const n of records){
     const owner=inputOwner[n.id];if(!owner)continue;
     const lines=wrap(n.title,202,'600 13px system-ui');
@@ -46,7 +63,14 @@ export function prepareCards(records, inputOwner, measure, translate) {
     const descriptionLines=description?wrap(description,228,'13px system-ui'):[];
     const subtitle=n.category==='external'&&!n.title.endsWith(n.subtitle||'')?n.subtitle:'';
     const subtitleLines=subtitle?wrap(subtitle,228,'13px system-ui'):[];
-    return {...n,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputs,metadata,role:roleLines.join('\n'),
+    const names=n.branch==='component'?areaNames(n.id):[];
+    const overviewMinWidth=Math.max(0,...String(n.title).split(/\s+/).map(word=>measure(word,n.branch==='communication'?'700 13px system-ui':'700 18px system-ui')))+(n.branch==='communication'?16:32);
+    const overviewHeightAtWidth=['component','communication'].includes(n.branch)?width=>{
+      const heading=overviewHeading(n,width,measure);
+      const list=names.length?17+names.reduce((h,name)=>h+10+wrap(name,Math.max(1,Math.min(304,width-32)),'500 13px system-ui').length*18,0):0;
+      return Math.max(52,(n.branch==='communication'?16:32)+heading.height+list);
+    }:undefined;
+    return {...n,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputs,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,
       kindLabel:communicationChildren.has(n.id)?'':kind(n),description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,
       headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines.length?12+descriptionLines.length*18:0)),

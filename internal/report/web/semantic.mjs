@@ -31,6 +31,22 @@ export async function semanticLayout(items, relations, areas, width, height) {
     if(node.width*overviewZoom<minimum){record.minimumWidth=minimum/overviewZoom;widened=true;}
   }
   if(widened)layout=await arrange(records,relations,areas,width,height);
+  // Compound routing may leave a short root even though its nested drawing is
+  // large. Reserve its measured overview heading and complete area list before
+  // showing the fixed world. Recheck after fitting because added space changes
+  // the whole-map scale. Bounded placement work never runs during a gesture.
+  for(let pass=0;pass<4;pass++){
+    const zoom=systemViewport(layout.nodes,width,height||700).zoom;
+    let resized=false;
+    for(const node of layout.nodes.filter(n=>!n.parentId)){
+      const record=records.find(n=>n.id===node.id);
+      const needed=record.overviewHeightAtWidth?.(node.width*zoom)||0;
+      if(needed&&record.overviewMinWidth>node.width*zoom){record.minimumWidth=(record.overviewMinWidth+2)/zoom;resized=true;}
+      if(needed>node.height*zoom+1){record.minimumHeight=(needed+2)/zoom;resized=true;}
+    }
+    if(!resized)break;
+    layout=await arrange(records,relations,areas,width,height);
+  }
   return {layout,records,scales,owner,summaries:summaryByID};
 }
 

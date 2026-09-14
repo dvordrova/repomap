@@ -7,6 +7,8 @@
 *.test
 .bin/
 node_modules/
+internal/report/web/test-results/
+internal/report/web/playwright-report/
 .cpcache/
 __pycache__/
 *.py[cod]

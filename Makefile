@@ -11,7 +11,7 @@ PRODUCT_GO_PACKAGES := ./cmd/... ./internal/...
 GO_PACKAGE_PARALLELISM ?= 4
 GO_TEST_TIMEOUT ?= 5m
 
-.PHONY: help build ui-build ui-test verify-package-layout test vet check run cache-clear
+.PHONY: help build ui-build ui-test ui-visual-test verify-package-layout test vet check run cache-clear
 
 help: ## Print available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -26,6 +26,9 @@ ui-build: ## Rebuild the checked-in report JS/CSS (developer Node required)
 
 ui-test: ## Verify report layout and the checked-in JS/CSS
 	cd internal/report/web && npm test && node build.mjs --check
+
+ui-visual-test: ## Compare canvas screenshots using prepared input (no provider calls)
+	cd internal/report/web && node build.mjs --check && npm run test:visual
 
 # Benchmark evidence may contain nested source trees and module caches, so the
 # product package roots are explicit. Fail if a new root would otherwise be

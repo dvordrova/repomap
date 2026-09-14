@@ -135,10 +135,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   in its actual top-right corner, independently of the text column width. Its
   screen size stays fixed while zooming. Open frames and leaf parts do not
   promise another hidden layer.
-  Zooming into a component animates toward its first content at readable scale.
+  Zooming into a component or external collection animates toward its first
+  content at readable scale; fitting an oversized external frame must not leave
+  its calls too small to read.
   Its header stays within the visible horizontal part of the same frame, so
   a first child placed far from the left edge cannot crop that content or
   remove the component name during the entrance.
+  Closed summaries follow the visible portion of their own frame while
+  zooming. After opening, the persistent location row keeps the component's
+  name available when its world header leaves the viewport. These are label
+  positions only: the pointer's world point, frames and routes do not move.
   Unbound inputs, external records and unread components keep their identities.
   Routes are clipped at closed areas using their existing orthogonal segments;
   opening an area reveals the original continuation. Internal routes wait for
@@ -155,7 +161,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   window. The initial world choice accounts for readable root-header widths and heights,
   not only its bounding rectangle. After placing the full area summaries,
   narrow root frames reserve overview text width before the final layout is
-  shown. Compact component purposes use the remaining whole lines, with an
+  shown. That initial placement also measures the heading and complete area
+  list at the fitted screen size. Long words reserve enough width; a narrow
+  heading can continue below its zoom mark instead of breaking a name midway.
+  Compact component purposes use the remaining whole lines, with an
   ellipsis when shortened, and stay hidden if fewer than two lines fit; the complete
   purpose remains in the reading column. External frames reserve summary space.
   The fixed world places frames, parts, complete input cards, component

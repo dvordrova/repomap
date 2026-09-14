@@ -127,3 +127,33 @@ After asset changes, run focused report tests/vet, `make build`, and ordinary
 covers source/question return, exact input selection, map camera stability,
 connection-label navigation, dense areas and the separate reading column. The
 report contains the runtime JS/CSS inline and needs no network asset requests.
+
+### Canvas screenshot tests
+
+`make ui-visual-test` runs Chromium against prepared input containing two
+systems and five external participants. The test host supplies records and
+callbacks to the ordinary bundled canvas: the production code measures cards,
+chooses the layout, routes connections and handles mouse gestures. No provider
+request or saved layout is involved. This fixture supplements ordinary report
+acceptance; it does not check analysis quality or replace source/Back journeys
+in a complete generated report.
+
+Install the pinned browser once with `npx playwright install chromium
+--only-shell` from `internal/report/web`. Browser downloads use Playwright's
+standard shared location. Normal comparison is `make ui-visual-test`; explicitly
+review and update references with `npm run test:visual:update` in the web
+directory. Missing references fail normal runs. The checked-in PNGs cover
+1440×900 and 1024×768 at DPR 1 on macOS 15 Intel with the Chromium version
+selected by the pinned Playwright dependency. Other operating systems need
+their own reviewed references, not automatically accepted images.
+
+The suite checks readable names, complete area lists, external call focus,
+stable geometry and the successive stages of pointer-anchored zoom. PNG
+attachments show the aim and action for each journey step. Open the review
+page with `npx playwright show-report --host 127.0.0.1`; its HTML is a viewer for
+the screenshots and, on mismatch, expected/actual/diff images. Actual output
+also appears as one scrollable image sequence in `playwright-report/journey.html`.
+Failed sequences are explicitly marked as diagnostic output. The images
+and the viewer are ignored build artifacts; only reviewed reference PNGs are
+committed. CI compares references without updating them and publishes the
+review report as `canvas-screenshots`.

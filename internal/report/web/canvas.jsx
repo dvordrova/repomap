@@ -6,7 +6,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
 import {semanticLayout, detailedAreas, componentContents, componentViewport, closedContainer, readableFocus, frameInventory, visibleRoute, systemViewport} from './semantic.mjs';
-import {prepareCards,wrapText} from './cards.mjs';
+import {prepareCards,wrapText,overviewHeading} from './cards.mjs';
 import {HoverGate} from './hover.mjs';
 import {InputCards, OverviewMembers} from './card-content.jsx';
 import '@xyflow/react/dist/style.css';
@@ -56,7 +56,7 @@ function ZoomMark({node,item,enter,select}) {
 function FrameTitle({node,item,focused,enter,select}) {
   const viewport=useViewport();
   const component=item.branch==='component',communication=item.branch==='communication';
-  const x=component?Math.max(node.absolute.x+18,Math.min(node.absolute.x+node.width-260,(24-viewport.x)/viewport.zoom)):node.absolute.x+18;
+  const x=component||communication?Math.max(node.absolute.x+18,Math.min(node.absolute.x+node.width-260,(24-viewport.x)/viewport.zoom)):node.absolute.x+18;
   return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${component?'flow-component-title':communication?'flow-communication-title':''}`}
     style={{transform:`translate(${x}px,${node.absolute.y+12}px)`,maxWidth:node.width-36}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
@@ -155,13 +155,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(input){const box=input.getBoundingClientRect(),point=instance.screenToFlowPosition({x:box.x+box.width/2,y:box.y+box.height/2});commitCamera(instance.setCenter(point.x,point.y,{zoom:1/contentScale,duration:smooth?420:0}));return;}
     if(!center&&readableFocus(n.id,placed,byID,detailed,componentsOpen,viewport,rect.width,rect.height))return;
     if(n.frame){
-      if(byID.get(n.id).branch==='component'){
+      if(['component','communication'].includes(byID.get(n.id).branch)){
         commitCamera(instance.setViewport(componentViewport(n,layout.nodes,rect.width),{duration:smooth?420:0}));return;
       }
       const zoom=scales.has(n.id)?.8/contentScale:Math.min(1,Math.max(.6,Math.min((rect.width-48)/n.width,(rect.height-48)/n.height)));
-      if(byID.get(n.id).branch==='communication'){
-        commitCamera(instance.setViewport({x:Math.max(24,(rect.width-n.width*zoom)/2)-x*zoom,y:Math.max(24,(rect.height-n.height*zoom)/2)-y*zoom,zoom},{duration:smooth?420:0}));return;
-      }
       commitCamera(instance.setViewport({x:24-x*zoom,y:24-y*zoom,zoom},{duration:smooth?420:0}));return;
     }
     const zoom=1/contentScale;
@@ -281,13 +278,17 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       <ViewportPortal>
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&(componentsOpen||scales.has(n.id))&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
         {!componentsOpen&&drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication'].includes(byID.get(n.id).branch)).map(n=>{
-          const item=byID.get(n.id),inventory=inventories.get(n.id),screenWidth=n.width*zoom,screenHeight=n.height*zoom;
+          const viewport=instance?.getViewport()||{x:0,y:0};
+          const left=Math.max(0,n.absolute.x*zoom+viewport.x),right=Math.min(host.clientWidth,(n.absolute.x+n.width)*zoom+viewport.x);
+          const item=byID.get(n.id),inventory=inventories.get(n.id),screenWidth=right-left,screenHeight=n.height*zoom;
+          if(screenWidth<=32)return null;
+          const heading=overviewHeading(item,screenWidth,measure);
           const communication=item.branch==='communication',scale=1/zoom,width=Math.min(320,screenWidth-16);
           const contentWidth=Math.max(1,width-16),areaIDs=communication?[]:inventory.areaIDs;
           const textHeight=(text,font,lineHeight,w=contentWidth)=>wrapText(text,w,font,measure).length*lineHeight;
           const listHeight=areaIDs.length?7+areaIDs.reduce((h,id)=>h+10+textHeight(byID.get(id).name||byID.get(id).title,'500 13px system-ui',18),0):0;
           const counts=[inventory.parts?t('{0} parts',inventory.parts):'',inventory.inputs?t('{0} inputs',inventory.inputs):''].filter(Boolean).join(' · ');
-          let remaining=screenHeight-32-Math.max(23,textHeight(item.name,'700 18px system-ui',23,Math.max(1,Math.min(contentWidth,screenWidth-64))))-listHeight-(areaIDs.length?10:0);
+          let remaining=screenHeight-32-heading.height-listHeight-(areaIDs.length?10:0);
           const listOverflow=remaining<0;
           const roleHeight=item.role?textHeight(item.role,'600 13px system-ui',18)+10:0;
           const showRole=!communication&&roleHeight>0&&remaining>=roleHeight;
@@ -296,10 +297,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
           const showCounts=!communication&&remaining>=countsHeight;
           if(showCounts)remaining-=countsHeight;
           const descriptionLines=Math.floor((remaining-10)/18);
+          // Screen-sized summaries must stay in the visible part of their own
+          // frame while approaching its contents. Their world corner can leave
+          // the viewport long before the interior reaches readable scale.
+          const x=(left+8-viewport.x)/zoom;
+          const y=Math.max(n.absolute.y+8/zoom,Math.min(n.absolute.y+n.height-(heading.height+24)/zoom,(40-viewport.y)/zoom));
           return <div key={'component-'+n.id} className={`flow-component-overview nopan ${item.branch==='communication'?'flow-communication-overview':''}`}
-            data-component-overview={n.id} style={{transform:`translate(${n.absolute.x+8/zoom}px,${n.absolute.y+8/zoom}px) scale(${scale})`,width,maxHeight:screenHeight-16}}
+            data-component-overview={n.id} style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width,maxHeight:(n.absolute.y+n.height-y)*zoom-8}}
             onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,true);}}>
-            <div className="flow-component-overview-heading" style={{maxWidth:screenWidth-64}}><strong>{item.name}</strong></div>
+            <div className="flow-component-overview-heading" style={{maxWidth:heading.width,paddingTop:heading.clearZoom?32:undefined}}><strong>{item.name}</strong></div>
             {showRole&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
             {!communication&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description.replace(/\n/g,' ')}</p>}
             {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'nowheel':''}`}>{areaIDs.map(id=><li key={id}>
