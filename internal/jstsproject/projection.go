@@ -356,12 +356,27 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		relations[relation].TargetsObserved = binding.TargetsObserved
 		relations[relation].Witnesses[0].Detail = binding.Element + "." + binding.Attribute
 	}
+	readPairs := map[[2]string]bool{}
+	for _, read := range result.Reads {
+		witness := "typescript_value_reference"
+		if fileLanguage[read.Location.FileRef] == "javascript" {
+			witness = "javascript_value_reference"
+		}
+		if read.Syntax == "jsx_tag" {
+			witness = "jsx_tag_reference"
+		}
+		addRelation("program:"+read.Ref, programindex.RelationReads, read.FromRef, read.ToRefs,
+			programResolution(read.Resolution), read.Location, witness, "", "")
+		for _, target := range read.ToRefs {
+			readPairs[[2]string{read.FromRef, target}] = true
+		}
+	}
 	for _, contract := range result.Contracts {
 		if contract.DeclarationRef == "" {
 			continue
 		}
 		for _, caller := range contract.UsedByRefs {
-			if caller == contract.DeclarationRef {
+			if caller == contract.DeclarationRef || readPairs[[2]string{caller, contract.DeclarationRef}] {
 				continue
 			}
 			addRelation("contract-use:"+contract.Ref+":"+caller, programindex.RelationReads, caller, []string{contract.DeclarationRef}, programindex.ResolutionExact, contract.Location, "typescript_symbol_reference", contract.Name, "")

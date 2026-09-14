@@ -24,7 +24,7 @@ Everything on the page is one of three labeled things:
   rejected into `rejected.jsonl` with its raw output and the reason, never
   repaired.
 
-Under the page, each selected Go, Python, and JavaScript/TypeScript target
+Under the page, each selected Go, Python, JavaScript/TypeScript, and Clojure JVM target
 builds one complete target-local ProgramIndex. The deterministic fact and
 claim stages run over the indexes, and then the atlas reads every target as
 tables: directories by depth, independent files with direct caller facts,
@@ -453,7 +453,19 @@ It does not read provider configuration, use the response cache, scan the
 repository or call a model. Missing or incompatible inputs produce an error;
 they are never regenerated. Only the requested HTML is written, after rendering
 succeeds. The output can be served with `python -m http.server`.
-Change `internal/report/templates/{html,css,js}`, rebuild and render again.
+Change ordinary `internal/report/templates/{html,css,js}`, rebuild and render
+again. The React Flow + ELK canvas source lives in `internal/report/web`:
+
+```sh
+make ui-build
+make ui-test
+make build
+```
+
+The developer needs Node/npm to regenerate that layer. Its generated JS/CSS
+and dependency lockfile are checked in, so `go install` and `make build` require
+only Go. `go:embed` packages the ready assets; each report includes them inline,
+without a CDN or a separate frontend server.
 UI experiments belong in those product templates, not a separately assembled
 copy of the report. This loop does not validate new analysis or prompt changes.
 
@@ -486,3 +498,9 @@ lives in Markdown beside documentation reduction, the atlas tables and the
 orientation and is embedded in the binary;
 complete dynamic reservoirs, provider-sized request partitions, ref restoration,
 and semantic validation remain in Go.
+
+Clojure projects use `deps.edn` or `project.clj`, Clojure CLI and clj-kondo
+on your normal PATH. On macOS, install the tools with
+`brew install clojure/tools/clojure borkdude/brew/clj-kondo`. The adapter reads
+`.clj` and the JVM branch of `.cljc` through the same report pipeline.
+See [the Clojure contract](docs/contracts/CLOJURE.md) for native prerequisites.

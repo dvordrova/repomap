@@ -67,3 +67,4 @@ export function runLiteralAdapter(): Promise<Response> {
 export function unusedLiteralAdapter(): LiteralAdapter {
   return new LiteralAdapter("https://unrelated.example");
 }
+export { paintColor as surfaceColor, ReadTile as Tile } from "../shared/contracts"

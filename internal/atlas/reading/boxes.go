@@ -15,76 +15,33 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
-// boxState is one box before it is written per target: a directory, or a
-// directory split by a title the model started.
+// boxState holds an accepted responsibility and its exact declaration members.
+// Before design reading, temporary boxes describe source-file inventory only.
 type boxState struct {
-	id     string
-	dir    string
-	title  string
-	line   string
-	files  []string // file place IDs
-	top    bool
-	open   bool
-	zoneID map[string]string // per target
+	targetID string
+	symbols  map[string]bool // explicit declaration membership; nil before design reading
+	id       string
+	dir      string
+	title    string
+	line     string
+	files    []string // file place IDs
+	open     bool
+	zoneID   map[string]string // per target
 }
 
-// assignBoxes turns the file rows' box choices into boxes, once, after the
-// file rounds. A title started by fewer than two files was already cancelled.
+// assignBoxes supplies source-file inventory while captioning. Architecture
+// reading replaces it with explicitly chosen declaration membership.
 func (r *reader) assignBoxes() {
 	r.boxOf = make(map[string]string)
 	r.boxes = make(map[string]*boxState)
-	box := func(id, dir, title string) *boxState {
-		if existing, ok := r.boxes[id]; ok {
-			return existing
-		}
-		created := &boxState{id: id, dir: dir, title: title, zoneID: make(map[string]string)}
-		if dirPlace, ok := r.places[atlas.DirectoryID(dir)]; ok {
-			created.top = dirPlace.Directory.TopBox
-			if line, ok := r.lines[dirPlace.ID]; ok && id == dir {
-				created.line = line.value
-			} else {
-				created.line = dirPlace.Given
-			}
-			if title == "" {
-				if t, ok := r.titles[dirPlace.ID]; ok {
-					created.title = t.value
-				} else {
-					created.title = directoryTitle(dir)
-				}
-			}
-		}
-		r.boxes[id] = created
-		return created
-	}
 	for _, place := range r.opts.Graph.Places {
 		if place.Kind != atlas.PlaceFile {
 			continue
 		}
-		dir := parentDir(place.Path)
-		boxID, boxDir, title := dir, dir, ""
-		switch choice := r.boxChoice[place.ID]; {
-		case choice == "" || choice == lines.BoxHere:
-		default:
-			if newTitle, ok := table.IsFree(lines.Files().Columns[1], choice); ok {
-				boxID, title = dir+"#"+atlas.Slug(newTitle), newTitle
-			} else if _, ok := r.places[atlas.DirectoryID(choice)]; ok {
-				boxID, boxDir = choice, choice
-			}
-		}
-		owner := box(boxID, boxDir, title)
-		if title != "" && owner.line == "" {
-			owner.line = r.lines[place.ID].value
-		}
-		owner.files = append(owner.files, place.ID)
-		r.boxOf[place.ID] = boxID
-	}
-	for _, owner := range r.boxes {
-		sort.Strings(owner.files)
-		// A box is open when its directory was, or when no budget asked.
-		owner.open = !r.budget
-		if open, decided := r.openDirs[atlas.DirectoryID(owner.dir)]; decided {
-			owner.open = open
-		}
+		id := place.Path
+		r.boxOf[place.ID] = id
+		r.boxes[id] = &boxState{id: id, dir: parentDir(place.Path), title: place.Path, line: r.lines[place.ID].value,
+			files: []string{place.ID}, open: true, zoneID: map[string]string{}}
 	}
 }
 
@@ -92,6 +49,9 @@ func (r *reader) assignBoxes() {
 func (r *reader) boxesOfTarget(targetID string) []*boxState {
 	var result []*boxState
 	for _, owner := range r.boxes {
+		if owner.targetID != "" && owner.targetID != targetID {
+			continue
+		}
 		for _, fileID := range owner.files {
 			if contains(r.places[fileID].TargetIDs, targetID) {
 				result = append(result, owner)
@@ -104,6 +64,9 @@ func (r *reader) boxesOfTarget(targetID string) []*boxState {
 }
 
 func (r *reader) targetFiles(owner *boxState, targetID string) int {
+	if owner == nil || owner.targetID != "" && owner.targetID != targetID {
+		return 0
+	}
 	count := 0
 	for _, fileID := range owner.files {
 		if contains(r.places[fileID].TargetIDs, targetID) {
@@ -125,149 +88,6 @@ type zoneState struct {
 	boxes []string
 }
 
-// readZones names the parts of every target and places its boxes in them:
-// the largest top boxes name the parts, the rest choose from the closed
-// list, boxes beneath a top box inherit its part.
-func (r *reader) readZones(ctx context.Context) error {
-	r.zones = make(map[string][]*zoneState)
-	r.opts.Stage(lines.StageZones, "naming the parts of every target from its largest boxes")
-	for _, target := range r.opts.Targets {
-		if err := r.readTargetZones(ctx, target.ID); err != nil {
-			return err
-		}
-	}
-	r.reportStage(lines.StageZones)
-	return nil
-}
-
-func (r *reader) readTargetZones(ctx context.Context, targetID string) error {
-	var tops []*boxState
-	for _, owner := range r.boxesOfTarget(targetID) {
-		if owner.top || strings.Contains(owner.id, "#") {
-			tops = append(tops, owner)
-		}
-	}
-	if all := r.boxesOfTarget(targetID); len(tops) < 4 && len(all) >= 4 {
-		// A library whose root directory holds files has one top box and
-		// everything beneath it; its parts are cut over all of its boxes.
-		tops = all
-	}
-	if len(tops) < 4 {
-		// A target of a few boxes needs no parts: each box is its own.
-		for _, owner := range tops {
-			zone := &zoneState{id: atlas.Slug(owner.title), title: owner.title, line: owner.line, boxes: []string{owner.id}}
-			r.zones[targetID] = append(r.zones[targetID], zone)
-			owner.zoneID[targetID] = zone.id
-		}
-		r.inheritZones(targetID, tops)
-		return nil
-	}
-	parts, err := r.partition(ctx, targetID, tops, 1)
-	if err != nil {
-		return err
-	}
-	// A part holding more than half of the boxes is not a part, it is the
-	// target under one name: client/v3 came back as "Official Go client ·
-	// 18 groups". Such a part is partitioned once more on its own.
-	for _, part := range parts {
-		if len(part.boxes) < 6 || len(part.boxes)*2 <= len(tops) {
-			r.zones[targetID] = append(r.zones[targetID], part)
-			continue
-		}
-		inner := make([]*boxState, 0, len(part.boxes))
-		for _, boxID := range part.boxes {
-			inner = append(inner, r.boxes[boxID])
-		}
-		sub, err := r.partition(ctx, targetID, inner, 10)
-		if err != nil {
-			return err
-		}
-		if len(sub) < 2 {
-			r.zones[targetID] = append(r.zones[targetID], part)
-			continue
-		}
-		r.zones[targetID] = append(r.zones[targetID], sub...)
-	}
-	for _, zone := range r.zones[targetID] {
-		for _, boxID := range zone.boxes {
-			r.boxes[boxID].zoneID[targetID] = zone.id
-		}
-	}
-	r.inheritZones(targetID, tops)
-	// Empty parts vanish; every remaining part gets its sentence.
-	kept := r.zones[targetID][:0]
-	for _, zone := range r.zones[targetID] {
-		if len(zone.boxes) > 0 {
-			kept = append(kept, zone)
-		}
-	}
-	r.zones[targetID] = kept
-	var rows []table.Row
-	for _, zone := range kept {
-		var boxes []lines.BoxSummary
-		for _, boxID := range zone.boxes {
-			boxes = append(boxes, r.summary(r.boxes[boxID], targetID))
-		}
-		rows = append(rows, lines.ZoneLineRow(zone.id, zone.title, boxes))
-	}
-	described, err := r.runTableWith(ctx, lines.ZoneLines(), 3, []table.Field{{Name: "question", Value: "lines"}}, rows, nil)
-	if err != nil {
-		return err
-	}
-	for i, zone := range kept {
-		if answer := described[i]; answer.answer != nil {
-			zone.line = answer.answer["line"]
-			continue
-		}
-		var names []string
-		for _, boxID := range zone.boxes {
-			names = append(names, r.boxes[boxID].title)
-			if len(names) == 3 {
-				break
-			}
-		}
-		zone.line = fmt.Sprintf("%s: %s", boxCount(len(zone.boxes)), strings.Join(names, ", "))
-	}
-	return nil
-}
-
-// inheritZones gives boxes beneath the reviewed tops the part of their nearest
-// placed ancestor. A refused top assignment remains unassigned.
-func (r *reader) inheritZones(targetID string, tops []*boxState) {
-	asked := make(map[string]bool, len(tops))
-	for _, top := range tops {
-		asked[top.id] = true
-	}
-	byID := make(map[string]*zoneState)
-	for _, zone := range r.zones[targetID] {
-		byID[zone.id] = zone
-	}
-	for _, owner := range r.boxesOfTarget(targetID) {
-		if asked[owner.id] {
-			continue
-		}
-		if _, placed := owner.zoneID[targetID]; placed {
-			continue
-		}
-		dir := owner.dir
-		for dir != "." {
-			dir = parentDir(dir)
-			ancestor, ok := r.boxes[dir]
-			if !ok {
-				continue
-			}
-			if zoneID, placed := ancestor.zoneID[targetID]; placed {
-				owner.zoneID[targetID] = zoneID
-				byID[zoneID].boxes = append(byID[zoneID].boxes, owner.id)
-				break
-			}
-			if asked[ancestor.id] {
-				break
-			}
-		}
-	}
-}
-
 // arrowState is one box-to-box arrow of one target.
 type arrowState struct {
 	from, to  string
@@ -281,8 +101,24 @@ func (r *reader) foldArrows() {
 	r.arrows = make(map[string][]*arrowState)
 	for _, target := range r.opts.Targets {
 		byPair := make(map[[2]string]*arrowState)
+		nativePairs := map[[2]string]bool{}
+		if r.designBoxOf != nil {
+			for _, place := range r.opts.Graph.Places {
+				if place.Symbol == nil || !contains(place.TargetIDs, target.ID) {
+					continue
+				}
+				for _, call := range place.Symbol.Calls {
+					for _, callee := range call.CalleeIDs {
+						nativePairs[[2]string{r.boxFor(target.ID, place.ID), r.boxFor(target.ID, callee)}] = true
+					}
+				}
+			}
+		}
 		for _, edge := range r.opts.Graph.Edges {
-			from, to := r.boxOfPlace(edge.From), r.boxOfPlace(edge.To)
+			from, to := r.boxFor(target.ID, edge.From), r.boxFor(target.ID, edge.To)
+			if edge.Kind == "calls" && nativePairs[[2]string{from, to}] {
+				continue // exact observations below own these counts
+			}
 			if from == "" || to == "" || from == to {
 				continue
 			}
@@ -302,6 +138,33 @@ func (r *reader) foldArrows() {
 				arrow.witnesses[witness.Caller+"\x00"+witness.Callee]++
 			}
 		}
+		// Declaration observations retain collaborations within one file and
+		// across files split between several parts. File edges cannot locate
+		// these endpoints and must not guess an owner.
+		if r.designBoxOf != nil {
+			for _, place := range r.opts.Graph.Places {
+				if place.Symbol == nil || !contains(place.TargetIDs, target.ID) {
+					continue
+				}
+				from := r.boxFor(target.ID, place.ID)
+				for _, call := range place.Symbol.Calls {
+					for _, callee := range call.CalleeIDs {
+						to := r.boxFor(target.ID, callee)
+						if from == "" || to == "" || from == to {
+							continue
+						}
+						key := [2]string{from, to}
+						arrow := byPair[key]
+						if arrow == nil {
+							arrow = &arrowState{from: from, to: to, witnesses: map[string]int{}}
+							byPair[key] = arrow
+						}
+						arrow.calls++
+						arrow.witnesses[place.Symbol.Decl.Name+"\x00"+call.Name]++
+					}
+				}
+			}
+		}
 		var arrows []*arrowState
 		for _, arrow := range byPair {
 			arrows = append(arrows, arrow)
@@ -312,16 +175,8 @@ func (r *reader) foldArrows() {
 			}
 			return arrows[i].to < arrows[j].to
 		})
-		// Up to six outgoing arrows per box are drawn, the busiest first.
-		outgoing := make(map[string][]*arrowState)
 		for _, arrow := range arrows {
-			outgoing[arrow.from] = append(outgoing[arrow.from], arrow)
-		}
-		for _, list := range outgoing {
-			sort.SliceStable(list, func(i, j int) bool { return list[i].calls > list[j].calls })
-			for i, arrow := range list {
-				arrow.drawn = i < 6
-			}
+			arrow.drawn = true
 		}
 		r.arrows[target.ID] = arrows
 	}
@@ -885,12 +740,12 @@ func operationIdentifier(name string) string {
 func (r *reader) side(owner *boxState, targetID string) string {
 	in, out := false, false
 	for _, fileID := range owner.files {
-		if contains(r.places[fileID].TargetIDs, targetID) && contains(r.opts.Graph.Seeds, fileID) {
+		if contains(r.places[fileID].TargetIDs, targetID) && contains(r.opts.Graph.Seeds, fileID) && r.boxFor(targetID, fileID) == owner.id {
 			in = true
 		}
 	}
 	for _, state := range r.boundaries {
-		if r.boxOf[state.place.Parent] != owner.id || !contains(state.place.TargetIDs, targetID) {
+		if r.boundaryBox(targetID, state.place) != owner.id || !contains(state.place.TargetIDs, targetID) {
 			continue
 		}
 		// Configuration describes how this code is parameterized. Reading an
@@ -922,7 +777,7 @@ func (r *reader) trace(targetID string) []string {
 		if !contains(r.places[seed].TargetIDs, targetID) {
 			continue
 		}
-		if boxID, ok := r.boxOf[seed]; ok && !contains(start, boxID) {
+		if boxID := r.boxFor(targetID, seed); boxID != "" && !contains(start, boxID) {
 			start = append(start, boxID)
 		}
 	}
@@ -959,105 +814,4 @@ func parentDir(filePath string) string {
 		return "."
 	}
 	return dir
-}
-
-// partition names the parts of a set of boxes in one row and lets every box
-// choose its part from that closed list. It returns the parts with their
-// boxes; empty parts are dropped. Only the final parts assign box zones.
-func (r *reader) partition(ctx context.Context, targetID string, tops []*boxState, round int) ([]*zoneState, error) {
-	sort.SliceStable(tops, func(i, j int) bool {
-		a, b := r.targetFiles(tops[i], targetID), r.targetFiles(tops[j], targetID)
-		if a != b {
-			return a > b
-		}
-		return tops[i].id < tops[j].id
-	})
-	largest := tops
-	if len(largest) > lines.WindowRows {
-		largest = largest[:lines.WindowRows]
-	}
-	want := lines.WantZones(len(largest))
-	summaries := make([]lines.BoxSummary, 0, len(largest))
-	for _, owner := range largest {
-		summaries = append(summaries, r.summary(owner, targetID))
-	}
-	named, err := r.runTableWith(ctx, lines.ZoneNames(want), round, []table.Field{{Name: "question", Value: "names"}, {Name: "want", Value: want}},
-		[]table.Row{lines.ZoneNamesRow(targetID, summaries)}, func(answers table.Answers) error {
-			distinct := make(map[string]struct{})
-			for i := 0; i < want; i++ {
-				distinct[strings.ToLower(strings.TrimSpace(lines.PartName(answers[0], i)))] = struct{}{}
-			}
-			if len(distinct) != want {
-				return fmt.Errorf("%d distinct parts, want %d", len(distinct), want)
-			}
-			return nil
-		})
-	if err != nil {
-		return nil, err
-	}
-	var titles []string
-	var parts []*zoneState
-	byKey := make(map[string]*zoneState)
-	addPart := func(title string) *zoneState {
-		key := strings.ToLower(strings.TrimSpace(title))
-		if zone, ok := byKey[key]; ok {
-			return zone
-		}
-		zone := &zoneState{id: atlas.Slug(title), title: strings.TrimSpace(title)}
-		byKey[key] = zone
-		titles = append(titles, zone.title)
-		parts = append(parts, zone)
-		return zone
-	}
-	if named[0].answer != nil {
-		for i := 0; i < want; i++ {
-			addPart(lines.PartName(named[0].answer, i))
-		}
-	} else {
-		for _, owner := range largest[:want] {
-			addPart(owner.title)
-		}
-	}
-	rows := make([]table.Row, 0, len(tops))
-	for _, owner := range tops {
-		rows = append(rows, lines.ZoneBoxRow(r.summary(owner, targetID)))
-	}
-	assigned, err := r.runTableWith(ctx, lines.ZoneAssign(titles), round+1, []table.Field{{Name: "question", Value: "assign"}, {Name: "parts", Value: titles}}, rows, nil)
-	if err != nil {
-		return nil, err
-	}
-	for i, owner := range tops {
-		if answer := assigned[i]; answer.answer != nil {
-			zone := addPart(answer.answer["part"])
-			zone.boxes = append(zone.boxes, owner.id)
-			continue
-		}
-		if r.dry || named[0].answer == nil {
-			if zone, ok := byKey[strings.ToLower(strings.TrimSpace(owner.title))]; ok {
-				zone.boxes = append(zone.boxes, owner.id)
-			}
-		}
-	}
-	kept := parts[:0]
-	var empty []string
-	for _, part := range parts {
-		if len(part.boxes) > 0 {
-			kept = append(kept, part)
-		} else {
-			empty = append(empty, part.title)
-		}
-	}
-	// A named part no box chose vanishes; the journal says which, so a
-	// name the model invented and then abandoned is visible in the run.
-	if len(empty) > 0 && r.opts.State != nil {
-		r.opts.State(lines.StageZones, "ready", fmt.Sprintf("target %s: %d named parts held no box after assignment and were dropped: %s", targetID, len(empty), strings.Join(empty, ", ")))
-	}
-	return kept, nil
-}
-
-func boxCount(n int) string {
-	if n == 1 {
-		return "1 box"
-	}
-	return fmt.Sprintf("%d boxes", n)
 }

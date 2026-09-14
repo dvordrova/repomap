@@ -15,8 +15,8 @@ func TestLinePromptExamplesMatchRequestedOpenMode(t *testing.T) {
 	for _, base := range []table.Definition{Directories(), Files()} {
 		t.Run(base.Stage, func(t *testing.T) {
 			rows := []table.Row{
-				{ID: "first", Fields: []table.Field{{Name: "box_options", Value: []string{BoxHere}}}},
-				{ID: "second", Fields: []table.Field{{Name: "box_options", Value: []string{BoxHere}}}},
+				{ID: "first", Fields: []table.Field{{Name: "path", Value: "main.go"}}},
+				{ID: "second", Fields: []table.Field{{Name: "path", Value: "report.go"}}},
 			}
 			for mode, def := range []table.Definition{base, WithOpen(base)} {
 				windows, err := table.Windows(def, 1, rows)

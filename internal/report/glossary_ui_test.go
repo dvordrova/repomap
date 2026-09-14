@@ -14,11 +14,11 @@ func TestGlossaryHTMLKeepsAnswerTermsAndSourceDistinctDefinitions(t *testing.T) 
 		t.Run(string(language), func(t *testing.T) {
 			view := &pageView{Glossary: []pageGlossaryTerm{
 				{ID: "term-first", Name: "Разбор", OriginalName: "Parsing", Explanation: "First explanation with <source> intact.",
-					Sources:   []pageAnchor{{Text: "first.py:12", Href: "https://example.test/first.py#L12"}, {Text: "first.py:18", Href: "https://example.test/first.py#L18"}},
+					Sources:   []pageAnchor{{Path: "first.py", Line: 12, Text: "first.py:12", Href: "https://example.test/first.py#L12"}, {Path: "first.py", Line: 18, Text: "first.py:18", Href: "https://example.test/first.py#L18"}},
 					Questions: []pageLearnLink{{Title: "How does the first parser work?", Href: "#question-first"}},
 					Places:    []pageLearnLink{{Title: "First parser", Href: "#part-first"}}},
 				{ID: "term-second", Name: "Разбор", OriginalName: "Parsing", Explanation: "A separate definition from another source.",
-					Sources:   []pageAnchor{{Text: "second.py:30", Href: "https://example.test/second.py#L30"}},
+					Sources:   []pageAnchor{{Path: "second.py", Line: 30, Text: "second.py:30", Href: "https://example.test/second.py#L30"}},
 					Questions: []pageLearnLink{{Title: "How does the second parser work?", Href: "#question-second"}},
 					Places:    []pageLearnLink{{Title: "Second parser", Href: "#part-second"}}},
 			}}
@@ -52,6 +52,12 @@ func TestGlossaryHTMLKeepsAnswerTermsAndSourceDistinctDefinitions(t *testing.T) 
 			}
 			if strings.Contains(html.String(), `class="term-mention"`) {
 				t.Fatal("glossary definitions contain nested inline term controls")
+			}
+			if strings.Count(html.String(), `<code>first.py</code>`) != 1 ||
+				strings.Count(html.String(), `<details class="glossary-source-file">`) != 2 ||
+				strings.Count(html.String(), `<details class="glossary-sources">`) != 2 ||
+				strings.Contains(html.String(), `<p class="model glossary-explanation"><span`) {
+				t.Fatal("glossary repeats paths, expands its context by default, or prefixes the explanation with a badge")
 			}
 			if strings.Contains(html.String(), "glossary-comparison-note") {
 				t.Fatal("complete glossary carries an incomplete-comparison notice")

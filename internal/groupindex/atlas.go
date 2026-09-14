@@ -11,8 +11,8 @@ import (
 
 // ProjectAtlas turns the atlas into one GroupsIndex per target, the shape
 // the page, the orientation and the publication already read: a box is a
-// group whose members are the objects declared in its files, a zone is a
-// container, an arrow is a connection labelled with the model's sentence,
+// group with explicitly selected declarations and native lexical children,
+// a zone is a container, a native relation supplies a connection's endpoints,
 // a joint is a connection into another target. Lanes follow the box's side.
 // Programs maps a target ID to its program index; every atlas target needs
 // one. The result is a validated set.
@@ -217,11 +217,35 @@ func categoryOfLane(lane Lane) programindex.Category {
 
 func projectTarget(program programindex.Index, target atlas.Target, sourceRefs map[string]string) (projectedTarget, error) {
 	boxOfFile := make(map[string]*atlas.Box)
+	boxOfDeclaration := make(map[string]*atlas.Box)
+	objects := make(map[string]programindex.Object, len(program.Objects))
+	declarations := make(map[string]bool, len(program.Objects))
+	for _, object := range program.Objects {
+		objects[object.ID] = object
+		declarations[declarationKey(object)] = true
+	}
 	interpretations := make(map[string]Interpretation)
 	for position := range target.Boxes {
 		box := &target.Boxes[position]
+		for _, id := range box.MemberIDs {
+			key := sourceRefs[id]
+			if key == "" {
+				if object, ok := objects[id]; ok {
+					key = declarationKey(object)
+				}
+			}
+			if key == "" || !declarations[key] {
+				return projectedTarget{}, fmt.Errorf("atlas projection: part %q names an unknown declaration %q", box.ID, id)
+			}
+			if previous := boxOfDeclaration[key]; previous != nil && previous.ID != box.ID {
+				return projectedTarget{}, fmt.Errorf("atlas projection: declaration %q belongs to two parts", id)
+			}
+			boxOfDeclaration[key] = box
+		}
 		for _, file := range box.Files {
-			boxOfFile[file.Path] = box
+			if box.MemberIDs == nil {
+				boxOfFile[file.Path] = box
+			}
 			for _, symbol := range file.Symbols {
 				interpretation := Interpretation{Line: symbol.Line, Alias: symbol.Alias, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary}
 				if interpretation != (Interpretation{}) {
@@ -230,8 +254,41 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			}
 		}
 	}
-	// Every object is a subject, so owner and container references resolve;
-	// the objects of a box's files carry its lane's category.
+	// Every object remains a subject. Explicit declarations select semantic
+	// membership; only native lexical ownership carries it to inner objects.
+	// A shared source path cannot put unrelated declarations into a part.
+	memberBoxes := make(map[string]*atlas.Box)
+	var locate func(string, map[string]bool) *atlas.Box
+	locate = func(id string, seen map[string]bool) *atlas.Box {
+		if seen[id] {
+			return nil
+		}
+		seen[id] = true
+		if box := memberBoxes[id]; box != nil {
+			return box
+		}
+		object, exists := objects[id]
+		if !exists {
+			return nil
+		}
+		box := boxOfDeclaration[declarationKey(object)]
+		// A selected module body owns its observed top-level activity, not
+		// every declaration in the file. Those declarations still require
+		// their own accepted membership, including after a refused model row.
+		if box == nil && object.OwnerID != "" && objects[object.OwnerID].Kind != programindex.ObjectModule {
+			box = locate(object.OwnerID, seen)
+		}
+		if box == nil && object.ContainerID != "" && objects[object.ContainerID].Kind != programindex.ObjectModule {
+			box = locate(object.ContainerID, seen)
+		}
+		if box == nil && object.Location != nil {
+			box = boxOfFile[atlasPath(object.Location.Path)]
+		}
+		if box != nil {
+			memberBoxes[id] = box
+		}
+		return box
+	}
 	membersOfBox := make(map[string][]string, len(target.Boxes))
 	retained := make(map[string]struct{})
 	for _, object := range program.Objects {
@@ -244,11 +301,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 	for _, object := range program.Objects {
 		categories := []programindex.Category{}
-		if object.Location != nil {
-			if box, ok := boxOfFile[atlasPath(object.Location.Path)]; ok {
-				categories = []programindex.Category{categoryOfLane(laneOfSide(box.Side))}
-				membersOfBox[box.ID] = append(membersOfBox[box.ID], object.ID)
-			}
+		if box := locate(object.ID, map[string]bool{}); box != nil {
+			categories = []programindex.Category{categoryOfLane(laneOfSide(box.Side))}
+			membersOfBox[box.ID] = append(membersOfBox[box.ID], object.ID)
 		}
 		subject := byID[object.ID]
 		subject.Categories = categories
@@ -340,6 +395,57 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		connection.ID = connectionIdentity(connection)
 		connections = append(connections, connection)
+	}
+	if len(boxOfDeclaration) > 0 {
+		// Semantic parts do not inherit file-to-file arrows. Rebind every
+		// original declaration relation, including same-file calls, reads and
+		// callbacks, with its actual endpoints and source locations.
+		sentences := map[[2]string]string{}
+		for _, connection := range connections {
+			sentences[[2]string{connection.From.GroupID, connection.To.GroupID}] = connection.Summary
+		}
+		connections = []Connection{}
+		for _, relation := range program.Relations {
+			if relation.Kind == programindex.RelationContains {
+				continue
+			}
+			fromBox := memberBoxes[relation.FromID]
+			if fromBox == nil {
+				continue
+			}
+			from := groupOfBox[fromBox.ID]
+			for _, id := range relation.ToIDs {
+				toBox := memberBoxes[id]
+				if toBox == nil {
+					continue
+				}
+				to := groupOfBox[toBox.ID]
+				if from == "" || to == "" || from == to {
+					continue
+				}
+				label := objects[relation.FromID].Name + " " + string(relation.Kind) + " " + objects[id].Name
+				summary := label
+				if sentence := sentences[[2]string{from, to}]; relation.Kind == programindex.RelationCalls && sentence != "" {
+					summary = sentence
+				}
+				location := relation.Location
+				if location == nil {
+					location = objects[relation.FromID].Location
+				}
+				resolution := programindex.PatternValuePossible
+				if relation.Resolution == programindex.ResolutionExact {
+					resolution = programindex.PatternValueExact
+				}
+				evidence := []SubjectEndpoint{{TargetID: program.Target.ID, SubjectID: relation.FromID}, {TargetID: program.Target.ID, SubjectID: id}}
+				sort.Slice(evidence, func(i, j int) bool { return evidence[i].SubjectID < evidence[j].SubjectID })
+				connection := Connection{From: Endpoint{TargetID: program.Target.ID, GroupID: from}, To: Endpoint{TargetID: program.Target.ID, GroupID: to},
+					SemanticKind: string(relation.Kind), Label: label, Summary: summary, SupportResolution: resolution, Evidence: evidence,
+					SourceKind: "native_" + string(relation.Kind), SourceID: relation.ID, FromSubjectID: relation.FromID, ToSubjectID: id,
+					FromLocation: location, ToLocation: objects[id].Location}
+				connection.ID = connectionIdentity(connection)
+				connections = append(connections, connection)
+			}
+		}
 	}
 
 	var operations []Operation

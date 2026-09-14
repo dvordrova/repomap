@@ -22,7 +22,7 @@ const (
 	StageFiles       = "atlas_files"
 
 	directoriesContract = "repomap.atlas.directories.v4"
-	filesContract       = "repomap.atlas.files.v5"
+	filesContract       = "repomap.atlas.files.v6"
 
 	// WindowRows is the row budget of the dependent table definitions.
 	WindowRows = 40
@@ -36,14 +36,8 @@ const (
 	maxSignature = 160
 	maxDoc       = 200
 	maxCallers   = 3
-	maxSiblings  = 8
 	// maxCallerDecls bounds the calling declarations named per caller file.
 	maxCallerDecls = 3
-
-	// BoxHere is the box choice that keeps a file in its own directory;
-	// BoxNew is the prefix that starts a new box.
-	BoxHere = "here"
-	BoxNew  = "new: "
 )
 
 //go:embed prompts/directories.md
@@ -64,20 +58,13 @@ func Directories() table.Definition {
 	}
 }
 
-// Files is the file table. The box cell is asked only for a file that may
-// move: a row without box_options has no placement decision (its directory
-// is the box), and an omitted or null box on an asked row means here.
+// Files describes source files. Architecture reading owns membership.
 func Files() table.Definition {
 	return table.Definition{
 		Stage: StageFiles, Contract: filesContract,
 		System: filesPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what the file does"},
-			{
-				Name: "box", Kind: table.Choice, OptionsFrom: "box_options", WhenOptionsFrom: "box_options",
-				Free: BoxNew, FreeMaxRunes: TitleRunes, Missing: BoxHere,
-				Note: "one of box_options, or new: followed by a title",
-			},
 		},
 	}
 }
@@ -144,7 +131,7 @@ type FileCallers map[string][]string
 // evidence never contains another file's model output, so file requests are
 // independent and a reworded file does not propagate through the call graph.
 func FileRow(
-	place atlas.Place, directory atlas.Place, siblings []string,
+	place atlas.Place, directory atlas.Place,
 	lines Lines, places map[string]atlas.Place, calling FileCallers,
 ) table.Row {
 	facts := place.File
@@ -194,13 +181,6 @@ func FileRow(
 		}
 	}
 	fields = append(fields, table.Field{Name: "declaration_count", Value: len(facts.Decls)}, table.Field{Name: "declarations", Value: decls})
-	// A file without a sibling box has no placement to decide: here is the
-	// only answer, so the cell is not asked (all ten Morfeu answers were here).
-	if len(siblings) > 0 {
-		options := []string{BoxHere}
-		options = append(options, bounded(siblings, maxSiblings)...)
-		fields = append(fields, table.Field{Name: "box_options", Value: options})
-	}
 	return table.Row{ID: place.ID, Fields: fields}
 }
 

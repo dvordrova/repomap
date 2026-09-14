@@ -242,6 +242,7 @@ type StructuralEdge struct {
 	RelationID       string                              `json:"relation_id"`
 	RelationKind     programindex.RelationKind           `json:"relation_kind"`
 	Resolution       programindex.Resolution             `json:"resolution"`
+	Location         *programindex.Location              `json:"location,omitempty"`
 	ArgumentID       string                              `json:"argument_id,omitempty"`
 	ValueCandidateID string                              `json:"value_candidate_id,omitempty"`
 	SourceArgumentID string                              `json:"source_argument_id,omitempty"`
@@ -606,6 +607,9 @@ func (index Index) Snapshot() Index {
 	}
 	result.StructuralEdges = make([]StructuralEdge, len(index.StructuralEdges))
 	copy(result.StructuralEdges, index.StructuralEdges)
+	for i := range result.StructuralEdges {
+		result.StructuralEdges[i].Location = cloneLocation(index.StructuralEdges[i].Location)
+	}
 	result.Connections = make([]Connection, len(index.Connections))
 	for position, connection := range index.Connections {
 		result.Connections[position] = connection
@@ -1102,6 +1106,7 @@ func compileStructuralEdges(index programindex.Index, retained map[string]struct
 				FromSubjectID: relation.FromID, ToSubjectID: targetID,
 				Role: EdgeRelationTarget, RelationID: relation.ID,
 				RelationKind: relation.Kind, Resolution: relation.Resolution,
+				Location: cloneLocation(relation.Location),
 			})
 		}
 		for _, pattern := range relation.Patterns {
@@ -1320,6 +1325,9 @@ func validateStructuralEdge(subjects map[string]Subject, edge StructuralEdge) er
 	}
 	if !edge.Role.Valid() || !edge.Resolution.Valid() {
 		return fmt.Errorf("group index: invalid structural edge")
+	}
+	if !validOptionalLocation(edge.Location) || edge.Location != nil && edge.Role != EdgeRelationTarget {
+		return fmt.Errorf("group index: invalid structural edge location")
 	}
 	switch edge.Role {
 	case EdgeObjectOwner:

@@ -21,8 +21,8 @@ new description or selection requests.
 - The atlas (`internal/atlas`) is the model path. `places` builds
   `places.json` from the program indexes, claims, facts and corpus: every
   directory and file, the declarations of a file with the first sentence of
-  their docstrings, every callable and type symbol plus other declarations
-  within the first ten ranked candidates per file, the boundaries
+  their docstrings, every eligible callable, type, module body and module-level
+  value without a per-file rank cutoff, the boundaries
   (native routes, client calls, listeners, configuration reads and supported SDK source candidates), the
   file-to-file edges and the seeds. Native listener addresses keep the fixed
   `listen_address` kind; they remain available to reading and matching but do
@@ -38,12 +38,13 @@ new description or selection requests.
   a sibling target's fact. Shared source context uses the original SubjectID
   before a target-scoped ObjectID. `reading` walks them in rounds and asks
   one keyed table per round: directories by depth, independent files with direct caller facts,
-  symbols, boundaries, the parts of a target (one row asking for
-  exactly `want` names, then every top box choosing from that closed list),
+  symbols, boundaries, declaration-based responsibilities and their larger areas,
   the drawn arrows, the portfolio, the joints. A row carries the place's own facts and its directory's line, one step up.
   File callers contribute deterministic facts, never another file's model
-  line. Description candidates include every callable and the first ten ranked
-  declarations; additional types remain available to question reading. An
+  line. Description candidates include every eligible declaration in authored
+  code; visibility, documentation and callers order them without removing
+  lower-ranked evidence. Generated declarations retain their existing source
+  evidence without becoming description candidates. An
   accepted directory `open=no` can leave descendant directory/file rows unasked
   in exploration mode. Symbol selection still reviews its complete candidate
   set; caption requests follow the existing displayed-key selection, not an
@@ -58,7 +59,8 @@ new description or selection requests.
   remain available. Other tables retain their owning context and round bounds.
   The actual prepared provider request still obeys the shared transport envelope.
   The model writes one line or one closed choice per
-  cell; the code owns membership, arrows and their direction, joints by
+  cell; the architecture stage selects membership, while code validates exact
+  references and owns native arrows and their direction, joints by
   matched values, counts and identities. Rejected independent rows fall back on
   their own deterministic lines and are written to `rejected.jsonl`; valid
   neighbours survive in the original exact-response cache. An entirely refused
@@ -79,6 +81,55 @@ new description or selection requests.
   catalogue and demonstrate both modes. If requested, `open` is a mandatory
   `yes`/`no` string; prompts must not forbid it by prescribing only the base
   two cells. A missing choice still refuses only its own row.
+
+## Architectural responsibilities
+
+`reading/design.go` owns the ordinary `atlas_zones` stage. File captions do not
+assign files to directories, neighbouring boxes or a `new:` title. Temporary
+file inventory is used during caption selection only. Design reading receives
+every declaration in the target, its signature and author documentation,
+available native call/binding observations with local callee refs, literal
+values and resolution, accepted activation/caption interpretations, and the
+complete available README/document context. Paths remain source addresses and
+context; they do not determine architectural ownership.
+
+Source-located module bodies with observed calls, external invocations,
+execution, reads or writes enter the same closed declaration catalogue. This
+retains top-level startup and registration activity without assigning it to an
+unrelated function in the file. Imports and containment alone do not create a
+module-body candidate. Its native kind and exact source/call identities remain
+visible to the existing symbol, boundary and design stages.
+
+The model selects cohesive responsibilities by closed declaration refs. A part
+may cross directories, and declarations in one file may belong to different
+parts. A meaningful collaborator may be a single declaration. There is no fixed
+number of parts or areas. Consequential responsibilities such as input checks
+and supplied-code execution retain their actual runtime/caller context; shared
+types or absent observations cannot establish a runtime check or its absence.
+The same owner groups accepted parts into larger areas with their declarations
+and native collaboration context, rather than only titles and file counts.
+
+Requests split only for the actual provider envelope, preserving whole input
+items. After a split, accepted parts undergo aggregate merge review; rejected
+merge decisions retain their original accepted parts. Unknown members are
+discarded. Conflicting groups are refused together, so response order cannot
+choose ownership; independent valid groups survive. Missing decisions remain
+explicit source inventory, with no inherited directory membership or invented
+area. Rejections point to the saved raw response. An area must contain at least
+two distinct accepted parts. Group IDs derive from target and exact member IDs,
+not generated names. A target description reads its accepted responsibilities
+even for a single-target run; it does not inherit a directory caption.
+
+Atlas v8 saves explicit `member_ids`; one file may appear in multiple parts with
+different declarations. Native lexical children inherit their owning
+declaration's part. GroupsIndex retains every original subject and structural
+relation, and projects cross-part native relationships with exact subject IDs,
+locations and original resolution, including calls within one source file.
+File endpoints acquire a part only when all their declarations share that part.
+Selecting a module body does not assign other declarations in its file; those
+retain their separate accepted or unassigned membership. Native lexical
+inheritance within a selected callable or class is unchanged.
+The browser does not choose, validate or repair architectural membership.
 
 ## Operation ownership
 
@@ -160,6 +211,15 @@ semantic repair enforces this distinction.
   the shared glossary without new definition calls or a second semantic graph.
   Effects implemented elsewhere still require their
   actual source contract; method ownership alone does not establish them.
+
+  This currently covers nominal native type declarations, not every domain
+  value. Functions returning maps/vectors and constants keep their callable or
+  variable identity; their existing descriptions are available within the
+  owning part. An architectural core responsibility does not imply a declared
+  data type. In functional code, missing concept cards therefore do not prove
+  missing native extraction or an absence of domain entities. Recognizing such
+  values as independent concepts would require an explicit source-grounded
+  interpretation contract, not a renderer name/path heuristic.
 
 Symbols and Types may also return one short English `alias` beside their
 explanation, through the same existing table request. It is an optional
@@ -421,6 +481,13 @@ an operation's path only if its caller is reached; otherwise it remains visible
 on the caller's group. Cross-component endpoints link to the matching operation
 where its anchor is known. These are possible static paths, not a runtime trace;
 unresolved dispatch and model integrations use dashed lines.
+
+The common system map composes these saved per-input paths across exact matched
+input endpoints, with cycle protection. Reaching a peer part alone never starts
+all its inputs. Each continued path retains a source witness from both sides;
+the integration step remains distinct from a native call. External communication
+belongs to an input only when its original caller subject is reached by that
+input's execution relations, not merely when its owning part is reached.
 
 Independent joint protocol decisions additionally use exact row memos keyed by the complete boundary, eligible peer catalogue and target context. The memo restores and revalidates its original response row; equal labels alone do not establish equivalent inputs or a match.
 

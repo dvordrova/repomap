@@ -56,6 +56,16 @@ func (links pageLinks) static() bool { return links.repositoryURL != "" }
 
 func (links pageLinks) served() bool { return len(links.sourceIDs) > 0 }
 
+// The reviewed root can be a subdirectory of the Git repository. Keep the
+// header pointed at that recorded directory, just like its source anchors.
+func (links pageLinks) rootURL() string {
+	if links.pathPrefix == "" || !links.static() {
+		return links.repositoryURL
+	}
+	href := links.permalink("", 0)
+	return strings.Replace(strings.TrimSuffix(href, "/"), links.blobPrefix, strings.Replace(links.blobPrefix, "blob", "tree", 1), 1)
+}
+
 func (links pageLinks) anchor(path string, line, column int) pageAnchor {
 	anchor := pageAnchor{Path: path, Line: line, Text: path}
 	if line > 0 {

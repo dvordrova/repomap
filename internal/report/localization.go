@@ -518,6 +518,9 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 		for i := range section.Outbound {
 			row := &section.Outbound[i]
 			row.SummaryRef = add("summary", &row.Summary)
+			for j := range row.Callers {
+				add("label", &row.Callers[j].Title)
+			}
 		}
 		// Action names are stable English labels or exact command/path syntax.
 		// Their descriptions remain prose, regardless of the name's origin.
@@ -545,6 +548,7 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 					group.Operations[j].SummaryRef = add("summary", &group.Operations[j].Summary)
 				}
 				connections(group.Connections)
+				connections(group.InternalConnections)
 			}
 		}
 		if section.Flow != nil {

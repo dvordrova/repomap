@@ -46,6 +46,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   module caches, cap package-level parallelism at four, and give each test
   binary at most five minutes. Focused commands must keep the same or tighter
   bounds; ordinary development must not relocate `GOCACHE` or `GOMODCACHE`.
+- The owner uses the default system repomap response cache for ordinary
+  acceptance runs as well. Do not create a separate model cache per repository
+  or UI investigation with `--debug-dir`. Temporary rendered HTML and browser
+  servers may stay under the task's temporary directory. System Go caches and
+  the configured official DeepSeek endpoint are authorized for these runs.
 - Product acceptance means running that binary on a real repository through
   the normal online provider path. Offline runs, fixtures, replay commands, and
   helper tools are not acceptance evidence.
@@ -106,3 +111,19 @@ coverage. Counts alone are insufficient: inspect which subjects disappeared
 and whether their responsibilities remain explained elsewhere. Then compare
 elapsed time, provider tokens/requests, native preparation work and disk use.
 No percentage of closed code or file-length cutoff is an acceptance rule.
+
+## Interactive report assets
+
+`internal/report/web` owns the React Flow + ELK display layer. `make ui-build`
+uses the developer's Node/npm installation and ordinary shared npm cache to
+rebuild the checked-in `templates/js/27-report-ui.js` and
+`templates/css/47-flow.css`. Dependency versions and the lockfile are pinned;
+licenses ship in the generated JS. `make ui-test` checks real ELK routing and
+input inventory retention, then verifies that generated files match sources.
+Neither `go install` nor `make build` invokes Node or a JavaScript builder.
+
+After asset changes, run focused report tests/vet, `make build`, and ordinary
+`repomap render` on the same completed runs and translations. Browser acceptance
+covers source/question return, exact input selection, map camera stability,
+connection-label navigation, dense areas and the separate reading column. The
+report contains the runtime JS/CSS inline and needs no network asset requests.

@@ -486,9 +486,12 @@ func TestOpenIncludesGeneratedAndUntrackedSourceWithoutGit(t *testing.T) {
 		".terraform/providers/x/README.md": "installed provider documentation\n",
 		"custom-env/pyvenv.cfg":            "home = /python\n",
 		"custom-env/lib/dep.py":            "external dependency\n",
-		".github/workflows/ci.yml":         "on: push\n",
-		"tools/.golangci.yaml":             "linters: {}\n",
-		"state/example.bin":                "binary fixture data\n",
+		".go/pkg/mod/cache/download/go.opentelemetry.io/otel/@v/list": "v1.45.0\n",
+		".go/pkg/mod/go.opentelemetry.io/otel@v1.45.0/go.mod":         "module go.opentelemetry.io/otel\n\nreplace go.opentelemetry.io/otel/metric => ./metric\n",
+		".go/pkg/mod/go.opentelemetry.io/otel@v1.45.0/trace.go":       "package otel\n",
+		".github/workflows/ci.yml":                                    "on: push\n",
+		"tools/.golangci.yaml":                                        "linters: {}\n",
+		"state/example.bin":                                           "binary fixture data\n",
 	}
 	for name, content := range files {
 		writeCorpusFile(t, repo, name, content, 0o600)
@@ -516,7 +519,7 @@ func TestOpenIncludesGeneratedAndUntrackedSourceWithoutGit(t *testing.T) {
 				t.Fatalf("%s: wrong current content for %s: %v", state, name, err)
 			}
 		}
-		for _, name := range []string{"reports/README.md", "node_modules/dep/index.js", "custom-env/lib/dep.py", ".history/README.md", ".terraform/providers/x/README.md"} {
+		for _, name := range []string{"reports/README.md", "node_modules/dep/index.js", "custom-env/lib/dep.py", ".history/README.md", ".terraform/providers/x/README.md", ".go/pkg/mod/go.opentelemetry.io/otel@v1.45.0/go.mod", ".go/pkg/mod/go.opentelemetry.io/otel@v1.45.0/trace.go"} {
 			if _, ok := opened.ID(name); ok {
 				t.Fatalf("%s: included excluded input %s", state, name)
 			}

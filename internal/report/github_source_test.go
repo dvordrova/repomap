@@ -76,3 +76,17 @@ func TestResolveGitHubRepositoryURLInfersRepositoryFromOrigin(t *testing.T) {
 		t.Fatalf("mismatched origin error = %v", err)
 	}
 }
+
+func TestReviewedRootLinkKeepsNestedDirectory(t *testing.T) {
+	for _, prefix := range []string{"/blob/", "/-/blob/"} {
+		links := pageLinks{repositoryURL: "https://example.test/owner/repo", blobPrefix: prefix, revision: "abc", pathPrefix: "examples/tutorial game"}
+		want := "https://example.test/owner/repo" + strings.Replace(prefix, "blob", "tree", 1) + "abc/examples/tutorial%20game"
+		if got := links.rootURL(); got != want {
+			t.Fatalf("root URL = %q, want %q", got, want)
+		}
+		links.pathPrefix = ""
+		if links.rootURL() != links.repositoryURL {
+			t.Fatal("a full repository should link to its root")
+		}
+	}
+}

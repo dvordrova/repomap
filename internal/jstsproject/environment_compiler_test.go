@@ -36,7 +36,7 @@ func TestCumulativeJSTSNativeCompilerTypeMembers(t *testing.T) {
 	root := t.TempDir()
 	_, file, _, _ := runtime.Caller(0)
 	fixture := filepath.Join(filepath.Dir(file), "../../testdata/repositories/jsts")
-	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/platform.ts", "src/server.ts", "src/type-members.ts", "tsconfig.json"}
+	tracked := []string{"package.json", "shared/contracts.ts", "src/ambiguity.tsx", "src/destinations.ts", "src/market-worker.js", "src/platform.ts", "src/server.ts", "src/type-members.ts", "tsconfig.json"}
 	for _, name := range tracked {
 		data, err := os.ReadFile(filepath.Join(fixture, name))
 		if err != nil {
@@ -61,6 +61,7 @@ func TestCumulativeJSTSNativeCompilerTypeMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCumulativeJSTSTypeMembers(t, result, index, lines.QuestionRows(graph))
+	assertCumulativeJSTSValueReads(t, result, index)
 }
 
 // A real Node executable in an empty prefix makes missing-compiler checks

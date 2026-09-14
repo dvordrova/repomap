@@ -28,9 +28,11 @@
     content.tabIndex = 0;
     content.setAttribute('role', 'region');
     content.setAttribute('aria-label', rmT('Node description and sources'));
-    var hint = document.createElement('p');
+    var hint = document.createElement('div');
     hint.className = 'map-inspector-hint';
-    hint.textContent = rmT(map.hasAttribute('data-map-explorer')?'Click a part or code element to keep its explanation here.':'Hover or focus a node to read about it.');
+    var home = map.hasAttribute('data-system-map') && document.querySelector('template[data-system-reading-home]');
+    if(home)hint.appendChild(home.content.cloneNode(true));
+    else hint.textContent = rmT(map.hasAttribute('data-map-explorer')?'Click a part or code element to keep its explanation here.':'Hover or focus a node to read about it.');
     content.appendChild(hint); inspector.appendChild(content); workspace.appendChild(inspector);
     var continuation = document.createElement('div');
     continuation.className = 'map-inspector-continuation';
@@ -62,6 +64,7 @@
     }
 
     function preview(event) {
+      if(map.hasAttribute('data-system-map'))return;
       var node = event.currentTarget;
       edges = map.querySelectorAll('.map-edge, .map-edge-label');
       // An open area's description stays in the inspector while the map
@@ -141,6 +144,7 @@
   }
 
   function bindControls(map) {
+    if(map.hasAttribute('data-system-map'))return;
     var controls = map.querySelector('[data-map-controls]');
     var stage = map.querySelector('[data-map-stage]');
     var svg = map.querySelector('svg');
@@ -201,7 +205,7 @@
     resize.observe(svg);
 
     function readable() {
-      scale = readableScale;
+      scale = map.hasAttribute('data-system-map') ? Math.max(readableScale,stage.clientWidth/baseWidth) : readableScale;
       apply();
     }
 
@@ -330,6 +334,13 @@
     var inspector=content.closest('.map-inspector'),heading=document.createElement('div');
     heading.className='map-inspector-heading';content.before(heading);
     content.appendChild(card);
+    if(map.hasAttribute('data-system-map')){
+      // Only connection evidence has a hover preview. Selected card details
+      // remain mounted and usable while crossing the canvas to reach them.
+      var mapPreview=document.createElement('div');mapPreview.className='system-map-preview';mapPreview.hidden=true;inspector.appendChild(mapPreview);
+      map.clearMapPreview=function(){mapPreview.hidden=true;inspector.classList.remove('has-map-preview');};
+      map.previewConnection=function(edge){mapPreview.replaceChildren();var title=document.createElement('strong'),body=document.createElement('div');connectionReading(edge,title,body);mapPreview.append(title,body);mapPreview.hidden=false;inspector.classList.add('has-map-preview');};
+    }
     new ResizeObserver(function () { content.dispatchEvent(new Event('scroll')); }).observe(card);
 
     function sentences(id) {
@@ -345,16 +356,17 @@
       }
       return out;
     }
-    var inspectedNode=null, inspectionRevision=0, remembered=new Map();
+    var inspectedNode=null, inspectionKey='', inspectionRevision=0, inspectionPending=false, remembered=new Map();
     function remember(){
-      if(!inspectedNode||card.classList.contains('map-card-connection'))return;
-      remembered.set(inspectedNode,{concept:map.explorerMember?.key,scroll:content.scrollTop});
+      if(inspectionPending||!inspectedNode||card.classList.contains('map-card-connection'))return;
+      remembered.set(inspectionKey,{concept:map.explorerMember?.key,scroll:content.scrollTop,
+        expanded:Array.from(card.querySelectorAll('details')).map(function(detail,index){return detail.open?index:-1;}).filter(function(index){return index>=0;})});
     }
     content.addEventListener('scroll',remember);
     function show(node) {
-      remember();inspectedNode=node;
+      remember();inspectedNode=node;inspectionKey=node.id+'\0'+(map.inspectedOperation?.id||'');inspectionPending=true;
       map.explorerMember=null;
-      var saved=remembered.get(node), ticket=++inspectionRevision;
+      var saved=remembered.get(inspectionKey), ticket=++inspectionRevision;
       content.scrollTop = 0;
       card.classList.remove('map-card-connection');
       var id = node.getAttribute('data-node');
@@ -362,7 +374,7 @@
       var html = '<div class="map-card-intro">';
       if(map.exploreNode){
         var current=node.dataset.activation?map.explorerOperation===node&&map.dataset.operationPinned==='true':map.explorerScope===id;
-        html+='<span class="map-card-kind">'+(current?'':rmT('Preview')+' · ')+(node.dataset.activation?rmT('Operation')+(counts?' · '+escapeText(counts):''):node.dataset.branch==='component'?rmT('Component'):node.dataset.branch?rmT('Area'):rmT('Part'))+'</span>';
+        html+='<span class="map-card-kind">'+(current?'':rmT('Preview')+' · ')+(node.dataset.itemKind?rmT(node.dataset.itemKind):node.dataset.activation?rmT('Operation')+(counts?' · '+escapeText(counts):''):node.dataset.branch==='component'?rmT('Component'):node.dataset.branch?rmT('Area'):rmT(map.itemKind?map.itemKind(node):'Part'))+'</span>';
       }
       html += '<b>' + escapeText(titleOf(node)) + '</b>';
       var summary = node.getAttribute('data-summary');
@@ -390,13 +402,14 @@
       var operation = map.inspectedOperation;
       var witness = operation && !node.dataset.activation && JSON.parse(operation.dataset.callPaths || '{}')[id];
       if (witness && witness.length) {
-        html += '<details class="call-path"><summary>'+rmT.html('Why it appears in {0}',operation.dataset.title)+'</summary><p>'+rmT.html('One shortest static call path:')+'</p><ol>';
+        html += '<details class="call-path"><summary>'+rmT.html('Why it appears in {0}',operation.dataset.title)+'</summary><p>'+rmT.html('One shortest static path:')+'</p><ol>';
         witness.forEach(function (step) {
-          html += '<li>'+(step.possible?("<span class=\"possible\">"+rmT.html("possible call")+"</span> "):'')+'<strong>'+escapeText(step.name)+'</strong><br>';
+          html += '<li>'+((step.possible||step.read)?("<span class=\"possible\">"+rmT.html(step.read?(step.possible?"possible read":"read"):step.integration?"possible integration":"possible call")+"</span> "):'')+'<strong>'+escapeText(step.name)+'</strong><br>';
           if (step.href) html += '<a target="_blank" rel="noopener" href="'+escapeText(step.href)+'">'+escapeText(step.source)+'</a>';
           else if (step.open) html += '<a href="#" data-open="'+escapeText(step.open)+'">'+escapeText(step.source)+'</a>';
           else if(step.no_source) html += '<span title="'+escapeText(rmT('No source'))+'">'+escapeText(step.source)+'</span>';
           else html += escapeText(step.source);
+          if(step.read_at) html += '<br>'+rmT.html('Read at')+' '+repomapMembers.sourceLink(step.read_at).outerHTML;
           html += '</li>';
         });
         html += '</ol></details>';
@@ -409,7 +422,6 @@
       if (keys.length) html += '<ul class="map-card-keys">' + keys.map(function (k) { return '<li><code>' + k.replace(/ — .*$/, '') + '</code>' + (k.indexOf(' — ') > 0 ? ' — ' + k.slice(k.indexOf(' — ') + 3) : '') + '</li>'; }).join('') + '</ul>';
       var arrows = map.classList.contains('repo-map') || witness ? [] : sentences(id);
       if (arrows.length) html += '<ul>' + arrows.map(function (a) { return '<li>' + escapeText(a) + '</li>'; }).join('') + '</ul>';
-      html += '<span class="map-card-hint">'+(node.getAttribute('data-activation')?rmT('Click to keep this operation selected. Open code using the source link.'):rmT('click — explore'))+'</span>';
       card.innerHTML = html+'</details>';
       // Keep the current object and term above the scrolling evidence. This
       // is a reserved row of the inspector, never an overlay on map controls.
@@ -417,12 +429,18 @@
       var objectHeading=document.createElement('div'),kindHeading=card.querySelector('.map-card-kind');
       if(kindHeading)objectHeading.appendChild(kindHeading);
       objectHeading.appendChild(card.querySelector('.map-card-intro>b'));heading.appendChild(objectHeading);
+      if(map.closeDetails){
+        objectHeading.className='map-object-heading';
+        var close=document.createElement('button');close.type='button';close.className='map-close-details';
+        close.setAttribute('aria-label',rmT('Close details'));close.innerHTML='<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="m5 12 5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        close.addEventListener('click',function(){map.closeDetails();});objectHeading.appendChild(close);
+      }
       heading.classList.toggle('has-concepts',concepts.length>0);
-      rmLocalReadingActions(heading,card.querySelector('.map-card-intro'),function(){
+      if(node.dataset.branch!=='communication')rmLocalReadingActions(heading,card.querySelector('.map-card-intro'),function(){
         var direct=card.querySelector('.map-card-intro a');
         if(direct){direct.click();return;}
-        var evidence=card.querySelector('.map-card-evidence');evidence.open=true;
-        evidence.scrollIntoView({block:'nearest'});
+        var evidence=card.querySelector('.map-all-members')||card.querySelector('.map-card-evidence');
+        if(evidence){if(evidence.tagName==='DETAILS')evidence.open=true;evidence.scrollIntoView({block:'nearest'});}
       });
       map.inspectConcept=function(index){
         var panel=card.querySelector('.map-concepts');if(!panel)return;
@@ -438,19 +456,19 @@
         map.dispatchEvent(new Event('repomap:reading'));remember();
       };
       if(concepts.length){
-        var list=document.createElement('details');list.className='map-all-members';
-        var label=document.createElement('summary');label.textContent=rmT('All {0} →',concepts.length);list.appendChild(label);
+        var list=document.createElement('section');list.className='map-all-members';
+        var label=document.createElement('h5');label.textContent=rmT('Code in this part');list.appendChild(label);
         list.appendChild(repomapMembers.grid(map,node));card.appendChild(list);
         if(saved?.concept){var selected=concepts.findIndex(function(c){return repomapMembers.sourceKey(c.source)===saved.concept;});map.inspectConcept(selected);}
       }
       var actions=document.createElement('div');actions.className='map-card-actions';card.querySelector('.map-card-intro').appendChild(actions);
       if(map.exploreNode && !node.dataset.activation){
-        if(map.explorerScope!==id){var explore=document.createElement('button');explore.type='button';explore.textContent=node.dataset.branch?rmT('Explore these parts'):rmT('Explore connections');explore.addEventListener('click',function(){map.exploreNode(id);});actions.appendChild(explore);}
+        if(!map.hasAttribute('data-system-map')&&map.explorerScope!==id){var explore=document.createElement('button');explore.type='button';explore.textContent=node.dataset.branch?rmT('Explore these parts'):rmT('Explore connections');explore.addEventListener('click',function(){map.exploreNode(id);});actions.appendChild(explore);}
         var href=node.getAttribute('href')||'';
         var destination=href.charAt(0)==='#'&&document.getElementById(href.slice(1));
-        if(destination&&href!=='#'+id&&destination!==map.closest('[data-report-page]')){var detail=document.createElement('a');detail.href=href;detail.textContent=node.dataset.branch?rmT('Open component'):rmT('Code and all group details');detail.className='map-details-link';actions.appendChild(detail);}
+        if(destination&&node.dataset.branch&&href!=='#'+id&&destination!==map.closest('[data-report-page]')){var detail=document.createElement('a');detail.href=href;detail.textContent=rmT('Open component');detail.className='map-details-link';actions.appendChild(detail);}
         var users=map.operationChoices(id);
-        if(users.length){var usage=document.createElement('details'),summary=document.createElement('summary');summary.textContent=rmT('Related operations for {0} · {1}',titleOf(node),users.length);usage.appendChild(summary);
+        if(users.length){var usage=document.createElement('details'),summary=document.createElement('summary');usage.className='map-related-operations';summary.textContent=rmT('Related operations for {0} · {1}',titleOf(node),users.length);usage.appendChild(summary);
           users.forEach(function(op){var b=document.createElement('button');b.type='button';b.textContent=op.dataset.title;
             if(users.some(function(other){return other!==op&&other.dataset.title===op.dataset.title;})&&op.dataset.sourceText)b.textContent+=' · '+op.dataset.sourceText;
             b.addEventListener('click',function(){
@@ -462,7 +480,11 @@
       if(node.dataset.activation&&!witness?.length&&step<0&&!keys.length&&!arrows.length)evidence.remove();
       else actions.appendChild(evidence);
       if(!actions.childElementCount)actions.remove();
-      requestAnimationFrame(function(){if(inspectionRevision===ticket&&!card.hidden)content.scrollTop=saved?.scroll||0;});
+      requestAnimationFrame(function(){if(inspectionRevision===ticket&&!card.hidden){
+        if(saved)card.querySelectorAll('details').forEach(function(detail,index){detail.open=saved.expanded.includes(index);});
+        content.scrollTop=saved?.scroll||0;
+        inspectionPending=false;
+      }});
     }
     map.explainSource=function(source){
       if(!inspectedNode)return;
@@ -471,31 +493,34 @@
       if(index>=0)map.inspectConcept(index);
     };
     map.showAllMembers=function(node){map.showNode(node);var list=card.querySelector('.map-all-members');if(list){list.open=true;list.scrollIntoView({block:'nearest'});}};
-    map.showNode=function(node){if(map.exploreNode||!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');}};
+    map.showNode=function(node){if(map.exploreNode||!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');map.dispatchEvent(new CustomEvent('repomap:inspect',{detail:{node:node,card:card}}));}};
     map.showMember=function(node,item){
       map.showNode(node);map.explainSource({href:item.source.Href,open:item.source.Open,key:repomapMembers.sourceKey(item.source)});
       var frame=inspector.getBoundingClientRect();
       if(frame.bottom>window.innerHeight||frame.top<0)inspector.scrollIntoView({block:'nearest'});
     };
-    map.clearInspection=function(){card.hidden=true;map.explorerMember=null;map.querySelector('.map-inspector').classList.remove('has-preview');map.dispatchEvent(new Event('repomap:reading'));};
-    map.addEventListener('repomap:connection',function(event){
-      remember();inspectionRevision++;
-      content.scrollTop = 0;
-      card.classList.add('map-card-connection');
-      var edge=event.detail;card.replaceChildren();var title=document.createElement('b');title.textContent=titleOf(byId[edge.from])+' → '+titleOf(byId[edge.to]);heading.replaceChildren(title);heading.classList.remove('has-concepts');
-      var kind=document.createElement('p');kind.textContent=edge.possible?rmT('Interpreted connection or possible dispatch'):rmT('Code connections');card.appendChild(kind);
+    map.clearInspection=function(){inspectionRevision++;inspectionPending=false;card.hidden=true;heading.replaceChildren();content.scrollTop=0;inspectedNode=null;map.explorerMember=null;map.querySelector('.map-inspector').classList.remove('has-preview');map.dispatchEvent(new Event('repomap:reading'));};
+    function connectionReading(edge,title,body){
+      title.textContent=titleOf(byId[edge.from])+' → '+titleOf(byId[edge.to]);
+      var kind=document.createElement('p');kind.textContent=edge.possible?rmT('Interpreted connection or possible dispatch'):rmT('Code connections');body.appendChild(kind);
       edge.relations.forEach(function(relation){var row=document.createElement('p');
-        [relation.from,relation.to].forEach(function(id,i){if(i)row.appendChild(document.createTextNode(' → '+relation.label+' → '));var n=byId[id];if(!n)return;var a=document.createElement('button');a.type='button';a.textContent=titleOf(n);a.addEventListener('click',function(){if(map.exploreNode)map.exploreNode(id);else n.click();});row.appendChild(a);});card.appendChild(row);
-        if(relation.summary){var summary=document.createElement('p');summary.textContent=relation.summary;summary.dataset.displayRef=relation.summaryRef||'';card.appendChild(summary);}
+        [relation.from,relation.to].forEach(function(id,i){if(i)row.appendChild(document.createTextNode(' → '+relation.label+' → '));var n=byId[id];if(!n)return;var a=document.createElement('button');a.type='button';a.textContent=titleOf(n);a.addEventListener('click',function(){if(map.revealNode)map.revealNode(n,false);else if(map.exploreNode)map.exploreNode(id);else n.click();});row.appendChild(a);});body.appendChild(row);
+        if(relation.summary){var summary=document.createElement('p');summary.textContent=relation.summary;summary.dataset.displayRef=relation.summaryRef||'';body.appendChild(summary);}
         var evidenceKind=document.createElement('span');evidenceKind.className='map-card-meta';evidenceKind.textContent=relation.possible?rmT('Interpreted connection or possible dispatch'):rmT('Code connections');row.appendChild(evidenceKind);
-        [['fromSource','fromText','fromNoSource'],['toSource','toText','toNoSource']].forEach(function(fields){if(!relation[fields[0]]&&!relation[fields[2]])return;var link=repomapMembers.sourceLink({Href:relation[fields[0]],Text:relation[fields[1]],NoSource:relation[fields[2]]});link.className='map-details-link';card.appendChild(link);});
+        [['fromSource','fromText','fromNoSource'],['toSource','toText','toNoSource']].forEach(function(fields){if(!relation[fields[0]]&&!relation[fields[2]])return;var link=repomapMembers.sourceLink({Href:relation[fields[0]],Text:relation[fields[1]],NoSource:relation[fields[2]]});link.className='map-details-link';body.appendChild(link);});
       });
+    }
+    map.addEventListener('repomap:connection',function(event){
+      remember();inspectionRevision++;map.clearMapPreview?.();content.scrollTop=0;card.classList.add('map-card-connection');card.replaceChildren();
+      var title=document.createElement('b');heading.replaceChildren(title);heading.classList.remove('has-concepts');connectionReading(event.detail,title,card);
       card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');
     });
     for (var n = 0; n < nodes.length; n++) {
       // The native title remains in the static HTML for readers without JS.
       var title = nodes[n].querySelector('title');
-      if(map.hasAttribute('data-map-explorer')){
+      if(map.hasAttribute('data-system-map')){
+        if(title)title.remove();
+      }else if(map.hasAttribute('data-map-explorer')){
         // Hover may emphasize neighbours and answers "what is this" in a
         // readable card beside the pointer; only an explicit choice changes
         // the reading panel or the canvas. The native title tooltip, which
@@ -507,8 +532,7 @@
             var label=document.createElement('span');label.className='map-card-kind';label.textContent=rmT(kind);
             var name=document.createElement('b');name.textContent=node.dataset.title||'';
             var summary=document.createElement('p');summary.textContent=node.dataset.summary||'';
-            var hint=document.createElement('span');hint.className='map-card-hint';hint.textContent=rmT('click — explore');
-            hoverCard.replaceChildren(label,name,summary,hint);
+            hoverCard.replaceChildren(label,name,summary);
           });
         })(nodes[n]);
       }else{

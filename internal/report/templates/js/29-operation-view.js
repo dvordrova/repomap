@@ -1,378 +1,297 @@
-// Structure and operation context are two views of the same retained graph.
-// Opening a scope changes the projection, never the underlying evidence.
-(function () {
-  document.querySelectorAll('[data-map-explorer]').forEach(function(map){
-    var svg=map.querySelector('svg'), stage=map.querySelector('[data-map-stage]');
-    var nodes=Array.from(map.querySelectorAll('[data-node]')), byID={}, origins={}, parents={};
-    nodes.forEach(function(n){byID[n.id]=n;var r=n.querySelector('rect');origins[n.id]={x:+r.getAttribute('x'),y:+r.getAttribute('y')};children(n).forEach(function(id){(parents[id]||(parents[id]=[])).push(n.id);});});
-    function children(n){return (n.dataset.children||'').split(/\s+/).filter(Boolean);}
-    function leaves(id,seen){seen=seen||new Set();if(seen.has(id))return [];seen.add(id);var n=byID[id];if(!n)return [];var list=children(n);return list.length?list.flatMap(function(c){return leaves(c,new Set(seen));}):[id];}
-    // An identically named area with one part adds no navigable subdivision.
-    // Keep its original node and description, but open that part directly.
-    // A remote area may contain only the subset seen from this component, so
-    // its one visible member is not enough to establish a single-part area.
-    var directParts={},areaDescriptions={};
-    nodes.forEach(function(n){
-      var ids=children(n),part=ids.length===1&&byID[ids[0]];
-      if(n.dataset.branch==='area'&&n.dataset.remote!=='true'&&part&&!part.dataset.branch&&!part.dataset.activation&&n.dataset.canonicalTitle===part.dataset.canonicalTitle){
-        directParts[n.id]=part.id;(areaDescriptions[part.id]||(areaDescriptions[part.id]=[])).push(n.dataset.summary);
-      }
-    });
-    function displayed(id){return directParts[id]||id;}
-    function displayedSet(ids){return Array.from(new Set(ids.map(displayed)));}
-    var nearOf={};nodes.forEach(function(n){nearOf[n.id]=(n.dataset.near||'').split(/\s+/).filter(Boolean);});
-    var ops=nodes.filter(function(n){return n.dataset.activation;}), groups=nodes.filter(function(n){return !n.dataset.activation;});
-    var roots=displayedSet(groups.filter(function(n){return !parents[n.id];}).map(function(n){return n.id;}));
-    var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),label:(e.querySelector('title')||{}).textContent||''};});
-    svg.querySelector('.map-frames').replaceChildren();svg.querySelector('.map-lanes').replaceChildren();svg.querySelector('.map-edge-labels').replaceChildren();
-    var oldControls=map.querySelector('[data-operation-controls]');if(oldControls)oldControls.remove();
-    var bar=document.createElement('div');bar.className='explorer-controls';
-    bar.innerHTML=("<div class=\"explorer-modes\" role=\"group\" aria-label=\""+rmT.html("Explore by")+"\"><button type=\"button\" data-structure>"+rmT.html("Structure")+"</button><button type=\"button\" data-operations>"+rmT.html("Operations")+"</button></div><label class=\"explorer-search\">"+rmT.html("Find a part")+" <input type=\"search\" placeholder=\""+rmT.html("Name or description")+"\" aria-label=\""+rmT.html("Find a part")+"\"></label><button type=\"button\" data-all-uses>"+rmT.html("Clear selection")+"</button><nav class=\"explorer-breadcrumbs\" aria-label=\""+rmT.html("Map path")+"\"></nav>");
-    map.prepend(bar);
-    // Fit, zoom and reset belong with the other view controls, not on a row
-    // of their own above the map.
-    var zoomControls=map.querySelector('[data-map-controls]'),crumbRow=bar.querySelector('.explorer-breadcrumbs');
-    if(zoomControls){if(crumbRow)bar.insertBefore(zoomControls,crumbRow);else bar.appendChild(zoomControls);}
-    var structure=bar.querySelector('[data-structure]'), operationMode=bar.querySelector('[data-operations]'), search=bar.querySelector('input'), allUses=bar.querySelector('[data-all-uses]'), crumbs=bar.querySelector('nav');
-    operationMode.hidden=!ops.length;
-    var operationPicker=document.createElement('div');operationPicker.className='operation-picker';operationPicker.hidden=true;
-    operationPicker.innerHTML=("<label>"+rmT.html("Find an operation")+" <input type=\"search\" placeholder=\""+rmT.html("Command, endpoint, activity")+"\" aria-label=\""+rmT.html("Find an operation")+"\"></label><div class=\"operation-choices\"></div>");
-    bar.after(operationPicker);
-    var choices=operationPicker.querySelector('.operation-choices'), opSearch=operationPicker.querySelector('input');
-    var choiceCount=document.createElement('span');choiceCount.className='operation-choice-count';
-    operationPicker.querySelector('label').appendChild(choiceCount);
-    var visit=null, returnPath=document.createElement('div');returnPath.className='explorer-return';returnPath.hidden=true;bar.appendChild(returnPath);
-    var trail=[], operation=null, pinned=false, mode='structure', scope='', visibleIDs=[], currentEdges=[], revision=0;
-    var scopeVisits=new Map();
-    var historyRestoreHash='', historyRestoreKey='', historyRestorePromise=null, historyRevision=0;
-    function abandonHistoryRestore(){historyRestoreHash='';historyRestoreKey='';historyRevision++;map.readingRestoring=false;}
-    function button(text,fn){var b=document.createElement('button');b.type='button';b.textContent=text;b.addEventListener('click',fn);return b;}
-    function show(n){if(map.showNode)map.showNode(n);}
-    function partOwner(node){
-      var href=node.getAttribute('href')||'',destination=href[0]==='#'&&document.getElementById(href.slice(1));
-      var owner=destination&&destination.closest('[data-report-page]');
-      return (owner||map.closest('[data-report-page]')).dataset.componentName;
+// One repository drawing. Selection changes emphasis and reading, never layout.
+// All IDs, containment and operation paths come from the rendered report.
+function rmSystemProjection(nodes, edges) {
+  var byID={},parents={},inputOwner={};
+  nodes.forEach(function(n){byID[n.id]=n;});
+  nodes.forEach(function(n){if(n.inputOwner&&byID[n.inputOwner])inputOwner[n.id]=n.inputOwner;});
+  nodes.forEach(function(n){(n.children||[]).forEach(function(id){parents[id]=n.id;});});
+  edges.forEach(function(e){if(byID[e.from]?.activation && e.label==='implemented in' && byID[e.to] && !byID[e.to].activation)inputOwner[e.from]=e.to;});
+  function leaves(id,seen){seen=seen||new Set();if(seen.has(id)||!byID[id])return [];seen.add(id);var n=byID[id];return n.children?.length?n.children.flatMap(function(c){return leaves(c,new Set(seen));}):[id];}
+  var visible=nodes.filter(function(n){return !n.children?.length&&!inputOwner[n.id];}).map(function(n){return n.id;});
+  var representatives={};nodes.forEach(function(n){representatives[n.id]=[inputOwner[n.id]||n.id];});
+  var areas=nodes.filter(function(n){return n.children?.length;}).map(function(n){return {id:n.id,nodes:n.children.filter(function(id){return !inputOwner[id];})};});
+  function selection(id,operation){
+    var selected=new Set(leaves(id).map(function(n){return inputOwner[n]||n;}));if(byID[id])selected.add(inputOwner[id]||id);var active=new Set(operation?[]:selected),path=[];
+    if(operation){
+      path=edges.filter(function(e){return (e.operations||[]).includes(operation);});
+      path.forEach(function(e){active.add(inputOwner[e.from]||e.from);active.add(inputOwner[e.to]||e.to);});
+      active.add(inputOwner[operation]||operation);
+    }else if(id){edges.forEach(function(e){if(selected.has(e.from)||selected.has(e.to)){active.add(e.from);active.add(e.to);}});}
+    return {selected:selected,active:active,path:path,entry:operation?(inputOwner[operation]||operation):''};
+  }
+  return {visible:visible,areas:areas,representatives:representatives,parents:parents,inputOwner:inputOwner,leaves:leaves,selection:selection};
+}
+(function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
+  var svg=map.querySelector('svg'),stage=map.querySelector('[data-map-stage]');
+  var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
+  nodes.forEach(function(n){byID[n.id]=n;});
+  map.querySelectorAll('[data-map-alias]').forEach(function(n){aliases[n.id]=n.dataset.mapAlias;});
+  var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).filter(function(e){return e.dataset.scope!=='static';}).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),label:e.querySelector('title')?.textContent||''};});
+  var model=nodes.map(function(n){return {id:n.id,children:(n.dataset.children||'').split(/\s+/).filter(Boolean),activation:n.dataset.activation,inputOwner:n.dataset.inputOwner};});
+  var projection=rmSystemProjection(model,rawEdges),scope='',operation=null,surface=null,ready=null;
+  var searchValue='',filterValue='',selectionRevision=0,visual=null;
+  var numbered=true;
+  map.querySelector('[data-operation-controls]')?.remove();
+  var bar=rmEl('div','system-controls'),search=rmEl('input','system-search'),filter=rmEl('select','system-filter'),clear=rmEl('button','',rmT('Clear selection'));
+  search.type='search';search.placeholder=rmT('Find');search.setAttribute('aria-label',rmT('Find'));clear.type='button';
+  [['','Everything'],['component','Components'],['part','Parts'],['input','Inputs'],['external','External communication']].forEach(function(item){var option=rmEl('option','',rmT(item[1]));option.value=item[0];filter.appendChild(option);});filter.setAttribute('aria-label',rmT('Show on map'));
+  bar.append(search);map.prepend(bar);bar.appendChild(map.querySelector('[data-map-controls]'));
+  if(map.hasAttribute('data-system-map'))search.hidden=true;
+  var styleChoice=rmEl('button','',rmT('Connection labels'));styleChoice.type='button';styleChoice.setAttribute('aria-pressed','true');
+  function syncStyle(){styleChoice.textContent=rmT(numbered?'Connection labels':'Arrows');styleChoice.setAttribute('aria-pressed',String(numbered));map.classList.toggle('system-numbered',numbered);}
+  styleChoice.addEventListener('click',function(){numbered=!numbered;syncStyle();emphasize();emit();});syncStyle();
+  var results=rmEl('div','system-results');results.hidden=true;bar.after(results);
+  var colorKey=rmEl('span','flow-color-key');
+  [['','Parts'],['core','Core'],['input','Inputs'],['external','External communication']].filter(function(item){return nodes.some(function(n){return item[0]==='core'?!n.dataset.branch&&!n.dataset.activation&&n.dataset.lane==='core':item[0]?category(n)===item[0]:!n.dataset.branch&&category(n)==='part'&&n.dataset.lane!=='core';});}).forEach(function(item){var label=rmEl('span',item[0]);label.append(rmEl('i'),document.createTextNode(rmT(item[1])));colorKey.appendChild(label);});
+  var caption=rmEl('div','system-selection');caption.setAttribute('aria-live','polite');results.after(caption);
+  var measureControls=new ResizeObserver(function(){map.style.setProperty('--system-controls-height',(bar.offsetHeight+results.offsetHeight+caption.offsetHeight+24)+'px');});
+  [bar,results,caption].forEach(function(n){measureControls.observe(n);});
+  function kind(n){return n.dataset.itemKind||(n.dataset.activation?'Inputs':n.dataset.branch==='component'?'Component':n.dataset.branch?'Area':n.dataset.lane==='core'?'Core':n.dataset.lane==='dependencies'?'Code dependencies':n.dataset.lane==='triggers'?'Entrypoints':'Part');}
+  map.itemKind=kind;
+  function category(n){return n.dataset.activation?'input':n.dataset.itemKind==='External communication'?'external':n.dataset.branch==='component'||n.dataset.itemKind==='Component'?'component':'part';}
+  function owner(n){return document.getElementById(n.dataset.owner)?.dataset.componentName||'';}
+  function emit(){map.dispatchEvent(new Event('repomap:reading'));}
+  function address(n,newVisit){document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:n||document.getElementById('overview'),newVisit:!!newVisit}}));}
+  function path(id){var result=[],seen=new Set();while(id&&!seen.has(id)){seen.add(id);result.unshift(id);id=projection.parents[id];}return result;}
+  function matches(n){return (!filterValue||category(n)===filterValue)&&(!searchValue||(path(n.id).map(function(id){return byID[id].dataset.title;}).join(' ')+' '+n.dataset.summary+' '+owner(n)).toLowerCase().includes(searchValue.toLowerCase()));}
+  function updateResults(){
+    results.replaceChildren();results.hidden=!searchValue&&!filterValue;
+    if(results.hidden)return;
+    nodes.filter(matches).forEach(function(n){var b=rmEl('button','',n.dataset.title);b.type='button';b.dataset.selectNode=n.id;b.appendChild(rmEl('small','',owner(n)+' · '+rmT(kind(n))));b.addEventListener('click',function(){select(n,true,null,true).then(function(selected){if(selected)rmScrollToReading(map);});});results.appendChild(b);});
+    if(!results.childElementCount)results.appendChild(rmEl('p','',rmT('No matches.')));
+  }
+  function emphasize(){
+    var state=projection.selection(scope,operation?.id),has=!!scope||!!operation||!!searchValue||!!filterValue;
+    var matched=new Set();if(searchValue||filterValue)nodes.filter(matches).forEach(function(n){projection.leaves(n.id).forEach(function(id){matched.add(projection.inputOwner[id]||id);});});
+    surface?.update({scope:scope,operation:operation?.id||'',entry:state.entry,selected:state.selected,matched:matched,searching:!!searchValue||!!filterValue,numbered:numbered});
+    map.classList.toggle('system-has-selection',has);clear.disabled=!scope&&!operation;
+    renderCaption();
+    map.explorerScope=scope;map.explorerOperation=operation;map.inspectedOperation=operation;map.dataset.operationPinned=operation?'true':'false';
+  }
+  function renderCaption(){
+    caption.replaceChildren();
+    var inspector=map.querySelector('.map-inspector'),controls=map.querySelector('.map-input-context');
+    if(inspector&&!controls){controls=rmEl('div','map-input-context');inspector.prepend(controls);}
+    if(controls){controls.replaceChildren();controls.hidden=!operation;}
+    if(operation){
+      var context=rmEl('span','system-reading-context',rmT('Input')+': '+operation.dataset.title);
+      var start=rmEl('button','system-input-start',rmT('Show input'));start.type='button';start.addEventListener('click',function(){surface?.clearHover();select(operation,true,null,true);});context.appendChild(start);
+      clear.textContent=rmT('Leave input path');controls?.append(context,clear);
     }
-    function followForeign(node,allUses,source){
-      if(!node||node.dataset.remote!=='true'||node.dataset.branch)return false;
-      var href=node.getAttribute('href')||'',destination=href[0]==='#'&&document.getElementById(href.slice(1));
-      var owner=destination&&destination.closest('[data-report-page]'),other=owner&&owner.querySelector('[data-map-explorer]');
-      if(!owner||owner===map.closest('[data-report-page]'))return false;
-      // Match only the existing exact destination, never a symbol name.
-      // A cross-target stub opens the owning page, not another copy here.
-      var canonical=other&&Array.from(other.querySelectorAll('[data-node]')).find(function(candidate){return candidate.dataset.remote!=='true'&&(candidate===destination||candidate.getAttribute('href')===href);});
-      if(canonical&&other.revealNode)other.revealNode(canonical,allUses,source);
-      else {document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:destination}}));destination.scrollIntoView({block:'start'});}
-      return true;
-    }
-    ops.forEach(function(op){
-      var b=button(op.dataset.title,async function(){var same=operation===op;operation=op;pinned=true;if(!same){scope='';trail=[];visit=null;}search.value='';address(op);await render();revealChoice();show(op);orient();});b.dataset.operationChoice=op.id;
-      b.title=op.dataset.summary||'';
-      var desc=document.createElement('span');desc.textContent=rmT(op.dataset.activation)+' · '+op.dataset.operationGroup;b.appendChild(desc);choices.appendChild(b);
-      if(ops.some(function(other){return other!==op&&other.dataset.title===op.dataset.title;})&&op.dataset.sourceText){
-        var source=document.createElement('span');source.className='operation-choice-source';source.textContent=op.dataset.sourceText;b.appendChild(source);
-      }
-    });
-    function updateChoices(){
-      var matching=Array.from(choices.children).filter(function(b){return !b.hidden;}).length;
-      choiceCount.textContent=matching===ops.length?rmT('{0} operations',matching):rmT('{0} of {1} operations',matching,ops.length);
-    }
-    function filterChoices(){var term=opSearch.value.toLowerCase();choices.querySelectorAll('button').forEach(function(b){var n=byID[b.dataset.operationChoice];b.hidden=(n.dataset.title+' '+n.dataset.summary+' '+n.dataset.activation+' '+n.dataset.sourceText).toLowerCase().indexOf(term)<0;});updateChoices();}
-    function revealChoice(keepFilter){
-      if(operation&&!keepFilter){opSearch.value='';filterChoices();}
-    }
-    opSearch.addEventListener('input',filterChoices);
-    function allowed(){return operation?new Set(nearOf[operation.id].concat(operation.id)):null;}
-    function applicable(id,limit){return !limit||leaves(id).some(function(leaf){return limit.has(leaf);});}
-    function scopePath(id,seen){
-      seen=seen||new Set();if(!id||seen.has(id))return [];seen.add(id);
-      var parent=(parents[id]||[]).find(function(p){return !seen.has(p);});
-      return scopePath(parent,seen).concat(directParts[id]?[]:[id]);
-    }
-    function setScope(id){scope=displayed(id);trail=scopePath(scope).slice(0,-1);}
-    // The explanation stands beside the map, so a click never needs the page
-    // to move; only a map that is entirely out of view (a reveal from a
-    // question or a search) is brought back.
-    function stageWidth(){
-      var stage=map.querySelector('.map-stage');
-      if(stage&&stage.clientWidth)return stage.clientWidth;
-      var mapStyle=getComputedStyle(map),width=map.clientWidth-parseFloat(mapStyle.paddingLeft)-parseFloat(mapStyle.paddingRight);
-      if(window.innerWidth>1100)width-=Math.min(24*16,Math.max(17*16,width*.32))+16;
-      return width;
-    }
-    function orient(){
-      var inset=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--toolbar-height'))||0;
-      var rect=(map.querySelector('.map-stage')||bar).getBoundingClientRect();
-      if(rect.bottom<inset||rect.top>window.innerHeight)map.scrollIntoView({block:'start'});
-    }
-    function address(node){document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:node||map.closest('[data-report-page]')}}));}
-    function readingDisclosures(){return {members:!!map.querySelector('.map-all-members')?.open};}
-    function restoreDisclosures(saved){var members=map.querySelector('.map-all-members');if(members)members.open=!!saved?.members;}
-    function snapshot(){
-      var member=map.explorerMember;
-      return {scope:scope,operation:operation,pinned:pinned,mode:mode,search:search.value,
-        source:member&&member.owner===scope?{href:member.href,open:member.open,key:member.key}:null,
-        label:member&&member.owner===scope?rmT('{0} in {1}',member.name,byID[scope].dataset.title):scope?byID[scope].dataset.title:map.closest('[data-report-page]').dataset.componentName,
-        disclosures:readingDisclosures(),viewport:map.captureViewport?.(),scroll:window.scrollY};
-    }
-    async function restore(saved){
-      setScope(saved.scope);operation=saved.operation;pinned=saved.pinned;mode=saved.mode;search.value=saved.search;
-      address(byID[scope]);await render();restoreDisclosures(saved.disclosures);if(saved.source)map.explainSource(saved.source);
-      if(saved.viewport)map.restoreViewport?.(saved.viewport);window.scrollTo({top:saved.scroll,behavior:'instant'});
-    }
-    function scopeKey(id){return [mode,operation?.id||'',id].join('\0');}
-    async function open(id){
-      id=displayed(id);if((id&&!byID[id])||scope===id)return;
-      if(followForeign(byID[id]))return;
-      abandonHistoryRestore();
-      scopeVisits.set(scopeKey(scope),snapshot());
-      var previous=(!id||trail.indexOf(id)>=0)&&scopeVisits.get(scopeKey(id));
-      if(previous){await restore(previous);return;}
-      var next=byID[id];
-      if(!operation)visit=null;
-      if(next?.dataset.activation){operation=next;pinned=true;mode='operations';setScope('');}else setScope(id);
-      // Only a reader's own click on the map asks the page to follow the
-      // opened block; layouts that happen because a page was opened by a
-      // link must leave the page where the link put it.
-      map.followOpened=true;
-      search.value='';address(next);await render();orient();
-    }
-    function showReturnPath(){
-      returnPath.replaceChildren();returnPath.hidden=!visit;if(!visit)return;
-      var previous=visit;
-      returnPath.append(rmT('Opened')+' ',button(previous.operation.dataset.title,async function(){operation=previous.operation;pinned=true;mode='operations';address(operation);await render();revealChoice();show(operation);orient();}),' '+rmT('from')+' ',button(previous.origin.label,async function(){
-        operation=null;pinned=false;mode='structure';setScope(previous.origin.node.id);search.value='';address(byID[scope]);await render();
-        if(previous.origin.source)map.explainSource(previous.origin.source);orient();
-      }));
-    }
-    async function render(){
-      var ticket=++revision;map.setAttribute('aria-busy','true');
-      // A root view whose only own node is one area would show a single box
-      // reading "Open parts · N". Its parts are the first thing worth seeing,
-      // so that area is open from the start; the crumbs still name it.
-      if(!scope&&!operation&&!search.value.trim()){
-        var own=roots.filter(function(id){return byID[id].dataset.remote!=='true';});
-        if(own.length===1&&byID[own[0]].dataset.branch==='area')setScope(own[0]);
-      }
-      var previousViewport=operation&&map.explorerOperation===operation?map.captureViewport?.():null;
-      var area=!operation&&!search.value.trim()?scopePath(scope).map(function(id){return byID[id];}).filter(function(n){return n?.dataset.branch==='area';}).pop():null;
-      var viewScope=area?area.id:scope;
-      var limit=allowed(), scopeLeaves=viewScope?new Set(leaves(viewScope)):null;
-      var edges=rawEdges.filter(function(e){return operation?e.scope==='operation'&&e.operations.indexOf(operation.id)>=0:e.scope==='structure';});
-      var base=viewScope&&children(byID[viewScope]).length?children(byID[viewScope]):roots.filter(function(id){return byID[id].dataset.remote!=='true';});
-      base=base.filter(function(id){return applicable(id,limit);});
-      var term=search.value.trim().toLowerCase();
-      if(term)base=groups.filter(function(n){return applicable(n.id,limit)&&(!scopeLeaves||leaves(n.id).some(function(id){return scopeLeaves.has(id);}))&&(n.dataset.title+' '+n.dataset.summary+' '+repomapMembers.items(n).map(repomapMembers.displayName).join(' ')).toLowerCase().indexOf(term)>=0;}).map(function(n){return n.id;});
-      base=displayedSet(base);
-      var inside=area?scopeLeaves:term?new Set(base.flatMap(function(id){return leaves(id);})):null;
-      if(operation&&!term){
-        base=groups.filter(function(n){return !children(n).length&&applicable(n.id,limit);}).map(function(n){return n.id;});
-        inside=null;
-      }
-      var relevant=edges.filter(function(e){return !inside||inside.has(e.from)||inside.has(e.to);});
-      var endpoints=new Set(relevant.flatMap(function(e){return [e.from,e.to];}));
-      // A boundary is folded at the nearest unopened area/component. Edges
-      // between those boundary nodes stay in their own scope, not this one.
-      var represented=new Set(base.flatMap(function(id){return leaves(id);}));
-      function boundaryAt(id){
-        var members=leaves(id);
-        if(!members.some(function(leaf){return endpoints.has(leaf)&&!represented.has(leaf);}))return [];
-        // A peer cannot contain the part already open. Descend shared
-        // ancestors until the peer and the current scope are disjoint.
-        if(members.some(function(leaf){return represented.has(leaf);}))return children(byID[id]).flatMap(boundaryAt);
-        return [id];
-      }
-      var boundary=roots.flatMap(boundaryAt);
-      var visible=Array.from(new Set(base.concat(boundary))).filter(function(id){return applicable(id,limit);});
-      if(operation&&!term)visible=[operation.id].concat(visible.filter(function(id){return id!==operation.id;}));
-      var representatives={};
-      visible.forEach(function(id){leaves(id).forEach(function(leaf){
-        if(represented.has(leaf)&&base.indexOf(id)<0)return;
-        (representatives[leaf]||(representatives[leaf]=[])).push(id);
-      });});
-      currentEdges=repomapGraph.fold(relevant,representatives,inside);
-      if(area&&!term){
-        var outer={};Object.keys(representatives).forEach(function(id){outer[id]=inside.has(id)?[area.id]:representatives[id];});
-        currentEdges=repomapGraph.fold(relevant.filter(function(e){return inside.has(e.from)&&inside.has(e.to);}),representatives,inside)
-          .concat(repomapGraph.fold(relevant.filter(function(e){return !inside.has(e.from)||!inside.has(e.to);}),outer,inside));
-      }
-      // Standalone scope: order incoming peers, the subject, outgoing peers.
-      // Areas use a compact grid, retaining their own original child names.
-      visible.sort(function(a,b){if(!operation){if(a===scope)return -1;if(b===scope)return 1;}if(a===operation?.id)return -1;if(b===operation?.id)return 1;var ai=base.indexOf(a)>=0,bi=base.indexOf(b)>=0;if(ai!==bi)return ai?-1:1;return byID[a].dataset.title.localeCompare(byID[b].dataset.title);});
-      var boxes={};visible.forEach(function(id){boxes[id]={w:220,h:80};});
-      var layout;
-      // The explanation panel takes the right third of the workspace on wide
-      // screens, so the map's width is the stage's. The first render starts
-      // before the shared inspector mounts the stage; one microtask later the
-      // whole bundle has run and the stage can be measured. A hidden page
-      // takes the same split from the figure's width.
-      await Promise.resolve();if(ticket!==revision)return;
-      var availableWidth=stageWidth();
-      var opened=scope&&byID[scope], expanded=!term&&opened&&!opened.dataset.branch&&!opened.dataset.activation?opened:null;
-      map.classList.toggle('map-part-expanded',!!expanded);map.classList.toggle('map-operation-context',!!operation);
-      if(expanded&&boxes[expanded.id])boxes[expanded.id]=repomapMembers.size(expanded);
-      {
-      visible.forEach(function(id){
-        var node=byID[id],display=node.style.display,visibility=node.style.visibility;
-        node.style.display='';node.style.visibility='hidden';
-        node.querySelectorAll('.map-node-title').forEach(function(title){boxes[id].w=Math.max(boxes[id].w,Math.ceil(title.getComputedTextLength())+22);});
-        node.style.display=display;node.style.visibility=visibility;
-      });
-      try{layout=await repomapGraph.layout(boxes,currentEdges,area?[{id:area.id,nodes:base}]:null,availableWidth);}catch(error){
-        if(ticket!==revision)return;map.setAttribute('aria-busy','false');
-        var message=bar.querySelector('[role="alert"]');if(!message){message=document.createElement('p');message.setAttribute('role','alert');bar.appendChild(message);}message.textContent=rmT('Could not arrange this map. Try another scope.');console.error('Component map layout',error);return;
-      }
-      if(ticket!==revision)return;
-      repomapPreview.freeze(map);boxes=layout.boxes;
-      var frameLayer=svg.querySelector('.map-frames');frameLayer.replaceChildren();
-      (layout.areas||[]).forEach(function(frame){
-        var group=document.createElementNS('http://www.w3.org/2000/svg','g');group.classList.add('map-expanded-area');group.dataset.areaFrame=frame.id;
-        var rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
-        Object.entries({x:frame.x,y:frame.y,width:frame.w,height:frame.h,rx:12}).forEach(function(pair){rect.setAttribute(pair[0],pair[1]);});group.appendChild(rect);
-        var label=document.createElementNS('http://www.w3.org/2000/svg','text');label.setAttribute('x',frame.x+20);label.setAttribute('y',frame.y+27);label.textContent=byID[frame.id].dataset.title;group.appendChild(label);
-        frameLayer.appendChild(group);
-      });
-      var routed=repomapGraph.draw(map,layout.edges);
-      nodes.forEach(function(n){var b=boxes[n.id];n.style.display=b?'':'none';if(!b)return;var origin=origins[n.id];n.setAttribute('transform','translate('+(b.x-origin.x)+' '+(b.y-origin.y)+')');var rect=n.querySelector('rect');rect.setAttribute('width',b.w);rect.setAttribute('height',b.h);n.classList.toggle('map-area',!!n.dataset.branch);n.classList.toggle('operation-selected',n===operation);if(!n.dataset.activation)n.dataset.near=currentEdges.filter(function(e){return e.from===n.id||e.to===n.id;}).map(function(e){return e.from===n.id?e.to:e.from;}).join(' ');});
-      nodes.forEach(function(n){
-        n.classList.toggle('map-scope-selected',n.id===scope);n.classList.toggle('map-context-node',!!area&&base.indexOf(n.id)<0);
-        if(n.dataset.activation)return;
-        var subtitle=n.querySelector('.map-node-context');
-        if(!subtitle){subtitle=document.createElementNS('http://www.w3.org/2000/svg','text');subtitle.setAttribute('x',origins[n.id].x);subtitle.setAttribute('y',origins[n.id].y);subtitle.setAttribute('dx','11');subtitle.setAttribute('dy','56');subtitle.setAttribute('class','map-node-context');n.appendChild(subtitle);}
-        subtitle.textContent=n.dataset.branch?rmT('Open parts · {0}',children(n).length):n.id===scope?rmT('Part'):repomapMembers.items(n).length?rmT('Open key code · {0}',repomapMembers.items(n).length):rmT('Explore connections');
-      });
-      repomapMembers.draw(map,expanded,expanded&&boxes[expanded.id]);
-      var width=Math.max(300,layout.width),height=Math.max(160,layout.height);
-      svg.setAttribute('viewBox','0 0 '+width+' '+height);svg.setAttribute('width',width);svg.setAttribute('height',height);svg.style.width=width+'px';svg.style.minWidth='0';svg.style.maxWidth='none';
-      }
-      visibleIDs=visible;map.inspectedOperation=operation;map.dataset.operationPinned=pinned?'true':'false';map.classList.remove('map-previewing');
-      map.explorerScope=scope;map.explorerOperation=operation;
-      structure.setAttribute('aria-pressed',mode==='structure');operationMode.setAttribute('aria-pressed',mode==='operations');operationPicker.hidden=mode!=='operations'||!!operation;
-      allUses.hidden=!operation;allUses.textContent=rmT('Clear selection');
-      allUses.title=operation?rmT('Clear selection: {0}',operation.dataset.title):'';
-      choices.querySelectorAll('button').forEach(function(b){var selected=operation&&b.dataset.operationChoice===operation.id;b.setAttribute('aria-pressed',!!selected);});
-      updateChoices();
-      crumbs.replaceChildren();
-      var repository=document.createElement('a');repository.href='#repository-map';repository.className='explorer-repository';repository.textContent=rmT('← Repository');crumbs.appendChild(repository);
-      crumbs.appendChild(button(map.closest('[data-report-page]').dataset.componentName,function(){visit=null;open('');}));
-      if(operation){
-        var choose=document.createElement('a');choose.href='#'+map.closest('[data-report-page]').id+'-inbound';choose.textContent=rmT('Choose another operation');crumbs.appendChild(choose);
-        var label=document.createElement('strong');label.textContent='→ '+operation.dataset.title+' · '+rmT(pinned?'selected':'preview');crumbs.appendChild(label);}
-      trail.concat(scope?[scope]:[]).forEach(function(id){
-        var item=button(byID[id].dataset.title,function(){open(id);});
-        item.className='explorer-crumb';
-        var kind=document.createElement('span');kind.className='explorer-crumb-kind';kind.textContent=byID[id].dataset.branch==='component'?rmT('Component'):byID[id].dataset.branch?rmT('Area'):rmT('Part');if(byID[id].dataset.remote==='true'&&!byID[id].dataset.branch)kind.textContent+=' · '+partOwner(byID[id]);item.prepend(kind);
-        if(id===scope){item.setAttribute('aria-current','location');item.disabled=true;}
-        crumbs.appendChild(item);
-      });
-      if(scope)crumbs.prepend(button(rmT('← Back'),function(){open(trail[trail.length-1]||'');}));
-      if(area){var collapse=button(rmT('Collapse details'),function(){open(scopePath(area.id).slice(0,-1).pop()||'');});collapse.className='explorer-collapse';crumbs.appendChild(collapse);}
-      var selfCount=edges.filter(function(edge){return edge.from===edge.to&&(operation||expanded&&edge.from===scope);}).length;
-      var status=document.createElement('span');status.className='explorer-status';status.textContent=rmT('{0} parts · {1} connections',visible.filter(function(id){return !byID[id].dataset.activation;}).length,currentEdges.reduce(function(count,edge){return count+edge.relations.length;},selfCount));crumbs.appendChild(status);
-      // One line says what the operation view shows: the reader asked "what am
-      // I looking at" after the first jump into it.
-      var caption=bar.querySelector('.explorer-caption');
-      if(!caption){caption=document.createElement('p');caption.className='explorer-caption';bar.appendChild(caption);}
-      caption.hidden=!operation;
-      if(operation)caption.textContent=rmT('{0}: the dark box is the operation; below it the part with its handler and the parts that handler reaches. A solid arrow is a call in code, a dashed one an interpretation.',operation.dataset.title);
-      showReturnPath();
-      {
-        if(!previousViewport)stage.scrollTo(0,0);
-        var focused=expanded&&boxes[expanded.id]?[boxes[expanded.id]]:base.map(function(id){return boxes[id];}).filter(Boolean);
-        map.dispatchEvent(new CustomEvent('repomap:layout',{detail:{focus:focused}}));
-        if(previousViewport)map.restoreViewport?.(previousViewport);
-      }
-      function read(){if(ticket!==revision||!map.showNode)return;if(scope)show(byID[scope]);else if(operation)show(operation);else map.clearInspection();map.dispatchEvent(new Event('repomap:reading'));}
-      if(map.showNode)read();else requestAnimationFrame(read);
-      map.setAttribute('aria-busy','false');
-      return ticket;
-    }
-    structure.addEventListener('click',function(){mode='structure';operation=null;pinned=false;visit=null;address(byID[scope]);render();});
-    operationMode.addEventListener('click',async function(){mode='operations';await render();revealChoice();});
-    allUses.addEventListener('click',function(){operation=null;pinned=false;mode='structure';address(byID[scope]);render();});
-    var searchTimer=0;search.addEventListener('input',function(){visit=null;clearTimeout(searchTimer);searchTimer=setTimeout(render,200);});
-    ops.forEach(function(n){n.addEventListener('click',async function(e){e.preventDefault();e.stopImmediatePropagation();if(operation!==n)visit=null;operation=n;pinned=true;address(n);await render();revealChoice();show(n);orient();});});
-    groups.forEach(function(n){n.addEventListener('click',function(e){e.preventDefault();e.stopImmediatePropagation();open(n.id);});});
-    async function reveal(n,allUses,source){
-      if(!n||nodes.indexOf(n)<0)return;
-      if(followForeign(n,allUses,source))return;
-      abandonHistoryRestore();visit=null;scopeVisits.clear();
-      var destination=n;n=byID[displayed(n.id)];
-      if(allUses){mode='structure';operation=null;pinned=false;}
-      if(n.dataset.activation){mode='operations';operation=n;pinned=true;scope='';trail=[];}
-      else setScope(n.id);
-      search.value='';
-      // Record the destination state before layout can yield, and reveal its
-      // page before the map measures the space available to it.
-      document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:destination}}));
-      var rendered=await render();
-      if(rendered!==revision)return;
-      if(n.dataset.activation)revealChoice();
-      rmScrollToReading(map);show(n);
-      if(source)map.explainSource(source);
-    }
-    map.exploreNode=function(id){open(id);};
-    map.explorationLabel=function(){
-      var labels=[mode==='operations'?rmT('Operations'):rmT('Structure')];
-      if(operation)labels.push(operation.dataset.title+' · '+rmT(pinned?'selected':'preview'));
-      trail.concat(scope?[scope]:[]).forEach(function(id){var n=byID[id];labels.push((n.dataset.branch==='component'?rmT('Component'):n.dataset.branch?rmT('Area'):rmT('Part'))+(n.dataset.remote==='true'&&!n.dataset.branch?' · '+partOwner(n):'')+' '+n.dataset.title);});
-      if(map.explorerMember&&map.explorerMember.owner===scope)labels.push(rmT('Code element')+' '+map.explorerMember.name);
-      return labels.join(' › ');
-    };
-    map.resumeExploration=function(){if(scope)show(byID[scope]);else if(operation)show(operation);};
-    // The reading navigator owns the single browser-history entry. Supply
-    // only serializable UI state, retaining the exact declaration source.
-    map.readingState=function(){
-      var member=map.explorerMember;
-      return {scope:scope,operation:operation?.id||'',pinned:pinned,mode:mode,search:search.value,
-        source:member&&member.owner===scope?{href:member.href||'',open:member.open||'',key:member.key}:null,
-        disclosures:readingDisclosures(),viewport:map.captureViewport?.()||null};
-    };
-    map.restoreReadingState=function(saved){
-      if(!saved||(saved.scope&&!byID[saved.scope])||(saved.operation&&!byID[saved.operation]?.dataset.activation))return Promise.resolve();
-      var key=JSON.stringify([location.href,saved]);
-      if(key===historyRestoreKey&&(map.readingRestoring||JSON.stringify(map.readingState())===JSON.stringify(saved)))return historyRestorePromise||Promise.resolve();
-      var ticket=++historyRevision;historyRestoreKey=key;historyRestoreHash=location.hash;map.readingRestoring=true;
-      setScope(saved.scope||'');operation=byID[saved.operation]||null;pinned=!!saved.pinned;mode=saved.mode==='operations'?'operations':'structure';search.value=saved.search||'';
-      scopeVisits.clear();visit=null;map.explorerScope=scope;map.explorerOperation=operation;
-      historyRestorePromise=(async function(){
-        try{
-          await render();if(ticket!==historyRevision)return;restoreDisclosures(saved.disclosures);
-          if(saved.source)map.explainSource(saved.source);
-          // A previously selected term must also be clearable when the
-          // historical visit had no declaration selected.
-          else map.inspectConcept?.(-1);
-          await new Promise(requestAnimationFrame);if(ticket!==historyRevision)return;
-          if(saved.viewport)map.restoreViewport?.(saved.viewport);
-        }finally{
-          if(ticket===historyRevision){map.readingRestoring=false;map.dispatchEvent(new Event('repomap:reading'));}
-        }
-      })();return historyRestorePromise;
-    };
-    map.displayedNode=function(node){return byID[displayed(node.id)];};
-    map.areaDescriptions=function(node){return areaDescriptions[node.id]||[];};
-    map.revealNode=reveal;
-    map.findNode=function(n,source){return reveal(n,true,source);};
-    map.operationChoices=function(id){var members=new Set(leaves(id));return ops.filter(function(op){return nearOf[op.id].some(function(near){return members.has(near);});});};
-    map.chooseOperation=async function(id,origin){var op=byID[id];if(!op)return;visit=origin?{origin:origin,operation:op}:null;operation=op;pinned=true;mode='operations';setScope('');search.value='';address(op);await render();revealChoice();orient();};
-    function resetScope(){abandonHistoryRestore();setScope('');operation=null;pinned=false;mode='structure';visit=null;scopeVisits.clear();search.value='';}
-    function hashChanged(){
-      if(historyRestoreHash===location.hash){historyRestoreHash='';return;}
-      historyRestoreHash='';
-      var node=document.getElementById(location.hash.slice(1));
-      if(node===map.closest('[data-report-page]')){resetScope();render();return;}
-      reveal(node,true);
-    }
-    window.addEventListener('hashchange',hashChanged);
-    document.addEventListener('click',function(e){
-      var a=e.target.closest('a[href^="#"]');if(!a||a.closest('[data-map-explorer]')||a.hasAttribute('data-reading-map-return')||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
-      var destination=document.getElementById(a.getAttribute('href').slice(1));
-      // A component card/picker promises that component's entrance. A named
-      // return to an existing reading uses its exact scope through 45-modes.
-      if(destination===map.closest('[data-report-page]')||destination===map.closest('.component-parts')){resetScope();address(destination);render().then(function(){destination.scrollIntoView({block:'start'});});return;}
-      var source=a.closest('.learn-concept,.answer-term')?.querySelector('.model-sources a');
-      reveal(destination,!!a.closest('#learn-parts,.concept-library,.answer-term'),source&&{href:source.getAttribute('href'),open:source.dataset.open});
-    },true);
-    render();hashChanged();
+    map.querySelector('.map-reading-outside')?.remove();
+    if(visual?.readingOutside)map.querySelector('.map-inspector-heading')?.appendChild(rmEl('small','map-reading-outside',rmT('Outside this input path')));
+    caption.appendChild(colorKey);
+  }
+  function focusNode(n,center){surface?.focus(n.id,center);}
+  async function select(n,navigate,source,focus){
+    if(!n)return;
+    var ticket=++selectionRevision;map.explorerMember=null;map.clearMapPreview?.();
+    // Search is a chooser. Once a destination is chosen it must not continue
+    // highlighting every other result or covering the destination's drawing.
+    search.value=searchValue='';filter.value=filterValue='';updateResults();
+    if(n.dataset.activation){operation=n;scope='';}else scope=n.id;
+    emphasize();if(navigate)address(n,!!focus&&!!map.captureViewport?.()?.overview);
+    await ready;if(ticket!==selectionRevision)return false;map.showNode?.(n);if(source)map.explainSource?.(source);
+    if(focus)focusNode(n,!!n.dataset.activation||focus==='center');emit();return true;
+  }
+  function reset(){selectionRevision++;scope='';operation=null;surface?.clearHover();emphasize();map.clearInspection?.();emit();}
+  map.showWholeMap=async function(){
+    search.value=searchValue='';filter.value=filterValue='';updateResults();reset();
+    address(null,true);document.querySelector('.nav .find')?.restoreSearch?.();
+    await ready;await surface?.overview();emit();
+  };
+  map.componentSelection=function(){
+    if(map.captureViewport?.()?.componentsOpen===false)return '';
+    var ids=path(scope||operation?.id),component=ids.map(function(id){return byID[id];}).find(function(n){return n.dataset.branch==='component';});
+    return component?.dataset.owner||'';
+  };
+  map.selectComponent=function(id){return select(byID['system-component-'+id],true,null,'center');};
+  map.closeDetails=function(){
+    selectionRevision++;scope='';surface?.clearHover();emphasize();map.clearInspection?.();
+    address(operation||null);emit();
+  };
+  clear.addEventListener('click',function(){reset();address(null);});
+  function filterChanged(){searchValue=search.value;filterValue=filter.value;updateResults();emphasize();emit();}
+  search.addEventListener('input',filterChanged);filter.addEventListener('change',filterChanged);
+  nodes.forEach(function(n){n.addEventListener('click',function(e){e.preventDefault();e.stopImmediatePropagation();select(n,true);});});
+  var inputWrites=nodes.filter(function(n){return n.dataset.activation;}).map(function(n){return {input:n,writes:JSON.parse(n.dataset.writes||'[]')};});
+  var writeReading=null;
+  map.addEventListener('repomap:reading',function(){
+    if(!writeReading||writeReading.card.hidden)return;
+    var key=map.explorerMember?.key||'';if(key===writeReading.key)return;
+    writeReading.key=key;entityWrites(writeReading.node,writeReading.card);
   });
-})();
+  function entityWrites(n,card){
+    var entityKeys=new Set(repomapMembers.items(n).map(function(item){return repomapMembers.sourceKey(item.source);}));
+    var selectedKey=map.explorerMember?.owner===n.id?map.explorerMember.key:'';
+    var rows=inputWrites.flatMap(function(row){return row.writes.filter(function(write){return n.dataset.activation?row.input===n:entityKeys.has(repomapMembers.sourceKey(write.entity))&&(!selectedKey||repomapMembers.sourceKey(write.entity)===selectedKey);}).map(function(write){return {input:row.input,write:write};});});
+    card.querySelector('.system-entity-writes')?.remove();
+    if(!rows.length)return;
+    var section=rmEl('section','system-entity-writes');section.appendChild(rmEl('h5','',rmT('State changes')));
+    section.appendChild(rmEl('p','meta',rmT('Writes reachable in code; a call path does not prove they execute on every run.')));
+    var entities=new Map();rows.forEach(function(row){var key=repomapMembers.sourceKey(row.write.entity);if(!entities.has(key))entities.set(key,[]);entities.get(key).push(row);});
+    entities.forEach(function(changes){
+      var heading=rmEl('h6'),entity=changes[0].write;
+      var source=repomapMembers.sourceLink(entity.entity);source.textContent=entity.entity_name;heading.appendChild(source);section.appendChild(heading);
+      var inputs=new Map();changes.forEach(function(row){if(!inputs.has(row.input.id))inputs.set(row.input.id,[]);inputs.get(row.input.id).push(row);});
+      inputs.forEach(function(evidence){
+        var input=evidence[0].input;
+        if(!n.dataset.activation){var jump=rmEl('button','system-write-input',owner(input)+' / '+input.dataset.title);jump.type='button';jump.addEventListener('click',function(){select(input,true,null,true);});section.appendChild(jump);}
+        var fields=rmEl('ul','plain');evidence.forEach(function(row){
+          var write=row.write,field=rmEl('li');field.appendChild(rmEl('strong','',write.field));
+          if(write.possible)field.appendChild(rmEl('span','possible',' · '+rmT('possible')));
+          field.appendChild(document.createElement('br'));field.appendChild(repomapMembers.sourceLink(write.source));
+          var path=rmEl('details','call-path');path.appendChild(rmEl('summary','',rmT('Call path')));var steps=rmEl('ol');
+          write.steps.forEach(function(step){var li=rmEl('li');li.appendChild(rmEl('strong','',step.name));if(step.possible)li.appendChild(rmEl('span','possible',' · '+rmT(step.integration?'possible integration':'possible call')));li.appendChild(document.createElement('br'));li.appendChild(repomapMembers.sourceLink({Href:step.href,Open:step.open,Text:step.source,NoSource:step.no_source}));steps.appendChild(li);});path.appendChild(steps);field.appendChild(path);fields.appendChild(field);
+        });section.appendChild(fields);
+      });
+    });
+    card.querySelector('.map-card-intro').after(section);
+  }
+  map.addEventListener('repomap:inspect',function(e){
+    var n=e.detail.node,card=e.detail.card;
+    entityWrites(n,card);
+    writeReading={node:n,card:card,key:map.explorerMember?.key||''};
+    var group=document.getElementById((n.getAttribute('href')||'').slice(1));
+    if(!n.dataset.activation){
+      if(!n.dataset.branch)card.querySelector('.map-related-operations')?.remove();
+      var selectedMembers=new Set(projection.leaves(n.id));selectedMembers.add(n.id);
+      var reaching=nodes.filter(function(candidate){if(!candidate.dataset.activation)return false;return Array.from(projection.selection('',candidate.id).active).some(function(id){return selectedMembers.has(id);});});
+      var inputs=rmEl('section','system-reaching-inputs');inputs.appendChild(rmEl('h5','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')));
+      if(reaching.length){
+        var types=new Map();reaching.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
+        types.forEach(function(choices,type){inputs.appendChild(rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')));var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){select(input,true,null,true);});links.appendChild(b);});inputs.appendChild(links);});
+      }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
+      if(JSON.parse(n.dataset.concepts||'[]').length)inputs.appendChild(rmEl('p','meta',rmT('Reaching a part does not by itself establish a change to its entities.')));
+      if(!n.dataset.branch||n.dataset.branch==='communication'){card.querySelector('.map-card-intro').after(inputs);}
+    }
+    if(!n.dataset.branch&&!n.dataset.activation&&group?.classList.contains('group')){
+      // The grouped connection reading replaces only the duplicated inventory.
+      // The selected input's source-backed call path is a different explanation.
+      var witness=card.querySelector('.call-path');
+      if(witness){card.querySelector('.map-card-intro').after(witness);witness.open=true;}
+      card.querySelector('.map-card-evidence')?.remove();
+      group.querySelectorAll(':scope>.group-connections,:scope>.group-internal-connections,:scope>.group-inventory').forEach(function(section){
+        var copy=section.cloneNode(true);copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});
+        copy.querySelectorAll('.conn-peer a').forEach(function(link){
+          var href=link.getAttribute('href'),peer=nodes.find(function(candidate){return candidate.getAttribute('href')===href||'#'+candidate.id===href;});
+          if(peer)link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(peer,true,null,true);});
+        });if(copy.classList.contains('group-connections'))card.querySelector('.map-card-intro').after(copy);else card.appendChild(copy);
+      });
+      return;
+    }
+    if(n.dataset.branch==='communication'){
+      card.querySelector('.map-card-actions')?.remove();
+      card.querySelector('.map-related-operations')?.remove();
+      var calls=rmEl('section','system-communication-records');
+      (n.dataset.children||'').split(/\s+/).filter(Boolean).forEach(function(id){
+        var child=byID[id];if(!child)return;var item=rmEl('article');
+        var jump=rmEl('button','',child.dataset.title);jump.type='button';jump.addEventListener('click',function(){select(child,true,null,true);});
+        item.appendChild(jump);if(child.dataset.summary)item.appendChild(rmEl('p','',child.dataset.summary));calls.appendChild(item);
+      });card.querySelector('.map-card-intro').after(calls);
+    }
+    if(n.dataset.itemKind==='External communication'){
+      var proof=card.querySelector('.call-path');if(proof){card.querySelector('.map-card-intro').after(proof);proof.open=true;}
+      card.querySelector('.map-card-evidence')?.remove();
+    }
+    if(n.dataset.activation){
+      var pathState=projection.selection('',n.id),pathParts=rmEl('section','system-input-parts');
+      pathParts.appendChild(rmEl('h5','',rmT('Parts on this input path')));
+      var pathLinks=rmEl('div','system-neighbours');
+      pathState.active.forEach(function(id){
+        var part=byID[id];if(!part||part.dataset.activation)return;
+        var link=rmEl('button','',part.dataset.title);link.type='button';
+        link.addEventListener('click',function(){select(part,true,null,true);});pathLinks.appendChild(link);
+      });
+      if(pathLinks.childElementCount){pathParts.appendChild(pathLinks);card.appendChild(pathParts);}
+      var linkedInputs=new Set();pathState.path.forEach(function(edge){[edge.from,edge.to].forEach(function(id){if(id!==n.id&&byID[id]?.dataset.activation)linkedInputs.add(id);});});
+      if(linkedInputs.size){
+        var connected=rmEl('section','system-linked-inputs');connected.appendChild(rmEl('h5','',rmT('Connected inputs')));
+        linkedInputs.forEach(function(id){var link=rmEl('button','',byID[id].dataset.title);link.type='button';link.addEventListener('click',function(){select(byID[id],true,null,true);});connected.appendChild(link);});card.appendChild(connected);
+      }
+    }
+    var relations=rmEl('div','system-neighbours'),members=new Set(projection.leaves(n.id)),seen=new Set();
+    members.add(n.id);rawEdges.filter(function(r){return r.scope==='structure'||r.scope==='component';}).forEach(function(r){
+      var outgoing=members.has(r.from),incoming=members.has(r.to);if(outgoing===incoming)return;
+      var id=outgoing?r.to:r.from,key=(outgoing?'out:':'in:')+id;if(seen.has(key)||!byID[id])return;seen.add(key);
+      var peerName=(byID[id].dataset.owner!==n.dataset.owner&&owner(byID[id])?owner(byID[id])+' / ':'')+byID[id].dataset.title;
+      var b=rmEl('button','',(outgoing?'→ ':'← ')+peerName);b.type='button';b.addEventListener('click',function(){select(byID[id],true,null,true);});relations.appendChild(b);
+    });
+    if(relations.childElementCount)card.querySelector('.map-card-intro').appendChild(relations);
+    var details=document.getElementById(n.dataset.detailsId);
+    if(details){
+      var content=n.dataset.branch==='component'?details.querySelector('.input-catalog'):details;
+      if(content){
+        var copy=content.cloneNode(true);copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});
+        if(copy.matches('details'))copy.open=true;
+        if(n.dataset.itemKind==='External communication')copy.querySelectorAll('.outbound-call').forEach(function(detail){detail.open=true;});
+        copy.querySelectorAll('.outbound-caller-part').forEach(function(link){
+          var peer=nodes.find(function(candidate){return candidate.getAttribute('href')===link.getAttribute('href');});
+          if(peer)link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(peer,true,null,true);});
+        });
+        card.insertBefore(copy,card.querySelector('.map-all-members'));
+      }
+      if(n.dataset.branch==='component'){
+        card.querySelector('.map-related-operations')?.remove();card.querySelector('.map-card-evidence')?.remove();card.querySelector('.map-all-members')?.remove();
+        var readingLinks=rmEl('nav','system-component-reading');
+        details.querySelectorAll(':scope>.component-flow>h3,:scope>.component-config>h3,:scope>.data-catalog,:scope>.component-reference>h3,:scope>.component-reference>.evidence-list>h3,:scope>.component-reference>.component-coverage').forEach(function(section){
+          if(!section.id)return;
+          var title=section.matches('.data-catalog')?rmT('Data'):section.matches('details')?section.querySelector('summary').textContent:section.textContent;
+          var link=rmEl('a','map-details-link',title);link.href='#'+section.id;readingLinks.appendChild(link);
+        });
+        var heading=rmEl('h5',''),all=card.querySelector('.map-card-actions>.map-details-link');
+        if(all){all.textContent=rmT('Component details');heading.appendChild(all);}else heading.textContent=rmT('Component details');
+        if(readingLinks.childElementCount||all){readingLinks.prepend(heading);card.querySelector('.map-card-intro').after(readingLinks);}
+      }
+    }
+  });
+  async function layout(){
+    map.setAttribute('aria-busy','true');await Promise.resolve();
+    var items=nodes.map(function(n){
+      return {id:n.id,title:n.dataset.title,branch:n.dataset.branch,activation:n.dataset.activation,lane:n.dataset.lane,
+        summary:n.dataset.summary,subtitle:n.dataset.subtitle,sourceKind:n.dataset.sourceKind,
+        role:n.dataset.role,roleRef:n.dataset.roleRef,language:n.dataset.language,componentKind:n.dataset.componentKind,
+        children:(n.dataset.children||'').split(/\s+/).filter(Boolean),kind:kind(n),category:category(n)};
+    });
+    var relations=rawEdges.map(function(r){return Object.assign({},r,{displayFrom:projection.inputOwner[r.from]||r.from,displayTo:projection.inputOwner[r.to]||r.to});});
+    try{
+      surface=await rmCreateFlow(map,stage,items,relations,projection.areas,projection.inputOwner,{
+        select:function(id,center){select(byID[id],true,null,center?'center':false);},
+        emphasis:function(state){visual=state;renderCaption();},
+        connection:function(group){map.previewConnection?.({from:group.incoming?group.outside:group.area,to:group.incoming?group.area:group.outside,possible:group.relations.some(function(r){return r.possible;}),relations:group.relations});}
+      });
+      map.visibleEdges=surface.layout.edges;
+      emphasize();
+    }catch(error){caption.textContent=rmT('Could not arrange this map. Try another scope.');console.error(error);}
+    map.setAttribute('aria-busy','false');
+  }
+  map.captureViewport=function(){return surface?.capture()||null;};
+  map.restoreViewport=function(saved){surface?.restore(saved);};
+  map.exploreNode=function(id){select(byID[id],true);};
+  map.displayedNode=function(n){return byID[aliases[n.id]]||n;};
+  map.areaDescriptions=function(){return [];};
+  map.operationChoices=function(id){var children=new Set(projection.leaves(id));return nodes.filter(function(n){return n.dataset.activation&&((n.dataset.near||'').split(/\s+/).some(function(near){return children.has(near);})||children.has(projection.inputOwner[n.id]));});};
+  map.chooseOperation=function(id){return select(byID[id],true);};
+  map.explorationLabel=function(){return [operation?.dataset.title,path(scope).map(function(id){return byID[id].dataset.title;}).join(' / '),map.explorerMember?.name].filter(Boolean).join(' · ')||rmT('System map');};
+  map.resumeExploration=function(){var n=byID[scope]||operation;if(n)map.showNode(n);else map.clearInspection?.();};
+  map.readingState=function(){return {scope:scope,operation:operation?.id||'',search:searchValue,filter:filterValue,numbered:numbered,source:map.explorerMember||null,viewport:map.captureViewport?.()||null};};
+  map.restoreReadingState=async function(saved){if(!saved)return;var ticket=++selectionRevision;map.readingRestoring=true;try{scope=byID[saved.scope]?saved.scope:'';operation=byID[saved.operation]||null;search.value=searchValue=saved.search||'';filter.value=filterValue=saved.filter||'';numbered=saved.numbered!==false;syncStyle();updateResults();await ready;if(ticket!==selectionRevision)return;emphasize();map.resumeExploration();if(saved.source)map.explainSource(saved.source);else map.inspectConcept?.(-1);if(saved.viewport)map.restoreViewport(saved.viewport);}finally{if(ticket===selectionRevision){map.readingRestoring=false;emit();}}};
+  map.revealNode=async function(n,allUses,source){n=byID[aliases[n?.id]]||byID[n?.dataset?.mapAlias]||byID[n?.id];if(!n)return;if(allUses)operation=null;if(await select(n,true,source,true))rmScrollToReading(map);};
+  map.findNode=function(n,source){return map.revealNode(n,true,source);};
+  function mapped(node){if(!node)return null;if(byID[node.id])return byID[node.id];if(aliases[node.id])return byID[aliases[node.id]];if(node.dataset.mapAlias)return byID[node.dataset.mapAlias];return byID['system-component-'+node.id]||byID['system-component-'+node.id.replace(/-(parts|inbound|external)$/,'')];}
+  function hashChanged(){
+    if(map.readingRestoring)return;
+    var n=document.getElementById(location.hash.slice(1)),target=mapped(n);
+    var saved=history.state?.repomapReading?.map;
+    // The page navigator restores complete history visits. A later hashchange
+    // must not reinterpret that restoration as a new centred selection.
+    if(saved?.page===map.closest('[data-report-page]')?.id&&target&&
+      (saved.value?.scope===target.id||saved.value?.operation===target.id))return;
+    if(n===document.getElementById('overview')||n===document.getElementById('repository-map')){reset();return;}
+    if(target)select(target,n!==target,null,true);
+  }
+  document.addEventListener('click',function(e){var a=e.target.closest('a[href^="#"]');if(!a||a.closest('[data-map-explorer]')||a.hasAttribute('data-reading-map-return')||a.hasAttribute('data-open')||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;var n=document.getElementById(a.getAttribute('href').slice(1)),target=mapped(n);if(!target)return;e.preventDefault();e.stopImmediatePropagation();map.revealNode(target,false);},true);
+  if(map.hasAttribute('data-system-map'))document.querySelector('.nav-home')?.addEventListener('click',function(e){if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();map.showWholeMap().then(function(){rmScrollToReading(map);});});
+  window.addEventListener('hashchange',hashChanged);
+  ready=layout();ready.then(function(){hashChanged();});
+});})();

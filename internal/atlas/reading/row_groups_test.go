@@ -15,7 +15,7 @@ func TestRowGroupsPackTheirOwnWindowsInOneBatch(t *testing.T) {
 	provider := &tableProvider{}
 	r := answerTestReader(t, nil, provider)
 	r.opts.Through = ""
-	def := lines.ZoneLines()
+	def := lines.Targets(true)
 	groups := rowGroups{
 		{shared: []table.Field{{Name: "question", Value: "lines"}, {Name: "owner", Value: "first"}},
 			rows: []table.Row{{ID: "a", Fields: []table.Field{{Name: "part", Value: "A"}}}, {ID: "b", Fields: []table.Field{{Name: "part", Value: "B"}}}}},
@@ -34,7 +34,7 @@ func TestRowGroupsPackTheirOwnWindowsInOneBatch(t *testing.T) {
 	if use := r.use(def.Stage); use.Windows != 2 || use.Rows != 3 || provider.calls != 2 || answers[2].source != atlas.SourceModel {
 		t.Fatalf("groups did not form two windows of one batch: %+v / calls=%d", use, provider.calls)
 	}
-	for _, name := range []string{"atlas_zones-r1-w0.input.ref.json", "atlas_zones-r1-w1.input.ref.json"} {
+	for _, name := range []string{"atlas_targets-r1-w0.input.ref.json", "atlas_targets-r1-w1.input.ref.json"} {
 		if _, err := os.Stat(filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir, name)); err != nil {
 			t.Fatalf("window files are not numbered across groups: %v", err)
 		}

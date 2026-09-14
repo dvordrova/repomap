@@ -7,9 +7,11 @@
 .map-node:hover .map-node-body,.map-node:focus .map-node-body{stroke-width:2}
 /* The explanation stands beside the map and follows the page; the map itself
    grows with its content instead of scrolling inside a capped box. */
-[data-map-explorer] .map-workspace{grid-template-columns:minmax(0,1fr) clamp(17rem,32%,24rem);gap:1rem;align-items:start}
+[data-map-explorer] .map-workspace{grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start}
 [data-map-explorer] .map-inspector{grid-row:auto;position:sticky;top:calc(var(--toolbar-height,0px) + .75rem);z-index:1;height:auto;min-height:4rem;max-height:calc(100vh - var(--toolbar-height,0px) - 1.5rem);background:transparent;border:0;border-left:1px solid var(--line);padding:.2rem 0 .2rem 1rem}
 [data-map-explorer] .map-stage{max-height:none}
+[data-map-explorer] .map-inspector{position:static;max-height:none;border-left:0;border-top:1px solid var(--line);padding:.8rem .4rem}
+[data-map-explorer] .map-inspector:not(.has-preview){display:none}
 [data-map-explorer] .map-card-docked{grid-template-columns:minmax(0,1fr)}
 [data-map-explorer] .map-inspector-heading,[data-map-explorer] .map-inspector-heading.has-concepts{grid-template-columns:minmax(0,1fr);overflow-wrap:break-word}
 [data-map-explorer] .map-inspector-heading label{padding-left:0}
@@ -90,6 +92,22 @@
 .map-member-grid{display:block}.map-member{padding:9px 8px;margin:0 0 6px;min-height:42px;background:var(--paper)}
 .map-member-name{font-size:14px;line-height:1.4}.map-members-all{font:14px var(--sans);color:var(--accent);background:none;border:0;cursor:pointer;padding:4px 0}
 .map-all-members{margin:12px 0}.map-all-members .map-member-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px}
+.group-connections .conn-group{margin:16px 0;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.group-connections .conn-group:last-child{border-bottom:0}
+.conn-peer{font-weight:650;color:var(--ink)}
+.group-connections .connection-summary{max-width:75ch;font-size:14px;line-height:1.5;margin:6px 0}
+.connection-evidence{margin-top:8px;font-size:13px}
+.connection-evidence .conn{margin:12px 0}
+.connection-evidence .connection-sources{overflow-wrap:anywhere}
+.connection-evidence .anchor{white-space:normal;overflow-wrap:anywhere}
+.map-all-members>h5{margin:12px 0 8px}
+.system-input-parts,.system-linked-inputs{margin:16px 0}
+.system-input-parts>h5,.system-linked-inputs>h5{margin:8px 0}
+.system-linked-inputs>button{display:block;width:100%;text-align:left;margin:6px 0}
+.system-component-reading{display:flex;flex-wrap:wrap;gap:8px 14px;margin:16px 0;font-size:14px}
+.system-component-reading>h5{flex-basis:100%;margin:0}
+body.reading-ready:not([data-reading-page="overview"]) #overview>.learn-home-reading,
+body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence-list{display:none}
 [data-map-explorer] .map-member-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
 .input-catalog [data-integration-item]{padding:6px 0;font-size:14px}
@@ -147,6 +165,9 @@
 /* Long lists read by source file: a small heading per file, rows beneath. */
 .input-subgroup{margin:10px 0 2px;font-size:12px;font-weight:500;color:var(--muted)}.input-subgroup code{font-size:12px}
 [data-input-subgroup]+[data-input-subgroup]{margin-top:6px}
+.input-groups>[data-input-group]:has([data-input-subgroup]){display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:0 24px}
+.input-groups>[data-input-group]:has([data-input-subgroup])>h4,.input-groups>[data-input-group]:has([data-input-subgroup])>.input-provenance{grid-column:1/-1}
+.input-subgroup .meta{display:inline}
 .map-member-file{grid-column:1/-1;margin:8px 0 2px;font-size:12px;color:var(--muted);font-family:var(--mono,monospace)}
 .data-kind{font-size:14px;margin:12px 0 4px}.data-kind .meta{display:inline;font-size:12px}
 /* The telegraphic note sits on the call line itself; the click keeps the address, basis and source. */
@@ -155,3 +176,52 @@
 [data-map-explorer] .map-card-has-concepts{grid-template-columns:minmax(0,1fr)}
 [data-map-explorer] .map-card-has-concepts .map-card-intro{grid-column:1;grid-row:auto}
 [data-map-explorer] .map-card-has-concepts .map-concepts{grid-column:1;grid-row:auto;margin-top:.5rem}
+
+/* One fixed drawing beside its reading. Selection never changes either width. */
+.system-canvas{margin:12px 0;padding:12px;background:var(--paper)}
+.system-canvas .map-workspace{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:0;align-items:stretch}
+.system-canvas .map-stage{height:clamp(450px,70vh,800px);max-height:70vh;overflow:auto;background:#fafcfb;border-radius:7px 0 0 7px}
+.system-canvas .map-inspector,.system-canvas .map-inspector:not(.has-preview){display:flex;flex-direction:column;height:clamp(450px,70vh,800px);min-height:0;max-height:70vh;border:0;border-left:1px solid var(--line);padding:14px;position:static;background:var(--paper);overflow:hidden}
+.system-canvas .map-inspector-content{flex:1;min-height:0;overflow:auto;padding:0 5px 0 0}
+.system-canvas .map-inspector-heading{font-size:17px;margin-bottom:12px}
+.system-canvas .map-inspector.has-preview .map-inspector-hint{display:none}
+.system-canvas .map-inspector-hint{font-size:14px;line-height:1.5;color:var(--muted)}
+.system-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.system-controls input,.system-controls select,.system-controls>button{font:14px var(--sans);border:1px solid var(--line);border-radius:6px;background:var(--paper);padding:8px;color:var(--ink)}
+.system-controls input{width:230px}.system-controls .map-controls{margin-left:auto}.system-controls button:disabled{opacity:.45}
+.system-selection{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-height:24px;margin:4px 0 10px;font-size:13px;color:var(--muted)}
+.system-selection strong{color:var(--ink)}
+.system-input-start{font:inherit;color:var(--accent);background:none;border:0;border-bottom:1px solid var(--line);padding:0;cursor:pointer}
+.system-path-note{flex-basis:100%;font-size:12px}
+.system-results{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:5px;max-height:220px;overflow:auto;margin:8px 0;padding:4px}
+.system-results[hidden]{display:none}.system-results button{font:14px var(--sans);text-align:left;padding:9px;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:6px;cursor:pointer}.system-results small{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+.system-canvas .map-node-title{font-size:15px;font-weight:600}.system-canvas .map-node-context{font-size:12px;fill:var(--muted)}
+.system-canvas .system-input-badge{fill:var(--accent);font-weight:600}
+.system-canvas .map-expanded-area>rect{fill:#eff4f0;stroke:#b3c4b9;stroke-width:1}
+.system-canvas .system-component-frame>rect{fill:#fafcfb;stroke:#728f82;stroke-width:1.5}
+.system-canvas .map-expanded-area>text{font-size:15px;cursor:pointer}
+.system-canvas .map-edge-group{opacity:.25}.system-canvas .map-edge{stroke-width:1.5}
+.system-canvas .map-node{opacity:1}.system-canvas .map-node-body{fill:white;stroke:#728f82}
+.system-canvas.system-has-selection:not(.system-hovering) .map-node:not(.system-active):not(.map-scope-selected){opacity:.28}
+.system-canvas .map-edge-group.system-active{opacity:1}.system-canvas .map-edge-group.system-active .map-edge{stroke:var(--accent);stroke-width:2.3}
+.system-canvas .system-frame-selected>rect{stroke:var(--accent);stroke-width:2}
+.system-canvas.system-hovering .map-edge-group{opacity:.09}.system-canvas.system-hovering .map-edge-group.system-hover{opacity:1}
+.system-canvas.system-hovering .map-node{opacity:.25}.system-canvas.system-hovering .map-node.system-hover{opacity:1}
+.system-canvas .map-edge-group.system-hover .map-edge{stroke:var(--accent);stroke-width:2.5}
+.system-canvas .map-legend{font-size:12px}.system-canvas .map-legend summary{font-size:12px}
+.system-canvas .map-card-docked{font-size:14px;line-height:1.45;padding:0}.system-canvas .map-card-summary{font-size:14px}
+.system-canvas .map-all-members .map-member-grid{grid-template-columns:minmax(0,1fr)}
+.system-canvas .map-card-hint{display:none}
+.system-neighbours{display:grid;gap:5px;margin:12px 0}.system-neighbours button{font:13px var(--sans);color:var(--accent);text-align:left;background:var(--soft);border:1px solid var(--line);padding:7px;border-radius:5px;cursor:pointer}
+.system-entity-writes{border-top:1px solid var(--line);margin:16px 0;padding-top:12px}
+.system-entity-writes h6{font-size:14px;margin:14px 0 8px}.system-entity-writes li{margin:8px 0}
+.system-write-input{font:inherit;text-align:left;padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--soft);cursor:pointer}
+@media(max-width:900px){.system-canvas .map-workspace{grid-template-columns:minmax(0,1fr) 280px}}
+@media(max-width:650px){.system-canvas .map-workspace{grid-template-columns:minmax(0,1fr)}.system-canvas .map-inspector{height:300px;max-height:300px;border-left:0;border-top:1px solid var(--line)}}
+#overview .learn-home{gap:24px;margin:12px 0 18px;padding:0}
+#overview .learn-intro .summary{font-size:17px;line-height:1.55;margin:6px 0}
+#overview .learn-start{font-size:13px;gap:6px;padding-top:0;padding-bottom:0}
+#overview .repository-map-panel>h3{margin:12px 0 6px;font-size:17px}
+.system-map-preview[hidden]{display:none}
+.system-map-preview .map-details-link{display:block;margin-bottom:8px}
+.system-map-preview button{font:inherit;color:var(--accent);background:none;border:0;padding:0;text-decoration:underline;cursor:pointer}

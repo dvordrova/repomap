@@ -22,7 +22,6 @@ const (
 
 	symbolsContract    = "repomap.atlas.symbols.v8"
 	boundariesContract = "repomap.atlas.boundaries.v7"
-	zonesContract      = "repomap.atlas.zones.v2"
 	arrowsContract     = "repomap.atlas.arrows.v1"
 	targetsContract    = "repomap.atlas.targets.v3"
 	jointsContract     = "repomap.atlas.joints.v3"
@@ -37,7 +36,6 @@ const (
 	PeerNone = "none"
 
 	maxWitnesses = 3
-	maxZoneBoxes = 8
 	maxValues    = 8
 )
 
@@ -52,9 +50,6 @@ var boundariesPrompt string
 
 //go:embed prompts/fixed_boundaries.md
 var fixedBoundariesPrompt string
-
-//go:embed prompts/zones.md
-var zonesPrompt string
 
 //go:embed prompts/arrows.md
 var arrowsPrompt string
@@ -551,114 +546,12 @@ func BoundarySourceContext(place, owner atlas.Place, places, declarations map[st
 	return []table.Field{{Name: "source_context", Value: context}}
 }
 
-// ZoneNames asks for exactly want part names of one target in one row: a
-// cell per part, so the answer cannot be one name per box. ZoneAssign then
-// places every top box against that closed list; ZoneLines gives each part
-// its sentence. All three share one prompt and one stage.
-func ZoneNames(want int) table.Definition {
-	columns := make([]table.Column, 0, want)
-	for i := 1; i <= want; i++ {
-		columns = append(columns, table.Column{
-			Name: fmt.Sprintf("part_%d", i), Kind: table.Text, MaxRunes: TitleRunes,
-			Note: "the name of one part, two to four words, distinct from the others",
-		})
-	}
-	return table.Definition{
-		Stage: StageZones, Contract: fmt.Sprintf("%s.names.%d", zonesContract, want), Window: 1,
-		System: zonesPrompt, Columns: columns,
-	}
-}
-
-// ZoneNamesRow is the one row of the names question: the target's largest
-// boxes, each with its title, line and size.
-func ZoneNamesRow(targetID string, boxes []BoxSummary) table.Row {
-	entries := make([]string, 0, len(boxes))
-	for _, box := range boxes {
-		entries = append(entries, fmt.Sprintf("%s: %s (%s)", box.Title, box.Line, FileCount(box.Files)))
-	}
-	return table.Row{ID: targetID, Fields: []table.Field{{Name: "boxes", Value: entries}}}
-}
-
-// FileCount spells a number of files: "1 file", "12 files".
-func FileCount(n int) string {
-	if n == 1 {
-		return "1 file"
-	}
-	return fmt.Sprintf("%d files", n)
-}
-
-// PartName reads the i-th part cell of a names answer.
-func PartName(answer map[string]string, i int) string {
-	return answer[fmt.Sprintf("part_%d", i+1)]
-}
-
-func ZoneAssign(parts []string) table.Definition {
-	return table.Definition{
-		Stage: StageZones, Contract: zonesContract + ".assign", Window: WindowRows,
-		System: zonesPrompt, Independent: true,
-		Columns: []table.Column{{Name: "part", Kind: table.Choice, Options: parts, Note: "one of context.parts"}},
-	}
-}
-
-func ZoneLines() table.Definition {
-	return table.Definition{
-		Stage: StageZones, Contract: zonesContract + ".lines", Window: WindowRows,
-		System: zonesPrompt, Independent: true,
-		Columns: []table.Column{{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what this part does"}},
-	}
-}
-
-// BoxSummary is what a zone row says about a box.
+// BoxSummary describes the endpoints of an architecture connection.
 type BoxSummary struct {
 	ID    string
 	Title string
 	Line  string
 	Files int
-}
-
-// ZoneBoxRow is a row of the names or assign question.
-func ZoneBoxRow(box BoxSummary) table.Row {
-	return table.Row{ID: box.ID, Fields: []table.Field{
-		{Name: "title", Value: box.Title},
-		{Name: "line", Value: box.Line},
-		{Name: "files", Value: box.Files},
-	}}
-}
-
-// ZoneLineRow is a row of the lines question.
-func ZoneLineRow(zoneID, title string, boxes []BoxSummary) table.Row {
-	titles := make([]string, 0, min(len(boxes), maxZoneBoxes))
-	files := 0
-	for _, box := range boxes {
-		files += box.Files
-		if len(titles) < maxZoneBoxes {
-			titles = append(titles, box.Title)
-		}
-	}
-	return table.Row{ID: zoneID, Fields: []table.Field{
-		{Name: "part", Value: title},
-		{Name: "boxes", Value: titles},
-		{Name: "files", Value: files},
-	}}
-}
-
-// WantZones says how many parts a target of n top boxes should have: the
-// square root, held between four and eight.
-func WantZones(n int) int {
-	want := 0
-	for want*want < n {
-		want++
-	}
-	if want < 4 {
-		want = 4
-	}
-	if want > 8 {
-		want = 8
-	}
-	if want > n {
-		want = n
-	}
-	return want
 }
 
 // Arrows is the arrow table.
@@ -734,6 +627,7 @@ type TargetSummary struct {
 	Dirs         int
 	Boundaries   map[string]int
 	Operations   []string
+	Parts        []string
 }
 
 // TargetRow builds the row of one target.
@@ -760,6 +654,9 @@ func TargetRow(target TargetSummary) table.Row {
 	if len(target.Operations) > 0 {
 		fields = append(fields, table.Field{Name: "operation_hypotheses", Value: target.Operations})
 	}
+	if len(target.Parts) > 0 {
+		fields = append(fields, table.Field{Name: "responsibility_hypotheses", Value: target.Parts})
+	}
 	if len(target.Boundaries) > 0 {
 		kinds := make([]string, 0, len(target.Boundaries))
 		for kind := range target.Boundaries {
@@ -775,20 +672,9 @@ func TargetRow(target TargetSummary) table.Row {
 	return table.Row{ID: target.ID, Fields: fields}
 }
 
-// FallbackRole guesses a target's role from its path and kind when the
-// model has not spoken.
-func FallbackRole(root, kind string) string {
-	lower := strings.ToLower(root)
-	for _, marker := range []string{"testdata", "fixture", "fixtures", "test", "tests"} {
-		if strings.HasPrefix(lower, marker+"/") || strings.Contains(lower, "/"+marker+"/") || lower == marker {
-			return atlas.RoleFixture
-		}
-	}
-	for _, marker := range []string{"example", "examples", "samples", "demo"} {
-		if strings.HasPrefix(lower, marker+"/") || strings.Contains(lower, "/"+marker+"/") || lower == marker {
-			return atlas.RoleExample
-		}
-	}
+// FallbackRole preserves the native program kind while semantic roles await
+// selection. A source directory cannot classify a fixture, tool or example.
+func FallbackRole(kind string) string {
 	if strings.Contains(kind, "library") {
 		return atlas.RoleLibrary
 	}

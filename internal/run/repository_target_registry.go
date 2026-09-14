@@ -285,6 +285,7 @@ func ordinaryRepositoryTargetAdapterRegistry() (repositoryTargetAdapterRegistry,
 		goRepositoryTargetAdapterDescriptor(),
 		pythonRepositoryTargetAdapterDescriptor(),
 		jstsRepositoryTargetAdapterDescriptor(),
+		clojureRepositoryTargetAdapterDescriptor(),
 	)
 }
 

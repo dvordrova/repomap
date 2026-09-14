@@ -160,7 +160,7 @@ func TestReportRenderingIsEnglishOnly(t *testing.T) {
 				t.Fatal("translating a boundary purpose changed its route label or source anchor")
 			}
 		}
-		parsed, err := template.New("map").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/map.html")
+		parsed, err := template.New("map").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/map.html", "templates/html/partials.html")
 		if err != nil {
 			t.Fatal(err)
 		}

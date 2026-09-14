@@ -30,7 +30,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 14
-	Version      = 7
+	Version      = 8
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -446,14 +446,16 @@ type Zone struct {
 	BoxIDs []string `json:"box_ids"`
 }
 
-// Box is one box on the map: a directory, or a directory split by the
-// model's box choices.
+// Box is one accepted architectural responsibility or explicit source inventory.
 type Box struct {
-	// ID is the directory path, or the path plus the slug of a title the
-	// model started.
+	// MemberIDs names selected declarations. Native lexical children inherit
+	// their declaration's membership, never membership from a matching path.
+	// Nil is a source-file inventory before architecture reading.
+	MemberIDs []string `json:"member_ids"`
+	// ID is target-scoped and derived from exact members, not the model title.
 	ID  string `json:"id"`
 	Dir string `json:"dir"`
-	// Title and Line are MODEL; the directory name and Given stand in.
+	// Title and Line are MODEL; an unavailable decision names source inventory.
 	Title  string `json:"title"`
 	Line   string `json:"line"`
 	ZoneID string `json:"zone_id,omitempty"`
@@ -991,7 +993,7 @@ func Validate(value Atlas) error {
 			return fmt.Errorf("atlas: target %q is missing collections", target.ID)
 		}
 		boxes := make(map[string]struct{}, len(target.Boxes))
-		files := make(map[string]struct{})
+		members := make(map[string]struct{})
 		for _, box := range target.Boxes {
 			if box.ID == "" || box.Dir == "" {
 				return fmt.Errorf("atlas: target %q has a box without identity", target.ID)
@@ -1013,10 +1015,6 @@ func Validate(value Atlas) error {
 				if strings.HasPrefix(file.Path, "/") || file.Path == "" {
 					return fmt.Errorf("atlas: box %q holds a file with path %q", box.ID, file.Path)
 				}
-				if _, dup := files[file.Path]; dup {
-					return fmt.Errorf("atlas: file %q is in two boxes of target %q", file.Path, target.ID)
-				}
-				files[file.Path] = struct{}{}
 				if invalidText(file.Line) || !validSource(file.Source) {
 					return fmt.Errorf("atlas: file %q has an invalid line or source", file.Path)
 				}
@@ -1024,6 +1022,10 @@ func Validate(value Atlas) error {
 					return fmt.Errorf("atlas: file %q is missing symbols", file.Path)
 				}
 				for _, symbol := range file.Symbols {
+					if _, dup := members[symbol.ID]; dup {
+						return fmt.Errorf("atlas: declaration %q is in two boxes of target %q", symbol.ID, target.ID)
+					}
+					members[symbol.ID] = struct{}{}
 					if symbol.ID == "" || symbol.Name == "" || invalidText(symbol.Line) || invalidText(symbol.Doc) {
 						return fmt.Errorf("atlas: file %q has an invalid symbol", file.Path)
 					}

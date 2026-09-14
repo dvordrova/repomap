@@ -78,3 +78,47 @@ export function OtherActionPage() {
   const execute = () => console.log("different declaration")
   return <ActionPanel onActivate={execute} renderValue={() => "Other"} label="Other" />
 }
+
+import { paintColor as READ_COLOR, ReadTile as Tile } from "../shared/contracts"
+import * as palette from "./destinations"
+
+export function valueReferences() {
+  const alias = READ_COLOR
+  const shorthand = { READ_COLOR }
+  const keyed = { [READ_COLOR]: palette.surfaceColor }
+  return [alias, shorthand, keyed, READ_COLOR, READ_COLOR]
+}
+export function localReadShadow() {
+  const READ_COLOR = "local"
+  return READ_COLOR
+}
+export function parameterReadShadow(READ_COLOR: string) { return READ_COLOR }
+export function typeOnlyRead(_value: typeof READ_COLOR): typeof READ_COLOR { return "indigo" }
+export type ColorShape = typeof READ_COLOR
+export { READ_COLOR }
+
+export function writeOnlyReferences() {
+  let counter = 0
+  counter = 1
+  ;[counter] = [2]
+  ;({ counter } = { counter: 3 })
+  return { counter: "a property name" }
+}
+export function readModifyReferences() {
+  let counter = 0
+  counter += 1
+  counter++
+  return counter
+}
+export function ElementReferences() {
+  return <><Tile /><palette.Tile label={READ_COLOR}></palette.Tile></>
+}
+export function TagShadow(Tile: any) { return <Tile /> }
+export function directTileCall() { Tile() }
+export function deferredRead() {
+  queueMicrotask(() => { void READ_COLOR })
+}
+
+export interface ReadPalette { color: string }
+export const currentPalette: ReadPalette = { color: READ_COLOR }
+export function propertyRead() { return currentPalette.color }

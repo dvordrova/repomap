@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -16,7 +15,7 @@ import (
 )
 
 func TestIndependentRelationsKeepNeighboursAndExactResponseCache(t *testing.T) {
-	for _, def := range []table.Definition{lines.Arrows(), lines.Targets(), lines.Targets(true), lines.ZoneAssign([]string{"Core"}), lines.ZoneLines(), lines.Joints(), lines.Peers()} {
+	for _, def := range []table.Definition{lines.Arrows(), lines.Targets(), lines.Targets(true), lines.Joints(), lines.Peers()} {
 		t.Run(def.Contract, func(t *testing.T) {
 			rows := []table.Row{{ID: "first"}, {ID: "second"}, {ID: "third"}}
 			var wireRows []map[string]any
@@ -120,44 +119,15 @@ func (provider *mutatedTableProvider) Complete(ctx context.Context, request llm.
 }
 
 func TestRefusedZoneAssignmentDoesNotAcquireMatchingNameOrAncestor(t *testing.T) {
-	provider := &mutatedTableProvider{tableProvider: tableProvider{partNames: []string{"Rejected title", "Accepted title", "Other part", "Spare part"}}}
-	provider.mutate = func(input map[string]any, rows []map[string]any) {
-		mode := input["context"].(map[string]any)["question"]
-		if mode == "assign" {
-			for i, row := range rows {
-				row["part"] = "Accepted title"
-				if i == 1 {
-					row["part"] = "unknown part"
-				}
-			}
+	items := []designItem{{Ref: "r1", Name: "Accepted title", Path: "a"}, {Ref: "r2", Name: "Rejected title", Path: "a/b"}, {Ref: "r3", Name: "Rejected title", Path: "a/b/child"}, {Ref: "r4", Name: "Other", Path: "c"}}
+	result, err := decodeDesign([]byte(`{"groups":[{"title":"Accepted title","purpose":"Works.","members":["r1","r4"]},{"title":"Rejected title","purpose":"Unknown.","members":["outside"]}]}`), items, "areas")
+	if err != nil || len(result.Groups) != 1 || len(result.Groups[0].Members) != 2 || len(result.Notes) == 0 {
+		t.Fatalf("refused assignment was repaired: %+v %v", result, err)
+	}
+	for _, ref := range result.Groups[0].Members {
+		if ref == "r2" || ref == "r3" {
+			t.Fatal("name or ancestor determined membership")
 		}
-	}
-	r := answerTestReader(t, nil, provider)
-	r.opts.Through = ""
-	r.places, r.boxes, r.zones = make(map[string]atlas.Place), make(map[string]*boxState), make(map[string][]*zoneState)
-	for i, dir := range []string{"a", "a/b", "c", "d", "a/b/child", "a/kept"} {
-		fileID := fmt.Sprintf("file-%d", i)
-		r.places[fileID] = atlas.Place{ID: fileID, TargetIDs: []string{"t"}}
-		title := dir
-		if i == 1 {
-			title = "Rejected title"
-		}
-		r.boxes[dir] = &boxState{id: dir, dir: dir, title: title, top: i < 4, files: []string{fileID}, zoneID: make(map[string]string)}
-	}
-	var journal []string
-	r.opts.State = func(_, _ string, details ...string) { journal = append(journal, details...) }
-	if err := r.readTargetZones(t.Context(), "t"); err != nil {
-		t.Fatal(err)
-	}
-	if len(r.zones["t"]) != 1 || r.zones["t"][0].title != "Accepted title" || len(r.zones["t"][0].boxes) != 4 || r.boxes["a/b"].zoneID["t"] != "" || r.boxes["a/b/child"].zoneID["t"] != "" {
-		t.Fatalf("refused row gained a semantic zone: %+v / %v", r.zones["t"], r.boxes["a/b"].zoneID)
-	}
-	// The three named parts no box chose are dropped, and the run says so.
-	if text := strings.Join(journal, "\n"); !strings.Contains(text, "target t: 3 named parts held no box after assignment and were dropped: Rejected title, Other part, Spare part") {
-		t.Fatalf("dropped parts are not journaled: %v", journal)
-	}
-	if r.boxes["a"].zoneID["t"] != "accepted-title" || len(r.rejected) != 1 || r.rejected[0].Samples[0] != "r2" {
-		t.Fatal("valid neighbouring assignments or local rejection lost")
 	}
 }
 

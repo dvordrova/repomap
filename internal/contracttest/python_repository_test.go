@@ -285,6 +285,7 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 	if err != nil {
 		t.Fatalf("build Python atlas: %v", err)
 	}
+	adaptertest.AssertExecutionScope(t, index, graph, "src/fixture_app/events.py", 13, programindex.ObjectModule)
 	adaptertest.AssertCallControls(t, index, graph, "src/fixture_app/events.py", "process_pending_jobs", map[int][]adaptertest.Control{
 		33: nil,
 		35: {{Line: 34, Kind: "while body with constant true condition"}},
@@ -400,7 +401,8 @@ func assertPythonRepeatedImportAliases(t *testing.T, index programindex.Index) {
 		if relation.Location == nil || relation.Location.Path != path {
 			continue
 		}
-		if relation.Kind == programindex.RelationImports && relation.FromID == module.ID {
+		if relation.Kind == programindex.RelationImports && relation.FromID == module.ID &&
+			(sameSingleID(relation.ToIDs, loads.ID) || sameSingleID(relation.ToIDs, jsonModule.ID)) {
 			imports++
 			if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 ||
 				(relation.ToIDs[0] != loads.ID && relation.ToIDs[0] != jsonModule.ID) ||

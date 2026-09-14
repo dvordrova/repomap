@@ -174,17 +174,18 @@ type pageFlowStep struct {
 // pageGroup is one responsibility card. Members are grouped by file so the
 // path is printed once and each chip carries only its line.
 type pageGroup struct {
-	SummaryRef  string
-	ID          string
-	Members     int
-	Share       int
-	Title       string
-	Summary     string
-	Highlights  []pageChipRow
-	Inventory   []pageChipRow
-	Operations  []pageGroupOperation
-	Externals   []pageExternal
-	Connections []pageConnection
+	SummaryRef          string
+	ID                  string
+	Members             int
+	Share               int
+	Title               string
+	Summary             string
+	Highlights          []pageChipRow
+	Inventory           []pageChipRow
+	Operations          []pageGroupOperation
+	Externals           []pageExternal
+	Connections         []pageConnection
+	InternalConnections []pageConnection
 	// Zone is the part this group is in, when it is in one, and ZoneHref
 	// the frame on the map that draws it.
 	Zone     string
@@ -227,6 +228,8 @@ type pageDoc struct {
 // pageConnection is one model sentence between two groups. A connection to
 // another target renders as a stub that links to that target's section.
 type pageConnection struct {
+	EvidenceID           string
+	Native               bool
 	LabelRef, SummaryRef string
 	Arrow                string
 	Title                string
@@ -772,6 +775,7 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 		})
 	}
 	card.Connections = builder.groupConnections(index, group)
+	card.InternalConnections = builder.internalGroupConnections(index, group)
 	return card
 }
 
@@ -877,11 +881,13 @@ func (builder *pageBuilder) groupConnections(
 			continue
 		}
 		row := pageConnection{
-			Arrow:    arrow,
-			Title:    builder.groupTitles[other],
-			Label:    connection.Label,
-			Summary:  connection.Summary,
-			Possible: connection.SupportResolution == programindex.PatternValuePossible,
+			EvidenceID: connection.SourceID + "\x00" + connection.ToSubjectID,
+			Native:     strings.HasPrefix(connection.SourceKind, "native_"),
+			Arrow:      arrow,
+			Title:      builder.groupTitles[other],
+			Label:      connection.Label,
+			Summary:    connection.Summary,
+			Possible:   connection.SupportResolution == programindex.PatternValuePossible,
 		}
 		if row.Title == "" {
 			row.Title = strings.ReplaceAll(connection.SemanticKind, "_", " ")
@@ -931,6 +937,7 @@ func (builder *pageBuilder) groupConnections(
 		}
 		rows = append(rows, row)
 	}
+	rows = append(rows, builder.nativeGroupConnections(index, group)...)
 	return collapseConnections(rows)
 }
 
@@ -941,14 +948,15 @@ func (builder *pageBuilder) groupConnections(
 // its label again, and when it is, it is noise on the line.
 func collapseConnections(rows []pageConnection) []pageConnection {
 	type key struct {
-		arrow, title, otherTarget, label, from, to string
-		possible                                   bool
+		arrow, title, otherTarget, href, label, summary, from, to, evidence string
+		possible, native                                                    bool
 	}
 	at := make(map[key]int, len(rows))
 	result := make([]pageConnection, 0, len(rows))
 	for _, row := range rows {
 		row.Summary = dropEcho(row.Summary, row.Label)
-		k := key{arrow: row.Arrow, title: row.Title, otherTarget: row.OtherTarget, label: row.Label, possible: row.Possible}
+		k := key{arrow: row.Arrow, title: row.Title, otherTarget: row.OtherTarget, href: row.Href, label: row.Label, summary: row.Summary, possible: row.Possible, native: row.Native}
+		k.evidence = row.EvidenceID
 		if row.FromSource != nil {
 			k.from = row.FromSource.Text
 		}

@@ -22,8 +22,9 @@ import (
 // The report is one static page, assembled from the files under templates/.
 // Every .html file there is one region of the page; every .css and .js file
 // is one layer, concatenated in filename order, which is why they carry a
-// numeric prefix. Adding a region or a layer is a new file and no Go change,
-// so working on the page does not mean working on this package.
+// numeric prefix. The React Flow canvas is built from web/ by the developer;
+// its checked-in JS/CSS are included by the same embed. Building or installing
+// the Go application never invokes a JavaScript toolchain.
 //
 //go:embed templates
 var reportTemplateFS embed.FS

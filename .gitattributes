@@ -1,0 +1,3 @@
+# Generated JavaScript preserves whitespace inside dependency string literals.
+internal/report/templates/js/27-report-ui.js linguist-generated=true -whitespace
+internal/report/templates/css/47-flow.css linguist-generated=true

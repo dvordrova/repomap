@@ -42,7 +42,7 @@ func TestUnavailableSourcesKeepCodeMembersAndSelection(t *testing.T) {
 	members := read("26-map-members.js")
 	operations := read("29-operation-view.js")
 	reading := read("30-map.js")
-	snapshot := between(operations, "function snapshot(){", "    async function restore(saved)")
+	snapshot := between(operations, "map.readingState=function(){", "  map.restoreReadingState=")
 	explain := between(reading, "map.explainSource=function(source){", "    map.showNode=")
 	harness := `
 const assert = require('node:assert/strict');
@@ -96,12 +96,12 @@ map.inspectConcept=index=>{map.selected=items[index];};
 ` + explain + `
 map.explainSource({key:repomapMembers.sourceKey(second.source)});
 assert.equal(map.selected.source.Text,second.source.Text);
-const scope='part',operation=null,pinned=false,mode='structure',search={value:''};
+const scope='part',operation=null,searchValue='',filterValue='',numbered=true;
 const byID={part:node},window={scrollY:50};
 function readingDisclosures(){return null;}
 map.explorerMember={owner:scope,name:'Same',key:repomapMembers.sourceKey(second.source),href:'',open:''};
 ` + snapshot + `
-const saved=JSON.parse(JSON.stringify(snapshot()));
+const saved=JSON.parse(JSON.stringify(map.readingState()));
 map.selected=items[0];
 map.explainSource(saved.source);
 assert.equal(map.selected.source.Text,second.source.Text,'Back restores exact missing-source member');

@@ -39,6 +39,24 @@ func TestOutboundAddressExplainsConfigurationWithoutResolvingIt(t *testing.T) {
 	}
 }
 
+func TestOutboundInputsFollowCallerSubjectsNotTheirSharedPart(t *testing.T) {
+	index := groupindex.Index{Target: programindex.Target{ID: "service"},
+		Operations: []groupindex.Operation{{ID: "timer", SubjectID: "tick"}, {ID: "get", SubjectID: "read"}},
+		StructuralEdges: []groupindex.StructuralEdge{
+			{FromSubjectID: "tick", ToSubjectID: "send", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls},
+			{FromSubjectID: "send", ToSubjectID: "tick", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls},
+			{FromSubjectID: "read", ToSubjectID: "send", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationReads},
+		},
+		Outbound: []groupindex.OutboundCall{{ID: "queue", SubjectID: "send", GroupID: "shared"}, {ID: "unresolved", GroupID: "shared"}},
+	}
+	section := &pageSection{ID: "service", programTargetID: "service"}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
+	builder.fillSectionOutbound(section)
+	if section.Outbound[0].Operations != operationNodeID("service", "timer") || section.Outbound[1].Operations != "" {
+		t.Fatalf("outbound gained a caller through membership or a non-execution edge: %+v", section.Outbound)
+	}
+}
+
 func TestOutboundSourceUsesDoNotHideBehindOneSelectedAddress(t *testing.T) {
 	index := groupindex.Index{Target: programindex.Target{ID: "service"}, Outbound: []groupindex.OutboundCall{{
 		ID: "shared-send", Kind: "http_client", Source: "model", Address: "https://prices.example",
@@ -132,7 +150,7 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 		t.Fatal(err)
 	}
 	html := stdhtml.UnescapeString(out.String())
-	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "настройка клиента", "вызов в коде", `data-open="client.go:21:17"`, "가격조회.Get", address, "Развернуть · ещё 2", "GET /prices"} {
+	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "настройка клиента", "вызов в коде", `data-open="client.go:21:17"`, "가격조회.Get", address, "GET /prices"} {
 		if !strings.Contains(html, text) {
 			t.Fatalf("first-screen inventory lost %q", text)
 		}
@@ -145,14 +163,10 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 	if strings.Count(html, "data-integration-item") != 3 || strings.Count(html, "data-integration-record") != 7 || strings.Contains(html, `<details class="input-more">`) {
 		t.Fatal("destination groups lost or duplicated accepted communication records")
 	}
-	// Five records of one destination: three compact lines in view, two under
-	// one expansion; the destination is named once, by the group.
-	if strings.Count(html, `<details class="outbound-call">`) != 7 || strings.Count(html, `<details class="outbound-more">`) != 1 || strings.Count(html, `<strong class="input-title">Pricing service`) != 1 {
-		t.Fatal("destination records are not compact nested lines with one expansion after three")
-	}
-	// Pricing service records sit at client.go:21, :23, :24, :25 and :26.
-	if at := strings.Index(html, "Развернуть · ещё 2"); at < strings.LastIndex(html, "client.go:24") || at > strings.Index(html, "client.go:25") {
-		t.Fatal("the expansion does not separate the fourth record from the third")
+	// All call lines are visible beneath their destination. Only the original
+	// evidence of an individual call requires expansion.
+	if strings.Count(html, `<details class="outbound-call">`) != 7 || strings.Contains(html, `<details class="outbound-more">`) || strings.Count(html, `<strong class="input-title">Pricing service`) != 1 {
+		t.Fatal("destination records are not complete compact nested lines")
 	}
 	if first := strings.Index(html, `Pricing service <span class="meta">· 5</span>`); first < 0 || first > strings.Index(html, "Trace collector") {
 		t.Fatal("the destination with the most records is not the first group")
@@ -332,5 +346,26 @@ func TestOutboundLinesKeepTheTypeWhenAMemberRepeatsAcrossTypes(t *testing.T) {
 		if lines[id] != line {
 			t.Fatalf("line for %s = %q, want %q (%v)", id, lines[id], line, lines)
 		}
+	}
+}
+
+func TestOutboundPeerBindingRequiresExactCallerAndCallLocation(t *testing.T) {
+	location := programindex.Location{Path: "http.ts", Line: 12, Column: 8}
+	otherSite := programindex.Location{Path: "http.ts", Line: 12, Column: 28}
+	index := groupindex.Index{Target: programindex.Target{ID: "front"},
+		Outbound: []groupindex.OutboundCall{{ID: "send", SubjectID: "client", Location: location}},
+		Connections: []groupindex.Connection{
+			{ID: "match", From: groupindex.Endpoint{TargetID: "front"}, SourceKind: "integration", FromSubjectID: "client", FromLocation: &location},
+			{ID: "column", From: groupindex.Endpoint{TargetID: "front"}, SourceKind: "integration", FromSubjectID: "client", FromLocation: &otherSite},
+			{ID: "subject", From: groupindex.Endpoint{TargetID: "front"}, SourceKind: "integration", FromSubjectID: "another", FromLocation: &location},
+			{ID: "owner", From: groupindex.Endpoint{TargetID: "another"}, SourceKind: "integration", FromSubjectID: "client", FromLocation: &location},
+			{ID: "native", From: groupindex.Endpoint{TargetID: "front"}, SourceKind: "native_calls", FromSubjectID: "client", FromLocation: &location},
+		},
+	}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
+	section := &pageSection{ID: "front", programTargetID: "front"}
+	builder.fillSectionOutbound(section)
+	if !slices.Equal(section.Outbound[0].Connections, []string{"match"}) {
+		t.Fatalf("incorrect peer bindings: %+v", section.Outbound)
 	}
 }

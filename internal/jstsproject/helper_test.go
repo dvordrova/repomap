@@ -346,8 +346,11 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build cumulative JSTS places: %v", err)
 	}
+	adaptertest.AssertExecutionScope(t, index, graph, "src/server.ts", 77, programindex.ObjectModule)
+	adaptertest.AssertExecutionScope(t, index, graph, "src/market-worker.js", 5, programindex.ObjectModule)
 	assertCumulativeJSTSTypeMembers(t, result, index, lines.QuestionRows(graph))
 	assertCumulativeJSTSTypeHeaders(t, result, index, lines.QuestionRows(graph))
+	assertCumulativeJSTSValueReads(t, result, index)
 	assertCumulativeJSTSCallbackAliases(t, index, "src/server.ts", programindex.ResolutionExact)
 	assertCumulativeJSTSChainedCallbacks(t, index, "src/server.ts", programindex.ResolutionExact)
 	adaptertest.AssertCallControls(t, index, graph, "src/server.ts", "processPendingJobs", map[int][]adaptertest.Control{

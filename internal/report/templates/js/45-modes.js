@@ -10,11 +10,18 @@
   mapContext.className='reading-map-context';mapContext.dataset.readingMapReturn='';mapContext.hidden=true;locationLine.append(readingIntent,locationName,mapContext);
   var returnLinks=document.createElement('nav');returnLinks.className='reading-return';returnLinks.hidden=true;locationLine.appendChild(returnLinks);
   var returnLink=document.createElement('a'),termLink=document.createElement('a'),mapLink=document.createElement('a'),searchLink=document.createElement('button');mapLink.dataset.readingMapReturn='';searchLink.type='button';searchLink.dataset.readingFind='';returnLinks.append(returnLink,termLink,mapLink,searchLink);
-  var detailGroup=null;
+  var detailGroup=null,sectionTitle='';
   function measureToolbar(){document.documentElement.style.setProperty('--toolbar-height',getComputedStyle(toolbar).position==='sticky'?toolbar.getBoundingClientRect().height+'px':'0px');}
   new ResizeObserver(measureToolbar).observe(toolbar);measureToolbar();
   var current=home, question=null, term=null, searchIntent='',restoring=false;
   var globalSearch=document.querySelector('.nav .find');
+  var componentChoice=toolbar.querySelector('[data-component-choice]');
+  function syncComponentChoice(){var map=document.querySelector('[data-system-map]');if(componentChoice)componentChoice.value=map?.componentSelection?.()||'';}
+  componentChoice?.addEventListener('change',async function(){
+    var map=document.querySelector('[data-system-map]');if(!map)return;
+    if(componentChoice.value)await map.selectComponent(componentChoice.value);else await map.showWholeMap();
+    rmScrollToReading(map);
+  });
   var questionPage=document.getElementById('questions'),guides=questionPage?Array.from(questionPage.querySelectorAll('.reading-guide')):[];
   var questionIndex=questionPage&&questionPage.querySelector('.question-index');
   function enclosing(node){return node&&node.closest('[data-report-page]');}
@@ -22,15 +29,15 @@
   // A map may be reached from several questions. Its URL names the place;
   // this browser history entry retains why that particular visit was opened.
   function readingState(){
-    var map=current.querySelector('[data-map-explorer]');
-    return Object.assign({},history.state,{repomapReading:{question:question?.id||'',term:term?.id||'',search:searchIntent,find:globalSearch?.searchState(),map:map?.readingState?{page:current.id,value:map.readingState()}:null}});
+    var map=document.querySelector('[data-system-map]')||current.querySelector('[data-map-explorer]');
+    return Object.assign({},history.state,{repomapReading:{question:question?.id||'',term:term?.id||'',search:searchIntent,find:globalSearch?.searchState(),map:map?.readingState?{page:map.closest?.('[data-report-page]')?.id||current.id,value:map.readingState()}:null}});
   }
   function remember(){if(!restoring&&!current.querySelector('[data-map-explorer]')?.readingRestoring)history.replaceState(readingState(),'',location.href);}
   function savedElement(id,selector){var node=typeof id==='string'&&document.getElementById(id);return node&&node.matches(selector)?node:null;}
   function selectQuestion(selected){
     guides.forEach(function(guide){guide.hidden=guide!==selected;guide.open=guide===selected;});
     if(questionPage)questionPage.classList.toggle('has-selected-question',!!selected);
-    if(questionIndex)questionIndex.open=!selected;
+    if(questionIndex)questionIndex.hidden=!!selected;
     document.querySelectorAll('.question-menu a').forEach(function(a){
       if(selected&&a.getAttribute('href')==='#'+selected.id)a.setAttribute('aria-current','true');else a.removeAttribute('aria-current');
     });
@@ -74,7 +81,7 @@
     if(question){returnLink.href='#'+question.id;returnLink.textContent=rmT('Back to question');returnLink.title=question.querySelector('.reading-question').textContent;}
     termLink.hidden=!!question||!term||current===enclosing(term);
     if(term){termLink.href='#'+term.id;termLink.textContent=rmT('Back to term');termLink.title=term.querySelector('summary').textContent;}
-    var map=detailGroup&&current.querySelector('[data-map-explorer]');
+    var map=current!==home&&document.querySelector('[data-system-map]');
     mapLink.hidden=!map;
     if(map){mapLink.href='#'+mapDestination(map).id;mapLink.textContent=rmT('Back to map');mapLink.title=map.explorationLabel();}
     searchLink.hidden=!searchIntent||!!question;searchLink.textContent=rmT('Back to search');
@@ -82,19 +89,20 @@
   }
   function showLocation(){
     var repositorySelection=current===home&&home.querySelector('.repo-map')?.dataset.readingLabel;
-    var place=current===home?(repositorySelection||rmT('Home')):(current.dataset.componentName||current.querySelector('h2')?.textContent||'');
+    var place=current===home?(repositorySelection||''):(current.dataset.componentName||current.querySelector('h2')?.textContent||'');
     if(current===questionPage&&question)place=rmT('Question {0} of {1}',guides.indexOf(question)+1,guides.length);
     else if(term&&current===enclosing(term))place=term.querySelector('summary').textContent;
     var detailTitle=detailGroup&&detailGroup.querySelector('.group-head h4').cloneNode(true);
     if(detailTitle)detailTitle.querySelectorAll('button,.model-sources').forEach(function(n){n.remove();});
-    locationName.textContent=place+(detailTitle?' · '+rmT('Full details: {0}',detailTitle.textContent):'');
+    locationName.textContent=place+(detailTitle?' · '+rmT('Full details: {0}',detailTitle.textContent):sectionTitle?' · '+sectionTitle:'');
     readingIntent.textContent=question?question.querySelector('.reading-question').textContent:searchIntent?rmT('Search: {0}',searchIntent):'';
     readingIntent.hidden=!readingIntent.textContent;
     var map=!detailGroup&&current.querySelector('[data-map-explorer]');
     mapContext.hidden=!map;
     if(map){mapContext.href='#'+mapDestination(map).id;mapContext.textContent=map.explorationLabel();}
+    syncComponentChoice();
   }
-  function mapDestination(map){return document.getElementById(map.explorerScope)||map.explorerOperation||current;}
+  function mapDestination(map){return document.getElementById(map.explorerScope)||map.explorerOperation||home;}
   function placeSearch(){
     var panel=document.querySelector('.find-panel'),container=toolbar.querySelector('.nav');
     // The existing finder owns this one result panel and all of its state;
@@ -106,12 +114,16 @@
     var nextQuestion=node.closest('.reading-guide');
     if(page===questionPage)selectQuestion(nextQuestion);
     if(nextQuestion){question=nextQuestion;term=null;searchIntent='';}
-    else if(page===home||node.id==='questions'){question=null;term=null;searchIntent='';}
+    else if(node===home||node===repoMap||node.id==='questions'){question=null;term=null;searchIntent='';}
     var nextTerm=node.closest('.learn-concept');
     if(nextTerm)term=nextTerm;
     else if(node.id==='concepts')term=null;
     revealConcept(node);
-    current=page;body.dataset.readingPage=page.id;detailGroup=node.closest('.group');pages.forEach(function(p){p.hidden=p!==page;});
+    current=page;body.dataset.readingPage=page.id;detailGroup=node.closest('.group');
+    sectionTitle=node.matches?.('h3,h4')?node.textContent:node.matches?.('.component-coverage')?node.querySelector('summary').textContent:'';
+    // The map stays mounted above every reading. Answers, reference material
+    // and component details are sections below it, never another map page.
+    pages.forEach(function(p){p.hidden=p!==home&&p!==page;});
     placeSearch();showReturn();showLocation();
     for(var p=node;p&&p!==page;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;
     document.querySelectorAll('.target-picker').forEach(function(p){p.open=false;});
@@ -119,10 +131,10 @@
     // have changed this height before ResizeObserver gets its next turn.
     measureToolbar();
   }
-  function address(node,replace){
+  function address(node,replace,newVisit){
     if(!node.id)node=enclosing(node);
     var url=new URL(location.href);url.searchParams.delete('mode');url.hash=node.id;
-    if(url.href!==location.href)history[replace?'replaceState':'pushState'](readingState(),'',url);
+    if(url.href!==location.href||newVisit)history[replace?'replaceState':'pushState'](readingState(),'',url);
   }
   // The former Learn/Work switch changed nothing a reader could tell apart;
   // every reading block is shown and the search stays in the toolbar.
@@ -131,16 +143,17 @@
     placeSearch();
     // A single-component report has no repository SVG; its existing card
     // remains a direct entrance instead of an empty home.
-    if(!repoMap.querySelector('.repo-map'))repoMap.querySelector('.evidence-list').open=true;
+    if(!repoMap.querySelector('[data-system-map]'))repoMap.querySelector('.evidence-list').open=true;
   }
   // All navigators (search, map deep links and ordinary anchors) reveal the
   // existing section before any map measures its available space.
-  document.addEventListener('repomap:navigate',function(e){var node=e.detail.destination;if(!enclosing(node))return;setPage(node);address(node);});
+  document.addEventListener('repomap:navigate',function(e){var node=e.detail.destination;if(!enclosing(node))return;setPage(node);address(node,false,e.detail.newVisit);});
+  document.addEventListener('repomap:visit',function(){remember();history.pushState(readingState(),'',location.href);});
   // Layout commits the explorer's operation and scope. Hidden maps and the
   // inspector's temporary hover subject must not replace this reading context.
   document.addEventListener('repomap:layout',function(e){if(!detailGroup&&enclosing(e.target)===current)showLocation();},true);
   document.addEventListener('repomap:reading',function(e){if(!detailGroup&&enclosing(e.target)===current){showLocation();remember();}},true);
-  document.addEventListener('repomap:viewport',function(e){if(enclosing(e.target)===current)remember();},true);
+  document.addEventListener('repomap:viewport',function(e){syncComponentChoice();if(enclosing(e.target)===current)remember();},true);
   document.addEventListener('click',function(e){
     var findAction=e.target.closest('[data-reading-find]');
     if(findAction){
@@ -152,7 +165,7 @@
       e.preventDefault();var contextMap=current.querySelector('[data-map-explorer]');contextMap.resumeExploration();contextMap.scrollIntoView({block:'start'});return;
     }
     if(e.target.closest('a')===mapLink&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
-      e.preventDefault();var map=current.querySelector('[data-map-explorer]');
+      e.preventDefault();var map=document.querySelector('[data-system-map]');
       setPage(map);address(mapDestination(map));map.resumeExploration();map.scrollIntoView({block:'start'});return;
     }
     var readingQuestion=e.target.closest('.reading-guide');
@@ -164,7 +177,9 @@
       // browser Back must also reopen this card, not the previous URL's term.
       term=readingTerm;showReturn();showLocation();address(readingTerm,true);
     }
-    var a=e.target.closest('a[href^="#"]');if(!a||a.closest('[data-map-explorer]')||a.hasAttribute('data-open')||a.hasAttribute('data-question-map')||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
+    // Full code details are an ordinary reading step. Letting their link
+    // perform a bare hash jump would discard the question that opened the map.
+    var a=e.target.closest('a[href^="#"]');if(!a||(a.classList.contains('nav-home')&&document.querySelector('[data-system-map]'))||(a.closest('[data-map-explorer]')&&!a.classList.contains('map-details-link'))||a.hasAttribute('data-open')||a.hasAttribute('data-question-map')||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
     var node=document.getElementById(a.getAttribute('href').slice(1));if(!enclosing(node))return;
     e.preventDefault();setPage(node);address(node);
     // Map-node links are handled by their existing explorer. Scrolling an
@@ -180,7 +195,7 @@
       term=savedElement(saved.term,'.learn-concept');searchIntent=question?'':typeof saved.search==='string'?saved.search:'';
     }
     globalSearch?.restoreSearch(saved?.find);
-    if(saved?.map?.page===current.id)current.querySelector('[data-map-explorer]')?.restoreReadingState(saved.map.value);
+    if(saved?.map){var storedPage=document.getElementById(saved.map.page);storedPage?.querySelector('[data-map-explorer]')?.restoreReadingState(saved.map.value);}
     showReturn();showLocation();restoring=false;
   }
   // Restore the visit before a map reacts to the new URL or emits a reading

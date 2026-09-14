@@ -43,6 +43,7 @@
       card.replaceChildren();
       var heading=document.createElement('div');heading.className='term-popup-heading';
       var title=document.createElement('strong');title.id='rm-term-preview-title';title.textContent=rmT('Term explanation');heading.appendChild(title);
+      var badge=document.createElement('span');badge.className='badge';badge.textContent=rmT('(via model)');title.appendChild(document.createTextNode(' '));title.appendChild(badge);
       var close=document.createElement('button');close.type='button';close.className='term-popup-close';close.textContent=rmT('Close');close.addEventListener('click',function(){binding.hide(true);});heading.appendChild(close);card.appendChild(heading);
       var state=document.createElement('p');state.className='term-popup-state';state.textContent=rmT('Explanation pinned');card.appendChild(state);
       if(ids.length>1){var note=document.createElement('p');note.className='term-popup-variants';note.textContent=rmT('This name has {0} definitions in this report.',ids.length);card.appendChild(note);}

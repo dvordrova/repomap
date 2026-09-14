@@ -158,10 +158,11 @@ func TestTypeMembersFollowNativeOwnershipAcrossFiles(t *testing.T) {
 	if b.files["a/methods.go"].decls[0].Doc != "Renew extends the ticket's validity." {
 		t.Fatal("type context changed ordinary callable evidence")
 	}
-	// Owned fields remain with their class, including types beyond the
-	// description candidate budget. Do not flood the file with loose fields.
+	// Owned fields remain with their class throughout a file with many types.
+	// Do not flood the file with loose fields.
+	const typeCount = 12
 	var objects []programindex.Object
-	for i := 0; i < MaxSymbolCandidates+2; i++ {
+	for i := 0; i < typeCount; i++ {
 		id := fmt.Sprintf("class-%d", i)
 		objects = append(objects,
 			programindex.Object{ID: id, Name: id, Kind: programindex.ObjectType, Location: location("models.py", i*3+1)},
@@ -191,7 +192,7 @@ func TestTypeMembersFollowNativeOwnershipAcrossFiles(t *testing.T) {
 		t.Fatal("native object lookup retained the previous complete target")
 	}
 	b.collectSymbols()
-	if len(b.symbols) != MaxSymbolCandidates+2 || len(b.files["models.py"].decls) != MaxSymbolCandidates+2 {
+	if len(b.symbols) != typeCount || len(b.files["models.py"].decls) != typeCount {
 		t.Fatal("type evidence was ranked out or fields leaked into the file's declarations")
 	}
 	for _, symbol := range b.symbols {
@@ -274,7 +275,7 @@ func TestFixturePlaces(t *testing.T) {
 		t.Fatalf("native fixture boundaries missing: %+v", wantOwners)
 	}
 	// Keep identical canonical bytes for eager and lazy target storage below.
-	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "ded06f4a626388e0a80db4b12d788d570057c2197802ef702a8e800d4995d19a" {
+	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "9b4c84d488e0322a9b7ee26c9479a87d7d5bfed567f71b472901122e2b930323" {
 		t.Fatalf("saved mixed fixture graph changed: %s", got)
 	}
 	lazy := input
@@ -476,7 +477,7 @@ func TestFixturePlaces(t *testing.T) {
 		}
 		symbols++
 		perFile[place.Parent]++
-		wantCandidate := !places[place.Parent].File.Generated && (place.Symbol.Rank <= MaxSymbolCandidates || place.Symbol.Decl.Kind == "function" || place.Symbol.Decl.Kind == "method")
+		wantCandidate := !places[place.Parent].File.Generated
 		if place.Symbol.Candidate != wantCandidate || place.Symbol.Rank < 1 || place.Given == "" {
 			t.Fatalf("symbol place %s: %+v", place.ID, place.Symbol)
 		}

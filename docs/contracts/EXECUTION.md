@@ -113,7 +113,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   one short line or one closed choice. Independent atlas rows validate separately:
   an invalid, missing or duplicate known row loses only its own model answer;
   accepted neighbours keep their exact-response cache. Description and operation
-  rows additionally retain their entity memos. Independent arrows, target lines and zone choices/lines use the ordinary window cache. Joint/peer decisions also retain their existing exact complete-row memos. Unknown
+  rows additionally retain their entity memos. Independent arrows and target
+  lines use the ordinary window cache. Aggregate architecture decisions use the
+  same exact prepared-request cache and the owning closed-ref decoder for
+  parts, merge and areas; there is no directory-assignment memo or browser
+  validation step. Joint/peer decisions also retain their existing exact complete-row memos. Unknown
   keys are recorded and ignored; unused extra fields do not invalidate answers.
   Unparseable envelopes and incomplete coupled assignments still refuse their
   window.

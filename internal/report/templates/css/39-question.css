@@ -20,10 +20,13 @@
 .reading-map-links { display:flex;flex-wrap:wrap;gap:.4rem .8rem;font-size:var(--text-small) }
 .learn-questions { margin:1rem 0 1.5rem;max-width:65rem }
 .learn-questions li { padding:.4rem 0 }
-.learn-question-topics { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,23rem),1fr));gap:.6rem 1.5rem;align-items:start }
-.learn-question-topics > details { padding:.5rem 0;border-bottom:1px solid var(--line) }
-.learn-question-topics summary { font-weight:600;cursor:pointer }
-.learn-question-topics li > a { display:block }
+.learn-question-topics { display:block;max-width:76rem }
+.learn-question-topic { margin:0 0 1.8rem;padding:0;border:0 }
+.learn-question-topic h3 { font-size:1rem;font-weight:650;margin:0 0 .4rem }
+.learn-question-topics .question-links { margin:0 0 0 .25rem;padding:0 0 0 1rem;border-left:2px solid var(--line) }
+.question-links li { padding:.3rem 0;line-height:1.5 }
+.question-links a { display:block;text-decoration:none;color:var(--ink) }
+.question-links a:hover { text-decoration:underline;color:var(--accent) }
 .reading-question { font-size: 1rem; font-weight: 600; cursor: pointer; }
 .reading-stops { padding-left: 1.5rem; }
 .reading-part + .reading-part { margin-top:1rem;padding-top:.5rem;border-top:2px solid var(--line) }

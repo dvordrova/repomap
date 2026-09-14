@@ -56,15 +56,27 @@ func inventory(ctx context.Context, root string, exclusions []string) (gitfiles.
 			return nil
 		}
 		if entry.IsDir() {
+			if entry.Name() == "inline-configs" && filepath.Base(filepath.Dir(fullPath)) == ".clj-kondo" {
+				return fs.SkipDir
+			}
 			switch entry.Name() {
 			// .history is VS Code's Local History extension (copies of edited files,
 			// README included); .terraform holds downloaded providers; .idea and
 			// .vs are IDE state. None of them is the repository's own source.
-			case ".git", ".hg", ".svn", "node_modules", "__pycache__", ".cache", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".history", ".terraform", ".idea", ".vs":
+			case ".git", ".hg", ".svn", "node_modules", "__pycache__", ".cache", ".cpcache", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".history", ".terraform", ".idea", ".vs":
 				return fs.SkipDir
 			}
 			if marker, err := os.Stat(filepath.Join(fullPath, "pyvenv.cfg")); err == nil && marker.Mode().IsRegular() {
 				return fs.SkipDir
+			}
+			// A Go module cache kept inside the repository — a docker GOPATH
+			// mount, for example — is not the repository's own source. Every
+			// dependency in it carries a go.mod, and a cached module whose go.mod
+			// replaces a sibling directory cannot be listed at all.
+			if entry.Name() == "mod" && filepath.Base(filepath.Dir(fullPath)) == "pkg" {
+				if marker, err := os.Stat(filepath.Join(fullPath, "cache", "download")); err == nil && marker.IsDir() {
+					return fs.SkipDir
+				}
 			}
 			return nil
 		}
@@ -124,7 +136,7 @@ func projectInput(name string) bool {
 		return true
 	}
 	switch strings.ToLower(filepath.Ext(base)) {
-	case ".go", ".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".c", ".cc", ".cpp", ".h", ".hpp", ".s", ".proto", ".sh", ".bash", ".sql", ".graphql", ".gql", ".vue", ".svelte", ".html", ".css", ".scss", ".md", ".rst", ".adoc":
+	case ".go", ".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".clj", ".cljc", ".cljs", ".edn", ".c", ".cc", ".cpp", ".h", ".hpp", ".s", ".proto", ".sh", ".bash", ".sql", ".graphql", ".gql", ".vue", ".svelte", ".html", ".css", ".scss", ".md", ".rst", ".adoc":
 		return true
 	}
 	return false

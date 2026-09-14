@@ -6,6 +6,8 @@
 *.exe
 *.test
 .bin/
+node_modules/
+.cpcache/
 __pycache__/
 *.py[cod]
 

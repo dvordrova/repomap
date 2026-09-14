@@ -109,7 +109,7 @@ Work. Проверен поиск Router в выбранной библиоте�
 | UX10 | Work | При углублении различать текущий контекст и все использования | Ты: «только в данном контексте использование или в целом?» | Реализовано; повторить на большом отчёте. Есть сохранение операции, хлебные крошки, возврат и All uses. | Углубление сохраняет сценарий; полный обзор включается явно; назад возвращает ожидаемую область. | N05, C17 |  |
 | UX11 | Общее | Представления должны давать разную полезную информацию | Ты: «имхо это три одинаковые картинки» | Частично; 8 сентября режимы получили разные действия. Learn — вопросы с конечным индексом и точными ссылками к компоненту; Work — явный поиск по репозиторию/компоненту. Карта и выбранное место сохраняются. Проверено на Python/TS и Chi; различимость без знания прежней реализации ещё требует владельца. | На одном примере понятно, зачем переключать вид и что нового он показывает. | A24, N04, N08 |  |
 | UX12 | Общее | Убрать повторяющиеся префиксы и технические имена | Ты: «одинаковый префикс + помойка»; «что такое #1$1?» | Частично. Есть сокращённые названия частей и человекочитаемые операции. В 050958 визуально проверены два кубика Robot с разными точными исходниками; выбор models.py:21 не путается с robot.py:27. Большой каталог ещё требует ревью. | Пользователь различает одноимённые части, не читая длинные префиксы и внутренние обозначения. | A02, B06, N02 |  |
-| UX13 | Общее | Карточку должно быть можно спокойно прочитать и открыть её ссылку | Ты: «попробуй навести … и прочитать»; «на карточку нельзя переместить курсор, она исчезает» | Исправлялось; проверить реальным курсором. Есть закреплённый инспектор и механизм переноса к плавающей карточке. | Курсор доходит до текста/ссылки без исчезновения; клавиатура также позволяет открыть источник. | B10, A23 |  |
+| UX13 | Общее | Карточку должно быть можно спокойно прочитать и открыть её ссылку | Ты: «попробуй навести … и прочитать»; «на карточку нельзя переместить курсор, она исчезает» | Исправлялось; проверить реальным курсором. Есть закреплённый инспектор и механизм переноса к плавающей карточке. | Курсор доходит до текста/ссылки без исчезновения. | B10, A23 |  |
 | UX14 | Общее | Описание не должно закрывать нужные узлы и стрелки | Ты: «иногда текст карточки заслоняет полезную инфу» | Частично; текущее размещение — под картой. Выбранное объяснение не перекрывает узлы и стрелки; для чтения ниже большого раскрытия может понадобиться прокрутка страницы. Обычный широкий вариант проверен; удобство плотных карт остаётся для владельца. | Узел, его связи и описание видны одновременно на большом и маленьком графе. | A24, N04 |  |
 | UX15 | Общее | Инспектор должен следовать за действительно выбранным узлом | Ты: «I hover to front … move mouse to backend … still see fron» | Изменено по уточнению 8 сентября о постоянно сменяющихся объяснениях. Основной инспектор теперь следует за явным выбором; hover подчёркивает соседей и даёт краткий просмотр, сохраняя выбранное чтение. Это заменяет прежнюю попытку непрерывно менять основной текст по наведению. | Явный выбор frontend → backend меняет основное объяснение; простое наведение и переход к тексту сохраняют выбранный предмет. | N02, N04 |  |
 | UX16 | Общее | Защитная область перехода мыши не должна удерживать старую карточку | Ты: «safe triangle works not right? it is not moving?» | Исправлялось; проверить реальным курсором. Для плавающих карточек область обновляется по движению; закреплённой панели она не нужна. | Переход к карточке её сохраняет, уход в сторону переключает цель без залипания. | B10 |  |
@@ -219,7 +219,7 @@ UX29 проверен на обычном отчёте `20260907-083823-python-t
 
 В обычном отчёте `20260907-112735-python-tutorial-game-e70a52ffed75` верхняя панель закреплена и на 600px. Она сохраняет репозиторий, режим, часть и полные возвраты к вопросу и термину. Узкий инспектор прокручивается вместе со страницей: закрепление обоих блоков оставляло слишком мало места карте. Исправлено и перекрытие заголовка статьи после появления длинного возврата — высота панели измеряется до перехода. Проверен путь из поиска длинного вопроса о понятиях → Level → Application core → возврат к Level; вопрос и заголовок статьи оказываются ниже панели. На 934px инспектор закрепляется непосредственно под ней. После прокрутки на узком экране сама карта доступна, но её путь и инспектор уходят вверх; это оставшийся компромисс, а не полное закрытие UX31. Размер окна после проверки восстановлен.
 
-На 115943 отдельный проход Work выявил и проверил ещё две причины неясного контекста. Выбранная через Related operations или поиск onPlayClick раньше оставалась за горизонтальным краем списка; теперь карточка раскрывается, видны количество операций и кнопки продолжения. Очистка фильтра и изменение ширины сохраняют и показывают выбор. Нажатие кнопок той же карты больше не скрывает инспектор. Предпросмотр соседнего узла подписан Preview: клавиатурный переход к Frontend UI сохранил выбранную Utility helpers, и обе подписи видны одновременно после прокрутки вверх.
+На 115943 отдельный проход Work выявил и проверил ещё две причины неясного контекста. Выбранная через Related operations или поиск onPlayClick раньше оставалась за горизонтальным краем списка; теперь карточка раскрывается, видны количество операций и кнопки продолжения. Очистка фильтра и изменение ширины сохраняют и показывают выбор. Нажатие кнопок той же карты больше не скрывает инспектор. Предпросмотр соседнего узла подписан Preview.
 
 Проверены 934px и независимый проход 1600→600→1600px с увеличенным шрифтом. На 600px список может потребовать обычной прокрутки страницы, а длинный путь частично выходит за край. При переходе в Code and all group details прежняя операция сохраняется внутри карты, но не видна в полном разделе. Это оставшиеся проблемы ориентиров. [Проход Work и снимки](/Users/dvordrova/.codex/.chatgpt-projects/g-p-6a57399c4cd48191b02f6bf3a0c07cca/work/ui-ux-work-current-context.md), [точечный повтор и границы проверки](/Users/dvordrova/.codex/.chatgpt-projects/g-p-6a57399c4cd48191b02f6bf3a0c07cca/work/ui-ux-operation-context-root.md). Обычный 115943 завершился без новых вызовов модели; граф и ответы не менялись.
 
@@ -254,3 +254,321 @@ UX29 проверен на обычном отчёте `20260907-083823-python-t
 Последние малые запуски имеют 14 вопросов, 11 с состоянием answered и 3 partial. При этом ответ о разделении работы frontend/backend ограничивается HTTP API и исключает прочую работу frontend; состояние answered не означает, что общий вопрос удовлетворён. Это отдельный предмет содержательного ревью.
 
 В раннем обычном отчёте 094401 (44 секунды, 16 вопросов) ответ о проверке запуска подтверждал только frontend; проверка backend и установка зависимостей оставались пробелами. Следующие исправления обрезки типов проверены отдельно и сами по себе не решают достаточность ответов. Полная приёмка Learn/Work и большого etcd ещё не завершена.
+
+
+## 2026-09-13 — Архитектура по ответственности
+
+При сравнении канонического отчёта 094041 с 102843 исходный backend был одним
+мешком прикладной логики и точкой запуска. В новом отчёте отдельно видны HTTP API,
+модели обмена, симуляция поля, движение робота, валидация исходного кода и
+инициализация сенсоров. На фронте различаются редактор, координация playground,
+HTTP-клиент и анимация/рисование. Схема сохранила обе программы и три HTTP-пары.
+
+Путь 1: вопрос о неудачной валидации → Source code validation → To code.
+Сверху видны backend и путь Submission safety and setup / Source code validation;
+в деталях — вызов `run_level → validate`, `backend/app/app.py:90` и
+`backend/app/utils.py:18`. Возврат к карте сохраняет выбранную часть. Ответ
+отдельно сообщает, что ветвь формирования backend-ошибки отсутствует в его
+наблюдениях; это не доказательство отсутствия проверки. Найден и исправлен
+переход To code: обычная смена fragment теряла исходный вопрос. Теперь ссылка
+на полные детали проходит через общий навигатор с контекстом чтения.
+Повторный путь после исправления: вопрос 12 → карта → To code → Back to map →
+Back to question. На обоих промежуточных экранах виден исходный вопрос;
+последний переход возвращает именно к вопросу 12 из 16.
+
+Путь 2: вопрос о запуске показывает `python main.py` из backend, `npm start`
+из front, браузер на 3000 и proxy на 8080 с исходными ссылками. Переход обратно
+в список сохраняет доступ ко всем 16 вопросам.
+
+Othello 102848: из Handle mouse press event открыта UI event handling.
+До и после раскрытия остаются шесть частей и восемь связей: адаптер ввода,
+обработка события, геометрия, правила, доска и состояние игры. После перезагрузки
+верхняя строка продолжает называть выбранную операцию и открытую часть.
+На общем экране области показываются рамками с внутренними частями и стрелками;
+исчезли промежуточные одиночные контейнеры, пустая треть ширины и автоматический
+сдвиг к случайной первой части. Проверен обычный HTTP-отчёт, не исходный шаблон.
+
+## 2026-09-13 — Othello: объяснение термина и контекст
+
+На обычном отчёте `20260913-083717-othello-56735348db67` пользователь обнаружил стену ссылок в карточках AI и rules. В сохранённом словаре у AI 834 позиции в 28 файлах, у rules 796 в тех же 28: это полный контекст исходного анализа. Перерисованы этот отчёт и окончательный EDN-прогон `20260913-084650-othello-82aa91ac38fe` обычным `repomap render`, без модели.
+
+Проверенный путь: Home → AI. Заголовок содержит `Term explanation (via model)`; определение начинается непосредственно с текста. Вопросы и `Analysis context · 28 files` закрыты. Раскрытие контекста показывает каждый путь один раз; раскрытие README сохраняет пять исходных ссылок, включая весь файл и строки 1, 8, 18, 54 на зафиксированной ревизии. Затем закрыт контекст, раскрыты вопросы и выбран вопрос о запуске фонового AI: видны его полный заголовок, `Question 6 of 14`, ответ и переходы к UI и игровой логике. Это даёт понятный экран и после перерыва. Все позиции остаются в статическом HTML; список контекста не выдаётся за точные подтверждения определения.
+
+
+## 2026-09-13 — Общая карта и метки на границах
+
+Первый вариант с сеткой частей и отдельной строкой пар номеров был отклонён
+пользователем. В его рисунке прежний направленный canvas сохраняется, номер
+на стрелке у рамки совпадает с номером внутренней части, а внешняя сторона
+подписана именем участника. В обычных шаблонах восстановлены направленная
+раскладка и полная ширина карты; строка пар номеров и сетка удалены.
+
+Метки показываются при наведении на область или её часть. Нумерация локальна
+и одинакова для входящих и исходящих связей. На реальных данных Othello
+View model — 1, UI geometry and hit testing — 2, Animation frame policy — 3.
+Девять внешних пар получили метки, повторные исходные вызовы одной пары
+собраны под одной меткой. Внутренние стрелки сохранены. Подписи используют
+реальные концы связей, а не предположения из нарисованного примера.
+
+Путь 1: поиск View model → метка Quil painting → 1: View model → исходные
+связи score-block → disc-fill и draw-state → view-model, со ссылками
+на draw.cljc:94/161 и view.cljc:75. Track
+pointer position подсвечивает обработчик в общей карте, без отдельной
+двухкубиковой диаграммы. Код выбранной части читается под картой, при наведении
+остаётся прежняя карточка.
+
+Путь 2: вопрос 5 о клике Run → Run simulation on click → Playground orchestration
+→ Backend HTTP service → HTTP API endpoints. При переходе на backend размеры
+и позиции всех узлов совпали, исходная операция и вопрос сохранились. To code
+→ перезагрузка → Back to map → Back to question вернул к вопросу 5 из 16.
+Отдельный HTTP-вызов сохраняет адрес и источник front/src/service/http.ts:34;
+одинаковые backend API различены исходным методом/адресом либо именем вызова.
+
+Обычные запуски 113850 (Othello) и 113853 (Python + TypeScript) завершились с 0,
+использовав общий кэш. Метки проверяются обычным render тех же сохранённых
+данных через loopback HTTP. Это работающий вариант по рисунку; окончательную
+оценку визуала пользователь ещё не дал.
+
+
+## 2026-09-13 — Перепроверка плотной области и ухода указателя
+
+Предыдущая проверка удобного участка не выявила ни столкновения подписей
+Domain core, ни повторное включение меток из-за выбранной части. Скриншоты
+пользователя показали оба дефекта. Исправлена единица группировки: один внешний
+участник в одном направлении получает одну подпись и все внутренние номера.
+UI presentation logic имеет шесть групп вместо девяти отдельных пар;
+Domain core — девять внешних участников. Повторные вызовы остаются в деталях.
+
+Проверены переходы: поле страницы → фон области → внутренняя часть → маркер;
+часть → пустой участок канваса; область → за канвас; прокрутка при наведении;
+повторный вход при сохранённом выборе. На пустом участке и снаружи нет номеров,
+меток и видимой карточки; выбор сохраняется. Все внутренние адресаты при
+наведении читаемы, включая невыбранные. Измеренные границы подписей в проверенных
+Othello-областях не пересекаются и не выходят за полный рисунок. Нижние подписи
+Domain core осмотрены после прокрутки. Маркер Position evaluation с номерами
+1 и 2 открывает исходные вызовы к правилам/доске со ссылками eval.cljc/board.cljc.
+
+На общей Python/TypeScript-карте выбранная операция Run simulation on click
+сохраняется при наведении на Source code validation и уходе в пустое место.
+
+Проверка ширины: при innerWidth=1600 ширина main=1560, stage=1534.77,
+рисунка=1535; ограничение текстовой колонки снято. Временный размер окна
+сброшен; проверен и обычный viewport 934×992. Открыт собранный HTML через
+существующий loopback 8774, новых вкладок не создано. Оба сохранённых отчёта
+перерисованы обычным render без модели; консоль обеих страниц без ошибок.
+
+Ограничение способа управления: CUA не предоставляет свободное mouse-move.
+Реальные переходы указателя выполнялись поддерживаемым drag из поля страницы
+или узла (они не захватывают pan), с проверкой состояния после отпускания;
+отдельно проверены обычный координатный клик и прокрутка. Это не
+утверждение о проверке всех траекторий незажатой мыши. Автотесты отдельно
+проверяют очистку при выходе, прокрутке и blur/скрытии. Проверки пакета отчёта, vet и build прошли.
+
+
+## 2026-09-13 — React Flow + ELK, named inputs and colour
+
+The ordinary system canvas now uses React Flow for its viewport and ELK for
+compound layout and actual endpoint routing. The previous custom boundary
+route planner is removed. Generated assets are embedded in the Go binary and
+in each HTML report. Neither installation nor report viewing requires Node.
+
+On Othello all 8 inputs have visible named cards inside 3 implementing parts;
+14 architectural parts remain inside 6 accepted areas. On Python/TypeScript,
+all 12 inputs (3 HTTP requests, UI actions and a continuous activity) remain
+visible, alongside 3 separate outbound observations. Component headers retain
+language, component kind, role and purpose. Structure is neutral, inputs blue,
+external communication amber, selection/active edges purple. Types also have
+text labels. All input/part cards were checked for overflow in both DOMs.
+
+Journey 1: select UI event handling, click its exact Track pointer / mouse-click
+input. Node positions and sizes and the viewport transform remain equal across
+an ordinary click; the exact clicked operation stays in the reading column.
+View model → hover its area → grouped Quil painting label reads original calls
+and source pairs → click its number centers Quil painting → browser Back returns
+to View model. UI presentation logic retains six outside/direction groups. The
+hover preview occupies the reading column and does not cover surrounding nodes.
+
+Journey 2: question 5 in Python/TypeScript → Run simulation on click → Source code
+validation in backend → To code → reload → Back to map → Back to question.
+The original question and Run operation survive, and the validation description
+is restored. Selecting outbound POST /api/level/run focuses its amber card and
+retains front/src/service/http.ts:34. Repeated address text was removed.
+
+These journeys caught two integration defects: camera initialization could
+race a saved selection, and revealing/moving a canvas under a stationary mouse
+could preview the wrong neighbour. Camera initialization/restoration is ordered;
+preview resumes only after actual pointer movement. A real graph geometry check
+also exposed stale ELK bends from reusing the first orientation's mutated input
+for the second. Independent candidate inputs fix that. On the final browser DOM,
+all 32 Othello and 18 Python/TypeScript routes have orthogonal segments and none
+passes through a leaf card. The six frontend tests include this mutation contract,
+actual ELK routing, exact inventory preservation, long/translated input names and
+the stationary-pointer regression. Report tests, vet, asset check and build pass.
+
+No browser script assets are external and browser error logs are empty. Both
+saved online runs were rendered through the ordinary command, exit 0 and zero
+provider requests. The default browser viewport is restored; its 934px window
+has a 605px canvas plus a separate reading column. The map uses available page
+width, independent of the prose width. Whole-map fit necessarily reduces text;
+search, numbered destinations and reset restore readable detail.
+
+Input-method limit: CUA offers no unrestricted unpressed mouse move. Hover
+transitions were exercised using supported drags beginning in page margins or
+the reading column, plus actual clicks, scrolling and browser navigation. This
+is not a claim to have tested every free-mouse trajectory. Earlier entries in
+this journal describe superseded implementations; this entry covers the library
+migration and the latest colour/input changes.
+
+## 2026-09-13 — Reading stays pinned; emphasis has one subject
+
+The follow-up removes node hover previews from the reading panel. Hover affects
+the drawing; a click keeps full details and actionable links on the right.
+Connection hover evidence occupies a separate section without hiding those
+details and survives crossing into the inspector. The caption names the active
+area, input path or selected part. Hover overrides a path temporarily and
+canvas exit restores it. Reading outside that path is explicitly labelled and
+does not invent path membership. Search replaces emphasis, including zero matches.
+State no longer has its own purple category in the legend: type colours stay
+blue/amber, reading uses an outline, and active edges are dark neutral lines.
+
+Browser walkthrough: Track pointer position → Test helpers → hover the test
+area showed 4 connections while preserving Test helpers' links; moving back to
+the inspector restored the zero-edge input path. To code → Back to map kept
+both choices and the exact viewport. View model → its area showed the area
+frame/title and six grouped labels; hovering UI event handling's label showed
+14 source links alongside the still-mounted View model reading. Moving from
+that label into the inspector preserved the evidence and the To code action.
+Clear selection removed the old inspector heading. A no-match search kept the
+reading but highlighted no old edges. Python/TypeScript retained the Run input
+and exact outbound POST record after reload, without claiming it belonged to
+the saved input path.
+
+The compact Overview folds existing areas into cards listing all member parts
+and their input counts. It uses a separately precomputed ELK display layout,
+not a new analysis or inferred grouping. Detail geometry stays fixed. At the
+observed 934×992 viewport, overview labels are readable at the minimum scale
+and the map starts at the top/left; seeing the rest requires panning. Three +
+clicks entered the detailed level; three − clicks returned to the overview,
+with the selected reading intact. Reload also restored the overview and reading.
+A requested viewport override did not change the page's observed client size,
+so this is not a claim of verification at 1800px. The override was reset.
+
+Final detailed DOM checks: Othello 14 parts/8 inputs/32 routes; Python+TypeScript
+25 cards/12 inputs/3 outbound records/18 routes. No diagonal segments, routes
+through leaf cards or external script dependencies. Eleven frontend tests,
+generated asset verification, report tests and vet pass. Both saved ordinary
+online runs were re-rendered with zero provider requests. A missing Overview
+UI translation caught in an intermediate browser run was fixed; the vocabulary
+test now includes the authored frontend sources. CUA pointer testing used
+supported drags beginning outside the canvas or on a non-panning label; it does
+not establish every possible unpressed mouse trajectory.
+
+## 2026-09-13 — Small-repository journeys, complete reading and camera history
+
+This follow-up supersedes the preceding counts-only overview and wheel-driven
+layout switching. It is implementation/probe evidence, not owner acceptance of
+large maps.
+
+- **Recognise the repository.** Othello's overview now contains all eight named
+  interactions in their implementing parts, once per type/owner. Python/TS has
+  all twelve inputs and three independent external communication records. The
+  original core/entry/dependency lane labels remain visible. No dependency is
+  promoted to a runtime system; the saved Othello analysis has no outbound
+  observations. Its board, rules, state, search and evaluation are present.
+- **Explore and return.** Othello overview → zoom to .75 → pan → open Host input
+  adapter → Back → reload retained the exact transform
+  `translate(24.625px, .689453px) scale(.75)`. Opening overview from detail,
+  panning and choosing the already selected Position evaluation also records a
+  visit: two Back actions restore the overview and then the previous detail,
+  even though both addresses name the same part. Wheel/button zoom keeps the
+  current drawing; reset keeps its level. A new hashless visit → Host input
+  adapter → Back restored all six overview areas at `translate(16px,16px)
+  scale(.6)` with an empty inspector. The initial camera is saved only after
+  layout is ready; the later part reading is explicitly cleared on return.
+- **Read an explanation.** Position evaluation has three named peers with
+  2/3/5 original source rows. The repeated model summary is shown once per exact
+  peer/direction; source locations and possible-call evidence remain. Key code
+  is visible immediately. Returning after opening a source disclosure retains
+  that disclosure and the reading scroll, independently of the pinned input.
+- **Move the mouse without losing the reading.** Track pointer position → View
+  model keeps the zero-edge input path and marks the reading outside it. Moving
+  over UI presentation logic emphasizes 11 edges and six grouped labels;
+  moving into the sidebar restores the zero-edge path and leaves View model's
+  explanation/links intact. Pointer checks use supported drags beginning in the
+  page margin, not a claim of every native mouse trajectory.
+- **Follow a user scenario into another component.** Run simulation on click →
+  Backend HTTP service shows the saved `handleClick → runLevel` source path.
+  The exact POST peer opens backend `POST /api/level/run`; its participants lead
+  to Source code validation with `run_level → possible validate` and the actual
+  source lines. Back restores the frontend service's camera and expanded path.
+  The model's complete Run answer remains accessible beneath the same mounted
+  canvas; Back to map preserves the selected reading. This exposed and fixed a
+  regression where grouped connections had removed the input's call-path proof.
+- **Find material beyond the graph.** Component sidebar links expose original
+  flow/configuration/data/core/dependencies/dynamic execution/coverage/TODO
+  sections as available. Backend → Runs code it is given reaches the existing
+  `exec` observation at `backend/app/field.py:98` below the same canvas. The
+  header names the component and requested section. The complete question,
+  source, term and reference sections remain in the ordinary static HTML.
+  Input and communication catalogues show all grouped rows without All gates.
+
+The owner removed the introductory labels Understand this repository and
+Starting points; the summary and useful navigation remain. The old duplicate
+component catalogue is no longer inserted alongside the common canvas.
+
+Checks: focused report tests and vet, 12 frontend tests and generated-asset
+verification, owner binary build, both saved online reports rendered without
+provider requests. Browser observations use the actual 934×992 viewport.
+
+**Next design direction, not implemented or accepted here:** a multi-component
+overview with purposes and real inter-component connections, then component
+areas, then parts at closer zoom. It must preserve the location being examined
+and neighbouring components. A further code level is undecided. The owner asks
+to establish these journeys on small repositories before evaluating a large
+portfolio. The layout hierarchy must keep access to all saved LLM explanations,
+answers, limitations and source evidence; it cannot replace them with boxes.
+
+## 2026-09-13 — Сквозной путь входа и обратный поиск
+
+Проверены обычные сохранённые online-отчёты Othello и Python/TypeScript через
+`repomap render` (ноль дополнительных запросов к модели). В Run simulation on
+click теперь 10 участников, включая backend и внешний POST. У Source code
+validation видна цепочка четырёх исходников от UI; интеграция не названа вызовом
+компилятора. У внешнего POST в обратном списке только Run, без соседних входов
+HTTP-сервиса. Возврат внешнее обращение → Run → backend → назад → назад сохраняет
+точную камеру и прежнюю карточку. У Othello легенда не содержит внешних обращений.
+Проверены живой браузер и исходники, а не только наличие DOM.
+
+Расследование core: Board/Game представлены значениями, не именованными типами;
+текущая проекция понятий ограничена native type declarations. Python сохраняет неопределённые записи атрибутов без разрешённого объекта
+назначения; в этих отчётах нет связей записи к конкретным сущностям. Это
+ограничение анализа, не повод придумывать изменение
+сущности из факта вызова её компонента. Автоматические уровни детализации и
+полная модель изменений сущностей ещё не приняты.
+
+## 2026-09-13 — Fixed geography and access to repository reading
+
+Automatic area detail now uses one final world layout. Summary and parts occupy
+one fixed rectangle, and original routes continue through its boundary on
+zooming in. The retired independently laid-out overview is removed. Browser
+checks on Othello caught two issues missed by the previous happy path: ELK's
+vertical minimum-size axes were reversed, and exact float equality turned
+fractional vertical routes into diagonal clipping. Both have executable
+regressions now. An oversized initial view starts on actual content.
+
+Othello View model → three zoom-out steps crossed a detail boundary with the
+same node coordinates, dimensions and pinned reading. Route inspection found
+zero diagonal segments after the fix. Summary content had no overflow.
+The empty sidebar is replaced with saved repository entrances and component
+purposes/sources. Run topic → desktop answer exposed the original explanation
+and 20 source links; two Back actions restored the exact previous camera and
+home reading. The canvas remained mounted throughout.
+
+Python/TS external POST → Run → Source code validation displayed the four-step
+frontend-to-backend source witness with possible integration/call labels.
+Back twice restored the external reading and exact camera. All compact area
+cards fit their contents. This does not accept the still-pending top semantic
+level for multiple components or mutation tracing of value-shaped entities.
+Checks use the actual 934×992 browser viewport and supported controls; they do
+not claim every native pointer or pinch trajectory. Both reports are rendered
+from their same saved ordinary online runs, with zero new provider requests.

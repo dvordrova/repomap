@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/clojureproject"
 	"github.com/dvordrova/repomap/internal/corpus"
 )
 
@@ -120,6 +121,7 @@ const (
 	kindPython
 	kindGo
 	kindJSTS
+	kindClojure
 )
 
 func classifyPath(filePath string) fileKind {
@@ -127,6 +129,8 @@ func classifyPath(filePath string) fileKind {
 		return kindReadme
 	}
 	switch strings.ToLower(path.Ext(filePath)) {
+	case ".clj", ".cljc", ".cljs":
+		return kindClojure
 	case ".py":
 		return kindPython
 	case ".go":
@@ -156,6 +160,14 @@ func fileQuotes(repository *corpus.Corpus, entry corpus.Entry) ([]fileQuote, err
 	switch kind {
 	case kindReadme:
 		return tagged(SourceReadme, readmeQuotes(len(content.Bytes), lines)), nil
+	case kindClojure:
+		var docs []quote
+		for _, doc := range clojureproject.Docstrings(content.Bytes) {
+			if item, ok := docstringQuote(doc.Line-1, doc.Text); ok {
+				docs = append(docs, item)
+			}
+		}
+		return append(tagged(SourceDocstring, docs), tagged(SourceComment, markerComments(lines, ";"))...), nil
 	case kindPython:
 		return append(
 			tagged(SourceDocstring, pythonDocstrings(lines)),

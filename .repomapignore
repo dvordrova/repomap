@@ -1,0 +1,10 @@
+# Local experiment outputs, binaries and report artifacts, not project source.
+.bin/
+.codex-tmp/
+.claude/
+.hermes/desktop-attachments/
+.repomap/
+.repomap-runs/
+artifacts/
+tmp/
+surfacediscovery.test

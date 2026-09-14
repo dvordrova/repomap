@@ -247,3 +247,28 @@ func TestQuestionTermsUseSelectedDeclarationsNotNameGuesses(t *testing.T) {
 		t.Fatal("inline explanation duplicated the catalogue's destination")
 	}
 }
+
+func TestOneQuestionMenuKeepsUngroupedAnswersAndOpenTopics(t *testing.T) {
+	view := &pageView{Questions: []*pageQuestion{
+		{ID: "run", Question: "How to run?", Origins: []pageQuestionOrigin{{Title: "Run"}}},
+		{ID: "unknown", Question: "A question without an accepted topic?", Origins: []pageQuestionOrigin{{Title: "Unresolved topic"}}},
+	}}
+	learningQuestionTopics(view, &atlas.LearningPlan{Reviews: []atlas.LearningReview{{Intent: "run", Title: "Run"}}})
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := parsed.ExecuteTemplate(&out, "learn-start.html", view); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, id := range []string{"run", "unknown"} {
+		if strings.Count(html, `href="#`+id+`"`) != 1 {
+			t.Fatalf("question %s absent or duplicated: %s", id, html)
+		}
+	}
+	if strings.Contains(html, "<details") || strings.Contains(html, "question-menu") {
+		t.Fatal("the single grouped question list must not add folding or another catalogue")
+	}
+}

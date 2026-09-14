@@ -16,6 +16,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   it sends no other source-file contents. Before any `f*` identity exists, exclude
   `.npmrc`, every `.env*`, installed dependency subtrees such as `node_modules`, and every `*.tsbuildinfo` file from the
   shared corpus, freshness state, model input, debug output, and publication.
+  A dependency cache a project keeps inside its own checkout is excluded by the
+  same rule: a Python environment by its `pyvenv.cfg`, and a Go module cache by
+  its `pkg/mod` position and `cache/download` directory. Their contents are not
+  the repository's source, and a cached module whose `go.mod` replaces a sibling
+  directory cannot be listed at all, so admitting one fails the whole Go fact
+  stage.
 
 - The selected repository is trusted and the tool is not a security boundary.
   Nothing is scanned or redacted, the run directory is as sensitive as the
@@ -69,6 +75,13 @@ This is publication metadata, not model input or an analysis exclusion. Local
 serving still opens the analyzed working tree, including these paths. Corpus
 tests cover identical inventory before Git init, before the
 first commit and after a commit; they do not stand in for that integration.
+
+## Clojure projects
+
+Clojure sources and EDN manifests enter the same corpus. `deps.edn` and
+`project.clj` define exact JVM project targets; see [Clojure](CLOJURE.md).
+Generated `.cpcache` and `.clj-kondo/inline-configs` directories are excluded
+from inventory while their persistent on-disk caches remain intact.
 
 ## Repository guidance
 

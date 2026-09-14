@@ -1,4 +1,5 @@
-{{define "map.html"}}<figure class="map" data-map data-trace="{{.Trace}}"{{if .Explorer}} data-map-explorer{{end}}{{if .Operations}} data-operation-map{{end}}>
+{{define "map.html"}}<figure class="map{{if .System}} system-canvas{{end}}" data-map data-trace="{{.Trace}}"{{if .Explorer}} data-map-explorer{{end}}{{if .System}} data-system-map{{end}}{{if .Operations}} data-operation-map{{end}}>
+{{range .Nodes}}{{$node := .}}{{range .Aliases}}<span id="{{.}}" data-map-alias="{{$node.ID}}" hidden></span>{{end}}{{end}}
 {{if .Operations}}<div class="operation-controls" data-operation-controls hidden>
 <label>{{t "Find an operation"}} <input type="search" data-operation-search placeholder="{{t "Name or description"}}"></label>
 <label>{{t "In"}} <select data-operation-group><option value="">{{t "All groups"}}</option></select></label>
@@ -7,13 +8,13 @@
 </div>{{end}}
 {{template "map-controls.html"}}
 <div class="map-stage" data-map-stage>
-<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="img" aria-label="{{t "Map of this target's groups and the connections between them"}}" class="map-svg" style="min-width:{{printf "%.0f" .MinWidth}}px">
+<svg viewBox="0 0 {{printf "%.0f" .Width}} {{printf "%.0f" .Height}}" width="{{printf "%.0f" .Width}}" height="{{printf "%.0f" .Height}}" role="group" aria-label="{{t "System architecture and connections"}}" class="map-svg" style="min-width:{{printf "%.0f" .MinWidth}}px">
 <defs><marker id="{{.MarkerID}}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0.5 L10 5 L0 9.5 z" class="map-arrow-head"/></marker></defs>
 <g class="map-frames">{{range .Frames}}<g class="map-frame map-zone-{{.Zone}}" id="{{.ID}}" data-frame="{{.ID}}"><rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="6"/><text x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Title}}{{if gt .Holds .Shown}} · {{t "{0} groups" .Holds}}{{end}}</text></g>{{end}}</g>
 <g class="map-lanes">{{range .Lanes}}<text x="{{printf "%.1f" .X}}" y="18" class="map-lane-label">{{.Label}}</text>{{end}}</g>
 <g class="map-edges">{{range .Edges}}<path d="{{.Path}}" class="map-edge{{if .Possible}} map-edge-possible{{end}}" data-scope="{{.Scope}}" data-label-ref="{{.LabelRef}}" data-summary="{{.Summary}}" data-summary-ref="{{.SummaryRef}}" data-from-source="{{.FromSource.Href}}" data-from-text="{{.FromSource.Text}}" data-from-no-source="{{.FromSource.NoSource}}" data-to-source="{{.ToSource.Href}}" data-to-text="{{.ToSource.Text}}" data-to-no-source="{{.ToSource.NoSource}}"{{if and $.Explorer (ne .Scope "static")}} style="display:none"{{end}} data-from="{{.From}}" data-to="{{.To}}" data-operations="{{.Operations}}" marker-end="url(#{{$.MarkerID}})"><title>{{.Label}}</title></path>{{end}}</g>
 <g class="map-edge-labels">{{range .Edges}}{{if .Lines}}<g class="map-edge-label" data-from="{{.From}}" data-to="{{.To}}">{{$edge := .}}{{range $line, $text := .Lines}}<text x="{{printf "%.1f" $edge.LabelX}}" y="{{printf "%.1f" $edge.LabelY}}" dy="{{if eq (len $edge.Lines) 1}}3.5{{else if eq $line 0}}-2{{else}}9{{end}}" text-anchor="middle">{{$text}}</text>{{end}}<title>{{.Label}}</title></g>{{end}}{{end}}</g>
-<g class="map-nodes">{{range .Nodes}}<a{{if .Href}} href="{{.Href}}"{{end}} id="{{.ID}}" class="map-node map-node-{{.Lane}}"{{if .InitiallyHidden}} style="display:none"{{end}}{{if .Activation}} target="_blank" rel="noopener"{{end}} data-node="{{.ID}}" data-near="{{.Neighbours}}" data-title="{{.FullTitle}}" data-canonical-title="{{.CanonicalTitle}}" data-members="{{.Members}}" data-summary="{{.Summary}}" data-summary-ref="{{.SummaryRef}}" data-keys="{{.Keys}}" data-concepts="{{.Concepts}}" data-call-paths="{{.CallPaths}}" data-source="{{.Source.Href}}" data-source-text="{{.Source.Text}}" data-no-source="{{.Source.NoSource}}" data-open="{{.Source.Open}}" data-activation="{{.Activation}}" data-operation-group="{{.OperationGroup}}" data-remote="{{.Remote}}" data-children="{{.Children}}" data-branch="{{.Branch}}" data-component="{{.Component}}" data-source-kind="{{.SourceKind}}" aria-label="{{.FullTitle}}, {{if .Activation}}{{t .Activation}}{{else if .Branch}}{{.Subtitle}}{{else}}{{t "{0} symbols" .Members}}{{end}}">
+<g class="map-nodes">{{range .Nodes}}<a{{if .Href}} href="{{.Href}}"{{end}} id="{{.ID}}" class="map-node map-node-{{.Lane}}"{{if .InitiallyHidden}} style="display:none"{{end}}{{if .Activation}} target="_blank" rel="noopener"{{end}} data-node="{{.ID}}" data-owner="{{.Owner}}" data-item-kind="{{.ItemKind}}" data-lane="{{.Lane}}" data-details-id="{{.DetailsID}}" data-near="{{.Neighbours}}" data-title="{{.FullTitle}}" data-canonical-title="{{.CanonicalTitle}}" data-members="{{.Members}}" data-summary="{{.Summary}}" data-subtitle="{{.Subtitle}}" data-summary-ref="{{.SummaryRef}}" data-keys="{{.Keys}}" data-concepts="{{.Concepts}}" data-call-paths="{{.CallPaths}}" data-writes="{{.WritesJSON}}" data-source="{{.Source.Href}}" data-source-text="{{.Source.Text}}" data-no-source="{{.Source.NoSource}}" data-open="{{.Source.Open}}" data-activation="{{.Activation}}" data-input-owner="{{.InputOwner}}" data-operation-group="{{.OperationGroup}}" data-remote="{{.Remote}}" data-children="{{.Children}}" data-branch="{{.Branch}}" data-component="{{.Component}}" data-role="{{.Role}}" data-role-ref="{{.RoleRef}}" data-language="{{.Language}}" data-component-kind="{{.ComponentKind}}" data-source-kind="{{.SourceKind}}" aria-label="{{.FullTitle}}, {{if .Activation}}{{t .Activation}}{{else if .Branch}}{{.Subtitle}}{{else}}{{t "{0} symbols" .Members}}{{end}}">
 <rect x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" width="{{printf "%.1f" .Width}}" height="{{printf "%.1f" .Height}}" rx="6" class="map-node-body"/>
 {{$node := .}}{{range $line, $text := .Title}}<text x="{{printf "%.1f" $node.X}}" y="{{printf "%.1f" $node.Y}}" dx="11" dy="{{if eq $line 0}}20{{else}}37{{end}}" class="map-node-title">{{$text}}</text>{{end}}
 {{if .Subtitle}}<text x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dx="11" dy="56" class="map-node-context">{{.Subtitle}}</text>{{end}}
@@ -23,18 +24,26 @@
 </svg>
 </div>
 <figcaption class="map-note">
+{{$inputs := false}}{{$external := false}}{{$core := false}}{{range .Nodes}}{{if .Activation}}{{$inputs = true}}{{end}}{{if eq .ItemKind "External communication"}}{{$external = true}}{{end}}{{if and (eq .Lane "core") (not .Activation) (not .Branch)}}{{$core = true}}{{end}}{{end}}
 <details class="map-legend"><summary>{{t "legend"}}</summary><ul class="plain">
-<li>{{t "An area is a directory or a group of directories with one role; a part is a group of code with one role inside it; key code is the declarations of a part that carry an explanation, the rest waits under All N."}}</li>
-<li>{{t "Structure shows areas and parts. Click an area to open its parts, or a part to see its callers and dependencies. Back returns to the containing area or component."}}</li>
-{{if .Operations}}<li>{{t "Operations follows one command, endpoint or activity. Its context stays selected while you explore; Clear selection returns to the complete structure."}}</li>{{end}}
-<li>{{t "A connection may contain several relations between the folded areas. Click it to read the individual endpoints and evidence. These are static relations, not a recorded execution."}}</li>
+<li>{{t "Areas contain the saved architectural parts. Selecting a part keeps the drawing and opens its description and code beside it."}}</li>
+{{if $core}}<li>{{t "Purple cards are core parts: the repository's domain logic and data."}}</li>{{end}}
+{{if $inputs}}<li>{{t "Blue cards are inputs. Open one to follow its reachable code path."}}</li>{{end}}
+{{if $external}}<li>{{t "Amber cards are external communications. Open one to see its sources and the inputs that reach it."}}</li>{{end}}
+<li>{{t "The outlined card is open on the right. Dark arrows highlight the focused connections. Lines show static relations, not a recorded execution."}}</li>
 {{if .Subjects}}<li>{{t "These groups name {0} of this target's {1} symbols and connections." .Grouped .Subjects}}</li>{{end}}
 </ul></details></figcaption>
+{{range .Nodes}}{{if .Writes}}<noscript><section class="system-entity-writes"><h3>{{.FullTitle}} · {{t "State changes"}}</h3>
+<p>{{t "Writes reachable in code; a call path does not prove they execute on every run."}}</p>
+{{range .Writes}}<h4>{{.EntityName}} · {{.Field}}{{if .Possible}} · {{t "possible"}}{{end}}</h4>
+<p>{{template "anchor" .Entity}} → {{template "anchor" .Source}}</p>
+<details><summary>{{t "Call path"}}</summary><ol>{{range .Steps}}<li>{{.Name}}{{if .Possible}} · {{if .Integration}}{{t "possible integration"}}{{else}}{{t "possible call"}}{{end}}{{end}} {{template "anchor" .Anchor}}</li>{{end}}</ol></details>
+{{end}}</section></noscript>{{end}}{{end}}
 </figure>{{end}}
 {{define "map-controls.html"}}<div class="map-controls" data-map-controls hidden>
 <button type="button" data-map-fit title="{{t "Fit the whole map; labels may be smaller"}}">{{t "fit"}}</button>
 <button type="button" data-map-zoom="1.25">+</button>
 <button type="button" data-map-zoom="0.8">−</button>
 <button type="button" data-map-reset title="{{t "Return to readable text"}}">{{t "reset"}}</button>
-<span class="map-hint">{{t "drag to pan"}}</span>
+<span class="map-hint">{{t "Zoom to see inside"}} · {{t "Drag to move"}}</span>
 </div>{{end}}

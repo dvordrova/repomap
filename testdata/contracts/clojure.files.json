@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "f1",
+      "path": "README.md"
+    },
+    {
+      "id": "f2",
+      "path": "deps.edn"
+    },
+    {
+      "id": "f3",
+      "path": "src/example/core.clj"
+    },
+    {
+      "id": "f4",
+      "path": "src/example/service.cljc"
+    },
+    {
+      "id": "f5",
+      "path": "test/example/service_test.clj"
+    }
+  ]
+}

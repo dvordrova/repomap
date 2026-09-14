@@ -118,6 +118,7 @@ var mapLabelSteps = []float64{0, -1, 1, -2, 2, -3, 3}
 const mapLabelClearance = 3.0
 
 type pageMap struct {
+	System     bool
 	MarkerID   string
 	Explorer   bool
 	Operations bool
@@ -176,8 +177,12 @@ type pageMapLane struct {
 }
 
 type pageMapNode struct {
-	SummaryRef      string
-	InitiallyHidden bool
+	InputOwner                             string
+	Owner, ItemKind, DetailsID             string
+	Role, RoleRef, Language, ComponentKind string
+	Aliases                                []string
+	SummaryRef                             string
+	InitiallyHidden                        bool
 	// Frame is true of an endpoint that is a zone rather than a box: an
 	// arrow to it stops short of its outline instead of landing on it.
 	Frame bool
@@ -187,6 +192,7 @@ type pageMapNode struct {
 	Keys      string
 	Concepts  string
 	CallPaths string
+	Writes    []pageEntityWrite
 	Children  string
 	Branch    string
 	Component string
@@ -232,6 +238,7 @@ type pageMapNode struct {
 }
 
 type pageMapEdge struct {
+	ConnectionID         string
 	SummaryRef, LabelRef string
 	Summary              string
 	FromSource           pageAnchor

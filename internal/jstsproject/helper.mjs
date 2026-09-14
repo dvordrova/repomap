@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 24
+const CONTRACT_VERSION = 26
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -1867,6 +1867,101 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
   visitContracts(sourceFile)
 }
 
+// References bind to the compiler's declaration, not to a guessed runtime
+// value. In particular JSX tags do not invoke their component functions here.
+const reads = []
+function readOwner(node) {
+  for (let current = node; current && !ts.isSourceFile(current); current = current.parent) {
+    if (ts.isFunctionLike(current) && !declarationRefByNode.has(current)) {
+      const parent = current.parent
+      if (ts.isVariableDeclaration(parent) && parent.initializer === current && declarationRefByNode.has(parent)) return declarationRefByNode.get(parent)
+      return ""
+    }
+    if (declarationRefByNode.has(current) && !ts.isVariableDeclaration(current)) return declarationRefByNode.get(current)
+  }
+  return moduleRef(relative(node.getSourceFile().fileName))
+}
+function recordRead(node, syntax = "value") {
+  const checker = checkerForNode(node)
+  if (!checker) return
+  let symbol
+  try {
+    symbol = ts.isShorthandPropertyAssignment(node.parent) && checker.getShorthandAssignmentValueSymbol
+      ? checker.getShorthandAssignmentValueSymbol(node.parent) : checker.getSymbolAtLocation(node)
+    if (!symbol && ts.isPropertyAccessExpression(node)) symbol = checker.getSymbolAtLocation(node.name)
+  } catch { return }
+  const refs = refsForSymbol(symbol, checker)
+  const from = readOwner(node)
+  if (!from || refs.length === 0) return
+  // A property use and its receiver can begin at the same source column.
+  // Preserve both compiler references instead of collapsing by position alone.
+  reads.push({ref: factRef("read", node, `${syntax}:${expressionText(node)}`), from_ref: from, to_refs: refs, syntax,
+    resolution: refs.length !== 1 || /\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName)) ? "alternatives" : "exact",
+    location: locationOf(node)})
+}
+for (const { sourceFile } of sourceFiles) {
+  // Assignment destinations do not read their binding. Their receiver, index
+  // and destructuring defaults still evaluate as ordinary expressions.
+  const assignmentTarget = (node) => {
+    node = unwrapReceiverExpression(node)
+    if (ts.isPropertyAccessExpression(node)) visitUses(node.expression)
+    else if (ts.isElementAccessExpression(node)) { visitUses(node.expression); visitUses(node.argumentExpression) }
+    else if (ts.isArrayLiteralExpression(node)) node.elements.forEach(assignmentTarget)
+    else if (ts.isObjectLiteralExpression(node)) node.properties.forEach((property) => {
+      if (property.name && ts.isComputedPropertyName(property.name)) visitUses(property.name.expression)
+      if (ts.isPropertyAssignment(property)) assignmentTarget(property.initializer)
+      else if (ts.isShorthandPropertyAssignment(property) && property.objectAssignmentInitializer) visitUses(property.objectAssignmentInitializer)
+      else if (ts.isSpreadAssignment(property)) assignmentTarget(property.expression)
+    })
+    else if (ts.isSpreadElement(node)) assignmentTarget(node.expression)
+    else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) { assignmentTarget(node.left); visitUses(node.right) }
+  }
+  const calleeReceiver = (node) => {
+    node = unwrapReceiverExpression(node)
+    if (ts.isIdentifier(node)) return
+    if (ts.isPropertyAccessExpression(node)) visitUses(node.expression)
+    else if (ts.isElementAccessExpression(node)) { visitUses(node.expression); visitUses(node.argumentExpression) }
+    else visitUses(node)
+  }
+  const visitUses = (node) => {
+    if (!node) return
+    const parent = node.parent
+    if (ts.isImportDeclaration(node) || ts.isImportEqualsDeclaration(node) || ts.isExportDeclaration(node) ||
+        ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) || node.kind === ts.SyntaxKind.TypeParameter ||
+        parent?.type === node || parent?.typeArguments?.includes(node) || parent?.typeParameters?.includes(node) ||
+        ts.isHeritageClause(node) && node.token === ts.SyntaxKind.ImplementsKeyword) return
+    if (ts.isJsxClosingElement(node)) return
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      recordRead(node.tagName, "jsx_tag")
+      visitUses(node.attributes)
+      return
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      assignmentTarget(node.left); visitUses(node.right); return
+    }
+    if (ts.isForInStatement(node) || ts.isForOfStatement(node)) {
+      if (ts.isVariableDeclarationList(node.initializer)) visitUses(node.initializer)
+      else assignmentTarget(node.initializer)
+      visitUses(node.expression); visitUses(node.statement); return
+    }
+    if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
+      calleeReceiver(node.expression); (node.arguments || []).forEach(visitUses); return
+    }
+    if (ts.isDeleteExpression(node)) { assignmentTarget(node.expression); return }
+    if (ts.isPropertyAccessExpression(node)) {
+      recordRead(node); visitUses(node.expression); return
+    }
+    if (ts.isElementAccessExpression(node)) {
+      recordRead(node); visitUses(node.expression); visitUses(node.argumentExpression); return
+    }
+    if (ts.isIdentifier(node) && !(parent?.name === node && !ts.isShorthandPropertyAssignment(parent)) && parent?.label !== node) {
+      recordRead(node)
+    }
+    ts.forEachChild(node, visitUses)
+  }
+  visitUses(sourceFile)
+}
+
 for (const { sourceFile } of sourceFiles) {
   const visitUses = (node) => {
     if (ts.isIdentifier(node)) {
@@ -2020,6 +2115,7 @@ const result = {
   exports: uniqueByRef(exports),
   calls: uniqueByRef(calls),
   bindings: uniqueByRef(bindings),
+  reads: uniqueByRef(reads),
   surfaces: uniqueByRef(surfaces),
   contracts: uniqueByRef(contracts),
 }

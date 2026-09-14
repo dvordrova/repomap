@@ -1,6 +1,6 @@
 /* One report frame keeps the reader's place while the map or the answer
    occupies the main stage. Sources and native disclosures remain in place. */
-main,.report-toolbar,.report-footer,header.top{max-width:90rem}
+main,.report-toolbar,.report-footer,header.top{max-width:none}
 main{padding-top:1.25rem}
 header.top{padding:1.1rem 0 .8rem}
 .brand{gap:.65rem;align-items:center}
@@ -36,12 +36,10 @@ a{text-decoration-color:color-mix(in srgb,var(--accent) 35%,transparent)}
 .find-result-summary{line-height:1.55}
 .learn-home{display:grid;grid-template-columns:minmax(0,1fr) minmax(17rem,24rem);align-items:start;gap:2rem 4rem;padding:.7rem 0 1.4rem}
 .learn-home .learn-intro{max-width:none;padding:0}
-.learn-home .learn-intro h2{margin:0 0 .65rem;font-size:.825rem;font-weight:600;letter-spacing:.035em;color:var(--muted)}
 .learn-home .learn-intro .summary{max-width:58ch;margin:0;font-size:1.45rem;line-height:1.5;letter-spacing:-.025em;color:var(--ink)}
 .learn-home .learn-intro .empty{margin:0}
 .learn-home .report-scope{margin:.85rem 0 0;color:var(--muted);font-size:.825rem}
 .learn-home .learn-start{display:flex;flex-direction:column;gap:0;margin:0;padding:0 0 0 1.5rem;border-left:1px solid var(--line)}
-.learn-start-label{margin-bottom:.35rem;color:var(--muted);font-size:.825rem;font-weight:500}
 .learn-home .learn-start a{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;padding:.35rem 0;border:0;border-radius:0;background:none;color:var(--accent);font-size:.925rem;line-height:1.45;text-decoration:none}
 .learn-home .learn-start a span{color:inherit}
 .learn-home .learn-start a:hover{text-decoration:underline;background:none;outline:0}
@@ -67,7 +65,7 @@ a{text-decoration-color:color-mix(in srgb,var(--accent) 35%,transparent)}
 .question-index>summary{font-size:.9rem;font-weight:500;color:var(--muted);padding:.5rem 0}
 .learn-topic-menu{max-width:none;margin:0 0 1.5rem}
 .learn-topic-menu>summary{color:var(--muted);font-weight:500}
-.reading-page{max-width:68rem;margin:0 auto}
+.reading-page{max-width:68rem;margin:0}
 .reading-page-intro h2{margin:.7rem 0 .65rem;font-size:1.8rem}
 .reading-page-intro p{margin:0;color:var(--muted);max-width:70ch}
 .reading-page.has-selected-question>.reading-page-intro{display:none}
@@ -119,3 +117,45 @@ body.reading-ready .reading-guide[hidden]{display:none}
 @media(max-width:1000px){.learn-home{gap:1.5rem 2rem;grid-template-columns:minmax(0,1fr) minmax(15rem,20rem)}.report-toolbar .nav{flex-wrap:wrap}.report-toolbar .nav .find{flex-basis:16rem}.reading-guide{padding:1.25rem 1.5rem}.reading-question{font-size:1.4rem}}
 @media(max-width:650px){.brand .meta{margin-left:0}.learn-home{grid-template-columns:minmax(0,1fr);gap:1rem}.learn-home .learn-start{border-left:0;padding:0}.question-menu{grid-template-columns:minmax(0,1fr)}.report-toolbar .nav .find{flex-basis:100%;margin-left:0}.reading-intent{flex-basis:100%}.reading-guide{padding:1rem}.component-intro{display:block}.reading-question{font-size:1.25rem}}
 @media print{.report-toolbar,.report-footer,.learn-start,.reading-search-entry,.component-reading-entry,.question-position{display:none}.reading-guide{border:0;padding:0}.reading-page{max-width:none}body.reading-ready .reading-guide[hidden]{display:block}.reading-page.has-selected-question>.reading-page-intro{display:block}.learn-home{display:block}}
+
+/* The report identity, navigation and finder share one stable header. */
+.report-toolbar .nav{gap:.4rem;flex-wrap:nowrap}
+.report-toolbar .nav>.repo{font-size:1rem;font-weight:700;color:var(--ink);padding:.35rem .3rem;max-width:24rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.report-toolbar .nav>.nav-home{padding:.35rem;flex:0 0 2rem;justify-content:center}
+.component-choice{display:flex;align-items:center;gap:.4rem;white-space:nowrap;color:var(--muted);font-size:.8rem}
+.component-choice select{font:inherit;font-size:.875rem;color:var(--ink);border:1px solid var(--line);border-radius:6px;background:var(--paper);padding:.45rem .6rem;max-width:15rem;min-width:6rem;cursor:pointer}
+.report-toolbar .nav>.repomap-link{font-weight:700;gap:.4rem;color:var(--accent);padding:.35rem 0 .35rem .6rem;margin-left:auto}
+.report-toolbar .nav .find{margin-left:.4rem;min-width:8rem;flex:1 1 12rem}
+.report-toolbar .reading-location{height:2.3rem;box-sizing:border-box;flex-wrap:nowrap;overflow:hidden;align-items:center;padding:.2rem 0}
+.reading-address:empty{display:none}
+.reading-address,.reading-map-context,.reading-intent{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.reading-map-context:first-child::before,.reading-address:empty+.reading-map-context::before{content:none}
+.reading-intent{flex:0 1 auto}
+.reading-return{flex:0 0 auto;flex-wrap:nowrap}
+.question-index[hidden]{display:none}
+@media(max-width:1100px){.report-toolbar .nav{flex-wrap:wrap}.report-toolbar .nav>.repo{max-width:calc(100% - 12rem);flex:1}.report-toolbar .nav>.repomap-link{order:1}.report-toolbar .nav>a[href="#questions"],.component-choice,.report-toolbar .nav .find{order:2}.report-toolbar .nav .find{flex-basis:12rem}}
+@media print{.question-index[hidden]{display:block}}
+/* GitHub mark from https://github.com/primer/octicons (MIT License).
+Copyright (c) 2026 GitHub Inc.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE. */
+
+@media(max-width:1100px){
+.report-toolbar .nav::after{content:'';order:1;flex-basis:100%}
+.report-toolbar .nav>.repo{flex:1 1 auto;max-width:none}
+.report-toolbar .nav>.repomap-link{order:0}
+.report-toolbar .nav>a[href="#questions"],.component-choice,.report-toolbar .nav .find{order:2}
+}

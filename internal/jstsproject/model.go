@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	Version       = 17
-	HelperVersion = 24
+	Version       = 18
+	HelperVersion = 26
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20
@@ -172,6 +172,17 @@ type Binding struct {
 	Location        Location `json:"location"`
 }
 
+// Read records a compiler-bound value reference at its actual use site. A JSX
+// tag reads a value; it does not establish a synchronous call to that value.
+type Read struct {
+	Ref        string   `json:"ref"`
+	FromRef    string   `json:"from_ref"`
+	ToRefs     []string `json:"to_refs"`
+	Syntax     string   `json:"syntax"`
+	Resolution string   `json:"resolution"`
+	Location   Location `json:"location"`
+}
+
 // CallPattern retains only adapter-neutral syntax needed by later bounded
 // pattern classification. It deliberately carries no framework or protocol
 // meaning: the adapter records the terminal selector, exact local receiver
@@ -276,6 +287,7 @@ type Result struct {
 	Exports         []Export      `json:"exports"`
 	Calls           []Call        `json:"calls"`
 	Bindings        []Binding     `json:"bindings"`
+	Reads           []Read        `json:"reads"`
 	Surfaces        []Surface     `json:"surfaces"`
 	Contracts       []Contract    `json:"contracts"`
 	SHA256          string        `json:"sha256"`
@@ -551,6 +563,11 @@ func (result Result) Validate() error {
 			return err
 		}
 	}
+	for _, value := range result.Reads {
+		if err := registerFact(value.Ref, "read"); err != nil {
+			return err
+		}
+	}
 	for _, value := range result.Contracts {
 		if err := registerFact(value.Ref, "contract"); err != nil {
 			return err
@@ -567,6 +584,19 @@ func (result Result) Validate() error {
 	callableDeclarations := make(map[string]bool)
 	for _, declaration := range result.Declarations {
 		callableDeclarations[declaration.Ref] = declaration.Kind == "function" || declaration.Kind == "method" || declaration.Kind == "lambda"
+	}
+	for _, value := range result.Reads {
+		if !knownDeclaration(value.FromRef) || !validLocation(value.Location, fileRefs) ||
+			(value.Syntax != "value" && value.Syntax != "jsx_tag") ||
+			(value.Resolution != "exact" && value.Resolution != "alternatives") || len(value.ToRefs) == 0 ||
+			(value.Resolution == "exact" && len(value.ToRefs) != 1) {
+			return fmt.Errorf("jsts project: invalid value reference at %s:%d:%d", value.Location.Path, value.Location.Line, value.Location.Column)
+		}
+		for _, ref := range value.ToRefs {
+			if !knownDeclaration(ref) {
+				return fmt.Errorf("jsts project: read has unknown declaration")
+			}
+		}
 	}
 	for _, value := range result.Bindings {
 		if !knownDeclaration(value.FromRef) || value.Element == "" || value.Attribute == "" ||
@@ -819,6 +849,13 @@ func canonicalize(result *Result) {
 		result.Bindings[i].ToRefs = canonicalStrings(result.Bindings[i].ToRefs)
 	}
 	sort.Slice(result.Bindings, func(i, j int) bool { return result.Bindings[i].Ref < result.Bindings[j].Ref })
+	if result.Reads == nil {
+		result.Reads = []Read{}
+	}
+	for i := range result.Reads {
+		result.Reads[i].ToRefs = canonicalStrings(result.Reads[i].ToRefs)
+	}
+	sort.Slice(result.Reads, func(i, j int) bool { return result.Reads[i].Ref < result.Reads[j].Ref })
 	if result.Surfaces == nil {
 		result.Surfaces = []Surface{}
 	}

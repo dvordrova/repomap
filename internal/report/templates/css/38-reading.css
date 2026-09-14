@@ -47,3 +47,6 @@
 .source-links .anchor{font-size:max(var(--text-small),.9em);font-weight:400}
 .model-sources[hidden]{display:none}
 @media(max-width:650px){.cards .card{display:block}.cards .card>.model{margin:.5rem 0}.nav .find{flex-basis:100%}.collapse-label{float:none;display:none}.evidence-list[open]>summary .collapse-label{display:block;margin:.2rem 0 0}}
+
+/* Provenance stays on the source explanation, without repeated model chips. */
+.model::before{display:none}

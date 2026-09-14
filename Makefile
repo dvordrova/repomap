@@ -11,7 +11,7 @@ PRODUCT_GO_PACKAGES := ./cmd/... ./internal/...
 GO_PACKAGE_PARALLELISM ?= 4
 GO_TEST_TIMEOUT ?= 5m
 
-.PHONY: help build verify-package-layout test vet check run cache-clear
+.PHONY: help build ui-build ui-test verify-package-layout test vet check run cache-clear
 
 help: ## Print available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -20,6 +20,12 @@ help: ## Print available targets
 build: ## Build the repomap binary into .bin/
 	@mkdir -p $(BIN_DIR)
 	go build -trimpath -o $(BIN_DIR)/repomap ./cmd/repomap
+
+ui-build: ## Rebuild the checked-in report JS/CSS (developer Node required)
+	cd internal/report/web && npm ci && npm run build
+
+ui-test: ## Verify report layout and the checked-in JS/CSS
+	cd internal/report/web && npm test && node build.mjs --check
 
 # Benchmark evidence may contain nested source trees and module caches, so the
 # product package roots are explicit. Fail if a new root would otherwise be

@@ -103,6 +103,17 @@ use the base provider without recursively collecting another glossary. Saved
 
 ## Visible comparison scope
 
+Term previews put the `(via model)` badge beside `Term explanation`, outside
+the definition sentence. The static glossary puts the same provenance in the
+term heading. Questions, collapsed separately, and map destinations precede source context. Native
+concepts retain their direct declaration anchors. Generated domain definitions
+inherit the complete context of their selected analytical prose; the UI labels
+that collection `Analysis context`, not direct evidence for the definition.
+It starts collapsed, groups references by file, and reveals original locations
+only when that file is expanded. Every distinct saved destination remains in
+the static HTML, including editor and unavailable-source behavior. Presentation
+does not select supposedly relevant lines or change glossary generation.
+
 The ordinary run output and static glossary now expose the saved partial
 comparison state. The glossary uses one quiet localized explanation before its
 list; successful complete comparisons show no notice. This projects the existing

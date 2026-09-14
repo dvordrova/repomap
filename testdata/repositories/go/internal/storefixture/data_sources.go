@@ -23,3 +23,10 @@ type TypedQueryClient struct{}
 
 func (*TypedQueryClient) ReadRows()           {}
 func TypedParameter(client *TypedQueryClient) { client.ReadRows() }
+
+// A range variable inherits the slice's native concrete element type.
+func TypedIteration(clients []*TypedQueryClient) {
+	for _, client := range clients {
+		client.ReadRows()
+	}
+}

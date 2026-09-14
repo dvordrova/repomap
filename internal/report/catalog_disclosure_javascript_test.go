@@ -6,12 +6,8 @@ import (
 	"testing"
 )
 
-// A "Where this service connects" section with more than five destinations is
-// compacted to five rows and an "All N" disclosure. The destination rows carry
-// their own nested record lists; compaction must move the rows, not strip the
-// lists inside them. The owner's service (more than five destinations) once
-// opened every destination to nothing.
-func TestCatalogDisclosureKeepsDestinationRecords(t *testing.T) {
+// Every destination stays visible with its complete nested records.
+func TestCatalogKeepsAllDestinationRecordsVisible(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("Node is required for the report JavaScript regression")
@@ -20,7 +16,7 @@ func TestCatalogDisclosureKeepsDestinationRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	start, end := "// Disclosures change the first view only", "// Folding retains evidence"
+	start, end := "// Group labels name kinds and provenance", "// Folding retains evidence"
 	_, tail, ok := strings.Cut(string(raw), start)
 	if !ok {
 		t.Fatalf("missing %q", start)
@@ -63,9 +59,7 @@ function destination(i){
 const root=element('div');
 const group=element('section','',{'data-integration-group':''});root.appendChild(group);
 const first=element('ul','plain operation-catalog');group.appendChild(first);
-for(var i=1;i<=5;i++)first.appendChild(destination(i));
-const more=element('details','input-more');group.appendChild(more);
-more.appendChild(element('summary'));const restList=element('ul','plain operation-catalog');more.appendChild(restList);restList.appendChild(destination(6));
+for(var i=1;i<=6;i++)first.appendChild(destination(i));
 const document={createElement:function(tag){return element(tag);},querySelectorAll:function(selector){return root.querySelectorAll(selector);}};
 function rmT(key,n){return String(key).replace('{0}',n);}
 ` + start + compaction + `
@@ -77,12 +71,10 @@ items.forEach(function(item,index){
   assert.equal(item.querySelectorAll('[data-integration-record]').length,2);
 });
 const ownLists=group.children.filter(function(n){return n.tag==='ul';});
-assert.equal(ownLists.length,1,'one preview list at the group level');
-assert.equal(ownLists[0].children.length,5,'five rows before the disclosure');
-const disclosures=group.children.filter(function(n){return n.className==='input-more';});
-assert.equal(disclosures.length,1,'one All N disclosure');
-assert.equal(disclosures[0].querySelectorAll('[data-integration-item]').length,1,'the sixth row waits under the disclosure');
-assert.equal(disclosures[0].querySelector('summary').textContent,'All 6 →');
+assert.equal(ownLists.length,1,'one list at the group level');
+assert.equal(ownLists[0].children.length,6,'every destination is immediately visible');
+assert.equal(group.querySelectorAll('.input-more').length,0,'no second catalogue disclosure');
+
 `
 	if output, err := exec.Command(node, "-e", harness).CombinedOutput(); err != nil {
 		t.Fatalf("catalog disclosure regression: %v\n%s", err, output)

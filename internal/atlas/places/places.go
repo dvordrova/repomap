@@ -345,7 +345,12 @@ func (b *builder) useTargetObjects(index programindex.Index) {
 	b.fileOf = make(map[string]string)
 	b.symbolOf = make(map[string]string)
 	callbacks := make(map[string]bool)
+	executionOwners := make(map[string]bool)
 	for _, relation := range index.Relations {
+		switch relation.Kind {
+		case programindex.RelationCalls, programindex.RelationExecutes, programindex.RelationInvokesExternal, programindex.RelationReads, programindex.RelationWrites:
+			executionOwners[relation.FromID] = true
+		}
 		// A source-located closure can own a real call even when returned
 		// from a factory rather than registered as a callback. Its caller
 		// identity must survive for argument provenance and question evidence.
@@ -374,7 +379,10 @@ func (b *builder) useTargetObjects(index programindex.Index) {
 		}
 		filePath := atlasPath(object.Location.Path)
 		b.fileOf[object.ID] = filePath
-		if !declaration(object, b.byID) && !(object.Kind == programindex.ObjectFunction && callbacks[object.ID]) {
+		// A module body can call or read another part directly. It needs its
+		// own closed grouping choice; a file's declarations are not its caller.
+		moduleBody := object.Kind == programindex.ObjectModule && object.Name != "" && executionOwners[object.ID]
+		if !declaration(object, b.byID) && !moduleBody && !(object.Kind == programindex.ObjectFunction && callbacks[object.ID]) {
 			continue
 		}
 		name := object.Name
@@ -729,12 +737,13 @@ func (b *builder) quotedDocstringFor(filePath string, line int, decls []atlas.De
 	docs := b.docs[filePath]
 	best := ""
 	for _, doc := range docs {
-		if doc.Line > line || line-doc.Line > docstringReach {
+		clojure := strings.HasSuffix(filePath, ".clj") || strings.HasSuffix(filePath, ".cljc") || strings.HasSuffix(filePath, ".cljs")
+		if clojure && doc.Line < line || !clojure && doc.Line > line || line-doc.Line > docstringReach || doc.Line-line > docstringReach {
 			continue
 		}
 		between := false
 		for _, decl := range decls {
-			if decl.LineNo > doc.Line && decl.LineNo < line {
+			if decl.LineNo > min(doc.Line, line) && decl.LineNo < max(doc.Line, line) {
 				between = true
 				break
 			}
@@ -1060,11 +1069,8 @@ func (b *builder) assignDepths() {
 	}
 }
 
-// MaxSymbolCandidates is how many declarations of one file may become
-// symbol places: exported and documented first, then by callers.
-const MaxSymbolCandidates = 10
-
-// collectSymbols lifts each file's most telling declarations to places.
+// collectSymbols keeps every eligible declaration, ordered by documentation,
+// visibility and callers. Ranking changes presentation, never evidence coverage.
 func (b *builder) collectSymbols() {
 	calls := b.symbolCalls()
 	bindings := b.symbolBindings()
@@ -1092,9 +1098,6 @@ func (b *builder) collectSymbols() {
 			if state.generated && decl.Kind != "function" && decl.Kind != "method" && decl.Kind != "type" {
 				continue
 			}
-			if rank >= MaxSymbolCandidates && decl.Kind != "function" && decl.Kind != "method" && decl.Kind != "type" {
-				continue
-			}
 			given := decl.Doc
 			if given == "" {
 				given = decl.Signature
@@ -1110,12 +1113,12 @@ func (b *builder) collectSymbols() {
 				ID: id, Kind: atlas.PlaceSymbol, Path: filePath,
 				LineNo: decl.LineNo, Column: decl.Column, Depth: state.depth, TargetIDs: sortedKeys(state.targets),
 				Parent: atlas.FileID(filePath), Given: truncateRunes(given, maxLineRunes),
-				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Candidate: !state.generated && (rank < MaxSymbolCandidates || decl.Kind == "function" || decl.Kind == "method"), Rank: rank + 1},
+				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Candidate: !state.generated, Rank: rank + 1},
 			})
 		}
 	}
 	// Some declarations are intentionally not lifted (for example incidental
-	// closures and lower-ranked variables). Their names remain observations, but
+	// closures). Their names remain observations, but
 	// they cannot become dangling context links.
 	known := make(map[string]bool, len(b.symbols))
 	for _, place := range b.symbols {

@@ -5,15 +5,23 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas/destinations"
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // pageOutbound is one accepted communication record. Destination and Summary
 // are display prose; Address, NativeLabel and External retain source spelling.
 // No dependency-group membership is required and no package import creates one.
 type pageOutbound struct {
+	// Connections keep exact saved integration identities for the canvas.
+	// Destination text groups presentation only and never establishes a peer.
+	Connections                 []string
+	MapGroup                    string
+	Operations                  string
 	KindLabel                   string
 	DestinationCount            int
 	Uses                        []pageOutboundUse
+	Callers                     []pageConnection
 	ID                          string
 	Destination, DestinationRef string
 	Summary, SummaryRef         string
@@ -85,14 +93,36 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 	if index == nil {
 		return
 	}
+	adj := executionAdjacency(index)
+	reachable := make(map[string]map[string]bool)
+	for _, operation := range index.Operations {
+		reachable[operationNodeID(section.ID, operation.ID)] = reachedSubjects(operation.SubjectID, adj)
+	}
 	for _, call := range index.Outbound {
 		row := pageOutbound{
+			MapGroup:    call.GroupID,
 			KindLabel:   outboundKindLabel(call.Kind),
 			ID:          section.ID + "-out-" + call.ID,
 			Destination: call.Destination, Summary: call.Summary,
 			Address: call.Address, External: displayCallable(call.External), Basis: call.Basis, Source: call.Source, Method: call.Method,
 			Anchor: builder.links.anchor(call.Location.Path, call.Location.Line, call.Location.Column),
 		}
+		row.Callers = builder.outboundCallers(index, section.ID, call.SubjectID)
+		var inputs []string
+		for _, connection := range index.Connections {
+			if connection.SourceKind == "integration" && connection.From.TargetID == index.Target.ID &&
+				connection.FromSubjectID == call.SubjectID && call.SubjectID != "" &&
+				connection.FromLocation != nil && *connection.FromLocation == call.Location {
+				row.Connections = append(row.Connections, connection.ID)
+			}
+		}
+		for id, reached := range reachable {
+			if call.SubjectID != "" && reached[call.SubjectID] {
+				inputs = append(inputs, id)
+			}
+		}
+		sort.Strings(inputs)
+		row.Operations = strings.Join(inputs, " ")
 		destinations := make(map[string]bool)
 		for _, use := range call.Uses {
 			destinations[use.Address+"\x00"+use.Frontier] = true
@@ -128,6 +158,46 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 		}
 		section.Outbound = append(section.Outbound, row)
 	}
+}
+
+// A communication's reader follows exact native calls into its sending
+// function. Sharing a client group is not evidence that another method calls
+// this endpoint. This is source reading; no shortcut edge is added to the map.
+func (builder *pageBuilder) outboundCallers(index *groupindex.Index, sectionID, subjectID string) []pageConnection {
+	if subjectID == "" {
+		return nil
+	}
+	callee, calleeAnchor := builder.subjectDisplay(builder.subjects[subjectID].subject)
+	if callee == "" {
+		return nil
+	}
+	groups := map[string]groupindex.Group{}
+	for _, group := range index.Groups {
+		for _, id := range group.MemberSubjectIDs {
+			groups[id] = group
+		}
+	}
+	var callers []pageConnection
+	for _, edge := range index.StructuralEdges {
+		if edge.Role != groupindex.EdgeRelationTarget || edge.ToSubjectID != subjectID ||
+			(edge.RelationKind != programindex.RelationCalls && edge.RelationKind != programindex.RelationExecutes) {
+			continue
+		}
+		name, anchor := builder.subjectDisplay(builder.subjects[edge.FromSubjectID].subject)
+		if name == "" {
+			continue
+		}
+		if edge.Location != nil {
+			anchor = builder.links.anchorPointer(edge.Location.Path, edge.Location.Line, edge.Location.Column)
+		}
+		row := pageConnection{Native: true, EvidenceID: edge.RelationID, Arrow: "←", Label: name + " → " + callee,
+			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: anchor, ToSource: calleeAnchor}
+		if group := groups[edge.FromSubjectID]; group.ID != "" {
+			row.Title, row.Href = group.Title, "#"+groupAnchorID(sectionID, group.ID)
+		}
+		callers = append(callers, row)
+	}
+	return callers
 }
 
 // pageOutboundGroup presents every record naming one destination as one
@@ -182,7 +252,7 @@ var genericCallables = map[string]bool{"New": true, "Close": true, "Ping": true,
 // "Confirm") and keeps its type only when the member name alone is generic
 // ("Pool.Ping", "Migrate.Up"). The full callable stays in the record's body.
 func (row pageOutbound) Line() string {
-	if row.Method != "" && row.Address != "" {
+	if row.Method != "" && row.NativeLabel != "" {
 		return row.NativeLabel
 	}
 	if row.External != "" {

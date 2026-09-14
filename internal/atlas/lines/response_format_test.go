@@ -21,7 +21,7 @@ func TestPreparedTablesHaveOneResponseShapeWithCurrentColumns(t *testing.T) {
 		Directories(), WithOpen(Directories()), Files(), WithOpen(Files()),
 		Symbols(), Types(), SymbolSelection(false), SymbolSelection(true),
 		Operations(), Boundaries(), Targets(), Targets(true), Arrows(),
-		Joints(), Peers(), ZoneNames(7), ZoneAssign([]string{"Rendering"}), ZoneLines(), Answer(),
+		Joints(), Peers(), Answer(),
 	} {
 		for _, withTerms := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/terms=%t", def.Contract, withTerms), func(t *testing.T) {
@@ -96,7 +96,6 @@ func TestTableOwnerKeepsProseMetadataAndOmitsClosedDecisionMetadata(t *testing.T
 	}{
 		{"selection", SymbolSelection(false), true},
 		{"type-selection", SymbolSelection(true), true},
-		{"closed-assignments", ZoneAssign([]string{"Storage"}), true},
 		{"captions", Symbols(), false},
 		{"long-prose", Types(), false},
 		{"conditional-operation-prose", Operations(), false},

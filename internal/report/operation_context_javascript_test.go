@@ -1,72 +1,33 @@
 package report
 
-import (
-	"os/exec"
-	"strings"
-	"testing"
-)
+import "testing"
 
-// Exercise the actual graph projection with a chain longer than one neighbour.
-// Opening A or B must keep C, the remote endpoint and all original relations.
+// The whole drawing is independent of selection. A one-part input does not
+// manufacture a two-box graph, and a longer path retains its remote endpoint.
 func TestOperationContextSurvivesOpeningAPart(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("Node is required for the report JavaScript regression")
-	}
-	read := func(file string) string {
-		t.Helper()
-		raw, err := reportTemplateFS.ReadFile("templates/js/" + file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(raw)
-	}
-	part := func(script, start, end string) string {
-		t.Helper()
-		_, tail, ok := strings.Cut(script, start)
-		if !ok {
-			t.Fatalf("missing %q", start)
-		}
-		body, _, ok := strings.Cut(tail, end)
-		if !ok {
-			t.Fatalf("missing %q", end)
-		}
-		return start + body
-	}
-	ops := read("29-operation-view.js")
-	harness := `const assert=require('node:assert/strict');
-const byID={};
-function n(id,children='',remote='false',activation=''){
- const value={id,dataset:{title:id,children,remote,activation,branch:children?'area':''}};byID[id]=value;return value;
+	script := systemJSPiece(t, "29-operation-view.js", "function rmSystemProjection(", "(function(){")
+	runSystemJS(t, script+`
+const nodes=[{id:'front',children:['area']},{id:'area',children:['a','b','c','op']},{id:'a'},{id:'b'},{id:'c'},{id:'remote'},{id:'unrelated'},{id:'op',activation:'command'}];
+const edges=[{from:'op',to:'a',label:'implemented in',operations:['op']},{from:'a',to:'b',operations:['op']},{from:'b',to:'c',operations:['op']},{from:'c',to:'remote',operations:['op']},{from:'c',to:'unrelated',operations:[]}];
+const p=rmSystemProjection(nodes,edges),before=JSON.stringify([p.visible,p.areas,p.representatives]);
+assert.deepEqual(p.visible,['a','b','c','remote','unrelated']);
+assert.equal(p.inputOwner.op,'a');
+assert.equal(p.selection('','op').entry,'a','the visible handler identifies the selected input');
+assert.equal(p.selection('b','op').entry,'a','inspecting downstream code preserves the entry');
+assert.equal(p.selection('b','op').active.has('unrelated'),false,'a neighbouring part outside the saved path is not highlighted');
+assert.equal(p.selection('unrelated','op').active.has('unrelated'),false,'reading a part does not make it a participant of the pinned input');
+for(const id of ['a','b','area']){
+ const selected=p.selection(id,'op');
+ assert.ok(selected.active.has('remote'));
+ assert.equal(selected.path.length,4);
+ assert.equal(JSON.stringify([p.visible,p.areas,p.representatives]),before,'selection must not change the drawing');
 }
-const operation=n('op','','false','command');
-const groups=[n('area','a b c'),n('a'),n('b'),n('c'),n('remote','','true'),n('unrelated')];
-const roots=['area','remote','unrelated'],nearOf={op:['a','b','c','remote']};
-const search={value:''},directParts={};
-` + part(ops, "function children(n)", "    // An identically named area") +
-		part(ops, "function displayed(id)", "    var nearOf=") +
-		part(ops, "function allowed()", "    function scopePath(") +
-		part(read("28-map-routing.js"), "function fold(", "  function draw(") + `
-const repomapGraph={fold};
-const originalRelations=[{from:'a',to:'b',possible:false,label:'exact'}, {from:'a',to:'b',possible:true,label:'possible'}, {from:'b',to:'a',possible:false,label:'reverse'}];
-const folded=fold(originalRelations,{a:['A'],b:['B']});
-assert.equal(folded.length,2,'one arrow per direction, retaining mixed evidence');
-assert.equal(folded.find(e=>e.from==='A').relations.length,2);
-assert.deepEqual(folded.flatMap(e=>e.relations).map(e=>e.label).sort(),['exact','possible','reverse']);
-const rawEdges=[['op','a','entry'],['a','b','ab'],['b','c','bc'],['c','remote','external'],['b','c','second-source']].map(([from,to,label])=>({from,to,label,scope:'operation',operations:['op']}));
-rawEdges.push({from:'c',to:'unrelated',label:'other-operation',scope:'operation',operations:['other']});
-function projection(scope){
- let currentEdges=[];const area=null,viewScope=scope;
-` + part(ops, "var limit=allowed()", "      var boxes={}") + `
- return {visible,edges:currentEdges};
-}
-const complete=projection('');
-assert.deepEqual(complete.visible,['op','a','b','c','remote']);
-assert.equal(complete.edges.flatMap(e=>e.relations).length,5);
-assert.ok(complete.edges.some(e=>e.from==='c'&&e.to==='remote'));
-for(const scope of ['area','a','b','c'])assert.deepEqual(projection(scope),complete,scope);
-`
-	if output, err := exec.Command(node, "-e", harness).CombinedOutput(); err != nil {
-		t.Fatalf("operation context regression: %v\n%s", err, output)
-	}
+const single=rmSystemProjection(nodes,[edges[0]]);
+assert.deepEqual([...single.selection('','op').active],['a']);
+assert.equal(single.visible.includes('op'),false);
+const unbound=rmSystemProjection(nodes,[]);
+assert.equal(unbound.selection('','op').entry,'op','an unbound input keeps its own visible identity');
+const componentLink=rmSystemProjection(nodes,[{from:'front',to:'remote',scope:'component'}]);
+assert.ok(componentLink.selection('front').active.has('remote'),'component connections remain reachable');
+`)
 }

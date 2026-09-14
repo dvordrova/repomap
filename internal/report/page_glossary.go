@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 
 	"github.com/dvordrova/repomap/internal/terminology"
 )
@@ -18,6 +19,45 @@ type pageGlossaryTerm struct {
 	Questions                           []pageLearnLink
 	Places                              []pageLearnLink
 	Code                                bool
+}
+
+type pageGlossarySourceFile struct {
+	Path      string
+	Locations []pageAnchor
+}
+
+// SourceFiles groups the saved context without selecting evidence for a
+// definition. Every distinct destination remains available in the static HTML.
+func (term pageGlossaryTerm) SourceFiles() []pageGlossarySourceFile {
+	var files []pageGlossarySourceFile
+	byPath := make(map[string]int)
+	seen := make(map[pageAnchor]bool)
+	for _, source := range term.Sources {
+		if seen[source] {
+			continue
+		}
+		seen[source] = true
+		path := source.Path
+		if path == "" {
+			path = source.Text
+		}
+		at, exists := byPath[path]
+		if !exists {
+			at = len(files)
+			byPath[path] = at
+			files = append(files, pageGlossarySourceFile{Path: path})
+		}
+		if source.Line > 0 {
+			source.Text = strconv.Itoa(source.Line)
+		}
+		files[at].Locations = append(files[at].Locations, source)
+	}
+	for _, file := range files {
+		sort.SliceStable(file.Locations, func(i, j int) bool {
+			return file.Locations[i].Line < file.Locations[j].Line
+		})
+	}
+	return files
 }
 
 func collectGlossary(view *pageView) {

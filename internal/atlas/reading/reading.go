@@ -105,9 +105,8 @@ type reader struct {
 	places    map[string]atlas.Place
 	lines     map[string]cell
 	titles    map[string]cell
-	boxChoice map[string]string // file place ID -> box choice as answered
-	openDirs  map[string]bool   // directory place ID -> open, budget mode only
-	openFiles map[string]bool   // file place ID -> open, budget mode only
+	openDirs  map[string]bool // directory place ID -> open, budget mode only
+	openFiles map[string]bool // file place ID -> open, budget mode only
 	budget    bool
 
 	symbolLine map[string]cell               // symbol place ID -> model line
@@ -115,13 +114,17 @@ type reader struct {
 	outbound   map[string][]atlas.SymbolCall // model-selected calls, still anchored in source
 	keys       map[string][]string           // file place ID -> key symbol IDs, by rank
 
-	boxOf      map[string]string    // file place ID -> box ID
-	boxes      map[string]*boxState // box ID -> box
-	zones      map[string][]*zoneState
-	arrows     map[string][]*arrowState
-	boundaries map[string]*boundaryState
-	targets    map[string]*targetState
-	joints     []atlas.Joint
+	boxOf          map[string]string            // file place ID -> box ID
+	designBoxOf    map[string]map[string]string // target -> declaration/file -> accepted part
+	designFiles    map[string]string            // declaration -> its source file
+	designSubjects map[string]string            // native declaration -> place
+	designRound    int
+	boxes          map[string]*boxState // box ID -> box
+	zones          map[string][]*zoneState
+	arrows         map[string][]*arrowState
+	boundaries     map[string]*boundaryState
+	targets        map[string]*targetState
+	joints         []atlas.Joint
 
 	uses              map[string]*atlas.StageUse
 	started           map[string]time.Time
@@ -174,7 +177,6 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		places:            make(map[string]atlas.Place, len(opts.Graph.Places)),
 		lines:             make(map[string]cell),
 		titles:            make(map[string]cell),
-		boxChoice:         make(map[string]string),
 		openDirs:          make(map[string]bool),
 		openFiles:         make(map[string]bool),
 		symbolLine:        make(map[string]cell),
@@ -213,7 +215,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		{lines.StageSymbols, r.readSymbols},
 		{lines.StageOperations, r.readOperations},
 		{lines.StageBoundaries, r.readBoundaries},
-		{lines.StageZones, r.readZones},
+		{lines.StageZones, r.readDesign},
 		{lines.StageArrows, r.readArrows},
 		{lines.StageTargets, r.readTargets},
 		{lines.StageJoints, r.readJoints},
@@ -423,13 +425,12 @@ func (r *reader) readFiles(ctx context.Context) error {
 		details = append(details, fmt.Sprintf("files under closed directories left unasked: %d", closed))
 	}
 	r.opts.Stage(def.Stage, details...)
-	siblings := r.siblingBoxes()
 	calling := r.fileCallers()
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	rows := make([]table.Row, 0, len(files))
 	for _, place := range files {
 		directory := r.places[place.Parent]
-		rows = append(rows, lines.FileRow(place, directory, r.rankedSiblings(place, siblings[directory.Path]), r, r.places, calling[place.ID]))
+		rows = append(rows, lines.FileRow(place, directory, r, r.places, calling[place.ID]))
 	}
 	answers, err := r.runTable(ctx, def, 1, rows)
 	if err != nil {
@@ -440,16 +441,13 @@ func (r *reader) readFiles(ctx context.Context) error {
 		r.openFiles[row.ID] = true
 		if answer := answers[i]; answer.answer != nil {
 			r.lines[row.ID] = cell{value: answer.answer["line"], source: answer.source}
-			r.boxChoice[row.ID] = answer.answer["box"]
 			if r.budget {
 				r.openFiles[row.ID] = answer.answer["open"] == "yes"
 			}
 		} else {
 			r.lines[row.ID] = cell{value: place.Given, source: answer.source}
-			r.boxChoice[row.ID] = lines.BoxHere
 		}
 	}
-	r.cancelLonelyBoxes()
 	r.reportStage(def.Stage)
 	return nil
 }
@@ -478,81 +476,6 @@ func (r *reader) fileCallers() map[string]lines.FileCallers {
 		}
 	}
 	return result
-}
-
-// siblingBoxes lists, per directory, the paths of its sibling directories
-// that hold files: the boxes a file may move to.
-func (r *reader) siblingBoxes() map[string][]string {
-	children := make(map[string][]string)
-	for _, place := range r.opts.Graph.Places {
-		if place.Kind != atlas.PlaceDirectory || len(place.Directory.Files) == 0 || place.Path == "." {
-			continue
-		}
-		children[parentDir(place.Path)] = append(children[parentDir(place.Path)], place.Path)
-	}
-	result := make(map[string][]string)
-	for _, place := range r.opts.Graph.Places {
-		if place.Kind != atlas.PlaceDirectory || len(place.Directory.Files) == 0 {
-			continue
-		}
-		parent := parentDir(place.Path)
-		if place.Path == "." {
-			parent = "."
-		}
-		var siblings []string
-		for _, sibling := range children[parent] {
-			if sibling != place.Path {
-				siblings = append(siblings, sibling)
-			}
-		}
-		sort.Strings(siblings)
-		result[place.Path] = siblings
-	}
-	return result
-}
-
-// rankedSiblings orders a directory's sibling boxes by how many of the
-// file's callers and callees live in them, so the few the row can carry are
-// the ones the file might belong with.
-func (r *reader) rankedSiblings(place atlas.Place, siblings []string) []string {
-	if len(siblings) == 0 {
-		return siblings
-	}
-	weight := make(map[string]int, len(siblings))
-	for _, neighbourID := range append(append([]string{}, place.File.Callers...), place.File.Callees...) {
-		neighbour, ok := r.places[neighbourID]
-		if !ok {
-			continue
-		}
-		weight[path.Dir(neighbour.Path)]++
-	}
-	ranked := append([]string(nil), siblings...)
-	sort.SliceStable(ranked, func(i, j int) bool {
-		if weight[ranked[i]] != weight[ranked[j]] {
-			return weight[ranked[i]] > weight[ranked[j]]
-		}
-		return ranked[i] < ranked[j]
-	})
-	return ranked
-}
-
-// cancelLonelyBoxes moves a file back into its directory when it was the only
-// one to start a new box: one file is not a box.
-func (r *reader) cancelLonelyBoxes() {
-	column := lines.Files().Columns[1]
-	count := make(map[string]int)
-	for fileID, choice := range r.boxChoice {
-		if title, ok := table.IsFree(column, choice); ok {
-			count[parentDir(r.places[fileID].Path)+"#"+atlas.Slug(title)]++
-		}
-	}
-	for fileID, choice := range r.boxChoice {
-		if title, ok := table.IsFree(column, choice); ok {
-			if count[parentDir(r.places[fileID].Path)+"#"+atlas.Slug(title)] < 2 {
-				r.boxChoice[fileID] = lines.BoxHere
-			}
-		}
-	}
 }
 
 // rowAnswer is what one row ends with: the model's cells, or none with the
@@ -943,6 +866,7 @@ func (r *reader) atlas(files int) atlas.Atlas {
 }
 
 func (r *reader) target(meta TargetMeta) atlas.Target {
+	countedFiles := map[string]bool{}
 	target := atlas.Target{
 		ID: meta.ID, Language: meta.Language, Kind: meta.Kind, Name: meta.Name, Root: meta.Root,
 		SharedCode: append([]string(nil), meta.SharedCode...),
@@ -958,6 +882,9 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			ZoneID: owner.zoneID[meta.ID], Side: r.side(owner, meta.ID), Open: owner.open,
 			Files: []atlas.File{}, Keys: []atlas.Key{},
 		}
+		if owner.symbols != nil {
+			box.MemberIDs = []string{}
+		}
 		for _, fileID := range owner.files {
 			place := r.places[fileID]
 			if !contains(place.TargetIDs, meta.ID) {
@@ -972,6 +899,12 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 				Callers: len(place.File.Callers), Callees: len(place.File.Callees),
 			}
 			for _, decl := range place.File.Decls {
+				if owner.symbols != nil && !owner.symbols[atlas.SymbolID(place.Path, decl.LineNo, decl.Name)] {
+					continue
+				}
+				if owner.symbols != nil && decl.ObjectID != "" {
+					box.MemberIDs = append(box.MemberIDs, decl.ObjectID)
+				}
 				symbol := atlas.Symbol{
 					ObjectID: decl.ObjectID,
 					ID:       atlas.SymbolID(place.Path, decl.LineNo, decl.Name), Name: decl.Name, Kind: decl.Kind,
@@ -990,7 +923,10 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 				file.Symbols = append(file.Symbols, symbol)
 			}
 			box.Files = append(box.Files, file)
-			target.Files++
+			if !countedFiles[fileID] {
+				target.Files++
+				countedFiles[fileID] = true
+			}
 			target.Symbols += len(file.Symbols)
 		}
 		box.Keys = modelKeys(box.Files)
@@ -1022,8 +958,8 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		if !contains(state.place.TargetIDs, meta.ID) {
 			continue
 		}
-		boxID, ok := r.boxOf[state.place.Parent]
-		if !ok {
+		boxID := r.boundaryBox(meta.ID, state.place)
+		if boxID == "" {
 			continue
 		}
 		// The target shows only the boxes holding its files; a boundary whose

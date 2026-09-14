@@ -3,6 +3,7 @@ package report
 import (
 	"encoding/json"
 	"io/fs"
+	"os"
 	"reflect"
 	"regexp"
 	"sort"
@@ -24,7 +25,7 @@ func TestRussianUIExistsBeforeBrowserScripts(t *testing.T) {
 	if !ok {
 		t.Fatal("report has no UI vocabulary for browser labels")
 	}
-	for _, want := range []string{`<html lang="ru">`, `aria-label="Репозиторий"`, `>Главная</a>`, `>Компоненты · `, `>Об этом запуске</h2>`, "JavaScript необязателен."} {
+	for _, want := range []string{`<html lang="ru">`, `aria-label="Репозиторий"`, `aria-label="Главная"`, `aria-label="Компоненты"`, `<option value="">Все</option>`, `>Об этом запуске</h2>`, "JavaScript необязателен."} {
 		if !strings.Contains(static, want) {
 			t.Fatalf("static Russian HTML omits %q", want)
 		}
@@ -141,35 +142,43 @@ func TestUIParametersAreNotTranslatedOrReplacedAgain(t *testing.T) {
 // must exist in the shared catalogue before a less common UI branch is opened.
 func TestUIVocabularyCoversTemplateAndRuntimeMessages(t *testing.T) {
 	t.Parallel()
-	message := regexp.MustCompile(`\b(?:t\s+|rmT(?:\.html)?\()("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')`)
-	err := fs.WalkDir(reportTemplateFS, "templates", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || (!strings.HasSuffix(path, ".html") && !strings.HasSuffix(path, ".js")) || strings.HasSuffix(path, "/27-elk.js") {
-			return nil
-		}
-		content, err := fs.ReadFile(reportTemplateFS, path)
-		if err != nil {
-			return err
-		}
-		for _, match := range message.FindAllSubmatch(content, -1) {
-			literal := string(match[1])
-			if literal[0] == '\'' {
-				literal = `"` + strings.ReplaceAll(strings.ReplaceAll(literal[1:len(literal)-1], `\'`, `'`), `"`, `\"`) + `"`
-			}
-			key, err := strconv.Unquote(literal)
+	message := regexp.MustCompile(`\b(?:t\s+|(?:rmT(?:\.html)?|t)\()("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')`)
+	for _, source := range []struct {
+		files fs.FS
+		root  string
+	}{{reportTemplateFS, "templates"}, {os.DirFS("."), "web"}} {
+		err := fs.WalkDir(source.files, source.root, func(path string, entry fs.DirEntry, err error) error {
 			if err != nil {
-				t.Errorf("%s: invalid UI key %s: %v", path, literal, err)
-				continue
+				return err
 			}
-			if _, known := russianUI[key]; !known {
-				t.Errorf("%s: unknown UI key %q", path, key)
+			if entry.IsDir() && entry.Name() == "node_modules" {
+				return fs.SkipDir
 			}
+			if entry.IsDir() || (!strings.HasSuffix(path, ".html") && !strings.HasSuffix(path, ".js") && !strings.HasSuffix(path, ".jsx") && !strings.HasSuffix(path, ".mjs")) || strings.HasSuffix(path, "/27-report-ui.js") {
+				return nil
+			}
+			content, err := fs.ReadFile(source.files, path)
+			if err != nil {
+				return err
+			}
+			for _, match := range message.FindAllSubmatch(content, -1) {
+				literal := string(match[1])
+				if literal[0] == '\'' {
+					literal = `"` + strings.ReplaceAll(strings.ReplaceAll(literal[1:len(literal)-1], `\'`, `'`), `"`, `\"`) + `"`
+				}
+				key, err := strconv.Unquote(literal)
+				if err != nil {
+					t.Errorf("%s: invalid UI key %s: %v", path, literal, err)
+					continue
+				}
+				if _, known := russianUI[key]; !known {
+					t.Errorf("%s: unknown UI key %q", path, key)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 }

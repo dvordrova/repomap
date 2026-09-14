@@ -98,7 +98,7 @@
 .map-workspace .map-stage{min-width:0}
 .map-inspector{position:sticky;top:1rem;box-sizing:border-box;height:min(24rem,65vh);min-width:0;overflow:hidden;display:flex;flex-direction:column;border-left:1px solid var(--line);padding:.7rem 0 .7rem 1rem}
 .map-inspector-content{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;flex:1 1 auto}
-.map-inspector-content:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.map-inspector-content:focus{outline:none}
 .map-inspector-heading{flex:0 0 auto;display:grid;gap:.3rem 1rem;align-items:end;padding:0 0 .45rem;margin-bottom:.35rem;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
 .map-inspector-heading.has-concepts{grid-template-columns:minmax(0,1fr) minmax(0,1.35fr)}
 .map-inspector:not(.has-preview) .map-inspector-heading{display:none}

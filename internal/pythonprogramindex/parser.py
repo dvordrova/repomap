@@ -121,6 +121,9 @@ class Scope:
         self.bindings = {}
         self.export_bindings = {}
         self.export_star_import = False
+        self.global_names = set()
+        self.nonlocal_names = set()
+        self.opaque_names = set()
 
     def binding(self, name):
         current = self
@@ -153,6 +156,7 @@ class Analyzer:
         self.node_scopes = {}
         self.call_result_refs = {}
         self.return_annotations = {}
+        self.variable_annotations = {}
         self.return_values = {}
         self.suspended_callables = set()
         self.constructor_fields = {}
@@ -523,7 +527,7 @@ class Collector(ast.NodeVisitor):
         )
 
     def add_variable(self, name, node, forced_internal=False, signature=""):
-        if not name or name == "_":
+        if not name:
             return ""
         self.record_export(name)
         qname = self.scope.qname + "." + name
@@ -663,6 +667,8 @@ class Collector(ast.NodeVisitor):
             arguments.append(node.args.kwarg)
         for argument in arguments:
             self.add_variable(argument.arg, argument, True)
+            if argument.annotation is not None:
+                self.analyzer.variable_annotations[self.analyzer.node_refs[id(argument)]] = (argument.annotation, parent)
         for statement in node.body:
             self.visit(statement)
         self.scope = previous
@@ -754,6 +760,9 @@ class Collector(ast.NodeVisitor):
                 if ref:
                     self.analyzer.call_result_refs[id(node.value)] = ref
         self.bind_callable_alias(node.target, alias_binding)
+        ref = self.analyzer.node_refs.get(id(node.target))
+        if ref:
+            self.analyzer.variable_annotations[ref] = (node.annotation, self.scope)
 
     def visit_NamedExpr(self, node):
         alias_binding = self.callable_alias_binding(node.value)
@@ -789,6 +798,7 @@ class Collector(ast.NodeVisitor):
                 for target in ast.walk(item.optional_vars):
                     if isinstance(target, ast.Name):
                         self.record_export(target.id)
+                        self.scope.opaque_names.add(target.id)
         self.generic_visit(node)
 
     visit_AsyncWith = visit_With
@@ -796,11 +806,13 @@ class Collector(ast.NodeVisitor):
     def visit_ExceptHandler(self, node):
         if node.name:
             self.record_export(node.name)
+            self.scope.opaque_names.add(node.name)
         self.generic_visit(node)
 
     def visit_MatchAs(self, node):
         if node.name:
             self.record_export(node.name)
+            self.scope.opaque_names.add(node.name)
         self.generic_visit(node)
 
     visit_MatchStar = visit_MatchAs
@@ -808,7 +820,14 @@ class Collector(ast.NodeVisitor):
     def visit_MatchMapping(self, node):
         if node.rest:
             self.record_export(node.rest)
+            self.scope.opaque_names.add(node.rest)
         self.generic_visit(node)
+
+    def visit_Global(self, node):
+        self.scope.global_names.update(node.names)
+
+    def visit_Nonlocal(self, node):
+        self.scope.nonlocal_names.update(node.names)
 
     def visit_Import(self, node):
         for alias in node.names:
@@ -849,6 +868,7 @@ class RelationVisitor(ast.NodeVisitor):
         # declaration collector has already created stable variable objects,
         # but it must not let a later assignment explain an earlier call.
         self.pattern_bindings = {id(scope): {}}
+        self.read_shadows = set()
 
     def object(self, ref):
         return self.analyzer.objects_by_ref.get(ref)
@@ -1157,6 +1177,63 @@ class RelationVisitor(ast.NodeVisitor):
             return type_ref
         return ""
 
+    def iterable_element_type(self, annotation):
+        if annotation is None:
+            return ""
+        expression, declared_scope = annotation
+        if not isinstance(expression, ast.Subscript):
+            return ""
+        previous, self.scope = self.scope, declared_scope
+        try:
+            container = expression.value
+            builtin = (isinstance(container, ast.Name) and self.scope.binding(container.id) is None
+                       and container.id in ("list", "set", "frozenset", "tuple"))
+            authority, ref = self.resolve(container)
+            external = self.object(ref) if authority == "external" else None
+            generic = external and external["name"] in (
+                "typing.List", "typing.Set", "typing.FrozenSet", "typing.Tuple",
+                "typing.Sequence", "typing.Iterable", "typing.Iterator",
+                "collections.abc.Sequence", "collections.abc.Iterable", "collections.abc.Iterator",
+            )
+            if not builtin and not generic:
+                return ""
+            element = expression.slice
+            if isinstance(element, ast.Tuple):
+                # Only homogeneous tuple[T, ...]; a heterogeneous tuple or
+                # a mapping must not borrow its first member as every item.
+                is_tuple = (builtin and container.id == "tuple") or (external and external["name"] == "typing.Tuple")
+                if not is_tuple or len(element.elts) != 2 or not isinstance(element.elts[1], ast.Constant) or element.elts[1].value is not Ellipsis:
+                    return ""
+                element = element.elts[0]
+            if not isinstance(element, (ast.Name, ast.Attribute)):
+                return ""
+            authority, ref = self.resolve(element)
+            candidate = self.object(ref) if authority == "local" else None
+            return ref if candidate and candidate["kind"] == "type" else ""
+        finally:
+            self.scope = previous
+
+    def iterated_class(self, expression):
+        if isinstance(expression, ast.Call):
+            # sorted preserves element types. A local parameter/import named
+            # sorted, an arbitrary wrapper or star expansion proves nothing.
+            if (isinstance(expression.func, ast.Name) and expression.func.id == "sorted"
+                    and self.scope.binding("sorted") is None and "sorted" not in self.read_shadows
+                    and len(expression.args) == 1 and not isinstance(expression.args[0], ast.Starred)
+                    and all(k.arg in ("key", "reverse") for k in expression.keywords)):
+                return self.iterated_class(expression.args[0])
+            return ""
+        if isinstance(expression, ast.Name):
+            binding = self.pattern_binding(expression.id)
+            if binding and self.read_name(expression.id)[1] == binding.get("ref"):
+                return self.iterable_element_type(binding.get("iterable_annotation"))
+        if isinstance(expression, ast.Attribute):
+            _, ref = self.written_field(expression)
+            field = self.object(ref)
+            if field and not self.analyzer.field_write_counts.get((field.get("owner_ref"), field["name"])):
+                return self.iterable_element_type(self.analyzer.variable_annotations.get(ref))
+        return ""
+
     def pattern_receiver(self, callee):
         if not isinstance(callee, ast.Attribute):
             return {}
@@ -1337,6 +1414,7 @@ class RelationVisitor(ast.NodeVisitor):
                 # Any later assignment replaces this source-ordered binding.
                 "annotation_origin": bool(origins),
                 "value_candidate": None, "source_origin": origin,
+                "iterable_annotation": self.analyzer.variable_annotations.get(ref),
             }
 
     def relation_pattern(self, call, form, from_ref):
@@ -1652,6 +1730,85 @@ class RelationVisitor(ast.NodeVisitor):
         self.visit(node.body)
         self.scope = previous
 
+    def read_name(self, name):
+        # Reading a declared slot does not prove its runtime value. Keep the
+        # lexical declaration (including imported originals), not a guessed
+        # value or a method call on it. Class bodies are not method closures.
+        if name in self.read_shadows:
+            return "unknown", ""
+        scope = self.scope
+        if name in scope.global_names:
+            while scope.parent is not None:
+                scope = scope.parent
+        elif name in scope.nonlocal_names:
+            scope = scope.parent
+            while scope is not None and scope.kind == "type":
+                scope = scope.parent
+        while scope is not None:
+            if name in scope.opaque_names:
+                return "unknown", ""
+            binding = scope.bindings.get(name)
+            if binding:
+                if binding["kind"] == "object":
+                    return "local", binding["ref"]
+                if binding["kind"] == "from":
+                    return self.import_target(binding["module"], binding["name"], not binding.get("relative", False))
+                if binding["kind"] == "module":
+                    return self.import_target(binding["module"])
+                return "unknown", ""
+            scope = scope.parent
+            while scope is not None and scope.kind == "type":
+                scope = scope.parent
+        return "unknown", ""
+
+    def record_read(self, node, resolved):
+        candidate = self.object(resolved[1]) if resolved[1] else None
+        if candidate and candidate["kind"] == "variable":
+            self.emit_resolved("reads", self.scope.ref, resolved, node,
+                               "variable_read", safe_expression_name(node))
+
+    def visit_Name(self, node):
+        if isinstance(node.ctx, ast.Load):
+            self.record_read(node, self.read_name(node.id))
+
+    def visit_Attribute(self, node):
+        if isinstance(node.ctx, ast.Load):
+            root = node
+            while isinstance(root, ast.Attribute):
+                root = root.value
+            resolved = ("unknown", "")
+            if isinstance(root, ast.Name):
+                base = self.read_name(root.id)
+                value = self.object(base[1]) if base[1] else None
+                if value and value["kind"] in ("module", "package", "type"):
+                    # resolve's declaration binding must agree with lexical
+                    # lookup before following module/class attributes.
+                    if self.resolve(root) == base:
+                        resolved = self.resolve(node)
+                elif value and root.id not in self.read_shadows:
+                    resolved = self.written_field(node)
+            self.record_read(node, resolved)
+        self.visit(node.value)
+
+    def visit_ListComp(self, node):
+        previous = self.read_shadows
+        self.read_shadows = set(previous)
+        for generator in node.generators:
+            self.visit(generator.iter)
+            self.read_shadows.update(part.id for part in ast.walk(generator.target) if isinstance(part, ast.Name))
+            for condition in generator.ifs:
+                self.visit(condition)
+        if isinstance(node, ast.DictComp):
+            self.visit(node.key)
+            self.visit(node.value)
+        else:
+            self.visit(node.elt)
+        self.read_shadows = previous
+
+    visit_SetComp = visit_ListComp
+    visit_DictComp = visit_ListComp
+    visit_GeneratorExp = visit_ListComp
+
     def visit_Await(self, node):
         previous, self.invocation = self.invocation, "awaited"
         self.visit(node.value)
@@ -1747,6 +1904,7 @@ class RelationVisitor(ast.NodeVisitor):
     def visit_Assign(self, node):
         for target in node.targets:
             self._attribute_write(target)
+            self._target_reads(target)
         self.visit(node.value)
         origin = self.assignment_origin(node.value)
         initializer = self.initializer_value_candidate(node.value)
@@ -1757,6 +1915,7 @@ class RelationVisitor(ast.NodeVisitor):
 
     def visit_AnnAssign(self, node):
         self._attribute_write(node.target)
+        self._target_reads(node.target)
         if node.value is not None:
             self.visit(node.value)
             self.bind_pattern_target(
@@ -1767,9 +1926,16 @@ class RelationVisitor(ast.NodeVisitor):
             self.bind_field_type(node.target, node.value)
         else:
             self.bind_pattern_target(node.target, {"observed": 0})
+        if isinstance(node.target, ast.Name):
+            self.current_pattern_bindings()[node.target.id]["iterable_annotation"] = (node.annotation, self.scope)
 
     def visit_AugAssign(self, node):
         self._attribute_write(node.target)
+        self._target_reads(node.target)
+        if isinstance(node.target, ast.Name):
+            self.record_read(node.target, self.read_name(node.target.id))
+        elif isinstance(node.target, ast.Attribute):
+            self.record_read(node.target, self.written_field(node.target))
         self.visit(node.value)
         if isinstance(node.target, ast.Name):
             previous = self.pattern_binding(node.target.id) or {}
@@ -1790,8 +1956,22 @@ class RelationVisitor(ast.NodeVisitor):
 
     def visit_For(self, node):
         self.visit(node.iter)
+        self._target_reads(node.target)
+        type_ref = self.iterated_class(node.iter) if isinstance(node, ast.For) else ""
         self.bind_pattern_target(node.target, {"observed": 0})
-        for statement in node.body + node.orelse:
+        if type_ref and isinstance(node.target, ast.Name):
+            self.current_pattern_bindings()[node.target.id].update({
+                "origin_refs": [type_ref], "origin_resolution": "alternatives", "origins_observed": 1,
+                "annotation_origin": True, "iteration_origin": True,
+            })
+        for statement in node.body:
+            self.visit(statement)
+        # A loop can execute zero times; its item type is not established for
+        # a later use. Assignments inside the body already clear it in order.
+        for target in ast.walk(node.target):
+            if isinstance(target, ast.Name):
+                self.bind_nonvalue_name(target.id)
+        for statement in node.orelse:
             self.visit(statement)
 
     visit_AsyncFor = visit_For
@@ -1799,21 +1979,66 @@ class RelationVisitor(ast.NodeVisitor):
     def visit_Delete(self, node):
         for target in node.targets:
             self._attribute_write(target)
+            self._target_reads(target)
             if isinstance(target, ast.Name):
                 self.bind_nonvalue_name(target.id)
+
+    def _target_reads(self, target):
+        # A store reads the receiver/index, not the slot it overwrites.
+        if isinstance(target, ast.Attribute):
+            self.visit(target.value)
+        elif isinstance(target, ast.Subscript):
+            self.visit(target.value)
+            self.visit(target.slice)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for value in target.elts:
+                self._target_reads(value)
 
     def _attribute_write(self, target):
         if isinstance(target, ast.Attribute):
             if isinstance(target.value, ast.Name) and target.value.id == "self" and self.scope.class_ref:
                 key = (self.scope.class_ref, target.attr)
                 self.analyzer.field_write_counts[key] = self.analyzer.field_write_counts.get(key, 0) + 1
-            self.analyzer.add_relation(
-                "writes", self.scope.ref, [], "unresolved", target,
-                "dynamic_attribute_write", self.expression_name(target), targets_observed=1,
+            self.emit_resolved(
+                "writes", self.scope.ref, self.written_field(target), target,
+                "dynamic_attribute_write", self.expression_name(target),
             )
         elif isinstance(target, (ast.Tuple, ast.List)):
             for value in target.elts:
                 self._attribute_write(value)
+
+    def written_field(self, target):
+        # A written attribute is a possible field of an observed receiver,
+        # not an exact runtime slot (descriptors and __setattr__ still apply).
+        # Do not use the lexical spelling `self`: it may be rebound, static,
+        # or captured from a different enclosing class.
+        receiver = target.value
+        if not isinstance(receiver, ast.Name):
+            return "unknown", ""
+        origin = self.source_value(receiver)
+        owner_ref = ""
+        if origin.get("kind") == "receiver":
+            scope = self.scope
+            while scope is not None:
+                declaration = self.object(scope.ref)
+                if declaration and declaration.get("location") == origin.get("owner"):
+                    owner_ref = declaration.get("owner_ref", "")
+                    break
+                scope = scope.parent
+        elif origin.get("kind") in ("parameter", "call_result") or (self.pattern_binding(receiver.id) or {}).get("iteration_origin"):
+            binding = self.pattern_binding(receiver.id)
+            if binding and (binding.get("annotation_origin") or not binding.get("value_invalidated")):
+                refs = binding.get("origin_refs", [])
+                if len(refs) == 1:
+                    owner_ref = self.produced_class(refs[0])
+        owner = self.object(owner_ref)
+        if not owner or owner["kind"] != "type":
+            return "unknown", ""
+        ref = self.analyzer.objects_by_qname.get(self.analyzer.object_qname(owner_ref) + "." + target.attr, "")
+        field = self.object(ref)
+        if field and field["kind"] == "variable" and field.get("owner_ref") == owner_ref:
+            return "local", ref
+        return "unknown", ""
 
 
 def attach_control_context(tree, path):

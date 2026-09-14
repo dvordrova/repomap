@@ -166,16 +166,27 @@ func learningQuestionTopics(view *pageView, plan *atlas.LearningPlan) {
 			add("user", "Your questions", q)
 		}
 	}
-	if plan == nil {
-		return
-	}
-	for _, review := range plan.Reviews {
-		for _, q := range view.Questions {
-			for _, origin := range q.Origins {
-				if origin.Title == review.Title {
-					add(review.Intent, review.Title, q)
+	if plan != nil {
+		for _, review := range plan.Reviews {
+			for _, q := range view.Questions {
+				for _, origin := range q.Origins {
+					if origin.Title == review.Title {
+						add(review.Intent, review.Title, q)
+					}
 				}
 			}
+		}
+	}
+	// The one question menu must also retain answers without a saved topic.
+	linked := map[string]bool{}
+	for _, topic := range view.LearnQuestionTopics {
+		for _, link := range topic.Questions {
+			linked[link.Href] = true
+		}
+	}
+	for _, q := range view.Questions {
+		if !linked["#"+q.ID] {
+			add("unassigned", "Questions", q)
 		}
 	}
 }

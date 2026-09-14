@@ -306,7 +306,7 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 		RepoName:      data.RepoName,
 		Revision:      data.CapturedRevision,
 		ShortRevision: shortRevision(data.CapturedRevision),
-		RepositoryURL: builder.links.repositoryURL,
+		RepositoryURL: builder.links.rootURL(),
 		FormatVersion: data.FormatVersion,
 		ReportSHA256:  reportSHA256,
 		Served:        builder.links.served(),

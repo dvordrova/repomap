@@ -90,6 +90,65 @@ existing barrel-export and declared-return resolution for the comparable case.
 
 A source-ordered, directly annotated parameter may supply an existing locally resolved class method as an alternative native target, including an explicitly imported facade class. Annotations and literal values retain distinct provenance. Reassignment or conditional assignment clears that binding; unknown, union and unresolved quoted types remain unresolved. This adds no executed import, body analysis, framework inference or exact runtime dispatch.
 
+Synchronous iteration over a directly annotated homogeneous collection retains
+its locally resolved element class as a possible receiver inside the loop body.
+This applies to parameters, local annotations and declared receiver fields,
+including unshadowed `sorted(collection)` with its ordinary key/reverse options.
+Known built-in and typing/collections container annotations supply this evidence;
+an arbitrary wrapper, shadowed `sorted`, heterogeneous tuple, union, unknown
+collection or replaced binding does not. A loop may run zero times, so its
+receiver origin does not escape into the else clause or subsequent statements.
+An asynchronous loop does not borrow a synchronous container annotation.
+Method calls and direct field writes keep their original source locations and
+possible status; this is not runtime dispatch or proof that an input executes
+the write.
+
+The cumulative iteration fixture checks these positive cases and negative
+controls. Real Go range, TypeScript for-of and JavaScript JSDoc-array examples
+retain their existing compiler-resolved method identities, with untyped JS/TS
+controls remaining unresolved. Clojure has no corresponding generic receiver
+type evidence in its current adapter; Java instance dispatch remains unresolved.
+
+## Variable reads and attribute writes
+
+Underscore is an ordinary Python parameter/local name. Its declaration,
+annotation and initializer retain the same source identity as other names;
+typed `_` parameters and annotated call results must not abort extraction.
+Unannotated receivers remain unresolved. The cumulative JS/TS examples retain
+their native underscore parameter authority, and Clojure retains an unresolved
+local underscore callback. Go's blank identifier is intentionally different:
+the cumulative range example never creates a named `_` variable.
+
+Native variable reads retain the original declared slot and each source site,
+including imported aliases, module-qualified values, receiver fields and reads
+of receivers/indices on assignment targets. Reads remain alternatives, not a
+runtime-value claim. Lexical parameters/locals, comprehensions, nonlocal/global
+declarations and class-body versus method scope cannot borrow a same-named
+outer value. Unbound with/except/match targets stay unresolved. Replaced or
+untyped receivers do not acquire field authority. The cumulative examples test
+these controls and preserve read locations through GroupsIndex.
+
+Clojure already emits comparable native var reads; its cumulative example now
+checks an imported var and a shadowing local. Go and JS/TS do not currently emit
+general variable reads. JS/TS retains its narrower compiler contract/type-use
+relations; these are not evidence of arbitrary runtime value use.
+
+Source-ordered receiver origins may bind a direct attribute write to an existing
+native class field. Method receivers, their local aliases, directly annotated
+parameters and local constructor results retain the field's exact lexical owner.
+Assignments, augmented assignments, annotated writes and deletes keep every
+source site. Nested classes keep their own receiver identity; a captured outer
+receiver keeps its original owner. Rebinding, an untyped receiver, a static
+parameter merely named `self`, nested receiver expressions and dynamic `setattr`
+remain unresolved. Resolved candidates are alternatives because descriptors and
+`__setattr__` can redirect a write. No class is executed to infer the result.
+
+The cumulative MutableCounter fixture checks each write and its GroupsIndex
+source projection, with read-only and replaced-receiver controls. The current Go,
+JS/TS and Clojure adapters do not emit comparable target-bound field-write
+relations; their mutation-tracing equivalent remains unavailable rather than
+being inferred from call or field-initializer evidence.
+
 ## Framework-neutral registrations
 
 The original AST call site, result identity, positional/keyword arguments and callback targets remain separate. `Thread(target=...)`, async-task and supported schedule registrations preserve their written activation evidence. A later `start`, `join` or liveness check on that same result does not invent a callback call. Lifespan setup and finite retry loops remain negative controls; final scheduled/continuous roles belong to [operation review](READING.md#operation-ownership).

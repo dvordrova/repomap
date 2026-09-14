@@ -1,7 +1,25 @@
 <section id="overview" data-report-page>
-{{template "learn.html" .}}
+<noscript>{{template "learn.html" .}}</noscript>
 <div id="repository-map" class="repository-map-panel"><h3>{{t "System map"}}</h3>
-{{if .RepoMap}}{{template "repomap.html" .RepoMap}}{{end}}
+{{with .SystemMap}}{{template "map.html" .}}{{end}}
+<template data-system-reading-home>
+<div class="system-reading-home">
+{{if .Summary}}<p class="system-repository-summary" data-display-ref="{{.Summary.TextRef}}">{{.Summary.Text}}</p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
+<nav aria-label="{{t "Repository reference"}}">
+{{if .Questions}}<a href="#questions">{{t "Choose from {0} questions" (len .Questions)}} →</a>{{end}}
+<a href="{{.LearnRunHref}}">{{t "How do I run it?"}} →</a>
+{{if .Glossary}}<a href="#concepts">{{t "What does this term mean?"}} →</a>{{end}}
+<a href="#repository-gaps">{{t "What is missing"}} →</a>
+{{with .Summary}}{{if .Anchors}}<a href="#repository-summary-sources">{{t "Repository summary sources"}} →</a>{{end}}{{end}}
+{{if .Claims}}<a href="#repository-claims">{{t "What the people who wrote it said"}} →</a>{{end}}
+</nav>
+<h4>{{t "Components"}}</h4>
+{{range .Cards}}<article><a href="#{{.SectionID}}"><strong>{{.ShortName}}</strong> →</a>
+{{if .Role}}<p><strong data-display-ref="{{.RoleRef}}">{{.Role}}</strong>{{if .Purpose}} — <span data-display-ref="{{.PurposeRef}}">{{.Purpose}}</span>{{end}}</p>{{end}}
+</article>{{end}}
+{{range .MutedCards}}<article><strong>{{.Name}}</strong><p class="meta">{{.Reason}}</p></article>{{end}}
+</div>
+</template>
 <details class="evidence-list"><summary>{{t "Component details"}} <span class="collapse-label">{{t "Collapse details"}}</span></summary>
 {{if or .Cards .MutedCards}}<div class="cards">
 {{range .Cards}}<div class="card"><h3><a href="#{{.SectionID}}">{{.ShortName}}</a></h3>
@@ -14,20 +32,20 @@
 {{end}}</div>{{end}}
 </details>
 </div>
-{{template "learn-start.html" .}}
 </section>
-{{if or .Questions .LearningReviews}}<section id="questions" class="reading-page" data-report-page><header class="reading-page-intro"><h2>{{t "Questions to explore"}}</h2><p>{{t "Answers from the code and documentation read in this report, with paths into the map."}}</p></header>
-{{if .Questions}}<details class="question-index" open><summary>{{t "{0} questions in this report" (len .Questions)}}</summary><ol class="question-menu">{{range .Questions}}<li><a href="#{{.ID}}">{{.Question}}</a></li>{{end}}</ol></details>{{end}}
+{{if or .Questions .LearningReviews}}<section id="questions" class="reading-page" data-report-page><header class="reading-page-intro"><h2>{{t "Questions"}}</h2></header>
+{{if .Questions}}<div class="question-index">{{template "learn-start.html" .}}</div>{{end}}
 {{if .LearningNote}}<p>{{.LearningNote}}</p>{{end}}{{range .Questions}}{{template "question.html" .}}{{end}}{{template "learning-review.html" .}}</section>{{end}}
 <section id="repository-reference" data-report-page><h2>{{t "Repository reference"}}</h2>
+{{with .Summary}}{{if .Anchors}}<section id="repository-summary-sources"><h3>{{t "Repository summary sources"}}</h3><p class="meta">{{t "Model response"}} · {{t "The model cited these sources:"}}</p><div class="source-links">{{range .Anchors}}{{template "anchor" .}} {{end}}</div></section>{{end}}{{end}}
 {{if .Portals}}<details class="evidence-list"><summary>{{t "HTTP connection sources"}} <span class="collapse-label">{{t "Collapse sources"}}</span></summary><table><thead><tr><th>{{t "Method"}}</th><th>{{t "Path"}}</th><th>{{t "Call"}}</th><th></th><th>{{t "Route"}}</th></tr></thead><tbody>
 {{range .Portals}}<tr><td class="method">{{.Method}}</td><td><code>{{.Path}}</code>{{if .Possible}}<span class="possible">{{t "possible"}}</span>{{end}}</td><td>{{template "anchor" .Call}}</td><td>→</td><td>{{template "anchor" .Route}}</td></tr>{{end}}</tbody></table></details>{{end}}
 {{if .Addresses}}<h4>{{t "Where to reach them"}}</h4><ul class="plain fact">{{range .Addresses}}<li>{{if .Target}}<strong>{{.Target}}</strong> · {{end}}<code>{{.Key}}</code>{{if .Value}} <code>{{.Value}}</code>{{end}}{{if .Note}} <span class="meta">{{.Note}}</span>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
-<h3>{{t "What is missing"}}</h3>
+<h3 id="repository-gaps">{{t "What is missing"}}</h3>
 {{if .Negatives}}<ul class="plain fact">{{range .Negatives}}<li>{{.Text}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{else}}<p class="empty">{{.NegativesMissing}}</p>{{end}}
 <h3 id="how-to-run">{{t "How to run"}}</h3>
 {{if .Recipe}}<ul class="plain">{{range .Recipe}}<li class="{{if .Model}}model{{else}}fact{{end}}"><code>{{.Command}}</code>{{if .Basis}} <span class="recipe-basis">{{t .Basis}}</span>{{end}}{{if .Cwd}} <span class="meta">{{t "(in"}} <code>{{.Cwd}}</code>)</span>{{end}}{{if .Note}} — <span{{if .Model}} data-display-ref="{{.NoteRef}}"{{end}}>{{.Note}}</span>{{end}}<span class="{{if .Model}}model-sources{{end}}">{{range .Anchors}} {{template "anchor" .}}{{end}}</span></li>{{end}}</ul>{{else}}<p class="empty">{{.RecipeMissing}}</p>{{end}}
-<h3>{{t "What the people who wrote it said"}}</h3>
+<h3 id="repository-claims">{{t "What the people who wrote it said"}}</h3>
 {{if .Claims}}<div class="claims">{{range .Claims}}<blockquote class="claim"><p>{{.Text}}</p><span class="src">{{.Source}}{{if .Date}} · {{.Date}} · {{t "{0} days ago" .AgeDays}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</span></blockquote>{{end}}</div>
 {{if .MoreClaims}}<p class="meta">{{t "The README says {0} more things this page does not quote." .MoreClaims}}</p>{{end}}{{else}}<p class="empty">{{t "Nothing quotable was found in the README, comments or commit messages."}}</p>{{end}}
 </section>

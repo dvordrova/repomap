@@ -1,4 +1,4 @@
-// Disclosures change the first view only; the complete original rows stay in HTML.
+// Group labels name kinds and provenance; every catalogue item stays visible.
 document.querySelectorAll('[data-input-group],[data-integration-group]').forEach(function(section){
   // A long list grouped by source file compacts within each file.
   var scopes=section.querySelectorAll('[data-input-subgroup]');
@@ -10,19 +10,7 @@ function compactCatalog(group){
   if(kinds.size===1)group.querySelectorAll('.input-kind').forEach(function(kind){kind.hidden=true;});
   var sources=new Set(items.map(function(item){return item.dataset.sourceKind||'fact';}));
   if(sources.size>1)items.forEach(function(item){var label=document.createElement('span');label.className='input-source';label.textContent=rmT(item.dataset.sourceKind==='model'?'Model interpretation':'Observed in source');item.appendChild(label);});
-  if(items.length<=5)return;
-  // Only the group's own lists move to the preview and the remainder. A
-  // destination group keeps its record list nested inside its own row.
-  var own=function(node){return !node.closest('[data-input-item],[data-integration-item]');};
-  var lists=Array.from(group.querySelectorAll('ul.operation-catalog,ul.route-catalog')).filter(own);
-  var preview=document.createElement('ul');preview.className='plain operation-catalog';
-  var rest=document.createElement('ul');rest.className=preview.className;
-  items.forEach(function(item,index){(index<5?preview:rest).appendChild(item);});
-  lists.forEach(function(list){list.remove();});group.querySelectorAll('.input-more').forEach(function(more){if(own(more))more.remove();});
-  group.appendChild(preview);
-  var more=document.createElement('details');more.className='input-more';
-  var summary=document.createElement('summary');summary.textContent=rmT('All {0} →',items.length);
-  more.append(summary,rest);group.appendChild(more);
+
 }
 
 // Folding retains evidence; ELK owns placement, ports and obstacle-free routing.
@@ -31,21 +19,25 @@ var repomapGraph = (function () {
   var engine=new ELK();
   async function layout(boxes,edges,areas,availableWidth){
     var children=Object.keys(boxes).map(function(id){return{id:id,width:boxes[id].w,height:boxes[id].h};});
-    var options={'elk.algorithm':'layered','elk.direction':'RIGHT','elk.edgeRouting':'ORTHOGONAL','elk.randomSeed':'1','elk.hierarchyHandling':'INCLUDE_CHILDREN','elk.padding':'[top=36,left=36,bottom=36,right=36]','elk.spacing.nodeNode':'44','elk.spacing.edgeNode':'24','elk.spacing.edgeEdge':'12','elk.layered.spacing.nodeNodeBetweenLayers':'90','elk.layered.spacing.edgeNodeBetweenLayers':'28','elk.layered.spacing.edgeEdgeBetweenLayers':'12','elk.layered.mergeEdges':'false','elk.separateConnectedComponents':'true'};
+    var options={'elk.algorithm':'layered','elk.direction':'RIGHT','elk.edgeRouting':'ORTHOGONAL','elk.randomSeed':'1','elk.hierarchyHandling':'INCLUDE_CHILDREN','elk.padding':'[top=24,left=24,bottom=24,right=24]','elk.spacing.nodeNode':'28','elk.spacing.edgeNode':'16','elk.spacing.edgeEdge':'8','elk.layered.spacing.nodeNodeBetweenLayers':'48','elk.layered.spacing.edgeNodeBetweenLayers':'16','elk.layered.spacing.edgeEdgeBetweenLayers':'8','elk.layered.mergeEdges':'false','elk.separateConnectedComponents':'true'};
     if(areas && areas.length){
-      var assigned=new Set();
-      var compound=areas.map(function(area){var members=children.filter(function(n){return area.nodes.indexOf(n.id)>=0;});members.forEach(function(n){assigned.add(n.id);});return{id:area.id,children:members,layoutOptions:Object.assign({},options,{'elk.padding':'[top=64,left=24,bottom=24,right=24]'})};}).filter(function(a){return a.children.length;});
-      children=compound.concat(children.filter(function(n){return !assigned.has(n.id);}));
+      var items={},assigned=new Set();children.forEach(function(n){items[n.id]=n;});
+      areas.forEach(function(a){items[a.id]={id:a.id,children:[],layoutOptions:Object.assign({},options,{'elk.padding':'[top=48,left=20,bottom=20,right=20]'})};});
+      areas.forEach(function(a){a.nodes.forEach(function(id){if(items[id]){items[a.id].children.push(items[id]);assigned.add(id);}});});
+      children=Object.values(items).filter(function(n){return !assigned.has(n.id)&&(!n.children||n.children.length);});
     }
     var input={id:'root',layoutOptions:options,children:children,edges:edges.map(function(e,i){return{id:'edge-'+i,sources:[e.from],targets:[e.to]};})};
     var request=JSON.stringify(input);
     var graph=await engine.layout(JSON.parse(request));
-    // Prefer downward flow when it avoids horizontal overflow. Neither choice
-    // changes membership or shrinks labels, and ties keep left-to-right flow.
+    // Compare both dimensions. Choosing only the narrowest layout turns a
+    // moderately wide collaboration into an arbitrarily tall column.
     if(availableWidth && graph.width>availableWidth){
       function downward(n){if(n.layoutOptions)n.layoutOptions['elk.direction']='DOWN';(n.children||[]).forEach(downward);}
       var alternative=JSON.parse(request);downward(alternative);
-      var vertical=await engine.layout(alternative);if(vertical.width<graph.width)graph=vertical;
+      var vertical=await engine.layout(alternative);
+      var readableHeight=Math.max(520,availableWidth*.8);
+      function overflow(g){return Math.max(g.width/availableWidth,g.height/readableHeight);}
+      if(overflow(vertical)<overflow(graph))graph=vertical;
     }
     var placed={}, offsets={root:{x:0,y:0}},frames=[];
     function collect(parent,x,y){(parent.children||[]).forEach(function(n){var px=x+n.x,py=y+n.y;offsets[n.id]={x:px,y:py};if(n.children){frames.push({id:n.id,x:px,y:py,w:n.width,h:n.height});collect(n,px,py);}else placed[n.id]={x:px,y:py,w:n.width,h:n.height};});}
@@ -106,21 +98,17 @@ var repomapGraph = (function () {
   function draw(map, routed) {
     var svg=map.querySelector('svg'), layer=svg.querySelector('.map-edges'), marker=svg.querySelector('marker').id;
     layer.replaceChildren();map.visibleEdges=routed;
-    routed.forEach(function(edge){
-      var group=document.createElementNS('http://www.w3.org/2000/svg','g');group.setAttribute('class','map-edge-group');
+    routed.forEach(function(edge,index){
+      var group=document.createElementNS('http://www.w3.org/2000/svg','g');group.setAttribute('class','map-edge-group');group.dataset.edgeIndex=index;
       var casing=document.createElementNS('http://www.w3.org/2000/svg','path');casing.setAttribute('d',edge.path);casing.setAttribute('class','map-edge-case');group.appendChild(casing);
       var line=document.createElementNS('http://www.w3.org/2000/svg','path');
       line.setAttribute('d',edge.path);line.setAttribute('class','map-edge'+(edge.possible?' map-edge-possible':''));
       line.dataset.from=edge.from;line.dataset.to=edge.to;
       line.dataset.operations=Array.from(new Set(edge.relations.flatMap(function(e){return e.operations||[];}))).join(' ');
       line.setAttribute('marker-end','url(#'+marker+')');
-      var title=document.createElementNS('http://www.w3.org/2000/svg','title');
-      title.textContent=rmT('{0} connections',edge.relations.length)+' · '+Array.from(new Set(edge.relations.map(function(e){return e.label;}))).join(', ');line.appendChild(title);
-      line.setAttribute('tabindex','0');line.setAttribute('role','button');line.setAttribute('aria-label',title.textContent);
-      function inspect(){map.dispatchEvent(new CustomEvent('repomap:connection',{detail:edge}));}
-      function lift(){layer.appendChild(group);}
-      line.addEventListener('mouseenter',lift);line.addEventListener('focus',lift);
-      line.addEventListener('click',inspect);line.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();inspect();}});
+      // Lines carry direction only. Numbered boundary markers own navigation;
+      // source evidence is available in the reading panel, not a native tooltip.
+      line.setAttribute('aria-hidden','true');
       group.appendChild(line);layer.appendChild(group);
     });
     return routed;
@@ -325,7 +313,7 @@ function rmBuildEntrance(inputs){
         var bend=Math.max(24,Math.abs(ty-sy)/2);path='M'+sx+' '+sy+' C'+sx+' '+(sy+(down?bend:-bend))+' '+tx+' '+(ty+(down?-bend:bend))+' '+tx+' '+ty;
       }
       var line=document.createElementNS(links.namespaceURI,'path');line.setAttribute('d',path);line.setAttribute('class','repo-space-edge'+(edge.possible?' repo-space-edge-possible':''));line.dataset.from=edge.from;line.dataset.to=edge.to;line.dataset.edge=index;line.setAttribute('marker-end','url(#'+marker+')');
-      line.setAttribute('tabindex','0');line.setAttribute('role','button');line.setAttribute('aria-label',nameOf(edge.from)+' → '+nameOf(edge.to)+': '+edge.label);
+      line.setAttribute('role','button');line.setAttribute('aria-label',nameOf(edge.from)+' → '+nameOf(edge.to)+': '+edge.label);
       function inspect(){selected=selected===edge.to?selected:edge.from;selectedConnection=index;pointed='';record();render();requestAnimationFrame(function(){focus.scrollIntoView({block:'nearest'});focus.focus({preventScroll:true});});}
       var hit=document.createElementNS(links.namespaceURI,'path');hit.setAttribute('d',path);hit.setAttribute('class','repo-space-edge-hit');hit.setAttribute('aria-hidden','true');hit.addEventListener('click',inspect);links.appendChild(hit);
       line.addEventListener('click',inspect);line.addEventListener('keydown',function(event){if(event.key==='Enter'||event.key===' '){event.preventDefault();inspect();}});
@@ -368,7 +356,7 @@ function rmBuildEntrance(inputs){
 // the first screen the same way: name, purpose, counts and the inputs,
 // commands and communication entrance, ahead of the question list.
 (function(){
-  if(document.querySelector('.repo-map'))return;
+  if(document.querySelector('.repo-map,[data-system-map]'))return;
   var panel=document.getElementById('repository-map');if(!panel)return;
   var sources=Array.from(panel.querySelectorAll('.cards>.card'));if(!sources.length)return;
   var grid=rmEl('div','repo-component-grid repo-single-product');

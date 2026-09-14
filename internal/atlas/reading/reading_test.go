@@ -89,6 +89,7 @@ type tableProvider struct {
 	answerFor          func(map[string]any) table.Answer
 	learningFor        func(learningRequest) learningResponse
 	learningSelectNone bool
+	designFor          func(string, []designItem) designResult
 }
 
 type questionBatchRequest struct {
@@ -130,6 +131,32 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 	var batch questionBatchRequest
 	if err := json.Unmarshal(prepared.Bytes(), &batch); err != nil {
 		return llm.Completion{}, err
+	}
+	if batch.Task == "repomap.atlas.design.v1" {
+		var request struct {
+			Mode  string
+			Items []designItem
+		}
+		if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
+			return llm.Completion{}, err
+		}
+		response := designResult{Groups: []designGroup{}}
+		if provider.designFor != nil {
+			response = provider.designFor(request.Mode, request.Items)
+		} else if request.Mode != "areas" {
+			positions := map[string]int{}
+			for _, item := range request.Items {
+				position, found := positions[item.Path]
+				if !found {
+					position = len(response.Groups)
+					positions[item.Path] = position
+					response.Groups = append(response.Groups, designGroup{Title: item.Path, Purpose: "Reads the supplied declarations."})
+				}
+				response.Groups[position].Members = append(response.Groups[position].Members, item.Ref)
+			}
+		}
+		raw, err := json.Marshal(response)
+		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
 	}
 	if batch.Task == questionbatch.Contract {
 		provider.mu.Lock()
@@ -368,7 +395,7 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(tables)
-	for _, want := range []string{"## atlas_directories · round 1", "## atlas_files · round 1", "- given: given pkg/a/x.go", `box_options: ["here","pkg/b"]`} {
+	for _, want := range []string{"## atlas_directories · round 1", "## atlas_files · round 1", "- given: given pkg/a/x.go"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("tables.md lacks %q", want)
 		}
@@ -382,7 +409,7 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 		t.Error("a generated file was asked about")
 	}
 	target := result.Atlas.Targets[0]
-	if len(target.Boxes) != 2 || target.Files != 4 {
+	if len(target.Boxes) != 4 || target.Files != 4 {
 		t.Fatalf("boxes %d files %d", len(target.Boxes), target.Files)
 	}
 	for _, box := range target.Boxes {
@@ -399,9 +426,9 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 		}
 	}
 	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "*.input.ref.json"))
-	// three directory rounds, one independent file round; the one arrow has
-	// no witness call and takes its fallback sentence without a window
-	if len(requests) != 3+1 {
+	// Three directory rounds, one file round and the observed source-file
+	// collaboration, then the target description from accepted parts.
+	if len(requests) != 3+1+1+1 {
 		t.Fatalf("request files: %d", len(requests))
 	}
 	if err := atlas.Validate(result.Atlas); err != nil {
@@ -409,7 +436,7 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 	}
 }
 
-func TestLiveReadingKeepsLinesAndMovesFiles(t *testing.T) {
+func TestLiveReadingKeepsFileLinesWithoutDirectoryPlacement(t *testing.T) {
 	graph := testGraph(t)
 	provider := &tableProvider{boxFor: map[string]string{"pkg/a/y.go": "pkg/b"}}
 	result, err := Read(context.Background(), readOptions(t, graph, provider, ""))
@@ -436,20 +463,17 @@ func TestLiveReadingKeepsLinesAndMovesFiles(t *testing.T) {
 	target := result.Atlas.Targets[0]
 	boxes := make(map[string]atlas.Box)
 	for _, box := range target.Boxes {
-		boxes[box.ID] = box
+		boxes[box.Title] = box
 	}
-	if boxes["pkg/a"].Title != "Title a" || boxes["pkg/a"].Line != "Directory pkg/a does things." {
-		t.Fatalf("box pkg/a: %+v", boxes["pkg/a"])
+	if len(boxes) != 4 || len(boxes["pkg/a/y.go"].Files) != 1 {
+		t.Fatalf("source layout overrode accepted parts: %+v", boxes)
 	}
-	if len(boxes["pkg/a"].Files) != 1 || len(boxes["pkg/b"].Files) != 3 {
-		t.Fatalf("y.go did not move: a=%d b=%d", len(boxes["pkg/a"].Files), len(boxes["pkg/b"].Files))
-	}
-	for _, file := range boxes["pkg/b"].Files {
+	for _, file := range boxes["pkg/a/y.go"].Files {
 		if file.Path == "pkg/a/y.go" && (file.Source != atlas.SourceModel || file.Line != "File pkg/a/y.go does things.") {
 			t.Fatalf("moved file: %+v", file)
 		}
 	}
-	if target.Line != "Directory pkg/a does things." {
+	if target.Line != "Text for r1" {
 		t.Fatalf("target line: %q", target.Line)
 	}
 	tables, _ := os.ReadFile(result.TablesPath)
@@ -468,7 +492,7 @@ func TestLiveReadingKeepsLinesAndMovesFiles(t *testing.T) {
 	}
 }
 
-func TestLonelyNewBoxIsCancelled(t *testing.T) {
+func TestSingleDeclarationPartSurvives(t *testing.T) {
 	graph := testGraph(t)
 	provider := &tableProvider{boxFor: map[string]string{"pkg/a/y.go": "new: Helpers"}}
 	result, err := Read(context.Background(), readOptions(t, graph, provider, ""))
@@ -476,10 +500,11 @@ func TestLonelyNewBoxIsCancelled(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, box := range result.Atlas.Targets[0].Boxes {
-		if strings.Contains(box.ID, "#") {
-			t.Fatalf("a box of one file survived: %s", box.ID)
+		if box.Title == "pkg/a/y.go" && len(box.Files) == 1 && len(box.Files[0].Symbols) == 1 {
+			return
 		}
 	}
+	t.Fatal("single-declaration responsibility was merged into its directory")
 }
 
 func TestRejectedWindowFallsBackAndIsNotCached(t *testing.T) {

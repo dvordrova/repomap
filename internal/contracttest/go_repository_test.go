@@ -81,6 +81,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoHTTPRegistrations(t, repository, index)
 	adaptertest.AssertQueryOccurrenceOwners(t, repositoryPath, repository, index, "internal/storefixture/data_sources.go")
 	adaptertest.AssertConcreteParameterMethod(t, index, "internal/storefixture/data_sources.go")
+	assertGoTypedIteration(t, index)
 	assertGoListenAddresses(t, index, repository)
 	assertGoLocalHTTPNameFacts(t, index)
 	assertGoExternalEventAndStoragePatterns(t, index)
@@ -239,6 +240,7 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 		t.Fatal(err)
 	}
 	assertGoTypeFormsInQuestionEvidence(t, index, graph)
+	adaptertest.AssertExecutionScope(t, index, graph, "cmd/app/main.go", 12, programindex.ObjectFunction)
 	adaptertest.AssertRegistrationArgument(t, graph, "cmd/app/main.go", "getLevel", map[int]string{21: "/api/levels", 115: "/api/embedded", 117: "/api/overridden-lookalike"})
 	seen := make(map[string]bool)
 	for _, chunk := range lines.QuestionRows(graph) {
@@ -1356,4 +1358,26 @@ func programIndexHasObject(index programindex.Index, kind programindex.ObjectKin
 		}
 	}
 	return false
+}
+
+func assertGoTypedIteration(t *testing.T, index programindex.Index) {
+	t.Helper()
+	// Unlike Python/JS/Clojure, Go's blank identifier does not bind a value.
+	for _, object := range index.Objects {
+		if object.Kind == programindex.ObjectVariable && object.Name == "_" {
+			t.Fatalf("Go blank identifier became a named variable: %+v", object)
+		}
+	}
+	const path = "internal/storefixture/data_sources.go"
+	caller := programIndexObjectNamed(t, index, programindex.ObjectFunction, "TypedIteration", path)
+	method := programIndexObjectNamed(t, index, programindex.ObjectMethod, "ReadRows", path)
+	for _, relation := range index.Relations {
+		if relation.FromID == caller.ID && relation.Kind == programindex.RelationCalls {
+			if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 || relation.ToIDs[0] != method.ID || relation.Location == nil || relation.Location.Path != path || relation.Location.Column < 1 {
+				t.Fatalf("range variable lost the compiler method/site: %+v", relation)
+			}
+			return
+		}
+	}
+	t.Fatal("typed slice iteration lost its original method call")
 }

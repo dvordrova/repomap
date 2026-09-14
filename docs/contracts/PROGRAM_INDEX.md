@@ -49,6 +49,10 @@ ProgramIndex IDs are canonical local identities. Provider-facing stages assign
 deterministic request-local refs and restore accepted rows locally. A model is
 never asked to copy a UUID, canonical path, canonical ID, or source location.
 
+GroupsIndex structural target edges also preserve the optional original native
+relation location. Snapshots own that location. It identifies the observed write
+or call site independently of either declaration; absent locations remain absent.
+
 ## Shared storage and sequential restoration
 
 The owner approved shared project storage on 2026-09-09. Ordinary persistence
@@ -261,5 +265,14 @@ source checks. Names alone do not authorize exclusion. This is presentation,
 not deletion from analysis or a claim about test coverage.
 
 ## Ownership and source protection
+
+Architectural membership is an interpretation over native declarations, not
+native file ownership. Atlas v8 records the selected declaration IDs explicitly.
+Projection resolves those IDs through the original source identities, rejects
+unknown or conflicting memberships, and uses only native lexical owners for
+inner values and objects. Equal source paths do not join independent
+responsibilities. Every native subject and structural relation remains in the
+GroupsIndex; cross-part connections retain their original relation ID,
+declaration endpoints, source locations and resolution.
 
 Public snapshots keep their existing isolation. Shared materialization never reassigns a target, aliases package contexts, invents a callee or turns an alternative into an exact observation. Source bodies do not enter provider requests. [EXTRACTORS](../EXTRACTORS.md) owns configured extractor and SQL admission details.

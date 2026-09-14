@@ -1,10 +1,636 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Airflow exposed annotated underscore parser failure
+
+- The ordinary Apache Airflow run at revision
+  `1f5d7691663016c898718768991a2dae522b4475` selected 453 targets. Several
+  Python preparations failed before publication: `_remove_kwargs(_: object)`
+  in `airflow-core/src/airflow/api_fastapi/core_api/datamodels/trigger.py:27`
+  exposed a declaration skipped as `_`, then accessed by its annotation.
+- The cumulative Python fixture reproduced the numeric KeyError before the
+  fix. Underscore now retains its ordinary Python declaration; annotated
+  parameters and call results keep possible methods, while untyped parameters
+  remain unresolved. No Airflow-specific filter or invented receiver was added.
+- The complete Python parser suite, cumulative Python contract, corresponding
+  TypeScript/JavaScript parameter cases, Clojure local callback and Go blank
+  identifier checks pass; changed packages pass vet and the binary is rebuilt.
+- The interrupted run exited 130 and is not publication acceptance. Its nine
+  cache entries were moved into the existing default system response cache;
+  the old cache directory is only a link for saved diagnostic references.
+  The restarted full run used the default cache and official DeepSeek. It
+  parsed Airflow core successfully (105,059 objects and 354,875 relations).
+  The owner then explicitly narrowed acceptance to the Airflow CLI/core,
+  browser UI and Task SDK library. The full run was stopped with exit 130;
+  the ordinary three-target run is in progress, not yet browser acceptance.
+- Before the requested push, canonical `make test`, `make vet`, `make ui-test`
+  and `git diff --check` pass. Native Clojure `.cpcache` directories are ignored
+  alongside other generated build outputs.
+
+## 2026-09-14 — Visible zoom entrances on closed frames
+
+- Replaced the faint expand corners with a small magnifier-plus control on
+  every closed component, area and external collection. It follows the actual
+  frame's top-right corner, not the limited text column, and retains a 28px
+  hit area and 18px symbol while zooming. Open frames and leaves have no icon.
+- Area summaries reserve title space beside the icon. Narrow external titles
+  wrap instead of losing the destination suffix to an ellipsis.
+- Browser inspection confirmed 12px corner insets and a 28px control on all
+  three root summaries. The front icon opens its contents; the Application
+  shell and navigation icon opens the group's parts and reading panel. Back
+  restores the identical component camera. Existing smooth focus is reused.
+- Saved Python rendering makes zero provider requests. All 23 web tests,
+  generated-asset check, report tests/vet and owner binary build pass.
+
+## 2026-09-14 — Group names in component summaries
+
+- Distant component cards list every saved area name instead of a bare group
+  count. Each name opens that exact area through the existing smooth focus and
+  history path. Parts and inputs remain a secondary count when space permits.
+- Text measurement reserves the group list before optional role, counts and
+  purpose; short cards omit prose rather than cutting off a line. Dense lists
+  retain all names in a scrollable region. World coordinates stay unchanged.
+- Saved Python rendering used zero provider requests. At the normal 934×992
+  browser size, all four front and both backend names fit without scrolling;
+  one zoom step also retained both complete lists. Canvas rendering opened its
+  three parts and reading panel; Back restored the identical camera transform.
+- All 23 web tests, generated-asset check, report tests/vet and make build pass.
+
+## 2026-09-14 — Final small-repository navigation audit
+
+- Questions remain one vertical list of open topic headings and all their
+  questions. Python question 3 opens directly; Back restores the list. There
+  is no duplicate question grid or nested topic chooser.
+- A 934 px browser exposed narrow root frames and a clipped first child on
+  component entrance. Root summary width is now reserved after the actual
+  area-summary heights are placed. Layout selection considers both root
+  dimensions; short summaries retain a three-line purpose. Entering front
+  focuses its first content at readable scale, with the component title kept
+  in the visible horizontal part of its frame. Pan/zoom never rearranges nodes
+  or routes. Browser All → front → Back restores identical viewport text.
+- Home/All clears the visible Find query after recording the new visit. Empty
+  group readings now say no connections to other parts were found. Python's
+  remaining isolated Import retry, Sleep utility and Instruction labels have
+  no observed external consumers; the retry self-call is internal. We do not
+  invent links or infer dead code from an absent mapped relation. Browser
+  Sleep utility exposes both the missing connection and missing input path.
+- The ordinary online Othello audit completed in 325.546 s. The final owner
+  binary completed its ordinary repeat with exit 0 in 5.527 s, reusing exact
+  requests: `/private/tmp/repomap-goal-audit-20260914/20260913-223634-othello-2a9cc894b339`.
+  Its complete manifest/report, native, places, atlas and GroupsIndex chain
+  exists; the graph digest matches the first audit. It has 25 parts (24 core),
+  8 inputs and 16 questions. Native declarations include 173 functions and 32
+  vars, with no nominal types: board.cljc:27 returns a vector; game.cljc:5
+  returns a map. These values are explained by Board model/Game state, not
+  synthesized as type declarations. External symbols/imports are not runtime
+  communication records, so External communication is absent from its legend.
+- Othello browser: Board model is purple, has exact code and incoming sources;
+  Handle board click selects its six reached parts. Python's previously
+  inspected Run → backend → Robot write paths, GET exclusion and exact external
+  POST caller remain unchanged. No native or model topology changed in this
+  layout pass. The original audit records seven refusals (documentation,
+  single-part areas, an unsupported orientation ref and optional glossary).
+- All 23 real UI tests, generated-asset check, report tests/vet and make build
+  pass. Python and Othello previews use ordinary saved rendering with zero
+  provider requests. The question list remains open for the owner.
+
+## 2026-09-14 — JSX and value uses retain their original connections
+
+- JS/TS now publishes compiler-bound value and JSX tag references as original
+  reads. Aliases, reexports, shorthand values and local shadowing retain their
+  declaration identity. Pure writes, type-only syntax, unknown bindings and
+  unindexed callback bodies do not borrow a runtime reader. JSX does not
+  fabricate a synchronous call. Property and receiver uses sharing a source
+  column retain separate relations.
+- Real native testing exposed an older per-file rank cutoff: module activity
+  and values after ten other declarations disappeared, and later types could
+  not receive descriptions. Removed that cutoff; ranking only orders eligible
+  authored declarations. The saved complete Python graph adds nine original
+  declarations and admits seven existing types, losing none. These include
+  robot direction values, drawing coordinates, Step, Wall and RunResult.
+- Correction to the preceding native-test notes: the default Node 24 lacks a
+  TypeScript compiler, so JSTS tests had silently skipped. The actual suite now
+  runs with the prepared Node 21 compiler. The cumulative mixed fixture enables
+  JavaScript explicitly, and its iteration check correctly expects possible
+  JS dispatch. Full JSTS, places, contract, GroupsIndex, reading, report, Python
+  and Clojure checks pass; native value-read/shadowing equivalents were also
+  run explicitly for Python and Clojure. Focused vet and make build pass.
+  Native TypeScript 7 is not prepared; general Go variable reads still have
+  no producer equivalent. No fallback relationship is invented for either.
+- Final ordinary online run exits 0 in 27s:
+  `/private/tmp/repomap-iteration-20260914/20260913-220335-python-tutorial-game-0c7c8ba4ff97`.
+  Both target chains are complete: Python 219 objects/738 relations, frontend
+  259 objects/730 relations. The common GroupsIndex report has 27 parts, all
+  16 questions answered, three original outgoing HTTP observations, one owner
+  manifest/report JSON/physical HTML, and the complete saved reading chain.
+  Seven design and one glossary refusals remain explicit. Exact accepted
+  requests were reused; this was an ordinary run, not replay.
+- Browser: Find Editor opens Code editor and its Playground JSX use at
+  playground.tsx:110 → editor.tsx:19. The peer visit and Back retain the camera
+  and expanded source evidence. Find fieldColor exposes draw.ts:117 →
+  constants.ts:1, plus its reaching animation/resize inputs. The final report
+  preserves the question → Run → backend/robot-write reading → Back journey.
+  Its question menu is eight open topic headings with sixteen visible links;
+  no question grid or collapsed topic choices. Updated python.html through
+  saved render with zero provider requests and left Questions open.
+
+## 2026-09-14 — Module activity and internal code connections stay readable
+
+- Observed module-body calls, executions, external invocations, reads and
+  writes now give the normal architecture request a source-located module
+  declaration choice. Import/containment-only modules do not. Selecting that
+  body does not assign other declarations in its file; their accepted choices
+  and refusals remain independent. The prompt explains the distinction.
+- Real cumulative Python module registration, JS/TS module calls, Clojure
+  namespace evaluation and Go's callable main equivalent pass through native
+  evidence and places. Places, GroupsIndex, reading, contract, JSTS, Clojure
+  and report tests pass; focused vet and the owner build pass.
+- The ordinary online two-target run finished with exit 0 in 4m5s:
+  `/private/tmp/repomap-iteration-20260914/20260913-211836-python-tutorial-game-af4f98e3c6f9`.
+  Both targets are analyzed and retain their complete native/GroupsIndex
+  chains; the common atlas, report JSON, manifest and one physical HTML exist.
+  All 16 questions have answers and all three integrations survive. Sixteen
+  design refusals retain thirteen single-part-area decisions and three
+  unassigned styled declarations; no local membership is invented for them.
+- Browser: Server launch exposes the four original settings reads at
+  main.py:17–20 and settings.py:15. Visiting Application configuration and Back
+  restores the identical camera and expanded evidence. The normal model puts
+  index.tsx and reportWebVitals together in Application bootstrap.
+- That last journey exposed a presentation omission: same-part relations were
+  kept in GroupsIndex but absent from the source reading. The ordinary group
+  card and sidebar now expose those exact relations under Connections within
+  this part. No self-arrow or new relation is added. Browser Find reportWebVitals
+  now opens the original index.tsx:19 → reportWebVitals.ts:3 call, with both
+  revision links. A report test preserves same-line occurrences, resolution,
+  original sites and static reading, excluding containment and other members.
+  Long source links wrap within the sidebar.
+- The owner's question-list request remains one vertical series of open topic
+  headings and visible questions. Consolidated its styles in the question
+  stylesheet; Python question 7 opens with one click and Back returns to the
+  same list. No duplicate question grid or topic disclosure remains there.
+- Remaining native gaps: JSX component uses and general JS/TS variable reads
+  still do not supply their ordinary dependency relations. Unused helpers and
+  refused memberships remain distinct from those missing observations.
+
+## 2026-09-14 — Typed iteration restores the normal robot step
+
+- Python lost the element receiver in `for robot in sorted(self.robots)`, so
+  the report showed rollback writes but omitted normal movement. Direct known
+  collection annotations now retain a possible element class inside a
+  synchronous loop. Calls and field writes preserve their native source sites.
+  Unknown/replaced collections and receivers, shadowed sorted, heterogeneous
+  tuples, unions, asynchronous iteration and post-loop uses stay unresolved.
+- Cumulative Python native tests, real Go range and TS/JS for-of equivalents,
+  full contract/JSTS packages and focused vet pass. Clojure's corresponding
+  Java instance dispatch has no current native equivalent. The owner binary
+  completed the ordinary online two-target Python run with exit 0 in 4m29s:
+  `/private/tmp/repomap-iteration-20260914/20260913-205812-python-tutorial-game-5838b558b297`.
+  Both native/GroupsIndex chains and the common atlas, manifest/report JSON
+  and one physical HTML exist. Three integrations survived. Seven design
+  refusals concern single-part areas/missing membership; an identifier-only
+  glossary entry was also refused. These do not invent replacement membership.
+- Browser: Robot movement lists forward prev_x/prev_y/x/y writes at robot.py
+  40–43 for backend POST and front Run. The x path opens as handleClick →
+  runLevel → possible HTTP integration → run_level → Field.make_step →
+  Robot.make_step, with original links. GET /api/levels reaches HTTP endpoints
+  and Level data, with no Robot writes. The exact external POST identifies
+  handleClick at playground.tsx:72 as its caller and Run as its reaching input.
+  Back restores the identical Run camera and reading.
+- That journey exposed a separate focus bug: a hidden child's world bounds
+  fitted the overview, so search opened its sidebar without revealing it.
+  Camera preservation now requires an actually visible, legible destination.
+  Browser Find Robot movement now opens the detailed purple card; all 22 UI
+  tests, report tests/vet, bundle and owner build pass. Saved render makes zero
+  provider calls.
+- Remaining isolation audit: native module-level calls/reads can have no
+  selected architectural member (index.tsx → reportWebVitals; main.py →
+  settings). JSX component uses and general JS/TS variable reads have additional
+  native gaps. These are distinct from unused helpers; no missing edge is
+  inferred from a shared path or group name. The broader isolation work remains
+  open.
+
+## 2026-09-14 — One question list, header navigation and whole-map entrance
+
+- Questions are one vertical list: saved topic headings and immediately visible
+  questions, with a fallback for answers absent from the topic plan. Removed
+  the duplicate grid, nested topic choices and input catalogue All disclosures.
+- Header: reviewed repository link and house icon on the left, repomap/GitHub
+  link on the right, one Find field and a component list. All shares the
+  whole-map action. Nested repository links retain their directory and revision.
+- Removed changing hover prose above the canvas and the large Zoom in buttons.
+  A stable zoom/drag hint and small expand marks expose the action. Input
+  context and close-details chevron live in the reading card. Search excerpts
+  are short plain text, without model/source popovers; exact code names rank
+  before matches in answer bodies.
+- Whole-map entrance fits every root frame and refits its available space;
+  manual cameras restore exactly. Short-window checking exposed the old .15
+  lower zoom clamp: the minimum now permits the actual root bounds. The fixed
+  world reserves external-summary space and chooses an orientation that also
+  accounts for readable root headers. No layout runs during wheel zoom.
+- Outbound reading exposes native callers of the exact sending callable,
+  preserving original parts, possible-call status and source pairs. It does
+  not attribute every method in a shared client group to the same caller.
+- Saved Python browser journeys: grouped questions → question 7 → Field
+  simulation → Back restores the answer; front → All → Back restores the exact
+  camera; Find config returns Config first, a map visit returns to the same six
+  compact results; POST → Playground orchestration → Back restores its source
+  reading. Checked ordinary 934×992 and temporary 1280×720 browser layouts.
+  Othello also opens its component from the list and exposes all question topics.
+- Report tests/vet, 21 frontend tests, owner build and saved rendering pass.
+  UI rendering used existing accepted report/translations with zero provider
+  calls; the ordinary online variable-read run is recorded below. Broad
+  pointer-hover journey acceptance is not claimed from click-only browser QA.
+
+## 2026-09-13 — Connection reading, core colour and source-backed data reads
+
+- Core uses its saved lane for purple cards and overview rows; both legends
+  include only present categories. Reading and hover use a single contour.
+  Removed the outline of the whole scrolling inspector and renamed Key code
+  to Code in this part. Outgoing connections precede incoming connections and
+  code; native relations remain inspectable without a model sentence.
+- Browser on the saved Python report: Field simulation exposes all four
+  Robot movement calls with exact sources. Peer navigation and Back restored
+  the identical viewport and expanded evidence. Core fills are purple; node
+  outlines/shadows and the inspector outline are absent.
+- Python now emits declared-variable reads with lexical shadowing, import and
+  receiver controls. Input paths include terminal data reads with their native
+  site; reading a value, callback or class declaration does not activate effects.
+  Cumulative Python + GroupsIndex checks and a native Clojure var-read
+  equivalent pass. General Go/JS variable reads remain unavailable; JS/TS's
+  existing type/contract reads are narrower evidence.
+- Ordinary online owner-binary run exited 0 with both targets and three
+  integrations: `/private/tmp/repomap-variable-reads/20260913-193510-python-tutorial-game-727901bff0c4`.
+  Both target chains exist with one common manifest/report JSON/physical HTML.
+  Reads bind all three backend requests to levels and POST to the source-size
+  constant. Browser: GET /api/levels → Level data exposes get_levels_info →
+  possible read levels, its declaration and the original read at app.py:21.
+- Removed the introductory model-source popover; citations and attribution
+  remain below the canvas through Repository summary sources. Othello's
+  expanded legend contains no external category.
+- Othello core investigation: its accepted Board representation and Game state
+  groups exist, but the type-reading stage describes nominal declarations.
+  Functional vectors/maps returned by functions supply no nominal type card.
+  Recorded this general limitation; no Othello-specific inferred entity or
+  mutation was added.
+- Focused report/Python/Clojure/contract tests, scoped vet, 17 frontend tests,
+  owner build and saved rendering passed. Multi-component top-level zoom and
+  general functional-value entity interpretation remain open.
+
+## 2026-09-13 — Reuse external catalogue groups on the canvas
+
+- The system map now consumes the same outbound display grouping as the
+  external catalogue. Each destination has one frame and keeps every original
+  selectable call, source and input path. The frame is a display collection,
+  not a newly inferred component or target.
+- Matched peer links bind by integration identity and the exact caller and
+  call location, including column. Duplicate structural/path projections lead
+  to the same backend input; matching labels never establish an integration.
+- Saved Python browser journey: backend API contains all three HTTP calls;
+  POST opens the backend POST input, and Back restores the exact call camera.
+  Parameterized GET retains its native method/path. The frame sidebar lists
+  every record and its originating inputs; empty code/explanation actions
+  were removed.
+
+## 2026-09-13 — Python field writes and input evidence
+
+- Source-ordered Python receiver origins resolve attribute writes to existing
+  declared fields as alternatives, retaining exact write locations through
+  GroupsIndex. Aliases, declared receivers and constructor results are covered;
+  rebound, unknown, nested and dynamic writes stay unresolved.
+- Input reading lists reached writes with their entity, field, source site
+  and shortest call witness. Entity/part reading links back to those inputs.
+  Exact matched peer inputs carry the originating frontend witness and its
+  uncertainty; unrelated sibling inputs do not inherit effects.
+- Cumulative Python fixture: 14 distinct write observations, nine candidate
+  bindings, negative ownership/reassignment controls. No equivalent bound
+  field-write emission exists in the current Go, JS/TS or Clojure adapters;
+  those remain missing, not inferred from part reachability.
+- Ordinary online acceptance, owner binary: `python-tutorial-game` completed
+  with exit 0, two analyzed targets and three cross-target integrations.
+  Run: `/private/tmp/repomap-entity-writes/20260913-190514-python-tutorial-game-40fdbc785aac`.
+  Both native/program/group chains exist, with one common manifest, report JSON
+  and physical HTML. All 13 bound writes retain their source locations.
+- Browser: backend POST and frontend Run simulation expose the same eight
+  reachable writes; Robot reading lists both inputs and only its three writes.
+  Expanded frontend witness reaches `robot.py:46` through the HTTP call,
+  possible integration and backend call chain. This does not establish that
+  every write executes on every run. Functional Clojure value entities remain
+  unresolved acceptance work.
+- Focused report, Python, GroupsIndex and contract suites, 17 frontend tests,
+  scoped vet and the owner binary build passed.
+
+## 2026-09-13 — Align the report shell with the canvas
+
+- Removed the independent centred widths of the sticky toolbar and question
+  reading. Header, toolbar, canvas and answers now share the page gutter;
+  prose retains its reading measure. Removed the redundant canvas-only width
+  override.
+- Python browser check at 2250 CSS px: toolbar moved from x=405 and questions
+  from x=581 to the canvas gutter x=20; no horizontal document overflow.
+  At the ordinary 934 px viewport, questions → answer → Back → Back to map
+  kept one mounted canvas and placed the destination below the toolbar.
+- Report tests/vet and `make build` passed. Both saved Python and Othello
+  reports rendered successfully with zero provider requests.
+
+## 2026-09-13 — Fixed zoom geography and repository reading entrance
+
+- Automatic detail now changes contents inside fixed area rectangles. The
+  second overview graph/layout was removed. Original directed routes are
+  clipped only at closed area boundaries and continue to their actual parts
+  on zooming in. Entry/exit scales differ to avoid boundary flicker.
+- Live checks exposed and fixed swapped asymmetric minimum dimensions in ELK's
+  vertical layout, initial cameras over empty frame corners, and diagonal
+  clipping caused by tiny fractional differences on vertical segments.
+- An unselected sidebar now links to questions, run material, terms, missing
+  observations and author claims, with component purposes and original sources.
+  Long reading stays below the mounted canvas. Closing details restores this
+  entrance at its top instead of leaving a mostly empty column.
+- Othello: View model → zoom out through automatic summary → retained all world
+  coordinates and selected reading; no diagonal routes after the fix. All
+  summary content fits. Run topic → desktop answer with 20 source links → Back
+  twice restored the exact camera and home reading.
+- Python/TS: external POST → Run → Source code validation retained the four
+  source steps and their uncertainty. Back twice restored the exact external
+  camera and reading. No summary overflow; present-type legend unchanged.
+- This is small-repository browser evidence, not acceptance of the remaining
+  multi-component top level or value-entity mutation analysis. No new provider
+  requests were made. CURRENT was not read or changed.
+- Final checks: 17 frontend tests, embedded-asset consistency, report tests,
+  vet and owner binary build passed. Both saved renders exited successfully;
+  final Othello browser had no console warnings/errors or summary overflow,
+  and every home-reading link resolved to its existing report section.
+
+## 2026-09-13 — Cross-component input paths and reverse reading
+
+- The common map now continues an input through exact matched peer inputs,
+  keeping original edge authority, cycle protection and source witnesses.
+  A reached part never activates its other operations.
+- Outbound records list inputs that reach their original caller subject;
+  sharing a part, importing or reading the callable is insufficient.
+- Part/outbound sidebars show grouped reverse input links. Redundant related
+  operation and raw evidence disclosures were removed from these cards;
+  the saved call-path explanation stays visible. The toolbar drops the
+  type/style switches, and the legend contains only present categories.
+- Clojure investigation: saved Othello has 173 functions, 32 variables and no
+  type declarations. Board is a vector and Game a map returned by functions.
+  The existing native-type concept stage cannot name those value entities.
+  Python records unresolved attribute writes without target objects; these
+  reports have no resolved write edges. Reaching a part must not claim mutation.
+- Saved online Python/TS render: Run reaches 10 participants including the
+  backend validation/simulation and its POST communication. The validator's
+  four-step witness starts at PlayGround.handleClick, continues through
+  runLevel and a possible integration to run_level, then possible validate.
+  External POST lists only Run; external → Run → backend → Back twice restores
+  exactly translate(-1410.5px,-1214.5px) scale(1) and the external reading.
+  Othello shows Parts/Inputs only. Automatic semantic zoom and value-entity
+  effects remain unaccepted; this probe does not close the full goal.
+- Validation: focused report tests and vet, 12 frontend tests with embedded
+  asset consistency, owner binary build, both saved renders and browser console
+  checks passed. No new provider requests were made for this report change.
+
+## 2026-09-13 — Named inputs, complete reading and return journeys
+
+- Compact areas now show every named input, grouped once by its saved activation
+  type and exact owner. Saved core/entry/dependency labels remain visible.
+  Overview and detailed cards share their content and premeasured heights.
+- Zoom no longer swaps layouts mid-gesture. Explicit area opening shows the
+  area's title; reset keeps the current level. Programmatic camera changes
+  commit history after completion. Back's second hash event cannot reopen and
+  recenter a restored visit; opening the same part from overview retains a visit
+  even with the same URL. Inspector expansions/scroll survive reconstruction,
+  separately for the pinned input context. The initial hashless visit now saves
+  its completed overview camera; Back clears the later reading and restores
+  that initial overview instead of retaining a stale part in the inspector.
+- Group readings consolidate repeated connections by exact peer and direction:
+  one saved summary per relationship, all original evidence beneath it. Position
+  evaluation's 10 evidence rows are three peer groups (2/3/5), with no loss of
+  source pairs. Key code is visible immediately, duplicate full-group actions
+  and vague All disclosures removed. Input participants and connected inputs
+  are navigable; their original call-path explanation remains available.
+- The common canvas stays mounted above answers and reference sections. The
+  component sidebar links to existing flow, configuration, data, core,
+  dependencies, dynamic execution, coverage and TODO material. Removed the
+  two introductory labels and the duplicate catalogue inserted below the map.
+  All operation and outbound catalogue rows remain visible within their groups.
+- Small-repository browser journeys: Othello overview -> zoom/pan -> part ->
+  Back/reload retains exact camera; detail -> overview -> same part -> two Backs
+  restores both visits. Pinned Track pointer position -> View model -> hover its
+  area highlights 11 edges/6 labels; moving into the sidebar restores the empty
+  input path without replacing View model's reading. Python/TypeScript Run ->
+  HTTP service -> backend POST -> validation -> question/map return preserves
+  source-backed explanations and camera. Component -> dynamic execution exposes
+  backend/app/field.py:98 in the reading below the same map.
+- Focused report tests/vet, 12 frontend tests, generated-asset check and owner
+  binary build pass. Saved online reports 20260913-113850-othello-d98e15694e4a
+  and 20260913-113853-python-tutorial-game-7e7249a73524 render with zero provider
+  requests. These are small-repository UI checks, not acceptance of a new
+  multi-component semantic zoom or of the large-repository layout.
+
+## 2026-09-13 — Separate reading, hover connections and zoom overview
+
+- Node hover no longer replaces the selected inspector with a smaller duplicate.
+  Clicked details and links stay mounted; connection evidence uses its own section
+  and survives moving from its label into the reading column.
+- One emphasis reason drives nodes and edges together. Area hover temporarily
+  replaces a pinned path and clearly names/frames the area; leaving restores the
+  path. An off-path inspected part stays outside that path. Search results do not
+  inherit old highlighted edges. Removed the Selected colour legend and purple
+  state recolouring; input/external type colours remain stable.
+- Added a compact ELK overview using only saved areas, complete part membership,
+  input counts, original directed relations and component ownership. Detailed
+  card positions remain fixed. Zoom/click moves between display levels in the
+  same canvas; history includes the level and both geometry identities. Overview
+  keeps readable type and starts at the top/left in a narrow window.
+- Browser journeys: input Track pointer position → Test helpers (explicitly outside
+  its path) → hover area (4 edges) → right panel (0 path edges restored) → To code
+  → Back to map. View model → hover UI presentation logic (6 grouped labels) →
+  connection sources (14 source links) → move into inspector → To code → Back.
+  Full details remain present throughout hover. Clear selection clears the heading.
+  Detailed inventory remains Othello 14 parts/8 inputs and Python+TypeScript
+  25 displayed cards/12 inputs/3 outbound records; all 50 detailed routes remain
+  orthogonal and do not pass through leaf cards.
+- UI vocabulary verification now checks authored frontend sources as well as
+  templates; it catches a missing message before runtime. Eleven frontend tests,
+  generated asset check, focused report tests, vet and owner binary build pass.
+  Both existing saved online runs were rendered with zero provider calls.
+
+## 2026-09-13 — React Flow + ELK system canvas
+
+- Replaced the system SVG viewport and custom boundary route planner with React
+  Flow and ELK's compound part-to-part routing. The adapter consumes existing
+  report IDs, owners, operation paths and original relations. It adds no analysis
+  stage. Legacy small diagrams reuse the same bundled ELK code.
+- All bound inputs are named blue cards inside their exact implementing part;
+  unbound inputs remain nodes. External observations are amber cards with native
+  labels/addresses and their original sources. Component frames show language,
+  kind, role and purpose. Neutral structure and purple selection replace the
+  indistinguishable green tones. Input inventory: Othello 8, Python/TypeScript 12;
+  the latter retains 3 independent external observations. No card text overflow
+  was found in those rendered inventories.
+- A reserved reading column replaces floating node previews. Numbered connection
+  labels group outside identity + direction and every inner endpoint; hover
+  reads original sources, number click pans to the outside part. Labels persist
+  across their gaps and clear on workspace exit. Lines are noninteractive and
+  have no native tooltip. Selection keeps node positions/sizes and camera;
+  explicit search/destination navigation moves to the exact card.
+- Browser verification found stationary-pointer previews after clicks/navigation,
+  initial fit racing saved camera restoration, and stale ELK bends when comparing
+  orientations. Fixed these on the ordinary path. Each ELK candidate now receives
+  a fresh graph; regression exercises the real mutating library. Final rendered
+  geometry: 32 Othello + 18 Python/TypeScript edges, no diagonal segments or paths
+  through leaf cards. Input click, grouped destination/Back and question 5 → Run
+  → backend validation → code → reload → map → question were walked in the browser.
+- Developer-only `make ui-build` compiles checked-in JS/CSS; `make ui-test` runs
+  6 tests and verifies generated assets. All pass, as do focused report tests,
+  vet and `make build`. A local `go install` with Node absent from PATH completed
+  and rendered Othello. Go/npm use their ordinary shared caches. No external
+  script assets are requested by either generated report.
+- Final UI renders reuse completed online runs 113850/113853 and their saved
+  translations, both exit 0 with no provider calls. Preview is the actual generated
+  HTML at loopback 8774. Details and input-method limits are in the UI review.
+
+
+
+## 2026-09-13 — Boundary grouping and transient hover
+
+- Owner screenshots exposed crowded Domain core labels and annotations that
+  survived pointer exit. Previous verification of one convenient area did not
+  cover these cases. Boundary groups now use outside identity plus direction,
+  displaying every inner endpoint number once beside a single outside name.
+  All original calls and source pairs remain in the group's inspection.
+- Measured labels, marker hit areas and area titles reserve space; routes avoid
+  them and replace the corresponding overview bundle. Extra annotation space is
+  part of the initial drawing bounds. SVG edge paint order no longer changes
+  which saved relations are highlighted. Selection cannot revive hover labels;
+  empty canvas, exit and scroll clear them. Prose width no longer limits the canvas.
+- Browser checks covered Othello's dense Domain core (9 groups), UI presentation
+  logic (6 groups), frame/part/marker/empty-canvas/outside transitions, scroll,
+  grouped source inspection and the Python/TypeScript validation area while a
+  Run operation remained selected. A 1600 CSS-pixel window has a 1535-pixel
+  canvas and drawing. Final exit leaves no temporary numbers, ports or tooltip.
+- Focused report tests (including dense collision and pointer regressions),
+  vet and ordinary build passed. Both 113850/113853 saved runs were rendered
+  through the ordinary command with zero provider requests. This is a UI-only
+  iteration on those previously completed online runs, not another online run.
+  Detailed input-method coverage is recorded in repomap-ui-ux-review.md.
+
+## 2026-09-13 — Common canvas and boundary labels
+
+- The ordinary home report now assembles all existing component maps into one
+  canvas after translation. Exact destination links join remote copies; saved
+  membership, input ownership, native HTTP registrations, outbound records and
+  unread components remain represented. Selection changes emphasis and the
+  reading below the map, without expanding code lists or relaying out the scene.
+- Operations highlight their saved path on the common canvas, including other
+  components. A single-part operation stays in that part. Boundary markers
+  match local inner-part numbers and name outside participants, retaining the
+  earlier directed layout and full-width canvas. Marker click opens
+  original relation evidence. Internal arrows remain ordinary arrows.
+- Browser checks covered Othello View model → Quil painting boundary marker
+  → exact source evidence, plus Track pointer position.
+  The owner rejected the intermediate grid/number-strip design with an annotated
+  screenshot; that display was removed, and the original directed layout restored. The canonical question 5 → Run simulation on click
+  → backend HTTP API endpoints preserved identical node geometry and question
+  context. To code → reload → Back to map → Back to question returned to question
+  5 with the operation retained. Connection style survives reload too.
+- Focused `internal/report` tests and vet, `make build`, and both saved renders
+  passed. Ordinary Othello `20260913-113850-othello-d98e15694e4a` exited 0 in
+  4.928 s; canonical Python/TypeScript `20260913-113853-python-tutorial-game-7e7249a73524`
+  exited 0 in 10.330 s. All model responses reused the shared cache. The complete
+  common artifact chain and each target's native/group artifacts were inspected;
+  native facts, semantic atlas and common report graph match the prior accepted
+  inputs (run-local facts references and cache accounting differ). The two-target
+  publication has one manifest, report JSON and physical HTML.
+- This records the working display experiment and its verification, not final
+  owner approval of the visual design. No analysis cache or provider contract
+  changed; CURRENT was not consulted or modified.
+
 This is a concise living log, not another ADR. [CURRENT](CURRENT.md) owns the
 current decision/status; [topical contracts](../../AGENTS.md#start-here) own
 implementation details. Record a changed decision there in place. Append only
 useful implementation/acceptance evidence here; archive superseded detailed
 runs instead of growing the entry pages again.
+
+## 2026-09-13 — Responsibilities instead of directory boxes
+
+- Replaced file `here`/sibling/`new:` placement and fixed-count zone naming
+  with aggregate declaration membership and areas in the ordinary atlas stage.
+  The owner receives declarations, docs, native calls, values and activation
+  context. Parts can cross directories and split one file; native relation
+  endpoints and lexical ownership survive projection. Atlas v8 records exact
+  members. No parallel analysis path, browser semantic validation or new cache
+  was added. Conflicting memberships are refused together; independent groups
+  survive and missing choices remain explicit inventory.
+- Regressions exercise same-file separation, cross-directory collaboration,
+  singleton collaborators, conflicting/unknown refs, retained lexical children
+  and native cross-part source anchors. The saved Othello complete-window probe
+  covered all 205 declarations and six author contexts (121,734 prepared bytes
+  before the final behavioral-responsibility prompt clarification).
+  Full `make test`, `make vet` and `make build` passed with ordinary Go caches
+  and the existing nvm Node 21 TypeScript installation.
+- Ordinary online final Othello run
+  `20260913-102848-othello-055f2b24716e` exited 0 in 4.279 s, all model requests
+  reused. Relative to the accepted 084650 run: 5 → 16 parts and 10 → 169
+  cross-part native connections; all 354 subjects and 3,213 structural edges
+  and the native index hash are unchanged. The visible product map has 14
+  parts and 157 connections; two test-only groups remain in the complete data.
+- Canonical ordinary online baseline
+  `20260913-094041-python-tutorial-game-152990d369d2` exited 0. Final
+  `20260913-102843-python-tutorial-game-ea9674967cc8` exited 0 in 35.989 s.
+  Backend: 2 → 9 parts, including source validation and sensor initialization;
+  frontend: 6 → 13 parts, including HTTP service, editor and simulation UI.
+  Both native hashes, all subjects (219/259) and structural edges (567/679)
+  are unchanged. Three native HTTP operations remain. The refreshed model
+  selection marks Rootpage and LevelPage `operation_candidate=no` rather than
+  separate interactions; both remain key code and participate in the flow.
+  Othello adds the interpreted button-click interaction (7 → 8).
+- Inspected complete owner/sibling artifact chains and matching published
+  GroupsIndex hashes. Each run has one common manifest, report JSON and physical
+  HTML; all targets retain their native index and dependency catalogue.
+  Browser walkthroughs used loopback reports on 8772/8773: validation question
+  → backend validation part → `app.py:90` / `utils.py:18`; Othello click → six
+  collaborating parts, retaining eight scenario connections after opening a
+  part and reloading. Root areas show their parts and internal arrows directly;
+  the layout uses full page width and keeps all folded source relationships.
+  A final UI-only correction routes full-code links through reading history:
+  question → map → code → map → the original question now retains its named
+  return. Focused report tests/vet passed; both final saved reports were
+  rendered again with zero provider calls and the journey passed in the browser.
+
+## 2026-09-13 — Clojure JVM and glossary reading
+
+- Added the registered Clojure JVM adapter through native clj-kondo EDN,
+  ProgramIndex and ordinary reading/reporting. The cumulative Clojure fixture
+  and exact inventory cover imports, direct and shadowed calls, callback
+  argument binding, reader syntax, Java uses and exact author docstrings.
+  Focused corpus, claims, places, adapter, run, contract and report tests and
+  vet passed. Existing native JSTS equivalents passed using the owner's
+  TypeScript installation in nvm Node 21; Go and Python cumulative coverage
+  passed in the contract suite. ClojureScript execution and Scala are not added.
+- Installed the normal Clojure CLI and clj-kondo environment; retained ordinary
+  caches and Java 21, and installed Java 25 required by current Metabase.
+  Repositories live in `~/git`. Othello's actual specs passed: 143 examples,
+  507 assertions, zero failures. Its desktop dependencies and Metabase's run
+  dependencies resolved; Metabase's bootstrap namespace loaded on Java 25.
+  This is not a complete Metabase application build. The optional complete
+  Metabase native probe reached its root's 4,035 files and exceeded the
+  five-minute test timeout; full Metabase analysis remains unaccepted.
+- Ordinary online Othello run `20260913-083717-othello-56735348db67` exited 0
+  in 260.652 s. Final EDN repeat `20260913-084650-othello-82aa91ac38fe`
+  exited 0 in 4.427 s through the shared accepted-request cache, with zero
+  live provider calls. Inspected the manifest, shared program facts and index
+  set, dependencies, reduced documentation, places, atlas, tables, GroupsIndex,
+  analyzed target outcome, report JSON and the single HTML. Browser reading
+  followed desktop/browser launch instructions, original sources and UI flow.
+- Othello exposed glossary context rendered as hundreds of apparently direct
+  citations: AI had 834 locations across 28 files; rules had 796 across 28.
+  Domain entries now label this saved provenance `Analysis context`, collapsed
+  by default; file paths appear once, locations require opening the file.
+  Questions are a separate collapsed reading choice. `(via model)` sits in
+  the preview heading, outside the definition. Original destinations remain
+  in static HTML. Report tests and vet passed; saved rendering updated both
+  accepted Othello HTML files with zero provider calls. Browser walkthrough
+  verified AI context, README permalinks and a linked question; details are in
+  `repomap-ui-ux-review.md`.
 
 ## 2026-09-11 — current correction wave, ordinary acceptance pending
 

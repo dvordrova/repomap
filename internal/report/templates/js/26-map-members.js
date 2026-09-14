@@ -82,7 +82,7 @@ var repomapMembers = (function () {
     layer.setAttribute('width',box.w - 32); layer.setAttribute('height',box.h - 78);
     var body = document.createElement('div'); body.className='map-member-content';
     var heading = document.createElement('div'); heading.className='map-member-label';
-    heading.textContent=rmT('Key code')+' · '+items(node).length; body.appendChild(heading);
+    heading.textContent=rmT('Code in this part')+' · '+items(node).length; body.appendChild(heading);
     body.appendChild(grid(map,node,5));
     if(items(node).length>5){
       var more=document.createElement('button');more.type='button';more.className='map-members-all';more.textContent=rmT('All {0} →',items(node).length);

@@ -28,3 +28,21 @@ export function typedParameter(exchange: Market): void {
 export function unknownParameter(exchange: any): void {
   exchange.resetStream();
 }
+
+export function typedIteration(exchanges: Market[]): void {
+  for (const exchange of exchanges) {
+    exchange.resetStream();
+  }
+}
+export function unknownIteration(exchanges: any): void {
+  for (const exchange of exchanges) {
+    exchange.resetStream();
+  }
+}
+
+export function typedUnderscore(_: Market): void {
+  _.resetStream();
+}
+export function unknownUnderscore(_: any): void {
+  _.resetStream();
+}

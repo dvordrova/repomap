@@ -76,7 +76,7 @@ rmT.html = key => key;
 function render(value) {
   const content = {scrollTop:0}, card = {classList:{remove(){},toggle(){}}};
   const remembered = new Map();
-  let inspectedNode = null, inspectionRevision = 0;
+  let inspectedNode = null, inspectionKey = '', inspectionPending = false, inspectionRevision = 0;
   function remember() {}
   function sentences() {return [];}
   const step = {name:value.name,source:value.name,open:value.open,href:value.source,no_source:value.no_source};

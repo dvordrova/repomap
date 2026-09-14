@@ -14,3 +14,8 @@ import requests
 
 def read_local_http_name():
     return requests.get("/local-key")
+
+
+# A data dependency is a read, even when no function in this module is called.
+READ_VALUES = {"one": 1}
+READ_LIMIT = 8

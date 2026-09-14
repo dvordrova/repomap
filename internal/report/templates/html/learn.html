@@ -1,22 +1,19 @@
 {{define "learn.html"}}
 <div class="learn-home">
-<div class="learn-intro"><h2>{{t "Understand this repository"}}</h2>
-{{if .Summary}}<p class="summary model"><span data-display-ref="{{.Summary.TextRef}}">{{.Summary.Text}}</span><span class="model-sources">{{range .Summary.Anchors}} {{template "anchor" .}}{{end}}</span></p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
+<div class="learn-intro">
+{{if .Summary}}<p class="summary model"><span data-display-ref="{{.Summary.TextRef}}">{{.Summary.Text}}</span></p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
 </div>
 {{template "learn-start-links.html" .}}
 </div>
 {{end}}
 
 {{define "learn-start.html"}}
-<div>
-{{if .Questions}}<div class="learn-questions"><h3>{{t "{0} questions in this report" (len .Questions)}}</h3><p class="meta">{{t "Choose one question. Its answer leads to the relevant parts of the map and the original sources."}}</p><ol class="question-menu">{{range .Questions}}<li><a href="#{{.ID}}">{{.Question}}</a></li>{{end}}</ol></div>{{end}}
-{{if .LearnQuestionTopics}}<details class="learn-topic-menu"><summary>{{t "Questions by topic"}}</summary><div class="learn-question-topics">{{range .LearnQuestionTopics}}<details id="{{.ID}}"><summary>{{.Title}} <span class="meta">{{len .Questions}}</span></summary><ul class="plain">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}} →</a></li>{{end}}</ul></details>{{end}}</div></details>{{end}}
-{{if .LearningNote}}<p>{{.LearningNote}} <a href="#questions">{{t "View the topic review →"}}</a></p>{{end}}
+<div class="learn-home-reading">
+{{if .LearnQuestionTopics}}<div class="learn-question-topics">{{range .LearnQuestionTopics}}<section id="{{.ID}}" class="learn-question-topic"><h3>{{.Title}}</h3><ul class="plain question-links">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}}</a></li>{{end}}</ul></section>{{end}}</div>{{else if .Questions}}<ul class="plain question-links">{{range .Questions}}<li><a href="#{{.ID}}">{{.Question}}</a></li>{{end}}</ul>{{end}}
 </div>{{end}}
 
 {{define "learn-start-links.html"}}
 <nav class="learn-start" aria-label="{{t "Starting points"}}">
-<span class="learn-start-label">{{t "Starting points"}}</span>
 {{if .Questions}}<a class="learn-question-entry" href="#questions">{{t "Choose from {0} questions" (len .Questions)}} <span aria-hidden="true">→</span></a>{{end}}
 <a href="#repository-map">{{t "Inputs"}} <span aria-hidden="true">→</span></a>
 <a href="{{.LearnRunHref}}">{{t "How do I run it?"}} <span aria-hidden="true">→</span></a>
@@ -45,13 +42,18 @@
 {{if .GlossaryPartialComparison}}<p class="meta glossary-comparison-note">{{t "Some explanations were not compared together; similar entries may remain separate."}}</p>{{end}}
 <label class="concept-search" hidden>{{t "Find a term"}} <input type="search" aria-label="{{t "Find a term"}}" placeholder="{{t "Name or description"}}"></label>
 <p class="concept-count" role="status"></p><div class="concept-results">
-{{range .Glossary}}<details id="{{.ID}}" class="learn-concept" data-term-name="{{.Name}}" data-term-original="{{.OriginalName}}" data-term-code="{{.Code}}"><summary>{{.Name}}{{if ne .Name .OriginalName}} <span class="meta">· {{.OriginalName}}</span>{{end}}{{with .Sources}} <span class="concept-source-context meta">· {{(index . 0).Text}}</span>{{end}}</summary>
-<div class="glossary-entry-content"><p class="model glossary-explanation"><span class="badge">{{t "Model explanation"}}</span> {{.Explanation}}</p>
-{{if .Sources}}<div class="glossary-sources"><h3>{{t "Sources"}}</h3><div class="model-sources">{{range .Sources}} {{template "anchor" .}}{{end}}</div></div>{{end}}
-{{if .Questions}}<div class="glossary-questions"><h3>{{t "Questions"}}</h3><ul class="plain">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}}</a></li>{{end}}</ul></div>{{end}}
-{{if .Places}}<div class="glossary-places"><h3>{{t "On the map"}}</h3><ul class="plain">{{range .Places}}<li><a href="{{.Href}}">{{t "Explore {0} →" .Title}}</a></li>{{end}}</ul></div>{{end}}</div></details>{{end}}
+{{range .Glossary}}<details id="{{.ID}}" class="learn-concept" data-term-name="{{.Name}}" data-term-original="{{.OriginalName}}" data-term-code="{{.Code}}"><summary>{{.Name}}{{if ne .Name .OriginalName}} <span class="meta">· {{.OriginalName}}</span>{{end}} <span class="badge">{{t "(via model)"}}</span>{{if .Code}}{{with .Sources}} <span class="concept-source-context meta">· {{(index . 0).Text}}</span>{{end}}{{end}}</summary>
+<div class="glossary-entry-content"><p class="model glossary-explanation">{{.Explanation}}</p>
+{{if .Questions}}<details class="glossary-questions"><summary>{{t "Questions"}} <span class="meta">· {{len .Questions}}</span></summary><ul class="plain">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}}</a></li>{{end}}</ul></details>{{end}}
+{{if .Places}}<div class="glossary-places"><h3>{{t "On the map"}}</h3><ul class="plain">{{range .Places}}<li><a href="{{.Href}}">{{t "Explore {0} →" .Title}}</a></li>{{end}}</ul></div>{{end}}
+{{if .Sources}}{{if .Code}}<div class="glossary-sources"><h3>{{t "Sources"}}</h3>{{range .Sources}} {{template "anchor" .}}{{end}}</div>{{else}}{{with .SourceFiles}}<details class="glossary-sources"><summary>{{t "Analysis context"}} <span class="meta">· {{t "{0} files" (len .)}}</span></summary>
+<p class="meta">{{t "Files from the analysis in which this term appears."}}</p>
+{{range .}}<details class="glossary-source-file"><summary><code>{{.Path}}</code> <span class="meta">· {{t "{0} locations" (len .Locations)}}</span></summary><div class="glossary-source-locations">{{range .Locations}}{{template "glossary-location" .}}{{end}}</div></details>{{end}}
+</details>{{end}}{{end}}{{end}}</div></details>{{end}}
 </div><div class="concept-pages" hidden><button type="button" data-prev>{{t "← Previous"}}</button><span></span><button type="button" data-next>{{t "Next →"}}</button></div>
 </section>{{end}}
 {{end}}
+
+{{define "glossary-location"}}<span>{{if .Href}}<a class="anchor" href="{{.Href}}" target="_blank" rel="noopener" aria-label="{{.Path}}{{if .Line}}:{{.Line}}{{end}}">{{if .Line}}{{.Text}}{{else}}{{t "Whole file"}}{{end}}</a>{{else if .Open}}<a class="anchor" href="#" data-open="{{.Open}}" aria-label="{{.Path}}{{if .Line}}:{{.Line}}{{end}}">{{if .Line}}{{.Text}}{{else}}{{t "Whole file"}}{{end}}</a>{{else}}<span class="anchor"{{if .NoSource}} data-no-source="true" title="{{t "No source"}}"{{end}}>{{if .Line}}{{.Text}}{{else}}{{t "Whole file"}}{{end}}</span>{{end}}</span>{{end}}
 
 {{define "concept-explanation.html"}}<p class="model"><span data-display-ref="{{.ExplanationRef}}">{{.Explanation}}</span><span class="model-sources"> {{template "anchor" .Source}}</span></p>{{end}}

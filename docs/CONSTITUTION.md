@@ -44,8 +44,9 @@ reach the screen.
   and jumps between matched endpoints. It routes attention to commands,
   requests and background work with source anchors. A raw import graph or a
   column of equally weighted headings does not satisfy this purpose.
-* Not interactive-first. A static report, ≤ 2 screens per target before
-  expanding anything.
+* The canvas is the primary entrance. It must lead to the complete saved
+  explanations, questions and sources; the drawing alone is not the report.
+  The static HTML retains all of that reading without scripting.
 * Not a place for the model to write essays. One line per group purpose, one
   sentence per connection, anchors everywhere.
 
@@ -153,28 +154,33 @@ separate stage outputs.
   glossary entries remain readable without scripting; JavaScript may reveal
   those same definitions beside the bound words. This adds no semantic graph,
   per-term request or provider call during saved rendering.
-* Learn and Work are two entrances to this same report, sharing analysis,
-  maps, sources and navigation. Learn is the default on first open: a short
-  system explanation and a visible, progressively expanded system map, with
-  paths into areas, run instructions and unfamiliar terms. The map is central,
-  not hidden behind a catalogue. Work starts with search and the map for a
-  concrete investigation. Switching modes preserves the component, scope,
-  operation, zoom and inspector. Structure/Operations and contextual/all uses
-  remain controls within the map, not additional report modes. With scripting
-  disabled all sections and source links remain available in the HTML.
-  The repository overview exposes the complete, finite component set as cards
-  with existing purposes, source context and incident connections; the same
-  graph remains available as an explicit connections view. Learn exposes the
-  complete saved question menu and one answer at a time, with position and a
-  named return. Work offers search at repository or component scope. Opening
-  a part reveals its existing key code inside that part, with the chosen
-  explanation below the map. Hover may preview or emphasize neighbours but
-  never replaces the selected reading or opens another scope. Member cubes
-  do not inherit the group's arrows. The owner's 2026-09-10 entrance correction
-  exposes all existing requests, commands and background activities by name at
-  the component entrance and on its repository row. Their original kinds and
-  provenance remain visible. The 2026-09-10 review keeps five initial rows per
-  group with All N disclosures, beside the observed external communications.
+* The report opens with a short system explanation and one common system map,
+  with search and the complete saved question menu. These share the same
+  analysis, sources and navigation; separate Learn/Work entrances are removed.
+  Components and accepted architectural areas contain their actual parts.
+  Selecting a part or operation keeps the common layout at the current zoom level and shows its reading
+  in the reading panel. Functions belong in that reading, not in a separate
+  expansion of the diagram. An operation emphasizes its existing path;
+  a one-part operation does not require a second two-box diagram.
+  A compact overview may fold only saved areas and list their actual parts and
+  named inputs; zoom reveals their internal drawing in the same fixed area.
+  Ordinary zoom preserves world coordinates and the pointer location. It adds
+  no architectural grouping or relation. Hover may emphasize neighbours and identify an external arrow
+  with a local number matching its actual inner part, but never replaces
+  the selected reading. The outside participant remains named; direction and
+  source inspection survive. These local numbers never claim execution order.
+  Internal arrows and the existing directed layout remain intact. Question, operation, source selection and viewport survive navigation
+  and return from full details. With scripting disabled, all original sections
+  and source links remain available.
+  Answers, component reference and repository material open as reading sections
+  below the mounted common canvas. The selected reading stays in the sidebar.
+  The introductory labels "Understand this repository" and "Starting points"
+  are removed; the repository summary and useful entrances remain.
+  All existing requests, commands, background activities and interactions are
+  visible as named input cards in the common map, inside their explicit
+  implementing part when one is known, and through their component catalogue. Their original
+  kinds and provenance stay visible. Observed external communications retain
+  each original record; unread components retain their failure explanation.
   A service entrance should let the reader scan its HTTP methods and paths,
   the responsibilities of its workers, and its observed external destinations
   without opening the map. An integration code group or an imported package
@@ -186,8 +192,8 @@ separate stage outputs.
   HTTP operation paths come verbatim from selected source registrations. The
   model selects their references and interprets the method and responsibility;
   it does not rewrite the path as a display name.
-  Opening an area preserves its frame and peers; a part reveals source labels
-  inside that frame. Collapse and Back retain the prior view. Grouped arrows
+  Opening an area preserves its frame and peers; selecting a part reveals its
+  sources in the reading column. Zooming out and Back retain the prior geography. Grouped arrows
   preserve every original directed relation and its evidence on inspection.
   An operation opens its complete existing parts and
   relations; choosing one part retains that diagram and viewport beside its
@@ -213,8 +219,9 @@ separate stage outputs.
   shown with "+N".
 * Connection sentences (the model's one-liners) are visible: on hover and in
   the selected node panel. Never screen-reader-only.
-* Each target page shows only its own groups; cross-target edges render as
-  stubs pointing to the other target's page.
+* Each component reference contains its own groups. Cross-component exploration
+  follows the exact existing endpoints in the common canvas; a source or answer
+  link must not create another diagram or discard the current visit.
 * Provenance is visible in styling: fact (solid), model (marked as model,
   muted), claim (marked with source and age). A model-written sentence must
   not look like a heading of authoritative documentation.
@@ -231,12 +238,16 @@ separate stage outputs.
 * One page with sections, not many routes. Script size is not the constraint
   the owner cares about — "288 KB is very little" (2026-09-03) — but every
   answer must still be in the HTML: scripting may add preview and emphasis and
-  nothing else, so the page reads with scripting off. Today it is 145 KB with
-  5.4 KB of script.
+  nothing else, so the page reads with scripting off. The bundled interactive
+  canvas is a display of the same saved content, not another analysis engine.
 * The templates are one file per region of the page and one file per style or
   script layer, under `internal/report/templates/{html,css,js}`, concatenated
   in filename order. Adding a region or a layer is a new file and no Go change,
-  so working on the page does not mean working on that package.
+  so working on the page does not mean working on that package. The React Flow
+  + ELK layer is authored in `internal/report/web` and compiled into checked-in
+  JS/CSS layers. Developers regenerate those assets when changing that UI.
+  `go install` embeds the ready files and never runs a JavaScript builder; the
+  resulting report remains one self-contained HTML file.
 
 ## Acceptance (fixture)
 

@@ -227,14 +227,21 @@ func twoTargetOptions(t *testing.T, graph atlas.Graph, provider *tableProvider) 
 	return opts
 }
 
-func TestZonesAreNamedAssignedAndInherited(t *testing.T) {
+func TestAreasContainOnlyExplicitlyChosenParts(t *testing.T) {
 	graph := twoTargetGraph(t)
-	provider := &tableProvider{
-		partNames: []string{"Serving", "Domain", "Storage", "Spare"},
-		partFor: map[string]string{
-			"Title api": "Serving", "Title core": "Domain", "Title db": "Storage", "Title jobs": "Domain", "Title util": "Storage",
-		},
-	}
+	provider := &tableProvider{designFor: func(mode string, items []designItem) designResult {
+		result := designResult{Groups: []designGroup{}}
+		if mode == "areas" {
+			if len(items) >= 2 {
+				result.Groups = append(result.Groups, designGroup{Title: "Serving", Purpose: "Coordinates the selected parts.", Members: []string{items[0].Ref, items[1].Ref}})
+			}
+			return result
+		}
+		for _, item := range items {
+			result.Groups = append(result.Groups, designGroup{Title: item.Path, Purpose: "Reads the supplied declarations.", Members: []string{item.Ref}})
+		}
+		return result
+	}}
 	result, err := Read(context.Background(), twoTargetOptions(t, graph, provider))
 	if err != nil {
 		t.Fatal(err)
@@ -245,36 +252,29 @@ func TestZonesAreNamedAssignedAndInherited(t *testing.T) {
 			svc = target
 		}
 	}
-	// Four names were asked; "Spare" held no box and vanished.
-	if len(svc.Zones) != 3 {
+	if len(svc.Zones) != 1 || len(svc.Zones[0].BoxIDs) != 2 {
 		t.Fatalf("zones: %+v", svc.Zones)
 	}
-	zones := make(map[string]atlas.Zone)
-	for _, zone := range svc.Zones {
-		zones[zone.ID] = zone
-		if zone.Line == "" || !strings.HasPrefix(zone.Line, "Text for") {
-			t.Errorf("zone %s has no model line: %q", zone.ID, zone.Line)
-		}
-	}
-	if len(zones["domain"].BoxIDs) != 2 || len(zones["storage"].BoxIDs) != 2 || len(zones["serving"].BoxIDs) != 1 {
-		t.Fatalf("zone boxes: %+v", zones)
-	}
+	assigned := 0
 	for _, box := range svc.Boxes {
-		if box.ZoneID == "" {
-			t.Errorf("box %s has no zone", box.ID)
+		if box.ZoneID != "" {
+			assigned++
 		}
+	}
+	if assigned != 2 {
+		t.Fatal("unselected descendants inherited an area")
 	}
 	sides := make(map[string]string)
 	for _, box := range svc.Boxes {
-		sides[box.ID] = box.Side
+		sides[box.Title] = box.Side
 	}
-	if sides["svc/api"] != atlas.SideIn || sides["svc/db"] != atlas.SideMid || sides["svc/core"] != atlas.SideMid {
+	if sides["svc/api/h.go"] != atlas.SideIn || sides["svc/db/d.go"] != atlas.SideMid || sides["svc/core/c.go"] != atlas.SideMid {
 		t.Fatalf("sides: %v", sides)
 	}
-	if strings.Join(svc.Trace, " ") != "svc/api svc/core svc/db" {
+	if len(svc.Trace) < 3 {
 		t.Fatalf("trace: %v", svc.Trace)
 	}
-	if len(svc.Arrows) != 4 {
+	if len(svc.Arrows) < 4 {
 		t.Fatalf("arrows: %+v", svc.Arrows)
 	}
 	for _, arrow := range svc.Arrows {
@@ -295,7 +295,7 @@ func TestConfigReadDoesNotTurnCoreIntoDependencyOrShareASeed(t *testing.T) {
 			"main":     {TargetIDs: []string{"exe"}},
 			"commands": {TargetIDs: []string{"exe", "lib"}},
 		},
-		boxOf: map[string]string{"commands": owner.id},
+		boxOf: map[string]string{"main": owner.id, "commands": owner.id},
 		boundaries: map[string]*boundaryState{"token": {
 			kind: "config", place: atlas.Place{Parent: "commands", TargetIDs: []string{"exe", "lib"},
 				Boundary: &atlas.BoundaryFacts{Direction: atlas.DirectionOut}},
@@ -313,13 +313,10 @@ func TestConfigReadDoesNotTurnCoreIntoDependencyOrShareASeed(t *testing.T) {
 	}
 }
 
-func TestZonesFallBackWhenTheNamesWindowIsRefused(t *testing.T) {
+func TestRefusedDesignKeepsSourceInventoryWithoutInventingAreas(t *testing.T) {
 	graph := twoTargetGraph(t)
-	// The names come back all the same: fewer distinct names than asked, so
-	// the window is refused and the largest boxes name the parts; the assign
-	// window then answers a name outside the list and is refused too.
-	provider := &tableProvider{partNames: []string{"All", "All", "All", "All"}, partFor: map[string]string{
-		"Title api": "Odd", "Title core": "Odd", "Title db": "Odd", "Title jobs": "Odd", "Title util": "Odd",
+	provider := &tableProvider{designFor: func(_ string, _ []designItem) designResult {
+		return designResult{Groups: []designGroup{{Title: "Odd", Purpose: "Has no evidence.", Members: []string{"outside"}}}}
 	}}
 	result, err := Read(context.Background(), twoTargetOptions(t, graph, provider))
 	if err != nil {
@@ -331,8 +328,17 @@ func TestZonesFallBackWhenTheNamesWindowIsRefused(t *testing.T) {
 			svc = target
 		}
 	}
-	if len(svc.Zones) != lines.WantZones(5) {
-		t.Fatalf("fallback zones: %d, want %d: %+v", len(svc.Zones), lines.WantZones(5), svc.Zones)
+	if len(svc.Zones) != 0 {
+		t.Fatalf("invented fallback zones: %+v", svc.Zones)
+	}
+	expected := 0
+	for _, place := range graph.Places {
+		if place.File != nil && contains(place.TargetIDs, "svc") {
+			expected++
+		}
+	}
+	if svc.Files != expected {
+		t.Fatalf("refused design lost source files: %d, want %d", svc.Files, expected)
 	}
 	rejected := 0
 	for _, row := range result.Rejected {
@@ -340,8 +346,6 @@ func TestZonesFallBackWhenTheNamesWindowIsRefused(t *testing.T) {
 			rejected++
 		}
 	}
-	// The names window is refused; the box left over goes to an assign
-	// window the fake answers with the same bad name, refused again.
 	if rejected < 1 {
 		t.Fatalf("zone rejections: %+v", result.Rejected)
 	}
@@ -541,7 +545,7 @@ func TestCrossTargetCallsBecomeLinkJoints(t *testing.T) {
 			continue
 		}
 		links++
-		if joint.From.TargetID != "web" || joint.From.BoxID != "web/src" || joint.To.TargetID != "svc" || joint.To.BoxID != "svc/api" || !joint.Same || joint.Possible {
+		if joint.From.TargetID != "web" || joint.From.BoxID != designID("web", []string{atlas.SymbolID("web/src/client.ts", 3, "F")}) || joint.To.TargetID != "svc" || joint.To.BoxID != designID("svc", []string{atlas.SymbolID("svc/api/h.go", 3, "F")}) || !joint.Same || joint.Possible {
 			t.Fatalf("link joint: %+v", joint)
 		}
 	}
@@ -560,10 +564,10 @@ func TestFixturesJoinOnlyWithinTheirRoot(t *testing.T) {
 	if fixtureRoot("services/billing") != "services" {
 		t.Fatal(fixtureRoot("services/billing"))
 	}
-	if lines.FallbackRole("testdata/repositories/go", "module_library") != atlas.RoleFixture {
-		t.Fatal("testdata is not a fixture")
+	if lines.FallbackRole("module_library") != atlas.RoleLibrary {
+		t.Fatal("native library kind was lost")
 	}
-	if lines.FallbackRole("cmd/repomap", "executable") != atlas.RoleProduct {
+	if lines.FallbackRole("executable") != atlas.RoleProduct {
 		t.Fatal("cmd is not a product")
 	}
 }

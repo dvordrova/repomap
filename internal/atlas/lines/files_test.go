@@ -12,7 +12,7 @@ type noLines struct{}
 
 func (noLines) Line(string) (string, bool) { return "", false }
 
-func TestFileRowAsksBoxOnlyWhenTheFileMayMoveAndNamesCallingDeclarations(t *testing.T) {
+func TestFileRowDescribesEvidenceWithoutDecidingArchitectureMembership(t *testing.T) {
 	caller := atlas.Place{ID: atlas.FileID("pkg/a/x.go"), Kind: atlas.PlaceFile, Path: "pkg/a/x.go", File: &atlas.FileFacts{Doc: "Entry.", Decls: []atlas.Decl{
 		{Name: "Exported", Kind: "function", Exported: true, Doc: "Leading."}, {Name: "Main", Kind: "function"}}}}
 	silent := atlas.Place{ID: atlas.FileID("pkg/a/z.go"), Kind: atlas.PlaceFile, Path: "pkg/a/z.go", File: &atlas.FileFacts{Decls: []atlas.Decl{{Name: "Z", Kind: "type", Exported: true}}}}
@@ -28,7 +28,7 @@ func TestFileRowAsksBoxOnlyWhenTheFileMayMoveAndNamesCallingDeclarations(t *test
 		}
 		return result
 	}
-	alone := fields(FileRow(file, directory, nil, noLines{}, places, calling))
+	alone := fields(FileRow(file, directory, noLines{}, places, calling))
 	if alone["box_options"] != nil {
 		t.Fatalf("a file without a sibling box was offered a placement: %+v", alone)
 	}
@@ -39,12 +39,8 @@ func TestFileRowAsksBoxOnlyWhenTheFileMayMoveAndNamesCallingDeclarations(t *test
 	if _, listed := callers[1]["declarations"]; listed || callers[1]["path"] != "pkg/a/z.go" {
 		t.Fatalf("a caller without witnesses borrowed leading declarations: %+v", callers[1])
 	}
-	moving := fields(FileRow(file, directory, []string{"pkg/b"}, noLines{}, places, nil))
-	if !reflect.DeepEqual(moving["box_options"], []string{BoxHere, "pkg/b"}) {
-		t.Fatalf("a file beside a sibling box lost its options: %+v", moving)
-	}
 	def := Files()
-	windows, err := table.Windows(def, 1, []table.Row{FileRow(file, directory, nil, noLines{}, places, nil), FileRow(file, directory, []string{"pkg/b"}, noLines{}, places, nil)})
+	windows, err := table.Windows(def, 1, []table.Row{FileRow(file, directory, noLines{}, places, nil), FileRow(file, directory, noLines{}, places, nil)})
 	if err != nil || len(windows) != 1 {
 		t.Fatalf("windows: %v", err)
 	}
@@ -52,12 +48,12 @@ func TestFileRowAsksBoxOnlyWhenTheFileMayMoveAndNamesCallingDeclarations(t *test
 	if err != nil || len(result.Rejections) != 0 {
 		t.Fatalf("omitted box refused: %+v / %v", result, err)
 	}
-	if _, asked := result.Answers[0]["box"]; asked || result.Answers[1]["box"] != BoxHere {
-		t.Fatalf("inactive box gained a value or an omitted asked box lost here: %+v", result.Answers)
+	if _, asked := result.Answers[0]["box"]; asked || result.Answers[1]["box"] != "" {
+		t.Fatalf("file descriptions acquired membership: %+v", result.Answers)
 	}
 	moved, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"r1","line":"Helps.","box":"pkg/b"},{"key":"r2","line":"Helps too.","box":"new: Helpers"}]}`))
-	if err != nil || len(moved.Rejections) != 0 || moved.Answers[1]["box"] != "new: Helpers" {
-		t.Fatalf("a new box was refused: %+v / %v", moved, err)
+	if err != nil || len(moved.Rejections) != 0 || moved.Answers[1]["box"] != "" {
+		t.Fatalf("unsolicited box choice gained authority: %+v / %v", moved, err)
 	}
 	if _, asked := moved.Answers[0]["box"]; asked {
 		t.Fatalf("a box answer on a row without options gained authority: %+v", moved.Answers[0])

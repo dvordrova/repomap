@@ -21,22 +21,16 @@ type targetState struct {
 	role string
 }
 
-// readTargets asks one line and a role per target when the run has more
-// than one; a single target keeps its root directory's line.
+// readTargets describes each target from its accepted responsibilities and
+// entrypoints. A single target does not inherit a directory caption.
 func (r *reader) readTargets(ctx context.Context) error {
 	r.targets = make(map[string]*targetState)
 	for _, target := range r.opts.Targets {
-		state := &targetState{role: lines.FallbackRole(target.Root, target.Kind)}
+		state := &targetState{role: lines.FallbackRole(target.Kind)}
 		if target.SelectedRole != "" {
 			state.role = target.SelectedRole
 		}
-		if line, ok := r.lines[atlas.DirectoryID(target.Root)]; ok {
-			state.line = line.value
-		}
 		r.targets[target.ID] = state
-	}
-	if len(r.opts.Targets) < 2 {
-		return nil
 	}
 	rolesBound := true
 	for _, target := range r.opts.Targets {
@@ -87,6 +81,9 @@ func (r *reader) targetSummary(target TargetMeta) lines.TargetSummary {
 		dirs[parentDir(place.Path)] = struct{}{}
 	}
 	summary.Dirs = len(dirs)
+	for _, box := range r.boxesOfTarget(target.ID) {
+		summary.Parts = append(summary.Parts, box.title+": "+box.line)
+	}
 	seenOperations := make(map[string]bool)
 	for id, operation := range r.operations {
 		if contains(r.places[id].TargetIDs, target.ID) {
@@ -407,15 +404,19 @@ func (r *reader) linkJoints() []atlas.Joint {
 	weight := make(map[key]int)
 	var joints []atlas.Joint
 	for _, edge := range r.opts.Graph.Edges {
-		fromBox, toBox := r.boxOfPlace(edge.From), r.boxOfPlace(edge.To)
-		if fromBox == "" || toBox == "" || fromBox == toBox {
-			continue
-		}
 		for _, fromTarget := range r.places[edge.From].TargetIDs {
+			fromBox := r.boxFor(fromTarget, edge.From)
+			if fromBox == "" {
+				continue
+			}
 			if r.targetFiles(r.boxes[fromBox], fromTarget) == 0 {
 				continue
 			}
 			for _, toTarget := range r.places[edge.To].TargetIDs {
+				toBox := r.boxFor(toTarget, edge.To)
+				if toBox == "" {
+					continue
+				}
 				if fromTarget == toTarget || r.targetFiles(r.boxes[toBox], toTarget) == 0 {
 					continue
 				}

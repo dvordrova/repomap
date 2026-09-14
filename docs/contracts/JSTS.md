@@ -98,6 +98,37 @@ boundary excludes member bodies while keeping braces inside generic types.
 This native kind reaches the same ProgramIndex and question evidence; Python
 already preserves its class header.
 
+## Declared value references
+
+Compiler-bound reads of local declarations enter ProgramIndex at each original
+use site. Import aliases and repository-local reexports resolve to the original
+declaration, including shorthand object values and namespace properties. JSX
+opening/self-closing tags are value reads of their compiler-resolved component;
+closing tags do not add a second use. A tag reference, a value's type or a
+factory result does not prove execution of a component body. Existing calls
+and callback transfers retain their separate evidence and semantics.
+Property and receiver reads remain separate even when their expressions start
+at the same source column; neither use replaces the other.
+
+Declaration/import/export names, type-only syntax, noncomputed property names
+and assignment-only destinations are not runtime reads. Read-modify-write
+expressions still read their binding; assignment receivers, indexes and
+destructuring defaults retain their ordinary value uses. Parameter shadowing
+and unindexed destructured bindings never borrow an enclosing declaration.
+An unindexed anonymous callback body does not give its reads to the surrounding
+function. Unknown symbols do not gain same-name candidates. TypeScript keeps
+compiler declaration resolution; JavaScript references remain possible.
+Existing aggregate contract references are retained only where no precise
+value-use witness for that same reader/declaration pair exists. This avoids
+duplicating the old declaration-site summary beside actual use sites.
+
+The same structural read survives GroupsIndex and the ordinary source reading.
+Input paths may show a reached callable's variable/type reads as terminal data
+dependencies; they do not execute the read value or its neighbours. Cumulative
+Python and Clojure imported-variable/shadowing equivalents exist. General Go
+variable reads have no current producer equivalent; JSX has no syntax equivalent
+in the other language cubes. Neither absence is repaired in the renderer.
+
 ## Owned fields
 
 Direct interface property declarations now enter the same native declaration
