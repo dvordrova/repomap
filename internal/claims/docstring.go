@@ -10,17 +10,17 @@ import (
 )
 
 var (
-	pythonTripleQuote = regexp.MustCompile(`^[rRuUbBfF]{0,2}("""|''')`)
-	pythonTopLevelDef = regexp.MustCompile(`^(?:async\s+)?def\s|^class\s`)
+	pythonTripleQuote = regexp.MustCompile(`^[rRuU]?("""|''')`)
+	pythonDeclaration = regexp.MustCompile(`^(?:async\s+)?def\s|^class\s`)
 	jsDeclaration     = regexp.MustCompile(
 		`^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?` +
 			`(?:function\b|class\b|const\b|let\b|var\b|interface\b|type\b|enum\b|export\b)`,
 	)
 )
 
-// pythonDocstrings quotes the module docstring and the docstring of every
-// top-level def/class: the first statement of a body when it is a
-// triple-quoted string. No AST; a line scanner is enough for a quote.
+// pythonDocstrings quotes module and def/class body docstrings, including
+// nested declarations. The quote retains its own location and its exact
+// declaration header; it does not establish any runtime effect.
 func pythonDocstrings(lines []string) []quote {
 	var result []quote
 	if index := pythonFirstStatement(lines, 0); index >= 0 {
@@ -28,23 +28,80 @@ func pythonDocstrings(lines []string) []quote {
 			result = append(result, item)
 		}
 	}
-	for index, line := range lines {
-		if !pythonTopLevelDef.MatchString(line) {
+	code := pythonCodeLines(lines)
+	for index, line := range code {
+		if !pythonDeclaration.MatchString(strings.TrimSpace(line)) {
 			continue
 		}
-		end := pythonSignatureEnd(lines, index)
+		end := pythonSignatureEnd(code, index)
 		if end < 0 {
 			continue
 		}
 		body := pythonFirstStatement(lines, end+1)
-		if body < 0 || !isIndented(lines[body]) {
+		if body < 0 || pythonIndent(lines[body]) <= pythonIndent(lines[index]) {
 			continue
 		}
 		if item, ok := pythonDocstringAt(lines, body); ok {
+			item.DeclarationLine = index + 1
 			result = append(result, item)
 		}
 	}
 	return result
+}
+
+// Ignore declaration-looking text inside strings and comments. This is only
+// lexical quote extraction; the native adapter remains the declaration owner.
+func pythonCodeLines(lines []string) []string {
+	code := make([]string, len(lines))
+	delimiter := ""
+	for i, line := range lines {
+		masked := []byte(strings.Repeat(" ", len(line)))
+		for pos := 0; pos < len(line); {
+			if delimiter != "" {
+				if line[pos] == '\\' {
+					pos += 2
+				} else if strings.HasPrefix(line[pos:], delimiter) {
+					pos += len(delimiter)
+					delimiter = ""
+				} else {
+					pos++
+				}
+				continue
+			}
+			if line[pos] == '#' {
+				break
+			}
+			if line[pos] == '\'' || line[pos] == '"' {
+				// Keep a marker so an inline string body is still a statement.
+				masked[pos] = 's'
+				delimiter = string(line[pos])
+				if triple := strings.Repeat(delimiter, 3); strings.HasPrefix(line[pos:], triple) {
+					delimiter = triple
+				}
+				pos += len(delimiter)
+				continue
+			}
+			masked[pos] = line[pos]
+			pos++
+		}
+		code[i] = string(masked)
+	}
+	return code
+}
+
+func pythonIndent(line string) int {
+	indent := 0
+	for _, ch := range line {
+		switch ch {
+		case ' ':
+			indent++
+		case '\t':
+			indent += 8 - indent%8
+		default:
+			return indent
+		}
+	}
+	return indent
 }
 
 func pythonFirstStatement(lines []string, from int) int {
@@ -58,20 +115,30 @@ func pythonFirstStatement(lines []string, from int) int {
 }
 
 func pythonSignatureEnd(lines []string, from int) int {
+	depth := 0
 	for index := from; index < len(lines); index++ {
-		trimmed := strings.TrimSpace(lines[index])
-		if comment := strings.Index(trimmed, "#"); comment >= 0 {
-			trimmed = strings.TrimSpace(trimmed[:comment])
+		line := lines[index]
+		for pos, ch := range line {
+			switch ch {
+			case '(', '[', '{':
+				depth++
+			case ')', ']', '}':
+				depth--
+			case ':':
+				if depth == 0 {
+					if strings.TrimSpace(line[pos+1:]) == "" {
+						return index
+					}
+					// An inline body cannot own the next declaration's string.
+					return -1
+				}
+			}
 		}
-		if strings.HasSuffix(trimmed, ":") {
-			return index
+		if depth == 0 && !strings.HasSuffix(strings.TrimSpace(line), "\\") {
+			return -1
 		}
 	}
 	return -1
-}
-
-func isIndented(line string) bool {
-	return strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
 }
 
 func pythonDocstringAt(lines []string, index int) (quote, bool) {

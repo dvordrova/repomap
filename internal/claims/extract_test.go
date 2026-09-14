@@ -53,7 +53,7 @@ func TestExtractQuotesFixtureRepository(t *testing.T) {
 		AgeDays: fixtureAgeDays, TargetID: "t:backend", Text: "Backend entry module. Serves levels over HTTP.",
 	})
 	assertClaim(t, bySource[SourceDocstring], Claim{
-		Source: SourceDocstring, Path: "backend/app.py", Line: 8, Date: "2024-01-10",
+		Source: SourceDocstring, Path: "backend/app.py", Line: 8, DeclarationLine: 7, Date: "2024-01-10",
 		AgeDays: fixtureAgeDays, TargetID: "t:backend", Text: "Return every level in order.",
 	})
 	assertClaim(t, bySource[SourceDocstring], Claim{

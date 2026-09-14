@@ -724,9 +724,9 @@ func generatedByMarker(content []byte) bool {
 	return false
 }
 
-// docstringFor finds the docstring that belongs to the declaration at line:
-// the nearest docstring above it within reach, with no other declaration
-// between them.
+// docstringFor finds the author quote attached to this declaration. Python
+// body docstrings carry their declaration line; comment-based languages use
+// the existing neighbouring-comment rule.
 func (b *builder) docstringFor(filePath string, line int, decls []atlas.Decl) string {
 	return firstSentence(b.quotedDocstringFor(filePath, line, decls))
 }
@@ -737,6 +737,12 @@ func (b *builder) quotedDocstringFor(filePath string, line int, decls []atlas.De
 	docs := b.docs[filePath]
 	best := ""
 	for _, doc := range docs {
+		if strings.EqualFold(path.Ext(filePath), ".py") {
+			if doc.DeclarationLine == line {
+				return doc.Text
+			}
+			continue
+		}
 		clojure := strings.HasSuffix(filePath, ".clj") || strings.HasSuffix(filePath, ".cljc") || strings.HasSuffix(filePath, ".cljs")
 		if clojure && doc.Line < line || !clojure && doc.Line > line || line-doc.Line > docstringReach || doc.Line-line > docstringReach {
 			continue
@@ -770,7 +776,7 @@ func (b *builder) moduleDoc(filePath string, state *fileState) string {
 	}
 	switch strings.ToLower(path.Ext(filePath)) {
 	case ".py":
-		if firstDecl == 0 || firstDecl-first.Line > docstringReach || first.Line <= 2 {
+		if first.DeclarationLine == 0 && (firstDecl == 0 || first.Line <= firstDecl) {
 			return firstSentence(first.Text)
 		}
 	case ".go":

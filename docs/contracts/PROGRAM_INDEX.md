@@ -209,6 +209,15 @@ finite loops and lifecycle setup remaining explicit negative controls.
 
 ## Facts and authored documents
 
+Python body docstrings retain both their original quote line and the exact
+`def`/`class` declaration line in the existing claims artifact. Nested functions,
+methods and async declarations follow the same path. Places attaches that
+author quote only to the native declaration at that line; it does not borrow
+a neighbouring quote or treat a function's docstring as module documentation.
+The original quoted text stays an author claim in boundary and question input,
+not a deterministic runtime classification. ProgramIndex objects and relations
+are unchanged.
+
 The facts stage runs built-in sqlc and configured external commands through
 the same nodes/links contract in [EXTRACTORS](../EXTRACTORS.md).
 Extensions supply source observations, not architecture role assignments.

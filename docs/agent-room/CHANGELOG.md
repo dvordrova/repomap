@@ -1,5 +1,32 @@
 # Implementation and acceptance journal
 
+## 2026-09-14 — Preserve Python author descriptions at their declarations
+
+- Following the boundary input audit found two existing losses: the claims
+  scanner skipped methods and nested functions, and Places searched above a
+  Python declaration even though its docstring is inside the body. It could
+  consequently attach the preceding method's description to the next one.
+- The existing claims path now retains each nested/class/async docstring with
+  its exact declaration line while keeping the quote's original source line.
+  Places joins that claim to its native declaration and keeps unowned module
+  text separate. Strings containing example declarations and later expressions
+  do not become docstrings; inline bodies cannot borrow a following quote.
+  No ProgramIndex field, call relation or runtime classification was added.
+- Extended the cumulative Python destinations example without moving existing
+  declarations. The ordinary claims → Python native index → Places → boundary
+  request regression failed under the old projection: class/method/nested
+  descriptions shifted to their neighbours. It passes with exact attachment,
+  including the undocumented negative case. Comparing the complete mixed
+  fixture graphs shows only the expected removal of the module description
+  from two declarations that previously borrowed it; its file description
+  remains. The canonical graph checksum records that correction.
+- Go and Clojure already have owning author-quote tests. JS/TS supports JSDoc
+  before declarations; JSDoc directly before bare class methods remains a
+  separate missing equivalent. This change does not claim to fix it.
+- This is an offline input correction. A fresh ordinary online acceptance run
+  for this additional change is pending provider balance; the earlier Python
+  acceptance predates it.
+
 ## 2026-09-14 — Independent prompt, model and validation review
 
 - Prompt, Qwen-compatible transport, DeepSeek response quality and QA reviews
@@ -42,8 +69,9 @@
   `setup_mock_aws` at `test_log_handlers.py:679` has a docstring and runs inside
   `with mock_aws()`, but request `atlas_boundaries-r4-w1024` supplies an empty
   owner doc and no enclosing mock context for `boto3.client` at line 681. The
-  current Python producer does not extract docstrings. This needs native input
-  work, not a boundary rejection rule; no mock classification was invented.
+  existing quote scanner omitted nested docstrings, and the declaration
+  attachment searched on the wrong side of Python headers. The correction
+  above keeps the existing claims path; no mock classification was invented.
   A frozen next-comparison manifest selects eight unseen complete windows
   (23 rows) by source categories/order plus five known regression windows:
   `/private/tmp/repomap-boundary-prompt-probe-20260914/next-boundary-evaluation-manifest.json`.

@@ -108,9 +108,10 @@ func (input Input) validate() error {
 
 // fileQuote is one quote located inside a file before dates are attached.
 type fileQuote struct {
-	Source Source
-	Line   int
-	Text   string
+	Source          Source
+	Line            int
+	DeclarationLine int
+	Text            string
 }
 
 type fileKind int
@@ -189,7 +190,7 @@ func fileQuotes(repository *corpus.Corpus, entry corpus.Entry) ([]fileQuote, err
 func tagged(source Source, quotes []quote) []fileQuote {
 	result := make([]fileQuote, 0, len(quotes))
 	for _, item := range quotes {
-		result = append(result, fileQuote{Source: source, Line: item.Line, Text: item.Text})
+		result = append(result, fileQuote{Source: source, Line: item.Line, DeclarationLine: item.DeclarationLine, Text: item.Text})
 	}
 	return result
 }
@@ -218,12 +219,13 @@ func (b *builder) addCommit(commit commitRecord) {
 
 func (b *builder) addFile(filePath string, quote fileQuote, date string) {
 	claim := Claim{
-		Source:   quote.Source,
-		Path:     filePath,
-		Line:     quote.Line,
-		Text:     quote.Text,
-		Date:     date,
-		TargetID: targetFor(b.targets, filePath),
+		Source:          quote.Source,
+		Path:            filePath,
+		Line:            quote.Line,
+		DeclarationLine: quote.DeclarationLine,
+		Text:            quote.Text,
+		Date:            date,
+		TargetID:        targetFor(b.targets, filePath),
 	}
 	if date != "" {
 		claim.AgeDays = ageDays(b.asOf, date)

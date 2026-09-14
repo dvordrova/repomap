@@ -52,15 +52,18 @@ func (source Source) Valid() bool {
 // identifies it for commit messages. Date is an ISO-8601 date (YYYY-MM-DD)
 // and AgeDays is measured from the captured revision's commit date.
 type Claim struct {
-	ID       string `json:"id"`
-	Source   Source `json:"source"`
-	Path     string `json:"path,omitempty"`
-	Line     int    `json:"line,omitempty"`
-	Commit   string `json:"commit,omitempty"`
-	Text     string `json:"text"`
-	Date     string `json:"date,omitempty"`
-	AgeDays  int    `json:"age_days,omitempty"`
-	TargetID string `json:"target_id,omitempty"`
+	ID     string `json:"id"`
+	Source Source `json:"source"`
+	Path   string `json:"path,omitempty"`
+	Line   int    `json:"line,omitempty"`
+	// DeclarationLine is the exact Python def/class header owning a body
+	// docstring. Line still locates the original quote; zero leaves it unbound.
+	DeclarationLine int    `json:"declaration_line,omitempty"`
+	Commit          string `json:"commit,omitempty"`
+	Text            string `json:"text"`
+	Date            string `json:"date,omitempty"`
+	AgeDays         int    `json:"age_days,omitempty"`
+	TargetID        string `json:"target_id,omitempty"`
 }
 
 // Result is the sealed claims artifact.

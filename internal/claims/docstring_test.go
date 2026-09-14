@@ -1,6 +1,8 @@
 package claims
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -15,7 +17,7 @@ func TestPythonDocstringsUseFirstStatementOnly(t *testing.T) {
 		`class Game:`,
 		`    """A game."""`,
 		`    def play(self):`,
-		`        """Nested methods are not top-level."""`,
+		`        """Play the game."""`,
 		``,
 		`async def run(`,
 		`    arg,`,
@@ -31,8 +33,9 @@ func TestPythonDocstringsUseFirstStatementOnly(t *testing.T) {
 	quotes := pythonDocstrings(lines)
 	want := []quote{
 		{Line: 3, Text: "Module doc."},
-		{Line: 7, Text: "A game."},
-		{Line: 18, Text: "Load a file. Second paragraph."},
+		{Line: 7, DeclarationLine: 6, Text: "A game."},
+		{Line: 9, DeclarationLine: 8, Text: "Play the game."},
+		{Line: 18, DeclarationLine: 17, Text: "Load a file. Second paragraph."},
 	}
 	if len(quotes) != len(want) {
 		t.Fatalf("quotes = %+v, want %+v", quotes, want)
@@ -40,6 +43,83 @@ func TestPythonDocstringsUseFirstStatementOnly(t *testing.T) {
 	for index := range want {
 		if quotes[index] != want[index] {
 			t.Fatalf("quote %d = %+v, want %+v", index, quotes[index], want[index])
+		}
+	}
+}
+
+func TestCumulativePythonDocstringsKeepNestedDeclarationOwners(t *testing.T) {
+	filePath := "src/fixture_app/destinations.py"
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "repositories", "python", filePath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := splitLines(string(data))
+	byText := make(map[string]quote)
+	for _, item := range pythonDocstrings(lines) {
+		byText[item.Text] = item
+	}
+	for _, want := range []struct{ declaration, text string }{
+		{"class DocumentedClient:", "An author-described client used by a local test."},
+		{"    def setup(self):", "Build the client with a nested test helper."},
+		{"        def setup_mock_client():", "Set up a mock HTTP client for the test."},
+		{"    async def ready(self):", "Report that the test setup is ready."},
+	} {
+		line := 0
+		for i, text := range lines {
+			if text == want.declaration {
+				line = i + 1
+				break
+			}
+		}
+		got := byText[want.text]
+		if line == 0 || got.DeclarationLine != line || got.Line != line+1 {
+			t.Errorf("%s: owner/quote location = %+v, declaration line %d", want.declaration, got, line)
+		}
+	}
+	if _, exists := byText["A later string is not documentation for this method."]; exists {
+		t.Fatal("later expression became an author docstring")
+	}
+}
+
+func TestPythonDocstringsDoNotTreatStringContentsAsDeclarations(t *testing.T) {
+	lines := splitLines(strings.Join([]string{
+		`example = """`,
+		`class Example:`,
+		`    '''An example inside a string.'''`,
+		`"""`,
+		`def outer():`,
+		`    """Outer author quote."""`,
+		`    async def nested(`,
+		`        value="hash # and colon:",`,
+		`    ):`,
+		`        # A comment before the actual first statement.`,
+		`        r'''Nested author quote.'''`,
+		`        return value`,
+		`    return nested`,
+		`def bytes_only():`,
+		`    b"""Bytes are not a docstring."""`,
+		`def interpolation_only():`,
+		`    f"""An interpolated expression is not a docstring."""`,
+		`def later():`,
+		`    pass`,
+		`"""A dedented later string belongs to no declaration."""`,
+		`def inline(): pass`,
+		`class Inline: """An inline string is not a following body."""`,
+		`def following():`,
+		`    """The following declaration owns this quote."""`,
+	}, "\n"))
+	want := []quote{
+		{Line: 6, DeclarationLine: 5, Text: "Outer author quote."},
+		{Line: 11, DeclarationLine: 7, Text: "Nested author quote."},
+		{Line: 24, DeclarationLine: 23, Text: "The following declaration owns this quote."},
+	}
+	got := pythonDocstrings(lines)
+	if len(got) != len(want) {
+		t.Fatalf("quotes = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("quote %d = %+v, want %+v", i, got[i], want[i])
 		}
 	}
 }

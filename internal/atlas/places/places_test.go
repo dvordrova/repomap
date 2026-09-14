@@ -15,12 +15,83 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/pythonprogramindex"
+	"github.com/dvordrova/repomap/internal/pythontarget"
 )
+
+func TestCumulativePythonDocstringsReachTheirOwnBoundary(t *testing.T) {
+	root, repository := materializeFixtureRepository(t, filepath.Join(repositoryRoot(t), "testdata", "repositories", "python"))
+	quoted, err := claims.Extract(t.Context(), claims.Input{Repository: repository, RepoPath: root, Revision: "HEAD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := pythontarget.Discover(t.Context(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var target pythontarget.Target
+	for _, candidate := range catalog.Entries {
+		if candidate.Kind == pythontarget.KindLibrary && candidate.ProjectDir == "." {
+			target = candidate
+			break
+		}
+	}
+	input, err := pythonprogramindex.BuildInput(t.Context(), repository, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := programindex.New(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := Build(Input{Repository: repository, Targets: []TargetInput{{Index: index}}, Claims: quoted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const source = "src/fixture_app/destinations.py"
+	want := map[int]string{
+		97:  "An author-described client used by a local test.",
+		100: "Build the client with a nested test helper.",
+		103: "Set up a mock HTTP client for the test.",
+		109: "Report that the test setup is ready.",
+		113: "",
+	}
+	seen := map[int]bool{}
+	var boundaryOwner atlas.Place
+	for _, place := range graph.Places {
+		if place.Path != source || place.Symbol == nil {
+			continue
+		}
+		if doc, ok := want[place.LineNo]; ok {
+			seen[place.LineNo] = true
+			if place.Symbol.Decl.Doc != doc {
+				t.Errorf("declaration %d: doc %q, want %q", place.LineNo, place.Symbol.Decl.Doc, doc)
+			}
+		}
+		if place.LineNo == 103 {
+			boundaryOwner = place
+		}
+	}
+	if len(seen) != len(want) {
+		t.Fatalf("native declarations missing: %v", seen)
+	}
+	owner := lines.BoundaryOwner("o1", boundaryOwner, []int{105}, nil)
+	if owner["author_doc"] != want[103] {
+		t.Fatalf("boundary request lost its original author description: %+v", owner)
+	}
+	// A function's author quote must not become its file's module description.
+	for _, place := range graph.Places {
+		if place.Path == source && place.File != nil && place.File.Doc != "" {
+			t.Fatalf("function quote became module documentation: %q", place.File.Doc)
+		}
+	}
+}
 
 func TestCallableBindingsKeepAnonymousHandlersAndQualifiedCalls(t *testing.T) {
 	loc := &programindex.Location{Path: "app/main.go", Line: 8, Column: 2}
@@ -219,7 +290,7 @@ func TestFixturePlaces(t *testing.T) {
 			{Index: front, Dependencies: decodeCatalog(t, fixture, "front-dependency-catalog.json"), Root: "front"},
 		},
 		Claims: claims.Result{Claims: []claims.Claim{
-			{ID: "c1", Source: claims.SourceDocstring, Path: "backend/app/robot.py", Line: docLine - 1, Text: "Levels are loaded here. More words follow."},
+			{ID: "c1", Source: claims.SourceDocstring, Path: "backend/app/robot.py", Line: docLine + 1, DeclarationLine: docLine, Text: "Levels are loaded here. More words follow."},
 			{ID: "c2", Source: claims.SourceDocstring, Path: "backend/main.py", Line: 1, Text: "Backend entry module."},
 		}},
 	}
@@ -275,7 +346,8 @@ func TestFixturePlaces(t *testing.T) {
 		t.Fatalf("native fixture boundaries missing: %+v", wantOwners)
 	}
 	// Keep identical canonical bytes for eager and lazy target storage below.
-	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "9b4c84d488e0322a9b7ee26c9479a87d7d5bfed567f71b472901122e2b930323" {
+	// The Python quote is anchored inside its own declaration's body.
+	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "b7c99d999a81d40c122e0f799079476f051d680f1e330818c240a4a422e6f2cd" {
 		t.Fatalf("saved mixed fixture graph changed: %s", got)
 	}
 	lazy := input
@@ -426,7 +498,7 @@ func TestFixturePlaces(t *testing.T) {
 		}
 	}
 	if !documented {
-		t.Fatalf("the docstring above line %d was not attached: %+v", docLine, levels.File.Decls)
+		t.Fatalf("the body docstring for line %d was not attached: %+v", docLine, levels.File.Decls)
 	}
 	if main := places[atlas.FileID("backend/main.py")]; main.File.Doc != "Backend entry module." || main.Given != "Backend entry module." {
 		t.Fatalf("module docstring: doc %q given %q", main.File.Doc, main.Given)
@@ -854,6 +926,12 @@ func repositoryRoot(t *testing.T) string {
 
 func materializeFixture(t *testing.T, fixture string) *corpus.Corpus {
 	t.Helper()
+	_, repository := materializeFixtureRepository(t, fixture)
+	return repository
+}
+
+func materializeFixtureRepository(t *testing.T, fixture string) (string, *corpus.Corpus) {
+	t.Helper()
 	for _, name := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"} {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
@@ -913,5 +991,5 @@ func materializeFixture(t *testing.T, fixture string) *corpus.Corpus {
 		t.Fatalf("open fixture corpus: %v", err)
 	}
 	t.Cleanup(func() { _ = repository.Close() })
-	return repository
+	return destination, repository
 }

@@ -92,3 +92,24 @@ def run_literal_adapter():
 
 def unused_literal_adapter():
     return LiteralAdapter("https://unrelated.example")
+
+
+class DocumentedClient:
+    """An author-described client used by a local test."""
+
+    def setup(self):
+        """Build the client with a nested test helper."""
+
+        def setup_mock_client():
+            """Set up a mock HTTP client for the test."""
+            return requests.Session()
+
+        return setup_mock_client()
+
+    async def ready(self):
+        """Report that the test setup is ready."""
+        return True
+
+    def undocumented(self):
+        pass
+        """A later string is not documentation for this method."""
