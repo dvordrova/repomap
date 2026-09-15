@@ -324,9 +324,23 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   }
   const rootOf=new Map();for(const [root,interior] of prepared.interiors)for(const node of interior.local.nodes)rootOf.set(node.id,root);
   const nodes=[],labels=[],rootOffsets=new Map(graph.children.map(node=>[node.id,{x:node.x,y:node.y}]));
+  // The final text reserve can enlarge a participant. Fit its already prepared
+  // drawing to that rectangle with one uniform transform instead of leaving a
+  // miniature in its corner. No interior layout or zoom-time work is added.
+  const interiorScales=new Map(graph.children.map(root=>{
+    const interior=prepared.interiors.get(root.id);
+    return [root.id,Math.min(root.width/interior.local.width,root.height/interior.local.height)];
+  }));
+  const records=prepared.records.map(record=>{
+    const root=rootOf.get(record.id),factor=interiorScales.get(root)/prepared.interiors.get(root).scale;
+    return {...record,contentScale:(record.contentScale||1)*factor,summaryScale:(record.summaryScale||1)*factor,
+      width:record.width*factor,height:record.height*factor};
+  });
+  for(const record of records)byID.set(record.id,record);
+  const scales=new Map([...prepared.scales].map(([id,scale])=>[id,scale*interiorScales.get(rootOf.get(id))/prepared.interiors.get(rootOf.get(id)).scale]));
   const routes=new Map((graph.edges||[]).map(edge=>[edge.id,(edge.sections||[]).map(section=>[section.startPoint,...section.bendPoints||[],section.endPoint])]));
   for(const root of graph.children){
-    const interior=prepared.interiors.get(root.id),offset=rootOffsets.get(root.id),scale=interior.scale;
+    const interior=prepared.interiors.get(root.id),offset=rootOffsets.get(root.id),scale=interiorScales.get(root.id);
     for(const node of interior.local.nodes)nodes.push({...node,
       position:node.parentId?{x:node.position.x*scale,y:node.position.y*scale}:offset,
       absolute:transform(node.absolute,scale,offset),width:node.parentId?node.width*scale:root.width,height:node.parentId?node.height*scale:root.height});
@@ -338,7 +352,7 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   }
   const localRoute=(root,id)=>{
     const interior=prepared.interiors.get(root),offset=rootOffsets.get(root);
-    return (interior.local.edges.get(id)||[]).map(segment=>segment.map(point=>transform(point,interior.scale,offset)));
+    return (interior.local.edges.get(id)||[]).map(segment=>segment.map(point=>transform(point,interiorScales.get(root),offset)));
   };
   const edges=prepared.edges.map(edge=>{
     const from=rootOf.get(edge.from),to=rootOf.get(edge.to);
@@ -359,6 +373,6 @@ export async function layoutPrepared(prepared,width=1200,height=700){
         title:outside.name||outside.title,point:group.incoming?route.at(-1).at(-1):route[0][0]});
     }
   }
-  return {layout:{nodes,edges,labels,width:graph.width,height:graph.height},records:prepared.records,
-    scales:prepared.scales,owner:prepared.owner,summaries:prepared.summaries};
+  return {layout:{nodes,edges,labels,width:graph.width,height:graph.height},records,
+    scales,owner:prepared.owner,summaries:prepared.summaries};
 }

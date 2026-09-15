@@ -1,5 +1,35 @@
 # Implementation and acceptance journal
 
+## 2026-09-15 — Named groups at the first reveal
+
+- Reproduced the first shared reveal with actual Ctrl+wheel gestures: compact
+  group titles were hidden by a container query while their hints survived.
+  Titles now fit their complete names once to the fixed group rectangle. The
+  native frame paints the same thin outline at both levels; the title overlay
+  no longer adds its own scaled border. Hover and zoom retain the text layout.
+- Inspecting the saved Python report exposed a separate miniature-in-a-corner
+  result: the final outer text reserve enlarged participant frames without
+  fitting their contents. One uniform transform now fits the prepared cards,
+  text and routes to the final frame. Component entrance also keeps the complete
+  frame in view instead of panning to a topmost child and hiding its sibling.
+  No additional native layout runs during navigation.
+- Added first-reveal and slightly-closer screenshot comparisons, with title
+  paint, text bounds, screen outline width and unchanged-world assertions. The
+  short-name fixture requires 10px headings, measured to 0.1 CSS pixel. Exact
+  affine geometry remains checked in unit tests; browser comparisons allow
+  CSSOM serialization rounding of large world coordinates.
+- Inspected the complete 69-frame gallery as contact sheets, then key entrances,
+  role colours and changed camera states at full size. The dense 42-group
+  example retains small text at first reveal and still needs further zoom for
+  reading; its nonblank-label regression is not a claim of initial readability.
+- All 64 UI unit tests, focused report tests/vet, embedded asset verification
+  and the canonical build passed. All 32 desktop browser scenarios then passed
+  normal comparison against the reviewed references, without updating them.
+  Rendering the saved Python report made zero
+  provider requests. Its first reveal showed all seven front group names at
+  12px with no clipping; the part/source journey and exact camera return passed
+  with unchanged world geometry and no page errors.
+
 ## 2026-09-14 — Stable detail layers, readable frames and one visible connection
 
 - Detail now switches for every participant or group at the same hierarchy

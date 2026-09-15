@@ -7,7 +7,7 @@ import {connections} from './layout.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
-import {prepareCards,wrapText,overviewHeading} from './cards.mjs';
+import {prepareCards,wrapText,overviewHeading,groupHeading} from './cards.mjs';
 import {HoverGate} from './hover.mjs';
 import {InputTypes, scrollInventory} from './card-content.jsx';
 import '@xyflow/react/dist/style.css';
@@ -29,18 +29,18 @@ function Part({data}) {
   </div>;
 }
 function Area({data}) {
-  return <div className={`flow-area ${data.branch==='component'?'flow-component':data.branch==='communication'?'flow-communication':data.branch==='inputs'?'flow-input-collection':''} ${data.summarized?'flow-area-summarized':''}`}>
+  return <div className={`flow-area ${data.branch==='component'?'flow-component':data.branch==='communication'?'flow-communication':data.branch==='inputs'?'flow-input-collection':''}`}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
 }
-function AreaSummary({node,item,className,enter,select,compactScale:scale}){
-  const {zoom}=useViewport();
-  return <div className={`flow-area-summary nopan ${className}`} data-summary-area={node.id}
+function AreaSummary({node,heading,enter,select}){
+  const {scale,title}=heading;
+  return <div className="flow-area-summary nopan" data-summary-area={node.id}
     style={{transform:`translate(${node.absolute.x}px,${node.absolute.y}px) scale(${scale})`,transformOrigin:'top left',
-      width:node.width/scale,height:node.height/scale,'--flow-zoom':zoom*scale}}
+      width:node.width/scale,height:node.height/scale}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
-    <div className="flow-part flow-overview-card flow-overview-compact"><strong>{item.name||item.title}</strong></div>
+    <div className="flow-part flow-overview-card flow-overview-compact"><strong>{title}</strong></div>
   </div>;
 }
 function ZoomMark({node,item,enter,select,compactScale}) {
@@ -212,7 +212,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       if(['component','communication','inputs'].includes(byID.get(n.id).branch)){
         const destination=['communication','inputs'].includes(byID.get(n.id).branch)
           ?communicationViewport(n,layout.nodes,rect.width,rect.height,communicationScales().get(n.id)||1)
-          :componentViewport(n,layout.nodes,rect.width,(componentFonts.get(n.id)||20)/20);
+          :componentViewport(n,rect.width,rect.height,(componentFonts.get(n.id)||20)/20);
         commitCamera(instance.setViewport(destination,{duration:smooth?420:0}),id);return;
       }
       const zoom=scales.has(n.id)?1/contentScale:Math.min(1,Math.max(.6,Math.min((rect.width-48)/n.width,(rect.height-48)/n.height)));
@@ -330,7 +330,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const context=focusAncestors(state.focus,placed);
     const visible=id=>!closed(id);
     const drawing=layout;
-    const compactScale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
+    const groupHeadings=useMemo(()=>{
+      const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
+      return new Map(layout.nodes.filter(n=>scales.has(n.id)).map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure)]));
+    },[layoutKey]);
     const overview=isOverview();
     const area=state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):'';
     const number=new Map(area&&view.numbered?leaves(area).map((id,i)=>[id,i+1]):[]);
@@ -356,7 +359,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         selectable:false,draggable:false,connectable:false,
         style:{width:n.width,height:n.height,visibility:visible(n.id)?'visible':'hidden'},
         className:`${on||contains||!dim?'':'flow-node-muted'} ${focused?'flow-node-focus':on?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
-        data:{...item,summarized:n.frame&&scales.has(n.id)&&!detailed.has(n.id),operation:view.operation,reading,number:number.get(n.id),open:(id,event)=>select(id,event,true)}};
+        data:{...item,operation:view.operation,reading,number:number.get(n.id),open:(id,event)=>select(id,event,true)}};
     });
     const edges=routes.map(route=>{
       return {id:route.id,source:route.from,target:route.to,type:'routed',selectable:false,focusable:false,
@@ -422,9 +425,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id))&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)}/>)}
         {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
-          node={n} item={byID.get(n.id)} compactScale={compactScale} enter={enter} select={select}
-          className={`${state.focus.has(n.id)?'flow-node-focus':''} ${state.participants.has(n.id)?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${view.scope===n.id?'flow-node-reading':''}`}/>)}
-        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={compactScale} enter={enter} select={select}/>)}
+          node={n} heading={groupHeadings.get(n.id)} enter={enter} select={select}/>)}
+        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select}/>)}
         {area&&visible(area)&&detailed.has(area)&&view.numbered&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
       </ViewportPortal>
     </ReactFlow>;

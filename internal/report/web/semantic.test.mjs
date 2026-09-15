@@ -122,16 +122,17 @@ test('root summaries reserve readable width after tall area summaries are placed
   assert.deepEqual(world.layout.edges.flatMap(e=>e.relations),relations);
 });
 
-test('component entrance reveals the first child even when routing puts it far inside the frame',()=>{
-  const frame={id:'front',absolute:{x:32,y:64},width:2084,height:1309};
+test('component entrance includes siblings even when the topmost child is far to the right',()=>{
+  const frame={id:'front',absolute:{x:32,y:64},width:2084,height:1309,frame:true};
   for(const x of [64,364,1300]){
   const child={id:'area',parentId:'front',absolute:{x,y:302},width:400,height:580};
-  const v=componentViewport(frame,[frame,child],603);
-  assert.equal(componentContents(v.zoom),true);
-  assert.equal(frame.absolute.y*v.zoom+v.y,24);
-  assert.ok(child.absolute.x*v.zoom+v.x>=24);
-  assert.ok((child.absolute.x+child.width)*v.zoom+v.x<=579.01);
-  assert.ok(v.zoom>=.85&&v.zoom<=1);
+  const v=componentViewport(frame,603,580);
+  assert.equal(frame.absolute.y*v.zoom+v.y,12);
+  assert.equal(frame.absolute.x*v.zoom+v.x,12);
+  assert.ok(child.absolute.x*v.zoom+v.x>=12);
+  assert.ok((child.absolute.x+child.width)*v.zoom+v.x<=591.01);
+  assert.ok((frame.absolute.y+frame.height)*v.zoom+v.y<=568.01);
+  assert.ok(framedComponents([frame,child],v,603,580).has('front'),'even a lone target opens beyond its whole-map fit');
   }
 });
 
@@ -247,9 +248,9 @@ test('component detail also waits for readable direct part headings',()=>{
     const placed=new Map([frame,part].map(n=>[n.id,n]));
     assert.equal(closedContainer('utility',placed,new Map(records.map(n=>[n.id,n])),new Set(),componentContents(.7,true,textSize)),frame,
       'the 11.9px direct part is concealed when its component summary returns');
-    const viewport=componentViewport(frame,[frame,part],638);
-    assert.ok(textSize*viewport.zoom>=14,'the existing component entrance reveals readable direct parts');
-    assert.equal(componentContents(viewport.zoom,false,textSize),true);
+    const viewport=componentViewport(frame,638,700);
+    assert.ok(part.absolute.x*viewport.zoom+viewport.x>=12,'component entrance retains its leftmost part');
+    assert.ok((frame.absolute.x+frame.width)*viewport.zoom+viewport.x<=626.01,'the complete component stays in view');
   }
   assert.equal(componentTextSize([{id:'front',branch:'component',children:['area']},{id:'area',branch:'area'}]),20,'area-only components use their actual 20px member names');
 });
@@ -269,9 +270,8 @@ test('independently scaled components reveal only their own readable interiors',
   assert.deepEqual([...componentDetails(fonts,1.4,opened)],[],'11.9px parts close with their own component');
   const root={id:'front',absolute:{x:0,y:0},width:400,height:200};
   const area={id:'views',parentId:'front',absolute:{x:8,y:40},width:100,height:140};
-  const camera=componentViewport(root,[root,area],1054,fonts.get('front')/20);
-  assert.equal(camera.zoom,4);
-  assert.equal(fonts.get('front')*camera.zoom,20,'component entrance compensates its actual local scale');
+  const camera=componentViewport(root,1054,700,fonts.get('front')/20);
+  assert.equal(camera.zoom,1030/400,'component entrance fits every group before exploring one');
   const placed=new Map([root,area].map(n=>[n.id,n]));
   assert.equal(closedContainer('views',placed,new Map(records.map(n=>[n.id,n])),new Set(),true,new Set(),opened),root,
     'another open component cannot reveal this component’s unreadable interior');

@@ -32,6 +32,25 @@ export function overviewHeading(item,screenWidth,measure){
   return {width,clearZoom,height:wrapText(title,width,font,measure).length*lineHeight+(clearZoom?32:0)};
 }
 
+// A group's fixed world box can be much smaller than its siblings at the
+// common reveal threshold. Fit its complete name once, never hide it or
+// rewrap it against the current viewport. The frame itself is painted by Area.
+export function groupHeading(node,title,maxScale,measure){
+  const font='600 12px system-ui',widest=Math.max(0,...String(title).split(/\s+/).map(word=>measure(word,font)));
+  const lines=scale=>wrapText(title,node.width/scale-44,font,measure);
+  const fits=scale=>node.width/scale-44>=widest&&node.height/scale-12>=Math.max(20,lines(scale).length*16);
+  let scale=maxScale;
+  if(!fits(scale)){
+    let low=0,high=scale;
+    for(let i=0;i<20;i++){
+      const middle=(low+high)/2;
+      if(fits(middle))low=middle;else high=middle;
+    }
+    scale=low;
+  }
+  return {scale,title:lines(scale).join('\n')};
+}
+
 export function prepareCards(records, _inputOwner, measure, translate) {
   const kind=n=>translate(({request:'Request',command:'Command',interaction:'UI action',scheduled:'Scheduled task',continuous:'Background activity'})[n.activation]||n.kind||'Input');
   const wrap=(text,width,font)=>wrapText(text,width,font,measure);

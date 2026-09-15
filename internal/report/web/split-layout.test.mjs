@@ -109,7 +109,7 @@ test('viewport changes run only independent flat outer layouts and retain each p
   };
   const a=normalized(first.layout),b=normalized(second.layout);
   for(let i=0;i<a.length;i++){assert.equal(a[i].id,b[i].id);for(const field of ['width','height','x','y'])assert.ok(close(a[i][field],b[i][field]),`${a[i].id}: local ${field} survives resizing`);}
-  assert.equal(first.records,second.records,'prepared card metrics are reused');
+  assert.deepEqual(first.records,second.records,'the same interior fit preserves card metrics and content');
 });
 
 test('unrelated external participants cannot resize or rearrange an input collection',async()=>{
@@ -279,7 +279,7 @@ test('component placement moves ready area interiors intact and bundles only mat
   assert.deepEqual(prepared.edges.flatMap(edge=>edge.relations),relations,'the boundary grouping preserves every original source and endpoint');
 });
 
-test('a fit below .44 reserves collection minima in one correction without resizing component interiors',async()=>{
+test('a fit below .44 reserves collection minima and fits the existing interiors once',async()=>{
   // A wide ready frontend and its peer fit below .44. The smaller catalogues
   // were prepared exactly at .44, so resizing from the old fit alone would
   // still leave their headings too small after the new outer placement.
@@ -317,8 +317,10 @@ test('a fit below .44 reserves collection minima in one correction without resiz
     assert.ok(frame.width*zoom+1e-7>=root.overviewMinWidth,`${root.id}: the final fit preserves heading width`);
     assert.ok(frame.height*zoom+1e-7>=root.overviewHeightAtWidth(frame.width*zoom),`${root.id}: the final fit preserves the full input types`);
     assert.ok(frame.width>=root.width&&frame.height>=root.height,'a measured root reserve never shrinks its native contents');
-    assert.equal(nodes.get(`${root.id}-part`).width,96);assert.equal(nodes.get(`${root.id}-part`).height,80);
-    assert.deepEqual(nodes.get(`${root.id}-part`).position,{x:32,y:64},'prepared interiors retain their own coordinates');
+    const scale=Math.min(frame.width/root.width,frame.height/root.height),part=nodes.get(`${root.id}-part`);
+    assert.ok(close(part.width,96*scale)&&close(part.height,80*scale),'the original drawing uses its enlarged frame');
+    assert.ok(close(part.position.x,32*scale)&&close(part.position.y,64*scale),'one uniform transform preserves relative geometry');
+    assert.ok(close(result.records.find(record=>record.id===part.id).contentScale,scale),'text uses the same scale as its card');
   }
   for(const node of requests.at(-1).children)for(const port of node.ports||[]){
     if(port.layoutOptions['elk.port.side']==='EAST')assert.equal(port.x,node.width,'the fixed native port follows the enlarged frame');
@@ -346,12 +348,12 @@ test('the ordinary map reserves a short component inventory as well as collectio
     assert.ok(root.width*zoom+1e-7>=record.overviewMinWidth,`${root.id}: no heading word is split`);
     assert.ok(root.height*zoom+1e-7>=record.overviewHeightAtWidth(root.width*zoom,{availableHeight:548}),
       `${root.id}: the complete short inventory or input types fit`);
-    const interior=prepared.interiors.get(root.id);
+    const interior=prepared.interiors.get(root.id),scale=Math.min(root.width/interior.local.width,root.height/interior.local.height);
     for(const child of interior.local.nodes.filter(node=>node.parentId)){
       const node=nodes.get(child.id);
-      assert.ok(close(node.absolute.x-root.absolute.x,child.absolute.x*interior.scale));
-      assert.ok(close(node.absolute.y-root.absolute.y,child.absolute.y*interior.scale));
-      assert.ok(close(node.width,child.width*interior.scale));assert.ok(close(node.height,child.height*interior.scale));
+      assert.ok(close(node.absolute.x-root.absolute.x,child.absolute.x*scale));
+      assert.ok(close(node.absolute.y-root.absolute.y,child.absolute.y*scale));
+      assert.ok(close(node.width,child.width*scale));assert.ok(close(node.height,child.height*scale));
     }
   }
 });
@@ -376,12 +378,12 @@ test('parallel rows share one measured reserve while every participant remains r
     assert.ok(root.width*zoom+1e-7>=record.overviewMinWidth,`${root.id}: its heading keeps complete words`);
     assert.ok(root.height*zoom+1e-7>=record.overviewHeightAtWidth(root.width*zoom,{availableHeight:available.height}),
       `${root.id}: its measured heading and complete short inventory fit`);
-    const interior=prepared.interiors.get(root.id);
+    const interior=prepared.interiors.get(root.id),scale=Math.min(root.width/interior.local.width,root.height/interior.local.height);
     for(const child of interior.local.nodes.filter(node=>node.parentId)){
       const node=nodes.get(child.id);
-      assert.ok(close(node.absolute.x-root.absolute.x,child.absolute.x*interior.scale));
-      assert.ok(close(node.absolute.y-root.absolute.y,child.absolute.y*interior.scale));
-      assert.ok(close(node.width,child.width*interior.scale));assert.ok(close(node.height,child.height*interior.scale));
+      assert.ok(close(node.absolute.x-root.absolute.x,child.absolute.x*scale));
+      assert.ok(close(node.absolute.y-root.absolute.y,child.absolute.y*scale));
+      assert.ok(close(node.width,child.width*scale));assert.ok(close(node.height,child.height*scale));
     }
   }
 });

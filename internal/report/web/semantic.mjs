@@ -117,21 +117,18 @@ export function systemViewport(nodes,width,height) {
   return {x:Math.max(overviewInset,(width-(right-left)*zoom)/2)-left*zoom,y:Math.max(overviewInset,(height-(bottom-top)*zoom)/2)-top*zoom,zoom};
 }
 
-export function componentViewport(node,nodes,width,contentScale=1) {
-  const first=nodes.filter(n=>n.parentId===node.id).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];
-  const zoom=Math.max(.85,1/contentScale);
-  // Compound routing can put the first content far to the right. Focus that
-  // content instead of empty frame padding; its component title stays visible.
-  const left=first&&(first.absolute.x+first.width-node.absolute.x)*zoom>width-48
-    ?Math.max(node.absolute.x,first.absolute.x-32):node.absolute.x;
-  return {x:24-left*zoom,y:24-node.absolute.y*zoom,zoom};
+export function componentViewport(node,width,height,contentScale=1) {
+  // Enter the whole prepared component. A camera aimed at its topmost child
+  // can otherwise push a sibling off the left edge after the final interior fit.
+  const zoom=Math.min(Math.max(.85,1/contentScale),Math.max(1,width-24)/node.width,Math.max(1,height-24)/node.height);
+  return {x:12-node.absolute.x*zoom,y:12-node.absolute.y*zoom,zoom};
 }
 
 // External frames can contain scaled call cards. Enter at their real text
 // scale, with the first call visible even when routing leaves a large header gap.
 export function communicationViewport(node,nodes,width,height,contentScale=1) {
-  const base=componentViewport(node,nodes,width),zoom=Math.max(base.zoom,1/contentScale);
-  const viewport={x:24+(base.x-24)*zoom/base.zoom,y:24+(base.y-24)*zoom/base.zoom,zoom};
+  const base=componentViewport(node,width,height),zoom=Math.max(base.zoom,1/contentScale);
+  const viewport={x:24-node.absolute.x*zoom,y:24-node.absolute.y*zoom,zoom};
   const first=nodes.filter(n=>n.parentId===node.id).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];
   if(first){
     if(first.absolute.x*zoom+viewport.x<24||(first.absolute.x+first.width)*zoom+viewport.x>width-24)viewport.x=24-first.absolute.x*zoom;

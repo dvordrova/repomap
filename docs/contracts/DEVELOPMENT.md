@@ -169,6 +169,15 @@ frame occupies 85% of a canvas dimension, including a dense group inventory
 and one target with twenty external systems. The regression checks complete
 cards actually inside the canvas, not just visible DOM outside the viewport.
 The before/after frames are captured; the same world geometry must survive.
+The first shared reveal is also checked before another zoom step on dense and
+ordinary short-name maps. Every complete onscreen group has painted title text
+within its frame and a thin native outline. A slightly closer view retains the
+same geometry; the assertions distinguish a visible rectangle from a visible
+name and cannot accept a hidden label beside a lone question mark.
+The short-name fixture also requires at least 10px group titles at this first
+entrance. Final participant sizing must fit the existing interior uniformly,
+including its text and routes, rather than leave a miniature in an enlarged
+frame. Initial and slightly closer PNGs are compared with reviewed references.
 An additional five-participant fixture uses short component names, seven/five
 area names and eleven/three inputs in the ordinary report's 1054×580 canvas.
 Its complete initial inventories must fit, retain whole words and keep those

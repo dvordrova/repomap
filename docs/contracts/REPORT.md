@@ -164,9 +164,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Summaries lay out their complete text against their own frame, using the
   whole-map reading scale as a fixed reference. Pan clips the card at the
   viewport edge; it never squeezes or rewraps text into the remaining visible
-  sliver. Zoom scales that fixed text layout. Compact area labels share the first common entrance
-  scale, retaining readable headings in smaller siblings, and keep that fixed
-  layout until the next common detail layer. Hover and selection change outline
+  sliver. Zoom scales that fixed text layout. Compact area labels start from
+  the first common entrance scale, then fit their complete names and hint to
+  each actual group rectangle once. Smaller groups retain smaller text instead
+  of becoming blank; zoom enlarges that same layout without hiding or rewrapping
+  it. The native frame paints the outline at both detail levels; the title
+  overlay adds no second, magnified border. Hover and selection change outline
   paint only, never border geometry, padding, title position or wrapping.
   Closed frames display a subtle outlined child element with a question mark
   as their nested-content hint. The accessible action and the card both enter
@@ -206,8 +209,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   and keeps the reader's world and camera; choosing the whole map again may
   remeasure for the changed space. A pending resize layout cannot replace a
   world after a manual gesture. Saved whole-map intent survives a changed
-  geometry identity. Component entrance shows its title and first contents at
-  readable scale.
+  geometry identity. Component entrance fits the complete participant frame
+  before exploring a group, keeping siblings on both sides in view. Entering
+  a group or a call then uses its actual content scale for reading.
   The minimum camera scale permits the complete root bounds even in a short
   window. The initial world choice accounts for readable root-header widths and heights,
   not only its bounding rectangle. After placing the native area interiors,
@@ -241,8 +245,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the missing physical space. Its in-memory reserve follows nonoverlapping
   projected chains, so parallel rows do not count their widths or heights
   repeatedly; it also protects initially readable roots from the smaller final
-  fit. Fixed-side ports follow their new boundary. Prepared
-  interior coordinates, routes and scales remain unchanged. This is a bounded
+  fit. Fixed-side ports follow their new boundary. One uniform transform fits
+  each prepared interior to its final participant rectangle, including its
+  cards, text and native routes; the prepared drawing remains unchanged. This is a bounded
   initial sizing correction, not another orientation search or a zoom-time layout.
   Unzipping is not forced on small maps. Cross-participant labels reserve no
   interior space: their number badges belong to the outer endpoints, so their
