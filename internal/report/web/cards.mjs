@@ -35,10 +35,10 @@ export function overviewHeading(item,screenWidth,measure){
 // A group's fixed world box can be much smaller than its siblings at the
 // common reveal threshold. Fit its complete name once, never hide it or
 // rewrap it against the current viewport. The frame itself is painted by Area.
-export function groupHeading(node,title,maxScale,measure){
+export function groupHeading(node,title,maxScale,measure,reservedWidth=44,reservedHeight=12){
   const font='600 12px system-ui',widest=Math.max(0,...String(title).split(/\s+/).map(word=>measure(word,font)));
-  const lines=scale=>wrapText(title,node.width/scale-44,font,measure);
-  const fits=scale=>node.width/scale-44>=widest&&node.height/scale-12>=Math.max(20,lines(scale).length*16);
+  const lines=scale=>wrapText(title,node.width/scale-reservedWidth,font,measure);
+  const fits=scale=>node.width/scale-reservedWidth>=widest&&node.height/scale-reservedHeight>=Math.max(20,lines(scale).length*16);
   let scale=maxScale;
   if(!fits(scale)){
     let low=0,high=scale;
@@ -56,9 +56,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
   const wrap=(text,width,font)=>wrapText(text,width,font,measure);
   const communicationChildren=new Set(records.filter(n=>n.branch==='communication').flatMap(n=>n.children||[]));
   const byID=new Map(records.map(n=>[n.id,n]));
-  const areaNames=id=>(byID.get(id)?.children||[]).flatMap(child=>[
-    ...(byID.get(child)?.branch==='area'?[byID.get(child).title]:[]),...areaNames(child),
-  ]);
+  const childNames=id=>(byID.get(id)?.children||[]).map(child=>byID.get(child)?.overviewTitle||byID.get(child)?.title).filter(Boolean);
   return records.map(n=>{
     const frame=!!n.children?.length;
     const title=wrap(n.title,228,'700 17px system-ui');
@@ -69,7 +67,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     const descriptionLines=description?wrap(description,228,'13px system-ui'):[];
     const subtitle=n.category==='external'&&!n.title.endsWith(n.subtitle||'')?n.subtitle:'';
     const subtitleLines=subtitle?wrap(subtitle,228,'13px system-ui'):[];
-    const names=n.branch==='component'?areaNames(n.id):[];
+    const names=n.branch==='component'?childNames(n.id):[];
     // External headings may use the full width below the zoom mark. Its extra
     // row is reserved by overviewHeading, not by forcing a wider frame.
     const input=!!n.activation,collection=['communication','inputs'].includes(n.branch);

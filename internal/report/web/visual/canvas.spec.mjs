@@ -207,14 +207,14 @@ test('dense internal inventory keeps whole-map headings and zoom controls readab
   await assertOverviewReadable(page,{allowInventoryScroll:true});
   for(const id of ['front','backend']){
     await expect(page.locator(`[data-component-overview="${id}"] [data-overview-area]`)).toHaveCount(42);
-    const area=page.locator(`[data-component-overview="${id}"] [data-overview-area="${id}-workflow-40"]`);
+    const area=page.locator(`[data-component-overview="${id}"] [data-overview-area="${id}-workflow-40-part"]`);
     await expect(area).toHaveText('Additional workflow 40');
     await area.scrollIntoViewIfNeeded();
     await assertInsideCanvas(page,area,'The final area stays reachable in its frame',{text:true,container:`.react-flow__node[data-id="${id}"]`});
   }
   await testInfo.attach('journey-02 — Scroll to the final entries',{body:await workspace.screenshot(),contentType:'image/png'});
-  await page.locator('[data-overview-area="backend-workflow-40"]').click();
-  await expect(page.locator('[data-reading-title]')).toHaveText('Additional workflow 40');
+  await page.locator('[data-overview-area="backend-workflow-40-part"]').click();
+  await expect(page.locator('[data-reading-title]')).toHaveText('Workflow responsibility 40');
   await assertInsideCanvas(page,page.locator('.react-flow__node[data-id="backend-workflow-40-part"]'),'The final workflow opens its actual part');
   await testInfo.attach('journey-03 — Open the final workflow and its part',{body:await workspace.screenshot(),contentType:'image/png'});
   await showWholeMap(page);

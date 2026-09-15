@@ -1,5 +1,31 @@
 # Implementation and acceptance journal
 
+## 2026-09-15 — One part, one card
+
+- Removed the drawing-only area wrapper when its sole child is an existing
+  part. The saved area, part identity, native relations, operation membership
+  and sources remain unchanged. Old area links focus the part, and the reading
+  panel retains the area's additional description. Multi-part areas and
+  participant/input/external boundaries retain their containment.
+- Direct parts use the neighbouring groups' column width and fixed first-reveal
+  heading fit, with their measured card height. No extra zoom hint or intermediate
+  wrapper appears. The changed native packing also exposed insufficient outer
+  text reserve in the short-name fixture; at most one additional correction
+  now uses the first correction's actual placement, before display.
+- Added identity/source coverage and first-reveal/closer screenshot comparisons
+  for a singleton area, including complete text bounds and readable headings.
+  Inspected the 71-frame contact sheets and the changed singleton and short-name
+  entrances at full size. The existing dense 42-group first-reveal readability
+  limitation remains; this change does not claim to resolve it.
+- All 65 UI unit tests, focused report tests/vet, embedded asset verification
+  and the canonical build passed. All 33 desktop scenarios passed normal
+  screenshot comparison against the inspected references, without updating them.
+  Saved Python rendering made zero provider
+  requests. Its three singleton areas now draw their parts directly; the API
+  heading measured 14.2px at component entrance. Original area links, source
+  reading, additional descriptions and exact camera/world return passed with
+  no browser errors. The resulting real-report frames were inspected.
+
 ## 2026-09-15 — Named groups at the first reveal
 
 - Reproduced the first shared reveal with actual Ctrl+wheel gestures: compact

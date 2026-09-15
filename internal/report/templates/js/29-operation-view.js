@@ -283,7 +283,9 @@ function rmSystemProjection(nodes, edges) {
   map.restoreViewport=function(saved){surface?.restore(saved);};
   map.exploreNode=function(id){select(byID[id],true);};
   map.displayedNode=function(n){return byID[aliases[n.id]]||n;};
-  map.areaDescriptions=function(){return [];};
+  map.areaDescriptions=function(n){return path(n.id).filter(function(id){return id!==n.id&&byID[id].dataset.branch==='area'&&projection.leaves(id).length===1;}).map(function(id){
+    var area=byID[id];return (area.dataset.title!==n.dataset.title?area.dataset.title+': ':'')+area.dataset.summary;
+  });};
   map.operationChoices=function(id){var children=new Set(projection.leaves(id));return nodes.filter(function(n){return n.dataset.activation&&((n.dataset.near||'').split(/\s+/).some(function(near){return children.has(near);})||children.has(projection.inputOwner[n.id]));});};
   map.chooseOperation=function(id){return select(byID[id],true);};
   map.explorationLabel=function(){return [operation?.dataset.title,path(scope).map(function(id){return byID[id].dataset.title;}).join(' / '),map.explorerMember?.name].filter(Boolean).join(' · ')||rmT('System map');};

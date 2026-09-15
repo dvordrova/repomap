@@ -6,6 +6,12 @@ const {records,relations,areas,inputOwner}=options.has('single-target')?prepared
 if(options.has('many-external'))document.querySelector('h1').textContent='Two systems · seventeen external participants';
 if(options.has('short-names'))document.querySelector('h1').textContent='Short component names · complete initial inventories';
 if(options.has('single-target'))document.querySelector('h1').textContent='One system · twenty external participants';
+if(options.has('single-part-area')){
+  const group=records.find(n=>n.id==='requests');group.title='HTTP API surface';group.children=['routes'];
+  records.find(n=>n.id==='routes').title=group.title;
+  records.find(n=>n.id==='backend').children.push('auth');
+  areas.find(a=>a.id===group.id).nodes=group.children;
+}
 
 // Only the host callbacks and prepared English labels are supplied here.
 // Rendering, measurement, layout, zoom, hover and controls are production code.

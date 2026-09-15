@@ -7,6 +7,7 @@ import {connections} from './layout.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
+import {singlePartAreas} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,groupHeading} from './cards.mjs';
 import {HoverGate} from './hover.mjs';
 import {InputTypes, scrollInventory} from './card-content.jsx';
@@ -17,11 +18,12 @@ import './canvas.css';
 window.ELK = ELK;
 const t = (...args) => window.rmT(...args);
 function Part({data}) {
-  return <div className={`flow-part flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''}`} data-input-id={data.activation?data.id:undefined} style={data.contentScale&&data.contentScale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${data.contentScale})`,transformOrigin:'top left'}:undefined}>
+  const heading=data.standaloneHeading,scale=heading?.scale||data.contentScale;
+  return <div className={`flow-part flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
-    {data.kindLabel&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
-    <strong data-input-name={data.activation?'':undefined}>{data.title}</strong>
+    {data.kindLabel&&!heading&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
+    <strong data-input-name={data.activation?'':undefined}>{heading?.title||data.title}</strong>
     {data.description&&<div className="flow-description">{data.description}</div>}
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
     {data.number && <span className="flow-number">{data.number}</span>}
@@ -89,6 +91,8 @@ function RoutedEdge({id,data}) {
 const nodeTypes={part:Part,area:Area}, edgeTypes={routed:RoutedEdge};
 
 window.rmCreateFlow = async function(map, stage, records, relations, areas, inputOwner, callbacks) {
+  const display=singlePartAreas(records,areas),displayed=id=>display.aliases.get(id)||id;
+  records=display.records;areas=display.areas;
   const source=stage.querySelector('svg'), host=document.createElement('div');
   host.className='flow-root';stage.appendChild(host);
   map.classList.add('flow-enabled','flow-initializing');source.style.display='none';source.setAttribute('aria-hidden','true');
@@ -200,6 +204,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(hoverArea!==area){hoverArea=area;update?.();}
   }
   function focus(id,center=true,smooth=true){
+    id=displayed(id);
     const n=placed.get(id);if(!n)return;
     if(!instance||initializing){pendingFocus={id,center};return;}
     overviewFit=false;
@@ -287,9 +292,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const heading=useMemo(()=>visible?overviewHeading(item,screenWidth,measure):null,[screenWidth]);
     const text=useMemo(()=>{
       if(!visible)return null;
-      const communication=item.branch==='communication',inputs=item.branch==='inputs',areaIDs=communication||inputs?[]:inventory.areaIDs;
+      const communication=item.branch==='communication',inputs=item.branch==='inputs',areaIDs=communication||inputs?[]:children.get(n.id)||[];
       const textHeight=(text,font,lineHeight)=>wrapText(text,contentWidth,font,measure).length*lineHeight;
-      const listHeight=areaIDs.length?7+areaIDs.reduce((h,id)=>h+10+textHeight(byID.get(id).name||byID.get(id).title,'500 13px system-ui',18),0):0;
+      const listHeight=areaIDs.length?7+areaIDs.reduce((h,id)=>h+10+textHeight(byID.get(id).overviewTitle||byID.get(id).name||byID.get(id).title,'500 13px system-ui',18),0):0;
       const counts=inventory.parts?t('{0} parts',inventory.parts):'';
       const roleHeight=item.role?textHeight(item.role,'600 13px system-ui',18)+10:0;
       const countsHeight=textHeight(counts,'500 12px system-ui',17)+10;
@@ -313,7 +318,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description.replace(/\n/g,' ')}</p>}
       {inputs&&<InputTypes groups={item.inputGroups}/>}
       {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'flow-scrollable':''}`} onWheelCapture={scrollInventory}>{areaIDs.map(id=><li key={id}>
-        <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,true);}}>{byID.get(id).name||byID.get(id).title}</button>
+        <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,true);}}>{byID.get(id).overviewTitle||byID.get(id).name||byID.get(id).title}</button>
       </li>)}</ul>}
       {showCounts&&<div className="flow-inside-counts">{counts}</div>}
     </div>;
@@ -333,6 +338,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const groupHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       return new Map(layout.nodes.filter(n=>scales.has(n.id)).map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure)]));
+    },[layoutKey]);
+    const standaloneHeadings=useMemo(()=>{
+      const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
+      return new Map(layout.nodes.filter(n=>!n.frame&&!byID.get(n.id).activation&&byID.get(n.parentId)?.branch==='component').map(n=>{
+        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,item.roleLabel?35:15,15);
+        return [n.id,{...heading,width:n.width/heading.scale,height:n.height/heading.scale}];
+      }));
     },[layoutKey]);
     const overview=isOverview();
     const area=state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):'';
@@ -359,7 +371,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         selectable:false,draggable:false,connectable:false,
         style:{width:n.width,height:n.height,visibility:visible(n.id)?'visible':'hidden'},
         className:`${on||contains||!dim?'':'flow-node-muted'} ${focused?'flow-node-focus':on?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
-        data:{...item,operation:view.operation,reading,number:number.get(n.id),open:(id,event)=>select(id,event,true)}};
+        data:{...item,standaloneHeading:standaloneHeadings.get(n.id),operation:view.operation,reading,number:number.get(n.id),open:(id,event)=>select(id,event,true)}};
     });
     const edges=routes.map(route=>{
       return {id:route.id,source:route.from,target:route.to,type:'routed',selectable:false,focusable:false,
@@ -473,6 +485,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   });
   return {get layout(){return layout;},focus,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
-    view={...initial,...next};update();
+    view={...initial,...next,scope:displayed(next.scope)||'',
+      selected:new Set([...(next.selected||[])].map(displayed)),matched:new Set([...(next.matched||[])].map(displayed))};update();
   }};
 };

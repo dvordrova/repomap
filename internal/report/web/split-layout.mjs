@@ -90,8 +90,11 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         const local={...options,'elk.padding':`[top=${record.headerHeight||64},left=${32*scale},bottom=${32*scale},right=${32*scale}]`};
         for(const name of Object.keys(local))if(name.includes('spacing.'))local[name]=String(Number(local[name])*scale);
         const derived=id===root.id?minimum:null;
-        const min={width:Math.max(record.minimumWidth||0,derived?.width||0,record.branch==='area'?400:0),
-          height:Math.max(record.minimumHeight||0,derived?.height||0)};
+        // A loose part is a peer of the area's summary, not a miniature of
+        // an interior card. Give both the same column width before routing.
+        const peer=record.branch==='area'||root.branch==='component'&&parent.get(id)===root.id&&!children.has(id);
+        const min={width:Math.max(record.minimumWidth||0,derived?.width||0,peer?400:0),
+          height:Math.max(record.minimumHeight||0,derived?.height||0,peer&&!children.has(id)?record.height:0)};
         if(min.width||min.height){local['elk.nodeSize.constraints']='MINIMUM_SIZE';local['elk.nodeSize.minimum']=`(${min.width},${min.height})`;}
         const result=children.has(id)?{id,children:children.get(id).map(tree),layoutOptions:local}
           :{id,width:Math.max(record.width,min.width),height:Math.max(record.height,min.height),layoutOptions:local};
@@ -264,11 +267,12 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     if(!best||score.readable>best.readable||score.readable===best.readable&&score.overflow<best.overflow){graph=placed;best=score;bestInput=template;}
    }
   }
-  if(best.readable<1-1e-7){
+  for(let correction=0;correction<2&&best.readable<1-1e-7;correction++){
     // Root summaries use physical pixels. A fitted camera below .44 must
     // still reserve their measured minima, including the space their growth
-    // removes from that camera. Correct the chosen native shape once; interiors
-    // keep their prepared geometry.
+    // removes from that camera. A native placement can change its packing
+    // after frames grow; in that case one final correction uses those actual
+    // positions. Interiors keep their prepared geometry in both passes.
     // A lower corrected fit affects every summary, including participants
     // that were already readable in the selected candidate.
     const growing=graph.children.flatMap(node=>{
@@ -318,8 +322,8 @@ export async function layoutPrepared(prepared,width=1200,height=700){
           if(side==='SOUTH')port.y=node.height;
         }
       }
-      const placed=await native(candidate),score=metrics(placed);
-      if(score.readable>best.readable){graph=placed;best=score;}
+      const template=structuredClone(candidate),placed=await native(candidate),score=metrics(placed);
+      if(score.readable>best.readable){graph=placed;best=score;bestInput=template;}else break;
     }
   }
   const rootOf=new Map();for(const [root,interior] of prepared.interiors)for(const node of interior.local.nodes)rootOf.set(node.id,root);

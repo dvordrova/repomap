@@ -390,8 +390,6 @@
       if (concepts.length) {
         html+='<div class="map-concepts" hidden><strong data-concept-name></strong><p data-concept-explanation></p><div data-concept-source></div></div>';
       }
-      html += ("<details class=\"map-card-evidence\"><summary>"+rmT.html("Code and connections")+"</summary>");
-      if (counts && !node.dataset.activation) html += '<span class="map-card-meta">' + escapeText(counts) + '</span>';
       if(map.areaDescriptions){
         var descriptions=Array.from(new Set(map.areaDescriptions(node))).filter(function(text){return text&&text!==summary;});
         if(descriptions.length){
@@ -399,6 +397,8 @@
           descriptions.forEach(function(text){html+='<p>'+escapeText(text)+'</p>';});html+='</details>';
         }
       }
+      html += ("<details class=\"map-card-evidence\"><summary>"+rmT.html("Code and connections")+"</summary>");
+      if (counts && !node.dataset.activation) html += '<span class="map-card-meta">' + escapeText(counts) + '</span>';
       var operation = map.inspectedOperation;
       var witness = operation && !node.dataset.activation && JSON.parse(operation.dataset.callPaths || '{}')[id];
       if (witness && witness.length) {

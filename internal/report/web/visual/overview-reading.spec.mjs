@@ -62,7 +62,8 @@ for(const matchedPeer of [false,true])test(`short component names keep complete 
       expect(await list.evaluate(el=>el.scrollHeight<=el.clientHeight+1),`${item.title}'s complete inventory is visible initially`).toBe(true);
     }
     for(const child of prepared.records.filter(child=>child.branch==='area'&&item.children.includes(child.id))){
-      const entry=summary.locator(`[data-overview-area="${child.id}"]`);
+      const entryItem=child.children.length===1?prepared.records.find(n=>n.id===child.children[0]):child;
+      const entry=summary.locator(`[data-overview-area="${entryItem.id}"]`);
       await expect(entry).toHaveText(child.title);
       await readableText(entry,frame,child.title,{maximumLines:2});
     }

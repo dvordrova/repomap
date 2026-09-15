@@ -178,6 +178,11 @@ The short-name fixture also requires at least 10px group titles at this first
 entrance. Final participant sizing must fit the existing interior uniformly,
 including its text and routes, rather than leave a miniature in an enlarged
 frame. Initial and slightly closer PNGs are compared with reviewed references.
+An area with one existing part is checked at those same two moments: exactly
+one card, no wrapper or child hint, a readable full title, and direct selection
+of the original part. Multi-part areas and one-child input/external participant
+frames keep their actual containment. Unit coverage checks unchanged accepted
+area metadata, native endpoints, source locations and operation membership.
 An additional five-participant fixture uses short component names, seven/five
 area names and eleven/three inputs in the ordinary report's 1054×580 canvas.
 Its complete initial inventories must fit, retain whole words and keep those

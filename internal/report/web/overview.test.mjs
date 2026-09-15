@@ -1,6 +1,40 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {semanticLayout,visibleRoute} from './semantic.mjs';
+import {singlePartAreas} from './overview.mjs';
+
+test('one-part areas share their existing part while participants, sources and multi-part areas remain',async()=>{
+  const records=[
+    {id:'app',title:'Application',branch:'component',children:['api-area','domain']},
+    {id:'api-area',title:'HTTP API surface',summary:'Coordinates incoming requests.',branch:'area',children:['api']},
+    {id:'api',title:'HTTP API surface',lane:'triggers',source:'app.py:12'},
+    {id:'domain',title:'Simulation',branch:'area',children:['field','robot']},
+    {id:'field',title:'Field'},{id:'robot',title:'Robot'},
+    {id:'inputs',title:'Application',branch:'inputs',children:['request']},
+    {id:'request',title:'Run',activation:'request'},
+    {id:'remote',title:'Queue',branch:'communication',children:['publish']},
+    {id:'publish',title:'Publish message',category:'external'},
+  ];
+  const areas=records.filter(n=>n.children).map(n=>({id:n.id,nodes:n.children}));
+  const before=JSON.stringify({records,areas});
+  const display=singlePartAreas(records,areas);
+  assert.deepEqual([...display.aliases],[['api-area','api']]);
+  assert.deepEqual(display.records.find(n=>n.id==='app').children,['api','domain']);
+  assert.deepEqual(display.areas.find(n=>n.id==='app').nodes,['api','domain']);
+  assert.deepEqual(display.records.find(n=>n.id==='api'),{...records.find(n=>n.id==='api'),overviewTitle:'HTTP API surface'});
+  assert.equal(JSON.stringify({records,areas}),before,'saved area description and membership are untouched');
+  const relations=[{from:'request',to:'api',operations:['request'],fromSource:'app.py:4'},
+    {from:'api',to:'field',operations:['request'],fromSource:'app.py:16'},
+    {from:'robot',to:'publish',possible:true}];
+  const world=await semanticLayout(display.records,relations,display.areas,1200,800);
+  const nodes=new Map(world.layout.nodes.map(n=>[n.id,n]));
+  assert.equal(nodes.has('api-area'),false,'no redundant frame or additional zoom level');
+  assert.equal(nodes.get('api').parentId,'app');
+  assert.equal(nodes.get('field').parentId,'domain');
+  assert.equal(nodes.get('publish').parentId,'remote');
+  assert.equal(nodes.get('request').parentId,'inputs');
+  assert.deepEqual(world.layout.edges.flatMap(e=>e.relations),relations,'all native endpoints, sources and paths survive');
+});
 
 test('overview folds only saved areas and preserves every part, input, external identity and directed relation',async()=>{
   const items=[

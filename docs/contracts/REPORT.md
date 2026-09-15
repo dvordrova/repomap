@@ -147,6 +147,18 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   and heading without reserving a second member-list height. A closed group
   shows its name and nested-content hint, then directly reveals its actual
   objects at the next common layer. There is no intermediate member-list view.
+  An architectural area containing one part uses that existing part's rectangle
+  directly, with no wrapper or extra zoom step. The saved area and its accepted
+  membership remain intact: old area navigation focuses the same part, and its
+  additional description remains in the reading panel. This display folding
+  leaves native endpoints, operation paths and sources unchanged. Participant,
+  input and external destination frames keep their distinct boundary even with
+  one child. Component summaries list their actual immediate areas and loose
+  parts, so folding a wrapper never removes its responsibility from the overview.
+  That overview keeps the saved area caption; the single card and its source
+  reading keep the part's own title. Direct parts use the same fixed first-reveal
+  heading fit and column width as neighbouring groups, with their measured
+  card height, without promising hidden children.
   Input collections remain outside the component at every scale.
 
   Detail is synchronized by hierarchy depth. The whole-map layer shows targets,
@@ -241,8 +253,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   compared in both directions with free endpoints and with the prepared native
   ports: eight flat candidates, ranked by fitted text readability then world size.
   If the selected fit would shrink component inventories, collection headings or input types below
-  their measured minima, one final placement of that same native shape reserves
-  the missing physical space. Its in-memory reserve follows nonoverlapping
+  their measured minima, a final placement of that same native shape reserves
+  the missing physical space. If ELK changes the packing after that growth and
+  the measured text still does not fit, one further sizing pass uses its actual
+  resulting positions. There are at most two correction passes, both before
+  display. Their in-memory reserve follows nonoverlapping
   projected chains, so parallel rows do not count their widths or heights
   repeatedly; it also protects initially readable roots from the smaller final
   fit. Fixed-side ports follow their new boundary. One uniform transform fits
