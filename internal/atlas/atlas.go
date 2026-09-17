@@ -328,7 +328,10 @@ type BoundaryFacts struct {
 	Values   []string `json:"values"`
 	// Holder is the value the call acts on, as path:line:column of the call
 	// that produced it; registrations on one holder belong together.
-	Holder    string `json:"holder,omitempty"`
+	Holder string `json:"holder,omitempty"`
+	// Handed marks a value of the repository's own handed over without a
+	// named callable (Register("k6/x/dns", new(DNS))).
+	Handed    bool   `json:"handed,omitempty"`
 	Direction string `json:"direction"`
 	// GivenKind is the kind the code already knows from facts; empty when the
 	// model has to say.

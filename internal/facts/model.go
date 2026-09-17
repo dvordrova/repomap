@@ -175,7 +175,10 @@ type Fact struct {
 	ObjectID string  `json:"object_id,omitempty"`
 	// OwnerID is the declaration that makes the call a registration records,
 	// as distinct from the callable it hands over.
-	OwnerID    string     `json:"owner_id,omitempty"`
+	OwnerID string `json:"owner_id,omitempty"`
+	// Handed marks a registration that hands over a value of the
+	// repository's own (an instance, a module) rather than a callable.
+	Handed     bool       `json:"handed,omitempty"`
 	Method     string     `json:"method,omitempty"`
 	Path       string     `json:"path,omitempty"`
 	Key        string     `json:"key,omitempty"`

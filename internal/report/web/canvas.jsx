@@ -200,7 +200,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const n=byID.get(id);if(!n)return;
     // Hover affects the drawing only. The links and description opened by a
     // click stay usable while the pointer crosses other cards to reach them.
-    const area=parentArea(id)||id;
+    // The component frame is not something to look at: hovering it lights
+    // nothing, as selecting the whole component lights nothing.
+    const area=byID.get(parentArea(id)||id)?.branch==='component'?'':parentArea(id)||id;
     if(hoverArea!==area){hoverArea=area;update?.();}
   }
   function focus(id,center=true,smooth=true){

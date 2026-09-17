@@ -75,11 +75,14 @@ type registrationShape struct {
 	// handed reports that the call receives something of the repository's:
 	// a callable, the decorated declaration, a value, a produced value.
 	handed bool
-	// holder is the value the call acts on, at the call that produced it.
-	holder      *Anchor
-	origin      string
-	originKnown bool
-	method      string
+	// holder is the value the call acts on, at the call that produced it;
+	// holderPrefixes are the path literals of the calls between the holder
+	// and this value (Group("/articles")), root first.
+	holder         *Anchor
+	holderPrefixes []string
+	origin         string
+	originKnown    bool
+	method         string
 }
 
 // registrationShape reads what a call outside the repository is given: its
@@ -166,7 +169,7 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 		}
 	}
 	shape.handed = shape.handlerID != "" || relation.Kind == programindex.RelationDecorates || produced || shape.handedValue
-	shape.holder = target.holderRoot(pattern)
+	shape.holder, shape.holderPrefixes = target.holderRoot(pattern)
 	shape.method = statedMethod(pattern)
 	return shape
 }
@@ -228,7 +231,7 @@ func (target *targetContext) moduleLevel(object programindex.Object) bool {
 // value; a produced value handed as an argument (ListenAndServe(":8080",
 // mux)) gives it when the receiver does not. A value the code did not
 // produce by a call has no holder.
-func (target *targetContext) holderRoot(pattern programindex.RelationPattern) *Anchor {
+func (target *targetContext) holderRoot(pattern programindex.RelationPattern) (*Anchor, []string) {
 	start := producedAt(pattern.ReceiverValue)
 	for position := range pattern.Arguments {
 		argument := pattern.Arguments[position]
@@ -246,9 +249,13 @@ func (target *targetContext) holderRoot(pattern programindex.RelationPattern) *A
 		}
 	}
 	if start == nil {
-		return nil
+		start = target.parameterValue(pattern.ReceiverValue)
+	}
+	if start == nil {
+		return nil, nil
 	}
 	at := *start
+	var prefixes []string
 	for seen := map[sourcevalue.Anchor]bool{}; !seen[at]; {
 		seen[at] = true
 		var next *sourcevalue.Anchor
@@ -259,6 +266,11 @@ func (target *targetContext) holderRoot(pattern programindex.RelationPattern) *A
 			for _, produced := range producer.Patterns {
 				if location := produced.Location; location != nil && location.Path == at.Path && location.Line == at.Line && location.Column == at.Column {
 					next = producedAt(produced.ReceiverValue)
+					// The call that made this value from its holder names the
+					// place the value stands under: Group("/articles").
+					if prefix, ok := prefixLiteral(produced); ok && next != nil {
+						prefixes = append([]string{prefix}, prefixes...)
+					}
 				}
 			}
 		}
@@ -267,7 +279,49 @@ func (target *targetContext) holderRoot(pattern programindex.RelationPattern) *A
 		}
 		at = *next
 	}
-	return &Anchor{Path: at.Path, Line: at.Line, Column: at.Column}
+	return &Anchor{Path: at.Path, Line: at.Line, Column: at.Column}, prefixes
+}
+
+// parameterValue follows a receiver that is a parameter of its function to
+// the value the one repository caller passes in that position:
+// ArticlesRegister(v1.Group("/articles")) mounts every route the function
+// registers on its router parameter.
+func (target *targetContext) parameterValue(value *sourcevalue.Value) *sourcevalue.Anchor {
+	if value == nil || value.Kind != "parameter" || value.Owner == nil || value.Position == 0 {
+		return nil
+	}
+	var owner string
+	for _, object := range target.input.Index.Objects {
+		if isCallable(object) && object.Location != nil && object.Location.Path == value.Owner.Path && object.Location.Line == value.Owner.Line {
+			owner = object.ID
+			break
+		}
+	}
+	if owner == "" {
+		return nil
+	}
+	var passed *sourcevalue.Anchor
+	for _, relation := range target.input.Index.Relations {
+		if relation.Kind != programindex.RelationCalls || len(relation.ToIDs) != 1 || relation.ToIDs[0] != owner {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			for _, argument := range pattern.Arguments {
+				if argument.Position != value.Position {
+					continue
+				}
+				anchor := producedAt(argument.Origin)
+				if anchor == nil {
+					anchor = target.parameterValue(argument.Origin)
+				}
+				if anchor == nil || passed != nil && *passed != *anchor {
+					return nil
+				}
+				passed = anchor
+			}
+		}
+	}
+	return passed
 }
 
 func producedAt(value *sourcevalue.Value) *sourcevalue.Anchor {
@@ -336,7 +390,17 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 	if anchor == nil {
 		return
 	}
+	if len(prefixes) == 0 && len(shape.holderPrefixes) > 0 {
+		prefixes = []routePrefix{{path: joinRoutePaths(shape.holderPrefixes)}}
+	}
 	addresses := []routePrefix{{}}
+	if shape.address == nil && len(prefixes) > 0 && shape.handlerID != "" {
+		// POST("", handler) on a group: the handler answers on the group's path.
+		addresses = addresses[:0]
+		for _, prefix := range prefixes {
+			addresses = append(addresses, prefix)
+		}
+	}
 	if shape.address != nil {
 		addresses = addresses[:0]
 		for _, observed := range addressLiterals(values, *shape.address) {
@@ -377,6 +441,7 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 			Symbol:     shape.handlerName,
 			ObjectID:   shape.handlerID,
 			OwnerID:    ownerID,
+			Handed:     shape.handed && shape.handlerID == "" && shape.relation.Kind != programindex.RelationDecorates,
 			Text:       shape.origin,
 			Resolution: resolution,
 			Evidence:   address.evidence,
@@ -584,4 +649,17 @@ func goServeMuxMethodAndPath(pattern string) (method, path string, ok bool) {
 	}
 	i := strings.IndexByte(path, '/')
 	return method, path, i >= 0 && !strings.Contains(path[:i], "{")
+}
+
+// joinRoutePaths composes mount prefixes root first.
+func joinRoutePaths(prefixes []string) string {
+	path := ""
+	for _, prefix := range prefixes {
+		if path == "" {
+			path = prefix
+			continue
+		}
+		path = joinRoutePath(path, prefix)
+	}
+	return path
 }

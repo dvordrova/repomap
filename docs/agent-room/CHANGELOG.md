@@ -1,5 +1,21 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Routes under groups, one tile per symbol, one operation per handler
+
+- Mount prefixes follow the holder chain: `v1.Group("/articles")` names the
+  place a route registered on that group stands under, and a router
+  received as a parameter is the value its one repository caller passes
+  (`ArticlesRegister(v1.Group("/articles"))`). Gin RealWorld: `GET
+  /api/articles/:slug` instead of `GET /:slug`; `POST("", h)` on a group
+  answers on the group's path instead of a nameless `POST`.
+- A registration records `handed` (a value of the repository's own handed
+  over); only such a registration becomes an entry through `binds` without
+  a callable, so `Group("/articles")` no longer is one.
+- An outside system's tiles fold by symbol (`DB.Close ×2`), and the same
+  handler registered twice under one name (`GET("")` and `GET("/")`) is one
+  operation. Hovering the component frame lights nothing, like selecting
+  the whole component.
+
 ## 2026-09-17 — Initialization arrows on the map
 
 - A map arrow every relation of which is initialization (`map-edge-init`)

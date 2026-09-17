@@ -514,10 +514,18 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	// presenting the declaration as a second route. Multiple observed routes
 	// on the same handler remain distinct.
 	uniqueOperations := operations[:0]
+	sameOperation := make(map[string]bool)
 	for _, operation := range operations {
 		if operation.ID == operation.SubjectID && boundRequests[operation.SubjectID] {
 			continue
 		}
+		// The same handler registered twice under one name (`GET("")` and
+		// `GET("/")`) is one operation; the first site stands for it.
+		key := strings.Join([]string{operation.Kind, operation.Name, operation.SubjectID, operation.Address}, "\x00")
+		if operation.SubjectID != "" && sameOperation[key] {
+			continue
+		}
+		sameOperation[key] = true
 		uniqueOperations = append(uniqueOperations, operation)
 	}
 	operations = uniqueOperations

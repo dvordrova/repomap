@@ -1590,7 +1590,7 @@ func (b *builder) collectBoundaries() {
 			Boundary: &atlas.BoundaryFacts{
 				Source: "fact", Origins: []atlas.BoundaryOrigin{origin}, ObjectID: objectID, SubjectID: b.factSubjects[objectID],
 				Caller: caller, CallerDoc: callerDoc, External: external, Method: method, Values: values,
-				Holder: holder, Direction: direction, GivenKind: kind,
+				Holder: holder, Handed: fact.Kind == facts.KindRegistration && fact.Handed, Direction: direction, GivenKind: kind,
 			},
 		}}
 	}
