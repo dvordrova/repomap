@@ -1,6 +1,7 @@
 package contracttest
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/lines"
@@ -599,8 +600,11 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 		t.Fatalf("cumulative Python outbound HTTP pattern = %#v", outboundPattern)
 	}
 
+	// A method on a value produced by an outside constructor is that
+	// class's method.
+	kafkaSubscribe := programIndexExternalObjectNamed(t, index, "kafka.KafkaConsumer.subscribe")
 	subscription := pythonRelation(
-		t, index, programindex.RelationCalls, eventsModule.ID, "", programindex.ResolutionUnresolved,
+		t, index, programindex.RelationInvokesExternal, eventsModule.ID, kafkaSubscribe.ID, programindex.ResolutionExact,
 	)
 	subscriptionPattern := singlePythonPattern(t, subscription)
 	if subscriptionPattern.Selector != "subscribe" || subscriptionPattern.ReceiverID != consumer.ID ||
@@ -704,9 +708,9 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 	adaptertest.AssertRegistration(t, index, adaptertest.Registration{
 		Name: "Python callback registration",
 		Registration: adaptertest.Relation{
-			Kind: programindex.RelationCalls, FromID: eventsModule.ID, Resolution: programindex.ResolutionUnresolved,
+			Kind: programindex.RelationInvokesExternal, FromID: eventsModule.ID, ToIDs: []string{kafkaSubscribe.ID}, Resolution: programindex.ResolutionExact,
 			Path: "src/fixture_app/events.py", Line: 13,
-			TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, WitnessesOmitted: 0,
+			TargetsObserved: 1, TargetsOmitted: 0, WitnessesObserved: 1, WitnessesOmitted: 0,
 			PatternsObserved: 1, PatternsOmitted: 0,
 			Patterns: []adaptertest.Pattern{{
 				Form: programindex.PatternCall, Selector: "subscribe", ReceiverID: consumer.ID,
@@ -809,10 +813,10 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 	adaptertest.AssertRegistration(t, index, adaptertest.Registration{
 		Name: "Python duplicate callback arguments",
 		Registration: adaptertest.Relation{
-			Kind: programindex.RelationCalls, FromID: bindDuplicateCallbacks.ID,
-			Resolution: programindex.ResolutionUnresolved,
-			Path:       "src/fixture_app/events.py", Line: 25,
-			TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
+			Kind: programindex.RelationInvokesExternal, FromID: bindDuplicateCallbacks.ID,
+			ToIDs: []string{programIndexExternalObjectNamed(t, index, "kafka.KafkaConsumer.bind_pair").ID}, Resolution: programindex.ResolutionExact,
+			Path: "src/fixture_app/events.py", Line: 25,
+			TargetsObserved: 1, TargetsOmitted: 0, WitnessesObserved: 1, PatternsObserved: 1,
 			Patterns: []adaptertest.Pattern{{
 				Form: programindex.PatternCall, Selector: "bind_pair", ReceiverID: consumer.ID,
 				Path: "src/fixture_app/events.py", Line: 25,
@@ -951,9 +955,15 @@ func pythonRelation(
 			return relation
 		}
 	}
+	var seen []string
+	for _, relation := range index.Relations {
+		if relation.FromID == fromID {
+			seen = append(seen, fmt.Sprintf("%s %s %v", relation.Kind, relation.Resolution, relation.ToIDs))
+		}
+	}
 	t.Fatalf(
-		"Python ProgramIndex has no %s relation from %q to %q with %s resolution",
-		kind, fromID, toID, resolution,
+		"Python ProgramIndex has no %s relation from %q to %q with %s resolution; relations from it: %v",
+		kind, fromID, toID, resolution, seen,
 	)
 	return programindex.Relation{}
 }

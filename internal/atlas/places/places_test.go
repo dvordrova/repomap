@@ -360,7 +360,7 @@ func TestFixturePlaces(t *testing.T) {
 	}
 	// Keep identical canonical bytes for eager and lazy target storage below.
 	// The Python quote is anchored inside its own declaration's body.
-	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "257969141aae0dc8fd0e57989061a6be19597f0aa9467acb465e91aa135a7539" {
+	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "91d4d61f1c4f0575d8b113ddefd18b694fa4f6c76d239fd1af8a3ae50c3d68af" {
 		t.Fatalf("saved mixed fixture graph changed: %s", got)
 	}
 	lazy := input

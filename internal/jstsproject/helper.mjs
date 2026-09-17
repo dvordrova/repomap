@@ -2040,7 +2040,9 @@ for (const { sourceFile } of sourceFiles) {
 for (const { sourceFile } of sourceFiles) {
   const visit = (node) => {
     if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
-      const invocation = ts.isNewExpression(node) ? "construct" : "call"
+      // A decorator `@Get(':slug')` is a call whose caller is the declaration
+      // it decorates; the projection reads it as that declaration's decoration.
+      const invocation = ts.isNewExpression(node) ? "construct" : node.parent && ts.isDecorator(node.parent) ? "decorator" : "call"
       const callerRef = refForDeclarationNode(node)
       let localRefs = (ts.isNewExpression(node) ? localRefsForInvocation(node) : expressionRefs(node.expression))
         .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))

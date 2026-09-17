@@ -263,6 +263,11 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		if len(to) == 0 {
 			resolution = programindex.ResolutionUnresolved
 		}
+		if value.Invocation == "decorator" {
+			// The decorated declaration is the relation's source; the
+			// decorator symbol its target.
+			kind = programindex.RelationDecorates
+		}
 		callLanguage := fileLanguage[value.Location.FileRef]
 		witnessKind := "typescript_call"
 		if callLanguage == "javascript" {
@@ -270,6 +275,11 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		}
 		relationIndex := addRelation("program:"+value.Ref, kind, value.CallerRef, to, resolution, value.Location, witnessKind, value.Expression, jstsInvocation(value.Invocation))
 		relations[relationIndex].Patterns = programCallPatterns(value)
+		if value.Invocation == "decorator" {
+			for i := range relations[relationIndex].Patterns {
+				relations[relationIndex].Patterns[i].Form = programindex.PatternDecoratorCall
+			}
+		}
 		relations[relationIndex].PatternsObserved = value.PatternsObserved
 		if value.Pattern == nil {
 			continue

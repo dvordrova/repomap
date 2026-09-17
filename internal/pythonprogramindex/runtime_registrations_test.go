@@ -229,8 +229,10 @@ func TestCumulativePythonRoutesRetainRouterValuesAcrossDeclarations(t *testing.T
 				if pattern.ReceiverOriginResolution != programindex.ResolutionExact || len(pattern.ReceiverOriginIDs) != 1 || pattern.ReceiverOriginsObserved != 1 {
 					t.Fatalf("written parameter type lost possible receiver authority: %+v", pattern)
 				}
-				if relation.Resolution != programindex.ResolutionUnresolved || len(relation.ToIDs) != 0 {
-					t.Fatalf("parameter annotation invented a native call edge: %+v", relation)
+				// The annotation names the outside class; its method is the
+				// external symbol the call invokes.
+				if relation.Kind != programindex.RelationInvokesExternal || relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 {
+					t.Fatalf("parameter annotation did not name the outside method: %+v", relation)
 				}
 			}
 		}

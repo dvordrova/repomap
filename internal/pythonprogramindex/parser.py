@@ -1055,6 +1055,14 @@ class RelationVisitor(ast.NodeVisitor):
             value = self.object(resolved[1])
             if value is None or value["kind"] not in ("function", "method", "lambda", "type"):
                 return "unknown", ""
+        if resolved[0] == "unknown" and isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            # `session.exec(...)` on a parameter annotated with an outside
+            # class is that class's method: the annotation names the origin.
+            binding = self.pattern_binding(node.value.id)
+            origins = [ref for ref in (binding or {}).get("origin_refs", []) if (self.object(ref) or {}).get("kind") == "external_symbol"]
+            if binding and len(origins) == 1 and (binding.get("origin_resolution") or "exact") == "exact":
+                origin = self.object(origins[0])
+                return "external", self.analyzer.ensure_external(origin["name"] + "." + node.attr)
         return resolved
 
     def current_pattern_bindings(self):

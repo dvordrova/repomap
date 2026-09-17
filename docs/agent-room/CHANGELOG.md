@@ -1,5 +1,15 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Decorators in JS/TS, annotated receivers in Python
+
+- A TypeScript decorator call (`@Get(':slug')`) is a `decorates` relation
+  from the decorated declaration to the decorator's symbol, with a
+  `decorator_call` pattern — NestJS, Angular and TypeORM registrations
+  become visible. A Python call on a name bound to a value of an outside
+  class — `session.exec(...)` on an annotated parameter, `consumer.subscribe`
+  on `consumer = KafkaConsumer()` — invokes that class's method as an
+  external symbol instead of staying unresolved.
+
 ## 2026-09-17 — The reading simplified after a prompt review
 
 - The operations table is gone: an operation is a bound entry (a callable

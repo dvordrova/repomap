@@ -683,7 +683,7 @@ func (result Result) Validate() error {
 				return fmt.Errorf("jsts project: call has unknown callee")
 			}
 		}
-		if value.Invocation == "call" || value.Invocation == "construct" {
+		if value.Invocation == "call" || value.Invocation == "construct" || value.Invocation == "decorator" {
 			if value.PatternsObserved != 1 || !validCallPattern(
 				value.Ref, value.Pattern, declarations, patternExternalOrigins, patternResults, callsByRef,
 			) {
@@ -964,7 +964,7 @@ func validResolution(value string) bool {
 	return value == "exact" || value == "alternatives" || value == "unresolved"
 }
 func validInvocation(value string) bool {
-	return value == "call" || value == "construct"
+	return value == "call" || value == "construct" || value == "decorator"
 }
 
 func validCallPattern(
