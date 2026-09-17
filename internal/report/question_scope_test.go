@@ -86,3 +86,18 @@ func TestQuestionScopeUsesStaticVocabularyWithoutChangingSavedRoute(t *testing.T
 		t.Fatalf("rendering changed the saved English route: %v", err)
 	}
 }
+
+func TestQuestionPageIDsAreShortOrdinalsNotTextHashes(t *testing.T) {
+	const revision = "abc"
+	builder := &pageBuilder{data: &ReportData{CapturedRevision: revision, Questions: []atlas.QuestionRoute{
+		{Version: atlas.QuestionRouteVersion, Revision: revision, Question: "Same question?"},
+		{Version: atlas.QuestionRouteVersion, Revision: revision, Question: "Same question?"},
+	}}}
+	questions, err := builder.questionGuides()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(questions) != 2 || questions[0].ID != "q1" || questions[1].ID != "q2" {
+		t.Fatalf("question IDs = %#v", questions)
+	}
+}

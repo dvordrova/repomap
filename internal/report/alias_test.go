@@ -141,13 +141,13 @@ func TestDeclarationAliasKeepsNativeCodeAndOneGlossaryDefinition(t *testing.T) {
 			Interpretation: &groupindex.Interpretation{Key: true, Alias: alias, Line: "Reads historical prices for one stock."}}},
 	}}
 	var concepts []pageMapConcept
-	if err := json.Unmarshal([]byte(builder.groupConcepts(groupindex.Group{MemberSubjectIDs: []string{"subject"}})), &concepts); err != nil {
+	if err := json.Unmarshal([]byte(builder.groupConcepts("", groupindex.Group{MemberSubjectIDs: []string{"subject"}})), &concepts); err != nil {
 		t.Fatal(err)
 	}
 	if len(concepts) != 1 || concepts[0].Name != native || concepts[0].Alias != alias || concepts[0].Source.Path != location.Path || concepts[0].Source.Line != location.Line {
 		t.Fatalf("alias changed source identity: %+v", concepts)
 	}
-	chips, _ := builder.memberChips([]string{"subject"})
+	chips, _ := builder.memberChips("", []string{"subject"})
 	if len(chips) != 1 || chips[0].Members[0].Name != native || chips[0].Members[0].Alias != alias {
 		t.Fatal("key code lost its original name or accepted alias")
 	}

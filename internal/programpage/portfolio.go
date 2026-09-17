@@ -63,7 +63,7 @@ func Build(defaultTargetID string, pages []Page) (Portfolio, error) {
 	}
 	sort.Slice(portfolio.Pages, func(i, j int) bool {
 		if portfolio.Pages[i].Target.ID != portfolio.Pages[j].Target.ID {
-			return portfolio.Pages[i].Target.ID < portfolio.Pages[j].Target.ID
+			return programindex.TargetIDLess(portfolio.Pages[i].Target.ID, portfolio.Pages[j].Target.ID)
 		}
 		return portfolio.Pages[i].RunID < portfolio.Pages[j].RunID
 	})
@@ -187,7 +187,7 @@ func (portfolio Portfolio) validateShape() error {
 		if err := page.Target.Validate(); err != nil {
 			return fmt.Errorf("program page portfolio: page %d target: %w", position, err)
 		}
-		if position > 0 && portfolio.Pages[position-1].Target.ID >= page.Target.ID {
+		if position > 0 && !programindex.TargetIDLess(portfolio.Pages[position-1].Target.ID, page.Target.ID) {
 			return fmt.Errorf("program page portfolio: pages are not canonical")
 		}
 		if page.Target.ID == portfolio.DefaultTargetID {

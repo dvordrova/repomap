@@ -126,7 +126,7 @@ func makeAnswerWindow(def table.Definition, routes []atlas.QuestionRoute, parts 
 		for q, questionKeys := range keys {
 			for _, questionKey := range questionKeys {
 				if questionKey == key {
-					source.ResultRows = append(source.ResultRows, table.Key(q))
+					source.ResultRows = append(source.ResultRows, routes[parts[q].index].ID)
 					break
 				}
 			}
@@ -198,17 +198,17 @@ func makeAnswerWindow(def table.Definition, routes []atlas.QuestionRoute, parts 
 					key := string(raw)
 					if previous, exists := connections[key]; exists {
 						rows := previous["result_rows"].([]string)
-						if rows[len(rows)-1] != table.Key(i) {
-							previous["result_rows"] = append(rows, table.Key(i))
+						if rows[len(rows)-1] != route.ID {
+							previous["result_rows"] = append(rows, route.ID)
 						}
 					} else {
-						item["result_rows"] = []string{table.Key(i)}
+						item["result_rows"] = []string{route.ID}
 						connections[key] = item
 					}
 				}
 			}
 		}
-		result.table.Rows = append(result.table.Rows, table.Row{ID: route.Question, Fields: []table.Field{
+		result.table.Rows = append(result.table.Rows, table.Row{ID: route.ID, Fields: []table.Field{
 			{Name: "question", Value: route.Question}, {Name: "scope_ref", Value: scopeRefs[string(scopeKey)]},
 			{Name: "retrieval_complete", Value: route.Coverage.UnresolvedChunks == 0}, {Name: "evidence_complete", Value: part.complete},
 			{Name: "candidate_options", Value: options}, {Name: "prior_model_suggestions", Value: hints},

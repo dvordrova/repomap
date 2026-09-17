@@ -15,15 +15,30 @@ its sealed `program-index-set.json` binding.
 ProgramIndex retains:
 
 - exact target scope and seeds;
-- objects and their stable local identities;
+- objects and their compact target-local identities;
 - adapter-observed package/module directories, independent of source locations;
 - exact, alternatives, and unresolved relation authority as distinct states;
-- structural relation kinds such as calls, contains, imports, implements,
-  decorates, passes-callback, sources, executes, reads, writes, and
-  invokes-external;
-- complete witnesses and coverage counts;
+- structural relation kinds such as calls, imports, implements, decorates,
+  passes-callback, binds-implementation, sources, executes, reads, writes, and
+  invokes-external. Containment is the object's `container_id` (and `owner_id`)
+  only; there is no parallel `contains` relation;
+- complete witnesses and omission counts;
 - every source-distinct neutral relation pattern;
-- call/decorator form, selector, invocation text, and exact source location;
+- call/decorator form, selector, invocation, dispatch and exact source location.
+  Every adapter uses the same closed words. `invocation` is how a call runs:
+  absent for an ordinary call, `deferred`, `goroutine`, `async_task` or
+  `construct`. `dispatch` is how the target was found: absent for a static
+  target, `interface` (targets are implementations), `interface_method` (the
+  declared method of an external interface; implementation unknown) or
+  `function_value`. The relation kind already says a call, a callback or a
+  binding, so no mechanism prefix is attached;
+- one resolution rule for every language: one known target is `exact`, several
+  are `alternatives`, none is `unresolved`;
+- signatures as short native text for the reader and model: Go names packages
+  by their last element (`model.User`), and a named type's signature is only its
+  form (`struct`, `interface` or the underlying type), its members being objects;
+- object aliases: a declaration's names in other formats as sorted
+  `{format, name}` pairs, such as a field's JSON key;
 - source-anchored enclosing control statements on individual call patterns;
 - call-result and receiver identity;
 - receiver-origin provenance and its resolution;
@@ -31,7 +46,8 @@ ProgramIndex retains:
 - literal, template, dynamic, and object-backed values;
 - reconstructed value candidates and their source-object/source-argument
   provenance;
-- exact symbol-link identities suitable for deterministic cross-shard joins.
+- explicit external origin and repository-path authority where the language
+  extractor can prove it.
 
 Every external symbol has an explicit `authority_kind`. `package` means an
 ordinary external package that may support dependency categorization and a
@@ -45,43 +61,65 @@ categories remain allowed.
 Adapters derive this distinction from language-owned deterministic authority;
 shared stages never infer it from a path prefix or dependency-name heuristic.
 
-ProgramIndex IDs are canonical local identities. Provider-facing stages assign
-deterministic request-local refs and restore accepted rows locally. A model is
-never asked to copy a UUID, canonical path, canonical ID, or source location.
+ProgramIndex is the identity namespace for repository facts. A language adapter's
+`SourceRef` exists only while `programindex.New` joins its input; it is not saved.
+The sealed target graph assigns deterministic compact IDs: `n*` objects, `e*`
+relations and scoped `e*p*`, `e*p*a*`, `e*p*a*v*` descendants. IDs follow
+reading order: the launch seeds first (`main` is `n1`), then breadth-first along
+calls, callbacks, bindings and external invocations in source order, each
+declaration followed by its owner; what no entry reaches follows by file and
+line, unlocated objects and external symbols last. Relations are numbered by
+their source object, then by site, so `e1` is the first thing `n1` does. The
+order is computed by `programindex.New` alone; adapters keep handing over
+`SourceRef`s. Provider-facing
+stages send these IDs unchanged with a closed request allowlist and restore model
+rows directly against that allowlist. Only genuine request-local alternatives
+that are not fact entities receive temporary `c*` refs. A model is never asked
+to copy a UUID, canonical path, source location or digest.
 
-GroupsIndex structural target edges also preserve the optional original native
-relation location. Snapshots own that location. It identifies the observed write
-or call site independently of either declaration; absent locations remain absent.
+The complete canonical target plan assigns `t1..tN` before any target graph is
+built. The same target ID is reused by selected outcomes, ProgramIndex, facts,
+GroupsIndex and report joins; no layer derives a second target hash. A standalone
+single-target artifact therefore uses `t1`, while a consumer that deliberately
+combines independently built artifacts must first bind that complete target set.
+All ordinal IDs use numeric order rather than lexical order. `n*` is deliberately
+target-local inside one ProgramIndex. As soon as native objects enter the shared
+places/reading scope their existing identities are qualified as `t*.n*`; this is
+scope, not another numbering pass. Two targets may both own `n1` without aliasing
+unrelated declarations, facts, fields or boundary owners.
 
-## Shared storage and sequential restoration
+GroupsIndex v12 is a semantic overlay, not another fact graph. It persists only
+target and ProgramIndex bindings, `g*` groups, `k*` containers, `o*` operations,
+`x*` group connections, communication/data interpretations and subject
+annotations keyed by the existing `n*`/`e*p*` IDs. Native names, signatures,
+locations and structural edges are never serialized there. A reader combines
+the overlay with its exact sealed ProgramIndex; the structural view, including
+the optional native relation location, is derived in memory from that one fact
+authority.
 
-The owner approved shared project storage on 2026-09-09. Ordinary persistence
-stores one complete common-builder input per exact parser view under the initial
-run's `program-facts/<digest>.json`. A target's `program-index.json` is a storage-v1
-reference containing its original TargetInput (including seeds), relative facts
-path, facts digest and expected sealed index digest. Reading this reference
-uses the existing `programindex.New` and checks its original seal; it invokes
-no parser, repository read or provider. Standalone Encode/Decode uses
-the current complete Index format. A complete cohort may move together;
-missing shared facts fail without reconstruction from source. No automatic
-target merging or alternate graph is introduced.
+ProgramIndex does not manufacture a second stable identity for a declaration.
+Cross-target report edges are explicit `x*` connections whose evidence names
+the already scoped `t*.n*` or `t*.e*p*` facts. Equal names, signatures, source
+locations or language-specific export tuples do not silently join targets.
 
-ProgramIndex and GroupsIndex hashing use a local value copy to clear the seal;
+## Persistence
+
+Ordinary and standalone persistence have one format: `program-index.json` is
+the complete sealed Index. Adapter inputs, parser-owned SourceRefs and a second
+`program-facts` directory are not saved. Reading is strict Decode plus seal
+validation; it never calls `New`, a parser, the repository or a provider.
+
+ProgramIndex and the GroupsIndex semantic overlay hashing use a local value copy to clear the seal;
 JSON serialization reads their nested collections without copying them first.
 Validation computes the
 target object scope once per invocation and still rechecks every object and
 the complete seal. Public snapshots and handoff isolation are unchanged; no
 past validation is memoized for these publicly mutable structs.
 
-Places collects each target's declarations, relations, seeds and
-compact external-call observations together. After source documentation and
-native boundaries are ready, it applies the retained observations through the
-same boundary path. Each saved target loads once, retaining only one target's
-native lookup maps. A sequential ProgramIndex file reader reuses one decoded
-shared input across consecutive target views; switching project bindings or
-finishing construction releases it. Each view still restores its complete
-sealed identities through the same builder. No child-index array, persistent
-cache, format change or new analysis path is introduced.
+Places collects each target's declarations, relations, seeds and compact
+external-call observations together. Each saved target decodes once. Shared
+native parsing is an in-memory producer optimization and never changes the
+persisted graph or introduces a reconstruction cache.
 Seed locations are resolved against the complete file inventory before depths
 are assigned. Performance changes must preserve sealed graph content independently of any concurrent semantic change.
 
@@ -89,7 +127,7 @@ are assigned. Performance changes must preserve sealed graph content independent
 
 Callable observations from different target indexes meet at their existing
 compiler-located symbol place. Incoming calls retain that place identity as
-well as the native object ID; outgoing calls retain callee place IDs for local
+well as the target-qualified native object ID; outgoing calls retain callee place IDs for local
 retrieval. Outgoing calls also retain their source column locally. An empty
 unresolved target view is subsumed only by possible receiver observations at
 the same exact call site with otherwise identical call facts; distinct sites,
@@ -146,9 +184,21 @@ Only the existing boundary review assigns communication meaning. Request
 builders, local timers and imports are not locally promoted into integrations.
 Boundary uses survive the atlas, GroupsIndex and report. A selected address never hides another original use. [Report: external communication and data](REPORT.md#external-communication-and-data) owns the visible catalogue and source-chain disclosure.
 
-## Declared interfaces and dispatch observations
+## Declared interfaces
 
-When exact native source anchors identify the same interface call, the graph keeps its declared API identity together with every original dispatch observation (kind, resolution, invocation, detail and witnesses). An original exact API observation identifies the declared interface member; the containing call can still have unresolved runtime dispatch. This does not invent an implementation or turn that dispatch into an exact call. Distinct source columns, receiver/signature contexts and unrelated same-named methods do not merge. `SymbolCall.DispatchObservations` retains the distinction in the current graph and saved input; canonical native IDs remain local.
+A call of a method declared on an external interface is one `invokes_external` relation whose target is that declared method and whose dispatch is `interface_method`. The implementation that runs there is unresolved unless an adapter observes one; a native view of the same site that found no implementation is not projected as a second, empty `calls` relation. The graph reads such a call as the declared API with `unresolved` resolution. This does not invent an implementation or turn that dispatch into an exact call. An observed repository implementation at the same site stays its own `calls` relation with alternatives.
+
+## Compact artifact encoding
+
+`program-index.json` stores each fact once. Observed counts are not written: every `*_observed` value is the number of retained rows plus the stored `*_omitted` value, and a zero omission, an empty collection or an absent optional value is left out. Coverage stores only non-zero object/relation omissions; everything else is compiled from the rows when the artifact is read. Decoding restores the same in-memory index, including empty collections, before validating the seal.
+
+Go may additionally provide exhaustive repository-local method-set matches when
+its exact analysis input requests them. ProgramIndex stores these as exact
+`implements` relations for both concrete-type/interface-type and directly owned
+concrete-method/interface-method pairs. Their witnesses identify value or
+pointer method-set authority. They mean language compatibility only; observed
+field assignments, constructor arguments and call dispatch remain separate
+relations with their own locations and unresolved frontiers.
 
 ## Native operation evidence
 
@@ -249,7 +299,7 @@ concatenation; a leading English verb alone is insufficient. Explicit SQL/sqlc
 sources retain their authority. Unsupported or ambiguous strings stay original
 source text, never a claim that SQL or database access is absent.
 
-The deterministic facts pass runs after native extraction over the shared corpus, sealed ProgramIndex set, dependency catalogues and manifests. Original template holes remain parameters with possible authority. A cross-target literal portal requires exactly one supported opposite route; zero or ambiguous matches produce a diagnostic, not an invented fact. Dynamic execution remains its own source fact and does not automatically become an incoming operation or remote participant.
+The deterministic facts pass runs after native extraction over the shared corpus, sealed ProgramIndex set, dependency catalogues and manifests. It knows no framework: a `registration` is the shape of a call the repository does not own that hands something over (a callable, a value named by a literal, an address), with its call word, literals, stated verb, the callable handed over, the external symbol behind the call, and the mount prefixes observed for its receiver. A call the repository itself declares, on a value the repository itself produced, or on a class that declares the member, is delegation and never a registration. Which registration is a route, a consumer, a timer, a plugin hook or a client request is decided in the reading stage from the same closed boundary kinds, so a run without a model has candidates and no routes. `sql_query` retains an SQL statement literal and the tables it names as a fixed database boundary. Original template holes remain parameters with possible authority; a mount prefix composed with a router's own prefix is possible, not exact. Dead modules are judged repository-wide against every selected target's seeds and only for files that declare something to run. Dynamic execution remains its own source fact and does not automatically become an incoming operation or remote participant.
 
 Claims retain the original human-written quote, path and available date/age. Only the shallowest README supplies the repository overview claim; nested document evidence retains its heading and file-role context. No credential scanner or withheld-quote classifier is added. Configured extraction and SQL admission remain owned by [EXTRACTORS](../EXTRACTORS.md).
 
@@ -281,7 +331,8 @@ Projection resolves those IDs through the original source identities, rejects
 unknown or conflicting memberships, and uses only native lexical owners for
 inner values and objects. Equal source paths do not join independent
 responsibilities. Every native subject and structural relation remains in the
-GroupsIndex; cross-part connections retain their original relation ID,
+ProgramIndex and is joined to the GroupsIndex overlay by its compact ID;
+cross-part connections retain their original relation ID,
 declaration endpoints, source locations and resolution.
 
 Public snapshots keep their existing isolation. Shared materialization never reassigns a target, aliases package contexts, invents a callee or turns an alternative into an exact observation. Source bodies do not enter provider requests. [EXTRACTORS](../EXTRACTORS.md) owns configured extractor and SQL admission details.

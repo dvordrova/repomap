@@ -8,7 +8,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
@@ -267,7 +266,68 @@ func (builder *pageBuilder) buildMap(section *pageSection) *pageMap {
 	}
 	result := builder.buildOperationMap(section, index)
 	builder.addMapStructure(result, section, index)
+	scopeTargetMapIDs(result, index.Target.ID)
 	return result
+}
+
+// Group and container IDs are target-local in GroupsIndex. A report renders
+// every target into one document and also merges their nodes into one system
+// map, so their DOM/map identities must carry the already assigned target ID.
+// Operations already contain the section identity and stay unchanged.
+func scopeTargetMapIDs(view *pageMap, targetID string) {
+	if view == nil || targetID == "" {
+		return
+	}
+	mapID := func(id string) string {
+		if !strings.HasPrefix(id, "n-") {
+			return id
+		}
+		return "n-" + safeIDFragment(targetID) + "-" + strings.TrimPrefix(id, "n-")
+	}
+	mapIDs := func(value string) string {
+		ids := strings.Fields(value)
+		for position := range ids {
+			ids[position] = mapID(ids[position])
+		}
+		return strings.Join(ids, " ")
+	}
+	for position := range view.Nodes {
+		node := &view.Nodes[position]
+		node.ID = mapID(node.ID)
+		node.InputOwner = mapID(node.InputOwner)
+		node.Children = mapIDs(node.Children)
+		node.Neighbours = mapIDs(node.Neighbours)
+		for alias := range node.Aliases {
+			node.Aliases[alias] = mapID(node.Aliases[alias])
+		}
+		if node.CallPaths != "" {
+			var paths map[string]json.RawMessage
+			if json.Unmarshal([]byte(node.CallPaths), &paths) == nil {
+				mapped := make(map[string]json.RawMessage, len(paths))
+				for id, path := range paths {
+					mapped[mapID(id)] = path
+				}
+				raw, _ := json.Marshal(mapped)
+				node.CallPaths = string(raw)
+			}
+		}
+	}
+	for position := range view.Frames {
+		view.Frames[position].ID = safeIDFragment(targetID) + "-" + view.Frames[position].ID
+	}
+	for position := range view.Edges {
+		view.Edges[position].From = mapID(view.Edges[position].From)
+		view.Edges[position].To = mapID(view.Edges[position].To)
+		view.Edges[position].Operations = mapIDs(view.Edges[position].Operations)
+	}
+	view.Trace = mapIDs(view.Trace)
+}
+
+func targetMapNodeID(targetID, id string) string {
+	if targetID == "" || !strings.HasPrefix(id, "n-") {
+		return id
+	}
+	return "n-" + safeIDFragment(targetID) + "-" + strings.TrimPrefix(id, "n-")
 }
 
 // Kept as the static zone layout; the interactive explorer projects these
@@ -353,8 +413,8 @@ func (builder *pageBuilder) buildZoneMap(section *pageSection, index *groupindex
 		node.Neighbours = strings.Join(mapNodeIDs(local), " ")
 		node.Degree = len(local) - outside
 		node.Steps = stepRanges(steps[group.ID])
-		node.Keys = builder.keySymbols(group, maxKeySymbols)
-		node.Concepts = builder.groupConcepts(group)
+		node.Keys = builder.keySymbols(index.Target.ID, group, maxKeySymbols)
+		node.Concepts = builder.groupConcepts(index.Target.ID, group)
 		node.StepX = node.X + node.Width - 10
 		node.StepY = node.Y + mapNodeHeight - 9
 		result.Nodes = append(result.Nodes, node)
@@ -416,10 +476,10 @@ type pageMapConcept struct {
 
 // Concept explanations belong to existing type subjects, including overlapping
 // memberships. The renderer neither guesses terminology nor writes definitions.
-func (builder *pageBuilder) groupConcepts(group groupindex.Group) string {
+func (builder *pageBuilder) groupConcepts(targetID string, group groupindex.Group) string {
 	var concepts []pageMapConcept
 	for _, id := range group.MemberSubjectIDs {
-		ref, ok := builder.subjects[id]
+		ref, ok := builder.subject(targetID, id)
 		if !ok || ref.subject.Object == nil || ref.subject.Object.Kind != programindex.ObjectType {
 			continue
 		}
@@ -462,11 +522,11 @@ func (builder *pageBuilder) groupConcepts(group groupindex.Group) string {
 }
 
 // keySymbols names a group's key symbols, the documented ones first.
-func (builder *pageBuilder) keySymbols(group groupindex.Group, most int) string {
+func (builder *pageBuilder) keySymbols(targetID string, group groupindex.Group, most int) string {
 	type key struct{ name, doc string }
 	var documented, plain []key
 	for _, id := range group.MemberSubjectIDs {
-		ref, known := builder.subjects[id]
+		ref, known := builder.subject(targetID, id)
 		if !known {
 			continue
 		}
@@ -1561,7 +1621,7 @@ func mapNodeID(groupID string) string { return "n-" + safeIDFragment(groupID) }
 // groupAnchorID names the group block a map node links to. It is scoped by
 // section so two targets can hold groups with the same identity.
 func groupAnchorID(sectionID, groupID string) string {
-	return sectionID + "-g-" + safeIDFragment(groupID)
+	return sectionID + "-" + safeIDFragment(groupID)
 }
 
 // safeIDFragment keeps only characters that are safe in an HTML id and a URL
@@ -1702,24 +1762,13 @@ func (builder *pageBuilder) repoOutgoingCounts() map[string]int {
 		return counts
 	}
 	seen := make(map[[2]string]struct{})
-	for _, portal := range builder.data.Facts.OfKind(facts.KindPortal) {
-		if len(portal.Refs) < 2 {
-			continue
-		}
-		call, callKnown := builder.factsByID[portal.Refs[0]]
-		route, routeKnown := builder.factsByID[portal.Refs[1]]
-		if !callKnown || !routeKnown || call.TargetID == route.TargetID {
-			continue
-		}
-		if call.Anchor != nil && builder.testPaths[call.Anchor.Path] || route.Anchor != nil && builder.testPaths[route.Anchor.Path] {
-			continue
-		}
-		key := [2]string{call.TargetID, route.TargetID}
+	for _, portal := range builder.portalLinks() {
+		key := [2]string{portal.call.TargetID, portal.route.TargetID}
 		if _, repeated := seen[key]; repeated {
 			continue
 		}
 		seen[key] = struct{}{}
-		counts[call.TargetID]++
+		counts[portal.call.TargetID]++
 	}
 	for pair := range builder.repoCodeDependencies() {
 		counts[pair[0]]++
@@ -2038,6 +2087,8 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) ([]pageRep
 				kind = "calls"
 			case "passes_callback":
 				kind = "callback bindings"
+			case "binds_implementation":
+				kind = "implementation bindings"
 			case "integration":
 				kind = "inferred integrations"
 			default:
@@ -2061,24 +2112,13 @@ func (builder *pageBuilder) repoEdges(nodes map[string]*pageRepoNode) ([]pageRep
 		}
 		symbols[key] += count
 	}
-	for _, portal := range builder.data.Facts.OfKind(facts.KindPortal) {
-		if len(portal.Refs) < 2 {
-			continue
-		}
-		call, callKnown := builder.factsByID[portal.Refs[0]]
-		route, routeKnown := builder.factsByID[portal.Refs[1]]
-		if !callKnown || !routeKnown || call.TargetID == route.TargetID {
-			continue
-		}
-		if call.Anchor != nil && builder.testPaths[call.Anchor.Path] || route.Anchor != nil && builder.testPaths[route.Anchor.Path] {
-			continue
-		}
-		key := pair{call.TargetID, route.TargetID}
+	for _, portal := range builder.portalLinks() {
+		key := pair{portal.call.TargetID, portal.route.TargetID}
 		if counts[key] == 0 && symbols[key] == 0 {
 			order = append(order, key)
 		}
 		counts[key]++
-		if portal.Resolution != facts.ResolutionPossible {
+		if !portal.possible {
 			exact[key]++
 		}
 	}

@@ -57,7 +57,7 @@ func TestRegistrationContractKeepsFullFamilyAndExactNestedJoins(t *testing.T) {
 		Relations: []programindex.RelationInput{
 			{
 				SourceRef: "registration", Kind: programindex.RelationCalls, FromRef: "owner",
-				Resolution: programindex.ResolutionUnresolved, Invocation: "direct", Location: location(10), TargetsObserved: 2,
+				Resolution: programindex.ResolutionUnresolved, Location: location(10), TargetsObserved: 2,
 				Witnesses:         []programindex.Witness{{Kind: "syntax_call", Location: location(10)}, {Kind: "syntax_call", Location: location(11)}},
 				WitnessesObserved: 2, PatternsObserved: 2,
 				Patterns: []programindex.RelationPatternInput{
@@ -95,7 +95,7 @@ func TestRegistrationContractKeepsFullFamilyAndExactNestedJoins(t *testing.T) {
 			},
 			{
 				SourceRef: "continuation", Kind: programindex.RelationCalls, FromRef: "owner",
-				Resolution: programindex.ResolutionUnresolved, Invocation: "direct", Location: location(12), TargetsObserved: 1,
+				Resolution: programindex.ResolutionUnresolved, Location: location(12), TargetsObserved: 1,
 				Witnesses: []programindex.Witness{{Kind: "syntax_call", Location: location(12)}}, WitnessesObserved: 1,
 				PatternsObserved: 1, Patterns: []programindex.RelationPatternInput{{
 					SourceRef: "continuation-pattern", Form: programindex.PatternCall, Selector: "configure", Location: location(12),
@@ -140,7 +140,7 @@ func TestRegistrationContractKeepsFullFamilyAndExactNestedJoins(t *testing.T) {
 		Name: "two-row neutral registration",
 		Registration: Relation{
 			Kind: programindex.RelationCalls, FromID: owner, Resolution: programindex.ResolutionUnresolved,
-			Invocation: "direct", Path: "src/service.ref", Line: 10,
+			Path: "src/service.ref", Line: 10,
 			TargetsObserved: 2, TargetsOmitted: 2, WitnessesObserved: 2, PatternsObserved: 2,
 			Patterns: []Pattern{pattern(10, callbackA, true), pattern(11, callbackB, false)},
 		},
@@ -158,7 +158,7 @@ func TestRegistrationContractKeepsFullFamilyAndExactNestedJoins(t *testing.T) {
 		},
 		Continuation: &Relation{
 			Kind: programindex.RelationCalls, FromID: owner, Resolution: programindex.ResolutionUnresolved,
-			Invocation: "direct", Path: "src/service.ref", Line: 12,
+			Path: "src/service.ref", Line: 12,
 			TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
 			Patterns: []Pattern{{
 				Form: programindex.PatternCall, Selector: "configure", Path: "src/service.ref", Line: 12,

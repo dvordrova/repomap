@@ -25,15 +25,15 @@ func TestSQLCConnectsConfigInputsAndOutputsWithoutGit(t *testing.T) {
 	result := buildFacts(t, root, repository)
 	nodes := map[string]facts.Fact{}
 	for _, node := range result.OfKind(facts.KindEntity) {
-		nodes[node.Key] = node
+		nodes[node.Path] = node
 	}
-	if nodes["path:migrations"].Value != "present" || len(nodes["path:migrations"].Evidence) != 2 {
+	if nodes["migrations"].Value != "present" || len(nodes["migrations"].Evidence) != 2 {
 		t.Fatal("migration members lost")
 	}
-	if nodes["path:db/generated"].Value != "present" || len(nodes["path:db/generated"].Evidence) != 2 {
+	if nodes["db/generated"].Value != "present" || len(nodes["db/generated"].Evidence) != 2 {
 		t.Fatal("untracked output members lost")
 	}
-	if nodes["path:client"].Value != "not_in_corpus" {
+	if nodes["client"].Value != "not_in_corpus" {
 		t.Fatal("missing output disappeared")
 	}
 	var links []facts.Fact
@@ -50,7 +50,7 @@ func TestSQLCConnectsConfigInputsAndOutputsWithoutGit(t *testing.T) {
 		if link.Extractor != "sqlc" || link.Anchor.Path != "db/sqlc.yaml" {
 			t.Fatalf("link origin = %+v", link)
 		}
-		if link.Key == "configured queries input" && byID[link.Refs[0]].Key == "db/sqlc.yaml#sql[0]" {
+		if link.Key == "configured queries input" && byID[link.Refs[0]].Symbol == "sqlc (postgresql)" {
 			if link.Anchor.Line != 5 || byID[link.Refs[1]].Path != "db/queries" {
 				t.Fatalf("query anchor = %+v", link)
 			}

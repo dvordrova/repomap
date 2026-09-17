@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +19,21 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
 )
+
+func graphPlaceID(t *testing.T, graph atlas.Graph, kind atlas.PlaceKind, path string, line int, name string) string {
+	t.Helper()
+	for _, place := range graph.Places {
+		if place.Kind != kind || place.Path != path || line != 0 && place.LineNo != line {
+			continue
+		}
+		if name != "" && (place.Symbol == nil || place.Symbol.Decl.Name != name) {
+			continue
+		}
+		return place.ID
+	}
+	t.Fatalf("missing %s place at %s:%d %s", kind, path, line, name)
+	return ""
+}
 
 func testGraph(t *testing.T) atlas.Graph {
 	t.Helper()
@@ -29,7 +46,14 @@ func testGraph(t *testing.T) atlas.Graph {
 		place.Given = fmt.Sprintf("%d files", count)
 		return place
 	}
+	nextNode := 0
 	file := func(path string, depth int, decls []atlas.Decl, callers, callees []string, generated bool) atlas.Place {
+		for position := range decls {
+			if decls[position].ObjectID == "" {
+				nextNode++
+				decls[position].ObjectID = fmt.Sprintf("n%d", nextNode)
+			}
+		}
 		return atlas.Place{
 			ID: atlas.FileID(path), Kind: atlas.PlaceFile, Path: path, Depth: depth,
 			Parent: atlas.DirectoryID(filepath.Dir(path)), TargetIDs: []string{"t1"},
@@ -55,6 +79,20 @@ func testGraph(t *testing.T) atlas.Graph {
 		},
 		Seeds: []string{atlas.FileID("pkg/a/x.go")},
 	}
+	var symbols []atlas.Place
+	for _, file := range graph.Places {
+		if file.File == nil {
+			continue
+		}
+		for rank, decl := range file.File.Decls {
+			symbols = append(symbols, atlas.Place{
+				ID: atlas.SymbolID(file.Path, decl.LineNo, decl.Name), Kind: atlas.PlaceSymbol,
+				Path: file.Path, LineNo: decl.LineNo, Parent: file.ID, TargetIDs: append([]string(nil), file.TargetIDs...),
+				Given: decl.Name, Symbol: &atlas.SymbolFacts{Decl: decl, Candidate: !file.File.Generated, Rank: rank + 1},
+			})
+		}
+	}
+	graph.Places = append(graph.Places, symbols...)
 	atlas.SortPlaces(graph.Places)
 	encoded, err := atlas.EncodeGraph(graph)
 	if err != nil {
@@ -75,6 +113,7 @@ type tableProvider struct {
 	mu                 sync.Mutex
 	calls              int
 	refuse             map[string]bool
+	refuseStage        string
 	boxFor             map[string]string
 	fileLineFor        map[string]string
 	openFor            map[string]string
@@ -231,7 +270,7 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 	for _, row := range request.Rows {
 		key, _ := row["key"].(string)
 		path, _ := row["path"].(string)
-		if provider.refuse[path] {
+		if provider.refuse[path] && (provider.refuseStage == "" || provider.refuseStage == request.Table) {
 			refused = true
 		}
 		provider.mu.Lock()
@@ -370,6 +409,14 @@ func readOptions(t *testing.T, graph atlas.Graph, provider llm.Provider, cacheRo
 	}
 }
 
+func TestCompactIDsUseNumericOrder(t *testing.T) {
+	ids := []string{"p10", "p2", "p1", "p11"}
+	sort.Slice(ids, func(i, j int) bool { return compactIDLess(ids[i], ids[j]) })
+	if !reflect.DeepEqual(ids, []string{"p1", "p2", "p10", "p11"}) {
+		t.Fatalf("compact IDs sorted lexically: %v", ids)
+	}
+}
+
 func readWindowPayload(filename string) ([]byte, error) {
 	raw, err := os.ReadFile(filename)
 	if err != nil {
@@ -428,7 +475,7 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "*.input.ref.json"))
 	// Three directory rounds, one file round and the observed source-file
 	// collaboration, then the target description from accepted parts.
-	if len(requests) != 3+1+1+1 {
+	if len(requests) != 3+1+2+1+1 {
 		t.Fatalf("request files: %d", len(requests))
 	}
 	if err := atlas.Validate(result.Atlas); err != nil {
@@ -473,7 +520,7 @@ func TestLiveReadingKeepsFileLinesWithoutDirectoryPlacement(t *testing.T) {
 			t.Fatalf("moved file: %+v", file)
 		}
 	}
-	if target.Line != "Text for r1" {
+	if target.Line != "Text for "+target.ID {
 		t.Fatalf("target line: %q", target.Line)
 	}
 	tables, _ := os.ReadFile(result.TablesPath)
@@ -510,7 +557,7 @@ func TestSingleDeclarationPartSurvives(t *testing.T) {
 func TestRejectedWindowFallsBackAndIsNotCached(t *testing.T) {
 	graph := testGraph(t)
 	cacheRoot := t.TempDir()
-	provider := &tableProvider{refuse: map[string]bool{"pkg/b/z.go": true}}
+	provider := &tableProvider{refuse: map[string]bool{"pkg/b/z.go": true}, refuseStage: lines.StageFiles}
 	opts := readOptions(t, graph, provider, cacheRoot)
 	opts.WindowRows = 2
 	result, err := Read(context.Background(), opts)

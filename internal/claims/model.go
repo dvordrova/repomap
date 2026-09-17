@@ -12,15 +12,16 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
 const (
-	Version          = 1
+	Version          = 2
 	ArtifactFilename = "claims.json"
 
-	digestDomain = "repomap-claims-v1\x00"
+	digestDomain = "repomap-claims-v2\x00"
 	idDomain     = "repomap-claim-id-v1\x00"
 	idHexWidth   = 16
 
@@ -75,7 +76,8 @@ type Result struct {
 	SHA256   string  `json:"sha256"`
 }
 
-// NewClaimID derives a stable id from the source, its location and the text.
+// NewClaimID derives an extraction-local key. Seal replaces it with the
+// artifact-owned compact hN identity after canonical ordering.
 func NewClaimID(source Source, location string, text string) string {
 	hasher := sha256.New()
 	hasher.Write([]byte(idDomain))
@@ -94,6 +96,14 @@ func Seal(result Result) (Result, error) {
 		owned.Claims = []Claim{}
 	}
 	sort.SliceStable(owned.Claims, func(i, j int) bool { return claimLess(owned.Claims[i], owned.Claims[j]) })
+	seen := make(map[string]struct{}, len(owned.Claims))
+	for position := range owned.Claims {
+		if _, duplicate := seen[owned.Claims[position].ID]; duplicate {
+			return Result{}, fmt.Errorf("claims: duplicate extraction key %q", owned.Claims[position].ID)
+		}
+		seen[owned.Claims[position].ID] = struct{}{}
+		owned.Claims[position].ID = fmt.Sprintf("h%d", position+1)
+	}
 	digest, err := resultDigest(owned)
 	if err != nil {
 		return Result{}, err
@@ -125,6 +135,9 @@ func (result Result) Validate() error {
 			return fmt.Errorf("claims: duplicate id %q", claim.ID)
 		}
 		ids[claim.ID] = struct{}{}
+		if claim.ID != fmt.Sprintf("h%d", position+1) {
+			return fmt.Errorf("claims: claim IDs are not canonical")
+		}
 		if position > 0 && !claimLess(result.Claims[position-1], claim) {
 			return fmt.Errorf("claims: rows are not canonical at %d", position)
 		}
@@ -157,7 +170,7 @@ func (result Result) ByID() map[string]Claim {
 }
 
 func (claim Claim) validate() error {
-	if !strings.HasPrefix(claim.ID, "c-") || len(claim.ID) < 2+idHexWidth {
+	if claim.ID == "" {
 		return fmt.Errorf("invalid id %q", claim.ID)
 	}
 	if !claim.Source.Valid() {
@@ -207,7 +220,18 @@ func claimLess(a, b Claim) bool {
 	if a.Date != b.Date {
 		return a.Date > b.Date
 	}
-	return a.ID < b.ID
+	return compactClaimIDLess(a.ID, b.ID)
+}
+
+func compactClaimIDLess(left, right string) bool {
+	if strings.HasPrefix(left, "h") && strings.HasPrefix(right, "h") {
+		leftOrdinal, leftErr := strconv.Atoi(strings.TrimPrefix(left, "h"))
+		rightOrdinal, rightErr := strconv.Atoi(strings.TrimPrefix(right, "h"))
+		if leftErr == nil && rightErr == nil {
+			return leftOrdinal < rightOrdinal
+		}
+	}
+	return left < right
 }
 
 func resultDigest(result Result) (string, error) {

@@ -23,13 +23,17 @@ new description or selection requests.
   directory and file, the declarations of a file with the first sentence of
   their docstrings, every eligible callable, type, module body and module-level
   value without a per-file rank cutoff, the boundaries
-  (native routes, client calls, listeners, configuration reads and supported SDK source candidates), the
-  file-to-file edges and the seeds. Native listener addresses keep the fixed
-  `listen_address` kind; they remain available to reading and matching but do
-  not become HTTP request operations. Native boundary places share only exact
+  (registrations with their holder, SQL statements and configuration reads),
+  the file-to-file edges and the seeds. A registration's holder is the value
+  the call acts on, as `path:line:column` of the call that produced it,
+  followed back through the calls outside the repository (a route put into a
+  group made from a router is held by the router). Native boundary places share only exact
   source observations: path, line, column, kind, method, literal values and
   compiler-located subject. Each place retains every original target's FactID
-  and ObjectID behind local `origins`, sorted and deduplicated when sealed.
+  and target-qualified `t*.n*` ObjectID behind local `origins`, sorted and
+  deduplicated when sealed. The sealed graph assigns compact `d*`, `f*`, `s*`,
+  `b*`, `y*`, `m*` and `a*` place IDs once and rewrites every graph reference
+  in the same pass; source-shaped construction keys never survive in JSON.
   A native place keeps only the observing targets that also hold its file, with
   their origins; an observation no holding target made is dropped before
   reading, and a target's projection names only boxes that target has.
@@ -58,6 +62,15 @@ new description or selection requests.
   Explicit read-stage input and row budgets
   remain available. Other tables retain their owning context and round bounds.
   The actual prepared provider request still obeys the shared transport envelope.
+  Every table row uses its existing artifact ID as the provider-visible `key`:
+  `d*`, `f*`, `s*`, `b*`, `t*`, `j*` or `q*` as owned by that artifact. The
+  table layer never renumbers rows to `r1..rN`; symbol selection and operation
+  review use their source symbol's `s*` rather than `selection:<id>` or
+  `operation:<id>` pseudo-places. Drawn arrows receive persisted compact `x*`
+  IDs before their sentence request instead of using a joined box-pair key.
+  Request-local `c*` values remain
+  only for choices which have no artifact identity, such as one row's calls or
+  answer-source catalogue.
   The model writes one line or one closed choice per
   cell; the architecture stage selects membership, while code validates exact
   references and owns native arrows and their direction, joints by
@@ -69,9 +82,9 @@ new description or selection requests.
   as before. A sequence cell citing only refs outside its row's options, or nothing at
   all (a provider may send null), is an empty selection and keeps the row's
   other cells; commas separate refs like spaces; exceeding the limit still
-  refuses the cell. A response that answers exactly one row per asked row with no key on any
-  of them is read in asked order; a partial or partly keyed response keeps the
-  strict rule, every row names its key or is refused. Every row and answer is printed to `tables.md`, with prompts, requests, raw
+  refuses the cell. Every response row must copy an asked artifact ID. Missing,
+  unknown and duplicate keys are refused; response order never substitutes for
+  identity. Every row and answer is printed to `tables.md`, with prompts, requests, raw
   responses and normalized source-bound results under `tables/`. The ordinary
   path saves `reading-input.json` before its first atlas call; `read` consumes
   exactly that format and runs the same reader. Above two thousand files the directory and
@@ -108,6 +121,9 @@ and supplied-code execution retain their actual runtime/caller context; shared
 types or absent observations cannot establish a runtime check or its absence.
 The same owner groups accepted parts into larger areas with their declarations
 and native collaboration context, rather than only titles and file counts.
+Original declarations use their already scoped `t*.n*` refs. Accepted parts,
+areas and cross-target joints are born as short `p*`, `z*` and `j*` IDs; no
+`design:<sha>`, composed joint path or second post-model renumbering exists.
 
 Requests split only for the actual provider envelope, preserving whole input
 items. After a split, accepted parts undergo aggregate merge review; rejected
@@ -122,14 +138,17 @@ is a valid abstention in parts, merge and areas modes; a nonempty response whose
 groups are all invalid remains refused. Caption whitespace follows the ordinary
 table text normalization. Diagnostics distinguish ungrouped inputs and discarded
 unknown members from refused groups. Stage rejection counts count affected
-windows once, not each group or omitted input. Group IDs derive from target and exact member IDs,
-not generated names. A target description reads its accepted responsibilities
+windows once, not each group or omitted input. Accepted groups are canonically
+ordered and receive target-local `g1`, `g2`, ... IDs; containers use `k*` and
+group connections use `x*`. These are references inside one sealed overlay,
+not content hashes or cross-revision identities. A target description reads its accepted responsibilities
 even for a single-target run; it does not inherit a directory caption.
 
 Atlas v8 saves explicit `member_ids`; one file may appear in multiple parts with
 different declarations. Native lexical children inherit their owning
-declaration's part. GroupsIndex retains every original subject and structural
-relation, and projects cross-part native relationships with exact subject IDs,
+declaration's part. ProgramIndex retains every original subject and structural
+relation. GroupsIndex persists only semantic annotations and projects
+cross-part native relationships with exact subject IDs,
 locations and original resolution, including calls within one source file.
 File endpoints acquire a part only when all their declarations share that part.
 Selecting a module body does not assign other declarations in its file; those
@@ -185,6 +204,38 @@ remain model decisions with `self`/`none`, not local middleware classification.
   Native HTTP addresses survive missing or refused prose. Standard-library
   transports may establish communication; this does not promote their package
   objects into remote participants. No package blacklist or API handbook is added.
+
+## External symbols: the `atlas_api` table
+
+The model reads the symbols outside the repository that the code calls, one
+row per symbol, once per repository: `symbol`, `word`, `hands_callable` when a
+repository callable is passed to it, its `literals`, its `sites` and the
+symbols called `beside` it on the same holders. Three optional cells, each
+absent when the symbol does not do that: `binds` (what a callable handed to
+it becomes: `http_server`, `queue_consumer`, `scheduled`, `interaction`,
+`extension`, `other`), `publishes` (`yes` when the call makes what its holder
+holds reachable: a server started, an app run, a consumer connected) and
+`talks` (the kind of other running system it sends to, reads from or creates
+a client of). A symbol may hold several cells. The roles are recorded on the
+atlas as `api`.
+
+The roles make the boundaries; no call site is asked whether it is one. A
+registration handing a callable to a `binds` symbol is that entry, with the
+role's kind; one to a symbol without `binds` is nothing. A registration on a
+`publishes` symbol is the listener (`listen_address`, direction in) and gives
+its address to every entry on the same holder; when the code could not follow
+the value to a holder, the `atlas_publish` table shows the holders that hold
+entries and asks which one the call serves. Every call site of a `talks`
+symbol is an outgoing boundary of that kind, whether or not it carries a
+literal. Bound entries are operations through their boundary and are not
+reviewed as operation candidates; the boundaries table explains a boundary and
+chooses the destination and address of an outgoing one, never its existence
+or kind. The `listen_address` facts and the per-site `decision`, `kind` and
+`basis` cells, and the symbols' `outbound` selection, are gone.
+
+Without `--captions` the model is asked for decisions alone: every prose cell
+(titles, lines, aliases, sentences, operation descriptions) keeps its
+fallback, and a table of prose alone is not sent.
 
 A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell (27 Freqtrade rows were refused for it). Fixed native boundaries request explanation rather than pointless existence/kind choices. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems. The address catalogue lists only literals that can be addresses (no format templates, nothing from formatting, logging, time or string packages) and is sent only for outgoing rows whose address the code does not know; `destination` is a closed choice from the shared known-systems list (`internal/atlas/destinations`) annotated with the target's dependencies, with `other: ` for a system outside it; an owner's calls near the line and its source context are sent once per window and rows reference them. A native outbound fact without a column claims every selected call on its path and line, so the same call is not reviewed a second time as a candidate; a fact with a known column claims only that call.
 
@@ -518,7 +569,10 @@ Independent joint protocol decisions additionally use exact row memos keyed by t
 `orientation` is one model-assisted stage over facts, claims, and the complete
 matched GroupsIndex set. It returns one repository summary, one role per
 target, a run recipe, and one main flow. The model selects request-local refs
-that Go restores to exact fact, claim, and subject ids. Validation is a pure
+from the exact advertised artifact identities: `t*` targets, `a*` facts, `h*`
+claims and target-qualified graph subjects such as `t1.n22`. Groups likewise use
+qualified existing IDs such as `t1.g3`. Go does not allocate a second numbering
+scheme before the call. Validation is a pure
 function over the response and the advertised catalog. Set refs filter unknown
 or incompatible members and deduplicate repeats, recording ignored refs; a row
 with no required evidence, a recipe step with no manifest or entrypoint evidence,

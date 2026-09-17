@@ -10,7 +10,7 @@ import (
 )
 
 func TestJointMemoSharesExactRowsKeepsRefusedNeighboursAndRevalidatesReplay(t *testing.T) {
-	p := &independentResponseProvider{response: []byte(`{"rows":[{"key":"r1","same":"yes","label":"reads orders"},{"key":"r2","same":"invalid","label":"refused"}]}`)}
+	p := &independentResponseProvider{response: []byte(`{"rows":[{"key":"first-current-id","same":"yes","label":"reads orders"},{"key":"different-current-id","same":"invalid","label":"refused"}]}`)}
 	r := answerTestReader(t, nil, p)
 	def := lines.Joints()
 	shared := []table.Field{{Name: "question", Value: "joints"}}
@@ -34,7 +34,7 @@ func TestJointMemoSharesExactRowsKeepsRefusedNeighboursAndRevalidatesReplay(t *t
 	if err != nil || !found {
 		t.Fatal("missing exact original exchange", err)
 	}
-	p.response = []byte(`{"rows":[{"key":"r1","same":"no","label":"-"},{"key":"r2","same":"yes","label":"reads other"}]}`)
+	p.response = []byte(`{"rows":[{"key":"first-current-id","same":"no","label":"-"},{"key":"different-current-id","same":"yes","label":"reads other"}]}`)
 	prepared, err := llm.NewPrepared(exchange.Request)
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestJointMemoSharesExactRowsKeepsRefusedNeighboursAndRevalidatesReplay(t *t
 	}
 	changed := side
 	changed.Target = "different service"
-	p.response = []byte(`{"rows":[{"key":"r1","same":"yes","label":"new context"}]}`)
+	p.response = []byte(`{"rows":[{"key":"same-id","same":"yes","label":"new context"}]}`)
 	_, err = r.runJointTable(t.Context(), def, 4, shared, []table.Row{lines.JointRow("same-id", "/orders", changed, side)})
 	if err != nil || p.calls != 3 {
 		t.Fatalf("semantic target context ignored: %v calls%d", err, p.calls)
@@ -63,7 +63,7 @@ func TestJointMemoSharesExactRowsKeepsRefusedNeighboursAndRevalidatesReplay(t *t
 }
 
 func TestPeerMemoCanonicalizesFullCatalogueAndRestoresCurrentEndpoints(t *testing.T) {
-	p := &independentResponseProvider{response: []byte(`{"rows":[{"key":"r1","peer":"p1","label":"reads orders"}]}`)}
+	p := &independentResponseProvider{response: []byte(`{"rows":[{"key":"old-out","peer":"p1","label":"reads orders"}]}`)}
 	r := answerTestReader(t, nil, p)
 	r.targets = map[string]*targetState{"client": {role: atlas.RoleProduct}, "server": {role: atlas.RoleProduct}}
 	targets := map[string]TargetMeta{"client": {ID: "client", Name: "client"}, "server": {ID: "server", Name: "server"}}
@@ -104,7 +104,7 @@ func (jointProviderState) State() []byte {
 }
 
 func TestJointMemoDoesNotCrossProviderConfiguration(t *testing.T) {
-	p := &independentResponseProvider{response: []byte(`{"rows":[{"key":"r1","same":"no","label":"-"}]}`)}
+	p := &independentResponseProvider{response: []byte(`{"rows":[{"key":"joint","same":"no","label":"-"}]}`)}
 	r := answerTestReader(t, nil, p)
 	rows := []table.Row{lines.JointRow("joint", "x", lines.BoundarySide{Path: "a.py"}, lines.BoundarySide{Path: "b.py"})}
 	if _, err := r.runJointTable(t.Context(), lines.Joints(), 1, nil, rows); err != nil {

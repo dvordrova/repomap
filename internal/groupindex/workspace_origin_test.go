@@ -10,7 +10,7 @@ func TestObjectFactsKeepCanonicalWorkspaceOrigin(t *testing.T) {
 	external := &programindex.ExternalSymbol{AuthorityKind: programindex.ExternalAuthorityPackage,
 		PackagePath: "got", Name: "get", RepositoryPath: "shared"}
 	facts := ObjectFacts{Name: "got.get", Kind: programindex.ObjectExternalSymbol, Visibility: programindex.VisibilityPublic,
-		SymbolLinkIdentities: []programindex.SymbolLinkIdentity{}, External: cloneExternal(external)}
+		External: cloneExternal(external)}
 	external.RepositoryPath = "changed"
 	if facts.External.RepositoryPath != "shared" {
 		t.Fatal("group facts did not copy the compiler-owned origin")

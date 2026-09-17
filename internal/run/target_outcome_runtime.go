@@ -16,11 +16,12 @@ import (
 
 // repositorySelectedTarget projects one adapter-native selection into the
 // closed identity that can be shown even when page analysis never completes.
-func repositorySelectedTarget(target repositoryTypedTarget) (targetoutcome.SelectedTarget, error) {
+func repositorySelectedTarget(targetID string, target repositoryTypedTarget) (targetoutcome.SelectedTarget, error) {
 	if err := target.Validate(); err != nil {
 		return targetoutcome.SelectedTarget{}, err
 	}
 	return targetoutcome.NewSelectedTargetWithLanguages(
+		targetID,
 		targetoutcome.LanguageGroup(target.Key.Adapter),
 		target.AllowedLanguages,
 		target.Scope,

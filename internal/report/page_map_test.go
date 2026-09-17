@@ -26,8 +26,8 @@ func TestQuestionMapLinksKeepExactMembershipAndOverlappingOwners(t *testing.T) {
 	stop := atlas.QuestionStop{SubjectID: "write", Path: location.Path, Line: location.Line, Column: location.Column}
 	got := b.questionStepMapLinks(stop)
 	want := []pageQuestionMapLink{
-		{Label: "store (library) / Storage", Href: "#" + groupAnchorID("lib", "storage"), NodeID: mapNodeID("storage")},
-		{Label: "store (library) / Transactions", Href: "#" + groupAnchorID("lib", "transactions"), NodeID: mapNodeID("transactions")},
+		{Label: "store (library) / Storage", Href: "#" + groupAnchorID("lib", "storage"), NodeID: targetMapNodeID("library", mapNodeID("storage"))},
+		{Label: "store (library) / Transactions", Href: "#" + groupAnchorID("lib", "transactions"), NodeID: targetMapNodeID("library", mapNodeID("transactions"))},
 		{Label: "store (executable) / save", Href: "#" + operationNodeID("app", "save"), NodeID: operationNodeID("app", "save")},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -64,13 +64,13 @@ func TestMapConceptsUseExactTypeInterpretations(t *testing.T) {
 	b.subjects["helper"] = subjectRef{subject: groupindex.Subject{Object: &groupindex.ObjectFacts{Name: "Ticket", Kind: programindex.ObjectFunction}, Interpretation: &groupindex.Interpretation{Key: true, Line: "This is a function."}}}
 	group := groupindex.Group{Title: "Ticket management", MemberSubjectIDs: []string{"Ticket", "helper", "Receipt", "unknown"}}
 	var got []pageMapConcept
-	if err := json.Unmarshal([]byte(b.groupConcepts(group)), &got); err != nil {
+	if err := json.Unmarshal([]byte(b.groupConcepts("", group)), &got); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 2 || got[1].Name != "Receipt" || got[0].Name != "Ticket" || got[0].Explanation != "Exact retained explanation for Ticket" || got[0].Source.Path != "queue/types.go" || got[0].Source.Line != 4 {
 		t.Fatalf("concept membership or source changed: %+v", got)
 	}
-	if b.groupConcepts(groupindex.Group{MemberSubjectIDs: []string{"helper"}}) != "" {
+	if b.groupConcepts("", groupindex.Group{MemberSubjectIDs: []string{"helper"}}) != "" {
 		t.Fatal("a familiar function name became a type definition")
 	}
 }
@@ -82,8 +82,8 @@ func TestConceptColumnsKeepSameLineDeclarationsAndCrossTargetMembership(t *testi
 			Object:         &groupindex.ObjectFacts{Name: "Value", Kind: programindex.ObjectType, Location: &programindex.Location{Path: "types.ts", Line: 4, Column: column}},
 			Interpretation: &groupindex.Interpretation{Key: true, Line: "A value used by the program."}}}
 	}
-	application := b.groupConcepts(groupindex.Group{MemberSubjectIDs: []string{"application-left", "application-right"}})
-	library := b.groupConcepts(groupindex.Group{MemberSubjectIDs: []string{"library-left"}})
+	application := b.groupConcepts("", groupindex.Group{MemberSubjectIDs: []string{"application-left", "application-right"}})
+	library := b.groupConcepts("", groupindex.Group{MemberSubjectIDs: []string{"library-left"}})
 	var a, shared []pageMapConcept
 	if err := json.Unmarshal([]byte(application), &a); err != nil {
 		t.Fatal(err)
@@ -249,6 +249,40 @@ func TestOperationMapUsesOneDestinationForOverlappingComponentViews(t *testing.T
 	}
 }
 
+func TestOperationMapDoesNotBorrowSiblingGroupByEqualSourceLocation(t *testing.T) {
+	shared := programindex.Location{Path: "internal/app/users.go", Line: 18, Column: 1}
+	api := groupindex.Index{
+		Target: programindex.Target{ID: "t1", Kind: "executable"},
+		Subjects: []groupindex.Subject{
+			{ID: "n1", Object: &groupindex.ObjectFacts{Name: "main", Location: &programindex.Location{Path: "cmd/api/main.go", Line: 11, Column: 1}}},
+			{ID: "n2", Object: &groupindex.ObjectFacts{Name: "NewUsers", Location: &shared}},
+		},
+		Groups:          []groupindex.Group{{ID: "g1", Title: "cmd/api", MemberSubjectIDs: []string{"n1"}}},
+		Operations:      []groupindex.Operation{{ID: "o1", SubjectID: "n1", GroupID: "g1", Name: "GET /users/:id", Kind: "request", Location: programindex.Location{Path: "cmd/api/main.go", Line: 20, Column: 1}}},
+		StructuralEdges: []groupindex.StructuralEdge{{FromSubjectID: "n1", ToSubjectID: "n2", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact}},
+	}
+	cli := groupindex.Index{
+		Target:   programindex.Target{ID: "t2", Kind: "executable"},
+		Subjects: []groupindex.Subject{{ID: "n2", Object: &groupindex.ObjectFacts{Name: "NewUsers", Location: &shared}}},
+		Groups:   []groupindex.Group{{ID: "g2", Title: "shared CLI wiring", MemberSubjectIDs: []string{"n2"}}},
+	}
+	builder := pageBuilder{indexes: []groupindex.Index{api, cli}, byProgram: map[string]*pageSection{
+		"t1": {ID: "api", programTargetID: "t1"},
+		"t2": {ID: "cli", programTargetID: "t2"},
+	}}
+	got := builder.buildOperationMap(builder.byProgram["t1"], &api)
+	for _, node := range got.Nodes {
+		if node.Remote || node.Component == "t2" {
+			t.Fatalf("equal source location invented a cross-target node: %+v", node)
+		}
+	}
+	for _, edge := range got.Edges {
+		if strings.Contains(edge.From, "foreign") || strings.Contains(edge.To, "foreign") {
+			t.Fatalf("equal source location invented a cross-target path: %+v", edge)
+		}
+	}
+}
+
 func TestZoneFramesDoNotCoverOtherZonesOrLooseNodes(t *testing.T) {
 	blocks := []mapBlock{
 		{container: &groupindex.Container{ID: "integration", Title: "Integration testing"}, groups: make([]groupindex.Group, 3)},
@@ -369,11 +403,11 @@ func TestMapStructureRetainsAreasAndGroupsWithoutOperations(t *testing.T) {
 			area = n
 		}
 	}
-	if area == nil || area.FullTitle != "Persistence" || area.Summary != "Stores data" || area.Children != mapNodeID("store")+" "+mapNodeID("buffer") {
+	if area == nil || area.FullTitle != "Persistence" || area.Summary != "Stores data" || area.Children != targetMapNodeID("target", mapNodeID("store"))+" "+targetMapNodeID("target", mapNodeID("buffer")) {
 		t.Fatalf("lost retained area: %+v", area)
 	}
 	for _, id := range []string{"store", "buffer", "loose"} {
-		if !present[mapNodeID(id)] {
+		if !present[targetMapNodeID("target", mapNodeID(id))] {
 			t.Fatalf("group %s disappeared", id)
 		}
 	}
@@ -428,8 +462,8 @@ func TestMapStructureRetainsIncomingCrossTargetConnectionsAtDestination(t *testi
 	}
 	for i, connection := range frontend.Connections {
 		edge := relations[i]
-		from := mapNodeID(section.ID + "-foreign-" + connection.From.GroupID)
-		if edge.From != from || edge.To != mapNodeID("core") || edge.Label != connection.Label || edge.Summary != connection.Summary || !edge.Possible {
+		from := targetMapNodeID("backend", mapNodeID(section.ID+"-foreign-"+connection.From.GroupID))
+		if edge.From != from || edge.To != targetMapNodeID("backend", mapNodeID("core")) || edge.Label != connection.Label || edge.Summary != connection.Summary || !edge.Possible {
 			t.Fatalf("incoming direction or interpretation changed: %+v", edge)
 		}
 		if want := builder.links.anchor(connection.FromLocation.Path, connection.FromLocation.Line, connection.FromLocation.Column); edge.FromSource != want {

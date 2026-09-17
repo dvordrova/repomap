@@ -40,18 +40,20 @@ func TestFileRowDescribesEvidenceWithoutDecidingArchitectureMembership(t *testin
 		t.Fatalf("a caller without witnesses borrowed leading declarations: %+v", callers[1])
 	}
 	def := Files()
-	windows, err := table.Windows(def, 1, []table.Row{FileRow(file, directory, noLines{}, places, nil), FileRow(file, directory, noLines{}, places, nil)})
+	first, second := FileRow(file, directory, noLines{}, places, nil), FileRow(file, directory, noLines{}, places, nil)
+	second.ID = "f2"
+	windows, err := table.Windows(def, 1, []table.Row{first, second})
 	if err != nil || len(windows) != 1 {
 		t.Fatalf("windows: %v", err)
 	}
-	result, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"r1","line":"Helps."},{"key":"r2","line":"Helps too."}]}`))
+	result, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"file:pkg/a/y.go","line":"Helps."},{"key":"f2","line":"Helps too."}]}`))
 	if err != nil || len(result.Rejections) != 0 {
 		t.Fatalf("omitted box refused: %+v / %v", result, err)
 	}
 	if _, asked := result.Answers[0]["box"]; asked || result.Answers[1]["box"] != "" {
 		t.Fatalf("file descriptions acquired membership: %+v", result.Answers)
 	}
-	moved, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"r1","line":"Helps.","box":"pkg/b"},{"key":"r2","line":"Helps too.","box":"new: Helpers"}]}`))
+	moved, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"file:pkg/a/y.go","line":"Helps.","box":"pkg/b"},{"key":"f2","line":"Helps too.","box":"new: Helpers"}]}`))
 	if err != nil || len(moved.Rejections) != 0 || moved.Answers[1]["box"] != "" {
 		t.Fatalf("unsolicited box choice gained authority: %+v / %v", moved, err)
 	}

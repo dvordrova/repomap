@@ -29,6 +29,7 @@ func AnalysisInput(
 		}
 	}
 	input := surfacediscovery.Input{
+		MatchInterfaceImplementations: true,
 		AnalysisTarget: &surfacediscovery.AnalysisTargetInput{
 			TargetRef: target.Ref, Kind: targetKind,
 			ModuleID: target.ModuleID, ModulePath: target.ModulePath, ModuleDir: target.ModuleDir,

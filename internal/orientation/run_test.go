@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -38,7 +39,6 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 				"title": "From the items request to the response",
 				"steps": []any{
 					map[string]any{"target": refs.target("beta"), "ref": refs.fact("call"), "explanation": "Beta calls GET /api/items."},
-					map[string]any{"target": refs.target("beta"), "ref": refs.fact("portal"), "explanation": "The call reaches Alpha's route."},
 					map[string]any{"target": refs.target("alpha"), "ref": refs.fact("route"), "explanation": "Alpha handles the route in Serve."},
 					map[string]any{"target": refs.target("alpha"), "ref": refs.subject("alpha", "core"), "explanation": "Apply computes the items."},
 				},
@@ -73,10 +73,10 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 		!reflect.DeepEqual(result.RunRecipe[0].FactIDs, []string{fixture.factID("manifest"), fixture.factID("config")}) {
 		t.Fatalf("recipe = %#v", result.RunRecipe)
 	}
-	if len(result.MainFlow.Steps) != 4 || result.MainFlow.Title == "" ||
-		result.MainFlow.Steps[1].FactID != fixture.factID("portal") ||
-		result.MainFlow.Steps[3].SubjectID != fixture.subjectID("alpha", "core") ||
-		result.MainFlow.Steps[3].TargetID != fixture.targetID("alpha") {
+	if len(result.MainFlow.Steps) != 3 || result.MainFlow.Title == "" ||
+		result.MainFlow.Steps[1].FactID != fixture.factID("route") ||
+		result.MainFlow.Steps[2].SubjectID != fixture.subjectID("alpha", "core") ||
+		result.MainFlow.Steps[2].TargetID != fixture.targetID("alpha") {
 		t.Fatalf("flow = %#v", result.MainFlow)
 	}
 	if provider.completions != 1 {
@@ -277,9 +277,13 @@ func TestRequestBytesAreDeterministicAndCloseOverRefs(t *testing.T) {
 	if !bytes.Equal(first, second) {
 		t.Fatalf("request bytes depend on groups order:\n%s\n%s", first, second)
 	}
-	for _, id := range fixture.canonicalIDs() {
-		if bytes.Contains(first, []byte(id)) {
-			t.Fatalf("request leaks exact id %q", id)
+	refs := fixture.refs(t)
+	for _, ref := range []string{
+		fixture.targetID("alpha"), fixture.factID("entrypoint"), fixture.claimID("readme"),
+		refs.subject("alpha", "inbound"),
+	} {
+		if ref == "" || !bytes.Contains(first, []byte(`"`+ref+`"`)) {
+			t.Fatalf("request did not preserve canonical compact ref %q", ref)
 		}
 	}
 	if !bytes.Contains(first, []byte(`"content_trust":"`+contentTrust+`"`)) {
@@ -429,7 +433,7 @@ func (provider *presetProvider) assertRequestShape(t *testing.T, fixture *fixtur
 	if len(seen.Targets) != 2 || seen.Targets[0].Root != "alpha" || seen.Targets[1].Manifest != "beta/go.mod" {
 		t.Fatalf("targets = %#v", seen.Targets)
 	}
-	if seen.OmittedFactCounts["import"] != 1 || seen.OmittedFactCounts["todo"] != 1 || len(seen.Facts) != 10 {
+	if seen.OmittedFactCounts["import"] != 1 || seen.OmittedFactCounts["todo"] != 1 || len(seen.Facts) != 9 {
 		t.Fatalf("facts = %d rows, omitted %v", len(seen.Facts), seen.OmittedFactCounts)
 	}
 	if len(seen.Claims) != 2 || seen.Claims[1].Source != "readme" ||
@@ -443,15 +447,6 @@ func (provider *presetProvider) assertRequestShape(t *testing.T, fixture *fixtur
 		if group.MemberCount != len(group.Members) || len(group.Members) == 0 || group.Members[0].Anchor == "" {
 			t.Fatalf("group members = %#v", group)
 		}
-	}
-	var portal factWire
-	for _, fact := range seen.Facts {
-		if fact.Kind == string(facts.KindPortal) {
-			portal = fact
-		}
-	}
-	if portal.Peer != "t1" || len(portal.Links) != 2 || portal.Anchor != "beta/main.go:10" {
-		t.Fatalf("portal wire = %#v", portal)
 	}
 	if _, aliased := fixture.subjectIDs["alpha"]["core"]; !aliased {
 		t.Fatal("fixture lost subject ids")
@@ -485,19 +480,11 @@ func (fixture *fixture) subjectID(target, label string) string {
 
 func (fixture *fixture) canonicalIDs() []string {
 	ids := []string{}
-	for _, id := range fixture.targetIDs {
-		ids = append(ids, id)
-	}
 	for _, id := range fixture.factIDs {
 		ids = append(ids, id)
 	}
 	for _, id := range fixture.claimIDs {
 		ids = append(ids, id)
-	}
-	for _, byLabel := range fixture.subjectIDs {
-		for _, id := range byLabel {
-			ids = append(ids, id)
-		}
 	}
 	return ids
 }
@@ -558,6 +545,11 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	alphaProgram, alphaIDs := testProgramIndex(t, "alpha")
 	betaProgram, betaIDs := testProgramIndex(t, "beta")
+	rebound, err := programindex.RebindTargetSet([]programindex.Index{alphaProgram, betaProgram})
+	if err != nil {
+		t.Fatalf("Rebind target set: %v", err)
+	}
+	alphaProgram, betaProgram = rebound[0], rebound[1]
 	alpha, _, err := groupindex.Build(alphaProgram, testProposals(alphaIDs))
 	if err != nil {
 		t.Fatalf("Build alpha: %v", err)
@@ -579,11 +571,12 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil || len(diagnostics) != 0 {
 		t.Fatalf("WithConnections: %v %#v", err, diagnostics)
 	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Target.Name < groups[j].Target.Name })
 
 	result := &fixture{
 		targetIDs: map[string]string{
-			"alpha": facts.NewTargetID("go", "alpha", "alpha/go.mod", "program-target-alpha"),
-			"beta":  facts.NewTargetID("go", "beta", "beta/go.mod", "program-target-beta"),
+			"alpha": alphaProgram.Target.ID,
+			"beta":  betaProgram.Target.ID,
 		},
 		factIDs:    map[string]string{},
 		claimIDs:   map[string]string{},
@@ -614,8 +607,8 @@ func (fixture *fixture) facts(t *testing.T, alphaProgramID, betaProgramID string
 	}
 	rows := []facts.Fact{
 		fact("entrypoint", facts.KindEntrypoint, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 1), Symbol: "Serve", Key: "callable"}),
-		fact("route", facts.KindHTTPRoute, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 10), Method: "GET", Path: "/api/items", Symbol: "Serve"}),
-		fact("call", facts.KindHTTPCall, facts.Fact{TargetID: beta, Anchor: anchor("beta/main.go", 10), Method: "GET", Path: "/api/items", Symbol: "Serve"}),
+		fact("route", facts.KindRegistration, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 10), Key: "HandleFunc", Method: "GET", Path: "/api/items", Symbol: "Serve", Values: []string{"GET /api/items"}}),
+		fact("call", facts.KindRegistration, facts.Fact{TargetID: beta, Anchor: anchor("beta/main.go", 10), Key: "Get", Method: "GET", Path: "http://alpha/api/items", Values: []string{"http://alpha/api/items"}}),
 		fact("manifest", facts.KindManifest, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/go.mod", 1), Key: "module", Value: "example.com/alpha"}),
 		fact("config", facts.KindConfigRead, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 3), Key: "PORT", Value: "8080"}),
 		fact("risk", facts.KindDynamicExecution, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 5), Key: "exec", Symbol: "Apply"}),
@@ -625,21 +618,27 @@ func (fixture *fixture) facts(t *testing.T, alphaProgramID, betaProgramID string
 		fact("import", facts.KindImport, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 2), Path: "alpha/util.go"}),
 		fact("todo", facts.KindTODO, facts.Fact{TargetID: alpha, Anchor: anchor("alpha/main.go", 6), Text: "TODO: tidy"}),
 	}
-	rows = append(rows, fact("portal", facts.KindPortal, facts.Fact{
-		TargetID: beta, PeerTargetID: alpha, Anchor: anchor("beta/main.go", 10), Method: "GET", Path: "/api/items",
-		Refs: []string{fixture.factID("call"), fixture.factID("route")}, Evidence: []facts.Anchor{{Path: "alpha/main.go", Line: 10}},
-		Resolution: facts.ResolutionExact,
-	}))
 	sealed, err := facts.Seal(facts.Result{
 		Revision: strings.Repeat("1", 40),
 		Targets: []facts.Target{
-			{ID: alpha, ProgramTargetID: alphaProgramID, Language: "go", Name: "alpha", Kind: "package", Root: "alpha", Manifest: "alpha/go.mod", Anchor: facts.Anchor{Path: "alpha/main.go", Line: 1}},
-			{ID: beta, ProgramTargetID: betaProgramID, Language: "go", Name: "beta", Kind: "package", Root: "beta", Manifest: "beta/go.mod", Anchor: facts.Anchor{Path: "beta/main.go", Line: 1}},
+			{ID: alphaProgramID, Language: "go", Name: "alpha", Kind: "package", Root: "alpha", Manifest: "alpha/go.mod", Anchor: facts.Anchor{Path: "alpha/main.go", Line: 1}},
+			{ID: betaProgramID, Language: "go", Name: "beta", Kind: "package", Root: "beta", Manifest: "beta/go.mod", Anchor: facts.Anchor{Path: "beta/main.go", Line: 1}},
 		},
 		Facts: rows,
 	})
 	if err != nil {
 		t.Fatalf("facts.Seal: %v", err)
+	}
+	labels := make(map[string]string, len(rows))
+	for _, row := range rows {
+		for label, id := range fixture.factIDs {
+			if id == row.ID {
+				labels[factKey(row)] = label
+			}
+		}
+	}
+	for _, row := range sealed.Facts {
+		fixture.factIDs[labels[factKey(row)]] = row.ID
 	}
 	return sealed
 }
@@ -653,10 +652,12 @@ func (fixture *fixture) claims(t *testing.T) claims.Result {
 	readme.ID = claims.NewClaimID(readme.Source, "README.md:1", readme.Text)
 	commit := claims.Claim{Source: claims.SourceCommit, Commit: "abc1234", Text: "Add items route", Date: "2024-03-01"}
 	commit.ID = claims.NewClaimID(commit.Source, commit.Commit, commit.Text)
-	fixture.claimIDs["readme"], fixture.claimIDs["commit"] = readme.ID, commit.ID
 	sealed, err := claims.Seal(claims.Result{Revision: strings.Repeat("1", 40), Claims: []claims.Claim{readme, commit}})
 	if err != nil {
 		t.Fatalf("claims.Seal: %v", err)
+	}
+	for _, claim := range sealed.Claims {
+		fixture.claimIDs[string(claim.Source)] = claim.ID
 	}
 	return sealed
 }
@@ -675,13 +676,12 @@ func testProgramIndex(t *testing.T, selector string) (programindex.Index, map[st
 		{
 			SourceRef: "dependency", Kind: programindex.ObjectExternalSymbol, Name: "queue.Publish", Visibility: programindex.VisibilityPublic,
 			External: &programindex.ExternalSymbol{AuthorityKind: programindex.ExternalAuthorityPackage, PackagePath: "example.com/queue", Name: "Publish"}, Location: location(4),
-			SymbolLinkIdentities: []programindex.SymbolLinkIdentityInput{{Domain: "go", Parts: []string{"example.com/queue", "Publish"}, Display: "queue.Publish"}},
 		},
 		{SourceRef: "ungrouped", Kind: programindex.ObjectFunction, Name: "DebugOnly", Visibility: programindex.VisibilityInternal, Location: location(6)},
 	}
 	relations := []programindex.RelationInput{{
 		SourceRef: "dispatch", Kind: programindex.RelationCalls, FromRef: "inbound", ToRefs: []string{"core"},
-		Resolution: programindex.ResolutionExact, Invocation: "sync", Location: location(10), TargetsObserved: 1,
+		Resolution: programindex.ResolutionExact, Location: location(10), TargetsObserved: 1,
 		Witnesses: []programindex.Witness{{Kind: "direct_call", Location: location(10)}}, WitnessesObserved: 1,
 		PatternsObserved: 1,
 		Patterns: []programindex.RelationPatternInput{{
@@ -761,4 +761,12 @@ func groupByTitle(t *testing.T, groups []groupindex.Group, title string) groupin
 	}
 	t.Fatalf("group %q not found", title)
 	return groupindex.Group{}
+}
+
+func factKey(row facts.Fact) string {
+	anchor := ""
+	if row.Anchor != nil {
+		anchor = row.Anchor.String()
+	}
+	return string(row.Kind) + "\x00" + row.TargetID + "\x00" + anchor + "\x00" + row.Path + "\x00" + row.Key
 }

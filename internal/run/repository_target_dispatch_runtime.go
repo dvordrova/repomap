@@ -43,8 +43,10 @@ type repositoryTargetDispatchOptions struct {
 	DisplayLanguage report.DisplayLanguage
 	// NoModel walks the atlas without a provider: every cell is its
 	// fallback line and no orientation is asked.
-	NoModel          bool
-	NoQuestions      bool
+	NoModel     bool
+	NoQuestions bool
+	// Captions asks the model for prose cells too; off, only decisions.
+	Captions         bool
 	Questions        []string
 	Output           *runOutput
 	FirstLayer       *debugdump.SemanticObserver
@@ -91,8 +93,8 @@ func dispatchRepositoryTargetPlan(
 	}
 	selectedTargets := make(map[repositoryTargetKey]targetoutcome.SelectedTarget, len(ordered))
 	selectedTargetRows := make([]targetoutcome.SelectedTarget, 0, len(ordered))
-	for _, target := range ordered {
-		selected, selectedErr := repositorySelectedTarget(target)
+	for position, target := range ordered {
+		selected, selectedErr := repositorySelectedTarget(fmt.Sprintf("t%d", position+1), target)
 		if selectedErr != nil {
 			return "", fmt.Errorf(
 				"repository target dispatcher: project selected target %s: %w",
@@ -147,7 +149,7 @@ func dispatchRepositoryTargetPlan(
 	}
 
 	runs := make([]targetPublishedRun, 0, len(ordered))
-	programStore := programindex.NewArtifactStore(filepath.Join(options.DebugDir, options.RunID, "program-facts"))
+	programStore := programindex.NewArtifactStore()
 	attemptedRunDirs := make([]string, 0, len(ordered))
 	pendingTargets := make([]targetPageConsoleContext, 0, len(ordered))
 	outcomes := make([]targetoutcome.Outcome, 0, len(ordered))
@@ -200,14 +202,14 @@ func dispatchRepositoryTargetPlan(
 		}
 		runDir := filepath.Join(options.DebugDir, runID)
 		attemptedRunDirs = append(attemptedRunDirs, runDir)
+		selected := selectedTargets[target.Key]
 		consoleTarget := targetPageConsoleContext{
 			DisplayPath: repositoryTypedTargetDisplay(target),
-			Scope:       target.Key.String(),
+			Scope:       selected.ID,
 			RunID:       runID,
 			Role:        role,
 		}
 		options.Output.TargetPage("started", consoleTarget)
-		selected := selectedTargets[target.Key]
 		currentStage := targetoutcome.StageTargetPreparation
 
 		descriptor, ok := registry.descriptor(target.Key.Adapter)
@@ -258,7 +260,7 @@ func dispatchRepositoryTargetPlan(
 				registry,
 				repositoryProgramBuildRequest{
 					Context: ctx, Corpus: options.Corpus,
-					Target: target, Facts: dispatchBinding.ProgramFacts,
+					Target: target, TargetID: fmt.Sprintf("t%d", index+1), Facts: dispatchBinding.ProgramFacts,
 				},
 			)
 		}
@@ -274,7 +276,6 @@ func dispatchRepositoryTargetPlan(
 			}
 			continue
 		}
-
 		childDeps := options.Deps
 		childDeps.sharedRepositoryCorpus = options.Corpus
 		state := cloneRepositoryState(options.RepositoryState)

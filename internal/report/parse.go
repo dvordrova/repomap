@@ -215,7 +215,7 @@ func restoreGroupGraphView(runDir string, data *ReportData) error {
 	if data.defaultProgramIndex == nil || data.ProgramPortfolio == nil {
 		return fmt.Errorf("report: groups index default ProgramIndex is unavailable")
 	}
-	index, err := groupindex.Decode(encoded)
+	index, err := groupindex.Decode(encoded, *data.defaultProgramIndex)
 	if err != nil {
 		return fmt.Errorf("report: decode groups index: %w", err)
 	}
@@ -359,39 +359,27 @@ func collectOpenablePaths(data *ReportData) error {
 			}
 		}
 	}
-	addProgram := func(target programindex.Target, view ProgramView) error {
-		for _, source := range target.Sources {
+	addProgram := func(index programindex.Index) error {
+		for _, source := range index.Target.Sources {
 			if err := add(source.Path); err != nil {
 				return err
 			}
 		}
-		for _, seed := range target.Seeds {
+		for _, seed := range index.Target.Seeds {
 			if seed.Location != nil {
 				if err := add(seed.Location.Path); err != nil {
 					return err
 				}
 			}
 		}
-		for _, seed := range view.Seeds {
-			if seed.LaunchLocation != nil {
-				if err := add(seed.LaunchLocation.Path); err != nil {
-					return err
-				}
-			}
-			if seed.DeclarationLocation != nil {
-				if err := add(seed.DeclarationLocation.Path); err != nil {
-					return err
-				}
-			}
-		}
-		for _, object := range view.Objects {
+		for _, object := range index.Objects {
 			if object.Location != nil {
 				if err := add(object.Location.Path); err != nil {
 					return err
 				}
 			}
 		}
-		for _, relation := range view.Relations {
+		for _, relation := range index.Relations {
 			if relation.Location != nil {
 				if err := add(relation.Location.Path); err != nil {
 					return err
@@ -409,7 +397,7 @@ func collectOpenablePaths(data *ReportData) error {
 	}
 	if data.ProgramPortfolio != nil {
 		for _, entry := range data.ProgramPortfolio.Entries {
-			if err := addProgram(entry.Target, entry.View); err != nil {
+			if err := addProgram(entry); err != nil {
 				return err
 			}
 		}

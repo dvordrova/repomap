@@ -20,7 +20,7 @@ func bindingObservationTarget(suffix string, reverse bool) TargetInput {
 		{ID: "registrar-" + suffix, Name: "Register", Kind: programindex.ObjectExternalSymbol, External: &programindex.ExternalSymbol{PackagePath: "company/runtime", Name: "Register"}},
 	}, Relations: []programindex.Relation{{
 		FromID: "factory-" + suffix, ToIDs: []string{"callback-" + suffix}, Kind: programindex.RelationPassesCallback,
-		SourceArgumentID: "argument-" + suffix, Resolution: programindex.ResolutionAlternatives, Invocation: "callable_binding:field",
+		SourceArgumentID: "argument-" + suffix, Resolution: programindex.ResolutionAlternatives,
 		Witnesses: []programindex.Witness{
 			{Kind: "callback", Detail: "runtime.Register -> Run", Location: location("app/install.go", 7)},
 			{Kind: "callable_receiver_field", Detail: "Name = \"거래\"", Location: location("app/install.go", 5)},
@@ -117,7 +117,7 @@ func TestBindingEvidenceNormalizationKeepsDistinctNativeObservations(t *testing.
 			index.Objects[1].Name = "RunOther"
 			index.Objects[1].Location.Path = "app/other.go"
 		},
-		"invocation": func(index *programindex.Index) { index.Relations[0].Invocation = "callable_binding:constructor" },
+		"kind":       func(index *programindex.Index) { index.Relations[0].Kind = programindex.RelationBindsImplementation },
 		"resolution": func(index *programindex.Index) { index.Relations[0].Resolution = programindex.ResolutionExact },
 	} {
 		t.Run(name, func(t *testing.T) {

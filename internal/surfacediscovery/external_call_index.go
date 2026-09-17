@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ExternalCallIndexVersion = 8
+	ExternalCallIndexVersion = 9
 	// ExternalCallCgoPackagePath is the Go toolchain's pseudo-package identity
 	// for an exact handoff to a generated cgo wrapper. It does not identify a
 	// repository package or claim execution beyond that wrapper boundary.
@@ -47,10 +47,15 @@ type ExternalCallDispatch string
 const (
 	ExternalCallStatic          ExternalCallDispatch = "static"
 	ExternalCallInterfaceInvoke ExternalCallDispatch = "interface_invoke"
+	// ExternalCallInterfaceImplementation is a call through a repository
+	// interface whose observed value is an external concrete type. Target is
+	// that type's method; other possible values remain the handoff's frontier.
+	ExternalCallInterfaceImplementation ExternalCallDispatch = "interface_implementation"
 )
 
 func (dispatch ExternalCallDispatch) Valid() bool {
-	return dispatch == ExternalCallStatic || dispatch == ExternalCallInterfaceInvoke
+	return dispatch == ExternalCallStatic || dispatch == ExternalCallInterfaceInvoke ||
+		dispatch == ExternalCallInterfaceImplementation
 }
 
 // ExternalCallWitness is the adapter input for one exact SSA call
@@ -753,7 +758,7 @@ func externalCallCoverage(index ExternalCallIndex) (ExternalCallIndexCoverage, e
 			if err := add(&coverage.ExternalStaticWitnesses, family.WitnessCount); err != nil {
 				return ExternalCallIndexCoverage{}, err
 			}
-		} else if family.Dispatch == ExternalCallInterfaceInvoke {
+		} else {
 			if err := add(&coverage.ExternalInterfaceInvokeWitnesses, family.WitnessCount); err != nil {
 				return ExternalCallIndexCoverage{}, err
 			}

@@ -14,7 +14,12 @@ import (
 func TestOrientationListsAtMostTheAdvertisedMembersPerGroup(t *testing.T) {
 	fixture := newFixture(t)
 	index := &fixture.input.Groups[0]
-	group := &index.Groups[0]
+	var group *groupindex.Group
+	for position := range index.Groups {
+		if index.Groups[position].Title == "Execution triggers" {
+			group = &index.Groups[position]
+		}
+	}
 	group.MemberSubjectIDs = nil
 	total := MaxAdvertisedGroupMembers + 20
 	for i := 0; i < total; i++ {
@@ -28,7 +33,12 @@ func TestOrientationListsAtMostTheAdvertisedMembersPerGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed := wire.Groups[0]
+	listed := groupWire{}
+	for _, candidate := range wire.Groups {
+		if candidate.MemberCount == total {
+			listed = candidate
+		}
+	}
 	if len(listed.Members) != MaxAdvertisedGroupMembers || listed.MemberCount != total || listed.Members[0].Name != "Handler0" {
 		t.Fatalf("members were not bounded in group order with the real count: %d of %d", len(listed.Members), listed.MemberCount)
 	}
@@ -54,7 +64,7 @@ func TestOrientationBoundsOneMemberObservationLists(t *testing.T) {
 	for i := 0; i < MaxEvidenceCallers+2; i++ {
 		callers = append(callers, atlas.SymbolCaller{Path: "alpha/callers.go", Line: i + 1})
 	}
-	fixture.input.Graph = atlas.Graph{Places: []atlas.Place{{ID: "local-place-main", Kind: atlas.PlaceSymbol, Path: "alpha/main.go", LineNo: 1,
+	fixture.input.Graph = atlas.Graph{Places: []atlas.Place{{ID: "local-place-main", Kind: atlas.PlaceSymbol, Path: "alpha/main.go", LineNo: 1, TargetIDs: []string{fixture.input.Groups[0].Target.ID},
 		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: subject, Name: "Serve"}, Calls: calls, CalledBy: callers}}}}
 	wire, _, err := buildRequest(fixture.input)
 	if err != nil {
@@ -88,7 +98,7 @@ func TestRunWalksThePackingLadderAfterASizeRefusal(t *testing.T) {
 			for _, id := range group.MemberSubjectIDs {
 				var calls []atlas.SymbolCall
 				for c := 0; c < 8; c++ {
-					calls = append(calls, atlas.SymbolCall{Name: fmt.Sprintf("Step%d", c), Kind: "calls", Line: c + 1, Column: 2, Invocation: "synchronous", Resolution: "exact"})
+					calls = append(calls, atlas.SymbolCall{Name: fmt.Sprintf("Step%d", c), Kind: "calls", Line: c + 1, Column: 2, Resolution: "exact"})
 				}
 				fixture.input.Graph.Places = append(fixture.input.Graph.Places, atlas.Place{ID: "place-" + id, Kind: atlas.PlaceSymbol, Path: "alpha/members.go", LineNo: len(fixture.input.Graph.Places) + 1,
 					Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: id, Name: "Member"}, Calls: calls}})

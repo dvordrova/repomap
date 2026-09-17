@@ -23,15 +23,15 @@ func TestQuestionCallableFactsReachFinalAnswerWithoutInventingWiring(t *testing.
 	trace := decl("trace", "otel.go", "newTraceProvider", 91)
 	other := decl("other", "otel.go", "unrelatedNeighbour", 120)
 	main.Symbol.Calls = []atlas.SymbolCall{
-		{Name: "InitHandler", Kind: "calls", Line: 27, Column: 20, Invocation: "synchronous", Resolution: "exact", CalleeIDs: []string{init.ID}},
-		{Name: "ReinitHandler", Kind: "calls", Line: 28, Column: 22, Invocation: "synchronous", Resolution: "exact", CalleeIDs: []string{reinit.ID}},
+		{Name: "InitHandler", Kind: "calls", Line: 27, Column: 20, Resolution: "exact", CalleeIDs: []string{init.ID}},
+		{Name: "ReinitHandler", Kind: "calls", Line: 28, Column: 22, Resolution: "exact", CalleeIDs: []string{reinit.ID}},
 		{Name: "Dispatch", Kind: "calls", Line: 40, Column: 10, Resolution: "alternatives", CalleeIDs: []string{init.ID, reinit.ID}},
-		{Name: "InitHandler", Kind: "calls", Line: 55, Column: 10, Invocation: "synchronous", Resolution: "exact", CalleeIDs: []string{init.ID}},
-		{Name: "InitHandler", Kind: "calls", Line: 55, Column: 35, Invocation: "synchronous", Resolution: "exact", CalleeIDs: []string{init.ID}},
+		{Name: "InitHandler", Kind: "calls", Line: 55, Column: 10, Resolution: "exact", CalleeIDs: []string{init.ID}},
+		{Name: "InitHandler", Kind: "calls", Line: 55, Column: 35, Resolution: "exact", CalleeIDs: []string{init.ID}},
 		{Name: "InitHandler", Kind: "calls", Line: 55, Column: 65, Invocation: "goroutine", Resolution: "exact", CalleeIDs: []string{init.ID}},
 		{Name: "Unknown", Kind: "calls", Line: 60, Column: 11, Resolution: "unresolved"},
 	}
-	caller := atlas.SymbolCaller{PlaceID: main.ID, ObjectID: main.Symbol.Decl.ObjectID, Name: "main", Signature: "func()", Path: main.Path, Line: 27, Kind: "calls", Invocation: "synchronous", Resolution: "exact"}
+	caller := atlas.SymbolCaller{PlaceID: main.ID, ObjectID: main.Symbol.Decl.ObjectID, Name: "main", Signature: "func()", Path: main.Path, Line: 27, Kind: "calls", Resolution: "exact"}
 	init.Symbol.CalledBy = []atlas.SymbolCaller{caller}
 	caller.Line = 55
 	init.Symbol.CalledBy = append(init.Symbol.CalledBy, caller)
@@ -64,7 +64,7 @@ func TestQuestionCallableFactsReachFinalAnswerWithoutInventingWiring(t *testing.
 		for _, name := range names {
 			wanted[name] = true
 		}
-		route := atlas.QuestionRoute{Question: "How are these declarations connected?"}
+		route := atlas.QuestionRoute{ID: "q1", Question: "How are these declarations connected?"}
 		for _, chunk := range chunks {
 			for ref, anchor := range chunk.Anchors {
 				if wanted[anchor.Name] {
@@ -105,7 +105,7 @@ func TestQuestionCallableFactsReachFinalAnswerWithoutInventingWiring(t *testing.
 			t.Fatal(err)
 		}
 		for _, source := range sourceCatalog.Sources {
-			if !strings.HasPrefix(source.Ref, "g") || source.Row != "r1" {
+			if !strings.HasPrefix(source.Ref, "g") || source.Row != "q1" {
 				t.Fatalf("declaration refs confused glossary result ownership: %+v", source)
 			}
 		}

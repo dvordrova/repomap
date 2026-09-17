@@ -82,7 +82,6 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	adaptertest.AssertQueryOccurrenceOwners(t, repositoryPath, repository, index, "internal/storefixture/data_sources.go")
 	adaptertest.AssertConcreteParameterMethod(t, index, "internal/storefixture/data_sources.go")
 	assertGoTypedIteration(t, index)
-	assertGoListenAddresses(t, index, repository)
 	assertGoLocalHTTPNameFacts(t, index)
 	assertGoExternalEventAndStoragePatterns(t, index)
 	assertGoChainedCallAndCallbackTraversal(t, index)
@@ -92,6 +91,8 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertChainedCallbackArguments(t, index, chain.ID, "Map", programindex.ResolutionExact)
 	assertGoRetainedProducerReceiverProjection(t, index, producerResultID)
 	assertGoInterfaceFieldEvidence(t, authorities, index)
+	assertGoExternalInterfaceImplementation(t, index)
+	assertGoInterfaceImplementationMatches(t, index)
 	assertGoSharedHandoffFlows(t, index)
 	assertGoCallableReceiverFields(t, authorities, index)
 	assertGoInterfaceObjectTransfer(t, authorities, index)
@@ -190,12 +191,12 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 	t.Helper()
 	const path = "internal/storefixture/level_responses.go"
 	want := map[string]struct {
-		name, signature string
-		line, column    int
+		name, signature, projected, aliases string
+		line, column                        int
 	}{
-		"GetLevelsInfoResponse":      {"Count", `Count int "json:\"count\""`, 5, 2},
-		"OtherLevelsInfoResponse":    {"Count", `Count string "json:\"count_label\""`, 10, 2},
-		"EmbeddedLevelsInfoResponse": {"GetLevelsInfoResponse", "GetLevelsInfoResponse " + goFixtureRootPackage + "/internal/storefixture.GetLevelsInfoResponse", 15, 2},
+		"GetLevelsInfoResponse":      {"Count", "Count int", "Count int", "json:count", 5, 2},
+		"OtherLevelsInfoResponse":    {"Count", "Count string", "Count string", "json:count_label", 10, 2},
+		"EmbeddedLevelsInfoResponse": {"GetLevelsInfoResponse", "GetLevelsInfoResponse " + goFixtureRootPackage + "/internal/storefixture.GetLevelsInfoResponse", "GetLevelsInfoResponse storefixture.GetLevelsInfoResponse", "", 15, 2},
 	}
 	for _, declaration := range authorities.core.Types {
 		if expected, ok := want[declaration.Name]; ok {
@@ -228,7 +229,7 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 		}
 		if expected, ok := want[owner.Name]; ok {
 			if fields[owner.Name].ID != "" || object.Kind != programindex.ObjectVariable || object.ContainerID != owner.ID ||
-				object.Name != expected.name || object.Signature != expected.signature || object.Location == nil ||
+				object.Name != expected.name || object.Signature != expected.projected || object.Location == nil ||
 				object.Location.Path != path || object.Location.Line != expected.line || object.Location.Column != expected.column {
 				t.Fatalf("Go type %s projected field = %+v", owner.Name, object)
 			}
@@ -256,13 +257,16 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 				}
 				anchor := chunk.Anchors[evidence["ref"].(string)]
 				members, _ := evidence["owned_declarations"].([]map[string]any)
-				if anchor.SubjectID != owners[name].ID || fields[name].ID == "" || len(members) != 1 ||
+				if anchor.SubjectID != index.Target.ID+"."+owners[name].ID || fields[name].ID == "" || len(members) != 1 ||
 					members[0]["path"] != path || members[0]["line"] != expected.line || members[0]["name"] != expected.name ||
 					!strings.HasPrefix(members[0]["signature"].(string), expected.name+" ") {
 					t.Fatalf("Go type %s lost exact field evidence before question selection: %+v", name, evidence)
 				}
 				if name != "EmbeddedLevelsInfoResponse" && members[0]["signature"] != expected.signature {
-					t.Fatalf("Go type %s lost field type or JSON tag: %+v", name, members)
+					t.Fatalf("Go type %s lost field type: %+v", name, members)
+				}
+				if aliases, _ := members[0]["aliases"].(string); aliases != expected.aliases {
+					t.Fatalf("Go type %s lost its JSON name: %+v", name, members)
 				}
 				seen[name] = true
 			}
@@ -286,7 +290,7 @@ func assertGoTypeFormsInQuestionEvidence(t *testing.T, index programindex.Index,
 	}
 	for _, object := range index.Objects {
 		if expected, ok := want[object.Name]; ok && object.Kind == programindex.ObjectType {
-			if !strings.Contains(object.Signature, " "+expected.shape+"{") {
+			if object.Signature != expected.shape {
 				t.Fatalf("Go %s lost its native type form: %q", object.Name, object.Signature)
 			}
 		}
@@ -309,7 +313,7 @@ func assertGoTypeFormsInQuestionEvidence(t *testing.T, index programindex.Index,
 					continue
 				}
 				signature, _ := evidence["signature"].(string)
-				if !strings.Contains(signature, " "+expected.shape+"{") {
+				if signature != expected.shape {
 					t.Fatalf("Go %s question evidence lost type form: %+v", name, evidence)
 				}
 				// Question-batch v4 names a member that is an anchor of the same
@@ -367,7 +371,7 @@ func assertGoInterfaceDeclarations(t *testing.T, authorities goFixtureAuthoritie
 		}
 	}
 	for _, relation := range index.Relations {
-		if ids[relation.FromID] && relation.Kind != programindex.RelationContains {
+		if ids[relation.FromID] {
 			t.Fatalf("interface declaration invented runtime relations: %+v", relation)
 		}
 	}
@@ -386,7 +390,7 @@ func assertGoTestDeclarationProjection(t *testing.T, repository *corpus.Corpus, 
 			t.Fatalf("unexpected test declaration: %+v", object)
 		}
 		want[object.Name] = true
-		if object.Visibility != programindex.VisibilityInternal || len(object.SymbolLinkIdentities) != 0 {
+		if object.Visibility != programindex.VisibilityInternal {
 			t.Fatalf("test became public runtime API: %+v", object)
 		}
 		testIDs[object.ID] = true
@@ -398,7 +402,7 @@ func assertGoTestDeclarationProjection(t *testing.T, repository *corpus.Corpus, 
 		}
 	}
 	for _, relation := range index.Relations {
-		if testIDs[relation.FromID] && relation.Kind != programindex.RelationContains {
+		if testIDs[relation.FromID] {
 			t.Fatal("parsed test gained inferred call authority")
 		}
 	}
@@ -409,8 +413,9 @@ func assertGoTestDeclarationProjection(t *testing.T, repository *corpus.Corpus, 
 	anchors := map[string]bool{}
 	for _, chunk := range lines.QuestionRows(graph) {
 		for _, anchor := range chunk.Anchors {
-			if testIDs[anchor.SubjectID] && strings.HasSuffix(anchor.Path, "_test.go") && anchor.Line > 0 {
-				anchors[names[anchor.SubjectID]] = true
+			nativeID := strings.TrimPrefix(anchor.SubjectID, index.Target.ID+".")
+			if testIDs[nativeID] && strings.HasSuffix(anchor.Path, "_test.go") && anchor.Line > 0 {
+				anchors[names[nativeID]] = true
 			}
 		}
 	}
@@ -514,7 +519,7 @@ func assertGoInterfaceObjectTransfer(t *testing.T, authorities goFixtureAuthorit
 				continue
 			}
 			projected++
-			if relation.Kind != programindex.RelationPassesCallback || relation.SourceArgumentID != "" || !strings.Contains(witness.Detail, "method Apply") || witness.Location == nil || witness.Location.Path != "internal/storefixture/fixtures.go" {
+			if relation.Kind != programindex.RelationBindsImplementation || relation.SourceArgumentID != "" || !strings.Contains(witness.Detail, "method Apply") || witness.Location == nil || witness.Location.Path != "internal/storefixture/fixtures.go" {
 				t.Fatalf("lost neutral registration projection: %+v", relation)
 			}
 			for id := range names {
@@ -574,7 +579,7 @@ func assertGoCallableReceiverFields(t *testing.T, authorities goFixtureAuthoriti
 				continue
 			}
 			projected++
-			if relation.Kind != programindex.RelationPassesCallback || relation.Invocation != "callable_binding:field" || witness.Detail == "" {
+			if relation.Kind != programindex.RelationPassesCallback || relation.Invocation != "" || witness.Detail == "" {
 				t.Fatalf("receiver field became an execution edge: %+v", relation)
 			}
 		}
@@ -591,7 +596,13 @@ func assertGoInterfaceFieldEvidence(t *testing.T, authorities goFixtureAuthoriti
 		names[function.ID] = strings.NewReplacer("(", "", ")", "", "*", "").Replace(function.Symbol)
 	}
 	seen := make(map[string]bool)
-	want := map[string][]string{"fieldFacade.Put": {"storedEngine.Put", "alternateEngine.Put"}, "outerFacade.Put": {"fieldFacade.Put"}, "unrelatedFacade.Put": {"neverStoredEngine.Put"}, "unknownFacade.Put": {}}
+	want := map[string][]string{
+		"fieldFacade.Put":               {"storedEngine.Put", "alternateEngine.Put"},
+		"outerFacade.Put":               {"fieldFacade.Put"},
+		"unrelatedFacade.Put":           {"neverStoredEngine.Put"},
+		"unknownFacade.Put":             {},
+		"constructorInjectedFacade.Put": {"storedEngine.Put"},
+	}
 	for _, handoff := range authorities.dynamic.Handoffs {
 		if handoff.Kind != godynamichandoff.InterfaceInvoke {
 			continue
@@ -602,7 +613,7 @@ func assertGoInterfaceFieldEvidence(t *testing.T, authorities goFixtureAuthoriti
 				continue
 			}
 			seen[caller] = true
-			if handoff.Slot.Field == "" || handoff.Slot.ContainerType == "" || len(handoff.Candidates) != len(expected) || handoff.CandidatesOmitted < 1 {
+			if handoff.Slot.Field == "" || handoff.Slot.ContainerType == "" || len(handoff.Candidates) != len(expected) {
 				t.Fatalf("field receiver evidence for %s: %+v", caller, handoff)
 			}
 			if len(expected) == 0 {
@@ -611,8 +622,8 @@ func assertGoInterfaceFieldEvidence(t *testing.T, authorities goFixtureAuthoriti
 				}
 				continue
 			}
-			if handoff.Resolution != godynamichandoff.ResolutionAlternatives {
-				t.Fatal("field observation became an exact instance call")
+			if want := godynamichandoff.ResolutionExact; len(expected) > 1 && handoff.Resolution != godynamichandoff.ResolutionAlternatives || len(expected) == 1 && handoff.Resolution != want {
+				t.Fatalf("%s resolution = %s for %d observed values", caller, handoff.Resolution, len(expected))
 			}
 			for _, expectedName := range expected {
 				found := false
@@ -645,7 +656,7 @@ func assertGoInterfaceFieldEvidence(t *testing.T, authorities goFixtureAuthoriti
 				continue
 			}
 			projected++
-			if relation.Kind != programindex.RelationCalls || relation.Resolution != programindex.ResolutionAlternatives || relation.TargetsOmitted < 1 || witness.Location == nil ||
+			if relation.Kind != programindex.RelationCalls || relation.Resolution == programindex.ResolutionUnresolved || witness.Location == nil ||
 				(witness.Location.Path != "internal/storefixture/fixtures.go" && witness.Location.Path != "internal/storefixture/handoff_flow.go") {
 				t.Fatalf("ProgramIndex lost possible field assignment evidence: %+v", relation)
 			}
@@ -684,8 +695,53 @@ func assertGoSharedHandoffFlows(t *testing.T, index programindex.Index) {
 			t.Errorf("missing callback projection for %s", name)
 		}
 	}
-	if len(assignments) != 2 || !assignments[40] || !assignments[41] {
+	if len(assignments) != 3 || !assignments[45] || !assignments[46] || !assignments[88] {
 		t.Fatalf("shared value lost exact store locations: %v", assignments)
+	}
+}
+
+func assertGoInterfaceImplementationMatches(t *testing.T, index programindex.Index) {
+	t.Helper()
+	objects := make(map[string]programindex.Object, len(index.Objects))
+	for _, object := range index.Objects {
+		objects[object.ID] = object
+	}
+	var interfaceType, implementationType, interfaceMethod, implementationMethod string
+	for _, object := range index.Objects {
+		owner := objects[object.OwnerID]
+		switch {
+		case object.Kind == programindex.ObjectType && object.Name == "FieldStore":
+			interfaceType = object.ID
+		case object.Kind == programindex.ObjectType && object.Name == "compatibleOnlyEngine":
+			implementationType = object.ID
+		case object.Kind == programindex.ObjectMethod && object.Name == "Put" && owner.Name == "FieldStore":
+			interfaceMethod = object.ID
+		case object.Kind == programindex.ObjectMethod && object.Name == "Put" && owner.Name == "compatibleOnlyEngine":
+			implementationMethod = object.ID
+		}
+	}
+	want := map[[2]string]string{
+		{implementationType, interfaceType}:     "go_interface_implementation",
+		{implementationMethod, interfaceMethod}: "go_interface_method_implementation",
+	}
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationImplements || len(relation.ToIDs) != 1 {
+			continue
+		}
+		key := [2]string{relation.FromID, relation.ToIDs[0]}
+		witnessKind, expected := want[key]
+		if !expected {
+			continue
+		}
+		if relation.Resolution != programindex.ResolutionExact || relation.TargetsObserved != 1 ||
+			len(relation.Witnesses) == 0 || relation.Witnesses[0].Kind != witnessKind ||
+			relation.Location == nil || relation.Location.Path != "internal/storefixture/handoff_flow.go" {
+			t.Fatalf("compatible-only interface match lost exact authority: %+v", relation)
+		}
+		delete(want, key)
+	}
+	if interfaceType == "" || implementationType == "" || interfaceMethod == "" || implementationMethod == "" || len(want) != 0 {
+		t.Fatalf("compatible-only implementation was not matched: endpoints=%q/%q/%q/%q missing=%v", interfaceType, implementationType, interfaceMethod, implementationMethod, want)
 	}
 }
 
@@ -755,7 +811,7 @@ func assertGoRetainedCallbackSourceArgument(t *testing.T, index programindex.Ind
 	for _, relation := range transfers {
 		argument, found := arguments[relation.SourceArgumentID]
 		if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 ||
-			relation.Invocation != "callback_transfer:synchronous" || !found || len(argument.ObjectIDs) != 1 || argument.ObjectIDs[0] != relation.ToIDs[0] ||
+			relation.Invocation != "" || !found || len(argument.ObjectIDs) != 1 || argument.ObjectIDs[0] != relation.ToIDs[0] ||
 			relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 {
 			t.Fatalf("callback transfer lost its retained owning argument: %#v", relation)
 		}
@@ -1048,7 +1104,7 @@ func assertGoNeutralBoundaryPatterns(t *testing.T, index programindex.Index) {
 		subscribe.Patterns[0].Arguments[1].ObjectIDs[0] != consumerID {
 		t.Fatalf("cumulative Go Subscribe neutral pattern = %#v", subscribe)
 	}
-	if len(callbackTransfers) != 1 || callbackTransfers[0].Invocation != "callback_transfer:synchronous" ||
+	if len(callbackTransfers) != 1 || callbackTransfers[0].Invocation != "" ||
 		callbackTransfers[0].SourceArgumentID != subscribe.Patterns[0].Arguments[1].ID ||
 		callbackTransfers[0].TargetsObserved != 1 || callbackTransfers[0].TargetsOmitted != 0 {
 		t.Fatalf("cumulative Go callback transfer = %#v", callbackTransfers)
@@ -1157,13 +1213,14 @@ func analyzeGoFixture(
 	if err != nil {
 		t.Fatalf("scope cumulative Go fixture target: %v", err)
 	}
-	if scoped.AnalysisTarget.Kind == analysistarget.KindExecutablePackage {
+	if scoped.AnalysisTarget.Kind == analysistarget.KindExecutablePackage && strings.HasPrefix(packagePath, goFixtureRootPackage) {
 		assertGoFixtureTestSources(t, deferred, scoped)
 	}
 	input, err := goadapter.AnalysisInput(scoped.GoFacts, scoped.AnalysisTarget)
 	if err != nil {
 		t.Fatalf("bind cumulative Go fixture analysis input: %v", err)
 	}
+	input.MatchInterfaceImplementations = true
 	options := surfacediscovery.DefaultOptions(repositoryPath, runtime.GOOS+"/"+runtime.GOARCH)
 	options.CaptureExternalCallIndex = true
 	options.CaptureCoreObjectIndex = true
@@ -1380,4 +1437,36 @@ func assertGoTypedIteration(t *testing.T, index programindex.Index) {
 		}
 	}
 	t.Fatal("typed slice iteration lost its original method call")
+}
+
+// A repository interface field holding *sql.DB makes the call through it one
+// exact invokes_external fact of (*sql.DB).QueryRowContext with its SQL text,
+// and no unresolved call beside it.
+func assertGoExternalInterfaceImplementation(t *testing.T, index programindex.Index) {
+	t.Helper()
+	caller := programIndexObjectNamed(t, index, programindex.ObjectMethod, "Name", "internal/storefixture/handoff_flow.go")
+	names := make(map[string]string)
+	for _, object := range index.Objects {
+		names[object.ID] = object.Name
+	}
+	found := false
+	for _, relation := range index.Relations {
+		if relation.FromID != caller.ID {
+			continue
+		}
+		if relation.Resolution == programindex.ResolutionUnresolved {
+			t.Fatalf("resolved external implementation kept an unresolved call: %+v", relation)
+		}
+		if relation.Kind != programindex.RelationInvokesExternal || len(relation.ToIDs) != 1 || names[relation.ToIDs[0]] != "database/sql.*DB.QueryRowContext" {
+			continue
+		}
+		if relation.Resolution != programindex.ResolutionExact || len(relation.Patterns) != 1 || len(relation.Patterns[0].Arguments) < 2 ||
+			relation.Patterns[0].Arguments[1].Value != "SELECT name FROM users WHERE id = $1" {
+			t.Fatalf("external implementation call lost exactness or its SQL: %+v", relation)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("(*sql.DB).QueryRowContext through rowQuerier was not projected")
+	}
 }

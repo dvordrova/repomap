@@ -5,14 +5,17 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 const (
-	requestVersion = 2
+	requestVersion = 3
 
 	// MaxAdvertisedGroupMembers caps the members listed per group; member_count
 	// still reports the real size. The orientation request is one call against
@@ -152,8 +155,8 @@ type subjectEntry struct {
 	targetRef string
 }
 
-// catalog maps request-local refs back to exact ids. It is the only bridge
-// between what the model saw and what the artifact stores.
+// catalog closes the request vocabulary. Canonical compact graph identities
+// pass through directly; facts and claims retain their own artifact identities.
 type catalog struct {
 	targets  map[string]string
 	facts    map[string]factEntry
@@ -184,8 +187,8 @@ type requestBuilder struct {
 	bounds      packing
 	input       Input
 	catalog     catalog
-	targetRefs  map[string]string // facts target id -> ref
-	programRefs map[string]string // program target id -> ref
+	targetRefs  map[string]string // target id -> request identity (the same tN)
+	programRefs map[string]string // target id -> request identity (the same tN)
 	factRefs    map[string]string // fact id -> ref
 	groupRefs   map[groupKey]string
 	subjectRefs map[subjectKey]string
@@ -225,30 +228,54 @@ func buildRequestWith(input Input, bounds packing) (request, catalog, error) {
 		wire.Connections = append(wire.Connections, connections...)
 	}
 	if bounds.Evidence {
-		subjects := make(map[string]bool, len(builder.subjectRefs))
+		subjectsByTarget := make(map[string]map[string]bool)
 		for subject := range builder.subjectRefs {
-			subjects[subject.subjectID] = true
+			if subjectsByTarget[subject.targetID] == nil {
+				subjectsByTarget[subject.targetID] = make(map[string]bool)
+			}
+			subjectsByTarget[subject.targetID][subject.subjectID] = true
 		}
-		evidence := lines.CallableEvidenceWithin(input.Graph, subjects, lines.EvidenceLimits{Calls: bounds.Calls, Callers: bounds.Callers})
-		for subject, ref := range builder.subjectRefs {
-			if facts := evidence[subject.subjectID]; facts != nil {
-				wire.MemberEvidence = append(wire.MemberEvidence, memberEvidenceWire{Ref: ref, Evidence: facts})
+		for targetID, subjects := range subjectsByTarget {
+			graph := input.Graph
+			graph.Places = slices.DeleteFunc(slices.Clone(input.Graph.Places), func(place atlas.Place) bool {
+				return len(place.TargetIDs) > 0 && !slices.Contains(place.TargetIDs, targetID)
+			})
+			evidence := lines.CallableEvidenceWithin(graph, subjects, lines.EvidenceLimits{Calls: bounds.Calls, Callers: bounds.Callers})
+			for subject, ref := range builder.subjectRefs {
+				if subject.targetID != targetID {
+					continue
+				}
+				if facts := evidence[subject.subjectID]; facts != nil {
+					wire.MemberEvidence = append(wire.MemberEvidence, memberEvidenceWire{Ref: ref, Evidence: facts})
+				}
 			}
 		}
 	}
 	sort.Slice(wire.MemberEvidence, func(i, j int) bool {
-		return refOrdinal(wire.MemberEvidence[i].Ref) < refOrdinal(wire.MemberEvidence[j].Ref)
+		return qualifiedSubjectRefLess(wire.MemberEvidence[i].Ref, wire.MemberEvidence[j].Ref)
 	})
 	return wire, builder.catalog, nil
 }
 
+func qualifiedSubjectRefLess(left, right string) bool {
+	leftTarget, leftSubject, leftOK := strings.Cut(left, ".")
+	rightTarget, rightSubject, rightOK := strings.Cut(right, ".")
+	if !leftOK || !rightOK {
+		return left < right
+	}
+	if leftTarget != rightTarget {
+		return programindex.TargetIDLess(leftTarget, rightTarget)
+	}
+	return groupindex.SubjectIDLess(leftSubject, rightSubject)
+}
+
 func (builder *requestBuilder) targets() []targetWire {
 	rows := make([]targetWire, 0, len(builder.input.Facts.Targets))
-	for position, target := range builder.input.Facts.Targets {
-		ref := "t" + strconv.Itoa(position+1)
+	for _, target := range builder.input.Facts.Targets {
+		ref := target.ID
 		builder.catalog.targets[ref] = target.ID
 		builder.targetRefs[target.ID] = ref
-		builder.programRefs[target.ProgramTargetID] = ref
+		builder.programRefs[target.ID] = ref
 		rows = append(rows, targetWire{
 			Ref: ref, Language: target.Language, Kind: target.Kind, Name: target.Name,
 			Root: target.Root, Manifest: target.Manifest,
@@ -264,7 +291,7 @@ func (builder *requestBuilder) facts(omitted map[string]int) []factWire {
 			omitted[string(fact.Kind)]++
 			continue
 		}
-		ref := "f" + strconv.Itoa(len(advertised)+1)
+		ref := fact.ID
 		builder.catalog.facts[ref] = factEntry{id: fact.ID, kind: fact.Kind}
 		builder.factRefs[fact.ID] = ref
 		advertised = append(advertised, fact)
@@ -296,8 +323,8 @@ func (builder *requestBuilder) factWire(fact facts.Fact) factWire {
 
 func (builder *requestBuilder) claims() []claimWire {
 	rows := make([]claimWire, 0, len(builder.input.Claims.Claims))
-	for position, claim := range builder.input.Claims.Claims {
-		ref := "c" + strconv.Itoa(position+1)
+	for _, claim := range builder.input.Claims.Claims {
+		ref := claim.ID
 		builder.catalog.claims[ref] = claim.ID
 		rows = append(rows, claimWire{
 			Ref: ref, Source: string(claim.Source), Target: builder.targetRefs[claim.TargetID],
@@ -313,25 +340,14 @@ func (builder *requestBuilder) claims() []claimWire {
 func (builder *requestBuilder) orderedIndexes() []groupindex.Index {
 	indexes := append([]groupindex.Index(nil), builder.input.Groups...)
 	sort.SliceStable(indexes, func(i, j int) bool {
-		a, b := refOrdinal(builder.programRefs[indexes[i].Target.ID]), refOrdinal(builder.programRefs[indexes[j].Target.ID])
-		if a != b {
-			return a < b
-		}
-		return indexes[i].Target.ID < indexes[j].Target.ID
+		return compactRefLess(builder.programRefs[indexes[i].Target.ID], builder.programRefs[indexes[j].Target.ID])
 	})
 	return indexes
 }
 
-// orderedGroups fixes the order in which one index's groups and their
-// members receive g* and s* refs. The key is what the graph settled: the
-// sorted member subjects, then lane, title, summary and ID as tie-breaks.
-// A group's ID hashes its lane and prose as well, so the index's own ID
-// order moves every later group, and every member ref inside it, when one
-// group's lane or wording changes: Morfeu builds 20260911-110335 and
-// 20260911-152759 differ only in "Catalog feature" being dependencies or
-// core, yet g5 named different groups and the same five cited members
-// carried different s* refs. Member order likewise never depends on how
-// the caller listed them.
+// orderedGroups makes request bytes independent of caller slice order. Group
+// and member identities already belong to GroupsIndex/ProgramIndex and pass
+// through unchanged, qualified only by target where local IDs can collide.
 func orderedGroups(groups []groupindex.Group) []groupindex.Group {
 	ordered := make([]groupindex.Group, 0, len(groups))
 	for _, group := range groups {
@@ -365,7 +381,7 @@ func (builder *requestBuilder) groups(index groupindex.Index) []groupWire {
 	}
 	rows := make([]groupWire, 0, len(index.Groups))
 	for _, group := range orderedGroups(index.Groups) {
-		ref := "g" + strconv.Itoa(len(builder.groupRefs)+1)
+		ref := index.Target.ID + "." + group.ID
 		builder.groupRefs[groupKey{targetID: index.Target.ID, groupID: group.ID}] = ref
 		rows = append(rows, groupWire{
 			Ref: ref, Target: targetRef, Lane: string(group.Lane), Title: group.Title, Summary: group.Summary,
@@ -393,7 +409,7 @@ func (builder *requestBuilder) members(
 		key := subjectKey{targetID: programTargetID, subjectID: subjectID}
 		ref, seen := builder.subjectRefs[key]
 		if !seen {
-			ref = "s" + strconv.Itoa(len(builder.subjectRefs)+1)
+			ref = programTargetID + "." + subjectID
 			builder.subjectRefs[key] = ref
 			builder.catalog.subjects[ref] = subjectEntry{id: subjectID, targetRef: targetRef}
 		}
@@ -441,11 +457,11 @@ func (builder *requestBuilder) connections(index groupindex.Index) ([]connection
 	// they cite, not the caller's slice.
 	sort.SliceStable(rows, func(i, j int) bool {
 		a, b := rows[i], rows[j]
-		if refOrdinal(a.From) != refOrdinal(b.From) {
-			return refOrdinal(a.From) < refOrdinal(b.From)
+		if a.From != b.From {
+			return compactRefLess(a.From, b.From)
 		}
-		if refOrdinal(a.To) != refOrdinal(b.To) {
-			return refOrdinal(a.To) < refOrdinal(b.To)
+		if a.To != b.To {
+			return compactRefLess(a.To, b.To)
 		}
 		if a.Kind != b.Kind {
 			return a.Kind < b.Kind
@@ -465,14 +481,39 @@ func anchorString(path string, line int) string {
 	return path + ":" + strconv.Itoa(line)
 }
 
-// refOrdinal orders refs by their number; unknown refs sort last.
-func refOrdinal(ref string) int {
-	if len(ref) < 2 {
-		return int(^uint(0) >> 1)
+// compactRefLess compares every qualified compact segment naturally. Lexical
+// ordering would put t10 before t2; reading only the first ordinal would fail
+// on t2.g10 entirely. Invalid refs still have a deterministic lexical order,
+// while validation remains responsible for refusing them.
+func compactRefLess(left, right string) bool {
+	leftParts, rightParts := strings.Split(left, "."), strings.Split(right, ".")
+	for position := 0; position < min(len(leftParts), len(rightParts)); position++ {
+		leftPrefix, leftOrdinal, leftOK := compactRefSegment(leftParts[position])
+		rightPrefix, rightOrdinal, rightOK := compactRefSegment(rightParts[position])
+		if !leftOK || !rightOK {
+			return left < right
+		}
+		if leftPrefix != rightPrefix {
+			return leftPrefix < rightPrefix
+		}
+		if leftOrdinal != rightOrdinal {
+			return leftOrdinal < rightOrdinal
+		}
 	}
-	ordinal, err := strconv.Atoi(ref[1:])
-	if err != nil {
-		return int(^uint(0) >> 1)
+	if len(leftParts) != len(rightParts) {
+		return len(leftParts) < len(rightParts)
 	}
-	return ordinal
+	return left < right
+}
+
+func compactRefSegment(value string) (string, int, bool) {
+	firstDigit := strings.IndexFunc(value, func(r rune) bool { return r >= '0' && r <= '9' })
+	if firstDigit <= 0 {
+		return "", 0, false
+	}
+	ordinal, err := strconv.Atoi(value[firstDigit:])
+	if err != nil || ordinal <= 0 || value[:firstDigit]+strconv.Itoa(ordinal) != value {
+		return "", 0, false
+	}
+	return value[:firstDigit], ordinal, true
 }

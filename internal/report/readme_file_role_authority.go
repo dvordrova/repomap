@@ -49,7 +49,7 @@ func decodeReadmeFileRoleAuthority(raw []byte) (map[string]string, error) {
 	pathsByRef := make(map[string]string, len(artifact.Files))
 	refsByPath := make(map[string]string, len(artifact.Files))
 	for _, file := range artifact.Files {
-		if !validProgramViewText(file.FileRef) || validateManifestPath(file.Path) != nil ||
+		if strings.TrimSpace(file.FileRef) == "" || strings.TrimSpace(file.FileRef) != file.FileRef || validateManifestPath(file.Path) != nil ||
 			len(file.Classifications) == 0 {
 			return nil, fmt.Errorf("report: README file-role artifact contains an invalid file row")
 		}

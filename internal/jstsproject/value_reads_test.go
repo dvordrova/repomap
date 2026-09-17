@@ -47,11 +47,7 @@ func assertCumulativeJSTSValueReads(t *testing.T, result Result, index programin
 			if relation.Location == nil || relation.Location.Column < 1 || target.Location == nil {
 				t.Fatalf("read lost original locations: %+v", relation)
 			}
-			resolution := programindex.ResolutionExact
-			if caller == "jsValueReferences" {
-				resolution = programindex.ResolutionAlternatives
-			}
-			if relation.Resolution != resolution {
+			if relation.Resolution != programindex.ResolutionExact {
 				t.Fatalf("read changed compiler authority: %+v", relation)
 			}
 			if target.Name == "paintColor" && (target.Location.Path != "shared/contracts.ts" || target.Location.Line != 5) {

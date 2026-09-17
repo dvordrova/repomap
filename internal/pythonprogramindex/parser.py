@@ -5,9 +5,6 @@ import json
 import sys
 
 
-PYTHON_PUBLIC_SYMBOL_DOMAIN = "python_public_symbol_v1"
-
-
 def stable_ref(domain, *parts):
     wire = json.dumps([domain, *parts], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return "python-source-" + hashlib.sha256(wire).hexdigest()[:32]
@@ -167,38 +164,6 @@ class Analyzer:
         self.relations = []
         self.relations_by_key = {}
 
-    def symbol_link_identity(self, value, qname):
-        if not qname:
-            return None
-        if value.get("kind") == "external_symbol":
-            pass
-        elif value.get("kind") not in ("function", "method", "type") or \
-                value.get("visibility") != "public":
-            return None
-        if value.get("kind") != "external_symbol" and \
-                any(part.startswith("_") for part in qname.split(".")):
-            # A public-looking member of a private module/type is not a public
-            # import binding for another target.
-            return None
-        return {
-            "domain": PYTHON_PUBLIC_SYMBOL_DOMAIN,
-            # Python's stable cross-shard fact is the public binding's fully
-            # qualified name. Its runtime value can still be rebound, so call
-            # relations remain alternatives rather than borrowing authority
-            # from this identity.
-            "parts": ["binding", bounded_text(qname)],
-            "display": bounded_text(qname),
-        }
-
-    def add_symbol_link_identity(self, value, qname):
-        identity = self.symbol_link_identity(value, qname)
-        if identity is None:
-            return
-        identities = value.setdefault("symbol_link_identities", [])
-        if identity not in identities:
-            identities.append(identity)
-            identities.sort(key=lambda item: (item["domain"], item["parts"], item["display"]))
-
     def add_object(self, value, qname=""):
         ref = value["source_ref"]
         existing = self.objects_by_ref.get(ref)
@@ -206,12 +171,9 @@ class Analyzer:
             if existing.get("location") is None and value.get("location") is not None:
                 existing["location"] = value["location"]
             if qname:
-                self.add_symbol_link_identity(existing, qname)
                 self.objects_by_qname[qname] = ref
                 self.qnames_by_ref.setdefault(ref, qname)
             return ref
-        if qname:
-            self.add_symbol_link_identity(value, qname)
         self.objects.append(value)
         self.objects_by_ref[ref] = value
         if qname:
@@ -461,19 +423,6 @@ class Analyzer:
                 for argument in pattern.get("arguments", []):
                     if "origin" in argument:
                         argument["origin"] = field_initializers(argument["origin"], set())
-
-        for value in list(self.objects):
-            container = value.get("container_ref", "")
-            if not container:
-                continue
-            location = value.get("location")
-            node = SyntheticNode(location)
-            self.current_path = location["path"] if location is not None else decoded[0]["path"]
-            self.add_relation(
-                "contains", container, [value["source_ref"]], "exact", node,
-                "declaration" if location is not None else "declared_scope",
-                value["name"], targets_observed=1,
-            )
 
         self.objects.sort(key=lambda value: value["source_ref"])
         self.relations.sort(key=lambda value: value["source_ref"])
@@ -863,7 +812,7 @@ class RelationVisitor(ast.NodeVisitor):
         self.analyzer = analyzer
         self.module = module
         self.scope = scope
-        self.invocation = "direct"
+        self.invocation = ""
         # Pattern receiver provenance is deliberately source ordered. The
         # declaration collector has already created stable variable objects,
         # but it must not let a later assignment explain an earlier call.
@@ -1055,7 +1004,7 @@ class RelationVisitor(ast.NodeVisitor):
         if authority == "literal":
             return "exact", [ref]
         if authority in ("local", "external"):
-            return "alternatives", [ref]
+            return "exact", [ref]
         return "unresolved", []
 
     def resolved_call_target(self, node):
@@ -1272,7 +1221,7 @@ class RelationVisitor(ast.NodeVisitor):
             if binding is not None and binding.get("ref"):
                 return {
                     "object_refs": [binding["ref"]],
-                    "resolution": "alternatives",
+                    "resolution": "exact",
                     "objects_observed": 1,
                 }
         resolution, refs = self.pattern_resolution(resolved)
@@ -1523,14 +1472,12 @@ class RelationVisitor(ast.NodeVisitor):
                 patterns_observed=patterns_observed, source_argument=source_argument,
             )
         if authority in ("local", "external", "literal") and ref:
-            # Python names, attributes, descriptors and class members are
-            # mutable runtime joints. Retain the locally observed candidate as
-            # an alternative edge, but do not promote even a single candidate
-            # to an exact runtime target.
+            # The one binding this name resolves to is the target. Rebinding the
+            # name elsewhere makes its resolution unknown instead.
             candidate = self.object(ref)
             candidate_detail = self.candidate_detail(detail, candidate)
             return self.analyzer.add_relation(
-                kind, from_ref, [ref], "alternatives", node, witness_kind + "_candidate",
+                kind, from_ref, [ref], "exact", node, witness_kind,
                 candidate_detail, invocation=invocation, targets_observed=1,
                 source_expression=source_expression, witness_callee=witness_callee,
                 patterns=[pattern] if pattern else [], patterns_observed=patterns_observed,
@@ -1554,13 +1501,11 @@ class RelationVisitor(ast.NodeVisitor):
             )
             return True
         candidate = self.object(decorator_ref) if decorator_ref else None
-        witness = witness_kind + "_candidate" if candidate else witness_kind
-        # Direction is always decorated declaration -> decorator candidate.
-        # Python's mutable binding keeps a known candidate alternative rather
-        # than changing relation orientation or claiming exact dispatch.
+        witness = witness_kind
+        # Direction is always decorated declaration -> decorator.
         self.analyzer.add_relation(
             "decorates", decorated_ref, [decorator_ref] if candidate else [],
-            "alternatives" if candidate else "unresolved", node, witness,
+            "exact" if candidate else "unresolved", node, witness,
             self.candidate_detail(detail, candidate),
             targets_observed=1, patterns=[pattern] if pattern else [],
             patterns_observed=patterns_observed,
@@ -1763,6 +1708,11 @@ class RelationVisitor(ast.NodeVisitor):
 
     def record_read(self, node, resolved):
         candidate = self.object(resolved[1]) if resolved[1] else None
+        # A callable reading its own parameter or local is not a program
+        # relation; the value's origin stays on the patterns that use it.
+        if candidate and self.scope.kind != "module" and self.scope.kind != "type" and \
+                candidate.get("container_ref") == self.scope.ref:
+            return
         if candidate and candidate["kind"] == "variable":
             self.emit_resolved("reads", self.scope.ref, resolved, node,
                                "variable_read", safe_expression_name(node))
@@ -1810,7 +1760,7 @@ class RelationVisitor(ast.NodeVisitor):
     visit_GeneratorExp = visit_ListComp
 
     def visit_Await(self, node):
-        previous, self.invocation = self.invocation, "awaited"
+        previous, self.invocation = self.invocation, ""
         self.visit(node.value)
         self.invocation = previous
 
@@ -1868,7 +1818,7 @@ class RelationVisitor(ast.NodeVisitor):
             consumer = getattr(node, "repomap_result_consumer", "")
             called = self.object(resolved[1]) if resolved[1] else None
             if consumer and called and called.get("signature", "").startswith("async "):
-                invocation = "coroutine_result_argument:" + consumer
+                invocation = "async_task"
             call_relation_ref = self.emit_resolved(
                 kind, self.scope.ref, resolved, node, "callsite", name, invocation,
                 exact_authorities=("literal",), source_expression=source_expression,

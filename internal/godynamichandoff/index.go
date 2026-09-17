@@ -19,7 +19,7 @@ import (
 	"unicode/utf8"
 )
 
-const Version = 7
+const Version = 8
 
 type Scenario struct {
 	ID     string   `json:"id"`
@@ -121,7 +121,8 @@ func (value CandidateEvidence) valid() bool {
 
 func (value CandidateEvidence) exact() bool {
 	return value == EvidenceDirectFunctionValue || value == EvidenceClosureValue ||
-		value == EvidenceUniqueValueFlow || value == EvidenceConcreteInterfaceValue
+		value == EvidenceUniqueValueFlow || value == EvidenceConcreteInterfaceValue ||
+		value == EvidenceInterfaceFieldAssignment
 }
 
 type Candidate struct {

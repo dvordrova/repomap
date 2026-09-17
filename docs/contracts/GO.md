@@ -43,9 +43,13 @@ names, field/argument detail, invocation, resolution and source location. Calls
 to external code retain qualified names, so `context.WithTimeout` does not lose
 its identity before interpretation. The dynamic-handoff index also retains source
 assignments to interface fields, keyed by the compiler's field declaration.
-Local factory return values can resolve a stored implementation. These are
-possible alternatives with an open frontier, never exact instance bindings:
-all observed stores to one field do not prove the value of a particular receiver.
+Local factory return values can resolve a stored implementation. The stores of
+a field seen in the analyzed program are its values: one resolved value is an
+exact call, several are alternatives, and only a store whose value cannot be
+followed leaves an unknown. An implementation outside the repository, such as
+`*sql.DB` stored in a sqlc `DBTX` field, is not an unknown: the call becomes an
+`invokes_external` fact of that type's method (dispatch `interface`) with the
+call site's arguments, and no unresolved `calls` relation is projected beside it.
 Fields with the same name on unrelated types do not share candidates. Both the
 call site and the constructor assignment survive projection; an assignment is
 support for the call, not a second call at the constructor line. This recovers
@@ -68,9 +72,39 @@ interface when their implementation is resolved from the actual value, local
 factory return, or observed alternatives. The existing transfer slot records
 the declared interface and method. An unrelated compatible type cannot supply
 an implementation; extra concrete methods outside the interface are excluded.
-These are object-registration observations, not callback executions. On etcd,
+These are object-registration observations, not callback executions: they are
+`binds_implementation` relations, while a callable value passed as an argument
+remains `passes_callback`. On etcd,
 quotaKVServer.Put retains the RegisterKVServer argument at grpc.go:80 and the
 separate local KvServerToKvClient adapter binding at v3client.go:33.
+
+An interface value stored through a repository constructor parameter retains
+the concrete implementations supplied by every actual static repository call
+to that constructor. A non-call use, missing argument or caller outside the
+selected repository scope keeps the frontier unresolved. The declared method
+still limits eligible observed implementations; type compatibility alone never
+creates a dispatch edge. The cumulative Go fixture requires the
+constructor-injected facade to retain `storedEngine.Put` as an observed target.
+
+## Interface implementation matching
+
+The exact Go analysis input owns `MatchInterfaceImplementations`. When enabled,
+the core-object pass uses the already loaded `go/types` universe to enumerate
+every selected-repository named non-interface type whose value or pointer method
+set satisfies a selected-repository interface. An inverted method-name index
+narrows candidates before `types.Implements` performs the authoritative check;
+this adds no source read, package load, SSA build or call-graph traversal. The
+ordinary Go adapter enables the option for every selected target, including
+module libraries; direct cube callers may enable or disable it explicitly.
+
+Each accepted type pair projects one exact `implements` relation from concrete
+type to interface and each directly owned matching method projects another
+exact `implements` relation from concrete method to interface method. Value and
+pointer method-set evidence remains explicit. These compatibility facts do not
+claim construction, assignment or runtime dispatch and therefore never replace
+the separately observed binding and call relations. The cumulative fixture
+requires `compatibleOnlyEngine` and its `Put` method to match `FieldStore`
+despite never being assigned to that interface.
 
 ## Receiver fields and bindings
 
@@ -99,8 +133,10 @@ and exact-request hashes, independently of the byte-preserving loading change.
 
 Direct TypeScript interface property declarations retain their written type,
 optional/readonly modifiers, exact source location and native owner. Go core
-objects retain compiler type signatures and explicitly declared struct fields, including tags and embedded
-field declarations, under their native type. Both project into the existing
+objects retain short type signatures and explicitly declared struct fields, including embedded
+field declarations, under their native type. A struct tag is not signature text: each named format
+becomes an object alias (`json:"count_label,omitempty"` is alias `json`/`count_label`; options and `-`
+are not names). Both project into the existing
 type-owned variable objects used by Python class fields. The same atlas members
 and question evidence carry them onward; no field creates a runtime call or an
 inherited declaration at a new owner. Comparable count-field examples live in the cumulative TypeScript, Python and Go testdata repositories.

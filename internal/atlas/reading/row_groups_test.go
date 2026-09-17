@@ -28,7 +28,7 @@ func TestRowGroupsPackTheirOwnWindowsInOneBatch(t *testing.T) {
 	}
 	// Each group is its own window with its own keys; the answers come back
 	// in the groups' row order.
-	if answers[0].answer["line"] != "Text for r1" || answers[1].answer["line"] != "Text for r2" || answers[2].answer["line"] != "Text for r1" {
+	if answers[0].answer["line"] != "Text for a" || answers[1].answer["line"] != "Text for b" || answers[2].answer["line"] != "Text for c" {
 		t.Fatalf("answers lost their group order: %+v", answers)
 	}
 	if use := r.use(def.Stage); use.Windows != 2 || use.Rows != 3 || provider.calls != 2 || answers[2].source != atlas.SourceModel {

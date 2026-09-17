@@ -1,24 +1,23 @@
 Evidence vocabulary. Every value below comes from an extractor, never from a model; a field absent from a row was not observed.
-- `invocation`, how a call site is made: `synchronous` (default, left out); `goroutine` a Go `go` statement; `deferred` a Go
-  `defer`. A prefixed form names the dynamic joint, then the invocation: `interface_invoke:` a call through an interface method
-  with no statically known implementation; `declared_interface_dispatch:` a call of a method declared on an external interface,
-  the declared method being the callee; `function_value_call:` a call of a function value (closure, variable or field);
-  `callback_transfer:` a callable value passed into a named function or a declared interface method, transferred, not run;
-  `callable_binding:field` a callable assigned to a struct field, not an execution. `dynamic`, `non_static` and `depth_bound`
-  are unresolved sites counted in `detail`: a dynamic interface invoke, a non-static call, a call beyond the traversal depth.
+- `invocation`, how a call runs: absent for an ordinary call; `deferred` a Go `defer`; `goroutine` a Go `go` statement;
+  `async_task` a Python coroutine handed to a consumer such as `asyncio.create_task`; `construct` a JavaScript `new`.
+- `dispatch`, how its target was found: absent for a static target; `interface` through an interface, the targets being the
+  observed implementations; `interface_method` a method declared on an external interface, the implementation that runs
+  unresolved; `function_value` a call of a function value (closure, variable or field). An unresolved frontier row counts
+  such sites in `detail`.
+- `aliases` of a declaration are its names in other formats, `format:name` separated by spaces: `json:count_label` is the
+  JSON key of that field.
 - `resolution`: `exact` (default, left out) one known callee; `alternatives` several possible callees; `unresolved` none known.
 - `kind` of a declaration: `function`, `method`, `type`, `variable`, `lambda`. Of a call: `calls` a repository declaration;
-  `invokes_external` a symbol outside the indexed code; `executes` a process or command launch; `passes_callback`, `reads`,
-  `writes`, `sources`, `decorates`, `implements` other observed relations, by name.
+  `invokes_external` a symbol outside the indexed code; `executes` a process or command launch; `passes_callback`,
+  `binds_implementation`, `reads`, `writes`, `sources`, `decorates`, `implements` other observed relations, by name.
 - Origins (`receiver_value`, `source_arguments[].origin`, `result_value`) are source expressions, not runtime values: a node
   has a `kind`, a `text` and at most two levels of `parts`. `literal` (text is the value); `parameter` (of the enclosing
   callable, by name); `receiver` (its method receiver); `field` (a field selection, parts[0] the value it is selected from,
   `initializer` an observed assignment when the instance cannot be followed); `call_result` (the result of another call);
   `record` (a composite literal of `field_value` nodes, each named by text, value in parts); `concat` (a string composed of
   its parts); `index` (container, then key); `alternatives` (several possible sources); `unknown` (not followed).
-- `dispatch_observations` are the native views of one call site; `witnesses[].kind`: `go_ssa_dynamic_handoff` (Go SSA saw a
-  callable or interface value cross to this site); `go_declared_interface_dispatch` (a Go call of a method declared on an
-  external interface); `callable_receiver_field` (a literal field on the registering receiver object);
+- Evidence extractors `callable_receiver_field` (a literal field on the registering receiver object) and
   `interface_field_assignment` (an observed assignment of a candidate implementation to the interface-typed field).
 - `extractor` in `source_evidence.by_ref`: `control_context` (the label names the statement whose body holds the call:
   `for body`, `for body without condition`, `range body`, `range body over channel`, `select without default`,

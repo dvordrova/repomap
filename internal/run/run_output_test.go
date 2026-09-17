@@ -52,6 +52,18 @@ func TestRunOutputTimestampsEveryEventAndAlignsContinuation(t *testing.T) {
 	t.Log("console sample:\n" + text)
 }
 
+func TestTargetPagePrintsOnlyCompactPublicScope(t *testing.T) {
+	var buffer bytes.Buffer
+	output := newRunOutput(&buffer)
+	output.TargetPage("started", targetPageConsoleContext{
+		DisplayPath: "cmd/api", Scope: "t1", RunID: "run", Role: "default",
+	})
+	text := buffer.String()
+	if !strings.Contains(text, "scope: t1") || strings.Contains(text, "go:at-") {
+		t.Fatalf("target page exposed native discovery identity:\n%s", text)
+	}
+}
+
 func TestRunOutputSuppressedBlankAndAccountingDoNotAdvanceDelta(t *testing.T) {
 	var buffer bytes.Buffer
 	output := newRunOutput(&buffer)

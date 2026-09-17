@@ -1,18 +1,13 @@
 package surfacediscovery
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
-	"os"
-	"path/filepath"
-	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -45,6 +40,7 @@ func resolutionAnalyzerFromFiles(t testing.TB, fset *token.FileSet, files []*ast
 	scenario := Scenario{ID: "go:linux/amd64:tags=", GOOS: "linux", GOARCH: "amd64"}
 	a := &analyzer{ctx: context.Background(), root: "/fixture", program: pkg.Prog, packages: []*ssa.Package{pkg}, scenario: scenario,
 		admittedPackages: map[string]bool{pkgPath: true}, modulePaths: map[string]bool{pkgPath: true},
+		allFunctions:          make(map[*ssa.Function]bool),
 		functionIDs:           make(map[*ssa.Function]string),
 		packageFacts:          map[string]*packages.Package{pkgPath: {Module: &packages.Module{Path: pkgPath, Dir: "/fixture"}}},
 		directCallIndex:       newDirectCallIndexBuilder(scenario, 0),
@@ -52,6 +48,7 @@ func resolutionAnalyzerFromFiles(t testing.TB, fset *token.FileSet, files []*ast
 	var functions []*ssa.Function
 	for function := range ssautil.AllFunctions(pkg.Prog) {
 		if a.isRepositoryFunction(function) {
+			a.allFunctions[function] = true
 			functions = append(functions, function)
 			a.directCallIndex.recordFunction(a, function)
 		}
@@ -60,137 +57,49 @@ func resolutionAnalyzerFromFiles(t testing.TB, fset *token.FileSet, files []*ast
 	return a, pkg
 }
 
-func TestDynamicValueCanonicalEquivalenceOnCumulativeFixture(t *testing.T) {
-	fset := token.NewFileSet()
-	var files []*ast.File
-	for _, name := range []string{"fixtures.go", "handoff_flow.go"} {
-		path := filepath.Join("..", "..", "testdata", "repositories", "go", "internal", "storefixture", name)
-		source, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		file, err := parser.ParseFile(fset, "/fixture/"+name, source, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		files = append(files, file)
-	}
-	a, pkg := resolutionAnalyzerFromFiles(t, fset, files)
-	actual, original, shapes := compareResolutionIndexes(t, a, pkg)
-	if !bytes.Equal(actual, original) {
-		t.Fatalf("canonical handoff index differs from the original walker\nactual: %s\noriginal: %s", actual, original)
-	}
-	for _, required := range []string{"SharedCallbackFlow", "CyclicCallbackFlow", "InvokeInterfaceFlows", "Put", "RegisterServices", "BuildActionPair"} {
-		if shapes[required] == 0 {
-			t.Errorf("fixture did not exercise %s", required)
-		}
-	}
-}
-
-// Both paths use the same native caller, slot, location and function catalogue;
-// only candidate resolution changes. New seals and validates all accounting,
-// source sets, evidence and the digest, rather than comparing counts alone.
-func compareResolutionIndexes(t testing.TB, a *analyzer, pkg *ssa.Package) ([]byte, []byte, map[string]int) {
-	t.Helper()
-	var current, original []godynamichandoff.Handoff
-	shapes := make(map[string]int)
+func TestInterfaceConstructorParameterUsesActualRepositoryArguments(t *testing.T) {
+	a, pkg := resolutionTestAnalyzer(t, `package fixture
+type Repository interface{ Get(int) }
+type Postgres struct{}
+func (*Postgres) Get(int) {}
+type Service struct{ repository Repository }
+func NewService(repository Repository) *Service { return &Service{repository: repository} }
+func (service *Service) Get(id int) { service.repository.Get(id) }
+func main() { NewService(&Postgres{}).Get(1) }
+`)
+	var invocation *ssa.Call
 	for function := range ssautil.AllFunctions(pkg.Prog) {
-		if !a.isRepositoryFunction(function) || function.Synthetic != "" {
-			continue
-		}
-		callerID, ok := a.directCallIndex.recordFunction(a, function)
-		if !ok {
+		if function.Name() != "Get" || function.Signature.Recv() == nil ||
+			!strings.Contains(function.Signature.Recv().Type().String(), "Service") {
 			continue
 		}
 		for _, block := range function.Blocks {
 			for _, instruction := range block.Instrs {
-				if store, ok := instruction.(*ssa.Store); ok {
-					before := len(a.dynamicHandoffCapture.callableBindings)
-					a.dynamicHandoffCapture.observeCallableBinding(a, store)
-					if len(a.dynamicHandoffCapture.callableBindings) > before {
-						base := a.dynamicHandoffCapture.callableBindings[before].handoff
-						appendResolutionPair(t, a, base, dynamicCallbackArgument{value: store.Val, signature: base.Slot.Signature}, &current, &original)
-						shapes[function.Name()]++
-					}
-				}
-				call, ok := instruction.(ssa.CallInstruction)
-				if !ok {
-					continue
-				}
-				common := call.Common()
-				base := godynamichandoff.Handoff{CallerID: callerID, Invocation: dynamicInvocation(call), Callsite: dynamicLocation(a.location(call.Pos()))}
-				var values []dynamicCallbackArgument
-				if common.IsInvoke() {
-					base.Kind = godynamichandoff.InterfaceInvoke
-					values = []dynamicCallbackArgument{{value: common.Value, method: common.Method, signature: types.TypeString(common.Signature(), packageQualifier)}}
-				} else if common.StaticCallee() == nil {
-					if _, builtin := common.Value.(*ssa.Builtin); !builtin {
-						base.Kind = godynamichandoff.FunctionValueCall
-						values = []dynamicCallbackArgument{{value: common.Value, signature: types.TypeString(common.Signature(), packageQualifier)}}
-					}
-				}
-				for _, value := range values {
-					appendResolutionPair(t, a, base, value, &current, &original)
-					shapes[function.Name()]++
-				}
-				if target, ok := dynamicCallbackStaticTarget(a, common); ok {
-					base.Kind, base.StaticTarget = godynamichandoff.CallbackTransfer, target
-					for _, value := range append(dynamicCallbackArguments(common), dynamicInterfaceArguments(common)...) {
-						appendResolutionPair(t, a, base, value, &current, &original)
-						shapes[function.Name()]++
-					}
+				call, ok := instruction.(*ssa.Call)
+				if ok && call.Common().IsInvoke() {
+					invocation = call
 				}
 			}
 		}
 	}
-	direct := a.directCallIndex.finish()
-	seal := func(handoffs []godynamichandoff.Handoff) []byte {
-		capture := &dynamicHandoffCapture{handoffs: handoffs}
-		index, err := capture.finish(direct, callableBindingSnapshot{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := index.Validate(); err != nil {
-			t.Fatal(err)
-		}
-		data, err := json.Marshal(index)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return data
+	if invocation == nil {
+		t.Fatal("fixture interface invocation is absent")
 	}
-	return seal(current), seal(original), shapes
-}
-
-func appendResolutionPair(t testing.TB, a *analyzer, base godynamichandoff.Handoff, value dynamicCallbackArgument, current, original *[]godynamichandoff.Handoff) {
-	t.Helper()
-	base.Slot.Signature, base.Slot.Parameter = value.signature, value.parameter
-	var candidates, reference []godynamichandoff.Candidate
-	var unknown, referenceUnknown int
-	var err error
-	if value.method != nil {
-		base.Slot.DeclaredType, base.Slot.Method = types.TypeString(value.value.Type(), packageQualifier), value.method.Name()
-		candidates, unknown, err = dynamicInterfaceCandidates(a, value.value, value.method)
-		reference, referenceUnknown = referenceDynamicInterfaceCandidates(a, value.value, value.method)
-	} else {
-		candidates, unknown, err = dynamicFunctionCandidates(a, value.value)
-		reference, referenceUnknown = referenceDynamicFunctionCandidates(a, value.value)
-	}
+	candidates, unresolved, err := dynamicInterfaceCandidates(a, invocation.Common().Value, invocation.Common().Method)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, result := range []struct {
-		candidates []godynamichandoff.Candidate
-		unknown    int
-	}{{candidates, unknown}, {reference, referenceUnknown}} {
-		handoff := base
-		handoff.Candidates, handoff.CandidatesConsidered = result.candidates, len(result.candidates)+result.unknown
-		handoff.Resolution = dynamicResolution(result.candidates, result.unknown)
-		if i == 0 {
-			*current = append(*current, handoff)
-		} else {
-			*original = append(*original, handoff)
+	if len(candidates) != 1 || unresolved != 0 {
+		t.Fatalf("constructor-injected implementation = %+v unresolved=%d", candidates, unresolved)
+	}
+	target := ""
+	for function, functionID := range a.directCallIndex.functionNode {
+		if functionID == candidates[0].FunctionID && strings.Contains(function.String(), "Postgres") {
+			target = function.String()
 		}
+	}
+	if !strings.Contains(target, ".Postgres).Get") {
+		t.Fatalf("constructor-injected target = %q, want (*Postgres).Get", target)
 	}
 }
 
@@ -206,34 +115,9 @@ func TestDynamicValueCycleContextAndEvidence(t *testing.T) {
 	if len(blocked.functions) != 1 || len(fresh.functions) != 2 || !blocked.cyclic || !fresh.cyclic {
 		t.Fatalf("cycle context was cached: blocked=%+v fresh=%+v", blocked, fresh)
 	}
-	for _, active := range []map[ssa.Value]bool{{b: true}, {}} {
-		want := make(map[*ssa.Function]godynamichandoff.CandidateEvidence)
-		unknown := referenceResolveDynamicFunctionValue(a, want, active, false)
-		got := fresh
-		if active[b] {
-			got = blocked
-		}
-		if unknown != got.unresolved || !reflect.DeepEqual(want, got.functions) {
-			t.Fatal("cycle summary changed original evidence or path counts")
-		}
-	}
 	if r.functionValue(f, false).functions[f] != godynamichandoff.EvidenceDirectFunctionValue ||
 		r.functionValue(f, true).functions[f] != godynamichandoff.EvidenceUniqueValueFlow {
 		t.Fatal("throughFlow was not retained in memo identity")
-	}
-	// A direct function and a closure can resolve to the same function. Merge
-	// must retain the last original observation, not promote the stronger one.
-	closure := &ssa.MakeClosure{Fn: f}
-	for _, values := range [][]ssa.Value{{f, closure}, {closure, f}} {
-		got := dynamicValueSummary{}
-		want := make(map[*ssa.Function]godynamichandoff.CandidateEvidence)
-		for _, value := range values {
-			r.merge(&got, r.functionValue(value, false))
-			referenceResolveDynamicFunctionValue(value, want, make(map[ssa.Value]bool), false)
-		}
-		if !reflect.DeepEqual(got.functions, want) {
-			t.Fatal("summary merge changed last-write evidence")
-		}
 	}
 }
 
@@ -304,7 +188,7 @@ func Run(h *H){h.V.M()}`)
 	call := lastResolutionCall(pkg).Common()
 	r := newDynamicValueResolver(a, call.Method)
 	result := r.interfaceValue(call.Value)
-	if r.err != nil || result.unresolved != 1 || len(result.functions) != 1 {
+	if r.err != nil || result.unresolved != 0 || len(result.functions) != 1 {
 		t.Fatalf("field summary = %+v, %v", result, r.err)
 	}
 	for function := range result.functions {
@@ -358,46 +242,26 @@ func resolutionDiamondSource(interfaceValue, known bool, depth int) string {
 	return source + fmt.Sprintf("func Run(x A,flag bool){Sink(I%d(x,flag))}", depth)
 }
 
-func TestDynamicValueDiamondsPreserveCanonicalIndexes(t *testing.T) {
-	for _, isInterface := range []bool{false, true} {
-		for _, known := range []bool{false, true} {
-			t.Run(fmt.Sprintf("interface=%t/known=%t", isInterface, known), func(t *testing.T) {
-				a, pkg := resolutionTestAnalyzer(t, resolutionDiamondSource(isInterface, known, 8))
-				got, want, _ := compareResolutionIndexes(t, a, pkg)
-				if !bytes.Equal(got, want) {
-					t.Fatal("DAG changed canonical handoff bytes/digest")
-				}
-			})
-		}
-	}
-}
-
 func BenchmarkDynamicValueDiamonds(b *testing.B) {
 	for _, isInterface := range []bool{false, true} {
 		for _, known := range []bool{false, true} {
 			for _, depth := range []int{8, 12, 16} {
 				a, pkg := resolutionTestAnalyzer(b, resolutionDiamondSource(isInterface, known, depth))
-				for _, original := range []bool{true, false} {
-					b.Run(fmt.Sprintf("interface=%t/known=%t/depth=%d/original=%t", isInterface, known, depth, original), func(b *testing.B) {
-						b.ReportAllocs()
-						for i := 0; i < b.N; i++ {
-							if isInterface {
-								for _, argument := range dynamicInterfaceArguments(lastResolutionCall(pkg).Common()) {
-									if original {
-										referenceResolveDynamicInterfaceValue(a, argument.value, argument.method, make(map[*ssa.Function]struct{}), make(map[*ssa.Function][]godynamichandoff.Location), make(map[ssa.Value]bool))
-									} else if _, err := resolveDynamicInterfaceValue(a, argument.value, argument.method); err != nil {
-										b.Fatal(err)
-									}
+				b.Run(fmt.Sprintf("interface=%t/known=%t/depth=%d", isInterface, known, depth), func(b *testing.B) {
+					b.ReportAllocs()
+					for i := 0; i < b.N; i++ {
+						if isInterface {
+							for _, argument := range dynamicInterfaceArguments(lastResolutionCall(pkg).Common()) {
+								if _, err := resolveDynamicInterfaceValue(a, argument.value, argument.method); err != nil {
+									b.Fatal(err)
 								}
-							} else if original {
-								referenceResolveDynamicFunctionValue(lastResolutionCall(pkg).Common().Value, make(map[*ssa.Function]godynamichandoff.CandidateEvidence), make(map[ssa.Value]bool), false)
-							} else if _, err := resolveDynamicFunctionValue(lastResolutionCall(pkg).Common().Value); err != nil {
-								b.Fatal(err)
 							}
+						} else if _, err := resolveDynamicFunctionValue(lastResolutionCall(pkg).Common().Value); err != nil {
+							b.Fatal(err)
 						}
-						runtime.KeepAlive(pkg)
-					})
-				}
+					}
+					runtime.KeepAlive(pkg)
+				})
 			}
 		}
 	}

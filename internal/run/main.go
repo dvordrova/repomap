@@ -265,6 +265,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	)
 	noCache := fs.Bool("no-cache", false, "disable cross-run model response caches")
 	noQuestions := fs.Bool("no-questions", false, "skip question generation, retrieval and answers, including configured questions")
+	captions := fs.Bool("captions", false, "ask the model for titles, lines and sentences besides its decisions")
 	var questions []string
 	fs.Func("question", "add a reading question; repeat for several questions", func(value string) error { return appendQuestion(&questions, value) })
 	gitLabURLFlag := fs.String("gitlab-url", "", "create a standalone report with GitLab source links; does not select a repository")
@@ -622,7 +623,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				Corpus: repositoryCorpus, RepositoryState: initialState, Plan: plan,
 				RunID: runID, DebugDir: dDir, NoCache: *noCache, NoOpen: *noOpen,
 				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
-				NoModel: *noModel, NoQuestions: *noQuestions, Questions: questions, DisplayLanguage: displayLanguage,
+				NoModel: *noModel, NoQuestions: *noQuestions, Captions: *captions, Questions: questions, DisplayLanguage: displayLanguage,
 				Output: humanOutput, FirstLayer: firstLayer,
 				DiscoverJSTSFn: jstsproject.DiscoverSelected,
 				VerifiedRunsSink: func(receipts []report.RunReceipt) {

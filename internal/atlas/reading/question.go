@@ -31,12 +31,14 @@ func (r *reader) readQuestions(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	ids := stableQuestionIDs(questions)
 	for questionIndex, question := range questions {
 		r.questionText = question
 		r.questionKey = fmt.Sprintf("%x", sha256.Sum256([]byte(question)))
 		if err := r.bindQuestion(chunks, retrieval[questionIndex]); err != nil {
 			return err
 		}
+		r.question.ID = ids[question]
 		r.question.UserQuestion = contains(r.opts.Questions, question)
 		r.question.Origins = origins[question]
 
@@ -72,6 +74,16 @@ func (r *reader) readQuestions(ctx context.Context) error {
 		}
 	}
 	return r.persistQuestion()
+}
+
+func stableQuestionIDs(questions []string) map[string]string {
+	ordered := append([]string(nil), questions...)
+	sort.Strings(ordered)
+	ids := make(map[string]string, len(ordered))
+	for i, question := range ordered {
+		ids[question] = fmt.Sprintf("q%d", i+1)
+	}
+	return ids
 }
 
 func (r *reader) questionRows() []lines.QuestionChunk {

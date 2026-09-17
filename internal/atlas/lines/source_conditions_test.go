@@ -7,33 +7,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
-	"github.com/dvordrova/repomap/internal/atlas/table"
 )
-
-func TestEmptyCallCatalogueDoesNotAskOutboundOrRemoveKeyAndCandidate(t *testing.T) {
-	def := SymbolSelection(false)
-	rows := []table.Row{{Fields: []table.Field{{Name: "call_options", Value: []string{}}}}, {Fields: []table.Field{{Name: "call_options", Value: []string{"c1"}}}}}
-	window := table.Window{Rows: rows}
-	raw, err := table.Request(def, window)
-	if err != nil || !strings.Contains(string(raw), `"when_options_nonempty":"call_options"`) || strings.Contains(string(raw), "limit_from") {
-		t.Fatalf("missing input condition, or a count the options already bound: %s %v", raw, err)
-	}
-	// A dropped candidate cell reads no; a written yes is the proposal.
-	result, err := table.DecodeResult(def, window, []byte(`{"rows":[{"key":"r1","key_symbol":"yes","outbound":42},{"key":"r2","key_symbol":"no","operation_candidate":"yes","outbound":"c1"}]}`))
-	if err != nil || len(result.Rejections) != 0 || result.Answers[0]["key_symbol"] != "yes" || result.Answers[0]["operation_candidate"] != "no" || len(result.Answers[0]) != 2 ||
-		result.Answers[1]["outbound"] != "c1" || result.Answers[1]["operation_candidate"] != "yes" {
-		t.Fatalf("input condition changed supported decisions: %+v %v", result, err)
-	}
-	missing, err := table.DecodeResult(def, window, []byte(`{"rows":[{"key":"r1","key_symbol":"yes"},{"key":"r2","key_symbol":"no","operation_candidate":"no"}]}`))
-	if err != nil || missing.Answers[0] == nil || missing.Answers[1] != nil {
-		t.Fatalf("empty calls requested outbound or real calls stopped requiring it: %+v %v", missing, err)
-	}
-	// A written value outside yes/no is still a refused cell, not a default.
-	written, err := table.DecodeResult(def, window, []byte(`{"rows":[{"key":"r1","key_symbol":"yes","operation_candidate":"unassessed"},{"key":"r2","key_symbol":"no","operation_candidate":"no","outbound":"none"}]}`))
-	if err != nil || written.Answers[0] != nil || written.Answers[1] == nil || len(written.Rejections) != 1 {
-		t.Fatalf("a value outside yes/no was accepted or refused its neighbour: %+v %v", written, err)
-	}
-}
 
 func TestOutgoingOptionsRetainUncertainCallsAndOriginalPositions(t *testing.T) {
 	calls := []atlas.SymbolCall{
@@ -46,6 +20,7 @@ func TestOutgoingOptionsRetainUncertainCallsAndOriginalPositions(t *testing.T) {
 		{Name: "unknown target", Kind: "calls", Line: 16, Resolution: "exact"},
 	}
 	row := SymbolRow(atlas.Place{Symbol: &atlas.SymbolFacts{Calls: calls}}, "")
+	row.ID = "s1"
 	fields := make(map[string]any)
 	for _, field := range row.Fields {
 		fields[field.Name] = field.Value
@@ -62,11 +37,6 @@ func TestOutgoingOptionsRetainUncertainCallsAndOriginalPositions(t *testing.T) {
 	if _, counted := fields["call_count"]; counted {
 		t.Fatal("a count the options already bound is still rendered")
 	}
-	window := table.Window{Rows: []table.Row{row}}
-	result, err := table.DecodeResult(SymbolSelection(false), window, []byte(`{"rows":[{"key":"r1","key_symbol":"yes","operation_candidate":"no","outbound":"c1 c5 c2"}]}`))
-	if err != nil || result.Answers[0]["outbound"] != "c5 c2" {
-		t.Fatalf("unsupported local choice displaced accepted choices: %+v %v", result, err)
-	}
 }
 
 // A rendered call leaves out the default invocation and resolution, which the
@@ -79,15 +49,15 @@ func TestSymbolRowOmitsDefaultsAndKeepsLocalCallsBrief(t *testing.T) {
 	choice := atlas.EdgeEvidence{Extractor: "control_context", Label: "select without default", Path: "worker.go", LineNo: 12}
 	place := atlas.Place{ID: "sym:run", Path: "worker.go", Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "run", Kind: "function"}, Calls: []atlas.SymbolCall{
 		{Name: "processPendingJobs", Kind: "calls", Line: 13, Column: 4, Invocation: "goroutine", Resolution: "exact", CalleeIDs: []string{"private-callee"}, Evidence: []atlas.EdgeEvidence{loop, choice}},
-		{Name: "time.Sleep", Kind: "invokes_external", Line: 14, Column: 4, Invocation: "synchronous", Resolution: "exact", API: &atlas.CallAPI{Package: "time", Name: "Sleep"}, Evidence: []atlas.EdgeEvidence{loop}},
-		{Name: "Store.Save", Kind: "calls", Line: 15, Column: 4, Invocation: "interface_invoke:synchronous", Resolution: "alternatives", CalleeIDs: []string{"private-a", "private-b"}},
+		{Name: "time.Sleep", Kind: "invokes_external", Line: 14, Column: 4, Resolution: "exact", API: &atlas.CallAPI{Package: "time", Name: "Sleep"}, Evidence: []atlas.EdgeEvidence{loop}},
+		{Name: "Store.Save", Kind: "calls", Line: 15, Column: 4, Dispatch: "interface", Resolution: "alternatives", CalleeIDs: []string{"private-a", "private-b"}},
 	}}}
 	raw, err := json.Marshal(SymbolRow(place, "").Fields)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{`"local_calls"`, `"processPendingJobs@13 goroutine (for body without condition; select without default)"`, `"ref":"c2"`, `"ref":"c3"`,
-		`"invocation":"interface_invoke:synchronous"`, `"resolution":"alternatives"`, `"source_evidence"`, `"for body without condition"`, `"has_repository_callee_candidate":true`} {
+		`"dispatch":"interface"`, `"resolution":"alternatives"`, `"source_evidence"`, `"for body without condition"`, `"has_repository_callee_candidate":true`} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("symbol row lost %s: %s", want, raw)
 		}
@@ -105,7 +75,7 @@ func TestSymbolRowOmitsDefaultsAndKeepsLocalCallsBrief(t *testing.T) {
 }
 
 func TestSingletonBindingIsOneCompleteObject(t *testing.T) {
-	binding := atlas.SymbolBinding{From: "Routes", To: "Proxy", Path: "server/routes.go", Line: 19, Invocation: "callback_transfer", Resolution: "alternatives",
+	binding := atlas.SymbolBinding{From: "Routes", To: "Proxy", Path: "server/routes.go", Line: 19, Kind: "passes_callback", Resolution: "alternatives",
 		Arguments: []atlas.RegistrationArgument{{Kind: "literal_string", Value: "/proxy", Path: "server/routes.go", Line: 19}}, Evidence: []atlas.EdgeEvidence{{Path: "server/routes.go", LineNo: 19, Extractor: "binding"}}}
 	before, _ := json.Marshal(binding)
 	var catalogue EvidenceCatalog

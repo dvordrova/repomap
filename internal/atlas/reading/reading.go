@@ -16,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,6 +81,9 @@ type Options struct {
 	Questions []string
 	// Learn adapts the base learning intents after the ordinary atlas.
 	Learn bool
+	// NoCaptions leaves every prose cell (titles, lines, aliases, sentences)
+	// on its fallback and asks the model for decisions alone.
+	NoCaptions bool
 }
 
 // Result is the reading's outcome.
@@ -101,24 +105,31 @@ type cell struct {
 }
 
 type reader struct {
-	opts      Options
-	places    map[string]atlas.Place
-	lines     map[string]cell
-	titles    map[string]cell
-	openDirs  map[string]bool // directory place ID -> open, budget mode only
-	openFiles map[string]bool // file place ID -> open, budget mode only
-	budget    bool
+	opts              Options
+	places            map[string]atlas.Place
+	directoriesByPath map[string]string
+	symbolsBySource   map[string]string
+	lines             map[string]cell
+	titles            map[string]cell
+	openDirs          map[string]bool // directory place ID -> open, budget mode only
+	openFiles         map[string]bool // file place ID -> open, budget mode only
+	budget            bool
 
-	symbolLine map[string]cell               // symbol place ID -> model line
-	operations map[string][3]string          // symbol ID -> activation, operation name and description
-	outbound   map[string][]atlas.SymbolCall // model-selected calls, still anchored in source
-	keys       map[string][]string           // file place ID -> key symbol IDs, by rank
+	symbolLine map[string]cell      // symbol place ID -> model line
+	operations map[string][3]string // symbol ID -> activation, operation name and description
+	api        map[string]apiRole   // external symbol -> what it binds, publishes, talks to
+	keys       map[string][]string  // file place ID -> key symbol IDs, by rank
 
 	boxOf          map[string]string            // file place ID -> box ID
 	designBoxOf    map[string]map[string]string // target -> declaration/file -> accepted part
 	designFiles    map[string]string            // declaration -> its source file
 	designSubjects map[string]string            // native declaration -> place
 	designRound    int
+	nextPart       int
+	nextZone       int
+	nextBoundary   int
+	nextJoint      int
+	boundaryIDs    map[string]string    // stable source identity -> compact boundary ID
 	boxes          map[string]*boxState // box ID -> box
 	zones          map[string][]*zoneState
 	arrows         map[string][]*arrowState
@@ -138,10 +149,64 @@ type reader struct {
 	learning          *atlas.LearningPlan
 	learningRound     int
 	knowledge         map[string]*Knowledge
+	knowledgeRecords  map[knowledgeRecordKey]*Knowledge
 	knowledgeSubjects map[string]*Knowledge
 	symbolSelections  map[string]*Knowledge // native subject -> independent selection evidence
 	responseTables    map[string]rememberedTable
 	recallOnly        bool
+}
+
+func (r *reader) compactID(prefix string, next *int) string {
+	(*next)++
+	return prefix + fmt.Sprint(*next)
+}
+
+func compactIDLess(left, right string) bool {
+	parts := func(value string) (string, int, bool) {
+		cut := 0
+		for cut < len(value) && value[cut] >= 'a' && value[cut] <= 'z' {
+			cut++
+		}
+		if cut == 0 || cut == len(value) {
+			return "", 0, false
+		}
+		number, err := strconv.Atoi(value[cut:])
+		return value[:cut], number, err == nil && number > 0
+	}
+	leftPrefix, leftNumber, leftOK := parts(left)
+	rightPrefix, rightNumber, rightOK := parts(right)
+	if leftOK && rightOK && leftPrefix == rightPrefix {
+		return leftNumber < rightNumber
+	}
+	return left < right
+}
+
+func symbolSourceKey(path string, line int, name string) string {
+	return path + "\x00" + fmt.Sprintf("%d", line) + "\x00" + name
+}
+
+func (r *reader) symbolID(path string, line int, name string) string {
+	if id := r.symbolsBySource[symbolSourceKey(path, line, name)]; id != "" {
+		return id
+	}
+	for id, place := range r.places {
+		if place.Kind == atlas.PlaceSymbol && place.Path == path && place.LineNo == line && place.Symbol != nil && place.Symbol.Decl.Name == name {
+			return id
+		}
+	}
+	return ""
+}
+
+func (r *reader) directoryID(path string) string {
+	if id := r.directoriesByPath[path]; id != "" {
+		return id
+	}
+	for id, place := range r.places {
+		if place.Kind == atlas.PlaceDirectory && place.Path == path {
+			return id
+		}
+	}
+	return ""
 }
 
 // Read performs the walk.
@@ -175,24 +240,37 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 	r := &reader{
 		opts:              opts,
 		places:            make(map[string]atlas.Place, len(opts.Graph.Places)),
+		directoriesByPath: make(map[string]string),
+		symbolsBySource:   make(map[string]string),
 		lines:             make(map[string]cell),
 		titles:            make(map[string]cell),
 		openDirs:          make(map[string]bool),
 		openFiles:         make(map[string]bool),
 		symbolLine:        make(map[string]cell),
 		operations:        make(map[string][3]string),
-		outbound:          make(map[string][]atlas.SymbolCall),
+		api:               make(map[string]apiRole),
 		keys:              make(map[string][]string),
 		uses:              make(map[string]*atlas.StageUse),
 		started:           make(map[string]time.Time),
 		dry:               opts.Provider == nil,
 		knowledge:         make(map[string]*Knowledge),
+		knowledgeRecords:  make(map[knowledgeRecordKey]*Knowledge),
 		knowledgeSubjects: make(map[string]*Knowledge),
 		responseTables:    make(map[string]rememberedTable),
+		boundaryIDs:       make(map[string]string),
 	}
 	files := 0
 	for _, place := range opts.Graph.Places {
 		r.places[place.ID] = place
+		if place.Kind == atlas.PlaceDirectory {
+			r.directoriesByPath[place.Path] = place.ID
+		}
+		if place.Kind == atlas.PlaceSymbol && place.Symbol != nil {
+			r.symbolsBySource[symbolSourceKey(place.Path, place.LineNo, place.Symbol.Decl.Name)] = place.ID
+		}
+		if place.Kind == atlas.PlaceBoundary {
+			r.nextBoundary++
+		}
 		if place.Kind == atlas.PlaceFile && !place.File.Generated {
 			files++
 		}
@@ -213,6 +291,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		{lines.StageDirectories, r.readDirectories},
 		{lines.StageFiles, r.readFiles},
 		{lines.StageSymbols, r.readSymbols},
+		{lines.StageAPI, r.readAPI},
 		{lines.StageOperations, r.readOperations},
 		{lines.StageBoundaries, r.readBoundaries},
 		{lines.StageZones, r.readDesign},
@@ -229,7 +308,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 			stage, state := r.opts.Stage, r.opts.State
 			r.opts.Stage = func(string, ...string) {}
 			r.opts.State = func(string, string, ...string) {}
-			for _, step := range steps[:5] {
+			for _, step := range steps[:6] {
 				if err := step.run(ctx); err != nil {
 					return Result{}, err
 				}
@@ -543,6 +622,17 @@ func (r *reader) runTableGroups(ctx context.Context, def table.Definition, round
 			def.MaxInputBytes = r.opts.InputBytes
 		}
 	}
+	if r.opts.NoCaptions {
+		def = withoutCaptions(def)
+		if len(def.Columns) == 0 {
+			for i := range answers {
+				answers[i] = rowAnswer{source: atlas.SourceGiven}
+			}
+			r.use(def.Stage).Rows += len(answers)
+			r.use(def.Stage).Given += len(answers)
+			return answers, nil
+		}
+	}
 	if def.Memoize && !r.dry {
 		if check != nil {
 			return nil, fmt.Errorf("table %s: a whole-window check cannot validate independent knowledge", def.Stage)
@@ -550,6 +640,23 @@ func (r *reader) runTableGroups(ctx context.Context, def table.Definition, round
 		return r.runIndependent(ctx, def, round, groups)
 	}
 	return r.runPreparedGroups(ctx, def, round, groups, check)
+}
+
+// withoutCaptions keeps the decisions of a table and drops its prose cells;
+// a table of prose alone asks nothing.
+func withoutCaptions(def table.Definition) table.Definition {
+	columns := make([]table.Column, 0, len(def.Columns))
+	for _, column := range def.Columns {
+		if column.Kind != table.Text {
+			columns = append(columns, column)
+		}
+	}
+	if len(columns) == len(def.Columns) {
+		return def
+	}
+	def.Columns = columns
+	def.Contract += ".decisions"
+	return def
 }
 
 func (r *reader) runPreparedTable(ctx context.Context, def table.Definition, round int, shared []table.Field, rows []table.Row, check func(table.Answers) error) ([]rowAnswer, error) {
@@ -656,7 +763,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 					rejectedRows++
 					continue
 				}
-				answers[offsets[i]+j] = rowAnswer{answer: value.Answers[j], source: source, requestSHA: result.Outcome.RequestSHA256, responseSHA: result.Outcome.ResponseSHA256, requestKey: result.Outcome.CacheKey, rowKey: table.Key(j)}
+				answers[offsets[i]+j] = rowAnswer{answer: value.Answers[j], source: source, requestSHA: result.Outcome.RequestSHA256, responseSHA: result.Outcome.ResponseSHA256, requestKey: result.Outcome.CacheKey, rowKey: window.Rows[j].ID}
 			}
 			use.Given += rejectedRows
 			reason := ""
@@ -669,8 +776,8 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 			}
 			for _, rejection := range value.Rejections {
 				samples := []string{rejection.Key}
-				for j, row := range window.Rows {
-					if rejection.Key == table.Key(j) {
+				for _, row := range window.Rows {
+					if rejection.Key == row.ID {
 						samples = append(samples, row.ID)
 						break
 					}
@@ -803,7 +910,7 @@ func (r *reader) printWindow(def table.Definition, window table.Window, answers 
 	}
 	r.tables.WriteString("\n")
 	for i, row := range window.Rows {
-		fmt.Fprintf(&r.tables, "- %s · %s\n", table.Key(i), row.ID)
+		fmt.Fprintf(&r.tables, "- %s\n", row.ID)
 		for _, field := range row.Fields {
 			encoded, _ := json.Marshal(field.Value)
 			fmt.Fprintf(&r.tables, "  - %s: %s\n", field.Name, string(encoded))
@@ -824,7 +931,7 @@ func (r *reader) printWindow(def table.Definition, window table.Window, answers 
 func (r *reader) atlas(files int) atlas.Atlas {
 	result := atlas.Atlas{
 		Version: atlas.Version, Repository: r.opts.Repository, Revision: r.opts.Revision,
-		Targets: []atlas.Target{}, Joints: append([]atlas.Joint{}, r.joints...), Diagnostics: []atlas.Diagnostic{},
+		Targets: []atlas.Target{}, Joints: append([]atlas.Joint{}, r.joints...), API: r.apiRoles(), Diagnostics: []atlas.Diagnostic{},
 		Budget: atlas.Budget{Files: files, OpenAsked: r.budget},
 	}
 	for _, open := range r.openDirs {
@@ -899,7 +1006,8 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 				Callers: len(place.File.Callers), Callees: len(place.File.Callees),
 			}
 			for _, decl := range place.File.Decls {
-				if owner.symbols != nil && !owner.symbols[atlas.SymbolID(place.Path, decl.LineNo, decl.Name)] {
+				symbolID := r.symbolID(place.Path, decl.LineNo, decl.Name)
+				if owner.symbols != nil && !owner.symbols[symbolID] {
 					continue
 				}
 				if owner.symbols != nil && decl.ObjectID != "" {
@@ -907,7 +1015,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 				}
 				symbol := atlas.Symbol{
 					ObjectID: decl.ObjectID,
-					ID:       atlas.SymbolID(place.Path, decl.LineNo, decl.Name), Name: decl.Name, Kind: decl.Kind,
+					ID:       symbolID, Name: decl.Name, Kind: decl.Kind,
 					Signature: decl.Signature, Doc: decl.Doc, LineNo: decl.LineNo, Column: decl.Column,
 				}
 				if line, ok := r.symbolLine[symbol.ID]; ok {
@@ -937,7 +1045,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 	}
 	for _, zone := range r.zones[meta.ID] {
 		boxIDs := append([]string{}, zone.boxes...)
-		sort.Strings(boxIDs)
+		sort.Slice(boxIDs, func(i, j int) bool { return compactIDLess(boxIDs[i], boxIDs[j]) })
 		target.Zones = append(target.Zones, atlas.Zone{ID: zone.id, Title: zone.title, Line: zone.line, BoxIDs: boxIDs})
 	}
 	for _, arrow := range r.arrows[meta.ID] {
@@ -945,14 +1053,14 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			continue
 		}
 		target.Arrows = append(target.Arrows, atlas.Arrow{
-			From: arrow.from, To: arrow.to, Calls: arrow.calls, Witnesses: arrow.topWitnesses(), Sentence: arrow.sentence,
+			ID: arrow.id, From: arrow.from, To: arrow.to, Calls: arrow.calls, Witnesses: arrow.topWitnesses(), Sentence: arrow.sentence,
 		})
 	}
 	boundaryIDs := make([]string, 0, len(r.boundaries))
 	for id := range r.boundaries {
 		boundaryIDs = append(boundaryIDs, id)
 	}
-	sort.Strings(boundaryIDs)
+	sort.Slice(boundaryIDs, func(i, j int) bool { return compactIDLess(boundaryIDs[i], boundaryIDs[j]) })
 	for _, id := range boundaryIDs {
 		state := r.boundaries[id]
 		if !contains(state.place.TargetIDs, meta.ID) {

@@ -8,28 +8,15 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// reachabilityKinds are the relation kinds along which execution or loading
-// can move from one file to another.
-var reachabilityKinds = map[programindex.RelationKind]struct{}{
-	programindex.RelationImports:        {},
-	programindex.RelationCalls:          {},
-	programindex.RelationContains:       {},
-	programindex.RelationDecorates:      {},
-	programindex.RelationPassesCallback: {},
-	programindex.RelationExecutes:       {},
-	programindex.RelationSources:        {},
-	programindex.RelationReads:          {},
-	programindex.RelationWrites:         {},
-}
+// A file is dead when no entrypoint of any target reaches it through the
+// relations the program graph records between files. A file that declares
+// only types and values has no code to run and is never judged: the graph
+// carries no edge for naming a type in a signature.
 
-// addReachability emits file-level import facts and marks every target file
-// that no entrypoint seed can reach as dead.
+// addReachability emits this target's file-level import facts and records its
+// file edges, seeds and judgeable files for the repository-wide verdict.
 func (b *builder) addReachability(target *targetContext) {
-	edges := make(map[string]map[string]struct{})
 	for _, relation := range target.input.Index.Relations {
-		if _, ok := reachabilityKinds[relation.Kind]; !ok {
-			continue
-		}
 		from := target.filePath(relation.FromID)
 		if from == "" {
 			continue
@@ -39,26 +26,70 @@ func (b *builder) addReachability(target *targetContext) {
 			if to == "" || to == from {
 				continue
 			}
-			if edges[from] == nil {
-				edges[from] = make(map[string]struct{})
-			}
-			edges[from][to] = struct{}{}
+			b.reach.edge(from, to)
 			if relation.Kind == programindex.RelationImports {
 				b.addImport(target, relation, to)
 			}
 		}
 	}
-	addPackageInitEdges(target.files(), edges)
+	// Loading a container reaches the declarations it contains.
+	for _, object := range target.input.Index.Objects {
+		from, to := target.filePath(object.ContainerID), target.filePath(object.ID)
+		if object.ContainerID != "" && from != "" && to != "" && to != from {
+			b.reach.edge(from, to)
+		}
+		if isCallable(object) {
+			b.reach.executable[target.filePath(object.ID)] = true
+		}
+	}
+	addPackageInitEdges(target.files(), b.reach.edges)
 	roots := seedFiles(target)
 	if len(roots) == 0 {
 		b.diagnose("dead_module_skipped", target.target.Name+": no entrypoint seeds")
+	}
+	b.reach.roots = append(b.reach.roots, roots...)
+	for _, filePath := range target.files() {
+		if _, judged := b.reach.owner[filePath]; !judged {
+			b.reach.owner[filePath] = target
+		}
+	}
+}
+
+type reachability struct {
+	edges      map[string]map[string]struct{}
+	roots      []string
+	executable map[string]bool
+	owner      map[string]*targetContext
+}
+
+func newReachability() *reachability {
+	return &reachability{edges: make(map[string]map[string]struct{}), executable: make(map[string]bool), owner: make(map[string]*targetContext)}
+}
+
+func (r *reachability) edge(from, to string) {
+	if r.edges[from] == nil {
+		r.edges[from] = make(map[string]struct{})
+	}
+	r.edges[from][to] = struct{}{}
+}
+
+// addDeadModules judges every executable file once, against the seeds of
+// every target: shared code reached by one service is not dead for another.
+func (b *builder) addDeadModules() {
+	if len(b.reach.roots) == 0 {
 		return
 	}
-	reached := reach(roots, edges)
-	for _, filePath := range target.files() {
-		if _, ok := reached[filePath]; ok || isDeclarationFile(filePath) {
+	reached := reach(b.reach.roots, b.reach.edges)
+	files := make([]string, 0, len(b.reach.owner))
+	for filePath := range b.reach.owner {
+		files = append(files, filePath)
+	}
+	sort.Strings(files)
+	for _, filePath := range files {
+		if _, ok := reached[filePath]; ok || !b.reach.executable[filePath] || isDeclarationFile(filePath) {
 			continue
 		}
+		target := b.reach.owner[filePath]
 		b.add(target.root, Fact{
 			Kind:     KindDeadModule,
 			TargetID: target.target.ID,

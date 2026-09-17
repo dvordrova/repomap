@@ -39,7 +39,7 @@ func assertGoOperationSourceValues(t *testing.T, graph atlas.Graph) {
 			case call.Line == 128 && call.API.Name == "ServeHTTP":
 				if !parameter(call.ReceiverValue, "next", 1, 125) || len(call.SourceArguments) != 2 ||
 					!parameter(call.SourceArguments[0].Origin, "w", 1, 126) || !parameter(call.SourceArguments[1].Origin, "r", 2, 126) ||
-					call.Resolution != "unresolved" || len(call.DispatchObservations) != 2 {
+					call.Resolution != "unresolved" {
 					t.Fatalf("middleware lost captured continuation, same-request arguments or runtime uncertainty: %+v", call)
 				}
 				seen["continuation"] = true

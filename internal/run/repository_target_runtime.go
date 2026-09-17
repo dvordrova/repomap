@@ -219,6 +219,10 @@ func selectRepositoryTargetPlanForRun(
 			return repositoryTargetPlan{}, resolveErr
 		}
 		if options.Output != nil {
+			selected := plan.Default.String()
+			if target, found := plan.DefaultTarget(); found {
+				selected = repositoryTypedTargetDisplay(target)
+			}
 			options.Output.State(
 				"Target hypothesis merge", "not needed",
 				"reason: explicit --target bypasses candidate merging",
@@ -226,7 +230,8 @@ func selectRepositoryTargetPlanForRun(
 			options.Output.State(
 				"Repository target plan", "ready",
 				"source: explicit --target",
-				"selected: "+plan.Default.String(),
+				"selected: "+selected,
+				fmt.Sprintf("targets: %d", len(plan.Targets)),
 			)
 		}
 		return plan, nil
@@ -308,10 +313,14 @@ func selectRepositoryTargetPlanForRun(
 		for _, row := range plan.Outcome.Placements {
 			options.Output.Stage("Target placement", row.Selector+": "+row.Decision, row.Reason)
 		}
+		defaultTarget := plan.Default.String()
+		if target, found := plan.DefaultTarget(); found {
+			defaultTarget = repositoryTypedTargetDisplay(target)
+		}
 		options.Output.State(
 			"Repository target plan", "ready",
 			fmt.Sprintf("typed targets: %d", len(plan.Targets)),
-			"default: "+plan.Default.String(),
+			"default: "+defaultTarget,
 		)
 	}
 	return plan, nil

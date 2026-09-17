@@ -22,6 +22,7 @@ type Result struct {
 	Answers     Answers        `json:"answers"`
 	Rejections  []RowRejection `json:"rejections,omitempty"`
 	independent bool
+	rowKeys     []string
 }
 
 // AcceptedRowKeys limits optional response metadata to rows whose required
@@ -33,7 +34,7 @@ func (result Result) AcceptedRowKeys() []string {
 	keys := make([]string, 0, len(result.Answers))
 	for i, answer := range result.Answers {
 		if answer != nil {
-			keys = append(keys, Key(i))
+			keys = append(keys, result.rowKeys[i])
 		}
 	}
 	return keys
@@ -65,30 +66,34 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 	if err := json.Unmarshal(normalized, &envelope); err != nil || envelope.Rows == nil {
 		return Result{}, fmt.Errorf("table %s: response is not {\"rows\": [...]}", def.Stage)
 	}
-	result := Result{Answers: make(Answers, len(window.Rows)), independent: true}
+	indexes, err := rowIndexes(window.Rows)
+	if err != nil {
+		return Result{}, fmt.Errorf("table %s: %w", def.Stage, err)
+	}
+	result := Result{Answers: make(Answers, len(window.Rows)), independent: true, rowKeys: make([]string, len(window.Rows))}
+	for i, row := range window.Rows {
+		result.rowKeys[i] = row.ID
+	}
 	byKey := make(map[string][]map[string]json.RawMessage)
-	positional := keylessInAskedOrder(envelope.Rows, len(window.Rows))
-	for i, rawRow := range envelope.Rows {
+	for _, rawRow := range envelope.Rows {
 		var cells map[string]json.RawMessage
 		var key string
 		if json.Unmarshal(rawRow, &cells) != nil {
 			result.Rejections = append(result.Rejections, RowRejection{Reason: "response row has no string key"})
 			continue
 		}
-		if positional {
-			key = Key(i)
-		} else if json.Unmarshal(cells["key"], &key) != nil || key == "" {
+		if json.Unmarshal(cells["key"], &key) != nil || key == "" {
 			result.Rejections = append(result.Rejections, RowRejection{Reason: "response row has no string key"})
 			continue
 		}
-		if _, known := keyIndex(key, len(window.Rows)); !known {
+		if _, known := indexes[key]; !known {
 			result.Rejections = append(result.Rejections, RowRejection{Key: key, Reason: "response key was not asked"})
 			continue
 		}
 		byKey[key] = append(byKey[key], cells)
 	}
 	for i, row := range window.Rows {
-		key := Key(i)
+		key := row.ID
 		cells := byKey[key]
 		var reason string
 		switch len(cells) {
@@ -111,28 +116,6 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 		return result, fmt.Errorf("table %s: no rows accepted; row %s: %s", def.Stage, rejection.Key, rejection.Reason)
 	}
 	return result, nil
-}
-
-// keylessInAskedOrder reports a response that answers exactly one row per
-// asked row and carries no key on any of them. The model drops the key it
-// was told to copy in small answer windows (ten of 242 Freqtrade windows,
-// one to three questions each); with one row per asked row and no key
-// anywhere, the asked order is the only reading. A partial or partly keyed
-// response keeps the strict rule: every row names its key or is refused.
-func keylessInAskedOrder(rows []json.RawMessage, asked int) bool {
-	if asked == 0 || len(rows) != asked {
-		return false
-	}
-	for _, rawRow := range rows {
-		var cells map[string]json.RawMessage
-		if json.Unmarshal(rawRow, &cells) != nil {
-			return false
-		}
-		if _, keyed := cells["key"]; keyed {
-			return false
-		}
-	}
-	return true
 }
 
 func decodeIndependentCells(def Definition, context []Field, row Row, cells map[string]json.RawMessage) (Answer, error) {
@@ -164,9 +147,14 @@ func decodeIndependentCells(def Definition, context []Field, row Row, cells map[
 			continue
 		}
 		raw, found := cells[column.Name]
-		if (!found || string(raw) == "null") && column.Missing != "" {
-			answer[column.Name] = column.Missing
-			continue
+		if !found || string(raw) == "null" {
+			if column.Missing != "" {
+				answer[column.Name] = column.Missing
+				continue
+			}
+			if column.Optional {
+				continue
+			}
 		}
 		if !found {
 			if column.EmptyFrom != "" {

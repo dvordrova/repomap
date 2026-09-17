@@ -65,7 +65,20 @@ func TestSavedInputRunsThroughFilesWithoutLaterStages(t *testing.T) {
 		t.Fatal("no normalized results")
 	}
 	raw, _ := os.ReadFile(results[0])
-	if !strings.Contains(string(raw), `"id": "file:pkg/a/x.go"`) || !strings.Contains(string(raw), `"path": "pkg/a/x.go"`) || !strings.Contains(string(raw), `"cells"`) {
+	var saved struct {
+		Rows []struct {
+			ID   string `json:"id"`
+			Path string `json:"path"`
+		} `json:"rows"`
+	}
+	if json.Unmarshal(raw, &saved) != nil {
+		t.Fatalf("invalid saved result: %s", raw)
+	}
+	found := false
+	for _, row := range saved.Rows {
+		found = found || row.Path == "pkg/a/x.go" && strings.HasPrefix(row.ID, "f") && len(row.ID) <= 8
+	}
+	if !found || !strings.Contains(string(raw), `"cells"`) {
 		t.Fatalf("missing source binding: %s", raw)
 	}
 }

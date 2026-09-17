@@ -13,8 +13,8 @@ func TestNativeBoundariesKeepTargetOriginsAndSameLineRegistrations(t *testing.T)
 		t.Run(source, func(t *testing.T) {
 			b := builder{files: map[string]*fileState{source: {targets: map[string]struct{}{"app": {}, "lib": {}, "unobserved": {}}}},
 				dirs: map[string]*dirState{}, bounds: map[boundaryKey]*boundaryState{},
-				factSubjects: map[string]string{"app-handler": "same-handler", "lib-handler": "same-handler"}}
-			b.input.Facts.Targets = []facts.Target{{ID: "facts-app", ProgramTargetID: "app"}, {ID: "facts-lib", ProgramTargetID: "lib"}}
+				factSubjects: map[string]string{"app.app-handler": "same-handler", "lib.lib-handler": "same-handler"}}
+			b.input.Facts.Targets = []facts.Target{{ID: "app"}, {ID: "lib"}}
 			for _, target := range []string{"app", "lib"} {
 				for i, observation := range []struct {
 					method, path string
@@ -22,12 +22,12 @@ func TestNativeBoundariesKeepTargetOriginsAndSameLineRegistrations(t *testing.T)
 				}{
 					{"ANY", "/update", 4}, {"ANY", "/metrics", 4}, {"POST", "/update", 4}, {"ANY", "/update", 37},
 				} {
-					b.input.Facts.Facts = append(b.input.Facts.Facts, facts.Fact{ID: fmt.Sprintf("%s-route-%d", target, i), Kind: facts.KindHTTPRoute,
-						TargetID: "facts-" + target, ObjectID: target + "-handler", Method: observation.method, Path: observation.path,
+					b.input.Facts.Facts = append(b.input.Facts.Facts, facts.Fact{ID: fmt.Sprintf("%s-route-%d", target, i), Kind: facts.KindRegistration,
+						TargetID: target, ObjectID: target + "-handler", Method: observation.method, Path: observation.path,
 						Anchor: &facts.Anchor{Path: source, Line: 10, Column: observation.column}})
 				}
-				b.input.Facts.Facts = append(b.input.Facts.Facts, facts.Fact{ID: target + "-listener", Kind: facts.KindListenAddress,
-					TargetID: "facts-" + target, ObjectID: target + "-handler", Value: ":8080", Anchor: &facts.Anchor{Path: source, Line: 10, Column: 4}})
+				b.input.Facts.Facts = append(b.input.Facts.Facts, facts.Fact{ID: target + "-listener", Kind: facts.KindRegistration,
+					TargetID: target, Key: "Start", Values: []string{":8080"}, Path: ":8080", Text: "echo.Echo.Start", Anchor: &facts.Anchor{Path: source, Line: 10, Column: 4}})
 			}
 			b.collectBoundaries()
 			if len(b.bounds) != 5 {
@@ -53,14 +53,14 @@ func TestNativeBoundariesKeepTargetOriginsAndSameLineRegistrations(t *testing.T)
 					t.Fatalf("lost target facts: %+v", place)
 				}
 				for _, origin := range place.Boundary.Origins {
-					if origin.ObjectID != origin.TargetID+"-handler" {
+					if origin.ObjectID != "" && origin.ObjectID != origin.TargetID+"."+origin.TargetID+"-handler" {
 						t.Fatalf("foreign declaration identity: %+v", origin)
 					}
 					if origin.FactID[:len(origin.TargetID)] != origin.TargetID {
 						t.Fatalf("foreign fact identity: %+v", origin)
 					}
 				}
-				if place.Boundary.Values[0] == ":8080" && (place.Boundary.GivenKind != atlas.BoundaryListenAddress || place.Boundary.Method != "") {
+				if place.Boundary.Values[0] == ":8080" && (place.Boundary.Direction != atlas.DirectionOut || place.Boundary.Method != "") {
 					t.Fatalf("listener became a request: %+v", place)
 				}
 			}
@@ -75,11 +75,11 @@ func TestNativeBoundariesStayWithinFileOwnership(t *testing.T) {
 	// the boundary outside every box of the other six targets.
 	b := builder{files: map[string]*fileState{"routes.go": {targets: map[string]struct{}{"app": {}}}},
 		dirs: map[string]*dirState{}, bounds: map[boundaryKey]*boundaryState{},
-		factSubjects: map[string]string{"app-handler": "same-handler", "tool-handler": "same-handler"}}
-	b.input.Facts.Targets = []facts.Target{{ID: "facts-app", ProgramTargetID: "app"}, {ID: "facts-tool", ProgramTargetID: "tool"}}
+		factSubjects: map[string]string{"app.app-handler": "same-handler", "tool.tool-handler": "same-handler"}}
+	b.input.Facts.Targets = []facts.Target{{ID: "app"}, {ID: "tool"}}
 	for _, target := range []string{"app", "tool"} {
-		b.input.Facts.Facts = append(b.input.Facts.Facts, facts.Fact{ID: target + "-route", Kind: facts.KindHTTPRoute,
-			TargetID: "facts-" + target, ObjectID: target + "-handler", Method: "POST", Path: "/update",
+		b.input.Facts.Facts = append(b.input.Facts.Facts, facts.Fact{ID: target + "-route", Kind: facts.KindRegistration,
+			TargetID: target, ObjectID: target + "-handler", Method: "POST", Path: "/update",
 			Anchor: &facts.Anchor{Path: "routes.go", Line: 33, Column: 4}})
 	}
 	b.collectBoundaries()
@@ -106,7 +106,7 @@ func TestNativeBoundariesStayWithinFileOwnership(t *testing.T) {
 	if len(place.Boundary.Origins) != 1 || place.Boundary.Origins[0].TargetID != "app" || place.Boundary.Origins[0].FactID != "app-route" {
 		t.Fatalf("origins do not match the retained scopes: %+v", place.Boundary.Origins)
 	}
-	if place.Boundary.ObjectID != "app-handler" {
+	if place.Boundary.ObjectID != "app.app-handler" {
 		t.Fatalf("representative object is not the owner's: %s", place.Boundary.ObjectID)
 	}
 }
@@ -114,10 +114,10 @@ func TestNativeBoundariesStayWithinFileOwnership(t *testing.T) {
 func TestNativeBoundaryWithoutAnObservingOwnerIsDropped(t *testing.T) {
 	b := builder{files: map[string]*fileState{"routes.go": {targets: map[string]struct{}{"lib": {}}}},
 		dirs: map[string]*dirState{}, bounds: map[boundaryKey]*boundaryState{},
-		factSubjects: map[string]string{"tool-handler": "handler"}}
-	b.input.Facts.Targets = []facts.Target{{ID: "facts-tool", ProgramTargetID: "tool"}}
-	b.input.Facts.Facts = append(b.input.Facts.Facts, facts.Fact{ID: "tool-route", Kind: facts.KindHTTPRoute,
-		TargetID: "facts-tool", ObjectID: "tool-handler", Method: "GET", Path: "/health",
+		factSubjects: map[string]string{"tool.tool-handler": "handler"}}
+	b.input.Facts.Targets = []facts.Target{{ID: "tool"}}
+	b.input.Facts.Facts = append(b.input.Facts.Facts, facts.Fact{ID: "tool-route", Kind: facts.KindRegistration,
+		TargetID: "tool", ObjectID: "tool-handler", Method: "GET", Path: "/health",
 		Anchor: &facts.Anchor{Path: "routes.go", Line: 12, Column: 4}})
 	b.collectBoundaries()
 	graph, err := b.graph()

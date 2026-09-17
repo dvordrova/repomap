@@ -7,44 +7,32 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-const ProgramPortfolioVersion = 2
+const ProgramPortfolioVersion = 4
 
-// ProgramPortfolio is the complete browser-facing projection of the selected
-// language-neutral ProgramIndex artifact set. It never chooses, drops, or
-// repairs a target: every set entry has one exact Target/View pair.
+// ProgramPortfolio is the complete selected ProgramIndex set. The report uses
+// the same indexes as every other consumer; it does not copy them into a
+// presentation-specific graph.
 type ProgramPortfolio struct {
-	Version         int                     `json:"version"`
-	DefaultTargetID string                  `json:"default_target_id"`
-	Entries         []ProgramPortfolioEntry `json:"entries"`
+	Version         int                  `json:"version"`
+	DefaultTargetID string               `json:"default_target_id"`
+	Entries         []programindex.Index `json:"entries"`
 }
 
-type ProgramPortfolioEntry struct {
-	Target programindex.Target `json:"target"`
-	View   ProgramView         `json:"view"`
-}
-
-// NewProgramPortfolio projects every validated selected index and preserves
-// the artifact-set default by exact ProgramTarget ID.
+// NewProgramPortfolio owns every validated selected index and preserves the
+// artifact-set default by exact ProgramTarget ID.
 func NewProgramPortfolio(defaultTargetID string, indexes []programindex.Index) (*ProgramPortfolio, error) {
 	if len(indexes) == 0 {
 		return nil, fmt.Errorf("program portfolio: entries are empty")
 	}
 	result := &ProgramPortfolio{
 		Version: ProgramPortfolioVersion, DefaultTargetID: defaultTargetID,
-		Entries: make([]ProgramPortfolioEntry, 0, len(indexes)),
+		Entries: make([]programindex.Index, 0, len(indexes)),
 	}
 	for _, index := range indexes {
-		view, err := NewProgramView(index)
-		if err != nil {
-			return nil, fmt.Errorf("program portfolio: project target %q: %w", index.Target.ID, err)
-		}
-		result.Entries = append(result.Entries, ProgramPortfolioEntry{
-			Target: index.Target.Snapshot(),
-			View:   *view,
-		})
+		result.Entries = append(result.Entries, index.Snapshot())
 	}
 	sort.Slice(result.Entries, func(left, right int) bool {
-		return result.Entries[left].Target.ID < result.Entries[right].Target.ID
+		return programindex.TargetIDLess(result.Entries[left].Target.ID, result.Entries[right].Target.ID)
 	})
 	if err := result.Validate(); err != nil {
 		return nil, err
@@ -52,25 +40,45 @@ func NewProgramPortfolio(defaultTargetID string, indexes []programindex.Index) (
 	return result, nil
 }
 
+// BindProgramPortfolio installs the complete target set into a repository
+// report. The same ProgramIndexes then back both persistence and rendering.
+func BindProgramPortfolio(data *ReportData, defaultTargetID string, indexes []programindex.Index) error {
+	if data == nil {
+		return fmt.Errorf("program portfolio: report data is missing")
+	}
+	portfolio, err := NewProgramPortfolio(defaultTargetID, indexes)
+	if err != nil {
+		return err
+	}
+	data.ProgramPortfolio = portfolio
+	data.programIndexes = make([]programindex.Index, len(portfolio.Entries))
+	copy(data.programIndexes, portfolio.Entries)
+	data.defaultProgramIndex = nil
+	for position := range data.programIndexes {
+		if data.programIndexes[position].Target.ID == defaultTargetID {
+			data.defaultProgramIndex = &data.programIndexes[position]
+			break
+		}
+	}
+	if data.defaultProgramIndex == nil {
+		return fmt.Errorf("program portfolio: default ProgramIndex is missing")
+	}
+	return nil
+}
+
 func (portfolio ProgramPortfolio) Validate() error {
 	if portfolio.Version != ProgramPortfolioVersion ||
-		!validProgramViewText(portfolio.DefaultTargetID) ||
+		!programindex.ValidTargetID(portfolio.DefaultTargetID) ||
 		portfolio.Entries == nil || len(portfolio.Entries) == 0 {
 		return fmt.Errorf("program portfolio: invalid identity or empty entries")
 	}
 	defaultMatches := 0
 	previousID := ""
 	for _, entry := range portfolio.Entries {
-		if err := entry.Target.Validate(); err != nil {
-			return fmt.Errorf("program portfolio: target: %w", err)
+		if err := entry.Validate(); err != nil {
+			return fmt.Errorf("program portfolio: target %q: %w", entry.Target.ID, err)
 		}
-		if err := entry.View.Validate(); err != nil {
-			return fmt.Errorf("program portfolio: view for %q: %w", entry.Target.ID, err)
-		}
-		if entry.View.TargetID != entry.Target.ID {
-			return fmt.Errorf("program portfolio: target/view identity mismatch")
-		}
-		if previousID != "" && previousID >= entry.Target.ID {
+		if previousID != "" && !programindex.TargetIDLess(previousID, entry.Target.ID) {
 			return fmt.Errorf("program portfolio: entries are not canonical")
 		}
 		previousID = entry.Target.ID
@@ -84,14 +92,14 @@ func (portfolio ProgramPortfolio) Validate() error {
 	return nil
 }
 
-func (portfolio ProgramPortfolio) defaultEntry() (ProgramPortfolioEntry, error) {
+func (portfolio ProgramPortfolio) defaultEntry() (programindex.Index, error) {
 	if err := portfolio.Validate(); err != nil {
-		return ProgramPortfolioEntry{}, err
+		return programindex.Index{}, err
 	}
 	for _, entry := range portfolio.Entries {
 		if entry.Target.ID == portfolio.DefaultTargetID {
 			return entry, nil
 		}
 	}
-	return ProgramPortfolioEntry{}, fmt.Errorf("program portfolio: default target is missing")
+	return programindex.Index{}, fmt.Errorf("program portfolio: default target is missing")
 }

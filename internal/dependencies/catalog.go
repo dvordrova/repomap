@@ -6,10 +6,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
-const Version = 1
+const Version = 2
 
 // Kind describes where a dependency package is implemented relative to the
 // selected repository. Language adapters establish the kind from their exact
@@ -69,8 +70,7 @@ type Replacement struct {
 }
 
 // Importer is one exact repository package that directly imports a
-// dependency. Ref is a stable local identity; provider-facing cubes must map
-// it to a request-local short ref before advertising it to a model.
+// dependency. Ref is its compact catalog-local identity.
 type Importer struct {
 	Ref            string `json:"ref"`
 	Language       string `json:"language"`
@@ -82,7 +82,7 @@ type Importer struct {
 
 // Dependency is one exact directly imported package and the repository
 // packages that import it. RepositoryPath is populated only for workspace
-// dependencies. ID is a stable local identity, not a model-facing ref.
+// dependencies. ID is its compact catalog-local identity.
 type Dependency struct {
 	ID             string       `json:"id"`
 	Language       string       `json:"language"`
@@ -109,7 +109,9 @@ type Catalog struct {
 // that the adapter observed but could not type without inventing authority.
 func BuildWithOmissions(importers []Importer, values []Dependency, omissions []Omission) (Catalog, error) {
 	importerByRef := make(map[string]Importer, len(importers))
+	importerAlias := make(map[string]string, len(importers)*2)
 	for _, importer := range importers {
+		inputRef := importer.Ref
 		var err error
 		importer, err = SealImporter(importer)
 		if err != nil {
@@ -119,19 +121,42 @@ func BuildWithOmissions(importers []Importer, values []Dependency, omissions []O
 			return Catalog{}, fmt.Errorf("dependencies: conflicting importer identity %q", importer.Ref)
 		}
 		importerByRef[importer.Ref] = importer
+		for _, alias := range []string{inputRef, importer.Ref} {
+			if alias == "" {
+				continue
+			}
+			if previous, exists := importerAlias[alias]; exists && previous != importer.Ref {
+				return Catalog{}, fmt.Errorf("dependencies: conflicting importer ref %q", alias)
+			}
+			importerAlias[alias] = importer.Ref
+		}
+	}
+	orderedImporters := make([]Importer, 0, len(importerByRef))
+	for _, importer := range importerByRef {
+		orderedImporters = append(orderedImporters, importer)
+	}
+	sort.Slice(orderedImporters, func(i, j int) bool { return importerLess(orderedImporters[i], orderedImporters[j]) })
+	compactImporterRef := make(map[string]string, len(orderedImporters))
+	for position := range orderedImporters {
+		identity := orderedImporters[position].Ref
+		compact := "i" + strconv.Itoa(position+1)
+		orderedImporters[position].Ref = compact
+		compactImporterRef[identity] = compact
 	}
 
 	dependencyByID := make(map[string]Dependency, len(values))
 	for _, value := range values {
-		value.ID = dependencyIdentity(value)
+		for position, ref := range value.ImporterRefs {
+			identity, ok := importerAlias[ref]
+			if !ok {
+				return Catalog{}, fmt.Errorf("dependencies: dependency has unknown importer ref %q", ref)
+			}
+			value.ImporterRefs[position] = identity
+		}
 		value.ImporterRefs = canonicalStrings(value.ImporterRefs)
+		value.ID = dependencyIdentity(value)
 		if err := validateDependencyShape(value); err != nil {
 			return Catalog{}, err
-		}
-		for _, ref := range value.ImporterRefs {
-			if _, ok := importerByRef[ref]; !ok {
-				return Catalog{}, fmt.Errorf("dependencies: dependency %q has unknown importer ref %q", value.ID, ref)
-			}
 		}
 		if previous, exists := dependencyByID[value.ID]; exists {
 			if !sameDependencyIdentity(previous, value) {
@@ -146,33 +171,50 @@ func BuildWithOmissions(importers []Importer, values []Dependency, omissions []O
 
 	catalog := Catalog{
 		Version:      Version,
-		Importers:    make([]Importer, 0, len(importerByRef)),
+		Importers:    orderedImporters,
 		Dependencies: make([]Dependency, 0, len(dependencyByID)),
 		Coverage: Coverage{
 			State:     CoverageComplete,
 			Omissions: canonicalOmissions(omissions),
 		},
 	}
-	for _, importer := range importerByRef {
-		catalog.Importers = append(catalog.Importers, importer)
-	}
 	for _, value := range dependencyByID {
+		for position, ref := range value.ImporterRefs {
+			value.ImporterRefs[position] = compactImporterRef[ref]
+		}
+		value.ImporterRefs = canonicalCompactIDs(value.ImporterRefs, "i")
 		catalog.Dependencies = append(catalog.Dependencies, value)
-		catalog.Coverage.ImportsRetained += len(value.ImporterRefs)
 	}
+	sort.Slice(catalog.Dependencies, func(i, j int) bool { return dependencyLess(catalog.Dependencies[i], catalog.Dependencies[j]) })
+	for position := range catalog.Dependencies {
+		catalog.Dependencies[position].ID = "d" + strconv.Itoa(position+1)
+		catalog.Coverage.ImportsRetained += len(catalog.Dependencies[position].ImporterRefs)
+	}
+	for position := range catalog.Coverage.Omissions {
+		ref := catalog.Coverage.Omissions[position].ImporterRef
+		if ref == "" {
+			continue
+		}
+		identity, ok := importerAlias[ref]
+		if !ok {
+			return Catalog{}, fmt.Errorf("dependencies: coverage omission has unknown importer ref %q", ref)
+		}
+		catalog.Coverage.Omissions[position].ImporterRef = compactImporterRef[identity]
+	}
+	catalog.Coverage.Omissions = canonicalOmissions(catalog.Coverage.Omissions)
 	catalog.Coverage.ImportsObserved = catalog.Coverage.ImportsRetained + len(catalog.Coverage.Omissions)
 	if len(catalog.Coverage.Omissions) > 0 {
 		catalog.Coverage.State = CoveragePartial
 	}
-	sortCatalog(&catalog)
 	if err := catalog.Validate(); err != nil {
 		return Catalog{}, err
 	}
 	return catalog, nil
 }
 
-// SealImporter binds an importer to its stable local ref. Provider-facing
-// cubes must still replace that ref with a request-local short ref.
+// SealImporter supplies a construction-only identity so language adapters can
+// join dependency uses before the complete catalog assigns i* ordinals. The
+// value never survives BuildWithOmissions.
 func SealImporter(importer Importer) (Importer, error) {
 	importer.Ref = importerIdentity(importer)
 	if err := validateImporter(importer); err != nil {
@@ -189,7 +231,7 @@ func Empty() Catalog {
 	}
 }
 
-// Validate verifies canonical order, stable identity bindings and exact
+// Validate verifies canonical order, compact identity bindings and exact
 // importer-ref resolution.
 func (catalog Catalog) Validate() error {
 	if catalog.Version != Version {
@@ -200,7 +242,7 @@ func (catalog Catalog) Validate() error {
 		if err := validateImporter(importer); err != nil {
 			return err
 		}
-		if importer.Ref != importerIdentity(importer) {
+		if importer.Ref != "i"+strconv.Itoa(index+1) {
 			return fmt.Errorf("dependencies: importer ref binding mismatch")
 		}
 		if _, exists := seenImporters[importer.Ref]; exists {
@@ -216,7 +258,7 @@ func (catalog Catalog) Validate() error {
 		if err := validateDependencyShape(value); err != nil {
 			return err
 		}
-		if value.ID != dependencyIdentity(value) {
+		if value.ID != "d"+strconv.Itoa(index+1) {
 			return fmt.Errorf("dependencies: dependency id binding mismatch")
 		}
 		if _, exists := seenDependencies[value.ID]; exists {
@@ -229,7 +271,7 @@ func (catalog Catalog) Validate() error {
 			if _, ok := seenImporters[ref]; !ok {
 				return fmt.Errorf("dependencies: dependency %q has unknown importer ref %q", value.ID, ref)
 			}
-			if refIndex > 0 && value.ImporterRefs[refIndex-1] >= ref {
+			if !compactID(ref, "i") || refIndex > 0 && !compactIDLess(value.ImporterRefs[refIndex-1], ref, "i") {
 				return fmt.Errorf("dependencies: importer refs are not canonical")
 			}
 		}
@@ -242,8 +284,8 @@ func (catalog Catalog) Validate() error {
 }
 
 // Subset retains only the supplied importer refs and dependencies used by at
-// least one of them. Dependency identities remain stable because importer
-// membership is not part of dependency identity.
+// least one of them, then seals a new self-contained catalog. Its i*/d*
+// ordinals are local to that result; semantic joins use the typed fields.
 func (catalog Catalog) Subset(importerRefs map[string]struct{}) (Catalog, error) {
 	if err := catalog.Validate(); err != nil {
 		return Catalog{}, err
@@ -429,6 +471,37 @@ func canonicalStrings(values []string) []string {
 	return result[:write]
 }
 
+func canonicalCompactIDs(values []string, prefix string) []string {
+	result := append([]string(nil), values...)
+	sort.Slice(result, func(i, j int) bool { return compactIDLess(result[i], result[j], prefix) })
+	write := 0
+	for _, value := range result {
+		if write > 0 && result[write-1] == value {
+			continue
+		}
+		result[write] = value
+		write++
+	}
+	return result[:write]
+}
+
+func compactID(value, prefix string) bool {
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	ordinal, err := strconv.Atoi(value[len(prefix):])
+	return err == nil && ordinal > 0 && prefix+strconv.Itoa(ordinal) == value
+}
+
+func compactIDLess(left, right, prefix string) bool {
+	leftOrdinal, leftErr := strconv.Atoi(strings.TrimPrefix(left, prefix))
+	rightOrdinal, rightErr := strconv.Atoi(strings.TrimPrefix(right, prefix))
+	if leftErr == nil && rightErr == nil && leftOrdinal != rightOrdinal {
+		return leftOrdinal < rightOrdinal
+	}
+	return left < right
+}
+
 func canonicalOmissions(values []Omission) []Omission {
 	result := append([]Omission(nil), values...)
 	sort.Slice(result, func(i, j int) bool { return omissionLess(result[i], result[j]) })
@@ -453,7 +526,10 @@ func omissionLess(left, right Omission) bool {
 	if left.Reason != right.Reason {
 		return left.Reason < right.Reason
 	}
-	return left.ImporterRef < right.ImporterRef
+	if left.ImporterRef != right.ImporterRef {
+		return compactIDLess(left.ImporterRef, right.ImporterRef, "i")
+	}
+	return false
 }
 
 func sameDependencyIdentity(left, right Dependency) bool {
@@ -480,21 +556,21 @@ func snapshotDependency(value Dependency) Dependency {
 	return result
 }
 
-func sortCatalog(catalog *Catalog) {
-	sort.Slice(catalog.Importers, func(i, j int) bool {
-		return importerLess(catalog.Importers[i], catalog.Importers[j])
-	})
-	sort.Slice(catalog.Dependencies, func(i, j int) bool {
-		return dependencyLess(catalog.Dependencies[i], catalog.Dependencies[j])
-	})
-}
-
 func importerLess(left, right Importer) bool {
 	if left.RepositoryPath != right.RepositoryPath {
 		return left.RepositoryPath < right.RepositoryPath
 	}
 	if left.PackagePath != right.PackagePath {
 		return left.PackagePath < right.PackagePath
+	}
+	if left.Language != right.Language {
+		return left.Language < right.Language
+	}
+	if left.ModulePath != right.ModulePath {
+		return left.ModulePath < right.ModulePath
+	}
+	if left.Name != right.Name {
+		return left.Name < right.Name
 	}
 	return left.Ref < right.Ref
 }
@@ -509,7 +585,30 @@ func dependencyLess(left, right Dependency) bool {
 	if left.ModulePath != right.ModulePath {
 		return left.ModulePath < right.ModulePath
 	}
+	if left.ModuleVersion != right.ModuleVersion {
+		return left.ModuleVersion < right.ModuleVersion
+	}
+	if left.RepositoryPath != right.RepositoryPath {
+		return left.RepositoryPath < right.RepositoryPath
+	}
+	if left.Language != right.Language {
+		return left.Language < right.Language
+	}
+	if left.Name != right.Name {
+		return left.Name < right.Name
+	}
+	leftReplacement, rightReplacement := replacementOrderKey(left.Replacement), replacementOrderKey(right.Replacement)
+	if leftReplacement != rightReplacement {
+		return leftReplacement < rightReplacement
+	}
 	return left.ID < right.ID
+}
+
+func replacementOrderKey(value *Replacement) string {
+	if value == nil {
+		return ""
+	}
+	return strings.Join([]string{value.ModulePath, value.ModuleVersion, strconv.FormatBool(value.Local), value.RepositoryPath}, "\x00")
 }
 
 func kindRank(kind Kind) int {

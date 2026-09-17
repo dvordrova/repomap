@@ -146,10 +146,15 @@ func TestOverviewRetainsProductionUsesAndSchemaWithoutTestShelfRows(t *testing.T
 }
 
 func TestOverviewPortalCountsUseExactTestSites(t *testing.T) {
-	call := facts.Fact{ID: "call", TargetID: "caller", Anchor: &facts.Anchor{Path: "checks.ts", Line: 4}}
-	route := facts.Fact{ID: "route", TargetID: "server"}
-	data := &ReportData{Facts: &facts.Result{Facts: []facts.Fact{{ID: "portal", Kind: facts.KindPortal, Refs: []string{"call", "route"}}}}}
-	builder := pageBuilder{data: data, testPaths: map[string]bool{"checks.ts": true}, factsByID: map[string]facts.Fact{"call": call, "route": route}}
+	call := facts.Fact{ID: "call", Kind: facts.KindRegistration, TargetID: "caller", Method: "GET", Path: "/api/items", Anchor: &facts.Anchor{Path: "checks.ts", Line: 4}}
+	route := facts.Fact{ID: "route", Kind: facts.KindRegistration, TargetID: "server", Method: "GET", Path: "/api/items", Anchor: &facts.Anchor{Path: "server.go", Line: 9}}
+	data := &ReportData{Facts: &facts.Result{Facts: []facts.Fact{call, route}}}
+	builder := pageBuilder{data: data, testPaths: map[string]bool{"checks.ts": true}, factsByID: map[string]facts.Fact{"call": call, "route": route},
+		sections: []*pageSection{{programTargetID: "caller"}, {programTargetID: "server"}},
+		indexes: []groupindex.Index{
+			{Target: programindex.Target{ID: "caller"}, Outbound: []groupindex.OutboundCall{{ID: "x", FactID: "call", Kind: "http_client", Method: "GET"}}},
+			{Target: programindex.Target{ID: "server"}, Operations: []groupindex.Operation{{ID: "o1", FactID: "route", Kind: "request"}}},
+		}}
 	nodes := map[string]*pageRepoNode{"caller": {ID: "caller", Width: 100, Height: 100}, "server": {ID: "server", X: 200, Width: 100, Height: 100}}
 	if edges, _ := builder.repoEdges(nodes); len(edges) != 0 || len(builder.repoOutgoingCounts()) != 0 {
 		t.Fatal("test portal returned to overview")

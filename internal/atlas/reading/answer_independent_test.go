@@ -43,7 +43,7 @@ func TestIndependentAnswersPreserveNeighboursExactCacheAndReplay(t *testing.T) {
 			if err := r.readAnswers(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			if len(provider.requests) != 1 || len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || r.rejected[0].Samples[0] != "r2" || r.rejected[0].ResponseRef == "" {
+			if len(provider.requests) != 1 || len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || r.rejected[0].Samples[0] != "q2" || r.rejected[0].ResponseRef == "" {
 				t.Fatalf("one invalid answer lost row diagnostics or generated retries: %+v", r.rejected)
 			}
 			check := func(reader *reader, source string) {
@@ -103,7 +103,7 @@ func TestIndependentAnswersPreserveNeighboursExactCacheAndReplay(t *testing.T) {
 				t.Fatal("replay did not refresh the existing shared cache entry")
 			}
 			for _, accepted := range provider.accepted {
-				if !reflect.DeepEqual(accepted, []string{"r1", "r3"}) {
+				if !reflect.DeepEqual(accepted, []string{"q1", "q3"}) {
 					t.Fatalf("refused answer authorized terminology: %v", accepted)
 				}
 			}

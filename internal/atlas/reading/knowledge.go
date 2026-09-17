@@ -19,7 +19,7 @@ import (
 
 const (
 	KnowledgeFilename = "knowledge.json"
-	KnowledgeVersion  = 2
+	KnowledgeVersion  = 3
 )
 
 // Knowledge is one interpretation attached to an internal entity. Input is
@@ -44,6 +44,14 @@ type Knowledge struct {
 	Source         string          `json:"source"`
 	OriginRequest  string          `json:"origin_request_sha256"`
 	OriginResponse string          `json:"origin_response_sha256"`
+}
+
+// knowledgeRecordKey keeps independent interpretations of one place apart
+// without manufacturing another entity identity from a string prefix.
+type knowledgeRecordKey struct {
+	PlaceID  string
+	Stage    string
+	Contract string
 }
 
 // A memo is an index into the current shared response, never a second copy
@@ -99,14 +107,10 @@ func (r *reader) knowledgeInput(def table.Definition, shared []table.Field, row 
 		return k, window, err
 	}
 	window.Request, k.Input = input, input
-	call, err := table.Call(def, window)
-	if err != nil {
-		return k, window, err
-	}
-	// Reuse depends on what the model actually receives and the table contract.
-	// Ownership and prior knowledge IDs are local bindings, not model input.
-	// A changed parent line still changes this row's exact request.
-	k.BasisID, err = llm.MemoIdentity(r.opts.Provider, call.State, call.Prompt, call.Limits)
+	// Reuse depends on the evidence the model receives and the table contract.
+	// The artifact ID is an owner binding, not a second semantic input: equal
+	// evidence can share one accepted interpretation without renaming either row.
+	k.BasisID, err = table.MemoIdentity(r.opts.Provider, def, window)
 	return k, window, err
 }
 
@@ -155,7 +159,7 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 	for key, value := range original {
 		cells[key] = value
 	}
-	cells["key"], _ = json.Marshal(table.Key(0))
+	cells["key"], _ = json.Marshal(window.Rows[0].ID)
 	raw, err := json.Marshal(map[string]any{"rows": []map[string]json.RawMessage{cells}})
 	if err != nil {
 		return rowAnswer{}, false, err
@@ -310,6 +314,10 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 		k.Cells, k.Source, k.OriginRequest = answer.answer, answer.source, answer.requestSHA
 		k.OriginResponse = answer.responseSHA
 		k.ID = k.identity(r.opts.Repository)
+		if r.knowledgeRecords == nil {
+			r.knowledgeRecords = make(map[knowledgeRecordKey]*Knowledge)
+		}
+		r.knowledgeRecords[knowledgeRecordKey{PlaceID: k.PlaceID, Stage: k.Stage, Contract: k.Contract}] = &k
 		r.knowledge[k.PlaceID] = &k
 		r.knowledgeSubjects[k.SubjectID] = &k
 		if !r.recallOnly && !reused[i] && !saved[k.BasisID] {
@@ -327,11 +335,19 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 }
 
 func (r *reader) persistKnowledge() error {
-	rows := make([]Knowledge, 0, len(r.knowledge))
-	for _, record := range r.knowledge {
+	rows := make([]Knowledge, 0, len(r.knowledgeRecords))
+	for _, record := range r.knowledgeRecords {
 		rows = append(rows, *record)
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].PlaceID < rows[j].PlaceID })
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].PlaceID != rows[j].PlaceID {
+			return rows[i].PlaceID < rows[j].PlaceID
+		}
+		if rows[i].Stage != rows[j].Stage {
+			return rows[i].Stage < rows[j].Stage
+		}
+		return rows[i].Contract < rows[j].Contract
+	})
 	raw, err := json.MarshalIndent(struct {
 		Version    int         `json:"version"`
 		Repository string      `json:"repository"`

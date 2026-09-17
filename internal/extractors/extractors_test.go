@@ -29,7 +29,7 @@ func TestExternalCommandAndSQLCUseTheSameFactBoundary(t *testing.T) {
 	}
 	byProducer := make(map[string]facts.Fact)
 	for _, row := range result.OfKind(facts.KindEntity) {
-		if row.Key == "sqlc.yaml#sql[0]" {
+		if row.Path == "sqlc.yaml" && strings.HasPrefix(row.Symbol, "sqlc (") {
 			byProducer[row.Extractor] = row
 		}
 	}
@@ -53,9 +53,10 @@ func TestExternalCommandAndSQLCUseTheSameFactBoundary(t *testing.T) {
 			t.Fatalf("reference not restored: %+v", row)
 		}
 	}
-	// The raw response must keep local IDs; normalization may not mutate it.
-	if extracted.Extractions[2].Nodes[0].ID != "sqlc.yaml#sql[0]" {
-		t.Fatal("producer input mutated")
+	// The normalized handoff is compact while exact producer IDs remain only
+	// in the replayable raw exchange.
+	if extracted.Version != ArtifactVersion || extracted.Extractions[2].Nodes[0].ID != "u1" || !strings.Contains(extracted.Exchanges[2].Stdout, `"id":"sqlc.yaml#sql[0]"`) {
+		t.Fatal("producer identity was not separated from the normalized artifact")
 	}
 }
 
@@ -64,9 +65,6 @@ func TestCommandFailuresKeepTheirExchangeAndHaveNoReplacement(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			root, repository := commandCorpus(t, mode)
 			extracted, err := Run(context.Background(), root, repository)
-			if mode == "unknown-ref" && err == nil {
-				_, err = facts.Build(facts.Input{Repository: repository, Extractions: extracted.Extractions})
-			}
 			if err == nil {
 				t.Fatal("failed extractor silently replaced")
 			}

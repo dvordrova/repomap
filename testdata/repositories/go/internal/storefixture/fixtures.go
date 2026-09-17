@@ -1,6 +1,7 @@
 package storefixture
 
 import (
+	"context"
 	"os"
 	"os/signal"
 )
@@ -25,6 +26,9 @@ func Exercise(root string) string {
 		events := make(chan os.Signal, 1)
 		registerSignalConsumer(events)
 		_, _ = createFixtureState()
+		if rows, err := OpenUserRows(); err == nil {
+			_ = rows.Name(context.Background(), 1)
+		}
 	}
 	return bundle.root
 }

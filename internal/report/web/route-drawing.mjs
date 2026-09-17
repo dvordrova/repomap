@@ -16,30 +16,34 @@ export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=
     // Certainty belongs to the original relations, not to a second visible
     // arrow. A mixed bundle proves a connection exists; its possible reads or
     // calls still retain their own status in the source inspection.
-    const key=JSON.stringify([edge.outerFrom||from?.id||edge.from,edge.outerTo||to?.id||edge.to]);
+    const visibleFrom=edge.outerFrom||from?.id||edge.from,visibleTo=edge.outerTo||to?.id||edge.to;
+    const key=JSON.stringify([visibleFrom,visibleTo].sort());
     let group=groups.get(key);
-    if(!group){group={edge,paths,segments,edgeIDs:[],on:false,possible:true};groups.set(key,group);}
+    if(!group){group={edge,paths,segments,edgeIDs:[],directions:new Set(),on:false,possible:true};groups.set(key,group);}
     // Prefer an exact native route, then its stable edge ID. Never choose an
     // empty clipped route or invent a replacement line between the endpoints.
     if((group.edge.possible&&!edge.possible)||!!group.edge.possible===!!edge.possible&&edge.id<group.edge.id){
       group.edge=edge;group.paths=paths;group.segments=segments;
     }
-    group.edgeIDs.push(edge.id);group.on ||= activeEdges.has(edge.id);group.possible &&= !!edge.possible;
+    group.edgeIDs.push(edge.id);group.directions.add(`${visibleFrom}\0${visibleTo}`);
+    group.on ||= activeEdges.has(edge.id);group.possible &&= !!edge.possible;
   }
-  for(const {edge,paths,segments,edgeIDs,on,possible} of groups.values()){
+  for(const {edge,paths,segments,edgeIDs,directions,on,possible} of groups.values()){
+    const bidirectional=directions.size>1;
     paths.forEach((path,index)=>{
       const key=path;
       let route=drawing.get(key);
       if(!route){
         route={id:index?`${edge.id}-segment-${index}`:edge.id,from:edge.from,to:edge.to,
           path,points:segments[index],start:segments[index][0],end:segments[index].at(-1),
-          possible:true,edgeIDs:[],on:false,arrow:false};
+          possible:true,edgeIDs:[],on:false,arrow:false,reverseArrow:false};
         drawing.set(key,route);
       }
       for(const id of edgeIDs)if(!route.edgeIDs.includes(id))route.edgeIDs.push(id);
       route.on ||= on;
       route.possible &&= possible;
       route.arrow ||= index===paths.length-1;
+      route.reverseArrow ||= bidirectional&&index===0;
     });
   }
   return [...drawing.values()].map(route=>({...route,dim:dim&&!route.on}));

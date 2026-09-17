@@ -50,7 +50,7 @@ func TestCumulativePythonFieldWritesKeepReceiverAndSource(t *testing.T) {
 			}
 			continue
 		}
-		if relation.Resolution != programindex.ResolutionAlternatives || len(relation.ToIDs) != 1 {
+		if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 {
 			t.Fatalf("write lost its possible field: %q %+v", line, relation)
 		}
 		field := objects[relation.ToIDs[0]]

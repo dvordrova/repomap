@@ -77,7 +77,7 @@ func (p *answerTestProvider) Complete(ctx context.Context, prepared llm.Prepared
 func answerTestRoutes(count int) []atlas.QuestionRoute {
 	routes := make([]atlas.QuestionRoute, count)
 	for i := range routes {
-		routes[i] = atlas.QuestionRoute{Question: fmt.Sprintf("Question %02d?", i), Stops: []atlas.QuestionStop{{PlaceID: fmt.Sprintf("internal:%d", i), Path: fmt.Sprintf("source-%02d.go", i), Line: 1, Name: "Run", Evidence: map[string]any{"signature": "Run()"}, Why: fmt.Sprintf("Reason %d", i)}}}
+		routes[i] = atlas.QuestionRoute{ID: fmt.Sprintf("q%d", i+1), Question: fmt.Sprintf("Question %02d?", i), Stops: []atlas.QuestionStop{{PlaceID: fmt.Sprintf("internal:%d", i), Path: fmt.Sprintf("source-%02d.go", i), Line: 1, Name: "Run", Evidence: map[string]any{"signature": "Run()"}, Why: fmt.Sprintf("Reason %d", i)}}}
 	}
 	return routes
 }
@@ -124,12 +124,12 @@ func TestAnswerBatchSharesEvidenceKeepsRowsAndCanonicalExactCache(t *testing.T) 
 		t.Fatalf("not a canonical shared catalogue: %+v", request)
 	}
 	for _, source := range request.Context.Candidates {
-		if !reflect.DeepEqual(source.ResultRows, []string{"r1", "r2"}) {
+		if !reflect.DeepEqual(source.ResultRows, []string{"q1", "q2"}) {
 			t.Fatalf("source row origins=%v", source.ResultRows)
 		}
 	}
 	a, b := first.Questions[0].Answer.Parts[0], first.Questions[1].Answer.Parts[0]
-	if a.OriginRequest == "" || a.OriginRequest != b.OriginRequest || a.OriginRow != "r2" || b.OriginRow != "r1" {
+	if a.OriginRequest == "" || a.OriginRequest != b.OriginRequest || a.OriginRow != "q2" || b.OriginRow != "q1" {
 		t.Fatalf("shared origin lost exact row: %+v / %+v", a, b)
 	}
 	for i, q := range first.Questions {
@@ -200,7 +200,7 @@ func TestAnswerSourcesKeepIndependentObservationsAndQuestionHints(t *testing.T) 
 			break
 		}
 	}
-	response := []table.Answer{{"key": "r1", "answer": "A claim.", "basis": "Observed.", "sources": forbidden, "remaining": "none", "state": "answered"}, {"key": "r2", "answer": "none", "basis": "none", "sources": "none", "remaining": "Missing evidence.", "state": "unanswered"}}
+	response := []table.Answer{{"key": "q1", "answer": "A claim.", "basis": "Observed.", "sources": forbidden, "remaining": "none", "state": "answered"}, {"key": "q2", "answer": "none", "basis": "none", "sources": "none", "remaining": "Missing evidence.", "state": "unanswered"}}
 	encoded, _ := json.Marshal(map[string]any{"rows": response})
 	decoded, err := call.DecodeValidate(encoded)
 	if err != nil || decoded.Answers[0] != nil || decoded.Answers[1]["state"] != "unanswered" || len(decoded.Rejections) != 1 {
@@ -505,7 +505,7 @@ func TestAnswerConnectionsKeepExactRowsAndOriginalWitnesses(t *testing.T) {
 	if err := json.Unmarshal(window.table.Request, &request); err != nil {
 		t.Fatal(err)
 	}
-	if len(request.Context.Connections) != 1 || !reflect.DeepEqual(request.Context.Connections[0].ResultRows, []string{"r1"}) || request.Context.Connections[0].Count != 4000 || request.Context.Connections[0].Declaration.Path != "schema.sql" {
+	if len(request.Context.Connections) != 1 || !reflect.DeepEqual(request.Context.Connections[0].ResultRows, []string{"q1"}) || request.Context.Connections[0].Count != 4000 || request.Context.Connections[0].Declaration.Path != "schema.sql" {
 		t.Fatalf("connection scope broadened: %+v", request)
 	}
 	if strings.Contains(string(window.table.Request), "UnrelatedCaller") || !strings.Contains(string(window.table.Request), "files_or_observed_entities") || routes[0].Connections[0].Witnesses[0].Caller != "UnrelatedCaller" {

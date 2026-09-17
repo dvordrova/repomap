@@ -211,3 +211,62 @@ func hidden() {}
 		t.Fatalf("missing callables = %#v", wantCallables)
 	}
 }
+
+func TestCoreObjectIndexOptionMatchesAllRepositoryInterfaceImplementations(t *testing.T) {
+	repository := t.TempDir()
+	writeTargetScopeFile(t, repository, "go.mod", "module example.com/interfaces\n\ngo 1.24\n")
+	writeTargetScopeFile(t, repository, "interfaces.go", `package interfaces
+
+type Reader interface{ Read() string }
+type ValueReader struct{}
+func (ValueReader) Read() string { return "value" }
+type PointerReader struct{}
+func (*PointerReader) Read() string { return "pointer" }
+type WrongReader struct{}
+func (WrongReader) Read(int) string { return "wrong" }
+`)
+
+	input := Input{
+		MatchInterfaceImplementations: true,
+		ModuleDirs:                    []string{"."},
+		Packages:                      []PackageInput{{Path: "example.com/interfaces", ModuleDir: "."}},
+		AnalysisTarget: &AnalysisTargetInput{
+			TargetRef: "target-interfaces", Kind: AnalysisTargetModuleLibrary,
+			ModuleID: "module-interfaces", ModulePath: "example.com/interfaces", ModuleDir: ".",
+			TargetPackages: []string{"example.com/interfaces"},
+		},
+	}
+	options := defaultHostOptions(repository)
+	options.CaptureCoreObjectIndex = true
+	result, err := analyzeForTest(options, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]bool{
+		"ValueReader":   {true, true},
+		"PointerReader": {false, true},
+	}
+	for _, match := range result.CoreObjectIndex.InterfaceImplementations {
+		if match.InterfaceName != "Reader" || match.InterfacePackage != "example.com/interfaces" {
+			t.Fatalf("unexpected interface match: %#v", match)
+		}
+		receivers, expected := want[match.ImplementationName]
+		if !expected || match.ImplementationPackage != "example.com/interfaces" ||
+			match.ValueReceiver != receivers[0] || match.PointerReceiver != receivers[1] {
+			t.Fatalf("incorrect interface match: %#v", match)
+		}
+		delete(want, match.ImplementationName)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing interface matches: %#v", want)
+	}
+
+	input.MatchInterfaceImplementations = false
+	result, err = analyzeForTest(options, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.CoreObjectIndex.InterfaceImplementations) != 0 {
+		t.Fatalf("disabled interface matches = %#v", result.CoreObjectIndex.InterfaceImplementations)
+	}
+}

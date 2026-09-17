@@ -101,14 +101,14 @@ func TestCallableBindingsKeepAnonymousHandlersAndQualifiedCalls(t *testing.T) {
 		{ID: "incidental", Name: "helper$1", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: loc.Path, Line: 20, Column: 3}},
 		{ID: "timeout", Name: "WithTimeout", Kind: programindex.ObjectExternalSymbol, External: &programindex.ExternalSymbol{PackagePath: "context", Name: "WithTimeout"}},
 	}, Relations: []programindex.Relation{
-		{FromID: "factory", ToIDs: []string{"handler"}, Kind: programindex.RelationPassesCallback, Invocation: "callable_binding:field", Resolution: programindex.ResolutionExact, Witnesses: []programindex.Witness{
+		{FromID: "factory", ToIDs: []string{"handler"}, Kind: programindex.RelationPassesCallback, Resolution: programindex.ResolutionExact, Witnesses: []programindex.Witness{
 			{Detail: "company.Worker.Execute", Location: loc},
 			{Kind: "callable_receiver_field", Detail: "Name = \"refresh\"", Location: &programindex.Location{Path: loc.Path, Line: 7, Column: 2}},
 			{Kind: "interface_field_assignment", Detail: "observed receiver assignment", Location: &programindex.Location{Path: loc.Path, Line: 6, Column: 2}},
 		}},
 		{FromID: "handler", ToIDs: []string{"timeout"}, Kind: programindex.RelationInvokesExternal, Patterns: []programindex.RelationPattern{{Selector: "WithTimeout", Location: loc}}},
-		{FromID: "handler", ToIDs: []string{"incidental"}, Kind: programindex.RelationCalls, Resolution: programindex.ResolutionExact, Invocation: "synchronous", Witnesses: []programindex.Witness{{Detail: "app/main.go:10", Location: loc}}},
-		{FromID: "handler", Kind: programindex.RelationCalls, Resolution: programindex.ResolutionUnresolved, Invocation: "declared_interface_dispatch:synchronous", Witnesses: []programindex.Witness{{Detail: "company.Store.Put func(value string) error", Location: loc}}},
+		{FromID: "handler", ToIDs: []string{"incidental"}, Kind: programindex.RelationCalls, Resolution: programindex.ResolutionExact, Witnesses: []programindex.Witness{{Detail: "app/main.go:10", Location: loc}}},
+		{FromID: "handler", Kind: programindex.RelationCalls, Resolution: programindex.ResolutionUnresolved, Dispatch: "interface_method", Witnesses: []programindex.Witness{{Detail: "company.Store.Put func(value string) error", Location: loc}}},
 		{FromID: "handler", ToIDs: []string{"factory"}, Kind: programindex.RelationCalls, Resolution: programindex.ResolutionAlternatives, Witnesses: []programindex.Witness{
 			{Detail: "company.Worker.Run via field Facade.worker", Location: loc},
 			{Kind: "interface_field_assignment", Detail: "observed receiver assignment for Worker.Run", Location: &programindex.Location{Path: "app/factory.go", Line: 12, Column: 4}},
@@ -147,7 +147,7 @@ func TestCallableBindingsKeepAnonymousHandlersAndQualifiedCalls(t *testing.T) {
 		t.Fatalf("qualified external or unresolved dispatch evidence lost: %+v", calls)
 	}
 	callers := b.symbolCallers()[b.symbolOf["factory"]]
-	if len(callers) != 1 || callers[0].ObjectID != "handler" || callers[0].PlaceID != b.symbolOf["handler"] || callers[0].Name != "Install$1" || callers[0].Path != loc.Path || callers[0].Resolution != "alternatives" {
+	if len(callers) != 1 || callers[0].ObjectID != "app.handler" || callers[0].PlaceID != b.symbolOf["handler"] || callers[0].Name != "Install$1" || callers[0].Path != loc.Path || callers[0].Resolution != "alternatives" {
 		t.Fatalf("incoming caller not bound to native target: %+v", callers)
 	}
 }
@@ -222,7 +222,7 @@ func TestTypeMembersFollowNativeOwnershipAcrossFiles(t *testing.T) {
 		if place.Path == "a/type.go" && (members[0].Path != "a/methods.go" || members[0].Decl.Doc != "Renew extends the ticket's validity. Pending jobs remain available." || members[0].Decl.LineNo != 4) {
 			t.Fatalf("cross-file member context lost: %+v", members)
 		}
-		if place.Path == "b/type.go" && members[0].Decl.ObjectID != "renew-b" {
+		if place.Path == "b/type.go" && members[0].Decl.ObjectID != "target.renew-b" {
 			t.Fatal("same-named types were conflated")
 		}
 	}
@@ -270,7 +270,7 @@ func TestTypeMembersFollowNativeOwnershipAcrossFiles(t *testing.T) {
 		if len(symbol.Symbol.Members) != 1 || symbol.Symbol.Members[0].Decl.Signature != "items: list[Point]" {
 			t.Fatalf("class field was omitted or duplicated across target copies: %+v", symbol)
 		}
-		if got, want := symbol.Symbol.Members[0].Decl.ObjectID, "0-"+symbol.Symbol.Decl.Name+"-copy"; got != want {
+		if got, want := symbol.Symbol.Members[0].Decl.ObjectID, "other-python-target.0-"+symbol.Symbol.Decl.Name+"-copy"; got != want {
 			t.Fatalf("class field representative = %s, want original native-ID ordering %s", got, want)
 		}
 	}
@@ -281,6 +281,11 @@ func TestFixturePlaces(t *testing.T) {
 	repository := materializeFixture(t, fixture)
 	backend := decodeIndex(t, fixture, "backend-program-index.json")
 	front := decodeIndex(t, fixture, "front-program-index.json")
+	indexes, err := programindex.RebindTargetSet([]programindex.Index{backend, front})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend, front = indexes[0], indexes[1]
 	docLine := firstDeclarationLine(t, backend, "backend/app/robot.py")
 	input := Input{
 		Revision:   strings.Repeat("a", 40),
@@ -298,7 +303,6 @@ func TestFixturePlaces(t *testing.T) {
 	for _, target := range input.Targets {
 		factInput.Targets = append(factInput.Targets, facts.TargetInput{Index: target.Index, Dependencies: target.Dependencies, Root: target.Root})
 	}
-	var err error
 	input.Facts, err = facts.Build(factInput)
 	if err != nil {
 		t.Fatal(err)
@@ -311,15 +315,18 @@ func TestFixturePlaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Native HTTP facts keep their actual declarations after target release;
-	// local execution remains a source call, not a runtime boundary.
+	// Registrations keep their actual handler declarations after target
+	// release; their kind is the model's, so the place carries none yet.
+	// Local execution remains a source call, not a runtime boundary.
 	wantOwners := map[string]string{
-		"bnd:backend/app/app.py:18:http_server":        "sym:backend/app/app.py:19:get_levels_info",
-		"bnd:backend/app/app.py:59:http_server":        "sym:backend/app/app.py:60:get_level",
-		"bnd:backend/app/app.py:74:http_server":        "sym:backend/app/app.py:75:run_level",
-		"bnd:front/src/service/http.ts:12:http_client": "sym:front/src/service/http.ts:10:getLevels",
-		"bnd:front/src/service/http.ts:21:http_client": "sym:front/src/service/http.ts:19:getLevel",
-		"bnd:front/src/service/http.ts:34:http_client": "sym:front/src/service/http.ts:30:runLevel",
+		"bnd:backend/app/app.py:18:": "sym:backend/app/app.py:19:get_levels_info",
+		"bnd:backend/app/app.py:59:": "sym:backend/app/app.py:60:get_level",
+		"bnd:backend/app/app.py:74:": "sym:backend/app/app.py:75:run_level",
+	}
+	wantCallers := map[string]string{
+		"bnd:front/src/service/http.ts:12:": "getLevels",
+		"bnd:front/src/service/http.ts:21:": "getLevel",
+		"bnd:front/src/service/http.ts:34:": "runLevel",
 	}
 	dynamicFacts := make(map[string]bool)
 	for _, fact := range input.Facts.OfKind(facts.KindDynamicExecution) {
@@ -336,18 +343,24 @@ func TestFixturePlaces(t *testing.T) {
 		}
 		key := boundaryID(place.Path, place.LineNo, place.Boundary.GivenKind)
 		if owner, expected := wantOwners[key]; expected {
-			if place.Boundary.SubjectID != owner {
+			if place.Boundary.SubjectID != owner || place.Boundary.Direction != atlas.DirectionIn {
 				t.Fatalf("native boundary owner changed: %+v", place)
 			}
 			delete(wantOwners, key)
 		}
+		if caller, expected := wantCallers[key]; expected {
+			if place.Boundary.Caller != caller || place.Boundary.Direction != atlas.DirectionOut {
+				t.Fatalf("request boundary caller changed: %+v", place)
+			}
+			delete(wantCallers, key)
+		}
 	}
-	if len(wantOwners) != 0 {
-		t.Fatalf("native fixture boundaries missing: %+v", wantOwners)
+	if len(wantOwners) != 0 || len(wantCallers) != 0 {
+		t.Fatalf("native fixture boundaries missing: %+v %+v", wantOwners, wantCallers)
 	}
 	// Keep identical canonical bytes for eager and lazy target storage below.
 	// The Python quote is anchored inside its own declaration's body.
-	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "b7c99d999a81d40c122e0f799079476f051d680f1e330818c240a4a422e6f2cd" {
+	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "2238b398ac219982f6193e7db4b97d1f372bcd6b16eb8f8ce147f388255d723e" {
 		t.Fatalf("saved mixed fixture graph changed: %s", got)
 	}
 	lazy := input
@@ -402,7 +415,11 @@ func TestFixturePlaces(t *testing.T) {
 		if fact.Anchor == nil || fact.Anchor.Line < 1 {
 			continue
 		}
-		if !found || place.SourceFact == nil || place.Path != fact.Anchor.Path || place.LineNo != fact.Anchor.Line || place.Column != fact.Anchor.Column || place.SourceFact.Key != fact.Key || place.SourceFact.Value != fact.Value || place.SourceFact.ObjectID != fact.ObjectID {
+		wantObjectID := ""
+		if fact.ObjectID != "" {
+			wantObjectID = fact.TargetID + "." + fact.ObjectID
+		}
+		if !found || place.SourceFact == nil || place.Path != fact.Anchor.Path || place.LineNo != fact.Anchor.Line || place.Column != fact.Anchor.Column || place.SourceFact.Key != fact.Key || place.SourceFact.Value != fact.Value || place.SourceFact.ObjectID != wantObjectID {
 			t.Fatalf("launch/manifest observation lost its exact source: %+v => %+v", fact, place)
 		}
 		if fact.Key == "main_guard" && place.Path == "backend/main.py" {
@@ -589,7 +606,7 @@ func TestSymbolContextJoinsTargetCopiesBySourceAndKeepsGeneratedCalls(t *testing
 				{ID: "transport-" + suffix, Name: "Invoke", Kind: programindex.ObjectExternalSymbol, External: &programindex.ExternalSymbol{PackagePath: "company/transport", Name: "Invoke"}},
 			},
 			Relations: []programindex.Relation{
-				{FromID: "send-" + suffix, ToIDs: []string{"generated-" + suffix}, Kind: programindex.RelationCalls, Invocation: "synchronous", Resolution: programindex.ResolutionExact,
+				{FromID: "send-" + suffix, ToIDs: []string{"generated-" + suffix}, Kind: programindex.RelationCalls, Resolution: programindex.ResolutionExact,
 					Witnesses: []programindex.Witness{{Location: location("app/client.go", line)}}},
 				{FromID: "generated-" + suffix, ToIDs: []string{"transport-" + suffix}, Kind: programindex.RelationInvokesExternal,
 					Patterns: []programindex.RelationPattern{{Selector: "Invoke", Location: location("app/generated.go", 21)}}},
@@ -692,7 +709,7 @@ func TestDispatchViewsKeepPossibleReceiversWithoutInventingExtraCalls(t *testing
 			for i, observed := range tc.observations {
 				suffix := fmt.Sprint(i)
 				location := &programindex.Location{Path: "app/client.go", Line: 11, Column: observed.column}
-				relation := programindex.Relation{FromID: "caller" + suffix, Kind: programindex.RelationCalls, Resolution: observed.resolution, Invocation: "interface_invoke:synchronous",
+				relation := programindex.Relation{FromID: "caller" + suffix, Kind: programindex.RelationCalls, Resolution: observed.resolution, Dispatch: "interface",
 					Witnesses: []programindex.Witness{{Kind: "dispatch", Detail: observed.detail, Location: location}}}
 				if observed.callee != "" {
 					relation.ToIDs = []string{observed.callee + suffix}
@@ -780,6 +797,11 @@ func firstDeclarationLine(t *testing.T, index programindex.Index, path string) i
 func TestFilesUnderAnotherTargetRootBelongToIt(t *testing.T) {
 	tool := atlasTestIndexTarget(t, "tool")
 	lib := atlasTestIndexTarget(t, "lib")
+	rebound, err := programindex.RebindTargetSet([]programindex.Index{tool, lib})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, lib = rebound[0], rebound[1]
 	toolID, libID := tool.Target.ID, lib.Target.ID
 	b := &builder{files: map[string]*fileState{
 		"cmd/tool/main.go": {targets: map[string]struct{}{toolID: {}}},
@@ -800,7 +822,14 @@ func TestFilesUnderAnotherTargetRootBelongToIt(t *testing.T) {
 }
 
 func TestSameRootTargetsKeepTheirIndexedFilesInEitherOrder(t *testing.T) {
-	exe, lib, nested := atlasTestIndexTarget(t, "tool"), atlasTestIndexTarget(t, "library"), atlasTestIndexTarget(t, "nested")
+	exe := atlasTestIndexTarget(t, "tool")
+	lib := atlasTestIndexTarget(t, "library")
+	nested := atlasTestIndexTarget(t, "nested")
+	rebound, err := programindex.RebindTargetSet([]programindex.Index{exe, lib, nested})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe, lib, nested = rebound[0], rebound[1], rebound[2]
 	inputs := []TargetInput{{Index: exe, Root: "tools/check"}, {Index: lib, Root: "tools/check"}, {Index: nested, Root: "tools/check/child"}}
 	for _, order := range [][]TargetInput{inputs, {inputs[2], inputs[1], inputs[0]}} {
 		b := &builder{input: Input{Targets: order}, files: map[string]*fileState{
@@ -829,23 +858,6 @@ func TestCleanTextDropsControlCharacters(t *testing.T) {
 	}
 	if got := cleanText("plain text"); got != "plain text" {
 		t.Fatalf("cleanText left plain text alone: %q", got)
-	}
-}
-
-func TestShortSignature(t *testing.T) {
-	python := "read(path: str='some/path/data.json') -> list[Point]"
-	if languageSignature(python, "python") != python {
-		t.Fatal("Go path shortening changed a Python declaration literal")
-	}
-	cases := map[string]string{
-		"func(entries []github.com/dvordrova/repomap/internal/corpus.Entry) (map[string]github.com/x/y/z.T, error)": "func(entries []corpus.Entry) (map[string]z.T, error)",
-		"func(a int) string":                             "func(a int) string",
-		"func(*golang.org/x/tools/go/ssa.Function) bool": "func(*ssa.Function) bool",
-	}
-	for signature, want := range cases {
-		if got := shortSignature(signature); got != want {
-			t.Errorf("%q -> %q, want %q", signature, got, want)
-		}
 	}
 }
 

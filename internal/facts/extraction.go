@@ -56,7 +56,11 @@ func (b *builder) addExtractions() error {
 			if err := node.Data.Validate(); err != nil {
 				return fmt.Errorf("extractor %s: %w", extraction.Name, err)
 			}
-			row := Fact{Data: CloneData(node.Data), Kind: KindEntity, Key: node.ID, Symbol: node.Name, Path: node.Path, Extractor: extraction.Name, Value: "reference"}
+			key := node.Name
+			if key == "" {
+				key = node.Path
+			}
+			row := Fact{Data: CloneData(node.Data), Kind: KindEntity, Key: key, Symbol: node.Name, Path: node.Path, Extractor: extraction.Name, Value: "reference"}
 			if node.Path != "" {
 				row.Value = "not_in_corpus"
 				row.TargetID = b.targetForPath(node.Path)

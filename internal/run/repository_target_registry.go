@@ -70,10 +70,11 @@ type repositoryTargetAdapterDescriptor struct {
 // snapshot. Generic orchestration passes it atomically to BuildProgramInput;
 // an adapter never exposes independently sampled GetObjects/GetRelations/etc.
 type repositoryProgramBuildRequest struct {
-	Context context.Context
-	Corpus  *corpus.Corpus
-	Target  repositoryTypedTarget
-	Facts   any
+	Context  context.Context
+	Corpus   *corpus.Corpus
+	Target   repositoryTypedTarget
+	TargetID string
+	Facts    any
 }
 
 type repositoryDependencyBuildRequest struct {
@@ -442,6 +443,7 @@ func buildRepositoryProgramPageAuthority(
 			"build program input: adapter %q: %w", request.Target.Key.Adapter, err,
 		)
 	}
+	input.Target.ID = request.TargetID
 	index, err := programindex.New(input)
 	if err != nil {
 		return repositoryProgramPageAuthority{}, fmt.Errorf(

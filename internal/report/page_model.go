@@ -17,9 +17,10 @@ import (
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
-// pageView is the complete model of the static report page. It carries only
-// reader-facing values: names, paths, lines, sentences. Target and group
-// identities, digests, and adapter refs never reach the template.
+// pageView is the complete model of the static report page. Visible values are
+// reader-facing names, paths, lines and sentences. Existing compact target and
+// graph IDs may address DOM elements; digests and adapter construction refs do
+// not become reader-facing identities.
 type pageView struct {
 	Language         DisplayLanguage
 	UIVocabularyJSON template.JS
@@ -253,6 +254,32 @@ type pageBuilder struct {
 	subjectAt map[string]string
 }
 
+// subjectKey is the only identity used by the report projection. Subject IDs
+// are deliberately target-local (n1, n2, ...), so using one without its owner
+// would let a later target silently replace an earlier one.
+func subjectKey(targetID, subjectID string) string {
+	if targetID == "" || strings.HasPrefix(subjectID, targetID+".") {
+		return subjectID
+	}
+	return targetID + "." + subjectID
+}
+
+func subjectLocationKey(targetID, path string, line int) string {
+	return targetID + "\x00" + path + ":" + strconv.Itoa(line)
+}
+
+func (builder *pageBuilder) subject(targetID, subjectID string) (subjectRef, bool) {
+	if targetID != "" {
+		if ref, ok := builder.subjects[subjectKey(targetID, subjectID)]; ok {
+			return ref, true
+		}
+	}
+	// Direct lookup supports already-qualified refs and small projection unit
+	// fixtures. Production subjects are always stored under subjectKey.
+	ref, ok := builder.subjects[subjectID]
+	return ref, ok
+}
+
 func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (*pageView, error) {
 	if data == nil || data.GroupGraph == nil || data.TargetOutcomePortfolio == nil {
 		return nil, fmt.Errorf("report: page requires the final group graph and target inventory")
@@ -286,16 +313,16 @@ func buildPageView(data *ReportData, reportSHA256 string, localRoots []string) (
 			})
 		}
 	}
-	builder.indexes = foldIndexes(data.GroupGraph.Indexes)
+	builder.indexes = foldIndexes(data.GroupGraph.hydrated)
 	for position := range builder.indexes {
 		index := &builder.indexes[position]
 		for _, subject := range index.Subjects {
-			builder.subjects[subject.ID] = subjectRef{subject: subject, programTargetID: index.Target.ID}
+			builder.subjects[subjectKey(index.Target.ID, subject.ID)] = subjectRef{subject: subject, programTargetID: index.Target.ID}
 			if object := subject.Object; object != nil && object.Location != nil && object.Location.Path != "" {
 				builder.declarations[object.Location.Path] = append(
 					builder.declarations[object.Location.Path], object.Location.Line,
 				)
-				builder.subjectAt[object.Location.Path+":"+strconv.Itoa(object.Location.Line)] = subject.ID
+				builder.subjectAt[subjectLocationKey(index.Target.ID, object.Location.Path, object.Location.Line)] = subject.ID
 			}
 		}
 		for _, group := range index.Groups {
@@ -558,7 +585,7 @@ func (builder *pageBuilder) refAnchors(refs []string) []pageAnchor {
 			anchors = append(anchors, builder.links.anchor(claim.Path, claim.Line, 0))
 			continue
 		}
-		if subject, ok := builder.subjects[ref]; ok {
+		if subject, ok := builder.subject("", ref); ok {
 			if _, anchor := builder.subjectDisplay(subject.subject); anchor != nil {
 				anchors = append(anchors, *anchor)
 			}
@@ -616,7 +643,7 @@ func (builder *pageBuilder) factsCard(target facts.Target) pageTargetCard {
 			card.Entrypoints = append(card.Entrypoints, *anchor)
 		}
 	}
-	card.Calls = len(builder.targetFacts(target.ID, facts.KindHTTPCall))
+	card.Calls = len(builder.outboundRequests(target.ID, ""))
 	card.Dynamic = len(builder.targetFacts(target.ID, facts.KindDynamicExecution))
 	card.Dead = len(builder.targetFacts(target.ID, facts.KindDeadModule))
 	card.Counts = cardCounts(card)
@@ -676,61 +703,18 @@ func (builder *pageBuilder) portals(view *pageView) {
 		view.PortalsMissing = notAvailableFacts
 		return
 	}
-	for _, portal := range builder.data.Facts.OfKind(facts.KindPortal) {
-		row := pagePortal{
-			Method: portal.Method, Path: portal.Path,
-			Possible: portal.Resolution == facts.ResolutionPossible,
-		}
-		if call, ok := builder.factsByID[portal.Refs[0]]; ok && call.Anchor != nil {
-			row.Call = builder.links.anchor(call.Anchor.Path, call.Anchor.Line, call.Anchor.Column)
-		} else if portal.Anchor != nil {
-			row.Call = builder.links.anchor(portal.Anchor.Path, portal.Anchor.Line, portal.Anchor.Column)
-		}
-		if route, ok := builder.factsByID[portal.Refs[1]]; ok && route.Anchor != nil {
-			row.Route = builder.links.anchor(route.Anchor.Path, route.Anchor.Line, route.Anchor.Column)
-		} else if len(portal.Evidence) > 0 {
-			row.Route = builder.links.anchor(portal.Evidence[0].Path, portal.Evidence[0].Line, 0)
-		}
-		view.Portals = append(view.Portals, row)
+	for _, portal := range builder.portalLinks() {
+		view.Portals = append(view.Portals, pagePortal{
+			Method: portal.method, Path: portal.path, Possible: portal.possible,
+			Call:  builder.links.anchor(portal.call.Anchor.Path, portal.call.Anchor.Line, portal.call.Anchor.Column),
+			Route: builder.links.anchor(portal.route.Anchor.Path, portal.route.Anchor.Line, portal.route.Anchor.Column),
+		})
 	}
 	if len(view.Portals) > 0 {
 		return
 	}
 	view.PortalsMissing = "No cross-target HTTP link was found."
 	view.Boundaries = builder.boundaryCounts()
-}
-
-// httpRows lists http_call or http_route facts; an empty targetID means every
-// target, and rows then carry the owning target name.
-func (builder *pageBuilder) httpRows(kind facts.Kind, targetID string) []pageHTTPRow {
-	if builder.data.Facts == nil {
-		return nil
-	}
-	var rows []pageHTTPRow
-	for _, fact := range builder.data.Facts.OfKind(kind) {
-		if targetID != "" && fact.TargetID != targetID {
-			continue
-		}
-		row := pageHTTPRow{
-			Method: fact.Method, Path: fact.Path, Symbol: fact.Symbol,
-			Anchor:   builder.links.factAnchor(fact),
-			Possible: fact.Resolution == facts.ResolutionPossible,
-		}
-		if fact.ObjectID != "" {
-			if subject, known := builder.subjects[fact.ObjectID]; known {
-				if _, anchor := builder.subjectDisplay(subject.subject); anchor != nil {
-					row.SymbolAnchor = anchor
-				}
-			}
-		}
-		if targetID == "" {
-			if section := builder.byFacts[fact.TargetID]; section != nil {
-				row.Target = section.Name
-			}
-		}
-		rows = append(rows, row)
-	}
-	return rows
 }
 
 func (builder *pageBuilder) negatives(view *pageView) {
@@ -828,7 +812,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 			owner = builder.byFacts[fact.TargetID]
 		}
 	case step.SubjectID != "":
-		if ref, ok := builder.subjects[step.SubjectID]; ok {
+		if ref, ok := builder.subject(step.TargetID, step.SubjectID); ok {
 			row.Label, row.Anchor = builder.subjectDisplay(ref.subject)
 			owner = builder.byProgram[ref.programTargetID]
 		}
@@ -916,7 +900,7 @@ func (builder *pageBuilder) boundaryCounts() []pageBoundary {
 		row := pageBoundary{
 			Target: section.Label, SectionID: section.ID,
 			Routes: section.NativeRouteCount(),
-			Calls:  len(builder.targetFacts(section.factsTargetID, facts.KindHTTPCall)),
+			Calls:  len(builder.outboundRequests(section.programTargetID, "")),
 		}
 		if row.Routes == 0 && row.Calls == 0 {
 			continue

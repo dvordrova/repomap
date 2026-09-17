@@ -85,7 +85,7 @@ function FrameTitle({node,item,focused,enter,select}) {
 function RoutedEdge({id,data}) {
   return <g aria-hidden="true" className={`flow-edge ${data.on?'flow-edge-active':''} ${data.dim?'flow-edge-muted':''}`} data-edge-id={id} data-edge-ids={data.edgeIDs.join(' ')}>
     <path className="flow-edge-casing" d={data.path} vectorEffect="non-scaling-stroke"/>
-    <path d={data.path} fill="none" vectorEffect="non-scaling-stroke" style={data.possible?{strokeDasharray:'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined} markerEnd={data.arrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined}/>
+    <path d={data.path} fill="none" vectorEffect="non-scaling-stroke" style={data.possible?{strokeDasharray:'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined} markerStart={data.reverseArrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined} markerEnd={data.arrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined}/>
   </g>;
 }
 const nodeTypes={part:Part,area:Area}, edgeTypes={routed:RoutedEdge};

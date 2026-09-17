@@ -12,15 +12,18 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 const (
-	Version          = 2
+	Version          = 3
 	ArtifactFilename = "facts.json"
 
-	digestDomain = "repomap-facts-v2\x00"
+	digestDomain = "repomap-facts-v3\x00"
 	idDomain     = "repomap-fact-id-v1\x00"
 	idHexWidth   = 16
 )
@@ -32,21 +35,16 @@ const (
 	// KindEntrypoint is a real execution root proved by a language adapter
 	// (main guard, bound module object, callable seed, manifest script).
 	KindEntrypoint Kind = "entrypoint"
-	// KindHTTPRoute is a server-side route registration with a method and a
-	// path literal.
-	KindHTTPRoute Kind = "http_route"
-	// KindHTTPCall is a client-side HTTP call with a method and a path
-	// literal or template.
-	KindHTTPCall Kind = "http_call"
-	// KindPortal joins one http_call to exactly one http_route of another
-	// target on method and path literals.
-	KindPortal Kind = "portal"
+	// KindRegistration is a call the repository does not own that hands over a
+	// repository callable, an address-like literal, or a literal to a value
+	// holding callables: a route, a consumer, a timer, a client request, a
+	// server start. Its shape is a fact; what it is, the reading stage decides.
+	KindRegistration Kind = "registration"
+	// KindSQLQuery is an SQL statement literal handed to a call the repository
+	// does not own, with the tables it names.
+	KindSQLQuery Kind = "sql_query"
 	// KindConfigRead is an environment/config key read.
 	KindConfigRead Kind = "config_read"
-	// KindListenAddress is a literal address a server binds to. It answers
-	// "on which port" from the code rather than from a manifest or an
-	// environment key that may have no default anywhere in the repository.
-	KindListenAddress Kind = "listen_address"
 	// KindDynamicExecution marks a place where the program runs code it was
 	// given rather than code you can read: exec, eval, subprocess, a
 	// deserializer that can construct objects. It is an orientation fact, not
@@ -75,8 +73,8 @@ const (
 
 func (kind Kind) Valid() bool {
 	switch kind {
-	case KindEntrypoint, KindHTTPRoute, KindHTTPCall, KindPortal, KindConfigRead,
-		KindListenAddress, KindDynamicExecution, KindManifest, KindTODO,
+	case KindEntrypoint, KindRegistration, KindSQLQuery, KindConfigRead,
+		KindDynamicExecution, KindManifest, KindTODO,
 		KindDeadModule, KindNegative, KindDependency, KindImport, KindEntity, KindRelation:
 		return true
 	default:
@@ -136,22 +134,23 @@ func (anchor Anchor) validate() error {
 // Target is one analyzed target as the reader sees it: a language, a root
 // directory, and the manifest that defines it.
 type Target struct {
-	ID              string `json:"id"`
-	ProgramTargetID string `json:"program_target_id"`
-	Language        string `json:"language"`
-	Name            string `json:"name"`
-	Kind            string `json:"kind"`
-	Root            string `json:"root"`
-	Manifest        string `json:"manifest,omitempty"`
-	Anchor          Anchor `json:"anchor"`
+	ID       string `json:"id"`
+	Language string `json:"language"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	Root     string `json:"root"`
+	Manifest string `json:"manifest,omitempty"`
+	Anchor   Anchor `json:"anchor"`
 }
 
 // Fact is one anchored row. Only the fields meaningful for its Kind are set:
 //
 //	entrypoint  Symbol, ObjectID, Key (seed kind)
-//	http_route  Method, Path, Symbol (handler), ObjectID (handler object)
-//	http_call   Method, Path, Symbol (caller), ObjectID (caller object)
-//	portal      Method, Path, Refs [call id, route id], PeerTargetID, Evidence [route anchor]
+//	registration Key (call word), Values (literals), Path (address literal, mount
+//	            prefixes applied), Method (verb the word or literal states),
+//	            Symbol/ObjectID (callable handed over), Text (external symbol
+//	            behind the call), Evidence (prefix/value sites)
+//	sql_query   Value (statement), Key (tables), Symbol/ObjectID (caller)
 //	config_read Key (env key), Value (literal default), Symbol
 //	dynamic_execution Key (what runs the code), Symbol, Text (source line)
 //	manifest    Key (dotted manifest key), Value
@@ -169,16 +168,20 @@ type Fact struct {
 	TargetID     string      `json:"target_id,omitempty"`
 	PeerTargetID string      `json:"peer_target_id,omitempty"`
 	Anchor       *Anchor     `json:"anchor,omitempty"`
-	Symbol       string      `json:"symbol,omitempty"`
-	ObjectID     string      `json:"object_id,omitempty"`
-	Method       string      `json:"method,omitempty"`
-	Path         string      `json:"path,omitempty"`
-	Key          string      `json:"key,omitempty"`
-	Value        string      `json:"value,omitempty"`
-	Text         string      `json:"text,omitempty"`
-	Resolution   Resolution  `json:"resolution,omitempty"`
-	Refs         []string    `json:"refs,omitempty"`
-	Evidence     []Anchor    `json:"evidence,omitempty"`
+	// Holder is the value a registration acts on, at the call that produced
+	// it: the router a route is put into, the server that is started.
+	Holder     *Anchor    `json:"holder,omitempty"`
+	Symbol     string     `json:"symbol,omitempty"`
+	ObjectID   string     `json:"object_id,omitempty"`
+	Method     string     `json:"method,omitempty"`
+	Path       string     `json:"path,omitempty"`
+	Key        string     `json:"key,omitempty"`
+	Value      string     `json:"value,omitempty"`
+	Text       string     `json:"text,omitempty"`
+	Values     []string   `json:"values,omitempty"`
+	Resolution Resolution `json:"resolution,omitempty"`
+	Refs       []string   `json:"refs,omitempty"`
+	Evidence   []Anchor   `json:"evidence,omitempty"`
 	// Extractor names the producer of an extension fact, including built-ins.
 	Extractor string `json:"extractor,omitempty"`
 }
@@ -200,10 +203,11 @@ type Result struct {
 	SHA256      string       `json:"sha256"`
 }
 
-// NewFactID derives the stable, target-scoped id of one fact from its root,
+// NewFactID derives an extraction-local, target-scoped key from its root,
 // kind, anchor path, the trimmed content of the anchored line, and the
-// principal literal (method+path, key, symbol...). Callers that see a
-// collision append an ordinal through WithOrdinal.
+// principal literal (method+path, key, symbol...). Seal replaces it with the
+// artifact-owned compact aN identity after canonical ordering. Callers that
+// see a collision append an ordinal through WithOrdinal.
 func NewFactID(root string, kind Kind, anchorPath string, lineContent string, principal ...string) string {
 	hasher := sha256.New()
 	hasher.Write([]byte(idDomain))
@@ -222,24 +226,6 @@ func WithOrdinal(id string, ordinal int) string {
 	return fmt.Sprintf("%s-%d", id, ordinal)
 }
 
-// NewTargetID derives a stable target id.
-//
-// Language, root and manifest are not enough on their own: one directory can
-// hold two targets of the same language behind the same manifest — a library
-// and the module you run — and python-dotenv does. Those two collided, and a
-// collision failed the whole run rather than one target. The program target
-// id is a content hash of the target itself, so it separates them and stays
-// stable across runs of the same revision.
-func NewTargetID(language, root, manifest, programTargetID string) string {
-	hasher := sha256.New()
-	hasher.Write([]byte(idDomain))
-	for _, part := range []string{"target", language, root, manifest, programTargetID} {
-		hasher.Write([]byte(part))
-		hasher.Write([]byte{0})
-	}
-	return "t-" + hex.EncodeToString(hasher.Sum(nil))[:idHexWidth]
-}
-
 // Seal sorts the rows canonically, checks the shape, and computes the digest.
 func Seal(result Result) (Result, error) {
 	owned := clone(result)
@@ -255,6 +241,24 @@ func Seal(result Result) (Result, error) {
 	}
 	sortTargets(owned.Targets)
 	sortFacts(owned.Facts)
+	factIDs := make(map[string]string, len(owned.Facts))
+	for position := range owned.Facts {
+		oldID := owned.Facts[position].ID
+		if _, duplicate := factIDs[oldID]; duplicate {
+			return Result{}, fmt.Errorf("facts: duplicate extraction key %q", oldID)
+		}
+		factIDs[oldID] = fmt.Sprintf("a%d", position+1)
+		owned.Facts[position].ID = factIDs[oldID]
+	}
+	for position := range owned.Facts {
+		for refPosition, oldRef := range owned.Facts[position].Refs {
+			newRef, known := factIDs[oldRef]
+			if !known {
+				return Result{}, fmt.Errorf("facts: fact references unknown extraction key %q", oldRef)
+			}
+			owned.Facts[position].Refs[refPosition] = newRef
+		}
+	}
 	sortDiagnostics(owned.Diagnostics)
 	digest, err := resultDigest(owned)
 	if err != nil {
@@ -300,6 +304,9 @@ func (result Result) Validate() error {
 			return fmt.Errorf("facts: duplicate fact id %q", fact.ID)
 		}
 		factIDs[fact.ID] = struct{}{}
+		if fact.ID != fmt.Sprintf("a%d", position+1) {
+			return fmt.Errorf("facts: fact IDs are not canonical")
+		}
 		if position > 0 && !factLess(result.Facts[position-1], fact) {
 			return fmt.Errorf("facts: facts are not canonical at %d", position)
 		}
@@ -368,7 +375,7 @@ func (result Result) TargetByID(id string) (Target, bool) {
 }
 
 func (target Target) validate() error {
-	if !validID(target.ID, "t-") {
+	if !programindex.ValidTargetID(target.ID) {
 		return fmt.Errorf("invalid target id %q", target.ID)
 	}
 	if !validText(target.Language) || !validText(target.Name) || !validText(target.Kind) {
@@ -387,14 +394,11 @@ func (target Target) validate() error {
 	if err := target.Anchor.validate(); err != nil {
 		return err
 	}
-	if target.ProgramTargetID != "" && !validText(target.ProgramTargetID) {
-		return fmt.Errorf("invalid program target id")
-	}
 	return nil
 }
 
 func (fact Fact) validate(targets map[string]struct{}) error {
-	if !validID(fact.ID, "f-") {
+	if fact.ID == "" {
 		return fmt.Errorf("invalid fact id")
 	}
 	if !fact.Kind.Valid() {
@@ -429,20 +433,22 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 		}
 	}
 	switch fact.Kind {
-	case KindHTTPRoute, KindHTTPCall, KindPortal:
-		if fact.Method == "" || fact.Path == "" || fact.Anchor == nil {
-			return fmt.Errorf("%s requires method, path and anchor", fact.Kind)
+	case KindRegistration:
+		if fact.Key == "" || fact.Anchor == nil {
+			return fmt.Errorf("registration requires its call word and anchor")
 		}
-		if fact.Kind == KindPortal && len(fact.Refs) != 2 {
-			return fmt.Errorf("portal requires exactly two refs")
+		for _, value := range fact.Values {
+			if !validText(value) {
+				return fmt.Errorf("invalid registration value")
+			}
+		}
+	case KindSQLQuery:
+		if fact.Value == "" || fact.Anchor == nil {
+			return fmt.Errorf("sql_query requires statement and anchor")
 		}
 	case KindConfigRead, KindDynamicExecution, KindManifest, KindNegative, KindDependency:
 		if fact.Key == "" {
 			return fmt.Errorf("%s requires key", fact.Kind)
-		}
-	case KindListenAddress:
-		if fact.Value == "" || fact.Anchor == nil {
-			return fmt.Errorf("listen_address requires value and anchor")
 		}
 	case KindTODO:
 		if fact.Text == "" || fact.Anchor == nil {
@@ -487,7 +493,7 @@ func targetLess(a, b Target) bool {
 	if a.Language != b.Language {
 		return a.Language < b.Language
 	}
-	return a.ID < b.ID
+	return programindex.TargetIDLess(a.ID, b.ID)
 }
 
 func sortFacts(facts []Fact) {
@@ -515,7 +521,18 @@ func factLess(a, b Fact) bool {
 	if a.Path != b.Path {
 		return a.Path < b.Path
 	}
-	return a.ID < b.ID
+	return compactFactIDLess(a.ID, b.ID)
+}
+
+func compactFactIDLess(left, right string) bool {
+	if strings.HasPrefix(left, "a") && strings.HasPrefix(right, "a") {
+		leftOrdinal, leftErr := strconv.Atoi(strings.TrimPrefix(left, "a"))
+		rightOrdinal, rightErr := strconv.Atoi(strings.TrimPrefix(right, "a"))
+		if leftErr == nil && rightErr == nil {
+			return leftOrdinal < rightOrdinal
+		}
+	}
+	return left < right
 }
 
 func anchorPath(fact Fact) string {
@@ -570,6 +587,7 @@ func clone(result Result) Result {
 			copied.Anchor = &anchor
 		}
 		copied.Refs = cloneSlice(fact.Refs)
+		copied.Values = cloneSlice(fact.Values)
 		copied.Evidence = cloneSlice(fact.Evidence)
 		owned.Facts[position] = copied
 	}

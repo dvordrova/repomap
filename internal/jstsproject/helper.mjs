@@ -1338,9 +1338,6 @@ function invocationOrigin(node) {
   let refs = (ts.isNewExpression(node) ? localRefsForInvocation(node) : expressionRefs(node.expression))
     .filter((ref) => ["function", "method", "lambda"].includes(declarationKindByRef.get(ref)))
   let resolution = refs.length > 1 ? "alternatives" : refs.length === 1 ? "exact" : ""
-  if (/\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName)) && resolution === "exact") {
-    resolution = "alternatives"
-  }
   if (refs.length > 0) return { refs, resolution, observed: refs.length }
 
   const imported = externalImportForExpression(node.expression)
@@ -1353,7 +1350,7 @@ function invocationOrigin(node) {
     if (exportName && name) {
       return {
         refs: [externalProgramObjectRef(imported.package, receiver, name, imported.repositoryPath)],
-        resolution: /\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName)) ? "alternatives" : "exact",
+        resolution: "exact",
         observed: 1,
       }
     }
@@ -1363,7 +1360,7 @@ function invocationOrigin(node) {
   if (platformTarget) {
     return {
       refs: [externalProgramObjectRef("platform:javascript", platformTarget.receiver, platformTarget.name)],
-      resolution: /\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName)) ? "alternatives" : "exact",
+      resolution: "exact",
       observed: 1,
     }
   }
@@ -1594,10 +1591,9 @@ function patternHasObjectCandidate(node) {
 
 function callPatternArgument(node, position) {
   const objectRefs = patternObjectRefs(node)
-  const javascript = /\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName))
   const hasObjectCandidate = patternHasObjectCandidate(node)
   const resolution = objectRefs.length === 0 ? hasObjectCandidate ? "unresolved" : "" :
-    javascript || objectRefs.length > 1 ? "alternatives" : "exact"
+    objectRefs.length > 1 ? "alternatives" : "exact"
   const common = {
     origin: sourceValue(node),
     position,
@@ -1896,7 +1892,7 @@ function recordRead(node, syntax = "value") {
   // A property use and its receiver can begin at the same source column.
   // Preserve both compiler references instead of collapsing by position alone.
   reads.push({ref: factRef("read", node, `${syntax}:${expressionText(node)}`), from_ref: from, to_refs: refs, syntax,
-    resolution: refs.length !== 1 || /\.(?:js|jsx|mjs|cjs)$/.test(relative(node.getSourceFile().fileName)) ? "alternatives" : "exact",
+    resolution: refs.length !== 1 ? "alternatives" : "exact",
     location: locationOf(node)})
 }
 for (const { sourceFile } of sourceFiles) {
@@ -2007,7 +2003,6 @@ for (const { sourceFile } of sourceFiles) {
       // set. Retain compiler/type-resolved local refs, exact external-import
       // authority, or an explicit unresolved frontier with no invented target.
       let resolution = localRefs.length > 1 ? "alternatives" : localRefs.length === 1 ? "exact" : platformTarget ? "exact" : externalPackage ? externalImport.resolution : "unresolved"
-      if (/\.(?:js|jsx|mjs|cjs)$/.test(relative(sourceFile.fileName)) && resolution === "exact") resolution = "alternatives"
       const displayExpression = callDisplayExpression(node)
       const call = {
         ref: callFactRef(node), caller_ref: callerRef, callee_refs: localRefs,
@@ -2073,7 +2068,7 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
           ref: factRef("binding", node), from_ref: refForDeclarationNode(node), to_refs: callableRefs,
           element: expressionText(element.tagName), attribute: expressionText(node.name),
           resolution: callableRefs.length === 0 ? "unresolved" :
-            /\.(?:js|jsx|mjs|cjs)$/.test(filePath) || refs.length !== 1 || callableRefs.length !== 1 ? "alternatives" : "exact",
+            refs.length !== 1 || callableRefs.length !== 1 ? "alternatives" : "exact",
           targets_observed: Math.max(1, refs.length), location: locationOf(node),
         })
       }

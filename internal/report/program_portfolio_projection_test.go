@@ -10,6 +10,11 @@ import (
 func TestProgramPortfolioKeepsEveryExactTargetAndOneDefaultEntry(t *testing.T) {
 	pythonIndex := reportProgramIndexFixture(t, "python", "executable")
 	goIndex := reportProgramIndexFixture(t, "go", "library")
+	rebound, err := programindex.RebindTargetSet([]programindex.Index{pythonIndex, goIndex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pythonIndex, goIndex = rebound[0], rebound[1]
 	portfolio, err := NewProgramPortfolio(pythonIndex.Target.ID, []programindex.Index{pythonIndex, goIndex})
 	if err != nil {
 		t.Fatalf("NewProgramPortfolio: %v", err)
@@ -21,7 +26,7 @@ func TestProgramPortfolioKeepsEveryExactTargetAndOneDefaultEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaultEntry.Target.ID != pythonIndex.Target.ID || defaultEntry.View.TargetID != pythonIndex.Target.ID {
+	if defaultEntry.Target.ID != pythonIndex.Target.ID || defaultEntry.SHA256 != pythonIndex.SHA256 {
 		t.Fatalf("default entry = %#v", defaultEntry)
 	}
 }
@@ -41,7 +46,7 @@ func TestProgramPortfolioAcceptsSyntheticAdapterLanguage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(portfolio.Entries) != 1 || portfolio.Entries[0].Target.ID != index.Target.ID ||
-		portfolio.Entries[0].View.TargetID != index.Target.ID {
+		portfolio.Entries[0].SHA256 != index.SHA256 {
 		t.Fatalf("synthetic adapter entry = %#v", portfolio.Entries)
 	}
 }

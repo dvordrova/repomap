@@ -10,6 +10,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -17,6 +18,7 @@ import (
 )
 
 const Version = 1
+const ArtifactVersion = 2
 const ConfigFilename = ".repomap.json"
 const ArtifactFilename = "extractions.json"
 
@@ -59,12 +61,13 @@ type Exchange struct {
 }
 
 type Result struct {
+	Version     int                `json:"version"`
 	Extractions []facts.Extraction `json:"extractions"`
 	Exchanges   []Exchange         `json:"exchanges"`
 }
 
 func Run(ctx context.Context, root string, repository *corpus.Corpus) (Result, error) {
-	result := Result{Extractions: []facts.Extraction{}, Exchanges: []Exchange{}}
+	result := Result{Version: ArtifactVersion, Extractions: []facts.Extraction{}, Exchanges: []Exchange{}}
 	if repository == nil {
 		return result, nil
 	}
@@ -158,8 +161,42 @@ func (result *Result) accept(exchange Exchange) error {
 	if response.Version != Version || response.Nodes == nil || response.Links == nil {
 		return fmt.Errorf("extractor %s: expected version %d, nodes and links arrays", exchange.Name, Version)
 	}
-	result.Extractions = append(result.Extractions, facts.Extraction{Name: exchange.Name, Nodes: response.Nodes, Links: response.Links, Diagnostics: response.Diagnostics})
+	normalized, err := normalizeExtraction(facts.Extraction{Name: exchange.Name, Nodes: response.Nodes, Links: response.Links, Diagnostics: response.Diagnostics})
+	if err != nil {
+		return fmt.Errorf("extractor %s: %w", exchange.Name, err)
+	}
+	result.Extractions = append(result.Extractions, normalized)
 	return nil
+}
+
+// normalizeExtraction replaces producer-local construction keys with one
+// compact namespace per accepted extraction. The exact command response stays
+// in Exchange.Stdout for replay and debugging; later facts never need to carry
+// the producer's paths or hashes as identities.
+func normalizeExtraction(value facts.Extraction) (facts.Extraction, error) {
+	result := facts.Extraction{Name: value.Name, Nodes: append([]facts.ExtractionNode(nil), value.Nodes...), Links: append([]facts.ExtractionLink(nil), value.Links...), Diagnostics: append([]facts.Diagnostic(nil), value.Diagnostics...)}
+	refs := make(map[string]string, len(result.Nodes))
+	for position := range result.Nodes {
+		oldID := result.Nodes[position].ID
+		if oldID == "" {
+			return facts.Extraction{}, fmt.Errorf("node has no producer-local id")
+		}
+		if _, duplicate := refs[oldID]; duplicate {
+			return facts.Extraction{}, fmt.Errorf("duplicate node id %q", oldID)
+		}
+		refs[oldID] = "u" + strconv.Itoa(position+1)
+		result.Nodes[position].ID = refs[oldID]
+	}
+	for position := range result.Links {
+		from, fromKnown := refs[result.Links[position].From]
+		to, toKnown := refs[result.Links[position].To]
+		if !fromKnown || !toKnown {
+			return facts.Extraction{}, fmt.Errorf("link cites an unknown node")
+		}
+		result.Links[position].From = from
+		result.Links[position].To = to
+	}
+	return result, nil
 }
 
 func decode(data []byte, value any) error {

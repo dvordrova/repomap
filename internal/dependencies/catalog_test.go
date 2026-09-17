@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"testing"
 )
 
@@ -30,7 +31,7 @@ func TestPersistWritesExactValidatedCatalog(t *testing.T) {
 	}
 }
 
-func TestBuildCanonicalizesStableDependenciesAndImporterRefs(t *testing.T) {
+func TestBuildAssignsCanonicalCompactDependencyAndImporterRefs(t *testing.T) {
 	t.Parallel()
 
 	app := Importer{
@@ -68,7 +69,7 @@ func TestBuildCanonicalizesStableDependenciesAndImporterRefs(t *testing.T) {
 		},
 	}
 
-	got, err := BuildWithOmissions([]Importer{worker, app, app}, rows, nil)
+	got, err := BuildWithOmissions(sealed.Importers, rows, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,20 +88,21 @@ func TestBuildCanonicalizesStableDependenciesAndImporterRefs(t *testing.T) {
 	if !slices.Equal(got.Dependencies[2].ImporterRefs, wantImporterRefs) {
 		t.Fatalf("merged importer refs = %#v", got.Dependencies[2].ImporterRefs)
 	}
-	for _, value := range got.Dependencies {
-		if value.ID == "" {
-			t.Fatalf("dependency has no stable local id: %#v", value)
+	for index, value := range got.Dependencies {
+		if value.ID != "d"+strconv.Itoa(index+1) {
+			t.Fatalf("dependency has noncanonical compact id: %#v", value)
 		}
 	}
-	for _, importer := range got.Importers {
-		if importer.Ref == "" {
-			t.Fatalf("importer has no stable local ref: %#v", importer)
+	for index, importer := range got.Importers {
+		if importer.Ref != "i"+strconv.Itoa(index+1) {
+			t.Fatalf("importer has noncanonical compact ref: %#v", importer)
 		}
 	}
 
 	reversedRows := append([]Dependency(nil), rows...)
 	slices.Reverse(reversedRows)
-	reversedImporters := []Importer{app, worker}
+	reversedImporters := append([]Importer(nil), sealed.Importers...)
+	slices.Reverse(reversedImporters)
 	again, err := BuildWithOmissions(reversedImporters, reversedRows, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +124,7 @@ func TestBuildCanonicalizesStableDependenciesAndImporterRefs(t *testing.T) {
 	}
 }
 
-func TestCatalogSubsetRetainsStableDependencyIdentity(t *testing.T) {
+func TestCatalogSubsetResealsCompactLocalIdentity(t *testing.T) {
 	t.Parallel()
 
 	first := Importer{
@@ -181,9 +183,9 @@ func TestCatalogRejectsUnknownImporterAndIdentityDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog.Importers[0].PackagePath = "example.com/root/drifted"
+	catalog.Importers[0].Ref = "i2"
 	if err := catalog.Validate(); err == nil {
-		t.Fatal("drifted importer ref binding was accepted")
+		t.Fatal("noncanonical importer ordinal was accepted")
 	}
 }
 
@@ -212,7 +214,8 @@ func TestBuildWithOmissionsPersistsHonestPartialCoverage(t *testing.T) {
 		catalog.Coverage.ImportsRetained != 1 || len(catalog.Coverage.Omissions) != 2 {
 		t.Fatalf("coverage = %#v", catalog.Coverage)
 	}
-	subset, err := catalog.Subset(map[string]struct{}{importer.Ref: {}})
+	compactRef := catalog.Importers[0].Ref
+	subset, err := catalog.Subset(map[string]struct{}{compactRef: {}})
 	if err != nil || !reflect.DeepEqual(subset.Coverage, catalog.Coverage) {
 		t.Fatalf("retained importer coverage = %#v, error %v", subset.Coverage, err)
 	}

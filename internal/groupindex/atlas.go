@@ -21,7 +21,7 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 	for id := range programs {
 		ids = append(ids, id)
 	}
-	sort.Strings(ids)
+	sort.Slice(ids, func(i, j int) bool { return programindex.TargetIDLess(ids[i], ids[j]) })
 	return projectAtlasFrom(ids, value, func(id string) (programindex.Index, error) {
 		program, ok := programs[id]
 		if !ok {
@@ -70,8 +70,10 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, read func(string) (progra
 			return nil, err
 		}
 		for _, object := range program.Objects {
-			if _, needed := sourceRefs[object.ID]; needed {
-				sourceRefs[object.ID] = declarationKey(object)
+			for _, ref := range []string{program.Target.ID + "." + object.ID, object.ID} {
+				if _, needed := sourceRefs[ref]; needed {
+					sourceRefs[ref] = declarationKey(object)
+				}
 			}
 		}
 	}
@@ -161,7 +163,6 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, read func(string) (progra
 			if connection.Summary == "" {
 				connection.Summary = label
 			}
-			connection.ID = connectionIdentity(connection)
 			projected[position].index.Connections = append(projected[position].index.Connections, connection)
 		}
 	}
@@ -172,6 +173,7 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, read func(string) (progra
 			return connectionKey(index.Connections[i]) < connectionKey(index.Connections[j])
 		})
 		index.Connections = dedupeConnections(index.Connections)
+		assignConnectionIDs(index.Connections, 0)
 		seal, err := indexDigest(index)
 		if err != nil {
 			return nil, err
@@ -313,16 +315,17 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			}
 		}
 	}
-	sort.Slice(subjects, func(i, j int) bool { return subjects[i].ID < subjects[j].ID })
+	sort.Slice(subjects, func(i, j int) bool { return subjectIDLess(subjects[i].ID, subjects[j].ID) })
 
 	groupOfBox := make(map[string]string, len(target.Boxes))
+	groupValueOfBox := make(map[string]string, len(target.Boxes))
 	groups := make([]Group, 0, len(target.Boxes))
 	for _, box := range target.Boxes {
 		members := membersOfBox[box.ID]
 		if len(members) == 0 {
 			continue
 		}
-		sort.Strings(members)
+		sort.Slice(members, func(i, j int) bool { return subjectIDLess(members[i], members[j]) })
 		members = compactSorted(members)
 		summary := strings.TrimSpace(box.Line)
 		if summary == "" {
@@ -332,11 +335,18 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			Title: strings.TrimSpace(box.Title), Summary: summary, Lane: laneOfSide(box.Side),
 			MemberSubjectIDs: members, EvidenceSubjectIDs: []string{},
 		}
-		group.ID = groupIdentity(program.Target.ID, group)
-		groupOfBox[box.ID] = group.ID
+		groupValueOfBox[box.ID] = groupKey(group)
 		groups = append(groups, group)
 	}
-	sort.Slice(groups, func(i, j int) bool { return groups[i].ID < groups[j].ID })
+	sort.Slice(groups, func(i, j int) bool { return groupKey(groups[i]) < groupKey(groups[j]) })
+	groupIDByValue := make(map[string]string, len(groups))
+	for position := range groups {
+		groups[position].ID = compactOrdinal("g", position)
+		groupIDByValue[groupKey(groups[position])] = groups[position].ID
+	}
+	for boxID, value := range groupValueOfBox {
+		groupOfBox[boxID] = groupIDByValue[value]
+	}
 
 	containers := make([]Container, 0, len(target.Zones))
 	for _, zone := range target.Zones {
@@ -354,10 +364,11 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				}
 			}
 		}
-		if len(ids) == 0 {
+		// A zone of one group is that group; a container holds several.
+		if len(ids) < 2 {
 			continue
 		}
-		sort.Strings(ids)
+		sort.Slice(ids, func(i, j int) bool { return compactIDLess(ids[i], ids[j], "g") })
 		lane := LaneCore
 		best := 0
 		for _, candidate := range []Lane{LaneCore, LaneTriggers, LaneDependencies} {
@@ -370,8 +381,11 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			summary = strings.TrimSpace(zone.Title)
 		}
 		container := Container{Title: strings.TrimSpace(zone.Title), Summary: summary, Lane: lane, GroupIDs: ids}
-		container.ID = containerIdentity(program.Target.ID, container)
 		containers = append(containers, container)
+	}
+	sort.Slice(containers, func(i, j int) bool { return containerKey(containers[i]) < containerKey(containers[j]) })
+	for position := range containers {
+		containers[position].ID = compactOrdinal("k", position)
 	}
 
 	connections := make([]Connection, 0, len(target.Arrows))
@@ -393,7 +407,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			SupportResolution: programindex.PatternValueExact,
 			Evidence:          []SubjectEndpoint{},
 		}
-		connection.ID = connectionIdentity(connection)
 		connections = append(connections, connection)
 	}
 	if len(boxOfDeclaration) > 0 {
@@ -406,9 +419,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		connections = []Connection{}
 		for _, relation := range program.Relations {
-			if relation.Kind == programindex.RelationContains {
-				continue
-			}
 			fromBox := memberBoxes[relation.FromID]
 			if fromBox == nil {
 				continue
@@ -442,7 +452,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 					SemanticKind: string(relation.Kind), Label: label, Summary: summary, SupportResolution: resolution, Evidence: evidence,
 					SourceKind: "native_" + string(relation.Kind), SourceID: relation.ID, FromSubjectID: relation.FromID, ToSubjectID: id,
 					FromLocation: location, ToLocation: objects[id].Location}
-				connection.ID = connectionIdentity(connection)
 				connections = append(connections, connection)
 			}
 		}
@@ -464,7 +473,8 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 	boundRequests := make(map[string]bool)
 	for _, boundary := range target.Boundaries {
-		if boundary.Direction != atlas.DirectionIn || boundary.Kind == atlas.BoundaryConfig || boundary.Kind == atlas.BoundaryListenAddress {
+		kind := OperationKind(boundary.Kind)
+		if boundary.Direction != atlas.DirectionIn || kind == "" {
 			continue
 		}
 		groupID := groupOfBox[boundary.BoxID]
@@ -473,7 +483,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		// A request interpreted on a declaration is already an operation.
 		// Keep the boundary for matching without drawing the same action twice.
-		if strings.HasPrefix(boundary.ID, "in:") {
+		if boundary.Source == "model" && boundary.Direction == atlas.DirectionIn {
 			continue
 		}
 		name := strings.TrimSpace(boundary.Method + " " + strings.Join(boundary.Values, ", "))
@@ -494,7 +504,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				}
 			}
 		}
-		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: "request", Name: name, Summary: boundary.Line, Source: source, Location: programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)}})
+		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)}})
 		if subjectID != "" {
 			boundRequests[subjectID] = true
 		}
@@ -505,13 +515,16 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	// on the same handler remain distinct.
 	uniqueOperations := operations[:0]
 	for _, operation := range operations {
-		if operation.ID == operation.SubjectID && operation.Kind == "request" && boundRequests[operation.SubjectID] {
+		if operation.ID == operation.SubjectID && boundRequests[operation.SubjectID] {
 			continue
 		}
 		uniqueOperations = append(uniqueOperations, operation)
 	}
 	operations = uniqueOperations
-	sort.Slice(operations, func(i, j int) bool { return operations[i].ID < operations[j].ID })
+	sort.Slice(operations, func(i, j int) bool { return operationKey(operations[i]) < operationKey(operations[j]) })
+	for position := range operations {
+		operations[position].ID = compactOrdinal("o", position)
+	}
 	return projectedTarget{
 		index: Index{
 			Version:            Version,
@@ -531,6 +544,14 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		},
 		groupOfBox: groupOfBox,
 	}, nil
+}
+
+func operationKey(operation Operation) string {
+	return strings.Join([]string{
+		operation.GroupID, operation.Kind, operation.Name, operation.Summary,
+		operation.Source, operation.FactID, operation.SubjectID,
+		fmt.Sprintf("%s:%d:%d", operation.Location.Path, operation.Location.Line, operation.Location.Column), operation.ID,
+	}, "\x00")
 }
 
 func declarationKey(object programindex.Object) string {
@@ -593,4 +614,25 @@ func snakeCase(label string) string {
 		kind = "integrates_with"
 	}
 	return kind
+}
+
+// OperationKind is what an accepted incoming boundary makes its handler: the
+// entry kinds the reading stage chooses map one to one onto operations.
+func OperationKind(boundaryKind string) string {
+	switch boundaryKind {
+	case atlas.BoundaryHTTPServer:
+		return "request"
+	case atlas.BoundaryQueueConsumer:
+		return "consumer"
+	case atlas.BoundaryScheduled:
+		return "scheduled"
+	case atlas.BoundaryInteraction:
+		return "interaction"
+	case atlas.BoundaryExtension:
+		return "extension"
+	case atlas.BoundaryOther:
+		return "entry"
+	default:
+		return ""
+	}
 }

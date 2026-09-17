@@ -1,7 +1,6 @@
 package report
 
 import (
-	"fmt"
 	"path"
 	"sort"
 	"strconv"
@@ -286,7 +285,7 @@ func (builder *pageBuilder) createSections() {
 	for position := range builder.indexes {
 		index := &builder.indexes[position]
 		section := &pageSection{
-			ID:              sectionID(index.Target.Name, position),
+			ID:              index.Target.ID,
 			Name:            index.Target.Name,
 			Language:        index.Target.Language,
 			Kind:            index.Target.Kind,
@@ -363,9 +362,7 @@ func labelSections(sections []*pageSection) {
 	}
 }
 
-// factsTargetFor matches a graph target to its fact target by the program
-// target id the fact layer recorded. Matching is exact: a fact target is
-// never guessed from a name.
+// factsTargetFor matches the same compact target identity across graph and facts.
 func (builder *pageBuilder) factsTargetFor(
 	programTargetID string,
 	used map[string]struct{},
@@ -374,7 +371,7 @@ func (builder *pageBuilder) factsTargetFor(
 		return facts.Target{}, false
 	}
 	for _, target := range builder.data.Facts.Targets {
-		if target.ProgramTargetID != programTargetID {
+		if target.ID != programTargetID {
 			continue
 		}
 		if _, taken := used[target.ID]; taken {
@@ -385,29 +382,11 @@ func (builder *pageBuilder) factsTargetFor(
 	return facts.Target{}, false
 }
 
-func sectionID(name string, position int) string {
-	cleaned := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			return r
-		case r >= 'A' && r <= 'Z':
-			return r + ('a' - 'A')
-		default:
-			return '-'
-		}
-	}, name)
-	cleaned = strings.Trim(cleaned, "-")
-	if cleaned == "" {
-		cleaned = "target"
-	}
-	return fmt.Sprintf("%s-%d", cleaned, position+1)
-}
-
 func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 	if !section.FactsAvailable {
 		return
 	}
-	section.Calls = builder.httpRows(facts.KindHTTPCall, section.factsTargetID)
+	section.Calls = builder.outboundRequests(section.programTargetID, "")
 	for _, fact := range builder.targetFacts(section.factsTargetID, facts.KindEntrypoint) {
 		section.Entrypoints = append(section.Entrypoints, pageEntrypoint{
 			Symbol: shortEntrypointName(fact.Symbol),
@@ -677,7 +656,7 @@ func (builder *pageBuilder) packageOwners() []packageOwner {
 	byTarget := make(map[string][]string)
 	if builder.data.ProgramPortfolio != nil {
 		for _, entry := range builder.data.ProgramPortfolio.Entries {
-			for _, object := range entry.View.Objects {
+			for _, object := range entry.Objects {
 				if object.Kind == programindex.ObjectPackage || object.Kind == programindex.ObjectModule {
 					byTarget[entry.Target.ID] = append(byTarget[entry.Target.ID], object.Name)
 				}
@@ -754,22 +733,22 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 		Summary: dropEcho(group.Summary, group.Title),
 		Members: len(group.MemberSubjectIDs), Share: laneShare(index, group),
 	}
-	rows, externals := builder.memberChips(group.MemberSubjectIDs)
+	rows, externals := builder.memberChips(index.Target.ID, group.MemberSubjectIDs)
 	card.Externals = externals
 	card.Inventory = rows
 	var selected []string
 	for _, id := range group.MemberSubjectIDs {
-		if ref, ok := builder.subjects[id]; ok && ref.subject.Interpretation != nil && ref.subject.Interpretation.Key {
+		if ref, ok := builder.subject(index.Target.ID, id); ok && ref.subject.Interpretation != nil && ref.subject.Interpretation.Key {
 			selected = append(selected, id)
 		}
 	}
-	card.Highlights, _ = builder.memberChips(selected)
+	card.Highlights, _ = builder.memberChips(index.Target.ID, selected)
 	for _, operation := range index.Operations {
 		if operation.GroupID != group.ID {
 			continue
 		}
 		card.Operations = append(card.Operations, pageGroupOperation{
-			Name: builder.operationDisplayName(operation), Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
+			Name: builder.operationDisplayName(index.Target.ID, operation), Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
 			Href:   "#" + operationNodeID(sectionID, operation.ID),
 			Anchor: builder.links.anchor(operation.Location.Path, operation.Location.Line, operation.Location.Column),
 		})
@@ -791,12 +770,12 @@ type pageExternal struct {
 	Href string
 }
 
-func (builder *pageBuilder) memberChips(memberIDs []string) ([]pageChipRow, []pageExternal) {
+func (builder *pageBuilder) memberChips(targetID string, memberIDs []string) ([]pageChipRow, []pageExternal) {
 	byPath := make(map[string][]pageChip)
 	seen := make(map[string]struct{}, len(memberIDs))
 	var externals []pageExternal
 	for _, id := range memberIDs {
-		ref, known := builder.subjects[id]
+		ref, known := builder.subject(targetID, id)
 		if !known {
 			continue
 		}
@@ -906,7 +885,7 @@ func (builder *pageBuilder) groupConnections(
 					for _, operation := range otherIndex.Operations {
 						if operationLocationKey(operation.Location) == operationLocationKey(*location) {
 							row.Href = "#" + operationNodeID(section.ID, operation.ID)
-							row.Title = builder.operationDisplayName(operation)
+							row.Title = builder.operationDisplayName(otherIndex.Target.ID, operation)
 							break
 						}
 					}
@@ -1064,7 +1043,7 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 	for _, entry := range section.Entrypoints {
 		step := pageStart{Symbol: entry.Symbol, Anchor: entry.Anchor}
 		if entry.Anchor != nil {
-			if subjectID, known := builder.subjectAt[entry.Anchor.Path+":"+strconv.Itoa(entry.Anchor.Line)]; known {
+			if subjectID, known := builder.subjectAt[subjectLocationKey(index.Target.ID, entry.Anchor.Path, entry.Anchor.Line)]; known {
 				if group, inGroup := groupOf[subjectID]; inGroup {
 					step.Group = group.Title
 					step.Href = "#" + groupAnchorID(section.ID, group.ID)

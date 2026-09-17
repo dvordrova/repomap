@@ -64,8 +64,8 @@ func TestLinePromptExamplesMatchRequestedOpenMode(t *testing.T) {
 				}
 				// Actual decisions, independent of the illustrative response values.
 				example.Rows = []map[string]string{
-					{"key": "r1", "title": "Command entry", "line": "Starts the analysis.", "box": "here"},
-					{"key": "r2", "title": "Report rendering", "line": "Renders the report.", "box": "here"},
+					{"key": windows[0].Rows[0].ID, "title": "Command entry", "line": "Starts the analysis.", "box": "here"},
+					{"key": windows[0].Rows[1].ID, "title": "Report rendering", "line": "Renders the report.", "box": "here"},
 				}
 				if mode == 1 {
 					for _, row := range example.Rows {

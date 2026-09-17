@@ -70,7 +70,7 @@ func TestSymbolAndTypeAliasesFollowExistingKnowledgeWithoutRenamingDeclarations(
 			rename(&place.Symbol.Decl)
 			place.ID = atlas.SymbolID(place.Path, place.LineNo, place.Symbol.Decl.Name)
 			if place.Symbol.Decl.Name != "Gen" {
-				want[place.ID] = place.Symbol.Decl
+				want[place.Symbol.Decl.ObjectID] = place.Symbol.Decl
 			}
 		}
 	}
@@ -91,14 +91,14 @@ func TestSymbolAndTypeAliasesFollowExistingKnowledgeWithoutRenamingDeclarations(
 			for _, box := range target.Boxes {
 				for _, file := range box.Files {
 					for _, symbol := range file.Symbols {
-						decl, known := want[symbol.ID]
+						decl, known := want[symbol.ObjectID]
 						if !known {
 							if symbol.Alias != "" {
 								t.Fatal("unreviewed declaration acquired an alias")
 							}
 							continue
 						}
-						seen[symbol.ID] = true
+						seen[symbol.ObjectID] = true
 						if symbol.Alias != aliases[decl.Name] || symbol.Name != decl.Name || symbol.ObjectID != decl.ObjectID || symbol.LineNo != decl.LineNo || symbol.Column != decl.Column || symbol.Signature != decl.Signature || symbol.Doc != decl.Doc {
 							t.Fatalf("English label replaced a native declaration or lost its model value: %+v", symbol)
 						}

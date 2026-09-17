@@ -15,9 +15,9 @@ import (
 	"testing"
 )
 
-func TestGroupGraphViewOwnsCompleteMatchedSetWithoutReconstruction(t *testing.T) {
+func TestGroupGraphViewPersistsOverlaysAndOwnsHydratedSet(t *testing.T) {
 	left := reportGroupIndexFixture(t, "api", "go:./cmd/api", "cmd/api/main.go")
-	right := reportGroupIndexFixture(t, "worker", "python:worker", "worker.py")
+	_, right := reportCategorizedGroupFixtureAt(t, "worker", "python:worker", "worker.py", []programindex.Category{programindex.CategoryCore}, groupindex.LaneCore, "t2")
 	matched, diagnostics, err := groupindex.WithConnections(
 		[]groupindex.Index{left, right},
 		[]groupindex.ConnectionInput{{
@@ -34,7 +34,7 @@ func TestGroupGraphViewOwnsCompleteMatchedSetWithoutReconstruction(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Indexes) != 2 || len(view.Indexes[0].Connections)+len(view.Indexes[1].Connections) != 1 {
+	if len(view.Indexes) != 2 || len(view.hydrated[0].Connections)+len(view.hydrated[1].Connections) != 1 {
 		t.Fatalf("group graph = %#v", view)
 	}
 	paths, err := view.SourcePaths()
@@ -45,8 +45,8 @@ func TestGroupGraphViewOwnsCompleteMatchedSetWithoutReconstruction(t *testing.T)
 		t.Fatalf("source paths = %#v", paths)
 	}
 	snapshot := view.Snapshot()
-	snapshot.Indexes[0].Groups[0].Title = "changed"
-	if view.Indexes[0].Groups[0].Title == "changed" {
+	snapshot.hydrated[0].Groups[0].Title = "changed"
+	if view.hydrated[0].Groups[0].Title == "changed" {
 		t.Fatal("GroupGraphView snapshot aliases graph authority")
 	}
 }
@@ -57,9 +57,9 @@ func TestReadRunDirDefersForeignEndpointsUntilCompleteGraphBinding(t *testing.T)
 		[]programindex.Category{programindex.CategoryInbound, programindex.CategoryBackgroundActivity},
 		groupindex.LaneTriggers,
 	)
-	_, right := reportCategorizedGroupFixture(
+	_, right := reportCategorizedGroupFixtureAt(
 		t, "worker", "python:worker", "worker.py",
-		[]programindex.Category{programindex.CategoryDependency}, groupindex.LaneDependencies,
+		[]programindex.Category{programindex.CategoryDependency}, groupindex.LaneDependencies, "t2",
 	)
 	matched, diagnostics, err := groupindex.WithConnections(
 		[]groupindex.Index{left, right},
@@ -196,11 +196,21 @@ func reportCategorizedGroupFixture(
 	categories []programindex.Category,
 	lane groupindex.Lane,
 ) (programindex.Index, groupindex.Index) {
+	return reportCategorizedGroupFixtureAt(t, name, selector, sourcePath, categories, lane, "t1")
+}
+
+func reportCategorizedGroupFixtureAt(
+	t *testing.T,
+	name, selector, sourcePath string,
+	categories []programindex.Category,
+	lane groupindex.Lane,
+	targetID string,
+) (programindex.Index, groupindex.Index) {
 	t.Helper()
 	base, err := programindex.New(programindex.Input{
 		ScenarioSHA256: strings.Repeat("a", 64), SourceSHA256: strings.Repeat("b", 64),
 		Target: programindex.TargetInput{
-			Language: "fixture", Kind: "service", Name: name, Selector: selector,
+			ID: targetID, Language: "fixture", Kind: "service", Name: name, Selector: selector,
 			Sources: []programindex.TargetSource{{FileRef: "f1", Path: sourcePath}}, AnchorFileRef: "f1",
 		},
 		Objects: []programindex.ObjectInput{{
@@ -215,20 +225,20 @@ func reportCategorizedGroupFixture(
 		t.Fatal(err)
 	}
 	documentation := reportReducedDocumentationFixture(t)
-	enriched, err := programindex.Enrich(base, documentation.ReductionSHA256, []programindex.CategoryAssignment{{
+	program, err := programindex.Enrich(base, documentation.ReductionSHA256, []programindex.CategoryAssignment{{
 		SubjectID: base.Objects[0].ID, Categories: categories,
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	index, diagnostics, err := groupindex.Build(enriched, groupindex.Proposals{Groups: []groupindex.GroupProposal{{
+	grouped, diagnostics, err := groupindex.Build(program, groupindex.Proposals{Groups: []groupindex.GroupProposal{{
 		Key: "group", Title: name + " group", Summary: "Owns " + name + " work.", Lane: lane,
-		MemberSubjectIDs: []string{base.Objects[0].ID}, EvidenceSubjectIDs: []string{},
+		MemberSubjectIDs: []string{program.Objects[0].ID}, EvidenceSubjectIDs: []string{},
 	}}})
 	if err != nil || len(diagnostics) != 0 {
-		t.Fatalf("groupindex.Build: diagnostics=%#v err=%v", diagnostics, err)
+		t.Fatalf("rebuild rebound group: diagnostics=%#v err=%v", diagnostics, err)
 	}
-	return enriched, index
+	return program, grouped
 }
 
 func reportFinalGraphFixture(

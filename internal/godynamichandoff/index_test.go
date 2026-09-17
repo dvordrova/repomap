@@ -130,8 +130,8 @@ func TestInterfaceFieldAssignmentsRemainPossibleAndKeepSources(t *testing.T) {
 	}
 	input.Handoffs[0].Resolution = ResolutionExact
 	input.Handoffs[0].CandidatesConsidered = 1
-	if _, err := New(input); err == nil {
-		t.Fatal("observed field store accepted as an exact runtime call")
+	if _, err := New(input); err != nil {
+		t.Fatalf("the one observed field value is not an exact call: %v", err)
 	}
 	input.Handoffs[0].Resolution = ResolutionAlternatives
 	input.Handoffs[0].CandidatesConsidered = 2

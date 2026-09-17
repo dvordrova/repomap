@@ -384,8 +384,17 @@ func validateProgramPresentation(data *ReportData) error {
 	if data.GroupGraph == nil {
 		return fmt.Errorf("report: publication requires the final group graph")
 	}
+	if len(data.ProgramPortfolio.Entries) != len(data.GroupGraph.Indexes) {
+		return fmt.Errorf("report: ProgramIndex and group overlay sets differ")
+	}
+	for position, program := range data.ProgramPortfolio.Entries {
+		overlay := data.GroupGraph.Indexes[position]
+		if overlay.TargetID != program.Target.ID || overlay.ProgramIndexSHA256 != program.SHA256 {
+			return fmt.Errorf("report: group overlay %d does not bind its ProgramIndex", position)
+		}
+	}
 	if err := validateSelectedGroupGraphBinding(
-		data.GroupGraph, defaultEntry.Target, defaultEntry.View.IndexSHA256,
+		data.GroupGraph, defaultEntry.Target, defaultEntry.SHA256,
 	); err != nil {
 		return fmt.Errorf("report: group graph view: %w", err)
 	}
@@ -881,6 +890,12 @@ func decodeStrictReportJSON(reportJSON []byte) (ReportData, error) {
 	}
 	if data.FormatVersion != CurrentFormatVersion {
 		return ReportData{}, fmt.Errorf("report: unsupported report format version %d", data.FormatVersion)
+	}
+	if data.ProgramPortfolio == nil || data.GroupGraph == nil {
+		return ReportData{}, fmt.Errorf("report: report.json is missing its program or group graph")
+	}
+	if err := data.GroupGraph.Hydrate(data.ProgramPortfolio.Entries); err != nil {
+		return ReportData{}, fmt.Errorf("report: restore group graph: %w", err)
 	}
 	return data, nil
 }

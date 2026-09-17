@@ -400,12 +400,12 @@ func (cat catalog) resolve(refs []string, allowed ...byte) ([]resolvedRef, []str
 			continue
 		}
 		seen[ref] = struct{}{}
-		if ref == "" || !bytes.ContainsRune(allowed, rune(ref[0])) {
+		if ref == "" {
 			ignored = append(ignored, ref)
 			continue
 		}
 		entry, err := cat.lookup(ref)
-		if err != nil {
+		if err != nil || !bytes.ContainsRune(allowed, rune(entry.class)) {
 			ignored = append(ignored, ref)
 			continue
 		}
@@ -425,19 +425,14 @@ func (result *normalized) rejectRefs(section string, refs []string) {
 }
 
 func (cat catalog) lookup(ref string) (resolvedRef, error) {
-	switch ref[0] {
-	case classFact:
-		if entry, known := cat.facts[ref]; known {
-			return resolvedRef{ref: ref, class: classFact, id: entry.id, fact: entry}, nil
-		}
-	case classClaim:
-		if id, known := cat.claims[ref]; known {
-			return resolvedRef{ref: ref, class: classClaim, id: id}, nil
-		}
-	case classSubject:
-		if entry, known := cat.subjects[ref]; known {
-			return resolvedRef{ref: ref, class: classSubject, id: entry.id, subject: entry}, nil
-		}
+	if entry, known := cat.facts[ref]; known {
+		return resolvedRef{ref: ref, class: classFact, id: entry.id, fact: entry}, nil
+	}
+	if id, known := cat.claims[ref]; known {
+		return resolvedRef{ref: ref, class: classClaim, id: id}, nil
+	}
+	if entry, known := cat.subjects[ref]; known {
+		return resolvedRef{ref: ref, class: classSubject, id: entry.id, subject: entry}, nil
 	}
 	return resolvedRef{}, fmt.Errorf("unknown ref %q", ref)
 }
@@ -450,11 +445,11 @@ func classNames(classes []byte) string {
 		}
 		switch class {
 		case classFact:
-			names += "facts f*"
+			names += "facts a*"
 		case classClaim:
-			names += "claims c*"
+			names += "claims h*"
 		case classSubject:
-			names += "members s*"
+			names += "qualified members"
 		}
 	}
 	return names

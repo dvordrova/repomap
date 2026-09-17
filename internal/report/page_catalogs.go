@@ -12,22 +12,20 @@ func (builder *pageBuilder) fillSectionOperations(section *pageSection) {
 	var routes []pageHTTPRow
 	byFact := make(map[string]pageHTTPRow)
 	var routeFacts []facts.Fact
-	if section.FactsAvailable {
-		routeFacts = builder.targetFacts(section.factsTargetID, facts.KindHTTPRoute)
-		rows := builder.httpRows(facts.KindHTTPRoute, section.factsTargetID)
-		for i, fact := range routeFacts {
-			byFact[fact.ID] = rows[i]
-		}
-	}
 	if index := builder.graphIndex(section.programTargetID); index != nil {
 		for _, operation := range index.Operations {
-			if row, ok := byFact[operation.FactID]; ok && operation.Kind == "request" {
+			if fact, ok := builder.factsByID[operation.FactID]; ok && section.FactsAvailable && operation.Kind == "request" && fact.Kind == facts.KindRegistration {
+				row, seen := byFact[fact.ID]
+				if !seen {
+					row = builder.registrationRow(fact, "")
+					routeFacts = append(routeFacts, fact)
+				}
 				row.OperationHrefs = append(row.OperationHrefs, "#"+operationNodeID(section.ID, operation.ID))
-				byFact[operation.FactID] = row
+				byFact[fact.ID] = row
 				continue
 			}
 			row := pageGroupOperation{
-				Name: builder.operationDisplayName(operation), Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
+				Name: builder.operationDisplayName(index.Target.ID, operation), Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
 				Href:   "#" + operationNodeID(section.ID, operation.ID),
 				Anchor: builder.links.anchor(operation.Location.Path, operation.Location.Line, operation.Location.Column),
 			}

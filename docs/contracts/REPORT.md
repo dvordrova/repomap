@@ -43,9 +43,26 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   are frames, with their actual parts inside. All selected targets are present;
   unread components keep their original failure note. An exact existing remote
   href can resolve to a local part; names and file paths never establish that
-  identity. Every original relation and its source endpoints survives display
-  folding. This is a display assembly after translation, not another semantic
+  identity. Every original relation and its source endpoints survives in the
+  node readings. The canvas draws one physical arrow per directed visible-node
+  pair, combining its operation membership and short labels: coincident call,
+  callback and implementation rows are evidence on one connection, not extra
+  geometry. Opposite directed rows share that route and put an arrowhead at
+  each end; their original directions remain in the node readings. This is a
+  display assembly after translation, not another semantic
   graph, analysis payload or provider stage.
+
+- Groups and containers keep target-local `g*`/`k*` identities in GroupsIndex.
+  The single HTML document qualifies their map/DOM identities with the existing
+  target ID (`n-t1-g1`, `n-t2-g1`) so equal local ordinals cannot collapse two
+  component maps. Page construction likewise resolves every target-local `n*`
+  subject and source location through its owning target; there is no global
+  unqualified subject table in which one executable can replace another.
+  A component section reuses its `t*` target ID; group, operation and data
+  anchors append their existing `g*`, `o*` or `y*` ID instead of minting a
+  second name-derived section identity.
+  Equal source locations in sibling executables do not create a foreign node or
+  operation path; only an explicit cross-target connection can do that.
 
 - The ordinary entrance includes every saved request, command, activity and
   interaction. SystemMap collects the original input nodes into one blue
@@ -536,7 +553,7 @@ successful repository run the following artifacts are persisted, as applicable:
 
 - repository corpus and repository-guidance authority;
 - `reduced-documentation.json`;
-- the target ProgramIndex reference, shared `program-facts` input and `program-index-set.json`;
+- the complete target `program-index.json` and `program-index-set.json`;
 - the target-scoped `dependency-catalog.json` artifact;
 - the matched `groups-index.json` artifact;
 - `program-page-portfolio.json`;
@@ -550,6 +567,11 @@ catalogue and GroupsIndex. Shared artifacts, the manifest, report JSON and HTML
 are published once in the owner run from values already held in memory. A
 served report has the same complete set of target sections; it needs no sibling
 report files. Saved report restoration reads the common JSON and manifest.
+The common JSON contains the exact selected ProgramIndexes, not a copied
+presentation graph. Its group-graph field contains only thin GroupsIndex
+overlays; native subjects and structural edges are joined from those embedded
+ProgramIndexes in memory before rendering. Consequently `report.json` has one
+native graph schema and one semantic overlay schema, with no `ProgramView`.
 
 UI iteration uses `repomap render RUN_DIR --output FILE.html`. It restores the
 current common report and completed display translations with `ReadRunReceipt`,
@@ -589,11 +611,14 @@ A report without a remote source link retains the original code, explanation and
 
 - Everything the report shows is a deterministic fact, a claim quoted from a
   human-written artifact, or a model hypothesis, and the three are always
-  labeled. `facts.json` holds the anchored fact layer: entrypoints, HTTP routes
-  and client calls with method and path literals, cross-target portals,
-  environment keys, the places where the program runs code it was given,
+  labeled. `facts.json` holds the anchored fact layer: entrypoints,
+  registrations (call word, literals, stated verb, callable handed over),
+  SQL statements with their tables, environment keys, the places where the program runs code it was given,
   manifest rows, TODO markers, imports, dead modules, negatives, and
-  dependencies. `claims.json` holds quotes with their
+  dependencies. Routes, client requests and the portals between targets are
+  not facts: they are registrations the reading stage classified, read from
+  the GroupsIndex operations and outbound rows and joined on literals in the
+  report. `claims.json` holds quotes with their
   source path, date and age. `orientation.json` holds the model's repository
   summary, roles, run recipe, and main flow; every row cites fact, claim, or
   subject ids. The orientation request walks a packing ladder: 40 members per

@@ -37,7 +37,7 @@ func (p *selectionProvider) Complete(ctx context.Context, prepared llm.Prepared)
 		if request.Table == lines.StageSymbols {
 			if request.Fill[0].Name == "key_symbol" {
 				if name == "Op08" {
-					row["key_symbol"], row["operation_candidate"], row["outbound"] = "no", "yes", "c1 c2"
+					row["key_symbol"], row["operation_candidate"] = "no", "yes"
 				}
 				if name == "Op07" {
 					delete(row, "operation_candidate") // The model dropped the cell.
@@ -56,11 +56,12 @@ func (p *selectionProvider) Complete(ctx context.Context, prepared llm.Prepared)
 
 func TestClosedScopeAndRefusedCaptionKeepIndependentRoles(t *testing.T) {
 	graph := withSymbols(t, twoTargetGraph(t))
+	op07 := graphPlaceID(t, graph, atlas.PlaceSymbol, "svc/core/c.go", 17, "Op07")
 	for i := range graph.Places {
 		place := &graph.Places[i]
 		if place.Symbol != nil && place.Symbol.Decl.Name == "Op08" {
 			place.Symbol.Calls = []atlas.SymbolCall{
-				{Name: "Op07", Kind: "calls", Resolution: "exact", CalleeIDs: []string{atlas.SymbolID("svc/core/c.go", 17, "Op07")}, Line: 24},
+				{Name: "Op07", Kind: "calls", Resolution: "exact", CalleeIDs: []string{op07}, Line: 24},
 				{Name: "Client.Submit", Kind: "invokes_external", Line: 25, Values: []string{"jobs"}},
 			}
 		}
@@ -85,20 +86,23 @@ func TestClosedScopeAndRefusedCaptionKeepIndependentRoles(t *testing.T) {
 	}
 	known := make(map[string]Knowledge)
 	for _, record := range saved.Records {
-		known[record.PlaceID] = record
+		key := record.PlaceID
+		if record.Stage == lines.StageSymbols && record.Cells["key_symbol"] != "" {
+			key = "selection:" + record.PlaceID
+		} else if record.Stage == lines.StageOperations {
+			key = "operation:" + record.PlaceID
+		}
+		known[key] = record
 	}
-	first := atlas.SymbolID("svc/core/c.go", 11, "Op01")
+	first := graphPlaceID(t, graph, atlas.PlaceSymbol, "svc/core/c.go", 11, "Op01")
 	if known["selection:"+first].Cells["key_symbol"] != "yes" || known[first].ID != "" {
 		t.Fatal("refused caption changed its accepted selection")
 	}
-	dropped := atlas.SymbolID("svc/core/c.go", 17, "Op07")
+	dropped := op07
 	if known["selection:"+dropped].Cells["operation_candidate"] != "no" || known["selection:"+dropped].Cells["key_symbol"] != "yes" {
 		t.Fatal("a dropped candidate cell did not read no beside its accepted key decision")
 	}
-	operation := atlas.SymbolID("svc/core/c.go", 18, "Op08")
-	if known["selection:"+operation].Cells["outbound"] != "c2" || known[operation].ID != "" {
-		t.Fatal("non-key operation lost its independent outgoing call")
-	}
+	operation := graphPlaceID(t, graph, atlas.PlaceSymbol, "svc/core/c.go", 18, "Op08")
 	found := false
 	for _, target := range result.Atlas.Targets {
 		for _, box := range target.Boxes {

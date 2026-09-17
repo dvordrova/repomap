@@ -2,17 +2,16 @@ package reading
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/destinations"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // boxState holds an accepted responsibility and its exact declaration members.
@@ -59,7 +58,7 @@ func (r *reader) boxesOfTarget(targetID string) []*boxState {
 			}
 		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].id < result[j].id })
+	sort.Slice(result, func(i, j int) bool { return compactIDLess(result[i].id, result[j].id) })
 	return result
 }
 
@@ -90,6 +89,7 @@ type zoneState struct {
 
 // arrowState is one box-to-box arrow of one target.
 type arrowState struct {
+	id        string
 	from, to  string
 	calls     int
 	witnesses map[string]int
@@ -135,7 +135,7 @@ func (r *reader) foldArrows() {
 			}
 			arrow.calls += edge.Count
 			for _, witness := range edge.Witnesses {
-				arrow.witnesses[witness.Caller+"\x00"+witness.Callee]++
+				arrow.witnesses[witness.Caller+"\x00"+witness.Callee+"\x00"+witness.Kind]++
 			}
 		}
 		// Declaration observations retain collaborations within one file and
@@ -160,7 +160,7 @@ func (r *reader) foldArrows() {
 							byPair[key] = arrow
 						}
 						arrow.calls++
-						arrow.witnesses[place.Symbol.Decl.Name+"\x00"+call.Name]++
+						arrow.witnesses[place.Symbol.Decl.Name+"\x00"+call.Name+"\x00"+call.Kind]++
 					}
 				}
 			}
@@ -211,8 +211,12 @@ func (arrow *arrowState) topWitnesses() []atlas.Witness {
 	})
 	result := make([]atlas.Witness, 0, 3)
 	for _, p := range pairs {
-		caller, callee, _ := strings.Cut(p.key, "\x00")
-		result = append(result, atlas.Witness{Caller: caller, Callee: callee})
+		parts := strings.SplitN(p.key, "\x00", 3)
+		witness := atlas.Witness{Caller: parts[0], Callee: parts[1]}
+		if len(parts) == 3 {
+			witness.Kind = parts[2]
+		}
+		result = append(result, witness)
 		if len(result) == 3 {
 			break
 		}
@@ -226,11 +230,20 @@ func (r *reader) readArrows(ctx context.Context) error {
 	r.foldArrows()
 	def := lines.Arrows()
 	seen := make(map[string]*arrowState)
+	ids := make(map[string]string)
 	var rows []table.Row
 	var order []*arrowState
 	for _, target := range r.opts.Targets {
 		for _, arrow := range r.arrows[target.ID] {
-			if !arrow.drawn || !r.boxes[arrow.from].open || !r.boxes[arrow.to].open {
+			if !arrow.drawn {
+				continue
+			}
+			key := arrow.from + "\x00" + arrow.to
+			if ids[key] == "" {
+				ids[key] = fmt.Sprintf("x%d", len(ids)+1)
+			}
+			arrow.id = ids[key]
+			if !r.boxes[arrow.from].open || !r.boxes[arrow.to].open {
 				continue
 			}
 			// An arrow made only of import edges has no witness call to
@@ -240,13 +253,12 @@ func (r *reader) readArrows(ctx context.Context) error {
 			if len(arrow.witnesses) == 0 {
 				continue
 			}
-			key := arrow.from + "\x00" + arrow.to
 			if _, ok := seen[key]; ok {
 				continue
 			}
 			seen[key] = arrow
 			from, to := r.summary(r.boxes[arrow.from], target.ID), r.summary(r.boxes[arrow.to], target.ID)
-			rows = append(rows, lines.ArrowRow(key, from, to, arrow.topWitnesses(), arrow.calls))
+			rows = append(rows, lines.ArrowRow(arrow.id, from, to, arrow.topWitnesses(), arrow.calls))
 			order = append(order, arrow)
 		}
 	}
@@ -263,6 +275,9 @@ func (r *reader) readArrows(ctx context.Context) error {
 	}
 	for _, target := range r.opts.Targets {
 		for _, arrow := range r.arrows[target.ID] {
+			if id := ids[arrow.from+"\x00"+arrow.to]; id != "" {
+				arrow.id = id
+			}
 			if sentence, ok := sentences[arrow.from+"\x00"+arrow.to]; ok {
 				arrow.sentence = sentence
 				continue
@@ -293,24 +308,13 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		if place.Symbol.Decl.Kind == "type" && len(place.Symbol.Members) == 0 && place.Symbol.Decl.Doc == "" {
 			continue
 		}
-		id := "selection:" + place.ID
-		selection := place
-		selection.ID = id
-		symbol := *place.Symbol
-		selection.Symbol = &symbol
-		if symbol.Decl.ObjectID == "" {
-			symbol.Decl.ObjectID = place.ID
-		}
-		r.places[id] = selection
 		if place.Symbol.Decl.Kind == "type" {
 			row := lines.TypeRow(place)
-			row.ID = id
 			typeRows = append(typeRows, row)
 			typeOrder = append(typeOrder, place)
 		} else {
 			fileLine, _ := r.Line(place.Parent)
 			row := lines.SymbolRow(place, fileLine)
-			row.ID = id
 			rows = append(rows, row)
 			order = append(order, place)
 		}
@@ -340,13 +344,8 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		if subject == "" {
 			subject = place.ID
 		}
-		r.symbolSelections[subject] = r.knowledge["selection:"+place.ID]
-		for _, ref := range strings.Fields(answer.answer["outbound"]) {
-			n, err := strconv.Atoi(strings.TrimPrefix(ref, "c"))
-			if err == nil && n > 0 && n <= len(place.Symbol.Calls) {
-				r.outbound[place.ID] = append(r.outbound[place.ID], place.Symbol.Calls[n-1])
-			}
-		}
+		r.symbolSelections[subject] = r.knowledge[place.ID]
+		delete(r.knowledge, place.ID)
 		// A proposal only: the operations table reviews the candidate with
 		// its own evidence and either fills the activation, name and
 		// description or deletes the entry.
@@ -450,6 +449,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		}
 		r.boundaries[place.ID] = state
 	}
+	publishes := r.applyAPIRoles()
 	r.bindInterpretedBoundaries()
 	tracer := NewDestinationReader(r.opts.Graph.Places)
 	for _, state := range r.boundaries {
@@ -475,14 +475,14 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	for id := range r.boundaries {
 		ids = append(ids, id)
 	}
-	sort.Strings(ids)
+	sort.Slice(ids, func(i, j int) bool { return compactIDLess(ids[i], ids[j]) })
 	r.opts.Stage(lines.StageBoundaries, fmt.Sprintf("reviewing runtime relationships: %d source candidates and facts", len(ids)))
-	for mode := 0; mode < 4; mode++ {
-		outgoing, fixed := mode%2 == 1, mode < 2
-		def := lines.Boundaries(outgoing)
-		if fixed {
-			def = lines.FixedBoundaries(outgoing)
-		}
+	// Every boundary here has its kind: the facts and the symbol roles gave
+	// it. The table explains it, and for an outgoing one chooses the
+	// destination and the address among the observed values.
+	for mode := 0; mode < 2; mode++ {
+		outgoing, fixed := mode == 1, true
+		def := lines.FixedBoundaries(outgoing)
 		// The rows of one declaration share one window: the declaration, its
 		// source context and the destination catalogue are sent once, and a
 		// row names the declaration by owner_ref. Rows without a declaration
@@ -495,8 +495,9 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		var keys []string
 		for _, id := range ids {
 			state := r.boundaries[id]
-			// An accepted operation already owns its incoming interpretation.
-			if strings.HasPrefix(id, "in:") {
+			// A candidate an earlier mode refused is gone; an accepted
+			// operation already owns its incoming interpretation.
+			if state == nil || state.place.Boundary.Source == "model" && state.place.Boundary.Direction == atlas.DirectionIn {
 				continue
 			}
 			facts := state.place.Boundary
@@ -607,7 +608,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		}
 	}
 	r.reportStage(lines.StageBoundaries)
-	return nil
+	return r.joinPublishes(ctx, publishes)
 }
 
 // destinationChoice reads a destination cell: the system a d* ref names in
@@ -665,11 +666,20 @@ func boundaryOwner(facts *atlas.BoundaryFacts, owners map[string]atlas.Place) at
 // selected call is not yet an accepted SDK relationship. Source columns and
 // native call identities distinguish calls sharing a line or declaration.
 func (r *reader) bindInterpretedBoundaries() {
-	nativeRoutes := make(map[string]bool)
-	for _, place := range r.opts.Graph.Places {
-		if b := place.Boundary; b != nil && b.SubjectID != "" && b.Source == "fact" && b.Direction == atlas.DirectionIn && b.GivenKind == atlas.BoundaryHTTPServer && b.Method != "" {
-			nativeRoutes[b.SubjectID] = true
+	if r.boundaryIDs == nil {
+		r.boundaryIDs = make(map[string]string)
+	}
+	boundaryID := func(source string) string {
+		if id := r.boundaryIDs[source]; id != "" {
+			return id
 		}
+		id := r.compactID("b", &r.nextBoundary)
+		r.boundaryIDs[source] = id
+		return id
+	}
+	nativeRoutes := make(map[string]bool)
+	for subject := range r.boundEntries() {
+		nativeRoutes[subject] = true
 	}
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil {
@@ -677,15 +687,17 @@ func (r *reader) bindInterpretedBoundaries() {
 		}
 		decl := place.Symbol.Decl
 		if operation := r.operations[place.ID]; operation[0] == "request" && !nativeRoutes[place.ID] {
-			id := "in:" + place.ID
+			id := boundaryID("in\x00" + place.ID)
 			p := atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: place.LineNo, Column: decl.Column,
 				Parent: place.Parent, TargetIDs: append([]string(nil), place.TargetIDs...), Boundary: &atlas.BoundaryFacts{
 					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, CallerDoc: decl.Doc, External: decl.Name,
 					Values: []string{}, Direction: atlas.DirectionIn}}
 			r.boundaries[id] = &boundaryState{place: p, line: operation[2], kind: atlas.BoundaryOther}
 		}
-		for _, call := range r.outbound[place.ID] {
-			if call.Line < 1 {
+		for _, call := range place.Symbol.Calls {
+			// A call to a symbol that talks to another system is that
+			// outgoing boundary at every site.
+			if call.Line < 1 || call.Kind != string(programindex.RelationInvokesExternal) || call.API == nil || r.api[apiName(*call.API)].talks == "" {
 				continue
 			}
 			claimed := false
@@ -711,16 +723,12 @@ func (r *reader) bindInterpretedBoundaries() {
 			if claimed {
 				continue
 			}
-			identity, _ := json.Marshal(struct {
-				Kind, Name, Invocation, Resolution string
-				Callees                            []string
-			}{call.Kind, call.Name, call.Invocation, call.Resolution, call.CalleeIDs})
-			id := fmt.Sprintf("out:%s:%d:%d:%s", place.ID, call.Line, call.Column, digest(identity))
+			id := boundaryID(fmt.Sprintf("out\x00%s\x00%d\x00%d\x00%s\x00%s\x00%s", place.ID, call.Line, call.Column, call.Kind, call.Name, call.Resolution))
 			p := atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: call.Line, Column: call.Column,
 				Parent: place.Parent, TargetIDs: append([]string(nil), place.TargetIDs...), Boundary: &atlas.BoundaryFacts{
 					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, CallerDoc: decl.Doc, External: call.Name,
-					Values: append([]string{}, call.Values...), Direction: atlas.DirectionOut}}
-			r.boundaries[id] = &boundaryState{place: p}
+					Values: append([]string{}, call.Values...), Direction: atlas.DirectionOut, GivenKind: r.api[apiName(*call.API)].talks}}
+			r.boundaries[id] = &boundaryState{place: p, kind: r.api[apiName(*call.API)].talks}
 		}
 	}
 }

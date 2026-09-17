@@ -64,15 +64,16 @@ test('a shared outer route is not painted again for every original relation',()=
   assert.equal(drawing[0].arrow,true);
 });
 
-test('shared stretches combine certainty while the reverse direction stays separate',()=>{
+test('reverse relations share one bidirectional physical route',()=>{
   const original=edges();original[1].possible=true;
   original.push({id:'reverse',from:'part-a',to:'input-a',relations:[],segments:[[...shared].reverse()]});
   const drawing=routeDrawing(original,()=>null,new Set());
   const common=drawing.filter(route=>route.path==='M 100 50 L 200 50');
   assert.equal(common.length,1);
   assert.equal(common[0].possible,false);
-  assert.deepEqual(common[0].edgeIDs,['first','second']);
-  assert.equal(drawing.filter(route=>route.path==='M 200 50 L 100 50').length,1);
+  assert.equal(drawing.filter(route=>route.path==='M 200 50 L 100 50').length,0);
+  assert.equal(drawing.filter(route=>route.reverseArrow).length,1);
+  assert.deepEqual([...common[0].edgeIDs].sort(),['first','reverse','second']);
 });
 
 test('grouped container routes expose the selected native boundary points',()=>{
@@ -86,7 +87,7 @@ test('grouped container routes expose the selected native boundary points',()=>{
   assert.deepEqual(drawing[0].end,point(200,50));
 });
 
-test('opened and closed area pairs share one native route while reverse direction stays separate',()=>{
+test('opened and closed area pairs share one bidirectional native route',()=>{
   const source={id:'requests',absolute:{x:0,y:0},width:100,height:100};
   const target={id:'execution',absolute:{x:200,y:0},width:100,height:100};
   const original=edges();original[1].possible=true;
@@ -95,11 +96,11 @@ test('opened and closed area pairs share one native route while reverse directio
   const boundary=id=>id.startsWith('input')?source:target;
   for(const opened of [false,true]){
     const drawing=routeDrawing(original,opened?()=>null:boundary,new Set(['second']),false,opened?boundary:()=>null);
-    assert.equal(drawing.length,2);
-    assert.deepEqual(drawing.map(route=>[route.path,route.possible]),[
-      ['M 100 50 L 200 50',false],['M 200 50 L 100 50',false],
+    assert.equal(drawing.length,1);
+    assert.deepEqual(drawing.map(route=>[route.path,route.possible,route.reverseArrow]),[
+      ['M 100 50 L 200 50',false,true],
     ]);
-    assert.deepEqual(drawing[0].edgeIDs,['first','second']);
+    assert.deepEqual(drawing[0].edgeIDs,['first','second','reverse']);
     assert.ok(drawing[0].on,'selecting a possible relation highlights the shared visible route');
   }
 });

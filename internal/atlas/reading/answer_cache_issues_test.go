@@ -139,7 +139,7 @@ func TestAnswerCacheRecordFailuresPreserveAcceptedAnswer(t *testing.T) {
 				t.Fatalf("accepted answer not restored: %#v", answer)
 			}
 			part, value := answer.Parts[0], expected.Value.Answers[0]
-			if part.Source != atlas.SourceModel || part.OriginRequest != expected.RequestSHA256 || part.OriginRow != "r1" || part.Text != value["answer"] || part.Basis != value["basis"] || part.Remaining != value["remaining"] {
+			if part.Source != atlas.SourceModel || part.OriginRequest != expected.RequestSHA256 || part.OriginRow != "q1" || part.Text != value["answer"] || part.Basis != value["basis"] || part.Remaining != value["remaining"] {
 				t.Fatalf("accepted content or provenance changed: %+v", part)
 			}
 			if !reflect.DeepEqual(part.Steps, []atlas.QuestionStep{{Path: "source-00.go", Line: 1, StopIndexes: []int{0}}}) || !reflect.DeepEqual(r.questions[0].Stops, answerTestRoutes(1)[0].Stops) || !reflect.DeepEqual(r.questions[0].Guide.Steps, part.Steps) {

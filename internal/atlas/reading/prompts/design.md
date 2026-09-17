@@ -38,9 +38,11 @@ Avoid redundant wrappers; an area may contain one or several parts. There is no
 required group count.
 
 Return exactly one object:
-{"groups":[{"title":"Short responsibility name","purpose":"One sentence explaining its job.","members":["r1","r2"]}]}
+{"groups":[{"title":"Short responsibility name","purpose":"One sentence explaining its job.","members":["n1","n2"]}]}
 
-Members must be references from this request's input catalogue. Each reference
+Members must be IDs from this request's closed input catalogue. Declaration
+items keep their ProgramIndex `n*` IDs unchanged. Reduction-only choices use
+temporary `c*` IDs because they do not exist in the fact graph. Each reference
 belongs to at most one group. In parts/merge mode include every understood input;
 omit an input whose responsibility cannot be established. In areas mode members
 are part refs, never declaration refs hidden inside those parts. Unknown or

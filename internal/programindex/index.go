@@ -1,8 +1,9 @@
 // Package programindex owns the sealed, language-neutral handoff from a
 // language adapter to the semantic domain cubes.
 //
-// IDs in this package are stable local identities. Provider-facing code must
-// still replace them with bounded request-local refs before model execution.
+// IDs in this package are compact artifact-local identities. Provider-facing
+// code uses them directly with a closed request allowlist; there is no second
+// identity namespace for repository facts.
 package programindex
 
 import (
@@ -24,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 14
+	Version          = 17
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -40,14 +41,9 @@ const (
 	MaxArgumentsPerPattern  = 128
 	MaxPatternParts         = 64
 	MaxObjectsPerPatternRef = 64
-	// These former alias/re-export bounds are advisory scale thresholds. Exact
-	// compiler-owned identities and all of their parts remain lossless; the
-	// aggregate ProgramIndex envelopes are the only size authority.
-	MaxSymbolLinkIdentitiesPerObject = 16
-	MaxSymbolLinkIdentityParts       = 16
-	MaxWitnesses                     = 524_288
-	MaxPatterns                      = 524_288
-	MaxPatternArguments              = 2_097_152
+	MaxWitnesses            = 524_288
+	MaxPatterns             = 524_288
+	MaxPatternArguments     = 2_097_152
 	// MaxTextBytes is advisory. Individual semantic strings remain lossless.
 	MaxTextBytes = 16 * 1024
 	// AdvisoryAggregateTextBytes and AdvisoryIndexBytes are the former local
@@ -106,23 +102,26 @@ func (visibility Visibility) Valid() bool {
 type RelationKind string
 
 const (
-	RelationCalls           RelationKind = "calls"
-	RelationContains        RelationKind = "contains"
-	RelationImports         RelationKind = "imports"
-	RelationImplements      RelationKind = "implements"
-	RelationDecorates       RelationKind = "decorates"
-	RelationPassesCallback  RelationKind = "passes_callback"
-	RelationSources         RelationKind = "sources"
-	RelationExecutes        RelationKind = "executes"
-	RelationReads           RelationKind = "reads"
-	RelationWrites          RelationKind = "writes"
-	RelationInvokesExternal RelationKind = "invokes_external"
+	RelationCalls          RelationKind = "calls"
+	RelationImports        RelationKind = "imports"
+	RelationImplements     RelationKind = "implements"
+	RelationDecorates      RelationKind = "decorates"
+	RelationPassesCallback RelationKind = "passes_callback"
+	// RelationBindsImplementation records a concrete value observed to fill an
+	// interface-typed slot. Its targets are the implementation methods carried
+	// by that value; nothing is invoked at the binding site.
+	RelationBindsImplementation RelationKind = "binds_implementation"
+	RelationSources             RelationKind = "sources"
+	RelationExecutes            RelationKind = "executes"
+	RelationReads               RelationKind = "reads"
+	RelationWrites              RelationKind = "writes"
+	RelationInvokesExternal     RelationKind = "invokes_external"
 )
 
 func (kind RelationKind) Valid() bool {
 	switch kind {
-	case RelationCalls, RelationContains, RelationImports, RelationImplements,
-		RelationDecorates, RelationPassesCallback, RelationSources,
+	case RelationCalls, RelationImports, RelationImplements,
+		RelationDecorates, RelationPassesCallback, RelationBindsImplementation, RelationSources,
 		RelationExecutes, RelationReads, RelationWrites, RelationInvokesExternal:
 		return true
 	default:
@@ -206,6 +205,9 @@ type TargetSeed struct {
 // adapter-owned declaration key that distinguishes otherwise identical target
 // views, such as Python console_scripts and gui_scripts aliases.
 type TargetInput struct {
+	// ID is assigned once by the complete target plan. Standalone cube calls
+	// omit it and receive t1.
+	ID            string
 	TestSources   []string
 	Language      string
 	Kind          string
@@ -244,15 +246,103 @@ func (target Target) Snapshot() Target {
 	return result
 }
 
-// Validate checks the standalone target shape and its stable identity. This
+// rebindTargetID installs the target's one portfolio-local t* identity and
+// reseals the exact same fact graph. Object and relation IDs are target-local
+// already and therefore do not change.
+func rebindTargetID(index Index, targetID string) (Index, error) {
+	if err := index.Validate(); err != nil {
+		return Index{}, fmt.Errorf("program index: rebind target: %w", err)
+	}
+	if !validCompactID(targetID, "t") {
+		return Index{}, fmt.Errorf("program index: invalid compact target ID %q", targetID)
+	}
+	if index.Target.ID == targetID {
+		return index.Snapshot(), nil
+	}
+	if index.Categorization != nil {
+		assignments := make([]CategoryAssignment, len(index.Categorization.Assignments))
+		for position, assignment := range index.Categorization.Assignments {
+			assignments[position] = CategoryAssignment{
+				SubjectID:  assignment.SubjectID,
+				Categories: append([]Category(nil), assignment.Categories...),
+			}
+		}
+		documentationSHA := index.Categorization.ReducedDocumentationSHA256
+		base, err := Base(index)
+		if err != nil {
+			return Index{}, err
+		}
+		rebound, err := rebindTargetID(base, targetID)
+		if err != nil {
+			return Index{}, err
+		}
+		return Enrich(rebound, documentationSHA, assignments)
+	}
+	result := index.Snapshot()
+	result.Target.ID = targetID
+	result.SHA256 = ""
+	seal, err := indexDigest(result)
+	if err != nil {
+		return Index{}, err
+	}
+	result.SHA256 = seal
+	if err := result.Validate(); err != nil {
+		return Index{}, err
+	}
+	return result, nil
+}
+
+// RebindTargetSet assigns t1..tN once for a complete target set. Ordinals
+// follow target content, not discovery order, and the returned slice preserves
+// caller order.
+func RebindTargetSet(indexes []Index) ([]Index, error) {
+	type candidate struct {
+		position int
+		key      string
+	}
+	candidates := make([]candidate, len(indexes))
+	for position, index := range indexes {
+		if err := index.Validate(); err != nil {
+			return nil, fmt.Errorf("program index: rebind target set: %w", err)
+		}
+		target := index.Target.Snapshot()
+		target.ID = ""
+		encoded, err := json.Marshal(target)
+		if err != nil {
+			return nil, fmt.Errorf("program index: encode target ordering key: %w", err)
+		}
+		candidates[position] = candidate{position: position, key: string(encoded)}
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].key < candidates[j].key })
+	for position := 1; position < len(candidates); position++ {
+		if candidates[position-1].key == candidates[position].key {
+			return nil, fmt.Errorf("program index: duplicate target in set")
+		}
+	}
+	result := make([]Index, len(indexes))
+	for ordinal, candidate := range candidates {
+		rebound, err := rebindTargetID(indexes[candidate.position], compactOrdinalID("t", ordinal))
+		if err != nil {
+			return nil, err
+		}
+		result[candidate.position] = rebound
+	}
+	return result, nil
+}
+
+func compactOrdinalID(prefix string, zeroBased int) string {
+	return prefix + strconv.Itoa(zeroBased+1)
+}
+
+// Validate checks the standalone target shape and its compact portfolio-local identity. This
 // lets manifests and report adapters bind the same language-neutral target
 // without retaining an entire Index in memory.
 func (target Target) Validate() error {
 	if err := validateTargetShape(target); err != nil {
 		return err
 	}
-	if target.ID != targetIdentity(target) {
-		return fmt.Errorf("program index: target identity mismatch")
+	if !validCompactID(target.ID, "t") {
+		return fmt.Errorf("program index: target identity is not compact")
 	}
 	return nil
 }
@@ -274,38 +364,39 @@ type ObjectInput struct {
 	// Directory is an adapter-observed repository directory for a package or
 	// module. It remains available when that boundary has no source file.
 	Directory string
-	// SymbolLinkIdentities are adapter-normalized, exact identities that may
-	// join this object to the same symbol in another sealed ProgramIndex shard.
-	// The common builder owns opaque keys, canonical order and deduplication.
-	SymbolLinkIdentities []SymbolLinkIdentityInput
 	// External is adapter-owned origin and symbol authority. It is valid only
 	// for ObjectExternalSymbol and avoids forcing consumers to recover package
 	// or platform boundaries from presentation text or raw identity syntax.
 	External *ExternalSymbol
+	Aliases  []Alias
 }
 
-// SymbolLinkIdentityInput is the only adapter-facing cross-shard symbol
-// identity constructor. Domain namespaces one adapter/language identity
-// scheme. Parts are already normalized by that adapter; ProgramIndex treats
-// them as opaque ordered bytes and never parses their meaning. Display is
-// optional presentation text and carries no matching authority.
-type SymbolLinkIdentityInput struct {
-	Domain  string
-	Parts   []string
-	Display string
+// Alias is a name a declaration takes in another format, such as the JSON key
+// of a Go struct field declared with `json:"count_label"`.
+type Alias struct {
+	Format string `json:"format"`
+	Name   string `json:"name"`
 }
 
-// SymbolLinkIdentity is the sealed portable identity retained on an object.
-// Consumers compare only the exact (Domain, Key) pair. Key is constructed by
-// the common builder from the ordered input parts, so consumers never need to
-// reproduce or understand adapter normalization.
-type SymbolLinkIdentity struct {
-	Domain  string `json:"domain"`
-	Key     string `json:"key"`
-	Display string `json:"display,omitempty"`
-	// PartCount preserves only tuple size for warning-only scale diagnostics.
-	// Key remains the matching authority; raw parts are never persisted.
-	PartCount int `json:"part_count"`
+func canonicalAliases(values []Alias) []Alias {
+	if len(values) == 0 {
+		return nil
+	}
+	result := slices.Clone(values)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Format+"\x00"+result[i].Name < result[j].Format+"\x00"+result[j].Name
+	})
+	return slices.Compact(result)
+}
+
+func validAliases(values []Alias) bool {
+	for position, alias := range values {
+		if !validText(alias.Format) || !validText(alias.Name) ||
+			position > 0 && values[position-1].Format+"\x00"+values[position-1].Name >= alias.Format+"\x00"+alias.Name {
+			return false
+		}
+	}
+	return true
 }
 
 // ExternalAuthorityKind is the adapter-established origin class for an
@@ -351,18 +442,18 @@ func IsExternalPlatformAuthority(value *ExternalSymbol) bool {
 // Signature, ownership, containment and location are optional because not all
 // adapters can establish them with exact local authority.
 type Object struct {
-	ID                   string               `json:"id"`
-	SourceRef            string               `json:"source_ref"`
-	Kind                 ObjectKind           `json:"kind"`
-	Name                 string               `json:"name"`
-	Visibility           Visibility           `json:"visibility"`
-	Signature            string               `json:"signature,omitempty"`
-	OwnerID              string               `json:"owner_id,omitempty"`
-	ContainerID          string               `json:"container_id,omitempty"`
-	Location             *Location            `json:"location,omitempty"`
-	Directory            string               `json:"directory,omitempty"`
-	SymbolLinkIdentities []SymbolLinkIdentity `json:"symbol_link_identities,omitempty"`
-	External             *ExternalSymbol      `json:"external,omitempty"`
+	ID          string          `json:"id"`
+	SourceRef   string          `json:"-"`
+	Kind        ObjectKind      `json:"kind"`
+	Name        string          `json:"name"`
+	Visibility  Visibility      `json:"visibility"`
+	Signature   string          `json:"signature,omitempty"`
+	OwnerID     string          `json:"owner_id,omitempty"`
+	ContainerID string          `json:"container_id,omitempty"`
+	Location    *Location       `json:"location,omitempty"`
+	Directory   string          `json:"directory,omitempty"`
+	External    *ExternalSymbol `json:"external,omitempty"`
+	Aliases     []Alias         `json:"aliases,omitempty"`
 }
 
 // Witness preserves one bounded local fact supporting a relation. Kind and
@@ -481,15 +572,15 @@ type PatternValueCandidate struct {
 	ID                      string                 `json:"id"`
 	Kind                    PatternValueKind       `json:"kind"`
 	Value                   string                 `json:"value,omitempty"`
-	Parts                   []PatternPart          `json:"parts"`
+	Parts                   []PatternPart          `json:"parts,omitempty"`
 	Resolution              PatternValueResolution `json:"resolution"`
 	SourceKind              PatternValueSourceKind `json:"source_kind"`
-	SourceObjectIDs         []string               `json:"source_object_ids"`
-	SourceObjectsObserved   int                    `json:"source_objects_observed"`
-	SourceObjectsOmitted    int                    `json:"source_objects_omitted"`
-	SourceArgumentIDs       []string               `json:"source_argument_ids"`
-	SourceArgumentsObserved int                    `json:"source_arguments_observed"`
-	SourceArgumentsOmitted  int                    `json:"source_arguments_omitted"`
+	SourceObjectIDs         []string               `json:"source_object_ids,omitempty"`
+	SourceObjectsObserved   int                    `json:"-"`
+	SourceObjectsOmitted    int                    `json:"source_objects_omitted,omitempty"`
+	SourceArgumentIDs       []string               `json:"source_argument_ids,omitempty"`
+	SourceArgumentsObserved int                    `json:"-"`
+	SourceArgumentsOmitted  int                    `json:"source_arguments_omitted,omitempty"`
 }
 
 // PatternArgumentInput is one adapter-observed positional or keyword
@@ -529,14 +620,14 @@ type PatternArgument struct {
 	Keyword                 string                  `json:"keyword,omitempty"`
 	Kind                    PatternValueKind        `json:"kind"`
 	Value                   string                  `json:"value,omitempty"`
-	Parts                   []PatternPart           `json:"parts"`
-	ObjectIDs               []string                `json:"object_ids"`
+	Parts                   []PatternPart           `json:"parts,omitempty"`
+	ObjectIDs               []string                `json:"object_ids,omitempty"`
 	Resolution              Resolution              `json:"resolution,omitempty"`
-	ObjectsObserved         int                     `json:"objects_observed"`
-	ObjectsOmitted          int                     `json:"objects_omitted"`
-	ValueCandidates         []PatternValueCandidate `json:"value_candidates"`
-	ValueCandidatesObserved int                     `json:"value_candidates_observed"`
-	ValueCandidatesOmitted  int                     `json:"value_candidates_omitted"`
+	ObjectsObserved         int                     `json:"-"`
+	ObjectsOmitted          int                     `json:"objects_omitted,omitempty"`
+	ValueCandidates         []PatternValueCandidate `json:"value_candidates,omitempty"`
+	ValueCandidatesObserved int                     `json:"-"`
+	ValueCandidatesOmitted  int                     `json:"value_candidates_omitted,omitempty"`
 }
 
 // RelationPatternInput retains one bounded syntactic candidate nested in its
@@ -567,24 +658,49 @@ type RelationPattern struct {
 	ResultValue              *sourcevalue.Value `json:"result_value,omitempty"`
 	Context                  []Witness          `json:"context,omitempty"`
 	ID                       string             `json:"id"`
-	SourceRef                string             `json:"source_ref"`
+	SourceRef                string             `json:"-"`
 	Form                     PatternForm        `json:"form"`
 	Selector                 string             `json:"selector"`
 	Location                 *Location          `json:"location,omitempty"`
 	ResultID                 string             `json:"result_id,omitempty"`
 	ReceiverID               string             `json:"receiver_id,omitempty"`
-	ReceiverOriginIDs        []string           `json:"receiver_origin_ids"`
+	ReceiverOriginIDs        []string           `json:"receiver_origin_ids,omitempty"`
 	ReceiverOriginResolution Resolution         `json:"receiver_origin_resolution,omitempty"`
-	ReceiverOriginsObserved  int                `json:"receiver_origins_observed"`
-	ReceiverOriginsOmitted   int                `json:"receiver_origins_omitted"`
-	Arguments                []PatternArgument  `json:"arguments"`
-	ArgumentsObserved        int                `json:"arguments_observed"`
-	ArgumentsOmitted         int                `json:"arguments_omitted"`
+	ReceiverOriginsObserved  int                `json:"-"`
+	ReceiverOriginsOmitted   int                `json:"receiver_origins_omitted,omitempty"`
+	Arguments                []PatternArgument  `json:"arguments,omitempty"`
+	ArgumentsObserved        int                `json:"-"`
+	ArgumentsOmitted         int                `json:"arguments_omitted,omitempty"`
 }
 
-// RelationInput cites ObjectInput.SourceRef values. Invocation is optional,
-// advisory text (for example a language's synchronous/deferred distinction),
-// never a cross-language enum or stronger call authority. TargetsObserved and
+// Invocation says how a call runs. Empty is an ordinary call that returns
+// before its caller continues; every adapter uses the same words.
+const (
+	InvocationDeferred  = "deferred"
+	InvocationGoroutine = "goroutine"
+	InvocationAsyncTask = "async_task"
+	InvocationConstruct = "construct"
+)
+
+func validInvocation(value string) bool {
+	return value == "" || value == InvocationDeferred || value == InvocationGoroutine ||
+		value == InvocationAsyncTask || value == InvocationConstruct
+}
+
+// Dispatch says how a call's target was found. Empty is a static target.
+// Interface targets are implementations; an interface method target is the
+// declared method of an external interface whose implementation is unknown.
+const (
+	DispatchInterface       = "interface"
+	DispatchInterfaceMethod = "interface_method"
+	DispatchFunctionValue   = "function_value"
+)
+
+func validDispatch(value string) bool {
+	return value == "" || value == DispatchInterface || value == DispatchInterfaceMethod || value == DispatchFunctionValue
+}
+
+// RelationInput cites ObjectInput.SourceRef values. TargetsObserved and
 // WitnessesObserved are mandatory adapter measurements; the core never derives
 // them from retained rows.
 type RelationInput struct {
@@ -594,6 +710,7 @@ type RelationInput struct {
 	ToRefs            []string
 	Resolution        Resolution
 	Invocation        string
+	Dispatch          string
 	Location          *Location
 	TargetsObserved   int
 	Witnesses         []Witness
@@ -606,21 +723,22 @@ type RelationInput struct {
 // Relation is one typed, locally resolved edge or uncertainty joint.
 type Relation struct {
 	ID                string            `json:"id"`
-	SourceRef         string            `json:"source_ref"`
+	SourceRef         string            `json:"-"`
 	Kind              RelationKind      `json:"kind"`
 	FromID            string            `json:"from_id"`
-	ToIDs             []string          `json:"to_ids"`
+	ToIDs             []string          `json:"to_ids,omitempty"`
 	Resolution        Resolution        `json:"resolution"`
 	Invocation        string            `json:"invocation,omitempty"`
+	Dispatch          string            `json:"dispatch,omitempty"`
 	Location          *Location         `json:"location,omitempty"`
-	TargetsObserved   int               `json:"targets_observed"`
-	TargetsOmitted    int               `json:"targets_omitted"`
-	Witnesses         []Witness         `json:"witnesses"`
-	WitnessesObserved int               `json:"witnesses_observed"`
-	WitnessesOmitted  int               `json:"witnesses_omitted"`
-	Patterns          []RelationPattern `json:"patterns"`
-	PatternsObserved  int               `json:"patterns_observed"`
-	PatternsOmitted   int               `json:"patterns_omitted"`
+	TargetsObserved   int               `json:"-"`
+	TargetsOmitted    int               `json:"targets_omitted,omitempty"`
+	Witnesses         []Witness         `json:"witnesses,omitempty"`
+	WitnessesObserved int               `json:"-"`
+	WitnessesOmitted  int               `json:"witnesses_omitted,omitempty"`
+	Patterns          []RelationPattern `json:"patterns,omitempty"`
+	PatternsObserved  int               `json:"-"`
+	PatternsOmitted   int               `json:"patterns_omitted,omitempty"`
 	SourceArgumentID  string            `json:"source_argument_id,omitempty"`
 }
 
@@ -637,42 +755,42 @@ type CoverageInput struct {
 // explicit. Target, witness and nested-pattern omissions are aggregated from
 // Relation rows.
 type Coverage struct {
-	ObjectsObserved              int `json:"objects_observed"`
-	ObjectsIndexed               int `json:"objects_indexed"`
-	ObjectsOmitted               int `json:"objects_omitted"`
-	RelationsObserved            int `json:"relations_observed"`
-	RelationsIndexed             int `json:"relations_indexed"`
-	RelationsOmitted             int `json:"relations_omitted"`
-	ExactRelations               int `json:"exact_relations"`
-	AlternativeRelations         int `json:"alternative_relations"`
-	UnresolvedRelations          int `json:"unresolved_relations"`
-	TargetsObserved              int `json:"targets_observed"`
-	TargetsIndexed               int `json:"targets_indexed"`
-	TargetsOmitted               int `json:"targets_omitted"`
-	WitnessesObserved            int `json:"witnesses_observed"`
-	WitnessesIndexed             int `json:"witnesses_indexed"`
-	WitnessesOmitted             int `json:"witnesses_omitted"`
-	PatternsObserved             int `json:"patterns_observed"`
-	PatternsIndexed              int `json:"patterns_indexed"`
-	PatternsOmitted              int `json:"patterns_omitted"`
-	ArgumentsObserved            int `json:"arguments_observed"`
-	ArgumentsIndexed             int `json:"arguments_indexed"`
-	ArgumentsOmitted             int `json:"arguments_omitted"`
-	ReceiverOriginsObserved      int `json:"receiver_origins_observed"`
-	ReceiverOriginsIndexed       int `json:"receiver_origins_indexed"`
-	ReceiverOriginsOmitted       int `json:"receiver_origins_omitted"`
-	ArgumentObjectsObserved      int `json:"argument_objects_observed"`
-	ArgumentObjectsIndexed       int `json:"argument_objects_indexed"`
-	ArgumentObjectsOmitted       int `json:"argument_objects_omitted"`
-	ArgumentValuesObserved       int `json:"argument_values_observed"`
-	ArgumentValuesIndexed        int `json:"argument_values_indexed"`
-	ArgumentValuesOmitted        int `json:"argument_values_omitted"`
-	ValueSourcesObserved         int `json:"value_sources_observed"`
-	ValueSourcesIndexed          int `json:"value_sources_indexed"`
-	ValueSourcesOmitted          int `json:"value_sources_omitted"`
-	ValueArgumentSourcesObserved int `json:"value_argument_sources_observed"`
-	ValueArgumentSourcesIndexed  int `json:"value_argument_sources_indexed"`
-	ValueArgumentSourcesOmitted  int `json:"value_argument_sources_omitted"`
+	ObjectsObserved              int `json:"-"`
+	ObjectsIndexed               int `json:"-"`
+	ObjectsOmitted               int `json:"objects_omitted,omitempty"`
+	RelationsObserved            int `json:"-"`
+	RelationsIndexed             int `json:"-"`
+	RelationsOmitted             int `json:"relations_omitted,omitempty"`
+	ExactRelations               int `json:"-"`
+	AlternativeRelations         int `json:"-"`
+	UnresolvedRelations          int `json:"-"`
+	TargetsObserved              int `json:"-"`
+	TargetsIndexed               int `json:"-"`
+	TargetsOmitted               int `json:"targets_omitted,omitempty"`
+	WitnessesObserved            int `json:"-"`
+	WitnessesIndexed             int `json:"-"`
+	WitnessesOmitted             int `json:"witnesses_omitted,omitempty"`
+	PatternsObserved             int `json:"-"`
+	PatternsIndexed              int `json:"-"`
+	PatternsOmitted              int `json:"patterns_omitted,omitempty"`
+	ArgumentsObserved            int `json:"-"`
+	ArgumentsIndexed             int `json:"-"`
+	ArgumentsOmitted             int `json:"arguments_omitted,omitempty"`
+	ReceiverOriginsObserved      int `json:"-"`
+	ReceiverOriginsIndexed       int `json:"-"`
+	ReceiverOriginsOmitted       int `json:"receiver_origins_omitted,omitempty"`
+	ArgumentObjectsObserved      int `json:"-"`
+	ArgumentObjectsIndexed       int `json:"-"`
+	ArgumentObjectsOmitted       int `json:"-"`
+	ArgumentValuesObserved       int `json:"-"`
+	ArgumentValuesIndexed        int `json:"-"`
+	ArgumentValuesOmitted        int `json:"-"`
+	ValueSourcesObserved         int `json:"-"`
+	ValueSourcesIndexed          int `json:"-"`
+	ValueSourcesOmitted          int `json:"-"`
+	ValueArgumentSourcesObserved int `json:"-"`
+	ValueArgumentSourcesIndexed  int `json:"-"`
+	ValueArgumentSourcesOmitted  int `json:"-"`
 }
 
 type Input struct {
@@ -682,7 +800,6 @@ type Input struct {
 	Objects        []ObjectInput
 	Relations      []RelationInput
 	Coverage       CoverageInput
-	shared         *SharedInput
 }
 
 // Index is the canonical, bounded and SHA-sealed language-neutral handoff.
@@ -693,7 +810,7 @@ type Index struct {
 	Target         Target          `json:"target"`
 	Objects        []Object        `json:"objects"`
 	Relations      []Relation      `json:"relations"`
-	Coverage       Coverage        `json:"coverage"`
+	Coverage       Coverage        `json:"coverage,omitzero"`
 	Categorization *Categorization `json:"categorization,omitempty"`
 	SHA256         string          `json:"sha256"`
 }
@@ -735,7 +852,68 @@ func Decode(encoded []byte) (Index, error) {
 	return index, nil
 }
 
-// New resolves adapter-local source refs, assigns stable local identities,
+// UnmarshalJSON strictly decodes the compact artifact and restores the counts
+// it omits: every observed count is its retained rows plus the stored omission,
+// empty collections are absent, and coverage is compiled from the rows.
+func (index *Index) UnmarshalJSON(encoded []byte) error {
+	type artifact Index
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	var decoded artifact
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	*index = Index(decoded)
+	index.Objects = emptyIfNil(index.Objects)
+	index.Relations = emptyIfNil(index.Relations)
+	for position := range index.Relations {
+		restoreRelationCounts(&index.Relations[position])
+	}
+	index.Coverage = compileCoverage(index.Objects, index.Relations,
+		len(index.Objects)+decoded.Coverage.ObjectsOmitted, len(index.Relations)+decoded.Coverage.RelationsOmitted)
+	return nil
+}
+
+func restoreRelationCounts(relation *Relation) {
+	relation.ToIDs = emptyIfNil(relation.ToIDs)
+	relation.Witnesses = emptyIfNil(relation.Witnesses)
+	relation.Patterns = emptyIfNil(relation.Patterns)
+	relation.TargetsObserved = len(relation.ToIDs) + relation.TargetsOmitted
+	relation.WitnessesObserved = len(relation.Witnesses) + relation.WitnessesOmitted
+	relation.PatternsObserved = len(relation.Patterns) + relation.PatternsOmitted
+	for position := range relation.Patterns {
+		pattern := &relation.Patterns[position]
+		pattern.ReceiverOriginIDs = emptyIfNil(pattern.ReceiverOriginIDs)
+		pattern.Arguments = emptyIfNil(pattern.Arguments)
+		pattern.ReceiverOriginsObserved = len(pattern.ReceiverOriginIDs) + pattern.ReceiverOriginsOmitted
+		pattern.ArgumentsObserved = len(pattern.Arguments) + pattern.ArgumentsOmitted
+		for position := range pattern.Arguments {
+			argument := &pattern.Arguments[position]
+			argument.Parts = emptyIfNil(argument.Parts)
+			argument.ObjectIDs = emptyIfNil(argument.ObjectIDs)
+			argument.ValueCandidates = emptyIfNil(argument.ValueCandidates)
+			argument.ObjectsObserved = len(argument.ObjectIDs) + argument.ObjectsOmitted
+			argument.ValueCandidatesObserved = len(argument.ValueCandidates) + argument.ValueCandidatesOmitted
+			for position := range argument.ValueCandidates {
+				candidate := &argument.ValueCandidates[position]
+				candidate.Parts = emptyIfNil(candidate.Parts)
+				candidate.SourceObjectIDs = emptyIfNil(candidate.SourceObjectIDs)
+				candidate.SourceArgumentIDs = emptyIfNil(candidate.SourceArgumentIDs)
+				candidate.SourceObjectsObserved = len(candidate.SourceObjectIDs) + candidate.SourceObjectsOmitted
+				candidate.SourceArgumentsObserved = len(candidate.SourceArgumentIDs) + candidate.SourceArgumentsOmitted
+			}
+		}
+	}
+}
+
+func emptyIfNil[T any](values []T) []T {
+	if values == nil {
+		return []T{}
+	}
+	return values
+}
+
+// New resolves adapter-local source refs, assigns compact artifact identities,
 // canonicalizes all collections, derives coverage, validates and seals the
 // result. It never truncates or rejects an input at an advisory collection
 // threshold.
@@ -766,31 +944,35 @@ func New(input Input) (Index, error) {
 	if err != nil {
 		return Index{}, err
 	}
-	objectScopeID := targetObjectScopeIdentity(index.Target)
-
 	bindings := make([]objectBinding, 0, len(input.Objects))
 	for _, value := range input.Objects {
 		if err := validateObjectInput(value); err != nil {
 			return Index{}, err
 		}
-		linkIdentities, err := canonicalizeSymbolLinkIdentityInputs(value.SymbolLinkIdentities)
-		if err != nil {
-			return Index{}, fmt.Errorf("program index: object %q symbol link identities: %w", value.SourceRef, err)
-		}
-		object := Object{
-			ID: stableID("program-object", objectScopeID, value.SourceRef), SourceRef: value.SourceRef,
-			Kind: value.Kind, Name: value.Name, Visibility: value.Visibility,
-			Signature: value.Signature, Location: cloneLocation(value.Location), Directory: value.Directory,
-			SymbolLinkIdentities: linkIdentities, External: cloneExternalSymbol(value.External),
-		}
-		index.Objects = append(index.Objects, object)
-		bindings = append(bindings, objectBinding{SourceRef: value.SourceRef, ID: object.ID})
+		bindings = append(bindings, objectBinding{SourceRef: value.SourceRef})
 	}
 	sort.Slice(bindings, func(i, j int) bool { return bindings[i].SourceRef < bindings[j].SourceRef })
-	for position := 1; position < len(bindings); position++ {
-		if bindings[position-1].SourceRef == bindings[position].SourceRef {
+	for position := range bindings {
+		if position > 0 && bindings[position-1].SourceRef == bindings[position].SourceRef {
 			return Index{}, fmt.Errorf("program index: duplicate object source ref %q", bindings[position].SourceRef)
 		}
+	}
+	ordinals := readingOrder(input, seedInputs)
+	for position := range bindings {
+		bindings[position].ID = compactID("n", ordinals[bindings[position].SourceRef])
+	}
+	for _, value := range input.Objects {
+		id, err := resolveObjectRef(bindings, value.SourceRef)
+		if err != nil {
+			return Index{}, err
+		}
+		object := Object{
+			ID: id, SourceRef: value.SourceRef,
+			Kind: value.Kind, Name: value.Name, Visibility: value.Visibility,
+			Signature: value.Signature, Location: cloneLocation(value.Location), Directory: value.Directory,
+			External: cloneExternalSymbol(value.External), Aliases: canonicalAliases(value.Aliases),
+		}
+		index.Objects = append(index.Objects, object)
 	}
 	for position, value := range input.Objects {
 		ownerID, err := resolveObjectRef(bindings, value.OwnerRef)
@@ -807,7 +989,7 @@ func New(input Input) (Index, error) {
 		index.Objects[position].OwnerID = ownerID
 		index.Objects[position].ContainerID = containerID
 	}
-	sort.Slice(index.Objects, func(i, j int) bool { return index.Objects[i].ID < index.Objects[j].ID })
+	sort.Slice(index.Objects, func(i, j int) bool { return compactIDLess(index.Objects[i].ID, index.Objects[j].ID, "n") })
 	for position := 1; position < len(index.Objects); position++ {
 		if index.Objects[position-1].ID == index.Objects[position].ID {
 			return Index{}, fmt.Errorf("program index: duplicate object identity %q", index.Objects[position].ID)
@@ -832,13 +1014,23 @@ func New(input Input) (Index, error) {
 	sort.Slice(index.Target.Seeds, func(i, j int) bool {
 		return compareTargetSeeds(index.Target.Seeds[i], index.Target.Seeds[j]) < 0
 	})
-	index.Target.ID = targetIdentity(index.Target)
+	index.Target.ID = input.Target.ID
+	if index.Target.ID == "" {
+		index.Target.ID = "t1"
+	}
+	if !validCompactID(index.Target.ID, "t") {
+		return Index{}, fmt.Errorf("program index: invalid target input ID %q", index.Target.ID)
+	}
 
+	relationIDs, err := compactRelationIDs(input.Relations, bindings)
+	if err != nil {
+		return Index{}, err
+	}
 	pendingSourceArguments := make(map[string]PatternArgumentRefInput)
 	pendingValueSourceArguments := make(map[string]pendingPatternValueSourceArguments)
-	for _, value := range input.Relations {
+	for relationPosition, value := range input.Relations {
 		if !validText(value.SourceRef) || !value.Kind.Valid() || !value.Resolution.Valid() || !validText(value.FromRef) ||
-			!validOptionalText(value.Invocation) || !validOptionalLocation(value.Location) {
+			!validInvocation(value.Invocation) || !validDispatch(value.Dispatch) || !validOptionalLocation(value.Location) {
 			return Index{}, fmt.Errorf("program index: invalid relation input")
 		}
 		fromID, err := resolveObjectRef(bindings, value.FromRef)
@@ -868,7 +1060,7 @@ func New(input Input) (Index, error) {
 		if err != nil {
 			return Index{}, fmt.Errorf("program index: relation %q: %w", value.SourceRef, err)
 		}
-		relationID := stableID("program-relation", index.Target.ID, value.SourceRef, string(value.Kind), fromID)
+		relationID := relationIDs[relationPosition]
 		patterns, err := canonicalizeRelationPatterns(
 			value.Patterns, relationID, bindings, pendingValueSourceArguments,
 		)
@@ -878,7 +1070,7 @@ func New(input Input) (Index, error) {
 		relation := Relation{
 			ID:        relationID,
 			SourceRef: value.SourceRef, Kind: value.Kind, FromID: fromID, ToIDs: toIDs,
-			Resolution: value.Resolution, Invocation: value.Invocation, Location: cloneLocation(value.Location),
+			Resolution: value.Resolution, Invocation: value.Invocation, Dispatch: value.Dispatch, Location: cloneLocation(value.Location),
 			TargetsObserved: value.TargetsObserved, TargetsOmitted: value.TargetsObserved - len(toIDs),
 			Witnesses: witnesses, WitnessesObserved: value.WitnessesObserved,
 			WitnessesOmitted: value.WitnessesObserved - len(witnesses),
@@ -912,7 +1104,7 @@ func New(input Input) (Index, error) {
 			return Index{}, err
 		}
 	}
-	sort.Slice(index.Relations, func(i, j int) bool { return index.Relations[i].ID < index.Relations[j].ID })
+	sort.Slice(index.Relations, func(i, j int) bool { return compactIDLess(index.Relations[i].ID, index.Relations[j].ID, "e") })
 	for position := 1; position < len(index.Relations); position++ {
 		if index.Relations[position-1].ID == index.Relations[position].ID {
 			return Index{}, fmt.Errorf("program index: duplicate relation identity %q", index.Relations[position].ID)
@@ -947,8 +1139,8 @@ func (index Index) Snapshot() Index {
 	copy(result.Objects, index.Objects)
 	for position := range result.Objects {
 		result.Objects[position].Location = cloneLocation(index.Objects[position].Location)
-		result.Objects[position].SymbolLinkIdentities = cloneSymbolLinkIdentities(index.Objects[position].SymbolLinkIdentities)
 		result.Objects[position].External = cloneExternalSymbol(index.Objects[position].External)
+		result.Objects[position].Aliases = slices.Clone(index.Objects[position].Aliases)
 	}
 	result.Relations = make([]Relation, len(index.Relations))
 	copy(result.Relations, index.Relations)
@@ -974,12 +1166,11 @@ func (index Index) Validate() error {
 	if err := index.Target.Validate(); err != nil {
 		return err
 	}
-	objectScopeID := targetObjectScopeIdentity(index.Target)
 	for position, object := range index.Objects {
-		if err := validateObject(object, objectScopeID); err != nil {
+		if err := validateObject(object); err != nil {
 			return err
 		}
-		if position > 0 && index.Objects[position-1].ID >= object.ID {
+		if position > 0 && !compactIDLess(index.Objects[position-1].ID, object.ID, "n") {
 			return fmt.Errorf("program index: objects are not canonical")
 		}
 	}
@@ -1033,9 +1224,6 @@ func (index Index) Validate() error {
 	for position, relation := range index.Relations {
 		if err := validateRelationShape(relation); err != nil {
 			return err
-		}
-		if relation.ID != stableID("program-relation", index.Target.ID, relation.SourceRef, string(relation.Kind), relation.FromID) {
-			return fmt.Errorf("program index: relation identity mismatch")
 		}
 		if !hasObjectID(index.Objects, relation.FromID) {
 			return fmt.Errorf("program index: relation %q has unknown source", relation.ID)
@@ -1108,7 +1296,7 @@ func (index Index) Validate() error {
 				return fmt.Errorf("program index: relation %q source argument authority mismatch", relation.ID)
 			}
 		}
-		if position > 0 && index.Relations[position-1].ID >= relation.ID {
+		if position > 0 && !compactIDLess(index.Relations[position-1].ID, relation.ID, "e") {
 			return fmt.Errorf("program index: relations are not canonical")
 		}
 	}
@@ -1135,6 +1323,183 @@ func (index Index) Validate() error {
 type objectBinding struct {
 	SourceRef string
 	ID        string
+}
+
+func compactRelationIDs(values []RelationInput, bindings []objectBinding) ([]string, error) {
+	type candidate struct {
+		position int
+		key      string
+	}
+	candidates := make([]candidate, 0, len(values))
+	for position, value := range values {
+		if !validText(value.SourceRef) || !value.Kind.Valid() || !value.Resolution.Valid() || !validText(value.FromRef) {
+			return nil, fmt.Errorf("program index: invalid relation input")
+		}
+		fromID, err := resolveObjectRef(bindings, value.FromRef)
+		if err != nil {
+			return nil, fmt.Errorf("program index: relation %q source: %w", value.SourceRef, err)
+		}
+		candidates = append(candidates, candidate{
+			position: position,
+			key:      strings.Join([]string{value.SourceRef, string(value.Kind), fromID}, "\x00"),
+		})
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].key < candidates[j].key })
+	for position := 1; position < len(candidates); position++ {
+		if candidates[position-1].key == candidates[position].key {
+			return nil, fmt.Errorf("program index: duplicate relation identity input")
+		}
+	}
+	// Relations read in the order of their source objects, then of their
+	// sites: e1 is what n1 does first.
+	sort.SliceStable(candidates, func(i, j int) bool {
+		a, b := values[candidates[i].position], values[candidates[j].position]
+		if a.FromRef != b.FromRef {
+			aID, _ := resolveObjectRef(bindings, a.FromRef)
+			bID, _ := resolveObjectRef(bindings, b.FromRef)
+			return compactIDLess(aID, bID, "n")
+		}
+		if c := compareOptionalLocations(a.Location, b.Location); c != 0 {
+			return c < 0
+		}
+		return candidates[i].key < candidates[j].key
+	})
+	ids := make([]string, len(values))
+	for position, candidate := range candidates {
+		ids[candidate.position] = compactID("e", position+1)
+	}
+	return ids, nil
+}
+
+// readingOrder numbers objects the way a reader meets them: the launch seeds
+// first, then breadth-first along calls and bindings in source order, each
+// declaration followed by its owner. What no entry reaches follows by file
+// and line; objects without a location, then external symbols, come last.
+func readingOrder(input Input, seeds []TargetSeedInput) map[string]int {
+	objects := make(map[string]ObjectInput, len(input.Objects))
+	for _, object := range input.Objects {
+		objects[object.SourceRef] = object
+	}
+	type edge struct {
+		to       string
+		location *Location
+	}
+	next := make(map[string][]edge)
+	for _, relation := range input.Relations {
+		if relation.Kind == RelationImports {
+			continue
+		}
+		for _, to := range relation.ToRefs {
+			next[relation.FromRef] = append(next[relation.FromRef], edge{to, relation.Location})
+		}
+	}
+	for from := range next {
+		edges := next[from]
+		sort.SliceStable(edges, func(i, j int) bool {
+			if c := compareOptionalLocations(edges[i].location, edges[j].location); c != 0 {
+				return c < 0
+			}
+			return edges[i].to < edges[j].to
+		})
+	}
+	ordinals := make(map[string]int, len(input.Objects))
+	var queue []string
+	visit := func(ref string) {
+		if _, seen := ordinals[ref]; seen || ref == "" {
+			return
+		}
+		if _, known := objects[ref]; !known {
+			return
+		}
+		ordinals[ref] = len(ordinals) + 1
+		queue = append(queue, ref)
+	}
+	for _, seed := range seeds {
+		visit(seed.ObjectRef)
+	}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, edge := range next[current] {
+			visit(edge.to)
+		}
+		visit(objects[current].OwnerRef)
+		visit(objects[current].ContainerRef)
+	}
+	rest := make([]ObjectInput, 0, len(input.Objects))
+	for _, object := range input.Objects {
+		if _, seen := ordinals[object.SourceRef]; !seen {
+			rest = append(rest, object)
+		}
+	}
+	sort.Slice(rest, func(i, j int) bool {
+		a, b := rest[i], rest[j]
+		if (a.Kind == ObjectExternalSymbol) != (b.Kind == ObjectExternalSymbol) {
+			return b.Kind == ObjectExternalSymbol
+		}
+		if c := compareOptionalLocations(a.Location, b.Location); c != 0 {
+			return c < 0
+		}
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		return a.SourceRef < b.SourceRef
+	})
+	for _, object := range rest {
+		ordinals[object.SourceRef] = len(ordinals) + 1
+	}
+	return ordinals
+}
+
+// compareOptionalLocations orders located values by path, line and column;
+// an unlocated value sorts after every located one.
+func compareOptionalLocations(a, b *Location) int {
+	switch {
+	case a == nil && b == nil:
+		return 0
+	case a == nil:
+		return 1
+	case b == nil:
+		return -1
+	}
+	if a.Path != b.Path {
+		return strings.Compare(a.Path, b.Path)
+	}
+	if a.Line != b.Line {
+		return a.Line - b.Line
+	}
+	return a.Column - b.Column
+}
+
+func compactID(prefix string, ordinal int) string {
+	return prefix + strconv.Itoa(ordinal)
+}
+
+func validCompactID(value, prefix string) bool {
+	if !strings.HasPrefix(value, prefix) || len(value) == len(prefix) {
+		return false
+	}
+	ordinal, err := strconv.Atoi(value[len(prefix):])
+	return err == nil && ordinal > 0 && compactID(prefix, ordinal) == value
+}
+
+func compactIDLess(left, right, prefix string) bool {
+	leftOrdinal, leftErr := strconv.Atoi(strings.TrimPrefix(left, prefix))
+	rightOrdinal, rightErr := strconv.Atoi(strings.TrimPrefix(right, prefix))
+	if leftErr != nil || rightErr != nil {
+		return left < right
+	}
+	return leftOrdinal < rightOrdinal
+}
+
+// ValidTargetID reports whether value is a canonical repository-local tN ID.
+func ValidTargetID(value string) bool {
+	return validCompactID(value, "t")
+}
+
+// TargetIDLess orders compact target IDs by ordinal, so t10 follows t9.
+func TargetIDLess(left, right string) bool {
+	return compactIDLess(left, right, "t")
 }
 
 type pendingPatternValueSourceArguments struct {
@@ -1247,12 +1612,12 @@ func resolveObjectRef(bindings []objectBinding, ref string) (string, error) {
 }
 
 func hasObjectID(objects []Object, id string) bool {
-	position := sort.Search(len(objects), func(position int) bool { return objects[position].ID >= id })
+	position := sort.Search(len(objects), func(position int) bool { return !compactIDLess(objects[position].ID, id, "n") })
 	return position < len(objects) && objects[position].ID == id
 }
 
 func objectWithID(objects []Object, id string) (Object, bool) {
-	position := sort.Search(len(objects), func(position int) bool { return objects[position].ID >= id })
+	position := sort.Search(len(objects), func(position int) bool { return !compactIDLess(objects[position].ID, id, "n") })
 	if position == len(objects) || objects[position].ID != id {
 		return Object{}, false
 	}
@@ -1307,7 +1672,8 @@ func validateObjectInput(value ObjectInput) error {
 	}
 	if !validText(value.SourceRef) || !value.Kind.Valid() || !validText(value.Name) ||
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerRef) ||
-		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) {
+		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
+		!validAliases(canonicalAliases(value.Aliases)) {
 		return fmt.Errorf("program index: invalid object input")
 	}
 	if err := validateExternalSymbolBinding(value.Kind, value.External); err != nil {
@@ -1316,20 +1682,15 @@ func validateObjectInput(value ObjectInput) error {
 	return nil
 }
 
-func validateObject(value Object, objectScopeID string) error {
-	if !canonicalSymbolLinkIdentities(value.SymbolLinkIdentities) {
-		return fmt.Errorf("program index: invalid object symbol link identities")
-	}
-	if !validText(value.SourceRef) || !value.Kind.Valid() || !validText(value.Name) || !value.Visibility.Valid() ||
+func validateObject(value Object) error {
+	if !validCompactID(value.ID, "n") || !value.Kind.Valid() || !validText(value.Name) || !value.Visibility.Valid() ||
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerID) ||
-		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) {
+		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
+		!validAliases(value.Aliases) {
 		return fmt.Errorf("program index: invalid object")
 	}
 	if err := validateExternalSymbolBinding(value.Kind, value.External); err != nil {
 		return err
-	}
-	if value.ID != stableID("program-object", objectScopeID, value.SourceRef) {
-		return fmt.Errorf("program index: object identity mismatch")
 	}
 	return nil
 }
@@ -1358,8 +1719,8 @@ func validateTargetSeedBinding(seed TargetSeed, object Object) error {
 }
 
 func validateRelationShape(value Relation) error {
-	if !validText(value.ID) || !validText(value.SourceRef) || !value.Kind.Valid() || !value.Resolution.Valid() ||
-		!validText(value.FromID) || !validOptionalText(value.Invocation) || !validOptionalLocation(value.Location) ||
+	if !validCompactID(value.ID, "e") || !value.Kind.Valid() || !value.Resolution.Valid() ||
+		!validText(value.FromID) || !validInvocation(value.Invocation) || !validDispatch(value.Dispatch) || !validOptionalLocation(value.Location) ||
 		!validOptionalText(value.SourceArgumentID) ||
 		value.ToIDs == nil || value.Witnesses == nil || value.Patterns == nil ||
 		!canonicalStrings(value.ToIDs) {
@@ -1391,7 +1752,7 @@ func validateRelationShape(value Relation) error {
 		if err := validateRelationPatternShape(pattern, value.ID); err != nil {
 			return err
 		}
-		if position > 0 && value.Patterns[position-1].ID >= pattern.ID {
+		if pattern.ID != value.ID+"p"+strconv.Itoa(position+1) {
 			return fmt.Errorf("program index: relation patterns are not canonical")
 		}
 	}
@@ -1446,8 +1807,10 @@ func canonicalizeRelationPatterns(
 	bindings []objectBinding,
 	pendingValueSources map[string]pendingPatternValueSourceArguments,
 ) ([]RelationPattern, error) {
+	values = slices.Clone(values)
+	sort.Slice(values, func(i, j int) bool { return values[i].SourceRef < values[j].SourceRef })
 	result := make([]RelationPattern, 0, len(values))
-	for _, value := range values {
+	for position, value := range values {
 		if !validText(value.SourceRef) || !value.Form.Valid() || !validText(value.Selector) ||
 			!validOptionalLocation(value.Location) ||
 			!validOptionalText(value.ResultRef) || !validOptionalText(value.ReceiverRef) {
@@ -1467,7 +1830,10 @@ func canonicalizeRelationPatterns(
 		if err != nil {
 			return nil, fmt.Errorf("pattern %q receiver origins: %w", value.SourceRef, err)
 		}
-		id := stableID("program-pattern", relationID, value.SourceRef)
+		if position > 0 && values[position-1].SourceRef == value.SourceRef {
+			return nil, fmt.Errorf("duplicate pattern source ref %q", value.SourceRef)
+		}
+		id := relationID + "p" + strconv.Itoa(position+1)
 		arguments, err := canonicalizePatternArguments(value.Arguments, id, bindings, pendingValueSources)
 		if err != nil {
 			return nil, fmt.Errorf("pattern %q arguments: %w", value.SourceRef, err)
@@ -1491,12 +1857,6 @@ func canonicalizeRelationPatterns(
 		}
 		result = append(result, pattern)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
-	for position := 1; position < len(result); position++ {
-		if result[position-1].ID == result[position].ID {
-			return nil, fmt.Errorf("duplicate pattern source ref %q", result[position].SourceRef)
-		}
-	}
 	return result, nil
 }
 
@@ -1506,8 +1866,22 @@ func canonicalizePatternArguments(
 	bindings []objectBinding,
 	pendingValueSources map[string]pendingPatternValueSourceArguments,
 ) ([]PatternArgument, error) {
+	values = slices.Clone(values)
+	sort.Slice(values, func(i, j int) bool {
+		left, right := values[i], values[j]
+		if left.Position > 0 && right.Position == 0 {
+			return true
+		}
+		if left.Position == 0 && right.Position > 0 {
+			return false
+		}
+		if left.Position > 0 {
+			return left.Position < right.Position
+		}
+		return left.Keyword < right.Keyword
+	})
 	result := make([]PatternArgument, 0, len(values))
-	for _, value := range values {
+	for position, value := range values {
 		if !validPatternArgumentKey(value.Position, value.Keyword) || !value.Kind.Valid() {
 			return nil, fmt.Errorf("invalid argument input")
 		}
@@ -1536,7 +1910,10 @@ func canonicalizePatternArguments(
 		if err != nil {
 			return nil, fmt.Errorf("argument %q objects: %w", patternArgumentKey(value.Position, value.Keyword), err)
 		}
-		argumentID := stableID("program-pattern-argument", patternID, patternArgumentKey(value.Position, value.Keyword))
+		if position > 0 && patternArgumentKey(values[position-1].Position, values[position-1].Keyword) == patternArgumentKey(value.Position, value.Keyword) {
+			return nil, fmt.Errorf("duplicate argument key %q", patternArgumentKey(value.Position, value.Keyword))
+		}
+		argumentID := patternID + "a" + strconv.Itoa(position+1)
 		valueCandidates, valueCandidatesOmitted, err := canonicalizePatternValueCandidates(
 			value.ValueCandidates, value.ValueCandidatesObserved, argumentID, bindings, pendingValueSources,
 		)
@@ -1553,12 +1930,6 @@ func canonicalizePatternArguments(
 			ValueCandidatesOmitted: valueCandidatesOmitted,
 		}
 		result = append(result, argument)
-	}
-	sort.Slice(result, func(i, j int) bool { return comparePatternArguments(result[i], result[j]) < 0 })
-	for position := 1; position < len(result); position++ {
-		if comparePatternArguments(result[position-1], result[position]) == 0 {
-			return nil, fmt.Errorf("duplicate argument key %q", patternArgumentKey(result[position].Position, result[position].Keyword))
-		}
 	}
 	return result, nil
 }
@@ -1617,9 +1988,6 @@ func canonicalizePatternValueCandidates(
 				return nil, 0, fmt.Errorf("initializer candidate has invalid sources")
 			}
 			candidate.ID = patternValueCandidateIdentity(argumentID, candidate)
-			if err := validatePatternValueCandidateShape(candidate, argumentID); err != nil {
-				return nil, 0, err
-			}
 		case PatternValueSourceActualArgument:
 			if len(sourceIDs) != 0 || len(sourceArgumentRefs) == 0 || value.Resolution != PatternValuePossible {
 				return nil, 0, fmt.Errorf("actual-argument candidate has invalid sources or authority")
@@ -1639,6 +2007,15 @@ func canonicalizePatternValueCandidates(
 		if result[position-1].ID == result[position].ID {
 			return nil, 0, fmt.Errorf("duplicate candidate identity %q", result[position].ID)
 		}
+	}
+	for position := range result {
+		oldID := result[position].ID
+		newID := argumentID + "v" + strconv.Itoa(position+1)
+		if pending, ok := pendingValueSources[oldID]; ok {
+			delete(pendingValueSources, oldID)
+			pendingValueSources[newID] = pending
+		}
+		result[position].ID = newID
 	}
 	return result, observed - len(result), nil
 }
@@ -1764,15 +2141,12 @@ func validateRelationPatternShape(value RelationPattern, relationID string) erro
 			return fmt.Errorf("program index: noncanonical pattern context")
 		}
 	}
-	if !validText(value.ID) || !validText(value.SourceRef) || !value.Form.Valid() || !validText(value.Selector) ||
+	if !strings.HasPrefix(value.ID, relationID+"p") || !value.Form.Valid() || !validText(value.Selector) ||
 		!validOptionalLocation(value.Location) ||
 		!validOptionalText(value.ResultID) || !validOptionalText(value.ReceiverID) ||
 		value.ReceiverOriginIDs == nil || value.Arguments == nil ||
 		!canonicalStringsAllowEmpty(value.ReceiverOriginIDs) {
 		return fmt.Errorf("program index: invalid relation pattern")
-	}
-	if value.ID != stableID("program-pattern", relationID, value.SourceRef) {
-		return fmt.Errorf("program index: pattern identity mismatch")
 	}
 	if err := validateOptionalObjectAuthority(value.ReceiverOriginIDs, value.ReceiverOriginResolution,
 		value.ReceiverOriginsObserved, value.ReceiverOriginsOmitted); err != nil {
@@ -1786,8 +2160,11 @@ func validateRelationPatternShape(value RelationPattern, relationID string) erro
 		if err := validatePatternArgumentShape(argument, value.ID); err != nil {
 			return err
 		}
-		if position > 0 && comparePatternArguments(value.Arguments[position-1], argument) >= 0 {
-			return fmt.Errorf("program index: pattern arguments are not canonical")
+		if argument.ID != value.ID+"a"+strconv.Itoa(position+1) ||
+			position > 0 && comparePatternArguments(value.Arguments[position-1], argument) >= 0 {
+			return fmt.Errorf("program index: pattern arguments are not canonical at %s: previous=%d/%q current=%s:%d/%q",
+				value.ID, value.Arguments[max(0, position-1)].Position, value.Arguments[max(0, position-1)].Keyword,
+				argument.ID, argument.Position, argument.Keyword)
 		}
 	}
 	return nil
@@ -1797,13 +2174,10 @@ func validatePatternArgumentShape(value PatternArgument, patternID string) error
 	if err := sourcevalue.Validate(value.Origin); err != nil {
 		return err
 	}
-	if !validText(value.ID) || !validPatternArgumentKey(value.Position, value.Keyword) || !value.Kind.Valid() ||
+	if !strings.HasPrefix(value.ID, patternID+"a") || !validPatternArgumentKey(value.Position, value.Keyword) || !value.Kind.Valid() ||
 		value.Parts == nil || value.ObjectIDs == nil || value.ValueCandidates == nil ||
 		!canonicalStringsAllowEmpty(value.ObjectIDs) {
 		return fmt.Errorf("program index: invalid pattern argument")
-	}
-	if value.ID != stableID("program-pattern-argument", patternID, patternArgumentKey(value.Position, value.Keyword)) {
-		return fmt.Errorf("program index: pattern argument identity mismatch")
 	}
 	if err := validateOptionalObjectAuthority(value.ObjectIDs, value.Resolution, value.ObjectsObserved, value.ObjectsOmitted); err != nil {
 		return fmt.Errorf("program index: invalid pattern argument object coverage")
@@ -1818,7 +2192,7 @@ func validatePatternArgumentShape(value PatternArgument, patternID string) error
 		if err := validatePatternValueCandidateShape(candidate, value.ID); err != nil {
 			return err
 		}
-		if position > 0 && value.ValueCandidates[position-1].ID >= candidate.ID {
+		if candidate.ID != value.ID+"v"+strconv.Itoa(position+1) {
 			return fmt.Errorf("program index: pattern value candidates are not canonical")
 		}
 	}
@@ -1854,7 +2228,7 @@ func validatePatternArgumentShape(value PatternArgument, patternID string) error
 }
 
 func validatePatternValueCandidateShape(value PatternValueCandidate, argumentID string) error {
-	if !validText(value.ID) || !value.Resolution.Valid() || !value.SourceKind.Valid() ||
+	if !strings.HasPrefix(value.ID, argumentID+"v") || !value.Resolution.Valid() || !value.SourceKind.Valid() ||
 		value.Parts == nil || value.SourceObjectIDs == nil || value.SourceArgumentIDs == nil ||
 		!canonicalStringsAllowEmpty(value.SourceObjectIDs) || !canonicalStringsAllowEmpty(value.SourceArgumentIDs) ||
 		value.SourceObjectsObserved != len(value.SourceObjectIDs) || value.SourceObjectsOmitted != 0 ||
@@ -1872,9 +2246,6 @@ func validatePatternValueCandidateShape(value PatternValueCandidate, argumentID 
 			value.Resolution != PatternValuePossible {
 			return fmt.Errorf("program index: invalid actual-argument value candidate sources")
 		}
-	}
-	if value.ID != patternValueCandidateIdentity(argumentID, value) {
-		return fmt.Errorf("program index: pattern value candidate identity mismatch")
 	}
 	switch value.Kind {
 	case PatternLiteralString:
@@ -2056,16 +2427,7 @@ func resolvePatternValueSourceArgumentReferences(
 					candidate.SourceArgumentIDs = ids
 					candidate.SourceArgumentsObserved = value.Observed
 					candidate.SourceArgumentsOmitted = 0
-					candidate.ID = patternValueCandidateIdentity(argument.ID, *candidate)
 					resolvedPending[pendingID] = struct{}{}
-				}
-				sort.Slice(argument.ValueCandidates, func(i, j int) bool {
-					return argument.ValueCandidates[i].ID < argument.ValueCandidates[j].ID
-				})
-				for position := 1; position < len(argument.ValueCandidates); position++ {
-					if argument.ValueCandidates[position-1].ID == argument.ValueCandidates[position].ID {
-						return fmt.Errorf("program index: duplicate resolved pattern value candidate")
-					}
 				}
 			}
 		}
@@ -2234,24 +2596,6 @@ func indexDigest(index Index) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
-func targetObjectScopeIdentity(target Target) string {
-	fields := make([]string, 0, 4+2*len(target.Sources))
-	fields = append(fields, target.Language, target.Kind, target.Selector, target.AnchorFileRef)
-	for _, source := range target.Sources {
-		fields = append(fields, source.FileRef, source.Path)
-	}
-	return stableID("program-target-scope", fields...)
-}
-
-func targetIdentity(target Target) string {
-	fields := make([]string, 0, 1+3*len(target.Seeds))
-	fields = append(fields, targetObjectScopeIdentity(target))
-	for _, seed := range target.Seeds {
-		fields = append(fields, seed.ObjectID, string(seed.Kind), locationKey(seed.Location))
-	}
-	return stableID("program-target", fields...)
-}
-
 func stableID(prefix string, fields ...string) string {
 	digest := sha256.New()
 	for _, field := range append([]string{prefix}, fields...) {
@@ -2339,78 +2683,6 @@ func cloneExternalSymbol(value *ExternalSymbol) *ExternalSymbol {
 	}
 	copyValue := *value
 	return &copyValue
-}
-
-func canonicalizeSymbolLinkIdentityInputs(values []SymbolLinkIdentityInput) ([]SymbolLinkIdentity, error) {
-	if len(values) == 0 {
-		return nil, nil
-	}
-	result := make([]SymbolLinkIdentity, 0, len(values))
-	for _, value := range values {
-		if !validText(value.Domain) || !validOptionalText(value.Display) ||
-			len(value.Parts) == 0 {
-			return nil, fmt.Errorf("invalid identity")
-		}
-		parts := cloneStrings(value.Parts)
-		for _, part := range parts {
-			if !validText(part) {
-				return nil, fmt.Errorf("invalid identity part")
-			}
-		}
-		result = append(result, SymbolLinkIdentity{
-			Domain:    value.Domain,
-			Key:       stableID("symbol-link", append([]string{value.Domain}, parts...)...),
-			Display:   value.Display,
-			PartCount: len(parts),
-		})
-	}
-	sort.Slice(result, func(i, j int) bool { return symbolLinkIdentityKey(result[i]) < symbolLinkIdentityKey(result[j]) })
-	compacted := result[:0]
-	for _, identity := range result {
-		if len(compacted) > 0 && compacted[len(compacted)-1].Domain == identity.Domain &&
-			compacted[len(compacted)-1].Key == identity.Key {
-			if compacted[len(compacted)-1].Display != identity.Display {
-				return nil, fmt.Errorf("conflicting display for one exact identity")
-			}
-			continue
-		}
-		compacted = append(compacted, identity)
-	}
-	return compacted, nil
-}
-
-func canonicalSymbolLinkIdentities(values []SymbolLinkIdentity) bool {
-	previous := ""
-	for _, value := range values {
-		if !validText(value.Domain) || !validSymbolLinkKey(value.Key) || !validOptionalText(value.Display) ||
-			value.PartCount <= 0 {
-			return false
-		}
-		key := symbolLinkIdentityKey(value)
-		if previous != "" && previous >= key {
-			return false
-		}
-		previous = key
-	}
-	return true
-}
-
-func symbolLinkIdentityKey(value SymbolLinkIdentity) string {
-	return value.Domain + "\x00" + value.Key
-}
-
-func validSymbolLinkKey(value string) bool {
-	const prefix = "symbol-link-"
-	return strings.HasPrefix(value, prefix) && validSHA256(strings.TrimPrefix(value, prefix))
-}
-
-func cloneSymbolLinkIdentities(values []SymbolLinkIdentity) []SymbolLinkIdentity {
-	if values == nil {
-		return nil
-	}
-	result := make([]SymbolLinkIdentity, len(values))
-	copy(result, values)
-	return result
 }
 
 func validSHA256(value string) bool {

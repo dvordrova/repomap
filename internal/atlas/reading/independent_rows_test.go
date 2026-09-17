@@ -44,7 +44,7 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 		}
 		return r
 	}
-	response := []byte(`{"extra":{"ignored":true},"rows":[{"key":"r1","entry":"self","name_kind":"label","activation":"command","name":"First","description":"Runs first.","extra":[1]},{"key":"r2","entry":"u1","activation":"command","name":"Second","description":"Runs second."},{"key":"r3","entry":"none","activation":"none","name":"Third","description":"No operation."}]}`)
+	response := []byte(`{"extra":{"ignored":true},"rows":[{"key":"first","entry":"self","name_kind":"label","activation":"command","name":"First","description":"Runs first.","extra":[1]},{"key":"second","entry":"u1","activation":"command","name":"Second","description":"Runs second."},{"key":"third","entry":"none","activation":"none","name":"Third","description":"No operation."}]}`)
 	provider := &independentResponseProvider{response: response}
 	r := newReader(provider)
 	var messages []string
@@ -53,7 +53,7 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 	if err != nil || first[0].answer["name"] != "First" || first[1].answer != nil || first[1].source != atlas.SourceGiven || first[2].answer["entry"] != "none" {
 		t.Fatalf("one unsupported u1 removed valid operations: %+v / %v; rejected=%+v", first, err, r.rejected)
 	}
-	if len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || !strings.Contains(r.rejected[0].Reason, `"u1"`) || r.rejected[0].Samples[0] != "r2" || r.rejected[0].ResponseRef == "" {
+	if len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || !strings.Contains(r.rejected[0].Reason, `"u1"`) || r.rejected[0].Samples[0] != "second" || r.rejected[0].ResponseRef == "" {
 		t.Fatalf("refused row lost its reason and original response: %+v", r.rejected)
 	}
 	if !strings.Contains(strings.Join(messages, "\n"), "1 rows rejected, 2 accepted in this response") || r.use(def.Stage).Given != 1 {
@@ -75,7 +75,7 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 	}
 	// The accepted neighbours are recalled using their original row keys after
 	// reordering. Only the previously refused row is requested again.
-	warmProvider := &independentResponseProvider{response: []byte(`{"rows":[{"key":"r1","entry":"self","name_kind":"label","activation":"command","name":"Second","description":"Runs second."}]}`)}
+	warmProvider := &independentResponseProvider{response: []byte(`{"rows":[{"key":"second","entry":"self","name_kind":"label","activation":"command","name":"Second","description":"Runs second."}]}`)}
 	warm := newReader(warmProvider)
 	warmed, err := warm.runIndependent(t.Context(), def, 1, rowGroups{{rows: []table.Row{rows[2], rows[1], rows[0]}}})
 	if err != nil || warmProvider.calls != 1 || warmed[0].source != atlas.SourceCache || warmed[1].source != atlas.SourceModel || warmed[2].source != atlas.SourceCache {
@@ -83,7 +83,7 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 	}
 	// Replay preserves the original window. A malformed/duplicated neighbouring
 	// row must not prevent either accepted memo from reading the new response.
-	replayed := []byte(`{"extra":true,"rows":[{"key":"r1","entry":"self","name_kind":"label","activation":"command","name":"Updated first","description":"Runs first."},{"key":"r2","entry":42},{"key":"r2","entry":"u1"},{"key":"r3","entry":"none","activation":"none","name":"Third","description":"No operation."}]}`)
+	replayed := []byte(`{"extra":true,"rows":[{"key":"first","entry":"self","name_kind":"label","activation":"command","name":"Updated first","description":"Runs first."},{"key":"second","entry":42},{"key":"second","entry":"u1"},{"key":"third","entry":"none","activation":"none","name":"Third","description":"No operation."}]}`)
 	prepared, err := llm.NewPrepared(exchange.Request)
 	if err != nil {
 		t.Fatal(err)

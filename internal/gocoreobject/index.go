@@ -10,12 +10,13 @@ import (
 	"go/token"
 	"io/fs"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 )
 
-const Version = 4
+const Version = 6
 
 type TypeKind string
 
@@ -99,11 +100,13 @@ type TypeDeclaration struct {
 // FieldDeclaration belongs to the enclosing native type declaration. Embedded
 // fields are declarations; their promoted members are not new declarations.
 type FieldDeclaration struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Signature string   `json:"signature"`
-	Exported  bool     `json:"exported"`
-	Location  Location `json:"location"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Signature string `json:"signature"`
+	// Tag is the raw struct tag, without Go quoting.
+	Tag      string   `json:"tag,omitempty"`
+	Exported bool     `json:"exported"`
+	Location Location `json:"location"`
 }
 
 type CallableDeclaration struct {
@@ -118,31 +121,46 @@ type CallableDeclaration struct {
 	DirectCallNodeID string       `json:"direct_call_node_id,omitempty"`
 }
 
+// InterfaceImplementation is an exhaustive, target-scoped Go method-set
+// match. It is type compatibility, not evidence that a value was constructed,
+// assigned, or dispatched at runtime.
+type InterfaceImplementation struct {
+	InterfacePackage      string `json:"interface_package"`
+	InterfaceName         string `json:"interface_name"`
+	ImplementationPackage string `json:"implementation_package"`
+	ImplementationName    string `json:"implementation_name"`
+	ValueReceiver         bool   `json:"value_receiver,omitempty"`
+	PointerReceiver       bool   `json:"pointer_receiver,omitempty"`
+}
+
 type Coverage struct {
-	PackagesIndexed  int `json:"packages_indexed"`
-	TypesIndexed     int `json:"types_indexed"`
-	CallablesIndexed int `json:"callables_indexed"`
+	PackagesIndexed                 int `json:"packages_indexed"`
+	TypesIndexed                    int `json:"types_indexed"`
+	CallablesIndexed                int `json:"callables_indexed"`
+	InterfaceImplementationsIndexed int `json:"interface_implementations_indexed"`
 }
 
 // Input is the complete exact fact projection prepared by the Go adapter. New
 // canonicalizes, assigns local identities, validates, and seals it.
 type Input struct {
-	Scenario  Scenario
-	Scope     Scope
-	Packages  []Package
-	Types     []TypeDeclaration
-	Callables []CallableDeclaration
+	Scenario                 Scenario
+	Scope                    Scope
+	Packages                 []Package
+	Types                    []TypeDeclaration
+	Callables                []CallableDeclaration
+	InterfaceImplementations []InterfaceImplementation
 }
 
 type Index struct {
-	Version   int                   `json:"version"`
-	Scenario  Scenario              `json:"scenario"`
-	Scope     Scope                 `json:"scope"`
-	Packages  []Package             `json:"packages"`
-	Types     []TypeDeclaration     `json:"types"`
-	Callables []CallableDeclaration `json:"callables"`
-	Coverage  Coverage              `json:"coverage"`
-	SHA256    string                `json:"sha256"`
+	Version                  int                       `json:"version"`
+	Scenario                 Scenario                  `json:"scenario"`
+	Scope                    Scope                     `json:"scope"`
+	Packages                 []Package                 `json:"packages"`
+	Types                    []TypeDeclaration         `json:"types"`
+	Callables                []CallableDeclaration     `json:"callables"`
+	InterfaceImplementations []InterfaceImplementation `json:"interface_implementations"`
+	Coverage                 Coverage                  `json:"coverage"`
+	SHA256                   string                    `json:"sha256"`
 }
 
 func New(input Input) (Index, error) {
@@ -158,9 +176,10 @@ func New(input Input) (Index, error) {
 			TargetModuleDir: input.Scope.TargetModuleDir, TargetPackage: input.Scope.TargetPackage,
 			TargetPackages: append([]string(nil), input.Scope.TargetPackages...),
 		},
-		Packages:  append([]Package(nil), input.Packages...),
-		Types:     append([]TypeDeclaration(nil), input.Types...),
-		Callables: append([]CallableDeclaration(nil), input.Callables...),
+		Packages:                 append([]Package(nil), input.Packages...),
+		Types:                    append([]TypeDeclaration(nil), input.Types...),
+		Callables:                append([]CallableDeclaration(nil), input.Callables...),
+		InterfaceImplementations: append([]InterfaceImplementation(nil), input.InterfaceImplementations...),
 	}
 	sort.Strings(index.Scenario.Tags)
 	index.Scenario.Tags = compactStrings(index.Scenario.Tags)
@@ -222,9 +241,13 @@ func New(input Input) (Index, error) {
 	}
 	sort.Slice(index.Types, func(i, j int) bool { return typeKey(index.Types[i]) < typeKey(index.Types[j]) })
 	sort.Slice(index.Callables, func(i, j int) bool { return callableKey(index.Callables[i]) < callableKey(index.Callables[j]) })
+	sort.Slice(index.InterfaceImplementations, func(i, j int) bool {
+		return interfaceImplementationKey(index.InterfaceImplementations[i]) < interfaceImplementationKey(index.InterfaceImplementations[j])
+	})
+	index.InterfaceImplementations = compactInterfaceImplementations(index.InterfaceImplementations)
 	index.Coverage = Coverage{
 		PackagesIndexed: len(index.Packages), TypesIndexed: len(index.Types),
-		CallablesIndexed: len(index.Callables),
+		CallablesIndexed: len(index.Callables), InterfaceImplementationsIndexed: len(index.InterfaceImplementations),
 	}
 	digest, err := indexDigest(index)
 	if err != nil {
@@ -247,6 +270,7 @@ func (index Index) Snapshot() Index {
 		result.Types[position].Fields = append([]FieldDeclaration(nil), result.Types[position].Fields...)
 	}
 	result.Callables = append([]CallableDeclaration(nil), index.Callables...)
+	result.InterfaceImplementations = append([]InterfaceImplementation(nil), index.InterfaceImplementations...)
 	return result
 }
 
@@ -333,9 +357,22 @@ func (index Index) Validate() error {
 		}
 		callableIDs[declaration.ID] = struct{}{}
 	}
+	typesByName := make(map[string]TypeDeclaration, len(index.Types))
+	for _, declaration := range index.Types {
+		typesByName[declaration.Package+"\x00"+declaration.Name] = declaration
+	}
+	for position, match := range index.InterfaceImplementations {
+		iface, interfaceExists := typesByName[match.InterfacePackage+"\x00"+match.InterfaceName]
+		implementation, implementationExists := typesByName[match.ImplementationPackage+"\x00"+match.ImplementationName]
+		if !interfaceExists || !implementationExists || iface.Kind != TypeInterface || implementation.Kind == TypeInterface ||
+			implementation.Kind == TypeAlias || !match.ValueReceiver && !match.PointerReceiver ||
+			position > 0 && interfaceImplementationKey(index.InterfaceImplementations[position-1]) >= interfaceImplementationKey(match) {
+			return fmt.Errorf("go core object index: invalid interface implementation")
+		}
+	}
 	if index.Coverage != (Coverage{
 		PackagesIndexed: len(index.Packages), TypesIndexed: len(index.Types),
-		CallablesIndexed: len(index.Callables),
+		CallablesIndexed: len(index.Callables), InterfaceImplementationsIndexed: len(index.InterfaceImplementations),
 	}) {
 		return fmt.Errorf("go core object index: invalid coverage")
 	}
@@ -387,6 +424,24 @@ func callableKey(value CallableDeclaration) string {
 	return strings.Join([]string{
 		value.Package, locationKey(value.Location), value.Receiver, value.Name, string(value.Kind), value.ID,
 	}, "\x00")
+}
+
+func interfaceImplementationKey(value InterfaceImplementation) string {
+	return strings.Join([]string{
+		value.InterfacePackage, value.InterfaceName,
+		value.ImplementationPackage, value.ImplementationName,
+		strconv.FormatBool(value.ValueReceiver), strconv.FormatBool(value.PointerReceiver),
+	}, "\x00")
+}
+
+func compactInterfaceImplementations(values []InterfaceImplementation) []InterfaceImplementation {
+	result := values[:0]
+	for _, value := range values {
+		if len(result) == 0 || result[len(result)-1] != value {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func locationKey(value Location) string {

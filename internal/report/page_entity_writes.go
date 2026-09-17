@@ -39,11 +39,19 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, root string
 			!reached[edge.FromSubjectID] || edge.Location == nil {
 			continue
 		}
-		field := builder.subjects[edge.ToSubjectID].subject.Object
+		fieldRef, known := builder.subject(index.Target.ID, edge.ToSubjectID)
+		if !known {
+			continue
+		}
+		field := fieldRef.subject.Object
 		if field == nil || field.Kind != programindex.ObjectVariable || field.OwnerID == "" {
 			continue
 		}
-		entity := builder.subjects[field.OwnerID].subject
+		entityRef, known := builder.subject(index.Target.ID, field.OwnerID)
+		if !known {
+			continue
+		}
+		entity := entityRef.subject
 		if entity.Object == nil || entity.Object.Kind != programindex.ObjectType {
 			continue
 		}
@@ -51,7 +59,7 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, root string
 		if anchor == nil {
 			continue
 		}
-		steps := builder.callWitness(root, edge.FromSubjectID, parents)
+		steps := builder.callWitness(index.Target.ID, root, edge.FromSubjectID, parents)
 		if len(steps) == 0 {
 			continue
 		}

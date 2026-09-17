@@ -56,7 +56,7 @@ func TestCumulativePythonExplicitFacadesRetainFactoryCallbackAuthority(t *testin
 		for _, target := range relation.ToIDs {
 			if target == factory && relation.Kind == programindex.RelationCalls {
 				factoryCalls++
-				if relation.Resolution != programindex.ResolutionAlternatives {
+				if relation.Resolution != programindex.ResolutionExact {
 					t.Fatalf("facade import invented exact factory dispatch: %+v", relation)
 				}
 			}
@@ -77,7 +77,7 @@ func TestCumulativePythonExplicitFacadesRetainFactoryCallbackAuthority(t *testin
 					continue
 				}
 				callbacks++
-				if len(argument.ObjectIDs) != 1 || argument.ObjectIDs[0] != callback || argument.Resolution != programindex.ResolutionAlternatives || argument.ObjectsObserved != 1 {
+				if len(argument.ObjectIDs) != 1 || argument.ObjectIDs[0] != callback || argument.Resolution != programindex.ResolutionExact || argument.ObjectsObserved != 1 {
 					t.Fatalf("explicit re-export factory lost possible original callback: %+v", argument)
 				}
 			}
@@ -98,7 +98,7 @@ func TestCumulativePythonExplicitFacadesRetainFactoryCallbackAuthority(t *testin
 			t.Fatalf("graph lost or invented facade receiver registrations: %+v", place.Symbol.Bindings)
 		}
 		for _, binding := range place.Symbol.Bindings {
-			if binding.Resolution != "alternatives" || binding.Path != prefix+"consumer.py" || !strings.Contains(binding.From, "Bot.__init__") || strings.Contains(binding.From, "UnknownBot") {
+			if binding.Resolution != "exact" || binding.Path != prefix+"consumer.py" || !strings.Contains(binding.From, "Bot.__init__") || strings.Contains(binding.From, "UnknownBot") {
 				t.Fatalf("graph changed original owner/authority: %+v", binding)
 			}
 			foundTime := false
@@ -140,7 +140,7 @@ func TestCumulativePythonTypedParameterKeepsPossibleOriginalMethod(t *testing.T)
 		}
 		if relation.Location.Line == 5 {
 			known++
-			if relation.Resolution != programindex.ResolutionAlternatives || len(relation.ToIDs) != 1 || relation.ToIDs[0] != method {
+			if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 || relation.ToIDs[0] != method {
 				t.Fatalf("written local type lost original possible method: %+v", relation)
 			}
 		} else {

@@ -12,7 +12,7 @@ import (
 )
 
 func TestAnswerScopesAreSharedExactlyWithoutBroadeningPartialParts(t *testing.T) {
-	routes := []atlas.QuestionRoute{{Question: "First?", Scope: []string{"Original complete scope.", "No runtime observations."}}, {Question: "Second?", Scope: []string{"Original complete scope.", "No runtime observations."}}, {Question: "Partial?", Scope: []string{"Only selected sources inspected."}}}
+	routes := []atlas.QuestionRoute{{ID: "q1", Question: "First?", Scope: []string{"Original complete scope.", "No runtime observations."}}, {ID: "q3", Question: "Second?", Scope: []string{"Original complete scope.", "No runtime observations."}}, {ID: "q2", Question: "Partial?", Scope: []string{"Only selected sources inspected."}}}
 	window, err := makeAnswerWindow(lines.Answer(), routes, []answerQuestion{{index: 0, complete: true}, {index: 1, complete: true}, {index: 2, complete: false}})
 	if err != nil {
 		t.Fatal(err)

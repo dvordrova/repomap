@@ -86,6 +86,10 @@ type Column struct {
 	// required. Empty leaves an unasked cell without a value, as a file's
 	// box that may not move. A decoder rule like Missing.
 	Unasked string `json:"-"`
+	// Optional lets the model leave the cell out or send null: the row then
+	// has no value for it, which is the answer "not this". A written choice
+	// is still validated. A decoder rule like Missing.
+	Optional bool `json:"-"`
 	// WhenOptionsFrom requires this cell only when the named input field, in
 	// the row or the window context, has advertised choices. A row without
 	// the field has no decision to request or validate: an address cell is
@@ -127,14 +131,16 @@ type Field struct {
 	Value any
 }
 
-// Row is one thing the model is asked about. ID is the code-side identity;
-// the model sees only the window-local key.
+// Row is one thing the model is asked about. ID is its existing artifact
+// identity and is also the closed key copied by the model. The table layer
+// never invents a second, window-local identity.
 type Row struct {
 	ID     string
 	Fields []Field
 }
 
-// Window is one request with keys r1..rN and optional Definition.Window row limit.
+// Window is one request with the rows' existing IDs and an optional
+// Definition.Window row limit.
 // Context is what every row of the window shares: a closed list of names to
 // choose from, a count the answer is measured against.
 type Window struct {
@@ -145,9 +151,6 @@ type Window struct {
 	Rows    []Row
 	Request []byte
 }
-
-// Key is the window-local key of row i.
-func Key(i int) string { return fmt.Sprintf("r%d", i+1) }
 
 // Windows packs rows into windows of the definition's budgets, keeping the
 // caller's order. Boundaries are the caller's business: it sorts rows by path
@@ -199,7 +202,7 @@ func WindowsWithContext(def Definition, round int, context []Field, rows []Row) 
 			start, position, size = i, 0, baseSize
 		}
 		var encoded jsonBuffer
-		writeRow(&encoded, position, row)
+		writeRow(&encoded, row)
 		if encoded.err != nil {
 			return nil, fmt.Errorf("table %s: encode evidence: %w", def.Stage, encoded.err)
 		}
@@ -213,7 +216,7 @@ func WindowsWithContext(def Definition, round int, context []Field, rows []Row) 
 			}
 			start, size = i, baseSize
 			encoded.Reset()
-			writeRow(&encoded, 0, row)
+			writeRow(&encoded, row)
 			if encoded.err != nil {
 				return nil, fmt.Errorf("table %s: encode evidence: %w", def.Stage, encoded.err)
 			}
@@ -230,9 +233,9 @@ func WindowsWithContext(def Definition, round int, context []Field, rows []Row) 
 	return windows, nil
 }
 
-func writeRow(out *jsonBuffer, index int, row Row) {
+func writeRow(out *jsonBuffer, row Row) {
 	out.WriteString("    {\"key\": ")
-	writeJSON(out, Key(index))
+	writeJSON(out, row.ID)
 	for _, field := range row.Fields {
 		out.WriteString(", ")
 		writeJSON(out, field.Name)
@@ -245,6 +248,9 @@ func writeRow(out *jsonBuffer, index int, row Row) {
 // Request is the exact user prompt of a window: one JSON object with the
 // table name, the columns to fill and the rows. Field order is the caller's.
 func Request(def Definition, window Window) ([]byte, error) {
+	if _, err := rowIndexes(window.Rows); err != nil {
+		return nil, fmt.Errorf("table %s: %w", def.Stage, err)
+	}
 	var out jsonBuffer
 	out.WriteString("{\n  \"table\": ")
 	writeJSON(&out, def.Stage)
@@ -307,7 +313,7 @@ func Request(def Definition, window Window) ([]byte, error) {
 		if i > 0 {
 			out.WriteString(",\n")
 		}
-		writeRow(&out, i, row)
+		writeRow(&out, row)
 	}
 	out.WriteString("\n  ]")
 	if def.ContextAfterRows {
@@ -345,21 +351,6 @@ type Answer map[string]string
 // Answers are the window's rows in request order.
 type Answers []Answer
 
-// AcceptedRowKeys preserves whole-response metadata for complete tables and
-// limits a partial independent result to the rows whose required cells passed.
-func (answers Answers) AcceptedRowKeys() []string {
-	keys := make([]string, 0, len(answers))
-	for i, answer := range answers {
-		if answer != nil {
-			keys = append(keys, Key(i))
-		}
-	}
-	if len(keys) == len(answers) {
-		return nil
-	}
-	return keys
-}
-
 // Decode returns accepted cells in request order, with nil for an independently
 // rejected row. DecodeResult additionally reports each rejection's reason.
 func Decode(def Definition, window Window, raw []byte) (Answers, error) {
@@ -384,6 +375,10 @@ func decodeWindow(def Definition, window Window, raw []byte) (Answers, error) {
 		return nil, fmt.Errorf("table %s: %d rows answered, %d asked", def.Stage, len(envelope.Rows), len(window.Rows))
 	}
 	answers := make(Answers, len(window.Rows))
+	byKey, err := rowIndexes(window.Rows)
+	if err != nil {
+		return nil, fmt.Errorf("table %s: %w", def.Stage, err)
+	}
 	seen := make(map[string]struct{}, len(window.Rows))
 	for _, cells := range envelope.Rows {
 		keyRaw, ok := cells["key"]
@@ -394,7 +389,7 @@ func decodeWindow(def Definition, window Window, raw []byte) (Answers, error) {
 		if err := json.Unmarshal(keyRaw, &key); err != nil {
 			return nil, fmt.Errorf("table %s: a row key is not a string", def.Stage)
 		}
-		index, ok := keyIndex(key, len(window.Rows))
+		index, ok := byKey[key]
 		if !ok {
 			return nil, fmt.Errorf("table %s: key %q was not asked", def.Stage, key)
 		}
@@ -426,18 +421,18 @@ func decodeWindow(def Definition, window Window, raw []byte) (Answers, error) {
 	return answers, nil
 }
 
-func keyIndex(key string, count int) (int, bool) {
-	if !strings.HasPrefix(key, "r") {
-		return 0, false
+func rowIndexes(rows []Row) (map[string]int, error) {
+	result := make(map[string]int, len(rows))
+	for i, row := range rows {
+		if row.ID == "" {
+			return nil, fmt.Errorf("row %d has no ID", i+1)
+		}
+		if _, exists := result[row.ID]; exists {
+			return nil, fmt.Errorf("row ID %q is duplicated", row.ID)
+		}
+		result[row.ID] = i
 	}
-	var index int
-	if _, err := fmt.Sscanf(key, "r%d", &index); err != nil || index < 1 || index > count {
-		return 0, false
-	}
-	if Key(index-1) != key {
-		return 0, false
-	}
-	return index - 1, true
+	return result, nil
 }
 
 func normalizeCell(column Column, context []Field, row Row, cell string) (string, error) {
@@ -674,7 +669,7 @@ func Call(def Definition, window Window) (llm.Call[Answers], error) {
 		State: state,
 		Prompt: llm.Prompt{
 			System: def.System, User: string(window.Request), ResponseFormatJSON: true,
-			Reasoning: def.Reasoning, ResponseExample: ResponseExample(def), NoResponseAdjunct: !hasProse,
+			Reasoning: def.Reasoning, ResponseExample: ResponseExample(def, window), NoResponseAdjunct: !hasProse,
 		},
 		Limits: llm.Limits{
 			MaxRequestBytes:  llm.SemanticRecordByteLimit,
@@ -687,14 +682,50 @@ func Call(def Definition, window Window) (llm.Call[Answers], error) {
 	}, nil
 }
 
+// MemoIdentity identifies the interpretation input without its owning row ID.
+// Equal evidence may be interpreted once for multiple artifact owners, while
+// every actual provider request and response still uses each artifact's ID.
+// No substitute row key is minted for memoization.
+func MemoIdentity(provider llm.Provider, def Definition, window Window) (string, error) {
+	type memoRow struct {
+		Fields []Field `json:"fields"`
+	}
+	rows := make([]memoRow, len(window.Rows))
+	for i, row := range window.Rows {
+		rows[i] = memoRow{Fields: row.Fields}
+	}
+	semantic, err := json.Marshal(struct {
+		Table   string    `json:"table"`
+		Fill    []Column  `json:"fill"`
+		Context []Field   `json:"context,omitempty"`
+		Rows    []memoRow `json:"rows"`
+	}{def.Stage, def.Columns, window.Context, rows})
+	if err != nil {
+		return "", err
+	}
+	state, err := json.Marshal(struct {
+		Contract  string `json:"contract"`
+		Prompt    string `json:"prompt_sha256"`
+		Reasoning bool   `json:"reasoning,omitempty"`
+	}{def.Contract, sha256Hex([]byte(def.System)), def.Reasoning})
+	if err != nil {
+		return "", err
+	}
+	return llm.MemoIdentityBytes(provider, state, semantic)
+}
+
 // ResponseExample is the one-line answer shape appended to every system
 // prompt: the row key first, then the cells in fill order. A map would
 // marshal its keys alphabetically and show the key third; the model copies
 // the shape it sees, and the decoder reads the key before anything else.
-func ResponseExample(def Definition) string {
+func ResponseExample(def Definition, window Window) string {
 	var example strings.Builder
 	example.WriteString(`{"rows":[{"key":`)
-	example.Write(jsonString(Key(0)))
+	key := "<same row ID>"
+	if len(window.Rows) > 0 {
+		key = window.Rows[0].ID
+	}
+	example.Write(jsonString(key))
 	for _, column := range def.Columns {
 		example.WriteString(",")
 		example.Write(jsonString(column.Name))

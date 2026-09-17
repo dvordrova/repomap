@@ -142,40 +142,6 @@ func TestBoundaryRowAsksAddressOnlyWithCandidatesAndNamesItsOwner(t *testing.T) 
 	}
 }
 
-func TestBoundaryDefinitionsCarryClosedListsAsColumnOptions(t *testing.T) {
-	out := Boundaries(true)
-	names := map[string]table.Column{}
-	for _, column := range out.Columns {
-		names[column.Name] = column
-	}
-	if !reflect.DeepEqual(names["decision"].Options, []string{"boundary", "none", "unassessed"}) || !reflect.DeepEqual(names["kind"].Options, atlas.OutgoingBoundaryKinds()) {
-		t.Fatalf("closed lists are not column options: %+v", names)
-	}
-	for _, kind := range names["kind"].Options {
-		if kind == atlas.BoundaryHTTPServer || kind == atlas.BoundaryConfig {
-			t.Fatalf("an outgoing candidate may choose a kind the group index drops: %v", names["kind"].Options)
-		}
-	}
-	if names["line"].Kind != table.Text || names["line"].MaxRunes != ShortLineRunes {
-		t.Fatalf("outgoing line is not a bounded text cell: %+v", names["line"])
-	}
-	if names["destination"].OptionsFrom != "destination_options" || names["destination"].Free != DestinationOther {
-		t.Fatalf("destination is not a closed choice with a free prefix: %+v", names["destination"])
-	}
-	if names["address"].WhenOptionsFrom != "address_options" {
-		t.Fatalf("address cell is asked without candidates: %+v", names["address"])
-	}
-	if !strings.HasPrefix(out.Contract, "repomap.atlas.boundaries.v7") || !strings.HasPrefix(FixedBoundaries(true).Contract, "repomap.atlas.boundaries.v7.fixed") {
-		t.Fatalf("contract not raised: %s / %s", out.Contract, FixedBoundaries(true).Contract)
-	}
-	if FixedBoundaries(false).System == Boundaries().System || strings.Count(FixedBoundaries(false).System, "\n") > 25 {
-		t.Fatal("fixed facts share the candidate prompt or the fixed prompt is not short")
-	}
-	if !reflect.DeepEqual(Boundaries().Columns[1].Options, atlas.BoundaryKinds()) {
-		t.Fatalf("incoming candidates lost the full kind list: %v", Boundaries().Columns[1].Options)
-	}
-}
-
 func TestBoundaryWindowSharesOwnerAndDestinationsAndDecodesClosedDestination(t *testing.T) {
 	owner := atlas.Place{ID: "owner", Path: "client.go", LineNo: 10, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "publish", Doc: "Publishes events."},
 		Calls: []atlas.SymbolCall{{Kind: "invokes_external", Name: "ch.Publish", Line: 40, Values: []string{"morfeu.events"}}}}}
@@ -188,7 +154,7 @@ func TestBoundaryWindowSharesOwnerAndDestinationsAndDecodesClosedDestination(t *
 		BoundaryRow(place("first", 40), "o1", BoundaryAddresses(place("first", 40), owner), true),
 		BoundaryRow(place("second", 41), "o1", nil, true),
 	}
-	def := Boundaries(true)
+	def := FixedBoundaries(true)
 	windows, err := table.WindowsWithContext(def, 1, shared, rows)
 	if err != nil || len(windows) != 1 {
 		t.Fatalf("windows: %d, %v", len(windows), err)
@@ -201,41 +167,25 @@ func TestBoundaryWindowSharesOwnerAndDestinationsAndDecodesClosedDestination(t *
 		t.Fatalf("catalogue lost the target's dependency annotation:\n%s", request)
 	}
 	result, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[
-		{"key":"r1","decision":"boundary","kind":"queue_producer","line":"publishes catalog events to morfeu.events","destination":"d1","basis":"dispatch","address":"a1"},
-		{"key":"r2","decision":"boundary","kind":"sdk","line":"notifies the operator","destination":"other: Twilio","basis":"dispatch"}]}`))
+		{"key":"first","line":"publishes catalog events to morfeu.events","destination":"d1","address":"a1"},
+		{"key":"second","line":"notifies the operator","destination":"other: Twilio"}]}`))
 	if err != nil || len(result.Rejections) != 0 {
 		t.Fatalf("closed destination refused: %+v / %v", result, err)
 	}
 	if result.Answers[0]["destination"] != "d1" || destinations.Value(catalog, result.Answers[0]["destination"]) != "RabbitMQ" || result.Answers[0]["address"] != "a1" {
 		t.Fatalf("ref did not resolve to the listed system: %+v", result.Answers[0])
 	}
-	if free, ok := table.IsFree(def.Columns[3], result.Answers[1]["destination"]); !ok || free != "Twilio" {
+	if free, ok := table.IsFree(def.Columns[1], result.Answers[1]["destination"]); !ok || free != "Twilio" {
 		t.Fatalf("free destination lost: %+v", result.Answers[1])
 	}
 	if _, asked := result.Answers[1]["address"]; asked {
 		t.Fatalf("a row without candidates acquired an address cell: %+v", result.Answers[1])
 	}
 	refused, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[
-		{"key":"r1","decision":"boundary","kind":"queue_producer","line":"publishes","destination":"RabbitMQ broker","basis":"dispatch","address":"a1"},
-		{"key":"r2","decision":"none","kind":"","line":"","destination":"","basis":""}]}`))
-	if err != nil || len(refused.Rejections) != 1 || refused.Rejections[0].Key != "r1" || refused.Answers[1]["decision"] != "none" {
-		t.Fatalf("free text without the prefix was accepted or a negative row lost: %+v / %v", refused, err)
-	}
-	for _, decision := range []string{"none", "unassessed"} {
-		inactive, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[
-			{"key":"r1","decision":"boundary","kind":"queue_producer","line":"publishes catalog events to morfeu.events","destination":"d1","basis":"dispatch","address":"a1"},
-			{"key":"r2","decision":"`+decision+`","kind":{"invalid":true},"line":false,"destination":["d999"],"basis":17,"address":{"invalid":true}}]}`))
-		if err != nil || len(inactive.Rejections) != 0 || !reflect.DeepEqual(inactive.Answers[0], result.Answers[0]) || !reflect.DeepEqual(inactive.Answers[1], table.Answer{"decision": decision}) {
-			t.Fatalf("inactive boundary cells refused or changed a useful answer for %s: %+v / %v", decision, inactive, err)
-		}
-	}
-	// A basis written into decision is not a positive decision. Its refusal
-	// must preserve the independently valid neighbouring communication.
-	mixed, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[
-		{"key":"r1","decision":"remote_client_instance","kind":"queue_producer","line":"publishes catalog events to morfeu.events","destination":"d1","basis":"dispatch","address":"a1"},
-		{"key":"r2","decision":"boundary","kind":"sdk","line":"notifies the operator","destination":"other: Twilio","basis":"dispatch"}]}`))
-	if err != nil || len(mixed.Rejections) != 1 || mixed.Rejections[0].Key != "r1" || !strings.Contains(mixed.Rejections[0].Reason, `cell "decision" is "remote_client_instance"`) || mixed.Answers[0] != nil || !reflect.DeepEqual(mixed.Answers[1], result.Answers[1]) || !reflect.DeepEqual(mixed.AcceptedRowKeys(), []string{"r2"}) {
-		t.Fatalf("invalid boundary decision was repaired or lost its valid neighbour: %+v / %v", mixed, err)
+		{"key":"first","line":"publishes","destination":"RabbitMQ broker","address":"a1"},
+		{"key":"second","line":"notifies","destination":"other: Twilio"}]}`))
+	if err != nil || len(refused.Rejections) != 1 || refused.Rejections[0].Key != "first" || refused.Answers[1]["destination"] != "other: Twilio" {
+		t.Fatalf("free text without the prefix was accepted or its neighbour lost: %+v / %v", refused, err)
 	}
 }
 
@@ -277,12 +227,12 @@ func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) 
 			if (request.Rows[0]["address_catalog"] != nil) != outgoing {
 				t.Fatalf("address catalogue presence does not follow the asked cells: %s", windows[0].Request)
 			}
-			result, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"r1","line":"Reads the configured value.","decision":"none","kind":"invented","basis":"configuration","destination":"d1","address":"unknown"}]}`))
+			result, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"native","line":"Reads the configured value.","decision":"none","kind":"invented","basis":"configuration","destination":"d1","address":"unknown"}]}`))
 			if err != nil || len(result.Rejections) != 0 || len(result.Answers[0]) != len(want) || result.Answers[0]["decision"] != "" || result.Answers[0]["kind"] != "" {
 				t.Fatalf("unrequested cells acquired authority: %+v / %v", result, err)
 			}
 			if outgoing {
-				bad, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"r1","line":"Sends a request.","destination":"d1","address":"a999"}]}`))
+				bad, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"native","line":"Sends a request.","destination":"d1","address":"a999"}]}`))
 				if err == nil || len(bad.Rejections) != 1 || !strings.Contains(bad.Rejections[0].Reason, "address") {
 					t.Fatalf("fixed fact weakened closed address refs: %+v / %v", bad, err)
 				}

@@ -1,13 +1,14 @@
 package report
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"github.com/dvordrova/repomap/internal/atlas"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/atlas"
 )
 
 type pageQuestion struct {
@@ -88,8 +89,8 @@ func (step pageQuestionStep) ExcerptCheckIDs() []string {
 // Preserve the reading route and separately grounded model answer verbatim.
 func (builder *pageBuilder) questionGuides() ([]*pageQuestion, error) {
 	var views []*pageQuestion
-	for _, route := range builder.data.Questions {
-		view, err := builder.questionGuide(route)
+	for position, route := range builder.data.Questions {
+		view, err := builder.questionGuide(route, "q"+strconv.Itoa(position+1))
 		if err != nil {
 			return nil, err
 		}
@@ -98,11 +99,11 @@ func (builder *pageBuilder) questionGuides() ([]*pageQuestion, error) {
 	return views, nil
 }
 
-func (builder *pageBuilder) questionGuide(route atlas.QuestionRoute) (*pageQuestion, error) {
+func (builder *pageBuilder) questionGuide(route atlas.QuestionRoute, id string) (*pageQuestion, error) {
 	if route.Version != atlas.QuestionRouteVersion || route.Revision != builder.data.CapturedRevision {
 		return nil, fmt.Errorf("report: question route format or revision does not match")
 	}
-	view := &pageQuestion{ID: fmt.Sprintf("question-%x", sha256.Sum256([]byte(route.Question))), Question: route.Question, Scope: route.Scope}
+	view := &pageQuestion{ID: id, Question: route.Question, Scope: route.Scope}
 	view.UserQuestion = route.UserQuestion
 	for _, origin := range route.Origins {
 		checks, err := builder.questionSources(origin.Sources)
@@ -445,7 +446,7 @@ func (builder *pageBuilder) questionStepMapLinks(stop atlas.QuestionStop) []page
 		for _, op := range index.Operations {
 			if stop.SubjectID != "" && (op.SubjectID == stop.SubjectID || op.ID == stop.SubjectID) {
 				id := operationNodeID(section.ID, op.ID)
-				links = append(links, pageQuestionMapLink{Label: section.ShortLabel + " / " + builder.operationDisplayName(op), Href: "#" + id, NodeID: id})
+				links = append(links, pageQuestionMapLink{Label: section.ShortLabel + " / " + builder.operationDisplayName(index.Target.ID, op), Href: "#" + id, NodeID: id})
 				foundOperation = true
 			}
 		}
@@ -455,7 +456,7 @@ func (builder *pageBuilder) questionStepMapLinks(stop atlas.QuestionStop) []page
 		exact := false
 		for _, group := range index.Groups {
 			if slices.Contains(group.MemberSubjectIDs, stop.SubjectID) {
-				links = append(links, pageQuestionMapLink{Label: section.ShortLabel + " / " + group.Title, Href: "#" + groupAnchorID(section.ID, group.ID), NodeID: mapNodeID(group.ID)})
+				links = append(links, pageQuestionMapLink{Label: section.ShortLabel + " / " + group.Title, Href: "#" + groupAnchorID(section.ID, group.ID), NodeID: targetMapNodeID(index.Target.ID, mapNodeID(group.ID))})
 				exact = true
 			}
 		}
@@ -472,7 +473,7 @@ func (builder *pageBuilder) questionStepMapLinks(stop atlas.QuestionStop) []page
 		}
 		for _, group := range index.Groups {
 			if slices.ContainsFunc(group.MemberSubjectIDs, func(id string) bool { return inFile[id] }) {
-				links = append(links, pageQuestionMapLink{Label: section.ShortLabel + " / " + group.Title, Href: "#" + groupAnchorID(section.ID, group.ID), NodeID: mapNodeID(group.ID)})
+				links = append(links, pageQuestionMapLink{Label: section.ShortLabel + " / " + group.Title, Href: "#" + groupAnchorID(section.ID, group.ID), NodeID: targetMapNodeID(index.Target.ID, mapNodeID(group.ID))})
 			}
 		}
 	}

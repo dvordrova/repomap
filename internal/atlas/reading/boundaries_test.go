@@ -8,141 +8,12 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
-	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
-
-func TestBoundaryReviewOwnsRuntimeRelationshipsAndKeepsIndependentRows(t *testing.T) {
-	const address = "  https://거래.example/시세/%2F  "
-	const purpose = "sends requests to the peer service · not established: final host"
-	owner := func(id string, calls ...atlas.SymbolCall) atlas.Place {
-		return atlas.Place{ID: id, Kind: atlas.PlaceSymbol, Path: id + ".go", Parent: "file:" + id, LineNo: 10, TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:" + id, Name: id, Kind: "function", Signature: "func()", Doc: "Original author documentation."}, Calls: calls}}
-	}
-	call := func(name string, line, column int, values ...string) atlas.SymbolCall {
-		return atlas.SymbolCall{Kind: "invokes_external", Name: name, Line: line, Column: column, Values: values}
-	}
-	send := owner("send", call("http.NewRequestWithContext", 20, 9, address), call("http.Client.Do", 21, 11), call("time.Sleep", 21, 44))
-	exporter := owner("exporter", call("otlptracehttp.New", 12, 4), call("otlptracehttp.WithEndpoint", 12, 30, "collector.internal:4318"))
-	send.Symbol.Calls[0].API = &atlas.CallAPI{Package: "net/http", Name: "NewRequestWithContext"}
-	send.Symbol.Calls[0].SourceArguments = []atlas.SourceArgument{{Position: 3, Origin: &sourcevalue.Value{Kind: "literal", Text: address}}}
-	send.Symbol.Calls[1].API = &atlas.CallAPI{Package: "net/http", Receiver: "Client", Name: "Do"}
-	send.Symbol.Calls[1].SourceArguments = []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "send.go", Line: 20, Column: 9}}}}
-	const otlp = "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	exporter.Symbol.Calls[0].API = &atlas.CallAPI{Package: otlp, Name: "New"}
-	exporter.Symbol.Calls[0].SourceArguments = []atlas.SourceArgument{{Position: 2, Origin: &sourcevalue.Value{Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "exporter.go", Line: 12, Column: 30}}}}
-	exporter.Symbol.Calls[1].API = &atlas.CallAPI{Package: otlp, Name: "WithEndpoint"}
-	exporter.Symbol.Calls[1].SourceArguments = []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: "collector.internal:4318"}}}
-	setup := owner("setup", call("http.NewRequest", 12, 7, "https://unused.example"))
-	unknown := owner("unknown", call("Opaque.Apply", 12, 5))
-	bad := owner("bad", call("http.Client.Do", 12, 8))
-	dynamic := owner("dynamic", call("http.Client.Do", 12, 9))
-	provider := &mutatedTableProvider{}
-	var inspected int
-	provider.mutate = func(input map[string]any, rows []map[string]any) {
-		sourceRows := input["rows"].([]any)
-		// The rows of one declaration share one window; the declaration is
-		// sent once, in the context, and every row names it by owner_ref.
-		original := windowOwner(input)
-		if original["author_doc"] != "Original author documentation." {
-			t.Error("author evidence lost")
-		}
-		if strings.Count(string(mustJSON(input)), "Original author documentation.") != 1 {
-			t.Error("owner repeated inside the window")
-		}
-		for i, row := range rows {
-			source := sourceRows[i].(map[string]any)
-			if source["owner_ref"] != original["ref"] || source["owner"] != nil {
-				t.Errorf("row does not name the shared owner: %+v", source)
-			}
-			if _, present := source["file_hypothesis"]; present {
-				t.Error("boundary depends on a caption")
-			}
-			inspected++
-			row["decision"], row["kind"], row["line"] = "boundary", "http_client", purpose
-			row["destination"], row["basis"], row["address"] = "other: Peer service", "dispatch", "unknown"
-			switch source["caller"] {
-			case "send":
-				if len(original["calls"].([]any)) != 3 {
-					t.Error("owning callable calls truncated")
-				}
-				if source["external"] == "time.Sleep" {
-					row["decision"] = "none"
-					row["kind"] = 42
-					row["address"] = false
-				} else {
-					row["address"] = "a1"
-				}
-				// The code knows the traced address: no address cell is asked.
-				if source["address_options"] != nil {
-					t.Errorf("known address asked again: %+v", source)
-				}
-			case "exporter":
-				if len(original["calls"].([]any)) != 2 {
-					t.Error("exporter lost its configuration observation")
-				}
-				row["destination"], row["basis"], row["line"], row["address"] = destinationRef(input, "OpenTelemetry collector"), "remote_client_instance", "Configures trace export to the collector.", "a1"
-			case "setup":
-				row["decision"] = "none"
-				row["destination"] = false
-			case "unknown":
-				row["decision"] = "unassessed"
-				row["line"] = nil
-			case "bad":
-				// An invented kind still refuses the row; an invented address
-				// ref alone would now settle as unknown.
-				row["kind"], row["address"] = "teleport", "a999"
-			}
-		}
-	}
-	r := answerTestReader(t, nil, provider)
-	r.opts.Through = ""
-	r.opts.Graph.Places = []atlas.Place{send, exporter, setup, unknown, bad, dynamic}
-	r.places = make(map[string]atlas.Place)
-	r.knowledge = make(map[string]*Knowledge)
-	r.knowledgeSubjects = make(map[string]*Knowledge)
-	r.responseTables = make(map[string]rememberedTable)
-	r.outbound = map[string][]atlas.SymbolCall{"send": send.Symbol.Calls[1:], "exporter": exporter.Symbol.Calls[:1], "setup": setup.Symbol.Calls, "unknown": unknown.Symbol.Calls, "bad": bad.Symbol.Calls, "dynamic": dynamic.Symbol.Calls}
-	r.boxOf = make(map[string]string)
-	for _, p := range r.opts.Graph.Places {
-		r.places[p.ID] = p
-		r.boxOf[p.Parent] = "box"
-	}
-	if err := r.readBoundaries(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if inspected != 7 || len(r.boundaries) != 3 || len(r.rejected) != 1 {
-		t.Fatalf("rows=%d boundaries=%+v rejected=%+v", inspected, r.boundaries, r.rejected)
-	}
-	projected := r.target(TargetMeta{ID: "service"})
-	byCaller := make(map[string]atlas.Boundary)
-	for _, b := range projected.Boundaries {
-		byCaller[b.Caller] = b
-	}
-	if b := byCaller["send"]; b.Address != address || b.Column != 11 || b.Source != "model" || b.Kind != "http_client" || b.Destination != "Peer service" || b.Basis != "dispatch" || b.Line != purpose || len(b.Values) != 0 {
-		t.Fatalf("source or positive claim lost: %+v", b)
-	}
-	if b := byCaller["exporter"]; b.Address != "collector.internal:4318" || b.Basis != "configuration" || b.Destination != "OpenTelemetry collector" {
-		t.Fatalf("configuration became dispatch: %+v", b)
-	}
-	if b := byCaller["dynamic"]; b.Address != "" || b.Basis != "dispatch" {
-		t.Fatalf("unknown runtime address invented: %+v", b)
-	}
-	decisions := map[string]string{}
-	for _, k := range r.knowledge {
-		decisions[k.Path] = k.Cells["decision"]
-	}
-	if decisions["setup.go"] != "none" || decisions["unknown.go"] != "unassessed" {
-		t.Fatalf("negative assessments not retained: %v", decisions)
-	}
-	// Every refused/negative source remains available in the original graph.
-	if len(r.opts.Graph.Places) != 6 || len(r.opts.Graph.Places[0].Symbol.Calls) != 3 {
-		t.Fatal("review rewrote source observations")
-	}
-}
 
 func TestBoundaryNativeFactSurvivesRefusedProseAndSameLineCallsKeepColumns(t *testing.T) {
 	native := atlas.Place{ID: "native", Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 20, Column: 9, Parent: "file:main", TargetIDs: []string{"service"}, Given: "GET https://native.example", Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "fact"}}, ObjectID: "caller", Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryHTTPClient, Method: "GET", Values: []string{"https://native.example"}}}
-	first := atlas.SymbolCall{Name: "http.Get", Kind: "invokes_external", Line: 20, Column: 9}
-	second := atlas.SymbolCall{Name: "http.Get", Kind: "invokes_external", Line: 20, Column: 42}
+	first := atlas.SymbolCall{Name: "http.Get", Kind: "invokes_external", Line: 20, Column: 9, API: &atlas.CallAPI{Package: "net/http", Name: "Get"}}
+	second := atlas.SymbolCall{Name: "http.Get", Kind: "invokes_external", Line: 20, Column: 42, API: &atlas.CallAPI{Package: "net/http", Name: "Get"}}
 	symbol := atlas.Place{ID: "owner", Kind: atlas.PlaceSymbol, Path: "main.go", LineNo: 10, Parent: "file:main", TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "caller", Name: "send"}, Calls: []atlas.SymbolCall{first, second}}}
 	provider := &mutatedTableProvider{}
 	provider.mutate = func(input map[string]any, rows []map[string]any) {
@@ -161,48 +32,26 @@ func TestBoundaryNativeFactSurvivesRefusedProseAndSameLineCallsKeepColumns(t *te
 	r.knowledge = map[string]*Knowledge{}
 	r.knowledgeSubjects = map[string]*Knowledge{}
 	r.responseTables = map[string]rememberedTable{}
-	r.outbound = map[string][]atlas.SymbolCall{symbol.ID: {first, second}}
+	r.api = map[string]apiRole{"net/http.Get": {talks: atlas.BoundaryHTTPClient}}
 	r.boundaries = map[string]*boundaryState{native.ID: {place: native, kind: atlas.BoundaryHTTPClient}}
 	r.bindInterpretedBoundaries()
 	if len(r.boundaries) != 2 {
 		t.Fatalf("same-line call collapsed or exact native call duplicated: %+v", r.boundaries)
 	}
-	var candidateID string
 	for id, b := range r.boundaries {
-		if id != native.ID {
-			candidateID = id
-			if b.place.Column != 42 {
-				t.Fatalf("call column lost: %+v", b.place)
-			}
+		if id != native.ID && (b.place.Column != 42 || b.kind != atlas.BoundaryHTTPClient) {
+			t.Fatalf("call column or its symbol's kind lost: %+v", b.place)
 		}
-	}
-	// An unrelated earlier selection cannot shift the source call's identity.
-	r.outbound[symbol.ID] = []atlas.SymbolCall{second}
-	r.boundaries = map[string]*boundaryState{native.ID: {place: native, kind: atlas.BoundaryHTTPClient}}
-	r.bindInterpretedBoundaries()
-	if r.boundaries[candidateID] == nil {
-		t.Fatal("call identity depends on selected-list order")
 	}
 	if err := r.readBoundaries(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.boundaries) != 1 || !reflect.DeepEqual(r.boundaries[native.ID].place, native) || r.boundaries[native.ID].kind != atlas.BoundaryHTTPClient || r.boundaries[native.ID].line != native.Given || r.boundaries[native.ID].address != native.Boundary.Values[0] || r.boundaries[native.ID].basis != "dispatch" {
+	if len(r.boundaries) != 2 || !reflect.DeepEqual(r.boundaries[native.ID].place, native) || r.boundaries[native.ID].kind != atlas.BoundaryHTTPClient || r.boundaries[native.ID].line != native.Given || r.boundaries[native.ID].address != native.Boundary.Values[0] || r.boundaries[native.ID].basis != "dispatch" {
 		t.Fatalf("refused prose deleted source fact: %+v", r.boundaries)
 	}
 	if len(r.rejected) != 1 || !strings.Contains(r.rejected[0].Reason, "line") {
 		raw, _ := json.Marshal(r.rejected)
 		t.Fatalf("fixed fact prose was not locally validated: %s", raw)
-	}
-}
-
-func TestBoundaryDefinitionsKeepPositiveAndNegativeCellsConditional(t *testing.T) {
-	for _, out := range []bool{false, true} {
-		def := lines.Boundaries(out)
-		for _, column := range def.Columns[1:] {
-			if column.When["decision"] != "boundary" {
-				t.Fatalf("%s required on a negative result", column.Name)
-			}
-		}
 	}
 }
 
@@ -284,7 +133,7 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 	root := atlas.Place{ID: "dir:root", Kind: atlas.PlaceDirectory, Path: ".", Directory: &atlas.DirectoryFacts{Readme: "A service that proxies partner data and refreshes snapshots."}}
 	directory := atlas.Place{ID: "dir:utils", Kind: atlas.PlaceDirectory, Path: "utils", Parent: root.ID, Directory: &atlas.DirectoryFacts{Doc: "Shared request helpers."}}
 	file := atlas.Place{ID: "file:requests", Kind: atlas.PlaceFile, Path: "utils/requests.go", Parent: directory.ID, TargetIDs: []string{"service"}, File: &atlas.FileFacts{Doc: "Preserve cancellation when forwarding a request."}}
-	call := atlas.SymbolCall{Kind: "invokes_external", Name: "http.Client.Do", Line: 31, Column: 19}
+	call := atlas.SymbolCall{Kind: "invokes_external", Name: "http.Client.Do", Line: 31, Column: 19, API: &atlas.CallAPI{Package: "net/http", Receiver: "*Client", Name: "Do"}}
 	owner := atlas.Place{ID: "symbol:send", Kind: atlas.PlaceSymbol, Path: file.Path, Parent: file.ID, LineNo: 10, TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{
 		Decl: atlas.Decl{ObjectID: "object:send", Name: "SendRequest", Signature: "func SendRequest(ctx Context, endpoint string)"}, Calls: []atlas.SymbolCall{call},
 		CalledBy: []atlas.SymbolCaller{
@@ -293,7 +142,7 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 			{ObjectID: "object:refresh", Name: "Refresh", Signature: "func Refresh()", Path: "jobs/refresh.go", Line: 22, Kind: "calls", Resolution: "alternatives"},
 			{Name: "Proxy", Signature: "func Proxy()", Path: "another/server.go", Line: 18, Kind: "calls", Resolution: "unresolved"},
 		}}}
-	binding := atlas.SymbolBinding{From: "Routes", To: "Proxy", Path: "server/routes.go", Line: 9, Invocation: "callback_transfer", Resolution: "resolved",
+	binding := atlas.SymbolBinding{From: "Routes", To: "Proxy", Path: "server/routes.go", Line: 9, Kind: "passes_callback", Resolution: "resolved",
 		Arguments: []atlas.RegistrationArgument{{Kind: "literal_string", Value: "/proxy", Path: "server/routes.go", Line: 9, Position: 1}}}
 	proxy := atlas.Place{ID: "symbol:proxy", Kind: atlas.PlaceSymbol, Path: "server/gen_server.go", LineNo: 20, Symbol: &atlas.SymbolFacts{
 		Decl: atlas.Decl{ObjectID: "object:proxy", Name: "Proxy", Doc: "Forwards the caller's request to the configured partner."}, Bindings: []atlas.SymbolBinding{binding},
@@ -371,7 +220,7 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 	}
 	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
 	r.responseTables = map[string]rememberedTable{}
-	r.outbound = map[string][]atlas.SymbolCall{owner.ID: {call}}
+	r.api = map[string]apiRole{"net/http.Client.Do": {talks: atlas.BoundaryHTTPClient}}
 	r.boxOf = map[string]string{file.ID: "requests"}
 	if err := r.readBoundaries(t.Context()); err != nil {
 		t.Fatal(err)
@@ -417,7 +266,7 @@ func TestColumnlessNativeFactClaimsItsLineAndColumnedFactKeepsOtherCalls(t *test
 	// Morfeu 20260911-152759 reviewed internal/broker/client.go:166 twice,
 	// as bnd:…:166:sdk and as out:…PublicarComConfirm:166:42, and the
 	// outbound page listed the call twice.
-	call := atlas.SymbolCall{Name: "amqp091.Channel.PublishWithDeferredConfirm", Kind: "invokes_external", Line: 166, Column: 42}
+	call := atlas.SymbolCall{Name: "amqp091.Channel.PublishWithDeferredConfirm", Kind: "invokes_external", Line: 166, Column: 42, API: &atlas.CallAPI{Package: "github.com/rabbitmq/amqp091-go", Receiver: "*Channel", Name: "PublishWithDeferredConfirm"}}
 	symbol := atlas.Place{ID: "owner", Kind: atlas.PlaceSymbol, Path: "client.go", LineNo: 143, Parent: "file:client", TargetIDs: []string{"service"},
 		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "caller", Name: "Client.PublicarComConfirm"}, Calls: []atlas.SymbolCall{call}}}
 	// The SDK observation itself arrives with source "external_call", not
@@ -442,7 +291,7 @@ func TestColumnlessNativeFactClaimsItsLineAndColumnedFactKeepsOtherCalls(t *test
 			r := &reader{
 				opts:       Options{Graph: atlas.Graph{Places: []atlas.Place{native, symbol}}},
 				places:     map[string]atlas.Place{native.ID: native, symbol.ID: symbol},
-				outbound:   map[string][]atlas.SymbolCall{symbol.ID: {call}},
+				api:        map[string]apiRole{"github.com/rabbitmq/amqp091-go.Channel.PublishWithDeferredConfirm": {talks: atlas.BoundarySDK}},
 				operations: map[string][3]string{},
 				boundaries: map[string]*boundaryState{native.ID: {place: native, kind: atlas.BoundarySDK}},
 			}
@@ -451,5 +300,85 @@ func TestColumnlessNativeFactClaimsItsLineAndColumnedFactKeepsOtherCalls(t *test
 				t.Fatalf("boundaries = %d, want %d: %+v", len(r.boundaries), test.boundaries, r.boundaries)
 			}
 		})
+	}
+}
+
+// The registrations of one holder: a route put into a router, the router
+// started on an address, a callback handed to a sorter, a driver opened.
+// The symbol roles say what each is; the holder gives the route its address.
+func TestSymbolRolesTurnRegistrationsIntoBoundariesAndHoldersCarryAddresses(t *testing.T) {
+	registration := func(id, external string, direction string, holder string, handler string, values ...string) atlas.Place {
+		return atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 20, Column: len(id), Parent: "file:main", TargetIDs: []string{"api"}, Given: external,
+			Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "api", FactID: "fact:" + id}}, ObjectID: handler, Caller: "main", External: external, Holder: holder, Values: values, Direction: direction}}
+	}
+	route := registration("b1", "echo.Echo.GET", atlas.DirectionIn, "main.go:19:20", "handler", "/users/:id")
+	route.Boundary.Method = "GET"
+	start := registration("b2", "echo.Echo.Start", atlas.DirectionOut, "main.go:19:20", "", ":8080")
+	comparator := registration("b3", "sort.Slice", atlas.DirectionIn, "", "less")
+	open := registration("b4", "database/sql.Open", atlas.DirectionOut, "", "", "postgres")
+	r := answerTestReader(t, nil, nil)
+	r.dry, r.opts.Through = true, ""
+	r.opts.Graph.Places = []atlas.Place{route, start, comparator, open}
+	r.places = map[string]atlas.Place{}
+	for _, place := range r.opts.Graph.Places {
+		r.places[place.ID] = place
+	}
+	r.api = map[string]apiRole{
+		"echo.Echo.GET":     {binds: atlas.BoundaryHTTPServer},
+		"echo.Echo.Start":   {publishes: true},
+		"database/sql.Open": {talks: atlas.BoundaryDB},
+	}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.boundaries) != 3 || r.boundaries["b3"] != nil {
+		t.Fatalf("a callback handed to a symbol that binds nothing survived: %+v", r.boundaries)
+	}
+	if got := r.boundaries["b1"]; got.kind != atlas.BoundaryHTTPServer || got.address != ":8080" {
+		t.Fatalf("route did not take its symbol's kind and its holder's address: %+v", got)
+	}
+	if got := r.boundaries["b2"]; got.kind != atlas.BoundaryListenAddress || got.place.Boundary.Direction != atlas.DirectionIn || got.address != ":8080" {
+		t.Fatalf("publishing call is not the listener: %+v", got)
+	}
+	if got := r.boundaries["b4"]; got.kind != atlas.BoundaryDB || got.place.Boundary.Direction != atlas.DirectionOut {
+		t.Fatalf("driver open is not the database boundary: %+v", got)
+	}
+	if !reflect.DeepEqual(r.apiRoles(), []atlas.APIRole{{Symbol: "database/sql.Open", Talks: "db"}, {Symbol: "echo.Echo.GET", Binds: "http_server"}, {Symbol: "echo.Echo.Start", Publishes: true}}) {
+		t.Fatalf("roles recorded differently: %+v", r.apiRoles())
+	}
+}
+
+// A server started elsewhere on a value the code could not follow back to
+// the router: the model is shown the holders and picks one.
+func TestPublishWithoutFollowedHolderAsksWhichHolderItServes(t *testing.T) {
+	route := atlas.Place{ID: "b1", Kind: atlas.PlaceBoundary, Path: "routes.go", LineNo: 12, Column: 4, Parent: "file:routes", TargetIDs: []string{"api"}, Given: "GET /users/:id",
+		Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "api", FactID: "fact:route"}}, ObjectID: "handler", Caller: "routes", External: "echo.Echo.GET", Holder: "routes.go:10:8", Method: "GET", Values: []string{"/users/:id"}, Direction: atlas.DirectionIn}}
+	start := atlas.Place{ID: "b2", Kind: atlas.PlaceBoundary, Path: "server.go", LineNo: 40, Column: 3, Parent: "file:server", TargetIDs: []string{"api"}, Given: "Start",
+		Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "api", FactID: "fact:start"}}, Caller: "Server.Run", External: "echo.Echo.Start", Values: []string{":8080"}, Direction: atlas.DirectionOut}}
+	provider := &mutatedTableProvider{}
+	asked := 0
+	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		if input["table"] != lines.StagePublish {
+			return
+		}
+		asked++
+		holders := input["context"].(map[string]any)["holders"].([]any)
+		if len(holders) != 1 || holders[0].(map[string]any)["holder"] != "routes.go:10:8" || !strings.Contains(string(mustJSON(holders)), "GET /users/:id → routes") {
+			t.Fatalf("holders shown differently: %+v", holders)
+		}
+		rows[0]["holder"] = "h1"
+	}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through = ""
+	r.opts.Graph.Places = []atlas.Place{route, start}
+	r.places = map[string]atlas.Place{route.ID: route, start.ID: start}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	r.api = map[string]apiRole{"echo.Echo.GET": {binds: atlas.BoundaryHTTPServer}, "echo.Echo.Start": {publishes: true}}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if asked != 1 || r.boundaries["b1"].address != ":8080" {
+		t.Fatalf("asked %d times, route address %q", asked, r.boundaries["b1"].address)
 	}
 }

@@ -70,10 +70,8 @@ func TestCumulativePythonDispatchSharesParserAndPreservesEveryTarget(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := programindex.NewArtifactStore(filepath.Join(dir, "owner", "program-facts"))
-	var flatBytes, storedBytes int64
+	store := programindex.NewArtifactStore()
 	var artifactPaths []string
-	viewFiles := make(map[string]string)
 	for _, target := range targets {
 		binding, err := preparePythonRepositoryDispatchTarget(t.Context(), repositoryTargetDispatchOptions{}, target, state)
 		if err != nil {
@@ -106,28 +104,9 @@ func TestCumulativePythonDispatchSharesParserAndPreservesEveryTarget(t *testing.
 		if !bytes.Equal(before, after) {
 			t.Fatalf("shared artifact changed %s", target.Selector)
 		}
-		flatBytes += int64(len(before))
-		info, err := os.Stat(artifact)
-		if err != nil {
-			t.Fatal(err)
+		if bytes.Contains(before, []byte(`"source_ref"`)) || bytes.Contains(before, []byte(`"storage_version"`)) {
+			t.Fatal("sealed artifact retained builder storage fields")
 		}
-		storedBytes += info.Size()
-		viewWire, err := os.ReadFile(artifact)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var view struct {
-			Facts string `json:"facts"`
-		}
-		if err := json.Unmarshal(viewWire, &view); err != nil {
-			t.Fatal(err)
-		}
-		native, _ := repositoryPythonTarget(target)
-		packages, _ := json.Marshal(native.Packages)
-		if previous, ok := viewFiles[string(packages)]; ok && previous != view.Facts {
-			t.Fatal("identical package context wrote separate facts")
-		}
-		viewFiles[string(packages)] = view.Facts
 	}
 	data, err := os.ReadFile(counter)
 	if err != nil {
@@ -150,22 +129,8 @@ func TestCumulativePythonDispatchSharesParserAndPreservesEveryTarget(t *testing.
 	if len(parsedPaths) != len(catalog.Entries[0].Modules) {
 		t.Fatalf("parsed %d ASTs for %d source files", len(parsedPaths), len(catalog.Entries[0].Modules))
 	}
-	factFiles, err := filepath.Glob(filepath.Join(dir, "owner", "program-facts", "*.json"))
-	// The cumulative project has two distinct package authorities: the
-	// declared library and the importable launch view. They share source ASTs,
-	// but must not share their different package/resolution facts.
-	if err != nil || len(factFiles) != 2 || len(viewFiles) != 2 {
-		t.Fatalf("shared fixture facts: %v, %v", factFiles, err)
-	}
-	for _, file := range factFiles {
-		info, err := os.Stat(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		storedBytes += info.Size()
-	}
-	if storedBytes >= flatBytes/2 {
-		t.Fatalf("shared facts did not remove target copies: %d vs %d bytes", storedBytes, flatBytes)
+	if _, err := os.Stat(filepath.Join(dir, "owner", "program-facts")); !os.IsNotExist(err) {
+		t.Fatalf("builder facts were persisted: %v", err)
 	}
 	// Reading a moved complete cohort uses only its saved facts. A missing or
 	// mismatched shared input cannot quietly yield a partial target.
@@ -186,7 +151,7 @@ func TestCumulativePythonDispatchSharesParserAndPreservesEveryTarget(t *testing.
 	if err := json.Unmarshal(viewWire, &view); err != nil {
 		t.Fatal(err)
 	}
-	view["index_sha256"] = strings.Repeat("0", 64)
+	view["sha256"] = strings.Repeat("0", 64)
 	badView, _ := json.Marshal(view)
 	if err := os.WriteFile(first, badView, 0o644); err != nil {
 		t.Fatal(err)
@@ -194,16 +159,7 @@ func TestCumulativePythonDispatchSharesParserAndPreservesEveryTarget(t *testing.
 	if _, err := programindex.ReadFile(first); err == nil {
 		t.Fatal("mismatched target binding accepted")
 	}
-	if err := os.WriteFile(first, viewWire, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(filepath.Join(filepath.Dir(first), filepath.FromSlash(view["facts"].(string)))); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := programindex.ReadFile(first); err == nil {
-		t.Fatal("missing project facts accepted")
-	}
-	t.Logf("%d exact indexes unchanged; %d source ASTs parsed once; shared storage %d vs %d bytes", len(targets), len(parsedPaths), storedBytes, flatBytes)
+	t.Logf("%d exact indexes unchanged; %d source ASTs parsed once; no builder facts persisted", len(targets), len(parsedPaths))
 }
 
 func TestPythonSharedPreparationFailureKeepsHealthySibling(t *testing.T) {

@@ -2,7 +2,6 @@ package reading
 
 import (
 	"context"
-	"crypto/sha256"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -24,8 +23,9 @@ import (
 //go:embed prompts/design.md
 var designPrompt string
 
-// A design item is a declaration, or an accepted aggregate in a reduction.
-// Identity and membership remain local; the provider chooses request-local refs.
+// A design item is either a ProgramIndex declaration, whose compact n* ID is
+// used unchanged, or an accepted aggregate in a reduction, which receives a
+// temporary c* choice ref. Repository facts never enter a second namespace.
 type designItem struct {
 	Ref          string       `json:"ref"`
 	Path         string       `json:"path,omitempty"`
@@ -190,7 +190,7 @@ func designCallFor(items []designItem, documents []table.Field, mode string) (ll
 	return llm.Call[designResult]{
 		State: []byte("repomap.atlas.design.v1"),
 		Prompt: llm.Prompt{System: designPrompt, User: string(raw), ResponseFormatJSON: true,
-			ResponseExample: `{"groups":[{"title":"Move search","purpose":"Chooses a move by exploring legal continuations.","members":["r1","r2"]}]}`, NoResponseAdjunct: true},
+			ResponseExample: `{"groups":[{"title":"Move search","purpose":"Chooses a move by exploring legal continuations.","members":["n1","n2"]}]}`, NoResponseAdjunct: true},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
 		DecodeValidate: func(raw []byte) (designResult, error) { return decodeDesign(raw, items, mode) },
 	}, nil
@@ -302,12 +302,19 @@ func (r *reader) designInputs(targetID string) ([]designItem, []table.Field) {
 			continue
 		}
 		for _, decl := range file.File.Decls {
-			id := atlas.SymbolID(file.Path, decl.LineNo, decl.Name)
-			r.designFiles[id] = file.ID
-			if decl.ObjectID != "" {
-				r.designSubjects[decl.ObjectID] = id
+			id := r.symbolID(file.Path, decl.LineNo, decl.Name)
+			objectID := decl.ObjectID
+			if objectID == "" {
+				if symbol := r.places[id].Symbol; symbol != nil {
+					objectID = symbol.Decl.ObjectID
+				}
 			}
-			item := designItem{Ref: fmt.Sprintf("r%d", len(items)+1), Path: file.Path, Name: decl.Name, Kind: decl.Kind,
+			if objectID == "" {
+				continue
+			}
+			r.designFiles[id] = file.ID
+			r.designSubjects[objectID] = id
+			item := designItem{Ref: objectID, Path: file.Path, Name: decl.Name, Kind: decl.Kind,
 				Signature: decl.Signature, Doc: decl.Doc, Purpose: r.symbolLine[id].value, Activation: r.operations[id][0], IDs: []string{id}}
 			refs[id] = item.Ref
 			items = append(items, item)
@@ -346,12 +353,6 @@ func (r *reader) designInputs(targetID string) ([]designItem, []table.Field) {
 		}
 	}
 	return items, docs
-}
-
-func designID(targetID string, members []string) string {
-	ids := append([]string(nil), members...)
-	sort.Strings(ids)
-	return fmt.Sprintf("design:%x", sha256.Sum256([]byte(targetID+"\x00"+strings.Join(ids, "\x00"))))
 }
 
 func (r *reader) readDesign(ctx context.Context) error {
@@ -393,7 +394,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 			}
 			var ids []string
 			for _, decl := range file.File.Decls {
-				id := atlas.SymbolID(file.Path, decl.LineNo, decl.Name)
+				id := r.symbolID(file.Path, decl.LineNo, decl.Name)
 				if membership[id] == "" {
 					ids = append(ids, id)
 				}
@@ -402,13 +403,13 @@ func (r *reader) readDesign(ctx context.Context) error {
 				if len(ids) == 0 {
 					ids = []string{file.ID}
 				}
-				r.addDesignBox(target.ID, designItem{Name: file.Path, Purpose: "Code awaiting architecture grouping.", IDs: ids}, membership)
+				r.addDesignBox(target.ID, designItem{Name: file.Path, Purpose: "Declarations from this source file.", IDs: ids}, membership)
 			}
 			// A file endpoint is unambiguous only when all its declarations
 			// actually belong to one part. Never choose an arbitrary owner.
 			owners := map[string]bool{}
 			for _, decl := range file.File.Decls {
-				owners[membership[atlas.SymbolID(file.Path, decl.LineNo, decl.Name)]] = true
+				owners[membership[r.symbolID(file.Path, decl.LineNo, decl.Name)]] = true
 			}
 			if len(owners) == 1 {
 				for id := range owners {
@@ -418,7 +419,10 @@ func (r *reader) readDesign(ctx context.Context) error {
 		}
 		var areaItems []designItem
 		for _, part := range designPartContext(items, parts) {
-			part.IDs = []string{designID(target.ID, part.IDs)}
+			if len(part.IDs) == 0 || membership[part.IDs[0]] == "" {
+				continue
+			}
+			part.IDs = []string{membership[part.IDs[0]]}
 			areaItems = append(areaItems, part)
 		}
 		areas, _, err := r.askDesign(ctx, areaItems, nil, "areas")
@@ -426,7 +430,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 			return err
 		}
 		for _, area := range areas {
-			zone := &zoneState{id: designID(target.ID, area.IDs), title: area.Name, line: area.Purpose, boxes: area.IDs}
+			zone := &zoneState{id: r.compactID("z", &r.nextZone), title: area.Name, line: area.Purpose, boxes: area.IDs}
 			r.zones[target.ID] = append(r.zones[target.ID], zone)
 			for _, id := range area.IDs {
 				r.boxes[id].zoneID[target.ID] = zone.id
@@ -444,7 +448,7 @@ func designPartContext(original, parts []designItem) []designItem {
 	result := append([]designItem(nil), parts...)
 	partOf := map[string]string{}
 	for i := range result {
-		result[i].Ref = fmt.Sprintf("r%d", i+1)
+		result[i].Ref = fmt.Sprintf("c%d", i+1)
 		result[i].Calls = nil
 		for _, id := range result[i].IDs {
 			partOf[id] = result[i].Ref
@@ -492,7 +496,7 @@ func preserveDesignParts(original, accepted []designItem) []designItem {
 }
 
 func (r *reader) addDesignBox(targetID string, part designItem, membership map[string]string) {
-	id := designID(targetID, part.IDs)
+	id := r.compactID("p", &r.nextPart)
 	box := &boxState{id: id, targetID: targetID, title: part.Name, line: part.Purpose, open: true, dir: ".", zoneID: map[string]string{}, symbols: map[string]bool{}}
 	for _, member := range part.IDs {
 		membership[member] = id

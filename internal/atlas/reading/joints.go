@@ -66,7 +66,7 @@ func (r *reader) targetSummary(target TargetMeta) lines.TargetSummary {
 		SelectedRole: target.SelectedRole,
 		Boundaries:   make(map[string]int),
 	}
-	if root, ok := r.places[atlas.DirectoryID(target.Root)]; ok {
+	if root, ok := r.places[r.directoryID(target.Root)]; ok {
 		summary.Readme = root.Directory.Readme
 		if summary.Readme == "" {
 			summary.Readme = root.Directory.Doc
@@ -175,8 +175,8 @@ func (r *reader) readJoints(ctx context.Context) error {
 			ins = append(ins, state)
 		}
 	}
-	sort.Slice(outs, func(i, j int) bool { return outs[i].place.ID < outs[j].place.ID })
-	sort.Slice(ins, func(i, j int) bool { return ins[i].place.ID < ins[j].place.ID })
+	sort.Slice(outs, func(i, j int) bool { return compactIDLess(outs[i].place.ID, outs[j].place.ID) })
+	sort.Slice(ins, func(i, j int) bool { return compactIDLess(ins[i].place.ID, ins[j].place.ID) })
 	var candidates []*jointState
 	matched := make(map[string]bool)
 	for _, out := range outs {
@@ -196,7 +196,7 @@ func (r *reader) readJoints(ctx context.Context) error {
 					candidates = append(candidates, &jointState{
 						from: out, to: in,
 						joint: atlas.Joint{
-							ID:    fmt.Sprintf("joint:%s:%s->%s:%s", fromTarget, out.place.ID, toTarget, in.place.ID),
+							ID:    r.compactID("j", &r.nextJoint),
 							From:  atlas.Endpoint{TargetID: fromTarget, BoundaryID: out.place.ID},
 							To:    atlas.Endpoint{TargetID: toTarget, BoundaryID: in.place.ID},
 							Value: value, Possible: possible || out.place.Boundary.Source == "model" || in.place.Boundary.Source == "model", SourceKind: "integration",
@@ -260,7 +260,7 @@ func (r *reader) readJoints(ctx context.Context) error {
 					continue
 				}
 				r.joints = append(r.joints, atlas.Joint{
-					ID:    fmt.Sprintf("joint:%s:%s->%s:%s", fromTarget, out.place.ID, toTarget, peer.in.place.ID),
+					ID:    r.compactID("j", &r.nextJoint),
 					From:  atlas.Endpoint{TargetID: fromTarget, BoundaryID: out.place.ID},
 					To:    atlas.Endpoint{TargetID: toTarget, BoundaryID: peer.in.place.ID},
 					Value: strings.Join(out.place.Boundary.Values, ", "),
@@ -270,7 +270,7 @@ func (r *reader) readJoints(ctx context.Context) error {
 		}
 	}
 	r.joints = append(r.joints, r.linkJoints()...)
-	sort.Slice(r.joints, func(i, j int) bool { return r.joints[i].ID < r.joints[j].ID })
+	sort.Slice(r.joints, func(i, j int) bool { return compactIDLess(r.joints[i].ID, r.joints[j].ID) })
 	r.reportStage(def.Stage)
 	return nil
 }
@@ -439,7 +439,7 @@ func (r *reader) linkJoints() []atlas.Joint {
 				}
 				seen[k] = true
 				joints = append(joints, atlas.Joint{
-					ID:         fmt.Sprintf("joint:%s:%s:%s->%s:%s", edge.Kind, fromTarget, fromBox, toTarget, toBox),
+					ID:         r.compactID("j", &r.nextJoint),
 					From:       atlas.Endpoint{TargetID: fromTarget, BoxID: fromBox},
 					To:         atlas.Endpoint{TargetID: toTarget, BoxID: toBox},
 					Value:      edge.Kind + " " + r.boxes[toBox].dir,
@@ -652,11 +652,7 @@ func (r *reader) runJointTable(ctx context.Context, def table.Definition, round 
 			return nil, err
 		}
 		window.Request = input
-		call, err := table.Call(def, window)
-		if err != nil {
-			return nil, err
-		}
-		basis[i], err = llm.MemoIdentity(r.opts.Provider, call.State, call.Prompt, call.Limits)
+		basis[i], err = table.MemoIdentity(r.opts.Provider, def, window)
 		if err != nil {
 			return nil, err
 		}

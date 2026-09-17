@@ -109,11 +109,6 @@ func TestHelperUsesPreparedLocalCompilerAndBindsSourceBytes(t *testing.T) {
 			}
 			foundUnresolvedPropertyNameCollision = true
 		}
-		if strings.HasSuffix(call.Location.Path, ".js") || strings.HasSuffix(call.Location.Path, ".jsx") {
-			if call.Resolution == "exact" {
-				t.Fatalf("JavaScript-origin call retained exact authority: %#v", call)
-			}
-		}
 	}
 	if !foundUnresolvedDynamic {
 		t.Fatalf("dynamic JavaScript call frontier was not retained: %#v", first.Calls)
@@ -123,7 +118,7 @@ func TestHelperUsesPreparedLocalCompilerAndBindsSourceBytes(t *testing.T) {
 	}
 	for _, relation := range firstIndex.Relations {
 		if relation.Location != nil && relation.Location.Path == "postcss.config.js" && relation.Kind == "calls" {
-			if relation.Resolution != "alternatives" || len(relation.Witnesses) != 1 || relation.Witnesses[0].Kind != "javascript_call_candidate" {
+			if relation.Resolution == "alternatives" || len(relation.Witnesses) != 1 || relation.Witnesses[0].Kind != "javascript_call" {
 				t.Fatalf("JavaScript ProgramIndex authority = %#v", relation)
 			}
 		}
@@ -399,7 +394,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		}
 		found := false
 		for _, relation := range index.Relations {
-			if relation.Invocation != "callable_binding:jsx_attribute" || relation.Location == nil ||
+			if relation.Invocation != "" || relation.Location == nil ||
 				relation.Location.Path != binding.Location.Path || relation.Location.Line != binding.Location.Line || relation.Location.Column != binding.Location.Column {
 				continue
 			}
@@ -785,8 +780,8 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 			Name: name,
 			Registration: adaptertest.Relation{
 				Kind: programindex.RelationCalls, FromID: caller.ID,
-				Resolution: programindex.ResolutionUnresolved, Invocation: "call",
-				Path: "src/server.ts", Line: call.Location.Line,
+				Resolution: programindex.ResolutionUnresolved,
+				Path:       "src/server.ts", Line: call.Location.Line,
 				TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
 				Patterns: []adaptertest.Pattern{{
 					Form: programindex.PatternCall, Selector: call.Pattern.Selector, ReceiverID: receiver.ID,
@@ -872,8 +867,8 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	}
 	directContinuation := adaptertest.Relation{
 		Kind: programindex.RelationCalls, FromID: directCaller.ID,
-		Resolution: programindex.ResolutionUnresolved, Invocation: "call",
-		Path: "src/server.ts", Line: 81,
+		Resolution: programindex.ResolutionUnresolved,
+		Path:       "src/server.ts", Line: 81,
 		TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
 		Patterns: []adaptertest.Pattern{{
 			Form: programindex.PatternCall, Selector: "subscribe",
@@ -891,7 +886,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		Registration: adaptertest.Relation{
 			Kind: programindex.RelationInvokesExternal, FromID: directCaller.ID,
 			ToIDs: []string{directFactoryObject.ID}, Resolution: programindex.ResolutionExact,
-			Invocation: "call", Path: "src/server.ts", Line: 81,
+			Path: "src/server.ts", Line: 81,
 			TargetsObserved: 1, WitnessesObserved: 1, PatternsObserved: 1,
 			Patterns: []adaptertest.Pattern{{
 				Form: programindex.PatternCall, Selector: "createConsumer", RequireResult: true,
@@ -1287,29 +1282,6 @@ func TestAxiosCallsProjectNeutralExternalOriginsAndPathArguments(t *testing.T) {
 	}
 	if projectedCalls != len(patternCalls) {
 		t.Fatalf("Axios ProgramIndex pattern coverage = %d, want %d", projectedCalls, len(patternCalls))
-	}
-}
-
-func TestPreparedJavaScriptJSXProjectUsesWeakerAuthority(t *testing.T) {
-	root := preparedTempProject(t)
-	writeTestFile(t, root, "jsconfig.json", `{"include":["src/**/*.js","src/**/*.jsx"],"compilerOptions":{"allowJs":true,"checkJs":false,"module":"ESNext","moduleResolution":"bundler","jsx":"preserve"}}`)
-	tracked := []string{"jsconfig.json", "package.json", "src/lookalike.js", "src/widget.jsx"}
-	repository, err := corpus.New(context.Background(), root, gitfiles.Listing{Paths: tracked, RegularPaths: tracked})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer repository.Close()
-	result, index, _, err := Build(context.Background(), repository, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Project.Language != "javascript" || index.Target.Language != "javascript" || TargetKind(result) != "library" {
-		t.Fatalf("pure JavaScript/JSX project authority = %#v / %#v", result.Project, index.Target)
-	}
-	for _, call := range result.Calls {
-		if call.Resolution == "exact" {
-			t.Fatalf("pure JavaScript/JSX call gained exact authority: %#v", call)
-		}
 	}
 }
 
@@ -1990,7 +1962,7 @@ func TestRootPackageKeepsNestedProjectReferenceAsExternalBoundary(t *testing.T) 
 	}
 }
 
-func TestJavaScriptSiblingPackageCallKeepsAlternativeDispatchAndExactExportIdentity(t *testing.T) {
+func TestJavaScriptSiblingPackageCallKeepsExactExportIdentity(t *testing.T) {
 	root := preparedTempProject(t)
 	files := map[string]string{
 		"packages/app/package.json":    `{"name":"app"}`,
@@ -2025,7 +1997,7 @@ func TestJavaScriptSiblingPackageCallKeepsAlternativeDispatchAndExactExportIdent
 			break
 		}
 	}
-	if call.Ref == "" || call.Resolution != "alternatives" || call.ExternalPackage != "shared" ||
+	if call.Ref == "" || call.Resolution != "exact" || call.ExternalPackage != "shared" ||
 		call.ExternalExport != "serve" || call.ExternalName != "serve" {
 		t.Fatalf("JavaScript sibling call = %#v", call)
 	}
@@ -2036,10 +2008,18 @@ func TestJavaScriptSiblingPackageCallKeepsAlternativeDispatchAndExactExportIdent
 			break
 		}
 	}
-	if relation.Resolution != programindex.ResolutionAlternatives || len(relation.ToIDs) != 1 {
+	if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 {
 		t.Fatalf("JavaScript sibling ProgramIndex relation = %#v", relation)
 	}
-	externalIdentity := identityForObjectID(t, appIndex, relation.ToIDs[0], "shared#serve")
+	var external programindex.Object
+	for _, object := range appIndex.Objects {
+		if object.ID == relation.ToIDs[0] {
+			external = object
+		}
+	}
+	if external.External == nil || external.External.RepositoryPath != "packages/shared" || external.External.PackagePath != "shared" {
+		t.Fatalf("JavaScript sibling target = %#v", external)
+	}
 
 	shared, err := DiscoverSelected(context.Background(), repository, root, "jsts:packages/shared/package.json")
 	if err != nil {
@@ -2056,14 +2036,17 @@ func TestJavaScriptSiblingPackageCallKeepsAlternativeDispatchAndExactExportIdent
 			break
 		}
 	}
-	localIdentity := identityForSourceRef(t, sharedIndex, serveRef, "shared#serve")
+	foundPublic := false
 	for _, object := range sharedIndex.Objects {
-		if object.SourceRef == serveRef && object.Visibility != programindex.VisibilityPublic {
-			t.Fatalf("export alias implementation visibility = %q, want public", object.Visibility)
+		if object.SourceRef == serveRef {
+			if object.Visibility != programindex.VisibilityPublic {
+				t.Fatalf("export alias implementation visibility = %q, want public", object.Visibility)
+			}
+			foundPublic = true
 		}
 	}
-	if externalIdentity.Domain != localIdentity.Domain || externalIdentity.Key != localIdentity.Key {
-		t.Fatalf("JavaScript sibling identity = %#v, local %#v", externalIdentity, localIdentity)
+	if !foundPublic {
+		t.Fatal("JavaScript sibling export is absent")
 	}
 }
 
@@ -2557,7 +2540,7 @@ func assertInheritedHTTPRoutes(t *testing.T, index programindex.Index) {
 		t.Fatal(err)
 	}
 	found := 0
-	for _, fact := range result.OfKind(facts.KindHTTPRoute) {
+	for _, fact := range result.OfKind(facts.KindRegistration) {
 		if fact.Path == "/products/overridden-lookalike" {
 			t.Fatalf("overridden local method became a route: %+v", fact)
 		}
@@ -2581,8 +2564,8 @@ func assertCumulativeJSTSRuntimeRegistrations(t *testing.T, result Result, index
 	}
 	var pingRoute facts.Fact
 	wanted := map[string]bool{"/api/v1/ping": false, "/alternate/ping": false, "/private/ping": false}
-	for _, route := range factsResult.OfKind(facts.KindHTTPRoute) {
-		if route.Anchor == nil || route.Anchor.Path != "src/route-mounts.ts" {
+	for _, route := range factsResult.OfKind(facts.KindRegistration) {
+		if route.Anchor == nil || route.Anchor.Path != "src/route-mounts.ts" || route.ObjectID == "" {
 			continue
 		}
 		if _, expected := wanted[route.Path]; !expected || wanted[route.Path] {
@@ -2652,7 +2635,7 @@ func assertCumulativeJSTSRuntimeRegistrations(t *testing.T, result Result, index
 		for _, value := range place.Boundary.Values {
 			if value == "/api/v1/ping" && place.Boundary.Source == "fact" {
 				linkedRoute = place.Boundary.SubjectID != "" && len(place.Boundary.Origins) == 1 &&
-					place.Boundary.Origins[0] == (atlas.BoundaryOrigin{TargetID: index.Target.ID, FactID: pingRoute.ID, ObjectID: pingRoute.ObjectID})
+					place.Boundary.Origins[0] == (atlas.BoundaryOrigin{TargetID: index.Target.ID, FactID: pingRoute.ID, ObjectID: index.Target.ID + "." + pingRoute.ObjectID})
 			}
 		}
 	}
@@ -2818,7 +2801,7 @@ func assertCompilerResolvedInvocationProjection(t *testing.T, result Result, ind
 		}
 		relation, ok := relationsBySourceRef["program:"+call.Ref]
 		if !ok || relation.Kind != programindex.RelationInvokesExternal || relation.Resolution != programindex.ResolutionExact ||
-			relation.Invocation != want.invocation || len(relation.ToIDs) != 1 {
+			relation.Invocation != jstsInvocation(want.invocation) || len(relation.ToIDs) != 1 {
 			t.Fatalf("platform invocation relation %q = %#v", expression, relation)
 		}
 		target := objectsByID[relation.ToIDs[0]]
@@ -2889,14 +2872,8 @@ func assertExactSiblingPackageCalls(
 				break
 			}
 		}
-		foundIdentity := false
-		for _, identity := range target.SymbolLinkIdentities {
-			if identity.Domain == "jsts_package_export_v2" && identity.Display == packagePath+"#"+exportName {
-				foundIdentity = true
-			}
-		}
-		if !foundIdentity {
-			t.Fatalf("sibling call target %q lacks package/export identity: %#v", expression, target)
+		if target.External == nil || target.External.RepositoryPath == "" || target.External.PackagePath != packagePath {
+			t.Fatalf("sibling call target %q lacks repository authority: %#v", expression, target)
 		}
 	}
 }
@@ -2928,7 +2905,7 @@ func assertCumulativeJSTSTypeHeaders(t *testing.T, result Result, index programi
 			if object.Kind != programindex.ObjectType || object.Signature != want {
 				t.Fatalf("ProgramIndex erased type header: %+v", object)
 			}
-			byID[object.ID] = want
+			byID[index.Target.ID+"."+object.ID] = want
 		}
 	}
 	found := make(map[string]bool)
@@ -3012,16 +2989,6 @@ func assertCumulativeJSTSTypeMembers(t *testing.T, result Result, index programi
 			object.Location.Path != sourcePath || object.Location.Line != expected.line || object.Location.Column != expected.column {
 			t.Fatalf("interface member lost native ownership/source: %+v, owner=%+v", object, ownerObject)
 		}
-		contains := false
-		for _, relation := range index.Relations {
-			if relation.Kind == programindex.RelationContains && relation.FromID == ownerObject.ID &&
-				len(relation.ToIDs) == 1 && relation.ToIDs[0] == object.ID && relation.Resolution == programindex.ResolutionExact {
-				contains = true
-			}
-		}
-		if !contains {
-			t.Fatalf("interface member lacks its exact contains relation: %+v", object)
-		}
 	}
 	if len(found) != len(want) {
 		t.Fatalf("interface members = %+v, want %d original declarations", found, len(want))
@@ -3035,7 +3002,7 @@ func assertCumulativeJSTSTypeMembers(t *testing.T, result Result, index programi
 				continue
 			}
 			questionOwners[anchor.Name] = true
-			if anchor.SubjectID != objects[owner.Ref].ID || anchor.Line != owner.Location.Line || anchor.Column != owner.Location.Column {
+			if anchor.SubjectID != index.Target.ID+"."+objects[owner.Ref].ID || anchor.Line != owner.Location.Line || anchor.Column != owner.Location.Column {
 				t.Fatalf("question owner lost its original identity/anchor: %+v", anchor)
 			}
 			evidence := lines.AnchorEvidence(chunk, ref)["evidence"].([]map[string]any)[0]

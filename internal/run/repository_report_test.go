@@ -46,7 +46,7 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 	var outcomes []targetoutcome.Outcome
 	for i := 0; i < 27; i++ {
 		name := fmt.Sprintf("part-%02d", i)
-		index := runtimeProgramIndex(t, name, "go:"+name, name+"/main.go", name)
+		index := runtimeProgramIndex(t, fmt.Sprintf("t%d", i+1), name, "go:"+name, name+"/main.go", name)
 		groups, err := groupindex.Empty(index)
 		if err != nil {
 			t.Fatal(err)
@@ -69,7 +69,7 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 			GroupIndex: groups, Dependencies: &catalog, Documentation: &docs,
 			RepoName: "fixture", Source: source,
 		})
-		selected, err := targetoutcome.NewSelectedTarget(targetoutcome.LanguageGroupGo, targetoutcome.ScopeLibrary, name, index.Target.Selector)
+		selected, err := targetoutcome.NewSelectedTarget(index.Target.ID, targetoutcome.LanguageGroupGo, targetoutcome.ScopeLibrary, name, index.Target.Selector)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -190,7 +190,7 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 }
 
 func TestRestoredTargetIndexIsReleasedAfterReading(t *testing.T) {
-	index := runtimeProgramIndex(t, "api", "go:api", "main.go", "main")
+	index := runtimeProgramIndex(t, "t1", "api", "go:api", "main.go", "main")
 	run := targetPublishedRun{RunDir: t.TempDir()}
 	if err := programindex.Persist(run.RunDir, programindex.ArtifactFilename, index); err != nil {
 		t.Fatal(err)

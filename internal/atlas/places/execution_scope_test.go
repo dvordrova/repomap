@@ -17,7 +17,6 @@ func TestOnlyObservedModuleBodiesEnterDeclarationChoices(t *testing.T) {
 		{FromID: "caller", ToIDs: []string{"work"}, Kind: programindex.RelationCalls},
 		{FromID: "reader", Kind: programindex.RelationReads},
 		{FromID: "namespace", Kind: programindex.RelationCalls},
-		{FromID: "passive", ToIDs: []string{"work"}, Kind: programindex.RelationContains},
 		{FromID: "passive", ToIDs: []string{"reader"}, Kind: programindex.RelationImports},
 	}}
 	b := builder{}

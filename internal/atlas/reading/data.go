@@ -1,9 +1,10 @@
 package reading
 
 import (
+	"sort"
+
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/facts"
-	"sort"
 )
 
 func (r *reader) dataForTarget(id string) []atlas.DataRecord {
@@ -24,8 +25,8 @@ func (r *reader) dataForTarget(id string) []atlas.DataRecord {
 	}
 	for i := range rows {
 		rows[i].References = refs[rows[i].ID]
-		sort.Strings(rows[i].References)
+		sort.Slice(rows[i].References, func(a, b int) bool { return compactIDLess(rows[i].References[a], rows[i].References[b]) })
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
+	sort.Slice(rows, func(i, j int) bool { return compactIDLess(rows[i].ID, rows[j].ID) })
 	return rows
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestDigestPreservesCanonicalBytesWithoutMutatingOwnedIndex(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			previous := index.Snapshot()
+			previous := OverlayFromIndex(index)
 			previous.SHA256 = ""
 			previousBytes, err := json.Marshal(previous)
 			if err != nil {
@@ -42,12 +43,16 @@ func TestDigestPreservesCanonicalBytesWithoutMutatingOwnedIndex(t *testing.T) {
 			if err != nil || !bytes.Equal(before, after) {
 				t.Fatalf("digest/validation mutated index or nested storage: %v", err)
 			}
-			text := &index.Target.Name
+			text := &index.ProgramIndexSHA256
 			if len(index.Groups) > 0 {
 				text = &index.Groups[0].Summary
 			}
 			original := *text
-			*text = original + " changed meaning"
+			if len(index.Groups) > 0 {
+				*text = original + " changed meaning"
+			} else {
+				*text = strings.Repeat("a", 64)
+			}
 			changed, err := indexDigest(index)
 			if err != nil || changed == digest || index.Validate() == nil {
 				t.Fatalf("later mutation reused the previous seal: %s / %v", changed, err)

@@ -2,9 +2,6 @@ package report
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	stdhtml "html"
 	"html/template"
@@ -187,14 +184,10 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 
 func TestOutboundSourcePathsAndFoldKeepOriginalEvidence(t *testing.T) {
 	index := reportGroupIndexFixture(t, "api", "fixture:api", "main.go")
-	index.Outbound = []groupindex.OutboundCall{{ID: "out", Kind: "http_client", External: "http.Client.Do", Method: "GET", Address: "https://가격.example/시장", Source: "fact", Basis: "dispatch", Location: programindex.Location{Path: "clients/가격.go", Line: 31, Column: 19}}}
-	index.SHA256 = ""
-	raw, err := json.Marshal(index)
+	index, err := groupindex.WithOutbound(index, []groupindex.OutboundCall{{ID: "out", Kind: "http_client", External: "http.Client.Do", Method: "GET", Address: "https://가격.example/시장", Source: "fact", Basis: "dispatch", Location: programindex.Location{Path: "clients/가격.go", Line: 31, Column: 19}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256(raw)
-	index.SHA256 = hex.EncodeToString(digest[:])
 	view, err := NewGroupGraphView([]groupindex.Index{index}, index.Target.ID)
 	if err != nil {
 		t.Fatal(err)

@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/facts"
@@ -29,8 +30,8 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 14
-	Version      = 8
+	GraphVersion = 16
+	Version      = 10
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -64,10 +65,9 @@ func (kind PlaceKind) Valid() bool {
 	}
 }
 
-// Place is one thing a reader can be asked about. ID is "dir:<path>",
-// "file:<path>", "sym:<path>:<line>:<name>" or "bnd:<path>:<line>". A path
-// is repository-relative and slash-separated; one place per path, however
-// many targets reach it.
+// Place is one thing a reader can be asked about. ID is a short graph-local
+// ordinal whose prefix identifies only the closed place kind. Paths and names
+// remain ordinary fields instead of being repeated inside identity strings.
 type Place struct {
 	ID   string    `json:"id"`
 	Kind PlaceKind `json:"kind"`
@@ -171,6 +171,8 @@ type Decl struct {
 	Name      string `json:"name"`
 	Kind      string `json:"kind"`
 	Signature string `json:"signature,omitempty"`
+	// Aliases are the declaration's names in other formats, "json:count_label".
+	Aliases string `json:"aliases,omitempty"`
 	// Doc is author documentation. File/callable rows use its first sentence;
 	// type context retains the existing bounded quote, including later effects.
 	Doc      string `json:"doc,omitempty"`
@@ -223,12 +225,9 @@ type TypeMember struct {
 }
 
 type SymbolCall struct {
-	// DispatchObservations preserve the original native views when a declared
-	// external interface and unresolved runtime dispatch address one call site.
-	DispatchObservations []DispatchObservation `json:"dispatch_observations,omitempty"`
-	ReceiverValue        *sourcevalue.Value    `json:"receiver_value,omitempty"`
-	ResultValue          *sourcevalue.Value    `json:"result_value,omitempty"`
-	API                  *CallAPI              `json:"api,omitempty"`
+	ReceiverValue *sourcevalue.Value `json:"receiver_value,omitempty"`
+	ResultValue   *sourcevalue.Value `json:"result_value,omitempty"`
+	API           *CallAPI           `json:"api,omitempty"`
 	// SourceArguments retain value provenance for local destination traversal.
 	// They are not appended wholesale to every description request.
 	SourceArguments []SourceArgument `json:"source_arguments,omitempty"`
@@ -237,6 +236,7 @@ type SymbolCall struct {
 	Line            int              `json:"line"`
 	Column          int              `json:"column,omitempty"`
 	Invocation      string           `json:"invocation,omitempty"`
+	Dispatch        string           `json:"dispatch,omitempty"`
 	Detail          string           `json:"detail,omitempty"`
 	Resolution      string           `json:"resolution,omitempty"`
 	Values          []string         `json:"values,omitempty"`
@@ -245,23 +245,6 @@ type SymbolCall struct {
 	// CalleeIDs refer to compiler-located symbol places, shared across target
 	// indexes. They are local retrieval keys and never enter provider prose.
 	CalleeIDs []string `json:"callee_ids,omitempty"`
-}
-
-type DispatchObservation struct {
-	Kind       string            `json:"kind"`
-	Invocation string            `json:"invocation"`
-	Resolution string            `json:"resolution"`
-	Detail     string            `json:"detail,omitempty"`
-	Witnesses  []DispatchWitness `json:"witnesses,omitempty"`
-}
-
-type DispatchWitness struct {
-	Kind             string `json:"kind"`
-	Detail           string `json:"detail,omitempty"`
-	SourceExpression string `json:"source_expression,omitempty"`
-	Path             string `json:"path,omitempty"`
-	Line             int    `json:"line,omitempty"`
-	Column           int    `json:"column,omitempty"`
 }
 
 // CallAPI is the exact native external symbol, before display shortening.
@@ -289,6 +272,7 @@ type SymbolCaller struct {
 	Line       int    `json:"line"`
 	Kind       string `json:"kind"`
 	Invocation string `json:"invocation,omitempty"`
+	Dispatch   string `json:"dispatch,omitempty"`
 	Resolution string `json:"resolution"`
 }
 
@@ -300,7 +284,7 @@ type SymbolBinding struct {
 	From       string                 `json:"from"`
 	To         string                 `json:"to"`
 	Detail     string                 `json:"detail"`
-	Invocation string                 `json:"invocation"`
+	Kind       string                 `json:"kind"`
 	Resolution string                 `json:"resolution"`
 	Path       string                 `json:"path"`
 	Line       int                    `json:"line"`
@@ -332,10 +316,13 @@ type BoundaryFacts struct {
 	CallerDoc string `json:"caller_doc,omitempty"`
 	// External is the external symbol as package.Receiver.Name; Method and
 	// Values are the literal facts the code extracted.
-	External  string   `json:"external,omitempty"`
-	Method    string   `json:"method,omitempty"`
-	Values    []string `json:"values"`
-	Direction string   `json:"direction"`
+	External string   `json:"external,omitempty"`
+	Method   string   `json:"method,omitempty"`
+	Values   []string `json:"values"`
+	// Holder is the value the call acts on, as path:line:column of the call
+	// that produced it; registrations on one holder belong together.
+	Holder    string `json:"holder,omitempty"`
+	Direction string `json:"direction"`
 	// GivenKind is the kind the code already knows from facts; empty when the
 	// model has to say.
 	GivenKind string `json:"given_kind,omitempty"`
@@ -368,6 +355,9 @@ func CanonicalBoundaryOrigins(origins []BoundaryOrigin) []BoundaryOrigin {
 type Witness struct {
 	Caller string `json:"caller"`
 	Callee string `json:"callee"`
+	// Kind is the relation between them: calls, passes_callback,
+	// binds_implementation, decorates, executes.
+	Kind   string `json:"kind,omitempty"`
 	Path   string `json:"path"`
 	LineNo int    `json:"line_no"`
 }
@@ -404,10 +394,24 @@ type Atlas struct {
 	// Targets holds one entry per analyzed target of any language.
 	Targets []Target `json:"targets"`
 	// Joints are the integrations between targets, at repository level.
-	Joints      []Joint      `json:"joints"`
+	Joints []Joint `json:"joints"`
+	// API is MODEL: what the external symbols the repository calls do with
+	// what it gives them. A symbol without a role is absent.
+	API         []APIRole    `json:"api,omitempty"`
 	Budget      Budget       `json:"budget"`
 	Diagnostics []Diagnostic `json:"diagnostics"`
 	SHA256      string       `json:"sha256"`
+}
+
+// APIRole is the model's reading of one external symbol: what a callable
+// handed to it becomes, whether it publishes what its holder holds, what
+// other running system it talks to. Each cell is empty when the symbol does
+// not do that.
+type APIRole struct {
+	Symbol    string `json:"symbol"`
+	Binds     string `json:"binds,omitempty"`
+	Publishes bool   `json:"publishes,omitempty"`
+	Talks     string `json:"talks,omitempty"`
 }
 
 // Target is one analyzed program target with its boxes.
@@ -438,7 +442,7 @@ type Target struct {
 
 // Zone is one part of a target: a named frame holding several boxes.
 type Zone struct {
-	// ID is the slug of the title, so colour and anchor hold between runs.
+	// ID is a compact atlas-local z* ordinal.
 	ID string `json:"id"`
 	// Title and Line are MODEL.
 	Title  string   `json:"title"`
@@ -452,7 +456,7 @@ type Box struct {
 	// their declaration's membership, never membership from a matching path.
 	// Nil is a source-file inventory before architecture reading.
 	MemberIDs []string `json:"member_ids"`
-	// ID is target-scoped and derived from exact members, not the model title.
+	// ID is a compact atlas-local p* ordinal assigned when the part is accepted.
 	ID  string `json:"id"`
 	Dir string `json:"dir"`
 	// Title and Line are MODEL; an unavailable decision names source inventory.
@@ -485,7 +489,7 @@ type File struct {
 // Symbol is one declaration on a card.
 type Symbol struct {
 	ObjectID string `json:"object_id,omitempty"`
-	// ID is path:line:name.
+	// ID is the existing compact s* place ID.
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Kind      string `json:"kind"`
@@ -516,6 +520,7 @@ type Key struct {
 
 // Arrow joins two boxes of one target, caller to callee.
 type Arrow struct {
+	ID        string    `json:"id"`
 	From      string    `json:"from"`
 	To        string    `json:"to"`
 	Calls     int       `json:"calls"`
@@ -640,6 +645,138 @@ func cleanPath(path string) string {
 	return path
 }
 
+func compactGraphPlaceIDs(graph Graph) (Graph, error) {
+	raw, err := json.Marshal(graph)
+	if err != nil {
+		return Graph{}, fmt.Errorf("atlas: copy graph for identity sealing: %w", err)
+	}
+	var owned Graph
+	if err := json.Unmarshal(raw, &owned); err != nil {
+		return Graph{}, fmt.Errorf("atlas: restore graph identity copy: %w", err)
+	}
+	sort.Slice(owned.Places, func(i, j int) bool {
+		left, right := owned.Places[i], owned.Places[j]
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		if left.Path != right.Path {
+			return left.Path < right.Path
+		}
+		if left.LineNo != right.LineNo {
+			return left.LineNo < right.LineNo
+		}
+		if left.Column != right.Column {
+			return left.Column < right.Column
+		}
+		return left.ID < right.ID
+	})
+	remap := make(map[string]string, len(owned.Places))
+	ordinals := make(map[PlaceKind]int)
+	for position := range owned.Places {
+		place := &owned.Places[position]
+		if place.ID == "" {
+			return Graph{}, fmt.Errorf("atlas: place without construction identity")
+		}
+		if _, duplicate := remap[place.ID]; duplicate {
+			return Graph{}, fmt.Errorf("atlas: duplicate construction identity %q", place.ID)
+		}
+		ordinals[place.Kind]++
+		remap[place.ID] = placePrefix(place.Kind) + strconv.Itoa(ordinals[place.Kind])
+	}
+	// Construction helpers still use source-shaped keys before the graph is
+	// sealed. Resolve those keys when an already sealed graph is extended in
+	// memory, without preserving them in the artifact.
+	for _, place := range owned.Places {
+		compact := remap[place.ID]
+		switch place.Kind {
+		case PlaceDirectory:
+			remap[DirectoryID(place.Path)] = compact
+		case PlaceFile:
+			remap[FileID(place.Path)] = compact
+		case PlaceSymbol:
+			if place.Symbol != nil {
+				remap[SymbolID(place.Path, place.LineNo, place.Symbol.Decl.Name)] = compact
+			}
+		}
+	}
+	mapID := func(id string) string {
+		if id == "" {
+			return ""
+		}
+		if compact := remap[id]; compact != "" {
+			return compact
+		}
+		return id
+	}
+	mapIDs := func(ids []string) {
+		for position := range ids {
+			ids[position] = mapID(ids[position])
+		}
+		sort.Slice(ids, func(i, j int) bool { return placeIDLess(ids[i], ids[j]) })
+	}
+	for position := range owned.Places {
+		place := &owned.Places[position]
+		place.ID = mapID(place.ID)
+		place.Parent = mapID(place.Parent)
+		if place.File != nil {
+			mapIDs(place.File.Callers)
+			mapIDs(place.File.Callees)
+		}
+		if place.Symbol != nil {
+			for call := range place.Symbol.Calls {
+				mapIDs(place.Symbol.Calls[call].CalleeIDs)
+			}
+			for caller := range place.Symbol.CalledBy {
+				place.Symbol.CalledBy[caller].PlaceID = mapID(place.Symbol.CalledBy[caller].PlaceID)
+			}
+		}
+		if place.Boundary != nil {
+			place.Boundary.SubjectID = mapID(place.Boundary.SubjectID)
+		}
+	}
+	for position := range owned.Edges {
+		owned.Edges[position].From = mapID(owned.Edges[position].From)
+		owned.Edges[position].To = mapID(owned.Edges[position].To)
+	}
+	mapIDs(owned.Seeds)
+	sort.Slice(owned.Places, func(i, j int) bool { return placeIDLess(owned.Places[i].ID, owned.Places[j].ID) })
+	// Equal endpoints and kinds keep the producer's deterministic evidence
+	// order. An unstable sort is allowed to reshuffle those otherwise equal
+	// rows, which would make the sealed artifact depend on sort internals.
+	sort.SliceStable(owned.Edges, func(i, j int) bool {
+		left, right := owned.Edges[i], owned.Edges[j]
+		if left.From != right.From {
+			return placeIDLess(left.From, right.From)
+		}
+		if left.To != right.To {
+			return placeIDLess(left.To, right.To)
+		}
+		return left.Kind < right.Kind
+	})
+	return owned, nil
+}
+
+func placeIDLess(left, right string) bool {
+	if len(left) < 2 || len(right) < 2 || left[0] != right[0] {
+		return left < right
+	}
+	leftOrdinal, leftErr := strconv.Atoi(left[1:])
+	rightOrdinal, rightErr := strconv.Atoi(right[1:])
+	if leftErr != nil || rightErr != nil {
+		return left < right
+	}
+	return leftOrdinal < rightOrdinal
+}
+
+func validPlaceID(id string, kind PlaceKind) bool {
+	prefix := placePrefix(kind)
+	if !strings.HasPrefix(id, prefix) || len(id) == len(prefix) {
+		return false
+	}
+	ordinal, err := strconv.Atoi(id[len(prefix):])
+	return err == nil && ordinal > 0 && prefix+strconv.Itoa(ordinal) == id
+}
+
 // Slug turns a title into a stable identifier: lowercase words joined by
 // hyphens, nothing else.
 func Slug(title string) string {
@@ -674,10 +811,15 @@ func EncodeGraph(graph Graph) ([]byte, error) {
 	}
 	graph.Version = GraphVersion
 	graph.SHA256 = ""
+	var err error
+	graph, err = compactGraphPlaceIDs(graph)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateGraph(graph); err != nil {
 		return nil, err
 	}
-	digest, err := digestOf("repomap-atlas-graph-v2\x00", graph)
+	digest, err := digestOf("repomap-atlas-graph-v3\x00", graph)
 	if err != nil {
 		return nil, err
 	}
@@ -696,7 +838,7 @@ func DecodeGraph(encoded []byte) (Graph, error) {
 	}
 	sealed := graph.SHA256
 	graph.SHA256 = ""
-	digest, err := digestOf("repomap-atlas-graph-v2\x00", graph)
+	digest, err := digestOf("repomap-atlas-graph-v3\x00", graph)
 	if err != nil {
 		return Graph{}, err
 	}
@@ -717,7 +859,7 @@ func Encode(value Atlas) ([]byte, error) {
 	if err := Validate(value); err != nil {
 		return nil, err
 	}
-	digest, err := digestOf("repomap-atlas-v2\x00", value)
+	digest, err := digestOf("repomap-atlas-v3\x00", value)
 	if err != nil {
 		return nil, err
 	}
@@ -736,7 +878,7 @@ func Decode(encoded []byte) (Atlas, error) {
 	}
 	sealed := value.SHA256
 	value.SHA256 = ""
-	digest, err := digestOf("repomap-atlas-v2\x00", value)
+	digest, err := digestOf("repomap-atlas-v3\x00", value)
 	if err != nil {
 		return Atlas{}, err
 	}
@@ -818,7 +960,7 @@ func validateGraph(graph Graph) error {
 		if !place.Kind.Valid() {
 			return fmt.Errorf("atlas: place %q has kind %q", place.ID, place.Kind)
 		}
-		if place.ID == "" || !strings.HasPrefix(place.ID, placePrefix(place.Kind)) {
+		if !validPlaceID(place.ID, place.Kind) {
 			return fmt.Errorf("atlas: place %q does not name its kind", place.ID)
 		}
 		if strings.HasPrefix(place.Path, "/") || strings.Contains(place.Path, "\\") {
@@ -827,7 +969,7 @@ func validateGraph(graph Graph) error {
 		if _, dup := seen[place.ID]; dup {
 			return fmt.Errorf("atlas: place %q appears twice", place.ID)
 		}
-		if position > 0 && graph.Places[position-1].ID >= place.ID {
+		if position > 0 && !placeIDLess(graph.Places[position-1].ID, place.ID) {
 			return fmt.Errorf("atlas: places are not sorted at %q", place.ID)
 		}
 		seen[place.ID] = place.Kind
@@ -943,19 +1085,19 @@ func validateGraph(graph Graph) error {
 func placePrefix(kind PlaceKind) string {
 	switch kind {
 	case PlaceDirectory:
-		return "dir:"
+		return "d"
 	case PlaceFile:
-		return "file:"
+		return "f"
 	case PlaceSymbol:
-		return "sym:"
+		return "s"
 	case PlaceEntity:
-		return "entity:"
+		return "y"
 	case PlaceDocument:
-		return "doc:"
+		return "m"
 	case PlaceSourceFact:
-		return "fact:"
+		return "a"
 	default:
-		return "bnd:"
+		return "b"
 	}
 }
 
@@ -1054,7 +1196,12 @@ func Validate(value Atlas) error {
 				}
 			}
 		}
+		arrowIDs := make(map[string]bool, len(target.Arrows))
 		for _, arrow := range target.Arrows {
+			if arrow.ID == "" || arrowIDs[arrow.ID] {
+				return fmt.Errorf("atlas: target %q has an empty or duplicate arrow id %q", target.ID, arrow.ID)
+			}
+			arrowIDs[arrow.ID] = true
 			if _, ok := boxes[arrow.From]; !ok {
 				return fmt.Errorf("atlas: arrow from unknown box %q", arrow.From)
 			}
@@ -1165,7 +1312,13 @@ const (
 	BoundaryQueueConsumer = "queue_consumer"
 	BoundarySDK           = "sdk"
 	BoundaryConfig        = "config"
-	BoundaryOther         = "other"
+	// BoundaryScheduled is work a timer or scheduler activates; BoundaryInteraction
+	// a user's action in an interface; BoundaryExtension a hook the host
+	// program registers with a runtime or plugin system.
+	BoundaryScheduled   = "scheduled"
+	BoundaryInteraction = "interaction"
+	BoundaryExtension   = "extension"
+	BoundaryOther       = "other"
 
 	SourceModel  = "model"
 	SourceCache  = "cache"
@@ -1182,8 +1335,15 @@ func Roles() []string {
 func BoundaryKinds() []string {
 	return []string{
 		BoundaryHTTPClient, BoundaryHTTPServer, BoundaryDB, BoundaryQueueProducer,
-		BoundaryQueueConsumer, BoundarySDK, BoundaryConfig, BoundaryOther,
+		BoundaryQueueConsumer, BoundaryScheduled, BoundaryInteraction, BoundaryExtension,
+		BoundarySDK, BoundaryConfig, BoundaryOther,
 	}
+}
+
+// IncomingBoundaryKinds lists what a registration handing over a repository
+// callable can be: the ways work enters the component.
+func IncomingBoundaryKinds() []string {
+	return []string{BoundaryHTTPServer, BoundaryQueueConsumer, BoundaryScheduled, BoundaryInteraction, BoundaryExtension, BoundaryOther}
 }
 
 // OutgoingBoundaryKinds lists the kinds an outgoing candidate may take: the

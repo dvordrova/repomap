@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -22,7 +21,7 @@ import (
 )
 
 const (
-	Version          = 2
+	Version          = 3
 	ArtifactFilename = "target-outcome-portfolio.json"
 
 	MaxOutcomes           = 4_096
@@ -33,10 +32,7 @@ const (
 	MaxAllowedProgramLanguages = 16
 )
 
-const (
-	digestDomain       = "target-outcome-portfolio-v2\x00"
-	legacyDigestDomain = "target-outcome-portfolio-v1\x00"
-)
+const digestDomain = "target-outcome-portfolio-v3\x00"
 
 // LanguageGroup is the bounded public adapter family that owns a selected
 // target. The separately persisted AllowedProgramLanguages set is the exact
@@ -144,12 +140,14 @@ type SelectedTarget struct {
 // NewSelectedTarget validates and seals the exact public selected-target
 // tuple. Its identity changes when any tuple field changes.
 func NewSelectedTarget(
+	id string,
 	languageGroup LanguageGroup,
 	scopeKind ScopeKind,
 	displayName string,
 	selector string,
 ) (SelectedTarget, error) {
 	return NewSelectedTargetWithLanguages(
+		id,
 		languageGroup, defaultAllowedProgramLanguages(languageGroup),
 		scopeKind, displayName, selector,
 	)
@@ -159,6 +157,7 @@ func NewSelectedTarget(
 // ProgramIndex languages it may materialize. Report code checks membership in
 // this identity-bound set instead of registering language families itself.
 func NewSelectedTargetWithLanguages(
+	id string,
 	languageGroup LanguageGroup,
 	allowedProgramLanguages []string,
 	scopeKind ScopeKind,
@@ -166,26 +165,26 @@ func NewSelectedTargetWithLanguages(
 	selector string,
 ) (SelectedTarget, error) {
 	target := SelectedTarget{
+		ID:            id,
 		LanguageGroup: languageGroup, AllowedProgramLanguages: canonicalLanguages(allowedProgramLanguages),
 		ScopeKind: scopeKind, DisplayName: displayName, Selector: selector,
 	}
 	if err := target.validateShape(); err != nil {
 		return SelectedTarget{}, err
 	}
-	target.ID = selectedTargetID(target)
 	if err := target.Validate(); err != nil {
 		return SelectedTarget{}, err
 	}
 	return target, nil
 }
 
-// Validate checks the closed selected-target shape and its stable identity.
+// Validate checks the closed selected-target shape and its plan-owned compact identity.
 func (target SelectedTarget) Validate() error {
 	if err := target.validateShape(); err != nil {
 		return err
 	}
-	if target.ID != selectedTargetID(target) {
-		return fmt.Errorf("target outcome portfolio: selected target identity mismatch")
+	if !validSelectedTargetID(target.ID) {
+		return fmt.Errorf("target outcome portfolio: selected target identity is not compact")
 	}
 	return nil
 }
@@ -290,6 +289,9 @@ func (outcome Outcome) Validate() error {
 		if err := outcome.Analysis.ProgramTarget.Validate(); err != nil {
 			return fmt.Errorf("target outcome portfolio: analyzed program target: %w", err)
 		}
+		if outcome.SelectedTarget.ID != outcome.Analysis.ProgramTarget.ID {
+			return fmt.Errorf("target outcome portfolio: selected and analyzed target identity mismatch")
+		}
 		if !selectedLanguageMatches(outcome.SelectedTarget.AllowedProgramLanguages, outcome.Analysis.ProgramTarget.Language) {
 			return fmt.Errorf("target outcome portfolio: analyzed program target language mismatch")
 		}
@@ -326,7 +328,7 @@ func Build(defaultSelectedTargetID string, outcomes []Outcome) (Portfolio, error
 		Outcomes:                cloneOutcomes(outcomes),
 	}
 	sort.Slice(portfolio.Outcomes, func(i, j int) bool {
-		return portfolio.Outcomes[i].SelectedTarget.ID < portfolio.Outcomes[j].SelectedTarget.ID
+		return programindex.TargetIDLess(portfolio.Outcomes[i].SelectedTarget.ID, portfolio.Outcomes[j].SelectedTarget.ID)
 	})
 	if err := portfolio.validateShape(); err != nil {
 		return Portfolio{}, err
@@ -387,15 +389,6 @@ func Decode(encoded []byte) (Portfolio, error) {
 	if len(encoded) == 0 {
 		return Portfolio{}, fmt.Errorf("target outcome portfolio: invalid artifact size")
 	}
-	var header struct {
-		Version int `json:"version"`
-	}
-	if err := json.Unmarshal(encoded, &header); err != nil {
-		return Portfolio{}, fmt.Errorf("target outcome portfolio: decode version: %w", err)
-	}
-	if header.Version == 1 {
-		return decodeLegacyPortfolio(encoded)
-	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
 	var portfolio Portfolio
@@ -422,191 +415,6 @@ func Decode(encoded []byte) (Portfolio, error) {
 	return portfolio, nil
 }
 
-// The v1 wire contract had a closed language group and no explicit allowed
-// ProgramIndex language set. Decode verifies its exact old shape and seal,
-// then returns a newly sealed v2 value. No v1 authority is guessed: the only
-// migration mapping is the same closed mapping v1 itself enforced.
-type legacySelectedTarget struct {
-	ID            string        `json:"id"`
-	LanguageGroup LanguageGroup `json:"language_group"`
-	ScopeKind     ScopeKind     `json:"scope_kind"`
-	DisplayName   string        `json:"display_name"`
-	Selector      string        `json:"selector"`
-}
-
-type legacyOutcome struct {
-	SelectedTarget legacySelectedTarget `json:"selected_target"`
-	State          State                `json:"state"`
-	Analysis       *Analysis            `json:"analysis,omitempty"`
-	Failure        *Failure             `json:"failure,omitempty"`
-}
-
-type legacyPortfolio struct {
-	Version                 int             `json:"version"`
-	DefaultSelectedTargetID string          `json:"default_selected_target_id"`
-	Outcomes                []legacyOutcome `json:"outcomes"`
-	SHA256                  string          `json:"sha256"`
-}
-
-func decodeLegacyPortfolio(encoded []byte) (Portfolio, error) {
-	decoder := json.NewDecoder(bytes.NewReader(encoded))
-	decoder.DisallowUnknownFields()
-	var legacy legacyPortfolio
-	if err := decoder.Decode(&legacy); err != nil {
-		return Portfolio{}, fmt.Errorf("target outcome portfolio: decode v1 artifact: %w", err)
-	}
-	var trailing struct{}
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return Portfolio{}, fmt.Errorf("target outcome portfolio: invalid v1 trailing data")
-	}
-	if err := validateLegacyPortfolio(legacy); err != nil {
-		return Portfolio{}, err
-	}
-	canonical, err := json.Marshal(legacy)
-	if err != nil {
-		return Portfolio{}, fmt.Errorf("target outcome portfolio: encode v1 canonical bytes: %w", err)
-	}
-	if !bytes.Equal(encoded, canonical) {
-		return Portfolio{}, fmt.Errorf("target outcome portfolio: v1 artifact is not canonical")
-	}
-
-	newOutcomes := make([]Outcome, 0, len(legacy.Outcomes))
-	defaultID := ""
-	for _, oldOutcome := range legacy.Outcomes {
-		selected, err := NewSelectedTarget(
-			oldOutcome.SelectedTarget.LanguageGroup,
-			oldOutcome.SelectedTarget.ScopeKind,
-			oldOutcome.SelectedTarget.DisplayName,
-			oldOutcome.SelectedTarget.Selector,
-		)
-		if err != nil {
-			return Portfolio{}, fmt.Errorf("target outcome portfolio: migrate v1 selected target: %w", err)
-		}
-		if oldOutcome.SelectedTarget.ID == legacy.DefaultSelectedTargetID {
-			defaultID = selected.ID
-		}
-		var migrated Outcome
-		if oldOutcome.State == StateAnalyzed {
-			migrated, err = NewAnalyzed(
-				selected, oldOutcome.Analysis.ProgramTarget, oldOutcome.Analysis.RunID,
-			)
-		} else {
-			migrated, err = NewNotAnalyzed(
-				selected, oldOutcome.Failure.Stage, oldOutcome.Failure.Reason,
-			)
-		}
-		if err != nil {
-			return Portfolio{}, fmt.Errorf("target outcome portfolio: migrate v1 outcome: %w", err)
-		}
-		newOutcomes = append(newOutcomes, migrated)
-	}
-	return Build(defaultID, newOutcomes)
-}
-
-func validateLegacyPortfolio(portfolio legacyPortfolio) error {
-	if portfolio.Version != 1 || !validSelectedTargetID(portfolio.DefaultSelectedTargetID) ||
-		portfolio.Outcomes == nil || len(portfolio.Outcomes) == 0 {
-		return fmt.Errorf("target outcome portfolio: invalid v1 identity")
-	}
-	defaultMatches := 0
-	programTargets := make(map[string]struct{}, len(portfolio.Outcomes))
-	runIDs := make(map[string]struct{}, len(portfolio.Outcomes))
-	previousID := ""
-	for position, outcome := range portfolio.Outcomes {
-		selected := outcome.SelectedTarget
-		if !legacyLanguageGroupValid(selected.LanguageGroup) || !selected.ScopeKind.Valid() ||
-			!validExactText(selected.DisplayName) || !validExactText(selected.Selector) ||
-			selected.ID != legacySelectedTargetID(selected) {
-			return fmt.Errorf("target outcome portfolio: invalid v1 selected target %d", position)
-		}
-		if previousID != "" && previousID >= selected.ID {
-			return fmt.Errorf("target outcome portfolio: v1 outcomes are not canonical")
-		}
-		previousID = selected.ID
-		if selected.ID == portfolio.DefaultSelectedTargetID {
-			defaultMatches++
-		}
-		switch outcome.State {
-		case StateAnalyzed:
-			if outcome.Analysis == nil || outcome.Failure != nil ||
-				outcome.Analysis.ProgramTarget.Validate() != nil ||
-				!legacySelectedLanguageMatches(selected.LanguageGroup, outcome.Analysis.ProgramTarget.Language) ||
-				programpage.ValidateRunID(outcome.Analysis.RunID) != nil {
-				return fmt.Errorf("target outcome portfolio: invalid v1 analyzed outcome %d", position)
-			}
-			if _, duplicate := programTargets[outcome.Analysis.ProgramTarget.ID]; duplicate {
-				return fmt.Errorf("target outcome portfolio: duplicate v1 program target")
-			}
-			if _, duplicate := runIDs[outcome.Analysis.RunID]; duplicate {
-				return fmt.Errorf("target outcome portfolio: duplicate v1 run id")
-			}
-			programTargets[outcome.Analysis.ProgramTarget.ID] = struct{}{}
-			runIDs[outcome.Analysis.RunID] = struct{}{}
-		case StateNotAnalyzed:
-			if outcome.Analysis != nil || outcome.Failure == nil ||
-				!outcome.Failure.Stage.Valid() || !outcome.Failure.Reason.Valid() {
-				return fmt.Errorf("target outcome portfolio: invalid v1 failed outcome %d", position)
-			}
-		default:
-			return fmt.Errorf("target outcome portfolio: invalid v1 state")
-		}
-	}
-	if defaultMatches != 1 {
-		return fmt.Errorf("target outcome portfolio: invalid v1 default")
-	}
-	want, err := legacyPortfolioDigest(portfolio)
-	if err != nil {
-		return err
-	}
-	if !validSHA256(portfolio.SHA256) || portfolio.SHA256 != want {
-		return fmt.Errorf("target outcome portfolio: v1 sha256 mismatch")
-	}
-	return nil
-}
-
-func legacyPortfolioDigest(portfolio legacyPortfolio) (string, error) {
-	portfolio.SHA256 = ""
-	encoded, err := json.Marshal(portfolio)
-	if err != nil {
-		return "", fmt.Errorf("target outcome portfolio: encode v1 digest material: %w", err)
-	}
-	digest := sha256.New()
-	_, _ = digest.Write([]byte(legacyDigestDomain))
-	_, _ = digest.Write(encoded)
-	return hex.EncodeToString(digest.Sum(nil)), nil
-}
-
-func legacySelectedTargetID(target legacySelectedTarget) string {
-	digest := sha256.New()
-	for _, field := range []string{
-		"selected-target", string(target.LanguageGroup), string(target.ScopeKind),
-		target.DisplayName, target.Selector,
-	} {
-		_, _ = digest.Write([]byte(strconv.Itoa(len(field))))
-		_, _ = digest.Write([]byte{0})
-		_, _ = digest.Write([]byte(field))
-	}
-	return "selected-target-" + hex.EncodeToString(digest.Sum(nil))
-}
-
-func legacyLanguageGroupValid(group LanguageGroup) bool {
-	return group == LanguageGroupGo || group == LanguageGroupPython ||
-		group == LanguageGroupJavaScriptTypeScript
-}
-
-func legacySelectedLanguageMatches(group LanguageGroup, language string) bool {
-	switch group {
-	case LanguageGroupGo:
-		return language == "go"
-	case LanguageGroupPython:
-		return language == "python"
-	case LanguageGroupJavaScriptTypeScript:
-		return language == "javascript" || language == "typescript"
-	default:
-		return false
-	}
-}
-
 func (portfolio Portfolio) validateShape() error {
 	if portfolio.Version != Version || !validSelectedTargetID(portfolio.DefaultSelectedTargetID) {
 		return fmt.Errorf("target outcome portfolio: invalid identity")
@@ -622,7 +430,7 @@ func (portfolio Portfolio) validateShape() error {
 			return fmt.Errorf("target outcome portfolio: outcome %d: %w", position, err)
 		}
 		selectedID := outcome.SelectedTarget.ID
-		if position > 0 && portfolio.Outcomes[position-1].SelectedTarget.ID >= selectedID {
+		if position > 0 && !programindex.TargetIDLess(portfolio.Outcomes[position-1].SelectedTarget.ID, selectedID) {
 			return fmt.Errorf("target outcome portfolio: outcomes are not canonical")
 		}
 		if selectedID == portfolio.DefaultSelectedTargetID {
@@ -660,27 +468,6 @@ func portfolioDigest(portfolio Portfolio) (string, error) {
 	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
-func selectedTargetID(target SelectedTarget) string {
-	digest := sha256.New()
-	for _, field := range []string{
-		"selected-target",
-		string(target.LanguageGroup),
-		string(target.ScopeKind),
-		target.DisplayName,
-		target.Selector,
-	} {
-		_, _ = digest.Write([]byte(strconv.Itoa(len(field))))
-		_, _ = digest.Write([]byte{0})
-		_, _ = digest.Write([]byte(field))
-	}
-	for _, language := range target.AllowedProgramLanguages {
-		_, _ = digest.Write([]byte(strconv.Itoa(len(language))))
-		_, _ = digest.Write([]byte{0})
-		_, _ = digest.Write([]byte(language))
-	}
-	return "selected-target-" + hex.EncodeToString(digest.Sum(nil))
-}
-
 func cloneOutcomes(outcomes []Outcome) []Outcome {
 	if outcomes == nil {
 		return nil
@@ -705,11 +492,7 @@ func validExactText(value string) bool {
 }
 
 func validSelectedTargetID(value string) bool {
-	const prefix = "selected-target-"
-	if !strings.HasPrefix(value, prefix) {
-		return false
-	}
-	return validSHA256(strings.TrimPrefix(value, prefix))
+	return programindex.ValidTargetID(value)
 }
 
 func selectedLanguageMatches(allowed []string, language string) bool {

@@ -21,7 +21,7 @@ func (b *builder) addExtractions(graph *atlas.Graph) {
 	}
 	programTargets := make(map[string]string, len(b.input.Facts.Targets))
 	for _, target := range b.input.Facts.Targets {
-		programTargets[target.ID] = target.ProgramTargetID
+		programTargets[target.ID] = target.ID
 	}
 	for _, fact := range b.input.Facts.Facts {
 		if fact.Kind != facts.KindEntity {

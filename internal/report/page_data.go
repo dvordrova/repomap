@@ -67,12 +67,11 @@ func catalogTable(name string) bool {
 	return strings.HasPrefix(lower, "pg_") || strings.HasPrefix(lower, "information_schema.") || lower == "information_schema" || strings.HasPrefix(lower, "sqlite_")
 }
 
-// dataRowID is the page-level id of one data record. Record ids carry a
-// kind prefix such as "entity:" or "query:"; a colon inside a fragment href
-// reads as a URL scheme to html/template, which then replaces the link with
-// #ZgotmplZ, so the page id keeps a hyphen there instead.
+// dataRowID qualifies the existing target-local y* record for the one HTML
+// document. The replacement is defensive for synthetic projection fixtures;
+// persisted GroupsIndex records already admit only compact y* identities.
 func dataRowID(sectionID, recordID string) string {
-	return sectionID + "-data-" + strings.ReplaceAll(recordID, ":", "-")
+	return sectionID + "-" + strings.ReplaceAll(recordID, ":", "-")
 }
 
 func (builder *pageBuilder) fillSectionData(section *pageSection) {
@@ -142,7 +141,7 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 			}
 		}
 		for _, link := range operations[record.OwnerSubjectID] {
-			row.Operations = append(row.Operations, pageDataOperation{Name: builder.operationDisplayName(link.operation), Href: "#" + operationNodeID(section.ID, link.operation.ID), Via: link.subject.Object.Name, Possible: link.possible, Anchor: builder.links.anchor(link.subject.Object.Location.Path, link.subject.Object.Location.Line, link.subject.Object.Location.Column)})
+			row.Operations = append(row.Operations, pageDataOperation{Name: builder.operationDisplayName(index.Target.ID, link.operation), Href: "#" + operationNodeID(section.ID, link.operation.ID), Via: link.subject.Object.Name, Possible: link.possible, Anchor: builder.links.anchor(link.subject.Object.Location.Path, link.subject.Object.Location.Line, link.subject.Object.Location.Column)})
 		}
 		section.Data.Rows = append(section.Data.Rows, row)
 	}

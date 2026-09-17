@@ -19,6 +19,21 @@ func (r *reader) readAnswers(ctx context.Context) error {
 	if len(r.questions) == 0 {
 		return nil
 	}
+	questions := make([]string, len(r.questions))
+	for i := range r.questions {
+		questions[i] = r.questions[i].Question
+	}
+	ids := stableQuestionIDs(questions)
+	seenIDs := make(map[string]bool, len(r.questions))
+	for i := range r.questions {
+		if r.questions[i].ID == "" {
+			r.questions[i].ID = ids[r.questions[i].Question]
+		}
+		if seenIDs[r.questions[i].ID] {
+			return fmt.Errorf("answer: duplicate question ID %q", r.questions[i].ID)
+		}
+		seenIDs[r.questions[i].ID] = true
+	}
 	def := lines.Answer()
 	if r.opts.Through == "" || r.opts.Through == lines.StageAnswer {
 		if r.opts.Prompt != "" {
@@ -170,7 +185,7 @@ func (r *reader) readAnswers(ctx context.Context) error {
 						part.Source = atlas.SourceCache
 					}
 					value := outcome.Value.Answers[j]
-					part.OriginRequest, part.OriginRow = outcome.RequestSHA256, table.Key(j)
+					part.OriginRequest, part.OriginRow = outcome.RequestSHA256, window.table.Rows[j].ID
 					part.State = value["state"]
 					part.Text = answerProse(value["answer"])
 					part.Basis = answerProse(value["basis"])
@@ -239,7 +254,7 @@ func answerCall(def table.Definition, window answerWindow) (llm.Call[table.Resul
 				}
 				if err := validateAnswerRow(value, window.table.Rows[i]); err != nil {
 					result.Answers[i] = nil
-					result.Rejections = append(result.Rejections, table.RowRejection{Key: table.Key(i), Reason: err.Error()})
+					result.Rejections = append(result.Rejections, table.RowRejection{Key: window.table.Rows[i].ID, Reason: err.Error()})
 				}
 			}
 			if len(result.AcceptedRowKeys()) == 0 {

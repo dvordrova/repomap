@@ -57,14 +57,14 @@ func TestInputCatalogueJoinsExactFactsAndRetainsUngroupedRoutes(t *testing.T) {
 		{ID: "worker", Kind: "continuous", Source: "model", Name: "Process messages", Location: location},
 	}}
 	layer := &facts.Result{Facts: []facts.Fact{
-		{ID: "route-a", TargetID: "facts", Kind: facts.KindHTTPRoute, Method: "GET", Path: "/a", Anchor: &facts.Anchor{Path: "server.go", Line: 10}},
-		{ID: "orphan", TargetID: "facts", Kind: facts.KindHTTPRoute, Method: "POST", Path: "/outside-map", Anchor: &facts.Anchor{Path: "server.go", Line: 22}},
-		{ID: "other-target", TargetID: "other", Kind: facts.KindHTTPRoute, Method: "GET", Path: "/a"},
+		{ID: "route-a", TargetID: "facts", Kind: facts.KindRegistration, Method: "GET", Path: "/a", Anchor: &facts.Anchor{Path: "server.go", Line: 10}},
+		{ID: "orphan", TargetID: "facts", Kind: facts.KindRegistration, Method: "POST", Path: "/outside-map", Anchor: &facts.Anchor{Path: "server.go", Line: 22}},
+		{ID: "other-target", TargetID: "other", Kind: facts.KindRegistration, Method: "GET", Path: "/a"},
 	}}
-	builder := pageBuilder{data: &ReportData{Facts: layer}, indexes: []groupindex.Index{index}, links: pageLinks{sourceIDs: map[string]string{"server.go": "source"}}}
+	builder := pageBuilder{data: &ReportData{Facts: layer}, factsByID: layer.ByID(), indexes: []groupindex.Index{index}, links: pageLinks{sourceIDs: map[string]string{"server.go": "source"}}}
 	section := &pageSection{ID: "section", programTargetID: "program", factsTargetID: "facts", FactsAvailable: true}
 	builder.fillSectionOperations(section)
-	if len(section.RouteGroups) != 2 || section.RouteGroups[0].Paths+section.RouteGroups[1].Paths != 2 {
+	if len(section.RouteGroups) != 1 || section.RouteGroups[0].Paths != 1 {
 		t.Fatalf("route lost, duplicated, or borrowed from another target: %+v", section.RouteGroups)
 	}
 	if len(section.Requests) != 1 || section.Requests[0].Source != "model" || section.Requests[0].Href != "#"+operationNodeID("section", "model") {
@@ -73,24 +73,17 @@ func TestInputCatalogueJoinsExactFactsAndRetainsUngroupedRoutes(t *testing.T) {
 	if len(section.Activities) != 1 || section.Activities[0].Kind != "continuous" {
 		t.Fatalf("background activity lost: %+v", section.Activities)
 	}
-	if got := section.RouteGroups[1].Rows[0].Paths[0].Anchor; got == nil || got.Line != 22 {
-		t.Fatalf("ungrouped route lost its original anchor: %+v", got)
-	}
 	if got := section.RouteGroups[0].Rows[0].Paths[0].OperationHrefs; !slices.Equal(got, []string{"#" + operationNodeID("section", "bound"), "#" + operationNodeID("section", "bound-also")}) {
 		t.Fatalf("route did not retain every exact operation membership: %v", got)
 	}
-	if got := section.RouteGroups[1].Rows[0].Paths[0].OperationHrefs; len(got) != 0 {
-		t.Fatalf("ungrouped route acquired an invented operation link: %v", got)
-	}
-	// Two original registrations and one unmatched interpretation produce three
-	// request records, even though the interpretation has the same name/site.
-	// The factual HTTP summaries must still count exactly two registrations.
-	section.InboundCount, section.InputsCount = 3, 4
+	// One accepted registration and one unmatched interpretation produce two
+	// request records. The factual HTTP summary counts the registration once.
+	section.InboundCount, section.InputsCount = 2, 3
 	builder.sections = []*pageSection{section}
 	builder.byFacts = map[string]*pageSection{"facts": section}
 	card := builder.factsCard(facts.Target{ID: "facts"})
 	boundaries := builder.boundaryCounts()
-	if section.NativeRouteCount() != 2 || card.Routes != 2 || card.Counts != "2 routes" || len(boundaries) != 1 || boundaries[0].Routes != 2 {
+	if section.NativeRouteCount() != 1 || card.Routes != 1 || card.Counts != "1 route" || len(boundaries) != 1 || boundaries[0].Routes != 1 {
 		t.Fatalf("request interpretations inflated native HTTP counts: section=%d card=%+v boundaries=%+v", section.NativeRouteCount(), card, boundaries)
 	}
 	for _, language := range []DisplayLanguage{English, Russian} {
@@ -105,13 +98,13 @@ func TestInputCatalogueJoinsExactFactsAndRetainsUngroupedRoutes(t *testing.T) {
 		for _, counted := range []struct {
 			label string
 			count string
-		}{{"Incoming request records", "3"}, {"HTTP registrations in source", "2"}, {"Handlers without a matched route", "1"}} {
+		}{{"Incoming request records", "2"}, {"HTTP registrations in source", "1"}, {"Handlers without a matched route", "1"}} {
 			label, err := uiText(language, counted.label)
 			if err != nil || !strings.Contains(rendered.String(), label+" · "+counted.count) {
 				t.Fatalf("%s catalogue lost the distinction %s/%s: %s", language, counted.label, counted.count, rendered.String())
 			}
 		}
-		for _, kept := range []string{"/a", "/outside-map", "#" + operationNodeID("section", "bound"), "#" + operationNodeID("section", "bound-also"), "#" + operationNodeID("section", "model"), `data-source-kind="model"`} {
+		for _, kept := range []string{"/a", "#" + operationNodeID("section", "bound"), "#" + operationNodeID("section", "bound-also"), "#" + operationNodeID("section", "model"), `data-source-kind="model"`} {
 			if !strings.Contains(rendered.String(), kept) {
 				t.Fatalf("display count correction discarded original record/link %q", kept)
 			}

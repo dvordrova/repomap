@@ -2,12 +2,25 @@ package table
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/llm"
 )
+
+type memoTestProvider struct{}
+
+func (memoTestProvider) State() []byte { return []byte(`{"model":"test"}`) }
+func (memoTestProvider) Prepare(llm.Prompt, llm.Limits) (llm.Prepared, error) {
+	return llm.Prepared{}, fmt.Errorf("memo identity prepared a pretend provider request")
+}
+func (memoTestProvider) Complete(context.Context, llm.Prepared) (llm.Completion, error) {
+	return llm.Completion{}, fmt.Errorf("unexpected provider call")
+}
 
 func testDefinition() Definition {
 	return Definition{
@@ -16,6 +29,36 @@ func testDefinition() Definition {
 			{Name: "line", Kind: Text, MaxRunes: 20},
 			{Name: "box", Kind: Choice, OptionsFrom: "box_options", Free: "new: ", FreeMaxRunes: 10},
 		},
+	}
+}
+
+func TestArtifactIDsReachProviderButDoNotSplitEqualEvidenceMemos(t *testing.T) {
+	def := testDefinition()
+	first := Window{Rows: []Row{{ID: "f1", Fields: []Field{{Name: "path", Value: "same.go"}}}}}
+	second := Window{Rows: []Row{{ID: "f9", Fields: []Field{{Name: "path", Value: "same.go"}}}}}
+	firstRequest, err := Request(def, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRequest, err := Request(def, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(firstRequest, []byte(`"key": "f1"`)) || !bytes.Contains(secondRequest, []byte(`"key": "f9"`)) || bytes.Contains(firstRequest, []byte(`"key": "r1"`)) {
+		t.Fatalf("provider rows were renamed: %s / %s", firstRequest, secondRequest)
+	}
+	a, err := MemoIdentity(memoTestProvider{}, def, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := MemoIdentity(memoTestProvider{}, def, second)
+	if err != nil || a != b {
+		t.Fatalf("owner ID split equal evidence: %s / %s / %v", a, b, err)
+	}
+	second.Rows[0].Fields[0].Value = "changed.go"
+	c, err := MemoIdentity(memoTestProvider{}, def, second)
+	if err != nil || c == a {
+		t.Fatalf("changed evidence reused a memo: %s / %s / %v", a, c, err)
 	}
 }
 
@@ -44,13 +87,13 @@ func TestSequencePreservesOrderAndFiltersOnlyExactKnownRefs(t *testing.T) {
 
 func testRows() []Row {
 	return []Row{
-		{ID: "file:a.go", Fields: []Field{{Name: "path", Value: "a.go"}, {Name: "box_options", Value: []string{"here", "pkg/b"}}}},
-		{ID: "file:b.go", Fields: []Field{{Name: "path", Value: "b.go"}, {Name: "box_options", Value: []string{"here"}}}},
-		{ID: "file:c.go", Fields: []Field{{Name: "path", Value: "c.go"}, {Name: "box_options", Value: []string{"here"}}}},
+		{ID: "f1", Fields: []Field{{Name: "path", Value: "a.go"}, {Name: "box_options", Value: []string{"here", "pkg/b"}}}},
+		{ID: "f2", Fields: []Field{{Name: "path", Value: "b.go"}, {Name: "box_options", Value: []string{"here"}}}},
+		{ID: "f3", Fields: []Field{{Name: "path", Value: "c.go"}, {Name: "box_options", Value: []string{"here"}}}},
 	}
 }
 
-func TestResponseExampleDependsOnColumnsNotBatchMembership(t *testing.T) {
+func TestResponseExampleUsesTheWindowArtifactID(t *testing.T) {
 	def := testDefinition()
 	windows, err := Windows(def, 1, testRows())
 	if err != nil {
@@ -61,8 +104,8 @@ func TestResponseExampleDependsOnColumnsNotBatchMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, err := Call(def, windows[1])
-	if err != nil || first.Prompt.ResponseExample != second.Prompt.ResponseExample {
-		t.Fatalf("the owner shape changed with batch neighbors: %v", err)
+	if err != nil || first.Prompt.ResponseExample == second.Prompt.ResponseExample {
+		t.Fatalf("the example did not follow each window's existing row ID: %v", err)
 	}
 	var example struct {
 		Rows []map[string]string `json:"rows"`
@@ -71,7 +114,7 @@ func TestResponseExampleDependsOnColumnsNotBatchMembership(t *testing.T) {
 		t.Fatalf("response example lost its table object: %s / %v", first.Prompt.ResponseExample, err)
 	}
 	row := example.Rows[0]
-	if len(row) != len(def.Columns)+1 || row["key"] != "r1" || row["line"] == "" || row["box"] == "" {
+	if len(row) != len(def.Columns)+1 || row["key"] != "f1" || row["line"] == "" || row["box"] == "" {
 		t.Fatalf("response example does not contain the owner columns: %+v", row)
 	}
 	def.Columns = append(def.Columns, Column{Name: "activation", Kind: Text})
@@ -90,8 +133,9 @@ func TestResponseExampleListsKeyFirstThenColumnsInFillOrder(t *testing.T) {
 		{Name: "activation", Kind: Choice, Options: []string{"command"}},
 		{Name: `na"me`, Kind: Text},
 	}}
-	example := ResponseExample(def)
-	want := `{"rows":[{"key":"r1","zone":"<computed zone>","entry":"<computed entry>","activation":"<computed activation>","na\"me":"<computed na\"me>"}]}`
+	window := Window{Rows: []Row{{ID: "s7"}}}
+	example := ResponseExample(def, window)
+	want := `{"rows":[{"key":"s7","zone":"<computed zone>","entry":"<computed entry>","activation":"<computed activation>","na\"me":"<computed na\"me>"}]}`
 	if example != want {
 		t.Fatalf("example = %s\nwant      %s", example, want)
 	}
@@ -101,7 +145,7 @@ func TestResponseExampleListsKeyFirstThenColumnsInFillOrder(t *testing.T) {
 	if err := json.Unmarshal([]byte(example), &decoded); err != nil || len(decoded.Rows) != 1 || len(decoded.Rows[0]) != 5 || strings.Contains(example, "\n") {
 		t.Fatalf("example is not one valid JSON line: %v", err)
 	}
-	call, err := Call(def, Window{})
+	call, err := Call(def, window)
 	if err != nil || call.Prompt.ResponseExample != example {
 		t.Fatalf("the prepared call does not carry the ordered example: %v", err)
 	}
@@ -121,14 +165,14 @@ func TestWindowsKeepOrderAndBytesAreStable(t *testing.T) {
 		t.Fatal("the same rows produced different request bytes")
 	}
 	request := string(first[0].Request)
-	if !strings.Contains(request, `{"key": "r1", "path": "a.go", "box_options": ["here","pkg/b"]}`) {
+	if !strings.Contains(request, `{"key": "f1", "path": "a.go", "box_options": ["here","pkg/b"]}`) {
 		t.Fatalf("request does not carry the row in field order:\n%s", request)
 	}
 	if strings.Index(request, `"path": "a.go"`) > strings.Index(request, `"path": "b.go"`) {
 		t.Fatal("rows are out of order")
 	}
-	if strings.Contains(request, "file:a.go") {
-		t.Fatal("the request carries the code-side row ID")
+	if !strings.Contains(request, `"key": "f1"`) {
+		t.Fatal("the request lost the artifact row ID")
 	}
 	withContext := first[0]
 	withContext.Context = []Field{{Name: "question", Value: "Where is state?"}, {Name: "repository", Value: "example/repository"}}
@@ -141,8 +185,8 @@ func TestWindowsKeepOrderAndBytesAreStable(t *testing.T) {
   "fill": [{"kind":"text","max_runes":20,"name":"line"}, {"free_prefix":"new: ","kind":"choice","name":"box","options_from":"box_options"}],
   "context": {"question": "Where is state?", "repository": "example/repository"},
   "rows": [
-    {"key": "r1", "path": "a.go", "box_options": ["here","pkg/b"]},
-    {"key": "r2", "path": "b.go", "box_options": ["here"]}
+    {"key": "f1", "path": "a.go", "box_options": ["here","pkg/b"]},
+    {"key": "f2", "path": "b.go", "box_options": ["here"]}
   ]
 }
 `
@@ -159,7 +203,7 @@ func TestWindowsKeepOrderAndBytesAreStable(t *testing.T) {
 func TestDecodeAcceptsEveryKeyOnce(t *testing.T) {
 	def := testDefinition()
 	windows, _ := Windows(def, 1, testRows())
-	raw := []byte("```json\n{\"rows\":[{\"key\":\"r2\",\"line\":\"  reads   b \",\"box\":\"HERE\"},{\"key\":\"r1\",\"line\":\"writes a\",\"box\":\"new:  Config loading and parsing \"}]}\n```")
+	raw := []byte("```json\n{\"rows\":[{\"key\":\"f2\",\"line\":\"  reads   b \",\"box\":\"HERE\"},{\"key\":\"f1\",\"line\":\"writes a\",\"box\":\"new:  Config loading and parsing \"}]}\n```")
 	answers, err := Decode(def, windows[0], raw)
 	if err != nil {
 		t.Fatal(err)
@@ -182,16 +226,16 @@ func TestDecodeRefusesBadWindows(t *testing.T) {
 	def := testDefinition()
 	windows, _ := Windows(def, 1, testRows())
 	cases := map[string]string{
-		"missing key":    `{"rows":[{"key":"r1","line":"a","box":"here"}]}`,
-		"duplicate key":  `{"rows":[{"key":"r1","line":"a","box":"here"},{"key":"r1","line":"b","box":"here"}]}`,
-		"unknown key":    `{"rows":[{"key":"r1","line":"a","box":"here"},{"key":"r9","line":"b","box":"here"}]}`,
-		"extra cell":     `{"rows":[{"key":"r1","line":"a","box":"here","why":"x"},{"key":"r2","line":"b","box":"here"}]}`,
-		"missing cell":   `{"rows":[{"key":"r1","line":"a"},{"key":"r2","line":"b","box":"here"}]}`,
-		"bad choice":     `{"rows":[{"key":"r1","line":"a","box":"pkg/z"},{"key":"r2","line":"b","box":"here"}]}`,
-		"empty text":     `{"rows":[{"key":"r1","line":"   ","box":"here"},{"key":"r2","line":"b","box":"here"}]}`,
-		"empty free":     `{"rows":[{"key":"r1","line":"a","box":"new: "},{"key":"r2","line":"b","box":"here"}]}`,
-		"extra envelope": `{"rows":[{"key":"r1","line":"a","box":"here"},{"key":"r2","line":"b","box":"here"}],"notes":"x"}`,
-		"not json":       `rows: r1 a here`,
+		"missing key":    `{"rows":[{"key":"f1","line":"a","box":"here"}]}`,
+		"duplicate key":  `{"rows":[{"key":"f1","line":"a","box":"here"},{"key":"f1","line":"b","box":"here"}]}`,
+		"unknown key":    `{"rows":[{"key":"f1","line":"a","box":"here"},{"key":"f9","line":"b","box":"here"}]}`,
+		"extra cell":     `{"rows":[{"key":"f1","line":"a","box":"here","why":"x"},{"key":"f2","line":"b","box":"here"}]}`,
+		"missing cell":   `{"rows":[{"key":"f1","line":"a"},{"key":"f2","line":"b","box":"here"}]}`,
+		"bad choice":     `{"rows":[{"key":"f1","line":"a","box":"pkg/z"},{"key":"f2","line":"b","box":"here"}]}`,
+		"empty text":     `{"rows":[{"key":"f1","line":"   ","box":"here"},{"key":"f2","line":"b","box":"here"}]}`,
+		"empty free":     `{"rows":[{"key":"f1","line":"a","box":"new: "},{"key":"f2","line":"b","box":"here"}]}`,
+		"extra envelope": `{"rows":[{"key":"f1","line":"a","box":"here"},{"key":"f2","line":"b","box":"here"}],"notes":"x"}`,
+		"not json":       `rows: f1 a here`,
 	}
 	for name, raw := range cases {
 		if _, err := Decode(def, windows[0], []byte(raw)); err == nil {
@@ -204,10 +248,10 @@ func TestChoiceAcceptsAUniquePrefix(t *testing.T) {
 	def := testDefinition()
 	def.Columns[1] = Column{Name: "box", Kind: Choice, Options: []string{"Utilities and configuration", "Utilities and logging", "Storage"}}
 	windows, _ := Windows(def, 1, testRows()[:1])
-	if _, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"r1","line":"a","box":"Utilities and"}]}`)); err == nil {
+	if _, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"f1","line":"a","box":"Utilities and"}]}`)); err == nil {
 		t.Fatal("an ambiguous prefix was accepted")
 	}
-	answers, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"r1","line":"a","box":"Stor"}]}`))
+	answers, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"f1","line":"a","box":"Stor"}]}`))
 	if err != nil || answers[0]["box"] != "Storage" {
 		t.Fatalf("unique prefix: %v %v", answers, err)
 	}
@@ -216,7 +260,7 @@ func TestChoiceAcceptsAUniquePrefix(t *testing.T) {
 func TestTextIsCutAtAWord(t *testing.T) {
 	def := testDefinition()
 	windows, _ := Windows(def, 1, testRows()[:1])
-	raw := `{"rows":[{"key":"r1","line":"this line is much longer than twenty runes","box":"here"}]}`
+	raw := `{"rows":[{"key":"f1","line":"this line is much longer than twenty runes","box":"here"}]}`
 	answers, err := Decode(def, windows[0], []byte(raw))
 	if err != nil {
 		t.Fatal(err)
@@ -234,12 +278,12 @@ func TestProsePreservesParagraphsAndTheCompleteQualification(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := "The declared default is 'two  spaces'.\n\n" + strings.Repeat("A supported observation. ", 45) + "\n\nThis does not establish runtime behavior."
-	raw, _ := json.Marshal(map[string]any{"rows": []map[string]string{{"key": "r1", "line": " \n" + text + "\n ", "box": "here"}}})
+	raw, _ := json.Marshal(map[string]any{"rows": []map[string]string{{"key": "f1", "line": " \n" + text + "\n ", "box": "here"}}})
 	answers, err := Decode(def, windows[0], raw)
 	if err != nil || answers[0]["line"] != text {
 		t.Fatalf("prose was changed: %v, %v", answers, err)
 	}
-	if _, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"r1","line":" \n ","box":"here"}]}`)); err == nil {
+	if _, err := Decode(def, windows[0], []byte(`{"rows":[{"key":"f1","line":" \n ","box":"here"}]}`)); err == nil {
 		t.Fatal("accepted empty prose")
 	}
 }
@@ -302,11 +346,11 @@ func TestWindowsSplitByInputBytesWithoutLosingRowsOrContext(t *testing.T) {
 			ids = append(ids, row.ID)
 		}
 	}
-	if len(windows) != 3 || strings.Join(ids, ",") != "file:a.go,file:b.go,file:c.go" {
+	if len(windows) != 3 || strings.Join(ids, ",") != "f1,f2,f3" {
 		t.Fatalf("lost or reordered rows: %v", ids)
 	}
 	def.MaxInputBytes--
-	if _, err := WindowsWithContext(def, 1, shared, rows); err == nil || !strings.Contains(err.Error(), "row file:a.go") {
+	if _, err := WindowsWithContext(def, 1, shared, rows); err == nil || !strings.Contains(err.Error(), "row f1") {
 		t.Fatalf("an oversized single row was hidden: %v", err)
 	}
 }
@@ -355,8 +399,8 @@ func TestWindowsKeepOversizedRowsWholeBetweenOrdinaryBatches(t *testing.T) {
 					t.Fatal("request lost complete shared context or rows")
 				}
 				for j, row := range decoded.Rows {
-					if row["key"] != Key(j) || row["doc"] != rows[offset+j].Fields[0].Value {
-						t.Fatal("request changed escaped UTF-8 evidence or its local key")
+					if row["key"] != rows[offset+j].ID || row["doc"] != rows[offset+j].Fields[0].Value {
+						t.Fatal("request changed escaped UTF-8 evidence or its row ID")
 					}
 				}
 				offset += len(window.Rows)
@@ -372,7 +416,7 @@ func TestWindowsGreedilyFillByteBudgetWithExactLocalKeys(t *testing.T) {
 	doc := strings.Repeat("ю\"<&\n", 20)
 	var rows []Row
 	for i := 0; i < 25; i++ {
-		rows = append(rows, Row{ID: fmt.Sprintf("private-row-%d", i), Fields: []Field{{Name: "doc", Value: doc}}})
+		rows = append(rows, Row{ID: fmt.Sprintf("k%d", i+1), Fields: []Field{{Name: "doc", Value: doc}}})
 	}
 	shared := []Field{{Name: "purpose", Value: "Keep complete evidence."}}
 	for _, afterRows := range []bool{false, true} {
@@ -389,8 +433,8 @@ func TestWindowsGreedilyFillByteBudgetWithExactLocalKeys(t *testing.T) {
 			budget int
 			sizes  []int
 		}{
-			{name: "byte only", budget: budget, sizes: []int{10, 10, 5}},
-			{name: "one byte short of r10", budget: budget - 1, sizes: []int{9, 9, 7}},
+			{name: "byte only", budget: budget, sizes: []int{10, 9, 6}},
+			{name: "one byte short of ten rows", budget: budget - 1, sizes: []int{9, 9, 7}},
 			{name: "explicit row cap", cap: 7, budget: budget, sizes: []int{7, 7, 7, 4}},
 		} {
 			t.Run(fmt.Sprintf("%s/context-after-%t", test.name, afterRows), func(t *testing.T) {
@@ -420,7 +464,7 @@ func TestWindowsGreedilyFillByteBudgetWithExactLocalKeys(t *testing.T) {
 						t.Fatal("request lost shared context or complete rows")
 					}
 					for j, row := range input.Rows {
-						if row["key"] != Key(j) || row["doc"] != doc {
+						if row["key"] != window.Rows[j].ID || row["doc"] != doc {
 							t.Fatal("request key or escaped UTF-8 evidence changed")
 						}
 					}
@@ -475,7 +519,7 @@ func TestChoiceWithOnlyUnknownAcceptsAnyAnswerAsUnknown(t *testing.T) {
 
 func TestSequenceEmptyOrNullIsAnEmptySelection(t *testing.T) {
 	column := Column{Name: "outbound", Kind: Sequence, OptionsFrom: "call_options"}
-	row := Row{Fields: []Field{{Name: "call_options", Value: []string{"c1", "c2"}}}}
+	row := Row{ID: "s1", Fields: []Field{{Name: "call_options", Value: []string{"c1", "c2"}}}}
 	for _, cell := range []string{"none", "", "  "} {
 		if got, err := normalizeCell(column, nil, row, cell); err != nil || got != "" {
 			t.Fatalf("empty selection %q refused: %q / %v", cell, got, err)
@@ -488,7 +532,7 @@ func TestSequenceEmptyOrNullIsAnEmptySelection(t *testing.T) {
 		t.Fatalf("a known ref beside an unknown one was lost: %q / %v", got, err)
 	}
 	def := Definition{Stage: "atlas_symbols", Independent: true, Columns: []Column{column}}
-	result, err := DecodeResult(def, Window{Rows: []Row{row}}, []byte(`{"rows":[{"key":"r1","outbound":null}]}`))
+	result, err := DecodeResult(def, Window{Rows: []Row{row}}, []byte(`{"rows":[{"key":"s1","outbound":null}]}`))
 	if err != nil || result.Answers[0] == nil || result.Answers[0]["outbound"] != "" {
 		t.Fatalf("null selection refused the row: %+v / %v", result, err)
 	}
@@ -499,7 +543,7 @@ func TestOptionsFromReadsTheWindowContextWhenTheRowHasNoList(t *testing.T) {
 	// row's own field still wins when both carry the name.
 	column := Column{Name: "destination", Kind: Choice, OptionsFrom: "destination_options", Free: "other: ", FreeMaxRunes: 10}
 	context := []Field{{Name: "destination_options", Value: []string{"d1", "d2"}}}
-	bare := Row{Fields: []Field{{Name: "path", Value: "client.go"}}}
+	bare := Row{ID: "b1", Fields: []Field{{Name: "path", Value: "client.go"}}}
 	if got, err := normalizeCell(column, context, bare, "d2"); err != nil || got != "d2" {
 		t.Fatalf("context options were not consulted: %q / %v", got, err)
 	}
@@ -516,14 +560,14 @@ func TestOptionsFromReadsTheWindowContextWhenTheRowHasNoList(t *testing.T) {
 	if _, err := normalizeCell(column, context, bare, "d9"); err == nil {
 		t.Fatal("a ref outside the context list was accepted")
 	}
-	own := Row{Fields: []Field{{Name: "destination_options", Value: []string{"d9"}}}}
+	own := Row{ID: "b3", Fields: []Field{{Name: "destination_options", Value: []string{"d9"}}}}
 	if got, err := normalizeCell(column, context, own, "d9"); err != nil || got != "d9" {
 		t.Fatalf("the row's own list did not shadow the context: %q / %v", got, err)
 	}
 	address := Column{Name: "address", Kind: Choice, OptionsFrom: "address_options", WhenOptionsFrom: "address_options"}
 	def := Definition{Stage: "atlas_boundaries", Independent: true, Columns: []Column{column, address}}
-	window := Window{Context: context, Rows: []Row{bare, {Fields: []Field{{Name: "address_options", Value: []string{"unknown", "a1"}}}}}}
-	result, err := DecodeResult(def, window, []byte(`{"rows":[{"key":"r1","destination":"d1"},{"key":"r2","destination":"d1","address":"a1"}]}`))
+	window := Window{Context: context, Rows: []Row{bare, {ID: "b2", Fields: []Field{{Name: "address_options", Value: []string{"unknown", "a1"}}}}}}
+	result, err := DecodeResult(def, window, []byte(`{"rows":[{"key":"b1","destination":"d1"},{"key":"b2","destination":"d1","address":"a1"}]}`))
 	if err != nil || len(result.Rejections) != 0 {
 		t.Fatalf("a row without address candidates was required to choose one: %+v / %v", result, err)
 	}

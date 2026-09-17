@@ -74,59 +74,6 @@ type Input struct {
 	Facts facts.Result
 }
 
-// sdkPackages are the client libraries whose calls with a literal argument
-// are integration points: a database, a queue, a cloud, a store, a service
-// SDK. "Any non-platform package with a literal" was measured on kubernetes
-// as 844 field paths and 120 feature-gate names; a closed list of what a
-// reader would call an integration is honest and small. Matched by exact
-// path or as a prefix with a slash.
-var sdkPackages = []string{
-	"database/sql", "net",
-	"google.golang.org/grpc", "github.com/jackc/pgx", "github.com/jackc/pgconn", "github.com/lib/pq",
-	"github.com/go-sql-driver/mysql", "gorm.io", "github.com/jmoiron/sqlx", "github.com/mattn/go-sqlite3",
-	"modernc.org/sqlite", "go.mongodb.org/mongo-driver", "github.com/redis/go-redis", "github.com/go-redis/redis",
-	"github.com/gomodule/redigo", "github.com/ClickHouse/clickhouse-go", "github.com/segmentio/kafka-go",
-	"github.com/IBM/sarama", "github.com/Shopify/sarama", "github.com/confluentinc/confluent-kafka-go",
-	"github.com/nats-io/nats.go", "github.com/rabbitmq/amqp091-go", "github.com/streadway/amqp",
-	"github.com/apache/pulsar-client-go", "github.com/eclipse/paho.mqtt.golang",
-	"github.com/aws/aws-sdk-go", "github.com/aws/aws-sdk-go-v2", "cloud.google.com/go",
-	"github.com/Azure/azure-sdk-for-go", "github.com/elastic/go-elasticsearch", "github.com/olivere/elastic",
-	"github.com/minio/minio-go", "github.com/hashicorp/vault", "github.com/hashicorp/consul",
-	"go.etcd.io/etcd/client", "k8s.io/client-go", "github.com/docker/docker/client", "github.com/moby/moby/client",
-	"github.com/go-resty/resty", "github.com/valyala/fasthttp", "github.com/gorilla/websocket", "nhooyr.io/websocket",
-	"github.com/slack-go/slack", "github.com/stripe/stripe-go", "github.com/twilio", "github.com/sendgrid",
-	"github.com/bwmarrin/discordgo", "gopkg.in/telebot", "github.com/go-telegram-bot-api",
-	"github.com/dgraph-io/badger", "go.etcd.io/bbolt", "github.com/syndtr/goleveldb", "github.com/gocql/gocql",
-	// Python and JavaScript client libraries, by import name.
-	"boto3", "botocore", "pymongo", "motor", "redis", "aioredis", "sqlalchemy", "psycopg2", "psycopg", "asyncpg",
-	"pymysql", "mysql", "sqlite3", "kafka", "aiokafka", "confluent_kafka", "pika", "aio_pika", "celery", "stripe",
-	"twilio", "slack_sdk", "google.cloud", "azure", "elasticsearch", "cassandra", "hvac", "consul", "kubernetes",
-	"docker", "paramiko", "smtplib", "ftplib", "telebot", "aiogram", "discord",
-	"@aws-sdk", "aws-sdk", "mongoose", "mongodb", "pg", "mysql2", "ioredis", "kafkajs", "amqplib", "@slack",
-	"firebase", "firebase-admin", "@google-cloud", "@azure", "socket.io", "socket.io-client", "ws", "nodemailer",
-	"stripe", "twilio", "discord.js", "telegraf", "node-telegram-bot-api", "@elastic/elasticsearch", "cassandra-driver",
-}
-
-// sdkNeverPackages are packages whose literal arguments are never an
-// integration: format strings, separators, error text, log messages, flag
-// names, metric names, assertions. etcd's first atlas found 1,055 of its
-// 1,791 "boundaries" in calls to zap.
-var sdkNeverPackages = []string{
-	"fmt", "strings", "errors", "bytes", "path", "path/filepath", "encoding/json", "io", "os",
-	"time", "regexp", "flag", "html/template", "text/template", "sort", "strconv", "unicode", "log",
-	"context", "sync", "math", "os/exec", "os/signal", "bufio", "crypto/sha256", "encoding/hex", "runtime",
-	"go.uber.org/zap", "go.uber.org/multierr", "github.com/sirupsen/logrus", "k8s.io/klog",
-	"github.com/golang/glog", "github.com/rs/zerolog", "github.com/go-logr/logr", "log/slog",
-	"google.golang.org/grpc/status", "google.golang.org/grpc/codes", "google.golang.org/grpc/grpclog",
-	"github.com/spf13/pflag", "github.com/spf13/cobra", "github.com/spf13/viper", "github.com/urfave/cli",
-	"github.com/pkg/errors", "github.com/stretchr/testify", "github.com/onsi/ginkgo", "github.com/onsi/gomega",
-	"github.com/prometheus/client_golang", "go.opentelemetry.io/otel", "github.com/google/go-cmp",
-	"golang.org/x/exp", "golang.org/x/sync", "golang.org/x/text", "golang.org/x/net/context",
-	"github.com/dustin/go-humanize", "github.com/olekukonko/tablewriter", "gopkg.in/yaml", "sigs.k8s.io/yaml",
-	"github.com/xiang90/probing", "github.com/coreos/go-semver", "github.com/gogo/protobuf",
-	"google.golang.org/protobuf", "github.com/golang/protobuf",
-}
-
 var generatedMarker = regexp.MustCompile(`(?i)code generated .* do not edit|do not edit`)
 
 // Build derives the graph. Same inputs give byte-identical output.
@@ -159,7 +106,7 @@ func Build(input Input) (atlas.Graph, error) {
 	}
 	for _, fact := range input.Facts.Facts {
 		if fact.ObjectID != "" {
-			b.factSubjects[fact.ObjectID] = ""
+			b.factSubjects[scopedObjectID(fact.TargetID, fact.ObjectID)] = ""
 		}
 	}
 	for _, target := range input.Targets {
@@ -192,7 +139,6 @@ func Build(input Input) (atlas.Graph, error) {
 		b.collectSymbolCallers(b.symbolCallerRows, target)
 		b.collectSymbolBindings(b.symbolBindingRows, target)
 		b.collectSymbolCalls(b.symbolCallRows, target)
-		b.collectExternalCallCandidates(target)
 	}
 	b.releaseTargetObjects()
 	// A located seed may refer to a file supplied by a later target. Resolve
@@ -211,7 +157,6 @@ func Build(input Input) (atlas.Graph, error) {
 	b.assignDepths()
 	b.collectSymbols()
 	b.collectBoundaries()
-	b.collectExternalCalls()
 	return b.graph()
 }
 
@@ -274,7 +219,6 @@ type builder struct {
 	symbolCallerRows  map[string]map[string]atlas.SymbolCaller
 	symbolBindingRows map[string]map[string]atlas.SymbolBinding
 	symbolCallRows    map[string]map[string]atlas.SymbolCall
-	externalCalls     []externalCallCandidate
 	memberOwners      map[string]string // retained declaration -> native owner's symbol place
 	typeFields        map[string]typeField
 	// workspace lists the package paths of the repository's own modules, from
@@ -285,6 +229,13 @@ type builder struct {
 type typeField struct {
 	owner  string
 	member atlas.TypeMember
+}
+
+func scopedObjectID(targetID, objectID string) string {
+	if targetID == "" || objectID == "" {
+		return ""
+	}
+	return targetID + "." + objectID
 }
 
 func (b *builder) indexClaims() {
@@ -357,7 +308,7 @@ func (b *builder) useTargetObjects(index programindex.Index) {
 		if relation.Kind == programindex.RelationCalls || relation.Kind == programindex.RelationInvokesExternal || relation.Kind == programindex.RelationExecutes {
 			callbacks[relation.FromID] = true
 		}
-		if relation.Kind == programindex.RelationPassesCallback {
+		if relation.Kind == programindex.RelationPassesCallback || relation.Kind == programindex.RelationBindsImplementation {
 			for _, id := range relation.ToIDs {
 				callbacks[id] = true
 			}
@@ -421,10 +372,11 @@ func (b *builder) collectObjects(target TargetInput) {
 		if b.symbolOf[object.ID] == "" {
 			continue
 		}
+		scopedID := scopedObjectID(targetID, object.ID)
 		// Keep the fact's exact target-local identity before declarations from
 		// overlapping targets merge and the current native lookups are released.
-		if _, needed := b.factSubjects[object.ID]; needed {
-			b.factSubjects[object.ID] = b.symbolOf[object.ID]
+		if _, needed := b.factSubjects[scopedID]; needed {
+			b.factSubjects[scopedID] = b.symbolOf[object.ID]
 		}
 		name := object.Name
 		if object.Kind == programindex.ObjectMethod && !strings.Contains(name, ".") {
@@ -438,14 +390,15 @@ func (b *builder) collectObjects(target TargetInput) {
 		state.decls = append(state.decls, atlas.Decl{
 			Name:      name,
 			Kind:      string(object.Kind),
-			Signature: languageSignature(object.Signature, state.language),
+			Signature: object.Signature,
+			Aliases:   aliasText(object.Aliases),
 			LineNo:    object.Location.Line,
 			Column:    object.Location.Column,
 			Exported:  object.Visibility == programindex.VisibilityPublic,
-			ObjectID:  object.ID,
+			ObjectID:  scopedID,
 		})
 		if owner := b.byID[object.OwnerID]; owner.Kind == programindex.ObjectType && owner.Location != nil {
-			b.memberOwners[object.ID] = b.symbolOf[owner.ID]
+			b.memberOwners[scopedID] = b.symbolOf[owner.ID]
 		}
 	}
 	for _, object := range index.Objects {
@@ -462,11 +415,12 @@ func (b *builder) collectObjects(target TargetInput) {
 		key := fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s", id, filePath, object.Location.Line, object.Location.Column, object.Name)
 		// The previous all-object pass sorted native IDs before deduplicating
 		// fields. Preserve that representative independently of target order.
-		if previous, exists := b.typeFields[key]; exists && previous.member.Decl.ObjectID <= object.ID {
+		scopedID := scopedObjectID(targetID, object.ID)
+		if previous, exists := b.typeFields[key]; exists && previous.member.Decl.ObjectID <= scopedID {
 			continue
 		}
 		b.typeFields[key] = typeField{owner: id, member: atlas.TypeMember{Path: filePath, Decl: atlas.Decl{
-			ObjectID: object.ID, Name: object.Name, Kind: string(object.Kind), Signature: languageSignature(object.Signature, file.language),
+			ObjectID: scopedID, Name: object.Name, Kind: string(object.Kind), Signature: object.Signature, Aliases: aliasText(object.Aliases),
 			LineNo: object.Location.Line, Column: object.Location.Column, Exported: object.Visibility == programindex.VisibilityPublic,
 		}}}
 	}
@@ -552,7 +506,7 @@ func (b *builder) collectEdges(target TargetInput) {
 		}
 		caller := b.byID[relation.FromID]
 		for _, toID := range relation.ToIDs {
-			b.fanIn[toID]++
+			b.fanIn[scopedObjectID(target.Index.Target.ID, toID)]++
 			to, ok := b.fileOf[toID]
 			if !ok || to == from {
 				continue
@@ -576,6 +530,8 @@ func edgeKind(kind programindex.RelationKind) string {
 		return "imports"
 	case programindex.RelationPassesCallback:
 		return "passes_callback"
+	case programindex.RelationBindsImplementation:
+		return "binds_implementation"
 	case programindex.RelationDecorates:
 		return "decorates"
 	case programindex.RelationExecutes:
@@ -619,6 +575,7 @@ func (b *builder) addEdge(from, to, kind string, witness atlas.Witness) {
 	}
 	edge.Count++
 	if witness.Caller != "" && len(edge.Witnesses) < 64 {
+		witness.Kind = kind
 		edge.Witnesses = append(edge.Witnesses, witness)
 	}
 }
@@ -998,41 +955,6 @@ func goPackageComment(source string) string {
 	return ""
 }
 
-// shortSignature drops module paths from a Go signature: a reader says
-// corpus.Entry, not github.com/owner/repo/internal/corpus.Entry.
-func languageSignature(signature, language string) string {
-	if language == "go" {
-		return shortSignature(signature)
-	}
-	return signature
-}
-
-func shortSignature(signature string) string {
-	if !strings.Contains(signature, "/") {
-		return signature
-	}
-	var out strings.Builder
-	token := strings.Builder{}
-	flush := func() {
-		text := token.String()
-		if slash := strings.LastIndex(text, "/"); slash >= 0 && strings.Contains(text[slash:], ".") {
-			text = text[slash+1:]
-		}
-		out.WriteString(text)
-		token.Reset()
-	}
-	for _, r := range signature {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '/' || r == '.' || r == '_' || r == '-' {
-			token.WriteRune(r)
-			continue
-		}
-		flush()
-		out.WriteRune(r)
-	}
-	flush()
-	return out.String()
-}
-
 func (b *builder) hasFile(filePath string) bool {
 	_, ok := b.entries[filePath]
 	return ok
@@ -1200,7 +1122,7 @@ func (b *builder) collectSymbolCallers(rows map[string]map[string]atlas.SymbolCa
 		if !ok || from.Location == nil {
 			continue
 		}
-		row := atlas.SymbolCaller{ObjectID: from.ID, PlaceID: b.symbolOf[from.ID], Name: displayName(from, b.byID), Signature: languageSignature(from.Signature, target.Index.Target.Language), Path: from.Location.Path, Line: relationLine(relation), Kind: string(relation.Kind), Invocation: relation.Invocation, Resolution: string(relation.Resolution)}
+		row := atlas.SymbolCaller{ObjectID: scopedObjectID(target.Index.Target.ID, from.ID), PlaceID: b.symbolOf[from.ID], Name: displayName(from, b.byID), Signature: from.Signature, Path: from.Location.Path, Line: relationLine(relation), Kind: string(relation.Kind), Invocation: relation.Invocation, Dispatch: relation.Dispatch, Resolution: string(relation.Resolution)}
 		key := row
 		if key.PlaceID != "" {
 			key.ObjectID = ""
@@ -1337,7 +1259,7 @@ func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolB
 		}
 	}
 	for _, relation := range target.Index.Relations {
-		if relation.Kind != programindex.RelationPassesCallback {
+		if relation.Kind != programindex.RelationPassesCallback && relation.Kind != programindex.RelationBindsImplementation {
 			continue
 		}
 		from, known := b.byID[relation.FromID]
@@ -1359,7 +1281,7 @@ func (b *builder) collectSymbolBindings(rows map[string]map[string]atlas.SymbolB
 				if witness.Kind == "callable_receiver_field" || witness.Kind == "interface_field_assignment" {
 					continue
 				}
-				row := atlas.SymbolBinding{From: displayName(from, b.byID), To: displayName(to, b.byID), Detail: witness.Detail, Invocation: relation.Invocation, Resolution: string(relation.Resolution)}
+				row := atlas.SymbolBinding{From: displayName(from, b.byID), To: displayName(to, b.byID), Detail: witness.Detail, Kind: string(relation.Kind), Resolution: string(relation.Resolution)}
 				row.Evidence = append(append([]atlas.EdgeEvidence{}, evidence...), registrationEvidence[relation.SourceArgumentID]...)
 				row.Evidence = canonicalBindingEvidence(row.Evidence)
 				row.Arguments = registrations[relation.SourceArgumentID]
@@ -1443,19 +1365,25 @@ func symbolCallKey(call atlas.SymbolCall) string {
 }
 
 func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.SymbolCall, target TargetInput) {
-	var observed []nativeSymbolCall
-	var source *nativeDispatchSource
 	add := func(id string, call atlas.SymbolCall) {
-		if b.symbolOf[id] == "" {
+		symbol := b.symbolOf[id]
+		if symbol == "" {
 			return
 		}
-		observed = append(observed, nativeSymbolCall{owner: id, path: b.fileOf[id], call: call, source: source})
+		// A method declared on an external interface names the API exactly;
+		// which implementation runs there was not observed.
+		if call.Dispatch == programindex.DispatchInterfaceMethod {
+			call.Resolution = string(programindex.ResolutionUnresolved)
+		}
+		if byObject[symbol] == nil {
+			byObject[symbol] = make(map[string]atlas.SymbolCall)
+		}
+		byObject[symbol][symbolCallKey(call)] = call
 	}
 	for _, relation := range target.Index.Relations {
-		if relation.Kind == programindex.RelationImports || relation.Kind == programindex.RelationContains {
+		if relation.Kind == programindex.RelationImports {
 			continue
 		}
-		source = dispatchSource(relation)
 		// Compiler dispatch and direct-call witnesses need not have a value
 		// pattern. Dropping them removed the call into an implementation from
 		// handler evidence, especially for interface dispatch.
@@ -1472,7 +1400,7 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 				if witness.Kind == "interface_field_assignment" {
 					continue
 				}
-				call := atlas.SymbolCall{Kind: string(relation.Kind), Invocation: relation.Invocation, Resolution: string(relation.Resolution), Detail: witness.Detail, Evidence: evidence}
+				call := atlas.SymbolCall{Kind: string(relation.Kind), Invocation: relation.Invocation, Dispatch: relation.Dispatch, Resolution: string(relation.Resolution), Detail: witness.Detail, Evidence: evidence}
 				if witness.Location != nil {
 					call.Line = witness.Location.Line
 					call.Column = witness.Location.Column
@@ -1493,7 +1421,7 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 			}
 		}
 		for _, pattern := range relation.Patterns {
-			call := atlas.SymbolCall{Kind: string(relation.Kind), Name: pattern.Selector, Invocation: relation.Invocation, Resolution: string(relation.Resolution), ReceiverValue: sourcevalue.Clone(pattern.ReceiverValue), ResultValue: sourcevalue.Clone(pattern.ResultValue)}
+			call := atlas.SymbolCall{Kind: string(relation.Kind), Name: pattern.Selector, Invocation: relation.Invocation, Dispatch: relation.Dispatch, Resolution: string(relation.Resolution), ReceiverValue: sourcevalue.Clone(pattern.ReceiverValue), ResultValue: sourcevalue.Clone(pattern.ResultValue)}
 			for _, witness := range pattern.Context {
 				if witness.Location != nil {
 					call.Evidence = append(call.Evidence, atlas.EdgeEvidence{Extractor: witness.Kind, Label: witness.Detail, Path: witness.Location.Path, LineNo: witness.Location.Line})
@@ -1537,15 +1465,6 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 			}
 			add(relation.FromID, call)
 		}
-	}
-	// Reconcile native views while their exact target and object scope is
-	// still available. Cross-target observations are not counterpart evidence.
-	for _, row := range mergeDeclaredDispatchPairs(observed) {
-		id := b.symbolOf[row.owner]
-		if byObject[id] == nil {
-			byObject[id] = make(map[string]atlas.SymbolCall)
-		}
-		byObject[id][symbolCallKey(row.call)] = row.call
 	}
 }
 
@@ -1594,7 +1513,7 @@ func (b *builder) collectBoundaries() {
 	// IDs, so a fact's target is translated before it names a place.
 	programTarget := make(map[string]string, len(b.input.Facts.Targets))
 	for _, target := range b.input.Facts.Targets {
-		programTarget[target.ID] = target.ProgramTargetID
+		programTarget[target.ID] = target.ID
 	}
 	for _, fact := range b.input.Facts.Facts {
 		if fact.Anchor == nil {
@@ -1604,15 +1523,27 @@ func (b *builder) collectBoundaries() {
 		if !ok || targetID == "" {
 			continue
 		}
-		var direction, kind, method string
+		var direction, kind, method, external, holder string
 		var values []string
 		switch fact.Kind {
-		case facts.KindHTTPRoute:
-			direction, kind, method, values = atlas.DirectionIn, atlas.BoundaryHTTPServer, fact.Method, []string{fact.Path}
-		case facts.KindHTTPCall:
-			direction, kind, method, values = atlas.DirectionOut, atlas.BoundaryHTTPClient, fact.Method, []string{fact.Path}
-		case facts.KindListenAddress:
-			direction, kind, values = atlas.DirectionIn, atlas.BoundaryListenAddress, []string{fact.Value}
+		case facts.KindRegistration:
+			// The shape is the fact; its kind is the model's to decide. A
+			// registration handing over a callable brings work in; one that
+			// only names an address sends work out.
+			direction, method, external = atlas.DirectionOut, fact.Method, fact.Text
+			if fact.ObjectID != "" {
+				direction = atlas.DirectionIn
+			}
+			values = registrationValues(fact)
+			if fact.Holder != nil {
+				holder = fmt.Sprintf("%s:%d:%d", fact.Holder.Path, fact.Holder.Line, fact.Holder.Column)
+			}
+		case facts.KindSQLQuery:
+			direction, kind = atlas.DirectionOut, atlas.BoundaryDB
+			if fact.Key != "" {
+				values = append(values, strings.Split(fact.Key, ", ")...)
+			}
+			values = append(values, fact.Value)
 		case facts.KindConfigRead:
 			direction, kind, values = atlas.DirectionOut, atlas.BoundaryConfig, []string{fact.Key}
 			if fact.Value != "" {
@@ -1627,146 +1558,27 @@ func (b *builder) collectBoundaries() {
 			continue
 		}
 		encodedValues, _ := json.Marshal(values)
+		objectID := scopedObjectID(targetID, fact.ObjectID)
 		key := boundaryKey{path: filePath, line: fact.Anchor.Line, column: fact.Anchor.Column, kind: kind,
-			method: method, values: string(encodedValues), subject: b.factSubjects[fact.ObjectID]}
-		origin := atlas.BoundaryOrigin{TargetID: targetID, FactID: fact.ID, ObjectID: fact.ObjectID}
+			method: method, values: string(encodedValues), subject: b.factSubjects[objectID]}
+		origin := atlas.BoundaryOrigin{TargetID: targetID, FactID: fact.ID, ObjectID: objectID}
 		if state, exists := b.bounds[key]; exists {
 			state.place.Boundary.Origins = append(state.place.Boundary.Origins, origin)
 			state.place.TargetIDs = appendUnique(state.place.TargetIDs, targetID)
 			continue
 		}
-		caller, callerDoc := b.callerOf(file, fact.ObjectID, fact.Symbol, fact.Anchor.Line)
+		caller, callerDoc := b.callerOf(file, objectID, fact.Symbol, fact.Anchor.Line)
 		b.bounds[key] = &boundaryState{place: atlas.Place{
 			ID: nativeBoundaryID(key), Kind: atlas.PlaceBoundary, Path: filePath,
 			LineNo: fact.Anchor.Line, Column: fact.Anchor.Column, Depth: file.depth, TargetIDs: []string{targetID},
 			Parent: atlas.FileID(filePath),
 			Boundary: &atlas.BoundaryFacts{
-				Source: "fact", Origins: []atlas.BoundaryOrigin{origin}, ObjectID: fact.ObjectID, SubjectID: b.factSubjects[fact.ObjectID],
-				Caller: caller, CallerDoc: callerDoc, Method: method, Values: values,
-				Direction: direction, GivenKind: kind,
+				Source: "fact", Origins: []atlas.BoundaryOrigin{origin}, ObjectID: objectID, SubjectID: b.factSubjects[objectID],
+				Caller: caller, CallerDoc: callerDoc, External: external, Method: method, Values: values,
+				Holder: holder, Direction: direction, GivenKind: kind,
 			},
 		}}
 	}
-}
-
-// collectExternalCalls lifts calls into non-platform packages that carry a
-// literal argument: an SDK client method called with a topic, a table, a
-// bucket. The model says what kind of integration it is.
-type externalCallCandidate struct {
-	path, objectID, caller, external, targetID string
-	line                                       int
-	values                                     []string
-}
-
-// Retain only the boundary observation while this target's index is loaded.
-// File docstrings, depths and native boundaries become available after the
-// complete file inventory; none of them requires retaining the target index.
-func (b *builder) collectExternalCallCandidates(target TargetInput) {
-	for _, relation := range target.Index.Relations {
-		if relation.Kind != programindex.RelationInvokesExternal {
-			continue
-		}
-		from, ok := b.fileOf[relation.FromID]
-		if !ok {
-			continue
-		}
-		var external *programindex.ExternalSymbol
-		for _, toID := range relation.ToIDs {
-			if object, ok := b.byID[toID]; ok && object.External != nil {
-				external = object.External
-				break
-			}
-		}
-		if external == nil || external.RepositoryPath != "" || !sdkCandidate(*external) {
-			continue
-		}
-		// JSTS carries compiler-resolved repository origins on each object.
-		// A different workspace package with the same npm name is not its origin.
-		if language := target.Index.Target.Language; language != "javascript" && language != "typescript" {
-			if _, own := b.workspace[external.PackagePath]; own {
-				continue
-			}
-		}
-		var values []string
-		line := relationLine(relation)
-		for _, pattern := range relation.Patterns {
-			if pattern.Location != nil && line == 0 {
-				line = pattern.Location.Line
-			}
-			for _, argument := range pattern.Arguments {
-				if value, ok := literalArgument(argument); ok {
-					values = appendUnique(values, value)
-				}
-			}
-		}
-		if len(values) == 0 || line == 0 {
-			continue
-		}
-		if len(values) > 8 {
-			values = values[:8]
-		}
-		b.externalCalls = append(b.externalCalls, externalCallCandidate{
-			path: from, line: line, objectID: relation.FromID,
-			caller:   displayName(b.byID[relation.FromID], b.byID),
-			external: externalName(*external), values: values, targetID: target.Index.Target.ID,
-		})
-	}
-}
-
-func (b *builder) collectExternalCalls() {
-	for _, call := range b.externalCalls {
-		from, line, values := call.path, call.line, call.values
-		claimed := false
-		for key := range b.bounds {
-			if key.path == from && key.line == line {
-				claimed = true
-				break
-			}
-		}
-		if claimed {
-			continue
-		}
-		key := boundaryKey{path: from, line: line, kind: "sdk"}
-		if state, exists := b.bounds[key]; exists {
-			state.place.Boundary.Values = appendUnique(state.place.Boundary.Values, values...)
-			state.place.TargetIDs = appendUnique(state.place.TargetIDs, call.targetID)
-			continue
-		}
-		callerName, callerDoc := b.callerOf(b.files[from], call.objectID, call.caller, line)
-		b.bounds[key] = &boundaryState{place: atlas.Place{
-			ID: boundaryID(from, line, "sdk"), Kind: atlas.PlaceBoundary, Path: from,
-			LineNo: line, Depth: b.files[from].depth, TargetIDs: []string{call.targetID},
-			Parent: atlas.FileID(from),
-			Boundary: &atlas.BoundaryFacts{
-				Source: "external_call", ObjectID: call.objectID,
-				Caller: callerName, CallerDoc: callerDoc,
-				External: call.external, Values: values,
-				Direction: atlas.DirectionOut,
-			},
-		}}
-	}
-	b.externalCalls = nil
-}
-
-func sdkCandidate(external programindex.ExternalSymbol) bool {
-	if _, never := packageMatches(external.PackagePath, sdkNeverPackages...); never {
-		return false
-	}
-	for _, known := range sdkPackages {
-		if known == "net" {
-			// net itself (Dial, Listen), not net/http, whose client calls
-			// with a literal URL are already facts.
-			if external.PackagePath == "net" {
-				return true
-			}
-			continue
-		}
-		if external.PackagePath == known || strings.HasPrefix(external.PackagePath, known+"/") ||
-			strings.HasPrefix(external.PackagePath, known+".") {
-			return true
-		}
-	}
-	return false
 }
 
 func externalName(external programindex.ExternalSymbol) string {
@@ -2237,4 +2049,30 @@ func truncateRunes(text string, limit int) string {
 		cut--
 	}
 	return strings.TrimSpace(string(runes[:cut])) + "…"
+}
+
+// aliasText renders a declaration's other-format names for a reader:
+// "json:count_label db:count".
+func aliasText(aliases []programindex.Alias) string {
+	parts := make([]string, 0, len(aliases))
+	for _, alias := range aliases {
+		parts = append(parts, alias.Format+":"+alias.Name)
+	}
+	return strings.Join(parts, " ")
+}
+
+// registrationValues are what the model reads about a registration: the
+// address it answers on when one exists, then its other literals. The call
+// word travels as the external symbol behind the call.
+func registrationValues(fact facts.Fact) []string {
+	var values []string
+	if fact.Path != "" {
+		values = append(values, fact.Path)
+	}
+	for _, literal := range fact.Values {
+		if literal != fact.Path {
+			values = appendUnique(values, literal)
+		}
+	}
+	return values
 }

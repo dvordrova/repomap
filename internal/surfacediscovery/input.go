@@ -27,9 +27,10 @@ const (
 // Input is an exact, already-selected Go analysis boundary. The package does
 // not discover targets and no repository-wide compatibility mode exists.
 type Input struct {
-	ModuleDirs     []string
-	Packages       []PackageInput
-	AnalysisTarget *AnalysisTargetInput
+	ModuleDirs                    []string
+	Packages                      []PackageInput
+	AnalysisTarget                *AnalysisTargetInput
+	MatchInterfaceImplementations bool
 }
 
 type AnalysisTargetInput struct {

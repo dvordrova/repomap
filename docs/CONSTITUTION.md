@@ -53,9 +53,11 @@ reach the screen.
 ## Layers of truth (data model invariant)
 
 1. **facts** — deterministic. Targets and their context (manifests, roots),
-   entrypoints found by reachability, imports/calls graph, HTTP boundaries
-   with method + path literals (server routes and client calls), cross-target
-   portals matched on literals, config reads (env keys), dynamic execution
+   entrypoints found by reachability, imports/calls graph, registrations (a
+   call outside the repository that receives a repository callable, an
+   address, or a value named by a literal: its call word, literals, the verb
+   it states, and the callable handed over; what it registers is not decided
+   here), SQL statements with the tables they name, config reads (env keys), dynamic execution
    (`exec`, `eval`, `subprocess`, `os.system`, `pickle.loads`, …, the places
    where control leaves code the reader can follow), manifest
    facts (`scripts`, `proxy`, `engines`, pinned versions, committed `.env`
@@ -69,8 +71,10 @@ reach the screen.
    flow. Every model artifact references facts by id. Any referenced id that
    does not exist in the fact layer is rejected (recorded, not silently
    dropped).
-4. **human** — confirmations/annotations (future). Ids must be stable enough
-   to attach them later: target-scoped `path + symbol + content-hash`.
+4. **human** — confirmations/annotations (future). They bind to one repository
+  index SHA plus its compact `t*/n*` IDs. A changed fact graph has a new root
+  and must explicitly migrate an annotation; entity IDs do not pretend to be
+  permanent cross-revision identities.
 
 The group graph is a layer on top of the fact features, never a replacement
 for them. Facts survive any rewrite of the model stage because they live in
@@ -84,14 +88,14 @@ separate stage outputs.
   is keyed by the stage contract, parameters and input content: reuse memory
   first, restore disk only when absent, compute on a miss. Deterministic stages
   never depend on LLM stages.
-  The owner approved shared project facts on 2026-09-09: identical parser
-  views share one immutable common ProgramIndex input and its saved artifact;
-  each launch keeps its exact target and seeds. Parse identical source
-  inventories once, retaining distinct package/import interpretations.
-  The portfolio releases completed child indexes and restores one target at a
-  time for shared stages instead of retaining every full target projection.
-  Shared facts and thin target bindings use the existing ProgramIndex builder;
-  this changes storage and lifetime, not target selection or semantic authority.
+  Identical target views may share one immutable native parse in memory while
+  they are built. Persistence starts only after sealing: each `program-index.json`
+  is the complete ProgramIndex itself. Adapter inputs, SourceRefs and parser
+  state are never persisted and a reader never rebuilds an index through `New`.
+  Target-local `n*` identities are qualified as `t*.n*` when they enter a
+  shared multi-target stage. Shared graph and semantic entities use compact
+  ordinal IDs assigned once at their owning boundary; paths and digests never
+  substitute for entity identity.
 * Validation is a pure function `(model_output, facts) -> (accepted,
   rejected_with_reason)`. It annotates; it never aborts a run. No thresholds
   like "fail if < 80% valid". Rejected items go to `rejected.jsonl` with the
@@ -214,7 +218,8 @@ separate stage outputs.
   existing analysis and shared glossary, not a separate question knowledge graph.
 * Overview page: what the repository is (roles with purpose + anchors), the
   targets as cards, the cross-target portals as a table
-  (`GET /api/levels: front/src/service/http.ts:12 → backend/app/app.py:19`),
+  (`GET /api/levels: front/src/service/http.ts:12 → backend/app/app.py:19`,
+  joined from registrations the model accepted as a request and a route),
   negatives stated explicitly, and a run recipe with each command anchored to
   the manifest line it came from.
 * Target page, in this order: Inbound (routes/triggers) → Entrypoints → Core

@@ -20,7 +20,7 @@ func TestPreparedTablesHaveOneResponseShapeWithCurrentColumns(t *testing.T) {
 	for _, def := range []table.Definition{
 		Directories(), WithOpen(Directories()), Files(), WithOpen(Files()),
 		Symbols(), Types(), SymbolSelection(false), SymbolSelection(true),
-		Operations(), Boundaries(), Targets(), Targets(true), Arrows(),
+		Operations(), FixedBoundaries(true), API(), Publish(), Targets(), Targets(true), Arrows(),
 		Joints(), Peers(), Answer(),
 	} {
 		for _, withTerms := range []bool{false, true} {
@@ -99,7 +99,6 @@ func TestTableOwnerKeepsProseMetadataAndOmitsClosedDecisionMetadata(t *testing.T
 		{"captions", Symbols(), false},
 		{"long-prose", Types(), false},
 		{"conditional-operation-prose", Operations(), false},
-		{"conditional-boundary-prose", Boundaries(true), false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			windows, err := table.Windows(test.def, 1, []table.Row{{ID: "local", Fields: []table.Field{{Name: "path", Value: "service.go"}}}})

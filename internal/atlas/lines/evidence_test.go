@@ -200,7 +200,10 @@ func TestTypeContextKeepsOwnedDeclarationsWithoutNativeIDs(t *testing.T) {
 			t.Fatalf("lost owned context %q: %s", want, request)
 		}
 	}
-	for _, forbidden := range []string{"native-type-id", "native-method-id", "native-field-id", "type-local", "operation_candidate", "outbound", "file_hypothesis"} {
+	if !strings.Contains(request, `"key": "type-local"`) {
+		t.Fatalf("type table lost its existing row ID: %s", request)
+	}
+	for _, forbidden := range []string{"native-type-id", "native-method-id", "native-field-id", "operation_candidate", "outbound", "file_hypothesis"} {
 		if strings.Contains(request, forbidden) {
 			t.Fatalf("type table exposed unrelated field %q", forbidden)
 		}
@@ -224,7 +227,7 @@ func TestTypeContextKeepsOwnedDeclarationsWithoutNativeIDs(t *testing.T) {
 		t.Fatal("type preparation mutated the native context")
 	}
 	explanation := "A ticket represents a pending job and keeps the points associated with that job together. Its Renew operation extends the ticket's validity; the declaration also exposes a Done operation.\n\nThese names describe the interface, without establishing what happens to the points when the job ends."
-	raw, _ = json.Marshal(map[string]any{"rows": []map[string]string{{"key": "r1", "line": explanation, "alias": "none", "key_symbol": "yes"}}})
+	raw, _ = json.Marshal(map[string]any{"rows": []map[string]string{{"key": "type-local", "line": explanation, "alias": "none", "key_symbol": "yes"}}})
 	answer, err := table.Decode(Types(), windows[0], raw)
 	if err != nil || len(answer) != 1 || answer[0]["line"] != explanation {
 		t.Fatalf("type explanation lost its full qualification or paragraph break: %v, %v", answer, err)
@@ -254,7 +257,7 @@ func TestIndependentTablesPackCompleteRowsWithoutCountCaps(t *testing.T) {
 		}}
 		rows = append(rows, TypeRow(place))
 	}
-	for _, def := range []table.Definition{Directories(), Files(), Symbols(), Types(), Boundaries(), Operations()} {
+	for _, def := range []table.Definition{Directories(), Files(), Symbols(), Types(), FixedBoundaries(true), Operations()} {
 		t.Run(def.Contract, func(t *testing.T) {
 			windows, err := table.Windows(def, 0, rows)
 			if err != nil || len(windows) != 1 || !reflect.DeepEqual(windows[0].Rows, rows) {

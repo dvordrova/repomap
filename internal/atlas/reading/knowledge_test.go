@@ -58,26 +58,8 @@ func (p *distinctDescriptionProvider) Complete(ctx context.Context, prepared llm
 
 func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) {
 	graph := knowledgeGraph(t)
-	firstID := atlas.SymbolID("pkg/a/y.go", 3, "help")
-	secondID := atlas.SymbolID("pkg/a/y.go", 8, "help")
-	for _, place := range graph.Places {
-		if place.ID != firstID {
-			continue
-		}
-		other := place
-		facts := *place.Symbol
-		other.ID, other.LineNo, other.Symbol = secondID, 8, &facts
-		other.Symbol.Decl.LineNo = 8
-		other.Symbol.Decl.ObjectID = "different-native-object"
-		for j := range graph.Places {
-			if graph.Places[j].ID == other.Parent {
-				graph.Places[j].File.Decls = append(graph.Places[j].File.Decls, other.Symbol.Decl)
-			}
-		}
-		graph.Places = append(graph.Places, other)
-		break
-	}
-	atlas.SortPlaces(graph.Places)
+	graph, firstID, secondID := duplicateHelpSymbol(t, graph, "different-native-object")
+	fileID := graphPlaceID(t, graph, atlas.PlaceFile, "pkg/a/y.go", 0, "")
 	cache := t.TempDir()
 	provider := &distinctDescriptionProvider{}
 	opts := readOptions(t, graph, provider, cache)
@@ -88,7 +70,7 @@ func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) 
 		t.Fatalf("provider saw %d symbol rows, want three distinct inputs for four declarations", provider.symbolRows)
 	}
 	if a.ID == b.ID || a.SubjectID == b.SubjectID || a.Line != 3 || b.Line != 8 ||
-		a.ContextID != atlas.FileID("pkg/a/y.go") || b.ContextID != a.ContextID ||
+		a.ContextID != fileID || b.ContextID != a.ContextID ||
 		a.BasisID != b.BasisID || !reflect.DeepEqual(a.Cells, b.Cells) ||
 		a.OriginRequest != b.OriginRequest || a.OriginResponse != b.OriginResponse {
 		t.Fatalf("shared answer lost distinct current source bindings: %+v / %+v", a, b)
@@ -150,7 +132,7 @@ func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) 
 	}
 	// A changed parent's actual line is a new input, even when the source
 	// name and declaration signature remain identical to their prior values.
-	replayLine(first[atlas.FileID("pkg/a/y.go")], "A different parent-file purpose.")
+	replayLine(first[fileID], "A different parent-file purpose.")
 	changedProvider := &distinctDescriptionProvider{}
 	changedOpts := readOptions(t, graph, changedProvider, cache)
 	changedOpts.Through = lines.StageSymbols
@@ -190,7 +172,7 @@ func TestKnowledgeReadsReplayedRowsWithoutRepeatingAnalysis(t *testing.T) {
 	opts := readOptions(t, graph, &tableProvider{}, cache)
 	opts.Through, opts.WindowRows = lines.StageSymbols, 2
 	first := readKnowledge(t, opts)
-	symbolID := atlas.SymbolID("pkg/a/y.go", 3, "help")
+	symbolID := graphPlaceID(t, graph, atlas.PlaceSymbol, "pkg/a/y.go", 3, "help")
 	ref, found, err := llm.LoadMemo(opts.Executor, first[symbolID].BasisID, llm.DecodeJSON[rememberedRow](nil))
 	if err != nil || !found {
 		t.Fatalf("row reference: %v", err)
@@ -265,31 +247,44 @@ func TestKnowledgeReadsReplayedRowsWithoutRepeatingAnalysis(t *testing.T) {
 
 func knowledgeGraph(t *testing.T) atlas.Graph {
 	t.Helper()
-	graph := testGraph(t)
-	var symbols []atlas.Place
-	for i := range graph.Places {
-		file := &graph.Places[i]
-		if file.File == nil {
+	return testGraph(t)
+}
+
+func duplicateHelpSymbol(t *testing.T, graph atlas.Graph, objectID string) (atlas.Graph, string, string) {
+	t.Helper()
+	firstID := graphPlaceID(t, graph, atlas.PlaceSymbol, "pkg/a/y.go", 3, "help")
+	for _, place := range graph.Places {
+		if place.ID != firstID {
 			continue
 		}
-		for j := range file.File.Decls {
-			decl := &file.File.Decls[j]
-			decl.ObjectID = "object-" + digest([]byte(file.Path+decl.Name))
-			symbols = append(symbols, atlas.Place{
-				ID: atlas.SymbolID(file.Path, decl.LineNo, decl.Name), Kind: atlas.PlaceSymbol,
-				Path: file.Path, LineNo: decl.LineNo, Parent: file.ID, TargetIDs: file.TargetIDs,
-				Symbol: &atlas.SymbolFacts{Decl: *decl, Candidate: true, Rank: j + 1},
-			})
+		other, facts := place, *place.Symbol
+		other.ID, other.LineNo, other.Symbol = "fixture-second-help", 8, &facts
+		other.Symbol.Decl.LineNo = 8
+		other.Symbol.Decl.ObjectID = objectID
+		for j := range graph.Places {
+			if graph.Places[j].ID == other.Parent {
+				graph.Places[j].File.Decls = append(graph.Places[j].File.Decls, other.Symbol.Decl)
+			}
 		}
+		graph.Places = append(graph.Places, other)
+		break
 	}
-	graph.Places = append(graph.Places, symbols...)
-	atlas.SortPlaces(graph.Places)
-	return graph
+	encoded, err := atlas.EncodeGraph(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err = atlas.DecodeGraph(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return graph,
+		graphPlaceID(t, graph, atlas.PlaceSymbol, "pkg/a/y.go", 3, "help"),
+		graphPlaceID(t, graph, atlas.PlaceSymbol, "pkg/a/y.go", 8, "help")
 }
 
 func TestTypeMemberDocumentationInvalidatesOnlyItsSelectionAndCaption(t *testing.T) {
 	graph := knowledgeGraph(t)
-	id := atlas.SymbolID("pkg/a/y.go", 3, "help")
+	id := graphPlaceID(t, graph, atlas.PlaceSymbol, "pkg/a/y.go", 3, "help")
 	var typePlace *atlas.Place
 	for i := range graph.Places {
 		if graph.Places[i].ID == id {
@@ -348,7 +343,13 @@ func readKnowledge(t *testing.T, opts Options) map[string]Knowledge {
 	result := make(map[string]Knowledge)
 	ids := make(map[string]bool)
 	for _, record := range artifact.Records {
-		result[record.PlaceID], ids[record.ID] = record, true
+		key := record.PlaceID
+		if record.Stage == lines.StageSymbols && record.Cells["key_symbol"] != "" {
+			key = "selection:" + record.PlaceID
+		} else if record.Stage == lines.StageOperations {
+			key = "operation:" + record.PlaceID
+		}
+		result[key], ids[record.ID] = record, true
 		if record.SubjectID == "" || record.BasisID == "" || len(record.Input) == 0 || (record.Cells["line"] == "" && record.Cells["key_symbol"] == "") || record.OriginRequest == "" {
 			t.Fatalf("unbound interpretation: %+v", record)
 		}
@@ -390,8 +391,8 @@ func TestKnowledgeSurvivesBatchChangesAndInvalidatesOnlyChangedBasis(t *testing.
 	// Edit only one leaf file's author documentation. The file's fake
 	// model wording stays identical: the symbol can reuse its answer, while
 	// its provenance must point to the newly interpreted file.
-	changedFile := atlas.FileID("pkg/a/y.go")
-	changedSymbol := atlas.SymbolID("pkg/a/y.go", 3, "help")
+	changedFile := graphPlaceID(t, graph, atlas.PlaceFile, "pkg/a/y.go", 0, "")
+	changedSymbol := graphPlaceID(t, graph, atlas.PlaceSymbol, "pkg/a/y.go", 3, "help")
 	for i := range graph.Places {
 		place := &graph.Places[i]
 		if place.ID == changedFile {

@@ -19,6 +19,7 @@ type dynamicHandoffCapture struct {
 	callbackTraversal map[string][]*ssa.Function
 	bindingsFrozen    bool
 	interfaceFields   map[*types.Var][]*ssa.Store
+	invokeSummaries   map[ssa.CallInstruction]dynamicValueSummary
 	coverage          godynamichandoff.CoverageInput
 	err               error
 }
@@ -352,11 +353,21 @@ func (capture *dynamicHandoffCapture) observeInterfaceInvoke(
 		capture.err = fmt.Errorf("surface discovery: Go dynamic handoff: malformed SSA interface invoke")
 		return
 	}
-	candidates, unresolved, err := dynamicInterfaceCandidates(a, common.Value, common.Method)
+	summary, ok := a.interfaceInvokeSummary(call)
+	if !ok {
+		if capture.err == nil {
+			capture.err = fmt.Errorf("surface discovery: Go dynamic handoff: interface invoke was not resolved")
+		}
+		return
+	}
+	candidates, unresolved, err := dynamicInterfaceSummaryCandidates(a, summary)
 	if err != nil {
 		capture.err = err
 		return
 	}
+	// An exact external implementation is an invokes_external fact of its own,
+	// not an unknown value of this repository dispatch.
+	unresolved -= len(externalInterfaceImplementations(a, summary))
 	candidatesConsidered := dynamicCandidatesConsidered(candidates, unresolved)
 	resolution := dynamicResolution(candidates, unresolved)
 	if resolution == godynamichandoff.ResolutionUnresolved {
@@ -669,6 +680,13 @@ func dynamicInterfaceCandidates(
 	if err != nil {
 		return nil, 0, err
 	}
+	return dynamicInterfaceSummaryCandidates(a, summary)
+}
+
+func dynamicInterfaceSummaryCandidates(
+	a *analyzer,
+	summary dynamicValueSummary,
+) ([]godynamichandoff.Candidate, int, error) {
 	resolved, unresolved := summary.functions, summary.unresolved
 	functionIDs := make(map[string]struct{}, len(resolved))
 	assignmentsByID := make(map[string][]godynamichandoff.Location)

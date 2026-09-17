@@ -177,17 +177,9 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		if container == "" && declaration.Kind != "module" {
 			container = moduleRefForFile(declaration.Location.FileRef)
 		}
-		linkIdentities := make([]programindex.SymbolLinkIdentityInput, 0)
-		for _, exportName := range canonicalStrings(exportNamesByDeclaration[declaration.Ref]) {
-			linkIdentities = append(linkIdentities, programindex.SymbolLinkIdentityInput{
-				Domain: "jsts_package_export_v2", Parts: []string{"export", path.Dir(result.Project.ManifestPath), result.Project.PackagePath, exportName},
-				Display: result.Project.PackagePath + "#" + exportName,
-			})
-		}
 		objects = append(objects, programindex.ObjectInput{
 			SourceRef: declaration.Ref, Kind: kind, Name: declarationDisplayName(declaration, declarationByRef), Visibility: visibility,
 			Signature: declaration.Signature, OwnerRef: declaration.OwnerRef, ContainerRef: container, Location: programLocation(declaration.Location),
-			SymbolLinkIdentities: linkIdentities,
 		})
 	}
 	for _, value := range result.Calls {
@@ -217,17 +209,9 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 				displayName += receiver + "."
 			}
 			displayName += name
-			linkIdentities := []programindex.SymbolLinkIdentityInput{}
-			if repositoryPath != "" && exportName != "" {
-				linkIdentities = append(linkIdentities, programindex.SymbolLinkIdentityInput{
-					Domain: "jsts_package_export_v2", Parts: []string{"export", repositoryPath, packagePath, exportName},
-					Display: packagePath + "#" + exportName,
-				})
-			}
 			externalObjects[ref] = programindex.ObjectInput{
 				SourceRef: ref, Kind: programindex.ObjectExternalSymbol, Name: displayName,
-				Visibility:           programindex.VisibilityPublic,
-				SymbolLinkIdentities: linkIdentities,
+				Visibility: programindex.VisibilityPublic,
 				External: &programindex.ExternalSymbol{
 					AuthorityKind:  externalAuthorityKind(packagePath, repositoryPath),
 					RepositoryPath: repositoryPath,
@@ -247,16 +231,6 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		}
 		relations = append(relations, programindex.RelationInput{SourceRef: sourceRef, Kind: kind, FromRef: fromRef, ToRefs: toRefs, Resolution: resolution, Invocation: invocation, Location: programLocation(location), TargetsObserved: targetsObserved, Witnesses: []programindex.Witness{{Kind: witnessKind, SourceExpression: expression, Location: programLocation(location)}}, WitnessesObserved: 1})
 		return len(relations) - 1
-	}
-	for _, declaration := range result.Declarations {
-		if declaration.Kind == "module" {
-			continue
-		}
-		container := declaration.OwnerRef
-		if container == "" {
-			container = moduleRefForFile(declaration.Location.FileRef)
-		}
-		addRelation("contains:"+declaration.Ref, programindex.RelationContains, container, []string{declaration.Ref}, programindex.ResolutionExact, declaration.Location, "typescript_declaration", "", "")
 	}
 	for _, value := range result.Imports {
 		from := moduleRefForFile(value.ImporterFileRef)
@@ -288,14 +262,11 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			resolution = programindex.ResolutionUnresolved
 		}
 		callLanguage := fileLanguage[value.Location.FileRef]
-		if callLanguage == "javascript" && resolution == programindex.ResolutionExact && len(to) == 1 {
-			resolution = programindex.ResolutionAlternatives
-		}
 		witnessKind := "typescript_call"
 		if callLanguage == "javascript" {
-			witnessKind = "javascript_call_candidate"
+			witnessKind = "javascript_call"
 		}
-		relationIndex := addRelation("program:"+value.Ref, kind, value.CallerRef, to, resolution, value.Location, witnessKind, value.Expression, value.Invocation)
+		relationIndex := addRelation("program:"+value.Ref, kind, value.CallerRef, to, resolution, value.Location, witnessKind, value.Expression, jstsInvocation(value.Invocation))
 		relations[relationIndex].Patterns = programCallPatterns(value)
 		relations[relationIndex].PatternsObserved = value.PatternsObserved
 		if value.Pattern == nil {
@@ -318,7 +289,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			}
 			callbackWitnessKind := "typescript_callback_argument"
 			if callLanguage == "javascript" {
-				callbackWitnessKind = "javascript_callback_candidate"
+				callbackWitnessKind = "javascript_callback_argument"
 			}
 			callbackResolution := programResolution(argument.Resolution)
 			// An exact callback edge may have exactly one observed callable and no
@@ -352,7 +323,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 	for _, binding := range result.Bindings {
 		relation := addRelation("program:"+binding.Ref, programindex.RelationPassesCallback,
 			binding.FromRef, binding.ToRefs, programResolution(binding.Resolution), binding.Location,
-			"jsx_callable_attribute", "", "callable_binding:jsx_attribute")
+			"jsx_callable_attribute", "", "")
 		relations[relation].TargetsObserved = binding.TargetsObserved
 		relations[relation].Witnesses[0].Detail = binding.Element + "." + binding.Attribute
 	}
@@ -633,7 +604,7 @@ func projectedObjectKind(declaration Declaration, declarations map[string]Declar
 
 // declarationDisplayName projects adapter-local declaration structure into a
 // path-free presentation name. Repository paths remain solely in Location;
-// SourceRef, the derived Object ID, and SymbolLinkIdentities retain identity.
+// SourceRef and the derived Object ID retain identity.
 // Module names are already logical module identities and may therefore keep
 // their adapter-normalized path-like spelling.
 func declarationDisplayName(declaration Declaration, declarations map[string]Declaration) string {
@@ -706,4 +677,13 @@ func nodeStandardLibrary(packagePath string) bool {
 		return true
 	}
 	return false
+}
+
+// jstsInvocation maps the helper's call forms onto the shared invocation
+// words: an ordinary call has none, `new` constructs.
+func jstsInvocation(value string) string {
+	if value == "construct" {
+		return programindex.InvocationConstruct
+	}
+	return ""
 }

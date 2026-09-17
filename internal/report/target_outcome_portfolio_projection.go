@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
@@ -121,7 +122,7 @@ func (view TargetOutcomePortfolioView) Validate() error {
 		if err := selected.Validate(); err != nil {
 			return fmt.Errorf("target outcome portfolio view: outcome %d selected target: %w", index, err)
 		}
-		if previousSelectedTargetID != "" && previousSelectedTargetID >= outcome.SelectedTargetID {
+		if previousSelectedTargetID != "" && !programindex.TargetIDLess(previousSelectedTargetID, outcome.SelectedTargetID) {
 			return fmt.Errorf("target outcome portfolio view: outcomes are not canonical")
 		}
 		previousSelectedTargetID = outcome.SelectedTargetID

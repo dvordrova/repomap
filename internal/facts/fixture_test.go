@@ -37,13 +37,14 @@ func TestFixturePythonTutorialGame(t *testing.T) {
 		t.Fatalf("REVISION %q disagrees with expected.json revision %q", strings.TrimSpace(string(revision)), expected.Revision)
 	}
 	repository := materializeFixture(t, fixture)
+	indexes := decodeIndexSet(t, fixture, "backend-program-index.json", "front-program-index.json")
 	input := Input{
 		Revision:     expected.Revision,
 		Repository:   repository,
 		TrackedPaths: repository.VisiblePaths(),
 		Targets: []TargetInput{
-			{Index: decodeIndex(t, fixture, "backend-program-index.json"), Dependencies: decodeCatalog(t, fixture, "backend-dependency-catalog.json"), Root: "backend", Manifest: "backend/Pipfile"},
-			{Index: decodeIndex(t, fixture, "front-program-index.json"), Dependencies: decodeCatalog(t, fixture, "front-dependency-catalog.json"), Root: "front", Manifest: "front/package.json"},
+			{Index: indexes[0], Dependencies: decodeCatalog(t, fixture, "backend-dependency-catalog.json"), Root: "backend", Manifest: "backend/Pipfile"},
+			{Index: indexes[1], Dependencies: decodeCatalog(t, fixture, "front-dependency-catalog.json"), Root: "front", Manifest: "front/package.json"},
 		},
 	}
 	first := mustBuild(t, input)
@@ -56,7 +57,7 @@ func TestFixturePythonTutorialGame(t *testing.T) {
 	}
 	fromSaved := mustBuild(t, lazy)
 	if first.SHA256 != fromSaved.SHA256 {
-		t.Fatal("reading targets individually changed anchored facts or cross-target portals")
+		t.Fatal("reading targets individually changed anchored facts")
 	}
 	second := mustBuild(t, input)
 	if first.SHA256 != second.SHA256 {
@@ -70,7 +71,7 @@ func TestFixturePythonTutorialGame(t *testing.T) {
 	}
 	if len(missing) > 0 {
 		t.Errorf("%d expected rows are missing:\n  %s", len(missing), strings.Join(missing, "\n  "))
-		for _, kind := range []Kind{KindHTTPRoute, KindHTTPCall, KindPortal, KindConfigRead, KindDynamicExecution, KindTODO, KindDeadModule, KindNegative, KindManifest, KindDependency, KindImport} {
+		for _, kind := range []Kind{KindRegistration, KindSQLQuery, KindConfigRead, KindDynamicExecution, KindTODO, KindDeadModule, KindNegative, KindManifest, KindDependency, KindImport} {
 			for _, fact := range first.OfKind(kind) {
 				t.Logf("have %s %s method=%s path=%s key=%s value=%s symbol=%s", fact.Kind, fact.Anchor, fact.Method, fact.Path, fact.Key, fact.Value, fact.Symbol)
 			}
@@ -172,6 +173,19 @@ func decodeIndex(t *testing.T, fixture, name string) programindex.Index {
 		t.Fatalf("decode %s: %v", name, err)
 	}
 	return index
+}
+
+func decodeIndexSet(t *testing.T, fixture string, names ...string) []programindex.Index {
+	t.Helper()
+	indexes := make([]programindex.Index, len(names))
+	for position, name := range names {
+		indexes[position] = decodeIndex(t, fixture, name)
+	}
+	bound, err := programindex.RebindTargetSet(indexes)
+	if err != nil {
+		t.Fatalf("bind fixture target set: %v", err)
+	}
+	return bound
 }
 
 func decodeCatalog(t *testing.T, fixture, name string) *dependencies.Catalog {
@@ -363,13 +377,14 @@ func TestFixtureAnchorsResolveInTheRepository(t *testing.T) {
 	fixture := filepath.Join(repositoryRoot(t), "testdata", "acceptance", "python-tutorial-game")
 	expected := readExpected(t, filepath.Join(fixture, "expected.json"))
 	repository := materializeFixture(t, fixture)
+	indexes := decodeIndexSet(t, fixture, "backend-program-index.json", "front-program-index.json")
 	result := mustBuild(t, Input{
 		Revision:     expected.Revision,
 		Repository:   repository,
 		TrackedPaths: repository.VisiblePaths(),
 		Targets: []TargetInput{
-			{Index: decodeIndex(t, fixture, "backend-program-index.json"), Dependencies: decodeCatalog(t, fixture, "backend-dependency-catalog.json"), Root: "backend", Manifest: "backend/Pipfile"},
-			{Index: decodeIndex(t, fixture, "front-program-index.json"), Dependencies: decodeCatalog(t, fixture, "front-dependency-catalog.json"), Root: "front", Manifest: "front/package.json"},
+			{Index: indexes[0], Dependencies: decodeCatalog(t, fixture, "backend-dependency-catalog.json"), Root: "backend", Manifest: "backend/Pipfile"},
+			{Index: indexes[1], Dependencies: decodeCatalog(t, fixture, "front-dependency-catalog.json"), Root: "front", Manifest: "front/package.json"},
 		},
 	})
 

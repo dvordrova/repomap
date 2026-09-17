@@ -1,6 +1,7 @@
 package report
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,49 @@ import (
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
+
+func TestReportJSONUsesProgramIndexAndThinGroupOverlayDirectly(t *testing.T) {
+	data := reportProgramShellDataFixture(t, "fixture")
+	encoded, err := encodeReportJSON(&data, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		ProgramPortfolio struct {
+			Entries []map[string]json.RawMessage `json:"entries"`
+		} `json:"program_portfolio"`
+		GroupGraph struct {
+			Indexes []map[string]json.RawMessage `json:"indexes"`
+		} `json:"group_graph"`
+	}
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatal(err)
+	}
+	program := wire.ProgramPortfolio.Entries[0]
+	if program["objects"] == nil || program["relations"] == nil || program["view"] != nil {
+		t.Fatalf("report did not persist ProgramIndex directly: %v", mapsKeys(program))
+	}
+	overlay := wire.GroupGraph.Indexes[0]
+	if overlay["target_id"] == nil || overlay["groups"] == nil || overlay["target"] != nil || overlay["structural_edges"] != nil {
+		t.Fatalf("report did not persist a thin group overlay: %v", mapsKeys(overlay))
+	}
+	restored, err := decodeStrictReportJSON(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored.GroupGraph.hydrated) != 1 || len(restored.GroupGraph.hydrated[0].StructuralEdges) == 0 {
+		t.Fatal("thin group overlay was not hydrated from the embedded ProgramIndex")
+	}
+}
+
+func mapsKeys(values map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
 
 func TestReadRunDirRestoresDefaultProgramPortfolioAndOpenablePaths(t *testing.T) {
 	runDir := t.TempDir()

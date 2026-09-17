@@ -116,7 +116,7 @@ func Increment(value C.repomap_int) CValue {
 		boundary.OwnerID != "" || boundary.ContainerID != "" || boundary.Visibility != programindex.VisibilityUnknown ||
 		boundary.External == nil || boundary.External.PackagePath != surfacediscovery.ExternalCallCgoPackagePath ||
 		boundary.External.AuthorityKind != programindex.ExternalAuthorityPlatform ||
-		boundary.External.Name != "repomap_increment" || len(boundary.SymbolLinkIdentities) != 0 {
+		boundary.External.Name != "repomap_increment" {
 		t.Fatalf("generated cgo boundary object = %#v", boundary)
 	}
 	foundBoundary := false
@@ -126,7 +126,7 @@ func Increment(value C.repomap_int) CValue {
 			continue
 		}
 		foundBoundary = relation.Resolution == programindex.ResolutionExact &&
-			relation.Invocation == "generated_cgo_wrapper:synchronous" &&
+			relation.Invocation == "" &&
 			relation.Location != nil && relation.Location.Path == "cgo.go" &&
 			relation.TargetsObserved == 1 && relation.TargetsOmitted == 0 &&
 			relation.WitnessesObserved == 1 && relation.WitnessesOmitted == 0 &&
@@ -398,13 +398,13 @@ func Partial(
 		}
 		switch {
 		case relation.Kind == programindex.RelationCalls && relation.ToIDs[0] == knownCallback.ID &&
-			relation.Invocation == "function_value_call:synchronous":
+			relation.Dispatch == programindex.DispatchFunctionValue:
 			valueCallRetained = true
 		case relation.Kind == programindex.RelationPassesCallback && relation.ToIDs[0] == knownCallback.ID &&
-			relation.Invocation == "callback_transfer:synchronous":
+			relation.Invocation == "" && relation.Dispatch == "":
 			callbackRetained = true
 		case relation.Kind == programindex.RelationPassesCallback && relation.ToIDs[0] == knownHandler.ID &&
-			relation.Invocation == "callback_transfer:synchronous":
+			relation.Invocation == "" && relation.Dispatch == "":
 			handlerTransferRetained = true
 		}
 	}
@@ -872,7 +872,7 @@ func helper() {}
 		case relation.Kind == programindex.RelationCalls && relation.Resolution == programindex.ResolutionExact &&
 			relation.FromID == runMethod.ID && len(relation.ToIDs) == 1 &&
 			relation.ToIDs[0] == helperFunction.ID:
-			localCall = relation.Invocation == string(surfacediscovery.DirectCallSynchronous) &&
+			localCall = relation.Invocation == "" &&
 				relation.WitnessesObserved == 1
 		case relation.Kind == programindex.RelationCalls && relation.Resolution == programindex.ResolutionExact &&
 			relation.FromID == boundFunction.ID && len(relation.ToIDs) == 1 &&
@@ -898,11 +898,11 @@ func helper() {}
 			staticExternal = relation.WitnessesObserved == 1 && relation.Witnesses[0].Kind == "go_external_static_call"
 		case relation.Kind == programindex.RelationInvokesExternal && relation.Resolution == programindex.ResolutionExact &&
 			len(relation.ToIDs) == 1 && relation.ToIDs[0] == ioWriterWrite.ID:
-			interfaceExternal = relation.Invocation == "declared_interface_dispatch:synchronous" &&
+			interfaceExternal = relation.Dispatch == programindex.DispatchInterfaceMethod &&
 				relation.WitnessesObserved == 1 && relation.Witnesses[0].Kind == "go_declared_interface_dispatch"
 		case relation.Kind == programindex.RelationCalls && relation.Resolution == programindex.ResolutionUnresolved:
-			isDynamic := relation.Invocation == "interface_invoke:synchronous" ||
-				relation.Invocation == "function_value_call:synchronous"
+			isDynamic := relation.Dispatch == programindex.DispatchInterface ||
+				relation.Dispatch == programindex.DispatchFunctionValue
 			unresolvedCall = unresolvedCall || isDynamic && relation.TargetsObserved > 0 &&
 				relation.TargetsOmitted == relation.TargetsObserved
 			if relation.FromID == orphanFunction.ID {
@@ -914,19 +914,19 @@ func helper() {}
 		case relation.Kind == programindex.RelationPassesCallback &&
 			relation.Resolution == programindex.ResolutionExact && relation.FromID == configureFunction.ID &&
 			len(relation.ToIDs) == 1 && relation.ToIDs[0] == boundFunction.ID &&
-			relation.Invocation == "callable_binding:field":
+			relation.Invocation == "":
 			callableBinding = relation.TargetsOmitted == 0 &&
 				relation.Witnesses[0].Kind == "go_ssa_dynamic_handoff"
 		case relation.Kind == programindex.RelationPassesCallback &&
 			relation.Resolution == programindex.ResolutionAlternatives &&
 			relation.FromID == configureAlternativesFunction.ID && len(relation.ToIDs) == 2 &&
-			relation.Invocation == "callable_binding:field":
+			relation.Invocation == "":
 			alternativeBinding = slices.Contains(relation.ToIDs, alphaFunction.ID) &&
 				slices.Contains(relation.ToIDs, betaFunction.ID) && relation.TargetsOmitted == 0
 		case relation.Kind == programindex.RelationPassesCallback &&
 			relation.Resolution == programindex.ResolutionExact && relation.FromID == configureFunction.ID &&
 			len(relation.ToIDs) == 1 && relation.ToIDs[0] == helperFunction.ID &&
-			relation.Invocation == "callback_transfer:synchronous":
+			relation.Invocation == "" && relation.Dispatch == "":
 			callbackTransfer = relation.TargetsOmitted == 0 &&
 				relation.Witnesses[0].Kind == "go_ssa_dynamic_handoff"
 		}

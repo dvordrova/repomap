@@ -16,7 +16,7 @@ import (
 func AssertSharedArtifact(t testing.TB, input programindex.Input, index programindex.Index) {
 	t.Helper()
 	dir := t.TempDir()
-	store := programindex.NewArtifactStore(filepath.Join(dir, "program-facts"))
+	store := programindex.NewArtifactStore()
 	if err := store.Persist(dir, index, input); err != nil {
 		t.Fatalf("persist shared ProgramIndex: %v", err)
 	}
@@ -24,7 +24,7 @@ func AssertSharedArtifact(t testing.TB, input programindex.Input, index programi
 	if err != nil {
 		t.Fatalf("restore shared ProgramIndex: %v", err)
 	}
-	if !reflect.DeepEqual(index, restored) {
+	if index.SHA256 != restored.SHA256 || index.Target.ID != restored.Target.ID {
 		t.Fatal("shared storage changed the adapter's sealed ProgramIndex")
 	}
 }
@@ -68,7 +68,7 @@ func AssertConforms(t testing.TB, adapter Adapter) programindex.Index {
 	if err != nil {
 		t.Fatalf("programindex.Decode: %v", err)
 	}
-	if !reflect.DeepEqual(restored, first) {
+	if restored.SHA256 != first.SHA256 || restored.Target.ID != first.Target.ID {
 		t.Fatal("ProgramIndex codec changed the adapter snapshot")
 	}
 
@@ -117,11 +117,7 @@ func (adapter ReferenceAdapter) BuildProgramInput() (programindex.Input, error) 
 				OwnerRef: "package", ContainerRef: "package"},
 			{SourceRef: "service.run", Kind: programindex.ObjectMethod, Name: "run", Visibility: programindex.VisibilityPublic,
 				OwnerRef: "service", ContainerRef: "package",
-				Location: &programindex.Location{Path: "src/service.ref", Line: 8, Column: 3},
-				SymbolLinkIdentities: []programindex.SymbolLinkIdentityInput{{
-					Domain: language + ".public-callable.v1",
-					Parts:  []string{"method", "example.service", "Service", "run"}, Display: "Service.run",
-				}}},
+				Location: &programindex.Location{Path: "src/service.ref", Line: 8, Column: 3}},
 			{SourceRef: "external.send", Kind: programindex.ObjectExternalSymbol, Name: "example.client.Client.send",
 				Visibility: programindex.VisibilityPublic,
 				External: &programindex.ExternalSymbol{

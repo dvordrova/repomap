@@ -33,7 +33,7 @@ func assertEvidenceVocabulary(t *testing.T, graph atlas.Graph, expected ...strin
 	}
 	prompts := map[string]string{"symbols": lines.SymbolSelection(false).System, "operations": lines.Operations().System}
 	for name, prompt := range prompts {
-		if !strings.Contains(prompt, "`synchronous`") || !strings.Contains(prompt, "`control_context`") {
+		if !strings.Contains(prompt, "`deferred`") || !strings.Contains(prompt, "`control_context`") {
 			t.Fatalf("%s prompt carries no evidence vocabulary", name)
 		}
 	}
@@ -98,7 +98,7 @@ func renderedEnumerations(value any, report func(field, value string)) {
 		columns, _ := node["columns"].([]any)
 		for key, item := range node {
 			switch key {
-			case "invocation", "resolution", "kind", "extractor":
+			case "invocation", "dispatch", "resolution", "kind", "extractor":
 				if text, ok := item.(string); ok && text != "" {
 					report(key, text)
 				}

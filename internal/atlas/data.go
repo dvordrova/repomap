@@ -27,7 +27,7 @@ func CloneDataRecords(rows []DataRecord) []DataRecord {
 func ValidateDataRecords(rows []DataRecord) error {
 	known := map[string]bool{}
 	for i, row := range rows {
-		if row.ID == "" || row.Path == "" || row.Line < 1 || row.Data == nil || known[row.ID] || i > 0 && rows[i-1].ID >= row.ID {
+		if row.ID == "" || row.Path == "" || row.Line < 1 || row.Data == nil || known[row.ID] || i > 0 && !placeIDLess(rows[i-1].ID, row.ID) {
 			return fmt.Errorf("atlas: invalid data record")
 		}
 		known[row.ID] = true

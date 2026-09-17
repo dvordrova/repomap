@@ -37,8 +37,23 @@ func TestDesignSplitsOneFileAndJoinsAcrossDirectories(t *testing.T) {
 	for i := range graph.Places {
 		p := &graph.Places[i]
 		if p.File != nil && p.Path == "pkg/a/x.go" {
-			p.File.Decls = append(p.File.Decls, atlas.Decl{Name: "Separate", Kind: "function", LineNo: 30, ObjectID: "separate"})
+			decl := atlas.Decl{Name: "Separate", Kind: "function", LineNo: 30, ObjectID: "separate"}
+			p.File.Decls = append(p.File.Decls, decl)
+			graph.Places = append(graph.Places, atlas.Place{
+				ID: "fixture-separate", Kind: atlas.PlaceSymbol, Path: p.Path, LineNo: decl.LineNo,
+				Parent: p.ID, TargetIDs: append([]string(nil), p.TargetIDs...), Given: decl.Name,
+				Symbol: &atlas.SymbolFacts{Decl: decl},
+			})
+			break
 		}
+	}
+	encoded, err := atlas.EncodeGraph(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err = atlas.DecodeGraph(encoded)
+	if err != nil {
+		t.Fatal(err)
 	}
 	result, err := Read(t.Context(), readOptions(t, graph, provider, ""))
 	if err != nil {
@@ -219,7 +234,7 @@ func TestDesignSinglePartAreaSurvivesReading(t *testing.T) {
 func TestDesignReductionKeepsRelationsAndUsesOnlyLocalRefs(t *testing.T) {
 	items := []designItem{{Ref: "r1", Name: "Start", IDs: []string{"internal:start"}, Calls: []designCall{{Kind: "calls", Name: "Load", To: []string{"r2"}, Line: 12, Resolution: "exact"}}}, {Ref: "r2", Name: "Load", IDs: []string{"internal:load"}}}
 	parts := designPartContext(items, []designItem{{Name: "Storage", Purpose: "Loads data.", IDs: []string{"internal:load"}}, {Name: "Application", Purpose: "Starts work.", IDs: []string{"internal:start"}}})
-	if len(parts[1].Calls) != 1 || parts[1].Calls[0].To[0] != "r1" {
+	if len(parts[1].Calls) != 1 || parts[1].Calls[0].To[0] != "c1" {
 		t.Fatalf("lost cross-part evidence: %+v", parts)
 	}
 	call, err := designCallFor(parts, nil, "areas")

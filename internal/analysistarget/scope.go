@@ -84,9 +84,13 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 	}
 	if facts.Dependencies != nil {
 		retainedImporterRefs := make(map[string]struct{})
-		for importerRef, pkg := range exactDependencies.importerPackages {
+		for _, importer := range facts.Dependencies.Importers {
+			pkg, known := exactDependencies.importerPackages[dependencyPackageKey(importer.ModulePath, importer.PackagePath, importer.RepositoryPath)]
+			if !known {
+				continue
+			}
 			if _, keep := retained[pkg.identity]; keep {
-				retainedImporterRefs[importerRef] = struct{}{}
+				retainedImporterRefs[importer.Ref] = struct{}{}
 			}
 		}
 		dependencyCatalog, dependencyErr := facts.Dependencies.Subset(retainedImporterRefs)
@@ -199,8 +203,8 @@ func sameTargetPackages(left, right []TargetPackage) bool {
 }
 
 type exactDependencyScope struct {
-	importerPackages  map[string]exactDependencyPackage
-	workspacePackages map[string]exactDependencyPackage
+	importerPackages  map[exactDependencyPackageKey]exactDependencyPackage
+	workspacePackages map[exactDependencyPackageKey]exactDependencyPackage
 }
 
 type exactDependencyPackage struct {
@@ -231,8 +235,8 @@ func newExactDependencyScope(facts gofacts.Facts) (*exactDependencyScope, error)
 		packageIdentities[key] = value
 	}
 	scope := &exactDependencyScope{
-		importerPackages:  make(map[string]exactDependencyPackage, len(facts.Dependencies.Importers)),
-		workspacePackages: make(map[string]exactDependencyPackage),
+		importerPackages:  make(map[exactDependencyPackageKey]exactDependencyPackage, len(facts.Dependencies.Importers)),
+		workspacePackages: make(map[exactDependencyPackageKey]exactDependencyPackage),
 	}
 	for _, importer := range facts.Dependencies.Importers {
 		pkg, ok := packageIdentities[dependencyPackageKey(
@@ -244,7 +248,7 @@ func newExactDependencyScope(facts gofacts.Facts) (*exactDependencyScope, error)
 			// deliberately excludes. It cannot admit a package into this target.
 			continue
 		}
-		scope.importerPackages[importer.Ref] = pkg
+		scope.importerPackages[dependencyPackageKey(importer.ModulePath, importer.PackagePath, importer.RepositoryPath)] = pkg
 	}
 	for _, dependency := range facts.Dependencies.Dependencies {
 		if dependency.Kind != dependencies.KindWorkspace {
@@ -259,7 +263,7 @@ func newExactDependencyScope(facts gofacts.Facts) (*exactDependencyScope, error)
 			// one is rejected below; unrelated targets remain analyzable.
 			continue
 		}
-		scope.workspacePackages[dependency.ID] = pkg
+		scope.workspacePackages[dependencyPackageKey(dependency.ModulePath, dependency.PackagePath, dependency.RepositoryPath)] = pkg
 	}
 	return scope, nil
 }
@@ -268,6 +272,7 @@ func (scope *exactDependencyScope) growOutgoingClosure(
 	retained map[string]struct{},
 	catalog dependencies.Catalog,
 ) error {
+	importers := dependencyImportersByRef(catalog)
 	changed := true
 	for changed {
 		changed = false
@@ -275,9 +280,11 @@ func (scope *exactDependencyScope) growOutgoingClosure(
 			if dependency.Kind != dependencies.KindWorkspace {
 				continue
 			}
-			to, targetAvailable := scope.workspacePackages[dependency.ID]
+			to, targetAvailable := scope.workspacePackages[dependencyPackageKey(dependency.ModulePath, dependency.PackagePath, dependency.RepositoryPath)]
 			for _, importerRef := range dependency.ImporterRefs {
-				from, importerAvailable := scope.importerPackages[importerRef]
+				importer, importerKnown := importers[importerRef]
+				from, importerAvailable := scope.importerPackages[dependencyPackageKey(importer.ModulePath, importer.PackagePath, importer.RepositoryPath)]
+				importerAvailable = importerKnown && importerAvailable
 				if !importerAvailable {
 					continue
 				}
@@ -305,13 +312,14 @@ func (scope *exactDependencyScope) internalEdges(
 	catalog dependencies.Catalog,
 	retained map[string]struct{},
 ) []gofacts.Edge {
+	importers := dependencyImportersByRef(catalog)
 	edges := make([]gofacts.Edge, 0)
 	seen := make(map[gofacts.Edge]struct{})
 	for _, dependency := range catalog.Dependencies {
 		if dependency.Kind != dependencies.KindWorkspace {
 			continue
 		}
-		to, targetAvailable := scope.workspacePackages[dependency.ID]
+		to, targetAvailable := scope.workspacePackages[dependencyPackageKey(dependency.ModulePath, dependency.PackagePath, dependency.RepositoryPath)]
 		if !targetAvailable {
 			continue
 		}
@@ -319,7 +327,9 @@ func (scope *exactDependencyScope) internalEdges(
 			continue
 		}
 		for _, importerRef := range dependency.ImporterRefs {
-			from, importerAvailable := scope.importerPackages[importerRef]
+			importer, importerKnown := importers[importerRef]
+			from, importerAvailable := scope.importerPackages[dependencyPackageKey(importer.ModulePath, importer.PackagePath, importer.RepositoryPath)]
+			importerAvailable = importerKnown && importerAvailable
 			if !importerAvailable {
 				continue
 			}
@@ -338,6 +348,14 @@ func (scope *exactDependencyScope) internalEdges(
 		}
 	}
 	return edges
+}
+
+func dependencyImportersByRef(catalog dependencies.Catalog) map[string]dependencies.Importer {
+	result := make(map[string]dependencies.Importer, len(catalog.Importers))
+	for _, importer := range catalog.Importers {
+		result[importer.Ref] = importer
+	}
+	return result
 }
 
 func growLegacyOutgoingClosure(

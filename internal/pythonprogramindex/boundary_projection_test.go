@@ -33,7 +33,7 @@ func TestCumulativePythonBoundaryOwnersSurviveTargetRelease(t *testing.T) {
 	}
 	before, _ := json.Marshal(original)
 	var route facts.Fact
-	for _, fact := range original.OfKind(facts.KindHTTPRoute) {
+	for _, fact := range original.OfKind(facts.KindRegistration) {
 		if fact.Path == "/api/v1/ping" {
 			route = fact
 		}
@@ -77,9 +77,10 @@ func TestCumulativePythonBoundaryOwnersSurviveTargetRelease(t *testing.T) {
 				}
 			}
 			if len(place.Boundary.Origins) == 1 && place.Boundary.Origins[0].TargetID == first.Target.ID && place.Boundary.Origins[0].FactID == route.ID {
-				linked = place.Boundary.ObjectID == route.ObjectID && place.Path == route.Anchor.Path && place.LineNo == route.Anchor.Line &&
-					place.Boundary.SubjectID == wantSubject && place.Boundary.GivenKind == atlas.BoundaryHTTPServer &&
-					len(place.Boundary.Origins) == 1 && place.Boundary.Origins[0] == (atlas.BoundaryOrigin{TargetID: first.Target.ID, FactID: route.ID, ObjectID: route.ObjectID}) &&
+				qualifiedObjectID := first.Target.ID + "." + route.ObjectID
+				linked = place.Boundary.ObjectID == qualifiedObjectID && place.Path == route.Anchor.Path && place.LineNo == route.Anchor.Line &&
+					place.Boundary.SubjectID == wantSubject && place.Boundary.GivenKind == "" && place.Boundary.Direction == atlas.DirectionIn &&
+					len(place.Boundary.Origins) == 1 && place.Boundary.Origins[0] == (atlas.BoundaryOrigin{TargetID: first.Target.ID, FactID: route.ID, ObjectID: qualifiedObjectID}) &&
 					len(place.TargetIDs) == 1 && place.TargetIDs[0] == first.Target.ID
 				if !linked {
 					t.Fatalf("native handler ownership lost after target release: %+v", place)
@@ -113,11 +114,13 @@ func TestCumulativePythonBoundaryOwnersSurviveTargetRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	var keptUnknown bool
+	unknownFactID := unknown.Facts[0].ID
+	qualifiedUnknown := first.Target.ID + "." + route.ObjectID
 	for _, place := range graph.Places {
 		if place.Boundary != nil && len(place.Boundary.Origins) == 1 &&
-			place.Boundary.Origins[0] == (atlas.BoundaryOrigin{TargetID: first.Target.ID, FactID: route.ID, ObjectID: route.ObjectID}) {
+			place.Boundary.Origins[0] == (atlas.BoundaryOrigin{TargetID: first.Target.ID, FactID: unknownFactID, ObjectID: qualifiedUnknown}) {
 			keptUnknown = true
-			if place.Boundary.SubjectID != "" || place.Boundary.ObjectID != route.ObjectID {
+			if place.Boundary.SubjectID != "" || place.Boundary.ObjectID != qualifiedUnknown {
 				t.Fatalf("unknown handler was guessed from its name/location: %+v", place)
 			}
 		}

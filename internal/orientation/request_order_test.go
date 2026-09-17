@@ -5,11 +5,21 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"sort"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/groupindex"
 )
+
+func TestQualifiedCompactRefsUseNaturalOrder(t *testing.T) {
+	refs := []string{"t10.g1", "t2.g10", "t2.g2", "t1.g20", "t1.g3"}
+	sort.Slice(refs, func(i, j int) bool { return compactRefLess(refs[i], refs[j]) })
+	want := []string{"t1.g3", "t1.g20", "t2.g2", "t2.g10", "t10.g1"}
+	if !reflect.DeepEqual(refs, want) {
+		t.Fatalf("qualified refs = %v, want %v", refs, want)
+	}
+}
 
 // Refs are numbered in an order the graph fixes, not in the order a caller
 // listed indexes, groups, members or connections.
@@ -49,20 +59,17 @@ func TestRequestBytesDoNotDependOnGroupMemberOrConnectionOrder(t *testing.T) {
 	}
 }
 
-// Morfeu builds 20260911-110335 and 20260911-152759 differ only in the lane
-// of "Catalog feature"; the index orders groups by an ID that hashes the
-// lane, so g5..g7 named other groups and the same cited members carried
-// other s* refs. A lane change may touch its own group's fields only.
+// A presentation change must not invent a second request-local identity for
+// an already built group or its members.
 func TestGroupLaneChangeKeepsEveryOtherRefInPlace(t *testing.T) {
 	fixture := newFixture(t)
 	before := decodeRequest(t, fixture.input)
 	moved := fixture.input
 	moved.Groups = append([]groupindex.Index(nil), fixture.input.Groups...)
-	// Both fixture targets hold a group of this title; each is relaned and,
-	// as a re-hashed group would, carries a new identity into its
-	// connections.
+	// Both fixture targets hold a group of this title; this test changes the
+	// presentation field on the already identified group.
 	const title = "Execution triggers"
-	relaned := make(map[groupindex.Endpoint]string)
+	changedGroups := 0
 	for i := range moved.Groups {
 		index := &moved.Groups[i]
 		index.Groups = append([]groupindex.Group(nil), index.Groups...)
@@ -71,26 +78,12 @@ func TestGroupLaneChangeKeepsEveryOtherRefInPlace(t *testing.T) {
 			if group.Title != title {
 				continue
 			}
-			renamed := "program-group-relaned-" + group.ID
-			relaned[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: group.ID}] = renamed
-			group.Lane, group.ID = groupindex.LaneCore, renamed
+			group.Lane = groupindex.LaneCore
+			changedGroups++
 		}
 	}
-	if len(relaned) != len(moved.Groups) {
-		t.Fatalf("relaned %d groups across %d indexes", len(relaned), len(moved.Groups))
-	}
-	for i := range moved.Groups {
-		index := &moved.Groups[i]
-		index.Connections = append([]groupindex.Connection(nil), index.Connections...)
-		for c := range index.Connections {
-			connection := &index.Connections[c]
-			if renamed, ok := relaned[connection.From]; ok {
-				connection.From.GroupID = renamed
-			}
-			if renamed, ok := relaned[connection.To]; ok {
-				connection.To.GroupID = renamed
-			}
-		}
+	if changedGroups != len(moved.Groups) {
+		t.Fatalf("relaned %d groups across %d indexes", changedGroups, len(moved.Groups))
 	}
 	after := decodeRequest(t, moved)
 	if !reflect.DeepEqual(groupRefsByTitle(before), groupRefsByTitle(after)) {
@@ -109,8 +102,8 @@ func TestGroupLaneChangeKeepsEveryOtherRefInPlace(t *testing.T) {
 			t.Fatalf("another group changed lane: %+v -> %+v", before.Groups[i], after.Groups[i])
 		}
 	}
-	if changed != len(relaned) {
-		t.Fatalf("lane changes = %d, want the %d relaned groups", changed, len(relaned))
+	if changed != changedGroups {
+		t.Fatalf("lane changes = %d, want %d", changed, changedGroups)
 	}
 }
 

@@ -40,7 +40,7 @@ func TestCumulativePythonTypedIterationKeepsPossibleMethodsAndWrites(t *testing.
 		}
 		line := lines[relation.Location.Line-1]
 		if relation.Kind == programindex.RelationWrites && strings.Contains(line, "typed iteration write") {
-			if relation.Resolution != programindex.ResolutionAlternatives || len(relation.ToIDs) != 1 || objects[relation.ToIDs[0]].Name != "position" || objects[objects[relation.ToIDs[0]].OwnerID].Name != "MovingItem" {
+			if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 || objects[relation.ToIDs[0]].Name != "position" || objects[objects[relation.ToIDs[0]].OwnerID].Name != "MovingItem" {
 				t.Fatalf("iteration write lost its original possible field: %+v", relation)
 			}
 			writes++
@@ -60,7 +60,7 @@ func TestCumulativePythonTypedIterationKeepsPossibleMethodsAndWrites(t *testing.
 			}
 			continue
 		}
-		if relation.Resolution != programindex.ResolutionAlternatives || len(relation.ToIDs) != 1 || objects[relation.ToIDs[0]].Name != "advance" || objects[objects[relation.ToIDs[0]].OwnerID].Name != "MovingItem" {
+		if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 || objects[relation.ToIDs[0]].Name != "advance" || objects[objects[relation.ToIDs[0]].OwnerID].Name != "MovingItem" {
 			t.Fatalf("%s lost the possible original method: %+v", marker, relation)
 		}
 	}

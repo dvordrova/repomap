@@ -1,5 +1,364 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Symbol roles replace per-site boundary decisions
+
+- New reading stage `atlas_api`: one row per external symbol the repository
+  calls, with optional `binds` (entry kind), `publishes` and `talks` cells.
+  The roles make the boundaries: bound callables are entries of the role's
+  kind, publishing calls are listeners that give their address to every
+  entry on the same holder (`atlas_publish` asks which holder when the code
+  could not follow the value), every site of a `talks` symbol is an outgoing
+  boundary. Deleted: `listen_address` facts and `listenSelectors`, the open
+  boundaries table (`decision`/`kind`/`basis`), the symbols' `outbound`
+  selection. Registrations carry a `holder` (the producing call, followed
+  through `Group`-like calls); a literal handed to a holder of callables
+  (`Start(":8080")`) is a registration too.
+- Operations carry `address`; the echo preset run yields `GET /users/:id` on
+  `:8080` from `Handler.GetUser`. Live DeepSeek on echo: GET → `http_server`,
+  Start → `publishes`, `database/sql.*` → `db`.
+- Captions are off by default (`--captions` turns them on): prose cells keep
+  their fallback and prose-only tables are not sent. A zone of one group is no
+  container.
+
+## 2026-09-17 — Object IDs in reading order
+
+- `programindex.New` numbers objects breadth-first from the target seeds
+  (`main` is `n1`), neighbours in source order, then owner and container;
+  unreached objects follow by file and line, external symbols last. Relations
+  are numbered by source object, then by site. Adapters are untouched; the
+  python-tutorial-game artifacts and the places fixture hash are regenerated.
+
+## 2026-09-17 — Registrations replace framework-named routes
+
+- `facts` no longer knows Echo, FastAPI, Express, chi or any client library.
+  `http_route`, `http_call` and `portal` are gone; one neutral `registration`
+  fact records the shape of a call outside the repository that hands over a
+  callable, a value named by a literal (`Register("k6/x/dns", new(DNS))`) or an
+  address: call word, literals, stated verb, handler, external symbol, mount
+  prefixes. Ownership rules exclude lookalikes: a repository callee, a value a
+  repository function produced, a class declaring the member, a workspace
+  package. Mixed inheritance and unknown receivers stay `possible` candidates.
+- `sql_query` is a new fixed fact (statement + tables) and a `db` boundary
+  without the model; the `sdkPackages`/`sdkNeverPackages` lists in places are
+  deleted. Dead modules are judged repository-wide and only for files that
+  declare callables (type-only files are never dead).
+- Registrations reach the reading stage as open boundaries: incoming rows
+  choose `http_server`, `queue_consumer`, `scheduled`, `interaction`,
+  `extension` or `other`; the boundaries prompt gained that section. Accepted
+  incoming boundaries become operations of the matching kind; routes, client
+  requests and cross-target portals in the report come from the overlay and a
+  literal join, no longer from facts. A refused candidate is removed, so a
+  `--no-model` run has registrations and no routes.
+- Arrow witnesses name the relation (`main supplies GetUser as the
+  implementation of …`) instead of calling every relation a call; implementation
+  bindings no longer make a declaration an operation candidate. Clojure resolves
+  vars named in call arguments (so `(map service/greet names)` is a callback
+  transfer with its argument) and writes platform calls as `invokes_external`.
+- `TestEchoPresetReadingTurnsRegistrationsIntoOperations` reads the Echo
+  service end to end with a preset in place of the model: `GET /users/:id`
+  becomes the handler's request operation and the sqlc query a `db` outbound
+  with table `users`, without a provider. Facts tests were rewritten as one
+  table of call shapes. python-tutorial-game expectations converted. `go vet
+  ./...` and `go test ./...` pass with python ≥3.11 and TypeScript on PATH
+  (`PATH=$HOME/.nvm/versions/node/v21.6.1/bin:/usr/local/bin:$PATH`).
+
+## 2026-09-16 — Field names in other formats are facts
+
+- Go struct tags no longer ride inside signature text. Each named tag format
+  becomes a ProgramIndex object alias (`json`/`count_label`); `,omitempty` and `-`
+  are dropped. Places and question evidence show `aliases: json:count_label`
+  beside the plain `Count string` signature, and the evidence vocabulary defines
+  it. Go core object index v6 keeps the raw tag separately. The cumulative Go
+  fixture checks both response JSON names reach question evidence.
+
+## 2026-09-16 — One vocabulary and one resolution rule across languages
+
+- ProgramIndex `invocation` is a closed set shared by every adapter: absent for an
+  ordinary call, `deferred`, `goroutine`, `async_task`, `construct`. The new closed
+  `dispatch` field says how the target was found: absent, `interface`,
+  `interface_method`, `function_value`. Go `synchronous`, Python `direct`/`awaited`,
+  JS `call`, and the prefixes `interface_invoke:`, `declared_interface_dispatch:`,
+  `callback_transfer:`, `interface_binding:`, `callable_binding:*`,
+  `function_value_call:`, `coroutine_result_argument:*`, `generated_cgo_wrapper:`
+  are gone; the relation kind already names a callback or binding. Places,
+  reading tables, operation activation and the evidence vocabulary use the same
+  words; binding tables carry `kind` instead of a mechanism string.
+- Python and JavaScript no longer demote one known target to `alternatives`:
+  one target is `exact`, several are `alternatives`, none is `unresolved`, in
+  every language. Python witnesses lost their `_candidate` suffix.
+- Python no longer emits a `reads` relation for a callable reading its own
+  parameter or local (293 of the cumulative API target's reads). Reads of fields,
+  module values and enclosing scopes remain; the saved places graph was unchanged.
+- Go signatures use short package names in the adapter itself, and a named
+  type's signature is its form (`struct`, `interface`, underlying type) instead of
+  repeating members that are already objects. Places no longer rewrites Go text.
+- The JS helper no longer demotes a single `.js`/`.jsx` target either. Its
+  compiler-backed tests normally skip without a global npm TypeScript; run with
+  `PATH=$HOME/.nvm/versions/node/v21.6.1/bin:$PATH`. Two of them
+  (`TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract`,
+  `TestCumulativeJSTSHTTPConstructorPathsAndEmptyCallbacks`) had failed before
+  this wave: their expectations still used local `n*` IDs where places, boundary
+  origins and question anchors carry the contract's target-qualified `t*.n*`.
+  The code was correct; the expectations, and the JS `call` invocation /
+  `.js` read demotion they also pinned, were updated. The full suite passes
+  uncached with the compiler available.
+- `go vet ./...` and `go test ./...` pass otherwise; python-tutorial-game artifacts
+  were regenerated through the ordinary no-model run.
+
+## 2026-09-16 — Go resolves interface values it actually observed
+
+- A call through a repository interface whose observed value is an external
+  type is now `invokes_external` of that type's method with the call's pattern.
+  Echo's `sqlc.Queries.GetUser` reads `database/sql.*DB.QueryRowContext` with the
+  `SELECT id, name FROM users WHERE id = $1` argument instead of an empty
+  unresolved call (external call index v9, dispatch `interface_implementation`).
+- The stores of an interface field observed in the program are its values. One
+  resolved value is `exact`, several are `alternatives`; the former permanent
+  `+1` unknown per field is gone (dynamic handoff index v8). The echo chain
+  handler → service → Postgres → sqlc → `*sql.DB` is exact end to end, with no
+  unresolved relation and no `targets_omitted`.
+- Removed the 318-line reference resolver kept only to compare against the
+  production walker, with its equivalence tests. The cumulative Go fixture
+  gained `rowQuerier`/`OpenUserRows` and an executable expectation.
+  `go vet ./...` and `go test ./...` pass.
+
+## 2026-09-16 — ProgramIndex keeps each fact once
+
+- ProgramIndex v17 removes the `contains` relation kind. Every adapter already
+  wrote the identical pair as the object's `container_id`; all five no-model
+  fixture runs had byte-identical pair sets. Reachability now follows
+  `container_id`, and the python-tutorial-game fixture lost only those rows.
+- The artifact no longer writes derivable counts: `*_observed` is retained rows
+  plus the stored `*_omitted`, zero omissions and empty collections are absent,
+  and coverage keeps only non-zero object/relation omissions. `Index` decoding
+  restores the same in-memory values before validation, so consumers are unchanged.
+- Go interface values passed into interface-typed parameters are now
+  `binds_implementation` (`interface_binding:*`) instead of `passes_callback`;
+  real callable values remain callbacks. Reachability, bindings evidence,
+  report labels and the evidence vocabulary name the new kind.
+- A Go SSA view that found no implementation for a call of a method declared on
+  an external interface is no longer projected as a second empty `calls`
+  relation beside its `invokes_external` fact. Places reads the declared API
+  with `unresolved` resolution directly; `DispatchObservations` and the pair
+  merge were removed (places graph v16, reading input v18).
+- Fresh no-model runs, old → new `program-index.json`: echo `cmd/api`
+  79,803 → 45,845 bytes and 93 → 37 relations; cumulative Go 10,919 → 5,488;
+  Python `acme.api` 931,965 → 517,308 (1,304 → 734); JS/TS 469,681 → 269,165
+  (631 → 385); Clojure 45,001 → 25,899 (45 → 31). `report.json` for echo
+  218,257 → 152,263 bytes. Python/JS places and reading inputs are unchanged.
+  `go vet ./...` and `go test ./...` pass.
+- Still open in the same format: Python emits
+  293 `variable_read_candidate` reads of locals such as `self`; invocation
+  words differ per language (`synchronous`/`direct`/`call`); locations repeat
+  full paths.
+
+## 2026-09-16 — Provider rows keep artifact IDs
+
+- Removed the atlas table layer's `r1..rN` renumbering. Requests, response
+  validation, rejection diagnostics, accepted-row metadata, answer provenance
+  and cache-row pointers now use the row's existing artifact ID.
+- Removed positional recovery for keyless model rows. Missing, unknown or
+  duplicate keys are refused instead of guessed from response order.
+- Added stable `q*` identities to question-route artifacts and removed
+  `selection:<symbol>` pseudo-places; symbol selection now uses the original
+  compact `s*` place ID and remains a separate knowledge stage.
+- Operation review likewise uses its source `s*`; atlas arrows receive
+  persisted compact `x*` IDs instead of NUL-joined box-pair row keys.
+- Independent interpretations of one place are indexed internally by the
+  structural tuple `(place, stage, contract)`. The reader no longer encodes
+  storage slots as `selection:s*` or `operation:s*` pseudo-identities.
+- Exact-input memo fingerprints omit owner ID without minting a replacement,
+  preserving shared interpretations for identical evidence while actual
+  provider payloads retain real artifact IDs.
+- A fresh exact `cmd/api` no-model run completed the whole artifact chain and
+  rendered in the browser. Its 15 captured model-input tables use only the
+  existing `t*`, `d*`, `f*`, `s*`, `b*` and `x*` artifact IDs: no `r*`,
+  prefixed pseudo-ID, NUL pair or long row key remains. `go test ./...` passes
+  after the change.
+
+## 2026-09-16 — One graph schema reaches the report
+
+- Removed the unused cross-shard `SymbolLinkIdentity` mechanism from
+  ProgramIndex and every language adapter. Its 76-character hash was generated,
+  copied into GroupsIndex/report and tested but never consumed by matching.
+  ProgramIndex v16, GroupsIndex v12, ProgramPortfolio v4 and report v91 now keep
+  only compact native IDs and explicit `x*` cross-target connections over
+  target-qualified facts. Tests now assert actual resolution, origin,
+  visibility and connection behavior instead of the dead hash transport.
+- Ordinary progress no longer prints hashed adapter discovery keys as target
+  scope. Target planning names the readable selected target and each target
+  page uses its already assigned `t*` identity.
+- Qualified compact refs now sort each segment naturally (`t2.g10` precedes
+  `t10.g1`). The former helper understood a bare `t10` but treated every
+  qualified group ref as unknown, making connection order depend on its prose.
+- Report sections no longer mint a second target-name slug. The component keeps
+  its existing `t*` identity and its anchors are direct compositions such as
+  `t1-g9`, `t1-o1` and `t1-y1`. Questions and Learn concepts likewise use short
+  page-local `q*` and `c*` ordinals instead of full text hashes.
+- File-backed fallback groups describe what they contain (declarations from
+  that source file) instead of exposing the internal "awaiting architecture
+  grouping" stage state on the reader's map.
+- Dependency catalog v2 replaces persisted hash identities with canonical
+  catalog-local `i*` importer refs and `d*` dependency IDs. Target subsets are
+  self-contained catalogs and semantic package fields, not copied IDs, own
+  joins across them.
+- Extraction artifact v2 normalizes accepted producer nodes once to `u*` and
+  rewrites their links before facts are built. Exact plugin stdout remains
+  replay evidence, but arbitrary producer IDs no longer become saved internal
+  identity or reader-facing fact keys.
+- The common System map now draws one physical arrow for each directed pair of
+  visible nodes. Operation paths, calls, callback transfers and implementation
+  facts between that pair are combined on the arrow while every original row
+  remains in the two node readings. The Echo API map drops coincident lines
+  instead of rendering the same `GetUser` route twice through parallel edges.
+- Opposite directions between the same visible pair also share one physical
+  route, with an arrowhead at both ends. This removes the second curve created
+  when a service calls a repository while that repository implements the
+  service's interface; direction remains exact in the retained relation rows.
+  Re-rendering the saved Echo analysis made zero provider requests. Browser
+  inspection counts 15 physical routes (three bidirectional) carrying all 18
+  logical directed connections, down from 28 DOM arrows before display
+  folding; the 48 short DOM IDs remain unique.
+- A fresh exact `cmd/api` no-model run completed the current pipeline with 67
+  objects, 93 relations, 31 facts, 22 claims, 11 groups and 23 connections.
+  Its HTML has 48 unique IDs, no duplicates, a maximum ID length of 20, the
+  new source-file fallback prose and no provider requests. Its dependency
+  artifact contains only `i1..i6` and `d1..d14`; accepted extractor nodes and
+  links contain only `u*`. An all-artifact `id`/`ref` audit finds no long graph
+  identity (only the operational run ID), and no hash-shaped saved entity ID.
+  Browser inspection shows the service file connected to the handler,
+  repository, composition root and exact incoming request. Full tests, vet,
+  build, and the standalone Echo module's tests and vet pass afterward.
+
+- `places.json` v15 now seals one compact place namespace (`d*`, `f*`, `s*`,
+  `b*`, `y*`, `m*`, `a*`) and rewrites parents, calls, edges and seeds in that
+  same pass. Source paths remain source data, never entity IDs.
+- Reading input v17 and atlas v10 remove hashed architecture identities:
+  responsibilities, areas, interpreted boundaries and target joints are born
+  as `p*`, `z*`, `b*` and `j*`. The same short refs appear in model windows,
+  saved results and the projected GroupsIndex; there is no post-model renumber.
+- Native ProgramIndex object ordinals remain target-local. Shared stages now
+  qualify them as `t*.n*`, preventing two targets' `n1` declarations from
+  colliding without inventing a hash or another ordinal namespace.
+- Removed `ProgramView`: `report.json` now embeds the exact selected
+  ProgramIndexes instead of copying their objects, relations, witnesses and
+  coverage into a second presentation DTO.
+- The common multi-target report carries every selected ProgramIndex once.
+  Its group graph serializes the same thin GroupsIndex overlays used by the
+  standalone artifacts; native subject facts and structural edges are hydrated
+  only in memory for page construction.
+- The common System map now qualifies target-local group/container DOM refs as
+  `n-t*-g*`-shaped map IDs. The two-target browser walkthrough caught and fixed
+  both failure modes hidden by the former global hashes: `g1` from `cmd/api`
+  could erase `g1` from `cmd/users`, and an equal shared-code source location
+  could falsely extend the HTTP request path into the Cobra target. Only exact
+  cross-target connections may now create that join.
+- The same walkthrough exposed one remaining unqualified renderer lookup: the
+  second target's `n*` subjects could overwrite the first target's declarations
+  in a group card. Page hydration now keys both subjects and declaration
+  locations by target plus local ID. A cumulative two-target regression gives
+  both targets the same local subject ID and requires each card to retain its
+  own name and source file. Re-rendering the saved two-target report made zero
+  provider requests; browser inspection shows both service cards contain the
+  same six declarations from `internal/users/service/service.go`, while only
+  `cmd/api` retains the incoming HTTP path and `cmd/users` explicitly has none.
+- Report format v91 and ProgramPortfolio v4 deliberately have no compatibility
+  reader. An executable JSON-shape test rejects a reintroduced `view`, target
+  copy or serialized structural edge. Full product verification is recorded
+  after the fresh ordinary run below.
+- `go test ./...`, `go vet ./...`, `make build`, and the nested module's tests
+  and vet pass. A fresh exact two-target no-model run analyzed both `cmd/api`
+  (67 objects/93 relations) and `cmd/users` (57 objects/71 relations), then
+  published one report with 36 facts, 22 claims, 19 groups and 37 connections.
+  Its saved analysis restores through `repomap render` with zero provider
+  requests. Browser QA on the same report shape opened `o1` and showed the
+  source-backed path from the Echo handler through the generated Goverter
+  converter, service and PostgreSQL repository to sqlc.
+
+## 2026-09-15 — Compact fact IDs and direct grouping references
+
+- ProgramIndex v15 assigns deterministic target-local `n*` object and `e*`
+  relation IDs, with compact IDs scoped below relations for patterns, arguments
+  and reconstructed values. Adapter SourceRefs are builder provenance and no
+  no longer serialize into ProgramIndex JSON.
+- Architecture grouping now sends selected ProgramIndex object IDs unchanged.
+  Only reduction-created parts receive temporary `c*` choice refs; the former
+  declaration `r*` remap is gone.
+- The constitution and ProgramIndex/execution contracts now bind derived model
+  decisions to the repository-index SHA instead of treating entity hashes as
+  permanent cross-revision identities.
+- No compatibility reader exists for v14. Regenerated the Python and TypeScript
+  acceptance ProgramIndexes through their real adapters. `go test ./...`,
+  `go vet ./...`, `make build`, and an ordinary Echo `cmd/api` no-model run all
+  pass; the run retained 67 objects, 93 relations, 11 groups and 23 connections.
+- Target-local node IDs exposed an orientation join that had relied on globally
+  unique entity hashes. Evidence lookup now qualifies `n*` by target before
+  reading the shared graph; the cumulative tests cover identical local IDs in
+  different targets.
+- Removed storage-v1 and the `program-facts` sidecar. Ordinary persistence now
+  writes the complete sealed ProgramIndex directly; `ReadFile` only decodes and
+  validates it and never reconstructs through adapter SourceRefs or `New`.
+  Multi-target Python still parses each AST once in memory, while its persisted
+  target artifacts are independent and contain no builder input.
+- GroupsIndex v12 now persists a thin semantic overlay over the sealed
+  ProgramIndex. Its subject rows contain only compact fact refs and semantic
+  annotations; native object/pattern facts, target copies and structural edges
+  are absent from `groups-index.json` and are joined from ProgramIndex on read.
+  Groups, containers and connections use deterministic local `g*`, `k*` and
+  `x*` ordinals instead of 64-hex content identities.
+- The canonical target plan now assigns `t1..tN` before ProgramIndex creation.
+  Selected-target outcomes, facts, atlas, GroupsIndex, page portfolios and the
+  report all reuse that same ID; the former selected-target and facts-target
+  hashes and `ProgramTargetID` translation table are gone. The obsolete v1
+  target-outcome reader was removed rather than preserved.
+- Facts v3 and claims v2 assign canonical `a*` and `h*` artifact IDs; GroupsIndex
+  operations use `o*`. Orientation sends those IDs directly, with existing
+  graph IDs qualified as `tN.gN` and `tN.nN`. Its response resolver checks the
+  closed catalogue instead of guessing entity type from a synthetic ref prefix.
+  Natural target ordering is shared, so double-digit IDs do not reorder sets.
+- Final verification passes with `go test ./...`, `go vet ./...`, `make build`,
+  and the nested Echo module's `go test ./...` plus `go vet ./...`. A fresh
+  ordinary `cmd/api` no-model run completed in 1.865 s with 67 objects, 93
+  relations, 31 facts, 22 claims, 11 groups and 23 group connections. Browser
+  QA opened the request operation `o1` and showed its source-backed path through
+  handler, generated Goverter converter, service, PostgreSQL repository and
+  generated sqlc query.
+
+## 2026-09-15 — Standalone Echo/sqlc example repository
+
+- Added `testdata/echo-sqlc-service` as an independent Go module rather than a
+  second scenario inside the cumulative Go contract fixture. It contains one
+  Echo handler, interface-separated service and repository layers, a
+  PostgreSQL sqlc configuration and checked-in generated query package, and a
+  Goverter converter definition with its generated implementation.
+- Added exactly two ordered migrations: the first creates `users` with only
+  its identifier, and the second adds `name`. The module dependency lock was
+  generated and `go test ./...` passed for every package.
+- Extended the example with a Cobra `cmd/users` executable. Both it and the
+  Echo `cmd/api` executable use the same `internal/app` composition path into
+  the service, repository and sqlc query. The nested module passes
+  `go test ./...` and `go vet ./...`; an exact two-target no-model run analyzed
+  both targets and projected 19 groups with 25 connections.
+- Go interface dispatch now follows interface-typed constructor parameters
+  back to the concrete values at every static repository call. The cumulative
+  fixture proves the assignment source and preserves an unresolved frontier;
+  the rebuilt Echo/sqlc artifacts now retain
+  `Service.GetUser -> Postgres.GetByID -> sqlc.Queries.GetUser`. Focused
+  surface-discovery and contract tests plus `go vet` pass.
+- Added the Go cube input `MatchInterfaceImplementations`. When enabled it
+  indexes repository method identities, narrows candidates through an inverted
+  method index, and confirms every repository-local type/interface pair with
+  `go/types.Implements`; it does not require an observed assignment. The
+  ordinary Go adapter enables it and projects separate exact `implements`
+  relations for matching types and their directly owned methods, while runtime
+  dispatch remains a separate observed relation. The cumulative fixture proves
+  a compatible implementation that is never assigned to its interface.
+- Focused cube, adapter and cumulative contract tests plus `go vet` and the
+  canonical build pass. A fresh exact two-target no-model run produced 67
+  objects/93 relations for Echo API and 57 objects/71 relations for Cobra CLI;
+  the common report contains 19 groups and 37 connections, including all four
+  exact type/interface pairs and their method pairs.
+
 ## 2026-09-15 — One part, one card
 
 - Removed the drawing-only area wrapper when its sole child is an existing

@@ -90,7 +90,7 @@ func TestPortfolioRejectsIncompleteAmbiguousOrUnsafeBindings(t *testing.T) {
 	}{
 		{name: "empty", defaultID: goTarget.ID, pages: nil, want: "page bound"},
 		{
-			name: "default absent", defaultID: "program-target-missing",
+			name: "default absent", defaultID: "t999",
 			pages: []Page{{Target: goTarget, RunID: "run-go-1"}}, want: "default target",
 		},
 		{
@@ -126,7 +126,7 @@ func TestPortfolioRejectsIncompleteAmbiguousOrUnsafeBindings(t *testing.T) {
 	invalidTarget := goTarget.Snapshot()
 	invalidTarget.ID += "-tampered"
 	if _, err := Build(invalidTarget.ID, []Page{{Target: invalidTarget, RunID: "run-go-1"}}); err == nil ||
-		!strings.Contains(err.Error(), "target identity mismatch") {
+		!strings.Contains(err.Error(), "not compact") {
 		t.Fatalf("invalid target Build error = %v", err)
 	}
 }
@@ -205,11 +205,12 @@ func TestExactTargetTextIsNotCutAtProgramIndexAdvisoryThreshold(t *testing.T) {
 
 func testTarget(t *testing.T, language, name, path, fileRef string) programindex.Target {
 	t.Helper()
+	targetID := map[string]string{"go": "t1", "python": "t2", "typescript": "t3"}[language]
 	index, err := programindex.New(programindex.Input{
 		ScenarioSHA256: strings.Repeat("a", 64),
 		SourceSHA256:   strings.Repeat("b", 64),
 		Target: programindex.TargetInput{
-			Language: language, Kind: "application", Name: name, Selector: language + ":" + name,
+			ID: targetID, Language: language, Kind: "application", Name: name, Selector: language + ":" + name,
 			Sources: []programindex.TargetSource{{FileRef: fileRef, Path: path}}, AnchorFileRef: fileRef,
 			Seeds: []programindex.TargetSeedInput{},
 		},

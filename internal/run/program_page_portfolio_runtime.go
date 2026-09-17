@@ -8,6 +8,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
@@ -145,11 +146,17 @@ func publishRepositoryReport(
 		return report.RunReceipt{}, err
 	}
 	groupIndexes := make([]groupindex.Index, len(runs))
+	programIndexes := make([]programindex.Index, len(runs))
 	for position, run := range runs {
 		if run.GroupIndex.Target.ID != run.ProgramPage.ProgramTarget.ID {
 			return report.RunReceipt{}, fmt.Errorf("repository report: run %s graph target mismatch", run.RunID)
 		}
 		groupIndexes[position] = run.GroupIndex
+		programIndex, programErr := run.programIndex()
+		if programErr != nil {
+			return report.RunReceipt{}, programErr
+		}
+		programIndexes[position] = programIndex
 	}
 	index, err := owner.programIndex()
 	if err != nil {
@@ -160,6 +167,9 @@ func publishRepositoryReport(
 	}
 	data, err := report.NewData(owner.RunDir, owner.RepoName, index, *owner.Documentation)
 	if err != nil {
+		return report.RunReceipt{}, err
+	}
+	if err := report.BindProgramPortfolio(data, portfolio.DefaultTargetID, programIndexes); err != nil {
 		return report.RunReceipt{}, err
 	}
 	if err := report.BindGroupGraphView(data, groupIndexes); err != nil {

@@ -82,8 +82,9 @@ func assertGoMethodArgumentExpressions(t *testing.T, index programindex.Index, g
 	}
 	// The graph keeps every origin anchor for the local destination pass.
 	anchored := 0
+	scopedCallerID := index.Target.ID + "." + caller.ID
 	for _, place := range graph.Places {
-		if place.Symbol == nil || place.Symbol.Decl.ObjectID != caller.ID {
+		if place.Symbol == nil || place.Symbol.Decl.ObjectID != scopedCallerID {
 			continue
 		}
 		for _, call := range place.Symbol.Calls {
@@ -104,7 +105,7 @@ func assertGoMethodArgumentExpressions(t *testing.T, index programindex.Index, g
 	// This is the actual declaration evidence builder used by orientation and
 	// questions. Its wire shape must retain positions and expressions without
 	// canonical IDs; the anchors stay local.
-	evidence := lines.CallableEvidence(graph, map[string]bool{caller.ID: true})[caller.ID]
+	evidence := lines.CallableEvidence(graph, map[string]bool{scopedCallerID: true})[scopedCallerID]
 	raw, err := json.Marshal(evidence)
 	if err != nil {
 		t.Fatal(err)

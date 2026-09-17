@@ -12,11 +12,11 @@ import (
 )
 
 func TestPortfolioCanonicalRoundTripRetainsAnalyzedAndFailedTargets(t *testing.T) {
-	goSelected := testSelectedTarget(t, LanguageGroupGo, ScopeExecutable, "cmd/api", "example.com/repo@.::example.com/repo/cmd/api")
-	pythonSelected := testSelectedTarget(t, LanguageGroupPython, ScopeLibrary, "acme", "library:acme")
-	jstsSelected := testSelectedTarget(t, LanguageGroupJavaScriptTypeScript, ScopePackage, "@acme/web", "jsts:packages/web/package.json")
-	goTarget := testProgramTarget(t, "go", "executable", "example.com/repo/cmd/api", "go:api", "cmd/api/main.go", "f-go")
-	jstsTarget := testProgramTarget(t, "typescript", "application", "@acme/web", "jsts:packages/web/package.json", "packages/web/src/main.ts", "f-jsts")
+	goSelected := testSelectedTarget(t, "t1", LanguageGroupGo, ScopeExecutable, "cmd/api", "example.com/repo@.::example.com/repo/cmd/api")
+	pythonSelected := testSelectedTarget(t, "t2", LanguageGroupPython, ScopeLibrary, "acme", "library:acme")
+	jstsSelected := testSelectedTarget(t, "t3", LanguageGroupJavaScriptTypeScript, ScopePackage, "@acme/web", "jsts:packages/web/package.json")
+	goTarget := testProgramTarget(t, "t1", "go", "executable", "example.com/repo/cmd/api", "go:api", "cmd/api/main.go", "f-go")
+	jstsTarget := testProgramTarget(t, "t3", "typescript", "application", "@acme/web", "jsts:packages/web/package.json", "packages/web/src/main.ts", "f-jsts")
 
 	goOutcome, err := NewAnalyzed(goSelected, goTarget, "run-go")
 	if err != nil {
@@ -88,8 +88,8 @@ func TestPortfolioCanonicalRoundTripRetainsAnalyzedAndFailedTargets(t *testing.T
 }
 
 func TestPortfolioAllowsFailedDefaultAndZeroAnalyzedTargets(t *testing.T) {
-	first := testSelectedTarget(t, LanguageGroupGo, ScopeExecutable, "cmd/api", "go-api")
-	second := testSelectedTarget(t, LanguageGroupJavaScriptTypeScript, ScopePackage, "web", "jsts:web")
+	first := testSelectedTarget(t, "t1", LanguageGroupGo, ScopeExecutable, "cmd/api", "go-api")
+	second := testSelectedTarget(t, "t2", LanguageGroupJavaScriptTypeScript, ScopePackage, "web", "jsts:web")
 	firstOutcome, err := NewNotAnalyzed(first, StageProgramAnalysis, ReasonSourceNotAnalyzable)
 	if err != nil {
 		t.Fatalf("first outcome: %v", err)
@@ -112,34 +112,15 @@ func TestPortfolioAllowsFailedDefaultAndZeroAnalyzedTargets(t *testing.T) {
 	}
 }
 
-func TestSelectedTargetIdentityBindsEveryPublicField(t *testing.T) {
-	base := testSelectedTarget(t, LanguageGroupGo, ScopeExecutable, "cmd/api", "go-api")
-	variants := []SelectedTarget{
-		testSelectedTarget(t, LanguageGroupPython, ScopeExecutable, "cmd/api", "go-api"),
-		testSelectedTarget(t, LanguageGroupGo, ScopeLibrary, "cmd/api", "go-api"),
-		testSelectedTarget(t, LanguageGroupGo, ScopeExecutable, "cmd/worker", "go-api"),
-		testSelectedTarget(t, LanguageGroupGo, ScopeExecutable, "cmd/api", "go-worker"),
-	}
-	changedLanguages, err := NewSelectedTargetWithLanguages(
-		LanguageGroupGo, []string{"go", "synthetic-go"}, ScopeExecutable, "cmd/api", "go-api",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	variants = append(variants, changedLanguages)
-	for _, variant := range variants {
-		if variant.ID == base.ID {
-			t.Fatalf("selected target identity ignored changed field: base=%#v variant=%#v", base, variant)
-		}
-	}
-	if !strings.HasPrefix(base.ID, "selected-target-") || len(base.ID) != len("selected-target-")+64 {
+func TestSelectedTargetUsesPlanOwnedCompactIdentity(t *testing.T) {
+	base := testSelectedTarget(t, "t1", LanguageGroupGo, ScopeExecutable, "cmd/api", "go-api")
+	if base.ID != "t1" {
 		t.Fatalf("selected target ID = %q", base.ID)
 	}
-
 	invalid := base
-	invalid.ID += "tampered"
-	if err := invalid.Validate(); err == nil || !strings.Contains(err.Error(), "identity mismatch") {
-		t.Fatalf("tampered SelectedTarget.Validate error = %v", err)
+	invalid.ID = "not-compact"
+	if err := invalid.Validate(); err == nil || !strings.Contains(err.Error(), "not compact") {
+		t.Fatalf("invalid SelectedTarget.Validate error = %v", err)
 	}
 	for _, input := range []struct {
 		language LanguageGroup
@@ -152,7 +133,7 @@ func TestSelectedTargetIdentityBindsEveryPublicField(t *testing.T) {
 		{LanguageGroupGo, ScopeExecutable, " app", "app"},
 		{LanguageGroupGo, ScopeExecutable, "app", "app\nsecret"},
 	} {
-		if _, err := NewSelectedTarget(input.language, input.scope, input.display, input.selector); err == nil {
+		if _, err := NewSelectedTarget("t1", input.language, input.scope, input.display, input.selector); err == nil {
 			t.Fatalf("NewSelectedTarget accepted invalid input %#v", input)
 		}
 	}
@@ -160,6 +141,7 @@ func TestSelectedTargetIdentityBindsEveryPublicField(t *testing.T) {
 
 func TestSelectedTargetAcceptsSyntheticAdapterDeclaredLanguages(t *testing.T) {
 	selected, err := NewSelectedTargetWithLanguages(
+		"t1",
 		LanguageGroup("jvm"), []string{"kotlin", "java", "scala", "java"},
 		ScopePackage, "server", "jvm:server",
 	)
@@ -169,11 +151,11 @@ func TestSelectedTargetAcceptsSyntheticAdapterDeclaredLanguages(t *testing.T) {
 	if got, want := selected.AllowedProgramLanguages, []string{"java", "kotlin", "scala"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("allowed languages = %#v, want %#v", got, want)
 	}
-	javaTarget := testProgramTarget(t, "java", "application", "server", "jvm:server", "src/Main.java", "f-java")
+	javaTarget := testProgramTarget(t, "t1", "java", "application", "server", "jvm:server", "src/Main.java", "f-java")
 	if _, err := NewAnalyzed(selected, javaTarget, "run-java"); err != nil {
 		t.Fatalf("NewAnalyzed Java: %v", err)
 	}
-	rubyTarget := testProgramTarget(t, "ruby", "application", "server", "jvm:server", "src/main.rb", "f-ruby")
+	rubyTarget := testProgramTarget(t, "t1", "ruby", "application", "server", "jvm:server", "src/main.rb", "f-ruby")
 	if _, err := NewAnalyzed(selected, rubyTarget, "run-ruby"); err == nil || !strings.Contains(err.Error(), "language mismatch") {
 		t.Fatalf("unadvertised language error = %v", err)
 	}
@@ -187,7 +169,7 @@ func TestSelectedTargetAcceptsSyntheticAdapterDeclaredLanguages(t *testing.T) {
 
 func TestSelectedTargetAcceptsAdvisoryThresholdPlusOneExactText(t *testing.T) {
 	longText := strings.Repeat("x", programindex.MaxTextBytes+1)
-	selected, err := NewSelectedTarget(LanguageGroupGo, ScopeExecutable, longText, longText)
+	selected, err := NewSelectedTarget("t1", LanguageGroupGo, ScopeExecutable, longText, longText)
 	if err != nil {
 		t.Fatalf("NewSelectedTarget beyond advisory text threshold: %v", err)
 	}
@@ -200,14 +182,14 @@ func TestSelectedTargetAcceptsAdvisoryThresholdPlusOneExactText(t *testing.T) {
 }
 
 func TestOutcomeRejectsInvalidUnionFailureProgramTargetAndRun(t *testing.T) {
-	selected := testSelectedTarget(t, LanguageGroupPython, ScopeExecutable, "worker", "python:worker")
-	target := testProgramTarget(t, "python", "executable", "worker", "python:worker", "app/worker.py", "f-python")
-	wrongLanguageTarget := testProgramTarget(t, "go", "executable", "worker", "python:worker", "app/worker.go", "f-go")
+	selected := testSelectedTarget(t, "t1", LanguageGroupPython, ScopeExecutable, "worker", "python:worker")
+	target := testProgramTarget(t, "t1", "python", "executable", "worker", "python:worker", "app/worker.py", "f-python")
+	wrongLanguageTarget := testProgramTarget(t, "t1", "go", "executable", "worker", "python:worker", "app/worker.go", "f-go")
 
 	invalidTarget := target.Snapshot()
 	invalidTarget.ID += "tampered"
 	if _, err := NewAnalyzed(selected, invalidTarget, "run-python"); err == nil ||
-		!strings.Contains(err.Error(), "target identity mismatch") {
+		!strings.Contains(err.Error(), "target identity is not compact") {
 		t.Fatalf("invalid ProgramTarget error = %v", err)
 	}
 	if _, err := NewAnalyzed(selected, target, "../run"); err == nil ||
@@ -248,11 +230,11 @@ func TestOutcomeRejectsInvalidUnionFailureProgramTargetAndRun(t *testing.T) {
 }
 
 func TestPortfolioRejectsIncompleteDuplicateOrUnsafeBindings(t *testing.T) {
-	firstSelected := testSelectedTarget(t, LanguageGroupGo, ScopeExecutable, "api", "go-api")
-	secondSelected := testSelectedTarget(t, LanguageGroupPython, ScopeExecutable, "worker", "python-worker")
-	thirdSelected := testSelectedTarget(t, LanguageGroupGo, ScopeExecutable, "api alias", "go-api-alias")
-	firstTarget := testProgramTarget(t, "go", "executable", "api", "api", "cmd/api/main.go", "f-go")
-	secondTarget := testProgramTarget(t, "python", "executable", "worker", "worker", "app/worker.py", "f-python")
+	firstSelected := testSelectedTarget(t, "t1", LanguageGroupGo, ScopeExecutable, "api", "go-api")
+	secondSelected := testSelectedTarget(t, "t2", LanguageGroupPython, ScopeExecutable, "worker", "python-worker")
+	thirdSelected := testSelectedTarget(t, "t3", LanguageGroupGo, ScopeExecutable, "api alias", "go-api-alias")
+	firstTarget := testProgramTarget(t, "t1", "go", "executable", "api", "api", "cmd/api/main.go", "f-go")
+	secondTarget := testProgramTarget(t, "t2", "python", "executable", "worker", "worker", "app/worker.py", "f-python")
 
 	first, err := NewAnalyzed(firstSelected, firstTarget, "run-first")
 	if err != nil {
@@ -262,11 +244,6 @@ func TestPortfolioRejectsIncompleteDuplicateOrUnsafeBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second outcome: %v", err)
 	}
-	third, err := NewAnalyzed(thirdSelected, firstTarget, "run-third")
-	if err != nil {
-		t.Fatalf("third outcome: %v", err)
-	}
-
 	tests := []struct {
 		name      string
 		defaultID string
@@ -276,7 +253,6 @@ func TestPortfolioRejectsIncompleteDuplicateOrUnsafeBindings(t *testing.T) {
 		{name: "empty", defaultID: firstSelected.ID, outcomes: nil, want: "outcome bound"},
 		{name: "default absent", defaultID: thirdSelected.ID, outcomes: []Outcome{first, second}, want: "default selected target"},
 		{name: "duplicate selected target", defaultID: firstSelected.ID, outcomes: []Outcome{first, first}, want: "not canonical"},
-		{name: "duplicate program target", defaultID: firstSelected.ID, outcomes: []Outcome{first, third}, want: "duplicate analyzed program target"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -296,8 +272,8 @@ func TestPortfolioRejectsIncompleteDuplicateOrUnsafeBindings(t *testing.T) {
 }
 
 func TestPortfolioCodecRejectsTamperAndNonCanonicalBytes(t *testing.T) {
-	selected := testSelectedTarget(t, LanguageGroupGo, ScopeExecutable, "api", "go-api")
-	target := testProgramTarget(t, "go", "executable", "api", "api", "cmd/api/main.go", "f-go")
+	selected := testSelectedTarget(t, "t1", LanguageGroupGo, ScopeExecutable, "api", "go-api")
+	target := testProgramTarget(t, "t1", "go", "executable", "api", "api", "cmd/api/main.go", "f-go")
 	outcome, err := NewAnalyzed(selected, target, "run-go")
 	if err != nil {
 		t.Fatalf("NewAnalyzed: %v", err)
@@ -335,56 +311,16 @@ func TestPortfolioCodecRejectsTamperAndNonCanonicalBytes(t *testing.T) {
 	}
 }
 
-func TestDecodeMigratesCanonicalV1Portfolio(t *testing.T) {
-	programTarget := testProgramTarget(t, "typescript", "application", "web", "jsts:web", "src/main.ts", "f-ts")
-	selected := legacySelectedTarget{
-		LanguageGroup: LanguageGroupJavaScriptTypeScript,
-		ScopeKind:     ScopePackage, DisplayName: "web", Selector: "jsts:web",
-	}
-	selected.ID = legacySelectedTargetID(selected)
-	legacy := legacyPortfolio{
-		Version: 1, DefaultSelectedTargetID: selected.ID,
-		Outcomes: []legacyOutcome{{
-			SelectedTarget: selected, State: StateAnalyzed,
-			Analysis: &Analysis{ProgramTarget: programTarget, RunID: "run-jsts"},
-		}},
-	}
-	var err error
-	legacy.SHA256, err = legacyPortfolioDigest(legacy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := json.Marshal(legacy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	migrated, err := Decode(raw)
-	if err != nil {
-		t.Fatalf("Decode v1: %v", err)
-	}
-	if migrated.Version != Version || len(migrated.Outcomes) != 1 ||
-		!reflect.DeepEqual(migrated.Outcomes[0].SelectedTarget.AllowedProgramLanguages, []string{"javascript", "typescript"}) ||
-		migrated.DefaultSelectedTargetID != migrated.Outcomes[0].SelectedTarget.ID ||
-		migrated.DefaultSelectedTargetID == legacy.DefaultSelectedTargetID {
-		t.Fatalf("migrated v1 portfolio = %#v", migrated)
-	}
-
-	tampered := append([]byte(nil), raw...)
-	tampered = []byte(strings.Replace(string(tampered), "run-jsts", "run-jsxx", 1))
-	if _, err := Decode(tampered); err == nil || !strings.Contains(err.Error(), "v1 sha256 mismatch") {
-		t.Fatalf("tampered v1 error = %v", err)
-	}
-}
-
 func testSelectedTarget(
 	t *testing.T,
+	targetID string,
 	language LanguageGroup,
 	scope ScopeKind,
 	displayName string,
 	selector string,
 ) SelectedTarget {
 	t.Helper()
-	target, err := NewSelectedTarget(language, scope, displayName, selector)
+	target, err := NewSelectedTarget(targetID, language, scope, displayName, selector)
 	if err != nil {
 		t.Fatalf("NewSelectedTarget(%q): %v", displayName, err)
 	}
@@ -393,6 +329,7 @@ func testSelectedTarget(
 
 func testProgramTarget(
 	t *testing.T,
+	targetID string,
 	language string,
 	kind string,
 	name string,
@@ -405,7 +342,7 @@ func testProgramTarget(
 		ScenarioSHA256: strings.Repeat("a", 64),
 		SourceSHA256:   strings.Repeat("b", 64),
 		Target: programindex.TargetInput{
-			Language: language, Kind: kind, Name: name, Selector: selector,
+			ID: targetID, Language: language, Kind: kind, Name: name, Selector: selector,
 			Sources: []programindex.TargetSource{{FileRef: fileRef, Path: path}}, AnchorFileRef: fileRef,
 			Seeds: []programindex.TargetSeedInput{},
 		},

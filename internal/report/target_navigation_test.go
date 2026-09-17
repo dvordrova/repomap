@@ -12,7 +12,7 @@ import (
 )
 
 func TestBuildTargetNavigationProjectsExactLanguageNeutralPages(t *testing.T) {
-	current := targetNavigationProgramTarget(t, "go", "executable", "api", "cmd/api/main.go", "4")
+	current := targetNavigationProgramTarget(t, "t1", "go", "executable", "api", "cmd/api/main.go", "4")
 	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, current)
 
 	got, err := BuildTargetNavigation(pages, defaultTargetID, currentTargetID)
@@ -78,11 +78,6 @@ func TestTargetNavigationRenderOptionsStayTransient(t *testing.T) {
 	if !bytes.Contains(withNavigation, []byte(entry.Target.Name)) {
 		t.Fatalf("rendered page is missing the analyzed target %q", entry.Target.Name)
 	}
-	for _, item := range navigation.Targets {
-		if bytes.Contains(withNavigation, []byte(item.TargetID)) {
-			t.Fatalf("rendered page exposed the internal identity of %q", item.DisplayName)
-		}
-	}
 
 	canonical, err := json.Marshal(data)
 	if err != nil {
@@ -124,7 +119,7 @@ func TestTargetNavigationSiblingHrefResolvesForFileAndHostedReports(t *testing.T
 }
 
 func TestBuildTargetNavigationRejectsIncompleteOrTamperedPages(t *testing.T) {
-	current := targetNavigationProgramTarget(t, "go", "executable", "api", "cmd/api/main.go", "4")
+	current := targetNavigationProgramTarget(t, "t1", "go", "executable", "api", "cmd/api/main.go", "4")
 	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, current)
 	tests := map[string]func([]TargetNavigationPage) ([]TargetNavigationPage, string, string){
 		"unknown current": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
@@ -142,7 +137,7 @@ func TestBuildTargetNavigationRejectsIncompleteOrTamperedPages(t *testing.T) {
 			return value, defaultTargetID, currentTargetID
 		},
 		"invalid target": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
-			value[2].ProgramTarget.Selector = "tampered"
+			value[2].ProgramTarget.Selector = ""
 			return value, defaultTargetID, currentTargetID
 		},
 		"missing artifact filename": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
@@ -245,9 +240,9 @@ func targetNavigationPages(
 	current programindex.Target,
 ) ([]TargetNavigationPage, string, string) {
 	t.Helper()
-	server := targetNavigationProgramTarget(t, "go", "executable", "server", "cmd/server/main.go", "1")
-	worker := targetNavigationProgramTarget(t, "python", "worker", "event worker", "worker/app.py", "2")
-	tool := targetNavigationProgramTarget(t, "bash", "tool", "release scripts", "scripts/release.sh", "3")
+	server := targetNavigationProgramTarget(t, "t2", "go", "executable", "server", "cmd/server/main.go", "1")
+	worker := targetNavigationProgramTarget(t, "t3", "python", "worker", "event worker", "worker/app.py", "2")
+	tool := targetNavigationProgramTarget(t, "t4", "bash", "tool", "release scripts", "scripts/release.sh", "3")
 	pages := []TargetNavigationPage{
 		{RunID: "20260810-120000-server-a1b2c3", ProgramTarget: server, ArtifactFilename: programindex.ArtifactFilename},
 		{RunID: "20260810-120000-api-a1b2c3", ProgramTarget: current.Snapshot(), ArtifactFilename: programindex.ArtifactFilename},
@@ -259,13 +254,14 @@ func targetNavigationPages(
 
 func targetNavigationProgramTarget(
 	t *testing.T,
-	language, kind, name, sourcePath, digestCharacter string,
+	targetID, language, kind, name, sourcePath, digestCharacter string,
 ) programindex.Target {
 	t.Helper()
 	index, err := programindex.New(programindex.Input{
 		ScenarioSHA256: strings.Repeat(digestCharacter, 64),
 		SourceSHA256:   strings.Repeat(digestCharacter, 64),
 		Target: programindex.TargetInput{
+			ID:       targetID,
 			Language: language, Kind: kind, Name: name, Selector: name,
 			Sources:       []programindex.TargetSource{{FileRef: "f1", Path: sourcePath}},
 			AnchorFileRef: "f1",

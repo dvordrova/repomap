@@ -212,7 +212,7 @@ func TestQuestionKeepsComplementaryDeclarationsFromOneChunk(t *testing.T) {
 	opts, provider := questionFixture(t)
 	for i := range opts.Graph.Places {
 		place := &opts.Graph.Places[i]
-		if place.ID != atlas.FileID("pkg/a/x.go") {
+		if place.File == nil || place.Path != "pkg/a/x.go" {
 			continue
 		}
 		place.File.Decls[0].ObjectID = "start-declaration"
@@ -469,7 +469,7 @@ func TestAnswerKeepsOriginalSourcesAndReusesExactRequest(t *testing.T) {
 func TestAnswerKeepsOriginalEvidenceAndLabelledModelHypotheses(t *testing.T) {
 	evidence := map[string]any{"context": map[string]any{"file_model_hypothesis": "Earlier speculation", "file_author_doc": "Author contract"},
 		"evidence": []map[string]any{{"signature": "run(code)", "prior_model_hypothesis": "Suggested effect"}}}
-	route := &atlas.QuestionRoute{Stops: []atlas.QuestionStop{{Path: "run.go", Line: 10, Evidence: evidence, Why: "Earlier route guess"}}}
+	route := &atlas.QuestionRoute{ID: "q1", Stops: []atlas.QuestionStop{{Path: "run.go", Line: 10, Evidence: evidence, Why: "Earlier route guess"}}}
 	window, err := makeAnswerWindow(lines.Answer(), []atlas.QuestionRoute{*route}, []answerQuestion{{index: 0, candidates: uniqueRouteAnchors(route.Stops), complete: true}})
 	if err != nil {
 		t.Fatal(err)

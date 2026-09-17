@@ -22,11 +22,9 @@ func TestInternalCallRemainsReadableAfterItsDeclarationsShareAPart(t *testing.T)
 	second := call
 	second.RelationID, second.Resolution = "second-call", programindex.ResolutionAlternatives
 	second.Location = &programindex.Location{Path: "index.tsx", Line: 19, Column: 20}
-	contains := call
-	contains.RelationID, contains.RelationKind = "contains", programindex.RelationContains
 	outside := call
 	outside.RelationID, outside.ToSubjectID = "outside-call", "outside"
-	index.StructuralEdges = []groupindex.StructuralEdge{call, second, contains, outside}
+	index.StructuralEdges = []groupindex.StructuralEdge{call, second, outside}
 	rows := b.internalGroupConnections(index, part)
 	if len(rows) != 2 || rows[0].Label != "src/index calls reportWebVitals" || !rows[0].Native || rows[0].Possible || !rows[1].Possible {
 		t.Fatalf("internal call disappeared, acquired membership edges, or lost resolution: %+v", rows)

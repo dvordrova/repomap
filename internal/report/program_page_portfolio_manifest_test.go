@@ -13,6 +13,7 @@ import (
 func TestTargetOutcomePortfolioViewRequiresExactAnalyzedPageBijection(t *testing.T) {
 	fixture := newProgramPageManifestFixture(t)
 	failedSelected, err := targetoutcome.NewSelectedTarget(
+		"t3",
 		targetoutcome.LanguageGroupGo, targetoutcome.ScopeLibrary,
 		"unavailable module", "go:example.test/unavailable",
 	)
@@ -82,8 +83,14 @@ type programPageManifestFixture struct {
 
 func newProgramPageManifestFixture(t *testing.T) programPageManifestFixture {
 	t.Helper()
-	current := reportProgramIndexFixture(t, "python", "executable").Target
-	sibling := reportProgramIndexFixture(t, "typescript", "application").Target
+	indexes, err := programindex.RebindTargetSet([]programindex.Index{
+		reportProgramIndexFixture(t, "python", "executable"),
+		reportProgramIndexFixture(t, "typescript", "application"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, sibling := indexes[0].Target, indexes[1].Target
 	const currentRunID = "run-current-1"
 	portfolio, err := programpage.Build(current.ID, []programpage.Page{
 		{Target: current, RunID: currentRunID},
@@ -97,6 +104,7 @@ func newProgramPageManifestFixture(t *testing.T) programPageManifestFixture {
 		t.Fatal(err)
 	}
 	currentSelected, err := targetoutcome.NewSelectedTarget(
+		current.ID,
 		targetoutcome.LanguageGroupPython, targetoutcome.ScopeExecutable,
 		current.Name, current.Selector,
 	)
@@ -104,6 +112,7 @@ func newProgramPageManifestFixture(t *testing.T) programPageManifestFixture {
 		t.Fatal(err)
 	}
 	siblingSelected, err := targetoutcome.NewSelectedTarget(
+		sibling.ID,
 		targetoutcome.LanguageGroupJavaScriptTypeScript, targetoutcome.ScopePackage,
 		sibling.Name, sibling.Selector,
 	)

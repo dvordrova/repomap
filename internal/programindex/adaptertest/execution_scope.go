@@ -33,7 +33,7 @@ func AssertExecutionScope(t *testing.T, index programindex.Index, graph atlas.Gr
 				place = &graph.Places[i]
 			}
 		}
-		if place == nil || place.Symbol == nil || !place.Symbol.Candidate || place.Symbol.Decl.ObjectID != owner.ID || place.Symbol.Decl.Kind != string(kind) {
+		if place == nil || place.Symbol == nil || !place.Symbol.Candidate || place.Symbol.Decl.ObjectID != index.Target.ID+"."+owner.ID || place.Symbol.Decl.Kind != string(kind) {
 			t.Fatalf("%s:%d lost its native %s grouping candidate: owner=%+v, place=%+v", path, line, kind, owner, place)
 		}
 		found := false

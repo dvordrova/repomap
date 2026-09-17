@@ -84,7 +84,7 @@ func TestCumulativePythonNamespaceDependencyAuthority(t *testing.T) {
 	foundCall := false
 	for _, relation := range index.Relations {
 		if relation.Kind == programindex.RelationInvokesExternal && relation.FromID == reader.ID && sameSingleID(relation.ToIDs, load.ID) {
-			if relation.Resolution != programindex.ResolutionAlternatives || relation.Location == nil || relation.Location.Path != source {
+			if relation.Resolution != programindex.ResolutionExact || relation.Location == nil || relation.Location.Path != source {
 				t.Fatalf("namespace import call lost its original qualified observation: %#v", relation)
 			}
 			foundCall = true
@@ -151,7 +151,7 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 			}
 		}
 	}
-	var namedCount, lambdaCount, literalCount, keywordCount int
+	var namedCount, lambdaCount, keywordCount int
 	for _, relation := range index.Relations {
 		if relation.Kind != programindex.RelationPassesCallback || relation.FromID != caller.ID {
 			continue
@@ -164,12 +164,10 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 		}
 		target := programIndexObjectByID(index, relation.ToIDs[0])
 		switch {
-		case target.ID == named.ID && relation.Resolution == programindex.ResolutionAlternatives:
+		case target.ID == named.ID && relation.Resolution == programindex.ResolutionExact:
 			namedCount++
-		case target.Kind == programindex.ObjectLambda && relation.Resolution == programindex.ResolutionAlternatives:
-			lambdaCount++
 		case target.Kind == programindex.ObjectLambda && relation.Resolution == programindex.ResolutionExact:
-			literalCount++
+			lambdaCount++
 		default:
 			t.Fatalf("callback acquired unsupported authority: target=%#v relation=%#v", target, relation)
 		}
@@ -177,8 +175,8 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 			keywordCount++
 		}
 	}
-	if namedCount != 1 || lambdaCount != 2 || literalCount != 1 || keywordCount != 1 {
-		t.Fatalf("callback aliases: named=%d lambda=%d literal=%d keyword=%d", namedCount, lambdaCount, literalCount, keywordCount)
+	if namedCount != 1 || lambdaCount != 3 || keywordCount != 1 {
+		t.Fatalf("callback aliases: named=%d lambda=%d keyword=%d", namedCount, lambdaCount, keywordCount)
 	}
 	for _, name := range []string{"register_unknown_callback", "register_overwritten_callback"} {
 		owner := programIndexObjectNamed(t, index, programindex.ObjectFunction, name, sourcePath)
@@ -196,7 +194,7 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 				}
 				argument := pythonPatternArgument(t, pattern, 1)
 				if len(argument.ObjectIDs) != 1 || programIndexObjectByID(index, argument.ObjectIDs[0]).Kind != programindex.ObjectVariable ||
-					argument.Resolution != programindex.ResolutionAlternatives {
+					argument.Resolution != programindex.ResolutionExact {
 					t.Fatalf("%s lost the original variable authority: %#v", name, argument)
 				}
 				found = true
@@ -322,11 +320,11 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 				t.Fatalf("%s lost its count declaration, syntax or exact location: %#v", want.name, field)
 			}
 			for _, place := range graph.Places {
-				if place.Symbol == nil || place.Symbol.Decl.ObjectID != owner.ID {
+				if place.Symbol == nil || place.Symbol.Decl.ObjectID != index.Target.ID+"."+owner.ID {
 					continue
 				}
 				members := place.Symbol.Members
-				if len(members) != 1 || members[0].Decl.ObjectID != field.ID ||
+				if len(members) != 1 || members[0].Decl.ObjectID != index.Target.ID+"."+field.ID ||
 					members[0].Decl.Signature != want.signature || members[0].Path != field.Location.Path ||
 					members[0].Decl.LineNo != want.line || members[0].Decl.Column != 5 {
 					t.Fatalf("%s atlas membership differs from its native field: %#v", want.name, members)
@@ -334,7 +332,7 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 			}
 			for _, chunk := range lines.QuestionRows(graph) {
 				for ref, anchor := range chunk.Anchors {
-					if anchor.SubjectID != owner.ID {
+					if anchor.SubjectID != index.Target.ID+"."+owner.ID {
 						continue
 					}
 					for _, evidence := range chunk.Row.Fields {
@@ -414,7 +412,7 @@ func assertPythonRepeatedImportAliases(t *testing.T, index programindex.Index) {
 		if relation.Kind == programindex.RelationInvokesExternal && relation.FromID == caller.ID {
 			calls++
 			callLines[relation.Location.Line] = true
-			if !sameSingleID(relation.ToIDs, loads.ID) || relation.Resolution != programindex.ResolutionAlternatives ||
+			if !sameSingleID(relation.ToIDs, loads.ID) || relation.Resolution != programindex.ResolutionExact ||
 				relation.WitnessesObserved != 1 || relation.WitnessesOmitted != 0 || len(relation.Witnesses) != 1 {
 				t.Fatalf("import alias lost its independently anchored call: %#v", relation)
 			}
@@ -498,7 +496,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 	routePattern := singlePythonPattern(t, route)
 	if routePattern.Form != programindex.PatternDecoratorCall || routePattern.Selector != "get" ||
 		routePattern.ReceiverID != app.ID ||
-		routePattern.ReceiverOriginResolution != programindex.ResolutionAlternatives ||
+		routePattern.ReceiverOriginResolution != programindex.ResolutionExact ||
 		!sameSingleID(routePattern.ReceiverOriginIDs, fastAPI.ID) ||
 		routePattern.ReceiverOriginsObserved != 1 || routePattern.ReceiverOriginsOmitted != 0 {
 		t.Fatalf("cumulative Python HTTP decorator pattern = %#v", routePattern)
@@ -516,7 +514,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 	dynamicRoutePattern := singlePythonPattern(t, dynamicRoute)
 	dynamicRoutePath := pythonPatternArgument(t, dynamicRoutePattern, 1)
 	if dynamicRoutePattern.Selector != "get" || dynamicRoutePath.Kind != programindex.PatternDynamic ||
-		dynamicRoutePath.Resolution != programindex.ResolutionAlternatives ||
+		dynamicRoutePath.Resolution != programindex.ResolutionExact ||
 		!sameSingleID(dynamicRoutePath.ObjectIDs, dynamicPath.ID) ||
 		dynamicRoutePath.ValueCandidatesObserved != 1 || dynamicRoutePath.ValueCandidatesOmitted != 0 ||
 		len(dynamicRoutePath.ValueCandidates) != 1 {
@@ -549,13 +547,13 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 
 	bootstrap := pythonRelation(
 		t, index, programindex.RelationInvokesExternal, main.ID, uvicornRun.ID,
-		programindex.ResolutionAlternatives,
+		programindex.ResolutionExact,
 	)
 	bootstrapPattern := singlePythonPattern(t, bootstrap)
 	bootstrapApp := pythonPatternArgument(t, bootstrapPattern, 1)
 	if bootstrapPattern.Form != programindex.PatternCall || bootstrapPattern.Selector != "run" ||
 		bootstrapApp.Kind != programindex.PatternDynamic ||
-		bootstrapApp.Resolution != programindex.ResolutionAlternatives ||
+		bootstrapApp.Resolution != programindex.ResolutionExact ||
 		!sameSingleID(bootstrapApp.ObjectIDs, app.ID) || bootstrapApp.ObjectsObserved != 1 ||
 		bootstrapApp.ObjectsOmitted != 0 {
 		t.Fatalf("cumulative Python server bootstrap pattern = %#v", bootstrapPattern)
@@ -563,19 +561,19 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 
 	assertPythonRelation(
 		t, index, programindex.RelationCalls, getLevel.ID, retrieveLevel.ID,
-		programindex.ResolutionAlternatives,
+		programindex.ResolutionExact,
 	)
 	assertPythonRelation(
 		t, index, programindex.RelationPassesCallback, getLevel.ID, fetchLevel.ID,
-		programindex.ResolutionAlternatives,
+		programindex.ResolutionExact,
 	)
 	assertPythonRelation(
 		t, index, programindex.RelationCalls, handleOrder.ID, retrieveLevel.ID,
-		programindex.ResolutionAlternatives,
+		programindex.ResolutionExact,
 	)
 	assertPythonRelation(
 		t, index, programindex.RelationPassesCallback, handleOrder.ID, fetchLevel.ID,
-		programindex.ResolutionAlternatives,
+		programindex.ResolutionExact,
 	)
 
 	loaderCall := pythonRelation(
@@ -589,7 +587,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 
 	outbound := pythonRelation(
 		t, index, programindex.RelationInvokesExternal, fetchLevel.ID, httpxGet.ID,
-		programindex.ResolutionAlternatives,
+		programindex.ResolutionExact,
 	)
 	outboundPattern := singlePythonPattern(t, outbound)
 	outboundURL := pythonPatternArgument(t, outboundPattern, 1)
@@ -606,7 +604,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 	)
 	subscriptionPattern := singlePythonPattern(t, subscription)
 	if subscriptionPattern.Selector != "subscribe" || subscriptionPattern.ReceiverID != consumer.ID ||
-		subscriptionPattern.ReceiverOriginResolution != programindex.ResolutionAlternatives ||
+		subscriptionPattern.ReceiverOriginResolution != programindex.ResolutionExact ||
 		!sameSingleID(subscriptionPattern.ReceiverOriginIDs, kafkaConsumer.ID) ||
 		subscriptionPattern.ReceiverOriginsObserved != 1 ||
 		subscriptionPattern.ReceiverOriginsOmitted != 0 {
@@ -617,14 +615,14 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 	if subscriptionTopic.Kind != programindex.PatternLiteralString ||
 		subscriptionTopic.Value != "orders.created" ||
 		subscriptionHandler.Kind != programindex.PatternDynamic ||
-		subscriptionHandler.Resolution != programindex.ResolutionAlternatives ||
+		subscriptionHandler.Resolution != programindex.ResolutionExact ||
 		!sameSingleID(subscriptionHandler.ObjectIDs, handleOrder.ID) ||
 		subscriptionHandler.ObjectsObserved != 1 || subscriptionHandler.ObjectsOmitted != 0 {
 		t.Fatalf("cumulative Python consumer subscription arguments = %#v", subscriptionPattern.Arguments)
 	}
 	assertPythonRelation(
 		t, index, programindex.RelationPassesCallback, eventsModule.ID, handleOrder.ID,
-		programindex.ResolutionAlternatives,
+		programindex.ResolutionExact,
 	)
 
 	dynamicSubscription := pythonRelation(
@@ -639,11 +637,11 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 	dynamicTopic := pythonPatternArgument(t, dynamicPattern, 1)
 	dynamicCallback := pythonPatternArgument(t, dynamicPattern, 2)
 	if dynamicTopic.Kind != programindex.PatternDynamic ||
-		dynamicTopic.Resolution != programindex.ResolutionAlternatives ||
+		dynamicTopic.Resolution != programindex.ResolutionExact ||
 		!sameSingleID(dynamicTopic.ObjectIDs, topic.ID) || dynamicTopic.ObjectsObserved != 1 ||
 		dynamicTopic.ObjectsOmitted != 0 ||
 		dynamicCallback.Kind != programindex.PatternDynamic ||
-		dynamicCallback.Resolution != programindex.ResolutionAlternatives ||
+		dynamicCallback.Resolution != programindex.ResolutionExact ||
 		!sameSingleID(dynamicCallback.ObjectIDs, callback.ID) || dynamicCallback.ObjectsObserved != 1 ||
 		dynamicCallback.ObjectsOmitted != 0 {
 		t.Fatalf("cumulative Python dynamic subscription arguments = %#v", dynamicPattern.Arguments)
@@ -656,7 +654,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 
 	directFactory := pythonRelation(
 		t, index, programindex.RelationInvokesExternal, subscribeDirect.ID, kafkaConsumer.ID,
-		programindex.ResolutionAlternatives,
+		programindex.ResolutionExact,
 	)
 	directFactoryPattern := singlePythonPattern(t, directFactory)
 	if directFactoryPattern.Selector != "KafkaConsumer" || directFactoryPattern.ResultID == "" ||
@@ -694,7 +692,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 				Form: programindex.PatternDecoratorCall, Selector: "get", ReceiverID: app.ID,
 				Path: "src/fixture_app/cli.py", Line: 17,
 				ReceiverOrigins: adaptertest.ObjectAuthority{
-					IDs: []string{fastAPI.ID}, Resolution: programindex.ResolutionAlternatives, Observed: 1,
+					IDs: []string{fastAPI.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
 				},
 				Observed: 1, Arguments: []adaptertest.Argument{{
 					Position: 1, Kind: programindex.PatternLiteralString, Value: "/api/level/{level_id}",
@@ -707,19 +705,19 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 		Name: "Python callback registration",
 		Registration: adaptertest.Relation{
 			Kind: programindex.RelationCalls, FromID: eventsModule.ID, Resolution: programindex.ResolutionUnresolved,
-			Invocation: "direct", Path: "src/fixture_app/events.py", Line: 13,
+			Path: "src/fixture_app/events.py", Line: 13,
 			TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, WitnessesOmitted: 0,
 			PatternsObserved: 1, PatternsOmitted: 0,
 			Patterns: []adaptertest.Pattern{{
 				Form: programindex.PatternCall, Selector: "subscribe", ReceiverID: consumer.ID,
 				Path: "src/fixture_app/events.py", Line: 13,
 				ReceiverOrigins: adaptertest.ObjectAuthority{
-					IDs: []string{kafkaConsumer.ID}, Resolution: programindex.ResolutionAlternatives, Observed: 1,
+					IDs: []string{kafkaConsumer.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
 				},
 				Observed: 2, Arguments: []adaptertest.Argument{
 					{Position: 1, Kind: programindex.PatternLiteralString, Value: "orders.created"},
 					{Position: 2, Kind: programindex.PatternDynamic, Objects: adaptertest.ObjectAuthority{
-						IDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionAlternatives, Observed: 1,
+						IDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
 					}},
 				},
 			}},
@@ -728,7 +726,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 			ArgumentPosition: 2,
 			Relation: adaptertest.Relation{
 				Kind: programindex.RelationPassesCallback, FromID: eventsModule.ID, ToIDs: []string{handleOrder.ID},
-				Resolution: programindex.ResolutionAlternatives, Path: "src/fixture_app/events.py", Line: 13,
+				Resolution: programindex.ResolutionExact, Path: "src/fixture_app/events.py", Line: 13,
 				TargetsObserved: 1, WitnessesObserved: 1,
 			},
 		}},
@@ -738,8 +736,8 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 		Name: "Python template output call",
 		Registration: adaptertest.Relation{
 			Kind: programindex.RelationInvokesExternal, FromID: fetchLevel.ID, ToIDs: []string{httpxGet.ID},
-			Resolution: programindex.ResolutionAlternatives, Invocation: "direct",
-			Path: "src/fixture_app/levels.py", Line: 5,
+			Resolution: programindex.ResolutionExact,
+			Path:       "src/fixture_app/levels.py", Line: 5,
 			TargetsObserved: 1, WitnessesObserved: 1, PatternsObserved: 1,
 			Patterns: []adaptertest.Pattern{{
 				Form: programindex.PatternCall, Selector: "get", Observed: 1,
@@ -759,17 +757,17 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 		Name: "Python dynamic callback frontier",
 		Registration: adaptertest.Relation{
 			Kind: programindex.RelationCalls, FromID: subscribeDynamic.ID, Resolution: programindex.ResolutionUnresolved,
-			Invocation: "direct", Path: "src/fixture_app/events.py", Line: 17,
+			Path: "src/fixture_app/events.py", Line: 17,
 			TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
 			Patterns: []adaptertest.Pattern{{
 				Form: programindex.PatternCall, Selector: "subscribe", ReceiverID: runtimeConsumer.ID, Observed: 2,
 				Path: "src/fixture_app/events.py", Line: 17,
 				Arguments: []adaptertest.Argument{
 					{Position: 1, Kind: programindex.PatternDynamic, Objects: adaptertest.ObjectAuthority{
-						IDs: []string{topic.ID}, Resolution: programindex.ResolutionAlternatives, Observed: 1,
+						IDs: []string{topic.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
 					}},
 					{Position: 2, Kind: programindex.PatternDynamic, Objects: adaptertest.ObjectAuthority{
-						IDs: []string{callback.ID}, Resolution: programindex.ResolutionAlternatives, Observed: 1,
+						IDs: []string{callback.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
 					}},
 				},
 			}},
@@ -780,8 +778,8 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 		Name: "Python direct-result callback registration",
 		Registration: adaptertest.Relation{
 			Kind: programindex.RelationCalls, FromID: subscribeDirect.ID,
-			Resolution: programindex.ResolutionUnresolved, Invocation: "direct",
-			Path: "src/fixture_app/events.py", Line: 21,
+			Resolution: programindex.ResolutionUnresolved,
+			Path:       "src/fixture_app/events.py", Line: 21,
 			TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
 			Patterns: []adaptertest.Pattern{{
 				Form: programindex.PatternCall, Selector: "subscribe", ReceiverID: directResult.ID,
@@ -792,7 +790,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 				Arguments: []adaptertest.Argument{
 					{Position: 1, Kind: programindex.PatternLiteralString, Value: "orders.direct"},
 					{Position: 2, Kind: programindex.PatternDynamic, Objects: adaptertest.ObjectAuthority{
-						IDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionAlternatives, Observed: 1,
+						IDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
 					}},
 				},
 			}},
@@ -801,7 +799,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 			ArgumentPosition: 2,
 			Relation: adaptertest.Relation{
 				Kind: programindex.RelationPassesCallback, FromID: subscribeDirect.ID,
-				ToIDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionAlternatives,
+				ToIDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionExact,
 				Path: "src/fixture_app/events.py", Line: 21,
 				TargetsObserved: 1, WitnessesObserved: 1,
 			},
@@ -812,22 +810,22 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 		Name: "Python duplicate callback arguments",
 		Registration: adaptertest.Relation{
 			Kind: programindex.RelationCalls, FromID: bindDuplicateCallbacks.ID,
-			Resolution: programindex.ResolutionUnresolved, Invocation: "direct",
-			Path: "src/fixture_app/events.py", Line: 25,
+			Resolution: programindex.ResolutionUnresolved,
+			Path:       "src/fixture_app/events.py", Line: 25,
 			TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
 			Patterns: []adaptertest.Pattern{{
 				Form: programindex.PatternCall, Selector: "bind_pair", ReceiverID: consumer.ID,
 				Path: "src/fixture_app/events.py", Line: 25,
 				ReceiverOrigins: adaptertest.ObjectAuthority{
-					IDs: []string{kafkaConsumer.ID}, Resolution: programindex.ResolutionAlternatives, Observed: 1,
+					IDs: []string{kafkaConsumer.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
 				},
 				Observed: 2,
 				Arguments: []adaptertest.Argument{
 					{Position: 1, Kind: programindex.PatternDynamic, Objects: adaptertest.ObjectAuthority{
-						IDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionAlternatives, Observed: 1,
+						IDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
 					}},
 					{Position: 2, Kind: programindex.PatternDynamic, Objects: adaptertest.ObjectAuthority{
-						IDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionAlternatives, Observed: 1,
+						IDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
 					}},
 				},
 			}},
@@ -835,12 +833,12 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 		Callbacks: []adaptertest.Callback{
 			{ArgumentPosition: 1, Relation: adaptertest.Relation{
 				Kind: programindex.RelationPassesCallback, FromID: bindDuplicateCallbacks.ID,
-				ToIDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionAlternatives,
+				ToIDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionExact,
 				Path: "src/fixture_app/events.py", Line: 25, TargetsObserved: 1, WitnessesObserved: 1,
 			}},
 			{ArgumentPosition: 2, Relation: adaptertest.Relation{
 				Kind: programindex.RelationPassesCallback, FromID: bindDuplicateCallbacks.ID,
-				ToIDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionAlternatives,
+				ToIDs: []string{handleOrder.ID}, Resolution: programindex.ResolutionExact,
 				Path: "src/fixture_app/events.py", Line: 25, TargetsObserved: 1, WitnessesObserved: 1,
 			}},
 		},

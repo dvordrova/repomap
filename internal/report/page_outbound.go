@@ -167,7 +167,11 @@ func (builder *pageBuilder) outboundCallers(index *groupindex.Index, sectionID, 
 	if subjectID == "" {
 		return nil
 	}
-	callee, calleeAnchor := builder.subjectDisplay(builder.subjects[subjectID].subject)
+	calleeRef, known := builder.subject(index.Target.ID, subjectID)
+	if !known {
+		return nil
+	}
+	callee, calleeAnchor := builder.subjectDisplay(calleeRef.subject)
 	if callee == "" {
 		return nil
 	}
@@ -183,7 +187,11 @@ func (builder *pageBuilder) outboundCallers(index *groupindex.Index, sectionID, 
 			(edge.RelationKind != programindex.RelationCalls && edge.RelationKind != programindex.RelationExecutes) {
 			continue
 		}
-		name, anchor := builder.subjectDisplay(builder.subjects[edge.FromSubjectID].subject)
+		callerRef, known := builder.subject(index.Target.ID, edge.FromSubjectID)
+		if !known {
+			continue
+		}
+		name, anchor := builder.subjectDisplay(callerRef.subject)
 		if name == "" {
 			continue
 		}

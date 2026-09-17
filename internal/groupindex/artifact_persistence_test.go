@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 func TestPersistAndReadRoundTrip(t *testing.T) {
@@ -13,6 +15,9 @@ func TestPersistAndReadRoundTrip(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 	runDir := t.TempDir()
+	if err := programindex.Persist(runDir, programindex.ArtifactFilename, program); err != nil {
+		t.Fatalf("Persist ProgramIndex: %v", err)
+	}
 	if err := Persist(runDir, index); err != nil {
 		t.Fatalf("Persist: %v", err)
 	}

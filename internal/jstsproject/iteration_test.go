@@ -49,11 +49,7 @@ func TestCumulativeJSTSIterationKeepsCompilerElementAuthority(t *testing.T) {
 			}
 			continue
 		}
-		resolution := programindex.ResolutionExact
-		if name == "typedJSIteration" || name == "typedJSUnderscore" {
-			resolution = programindex.ResolutionAlternatives
-		}
-		if relation.Resolution != resolution || len(relation.ToIDs) != 1 || relation.Location == nil {
+		if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 || relation.Location == nil {
 			t.Fatalf("%s lost compiler call authority: %+v", name, relation)
 		}
 		method := objects[relation.ToIDs[0]]

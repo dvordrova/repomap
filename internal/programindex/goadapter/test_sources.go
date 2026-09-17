@@ -53,7 +53,6 @@ func (projection *goProjection) projectTestSources(sources []gofacts.TestSource)
 					Name: source.PackageName, Visibility: programindex.VisibilityInternal, OwnerRef: moduleRef, ContainerRef: moduleRef}); err != nil {
 					return err
 				}
-				projection.addContains(moduleRef, packageRef, source.PackageName, nil)
 				packages[key] = packageRef
 			}
 		}
@@ -94,12 +93,6 @@ func (projection *goProjection) projectTestSources(sources []gofacts.TestSource)
 				Visibility: programindex.VisibilityInternal, OwnerRef: owner, ContainerRef: owner, Location: location}); err != nil {
 				return err
 			}
-			projection.relations = append(projection.relations, programindex.RelationInput{
-				SourceRef: stableRef("go-test-contains", owner, ref), Kind: programindex.RelationContains,
-				FromRef: owner, ToRefs: []string{ref}, Resolution: programindex.ResolutionExact, TargetsObserved: 1,
-				Location: location, WitnessesObserved: 1, Witnesses: []programindex.Witness{{Kind: "go_test_declaration",
-					Detail: "build-selected test source; parsed declaration; calls not analyzed", Location: location}},
-			})
 		}
 	}
 	return nil

@@ -333,8 +333,59 @@ func (r *dynamicValueResolver) interfaceValue(value ssa.Value) dynamicValueSumma
 		if call, ok := current.Tuple.(*ssa.Call); ok {
 			result = r.interfaceReturns(call, current.Index)
 		}
+	case *ssa.Parameter:
+		result = r.interfaceParameter(current)
 	}
 	return r.finish(key, result)
+}
+
+// An interface constructor parameter is resolved from the actual values at
+// every SSA use of that exact repository function. Direct static calls supply
+// their corresponding argument; any other use keeps the frontier open. This
+// preserves distinct alternatives and never substitutes a merely compatible
+// implementation by type name.
+func (r *dynamicValueResolver) interfaceParameter(parameter *ssa.Parameter) dynamicValueSummary {
+	unknown := dynamicValueSummary{unresolved: 1}
+	if r.analyzer == nil || parameter == nil || parameter.Parent() == nil {
+		return unknown
+	}
+	parent := parameter.Parent()
+	position := -1
+	for index, candidate := range parent.Params {
+		if candidate == parameter {
+			position = index
+			break
+		}
+	}
+	if position < 0 {
+		return unknown
+	}
+
+	result := dynamicValueSummary{}
+	found := false
+	for _, caller := range r.analyzer.orderedFunctions() {
+		if caller == nil || caller.Blocks == nil || !r.analyzer.isRepositoryFunction(caller) {
+			continue
+		}
+		for _, block := range caller.Blocks {
+			for _, instruction := range block.Instrs {
+				call, ok := instruction.(ssa.CallInstruction)
+				if !ok || call.Common() == nil || call.Common().StaticCallee() != parent {
+					continue
+				}
+				found = true
+				if position >= len(call.Common().Args) {
+					r.merge(&result, unknown)
+					continue
+				}
+				r.merge(&result, r.interfaceValue(call.Common().Args[position]))
+			}
+		}
+	}
+	if !found {
+		return unknown
+	}
+	return result
 }
 
 func (r *dynamicValueResolver) interfaceField(value *ssa.UnOp) dynamicValueSummary {
@@ -343,8 +394,15 @@ func (r *dynamicValueResolver) interfaceField(value *ssa.UnOp) dynamicValueSumma
 	if field == nil || r.analyzer.dynamicHandoffCapture == nil {
 		return result
 	}
-	// Stores remain possible alternatives; none closes this instance's frontier.
-	for _, store := range r.analyzer.dynamicHandoffCapture.interfaceFields[field] {
+	stores := r.analyzer.dynamicHandoffCapture.interfaceFields[field]
+	if len(stores) == 0 {
+		return result
+	}
+	// Every store of this field in the analyzed program is observed. Their
+	// values are the field's values; a store whose value cannot be followed
+	// keeps its own unknown path.
+	result = dynamicValueSummary{}
+	for _, store := range stores {
 		child := r.interfaceValue(store.Val)
 		r.merge(&result, child)
 		for function := range child.functions {

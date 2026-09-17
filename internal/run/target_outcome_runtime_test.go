@@ -20,7 +20,7 @@ func TestRepositorySelectedTargetKeepsPreanalysisGoIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	selected, err := repositorySelectedTarget(target)
+	selected, err := repositorySelectedTarget("t1", target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestRepositorySelectedTargetKeepsPreanalysisGoIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pythonSelected, err := repositorySelectedTarget(pythonTarget)
+	pythonSelected, err := repositorySelectedTarget("t2", pythonTarget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestRepositorySelectedTargetKeepsPreanalysisGoIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	jstsSelected, err := repositorySelectedTarget(jstsTarget)
+	jstsSelected, err := repositorySelectedTarget("t3", jstsTarget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,6 +98,7 @@ func TestClassifyRepositoryTargetFailureUsesClosedTypedCauses(t *testing.T) {
 
 func TestPersistTargetOutcomePortfolioForRunDirsKeepsCanonicalBytes(t *testing.T) {
 	selected, err := targetoutcome.NewSelectedTarget(
+		"t1",
 		targetoutcome.LanguageGroupGo,
 		targetoutcome.ScopeLibrary,
 		"module library",

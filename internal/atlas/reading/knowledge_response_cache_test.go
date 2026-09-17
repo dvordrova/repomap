@@ -91,7 +91,7 @@ func TestKnowledgeParsesSharedAdjunctOnceAndAcceptsOnlyValidatedRows(t *testing.
 }
 
 func TestKnowledgeMemoCollectsOnlyAcceptedRowFromOriginalLocalContext(t *testing.T) {
-	base := &replacementProvider{response: []byte(`{"rows":[{"key":"r1","line":"Alpha is unrelated."},{"key":"r2","line":"Beta is the accepted concept."},{"key":"r3","line":42}]}`)}
+	base := &replacementProvider{response: []byte(`{"rows":[{"key":"a","line":"Alpha is unrelated."},{"key":"b","line":"Beta is the accepted concept."},{"key":"bad","line":42}]}`)}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
 	def := table.Definition{Stage: "atlas_files", Contract: "local-context-test", System: "Describe each original source.", Independent: true, Columns: []table.Column{{Name: "line", Kind: table.Prose}}}
 	rows := []table.Row{
@@ -114,15 +114,15 @@ func TestKnowledgeMemoCollectsOnlyAcceptedRowFromOriginalLocalContext(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A fresh reader knows only its current isolated row. Memo r2 still belongs
-	// to b.py:9 in the original complete window, never to an invented r1 scope.
+	// A fresh reader knows only its current isolated row. Memo b still belongs
+	// to b.py:9 in the original complete window, never to another row's scope.
 	current := terminology.NewCollector([]string{"a.py", "b.py", "bad.py"})
 	r := &reader{opts: Options{Executor: executor, Provider: current.Wrap(base)}, responseTables: make(map[string]rememberedTable)}
 	window := table.Window{Rows: []table.Row{rows[1]}}
-	if _, found, err := r.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: "r3"}); err == nil || found {
+	if _, found, err := r.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: "bad"}); err == nil || found {
 		t.Fatal("refused row became memo prose")
 	}
-	if _, found, err := r.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: "r2"}); err != nil || !found {
+	if _, found, err := r.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: "b"}); err != nil || !found {
 		t.Fatalf("valid original row lost: %v", err)
 	}
 	base.response = []byte(`{"terms":[{"name":"Beta","kind":"domain","explanation":"The concept in the accepted original row.","rows":["p1"]}]}`)
@@ -130,7 +130,7 @@ func TestKnowledgeMemoCollectsOnlyAcceptedRowFromOriginalLocalContext(t *testing
 		t.Fatal(err)
 	}
 	terms := current.Snapshot()
-	if len(terms) != 1 || !reflect.DeepEqual(terms[0].Sources, []terminology.Source{{Path: "b.py", Line: 9}}) || !reflect.DeepEqual(terms[0].Origins, []terminology.Origin{{RequestSHA256: outcome.RequestSHA256, Row: "r2"}}) {
+	if len(terms) != 1 || !reflect.DeepEqual(terms[0].Sources, []terminology.Source{{Path: "b.py", Line: 9}}) || !reflect.DeepEqual(terms[0].Origins, []terminology.Origin{{RequestSHA256: outcome.RequestSHA256, Row: "b"}}) {
 		t.Fatalf("memo glossary lost original row, anchor or request: %+v", terms)
 	}
 }

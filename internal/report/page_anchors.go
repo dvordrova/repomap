@@ -124,8 +124,10 @@ func (links pageLinks) permalink(path string, line int) string {
 // factLabel is the short principal of a fact shown next to its anchor.
 func factLabel(fact facts.Fact) string {
 	switch fact.Kind {
-	case facts.KindHTTPRoute, facts.KindHTTPCall, facts.KindPortal:
-		return fact.Method + " " + fact.Path
+	case facts.KindRegistration:
+		return strings.TrimSpace(fact.Method + " " + firstNonEmpty(fact.Path, strings.Join(fact.Values, " "), fact.Key))
+	case facts.KindSQLQuery:
+		return firstNonEmpty(fact.Key, fact.Value)
 	case facts.KindEntrypoint:
 		if fact.Symbol != "" {
 			return fact.Symbol

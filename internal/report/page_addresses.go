@@ -32,21 +32,13 @@ func (builder *pageBuilder) addresses(view *pageView) {
 	if builder.data.Facts == nil {
 		return
 	}
-	for _, kind := range []facts.Kind{
-		facts.KindListenAddress, facts.KindManifest, facts.KindConfigRead,
-	} {
+	for _, kind := range []facts.Kind{facts.KindManifest, facts.KindConfigRead} {
 		for _, fact := range builder.data.Facts.OfKind(kind) {
-			if kind != facts.KindListenAddress && !addressFact(fact) {
+			if !addressFact(fact) {
 				continue
 			}
 			row := pageAddress{
 				Key: fact.Key, Value: fact.Value, Anchor: builder.links.factAnchor(fact),
-			}
-			if kind == facts.KindListenAddress {
-				row.Key = "listens on"
-				if fact.Symbol != "" {
-					row.Note = "in " + fact.Symbol
-				}
 			}
 			if section, known := builder.byFacts[fact.TargetID]; known {
 				row.Target = section.Label

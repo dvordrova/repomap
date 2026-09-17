@@ -21,7 +21,7 @@ func TestSharedNativeRoutesReachEachCatalogueWithoutListenerOrForeignFactIDs(t *
 	var representative programindex.Object
 	for i, name := range []string{"main", "shared"} {
 		program, err := programindex.New(programindex.Input{ScenarioSHA256: strings.Repeat("a", 64), SourceSHA256: strings.Repeat("b", 64),
-			Target:  programindex.TargetInput{Language: "go", Kind: "executable", Name: name, Selector: name, AnchorFileRef: "file", Sources: []programindex.TargetSource{{FileRef: "file", Path: "api.go"}}},
+			Target:  programindex.TargetInput{ID: fmt.Sprintf("t%d", i+1), Language: "go", Kind: "executable", Name: name, Selector: name, AnchorFileRef: "file", Sources: []programindex.TargetSource{{FileRef: "file", Path: "api.go"}}},
 			Objects: []programindex.ObjectInput{{SourceRef: "handler", Kind: programindex.ObjectFunction, Name: "Handler", Visibility: programindex.VisibilityPublic, Location: &programindex.Location{Path: "api.go", Line: 3, Column: 1}}}, Relations: []programindex.RelationInput{}, Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: 1}})
 		if err != nil {
 			t.Fatal(err)
@@ -30,7 +30,7 @@ func TestSharedNativeRoutesReachEachCatalogueWithoutListenerOrForeignFactIDs(t *
 		targetIDs = append(targetIDs, program.Target.ID)
 		targets = append(targets, reading.TargetMeta{ID: program.Target.ID, Language: "go", Kind: "executable", Name: name, Root: ".", SelectedRole: atlas.RoleProduct})
 		origins = append(origins, atlas.BoundaryOrigin{TargetID: program.Target.ID, FactID: fmt.Sprintf("route-%d", i), ObjectID: program.Objects[0].ID})
-		layer.Facts = append(layer.Facts, facts.Fact{ID: fmt.Sprintf("route-%d", i), Kind: facts.KindHTTPRoute, TargetID: name, Method: "ANY", Path: "/v1/update", Anchor: &facts.Anchor{Path: "api.go", Line: 10, Column: 4}})
+		layer.Facts = append(layer.Facts, facts.Fact{ID: fmt.Sprintf("route-%d", i), Kind: facts.KindRegistration, TargetID: name, Method: "ANY", Path: "/v1/update", Anchor: &facts.Anchor{Path: "api.go", Line: 10, Column: 4}})
 		if i == 0 {
 			representative = program.Objects[0]
 		}
@@ -72,7 +72,7 @@ func TestSharedNativeRoutesReachEachCatalogueWithoutListenerOrForeignFactIDs(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	builder := pageBuilder{data: &ReportData{Facts: layer}, indexes: indexes, links: pageLinks{sourceIDs: map[string]string{"api.go": "source"}}}
+	builder := pageBuilder{data: &ReportData{Facts: layer}, factsByID: layer.ByID(), indexes: indexes, links: pageLinks{sourceIDs: map[string]string{"api.go": "source"}}}
 	for _, target := range targets {
 		section := &pageSection{ID: target.Name, programTargetID: target.ID, factsTargetID: target.Name, FactsAvailable: true}
 		builder.fillSectionOperations(section)

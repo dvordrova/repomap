@@ -76,23 +76,16 @@ type parserViewResult struct {
 }
 
 type parsedObject struct {
-	SourceRef            string                       `json:"source_ref"`
-	Kind                 string                       `json:"kind"`
-	Name                 string                       `json:"name"`
-	Visibility           string                       `json:"visibility"`
-	Signature            string                       `json:"signature,omitempty"`
-	OwnerRef             string                       `json:"owner_ref,omitempty"`
-	ContainerRef         string                       `json:"container_ref,omitempty"`
-	Location             *programindex.Location       `json:"location,omitempty"`
-	Directory            string                       `json:"directory,omitempty"`
-	SymbolLinkIdentities []parsedSymbolLinkIdentity   `json:"symbol_link_identities,omitempty"`
-	External             *programindex.ExternalSymbol `json:"external,omitempty"`
-}
-
-type parsedSymbolLinkIdentity struct {
-	Domain  string   `json:"domain"`
-	Parts   []string `json:"parts"`
-	Display string   `json:"display,omitempty"`
+	SourceRef    string                       `json:"source_ref"`
+	Kind         string                       `json:"kind"`
+	Name         string                       `json:"name"`
+	Visibility   string                       `json:"visibility"`
+	Signature    string                       `json:"signature,omitempty"`
+	OwnerRef     string                       `json:"owner_ref,omitempty"`
+	ContainerRef string                       `json:"container_ref,omitempty"`
+	Location     *programindex.Location       `json:"location,omitempty"`
+	Directory    string                       `json:"directory,omitempty"`
+	External     *programindex.ExternalSymbol `json:"external,omitempty"`
 }
 
 type parsedRelation struct {
@@ -312,7 +305,11 @@ func buildMany(
 		}
 		indexes[position] = index
 	}
-	return indexes, nil
+	rebound, err := programindex.RebindTargetSet(indexes)
+	if err != nil {
+		return nil, fmt.Errorf("python program index: assign target refs: %w", err)
+	}
+	return rebound, nil
 }
 
 func buildInputs(
@@ -672,17 +669,11 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 			return parsedGroup{}, fmt.Errorf("duplicate helper object %q", value.SourceRef)
 		}
 		objectRefs[value.SourceRef] = value
-		linkIdentities := make([]programindex.SymbolLinkIdentityInput, len(value.SymbolLinkIdentities))
-		for position, identity := range value.SymbolLinkIdentities {
-			linkIdentities[position] = programindex.SymbolLinkIdentityInput{
-				Domain: identity.Domain, Parts: append([]string(nil), identity.Parts...), Display: identity.Display,
-			}
-		}
 		objects = append(objects, programindex.ObjectInput{
 			SourceRef: value.SourceRef, Kind: kind, Name: value.Name,
 			Visibility: programindex.Visibility(value.Visibility), Signature: value.Signature,
 			OwnerRef: value.OwnerRef, ContainerRef: value.ContainerRef, Location: cloneLocation(value.Location), Directory: value.Directory,
-			SymbolLinkIdentities: linkIdentities, External: cloneParsedExternalSymbol(value.External),
+			External: cloneParsedExternalSymbol(value.External),
 		})
 	}
 	relations := make([]programindex.RelationInput, 0, len(response.Relations))

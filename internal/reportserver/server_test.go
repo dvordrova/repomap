@@ -632,6 +632,7 @@ func writeTestRunAtWithTargetName(
 		t.Fatal(err)
 	}
 	selected, err := targetoutcome.NewSelectedTargetWithLanguages(
+		index.Target.ID,
 		targetoutcome.LanguageGroup(index.Target.Language), []string{index.Target.Language},
 		targetoutcome.ScopeLibrary, index.Target.Name, index.Target.Selector,
 	)

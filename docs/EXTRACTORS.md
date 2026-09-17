@@ -51,13 +51,15 @@ That is the public data model:
 | node | `id`, plus `path` or `name` | `line`, the other of `path` / `name`, source `data` |
 | link | `from`, `to`, `label` | `path`, `line` for more precise evidence |
 
-Node IDs belong to this one extractor. Links use those IDs. Paths are
+Node IDs belong only to this one response. Links use those IDs. Paths are
 repository-relative; a node may instead have only a name, for an external
 reference or a concept. A link uses its origin node as the source location
 unless it supplies its own path. A link from a node without a path must
 supply a source path. Omitted lines mean the beginning of the file.
 
-Repomap assigns internal identities and target membership, attaches the
+At the acceptance boundary repomap replaces producer IDs with `u1..uN` in
+producer order and rewrites every link to those same IDs. It then assigns fact
+identities and target membership, attaches the
 producer's name, and lists current corpus files beneath a directory. An
 output directory can be absent. No model classifications, confidence
 numbers, symbol IDs, target IDs, file lists or special generator types are
@@ -76,9 +78,11 @@ prove schema ownership, and a join does not establish a foreign key.
 
 Only protocol version 1 is accepted. Unknown fields, duplicate node IDs,
 missing link endpoints, invalid paths and command failures produce explicit
-errors. There are no compatibility readers or replacement results. Exact
-stdin, stdout and stderr are saved in `extractions.json`, including failed
-exchanges; normalized nodes and links enter `facts.json` as `entity` and
+errors. There are no compatibility readers or replacement results.
+`extractions.json` v2 stores exact stdin, stdout and stderr for replay,
+including failed exchanges, plus the accepted `u*` nodes and links. Producer
+IDs survive only inside exact stdout; they are not internal identity or model
+references. The normalized graph enters `facts.json` as `entity` and
 `relation` rows. A syntactically valid label remains the producer's statement,
 not a compiler-proved call or an LLM architecture classification.
 

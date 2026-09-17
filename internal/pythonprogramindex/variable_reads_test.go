@@ -24,7 +24,7 @@ func TestCumulativeVariableReadsKeepOriginalDeclarationAndLexicalScope(t *testin
 	}
 	want := map[string][]string{
 		"read_level_data":    {"fixture_app.levels.READ_VALUES", "fixture_app.levels.READ_LIMIT", "fixture_app.levels.READ_LIMIT", "fixture_app.levels.READ_LIMIT"},
-		"shadow_level_data":  {"shadow_level_data.values", "shadow_level_data.READ_LIMIT"},
+		"shadow_level_data":  nil,
 		"comprehension_data": {"fixture_app.levels.READ_VALUES", "fixture_app.levels.READ_LIMIT"},
 		"ReadScope":          {"ReadScope.READ_LIMIT"},
 		"method":             {"fixture_app.levels.READ_LIMIT"},
@@ -51,7 +51,7 @@ func TestCumulativeVariableReadsKeepOriginalDeclarationAndLexicalScope(t *testin
 			if target.Name != "READ_LIMIT" && target.Name != "READ_VALUES" && target.Name != "values" && target.Name != "count" {
 				continue
 			}
-			if target.Kind != programindex.ObjectVariable || relation.Resolution != programindex.ResolutionAlternatives || relation.Location.Column < 1 {
+			if target.Kind != programindex.ObjectVariable || relation.Resolution != programindex.ResolutionExact || relation.Location.Column < 1 {
 				t.Fatalf("read lost declaration, source or possible authority: %+v", relation)
 			}
 			if sites[relation.ID] {

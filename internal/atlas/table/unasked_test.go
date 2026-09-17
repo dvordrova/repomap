@@ -17,12 +17,14 @@ func TestUnaskedCellTakesItsOwnValueWhileMissingSettlesOnlyAskedCells(t *testing
 	}}
 	plain := Row{ID: "plain"}
 	offered := Row{ID: "offered", Fields: []Field{{Name: "registered_name_options", Value: []string{"p1"}}, {Name: "box_options", Value: []string{"here", "pkg/b"}}}}
-	window := Window{Rows: []Row{plain, offered, plain, offered}}
+	plain2, offered2 := plain, offered
+	plain2.ID, offered2.ID = "plain2", "offered2"
+	window := Window{Rows: []Row{plain, offered, plain2, offered2}}
 	result, err := DecodeResult(def, window, []byte(`{"rows":[
-		{"key":"r1","entry":"self","name":"Send mail","box":"pkg/b"},
-		{"key":"r2","entry":"self","http_path":"p1","name":"ignored"},
-		{"key":"r3","entry":"self","name_kind":"http","http_path":"p1","name":"Sync"},
-		{"key":"r4","entry":"none","name_kind":"label","name":"x","box":"pkg/b"}]}`))
+		{"key":"plain","entry":"self","name":"Send mail","box":"pkg/b"},
+		{"key":"offered","entry":"self","http_path":"p1","name":"ignored"},
+		{"key":"plain2","entry":"self","name_kind":"http","http_path":"p1","name":"Sync"},
+		{"key":"offered2","entry":"none","name_kind":"label","name":"x","box":"pkg/b"}]}`))
 	if err != nil || len(result.Rejections) != 0 {
 		t.Fatalf("rows refused: %+v / %v", result, err)
 	}

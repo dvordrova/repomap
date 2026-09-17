@@ -70,7 +70,7 @@ func TestValidateRejectsPreviousJSTSResultVersion(t *testing.T) {
 	}
 }
 
-func TestPackageExportIdentityJoinsTypeScriptAndJavaScriptShardsWithoutChangingResolution(t *testing.T) {
+func TestPackageExportKeepsTypeScriptAndJavaScriptResolution(t *testing.T) {
 	destination := minimalResult(t, "typescript").Snapshot()
 	destination.Project.Name = "shared"
 	destination.Project.PackagePath = "shared"
@@ -89,7 +89,15 @@ func TestPackageExportIdentityJoinsTypeScriptAndJavaScriptShardsWithoutChangingR
 	if err != nil {
 		t.Fatal(err)
 	}
-	destinationIdentity := identityForSourceRef(t, destinationIndex, serve.Ref, "shared#serve")
+	foundDestination := false
+	for _, object := range destinationIndex.Objects {
+		if object.SourceRef == serve.Ref && object.Visibility == programindex.VisibilityPublic {
+			foundDestination = true
+		}
+	}
+	if !foundDestination {
+		t.Fatal("destination export is not a public ProgramIndex object")
+	}
 
 	for _, test := range []struct {
 		language   string
@@ -129,9 +137,14 @@ func TestPackageExportIdentityJoinsTypeScriptAndJavaScriptShardsWithoutChangingR
 			if relation.Resolution != test.want || len(relation.ToIDs) != 1 {
 				t.Fatalf("external relation = %#v, want %s", relation, test.want)
 			}
-			identity := identityForObjectID(t, index, relation.ToIDs[0], "shared#serve")
-			if identity.Domain != destinationIdentity.Domain || identity.Key != destinationIdentity.Key {
-				t.Fatalf("cross-shard identity = %#v, destination %#v", identity, destinationIdentity)
+			var external programindex.Object
+			for _, object := range index.Objects {
+				if object.ID == relation.ToIDs[0] {
+					external = object
+				}
+			}
+			if external.External == nil || external.External.RepositoryPath != "." || external.External.PackagePath != "shared" {
+				t.Fatalf("repository-local external target = %#v", external)
 			}
 		})
 	}
@@ -601,7 +614,7 @@ func TestProgramTargetIdentityOmitsUnsafeSignatureBeforeProjection(t *testing.T)
 	if err := bindProgramTargetIdentity(&result); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(result.ProgramTargetID, "program-target-") {
+	if result.ProgramTargetID != "t1" {
 		t.Fatalf("program target identity = %q", result.ProgramTargetID)
 	}
 	for _, candidate := range result.Declarations {
@@ -621,7 +634,7 @@ func TestProgramTargetIdentityOmitsUnsafeSignatureBeforeProjection(t *testing.T)
 func TestResultRejectsDanglingFactReferences(t *testing.T) {
 	result := minimalResult(t, "typescript")
 	result.Surfaces = []Surface{{Ref: "surface:bad", Kind: SurfaceBrowser, Role: SurfaceProduct, Name: "bad", EntryRefs: []string{"decl:missing"}, EvidenceRefs: []string{}, Location: result.Files[0].location()}}
-	result.ProgramTargetID = "program-target-placeholder"
+	result.ProgramTargetID = "t1"
 	if _, err := Seal(result); err == nil || !strings.Contains(err.Error(), "unknown evidence ref") {
 		t.Fatalf("Seal dangling surface = %v", err)
 	}
@@ -691,49 +704,6 @@ func rederiveAndSeal(t *testing.T, result Result) Result {
 		t.Fatal(err)
 	}
 	return sealed
-}
-
-func identityForSourceRef(
-	t *testing.T,
-	index programindex.Index,
-	sourceRef string,
-	display string,
-) programindex.SymbolLinkIdentity {
-	t.Helper()
-	for _, object := range index.Objects {
-		if object.SourceRef == sourceRef {
-			return identityForObject(t, object, display)
-		}
-	}
-	t.Fatalf("object source ref %q not found", sourceRef)
-	return programindex.SymbolLinkIdentity{}
-}
-
-func identityForObjectID(
-	t *testing.T,
-	index programindex.Index,
-	objectID string,
-	display string,
-) programindex.SymbolLinkIdentity {
-	t.Helper()
-	for _, object := range index.Objects {
-		if object.ID == objectID {
-			return identityForObject(t, object, display)
-		}
-	}
-	t.Fatalf("object id %q not found", objectID)
-	return programindex.SymbolLinkIdentity{}
-}
-
-func identityForObject(t *testing.T, object programindex.Object, display string) programindex.SymbolLinkIdentity {
-	t.Helper()
-	for _, identity := range object.SymbolLinkIdentities {
-		if identity.Domain == "jsts_package_export_v2" && identity.Display == display {
-			return identity
-		}
-	}
-	t.Fatalf("object %q lacks package export identity %q: %#v", object.Name, display, object.SymbolLinkIdentities)
-	return programindex.SymbolLinkIdentity{}
 }
 
 func (file File) location() Location {

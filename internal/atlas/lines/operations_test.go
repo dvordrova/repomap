@@ -9,15 +9,18 @@ import (
 
 func TestOperationDecisionOwnsRequiredCells(t *testing.T) {
 	rows := make([]table.Row, 8)
+	for i := range rows {
+		rows[i].ID = string(rune('a' + i))
+	}
 	result, err := table.DecodeResult(Operations(), table.Window{Rows: rows}, []byte(`{"rows":[
-		{"key":"r1","entry":"none","activation":"none","name":"","description":""},
-		{"key":"r2","entry":"u1"},
-		{"key":"r3","entry":"none","name":42,"description":{}},
-		{"key":"r4","entry":"self","name_kind":"label","activation":"continuous","name":"worker","description":"Consumes updates until cancellation."},
-		{"key":"r5","entry":"self","name_kind":"label","activation":"continuous","name":null,"description":"Runs periodic event sending batches until context cancellation. Then stops."},
-		{"key":"r6","entry":"u2"},
-		{"key":"r7","entry":"self","name_kind":"label","activation":"none","name":"worker","description":"Runs."},
-		{"key":"r8","entry":"self","name_kind":"label","activation":"continuous","name":"","description":""}
+		{"key":"a","entry":"none","activation":"none","name":"","description":""},
+		{"key":"b","entry":"u1"},
+		{"key":"c","entry":"none","name":42,"description":{}},
+		{"key":"d","entry":"self","name_kind":"label","activation":"continuous","name":"worker","description":"Consumes updates until cancellation."},
+		{"key":"e","entry":"self","name_kind":"label","activation":"continuous","name":null,"description":"Runs periodic event sending batches until context cancellation. Then stops."},
+		{"key":"f","entry":"u2"},
+		{"key":"g","entry":"self","name_kind":"label","activation":"none","name":"worker","description":"Runs."},
+		{"key":"h","entry":"self","name_kind":"label","activation":"continuous","name":"","description":""}
 	]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +46,7 @@ func TestOperationDecisionOwnsRequiredCells(t *testing.T) {
 }
 
 func TestNegativeOperationWindowIsAccepted(t *testing.T) {
-	result, err := table.DecodeResult(Operations(), table.Window{Rows: []table.Row{{}}}, []byte(`{"rows":[{"key":"r1","entry":"none"}]}`))
+	result, err := table.DecodeResult(Operations(), table.Window{Rows: []table.Row{{ID: "s1"}}}, []byte(`{"rows":[{"key":"s1","entry":"none"}]}`))
 	if err != nil || len(result.AcceptedRowKeys()) != 1 {
 		t.Fatalf("negative window refused: %#v, %v", result, err)
 	}
@@ -54,18 +57,20 @@ func TestNegativeOperationWindowIsAccepted(t *testing.T) {
 // row with registered names that omits the cell reads label the same way.
 func TestNameKindIsAskedOnlyWithRegisteredNames(t *testing.T) {
 	def := Operations()
-	plain := table.Row{Fields: []table.Field{{Name: "path", Value: "worker.go"}}}
-	registered := table.Row{Fields: []table.Field{{Name: "registered_name_options", Value: []string{"p1"}}}}
-	window := table.Window{Rows: []table.Row{plain, registered, plain, registered}}
+	plain := table.Row{ID: "s1", Fields: []table.Field{{Name: "path", Value: "worker.go"}}}
+	registered := table.Row{ID: "s2", Fields: []table.Field{{Name: "registered_name_options", Value: []string{"p1"}}}}
+	plain2, registered2 := plain, registered
+	plain2.ID, registered2.ID = "s3", "s4"
+	window := table.Window{Rows: []table.Row{plain, registered, plain2, registered2}}
 	request, err := table.Request(def, window)
 	if err != nil || !strings.Contains(string(request), `"when_options_nonempty":"registered_name_options"`) || strings.Contains(string(request), "name_kind_options") {
 		t.Fatalf("name_kind is not conditioned on registered names: %s %v", request, err)
 	}
 	result, err := table.DecodeResult(def, window, []byte(`{"rows":[
-		{"key":"r1","entry":"self","activation":"continuous","name":"Send queued notifications","description":"Sends queued notifications until shutdown."},
-		{"key":"r2","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"p1","description":"Returns the status."},
-		{"key":"r3","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"p1","description":"Returns the status of one job. Then logs."},
-		{"key":"r4","entry":"self","activation":"request","http_method":"GET","http_path":"p1","description":"Returns the status."}
+		{"key":"s1","entry":"self","activation":"continuous","name":"Send queued notifications","description":"Sends queued notifications until shutdown."},
+		{"key":"s2","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"p1","description":"Returns the status."},
+		{"key":"s3","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"p1","description":"Returns the status of one job. Then logs."},
+		{"key":"s4","entry":"self","activation":"request","http_method":"GET","http_path":"p1","description":"Returns the status."}
 	]}`))
 	if err != nil || len(result.Rejections) != 0 {
 		t.Fatalf("unasked name kind refused a row: %+v %v", result, err)
@@ -85,13 +90,15 @@ func TestNameKindIsAskedOnlyWithRegisteredNames(t *testing.T) {
 }
 
 func TestHTTPNamesSelectClosedRegistrationWithoutFreeText(t *testing.T) {
-	row := table.Row{Fields: []table.Field{
+	row := table.Row{ID: "s1", Fields: []table.Field{
 		{Name: "registered_name_options", Value: []string{"p1"}},
 	}}
-	result, err := table.DecodeResult(Operations(), table.Window{Rows: []table.Row{row, row, row}}, []byte(`{"rows":[
-		{"key":"r1","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"p1","name":"/invented","description":"Returns a greeting."},
-		{"key":"r2","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"/invented","description":"Returns a greeting."},
-		{"key":"r3","entry":"none","name_kind":42,"http_path":[]}
+	row2, row3 := row, row
+	row2.ID, row3.ID = "s2", "s3"
+	result, err := table.DecodeResult(Operations(), table.Window{Rows: []table.Row{row, row2, row3}}, []byte(`{"rows":[
+		{"key":"s1","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"p1","name":"/invented","description":"Returns a greeting."},
+		{"key":"s2","entry":"self","activation":"request","name_kind":"http","http_method":"GET","http_path":"/invented","description":"Returns a greeting."},
+		{"key":"s3","entry":"none","name_kind":42,"http_path":[]}
 	]}`))
 	if err != nil {
 		t.Fatal(err)

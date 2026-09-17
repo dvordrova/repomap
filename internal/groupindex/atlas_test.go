@@ -13,11 +13,13 @@ import (
 func TestAtlasInterpretationRebindsTheSameDeclarationAcrossTargets(t *testing.T) {
 	a := atlasTestProgram(t, "library", "pkg/work.go")
 	b := atlasTestProgram(t, "executable", "pkg/work.go")
-	if a.Objects[0].ID == b.Objects[0].ID {
-		t.Fatal("fixture needs target-scoped IDs")
+	rebound := rebindTestTargets(t, a, b)
+	a, b = rebound[0], rebound[1]
+	if a.Objects[0].ID != b.Objects[0].ID {
+		t.Fatal("the same target-local ordinal should be reusable across qualified targets")
 	}
 	makeTarget := func(p programindex.Index) atlas.Target {
-		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "pkg", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{{ID: "pkg", Dir: "pkg", Title: "Work", Line: "Does work.", Side: atlas.SideMid, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "pkg/work.go", Line: "Work.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "symbol", ObjectID: a.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Restores a snapshot.", Alias: "snapshot restorer", Activation: "command", Operation: "snapshot restore", OperationSummary: "Restores a data directory from a saved snapshot.", Key: true}}}}}}}
+		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "pkg", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{{ID: "pkg", Dir: "pkg", Title: "Work", Line: "Does work.", Side: atlas.SideMid, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "pkg/work.go", Line: "Work.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "symbol", ObjectID: p.Target.ID + "." + p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Restores a snapshot.", Alias: "snapshot restorer", Activation: "command", Operation: "snapshot restore", OperationSummary: "Restores a data directory from a saved snapshot.", Key: true}}}}}}}
 	}
 	result, err := ProjectAtlas(map[string]programindex.Index{a.Target.ID: a, b.Target.ID: b}, atlas.Atlas{Version: atlas.Version, Repository: "x", Revision: "abc", Targets: []atlas.Target{makeTarget(a), makeTarget(b)}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
 	if err != nil {
@@ -121,6 +123,8 @@ func TestAtlasProjectsIndependentInterpretationWithoutCaption(t *testing.T) {
 func TestSharedCodeLinksRemainBoundToTheirCompleteTarget(t *testing.T) {
 	app := atlasTestProgram(t, "app", "cmd/app.go")
 	shared := atlasTestProgram(t, "shared", "pkg/shared.go")
+	rebound := rebindTestTargets(t, app, shared)
+	app, shared = rebound[0], rebound[1]
 	makeTarget := func(p programindex.Index, role string) atlas.Target {
 		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Role: role, Root: ".", Zones: []atlas.Zone{}, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}}
 	}
@@ -186,6 +190,8 @@ func atlasTestProgram(t *testing.T, name string, files ...string) programindex.I
 func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 	svc := atlasTestProgram(t, "svc", "svc/api/h.go", "svc/core/c.go")
 	web := atlasTestProgram(t, "web", "web/src/app.ts")
+	rebound := rebindTestTargets(t, svc, web)
+	svc, web = rebound[0], rebound[1]
 	value := atlas.Atlas{
 		Version: atlas.Version, Repository: "x", Revision: "abc",
 		Targets: []atlas.Target{
@@ -198,7 +204,7 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 					{ID: "svc/core", Dir: "svc/core", Title: "Domain", Line: "Does the work.", ZoneID: "serving", Side: atlas.SideMid, Open: true,
 						Files: []atlas.File{{Path: "svc/core/c.go", Line: "Core file.", Source: atlas.SourceModel, Open: true, Asked: true, Symbols: []atlas.Symbol{}}}, Keys: []atlas.Key{}},
 				},
-				Arrows:     []atlas.Arrow{{From: "svc/api", To: "svc/core", Calls: 3, Witnesses: []atlas.Witness{}, Sentence: "The handlers hand requests to the domain."}},
+				Arrows:     []atlas.Arrow{{ID: "x1", From: "svc/api", To: "svc/core", Calls: 3, Witnesses: []atlas.Witness{}, Sentence: "The handlers hand requests to the domain."}},
 				Boundaries: []atlas.Boundary{{ID: "b-in", BoxID: "svc/api", Path: "svc/api/h.go", LineNo: 10, Caller: "FA", Direction: atlas.DirectionIn, Kind: atlas.BoundaryHTTPServer, Values: []string{"/api/levels"}, Line: "Serves levels."}},
 				Trace:      []string{"svc/api", "svc/core"},
 			},

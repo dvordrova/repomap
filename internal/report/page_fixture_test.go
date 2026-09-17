@@ -130,6 +130,7 @@ func reportSelectedTargetFixture(
 	// The fixture binds the exact language the page materialized, so a
 	// synthetic target of any language stays a valid analyzed outcome.
 	selected, err := targetoutcome.NewSelectedTargetWithLanguages(
+		target.ID,
 		group, []string{target.Language}, scope, target.Name, target.Selector,
 	)
 	if err != nil {

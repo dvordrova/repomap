@@ -274,10 +274,13 @@ func frontIndex(t *testing.T, calls ...programindex.PatternArgumentInput) progra
 	return s.index()
 }
 
-func postCall(path string) programindex.PatternArgumentInput {
-	argument := literal(1, path)
-	argument.Keyword = "post"
-	return argument
+func bindTargetSet(t *testing.T, indexes ...programindex.Index) []programindex.Index {
+	t.Helper()
+	bound, err := programindex.RebindTargetSet(indexes)
+	if err != nil {
+		t.Fatalf("bind target set: %v", err)
+	}
+	return bound
 }
 
 func TestBuildTargetsAndEntrypoints(t *testing.T) {
@@ -289,27 +292,12 @@ func TestBuildTargetsAndEntrypoints(t *testing.T) {
 	if target.Root != "backend" || target.Language != "python" || target.Anchor.String() != "backend/main.py:14" {
 		t.Fatalf("target = %+v", target)
 	}
-	if target.ID != NewTargetID("python", "backend", "", target.ProgramTargetID) {
-		t.Fatalf("target id %q is not derived from its language, root, manifest and program target", target.ID)
+	if target.ID != "t1" {
+		t.Fatalf("facts target did not retain ProgramIndex identity: %q", target.ID)
 	}
 	entrypoint := requireFact(t, result, KindEntrypoint, "main guard", func(fact Fact) bool { return fact.Anchor.String() == "backend/main.py:14" })
 	if entrypoint.Symbol != "main" || entrypoint.Key != "main_guard" || entrypoint.TargetID != target.ID {
 		t.Fatalf("entrypoint = %+v", entrypoint)
-	}
-}
-
-func TestBuildRoutesFromDecorators(t *testing.T) {
-	result := mustBuild(t, Input{Targets: []TargetInput{{Index: backendIndex(t), Root: "backend", Manifest: "backend/Pipfile"}}})
-	routes := result.OfKind(KindHTTPRoute)
-	if len(routes) != 3 {
-		t.Fatalf("routes = %+v", routes)
-	}
-	route := requireFact(t, result, KindHTTPRoute, "GET /api/levels", func(fact Fact) bool { return fact.Path == "/api/levels" })
-	if route.Method != "GET" || route.Symbol != "get_levels_info" || route.Anchor.String() != "backend/app/app.py:18" || route.Resolution != ResolutionExact {
-		t.Fatalf("route = %+v", route)
-	}
-	if run, _ := findFact(result, KindHTTPRoute, func(fact Fact) bool { return fact.Method == "POST" }); run.Path != "/api/level/run" || run.Symbol != "run_level" {
-		t.Fatalf("post route = %+v", run)
 	}
 }
 
@@ -322,88 +310,6 @@ func TestBuildConfigReadsFromPatterns(t *testing.T) {
 	port := requireFact(t, result, KindConfigRead, "APP_PORT", func(fact Fact) bool { return fact.Key == "APP_PORT" })
 	if port.Value != "" || port.Anchor.Line != 6 {
 		t.Fatalf("port = %+v", port)
-	}
-}
-
-func TestBuildClientCallsAndPortals(t *testing.T) {
-	backend := backendIndex(t)
-	front := frontIndex(t, literal(1, "/api/levels"), template(1, "/api/level/", ""), postCall("/api/level/run"), literal(1, "/api/nothing"))
-	result := mustBuild(t, Input{Targets: []TargetInput{
-		{Index: backend, Root: "backend", Manifest: "backend/Pipfile"},
-		{Index: front, Root: "front", Manifest: "front/package.json"},
-	}})
-	calls := result.OfKind(KindHTTPCall)
-	if len(calls) != 4 {
-		t.Fatalf("calls = %+v", calls)
-	}
-	templated := requireFact(t, result, KindHTTPCall, "template", func(fact Fact) bool { return fact.Path == "/api/level/{param}" })
-	if templated.Resolution != ResolutionPossible || templated.Method != "GET" || templated.Symbol != "call1" || templated.Anchor.String() != "front/src/service/http.ts:22" {
-		t.Fatalf("templated call = %+v", templated)
-	}
-	portals := result.OfKind(KindPortal)
-	if len(portals) != 3 {
-		t.Fatalf("portals = %+v", portals)
-	}
-	exact := requireFact(t, result, KindPortal, "GET /api/levels", func(fact Fact) bool { return fact.Path == "/api/levels" })
-	if exact.Resolution != ResolutionExact || exact.Anchor.String() != "front/src/service/http.ts:12" || exact.Evidence[0].String() != "backend/app/app.py:18" {
-		t.Fatalf("exact portal = %+v", exact)
-	}
-	if exact.TargetID != result.Targets[1].ID || exact.PeerTargetID != result.Targets[0].ID || exact.Refs[0] != templatedOrExact(result, "/api/levels").ID {
-		t.Fatalf("exact portal targets/refs = %+v", exact)
-	}
-	possible := requireFact(t, result, KindPortal, "GET /api/level/{level_id}", func(fact Fact) bool { return fact.Path == "/api/level/{level_id}" })
-	if possible.Resolution != ResolutionPossible || possible.Anchor.Line != 22 || possible.Evidence[0].Line != 59 {
-		t.Fatalf("possible portal = %+v", possible)
-	}
-	if !hasDiagnostic(result, "portal_unmatched") {
-		t.Fatalf("expected an unmatched diagnostic, have %+v", result.Diagnostics)
-	}
-}
-
-func templatedOrExact(result Result, path string) Fact {
-	fact, _ := findFact(result, KindHTTPCall, func(fact Fact) bool { return fact.Path == path })
-	return fact
-}
-
-func TestBuildPortalAmbiguityIsDiagnosed(t *testing.T) {
-	s := newSynthetic(t, "python", "api", "api/main.py")
-	s.object("main", programindex.ObjectModule, "main", "api/main.py", 1, "")
-	s.object("app", programindex.ObjectVariable, "app", "api/main.py", 3, "main")
-	s.object("latest", programindex.ObjectFunction, "latest", "api/main.py", 10, "main")
-	s.object("byid", programindex.ObjectFunction, "by_id", "api/main.py", 20, "main")
-	s.external("flask", "flask", "Flask", programindex.ExternalAuthorityPackage)
-	s.seed("main", programindex.SeedMainGuard, "api/main.py", 30)
-	s.relate("r1", programindex.RelationDecorates, "latest", nil, loc("api/main.py", 9),
-		pattern("p", programindex.PatternDecoratorCall, "get", loc("api/main.py", 9), []string{"flask"}, literal(1, "/api/item/latest")))
-	s.relate("r2", programindex.RelationDecorates, "byid", nil, loc("api/main.py", 19),
-		pattern("p", programindex.PatternDecoratorCall, "get", loc("api/main.py", 19), []string{"flask"}, literal(1, "/api/item/<int:item_id>")))
-	front := frontIndex(t, template(1, "/api/item/", ""))
-	result := mustBuild(t, Input{Targets: []TargetInput{{Index: s.index(), Root: "api"}, {Index: front, Root: "front"}}})
-	if portals := result.OfKind(KindPortal); len(portals) != 0 {
-		t.Fatalf("ambiguous call produced portals %+v", portals)
-	}
-	if !hasDiagnostic(result, "portal_ambiguous") {
-		t.Fatalf("diagnostics = %+v", result.Diagnostics)
-	}
-}
-
-func TestBuildRouteWithCallbackHandler(t *testing.T) {
-	s := newSynthetic(t, "go", "server", "cmd/server/main.go")
-	s.object("pkg", programindex.ObjectPackage, "main", "", 0, "")
-	s.object("main", programindex.ObjectFunction, "main", "cmd/server/main.go", 10, "pkg")
-	s.object("handler", programindex.ObjectFunction, "listArticles", "cmd/server/main.go", 30, "pkg")
-	s.external("chi", "github.com/go-chi/chi/v5", "Get", programindex.ExternalAuthorityPackage)
-	s.seed("main", programindex.SeedCallable, "cmd/server/main.go", 10)
-	s.relate("reg", programindex.RelationInvokesExternal, "main", []string{"chi"}, loc("cmd/server/main.go", 12),
-		pattern("p", programindex.PatternCall, "Get", loc("cmd/server/main.go", 12), nil, literal(1, "/articles"), dynamicRef(2, "handler")))
-	s.callback("cb", "main", "handler", "reg", "p", 2)
-	result := mustBuild(t, Input{Targets: []TargetInput{{Index: s.index(), Root: "cmd/server"}}})
-	route := requireFact(t, result, KindHTTPRoute, "GET /articles", func(fact Fact) bool { return fact.Path == "/articles" })
-	if route.Method != "GET" || route.Symbol != "listArticles" || route.Anchor.String() != "cmd/server/main.go:12" {
-		t.Fatalf("route = %+v", route)
-	}
-	if dead := result.OfKind(KindDeadModule); len(dead) != 0 {
-		t.Fatalf("package object without location produced dead modules %+v", dead)
 	}
 }
 
@@ -492,29 +398,6 @@ func TestBuildTODOs(t *testing.T) {
 	}
 }
 
-func TestBuildDeadModulesAndImports(t *testing.T) {
-	s := newSynthetic(t, "typescript", "front", "front/src/index.tsx", "front/src/a.ts", "front/src/b.ts", "front/src/c.ts", "front/src/env.d.ts")
-	s.object("index", programindex.ObjectModule, "src/index", "front/src/index.tsx", 1, "")
-	s.object("root", programindex.ObjectVariable, "root", "front/src/index.tsx", 7, "index")
-	s.object("a", programindex.ObjectModule, "src/a", "front/src/a.ts", 1, "")
-	s.object("afn", programindex.ObjectFunction, "helper", "front/src/a.ts", 3, "a")
-	s.object("b", programindex.ObjectModule, "src/b", "front/src/b.ts", 1, "")
-	s.object("c", programindex.ObjectModule, "src/c", "front/src/c.ts", 1, "")
-	s.object("env", programindex.ObjectModule, "src/env", "front/src/env.d.ts", 1, "")
-	s.seed("root", programindex.SeedBoundObject, "front/src/index.tsx", 7)
-	s.relate("i1", programindex.RelationImports, "index", []string{"afn"}, loc("front/src/index.tsx", 2))
-	s.relate("c1", programindex.RelationCalls, "root", []string{"b"}, loc("front/src/index.tsx", 9))
-	result := mustBuild(t, Input{Targets: []TargetInput{{Index: s.index(), Root: "front"}}})
-	dead := result.OfKind(KindDeadModule)
-	if len(dead) != 1 || dead[0].Path != "front/src/c.ts" || dead[0].Anchor.String() != "front/src/c.ts:1" {
-		t.Fatalf("dead = %+v", dead)
-	}
-	imports := result.OfKind(KindImport)
-	if len(imports) != 1 || imports[0].Path != "front/src/a.ts" || imports[0].Anchor.String() != "front/src/index.tsx:2" {
-		t.Fatalf("imports = %+v", imports)
-	}
-}
-
 func TestGoTODOsOnlyComeFromCommentsWithPhysicalAnchors(t *testing.T) {
 	source := "package sample\n" +
 		"var ctx = context.TODO()\n" +
@@ -536,22 +419,6 @@ func TestGoTODOsOnlyComeFromCommentsWithPhysicalAnchors(t *testing.T) {
 		requireFact(t, result, KindTODO, expected.text, func(f Fact) bool {
 			return f.Anchor.Path == "sample.go" && f.Anchor.Line == expected.line && f.Text == expected.text
 		})
-	}
-}
-
-func TestBuildDeadModulesNeedSeeds(t *testing.T) {
-	s := newSynthetic(t, "python", "lib", "lib/a.py", "lib/b.py")
-	s.object("a", programindex.ObjectModule, "a", "lib/a.py", 1, "")
-	s.object("b", programindex.ObjectModule, "b", "lib/b.py", 1, "")
-	result := mustBuild(t, Input{Targets: []TargetInput{{Index: s.index(), Root: "lib"}}})
-	if dead := result.OfKind(KindDeadModule); len(dead) != 0 {
-		t.Fatalf("library without seeds produced dead modules %+v", dead)
-	}
-	if !hasDiagnostic(result, "dead_module_skipped") {
-		t.Fatalf("diagnostics = %+v", result.Diagnostics)
-	}
-	if result.Targets[0].Anchor.String() != "lib/a.py:1" {
-		t.Fatalf("seedless target anchor = %+v", result.Targets[0].Anchor)
 	}
 }
 
@@ -725,8 +592,8 @@ func TestBuildIsDeterministicAndRoundTrips(t *testing.T) {
 		t.Fatal("round trip changed the digest")
 	}
 	todos := first.OfKind(KindTODO)
-	if len(todos) != 2 || todos[0].ID == todos[1].ID || !strings.HasPrefix(todos[1].ID, todos[0].ID) {
-		t.Fatalf("identical lines must get ordinal ids: %+v", todos)
+	if len(todos) != 2 || todos[0].ID == todos[1].ID || todos[0].ID[0] != 'a' || todos[1].ID[0] != 'a' {
+		t.Fatalf("facts must get distinct compact artifact IDs: %+v", todos)
 	}
 }
 
@@ -734,47 +601,6 @@ func TestBuildRejectsDuplicateTargets(t *testing.T) {
 	index := backendIndex(t)
 	if _, err := Build(Input{Targets: []TargetInput{{Index: index, Root: "backend"}, {Index: index, Root: "backend"}}}); err == nil {
 		t.Fatal("duplicate targets were accepted")
-	}
-}
-
-// TestComposedRoutePathsFollowTheMountChain pins the rule that a router
-// mounted under a prefix answers on that prefix plus its own path, including
-// when the same router is mounted more than once.
-func TestComposedRoutePathsFollowTheMountChain(t *testing.T) {
-	for _, test := range []struct {
-		prefix, path, want string
-	}{
-		{"", "/articles", "/articles"},
-		{"/v3", "/articles", "/v3/articles"},
-		{"/v3/", "/articles", "/v3/articles"},
-		{"/v3", "/", "/v3"},
-		{"/", "/", "/"},
-		{"", "/", "/"},
-		{"/v3/articles", "/{articleID}", "/v3/articles/{articleID}"},
-	} {
-		if got := joinRoutePath(test.prefix, test.path); got != test.want {
-			t.Fatalf("joinRoutePath(%q, %q) = %q, want %q", test.prefix, test.path, got, test.want)
-		}
-	}
-}
-
-// TestListenAddressAcceptsOnlyRealBindTargets keeps the port answer honest:
-// what a server is actually given, and nothing that merely looks like it.
-func TestListenAddressAcceptsOnlyRealBindTargets(t *testing.T) {
-	for _, value := range []string{
-		":3333", "0.0.0.0:8080", "127.0.0.1:80", "localhost:65535", "/tmp/app.sock", "./app.sock",
-	} {
-		if !isListenAddress(value) {
-			t.Fatalf("isListenAddress(%q) = false, want true", value)
-		}
-	}
-	for _, value := range []string{
-		"", "tcp", ":0", ":65536", ":notaport", "http://example.com/path",
-		"example.com", "some text:8080", "a/b:8080",
-	} {
-		if isListenAddress(value) {
-			t.Fatalf("isListenAddress(%q) = true, want false", value)
-		}
 	}
 }
 

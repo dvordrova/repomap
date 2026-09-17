@@ -1,10 +1,9 @@
 package report
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -106,7 +105,7 @@ func (builder *pageBuilder) learn(view *pageView) {
 					if !exists {
 						at = len(view.LearnConcepts)
 						conceptAt[key] = at
-						view.LearnConcepts = append(view.LearnConcepts, pageLearnConcept{pageMapConcept: concept, ID: fmt.Sprintf("concept-%x", sha256.Sum256([]byte(key)))})
+						view.LearnConcepts = append(view.LearnConcepts, pageLearnConcept{pageMapConcept: concept})
 					}
 					place := pageLearnLink{Title: section.ShortLabel + " / " + node.FullTitle, Href: "#" + node.ID}
 					view.LearnConcepts[at].Places = append(view.LearnConcepts[at].Places, place)
@@ -126,6 +125,9 @@ func (builder *pageBuilder) learn(view *pageView) {
 		view.LearnBands = append(view.LearnBands, pageLearnBand{Title: name[2:], Parts: bands[name]})
 	}
 	sort.SliceStable(view.LearnConcepts, func(i, j int) bool { return view.LearnConcepts[i].Name < view.LearnConcepts[j].Name })
+	for position := range view.LearnConcepts {
+		view.LearnConcepts[position].ID = "c" + strconv.Itoa(position+1)
+	}
 	conceptNames := map[string]int{}
 	for _, concept := range view.LearnConcepts {
 		conceptNames[concept.Name]++

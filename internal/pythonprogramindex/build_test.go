@@ -206,11 +206,10 @@ _hidden = 1
 	}
 
 	assertExactRelation(t, index, programindex.RelationImports, service.ID, callback.ID)
-	assertAlternativeRelation(t, index, programindex.RelationCalls, run.ID, callback.ID)
-	assertAlternativeRelation(t, index, programindex.RelationDecorates, run.ID, decorate.ID)
-	assertAlternativeRelation(t, index, programindex.RelationImplements, worker.ID, base.ID)
-	assertAlternativeRelation(t, index, programindex.RelationPassesCallback, main.ID, callback.ID)
-	assertExactRelation(t, index, programindex.RelationContains, worker.ID, execute.ID)
+	assertExactRelation(t, index, programindex.RelationCalls, run.ID, callback.ID)
+	assertExactRelation(t, index, programindex.RelationDecorates, run.ID, decorate.ID)
+	assertExactRelation(t, index, programindex.RelationImplements, worker.ID, base.ID)
+	assertExactRelation(t, index, programindex.RelationPassesCallback, main.ID, callback.ID)
 
 	external := objectNamed(t, index, programindex.ObjectExternalSymbol, "json.dumps", "")
 	if external.Visibility != programindex.VisibilityUnknown {
@@ -221,15 +220,7 @@ _hidden = 1
 		external.External.Receiver != "" || external.External.Name != "dumps" {
 		t.Fatalf("external symbol authority = %#v, want json.dumps", external.External)
 	}
-	assertPythonPublicIdentity(t, run, "pkg.service.run")
-	assertPythonPublicIdentity(t, external, "json.dumps")
-	if len(hidden.SymbolLinkIdentities) != 0 {
-		t.Fatalf("internal binding received cross-target identity: %#v", hidden.SymbolLinkIdentities)
-	}
-	if len(hiddenExecute.SymbolLinkIdentities) != 0 {
-		t.Fatalf("member of private owner received cross-target identity: %#v", hiddenExecute.SymbolLinkIdentities)
-	}
-	assertAlternativeRelation(t, index, programindex.RelationInvokesExternal, run.ID, external.ID)
+	assertExactRelation(t, index, programindex.RelationInvokesExternal, run.ID, external.ID)
 
 	invoke := objectNamed(t, index, programindex.ObjectFunction, "invoke", "pkg/service.py")
 	assertUnresolvedFrom(t, index, programindex.RelationCalls, invoke.ID)
@@ -516,7 +507,7 @@ def healthcheck():
 	app := objectNamed(t, index, programindex.ObjectVariable, "app", "src/main.py")
 	fastAPI := objectNamed(t, index, programindex.ObjectExternalSymbol, "fastapi.FastAPI", "")
 	assertExactRelation(t, index, programindex.RelationImports, mainModule.ID, load.ID)
-	assertAlternativeRelation(t, index, programindex.RelationCalls, healthcheck.ID, load.ID)
+	assertExactRelation(t, index, programindex.RelationCalls, healthcheck.ID, load.ID)
 	assertExternalCallExpression(t, index, "fastapi.FastAPI", "FastAPI")
 	for _, object := range index.Objects {
 		if object.Kind == programindex.ObjectExternalSymbol && strings.HasPrefix(object.Name, "src.") {
@@ -539,7 +530,7 @@ def healthcheck():
 		}
 		pattern := relation.Patterns[0]
 		if pattern.Form != programindex.PatternDecoratorCall || pattern.Selector != "get" ||
-			pattern.ReceiverID != app.ID || pattern.ReceiverOriginResolution != programindex.ResolutionAlternatives ||
+			pattern.ReceiverID != app.ID || pattern.ReceiverOriginResolution != programindex.ResolutionExact ||
 			!reflect.DeepEqual(pattern.ReceiverOriginIDs, []string{fastAPI.ID}) ||
 			pattern.ReceiverOriginsObserved != 1 || pattern.ReceiverOriginsOmitted != 0 {
 			t.Fatalf("decorator receiver pattern = %#v", pattern)
@@ -601,7 +592,7 @@ def expand(values, options):
 		t.Fatal("generic decorator pattern not found")
 	}
 	if pattern.Selector != "publish" || pattern.ReceiverID != receiver.ID ||
-		pattern.ReceiverOriginResolution != programindex.ResolutionAlternatives ||
+		pattern.ReceiverOriginResolution != programindex.ResolutionExact ||
 		!reflect.DeepEqual(pattern.ReceiverOriginIDs, []string{maker.ID}) {
 		t.Fatalf("generic receiver origin = %#v", pattern)
 	}
@@ -618,7 +609,7 @@ def expand(values, options):
 	}
 	keyword := pattern.Arguments[1]
 	if keyword.Keyword != "mode" || keyword.Kind != programindex.PatternDynamic ||
-		keyword.Resolution != programindex.ResolutionAlternatives ||
+		keyword.Resolution != programindex.ResolutionExact ||
 		!reflect.DeepEqual(keyword.ObjectIDs, []string{segment.ID}) {
 		t.Fatalf("keyword authority = %#v", keyword)
 	}
@@ -724,7 +715,7 @@ def reassigned_handler():
 
 	literal := argumentForHandler("literal_handler")
 	if literal.Kind != programindex.PatternDynamic ||
-		literal.Resolution != programindex.ResolutionAlternatives ||
+		literal.Resolution != programindex.ResolutionExact ||
 		literal.ValueCandidatesObserved != 1 || literal.ValueCandidatesOmitted != 0 ||
 		len(literal.ValueCandidates) != 1 ||
 		literal.ValueCandidates[0].Kind != programindex.PatternLiteralString ||
@@ -993,7 +984,7 @@ def sample():
 			continue
 		}
 		calls++
-		if relation.Resolution != programindex.ResolutionAlternatives || len(relation.ToIDs) != 1 ||
+		if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 ||
 			relation.TargetsOmitted != 0 || relation.WitnessesObserved != 1 || len(relation.Witnesses) != 1 {
 			t.Fatalf("nested call was visited more than once or promoted to exact: %#v", relation)
 		}
@@ -1041,7 +1032,7 @@ class Child(make(), metaclass=make()):
 			continue
 		}
 		headerCalls++
-		if relation.Resolution != programindex.ResolutionAlternatives || len(relation.ToIDs) != 1 ||
+		if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 ||
 			relation.TargetsOmitted != 0 || relation.WitnessesObserved != 1 || len(relation.Witnesses) != 1 {
 			t.Fatalf("definition-header call lost its possible-target witness: %#v", relation)
 		}
@@ -1302,10 +1293,14 @@ def main():
 	if invocations != 1 {
 		t.Fatalf("parser invocations = %d, want one shared AST parse with two semantic projections", invocations)
 	}
-	if !reflect.DeepEqual(batch[0], singleExecutable[0]) {
+	singles, err := programindex.RebindTargetSet([]programindex.Index{singleExecutable[0], singleLibrary[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(batch[0], singles[0]) {
 		t.Fatal("executable projection changed when a library view shared its source inventory")
 	}
-	if !reflect.DeepEqual(batch[1], singleLibrary[0]) {
+	if !reflect.DeepEqual(batch[1], singles[1]) {
 		t.Fatal("library projection changed when an executable view shared its source inventory")
 	}
 }
@@ -1559,26 +1554,6 @@ func assertExactRelation(
 	t.Fatalf("exact %s relation %q -> %q not found", kind, fromID, toID)
 }
 
-func assertAlternativeRelation(
-	t *testing.T,
-	index programindex.Index,
-	kind programindex.RelationKind,
-	fromID string,
-	toID string,
-) {
-	t.Helper()
-	for _, relation := range index.Relations {
-		if relation.Kind == kind && relation.FromID == fromID &&
-			relation.Resolution == programindex.ResolutionAlternatives && reflect.DeepEqual(relation.ToIDs, []string{toID}) {
-			if len(relation.Witnesses) == 0 || relation.WitnessesObserved < 1 {
-				t.Fatalf("alternative %s relation has no witness: %#v", kind, relation)
-			}
-			return
-		}
-	}
-	t.Fatalf("alternative %s relation %q -> %q not found", kind, fromID, toID)
-}
-
 func assertUnresolvedFrom(t *testing.T, index programindex.Index, kind programindex.RelationKind, fromID string) {
 	t.Helper()
 	_ = unresolvedFrom(t, index, kind, fromID)
@@ -1599,7 +1574,7 @@ func assertAlternativeWitness(
 			related = append(related, relation)
 		}
 		if relation.Kind != kind || relation.FromID != fromID ||
-			relation.Resolution != programindex.ResolutionAlternatives ||
+			relation.Resolution != programindex.ResolutionExact ||
 			!reflect.DeepEqual(relation.ToIDs, []string{toID}) {
 			continue
 		}
@@ -1623,7 +1598,7 @@ func assertAlternativeWitnessExpression(
 	t.Helper()
 	for _, relation := range index.Relations {
 		if relation.Kind != kind || relation.FromID != fromID ||
-			relation.Resolution != programindex.ResolutionAlternatives ||
+			relation.Resolution != programindex.ResolutionExact ||
 			!reflect.DeepEqual(relation.ToIDs, []string{toID}) {
 			continue
 		}
@@ -1656,17 +1631,6 @@ func assertExternalCallExpression(
 		}
 	}
 	t.Fatalf("external call to %q lost source expression %q", canonical, expression)
-}
-
-func assertPythonPublicIdentity(t *testing.T, object programindex.Object, display string) {
-	t.Helper()
-	for _, identity := range object.SymbolLinkIdentities {
-		if identity.Domain == "python_public_symbol_v1" && identity.Display == display &&
-			strings.HasPrefix(identity.Key, "symbol-link-") {
-			return
-		}
-	}
-	t.Fatalf("object %q lacks Python public identity %q: %#v", object.Name, display, object.SymbolLinkIdentities)
 }
 
 func unresolvedFrom(

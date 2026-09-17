@@ -9,16 +9,18 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// GroupGraphView is the direct report projection of the final graph. It keeps
-// the sealed GroupsIndexes themselves, rather than asking the browser to
-// rebuild groups or infer edges from older semantic views.
+// GroupGraphView is the complete set of thin group overlays stored in the
+// report. The bound ProgramIndexes expand native subjects and structural edges
+// in memory; report.json never repeats them.
 type GroupGraphView struct {
-	SelectedTargetID string             `json:"selected_target_id"`
-	Indexes          []groupindex.Index `json:"indexes"`
+	SelectedTargetID string               `json:"selected_target_id"`
+	Indexes          []groupindex.Overlay `json:"indexes"`
+	hydrated         []groupindex.Index
 }
 
-// NewGroupGraphView owns and canonicalizes a complete target graph set. The
-// selected target controls page focus only; it does not alter graph authority.
+// NewGroupGraphView owns and canonicalizes a complete target graph set, then
+// retains only its semantic overlays for persistence. The selected target
+// controls page focus only; it does not alter graph authority.
 func NewGroupGraphView(
 	indexes []groupindex.Index,
 	selectedTargetID string,
@@ -31,9 +33,13 @@ func NewGroupGraphView(
 		owned[position] = indexes[position].Snapshot()
 	}
 	sort.Slice(owned, func(i, j int) bool {
-		return owned[i].Target.ID < owned[j].Target.ID
+		return programindex.TargetIDLess(owned[i].Target.ID, owned[j].Target.ID)
 	})
-	view := &GroupGraphView{SelectedTargetID: selectedTargetID, Indexes: owned}
+	overlays := make([]groupindex.Overlay, len(owned))
+	for position := range owned {
+		overlays[position] = groupindex.OverlayFromIndex(owned[position])
+	}
+	view := &GroupGraphView{SelectedTargetID: selectedTargetID, Indexes: overlays, hydrated: owned}
 	if err := view.Validate(); err != nil {
 		return nil, err
 	}
@@ -47,10 +53,12 @@ func (view *GroupGraphView) Snapshot() *GroupGraphView {
 	}
 	result := &GroupGraphView{
 		SelectedTargetID: view.SelectedTargetID,
-		Indexes:          make([]groupindex.Index, len(view.Indexes)),
+		Indexes:          make([]groupindex.Overlay, len(view.Indexes)),
+		hydrated:         make([]groupindex.Index, len(view.hydrated)),
 	}
-	for position := range view.Indexes {
-		result.Indexes[position] = view.Indexes[position].Snapshot()
+	for position := range view.hydrated {
+		result.hydrated[position] = view.hydrated[position].Snapshot()
+		result.Indexes[position] = groupindex.OverlayFromIndex(result.hydrated[position])
 	}
 	return result
 }
@@ -60,22 +68,59 @@ func (view *GroupGraphView) Validate() error {
 	if view == nil || view.SelectedTargetID == "" || len(view.Indexes) == 0 {
 		return fmt.Errorf("group graph view: incomplete graph authority")
 	}
-	if err := groupindex.ValidateSet(view.Indexes); err != nil {
-		return fmt.Errorf("group graph view: %w", err)
-	}
 	selected := false
 	for position, index := range view.Indexes {
-		if position > 0 && view.Indexes[position-1].Target.ID >= index.Target.ID {
+		if err := index.Validate(); err != nil {
+			return fmt.Errorf("group graph view: %w", err)
+		}
+		if position > 0 && !programindex.TargetIDLess(view.Indexes[position-1].TargetID, index.TargetID) {
 			return fmt.Errorf("group graph view: target indexes are not canonical")
 		}
-		if index.Target.ID == view.SelectedTargetID {
+		if index.TargetID == view.SelectedTargetID {
 			selected = true
 		}
 	}
 	if !selected {
 		return fmt.Errorf("group graph view: selected target is absent")
 	}
+	if len(view.hydrated) != len(view.Indexes) {
+		return fmt.Errorf("group graph view: ProgramIndex bindings are unavailable")
+	}
+	if err := groupindex.ValidateSet(view.hydrated); err != nil {
+		return fmt.Errorf("group graph view: %w", err)
+	}
 	return nil
+}
+
+// Hydrate binds each thin semantic overlay to the one ProgramIndex it names.
+// The expanded native graph exists only in memory for page construction.
+func (view *GroupGraphView) Hydrate(programs []programindex.Index) error {
+	if view == nil {
+		return fmt.Errorf("group graph view: missing view")
+	}
+	if len(programs) != len(view.Indexes) {
+		return fmt.Errorf("group graph view: ProgramIndex and overlay sets differ")
+	}
+	byTarget := make(map[string]programindex.Index, len(programs))
+	for _, program := range programs {
+		if _, duplicate := byTarget[program.Target.ID]; duplicate {
+			return fmt.Errorf("group graph view: duplicate ProgramIndex %q", program.Target.ID)
+		}
+		byTarget[program.Target.ID] = program
+	}
+	view.hydrated = make([]groupindex.Index, 0, len(view.Indexes))
+	for _, overlay := range view.Indexes {
+		program, ok := byTarget[overlay.TargetID]
+		if !ok {
+			return fmt.Errorf("group graph view: ProgramIndex %q is missing", overlay.TargetID)
+		}
+		index, err := overlay.Hydrate(program)
+		if err != nil {
+			return fmt.Errorf("group graph view: hydrate %q: %w", overlay.TargetID, err)
+		}
+		view.hydrated = append(view.hydrated, index)
+	}
+	return view.Validate()
 }
 
 // SourcePaths returns every repository-relative location carried by the final
@@ -86,7 +131,7 @@ func (view *GroupGraphView) SourcePaths() ([]string, error) {
 		return nil, err
 	}
 	paths := make([]string, 0)
-	for _, index := range view.Indexes {
+	for _, index := range view.hydrated {
 		for _, operation := range index.Operations {
 			paths = append(paths, operation.Location.Path)
 		}
@@ -139,14 +184,14 @@ func BindGroupGraphView(data *ReportData, indexes []groupindex.Index) error {
 	if err != nil {
 		return err
 	}
-	if err := validateSelectedGroupGraphBinding(view, entry.Target, entry.View.IndexSHA256); err != nil {
+	if err := validateSelectedGroupGraphBinding(view, entry.Target, entry.SHA256); err != nil {
 		return err
 	}
 	if data.localGroupsIndex != nil {
 		var selected *groupindex.Index
-		for index := range view.Indexes {
-			if view.Indexes[index].Target.ID == entry.Target.ID {
-				selected = &view.Indexes[index]
+		for index := range view.hydrated {
+			if view.hydrated[index].Target.ID == entry.Target.ID {
+				selected = &view.hydrated[index]
 				break
 			}
 		}
@@ -200,7 +245,7 @@ func validateSelectedGroupGraphBinding(
 	if err := view.Validate(); err != nil {
 		return err
 	}
-	for _, index := range view.Indexes {
+	for _, index := range view.hydrated {
 		if index.Target.ID != view.SelectedTargetID {
 			continue
 		}

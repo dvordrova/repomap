@@ -6,8 +6,8 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"sort"
-	"strings"
 )
 
 // Review candidate activations with neighbouring declarations. Descriptions
@@ -19,7 +19,7 @@ func (r *reader) readOperations(ctx context.Context) error {
 	// evidence. Callbacks and asynchronous entrants are reviewed even when the
 	// description table missed them. This selects candidates, never a role.
 	candidates := make(map[string]bool)
-	nativeRoutes := operationNativeRoutes(r.opts.Graph)
+	nativeRoutes := r.boundEntries()
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil {
 			continue
@@ -59,15 +59,19 @@ func (r *reader) readOperations(ctx context.Context) error {
 	var rows []table.Row
 	var subjects []string
 	names := make(map[string]map[string]string)
+	previousKnowledge := make(map[string]*Knowledge)
+	previousSubjects := make(map[string]*Knowledge)
 	for _, place := range r.opts.Graph.Places {
 		if !candidates[place.ID] {
 			continue
 		}
-		id := "operation:" + place.ID
-		// The review is its own internal entity, attached to the source symbol.
-		r.places[id] = atlas.Place{ID: id, Kind: atlas.PlaceEntity, Path: place.Path, LineNo: place.LineNo, Parent: place.ID, TargetIDs: append([]string(nil), place.TargetIDs...)}
 		row, registeredNames := OperationRow(place, declarations, nativeRoutes[place.ID])
-		row.ID = id
+		previousKnowledge[place.ID] = r.knowledge[place.ID]
+		subject := place.Symbol.Decl.ObjectID
+		if subject == "" {
+			subject = place.ID
+		}
+		previousSubjects[place.ID] = r.knowledgeSubjects[subject]
 		names[place.ID] = registeredNames
 		rows = append(rows, row)
 		subjects = append(subjects, place.ID)
@@ -78,6 +82,19 @@ func (r *reader) readOperations(ctx context.Context) error {
 		return err
 	}
 	for i, id := range subjects {
+		delete(r.knowledge, id)
+		if previousKnowledge[id] != nil {
+			r.knowledge[id] = previousKnowledge[id]
+		}
+		subject := r.places[id].Symbol.Decl.ObjectID
+		if subject == "" {
+			subject = id
+		}
+		if previousSubjects[id] != nil {
+			r.knowledgeSubjects[subject] = previousSubjects[id]
+		} else {
+			delete(r.knowledgeSubjects, subject)
+		}
 		answer := answers[i].answer
 		if answer == nil || answer["activation"] == "none" || answer["entry"] != "self" {
 			delete(r.operations, id)
@@ -107,6 +124,11 @@ func OperationRow(place atlas.Place, declarations map[string]atlas.Place, routes
 	var receivedBindings []atlas.SymbolBinding
 	var suppliedCallbacks []string
 	for _, binding := range place.Symbol.Bindings {
+		// An implementation supplied to a constructor is wiring, not a
+		// registration that could activate this declaration.
+		if binding.Kind == string(programindex.RelationBindsImplementation) {
+			continue
+		}
 		if binding.To == decl.Name {
 			receivedBindings = append(receivedBindings, binding)
 		}
@@ -148,12 +170,14 @@ func OperationRow(place atlas.Place, declarations map[string]atlas.Place, routes
 // Native routes already identify their handler through the canonical symbol
 // place. A decorator does not have to masquerade as a callback binding to make
 // its source path available to operation review.
-func operationNativeRoutes(graph atlas.Graph) map[string][]atlas.Place {
+// boundEntries are the declarations a registration handed to a symbol that
+// binds them: the route, the consumer, the hook. Each is already an
+// operation through its boundary and is not reviewed as a candidate.
+func (r *reader) boundEntries() map[string][]atlas.Place {
 	result := make(map[string][]atlas.Place)
-	for _, place := range graph.Places {
+	for _, place := range r.opts.Graph.Places {
 		b := place.Boundary
-		if b == nil || b.Source != "fact" || b.SubjectID == "" || b.Direction != atlas.DirectionIn ||
-			b.GivenKind != atlas.BoundaryHTTPServer || b.Method == "" || len(b.Values) == 0 {
+		if b == nil || b.Source != "fact" || b.SubjectID == "" || b.Direction != atlas.DirectionIn || r.api[b.External].binds == "" {
 			continue
 		}
 		result[b.SubjectID] = append(result[b.SubjectID], place)
@@ -193,7 +217,7 @@ func operationRegisteredNames(bindings []atlas.SymbolBinding, routes ...atlas.Pl
 	names := make(map[string]string)
 	// Prefer the complete native path, including source-observed router mounts.
 	// Raw callback literals remain useful when no native HTTP fact is available.
-	sort.Slice(routes, func(i, j int) bool { return routes[i].ID < routes[j].ID })
+	sort.Slice(routes, func(i, j int) bool { return compactIDLess(routes[i].ID, routes[j].ID) })
 	for _, route := range routes {
 		for _, path := range route.Boundary.Values {
 			ref := fmt.Sprintf("p%d", len(refs)+1)
@@ -264,8 +288,11 @@ func operationCallerEvidence(place atlas.Place, declarations map[string]atlas.Pl
 		}
 		sites, _ := row["call_sites"].([]map[string]any)
 		site := map[string]any{"line": caller.Line, "kind": caller.Kind}
-		if caller.Invocation != "" && caller.Invocation != lines.DefaultInvocation {
+		if caller.Invocation != "" {
 			site["invocation"] = caller.Invocation
+		}
+		if caller.Dispatch != "" {
+			site["dispatch"] = caller.Dispatch
 		}
 		if caller.Resolution != "" && caller.Resolution != lines.DefaultResolution {
 			site["resolution"] = caller.Resolution
@@ -286,12 +313,12 @@ func operationCallerEvidence(place atlas.Place, declarations map[string]atlas.Pl
 
 func observedActivation(place atlas.Place) bool {
 	for _, binding := range place.Symbol.Bindings {
-		if binding.To == place.Symbol.Decl.Name {
+		if binding.To == place.Symbol.Decl.Name && binding.Kind != string(programindex.RelationBindsImplementation) {
 			return true
 		}
 	}
 	for _, caller := range place.Symbol.CalledBy {
-		if caller.Kind == "executes" || strings.Contains(caller.Invocation, "goroutine") || strings.Contains(caller.Invocation, "asynchronous") || strings.HasPrefix(caller.Invocation, "coroutine_result_argument:") {
+		if caller.Kind == "executes" || caller.Invocation == programindex.InvocationGoroutine || caller.Invocation == programindex.InvocationAsyncTask {
 			return true
 		}
 	}

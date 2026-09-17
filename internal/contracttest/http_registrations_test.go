@@ -28,11 +28,11 @@ func assertGoHTTPRegistrations(t *testing.T, repository *corpus.Corpus, index pr
 	var emptyID, emptyFactID string
 	var interfaceEmptyID string
 	var sameColumns []int
-	for _, fact := range result.OfKind(facts.KindHTTPRoute) {
+	for _, fact := range result.OfKind(facts.KindRegistration) {
 		if fact.Anchor == nil || fact.Anchor.Path != source {
 			continue
 		}
-		key := fact.Method + " " + fact.Path
+		key := firstNonEmptyString(fact.Method, "ANY") + " " + fact.Path
 		counts[key]++
 		if _, ok := wanted[key]; !ok {
 			t.Fatalf("invented route from unknown input/local method: %+v", fact)
@@ -125,35 +125,26 @@ func assertGoHTTPRegistrations(t *testing.T, repository *corpus.Corpus, index pr
 				t.Fatalf("one native interface invocation became multiple calls: %+v", place.Symbol.Calls)
 			}
 			call := place.Symbol.Calls[0]
-			if call.API == nil || call.API.Package != "net/http" || call.API.Name != "RoundTrip" || call.Resolution != "unresolved" || len(call.DispatchObservations) != 2 {
-				t.Fatalf("merged interface call lost declared API or unresolved runtime view: %+v", call)
-			}
-			for _, observation := range call.DispatchObservations {
-				if len(observation.Witnesses) == 0 {
-					t.Fatalf("native dispatch provenance disappeared: %+v", observation)
-				}
-				for _, witness := range observation.Witnesses {
-					if witness.Path != source || witness.Line != call.Line || witness.Column != call.Column || witness.Kind == "" {
-						t.Fatalf("native dispatch witness changed source: %+v", witness)
-					}
-				}
+			if call.API == nil || call.API.Package != "net/http" || call.API.Name != "RoundTrip" || call.Resolution != "unresolved" ||
+				call.Dispatch != "interface_method" || call.Line <= 0 || call.Column <= 0 {
+				t.Fatalf("interface call lost declared API, site or unresolved runtime view: %+v", call)
 			}
 			dispatch = true
 		}
-		if place.Symbol != nil && place.Symbol.Decl.ObjectID == emptyID {
+		if place.Symbol != nil && place.Symbol.Decl.ObjectID == index.Target.ID+"."+emptyID {
 			kept = true
 			for _, boundary := range graph.Places {
 				if boundary.Boundary == nil || boundary.Boundary.SubjectID != place.ID {
 					continue
 				}
 				for _, origin := range boundary.Boundary.Origins {
-					attached = attached || origin.TargetID == index.Target.ID && origin.FactID == emptyFactID && origin.ObjectID == emptyID
+					attached = attached || origin.TargetID == index.Target.ID && origin.FactID == emptyFactID && origin.ObjectID == index.Target.ID+"."+emptyID
 				}
 			}
 		}
-		if place.Symbol != nil && place.Symbol.Decl.ObjectID == interfaceEmptyID {
+		if place.Symbol != nil && place.Symbol.Decl.ObjectID == index.Target.ID+"."+interfaceEmptyID {
 			for _, boundary := range graph.Places {
-				interfaceKept = interfaceKept || boundary.Boundary != nil && boundary.Boundary.ObjectID == interfaceEmptyID && boundary.Boundary.SubjectID == place.ID
+				interfaceKept = interfaceKept || boundary.Boundary != nil && boundary.Boundary.ObjectID == index.Target.ID+"."+interfaceEmptyID && boundary.Boundary.SubjectID == place.ID
 			}
 		}
 	}
@@ -178,7 +169,7 @@ func assertPythonHTTPRegistrations(t *testing.T, repository *corpus.Corpus, inde
 	}
 	want := map[string]string{"/health": "empty_health_handler", "/v1/update": "empty_registered_handler", "/v1/metrics": "empty_registered_handler"}
 	owners := make(map[string]bool)
-	for _, fact := range result.OfKind(facts.KindHTTPRoute) {
+	for _, fact := range result.OfKind(facts.KindRegistration) {
 		if fact.Anchor == nil || fact.Anchor.Path != source {
 			continue
 		}
@@ -190,7 +181,7 @@ func assertPythonHTTPRegistrations(t *testing.T, repository *corpus.Corpus, inde
 			t.Fatalf("Python wrapper lost constructor/registration evidence: %+v", fact)
 		}
 		delete(want, fact.Path)
-		owners[fact.ObjectID] = true
+		owners[index.Target.ID+"."+fact.ObjectID] = true
 	}
 	if len(want) > 0 {
 		t.Fatalf("Python routes omitted: %v", want)
@@ -208,4 +199,13 @@ func assertPythonHTTPRegistrations(t *testing.T, repository *corpus.Corpus, inde
 		t.Fatalf("Python empty registered handlers omitted from graph: %v", owners)
 	}
 	adaptertest.AssertMethodArgumentPositions(t, graph, source, "pass_method_arguments", "receive_method_arguments")
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

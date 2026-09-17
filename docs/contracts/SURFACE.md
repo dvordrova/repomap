@@ -54,7 +54,7 @@ script entrypoints or sidecar tools.
   in the successful owner run. Stages pass typed values in memory; persistence
   is separate from computation. Identical project/parser views share their
   complete common ProgramIndex input; target-local `program-index.json` stores
-  only the target, seeds and a relative binding to `program-facts/<digest>.json`
+  the complete sealed ProgramIndex; there is no `program-facts` sidecar
   in the initial run directory. The existing common builder restores the exact
   sealed target index without parsing code. Distinct package/import contexts
   remain separate facts even when they share ASTs. The owner approved this
@@ -63,7 +63,7 @@ script entrypoints or sidecar tools.
   projection load one target at a time, without memoizing all children. Places
   loads each target once, retaining only its boundary observations for the
   later source-documentation pass. Its sequential file reader reuses one
-  decoded shared input until the project binding changes and releases it
+  decoded target Index until the sequential consumer releases it
   after graph construction; it never stores the complete child indexes. Other
   handoffs reuse a value in memory when available. The report server consumes the generated result directly,
   or restores one common report and manifest in another process. Every target
@@ -95,6 +95,10 @@ script entrypoints or sidecar tools.
   the originally selected default remains the logical default in
   TargetOutcomePortfolio. If every selected target
   fails, retain diagnostics but do not invent a targetless or synthetic report.
+
+Successful target-plan and target-page console rows use the public selector or
+the already assigned compact `t*` identity. Adapter-native discovery keys such
+as hashed scout refs are not user-facing scope labels.
 
 ## Helper and publication errors
 

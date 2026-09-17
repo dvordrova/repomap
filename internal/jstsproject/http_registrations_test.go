@@ -40,7 +40,7 @@ func TestCumulativeJSTSHTTPConstructorPathsAndEmptyCallbacks(t *testing.T) {
 	}
 	want := map[string]bool{"/health": true, "/returned": true, "/v1/update": true, "/v1/metrics": true}
 	var emptyID string
-	for _, fact := range result.OfKind(facts.KindHTTPRoute) {
+	for _, fact := range result.OfKind(facts.KindRegistration) {
 		if fact.Anchor == nil || fact.Anchor.Path != source {
 			continue
 		}
@@ -73,7 +73,8 @@ func TestCumulativeJSTSHTTPConstructorPathsAndEmptyCallbacks(t *testing.T) {
 	}
 	adaptertest.AssertMethodArgumentPositions(t, graph, source, "passMethodArguments", "receiveMethodArguments")
 	for _, place := range graph.Places {
-		if place.Symbol != nil && place.Symbol.Decl.ObjectID == emptyID {
+		// Places scope native objects by target: t*.n*.
+		if place.Symbol != nil && place.Symbol.Decl.ObjectID == index.Target.ID+"."+emptyID {
 			return
 		}
 	}

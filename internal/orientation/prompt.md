@@ -12,20 +12,20 @@ cite a ref of the wrong kind.
 
 - `targets`: the analyzed parts of the repository (refs `t1`, `t2`, ...) with
   their language, name, root directory, and manifest file.
-- `facts`: what the code and manifests prove (refs `f*`). Each fact has a
+- `facts`: what the code and manifests prove (refs `a*`). Each fact has a
   `kind` (`entrypoint`, `http_route`, `http_call`, `portal`, `config_read`,
   `risk`, `manifest`, `negative`, `dead_module`, `dependency`), the target it
   belongs to, and an `anchor` of the form `path:line`. A `portal` joins one
   client call to the server route it reaches; its `links` name both facts.
   `omitted_fact_counts` tells how many rows of other kinds exist but were not
   listed.
-- `claims`: text people wrote (refs `c*`): README lines, docstrings, commit
+- `claims`: text people wrote (refs `h*`): README lines, docstrings, commit
   subjects, each with a source and a date when known. Claims can be stale or
   wrong; facts win when they disagree.
 - `groups`: model interpretations of responsibilities (refs `g*`), each with a lane,
   a title, a summary, `member_count` and its first members (`member_count` is
   the real size; the list may be shorter). Members are the code symbols you
-  may cite (refs `s*`), each with a name and an anchor. Group refs `g*` are
+  may cite (target-qualified refs such as `t1.n22`), each with a name and an anchor. Group refs such as `t1.g3` are
   context only; do not use them in the orientation result’s citation fields.
 - `connections`: how groups relate to each other, including links between
   targets. These interpretations do not prove execution order.
@@ -45,8 +45,8 @@ cite a ref of the wrong kind.
 
 Rules for each part:
 
-- `summary`: one sentence. `summary_refs` may cite facts (`f*`), claims
-  (`c*`), or members (`s*`). Prefer facts over claims.
+- `summary`: one sentence. `summary_refs` may cite facts (`a*`), claims
+  (`h*`), or qualified members (`tN.nN` / `tN.eNpN`). Prefer facts over claims.
 - `roles`: exactly one row per target. `role` is a short label such as
   "Backend API service" or "Browser front end". `purpose` is one sentence.
   `refs` may cite facts, claims, or members; cite at least one and prefer
@@ -69,7 +69,7 @@ Rules for each part:
   rather than presenting the bare entry point as sufficient.
 - `main_flow`: one useful supported flow, from its trigger through the work and
   its result where those relationships are supplied. Each step cites exactly
-  one fact (`f*`) or member (`s*`) of that target and explains it in one sentence.
+  one fact (`a*`) or qualified member of that target and explains it in one sentence.
   Use member_evidence before group summaries or names. Preserve observed call
   relationships and conditional scope; two siblings do not call each other.
   A dependency/manifest describes a requirement, not an executed step. Do not

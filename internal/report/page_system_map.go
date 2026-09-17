@@ -207,7 +207,7 @@ func (view *pageView) SystemMap() *pageMap {
 				}
 				add(pageMapNode{ID: id, Owner: section.ID, ItemKind: "External communication", FullTitle: title, Summary: row.Summary, SummaryRef: row.SummaryRef, Source: row.Anchor, SourceKind: row.Source, DetailsID: row.ID, Href: "#" + row.ID, Subtitle: row.Address, Lane: "dependencies"})
 				children = append(children, id)
-				from := mapNodeID(row.MapGroup)
+				from := targetMapNodeID(section.programTargetID, mapNodeID(row.MapGroup))
 				if _, ok := positions[from]; row.MapGroup != "" && ok {
 					result.Edges = append(result.Edges, pageMapEdge{From: from, To: id, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor})
 				}
@@ -339,9 +339,94 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 		}
 	}
+	// The component maps retain every exact relation for their cards, but the
+	// system map is one drawing. Calls, callback flow and implementation facts
+	// between the same two visible nodes share one physical arrow here. Drawing
+	// each row separately produces coincident or parallel lines without adding
+	// information; the node details still expose every original relation.
+	result.Edges = collapseSystemMapEdges(result.Edges)
 	completeSystemPaths(result)
 	result.Height = 140 + float64(len(result.Nodes)/3)*100
 	return result
+}
+
+func collapseSystemMapEdges(edges []pageMapEdge) []pageMapEdge {
+	type endpoints struct{ from, to string }
+	positions := make(map[endpoints]int, len(edges))
+	result := make([]pageMapEdge, 0, len(edges))
+	for _, edge := range edges {
+		key := endpoints{edge.From, edge.To}
+		position, exists := positions[key]
+		if !exists {
+			positions[key] = len(result)
+			result = append(result, edge)
+			continue
+		}
+		merged := &result[position]
+		merged.Operations = joinUniqueFields(merged.Operations, edge.Operations)
+		merged.Label = joinUniqueText(merged.Label, edge.Label, " · ")
+		merged.Summary = joinUniqueText(merged.Summary, edge.Summary, " ")
+		merged.Possible = merged.Possible && edge.Possible
+		if edgeScopeRank(edge.Scope) < edgeScopeRank(merged.Scope) {
+			merged.Scope = edge.Scope
+		}
+		if merged.ConnectionID == "" {
+			merged.ConnectionID = edge.ConnectionID
+		} else if edge.ConnectionID != "" && merged.ConnectionID != edge.ConnectionID {
+			merged.ConnectionID = ""
+		}
+		if merged.LabelRef != edge.LabelRef {
+			merged.LabelRef = ""
+		}
+		if merged.SummaryRef != edge.SummaryRef {
+			merged.SummaryRef = ""
+		}
+		if merged.FromSource != edge.FromSource {
+			merged.FromSource = pageAnchor{}
+		}
+		if merged.ToSource != edge.ToSource {
+			merged.ToSource = pageAnchor{}
+		}
+	}
+	return result
+}
+
+func joinUniqueFields(left, right string) string {
+	values := strings.Fields(left)
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		seen[value] = true
+	}
+	for _, value := range strings.Fields(right) {
+		if !seen[value] {
+			values = append(values, value)
+			seen[value] = true
+		}
+	}
+	return strings.Join(values, " ")
+}
+
+func joinUniqueText(left, right, separator string) string {
+	if left == "" {
+		return right
+	}
+	if right == "" || left == right {
+		return left
+	}
+	return left + separator + right
+}
+
+func edgeScopeRank(scope string) int {
+	switch scope {
+	case "operation":
+		return 0
+	case "structure":
+		return 1
+	case "component":
+		return 2
+	default:
+		return 3
+	}
 }
 
 // Compose only already established paths whose endpoint is an exact input.

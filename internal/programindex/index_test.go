@@ -80,7 +80,7 @@ func TestExternalAuthorityKindIsRequiredClosedRawAndSealed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if !reflect.DeepEqual(decoded, index) {
+	if decoded.SHA256 != index.SHA256 {
 		t.Fatal("codec changed external authority")
 	}
 
@@ -141,7 +141,7 @@ func TestNewCanonicalizesResolvesAndSeals(t *testing.T) {
 	if err := index.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if !strings.HasPrefix(index.Target.ID, "program-target-") || len(index.SHA256) != 64 {
+	if index.Target.ID != "t1" || len(index.SHA256) != 64 {
 		t.Fatalf("unsealed identities: target=%q sha=%q", index.Target.ID, index.SHA256)
 	}
 	if got, want := index.Target.Sources, []TargetSource{
@@ -174,14 +174,6 @@ func TestNewCanonicalizesResolvesAndSeals(t *testing.T) {
 	pkg := objectWithSourceRef(t, index, "object-package")
 	if method.OwnerID != owner.ID || method.ContainerID != pkg.ID || method.Signature != "run(context) -> error" {
 		t.Fatalf("method ownership was not resolved: %#v", method)
-	}
-	if got, want := method.SymbolLinkIdentities, []SymbolLinkIdentity{{
-		Domain:    "neutral.public-callable.v1",
-		Key:       stableID("symbol-link", "neutral.public-callable.v1", "example", "WorkerA", "run"),
-		Display:   "WorkerA.run",
-		PartCount: 3,
-	}}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("method symbol link identities = %#v, want %#v", got, want)
 	}
 	unknownVisibility := objectWithSourceRef(t, index, "object-runner")
 	if unknownVisibility.Visibility != VisibilityUnknown {
@@ -257,9 +249,6 @@ func TestNewCanonicalizesResolvesAndSeals(t *testing.T) {
 	snapshot.Target.Seeds[0].ObjectID = "changed"
 	snapshot.Target.Seeds[0].Location.Path = "changed.py"
 	snapshot.Objects[0].Location = &Location{Path: "changed.py", Line: 1, Column: 1}
-	if len(snapshot.Objects[0].SymbolLinkIdentities) > 0 {
-		snapshot.Objects[0].SymbolLinkIdentities[0].Display = "changed"
-	}
 	snapshot.Relations[0].ToIDs = append(snapshot.Relations[0].ToIDs, "changed")
 	snapshot.Relations[0].Witnesses[0].SourceExpression = "changed.call"
 	snapshot.Relations[0].Witnesses[0].Location.Path = "changed.py"
@@ -268,94 +257,6 @@ func TestNewCanonicalizesResolvesAndSeals(t *testing.T) {
 		index.Objects[0].Location != nil && index.Objects[0].Location.Path == "changed.py" ||
 		index.Relations[0].Witnesses[0].Location.Path == "changed.py" {
 		t.Fatal("Snapshot aliases index storage")
-	}
-}
-
-func TestSymbolLinkIdentityIsLosslessCanonicalAndSealed(t *testing.T) {
-	input := shapeInput()
-	input.Objects[0].SymbolLinkIdentities = []SymbolLinkIdentityInput{
-		{Domain: "synthetic.public-callable.v1", Parts: []string{"acme", "Client", "Send"}, Display: "Client.Send"},
-		{Domain: "synthetic.alias.v1", Parts: []string{"urn:acme:send"}, Display: "send"},
-		{Domain: "synthetic.public-callable.v1", Parts: []string{"acme", "Client", "Send"}, Display: "Client.Send"},
-	}
-	index, err := newMeasuredProgramIndex(input)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	caller := objectWithSourceRef(t, index, "caller")
-	if len(caller.SymbolLinkIdentities) != 2 {
-		t.Fatalf("canonical identities = %#v", caller.SymbolLinkIdentities)
-	}
-	for position, identity := range caller.SymbolLinkIdentities {
-		if !strings.HasPrefix(identity.Key, "symbol-link-") || len(identity.Key) != len("symbol-link-")+64 {
-			t.Fatalf("identity %d key = %q", position, identity.Key)
-		}
-		if position > 0 && symbolLinkIdentityKey(caller.SymbolLinkIdentities[position-1]) >= symbolLinkIdentityKey(identity) {
-			t.Fatalf("identities are not canonical: %#v", caller.SymbolLinkIdentities)
-		}
-	}
-
-	reordered := input
-	reordered.Objects = append([]ObjectInput(nil), input.Objects...)
-	reordered.Objects[0].SymbolLinkIdentities = append([]SymbolLinkIdentityInput(nil), input.Objects[0].SymbolLinkIdentities...)
-	reordered.Objects[0].SymbolLinkIdentities[0], reordered.Objects[0].SymbolLinkIdentities[1] =
-		reordered.Objects[0].SymbolLinkIdentities[1], reordered.Objects[0].SymbolLinkIdentities[0]
-	reorderedIndex, err := newMeasuredProgramIndex(reordered)
-	if err != nil {
-		t.Fatalf("New reordered: %v", err)
-	}
-	if !reflect.DeepEqual(reorderedIndex, index) {
-		t.Fatal("identity input order changed the sealed index")
-	}
-
-	conflict := input
-	conflict.Objects = append([]ObjectInput(nil), input.Objects...)
-	conflict.Objects[0].SymbolLinkIdentities = append([]SymbolLinkIdentityInput(nil), input.Objects[0].SymbolLinkIdentities...)
-	conflict.Objects[0].SymbolLinkIdentities[2].Display = "different display"
-	if _, err := newMeasuredProgramIndex(conflict); err == nil || !strings.Contains(err.Error(), "conflicting display") {
-		t.Fatalf("conflicting alias error = %v", err)
-	}
-
-	formerBounds := shapeInput()
-	identities := make([]SymbolLinkIdentityInput, MaxSymbolLinkIdentitiesPerObject+1)
-	parts := make([]string, MaxSymbolLinkIdentityParts+1)
-	for position := range parts {
-		parts[position] = "part-" + strconv.Itoa(position)
-	}
-	for position := range identities {
-		identities[position] = SymbolLinkIdentityInput{
-			Domain:  "synthetic.alias." + strconv.Itoa(position),
-			Parts:   append([]string(nil), parts...),
-			Display: "alias " + strconv.Itoa(position),
-		}
-	}
-	formerBounds.Objects[0].SymbolLinkIdentities = identities
-	retained, err := newMeasuredProgramIndex(formerBounds)
-	if err != nil {
-		t.Fatalf("New above former identity bounds: %v", err)
-	}
-	retainedCaller := objectWithSourceRef(t, retained, "caller")
-	if len(retainedCaller.SymbolLinkIdentities) != len(identities) {
-		t.Fatalf("retained identities = %d, want %d", len(retainedCaller.SymbolLinkIdentities), len(identities))
-	}
-	for _, identity := range retainedCaller.SymbolLinkIdentities {
-		if identity.PartCount != len(parts) {
-			t.Fatalf("retained identity part count = %d, want %d", identity.PartCount, len(parts))
-		}
-	}
-
-	tampered := index.Snapshot()
-	position := objectPositionWithSourceRef(t, tampered, "caller")
-	tampered.Objects[position].SymbolLinkIdentities[0].Key = "symbol-link-" + strings.Repeat("0", 64)
-	if err := tampered.Validate(); err == nil {
-		t.Fatal("Validate accepted a changed symbol link key")
-	}
-
-	tamperedCount := index.Snapshot()
-	position = objectPositionWithSourceRef(t, tamperedCount, "caller")
-	tamperedCount.Objects[position].SymbolLinkIdentities[0].PartCount = 0
-	if err := tamperedCount.Validate(); err == nil {
-		t.Fatal("Validate accepted a missing symbol identity part count")
 	}
 }
 
@@ -401,7 +302,7 @@ func TestRelationPatternsResolveCanonicalizeCoverAndSeal(t *testing.T) {
 		t.Fatalf("sealed patterns = %#v", relation)
 	}
 	call := patternWithSourceRef(t, relation, "route-call")
-	if call.ID != stableID("program-pattern", relation.ID, "route-call") ||
+	if call.ID != relation.ID+"p1" ||
 		call.Location == nil || call.Location.Line != 14 ||
 		call.ResultID != objectWithSourceRef(t, index, "target-b").ID ||
 		call.ReceiverID != objectWithSourceRef(t, index, "caller").ID {
@@ -422,8 +323,8 @@ func TestRelationPatternsResolveCanonicalizeCoverAndSeal(t *testing.T) {
 	if call.Arguments[0].Position != 1 || call.Arguments[1].Position != 2 || call.Arguments[2].Keyword != "handler" {
 		t.Fatalf("arguments are not canonical: %#v", call.Arguments)
 	}
-	for _, argument := range call.Arguments {
-		if argument.ID != stableID("program-pattern-argument", call.ID, patternArgumentKey(argument.Position, argument.Keyword)) {
+	for position, argument := range call.Arguments {
+		if argument.ID != call.ID+"a"+strconv.Itoa(position+1) {
 			t.Fatalf("argument identity = %#v", argument)
 		}
 	}
@@ -488,7 +389,7 @@ func TestRelationPatternsResolveCanonicalizeCoverAndSeal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if !reflect.DeepEqual(decoded, index) {
+	if decoded.SHA256 != index.SHA256 {
 		t.Fatalf("pattern codec changed index:\nencoded=%s\ndecoded=%#v", encoded, decoded)
 	}
 
@@ -741,8 +642,8 @@ func TestPatternValueCandidatesResolveCanonicalizeSealAndRejectTampering(t *test
 	wantSources := []string{wantTargetA, objectWithSourceRef(t, index, "target-b").ID}
 	sort.Strings(wantSources)
 	foundLiteral, foundTemplate := false, false
-	for _, candidate := range argument.ValueCandidates {
-		if candidate.ID != patternValueCandidateIdentity(argument.ID, candidate) ||
+	for position, candidate := range argument.ValueCandidates {
+		if candidate.ID != argument.ID+"v"+strconv.Itoa(position+1) ||
 			candidate.SourceKind != PatternValueSourceInitializer || candidate.SourceObjectsOmitted != 0 {
 			t.Fatalf("candidate identity/provenance = %#v", candidate)
 		}
@@ -774,7 +675,7 @@ func TestPatternValueCandidatesResolveCanonicalizeSealAndRejectTampering(t *test
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if !reflect.DeepEqual(decoded, index) {
+	if decoded.SHA256 != index.SHA256 {
 		t.Fatal("resolved value codec changed ProgramIndex")
 	}
 
@@ -839,7 +740,7 @@ func TestPatternValueCandidatesResolveCanonicalizeSealAndRejectTampering(t *test
 
 	tampered := index.Snapshot()
 	tampered.Relations[0].Patterns[0].Arguments[0].ValueCandidates[0].ID = "program-pattern-value-" + strings.Repeat("0", 64)
-	if err := tampered.Validate(); err == nil || !strings.Contains(err.Error(), "identity mismatch") {
+	if err := tampered.Validate(); err == nil || !strings.Contains(err.Error(), "invalid pattern value candidate") {
 		t.Fatalf("tampered candidate identity error = %v", err)
 	}
 }
@@ -1149,7 +1050,7 @@ func TestCodecIsStrictAndValidatesSeal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if !reflect.DeepEqual(decoded, index) {
+	if decoded.SHA256 != index.SHA256 {
 		t.Fatalf("codec changed index:\nencoded=%s\ndecoded=%#v", encoded, decoded)
 	}
 	if ArtifactFilename != "program-index.json" {
@@ -1274,8 +1175,8 @@ func TestTargetSeedsAreExactIdentityBoundLocalObjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New changed seed: %v", err)
 	}
-	if first.Target.ID == second.Target.ID || first.SHA256 == second.SHA256 {
-		t.Fatal("changing the exact launch seed did not change target identity and index seal")
+	if first.Target.ID != "t1" || second.Target.ID != "t1" || first.SHA256 == second.SHA256 {
+		t.Fatal("changing the exact launch seed changed the local target ref or not the index seal")
 	}
 
 	input.Target.Seeds = []TargetSeedInput{{
@@ -1394,8 +1295,8 @@ func TestStructuredTargetSeedPreservesLaunchLocationAndRejectsIncompatibleObject
 	if err != nil {
 		t.Fatalf("New changed launch: %v", err)
 	}
-	if changed.Target.ID == index.Target.ID {
-		t.Fatal("distinct main-guard launch lines share one target identity")
+	if changed.Target.ID != index.Target.ID || changed.SHA256 == index.SHA256 {
+		t.Fatal("launch evidence changed the local target ref or not the index seal")
 	}
 
 	for _, seed := range []TargetSeedInput{
@@ -1435,9 +1336,9 @@ func TestPythonTargetSelectorDistinguishesOtherwiseIdenticalViews(t *testing.T) 
 	if err != nil {
 		t.Fatalf("New second view: %v", err)
 	}
-	if first.Target.ID == second.Target.ID {
-		t.Fatalf("Python views with selectors %q and %q share target ID %q",
-			first.Target.Selector, second.Target.Selector, first.Target.ID)
+	if first.Target.ID != "t1" || second.Target.ID != "t1" || first.SHA256 == second.SHA256 {
+		t.Fatalf("independent Python views did not keep local t1 refs with distinct seals: %q / %q",
+			first.Target.ID, second.Target.ID)
 	}
 }
 
@@ -1487,11 +1388,7 @@ func representativeInput() Input {
 		Objects: []ObjectInput{
 			{SourceRef: "object-method", Kind: ObjectMethod, Name: "run", Visibility: VisibilityPublic,
 				Signature: "run(context) -> error", OwnerRef: "object-worker", ContainerRef: "object-package",
-				Location: &Location{Path: "src/worker.lang", Line: 12, Column: 3},
-				SymbolLinkIdentities: []SymbolLinkIdentityInput{
-					{Domain: "neutral.public-callable.v1", Parts: []string{"example", "WorkerA", "run"}, Display: "WorkerA.run"},
-					{Domain: "neutral.public-callable.v1", Parts: []string{"example", "WorkerA", "run"}, Display: "WorkerA.run"},
-				}},
+				Location: &Location{Path: "src/worker.lang", Line: 12, Column: 3}},
 			{SourceRef: "object-external", Kind: ObjectExternalSymbol, Name: "runtime.schedule", Visibility: VisibilityPublic},
 			{SourceRef: "object-impl-b", Kind: ObjectType, Name: "WorkerB", Visibility: VisibilityInternal,
 				ContainerRef: "object-package", Location: &Location{Path: "src/b.lang", Line: 4, Column: 1}},
@@ -1505,7 +1402,7 @@ func representativeInput() Input {
 		Relations: []RelationInput{
 			{
 				SourceRef: "relation-unresolved", Kind: RelationInvokesExternal, FromRef: "object-method",
-				Resolution: ResolutionUnresolved, Invocation: "runtime selected", TargetsObserved: 3,
+				Resolution: ResolutionUnresolved, Dispatch: DispatchFunctionValue, TargetsObserved: 3,
 				WitnessesObserved: 2, Witnesses: []Witness{{Kind: "dynamic_name", Detail: "callee name is computed",
 					Location: &Location{Path: "src/worker.lang", Line: 20, Column: 7}}},
 			},

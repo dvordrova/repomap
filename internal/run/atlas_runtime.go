@@ -170,7 +170,7 @@ func readRepositoryAtlas(
 		Graph: graph, Targets: metas,
 		Repository: repoRunLabel(options.Repo), Revision: options.RepositoryState.Head,
 		Executor: executor, Provider: provider, OwnerRunDir: owner.RunDir,
-		Questions: questions, Learn: !options.NoQuestions,
+		Questions: questions, Learn: !options.NoQuestions, NoCaptions: !options.Captions,
 		Stage: options.Output.Stage, State: options.Output.State,
 	})
 	if err != nil {

@@ -20,7 +20,16 @@ func TestExternalWorkspaceOriginIsCanonicalAndSealed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	object := objectWithSourceRef(t, restored, "workspace-get")
+	var object Object
+	for _, candidate := range restored.Objects {
+		if candidate.Name == "got.get" {
+			object = candidate
+			break
+		}
+	}
+	if object.ID == "" {
+		t.Fatal("restored workspace object not found")
+	}
 	if object.External.RepositoryPath != "packages/库" {
 		t.Fatalf("workspace origin lost: %#v", object)
 	}

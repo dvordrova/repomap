@@ -47,7 +47,7 @@ func projectData(program programindex.Index, rows []atlas.DataRecord) []DataReco
 		}
 		out = append(out, record)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	sort.Slice(out, func(i, j int) bool { return compactIDLess(out[i].ID, out[j].ID, "y") })
 	return out
 }
 func cloneData(rows []DataRecord) []DataRecord {
@@ -60,7 +60,7 @@ func cloneData(rows []DataRecord) []DataRecord {
 func (index Index) validateData(subjects map[string]Subject) error {
 	known := map[string]bool{}
 	for i, row := range index.Data {
-		if row.ID == "" || row.Path == "" || row.Line < 1 || row.Data == nil || known[row.ID] || i > 0 && index.Data[i-1].ID >= row.ID {
+		if row.ID == "" || row.Path == "" || row.Line < 1 || row.Data == nil || known[row.ID] || i > 0 && !compactIDLess(index.Data[i-1].ID, row.ID, "y") {
 			return fmt.Errorf("group index: invalid data source record")
 		}
 		if err := row.Data.Validate(); err != nil {

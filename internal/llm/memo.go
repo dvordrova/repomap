@@ -23,6 +23,17 @@ func MemoIdentity(provider Provider, state []byte, prompt Prompt, limits Limits)
 	return executionCacheKey(providerState, state, prepared.Bytes()), nil
 }
 
+// MemoIdentityBytes binds already-canonical semantic evidence to the provider
+// configuration without preparing a pretend provider request. Cubes use it
+// when local owner IDs are deliberately absent from reusable evidence.
+func MemoIdentityBytes(provider Provider, state, evidence []byte) (string, error) {
+	providerState, err := canonicalProviderState(provider.State())
+	if err != nil {
+		return "", err
+	}
+	return executionCacheKey(providerState, state, evidence), nil
+}
+
 // A memo stores a cube-owned index into shared responses. The atlas uses it
 // to find the original batch and row for an unchanged entity input.
 type memoRecord struct {

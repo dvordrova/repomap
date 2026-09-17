@@ -24,7 +24,7 @@ const (
 
 	executionContract     = "repomap.orientation.v1"
 	preparationVersion    = 3
-	promptVersion         = 4
+	promptVersion         = 5
 	responseSchemaVersion = 1
 	maxOutputTokens       = llm.DefaultMaxOutputTokens
 )
@@ -175,7 +175,7 @@ func validateInput(input Input) error {
 	}
 	programTargets := make(map[string]struct{}, len(input.Facts.Targets))
 	for _, target := range input.Facts.Targets {
-		programTargets[target.ProgramTargetID] = struct{}{}
+		programTargets[target.ID] = struct{}{}
 	}
 	for _, index := range input.Groups {
 		if _, known := programTargets[index.Target.ID]; !known {

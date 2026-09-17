@@ -71,8 +71,8 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 			}
 			assertRepeatedAliasedImports(t, source, result, index, catalog)
 			if strings.HasSuffix(source, ".js") {
-				assertCumulativeJSTSCallbackAliases(t, index, source, programindex.ResolutionAlternatives)
-				assertCumulativeJSTSChainedCallbacks(t, index, source, programindex.ResolutionAlternatives)
+				assertCumulativeJSTSCallbackAliases(t, index, source, programindex.ResolutionExact)
+				assertCumulativeJSTSChainedCallbacks(t, index, source, programindex.ResolutionExact)
 			}
 			objects := make(map[string]programindex.Object)
 			for _, object := range index.Objects {
@@ -85,10 +85,6 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 				}
 			}
 			wantResolution := programindex.ResolutionExact
-			if strings.HasSuffix(source, ".js") {
-				wantResolution = programindex.ResolutionAlternatives
-			}
-			identities := map[string]string{}
 			for expression, directory := range map[string]string{"local.get": "packages/local-store", "other.get": "packages/second-store", "remote.get": ""} {
 				var relation programindex.Relation
 				for _, call := range result.Calls {
@@ -107,13 +103,7 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 				if object.External == nil || object.External.AuthorityKind != programindex.ExternalAuthorityPackage || object.External.RepositoryPath != directory || object.External.PackagePath != "got" {
 					t.Fatalf("projected %s: %#v", expression, object)
 				}
-				if directory == "" {
-					if len(object.SymbolLinkIdentities) != 0 {
-						t.Fatalf("npm linked to repository: %#v", object)
-					}
-				} else {
-					identity := identityForObjectID(t, index, object.ID, "got#get")
-					identities[directory] = identity.Key
+				if directory != "" {
 					// The actual sibling export meets this exact boundary even though
 					// both packages have the same name and identical source contents.
 					sibling, err := DiscoverSelected(context.Background(), repository, root, "jsts:"+directory+"/package.json")
@@ -127,20 +117,17 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 					found := false
 					for _, declaration := range sibling.Declarations {
 						if declaration.Name == "get" {
-							local := identityForSourceRef(t, siblingIndex, declaration.Ref, "got#get")
-							if local.Key != identity.Key {
-								t.Fatalf("sibling identity mismatch: %#v / %#v", identity, local)
+							for _, local := range siblingIndex.Objects {
+								if local.SourceRef == declaration.Ref && local.Visibility == programindex.VisibilityPublic {
+									found = true
+								}
 							}
-							found = true
 						}
 					}
 					if !found {
 						t.Fatal("sibling export missing")
 					}
 				}
-			}
-			if identities["packages/local-store"] == identities["packages/second-store"] {
-				t.Fatal("same-name sibling identities collapsed")
 			}
 			var origins []string
 			for _, dependency := range catalog.Dependencies {
@@ -171,7 +158,7 @@ func TestCumulativeJSTSWorkspaceOriginsDoNotInventHTTP(t *testing.T) {
 			}
 			httpCount, dependencyCount := 0, 0
 			for _, fact := range factResult.Facts {
-				if fact.Kind == facts.KindHTTPCall || fact.Kind == facts.KindHTTPRoute {
+				if fact.Kind == facts.KindRegistration {
 					httpCount++
 					if fact.Path != "/remote-key" || fact.Method != "GET" || fact.Anchor == nil || fact.Anchor.Path != source || fact.Anchor.Line != 8+lineOffset {
 						t.Fatalf("invented or misplaced HTTP: %#v", fact)

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // Persist writes one validated GroupsIndex into an existing ordinary run
@@ -37,11 +38,11 @@ func PersistNamed(runDir string, filename string, index Index) error {
 		filename,
 		encoded,
 		func(saved []byte) error {
-			decoded, decodeErr := Decode(saved)
+			decoded, decodeErr := DecodeOverlay(saved)
 			if decodeErr != nil {
 				return decodeErr
 			}
-			if decoded.SHA256 != index.SHA256 || decoded.Target.ID != index.Target.ID {
+			if decoded.SHA256 != index.SHA256 || decoded.TargetID != index.Target.ID {
 				return fmt.Errorf("group index: persisted authority mismatch")
 			}
 			return nil
@@ -66,7 +67,11 @@ func ReadNamed(runDir string, filename string) (Index, error) {
 	if err != nil {
 		return Index{}, fmt.Errorf("group index: read artifact: %w", err)
 	}
-	index, err := Decode(raw)
+	program, err := programindex.ReadFile(filepath.Join(runDir, programindex.ArtifactFilename))
+	if err != nil {
+		return Index{}, fmt.Errorf("group index: read ProgramIndex: %w", err)
+	}
+	index, err := Decode(raw, program)
 	if err != nil {
 		return Index{}, fmt.Errorf("group index: decode artifact: %w", err)
 	}

@@ -26,15 +26,15 @@ func (b *builder) addSourceFacts(graph *atlas.Graph) {
 			continue
 		}
 		target, ok := targets[fact.TargetID]
-		if !ok || target.ProgramTargetID == "" {
+		if !ok {
 			continue
 		}
 		graph.Places = append(graph.Places, atlas.Place{
 			ID: "fact:" + fact.ID, Kind: atlas.PlaceSourceFact, Path: fact.Anchor.Path,
 			LineNo: fact.Anchor.Line, Column: fact.Anchor.Column,
-			TargetIDs: []string{target.ProgramTargetID}, Given: string(fact.Kind) + ": " + fact.Key,
+			TargetIDs: []string{target.ID}, Given: string(fact.Kind) + ": " + fact.Key,
 			SourceFact: &atlas.SourceFact{Kind: string(fact.Kind), Name: fact.Symbol,
-				Key: fact.Key, Value: fact.Value, ObjectID: fact.ObjectID,
+				Key: fact.Key, Value: fact.Value, ObjectID: scopedObjectID(target.ID, fact.ObjectID),
 				Language: target.Language, Component: target.Name, ComponentKind: target.Kind, Root: target.Root},
 		})
 	}

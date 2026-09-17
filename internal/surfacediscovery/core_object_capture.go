@@ -5,7 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strconv"
+	"sort"
 
 	"github.com/dvordrova/repomap/internal/gocoreobject"
 )
@@ -65,7 +65,118 @@ func (a *analyzer) captureCoreObjectIndex(direct DirectCallIndex) (gocoreobject.
 			}
 		}
 	}
+	if a.input.MatchInterfaceImplementations {
+		if err := a.captureInterfaceImplementations(&input); err != nil {
+			return gocoreobject.Index{}, err
+		}
+	}
 	return gocoreobject.New(input)
+}
+
+type coreNamedType struct {
+	declaration gocoreobject.TypeDeclaration
+	named       *types.Named
+}
+
+// captureInterfaceImplementations uses the already-loaded Go type universe.
+// An inverted method-name index narrows candidates before types.Implements
+// performs the authoritative method-set check. No call graph or source pass is
+// needed, and interface compatibility remains distinct from observed values.
+func (a *analyzer) captureInterfaceImplementations(input *gocoreobject.Input) error {
+	if a == nil || input == nil {
+		return fmt.Errorf("go core object index: interface matching input is unavailable")
+	}
+	entries := make([]coreNamedType, 0, len(input.Types))
+	for _, declaration := range input.Types {
+		facts := a.packageFacts[declaration.Package]
+		if facts == nil || facts.Types == nil {
+			return fmt.Errorf("go core object index: interface matching package %q is unavailable", declaration.Package)
+		}
+		object, ok := facts.Types.Scope().Lookup(declaration.Name).(*types.TypeName)
+		if !ok {
+			return fmt.Errorf("go core object index: interface matching type %s.%s is unavailable", declaration.Package, declaration.Name)
+		}
+		named, ok := types.Unalias(object.Type()).(*types.Named)
+		if !ok || declaration.Kind == gocoreobject.TypeAlias {
+			continue
+		}
+		entries = append(entries, coreNamedType{declaration: declaration, named: named})
+	}
+
+	candidates := make([]coreNamedType, 0, len(entries))
+	byMethod := make(map[string]map[int]struct{})
+	for _, entry := range entries {
+		if entry.declaration.Kind == gocoreobject.TypeInterface {
+			continue
+		}
+		index := len(candidates)
+		candidates = append(candidates, entry)
+		seen := make(map[string]struct{})
+		for _, receiver := range []types.Type{entry.named, types.NewPointer(entry.named)} {
+			set := types.NewMethodSet(receiver)
+			for position := 0; position < set.Len(); position++ {
+				method, ok := set.At(position).Obj().(*types.Func)
+				if !ok {
+					continue
+				}
+				key := method.Id()
+				if _, duplicate := seen[key]; duplicate {
+					continue
+				}
+				seen[key] = struct{}{}
+				if byMethod[key] == nil {
+					byMethod[key] = make(map[int]struct{})
+				}
+				byMethod[key][index] = struct{}{}
+			}
+		}
+	}
+
+	for _, entry := range entries {
+		if entry.declaration.Kind != gocoreobject.TypeInterface {
+			continue
+		}
+		iface, ok := entry.named.Underlying().(*types.Interface)
+		if !ok {
+			return fmt.Errorf("go core object index: %s.%s lost interface type", entry.declaration.Package, entry.declaration.Name)
+		}
+		iface.Complete()
+		candidateIDs := make([]int, 0, len(candidates))
+		if iface.NumMethods() == 0 {
+			for index := range candidates {
+				candidateIDs = append(candidateIDs, index)
+			}
+		} else {
+			var narrow map[int]struct{}
+			narrowSelected := false
+			for position := 0; position < iface.NumMethods(); position++ {
+				set := byMethod[iface.Method(position).Id()]
+				if !narrowSelected || len(set) < len(narrow) {
+					narrow = set
+					narrowSelected = true
+				}
+			}
+			for index := range narrow {
+				candidateIDs = append(candidateIDs, index)
+			}
+			sort.Ints(candidateIDs)
+		}
+		for _, index := range candidateIDs {
+			implementation := candidates[index]
+			valueReceiver := types.Implements(implementation.named, iface)
+			pointerReceiver := types.Implements(types.NewPointer(implementation.named), iface)
+			if !valueReceiver && !pointerReceiver {
+				continue
+			}
+			input.InterfaceImplementations = append(input.InterfaceImplementations, gocoreobject.InterfaceImplementation{
+				InterfacePackage: entry.declaration.Package, InterfaceName: entry.declaration.Name,
+				ImplementationPackage: implementation.declaration.Package,
+				ImplementationName:    implementation.declaration.Name,
+				ValueReceiver:         valueReceiver, PointerReceiver: pointerReceiver,
+			})
+		}
+	}
+	return nil
 }
 
 // coreObjectRepresentativeSource retains one exact repository-local source
@@ -152,12 +263,10 @@ func (a *analyzer) captureCoreObjectFile(
 							return err
 						}
 						signature := field.Name() + " " + types.TypeString(field.Type(), packageQualifier)
-						if tag := structure.Tag(position); tag != "" {
-							signature += " " + strconv.Quote(tag)
-						}
 						owner := &input.Types[len(input.Types)-1]
 						owner.Fields = append(owner.Fields, gocoreobject.FieldDeclaration{
-							Name: field.Name(), Signature: signature, Exported: field.Exported(), Location: location,
+							Name: field.Name(), Signature: signature, Tag: structure.Tag(position),
+							Exported: field.Exported(), Location: location,
 						})
 					}
 				}

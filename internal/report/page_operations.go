@@ -12,11 +12,11 @@ import (
 
 // Reuse a declaration's accepted alias only when an operation repeats its
 // native name. A distinct action label or command/path has its own meaning.
-func (builder *pageBuilder) operationDisplayName(operation groupindex.Operation) string {
+func (builder *pageBuilder) operationDisplayName(targetID string, operation groupindex.Operation) string {
 	if operation.Source != "model" || operation.Kind == "command" || operation.Kind == "request" {
 		return operation.Name
 	}
-	ref, ok := builder.subjects[operation.SubjectID]
+	ref, ok := builder.subject(targetID, operation.SubjectID)
 	if !ok || ref.subject.Object == nil || ref.subject.Interpretation == nil ||
 		operation.Name != ref.subject.Object.Name {
 		return operation.Name
@@ -41,45 +41,15 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		}
 	}
 	result.Grouped = len(groupOf)
-	// A native index may include code reached in another module. Join by its
-	// exact source location, since object IDs are scoped to their target.
+	// Foreign nodes exist only for an explicit cross-target connection. Equal
+	// source locations are common when two executables share a library; a path
+	// is evidence, not authority to move one target's operation into its sibling.
 	foreignNodes := make(map[string]pageMapNode)
-	owners := make(map[string]string)
-	foreign := append([]groupindex.Index(nil), builder.indexes...)
-	sort.SliceStable(foreign, func(i, j int) bool { return foreign[i].Target.Kind == "library" && foreign[j].Target.Kind != "library" })
-	for _, other := range foreign {
-		otherSection := builder.byProgram[other.Target.ID]
-		if other.Target.ID == index.Target.ID || otherSection == nil {
-			continue
-		}
-		locations := make(map[string]string)
-		for _, subject := range other.Subjects {
-			if subject.Object != nil && subject.Object.Location != nil {
-				locations[subject.ID] = operationLocationKey(*subject.Object.Location)
-			}
-		}
-		for _, group := range other.Groups {
-			foreignNodes[group.ID] = pageMapNode{ID: mapNodeID(section.ID + "-foreign-" + group.ID), Component: other.Target.ID, Href: "#" + groupAnchorID(otherSection.ID, group.ID), FullTitle: group.Title, Title: mapTitle(group.Title), Summary: group.Summary, Concepts: builder.groupConcepts(group), Lane: "dependencies", Members: len(group.MemberSubjectIDs)}
-			for _, subjectID := range group.MemberSubjectIDs {
-				if key := locations[subjectID]; key != "" && owners[key] == "" {
-					owners[key] = group.ID
-				}
-			}
-		}
-	}
 	nodeOfGroup := func(group string) string {
 		if node, ok := foreignNodes[group]; ok {
 			return node.ID
 		}
 		return mapNodeID(group)
-	}
-	for _, subject := range index.Subjects {
-		if groupOf[subject.ID] != "" || subject.Object == nil || subject.Object.Location == nil {
-			continue
-		}
-		if group := owners[operationLocationKey(*subject.Object.Location)]; group != "" {
-			groupOf[subject.ID] = group
-		}
 	}
 	adj := executionAdjacency(index)
 	reads := dataReadAdjacency(index)
@@ -140,7 +110,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		for _, peer := range otherIndex.Operations {
 			if destination.ToLocation != nil && operationLocationKey(peer.Location) == operationLocationKey(*destination.ToLocation) {
 				node.Href = "#" + operationNodeID(otherSection.ID, peer.ID)
-				node.FullTitle = otherSection.ShortLabel + " / " + builder.operationDisplayName(peer)
+				node.FullTitle = otherSection.ShortLabel + " / " + builder.operationDisplayName(otherIndex.Target.ID, peer)
 				node.Summary = peer.Summary
 				break
 			}
@@ -247,13 +217,13 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		if runes := []rune(subtitle); len(runes) > 28 {
 			subtitle = string(runes[:27]) + "…"
 		}
-		name := builder.operationDisplayName(operation)
+		name := builder.operationDisplayName(index.Target.ID, operation)
 		result.Nodes = append(result.Nodes, pageMapNode{
 			ID: id, Href: source.Href, Title: mapTitle(name), FullTitle: name,
 			InputOwner: mapNodeID(operation.GroupID),
 			Summary:    operation.Summary, Activation: operation.Kind, Source: source, SourceKind: operation.Source,
 			OperationGroup: groups[operation.GroupID].Title,
-			CallPaths:      builder.operationCallPaths(operation.SubjectID, firstInGroup, parents),
+			CallPaths:      builder.operationCallPaths(index.Target.ID, operation.SubjectID, firstInGroup, parents),
 			Writes:         builder.operationWrites(index, operation.SubjectID, seen, parents),
 			Subtitle:       subtitle,
 			Lane:           "triggers", X: mapPadding, Y: 40 + float64(i)*84, Width: mapNodeWidth, Height: 68,
@@ -265,8 +235,8 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 	for i, group := range ordered {
 		result.Nodes = append(result.Nodes, pageMapNode{
 			ID: mapNodeID(group.ID), Href: "#" + groupAnchorID(section.ID, group.ID),
-			Title: mapTitle(group.Title), FullTitle: group.Title, Summary: dropEcho(group.Summary, group.Title), Keys: builder.keySymbols(group, maxKeySymbols),
-			Lane: string(group.Lane), Members: len(group.MemberSubjectIDs), Concepts: builder.groupConcepts(group),
+			Title: mapTitle(group.Title), FullTitle: group.Title, Summary: dropEcho(group.Summary, group.Title), Keys: builder.keySymbols(index.Target.ID, group, maxKeySymbols),
+			Lane: string(group.Lane), Members: len(group.MemberSubjectIDs), Concepts: builder.groupConcepts(index.Target.ID, group),
 			X: 246, Y: 40 + float64(i)*84, Width: mapNodeWidth, Height: mapNodeHeight,
 		})
 	}
@@ -341,7 +311,7 @@ func operationLocationKey(location programindex.Location) string {
 	return fmt.Sprintf("%s:%d:%d", location.Path, location.Line, max(1, location.Column))
 }
 
-func operationNodeID(section, id string) string { return section + "-op-" + safeIDFragment(id) }
+func operationNodeID(section, id string) string { return section + "-" + safeIDFragment(id) }
 
 // Containers and connections come from the same sealed GroupsIndex as the
 // operation paths. The browser only folds their visible endpoints; it does
@@ -374,7 +344,7 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 				continue
 			}
 			id := mapNodeID(section.ID + "-foreign-" + group.ID)
-			add(pageMapNode{ID: id, Component: end.TargetID, Remote: true, Href: "#" + groupAnchorID(otherSection.ID, group.ID), FullTitle: group.Title, Title: mapTitle(group.Title), Summary: group.Summary, Concepts: builder.groupConcepts(group), Members: len(group.MemberSubjectIDs), Lane: string(group.Lane)})
+			add(pageMapNode{ID: id, Component: end.TargetID, Remote: true, Href: "#" + groupAnchorID(otherSection.ID, group.ID), FullTitle: group.Title, Title: mapTitle(group.Title), Summary: group.Summary, Concepts: builder.groupConcepts(end.TargetID, group), Members: len(group.MemberSubjectIDs), Lane: string(group.Lane)})
 			return id
 		}
 		return ""
@@ -515,10 +485,10 @@ type pageCallStep struct {
 
 // Keep one shortest native call witness for each reached group. This is an
 // explanation of membership in the view, not an assertion that all calls run.
-func (builder *pageBuilder) operationCallPaths(root string, destinations map[string]string, parents map[string]groupindex.StructuralEdge) string {
+func (builder *pageBuilder) operationCallPaths(targetID, root string, destinations map[string]string, parents map[string]groupindex.StructuralEdge) string {
 	paths := make(map[string][]pageCallStep)
 	for node, destination := range destinations {
-		if steps := builder.callWitness(root, destination, parents); len(steps) > 0 {
+		if steps := builder.callWitness(targetID, root, destination, parents); len(steps) > 0 {
 			paths[node] = steps
 		}
 	}
@@ -526,10 +496,10 @@ func (builder *pageBuilder) operationCallPaths(root string, destinations map[str
 	return string(data)
 }
 
-func (builder *pageBuilder) callWitness(root, destination string, parents map[string]groupindex.StructuralEdge) []pageCallStep {
+func (builder *pageBuilder) callWitness(targetID, root, destination string, parents map[string]groupindex.StructuralEdge) []pageCallStep {
 	var reversed []pageCallStep
 	for current := destination; current != ""; {
-		ref, known := builder.subjects[current]
+		ref, known := builder.subject(targetID, current)
 		if !known {
 			reversed = nil
 			break

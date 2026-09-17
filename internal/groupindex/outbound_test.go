@@ -11,6 +11,8 @@ import (
 func TestAtlasOutboundSurvivesIncomingLaneAndRebindsAcrossTargets(t *testing.T) {
 	library := atlasTestProgram(t, "library", "api/proxy.go")
 	app := atlasTestProgram(t, "executable", "api/proxy.go")
+	rebound := rebindTestTargets(t, library, app)
+	library, app = rebound[0], rebound[1]
 	address := "https://시세.example/가격?q=%EC%9B%90"
 	makeTarget := func(p programindex.Index) atlas.Target {
 		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: p.Target.Kind,
@@ -60,7 +62,7 @@ func TestAtlasOutboundSurvivesIncomingLaneAndRebindsAcrossTargets(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		restored, err := Decode(raw)
+		restored, err := Decode(raw, program)
 		if err != nil || !reflect.DeepEqual(restored.Outbound, index.Outbound) {
 			t.Fatalf("saved outbound observations changed: %+v, %v", restored.Outbound, err)
 		}

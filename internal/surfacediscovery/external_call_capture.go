@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/constant"
 	"go/types"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -142,6 +143,7 @@ func (a *analyzer) observeExternalInterfaceInvoke(call ssa.CallInstruction, comm
 	if !targetOK || admittedRepositoryPackage(a, target.PackagePath) {
 		if callerOK {
 			a.addExternalCallExclusionNode(caller, ExternalCallExclusion{DynamicInvokesExcluded: 1})
+			a.observeExternalInterfaceImplementations(call, caller)
 		}
 		return
 	}
@@ -165,6 +167,75 @@ func (a *analyzer) observeExternalInterfaceInvoke(call ssa.CallInstruction, comm
 		Invocation: directCallInvocation(call), Callsite: callsite,
 		Pattern: pattern,
 	})
+}
+
+// observeExternalInterfaceImplementations records the external concrete
+// methods that observed values of a repository interface can supply at this
+// invoke, such as *sql.DB behind a sqlc DBTX field. Repository implementations
+// and unknown values stay with the dynamic handoff.
+func (a *analyzer) observeExternalInterfaceImplementations(call ssa.CallInstruction, caller DirectCallNode) {
+	summary, ok := a.interfaceInvokeSummary(call)
+	if !ok {
+		return
+	}
+	callsite := a.location(call.Pos())
+	if !validRepositoryDirectCallLocation(callsite) {
+		return
+	}
+	for _, function := range externalInterfaceImplementations(a, summary) {
+		target, _ := externalCallTarget(function)
+		pattern := a.externalCallPattern(call, callsite)
+		if a.externalCallIndexErr != nil {
+			return
+		}
+		a.externalCallIndexErr = a.externalCallIndex.AddWitness(ExternalCallWitness{
+			Caller: caller, Target: target, Dispatch: ExternalCallInterfaceImplementation,
+			Invocation: directCallInvocation(call), Callsite: callsite, Pattern: pattern,
+		})
+		if a.externalCallIndexErr != nil {
+			return
+		}
+	}
+}
+
+// externalInterfaceImplementations returns resolved implementations outside
+// the admitted repository that have an exact external symbol, in stable order.
+func externalInterfaceImplementations(a *analyzer, summary dynamicValueSummary) []*ssa.Function {
+	var result []*ssa.Function
+	for function := range summary.functions {
+		function = externalCallCanonicalFunction(function)
+		if function == nil || a.isRepositoryFunction(function) {
+			continue
+		}
+		if target, ok := externalCallTarget(function); ok && !admittedRepositoryPackage(a, target.PackagePath) {
+			result = append(result, function)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].String() < result[j].String() })
+	return slices.Compact(result)
+}
+
+// interfaceInvokeSummary resolves the receiver values of one interface invoke
+// once for both the external-call index and the dynamic handoff capture.
+func (a *analyzer) interfaceInvokeSummary(call ssa.CallInstruction) (dynamicValueSummary, bool) {
+	capture := a.dynamicHandoffCapture
+	common := call.Common()
+	if capture == nil || !capture.enabled || common == nil || common.Method == nil || common.Value == nil {
+		return dynamicValueSummary{}, false
+	}
+	if summary, ok := capture.invokeSummaries[call]; ok {
+		return summary, true
+	}
+	summary, err := resolveDynamicInterfaceValue(a, common.Value, common.Method)
+	if err != nil {
+		capture.err = err
+		return dynamicValueSummary{}, false
+	}
+	if capture.invokeSummaries == nil {
+		capture.invokeSummaries = make(map[ssa.CallInstruction]dynamicValueSummary)
+	}
+	capture.invokeSummaries[call] = summary
+	return summary, true
 }
 
 // externalCallPattern projects only language syntax and compiler-resolved

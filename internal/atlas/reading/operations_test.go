@@ -26,12 +26,12 @@ func TestOperationOwnershipKeepsLaunchedWorkIndependentOfSetup(t *testing.T) {
 	}{
 		{"AddLogHook", "notifications.go", "", "", "", "Installs logging and starts the notification sender."},
 		{"sendNotifications", "notifications.go", "continuous", "", "goroutine", "Consumes queued notifications until the channel closes."},
-		{"formatBatch", "notifications.go", "", "", "synchronous", "Formats the current notification batch."},
+		{"formatBatch", "notifications.go", "", "", "", "Formats the current notification batch."},
 		{"HandleUpdate", "metrics.go", "continuous", "", "goroutine", "Receives metric updates from the channel until shutdown."},
 		{"updateContainers", "jobs.go", "scheduled", "cron.AddFunc", "", "Updates containers when the registered cron schedule fires."},
 		{"notifyUpgrade", "jobs.go", "scheduled", "time.AfterFunc", "", "Sends one upgrade notice after the configured delay."},
 		{"PreRun", "command.go", "", "cobra.Command.PreRun", "", "Prepares flags and logging before the command action."},
-		{"serve", "server.go", "", "", "synchronous", "Configures and starts the HTTP listener."},
+		{"serve", "server.go", "", "", "", "Configures and starts the HTTP listener."},
 		{"lifespan", "server.py", "", "FastAPI.lifespan", "", "Starts background tasks, yields, then joins them at shutdown."},
 		{"refreshMetrics", "metrics.ts", "scheduled", "setInterval", "", "Publishes current counters on the configured timer."},
 	}
@@ -60,7 +60,7 @@ func TestOperationOwnershipKeepsLaunchedWorkIndependentOfSetup(t *testing.T) {
 			p.Symbol.CalledBy = []atlas.SymbolCaller{{PlaceID: caller, Name: caller, Kind: "calls", Path: "notifications.go", Line: 20, Invocation: test.invocation, Resolution: "exact"}}
 		}
 		if test.activation == "continuous" {
-			p.Symbol.Calls = []atlas.SymbolCall{{Name: "dispatch", Kind: "calls", Line: 12, Invocation: "synchronous",
+			p.Symbol.Calls = []atlas.SymbolCall{{Name: "dispatch", Kind: "calls", Line: 12,
 				Evidence: []atlas.EdgeEvidence{{Extractor: "control_context", Label: "range body over channel", Path: test.path, LineNo: 11}}}}
 		}
 		r.opts.Graph.Places = append(r.opts.Graph.Places, p)
@@ -222,7 +222,7 @@ func TestNativeHTTPRouteHandlerKeepsItsRouteAndGetsNoModelOperation(t *testing.T
 	routes := 0
 	for _, target := range result.Atlas.Targets {
 		for _, boundary := range target.Boundaries {
-			if boundary.ID == "bnd:customer" && len(boundary.Values) == 1 && boundary.Values[0] == want {
+			if boundary.FactID == "native:customer" && len(boundary.Values) == 1 && boundary.Values[0] == want {
 				routes++
 			}
 		}
@@ -296,15 +296,16 @@ func TestOperationRowCarriesOnlyObservedFields(t *testing.T) {
 
 func TestNativeHTTPRouteCatalogueUsesSubjectIdentityAndRetainsMounts(t *testing.T) {
 	first := atlas.Place{ID: "route:first", Path: "routes.py", LineNo: 11, Column: 2,
-		Boundary: &atlas.BoundaryFacts{Source: "fact", SubjectID: "handler:first", Caller: "same_name", GivenKind: atlas.BoundaryHTTPServer,
+		Boundary: &atlas.BoundaryFacts{Source: "fact", SubjectID: "handler:first", Caller: "same_name", External: "flask.Flask.route",
 			Direction: atlas.DirectionIn, Method: "GET", Values: []string{"/api/one", "/api/two"}}}
 	second := first
 	second.ID, second.Boundary = "route:second", &atlas.BoundaryFacts{Source: "fact", SubjectID: "handler:second", Caller: "same_name",
-		GivenKind: atlas.BoundaryHTTPServer, Direction: atlas.DirectionIn, Method: "POST", Values: []string{"/other"}}
+		External: "flask.Flask.route", Direction: atlas.DirectionIn, Method: "POST", Values: []string{"/other"}}
 	listener := first
-	listener.ID, listener.Boundary = "listener", &atlas.BoundaryFacts{Source: "fact", SubjectID: "handler:first", GivenKind: atlas.BoundaryHTTPServer,
+	listener.ID, listener.Boundary = "listener", &atlas.BoundaryFacts{Source: "fact", SubjectID: "handler:first", External: "flask.Flask.run",
 		Direction: atlas.DirectionIn, Values: []string{":8080"}}
-	routes := operationNativeRoutes(atlas.Graph{Places: []atlas.Place{first, second, listener}})
+	r := &reader{opts: Options{Graph: atlas.Graph{Places: []atlas.Place{first, second, listener}}}, api: map[string]apiRole{"flask.Flask.route": {binds: atlas.BoundaryHTTPServer}, "flask.Flask.run": {publishes: true}}}
+	routes := r.boundEntries()
 	if len(routes["handler:first"]) != 1 || len(routes["handler:second"]) != 1 {
 		t.Fatalf("route identity confused with name/listener: %+v", routes)
 	}
@@ -467,7 +468,11 @@ func TestOperationReviewKeepsRegistrationMetadataOnItsRecipient(t *testing.T) {
 	}
 	inputs := make(map[string]string)
 	for _, record := range artifact.Records {
-		inputs[record.PlaceID] = string(record.Input)
+		key := record.PlaceID
+		if record.Stage == lines.StageOperations {
+			key = "operation:" + record.PlaceID
+		}
+		inputs[key] = string(record.Input)
 	}
 	if !strings.Contains(inputs[first], "first-action-help") || strings.Contains(inputs[first], "second-action-help") || !strings.Contains(inputs[first], "Op02") {
 		t.Fatalf("factory inherited supplied action metadata or lost its own evidence: %s", inputs[first])
@@ -504,7 +509,8 @@ func TestNativeRouteHandlersAreNotReviewedWhileOtherHandlersAre(t *testing.T) {
 	}
 	routed, plain := handler("routed"), handler("plain")
 	route := atlas.Place{ID: "bnd:api.py:8:http_server", Kind: atlas.PlaceBoundary, Path: "api.py", LineNo: 8, Parent: "file:api", TargetIDs: []string{"service"},
-		Boundary: &atlas.BoundaryFacts{Source: "fact", SubjectID: routed.ID, GivenKind: atlas.BoundaryHTTPServer, Direction: atlas.DirectionIn, Method: "GET", Values: []string{"/items"}}}
+		Boundary: &atlas.BoundaryFacts{Source: "fact", SubjectID: routed.ID, External: "flask.Flask.get", Direction: atlas.DirectionIn, Method: "GET", Values: []string{"/items"}}}
+	r.api = map[string]apiRole{"flask.Flask.get": {binds: atlas.BoundaryHTTPServer}}
 	r.opts.Graph.Places = []atlas.Place{routed, plain, route}
 	r.places = map[string]atlas.Place{routed.ID: routed, plain.ID: plain, route.ID: route}
 	r.operations = map[string][3]string{routed.ID: {"request"}, plain.ID: {"request"}}

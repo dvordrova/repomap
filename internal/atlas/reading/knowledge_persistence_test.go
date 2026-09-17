@@ -14,25 +14,7 @@ import (
 
 func TestKnowledgeMemoWriteFailureKeepsAcceptedBindingsAndArtifacts(t *testing.T) {
 	graph := knowledgeGraph(t)
-	firstID := atlas.SymbolID("pkg/a/y.go", 3, "help")
-	secondID := atlas.SymbolID("pkg/a/y.go", 8, "help")
-	for _, place := range graph.Places {
-		if place.ID != firstID {
-			continue
-		}
-		other, facts := place, *place.Symbol
-		other.ID, other.LineNo, other.Symbol = secondID, 8, &facts
-		other.Symbol.Decl.LineNo = 8
-		other.Symbol.Decl.ObjectID = "second-native-object"
-		for j := range graph.Places {
-			if graph.Places[j].ID == other.Parent {
-				graph.Places[j].File.Decls = append(graph.Places[j].File.Decls, other.Symbol.Decl)
-			}
-		}
-		graph.Places = append(graph.Places, other)
-		break
-	}
-	atlas.SortPlaces(graph.Places)
+	graph, firstID, secondID := duplicateHelpSymbol(t, graph, "second-native-object")
 	cache := t.TempDir()
 	initial := readOptions(t, graph, &tableProvider{}, cache)
 	initial.Through, initial.WindowRows = lines.StageSymbols, 1

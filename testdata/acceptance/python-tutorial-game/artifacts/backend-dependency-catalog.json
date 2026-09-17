@@ -1,8 +1,8 @@
 {
-  "version": 1,
+  "version": 2,
   "importers": [
     {
-      "ref": "importer-07db04f684638fd827c123a0",
+      "ref": "i1",
       "language": "python",
       "name": "main",
       "module_path": "main",
@@ -10,7 +10,7 @@
       "repository_path": "backend"
     },
     {
-      "ref": "importer-249b16a81afa44b6eab13e4b",
+      "ref": "i2",
       "language": "python",
       "name": "app.app",
       "module_path": "app",
@@ -18,7 +18,7 @@
       "repository_path": "backend/app"
     },
     {
-      "ref": "importer-87810ff61e4e92aef3b5cbac",
+      "ref": "i3",
       "language": "python",
       "name": "app.award",
       "module_path": "app",
@@ -26,7 +26,7 @@
       "repository_path": "backend/app"
     },
     {
-      "ref": "importer-a4f93cd1d96a51a2e792fbfe",
+      "ref": "i4",
       "language": "python",
       "name": "app.field",
       "module_path": "app",
@@ -34,7 +34,7 @@
       "repository_path": "backend/app"
     },
     {
-      "ref": "importer-c35f00bc67d434d99eb044bd",
+      "ref": "i5",
       "language": "python",
       "name": "app.models",
       "module_path": "app",
@@ -42,7 +42,7 @@
       "repository_path": "backend/app"
     },
     {
-      "ref": "importer-80fade700cf7f262a3ba955a",
+      "ref": "i6",
       "language": "python",
       "name": "app.robot",
       "module_path": "app",
@@ -50,7 +50,7 @@
       "repository_path": "backend/app"
     },
     {
-      "ref": "importer-0079ed79e0161e66b7d676d0",
+      "ref": "i7",
       "language": "python",
       "name": "app.settings",
       "module_path": "app",
@@ -58,7 +58,7 @@
       "repository_path": "backend/app"
     },
     {
-      "ref": "importer-a99d64e4f4d074cef8ed9b90",
+      "ref": "i8",
       "language": "python",
       "name": "app.utils",
       "module_path": "app",
@@ -68,7 +68,7 @@
   ],
   "dependencies": [
     {
-      "id": "dependency-face48993f35c38f85968f53",
+      "id": "d1",
       "language": "python",
       "kind": "workspace",
       "name": "app.app",
@@ -76,11 +76,11 @@
       "package_path": "app.app",
       "repository_path": "backend/app",
       "importer_refs": [
-        "importer-07db04f684638fd827c123a0"
+        "i1"
       ]
     },
     {
-      "id": "dependency-435c24646a0b9741ccae3fd0",
+      "id": "d2",
       "language": "python",
       "kind": "workspace",
       "name": "app.award",
@@ -88,12 +88,12 @@
       "package_path": "app.award",
       "repository_path": "backend/app",
       "importer_refs": [
-        "importer-249b16a81afa44b6eab13e4b",
-        "importer-a4f93cd1d96a51a2e792fbfe"
+        "i2",
+        "i4"
       ]
     },
     {
-      "id": "dependency-cb4e2c57e09c86e63c52c425",
+      "id": "d3",
       "language": "python",
       "kind": "workspace",
       "name": "app.field",
@@ -101,11 +101,11 @@
       "package_path": "app.field",
       "repository_path": "backend/app",
       "importer_refs": [
-        "importer-249b16a81afa44b6eab13e4b"
+        "i2"
       ]
     },
     {
-      "id": "dependency-66a5e7aba5778bc5fe583b8d",
+      "id": "d4",
       "language": "python",
       "kind": "workspace",
       "name": "app.levels",
@@ -113,11 +113,11 @@
       "package_path": "app.levels",
       "repository_path": "backend/app",
       "importer_refs": [
-        "importer-249b16a81afa44b6eab13e4b"
+        "i2"
       ]
     },
     {
-      "id": "dependency-7fe50ba6e5446be162f4254b",
+      "id": "d5",
       "language": "python",
       "kind": "workspace",
       "name": "app.models",
@@ -125,11 +125,11 @@
       "package_path": "app.models",
       "repository_path": "backend/app",
       "importer_refs": [
-        "importer-249b16a81afa44b6eab13e4b"
+        "i2"
       ]
     },
     {
-      "id": "dependency-b14fa220adaebc3e09c975a0",
+      "id": "d6",
       "language": "python",
       "kind": "workspace",
       "name": "app.robot",
@@ -137,12 +137,12 @@
       "package_path": "app.robot",
       "repository_path": "backend/app",
       "importer_refs": [
-        "importer-249b16a81afa44b6eab13e4b",
-        "importer-a4f93cd1d96a51a2e792fbfe"
+        "i2",
+        "i4"
       ]
     },
     {
-      "id": "dependency-6180c815f0f9d7cc24d6b0ea",
+      "id": "d7",
       "language": "python",
       "kind": "workspace",
       "name": "app.settings",
@@ -150,11 +150,11 @@
       "package_path": "app.settings",
       "repository_path": "backend/app",
       "importer_refs": [
-        "importer-07db04f684638fd827c123a0"
+        "i1"
       ]
     },
     {
-      "id": "dependency-0bc23240bb590ad9798414e8",
+      "id": "d8",
       "language": "python",
       "kind": "workspace",
       "name": "app.utils",
@@ -162,107 +162,107 @@
       "package_path": "app.utils",
       "repository_path": "backend/app",
       "importer_refs": [
-        "importer-249b16a81afa44b6eab13e4b"
+        "i2"
       ]
     },
     {
-      "id": "dependency-6bc7152917422d45a25bd0eb",
+      "id": "d9",
       "language": "python",
       "kind": "stdlib",
       "name": "copy",
       "package_path": "copy",
       "importer_refs": [
-        "importer-249b16a81afa44b6eab13e4b",
-        "importer-a4f93cd1d96a51a2e792fbfe"
+        "i2",
+        "i4"
       ]
     },
     {
-      "id": "dependency-42f6eed56b45f926dc16ce5b",
+      "id": "d10",
       "language": "python",
       "kind": "stdlib",
       "name": "dataclasses",
       "package_path": "dataclasses",
       "importer_refs": [
-        "importer-80fade700cf7f262a3ba955a",
-        "importer-87810ff61e4e92aef3b5cbac",
-        "importer-a4f93cd1d96a51a2e792fbfe"
+        "i3",
+        "i4",
+        "i6"
       ]
     },
     {
-      "id": "dependency-efe4fc17adb4b2f3b5245a65",
+      "id": "d11",
       "language": "python",
       "kind": "stdlib",
       "name": "enum",
       "package_path": "enum",
       "importer_refs": [
-        "importer-c35f00bc67d434d99eb044bd"
+        "i5"
       ]
     },
     {
-      "id": "dependency-98373747bdc814d31c55f5d7",
+      "id": "d12",
       "language": "python",
       "kind": "stdlib",
       "name": "re",
       "package_path": "re",
       "importer_refs": [
-        "importer-a99d64e4f4d074cef8ed9b90"
+        "i8"
       ]
     },
     {
-      "id": "dependency-21201166bf318986eea24287",
+      "id": "d13",
       "language": "python",
       "kind": "stdlib",
       "name": "typing",
       "package_path": "typing",
       "importer_refs": [
-        "importer-249b16a81afa44b6eab13e4b",
-        "importer-80fade700cf7f262a3ba955a",
-        "importer-a4f93cd1d96a51a2e792fbfe",
-        "importer-c35f00bc67d434d99eb044bd"
+        "i2",
+        "i4",
+        "i5",
+        "i6"
       ]
     },
     {
-      "id": "dependency-fb80df2fad38f89a596d0f29",
+      "id": "d14",
       "language": "python",
       "kind": "stdlib",
       "name": "uuid",
       "package_path": "uuid",
       "importer_refs": [
-        "importer-80fade700cf7f262a3ba955a"
+        "i6"
       ]
     },
     {
-      "id": "dependency-07fd54015895b837435b59b5",
+      "id": "d15",
       "language": "python",
       "kind": "external",
       "name": "fastapi",
       "module_path": "fastapi",
       "package_path": "fastapi",
       "importer_refs": [
-        "importer-249b16a81afa44b6eab13e4b"
+        "i2"
       ]
     },
     {
-      "id": "dependency-cffd09c03d168be37901b1b9",
+      "id": "d16",
       "language": "python",
       "kind": "external",
       "name": "pydantic",
       "module_path": "pydantic",
       "package_path": "pydantic",
       "importer_refs": [
-        "importer-0079ed79e0161e66b7d676d0",
-        "importer-c35f00bc67d434d99eb044bd"
+        "i5",
+        "i7"
       ]
     },
     {
-      "id": "dependency-6df1a4286f3f620c55cd9e15",
+      "id": "d17",
       "language": "python",
       "kind": "external",
       "name": "uvicorn",
       "module_path": "uvicorn",
       "package_path": "uvicorn",
       "importer_refs": [
-        "importer-07db04f684638fd827c123a0"
+        "i1"
       ]
     }
   ],

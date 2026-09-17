@@ -7,6 +7,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 func TestSystemMapKeepsInventoryAndExactCrossComponentDestinations(t *testing.T) {
@@ -49,6 +52,92 @@ func TestSystemMapKeepsInventoryAndExactCrossComponentDestinations(t *testing.T)
 	}
 	if view.Sections[0].Map.Edges[0].To != "remote" {
 		t.Fatal("display mutated the original component view")
+	}
+}
+
+func TestSystemMapKeepsEqualTargetLocalGroupIDsInTheirOwnComponents(t *testing.T) {
+	api := &pageMap{Nodes: []pageMapNode{{ID: mapNodeID("g1"), FullTitle: "API wiring"}}}
+	cli := &pageMap{Nodes: []pageMapNode{{ID: mapNodeID("g1"), FullTitle: "CLI wiring"}}}
+	scopeTargetMapIDs(api, "t1")
+	scopeTargetMapIDs(cli, "t2")
+
+	view := pageView{Sections: []*pageSection{
+		{ID: "api", programTargetID: "t1", ShortLabel: "cmd/api", Map: api},
+		{ID: "cli", programTargetID: "t2", ShortLabel: "cmd/users", Map: cli},
+	}}
+	got := view.SystemMap()
+	nodes := make(map[string]pageMapNode, len(got.Nodes))
+	for _, node := range got.Nodes {
+		if _, duplicate := nodes[node.ID]; duplicate {
+			t.Fatalf("duplicate system-map node %q", node.ID)
+		}
+		nodes[node.ID] = node
+	}
+	apiGroup := targetMapNodeID("t1", mapNodeID("g1"))
+	cliGroup := targetMapNodeID("t2", mapNodeID("g1"))
+	if nodes[apiGroup].FullTitle != "API wiring" || nodes[cliGroup].FullTitle != "CLI wiring" {
+		t.Fatalf("target-local groups collapsed: api=%+v cli=%+v", nodes[apiGroup], nodes[cliGroup])
+	}
+	if nodes["system-component-api"].Children != apiGroup || nodes["system-component-cli"].Children != cliGroup {
+		t.Fatalf("component membership crossed targets: api=%q cli=%q", nodes["system-component-api"].Children, nodes["system-component-cli"].Children)
+	}
+}
+
+func TestSystemMapDrawsOneArrowPerDirectedNodePair(t *testing.T) {
+	view := pageView{Sections: []*pageSection{{
+		ID: "api", ShortLabel: "api",
+		Map: &pageMap{
+			Nodes: []pageMapNode{{ID: "handler"}, {ID: "service"}, {ID: "o1", Activation: "request"}, {ID: "o2", Activation: "command"}},
+			Edges: []pageMapEdge{
+				{ConnectionID: "x1", From: "handler", To: "service", Scope: "operation", Operations: "o1", Label: "calls", Possible: true, FromSource: pageAnchor{Text: "handler.go:10"}},
+				{ConnectionID: "x2", From: "handler", To: "service", Scope: "structure", Operations: "o2 o1", Label: "passes callback", Summary: "Handler supplies the service method.", Possible: false, FromSource: pageAnchor{Text: "main.go:8"}},
+			},
+		},
+	}}}
+	got := view.SystemMap()
+	if len(got.Edges) != 1 {
+		t.Fatalf("same directed pair produced %d physical arrows: %+v", len(got.Edges), got.Edges)
+	}
+	edge := got.Edges[0]
+	if edge.From != "handler" || edge.To != "service" || edge.Scope != "operation" || edge.Operations != "o1 o2" ||
+		edge.Label != "calls · passes callback" || edge.Summary != "Handler supplies the service method." || edge.Possible ||
+		edge.ConnectionID != "" || edge.FromSource != (pageAnchor{}) {
+		t.Fatalf("collapsed arrow lost its combined meaning: %+v", edge)
+	}
+}
+
+func TestPageHydratesEqualTargetLocalSubjectIDsFromTheirOwner(t *testing.T) {
+	apiProgram, api := reportCategorizedGroupFixtureAt(t, "APIHandler", "go:./cmd/api", "cmd/api/main.go", []programindex.Category{programindex.CategoryCore}, groupindex.LaneCore, "t1")
+	cliProgram, cli := reportCategorizedGroupFixtureAt(t, "CLICommand", "go:./cmd/users", "cmd/users/main.go", []programindex.Category{programindex.CategoryCore}, groupindex.LaneCore, "t2")
+	if api.Subjects[0].ID != cli.Subjects[0].ID {
+		t.Fatalf("fixture did not exercise target-local collision: %q != %q", api.Subjects[0].ID, cli.Subjects[0].ID)
+	}
+	graph, err := NewGroupGraphView([]groupindex.Index{api, cli}, api.Target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := &ReportData{
+		FormatVersion: CurrentFormatVersion, RepoName: "two-targets", CapturedRevision: strings.Repeat("a", 40), GroupGraph: graph,
+		TargetOutcomePortfolio: reportTargetOutcomeViewFixture(t, []TargetNavigationPage{
+			{RunID: "api-run", ProgramTarget: apiProgram.Target.Snapshot(), ArtifactFilename: programindex.ArtifactFilename},
+			{RunID: "cli-run", ProgramTarget: cliProgram.Target.Snapshot(), ArtifactFilename: programindex.ArtifactFilename},
+		}, api.Target.ID),
+	}
+	view, err := buildPageView(data, strings.Repeat("b", 64), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Sections) != 2 || len(view.Sections[0].Core) != 1 || len(view.Sections[1].Core) != 1 {
+		t.Fatalf("unexpected sections: %#v", view.Sections)
+	}
+	if view.Sections[0].ID != "t1" || view.Sections[1].ID != "t2" {
+		t.Fatalf("sections received a second identity namespace: %q, %q", view.Sections[0].ID, view.Sections[1].ID)
+	}
+	for position, want := range []struct{ name, path string }{{"APIHandler", "cmd/api/main.go"}, {"CLICommand", "cmd/users/main.go"}} {
+		rows := view.Sections[position].Core[0].Inventory
+		if len(rows) != 1 || rows[0].Path != want.path || len(rows[0].Members) != 1 || rows[0].Members[0].Name != want.name {
+			t.Fatalf("section %d borrowed another target's subject: %#v", position, rows)
+		}
 	}
 }
 

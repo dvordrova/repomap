@@ -20,9 +20,10 @@ func assertPythonLocalHTTPNameFacts(t *testing.T, index programindex.Index) {
 	t.Helper()
 	caller := programIndexObjectNamed(t, index, programindex.ObjectFunction, "read_local_http_name", "src/fixture_app/levels.py")
 	callee := programIndexObjectNamed(t, index, programindex.ObjectFunction, "get", "src/requests.py")
-	assertNativeHTTPNameFacts(t, index, caller, callee, 16, programindex.ResolutionAlternatives,
+	assertNativeHTTPNameFacts(t, index, caller, callee, 16, programindex.ResolutionExact,
 		facts.Fact{Anchor: &facts.Anchor{Path: "src/fixture_app/levels.py", Line: 5}, Symbol: "fetch_level", Path: "https://catalog.example/levels/{param}", Resolution: facts.ResolutionPossible})
-	assertInheritedRouteFacts(t, index, "/api/inherited", "src/fixture_app/cli.py", 92, "/api/overridden-lookalike", "/api/mixed-lookalike", "/api/lookalike")
+	assertInheritedRouteFacts(t, index, "/api/inherited", "src/fixture_app/cli.py", 92, "/api/overridden-lookalike", "/api/lookalike")
+	assertPossibleRegistration(t, index, "/api/mixed-lookalike")
 }
 
 func assertInheritedRouteFacts(t *testing.T, index programindex.Index, route, source string, line int, absent ...string) {
@@ -32,7 +33,7 @@ func assertInheritedRouteFacts(t *testing.T, index programindex.Index, route, so
 		t.Fatal(err)
 	}
 	found := 0
-	for _, fact := range result.OfKind(facts.KindHTTPRoute) {
+	for _, fact := range result.OfKind(facts.KindRegistration) {
 		for _, path := range absent {
 			if fact.Path == path {
 				t.Fatalf("local override acquired a route: %+v", fact)
@@ -40,7 +41,7 @@ func assertInheritedRouteFacts(t *testing.T, index programindex.Index, route, so
 		}
 		if fact.Path == route {
 			found++
-			if fact.Anchor == nil || fact.Anchor.Path != source || fact.Anchor.Line != line || fact.Anchor.Column <= 0 || fact.Method != "GET" && fact.Method != "ANY" {
+			if fact.Anchor == nil || fact.Anchor.Path != source || fact.Anchor.Line != line || fact.Anchor.Column <= 0 || fact.Method != "GET" && fact.Method != "" {
 				t.Fatalf("inherited method lost registration anchor: %+v", fact)
 			}
 		}
@@ -87,16 +88,16 @@ func assertNativeHTTPNameFacts(t *testing.T, index programindex.Index, caller, c
 	}
 	controls := 0
 	for _, fact := range result.Facts {
-		if fact.Kind != facts.KindHTTPCall && fact.Kind != facts.KindHTTPRoute && fact.Kind != facts.KindPortal {
+		if fact.Kind != facts.KindRegistration {
 			continue
 		}
 		if fact.ObjectID == caller.ID || (fact.Anchor != nil && fact.Anchor.Path == caller.Location.Path && fact.Anchor.Line == line) {
 			t.Fatalf("local %s call acquired an HTTP fact: %+v", index.Target.Language, fact)
 		}
-		if fact.Kind != facts.KindHTTPCall || fact.Anchor == nil || fact.Anchor.Path != control.Anchor.Path || fact.Anchor.Line != control.Anchor.Line {
+		if fact.Anchor == nil || fact.Anchor.Path != control.Anchor.Path || fact.Anchor.Line != control.Anchor.Line {
 			continue
 		}
-		if fact.Method != "GET" || fact.Path != control.Path || fact.Symbol != control.Symbol || fact.Resolution != control.Resolution || fact.Anchor.Column <= 0 {
+		if fact.Method != "GET" || fact.Path != control.Path || fact.Resolution != control.Resolution || fact.Anchor.Column <= 0 {
 			t.Fatalf("real outbound HTTP control lost method, path or source: %+v", fact)
 		}
 		controls++
@@ -104,4 +105,23 @@ func assertNativeHTTPNameFacts(t *testing.T, index programindex.Index, caller, c
 	if controls != 1 {
 		t.Fatalf("real outbound HTTP control at %s:%d appeared %d times, want once", control.Anchor.Path, control.Anchor.Line, controls)
 	}
+}
+
+// A receiver whose class mixes several bases cannot be resolved to one
+// origin; its registration stays a possible candidate for the reading stage.
+func assertPossibleRegistration(t *testing.T, index programindex.Index, path string) {
+	t.Helper()
+	result, err := facts.Build(facts.Input{Targets: []facts.TargetInput{{Index: index, Root: "."}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fact := range result.OfKind(facts.KindRegistration) {
+		if fact.Path == path {
+			if fact.Resolution != facts.ResolutionPossible {
+				t.Fatalf("unresolvable receiver became an exact registration: %+v", fact)
+			}
+			return
+		}
+	}
+	t.Fatalf("registration %s was not kept as a candidate", path)
 }

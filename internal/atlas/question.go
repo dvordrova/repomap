@@ -5,7 +5,7 @@ package atlas
 const QuestionFilename = "question-routes.json"
 
 // QuestionRouteVersion versions each complete reading and its answer metadata.
-const QuestionRouteVersion = 9
+const QuestionRouteVersion = 10
 
 // QuestionRoutes keeps independent reading results over one shared graph.
 type QuestionRoutes struct {
@@ -15,6 +15,7 @@ type QuestionRoutes struct {
 
 type QuestionRoute struct {
 	Version      int              `json:"version"`
+	ID           string           `json:"id"`
 	Question     string           `json:"question"`
 	Repository   string           `json:"repository"`
 	Revision     string           `json:"revision"`

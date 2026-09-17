@@ -66,8 +66,9 @@ index, err := programindex.New(input)
 emit its leaf name or owner-qualified display name without copying a repository
 path into it; keep the exact path in `Location`. Equal names are legitimate:
 `SourceRef` and the derived object ID keep declarations distinct inside one
-target, while `SymbolLinkIdentities` are the only optional cross-target join
-authority. Shared consumers must never split `Name` on a language-specific
+target. Cross-target joins are later explicit connections over target-qualified
+ProgramIndex facts; adapters do not mint a parallel symbol identity. Shared
+consumers must never split `Name` on a language-specific
 delimiter to reconstruct any of these fields. Logical module and package names
 may retain their language-native path-like spelling.
 
@@ -225,29 +226,6 @@ relation's targets. Argument position is part of the authority: passing the
 same callable in two positions must remain two distinguishable provenance
 rows, not one ambiguous singular source-argument join.
 
-## Optional exact cross-target symbol identity
-
-If the extractor can prove that a local public declaration and an external
-symbol are the same callable identity, attach the same normalized tuple to both
-objects:
-
-```go
-SymbolLinkIdentities: []programindex.SymbolLinkIdentityInput{{
-    Domain:  "jvm-public-callable-v1",
-    Parts:   []string{"method", "com.example.Service", "run", "(Request)Response"},
-    Display: "Service.run",
-}}
-```
-
-`Domain` namespaces the adapter and identity scheme. `Parts` are ordered,
-non-empty, already normalized exact facts. `Display` is optional and has no
-authority. The common builder seals a key; consumers compare only exact
-`(Domain, Key)` and never parse `Parts`, `Display`, object names, or language.
-The sealed row retains only `part_count` for warning-only scale diagnostics;
-the raw parts are not persisted. Retain every exact alias/re-export identity;
-former per-object and per-identity thresholds are warning-only. Do not emit
-identity from a similar name or signature guess.
-
 ## Conformance test
 
 ```go
@@ -295,8 +273,6 @@ allowlist.
   frontier or supplied incomplete accounting. Record it; do not truncate.
 - `not canonical`, duplicate, or identity mismatch after decode: the adapter
   attempted to own ordering/IDs, or output changed between builds.
-- invalid symbol-link identity: domain/parts are empty, malformed, or two rows
-  claim the same exact tuple with conflicting display text.
 - aggregate/index byte warning: retain the complete target unchanged. These
   thresholds are diagnostic only; never split target ownership or truncate the
   graph because one is crossed.

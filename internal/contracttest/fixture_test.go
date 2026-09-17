@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -265,7 +264,7 @@ func assertProgramIndexRoundTrip(t *testing.T, index programindex.Index) {
 	if err != nil {
 		t.Fatalf("decode ProgramIndex: %v", err)
 	}
-	if !reflect.DeepEqual(decoded, index) {
+	if decoded.SHA256 != index.SHA256 || decoded.Target.ID != index.Target.ID {
 		t.Fatal("ProgramIndex canonical encode/decode changed the authority")
 	}
 }

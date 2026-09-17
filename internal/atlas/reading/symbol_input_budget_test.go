@@ -38,7 +38,7 @@ func (p *symbolInputProvider) Complete(ctx context.Context, prepared llm.Prepare
 func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T) {
 	graph := withSymbols(t, twoTargetGraph(t))
 	largeName := "Op" + itoa(4)
-	largeID := atlas.SymbolID("svc/core/c.go", 14, largeName)
+	largeID := graphPlaceID(t, graph, atlas.PlaceSymbol, "svc/core/c.go", 14, largeName)
 	var large atlas.Place
 	for i := range graph.Places {
 		place := &graph.Places[i]
@@ -94,15 +94,17 @@ func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T)
 			t.Fatal(err)
 		}
 		var originals []table.Row
-		for i, row := range request.Rows {
+		for _, row := range request.Rows {
 			name, _ := row["name"].(string)
-			if seen[name] {
-				t.Fatalf("symbol %s was repeated across windows", name)
+			path, _ := row["path"].(string)
+			identity := path + "\x00" + name
+			if seen[identity] {
+				t.Fatalf("symbol %s in %s was repeated across windows", name, path)
 			}
-			seen[name] = true
+			seen[identity] = true
 			var original atlas.Place
 			for _, place := range graph.Places {
-				if place.Symbol != nil && place.Path == "svc/core/c.go" && place.Symbol.Decl.Name == name {
+				if place.Symbol != nil && place.Path == path && place.Symbol.Decl.Name == name {
 					original = place
 					break
 				}
@@ -111,8 +113,8 @@ func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T)
 				t.Fatalf("provider row has no original declaration: %s", name)
 			}
 			originals = append(originals, lines.SymbolRow(original, cold[original.Parent].Cells["line"]))
-			if row["key"] != table.Key(i) {
-				t.Fatalf("window-local ref changed: %v", row["key"])
+			if row["key"] != original.ID {
+				t.Fatalf("artifact ID changed before the provider: %v", row["key"])
 			}
 			if original.ID == largeID && len(request.Rows) != 1 {
 				t.Fatal("oversized atomic symbol shares its window with a neighbour")

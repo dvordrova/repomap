@@ -23,9 +23,9 @@ type EvidenceCatalog struct {
 }
 
 // DefaultInvocation and DefaultResolution are the values a rendered call
-// leaves out under OmitDefaults.
+// leaves out under OmitDefaults. An ordinary call has no invocation word.
 const (
-	DefaultInvocation = "synchronous"
+	DefaultInvocation = ""
 	DefaultResolution = "exact"
 )
 
@@ -113,9 +113,6 @@ func (c *EvidenceCatalog) call(call atlas.SymbolCall) callEvidence {
 	refs := c.references(call.Evidence)
 	call.Evidence = nil
 	if c.OmitDefaults {
-		if call.Invocation == DefaultInvocation {
-			call.Invocation = ""
-		}
 		if call.Resolution == DefaultResolution {
 			call.Resolution = ""
 		}
@@ -137,11 +134,11 @@ func (c *EvidenceCatalog) Bindings(bindings []atlas.SymbolBinding) any {
 	if len(bindings) == 0 {
 		return nil
 	}
-	columns := []string{"from", "to", "detail", "invocation", "resolution", "path", "line", "arguments", "evidence_refs"}
+	columns := []string{"from", "to", "detail", "kind", "resolution", "path", "line", "arguments", "evidence_refs"}
 	var rows [][]any
 	for _, binding := range bindings {
 		refs := c.references(binding.Evidence)
-		rows = append(rows, []any{binding.From, binding.To, binding.Detail, binding.Invocation, binding.Resolution, binding.Path, binding.Line, binding.Arguments, refs})
+		rows = append(rows, []any{binding.From, binding.To, binding.Detail, binding.Kind, binding.Resolution, binding.Path, binding.Line, binding.Arguments, refs})
 	}
 	// A binding without arguments or evidence has no such field, not a null.
 	if len(rows) == 1 {

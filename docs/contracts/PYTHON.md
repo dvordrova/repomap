@@ -23,8 +23,10 @@ existing exact-target fallback; cancellation stops dispatch immediately.
 
 The Python adapter owns package/module scope, import restoration, call and
 registration facts, decorators, arguments, target seeds, external origins,
-and complete observed/omitted coverage. Dynamic dispatch remains alternatives
-or unresolved authority; shared stages never repair it by matching names.
+and complete observed/omitted coverage. A name, import, alias, decorator, base
+class, read or write that resolves to one known declaration is `exact`; several
+known targets are `alternatives`, and a rebound or unknown name is `unresolved`.
+Shared stages never repair resolution by matching names.
 It maps an exact top-level import root in `sys.stdlib_module_names` to
 `platform` and every other external root to `package`; an invalid or missing
 authority kind fails the adapter boundary.
@@ -42,8 +44,8 @@ dependency coverage.
 
 The Python adapter also keeps an existing callable candidate consistent
 between an argument and the callback transfer that cites that exact argument.
-Aliases assigned to a function or lambda remain alternatives; an inline lambda
-retains exact authority, while unknown or overwritten aliases gain no callback.
+Aliases assigned to a function or lambda and inline lambdas are exact, while
+unknown or overwritten aliases gain no callback.
 The Airflow Edge3, Azure and Vertica libraries exposed the earlier mismatch:
 the argument named the assignment variable while the transfer named its callable.
 Local native extraction does not establish ordinary full-repository acceptance. Cumulative Python,
@@ -82,13 +84,13 @@ unrelated local classes do not acquire framework authority from a method name.
 The Python adapter also follows unconditional explicit re-exports through
 indexed package/module imports, retaining each written import boundary. A
 factory's declared return type may then supply the original instance method
-as an alternative callback recipient. Reassigned, conflicting, conditional,
+as the callback recipient. Reassigned, conflicting, conditional,
 deleted, wildcard or cyclic export bindings remain unresolved; untyped factory
 returns and unrelated same-named classes gain no receiver authority. No module
 is imported or executed to discover exports. TypeScript uses the compiler's
 existing barrel-export and declared-return resolution for the comparable case.
 
-A source-ordered, directly annotated parameter may supply an existing locally resolved class method as an alternative native target, including an explicitly imported facade class. Annotations and literal values retain distinct provenance. Reassignment or conditional assignment clears that binding; unknown, union and unresolved quoted types remain unresolved. This adds no executed import, body analysis, framework inference or exact runtime dispatch.
+A source-ordered, directly annotated parameter may supply an existing locally resolved class method as the native target, including an explicitly imported facade class. Annotations and literal values retain distinct provenance. Reassignment or conditional assignment clears that binding; unknown, union and unresolved quoted types remain unresolved. This adds no executed import, body analysis, framework inference or exact runtime dispatch.
 
 Synchronous iteration over a directly annotated homogeneous collection retains
 its locally resolved element class as a possible receiver inside the loop body.
@@ -121,8 +123,9 @@ the cumulative range example never creates a named `_` variable.
 
 Native variable reads retain the original declared slot and each source site,
 including imported aliases, module-qualified values, receiver fields and reads
-of receivers/indices on assignment targets. Reads remain alternatives, not a
-runtime-value claim. Lexical parameters/locals, comprehensions, nonlocal/global
+of receivers/indices on assignment targets. A read names its declaration, not a
+runtime value. A callable reading its own parameter or local is not a relation;
+that value's origin stays on the patterns that use it. Lexical parameters/locals, comprehensions, nonlocal/global
 declarations and class-body versus method scope cannot borrow a same-named
 outer value. Unbound with/except/match targets stay unresolved. Replaced or
 untyped receivers do not acquire field authority. The cumulative examples test
@@ -140,8 +143,7 @@ Assignments, augmented assignments, annotated writes and deletes keep every
 source site. Nested classes keep their own receiver identity; a captured outer
 receiver keeps its original owner. Rebinding, an untyped receiver, a static
 parameter merely named `self`, nested receiver expressions and dynamic `setattr`
-remain unresolved. Resolved candidates are alternatives because descriptors and
-`__setattr__` can redirect a write. No class is executed to infer the result.
+remain unresolved. A resolved field write is exact. No class is executed to infer the result.
 
 The cumulative MutableCounter fixture checks each write and its GroupsIndex
 source projection, with read-only and replaced-receiver controls. The current Go,

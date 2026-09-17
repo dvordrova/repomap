@@ -25,7 +25,7 @@ func TestOperationRequestPreservesReceiverArgumentsAndContinuation(t *testing.T)
 	call := func(name string, line, column int, receiver *sourcevalue.Value) atlas.SymbolCall {
 		api := &atlas.CallAPI{Package: "net/http", Receiver: name[:strings.LastIndexByte(name, '.')], Name: name[strings.LastIndexByte(name, '.')+1:]}
 		return atlas.SymbolCall{Name: "http." + name, Kind: "invokes_external", Line: line, Column: column,
-			API: api, ReceiverValue: receiver, Invocation: "synchronous", Resolution: "exact",
+			API: api, ReceiverValue: receiver, Resolution: "exact",
 			Evidence: []atlas.EdgeEvidence{{Extractor: "compiler", Path: path, LineNo: line, Label: "original invocation"}}}
 	}
 	requestSet := call("Header.Set", 127, 15, &sourcevalue.Value{Kind: "field", Text: "Header", Parts: []sourcevalue.Value{*parameter("r", 2, 126)}})
@@ -33,7 +33,6 @@ func TestOperationRequestPreservesReceiverArgumentsAndContinuation(t *testing.T)
 	continuation := call("Handler.ServeHTTP", 128, 8, parameter("next", 1, 125))
 	continuation.SourceArguments = []atlas.SourceArgument{{Position: 1, Origin: parameter("w", 1, 126)}, {Position: 2, Origin: parameter("r", 2, 126)}}
 	continuation.Resolution = "unresolved"
-	continuation.DispatchObservations = []atlas.DispatchObservation{{Kind: "invokes_external", Resolution: "exact", Invocation: "synchronous"}, {Kind: "invokes_unresolved", Resolution: "unresolved", Invocation: "synchronous"}}
 	responseHeader := call("ResponseWriter.Header", 133, 4, parameter("w", 1, 132))
 	responseSet := call("Header.Set", 133, 13, &sourcevalue.Value{Kind: "call_result", Anchor: anchor(133, 4)})
 	responseSet.SourceArguments = []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: "X-Scope-OrgID"}}, {Position: 2, Origin: &sourcevalue.Value{Kind: "literal", Text: "fixture-response"}}}
@@ -45,8 +44,9 @@ func TestOperationRequestPreservesReceiverArgumentsAndContinuation(t *testing.T)
 	r.places, r.operations = map[string]atlas.Place{}, map[string][3]string{}
 	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
 	r.responseTables = map[string]rememberedTable{}
+	ids := map[string]string{"withRequestScope$1": "s1", "writeScopeResponse": "s2"}
 	for _, name := range []string{"withRequestScope$1", "writeScopeResponse"} {
-		p := atlas.Place{ID: "private-" + name, Kind: atlas.PlaceSymbol, Path: path, LineNo: 126, Parent: "file:" + path,
+		p := atlas.Place{ID: ids[name], Kind: atlas.PlaceSymbol, Path: path, LineNo: 126, Parent: "file:" + path,
 			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: name, ObjectID: "private-object-" + name, Signature: "func(w http.ResponseWriter, r *http.Request)"}, Calls: byName[name]}}
 		r.opts.Graph.Places = append(r.opts.Graph.Places, p)
 		r.places[p.ID], r.operations[p.ID] = p, [3]string{"request", "earlier proposal", ""}
@@ -115,7 +115,7 @@ func TestOperationRequestPreservesReceiverArgumentsAndContinuation(t *testing.T)
 	if err := r.readOperations(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if inspected != 2 || len(r.rejected) != 0 || len(r.operations) != 1 || r.operations["private-writeScopeResponse"][0] != "request" {
+	if inspected != 2 || len(r.rejected) != 0 || len(r.operations) != 1 || r.operations["s2"][0] != "request" {
 		t.Fatalf("independent operation decisions changed: inspected=%d rejected=%+v operations=%+v", inspected, r.rejected, r.operations)
 	}
 	after, _ := json.Marshal(r.opts.Graph)

@@ -17,8 +17,8 @@ func assertGoSourceValues(t *testing.T, repository *corpus.Corpus, index program
 		t.Fatal(err)
 	}
 	assertGoOperationSourceValues(t, graph)
-	assertEvidenceVocabulary(t, graph, "interface_invoke:synchronous", "declared_interface_dispatch:synchronous", "callback_transfer:synchronous",
-		"callable_binding:field", "go_ssa_dynamic_handoff", "go_declared_interface_dispatch", "callback_registration", "registration_receiver_call",
+	assertEvidenceVocabulary(t, graph, "interface", "interface_method", "passes_callback",
+		"binds_implementation", "callback_registration", "registration_receiver_call",
 		"interface_field_assignment", "literal_string", "record", "call_result", "alternatives", "unresolved", "invokes_external")
 	seen := map[string]bool{}
 	destinations := reading.NewDestinationReader(graph.Places)

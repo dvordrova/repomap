@@ -121,7 +121,7 @@ func questionCallableEvidence(facts map[string]any, place atlas.Place, places, s
 		if original.Symbol != nil && original.Path == caller.Path {
 			for _, call := range original.Symbol.Calls {
 				if call.Line == caller.Line && call.Kind == caller.Kind &&
-					call.Invocation == caller.Invocation && call.Resolution == caller.Resolution &&
+					call.Invocation == caller.Invocation && call.Dispatch == caller.Dispatch && call.Resolution == caller.Resolution &&
 					slices.Contains(call.CalleeIDs, place.ID) {
 					columns[call.Column] = true
 				}

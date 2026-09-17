@@ -18,12 +18,12 @@ import (
 
 // runtimeProgramIndex is a one-object program index for tests that need a
 // target and nothing more.
-func runtimeProgramIndex(t *testing.T, name, selector, path, fileRef string) programindex.Index {
+func runtimeProgramIndex(t *testing.T, targetID, name, selector, path, fileRef string) programindex.Index {
 	t.Helper()
 	base, err := programindex.New(programindex.Input{
 		ScenarioSHA256: strings.Repeat("a", 64), SourceSHA256: strings.Repeat("b", 64),
 		Target: programindex.TargetInput{
-			Language: "go", Kind: "application", Name: name, Selector: selector,
+			ID: targetID, Language: "go", Kind: "application", Name: name, Selector: selector,
 			Sources: []programindex.TargetSource{{FileRef: fileRef, Path: path}}, AnchorFileRef: fileRef,
 		},
 		Objects: []programindex.ObjectInput{{

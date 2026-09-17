@@ -29,73 +29,52 @@
       "note": "ReactDOM.createRoot executes in the module initializer; root is its produced value, not the executing callable"
     },
     {
-      "kind": "http_route",
+      "kind": "registration",
+      "key": "get",
       "method": "GET",
       "path": "/api/levels",
-      "symbol": "get_levels_info",
-      "anchor": "backend/app/app.py:18"
+      "anchor": "backend/app/app.py:18",
+      "symbol": "get_levels_info"
     },
     {
-      "kind": "http_route",
+      "kind": "registration",
+      "key": "get",
       "method": "GET",
       "path": "/api/level/{level_id}",
-      "symbol": "get_level",
-      "anchor": "backend/app/app.py:59"
+      "anchor": "backend/app/app.py:59",
+      "symbol": "get_level"
     },
     {
-      "kind": "http_route",
+      "kind": "registration",
+      "key": "post",
       "method": "POST",
       "path": "/api/level/run",
-      "symbol": "run_level",
-      "anchor": "backend/app/app.py:74"
+      "anchor": "backend/app/app.py:74",
+      "symbol": "run_level"
     },
     {
-      "kind": "http_call",
+      "kind": "registration",
+      "key": "get",
       "method": "GET",
       "path": "/api/levels",
-      "symbol": "getLevels",
-      "resolution": "exact",
-      "anchor": "front/src/service/http.ts:12"
+      "anchor": "front/src/service/http.ts:12",
+      "resolution": "exact"
     },
     {
-      "kind": "http_call",
+      "kind": "registration",
+      "key": "get",
       "method": "GET",
       "path": "/api/level/{param}",
-      "symbol": "getLevel",
-      "resolution": "possible",
-      "anchor": "front/src/service/http.ts:21"
+      "anchor": "front/src/service/http.ts:21",
+      "resolution": "possible"
     },
     {
-      "kind": "http_call",
+      "kind": "registration",
+      "key": "post",
       "method": "POST",
       "path": "/api/level/run",
-      "symbol": "runLevel",
-      "resolution": "exact",
-      "anchor": "front/src/service/http.ts:34"
-    },
-    {
-      "kind": "portal",
-      "method": "GET",
-      "path": "/api/levels",
-      "resolution": "exact",
-      "from": "front/src/service/http.ts:12",
-      "to": "backend/app/app.py:18"
-    },
-    {
-      "kind": "portal",
-      "method": "GET",
-      "path": "/api/level/{level_id}",
-      "resolution": "possible",
-      "from": "front/src/service/http.ts:21",
-      "to": "backend/app/app.py:59"
-    },
-    {
-      "kind": "portal",
-      "method": "POST",
-      "path": "/api/level/run",
-      "resolution": "exact",
-      "from": "front/src/service/http.ts:34",
-      "to": "backend/app/app.py:74"
+      "anchor": "front/src/service/http.ts:34",
+      "resolution": "exact"
     },
     {
       "kind": "config_read",
@@ -203,11 +182,6 @@
       "kind": "dead_module",
       "path": "front/src/utils/retry.ts",
       "anchor": "front/src/utils/retry.ts:1"
-    },
-    {
-      "kind": "dead_module",
-      "path": "front/src/utils/instructions.ts",
-      "anchor": "front/src/utils/instructions.ts:1"
     },
     {
       "kind": "dead_module",

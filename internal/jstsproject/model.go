@@ -364,7 +364,7 @@ func unsafeDeclarationSignature(value string, isSource bool) bool {
 }
 
 func (result Result) Validate() error {
-	if result.Version != Version || result.HelperVersion != HelperVersion || !validSHA(result.CorpusSHA256) || !validSHA(result.SourceSHA256) || !validSHA(result.SHA256) || !strings.HasPrefix(result.ProgramTargetID, "program-target-") {
+	if result.Version != Version || result.HelperVersion != HelperVersion || !validSHA(result.CorpusSHA256) || !validSHA(result.SourceSHA256) || !validSHA(result.SHA256) || !validCompactTargetID(result.ProgramTargetID) {
 		return fmt.Errorf("jsts project: invalid producer identity")
 	}
 	if strings.TrimSpace(result.Project.Ref) == "" || strings.TrimSpace(result.Project.Name) == "" || path.Base(result.Project.ManifestPath) != "package.json" || strings.TrimSpace(result.Project.ManifestFileRef) == "" || !safeRepositoryPath(result.Project.ManifestPath) ||
@@ -895,6 +895,14 @@ func validSHA(value string) bool {
 	}
 	_, err := hex.DecodeString(value)
 	return err == nil
+}
+
+func validCompactTargetID(value string) bool {
+	if !strings.HasPrefix(value, "t") || len(value) == 1 {
+		return false
+	}
+	ordinal, err := strconv.Atoi(value[1:])
+	return err == nil && ordinal > 0 && value == "t"+strconv.Itoa(ordinal)
 }
 func validWorkspaceOrigin(repositoryPath, packagePath, resolution string) bool {
 	if repositoryPath == "" {

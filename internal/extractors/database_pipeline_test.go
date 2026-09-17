@@ -135,7 +135,7 @@ func TestCumulativeDataSurvivesNativeGraphReadingAndSavedGroupsIndex(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	restored, err := groupindex.Decode(raw)
+	restored, err := groupindex.Decode(raw, program)
 	if err != nil || !reflect.DeepEqual(restored.Data, index.Data) {
 		t.Fatal("saved source schema changed", err)
 	}

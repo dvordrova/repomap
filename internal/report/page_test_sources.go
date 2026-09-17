@@ -9,7 +9,7 @@ import (
 )
 
 // overviewBuilder removes known testing material only from the orientation
-// view. The saved graph, full ProgramView, question evidence and source checks
+// view. The saved graph, full ProgramIndex, question evidence and source checks
 // retain every original declaration and connection.
 func (builder *pageBuilder) overviewBuilder() *pageBuilder {
 	view := *builder
@@ -24,7 +24,7 @@ func (builder *pageBuilder) overviewBuilder() *pageBuilder {
 	// It is a build-selected test declaration, never a guessed filename role.
 	if builder.data != nil && builder.data.ProgramPortfolio != nil {
 		for _, entry := range builder.data.ProgramPortfolio.Entries {
-			for _, relation := range entry.View.Relations {
+			for _, relation := range entry.Relations {
 				for _, witness := range relation.Witnesses {
 					if witness.Kind == "go_test_declaration" && witness.Location != nil {
 						view.testPaths[witness.Location.Path] = true

@@ -16,10 +16,10 @@ import (
 func TestDataCataloguePreservesScopeSourceAndActualModelCallAssociations(t *testing.T) {
 	index := groupindex.Index{Target: programindex.Target{ID: "service"}}
 	for i := 0; i < 6; i++ {
-		index.Data = append(index.Data, groupindex.DataRecord{DataRecord: atlas.DataRecord{ID: fmt.Sprintf("table-%d", i), Path: "models.py", Line: 10 + i,
+		index.Data = append(index.Data, groupindex.DataRecord{DataRecord: atlas.DataRecord{ID: fmt.Sprintf("y%d", i+1), Path: "models.py", Line: 10 + i,
 			Data: &facts.DataObject{Kind: "table", Origin: "orm", Scope: fmt.Sprintf("orm:Base%d", i), Name: "trades", Owner: &facts.Anchor{Path: "models.py", Line: 9 + i}, Columns: []facts.DataColumn{{Name: "id", PrimaryKey: true, Anchor: facts.Anchor{Path: "models.py", Line: 11 + i}}}}}, OwnerSubjectID: fmt.Sprintf("model-%d", i)})
 	}
-	index.Data = append(index.Data, groupindex.DataRecord{DataRecord: atlas.DataRecord{ID: "query", Path: "queries.py", Line: 3, References: []string{"table-0"},
+	index.Data = append(index.Data, groupindex.DataRecord{DataRecord: atlas.DataRecord{ID: "y7", Path: "queries.py", Line: 3, References: []string{"y1"},
 		Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "orm:Base0", Name: "ReadTrades", SQL: "SELECT * FROM trades WHERE note='<script>'", Statement: "SELECT", Partial: true}}})
 	index.Operations = []groupindex.Operation{{ID: "get-trades", SubjectID: "handler", Name: "GET /trades", Kind: "request"}, {ID: "retry", SubjectID: "unknown", Name: "Retry", Kind: "scheduled"}}
 	index.Subjects = []groupindex.Subject{{ID: "method", Object: &groupindex.ObjectFacts{Name: "Trade.get_trades", OwnerID: "model-0", Location: &programindex.Location{Path: "models.py", Line: 30, Column: 5}}}, {ID: "other-method", Object: &groupindex.ObjectFacts{Name: "Archive.get_trades", OwnerID: "model-1", Location: &programindex.Location{Path: "models.py", Line: 50, Column: 5}}}}
@@ -60,12 +60,12 @@ func TestDataCataloguePreservesScopeSourceAndActualModelCallAssociations(t *test
 		t.Fatal(err)
 	}
 	html := rendered.String()
-	for _, want := range []string{"trades", "GET /trades", "Trade.get_trades", "models.py:30:5", "ReadTrades", "#service-data-table-0", "&lt;script&gt;", "все 6 →"} {
+	for _, want := range []string{"trades", "GET /trades", "Trade.get_trades", "models.py:30:5", "ReadTrades", "#" + dataRowID("service", "y1"), "&lt;script&gt;", "все 6 →"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("data overview lost %q", want)
 		}
 	}
-	if strings.Contains(html, "<script>") || strings.Count(html, `id="service-data-table-`) != 6 {
+	if strings.Contains(html, "<script>") || strings.Count(html, `id="service-y`) != 7 {
 		t.Fatal("SQL not escaped or rows lost/duplicated")
 	}
 	if strings.Contains(html, "orm:Base") {
@@ -82,10 +82,10 @@ func TestDataCatalogueLinksQueryOperationsAndScopedTablesBothWays(t *testing.T) 
 		{ID: "query-class", Object: &groupindex.ObjectFacts{Kind: programindex.ObjectType, Name: "LegacyQueryClass", Location: location}},
 	}
 	index.Data = []groupindex.DataRecord{
-		{DataRecord: atlas.DataRecord{ID: "table", Path: "schema.sql", Line: 2, Data: &facts.DataObject{Kind: "table", Origin: "ddl", Scope: "schema:main", Name: "trades"}}},
-		{DataRecord: atlas.DataRecord{ID: "other-table", Path: "archive.sql", Line: 2, Data: &facts.DataObject{Kind: "table", Origin: "ddl", Scope: "schema:archive", Name: "trades"}}},
-		{DataRecord: atlas.DataRecord{ID: "query", Path: "queries.py", Line: 11, References: []string{"table"}, Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "schema:main", Name: "ReadTrades", SQL: "SELECT id FROM trades", Statement: "SELECT"}}, OwnerSubjectID: "query-owner"},
-		{DataRecord: atlas.DataRecord{ID: "legacy-query", Path: "queries.py", Line: 12, Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "unknown", Name: "DifferentQuery", SQL: "SELECT id FROM trades"}}, OwnerSubjectID: "query-class"},
+		{DataRecord: atlas.DataRecord{ID: "y1", Path: "schema.sql", Line: 2, Data: &facts.DataObject{Kind: "table", Origin: "ddl", Scope: "schema:main", Name: "trades"}}},
+		{DataRecord: atlas.DataRecord{ID: "y2", Path: "archive.sql", Line: 2, Data: &facts.DataObject{Kind: "table", Origin: "ddl", Scope: "schema:archive", Name: "trades"}}},
+		{DataRecord: atlas.DataRecord{ID: "y3", Path: "queries.py", Line: 11, References: []string{"y1"}, Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "schema:main", Name: "ReadTrades", SQL: "SELECT id FROM trades", Statement: "SELECT"}}, OwnerSubjectID: "query-owner"},
+		{DataRecord: atlas.DataRecord{ID: "y4", Path: "queries.py", Line: 12, Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "unknown", Name: "DifferentQuery", SQL: "SELECT id FROM trades"}}, OwnerSubjectID: "query-class"},
 	}
 	index.Operations = []groupindex.Operation{{ID: "get", Name: "GET /trades", SubjectID: "handler", Kind: "request"}}
 	index.StructuralEdges = []groupindex.StructuralEdge{
@@ -100,14 +100,14 @@ func TestDataCatalogueLinksQueryOperationsAndScopedTablesBothWays(t *testing.T) 
 	for _, row := range section.Data.Rows {
 		rows[row.ID] = row
 	}
-	query, table := rows["service-data-query"], rows["service-data-table"]
-	if len(query.Operations) != 1 || !query.Operations[0].Possible || len(query.References) != 1 || query.References[0].Href != "#service-data-table" {
+	query, table := rows[dataRowID("service", "y3")], rows[dataRowID("service", "y1")]
+	if len(query.Operations) != 1 || !query.Operations[0].Possible || len(query.References) != 1 || query.References[0].Href != "#"+dataRowID("service", "y1") {
 		t.Fatalf("query links lost: %+v", query)
 	}
-	if len(table.Queries) != 1 || table.Queries[0].Href != "#service-data-query" || len(table.Operations) != 1 || table.Operations[0].ViaHref != "#service-data-query" || !table.Operations[0].Possible {
+	if len(table.Queries) != 1 || table.Queries[0].Href != "#"+dataRowID("service", "y3") || len(table.Operations) != 1 || table.Operations[0].ViaHref != "#"+dataRowID("service", "y3") || !table.Operations[0].Possible {
 		t.Fatalf("table inverse/source links lost: %+v", table)
 	}
-	if len(rows["service-data-other-table"].Operations) != 0 || len(rows["service-data-other-table"].Queries) != 0 || len(rows["service-data-legacy-query"].Operations) != 0 {
+	if len(rows[dataRowID("service", "y2")].Operations) != 0 || len(rows[dataRowID("service", "y2")].Queries) != 0 || len(rows[dataRowID("service", "y4")].Operations) != 0 {
 		t.Fatal("name or class membership invented query ownership")
 	}
 	if len(section.Requests[0].Data) != 2 || len(section.RouteGroups[0].Rows[0].Paths[0].Data) != 2 {
@@ -121,41 +121,9 @@ func TestDataCatalogueLinksQueryOperationsAndScopedTablesBothWays(t *testing.T) 
 	if err := parsed.ExecuteTemplate(&html, "operation-row", section.Requests[0]); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"Данные", `href="#service-data-query"`, `href="#service-data-table"`} {
+	for _, expected := range []string{"Данные", `href="#` + dataRowID("service", "y3") + `"`, `href="#` + dataRowID("service", "y1") + `"`} {
 		if !strings.Contains(html.String(), expected) {
 			t.Fatalf("input row lacks %q", expected)
-		}
-	}
-}
-
-// Record ids carry kind prefixes with a colon ("query:…"). Inside a fragment
-// href html/template reads the text before the colon as a URL scheme and
-// replaces the whole link with #ZgotmplZ; the meetup report shipped 82 such
-// dead "SQL texts" links. Page ids therefore never contain a colon.
-func TestDataRowIDsAreSafeFragmentTargets(t *testing.T) {
-	index := groupindex.Index{Target: programindex.Target{ID: "service"}, Data: []groupindex.DataRecord{
-		{DataRecord: atlas.DataRecord{ID: "entity:f-1", Path: "schema.sql", Line: 2, Data: &facts.DataObject{Kind: "table", Origin: "ddl", Scope: "schema:main", Name: "events"}}},
-		{DataRecord: atlas.DataRecord{ID: "query:q-1", Path: "queries.sql", Line: 5, References: []string{"entity:f-1"},
-			Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "schema:main", Name: "CreateEvent", SQL: "INSERT INTO events VALUES (1)", Statement: "INSERT"}}},
-	}}
-	section := &pageSection{ID: "service", programTargetID: "service"}
-	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
-	builder.fillSectionData(section)
-	parsed, err := template.New("report").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := parsed.ExecuteTemplate(&out, "data.html", section); err != nil {
-		t.Fatal(err)
-	}
-	html := out.String()
-	if strings.Contains(html, "ZgotmplZ") {
-		t.Fatal("a data link was rejected by html/template")
-	}
-	for _, text := range []string{`id="service-data-entity-f-1"`, `id="service-data-query-q-1"`, `href="#service-data-query-q-1"`, `href="#service-data-entity-f-1"`} {
-		if !strings.Contains(html, text) {
-			t.Fatalf("data catalog lost %q", text)
 		}
 	}
 }

@@ -21,7 +21,7 @@ func TestIndependentRelationsKeepNeighboursAndExactResponseCache(t *testing.T) {
 			var wireRows []map[string]any
 			for i := range rows {
 				rows[i].Fields = []table.Field{{Name: "peer_options", Value: []string{"none", "p1"}}}
-				wire := map[string]any{"key": table.Key(i), "extra": []int{1}}
+				wire := map[string]any{"key": rows[i].ID, "extra": []int{1}}
 				for _, column := range def.Columns {
 					value := "Accepted prose."
 					if column.Kind == table.Choice {
@@ -50,7 +50,7 @@ func TestIndependentRelationsKeepNeighboursAndExactResponseCache(t *testing.T) {
 			if err != nil || base.calls != 1 || len(first) != 3 || first[0].answer == nil || first[1].answer != nil || first[2].answer == nil {
 				t.Fatalf("independent rows used knowledge routing or lost neighbours: %+v / %v", first, err)
 			}
-			if len(r.knowledge) != 0 || first[1].source != atlas.SourceGiven || len(r.rejected) != 1 || r.rejected[0].Samples[0] != "r2" {
+			if len(r.knowledge) != 0 || first[1].source != atlas.SourceGiven || len(r.rejected) != 1 || r.rejected[0].Samples[0] != "second" {
 				t.Fatalf("invalid row gained an answer or lost diagnostics: %+v", r.rejected)
 			}
 			exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, first[0].requestKey)
@@ -86,7 +86,7 @@ func TestIndependentRelationsKeepNeighboursAndExactResponseCache(t *testing.T) {
 			if err != nil || base.calls != 2 || updated[1].answer == nil || updated[1].source != atlas.SourceCache || updated[0].responseSHA == first[0].responseSHA {
 				t.Fatalf("replayed exact response was not revalidated: %+v / %v", updated, err)
 			}
-			if !reflect.DeepEqual(provider.accepted, [][]string{{"r1", "r3"}, {"r1", "r3"}, {"r1", "r2", "r3"}}) {
+			if !reflect.DeepEqual(provider.accepted, [][]string{{"first", "third"}, {"first", "third"}, {"first", "second", "third"}}) {
 				t.Fatalf("rejected-row metadata accepted: %v", provider.accepted)
 			}
 		})
@@ -139,12 +139,12 @@ func TestRefusedJointAndPeerRowsDoNotCreateConnections(t *testing.T) {
 				question := input["context"].(map[string]any)["question"]
 				for _, row := range rows {
 					if question == "joints" {
-						if row["key"] == "r2" {
+						if row["key"] == "j2" {
 							row["same"] = "unsupported"
 						}
 					} else if mode == "joints" {
 						row["peer"] = "none"
-					} else if row["key"] == "r2" {
+					} else if row["key"] == "out2" {
 						row["peer"] = "p999"
 					}
 				}
@@ -169,7 +169,11 @@ func TestRefusedJointAndPeerRowsDoNotCreateConnections(t *testing.T) {
 			if err := r.readJoints(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			if len(r.joints) != 1 || r.joints[0].From.BoundaryID != "out1" || r.joints[0].Blind != (mode == "peers") || len(r.rejected) != 1 || r.rejected[0].Samples[0] != "r2" {
+			wantRejected := "j2"
+			if mode == "peers" {
+				wantRejected = "out2"
+			}
+			if len(r.joints) != 1 || r.joints[0].From.BoundaryID != "out1" || r.joints[0].Blind != (mode == "peers") || len(r.rejected) != 1 || r.rejected[0].Samples[0] != wantRejected {
 				t.Fatalf("refused connection gained authority or removed its neighbour: %+v / %+v", r.joints, r.rejected)
 			}
 		})

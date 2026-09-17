@@ -85,7 +85,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   competing root-format instruction. Analytical responses use that direct owner
   shape; glossary work has a separate request and cannot add a `result/terms`
   wrapper. Table examples derive from the current `fill` columns and mode.
-- Models select only closed request-local short refs. Catalog rows may show
+- Models select only closed short refs already owned by their source artifacts:
+  `t*`, `n*`, `e*`, `a*`, `h*`, `g*`, `o*`, `k*` and `x*`. Cross-target refs
+  qualify those identities rather than renumbering them. Only genuine
+  request-local alternatives use `c*` refs. Catalog rows may show
   exact repository-relative paths, file names, symbol names/signatures, and
   dependency names because that context has semantic value. The model is
   never required to copy those values: UUIDs, canonical identities, ref
@@ -94,7 +97,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   absolute host paths are never sent.
 
 - Provider request bodies must never contain full repository source contents,
-  raw internal edges, canonical internal IDs, the LLM client's authentication
+  unselected raw internal edges, digests, the LLM client's authentication
   credentials, or unadvertised paths.
   A complete names-only tracked-file dictionary is explicitly allowed for the
   README file-role classifier.
@@ -185,9 +188,13 @@ a literal `<think/>`, truncation or ambiguous final JSON is refused.
 The shared executor stores entity-to-response-row indexes in its existing
 .llm-cache directory. Each memo contains only the request key and original row
 key; the answer comes from the current shared response and is revalidated by
-the owning table. Response tables are loaded once per request per reading. Answer basis identity includes provider configuration, prompt/table
-contract and the exact single-row model request. Repository labels, native
-subject IDs, ownership and parent knowledge IDs do not affect answer reuse.
+the owning table. Response tables are loaded once per request per reading.
+Answer basis identity includes provider configuration, prompt/table contract
+and the exact single-row evidence, but deliberately omits the artifact owner
+ID. It does not replace that ID with a memo-local key. Thus identical evidence
+may share one interpretation while every actual provider request and accepted
+response retains the representative artifact's real ID. Repository labels,
+native subject IDs, ownership and parent knowledge IDs do not affect answer reuse.
 They instead contribute to the current knowledge ID together with the answer
 basis and accepted cells. Every reuse rebuilds that binding: dependencies point
 to this run's parent knowledge, not obsolete records. A parent's changed source

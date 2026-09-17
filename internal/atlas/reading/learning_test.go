@@ -963,7 +963,7 @@ func TestLearningMenuRefusesAnIntentOverItsCeiling(t *testing.T) {
 				if r.learning.State != "partial" || !reflect.DeepEqual(r.learning.Questions, []atlas.LearningQuestion{data}) || audiences["purpose/unavailable"] != learningMenuLimit+2 || audiences["data/first_day"] != 1 {
 					t.Fatalf("a menu over the ceiling was read or refused its neighbour: state %q, audiences %v, questions %+v", r.learning.State, audiences, r.learning.Questions)
 				}
-				if len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || !reflect.DeepEqual(r.rejected[0].Samples, []string{"r1", "purpose"}) || !strings.Contains(r.rejected[0].Reason, fmt.Sprintf("chooses %d items, limit %d", refs, learningMenuLimit)) {
+				if len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || !reflect.DeepEqual(r.rejected[0].Samples, []string{"purpose", "purpose"}) || !strings.Contains(r.rejected[0].Reason, fmt.Sprintf("chooses %d items, limit %d", refs, learningMenuLimit)) {
 					t.Fatalf("journal does not name the refused menu and its count: %+v", r.rejected)
 				}
 				return

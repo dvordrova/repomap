@@ -1,5 +1,10 @@
 package storefixture
 
+import (
+	"context"
+	"database/sql"
+)
+
 // Shared branches stay distinct paths even when they reach one callback.
 type flowCallback func()
 type routedCallback func()
@@ -69,4 +74,45 @@ func InvokeInterfaceFlows(flag bool) {
 	first, second := flowStorePair()
 	first.Put("first")
 	second.Put("second")
+}
+
+type constructorInjectedFacade struct{ store FieldStore }
+
+// compatibleOnlyEngine is never assigned to a FieldStore. It exists to prove
+// that library interface matching is method-set authority, not runtime binding.
+type compatibleOnlyEngine struct{}
+
+func (*compatibleOnlyEngine) Put(string) {}
+
+func newConstructorInjectedFacade(store FieldStore) *constructorInjectedFacade {
+	return &constructorInjectedFacade{store: store}
+}
+
+func (facade *constructorInjectedFacade) Put(key string) { facade.store.Put(key) }
+
+func InvokeConstructorInjectedStore() {
+	newConstructorInjectedFacade(&storedEngine{}).Put("constructor")
+}
+
+// A repository interface filled by a standard-library value: the call through
+// the field is the external method of that value, with its SQL argument.
+type rowQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+type userRows struct{ db rowQuerier }
+
+func newUserRows(db rowQuerier) *userRows { return &userRows{db: db} }
+
+func (rows *userRows) Name(ctx context.Context, id int64) error {
+	var name string
+	return rows.db.QueryRowContext(ctx, "SELECT name FROM users WHERE id = $1", id).Scan(&name)
+}
+
+func OpenUserRows() (*userRows, error) {
+	db, err := sql.Open("postgres", "")
+	if err != nil {
+		return nil, err
+	}
+	return newUserRows(db), nil
 }

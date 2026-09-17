@@ -25,11 +25,11 @@ func TestOrientationMemberEvidenceCarriesCompactOrigins(t *testing.T) {
 	for level := 8; level >= 0; level-- {
 		origin = &sourcevalue.Value{Kind: "field", Text: fmt.Sprintf("level%d", level), Anchor: anchor(level + 10), Owner: anchor(1), Parts: []sourcevalue.Value{*origin}}
 	}
-	call := atlas.SymbolCall{Name: "Apply", Kind: "calls", Line: 5, Column: 9, Invocation: "synchronous", Resolution: "exact",
+	call := atlas.SymbolCall{Name: "Apply", Kind: "calls", Line: 5, Column: 9, Resolution: "exact",
 		ReceiverValue:   &sourcevalue.Value{Kind: "parameter", Text: "client", Position: 1, Owner: anchor(1)},
 		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: origin}},
 		ResultValue:     &sourcevalue.Value{Kind: "call_result", Anchor: anchor(5)}}
-	main := atlas.Place{ID: "local-place-main", Kind: atlas.PlaceSymbol, Path: "alpha/main.go", LineNo: 1,
+	main := atlas.Place{ID: "local-place-main", Kind: atlas.PlaceSymbol, Path: "alpha/main.go", LineNo: 1, TargetIDs: []string{fixture.input.Groups[0].Target.ID},
 		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: fixture.subjectID("alpha", "inbound"), Name: "Serve", Signature: "func Serve()"}, Calls: []atlas.SymbolCall{call}}}
 	fixture.input.Graph = atlas.Graph{Places: []atlas.Place{main}}
 	full, err := json.Marshal(main.Symbol.Calls)

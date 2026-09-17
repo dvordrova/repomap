@@ -17,18 +17,20 @@ import (
 )
 
 func TestInterpretedOperationsBindCallsWithoutFrameworkRules(t *testing.T) {
-	client := atlas.Place{ID: "send", Kind: atlas.PlaceSymbol, Path: "app/send.go", LineNo: 5, Parent: "file:send", TargetIDs: []string{"client"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "sender", Name: "Submit"}}}
+	client := atlas.Place{ID: "send", Kind: atlas.PlaceSymbol, Path: "app/send.go", LineNo: 5, Parent: "file:send", TargetIDs: []string{"client"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "sender", Name: "Submit"},
+		Calls: []atlas.SymbolCall{{Kind: "invokes_external", Name: "CompanySDK.Submit", Line: 11, Values: []string{"jobs"}, API: &atlas.CallAPI{Package: "company/sdk", Name: "Submit"}}}}}
 	handler := atlas.Place{ID: "handle", Kind: atlas.PlaceSymbol, Path: "service/handle.py", LineNo: 8, Parent: "file:handle", TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "receiver", Name: "Handler.Submit", Column: 17}}}
-	r := reader{opts: Options{Graph: atlas.Graph{Places: []atlas.Place{client, handler}}}, boundaries: map[string]*boundaryState{}, operations: map[string][3]string{"handle": {"request", "submit job"}}, symbolLine: map[string]cell{"send": {value: "Submits a job to the service."}, "handle": {value: "Accepts a job."}}, outbound: map[string][]atlas.SymbolCall{"send": {{Name: "CompanySDK.Submit", Line: 11, Values: []string{"jobs"}}}}}
+	r := reader{opts: Options{Graph: atlas.Graph{Places: []atlas.Place{client, handler}}}, boundaries: map[string]*boundaryState{}, operations: map[string][3]string{"handle": {"request", "submit job"}}, symbolLine: map[string]cell{"send": {value: "Submits a job to the service."}, "handle": {value: "Accepts a job."}}, api: map[string]apiRole{"company/sdk.Submit": {talks: atlas.BoundarySDK}}}
 	r.bindInterpretedBoundaries()
 	if len(r.boundaries) != 2 {
 		t.Fatalf("wanted two bound endpoints, got %v", r.boundaries)
 	}
-	var out *boundaryState
-	in := r.boundaries["in:handle"]
+	var out, in *boundaryState
 	for _, state := range r.boundaries {
 		if state.place.Boundary.Direction == atlas.DirectionOut {
 			out = state
+		} else if state.place.Boundary.Direction == atlas.DirectionIn {
+			in = state
 		}
 	}
 	if out.place.Boundary.ObjectID != "sender" || out.place.LineNo != 11 || in.place.Boundary.ObjectID != "receiver" || in.place.Column != 17 {
@@ -42,8 +44,8 @@ func TestInterpretedOperationsBindCallsWithoutFrameworkRules(t *testing.T) {
 	if len(published.Boundaries) != 1 || published.Boundaries[0].Column != 17 {
 		t.Fatalf("boundary lost the declaration column before map matching: %+v", published.Boundaries)
 	}
-	if out.kind != "" || out.line != "" {
-		t.Fatal("selected call gained a relationship before its boundary review")
+	if out.kind != atlas.BoundarySDK || out.line != "" {
+		t.Fatal("the symbol's role did not reach the call's boundary")
 	}
 	if value, _, ok := valuesJoin(out.place.Boundary, in.place.Boundary); ok {
 		t.Fatalf("synthetic method name became an observed matching value: %q", value)
@@ -62,12 +64,14 @@ func twoTargetGraph(t *testing.T) atlas.Graph {
 			Directory: &atlas.DirectoryFacts{Dirs: dirs, Files: files, FileCount: count, TopBox: top},
 		}
 	}
+	nextNode := 0
 	file := func(path string, depth int, targets []string, callers, callees []string) atlas.Place {
+		nextNode++
 		return atlas.Place{
 			ID: atlas.FileID(path), Kind: atlas.PlaceFile, Path: path, Depth: depth,
 			Parent: atlas.DirectoryID(filepath.Dir(path)), TargetIDs: targets, Given: "given " + path,
 			File: &atlas.FileFacts{
-				Decls:   []atlas.Decl{{Name: "F", Kind: "function", LineNo: 3, Exported: true, Doc: "F does."}},
+				Decls:   []atlas.Decl{{ObjectID: fmt.Sprintf("n%d", nextNode), Name: "F", Kind: "function", LineNo: 3, Exported: true, Doc: "F does."}},
 				Callers: callers, Callees: callees,
 			},
 		}
@@ -116,6 +120,23 @@ func twoTargetGraph(t *testing.T) atlas.Graph {
 		},
 		Seeds: []string{atlas.FileID("svc/api/h.go"), atlas.FileID("web/src/app.ts")},
 	}
+	// A file declaration and its graph node are one native fact. Keeping both
+	// makes this fixture match every real language cube instead of relying on
+	// the reader to manufacture missing symbol identities.
+	var symbols []atlas.Place
+	for _, file := range graph.Places {
+		if file.File == nil {
+			continue
+		}
+		for rank, decl := range file.File.Decls {
+			symbols = append(symbols, atlas.Place{
+				ID: atlas.SymbolID(file.Path, decl.LineNo, decl.Name), Kind: atlas.PlaceSymbol,
+				Path: file.Path, LineNo: decl.LineNo, Parent: file.ID, TargetIDs: append([]string(nil), file.TargetIDs...),
+				Given: decl.Name, Symbol: &atlas.SymbolFacts{Decl: decl, Candidate: false, Rank: rank + 1},
+			})
+		}
+	}
+	graph.Places = append(graph.Places, symbols...)
 	atlas.SortPlaces(graph.Places)
 	encoded, err := atlas.EncodeGraph(graph)
 	if err != nil {
@@ -133,20 +154,21 @@ func withSymbols(t *testing.T, graph atlas.Graph) atlas.Graph {
 	t.Helper()
 	core := -1
 	for i, place := range graph.Places {
-		if place.ID == atlas.FileID("svc/core/c.go") {
+		if place.Kind == atlas.PlaceFile && place.Path == "svc/core/c.go" {
 			core = i
 		}
 	}
 	for i := 1; i <= 8; i++ {
 		name := "Op" + itoa(i)
+		objectID := "n" + itoa(100+i)
 		graph.Places[core].File.Decls = append(graph.Places[core].File.Decls, atlas.Decl{
-			Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true,
+			ObjectID: objectID, Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true,
 		})
 		graph.Places = append(graph.Places, atlas.Place{
 			ID: atlas.SymbolID("svc/core/c.go", 10+i, name), Kind: atlas.PlaceSymbol, Path: "svc/core/c.go",
 			LineNo: 10 + i, Depth: 1, TargetIDs: []string{"svc"}, Parent: atlas.FileID("svc/core/c.go"),
 			Given:  "func " + name,
-			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true}, Candidate: true, Rank: i},
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: objectID, Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true}, Candidate: true, Rank: i},
 		})
 	}
 	atlas.SortPlaces(graph.Places)
@@ -262,7 +284,7 @@ func TestAreasContainOnlyExplicitlyChosenParts(t *testing.T) {
 		}
 	}
 	if assigned != 2 {
-		t.Fatal("unselected descendants inherited an area")
+		t.Fatalf("area assignment count %d, boxes: %+v", assigned, svc.Boxes)
 	}
 	sides := make(map[string]string)
 	for _, box := range svc.Boxes {
@@ -378,7 +400,7 @@ func TestJointsMatchValuesAcrossTargetsAndAskPeersForTheRest(t *testing.T) {
 	if exact.Value != "GET /api/levels/{id}" || !exact.Possible || exact.Blind || exact.Label != "reads GET /api/levels/{id}" {
 		t.Fatalf("value joint: %+v", exact)
 	}
-	if !blind.Blind || !blind.Possible || blind.To.BoundaryID != "bnd:svc/api/h.go:10:http_server" {
+	if !blind.Blind || !blind.Possible || boundaryPath(result.Atlas, blind.To) != "svc/api/h.go" {
 		t.Fatalf("blind joint: %+v", blind)
 	}
 	var web atlas.Target
@@ -387,7 +409,7 @@ func TestJointsMatchValuesAcrossTargetsAndAskPeersForTheRest(t *testing.T) {
 			web = target
 		}
 	}
-	if web.Role == "" || web.Line != "Text for r2" && web.Line != "Text for r1" {
+	if web.Role == "" || web.Line != "Text for web" {
 		t.Fatalf("portfolio cells: role %q line %q", web.Role, web.Line)
 	}
 	if len(web.Boundaries) != 3 {
@@ -444,7 +466,7 @@ func TestPeerWindowWinnersCompeteBeforePublication(t *testing.T) {
 	for _, joint := range result.Atlas.Joints {
 		if joint.Blind {
 			blind++
-			if joint.To.BoundaryID != "bnd:svc/api/h.go:10:http_server" || !joint.Possible {
+			if boundaryPath(result.Atlas, joint.To) != "svc/api/h.go" || !joint.Possible {
 				t.Fatalf("final source identity or uncertainty lost: %+v", joint)
 			}
 		} else {
@@ -454,6 +476,20 @@ func TestPeerWindowWinnersCompeteBeforePublication(t *testing.T) {
 	if blind != 1 || literal != 1 {
 		t.Fatalf("published intermediate window choices: blind=%d literal=%d", blind, literal)
 	}
+}
+
+func boundaryPath(value atlas.Atlas, endpoint atlas.Endpoint) string {
+	for _, target := range value.Targets {
+		if target.ID != endpoint.TargetID {
+			continue
+		}
+		for _, boundary := range target.Boundaries {
+			if boundary.ID == endpoint.BoundaryID {
+				return boundary.Path
+			}
+		}
+	}
+	return ""
 }
 
 func TestMatchingSignatureBelongsToExactBoundaryObject(t *testing.T) {
@@ -545,7 +581,20 @@ func TestCrossTargetCallsBecomeLinkJoints(t *testing.T) {
 			continue
 		}
 		links++
-		if joint.From.TargetID != "web" || joint.From.BoxID != designID("web", []string{atlas.SymbolID("web/src/client.ts", 3, "F")}) || joint.To.TargetID != "svc" || joint.To.BoxID != designID("svc", []string{atlas.SymbolID("svc/api/h.go", 3, "F")}) || !joint.Same || joint.Possible {
+		boxPath := func(targetID, boxID string) string {
+			for _, target := range result.Atlas.Targets {
+				if target.ID != targetID {
+					continue
+				}
+				for _, box := range target.Boxes {
+					if box.ID == boxID && len(box.Files) > 0 {
+						return box.Files[0].Path
+					}
+				}
+			}
+			return ""
+		}
+		if joint.From.TargetID != "web" || boxPath("web", joint.From.BoxID) != "web/src/client.ts" || joint.To.TargetID != "svc" || boxPath("svc", joint.To.BoxID) != "svc/api/h.go" || !joint.Same || joint.Possible {
 			t.Fatalf("link joint: %+v", joint)
 		}
 	}
@@ -638,7 +687,7 @@ func TestClosedScopesKeepSelectionsAndQuestionSources(t *testing.T) {
 			}
 			selectedSubjects := make(map[string]bool)
 			for _, record := range saved.Records {
-				if strings.HasPrefix(record.PlaceID, "selection:") {
+				if record.Stage == lines.StageSymbols && record.Cells["key_symbol"] != "" {
 					if record.Cells["key_symbol"] != "yes" {
 						t.Fatalf("lost choice: %+v", record)
 					}

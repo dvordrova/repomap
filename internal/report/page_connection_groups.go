@@ -43,7 +43,11 @@ func (builder *pageBuilder) nativeGroupConnections(index groupindex.Index, group
 			}
 			arrow, peer = "←", from
 		}
-		fromSubject, toSubject := builder.subjects[edge.FromSubjectID], builder.subjects[edge.ToSubjectID]
+		fromSubject, fromKnown := builder.subject(index.Target.ID, edge.FromSubjectID)
+		toSubject, toKnown := builder.subject(index.Target.ID, edge.ToSubjectID)
+		if !fromKnown || !toKnown {
+			continue
+		}
 		fromName, fromAnchor := builder.subjectDisplay(fromSubject.subject)
 		toName, toAnchor := builder.subjectDisplay(toSubject.subject)
 		if fromName == "" || toName == "" {
@@ -68,12 +72,17 @@ func (builder *pageBuilder) internalGroupConnections(index groupindex.Index, gro
 	}
 	var rows []pageConnection
 	for _, edge := range index.StructuralEdges {
-		if edge.Role != groupindex.EdgeRelationTarget || edge.RelationKind == programindex.RelationContains ||
+		if edge.Role != groupindex.EdgeRelationTarget ||
 			!members[edge.FromSubjectID] || !members[edge.ToSubjectID] {
 			continue
 		}
-		fromName, fromAnchor := builder.subjectDisplay(builder.subjects[edge.FromSubjectID].subject)
-		toName, toAnchor := builder.subjectDisplay(builder.subjects[edge.ToSubjectID].subject)
+		fromSubject, fromKnown := builder.subject(index.Target.ID, edge.FromSubjectID)
+		toSubject, toKnown := builder.subject(index.Target.ID, edge.ToSubjectID)
+		if !fromKnown || !toKnown {
+			continue
+		}
+		fromName, fromAnchor := builder.subjectDisplay(fromSubject.subject)
+		toName, toAnchor := builder.subjectDisplay(toSubject.subject)
 		if fromName == "" || toName == "" {
 			continue
 		}

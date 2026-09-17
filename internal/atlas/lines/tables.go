@@ -45,9 +45,6 @@ var symbolsPrompt string
 //go:embed prompts/types.md
 var typesPrompt string
 
-//go:embed prompts/boundaries.md
-var boundariesPrompt string
-
 //go:embed prompts/fixed_boundaries.md
 var fixedBoundariesPrompt string
 
@@ -103,8 +100,12 @@ func TypeRow(place atlas.Place) table.Row {
 func ownedDeclarations(declarations []atlas.TypeMember) []map[string]any {
 	members := make([]map[string]any, 0, len(declarations))
 	for _, member := range declarations {
-		members = append(members, map[string]any{"path": member.Path, "line": member.Decl.LineNo,
-			"name": member.Decl.Name, "kind": member.Decl.Kind, "signature": member.Decl.Signature, "author_doc": member.Decl.Doc})
+		entry := map[string]any{"path": member.Path, "line": member.Decl.LineNo,
+			"name": member.Decl.Name, "kind": member.Decl.Kind, "signature": member.Decl.Signature, "author_doc": member.Decl.Doc}
+		if member.Decl.Aliases != "" {
+			entry["aliases"] = member.Decl.Aliases
+		}
+		members = append(members, entry)
 	}
 	return members
 }
@@ -163,7 +164,7 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 // what the call says about this declaration, such as a loop that launches it.
 func localCall(call atlas.SymbolCall) string {
 	line := fmt.Sprintf("%s@%d", call.Name, call.Line)
-	if call.Invocation != "" && call.Invocation != DefaultInvocation {
+	if call.Invocation != "" {
 		line += " " + call.Invocation
 	}
 	var statements []string
@@ -183,33 +184,8 @@ func localCall(call atlas.SymbolCall) string {
 // lists are column options: every row chooses from the same list, so no row
 // repeats it, and an outgoing candidate is offered only the kinds the group
 // index keeps as communication.
-func Boundaries(outgoing ...bool) table.Definition {
-	positive := map[string]string{"decision": "boundary"}
-	def := table.Definition{
-		Stage: StageBoundaries, Contract: boundariesContract,
-		System: withVocabulary(boundariesPrompt), Independent: true, Memoize: true,
-		ContextAfterRows: true,
-		Columns: []table.Column{
-			{Name: "decision", Kind: table.Choice, Options: []string{"boundary", "none", "unassessed"}, Note: "whether this call establishes external communication; choose from these three options using the prompt's decision/basis table"},
-			{Name: "kind", Kind: table.Choice, Options: atlas.BoundaryKinds(), When: positive},
-			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, When: positive, Note: "at most ten words, no subject: why this component exchanges with the runtime system"},
-		},
-	}
-	if len(outgoing) > 0 && outgoing[0] {
-		def.Contract += ".outbound"
-		def.Columns[1].Options = atlas.OutgoingBoundaryKinds()
-		def.Columns = append(def.Columns,
-			destinationColumn(positive),
-			table.Column{Name: "basis", Kind: table.Choice, Options: []string{"dispatch", "remote_client_instance"}, When: positive, Note: "how the boundary is established; dispatch and remote_client_instance are values of basis, not decision"},
-			addressColumn(positive),
-		)
-	}
-	return def
-}
-
-// FixedBoundaries explains an existing native observation. Its existence and
-// kind are input facts, not mandatory one-option model decisions, and the
-// short prompt asks for the line alone. An outgoing HTTP fact whose address
+// FixedBoundaries explains a boundary whose existence and kind the facts and
+// the symbol roles already gave; the short prompt asks for the line alone. An outgoing HTTP fact whose address
 // the code does not know may still need a destination and an address choice.
 func FixedBoundaries(outgoing bool) table.Definition {
 	def := table.Definition{
@@ -509,7 +485,7 @@ func BoundarySourceContext(place, owner atlas.Place, places, declarations map[st
 			var matched []map[string]any
 			if declaration := declarations[id]; declaration.Symbol != nil {
 				for _, call := range declaration.Symbol.Calls {
-					if call.Line != caller.Line || call.Kind != caller.Kind || call.Invocation != caller.Invocation || call.Resolution != caller.Resolution || !slices.Contains(call.CalleeIDs, owner.ID) {
+					if call.Line != caller.Line || call.Kind != caller.Kind || call.Invocation != caller.Invocation || call.Dispatch != caller.Dispatch || call.Resolution != caller.Resolution || !slices.Contains(call.CalleeIDs, owner.ID) {
 						continue
 					}
 					evidence := EvidenceCatalog{OmitDefaults: true}
@@ -524,7 +500,7 @@ func BoundarySourceContext(place, owner atlas.Place, places, declarations map[st
 			}
 			if len(matched) == 0 {
 				matched = append(matched, map[string]any{"line": caller.Line, "kind": caller.Kind,
-					"invocation": caller.Invocation, "resolution": caller.Resolution})
+					"invocation": caller.Invocation, "dispatch": caller.Dispatch, "resolution": caller.Resolution})
 			}
 			row["call_sites"] = append(sites, matched...)
 		}
@@ -568,7 +544,7 @@ func Arrows() table.Definition {
 func ArrowRow(id string, from, to BoxSummary, witnesses []atlas.Witness, calls int) table.Row {
 	pairs := make([]string, 0, min(len(witnesses), maxWitnesses))
 	for _, witness := range witnesses {
-		pairs = append(pairs, witness.Caller+" calls "+witness.Callee)
+		pairs = append(pairs, witness.Caller+" "+witnessVerb(witness.Kind)+" "+witness.Callee)
 		if len(pairs) == maxWitnesses {
 			break
 		}
@@ -768,4 +744,23 @@ func PeerContext(refs []string, sides []BoundarySide) table.Field {
 		peers = append(peers, peer)
 	}
 	return table.Field{Name: "peers", Value: peers}
+}
+
+// witnessVerb says what one declaration does to another, by the relation the
+// graph recorded: a call, a callback handed over, an implementation supplied.
+func witnessVerb(kind string) string {
+	switch kind {
+	case "passes_callback":
+		return "passes as a callback"
+	case "binds_implementation":
+		return "supplies as the implementation of"
+	case "decorates":
+		return "is decorated by"
+	case "executes":
+		return "runs"
+	case "imports":
+		return "imports"
+	default:
+		return "calls"
+	}
 }

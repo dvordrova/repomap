@@ -336,7 +336,7 @@ func displayProtectedNames(data *ReportData) []string {
 		add(path)
 	}
 	if data.GroupGraph != nil {
-		for _, index := range data.GroupGraph.Indexes {
+		for _, index := range data.GroupGraph.hydrated {
 			add(index.Target.Name)
 			for _, call := range index.Outbound {
 				add(call.Address)

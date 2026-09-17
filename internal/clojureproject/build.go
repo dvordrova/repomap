@@ -44,7 +44,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 	objectRef := func(d definition) string {
 		return fmt.Sprintf("var:%s:%d:%d:%s/%s", d.Filename, d.Row, d.Col, d.NS, d.Name)
 	}
-	addRelation := func(kind p.RelationKind, from string, to []string, at site, invocation string, pattern *p.RelationPatternInput) {
+	addRelation := func(kind p.RelationKind, from string, to []string, at site, dispatch string, pattern *p.RelationPatternInput) {
 		if from == "" {
 			return
 		}
@@ -56,7 +56,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		} else if len(to) > 1 {
 			resolution = p.ResolutionAlternatives
 		}
-		r := p.RelationInput{SourceRef: fmt.Sprintf("relation:%d", len(input.Relations)), Kind: kind, FromRef: from, ToRefs: to, Resolution: resolution, TargetsObserved: max(1, len(to)), Location: location(at), Invocation: invocation, Witnesses: []p.Witness{{Kind: "clj_kondo", Detail: "native " + string(kind), Location: location(at)}}, WitnessesObserved: 1}
+		r := p.RelationInput{SourceRef: fmt.Sprintf("relation:%d", len(input.Relations)), Kind: kind, FromRef: from, ToRefs: to, Resolution: resolution, TargetsObserved: max(1, len(to)), Location: location(at), Dispatch: dispatch, Witnesses: []p.Witness{{Kind: "clj_kondo", Detail: "native " + string(kind), Location: location(at)}}, WitnessesObserved: 1}
 		if pattern != nil {
 			r.Patterns = []p.RelationPatternInput{*pattern}
 			r.PatternsObserved = 1
@@ -119,11 +119,9 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		if len(d.Arglists) > 0 {
 			signature += " " + strings.Join(d.Arglists, " ")
 		}
-		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: kind, Name: d.NS + "/" + d.Name, Visibility: visibility, Signature: signature, OwnerRef: owner, ContainerRef: owner, Location: location(d.site),
-			SymbolLinkIdentities: []p.SymbolLinkIdentityInput{{Domain: "clojure-var", Parts: []string{d.Filename, d.NS, d.Name}, Display: d.NS + "/" + d.Name}}}
+		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: kind, Name: d.NS + "/" + d.Name, Visibility: visibility, Signature: signature, OwnerRef: owner, ContainerRef: owner, Location: location(d.site)}
 		vars[d.NS+"/"+d.Name] = append(vars[d.NS+"/"+d.Name], ref)
 		definitions[d.Filename] = append(definitions[d.Filename], d)
-		addRelation(p.RelationContains, owner, []string{ref}, d.site, "", nil)
 		if d.Name == "-main" && kind == p.ObjectFunction {
 			fileRef, _ := repository.ID(d.Filename)
 			input.Target.Sources = append(input.Target.Sources, p.TargetSource{FileRef: string(fileRef), Path: d.Filename})
@@ -165,6 +163,26 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		}
 		return []string{external(ns, name)}
 	}
+	// A var named in argument position is what that argument carries.
+	argumentTargets := map[site][]string{}
+	for _, u := range a.Usages {
+		if valid(u.site) && !u.Macro && u.Arity == nil {
+			argumentTargets[site{Filename: u.Filename, Row: u.NameRow, Col: u.NameCol}] = resolve(u.To, u.Name)
+		}
+	}
+	argumentsOf := func(u site) []p.PatternArgumentInput {
+		args := sources[u.Filename].arguments(u)
+		for i := range args {
+			at := args[i].Origin.Anchor
+			if refs := argumentTargets[site{Filename: at.Path, Row: at.Line, Col: at.Column}]; len(refs) > 0 {
+				args[i].ObjectRefs, args[i].Resolution, args[i].ObjectsObserved = refs, p.ResolutionExact, len(refs)
+				if len(refs) > 1 {
+					args[i].Resolution = p.ResolutionAlternatives
+				}
+			}
+		}
+		return args
+	}
 	for _, u := range a.Usages {
 		if !valid(u.site) {
 			continue
@@ -180,18 +198,22 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			addRelation(p.RelationReads, owner, targets, u.site, "", nil)
 			continue
 		}
-		args := sources[u.Filename].arguments(u.site)
+		args := argumentsOf(u.site)
 		pattern := p.RelationPatternInput{SourceRef: fmt.Sprintf("call:%s:%d:%d", u.Filename, u.Row, u.Col), Form: p.PatternCall, Selector: u.To + "/" + u.Name, Location: location(u.site), Arguments: args, ArgumentsObserved: len(args)}
-		addRelation(p.RelationCalls, owner, targets, u.site, "synchronous", &pattern)
+		kind := p.RelationCalls
+		if len(targets) == 1 && objects[targets[0]].Kind == p.ObjectExternalSymbol {
+			kind = p.RelationInvokesExternal
+		}
+		addRelation(kind, owner, targets, u.site, "", &pattern)
 	}
 	for _, u := range a.Java {
 		if !valid(u.site) || !u.Call {
 			continue
 		}
 		ref := external(u.Class, u.Method)
-		args := sources[u.Filename].arguments(u.site)
+		args := argumentsOf(u.site)
 		pattern := p.RelationPatternInput{SourceRef: fmt.Sprintf("java:%s:%d:%d", u.Filename, u.Row, u.Col), Form: p.PatternCall, Selector: u.Class + "/" + u.Method, Location: location(u.site), Arguments: args, ArgumentsObserved: len(args)}
-		addRelation(p.RelationCalls, ownerAt(u.site), []string{ref}, u.site, "synchronous", &pattern)
+		addRelation(p.RelationCalls, ownerAt(u.site), []string{ref}, u.site, "", &pattern)
 	}
 	for _, u := range a.Instances {
 		if u.Row == 0 {
@@ -201,7 +223,12 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		if !valid(u.site) {
 			continue
 		}
-		addRelation(p.RelationCalls, ownerAt(u.site), nil, u.site, u.Method, nil)
+		owner := ownerAt(u.site)
+		if owner == "" {
+			continue
+		}
+		addRelation(p.RelationCalls, owner, nil, u.site, "", nil)
+		input.Relations[len(input.Relations)-1].Witnesses[0].Detail = "java instance method " + u.Method
 	}
 	// clj-kondo binds locals independently from vars: a parameter shadowing a
 	// global must never turn into a call of that global.
@@ -214,7 +241,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		if offset >= 0 && offset < len(s.text) && s.text[offset] == '(' {
 			args := s.arguments(u.site)
 			pattern := p.RelationPatternInput{SourceRef: fmt.Sprintf("local:%s:%d:%d", u.Filename, u.Row, u.Col), Form: p.PatternCall, Selector: u.Name, Location: location(u.site), Arguments: args, ArgumentsObserved: len(args)}
-			addRelation(p.RelationCalls, ownerAt(u.site), nil, u.site, "function_value_call:synchronous", &pattern)
+			addRelation(p.RelationCalls, ownerAt(u.site), nil, u.site, p.DispatchFunctionValue, &pattern)
 		}
 	}
 	var importers []dependencies.Importer
@@ -310,7 +337,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 					continue
 				}
 				at := arg.Origin.Anchor
-				addRelation(p.RelationPassesCallback, call.FromRef, slices.Clone(arg.ObjectRefs), site{Filename: at.Path, Row: at.Line, Col: at.Column}, "callback_transfer:synchronous", nil)
+				addRelation(p.RelationPassesCallback, call.FromRef, slices.Clone(arg.ObjectRefs), site{Filename: at.Path, Row: at.Line, Col: at.Column}, "", nil)
 				input.Relations[len(input.Relations)-1].SourceArgument = &p.PatternArgumentRefInput{RelationSourceRef: call.SourceRef, PatternSourceRef: pattern.SourceRef, Position: arg.Position}
 			}
 		}

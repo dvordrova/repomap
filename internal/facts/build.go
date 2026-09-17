@@ -9,6 +9,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 // TargetInput is one analyzed target as the pipeline knows it: its sealed
@@ -57,17 +58,17 @@ func Build(input Input) (Result, error) {
 			}
 		}
 		builder.addEntrypoints(target)
-		builder.addHTTP(target)
+		builder.addRegistrations(target)
+		builder.addSQLQueries(target)
 		builder.addConfigReads(target)
-		builder.addListenAddresses(target)
 		builder.addDynamicExecution(target)
 		builder.addReachability(target)
 		builder.addDependencies(target)
 	}
+	builder.addDeadModules()
 	if err := builder.addExtractions(); err != nil {
 		return Result{}, err
 	}
-	builder.addPortals()
 	builder.addManifests()
 	builder.addTODOs()
 	builder.addNegatives()
@@ -88,6 +89,7 @@ type builder struct {
 	source      *sourceReader
 	targets     []*targetContext
 	facts       []Fact
+	reach       *reachability
 	ids         map[string]int
 	seen        map[string]struct{}
 	diagnostics []Diagnostic
@@ -98,6 +100,7 @@ func newBuilder(input Input) (*builder, error) {
 		input: input,
 		ids:   make(map[string]int),
 		seen:  make(map[string]struct{}),
+		reach: newReachability(),
 	}
 	result.source = newSourceReader(input.Repository, result.diagnose)
 	ids := make(map[string]struct{}, len(input.Targets))
@@ -192,6 +195,9 @@ type targetContext struct {
 	callbacks    map[string]string
 	classBases   map[string][]string
 	classMembers map[string]map[string]bool
+	// producers indexes call patterns by site, so a value read as "the result
+	// of the call at this anchor" can be followed to that call.
+	producers map[sourcevalue.Anchor][]programindex.Relation
 }
 
 func newTargetContext(input TargetInput) (*targetContext, error) {
@@ -221,7 +227,7 @@ func newTargetContext(input TargetInput) (*targetContext, error) {
 	for _, relation := range index.Relations {
 		if relation.Kind == programindex.RelationImplements {
 			for _, witness := range relation.Witnesses {
-				if witness.Kind == "base_class" || witness.Kind == "base_class_candidate" {
+				if witness.Kind == "base_class" {
 					// An unresolved or omitted base must not disappear when
 					// deciding whether a method has one inherited origin.
 					bases := relation.ToIDs
@@ -245,7 +251,7 @@ func newTargetContext(input TargetInput) (*targetContext, error) {
 		}
 	}
 	for _, object := range index.Objects {
-		if len(result.classBases[object.OwnerID]) == 0 {
+		if object.OwnerID == "" {
 			continue
 		}
 		if result.classMembers[object.OwnerID] == nil {
@@ -255,14 +261,13 @@ func newTargetContext(input TargetInput) (*targetContext, error) {
 	}
 
 	result.target = Target{
-		ID:              NewTargetID(index.Target.Language, root, manifest, index.Target.ID),
-		ProgramTargetID: index.Target.ID,
-		Language:        index.Target.Language,
-		Name:            index.Target.Name,
-		Kind:            index.Target.Kind,
-		Root:            root,
-		Manifest:        manifest,
-		Anchor:          result.targetAnchor(manifest),
+		ID:       index.Target.ID,
+		Language: index.Target.Language,
+		Name:     index.Target.Name,
+		Kind:     index.Target.Kind,
+		Root:     root,
+		Manifest: manifest,
+		Anchor:   result.targetAnchor(manifest),
 	}
 	return result, nil
 }
@@ -319,4 +324,13 @@ func (b *builder) addEntrypoints(target *targetContext) {
 			Key:      string(seed.Kind),
 		}, string(seed.Kind), object.Name)
 	}
+}
+
+func (b *builder) targetByID(id string) (Target, bool) {
+	for _, target := range b.targets {
+		if target.target.ID == id {
+			return target.target, true
+		}
+	}
+	return Target{}, false
 }

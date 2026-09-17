@@ -1,21 +1,31 @@
 package facts
 
 import (
-	"github.com/dvordrova/repomap/internal/programindex"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// Prefixes follow observed router values and arguments, never variable names.
-// Different routers in one module remain distinct, with original mount anchors.
+// A mount is a call the repository does not own that hands a repository
+// value (a router, a blueprint, an included module) to something else under a
+// path prefix. A constructor given a "/prefix" literal keyword gives its
+// result an intrinsic prefix. Both follow observed values, never variable
+// names, so two routers in one module stay distinct.
+//
+// When a mount prefix and an intrinsic prefix meet, frameworks differ on
+// whether they compose or the mount replaces the router's own prefix. The
+// composed path is retained as possible rather than choosing a framework.
+
 type routePrefix struct {
 	path     string
 	evidence []Anchor
+	possible bool
 }
+
 type routeMount struct {
-	ownerID, path     string
-	anchor            Anchor
-	overrideIntrinsic bool
+	ownerID, path string
+	anchor        Anchor
 }
 
 func (target *targetContext) routeValueOrigins() map[string][]programindex.ExternalSymbol {
@@ -30,44 +40,116 @@ func (target *targetContext) routeValueOrigins() map[string][]programindex.Exter
 	return result
 }
 
-func (target *targetContext) prefixesByObject(originsByValue map[string][]programindex.ExternalSymbol) map[string][]routePrefix {
-	mounts := make(map[string][]routeMount)
-	intrinsic := make(map[string][]routePrefix)
+// isRouterMount reports a route-word call whose "handler" is a repository
+// value rather than a callable: mount("/api", router) describes a router.
+func (target *targetContext) isRouterMount(pattern programindex.RelationPattern) bool {
+	return target.mountedValue(pattern) != ""
+}
+
+// mountedValue is the one repository non-callable object a call hands over.
+func (target *targetContext) mountedValue(pattern programindex.RelationPattern) string {
+	for _, argument := range pattern.Arguments {
+		if len(argument.ObjectIDs) != 1 || argument.ObjectsOmitted != 0 {
+			continue
+		}
+		id := argument.ObjectIDs[0]
+		object, ok := target.object(id)
+		if !ok || object.Kind != programindex.ObjectVariable && object.Kind != programindex.ObjectModule {
+			continue
+		}
+		if module := target.includedModule(id); module != "" {
+			return module
+		}
+		return id
+	}
+	return ""
+}
+
+// includedModule maps a call result such as include("app.urls") to the
+// indexed module its literal names.
+func (target *targetContext) includedModule(resultID string) string {
 	for _, relation := range target.input.Index.Relations {
 		for _, pattern := range relation.Patterns {
-			origins := append(target.externalOrigins(relation, pattern), originsByValue[pattern.ReceiverID]...)
-			if pattern.ResultID != "" {
-				for _, origin := range origins {
-					var key string
-					if _, ok := packageMatches(origin.PackagePath, "fastapi"); ok && strings.EqualFold(pattern.Selector, "APIRouter") {
-						key = "prefix"
-					}
-					if _, ok := packageMatches(origin.PackagePath, "flask"); ok && strings.EqualFold(pattern.Selector, "Blueprint") {
-						key = "url_prefix"
-					}
-					if argument, ok := keywordArgument(pattern, key); key != "" && ok {
-						if value, _, literal := literalValue(argument); literal && strings.HasPrefix(value, "/") {
-							if at := target.patternAnchor(relation, pattern); at != nil {
-								intrinsic[pattern.ResultID] = append(intrinsic[pattern.ResultID], routePrefix{value, []Anchor{*at}})
-							}
-						}
+			if pattern.ResultID != resultID {
+				continue
+			}
+			argument, ok := positionalArgument(pattern, 1)
+			if !ok {
+				continue
+			}
+			if len(argument.ObjectIDs) == 1 {
+				if object, known := target.object(argument.ObjectIDs[0]); known && object.Kind == programindex.ObjectModule {
+					return object.ID
+				}
+			}
+			if value, _, literal := literalValue(argument); literal {
+				for _, object := range target.input.Index.Objects {
+					if object.Kind == programindex.ObjectModule && object.Name == value {
+						return object.ID
 					}
 				}
 			}
-			child, prefix, override, ok := target.routerMount(relation, pattern, origins)
-			if !ok || child == "" {
+		}
+	}
+	return ""
+}
+
+// prefixLiteral is the one path literal of a mount, positional or keyword,
+// stating where the handed value answers: "/api", or "django/" as Django
+// writes it. A host or a name is not a prefix; several paths name no one.
+func prefixLiteral(pattern programindex.RelationPattern) (string, bool) {
+	found := ""
+	for _, argument := range pattern.Arguments {
+		value, _, literal := literalValue(argument)
+		if !literal || !strings.HasPrefix(value, "/") && !strings.HasSuffix(value, "/") {
+			continue
+		}
+		if found != "" {
+			return "", false
+		}
+		found = value
+	}
+	return found, found != ""
+}
+
+// prefixesByObject composes the prefixes each router value answers under.
+// Only a mount or constructor whose external origin is known counts: a
+// prefix given to a repository lookalike, or to a value of unknown type,
+// says nothing about any route.
+func (target *targetContext) prefixesByObject() map[string][]routePrefix {
+	mounts := make(map[string][]routeMount)
+	intrinsic := make(map[string][]routePrefix)
+	originsByValue := target.routeValueOrigins()
+	for _, relation := range target.input.Index.Relations {
+		if target.ownsCallee(relation) {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			at := target.patternAnchor(relation, pattern)
+			if at == nil || target.ownsReceiver(pattern) || len(target.callOrigins(relation, pattern, originsByValue)) == 0 {
 				continue
+			}
+			prefix, ok := prefixLiteral(pattern)
+			if !ok {
+				continue
+			}
+			if pattern.ResultID != "" {
+				if _, keyword := keywordPrefix(pattern); keyword {
+					intrinsic[pattern.ResultID] = append(intrinsic[pattern.ResultID], routePrefix{path: prefix, evidence: []Anchor{*at}})
+				}
+			}
+			child := target.mountedValue(pattern)
+			if child == "" && (strings.EqualFold(pattern.Selector, "route") || strings.EqualFold(pattern.Selector, "mount")) {
+				child = target.mountedRouter(relation, pattern)
 			}
 			owner := pattern.ReceiverID
 			if owner == "" {
 				owner = relation.FromID
 			}
-			if child == owner {
+			if child == "" || child == owner {
 				continue
 			}
-			if at := target.patternAnchor(relation, pattern); at != nil {
-				mounts[child] = append(mounts[child], routeMount{owner, prefix, *at, override})
-			}
+			mounts[child] = append(mounts[child], routeMount{ownerID: owner, path: prefix, anchor: *at})
 		}
 	}
 	result := make(map[string][]routePrefix)
@@ -91,14 +173,14 @@ func (target *targetContext) prefixesByObject(originsByValue map[string][]progra
 				parents = []routePrefix{{}}
 			}
 			own := intrinsic[id]
-			if mount.overrideIntrinsic || len(own) == 0 {
+			if len(own) == 0 {
 				own = []routePrefix{{}}
 			}
 			for _, parent := range parents {
 				for _, local := range own {
 					prefix := joinPrefix(joinPrefix(parent.path, mount.path), local.path)
 					evidence := append(append(append([]Anchor{}, parent.evidence...), mount.anchor), local.evidence...)
-					values = append(values, routePrefix{prefix, evidence})
+					values = append(values, routePrefix{path: prefix, evidence: evidence, possible: parent.possible || local.path != ""})
 				}
 			}
 		}
@@ -116,126 +198,20 @@ func (target *targetContext) prefixesByObject(originsByValue map[string][]progra
 	return result
 }
 
-func (target *targetContext) isRouterMount(relation programindex.Relation, pattern programindex.RelationPattern, origins []programindex.ExternalSymbol) bool {
-	_, _, _, ok := target.routerMount(relation, pattern, origins)
-	return ok
+func keywordPrefix(pattern programindex.RelationPattern) (string, bool) {
+	for _, argument := range pattern.Arguments {
+		if argument.Keyword == "" {
+			continue
+		}
+		if value, _, literal := literalValue(argument); literal && strings.HasPrefix(value, "/") {
+			return value, true
+		}
+	}
+	return "", false
 }
 
-func (target *targetContext) routerMount(relation programindex.Relation, pattern programindex.RelationPattern, origins []programindex.ExternalSymbol) (string, string, bool, bool) {
-	selector := strings.ToLower(pattern.Selector)
-	side := classifyHTTP(origins, pattern.Form, selector)
-	if !side.server {
-		return "", "", false, false
-	}
-	position, key, override := 0, "", false
-	switch selector {
-	case "include_router":
-		if _, ok := packageMatches(side.pkgPath, "fastapi", "starlette"); !ok {
-			return "", "", false, false
-		}
-		position, key = 1, "prefix"
-	case "register_blueprint":
-		if _, ok := packageMatches(side.pkgPath, "flask"); !ok {
-			return "", "", false, false
-		}
-		position, key = 1, "url_prefix"
-	case "use":
-		if _, ok := packageMatches(side.pkgPath, "express"); !ok {
-			return "", "", false, false
-		}
-		position = 2
-	case "path":
-		if _, ok := packageMatches(side.pkgPath, "django"); !ok {
-			return "", "", false, false
-		}
-		position = 2
-	case "route", "mount":
-		if _, ok := packageMatches(side.pkgPath, "github.com/go-chi/chi"); !ok {
-			return "", "", false, false
-		}
-		position = 2
-	default:
-		return "", "", false, false
-	}
-	argument, ok := positionalArgument(pattern, position)
-	if !ok {
-		return "", "", false, false
-	}
-	child := ""
-	if len(argument.ObjectIDs) == 1 && argument.ObjectsOmitted == 0 {
-		child = argument.ObjectIDs[0]
-	}
-	if selector == "path" {
-		child = target.includedModule(child)
-	}
-	if child == "" && (selector == "route" || selector == "mount") {
-		child = target.mountedRouter(relation, pattern)
-	}
-	if child == "" {
-		return "", "", false, false
-	}
-	var value string
-	if key != "" {
-		if arg, present := keywordArgument(pattern, key); present {
-			var literal bool
-			value, _, literal = literalValue(arg)
-			if !literal {
-				return "", "", false, false
-			}
-			override = selector == "register_blueprint"
-		}
-	} else {
-		arg, present := positionalArgument(pattern, 1)
-		var literal bool
-		value, _, literal = literalValue(arg)
-		if !present || !literal {
-			return "", "", false, false
-		}
-	}
-	if selector == "path" {
-		value = "/" + strings.TrimPrefix(value, "/")
-	}
-	if value != "" && !strings.HasPrefix(value, "/") {
-		return "", "", false, false
-	}
-	return child, value, override, true
-}
-
-// Only an observed Django include call can map its literal module name to a
-// module identity already present in the index.
-func (target *targetContext) includedModule(resultID string) string {
-	if resultID == "" {
-		return ""
-	}
-	for _, relation := range target.input.Index.Relations {
-		for _, pattern := range relation.Patterns {
-			if pattern.ResultID != resultID || pattern.Selector != "include" {
-				continue
-			}
-			if _, ok := packageMatches(classifyHTTP(target.externalOrigins(relation, pattern), pattern.Form, "include").pkgPath, "django"); !ok {
-				continue
-			}
-			arg, ok := positionalArgument(pattern, 1)
-			if !ok {
-				continue
-			}
-			if len(arg.ObjectIDs) == 1 {
-				if object, known := target.object(arg.ObjectIDs[0]); known && object.Kind == programindex.ObjectModule {
-					return object.ID
-				}
-			}
-			if value, _, literal := literalValue(arg); literal {
-				for _, object := range target.input.Index.Objects {
-					if object.Kind == programindex.ObjectModule && object.Name == value {
-						return object.ID
-					}
-				}
-			}
-		}
-	}
-	return ""
-}
-
+// mountedRouter resolves a route-group closure: Route("/api", func(r) {...})
+// registers on the router the closure receives.
 func (target *targetContext) mountedRouter(relation programindex.Relation, pattern programindex.RelationPattern) string {
 	if _, objectID := target.routeHandler(relation, pattern); objectID != "" {
 		return objectID
@@ -270,9 +246,12 @@ func joinPrefix(prefix, path string) string {
 	}
 	return joinRoutePath(prefix, path)
 }
+
+// joinRoutePath composes a mount prefix and a path; a mounted path is a
+// path, so it starts with "/" however the framework wrote its parts.
 func joinRoutePath(prefix, path string) string {
-	joined := strings.TrimSuffix(prefix, "/") + "/" + strings.TrimPrefix(path, "/")
-	joined = strings.TrimSuffix(joined, "/")
+	joined := "/" + strings.Trim(prefix, "/") + "/" + strings.TrimPrefix(path, "/")
+	joined = strings.TrimSuffix(strings.ReplaceAll(joined, "//", "/"), "/")
 	if joined == "" {
 		return "/"
 	}

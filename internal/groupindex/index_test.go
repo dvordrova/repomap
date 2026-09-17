@@ -44,8 +44,8 @@ func TestBuildRetainsCompleteProgramFactsAndBuildsSparseOverlappingGroups(t *tes
 	if len(diagnostics) != 6 {
 		t.Fatalf("diagnostics = %#v, want 6 rejected rows", diagnostics)
 	}
-	if Version != 10 {
-		t.Fatalf("GroupsIndex version = %d, want 10", Version)
+	if Version != 12 {
+		t.Fatalf("GroupsIndex version = %d, want 12", Version)
 	}
 	if index.Version != Version || index.ProgramIndexSHA256 != program.SHA256 || index.Target.ID != program.Target.ID {
 		t.Fatalf("producer binding = %#v", index)
@@ -78,7 +78,7 @@ func TestBuildRetainsCompleteProgramFactsAndBuildsSparseOverlappingGroups(t *tes
 
 	pattern := subjectByID(t, index.Subjects, ids["pattern"])
 	if pattern.Pattern == nil || pattern.Pattern.RelationID == "" || pattern.Pattern.FromID != ids["inbound"] ||
-		!reflect.DeepEqual(pattern.Pattern.ToIDs, []string{ids["core"]}) || pattern.Pattern.Invocation != "sync" ||
+		!reflect.DeepEqual(pattern.Pattern.ToIDs, []string{ids["core"]}) || pattern.Pattern.Invocation != "" ||
 		pattern.Pattern.ReceiverID != ids["ungrouped"] || len(pattern.Pattern.Arguments) != 3 {
 		t.Fatalf("pattern facts = %#v", pattern.Pattern)
 	}
@@ -96,8 +96,7 @@ func TestBuildRetainsCompleteProgramFactsAndBuildsSparseOverlappingGroups(t *tes
 	dependency := subjectByID(t, index.Subjects, ids["dependency"])
 	if dependency.Object == nil || dependency.Object.External == nil ||
 		dependency.Object.External.AuthorityKind != programindex.ExternalAuthorityPackage ||
-		dependency.Object.External.PackagePath != "example.com/queue" ||
-		len(dependency.Object.SymbolLinkIdentities) != 1 {
+		dependency.Object.External.PackagePath != "example.com/queue" {
 		t.Fatalf("external object facts = %#v", dependency.Object)
 	}
 	inbound := subjectByID(t, index.Subjects, ids["inbound"])
@@ -117,7 +116,7 @@ func TestBuildRetainsCompleteProgramFactsAndBuildsSparseOverlappingGroups(t *tes
 	connection := index.Connections[0]
 	if connection.SemanticKind != "awakens_domain_flow" ||
 		connection.SupportResolution != programindex.PatternValueExact ||
-		!strings.HasPrefix(connection.ID, "program-group-connection-") ||
+		connection.ID != "x1" ||
 		len(connection.Evidence) != 1 || connection.Evidence[0] != (SubjectEndpoint{TargetID: program.Target.ID, SubjectID: ids["pattern"]}) {
 		t.Fatalf("custom connection = %#v", connection)
 	}
@@ -126,10 +125,11 @@ func TestBuildRetainsCompleteProgramFactsAndBuildsSparseOverlappingGroups(t *tes
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
-	if !strings.Contains(string(encoded), `"authority_kind":"package"`) {
-		t.Fatalf("encoded GroupsIndex lost external authority kind: %s", encoded)
+	if strings.Contains(string(encoded), `"authority_kind"`) || strings.Contains(string(encoded), `"structural_edges"`) ||
+		strings.Contains(string(encoded), `"target":{"`) {
+		t.Fatalf("encoded GroupsIndex repeated ProgramIndex facts: %s", encoded)
 	}
-	decoded, err := Decode(encoded)
+	decoded, err := Decode(encoded, program)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -174,10 +174,10 @@ func TestBuildRequiresEnrichmentAndDecodeIsStrict(t *testing.T) {
 		t.Fatalf("Encode: %v", err)
 	}
 	withUnknown := append([]byte(`{"unexpected":true,`), encoded[1:]...)
-	if _, err := Decode(withUnknown); err == nil || !strings.Contains(err.Error(), "unknown field") {
+	if _, err := Decode(withUnknown, program); err == nil || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("Decode unknown field error = %v", err)
 	}
-	if _, err := Decode(append(encoded, []byte(` {}`)...)); err == nil || !strings.Contains(err.Error(), "trailing JSON") {
+	if _, err := Decode(append(encoded, []byte(` {}`)...), program); err == nil || !strings.Contains(err.Error(), "trailing JSON") {
 		t.Fatalf("Decode trailing value error = %v", err)
 	}
 	tampered := index.Snapshot()
@@ -186,12 +186,9 @@ func TestBuildRequiresEnrichmentAndDecodeIsStrict(t *testing.T) {
 		t.Fatal("Validate accepted a tampered subject")
 	}
 
-	withMissingExternalAuthority := []byte(strings.Replace(
-		string(encoded), `"authority_kind":"package",`, "", 1,
-	))
-	if _, err := Decode(withMissingExternalAuthority); err == nil ||
-		!strings.Contains(err.Error(), "invalid object subject") {
-		t.Fatalf("Decode missing external authority kind error = %v", err)
+	withUnknownSubject := []byte(strings.Replace(string(encoded), `"id":"n1"`, `"id":"n999"`, 1))
+	if _, err := Decode(withUnknownSubject, program); err == nil {
+		t.Fatalf("Decode unknown subject annotation error = %v", err)
 	}
 
 	tamperedExternal := index.Snapshot()
@@ -221,7 +218,6 @@ func TestValidateRejectsPlatformAuthorityAsDependencyGroupEvidence(t *testing.T)
 	for _, evidenceID := range []string{ids["platform"], ids["platform-pattern"]} {
 		tampered := base.Snapshot()
 		tampered.Groups[0].EvidenceSubjectIDs = []string{evidenceID}
-		tampered.Groups[0].ID = groupIdentity(tampered.Target.ID, tampered.Groups[0])
 		tampered.SHA256 = ""
 		digest, digestErr := indexDigest(tampered)
 		if digestErr != nil {
@@ -317,6 +313,8 @@ func TestBuildRetainsValueCandidatesAndProjectsHonestProvenanceEdges(t *testing.
 func TestWithConnectionsOwnsCrossTargetResolutionMergeAndReseal(t *testing.T) {
 	leftProgram := testProgramIndex(t, "left")
 	rightProgram := testProgramIndex(t, "right")
+	rebound := rebindTestTargets(t, leftProgram, rightProgram)
+	leftProgram, rightProgram = rebound[0], rebound[1]
 	leftIDs := testSubjectIDs(t, leftProgram)
 	rightIDs := testSubjectIDs(t, rightProgram)
 	left, _, err := Build(leftProgram, testProposalsWithoutConnections(leftIDs))
@@ -341,7 +339,7 @@ func TestWithConnectionsOwnsCrossTargetResolutionMergeAndReseal(t *testing.T) {
 		},
 	}
 	unknownGroup := valid
-	unknownGroup.To.GroupID = "program-group-" + strings.Repeat("f", 64)
+	unknownGroup.To.GroupID = "g999"
 	unknownEvidence := valid
 	unknownEvidence.SemanticKind = "has_unknown_evidence"
 	unknownEvidence.Evidence = []SubjectEndpoint{{
@@ -394,6 +392,8 @@ func TestWithConnectionsOwnsCrossTargetResolutionMergeAndReseal(t *testing.T) {
 func TestWithConnectionsRequiresAndSealsClosedSupportResolution(t *testing.T) {
 	leftProgram := testProgramIndex(t, "support-left")
 	rightProgram := testProgramIndex(t, "support-right")
+	rebound := rebindTestTargets(t, leftProgram, rightProgram)
+	leftProgram, rightProgram = rebound[0], rebound[1]
 	leftIDs := testSubjectIDs(t, leftProgram)
 	rightIDs := testSubjectIDs(t, rightProgram)
 	left, _, err := Build(leftProgram, testProposalsWithoutConnections(leftIDs))
@@ -448,7 +448,7 @@ func TestWithConnectionsRequiresAndSealsClosedSupportResolution(t *testing.T) {
 	possibleIndexes, possible := build(programindex.PatternValuePossible)
 	if exact.SupportResolution != programindex.PatternValueExact ||
 		possible.SupportResolution != programindex.PatternValuePossible ||
-		exact.ID == possible.ID || exactIndexes[0].SHA256 == possibleIndexes[0].SHA256 {
+		exact.ID != "x1" || possible.ID != "x1" || exactIndexes[0].SHA256 == possibleIndexes[0].SHA256 {
 		t.Fatalf("support resolution was not identity-bound: exact=%#v possible=%#v", exact, possible)
 	}
 }
@@ -456,6 +456,15 @@ func TestWithConnectionsRequiresAndSealsClosedSupportResolution(t *testing.T) {
 func testProgramIndex(t *testing.T, selector string) programindex.Index {
 	t.Helper()
 	return enrichTestProgramIndex(t, testBaseProgramIndex(t, selector))
+}
+
+func rebindTestTargets(t *testing.T, indexes ...programindex.Index) []programindex.Index {
+	t.Helper()
+	rebound, err := programindex.RebindTargetSet(indexes)
+	if err != nil {
+		t.Fatalf("RebindTargetSet: %v", err)
+	}
+	return rebound
 }
 
 func testValueProvenanceProgramIndex(t *testing.T) programindex.Index {
@@ -549,7 +558,6 @@ func testBaseProgramIndex(t *testing.T, selector string) programindex.Index {
 		{
 			SourceRef: "dependency", Kind: programindex.ObjectExternalSymbol, Name: "queue.Publish", Visibility: programindex.VisibilityPublic,
 			External: &programindex.ExternalSymbol{AuthorityKind: programindex.ExternalAuthorityPackage, PackagePath: "example.com/queue", Name: "Publish"}, Location: location(4),
-			SymbolLinkIdentities: []programindex.SymbolLinkIdentityInput{{Domain: "go", Parts: []string{"example.com/queue", "Publish"}, Display: "queue.Publish"}},
 		},
 		{
 			SourceRef: "platform", Kind: programindex.ObjectExternalSymbol,
@@ -564,7 +572,7 @@ func testBaseProgramIndex(t *testing.T, selector string) programindex.Index {
 	}
 	relations := []programindex.RelationInput{{
 		SourceRef: "dispatch", Kind: programindex.RelationCalls, FromRef: "inbound", ToRefs: []string{"core"},
-		Resolution: programindex.ResolutionExact, Invocation: "sync", Location: location(10), TargetsObserved: 1,
+		Resolution: programindex.ResolutionExact, Location: location(10), TargetsObserved: 1,
 		Witnesses: []programindex.Witness{{Kind: "direct_call", Location: location(10)}}, WitnessesObserved: 1,
 		PatternsObserved: 1,
 		Patterns: []programindex.RelationPatternInput{{

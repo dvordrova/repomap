@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version          = 10
+	Version          = 12
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -99,15 +99,14 @@ func (kind SubjectKind) Valid() bool {
 // ObjectFacts are the exact matching and source-detail facts retained for one
 // ProgramIndex object.
 type ObjectFacts struct {
-	Name                 string                            `json:"name"`
-	Kind                 programindex.ObjectKind           `json:"kind"`
-	Visibility           programindex.Visibility           `json:"visibility"`
-	Signature            string                            `json:"signature,omitempty"`
-	OwnerID              string                            `json:"owner_id,omitempty"`
-	ContainerID          string                            `json:"container_id,omitempty"`
-	SymbolLinkIdentities []programindex.SymbolLinkIdentity `json:"symbol_link_identities"`
-	External             *programindex.ExternalSymbol      `json:"external,omitempty"`
-	Location             *programindex.Location            `json:"location,omitempty"`
+	Name        string                       `json:"name"`
+	Kind        programindex.ObjectKind      `json:"kind"`
+	Visibility  programindex.Visibility      `json:"visibility"`
+	Signature   string                       `json:"signature,omitempty"`
+	OwnerID     string                       `json:"owner_id,omitempty"`
+	ContainerID string                       `json:"container_id,omitempty"`
+	External    *programindex.ExternalSymbol `json:"external,omitempty"`
+	Location    *programindex.Location       `json:"location,omitempty"`
 }
 
 // PatternValueCandidate retains one adapter-proven value reconstruction. Its
@@ -189,18 +188,29 @@ type Interpretation struct {
 	OperationSummary string `json:"operation_summary,omitempty"`
 }
 
+// SubjectAnnotation is the only subject material owned by GroupsIndex. Native
+// names, locations, signatures and structure stay in ProgramIndex.
+type SubjectAnnotation struct {
+	ID             string                  `json:"id"`
+	Categories     []programindex.Category `json:"categories"`
+	Interpretation *Interpretation         `json:"interpretation,omitempty"`
+}
+
 // Operation retains an action on the same subject and group graph. Source
 // distinguishes model interpretation from a directly extracted boundary.
 type Operation struct {
-	ID        string                `json:"id"`
-	FactID    string                `json:"fact_id,omitempty"`
-	SubjectID string                `json:"subject_id,omitempty"`
-	GroupID   string                `json:"group_id"`
-	Kind      string                `json:"kind"`
-	Name      string                `json:"name"`
-	Summary   string                `json:"summary"`
-	Source    string                `json:"source"`
-	Location  programindex.Location `json:"location"`
+	ID        string `json:"id"`
+	FactID    string `json:"fact_id,omitempty"`
+	SubjectID string `json:"subject_id,omitempty"`
+	GroupID   string `json:"group_id"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	// Address is where the operation is reachable, when a publishing call
+	// on the same holder stated it.
+	Address  string                `json:"address,omitempty"`
+	Summary  string                `json:"summary"`
+	Source   string                `json:"source"`
+	Location programindex.Location `json:"location"`
 }
 
 // StructuralEdgeRole is a deterministic projection of exact ProgramIndex
@@ -379,16 +389,16 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 			diagnostics = append(diagnostics, Diagnostic{Kind: kind, ProposalKey: proposal.Key, Reason: reason})
 			continue
 		}
-		byID := groupCandidates[proposal.Key]
-		if byID == nil {
-			byID = make(map[string]Group)
-			groupCandidates[proposal.Key] = byID
+		byValue := groupCandidates[proposal.Key]
+		if byValue == nil {
+			byValue = make(map[string]Group)
+			groupCandidates[proposal.Key] = byValue
 		}
-		byID[group.ID] = group
+		byValue[groupKey(group)] = group
 	}
 
-	groupsByID := make(map[string]Group)
-	groupIDsByKey := make(map[string]string)
+	groupsByValue := make(map[string]Group)
+	groupValueByProposalKey := make(map[string]string)
 	for key, candidates := range groupCandidates {
 		if len(candidates) != 1 {
 			diagnostics = append(diagnostics, Diagnostic{
@@ -397,17 +407,26 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 			})
 			continue
 		}
-		for id, group := range candidates {
-			groupIDsByKey[key] = id
-			groupsByID[id] = group
+		for value, group := range candidates {
+			groupValueByProposalKey[key] = value
+			groupsByValue[value] = group
 		}
 	}
 
-	groups := make([]Group, 0, len(groupsByID))
-	for _, group := range groupsByID {
+	groups := make([]Group, 0, len(groupsByValue))
+	for _, group := range groupsByValue {
 		groups = append(groups, group)
 	}
-	sort.Slice(groups, func(i, j int) bool { return groups[i].ID < groups[j].ID })
+	sort.Slice(groups, func(i, j int) bool { return groupKey(groups[i]) < groupKey(groups[j]) })
+	groupIDByValue := make(map[string]string, len(groups))
+	for position := range groups {
+		groups[position].ID = compactOrdinal("g", position)
+		groupIDByValue[groupKey(groups[position])] = groups[position].ID
+	}
+	groupIDsByKey := make(map[string]string, len(groupValueByProposalKey))
+	for key, value := range groupValueByProposalKey {
+		groupIDsByKey[key] = groupIDByValue[value]
+	}
 	if groups == nil {
 		groups = []Group{}
 	}
@@ -448,6 +467,7 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 	sort.Slice(connections, func(i, j int) bool {
 		return connectionKey(connections[i]) < connectionKey(connections[j])
 	})
+	assignConnectionIDs(connections, 0)
 	if connections == nil {
 		connections = []Connection{}
 	}
@@ -542,6 +562,7 @@ func WithConnections(indexes []Index, accepted []ConnectionInput) ([]Index, []Di
 
 	for targetID, bySlot := range candidatesByOwner {
 		connections := make([]Connection, 0, len(bySlot))
+		newConnections := make([]Connection, 0, len(bySlot))
 		for slot, candidates := range bySlot {
 			if candidates.existing != nil {
 				connections = append(connections, *candidates.existing)
@@ -561,10 +582,13 @@ func WithConnections(indexes []Index, accepted []ConnectionInput) ([]Index, []Di
 				continue
 			}
 			for _, connection := range candidates.values {
-				connections = append(connections, connection)
+				newConnections = append(newConnections, connection)
 			}
 		}
-		sort.Slice(connections, func(i, j int) bool { return connectionKey(connections[i]) < connectionKey(connections[j]) })
+		sort.Slice(connections, func(i, j int) bool { return compactIDLess(connections[i].ID, connections[j].ID, "x") })
+		sort.Slice(newConnections, func(i, j int) bool { return connectionKey(newConnections[i]) < connectionKey(newConnections[j]) })
+		assignConnectionIDs(newConnections, len(connections))
+		connections = append(connections, newConnections...)
 		position := indexPositionByTarget[targetID]
 		if reflect.DeepEqual(result[position].Connections, connections) {
 			continue
@@ -581,6 +605,30 @@ func WithConnections(indexes []Index, accepted []ConnectionInput) ([]Index, []Di
 		return nil, nil, err
 	}
 	return result, canonicalDiagnostics(diagnostics), nil
+}
+
+// WithOutbound replaces the accepted communication overlay and reseals the
+// index. Native ProgramIndex facts remain untouched.
+func WithOutbound(index Index, outbound []OutboundCall) (Index, error) {
+	if err := index.Validate(); err != nil {
+		return Index{}, err
+	}
+	result := index.Snapshot()
+	result.Outbound = append([]OutboundCall(nil), outbound...)
+	for position := range result.Outbound {
+		result.Outbound[position].Values = cloneStrings(outbound[position].Values)
+		result.Outbound[position].Uses = cloneDestinationUses(outbound[position].Uses)
+	}
+	result.SHA256 = ""
+	seal, err := indexDigest(result)
+	if err != nil {
+		return Index{}, err
+	}
+	result.SHA256 = seal
+	if err := result.Validate(); err != nil {
+		return Index{}, err
+	}
+	return result, nil
 }
 
 // Snapshot returns a consumer-owned deep copy.
@@ -636,7 +684,7 @@ func (index Index) Validate() error {
 	if err := index.Target.Validate(); err != nil {
 		return fmt.Errorf("group index: invalid target: %w", err)
 	}
-	if index.Subjects == nil || index.Groups == nil || index.StructuralEdges == nil || index.Connections == nil {
+	if index.Subjects == nil || index.Groups == nil || index.Containers == nil || index.StructuralEdges == nil || index.Connections == nil {
 		return fmt.Errorf("group index: missing collections")
 	}
 
@@ -645,8 +693,8 @@ func (index Index) Validate() error {
 		if err := validateSubject(subject); err != nil {
 			return err
 		}
-		if position > 0 && index.Subjects[position-1].ID >= subject.ID {
-			return fmt.Errorf("group index: subjects are not canonical")
+		if position > 0 && !subjectIDLess(index.Subjects[position-1].ID, subject.ID) {
+			return fmt.Errorf("group index: subjects are not canonical: %s before %s", index.Subjects[position-1].ID, subject.ID)
 		}
 		subjectsByID[subject.ID] = subject
 	}
@@ -658,10 +706,26 @@ func (index Index) Validate() error {
 		if err := validateGroup(index.Target.ID, subjectsByID, group); err != nil {
 			return err
 		}
-		if position > 0 && index.Groups[position-1].ID >= group.ID {
-			return fmt.Errorf("group index: groups are not canonical")
+		if group.ID != compactOrdinal("g", position) {
+			return fmt.Errorf("group index: groups do not use canonical compact IDs")
 		}
 		groupsByID[group.ID] = struct{}{}
+	}
+	seenContainerGroups := make(map[string]struct{})
+	for position, container := range index.Containers {
+		if container.ID != compactOrdinal("k", position) || !validContainerID(container.ID) ||
+			!validText(container.Title) || !validText(container.Summary) || !container.Lane.Valid() || len(container.GroupIDs) < 2 {
+			return fmt.Errorf("group index: invalid container")
+		}
+		for groupPosition, groupID := range container.GroupIDs {
+			if _, ok := groupsByID[groupID]; !ok || groupPosition > 0 && !compactIDLess(container.GroupIDs[groupPosition-1], groupID, "g") {
+				return fmt.Errorf("group index: invalid container group")
+			}
+			if _, repeated := seenContainerGroups[groupID]; repeated {
+				return fmt.Errorf("group index: group belongs to multiple containers")
+			}
+			seenContainerGroups[groupID] = struct{}{}
+		}
 	}
 	for i, operation := range index.Operations {
 		if operation.Kind != "command" && operation.Kind != "request" && operation.Kind != "interaction" && operation.Kind != "scheduled" && operation.Kind != "continuous" {
@@ -669,12 +733,9 @@ func (index Index) Validate() error {
 		}
 		_, groupExists := groupsByID[operation.GroupID]
 		_, subjectExists := subjectsByID[operation.SubjectID]
-		if !groupExists || operation.SubjectID != "" && !subjectExists || !validText(operation.ID) || !validText(operation.Name) || !validText(operation.Summary) ||
+		if !groupExists || operation.SubjectID != "" && !subjectExists || operation.ID != compactOrdinal("o", i) || !validText(operation.Name) || !validText(operation.Summary) ||
 			(operation.Source != "model" && operation.Source != "fact") || operation.Location.Path == "" || operation.Location.Line < 1 || operation.Location.Column < 1 {
 			return fmt.Errorf("group index: invalid operation %q", operation.ID)
-		}
-		if i > 0 && index.Operations[i-1].ID >= operation.ID {
-			return fmt.Errorf("group index: operations are not canonical")
 		}
 	}
 	if err := index.validateData(subjectsByID); err != nil {
@@ -696,8 +757,8 @@ func (index Index) Validate() error {
 		if err := validateConnection(index.Target.ID, groupsByID, subjectsByID, connection); err != nil {
 			return err
 		}
-		if position > 0 && connectionKey(index.Connections[position-1]) >= connectionKey(connection) {
-			return fmt.Errorf("group index: connections are not canonical")
+		if connection.ID != compactOrdinal("x", position) {
+			return fmt.Errorf("group index: connections do not use canonical compact IDs")
 		}
 		slot := connectionSlot(connection)
 		if _, exists := connectionSlots[slot]; exists {
@@ -750,7 +811,7 @@ func Encode(index Index) ([]byte, error) {
 	if err := index.Validate(); err != nil {
 		return nil, err
 	}
-	encoded, err := json.Marshal(index)
+	encoded, err := json.Marshal(OverlayFromIndex(index))
 	if err != nil {
 		return nil, fmt.Errorf("group index: encode artifact: %w", err)
 	}
@@ -758,27 +819,38 @@ func Encode(index Index) ([]byte, error) {
 }
 
 // Decode strictly decodes one artifact and validates its identities and seal.
-func Decode(encoded []byte) (Index, error) {
+func Decode(encoded []byte, program programindex.Index) (Index, error) {
+	if err := program.Validate(); err != nil {
+		return Index{}, fmt.Errorf("group index: invalid ProgramIndex: %w", err)
+	}
+	artifact, err := DecodeOverlay(encoded)
+	if err != nil {
+		return Index{}, err
+	}
+	return artifact.Hydrate(program)
+}
+
+func DecodeOverlay(encoded []byte) (Overlay, error) {
 	if len(encoded) == 0 {
-		return Index{}, fmt.Errorf("group index: invalid artifact size")
+		return Overlay{}, fmt.Errorf("group index: invalid artifact size")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
-	var index Index
-	if err := decoder.Decode(&index); err != nil {
-		return Index{}, fmt.Errorf("group index: decode artifact: %w", err)
+	var artifact Overlay
+	if err := decoder.Decode(&artifact); err != nil {
+		return Overlay{}, fmt.Errorf("group index: decode artifact: %w", err)
 	}
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		if err == nil {
-			return Index{}, fmt.Errorf("group index: trailing JSON value")
+			return Overlay{}, fmt.Errorf("group index: trailing JSON value")
 		}
-		return Index{}, fmt.Errorf("group index: trailing data: %w", err)
+		return Overlay{}, fmt.Errorf("group index: trailing data: %w", err)
 	}
-	if err := index.Validate(); err != nil {
-		return Index{}, err
+	if err := artifact.Validate(); err != nil {
+		return Overlay{}, err
 	}
-	return index, nil
+	return artifact, nil
 }
 
 // ValidateSet proves every cross-target group endpoint and evidence subject
@@ -903,7 +975,6 @@ func compileGroupProposal(targetID string, subjects map[string]subjectAuthority,
 		Title: proposal.Title, Summary: proposal.Summary, Lane: proposal.Lane,
 		MemberSubjectIDs: members, EvidenceSubjectIDs: evidence,
 	}
-	group.ID = groupIdentity(targetID, group)
 	return group, "", ""
 }
 
@@ -938,7 +1009,6 @@ func compileConnectionProposal(
 		SupportResolution: programindex.PatternValueExact,
 		Evidence:          qualifySubjects(targetID, evidence),
 	}
-	connection.ID = connectionIdentity(connection)
 	return connection, "", ""
 }
 
@@ -983,7 +1053,6 @@ func compileConnectionInput(
 		Label: input.Label, Summary: input.Summary, SupportResolution: input.SupportResolution,
 		Evidence: evidence,
 	}
-	connection.ID = connectionIdentity(connection)
 	return connection, "", ""
 }
 
@@ -1028,9 +1097,7 @@ func compileRetainedSubjects(index programindex.Index, retained map[string]struc
 			Object: &ObjectFacts{
 				Name: object.Name, Kind: object.Kind, Visibility: object.Visibility,
 				Signature: object.Signature, OwnerID: object.OwnerID, ContainerID: object.ContainerID,
-				SymbolLinkIdentities: cloneSymbolLinkIdentities(object.SymbolLinkIdentities),
-				External:             cloneExternal(object.External),
-				Location:             cloneLocation(object.Location),
+				External: cloneExternal(object.External), Location: cloneLocation(object.Location),
 			},
 		})
 	}
@@ -1057,7 +1124,7 @@ func compileRetainedSubjects(index programindex.Index, retained map[string]struc
 			})
 		}
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	sort.Slice(result, func(i, j int) bool { return subjectIDLess(result[i].ID, result[j].ID) })
 	if result == nil {
 		result = []Subject{}
 	}
@@ -1230,9 +1297,6 @@ func validateGroup(targetID string, subjects map[string]Subject, group Group) er
 			return fmt.Errorf("group index: platform authority cannot evidence a dependencies-lane group")
 		}
 	}
-	if group.ID != groupIdentity(targetID, group) {
-		return fmt.Errorf("group index: group identity mismatch")
-	}
 	return nil
 }
 
@@ -1288,9 +1352,6 @@ func validateConnection(
 		!connection.SupportResolution.Valid() || connection.Evidence == nil ||
 		!canonicalSubjectEndpoints(connection.Evidence) {
 		return fmt.Errorf("group index: invalid connection")
-	}
-	if connection.ID != connectionIdentity(connection) {
-		return fmt.Errorf("group index: connection identity mismatch")
 	}
 	if connection.From.TargetID != localTargetID {
 		return fmt.Errorf("group index: connection is not stored by its source target")
@@ -1401,8 +1462,8 @@ func (edge StructuralEdge) hasValueSourceEvidence() bool {
 func validValueSourceEdgeAuthority(edge StructuralEdge) bool {
 	return validRelationID(edge.RelationID) && edge.RelationKind.Valid() &&
 		edge.Resolution == programindex.ResolutionUnresolved &&
-		validPrefixedSHA256(edge.ArgumentID, "program-pattern-argument-") &&
-		validPrefixedSHA256(edge.ValueCandidateID, "program-pattern-value-") &&
+		validPatternArgumentID(edge.ArgumentID) &&
+		validPatternValueID(edge.ValueCandidateID) &&
 		edge.ValueResolution.Valid() && edge.ValueSourceKind.Valid()
 }
 
@@ -1532,15 +1593,18 @@ func isObjectSubject(subject Subject) bool {
 }
 
 func containsString(values []string, value string) bool {
-	position := sort.SearchStrings(values, value)
-	return position < len(values) && values[position] == value
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }
 
 func validObjectFacts(facts ObjectFacts) bool {
 	if !validText(facts.Name) || !facts.Kind.Valid() || !facts.Visibility.Valid() ||
 		!validOptionalText(facts.Signature) || !validOptionalDirectObjectID(facts.OwnerID) ||
-		!validOptionalDirectObjectID(facts.ContainerID) || facts.SymbolLinkIdentities == nil ||
-		!canonicalSymbolLinkIdentities(facts.SymbolLinkIdentities) || !validOptionalLocation(facts.Location) {
+		!validOptionalDirectObjectID(facts.ContainerID) || !validOptionalLocation(facts.Location) {
 		return false
 	}
 	if facts.External == nil {
@@ -1556,7 +1620,7 @@ func validObjectFacts(facts ObjectFacts) bool {
 func validPatternFacts(patternID string, facts PatternFacts) bool {
 	if !facts.Form.Valid() || !validText(facts.Selector) || !validOptionalLocation(facts.Location) ||
 		!validRelationID(facts.RelationID) || !facts.RelationKind.Valid() || !facts.RelationResolution.Valid() ||
-		!validPrefixedSHA256(facts.FromID, "program-object-") || facts.ToIDs == nil ||
+		!validCompactID(facts.FromID, "n") || facts.ToIDs == nil ||
 		!canonicalDirectObjectIDs(facts.ToIDs) || !validOptionalText(facts.Invocation) ||
 		!validOptionalDirectObjectID(facts.ResultID) || !validOptionalDirectObjectID(facts.ReceiverID) ||
 		facts.ReceiverOriginIDs == nil || !canonicalDirectObjectIDs(facts.ReceiverOriginIDs) || facts.Arguments == nil {
@@ -1581,7 +1645,7 @@ func validPatternFacts(patternID string, facts PatternFacts) bool {
 }
 
 func validPatternArgument(patternID string, argument PatternArgument) bool {
-	if !validPrefixedSHA256(argument.ID, "program-pattern-argument-") ||
+	if !validPatternArgumentID(argument.ID) ||
 		!validPatternArgumentSelector(argument.Position, argument.Keyword) || !argument.Kind.Valid() ||
 		argument.Parts == nil || argument.ObjectIDs == nil || argument.ValueCandidates == nil ||
 		!canonicalDirectObjectIDs(argument.ObjectIDs) ||
@@ -1590,7 +1654,7 @@ func validPatternArgument(patternID string, argument PatternArgument) bool {
 		argument.ValueCandidatesOmitted != 0 {
 		return false
 	}
-	if argument.ID != stableID("program-pattern-argument", patternID, patternArgumentKey(argument)) {
+	if !strings.HasPrefix(argument.ID, patternID+"a") {
 		return false
 	}
 	if argument.Kind != programindex.PatternDynamic && len(argument.ValueCandidates) != 0 {
@@ -1650,7 +1714,7 @@ func validPatternArgumentObjectAuthority(ids []string, resolution programindex.R
 }
 
 func validPatternValueCandidate(argumentID string, candidate PatternValueCandidate) bool {
-	if !validPrefixedSHA256(candidate.ID, "program-pattern-value-") ||
+	if !validPatternValueID(candidate.ID) ||
 		!candidate.Kind.Valid() || candidate.Kind == programindex.PatternDynamic ||
 		!candidate.Resolution.Valid() || !candidate.SourceKind.Valid() || candidate.Parts == nil ||
 		candidate.SourceObjectIDs == nil || candidate.SourceArgumentIDs == nil ||
@@ -1671,7 +1735,7 @@ func validPatternValueCandidate(argumentID string, candidate PatternValueCandida
 			return false
 		}
 	}
-	if candidate.ID != patternValueCandidateIdentity(argumentID, candidate) {
+	if !strings.HasPrefix(candidate.ID, argumentID+"v") {
 		return false
 	}
 	switch candidate.Kind {
@@ -1720,7 +1784,7 @@ func categoriesSupportLane(categories []programindex.Category, lane Lane) bool {
 
 func canonicalDirectObjectIDs(values []string) bool {
 	for position, value := range values {
-		if !validPrefixedSHA256(value, "program-object-") || position > 0 && values[position-1] >= value {
+		if !validCompactID(value, "n") || position > 0 && values[position-1] >= value {
 			return false
 		}
 	}
@@ -1729,7 +1793,7 @@ func canonicalDirectObjectIDs(values []string) bool {
 
 func canonicalPatternArgumentIDs(values []string) bool {
 	for position, value := range values {
-		if !validPrefixedSHA256(value, "program-pattern-argument-") || position > 0 && values[position-1] >= value {
+		if !validPatternArgumentID(value) || position > 0 && values[position-1] >= value {
 			return false
 		}
 	}
@@ -1737,7 +1801,7 @@ func canonicalPatternArgumentIDs(values []string) bool {
 }
 
 func validOptionalDirectObjectID(value string) bool {
-	return value == "" || validPrefixedSHA256(value, "program-object-")
+	return value == "" || validCompactID(value, "n")
 }
 
 func validPatternArgumentSelector(position int, keyword string) bool {
@@ -1792,13 +1856,6 @@ func patternValueCandidateIdentity(argumentID string, value PatternValueCandidat
 	return stableID("program-pattern-value", fields...)
 }
 
-func containerIdentity(targetID string, container Container) string {
-	fields := []string{targetID, string(container.Lane), container.Title, container.Summary,
-		"groups", strconv.Itoa(len(container.GroupIDs))}
-	fields = append(fields, container.GroupIDs...)
-	return stableID("program-container", fields...)
-}
-
 // compileContainers resolves the group keys a container names. A container
 // that ends up holding fewer than two groups is not a level, it is the group
 // itself under another name, and is dropped.
@@ -1847,24 +1904,32 @@ func compileContainers(
 			})
 			continue
 		}
-		sort.Strings(ids)
+		sort.Slice(ids, func(i, j int) bool { return compactIDLess(ids[i], ids[j], "g") })
 		container := Container{
 			Title: strings.TrimSpace(proposal.Title), Summary: strings.TrimSpace(proposal.Summary),
 			Lane: proposal.Lane, GroupIDs: ids,
 		}
-		container.ID = containerIdentity(targetID, container)
 		result = append(result, container)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	sort.Slice(result, func(i, j int) bool { return containerKey(result[i]) < containerKey(result[j]) })
+	for position := range result {
+		result[position].ID = compactOrdinal("k", position)
+	}
 	return result, diagnostics
 }
 
-func groupIdentity(targetID string, group Group) string {
-	fields := []string{targetID, string(group.Lane), group.Title, group.Summary, "members", strconv.Itoa(len(group.MemberSubjectIDs))}
+func groupKey(group Group) string {
+	fields := []string{string(group.Lane), group.Title, group.Summary, "members", strconv.Itoa(len(group.MemberSubjectIDs))}
 	fields = append(fields, group.MemberSubjectIDs...)
 	fields = append(fields, "evidence", strconv.Itoa(len(group.EvidenceSubjectIDs)))
 	fields = append(fields, group.EvidenceSubjectIDs...)
-	return stableID("program-group", fields...)
+	return strings.Join(fields, "\x00")
+}
+
+func containerKey(container Container) string {
+	fields := []string{string(container.Lane), container.Title, container.Summary, strconv.Itoa(len(container.GroupIDs))}
+	fields = append(fields, container.GroupIDs...)
+	return strings.Join(fields, "\x00")
 }
 
 func connectionSlot(connection Connection) string {
@@ -1903,10 +1968,10 @@ func connectionKey(connection Connection) string {
 	return strings.Join(values, "\x00")
 }
 
-func connectionIdentity(connection Connection) string {
-	copyValue := connection
-	copyValue.ID = ""
-	return stableID("program-group-connection", connectionKey(copyValue))
+func assignConnectionIDs(connections []Connection, offset int) {
+	for position := range connections {
+		connections[position].ID = compactOrdinal("x", offset+position)
+	}
 }
 
 func connectionProposalKey(proposal ConnectionProposal) string {
@@ -1927,7 +1992,7 @@ func canonicalSubjectIDs(values []string) ([]string, bool) {
 			return nil, false
 		}
 	}
-	sort.Strings(result)
+	sort.Slice(result, func(i, j int) bool { return subjectIDLess(result[i], result[j]) })
 	result = compactStrings(result)
 	if result == nil {
 		result = []string{}
@@ -1937,7 +2002,7 @@ func canonicalSubjectIDs(values []string) ([]string, bool) {
 
 func canonicalDirectSubjectIDs(values []string) bool {
 	for position, value := range values {
-		if !validDirectSubjectID(value) || position > 0 && values[position-1] >= value {
+		if !validDirectSubjectID(value) || position > 0 && !subjectIDLess(values[position-1], value) {
 			return false
 		}
 	}
@@ -1964,10 +2029,122 @@ func diagnosticKey(value Diagnostic) string {
 	return value.Kind + "\x00" + value.ProposalKey + "\x00" + value.Reason
 }
 
-func indexDigest(index Index) (string, error) {
-	// Hashing only reads nested collections; the value copy owns its SHA field.
-	payload := index
+// Overlay is the persisted semantic layer. It binds to one complete
+// ProgramIndex and never repeats that index's native facts or derived edges.
+type Overlay struct {
+	Version            int                 `json:"version"`
+	TargetID           string              `json:"target_id"`
+	ProgramIndexSHA256 string              `json:"program_index_sha256"`
+	Role               string              `json:"role,omitempty"`
+	SharedCode         []string            `json:"shared_code,omitempty"`
+	Summary            string              `json:"summary,omitempty"`
+	Data               []DataRecord        `json:"data,omitempty"`
+	Subjects           []SubjectAnnotation `json:"subjects"`
+	Groups             []Group             `json:"groups"`
+	Operations         []Operation         `json:"operations,omitempty"`
+	Outbound           []OutboundCall      `json:"outbound,omitempty"`
+	Containers         []Container         `json:"containers"`
+	Connections        []Connection        `json:"connections"`
+	SHA256             string              `json:"sha256"`
+}
+
+func OverlayFromIndex(index Index) Overlay {
+	subjects := make([]SubjectAnnotation, len(index.Subjects))
+	for position, subject := range index.Subjects {
+		categories := make([]programindex.Category, len(subject.Categories))
+		copy(categories, subject.Categories)
+		subjects[position] = SubjectAnnotation{
+			ID: subject.ID, Categories: categories,
+		}
+		if subject.Interpretation != nil {
+			interpretation := *subject.Interpretation
+			subjects[position].Interpretation = &interpretation
+		}
+	}
+	return Overlay{
+		Version: index.Version, TargetID: index.Target.ID, ProgramIndexSHA256: index.ProgramIndexSHA256,
+		Role: index.Role, SharedCode: index.SharedCode, Summary: index.Summary, Data: index.Data,
+		Subjects: subjects, Groups: index.Groups, Operations: index.Operations, Outbound: index.Outbound,
+		Containers: index.Containers, Connections: index.Connections, SHA256: index.SHA256,
+	}
+}
+
+func (artifact Overlay) Validate() error {
+	if artifact.Version != Version || !validTargetID(artifact.TargetID) || !validSHA256(artifact.ProgramIndexSHA256) ||
+		artifact.Subjects == nil || artifact.Groups == nil || artifact.Containers == nil || artifact.Connections == nil {
+		return fmt.Errorf("group index: invalid semantic overlay")
+	}
+	seen := make(map[string]struct{}, len(artifact.Subjects))
+	for _, subject := range artifact.Subjects {
+		if !validDirectSubjectID(subject.ID) || !canonicalCategories(subject.Categories) {
+			return fmt.Errorf("group index: invalid subject annotation")
+		}
+		if _, exists := seen[subject.ID]; exists {
+			return fmt.Errorf("group index: duplicate subject annotation")
+		}
+		seen[subject.ID] = struct{}{}
+		if subject.Interpretation != nil && subject.Interpretation.Line != "" && !validText(subject.Interpretation.Line) {
+			return fmt.Errorf("group index: invalid subject interpretation")
+		}
+	}
+	payload := artifact
 	payload.SHA256 = ""
+	want, err := artifactDigest(payload)
+	if err != nil {
+		return err
+	}
+	if !validSHA256(artifact.SHA256) || artifact.SHA256 != want {
+		return fmt.Errorf("group index: sha256 mismatch")
+	}
+	return nil
+}
+
+func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
+	if err := program.Validate(); err != nil {
+		return Index{}, fmt.Errorf("group index: invalid ProgramIndex: %w", err)
+	}
+	if err := artifact.Validate(); err != nil {
+		return Index{}, err
+	}
+	if artifact.TargetID != program.Target.ID || artifact.ProgramIndexSHA256 != program.SHA256 {
+		return Index{}, fmt.Errorf("group index: ProgramIndex binding mismatch")
+	}
+	retained := make(map[string]struct{}, len(artifact.Subjects))
+	annotations := make(map[string]SubjectAnnotation, len(artifact.Subjects))
+	for _, annotation := range artifact.Subjects {
+		retained[annotation.ID] = struct{}{}
+		annotations[annotation.ID] = annotation
+	}
+	subjects := compileRetainedSubjects(program, retained)
+	for position := range subjects {
+		annotation := annotations[subjects[position].ID]
+		subjects[position].Categories = make([]programindex.Category, len(annotation.Categories))
+		copy(subjects[position].Categories, annotation.Categories)
+		if annotation.Interpretation != nil {
+			interpretation := *annotation.Interpretation
+			subjects[position].Interpretation = &interpretation
+		}
+	}
+	index := Index{
+		Version: artifact.Version, Role: artifact.Role, SharedCode: artifact.SharedCode, Summary: artifact.Summary,
+		Target: program.Target.Snapshot(), ProgramIndexSHA256: artifact.ProgramIndexSHA256,
+		Data: artifact.Data, Subjects: subjects, Groups: artifact.Groups, Operations: artifact.Operations,
+		Outbound: artifact.Outbound, Containers: artifact.Containers,
+		StructuralEdges: compileStructuralEdges(program, retained), Connections: artifact.Connections, SHA256: artifact.SHA256,
+	}
+	if err := index.Validate(); err != nil {
+		return Index{}, err
+	}
+	return index, nil
+}
+
+func indexDigest(index Index) (string, error) {
+	payload := OverlayFromIndex(index)
+	payload.SHA256 = ""
+	return artifactDigest(payload)
+}
+
+func artifactDigest(payload Overlay) (string, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("group index: encode digest material: %w", err)
@@ -2017,23 +2194,97 @@ func validSnakeCase(value string) bool {
 }
 
 func validDirectSubjectID(value string) bool {
-	return validPrefixedSHA256(value, "program-object-") || validPrefixedSHA256(value, "program-pattern-")
+	return validCompactID(value, "n") || validPatternID(value)
 }
 
 func validGroupID(value string) bool {
-	return validPrefixedSHA256(value, "program-group-")
+	return validCompactID(value, "g")
 }
 
 func validConnectionID(value string) bool {
-	return validPrefixedSHA256(value, "program-group-connection-")
+	return validCompactID(value, "x")
+}
+
+func validContainerID(value string) bool { return validCompactID(value, "k") }
+
+func compactOrdinal(prefix string, zeroBased int) string {
+	return prefix + strconv.Itoa(zeroBased+1)
+}
+
+func compactIDLess(left, right, prefix string) bool {
+	leftOrdinal, leftErr := strconv.Atoi(strings.TrimPrefix(left, prefix))
+	rightOrdinal, rightErr := strconv.Atoi(strings.TrimPrefix(right, prefix))
+	if leftErr != nil || rightErr != nil {
+		return left < right
+	}
+	return leftOrdinal < rightOrdinal
+}
+
+func subjectIDLess(left, right string) bool {
+	leftObject := strings.HasPrefix(left, "n")
+	rightObject := strings.HasPrefix(right, "n")
+	if leftObject != rightObject {
+		return leftObject
+	}
+	if leftObject {
+		return compactIDLess(left, right, "n")
+	}
+	parsePattern := func(value string) (int, int) {
+		separator := strings.IndexByte(value, 'p')
+		if separator < 0 {
+			return 0, 0
+		}
+		relation, _ := strconv.Atoi(strings.TrimPrefix(value[:separator], "e"))
+		pattern, _ := strconv.Atoi(value[separator+1:])
+		return relation, pattern
+	}
+	leftRelation, leftPattern := parsePattern(left)
+	rightRelation, rightPattern := parsePattern(right)
+	if leftRelation != rightRelation {
+		return leftRelation < rightRelation
+	}
+	return leftPattern < rightPattern
+}
+
+// SubjectIDLess orders the compact object and pattern identities used by the
+// shared graph and by qualified provider references.
+func SubjectIDLess(left, right string) bool {
+	return subjectIDLess(left, right)
 }
 
 func validRelationID(value string) bool {
-	return validPrefixedSHA256(value, "program-relation-")
+	return validCompactID(value, "e")
+}
+
+func validCompactID(value, prefix string) bool {
+	if !strings.HasPrefix(value, prefix) || len(value) == len(prefix) {
+		return false
+	}
+	ordinal, err := strconv.Atoi(value[len(prefix):])
+	return err == nil && ordinal > 0 && prefix+strconv.Itoa(ordinal) == value
+}
+
+func validPatternID(value string) bool {
+	return validScopedCompactID(value, "e", "p")
+}
+
+func validPatternArgumentID(value string) bool {
+	patternEnd := strings.LastIndex(value, "a")
+	return patternEnd > 0 && validPatternID(value[:patternEnd]) && validCompactID(value[patternEnd:], "a")
+}
+
+func validPatternValueID(value string) bool {
+	argumentEnd := strings.LastIndex(value, "v")
+	return argumentEnd > 0 && validPatternArgumentID(value[:argumentEnd]) && validCompactID(value[argumentEnd:], "v")
+}
+
+func validScopedCompactID(value, outerPrefix, innerPrefix string) bool {
+	inner := strings.LastIndex(value, innerPrefix)
+	return inner > 0 && validCompactID(value[:inner], outerPrefix) && validCompactID(value[inner:], innerPrefix)
 }
 
 func validTargetID(value string) bool {
-	return validPrefixedSHA256(value, "program-target-")
+	return validCompactID(value, "t")
 }
 
 func validPrefixedSHA256(value, prefix string) bool {
@@ -2128,7 +2379,6 @@ func cloneSubject(subject Subject) Subject {
 	copy(result.Categories, subject.Categories)
 	if subject.Object != nil {
 		object := *subject.Object
-		object.SymbolLinkIdentities = cloneSymbolLinkIdentities(subject.Object.SymbolLinkIdentities)
 		object.External = cloneExternal(subject.Object.External)
 		object.Location = cloneLocation(subject.Object.Location)
 		result.Object = &object
@@ -2216,34 +2466,6 @@ func cloneExternal(value *programindex.ExternalSymbol) *programindex.ExternalSym
 	}
 	result := *value
 	return &result
-}
-
-func cloneSymbolLinkIdentities(values []programindex.SymbolLinkIdentity) []programindex.SymbolLinkIdentity {
-	if len(values) == 0 {
-		return []programindex.SymbolLinkIdentity{}
-	}
-	result := make([]programindex.SymbolLinkIdentity, len(values))
-	copy(result, values)
-	return result
-}
-
-func canonicalSymbolLinkIdentities(values []programindex.SymbolLinkIdentity) bool {
-	previous := ""
-	for _, value := range values {
-		if !validText(value.Domain) || !validSymbolLinkKey(value.Key) || !validOptionalText(value.Display) || value.PartCount <= 0 {
-			return false
-		}
-		key := value.Domain + "\x00" + value.Key
-		if previous != "" && previous >= key {
-			return false
-		}
-		previous = key
-	}
-	return true
-}
-
-func validSymbolLinkKey(value string) bool {
-	return validPrefixedSHA256(value, "symbol-link-")
 }
 
 func cloneLocation(value *programindex.Location) *programindex.Location {

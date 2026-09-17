@@ -192,8 +192,8 @@ func TestLearnKeepsConceptMembershipsAndSkipsRemoteCopies(t *testing.T) {
 	if view.LearnConcepts[0].Source.Line != 12 {
 		t.Fatal("lost declaration source")
 	}
-	if !strings.HasPrefix(view.LearnConcepts[0].ID, "concept-") {
-		t.Fatal("term has no individual address")
+	if view.LearnConcepts[0].ID != "c1" {
+		t.Fatalf("term address = %q, want c1", view.LearnConcepts[0].ID)
 	}
 	if view.LearnConcepts[0].Places[1].Href != "#lib-lease" || !strings.Contains(view.LearnConcepts[0].Places[1].Title, "library") {
 		t.Fatal("lost distinct library owner")
