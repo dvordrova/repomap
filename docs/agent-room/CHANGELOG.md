@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Publishing sites are listeners everywhere; Python live
+
+- A call to a `publishes` symbol is the listener at every site, registration
+  or not (`uvicorn.run("app.app:app", host=…, port=…)` has no address literal
+  and no followed holder, so `atlas_publish` asks; DeepSeek picks the
+  FastAPI holder and the three routes become request operations). The
+  listener's address is the value that reads as one (host:port, :port, URL,
+  socket path), never a module path. Every operation kind the boundary
+  kinds map onto validates; the api prompt says a transforming decorator
+  (`dataclass`, `lru_cache`, `property`) binds nothing.
+
 ## 2026-09-17 — Typed signatures in Python and JavaScript/TypeScript
 
 - Python: a function's parameters (without `self`/`cls`) and its return

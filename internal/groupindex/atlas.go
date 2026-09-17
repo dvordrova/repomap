@@ -621,6 +621,17 @@ func snakeCase(label string) string {
 	return kind
 }
 
+// validOperationKind accepts the kinds the reading's activations and the
+// incoming boundary kinds map onto.
+func validOperationKind(kind string) bool {
+	switch kind {
+	case "command", "request", "consumer", "scheduled", "interaction", "extension", "entry", "continuous":
+		return true
+	default:
+		return false
+	}
+}
+
 // OperationKind is what an accepted incoming boundary makes its handler: the
 // entry kinds the reading stage chooses map one to one onto operations.
 func OperationKind(boundaryKind string) string {

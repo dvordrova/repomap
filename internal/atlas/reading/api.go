@@ -185,9 +185,7 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 			continue
 		}
 		if role.publishes {
-			if len(facts.Values) > 0 {
-				state.address = facts.Values[0]
-			}
+			state.address = publishAddress(facts.Values)
 			publishes = append(publishes, state)
 		}
 		state.kind = facts.GivenKind
@@ -195,6 +193,21 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 		r.places[id] = state.place
 	}
 	return publishes
+}
+
+// publishAddress is the literal among a publishing call's values that reads
+// as an address: a host:port, a :port, a URL or a socket path. A module path
+// or a name is not where the program listens.
+func publishAddress(values []string) string {
+	for _, value := range values {
+		if strings.Contains(value, "://") || strings.HasPrefix(value, "/") {
+			return value
+		}
+		if colon := strings.LastIndex(value, ":"); colon >= 0 && colon < len(value)-1 && strings.Trim(value[colon+1:], "0123456789") == "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // joinPublishes gives the entries of a holder the address its publishing
@@ -228,9 +241,6 @@ func (r *reader) joinPublishes(ctx context.Context, publishes []*boundaryState) 
 	}
 	var open []*boundaryState
 	for _, publish := range publishes {
-		if publish.address == "" {
-			continue
-		}
 		if held := byHolder[publish.place.Boundary.Holder]; held != nil {
 			give(held.entries, publish.address)
 			continue

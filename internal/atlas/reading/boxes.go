@@ -450,7 +450,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		r.boundaries[place.ID] = state
 	}
 	publishes := r.applyAPIRoles()
-	r.bindInterpretedBoundaries()
+	publishes = append(publishes, r.bindInterpretedBoundaries()...)
 	tracer := NewDestinationReader(r.opts.Graph.Places)
 	for _, state := range r.boundaries {
 		facts := state.place.Boundary
@@ -665,7 +665,8 @@ func boundaryOwner(facts *atlas.BoundaryFacts, owners map[string]atlas.Place) at
 // Interpretation adds candidate source calls before the boundary review. A
 // selected call is not yet an accepted SDK relationship. Source columns and
 // native call identities distinguish calls sharing a line or declaration.
-func (r *reader) bindInterpretedBoundaries() {
+func (r *reader) bindInterpretedBoundaries() []*boundaryState {
+	var publishes []*boundaryState
 	if r.boundaryIDs == nil {
 		r.boundaryIDs = make(map[string]string)
 	}
@@ -696,8 +697,13 @@ func (r *reader) bindInterpretedBoundaries() {
 		}
 		for _, call := range place.Symbol.Calls {
 			// A call to a symbol that talks to another system is that
-			// outgoing boundary at every site.
-			if call.Line < 1 || call.Kind != string(programindex.RelationInvokesExternal) || call.API == nil || r.api[apiName(*call.API)].talks == "" {
+			// outgoing boundary at every site; a call to a symbol that
+			// publishes is the listener at every site.
+			if call.Line < 1 || call.Kind != string(programindex.RelationInvokesExternal) || call.API == nil {
+				continue
+			}
+			role := r.api[apiName(*call.API)]
+			if role.talks == "" && !role.publishes {
 				continue
 			}
 			claimed := false
@@ -723,14 +729,24 @@ func (r *reader) bindInterpretedBoundaries() {
 			if claimed {
 				continue
 			}
-			id := boundaryID(fmt.Sprintf("out\x00%s\x00%d\x00%d\x00%s\x00%s\x00%s", place.ID, call.Line, call.Column, call.Kind, call.Name, call.Resolution))
+			direction, kind := atlas.DirectionOut, role.talks
+			if role.publishes {
+				direction, kind = atlas.DirectionIn, atlas.BoundaryListenAddress
+			}
+			id := boundaryID(fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s\x00%s\x00%s", direction, place.ID, call.Line, call.Column, call.Kind, call.Name, call.Resolution))
 			p := atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: call.Line, Column: call.Column,
 				Parent: place.Parent, TargetIDs: append([]string(nil), place.TargetIDs...), Boundary: &atlas.BoundaryFacts{
 					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, CallerDoc: decl.Doc, External: call.Name,
-					Values: append([]string{}, call.Values...), Direction: atlas.DirectionOut, GivenKind: r.api[apiName(*call.API)].talks}}
-			r.boundaries[id] = &boundaryState{place: p, kind: r.api[apiName(*call.API)].talks}
+					Values: append([]string{}, call.Values...), Direction: direction, GivenKind: kind}}
+			state := &boundaryState{place: p, kind: kind}
+			if role.publishes {
+				state.address = publishAddress(call.Values)
+				publishes = append(publishes, state)
+			}
+			r.boundaries[id] = state
 		}
 	}
+	return publishes
 }
 
 // An equal terminal identifier is only a candidate for the model to confirm.

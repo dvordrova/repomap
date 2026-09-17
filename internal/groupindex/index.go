@@ -737,7 +737,7 @@ func (index Index) Validate() error {
 		}
 	}
 	for i, operation := range index.Operations {
-		if operation.Kind != "command" && operation.Kind != "request" && operation.Kind != "interaction" && operation.Kind != "scheduled" && operation.Kind != "continuous" {
+		if !validOperationKind(operation.Kind) {
 			return fmt.Errorf("group index: invalid operation kind %q", operation.Kind)
 		}
 		_, groupExists := groupsByID[operation.GroupID]

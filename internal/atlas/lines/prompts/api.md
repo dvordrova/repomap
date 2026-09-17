@@ -21,7 +21,8 @@ that.
   hook, plugin or module registered with a host runtime; `other` an
   established entry of another kind. A symbol that runs the callable in
   place — a sort comparator, a map function, a middleware wrapper, a
-  deferred cleanup — binds nothing.
+  deferred cleanup — binds nothing; neither does a decorator that only
+  transforms what it decorates (`dataclass`, `lru_cache`, `property`).
 - `publishes`: `yes` when the call makes what its holder holds reachable
   from outside: starts the server on the given address, runs the
   application, connects the consumer to its broker. A symbol that only
