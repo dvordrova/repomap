@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Construction of an outside type is a registration
+
+- The Go adapter projects a callable bound into a field of a value of an
+  outside type (`&cobra.Command{Use: "serve", RunE: run}`) as the
+  construction of that type: `invokes_external` with the `construct`
+  invocation, the sibling string literals as keyword arguments, the bound
+  field as the callback's argument. Facts read it as a registration of the
+  callable under the type (`Key` the type name, `Values` the literals;
+  keyword literals have no order, so none is the address). New entry kind
+  `command` for `binds`; fixture `BuildCommands` with `testing.InternalTest`.
+
 ## 2026-09-17 — Symbol roles replace per-site boundary decisions
 
 - New reading stage `atlas_api`: one row per external symbol the repository

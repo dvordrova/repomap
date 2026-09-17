@@ -630,6 +630,8 @@ func OperationKind(boundaryKind string) string {
 		return "interaction"
 	case atlas.BoundaryExtension:
 		return "extension"
+	case atlas.BoundaryCommand:
+		return "command"
 	case atlas.BoundaryOther:
 		return "entry"
 	default:

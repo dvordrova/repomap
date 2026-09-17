@@ -100,6 +100,9 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 		argument := &pattern.Arguments[position]
 		if value, _, literal := literalValue(*argument); literal {
 			shape.literals = append(shape.literals, value)
+			// The first positional literal names what is handed over. Keyword
+			// literals (Command{Use: "serve", Short: "…"}) have no order the
+			// index keeps, so they stay values without one being the address.
 			if argument.Keyword == "" && shape.firstLiteral == nil && !isHTTPVerb(value) {
 				shape.firstLiteral = argument
 			}

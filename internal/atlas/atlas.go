@@ -1318,7 +1318,10 @@ const (
 	BoundaryScheduled   = "scheduled"
 	BoundaryInteraction = "interaction"
 	BoundaryExtension   = "extension"
-	BoundaryOther       = "other"
+	// BoundaryCommand is a command a runner activates: a CLI subcommand, a
+	// task a task runner names.
+	BoundaryCommand = "command"
+	BoundaryOther   = "other"
 
 	SourceModel  = "model"
 	SourceCache  = "cache"
@@ -1336,14 +1339,14 @@ func BoundaryKinds() []string {
 	return []string{
 		BoundaryHTTPClient, BoundaryHTTPServer, BoundaryDB, BoundaryQueueProducer,
 		BoundaryQueueConsumer, BoundaryScheduled, BoundaryInteraction, BoundaryExtension,
-		BoundarySDK, BoundaryConfig, BoundaryOther,
+		BoundaryCommand, BoundarySDK, BoundaryConfig, BoundaryOther,
 	}
 }
 
 // IncomingBoundaryKinds lists what a registration handing over a repository
 // callable can be: the ways work enters the component.
 func IncomingBoundaryKinds() []string {
-	return []string{BoundaryHTTPServer, BoundaryQueueConsumer, BoundaryScheduled, BoundaryInteraction, BoundaryExtension, BoundaryOther}
+	return []string{BoundaryHTTPServer, BoundaryQueueConsumer, BoundaryScheduled, BoundaryInteraction, BoundaryExtension, BoundaryCommand, BoundaryOther}
 }
 
 // OutgoingBoundaryKinds lists the kinds an outgoing candidate may take: the

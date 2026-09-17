@@ -88,6 +88,15 @@ func (s *synthetic) callback(ref, from, to, relationRef, patternRef string, posi
 	})
 }
 
+func (s *synthetic) callbackKeyword(ref, from, to, relationRef, patternRef, keyword string) {
+	s.callback(ref, from, to, relationRef, patternRef, 0)
+	s.relations[len(s.relations)-1].SourceArgument.Keyword = keyword
+}
+
+func dynamicKeyword(name, ref string) programindex.PatternArgumentInput {
+	return programindex.PatternArgumentInput{Keyword: name, Kind: programindex.PatternDynamic, ObjectRefs: []string{ref}, Resolution: programindex.ResolutionExact, ObjectsObserved: 1}
+}
+
 func (s *synthetic) index() programindex.Index {
 	s.t.Helper()
 	seeds := s.seeds

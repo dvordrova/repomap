@@ -79,6 +79,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoSourceValues(t, repository, index)
 	assertGoRuntimeRegistrations(t, index)
 	assertGoHTTPRegistrations(t, repository, index)
+	assertGoConstructRegistrations(t, index)
 	adaptertest.AssertQueryOccurrenceOwners(t, repositoryPath, repository, index, "internal/storefixture/data_sources.go")
 	adaptertest.AssertConcreteParameterMethod(t, index, "internal/storefixture/data_sources.go")
 	assertGoTypedIteration(t, index)

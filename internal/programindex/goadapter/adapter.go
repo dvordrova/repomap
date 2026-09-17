@@ -83,6 +83,8 @@ func BuildInput(
 		objectRefs:           make(map[string]struct{}),
 		moduleRefs:           make(map[string]string),
 		packageRefs:          make(map[string]string),
+		repositoryPackages:   make(map[string]bool),
+		constructs:           make(map[string]int),
 		typeRefs:             make(map[string]string),
 		typeLocations:        make(map[string]*programindex.Location),
 		methodRefs:           make(map[string]map[string]string),
@@ -237,9 +239,15 @@ type goProjection struct {
 	objects   []programindex.ObjectInput
 	relations []programindex.RelationInput
 
-	objectRefs           map[string]struct{}
-	moduleRefs           map[string]string
-	packageRefs          map[string]string
+	objectRefs  map[string]struct{}
+	moduleRefs  map[string]string
+	packageRefs map[string]string
+	// repositoryPackages are the import paths this target's modules own; a
+	// value of a type from any other package is constructed outside them.
+	repositoryPackages map[string]bool
+	// constructs indexes the construction relations by caller and literal so
+	// two callables bound into one literal share it.
+	constructs           map[string]int
 	typeRefs             map[string]string
 	typeLocations        map[string]*programindex.Location
 	methodRefs           map[string]map[string]string
@@ -265,6 +273,7 @@ func (projection *goProjection) projectObjects() error {
 		}
 		packageRef := stableRef("go-package", pkg.ModuleID, pkg.Path)
 		projection.packageRefs[packageKey(pkg.ModuleID, pkg.Path)] = packageRef
+		projection.repositoryPackages[pkg.Path] = true
 		if err := projection.addObject(programindex.ObjectInput{
 			SourceRef: packageRef, Kind: programindex.ObjectPackage, Name: pkg.Path,
 			Visibility: goPackageVisibility(pkg.Path), OwnerRef: moduleRef, ContainerRef: moduleRef,
@@ -929,6 +938,15 @@ func (projection *goProjection) projectDynamicHandoffs() (
 				return nil, err
 			}
 		}
+		if handoff.Kind == godynamichandoff.CallableBinding {
+			ref, err := projection.constructRegistration(handoff, fromRef, toRefs, resolution, location)
+			if err != nil {
+				return nil, err
+			}
+			if ref != nil {
+				sourceArgument = ref
+			}
+		}
 		witnesses := []programindex.Witness{{Kind: "go_ssa_dynamic_handoff", Detail: dynamicHandoffDetail(handoff, functionNames), Location: location}}
 		for _, field := range handoff.ReceiverFields {
 			at, err := projection.dynamicLocation(field.Location)
@@ -970,6 +988,96 @@ func (projection *goProjection) projectDynamicHandoffs() (
 		represented[handoff.CallerID] = counts
 	}
 	return represented, nil
+}
+
+// constructRegistration projects a callable bound into a field of a value
+// whose type another package declares as the construction of that value:
+// Go writes &cobra.Command{Use: "serve", RunE: run} where other languages
+// call a constructor. The relation invokes the type with the construct
+// invocation; the string literals stored beside the callable are its keyword
+// arguments and the bound field is the argument the callback crosses by. A
+// value of a repository type is no construction outside the repository.
+func (projection *goProjection) constructRegistration(
+	handoff godynamichandoff.Handoff, fromRef string, toRefs []string,
+	resolution programindex.Resolution, location *programindex.Location,
+) (*programindex.PatternArgumentRefInput, error) {
+	packagePath, typeName, ok := splitQualifiedType(handoff.Slot.ContainerType)
+	if !ok || projection.repositoryPackages[packagePath] {
+		return nil, nil
+	}
+	target := surfacediscovery.ExternalCallTarget{PackagePath: packagePath, Name: typeName}
+	typeRef, exists := projection.externalRefs[externalTargetKey(target)]
+	if !exists {
+		typeRef = stableRef("go-external-symbol", packagePath, "", typeName)
+		projection.externalRefs[externalTargetKey(target)] = typeRef
+		authority := projection.externalAuthorities[packagePath]
+		if authority == "" {
+			authority = programindex.ExternalAuthorityPackage
+		}
+		if err := projection.addObject(programindex.ObjectInput{
+			SourceRef: typeRef, Kind: programindex.ObjectExternalSymbol, Name: externalTargetName(target),
+			Visibility: visibility(token.IsExported(typeName)),
+			External:   &programindex.ExternalSymbol{AuthorityKind: authority, PackagePath: packagePath, Name: typeName},
+		}); err != nil {
+			return nil, err
+		}
+	}
+	fields := append([]godynamichandoff.ReceiverField(nil), handoff.ReceiverFields...)
+	sort.Slice(fields, func(i, j int) bool {
+		if fields[i].Location.Line != fields[j].Location.Line {
+			return fields[i].Location.Line < fields[j].Location.Line
+		}
+		return fields[i].Location.Column < fields[j].Location.Column
+	})
+	keyParts := []string{handoff.CallerID, handoff.Slot.ContainerType}
+	for _, field := range fields {
+		keyParts = append(keyParts, field.Field, field.Literal, field.Location.Path, strconv.Itoa(field.Location.Line), strconv.Itoa(field.Location.Column))
+	}
+	if len(fields) == 0 {
+		keyParts = append(keyParts, handoff.Callsite.Path, strconv.Itoa(handoff.Callsite.Line), strconv.Itoa(handoff.Callsite.Column))
+	}
+	key := strings.Join(keyParts, "\x00")
+	bound := programindex.PatternArgumentInput{
+		Keyword: handoff.Slot.Field, Kind: programindex.PatternDynamic, ObjectRefs: toRefs,
+		Resolution: resolution, ObjectsObserved: max(handoff.CandidatesConsidered, len(toRefs)),
+	}
+	position, exists := projection.constructs[key]
+	if !exists {
+		relationRef := stableRef("go-construct", key)
+		patternRef := stableRef("go-construct-pattern", key)
+		var arguments []programindex.PatternArgumentInput
+		for _, field := range fields {
+			if value, err := strconv.Unquote(field.Literal); err == nil {
+				arguments = append(arguments, programindex.PatternArgumentInput{Keyword: field.Field, Kind: programindex.PatternLiteralString, Value: value})
+			}
+		}
+		position = len(projection.relations)
+		projection.constructs[key] = position
+		projection.relations = append(projection.relations, programindex.RelationInput{
+			SourceRef: relationRef, Kind: programindex.RelationInvokesExternal, FromRef: fromRef, ToRefs: []string{typeRef},
+			Resolution: programindex.ResolutionExact, Invocation: programindex.InvocationConstruct, Location: location, TargetsObserved: 1,
+			Witnesses:         []programindex.Witness{{Kind: "go_composite_literal", Detail: handoff.Slot.ContainerType, Location: location}},
+			WitnessesObserved: 1,
+			Patterns: []programindex.RelationPatternInput{{
+				SourceRef: patternRef, Form: programindex.PatternCall, Selector: typeName, Location: location,
+				Arguments: arguments, ArgumentsObserved: len(arguments),
+			}},
+			PatternsObserved: 1,
+		})
+	}
+	relation := &projection.relations[position]
+	relation.Patterns[0].Arguments = append(relation.Patterns[0].Arguments, bound)
+	relation.Patterns[0].ArgumentsObserved = len(relation.Patterns[0].Arguments)
+	return &programindex.PatternArgumentRefInput{RelationSourceRef: relation.SourceRef, PatternSourceRef: relation.Patterns[0].SourceRef, Keyword: handoff.Slot.Field}, nil
+}
+
+// splitQualifiedType reads "path/to/pkg.Type" as its package path and name.
+func splitQualifiedType(qualified string) (string, string, bool) {
+	dot := strings.LastIndex(qualified, ".")
+	if dot <= 0 || dot == len(qualified)-1 || strings.ContainsAny(qualified, "[]* ") {
+		return "", "", false
+	}
+	return qualified[:dot], qualified[dot+1:], true
 }
 
 // goInvocation maps Go's call forms onto the shared invocation words. A

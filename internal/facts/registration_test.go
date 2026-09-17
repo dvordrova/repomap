@@ -45,6 +45,18 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 			want: []want{{key: "Handle", method: "GET", path: "/items", symbol: "serveItems", values: []string{"GET /items"}, resolution: ResolutionExact}},
 		},
 		{
+			name: "a value of an outside type constructed with a callable in a field registers it under the literal beside it",
+			build: func(s *synthetic) {
+				s.object("main", programindex.ObjectFunction, "main", "main.go", 5, "")
+				s.object("h", programindex.ObjectFunction, "runServe", "main.go", 30, "")
+				s.external("command", "github.com/spf13/cobra", "Command", programindex.ExternalAuthorityPackage)
+				s.relate("new", programindex.RelationInvokesExternal, "main", []string{"command"}, loc("main.go", 8),
+					pattern("p", programindex.PatternCall, "Command", loc("main.go", 8), nil, keyword("Use", "serve"), keyword("Short", "Run the server"), dynamicKeyword("RunE", "h")))
+				s.callbackKeyword("cb", "main", "h", "new", "p", "RunE")
+			},
+			want: []want{{key: "Command", symbol: "runServe", values: []string{"Run the server", "serve"}, resolution: ResolutionExact}},
+		},
+		{
 			name: "a request with only a path is a registration without a handler",
 			build: func(s *synthetic) {
 				s.object("fn", programindex.ObjectFunction, "loadItems", "client.ts", 3, "")

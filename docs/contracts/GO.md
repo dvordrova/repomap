@@ -115,6 +115,14 @@ anchored observations, not final runtime values. Named and anonymous callbacks
 share this mechanism. No field names or framework types drive extraction.
 ProgramIndex carries these as `callable_receiver_field` witnesses, and the
 atlas attaches them as binding evidence rather than additional registrations.
+A callable bound into a field of a value whose type another package declares
+(`&cobra.Command{Use: "serve", RunE: run}`) is also projected as the
+construction of that value: an `invokes_external` relation to the type with
+the `construct` invocation, whose one call pattern carries the string literals
+stored beside the callable as keyword arguments and the bound field as the
+keyword argument the `passes_callback` crosses by. Go constructs where other
+languages call a constructor, and the facts stage reads both as one
+registration shape. A value of a repository type is no such construction.
 The own callback sees its object's fields; a neighbouring caller's registration
 retains just the binding shape and source, so a shared error helper does not
 inherit every command's help text. Canonical sealing, independent copies,
