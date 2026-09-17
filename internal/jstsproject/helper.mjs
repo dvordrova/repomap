@@ -838,6 +838,7 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
         exported: declarationExported(node),
         owner_ref: ownerRef,
         location: locationOf(node.name || node),
+        end_line: node.getSourceFile().getLineAndCharacterOfPosition(node.getEnd()).line + 1,
       })
     }
     ts.forEachChild(node, visit)

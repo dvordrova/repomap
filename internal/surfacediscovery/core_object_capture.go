@@ -246,7 +246,7 @@ func (a *analyzer) captureCoreObjectFile(
 				input.Types = append(input.Types, gocoreobject.TypeDeclaration{
 					Kind: coreObjectTypeKind(object), Package: packagePath, Name: object.Name(),
 					Signature: types.ObjectString(object, packageQualifier),
-					Exported:  object.Exported(), Location: location,
+					Exported:  object.Exported(), Location: location, EndLine: a.location(typeSpec.End()).Line,
 				})
 				if _, ok := typeSpec.Type.(*ast.StructType); ok {
 					structure, ok := types.Unalias(object.Type()).Underlying().(*types.Struct)
@@ -343,7 +343,7 @@ func (a *analyzer) captureCoreObjectFile(
 			input.Callables = append(input.Callables, gocoreobject.CallableDeclaration{
 				Kind: kind, Package: packagePath, Name: object.Name(), Receiver: receiver,
 				Signature: types.TypeString(signature, packageQualifier), Exported: object.Exported(),
-				Location: location, DirectCallNodeID: directCallNodeID,
+				Location: location, EndLine: a.location(value.End()).Line, DirectCallNodeID: directCallNodeID,
 				Parameters: typedNames(signature.Params()), Results: typedNames(signature.Results()),
 			})
 		}

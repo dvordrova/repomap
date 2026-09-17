@@ -94,6 +94,7 @@ type TypeDeclaration struct {
 	Signature string             `json:"signature"`
 	Exported  bool               `json:"exported"`
 	Location  Location           `json:"location"`
+	EndLine   int                `json:"end_line,omitempty"`
 	Fields    []FieldDeclaration `json:"fields,omitempty"`
 }
 
@@ -118,6 +119,7 @@ type CallableDeclaration struct {
 	Signature        string       `json:"signature"`
 	Exported         bool         `json:"exported"`
 	Location         Location     `json:"location"`
+	EndLine          int          `json:"end_line,omitempty"`
 	DirectCallNodeID string       `json:"direct_call_node_id,omitempty"`
 	// Parameters and Results are the signature's values in order, each with
 	// the named type it carries when one does (through pointers and slices).
@@ -370,6 +372,9 @@ func (index Index) Validate() error {
 			if !validText(value.Type) || (value.Package == "") != (value.TypeName == "") {
 				return fmt.Errorf("go core object index: invalid callable value type")
 			}
+		}
+		if declaration.EndLine != 0 && declaration.EndLine < declaration.Location.Line {
+			return fmt.Errorf("go core object index: callable ends before it starts")
 		}
 		if _, duplicate := callableIDs[declaration.ID]; duplicate {
 			return fmt.Errorf("go core object index: duplicate callable declaration")

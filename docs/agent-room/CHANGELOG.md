@@ -1,5 +1,14 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Declarations know where they end; questions are opt-in
+
+- Every adapter records a declaration's `end_line` (Go from the AST node's
+  end, Python from `end_lineno`, JS/TS from the node's end position, Clojure
+  from clj-kondo's `end-row`), so a declaration's source can be read whole.
+- The question cascade (`atlas_learn`, `atlas_question`, `atlas_answer`)
+  runs only with `--learn` or an explicit `--question`; `--no-questions` is
+  gone. Effective options record `learn`.
+
 ## 2026-09-17 — Typed signatures and what an operation exchanges
 
 - ProgramIndex v18: callables carry `parameters` and `results` with the

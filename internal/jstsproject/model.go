@@ -116,6 +116,7 @@ type Declaration struct {
 	Exported          bool     `json:"exported"`
 	OwnerRef          string   `json:"owner_ref,omitempty"`
 	Location          Location `json:"location"`
+	EndLine           int      `json:"end_line,omitempty"`
 }
 
 type Import struct {

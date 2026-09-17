@@ -119,7 +119,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		if len(d.Arglists) > 0 {
 			signature += " " + strings.Join(d.Arglists, " ")
 		}
-		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: kind, Name: d.NS + "/" + d.Name, Visibility: visibility, Signature: signature, OwnerRef: owner, ContainerRef: owner, Location: location(d.site)}
+		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: kind, Name: d.NS + "/" + d.Name, Visibility: visibility, Signature: signature, OwnerRef: owner, ContainerRef: owner, Location: location(d.site), EndLine: d.EndRow}
 		vars[d.NS+"/"+d.Name] = append(vars[d.NS+"/"+d.Name], ref)
 		definitions[d.Filename] = append(definitions[d.Filename], d)
 		if d.Name == "-main" && kind == p.ObjectFunction {

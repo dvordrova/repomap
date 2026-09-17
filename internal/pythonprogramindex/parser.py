@@ -636,6 +636,7 @@ class Collector(ast.NodeVisitor):
             **({"owner_ref": parent.ref} if parent.kind == "type" else {}),
             "container_ref": parent.ref,
             "location": source_location(self.module["path"], node),
+            "end_line": getattr(node, "end_lineno", 0),
         }, qname)
         parent.bindings[node.name] = {"kind": "object", "ref": ref}
         self.analyzer.node_refs[id(node)] = ref

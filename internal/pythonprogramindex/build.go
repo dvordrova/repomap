@@ -84,6 +84,7 @@ type parsedObject struct {
 	OwnerRef     string                       `json:"owner_ref,omitempty"`
 	ContainerRef string                       `json:"container_ref,omitempty"`
 	Location     *programindex.Location       `json:"location,omitempty"`
+	EndLine      int                          `json:"end_line,omitempty"`
 	Directory    string                       `json:"directory,omitempty"`
 	External     *programindex.ExternalSymbol `json:"external,omitempty"`
 }
@@ -672,7 +673,7 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 		objects = append(objects, programindex.ObjectInput{
 			SourceRef: value.SourceRef, Kind: kind, Name: value.Name,
 			Visibility: programindex.Visibility(value.Visibility), Signature: value.Signature,
-			OwnerRef: value.OwnerRef, ContainerRef: value.ContainerRef, Location: cloneLocation(value.Location), Directory: value.Directory,
+			OwnerRef: value.OwnerRef, ContainerRef: value.ContainerRef, Location: cloneLocation(value.Location), EndLine: value.EndLine, Directory: value.Directory,
 			External: cloneParsedExternalSymbol(value.External),
 		})
 	}

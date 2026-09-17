@@ -43,8 +43,10 @@ type repositoryTargetDispatchOptions struct {
 	DisplayLanguage report.DisplayLanguage
 	// NoModel walks the atlas without a provider: every cell is its
 	// fallback line and no orientation is asked.
-	NoModel     bool
-	NoQuestions bool
+	NoModel bool
+	// Learn runs the question cascade after the atlas; off, no question is
+	// generated, retrieved or answered.
+	Learn bool
 	// Captions asks the model for prose cells too; off, only decisions.
 	Captions         bool
 	Questions        []string
