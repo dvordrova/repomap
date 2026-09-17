@@ -82,8 +82,11 @@ func ValidateProgramIndex(result Result, index programindex.Index) error {
 	if err := index.Validate(); err != nil {
 		return err
 	}
-	if index.ScenarioSHA256 != result.SHA256 || index.SourceSHA256 != result.SourceSHA256 || index.Target.ID != result.ProgramTargetID {
-		return fmt.Errorf("jsts project: ProgramIndex identity binding mismatch")
+	switch {
+	case index.ScenarioSHA256 != result.SHA256:
+		return fmt.Errorf("jsts project: ProgramIndex scenario %s is not the result %s", index.ScenarioSHA256, result.SHA256)
+	case index.SourceSHA256 != result.SourceSHA256:
+		return fmt.Errorf("jsts project: ProgramIndex source %s is not the result source %s", index.SourceSHA256, result.SourceSHA256)
 	}
 	if index.Target.Language != result.Project.Language || index.Target.Kind != TargetKind(result) || index.Target.Name != result.Project.Name || index.Target.Selector != result.Project.Selector || index.Target.AnchorFileRef != result.Project.ManifestFileRef {
 		return fmt.Errorf("jsts project: ProgramIndex target binding mismatch")
@@ -102,6 +105,11 @@ func ValidateProgramIndex(result Result, index programindex.Index) error {
 		return fmt.Errorf("jsts project: restore structural ProgramIndex projection: %w", err)
 	}
 	rederived, err := programIndexFor(result, result.SHA256)
+	if err != nil {
+		return err
+	}
+	// The portfolio numbers its targets; the result's own projection is t1.
+	rederived, err = programindex.RebindTargetID(rederived, index.Target.ID)
 	if err != nil {
 		return err
 	}

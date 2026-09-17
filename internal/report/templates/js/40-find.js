@@ -26,7 +26,7 @@
     if(map.displayedNode(n)!==n)return;
     var section=document.getElementById(n.dataset.owner)||n.closest('section'),id=section.id,href=n.getAttribute('href');
     if(href&&href[0]==='#'&&!n.dataset.activation&&!n.dataset.branch)groupNodes[href.slice(1)]=n;
-    add({title:n.dataset.title,summary:n.dataset.summary,additionalText:map.areaDescriptions(n).join(' '),component:components[id]||section.querySelector('h2').textContent,section:id,kind:n.dataset.activation?'operation':'part',type:n.dataset.activation?rmT(n.dataset.activation):(n.dataset.branch?rmT('Area'):rmT('Part')),node:n,map:map});
+    add({title:n.dataset.title,summary:n.dataset.summary,additionalText:map.areaDescriptions(n).join(' '),component:components[id]||(section.querySelector('h2')||section.querySelector('h3')||n).textContent||n.dataset.title,section:id,kind:n.dataset.activation?'operation':'part',type:n.dataset.activation?rmT(n.dataset.activation):(n.dataset.branch?rmT('Area'):rmT('Part')),node:n,map:map});
   });
   // Retain every displayed membership; overlapping executable/library views
   // stay separate and explicitly labelled.

@@ -48,6 +48,14 @@ func TestSealedResultProjectsExactProgramIndexAndDependencies(t *testing.T) {
 	if err := ValidateProgramIndex(result, enriched); err != nil {
 		t.Fatalf("enriched structural projection: %v", err)
 	}
+	// A portfolio of several targets numbers this one after the others.
+	rebound, err := programindex.RebindTargetID(index, "t5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateProgramIndex(result, rebound); err != nil {
+		t.Fatalf("rebound target projection: %v", err)
+	}
 	if index.Target.Kind != "library" || len(index.Target.Seeds) != 0 {
 		t.Fatalf("tool/library target promoted: %#v", index.Target)
 	}

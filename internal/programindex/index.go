@@ -292,6 +292,12 @@ func rebindTargetID(index Index, targetID string) (Index, error) {
 	return result, nil
 }
 
+// RebindTargetID is rebindTargetID for an adapter that validates its own
+// projection against an index the portfolio has already numbered.
+func RebindTargetID(index Index, targetID string) (Index, error) {
+	return rebindTargetID(index, targetID)
+}
+
 // RebindTargetSet assigns t1..tN once for a complete target set. Ordinals
 // follow target content, not discovery order, and the returned slice preserves
 // caller order.
