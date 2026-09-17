@@ -243,6 +243,18 @@ takes and the ones it hands to calls outside the repository (the value
 written into a response, found through the call that produced it). None of
 this is persisted; all of it is recomputed when an overlay is hydrated.
 
+## Layers: the table that reads code
+
+`atlas_layers` walks, from every bound entry, the graph's calls to every
+declaration that makes an outgoing call, and asks about each declaration on
+the way. Its row is the declaration's source as written — numbered lines
+from its first line to its `end_line`, the middle elided beyond sixty — with
+the declarations `before` and `after` it on those ways. One decision:
+`access` (makes the outgoing call itself), `adapter` (changes the shape of
+what passes through), `logic` (decides), `passthrough` (only forwards). The
+answer is the symbol's `role` and the subject's interpretation role. Source
+is read through `Options.ReadSource`; without it the rows carry no source.
+
 Without `--captions` the model is asked for decisions alone: every prose cell
 (titles, lines, aliases, sentences, operation descriptions) keeps its
 fallback, and a table of prose alone is not sent.

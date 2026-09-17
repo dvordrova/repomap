@@ -81,6 +81,9 @@ type Options struct {
 	Questions []string
 	// Learn adapts the base learning intents after the ordinary atlas.
 	Learn bool
+	// ReadSource returns a repository file's bytes for the tables that read
+	// code; nil leaves those rows without source.
+	ReadSource func(path string) ([]byte, error)
 	// NoCaptions leaves every prose cell (titles, lines, aliases, sentences)
 	// on its fallback and asks the model for decisions alone.
 	NoCaptions bool
@@ -118,6 +121,7 @@ type reader struct {
 	symbolLine map[string]cell      // symbol place ID -> model line
 	operations map[string][3]string // symbol ID -> activation, operation name and description
 	api        map[string]apiRole   // external symbol -> what it binds, publishes, talks to
+	roles      map[string]string    // symbol place ID -> what it does on a chain
 	keys       map[string][]string  // file place ID -> key symbol IDs, by rank
 
 	boxOf          map[string]string            // file place ID -> box ID
@@ -294,6 +298,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		{lines.StageAPI, r.readAPI},
 		{lines.StageOperations, r.readOperations},
 		{lines.StageBoundaries, r.readBoundaries},
+		{lines.StageLayers, r.readLayers},
 		{lines.StageZones, r.readDesign},
 		{lines.StageArrows, r.readArrows},
 		{lines.StageTargets, r.readTargets},
@@ -308,7 +313,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 			stage, state := r.opts.Stage, r.opts.State
 			r.opts.Stage = func(string, ...string) {}
 			r.opts.State = func(string, string, ...string) {}
-			for _, step := range steps[:6] {
+			for _, step := range steps[:7] {
 				if err := step.run(ctx); err != nil {
 					return Result{}, err
 				}
@@ -1028,6 +1033,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 				if operation, ok := r.operations[symbol.ID]; ok {
 					symbol.Activation, symbol.Operation, symbol.OperationSummary = operation[0], operation[1], operation[2]
 				}
+				symbol.Role = r.roles[symbol.ID]
 				file.Symbols = append(file.Symbols, symbol)
 			}
 			box.Files = append(box.Files, file)

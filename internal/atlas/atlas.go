@@ -175,10 +175,12 @@ type Decl struct {
 	Aliases string `json:"aliases,omitempty"`
 	// Doc is author documentation. File/callable rows use its first sentence;
 	// type context retains the existing bounded quote, including later effects.
-	Doc      string `json:"doc,omitempty"`
-	LineNo   int    `json:"line_no"`
-	Column   int    `json:"column,omitempty"`
-	Exported bool   `json:"exported"`
+	Doc    string `json:"doc,omitempty"`
+	LineNo int    `json:"line_no"`
+	Column int    `json:"column,omitempty"`
+	// EndLine is the declaration's last line when the adapter knows it.
+	EndLine  int  `json:"end_line,omitempty"`
+	Exported bool `json:"exported"`
 	// FanIn counts distinct callers of this declaration in the graph.
 	FanIn int `json:"fan_in"`
 	// ObjectID keeps the program-index identity for the page's anchors. It is
@@ -507,6 +509,10 @@ type Symbol struct {
 	Activation       string `json:"activation,omitempty"`
 	Operation        string `json:"operation,omitempty"`
 	OperationSummary string `json:"operation_summary,omitempty"`
+	// Role is MODEL: what a declaration on a chain from an entry to an
+	// outgoing call does with what passes through (access, adapter, logic,
+	// passthrough), read from its source.
+	Role string `json:"role,omitempty"`
 }
 
 // Key is one key symbol shown on a box.

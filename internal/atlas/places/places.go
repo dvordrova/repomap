@@ -394,6 +394,7 @@ func (b *builder) collectObjects(target TargetInput) {
 			Aliases:   aliasText(object.Aliases),
 			LineNo:    object.Location.Line,
 			Column:    object.Location.Column,
+			EndLine:   object.EndLine,
 			Exported:  object.Visibility == programindex.VisibilityPublic,
 			ObjectID:  scopedID,
 		})

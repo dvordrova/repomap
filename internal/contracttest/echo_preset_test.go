@@ -67,6 +67,17 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 		Targets:  []reading.TargetMeta{{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}},
 		Executor: llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}},
 		Provider: provider, OwnerRunDir: t.TempDir(),
+		ReadSource: func(path string) ([]byte, error) {
+			id, ok := repository.ID(path)
+			if !ok {
+				return nil, fmt.Errorf("%s is not in the corpus", path)
+			}
+			content, err := repository.ReadFileAll(id)
+			if err != nil {
+				return nil, err
+			}
+			return content.Bytes, nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -158,6 +169,21 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 			t.Fatalf("types carried by the route chain = %v", typeNames(chain.TypeIDs))
 		}
 	}
+	// The layers table read each declaration on the chain from its source and
+	// the preset answered from what it saw.
+	roles := map[string]string{}
+	for _, subject := range overlay.Subjects {
+		if subject.Interpretation != nil && subject.Interpretation.Role != "" {
+			roles[names[subject.ID]+"@"+subject.Object.Location.Path] = subject.Interpretation.Role
+		}
+	}
+	wantRoles := map[string]string{
+		"GetUser@internal/users/handler/handler.go": "logic", "GetUser@internal/users/service/service.go": "passthrough",
+		"GetByID@internal/users/repository/postgres.go": "adapter", "GetUser@internal/database/sqlc/users.sql.go": "access",
+	}
+	if !reflect.DeepEqual(roles, wantRoles) || !provider.sawQuerySource {
+		t.Fatalf("roles = %v (saw query source: %v)", roles, provider.sawQuerySource)
+	}
 	// Chains are derived: the saved overlay has none, the hydrated index has them again.
 	encoded, err := groupindex.Encode(overlay)
 	if err != nil {
@@ -209,7 +235,7 @@ func materializeRepository(t *testing.T, relative string) (string, *corpus.Corpu
 // would, from the row alone. Text cells get a placeholder; choices get the
 // reader's decision, or the first option where any answer is fine.
 type echoPreset struct {
-	sawRegistration, sawSQL bool
+	sawRegistration, sawSQL, sawQuerySource bool
 }
 
 func (*echoPreset) State() []byte { return []byte(`{"provider":"echo-preset"}`) }
@@ -270,6 +296,19 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 				answer["publishes"] = "yes"
 			case name == "talks" && symbol == "database/sql.Open":
 				answer["talks"] = "db"
+			}
+		case table == "atlas_layers" && name == "role":
+			source, _ := row["source"].(string)
+			switch {
+			case strings.Contains(source, "QueryRowContext"):
+				preset.sawQuerySource = true
+				answer["role"] = "access"
+			case strings.Contains(source, ".JSON("):
+				answer["role"] = "logic"
+			case strings.Contains(source, "model.User{"):
+				answer["role"] = "adapter"
+			default:
+				answer["role"] = "passthrough"
 			}
 		case table == "atlas_boundaries" && name == "destination":
 			answer["destination"] = "other: PostgreSQL"

@@ -171,6 +171,17 @@ func readRepositoryAtlas(
 		Repository: repoRunLabel(options.Repo), Revision: options.RepositoryState.Head,
 		Executor: executor, Provider: provider, OwnerRunDir: owner.RunDir,
 		Questions: questions, Learn: options.Learn, NoCaptions: !options.Captions,
+		ReadSource: func(path string) ([]byte, error) {
+			id, ok := options.Corpus.ID(path)
+			if !ok {
+				return nil, fmt.Errorf("%s is not in the corpus", path)
+			}
+			content, err := options.Corpus.ReadFileAll(id)
+			if err != nil {
+				return nil, err
+			}
+			return content.Bytes, nil
+		},
 		Stage: options.Output.Stage, State: options.Output.State,
 	})
 	if err != nil {

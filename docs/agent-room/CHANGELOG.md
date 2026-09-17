@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — The first table that reads code: layers
+
+- New reading stage `atlas_layers`: from every bound entry the reader walks
+  the graph's calls to every declaration that makes an outgoing call and
+  shows the model each declaration on the way as source (numbered lines
+  from its first to its last line, the middle elided beyond 60), with the
+  declarations before and after it. One decision per row: `access`,
+  `adapter`, `logic` or `passthrough`. The role lives on the atlas symbol
+  and the overlay subject. `reading.Options.ReadSource` supplies file
+  bytes; the run reads them from the corpus.
+
 ## 2026-09-17 — Declarations know where they end; questions are opt-in
 
 - Every adapter records a declaration's `end_line` (Go from the AST node's
