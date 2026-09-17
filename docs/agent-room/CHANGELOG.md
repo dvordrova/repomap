@@ -1,5 +1,15 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Four real repositories through the first two steps
+
+- Registration literals and addresses are one line (`strings.Fields`), so a
+  `Printf("…\n")` argument no longer fails the facts validator and the run
+  (gin-realworld). The "Repository snapshot" console block (tracked-file
+  listing, platform choice, `--force-platform` hints) prints nothing; the
+  work stays. Roles observed: gin (34 of 81 symbols: router verbs, `Run`
+  publishes, gorm `db`), Express+Prisma (7 of 43: `Router.*`,
+  `PrismaClient`), microblog (28 of 100), xk6-dns (4 of 47).
+
 ## 2026-09-17 — Glasses for the model: declared signatures, usage lines, source
 
 - An `api` row carries `declared` (the external symbol's type as its package

@@ -99,6 +99,11 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 	for position := range pattern.Arguments {
 		argument := &pattern.Arguments[position]
 		if value, _, literal := literalValue(*argument); literal {
+			// A literal is one line for the reader; an empty one says nothing.
+			value = clipText(strings.Join(strings.Fields(value), " "))
+			if value == "" {
+				continue
+			}
 			shape.literals = append(shape.literals, value)
 			// The first positional literal names what is handed over. Keyword
 			// literals (Command{Use: "serve", Short: "…"}) have no order the
@@ -311,7 +316,10 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 	if shape.address != nil {
 		addresses = addresses[:0]
 		for _, observed := range addressLiterals(values, *shape.address) {
-			path := observed.text
+			path := clipText(strings.Join(strings.Fields(observed.text), " "))
+			if path == "" {
+				continue
+			}
 			if method, rest, ok := goServeMuxMethodAndPath(path); ok && method != "ANY" {
 				path = rest
 			}

@@ -32,6 +32,7 @@ func TestRunOutputTimestampsEveryEventAndAlignsContinuation(t *testing.T) {
 	clock = clock.Add(5 * time.Second)
 	output.Error("one error")
 	clock = clock.Add(time.Second)
+	// Groundwork progress prints nothing.
 	output.Progress(orient.ProgressEvent{Stage: orient.ProgressSnapshotStarted, RepoPath: "/repo"})
 	text := buffer.String()
 	for _, want := range []string{
@@ -40,14 +41,13 @@ func TestRunOutputTimestampsEveryEventAndAlignsContinuation(t *testing.T) {
 		"[   3.750 +2.500]   state: complete\n" + strings.Repeat(" ", 20) + "12 sources\n",
 		"[   3.875 +0.125] WARN",
 		"[   8.875 +5.000] ERROR",
-		"[   9.875 +1.000] Repository snapshot:",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing event %q:\n%s", want, text)
 		}
 	}
-	if count := len(regexp.MustCompile(`(?m)^\[`).FindAllString(text, -1)); count != 6 {
-		t.Fatalf("%d prefixes for six logical events:\n%s", count, text)
+	if count := len(regexp.MustCompile(`(?m)^\[`).FindAllString(text, -1)); count != 5 || strings.Contains(text, "snapshot") {
+		t.Fatalf("%d prefixes for five logical events, or groundwork printed:\n%s", count, text)
 	}
 	t.Log("console sample:\n" + text)
 }

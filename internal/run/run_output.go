@@ -195,43 +195,9 @@ func (output *runOutput) level(level, summary string, details ...string) {
 // counters and wait heartbeats are throttled; the underlying work and saved
 // metrics are untouched.
 func (output *runOutput) Progress(event orient.ProgressEvent) {
-	output.mu.Lock()
-	defer output.mu.Unlock()
-
-	switch event.Stage {
-	case orient.ProgressSnapshotStarted:
-		header := output.stageLocked("Repository snapshot")
-		details := []string{"collecting tracked repository facts", "repository: " + event.RepoPath}
-		if event.GoTarget != "" {
-			details = append(details, "Go target: "+event.GoTarget, "override: --force-platform GOOS/GOARCH")
-		}
-		output.writeEventLocked(output.writer, header, details...)
-	case orient.ProgressSnapshotReady:
-		header := output.stageLocked("Repository snapshot")
-		details := []string{
-			"state: complete",
-			fmt.Sprintf("tracked files: %d", event.FileCount),
-			formatRunOutputDuration(event.LatencyMillis),
-		}
-		if event.GoTargetProvenance != "" {
-			details = append(details,
-				"Go target: "+event.GoTargetProvenance,
-				fmt.Sprintf("platform evidence: %d target-specific production Go file(s)", event.GoTargetEvidenceCount),
-			)
-			if len(event.GoTargetEvidencePaths) > 0 {
-				details = append(details, "evidence: "+strings.Join(event.GoTargetEvidencePaths, ", "))
-			}
-		} else if event.SuggestedGoTarget != "" {
-			details = append(details,
-				fmt.Sprintf("platform hint: %s has %d target-specific production Go file(s)", event.SuggestedGoTarget, event.GoTargetEvidenceCount),
-				"try: --force-platform "+event.SuggestedGoTarget,
-			)
-			if len(event.GoTargetEvidencePaths) > 0 {
-				details = append(details, "evidence: "+strings.Join(event.GoTargetEvidencePaths, ", "))
-			}
-		}
-		output.writeEventLocked(output.writer, header, details...)
-	}
+	// The tracked-file listing and the platform choice are groundwork, not a
+	// stage a reader follows; nothing is printed for them.
+	_ = event
 }
 
 func (output *runOutput) stageLocked(name string) string {
