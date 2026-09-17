@@ -418,7 +418,7 @@ func (projection *goProjection) projectObjects() error {
 		}
 		if err := projection.addObject(programindex.ObjectInput{
 			SourceRef: ref, Kind: programindex.ObjectExternalSymbol,
-			Name: externalTargetName(family.Target), Visibility: objectVisibility,
+			Name: externalTargetName(family.Target), Visibility: objectVisibility, Signature: shortSignature(family.Target.Signature),
 			External: &programindex.ExternalSymbol{
 				AuthorityKind: projection.externalAuthorities[family.Target.PackagePath],
 				PackagePath:   family.Target.PackagePath,

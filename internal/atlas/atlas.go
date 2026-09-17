@@ -254,6 +254,8 @@ type CallAPI struct {
 	Package  string `json:"package"`
 	Receiver string `json:"receiver,omitempty"`
 	Name     string `json:"name"`
+	// Signature is the symbol's declared type when the adapter read it.
+	Signature string `json:"signature,omitempty"`
 }
 
 type SourceArgument struct {

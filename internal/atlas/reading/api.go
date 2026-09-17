@@ -24,10 +24,14 @@ type apiRole struct {
 type apiSymbol struct {
 	name          string
 	word          string
+	signature     string
 	handsCallable bool
 	literals      []string
 	sites         int
 	holders       map[string]bool
+	// usage is the first site: the line a reader would look at.
+	usagePath string
+	usageLine int
 }
 
 func apiName(api atlas.CallAPI) string {
@@ -68,6 +72,12 @@ func (r *reader) apiSymbols() []*apiSymbol {
 			s := symbol(apiName(*call.API))
 			s.sites++
 			s.literals = appendUnique(s.literals, call.Values...)
+			if s.signature == "" {
+				s.signature = call.API.Signature
+			}
+			if s.usagePath == "" && call.Line > 0 {
+				s.usagePath, s.usageLine = place.Path, call.Line
+			}
 		}
 	}
 	result := make([]*apiSymbol, 0, len(byName))
@@ -92,6 +102,12 @@ func (r *reader) readAPI(ctx context.Context) error {
 	var rows []table.Row
 	for i, s := range symbols {
 		fields := []table.Field{{Name: "symbol", Value: s.name}, {Name: "word", Value: s.word}}
+		if s.signature != "" {
+			fields = append(fields, table.Field{Name: "declared", Value: s.signature})
+		}
+		if usage := strings.TrimSpace(r.source(s.usagePath, s.usageLine, s.usageLine)); usage != "" {
+			fields = append(fields, table.Field{Name: "usage", Value: usage})
+		}
 		if s.handsCallable {
 			fields = append(fields, table.Field{Name: "hands_callable", Value: true})
 		}

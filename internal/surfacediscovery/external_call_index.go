@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ExternalCallIndexVersion = 9
+	ExternalCallIndexVersion = 10
 	// ExternalCallCgoPackagePath is the Go toolchain's pseudo-package identity
 	// for an exact handoff to a generated cgo wrapper. It does not identify a
 	// repository package or claim execution beyond that wrapper boundary.
@@ -37,6 +37,9 @@ type ExternalCallTarget struct {
 	PackagePath string `json:"package_path"`
 	Receiver    string `json:"receiver,omitempty"`
 	Name        string `json:"name"`
+	// Signature is the target's declared function type, as the dependency
+	// declares it: what a reader sees before deciding what the call does.
+	Signature string `json:"signature,omitempty"`
 }
 
 // ExternalCallDispatch states what the Go type system proves about one call.

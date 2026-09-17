@@ -5,6 +5,8 @@ function, a method, a decorator. Decide what the symbol does with what the
 repository gives it. Judge rows independently, from the row alone.
 
 The row supplies `symbol` (package and name), `word` (the call as written),
+`declared` (the symbol's type as its package declares it, when known),
+`usage` (one line of the repository that calls it),
 `hands_callable` when the repository passes one of its own callables to
 this symbol, `literals` the code gives it, `sites` how many places call it,
 and `beside`: other symbols called on the same value, such as `Start`

@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Glasses for the model: declared signatures, usage lines, source
+
+- An `api` row carries `declared` (the external symbol's type as its package
+  declares it — Go, from the type checker; `ExternalCallTarget.Signature`,
+  external call index v10) and `usage` (one repository line that calls it).
+  An `operations` row carries the declaration's source instead of a listing
+  of its calls. Effects on microblog: the model no longer marks the app's
+  own model methods reached through `current_user` as database calls; it
+  now proposes alembic `upgrade`/`downgrade` as commands (20 rows of noise
+  the operations table accepts on source alone).
+
 ## 2026-09-17 — Two real repositories: xk6-dns and microblog
 
 - `new(T)`/`&T{}` in Go is a produced value (an empty record), so

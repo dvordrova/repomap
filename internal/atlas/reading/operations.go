@@ -66,6 +66,16 @@ func (r *reader) readOperations(ctx context.Context) error {
 			continue
 		}
 		row, registeredNames := OperationRow(place, declarations, nativeRoutes[place.ID])
+		if source := r.source(place.Path, place.Symbol.Decl.LineNo, place.Symbol.Decl.EndLine); source != "" {
+			// The declaration as written says more than a listing of its calls.
+			kept := row.Fields[:0]
+			for _, field := range row.Fields {
+				if field.Name != "calls" {
+					kept = append(kept, field)
+				}
+			}
+			row.Fields = append(kept, table.Field{Name: "source", Value: source})
+		}
 		previousKnowledge[place.ID] = r.knowledge[place.ID]
 		subject := place.Symbol.Decl.ObjectID
 		if subject == "" {

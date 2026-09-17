@@ -673,7 +673,7 @@ func externalCallTarget(function *ssa.Function) (ExternalCallTarget, bool) {
 	}
 	target := ExternalCallTarget{
 		PackagePath: object.Pkg().Path(), Receiver: receiverName(function.Signature),
-		Name: object.Name(),
+		Name: object.Name(), Signature: types.TypeString(function.Signature, packageQualifier),
 	}
 	return target, validExternalCallTarget(target)
 }
@@ -685,7 +685,7 @@ func externalInterfaceInvokeTarget(common *ssa.CallCommon) (ExternalCallTarget, 
 	signature, _ := common.Method.Type().(*types.Signature)
 	target := ExternalCallTarget{
 		PackagePath: common.Method.Pkg().Path(), Receiver: receiverName(signature),
-		Name: common.Method.Name(),
+		Name: common.Method.Name(), Signature: types.TypeString(common.Method.Type(), packageQualifier),
 	}
 	return target, validExternalCallTarget(target)
 }

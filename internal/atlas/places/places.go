@@ -1440,7 +1440,7 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 				if object, ok := b.byID[relation.ToIDs[0]]; ok && object.External != nil {
 					call.Name = externalName(*object.External)
 					if object.External.RepositoryPath == "" {
-						call.API = &atlas.CallAPI{Package: object.External.PackagePath, Receiver: object.External.Receiver, Name: object.External.Name}
+						call.API = &atlas.CallAPI{Package: object.External.PackagePath, Receiver: object.External.Receiver, Name: object.External.Name, Signature: object.Signature}
 					}
 				}
 			}
