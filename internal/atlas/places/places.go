@@ -165,6 +165,7 @@ type fileState struct {
 	decls     []atlas.Decl
 	doc       string
 	generated bool
+	test      bool
 	targets   map[string]struct{}
 	callers   map[string]struct{}
 	callees   map[string]struct{}
@@ -627,6 +628,13 @@ func (b *builder) collectSeeds(target TargetInput) {
 // readFiles attaches docstrings to declarations, finds module docs and marks
 // generated files.
 func (b *builder) readFiles() error {
+	for _, target := range b.input.Targets {
+		for _, source := range target.Index.Target.TestSources {
+			if state := b.files[atlasPath(source)]; state != nil {
+				state.test = true
+			}
+		}
+	}
 	for filePath, state := range b.files {
 		sort.Slice(state.decls, func(i, j int) bool {
 			if state.decls[i].LineNo != state.decls[j].LineNo {
@@ -1773,7 +1781,7 @@ func (b *builder) graph() (atlas.Graph, error) {
 			File: &atlas.FileFacts{
 				Doc: state.doc, Decls: state.decls,
 				Callers: fileIDs(state.callers), Callees: fileIDs(state.callees),
-				Generated: state.generated,
+				Generated: state.generated, Test: state.test,
 			},
 		}
 		if place.File.Decls == nil {

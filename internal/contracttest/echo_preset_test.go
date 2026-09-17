@@ -181,8 +181,8 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 		"GetUser@internal/users/handler/handler.go": "logic", "GetUser@internal/users/service/service.go": "passthrough",
 		"GetByID@internal/users/repository/postgres.go": "adapter", "GetUser@internal/database/sqlc/users.sql.go": "access",
 	}
-	if !reflect.DeepEqual(roles, wantRoles) || !provider.sawQuerySource {
-		t.Fatalf("roles = %v (saw query source: %v)", roles, provider.sawQuerySource)
+	if !reflect.DeepEqual(roles, wantRoles) || provider.sawQuerySource || !provider.sawRepositorySource {
+		t.Fatalf("roles = %v (query asked: %v, repository read: %v)", roles, provider.sawQuerySource, provider.sawRepositorySource)
 	}
 	// Chains are derived: the saved overlay has none, the hydrated index has them again.
 	encoded, err := groupindex.Encode(overlay)
@@ -235,7 +235,7 @@ func materializeRepository(t *testing.T, relative string) (string, *corpus.Corpu
 // would, from the row alone. Text cells get a placeholder; choices get the
 // reader's decision, or the first option where any answer is fine.
 type echoPreset struct {
-	sawRegistration, sawSQL, sawQuerySource bool
+	sawRegistration, sawSQL, sawQuerySource, sawRepositorySource bool
 }
 
 func (*echoPreset) State() []byte { return []byte(`{"provider":"echo-preset"}`) }
@@ -298,14 +298,15 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 				answer["talks"] = "db"
 			}
 		case table == "atlas_layers" && name == "role":
+			// The query itself is never asked: the code names the access.
 			source, _ := row["source"].(string)
 			switch {
 			case strings.Contains(source, "QueryRowContext"):
 				preset.sawQuerySource = true
-				answer["role"] = "access"
 			case strings.Contains(source, ".JSON("):
 				answer["role"] = "logic"
 			case strings.Contains(source, "model.User{"):
+				preset.sawRepositorySource = true
 				answer["role"] = "adapter"
 			default:
 				answer["role"] = "passthrough"
@@ -314,10 +315,6 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 			answer["destination"] = "other: PostgreSQL"
 		case table == "atlas_boundaries" && name == "address":
 			answer["address"] = "unknown"
-		case table == "atlas_symbols" && name == "operation_candidate":
-			answer[name] = "no"
-		case table == "atlas_operations" && name == "entry":
-			answer[name] = "none"
 		case column["kind"] == "text":
 			answer[name] = fmt.Sprintf("preset %s", name)
 		case column["kind"] == "choice":

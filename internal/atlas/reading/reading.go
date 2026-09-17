@@ -118,11 +118,10 @@ type reader struct {
 	openFiles         map[string]bool // file place ID -> open, budget mode only
 	budget            bool
 
-	symbolLine map[string]cell      // symbol place ID -> model line
-	operations map[string][3]string // symbol ID -> activation, operation name and description
-	api        map[string]apiRole   // external symbol -> what it binds, publishes, talks to
-	roles      map[string]string    // symbol place ID -> what it does on a chain
-	keys       map[string][]string  // file place ID -> key symbol IDs, by rank
+	symbolLine map[string]cell     // symbol place ID -> model line
+	api        map[string]apiRole  // external symbol -> what it binds, publishes, talks to
+	roles      map[string]string   // symbol place ID -> what it does on a chain
+	keys       map[string][]string // file place ID -> key symbol IDs, by rank
 
 	boxOf          map[string]string            // file place ID -> box ID
 	designBoxOf    map[string]map[string]string // target -> declaration/file -> accepted part
@@ -251,7 +250,6 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		openDirs:          make(map[string]bool),
 		openFiles:         make(map[string]bool),
 		symbolLine:        make(map[string]cell),
-		operations:        make(map[string][3]string),
 		api:               make(map[string]apiRole),
 		keys:              make(map[string][]string),
 		uses:              make(map[string]*atlas.StageUse),
@@ -296,7 +294,6 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		{lines.StageFiles, r.readFiles},
 		{lines.StageSymbols, r.readSymbols},
 		{lines.StageAPI, r.readAPI},
-		{lines.StageOperations, r.readOperations},
 		{lines.StageBoundaries, r.readBoundaries},
 		{lines.StageLayers, r.readLayers},
 		{lines.StageZones, r.readDesign},
@@ -313,7 +310,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 			stage, state := r.opts.Stage, r.opts.State
 			r.opts.Stage = func(string, ...string) {}
 			r.opts.State = func(string, string, ...string) {}
-			for _, step := range steps[:7] {
+			for _, step := range steps[:6] {
 				if err := step.run(ctx); err != nil {
 					return Result{}, err
 				}
@@ -1030,9 +1027,6 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 					symbol.Alias = knowledge.Cells["alias"]
 				}
 				symbol.Key = contains(r.keys[fileID], symbol.ID)
-				if operation, ok := r.operations[symbol.ID]; ok {
-					symbol.Activation, symbol.Operation, symbol.OperationSummary = operation[0], operation[1], operation[2]
-				}
 				symbol.Role = r.roles[symbol.ID]
 				file.Symbols = append(file.Symbols, symbol)
 			}

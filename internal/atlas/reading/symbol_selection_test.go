@@ -37,17 +37,11 @@ func (p *selectionProvider) Complete(ctx context.Context, prepared llm.Prepared)
 		if request.Table == lines.StageSymbols {
 			if request.Fill[0].Name == "key_symbol" {
 				if name == "Op08" {
-					row["key_symbol"], row["operation_candidate"] = "no", "yes"
-				}
-				if name == "Op07" {
-					delete(row, "operation_candidate") // The model dropped the cell.
+					row["key_symbol"] = "no"
 				}
 			} else if name == "Op01" {
 				delete(row, "line")
 			}
-		}
-		if request.Table == lines.StageOperations && name == "Op08" {
-			row["activation"], row["entry"], row["name"], row["description"] = "request", "self", "submit job", "Accepts a job submission."
 		}
 	}
 	response.Response, err = json.Marshal(output)
@@ -89,8 +83,6 @@ func TestClosedScopeAndRefusedCaptionKeepIndependentRoles(t *testing.T) {
 		key := record.PlaceID
 		if record.Stage == lines.StageSymbols && record.Cells["key_symbol"] != "" {
 			key = "selection:" + record.PlaceID
-		} else if record.Stage == lines.StageOperations {
-			key = "operation:" + record.PlaceID
 		}
 		known[key] = record
 	}
@@ -99,24 +91,8 @@ func TestClosedScopeAndRefusedCaptionKeepIndependentRoles(t *testing.T) {
 		t.Fatal("refused caption changed its accepted selection")
 	}
 	dropped := op07
-	if known["selection:"+dropped].Cells["operation_candidate"] != "no" || known["selection:"+dropped].Cells["key_symbol"] != "yes" {
-		t.Fatal("a dropped candidate cell did not read no beside its accepted key decision")
-	}
-	operation := graphPlaceID(t, graph, atlas.PlaceSymbol, "svc/core/c.go", 18, "Op08")
-	found := false
-	for _, target := range result.Atlas.Targets {
-		for _, box := range target.Boxes {
-			for _, file := range box.Files {
-				for _, symbol := range file.Symbols {
-					if symbol.ID == operation {
-						found = symbol.Activation == "request" && symbol.OperationSummary != "" && symbol.Line == ""
-					}
-				}
-			}
-		}
-	}
-	if !found {
-		t.Fatal("closed non-key operation disappeared from the atlas")
+	if known["selection:"+dropped].Cells["key_symbol"] != "yes" {
+		t.Fatal("a key decision was lost")
 	}
 }
 

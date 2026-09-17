@@ -200,6 +200,9 @@ type FileFacts struct {
 	Callees []string `json:"callees"`
 	// Generated files are indexed but never asked about.
 	Generated bool `json:"generated,omitempty"`
+	// Test files are the target's testing sources; what only they call is
+	// testing, not the program.
+	Test bool `json:"test,omitempty"`
 }
 
 // SymbolFacts is one declaration lifted to a place of its own. Generated
@@ -422,7 +425,6 @@ type APIRole struct {
 	Auth         string `json:"auth,omitempty"`
 	Config       string `json:"config,omitempty"`
 	Validates    bool   `json:"validates,omitempty"`
-	Test         bool   `json:"test,omitempty"`
 }
 
 // InputKinds are the parts of a received request a symbol may read.

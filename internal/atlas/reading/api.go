@@ -14,8 +14,8 @@ import (
 
 // apiRole is the model's reading of one external symbol; see atlas.APIRole.
 type apiRole struct {
-	binds, talks, readsInput, auth, config               string
-	publishes, middleware, writesOutput, validates, test bool
+	binds, talks, readsInput, auth, config         string
+	publishes, middleware, writesOutput, validates bool
 }
 
 // apiSymbol is what the code observed about one external symbol across the
@@ -23,12 +23,13 @@ type apiRole struct {
 // the literals it was given, its sites and the holders it acts on.
 type apiSymbol struct {
 	name          string
-	word          string
 	signature     string
 	handsCallable bool
 	literals      []string
-	sites         int
-	holders       map[string]bool
+	// sites counts the calls outside test files; a symbol only tests call
+	// belongs to testing and is not asked about.
+	sites   int
+	holders map[string]bool
 	// usage is the first site: the line a reader would look at.
 	usagePath string
 	usageLine int
@@ -49,17 +50,24 @@ func (r *reader) apiSymbols() []*apiSymbol {
 	byName := make(map[string]*apiSymbol)
 	symbol := func(name string) *apiSymbol {
 		if byName[name] == nil {
-			byName[name] = &apiSymbol{name: name, word: name[strings.LastIndex(name, ".")+1:], holders: make(map[string]bool)}
+			byName[name] = &apiSymbol{name: name, holders: make(map[string]bool)}
 		}
 		return byName[name]
 	}
 	for _, place := range r.opts.Graph.Places {
+		inTest := false
+		if file := r.places[place.Parent]; file.File != nil && file.File.Test {
+			inTest = true
+		}
 		if b := place.Boundary; b != nil && b.Source == "fact" && b.External != "" && b.GivenKind == "" {
 			s := symbol(b.External)
 			s.handsCallable = s.handsCallable || b.ObjectID != ""
 			s.literals = appendUnique(s.literals, b.Values...)
 			if b.Holder != "" {
 				s.holders[b.Holder] = true
+			}
+			if !inTest {
+				s.sites++
 			}
 		}
 		if place.Symbol == nil {
@@ -70,7 +78,9 @@ func (r *reader) apiSymbols() []*apiSymbol {
 				continue
 			}
 			s := symbol(apiName(*call.API))
-			s.sites++
+			if !inTest {
+				s.sites++
+			}
 			s.literals = appendUnique(s.literals, call.Values...)
 			if s.signature == "" {
 				s.signature = call.API.Signature
@@ -82,7 +92,9 @@ func (r *reader) apiSymbols() []*apiSymbol {
 	}
 	result := make([]*apiSymbol, 0, len(byName))
 	for _, s := range byName {
-		result = append(result, s)
+		if s.sites > 0 {
+			result = append(result, s)
+		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].name < result[j].name })
 	return result
@@ -93,73 +105,58 @@ func (r *reader) apiSymbols() []*apiSymbol {
 func (r *reader) readAPI(ctx context.Context) error {
 	r.api = make(map[string]apiRole)
 	symbols := r.apiSymbols()
-	holdersOf := make(map[string][]string)
+	var handed, other []*apiSymbol
 	for _, s := range symbols {
-		for holder := range s.holders {
-			holdersOf[holder] = append(holdersOf[holder], s.name)
-		}
-	}
-	var rows []table.Row
-	for i, s := range symbols {
-		fields := []table.Field{{Name: "symbol", Value: s.name}, {Name: "word", Value: s.word}}
-		if s.signature != "" {
-			fields = append(fields, table.Field{Name: "declared", Value: s.signature})
-		}
-		if usage := strings.TrimSpace(r.source(s.usagePath, s.usageLine, s.usageLine)); usage != "" {
-			fields = append(fields, table.Field{Name: "usage", Value: usage})
-		}
 		if s.handsCallable {
-			fields = append(fields, table.Field{Name: "hands_callable", Value: true})
+			handed = append(handed, s)
+		} else {
+			other = append(other, s)
 		}
-		if len(s.literals) > 0 {
-			literals := s.literals
-			if len(literals) > 6 {
-				literals = literals[:6]
+	}
+	r.opts.Stage(lines.StageAPI, fmt.Sprintf("reading %d outside symbols: %d handed a callable, %d given values", len(symbols), len(handed), len(other)))
+	for round, group := range [][]*apiSymbol{handed, other} {
+		rows := make([]table.Row, 0, len(group))
+		for i, s := range group {
+			fields := []table.Field{{Name: "symbol", Value: s.name}}
+			if s.signature != "" {
+				fields = append(fields, table.Field{Name: "declared", Value: s.signature})
 			}
-			fields = append(fields, table.Field{Name: "literals", Value: literals})
-		}
-		if s.sites > 0 {
-			fields = append(fields, table.Field{Name: "sites", Value: s.sites})
-		}
-		var beside []string
-		for holder := range s.holders {
-			for _, other := range holdersOf[holder] {
-				if other != s.name {
-					beside = appendUnique(beside, other)
+			if usage := strings.TrimSpace(r.source(s.usagePath, s.usageLine, s.usageLine)); usage != "" {
+				fields = append(fields, table.Field{Name: "usage", Value: usage})
+			}
+			if len(s.literals) > 0 {
+				literals := s.literals
+				if len(literals) > 6 {
+					literals = literals[:6]
 				}
+				fields = append(fields, table.Field{Name: "literals", Value: literals})
 			}
+			if s.handsCallable {
+				fields = append(fields, table.Field{Name: "hands_callable", Value: true})
+			}
+			rows = append(rows, table.Row{ID: fmt.Sprintf("sym%d", i+1), Fields: fields})
 		}
-		if len(beside) > 0 {
-			sort.Strings(beside)
-			fields = append(fields, table.Field{Name: "beside", Value: beside})
+		answers, err := r.runTable(ctx, lines.API(round == 0), round+1, rows)
+		if err != nil {
+			return err
 		}
-		rows = append(rows, table.Row{ID: fmt.Sprintf("sym%d", i+1), Fields: fields})
-	}
-	r.opts.Stage(lines.StageAPI, fmt.Sprintf("reading %d external symbols: what they bind, publish or talk to", len(rows)))
-	answers, err := r.runTable(ctx, lines.API(), 1, rows)
-	if err != nil {
-		return err
-	}
-	for i, s := range symbols {
-		answer := answers[i].answer
-		if answer == nil {
-			continue
-		}
-		role := apiRole{
-			binds: answer["binds"], talks: answer["talks"], publishes: answer["publishes"] == "yes",
-			middleware: answer["middleware"] == "yes", readsInput: answer["reads_input"], writesOutput: answer["writes_output"] == "yes",
-			auth: answer["auth"], config: answer["config"], validates: answer["validates"] == "yes", test: answer["test"] == "yes",
-		}
-		// A middleware or a testing symbol binds no entry and starts nothing
-		// the program serves; what it talks to stays.
-		if role.middleware || role.test {
-			role.binds, role.publishes = "", false
-		}
-		if role.test {
-			role.talks = ""
-		}
-		if role != (apiRole{}) {
-			r.api[s.name] = role
+		for i, s := range group {
+			answer := answers[i].answer
+			if answer == nil {
+				continue
+			}
+			role := apiRole{
+				binds: answer["binds"], talks: answer["talks"], publishes: answer["publishes"] == "yes",
+				middleware: answer["middleware"] == "yes", readsInput: answer["reads_input"], writesOutput: answer["writes_output"] == "yes",
+				auth: answer["auth"], config: answer["config"], validates: answer["validates"] == "yes",
+			}
+			// A middleware binds no entry and starts nothing the program serves.
+			if role.middleware {
+				role.binds, role.publishes = "", false
+			}
+			if role != (apiRole{}) {
+				r.api[s.name] = role
+			}
 		}
 	}
 	r.reportStage(lines.StageAPI)
@@ -177,7 +174,7 @@ func (r *reader) apiRoles() []atlas.APIRole {
 	for _, name := range names {
 		role := r.api[name]
 		result = append(result, atlas.APIRole{Symbol: name, Binds: role.binds, Publishes: role.publishes, Talks: role.talks,
-			Middleware: role.middleware, ReadsInput: role.readsInput, WritesOutput: role.writesOutput, Auth: role.auth, Config: role.config, Validates: role.validates, Test: role.test})
+			Middleware: role.middleware, ReadsInput: role.readsInput, WritesOutput: role.writesOutput, Auth: role.auth, Config: role.config, Validates: role.validates})
 	}
 	return result
 }

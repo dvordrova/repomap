@@ -20,35 +20,23 @@ func TestInterpretedOperationsBindCallsWithoutFrameworkRules(t *testing.T) {
 	client := atlas.Place{ID: "send", Kind: atlas.PlaceSymbol, Path: "app/send.go", LineNo: 5, Parent: "file:send", TargetIDs: []string{"client"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "sender", Name: "Submit"},
 		Calls: []atlas.SymbolCall{{Kind: "invokes_external", Name: "CompanySDK.Submit", Line: 11, Values: []string{"jobs"}, API: &atlas.CallAPI{Package: "company/sdk", Name: "Submit"}}}}}
 	handler := atlas.Place{ID: "handle", Kind: atlas.PlaceSymbol, Path: "service/handle.py", LineNo: 8, Parent: "file:handle", TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "receiver", Name: "Handler.Submit", Column: 17}}}
-	r := reader{opts: Options{Graph: atlas.Graph{Places: []atlas.Place{client, handler}}}, boundaries: map[string]*boundaryState{}, operations: map[string][3]string{"handle": {"request", "submit job"}}, symbolLine: map[string]cell{"send": {value: "Submits a job to the service."}, "handle": {value: "Accepts a job."}}, api: map[string]apiRole{"company/sdk.Submit": {talks: atlas.BoundarySDK}}}
+	r := reader{opts: Options{Graph: atlas.Graph{Places: []atlas.Place{client, handler}}}, boundaries: map[string]*boundaryState{}, symbolLine: map[string]cell{"send": {value: "Submits a job to the service."}, "handle": {value: "Accepts a job."}}, api: map[string]apiRole{"company/sdk.Submit": {talks: atlas.BoundarySDK}}}
 	r.bindInterpretedBoundaries()
-	if len(r.boundaries) != 2 {
-		t.Fatalf("wanted two bound endpoints, got %v", r.boundaries)
+	if len(r.boundaries) != 1 {
+		t.Fatalf("wanted one bound endpoint, got %v", r.boundaries)
 	}
-	var out, in *boundaryState
+	var out *boundaryState
 	for _, state := range r.boundaries {
-		if state.place.Boundary.Direction == atlas.DirectionOut {
-			out = state
-		} else if state.place.Boundary.Direction == atlas.DirectionIn {
-			in = state
-		}
+		out = state
 	}
-	if out.place.Boundary.ObjectID != "sender" || out.place.LineNo != 11 || in.place.Boundary.ObjectID != "receiver" || in.place.Column != 17 {
+	if out.place.Boundary.Direction != atlas.DirectionOut || out.place.Boundary.ObjectID != "sender" || out.place.LineNo != 11 {
 		t.Fatal("lost source identity")
 	}
-	if out.place.Boundary.Source != "model" || in.place.Boundary.Source != "model" {
+	if out.place.Boundary.Source != "model" {
 		t.Fatal("interpretation became a source fact")
-	}
-	r.boxOf = map[string]string{"file:handle": "handler-group"}
-	published := r.target(TargetMeta{ID: "service"})
-	if len(published.Boundaries) != 1 || published.Boundaries[0].Column != 17 {
-		t.Fatalf("boundary lost the declaration column before map matching: %+v", published.Boundaries)
 	}
 	if out.kind != atlas.BoundarySDK || out.line != "" {
 		t.Fatal("the symbol's role did not reach the call's boundary")
-	}
-	if value, _, ok := valuesJoin(out.place.Boundary, in.place.Boundary); ok {
-		t.Fatalf("synthetic method name became an observed matching value: %q", value)
 	}
 }
 

@@ -19,7 +19,7 @@ func assertGoSourceValues(t *testing.T, repository *corpus.Corpus, index program
 	assertGoOperationSourceValues(t, graph)
 	assertEvidenceVocabulary(t, graph, "interface", "interface_method", "passes_callback",
 		"binds_implementation", "callback_registration", "registration_receiver_call",
-		"interface_field_assignment", "literal_string", "record", "call_result", "alternatives", "unresolved", "invokes_external")
+		"interface_field_assignment", "literal_string", "alternatives", "unresolved", "invokes_external")
 	seen := map[string]bool{}
 	destinations := reading.NewDestinationReader(graph.Places)
 	var visit func(*sourcevalue.Value)

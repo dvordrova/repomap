@@ -1,5 +1,25 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — The reading simplified after a prompt review
+
+- The operations table is gone: an operation is a bound entry (a callable
+  handed to a `binds` symbol) or a command; the model no longer judges
+  "entry self/none" over a listing of calls. Its 150-line prompt and the
+  `operation_candidate` cell went with it.
+- `api` is two tables: symbols handed a callable answer `binds`,
+  `middleware`, `publishes`; the others `publishes`, `talks`,
+  `reads_input`, `writes_output`, `auth`, `config`, `validates`. `talks` is
+  only the call that itself crosses: a builder returning its receiver type,
+  a header set, a pool tuned talk to nothing. Rows carry `symbol`,
+  `declared`, `usage`, `literals`, `hands_callable`; `word`, `sites` and
+  `beside` are gone. The prompt is a legend plus two rules; each cell is
+  defined once, in its note, without framework names.
+- `test` is the code's: places mark a target's test sources on files, and
+  a symbol only test files call is not asked about. `access` is the
+  code's: the declaration that makes the outgoing call; the model chooses
+  among `adapter`, `logic`, `passthrough` from source alone, `before`/`after`
+  are gone. A "no"/"none"/"" in an optional cell reads as absence.
+
 ## 2026-09-17 — Seven more cells on the api table
 
 - `middleware`, `reads_input` (body/path/query/header), `writes_output`,

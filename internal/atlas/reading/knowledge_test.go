@@ -346,8 +346,6 @@ func readKnowledge(t *testing.T, opts Options) map[string]Knowledge {
 		key := record.PlaceID
 		if record.Stage == lines.StageSymbols && record.Cells["key_symbol"] != "" {
 			key = "selection:" + record.PlaceID
-		} else if record.Stage == lines.StageOperations {
-			key = "operation:" + record.PlaceID
 		}
 		result[key], ids[record.ID] = record, true
 		if record.SubjectID == "" || record.BasisID == "" || len(record.Input) == 0 || (record.Cells["line"] == "" && record.Cells["key_symbol"] == "") || record.OriginRequest == "" {

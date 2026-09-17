@@ -8,7 +8,6 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
-	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
@@ -21,17 +20,7 @@ import (
 // values must have been rendered, so the check cannot pass on an empty walk.
 func assertEvidenceVocabulary(t *testing.T, graph atlas.Graph, expected ...string) {
 	t.Helper()
-	declarations := make(map[string]atlas.Place)
-	for _, place := range graph.Places {
-		if place.Symbol == nil {
-			continue
-		}
-		if id := place.Symbol.Decl.ObjectID; id != "" {
-			declarations[id] = place
-		}
-		declarations[place.ID] = place
-	}
-	prompts := map[string]string{"symbols": lines.SymbolSelection(false).System, "operations": lines.Operations().System}
+	prompts := map[string]string{"symbols": lines.SymbolSelection(false).System}
 	for name, prompt := range prompts {
 		if !strings.Contains(prompt, "`deferred`") || !strings.Contains(prompt, "`control_context`") {
 			t.Fatalf("%s prompt carries no evidence vocabulary", name)
@@ -45,7 +34,6 @@ func assertEvidenceVocabulary(t *testing.T, graph atlas.Graph, expected ...strin
 			continue
 		}
 		rows := map[string]table.Row{"symbols": lines.SymbolRow(place, "")}
-		rows["operations"], _ = reading.OperationRow(place, declarations, nil)
 		for name, row := range rows {
 			fields := make(map[string]any, len(row.Fields))
 			for _, field := range row.Fields {

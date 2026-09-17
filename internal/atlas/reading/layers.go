@@ -49,33 +49,17 @@ func (r *reader) readLayers(ctx context.Context) error {
 			leaving[owner.ID] = true
 		}
 	}
-	// An activation the operations table accepted is an entry as well.
-	for id, operation := range r.operations {
-		if operation[0] != "" && owners[id].Symbol != nil {
-			entries = appendUnique(entries, id)
-		}
-	}
 	sort.Strings(entries)
 	type node struct {
-		place  atlas.Place
-		before []string
-		after  []string
+		place atlas.Place
 	}
 	nodes := make(map[string]*node)
 	var order []string
 	touch := func(path []string) {
-		for i, id := range path {
-			current := nodes[id]
-			if current == nil {
-				current = &node{place: owners[id]}
-				nodes[id] = current
+		for _, id := range path {
+			if nodes[id] == nil {
+				nodes[id] = &node{place: owners[id]}
 				order = append(order, id)
-			}
-			if i > 0 {
-				current.before = appendUnique(current.before, owners[path[i-1]].Symbol.Decl.Name)
-			}
-			if i < len(path)-1 {
-				current.after = appendUnique(current.after, owners[path[i+1]].Symbol.Decl.Name)
 			}
 		}
 	}
@@ -103,33 +87,30 @@ func (r *reader) readLayers(ctx context.Context) error {
 		}
 		walk([]string{entry})
 	}
+	// The declaration that makes the outgoing call is the access: the code
+	// knows it. The others are read.
 	var rows []table.Row
+	var asked []string
 	for _, id := range order {
 		current := nodes[id]
+		if leaving[id] {
+			r.roles[id] = lines.RoleAccess
+			continue
+		}
 		decl := current.place.Symbol.Decl
 		fields := []table.Field{{Name: "name", Value: decl.Name}, {Name: "path", Value: current.place.Path}, {Name: "line", Value: decl.LineNo}}
-		if decl.Signature != "" {
-			fields = append(fields, table.Field{Name: "signature", Value: decl.Signature})
-		}
 		if source := r.source(current.place.Path, decl.LineNo, decl.EndLine); source != "" {
 			fields = append(fields, table.Field{Name: "source", Value: source})
 		}
-		if len(current.before) > 0 {
-			sort.Strings(current.before)
-			fields = append(fields, table.Field{Name: "before", Value: current.before})
-		}
-		if len(current.after) > 0 {
-			sort.Strings(current.after)
-			fields = append(fields, table.Field{Name: "after", Value: current.after})
-		}
 		rows = append(rows, table.Row{ID: id, Fields: fields})
+		asked = append(asked, id)
 	}
-	r.opts.Stage(lines.StageLayers, fmt.Sprintf("reading %d declarations on the ways from %d entries to outgoing calls", len(rows), len(entries)))
+	r.opts.Stage(lines.StageLayers, fmt.Sprintf("reading %d declarations on the ways from %d entries to %d outgoing calls", len(rows), len(entries), len(leaving)))
 	answers, err := r.runTable(ctx, lines.Layers(), 1, rows)
 	if err != nil {
 		return err
 	}
-	for i, id := range order {
+	for i, id := range asked {
 		if answer := answers[i].answer; answer != nil && answer["role"] != "" {
 			r.roles[id] = answer["role"]
 		}

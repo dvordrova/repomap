@@ -315,7 +315,7 @@ func (r *reader) designInputs(targetID string) ([]designItem, []table.Field) {
 			r.designFiles[id] = file.ID
 			r.designSubjects[objectID] = id
 			item := designItem{Ref: objectID, Path: file.Path, Name: decl.Name, Kind: decl.Kind,
-				Signature: decl.Signature, Doc: decl.Doc, Purpose: r.symbolLine[id].value, Activation: r.operations[id][0], IDs: []string{id}}
+				Signature: decl.Signature, Doc: decl.Doc, Purpose: r.symbolLine[id].value, IDs: []string{id}}
 			refs[id] = item.Ref
 			items = append(items, item)
 		}

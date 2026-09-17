@@ -18,26 +18,31 @@ var apiPrompt string
 //go:embed prompts/publish.md
 var publishPrompt string
 
-// API reads the external symbols the repository calls, one row per symbol:
-// what a callable handed to it becomes, whether it publishes what its holder
-// holds, and what other system it talks to. Every cell is optional; a symbol
-// that does none of it gets no cell.
-func API() table.Definition {
-	return table.Definition{
-		Stage: StageAPI, Contract: "repomap.atlas.api.v2", System: apiPrompt, Independent: true,
-		Columns: []table.Column{
-			{Name: "binds", Kind: table.Choice, Options: atlas.IncomingBoundaryKinds(), Optional: true, Note: "what a repository callable handed to this symbol becomes; leave out when it runs the callable in place"},
-			{Name: "publishes", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when the call makes what its holder holds reachable from outside"},
-			{Name: "talks", Kind: table.Choice, Options: atlas.OutgoingBoundaryKinds(), Optional: true, Note: "the kind of other running system this symbol sends to, reads from or creates a client of"},
-			{Name: "middleware", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when the callable handed over runs around or before handlers rather than as an entry of its own"},
-			{Name: "reads_input", Kind: table.Choice, Options: atlas.InputKinds(), Optional: true, Note: "the part of a received request this symbol reads"},
-			{Name: "writes_output", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this symbol writes the response a received request gets"},
-			{Name: "auth", Kind: table.Choice, Options: atlas.AuthKinds(), Optional: true, Note: "what this symbol does with credentials: verifies a token or password, issues a token, hashes a secret"},
-			{Name: "config", Kind: table.Choice, Options: atlas.ConfigKinds(), Optional: true, Note: "reads one configuration value, or loads configuration from a source"},
-			{Name: "validates", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this symbol checks input against rules"},
-			{Name: "test", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this symbol belongs to testing: a runner, an assertion, a mock, fake data"},
-		},
+// API reads the external symbols the repository calls. A symbol handed a
+// repository callable is asked what the callable becomes; every other
+// symbol is asked what it does with the values it gets. Every cell is
+// optional: a symbol that does none of it gets no cell.
+func API(handed bool) table.Definition {
+	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v3", System: apiPrompt, Independent: true}
+	if handed {
+		def.Contract += ".handed"
+		def.Columns = []table.Column{
+			{Name: "binds", Kind: table.Choice, Options: atlas.IncomingBoundaryKinds(), Optional: true, Note: "what the handed callable becomes: http_server a handler of requests on the given path; queue_consumer a handler of messages; scheduled work a timer runs; interaction a handler of a user's action; extension a hook registered with a host; command a command a runner activates; other an established entry of another kind. A symbol that runs the callable in place or only transforms it binds nothing"},
+			{Name: "middleware", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when the callable runs around or before the handlers rather than being an entry of its own"},
+			{Name: "publishes", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this call starts serving: listens on an address, runs the application, connects the consumer"},
+		}
+		return def
 	}
+	def.Columns = []table.Column{
+		{Name: "publishes", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this call starts serving: listens on an address, runs the application, connects the consumer"},
+		{Name: "talks", Kind: table.Choice, Options: atlas.OutgoingBoundaryKinds(), Optional: true, Note: "the kind of other running system this call itself sends to, reads from or opens a connection to: http_client, db, queue_producer, queue_consumer, sdk, other. A call that builds or configures — returning the same type it was called on, setting a header, tuning a pool — and a call that reads a result already received talk to nothing"},
+		{Name: "reads_input", Kind: table.Choice, Options: atlas.InputKinds(), Optional: true, Note: "the part of a received request this symbol reads: body, path, query or header"},
+		{Name: "writes_output", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this symbol writes the response a received request gets"},
+		{Name: "auth", Kind: table.Choice, Options: atlas.AuthKinds(), Optional: true, Note: "with credentials: verifies a token or a password, issues a token, hashes a secret"},
+		{Name: "config", Kind: table.Choice, Options: atlas.ConfigKinds(), Optional: true, Note: "reads one configuration value, or loads configuration from a source"},
+		{Name: "validates", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this symbol checks input against rules"},
+	}
+	return def
 }
 
 // Publish asks which holder a publishing call serves when the code could not

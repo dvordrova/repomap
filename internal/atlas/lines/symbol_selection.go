@@ -13,7 +13,7 @@ var symbolSelectionPrompt string
 // Its complete evidence is unchanged by directory/file presentation choices.
 func SymbolSelection(types bool) table.Definition {
 	def := table.Definition{
-		Stage: StageSymbols, Contract: "repomap.atlas.symbol-selection.v6",
+		Stage: StageSymbols, Contract: "repomap.atlas.symbol-selection.v7",
 		System: symbolSelectionPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "key_symbol", Kind: table.Choice, Options: []string{"yes", "no"}, Note: "a declaration a newcomer needs to understand this file"},
@@ -25,10 +25,5 @@ func SymbolSelection(types bool) table.Definition {
 	}
 	// Symbol rows carry calls; their prompt defines every rendered value.
 	def.System = withVocabulary(symbolSelectionPrompt)
-	// The candidate cell is a gate: the operations table reviews every yes
-	// with its own evidence and decides the activation kind itself.
-	def.Columns = append(def.Columns,
-		table.Column{Name: "operation_candidate", Kind: table.Choice, Options: []string{"yes", "no"}, Missing: "no", Note: "yes when the observations support an externally activated operation (command, request, interaction, scheduled or continuous work); the operations table decides which"},
-	)
 	return def
 }

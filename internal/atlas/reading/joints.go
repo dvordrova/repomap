@@ -85,13 +85,15 @@ func (r *reader) targetSummary(target TargetMeta) lines.TargetSummary {
 		summary.Parts = append(summary.Parts, box.title+": "+box.line)
 	}
 	seenOperations := make(map[string]bool)
-	for id, operation := range r.operations {
-		if contains(r.places[id].TargetIDs, target.ID) {
-			name := operation[0] + ": " + operation[1]
-			if !seenOperations[name] {
-				summary.Operations = append(summary.Operations, name)
-				seenOperations[name] = true
-			}
+	for _, state := range r.boundaries {
+		b := state.place.Boundary
+		if b.Direction != atlas.DirectionIn || b.ObjectID == "" || state.kind == atlas.BoundaryListenAddress || !contains(state.place.TargetIDs, target.ID) {
+			continue
+		}
+		name := state.kind + ": " + strings.TrimSpace(b.Method+" "+strings.Join(b.Values, ", "))
+		if !seenOperations[name] {
+			summary.Operations = append(summary.Operations, name)
+			seenOperations[name] = true
 		}
 	}
 	sort.Strings(summary.Operations)

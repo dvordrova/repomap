@@ -346,12 +346,6 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		}
 		r.symbolSelections[subject] = r.knowledge[place.ID]
 		delete(r.knowledge, place.ID)
-		// A proposal only: the operations table reviews the candidate with
-		// its own evidence and either fills the activation, name and
-		// description or deletes the entry.
-		if answer.answer["operation_candidate"] == "yes" {
-			r.operations[place.ID] = [3]string{}
-		}
 		if answer.answer["key_symbol"] == "yes" {
 			byFile[place.Parent] = append(byFile[place.Parent], marked{id: place.ID, rank: place.Symbol.Rank})
 		}
@@ -678,23 +672,11 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 		r.boundaryIDs[source] = id
 		return id
 	}
-	nativeRoutes := make(map[string]bool)
-	for subject := range r.boundEntries() {
-		nativeRoutes[subject] = true
-	}
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil {
 			continue
 		}
 		decl := place.Symbol.Decl
-		if operation := r.operations[place.ID]; operation[0] == "request" && !nativeRoutes[place.ID] {
-			id := boundaryID("in\x00" + place.ID)
-			p := atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: place.LineNo, Column: decl.Column,
-				Parent: place.Parent, TargetIDs: append([]string(nil), place.TargetIDs...), Boundary: &atlas.BoundaryFacts{
-					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, CallerDoc: decl.Doc, External: decl.Name,
-					Values: []string{}, Direction: atlas.DirectionIn}}
-			r.boundaries[id] = &boundaryState{place: p, line: operation[2], kind: atlas.BoundaryOther}
-		}
 		for _, call := range place.Symbol.Calls {
 			// A call to a symbol that talks to another system is that
 			// outgoing boundary at every site; a call to a symbol that

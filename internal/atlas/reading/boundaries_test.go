@@ -292,7 +292,6 @@ func TestColumnlessNativeFactClaimsItsLineAndColumnedFactKeepsOtherCalls(t *test
 				opts:       Options{Graph: atlas.Graph{Places: []atlas.Place{native, symbol}}},
 				places:     map[string]atlas.Place{native.ID: native, symbol.ID: symbol},
 				api:        map[string]apiRole{"github.com/rabbitmq/amqp091-go.Channel.PublishWithDeferredConfirm": {talks: atlas.BoundarySDK}},
-				operations: map[string][3]string{},
 				boundaries: map[string]*boundaryState{native.ID: {place: native, kind: atlas.BoundarySDK}},
 			}
 			r.bindInterpretedBoundaries()

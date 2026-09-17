@@ -156,6 +156,13 @@ func decodeIndependentCells(def Definition, context []Field, row Row, cells map[
 				continue
 			}
 		}
+		if column.Optional && found {
+			// A small model says "no" where it should leave the cell out.
+			var cell string
+			if json.Unmarshal(raw, &cell) == nil && (strings.TrimSpace(cell) == "" || strings.EqualFold(strings.TrimSpace(cell), "no") || strings.EqualFold(strings.TrimSpace(cell), "none")) {
+				continue
+			}
+		}
 		if !found {
 			if column.EmptyFrom != "" {
 				deferred = append(deferred, column)
