@@ -39,6 +39,10 @@ ProgramIndex retains:
   form (`struct`, `interface` or the underlying type), its members being objects;
 - object aliases: a declaration's names in other formats as sorted
   `{format, name}` pairs, such as a field's JSON key;
+- a callable's `parameters` and `results` in order, each `{name, type,
+  type_id}`: the type as short text and, when the value carries a repository
+  type (through pointers, slices and arrays), that type's object. An adapter
+  that knows no types leaves them out;
 - source-anchored enclosing control statements on individual call patterns;
 - call-result and receiver identity;
 - receiver-origin provenance and its resolution;

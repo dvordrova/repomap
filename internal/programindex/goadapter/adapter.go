@@ -351,6 +351,7 @@ func (projection *goProjection) projectObjects() error {
 			SourceRef: declaration.ID, Kind: kind, Name: declaration.Name,
 			Visibility: visibility(declaration.Exported), Signature: shortSignature(declaration.Signature),
 			OwnerRef: ownerRef, ContainerRef: containerRef, Location: location,
+			Parameters: projection.typedNames(declaration.Parameters), Results: projection.typedNames(declaration.Results),
 		}); err != nil {
 			return err
 		}
@@ -1069,6 +1070,23 @@ func (projection *goProjection) constructRegistration(
 	relation.Patterns[0].Arguments = append(relation.Patterns[0].Arguments, bound)
 	relation.Patterns[0].ArgumentsObserved = len(relation.Patterns[0].Arguments)
 	return &programindex.PatternArgumentRefInput{RelationSourceRef: relation.SourceRef, PatternSourceRef: relation.Patterns[0].SourceRef, Keyword: handoff.Slot.Field}, nil
+}
+
+// typedNames hands a signature's values over with the repository type each
+// carries; a type of another package or module keeps its text alone.
+func (projection *goProjection) typedNames(values []gocoreobject.TypedName) []programindex.TypedNameInput {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]programindex.TypedNameInput, 0, len(values))
+	for _, value := range values {
+		typed := programindex.TypedNameInput{Name: value.Name, Type: shortSignature(value.Type)}
+		if value.Package != "" {
+			typed.TypeRef = projection.typeRefs[typeKey(value.Package, value.TypeName)]
+		}
+		result = append(result, typed)
+	}
+	return result
 }
 
 // splitQualifiedType reads "path/to/pkg.Type" as its package path and name.

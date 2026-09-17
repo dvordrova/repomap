@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 )
 
-const Version = 6
+const Version = 7
 
 type TypeKind string
 
@@ -119,6 +119,20 @@ type CallableDeclaration struct {
 	Exported         bool         `json:"exported"`
 	Location         Location     `json:"location"`
 	DirectCallNodeID string       `json:"direct_call_node_id,omitempty"`
+	// Parameters and Results are the signature's values in order, each with
+	// the named type it carries when one does (through pointers and slices).
+	Parameters []TypedName `json:"parameters,omitempty"`
+	Results    []TypedName `json:"results,omitempty"`
+}
+
+// TypedName is one value of a signature: its name (empty for an unnamed
+// result), its type as written, and the package and name of the declared
+// type it carries, empty for a builtin, a function or an anonymous type.
+type TypedName struct {
+	Name     string `json:"name,omitempty"`
+	Type     string `json:"type"`
+	Package  string `json:"package,omitempty"`
+	TypeName string `json:"type_name,omitempty"`
 }
 
 // InterfaceImplementation is an exhaustive, target-scoped Go method-set
@@ -351,6 +365,11 @@ func (index Index) Validate() error {
 		if declaration.Kind == CallableFunction && declaration.Receiver != "" ||
 			declaration.Kind == CallableMethod && !validText(declaration.Receiver) {
 			return fmt.Errorf("go core object index: invalid callable receiver")
+		}
+		for _, value := range append(append([]TypedName(nil), declaration.Parameters...), declaration.Results...) {
+			if !validText(value.Type) || (value.Package == "") != (value.TypeName == "") {
+				return fmt.Errorf("go core object index: invalid callable value type")
+			}
 		}
 		if _, duplicate := callableIDs[declaration.ID]; duplicate {
 			return fmt.Errorf("go core object index: duplicate callable declaration")

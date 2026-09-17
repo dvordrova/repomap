@@ -207,10 +207,15 @@ type Operation struct {
 	Name      string `json:"name"`
 	// Address is where the operation is reachable, when a publishing call
 	// on the same holder stated it.
-	Address  string                `json:"address,omitempty"`
-	Summary  string                `json:"summary"`
-	Source   string                `json:"source"`
-	Location programindex.Location `json:"location"`
+	Address string `json:"address,omitempty"`
+	// RequestTypeIDs are the repository types the operation's subject takes;
+	// ResponseTypeIDs the repository types it hands to calls outside the
+	// repository, as the value written into a response. Derived, not persisted.
+	RequestTypeIDs  []string              `json:"-"`
+	ResponseTypeIDs []string              `json:"-"`
+	Summary         string                `json:"summary"`
+	Source          string                `json:"source"`
+	Location        programindex.Location `json:"location"`
 }
 
 // StructuralEdgeRole is a deterministic projection of exact ProgramIndex
@@ -2129,11 +2134,13 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 			subjects[position].Interpretation = &interpretation
 		}
 	}
+	operations := append([]Operation(nil), artifact.Operations...)
+	operationTypes(program, operations)
 	index := Index{
 		Version: artifact.Version, Role: artifact.Role, SharedCode: artifact.SharedCode, Summary: artifact.Summary,
 		Target: program.Target.Snapshot(), ProgramIndexSHA256: artifact.ProgramIndexSHA256,
-		Data: artifact.Data, Subjects: subjects, Groups: artifact.Groups, Operations: artifact.Operations,
-		Outbound: artifact.Outbound, Chains: projectChains(program, artifact.Operations, artifact.Outbound), Containers: artifact.Containers,
+		Data: artifact.Data, Subjects: subjects, Groups: artifact.Groups, Operations: operations,
+		Outbound: artifact.Outbound, Chains: projectChains(program, operations, artifact.Outbound), Containers: artifact.Containers,
 		StructuralEdges: compileStructuralEdges(program, retained), Connections: artifact.Connections, SHA256: artifact.SHA256,
 	}
 	if err := index.Validate(); err != nil {

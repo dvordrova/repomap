@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 17
+	Version          = 18
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -369,6 +369,28 @@ type ObjectInput struct {
 	// or platform boundaries from presentation text or raw identity syntax.
 	External *ExternalSymbol
 	Aliases  []Alias
+	// Parameters and Results are a callable's values in order; TypeRef names
+	// the repository type a value carries when the adapter resolved one.
+	Parameters []TypedNameInput
+	Results    []TypedNameInput
+}
+
+// TypedNameInput is one value of a callable's signature as an adapter hands
+// it over: its name, its type as short text, and the source ref of the
+// repository type it carries, if any.
+type TypedNameInput struct {
+	Name    string
+	Type    string
+	TypeRef string
+}
+
+// TypedName is one sealed value of a callable's signature. TypeID is the
+// repository type the value carries, empty for a builtin, an outside type, a
+// function or an anonymous type.
+type TypedName struct {
+	Name   string `json:"name,omitempty"`
+	Type   string `json:"type"`
+	TypeID string `json:"type_id,omitempty"`
 }
 
 // Alias is a name a declaration takes in another format, such as the JSON key
@@ -454,6 +476,8 @@ type Object struct {
 	Directory   string          `json:"directory,omitempty"`
 	External    *ExternalSymbol `json:"external,omitempty"`
 	Aliases     []Alias         `json:"aliases,omitempty"`
+	Parameters  []TypedName     `json:"parameters,omitempty"`
+	Results     []TypedName     `json:"results,omitempty"`
 }
 
 // Witness preserves one bounded local fact supporting a relation. Kind and
@@ -988,6 +1012,18 @@ func New(input Input) (Index, error) {
 		}
 		index.Objects[position].OwnerID = ownerID
 		index.Objects[position].ContainerID = containerID
+		for _, values := range []struct {
+			inputs []TypedNameInput
+			sealed *[]TypedName
+		}{{value.Parameters, &index.Objects[position].Parameters}, {value.Results, &index.Objects[position].Results}} {
+			for _, typed := range values.inputs {
+				typeID, err := resolveObjectRef(bindings, typed.TypeRef)
+				if err != nil {
+					return Index{}, fmt.Errorf("program index: object %q value type: %w", value.SourceRef, err)
+				}
+				*values.sealed = append(*values.sealed, TypedName{Name: typed.Name, Type: typed.Type, TypeID: typeID})
+			}
+		}
 	}
 	sort.Slice(index.Objects, func(i, j int) bool { return compactIDLess(index.Objects[i].ID, index.Objects[j].ID, "n") })
 	for position := 1; position < len(index.Objects); position++ {
@@ -1676,6 +1712,11 @@ func validateObjectInput(value ObjectInput) error {
 		!validAliases(canonicalAliases(value.Aliases)) {
 		return fmt.Errorf("program index: invalid object input")
 	}
+	for _, typed := range append(append([]TypedNameInput(nil), value.Parameters...), value.Results...) {
+		if !validOptionalText(typed.Name) || !validText(typed.Type) || !validOptionalText(typed.TypeRef) {
+			return fmt.Errorf("program index: invalid object value type")
+		}
+	}
 	if err := validateExternalSymbolBinding(value.Kind, value.External); err != nil {
 		return err
 	}
@@ -1688,6 +1729,11 @@ func validateObject(value Object) error {
 		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
 		!validAliases(value.Aliases) {
 		return fmt.Errorf("program index: invalid object")
+	}
+	for _, typed := range append(append([]TypedName(nil), value.Parameters...), value.Results...) {
+		if !validOptionalText(typed.Name) || !validText(typed.Type) || typed.TypeID != "" && !validCompactID(typed.TypeID, "n") {
+			return fmt.Errorf("program index: invalid object value type")
+		}
 	}
 	if err := validateExternalSymbolBinding(value.Kind, value.External); err != nil {
 		return err

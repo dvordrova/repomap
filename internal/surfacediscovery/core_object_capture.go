@@ -344,10 +344,47 @@ func (a *analyzer) captureCoreObjectFile(
 				Kind: kind, Package: packagePath, Name: object.Name(), Receiver: receiver,
 				Signature: types.TypeString(signature, packageQualifier), Exported: object.Exported(),
 				Location: location, DirectCallNodeID: directCallNodeID,
+				Parameters: typedNames(signature.Params()), Results: typedNames(signature.Results()),
 			})
 		}
 	}
 	return nil
+}
+
+// typedNames reads a signature's values with the declared type each carries:
+// *model.User, []model.User and model.User all carry model.User.
+func typedNames(values *types.Tuple) []gocoreobject.TypedName {
+	if values == nil || values.Len() == 0 {
+		return nil
+	}
+	result := make([]gocoreobject.TypedName, 0, values.Len())
+	for position := 0; position < values.Len(); position++ {
+		value := values.At(position)
+		typed := gocoreobject.TypedName{Name: value.Name(), Type: types.TypeString(value.Type(), packageQualifier)}
+		if typed.Name == "_" {
+			typed.Name = ""
+		}
+		carried := value.Type()
+		for {
+			switch inner := carried.(type) {
+			case *types.Pointer:
+				carried = inner.Elem()
+				continue
+			case *types.Slice:
+				carried = inner.Elem()
+				continue
+			case *types.Array:
+				carried = inner.Elem()
+				continue
+			}
+			break
+		}
+		if named, ok := types.Unalias(carried).(*types.Named); ok && named.Obj() != nil && named.Obj().Pkg() != nil {
+			typed.Package, typed.TypeName = named.Obj().Pkg().Path(), named.Obj().Name()
+		}
+		result = append(result, typed)
+	}
+	return result
 }
 
 func coreObjectTypeKind(object *types.TypeName) gocoreobject.TypeKind {

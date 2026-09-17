@@ -16,6 +16,9 @@ type Chain struct {
 	OperationID string   `json:"operation_id"`
 	SubjectIDs  []string `json:"subject_ids"`
 	OutboundID  string   `json:"outbound_id"`
+	// TypeIDs are the repository types the chain's signatures carry, in
+	// walking order: what crosses from the entry to the system.
+	TypeIDs []string `json:"type_ids,omitempty"`
 }
 
 const (
@@ -27,6 +30,10 @@ const (
 // subject in reading order and records every path that reaches a subject
 // with an outbound call.
 func projectChains(program programindex.Index, operations []Operation, outbound []OutboundCall) []Chain {
+	objects := make(map[string]programindex.Object, len(program.Objects))
+	for _, object := range program.Objects {
+		objects[object.ID] = object
+	}
 	callees := make(map[string][]string)
 	for _, relation := range program.Relations {
 		if relation.Kind != programindex.RelationCalls || relation.Resolution == programindex.ResolutionUnresolved {
@@ -57,7 +64,11 @@ func projectChains(program programindex.Index, operations []Operation, outbound 
 					return
 				}
 				found++
-				chains = append(chains, Chain{OperationID: operation.ID, SubjectIDs: append([]string(nil), path...), OutboundID: id})
+				var types []string
+				for _, subject := range path {
+					types = carriedTypes(types, objects[subject])
+				}
+				chains = append(chains, Chain{OperationID: operation.ID, SubjectIDs: append([]string(nil), path...), OutboundID: id, TypeIDs: types})
 			}
 			if len(path) >= chainDepth {
 				return
@@ -77,6 +88,82 @@ func projectChains(program programindex.Index, operations []Operation, outbound 
 		chains[position].ID = compactOrdinal("c", position)
 	}
 	return chains
+}
+
+// carriedTypes adds the repository types an object's signature carries.
+func carriedTypes(types []string, object programindex.Object) []string {
+	for _, value := range append(append([]programindex.TypedName(nil), object.Parameters...), object.Results...) {
+		if value.TypeID != "" {
+			types = appendUniqueString(types, value.TypeID)
+		}
+	}
+	return types
+}
+
+// operationTypes names what an operation takes in and gives back: the
+// repository types of its subject's parameters, and the repository types
+// produced by the repository callees whose results the subject hands to
+// calls outside the repository (the value written into a response).
+func operationTypes(program programindex.Index, operations []Operation) {
+	objects := make(map[string]programindex.Object, len(program.Objects))
+	for _, object := range program.Objects {
+		objects[object.ID] = object
+	}
+	type site struct {
+		path         string
+		line, column int
+	}
+	producers := make(map[site][]string)
+	for _, relation := range program.Relations {
+		if relation.Kind != programindex.RelationCalls {
+			continue
+		}
+		// A call resolved through an interface has no pattern of its own; the
+		// relation's location is its site.
+		locations := []*programindex.Location{relation.Location}
+		for _, pattern := range relation.Patterns {
+			locations = append(locations, pattern.Location)
+		}
+		for _, location := range locations {
+			if location != nil {
+				key := site{location.Path, location.Line, location.Column}
+				for _, id := range relation.ToIDs {
+					producers[key] = appendUniqueString(producers[key], id)
+				}
+			}
+		}
+	}
+	for position := range operations {
+		subject := operations[position].SubjectID
+		if subject == "" {
+			continue
+		}
+		for _, value := range objects[subject].Parameters {
+			if value.TypeID != "" {
+				operations[position].RequestTypeIDs = appendUniqueString(operations[position].RequestTypeIDs, value.TypeID)
+			}
+		}
+		for _, relation := range program.Relations {
+			if relation.FromID != subject || relation.Kind != programindex.RelationInvokesExternal {
+				continue
+			}
+			for _, pattern := range relation.Patterns {
+				for _, argument := range pattern.Arguments {
+					origin := argument.Origin
+					if origin == nil || origin.Kind != "call_result" || origin.Anchor == nil {
+						continue
+					}
+					for _, callee := range producers[site{origin.Anchor.Path, origin.Anchor.Line, origin.Anchor.Column}] {
+						for _, value := range objects[callee].Results {
+							if value.TypeID != "" {
+								operations[position].ResponseTypeIDs = appendUniqueString(operations[position].ResponseTypeIDs, value.TypeID)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 func appendUniqueString(values []string, value string) []string {

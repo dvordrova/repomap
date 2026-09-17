@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -142,6 +143,21 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	if strings.Join(walked, " → ") != "GetUser → GetUser → GetByID → GetUser" {
 		t.Fatalf("route chain to the users table = %v (chains %+v)", walked, overlay.Chains)
 	}
+	typeNames := func(ids []string) []string {
+		var result []string
+		for _, id := range ids {
+			result = append(result, names[id])
+		}
+		return result
+	}
+	if !reflect.DeepEqual(typeNames(request.RequestTypeIDs), []string(nil)) || !reflect.DeepEqual(typeNames(request.ResponseTypeIDs), []string{"UserResponse"}) {
+		t.Fatalf("request/response types = %v / %v", typeNames(request.RequestTypeIDs), typeNames(request.ResponseTypeIDs))
+	}
+	for _, chain := range overlay.Chains {
+		if chain.OperationID == request.ID && chain.OutboundID == query.ID && !reflect.DeepEqual(typeNames(chain.TypeIDs), []string{"User", "User"}) {
+			t.Fatalf("types carried by the route chain = %v", typeNames(chain.TypeIDs))
+		}
+	}
 	// Chains are derived: the saved overlay has none, the hydrated index has them again.
 	encoded, err := groupindex.Encode(overlay)
 	if err != nil {
@@ -154,8 +170,8 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(restored.Chains) != len(overlay.Chains) {
-		t.Fatalf("hydrated chains = %d, projected %d", len(restored.Chains), len(overlay.Chains))
+	if len(restored.Chains) != len(overlay.Chains) || !reflect.DeepEqual(restored.Operations, overlay.Operations) {
+		t.Fatalf("hydrated chains = %d, projected %d; operations equal: %v", len(restored.Chains), len(overlay.Chains), reflect.DeepEqual(restored.Operations, overlay.Operations))
 	}
 }
 

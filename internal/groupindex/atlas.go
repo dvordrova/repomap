@@ -528,6 +528,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	data := projectData(program, target.Data)
 	outbound := projectOutbound(program, target, groupOfBox, sourceRefs)
 	joinOutboundData(outbound, data)
+	operationTypes(program, operations)
 	return projectedTarget{
 		index: Index{
 			Version:            Version,

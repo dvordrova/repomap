@@ -1,5 +1,18 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Typed signatures and what an operation exchanges
+
+- ProgramIndex v18: callables carry `parameters` and `results` with the
+  repository type each value carries; the Go adapter fills them from the
+  core object index (v7, `TypedName` per signature value). Signatures stay
+  short text for reading.
+- GroupsIndex derives, never persists: per operation the repository types
+  its subject takes (`RequestTypeIDs`) and hands to calls outside the
+  repository (`ResponseTypeIDs`: the value written into a response, found
+  through the call result that produced it); per chain the repository types
+  its signatures carry. Echo: `GET /users/:id` responds with `UserResponse`;
+  its chain to `users` carries `model.User` and `sqlc.User`.
+
 ## 2026-09-17 — Chains from an operation to the system it reaches
 
 - GroupsIndex gains `chains`: from each operation's subject, exact and
