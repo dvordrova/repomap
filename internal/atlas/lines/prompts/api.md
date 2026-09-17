@@ -35,5 +35,22 @@ that.
   A library that works inside the process — parsing, logging, local files,
   time, an in-memory store — talks to nothing.
 
+- `middleware`: `yes` when the callable handed over runs around or before
+  the handlers (`Router.use`, a cors or body parser) rather than being an
+  entry of its own. A middleware symbol binds no entry.
+- `reads_input`: which part of a received request this symbol reads —
+  `body`, `path`, `query` or `header` (`Context.Param`, `req.body`,
+  `request.args`).
+- `writes_output`: `yes` when this symbol writes the response a received
+  request gets (`Context.JSON`, `res.status`, `jsonify`).
+- `auth`: what the symbol does with credentials — `verifies` a token or a
+  password, `issues` a token, `hashes` a secret.
+- `config`: `reads` one configuration value (`os.Getenv`, `viper.Get`) or
+  `loads` configuration from a source (`load_dotenv`, `ReadInConfig`).
+- `validates`: `yes` when the symbol checks input against rules.
+- `test`: `yes` when the symbol belongs to testing — a runner, an
+  assertion, a mock, fake data. A testing symbol binds, publishes and talks
+  to nothing the program serves.
+
 One symbol may hold several cells: a call that takes a handler and an
 address and serves it both binds and publishes.

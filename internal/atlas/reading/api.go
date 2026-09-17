@@ -14,8 +14,8 @@ import (
 
 // apiRole is the model's reading of one external symbol; see atlas.APIRole.
 type apiRole struct {
-	binds, talks string
-	publishes    bool
+	binds, talks, readsInput, auth, config               string
+	publishes, middleware, writesOutput, validates, test bool
 }
 
 // apiSymbol is what the code observed about one external symbol across the
@@ -145,7 +145,19 @@ func (r *reader) readAPI(ctx context.Context) error {
 		if answer == nil {
 			continue
 		}
-		role := apiRole{binds: answer["binds"], talks: answer["talks"], publishes: answer["publishes"] == "yes"}
+		role := apiRole{
+			binds: answer["binds"], talks: answer["talks"], publishes: answer["publishes"] == "yes",
+			middleware: answer["middleware"] == "yes", readsInput: answer["reads_input"], writesOutput: answer["writes_output"] == "yes",
+			auth: answer["auth"], config: answer["config"], validates: answer["validates"] == "yes", test: answer["test"] == "yes",
+		}
+		// A middleware or a testing symbol binds no entry and starts nothing
+		// the program serves; what it talks to stays.
+		if role.middleware || role.test {
+			role.binds, role.publishes = "", false
+		}
+		if role.test {
+			role.talks = ""
+		}
 		if role != (apiRole{}) {
 			r.api[s.name] = role
 		}
@@ -164,7 +176,8 @@ func (r *reader) apiRoles() []atlas.APIRole {
 	result := make([]atlas.APIRole, 0, len(names))
 	for _, name := range names {
 		role := r.api[name]
-		result = append(result, atlas.APIRole{Symbol: name, Binds: role.binds, Publishes: role.publishes, Talks: role.talks})
+		result = append(result, atlas.APIRole{Symbol: name, Binds: role.binds, Publishes: role.publishes, Talks: role.talks,
+			Middleware: role.middleware, ReadsInput: role.readsInput, WritesOutput: role.writesOutput, Auth: role.auth, Config: role.config, Validates: role.validates, Test: role.test})
 	}
 	return result
 }

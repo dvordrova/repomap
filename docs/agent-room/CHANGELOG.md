@@ -1,5 +1,19 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Seven more cells on the api table
+
+- `middleware`, `reads_input` (body/path/query/header), `writes_output`,
+  `auth` (verifies/issues/hashes), `config` (reads/loads), `validates`,
+  `test` — all optional, all properties of the symbol, recorded on
+  `atlas.api` (contract v2). A middleware or testing symbol binds no entry
+  and publishes nothing; a testing symbol talks to nothing. On the four real
+  repos the model placed them where a reader would: gin's `Context.Param →
+  path`, `ShouldBindWith → body + validates`, `RouterGroup.Use → middleware`,
+  jwt `ParseWithClaims → verifies`, bcrypt `GenerateFromPassword → hashes`,
+  `os.Getenv → reads`; microblog's `load_dotenv → loads`, wtforms
+  validators; Express's `expressjwt → middleware + verifies`, jest and
+  falso → test. One miss: `String.split → reads_input: header`.
+
 ## 2026-09-17 — JS/TS: every declaration the checker resolves names its symbol
 
 - A call the TypeScript checker resolves to a declaration in `node_modules`
