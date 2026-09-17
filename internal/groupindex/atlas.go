@@ -529,26 +529,25 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	outbound := projectOutbound(program, target, groupOfBox, sourceRefs)
 	joinOutboundData(outbound, data)
 	operationTypes(program, operations)
-	return projectedTarget{
-		index: Index{
-			Version:            Version,
-			Role:               target.Role,
-			SharedCode:         append([]string(nil), target.SharedCode...),
-			Summary:            target.Line,
-			Target:             program.Target.Snapshot(),
-			ProgramIndexSHA256: program.SHA256,
-			Data:               data,
-			Subjects:           subjects,
-			Groups:             groups,
-			Operations:         operations,
-			Outbound:           outbound,
-			Chains:             projectChains(program, operations, outbound),
-			Containers:         containers,
-			StructuralEdges:    compileStructuralEdges(program, retained),
-			Connections:        connections,
-		},
-		groupOfBox: groupOfBox,
-	}, nil
+	index := Index{
+		Version:            Version,
+		Role:               target.Role,
+		SharedCode:         append([]string(nil), target.SharedCode...),
+		Summary:            target.Line,
+		Target:             program.Target.Snapshot(),
+		ProgramIndexSHA256: program.SHA256,
+		Data:               data,
+		Subjects:           subjects,
+		Groups:             groups,
+		Operations:         operations,
+		Outbound:           outbound,
+		Chains:             projectChains(program, operations, outbound),
+		Containers:         containers,
+		StructuralEdges:    compileStructuralEdges(program, retained),
+		Connections:        connections,
+	}
+	applyPhases(&index, program)
+	return projectedTarget{index: index, groupOfBox: groupOfBox}, nil
 }
 
 func operationKey(operation Operation) string {

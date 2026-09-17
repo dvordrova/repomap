@@ -74,6 +74,9 @@ type Connection struct {
 	ToSubjectID       string                              `json:"to_subject_id,omitempty"`
 	FromLocation      *programindex.Location              `json:"from_location,omitempty"`
 	ToLocation        *programindex.Location              `json:"to_location,omitempty"`
+	// Phase is the phase of the connection's source subject: init wiring
+	// or runtime flow. Derived, never persisted.
+	Phase string `json:"-"`
 }
 
 // SubjectEndpoint qualifies evidence by target so a cross-target connection
@@ -177,6 +180,8 @@ type Subject struct {
 	Pattern    *PatternFacts           `json:"pattern,omitempty"`
 	// Interpretation stays on the exact entity; grouping never replaces it.
 	Interpretation *Interpretation `json:"interpretation,omitempty"`
+	// Phase is init, runtime or both: derived, never persisted.
+	Phase string `json:"phase,omitempty"`
 }
 
 type Interpretation struct {
@@ -497,6 +502,7 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 		StructuralEdges:    structuralEdges,
 		Connections:        connections,
 	}
+	applyPhases(&index, program)
 	seal, err := indexDigest(index)
 	if err != nil {
 		return Index{}, nil, err
@@ -2146,6 +2152,7 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 		Outbound: artifact.Outbound, Chains: projectChains(program, operations, artifact.Outbound), Containers: artifact.Containers,
 		StructuralEdges: compileStructuralEdges(program, retained), Connections: artifact.Connections, SHA256: artifact.SHA256,
 	}
+	applyPhases(&index, program)
 	if err := index.Validate(); err != nil {
 		return Index{}, err
 	}

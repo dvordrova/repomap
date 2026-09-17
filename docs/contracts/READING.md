@@ -255,6 +255,11 @@ what passes through), `logic` (decides), `passthrough` (only forwards). The
 answer is the symbol's `role` and the subject's interpretation role. Source
 is read through `Options.ReadSource`; without it the rows carry no source.
 
+Every subject and connection of the overlay carries a derived phase: `init`
+for what the seeds reach by ordinary calls before anything serves, `runtime`
+for an operation's subject and its chains, `both` when a declaration serves
+in each. It is recomputed on hydrate, never persisted.
+
 Without `--captions` the model is asked for decisions alone: every prose cell
 (titles, lines, aliases, sentences, operation descriptions) keeps its
 fallback, and a table of prose alone is not sent.

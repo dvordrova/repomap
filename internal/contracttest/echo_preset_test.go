@@ -184,6 +184,21 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	if !reflect.DeepEqual(roles, wantRoles) || provider.sawQuerySource || !provider.sawRepositorySource {
 		t.Fatalf("roles = %v (query asked: %v, repository read: %v)", roles, provider.sawQuerySource, provider.sawRepositorySource)
 	}
+	// Initialization is what main reaches by calls; runtime is the route's chain.
+	phases := map[string]string{}
+	for _, subject := range overlay.Subjects {
+		if subject.Phase != "" {
+			phases[names[subject.ID]+"@"+subject.Object.Location.Path] = subject.Phase
+		}
+	}
+	for name, want := range map[string]string{
+		"main@cmd/api/main.go": "init", "NewUsers@internal/app/users.go": "init", "New@internal/users/handler/handler.go": "init",
+		"GetUser@internal/users/handler/handler.go": "runtime", "GetUser@internal/database/sqlc/users.sql.go": "runtime",
+	} {
+		if phases[name] != want {
+			t.Fatalf("phase of %s = %q, want %q (all: %v)", name, phases[name], want, phases)
+		}
+	}
 	// Chains are derived: the saved overlay has none, the hydrated index has them again.
 	encoded, err := groupindex.Encode(overlay)
 	if err != nil {
@@ -196,7 +211,7 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(restored.Chains) != len(overlay.Chains) || !reflect.DeepEqual(restored.Operations, overlay.Operations) {
+	if len(restored.Chains) != len(overlay.Chains) || !reflect.DeepEqual(restored.Operations, overlay.Operations) || !reflect.DeepEqual(restored.Subjects, overlay.Subjects) {
 		t.Fatalf("hydrated chains = %d, projected %d; operations equal: %v", len(restored.Chains), len(overlay.Chains), reflect.DeepEqual(restored.Operations, overlay.Operations))
 	}
 }

@@ -1,5 +1,15 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Initialization and runtime phases
+
+- Every subject and connection of the overlay carries a phase, derived and
+  never persisted: `init` — reached from the target's seeds by ordinary
+  calls, the wiring before anything serves; `runtime` — an operation's
+  subject or on one of its chains; `both`. Echo: `main`, `NewUsers`,
+  `handler.New` are init, `Handler.GetUser` … `Queries.GetUser` runtime.
+  The map can now fold init arrows into one bootstrap and draw runtime
+  flows on their own.
+
 ## 2026-09-17 — An entry has a named kind
 
 - `binds` offers `http_server`, `queue_consumer`, `scheduled`, `interaction`,
