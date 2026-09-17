@@ -427,6 +427,12 @@ type APIRole struct {
 	Validates    bool   `json:"validates,omitempty"`
 }
 
+// EntryKinds are what a handed callable can become; an entry has a named
+// kind or is none.
+func EntryKinds() []string {
+	return []string{BoundaryHTTPServer, BoundaryQueueConsumer, BoundaryScheduled, BoundaryInteraction, BoundaryExtension, BoundaryCommand}
+}
+
 // InputKinds are the parts of a received request a symbol may read.
 func InputKinds() []string { return []string{"body", "path", "query", "header"} }
 

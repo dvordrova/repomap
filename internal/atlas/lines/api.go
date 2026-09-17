@@ -27,7 +27,7 @@ func API(handed bool) table.Definition {
 	if handed {
 		def.Contract += ".handed"
 		def.Columns = []table.Column{
-			{Name: "binds", Kind: table.Choice, Options: atlas.IncomingBoundaryKinds(), Optional: true, Note: "what the handed callable becomes: http_server a handler of requests on the given path; queue_consumer a handler of messages; scheduled work a timer runs; interaction a handler of a user's action; extension a hook registered with a host; command a command a runner activates; other an established entry of another kind. A symbol that runs the callable in place or only transforms it binds nothing"},
+			{Name: "binds", Kind: table.Choice, Options: atlas.EntryKinds(), Optional: true, Note: "what the handed callable becomes: http_server a handler of requests on the given path; queue_consumer a handler of messages; scheduled work a timer runs; interaction a handler of a user's action; extension a hook registered with a host; command a command a runner activates. A symbol that runs the callable in place, wraps it, or only marks or transforms it binds nothing"},
 			{Name: "middleware", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when the callable runs around or before the handlers rather than being an entry of its own"},
 			{Name: "publishes", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this call starts serving: listens on an address, runs the application, connects the consumer"},
 		}

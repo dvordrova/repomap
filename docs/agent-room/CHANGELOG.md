@@ -1,5 +1,15 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — An entry has a named kind
+
+- `binds` offers `http_server`, `queue_consumer`, `scheduled`, `interaction`,
+  `extension`, `command` — no `other`: on NestJS and FastAPI the model had
+  put every marker decorator (`Injectable`, `Column`, `ApiOperation`,
+  `field_validator`, `pytest.fixture`) there and each became an entry. A
+  parameter decorator (`@Body() dto`) is a call the method makes, not a
+  decoration of the method. NestJS RealWorld: 26 request operations with
+  verbs and paths; FastAPI template: 24 requests and the typer command.
+
 ## 2026-09-17 — Decorators in JS/TS, annotated receivers in Python
 
 - A TypeScript decorator call (`@Get(':slug')`) is a `decorates` relation
