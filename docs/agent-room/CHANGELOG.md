@@ -1,5 +1,12 @@
 # Implementation and acceptance journal
 
+## 2026-09-18 — A handed value is a constructed instance or a module
+
+- `handed` on a registration now means an instance the repository built
+  (`new(DNS)`, `&T{}`) or a module was handed over — not any value a
+  repository call returned. `c.Set("my_user_model", user)` is no longer an
+  entry through a `binds` role on `Context.Set`.
+
 ## 2026-09-17 — Routes under groups, one tile per symbol, one operation per handler
 
 - Mount prefixes follow the holder chain: `v1.Group("/articles")` names the

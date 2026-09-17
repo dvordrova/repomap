@@ -75,6 +75,10 @@ type registrationShape struct {
 	// handed reports that the call receives something of the repository's:
 	// a callable, the decorated declaration, a value, a produced value.
 	handed bool
+	// constructed reports an instance the repository built (new(DNS)) or a
+	// module handed over: what a registering symbol may make an entry of.
+	// A value a repository call returned is data, not something registered.
+	constructed bool
 	// holder is the value the call acts on, at the call that produced it;
 	// holderPrefixes are the path literals of the calls between the holder
 	// and this value (Group("/articles")), root first.
@@ -136,6 +140,7 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 			// handed over; a local variable (an error, a counter) is not.
 			if object, ok := target.object(id); ok && (object.Kind == programindex.ObjectModule || object.Kind == programindex.ObjectVariable && target.moduleLevel(object)) {
 				shape.handedValue = true
+				shape.constructed = shape.constructed || object.Kind == programindex.ObjectModule
 			}
 		}
 		// A value the repository made: a record it built (new(DNS)) or the
@@ -144,7 +149,7 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 		if len(argument.ObjectIDs) == 0 && argument.Origin != nil {
 			switch {
 			case argument.Origin.Kind == "record":
-				produced = true
+				produced, shape.constructed = true, true
 			case argument.Origin.Kind == "call_result" && argument.Origin.Anchor != nil && target.producesRepositoryType(*argument.Origin.Anchor):
 				produced = true
 			}
@@ -441,7 +446,7 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 			Symbol:     shape.handlerName,
 			ObjectID:   shape.handlerID,
 			OwnerID:    ownerID,
-			Handed:     shape.handed && shape.handlerID == "" && shape.relation.Kind != programindex.RelationDecorates,
+			Handed:     shape.constructed && shape.handlerID == "",
 			Text:       shape.origin,
 			Resolution: resolution,
 			Evidence:   address.evidence,
