@@ -1133,12 +1133,30 @@ function packageForDeclarationFile(filename) {
 function externalMethodForInvocation(node) {
   const checker = checkerForNode(node)
   const declaration = checker && resolvedSignatureDeclaration(node, checker)
-  const owner = declaration?.parent
-  if (!declaration || !ts.isMethodDeclaration(declaration) || !owner || !ts.isClassDeclaration(owner)) return null
+  if (!declaration) return null
+  // The JavaScript platform (lib.*.d.ts) is named by platformTargetForInvocation, not as a package.
+  const program = projectForNode(node)?.program
+  try { if (typeof program?.isSourceFileDefaultLibrary === "function" && program.isSourceFileDefaultLibrary(declaration.getSourceFile())) return null } catch {}
   const packageName = packageForDeclarationFile(declaration.getSourceFile().fileName)
-  const exportName = canonicalDeclarationName(owner)
-  if (!packageName || !exportName) return null
-  return { package: packageName, exportName, resolution: "exact", repositoryPath: "" }
+  if (!packageName || packageName === "typescript") return null
+  // The declaration the checker resolved the call to may be a class method,
+  // an interface method or call signature (`res.json`, `test()`), a
+  // property holding a function type, or an ambient `declare function`. Its
+  // owner is the nearest named declaration above it: the class, the
+  // interface, the type alias (`NextFunction`) or the variable it hangs on.
+  const callable = ts.isMethodDeclaration(declaration) || ts.isMethodSignature(declaration) || ts.isFunctionDeclaration(declaration) ||
+    ts.isCallSignatureDeclaration(declaration) || ts.isConstructSignatureDeclaration(declaration) || ts.isConstructorDeclaration(declaration) ||
+    ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration) || ts.isFunctionTypeNode(declaration) || ts.isArrowFunction(declaration)
+  if (!callable) return null
+  if (ts.isFunctionDeclaration(declaration)) {
+    const exportName = canonicalDeclarationName(declaration)
+    return exportName ? { package: packageName, exportName, resolution: "exact", repositoryPath: "" } : null
+  }
+  const owner = namedDeclarationAtOrAbove(declaration.parent)
+  if (!owner) return null
+  // viaType: the owner is the type the call was resolved through, and the
+  // call's own word stays the symbol's name (jest's `test` on `It`).
+  return { package: packageName, exportName: owner.name, resolution: "exact", repositoryPath: "", viaType: true }
 }
 
 function declarationPackages(symbol) {
@@ -2032,7 +2050,9 @@ for (const { sourceFile } of sourceFiles) {
       let externalExport = externalPackage ? externalImport.exportName : ""
       let externalReceiver = ""
       let externalName = externalPackage ? propertyName(node.expression) : ""
-      if (externalPackage && ts.isIdentifier(node.expression)) externalName = externalExport
+      if (externalPackage && ts.isIdentifier(node.expression) && !externalImport.viaType) externalName = externalExport
+      // A call through an element access or a call result has no word of its own; the export names it.
+      if (externalPackage && !externalName) externalName = externalExport
       if (externalPackage && externalExport && externalName && externalName !== externalExport) externalReceiver = externalExport
       let platformTarget
       if (localRefs.length === 0 && externalPackage === "") {

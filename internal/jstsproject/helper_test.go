@@ -776,28 +776,40 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 			t.Fatalf("%s objects are incomplete: caller=%#v receiver=%#v origin=%#v callback=%#v",
 				name, caller, receiver, origin, callback)
 		}
-		adaptertest.AssertRegistration(t, index, adaptertest.Registration{
-			Name: name,
-			Registration: adaptertest.Relation{
-				Kind: programindex.RelationCalls, FromID: caller.ID,
-				Resolution: programindex.ResolutionUnresolved,
-				Path:       "src/server.ts", Line: call.Location.Line,
-				TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
-				Patterns: []adaptertest.Pattern{{
-					Form: programindex.PatternCall, Selector: call.Pattern.Selector, ReceiverID: receiver.ID,
-					Path: "src/server.ts", Line: call.Location.Line,
-					ReceiverOrigins: adaptertest.ObjectAuthority{
-						IDs: []string{origin.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
-					},
-					Observed: 2,
-					Arguments: []adaptertest.Argument{
-						{Position: 1, Kind: programindex.PatternLiteralString, Value: call.Pattern.Arguments[0].Value},
-						{Position: 2, Kind: programindex.PatternDynamic, Objects: adaptertest.ObjectAuthority{
-							IDs: []string{callback.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
-						}},
-					},
+		// A method the checker resolved to a dependency's declaration is an
+		// external invocation of that symbol; one it could not is an
+		// unresolved call.
+		registration := adaptertest.Relation{
+			Kind: programindex.RelationCalls, FromID: caller.ID,
+			Resolution: programindex.ResolutionUnresolved,
+			Path:       "src/server.ts", Line: call.Location.Line,
+			TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
+		}
+		if call.ExternalPackage != "" {
+			external := objectsBySourceRef[externalProgramObjectRef(call.ExternalPackage, call.ExternalReceiver, call.ExternalName, "")]
+			if external.ID == "" {
+				t.Fatalf("%s external symbol %s.%s.%s is absent", name, call.ExternalPackage, call.ExternalReceiver, call.ExternalName)
+			}
+			registration.Kind, registration.Resolution, registration.ToIDs = programindex.RelationInvokesExternal, programindex.ResolutionExact, []string{external.ID}
+			registration.TargetsOmitted = 0
+		}
+		registration.Patterns = []adaptertest.Pattern{{
+			Form: programindex.PatternCall, Selector: call.Pattern.Selector, ReceiverID: receiver.ID,
+			Path: "src/server.ts", Line: call.Location.Line,
+			ReceiverOrigins: adaptertest.ObjectAuthority{
+				IDs: []string{origin.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
+			},
+			Observed: 2,
+			Arguments: []adaptertest.Argument{
+				{Position: 1, Kind: programindex.PatternLiteralString, Value: call.Pattern.Arguments[0].Value},
+				{Position: 2, Kind: programindex.PatternDynamic, Objects: adaptertest.ObjectAuthority{
+					IDs: []string{callback.ID}, Resolution: programindex.ResolutionExact, Observed: 1,
 				}},
 			},
+		}}
+		adaptertest.AssertRegistration(t, index, adaptertest.Registration{
+			Name:         name,
+			Registration: registration,
 			Callbacks: []adaptertest.Callback{{
 				ArgumentPosition: 2,
 				Relation: adaptertest.Relation{
@@ -880,6 +892,15 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 				}},
 			},
 		}},
+	}
+	if directConsumerCall.ExternalPackage != "" {
+		// The checker resolved `subscribe` to the dependency's declaration.
+		external := objectsBySourceRef[externalProgramObjectRef(directConsumerCall.ExternalPackage, directConsumerCall.ExternalReceiver, directConsumerCall.ExternalName, "")]
+		if external.ID == "" {
+			t.Fatalf("direct consumer external symbol is absent: %#v", directConsumerCall)
+		}
+		directContinuation.Kind, directContinuation.Resolution, directContinuation.ToIDs = programindex.RelationInvokesExternal, programindex.ResolutionExact, []string{external.ID}
+		directContinuation.TargetsOmitted = 0
 	}
 	adaptertest.AssertRegistration(t, index, adaptertest.Registration{
 		Name: "TypeScript direct factory result continuation",

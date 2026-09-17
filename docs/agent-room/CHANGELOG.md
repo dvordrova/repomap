@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — JS/TS: every declaration the checker resolves names its symbol
+
+- A call the TypeScript checker resolves to a declaration in `node_modules`
+  is an external invocation of that symbol whatever the declaration is: a
+  class method, an interface method or call signature (`res.json`, jest's
+  `test`), a function-typed property, an ambient function, a call signature
+  behind a type alias (`NextFunction`). The owner named above it is the
+  receiver. Only class methods counted before. The default library stays
+  the JavaScript platform. Express RealWorld: unresolved calls 279 → 100,
+  external invocations 80 → 259, `Application.listen` now publishes.
+
 ## 2026-09-17 — A handed value is one the repository made
 
 - `fmt.Printf("…%v\n", id, err)` was a registration because `err`, a call
