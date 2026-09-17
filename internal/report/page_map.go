@@ -249,6 +249,10 @@ type pageMapEdge struct {
 	To                   string
 	Label                string
 	Possible             bool
+	// Init marks an arrow every relation of which is initialization: the
+	// wiring before anything serves. The map draws it dashed, and only
+	// while one of its ends is the reader's selection.
+	Init bool
 	// Lines is the label written beside the edge. It is empty when there is
 	// no room for it without covering another one; the whole label is on the
 	// edge's tooltip either way.
@@ -1246,6 +1250,7 @@ func mapEdges(
 	labels := make(map[pair][]string)
 	possible := make(map[pair]bool)
 	exact := make(map[pair]bool)
+	initOnly := make(map[pair]bool)
 	var order []pair
 	for _, connection := range index.Connections {
 		if connection.From.TargetID != index.Target.ID || connection.To.TargetID != index.Target.ID {
@@ -1269,6 +1274,10 @@ func mapEdges(
 		if _, seen := labels[key]; !seen {
 			order = append(order, key)
 			labels[key] = nil
+			initOnly[key] = true
+		}
+		if connection.Phase != groupindex.PhaseInit {
+			initOnly[key] = false
 		}
 		if !containsString(labels[key], connection.Label) && connection.Label != "" {
 			labels[key] = append(labels[key], connection.Label)
@@ -1291,6 +1300,7 @@ func mapEdges(
 			// uncertain call among several cannot make the whole arrow
 			// look uncertain.
 			Possible: possible[key] && !exact[key],
+			Init:     initOnly[key],
 		}
 		if lines, atX, atY := router.placeLabel(edge.Label, labelX, labelY, room, minLeft); lines != nil {
 			edge.Lines, edge.LabelX, edge.LabelY = lines, atX, atY

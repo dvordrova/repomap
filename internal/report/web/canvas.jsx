@@ -85,7 +85,7 @@ function FrameTitle({node,item,focused,enter,select}) {
 function RoutedEdge({id,data}) {
   return <g aria-hidden="true" className={`flow-edge ${data.on?'flow-edge-active':''} ${data.dim?'flow-edge-muted':''}`} data-edge-id={id} data-edge-ids={data.edgeIDs.join(' ')}>
     <path className="flow-edge-casing" d={data.path} vectorEffect="non-scaling-stroke"/>
-    <path d={data.path} fill="none" vectorEffect="non-scaling-stroke" style={data.possible?{strokeDasharray:'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined} markerStart={data.reverseArrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined} markerEnd={data.arrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined}/>
+    <path d={data.path} fill="none" vectorEffect="non-scaling-stroke" style={data.possible||data.init?{strokeDasharray:data.init?'calc(3px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))':'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined} markerStart={data.reverseArrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined} markerEnd={data.arrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined}/>
   </g>;
 }
 const nodeTypes={part:Part,area:Area}, edgeTypes={routed:RoutedEdge};
@@ -350,7 +350,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const area=state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):'';
     const number=new Map(area&&view.numbered?leaves(area).map((id,i)=>[id,i+1]):[]);
     const dim=state.mode!=='all';
-    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,dim,boundaryBetween);
+    const initVisible=state.mode==='hover'||state.mode==='operation'||(state.mode==='selection'&&byID.get(view.scope)?.branch!=='component');
+    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,dim,boundaryBetween,initVisible);
     const labelGroups=area?connections(area,leaves(area),layout.edges.filter(e=>state.activeEdges.has(e.id)),
       id=>rootOf(id)!==rootOf(area)?rootOf(id):boundaryBetween(id,area)?.id||id):[];
     const labels=labelGroups.flatMap(group=>{

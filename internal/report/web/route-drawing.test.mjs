@@ -149,3 +149,19 @@ test('outer endpoint identities combine different native paths across opened par
   assert.deepEqual(drawing[0].edgeIDs,['first','second']);
   assert.equal(drawing[0].possible,false);assert.equal(drawing[0].on,true);
 });
+
+// Initialization wiring is dashed and appears only while a box or an area at
+// one of its ends is what the reader looks at; selecting the whole component
+// looks at nothing in particular and keeps the runtime arrows alone.
+test('init routes are drawn only for a looked-at end',()=>{
+  const wiring=[
+    {id:'boot',from:'bootstrap',to:'domain',init:true,relations:[{id:'r1',init:true}],segments:[[point(0,0),point(50,0)]]},
+    {id:'flow',from:'handler',to:'domain',relations:[{id:'r2'}],segments:[[point(0,20),point(50,20)]]},
+  ];
+  const none=routeDrawing(wiring,()=>null,new Set(),false,()=>null,false);
+  assert.deepEqual(none.map(route=>route.id),['flow']);
+  const whole=routeDrawing(wiring,()=>null,new Set(['boot','flow']),true,()=>null,false);
+  assert.deepEqual(whole.map(route=>route.id),['flow']);
+  const looked=routeDrawing(wiring,()=>null,new Set(['boot']),true,()=>null,true);
+  assert.deepEqual(looked.map(route=>[route.id,route.init,route.dim]),[['boot',true,false],['flow',false,true]]);
+});

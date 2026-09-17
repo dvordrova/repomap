@@ -1,5 +1,14 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Initialization arrows on the map
+
+- A map arrow every relation of which is initialization (`map-edge-init`)
+  is drawn dashed (short dashes, distinct from a possible arrow) and only
+  while a box or an area at one of its ends is what the reader looks at —
+  hovered, or selected as a part or area. Selecting the whole component
+  looks at nothing in particular and draws the runtime arrows alone.
+  Gin RealWorld: 5 init arrows out of 124 leave the default view.
+
 ## 2026-09-17 — Initialization and runtime phases
 
 - Every subject and connection of the overlay carries a phase, derived and

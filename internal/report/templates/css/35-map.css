@@ -10,6 +10,7 @@
 .map-node:focus{outline:none}
 .map-edge{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round}
 .map-edge-possible{stroke-dasharray:4 3}
+.map-edge-init{stroke-dasharray:2 4}
 .map-arrow-head{fill:var(--ink)}
 /* The label is written over its own line, so it needs the page colour cut
    out from under it rather than a box drawn around it. */

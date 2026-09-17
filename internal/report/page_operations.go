@@ -380,7 +380,7 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 		if _, exists := byID[to]; !exists {
 			continue
 		}
-		edge := pageMapEdge{ConnectionID: connection.ID, From: from, To: to, Label: connection.Label, Summary: connection.Summary, Scope: "structure", Possible: !strings.HasPrefix(connection.SourceKind, "native_") || connection.SupportResolution != programindex.PatternValueExact}
+		edge := pageMapEdge{ConnectionID: connection.ID, From: from, To: to, Label: connection.Label, Summary: connection.Summary, Scope: "structure", Possible: !strings.HasPrefix(connection.SourceKind, "native_") || connection.SupportResolution != programindex.PatternValueExact, Init: connection.Phase == groupindex.PhaseInit}
 		if connection.FromLocation != nil {
 			l := connection.FromLocation
 			edge.FromSource = builder.links.anchor(l.Path, l.Line, l.Column)

@@ -56,16 +56,16 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     const from=relation.displayFrom||relation.from,to=relation.displayTo||relation.to;
     if(from===to||!byID.has(from)||!byID.has(to))continue;
     const identity=key(from,to,!!relation.possible);
-    if(!folded.has(identity))folded.set(identity,{id:`e${folded.size}`,from,to,possible:!!relation.possible,relations:[]});
-    folded.get(identity).relations.push(relation);
+    if(!folded.has(identity))folded.set(identity,{id:`e${folded.size}`,from,to,possible:!!relation.possible,init:true,relations:[]});
+    const entry=folded.get(identity);entry.relations.push(relation);entry.init&&=!!relation.init;
   }
   const edges=[...folded.values()],aggregates=new Map(),ports=new Map(roots.map(root=>[root.id,new Map()]));
   for(const edge of edges){
     const from=rootOf(edge.from),to=rootOf(edge.to);
     if(from===to)continue;
     const identity=key(from,to,edge.possible);
-    if(!aggregates.has(identity))aggregates.set(identity,{id:`outer:${identity}`,from,to,possible:edge.possible,edges:[],relations:[]});
-    const aggregate=aggregates.get(identity);aggregate.edges.push(edge.id);aggregate.relations.push(...edge.relations);
+    if(!aggregates.has(identity))aggregates.set(identity,{id:`outer:${identity}`,from,to,possible:edge.possible,init:true,edges:[],relations:[]});
+    const aggregate=aggregates.get(identity);aggregate.edges.push(edge.id);aggregate.relations.push(...edge.relations);aggregate.init&&=!!edge.init;
     for(const [root,other,direction,side] of [[from,to,'out','EAST'],[to,from,'in','WEST']]){
       const portKey=key(other,direction,edge.possible);
       if(!ports.get(root).has(portKey))ports.get(root).set(portKey,{id:`port:${key(root,other,direction,edge.possible)}`,
