@@ -99,8 +99,6 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 	for position := range pattern.Arguments {
 		argument := &pattern.Arguments[position]
 		if value, _, literal := literalValue(*argument); literal {
-			// A literal is one line for the reader; an empty one says nothing.
-			value = clipText(strings.Join(strings.Fields(value), " "))
 			if value == "" {
 				continue
 			}
@@ -137,8 +135,16 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 				shape.handedValue = true
 			}
 		}
-		if len(argument.ObjectIDs) == 0 && argument.Origin != nil && (argument.Origin.Kind == "call_result" || argument.Origin.Kind == "record") {
-			produced = true
+		// A value the repository made: a record it built (new(DNS)) or the
+		// result of its own call. What a library returned (an error, a
+		// token) is the library's value, not something handed over.
+		if len(argument.ObjectIDs) == 0 && argument.Origin != nil {
+			switch {
+			case argument.Origin.Kind == "record":
+				produced = true
+			case argument.Origin.Kind == "call_result" && argument.Origin.Anchor != nil && target.producesRepositoryType(*argument.Origin.Anchor):
+				produced = true
+			}
 		}
 	}
 	// The symbol behind the call: the callee itself, or the type of the
@@ -186,6 +192,24 @@ func (shape *registrationShape) accept(holders map[Anchor]bool) bool {
 		return false
 	}
 	return true
+}
+
+// producesRepositoryType reports a call whose repository callee returns a
+// value of a repository type: an instance handed over, not an error or a
+// string a helper computed.
+func (target *targetContext) producesRepositoryType(at sourcevalue.Anchor) bool {
+	for _, id := range target.producerObjects(at) {
+		object, ok := target.object(id)
+		if !ok {
+			continue
+		}
+		for _, result := range object.Results {
+			if result.TypeID != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // moduleLevel reports a variable declared directly in a module or package.
@@ -316,7 +340,7 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 	if shape.address != nil {
 		addresses = addresses[:0]
 		for _, observed := range addressLiterals(values, *shape.address) {
-			path := clipText(strings.Join(strings.Fields(observed.text), " "))
+			path := observed.text
 			if path == "" {
 				continue
 			}

@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — A handed value is one the repository made
+
+- `fmt.Printf("…%v\n", id, err)` was a registration because `err`, a call
+  result, counted as a value handed over. A produced value is now a record
+  the repository built (`new(DNS)`) or the result of a repository call that
+  carries a repository type; what a library returned is the library's.
+  The facts validator no longer refuses newlines in a path, a value or a
+  symbol text (only NUL and invalid UTF-8), and literals are kept as
+  written — the one-line squash is gone. gin-realworld: 41 registrations
+  (router verbs and groups) where noise was; xk6-dns: 5.
+
 ## 2026-09-17 — Four real repositories through the first two steps
 
 - Registration literals and addresses are one line (`strings.Fields`), so a

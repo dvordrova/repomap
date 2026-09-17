@@ -77,12 +77,13 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 			want: []want{{key: "get", method: "GET", path: "/items/{param}", values: []string{"/items/{param}"}, resolution: ResolutionPossible}},
 		},
 		{
-			name: "a value named for a host is a registration too",
+			name: "a value the repository built, named for a host, is a registration too",
 			build: func(s *synthetic) {
 				s.object("init", programindex.ObjectFunction, "init", "dns.go", 5, "")
 				s.external("k6", "go.k6.io/k6/js/modules", "Register", programindex.ExternalAuthorityPackage)
 				produced := dynamic(2)
-				produced.Origin = &sourcevalue.Value{Kind: "call_result", Text: "new", Anchor: &sourcevalue.Anchor{Path: "dns.go", Line: 6, Column: 30}}
+				// new(DNS): a record the repository made, no field stored yet.
+				produced.Origin = &sourcevalue.Value{Kind: "record", Anchor: &sourcevalue.Anchor{Path: "dns.go", Line: 6, Column: 30}}
 				s.relate("reg", programindex.RelationInvokesExternal, "init", []string{"k6"}, loc("dns.go", 6),
 					pattern("p", programindex.PatternCall, "Register", loc("dns.go", 6), nil, literal(1, "k6/x/dns"), produced))
 			},

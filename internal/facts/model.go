@@ -422,8 +422,15 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 			return err
 		}
 	}
-	for _, text := range []string{fact.Symbol, fact.ObjectID, fact.Method, fact.Path, fact.Key, fact.Value, fact.Text, fact.Extractor} {
+	for _, text := range []string{fact.Symbol, fact.ObjectID, fact.Method, fact.Key, fact.Extractor} {
 		if text != "" && !validText(text) {
+			return fmt.Errorf("invalid text field")
+		}
+	}
+	// A path, a value and a symbol text are what the source says, newlines
+	// included; only what no text may hold is refused.
+	for _, text := range []string{fact.Path, fact.Value, fact.Text} {
+		if text != "" && (!utf8.ValidString(text) || strings.ContainsRune(text, 0)) {
 			return fmt.Errorf("invalid text field")
 		}
 	}
@@ -441,7 +448,7 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 			return fmt.Errorf("registration requires its call word and anchor")
 		}
 		for _, value := range fact.Values {
-			if !validText(value) {
+			if value == "" || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
 				return fmt.Errorf("invalid registration value")
 			}
 		}
