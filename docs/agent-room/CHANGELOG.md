@@ -1,5 +1,17 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Width: the Python and JS/TS fixtures through the whole reading
+
+- A registration records `owner_id`, the declaration making the call; an
+  outgoing boundary without a handed callable belongs to it, so a client
+  call (`axios.post` in `runLevel`) is a place a chain can end and a layers
+  row can be read. The declaration that starts a listener is not an entry.
+- Accepted activations (`interaction`, `scheduled` from the operations
+  table) are chain entries beside bound callables; a caption-less operation
+  is named by its declaration and needs no summary. JS/TS live: nine
+  interaction/scheduled operations, three `http_client` outbound calls,
+  layers read `logic`/`access`.
+
 ## 2026-09-17 — Publishing sites are listeners everywhere; Python live
 
 - A call to a `publishes` symbol is the listener at every site, registration

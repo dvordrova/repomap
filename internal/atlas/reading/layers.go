@@ -41,12 +41,21 @@ func (r *reader) readLayers(ctx context.Context) error {
 			continue
 		}
 		switch {
-		case b.Direction == atlas.DirectionIn && b.Source == "fact" && b.ObjectID != "":
+		case b.Direction == atlas.DirectionIn && b.ObjectID != "" && state.kind != atlas.BoundaryListenAddress:
+			// A bound callable is an entry; the declaration that starts the
+			// listener is not.
 			entries = appendUnique(entries, owner.ID)
 		case b.Direction == atlas.DirectionOut && state.kind != atlas.BoundaryConfig:
 			leaving[owner.ID] = true
 		}
 	}
+	// An activation the operations table accepted is an entry as well.
+	for id, operation := range r.operations {
+		if operation[0] != "" && owners[id].Symbol != nil {
+			entries = appendUnique(entries, id)
+		}
+	}
+	sort.Strings(entries)
 	type node struct {
 		place  atlas.Place
 		before []string

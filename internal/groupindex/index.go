@@ -742,7 +742,7 @@ func (index Index) Validate() error {
 		}
 		_, groupExists := groupsByID[operation.GroupID]
 		_, subjectExists := subjectsByID[operation.SubjectID]
-		if !groupExists || operation.SubjectID != "" && !subjectExists || operation.ID != compactOrdinal("o", i) || !validText(operation.Name) || !validText(operation.Summary) ||
+		if !groupExists || operation.SubjectID != "" && !subjectExists || operation.ID != compactOrdinal("o", i) || !validText(operation.Name) || !validOptionalText(operation.Summary) ||
 			(operation.Source != "model" && operation.Source != "fact") || operation.Location.Path == "" || operation.Location.Line < 1 || operation.Location.Column < 1 {
 			return fmt.Errorf("group index: invalid operation %q", operation.ID)
 		}

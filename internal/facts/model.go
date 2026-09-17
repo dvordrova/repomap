@@ -170,9 +170,12 @@ type Fact struct {
 	Anchor       *Anchor     `json:"anchor,omitempty"`
 	// Holder is the value a registration acts on, at the call that produced
 	// it: the router a route is put into, the server that is started.
-	Holder     *Anchor    `json:"holder,omitempty"`
-	Symbol     string     `json:"symbol,omitempty"`
-	ObjectID   string     `json:"object_id,omitempty"`
+	Holder   *Anchor `json:"holder,omitempty"`
+	Symbol   string  `json:"symbol,omitempty"`
+	ObjectID string  `json:"object_id,omitempty"`
+	// OwnerID is the declaration that makes the call a registration records,
+	// as distinct from the callable it hands over.
+	OwnerID    string     `json:"owner_id,omitempty"`
 	Method     string     `json:"method,omitempty"`
 	Path       string     `json:"path,omitempty"`
 	Key        string     `json:"key,omitempty"`

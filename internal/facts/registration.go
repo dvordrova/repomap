@@ -300,6 +300,7 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 			}
 		}
 	}
+	_, ownerID := target.enclosingSymbol(shape.relation.FromID)
 	for _, address := range addresses {
 		if !b.once(strings.Join([]string{string(KindRegistration), target.target.ID, anchor.String(), strconv.Itoa(anchor.Column), shape.word, address.path}, "\x00")) {
 			continue
@@ -319,6 +320,7 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 			Method:     shape.method,
 			Symbol:     shape.handlerName,
 			ObjectID:   shape.handlerID,
+			OwnerID:    ownerID,
 			Text:       shape.origin,
 			Resolution: resolution,
 			Evidence:   address.evidence,

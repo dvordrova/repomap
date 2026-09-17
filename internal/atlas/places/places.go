@@ -1559,7 +1559,13 @@ func (b *builder) collectBoundaries() {
 			continue
 		}
 		encodedValues, _ := json.Marshal(values)
-		objectID := scopedObjectID(targetID, fact.ObjectID)
+		// The boundary belongs to the callable handed over when there is
+		// one, otherwise to the declaration making the call.
+		owner := fact.ObjectID
+		if owner == "" {
+			owner = fact.OwnerID
+		}
+		objectID := scopedObjectID(targetID, owner)
 		key := boundaryKey{path: filePath, line: fact.Anchor.Line, column: fact.Anchor.Column, kind: kind,
 			method: method, values: string(encodedValues), subject: b.factSubjects[objectID]}
 		origin := atlas.BoundaryOrigin{TargetID: targetID, FactID: fact.ID, ObjectID: objectID}

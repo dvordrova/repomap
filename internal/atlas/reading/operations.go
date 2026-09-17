@@ -105,6 +105,10 @@ func (r *reader) readOperations(ctx context.Context) error {
 		if answer["name_kind"] == "http" {
 			operation[1] = answer["http_method"] + " " + names[id][answer["http_path"]]
 		}
+		if operation[1] == "" {
+			// Without captions the operation is named by its declaration.
+			operation[1] = r.places[id].Symbol.Decl.Name
+		}
 		r.operations[id] = operation
 	}
 	r.reportStage(def.Stage)
