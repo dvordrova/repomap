@@ -52,6 +52,10 @@ if (request.project_dir !== undefined && request.project_dir !== "" && !requeste
 }
 const root = requestedProjectDir ? path.join(repositoryRoot, ...requestedProjectDir.split("/")) : repositoryRoot
 const rootPrefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
+// Type text without host paths: the repository prefix goes, a node_modules
+// path becomes its package name.
+const cleanTypeText = (value) => value.split(slash(rootPrefix)).join("")
+  .replace(/node_modules\/(?:@types\/)?(@[^/]+\/[^/]+|[^/]+)(?:\/[^"']*)?/g, "$1")
 const absolute = (relative) => path.join(root, ...relative.split("/"))
 const relative = (filename) => {
   const resolved = path.resolve(filename)
@@ -839,6 +843,7 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
         owner_ref: ownerRef,
         location: locationOf(node.name || node),
         end_line: node.getSourceFile().getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+        ...(ts.isFunctionLike(node) ? typedSignature(node) : {}),
       })
     }
     ts.forEachChild(node, visit)
@@ -867,6 +872,47 @@ function symbolDeclarations(symbol) {
     const node = typeof declaration?.resolve === "function" ? declaration.resolve() : declaration
     if (node) result.push(node)
   }
+  return result
+}
+
+// A signature's values with the repository declaration each carries: the
+// type as the checker prints it, and the declared type it names once an
+// array or a promise is opened.
+function typedSignature(node) {
+  const checker = checkerForNode(node)
+  if (!checker) return {}
+  const typed = (name, type) => {
+    const value = { name }
+    if (!type) return value
+    try {
+      value.type = cleanTypeText(checker.typeToString(type, node, ts.TypeFormatFlags?.NoTruncation || 0))
+      let carried = type
+      for (let depth = 0; depth < 3; depth++) {
+        const symbolName = carried.getSymbol?.()?.getName?.()
+        const args = typeof checker.getTypeArguments === "function" && carried.objectFlags & ts.ObjectFlags.Reference ? checker.getTypeArguments(carried) : []
+        if ((symbolName === "Array" || symbolName === "Promise" || symbolName === "ReadonlyArray") && args.length > 0) { carried = args[0]; continue }
+        break
+      }
+      const ref = refsForSymbol(carried.getSymbol?.(), checker)[0]
+      if (ref) value.type_ref = ref
+    } catch {}
+    return value
+  }
+  const result = {}
+  try {
+    const signature = checker.getSignatureFromDeclaration(node)
+    if (!signature) return result
+    // A destructured parameter has no one name; it stays as its type alone.
+    const parameters = (node.parameters || [])
+      .map((parameter) => typed(ts.isIdentifier(parameter.name) ? parameter.name.text : "", checker.getTypeAtLocation(parameter)))
+      .filter((value) => value.name || value.type)
+    if (parameters.length > 0) result.parameters = parameters
+    const returned = signature.getReturnType()
+    if (returned && !(returned.flags & ts.TypeFlags.Void)) {
+      const value = typed("", returned)
+      if (value.type) result.results = [value]
+    }
+  } catch {}
   return result
 }
 

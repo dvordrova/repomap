@@ -85,8 +85,27 @@ type parsedObject struct {
 	ContainerRef string                       `json:"container_ref,omitempty"`
 	Location     *programindex.Location       `json:"location,omitempty"`
 	EndLine      int                          `json:"end_line,omitempty"`
+	Parameters   []parsedTyped                `json:"parameters,omitempty"`
+	Results      []parsedTyped                `json:"results,omitempty"`
 	Directory    string                       `json:"directory,omitempty"`
 	External     *programindex.ExternalSymbol `json:"external,omitempty"`
+}
+
+type parsedTyped struct {
+	Name    string `json:"name,omitempty"`
+	Type    string `json:"type,omitempty"`
+	TypeRef string `json:"type_ref,omitempty"`
+}
+
+func typedInputs(values []parsedTyped) []programindex.TypedNameInput {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]programindex.TypedNameInput, 0, len(values))
+	for _, value := range values {
+		result = append(result, programindex.TypedNameInput{Name: value.Name, Type: value.Type, TypeRef: value.TypeRef})
+	}
+	return result
 }
 
 type parsedRelation struct {
@@ -674,7 +693,7 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 			SourceRef: value.SourceRef, Kind: kind, Name: value.Name,
 			Visibility: programindex.Visibility(value.Visibility), Signature: value.Signature,
 			OwnerRef: value.OwnerRef, ContainerRef: value.ContainerRef, Location: cloneLocation(value.Location), EndLine: value.EndLine, Directory: value.Directory,
-			External: cloneParsedExternalSymbol(value.External),
+			External: cloneParsedExternalSymbol(value.External), Parameters: typedInputs(value.Parameters), Results: typedInputs(value.Results),
 		})
 	}
 	relations := make([]programindex.RelationInput, 0, len(response.Relations))

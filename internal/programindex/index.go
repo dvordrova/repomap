@@ -392,7 +392,7 @@ type TypedNameInput struct {
 // function or an anonymous type.
 type TypedName struct {
 	Name   string `json:"name,omitempty"`
-	Type   string `json:"type"`
+	Type   string `json:"type,omitempty"`
 	TypeID string `json:"type_id,omitempty"`
 }
 
@@ -1717,7 +1717,7 @@ func validateObjectInput(value ObjectInput) error {
 		return fmt.Errorf("program index: invalid object input")
 	}
 	for _, typed := range append(append([]TypedNameInput(nil), value.Parameters...), value.Results...) {
-		if !validOptionalText(typed.Name) || !validText(typed.Type) || !validOptionalText(typed.TypeRef) {
+		if !validOptionalText(typed.Name) || !validOptionalText(typed.Type) || typed.Name == "" && typed.Type == "" || !validOptionalText(typed.TypeRef) {
 			return fmt.Errorf("program index: invalid object value type")
 		}
 	}
@@ -1735,7 +1735,7 @@ func validateObject(value Object) error {
 		return fmt.Errorf("program index: invalid object")
 	}
 	for _, typed := range append(append([]TypedName(nil), value.Parameters...), value.Results...) {
-		if !validOptionalText(typed.Name) || !validText(typed.Type) || typed.TypeID != "" && !validCompactID(typed.TypeID, "n") {
+		if !validOptionalText(typed.Name) || !validOptionalText(typed.Type) || typed.Name == "" && typed.Type == "" || typed.TypeID != "" && !validCompactID(typed.TypeID, "n") {
 			return fmt.Errorf("program index: invalid object value type")
 		}
 	}

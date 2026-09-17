@@ -592,6 +592,7 @@ class Collector(ast.NodeVisitor):
             **({"owner_ref": owner_ref} if owner_ref else {}),
             "container_ref": parent.ref,
             "location": source_location(self.module["path"], node),
+            "end_line": getattr(node, "end_lineno", 0),
         }, qname)
         parent.bindings[node.name] = {"kind": "object", "ref": ref}
         self.analyzer.node_refs[id(node)] = ref
@@ -909,6 +910,46 @@ class RelationVisitor(ast.NodeVisitor):
         if canonical in self.analyzer.modules:
             return self.analyzer.modules[canonical]["source_ref"]
         return ""
+
+    # A signature's values with the repository class each carries: the
+    # annotation as written, and the class it names once containers such as
+    # list[X] and Optional[X] are opened.
+    def typed_parameters(self, node, kind):
+        arguments = node.args
+        values = list(arguments.posonlyargs) + list(arguments.args)
+        if arguments.vararg is not None:
+            values.append(arguments.vararg)
+        values.extend(arguments.kwonlyargs)
+        if arguments.kwarg is not None:
+            values.append(arguments.kwarg)
+        result = []
+        for position, argument in enumerate(values):
+            if position == 0 and kind == "method" and argument.arg in ("self", "cls"):
+                continue
+            result.append(self.typed_value(argument.arg, argument.annotation))
+        return result
+
+    def typed_results(self, node):
+        if node.returns is None:
+            return []
+        return [self.typed_value("", node.returns)]
+
+    def typed_value(self, name, annotation):
+        value = {"name": name}
+        if annotation is None:
+            return value
+        value["type"] = ast.unparse(annotation)
+        carried = annotation
+        while isinstance(carried, ast.Subscript):
+            carried = carried.slice
+            if isinstance(carried, ast.Tuple) and carried.elts:
+                carried = carried.elts[0]
+        if isinstance(carried, (ast.Name, ast.Attribute)):
+            origin, ref = self.resolve(carried)
+            target = self.object(ref) if ref else None
+            if origin == "local" and target and target["kind"] == "type":
+                value["type_ref"] = ref
+        return value
 
     def resolve(self, node):
         if isinstance(node, ast.Lambda):
@@ -1570,6 +1611,11 @@ class RelationVisitor(ast.NodeVisitor):
 
     def _visit_definition(self, node):
         defined_ref = self.analyzer.node_refs[id(node)]
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Classes are declared by now, so annotations resolve to them.
+            defined = self.object(defined_ref)
+            defined["parameters"] = self.typed_parameters(node, defined["kind"])
+            defined["results"] = self.typed_results(node)
         for decorator in node.decorator_list:
             target = decorator.func if isinstance(decorator, ast.Call) else decorator
             detail = self.expression_name(target)

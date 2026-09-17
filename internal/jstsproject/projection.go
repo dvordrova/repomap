@@ -180,7 +180,8 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		objects = append(objects, programindex.ObjectInput{
 			SourceRef: declaration.Ref, Kind: kind, Name: declarationDisplayName(declaration, declarationByRef), Visibility: visibility,
 			Signature: declaration.Signature, OwnerRef: declaration.OwnerRef, ContainerRef: container, Location: programLocation(declaration.Location),
-			EndLine: declaration.EndLine,
+			EndLine:    declaration.EndLine,
+			Parameters: typedInputs(declaration.Parameters, declarationByRef), Results: typedInputs(declaration.Results, declarationByRef),
 		})
 	}
 	for _, value := range result.Calls {
@@ -479,6 +480,23 @@ func testSources(result Result) []string {
 		}
 	}
 	return sources
+}
+
+// typedInputs keeps a value's type ref only for a declaration this
+// projection knows; a type from outside stays text.
+func typedInputs(values []TypedName, declared map[string]Declaration) []programindex.TypedNameInput {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]programindex.TypedNameInput, 0, len(values))
+	for _, value := range values {
+		typed := programindex.TypedNameInput{Name: value.Name, Type: value.Type}
+		if _, known := declared[value.TypeRef]; known {
+			typed.TypeRef = value.TypeRef
+		}
+		result = append(result, typed)
+	}
+	return result
 }
 
 func programLocation(value Location) *programindex.Location {

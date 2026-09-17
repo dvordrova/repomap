@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Typed signatures in Python and JavaScript/TypeScript
+
+- Python: a function's parameters (without `self`/`cls`) and its return
+  carry the annotation as written and the repository class it names once
+  `list[X]`/`Optional[X]` are opened; resolved in the relation pass, after
+  every class is declared. JS/TS: the checker's type text for each
+  parameter and the return, with the declaration it names once an array or
+  a promise is opened; a destructured parameter has no name. A value may
+  lack type text (an unannotated parameter) but never both name and type.
+  Clojure stays untyped.
+
 ## 2026-09-17 — The first table that reads code: layers
 
 - New reading stage `atlas_layers`: from every bound entry the reader walks

@@ -117,6 +117,15 @@ type Declaration struct {
 	OwnerRef          string   `json:"owner_ref,omitempty"`
 	Location          Location `json:"location"`
 	EndLine           int      `json:"end_line,omitempty"`
+	// Parameters and Results carry the declaration each value's type names.
+	Parameters []TypedName `json:"parameters,omitempty"`
+	Results    []TypedName `json:"results,omitempty"`
+}
+
+type TypedName struct {
+	Name    string `json:"name,omitempty"`
+	Type    string `json:"type,omitempty"`
+	TypeRef string `json:"type_ref,omitempty"`
 }
 
 type Import struct {

@@ -43,8 +43,9 @@ ProgramIndex retains:
   knows it;
 - a callable's `parameters` and `results` in order, each `{name, type,
   type_id}`: the type as short text and, when the value carries a repository
-  type (through pointers, slices and arrays), that type's object. An adapter
-  that knows no types leaves them out;
+  type (through pointers, slices and arrays in Go; `list[X]`/`Optional[X]` in
+  Python; arrays and promises in JS/TS), that type's object. A value has a
+  name, a type or both; an adapter that knows no types leaves them out;
 - source-anchored enclosing control statements on individual call patterns;
 - call-result and receiver identity;
 - receiver-origin provenance and its resolution;
