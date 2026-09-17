@@ -126,18 +126,32 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 			continue
 		}
 		for _, id := range argument.ObjectIDs {
-			if object, ok := target.object(id); ok && (object.Kind == programindex.ObjectVariable || object.Kind == programindex.ObjectModule) {
+			// A module-level value or a module is the repository's own thing
+			// handed over; a local variable (an error, a counter) is not.
+			if object, ok := target.object(id); ok && (object.Kind == programindex.ObjectModule || object.Kind == programindex.ObjectVariable && target.moduleLevel(object)) {
 				shape.handedValue = true
 			}
 		}
-		if len(argument.ObjectIDs) == 0 && argument.Origin != nil && argument.Origin.Kind == "call_result" {
+		if len(argument.ObjectIDs) == 0 && argument.Origin != nil && (argument.Origin.Kind == "call_result" || argument.Origin.Kind == "record") {
 			produced = true
 		}
 	}
-	for _, origin := range target.callOrigins(relation, pattern, originsByValue) {
-		shape.originKnown = true
-		if shape.origin == "" {
-			shape.origin = externalSymbolName(origin)
+	// The symbol behind the call: the callee itself, or the type of the
+	// value it is called on with the call word (flask.Blueprint.route).
+	for _, id := range relation.ToIDs {
+		if object, ok := target.object(id); ok && object.Kind == programindex.ObjectExternalSymbol && object.External != nil && object.External.RepositoryPath == "" {
+			shape.originKnown = true
+			if shape.origin == "" {
+				shape.origin = externalSymbolName(*object.External)
+			}
+		}
+	}
+	if !shape.originKnown {
+		for _, origin := range target.callOrigins(relation, pattern, originsByValue) {
+			shape.originKnown = true
+			if shape.origin == "" {
+				shape.origin = externalSymbolName(origin) + "." + pattern.Selector
+			}
 		}
 	}
 	shape.handed = shape.handlerID != "" || relation.Kind == programindex.RelationDecorates || produced || shape.handedValue
@@ -167,6 +181,16 @@ func (shape *registrationShape) accept(holders map[Anchor]bool) bool {
 		return false
 	}
 	return true
+}
+
+// moduleLevel reports a variable declared directly in a module or package.
+func (target *targetContext) moduleLevel(object programindex.Object) bool {
+	for _, id := range []string{object.ContainerID, object.OwnerID} {
+		if owner, ok := target.object(id); ok && (owner.Kind == programindex.ObjectModule || owner.Kind == programindex.ObjectPackage) {
+			return true
+		}
+	}
+	return false
 }
 
 // holderRoot is the value a call acts on, followed back through the calls

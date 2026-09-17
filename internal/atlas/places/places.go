@@ -2072,14 +2072,10 @@ func aliasText(aliases []programindex.Alias) string {
 // address it answers on when one exists, then its other literals. The call
 // word travels as the external symbol behind the call.
 func registrationValues(fact facts.Fact) []string {
-	var values []string
 	if fact.Path != "" {
-		values = append(values, fact.Path)
+		// The address, with its mount prefixes composed, stands for the
+		// literal it came from.
+		return []string{fact.Path}
 	}
-	for _, literal := range fact.Values {
-		if literal != fact.Path {
-			values = appendUnique(values, literal)
-		}
-	}
-	return values
+	return appendUnique(nil, fact.Values...)
 }

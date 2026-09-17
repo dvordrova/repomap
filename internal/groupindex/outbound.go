@@ -50,8 +50,7 @@ func projectOutbound(program programindex.Index, target atlas.Target, groups map
 		}
 	}
 	for _, boundary := range target.Boundaries {
-		if boundary.Direction != atlas.DirectionOut || !communicationKind(boundary.Kind) ||
-			boundary.Kind == atlas.BoundaryOther && boundary.Basis == "" {
+		if boundary.Direction != atlas.DirectionOut || !communicationKind(boundary.Kind) {
 			continue
 		}
 		source := "model"
@@ -118,7 +117,6 @@ func (index Index) validateOutbound(subjects map[string]Subject, groups map[stri
 		_, subjectExists := subjects[call.SubjectID]
 		_, groupExists := groups[call.GroupID]
 		if !validText(call.ID) || !communicationKind(call.Kind) ||
-			call.Kind == atlas.BoundaryOther && (call.Basis == "" || call.Destination == "") ||
 			call.Basis != "" && call.Basis != "dispatch" && call.Basis != "configuration" ||
 			call.SubjectID != "" && !subjectExists || call.GroupID != "" && !groupExists ||
 			(call.Source != "fact" && call.Source != "model") ||

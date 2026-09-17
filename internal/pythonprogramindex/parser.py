@@ -1240,6 +1240,12 @@ class RelationVisitor(ast.NodeVisitor):
         }
         if binding.get("ref"):
             result["receiver_ref"] = binding["ref"]
+        elif isinstance(callee.value, ast.Name):
+            # `from app.api import bp` binds the name here; the value is the
+            # module-level declaration it was imported from.
+            authority, ref = self.resolve(callee.value)
+            if authority == "local" and ref:
+                result["receiver_ref"] = ref
         if binding.get("origin_refs"):
             result["receiver_origin_refs"] = list(binding["origin_refs"])
         if binding.get("origin_resolution"):

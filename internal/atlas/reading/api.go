@@ -176,6 +176,10 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 				continue
 			}
 			facts.GivenKind = role.binds
+		case role.binds != "" && !role.publishes && role.talks == "":
+			// A value handed to a binding symbol (Register("k6/x/dns",
+			// new(DNS))) is an entry without a named callable.
+			facts.Direction, facts.GivenKind = atlas.DirectionIn, role.binds
 		case role.publishes:
 			facts.Direction, facts.GivenKind = atlas.DirectionIn, atlas.BoundaryListenAddress
 		case role.talks != "":

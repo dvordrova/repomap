@@ -1,5 +1,20 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Two real repositories: xk6-dns and microblog
+
+- `new(T)`/`&T{}` in Go is a produced value (an empty record), so
+  `modules.Register("k6/x/dns", new(DNS))` is a registration; a value handed
+  to a `binds` symbol is an entry without a named callable (`extension
+  k6/x/dns`). A local variable handed to a call (`fmt.Errorf("…", err)`) is
+  no longer "the repository's own value": only module-level values count.
+- The symbol behind a method on a value of an outside type carries the call
+  word: `flask.Blueprint.route`, not `flask.Blueprint`; an imported
+  module-level receiver (`from app.api import bp`) resolves to its
+  declaration. Registration values are the composed address alone
+  (`/auth/login`, not `/auth/login, /login`). Outgoing calls of kind `other`
+  survive without a basis. microblog: 33 request operations with mounted
+  paths, three commands; xk6-dns: the extension and its two exports.
+
 ## 2026-09-17 — Width: the Python and JS/TS fixtures through the whole reading
 
 - A registration records `owner_id`, the declaration making the call; an

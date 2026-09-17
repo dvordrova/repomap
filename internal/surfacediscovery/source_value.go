@@ -147,17 +147,17 @@ func (a *analyzer) sourceValue(value ssa.Value, active map[ssa.Value]bool, obser
 		if len(stores) > 0 {
 			return a.initialStoreValue(v, stores, readAt, active)
 		}
-		if len(fields) > 0 {
-			if pointer, ok := v.Type().Underlying().(*types.Pointer); ok {
-				if structure, ok := pointer.Elem().Underlying().(*types.Struct); ok {
-					result := &sourcevalue.Value{Kind: "record", Anchor: unknown.Anchor}
-					for i := 0; i < structure.NumFields(); i++ {
-						if stores := fields[i]; len(stores) > 0 {
-							result.Parts = append(result.Parts, sourcevalue.Value{Kind: "field_value", Text: structure.Field(i).Name(), Parts: []sourcevalue.Value{*a.initialStoreValue(v, stores, readAt, active)}})
-						}
+		// new(T) and &T{…} produce a value here: a record of the fields
+		// stored, empty when none was.
+		if pointer, ok := v.Type().Underlying().(*types.Pointer); ok {
+			if structure, ok := pointer.Elem().Underlying().(*types.Struct); ok {
+				result := &sourcevalue.Value{Kind: "record", Anchor: unknown.Anchor}
+				for i := 0; i < structure.NumFields(); i++ {
+					if stores := fields[i]; len(stores) > 0 {
+						result.Parts = append(result.Parts, sourcevalue.Value{Kind: "field_value", Text: structure.Field(i).Name(), Parts: []sourcevalue.Value{*a.initialStoreValue(v, stores, readAt, active)}})
 					}
-					return result
 				}
+				return result
 			}
 		}
 	case *ssa.FieldAddr:
