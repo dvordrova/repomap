@@ -274,6 +274,7 @@ type Index struct {
 	Groups             []Group             `json:"groups"`
 	Operations         []Operation         `json:"operations,omitempty"`
 	Outbound           []OutboundCall      `json:"outbound,omitempty"`
+	Chains             []Chain             `json:"chains,omitempty"`
 	// Containers are the level above the groups: a handful of named parts,
 	// each holding several groups. chi's router package really does hold
 	// thirty groups — one per middleware file — and thirty is the truth and
@@ -739,6 +740,9 @@ func (index Index) Validate() error {
 		}
 	}
 	if err := index.validateData(subjectsByID); err != nil {
+		return err
+	}
+	if err := index.validateChains(subjectsByID); err != nil {
 		return err
 	}
 	if err := index.validateOutbound(subjectsByID, groupsByID); err != nil {
@@ -2129,7 +2133,7 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 		Version: artifact.Version, Role: artifact.Role, SharedCode: artifact.SharedCode, Summary: artifact.Summary,
 		Target: program.Target.Snapshot(), ProgramIndexSHA256: artifact.ProgramIndexSHA256,
 		Data: artifact.Data, Subjects: subjects, Groups: artifact.Groups, Operations: artifact.Operations,
-		Outbound: artifact.Outbound, Containers: artifact.Containers,
+		Outbound: artifact.Outbound, Chains: projectChains(program, artifact.Operations, artifact.Outbound), Containers: artifact.Containers,
 		StructuralEdges: compileStructuralEdges(program, retained), Connections: artifact.Connections, SHA256: artifact.SHA256,
 	}
 	if err := index.Validate(); err != nil {

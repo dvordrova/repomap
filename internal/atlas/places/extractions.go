@@ -1,6 +1,8 @@
 package places
 
 import (
+	"strings"
+
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/facts"
 )
@@ -40,6 +42,22 @@ func (b *builder) addExtractions(graph *atlas.Graph) {
 				}
 				graph.Edges = append(graph.Edges, atlas.Edge{From: "entity:" + fact.ID, To: atlas.FileID(member.Path), Kind: "inventory", Count: 1, Witnesses: []atlas.Witness{},
 					Evidence: &atlas.EdgeEvidence{Label: "file at or beneath referenced path", Path: member.Path, LineNo: 1}})
+			}
+		}
+		if len(targets) == 0 {
+			// A repository-level extraction (migrations, a schema) belongs to
+			// the targets whose root holds its path, and when none does, to
+			// every target of the run: a schema beside cmd/ and internal/ is
+			// the program's schema.
+			for _, target := range b.input.Targets {
+				if root := atlasPath(target.Root); root == "." || strings.HasPrefix(fact.Path, root+"/") {
+					targets[target.Index.Target.ID] = struct{}{}
+				}
+			}
+			if len(targets) == 0 {
+				for _, target := range b.input.Targets {
+					targets[target.Index.Target.ID] = struct{}{}
+				}
 			}
 		}
 		place := atlas.Place{ID: "entity:" + fact.ID, Kind: atlas.PlaceEntity, Path: fact.Path, TargetIDs: sortedKeys(targets), Entity: entity,

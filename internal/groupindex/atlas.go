@@ -525,6 +525,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	for position := range operations {
 		operations[position].ID = compactOrdinal("o", position)
 	}
+	data := projectData(program, target.Data)
+	outbound := projectOutbound(program, target, groupOfBox, sourceRefs)
+	joinOutboundData(outbound, data)
 	return projectedTarget{
 		index: Index{
 			Version:            Version,
@@ -533,11 +536,12 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			Summary:            target.Line,
 			Target:             program.Target.Snapshot(),
 			ProgramIndexSHA256: program.SHA256,
-			Data:               projectData(program, target.Data),
+			Data:               data,
 			Subjects:           subjects,
 			Groups:             groups,
 			Operations:         operations,
-			Outbound:           projectOutbound(program, target, groupOfBox, sourceRefs),
+			Outbound:           outbound,
+			Chains:             projectChains(program, operations, outbound),
 			Containers:         containers,
 			StructuralEdges:    compileStructuralEdges(program, retained),
 			Connections:        connections,

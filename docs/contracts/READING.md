@@ -233,6 +233,13 @@ chooses the destination and address of an outgoing one, never its existence
 or kind. The `listen_address` facts and the per-site `decision`, `kind` and
 `basis` cells, and the symbols' `outbound` selection, are gone.
 
+GroupsIndex derives `chains` from the program index, its operations and its
+outbound calls: every path of exact or alternative calls from an operation's
+subject to a subject that makes an outbound call, at most eight subjects
+long, in reading order. An outbound call names the extracted tables among
+its values as `data_ids`. Neither is persisted; both are recomputed when an
+overlay is hydrated.
+
 Without `--captions` the model is asked for decisions alone: every prose cell
 (titles, lines, aliases, sentences, operation descriptions) keeps its
 fallback, and a table of prose alone is not sent.

@@ -11,6 +11,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/extractors"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/llm"
@@ -36,7 +37,11 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	layer, err := facts.Build(facts.Input{Repository: repository, Targets: []facts.TargetInput{{Index: index, Root: "."}}})
+	extracted, err := extractors.Run(context.Background(), repositoryPath, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layer, err := facts.Build(facts.Input{Repository: repository, Targets: []facts.TargetInput{{Index: index, Root: "."}}, Extractions: extracted.Extractions})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,6 +104,58 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	}
 	if len(result.Atlas.API) != 3 {
 		t.Fatalf("api roles = %+v", result.Atlas.API)
+	}
+	// The extracted schema reaches the overlay, the statement names its table
+	// and the route walks handler → service → repository → query to it.
+	var users string
+	for _, record := range overlay.Data {
+		if record.Data != nil && record.Data.Kind == "table" && record.Data.Name == "users" {
+			users = record.ID
+		}
+	}
+	if users == "" {
+		t.Fatalf("users table missing from data: %+v", overlay.Data)
+	}
+	var query groupindex.OutboundCall
+	for _, call := range overlay.Outbound {
+		if call.Kind == "db" && call.Location.Path == "internal/database/sqlc/users.sql.go" && len(call.Values) > 0 && call.Values[0] == "users" {
+			query = call
+		}
+	}
+	if len(query.DataIDs) != 1 || query.DataIDs[0] != users {
+		t.Fatalf("statement not joined to its table: %+v", query)
+	}
+	names := map[string]string{}
+	for _, subject := range overlay.Subjects {
+		if subject.Object != nil {
+			names[subject.ID] = subject.Object.Name
+		}
+	}
+	var walked []string
+	for _, chain := range overlay.Chains {
+		if chain.OperationID == request.ID && chain.OutboundID == query.ID {
+			for _, id := range chain.SubjectIDs {
+				walked = append(walked, names[id])
+			}
+		}
+	}
+	if strings.Join(walked, " → ") != "GetUser → GetUser → GetByID → GetUser" {
+		t.Fatalf("route chain to the users table = %v (chains %+v)", walked, overlay.Chains)
+	}
+	// Chains are derived: the saved overlay has none, the hydrated index has them again.
+	encoded, err := groupindex.Encode(overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), `"chains"`) {
+		t.Fatal("derived chains were persisted")
+	}
+	restored, err := groupindex.Decode(encoded, index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored.Chains) != len(overlay.Chains) {
+		t.Fatalf("hydrated chains = %d, projected %d", len(restored.Chains), len(overlay.Chains))
 	}
 }
 

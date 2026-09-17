@@ -1,5 +1,18 @@
 # Implementation and acceptance journal
 
+## 2026-09-17 — Chains from an operation to the system it reaches
+
+- GroupsIndex gains `chains`: from each operation's subject, exact and
+  alternative calls are walked in reading order (depth 8) and every path
+  ending at a subject with an outbound call is one chain (operation,
+  subjects in order, outbound). Chains are derived, recomputed on hydrate,
+  never persisted. Echo: `GET /users/:id` → `Handler.GetUser → Service.GetUser
+  → Postgres.GetByID → Queries.GetUser` → the `SELECT … FROM users` call.
+- Outbound calls carry `data_ids`: the extracted tables their values name.
+  Repository-level entities (migrations, schema) now belong to the targets
+  whose root holds them, or to every target of the run, so echo's `users`
+  table reaches the atlas and the overlay (`data` was null before).
+
 ## 2026-09-17 — Construction of an outside type is a registration
 
 - The Go adapter projects a callable bound into a field of a value of an

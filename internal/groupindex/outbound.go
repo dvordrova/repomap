@@ -25,9 +25,12 @@ type OutboundCall struct {
 	Basis       string                 `json:"basis,omitempty"`
 	Method      string                 `json:"method,omitempty"`
 	Values      []string               `json:"values"`
-	Summary     string                 `json:"summary,omitempty"`
-	Source      string                 `json:"source"`
-	Location    programindex.Location  `json:"location"`
+	// DataIDs are the data records this call names: the tables of its
+	// statement, joined by name to the extracted schema.
+	DataIDs  []string              `json:"data_ids,omitempty"`
+	Summary  string                `json:"summary,omitempty"`
+	Source   string                `json:"source"`
+	Location programindex.Location `json:"location"`
 }
 
 func projectOutbound(program programindex.Index, target atlas.Target, groups map[string]string, sourceRefs map[string]string) []OutboundCall {
@@ -72,6 +75,24 @@ func projectOutbound(program programindex.Index, target atlas.Target, groups map
 	}
 	sort.Slice(calls, func(i, j int) bool { return calls[i].ID < calls[j].ID })
 	return calls
+}
+
+// joinOutboundData names, on every outbound call, the extracted tables its
+// values name. A statement's tables come first among its values.
+func joinOutboundData(calls []OutboundCall, data []DataRecord) {
+	tables := make(map[string][]string)
+	for _, record := range data {
+		if record.Data != nil && record.Data.Kind == "table" {
+			tables[record.Data.Name] = append(tables[record.Data.Name], record.ID)
+		}
+	}
+	for position := range calls {
+		for _, value := range calls[position].Values {
+			for _, id := range tables[value] {
+				calls[position].DataIDs = appendUniqueString(calls[position].DataIDs, id)
+			}
+		}
+	}
 }
 
 func cloneDestinationUses(uses []atlas.DestinationUse) []atlas.DestinationUse {
