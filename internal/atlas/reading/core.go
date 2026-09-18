@@ -12,11 +12,10 @@ import (
 
 const maxCoreDeclarations = 12
 
-// readCore asks the model which parts a program exists for and which exist
-// only for its tests. The code says what it observed about each part; what
-// the part means to the program is the model's to say.
+// readCore asks the model the one role each part plays. The program exists
+// for its domain parts; a tests part leaves the map.
 func (r *reader) readCore(ctx context.Context) error {
-	for _, target := range r.opts.Targets {
+	for round, target := range r.opts.Targets {
 		// The code answers what it can see: a part made of test files exists
 		// for the tests, and the part where the program starts calls the core
 		// rather than being it. The model is asked about the rest.
@@ -86,7 +85,7 @@ func (r *reader) readCore(ctx context.Context) error {
 			rows = append(rows, table.Row{ID: part.id, Fields: fields})
 		}
 		r.opts.Stage(lines.StageCore, fmt.Sprintf("%s: asking which of %d parts the program exists for", target.Name, len(parts)))
-		answers, err := r.runTableWith(ctx, lines.Core(), 1, []table.Field{{Name: "parts", Value: listed}}, rows, nil)
+		answers, err := r.runTableWith(ctx, lines.Core(), round+1, []table.Field{{Name: "parts", Value: listed}}, rows, nil)
 		if err != nil {
 			return err
 		}
@@ -95,9 +94,9 @@ func (r *reader) readCore(ctx context.Context) error {
 			if answer == nil {
 				continue
 			}
-			part.forTests = answer["for_tests"] == "yes"
-			// What exists for the tests is not what the program exists for.
-			part.core = answer["core"] == "yes" && !part.forTests
+			part.role = answer["role"]
+			part.forTests = part.role == lines.PartTests
+			part.core = part.role == lines.PartDomain
 		}
 	}
 	r.reportStage(lines.StageCore)

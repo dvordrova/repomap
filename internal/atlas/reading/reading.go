@@ -122,6 +122,9 @@ type reader struct {
 	api        map[string]apiRole  // external symbol -> what it binds, publishes, talks to
 	roles      map[string]string   // symbol place ID -> what it does on a chain
 	keys       map[string][]string // file place ID -> key symbol IDs, by rank
+	// selectedKeys is every declaration the selection found worth a reader's
+	// attention; partKeys is what explains the part it stands in.
+	selectedKeys, partKeys, keysDecided map[string]bool
 
 	boxOf          map[string]string            // file place ID -> box ID
 	designBoxOf    map[string]map[string]string // target -> declaration/file -> accepted part
@@ -252,6 +255,8 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		symbolLine:        make(map[string]cell),
 		api:               make(map[string]apiRole),
 		keys:              make(map[string][]string),
+		selectedKeys:      make(map[string]bool),
+		keysDecided:       make(map[string]bool),
 		uses:              make(map[string]*atlas.StageUse),
 		started:           make(map[string]time.Time),
 		dry:               opts.Provider == nil,
@@ -299,6 +304,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		{lines.StageZones, r.readDesign},
 		{lines.StageArrows, r.readArrows},
 		{lines.StageCore, r.readCore},
+		{lines.StageKeys, r.readKeys},
 		{lines.StageTargets, r.readTargets},
 		{lines.StageJoints, r.readJoints},
 	}
@@ -1028,7 +1034,13 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 				if knowledge := r.knowledge[symbol.ID]; knowledge != nil && knowledge.Cells["alias"] != "none" {
 					symbol.Alias = knowledge.Cells["alias"]
 				}
-				symbol.Key = contains(r.keys[fileID], symbol.ID)
+				// Inside a part the model drew, the part's own choice stands;
+				// source inventory keeps the selection by file.
+				if r.keysDecided[owner.id] {
+					symbol.Key = r.partKeys[symbol.ID]
+				} else {
+					symbol.Key = contains(r.keys[fileID], symbol.ID)
+				}
 				symbol.Role = r.roles[symbol.ID]
 				file.Symbols = append(file.Symbols, symbol)
 			}

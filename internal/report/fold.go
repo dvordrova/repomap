@@ -63,7 +63,7 @@ func foldGroups(index groupindex.Index, canonical map[groupindex.Endpoint]groupi
 			at[key] = len(result)
 			canonical[here] = here
 			result = append(result, groupindex.Group{
-				ID: group.ID, Title: group.Title, Summary: group.Summary, Lane: group.Lane,
+				ID: group.ID, Title: group.Title, Summary: group.Summary, Lane: group.Lane, Core: group.Core,
 				MemberSubjectIDs:   append([]string(nil), group.MemberSubjectIDs...),
 				EvidenceSubjectIDs: append([]string(nil), group.EvidenceSubjectIDs...),
 			})
@@ -73,6 +73,7 @@ func foldGroups(index groupindex.Index, canonical map[groupindex.Endpoint]groupi
 		canonical[here] = groupindex.Endpoint{TargetID: index.Target.ID, GroupID: into.ID}
 		into.MemberSubjectIDs = appendAbsent(into.MemberSubjectIDs, group.MemberSubjectIDs)
 		into.EvidenceSubjectIDs = appendAbsent(into.EvidenceSubjectIDs, group.EvidenceSubjectIDs)
+		into.Core = into.Core || group.Core
 		if len(group.Summary) > len(into.Summary) {
 			into.Summary = group.Summary
 		}
@@ -95,7 +96,7 @@ func foldContainers(index groupindex.Index, canonical map[groupindex.Endpoint]gr
 	result := make([]groupindex.Container, 0, len(index.Containers))
 	for _, container := range index.Containers {
 		kept := groupindex.Container{
-			ID: container.ID, Title: container.Title, Summary: container.Summary, Lane: container.Lane,
+			ID: container.ID, Title: container.Title, Summary: container.Summary, Lane: container.Lane, Core: container.Core,
 		}
 		for _, id := range container.GroupIDs {
 			here := groupindex.Endpoint{TargetID: index.Target.ID, GroupID: id}

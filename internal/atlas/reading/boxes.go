@@ -29,6 +29,7 @@ type boxState struct {
 	// core and forTests are the model's: the program exists for this part;
 	// this part exists only for the program's tests.
 	core, forTests bool
+	role           string
 	// inventory is a source file no part took, not a part the model read.
 	inventory bool
 }
@@ -352,6 +353,7 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		r.symbolSelections[subject] = r.knowledge[place.ID]
 		delete(r.knowledge, place.ID)
 		if answer.answer["key_symbol"] == "yes" {
+			r.selectedKeys[place.ID] = true
 			byFile[place.Parent] = append(byFile[place.Parent], marked{id: place.ID, rank: place.Symbol.Rank})
 		}
 	}

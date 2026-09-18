@@ -199,8 +199,9 @@ func TestSymbolsGetLinesAndAtMostFiveKeysPerFile(t *testing.T) {
 			lined++
 		}
 	}
-	// c.go declares F (not a candidate) plus eight candidates: five keys
-	// by rank, with captions only for the three displayed keys.
+	// c.go declares F (not a candidate) plus eight candidates. The fake names
+	// no key inside the part, so the part keeps five by rank, with captions
+	// only for the three displayed keys.
 	if lined != 3 || keys != lines.MaxKeysPerFile {
 		t.Fatalf("lined %d keys %d: %+v", lined, keys, core.Symbols)
 	}

@@ -8,17 +8,26 @@ import (
 
 const StageCore = "atlas_core"
 
+// The role a part plays in its program. The program exists for its domain
+// parts; a tests part exists only for the program's tests.
+const (
+	PartDomain    = "domain"
+	PartInterface = "interface"
+	PartWiring    = "wiring"
+	PartSupport   = "support"
+	PartTests     = "tests"
+)
+
 //go:embed prompts/core.md
 var corePrompt string
 
-// Core asks, for each part of a program, whether the program exists for it
-// and whether it exists only for the program's tests. An empty cell is no.
+// Core asks the one role each part plays. What the program exists for is
+// then the code's to read off: its domain parts.
 func Core() table.Definition {
 	return table.Definition{
-		Stage: StageCore, Contract: "repomap.atlas.core.v3", System: corePrompt, Independent: true,
+		Stage: StageCore, Contract: "repomap.atlas.core.v4", System: corePrompt, Independent: true,
 		Columns: []table.Column{
-			{Name: "core", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when the program exists for what this part does: without it the program has no reason to run"},
-			{Name: "for_tests", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this part exists only so the program's tests can run"},
+			{Name: "role", Kind: table.Choice, Options: []string{PartDomain, PartInterface, PartWiring, PartSupport, PartTests}, Note: "the one role this part plays in the program"},
 		},
 	}
 }

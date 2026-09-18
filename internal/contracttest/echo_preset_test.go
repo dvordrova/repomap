@@ -106,7 +106,7 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 			core++
 		}
 	}
-	if !provider.sawEntryPart || core != 1 {
+	if !provider.sawDomainPart || core != 1 {
 		t.Fatalf("the model's core part did not reach the groups: %d of %d", core, len(overlay.Groups))
 	}
 	kinds := map[string]int{}
@@ -259,7 +259,7 @@ func materializeRepository(t *testing.T, relative string) (string, *corpus.Corpu
 // would, from the row alone. Text cells get a placeholder; choices get the
 // reader's decision, or the first option where any answer is fine.
 type echoPreset struct {
-	sawRegistration, sawSQL, sawQuerySource, sawRepositorySource, sawEntryPart bool
+	sawRegistration, sawSQL, sawQuerySource, sawRepositorySource, sawDomainPart bool
 }
 
 func (*echoPreset) State() []byte { return []byte(`{"provider":"echo-preset"}`) }
@@ -363,11 +363,12 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 				answer["role"] = "passthrough"
 			}
 		case table == "atlas_core":
-			// The part requests enter is what this program exists for; every
-			// other cell stays empty, and an empty cell is no.
-			if name == "core" && row["entries"] != nil {
-				preset.sawEntryPart = true
-				answer["core"] = "yes"
+			// The part that holds the stored users is this program's domain.
+			if row["reaches"] != nil {
+				preset.sawDomainPart = true
+				answer["role"] = "domain"
+			} else {
+				answer["role"] = "interface"
 			}
 		case table == "atlas_boundaries" && name == "destination":
 			answer["destination"] = "other: PostgreSQL"
