@@ -90,6 +90,19 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 			want: []want{{key: "Register", path: "k6/x/dns", values: []string{"k6/x/dns"}, resolution: ResolutionExact}},
 		},
 		{
+			name: "a value set on the request's own context is no registration",
+			build: func(s *synthetic) {
+				s.object("fn", programindex.ObjectFunction, "updateContext", "main.go", 3, "")
+				s.external("set", "github.com/gin-gonic/gin", "Set", programindex.ExternalAuthorityPackage)
+				produced := dynamic(2)
+				produced.Origin = &sourcevalue.Value{Kind: "record", Anchor: &sourcevalue.Anchor{Path: "main.go", Line: 4, Column: 9}}
+				call := pattern("p", programindex.PatternCall, "Set", loc("main.go", 5), nil, literal(1, "my_user_model"), produced)
+				// c is a parameter no repository caller supplies.
+				call.ReceiverValue = &sourcevalue.Value{Kind: "parameter", Text: "c", Position: 1, Anchor: &sourcevalue.Anchor{Path: "main.go", Line: 3, Column: 20}, Owner: &sourcevalue.Anchor{Path: "main.go", Line: 3, Column: 1}}
+				s.relate("call", programindex.RelationInvokesExternal, "fn", []string{"set"}, loc("main.go", 5), call)
+			},
+		},
+		{
 			name: "an unknown receiver keeps the registration possible",
 			build: func(s *synthetic) {
 				s.object("fn", programindex.ObjectFunction, "startServer", "server.js", 3, "")

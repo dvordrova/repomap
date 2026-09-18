@@ -19,7 +19,7 @@ window.ELK = ELK;
 const t = (...args) => window.rmT(...args);
 function Part({data}) {
   const heading=data.standaloneHeading,scale=heading?.scale||data.contentScale;
-  return <div className={`flow-part flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
+  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
     {data.kindLabel&&!heading&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
@@ -31,7 +31,7 @@ function Part({data}) {
   </div>;
 }
 function Area({data}) {
-  return <div className={`flow-area ${data.branch==='component'?'flow-component':data.branch==='communication'?'flow-communication':data.branch==='inputs'?'flow-input-collection':data.lane==='core'?'flow-area-core':''}`}>
+  return <div className={`flow-area ${data.branch==='component'?'flow-component':data.branch==='communication'?'flow-communication':data.branch==='inputs'?'flow-input-collection':data.branch!=='area'?'':data.lane==='core'?'flow-area-core':data.lane==='triggers'?'flow-area-entry':''}`}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
@@ -42,8 +42,8 @@ function AreaSummary({node,item,heading,enter,select}){
     style={{transform:`translate(${node.absolute.x}px,${node.absolute.y}px) scale(${scale})`,transformOrigin:'top left',
       width:node.width/scale,height:node.height/scale}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
-    <div className={`flow-part flow-overview-card flow-overview-compact ${item?.lane==='core'?'flow-core':''}`}><strong>{title}</strong>
-      {item?.lane==='core'&&<span className="flow-role-symbol flow-role-core" role="img" aria-label={item.roleLabel||'Core'}/>}</div>
+    <div className="flow-part flow-overview-card flow-overview-compact"><strong>{title}</strong>
+      {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}</div>
   </div>;
 }
 function ZoomMark({node,item,enter,select,compactScale}) {
@@ -70,7 +70,7 @@ function FrameTitle({node,item,focused,enter,select}) {
   // header is too small for a screen-sized title above the revealed children.
   if(component&&64*scale*viewport.zoom<24)return null;
   const x=component||communication||inputs?Math.max(node.absolute.x+18*scale,Math.min(node.absolute.x+node.width-260*scale,(24-viewport.x)/viewport.zoom)):node.absolute.x+18*scale;
-  return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${component?'flow-component-title':communication?'flow-communication-title':inputs?'flow-input-collection':''}`}
+  return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${component?'flow-component-title':communication?'flow-communication-title':inputs?'flow-input-collection':item.lane==='core'?'flow-core-title':item.lane==='triggers'?'flow-entry-title':''}`}
     data-frame-title={node.id}
     style={{transform:`translate(${x}px,${node.absolute.y+12*scale}px) scale(${scale})`,transformOrigin:'top left',maxWidth:node.width/scale-36,
       '--flow-zoom':viewport.zoom*scale,

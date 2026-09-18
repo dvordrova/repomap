@@ -379,6 +379,11 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				lane, best = candidate, lanes[candidate]
 			}
 		}
+		// Execution enters the container wherever it enters one of its
+		// groups, however many groups beside it only serve.
+		if lanes[LaneTriggers] > 0 {
+			lane = LaneTriggers
+		}
 		summary := strings.TrimSpace(zone.Line)
 		if summary == "" {
 			summary = strings.TrimSpace(zone.Title)

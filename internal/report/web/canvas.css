@@ -16,14 +16,17 @@
 .flow-enabled .react-flow__node-area{z-index:-1!important;pointer-events:none!important}
 /* Fractional CSS borders round up before the viewport transform; inset strokes do not. */
 .flow-area{--flow-frame-width:1.5px;--flow-frame-color:#718096;box-sizing:border-box;height:100%;width:100%;border:0;border-radius:calc(12px / var(--flow-zoom,1));box-shadow:inset 0 0 0 calc(var(--flow-frame-width) / var(--flow-zoom,1)) var(--flow-frame-color);background:#f1f4f8;pointer-events:none}
-.flow-area-title{position:absolute;font-size:16px;font-weight:650;line-height:21px;pointer-events:auto;cursor:pointer;background:#f1f4f8;padding:3px 6px;border-radius:4px;box-sizing:border-box}
-.flow-area-title.flow-component-title{background:#f8fafc}
+.flow-area-title{--flow-title-halo:#f1f4f8;position:absolute;font-size:16px;font-weight:650;line-height:21px;pointer-events:auto;cursor:pointer;background:transparent;text-shadow:0 0 2px var(--flow-title-halo),0 0 4px var(--flow-title-halo),0 0 6px var(--flow-title-halo);padding:3px 6px;box-sizing:border-box}
+.flow-area-title.flow-component-title{--flow-title-halo:#f8fafc}
 .flow-area.flow-component{background:#f8fafc;--flow-frame-color:#718096}
 .flow-area.flow-communication{background:#fffaf1;--flow-frame-color:#906014}
 .flow-area.flow-input-collection{background:#edf5ff;--flow-frame-color:#356faa}
 .flow-area.flow-area-core{background:#f6f0fb;--flow-frame-color:#755299}
-.flow-area-title.flow-input-collection{background:#edf5ff;color:#204a7b}
-.flow-area-title.flow-communication-title{background:#fffaf1;color:#77531c}
+.flow-area.flow-area-entry{background:#eef8f4;--flow-frame-color:#267267}
+.flow-area-title.flow-entry-title{--flow-title-halo:#eef8f4;color:#1d5a51}
+.flow-area-title.flow-input-collection{--flow-title-halo:#edf5ff;color:#204a7b}
+.flow-area-title.flow-communication-title{--flow-title-halo:#fffaf1;color:#77531c}
+.flow-area-title.flow-core-title{--flow-title-halo:#f6f0fb;color:#4f3470}
 .flow-communication-title .flow-kind{color:#896019;margin-bottom:4px}
 .system-communication-records article{border-top:1px solid #d4dce6;padding:12px 0}
 .system-communication-records button{width:100%;text-align:left}

@@ -173,8 +173,14 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 			}
 		}
 	}
-	shape.handed = shape.handlerID != "" || relation.Kind == programindex.RelationDecorates || produced || shape.handedValue
 	shape.holder, shape.holderPrefixes = target.holderRoot(pattern)
+	// A value set on a parameter no repository caller supplies
+	// (c.Set("user", model) on the request's context) is state of one call
+	// the outside made, not something registered with a holder.
+	if receiver := pattern.ReceiverValue; receiver != nil && receiver.Kind == "parameter" && shape.holder == nil {
+		produced, shape.handedValue, shape.constructed = false, false, false
+	}
+	shape.handed = shape.handlerID != "" || relation.Kind == programindex.RelationDecorates || produced || shape.handedValue
 	shape.method = statedMethod(pattern)
 	return shape
 }
