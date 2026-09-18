@@ -2374,6 +2374,58 @@ type pageNodeSymbol struct {
 	// Owner is the position, from 1, of the type in the same list this
 	// method belongs to: it is drawn inside that type's tile.
 	Owner int `json:"owner,omitempty"`
+	// Mark is the UML visibility sign, + or −, and Text what follows the
+	// name in a class box: "(args): Result" for a callable, ": Type" for a
+	// field. They are written in the row, not left to a tooltip.
+	Mark string `json:"mark,omitempty"`
+	Text string `json:"text,omitempty"`
+}
+
+const maxTileFields = 8
+
+// symbolText is what stands after a declaration's name in a class box.
+func symbolText(object *groupindex.ObjectFacts, name string) string {
+	switch object.Kind {
+	case programindex.ObjectFunction, programindex.ObjectMethod:
+		var parameters, results []string
+		for _, parameter := range object.Parameters {
+			switch {
+			case parameter.Name != "" && parameter.Type != "":
+				parameters = append(parameters, parameter.Name+": "+parameter.Type)
+			case parameter.Name != "":
+				parameters = append(parameters, parameter.Name)
+			default:
+				parameters = append(parameters, parameter.Type)
+			}
+		}
+		for _, result := range object.Results {
+			if result.Type != "" {
+				results = append(results, result.Type)
+			}
+		}
+		text := "(" + strings.Join(parameters, ", ") + ")"
+		if len(results) > 0 {
+			text += ": " + strings.Join(results, ", ")
+		}
+		return text
+	case programindex.ObjectVariable:
+		// The adapter's own words for the declaration, without the name they
+		// begin with: "Model gorm.Model", "body: string;", "name = Field()".
+		short := name
+		if dot := strings.LastIndex(short, "."); dot >= 0 {
+			short = short[dot+1:]
+		}
+		rest := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(object.Signature), short)), ";"))
+		switch {
+		case rest == "":
+			return ""
+		case strings.HasPrefix(rest, "="):
+			return " " + rest
+		default:
+			return ": " + strings.TrimSpace(strings.TrimPrefix(rest, ":"))
+		}
+	}
+	return ""
 }
 
 // groupSymbols lists a group's declarations, its keys first, each with its
@@ -2415,8 +2467,13 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 				symbol.Name = owner.subject.Object.Name + "." + name
 			}
 		case programindex.ObjectVariable:
-			// Only a variable a module or a package holds; a local, a
-			// parameter or a produced value has no such holder.
+			// A field is a row of its type's tile. Otherwise only a variable a
+			// module or a package holds: a local, a parameter or a produced
+			// value has no such holder.
+			if ownerKind == programindex.ObjectType {
+				symbol.Kind = "field"
+				break
+			}
 			moduleLevel := ownerKind == programindex.ObjectModule || ownerKind == programindex.ObjectPackage
 			if container, known := builder.subject(targetID, object.ContainerID); known && container.subject.Object != nil {
 				kind := container.subject.Object.Kind
@@ -2428,6 +2485,11 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		default:
 			continue
 		}
+		symbol.Mark = "−"
+		if object.Visibility == programindex.VisibilityPublic {
+			symbol.Mark = "+"
+		}
+		symbol.Text = symbolText(object, name)
 		if anchor != nil {
 			symbol.Href = anchor.Href
 		}
@@ -2451,12 +2513,34 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 	// tile under its own short name; elsewhere it keeps the type in its name.
 	for i, item := range all {
 		ref, known := builder.subject(targetID, item.id)
-		if !known || ref.subject.Object == nil || ref.subject.Object.Kind != programindex.ObjectMethod {
+		if !known || ref.subject.Object == nil || (ref.subject.Object.Kind != programindex.ObjectMethod && symbols[i].Kind != "field") {
 			continue
 		}
 		if owner, inPart := position[ref.subject.Object.OwnerID]; inPart && owner != i {
 			symbols[i].Owner = owner + 1
 			symbols[i].Name = strings.TrimPrefix(symbols[i].Name, symbols[owner].Name+".")
+		}
+	}
+	// A field whose type is not in this part says nothing here, and a type
+	// with dozens of fields shows the first few and how many more.
+	fields := map[int]int{}
+	for i := range symbols {
+		if symbols[i].Kind != "field" {
+			continue
+		}
+		fields[symbols[i].Owner]++
+		switch {
+		case symbols[i].Owner == 0 || fields[symbols[i].Owner] > maxTileFields+1:
+			symbols[i].Kind = "skip"
+		case fields[symbols[i].Owner] == maxTileFields+1:
+			symbols[i] = pageNodeSymbol{Kind: "more", Owner: symbols[i].Owner}
+		}
+	}
+	for owner, count := range fields {
+		for i := range symbols {
+			if symbols[i].Kind == "more" && symbols[i].Owner == owner {
+				symbols[i].Name = fmt.Sprintf("… +%d", count-maxTileFields)
+			}
 		}
 	}
 	raw, err := json.Marshal(symbols)

@@ -8,13 +8,16 @@ export const symbolRow={header:28,row:24,pad:6,gap:10};
 
 export function symbolBlocks(symbols,links,columns,height){
   const blocks=[],blockOf=new Array(symbols.length).fill(-1);
-  symbols.forEach((symbol,i)=>{if(!symbol.owner){blockOf[i]=blocks.length;blocks.push({head:i,rows:[]});}});
+  const field=symbol=>symbol.kind==='field'||symbol.kind==='more';
+  symbols.forEach((symbol,i)=>{if(!symbol.owner&&symbol.kind!=='skip'){blockOf[i]=blocks.length;blocks.push({head:i,rows:[]});}});
   symbols.forEach((symbol,i)=>{
-    if(!symbol.owner)return;
+    if(!symbol.owner||symbol.kind==='skip')return;
     const owner=blockOf[symbol.owner-1];
     if(owner>=0){blocks[owner].rows.push(i);blockOf[i]=owner;}
     else{blockOf[i]=blocks.length;blocks.push({head:i,rows:[]});}
   });
+  // As in a class box: the fields first, then the methods.
+  for(const block of blocks)block.rows.sort((a,b)=>field(symbols[b])-field(symbols[a])||a-b);
   const before=blocks.map(()=>new Set());
   for(const [from,to] of links){
     const a=blockOf[from],b=blockOf[to];
@@ -45,8 +48,8 @@ export function symbolBlocks(symbols,links,columns,height){
   const rows=new Array(symbols.length).fill(null);
   for(const [i,at] of placed){
     const block=blocks[i];
-    rows[block.head]={column:at.column,y:at.y,height:symbolRow.header};
-    block.rows.forEach((symbol,k)=>{rows[symbol]={column:at.column,y:at.y+symbolRow.header+k*symbolRow.row,height:symbolRow.row};});
+    rows[block.head]={block:i,column:at.column,y:at.y,height:symbolRow.header};
+    block.rows.forEach((symbol,k)=>{rows[symbol]={block:i,column:at.column,y:at.y+symbolRow.header+k*symbolRow.row,height:symbolRow.row};});
   }
   return {blocks:[...placed].map(([i,at])=>({...blocks[i],...at})),rows,hidden};
 }

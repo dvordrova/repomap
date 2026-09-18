@@ -34,14 +34,18 @@ function PartSymbols({symbols,calls,width,height}){
   const tileWidth=[340,260,deepTile.width].find(w=>fits(w).hidden===0&&(!links.length||columnsAt(w)>=3))||deepTile.width;
   const {blocks,rows,hidden}=fits(tileWidth);
   const x=column=>inset+column*(tileWidth+gap);
-  const drawn=links.filter(([from,to])=>rows[from]&&rows[to]);
+  // A method inside its type's tile needs no line to that type.
+  const drawn=links.filter(([from,to])=>rows[from]&&rows[to]&&rows[from].block!==rows[to].block);
   const near=new Set(hot<0?[]:drawn.filter(([from,to])=>from===hot||to===hot).flat().filter(value=>typeof value==='number'));
   const tone=i=>hot>=0&&i!==hot&&!near.has(i)?'flow-symbol-dim':'';
-  const row=(i,className)=>{
-    const symbol=symbols[i],title=symbol.kind?`${symbol.kind} ${symbol.name}`:symbol.name;
-    const props={className:`${className} ${symbol.key?'flow-symbol-key':''} ${tone(i)}`,title,onMouseEnter:()=>setHot(i)};
-    return symbol.href?<a key={i} href={symbol.href} target="_blank" rel="noopener" onClick={event=>event.stopPropagation()} {...props}>{symbol.name}</a>
-      :<span key={i} {...props}>{symbol.name}</span>;
+  // A row reads as a line of a class box: the visibility sign, the name and,
+  // in lighter type, what follows it — "(args): Result" or ": Type".
+  const row=(i,className,first)=>{
+    const symbol=symbols[i],kind=symbol.kind==='field'||symbol.kind==='more'?'flow-symbol-field':'';
+    const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${tone(i)}`,onMouseEnter:()=>setHot(i)};
+    const body=<>{symbol.mark&&<i>{symbol.mark} </i>}{symbol.name}{symbol.text&&<em>{symbol.text}</em>}</>;
+    return symbol.href?<a key={i} href={symbol.href} target="_blank" rel="noopener" onClick={event=>event.stopPropagation()} {...props}>{body}</a>
+      :<span key={i} {...props}>{body}</span>;
   };
   return <div className="flow-part-symbols nopan" style={{top:deepHeader,width,height:height-deepHeader}}>
     <div style={{width:inner.width,height:inner.height,transform:`scale(${1/deepDivisor})`,transformOrigin:'top left'}} onMouseLeave={()=>setHot(-1)}>
@@ -61,7 +65,7 @@ function PartSymbols({symbols,calls,width,height}){
       {blocks.map(block=><div key={block.head} className={`flow-symbol-block ${block.rows.length?'flow-symbol-type':''}`}
         style={{left:x(block.column),top:inset+block.y,width:tileWidth,height:block.height}}>
         {row(block.head,'flow-symbol-head')}
-        {block.rows.map(i=>row(i,'flow-symbol-row'))}
+        {block.rows.map((i,k)=>row(i,'flow-symbol-row',k>0&&symbols[i].kind!=='field'&&symbols[i].kind!=='more'&&['field','more'].includes(symbols[block.rows[k-1]].kind)))}
       </div>)}
       {hidden>0&&<span className="flow-symbol-more" style={{right:inset,bottom:inset}}>+{hidden}</span>}
     </div>
@@ -165,6 +169,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   records=display.records;areas=display.areas;
   const source=stage.querySelector('svg'), host=document.createElement('div');
   host.className='flow-root';stage.appendChild(host);
+  // Beside the canvas root, not inside it: React owns what is inside.
+  const dock=document.createElement('div');dock.className='flow-calls-dock';stage.appendChild(dock);
   map.classList.add('flow-enabled','flow-initializing');source.style.display='none';source.setAttribute('aria-hidden','true');
   host.inert=true;
   const location=document.createElement('div');location.className='flow-location';location.setAttribute('aria-live','polite');stage.insertBefore(location,host);
@@ -195,7 +201,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   let layoutKey=geometryKey(layout.nodes),layoutSize=initialSize,fitting,layoutError;
   const initial={scope:'',operation:'',entry:'',selected:new Set(),matched:new Set(),searching:false,numbered:true};
   let cameraRevision=0;
-  let update, instance, view=initial, hoverArea='', cardPart='', pinnedPart='', revealing={id:'',until:0,zoom:0}, preview='', restorePending, pendingFocus, panning=false, initializing=true;
+  let update, instance, view=initial, hoverArea='', cardPart='', pinnedPart='', pinnedLabels=new Set(), revealing={id:'',until:0,zoom:0}, preview='', restorePending, pendingFocus, panning=false, initializing=true;
   let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
   const closed=id=>closedContainer(id,placed,byID,detailed,componentsOpen,communicationsOpen,openComponents);
   new ResizeObserver(()=>{if(instance&&!initializing&&overviewFit)fitOverview();}).observe(host);
@@ -422,7 +428,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const standaloneHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       return new Map(layout.nodes.filter(n=>!n.frame&&!byID.get(n.id).activation&&byID.get(n.parentId)?.branch==='component').map(n=>{
-        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,item.roleLabel?65:45,15);
+        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,(item.roleLabel?65:45)+(item.symbols?.length?22:0),15);
         return [n.id,{...heading,width:n.width/heading.scale,height:n.height/heading.scale}];
       }));
     },[layoutKey]);
@@ -469,7 +475,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const active=state.mode==='all'?new Set():new Set(layout.edges.filter(e=>group.edges.includes(e.id)&&state.activeEdges.has(e.id))
         .map(e=>number.get(numbered(inside.has(e.from)?e.from:e.to))));
       const bold=active.size<byNumber.size||byNumber.size===1&&state.mode==='hover'&&hoverArea!==area?active:new Set();
-      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,byNumber,bold,title:outside.name||outside.title}];
+      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
     });
     // A number's cards stand beside every arrow it has, some of them off the
     // canvas. The camera draws back around the pointer, so the badge stays
@@ -597,16 +603,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // What a number stands for, beside its label: every call behind it, caller
   // and callee, each a link into the code. The card is drawn over the canvas
   // at screen size and kept inside it, and the pointer can move onto it.
-  function ConnectionCalls({label,anchor,only,passive}){
-    const card=useRef(null);
-    useLayoutEffect(()=>{
-      const el=card.current,at=anchor.current?.getBoundingClientRect();if(!el||!at)return;
-      const bounds=host.getBoundingClientRect(),size=el.getBoundingClientRect(),gap=4;
-      const left=Math.max(bounds.left+gap,Math.min(at.left+at.width/2-size.width/2,bounds.right-size.width-gap));
-      const below=at.bottom+gap,wanted=below+size.height<=bounds.bottom-gap?below:at.top-gap-size.height;
-      const top=Math.max(bounds.top+gap,Math.min(wanted,bounds.bottom-gap-size.height));
-      el.style.left=`${left}px`;el.style.top=`${top}px`;el.style.visibility='visible';
-    });
+  // Every card stands in one dock in the canvas's corner, in the order of
+  // the labels, so the same card is found in the same place each time. Its
+  // heading repeats the label's numbers and names the neighbour.
+  function ConnectionCalls({label,only,passive,go}){
     const name=id=>byID.get(id)?.name||byID.get(id)?.title||'';
     const ids=only===undefined?null:new Set(label.byNumber.get(only)?.ids||[]);
     const groups=new Map(),seen=new Set();
@@ -621,14 +621,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     }
     if(!groups.size)return null;
     const link=(href,text)=>href?<a href={href} target="_blank" rel="noopener" onClick={event=>event.stopPropagation()}>{text}</a>:<span>{text}</span>;
-    return createPortal(<div className={`flow-connection-calls nopan nowheel ${passive?'flow-calls-passive':''}`} ref={card} style={{maxWidth:Math.max(220,Math.min(460,host.clientWidth-12))}}>
+    return createPortal(<div className={`flow-connection-calls nopan nowheel ${passive?'flow-calls-passive':''}`} style={{order:label.order||0}}>
+      <header><b>{only===undefined?label.numbers.join(' · '):only}</b><button type="button" onClick={go}>{label.incoming?'←':'→'} {label.title}</button></header>
       {[...groups].map(([title,calls])=><div key={title}><strong>{title}</strong>
         {calls.map((call,i)=>{
           const parts=String(call.label).match(/^(\S+) (\S+) (\S+)$/);
           return <p key={i}>{parts?<>{link(call.from,parts[1])}<i>{parts[2]==='calls'?' → ':` ${parts[2].replace(/_/g,' ')} `}</i>{link(call.to||call.from,parts[3])}</>
             :link(call.from||call.to,call.label)}</p>;
         })}</div>)}
-    </div>,host);
+    </div>,dock);
   }
   function ConnectionLabel({label}){
     const {zoom}=useViewport();
@@ -664,11 +665,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
           style={style}
           >
           {!label.boundary&&<span>{label.incoming?'← ':'→ '}{label.labelTitle}</span>}
-          <button type="button" aria-label={t('Go to {0}',label.title)} onClick={event=>{event.stopPropagation();clearHover();select(label.outside,event,true);}}>
+          <button type="button" aria-label={label.title} className={pinnedLabels.has(label.id)?'flow-label-pinned':''}
+            onClick={event=>{event.stopPropagation();if(pinnedLabels.has(label.id))pinnedLabels.delete(label.id);else pinnedLabels.add(label.id);update?.();}}>
             {label.numbers.map((k,i)=><React.Fragment key={k}>{i>0&&!upright&&<i> · </i>}
               <b className={label.bold?.has(k)?'flow-number-active':''} onMouseEnter={()=>open(label.numbers.length>1?k:undefined)}>{k}</b></React.Fragment>)}
           </button>
-          {(hovered||shown!==undefined)&&<ConnectionCalls label={label} anchor={element} only={only} passive={!hovered&&!pinnedPart}/>}
+          {(hovered||shown!==undefined||pinnedLabels.has(label.id))&&<ConnectionCalls label={label} only={only}
+            passive={!pinnedLabels.has(label.id)&&!pinnedPart} go={event=>{event.stopPropagation();clearHover();select(label.outside,event,true);}}/>}
         </div>;
   }
   map.classList.add('flow-enabled');source.style.display='none';source.setAttribute('aria-hidden','true');

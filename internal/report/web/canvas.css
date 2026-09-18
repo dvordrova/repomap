@@ -166,7 +166,11 @@
 .flow-standalone-part>.flow-number{top:50%;bottom:auto;transform:translateY(-50%)}
 .flow-standalone-part:has(.flow-number)>.flow-role-symbol{right:40px;top:50%;transform:translateY(-50%)}
 .flow-label-upright button{white-space:pre;line-height:15px;padding:3px 6px}
-.flow-connection-calls{position:fixed;left:0;top:0;visibility:hidden;z-index:1000;box-sizing:border-box;min-width:220px;max-height:min(360px,60vh);overflow:auto;overscroll-behavior:contain;padding:8px 10px;background:#fff;border:1px solid #52647d;border-radius:8px;box-shadow:0 6px 18px rgba(36,48,68,.18);text-align:left}
+.flow-calls-dock{position:absolute;left:10px;top:40px;z-index:30;display:flex;flex-direction:column;gap:6px;width:min(380px,45%);max-height:calc(100% - 50px);overflow:auto;overscroll-behavior:contain;pointer-events:none}
+.flow-calls-dock:empty{display:none}
+.flow-connection-calls{flex:none;pointer-events:auto;box-sizing:border-box;padding:8px 10px;background:#fff;border:1px solid #52647d;border-radius:8px;box-shadow:0 6px 18px rgba(36,48,68,.18);text-align:left}
+.flow-connection-calls>header{display:flex;gap:8px;align-items:baseline;margin-bottom:6px;font:600 12px/16px system-ui;color:#243044}
+.flow-connection-calls>header b{flex:none;background:#e8edf4;border:1px solid #52647d;border-radius:7px;padding:0 7px;font-weight:600}
 .flow-connection-calls>div{margin-bottom:6px}
 .flow-connection-calls strong{display:block;font:600 12px/16px system-ui;color:#536176;margin-bottom:2px}
 .flow-connection-calls p{margin:0;font:400 12px/18px ui-monospace,SFMono-Regular,Menlo,monospace;color:#243044;overflow-wrap:anywhere}
@@ -202,3 +206,16 @@
 .flow-part-symbols .flow-symbol-block .flow-symbol-key{font-weight:750;color:#4f2f86}
 .flow-part-symbols .flow-symbol-more{border-style:dashed;color:#536176;text-align:center}
 .flow-node-reading .flow-part.flow-part-deep,.flow-node-focus .flow-part.flow-part-deep{border-width:1px;outline:0;box-shadow:none}
+.flow-part-symbols .flow-symbol-block i{font-style:normal;color:#8492a6}
+.flow-part-symbols .flow-symbol-block em{font-style:normal;font-weight:400;color:#6b7a90}
+.flow-part-symbols .flow-symbol-row.flow-symbol-field{color:#39455a}
+.flow-part-symbols .flow-symbol-row.flow-symbol-first-method{border-top:1px solid #c5cedb}
+.flow-part-symbols .flow-symbol-row{padding-left:12px!important}
+.flow-connection-calls>header button{all:unset;cursor:pointer;color:#4f3aa3;font:600 12px/16px system-ui}
+.flow-connection-calls>header button:hover{text-decoration:underline}
+.flow-enabled .flow-connection-label button.flow-label-pinned{background:#243044;color:#fff}
+.flow-standalone-part>.flow-part-zoom{top:50%;right:34px;transform:translateY(-50%)}
+.flow-standalone-part:has(.flow-part-zoom):has(.flow-number)>.flow-role-symbol{right:60px}
+.flow-standalone-part:not(:has(.flow-number))>.flow-part-zoom{right:8px}
+.flow-standalone-part:has(.flow-part-zoom):not(:has(.flow-number))>.flow-role-symbol{right:32px}
+.flow-standalone-part:has(.flow-part-zoom)>strong{padding-right:0}
