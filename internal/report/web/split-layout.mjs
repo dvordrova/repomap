@@ -20,6 +20,39 @@ const transform=(point,scale,offset)=>({x:offset.x+point.x*scale,y:offset.y+poin
 
 // Read only native positions, routes and labels. A wrapper is necessary for
 // ELK to import ports owned by the actual root compound; its offset is excluded.
+// Tiles no arrow joins are one layer to a layered drawing: a column in a
+// frame stretched to its summary's proportion. Rows of the column count
+// nearest that proportion fill the frame instead. Arrows that cross the frame
+// are drawn by the outer routes, so no interior leg is lost.
+function gridInterior(frame,ratio,top){
+  const gap=24,side=32,tiles=[...frame.children].sort((a,b)=>a.y-b.y||a.x-b.x);
+  const arrange=columns=>{
+    const widths=Array(columns).fill(0),rows=[];
+    tiles.forEach((tile,i)=>{widths[i%columns]=Math.max(widths[i%columns],tile.width);
+      rows[Math.floor(i/columns)]=Math.max(rows[Math.floor(i/columns)]||0,tile.height);});
+    return {columns,widths,rows,width:2*side+widths.reduce((a,b)=>a+b,0)+gap*(columns-1),
+      height:top+side+rows.reduce((a,b)=>a+b,0)+gap*(rows.length-1)};
+  };
+  let best=null;
+  for(let columns=1;columns<=tiles.length;columns++){
+    const candidate=arrange(columns),distance=Math.abs(Math.log(candidate.width/candidate.height/ratio));
+    if(!best||distance<best.distance)best={...candidate,distance};
+  }
+  const width=Math.max(best.width,best.height*ratio),height=Math.max(best.height,best.width/ratio);
+  const left=side+(width-best.width)/2,down=top+(height-best.height)/2;
+  tiles.forEach((tile,i)=>{
+    const column=i%best.columns,row=Math.floor(i/best.columns);
+    tile.x=left+best.widths.slice(0,column).reduce((a,b)=>a+b,0)+gap*column;
+    tile.y=down+best.rows.slice(0,row).reduce((a,b)=>a+b,0)+gap*row;
+  });
+  for(const port of frame.ports||[]){
+    const at=port.layoutOptions?.['elk.port.side'];
+    if(at==='EAST'||at==='WEST'){port.x=at==='EAST'?width:0;port.y*=height/frame.height;}
+    else{port.y=at==='SOUTH'?height:0;port.x*=width/frame.width;}
+  }
+  frame.width=width;frame.height=height;frame.edges=[];
+}
+
 function localGeometry(root){
   const nodes=[],edges=new Map(),labels=[],offsets=new Map([[root.id,{x:0,y:0}]]);
   function walk(node,parentId){
@@ -142,7 +175,13 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     const preferredWidth=root.overviewPreferredWidth||root.overviewMinWidth||(root.branch==='component'?220:160);
     const preferredHeight=root.overviewHeightAtWidth?.(preferredWidth,{availableHeight})||Math.min(180,placed.height);
     const ratio=preferredWidth/preferredHeight;
-    if(root.branch!=='component'){
+    // Cross-frame arrows are drawn by the outer routes alone, so a frame whose
+    // tiles no arrow joins needs no interior legs.
+    const loose=root.branch!=='component'&&(children.get(root.id)||[]).length>2&&!ownAreas.length
+      &&(children.get(root.id)||[]).every(id=>!children.has(id))
+      &&!ownEdges.some(edge=>rootOf(edge.from)===root.id&&rootOf(edge.to)===root.id&&edge.from!==root.id&&edge.to!==root.id);
+    if(loose)gridInterior(placed,ratio,localRecords.get(root.id).headerHeight||64);
+    else if(root.branch!=='component'){
       const minimum={width:Math.max(placed.width,placed.height*ratio),height:Math.max(placed.height,placed.width/ratio)};
       placed=(await native(graph(minimum))).children[0];
     }
