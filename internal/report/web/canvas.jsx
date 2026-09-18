@@ -77,7 +77,7 @@ function FrameTitle({node,item,focused,enter,select}) {
       '--flow-zoom':viewport.zoom*scale,
       '--flow-secondary-text':viewport.zoom*scale*13>=12?'visible':'hidden',
       '--flow-small-text':viewport.zoom*scale*12>=12?'visible':'hidden'}}
-    onMouseEnter={()=>enter(node.id,true)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
+    onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
     <strong>{item.title}</strong>
     {item.metadata&&<div className="flow-component-meta">{item.metadata}</div>}
     {item.role&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
@@ -197,14 +197,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const revision=++cameraRevision;
     return Promise.resolve(movement).then(()=>{if(revision===cameraRevision&&!initializing){updateLocation(undefined,subject);map.dispatchEvent(new Event('repomap:viewport'));}});
   }
-  function enter(id,deliberate=false){
+  function enter(id){
     if(!hover.allowed)return;
     const n=byID.get(id);if(!n)return;
     // Hover affects the drawing only. The links and description opened by a
     // click stay usable while the pointer crosses other cards to reach them.
-    // The component frame is not something to look at: hovering it lights
-    // nothing, as selecting the whole component lights nothing.
-    const area=byID.get(parentArea(id)||id)?.branch==='component'&&!deliberate?'':parentArea(id)||id;
+    // Pointing anywhere inside a target looks at the target: its frame, its
+    // numbers and what it is. Its initialization wiring stays off, as it
+    // does for a chosen target: init is drawn for a looked-at end only.
+    const area=parentArea(id)||id;
     if(hoverArea!==area){hoverArea=area;update?.();}
   }
   function focus(id,center=true,smooth=true){
@@ -364,7 +365,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const members=!area?[]:wholeComponent?layout.nodes.filter(n=>!n.frame&&!byID.get(n.id)?.activation&&childOf(n.id)).map(n=>n.id):leaves(area);
     const number=new Map(!area||!view.numbered?[]:wholeComponent?layout.nodes.filter(n=>n.parentId===area).map((n,i)=>[n.id,i+1]):members.map((id,i)=>[id,i+1]));
     const dim=state.mode!=='all';
-    const initVisible=state.mode==='hover'||state.mode==='operation'||(state.mode==='selection'&&byID.get(view.scope)?.branch!=='component');
+    const initVisible=(state.mode==='hover'&&byID.get(hoverArea)?.branch!=='component')||state.mode==='operation'||(state.mode==='selection'&&byID.get(view.scope)?.branch!=='component');
     const routes=routeDrawing(drawing.edges,closed,state.activeEdges,dim,boundaryBetween,initVisible,zoomedArea?new Set(leaves(zoomedArea)):null);
     const labelGroups=area?connections(area,members,layout.edges.filter(e=>state.activeEdges.has(e.id)),
       id=>rootOf(id)!==rootOf(area)?rootOf(id):boundaryBetween(id,area)?.id||id,wholeComponent?id=>number.get(childOf(id)):null):[];
@@ -417,10 +418,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         if(!hover.move(event.clientX,event.clientY))return;
         const labelElement=event.target.closest('.flow-connection-label');
         if(labelElement)return;
-        // A frame's title is the handle a reader points at to look at the
-        // whole frame; the empty space inside a component lights nothing.
+        // A frame's title looks at the whole frame, as its empty space does.
         const frameTitle=event.target.closest('[data-frame-title]');
-        if(frameTitle){enter(frameTitle.dataset.frameTitle,true);return;}
+        if(frameTitle){enter(frameTitle.dataset.frameTitle);return;}
         const input=event.target.closest('[data-input-id]');
         if(input){enter(input.dataset.inputId);return;}
         const node=event.target.closest('.react-flow__node');
