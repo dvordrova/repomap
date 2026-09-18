@@ -21,6 +21,7 @@
 .flow-area.flow-component{background:#f8fafc;--flow-frame-color:#718096}
 .flow-area.flow-communication{background:#fffaf1;--flow-frame-color:#906014}
 .flow-area.flow-input-collection{background:#edf5ff;--flow-frame-color:#356faa}
+.flow-area.flow-area-core{background:#f6f0fb;--flow-frame-color:#755299}
 .flow-area-title.flow-input-collection{background:#edf5ff;color:#204a7b}
 .flow-area-title.flow-communication-title{background:#fffaf1;color:#77531c}
 .flow-communication-title .flow-kind{color:#896019;margin-bottom:4px}
@@ -156,3 +157,4 @@
 .map-input-context button{font-size:12px;padding:4px 7px;margin-top:6px}
 .find-result-summary{font-size:13px!important;line-height:1.45!important;color:#536176;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:6px 0 0}
 @keyframes flow-reveal{from{opacity:.2}to{opacity:1}}
+.flow-area-summary .flow-role-symbol{position:absolute;right:8px;bottom:8px;width:14px;height:14px}
