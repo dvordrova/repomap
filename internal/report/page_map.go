@@ -249,6 +249,9 @@ type pageMapEdge struct {
 	To                   string
 	Label                string
 	Possible             bool
+	// Calls are the relations one drawn arrow stands for, each with its own
+	// places in the code: the call site and the declaration called.
+	Calls []pageEdgeCall
 	// Init marks an arrow every relation of which is initialization: the
 	// wiring before anything serves. The map draws it dashed, and only
 	// while one of its ends is the reader's selection.
@@ -2323,4 +2326,36 @@ func pageLane(lane groupindex.Lane, core bool) string {
 		return ""
 	}
 	return string(lane)
+}
+
+// pageEdgeCall is one relation behind an arrow: "caller calls callee" with
+// the link to where the call is made and to what is called.
+type pageEdgeCall struct {
+	Label string `json:"label"`
+	From  string `json:"from,omitempty"`
+	To    string `json:"to,omitempty"`
+}
+
+// CallsJSON is the arrow's relations for the page's script.
+func (edge pageMapEdge) CallsJSON() string {
+	calls := edgeCalls(edge)
+	if len(calls) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(calls)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+func edgeCalls(edge pageMapEdge) []pageEdgeCall {
+	if len(edge.Calls) > 0 || edge.Label == "" {
+		return edge.Calls
+	}
+	// A bare verb with no place in the code names no call.
+	if !strings.Contains(edge.Label, " ") && edge.FromSource.Href == "" && edge.ToSource.Href == "" {
+		return nil
+	}
+	return []pageEdgeCall{{Label: edge.Label, From: edge.FromSource.Href, To: edge.ToSource.Href}}
 }

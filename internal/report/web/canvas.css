@@ -176,3 +176,4 @@
 .flow-connection-label button b.flow-number-active{font-weight:800}
 .flow-label-upright button b{display:block}
 .flow-number{cursor:pointer;pointer-events:auto}.flow-number-pinned{background:#243044!important;color:#fff!important}
+.flow-calls-passive{pointer-events:none}

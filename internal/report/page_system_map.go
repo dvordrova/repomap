@@ -3,6 +3,7 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -385,10 +386,16 @@ func collapseSystemMapEdges(edges []pageMapEdge) []pageMapEdge {
 		position, exists := positions[key]
 		if !exists {
 			positions[key] = len(result)
+			edge.Calls = edgeCalls(edge)
 			result = append(result, edge)
 			continue
 		}
 		merged := &result[position]
+		for _, call := range edgeCalls(edge) {
+			if !slices.Contains(merged.Calls, call) {
+				merged.Calls = append(merged.Calls, call)
+			}
+		}
 		merged.Operations = joinUniqueFields(merged.Operations, edge.Operations)
 		merged.Label = joinUniqueText(merged.Label, edge.Label, " · ")
 		merged.Summary = joinUniqueText(merged.Summary, edge.Summary, " ")
