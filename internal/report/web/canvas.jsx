@@ -1,6 +1,6 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {flushSync} from 'react-dom';
+import {flushSync, createPortal} from 'react-dom';
 import {ReactFlow, Handle, Position, ViewportPortal, useViewport} from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
@@ -467,11 +467,22 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   // What the numbers stand for, beside the label: which part calls which,
   // and the calls themselves. The sidebar keeps what the reader chose.
-  function ConnectionCalls({label}){
+  // The card is drawn over the canvas at screen size and kept inside it:
+  // below the label when there is room, above it otherwise.
+  function ConnectionCalls({label,anchor}){
+    const card=useRef(null);
+    useLayoutEffect(()=>{
+      const el=card.current;if(!el||!anchor)return;
+      const bounds=host.getBoundingClientRect(),size=el.getBoundingClientRect(),gap=6;
+      const left=Math.max(bounds.left+gap,Math.min(anchor.left+anchor.width/2-size.width/2,bounds.right-size.width-gap));
+      const below=anchor.bottom+gap,wanted=below+size.height<=bounds.bottom-gap?below:anchor.top-gap-size.height;
+      const top=Math.max(bounds.top+gap,Math.min(wanted,bounds.bottom-gap-size.height));
+      el.style.left=`${left}px`;el.style.top=`${top}px`;el.style.visibility='visible';
+    });
     const name=id=>byID.get(id)?.name||byID.get(id)?.title||'';
     const rows=label.relations.filter(r=>name(r.from)&&name(r.to)).slice(0,6);
-    if(!rows.length)return null;
-    return <div className="flow-connection-calls">
+    if(!rows.length||!anchor)return null;
+    return createPortal(<div className="flow-connection-calls" ref={card} style={{maxWidth:Math.max(220,Math.min(420,host.clientWidth-12))}}>
       {rows.map((relation,i)=>{
         const calls=String(relation.summary||'').split(' · ').filter(Boolean);
         return <div key={i}><strong>{name(relation.from)} → {name(relation.to)}</strong>
@@ -479,10 +490,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
           {calls.length>8&&<span>+{calls.length-8}</span>}</div>;
       })}
       {label.relations.length>rows.length&&<span>+{label.relations.length-rows.length}</span>}
-    </div>;
+    </div>,document.body);
   }
   function ConnectionLabel({label}){
     const {zoom}=useViewport();
+    const [anchor,setAnchor]=useState(null);
     let upright=false;
     let style={transform:`translate(${label.x}px,${label.y}px) scale(${label.scale||1})`,transformOrigin:'top left',width:label.width/(label.scale||1),minHeight:label.height/(label.scale||1)};
     if(label.boundary){
@@ -502,14 +514,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
     }
     return <div
-          className={`flow-connection-label nopan ${label.boundary?'flow-boundary-label':''} ${upright?'flow-label-upright':''}`} data-connection-outside={label.outside} data-connection-label={label.id}
+          className={`flow-connection-label nopan ${label.boundary?'flow-boundary-label':''} ${upright?'flow-label-upright':''}`}
+          onMouseEnter={event=>setAnchor(event.currentTarget.getBoundingClientRect())} onMouseLeave={()=>setAnchor(null)} data-connection-outside={label.outside} data-connection-label={label.id}
           style={style}
           >
           {!label.boundary&&<span>{label.incoming?'← ':'→ '}{label.labelTitle}</span>}
           <button type="button" aria-label={t('Go to {0}',label.title)} onClick={event=>{event.stopPropagation();clearHover();select(label.outside,event,true);}}>
             {label.numbers.join(upright?'\n':' · ')}
           </button>
-          <ConnectionCalls label={label}/>
+          <ConnectionCalls label={label} anchor={anchor}/>
         </div>;
   }
   map.classList.add('flow-enabled');source.style.display='none';source.setAttribute('aria-hidden','true');
