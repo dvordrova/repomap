@@ -188,7 +188,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   let layoutKey=geometryKey(layout.nodes),layoutSize=initialSize,fitting,layoutError;
   const initial={scope:'',operation:'',entry:'',selected:new Set(),matched:new Set(),searching:false,numbered:true};
   let cameraRevision=0;
-  let update, instance, view=initial, hoverArea='', cardPart='', pinnedPart='', preview='', restorePending, pendingFocus, panning=false, initializing=true;
+  let update, instance, view=initial, hoverArea='', cardPart='', pinnedPart='', revealing={id:'',until:0,zoom:0}, preview='', restorePending, pendingFocus, panning=false, initializing=true;
   let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
   const closed=id=>closedContainer(id,placed,byID,detailed,componentsOpen,communicationsOpen,openComponents);
   new ResizeObserver(()=>{if(instance&&!initializing&&overviewFit)fitOverview();}).observe(host);
@@ -423,7 +423,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // Zoomed into one area with nothing hovered or chosen, that area is what
     // the reader is looking at: its parts keep their numbers.
     const zoomedArea=state.mode==='all'&&detailed.size===1?[...detailed][0]:'';
-    const chosen=state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):zoomedArea;
+    // Pinned cards belong to the frame their part stands in; that frame stays
+    // the one being read while they are pinned.
+    const chosen=(pinnedPart&&parentArea(pinnedPart))||(state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):zoomedArea);
     // What is numbered is the frame the reader looks at: an open area with
     // its parts, or else the open component with its areas and loose parts.
     const lookedComponent=chosen?rootOf(chosen):openComponents.size===1?[...openComponents][0]:'';
@@ -438,7 +440,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // The labels of a frame do not change with what is hovered inside it;
     // the numbers the hovered thing owns are set bold.
     const numbered=id=>wholeComponent?childOf(id):id;
-    const badge=id=>({pinned:pinnedPart===id,enter:event=>{cardPart=id;update?.();reveal(id,event);},leave:()=>{if(cardPart===id){cardPart='';update?.();}},
+    // While the camera draws back the badge slides under the pointer and
+    // back; that is not the reader leaving it.
+    const badge=id=>({pinned:pinnedPart===id,enter:event=>{cardPart=id;update?.();reveal(id,event);},
+      leave:()=>{if(cardPart!==id||performance.now()<revealing.until)return;cardPart='';update?.();},
       toggle:()=>{pinnedPart=pinnedPart===id?'':id;update?.();}});
     const inside=new Set(members);
     const labelGroups=area?connections(area,members,layout.edges,
@@ -465,6 +470,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // being read closes.
     function reveal(id,event){
       if(!instance||!event)return;
+      // One draw-back for one look at a badge, measured from where it began.
+      const now=performance.now(),element=event.currentTarget;
+      if(revealing.id===id&&now<revealing.until+1500)return;
       const points=labels.filter(label=>[...label.byNumber.values()].some(entry=>entry.key===id)).map(label=>label.point);
       if(!points.length)return;
       const v=instance.getViewport(),rect=host.getBoundingClientRect(),px=event.clientX-rect.left,py=event.clientY-rect.top;
@@ -475,13 +483,17 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         if(dx>0)z=Math.min(z,(rect.width-margin.right-px)/dx);else if(dx<0)z=Math.min(z,(px-margin.left)/-dx);
         if(dy>0)z=Math.min(z,(rect.height-margin.bottom-py)/dy);else if(dy<0)z=Math.min(z,(py-margin.top)/-dy);
       }
+      // Never so far that the parts being read stop being readable: labels
+      // that still do not fit stay where they are.
+      z=Math.max(z,v.zoom*.62);
+      const settle=()=>{if(cardPart===id&&!element.matches(':hover')){cardPart='';update?.();}};
       if(!(z>0)||z>=v.zoom*.98)return;
       const previous=new Set([...openComponents,...detailed,...communicationsOpen]);
       for(let step=0;step<=8;step++){
         const zoom=Math.max(minZoom(),z+(v.zoom-z)*step/8),next={x:px-fx*zoom,y:py-fy*zoom,zoom};
         if(zoom>=v.zoom*.98)return;
         const open=detailState(next,previous);
-        if(wholeComponent?open.components.has(area):open.areas.has(area)){instance.setViewport(next,{duration:320});return;}
+        if(wholeComponent?open.components.has(area):open.areas.has(area)){revealing={id,until:now+420,zoom:v.zoom};instance.setViewport(next,{duration:320});setTimeout(settle,460);return;}
       }
     }
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
