@@ -35,10 +35,10 @@ export function overviewHeading(item,screenWidth,measure){
 // A group's fixed world box can be much smaller than its siblings at the
 // common reveal threshold. Fit its complete name once, never hide it or
 // rewrap it against the current viewport. The frame itself is painted by Area.
-export function groupHeading(node,title,maxScale,measure,reservedWidth=44,reservedHeight=12){
+export function groupHeading(node,title,maxScale,measure,reservedWidth=44,reservedHeight=12,minHeight=0){
   const font='600 12px system-ui',widest=Math.max(0,...String(title).split(/\s+/).map(word=>measure(word,font)));
   const lines=scale=>wrapText(title,node.width/scale-reservedWidth,font,measure);
-  const fits=scale=>node.width/scale-reservedWidth>=widest&&node.height/scale-reservedHeight>=Math.max(20,lines(scale).length*16);
+  const fits=scale=>node.height/scale>=minHeight&&node.width/scale-reservedWidth>=widest&&node.height/scale-reservedHeight>=Math.max(20,lines(scale).length*16);
   let scale=maxScale;
   if(!fits(scale)){
     let low=0,high=scale;
@@ -104,7 +104,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     }:undefined;
     return {...n,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
       roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
-      kindLabel:communicationChildren.has(n.id)||!input&&['core','triggers'].includes(n.lane)?'':kind(n),description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),
+      kindLabel:input&&!communicationChildren.has(n.id)?kind(n):'',description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,
       headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines.length?12+descriptionLines.length*18:0)),
       width:260,height:frame?undefined:66+title.length*22+descriptionLines.length*18+

@@ -195,10 +195,9 @@ func (view *pageView) SystemMap() *pageMap {
 				name = group.KindLabel
 			}
 			// One tile per outside symbol: the same call made from several
-			// places is one thing the system is asked for, with the count.
+			// places is one thing the system is asked for. Every place it is
+			// made from stays a line of the arrow: which function asks.
 			tileOf := make(map[string]string)
-			sites := make(map[string]int)
-			edgeSeen := make(map[string]bool)
 			for _, row := range group.Rows {
 				id := "system-" + row.ID
 				if localOutbound[id] != "" {
@@ -208,35 +207,27 @@ func (view *pageView) SystemMap() *pageMap {
 				if symbol == "" {
 					symbol = row.ID
 				}
-				if tile, folded := tileOf[symbol]; folded {
-					sites[tile]++
-					for position := range result.Nodes {
-						if result.Nodes[position].ID == tile {
-							result.Nodes[position].Subtitle = joinSubtitle(result.Nodes[position].Subtitle, fmt.Sprintf("×%d", sites[tile]))
-						}
+				tile, folded := tileOf[symbol]
+				if !folded {
+					tile = id
+					tileOf[symbol] = id
+					title := row.Line()
+					if title == "" {
+						title = row.Brief()
 					}
-					from := targetMapNodeID(section.programTargetID, mapNodeID(row.MapGroup))
-					if _, ok := positions[from]; row.MapGroup != "" && ok && !edgeSeen[from+"\x00"+tile] {
-						edgeSeen[from+"\x00"+tile] = true
-						result.Edges = append(result.Edges, pageMapEdge{From: from, To: tile, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor})
+					if title == "" {
+						title = name
 					}
-					continue
+					add(pageMapNode{ID: id, Owner: section.ID, ItemKind: "External communication", FullTitle: title, Summary: row.Summary, SummaryRef: row.SummaryRef, Source: row.Anchor, SourceKind: row.Source, DetailsID: row.ID, Href: "#" + row.ID, Subtitle: row.Address, Lane: "dependencies"})
+					children = append(children, id)
 				}
-				tileOf[symbol] = id
-				sites[id] = 1
-				title := row.Line()
-				if title == "" {
-					title = row.Brief()
-				}
-				if title == "" {
-					title = name
-				}
-				add(pageMapNode{ID: id, Owner: section.ID, ItemKind: "External communication", FullTitle: title, Summary: row.Summary, SummaryRef: row.SummaryRef, Source: row.Anchor, SourceKind: row.Source, DetailsID: row.ID, Href: "#" + row.ID, Subtitle: row.Address, Lane: "dependencies"})
-				children = append(children, id)
 				from := targetMapNodeID(section.programTargetID, mapNodeID(row.MapGroup))
 				if _, ok := positions[from]; row.MapGroup != "" && ok {
-					edgeSeen[from+"\x00"+id] = true
-					result.Edges = append(result.Edges, pageMapEdge{From: from, To: id, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor})
+					edge := pageMapEdge{From: from, To: tile, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor}
+					if row.Caller != "" && row.External != "" && !strings.ContainsAny(row.Caller+row.External, " \t") {
+						edge.Calls = []pageEdgeCall{{Label: row.Caller + " calls " + row.External, From: row.CallerAnchor.Href, To: row.Anchor.Href, At: row.Anchor.Text}}
+					}
+					result.Edges = append(result.Edges, edge)
 				}
 			}
 			if len(children) > 0 {
@@ -560,18 +551,4 @@ func sortedKeys(values map[string]bool) string {
 	}
 	sort.Strings(keys)
 	return strings.Join(keys, " ")
-}
-
-// joinSubtitle keeps the address and replaces an earlier count with the
-// current one.
-func joinSubtitle(subtitle, count string) string {
-	if cut := strings.LastIndex(subtitle, " · ×"); cut >= 0 {
-		subtitle = subtitle[:cut]
-	} else if strings.HasPrefix(subtitle, "×") {
-		subtitle = ""
-	}
-	if subtitle == "" {
-		return count
-	}
-	return subtitle + " · " + count
 }

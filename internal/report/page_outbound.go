@@ -15,13 +15,16 @@ import (
 type pageOutbound struct {
 	// Connections keep exact saved integration identities for the canvas.
 	// Destination text groups presentation only and never establishes a peer.
-	Connections                 []string
-	MapGroup                    string
-	Operations                  string
-	KindLabel                   string
-	DestinationCount            int
-	Uses                        []pageOutboundUse
-	Callers                     []pageConnection
+	Connections      []string
+	MapGroup         string
+	Operations       string
+	KindLabel        string
+	DestinationCount int
+	Uses             []pageOutboundUse
+	Callers          []pageConnection
+	// Caller is the declaration the outside call is written in.
+	Caller                      string
+	CallerAnchor                pageAnchor
 	ID                          string
 	Destination, DestinationRef string
 	Summary, SummaryRef         string
@@ -108,6 +111,13 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 			Anchor: builder.links.anchor(call.Location.Path, call.Location.Line, call.Location.Column),
 		}
 		row.Callers = builder.outboundCallers(index, section.ID, call.SubjectID)
+		if ref, known := builder.subject(index.Target.ID, call.SubjectID); known && call.SubjectID != "" {
+			name, anchor := builder.subjectDisplay(ref.subject)
+			row.Caller = name
+			if anchor != nil {
+				row.CallerAnchor = *anchor
+			}
+		}
 		var inputs []string
 		for _, connection := range index.Connections {
 			if connection.SourceKind == "integration" && connection.From.TargetID == index.Target.ID &&

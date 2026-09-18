@@ -121,8 +121,6 @@
 .flow-area-summary .flow-overview-compact>strong{flex:1 1 auto;min-height:0;overflow:hidden;font:600 12px/16px system-ui;padding-right:44px;overflow-wrap:normal}
 .flow-standalone-part{padding:6px;gap:0}
 .flow-standalone-part>strong{font:600 12px/16px system-ui;overflow-wrap:normal}
-.flow-standalone-part:has(.flow-role-symbol)>strong{padding-right:20px}
-.flow-standalone-part>.flow-role-symbol{position:absolute;right:6px;top:6px;width:12px;height:12px}
 .flow-component-overview{position:absolute;transform-origin:top left;pointer-events:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:8px;overflow:hidden;color:#243044;background:#f8fafc;border-radius:8px;cursor:zoom-in}
 .flow-component-overview-heading{display:flex;flex-shrink:0;gap:8px;align-items:center;width:100%}
 .flow-component-overview-heading>strong{font:700 18px/23px system-ui;overflow-wrap:anywhere;flex:1;min-width:0}
@@ -153,11 +151,6 @@
 .map-input-context button{font-size:12px;padding:4px 7px;margin-top:6px}
 .find-result-summary{font-size:13px!important;line-height:1.45!important;color:#536176;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:6px 0 0}
 @keyframes flow-reveal{from{opacity:.2}to{opacity:1}}
-.flow-area-summary .flow-role-symbol{position:static;width:14px;height:14px}
-.flow-area-summary .flow-number{position:static}
-.flow-standalone-part:has(.flow-role-symbol)>strong{padding-right:50px}
-.flow-standalone-part>.flow-number{top:50%;bottom:auto;transform:translateY(-50%)}
-.flow-standalone-part:has(.flow-number)>.flow-role-symbol{right:40px;top:50%;transform:translateY(-50%)}
 .flow-label-upright button{white-space:pre;line-height:15px;padding:3px 6px}
 .flow-calls-place{position:absolute;z-index:5}
 .flow-calls-place::before{content:'';position:absolute;inset:-18px;z-index:-1}
@@ -213,11 +206,6 @@
 .flow-connection-calls header button{all:unset;cursor:pointer;color:#4f3aa3;font:600 12px/16px system-ui}
 .flow-connection-calls header button:hover{text-decoration:underline}
 .flow-enabled .flow-connection-label button.flow-label-pinned{background:#243044;color:#fff}
-.flow-standalone-part>.flow-part-zoom{top:50%;right:34px;transform:translateY(-50%)}
-.flow-standalone-part:has(.flow-part-zoom):has(.flow-number)>.flow-role-symbol{right:70px}
-.flow-standalone-part:not(:has(.flow-number))>.flow-part-zoom{right:8px}
-.flow-standalone-part:has(.flow-part-zoom):not(:has(.flow-number))>.flow-role-symbol{right:42px}
-.flow-standalone-part:has(.flow-part-zoom)>strong{padding-right:0}
 /* A label's transform makes it a stacking context of its own at level zero,
    below nested nodes and their arrows; with its card open it goes above. */
 .flow-connection-label:has(.flow-connection-calls){z-index:5000}
@@ -253,3 +241,8 @@
 .flow-connection-label button b:hover{background:#c3cedb}
 .flow-connection-label button b.flow-number-open{background:#243044;color:#fff}
 .flow-number:hover{background:#c3cedb}
+
+/* The marks stand in the same places on every card: the zoom mark top right, the number bottom right, the role mark on the top border, in the middle. */
+.flow-role-symbol{position:absolute;left:50%;top:0;width:14px;height:14px;transform:translate(-50%,-50%);z-index:1}
+.flow-standalone-part>strong{padding-right:38px}
+.flow-area-summary>.flow-overview-compact>footer{justify-content:flex-end}.flow-area-summary .flow-number{position:static}.flow-standalone-part>.flow-part-zoom{top:3px}.flow-standalone-part>.flow-number{right:6px;bottom:4px}

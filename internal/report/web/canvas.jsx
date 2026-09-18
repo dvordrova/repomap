@@ -118,9 +118,9 @@ function AreaSummary({node,item,number,badge,heading,enter,select}){
     <div className="flow-part flow-overview-card flow-overview-compact"><strong>{title}</strong>
       <footer>
         {number?<span data-badge={node.id} className={`flow-number ${badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>badge?.enter(event)} onMouseLeave={()=>badge?.leave()}
-          onClick={event=>{event.stopPropagation();badge?.toggle();}}>{number}</span>:<span/>}
-        {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
+          onClick={event=>{event.stopPropagation();badge?.toggle();}}>{number}</span>:null}
       </footer></div>
+    {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
   </div>;
 }
 function ZoomMark({node,item,enter,select,compactScale}) {
@@ -433,7 +433,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const standaloneHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       return new Map(layout.nodes.filter(n=>!n.frame&&!byID.get(n.id).activation&&byID.get(n.parentId)?.branch==='component').map(n=>{
-        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,(item.roleLabel?65:45)+(item.symbols?.length?34:0),15);
+        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,50,15,58);
         return [n.id,{...heading,width:n.width/heading.scale,height:n.height/heading.scale}];
       }));
     },[layoutKey]);
