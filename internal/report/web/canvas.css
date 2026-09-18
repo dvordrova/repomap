@@ -206,7 +206,9 @@
 .flow-part-zoom{position:absolute;right:5px;top:5px;display:grid;place-items:center;width:29px;height:20px;padding:0;border:0;background:transparent;color:#52647d;cursor:zoom-in}
 .flow-part-zoom:hover{color:#243044}
 .flow-part:has(.flow-part-zoom)>strong{padding-right:34px}
-.flow-part:not(.flow-standalone-part):has(.flow-number)>strong{padding-bottom:18px}
+/* An open part's number stands over its bottom corner; a closed area keeps its
+   number in a row of its own and needs no room left under the title. */
+.flow-part:not(.flow-standalone-part):not(.flow-overview-card):has(.flow-number)>strong{padding-bottom:18px}
 .flow-part-symbols .flow-symbol-block a:hover{background:#dfe6ef}
 .flow-part-symbols .flow-symbol-block .flow-symbol-key{font-weight:750;color:#4f2f86}
 .flow-part-symbols .flow-symbol-more{border-style:dashed;color:#536176;text-align:center}
