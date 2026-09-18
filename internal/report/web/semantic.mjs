@@ -117,22 +117,21 @@ export function systemViewport(nodes,width,height) {
   return {x:Math.max(overviewInset,(width-(right-left)*zoom)/2)-left*zoom,y:Math.max(overviewInset,(height-(bottom-top)*zoom)/2)-top*zoom,zoom};
 }
 
-export function componentViewport(node,width,height,contentScale=1) {
-  // Enter the whole prepared component. A camera aimed at its topmost child
-  // can otherwise push a sibling off the left edge after the final interior fit.
-  const zoom=Math.min(Math.max(.85,1/contentScale),Math.max(1,width-24)/node.width,Math.max(1,height-24)/node.height);
-  return {x:12-node.absolute.x*zoom,y:12-node.absolute.y*zoom,zoom};
-}
-
-// External frames can contain scaled call cards. Enter at their real text
-// scale, with the first call visible even when routing leaves a large header gap.
-export function communicationViewport(node,nodes,width,height,contentScale=1) {
-  const base=componentViewport(node,width,height),zoom=Math.max(base.zoom,1/contentScale);
-  const viewport={x:24-node.absolute.x*zoom,y:24-node.absolute.y*zoom,zoom};
-  const first=nodes.filter(n=>n.parentId===node.id).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];
-  if(first){
-    if(first.absolute.x*zoom+viewport.x<24||(first.absolute.x+first.width)*zoom+viewport.x>width-24)viewport.x=24-first.absolute.x*zoom;
-    if(first.absolute.y*zoom+viewport.y<24||(first.absolute.y+first.height)*zoom+viewport.y>height-24)viewport.y=24-first.absolute.y*zoom;
+// Entering a frame, whatever the frame is: an area, an inputs or external
+// frame, a component. It is shown whole in the middle of the free canvas, its
+// content at its own size when there is room and smaller when there is not,
+// but never below `floor`: the size at which that content opens by itself, or,
+// for a caller that opens the frame itself, the size at which it stays open. A
+// frame too large even so is entered at its first child. A component is
+// entered whole at any size: its children have scales of their own.
+export function frameViewport(node,nodes,width,height,contentScale=1,{whole=false,pad=24,floor=.86}={}) {
+  const fit=Math.min(Math.max(1,width-2*pad)/node.width,Math.max(1,height-2*pad)/node.height);
+  const zoom=Math.max(whole?0:floor/contentScale,Math.min(Math.max(whole?.85:0,1/contentScale),fit));
+  const viewport={x:Math.max(pad,(width-node.width*zoom)/2)-node.absolute.x*zoom,y:Math.max(pad,(height-node.height*zoom)/2)-node.absolute.y*zoom,zoom};
+  const first=(nodes||[]).filter(n=>n.parentId===node.id).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];
+  if(first&&!whole){
+    if(first.absolute.x*zoom+viewport.x<pad||(first.absolute.x+first.width)*zoom+viewport.x>width-pad)viewport.x=pad-first.absolute.x*zoom;
+    if(first.absolute.y*zoom+viewport.y<pad||(first.absolute.y+first.height)*zoom+viewport.y>height-pad)viewport.y=pad-first.absolute.y*zoom;
   }
   return viewport;
 }

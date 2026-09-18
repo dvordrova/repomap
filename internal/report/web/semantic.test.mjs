@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,componentViewport,communicationViewport,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
+import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
 
 test('approaching a target reveals its diagram before its smallest descendant text is readable',()=>{
   const nodes=[{id:'target',frame:true,absolute:{x:0,y:0},width:900,height:600}];
@@ -126,9 +126,11 @@ test('component entrance includes siblings even when the topmost child is far to
   const frame={id:'front',absolute:{x:32,y:64},width:2084,height:1309,frame:true};
   for(const x of [64,364,1300]){
   const child={id:'area',parentId:'front',absolute:{x,y:302},width:400,height:580};
-  const v=componentViewport(frame,603,580);
-  assert.equal(frame.absolute.y*v.zoom+v.y,12);
-  assert.equal(frame.absolute.x*v.zoom+v.x,12);
+  const v=frameViewport(frame,[],603,580,1,{whole:true,pad:12});
+  // The whole component is in view, in the middle of the canvas.
+  assert.ok(frame.absolute.y*v.zoom+v.y>=12-1e-9);
+  assert.ok(frame.absolute.x*v.zoom+v.x>=12-1e-9);
+  assert.ok((frame.absolute.x+frame.width)*v.zoom+v.x<=591.01);
   assert.ok(child.absolute.x*v.zoom+v.x>=12);
   assert.ok((child.absolute.x+child.width)*v.zoom+v.x<=591.01);
   assert.ok((frame.absolute.y+frame.height)*v.zoom+v.y<=568.01);
@@ -248,7 +250,7 @@ test('component detail also waits for readable direct part headings',()=>{
     const placed=new Map([frame,part].map(n=>[n.id,n]));
     assert.equal(closedContainer('utility',placed,new Map(records.map(n=>[n.id,n])),new Set(),componentContents(.7,true,textSize)),frame,
       'the 11.9px direct part is concealed when its component summary returns');
-    const viewport=componentViewport(frame,638,700);
+    const viewport=frameViewport(frame,[],638,700,1,{whole:true,pad:12});
     assert.ok(part.absolute.x*viewport.zoom+viewport.x>=12,'component entrance retains its leftmost part');
     assert.ok((frame.absolute.x+frame.width)*viewport.zoom+viewport.x<=626.01,'the complete component stays in view');
   }
@@ -270,7 +272,7 @@ test('independently scaled components reveal only their own readable interiors',
   assert.deepEqual([...componentDetails(fonts,1.4,opened)],[],'11.9px parts close with their own component');
   const root={id:'front',absolute:{x:0,y:0},width:400,height:200};
   const area={id:'views',parentId:'front',absolute:{x:8,y:40},width:100,height:140};
-  const camera=componentViewport(root,1054,700,fonts.get('front')/20);
+  const camera=frameViewport(root,[],1054,700,fonts.get('front')/20,{whole:true,pad:12});
   assert.equal(camera.zoom,1030/400,'component entrance fits every group before exploring one');
   const placed=new Map([root,area].map(n=>[n.id,n]));
   assert.equal(closedContainer('views',placed,new Map(records.map(n=>[n.id,n])),new Set(),true,new Set(),opened),root,
@@ -280,9 +282,10 @@ test('independently scaled components reveal only their own readable interiors',
 test('external entrance makes scaled call text readable and puts the first call in view',()=>{
   const frame={id:'api',absolute:{x:0,y:0},width:300,height:300};
   const call={id:'get',parentId:'api',absolute:{x:50,y:200},width:52,height:24};
-  const camera=communicationViewport(frame,[frame,call],638,578,.2);
-  assert.equal(camera.zoom,5,'a 17px call heading becomes 17px on screen');
-  assert.equal(17*.2*camera.zoom,17);
+  const camera=frameViewport(frame,[frame,call],638,578,.2);
+  // The frame does not fit at the calls' own size, so it is entered at the
+  // smallest size that still opens and reads them, not cut off at full size.
+  assert.ok(Math.abs(camera.zoom-4.3)<1e-9,'a 17px call heading is at least 14px on screen');
   assert.ok(call.absolute.x*camera.zoom+camera.x>=24);
   assert.ok(call.absolute.y*camera.zoom+camera.y>=24);
   assert.ok((call.absolute.x+call.width)*camera.zoom+camera.x<=638-24);
@@ -380,7 +383,7 @@ test('input collections reveal original inputs at readable scale and clip only t
     }
     assert.equal(JSON.stringify({nodes,route}),original,'zoom neither reparents the input nor changes its source edge');
   }
-  const entrance=communicationViewport(frame,nodes,1054,578,1);
+  const entrance=frameViewport(frame,nodes,1054,578,1);
   assert.ok(17*entrance.zoom>=14);
   assert.deepEqual([...communicationDetails(scales,entrance.zoom)],['inputs']);
   assert.ok(input.absolute.x*entrance.zoom+entrance.x>=24);

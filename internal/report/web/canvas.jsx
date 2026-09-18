@@ -7,7 +7,7 @@ import {connections} from './layout.mjs';
 import {symbolBlocks,symbolRow} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
-import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
+import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {singlePartAreas} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,groupHeading} from './cards.mjs';
@@ -305,19 +305,16 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(!center&&readableFocus(n.id,placed,byID,detailed,componentsOpen,viewport,rect.width,rect.height,communicationsOpen,openComponents))return;
     locationSubject=id;
     if(n.frame){
-      if(['component','communication','inputs'].includes(byID.get(n.id).branch)){
-        const destination=['communication','inputs'].includes(byID.get(n.id).branch)
-          ?communicationViewport(n,layout.nodes,rect.width,rect.height,communicationScales().get(n.id)||1)
-          :componentViewport(n,rect.width,rect.height,(componentFonts.get(n.id)||20)/20);
-        commitCamera(instance.setViewport(destination,{duration:smooth?420:0}),id);return;
-      }
-      // An area is shown whole: its parts at their own size when the canvas
-      // has room for that, smaller when it has not, never below three
-      // quarters. It stands in the middle of the free canvas.
-      const fit=Math.min((rect.width-48)/n.width,(rect.height-48)/n.height);
-      const zoom=scales.has(n.id)?Math.max(.75/contentScale,Math.min(1/contentScale,fit)):Math.min(1,Math.max(.6,fit));
-      const left=Math.max(24,(rect.width-n.width*zoom)/2),top=Math.max(24,(rect.height-n.height*zoom)/2);
-      commitCamera(instance.setViewport({x:left-x*zoom,y:top-y*zoom,zoom},{duration:smooth?420:0}),id);return;
+      // Every frame is entered by the one rule, at the scale its own content is
+      // drawn at: a component whole, the others no smaller than readable.
+      const branch=byID.get(n.id).branch,component=branch==='component';
+      const scale=component?(componentFonts.get(n.id)||20)/20:['communication','inputs'].includes(branch)?communicationScales().get(n.id)||1:scales.has(n.id)?contentScale:1;
+      // Entering a frame opens it, so it may be shown as small as an open frame
+      // stays open, about twelve pixels of text, rather than as large as a
+      // closed one needs to open by itself.
+      if(['communication','inputs'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id]);
+      else if(!component)detailed=new Set([...detailed,n.id]);
+      commitCamera(instance.setViewport(frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:.72}),{duration:smooth?420:0}),id);return;
     }
     const zoom=1/contentScale;
     commitCamera(instance.setCenter(x+n.width/2,y+Math.min(n.height/2,rect.height/(2*zoom)-24),{zoom,duration:smooth?420:0}),id);
