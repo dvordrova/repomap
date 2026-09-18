@@ -97,7 +97,7 @@ function Part({data}) {
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="1.5" y="11" width="10.5" height="10.5" rx="1.4"/><circle cx="14" cy="9" r="7" fill="#fff" fillOpacity=".92"/><path d="M19.2 14.2l3.2 3.2" strokeWidth="2.8"/>
       <path d="M9.5 10h5v4.5M12 8.2V4.6m-1.4 1.4L12 4.6 13.4 6M16.4 12.2h3m-1.4-1.4 1.4 1.4-1.4 1.4" strokeWidth="1.1"/></svg></button>}
-    {data.number && <span className={`flow-number nopan ${data.badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>data.badge?.enter(event)} onMouseLeave={()=>data.badge?.leave()}
+    {data.number && <span data-badge={data.id} className={`flow-number nopan ${data.badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>data.badge?.enter(event)} onMouseLeave={()=>data.badge?.leave()}
       onClick={event=>{event.stopPropagation();data.badge?.toggle();}}>{data.number}</span>}
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
@@ -116,7 +116,7 @@ function AreaSummary({node,item,number,badge,heading,enter,select}){
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,false);}}>
     <div className="flow-part flow-overview-card flow-overview-compact"><strong>{title}</strong>
       {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
-      {number&&<span className={`flow-number ${badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>badge?.enter(event)} onMouseLeave={()=>badge?.leave()}
+      {number&&<span data-badge={node.id} className={`flow-number ${badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>badge?.enter(event)} onMouseLeave={()=>badge?.leave()}
         onClick={event=>{event.stopPropagation();badge?.toggle();}}>{number}</span>}</div>
   </div>;
 }
@@ -471,12 +471,26 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       // On the component's frame the label is as large as the numbers of
       // the areas and loose parts it names.
       const frameScale=wholeComponent?Math.max(...layout.nodes.filter(n=>n.parentId===area).map(n=>groupHeadings.get(n.id)?.scale||standaloneHeadings.get(n.id)?.scale||0)):0;
+      // Which side of its frame the label stands on and at what scale: the
+      // frame's own children's scale, a part's or half a closed area's heading.
+      const frame=placed.get(root);
+      const sides=[['left',Math.abs(point.x-frame.absolute.x)],['right',Math.abs(point.x-frame.absolute.x-frame.width)],
+        ['top',Math.abs(point.y-frame.absolute.y)],['bottom',Math.abs(point.y-frame.absolute.y-frame.height)]];
+      const side=sides.sort((a,b)=>a[1]-b[1])[0][0];
+      const labelScale=frameScale||Math.max(...layout.nodes.filter(n=>n.parentId===root).map(n=>n.frame?(byID.get(n.id)?.summaryScale||1)/2:byID.get(n.id)?.contentScale||1),
+        ...group.insides.map(id=>byID.get(id)?.contentScale||1));
+      // The card stands outward of the label; this is the far corner it
+      // reaches, in the map's coordinates.
+      const reach={width:360*labelScale,height:340*labelScale};
+      const cardFar={x:point.x+(side==='left'?-reach.width:side==='right'?reach.width:0),y:point.y+(side==='top'?-reach.height:side==='bottom'?reach.height:0)};
+      const cardSpan=side==='left'||side==='right'?[{x:cardFar.x,y:point.y-reach.height/2},{x:cardFar.x,y:point.y+reach.height/2}]
+        :[{x:point.x-reach.width/2,y:cardFar.y},{x:point.x+reach.width/2,y:cardFar.y}];
       const byNumber=new Map();
       for(const id of group.insides){const k=number.get(numbered(id));if(!byNumber.has(k))byNumber.set(k,{key:numbered(id),ids:[]});byNumber.get(k).ids.push(id);}
       const active=state.mode==='all'?new Set():new Set(layout.edges.filter(e=>group.edges.includes(e.id)&&state.activeEdges.has(e.id))
         .map(e=>number.get(numbered(inside.has(e.from)?e.from:e.to))));
       const bold=active.size<byNumber.size||byNumber.size===1&&state.mode==='hover'&&hoverArea!==area?active:new Set();
-      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
+      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,side,labelScale,cardSpan,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
     });
     // A number's cards stand beside every arrow it has, some of them off the
     // canvas. The camera draws back around the pointer, so the badge stays
@@ -488,25 +502,35 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const rect=host.getBoundingClientRect(),zoom=Math.min(maxZoom,Math.min((rect.width-80)/node.width,(rect.height-80)/node.height));
       instance.setCenter(node.absolute.x+node.width/2,node.absolute.y+node.height/2,{zoom,duration:420});
     }
-    function reveal(id,event){
-      if(!instance||!event)return;
+    function reveal(id,pointer){
+      if(!instance||!pointer)return;
+      const event={clientX:pointer.clientX,clientY:pointer.clientY};
       // One draw-back for one look at a badge, measured from where it began.
-      const now=performance.now(),element=event.currentTarget;
+      const now=performance.now();
       if(revealing.id===id&&now<revealing.until+1500)return;
-      const points=labels.filter(label=>[...label.byNumber.values()].some(entry=>entry.key===id)).map(label=>label.point);
+      const points=labels.filter(label=>[...label.byNumber.values()].some(entry=>entry.key===id)).flatMap(label=>[label.point,...label.cardSpan]);
       if(!points.length)return;
       const v=instance.getViewport(),rect=host.getBoundingClientRect(),px=event.clientX-rect.left,py=event.clientY-rect.top;
-      const fx=(px-v.x)/v.zoom,fy=(py-v.y)/v.zoom,margin={left:130,right:130,top:40,bottom:190};
+      const fx=(px-v.x)/v.zoom,fy=(py-v.y)/v.zoom,margin={left:24,right:24,top:24,bottom:24};
       let z=v.zoom;
       for(const point of points){
         const dx=point.x-fx,dy=point.y-fy;
         if(dx>0)z=Math.min(z,(rect.width-margin.right-px)/dx);else if(dx<0)z=Math.min(z,(px-margin.left)/-dx);
         if(dy>0)z=Math.min(z,(rect.height-margin.bottom-py)/dy);else if(dy<0)z=Math.min(z,(py-margin.top)/-dy);
       }
-      // Never so far that the parts being read stop being readable: labels
-      // that still do not fit stay where they are.
-      z=Math.max(z,v.zoom*.62);
-      const settle=()=>{if(cardPart===id&&!element.matches(':hover')){cardPart='';update?.();}};
+      // Never so far that what is being read stops being readable: about nine
+      // pixels of text in the frame's own children. Cards that still do not
+      // fit stay where they are.
+      const childScale=Math.max(...labels.map(label=>label.labelScale||0),0);
+      z=Math.max(z,childScale?.6/childScale:v.zoom*.62);
+      // A pointer that does not move gets no new events, and the badge may
+      // have been redrawn: ask where the badge is now and whether the pointer
+      // still stands on it.
+      const settle=()=>{
+        const at=[...host.querySelectorAll('[data-badge]')].find(el=>el.dataset.badge===id)?.getBoundingClientRect();
+        const on=at&&event.clientX>=at.left-2&&event.clientX<=at.right+2&&event.clientY>=at.top-2&&event.clientY<=at.bottom+2;
+        if(cardPart===id&&!on){cardPart='';update?.();}
+      };
       if(!(z>0)||z>=v.zoom*.98)return;
       const previous=new Set([...openComponents,...detailed,...communicationsOpen]);
       for(let step=0;step<=8;step++){
@@ -645,20 +669,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     let upright=false,sideName='bottom';
     let style={transform:`translate(${label.x}px,${label.y}px) scale(${label.scale||1})`,transformOrigin:'top left',width:label.width/(label.scale||1),minHeight:label.height/(label.scale||1)};
     if(label.boundary){
-      const frame=placed.get(label.root),p=label.point;
-      const sides=[{dx:1,dy:0,tx:0,ty:-50,d:Math.abs(p.x-frame.absolute.x)},
-        {dx:-1,dy:0,tx:-100,ty:-50,d:Math.abs(p.x-frame.absolute.x-frame.width)},
-        {dx:0,dy:1,tx:-50,ty:0,d:Math.abs(p.y-frame.absolute.y)},
-        {dx:0,dy:-1,tx:-50,ty:-100,d:Math.abs(p.y-frame.absolute.y-frame.height)}];
-      const side=sides.sort((a,b)=>a.d-b.d)[0];
+      const p=label.point,side={left:{dx:1,dy:0,tx:0,ty:-50},right:{dx:-1,dy:0,tx:-100,ty:-50},top:{dx:0,dy:1,tx:-50,ty:0},bottom:{dx:0,dy:-1,tx:-50,ty:-100}}[label.side];
       // Along a side border the numbers stand one above another.
       upright=side.dx!==0&&label.numbers.length>1;
-      sideName=side.dx>0?'left':side.dx<0?'right':side.dy>0?'top':'bottom';
-      // The label stands on a frame, so it is read at the zoom that frame's
-      // own children are read at: a part's scale, or half the heading of a
-      // closed area. The parts deep inside are smaller than that.
-      const scale=label.frameScale||Math.max(...layout.nodes.filter(n=>n.parentId===label.root).map(n=>n.frame?(byID.get(n.id)?.summaryScale||1)/2:byID.get(n.id)?.contentScale||1),
-        ...label.insides.map(id=>byID.get(id)?.contentScale||1));
+      sideName=label.side;
+      const scale=label.labelScale;
       style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
     }
     // A number's badge on its part opens the cards of that number beside

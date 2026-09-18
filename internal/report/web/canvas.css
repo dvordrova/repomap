@@ -221,3 +221,6 @@
 .flow-standalone-part:not(:has(.flow-number))>.flow-part-zoom{right:8px}
 .flow-standalone-part:has(.flow-part-zoom):not(:has(.flow-number))>.flow-role-symbol{right:32px}
 .flow-standalone-part:has(.flow-part-zoom)>strong{padding-right:0}
+/* A label's transform makes it a stacking context of its own at level zero,
+   below nested nodes and their arrows; with its card open it goes above. */
+.flow-connection-label:has(.flow-connection-calls){z-index:5000}
