@@ -236,7 +236,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		result.Nodes = append(result.Nodes, pageMapNode{
 			ID: mapNodeID(group.ID), Href: "#" + groupAnchorID(section.ID, group.ID),
 			Title: mapTitle(group.Title), FullTitle: group.Title, Summary: dropEcho(group.Summary, group.Title), Keys: builder.keySymbols(index.Target.ID, group, maxKeySymbols),
-			Lane: pageLane(group.Lane, group.Core), Members: len(group.MemberSubjectIDs), Concepts: builder.groupConcepts(index.Target.ID, group),
+			Lane: pageLane(group.Lane, group.Core), Symbols: builder.groupSymbols(index.Target.ID, group), Members: len(group.MemberSubjectIDs), Concepts: builder.groupConcepts(index.Target.ID, group),
 			X: 246, Y: 40 + float64(i)*84, Width: mapNodeWidth, Height: mapNodeHeight,
 		})
 	}

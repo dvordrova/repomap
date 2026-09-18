@@ -1,7 +1,7 @@
 import React, {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {flushSync, createPortal} from 'react-dom';
-import {ReactFlow, Handle, Position, ViewportPortal, useViewport} from '@xyflow/react';
+import {ReactFlow, Handle, Position, ViewportPortal, useViewport, useStore} from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
@@ -17,8 +17,41 @@ import './canvas.css';
 // Legacy small repository diagrams share the same embedded ELK instance code.
 window.ELK = ELK;
 const t = (...args) => window.rmT(...args);
+// Zoomed far into a part, its declarations stand inside it as tiles: the
+// keys the model chose first, every tile a link into the code. The tiles are
+// drawn in the card's own rectangle at a quarter of its size, so nothing on
+// the map moves when they appear.
+const deepDivisor=4,deepHeader=20,deepTile={width:190,height:28,gap:8};
+function PartSymbols({symbols,width,height}){
+  const inner={width:width*deepDivisor,height:(height-deepHeader)*deepDivisor};
+  const columns=Math.max(1,Math.floor((inner.width-16+deepTile.gap)/(deepTile.width+deepTile.gap)));
+  const rows=Math.max(1,Math.floor((inner.height-16+deepTile.gap)/(deepTile.height+deepTile.gap)));
+  const room=columns*rows,shown=symbols.length>room?symbols.slice(0,room-1):symbols;
+  return <div className="flow-part-symbols nopan" style={{top:deepHeader,width,height:height-deepHeader}}>
+    <div style={{width:inner.width,height:inner.height,transform:`scale(${1/deepDivisor})`,transformOrigin:'top left',
+      gridTemplateColumns:`repeat(${columns},${deepTile.width}px)`,gridAutoRows:`${deepTile.height}px`,gap:deepTile.gap}}>
+      {shown.map((symbol,i)=>symbol.href
+        ?<a key={i} href={symbol.href} target="_blank" rel="noopener" className={symbol.key?'flow-symbol-key':''} title={symbol.kind?`${symbol.kind} ${symbol.name}`:symbol.name}
+          onClick={event=>event.stopPropagation()}>{symbol.name}</a>
+        :<span key={i} className={symbol.key?'flow-symbol-key':''}>{symbol.name}</span>)}
+      {symbols.length>shown.length&&<span className="flow-symbol-more">+{symbols.length-shown.length}</span>}
+    </div>
+  </div>;
+}
 function Part({data}) {
   const heading=data.standaloneHeading,scale=heading?.scale||data.contentScale;
+  const box=heading?{width:heading.width,height:heading.height}:{width:data.originalWidth||data.width||260,height:data.originalHeight||data.height||88};
+  // Only the flip between the two drawings re-renders the card, not every
+  // step of a zoom.
+  const far=useStore(state=>box.width*(scale||1)*state.transform[2]>=860);
+  const deep=far&&!data.activation&&data.symbols?.length>0;
+  if(deep)return <div className={`flow-part flow-part-deep flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''}`}
+      style={{width:box.width,height:box.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}}>
+    <Handle type="target" position={Position.Top} isConnectable={false}/>
+    <strong>{data.name||data.title}</strong>
+    <PartSymbols symbols={data.symbols} width={box.width} height={box.height}/>
+    <Handle type="source" position={Position.Bottom} isConnectable={false}/>
+  </div>;
   return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
@@ -166,7 +199,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const communicationScales=()=>new Map(areas.filter(a=>['communication','inputs'].includes(byID.get(a.id)?.branch))
     .map(a=>[a.id,Math.min(1,...leaves(a.id).map(id=>byID.get(id)?.contentScale||1))]));
   const maximumZoom=()=>Math.max(2,...[...scales.values(),...communicationScales().values(),
-    ...[...byID.values()].filter(n=>!n.children?.length).map(n=>n.contentScale||1)].map(scale=>1.8/scale));
+    ...[...byID.values()].filter(n=>!n.children?.length).map(n=>n.contentScale||1)].map(scale=>4.5/scale));
   maxZoom=maximumZoom();
   function detailState(viewport,previous){
     const open=detailLayers(layout.nodes,semantic.records,viewport,host.clientWidth,host.clientHeight,previous);

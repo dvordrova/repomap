@@ -189,6 +189,9 @@ type pageMapNode struct {
 	// for the card beside a pointed-at node: enough to decide whether to
 	// go down to the code.
 	Keys      string
+	// Symbols is the part's declarations for the deepest zoom: name, kind,
+	// whether the model chose it as a key of the part, and its place in code.
+	Symbols string
 	Concepts  string
 	CallPaths string
 	Writes    []pageEntityWrite
@@ -2358,4 +2361,49 @@ func edgeCalls(edge pageMapEdge) []pageEdgeCall {
 		return nil
 	}
 	return []pageEdgeCall{{Label: edge.Label, From: edge.FromSource.Href, To: edge.ToSource.Href}}
+}
+
+type pageNodeSymbol struct {
+	Name string `json:"name"`
+	Kind string `json:"kind,omitempty"`
+	Key  bool   `json:"key,omitempty"`
+	Href string `json:"href,omitempty"`
+}
+
+// groupSymbols lists a group's declarations, its keys first, each with its
+// place in the code. Compiler-named closures are nobody's symbol to look for.
+func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group) string {
+	var keys, rest []pageNodeSymbol
+	for _, id := range group.MemberSubjectIDs {
+		ref, known := builder.subject(targetID, id)
+		if !known {
+			continue
+		}
+		name, anchor := builder.subjectDisplay(ref.subject)
+		if name == "" || strings.Contains(name, "$") {
+			continue
+		}
+		symbol := pageNodeSymbol{Name: name}
+		if ref.subject.Object != nil {
+			symbol.Kind = string(ref.subject.Object.Kind)
+		}
+		if anchor != nil {
+			symbol.Href = anchor.Href
+		}
+		if interpretation := ref.subject.Interpretation; interpretation != nil && interpretation.Key {
+			symbol.Key = true
+			keys = append(keys, symbol)
+			continue
+		}
+		rest = append(rest, symbol)
+	}
+	symbols := append(keys, rest...)
+	if len(symbols) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(symbols)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
