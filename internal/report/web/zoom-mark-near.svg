@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="44"
+     viewBox="230 188 820 562" fill="none">
+  <defs>
+    <clipPath id="mi-near-outside" clipPathUnits="userSpaceOnUse">
+      <path d="M200 160H1080V790H200Z M822 413 A206 206 0 1 0 410 413 A206 206 0 1 0 822 413Z" clip-rule="evenodd"/>
+    </clipPath>
+    <clipPath id="mi-near-inside" clipPathUnits="userSpaceOnUse">
+      <circle cx="616" cy="413" r="206"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#mi-near-outside)">
+    <rect x="262" y="451" width="316" height="273"
+          rx="2" stroke="#608CAE" stroke-width="18"/>
+    <path d="M382 571 C382 525 414 496 461 496 C495 496 517 514 517 541 C517 570 494 581 473 595 C448 612 432 618 432 630" stroke="#BD7736" stroke-width="10.5"
+          stroke-linecap="round"/>
+    <circle cx="432" cy="670" r="5.8" fill="#BD7736"/>
+  </g>
+  <path d="M770.4 533.6 L1002.125269 714.674123"
+        stroke="#4B6275" stroke-width="30" stroke-linecap="round"
+        clip-path="url(#mi-near-outside)"/>
+  <g clip-path="url(#mi-near-inside)">
+    <g transform="translate(-131.120 -273.870) scale(1.44)">
+      <rect x="262" y="451" width="316" height="273"
+            rx="1.5" stroke="#608CAE" stroke-width="13"/>
+      <path d="M382 571 C382 525 414 496 461 496 C495 496 517 514 517 541 C517 570 494 581 473 595 C448 612 432 618 432 630" stroke="#BD7736" stroke-width="13.5"
+            stroke-linecap="round"/>
+      <circle cx="432" cy="670" r="8.2" fill="#BD7736"/>
+    </g>
+    <g stroke="#668296" stroke-width="17" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M590 374V270 M558 302L590 270L622 302"/>
+      <path d="M812 463H716 M748 431L716 463L748 495"/>
+    </g>
+  </g>
+  <circle cx="616" cy="413" r="206" stroke="#4B6275" stroke-width="24"/>
+</svg>
