@@ -25,9 +25,14 @@ const t = (...args) => window.rmT(...args);
 const deepDivisor=4,deepHeader=20,deepTile={width:190,height:28,columnGap:36,rowGap:8,inset:8};
 function PartSymbols({symbols,calls,width,height}){
   const [hot,setHot]=useState(-1);
-  const tile=deepTile,inner={width:width*deepDivisor,height:(height-deepHeader)*deepDivisor};
-  const columns=Math.max(1,Math.floor((inner.width-2*tile.inset+tile.columnGap)/(tile.width+tile.columnGap)));
-  const rows=Math.max(1,Math.floor((inner.height-2*tile.inset+tile.rowGap)/(tile.height+tile.rowGap)));
+  const inner={width:width*deepDivisor,height:(height-deepHeader)*deepDivisor};
+  const rows=Math.max(1,Math.floor((inner.height-2*deepTile.inset+deepTile.rowGap)/(deepTile.height+deepTile.rowGap)));
+  const columnsAt=w=>Math.max(1,Math.floor((inner.width-2*deepTile.inset+deepTile.columnGap)/(w+deepTile.columnGap)));
+  // The widest tile that still leaves a cell for every declaration: long
+  // qualified names are read whole when the part is small.
+  // Calls need columns to run across: a caller, what it calls, and what that calls.
+  const tileWidth=[340,260,deepTile.width].find(w=>columnsAt(w)*rows>=symbols.length&&(!calls?.length||columnsAt(w)>=3))||deepTile.width;
+  const tile={...deepTile,width:tileWidth},columns=columnsAt(tileWidth);
   const room=columns*rows,shown=symbols.length>room?symbols.slice(0,room-1):symbols;
   const drawn=(calls||[]).filter(([from,to])=>from<shown.length&&to<shown.length);
   const cells=symbolCells(shown.length,drawn,columns,rows);

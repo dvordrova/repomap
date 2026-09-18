@@ -2391,8 +2391,20 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 			continue
 		}
 		symbol := pageNodeSymbol{Name: name}
-		if ref.subject.Object != nil {
-			symbol.Kind = string(ref.subject.Object.Kind)
+		if object := ref.subject.Object; object != nil {
+			symbol.Kind = string(object.Kind)
+			owner, owned := builder.subject(targetID, object.OwnerID)
+			ownedByType := owned && owner.subject.Object != nil && owner.subject.Object.Kind == programindex.ObjectType
+			switch {
+			case object.Kind == programindex.ObjectVariable && ownedByType:
+				// A field is part of its type's tile, not a declaration to find.
+				continue
+			case object.Kind == programindex.ObjectMethod && ownedByType:
+				// Four methods called Response are four different things.
+				symbol.Name = owner.subject.Object.Name + "." + name
+			case object.Kind == programindex.ObjectLambda, object.Kind == programindex.ObjectModule, object.Kind == programindex.ObjectPackage:
+				continue
+			}
 		}
 		if anchor != nil {
 			symbol.Href = anchor.Href

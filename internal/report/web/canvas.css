@@ -191,3 +191,4 @@
 .flow-part-symbols a:hover{border-color:#243044;background:#f1f4f8}
 .flow-part-symbols .flow-symbol-key{font-weight:750;border-color:#755299;background:#f6f0fb;color:#3d2760}
 .flow-part-symbols .flow-symbol-more{border-style:dashed;color:#536176;text-align:center}
+.flow-node-reading .flow-part.flow-part-deep,.flow-node-focus .flow-part.flow-part-deep{border-width:1px;outline:0;box-shadow:none}
