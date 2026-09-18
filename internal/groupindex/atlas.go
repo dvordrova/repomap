@@ -322,7 +322,8 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	groups := make([]Group, 0, len(target.Boxes))
 	for _, box := range target.Boxes {
 		members := membersOfBox[box.ID]
-		if len(members) == 0 {
+		// A part that exists only for the tests is not a part of the program.
+		if len(members) == 0 || box.ForTests {
 			continue
 		}
 		sort.Slice(members, func(i, j int) bool { return subjectIDLess(members[i], members[j]) })
@@ -332,7 +333,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			summary = strings.TrimSpace(box.Title)
 		}
 		group := Group{
-			Title: strings.TrimSpace(box.Title), Summary: summary, Lane: laneOfSide(box.Side),
+			Title: strings.TrimSpace(box.Title), Summary: summary, Lane: laneOfSide(box.Side), Core: box.Core,
 			MemberSubjectIDs: members, EvidenceSubjectIDs: []string{},
 		}
 		groupValueOfBox[box.ID] = groupKey(group)
@@ -351,6 +352,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	containers := make([]Container, 0, len(target.Zones))
 	for _, zone := range target.Zones {
 		var ids []string
+		core := false
 		lanes := make(map[Lane]int)
 		for _, boxID := range zone.BoxIDs {
 			groupID, ok := groupOfBox[boxID]
@@ -361,6 +363,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			for _, box := range target.Boxes {
 				if box.ID == boxID {
 					lanes[laneOfSide(box.Side)]++
+					core = core || box.Core
 				}
 			}
 		}
@@ -380,7 +383,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if summary == "" {
 			summary = strings.TrimSpace(zone.Title)
 		}
-		container := Container{Title: strings.TrimSpace(zone.Title), Summary: summary, Lane: lane, GroupIDs: ids}
+		container := Container{Title: strings.TrimSpace(zone.Title), Summary: summary, Lane: lane, Core: core, GroupIDs: ids}
 		containers = append(containers, container)
 	}
 	sort.Slice(containers, func(i, j int) bool { return containerKey(containers[i]) < containerKey(containers[j]) })

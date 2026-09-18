@@ -100,6 +100,15 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	if request == nil || request.Kind != "request" || request.SubjectID != handler.ID || request.Name != "GET /users/:id" || request.Address != ":8080" || request.Source != "fact" {
 		t.Fatalf("route did not become the handler's request operation on the started address: %+v (operations %+v)", request, overlay.Operations)
 	}
+	core := 0
+	for _, group := range overlay.Groups {
+		if group.Core {
+			core++
+		}
+	}
+	if !provider.sawEntryPart || core != 1 {
+		t.Fatalf("the model's core part did not reach the groups: %d of %d", core, len(overlay.Groups))
+	}
 	kinds := map[string]int{}
 	for _, call := range overlay.Outbound {
 		kinds[call.Kind]++
@@ -250,7 +259,7 @@ func materializeRepository(t *testing.T, relative string) (string, *corpus.Corpu
 // would, from the row alone. Text cells get a placeholder; choices get the
 // reader's decision, or the first option where any answer is fine.
 type echoPreset struct {
-	sawRegistration, sawSQL, sawQuerySource, sawRepositorySource bool
+	sawRegistration, sawSQL, sawQuerySource, sawRepositorySource, sawEntryPart bool
 }
 
 func (*echoPreset) State() []byte { return []byte(`{"provider":"echo-preset"}`) }
@@ -265,12 +274,39 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 		Table string           `json:"table"`
 		Fill  []map[string]any `json:"fill"`
 		Rows  []map[string]any `json:"rows"`
+		Mode  string           `json:"mode"`
+		Items []struct {
+			Ref  string `json:"ref"`
+			Path string `json:"path"`
+		} `json:"items"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
 	}
 	var response []byte
 	switch {
+	case request.Task != "" && request.Mode == "parts":
+		// Two parts a reader would draw: what serves requests and what holds
+		// the data. Every other declaration stays source inventory.
+		parts := map[string][]string{}
+		for _, item := range request.Items {
+			switch {
+			case strings.Contains(item.Path, "/handler/"):
+				parts["Request handling"] = append(parts["Request handling"], item.Ref)
+			case strings.Contains(item.Path, "/database/"):
+				parts["Stored users"] = append(parts["Stored users"], item.Ref)
+			}
+		}
+		var groups []map[string]any
+		for _, title := range []string{"Request handling", "Stored users"} {
+			if len(parts[title]) > 0 {
+				groups = append(groups, map[string]any{"title": title, "purpose": title + ".", "members": parts[title]})
+			}
+		}
+		var err error
+		if response, err = json.Marshal(map[string]any{"groups": groups}); err != nil {
+			return llm.Completion{}, err
+		}
 	case request.Task != "":
 		response = []byte(`{"groups":[]}`)
 	default:
@@ -325,6 +361,13 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 				answer["role"] = "adapter"
 			default:
 				answer["role"] = "passthrough"
+			}
+		case table == "atlas_core":
+			// The part requests enter is what this program exists for; every
+			// other cell stays empty, and an empty cell is no.
+			if name == "core" && row["entries"] != nil {
+				preset.sawEntryPart = true
+				answer["core"] = "yes"
 			}
 		case table == "atlas_boundaries" && name == "destination":
 			answer["destination"] = "other: PostgreSQL"

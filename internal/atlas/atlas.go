@@ -497,9 +497,13 @@ type Box struct {
 	// Side orders the columns: in, mid, out.
 	Side string `json:"side"`
 	// Open is MODEL under a budget; always true below the threshold.
-	Open  bool   `json:"open"`
-	Files []File `json:"files"`
-	Keys  []Key  `json:"keys"`
+	Open bool `json:"open"`
+	// Core and ForTests are MODEL: the program exists for this part; this
+	// part exists only for the program's tests. Absent is no.
+	Core     bool   `json:"core,omitempty"`
+	ForTests bool   `json:"for_tests,omitempty"`
+	Files    []File `json:"files"`
+	Keys     []Key  `json:"keys"`
 }
 
 // File is one code file inside a box.

@@ -298,6 +298,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		{lines.StageLayers, r.readLayers},
 		{lines.StageZones, r.readDesign},
 		{lines.StageArrows, r.readArrows},
+		{lines.StageCore, r.readCore},
 		{lines.StageTargets, r.readTargets},
 		{lines.StageJoints, r.readJoints},
 	}
@@ -989,6 +990,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		box := atlas.Box{
 			ID: owner.id, Dir: owner.dir, Title: owner.title, Line: owner.line,
 			ZoneID: owner.zoneID[meta.ID], Side: r.side(owner, meta.ID), Open: owner.open,
+			Core: owner.core, ForTests: owner.forTests,
 			Files: []atlas.File{}, Keys: []atlas.Key{},
 		}
 		if owner.symbols != nil {

@@ -236,7 +236,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		result.Nodes = append(result.Nodes, pageMapNode{
 			ID: mapNodeID(group.ID), Href: "#" + groupAnchorID(section.ID, group.ID),
 			Title: mapTitle(group.Title), FullTitle: group.Title, Summary: dropEcho(group.Summary, group.Title), Keys: builder.keySymbols(index.Target.ID, group, maxKeySymbols),
-			Lane: string(group.Lane), Members: len(group.MemberSubjectIDs), Concepts: builder.groupConcepts(index.Target.ID, group),
+			Lane: pageLane(group.Lane, group.Core), Members: len(group.MemberSubjectIDs), Concepts: builder.groupConcepts(index.Target.ID, group),
 			X: 246, Y: 40 + float64(i)*84, Width: mapNodeWidth, Height: mapNodeHeight,
 		})
 	}
@@ -344,7 +344,7 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 				continue
 			}
 			id := mapNodeID(section.ID + "-foreign-" + group.ID)
-			add(pageMapNode{ID: id, Component: end.TargetID, Remote: true, Href: "#" + groupAnchorID(otherSection.ID, group.ID), FullTitle: group.Title, Title: mapTitle(group.Title), Summary: group.Summary, Concepts: builder.groupConcepts(end.TargetID, group), Members: len(group.MemberSubjectIDs), Lane: string(group.Lane)})
+			add(pageMapNode{ID: id, Component: end.TargetID, Remote: true, Href: "#" + groupAnchorID(otherSection.ID, group.ID), FullTitle: group.Title, Title: mapTitle(group.Title), Summary: group.Summary, Concepts: builder.groupConcepts(end.TargetID, group), Members: len(group.MemberSubjectIDs), Lane: pageLane(group.Lane, group.Core)})
 			return id
 		}
 		return ""
@@ -412,7 +412,7 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 			if len(children) == 1 {
 				unit = "group"
 			}
-			add(pageMapNode{ID: id, Branch: "area", Children: strings.Join(children, " "), Remote: remote, Component: owner.Target.ID, Href: "#" + id, FullTitle: container.Title, Title: mapTitle(container.Title), Summary: container.Summary, Subtitle: fmt.Sprintf("%d %s · explore →", len(children), unit), Lane: string(container.Lane)})
+			add(pageMapNode{ID: id, Branch: "area", Children: strings.Join(children, " "), Remote: remote, Component: owner.Target.ID, Href: "#" + id, FullTitle: container.Title, Title: mapTitle(container.Title), Summary: container.Summary, Subtitle: fmt.Sprintf("%d %s · explore →", len(children), unit), Lane: pageLane(container.Lane, container.Core)})
 			areaIDs = append(areaIDs, id)
 		}
 		return areaIDs

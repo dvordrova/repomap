@@ -404,6 +404,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 					ids = []string{file.ID}
 				}
 				r.addDesignBox(target.ID, designItem{Name: file.Path, Purpose: "Declarations from this source file.", IDs: ids}, membership)
+				r.boxes[membership[ids[0]]].inventory = true
 			}
 			// A file endpoint is unambiguous only when all its declarations
 			// actually belong to one part. Never choose an arbitrary owner.

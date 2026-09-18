@@ -390,7 +390,7 @@ func (builder *pageBuilder) buildZoneMap(section *pageSection, index *groupindex
 			Title: mapTitle(group.Title), FullTitle: group.Title,
 			// A summary that is the title again is the title said twice,
 			// on the card beside the node as on the card below.
-			Summary: dropEcho(group.Summary, group.Title), Lane: string(group.Lane),
+			Summary: dropEcho(group.Summary, group.Title), Lane: pageLane(group.Lane, group.Core),
 			Members: len(group.MemberSubjectIDs),
 			X:       mapPadding + float64(column)*(mapNodeWidth+mapColumnGap),
 			Y:       mapPadding + mapLaneLabelSpace + entry.y,
@@ -1073,7 +1073,7 @@ func growFrame(frames map[string]*pageMapFrame, container *groupindex.Container,
 	frame, known := frames[container.ID]
 	if !known {
 		frame = &pageMapFrame{
-			ID: container.ID, Title: container.Title, Lane: string(container.Lane),
+			ID: container.ID, Title: container.Title, Lane: pageLane(container.Lane, container.Core),
 			Zone: zoneOf(container.ID),
 			X:    node.X, Y: node.Y, Width: node.Width, Height: node.Height,
 		}
@@ -2310,4 +2310,17 @@ func stepRanges(listed string) string {
 		word = "steps"
 	}
 	return word + " " + strings.Join(runs, ", ")
+}
+
+// pageLane is the mark a part shows. The middle column is only where a part
+// stands between what enters and what leaves; the core mark is the model's
+// word that the program exists for the part.
+func pageLane(lane groupindex.Lane, core bool) string {
+	if core {
+		return string(groupindex.LaneCore)
+	}
+	if lane == groupindex.LaneCore {
+		return ""
+	}
+	return string(lane)
 }

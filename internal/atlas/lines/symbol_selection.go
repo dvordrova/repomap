@@ -13,7 +13,7 @@ var symbolSelectionPrompt string
 // Its complete evidence is unchanged by directory/file presentation choices.
 func SymbolSelection(types bool) table.Definition {
 	def := table.Definition{
-		Stage: StageSymbols, Contract: "repomap.atlas.symbol-selection.v7",
+		Stage: StageSymbols, Contract: "repomap.atlas.symbol-selection.v8",
 		System: symbolSelectionPrompt, Independent: true, Memoize: true,
 		Columns: []table.Column{
 			{Name: "key_symbol", Kind: table.Choice, Options: []string{"yes", "no"}, Note: "a declaration a newcomer needs to understand this file"},

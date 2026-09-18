@@ -26,6 +26,11 @@ type boxState struct {
 	files    []string // file place IDs
 	open     bool
 	zoneID   map[string]string // per target
+	// core and forTests are the model's: the program exists for this part;
+	// this part exists only for the program's tests.
+	core, forTests bool
+	// inventory is a source file no part took, not a part the model read.
+	inventory bool
 }
 
 // assignBoxes supplies source-file inventory while captioning. Architecture

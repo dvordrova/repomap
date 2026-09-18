@@ -42,10 +42,13 @@ func (lane Lane) Valid() bool {
 // Group is one model-proposed responsibility restored to canonical
 // ProgramIndex subject identities. Membership is sparse and overlapping.
 type Group struct {
-	ID                 string   `json:"id"`
-	Title              string   `json:"title"`
-	Summary            string   `json:"summary"`
-	Lane               Lane     `json:"lane"`
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	Lane    Lane   `json:"lane"`
+	// Core is the model's: the program exists for this group. Lane only says
+	// where the group stands between what enters and what leaves.
+	Core               bool     `json:"core,omitempty"`
 	MemberSubjectIDs   []string `json:"member_subject_ids"`
 	EvidenceSubjectIDs []string `json:"evidence_subject_ids"`
 }
@@ -353,10 +356,12 @@ type ContainerProposal struct {
 
 // Container is one part of a target: a name over several groups.
 type Container struct {
-	ID       string   `json:"id"`
-	Title    string   `json:"title"`
-	Summary  string   `json:"summary"`
-	Lane     Lane     `json:"lane"`
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	Lane    Lane   `json:"lane"`
+	// Core is true when one of the container's groups is core.
+	Core     bool     `json:"core,omitempty"`
 	GroupIDs []string `json:"group_ids"`
 }
 
