@@ -39,3 +39,14 @@ test('fields stand above methods and a skipped declaration takes no room',()=>{
   assert.deepEqual(blocks.map(block=>block.rows),[[2,1]]);
   assert.equal(rows[3],null);
 });
+
+test('a type taller than the card shows the rows that fit and counts the rest',()=>{
+  const symbols=[type('Service'),...Array.from({length:12},(_,i)=>method('m'+i,1))];
+  const height=symbolRow.header+symbolRow.pad+5*symbolRow.row;
+  const {blocks,rows,hidden}=symbolBlocks(symbols,[],2,height);
+  assert.equal(blocks[0].rows.length,4);
+  assert.equal(blocks[0].more,8);
+  assert.ok(blocks[0].height<=height);
+  assert.equal(rows[12],null,'a row that is not drawn anchors no link');
+  assert.equal(hidden,0);
+});

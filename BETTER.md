@@ -29,3 +29,19 @@ Related: initialization arrows take part in the layout although they are
 hidden most of the time, so the visible arrows are laid out around wiring the
 reader does not see. Laying out the working arrows first and routing the
 dashed ones over the finished drawing would make both calmer.
+
+### Nothing catches a name the canvas calls but no longer defines
+
+Twice a rewrite of `canvas.jsx` left a call to a function that was gone
+(`lookAt` out of scope, `deepInto` deleted with the block around it). The
+bundler does not complain, the unit tests import only the pure modules, and the
+error appears in the browser on the one click that reaches it.
+
+Ways out, cheapest first:
+
+- A check for undefined names over `canvas.jsx` in `npm test`: TypeScript with
+  `checkJs` or ESLint `no-undef`; neither is installed in the web package yet.
+- A Playwright smoke spec beside the visual ones that opens a report, clicks
+  one control of each kind (a part, a closed area, both zoom marks, a badge, a
+  label, a tile) and fails on any page error. The throwaway scripts used for
+  screenshots already do most of this.

@@ -42,9 +42,10 @@ function PartSymbols({symbols,calls,width,height}){
   const tone=i=>hot>=0&&i!==hot&&!near.has(i)?'flow-symbol-dim':'';
   // A row reads as a line of a class box: the visibility sign, the name and,
   // in lighter type, what follows it — "(args): Result" or ": Type".
+  const mixed=new Set(blocks.filter(block=>{const all=[block.head,...block.rows].filter(i=>symbols[i].kind!=='more');return all.some(i=>symbols[i].inner)&&all.some(i=>!symbols[i].inner);}).flatMap(block=>[block.head,...block.rows]));
   const row=(i,className,first)=>{
     const symbol=symbols[i],kind=symbol.kind==='field'||symbol.kind==='more'?'flow-symbol-field':'';
-    const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner?'flow-symbol-inner':''} ${tone(i)}`,onMouseEnter:()=>setHot(i)};
+    const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner&&mixed.has(i)?'flow-symbol-inner':''} ${tone(i)}`,onMouseEnter:()=>setHot(i)};
     const body=<>{symbol.name}{symbol.text&&<em>{symbol.text}</em>}</>;
     return symbol.href?<a key={i} href={symbol.href} target="_blank" rel="noopener" onClick={event=>event.stopPropagation()} {...props}>{body}</a>
       :<span key={i} {...props}>{body}</span>;
@@ -68,6 +69,7 @@ function PartSymbols({symbols,calls,width,height}){
         style={{left:x(block.column),top:inset+block.y,width:tileWidth,height:block.height}}>
         {row(block.head,'flow-symbol-head')}
         {block.rows.map((i,k)=>row(i,'flow-symbol-row',k>0&&symbols[i].kind!=='field'&&symbols[i].kind!=='more'&&['field','more'].includes(symbols[block.rows[k-1]].kind)))}
+        {block.more>0&&<span className="flow-symbol-row flow-symbol-rest">… +{block.more}</span>}
       </div>)}
       {hidden>0&&<span className="flow-symbol-more" style={{right:inset,bottom:inset}}>+{hidden}</span>}
     </div>
@@ -496,6 +498,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const bold=active.size<byNumber.size||byNumber.size===1&&state.mode==='hover'&&hoverArea!==area?active:new Set();
       return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,side,labelScale,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
     });
+    // Far enough into one part to read its declarations.
+    function deepInto(node){
+      if(!instance)return;
+      const rect=host.getBoundingClientRect(),zoom=Math.min(maxZoom,Math.min((rect.width-80)/node.width,(rect.height-80)/node.height));
+      instance.setCenter(node.absolute.x+node.width/2,node.absolute.y+node.height/2,{zoom,duration:420});
+    }
     // A look opens cards. Once they are drawn, measure what the map actually
     // shows — the parts the numbers stand for, the labels and their cards —
     // take the rectangle that holds them all, and let the one camera function

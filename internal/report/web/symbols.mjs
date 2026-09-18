@@ -32,7 +32,10 @@ export function symbolBlocks(symbols,links,columns,height){
     visiting.delete(i);
     return depth[i]=Math.min(columns-1,d);
   };
-  const tall=block=>symbolRow.header+(block.rows.length?block.rows.length*symbolRow.row+symbolRow.pad:0);
+  // A type taller than the card shows the rows that fit and counts the rest.
+  const most=Math.max(1,Math.floor((height-symbolRow.header-symbolRow.pad)/symbolRow.row)-1);
+  for(const block of blocks)if(block.rows.length>most+1){block.more=block.rows.length-most;block.rows=block.rows.slice(0,most);}
+  const tall=block=>symbolRow.header+(block.rows.length?(block.rows.length+(block.more?1:0))*symbolRow.row+symbolRow.pad:0);
   const order=blocks.map((_,i)=>i).sort((a,b)=>column(a)-column(b)||a-b);
   const filled=new Array(columns).fill(0),placed=new Map();
   let hidden=0;
