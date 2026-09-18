@@ -2377,11 +2377,12 @@ type pageNodeSymbol struct {
 	// Owner is the position, from 1, of the type in the same list this
 	// method belongs to: it is drawn inside that type's tile.
 	Owner int `json:"owner,omitempty"`
-	// Mark is the UML visibility sign, + or −, and Text what follows the
-	// name in a class box: "(args): Result" for a callable, ": Type" for a
-	// field. They are written in the row, not left to a tooltip.
-	Mark string `json:"mark,omitempty"`
-	Text string `json:"text,omitempty"`
+	// Inner marks a declaration the rest of the program cannot reach; it is
+	// drawn quieter. Text is what follows the name in a class box:
+	// "(args): Result" for a callable, ": Type" for a field, written in the
+	// row and not left to a tooltip.
+	Inner bool   `json:"inner,omitempty"`
+	Text  string `json:"text,omitempty"`
 }
 
 const maxTileFields = 8
@@ -2488,10 +2489,9 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		default:
 			continue
 		}
-		symbol.Mark = "−"
-		if object.Visibility == programindex.VisibilityPublic {
-			symbol.Mark = "+"
-		}
+		// Only what an adapter knows to be closed: a language with no such
+		// notion reports every declaration as reachable.
+		symbol.Inner = object.Visibility != programindex.VisibilityPublic && object.Visibility != programindex.VisibilityUnknown
 		symbol.Text = symbolText(object, name)
 		if anchor != nil {
 			symbol.Href = anchor.Href

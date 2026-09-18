@@ -166,7 +166,7 @@
 .flow-standalone-part>.flow-number{top:50%;bottom:auto;transform:translateY(-50%)}
 .flow-standalone-part:has(.flow-number)>.flow-role-symbol{right:40px;top:50%;transform:translateY(-50%)}
 .flow-label-upright button{white-space:pre;line-height:15px;padding:3px 6px}
-.flow-connection-calls{position:absolute;z-index:5;box-sizing:border-box;width:340px;max-height:320px;overflow:auto;overscroll-behavior:contain;padding:8px 10px;background:#fff;border:1px solid #52647d;border-radius:8px;box-shadow:0 6px 18px rgba(36,48,68,.18);text-align:left;cursor:default}
+.flow-connection-calls{position:absolute;z-index:5;box-sizing:border-box;width:340px;max-height:230px;overflow:auto;overscroll-behavior:contain;padding:8px 10px;background:#fff;border:1px solid #52647d;border-radius:8px;box-shadow:0 6px 18px rgba(36,48,68,.18);text-align:left;cursor:default}
 .flow-calls-left{right:calc(100% + 10px);top:50%;transform:translateY(-50%)}
 .flow-calls-right{left:calc(100% + 10px);top:50%;transform:translateY(-50%)}
 .flow-calls-top{bottom:calc(100% + 10px);left:50%;transform:translateX(-50%)}
@@ -224,3 +224,5 @@
 /* A label's transform makes it a stacking context of its own at level zero,
    below nested nodes and their arrows; with its card open it goes above. */
 .flow-connection-label:has(.flow-connection-calls){z-index:5000}
+.flow-part-symbols .flow-symbol-block .flow-symbol-inner{color:#7a8798}
+.flow-part-symbols .flow-symbol-block .flow-symbol-inner em{color:#a0abba}

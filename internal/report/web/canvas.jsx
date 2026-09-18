@@ -42,8 +42,8 @@ function PartSymbols({symbols,calls,width,height}){
   // in lighter type, what follows it — "(args): Result" or ": Type".
   const row=(i,className,first)=>{
     const symbol=symbols[i],kind=symbol.kind==='field'||symbol.kind==='more'?'flow-symbol-field':'';
-    const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${tone(i)}`,onMouseEnter:()=>setHot(i)};
-    const body=<>{symbol.mark&&<i>{symbol.mark} </i>}{symbol.name}{symbol.text&&<em>{symbol.text}</em>}</>;
+    const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner?'flow-symbol-inner':''} ${tone(i)}`,onMouseEnter:()=>setHot(i)};
+    const body=<>{symbol.name}{symbol.text&&<em>{symbol.text}</em>}</>;
     return symbol.href?<a key={i} href={symbol.href} target="_blank" rel="noopener" onClick={event=>event.stopPropagation()} {...props}>{body}</a>
       :<span key={i} {...props}>{body}</span>;
   };
@@ -481,7 +481,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         ...group.insides.map(id=>byID.get(id)?.contentScale||1));
       // The card stands outward of the label; this is the far corner it
       // reaches, in the map's coordinates.
-      const reach={width:360*labelScale,height:340*labelScale};
+      const reach={width:360*labelScale,height:250*labelScale};
       const cardFar={x:point.x+(side==='left'?-reach.width:side==='right'?reach.width:0),y:point.y+(side==='top'?-reach.height:side==='bottom'?reach.height:0)};
       const cardSpan=side==='left'||side==='right'?[{x:cardFar.x,y:point.y-reach.height/2},{x:cardFar.x,y:point.y+reach.height/2}]
         :[{x:point.x-reach.width/2,y:cardFar.y},{x:point.x+reach.width/2,y:cardFar.y}];
@@ -508,7 +508,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       // One draw-back for one look at a badge, measured from where it began.
       const now=performance.now();
       if(revealing.id===id&&now<revealing.until+1500)return;
-      const points=labels.filter(label=>[...label.byNumber.values()].some(entry=>entry.key===id)).flatMap(label=>[label.point,...label.cardSpan]);
+      const shown=labels.filter(label=>[...label.byNumber.values()].some(entry=>entry.key===id));
+      const points=shown.flatMap(label=>[label.point,...label.cardSpan]);
       if(!points.length)return;
       const v=instance.getViewport(),rect=host.getBoundingClientRect(),px=event.clientX-rect.left,py=event.clientY-rect.top;
       const fx=(px-v.x)/v.zoom,fy=(py-v.y)/v.zoom,margin={left:24,right:24,top:24,bottom:24};
@@ -518,11 +519,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         if(dx>0)z=Math.min(z,(rect.width-margin.right-px)/dx);else if(dx<0)z=Math.min(z,(px-margin.left)/-dx);
         if(dy>0)z=Math.min(z,(rect.height-margin.bottom-py)/dy);else if(dy<0)z=Math.min(z,(py-margin.top)/-dy);
       }
-      // Never so far that what is being read stops being readable: about nine
-      // pixels of text in the frame's own children. Cards that still do not
-      // fit stay where they are.
-      const childScale=Math.max(...labels.map(label=>label.labelScale||0),0);
-      z=Math.max(z,childScale?.6/childScale:v.zoom*.62);
+      // Never so far that the cards themselves cannot be read: their text is
+      // twelve pixels at the label's scale, and below about eight and a half
+      // it is no use bringing them into view. What still does not fit is
+      // reached by moving the map, as any other element is.
+      // The smallest of the cards being shown sets the limit.
+      const cardScale=Math.min(...shown.map(label=>label.labelScale).filter(Boolean));
+      z=Math.max(z,Number.isFinite(cardScale)?.75/cardScale:v.zoom*.62);
       // A pointer that does not move gets no new events, and the badge may
       // have been redrawn: ask where the badge is now and whether the pointer
       // still stands on it.
