@@ -5,6 +5,7 @@ import {ReactFlow, Handle, Position, ViewportPortal, useViewport, useStore} from
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {symbolBlocks,symbolRow} from './symbols.mjs';
+import {union,cameraContaining} from './camera.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
@@ -115,9 +116,11 @@ function AreaSummary({node,item,number,badge,heading,enter,select}){
       width:node.width/scale,height:node.height/scale}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,false);}}>
     <div className="flow-part flow-overview-card flow-overview-compact"><strong>{title}</strong>
-      {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
-      {number&&<span data-badge={node.id} className={`flow-number ${badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>badge?.enter(event)} onMouseLeave={()=>badge?.leave()}
-        onClick={event=>{event.stopPropagation();badge?.toggle();}}>{number}</span>}</div>
+      <footer>
+        {number?<span data-badge={node.id} className={`flow-number ${badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>badge?.enter(event)} onMouseLeave={()=>badge?.leave()}
+          onClick={event=>{event.stopPropagation();badge?.toggle();}}>{number}</span>:<span/>}
+        {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
+      </footer></div>
   </div>;
 }
 function ZoomMark({node,item,enter,select,compactScale}) {
@@ -201,7 +204,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   let layoutKey=geometryKey(layout.nodes),layoutSize=initialSize,fitting,layoutError;
   const initial={scope:'',operation:'',entry:'',selected:new Set(),matched:new Set(),searching:false,numbered:true};
   let cameraRevision=0;
-  let update, instance, view=initial, hoverArea='', cardPart='', pinnedPart='', pinnedLabels=new Map(), revealing={id:'',until:0,zoom:0}, preview='', restorePending, pendingFocus, panning=false, initializing=true;
+  let update, instance, view=initial, hoverArea='', cardPart='', pinnedPart='', pinnedLabels=new Map(), revealing={id:'',until:0,hold:null}, preview='', restorePending, pendingFocus, panning=false, initializing=true;
   let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
   const closed=id=>closedContainer(id,placed,byID,detailed,componentsOpen,communicationsOpen,openComponents);
   new ResizeObserver(()=>{if(instance&&!initializing&&overviewFit)fitOverview();}).observe(host);
@@ -423,7 +426,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const drawing=layout;
     const groupHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
-      return new Map(layout.nodes.filter(n=>scales.has(n.id)).map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure)]));
+      // The closed card is a title over a foot row, the number and the role mark:
+      // the title is fitted into what the foot row leaves.
+      return new Map(layout.nodes.filter(n=>scales.has(n.id)).map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure,44,40)]));
     },[layoutKey]);
     const standaloneHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
@@ -457,7 +462,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // While the camera draws back the badge slides under the pointer and
     // back; that is not the reader leaving it.
     const badge=id=>({pinned:pinnedPart===id,enter:event=>{cardPart=id;update?.();reveal(id,event);},
-      leave:()=>{if(cardPart!==id||performance.now()<revealing.until)return;cardPart='';update?.();},
+      leave:()=>{if(cardPart!==id||revealing.hold)return;cardPart='';update?.();},
       toggle:()=>{pinnedPart=pinnedPart===id?'':id;update?.();}});
     const inside=new Set(members);
     const labelGroups=area?connections(area,members,layout.edges,
@@ -479,69 +484,66 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const side=sides.sort((a,b)=>a[1]-b[1])[0][0];
       const labelScale=frameScale||Math.max(...layout.nodes.filter(n=>n.parentId===root).map(n=>n.frame?(byID.get(n.id)?.summaryScale||1)/2:byID.get(n.id)?.contentScale||1),
         ...group.insides.map(id=>byID.get(id)?.contentScale||1));
-      // The card stands outward of the label; this is the far corner it
-      // reaches, in the map's coordinates.
-      const reach={width:360*labelScale,height:250*labelScale};
-      const cardFar={x:point.x+(side==='left'?-reach.width:side==='right'?reach.width:0),y:point.y+(side==='top'?-reach.height:side==='bottom'?reach.height:0)};
-      const cardSpan=side==='left'||side==='right'?[{x:cardFar.x,y:point.y-reach.height/2},{x:cardFar.x,y:point.y+reach.height/2}]
-        :[{x:point.x-reach.width/2,y:cardFar.y},{x:point.x+reach.width/2,y:cardFar.y}];
       const byNumber=new Map();
       for(const id of group.insides){const k=number.get(numbered(id));if(!byNumber.has(k))byNumber.set(k,{key:numbered(id),ids:[]});byNumber.get(k).ids.push(id);}
       const active=state.mode==='all'?new Set():new Set(layout.edges.filter(e=>group.edges.includes(e.id)&&state.activeEdges.has(e.id))
         .map(e=>number.get(numbered(inside.has(e.from)?e.from:e.to))));
       const bold=active.size<byNumber.size||byNumber.size===1&&state.mode==='hover'&&hoverArea!==area?active:new Set();
-      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,side,labelScale,cardSpan,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
+      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,side,labelScale,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
     });
-    // A number's cards stand beside every arrow it has, some of them off the
-    // canvas. The camera draws back around the pointer, so the badge stays
-    // under it, until all of them are in view, but not so far that the frame
-    // being read closes.
-    // Far enough into one part to read its declarations.
-    function deepInto(node){
-      if(!instance)return;
-      const rect=host.getBoundingClientRect(),zoom=Math.min(maxZoom,Math.min((rect.width-80)/node.width,(rect.height-80)/node.height));
-      instance.setCenter(node.absolute.x+node.width/2,node.absolute.y+node.height/2,{zoom,duration:420});
-    }
+    // Showing a number's cards: once they are drawn, measure what the map
+    // actually shows — the badge's own card, the labels and their cards —
+    // take the rectangle that holds them all, and let the one camera function
+    // hold it, keeping the point under the pointer where it is when it can.
     function reveal(id,pointer){
       if(!instance||!pointer)return;
-      const event={clientX:pointer.clientX,clientY:pointer.clientY};
-      // One draw-back for one look at a badge, measured from where it began.
-      const now=performance.now();
+      const now=performance.now(),at={x:pointer.clientX,y:pointer.clientY};
       if(revealing.id===id&&now<revealing.until+1500)return;
-      const shown=labels.filter(label=>[...label.byNumber.values()].some(entry=>entry.key===id));
-      const points=shown.flatMap(label=>[label.point,...label.cardSpan]);
-      if(!points.length)return;
-      const v=instance.getViewport(),rect=host.getBoundingClientRect(),px=event.clientX-rect.left,py=event.clientY-rect.top;
-      const fx=(px-v.x)/v.zoom,fy=(py-v.y)/v.zoom,margin={left:24,right:24,top:24,bottom:24};
-      let z=v.zoom;
-      for(const point of points){
-        const dx=point.x-fx,dy=point.y-fy;
-        if(dx>0)z=Math.min(z,(rect.width-margin.right-px)/dx);else if(dx<0)z=Math.min(z,(px-margin.left)/-dx);
-        if(dy>0)z=Math.min(z,(rect.height-margin.bottom-py)/dy);else if(dy<0)z=Math.min(z,(py-margin.top)/-dy);
-      }
-      // Never so far that the cards themselves cannot be read: their text is
-      // twelve pixels at the label's scale, and below about eight and a half
-      // it is no use bringing them into view. What still does not fit is
-      // reached by moving the map, as any other element is.
-      // The smallest of the cards being shown sets the limit.
-      const cardScale=Math.min(...shown.map(label=>label.labelScale).filter(Boolean));
-      z=Math.max(z,Number.isFinite(cardScale)?.75/cardScale:v.zoom*.62);
-      // A pointer that does not move gets no new events, and the badge may
-      // have been redrawn: ask where the badge is now and whether the pointer
-      // still stands on it.
-      const settle=()=>{
-        const at=[...host.querySelectorAll('[data-badge]')].find(el=>el.dataset.badge===id)?.getBoundingClientRect();
-        const on=at&&event.clientX>=at.left-2&&event.clientX<=at.right+2&&event.clientY>=at.top-2&&event.clientY<=at.bottom+2;
-        if(cardPart===id&&!on){cardPart='';update?.();}
+      revealing={id,until:now+900,hold:at};
+      for(const side of ['top','bottom'])host.style.removeProperty(`--flow-card-max-${side}`);
+      const measure=()=>{
+        const v=instance.getViewport(),rect=host.getBoundingClientRect();
+        const toMap=r=>({x:(r.left-rect.left-v.x)/v.zoom,y:(r.top-rect.top-v.y)/v.zoom,width:r.width/v.zoom,height:r.height/v.zoom});
+        const badge=[...host.querySelectorAll('[data-badge]')].find(el=>el.dataset.badge===id);
+        const shown=[badge?.closest('.flow-part,.flow-area-summary'),...host.querySelectorAll('.flow-connection-label:has(.flow-connection-calls),.flow-connection-calls')].filter(Boolean);
+        return {v,size:{width:rect.width,height:rect.height},box:union(shown.map(el=>toMap(el.getBoundingClientRect()))),
+          anchor:{x:(at.x-rect.left-v.x)/v.zoom,y:(at.y-rect.top-v.y)/v.zoom}};
       };
-      if(!(z>0)||z>=v.zoom*.98)return;
-      const previous=new Set([...openComponents,...detailed,...communicationsOpen]);
-      for(let step=0;step<=8;step++){
-        const zoom=Math.max(minZoom(),z+(v.zoom-z)*step/8),next={x:px-fx*zoom,y:py-fy*zoom,zoom};
-        if(zoom>=v.zoom*.98)return;
-        const open=detailState(next,previous);
-        if(wholeComponent?open.components.has(area):open.areas.has(area)){revealing={id,until:now+420,zoom:v.zoom};instance.setViewport(next,{duration:320});setTimeout(settle,460);return;}
-      }
+      // The farthest the camera may draw back: the frame being read must stay
+      // open, or its labels and their cards go with it.
+      const place=({v,size,box,anchor})=>{
+        const previous=new Set([...openComponents,...detailed,...communicationsOpen]);
+        const least=cameraContaining(box,v,size,{pad:20,anchor,minZoom:minZoom()}).zoom;
+        for(let step=0;step<=8;step++){
+          const next=cameraContaining(box,v,size,{pad:20,anchor,minZoom:least+(v.zoom-least)*step/8});
+          const open=detailState(next,previous);
+          if(wholeComponent?open.components.has(area):open.areas.has(area))return {next,whole:step===0};
+        }
+        return null;
+      };
+      const after=run=>requestAnimationFrame(()=>requestAnimationFrame(run));
+      after(()=>{
+        if(cardPart!==id&&pinnedPart!==id)return;
+        const first=measure(),placed=place(first);
+        if(!placed)return;
+        const go=next=>{if(Math.abs(next.zoom-first.v.zoom)>1e-3||Math.abs(next.x-first.v.x)>1||Math.abs(next.y-first.v.y)>1)instance.setViewport(next,{duration:320});};
+        if(placed.whole){go(placed.next);return;}
+        // The camera stopped short, so not everything fits: the cards scroll
+        // inside, and they give up the height that is missing between them.
+        const cards=[...host.querySelectorAll('.flow-calls-top,.flow-calls-bottom')];
+        const over=first.box.height*placed.next.zoom-(first.size.height-40);
+        if(!cards.length||over<=0){go(placed.next);return;}
+        const unit=cards[0].getBoundingClientRect().height/cards[0].offsetHeight*placed.next.zoom/first.v.zoom;
+        // Cards side by side share a height: what is missing is split between
+        // the sides that have cards, above and below, and taken from the
+        // height the cards of that side actually have.
+        const sides=['top','bottom'].map(side=>[side,[...host.querySelectorAll(`.flow-calls-${side}`)]]).filter(([,list])=>list.length);
+        for(const [side,list] of sides){
+          const tallest=Math.max(...list.map(card=>card.offsetHeight));
+          host.style.setProperty(`--flow-card-max-${side}`,`${Math.floor(tallest-over/sides.length/unit)-8}px`);
+        }
+        after(()=>{const again=place(measure());go((again||placed).next);});
+      });
     }
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
     const nodes=drawing.nodes.map(n=>{
@@ -578,6 +580,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       onNodeMouseEnter={(_,n)=>enter(n.id)}
       onMouseMove={event=>{
         if(panning||!instance)return;
+        // The look at a badge the camera moved for ends when the pointer
+        // really moves away, not when the badge slid from under it.
+        // While the camera is still moving, wherever the pointer is counts as
+        // the place the look is held from.
+        if(revealing.hold&&performance.now()<revealing.until)revealing.hold={x:event.clientX,y:event.clientY};
+        else if(revealing.hold&&Math.hypot(event.clientX-revealing.hold.x,event.clientY-revealing.hold.y)>10){
+          revealing={...revealing,hold:null};
+          if(cardPart&&!event.target.closest?.('[data-badge],.flow-connection-label')){cardPart='';update?.();}
+        }
         if(!hover.move(event.clientX,event.clientY))return;
         const labelElement=event.target.closest('.flow-connection-label');
         if(labelElement)return;
