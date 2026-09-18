@@ -105,14 +105,18 @@ func (kind SubjectKind) Valid() bool {
 // ObjectFacts are the exact matching and source-detail facts retained for one
 // ProgramIndex object.
 type ObjectFacts struct {
-	Name        string                       `json:"name"`
-	Kind        programindex.ObjectKind      `json:"kind"`
-	Visibility  programindex.Visibility      `json:"visibility"`
-	Signature   string                       `json:"signature,omitempty"`
-	OwnerID     string                       `json:"owner_id,omitempty"`
-	ContainerID string                       `json:"container_id,omitempty"`
-	External    *programindex.ExternalSymbol `json:"external,omitempty"`
-	Location    *programindex.Location       `json:"location,omitempty"`
+	Name        string                  `json:"name"`
+	Kind        programindex.ObjectKind `json:"kind"`
+	Visibility  programindex.Visibility `json:"visibility"`
+	Signature   string                  `json:"signature,omitempty"`
+	OwnerID     string                  `json:"owner_id,omitempty"`
+	ContainerID string                  `json:"container_id,omitempty"`
+	// Parameters and Results are what a callable takes and returns, with the
+	// repository type each names when the adapter resolved it.
+	Parameters []programindex.TypedName     `json:"parameters,omitempty"`
+	Results    []programindex.TypedName     `json:"results,omitempty"`
+	External   *programindex.ExternalSymbol `json:"external,omitempty"`
+	Location   *programindex.Location       `json:"location,omitempty"`
 }
 
 // PatternValueCandidate retains one adapter-proven value reconstruction. Its
@@ -1120,7 +1124,9 @@ func compileRetainedSubjects(index programindex.Index, retained map[string]struc
 			Object: &ObjectFacts{
 				Name: object.Name, Kind: object.Kind, Visibility: object.Visibility,
 				Signature: object.Signature, OwnerID: object.OwnerID, ContainerID: object.ContainerID,
-				External: cloneExternal(object.External), Location: cloneLocation(object.Location),
+				Parameters: append([]programindex.TypedName(nil), object.Parameters...),
+				Results:    append([]programindex.TypedName(nil), object.Results...),
+				External:   cloneExternal(object.External), Location: cloneLocation(object.Location),
 			},
 		})
 	}

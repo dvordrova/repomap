@@ -186,9 +186,19 @@
 .flow-part-symbols svg marker path{fill:#7b8aa0;stroke:none}
 .flow-part-symbols svg path.flow-symbol-call-hot{stroke:#243044;stroke-width:2.5}
 .flow-part-symbols svg path.flow-symbol-call-dim{opacity:.18}
-.flow-part-symbols a,.flow-part-symbols span{position:absolute;box-sizing:border-box;display:block;padding:0 10px;font:500 13px/26px ui-monospace,SFMono-Regular,Menlo,monospace;color:#243044;background:#fff;border:1px solid #9aa7b8;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none}
-.flow-part-symbols .flow-symbol-dim{opacity:.35}
-.flow-part-symbols a:hover{border-color:#243044;background:#f1f4f8}
-.flow-part-symbols .flow-symbol-key{font-weight:750;border-color:#755299;background:#f6f0fb;color:#3d2760}
+.flow-symbol-block{position:absolute;box-sizing:border-box;background:#fff;border:1px solid #9aa7b8;border-radius:6px;overflow:hidden}
+.flow-symbol-block.flow-symbol-type{border-color:#52647d;background:#f8fafc}
+.flow-part-symbols .flow-symbol-block a,.flow-part-symbols .flow-symbol-block span{box-sizing:border-box;display:block;padding:0 10px;color:#243044;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none}
+.flow-part-symbols .flow-symbol-head{height:28px;font:600 13px/28px ui-monospace,SFMono-Regular,Menlo,monospace}
+.flow-symbol-type>.flow-symbol-head{background:#e8edf4;border-bottom:1px solid #c5cedb}
+.flow-part-symbols .flow-symbol-row{height:24px;font:400 12.5px/24px ui-monospace,SFMono-Regular,Menlo,monospace;padding-left:20px!important}
+.flow-part-symbols .flow-symbol-more{position:absolute;padding:0 10px;font:500 13px/26px system-ui;color:#536176;border:1px dashed #9aa7b8;border-radius:6px;background:#fff}
+.flow-part-symbols svg path.flow-symbol-returns,.flow-part-symbols svg path.flow-symbol-takes{stroke-dasharray:5 4;stroke:#755299}
+.flow-part-zoom{position:absolute;right:6px;top:6px;display:grid;place-items:center;width:18px;height:18px;padding:0;border:0;background:transparent;color:#52647d;cursor:zoom-in}
+.flow-part-zoom:hover{color:#243044}
+.flow-part:has(.flow-part-zoom)>strong{padding-right:22px}
+.flow-part:not(.flow-standalone-part):has(.flow-number)>strong{padding-bottom:18px}
+.flow-part-symbols .flow-symbol-block a:hover{background:#dfe6ef}
+.flow-part-symbols .flow-symbol-block .flow-symbol-key{font-weight:750;color:#4f2f86}
 .flow-part-symbols .flow-symbol-more{border-style:dashed;color:#536176;text-align:center}
 .flow-node-reading .flow-part.flow-part-deep,.flow-node-focus .flow-part.flow-part-deep{border-width:1px;outline:0;box-shadow:none}

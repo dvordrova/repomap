@@ -4,7 +4,7 @@ import {flushSync, createPortal} from 'react-dom';
 import {ReactFlow, Handle, Position, ViewportPortal, useViewport, useStore} from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
-import {symbolCells} from './symbols.mjs';
+import {symbolBlocks,symbolRow} from './symbols.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
@@ -25,42 +25,45 @@ const t = (...args) => window.rmT(...args);
 const deepDivisor=4,deepHeader=20,deepTile={width:190,height:28,columnGap:36,rowGap:8,inset:8};
 function PartSymbols({symbols,calls,width,height}){
   const [hot,setHot]=useState(-1);
-  const inner={width:width*deepDivisor,height:(height-deepHeader)*deepDivisor};
-  const rows=Math.max(1,Math.floor((inner.height-2*deepTile.inset+deepTile.rowGap)/(deepTile.height+deepTile.rowGap)));
-  const columnsAt=w=>Math.max(1,Math.floor((inner.width-2*deepTile.inset+deepTile.columnGap)/(w+deepTile.columnGap)));
-  // The widest tile that still leaves a cell for every declaration: long
-  // qualified names are read whole when the part is small.
-  // Calls need columns to run across: a caller, what it calls, and what that calls.
-  const tileWidth=[340,260,deepTile.width].find(w=>columnsAt(w)*rows>=symbols.length&&(!calls?.length||columnsAt(w)>=3))||deepTile.width;
-  const tile={...deepTile,width:tileWidth},columns=columnsAt(tileWidth);
-  const room=columns*rows,shown=symbols.length>room?symbols.slice(0,room-1):symbols;
-  const drawn=(calls||[]).filter(([from,to])=>from<shown.length&&to<shown.length);
-  const cells=symbolCells(shown.length,drawn,columns,rows);
-  const at=cell=>({x:tile.inset+cell.column*(tile.width+tile.columnGap),y:tile.inset+cell.row*(tile.height+tile.rowGap)});
-  const near=new Set(hot<0?[]:drawn.filter(([from,to])=>from===hot||to===hot).flat());
-  const more=symbols.length-shown.length,moreAt=more>0?at({column:columns-1,row:rows-1}):null;
+  const inner={width:width*deepDivisor,height:(height-deepHeader)*deepDivisor},inset=deepTile.inset,gap=deepTile.columnGap;
+  const links=calls||[],usable=inner.height-2*inset;
+  const columnsAt=w=>Math.max(1,Math.floor((inner.width-2*inset+gap)/(w+gap)));
+  // The widest tile that leaves nothing out, with columns enough for a
+  // caller, what it calls and what that returns.
+  const fits=w=>symbolBlocks(symbols,links,columnsAt(w),usable);
+  const tileWidth=[340,260,deepTile.width].find(w=>fits(w).hidden===0&&(!links.length||columnsAt(w)>=3))||deepTile.width;
+  const {blocks,rows,hidden}=fits(tileWidth);
+  const x=column=>inset+column*(tileWidth+gap);
+  const drawn=links.filter(([from,to])=>rows[from]&&rows[to]);
+  const near=new Set(hot<0?[]:drawn.filter(([from,to])=>from===hot||to===hot).flat().filter(value=>typeof value==='number'));
+  const tone=i=>hot>=0&&i!==hot&&!near.has(i)?'flow-symbol-dim':'';
+  const row=(i,className)=>{
+    const symbol=symbols[i],title=symbol.kind?`${symbol.kind} ${symbol.name}`:symbol.name;
+    const props={className:`${className} ${symbol.key?'flow-symbol-key':''} ${tone(i)}`,title,onMouseEnter:()=>setHot(i)};
+    return symbol.href?<a key={i} href={symbol.href} target="_blank" rel="noopener" onClick={event=>event.stopPropagation()} {...props}>{symbol.name}</a>
+      :<span key={i} {...props}>{symbol.name}</span>;
+  };
   return <div className="flow-part-symbols nopan" style={{top:deepHeader,width,height:height-deepHeader}}>
     <div style={{width:inner.width,height:inner.height,transform:`scale(${1/deepDivisor})`,transformOrigin:'top left'}} onMouseLeave={()=>setHot(-1)}>
       <svg width={inner.width} height={inner.height}>
         <defs><marker id="flow-symbol-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z"/></marker></defs>
-        {drawn.map(([from,to],i)=>{
-          const a=at(cells[from]),b=at(cells[to]),forward=cells[to].column>cells[from].column;
-          const start=forward?{x:a.x+tile.width,y:a.y+tile.height/2}:{x:a.x+tile.width/2,y:a.y+(b.y>=a.y?tile.height:0)};
-          const end=forward?{x:b.x,y:b.y+tile.height/2}:{x:b.x+tile.width/2+(cells[to].column===cells[from].column?24:0),y:b.y+(b.y>=a.y?0:tile.height)};
-          const bend=forward?Math.max(16,(end.x-start.x)/2):0,rise=forward?0:Math.max(10,Math.abs(end.y-start.y)/2)*(end.y>=start.y?1:-1);
-          return <path key={i} className={hot<0?'':from===hot||to===hot?'flow-symbol-call-hot':'flow-symbol-call-dim'}
-            d={`M${start.x} ${start.y}C${start.x+bend} ${start.y+rise},${end.x-bend} ${end.y-rise},${end.x} ${end.y}`} markerEnd="url(#flow-symbol-arrow)"/>;
+        {drawn.map(([from,to,kind],i)=>{
+          const a=rows[from],b=rows[to],forward=b.column>a.column,ay=inset+a.y+a.height/2,by=inset+b.y+b.height/2;
+          // Across columns a link leaves the right edge and enters the left;
+          // within a column it bows out to the right of both rows.
+          const start={x:x(a.column)+tileWidth,y:ay},end=forward?{x:x(b.column),y:by}:{x:x(b.column)+tileWidth,y:by};
+          const bend=forward?Math.max(16,(end.x-start.x)/2):26;
+          return <path key={i} className={`flow-symbol-${kind||'calls'} ${hot<0?'':from===hot||to===hot?'flow-symbol-call-hot':'flow-symbol-call-dim'}`}
+            d={`M${start.x} ${start.y}C${start.x+bend} ${start.y},${forward?end.x-bend:end.x+bend} ${end.y},${end.x} ${end.y}`} markerEnd="url(#flow-symbol-arrow)">
+            <title>{`${symbols[from].name} ${kind||'calls'} ${symbols[to].name}`}</title></path>;
         })}
       </svg>
-      {shown.map((symbol,i)=>{
-        const point=at(cells[i]),className=`${symbol.key?'flow-symbol-key':''} ${hot>=0&&i!==hot&&!near.has(i)?'flow-symbol-dim':''}`;
-        const style={left:point.x,top:point.y,width:tile.width,height:tile.height},title=symbol.kind?`${symbol.kind} ${symbol.name}`:symbol.name;
-        return symbol.href
-          ?<a key={i} href={symbol.href} target="_blank" rel="noopener" className={className} style={style} title={title}
-            onMouseEnter={()=>setHot(i)} onClick={event=>event.stopPropagation()}>{symbol.name}</a>
-          :<span key={i} className={className} style={style} title={title} onMouseEnter={()=>setHot(i)}>{symbol.name}</span>;
-      })}
-      {moreAt&&<span className="flow-symbol-more" style={{left:moreAt.x,top:moreAt.y,width:tile.width,height:tile.height}}>+{more}</span>}
+      {blocks.map(block=><div key={block.head} className={`flow-symbol-block ${block.rows.length?'flow-symbol-type':''}`}
+        style={{left:x(block.column),top:inset+block.y,width:tileWidth,height:block.height}}>
+        {row(block.head,'flow-symbol-head')}
+        {block.rows.map(i=>row(i,'flow-symbol-row'))}
+      </div>)}
+      {hidden>0&&<span className="flow-symbol-more" style={{right:inset,bottom:inset}}>+{hidden}</span>}
     </div>
   </div>;
 }
@@ -85,6 +88,10 @@ function Part({data}) {
     <strong data-input-name={data.activation?'':undefined}>{heading?.title||data.title}</strong>
     {data.description&&<div className="flow-description">{data.description}</div>}
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
+    {data.symbols?.length>0&&!data.activation&&<button type="button" className="flow-part-zoom nopan" aria-label={t('Zoom into {0}',data.name||data.title)}
+      onClick={event=>{event.stopPropagation();data.zoomInto?.();}}>
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16v.1"/></svg></button>}
     {data.number && <span className={`flow-number nopan ${data.badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>data.badge?.enter(event)} onMouseLeave={()=>data.badge?.leave()}
       onClick={event=>{event.stopPropagation();data.badge?.toggle();}}>{data.number}</span>}
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
@@ -468,6 +475,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // canvas. The camera draws back around the pointer, so the badge stays
     // under it, until all of them are in view, but not so far that the frame
     // being read closes.
+    // Far enough into one part to read its declarations.
+    function deepInto(node){
+      if(!instance)return;
+      const rect=host.getBoundingClientRect(),zoom=Math.min(maxZoom,Math.min((rect.width-80)/node.width,(rect.height-80)/node.height));
+      instance.setCenter(node.absolute.x+node.width/2,node.absolute.y+node.height/2,{zoom,duration:420});
+    }
     function reveal(id,event){
       if(!instance||!event)return;
       // One draw-back for one look at a badge, measured from where it began.
@@ -506,7 +519,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         selectable:false,draggable:false,connectable:false,
         style:{width:n.width,height:n.height,visibility:visible(n.id)?'visible':'hidden'},
         className:`${on||contains||!dim?'':'flow-node-muted'} ${focused?'flow-node-focus':on?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
-        data:{...item,standaloneHeading:standaloneHeadings.get(n.id),operation:view.operation,reading,number:number.get(n.id),badge:badge(n.id),open:(id,event)=>select(id,event,true)}};
+        data:{...item,standaloneHeading:standaloneHeadings.get(n.id),operation:view.operation,reading,number:number.get(n.id),badge:badge(n.id),zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true)}};
     });
     const edges=routes.map(route=>{
       return {id:route.id,source:route.from,target:route.to,type:'routed',selectable:false,focusable:false,

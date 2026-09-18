@@ -192,8 +192,8 @@ type pageMapNode struct {
 	// Symbols is the part's declarations for the deepest zoom: name, kind,
 	// whether the model chose it as a key of the part, and its place in code.
 	Symbols string
-	// SymbolCalls are the calls among those declarations, as pairs of
-	// positions in Symbols.
+	// SymbolCalls are the relations among those declarations: positions in
+	// Symbols and the kind, one of calls, returns, takes.
 	SymbolCalls string
 	Concepts    string
 	CallPaths   string
@@ -2371,6 +2371,9 @@ type pageNodeSymbol struct {
 	Kind string `json:"kind,omitempty"`
 	Key  bool   `json:"key,omitempty"`
 	Href string `json:"href,omitempty"`
+	// Owner is the position, from 1, of the type in the same list this
+	// method belongs to: it is drawn inside that type's tile.
+	Owner int `json:"owner,omitempty"`
 }
 
 // groupSymbols lists a group's declarations, its keys first, each with its
@@ -2444,36 +2447,75 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 	for i, item := range all {
 		position[item.id], symbols[i] = i, item.symbol
 	}
+	// A method whose type stands in the same part is a row of that type's
+	// tile under its own short name; elsewhere it keeps the type in its name.
+	for i, item := range all {
+		ref, known := builder.subject(targetID, item.id)
+		if !known || ref.subject.Object == nil || ref.subject.Object.Kind != programindex.ObjectMethod {
+			continue
+		}
+		if owner, inPart := position[ref.subject.Object.OwnerID]; inPart && owner != i {
+			symbols[i].Owner = owner + 1
+			symbols[i].Name = strings.TrimPrefix(symbols[i].Name, symbols[owner].Name+".")
+		}
+	}
 	raw, err := json.Marshal(symbols)
 	if err != nil {
 		return "", ""
 	}
-	// The calls among the part's own declarations, each pair once.
-	var calls [][2]int
+	// How the part's own declarations hang together, each pair and kind once:
+	// a call, a type a callable returns, a type it takes.
+	type link struct {
+		from, to int
+		kind     string
+	}
+	var calls []link
+	seen := map[link]bool{}
+	add := func(fromID, toID, kind string) {
+		from, fromKnown := position[fromID]
+		to, toKnown := position[toID]
+		if item := (link{from, to, kind}); fromKnown && toKnown && from != to && !seen[item] {
+			seen[item] = true
+			calls = append(calls, item)
+		}
+	}
 	if index := builder.graphIndex(targetID); index != nil {
-		seen := map[[2]int]bool{}
 		for _, edge := range index.StructuralEdges {
-			if edge.Role != groupindex.EdgeRelationTarget || edge.RelationKind != programindex.RelationCalls {
-				continue
+			if edge.Role == groupindex.EdgeRelationTarget && edge.RelationKind == programindex.RelationCalls {
+				add(edge.FromSubjectID, edge.ToSubjectID, "calls")
 			}
-			from, fromKnown := position[edge.FromSubjectID]
-			to, toKnown := position[edge.ToSubjectID]
-			if pair := [2]int{from, to}; fromKnown && toKnown && from != to && !seen[pair] {
-				seen[pair] = true
-				calls = append(calls, pair)
-			}
+		}
+	}
+	for _, item := range all {
+		ref, known := builder.subject(targetID, item.id)
+		if !known || ref.subject.Object == nil {
+			continue
+		}
+		object := ref.subject.Object
+		for _, result := range object.Results {
+			add(item.id, result.TypeID, "returns")
+		}
+		for _, parameter := range object.Parameters {
+			add(parameter.TypeID, item.id, "takes")
 		}
 	}
 	if len(calls) == 0 {
 		return string(raw), ""
 	}
 	sort.Slice(calls, func(i, j int) bool {
-		if calls[i][0] != calls[j][0] {
-			return calls[i][0] < calls[j][0]
+		if calls[i].from != calls[j].from {
+			return calls[i].from < calls[j].from
 		}
-		return calls[i][1] < calls[j][1]
+		if calls[i].to != calls[j].to {
+			return calls[i].to < calls[j].to
+		}
+		return calls[i].kind < calls[j].kind
 	})
-	rawCalls, err := json.Marshal(calls)
+	encoded := make([][3]any, len(calls))
+	for i, item := range calls {
+		encoded[i] = [3]any{item.from, item.to, item.kind}
+	}
+	rawCalls, err := json.Marshal(encoded)
 	if err != nil {
 		return string(raw), ""
 	}
