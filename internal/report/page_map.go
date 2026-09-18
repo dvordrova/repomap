@@ -2343,6 +2343,9 @@ type pageEdgeCall struct {
 	// At is the call site in words, path:line, for a relation whose label
 	// names no caller and callee.
 	At string `json:"at,omitempty"`
+	// Name is the declaration at the far end when the near end is not a
+	// declaration: the function an input is handled by. To leads to it.
+	Name string `json:"name,omitempty"`
 }
 
 // CallsJSON is the arrow's relations for the page's script.

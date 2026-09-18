@@ -615,7 +615,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       for(const call of calls){
         const parts=String(call.label||'').match(/^(\S+) (\S+) (\S+)$/);
         const heading=parts?other:'';
-        const row=`${heading}|${parts?call.label:other+'|'+(call.at||'')}`;
+        const row=`${heading}|${parts?call.label:other+'|'+(call.at||call.name||'')}`;
         if(seen.has(row))continue;seen.add(row);
         if(!groups.has(heading))groups.set(heading,[]);
         groups.get(heading).push({parts,call,other});
@@ -630,19 +630,26 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {[...groups].map(([title,rows])=><div key={title}>{title&&title!==label.title&&<strong>{title}</strong>}
         {rows.map(({parts,call,other},i)=><p key={i}>{parts
           ?<>{link(call.from,parts[1])}<i>{parts[2]==='calls'?' → ':` ${parts[2].replace(/_/g,' ')} `}</i>{link(call.to||call.from,parts[3])}</>
-          :<>{link(call.from||call.to,other)}{call.at&&<em> {call.at}</em>}</>}</p>)}</div>)}
+          :call.name?<>{link(call.from,other)}<i> → </i>{link(call.to,call.name)}</>:<>{link(call.from||call.to,other)}{call.at&&<em> {call.at}</em>}</>}</p>)}</div>)}
     </section>;
   }
   // The wheel scrolls a card only when the card has something to scroll.
   const wheel=el=>{if(el)el.classList.toggle('nowheel',el.scrollHeight>el.clientHeight+1);};
   const going=label=>event=>{event.stopPropagation();clearHover();select(label.outside,event,true);};
-  // A label's card stands diagonally from it, off the line of its arrow.
-  function ConnectionCalls({label,only,side}){
+  // A label's card stands diagonally from it, toward the roomier side and end
+  // of the canvas, so it never leaves the canvas by standing on a border.
+  function ConnectionCalls({label,only,at}){
     const groups=callGroups(label,only);
     if(!groups.size)return null;
-    const origin={left:'bottom right',right:'bottom left',top:'bottom left',bottom:'top left'}[side];
-    return <div className={`flow-calls-place flow-calls-${side} nopan`} onClick={event=>event.stopPropagation()}
-      style={label.cardScale&&Math.abs(label.cardScale-1)>.01?{transform:`scale(${label.cardScale})`,transformOrigin:origin}:undefined}>
+    const view=instance?.getViewport()||{x:0,y:0,zoom:1};
+    // The roomier side of the label; a card wider than that room is moved
+    // back along the label until it stands inside the canvas.
+    const outer=(label.labelScale||label.scale||1)*view.zoom,wide=520*outer*(label.cardScale||1);
+    const sx=at.x*view.zoom+view.x,right=sx<host.clientWidth/2,down=at.y*view.zoom+view.y<host.clientHeight/2;
+    const over=Math.max(0,right?sx+wide-host.clientWidth+8:wide-sx+8)/outer;
+    const style={[right?'marginLeft':'marginRight']:-over};
+    if(label.cardScale&&Math.abs(label.cardScale-1)>.01)Object.assign(style,{transform:`scale(${label.cardScale})`,transformOrigin:`${down?'top':'bottom'} ${right?'left':'right'}`});
+    return <div className={`flow-calls-place flow-calls-${right?'right':'left'} flow-calls-${down?'down':'up'} nopan`} onClick={event=>event.stopPropagation()} style={style}>
       <div ref={wheel} className="flow-connection-calls"><Calls label={label} groups={groups} go={going(label)}/></div></div>;
   }
   // Looking at a part's number: one card beside the part with everything it
@@ -664,13 +671,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   function ConnectionLabel({label}){
     const {zoom}=useViewport();
     const key=`label:${label.id}`,hovered=look.key===key;
-    let upright=false,sideName='bottom';
+    let upright=false;
     let style={transform:`translate(${label.x}px,${label.y}px) scale(${label.scale||1})`,transformOrigin:'top left',width:label.width/(label.scale||1),minHeight:label.height/(label.scale||1)};
     if(label.boundary){
       const p=label.point,side={left:{dx:1,dy:0,tx:0,ty:-50},right:{dx:-1,dy:0,tx:-100,ty:-50},top:{dx:0,dy:1,tx:-50,ty:0},bottom:{dx:0,dy:-1,tx:-50,ty:-100}}[label.side];
       // Along a side border the numbers stand one above another.
       upright=side.dx!==0&&label.numbers.length>1;
-      sideName=label.side;
       const scale=label.labelScale;
       style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
     }
@@ -688,7 +694,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
             {label.numbers.map((k,i)=><React.Fragment key={k}>{i>0&&!upright&&<i> · </i>}
               <b className={`${label.bold?.has(k)?'flow-number-active':''} ${hovered&&(lookOnly===k||lookOnly===undefined)?'flow-number-open':''}`} onMouseEnter={()=>{lookOnly=label.numbers.length>1?k:undefined;if(look.key===key)update?.();}}>{k}</b></React.Fragment>)}
           </button>
-          {(hovered||pinnedLabels.has(label.id))&&<ConnectionCalls label={label} only={only} side={sideName}/>}
+          {(hovered||pinnedLabels.has(label.id))&&<ConnectionCalls label={label} only={only} at={label.boundary?label.point:label}/>}
         </div>;
   }
   map.classList.add('flow-enabled');source.style.display='none';source.setAttribute('aria-hidden','true');

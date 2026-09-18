@@ -264,8 +264,18 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 	for _, edge := range matched {
 		usage[edge] = nil
 	}
+	handledBy := make(map[string]pageEdgeCall)
 	for i, operation := range ops {
 		id := result.Nodes[i].ID
+		if ref, known := builder.subject(index.Target.ID, operation.SubjectID); known {
+			if name, anchor := builder.subjectDisplay(ref.subject); name != "" {
+				call := pageEdgeCall{Label: "implemented in", Name: name}
+				if anchor != nil {
+					call.To = anchor.Href
+				}
+				handledBy[id] = call
+			}
+		}
 		usage[pathEdge{id, mapNodeID(operation.GroupID), operation.Source == "model", "implemented in", ""}] = []string{id}
 		for edge := range paths[id] {
 			usage[edge] = append(usage[edge], id)
@@ -274,7 +284,11 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 	for edge, operations := range usage {
 		sort.Strings(operations)
 		label := edge.label
-		result.Edges = append(result.Edges, pageMapEdge{ConnectionID: edge.connectionID, From: edge.from, To: edge.to, Label: label, Possible: edge.possible, Scope: "operation", Operations: strings.Join(operations, " ")})
+		drawn := pageMapEdge{ConnectionID: edge.connectionID, From: edge.from, To: edge.to, Label: label, Possible: edge.possible, Scope: "operation", Operations: strings.Join(operations, " ")}
+		if call, ok := handledBy[edge.from]; ok && label == "implemented in" {
+			drawn.Calls = []pageEdgeCall{call}
+		}
+		result.Edges = append(result.Edges, drawn)
 	}
 	sort.Slice(result.Edges, func(i, j int) bool {
 		a, b := result.Edges[i], result.Edges[j]
