@@ -262,7 +262,7 @@ function rmSystemProjection(nodes, edges) {
     var items=nodes.map(function(n){
       var component=n.dataset.activation||n.dataset.branch==='inputs'?componentsByOwner.get(n.dataset.owner):null;
       return {id:n.id,title:n.dataset.title,branch:n.dataset.branch,activation:n.dataset.activation,lane:n.dataset.lane,
-        summary:n.dataset.summary,symbols:(function(){try{return JSON.parse(n.dataset.symbols||'[]');}catch(_){return [];}})(),subtitle:n.dataset.subtitle,sourceKind:n.dataset.sourceKind,
+        summary:n.dataset.summary,symbols:(function(){try{return JSON.parse(n.dataset.symbols||'[]');}catch(_){return [];}})(),symbolCalls:(function(){try{return JSON.parse(n.dataset.symbolCalls||'[]');}catch(_){return [];}})(),subtitle:n.dataset.subtitle,sourceKind:n.dataset.sourceKind,
         role:n.dataset.role,roleRef:n.dataset.roleRef,language:n.dataset.language,componentKind:n.dataset.componentKind,
         componentOwner:component?.id||'',componentName:component?.dataset.title||'',
         children:(n.dataset.children||'').split(/\s+/).filter(function(id){return id&&(n.dataset.branch==='inputs'||!byID[id]?.dataset.activation);}),kind:kind(n),category:category(n)};

@@ -180,8 +180,14 @@
 .flow-part.flow-part-deep{padding:0;overflow:hidden}
 .flow-part.flow-part-deep>strong{display:block;font:650 7px/10px system-ui;padding:5px 8px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .flow-part-symbols{position:absolute;left:0;overflow:hidden;pointer-events:auto}
-.flow-part-symbols>div{display:grid;align-content:start;box-sizing:border-box;padding:8px}
-.flow-part-symbols a,.flow-part-symbols span{box-sizing:border-box;display:block;padding:0 10px;font:500 13px/26px ui-monospace,SFMono-Regular,Menlo,monospace;color:#243044;background:#fff;border:1px solid #9aa7b8;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none}
+.flow-part-symbols>div{position:relative;box-sizing:border-box}
+.flow-part-symbols svg{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.flow-part-symbols svg path{fill:none;stroke:#7b8aa0;stroke-width:1.5}
+.flow-part-symbols svg marker path{fill:#7b8aa0;stroke:none}
+.flow-part-symbols svg path.flow-symbol-call-hot{stroke:#243044;stroke-width:2.5}
+.flow-part-symbols svg path.flow-symbol-call-dim{opacity:.18}
+.flow-part-symbols a,.flow-part-symbols span{position:absolute;box-sizing:border-box;display:block;padding:0 10px;font:500 13px/26px ui-monospace,SFMono-Regular,Menlo,monospace;color:#243044;background:#fff;border:1px solid #9aa7b8;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none}
+.flow-part-symbols .flow-symbol-dim{opacity:.35}
 .flow-part-symbols a:hover{border-color:#243044;background:#f1f4f8}
 .flow-part-symbols .flow-symbol-key{font-weight:750;border-color:#755299;background:#f6f0fb;color:#3d2760}
 .flow-part-symbols .flow-symbol-more{border-style:dashed;color:#536176;text-align:center}

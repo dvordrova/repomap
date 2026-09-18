@@ -188,21 +188,24 @@ type pageMapNode struct {
 	// Keys names the group's key symbols with what their authors wrote,
 	// for the card beside a pointed-at node: enough to decide whether to
 	// go down to the code.
-	Keys      string
+	Keys string
 	// Symbols is the part's declarations for the deepest zoom: name, kind,
 	// whether the model chose it as a key of the part, and its place in code.
 	Symbols string
-	Concepts  string
-	CallPaths string
-	Writes    []pageEntityWrite
-	Children  string
-	Branch    string
-	Component string
-	ID        string
-	Href      string
-	Title     []string
-	Summary   string
-	Lane      string
+	// SymbolCalls are the calls among those declarations, as pairs of
+	// positions in Symbols.
+	SymbolCalls string
+	Concepts    string
+	CallPaths   string
+	Writes      []pageEntityWrite
+	Children    string
+	Branch      string
+	Component   string
+	ID          string
+	Href        string
+	Title       []string
+	Summary     string
+	Lane        string
 	// Members is how many subjects this group holds, and Share how much of the
 	// target that is. The node's height carries the same number, so a bucket
 	// looks like a bucket before any of it is read.
@@ -2372,8 +2375,12 @@ type pageNodeSymbol struct {
 
 // groupSymbols lists a group's declarations, its keys first, each with its
 // place in the code. Compiler-named closures are nobody's symbol to look for.
-func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group) string {
-	var keys, rest []pageNodeSymbol
+func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group) (string, string) {
+	type listed struct {
+		id     string
+		symbol pageNodeSymbol
+	}
+	var keys, rest []listed
 	for _, id := range group.MemberSubjectIDs {
 		ref, known := builder.subject(targetID, id)
 		if !known {
@@ -2392,18 +2399,52 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		}
 		if interpretation := ref.subject.Interpretation; interpretation != nil && interpretation.Key {
 			symbol.Key = true
-			keys = append(keys, symbol)
+			keys = append(keys, listed{id, symbol})
 			continue
 		}
-		rest = append(rest, symbol)
+		rest = append(rest, listed{id, symbol})
 	}
-	symbols := append(keys, rest...)
-	if len(symbols) == 0 {
-		return ""
+	all := append(keys, rest...)
+	if len(all) == 0 {
+		return "", ""
+	}
+	position := make(map[string]int, len(all))
+	symbols := make([]pageNodeSymbol, len(all))
+	for i, item := range all {
+		position[item.id], symbols[i] = i, item.symbol
 	}
 	raw, err := json.Marshal(symbols)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return string(raw)
+	// The calls among the part's own declarations, each pair once.
+	var calls [][2]int
+	if index := builder.graphIndex(targetID); index != nil {
+		seen := map[[2]int]bool{}
+		for _, edge := range index.StructuralEdges {
+			if edge.Role != groupindex.EdgeRelationTarget || edge.RelationKind != programindex.RelationCalls {
+				continue
+			}
+			from, fromKnown := position[edge.FromSubjectID]
+			to, toKnown := position[edge.ToSubjectID]
+			if pair := [2]int{from, to}; fromKnown && toKnown && from != to && !seen[pair] {
+				seen[pair] = true
+				calls = append(calls, pair)
+			}
+		}
+	}
+	if len(calls) == 0 {
+		return string(raw), ""
+	}
+	sort.Slice(calls, func(i, j int) bool {
+		if calls[i][0] != calls[j][0] {
+			return calls[i][0] < calls[j][0]
+		}
+		return calls[i][1] < calls[j][1]
+	})
+	rawCalls, err := json.Marshal(calls)
+	if err != nil {
+		return string(raw), ""
+	}
+	return string(raw), string(rawCalls)
 }

@@ -4,6 +4,7 @@ import {flushSync, createPortal} from 'react-dom';
 import {ReactFlow, Handle, Position, ViewportPortal, useViewport, useStore} from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
+import {symbolCells} from './symbols.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
@@ -21,20 +22,40 @@ const t = (...args) => window.rmT(...args);
 // keys the model chose first, every tile a link into the code. The tiles are
 // drawn in the card's own rectangle at a quarter of its size, so nothing on
 // the map moves when they appear.
-const deepDivisor=4,deepHeader=20,deepTile={width:190,height:28,gap:8};
-function PartSymbols({symbols,width,height}){
-  const inner={width:width*deepDivisor,height:(height-deepHeader)*deepDivisor};
-  const columns=Math.max(1,Math.floor((inner.width-16+deepTile.gap)/(deepTile.width+deepTile.gap)));
-  const rows=Math.max(1,Math.floor((inner.height-16+deepTile.gap)/(deepTile.height+deepTile.gap)));
+const deepDivisor=4,deepHeader=20,deepTile={width:190,height:28,columnGap:36,rowGap:8,inset:8};
+function PartSymbols({symbols,calls,width,height}){
+  const [hot,setHot]=useState(-1);
+  const tile=deepTile,inner={width:width*deepDivisor,height:(height-deepHeader)*deepDivisor};
+  const columns=Math.max(1,Math.floor((inner.width-2*tile.inset+tile.columnGap)/(tile.width+tile.columnGap)));
+  const rows=Math.max(1,Math.floor((inner.height-2*tile.inset+tile.rowGap)/(tile.height+tile.rowGap)));
   const room=columns*rows,shown=symbols.length>room?symbols.slice(0,room-1):symbols;
+  const drawn=(calls||[]).filter(([from,to])=>from<shown.length&&to<shown.length);
+  const cells=symbolCells(shown.length,drawn,columns,rows);
+  const at=cell=>({x:tile.inset+cell.column*(tile.width+tile.columnGap),y:tile.inset+cell.row*(tile.height+tile.rowGap)});
+  const near=new Set(hot<0?[]:drawn.filter(([from,to])=>from===hot||to===hot).flat());
+  const more=symbols.length-shown.length,moreAt=more>0?at({column:columns-1,row:rows-1}):null;
   return <div className="flow-part-symbols nopan" style={{top:deepHeader,width,height:height-deepHeader}}>
-    <div style={{width:inner.width,height:inner.height,transform:`scale(${1/deepDivisor})`,transformOrigin:'top left',
-      gridTemplateColumns:`repeat(${columns},${deepTile.width}px)`,gridAutoRows:`${deepTile.height}px`,gap:deepTile.gap}}>
-      {shown.map((symbol,i)=>symbol.href
-        ?<a key={i} href={symbol.href} target="_blank" rel="noopener" className={symbol.key?'flow-symbol-key':''} title={symbol.kind?`${symbol.kind} ${symbol.name}`:symbol.name}
-          onClick={event=>event.stopPropagation()}>{symbol.name}</a>
-        :<span key={i} className={symbol.key?'flow-symbol-key':''}>{symbol.name}</span>)}
-      {symbols.length>shown.length&&<span className="flow-symbol-more">+{symbols.length-shown.length}</span>}
+    <div style={{width:inner.width,height:inner.height,transform:`scale(${1/deepDivisor})`,transformOrigin:'top left'}} onMouseLeave={()=>setHot(-1)}>
+      <svg width={inner.width} height={inner.height}>
+        <defs><marker id="flow-symbol-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z"/></marker></defs>
+        {drawn.map(([from,to],i)=>{
+          const a=at(cells[from]),b=at(cells[to]),forward=cells[to].column>cells[from].column;
+          const start=forward?{x:a.x+tile.width,y:a.y+tile.height/2}:{x:a.x+tile.width/2,y:a.y+(b.y>=a.y?tile.height:0)};
+          const end=forward?{x:b.x,y:b.y+tile.height/2}:{x:b.x+tile.width/2+(cells[to].column===cells[from].column?24:0),y:b.y+(b.y>=a.y?0:tile.height)};
+          const bend=forward?Math.max(16,(end.x-start.x)/2):0,rise=forward?0:Math.max(10,Math.abs(end.y-start.y)/2)*(end.y>=start.y?1:-1);
+          return <path key={i} className={hot<0?'':from===hot||to===hot?'flow-symbol-call-hot':'flow-symbol-call-dim'}
+            d={`M${start.x} ${start.y}C${start.x+bend} ${start.y+rise},${end.x-bend} ${end.y-rise},${end.x} ${end.y}`} markerEnd="url(#flow-symbol-arrow)"/>;
+        })}
+      </svg>
+      {shown.map((symbol,i)=>{
+        const point=at(cells[i]),className=`${symbol.key?'flow-symbol-key':''} ${hot>=0&&i!==hot&&!near.has(i)?'flow-symbol-dim':''}`;
+        const style={left:point.x,top:point.y,width:tile.width,height:tile.height},title=symbol.kind?`${symbol.kind} ${symbol.name}`:symbol.name;
+        return symbol.href
+          ?<a key={i} href={symbol.href} target="_blank" rel="noopener" className={className} style={style} title={title}
+            onMouseEnter={()=>setHot(i)} onClick={event=>event.stopPropagation()}>{symbol.name}</a>
+          :<span key={i} className={className} style={style} title={title} onMouseEnter={()=>setHot(i)}>{symbol.name}</span>;
+      })}
+      {moreAt&&<span className="flow-symbol-more" style={{left:moreAt.x,top:moreAt.y,width:tile.width,height:tile.height}}>+{more}</span>}
     </div>
   </div>;
 }
@@ -49,7 +70,7 @@ function Part({data}) {
       style={{width:box.width,height:box.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <strong>{data.name||data.title}</strong>
-    <PartSymbols symbols={data.symbols} width={box.width} height={box.height}/>
+    <PartSymbols symbols={data.symbols} calls={data.symbolCalls} width={box.width} height={box.height}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
   return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
@@ -199,7 +220,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const communicationScales=()=>new Map(areas.filter(a=>['communication','inputs'].includes(byID.get(a.id)?.branch))
     .map(a=>[a.id,Math.min(1,...leaves(a.id).map(id=>byID.get(id)?.contentScale||1))]));
   const maximumZoom=()=>Math.max(2,...[...scales.values(),...communicationScales().values(),
-    ...[...byID.values()].filter(n=>!n.children?.length).map(n=>n.contentScale||1)].map(scale=>4.5/scale));
+    ...[...byID.values()].filter(n=>!n.children?.length).map(n=>n.contentScale||1)].map(scale=>1.8/scale),
+    // Far enough into a part to read its declarations, and no farther.
+    ...[...byID.values()].filter(n=>n.symbols?.length).map(n=>4.5/(n.contentScale||1)));
   maxZoom=maximumZoom();
   function detailState(viewport,previous){
     const open=detailLayers(layout.nodes,semantic.records,viewport,host.clientWidth,host.clientHeight,previous);
