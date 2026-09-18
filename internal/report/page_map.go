@@ -2340,6 +2340,9 @@ type pageEdgeCall struct {
 	Label string `json:"label"`
 	From  string `json:"from,omitempty"`
 	To    string `json:"to,omitempty"`
+	// At is the call site in words, path:line, for a relation whose label
+	// names no caller and callee.
+	At string `json:"at,omitempty"`
 }
 
 // CallsJSON is the arrow's relations for the page's script.
@@ -2363,7 +2366,7 @@ func edgeCalls(edge pageMapEdge) []pageEdgeCall {
 	if !strings.Contains(edge.Label, " ") && edge.FromSource.Href == "" && edge.ToSource.Href == "" {
 		return nil
 	}
-	return []pageEdgeCall{{Label: edge.Label, From: edge.FromSource.Href, To: edge.ToSource.Href}}
+	return []pageEdgeCall{{Label: edge.Label, From: edge.FromSource.Href, To: edge.ToSource.Href, At: edge.FromSource.Text}}
 }
 
 type pageNodeSymbol struct {
