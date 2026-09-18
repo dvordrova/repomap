@@ -3,7 +3,7 @@ import {visibleSegments} from './semantic.mjs';
 // Several original relations can traverse one native ELK route. Paint that
 // shared stretch once, without replacing the original edges used for reading,
 // numbering and operation selection. Segment order follows source to target.
-export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=>null, initVisible=false) {
+export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=>null, initVisible=false, lookedAt=null) {
   const drawing=new Map(),groups=new Map();
   for(const edge of edges){
     // Cross-system arrows belong to the outer map, even when one frame opens.
@@ -19,16 +19,17 @@ export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=
     const visibleFrom=edge.outerFrom||from?.id||edge.from,visibleTo=edge.outerTo||to?.id||edge.to;
     const key=JSON.stringify([visibleFrom,visibleTo].sort());
     let group=groups.get(key);
-    if(!group){group={edge,paths,segments,edgeIDs:[],directions:new Set(),on:false,possible:true,init:true};groups.set(key,group);}
+    if(!group){group={edge,paths,segments,edgeIDs:[],directions:new Set(),on:false,near:false,possible:true,init:true};groups.set(key,group);}
     // Prefer an exact native route, then its stable edge ID. Never choose an
     // empty clipped route or invent a replacement line between the endpoints.
     if((group.edge.possible&&!edge.possible)||!!group.edge.possible===!!edge.possible&&edge.id<group.edge.id){
       group.edge=edge;group.paths=paths;group.segments=segments;
     }
     group.edgeIDs.push(edge.id);group.directions.add(`${visibleFrom}\0${visibleTo}`);
+    group.near ||= !!lookedAt&&(lookedAt.has(edge.from)||lookedAt.has(edge.to));
     group.on ||= activeEdges.has(edge.id);group.possible &&= !!edge.possible;group.init &&= !!edge.init;
   }
-  for(const {edge,paths,segments,edgeIDs,directions,on,possible,init} of groups.values()){
+  for(const {edge,paths,segments,edgeIDs,directions,on,near,possible,init} of groups.values()){
     const bidirectional=directions.size>1;
     paths.forEach((path,index)=>{
       const key=path;
@@ -36,11 +37,12 @@ export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=
       if(!route){
         route={id:index?`${edge.id}-segment-${index}`:edge.id,from:edge.from,to:edge.to,
           path,points:segments[index],start:segments[index][0],end:segments[index].at(-1),
-          possible:true,init:true,edgeIDs:[],on:false,arrow:false,reverseArrow:false};
+          possible:true,init:true,edgeIDs:[],on:false,near:false,arrow:false,reverseArrow:false};
         drawing.set(key,route);
       }
       for(const id of edgeIDs)if(!route.edgeIDs.includes(id))route.edgeIDs.push(id);
       route.on ||= on;
+      route.near ||= near;
       route.possible &&= possible;
       route.init &&= init;
       route.arrow ||= index===paths.length-1;
@@ -50,5 +52,5 @@ export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=
   // Initialization wiring is drawn only while one of its ends is the box or
   // area the reader looks at: init is init, and it would double every
   // runtime arrow. Selecting the whole component looks at nothing in particular.
-  return [...drawing.values()].filter(route=>!route.init||(initVisible&&route.on)).map(route=>({...route,dim:dim&&!route.on}));
+  return [...drawing.values()].filter(route=>!route.init||(initVisible&&route.on)||route.near).map(route=>({...route,dim:dim&&!route.on}));
 }

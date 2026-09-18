@@ -77,7 +77,7 @@ function FrameTitle({node,item,focused,enter,select}) {
       '--flow-zoom':viewport.zoom*scale,
       '--flow-secondary-text':viewport.zoom*scale*13>=12?'visible':'hidden',
       '--flow-small-text':viewport.zoom*scale*12>=12?'visible':'hidden'}}
-    onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
+    onMouseEnter={()=>enter(node.id,true)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
     <strong>{item.title}</strong>
     {item.metadata&&<div className="flow-component-meta">{item.metadata}</div>}
     {item.role&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
@@ -197,14 +197,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const revision=++cameraRevision;
     return Promise.resolve(movement).then(()=>{if(revision===cameraRevision&&!initializing){updateLocation(undefined,subject);map.dispatchEvent(new Event('repomap:viewport'));}});
   }
-  function enter(id){
+  function enter(id,deliberate=false){
     if(!hover.allowed)return;
     const n=byID.get(id);if(!n)return;
     // Hover affects the drawing only. The links and description opened by a
     // click stay usable while the pointer crosses other cards to reach them.
     // The component frame is not something to look at: hovering it lights
     // nothing, as selecting the whole component lights nothing.
-    const area=byID.get(parentArea(id)||id)?.branch==='component'?'':parentArea(id)||id;
+    const area=byID.get(parentArea(id)||id)?.branch==='component'&&!deliberate?'':parentArea(id)||id;
     if(hoverArea!==area){hoverArea=area;update?.();}
   }
   function focus(id,center=true,smooth=true){
@@ -346,7 +346,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const standaloneHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       return new Map(layout.nodes.filter(n=>!n.frame&&!byID.get(n.id).activation&&byID.get(n.parentId)?.branch==='component').map(n=>{
-        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,item.roleLabel?35:15,15);
+        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,item.roleLabel?65:45,15);
         return [n.id,{...heading,width:n.width/heading.scale,height:n.height/heading.scale}];
       }));
     },[layoutKey]);
@@ -365,7 +365,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const number=new Map(!area||!view.numbered?[]:wholeComponent?layout.nodes.filter(n=>n.parentId===area).map((n,i)=>[n.id,i+1]):members.map((id,i)=>[id,i+1]));
     const dim=state.mode!=='all';
     const initVisible=state.mode==='hover'||state.mode==='operation'||(state.mode==='selection'&&byID.get(view.scope)?.branch!=='component');
-    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,dim,boundaryBetween,initVisible);
+    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,dim,boundaryBetween,initVisible,zoomedArea?new Set(leaves(zoomedArea)):null);
     const labelGroups=area?connections(area,members,layout.edges.filter(e=>state.activeEdges.has(e.id)),
       id=>rootOf(id)!==rootOf(area)?rootOf(id):boundaryBetween(id,area)?.id||id,wholeComponent?id=>number.get(childOf(id)):null):[];
     const labels=labelGroups.flatMap(group=>{
@@ -416,7 +416,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         if(panning||!instance)return;
         if(!hover.move(event.clientX,event.clientY))return;
         const labelElement=event.target.closest('.flow-connection-label');
-        if(labelElement){const label=labels.find(l=>l.id===labelElement.dataset.connectionLabel);if(label&&preview!==label.id){preview=label.id;callbacks.connection(label);}return;}
+        if(labelElement)return;
+        // A frame's title is the handle a reader points at to look at the
+        // whole frame; the empty space inside a component lights nothing.
+        const frameTitle=event.target.closest('[data-frame-title]');
+        if(frameTitle){enter(frameTitle.dataset.frameTitle,true);return;}
         const input=event.target.closest('[data-input-id]');
         if(input){enter(input.dataset.inputId);return;}
         const node=event.target.closest('.react-flow__node');
@@ -461,8 +465,25 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       </ViewportPortal>
     </ReactFlow>;
   }
+  // What the numbers stand for, beside the label: which part calls which,
+  // and the calls themselves. The sidebar keeps what the reader chose.
+  function ConnectionCalls({label}){
+    const name=id=>byID.get(id)?.name||byID.get(id)?.title||'';
+    const rows=label.relations.filter(r=>name(r.from)&&name(r.to)).slice(0,6);
+    if(!rows.length)return null;
+    return <div className="flow-connection-calls">
+      {rows.map((relation,i)=>{
+        const calls=String(relation.summary||'').split(' · ').filter(Boolean);
+        return <div key={i}><strong>{name(relation.from)} → {name(relation.to)}</strong>
+          {calls.slice(0,8).map((call,j)=><span key={j}>{call}</span>)}
+          {calls.length>8&&<span>+{calls.length-8}</span>}</div>;
+      })}
+      {label.relations.length>rows.length&&<span>+{label.relations.length-rows.length}</span>}
+    </div>;
+  }
   function ConnectionLabel({label}){
     const {zoom}=useViewport();
+    let upright=false;
     let style={transform:`translate(${label.x}px,${label.y}px) scale(${label.scale||1})`,transformOrigin:'top left',width:label.width/(label.scale||1),minHeight:label.height/(label.scale||1)};
     if(label.boundary){
       const frame=placed.get(label.root),p=label.point;
@@ -471,6 +492,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         {dx:0,dy:1,tx:-50,ty:0,d:Math.abs(p.y-frame.absolute.y)},
         {dx:0,dy:-1,tx:-50,ty:-100,d:Math.abs(p.y-frame.absolute.y-frame.height)}];
       const side=sides.sort((a,b)=>a.d-b.d)[0];
+      // Along a side border the numbers stand one above another.
+      upright=side.dx!==0&&label.numbers.length>1;
       // The label stands on a frame, so it is read at the zoom that frame's
       // own children are read at: a part's scale, or half the heading of a
       // closed area. The parts deep inside are smaller than that.
@@ -479,13 +502,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
     }
     return <div
-          className={`flow-connection-label nopan ${label.boundary?'flow-boundary-label':''}`} data-connection-outside={label.outside} data-connection-label={label.id}
+          className={`flow-connection-label nopan ${label.boundary?'flow-boundary-label':''} ${upright?'flow-label-upright':''}`} data-connection-outside={label.outside} data-connection-label={label.id}
           style={style}
-          onMouseEnter={()=>{if(hover.allowed){preview=label.id;callbacks.connection(label);}}}>
+          >
           {!label.boundary&&<span>{label.incoming?'← ':'→ '}{label.labelTitle}</span>}
           <button type="button" aria-label={t('Go to {0}',label.title)} onClick={event=>{event.stopPropagation();clearHover();select(label.outside,event,true);}}>
-            {label.numbers.join(' · ')}
+            {label.numbers.join(upright?'\n':' · ')}
           </button>
+          <ConnectionCalls label={label}/>
         </div>;
   }
   map.classList.add('flow-enabled');source.style.display='none';source.setAttribute('aria-hidden','true');

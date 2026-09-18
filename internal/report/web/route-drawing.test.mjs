@@ -163,5 +163,9 @@ test('init routes are drawn only for a looked-at end',()=>{
   const whole=routeDrawing(wiring,()=>null,new Set(['boot','flow']),true,()=>null,false);
   assert.deepEqual(whole.map(route=>route.id),['flow']);
   const looked=routeDrawing(wiring,()=>null,new Set(['boot']),true,()=>null,true);
-  assert.deepEqual(looked.map(route=>[route.id,route.init,route.dim]),[['boot',true,false],['flow',false,true]]);
+  assert.deepEqual(looked.map(route=>[route.id,route.init,route.dim]),[['boot',true,false],['flow',false,true]]);  // Zoomed into the area that holds bootstrap, with nothing hovered.
+  const zoomed=routeDrawing(wiring,()=>null,new Set(),false,()=>null,false,new Set(['bootstrap']));
+  assert.deepEqual(zoomed.map(route=>route.id),['boot','flow']);
+  const elsewhere=routeDrawing(wiring,()=>null,new Set(),false,()=>null,false,new Set(['other']));
+  assert.deepEqual(elsewhere.map(route=>route.id),['flow']);
 });
