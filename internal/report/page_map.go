@@ -2390,23 +2390,40 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		if name == "" || strings.Contains(name, "$") {
 			continue
 		}
-		symbol := pageNodeSymbol{Name: name}
-		if object := ref.subject.Object; object != nil {
-			symbol.Kind = string(object.Kind)
-			owner, owned := builder.subject(targetID, object.OwnerID)
-			ownedByType := owned && owner.subject.Object != nil && owner.subject.Object.Kind == programindex.ObjectType
-			switch {
-			case object.Kind == programindex.ObjectVariable && ownedByType:
-				// A field is part of its type's tile, not a declaration to find.
-				continue
-			case object.Kind == programindex.ObjectMethod && ownedByType:
-				// Four methods called Response are four different things.
-				if !strings.HasPrefix(name, owner.subject.Object.Name+".") {
-					symbol.Name = owner.subject.Object.Name + "." + name
-				}
-			case object.Kind == programindex.ObjectLambda, object.Kind == programindex.ObjectModule, object.Kind == programindex.ObjectPackage:
+		// A tile is a declaration a reader can look for: a type, a function, a
+		// method, or a module's own variable. A field belongs to its type's
+		// tile, a local or a parameter to its function's, and the values and
+		// calls the index also knows are not declarations at all.
+		object := ref.subject.Object
+		if object == nil {
+			continue
+		}
+		owner, owned := builder.subject(targetID, object.OwnerID)
+		var ownerKind programindex.ObjectKind
+		if owned && owner.subject.Object != nil {
+			ownerKind = owner.subject.Object.Kind
+		}
+		symbol := pageNodeSymbol{Name: name, Kind: string(object.Kind)}
+		switch object.Kind {
+		case programindex.ObjectType, programindex.ObjectFunction:
+		case programindex.ObjectMethod:
+			// Four methods called Response are four different things.
+			if ownerKind == programindex.ObjectType && !strings.HasPrefix(name, owner.subject.Object.Name+".") {
+				symbol.Name = owner.subject.Object.Name + "." + name
+			}
+		case programindex.ObjectVariable:
+			// Only a variable a module or a package holds; a local, a
+			// parameter or a produced value has no such holder.
+			moduleLevel := ownerKind == programindex.ObjectModule || ownerKind == programindex.ObjectPackage
+			if container, known := builder.subject(targetID, object.ContainerID); known && container.subject.Object != nil {
+				kind := container.subject.Object.Kind
+				moduleLevel = moduleLevel || kind == programindex.ObjectModule || kind == programindex.ObjectPackage
+			}
+			if !moduleLevel {
 				continue
 			}
+		default:
+			continue
 		}
 		if anchor != nil {
 			symbol.Href = anchor.Href
