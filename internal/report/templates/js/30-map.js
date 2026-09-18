@@ -256,9 +256,6 @@
         scale = Math.min(readableScale, stage.clientWidth / baseWidth, fitHeight);
         apply();
         stage.scrollTo(0, 0);
-      } else if (button.hasAttribute('data-map-reset')) {
-        readable();
-        pendingFocus=true;focusOpened();
       }
       map.dispatchEvent(new Event('repomap:viewport'));
     });

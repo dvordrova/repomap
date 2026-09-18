@@ -141,10 +141,7 @@ function FrameTitle({node,item,focused,enter,select}) {
   const viewport=useViewport();
   const scale=item.summaryScale||1;
   const component=item.branch==='component',communication=item.branch==='communication',inputs=item.branch==='inputs';
-  // The location row keeps the parent name available while its reserved world
-  // header is too small for a screen-sized title above the revealed children.
-  if(component&&64*scale*viewport.zoom<24)return null;
-  const x=component||communication||inputs?Math.max(node.absolute.x+18*scale,Math.min(node.absolute.x+node.width-260*scale,(24-viewport.x)/viewport.zoom)):node.absolute.x+18*scale;
+  const x=node.absolute.x+18*scale;
   return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${component?'flow-component-title':communication?'flow-communication-title':inputs?'flow-input-collection':item.lane==='core'?'flow-core-title':item.lane==='triggers'?'flow-entry-title':''}`}
     data-frame-title={node.id}
     style={{transform:`translate(${x}px,${node.absolute.y+12*scale}px) scale(${scale})`,transformOrigin:'top left',maxWidth:node.width/scale-36,
