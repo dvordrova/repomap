@@ -336,7 +336,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     hover.pause();preview='';map.clearMapPreview?.();
     if(instance)commitCamera(instance.setViewport(v));else restorePending=v;
   }
-  function resetView(){if(!instance)return;if(isOverview()){fitOverview();return;}const first=layout.nodes.filter(n=>!n.frame).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];focus(view.scope||view.operation||first?.id,true);}
   function fitOverview(duration=0){
     overviewFit=true;
     locationSubject='';
@@ -709,7 +708,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   map.querySelector('[data-map-controls]').addEventListener('click',event=>{
     const button=event.target.closest('button');if(!button||!instance)return;
     if(button.hasAttribute('data-map-fit'))map.showWholeMap();
-    else if(button.hasAttribute('data-map-reset'))resetView();
     else if(button.hasAttribute('data-map-zoom')){overviewFit=false;commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom)));}
   });
   return {get layout(){return layout;},focus,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
