@@ -350,7 +350,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       }));
     },[layoutKey]);
     const overview=isOverview();
-    const area=state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):'';
+    // Zoomed into one area with nothing hovered or chosen, that area is what
+    // the reader is looking at: its parts keep their numbers.
+    const zoomedArea=state.mode==='all'&&detailed.size===1?[...detailed][0]:'';
+    const area=state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):zoomedArea;
     const number=new Map(area&&view.numbered?leaves(area).map((id,i)=>[id,i+1]):[]);
     const dim=state.mode!=='all';
     const initVisible=state.mode==='hover'||state.mode==='operation'||(state.mode==='selection'&&byID.get(view.scope)?.branch!=='component');
@@ -457,7 +460,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         {dx:0,dy:1,tx:-50,ty:0,d:Math.abs(p.y-frame.absolute.y)},
         {dx:0,dy:-1,tx:-50,ty:-100,d:Math.abs(p.y-frame.absolute.y-frame.height)}];
       const side=sides.sort((a,b)=>a.d-b.d)[0];
-      const scale=Math.max(...label.insides.map(id=>byID.get(id)?.contentScale||1));
+      // The label stands on a frame, so it is drawn at that frame's size,
+      // not at the size of the parts deep inside it.
+      const scale=Math.max(byID.get(label.root)?.summaryScale||0,...label.insides.map(id=>byID.get(id)?.contentScale||1));
       style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
     }
     return <div
