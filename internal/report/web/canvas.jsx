@@ -460,9 +460,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         {dx:0,dy:1,tx:-50,ty:0,d:Math.abs(p.y-frame.absolute.y)},
         {dx:0,dy:-1,tx:-50,ty:-100,d:Math.abs(p.y-frame.absolute.y-frame.height)}];
       const side=sides.sort((a,b)=>a.d-b.d)[0];
-      // The label stands on a frame, so it is drawn at that frame's size,
-      // not at the size of the parts deep inside it.
-      const scale=Math.max(byID.get(label.root)?.summaryScale||0,...label.insides.map(id=>byID.get(id)?.contentScale||1));
+      // The label stands on a frame, so it is read at the zoom that frame's
+      // own children are read at: a part's scale, or half the heading of a
+      // closed area. The parts deep inside are smaller than that.
+      const scale=Math.max(...layout.nodes.filter(n=>n.parentId===label.root).map(n=>n.frame?(byID.get(n.id)?.summaryScale||1)/2:byID.get(n.id)?.contentScale||1),
+        ...label.insides.map(id=>byID.get(id)?.contentScale||1));
       style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
     }
     return <div
