@@ -5,7 +5,7 @@ import {ReactFlow, Handle, Position, ViewportPortal, useViewport, useStore} from
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {symbolBlocks,symbolRow} from './symbols.mjs';
-import {union,cameraContaining} from './camera.mjs';
+import {union,cameraContaining,readableTogether} from './camera.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
@@ -491,12 +491,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const side=sides.sort((a,b)=>a[1]-b[1])[0][0];
       const labelScale=frameScale||Math.max(...layout.nodes.filter(n=>n.parentId===root).map(n=>n.frame?(byID.get(n.id)?.summaryScale||1)/2:byID.get(n.id)?.contentScale||1),
         ...group.insides.map(id=>byID.get(id)?.contentScale||1));
+      // A card is read together with the things the look is on, so it takes
+      // their scale, wherever its label stands: a label on the target's frame
+      // is large, and a card that large beside an area's parts would push the
+      // camera far back for nothing.
+      const readScale=wholeComponent?labelScale:Math.max(...members.map(id=>byID.get(id)?.contentScale||0),0)||labelScale;
+      const cardScale=readScale/labelScale;
       const byNumber=new Map();
       for(const id of group.insides){const k=number.get(numbered(id));if(!byNumber.has(k))byNumber.set(k,{key:numbered(id),ids:[]});byNumber.get(k).ids.push(id);}
       const active=state.mode==='all'?new Set():new Set(layout.edges.filter(e=>group.edges.includes(e.id)&&state.activeEdges.has(e.id))
         .map(e=>number.get(numbered(inside.has(e.from)?e.from:e.to))));
       const bold=active.size<byNumber.size||byNumber.size===1&&state.mode==='hover'&&hoverArea!==area?active:new Set();
-      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,side,labelScale,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
+      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,side,labelScale,cardScale,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
     });
     // Far enough into one part to read its declarations.
     function deepInto(node){
@@ -520,10 +526,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const measure=()=>{
         const v=instance.getViewport(),rect=host.getBoundingClientRect();
         const toMap=r=>({x:(r.left-rect.left-v.x)/v.zoom,y:(r.top-rect.top-v.y)/v.zoom,width:r.width/v.zoom,height:r.height/v.zoom});
-        const owners=[...host.querySelectorAll('[data-badge]')].filter(el=>ids.includes(el.dataset.badge)).map(el=>el.closest('.flow-part,.flow-area-summary'));
-        const shown=[...owners,...host.querySelectorAll('.flow-connection-label:has(.flow-connection-calls),.flow-connection-calls')].filter(Boolean);
-        return {v,size:{width:rect.width,height:rect.height},box:union(shown.map(el=>toMap(el.getBoundingClientRect()))),
-          anchor:{x:(at.x-rect.left-v.x)/v.zoom,y:(at.y-rect.top-v.y)/v.zoom}};
+        const owners=[...host.querySelectorAll('[data-badge]')].filter(el=>ids.includes(el.dataset.badge)).map(el=>el.closest('.flow-part,.flow-area-summary')).filter(Boolean);
+        const size={width:rect.width,height:rect.height},anchor={x:(at.x-rect.left-v.x)/v.zoom,y:(at.y-rect.top-v.y)/v.zoom};
+        // A label with its card is shown whole or not at all, and only while
+        // its text stays readable: about nine pixels. What is left out stays
+        // where it is on the map.
+        const pairs=[...host.querySelectorAll('.flow-connection-label:has(.flow-connection-calls)')].map(label=>{
+          const card=label.querySelector('.flow-connection-calls'),drawn=card.getBoundingClientRect().height/Math.max(1,card.offsetHeight);
+          return {...union([toMap(label.getBoundingClientRect()),toMap(card.getBoundingClientRect())]),minZoom:v.zoom*9/(14.5*drawn)};
+        });
+        const must=owners.map(el=>toMap(el.getBoundingClientRect()));
+        const near=must.length?readableTogether(must,pairs,v,size,{pad:20,anchor}):pairs;
+        return {v,size,anchor,box:union([...must,...near])};
       };
       // The farthest the camera may draw back: the frame being read must stay
       // open, or its labels and their cards go with it.
@@ -658,21 +672,24 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // same place and zooms and moves with everything else. Each row is a call:
   // caller and callee as links, or the outside symbol with where it is called.
   function ConnectionCalls({label,only,side,go}){
+    const origin={left:'bottom right',right:'bottom left',top:'bottom left',bottom:'top left'}[side];
     const name=id=>byID.get(id)?.name||byID.get(id)?.title||'';
     const ids=only===undefined?null:new Set(label.byNumber.get(only)?.ids||[]);
     const groups=new Map(),seen=new Set();
     for(const relation of label.relations){
       if(ids&&!ids.has(relation.from)&&!ids.has(relation.to))continue;
       // The number already says which part inside the frame this is, and the
-      // map shows it; the card names only the part on the other side.
+      // map shows it; the card names only what is on the other side: a part,
+      // under which its calls read, or an outside symbol, a row of its own.
       const other=name(label.incoming?relation.from:relation.to);
       const calls=relation.calls?.length?relation.calls:[{label:relation.label||relation.summary||'',from:relation.fromSource,to:relation.toSource}];
       for(const call of calls){
         const parts=String(call.label||'').match(/^(\S+) (\S+) (\S+)$/);
-        const row=`${other}|${parts?call.label:call.at||''}`;
+        const heading=parts?other:'';
+        const row=`${heading}|${parts?call.label:other+'|'+(call.at||'')}`;
         if(seen.has(row))continue;seen.add(row);
-        if(!groups.has(other))groups.set(other,[]);
-        groups.get(other).push({parts,call});
+        if(!groups.has(heading))groups.set(heading,[]);
+        groups.get(heading).push({parts,call,other});
       }
     }
     if(!groups.size)return null;
@@ -682,12 +699,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const wheel=el=>{if(el)el.classList.toggle('nowheel',el.scrollHeight>el.clientHeight+1);};
     // The outer box holds the place and the unseen bridge to the label; the
     // inner one scrolls.
-    return <div className={`flow-calls-place flow-calls-${side} nopan`} onClick={event=>event.stopPropagation()}><div ref={wheel} className="flow-connection-calls">
+    return <div className={`flow-calls-place flow-calls-${side} nopan`} onClick={event=>event.stopPropagation()}
+      style={label.cardScale&&Math.abs(label.cardScale-1)>.01?{transform:`scale(${label.cardScale})`,transformOrigin:origin}:undefined}><div ref={wheel} className="flow-connection-calls">
       <header><button type="button" onClick={go}>{label.incoming?'←':'→'} {label.title}</button></header>
-      {[...groups].map(([title,rows])=><div key={title}>{title!==label.title&&<strong>{title}</strong>}
-        {rows.map(({parts,call},i)=><p key={i}>{parts
+      {[...groups].map(([title,rows])=><div key={title}>{title&&title!==label.title&&<strong>{title}</strong>}
+        {rows.map(({parts,call,other},i)=><p key={i}>{parts
           ?<>{link(call.from,parts[1])}<i>{parts[2]==='calls'?' → ':` ${parts[2].replace(/_/g,' ')} `}</i>{link(call.to||call.from,parts[3])}</>
-          :<>{link(call.from||call.to,title)}{call.at&&<em> {call.at}</em>}</>}</p>)}</div>)}
+          :<>{link(call.from||call.to,other)}{call.at&&<em> {call.at}</em>}</>}</p>)}</div>)}
     </div></div>;
   }
   function ConnectionLabel({label}){
