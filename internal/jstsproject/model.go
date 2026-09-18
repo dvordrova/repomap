@@ -22,7 +22,7 @@ import (
 
 const (
 	Version       = 18
-	HelperVersion = 26
+	HelperVersion = 27
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20

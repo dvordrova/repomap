@@ -2401,7 +2401,9 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 				continue
 			case object.Kind == programindex.ObjectMethod && ownedByType:
 				// Four methods called Response are four different things.
-				symbol.Name = owner.subject.Object.Name + "." + name
+				if !strings.HasPrefix(name, owner.subject.Object.Name+".") {
+					symbol.Name = owner.subject.Object.Name + "." + name
+				}
 			case object.Kind == programindex.ObjectLambda, object.Kind == programindex.ObjectModule, object.Kind == programindex.ObjectPackage:
 				continue
 			}

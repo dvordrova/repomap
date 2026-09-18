@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 26
+const CONTRACT_VERSION = 27
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -469,7 +469,11 @@ if (compilerFlavor === "legacy") {
       const program = ts.createProgram({ rootNames: [...rootFiles].sort(compareText).map(absolute), options })
       compilerProjects.push({ key: record.path, options, program, checker: program.getTypeChecker(), rootFiles })
     }
-    const additionalRoots = additionalFiles.filter((filePath) => !compilerProjects.some((project) => project.rootFiles.has(filePath)))
+    // What a written config names as its output directory is what the
+    // compiler wrote from the sources already read, not more source.
+    const outputDirectories = compilerProjects.map((project) => project.options.outDir ? relative(project.options.outDir) : "").filter(Boolean)
+    const compiled = (filePath) => outputDirectories.some((directory) => filePath === directory || filePath.startsWith(directory + "/"))
+    const additionalRoots = additionalFiles.filter((filePath) => !compiled(filePath) && !compilerProjects.some((project) => project.rootFiles.has(filePath)))
     if (additionalRoots.length > 0) {
       // These exact script/config files are additional roots even when the
       // written config selects only another package. In that case use the

@@ -3115,3 +3115,30 @@ func writeTestFile(t *testing.T, root, filePath, content string) {
 }
 
 func jsonMarshal(value any) ([]byte, error) { return json.Marshal(value) }
+
+// A committed build directory is what the compiler wrote from the sources
+// already read: the written config names it, and it is not more source.
+func TestCompilerOutputDirectoryIsNotReadAsSource(t *testing.T) {
+	root := preparedCompilerProject(t)
+	writeTestFile(t, root, "package.json", `{"name":"sample","main":"dist/main.js","scripts":{"start":"node dist/main.js"},"devDependencies":{"typescript":"5.9.3"}}`)
+	writeTestFile(t, root, "tsconfig.json", `{"include":["src/**/*"],"compilerOptions":{"target":"ES2022","module":"commonjs","allowJs":true,"outDir":"./dist"}}`)
+	writeTestFile(t, root, "src/main.ts", "export function hello(): string { return \"hello\" }\n")
+	writeTestFile(t, root, "dist/main.js", "\"use strict\";\nfunction hello() { return \"hello\" }\nexports.hello = hello\n")
+	tracked := []string{"dist/main.js", "package.json", "src/main.ts", "tsconfig.json"}
+	repository, err := corpus.New(context.Background(), root, gitfiles.Listing{Paths: tracked, RegularPaths: tracked})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	result, _, _, err := Build(context.Background(), repository, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, file := range result.Files {
+		paths = append(paths, file.Path)
+	}
+	if strings.Join(paths, ",") != "src/main.ts" {
+		t.Fatalf("source files = %v", paths)
+	}
+}
