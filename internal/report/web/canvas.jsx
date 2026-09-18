@@ -94,8 +94,9 @@ function Part({data}) {
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
     {data.symbols?.length>0&&!data.activation&&<button type="button" className="flow-part-zoom nopan" aria-label={t('Zoom into {0}',data.name||data.title)}
       onClick={event=>{event.stopPropagation();data.zoomInto?.();}}>
-      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16v.1"/></svg></button>}
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="1.5" y="11" width="10.5" height="10.5" rx="1.4"/><circle cx="14" cy="9" r="7" fill="#fff" fillOpacity=".92"/><path d="M19.2 14.2l3.2 3.2" strokeWidth="2.8"/>
+      <path d="M9.5 10h5v4.5M12 8.2V4.6m-1.4 1.4L12 4.6 13.4 6M16.4 12.2h3m-1.4-1.4 1.4 1.4-1.4 1.4" strokeWidth="1.1"/></svg></button>}
     {data.number && <span className={`flow-number nopan ${data.badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>data.badge?.enter(event)} onMouseLeave={()=>data.badge?.leave()}
       onClick={event=>{event.stopPropagation();data.badge?.toggle();}}>{data.number}</span>}
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
@@ -121,7 +122,7 @@ function AreaSummary({node,item,number,badge,heading,enter,select}){
 }
 function ZoomMark({node,item,enter,select,compactScale}) {
   const viewport=useViewport(),{zoom}=viewport;
-  const area=item.branch==='area',size=20,inset=area||['communication','inputs'].includes(item.branch)?8:12;
+  const area=item.branch==='area',size=24,inset=area||['communication','inputs'].includes(item.branch)?8:12;
   const scale=area?compactScale:1/zoom;
   if(node.width<(size+2*inset)*scale||node.height<(size+2*inset)*scale)return null;
   const point={x:node.absolute.x+node.width-(size+inset)*scale,y:node.absolute.y+inset*scale};
@@ -130,8 +131,9 @@ function ZoomMark({node,item,enter,select,compactScale}) {
     style={{transform:`translate(${point.x}px,${point.y}px) scale(${scale})`,width:size,height:size}}
     aria-label={t('Zoom into {0}',name)} onMouseEnter={()=>enter(node.id)}
     onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16v.1"/>
+    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1.5" y="11" width="10.5" height="10.5" rx="1.4"/><circle cx="14" cy="9" r="7" fill="#fff" fillOpacity=".92"/><path d="M19.2 14.2l3.2 3.2" strokeWidth="2.8"/>
+      <path d="M9.5 10h5v4.5M12 8.2V4.6m-1.4 1.4L12 4.6 13.4 6M16.4 12.2h3m-1.4-1.4 1.4 1.4-1.4 1.4" strokeWidth="1.1"/>
     </svg>
   </button>;
 }

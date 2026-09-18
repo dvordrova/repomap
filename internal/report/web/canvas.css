@@ -142,7 +142,7 @@
 .flow-component-areas li{margin:0;padding:0}
 .flow-enabled .flow-component-areas button{display:block;width:100%;padding:5px 0;border:0;border-radius:0;background:transparent;text-align:left;font:500 13px/18px system-ui;color:#243044;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
 .flow-enabled .flow-component-areas button:hover{color:#176f68;text-decoration:underline;text-underline-offset:3px;background:transparent}
-.flow-enabled .flow-zoom-mark{position:absolute;transform-origin:top left;display:grid;place-items:center;box-sizing:border-box;width:20px;height:20px;border:0;background:transparent;color:#52647d;border-radius:0;padding:0;cursor:zoom-in;pointer-events:auto}
+.flow-enabled .flow-zoom-mark{position:absolute;transform-origin:top left;display:grid;place-items:center;box-sizing:border-box;width:24px;height:24px;border:0;background:transparent;color:#52647d;border-radius:0;padding:0;cursor:zoom-in;pointer-events:auto}
 .flow-enabled .flow-zoom-mark svg{display:block}
 .flow-enabled .flow-zoom-mark:hover{background:transparent;color:#243044}
 .flow-communication-overview{background:#fffaf1;flex-direction:row;align-items:center;gap:4px;padding:0}
@@ -198,9 +198,9 @@
 .flow-part-symbols .flow-symbol-row{height:24px;font:400 12.5px/24px ui-monospace,SFMono-Regular,Menlo,monospace;padding-left:20px!important}
 .flow-part-symbols .flow-symbol-more{position:absolute;padding:0 10px;font:500 13px/26px system-ui;color:#536176;border:1px dashed #9aa7b8;border-radius:6px;background:#fff}
 .flow-part-symbols svg path.flow-symbol-returns,.flow-part-symbols svg path.flow-symbol-takes{stroke-dasharray:5 4;stroke:#755299}
-.flow-part-zoom{position:absolute;right:6px;top:6px;display:grid;place-items:center;width:18px;height:18px;padding:0;border:0;background:transparent;color:#52647d;cursor:zoom-in}
+.flow-part-zoom{position:absolute;right:5px;top:5px;display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;background:transparent;color:#52647d;cursor:zoom-in}
 .flow-part-zoom:hover{color:#243044}
-.flow-part:has(.flow-part-zoom)>strong{padding-right:22px}
+.flow-part:has(.flow-part-zoom)>strong{padding-right:26px}
 .flow-part:not(.flow-standalone-part):has(.flow-number)>strong{padding-bottom:18px}
 .flow-part-symbols .flow-symbol-block a:hover{background:#dfe6ef}
 .flow-part-symbols .flow-symbol-block .flow-symbol-key{font-weight:750;color:#4f2f86}
