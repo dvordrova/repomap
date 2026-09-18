@@ -166,7 +166,13 @@
 .flow-standalone-part>.flow-number{top:50%;bottom:auto;transform:translateY(-50%)}
 .flow-standalone-part:has(.flow-number)>.flow-role-symbol{right:40px;top:50%;transform:translateY(-50%)}
 .flow-label-upright button{white-space:pre;line-height:15px;padding:3px 6px}
-.flow-connection-calls{position:fixed;left:0;top:0;visibility:hidden;z-index:1000;box-sizing:border-box;min-width:220px;padding:8px 10px;background:#fff;border:1px solid #52647d;border-radius:8px;box-shadow:0 6px 18px rgba(36,48,68,.18);text-align:left;pointer-events:none}
-.flow-connection-calls>div{display:flex;flex-direction:column;gap:1px;margin-bottom:6px}
-.flow-connection-calls strong{font:600 12px/16px system-ui;color:#243044}
-.flow-connection-calls span{font:400 12px/16px ui-monospace,SFMono-Regular,Menlo,monospace;color:#39455a;overflow-wrap:anywhere}
+.flow-connection-calls{position:fixed;left:0;top:0;visibility:hidden;z-index:1000;box-sizing:border-box;min-width:220px;max-height:min(360px,60vh);overflow:auto;overscroll-behavior:contain;padding:8px 10px;background:#fff;border:1px solid #52647d;border-radius:8px;box-shadow:0 6px 18px rgba(36,48,68,.18);text-align:left}
+.flow-connection-calls>div{margin-bottom:6px}
+.flow-connection-calls strong{display:block;font:600 12px/16px system-ui;color:#536176;margin-bottom:2px}
+.flow-connection-calls p{margin:0;font:400 12px/18px ui-monospace,SFMono-Regular,Menlo,monospace;color:#243044;overflow-wrap:anywhere}
+.flow-connection-calls p i{font-style:normal;color:#8492a6}
+.flow-connection-calls a{color:#4f3aa3;text-decoration:none}.flow-connection-calls a:hover{text-decoration:underline}
+.flow-connection-label button b{font-weight:400}.flow-connection-label button i{font-style:normal}
+.flow-connection-label button b.flow-number-active{font-weight:800}
+.flow-label-upright button b{display:block}
+.flow-number{cursor:pointer;pointer-events:auto}.flow-number-pinned{background:#243044!important;color:#fff!important}
