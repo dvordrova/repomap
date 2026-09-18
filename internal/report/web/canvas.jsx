@@ -6,6 +6,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {symbolBlocks,symbolRow} from './symbols.mjs';
 import {union,cameraContaining} from './camera.mjs';
+import {createLook} from './look.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, componentViewport, communicationViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
@@ -204,7 +205,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   let layoutKey=geometryKey(layout.nodes),layoutSize=initialSize,fitting,layoutError;
   const initial={scope:'',operation:'',entry:'',selected:new Set(),matched:new Set(),searching:false,numbered:true};
   let cameraRevision=0;
-  let update, instance, view=initial, hoverArea='', cardPart='', pinnedPart='', pinnedLabels=new Map(), revealing={id:'',until:0,hold:null}, preview='', restorePending, pendingFocus, panning=false, initializing=true;
+  let update, instance, view=initial, hoverArea='', pinnedPart='', pinnedLabels=new Map(), lookOnly, preview='', restorePending, pendingFocus, panning=false, initializing=true;
   let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
   const closed=id=>closedContainer(id,placed,byID,detailed,componentsOpen,communicationsOpen,openComponents);
   new ResizeObserver(()=>{if(instance&&!initializing&&overviewFit)fitOverview();}).observe(host);
@@ -275,6 +276,16 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // only after they finish, or Back restores the previous display's camera.
     const revision=++cameraRevision;
     return Promise.resolve(movement).then(()=>{if(revision===cameraRevision&&!initializing){updateLocation(undefined,subject);map.dispatchEvent(new Event('repomap:viewport'));}});
+  }
+  // One look for the whole map: a badge, a label, whatever a layer adds.
+  const look=createLook();
+  // Set by each drawing of the map: showing a look needs the frame being read.
+  let lookAt=()=>{};
+  const lookBadge=()=>look.key.startsWith('badge:')?look.key.slice(6):'';
+  const lookLabel=()=>look.key.startsWith('label:')?look.key.slice(6):'';
+  function lookAway(key){
+    const ask=look.leave(key,performance.now());
+    if(ask)setTimeout(()=>{if(look.tick(performance.now()))update?.();},ask-performance.now()+5);
   }
   function enter(id){
     if(!hover.allowed)return;
@@ -461,8 +472,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const numbered=id=>wholeComponent?childOf(id):id;
     // While the camera draws back the badge slides under the pointer and
     // back; that is not the reader leaving it.
-    const badge=id=>({pinned:pinnedPart===id,enter:event=>{cardPart=id;update?.();reveal(id,event);},
-      leave:()=>{if(cardPart!==id||revealing.hold)return;cardPart='';update?.();},
+    const badge=id=>({pinned:pinnedPart===id,enter:event=>lookAt(`badge:${id}`,event,[id]),leave:()=>lookAway(`badge:${id}`),
       toggle:()=>{pinnedPart=pinnedPart===id?'':id;update?.();}});
     const inside=new Set(members);
     const labelGroups=area?connections(area,members,layout.edges,
@@ -491,21 +501,24 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const bold=active.size<byNumber.size||byNumber.size===1&&state.mode==='hover'&&hoverArea!==area?active:new Set();
       return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,side,labelScale,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
     });
-    // Showing a number's cards: once they are drawn, measure what the map
-    // actually shows — the badge's own card, the labels and their cards —
+    // A look opens cards. Once they are drawn, measure what the map actually
+    // shows — the parts the numbers stand for, the labels and their cards —
     // take the rectangle that holds them all, and let the one camera function
     // hold it, keeping the point under the pointer where it is when it can.
-    function reveal(id,pointer){
-      if(!instance||!pointer)return;
-      const now=performance.now(),at={x:pointer.clientX,y:pointer.clientY};
-      if(revealing.id===id&&now<revealing.until+1500)return;
-      revealing={id,until:now+900,hold:at};
+    lookAt=(key,pointer,ids)=>{
+      const began=look.enter(key);
+      update?.();
+      if(began&&pointer)showLook(key,{x:pointer.clientX,y:pointer.clientY},ids||[]);
+    };
+    function showLook(key,at,ids){
+      if(!instance)return;
+      const now=performance.now();
       for(const side of ['top','bottom'])host.style.removeProperty(`--flow-card-max-${side}`);
       const measure=()=>{
         const v=instance.getViewport(),rect=host.getBoundingClientRect();
         const toMap=r=>({x:(r.left-rect.left-v.x)/v.zoom,y:(r.top-rect.top-v.y)/v.zoom,width:r.width/v.zoom,height:r.height/v.zoom});
-        const badge=[...host.querySelectorAll('[data-badge]')].find(el=>el.dataset.badge===id);
-        const shown=[badge?.closest('.flow-part,.flow-area-summary'),...host.querySelectorAll('.flow-connection-label:has(.flow-connection-calls),.flow-connection-calls')].filter(Boolean);
+        const owners=[...host.querySelectorAll('[data-badge]')].filter(el=>ids.includes(el.dataset.badge)).map(el=>el.closest('.flow-part,.flow-area-summary'));
+        const shown=[...owners,...host.querySelectorAll('.flow-connection-label:has(.flow-connection-calls),.flow-connection-calls')].filter(Boolean);
         return {v,size:{width:rect.width,height:rect.height},box:union(shown.map(el=>toMap(el.getBoundingClientRect()))),
           anchor:{x:(at.x-rect.left-v.x)/v.zoom,y:(at.y-rect.top-v.y)/v.zoom}};
       };
@@ -523,21 +536,24 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       };
       const after=run=>requestAnimationFrame(()=>requestAnimationFrame(run));
       after(()=>{
-        if(cardPart!==id&&pinnedPart!==id)return;
+        if(look.key!==key)return;
         const first=measure(),placed=place(first);
         if(!placed)return;
-        const go=next=>{if(Math.abs(next.zoom-first.v.zoom)>1e-3||Math.abs(next.x-first.v.x)>1||Math.abs(next.y-first.v.y)>1)instance.setViewport(next,{duration:320});};
+        const go=next=>{
+          if(Math.abs(next.zoom-first.v.zoom)<=1e-3&&Math.abs(next.x-first.v.x)<=1&&Math.abs(next.y-first.v.y)<=1)return;
+          look.cameraMoves(at.x,at.y,performance.now()+420);instance.setViewport(next,{duration:320});
+        };
         if(placed.whole){go(placed.next);return;}
         // The camera stopped short, so not everything fits: the cards scroll
         // inside, and they give up the height that is missing between them.
-        const cards=[...host.querySelectorAll('.flow-calls-top,.flow-calls-bottom')];
+        const cards=[...host.querySelectorAll('.flow-calls-top>.flow-connection-calls,.flow-calls-bottom>.flow-connection-calls')];
         const over=first.box.height*placed.next.zoom-(first.size.height-40);
         if(!cards.length||over<=0){go(placed.next);return;}
         const unit=cards[0].getBoundingClientRect().height/cards[0].offsetHeight*placed.next.zoom/first.v.zoom;
         // Cards side by side share a height: what is missing is split between
         // the sides that have cards, above and below, and taken from the
         // height the cards of that side actually have.
-        const sides=['top','bottom'].map(side=>[side,[...host.querySelectorAll(`.flow-calls-${side}`)]]).filter(([,list])=>list.length);
+        const sides=['top','bottom'].map(side=>[side,[...host.querySelectorAll(`.flow-calls-${side}>.flow-connection-calls`)]]).filter(([,list])=>list.length);
         for(const [side,list] of sides){
           const tallest=Math.max(...list.map(card=>card.offsetHeight));
           host.style.setProperty(`--flow-card-max-${side}`,`${Math.floor(tallest-over/sides.length/unit)-8}px`);
@@ -580,15 +596,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       onNodeMouseEnter={(_,n)=>enter(n.id)}
       onMouseMove={event=>{
         if(panning||!instance)return;
-        // The look at a badge the camera moved for ends when the pointer
-        // really moves away, not when the badge slid from under it.
-        // While the camera is still moving, wherever the pointer is counts as
-        // the place the look is held from.
-        if(revealing.hold&&performance.now()<revealing.until)revealing.hold={x:event.clientX,y:event.clientY};
-        else if(revealing.hold&&Math.hypot(event.clientX-revealing.hold.x,event.clientY-revealing.hold.y)>10){
-          revealing={...revealing,hold:null};
-          if(cardPart&&!event.target.closest?.('[data-badge],.flow-connection-label')){cardPart='';update?.();}
-        }
+        if(look.move(event.clientX,event.clientY,performance.now(),!!event.target.closest?.('[data-badge],.flow-connection-label')))update?.();
         if(!hover.move(event.clientX,event.clientY))return;
         const labelElement=event.target.closest('.flow-connection-label');
         if(labelElement)return;
@@ -652,34 +660,39 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const groups=new Map(),seen=new Set();
     for(const relation of label.relations){
       if(ids&&!ids.has(relation.from)&&!ids.has(relation.to))continue;
+      // The number already says which part inside the frame this is, and the
+      // map shows it; the card names only the part on the other side.
+      const other=name(label.incoming?relation.from:relation.to);
       const calls=relation.calls?.length?relation.calls:[{label:relation.label||relation.summary||'',from:relation.fromSource,to:relation.toSource}];
       for(const call of calls){
         const parts=String(call.label||'').match(/^(\S+) (\S+) (\S+)$/);
-        // Calls between parts read under "part → part"; calls to an outside
-        // symbol read under the part that makes them.
-        const title=parts?`${name(relation.from)} → ${name(relation.to)}`:name(label.incoming?relation.to:relation.from);
-        const key=`${title}|${parts?call.label:name(label.incoming?relation.from:relation.to)+'|'+(call.at||'')}`;
-        if(seen.has(key))continue;seen.add(key);
-        if(!groups.has(title))groups.set(title,[]);
-        groups.get(title).push({parts,call,other:name(label.incoming?relation.from:relation.to)});
+        const row=`${other}|${parts?call.label:call.at||''}`;
+        if(seen.has(row))continue;seen.add(row);
+        if(!groups.has(other))groups.set(other,[]);
+        groups.get(other).push({parts,call});
       }
     }
     if(!groups.size)return null;
     const link=(href,text)=>href?<a href={href} target="_blank" rel="noopener" onClick={event=>event.stopPropagation()}>{text}</a>:<span>{text}</span>;
-    return <div className={`flow-connection-calls flow-calls-${side} nopan nowheel`} onClick={event=>event.stopPropagation()}>
-      <header><b>{only===undefined?label.numbers.join(' · '):only}</b><button type="button" onClick={go}>{label.incoming?'←':'→'} {label.title}</button></header>
-      {[...groups].map(([title,rows])=><div key={title}><strong>{title}</strong>
-        {rows.map(({parts,call,other},i)=><p key={i}>{parts
+    // The wheel scrolls the card only when the card has something to scroll;
+    // otherwise it is the map's.
+    const wheel=el=>{if(el)el.classList.toggle('nowheel',el.scrollHeight>el.clientHeight+1);};
+    // The outer box holds the place and the unseen bridge to the label; the
+    // inner one scrolls.
+    return <div className={`flow-calls-place flow-calls-${side} nopan`} onClick={event=>event.stopPropagation()}><div ref={wheel} className="flow-connection-calls">
+      <header><button type="button" onClick={go}>{label.incoming?'←':'→'} {label.title}</button></header>
+      {[...groups].map(([title,rows])=><div key={title}>{title!==label.title&&<strong>{title}</strong>}
+        {rows.map(({parts,call},i)=><p key={i}>{parts
           ?<>{link(call.from,parts[1])}<i>{parts[2]==='calls'?' → ':` ${parts[2].replace(/_/g,' ')} `}</i>{link(call.to||call.from,parts[3])}</>
-          :<>{link(call.from||call.to,other)}{call.at&&<em> {call.at}</em>}</>}</p>)}</div>)}
-    </div>;
+          :<>{link(call.from||call.to,title)}{call.at&&<em> {call.at}</em>}</>}</p>)}</div>)}
+    </div></div>;
   }
   function ConnectionLabel({label}){
     const {zoom}=useViewport();
-    const [hovered,setHovered]=useState(null),element=useRef(null),closing=useRef(0);
-    const open=only=>{clearTimeout(closing.current);setHovered({only});};
-    const close=()=>{clearTimeout(closing.current);closing.current=setTimeout(()=>setHovered(null),220);};
-    useEffect(()=>()=>clearTimeout(closing.current),[]);
+    const key=`label:${label.id}`,hovered=look.key===key;
+    // The parts the numbers stand for come into view with the card: the
+    // reader matches a number to its part on the map, not in the card.
+    const parts=[...(label.byNumber||new Map()).values()].map(entry=>entry.key);
     let upright=false,sideName='bottom';
     let style={transform:`translate(${label.x}px,${label.y}px) scale(${label.scale||1})`,transformOrigin:'top left',width:label.width/(label.scale||1),minHeight:label.height/(label.scale||1)};
     if(label.boundary){
@@ -692,18 +705,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     }
     // A number's badge on its part opens the cards of that number beside
     // every arrow it has; a click on the badge keeps them open.
-    const shown=[pinnedPart,cardPart].filter(Boolean).map(id=>[...(label.byNumber||[])].find(([,entry])=>entry.key===id)?.[0]).find(k=>k!==undefined);
-    const only=hovered?hovered.only:shown;
-    return <div ref={element}
+    const shown=[pinnedPart,lookBadge()].filter(Boolean).map(id=>[...(label.byNumber||[])].find(([,entry])=>entry.key===id)?.[0]).find(k=>k!==undefined);
+    const only=hovered?lookOnly:shown;
+    return <div
           className={`flow-connection-label nopan ${label.boundary?'flow-boundary-label':''} ${upright?'flow-label-upright':''}`}
-          onMouseEnter={()=>clearTimeout(closing.current)} onMouseLeave={close} data-connection-outside={label.outside} data-connection-label={label.id}
+          onMouseEnter={event=>{if(!hovered)lookOnly=undefined;lookAt(key,event,parts);}} onMouseLeave={()=>lookAway(key)} data-connection-outside={label.outside} data-connection-label={label.id}
           style={style}
           >
           {!label.boundary&&<span>{label.incoming?'← ':'→ '}{label.labelTitle}</span>}
           <button type="button" aria-label={label.title} className={pinnedLabels.has(label.id)?'flow-label-pinned':''}
             onClick={event=>{event.stopPropagation();if(pinnedLabels.has(label.id))pinnedLabels.delete(label.id);else pinnedLabels.set(label.id,label.area);update?.();}}>
             {label.numbers.map((k,i)=><React.Fragment key={k}>{i>0&&!upright&&<i> · </i>}
-              <b className={label.bold?.has(k)?'flow-number-active':''} onMouseEnter={()=>open(label.numbers.length>1?k:undefined)}>{k}</b></React.Fragment>)}
+              <b className={label.bold?.has(k)?'flow-number-active':''} onMouseEnter={()=>{lookOnly=label.numbers.length>1?k:undefined;if(look.key===key)update?.();}}>{k}</b></React.Fragment>)}
           </button>
           {(hovered||shown!==undefined||pinnedLabels.has(label.id))&&<ConnectionCalls label={label} only={only} side={sideName} go={event=>{event.stopPropagation();clearHover();select(label.outside,event,true);}}/>}
         </div>;
