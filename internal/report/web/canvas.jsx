@@ -96,9 +96,7 @@ function Part({data}) {
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
     {data.symbols?.length>0&&!data.activation&&<button type="button" className="flow-part-zoom nopan" aria-label={t('Zoom into {0}',data.name||data.title)}
       onClick={event=>{event.stopPropagation();data.zoomInto?.();}}>
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="1.5" y="11" width="10.5" height="10.5" rx="1.4"/><circle cx="14" cy="9" r="7" fill="#fff" fillOpacity=".92"/><path d="M19.2 14.2l3.2 3.2" strokeWidth="2.8"/>
-      <path d="M9.5 10h5v4.5M12 8.2V4.6m-1.4 1.4L12 4.6 13.4 6M16.4 12.2h3m-1.4-1.4 1.4 1.4-1.4 1.4" strokeWidth="1.1"/></svg></button>}
+      <span className="flow-zoom-picture" aria-hidden="true"/></button>}
     {data.number && <span data-badge={data.id} className={`flow-number nopan ${data.badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>data.badge?.enter(event)} onMouseLeave={()=>data.badge?.leave()}
       onClick={event=>{event.stopPropagation();data.badge?.toggle();}}>{data.number}</span>}
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
@@ -126,19 +124,16 @@ function AreaSummary({node,item,number,badge,heading,enter,select}){
 }
 function ZoomMark({node,item,enter,select,compactScale}) {
   const viewport=useViewport(),{zoom}=viewport;
-  const area=item.branch==='area',size=24,inset=area||['communication','inputs'].includes(item.branch)?8:12;
+  const area=item.branch==='area',size=34,tall=24,inset=area||['communication','inputs'].includes(item.branch)?8:12;
   const scale=area?compactScale:1/zoom;
-  if(node.width<(size+2*inset)*scale||node.height<(size+2*inset)*scale)return null;
+  if(node.width<(size+2*inset)*scale||node.height<(tall+2*inset)*scale)return null;
   const point={x:node.absolute.x+node.width-(size+inset)*scale,y:node.absolute.y+inset*scale};
   const name=item.branch==='inputs'?`${t('Inputs')} · ${item.name||item.title}`:item.name||item.title;
   return <button type="button" className="flow-zoom-mark nopan" data-zoom-into={node.id}
-    style={{transform:`translate(${point.x}px,${point.y}px) scale(${scale})`,width:size,height:size}}
+    style={{transform:`translate(${point.x}px,${point.y}px) scale(${scale})`,width:size,height:tall}}
     aria-label={t('Zoom into {0}',name)} onMouseEnter={()=>enter(node.id)}
     onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
-    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="1.5" y="11" width="10.5" height="10.5" rx="1.4"/><circle cx="14" cy="9" r="7" fill="#fff" fillOpacity=".92"/><path d="M19.2 14.2l3.2 3.2" strokeWidth="2.8"/>
-      <path d="M9.5 10h5v4.5M12 8.2V4.6m-1.4 1.4L12 4.6 13.4 6M16.4 12.2h3m-1.4-1.4 1.4 1.4-1.4 1.4" strokeWidth="1.1"/>
-    </svg>
+    <span className="flow-zoom-picture" aria-hidden="true"/>
   </button>;
 }
 function FrameTitle({node,item,focused,enter,select}) {
@@ -439,12 +434,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       // The closed card is a title over a foot row, the number and the role mark:
       // the title is fitted into what the foot row leaves.
-      return new Map(layout.nodes.filter(n=>scales.has(n.id)).map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure,44,40)]));
+      return new Map(layout.nodes.filter(n=>scales.has(n.id)).map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure,56,40)]));
     },[layoutKey]);
     const standaloneHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       return new Map(layout.nodes.filter(n=>!n.frame&&!byID.get(n.id).activation&&byID.get(n.parentId)?.branch==='component').map(n=>{
-        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,(item.roleLabel?65:45)+(item.symbols?.length?22:0),15);
+        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,(item.roleLabel?65:45)+(item.symbols?.length?34:0),15);
         return [n.id,{...heading,width:n.width/heading.scale,height:n.height/heading.scale}];
       }));
     },[layoutKey]);

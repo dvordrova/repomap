@@ -126,7 +126,7 @@
 .flow-area-summary{position:absolute;pointer-events:auto;cursor:pointer}
 .flow-area-summary>.flow-overview-compact{display:flex;flex-direction:column;box-sizing:border-box;height:100%;padding:6px;border:0;outline:0;background:transparent;overflow:hidden}
 .flow-area-summary>.flow-overview-compact>footer{flex:none;display:flex;align-items:center;justify-content:space-between;height:22px;margin-top:4px}
-.flow-area-summary .flow-overview-compact>strong{flex:1 1 auto;min-height:0;overflow:hidden;font:600 12px/16px system-ui;padding-right:32px;overflow-wrap:normal}
+.flow-area-summary .flow-overview-compact>strong{flex:1 1 auto;min-height:0;overflow:hidden;font:600 12px/16px system-ui;padding-right:44px;overflow-wrap:normal}
 .flow-standalone-part{padding:6px;gap:0}
 .flow-standalone-part>strong{font:600 12px/16px system-ui;overflow-wrap:normal}
 .flow-standalone-part:has(.flow-role-symbol)>strong{padding-right:20px}
@@ -143,7 +143,7 @@
 .flow-component-areas li{margin:0;padding:0}
 .flow-enabled .flow-component-areas button{display:block;width:100%;padding:5px 0;border:0;border-radius:0;background:transparent;text-align:left;font:500 13px/18px system-ui;color:#243044;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
 .flow-enabled .flow-component-areas button:hover{color:#176f68;text-decoration:underline;text-underline-offset:3px;background:transparent}
-.flow-enabled .flow-zoom-mark{position:absolute;transform-origin:top left;display:grid;place-items:center;box-sizing:border-box;width:24px;height:24px;border:0;background:transparent;color:#52647d;border-radius:0;padding:0;cursor:zoom-in;pointer-events:auto}
+.flow-enabled .flow-zoom-mark{position:absolute;transform-origin:top left;display:grid;place-items:center;box-sizing:border-box;width:34px;height:24px;border:0;background:transparent;color:#52647d;border-radius:0;padding:0;cursor:zoom-in;pointer-events:auto}
 .flow-enabled .flow-zoom-mark svg{display:block}
 .flow-enabled .flow-zoom-mark:hover{background:transparent;color:#243044}
 .flow-communication-overview{background:#fffaf1;flex-direction:row;align-items:center;gap:4px;padding:0}
@@ -203,9 +203,9 @@
 .flow-part-symbols .flow-symbol-row{height:24px;font:400 12.5px/24px ui-monospace,SFMono-Regular,Menlo,monospace;padding-left:20px!important}
 .flow-part-symbols .flow-symbol-more{position:absolute;padding:0 10px;font:500 13px/26px system-ui;color:#536176;border:1px dashed #9aa7b8;border-radius:6px;background:#fff}
 .flow-part-symbols svg path.flow-symbol-returns,.flow-part-symbols svg path.flow-symbol-takes{stroke-dasharray:5 4;stroke:#755299}
-.flow-part-zoom{position:absolute;right:5px;top:5px;display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;background:transparent;color:#52647d;cursor:zoom-in}
+.flow-part-zoom{position:absolute;right:5px;top:5px;display:grid;place-items:center;width:29px;height:20px;padding:0;border:0;background:transparent;color:#52647d;cursor:zoom-in}
 .flow-part-zoom:hover{color:#243044}
-.flow-part:has(.flow-part-zoom)>strong{padding-right:26px}
+.flow-part:has(.flow-part-zoom)>strong{padding-right:34px}
 .flow-part:not(.flow-standalone-part):has(.flow-number)>strong{padding-bottom:18px}
 .flow-part-symbols .flow-symbol-block a:hover{background:#dfe6ef}
 .flow-part-symbols .flow-symbol-block .flow-symbol-key{font-weight:750;color:#4f2f86}
@@ -220,9 +220,9 @@
 .flow-connection-calls>header button:hover{text-decoration:underline}
 .flow-enabled .flow-connection-label button.flow-label-pinned{background:#243044;color:#fff}
 .flow-standalone-part>.flow-part-zoom{top:50%;right:34px;transform:translateY(-50%)}
-.flow-standalone-part:has(.flow-part-zoom):has(.flow-number)>.flow-role-symbol{right:60px}
+.flow-standalone-part:has(.flow-part-zoom):has(.flow-number)>.flow-role-symbol{right:70px}
 .flow-standalone-part:not(:has(.flow-number))>.flow-part-zoom{right:8px}
-.flow-standalone-part:has(.flow-part-zoom):not(:has(.flow-number))>.flow-role-symbol{right:32px}
+.flow-standalone-part:has(.flow-part-zoom):not(:has(.flow-number))>.flow-role-symbol{right:42px}
 .flow-standalone-part:has(.flow-part-zoom)>strong{padding-right:0}
 /* A label's transform makes it a stacking context of its own at level zero,
    below nested nodes and their arrows; with its card open it goes above. */
@@ -241,3 +241,6 @@
 .flow-connection-calls strong{font:600 14px/19px system-ui;color:#39455a}
 .flow-connection-calls p{font:400 14.5px/21px ui-monospace,SFMono-Regular,Menlo,monospace}
 .flow-connection-calls p em{font-size:12.5px}
+/* The owner's drawing of the way in: an unknown object under a magnifier. One
+   picture in the stylesheet, so a mark is a button and nothing more. */
+.flow-zoom-picture{display:block;width:100%;height:100%;background:url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2264%22%20height=%2244%22%20viewBox=%22230%20188%20820%20562%22%20fill=%22none%22%3E%3Cdefs%3E%3CclipPath%20id=%22mi-blue-outside%22%20clipPathUnits=%22userSpaceOnUse%22%3E%3Cpath%20d=%22M200%20160H1080V790H200Z%20M806%20413%20A190%20190%200%201%200%20426%20413%20A190%20190%200%201%200%20806%20413Z%22%20clip-rule=%22evenodd%22/%3E%3C/clipPath%3E%3CclipPath%20id=%22mi-blue-inside%22%20clipPathUnits=%22userSpaceOnUse%22%3E%3Ccircle%20cx=%22616%22%20cy=%22413%22%20r=%22190%22/%3E%3C/clipPath%3E%3C/defs%3E%3Cg%20clip-path=%22url(%23mi-blue-outside)%22%3E%3Crect%20x=%22262%22%20y=%22451%22%20width=%22316%22%20height=%22273%22%20rx=%222%22%20stroke=%22%23608CAE%22%20stroke-width=%2218%22/%3E%3Cpath%20d=%22M382%20571%20C382%20525%20414%20496%20461%20496%20C495%20496%20517%20514%20517%20541%20C517%20570%20494%20581%20473%20595%20C448%20612%20432%20618%20432%20630%22%20stroke=%22%23BD7736%22%20stroke-width=%2210.5%22%20stroke-linecap=%22round%22/%3E%3Ccircle%20cx=%22432%22%20cy=%22670%22%20r=%225.8%22%20fill=%22%23BD7736%22/%3E%3C/g%3E%3Cpath%20d=%22M757.841936%20523.819066%20L1002.125269%20714.674123%22%20stroke=%22%234B6275%22%20stroke-width=%2230%22%20stroke-linecap=%22round%22%20clip-path=%22url(%23mi-blue-outside)%22/%3E%3Cg%20clip-path=%22url(%23mi-blue-inside)%22%3E%3Cg%20transform=%22translate(-104.300%20-217.850)%20scale(1.35)%22%3E%3Crect%20x=%22262%22%20y=%22451%22%20width=%22316%22%20height=%22273%22%20rx=%221.5%22%20stroke=%22%23608CAE%22%20stroke-width=%228.9%22/%3E%3Cpath%20d=%22M382%20571%20C382%20525%20414%20496%20461%20496%20C495%20496%20517%20514%20517%20541%20C517%20570%20494%20581%20473%20595%20C448%20612%20432%20618%20432%20630%22%20stroke=%22%23BD7736%22%20stroke-width=%229.2%22%20stroke-linecap=%22round%22/%3E%3Ccircle%20cx=%22432%22%20cy=%22670%22%20r=%225.8%22%20fill=%22%23BD7736%22/%3E%3C/g%3E%3Cg%20stroke=%22%23668296%22%20stroke-width=%2211.5%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%3E%3Cpath%20d=%22M590%20391V287%20M558%20319L590%20287L622%20319%22/%3E%3Cpath%20d=%22M794%20463H690%20M722%20431L690%20463L722%20495%22/%3E%3C/g%3E%3C/g%3E%3Ccircle%20cx=%22616%22%20cy=%22413%22%20r=%22190%22%20stroke=%22%234B6275%22%20stroke-width=%2222%22/%3E%3C/svg%3E") center/contain no-repeat}
