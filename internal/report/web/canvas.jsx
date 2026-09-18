@@ -36,14 +36,15 @@ function Area({data}) {
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
 }
-function AreaSummary({node,item,heading,enter,select}){
+function AreaSummary({node,item,number,heading,enter,select}){
   const {scale,title}=heading;
   return <div className="flow-area-summary nopan" data-summary-area={node.id}
     style={{transform:`translate(${node.absolute.x}px,${node.absolute.y}px) scale(${scale})`,transformOrigin:'top left',
       width:node.width/scale,height:node.height/scale}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
     <div className="flow-part flow-overview-card flow-overview-compact"><strong>{title}</strong>
-      {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}</div>
+      {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
+      {number&&<span className="flow-number">{number}</span>}</div>
   </div>;
 }
 function ZoomMark({node,item,enter,select,compactScale}) {
@@ -353,20 +354,30 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // Zoomed into one area with nothing hovered or chosen, that area is what
     // the reader is looking at: its parts keep their numbers.
     const zoomedArea=state.mode==='all'&&detailed.size===1?[...detailed][0]:'';
-    const area=state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):zoomedArea;
-    const number=new Map(area&&view.numbered?leaves(area).map((id,i)=>[id,i+1]):[]);
+    const chosen=state.mode==='hover'?parentArea(hoverArea):state.mode==='selection'?parentArea(view.scope):zoomedArea;
+    // What is numbered is the frame the reader looks at: an open area with
+    // its parts, or else the open component with its areas and loose parts.
+    const lookedComponent=chosen?rootOf(chosen):openComponents.size===1?[...openComponents][0]:'';
+    const area=chosen&&detailed.has(chosen)?chosen:byID.get(lookedComponent)?.branch==='component'&&openComponents.has(lookedComponent)?lookedComponent:chosen;
+    const wholeComponent=byID.get(area)?.branch==='component';
+    const childOf=id=>{while(id&&placed.get(id)?.parentId!==area)id=placed.get(id)?.parentId;return id||'';};
+    const members=!area?[]:wholeComponent?layout.nodes.filter(n=>!n.frame&&!byID.get(n.id)?.activation&&childOf(n.id)).map(n=>n.id):leaves(area);
+    const number=new Map(!area||!view.numbered?[]:wholeComponent?layout.nodes.filter(n=>n.parentId===area).map((n,i)=>[n.id,i+1]):members.map((id,i)=>[id,i+1]));
     const dim=state.mode!=='all';
     const initVisible=state.mode==='hover'||state.mode==='operation'||(state.mode==='selection'&&byID.get(view.scope)?.branch!=='component');
     const routes=routeDrawing(drawing.edges,closed,state.activeEdges,dim,boundaryBetween,initVisible);
-    const labelGroups=area?connections(area,leaves(area),layout.edges.filter(e=>state.activeEdges.has(e.id)),
-      id=>rootOf(id)!==rootOf(area)?rootOf(id):boundaryBetween(id,area)?.id||id):[];
+    const labelGroups=area?connections(area,members,layout.edges.filter(e=>state.activeEdges.has(e.id)),
+      id=>rootOf(id)!==rootOf(area)?rootOf(id):boundaryBetween(id,area)?.id||id,wholeComponent?id=>number.get(childOf(id)):null):[];
     const labels=labelGroups.flatMap(group=>{
       const matching=routes.filter(route=>route.edgeIDs.some(id=>group.edges.includes(id)));
       const route=group.incoming?matching.at(-1):matching[0];
       const point=group.incoming?route?.end:route?.start;
       if(!point)return [];
       const outside=byID.get(group.outside),root=rootOf(group.outside)!==rootOf(area)?rootOf(area):boundaryBetween(group.insides[0],group.outside)?.id||area;
-      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,title:outside.name||outside.title}];
+      // On the component's frame the label is as large as the numbers of
+      // the areas and loose parts it names.
+      const frameScale=wholeComponent?Math.max(...layout.nodes.filter(n=>n.parentId===area).map(n=>groupHeadings.get(n.id)?.scale||standaloneHeadings.get(n.id)?.scale||0)):0;
+      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,title:outside.name||outside.title}];
     });
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
     const nodes=drawing.nodes.map(n=>{
@@ -444,9 +455,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id))&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)}/>)}
         {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
-          node={n} item={byID.get(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select}/>)}
+          node={n} item={byID.get(n.id)} number={number.get(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select}/>)}
-        {area&&visible(area)&&detailed.has(area)&&view.numbered&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
+        {area&&visible(area)&&(detailed.has(area)||openComponents.has(area))&&view.numbered&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
       </ViewportPortal>
     </ReactFlow>;
   }
@@ -463,7 +474,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       // The label stands on a frame, so it is read at the zoom that frame's
       // own children are read at: a part's scale, or half the heading of a
       // closed area. The parts deep inside are smaller than that.
-      const scale=Math.max(...layout.nodes.filter(n=>n.parentId===label.root).map(n=>n.frame?(byID.get(n.id)?.summaryScale||1)/2:byID.get(n.id)?.contentScale||1),
+      const scale=label.frameScale||Math.max(...layout.nodes.filter(n=>n.parentId===label.root).map(n=>n.frame?(byID.get(n.id)?.summaryScale||1)/2:byID.get(n.id)?.contentScale||1),
         ...label.insides.map(id=>byID.get(id)?.contentScale||1));
       style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
     }

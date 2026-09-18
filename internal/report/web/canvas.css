@@ -161,3 +161,4 @@
 .find-result-summary{font-size:13px!important;line-height:1.45!important;color:#536176;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:6px 0 0}
 @keyframes flow-reveal{from{opacity:.2}to{opacity:1}}
 .flow-area-summary .flow-role-symbol{position:absolute;right:8px;bottom:8px;width:14px;height:14px}
+.flow-area-summary .flow-number{left:6px;right:auto;bottom:6px}
