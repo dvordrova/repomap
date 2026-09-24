@@ -170,6 +170,13 @@ type reader struct {
 	symbolSelections  map[string]*Knowledge // native subject -> independent selection evidence
 	responseTables    map[string]rememberedTable
 	recallOnly        bool
+	// knowledgeVersion counts record changes; knowledge.json is rewritten
+	// only when it moved past the version last written. tables.md likewise
+	// only when the printed text grew.
+	knowledgeVersion, knowledgeSaved int
+	knowledgeWritten                 bool
+	tablesSaved                      int
+	tablesWritten                    bool
 }
 
 func (r *reader) compactID(prefix string, next *int) string {
@@ -353,7 +360,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		if through == lines.StageSymbols {
 			r.assignBoxes()
 		}
-		if err := os.WriteFile(filepath.Join(opts.OwnerRunDir, atlas.TablesFilename), []byte(r.tables.String()), 0o600); err != nil {
+		if err := r.saveTables(); err != nil {
 			return Result{}, err
 		}
 		if err := r.persistKnowledge(); err != nil {
@@ -370,7 +377,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		if opts.Through == stageLearn {
 			through = stageLearn
 		}
-		if err := os.WriteFile(filepath.Join(opts.OwnerRunDir, atlas.TablesFilename), []byte(r.tables.String()), 0o600); err != nil {
+		if err := r.saveTables(); err != nil {
 			return Result{}, err
 		}
 	}
@@ -382,7 +389,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		if opts.Through == lines.StageQuestion {
 			through = lines.StageQuestion
 		}
-		if err := os.WriteFile(filepath.Join(opts.OwnerRunDir, atlas.TablesFilename), []byte(r.tables.String()), 0o600); err != nil {
+		if err := r.saveTables(); err != nil {
 			return Result{}, err
 		}
 		if err := r.persistKnowledge(); err != nil {
@@ -400,6 +407,19 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 	sort.Slice(result.Uses, func(i, j int) bool { return result.Uses[i].Stage < result.Uses[j].Stage })
 	result.Atlas.Budget.Stages = result.Uses
 	return result, nil
+}
+
+// saveTables writes tables.md when the reading printed more since the last
+// write. The printed text only grows, so an equal length is the same text.
+func (r *reader) saveTables() error {
+	if r.tablesWritten && r.tablesSaved == r.tables.Len() {
+		return nil
+	}
+	if err := os.WriteFile(filepath.Join(r.opts.OwnerRunDir, atlas.TablesFilename), []byte(r.tables.String()), 0o600); err != nil {
+		return err
+	}
+	r.tablesWritten, r.tablesSaved = true, r.tables.Len()
+	return nil
 }
 
 // Line satisfies lines.Lines with the model's lines so far.

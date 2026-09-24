@@ -360,6 +360,7 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 			r.knowledgeRecords = make(map[knowledgeRecordKey]*Knowledge)
 		}
 		r.knowledgeRecords[knowledgeRecordKey{PlaceID: k.PlaceID, Stage: k.Stage, Contract: k.Contract}] = &k
+		r.knowledgeVersion++
 		r.knowledge[k.PlaceID] = &k
 		r.knowledgeSubjects[k.SubjectID] = &k
 		if !r.recallOnly && !reused[i] && !saved[k.BasisID] {
@@ -376,7 +377,12 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 	return answers, nil
 }
 
+// persistKnowledge writes knowledge.json when its records changed since the
+// last write, and always the first time.
 func (r *reader) persistKnowledge() error {
+	if r.knowledgeWritten && r.knowledgeSaved == r.knowledgeVersion {
+		return nil
+	}
 	rows := make([]Knowledge, 0, len(r.knowledgeRecords))
 	for _, record := range r.knowledgeRecords {
 		rows = append(rows, *record)
@@ -399,5 +405,9 @@ func (r *reader) persistKnowledge() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(r.opts.OwnerRunDir, KnowledgeFilename), raw, 0o600)
+	if err := os.WriteFile(filepath.Join(r.opts.OwnerRunDir, KnowledgeFilename), raw, 0o600); err != nil {
+		return err
+	}
+	r.knowledgeWritten, r.knowledgeSaved = true, r.knowledgeVersion
+	return nil
 }
