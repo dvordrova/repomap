@@ -1,5 +1,39 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Each call keeps its own source position
+
+- An all-targets self-run failed with `atlas: boundary "b601" has conflicting
+  native origins for target "t17"` (`internal/report/web`). The JS/TS helper
+  placed every call at the start of its callee expression, so all calls of a
+  chain shared the leftmost receiver's position: `p.split('/')…join('/')` on
+  `build.mjs:19` gave split and join one anchor (19:108) and one place, and
+  join's holder named its own position. The same start dropped data: in
+  `consumer.on(t, first).on(t, second)` the registration once-gate folded
+  `second` into `first`.
+- A call now sits at the called member's name, the called name, or else the
+  `(` of its arguments. The call record, its pattern and the `call_result`
+  anchor of its value share that position. Python (attribute name), Go (SSA
+  `Lparen`) and Clojure (clj-kondo form) already did this. The boundary key
+  also carries the call word and external symbol, so targets merge only when
+  they saw the same call. The skeptic-reviewed ordinal pairing of identical
+  calls was dropped: facts never reach it, and it would pair calls across
+  targets by fact order. Two facts of one target in one place are still
+  refused.
+- Probe, no model, `--target jsts:internal/report/web/package.json`: the
+  HEAD binary exits 1 with the same refusal (`b1`, `t1`); the fixed binary
+  exits 0 with split at 19:110, split at 19:131 and join at 19:166 (holder
+  19:110) as three places. The online all-targets rerun and browser
+  walkthrough are still to do.
+- Cumulative fixtures, each read as two targets sharing the file: TypeScript
+  `chainedPlatformCalls` and `registerChainedOrderConsumers` (before: one
+  split at 77:20 and split/join both at 76:22; `recordOrder` lost), Python
+  `subscribe_chained`/`chained_text_calls`, Go `registerStrippedFiles`
+  (Handle and two nested StripPrefix calls with one path), Clojure
+  `chained-paths`/`nested-paths`. Go's standard library has no fluent
+  registration chain; Clojure Java instance chains carry no call pattern.
+  Python call-result objects still sit at the call expression's start (two at
+  `events.py:64:5`); patterns and anchors are distinct.
+
 ## 2026-09-25 — atlas_api stays with the text model (measured)
 
 - Paired probe on `cmd/repomap`: the same 485 atlas_api rows answered by

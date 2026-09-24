@@ -194,6 +194,12 @@ type boundaryKey struct {
 	method  string
 	values  string
 	subject string
+	// callee is the outside symbol and the call word. Targets share a place
+	// only when they saw the same call; a target that resolved another
+	// symbol at that position keeps its own place rather than borrowing the
+	// first target's External, and two different calls at one position
+	// never meet.
+	callee string
 }
 
 type boundaryState struct {
@@ -1516,7 +1522,10 @@ func (b *builder) symbolCalls() map[string][]atlas.SymbolCall {
 
 // collectBoundaries lifts the facts the code already knows as integration
 // points into boundary places. Only the same anchored observation is shared
-// across targets; different methods, paths and registration columns stay separate.
+// across targets; different methods, paths, columns and callees stay
+// separate. Every adapter gives each call its own position, so one target
+// never has two facts in one place: if it does, sealing refuses the graph,
+// and nothing pairs such facts with another target's by order.
 func (b *builder) collectBoundaries() {
 	// Facts name their own target rows; the atlas speaks in program target
 	// IDs, so a fact's target is translated before it names a place.
@@ -1575,7 +1584,7 @@ func (b *builder) collectBoundaries() {
 		}
 		objectID := scopedObjectID(targetID, owner)
 		key := boundaryKey{path: filePath, line: fact.Anchor.Line, column: fact.Anchor.Column, kind: kind,
-			method: method, values: string(encodedValues), subject: b.factSubjects[objectID]}
+			method: method, values: string(encodedValues), subject: b.factSubjects[objectID], callee: external + "\x00" + fact.Key}
 		origin := atlas.BoundaryOrigin{TargetID: targetID, FactID: fact.ID, ObjectID: objectID}
 		if state, exists := b.bounds[key]; exists {
 			state.place.Boundary.Origins = append(state.place.Boundary.Origins, origin)
@@ -1683,7 +1692,7 @@ func boundaryID(filePath string, line int, kind string) string {
 }
 
 func nativeBoundaryID(key boundaryKey) string {
-	encoded, _ := json.Marshal([]any{key.path, key.line, key.column, key.kind, key.method, key.values, key.subject})
+	encoded, _ := json.Marshal([]any{key.path, key.line, key.column, key.kind, key.method, key.values, key.subject, key.callee})
 	return fmt.Sprintf("%s:%x", boundaryID(key.path, key.line, key.kind), sha256.Sum256(encoded))
 }
 

@@ -84,6 +84,15 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	adaptertest.AssertSQLQueryFacts(t, index, "internal/storefixture/handoff_flow.go",
 		map[string]string{"SELECT name FROM users WHERE id = $1": "users"})
 	adaptertest.AssertSQLQueryFacts(t, index, "cmd/app/sql_literals.go", map[string]string{"DROP TABLE IF EXISTS %s": ""}, "create %s dir: %w")
+	// mux.Handle("/v/", http.StripPrefix("/v/", http.StripPrefix("/v/", http.NotFoundHandler())))
+	// SSA puts each call at its opening parenthesis, so a different call with
+	// the same path and the same call twice stay apart. Go has no fluent
+	// registration chain in the standard library; nesting is its equivalent.
+	adaptertest.AssertCallSiteBoundaries(t, repository, input, "internal/storefixture/http_registrations.go", []adaptertest.CallSite{
+		{Line: 164, Column: 12, Key: "Handle", Text: "net/http.ServeMux.Handle", Path: "/v/"},
+		{Line: 164, Column: 36, Key: "StripPrefix", Text: "net/http.StripPrefix", Path: "/v/"},
+		{Line: 164, Column: 60, Key: "StripPrefix", Text: "net/http.StripPrefix", Path: "/v/"},
+	})
 	adaptertest.AssertConcreteParameterMethod(t, index, "internal/storefixture/data_sources.go")
 	assertGoTypedIteration(t, index)
 	assertGoLocalHTTPNameFacts(t, index)

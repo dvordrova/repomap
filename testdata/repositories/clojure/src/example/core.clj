@@ -1,5 +1,5 @@
 (ns example.core
-  (:require [example.service :as service]))
+  (:require [example.service :as service] [clojure.string :as str]))
 
 (defn -main [& names]
   (service/deliver! "greeting.txt" (service/greet (first names))))
@@ -30,3 +30,11 @@
 ;; known only at run time.
 (defn drop-table-statement [table]
   (format "DROP TABLE IF EXISTS %s" table))
+
+;; Each threaded or nested form on one line sits at its own opening
+;; parenthesis, so the two identical replaces stay two calls.
+(defn chained-paths [path]
+  (-> path (str/replace "/" "-") (str/replace "/" "-")))
+
+(defn nested-paths [path]
+  (str/replace (str/replace path "/" "-") "/" "-"))

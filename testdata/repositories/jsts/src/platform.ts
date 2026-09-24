@@ -69,3 +69,12 @@ export async function axiosBoundaryPatterns(
   await axios.get(dynamicPath)
   localAxiosLookalike.get("/api/lookalike")
 }
+
+// Each call of a chain sits at its own name: split and join are two calls,
+// and so are the two splits written on one line.
+export function chainedPlatformCalls(path: string, name: string): string[] {
+  const normalized = path.split("/").join("/")
+  const repeated = name.split("/").join("").split("/")
+  const head = path.split("/")[0].split("/")
+  return [normalized, ...repeated, ...head]
+}

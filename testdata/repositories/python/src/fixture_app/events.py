@@ -52,3 +52,20 @@ def register_callbacks(items):
 async def consume_jobs(jobs):
     async for job in jobs:
         process_pending_jobs()
+
+
+def record_order(event):
+    return event
+
+
+# Each call of a chain sits at its own attribute name, so both chained
+# subscriptions keep their handlers and the two replaces stay two calls.
+def subscribe_chained():
+    KafkaConsumer().subscribe("orders.chained", handle_order).subscribe("orders.chained", record_order)
+
+
+def chained_text_calls(path, name):
+    normalized = "/".join(path.split("/"))
+    repeated = name.replace("/", "-").replace("/", "-")
+    head = path.split("/")[0].split("/")
+    return [normalized, repeated, head]

@@ -20,6 +20,8 @@ func assertGoHTTPRegistrations(t *testing.T, repository *corpus.Corpus, index pr
 	}
 	wanted := map[string]int{"GET /health": 1, "PATCH /tasks/{id}": 1, "HEAD status.example/{$}": 1, "ANY /v1/update": 1, "ANY /v1/metrics": 1, "ANY /direct-field": 1, "ANY /alternative": 1, "ANY /same": 2}
 	wanted["ANY /unknown-handler"], wanted["ANY /changed-handler"] = 1, 1
+	// Handle and the two nested StripPrefix calls of registerStrippedFiles.
+	wanted["ANY /v/"] = 3
 	for _, name := range []string{"/interface-alternative", "/interface-open", "/interface-unknown", "/interface-external"} {
 		wanted["ANY "+name] = 1
 	}

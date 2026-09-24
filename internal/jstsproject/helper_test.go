@@ -853,8 +853,14 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	if directConsumerCall.Ref == "" || directConsumerCall.Pattern.ReceiverRef != directFactoryCall.Pattern.ResultRef ||
 		directConsumerCall.Pattern.ReceiverRef == factoryObjectRef ||
 		directConsumerCall.Location.Path != "src/server.ts" || directConsumerCall.Location.Line != 81 ||
-		directConsumerCall.Location.Column != 3 {
+		directConsumerCall.Location.Column != 20 {
 		t.Fatalf("direct TypeScript continuation call = %#v; factory=%#v", directConsumerCall, directFactoryCall)
+	}
+	// subscribe sits at its own name (81:20); the value it acts on names the
+	// createConsumer call that produced it, at that call's position (81:3).
+	if receiver := directConsumerCall.Pattern.ReceiverValue; receiver == nil || receiver.Kind != "call_result" || receiver.Anchor == nil ||
+		receiver.Anchor.Line != directFactoryCall.Location.Line || receiver.Anchor.Column != directFactoryCall.Location.Column {
+		t.Fatalf("continuation receiver does not name its producing call: %+v", receiver)
 	}
 	directCaller := objectsBySourceRef[directCallerRef]
 	directCallback := objectsBySourceRef[declarationRefs["handleOrder"]]
@@ -868,14 +874,21 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		t.Fatalf("direct TypeScript result authority: caller=%#v callback=%#v factory=%#v result=%#v",
 			directCaller, directCallback, directFactoryObject, directResult)
 	}
-	callResults := 0
+	// Only a result another call acts on becomes an object, at the position
+	// of the call that produced it: the direct factory, the first map of
+	// stream.map(handleOrder).map(recordOrder), and the chains appended for
+	// call positions (createConsumer().on(...).on(...); path.split("/")
+	// .join("/"); name.split("/").join("").split("/")).
+	callResults := map[string]int{}
 	for _, object := range index.Objects {
-		if object.Kind == programindex.ObjectVariable && object.Name == "call result" {
-			callResults++
+		if object.Kind == programindex.ObjectVariable && object.Name == "call result" && object.Location != nil {
+			callResults[fmt.Sprintf("%s:%d:%d", object.Location.Path, object.Location.Line, object.Location.Column)]++
 		}
 	}
-	if callResults != 2 {
-		t.Fatalf("TypeScript synthetic call-result objects = %d, want the factory and chained map results", callResults)
+	wantResults := map[string]int{"src/server.ts:81:3": 1, "src/server.ts:114:10": 1, "src/server.ts:168:3": 1, "src/server.ts:168:20": 1,
+		"src/platform.ts:76:27": 1, "src/platform.ts:77:25": 1, "src/platform.ts:77:36": 1}
+	if !reflect.DeepEqual(callResults, wantResults) {
+		t.Fatalf("TypeScript synthetic call-result objects = %v, want %v", callResults, wantResults)
 	}
 	directContinuation := adaptertest.Relation{
 		Kind: programindex.RelationCalls, FromID: directCaller.ID,
@@ -884,7 +897,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 		TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
 		Patterns: []adaptertest.Pattern{{
 			Form: programindex.PatternCall, Selector: "subscribe",
-			Path: "src/server.ts", Line: 81, Column: 3, Observed: 2,
+			Path: "src/server.ts", Line: 81, Column: 20, Observed: 2,
 			Arguments: []adaptertest.Argument{
 				{Position: 1, Kind: programindex.PatternLiteralString, Value: "orders.direct"},
 				{Position: 2, Kind: programindex.PatternDynamic, Objects: adaptertest.ObjectAuthority{
@@ -2695,6 +2708,7 @@ export function Router(): Application
 	writeTestFile(t, root, "node_modules/@fixture/kafka-client/index.d.ts", `
 export interface Consumer {
   subscribe(topic: string, handler: (event: any) => void): void
+  on(topic: string, handler: (event: any) => void): Consumer
 }
 export function createConsumer(): Consumer
 `)

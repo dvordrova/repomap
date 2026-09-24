@@ -28,8 +28,11 @@ new description or selection requests.
   the call acts on, as `path:line:column` of the call that produced it,
   followed back through the calls outside the repository (a route put into a
   group made from a router is held by the router). Native boundary places share only exact
-  source observations: path, line, column, kind, method, literal values and
-  compiler-located subject. Each place retains every original target's FactID
+  source observations: path, line, column, kind, method, literal values,
+  compiler-located subject, call word and external symbol. Every language
+  adapter gives each call its own position, so one target has at most one
+  fact in a place; two would be refused, never paired with another target's
+  facts by order. Each place retains every original target's FactID
   and target-qualified `t*.n*` ObjectID behind local `origins`, sorted and
   deduplicated when sealed. The sealed graph assigns compact `d*`, `f*`, `s*`,
   `b*`, `y*`, `m*` and `a*` place IDs once and rewrites every graph reference

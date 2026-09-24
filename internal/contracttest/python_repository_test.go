@@ -2,6 +2,7 @@ package contracttest
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/lines"
@@ -676,15 +677,23 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 		directResult.Location.Line != 21 || directResult.Location.Column != 5 {
 		t.Fatalf("direct Python factory result object = %#v", directResult)
 	}
-	callResults := 0
+	// A result another call acts on, or takes as an argument, is an object
+	// placed where its call expression starts: the direct factory (21:5), the
+	// first map of the chained lambdas (models.py:60:12), and the chains of
+	// subscribe_chained and chained_text_calls. KafkaConsumer() and the first
+	// subscribe of line 64 both start at 64:5. Patterns and call_result
+	// anchors use the attribute name instead, so calls stay apart there.
+	callResults := map[string]int{}
 	for _, object := range index.Objects {
 		if object.Kind == programindex.ObjectVariable && object.Name == "call result" && object.Location != nil &&
 			(object.Location.Path == "src/fixture_app/events.py" || object.Location.Path == "src/fixture_app/models.py") {
-			callResults++
+			callResults[fmt.Sprintf("%s:%d:%d", object.Location.Path, object.Location.Line, object.Location.Column)]++
 		}
 	}
-	if callResults != 2 {
-		t.Fatalf("Python callback source call-result objects = %d, want the factory and chained map results", callResults)
+	wantResults := map[string]int{"src/fixture_app/events.py:21:5": 1, "src/fixture_app/models.py:60:12": 1,
+		"src/fixture_app/events.py:64:5": 2, "src/fixture_app/events.py:68:27": 1, "src/fixture_app/events.py:69:16": 1}
+	if !reflect.DeepEqual(callResults, wantResults) {
+		t.Fatalf("Python callback source call-result objects = %v, want %v", callResults, wantResults)
 	}
 
 	adaptertest.AssertRegistration(t, index, adaptertest.Registration{
@@ -849,6 +858,37 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 			}},
 		},
 		RequireComplete: true,
+	})
+}
+
+// Python already puts each call at its attribute name, so chained and nested
+// calls on one line keep their own facts and boundary places; this is the
+// equivalent of the TypeScript chained-call check.
+func TestCumulativePythonChainedCallsKeepTheirOwnPositions(t *testing.T) {
+	_, repository := materializeFixtureRepository(t, "python")
+	catalog, err := pythontarget.Discover(t.Context(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := pythonprogramindex.BuildInput(t.Context(), repository, pythonFixtureTarget(t, catalog))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// KafkaConsumer().subscribe("orders.chained", handle_order).subscribe("orders.chained", record_order)
+	// normalized = "/".join(path.split("/"))  -- join takes no literal, so no fact
+	// repeated = name.replace("/", "-").replace("/", "-")
+	// head = path.split("/")[0].split("/")
+	// The parser knows no type for what subscribe returns or for the untyped
+	// parameters, so those calls name no outside symbol; each is still its own
+	// fact at its own attribute name.
+	adaptertest.AssertCallSiteBoundaries(t, repository, input, "src/fixture_app/events.py", []adaptertest.CallSite{
+		{Line: 64, Column: 21, Key: "subscribe", Text: "kafka.KafkaConsumer.subscribe", Path: "orders.chained", Symbol: "handle_order"},
+		{Line: 64, Column: 63, Key: "subscribe", Path: "orders.chained", Symbol: "record_order"},
+		{Line: 68, Column: 32, Key: "split", Path: "/"},
+		{Line: 69, Column: 21, Key: "replace", Path: "/"},
+		{Line: 69, Column: 39, Key: "replace", Path: "/"},
+		{Line: 70, Column: 17, Key: "split", Path: "/"},
+		{Line: 70, Column: 31, Key: "split", Path: "/"},
 	})
 }
 

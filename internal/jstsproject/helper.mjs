@@ -657,11 +657,14 @@ const files = sourceFiles.map(({ path: filePath }) => ({
   sha256: sourceByteSHA.get(filePath) || "",
 }))
 
+const locationAt = (sourceFile, position) => {
+  const filePath = relative(sourceFile.fileName)
+  const point = sourceFile.getLineAndCharacterOfPosition(position)
+  return { path: filePath, file_ref: fileRefByPath.get(filePath), line: point.line + 1, column: point.character + 1 }
+}
 const locationOf = (node) => {
   const sourceFile = node.getSourceFile()
-  const filePath = relative(sourceFile.fileName)
-  const point = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile, false))
-  return { path: filePath, file_ref: fileRefByPath.get(filePath), line: point.line + 1, column: point.character + 1 }
+  return locationAt(sourceFile, node.getStart(sourceFile, false))
 }
 // Stable refs hash the complete identity input. Sanitizing and clipping the
 // display spelling made distinct source facts collide before ProgramIndex.
@@ -669,6 +672,17 @@ const stablePart = (value) => createHash("sha256").update(String(value)).digest(
 const factRef = (prefix, node, detail = "") => {
   const loc = locationOf(node)
   return `${prefix}:${loc.file_ref}:${loc.line}:${loc.column}:${stablePart(detail)}`
+}
+// A call's own source position: the called member's name, the called name,
+// or else the opening parenthesis of its arguments. Every call of a chain
+// starts at its leftmost receiver, so that start would give
+// `path.split("/").join("/")` one position for two calls. The call record,
+// its pattern and the call_result anchor of its value all use this position.
+const callSiteLocation = (node) => {
+  const callee = node.expression
+  if (ts.isPropertyAccessExpression(callee)) return locationOf(callee.name)
+  if (ts.isIdentifier(callee) || !node.arguments) return locationOf(callee)
+  return locationAt(node.getSourceFile(), node.arguments.pos - 1)
 }
 const expressionText = (node) => node.getText(node.getSourceFile()).replace(/\s+/g, " ").trim()
 const callDisplayExpression = (node) => ts.isNewExpression(node) ? `new ${expressionText(node.expression)}` : expressionText(node.expression)
@@ -1695,7 +1709,10 @@ function callPatternArgument(node, position) {
 }
 
 function sourceAnchor(node) {
-  const location = locationOf(node)
+  return anchorAt(locationOf(node))
+}
+
+function anchorAt(location) {
   if (!location.path || !fileRefByPath.has(location.path)) return undefined
   return { path: location.path, line: location.line, column: location.column }
 }
@@ -1717,7 +1734,7 @@ function sourceValue(expression, active = new Set()) {
     return { kind: "literal", text: node.getText(), anchor }
   }
   if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
-    return { kind: "call_result", text: terminalSelector(node.expression), anchor: sourceAnchor(node.expression) }
+    return { kind: "call_result", text: terminalSelector(node.expression), anchor: anchorAt(callSiteLocation(node)) }
   }
   if (ts.isIdentifier(node)) {
     let symbol
@@ -2085,7 +2102,7 @@ for (const { sourceFile } of sourceFiles) {
         invocation, external_package: externalPackage, external_export: externalExport,
         repository_path: externalImport.repositoryPath,
         external_receiver: externalReceiver, external_name: externalName,
-        expression: displayExpression, resolution, location: locationOf(node.expression),
+        expression: displayExpression, resolution, location: callSiteLocation(node),
       }
       if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
         const pattern = callPattern(node)

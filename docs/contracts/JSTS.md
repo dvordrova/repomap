@@ -129,6 +129,23 @@ Python and Clojure imported-variable/shadowing equivalents exist. General Go
 variable reads have no current producer equivalent; JSX has no syntax equivalent
 in the other language cubes. Neither absence is repaired in the renderer.
 
+## Call positions
+
+Every call and construction has one source position of its own: the called
+member's name (`split` in `path.split("/")`, also after `?.` and for `#private`
+members), the called name (`createConsumer()`, `new Image()`, `new X`), or
+otherwise the opening parenthesis of its arguments (element access, a call of
+a call's result, a parenthesized callee, `super`, `import`). The call record,
+its pattern and the `call_result` value it produces all carry that position,
+so a chained call's receiver names exactly the call that produced it. The call
+ref keeps its display expression and is unchanged. Placing every call of a
+chain at its leftmost receiver gave `path.split("/").join("/")` one position
+for two calls, and folded the second registration of
+`consumer.on(topic, a).on(topic, b)` into the first. Python places a call at its
+attribute name, Go at its opening parenthesis (SSA `CallCommon.Pos`) and
+Clojure at its form, so within a file no two calls share a position in any
+language; the cumulative fixtures check each equivalent.
+
 ## Owned fields
 
 Direct interface property declarations now enter the same native declaration

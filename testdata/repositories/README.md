@@ -90,3 +90,21 @@ table. Go (`fmt.Sprintf("DROP TABLE IF EXISTS %s", table)`) and Clojure
 repository, so it is also a `sql_query` fact. Python's `%` operator and a
 TypeScript template literal are not call arguments, so their equivalents in
 `sql_literals.py` and `sql-literals.ts` are partial source SQL only.
+
+Calls chained or nested on one line keep their own positions. Each language
+writes different calls with the same value, and the same call twice, on one
+line; every call is its own registration fact at its own column and its own
+boundary place, observed once by each of two targets sharing the file:
+
+| Language | Source example | A call's position |
+| --- | --- | --- |
+| TypeScript | [platform.ts](jsts/src/platform.ts) `chainedPlatformCalls`, [server.ts](jsts/src/server.ts) `registerChainedOrderConsumers` | the called member's name |
+| Python | [events.py](python/src/fixture_app/events.py) `subscribe_chained`, `chained_text_calls` | the attribute name |
+| Go | [http_registrations.go](go/internal/storefixture/http_registrations.go) `registerStrippedFiles` | the opening parenthesis |
+| Clojure | [core.clj](clojure/src/example/core.clj) `chained-paths`, `nested-paths` | the form's opening parenthesis |
+
+Go's standard library has no fluent registration chain, so nesting stands in
+for it. A Clojure Java instance chain (`(.. s (replace "/" "-"))`) carries no
+call pattern and becomes no fact. Python knows no type for an untyped
+parameter or for what `subscribe` returns, so those calls name no external
+symbol; they are still separate facts.

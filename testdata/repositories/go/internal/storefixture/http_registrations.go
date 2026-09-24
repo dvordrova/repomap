@@ -157,3 +157,9 @@ func PassMethodArgumentExpressions(app *methodArgumentApplication) {
 		panic("receiver-body-not-provider-evidence")
 	})().first)
 }
+
+// Nested calls on one line sit at their own opening parentheses: Handle and
+// StripPrefix name the same path, and so do the two StripPrefix calls.
+func registerStrippedFiles(mux *http.ServeMux) {
+	mux.Handle("/v/", http.StripPrefix("/v/", http.StripPrefix("/v/", http.NotFoundHandler())))
+}

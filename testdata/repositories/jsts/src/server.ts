@@ -162,3 +162,8 @@ export async function consumeJobs(jobs: AsyncIterable<string>): Promise<void> {
     processPendingJobs()
   }
 }
+
+// A registration made on the result of another keeps both handlers.
+export function registerChainedOrderConsumers(): void {
+  createConsumer().on("orders.chained", handleOrder).on("orders.chained", recordOrder)
+}

@@ -120,7 +120,8 @@ never entered into or read from a repository-wide unqualified map.
   unknowns; imports, timers and internal delegation do not become integrations.
   Native listener addresses stay separate from HTTP routes. Shared source
   boundaries retain each target's original fact/declaration identity through
-  atlas and GroupsIndex, including distinct same-line methods and paths.
+  atlas and GroupsIndex, including distinct same-line methods, paths and
+  callees. Each call has one source position in every language adapter.
 - **Questions and orientation:** question-batch v3 assigns relevance per original
   anchor, allowing different roles inside one evidence chunk. Question and
   boundary evidence preserve safe native receiver/arguments/API and exact call
