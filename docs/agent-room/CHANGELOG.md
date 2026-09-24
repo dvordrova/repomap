@@ -1,5 +1,13 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — testdata is test input, not a target
+
+- Owner decision: a `testdata` directory holds the inputs of the tests
+  around it and is never a target, like `.claude`, `.github` and `.vscode`.
+  Its files leave the guidance classifier's candidate tree and the target
+  portfolio. repomap's own no-target run had offered 22 fixture modules as
+  targets beside its one program.
+
 ## 2026-09-25 — Protected names are found through an index
 
 - Preparing a page's display texts scanned every protected name (paths,

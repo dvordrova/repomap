@@ -31,12 +31,14 @@ type repositoryNativeCandidate struct {
 }
 
 // repositoryToolingDirectories hold what surrounds a repository's programs,
-// not the programs: agent hooks, CI workflows and actions, editor settings.
-// A script found there is no target hypothesis. Morfeu's
+// not the programs: agent hooks, CI workflows and actions, editor settings,
+// and test inputs. A script found there is no target hypothesis. Morfeu's
 // .claude/hooks/obsidian-session-context.py carries a main guard, reached
 // the portfolio as a native target (launch_root, root ".") and ended every
-// run with WARN "Target not analyzed".
-var repositoryToolingDirectories = []string{".claude", ".github", ".vscode"}
+// run with WARN "Target not analyzed". A testdata directory holds inputs of
+// the tests of the code around it (the Go tool never builds it): repomap's
+// own run offered 22 fixture modules as targets beside its one program.
+var repositoryToolingDirectories = []string{".claude", ".github", ".vscode", "testdata"}
 
 // repositoryToolingPath reports whether a repository-relative file lies in a
 // tooling directory at any depth.

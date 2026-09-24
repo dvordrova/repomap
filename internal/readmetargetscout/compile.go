@@ -220,7 +220,7 @@ func validateRepoPath(value string) error {
 // excludedTreeComponents name editor and agent configuration trees. Their
 // files are never launched, built, deployed or imported as a repository
 // product, so they are outside the candidate authority.
-var excludedTreeComponents = map[string]bool{".claude": true, ".github": true, ".vscode": true}
+var excludedTreeComponents = map[string]bool{".claude": true, ".github": true, ".vscode": true, "testdata": true}
 
 // isCandidateEntryPath reports whether a tracked regular file could be the
 // entry the guidance names: code or a manifest outside prose and outside the

@@ -88,7 +88,7 @@ from inventory while their persistent on-disk caches remain intact.
 The initial guidance classifier answers one question: which files does the
 repository guidance name as entries. It sends the candidate files only (the
 names-only safe corpus without prose files and without anything under
-`.claude`, `.github` or `.vscode`) as a lossless prefix-compressed path tree
+`.claude`, `.github`, `.vscode` or `testdata`) as a lossless prefix-compressed path tree
 with compact `f*` leaves, plus the complete textual README and AGENTS.md
 documents, and reads back `{"files":[{"file_ref","hypotheses"}]}` in JSON
 mode; `target_entry` is the only class, since nothing consumed the others. A
@@ -146,8 +146,8 @@ Regression comparisons preserve every materialized byte while checking that repe
   package-target catalog scout over the same repository corpus. Merge their
   exact file candidates and resolvable repository-guidance candidates into one
   repository-wide `TargetPortfolio` request, leaving out any candidate under a
-  `.claude`, `.github` or `.vscode` directory (hooks, workflows and editor
-  settings are never a product); the presence of one supported
+  `.claude`, `.github`, `.vscode` or `testdata` directory (hooks, workflows,
+  editor settings and test inputs are never a product); the presence of one supported
   language must never suppress another. Bind one canonical required file
   representative for every exact native target, deduplicating a shared
   representative and never requiring every alternative file for the same
