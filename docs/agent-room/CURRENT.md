@@ -127,7 +127,12 @@ never entered into or read from a repository-wide unqualified map.
   ancestry preserves author scope without treating a model file-role hint as a
   native exclusion rule. Retrieval/answers distinguish task responsibility from
   HTTP hosting and preserve differing call arguments; launch recipes retain
-  supported required arguments. Implementation-body retrieval is not added.
+  supported required arguments. Owner decision 2026-09-25: a declaration's
+  own body may be sent to a provider for its caption. A decision model ranks
+  a part's declarations and the top ranked (about ten) go with their bodies
+  in one request; the rest stay in the analysis without a caption, visibly.
+  Whole source files still never enter provider bodies, and the repository
+  remains trusted input, not a security boundary.
 - **Execution:** shared reasoning/output allowance is 128,000 tokens, subject to
   the provider ceiling. Output refusals partition independent questions first;
   input/context refusals preserve and repartition complete evidence. A new
