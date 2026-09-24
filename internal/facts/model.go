@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -266,6 +267,8 @@ func Seal(result Result) (Result, error) {
 		}
 	}
 	sortDiagnostics(owned.Diagnostics)
+	// Identical diagnostics say nothing more twice.
+	owned.Diagnostics = slices.Compact(owned.Diagnostics)
 	digest, err := resultDigest(owned)
 	if err != nil {
 		return Result{}, err

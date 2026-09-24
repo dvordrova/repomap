@@ -45,7 +45,7 @@ func (b *builder) addReachability(target *targetContext) {
 	addPackageInitEdges(target.files(), b.reach.edges)
 	roots := seedFiles(target)
 	if len(roots) == 0 {
-		b.diagnose("dead_module_skipped", target.target.Name+": no entrypoint seeds")
+		b.diagnose("dead_module_skipped", target.target.Name+" ("+target.root+"): no entrypoint seeds")
 	}
 	b.reach.roots = append(b.reach.roots, roots...)
 	for _, filePath := range target.files() {
