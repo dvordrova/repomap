@@ -34,20 +34,36 @@ type boxState struct {
 	inventory bool
 }
 
-// assignBoxes supplies source-file inventory while captioning. Architecture
-// reading replaces it with explicitly chosen declaration membership.
-func (r *reader) assignBoxes() {
-	r.boxOf = make(map[string]string)
-	r.boxes = make(map[string]*boxState)
-	for _, place := range r.opts.Graph.Places {
-		if place.Kind != atlas.PlaceFile {
-			continue
+// overviewKeys chooses the declarations the overview describes, before any
+// part is drawn: every file of a target is its own source-inventory box, and
+// a box shows up to three of the keys the selection found in its file, the
+// documented ones first. A declaration shared by targets is chosen once. A
+// file without a selected key shows ranked keys, which the selection did not
+// choose and which are therefore not described.
+func (r *reader) overviewKeys() map[string]bool {
+	selected := make(map[string]bool)
+	for _, target := range r.opts.Targets {
+		for _, place := range r.opts.Graph.Places {
+			if place.Kind != atlas.PlaceFile || !contains(place.TargetIDs, target.ID) {
+				continue
+			}
+			file := atlas.File{Path: place.Path}
+			for _, decl := range place.File.Decls {
+				symbol := atlas.Symbol{ID: r.symbolID(place.Path, decl.LineNo, decl.Name), Name: decl.Name, Doc: decl.Doc, LineNo: decl.LineNo}
+				if line, ok := r.symbolLine[symbol.ID]; ok {
+					symbol.Line = line.value
+				}
+				symbol.Key = contains(r.keys[place.ID], symbol.ID)
+				file.Symbols = append(file.Symbols, symbol)
+			}
+			for _, key := range modelKeys([]atlas.File{file}) {
+				if contains(r.keys[r.places[key.SymbolID].Parent], key.SymbolID) {
+					selected[key.SymbolID] = true
+				}
+			}
 		}
-		id := place.Path
-		r.boxOf[place.ID] = id
-		r.boxes[id] = &boxState{id: id, dir: parentDir(place.Path), title: place.Path, line: r.lines[place.ID].value,
-			files: []string{place.ID}, open: true, zoneID: map[string]string{}}
 	}
+	return selected
 }
 
 // boxesOfTarget lists the boxes holding files of one target, by ID.
@@ -350,8 +366,10 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		if subject == "" {
 			subject = place.ID
 		}
+		unlock := r.lock()
 		r.symbolSelections[subject] = r.knowledge[place.ID]
 		delete(r.knowledge, place.ID)
+		unlock()
 		if answer.answer["key_symbol"] == "yes" {
 			r.selectedKeys[place.ID] = true
 			byFile[place.Parent] = append(byFile[place.Parent], marked{id: place.ID, rank: place.Symbol.Rank})
@@ -366,20 +384,9 @@ func (r *reader) readSymbols(ctx context.Context) error {
 			r.keys[fileID] = append(r.keys[fileID], item.id)
 		}
 	}
-	r.assignBoxes()
 	// Use the existing overview key selection, before model wording can affect
 	// its order. Shared declarations receive one caption across their owners.
-	selected := make(map[string]bool)
-	for _, target := range r.opts.Targets {
-		for _, box := range r.target(target).Boxes {
-			for _, key := range box.Keys {
-				place := r.places[key.SymbolID]
-				if contains(r.keys[place.Parent], key.SymbolID) {
-					selected[key.SymbolID] = true
-				}
-			}
-		}
-	}
+	selected := r.overviewKeys()
 	rows, typeRows = nil, nil
 	order, typeOrder = nil, nil
 	for _, place := range r.opts.Graph.Places {

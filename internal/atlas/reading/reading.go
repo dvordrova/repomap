@@ -285,6 +285,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		knowledgeSubjects: make(map[string]*Knowledge),
 		responseTables:    make(map[string]rememberedTable),
 		boundaryIDs:       make(map[string]string),
+		boxOf:             make(map[string]string),
 		shared:            &readerShared{},
 
 		classifierResponses: make(map[string]rememberedClassifier),
@@ -294,6 +295,10 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		r.places[place.ID] = place
 		if place.Kind == atlas.PlaceDirectory {
 			r.directoriesByPath[place.Path] = place.ID
+		}
+		if place.Kind == atlas.PlaceFile {
+			// Before a part holds it, a file is its own source-inventory box.
+			r.boxOf[place.ID] = place.Path
 		}
 		if place.Kind == atlas.PlaceSymbol && place.Symbol != nil {
 			r.symbolsBySource[symbolSourceKey(place.Path, place.LineNo, place.Symbol.Decl.Name)] = place.ID
@@ -362,9 +367,6 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 			return Result{}, err
 		}
 		through = step.name
-		if through == lines.StageSymbols {
-			r.assignBoxes()
-		}
 		if err := r.saveTables(); err != nil {
 			return Result{}, err
 		}
