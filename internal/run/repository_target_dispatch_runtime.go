@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -66,10 +67,11 @@ type repositoryGoWorkspaceState struct {
 	unionUnavailable bool
 }
 
-// dispatchRepositoryTargetPlan is the one owner-path execution loop. Target
+// dispatchRepositoryTargetPlan is the one owner-path execution. Target
 // discovery and semantic selection have already completed exactly once. Each
-// iteration supplies one typed adapter target to the ordinary single-page
-// pipeline; artifact filenames remain page-local and the shared semantic
+// planned target is supplied as one typed adapter target to the ordinary
+// single-page pipeline, one lane per adapter, and the results are folded in
+// plan order; artifact filenames remain page-local and the shared semantic
 // pipeline therefore needs no language combinations or filename prefixes.
 func dispatchRepositoryTargetPlan(
 	ctx context.Context,
@@ -160,12 +162,37 @@ func dispatchRepositoryTargetPlan(
 		dispatchPlans[target.Key.Adapter] = state
 	}
 
-	runs := make([]targetPublishedRun, 0, len(ordered))
-	programStore := programindex.NewArtifactStore()
-	attemptedRunDirs := make([]string, 0, len(ordered))
-	pendingTargets := make([]targetPageConsoleContext, 0, len(ordered))
-	outcomes := make([]targetoutcome.Outcome, 0, len(ordered))
-	targetErrors := make([]error, 0, len(ordered))
+	// Every target keeps its position, run identity and console context from
+	// the plan, whichever lane reaches it first.
+	slots := make([]targetPageSlot, len(ordered))
+	for position, target := range ordered {
+		runID := options.RunID
+		role := "default"
+		if position > 0 {
+			runID = debugdump.GenerateRunID(
+				repoRunLabel(options.Repo) + "-" + repositoryTypedTargetDisplay(target),
+			)
+			role = "sibling"
+		}
+		selected := selectedTargets[target.Key]
+		slots[position] = targetPageSlot{
+			position: position, target: target, selected: selected,
+			runID: runID, runDir: filepath.Join(options.DebugDir, runID),
+			console: targetPageConsoleContext{
+				DisplayPath: repositoryTypedTargetDisplay(target),
+				Scope:       selected.ID,
+				RunID:       runID,
+				Role:        role,
+			},
+		}
+	}
+	pages := targetPageDispatcher{
+		options: options, registry: registry, plans: dispatchPlans,
+		programStore: programindex.NewArtifactStore(), documentation: documentation,
+	}
+	runTargetPageLanes(ctx, slots, pages.page)
+	fold := foldTargetPageSlots(slots)
+	runs, pendingTargets, outcomes := fold.runs, fold.pendingTargets, fold.outcomes
 	failPublication := func(runErr error) (string, error) {
 		// A refused documentation reduction preceded every target in the
 		// serial order, so it stays the reported cause.
@@ -179,212 +206,8 @@ func dispatchRepositoryTargetPlan(
 		reportAnalyzedTargetPagePublicationFailure(options.Output, pendingTargets, runDir, runErr)
 		return "", runErr
 	}
-	recordFailure := func(
-		selected targetoutcome.SelectedTarget,
-		consoleTarget targetPageConsoleContext,
-		stage targetoutcome.Stage,
-		reason targetoutcome.Reason,
-		targetErr error,
-	) error {
-		outcome, outcomeErr := targetoutcome.NewNotAnalyzed(selected, stage, reason)
-		if outcomeErr != nil {
-			return outcomeErr
-		}
-		outcomes = append(outcomes, outcome)
-		wrapped := fmt.Errorf("target page %s failed: %w", consoleTarget.DisplayPath, targetErr)
-		targetErrors = append(targetErrors, wrapped)
-		options.Output.TargetPage("failed", consoleTarget)
-		options.Output.Warn(
-			"Target not analyzed",
-			"target: "+consoleTarget.DisplayPath,
-			"scope: "+consoleTarget.Scope,
-			"stage: "+string(stage),
-			"reason: "+string(reason),
-			targetErr.Error(),
-		)
-		return nil
-	}
-	for index := range ordered {
-		if err := ctx.Err(); err != nil {
-			return failPublication(err)
-		}
-		target := ordered[index]
-		runID := options.RunID
-		role := "default"
-		if index > 0 {
-			runID = debugdump.GenerateRunID(
-				repoRunLabel(options.Repo) + "-" + repositoryTypedTargetDisplay(target),
-			)
-			role = "sibling"
-		}
-		runDir := filepath.Join(options.DebugDir, runID)
-		attemptedRunDirs = append(attemptedRunDirs, runDir)
-		selected := selectedTargets[target.Key]
-		consoleTarget := targetPageConsoleContext{
-			DisplayPath: repositoryTypedTargetDisplay(target),
-			Scope:       selected.ID,
-			RunID:       runID,
-			Role:        role,
-		}
-		options.Output.TargetPage("started", consoleTarget)
-		currentStage := targetoutcome.StageTargetPreparation
-
-		descriptor, ok := registry.descriptor(target.Key.Adapter)
-		if !ok {
-			return failPublication(fmt.Errorf(
-				"repository target dispatcher: adapter %q is not registered", target.Key.Adapter,
-			))
-		}
-		prepareStarted := time.Now()
-		dispatchBinding, prepareErr := descriptor.PrepareDispatchTarget(
-			ctx, options, target, dispatchPlans[target.Key.Adapter],
-		)
-		options.Output.Wall("target native analysis", time.Since(prepareStarted))
-		if prepareErr != nil {
-			if ctx.Err() != nil {
-				return failPublication(prepareErr)
-			}
-			stage, reason := classifyRepositoryTargetFailure(currentStage, prepareErr)
-			if failureErr := recordFailure(selected, consoleTarget, stage, reason, prepareErr); failureErr != nil {
-				return failPublication(failureErr)
-			}
-			continue
-		}
-		if err := dispatchBinding.Target.validateWith(registry); err != nil ||
-			!sameRepositoryPlannedTarget(target, dispatchBinding.Target) {
-			if err == nil {
-				err = fmt.Errorf("prepared target changed its planned identity")
-			}
-			stage, reason := classifyRepositoryTargetFailure(currentStage, err)
-			if failureErr := recordFailure(
-				selected, consoleTarget, stage, reason, err,
-			); failureErr != nil {
-				return failPublication(failureErr)
-			}
-			continue
-		}
-		target = dispatchBinding.Target
-		currentStage = targetoutcome.StageProgramAnalysis
-		projectionStarted := time.Now()
-		var programPage repositoryProgramPageAuthority
-		if !dispatchBinding.ProgramFactsBound {
-			prepareErr = fmt.Errorf(
-				"repository target adapter %q did not bind one compiler fact snapshot",
-				target.Key.Adapter,
-			)
-		} else {
-			programPage, prepareErr = buildRepositoryProgramPageAuthority(
-				registry,
-				repositoryProgramBuildRequest{
-					Context: ctx, Corpus: options.Corpus,
-					Target: target, TargetID: fmt.Sprintf("t%d", index+1), Facts: dispatchBinding.ProgramFacts,
-				},
-			)
-		}
-		// Adapter-native compiler/parser facts are live only across the atomic
-		// ProgramIndex + dependency projection. Release them before any semantic
-		// or report work begins, including when the projection fails.
-		dispatchBinding.ProgramFacts = nil
-		options.Output.Wall("target program projection", time.Since(projectionStarted))
-		if prepareErr != nil {
-			stage, reason := classifyRepositoryTargetFailure(currentStage, prepareErr)
-			if failureErr := recordFailure(selected, consoleTarget, stage, reason, prepareErr); failureErr != nil {
-				return failPublication(failureErr)
-			}
-			continue
-		}
-		childDeps := options.Deps
-		childDeps.sharedRepositoryCorpus = options.Corpus
-		state := cloneRepositoryState(options.RepositoryState)
-		childDeps.capturedRepositoryState = &state
-		childDeps.preselectedTarget = &target
-		childDeps.preselectedProgramPage = &programPage
-		childDeps.programIndexStore = programStore
-		childDeps.coreReadmeRoleRows = cloneReadmeRoleLog(options.Plan.Outcome.ReadmeRoles)
-		childDeps.runIDOverride = runID
-		childDeps.siblingTargetRun = true
-		childDeps.deferredPortfolioHTML = true
-		reducedDocumentation, reduceErr := documentation.wait()
-		if reduceErr != nil {
-			return "", reduceErr
-		}
-		ownedDocumentation, documentationErr := reducedDocumentation.Snapshot()
-		if documentationErr != nil {
-			return failPublication(fmt.Errorf(
-				"repository target dispatcher: own reduced documentation for %s: %w",
-				consoleTarget.DisplayPath,
-				documentationErr,
-			))
-		}
-		childDeps.reducedDocumentation = &ownedDocumentation
-		childDeps.targetOutcomeStageSink = func(stage targetoutcome.Stage) {
-			currentStage = stage
-		}
-		var published targetPublishedRun
-		childDeps.publishedTargetSink = func(value targetPublishedRun) {
-			published = value
-		}
-		artifactStarted := time.Now()
-		childErr := runDefaultWithDeps(options.Repo, options.ExtraArgs, childDeps)
-		options.Output.Wall("target artifact preparation", time.Since(artifactStarted))
-		if err := childErr; err != nil {
-			if ctx.Err() != nil {
-				return failPublication(fmt.Errorf("target page %s failed: %w", consoleTarget.DisplayPath, err))
-			}
-			stage, reason := classifyRepositoryTargetFailure(currentStage, err)
-			if failureErr := recordFailure(selected, consoleTarget, stage, reason, err); failureErr != nil {
-				return failPublication(failureErr)
-			}
-			continue
-		}
-		if published.RunID != runID || published.RunDir != runDir ||
-			published.SelectedTargetKey != target.Key.String() {
-			authorityErr := fmt.Errorf("target page returned mismatched authority")
-			if failureErr := recordFailure(
-				selected, consoleTarget, targetoutcome.StageTargetPage,
-				targetoutcome.ReasonTargetOutputInvalid, authorityErr,
-			); failureErr != nil {
-				return failPublication(failureErr)
-			}
-			continue
-		}
-		page := published.ProgramPage
-		if page.RunID != published.RunID ||
-			!repositoryTypedTargetMatchesProgramTarget(target, page.ProgramTarget) {
-			err = fmt.Errorf("program target does not match exact adapter target")
-			if failureErr := recordFailure(
-				selected, consoleTarget, targetoutcome.StageTargetPage,
-				targetoutcome.ReasonTargetOutputInvalid, err,
-			); failureErr != nil {
-				return failPublication(failureErr)
-			}
-			continue
-		}
-		if err := published.GroupIndex.Validate(); err != nil ||
-			published.GroupIndex.Target.ID != page.ProgramTarget.ID {
-			if err == nil {
-				err = fmt.Errorf("GroupsIndex target does not match exact adapter target")
-			}
-			if failureErr := recordFailure(
-				selected, consoleTarget, targetoutcome.StageSemanticAnalysis,
-				targetoutcome.ReasonTargetOutputInvalid, err,
-			); failureErr != nil {
-				return failPublication(failureErr)
-			}
-			continue
-		}
-		published.ProgramPage = page
-		analyzed, analyzedErr := targetoutcome.NewAnalyzed(selected, page.ProgramTarget, runID)
-		if analyzedErr != nil {
-			return failPublication(analyzedErr)
-		}
-		outcomes = append(outcomes, analyzed)
-		// The saved child artifacts are complete. Keep only its navigation
-		// identity until the shared atlas needs this index again.
-		published.ProgramIndex = nil
-		published.GroupIndex = groupindex.Index{}
-		runs = append(runs, published)
-		pendingTargets = append(pendingTargets, consoleTarget)
+	if fold.stop != nil {
+		return failPublication(fold.stop)
 	}
 	if _, reduceErr := documentation.wait(); reduceErr != nil {
 		return "", reduceErr
@@ -402,7 +225,7 @@ func dispatchRepositoryTargetPlan(
 		)
 		return "", errors.Join(
 			fmt.Errorf("all selected repository targets were not analyzed"),
-			errors.Join(targetErrors...), diagnosticErr,
+			errors.Join(fold.targetErrors...), diagnosticErr,
 		)
 	}
 
@@ -451,6 +274,306 @@ func dispatchRepositoryTargetPlan(
 		fmt.Sprintf("not analyzed: %d", len(ordered)-len(runs)),
 	)
 	return filepath.Join(owner.RunDir, receipt.HTMLFilename()), nil
+}
+
+// targetPageSlot is one planned target's place in the ordered plan. A lane
+// writes only its own slots; the dispatcher folds them in target order.
+type targetPageSlot struct {
+	position int
+	target   repositoryTypedTarget
+	selected targetoutcome.SelectedTarget
+	runID    string
+	runDir   string
+	console  targetPageConsoleContext
+
+	// outcome is set once the target finished: analyzed with published, or
+	// not analyzed with failure. stop is a failure that ends the publication;
+	// stopCanceled marks one caused by cancellation.
+	outcome      *targetoutcome.Outcome
+	failure      error
+	published    *targetPublishedRun
+	stop         error
+	stopCanceled bool
+}
+
+// targetPageDispatcher runs the ordinary single-page pipeline for planned
+// targets. Its values are shared read-only by every lane; adapter plan state
+// is used only by that adapter's lane.
+type targetPageDispatcher struct {
+	options       repositoryTargetDispatchOptions
+	registry      repositoryTargetAdapterRegistry
+	plans         map[repositoryTargetAdapter]any
+	programStore  *programindex.ArtifactStore
+	documentation *background[documentationreduce.Result]
+}
+
+// runTargetPageLanes gives every adapter one lane. Lanes run side by side
+// because no target page reads another; targets of one adapter stay serial
+// in plan order because they share that adapter's native state (the Go
+// workspace, the Python parser groups). A target that is not analyzed never
+// stops its siblings; a failure that ends the publication cancels the other
+// lanes, whose unstarted targets stay unrun.
+func runTargetPageLanes(
+	ctx context.Context,
+	slots []targetPageSlot,
+	page func(context.Context, *targetPageSlot),
+) {
+	laneCtx, cancelLanes := context.WithCancel(ctx)
+	defer cancelLanes()
+	var lanes [][]int
+	laneOf := make(map[repositoryTargetAdapter]int)
+	for position := range slots {
+		adapter := slots[position].target.Key.Adapter
+		lane, found := laneOf[adapter]
+		if !found {
+			lane = len(lanes)
+			laneOf[adapter] = lane
+			lanes = append(lanes, nil)
+		}
+		lanes[lane] = append(lanes[lane], position)
+	}
+	var running sync.WaitGroup
+	for _, lane := range lanes {
+		running.Add(1)
+		go func(positions []int) {
+			defer running.Done()
+			for _, position := range positions {
+				slot := &slots[position]
+				page(laneCtx, slot)
+				if slot.stop != nil {
+					cancelLanes()
+					return
+				}
+			}
+		}(lane)
+	}
+	running.Wait()
+}
+
+// targetPageFold is the lanes' result in target order, as the serial loop
+// appended it.
+type targetPageFold struct {
+	runs           []targetPublishedRun
+	pendingTargets []targetPageConsoleContext
+	outcomes       []targetoutcome.Outcome
+	targetErrors   []error
+	// stop is the failure that ends the publication: the lowest-position one
+	// that is not a cancellation, or else the lowest-position cancellation.
+	stop error
+}
+
+func foldTargetPageSlots(slots []targetPageSlot) targetPageFold {
+	var fold targetPageFold
+	var stopped *targetPageSlot
+	for position := range slots {
+		slot := &slots[position]
+		if slot.stop != nil {
+			if stopped == nil || stopped.stopCanceled && !slot.stopCanceled {
+				stopped = slot
+			}
+			continue
+		}
+		if slot.outcome == nil {
+			continue
+		}
+		fold.outcomes = append(fold.outcomes, *slot.outcome)
+		if slot.failure != nil {
+			fold.targetErrors = append(fold.targetErrors, slot.failure)
+			continue
+		}
+		fold.runs = append(fold.runs, *slot.published)
+		fold.pendingTargets = append(fold.pendingTargets, slot.console)
+	}
+	if stopped != nil {
+		fold.stop = stopped.stop
+	}
+	return fold
+}
+
+// notAnalyzed records the explicit outcome of a target whose page failed.
+func (pages targetPageDispatcher) notAnalyzed(
+	slot *targetPageSlot,
+	stage targetoutcome.Stage,
+	reason targetoutcome.Reason,
+	targetErr error,
+) {
+	outcome, err := targetoutcome.NewNotAnalyzed(slot.selected, stage, reason)
+	if err != nil {
+		slot.stop = err
+		return
+	}
+	slot.outcome = &outcome
+	slot.failure = fmt.Errorf("target page %s failed: %w", slot.console.DisplayPath, targetErr)
+	output := pages.options.Output
+	output.TargetPage("failed", slot.console)
+	output.Warn(
+		"Target not analyzed",
+		"target: "+slot.console.DisplayPath,
+		"scope: "+slot.console.Scope,
+		"stage: "+string(stage),
+		"reason: "+string(reason),
+		targetErr.Error(),
+	)
+}
+
+// page prepares one target's native facts, projects its ProgramIndex and
+// runs its target page, leaving the result in its slot.
+func (pages targetPageDispatcher) page(ctx context.Context, slot *targetPageSlot) {
+	options := pages.options
+	registry := pages.registry
+	if err := ctx.Err(); err != nil {
+		slot.stop, slot.stopCanceled = err, true
+		return
+	}
+	target := slot.target
+	consoleTarget := slot.console
+	options.Output.TargetPage("started", consoleTarget)
+	currentStage := targetoutcome.StageTargetPreparation
+
+	descriptor, ok := registry.descriptor(target.Key.Adapter)
+	if !ok {
+		slot.stop = fmt.Errorf(
+			"repository target dispatcher: adapter %q is not registered", target.Key.Adapter,
+		)
+		return
+	}
+	prepareStarted := time.Now()
+	dispatchBinding, prepareErr := descriptor.PrepareDispatchTarget(
+		ctx, options, target, pages.plans[target.Key.Adapter],
+	)
+	options.Output.Wall("target native analysis", time.Since(prepareStarted))
+	if prepareErr != nil {
+		if ctx.Err() != nil {
+			slot.stop, slot.stopCanceled = prepareErr, true
+			return
+		}
+		stage, reason := classifyRepositoryTargetFailure(currentStage, prepareErr)
+		pages.notAnalyzed(slot, stage, reason, prepareErr)
+		return
+	}
+	if err := dispatchBinding.Target.validateWith(registry); err != nil ||
+		!sameRepositoryPlannedTarget(target, dispatchBinding.Target) {
+		if err == nil {
+			err = fmt.Errorf("prepared target changed its planned identity")
+		}
+		stage, reason := classifyRepositoryTargetFailure(currentStage, err)
+		pages.notAnalyzed(slot, stage, reason, err)
+		return
+	}
+	target = dispatchBinding.Target
+	currentStage = targetoutcome.StageProgramAnalysis
+	projectionStarted := time.Now()
+	var programPage repositoryProgramPageAuthority
+	if !dispatchBinding.ProgramFactsBound {
+		prepareErr = fmt.Errorf(
+			"repository target adapter %q did not bind one compiler fact snapshot",
+			target.Key.Adapter,
+		)
+	} else {
+		programPage, prepareErr = buildRepositoryProgramPageAuthority(
+			registry,
+			repositoryProgramBuildRequest{
+				Context: ctx, Corpus: options.Corpus,
+				Target: target, TargetID: fmt.Sprintf("t%d", slot.position+1), Facts: dispatchBinding.ProgramFacts,
+			},
+		)
+	}
+	// Adapter-native compiler/parser facts are live only across the atomic
+	// ProgramIndex + dependency projection. Release them before any semantic
+	// or report work begins, including when the projection fails.
+	dispatchBinding.ProgramFacts = nil
+	options.Output.Wall("target program projection", time.Since(projectionStarted))
+	if prepareErr != nil {
+		stage, reason := classifyRepositoryTargetFailure(currentStage, prepareErr)
+		pages.notAnalyzed(slot, stage, reason, prepareErr)
+		return
+	}
+	childDeps := options.Deps
+	childDeps.ctx = ctx
+	childDeps.sharedRepositoryCorpus = options.Corpus
+	state := cloneRepositoryState(options.RepositoryState)
+	childDeps.capturedRepositoryState = &state
+	childDeps.preselectedTarget = &target
+	childDeps.preselectedProgramPage = &programPage
+	childDeps.programIndexStore = pages.programStore
+	childDeps.coreReadmeRoleRows = cloneReadmeRoleLog(options.Plan.Outcome.ReadmeRoles)
+	childDeps.runIDOverride = slot.runID
+	childDeps.siblingTargetRun = true
+	childDeps.deferredPortfolioHTML = true
+	reducedDocumentation, reduceErr := pages.documentation.wait()
+	if reduceErr != nil {
+		slot.stop = reduceErr
+		return
+	}
+	ownedDocumentation, documentationErr := reducedDocumentation.Snapshot()
+	if documentationErr != nil {
+		slot.stop = fmt.Errorf(
+			"repository target dispatcher: own reduced documentation for %s: %w",
+			consoleTarget.DisplayPath,
+			documentationErr,
+		)
+		return
+	}
+	childDeps.reducedDocumentation = &ownedDocumentation
+	childDeps.targetOutcomeStageSink = func(stage targetoutcome.Stage) {
+		currentStage = stage
+	}
+	var published targetPublishedRun
+	childDeps.publishedTargetSink = func(value targetPublishedRun) {
+		published = value
+	}
+	artifactStarted := time.Now()
+	childErr := runDefaultWithDeps(options.Repo, options.ExtraArgs, childDeps)
+	options.Output.Wall("target artifact preparation", time.Since(artifactStarted))
+	if err := childErr; err != nil {
+		if ctx.Err() != nil {
+			slot.stop = fmt.Errorf("target page %s failed: %w", consoleTarget.DisplayPath, err)
+			slot.stopCanceled = true
+			return
+		}
+		stage, reason := classifyRepositoryTargetFailure(currentStage, err)
+		pages.notAnalyzed(slot, stage, reason, err)
+		return
+	}
+	if published.RunID != slot.runID || published.RunDir != slot.runDir ||
+		published.SelectedTargetKey != target.Key.String() {
+		pages.notAnalyzed(
+			slot, targetoutcome.StageTargetPage, targetoutcome.ReasonTargetOutputInvalid,
+			fmt.Errorf("target page returned mismatched authority"),
+		)
+		return
+	}
+	page := published.ProgramPage
+	if page.RunID != published.RunID ||
+		!repositoryTypedTargetMatchesProgramTarget(target, page.ProgramTarget) {
+		pages.notAnalyzed(
+			slot, targetoutcome.StageTargetPage, targetoutcome.ReasonTargetOutputInvalid,
+			fmt.Errorf("program target does not match exact adapter target"),
+		)
+		return
+	}
+	if err := published.GroupIndex.Validate(); err != nil ||
+		published.GroupIndex.Target.ID != page.ProgramTarget.ID {
+		if err == nil {
+			err = fmt.Errorf("GroupsIndex target does not match exact adapter target")
+		}
+		pages.notAnalyzed(
+			slot, targetoutcome.StageSemanticAnalysis, targetoutcome.ReasonTargetOutputInvalid, err,
+		)
+		return
+	}
+	published.ProgramPage = page
+	analyzed, analyzedErr := targetoutcome.NewAnalyzed(slot.selected, page.ProgramTarget, slot.runID)
+	if analyzedErr != nil {
+		slot.stop = analyzedErr
+		return
+	}
+	// The saved child artifacts are complete. Keep only its navigation
+	// identity until the shared atlas needs this index again.
+	published.ProgramIndex = nil
+	published.GroupIndex = groupindex.Index{}
+	slot.outcome = &analyzed
+	slot.published = &published
 }
 
 // materializeSelectedJSTSProjects is the selected-target execution boundary
