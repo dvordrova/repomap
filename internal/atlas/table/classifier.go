@@ -250,17 +250,36 @@ func ClassifierCall(def Definition, window Window, minProbability float64) (llm.
 // column, or a yes/no clear of the uncertain band. Anything else leaves the
 // row explicitly unanswered, never silently absent; other rows stand alone.
 func DecodeClassifier(def Definition, window Window, raw []byte, minProbability float64) (Result, error) {
+	answers, err := ParseClassifierAnswers(raw)
+	if err != nil {
+		return Result{}, fmt.Errorf("table %s: %w", def.Stage, err)
+	}
+	return DecodeClassifierAnswers(def, window, answers, minProbability)
+}
+
+// ClassifierAnswer is one decision-model answer as the response carries it.
+type ClassifierAnswer struct {
+	Type          string             `json:"type"`
+	Choice        string             `json:"choice"`
+	Probabilities map[string]float64 `json:"probabilities"`
+	Noul          *float64           `json:"noul"`
+}
+
+// ParseClassifierAnswers reads a decision-model response once, so rows
+// recalled from one remembered response need not parse it again each.
+func ParseClassifierAnswers(raw []byte) (map[string]ClassifierAnswer, error) {
 	var envelope struct {
-		Answers map[string]struct {
-			Type          string             `json:"type"`
-			Choice        string             `json:"choice"`
-			Probabilities map[string]float64 `json:"probabilities"`
-			Noul          *float64           `json:"noul"`
-		} `json:"answers"`
+		Answers map[string]ClassifierAnswer `json:"answers"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Answers == nil {
-		return Result{}, fmt.Errorf("table %s: response has no answers", def.Stage)
+		return nil, fmt.Errorf("response has no answers")
 	}
+	return envelope.Answers, nil
+}
+
+// DecodeClassifierAnswers is DecodeClassifier over already parsed answers.
+func DecodeClassifierAnswers(def Definition, window Window, answers map[string]ClassifierAnswer, minProbability float64) (Result, error) {
+	envelope := struct{ Answers map[string]ClassifierAnswer }{answers}
 	yesAt := max(minProbability, 0.5+ClassifierNoulMargin)
 	result := Result{Answers: make(Answers, len(window.Rows)), independent: true, rowKeys: make([]string, len(window.Rows))}
 	accepted := 0

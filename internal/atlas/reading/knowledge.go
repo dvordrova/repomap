@@ -198,18 +198,38 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 // recallClassifierRow takes a remembered decision-model answer for this row
 // from its cached response, validated against the current table.
 func (r *reader) recallClassifierRow(def table.Definition, window table.Window, ref rememberedRow) (rowAnswer, bool, error) {
-	exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, ref.RequestKey)
-	if err != nil || !found {
-		return rowAnswer{}, false, err
+	// One remembered response answers many rows: read and parse it once.
+	cached, known := r.classifierResponses[ref.RequestKey]
+	if !known {
+		exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, ref.RequestKey)
+		cached = rememberedClassifier{found: found, err: err, requestSHA: exchange.RequestSHA256, responseSHA: exchange.ResponseSHA256}
+		if err == nil && found {
+			cached.answers, cached.err = table.ParseClassifierAnswers(exchange.Response)
+		}
+		if r.classifierResponses == nil {
+			r.classifierResponses = make(map[string]rememberedClassifier)
+		}
+		r.classifierResponses[ref.RequestKey] = cached
+	}
+	if cached.err != nil || !cached.found {
+		return rowAnswer{}, false, cached.err
 	}
 	original := window
 	original.Rows = []table.Row{{ID: ref.RowKey, Fields: window.Rows[0].Fields}}
-	result, err := table.DecodeClassifier(def, original, exchange.Response, table.MinProbabilityOf(def))
+	result, err := table.DecodeClassifierAnswers(def, original, cached.answers, table.MinProbabilityOf(def))
 	if err != nil || result.Answers[0] == nil {
 		return rowAnswer{}, false, err
 	}
-	return rowAnswer{answer: result.Answers[0], source: atlas.SourceCache, requestSHA: exchange.RequestSHA256,
-		responseSHA: exchange.ResponseSHA256, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
+	return rowAnswer{answer: result.Answers[0], source: atlas.SourceCache, requestSHA: cached.requestSHA,
+		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
+}
+
+// rememberedClassifier is one cached decision-model response, parsed once.
+type rememberedClassifier struct {
+	answers                 map[string]table.ClassifierAnswer
+	found                   bool
+	requestSHA, responseSHA string
+	err                     error
 }
 
 // Index response rows without letting an invalid neighbour invalidate an

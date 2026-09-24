@@ -129,23 +129,26 @@ type reader struct {
 	// attention; partKeys is what explains the part it stands in.
 	selectedKeys, partKeys, keysDecided map[string]bool
 
-	boxOf          map[string]string            // file place ID -> box ID
-	classifierGate *llm.BatchController         // the decision model's own attempt gate
-	designBoxOf    map[string]map[string]string // target -> declaration/file -> accepted part
-	designFiles    map[string]string            // declaration -> its source file
-	designSubjects map[string]string            // native declaration -> place
-	designRound    int
-	nextPart       int
-	nextZone       int
-	nextBoundary   int
-	nextJoint      int
-	boundaryIDs    map[string]string    // stable source identity -> compact boundary ID
-	boxes          map[string]*boxState // box ID -> box
-	zones          map[string][]*zoneState
-	arrows         map[string][]*arrowState
-	boundaries     map[string]*boundaryState
-	targets        map[string]*targetState
-	joints         []atlas.Joint
+	boxOf          map[string]string    // file place ID -> box ID
+	classifierGate *llm.BatchController // the decision model's own attempt gate
+	// classifierResponses holds remembered decision-model responses by
+	// request key, parsed once for all the rows they answer.
+	classifierResponses map[string]rememberedClassifier
+	designBoxOf         map[string]map[string]string // target -> declaration/file -> accepted part
+	designFiles         map[string]string            // declaration -> its source file
+	designSubjects      map[string]string            // native declaration -> place
+	designRound         int
+	nextPart            int
+	nextZone            int
+	nextBoundary        int
+	nextJoint           int
+	boundaryIDs         map[string]string    // stable source identity -> compact boundary ID
+	boxes               map[string]*boxState // box ID -> box
+	zones               map[string][]*zoneState
+	arrows              map[string][]*arrowState
+	boundaries          map[string]*boundaryState
+	targets             map[string]*targetState
+	joints              []atlas.Joint
 
 	uses              map[string]*atlas.StageUse
 	started           map[string]time.Time
