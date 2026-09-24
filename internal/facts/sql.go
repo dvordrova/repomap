@@ -1,20 +1,18 @@
 package facts
 
 import (
-	"regexp"
-	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/sqltext"
 )
 
 // An SQL statement literal handed to a call the repository does not own is a
 // fact about data: which tables the code reads or writes at that line. The
-// statement is recognized by its first keyword, the tables by the keywords
-// that precede a table name. No driver or ORM is named.
-
-var sqlStatement = regexp.MustCompile(`(?is)^\s*(?:--[^\n]*\n\s*)*(select|insert|update|delete|with|create|alter|drop|merge|replace)\b`)
-
-var sqlTable = regexp.MustCompile(`(?i)\b(?:from|join|into|update|table(?:\s+if\s+(?:not\s+)?exists)?)\s+` + "`?\"?" + `([A-Za-z_][A-Za-z0-9_.]*)`)
-
+// literal must have SQL statement structure (sqltext.Statement, the same
+// admission the database extractor applies to unbound literals); a message or
+// help text that merely starts with an SQL verb is not a statement. The tables
+// are the names after FROM, JOIN, INTO, UPDATE or TABLE. No driver or ORM is
+// named.
 func (b *builder) addSQLQueries(target *targetContext) {
 	for _, relation := range target.input.Index.Relations {
 		if target.ownsCallee(relation) {
@@ -23,14 +21,15 @@ func (b *builder) addSQLQueries(target *targetContext) {
 		for _, pattern := range relation.Patterns {
 			for _, argument := range pattern.Arguments {
 				statement, _, literal := literalValue(argument)
-				if !literal || !sqlStatement.MatchString(statement) {
+				if !literal || !sqltext.Statement(statement) {
 					continue
 				}
 				anchor := target.patternAnchor(relation, pattern)
 				if anchor == nil {
 					continue
 				}
-				tables := sqlTables(statement)
+				tokens, _ := sqltext.Tokens(statement, 1)
+				tables := sqltext.Tables(tokens)
 				if !b.once(strings.Join([]string{string(KindSQLQuery), target.target.ID, anchor.String(), statement}, "\x00")) {
 					continue
 				}
@@ -48,19 +47,4 @@ func (b *builder) addSQLQueries(target *targetContext) {
 			}
 		}
 	}
-}
-
-func sqlTables(statement string) []string {
-	seen := make(map[string]bool)
-	var tables []string
-	for _, match := range sqlTable.FindAllStringSubmatch(statement, -1) {
-		name := strings.ToLower(match[1])
-		if strings.EqualFold(name, "select") || seen[name] {
-			continue
-		}
-		seen[name] = true
-		tables = append(tables, name)
-	}
-	sort.Strings(tables)
-	return tables
 }

@@ -3,53 +3,18 @@ package extractors
 import (
 	"fmt"
 	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/sqltext"
 	"regexp"
-	"sort"
 	"strings"
 )
 
-var sqlStart = regexp.MustCompile(`(?i)^\s*(SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP|PRAGMA)\b`)
+var sqlStart = regexp.MustCompile(`(?i)^\s*(SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP|PRAGMA|MERGE|REPLACE)\b`)
 var sqlName = regexp.MustCompile(`(?m)--\s*name:\s*([A-Za-z_][A-Za-z_0-9]*)\s*:`)
 
-func sqlTables(tokens []sqlToken) []string {
-	ctes := map[string]bool{}
-	tables := map[string]bool{}
-	for i := 0; i+2 < len(tokens); i++ {
-		if (i == 0 && strings.EqualFold(tokens[i].text, "with")) || tokens[i].text == "," {
-			if strings.EqualFold(tokens[i+2].text, "as") {
-				ctes[tokens[i+1].text] = true
-			}
-		}
-	}
-	for i := 0; i+1 < len(tokens); i++ {
-		if tokens[i].quoted {
-			continue
-		}
-		switch strings.ToUpper(tokens[i].text) {
-		case "FROM", "JOIN", "INTO", "UPDATE", "TABLE":
-		default:
-			continue
-		}
-		j := i + 1
-		if strings.EqualFold(tokens[j].text, "if") {
-			j += 3
-		}
-		name, _ := sqlIdentifier(tokens, j)
-		if name != "" && !strings.EqualFold(name, "set") && !ctes[name] {
-			tables[name] = true
-		}
-	}
-	out := make([]string, 0, len(tables))
-	for name := range tables {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
-func parseSQLColumns(tokens []sqlToken, path string, source ...func(sqlToken) facts.Anchor) []facts.DataColumn {
+func parseSQLColumns(tokens []sqltext.Token, path string, source ...func(sqltext.Token) facts.Anchor) []facts.DataColumn {
 	start := -1
 	for i, token := range tokens {
-		if token.text == "(" {
+		if token.Text == "(" {
 			start = i + 1
 			break
 		}
@@ -57,10 +22,10 @@ func parseSQLColumns(tokens []sqlToken, path string, source ...func(sqlToken) fa
 	if start < 0 {
 		return nil
 	}
-	var chunks [][]sqlToken
+	var chunks [][]sqltext.Token
 	level, begin := 0, start
 	for i := start; i < len(tokens); i++ {
-		switch tokens[i].text {
+		switch tokens[i].Text {
 		case "(":
 			level++
 		case ")":
@@ -84,21 +49,21 @@ func parseSQLColumns(tokens []sqlToken, path string, source ...func(sqlToken) fa
 		if len(chunk) == 0 {
 			continue
 		}
-		first := strings.ToUpper(chunk[0].text)
+		first := strings.ToUpper(chunk[0].Text)
 		if first == "CONSTRAINT" || first == "PRIMARY" || first == "FOREIGN" || first == "UNIQUE" || first == "CHECK" {
 			for i, t := range chunk {
-				if strings.EqualFold(t.text, "primary") && i+1 < len(chunk) && strings.EqualFold(chunk[i+1].text, "key") {
+				if strings.EqualFold(t.Text, "primary") && i+1 < len(chunk) && strings.EqualFold(chunk[i+1].Text, "key") {
 					for _, name := range sqlIdentifierList(chunk, i+2) {
 						pk[name] = true
 					}
 				}
-				if strings.EqualFold(t.text, "foreign") && i+1 < len(chunk) && strings.EqualFold(chunk[i+1].text, "key") {
+				if strings.EqualFold(t.Text, "foreign") && i+1 < len(chunk) && strings.EqualFold(chunk[i+1].Text, "key") {
 					locals := sqlIdentifierList(chunk, i+2)
 					for j := i + 2; j < len(chunk); j++ {
-						if !strings.EqualFold(chunk[j].text, "references") {
+						if !strings.EqualFold(chunk[j].Text, "references") {
 							continue
 						}
-						table, end := sqlIdentifier(chunk, j+1)
+						table, end := sqltext.Identifier(chunk, j+1)
 						remotes := sqlIdentifierList(chunk, end)
 						if table != "" && len(locals) == len(remotes) {
 							for k, local := range locals {
@@ -111,25 +76,25 @@ func parseSQLColumns(tokens []sqlToken, path string, source ...func(sqlToken) fa
 			}
 			continue
 		}
-		name, next := sqlIdentifier(chunk, 0)
+		name, next := sqltext.Identifier(chunk, 0)
 		if name == "" {
 			continue
 		}
-		column := facts.DataColumn{Name: name, Anchor: facts.Anchor{Path: path, Line: chunk[0].line}}
+		column := facts.DataColumn{Name: name, Anchor: facts.Anchor{Path: path, Line: chunk[0].Line}}
 		if len(source) > 0 && source[0] != nil {
 			column.Anchor = source[0](chunk[0])
 		}
 		if next < len(chunk) {
-			column.Type = chunk[next].text
+			column.Type = chunk[next].Text
 		}
 		for i, token := range chunk {
-			switch strings.ToUpper(token.text) {
+			switch strings.ToUpper(token.Text) {
 			case "PRIMARY":
 				column.PrimaryKey = true
 			case "REFERENCES":
-				ref, j := sqlIdentifier(chunk, i+1)
-				if j+1 < len(chunk) && chunk[j].text == "(" {
-					ref += "." + chunk[j+1].text
+				ref, j := sqltext.Identifier(chunk, i+1)
+				if j+1 < len(chunk) && chunk[j].Text == "(" {
+					ref += "." + chunk[j+1].Text
 				}
 				column.ForeignKey = ref
 			}
@@ -145,21 +110,21 @@ func parseSQLColumns(tokens []sqlToken, path string, source ...func(sqlToken) fa
 	return columns
 }
 
-func sqlIdentifierList(tokens []sqlToken, start int) []string {
-	if start >= len(tokens) || tokens[start].text != "(" {
+func sqlIdentifierList(tokens []sqltext.Token, start int) []string {
+	if start >= len(tokens) || tokens[start].Text != "(" {
 		return nil
 	}
 	var names []string
 	for i := start + 1; i < len(tokens); {
-		name, end := sqlIdentifier(tokens, i)
+		name, end := sqltext.Identifier(tokens, i)
 		if name == "" {
 			return nil
 		}
 		names = append(names, name)
-		if end < len(tokens) && tokens[end].text == ")" {
+		if end < len(tokens) && tokens[end].Text == ")" {
 			return names
 		}
-		if end >= len(tokens) || tokens[end].text != "," {
+		if end >= len(tokens) || tokens[end].Text != "," {
 			return nil
 		}
 		i = end + 1
@@ -168,20 +133,20 @@ func sqlIdentifierList(tokens []sqlToken, start int) []string {
 }
 
 func (b *databaseExtractor) addSQL(path, scope, source string, line int, dynamic bool, owner *facts.Anchor) string {
-	tokens, partial := sqlTokens(source, line)
+	tokens, partial := sqltext.Tokens(source, line)
 	if len(tokens) == 0 {
 		return ""
 	}
-	line = tokens[0].line
+	line = tokens[0].Line
 	if b.sourceAnchor != nil {
 		line = b.sourceAnchor(tokens[0]).Line
 	}
 	balance := 0
 	for _, token := range tokens {
-		if token.text == "(" {
+		if token.Text == "(" {
 			balance++
 		}
-		if token.text == ")" {
+		if token.Text == ")" {
 			balance--
 		}
 		if balance < 0 {
@@ -189,11 +154,11 @@ func (b *databaseExtractor) addSQL(path, scope, source string, line int, dynamic
 		}
 	}
 	partial = partial || balance != 0
-	statement := strings.ToUpper(tokens[0].text)
+	statement := strings.ToUpper(tokens[0].Text)
 	if !sqlStart.MatchString(statement) {
 		return ""
 	}
-	tables := sqlTables(tokens)
+	tables := sqltext.Tables(tokens)
 	name := fmt.Sprintf("%s · %s:%d", statement, path, line)
 	if named := sqlName.FindStringSubmatch(source); len(named) > 1 {
 		name = named[1]
@@ -204,16 +169,16 @@ func (b *databaseExtractor) addSQL(path, scope, source string, line int, dynamic
 	b.queries = append(b.queries, id)
 	if statement == "CREATE" {
 		for i := 1; i < len(tokens); i++ {
-			if !strings.EqualFold(tokens[i].text, "table") {
+			if !strings.EqualFold(tokens[i].Text, "table") {
 				continue
 			}
 			j := i + 1
-			if j < len(tokens) && strings.EqualFold(tokens[j].text, "if") {
+			if j < len(tokens) && strings.EqualFold(tokens[j].Text, "if") {
 				j += 3
 			}
-			table, _ := sqlIdentifier(tokens, j)
+			table, _ := sqltext.Identifier(tokens, j)
 			if table != "" {
-				tableLine := tokens[i].line
+				tableLine := tokens[i].Line
 				if b.sourceAnchor != nil {
 					tableLine = b.sourceAnchor(tokens[i]).Line
 				}

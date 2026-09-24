@@ -72,3 +72,14 @@ Go interface methods are covered in
 The cumulative Go check retains their original owner and signatures, rejects
 new method ownership on `EmbeddedTicket`/`TicketAlias`, and verifies that a
 declaration without a body acquires no execution node or runtime relations.
+
+SQL statement facts need statement structure. Each language hands one SQL
+statement and one ordinary message that starts with an SQL verb to calls
+outside the repository; only the statement becomes a `sql_query` fact:
+
+| Language | Statement | Ordinary text |
+| --- | --- | --- |
+| Go | [handoff_flow.go](go/internal/storefixture/handoff_flow.go) `QueryRowContext` | [cmd/app/sql_literals.go](go/cmd/app/sql_literals.go) `fmt.Errorf("create %s dir: %w", ...)` |
+| Python | [data_sources.py](python/src/fixture_app/data_sources.py) `connection.execute` | [sql_literals.py](python/src/fixture_app/sql_literals.py) `logging.error("create %s dir", path)` |
+| TypeScript | [data-sources.ts](jsts/src/data-sources.ts) `connection.execute` | [sql-literals.ts](jsts/src/sql-literals.ts) `console.error("create %s dir", path)` |
+| Clojure | [core.clj](clojure/src/example/core.clj) `(query! "SELECT ...")` | [core.clj](clojure/src/example/core.clj) `(format "create %s dir" dir)` |

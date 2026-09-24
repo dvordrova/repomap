@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/sqltext"
 )
 
 type databaseExtractor struct {
@@ -17,7 +18,7 @@ type databaseExtractor struct {
 	nodes        map[string]int
 	tables       map[string][]string
 	queries      []string
-	sourceAnchor func(sqlToken) facts.Anchor
+	sourceAnchor func(sqltext.Token) facts.Anchor
 }
 
 // Database extracts source declarations and SQL text without opening a database
@@ -86,7 +87,7 @@ func database(ctx context.Context, request Request, sqlc Response) (Response, er
 		for _, literal := range joinSQLLiterals(source, mask, literals, extension == ".py") {
 			// Explicit sqlc inputs already have SQL source authority. An
 			// otherwise unbound literal needs more than a leading English verb.
-			if len(scopes[file]) == 0 && !embeddedSQLStatement(literal.text) {
+			if len(scopes[file]) == 0 && !sqltext.Statement(literal.text) {
 				continue
 			}
 			scope := fileScopes[0]
@@ -112,14 +113,14 @@ func database(ctx context.Context, request Request, sqlc Response) (Response, er
 	return b.response, nil
 }
 
-func literalSQLAnchor(file string, literal sourceLiteral) func(sqlToken) facts.Anchor {
-	return func(token sqlToken) facts.Anchor {
+func literalSQLAnchor(file string, literal sourceLiteral) func(sqltext.Token) facts.Anchor {
+	return func(token sqltext.Token) facts.Anchor {
 		line := literal.line
 		for _, segment := range literal.segments {
-			if token.offset >= segment.offset && token.offset < segment.offset+len(segment.text) {
+			if token.Offset >= segment.offset && token.Offset < segment.offset+len(segment.text) {
 				line = segment.line
 				if segment.multiline {
-					line += strings.Count(segment.text[:token.offset-segment.offset], "\n")
+					line += strings.Count(segment.text[:token.Offset-segment.offset], "\n")
 				}
 				break
 			}
@@ -141,11 +142,11 @@ func (b *databaseExtractor) addTable(file string, line int, data *facts.DataObje
 		qualified = data.Schema + "." + data.Name
 	}
 	if data.Origin != "orm" {
-		tokens, _ := sqlTokens(data.Name, line)
+		tokens, _ := sqltext.Tokens(data.Name, line)
 		if len(tokens) > 0 {
-			data.Name = tokens[len(tokens)-1].text
-			if len(tokens) > 2 && tokens[len(tokens)-2].text == "." {
-				data.Schema, _ = sqlIdentifier(tokens[:len(tokens)-2], 0)
+			data.Name = tokens[len(tokens)-1].Text
+			if len(tokens) > 2 && tokens[len(tokens)-2].Text == "." {
+				data.Schema, _ = sqltext.Identifier(tokens[:len(tokens)-2], 0)
 			}
 		}
 	}

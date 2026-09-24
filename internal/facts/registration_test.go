@@ -229,13 +229,18 @@ func TestSQLStatementsNameTheirTables(t *testing.T) {
 	s.relate("q", programindex.RelationInvokesExternal, "fn", []string{"sql"}, loc("store.go", 12),
 		pattern("p", programindex.PatternCall, "QueryRowContext", loc("store.go", 12), nil, dynamic(1),
 			literal(2, "-- name: GetUser :one\nSELECT u.id, o.total FROM users u JOIN orders o ON o.user_id = u.id WHERE u.id = $1")))
+	// Literals that only start with an SQL verb, handed to calls outside the
+	// repository in the same function, are not statements.
+	s.external("errorf", "fmt", "Errorf", programindex.ExternalAuthorityPlatform)
+	s.relate("e", programindex.RelationInvokesExternal, "fn", []string{"errorf"}, loc("store.go", 14),
+		pattern("p", programindex.PatternCall, "Errorf", loc("store.go", 14), nil, literal(1, "create %s dir: %w"), dynamic(2)))
+	s.external("fold", "strings", "EqualFold", programindex.ExternalAuthorityPlatform)
+	s.relate("f", programindex.RelationInvokesExternal, "fn", []string{"fold"}, loc("store.go", 15),
+		pattern("p", programindex.PatternCall, "EqualFold", loc("store.go", 15), nil, dynamic(1), literal(2, "with")))
 	result := mustBuild(t, Input{Targets: []TargetInput{{Index: s.index(), Root: "."}}})
 	queries := result.OfKind(KindSQLQuery)
 	if len(queries) != 1 || queries[0].Key != "orders, users" || queries[0].Symbol != "Queries.GetUser" || queries[0].Anchor.String() != "store.go:12" {
 		t.Fatalf("sql queries = %+v", queries)
-	}
-	if got := sqlTables("INSERT INTO audit_log (id) VALUES ($1); UPDATE users SET seen = now()"); !reflect.DeepEqual(got, []string{"audit_log", "users"}) {
-		t.Fatalf("tables = %v", got)
 	}
 }
 

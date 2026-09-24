@@ -11,6 +11,8 @@ func TestCanonicalFoldsFreeTextOntoOneSystemAndKeepsUnknownText(t *testing.T) {
 		"remote PostgreSQL database": "PostgreSQL", "Postgres": "PostgreSQL", "Redis cache server": "Redis",
 		"Cache store (concrete implementation unresolved)": "Cache store", "S3-compatible object storage (MinIO)": "S3 storage",
 		"OTLP trace collector": "OpenTelemetry collector", "AWS S3 bucket": "S3 storage", "proxy service": "proxy service", "": "",
+		// DeepSeek serves an OpenAI-compatible API; the system called is DeepSeek.
+		"api.deepseek.com": "DeepSeek", "OpenAI-compatible DeepSeek chat API": "DeepSeek", "OpenAI API": "OpenAI",
 	} {
 		if got := Canonical(text); got != want {
 			t.Fatalf("Canonical(%q) = %q, want %q", text, got, want)

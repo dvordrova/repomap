@@ -279,6 +279,8 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 	assertPythonLocalHTTPNameFacts(t, index)
 	assertPythonHTTPRegistrations(t, repository, index)
 	adaptertest.AssertQueryOccurrenceOwners(t, repositoryPath, repository, index, "src/fixture_app/data_sources.py")
+	adaptertest.AssertSQLQueryFacts(t, index, "src/fixture_app/data_sources.py", map[string]string{"SELECT id FROM direct_rows": "direct_rows"})
+	adaptertest.AssertSQLQueryFacts(t, index, "src/fixture_app/sql_literals.py", nil, "create %s dir")
 	assertPythonRepeatedImportAliases(t, index)
 	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index}}})
 	if err != nil {

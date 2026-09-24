@@ -26,3 +26,9 @@ export const ordinarySourceText = [
     "SELECT id",
     "SELECT - []",
 ];
+
+// A message handed to a call outside the repository is ordinary text even
+// when it starts with an SQL verb.
+export function reportDirectoryError(path: string) {
+    console.error("create %s dir", path);
+}

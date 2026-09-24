@@ -17,7 +17,8 @@ import (
 type system struct{ word, name string }
 
 // known lists the systems in priority order: a specific service before its
-// vendor ("sqs" before "aws"), so the first matching word decides. One run
+// vendor ("sqs" before "aws") or before the API it is compatible with
+// ("deepseek" before "openai"), so the first matching word decides. One run
 // named one broker "RabbitMQ broker", "AMQP broker (RabbitMQ)", "RabbitMQ
 // broker (queue topology)" and four more ways; the reader wants one row per
 // system.
@@ -40,7 +41,7 @@ var known = []system{
 	{"stripe", "Stripe"}, {"twilio", "Twilio"}, {"sendgrid", "SendGrid"},
 	{"smtp", "SMTP server"}, {"smtplib", "SMTP server"}, {"nodemailer", "SMTP server"},
 	{"sentry", "Sentry"}, {"otlp", "OpenTelemetry collector"}, {"opentelemetry", "OpenTelemetry collector"}, {"prometheus", "Prometheus"},
-	{"openai", "OpenAI"}, {"anthropic", "Anthropic"},
+	{"deepseek", "DeepSeek"}, {"openai", "OpenAI"}, {"anthropic", "Anthropic"},
 	{"kubernetes", "Kubernetes API server"}, {"docker", "Docker daemon"},
 }
 

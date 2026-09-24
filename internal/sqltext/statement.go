@@ -1,13 +1,15 @@
-package extractors
+package sqltext
 
 import "strings"
 
-// embeddedSQLStatement recognizes a supported SQL statement shape in an
-// unbound source literal. It does not establish execution or the absence of
-// other SQL: ambiguous bare SELECT words and unsupported dialect forms remain
-// ordinary source text. Explicit .sql/sqlc inputs bypass this admission check.
-func embeddedSQLStatement(source string) bool {
-	tokens, partial := sqlTokens(source, 1)
+// Statement recognizes a supported SQL statement shape in an unbound source
+// literal: a leading verb must be followed by its statement structure, so an
+// error message or help text that merely starts with an SQL verb is not SQL.
+// It does not establish execution or the absence of other SQL: ambiguous bare
+// SELECT words and unsupported dialect forms remain ordinary source text.
+// Explicit .sql/sqlc inputs bypass this admission check.
+func Statement(source string) bool {
+	tokens, partial := Tokens(source, 1)
 	if len(tokens) == 0 {
 		return false
 	}
@@ -55,6 +57,12 @@ func embeddedSQLStatement(source string) bool {
 		}
 		_, ok := sqlSourceName(tokens, 2)
 		return ok || partial
+	case sqlWord(tokens, 0, "MERGE", "REPLACE"):
+		if !sqlWord(tokens, 1, "INTO") {
+			return false
+		}
+		_, ok := sqlSourceName(tokens, 2)
+		return ok || partial
 	case sqlWord(tokens, 0, "UPDATE"):
 		i, ok := sqlSourceName(tokens, 1)
 		if !ok || sqlWord(tokens, i, "SET") {
@@ -98,7 +106,7 @@ func embeddedSQLStatement(source string) bool {
 	}
 }
 
-func embeddedSelect(tokens []sqlToken) bool {
+func embeddedSelect(tokens []Token) bool {
 	i := 1
 	if sqlWord(tokens, i, "DISTINCT", "ALL") {
 		i++
@@ -120,13 +128,13 @@ func embeddedSelect(tokens []sqlToken) bool {
 		}
 	}
 	first := tokens[i]
-	if strings.HasPrefix(first.text, "{") || strings.HasPrefix(first.text, "${") {
+	if strings.HasPrefix(first.Text, "{") || strings.HasPrefix(first.Text, "${") {
 		return true
 	}
-	if first.literal || first.quoted || sqlNumericStart(first.text) || sqlPunctuation(tokens, i, "*", "(", "?", ":", "$") {
+	if first.Literal || first.Quoted || sqlNumericStart(first.Text) || sqlPunctuation(tokens, i, "*", "(", "?", ":", "$") {
 		return true
 	}
-	if sqlPunctuation(tokens, i, "+", "-") && i+1 < len(tokens) && sqlNumericStart(tokens[i+1].text) {
+	if sqlPunctuation(tokens, i, "+", "-") && i+1 < len(tokens) && sqlNumericStart(tokens[i+1].Text) {
 		return true
 	}
 	if sqlWord(tokens, i, "NULL", "TRUE", "FALSE", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP") {
@@ -150,24 +158,24 @@ func sqlNumericStart(text string) bool {
 	return len(text) > 0 && text[0] >= '0' && text[0] <= '9'
 }
 
-func sqlWord(tokens []sqlToken, index int, words ...string) bool {
-	if index < 0 || index >= len(tokens) || tokens[index].quoted || tokens[index].literal {
+func sqlWord(tokens []Token, index int, words ...string) bool {
+	if index < 0 || index >= len(tokens) || tokens[index].Quoted || tokens[index].Literal {
 		return false
 	}
 	for _, word := range words {
-		if strings.EqualFold(tokens[index].text, word) {
+		if strings.EqualFold(tokens[index].Text, word) {
 			return true
 		}
 	}
 	return false
 }
 
-func sqlPunctuation(tokens []sqlToken, index int, values ...string) bool {
-	if index < 0 || index >= len(tokens) || tokens[index].quoted || tokens[index].literal {
+func sqlPunctuation(tokens []Token, index int, values ...string) bool {
+	if index < 0 || index >= len(tokens) || tokens[index].Quoted || tokens[index].Literal {
 		return false
 	}
 	for _, value := range values {
-		if tokens[index].text == value {
+		if tokens[index].Text == value {
 			return true
 		}
 	}
@@ -175,22 +183,22 @@ func sqlPunctuation(tokens []sqlToken, index int, values ...string) bool {
 }
 
 // A source hole proves only that an identifier is supplied there. It remains
-// partial and never becomes a declared table name through sqlIdentifier.
-func sqlSourceName(tokens []sqlToken, index int) (int, bool) {
+// partial and never becomes a declared table name through Identifier.
+func sqlSourceName(tokens []Token, index int) (int, bool) {
 	if index < 0 || index >= len(tokens) {
 		return index, false
 	}
-	if strings.HasPrefix(tokens[index].text, "{") || strings.HasPrefix(tokens[index].text, "${") {
+	if strings.HasPrefix(tokens[index].Text, "{") || strings.HasPrefix(tokens[index].Text, "${") {
 		return index + 1, true
 	}
 	if sqlWord(tokens, index, "FROM", "INTO", "AS", "IF", "NOT", "EXISTS", "SET", "SELECT") {
 		return index, false
 	}
-	name, end := sqlIdentifier(tokens, index)
+	name, end := Identifier(tokens, index)
 	return end, name != ""
 }
 
-func sqlAfterParentheses(tokens []sqlToken, index int) int {
+func sqlAfterParentheses(tokens []Token, index int) int {
 	depth := 0
 	for ; index < len(tokens); index++ {
 		if sqlPunctuation(tokens, index, "(") {

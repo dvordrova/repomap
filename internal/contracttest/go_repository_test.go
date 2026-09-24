@@ -81,6 +81,9 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoHTTPRegistrations(t, repository, index)
 	assertGoConstructRegistrations(t, index)
 	adaptertest.AssertQueryOccurrenceOwners(t, repositoryPath, repository, index, "internal/storefixture/data_sources.go")
+	adaptertest.AssertSQLQueryFacts(t, index, "internal/storefixture/handoff_flow.go",
+		map[string]string{"SELECT name FROM users WHERE id = $1": "users"})
+	adaptertest.AssertSQLQueryFacts(t, index, "cmd/app/sql_literals.go", nil, "create %s dir: %w")
 	adaptertest.AssertConcreteParameterMethod(t, index, "internal/storefixture/data_sources.go")
 	assertGoTypedIteration(t, index)
 	assertGoLocalHTTPNameFacts(t, index)

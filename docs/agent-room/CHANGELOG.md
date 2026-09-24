@@ -35,6 +35,30 @@
   3,881 units then fell to `none`. Proposals are now a title → purpose
   object read in order and refused whole when an entry is empty or
   repeated; the parts and areas prompts are separate and short.
+## 2026-09-25 — SQL facts need statement structure; DeepSeek is a destination
+
+- A self-run of `cmd/repomap` had 13 `sql_query` facts and all were false:
+  `facts` took any non-owned call's literal starting with an SQL verb
+  (`fmt.Errorf("create %s dir: %w")`, `strings.EqualFold(text, "with")`,
+  flag help "create a standalone report with GitLab source links"). As fixed
+  `db` boundaries they drew outside tiles named fmt, strings, stderr, "local
+  filesystem", GitHub and GitLab and gave parts `reaches: db`.
+- The SQL lexer, statement admission and table mentions moved from
+  `internal/extractors` to `internal/sqltext`; the facts pass now uses that
+  admission and `sqltext.Tables` instead of its own verb regex (table names
+  keep their written case; WITH names are no longer tables). MERGE INTO and
+  REPLACE INTO joined the admission and the extractor's statement prefilter.
+  Of the 28 string literals handed to calls in repomap's non-test Go sources
+  that the old regex took, the shared admission takes none.
+- Each cumulative fixture (Go, Python, TypeScript, Clojure) hands one
+  "create %s dir" message to a call outside the repository beside a statement
+  that stays a fact; `adaptertest.AssertSQLQueryFacts` requires the exact
+  statement set and that the message really reaches such a call. All four
+  fail with the old regex. Clojure gained its first positive
+  (`(query! "SELECT id FROM direct_rows")`).
+- The destination catalogue lists DeepSeek before OpenAI, so the one remote
+  call (`api.deepseek.com`, an OpenAI-compatible API) is no longer offered
+  only OpenAI; refs after Prometheus shift by one.
 
 ## 2026-09-25 — Jev answers closed tables
 

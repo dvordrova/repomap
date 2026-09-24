@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 // These are source observations, without a database connection or execution.
 var sqlSourceExamples = []string{
 	"SELECT " + "id FROM public.orders WHERE note = 'JOIN imaginary_table'",
@@ -27,4 +29,10 @@ var ordinarySourceText = []string{
 	"DELETE",
 	"SELECT id",
 	"SELECT + \"\"",
+}
+
+// A message handed to a call outside the repository is ordinary text even
+// when it starts with an SQL verb.
+func directoryError(dir string, err error) error {
+	return fmt.Errorf("create %s dir: %w", dir, err)
 }

@@ -1,3 +1,5 @@
+import logging
+
 # These are source observations, without a database connection or execution.
 sql_source_examples = [
     ("SELECT "
@@ -27,3 +29,9 @@ ordinary_source_text = [
     "SELECT id",
     "SELECT - ``",
 ]
+
+
+def report_directory_error(path):
+    # A message handed to a call outside the repository is ordinary text even
+    # when it starts with an SQL verb.
+    logging.error("create %s dir", path)

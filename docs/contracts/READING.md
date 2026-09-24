@@ -284,7 +284,9 @@ The candidate prompt places the three `decision` choices beside their separate
 `invokes_external` describe source indexing or call direction, not a proven
 exchange with another process. Selected rows precede the complete shared owner
 context and destination catalogue. The catalogue offers names only; no entry
-establishes a call's runtime role. The response shape, closed choices, evidence
+establishes a call's runtime role. A service precedes the API it is compatible
+with, so DeepSeek's OpenAI-compatible endpoint is offered and folded as
+DeepSeek, not OpenAI. The response shape, closed choices, evidence
 and stage reasoning setting are unchanged. A tagged free value keeps its written
 name when whitespace around the colon varies (`other:Name`, `other : Name`);
 the tag and a nonempty name remain required. This formatting normalization does

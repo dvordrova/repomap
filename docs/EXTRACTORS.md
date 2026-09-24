@@ -104,6 +104,10 @@ supply that evidence. The check retains table-free expressions such as
 `SELECT 1`, string probes and function calls. Bare column/alias forms such as
 `SELECT trading mode` are ambiguous in an ordinary string and are not admitted
 there; explicit `.sql` and sqlc source inputs keep their existing authority.
+The admission, SQL tokens and table mentions live in `internal/sqltext`; the
+facts pass applies the same admission to call-argument literals before it
+records a `sql_query`. `MERGE INTO` and `REPLACE INTO` are admitted beside the
+other supported statements.
 This supported subset does not establish that other SQL is absent, and the
 original code and documentation remain available as source evidence. ORM model
 declarations are extracted independently. The producer never connects to a

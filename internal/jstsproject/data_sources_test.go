@@ -11,7 +11,7 @@ import (
 
 func TestCumulativeJSTSQueryOccurrencesRetainNativeOwners(t *testing.T) {
 	root := preparedCompilerProject(t)
-	tracked := []string{"package.json", "tsconfig.json", "src/data-sources.ts"}
+	tracked := []string{"package.json", "tsconfig.json", "src/data-sources.ts", "src/sql-literals.ts"}
 	for _, path := range tracked {
 		contents, err := os.ReadFile(filepath.Join("..", "..", "testdata", "repositories", "jsts", filepath.FromSlash(path)))
 		if err != nil {
@@ -29,4 +29,6 @@ func TestCumulativeJSTSQueryOccurrencesRetainNativeOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaptertest.AssertQueryOccurrenceOwners(t, root, repository, index, "src/data-sources.ts")
+	adaptertest.AssertSQLQueryFacts(t, index, "src/data-sources.ts", map[string]string{"SELECT id FROM direct_rows": "direct_rows"})
+	adaptertest.AssertSQLQueryFacts(t, index, "src/sql-literals.ts", nil, "create %s dir")
 }
