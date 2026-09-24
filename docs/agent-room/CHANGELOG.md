@@ -1,5 +1,15 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — atlas_api stays with the text model (measured)
+
+- Paired probe on `cmd/repomap`: the same 485 atlas_api rows answered by
+  DeepSeek (live) and Jev (optional yes-only columns as Nouls). Whole rows
+  agreed on 405. Nearly every difference was a Jev yes the row does not
+  support (`validates` on `go/types.Identical`, `token.IsExported`;
+  `reads_input: body` on `bytes.Split`, `go/parser.ParseFile`), and Jev
+  missed the one serving call, `net/http.Server` publishes. The table is not
+  opted in to the decision model.
+
 ## 2026-09-25 — testdata is test input, not a target
 
 - Owner decision: a `testdata` directory holds the inputs of the tests
