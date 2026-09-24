@@ -20,6 +20,8 @@ var keysPrompt string
 func Keys() table.Definition {
 	return table.Definition{
 		Stage: StageKeys, Contract: "repomap.atlas.keys.v2", System: keysPrompt, Independent: true,
+		// A decision model ranks a part's candidates; readKeys keeps the top.
+		Classifier: true, Ranked: true,
 		Columns: []table.Column{
 			{Name: "explains", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when a reader needs this declaration to understand what the part does"},
 		},

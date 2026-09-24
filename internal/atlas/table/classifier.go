@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/llm"
@@ -334,6 +335,13 @@ func DecodeClassifierAnswers(def Definition, window Window, answers map[string]C
 			got, ok := envelope.Answers[questionKey(row, column)]
 			options := columnOptions(column, window.Context, row)
 			if yesOnly(column, options) {
+				if def.Ranked && ok && got.Type == "noul" && got.Noul != nil {
+					answer[ProbabilityCell(column.Name)] = strconv.FormatFloat(*got.Noul, 'f', 4, 64)
+					if *got.Noul >= yesAt {
+						answer[column.Name] = "yes"
+					}
+					continue
+				}
 				switch {
 				case !ok || got.Type != "noul" || got.Noul == nil:
 					reason = fmt.Sprintf("column %s was not answered", column.Name)

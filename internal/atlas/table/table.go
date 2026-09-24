@@ -134,7 +134,14 @@ type Definition struct {
 	// this probability of yes or above, no below it. Zero keeps the ordinary
 	// rule, where neither side above MinProbability leaves the row unanswered.
 	YesAt float64
+	// Ranked makes a decision model's yes/no answers a ranking: every row
+	// keeps the probability of yes (ProbabilityCell) and none is refused as
+	// uncertain, because the owner orders rows instead of thresholding them.
+	Ranked bool
 }
+
+// ProbabilityCell names the cell holding a ranked column's probability of yes.
+func ProbabilityCell(column string) string { return column + "@p" }
 
 // Field is one ordered input of a row.
 type Field struct {

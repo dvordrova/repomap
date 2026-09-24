@@ -1,5 +1,17 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — A part's keys are ranked by Jev
+
+- `atlas_keys` opts in to the decision model as a ranking (`Ranked`): each
+  candidate's probability of explaining its part is kept, and readKeys shows
+  the five highest; a flat ranking (top minus sixth < 0.1) keeps the
+  selection's order. DeepSeek had answered yes to 89% of candidates, so file
+  order picked its five.
+- Same 26 saved parts of `cmd/repomap`: a blind judge over the 125
+  declarations where the two differed called 45 of Jev's 65 picks key (69%)
+  and 7 of DeepSeek's 60 (12%). The stage drops from ~8 s of DeepSeek calls
+  to one Jev round.
+
 ## 2026-09-25 — Design proposals have a measured output allowance
 
 - A parts proposal on `cmd/repomap` generated 128,000 tokens for 5m44s (a

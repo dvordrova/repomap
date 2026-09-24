@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
@@ -66,10 +67,17 @@ func (r *reader) readKeys(ctx context.Context) error {
 	}
 	at := 0
 	for _, group := range order {
+		groupAnswers := answers[at : at+len(group.ids)]
+		at += len(group.ids)
+		if ranked, ok := rankedByProbability(group.ids, groupAnswers); ok {
+			for _, id := range ranked {
+				r.partKeys[id] = true
+			}
+			continue
+		}
 		kept := 0
-		for _, id := range group.ids {
-			answer := answers[at].answer
-			at++
+		for i, id := range group.ids {
+			answer := groupAnswers[i].answer
 			if answer != nil && answer["explains"] == "yes" && kept < lines.MaxKeysPerPart {
 				r.partKeys[id] = true
 				kept++
@@ -127,4 +135,40 @@ func (r *reader) keyFields(targetID string, part *boxState, id string, title map
 		fields = append(fields, table.Field{Name: "called_from", Value: calledFrom})
 	}
 	return fields
+}
+
+// keysSpread is the least difference between the top candidate and the one
+// just past the keys shown for a ranking to decide them; a flatter
+// distribution keeps the selection's own order.
+const keysSpread = 0.1
+
+// rankedByProbability orders a part's candidates by the decision model's
+// probability that each explains the part and keeps the top ones. It
+// declines when an answer carries no probability or the ranking is flat.
+func rankedByProbability(ids []string, answers []rowAnswer) ([]string, bool) {
+	type scored struct {
+		id string
+		p  float64
+	}
+	cell := table.ProbabilityCell("explains")
+	rows := make([]scored, 0, len(ids))
+	for i, id := range ids {
+		if answers[i].answer == nil {
+			return nil, false
+		}
+		p, err := strconv.ParseFloat(answers[i].answer[cell], 64)
+		if err != nil {
+			return nil, false
+		}
+		rows = append(rows, scored{id, p})
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].p > rows[j].p })
+	if len(rows) <= lines.MaxKeysPerPart || rows[0].p-rows[lines.MaxKeysPerPart].p < keysSpread {
+		return nil, false
+	}
+	kept := make([]string, 0, lines.MaxKeysPerPart)
+	for _, row := range rows[:lines.MaxKeysPerPart] {
+		kept = append(kept, row.id)
+	}
+	return kept, true
 }
