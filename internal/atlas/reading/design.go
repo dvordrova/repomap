@@ -183,12 +183,12 @@ func designCallFor(items []designItem, documents []table.Field, mode string) (ll
 		Mode      string        `json:"mode"`
 		Items     []designItem  `json:"items"`
 		Documents []table.Field `json:"author_context,omitempty"`
-	}{"repomap.atlas.design.v1", mode, items, documents})
+	}{"repomap.atlas.design.v2", mode, items, documents})
 	if err != nil {
 		return llm.Call[designResult]{}, err
 	}
 	return llm.Call[designResult]{
-		State: []byte("repomap.atlas.design.v1"),
+		State: []byte("repomap.atlas.design.v2"),
 		Prompt: llm.Prompt{System: designPrompt, User: string(raw), ResponseFormatJSON: true,
 			ResponseExample: `{"groups":[{"title":"Move search","purpose":"Chooses a move by exploring legal continuations.","members":["n1","n2"]}]}`, NoResponseAdjunct: true},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
@@ -290,17 +290,31 @@ func (r *reader) askDesign(ctx context.Context, items []designItem, documents []
 	return accepted, len(results), nil
 }
 
+// designInputs describes a target as units a reader already recognizes: a
+// package with its free declarations, and each type with its methods. The
+// model groups these units; it never re-derives the package tree from every
+// declaration, error string and repository document.
 func (r *reader) designInputs(targetID string) ([]designItem, []table.Field) {
 	if r.designFiles == nil {
 		r.designFiles = map[string]string{}
 		r.designSubjects = map[string]string{}
 	}
-	var items []designItem
-	refs := map[string]string{}
+	var units []designItem
+	unitOf := map[string]int{} // unit key or symbol id -> unit position
+	unitFor := func(key, dir, name, kind string) int {
+		if position, ok := unitOf[key]; ok {
+			return position
+		}
+		units = append(units, designItem{Ref: fmt.Sprintf("c%d", len(units)+1), Path: dir, Name: name, Kind: kind})
+		unitOf[key] = len(units) - 1
+		return len(units) - 1
+	}
+	var symbols []string
 	for _, file := range r.opts.Graph.Places {
 		if file.File == nil || !contains(file.TargetIDs, targetID) {
 			continue
 		}
+		dir := path.Dir(file.Path)
 		for _, decl := range file.File.Decls {
 			id := r.symbolID(file.Path, decl.LineNo, decl.Name)
 			objectID := decl.ObjectID
@@ -314,45 +328,80 @@ func (r *reader) designInputs(targetID string) ([]designItem, []table.Field) {
 			}
 			r.designFiles[id] = file.ID
 			r.designSubjects[objectID] = id
-			item := designItem{Ref: objectID, Path: file.Path, Name: decl.Name, Kind: decl.Kind,
-				Signature: decl.Signature, Doc: decl.Doc, Purpose: r.symbolLine[id].value, IDs: []string{id}}
-			refs[id] = item.Ref
-			items = append(items, item)
-		}
-	}
-	for i := range items {
-		if symbol := r.places[items[i].IDs[0]].Symbol; symbol != nil {
-			for _, call := range symbol.Calls {
-				row := designCall{Kind: call.Kind, Name: call.Name, Line: call.Line, Resolution: call.Resolution, Values: call.Values}
-				for _, id := range call.CalleeIDs {
-					if ref := refs[id]; ref != "" {
-						row.To = append(row.To, ref)
-					}
+			var position int
+			switch owner, _, isMember := strings.Cut(decl.Name, "."); {
+			case decl.Kind == "type":
+				position = unitFor(dir+"#"+decl.Name, dir, decl.Name, "type")
+				units[position].Doc = firstSentence(decl.Doc)
+			case decl.Kind == "method" && isMember:
+				position = unitFor(dir+"#"+owner, dir, owner, "type")
+			default:
+				position = unitFor(dir, dir, dir, "package")
+				if units[position].Doc == "" && file.File.Doc != "" {
+					units[position].Doc = firstSentence(file.File.Doc)
 				}
-				items[i].Calls = append(items[i].Calls, row)
 			}
-			for _, binding := range symbol.Bindings {
-				items[i].Calls = append(items[i].Calls, designCall{Kind: "binding", Name: binding.From})
+			units[position].IDs = append(units[position].IDs, id)
+			units[position].Declarations = append(units[position].Declarations, decl.Name)
+			unitOf[id] = position
+			symbols = append(symbols, id)
+		}
+	}
+	// Calls between units are the collaboration evidence; their sites,
+	// arguments and outside callees do not decide where a unit belongs.
+	calls := make([]map[int]bool, len(units))
+	for _, id := range symbols {
+		symbol := r.places[id].Symbol
+		if symbol == nil {
+			continue
+		}
+		from := unitOf[id]
+		for _, call := range symbol.Calls {
+			for _, callee := range call.CalleeIDs {
+				if to, ok := unitOf[callee]; ok && to != from {
+					if calls[from] == nil {
+						calls[from] = map[int]bool{}
+					}
+					calls[from][to] = true
+				}
 			}
 		}
 	}
+	for i := range units {
+		if len(calls[i]) > 0 {
+			positions := make([]int, 0, len(calls[i]))
+			for position := range calls[i] {
+				positions = append(positions, position)
+			}
+			sort.Ints(positions)
+			to := make([]string, len(positions))
+			for j, position := range positions {
+				to[j] = units[position].Ref
+			}
+			units[i].Calls = []designCall{{Kind: "calls", To: to}}
+		}
+	}
+	// Only README and AGENTS documents describe the design to a newcomer;
+	// plans, reviews and journals are history, not architecture.
 	var docs []table.Field
 	for _, place := range r.opts.Graph.Places {
-		if place.Document != nil && len(place.TargetIDs) == 0 {
-			docs = append(docs, table.Field{Name: place.Path, Value: place.Document})
+		if place.Document == nil || (len(place.TargetIDs) > 0 && !contains(place.TargetIDs, targetID)) {
 			continue
 		}
-		if !contains(place.TargetIDs, targetID) {
-			continue
-		}
-		if place.Document != nil {
+		base := strings.ToUpper(path.Base(place.Path))
+		if strings.HasPrefix(base, "README") || strings.HasPrefix(base, "AGENTS") {
 			docs = append(docs, table.Field{Name: place.Path, Value: place.Document})
-		}
-		if place.File != nil && place.File.Doc != "" {
-			docs = append(docs, table.Field{Name: place.Path, Value: place.File.Doc})
 		}
 	}
-	return items, docs
+	return units, docs
+}
+
+func firstSentence(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if end := strings.Index(text, ". "); end >= 0 {
+		return text[:end+1]
+	}
+	return text
 }
 
 func (r *reader) readDesign(ctx context.Context) error {

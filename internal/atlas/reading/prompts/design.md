@@ -3,17 +3,16 @@
 Build a useful architecture diagram from the supplied code evidence. The reader
 needs to distinguish responsibilities and follow how they collaborate.
 
-Input files are source addresses, not component boundaries. A responsibility may
-span unrelated directories; one file can contain several responsibilities. Names
-and paths are hints. Base membership on declarations, documentation, native calls,
-data and supplied activation interpretations together. A test and the thing it
+In `parts` mode each item is a unit a reader already sees in the source tree:
+a `package` item holds a directory's functions and values, and a `type` item
+holds one type with its methods. `declarations` names what a unit holds and
+`observations` lists the other units it calls. A responsibility may span
+several directories, and a package may hold several responsibilities split
+along its types. Names and paths are hints. Base membership on names,
+documentation and calls together. A test and the thing it
 tests are different responsibilities. Distinguish launch/platform adapters,
 application coordination, domain rules, state and algorithms when the evidence
 supports these distinctions; do not impose these layers on every application.
-
-A module item represents observed activity in the module body, such as startup
-calls or registration. Its functions and types are separate input items with
-their own responsibilities; selecting the module does not select the whole file.
 
 Expose consequential responsibilities such as input validation, permission
 checks and executing supplied code when the evidence supports them. Preserve
@@ -28,7 +27,7 @@ declaration. Conversely, helpers implementing the same responsibility belong
 together. Avoid one part per function, one part per directory, or one bag for an
 entire application. Calls between different responsibilities are reasons for an
 arrow, not automatically reasons to merge them. The input is an aggregate of
-files and declarations, not independent caption tasks.
+packages and types, not independent caption tasks.
 
 In `merge` mode the inputs are previously accepted parts from separate context
 windows. Merge only parts that implement the same responsibility. Preserve
@@ -40,9 +39,8 @@ required group count.
 Return exactly one object:
 {"groups":[{"title":"Short responsibility name","purpose":"One sentence explaining its job.","members":["n1","n2"]}]}
 
-Members must be IDs from this request's closed input catalogue. Declaration
-items keep their ProgramIndex `n*` IDs unchanged. Reduction-only choices use
-temporary `c*` IDs because they do not exist in the fact graph. Each reference
+Members must be IDs from this request's closed input catalogue: temporary
+`c*` IDs, because units and parts do not exist in the fact graph. Each reference
 belongs to at most one group. In parts/merge mode include every understood input;
 omit an input whose responsibility cannot be established. In areas mode members
 are part refs, never declaration refs hidden inside those parts. Unknown or

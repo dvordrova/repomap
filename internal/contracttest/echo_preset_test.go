@@ -291,9 +291,9 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 		parts := map[string][]string{}
 		for _, item := range request.Items {
 			switch {
-			case strings.Contains(item.Path, "/handler/"):
+			case strings.Contains(item.Path+"/", "/handler/"):
 				parts["Request handling"] = append(parts["Request handling"], item.Ref)
-			case strings.Contains(item.Path, "/database/"):
+			case strings.Contains(item.Path+"/", "/database/"):
 				parts["Stored users"] = append(parts["Stored users"], item.Ref)
 			}
 		}

@@ -13,10 +13,10 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-func TestDesignSplitsOneFileAndJoinsAcrossDirectories(t *testing.T) {
+func TestDesignJoinsUnitsAcrossDirectories(t *testing.T) {
 	graph := knowledgeGraph(t)
-	// Main and help live beside each other; Z lives elsewhere. The accepted
-	// design joins Main with Z, leaving help as a separate collaborator.
+	// Package pkg/a holds Main and help; type Z lives in pkg/b. The accepted
+	// design joins the package with Z; Gen stays its own collaborator.
 	provider := &tableProvider{designFor: func(mode string, items []designItem) designResult {
 		result := designResult{Groups: []designGroup{}}
 		if mode == "areas" {
@@ -24,7 +24,7 @@ func TestDesignSplitsOneFileAndJoinsAcrossDirectories(t *testing.T) {
 		}
 		joint := designGroup{Title: "Application", Purpose: "Coordinates the work."}
 		for _, item := range items {
-			if item.Name == "Main" || item.Name == "Z" {
+			if item.Name == "pkg/a" || item.Name == "Z" {
 				joint.Members = append(joint.Members, item.Ref)
 			} else {
 				result.Groups = append(result.Groups, designGroup{Title: item.Name, Purpose: "Provides an independent collaborator.", Members: []string{item.Ref}})
@@ -33,43 +33,25 @@ func TestDesignSplitsOneFileAndJoinsAcrossDirectories(t *testing.T) {
 		result.Groups = append(result.Groups, joint)
 		return result
 	}}
-	// Put the helper inside Main's file while preserving its exact declaration.
-	for i := range graph.Places {
-		p := &graph.Places[i]
-		if p.File != nil && p.Path == "pkg/a/x.go" {
-			decl := atlas.Decl{Name: "Separate", Kind: "function", LineNo: 30, ObjectID: "separate"}
-			p.File.Decls = append(p.File.Decls, decl)
-			graph.Places = append(graph.Places, atlas.Place{
-				ID: "fixture-separate", Kind: atlas.PlaceSymbol, Path: p.Path, LineNo: decl.LineNo,
-				Parent: p.ID, TargetIDs: append([]string(nil), p.TargetIDs...), Given: decl.Name,
-				Symbol: &atlas.SymbolFacts{Decl: decl},
-			})
-			break
-		}
-	}
-	encoded, err := atlas.EncodeGraph(graph)
-	if err != nil {
-		t.Fatal(err)
-	}
-	graph, err = atlas.DecodeGraph(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
 	result, err := Read(t.Context(), readOptions(t, graph, provider, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var application, helper atlas.Box
+	var application, gen atlas.Box
 	for _, box := range result.Atlas.Targets[0].Boxes {
-		if box.Title == "Application" {
+		switch box.Title {
+		case "Application":
 			application = box
-		}
-		if box.Title == "Separate" {
-			helper = box
+		case "Gen":
+			gen = box
 		}
 	}
-	if len(application.Files) != 2 || len(helper.Files) != 1 || helper.Files[0].Path != "pkg/a/x.go" || len(helper.Files[0].Symbols) != 1 {
-		t.Fatalf("source layout overrode the design: application=%+v helper=%+v", application, helper)
+	var files []string
+	for _, file := range application.Files {
+		files = append(files, file.Path)
+	}
+	if strings.Join(files, " ") != "pkg/a/x.go pkg/a/y.go pkg/b/z.go" || len(gen.Files) != 1 || gen.Files[0].Path != "pkg/b/gen.go" {
+		t.Fatalf("source layout overrode the design: application=%v gen=%+v", files, gen)
 	}
 	if len(result.Atlas.Targets[0].Zones) != 0 {
 		t.Fatal("invented a wrapping area")
@@ -100,8 +82,12 @@ func TestDesignSavedCompleteWindow(t *testing.T) {
 				count += len(file.File.Decls)
 			}
 		}
-		if len(items) != count {
-			t.Fatalf("sampled declarations: %d of %d", len(items), count)
+		held := 0
+		for _, item := range items {
+			held += len(item.IDs)
+		}
+		if held != count {
+			t.Fatalf("sampled declarations: %d of %d", held, count)
 		}
 		call, err := designCallFor(items, docs, "parts")
 		if err != nil {

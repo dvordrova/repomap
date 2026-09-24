@@ -1,5 +1,18 @@
 # Implementation and acceptance journal
 
+## 2026-09-24 — Zones group packages and types, not every declaration
+
+- `atlas_zones` (design v2) sends units a reader already sees: a package with
+  its free declarations and each type with its methods, their first doc
+  sentence, declaration names and calls to other units. Outside calls,
+  their arguments and every non-README/AGENTS document are gone. The
+  model can still split a package along its types or join units across
+  directories.
+- Live `cmd/repomap`, cold cache: first zones request 4.5 MB → 0.4 MB,
+  zones 7 calls / 7m53s provider time (one 5-minute repetition loop) →
+  2 calls / 19 s; whole run 9m46s → 3m17s, provider time 14m38s → 6m30s,
+  no model request failed. 54 parts in 15 areas.
+
 ## 2026-09-24 — Key declarations answer in their own column
 
 - `atlas_keys` named its decision column `key`, the name every table row

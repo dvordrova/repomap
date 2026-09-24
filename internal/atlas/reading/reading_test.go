@@ -171,7 +171,7 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 	if err := json.Unmarshal(prepared.Bytes(), &batch); err != nil {
 		return llm.Completion{}, err
 	}
-	if batch.Task == "repomap.atlas.design.v1" {
+	if batch.Task == "repomap.atlas.design.v2" {
 		var request struct {
 			Mode  string
 			Items []designItem
@@ -183,15 +183,8 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 		if provider.designFor != nil {
 			response = provider.designFor(request.Mode, request.Items)
 		} else if request.Mode != "areas" {
-			positions := map[string]int{}
 			for _, item := range request.Items {
-				position, found := positions[item.Path]
-				if !found {
-					position = len(response.Groups)
-					positions[item.Path] = position
-					response.Groups = append(response.Groups, designGroup{Title: item.Path, Purpose: "Reads the supplied declarations."})
-				}
-				response.Groups[position].Members = append(response.Groups[position].Members, item.Ref)
+				response.Groups = append(response.Groups, designGroup{Title: item.Name, Purpose: "Reads the supplied declarations.", Members: []string{item.Ref}})
 			}
 		}
 		raw, err := json.Marshal(response)
@@ -507,10 +500,10 @@ func TestLiveReadingKeepsFileLinesWithoutDirectoryPlacement(t *testing.T) {
 	for _, box := range target.Boxes {
 		boxes[box.Title] = box
 	}
-	if len(boxes) != 4 || len(boxes["pkg/a/y.go"].Files) != 1 {
+	if len(boxes) != 3 || len(boxes["pkg/a"].Files) != 2 || len(boxes["Z"].Files) != 1 {
 		t.Fatalf("source layout overrode accepted parts: %+v", boxes)
 	}
-	for _, file := range boxes["pkg/a/y.go"].Files {
+	for _, file := range boxes["pkg/a"].Files {
 		if file.Path == "pkg/a/y.go" && (file.Source != atlas.SourceModel || file.Line != "File pkg/a/y.go does things.") {
 			t.Fatalf("moved file: %+v", file)
 		}
@@ -534,19 +527,18 @@ func TestLiveReadingKeepsFileLinesWithoutDirectoryPlacement(t *testing.T) {
 	}
 }
 
-func TestSingleDeclarationPartSurvives(t *testing.T) {
+func TestSingleTypePartSurvives(t *testing.T) {
 	graph := testGraph(t)
-	provider := &tableProvider{boxFor: map[string]string{"pkg/a/y.go": "new: Helpers"}}
-	result, err := Read(context.Background(), readOptions(t, graph, provider, ""))
+	result, err := Read(context.Background(), readOptions(t, graph, &tableProvider{}, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, box := range result.Atlas.Targets[0].Boxes {
-		if box.Title == "pkg/a/y.go" && len(box.Files) == 1 && len(box.Files[0].Symbols) == 1 {
+		if box.Title == "Z" && len(box.Files) == 1 && len(box.Files[0].Symbols) == 1 {
 			return
 		}
 	}
-	t.Fatal("single-declaration responsibility was merged into its directory")
+	t.Fatal("a type chosen as its own part was merged into its directory")
 }
 
 func TestRejectedWindowFallsBackAndIsNotCached(t *testing.T) {

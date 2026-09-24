@@ -249,7 +249,7 @@ func TestAreasContainOnlyExplicitlyChosenParts(t *testing.T) {
 			return result
 		}
 		for _, item := range items {
-			result.Groups = append(result.Groups, designGroup{Title: item.Path, Purpose: "Reads the supplied declarations.", Members: []string{item.Ref}})
+			result.Groups = append(result.Groups, designGroup{Title: item.Name, Purpose: "Reads the supplied declarations.", Members: []string{item.Ref}})
 		}
 		return result
 	}}
@@ -279,7 +279,7 @@ func TestAreasContainOnlyExplicitlyChosenParts(t *testing.T) {
 	for _, box := range svc.Boxes {
 		sides[box.Title] = box.Side
 	}
-	if sides["svc/api/h.go"] != atlas.SideIn || sides["svc/db/d.go"] != atlas.SideMid || sides["svc/core/c.go"] != atlas.SideMid {
+	if sides["svc/api"] != atlas.SideIn || sides["svc/db"] != atlas.SideMid || sides["svc/core"] != atlas.SideMid {
 		t.Fatalf("sides: %v", sides)
 	}
 	if len(svc.Trace) < 3 {
@@ -576,14 +576,18 @@ func TestCrossTargetCallsBecomeLinkJoints(t *testing.T) {
 					continue
 				}
 				for _, box := range target.Boxes {
-					if box.ID == boxID && len(box.Files) > 0 {
-						return box.Files[0].Path
+					if box.ID == boxID {
+						var paths []string
+						for _, file := range box.Files {
+							paths = append(paths, file.Path)
+						}
+						return strings.Join(paths, " ")
 					}
 				}
 			}
 			return ""
 		}
-		if joint.From.TargetID != "web" || boxPath("web", joint.From.BoxID) != "web/src/client.ts" || joint.To.TargetID != "svc" || boxPath("svc", joint.To.BoxID) != "svc/api/h.go" || !joint.Same || joint.Possible {
+		if joint.From.TargetID != "web" || !strings.Contains(boxPath("web", joint.From.BoxID), "web/src/client.ts") || joint.To.TargetID != "svc" || !strings.Contains(boxPath("svc", joint.To.BoxID), "svc/api/h.go") || !joint.Same || joint.Possible {
 			t.Fatalf("link joint: %+v", joint)
 		}
 	}
