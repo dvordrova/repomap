@@ -14,13 +14,14 @@ import (
 // text model. The rows, context and options are the same; only the wire
 // form and the validation differ.
 const (
-	// ClassifierQuestions and ClassifierInputBytes pack a closed table's
-	// windows for a decision model: every row and column becomes its own
-	// question, and the shared context is sent once as state. A request of
-	// 150 rows of seven columns (1,050 questions) exceeded the model's
-	// 64k-token request.
-	ClassifierQuestions  = 150
-	ClassifierInputBytes = 90_000
+	// ClassifierQuestions packs a closed table's windows for a decision
+	// model: every row and column becomes its own question, and the shared
+	// context is sent once as state. A request of 150 rows of seven columns
+	// (1,050 questions) exceeded the model's 64k-token request. Bytes pack
+	// by the ordinary target, and an oversized row still goes whole in its
+	// own request: a model refusal leaves it explicitly unanswered instead of
+	// failing the run.
+	ClassifierQuestions = 150
 	// ClassifierConcurrency is how many decision requests run at once. A
 	// 150-question request takes ~3 s whatever the load: 26 of them took 23 s
 	// four at a time and 5.7 s all at once, far inside 1,200 requests/min.
@@ -57,7 +58,7 @@ func MinProbabilityOf(def Definition) float64 {
 // ForClassifier packs a closed table for a decision model.
 func ForClassifier(def Definition) Definition {
 	def.Window = max(1, ClassifierQuestions/max(1, len(def.Columns)))
-	def.MaxInputBytes = ClassifierInputBytes
+	def.MaxInputBytes = 0
 	return def
 }
 
