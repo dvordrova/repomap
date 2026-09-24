@@ -133,6 +133,10 @@ func dispatchRepositoryTargetPlan(
 		)
 	})
 	defer documentation.wait()
+	// Extractors and the tracked-path listing read only the repository, so
+	// they run beside the target pages and the facts stage waits for them.
+	factSources := startRepositoryFactSources(ctx, options.Repo, options.Corpus)
+	defer factSources.wait()
 
 	registry, err := ordinaryRepositoryTargetAdapterRegistry()
 	if err != nil {
@@ -410,7 +414,7 @@ func dispatchRepositoryTargetPlan(
 	// The atlas is read over every target: the tables, then the boxes
 	// projected into the groups the page draws, then the orientation over
 	// those.
-	outcome, err := readRepositoryAtlas(ctx, options, runs)
+	outcome, err := readRepositoryAtlas(ctx, options, runs, factSources)
 	if err != nil {
 		return failPublication(err)
 	}

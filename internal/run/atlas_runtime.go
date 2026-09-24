@@ -42,6 +42,7 @@ func readRepositoryAtlas(
 	ctx context.Context,
 	options repositoryTargetDispatchOptions,
 	runs []targetPublishedRun,
+	sources repositoryFactSources,
 ) (atlasOutcome, error) {
 	owner := runs[0]
 	factsResult, claimsResult, err := buildFirstDayFacts(ctx, firstDayOptions{
@@ -49,7 +50,7 @@ func readRepositoryAtlas(
 		RepositoryName: repoRunLabel(options.Repo),
 		Revision:       options.RepositoryState.Head,
 		Corpus:         options.Corpus,
-		TrackedPaths:   repositoryTrackedPaths(ctx, options.Repo),
+		Sources:        sources,
 		Runs:           runs,
 		Output:         options.Output,
 	})

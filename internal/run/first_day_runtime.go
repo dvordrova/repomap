@@ -38,7 +38,7 @@ type firstDayOptions struct {
 	RepositoryName   string
 	Revision         string
 	Corpus           *corpus.Corpus
-	TrackedPaths     []string
+	Sources          repositoryFactSources
 	Runs             []targetPublishedRun
 	CacheRoot        string
 	NoCache          bool
@@ -49,17 +49,47 @@ type firstDayOptions struct {
 	Output           *runOutput
 }
 
+// repositoryFactSources are the repository-wide fact inputs no target page
+// produces: the extractors' output and the unfiltered tracked-path listing.
+// They start before the first target page and the facts stage waits for them.
+type repositoryFactSources struct {
+	extraction   *background[extractors.Result]
+	trackedPaths *background[[]string]
+}
+
+func startRepositoryFactSources(ctx context.Context, repoPath string, repository *corpus.Corpus) repositoryFactSources {
+	return repositoryFactSources{
+		extraction: startBackground(func() (extractors.Result, error) {
+			return extractors.Run(ctx, repoPath, repository)
+		}),
+		trackedPaths: startBackground(func() ([]string, error) {
+			return repositoryTrackedPaths(ctx, repoPath), nil
+		}),
+	}
+}
+
+// wait joins both sources, so nothing reads the corpus after its owner.
+func (sources repositoryFactSources) wait() {
+	sources.extraction.wait()
+	sources.trackedPaths.wait()
+}
+
 // buildFirstDayFacts derives and persists the two deterministic layers,
-// facts and claims, into the repository owner directory. The atlas path stops
-// here; the ordinary path asks for an orientation over them next.
+// facts and claims, into the repository owner directory. Claims read no fact,
+// so the two are built side by side; a facts failure is still reported first.
+// The atlas path stops here; the ordinary path asks for an orientation over
+// them next.
 func buildFirstDayFacts(ctx context.Context, options firstDayOptions) (facts.Result, claims.Result, error) {
+	claimsWork := startBackground(func() (claims.Result, error) {
+		return buildRepositoryClaims(ctx, options)
+	})
 	factsResult, err := buildRepositoryFacts(ctx, options)
+	claimsResult, claimsErr := claimsWork.wait()
 	if err != nil {
 		return facts.Result{}, claims.Result{}, err
 	}
-	claimsResult, err := buildRepositoryClaims(ctx, options)
-	if err != nil {
-		return facts.Result{}, claims.Result{}, err
+	if claimsErr != nil {
+		return facts.Result{}, claims.Result{}, claimsErr
 	}
 	for _, run := range options.Runs[:1] {
 		if err := facts.Persist(run.RunDir, factsResult); err != nil {
@@ -88,7 +118,7 @@ func buildRepositoryFacts(ctx context.Context, options firstDayOptions) (facts.R
 		options.Output.Stage("Facts", "extracting anchored repository facts")
 	}
 	started := time.Now()
-	extraction, extractionErr := extractors.Run(ctx, options.RepoPath, options.Corpus)
+	extraction, extractionErr := options.Sources.extraction.wait()
 	data, err := json.MarshalIndent(extraction, "", "  ")
 	if err != nil {
 		return facts.Result{}, err
@@ -101,10 +131,11 @@ func buildRepositoryFacts(ctx context.Context, options firstDayOptions) (facts.R
 	if extractionErr != nil {
 		return facts.Result{}, extractionErr
 	}
+	trackedPaths, _ := options.Sources.trackedPaths.wait()
 	result, err := facts.Build(facts.Input{
 		Revision:     options.Revision,
 		Repository:   options.Corpus,
-		TrackedPaths: options.TrackedPaths,
+		TrackedPaths: trackedPaths,
 		Targets:      targets,
 		Extractions:  extraction.Extractions,
 	})
