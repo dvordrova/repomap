@@ -59,8 +59,9 @@ func NewCollector(paths []string) *Collector {
 // evidence, such as ProgramIndex declarations and packages or environment
 // keys read by the code. The glossary explains concepts, not these names.
 // Only whole, case-sensitive equality counts; no segment, affix or
-// case-folded variant is inferred. Corpus paths and their file names are
-// already known to the collector and need not be supplied.
+// case-folded variant is inferred. Only a name in code spelling is kept (see
+// codeSpelling). Corpus paths and their file names are already known to the
+// collector and need not be supplied.
 func (c *Collector) ExcludeCodeNames(kind CodeNameKind, names ...string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -70,12 +71,35 @@ func (c *Collector) ExcludeCodeNames(kind CodeNameKind, names ...string) {
 }
 
 func addCodeName(names map[string]CodeNameKind, kind CodeNameKind, name string) {
-	if name == "" || codeNameRank(kind) < 0 {
+	if name == "" || codeNameRank(kind) < 0 || !codeSpelling(name) {
 		return
 	}
 	if previous, found := names[name]; !found || codeNameRank(kind) < codeNameRank(previous) {
 		names[name] = kind
 	}
+}
+
+// codeSpelling reports whether a name is written as only code writes names:
+// with a separator or sigil that ordinary words do not carry (_ . / \ : $ and,
+// for Clojure names such as valid? or ->Record, * ! ? < > =), or with a
+// lower-case letter directly before an upper-case one: funding_rate,
+// config.json, internal/run, ExchangeWS, fetchTicker. A single word, acronym,
+// product name or hyphenated word (candle, Exchange, JSON, ROI, Redis,
+// stop-loss) is ordinary vocabulary even when code also declares it as a
+// local, parameter, field, method or enum member; that coincidence does not
+// make the glossary term the declared name.
+func codeSpelling(name string) bool {
+	if strings.ContainsAny(name, "_./\\:$*!?<>=") {
+		return true
+	}
+	previous := rune(0)
+	for _, r := range name {
+		if unicode.IsLower(previous) && unicode.IsUpper(r) {
+			return true
+		}
+		previous = r
+	}
+	return false
 }
 
 // codeNames is the complete exact-name set for one generation: the supplied

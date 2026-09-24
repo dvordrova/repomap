@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,6 +26,11 @@ import (
 type terminologyRuntimeProvider struct {
 	calls  int
 	stages map[string]int
+	// prose answers every analysis text column, and terms maps each glossary
+	// name the stub defines, when its prose row contains it, to its kind.
+	// Empty values keep the OHLCV defaults.
+	prose string
+	terms map[string]string
 }
 
 func (*terminologyRuntimeProvider) State() []byte {
@@ -71,12 +78,19 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 			p.stages = make(map[string]int)
 		}
 		p.stages["glossary"]++
+		defined := p.terms
+		if defined == nil {
+			defined = map[string]string{"OHLCV": "acronym"}
+		}
+		names := slices.Sorted(maps.Keys(defined))
 		terms := []map[string]any{}
 		for _, row := range request.Prose {
-			if !strings.Contains(strings.Join(row.Text, " "), "OHLCV") {
-				continue
+			for _, name := range names {
+				if !strings.Contains(strings.Join(row.Text, " "), name) {
+					continue
+				}
+				terms = append(terms, map[string]any{"name": name, "kind": defined[name], "explanation": "The named group of market-data values described here.", "rows": []string{row.Ref}})
 			}
-			terms = append(terms, map[string]any{"name": "OHLCV", "kind": "acronym", "explanation": "The named group of market-data values described here.", "rows": []string{row.Ref}})
 		}
 		raw, err := json.Marshal(map[string]any{"terms": terms})
 		return llm.Completion{Response: raw, ChoiceCount: 1, FinishReason: llm.FinishStop, Metrics: llm.Metrics{Attempts: 1}}, err
@@ -94,6 +108,9 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 			switch column.Kind {
 			case "text", "prose":
 				answer[column.Name] = "OHLCV describes the market data fields."
+				if p.prose != "" {
+					answer[column.Name] = p.prose
+				}
 			case "sequence":
 				answer[column.Name] = "none"
 			case "choice":
@@ -206,13 +223,13 @@ func TestReadGlossaryJournalsATermThatSpellsADeclaration(t *testing.T) {
 		Targets: []reading.TargetMeta{{ID: "t1", Language: "go", Kind: "library", Name: "example", Root: "."}},
 		Graph: atlas.Graph{Version: atlas.GraphVersion, Revision: "abc", Places: []atlas.Place{
 			{ID: "dir:.", Kind: atlas.PlaceDirectory, Path: ".", TargetIDs: []string{"t1"}, Given: "one file", Directory: &atlas.DirectoryFacts{Files: []string{"main.go"}, FileCount: 1}},
-			{ID: "file:main.go", Kind: atlas.PlaceFile, Path: "main.go", TargetIDs: []string{"t1"}, Parent: "dir:.", Given: "one function",
-				File: &atlas.FileFacts{Decls: []atlas.Decl{{Name: "OHLCV", Kind: "func", LineNo: 3}}}},
+			{ID: "file:main.go", Kind: atlas.PlaceFile, Path: "main.go", TargetIDs: []string{"t1"}, Parent: "dir:.", Given: "two functions",
+				File: &atlas.FileFacts{Decls: []atlas.Decl{{Name: "FetchOHLCV", Kind: "func", LineNo: 3}, {Name: "OHLCV", Kind: "func", LineNo: 9}}}},
 		}}}
 	if _, err := reading.SaveInput(opts); err != nil {
 		t.Fatal(err)
 	}
-	provider := &terminologyRuntimeProvider{}
+	provider := &terminologyRuntimeProvider{prose: "FetchOHLCV returns OHLCV market data.", terms: map[string]string{"FetchOHLCV": "domain", "OHLCV": "acronym"}}
 	factory := func() (llm.Provider, error) { return provider, nil }
 	output := filepath.Join(t.TempDir(), "reading")
 	args := []string{filepath.Join(source, reading.InputFilename), "--through", "files", "--output", output, "--debug-dir", t.TempDir()}
@@ -223,8 +240,17 @@ func TestReadGlossaryJournalsATermThatSpellsADeclaration(t *testing.T) {
 		t.Fatal("the glossary was not asked")
 	}
 	raw, err := os.ReadFile(filepath.Join(output, "terminology.json"))
-	if err != nil || strings.Contains(string(raw), "OHLCV") {
-		t.Fatalf("a declaration name was published as a term: %s / %v", raw, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var terms []terminology.Candidate
+	if err := json.Unmarshal(raw, &terms); err != nil {
+		t.Fatal(err)
+	}
+	// The acronym stays a concept although a function is also named OHLCV;
+	// only the name in code spelling is dropped.
+	if len(terms) != 1 || terms[0].Name != "OHLCV" {
+		t.Fatalf("published terms: %s", raw)
 	}
 	journal, err := os.ReadFile(filepath.Join(output, "rejected.jsonl"))
 	if err != nil {
@@ -240,7 +266,10 @@ func TestReadGlossaryJournalsATermThatSpellsADeclaration(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &row); err != nil {
 			t.Fatal(err)
 		}
-		if row.Stage == "glossary" && row.Kind == "glossary_code_name_omitted" && row.Reason == "term names a code declaration: OHLCV" && row.ResponseRef != "" {
+		if row.Stage == "glossary" && row.Kind == "glossary_code_name_omitted" {
+			if row.Reason != "term names a code declaration: FetchOHLCV" || row.ResponseRef == "" {
+				t.Fatalf("unexpected code-name row: %s", line)
+			}
 			dropped += row.Count
 		}
 	}

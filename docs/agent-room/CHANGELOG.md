@@ -741,17 +741,32 @@
   (declarations, packages, files, paths, environment/configuration keys, flags,
   headers, commands, codes). A retired `identifier` answer refuses that term.
 - After validation, a term whose whole name exactly equals a code name the
-  owner already holds is dropped and journaled by name in `rejected.jsonl`
-  (`glossary_code_name_omitted`): every published target's ProgramIndex
-  type/function/method/variable and package/module names, `config_read`
+  owner already holds, and is in code spelling, is dropped and journaled by
+  name in `rejected.jsonl` (`glossary_code_name_omitted`). Names come from
+  every published target's ProgramIndex declarations (including locals,
+  parameters, fields and enum members) and packages/modules, `config_read`
   environment keys, and corpus paths with their file names; saved `read` uses
   its graph's declaration names and source paths. No artifact records flag
   names, so flags rely on the prompt. Names never enter the provider request.
   Generation contract is `repomap.glossary.generate.v4`; the prompt change
   alters request bytes, so old cached answers are not reused.
-- Tests: terminology exact-name drop/journal and prompt kinds; run-package
-  ProgramIndex/facts name selection and a saved-read run whose declaration-named
-  term lands in `rejected.jsonl`, not `terminology.json`. No online run was made.
+- Review: matching every declared name dropped the domain vocabulary the
+  glossary exists for (saved freqtrade: 543 of 1,764 terms, including `candle`,
+  `timeframe`, `ROI`, `RPC`; ten saved self-runs: 74 of 586 concept-kind terms,
+  including `JSON`, `API`, `SHA256`). Only a code spelling now counts: a
+  separator or sigil (`_ . / \ : $`, Clojure `* ! ? < > =`) or a lower-to-upper
+  case step. Freqtrade then drops 393 names, all code spellings; the self-runs
+  drop 4 concept occurrences (`ProgramIndex`, a struct field) and catch 486 of
+  1,173 former `identifier` terms rather than 791. Single-word code names rest
+  on the prompt, which now says a word code also uses remains a concept.
+- Tests: terminology exact-name drop/journal with domain words that code also
+  declares (`candle`, `Exchange`, `JSON`, `ROI`) surviving, and prompt kinds;
+  run-package ProgramIndex/facts name selection and a saved-read run where
+  `FetchOHLCV` lands in `rejected.jsonl` and the declared acronym `OHLCV`
+  stays in `terminology.json`. Freqtrade rates replay saved answers through the
+  committed Go rule; self-run rates use an exact mirror of it, because this
+  branch's ProgramIndex decoder rejects their newer `end_line` field. No online
+  run was made.
 
 ## 2026-09-15 — One part, one card
 

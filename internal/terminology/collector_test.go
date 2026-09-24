@@ -542,14 +542,21 @@ func TestUnicodePhrasesAndScriptBoundaries(t *testing.T) {
 }
 
 func TestCodeNamesAreDroppedByExactNameAndJournaled(t *testing.T) {
-	collector := NewCollector([]string{"cmd/app/main.go"})
-	collector.ExcludeCodeNames(CodeEnvironmentKey, "RABBITMQ_URL")
-	collector.ExcludeCodeNames(CodeDeclaration, "Collector")
-	code := collector.codeNames()
-	if code["main.go"] != CodeFile || code["cmd/app/main.go"] != CodeFile || code["RABBITMQ_URL"] != CodeEnvironmentKey || code["Collector"] != CodeDeclaration {
-		t.Fatalf("code names: %v", code)
+	collector := NewCollector([]string{"cmd/app/main.go", "Makefile"})
+	collector.ExcludeCodeNames(CodeEnvironmentKey, "RABBITMQ_URL", "HOME")
+	collector.ExcludeCodeNames(CodePackage, "example.com/app/broker", "freqtrade")
+	// Real repositories also declare their domain words: a local candle, a
+	// class Exchange, a method JSON, an enum member ROI.
+	collector.ExcludeCodeNames(CodeDeclaration, "ExchangeWS", "funding_rate", "candle", "Exchange", "JSON", "ROI")
+	want := map[string]CodeNameKind{
+		"cmd/app/main.go": CodeFile, "main.go": CodeFile, "RABBITMQ_URL": CodeEnvironmentKey,
+		"example.com/app/broker": CodePackage, "ExchangeWS": CodeDeclaration, "funding_rate": CodeDeclaration,
 	}
-	items := []proseSource{{Texts: []string{"Set RABBITMQ_URL in main.go before the Collector reads OHLCV and Collectors."}, Sources: []Source{{Path: "cmd/app/main.go"}}}}
+	code := collector.codeNames()
+	if !reflect.DeepEqual(code, want) {
+		t.Fatalf("code names: got %v, want %v", code, want)
+	}
+	items := []proseSource{{Texts: []string{"Set RABBITMQ_URL in main.go; ExchangeWS streams each candle of the Exchange as JSON with funding_rate and ROI."}, Sources: []Source{{Path: "cmd/app/main.go"}}}}
 	call, err := generationCall(items, code)
 	if err != nil {
 		t.Fatal(err)
@@ -561,22 +568,30 @@ func TestCodeNamesAreDroppedByExactNameAndJournaled(t *testing.T) {
 	got, err := call.DecodeValidate([]byte(`{"terms":[
 		{"name":"RABBITMQ_URL","kind":"domain","explanation":"The broker address variable.","rows":["p1"]},
 		{"name":"main.go","kind":"format","explanation":"The program entry file.","rows":["p1"]},
-		{"name":"Collector","kind":"domain","explanation":"The collecting type.","rows":["p1"]},
-		{"name":"Collectors","kind":"domain","explanation":"Not an exact code name.","rows":["p1"]},
-		{"name":"OHLCV","kind":"acronym","explanation":"Open, high, low, close and volume.","rows":["p1"]},
-		{"name":"OHLCV","kind":"identifier","explanation":"A retired kind.","rows":["p1"]},
-		{"name":"OHLCV","explanation":"No kind at all.","rows":["p1"]}]}`))
-	if err != nil || len(got.Terms) != 2 || got.Terms[0].candidate.Name != "Collectors" || got.Terms[1].candidate.Name != "OHLCV" {
-		t.Fatalf("published terms: %+v %v", got, err)
+		{"name":"ExchangeWS","kind":"domain","explanation":"The streaming exchange class.","rows":["p1"]},
+		{"name":"funding_rate","kind":"domain","explanation":"The funding rate candle type.","rows":["p1"]},
+		{"name":"candle","kind":"domain","explanation":"One time bucket of price and volume.","rows":["p1"]},
+		{"name":"Exchange","kind":"domain","explanation":"A trading venue.","rows":["p1"]},
+		{"name":"JSON","kind":"format","explanation":"JavaScript Object Notation.","rows":["p1"]},
+		{"name":"ROI","kind":"acronym","explanation":"Return on investment.","rows":["p1"]},
+		{"name":"ROI","kind":"identifier","explanation":"A retired kind.","rows":["p1"]},
+		{"name":"ROI","explanation":"No kind at all.","rows":["p1"]}]}`))
+	var published []string
+	for _, term := range got.Terms {
+		published = append(published, term.candidate.Name)
 	}
-	want := []llm.ResponseRejection{
+	if err != nil || !reflect.DeepEqual(published, []string{"candle", "Exchange", "JSON", "ROI"}) {
+		t.Fatalf("published terms: %v %+v %v", published, got, err)
+	}
+	wantJournal := []llm.ResponseRejection{
 		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[0]"}, Reason: "term names a code environment key: RABBITMQ_URL"},
 		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[1]"}, Reason: "term names a code file: main.go"},
-		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[2]"}, Reason: "term names a code declaration: Collector"},
-		{Kind: "glossary_term_rejected", Count: 1, Samples: []string{"terms[5]"}, Reason: "unknown optional term kind"},
-		{Kind: "glossary_term_rejected", Count: 1, Samples: []string{"terms[6]"}, Reason: "invalid optional term shape"},
+		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[2]"}, Reason: "term names a code declaration: ExchangeWS"},
+		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[3]"}, Reason: "term names a code declaration: funding_rate"},
+		{Kind: "glossary_term_rejected", Count: 1, Samples: []string{"terms[8]"}, Reason: "unknown optional term kind"},
+		{Kind: "glossary_term_rejected", Count: 1, Samples: []string{"terms[9]"}, Reason: "invalid optional term shape"},
 	}
-	if !reflect.DeepEqual(got.Rejections, want) {
+	if !reflect.DeepEqual(got.Rejections, wantJournal) {
 		t.Fatalf("journal: %+v", got.Rejections)
 	}
 
@@ -584,7 +599,7 @@ func TestCodeNamesAreDroppedByExactNameAndJournaled(t *testing.T) {
 	if err != nil || len(only.Terms) != 0 || len(only.Rejections) != 1 || only.Rejections[0].Kind != "glossary_code_name_omitted" {
 		t.Fatalf("a window of only code names must be accepted and publish nothing: %+v %v", only, err)
 	}
-	if _, err := call.DecodeValidate([]byte(`{"terms":[{"name":"OHLCV","kind":"identifier","explanation":"A retired kind.","rows":["p1"]}]}`)); err == nil {
+	if _, err := call.DecodeValidate([]byte(`{"terms":[{"name":"ROI","kind":"identifier","explanation":"A retired kind.","rows":["p1"]}]}`)); err == nil {
 		t.Fatal("a window whose only term has the retired identifier kind was accepted")
 	}
 }

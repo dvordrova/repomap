@@ -109,17 +109,40 @@ then discarded (121 of 136 and 100 of 182 terms), on a serial 15–30 s step. Th
 embedded prompt therefore tells the model not to define names that the code
 declares or reads: functions, methods, types, variables, constants, packages,
 modules, files, paths, environment and configuration keys, command-line flags,
-headers, commands and rule or ticket codes.
+headers, commands and rule or ticket codes. A word, acronym, protocol or format
+that code also uses as a name is still a concept; only its code spelling is
+skipped.
 
 After validation, Go also drops a valid term whose whole name equals, exactly
-and case-sensitively, a code name that the glossary owner already holds:
+and case-sensitively, a code name that the glossary owner already holds and
+that is in code spelling:
 
-- ordinary run: every published target's ProgramIndex type, function, method
-  and variable names, and package/module names as the index spells them (a Go
-  import path, a dotted Python module); environment keys from `config_read`
-  facts; every corpus path and its file name;
+- ordinary run: every name declared in a published target's ProgramIndex
+  (types, functions, methods and variables, which include locals, parameters,
+  fields and enum members), package/module names as the index spells them (a Go
+  import path, a dotted Python module), environment keys from `config_read`
+  facts, and every corpus path and its file name;
 - saved `read`: file and symbol declaration names in its places graph, plus its
   source-authority paths and their file names.
+
+Code spelling means a separator or sigil that ordinary words do not carry
+(`_ . / \ : $`, and `* ! ? < > =` for Clojure names), or a lower-case letter
+directly before an upper-case one: `funding_rate`, `config.json`,
+`internal/run`, `ExchangeWS`, `fetchTicker`. A single word, acronym, product
+name or hyphenated word is ordinary vocabulary and survives even when code
+declares the same spelling. Repositories name their code after their domain,
+and an exact match against every declared name had dropped the concepts the
+glossary exists for. On the saved freqtrade run (39,015 objects), it dropped
+543 distinct names from 1,764 generated terms, including `candle`, `timeframe`,
+`stoploss`, `pair` (a local), `ROI` (an enum member) and `RPC`. On ten saved
+self-runs it dropped 74 of 586 concept-kind terms (26 names), including `JSON`
+(method `Snapshot.JSON`), `API`, `SHA256` and `Python`. With code spelling, freqtrade
+drops 393 names, all class, function, configuration-key or file spellings
+(`ApiServer`, `stake_amount`), and keeps those words. The self-runs drop one
+concept, `ProgramIndex` (a struct field; 4 occurrences). The rule catches 486
+of their 1,173 former `identifier` terms rather than 791. Single-word code names
+such as `Snapshot`, `Corpus`, `IStrategy` or `caplog` are left to the prompt,
+because code cannot tell them from a word.
 
 Lambdas and external symbols are not names this code owns. No package segment,
 affix or case variant is inferred. No existing artifact records command-line

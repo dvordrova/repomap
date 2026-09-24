@@ -12,7 +12,10 @@ Explain domain and concept terms only. Do not define names that the code itself
 declares or reads: functions, methods, types, classes, variables, constants,
 packages, modules, files, paths, environment variables, configuration keys,
 command-line flags, headers, commands, rule or ticket codes. The reader opens
-the source for those; they are not glossary entries.
+the source for those; they are not glossary entries. A word, acronym, protocol
+or format that code also uses as a name, such as order, JSON or HTTP, is still
+a concept to explain; skip only a code spelling such as OrderBook, max_retries
+or config/app.yaml.
 
 Each definition has name, kind, explanation and rows. Keep the original
 spelling and script of name, give a short plain-English contextual definition,

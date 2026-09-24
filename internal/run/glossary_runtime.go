@@ -72,11 +72,14 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 	return nil
 }
 
-// The glossary explains concepts. A generated term that exactly spells a
-// name declared in a sealed ProgramIndex, or an environment key the facts
-// layer saw the code read, is dropped and journaled; corpus paths and file
-// names are already known to the collector. No existing artifact records
-// command-line flag names, so flags rely on the prompt alone.
+// The glossary explains concepts. These are every name declared in a sealed
+// ProgramIndex, including locals, parameters, fields, methods and enum
+// members, and every environment key the facts layer saw the code read;
+// corpus paths and file names are already known to the collector. The
+// collector keeps only names in code spelling, so a generated term that
+// exactly spells one is dropped and journaled while a domain word the code
+// also declares (candle, JSON, ROI) remains a concept. No existing artifact
+// records command-line flag names, so flags rely on the prompt alone.
 func glossaryCodeNames(indexes []programindex.Index, repository *facts.Result) map[terminology.CodeNameKind][]string {
 	names := make(map[terminology.CodeNameKind][]string)
 	for _, index := range indexes {
