@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -172,13 +173,10 @@ type reader struct {
 	recallOnly        bool
 	// shared guards knowledge and the response caches for concurrent work.
 	shared *readerShared
-	// knowledgeVersion counts record changes; knowledge.json is rewritten
-	// only when it moved past the version last written. tables.md likewise
-	// only when the printed text grew.
-	knowledgeVersion, knowledgeSaved int
-	knowledgeWritten                 bool
-	tablesSaved                      int
-	tablesWritten                    bool
+	// knowledge.json is rewritten only when the shared record version moved
+	// past the one last written, tables.md only when the printed text grew.
+	knowledgeSaved, tablesSaved     int
+	knowledgeWritten, tablesWritten bool
 }
 
 func (r *reader) compactID(prefix string, next *int) string {
@@ -254,6 +252,19 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 	if opts.State == nil {
 		opts.State = func(string, string, ...string) {}
 	}
+	// Stages that run at once report one event at a time.
+	var reporting sync.Mutex
+	stage, state := opts.Stage, opts.State
+	opts.Stage = func(name string, details ...string) {
+		reporting.Lock()
+		defer reporting.Unlock()
+		stage(name, details...)
+	}
+	opts.State = func(name, value string, details ...string) {
+		reporting.Lock()
+		defer reporting.Unlock()
+		state(name, value, details...)
+	}
 	if err := os.MkdirAll(filepath.Join(opts.OwnerRunDir, atlas.TablesDir), 0o700); err != nil {
 		return Result{}, fmt.Errorf("atlas reading: prepare %s: %w", atlas.TablesDir, err)
 	}
@@ -319,24 +330,8 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		mode += ", budget: the model says where to dig"
 	}
 	fmt.Fprintf(&r.tables, "# Atlas tables\n\nrepository: %s\nrevision: %s\nmode: %s\n\n", opts.Repository, opts.Revision, mode)
-	steps := []struct {
-		name string
-		run  func(context.Context) error
-	}{
-		{lines.StageDirectories, r.readDirectories},
-		{lines.StageFiles, r.readFiles},
-		{lines.StageSymbols, r.readSymbols},
-		{lines.StageAPI, r.readAPI},
-		{lines.StageBoundaries, r.readBoundaries},
-		{lines.StageLayers, r.readLayers},
-		{lines.StageZones, r.readDesign},
-		{lines.StageArrows, r.readArrows},
-		{lines.StageCore, r.readCore},
-		{lines.StageKeys, r.readKeys},
-		{lines.StageTargets, r.readTargets},
-		{lines.StageJoints, r.readJoints},
-	}
 	questionOnly := opts.Through == lines.StageQuestion || opts.Through == lines.StageAnswer
+	through := ""
 	if questionOnly {
 		// Restore only descriptions whose exact current basis is remembered.
 		// Reuse the ordinary row builders; this prelude never calls a model.
@@ -345,12 +340,12 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 			stage, state := r.opts.Stage, r.opts.State
 			r.opts.Stage = func(string, ...string) {}
 			r.opts.State = func(string, string, ...string) {}
-			for _, step := range steps[:6] {
-				if err := step.run(ctx); err != nil {
+			for _, name := range recallStages {
+				if err := readingStages[name](r, ctx); err != nil {
 					return Result{}, err
 				}
-				if r.use(step.name).Reused == 0 {
-					delete(r.uses, step.name)
+				if r.use(name).Reused == 0 {
+					delete(r.uses, name)
 				}
 			}
 			r.opts.Stage, r.opts.State = stage, state
@@ -359,23 +354,8 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 				r.opts.State("Knowledge", "ready", fmt.Sprintf("reused %d entity descriptions; no description requests made", len(r.knowledge)))
 			}
 		}
-		steps = nil
-	}
-	through := ""
-	for _, step := range steps {
-		if err := step.run(ctx); err != nil {
-			return Result{}, err
-		}
-		through = step.name
-		if err := r.saveTables(); err != nil {
-			return Result{}, err
-		}
-		if err := r.persistKnowledge(); err != nil {
-			return Result{}, err
-		}
-		if through == opts.Through {
-			break
-		}
+	} else if through, err = r.walk(ctx); err != nil {
+		return Result{}, err
 	}
 	if through == lines.StageJoints && (opts.Learn || opts.Through == stageLearn) {
 		if err := r.readLearning(ctx); err != nil {

@@ -8,10 +8,12 @@ import (
 
 // readerShared is what concurrent work of one reading shares behind one
 // lock: the knowledge maps and the request-keyed response caches, whose
-// keys never collide across stages, and the loads in progress.
+// keys never collide across stages, the loads in progress and the version
+// of the knowledge records, which grows with every record written.
 type readerShared struct {
-	mu      sync.Mutex
-	loading map[string]chan struct{}
+	mu               sync.Mutex
+	loading          map[string]chan struct{}
+	knowledgeVersion int
 }
 
 // lock takes the shared lock and returns its release. The first call, made

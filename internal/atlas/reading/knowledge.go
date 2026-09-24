@@ -377,13 +377,15 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 		k.Cells, k.Source, k.OriginRequest = answer.answer, answer.source, answer.requestSHA
 		k.OriginResponse = answer.responseSHA
 		k.ID = k.identity(r.opts.Repository)
+		unlock := r.lock()
 		if r.knowledgeRecords == nil {
 			r.knowledgeRecords = make(map[knowledgeRecordKey]*Knowledge)
 		}
 		r.knowledgeRecords[knowledgeRecordKey{PlaceID: k.PlaceID, Stage: k.Stage, Contract: k.Contract}] = &k
-		r.knowledgeVersion++
+		r.shared.knowledgeVersion++
 		r.knowledge[k.PlaceID] = &k
 		r.knowledgeSubjects[k.SubjectID] = &k
+		unlock()
 		if !r.recallOnly && !reused[i] && !saved[k.BasisID] {
 			raw, err := json.Marshal(rememberedRow{RequestKey: answer.requestKey, RowKey: answer.rowKey})
 			if err != nil {
@@ -451,13 +453,17 @@ func (r *reader) prepareRows(def table.Definition, groups rowGroups) []preparedR
 // persistKnowledge writes knowledge.json when its records changed since the
 // last write, and always the first time.
 func (r *reader) persistKnowledge() error {
-	if r.knowledgeWritten && r.knowledgeSaved == r.knowledgeVersion {
+	unlock := r.lock()
+	version := r.shared.knowledgeVersion
+	if r.knowledgeWritten && r.knowledgeSaved == version {
+		unlock()
 		return nil
 	}
 	rows := make([]Knowledge, 0, len(r.knowledgeRecords))
 	for _, record := range r.knowledgeRecords {
 		rows = append(rows, *record)
 	}
+	unlock()
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].PlaceID != rows[j].PlaceID {
 			return rows[i].PlaceID < rows[j].PlaceID
@@ -479,6 +485,6 @@ func (r *reader) persistKnowledge() error {
 	if err := os.WriteFile(filepath.Join(r.opts.OwnerRunDir, KnowledgeFilename), raw, 0o600); err != nil {
 		return err
 	}
-	r.knowledgeWritten, r.knowledgeSaved = true, r.knowledgeVersion
+	r.knowledgeWritten, r.knowledgeSaved = true, version
 	return nil
 }
