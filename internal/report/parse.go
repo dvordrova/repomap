@@ -402,11 +402,14 @@ func collectOpenablePaths(data *ReportData) error {
 			}
 		}
 	}
-	data.OpenablePaths = data.OpenablePaths[:0]
+	// A fresh slice: callers collect into a shallow copy (PreparePage, Generate)
+	// whose previous paths still back the original's.
+	openable := make([]string, 0, len(paths))
 	for sourcePath := range paths {
-		data.OpenablePaths = append(data.OpenablePaths, sourcePath)
+		openable = append(openable, sourcePath)
 	}
-	sort.Strings(data.OpenablePaths)
+	sort.Strings(openable)
+	data.OpenablePaths = openable
 	return nil
 }
 
