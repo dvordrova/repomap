@@ -17,8 +17,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Complete reservoirs are processed through as many deterministic disjoint
   provider batches and convergent closed-ref reduction rounds as necessary.
   Every stage uses the shared actual 32 MiB request envelope and 16 MiB
-  decoded-response ceiling and requests up to 128,000 output tokens; a lower
-  configured provider token ceiling remains authoritative. Composite input is
+  decoded-response ceiling and requests up to 128,000 output tokens unless its
+  owning contract states a smaller measured allowance (glossary 32,768; design
+  proposals 8,192). An allowance bounds a runaway answer, never evidence; an
+  answer that reaches it is the ordinary output-token refusal, never truncated
+  or partly accepted. A lower configured provider token ceiling remains
+  authoritative. Composite input is
   repartitioned when its prepared request does not fit. A real provider
   envelope failure is terminal unless the owning stage defines a lossless
   repartition; it never authorizes truncation or partial publication. Only

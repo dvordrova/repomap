@@ -133,17 +133,16 @@ Original declarations use their already scoped `t*.n*` refs. Accepted parts,
 areas and cross-target joints are born as short `p*`, `z*` and `j*` IDs; no
 `design:<sha>`, composed joint path or second post-model renumbering exists.
 
-Requests split only for the actual provider envelope, preserving whole input
-items. After a split, accepted parts undergo aggregate merge review; rejected
-merge decisions retain their original accepted parts. Unknown members are
-discarded. Conflicting groups are refused together, so response order cannot
-choose ownership; independent valid groups survive. Missing decisions remain
-explicit source inventory, with no inherited directory membership or invented
-area. Rejections point to the saved raw response. An area needs known members;
-a single accepted part is valid. Architectural usefulness is the model's
-decision, not a minimum-member validation rule. An explicit empty groups array
-is a valid abstention in parts, merge and areas modes; a nonempty response whose
-groups are all invalid remains refused. Caption whitespace follows the ordinary
+A parts or areas proposal is one request answered as a title → purpose
+object and accepted only whole: an empty or repeated title refuses it, and an
+empty object is an explicit abstention. There is no fixed number of parts or
+areas; the areas prompt suggests 4 to 8 and no count is validated. Proposals
+use an 8,192-token output allowance (accepted proposals used 105–1,026 tokens;
+one parts proposal looped to 128,000 in 344 s); a refused proposal leaves no
+catalogue and every declaration stays source inventory. Assignment by closed
+choice then decides membership; a unit that chose `none` or no option above
+the acceptance floor stays source inventory, with no inherited directory
+membership or invented area. Rejections point to the saved raw response. Caption whitespace follows the ordinary
 table text normalization. Diagnostics distinguish ungrouped inputs and discarded
 unknown members from refused groups. Stage rejection counts count affected
 windows once, not each group or omitted input. Accepted groups are canonically

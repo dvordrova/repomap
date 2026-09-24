@@ -1,5 +1,17 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Design proposals have a measured output allowance
+
+- A parts proposal on `cmd/repomap` generated 128,000 tokens for 5m44s (a
+  run of 9,761 entries over 163 distinct titles walking `internal/facts`
+  names) and failed; the run took 7m27s instead of ~2 min. Resending the
+  saved request 6 times answered in 525–922 tokens every time: a rare sample
+  (~1 in 10 on this target), not the request. Parts and areas proposals now
+  request at most 8,192 output tokens (~8× the largest accepted answer), so a
+  loop ends in ~22 s as an ordinary refusal. A proposed "at most 40 parts"
+  prompt line was measured and rejected: it pushed 3 of 4 answers to 41–55
+  parts. An identical-bytes resample after such a refusal awaits the owner.
+
 ## 2026-09-25 — Each call keeps its own source position
 
 - An all-targets self-run failed with `atlas: boundary "b601" has conflicting

@@ -263,6 +263,13 @@ func firstSentence(text string) string {
 	return text
 }
 
+// designProposalOutputTokens is the measured output allowance of a parts or
+// areas proposal: accepted proposals used 105-1,026 tokens and six resamples
+// of one request 525-922, while one parts proposal on cmd/repomap looped to
+// 128,000 tokens in 344 s. An answer that reaches it is the ordinary
+// output-token refusal, never truncated or partly accepted.
+const designProposalOutputTokens = 8192
+
 func designCallFor(mode string, input any, documents []table.Field) (llm.Call[designProposals], error) {
 	raw, err := json.Marshal(struct {
 		Task      string        `json:"task"`
@@ -281,7 +288,7 @@ func designCallFor(mode string, input any, documents []table.Field) (llm.Call[de
 		State: []byte("repomap.atlas.design.v4"),
 		Prompt: llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true,
 			ResponseExample: `{"groups":{"Move search":"Chooses a move by exploring legal continuations.","Board state":"Holds the position and applies moves."}}`, NoResponseAdjunct: true},
-		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
+		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: designProposalOutputTokens},
 		DecodeValidate: decodeDesignProposals,
 	}, nil
 }
