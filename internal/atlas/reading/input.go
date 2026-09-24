@@ -32,18 +32,34 @@ func (input Input) Options() Options {
 	return Options{Graph: input.Graph, Targets: input.Targets, Repository: input.Repository, Revision: input.Revision, Budget: input.Budget}
 }
 
+// savedInput is Input with the sealed graph kept as the bytes it was sealed
+// to. Its fields and their order are Input's, so the file is the same.
+type savedInput struct {
+	Version    int             `json:"version"`
+	Repository string          `json:"repository"`
+	Revision   string          `json:"revision"`
+	Graph      json.RawMessage `json:"graph"`
+	Targets    []TargetMeta    `json:"targets"`
+	Budget     bool            `json:"budget"`
+}
+
 // SaveInput runs before the provider and returns the same sealed graph it saves.
 // Ordinary reading and reading a saved input therefore carry the same identity.
+// The graph is sealed once: SealedGraph, when the caller already sealed it,
+// or EncodeGraph here. The reader still decodes and checks those bytes.
 func SaveInput(opts Options) (atlas.Graph, error) {
-	graphJSON, err := atlas.EncodeGraph(opts.Graph)
-	if err != nil {
-		return atlas.Graph{}, err
+	graphJSON := opts.SealedGraph
+	if graphJSON == nil {
+		var err error
+		if graphJSON, err = atlas.EncodeGraph(opts.Graph); err != nil {
+			return atlas.Graph{}, err
+		}
 	}
 	graph, err := atlas.DecodeGraph(graphJSON)
 	if err != nil {
 		return atlas.Graph{}, err
 	}
-	input := Input{Version: InputVersion, Repository: opts.Repository, Revision: opts.Revision, Graph: graph, Targets: opts.Targets, Budget: opts.Budget}
+	input := savedInput{Version: InputVersion, Repository: opts.Repository, Revision: opts.Revision, Graph: graphJSON, Targets: opts.Targets, Budget: opts.Budget}
 	data, err := json.MarshalIndent(input, "", "  ")
 	if err != nil {
 		return atlas.Graph{}, err

@@ -1,6 +1,7 @@
 package reading
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -80,6 +81,48 @@ func TestSavedInputRunsThroughFilesWithoutLaterStages(t *testing.T) {
 	}
 	if !found || !strings.Contains(string(raw), `"cells"`) {
 		t.Fatalf("missing source binding: %s", raw)
+	}
+}
+
+// The caller that already sealed the graph for places.json hands those bytes
+// on; the saved input is the same file as when the reading seals the graph.
+func TestSavedInputIsTheSameFromTheCallersSealedGraph(t *testing.T) {
+	graph := testGraph(t)
+	for i := range graph.Places {
+		if graph.Places[i].File != nil {
+			// Text JSON escapes: both ways must escape it alike.
+			graph.Places[i].Given = "reads <config> & writes \"état\" "
+		}
+	}
+	plain := readOptions(t, graph, nil, "")
+	fromReading, err := SaveInput(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed := readOptions(t, graph, nil, "")
+	if sealed.SealedGraph, err = atlas.EncodeGraph(graph); err != nil {
+		t.Fatal(err)
+	}
+	fromCaller, err := SaveInput(sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(filepath.Join(plain.OwnerRunDir, InputFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(sealed.OwnerRunDir, InputFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("saved input from the caller's sealed graph differs: %d bytes, want %d", len(got), len(want))
+	}
+	if fromCaller.SHA256 == "" || fromCaller.SHA256 != fromReading.SHA256 {
+		t.Fatalf("readings carry different graph identities: %q and %q", fromCaller.SHA256, fromReading.SHA256)
+	}
+	if _, err := LoadInput(filepath.Join(sealed.OwnerRunDir, InputFilename)); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -937,6 +937,12 @@ func PersistGraph(runDir string, graph Graph) error {
 	if err != nil {
 		return err
 	}
+	return WriteGraph(runDir, encoded)
+}
+
+// WriteGraph writes places.json from the bytes EncodeGraph returned, for a
+// caller that hands the same sealed bytes on instead of sealing twice.
+func WriteGraph(runDir string, encoded []byte) error {
 	return writeFile(filepath.Join(runDir, GraphFilename), encoded)
 }
 

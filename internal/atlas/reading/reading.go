@@ -50,10 +50,13 @@ type TargetMeta struct {
 
 // Options is everything the reading needs.
 type Options struct {
-	Graph      atlas.Graph
-	Targets    []TargetMeta
-	Repository string
-	Revision   string
+	Graph atlas.Graph
+	// SealedGraph optionally holds the bytes atlas.EncodeGraph returned for
+	// Graph (places.json), so the saved input does not seal the graph again.
+	SealedGraph []byte
+	Targets     []TargetMeta
+	Repository  string
+	Revision    string
 	// Executor is the run's executor; the reading binds it to one debugdump
 	// stage per table. Provider nil means a dry run: no call is made and
 	// every cell takes its fallback.
@@ -249,7 +252,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	opts.Graph = graph
+	opts.Graph, opts.SealedGraph = graph, nil
 	r := &reader{
 		opts:              opts,
 		classifierGate:    &llm.BatchController{},

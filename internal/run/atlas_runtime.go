@@ -120,7 +120,12 @@ func readRepositoryAtlas(
 	if err != nil {
 		return atlasOutcome{}, err
 	}
-	if err := atlas.PersistGraph(owner.RunDir, graph); err != nil {
+	// Seal once: places.json and the reading's saved input share these bytes.
+	sealed, err := atlas.EncodeGraph(graph)
+	if err != nil {
+		return atlasOutcome{}, err
+	}
+	if err := atlas.WriteGraph(owner.RunDir, sealed); err != nil {
 		return atlasOutcome{}, err
 	}
 	dirs, files, boundaries := 0, 0, 0
@@ -176,7 +181,7 @@ func readRepositoryAtlas(
 		options.Output.State("Questions", "off", "no --learn: skipping generation, retrieval and answers")
 	}
 	result, err := reading.Read(ctx, reading.Options{
-		Graph: graph, Targets: metas,
+		Graph: graph, SealedGraph: sealed, Targets: metas,
 		Repository: repoRunLabel(options.Repo), Revision: options.RepositoryState.Head,
 		Executor: executor, Provider: provider, Classifier: classifier, OwnerRunDir: owner.RunDir,
 		Questions: questions, Learn: options.Learn, NoCaptions: !options.Captions,
