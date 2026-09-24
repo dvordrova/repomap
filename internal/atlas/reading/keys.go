@@ -70,7 +70,7 @@ func (r *reader) readKeys(ctx context.Context) error {
 		for _, id := range group.ids {
 			answer := answers[at].answer
 			at++
-			if answer != nil && answer["key"] == "yes" && kept < lines.MaxKeysPerPart {
+			if answer != nil && answer["explains"] == "yes" && kept < lines.MaxKeysPerPart {
 				r.partKeys[id] = true
 				kept++
 			}

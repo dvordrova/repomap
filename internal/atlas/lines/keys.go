@@ -19,9 +19,9 @@ var keysPrompt string
 // file a declaration happens to stand in is only its address.
 func Keys() table.Definition {
 	return table.Definition{
-		Stage: StageKeys, Contract: "repomap.atlas.keys.v1", System: keysPrompt, Independent: true,
+		Stage: StageKeys, Contract: "repomap.atlas.keys.v2", System: keysPrompt, Independent: true,
 		Columns: []table.Column{
-			{Name: "key", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when a reader needs this declaration to understand what the part does"},
+			{Name: "explains", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when a reader needs this declaration to understand what the part does"},
 		},
 	}
 }

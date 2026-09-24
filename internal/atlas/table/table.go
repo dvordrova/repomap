@@ -251,6 +251,12 @@ func Request(def Definition, window Window) ([]byte, error) {
 	if _, err := rowIndexes(window.Rows); err != nil {
 		return nil, fmt.Errorf("table %s: %w", def.Stage, err)
 	}
+	for _, column := range def.Columns {
+		if column.Name == "key" {
+			// "key" is every row's own identity in the request and the answer.
+			return nil, fmt.Errorf("table %s: column name %q is reserved for the row identity", def.Stage, column.Name)
+		}
+	}
 	var out jsonBuffer
 	out.WriteString("{\n  \"table\": ")
 	writeJSON(&out, def.Stage)

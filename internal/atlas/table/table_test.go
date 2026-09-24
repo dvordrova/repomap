@@ -575,3 +575,13 @@ func TestOptionsFromReadsTheWindowContextWhenTheRowHasNoList(t *testing.T) {
 		t.Fatalf("inactive address cell gained authority or the active one lost it: %+v", result.Answers)
 	}
 }
+
+// Every row answers under "key"; a column of that name could never be
+// filled, and each window would be refused.
+func TestColumnCannotBeNamedLikeTheRowIdentity(t *testing.T) {
+	def := testDefinition()
+	def.Columns = append(def.Columns, Column{Name: "key", Kind: Choice, Options: []string{"yes"}, Optional: true})
+	if _, err := Request(def, Window{Rows: []Row{{ID: "s1"}}}); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("Request error = %v, want the reserved column name refused", err)
+	}
+}

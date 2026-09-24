@@ -1,5 +1,13 @@
 # Implementation and acceptance journal
 
+## 2026-09-24 — Key declarations answer in their own column
+
+- `atlas_keys` named its decision column `key`, the name every table row
+  already answers its identity under; the model returned `{"key":"s1"}` and
+  all 35 windows of a live `cmd/repomap` run were refused. The column is
+  `explains` (`repomap.atlas.keys.v2`) and `table.Request` refuses a column
+  named `key`.
+
 ## 2026-09-24 — Registration values stop at recursive field reads
 
 - Reading a registration argument's value keyed its cycle guard on the
