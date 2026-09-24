@@ -26,6 +26,10 @@ var corePrompt string
 func Core() table.Definition {
 	return table.Definition{
 		Stage: StageCore, Contract: "repomap.atlas.core.v4", System: corePrompt, Independent: true,
+		// Measured on 50 saved parts of repomap: Jev chose DeepSeek's role for
+		// 45; the other five were borderline (two UI presentation parts it
+		// called interface where DeepSeek said domain).
+		Classifier: true,
 		Columns: []table.Column{
 			{Name: "role", Kind: table.Choice, Options: []string{PartDomain, PartInterface, PartWiring, PartSupport, PartTests}, Note: "the one role this part plays in the program"},
 		},

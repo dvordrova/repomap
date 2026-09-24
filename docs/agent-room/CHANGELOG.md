@@ -1,5 +1,12 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Part roles on Jev
+
+- `atlas_core` opts in to the decision model. On repomap's 50 saved parts Jev
+  chose DeepSeek's role for 45; the five others were borderline (two UI
+  presentation parts named interface instead of domain). The role is one
+  closed choice per part, so the serial tail loses one DeepSeek round.
+
 ## 2026-09-25 — Part assignment asks Jev a direct question
 
 - Unit rows carry their file. For Jev, zone_parts and zone_areas ask a direct
