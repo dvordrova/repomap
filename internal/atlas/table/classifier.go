@@ -115,13 +115,13 @@ func yesOnly(column Column, options []string) bool {
 // catalogue is a context or row list of objects with a ref; refs without a
 // unique title keep their ref.
 type optionNames struct {
-	label, purpose map[string]string // ref -> shown name, ref -> purpose
-	ref            map[string]string // shown name -> ref
-	list           string            // the catalogue's field name
+	label map[string]string // ref -> shown name
+	ref   map[string]string // shown name -> ref
+	list  string            // the catalogue's field name
 }
 
 func namesFor(column Column, context []Field, row Row, options []string) optionNames {
-	names := optionNames{label: map[string]string{}, purpose: map[string]string{}, ref: map[string]string{}}
+	names := optionNames{label: map[string]string{}, ref: map[string]string{}}
 	catalogue := func(value any) []map[string]any {
 		switch list := value.(type) {
 		case []map[string]any:
@@ -152,9 +152,6 @@ func namesFor(column Column, context []Field, row Row, options []string) optionN
 					if ref != "" && title != "" {
 						titles[ref] = title
 						seen[strings.ToLower(title)]++
-						if purpose, _ := entry["purpose"].(string); purpose != "" {
-							names.purpose[ref] = purpose
-						}
 					}
 				}
 				for ref, title := range titles {
@@ -209,12 +206,10 @@ func ClassifierCall(def Definition, window Window, minProbability float64) (llm.
 				continue
 			}
 			criteria := make(map[string]any, len(options)+1)
+			// A catalogue's purposes are already in the state; repeating them
+			// in every question multiplied a request past the model's budget.
 			for _, option := range options {
-				if purpose := names.purpose[option]; purpose != "" {
-					criteria[names.label[option]] = purpose
-				} else {
-					criteria[names.label[option]] = nil
-				}
+				criteria[names.label[option]] = nil
 			}
 			if column.Optional {
 				criteria[classifierAbsent] = "No listed option applies to this row."
