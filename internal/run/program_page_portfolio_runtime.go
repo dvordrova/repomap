@@ -13,6 +13,7 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
@@ -276,7 +277,13 @@ func publishRepositoryReport(
 	if err := writeRunTiming(owner.RunDir, timing); err != nil {
 		return report.RunReceipt{}, err
 	}
-	return report.Generate(owner.RunDir, owner.Source, report.GenerateOptions{
+	generateOptions := report.GenerateOptions{
 		Data: data, GitLabURL: owner.GitLabURL, GitHubURL: owner.GitHubURL, PublishHTML: true, Render: renderOptions,
-	})
+	}
+	if !options.NoServe && options.Deps.serveReport != nil {
+		// The page the local server will serve is rendered beside report.html,
+		// so serving does not render it again after publication.
+		generateOptions.ServedSourceID = reportserver.SourceID
+	}
+	return report.Generate(owner.RunDir, owner.Source, generateOptions)
 }

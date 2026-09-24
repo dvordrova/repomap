@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"embed"
 	"io/fs"
@@ -108,6 +109,11 @@ func renderPresentedHTML(
 		return nil, diagnostics, err
 	}
 	return rendered, diagnostics, nil
+}
+
+func renderValidatedHTML(data *ReportData, options RenderOptions) ([]byte, error) {
+	rendered, _, err := renderPresentedHTML(data, options)
+	return rendered, err
 }
 
 func buildHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
@@ -492,6 +498,9 @@ type GenerateOptions struct {
 	GitLabURL   string
 	Render      RenderOptions
 	PublishHTML bool
+	// ServedSourceID, when set, also renders the page the local report
+	// server will serve, beside report.html, and keeps it in the receipt.
+	ServedSourceID SourceIDFunc
 }
 
 // Generate writes report.json, the manifest and, when asked, report.html
@@ -523,7 +532,7 @@ func Generate(runDir string, source RunSource, options GenerateOptions) (RunRece
 		}
 		standalone = &standaloneSourceConfig{hostName: "GitHub", repositoryURL: normalized}
 	}
-	return generate(runDir, source, standalone, options.Render, options.PublishHTML, options.Data)
+	return generate(runDir, source, standalone, options.Render, options.PublishHTML, options.Data, options.ServedSourceID)
 }
 
 func generate(
@@ -533,6 +542,7 @@ func generate(
 	renderOptions RenderOptions,
 	publishHTML bool,
 	data *ReportData,
+	servedSourceID SourceIDFunc,
 ) (RunReceipt, error) {
 	if err := source.validate(); err != nil {
 		return RunReceipt{}, err
@@ -645,11 +655,28 @@ func generate(
 	// was rendered from, so publication can prove the pair belongs together.
 	digest := sha256.Sum256(reportJSON)
 	renderOptions.ReportSHA256 = hex.EncodeToString(digest[:])
+	// The page the local server will serve is rendered beside report.html
+	// from its own shallow copy; neither render writes the data they share.
+	// It is only a head start: if it fails, the server renders as before.
+	var served ServedPage
+	var servedErr error
+	var serving sync.WaitGroup
+	if servedSourceID != nil {
+		serving.Add(1)
+		go func() {
+			defer serving.Done()
+			served, servedErr = renderServedPage(receipt, servedSourceID, renderValidatedHTML)
+		}()
+	}
 	// encodeReportJSON validated this data; the page differs only by its
 	// source links, which the render validates itself.
 	reportHTML, _, err := renderPresentedHTML(&renderData, renderOptions)
+	serving.Wait()
 	if err != nil {
 		return RunReceipt{}, err
+	}
+	if servedSourceID != nil && servedErr == nil {
+		receipt.served = &served
 	}
 	if err := installAuthorizedReport(runDir, reportJSON, reportHTML, manifest, translationsJSON); err != nil {
 		return RunReceipt{}, err

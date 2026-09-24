@@ -233,31 +233,21 @@ func loadRun(runsDir, runID string) (runRecord, *report.TargetNavigationPortfoli
 	return run, nil, err
 }
 
+// renderRun serves the page publication already rendered for this server
+// when the generating process hands its receipt over, and renders it
+// otherwise.
 func renderRun(runID string, receipt report.RunReceipt) (runRecord, error) {
-	runDir := receipt.RunDir()
-	reportData := *receipt.Data()
-	manifest := receipt.Manifest()
-	analysisRoot, err := manifest.ResolveAnalysisRoot()
-	if err != nil {
-		return runRecord{}, fmt.Errorf("resolve analysis root: %w", err)
-	}
-	sources := make(map[string]string, len(reportData.OpenablePaths))
-	sourceIDs := make(map[string]string, len(reportData.OpenablePaths))
-	for _, relativePath := range reportData.OpenablePaths {
-		id := sourceID(runID, relativePath)
-		sources[id] = relativePath
-		sourceIDs[relativePath] = id
-	}
-	reportData.SourceIDs = sourceIDs
-	renderOptions := receipt.RenderOptions()
-	renderOptions.LocalRoots = []string{runDir, analysisRoot, manifest.RepositoryState.Identity}
-	rendered, err := report.RenderHTMLWithOptions(&reportData, renderOptions)
-	if err != nil {
-		return runRecord{}, fmt.Errorf("render report: %w", err)
+	page, prepared := receipt.PreparedServedPage()
+	if !prepared {
+		var err error
+		page, err = report.RenderServedPage(receipt, SourceID)
+		if err != nil {
+			return runRecord{}, err
+		}
 	}
 	return runRecord{
-		id: runID, runDir: runDir, analysisRoot: analysisRoot,
-		rendered: rendered, sources: sources, htmlFilename: receipt.HTMLFilename(),
+		id: runID, runDir: receipt.RunDir(), analysisRoot: page.AnalysisRoot,
+		rendered: page.HTML, sources: page.Sources, htmlFilename: receipt.HTMLFilename(),
 	}, nil
 }
 
@@ -396,7 +386,9 @@ func resolveOpenTarget(analysisRoot, relativePath string) (string, error) {
 	return absolutePath, nil
 }
 
-func sourceID(runID, relativePath string) string {
+// SourceID names one openable source path of a run for the page this server
+// serves; publication borrows it to render that page early.
+func SourceID(runID, relativePath string) string {
 	digest := sha256.Sum256([]byte("repomap-source-v1\x00" + runID + "\x00" + relativePath))
 	return base64.RawURLEncoding.EncodeToString(digest[:])
 }

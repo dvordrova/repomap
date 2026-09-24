@@ -744,7 +744,7 @@ func writeTestRunAtWithTargetName(
 	primarySourcePath, primarySourceID := "", ""
 	if len(reportData.OpenablePaths) > 0 {
 		primarySourcePath = filepath.Join(canonicalRepository, filepath.FromSlash(reportData.OpenablePaths[0]))
-		primarySourceID = sourceID(runID, reportData.OpenablePaths[0])
+		primarySourceID = SourceID(runID, reportData.OpenablePaths[0])
 	}
 	return testRunFixture{
 		runsDir: runsDir, runID: runID,

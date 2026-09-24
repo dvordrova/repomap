@@ -168,6 +168,7 @@ type RunReceipt struct {
 	data              *ReportData
 	renderOptions     RenderOptions
 	savedReportSHA256 string
+	served            *ServedPage
 }
 
 func newRunReceipt(runDir string, manifest RunManifest, data *ReportData) (RunReceipt, error) {

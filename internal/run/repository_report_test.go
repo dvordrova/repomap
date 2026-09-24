@@ -290,3 +290,43 @@ func TestRestoredTargetIndexIsReleasedAfterReading(t *testing.T) {
 		t.Fatal("reading a removed index reused a retained child index")
 	}
 }
+
+// Publication renders the page the local server serves beside report.html,
+// and the server serves it instead of rendering again: it must be exactly
+// the page the server renders from the same receipt.
+func TestServedPagePreparedAtPublicationIsThePageTheServerRenders(t *testing.T) {
+	repositoryRoot := ordinaryGraphGoRepository(t)
+	var served []report.RunReceipt
+	err := runDefaultWithDeps(repositoryRoot, []string{
+		"--no-model", "--target", "example.com/common-page@.::example.com/common-page/cmd/app",
+		"--no-open", "--debug-dir", t.TempDir(),
+	}, defaultRunDeps{
+		ctx: context.Background(), stdout: io.Discard, stderr: io.Discard,
+		llmBatchConcurrency: 1, llmBatchController: &llm.BatchController{},
+		serveReport: func(_ context.Context, options reportserver.Options) error {
+			served = options.Runs
+			return nil
+		},
+		openReport: func(string) error { return nil },
+	})
+	if err != nil || len(served) != 1 {
+		t.Fatalf("served run: %v, %d receipts", err, len(served))
+	}
+	prepared, ok := served[0].PreparedServedPage()
+	if !ok {
+		t.Fatal("publication did not prepare the served page")
+	}
+	rendered, err := report.RenderServedPage(served[0], reportserver.SourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(prepared.HTML, rendered.HTML) || prepared.AnalysisRoot != rendered.AnalysisRoot ||
+		len(prepared.Sources) == 0 || len(prepared.Sources) != len(rendered.Sources) {
+		t.Fatal("the prepared served page differs from the page the server renders")
+	}
+	for id, sourcePath := range rendered.Sources {
+		if prepared.Sources[id] != sourcePath {
+			t.Fatalf("source %s names %q, want %q", id, prepared.Sources[id], sourcePath)
+		}
+	}
+}
