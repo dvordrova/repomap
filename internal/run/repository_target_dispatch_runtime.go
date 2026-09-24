@@ -245,23 +245,11 @@ func dispatchRepositoryTargetPlan(
 	if err != nil {
 		return failPublication(err)
 	}
-	if !options.NoModel {
-		if err := orientAtlasRuns(ctx, options, runs, &outcome); err != nil {
-			return failPublication(err)
-		}
+	receipt, err := orientAndPublishRepositoryReport(ctx, options, runs, &outcome, targetOutcomePortfolio)
+	if err != nil {
+		return failPublication(err)
 	}
 	owner = runs[0]
-	portfolio, err := buildProgramPagePortfolio(runs, owner.RunID)
-	if err != nil {
-		return failPublication(err)
-	}
-	options.Output.Stage("Report publication", "assembling one repository report from memory")
-	publicationStarted := time.Now()
-	receipt, err := publishRepositoryReport(ctx, portfolio, targetOutcomePortfolio, runs, outcome, options)
-	if err != nil {
-		return failPublication(err)
-	}
-	options.Output.State("Report publication", "ready", formatRunOutputWallDuration(time.Since(publicationStarted)))
 	if options.VerifiedRunsSink != nil {
 		options.VerifiedRunsSink([]report.RunReceipt{receipt})
 	}

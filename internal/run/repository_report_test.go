@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,7 +17,9 @@ import (
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
@@ -27,68 +30,13 @@ import (
 // Publication and serving must consume the values the producer already owns.
 func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 	ctx := context.Background()
-	root := t.TempDir()
-	repo, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	source, err := report.NewRunSource(repo, freshness.RepositoryState{
-		Version: freshness.RepositoryStateVersion, Identity: repo, Head: strings.Repeat("a", 40),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	docs, err := documentationreduce.Run(ctx, llm.Executor{}, nil, readmetargetscout.GuidanceSnapshot{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var runs []targetPublishedRun
-	var outcomes []targetoutcome.Outcome
-	for i := 0; i < 27; i++ {
-		name := fmt.Sprintf("part-%02d", i)
-		index := runtimeProgramIndex(t, fmt.Sprintf("t%d", i+1), name, "go:"+name, name+"/main.go", name)
-		groups, err := groupindex.Empty(index)
-		if err != nil {
-			t.Fatal(err)
-		}
-		runID := "run-" + name
-		dir := filepath.Join(root, runID)
-		if err := os.Mkdir(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "metadata.json"), []byte(`{"repo_name":"fixture"}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		page, err := report.TargetNavigationPageFor(dir, index.Target)
-		if err != nil {
-			t.Fatal(err)
-		}
-		catalog := dependencies.Empty()
-		runs = append(runs, targetPublishedRun{
-			RunID: runID, RunDir: dir, ProgramPage: page, ProgramIndex: &index,
-			GroupIndex: groups, Dependencies: &catalog, Documentation: &docs,
-			RepoName: "fixture", Source: source,
-		})
-		selected, err := targetoutcome.NewSelectedTarget(index.Target.ID, targetoutcome.LanguageGroupGo, targetoutcome.ScopeLibrary, name, index.Target.Selector)
-		if err != nil {
-			t.Fatal(err)
-		}
-		analyzed, err := targetoutcome.NewAnalyzed(selected, index.Target, runID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		outcomes = append(outcomes, analyzed)
-	}
-	portfolio, err := buildProgramPagePortfolio(runs, runs[0].RunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	inventory, err := targetoutcome.Build(outcomes[0].SelectedTarget.ID, outcomes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	root, runs, inventory := repositoryReportRunsFixture(t, 27)
 	question := &atlas.QuestionRoute{Version: atlas.QuestionRouteVersion, Question: "Where is state stored?", Revision: strings.Repeat("a", 40), Stops: []atlas.QuestionStop{{Path: "part-00/main.go", Line: 1, Name: "Open", Why: "Inspect the storage entry."}}, Guide: &atlas.QuestionGuide{State: "partial", Steps: []atlas.QuestionStep{{Path: "part-00/main.go", Line: 1, StopIndexes: []int{0}}}}}
-	receipt, err := publishRepositoryReport(ctx, portfolio, inventory, runs, atlasOutcome{Questions: []atlas.QuestionRoute{*question, {Version: atlas.QuestionRouteVersion, Question: "How do I run it?", Revision: question.Revision}}}, repositoryTargetDispatchOptions{Output: newRunOutput(io.Discard)})
+	assembled, err := assembleRepositoryReport(ctx, inventory, runs, atlasOutcome{Questions: []atlas.QuestionRoute{*question, {Version: atlas.QuestionRouteVersion, Question: "How do I run it?", Revision: question.Revision}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := publishRepositoryReport(ctx, assembled, nil, repositoryTargetDispatchOptions{Output: newRunOutput(io.Discard)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +96,11 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 	})
 	t.Run("Russian no-model publication keeps the common page and never opens a provider", func(t *testing.T) {
 		providerCalls := 0
-		localized, err := publishRepositoryReport(ctx, portfolio, inventory, runs, atlasOutcome{}, repositoryTargetDispatchOptions{
+		assembled, err := assembleRepositoryReport(ctx, inventory, runs, atlasOutcome{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		localized, err := publishRepositoryReport(ctx, assembled, nil, repositoryTargetDispatchOptions{
 			Output: newRunOutput(io.Discard), DisplayLanguage: report.Russian, NoModel: true,
 			Deps: defaultRunDeps{newCubeProvider: func() (llm.Provider, error) {
 				providerCalls++
@@ -186,6 +138,135 @@ func TestRepositoryReportPublishesOnceAndServesFromMemory(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("server reread deleted publication: %v", err)
+	}
+}
+
+// repositoryReportRunsFixture is count completed target pages held in memory:
+// no ProgramIndex, GroupsIndex, dependency or documentation file exists.
+func repositoryReportRunsFixture(t *testing.T, count int) (string, []targetPublishedRun, targetoutcome.Portfolio) {
+	t.Helper()
+	ctx := context.Background()
+	root := t.TempDir()
+	repo, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := report.NewRunSource(repo, freshness.RepositoryState{
+		Version: freshness.RepositoryStateVersion, Identity: repo, Head: strings.Repeat("a", 40),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs, err := documentationreduce.Run(ctx, llm.Executor{}, nil, readmetargetscout.GuidanceSnapshot{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runs []targetPublishedRun
+	var outcomes []targetoutcome.Outcome
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("part-%02d", i)
+		index := runtimeProgramIndex(t, fmt.Sprintf("t%d", i+1), name, "go:"+name, name+"/main.go", name)
+		groups, err := groupindex.Empty(index)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runID := "run-" + name
+		dir := filepath.Join(root, runID)
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "metadata.json"), []byte(`{"repo_name":"fixture"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		page, err := report.TargetNavigationPageFor(dir, index.Target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		catalog := dependencies.Empty()
+		runs = append(runs, targetPublishedRun{
+			RunID: runID, RunDir: dir, ProgramPage: page, ProgramIndex: &index,
+			GroupIndex: groups, Dependencies: &catalog, Documentation: &docs,
+			RepoName: "fixture", Source: source,
+		})
+		selected, err := targetoutcome.NewSelectedTarget(index.Target.ID, targetoutcome.LanguageGroupGo, targetoutcome.ScopeLibrary, name, index.Target.Selector)
+		if err != nil {
+			t.Fatal(err)
+		}
+		analyzed, err := targetoutcome.NewAnalyzed(selected, index.Target, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outcomes = append(outcomes, analyzed)
+	}
+	inventory, err := targetoutcome.Build(outcomes[0].SelectedTarget.ID, outcomes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, runs, inventory
+}
+
+func orientationPresetOptions(
+	root string,
+	runner orientationRunner,
+) repositoryTargetDispatchOptions {
+	return repositoryTargetDispatchOptions{
+		Output: newRunOutput(io.Discard), DebugDir: root, NoCache: true,
+		Deps: defaultRunDeps{
+			llmBatchConcurrency: 1, llmBatchController: &llm.BatchController{},
+			runOrientation: runner,
+		},
+	}
+}
+
+// The report is assembled while the orientation is asked; the published
+// page still carries the orientation that was accepted.
+func TestOrientationAskedBesideTheReportAssemblyReachesThePage(t *testing.T) {
+	root, runs, inventory := repositoryReportRunsFixture(t, 2)
+	const summary = "Two fixture parts that the orientation preset summarizes."
+	options := orientationPresetOptions(root, func(
+		_ context.Context, _ llm.Executor, _ llm.Provider, input orientation.Input,
+	) (orientation.Result, []orientation.RejectedRow, error) {
+		result, err := orientation.Seal(orientation.Result{
+			FactsSHA256: strings.Repeat("a", 64), ClaimsSHA256: strings.Repeat("b", 64),
+			GroupsSHA256s: orientationGroupDigests(input.Groups), Summary: summary,
+		})
+		return result, nil, err
+	})
+	outcome := atlasOutcome{}
+	receipt, err := orientAndPublishRepositoryReport(t.Context(), options, runs, &outcome, inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data := receipt.Data(); data.Orientation == nil || data.Orientation.Summary != summary {
+		t.Fatalf("published orientation = %+v", receipt.Data().Orientation)
+	}
+	html, err := os.ReadFile(filepath.Join(runs[0].RunDir, "report.html"))
+	if err != nil || !strings.Contains(string(html), summary) {
+		t.Fatalf("page omits the orientation summary: %v", err)
+	}
+}
+
+// A refused orientation is the run's cause even though the report was being
+// assembled beside it, and no report artifact is written without it.
+func TestRefusedOrientationPublishesNothingOfTheAssembledReport(t *testing.T) {
+	root, runs, inventory := repositoryReportRunsFixture(t, 2)
+	refused := errors.New("orientation preset refused")
+	options := orientationPresetOptions(root, func(
+		context.Context, llm.Executor, llm.Provider, orientation.Input,
+	) (orientation.Result, []orientation.RejectedRow, error) {
+		return orientation.Result{}, nil, refused
+	})
+	outcome := atlasOutcome{}
+	if _, err := orientAndPublishRepositoryReport(t.Context(), options, runs, &outcome, inventory); !errors.Is(err, refused) {
+		t.Fatalf("publication error = %v, want the orientation refusal", err)
+	}
+	for _, name := range []string{
+		"report.json", "report.html", report.RunManifestFilename,
+		programpage.ArtifactFilename, targetoutcome.ArtifactFilename,
+	} {
+		if _, err := os.Stat(filepath.Join(runs[0].RunDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s exists after a refused orientation: %v", name, err)
+		}
 	}
 }
 

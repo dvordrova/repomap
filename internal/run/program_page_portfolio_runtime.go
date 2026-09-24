@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/report"
@@ -111,72 +113,151 @@ func persistProgramPagePortfolioForRuns(
 	return nil
 }
 
-// publishRepositoryReport projects shared results once and publishes from memory.
-// Target directories keep their own analysis artifacts, never repository reports.
-func publishRepositoryReport(
+// orientAndPublishRepositoryReport asks the orientation over the projected
+// groups while the report is assembled from the targets, groups, facts and
+// claims; only the glossary, the translation and the publication wait for
+// the orientation. An orientation failure is reported before any assembly
+// failure, and nothing of the report is written before the orientation is
+// accepted.
+func orientAndPublishRepositoryReport(
 	ctx context.Context,
-	portfolio programpage.Portfolio,
+	options repositoryTargetDispatchOptions,
+	runs []targetPublishedRun,
+	outcome *atlasOutcome,
+	targetOutcomes targetoutcome.Portfolio,
+) (report.RunReceipt, error) {
+	// The assembly owns a copy: the orientation later records its result and
+	// drops the graph in outcome itself.
+	unoriented := *outcome
+	assembly := startBackground(func() (repositoryReportAssembly, error) {
+		return assembleRepositoryReport(ctx, targetOutcomes, runs, unoriented)
+	})
+	if !options.NoModel {
+		if err := orientAtlasRuns(ctx, options, runs, outcome); err != nil {
+			assembly.wait()
+			return report.RunReceipt{}, err
+		}
+	}
+	assembled, err := assembly.wait()
+	if err != nil {
+		return report.RunReceipt{}, err
+	}
+	options.Output.Stage("Report publication", "assembling one repository report from memory")
+	started := time.Now()
+	receipt, err := publishRepositoryReport(ctx, assembled, outcome.Orientation, options)
+	if err != nil {
+		return report.RunReceipt{}, err
+	}
+	options.Output.State("Report publication", "ready", formatRunOutputWallDuration(time.Since(started)))
+	return receipt, nil
+}
+
+// repositoryReportAssembly is the repository report before its orientation:
+// every target's ProgramIndex and projected groups bound into one ReportData
+// with the facts, claims and learning plan. Nothing in it reads the
+// orientation, so it is assembled while the orientation is asked.
+type repositoryReportAssembly struct {
+	portfolio      programpage.Portfolio
+	targetOutcomes targetoutcome.Portfolio
+	runs           []targetPublishedRun
+	data           *report.ReportData
+	programIndexes []programindex.Index
+}
+
+// assembleRepositoryReport projects shared results once, in memory, without
+// writing anything: a run whose orientation fails keeps the artifacts it
+// kept before.
+func assembleRepositoryReport(
+	ctx context.Context,
 	targetOutcomes targetoutcome.Portfolio,
 	runs []targetPublishedRun,
 	outcome atlasOutcome,
+) (repositoryReportAssembly, error) {
+	if err := ctx.Err(); err != nil {
+		return repositoryReportAssembly{}, err
+	}
+	if len(runs) == 0 {
+		return repositoryReportAssembly{}, fmt.Errorf("repository report: completed target coverage is incomplete")
+	}
+	portfolio, err := buildProgramPagePortfolio(runs, runs[0].RunID)
+	if err != nil {
+		return repositoryReportAssembly{}, err
+	}
+	if err := portfolio.Validate(); err != nil {
+		return repositoryReportAssembly{}, err
+	}
+	if len(runs) != len(portfolio.Pages) {
+		return repositoryReportAssembly{}, fmt.Errorf("repository report: completed target coverage is incomplete")
+	}
+	owner := &runs[0]
+	if owner.ProgramPage.ProgramTarget.ID != portfolio.DefaultTargetID {
+		return repositoryReportAssembly{}, fmt.Errorf("repository report: owner is not the default target")
+	}
+	inventory, err := report.NewTargetOutcomePortfolioView(targetOutcomes, portfolio)
+	if err != nil {
+		return repositoryReportAssembly{}, err
+	}
+	groupIndexes := make([]groupindex.Index, len(runs))
+	programIndexes := make([]programindex.Index, len(runs))
+	for position, run := range runs {
+		if run.GroupIndex.Target.ID != run.ProgramPage.ProgramTarget.ID {
+			return repositoryReportAssembly{}, fmt.Errorf("repository report: run %s graph target mismatch", run.RunID)
+		}
+		groupIndexes[position] = run.GroupIndex
+		programIndex, programErr := run.programIndex()
+		if programErr != nil {
+			return repositoryReportAssembly{}, programErr
+		}
+		programIndexes[position] = programIndex
+	}
+	index := programIndexes[0]
+	if owner.Documentation == nil {
+		return repositoryReportAssembly{}, fmt.Errorf("repository report: documentation is missing from memory")
+	}
+	data, err := report.NewData(owner.RunDir, owner.RepoName, index, *owner.Documentation)
+	if err != nil {
+		return repositoryReportAssembly{}, err
+	}
+	if err := report.BindProgramPortfolio(data, portfolio.DefaultTargetID, programIndexes); err != nil {
+		return repositoryReportAssembly{}, err
+	}
+	if err := report.BindGroupGraphView(data, groupIndexes); err != nil {
+		return repositoryReportAssembly{}, err
+	}
+	data.TargetOutcomePortfolio = inventory
+	data.Facts, data.Claims = &outcome.Facts, &outcome.Claims
+	data.Questions = outcome.Questions
+	data.Learning = outcome.Learning
+	data.CapturedRevision = owner.Source.Repository.Head
+	return repositoryReportAssembly{
+		portfolio: portfolio, targetOutcomes: targetOutcomes, runs: runs,
+		data: data, programIndexes: programIndexes,
+	}, nil
+}
+
+// publishRepositoryReport completes the assembled report with its
+// orientation, glossary and display translation and publishes it from
+// memory. Target directories keep their own analysis artifacts, never
+// repository reports.
+func publishRepositoryReport(
+	ctx context.Context,
+	assembled repositoryReportAssembly,
+	oriented *orientation.Result,
 	options repositoryTargetDispatchOptions,
 ) (report.RunReceipt, error) {
 	output := options.Output
 	if err := ctx.Err(); err != nil {
 		return report.RunReceipt{}, err
 	}
-	if err := portfolio.Validate(); err != nil {
-		return report.RunReceipt{}, err
-	}
-	if len(runs) == 0 || len(runs) != len(portfolio.Pages) {
-		return report.RunReceipt{}, fmt.Errorf("repository report: completed target coverage is incomplete")
-	}
+	runs, data, programIndexes := assembled.runs, assembled.data, assembled.programIndexes
 	owner := &runs[0]
-	if owner.ProgramPage.ProgramTarget.ID != portfolio.DefaultTargetID {
-		return report.RunReceipt{}, fmt.Errorf("repository report: owner is not the default target")
-	}
-	inventory, err := report.NewTargetOutcomePortfolioView(targetOutcomes, portfolio)
-	if err != nil {
+	if err := persistProgramPagePortfolioForRuns(assembled.portfolio, runs[:1]); err != nil {
 		return report.RunReceipt{}, err
 	}
-	if err := persistProgramPagePortfolioForRuns(portfolio, runs[:1]); err != nil {
+	if err := persistTargetOutcomePortfolioForRuns(assembled.targetOutcomes, runs[:1]); err != nil {
 		return report.RunReceipt{}, err
 	}
-	if err := persistTargetOutcomePortfolioForRuns(targetOutcomes, runs[:1]); err != nil {
-		return report.RunReceipt{}, err
-	}
-	groupIndexes := make([]groupindex.Index, len(runs))
-	programIndexes := make([]programindex.Index, len(runs))
-	for position, run := range runs {
-		if run.GroupIndex.Target.ID != run.ProgramPage.ProgramTarget.ID {
-			return report.RunReceipt{}, fmt.Errorf("repository report: run %s graph target mismatch", run.RunID)
-		}
-		groupIndexes[position] = run.GroupIndex
-		programIndex, programErr := run.programIndex()
-		if programErr != nil {
-			return report.RunReceipt{}, programErr
-		}
-		programIndexes[position] = programIndex
-	}
-	index := programIndexes[0]
-	if owner.Documentation == nil {
-		return report.RunReceipt{}, fmt.Errorf("repository report: documentation is missing from memory")
-	}
-	data, err := report.NewData(owner.RunDir, owner.RepoName, index, *owner.Documentation)
-	if err != nil {
-		return report.RunReceipt{}, err
-	}
-	if err := report.BindProgramPortfolio(data, portfolio.DefaultTargetID, programIndexes); err != nil {
-		return report.RunReceipt{}, err
-	}
-	if err := report.BindGroupGraphView(data, groupIndexes); err != nil {
-		return report.RunReceipt{}, err
-	}
-	data.TargetOutcomePortfolio = inventory
-	data.Facts, data.Claims, data.Orientation = &outcome.Facts, &outcome.Claims, outcome.Orientation
-	data.Questions = outcome.Questions
-	data.Learning = outcome.Learning
-	data.CapturedRevision = owner.Source.Repository.Head
+	data.Orientation = oriented
 	if err := reduceReportGlossary(ctx, options, owner.RunDir, data, programIndexes); err != nil {
 		return report.RunReceipt{}, err
 	}
