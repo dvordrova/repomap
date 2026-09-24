@@ -3,6 +3,7 @@ package reading
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -121,11 +122,11 @@ func TestDesignAreasHoldTheirChosenParts(t *testing.T) {
 }
 
 func TestDesignProposalsNeedTitlesAndPurposes(t *testing.T) {
-	result, err := decodeDesignProposals([]byte(`{"groups":[{"title":" HTTP\nAPI ","purpose":"Receives\r\nrequests."},{"title":"http api","purpose":"Duplicate."},{"title":"Untitled"}]}`))
+	result, err := decodeDesignProposals([]byte(`{"groups":{" HTTP\nAPI ":"Receives\r\nrequests."}}`))
 	if err != nil || len(result.Groups) != 1 || result.Groups[0].Title != "HTTP API" || result.Groups[0].Purpose != "Receives requests." {
 		t.Fatalf("proposals: %+v %v", result, err)
 	}
-	if _, err := decodeDesignProposals([]byte(`{"groups":[{"title":"Only"}]}`)); err == nil {
+	if _, err := decodeDesignProposals([]byte(`{"groups":{"Only":""}}`)); err == nil {
 		t.Fatal("accepted a proposal without a purpose")
 	}
 }
@@ -163,8 +164,9 @@ func (c *fakeClassifier) Complete(_ context.Context, prepared llm.Prepared) (llm
 	for key, question := range body.Questions {
 		column := key[strings.Index(key, "|")+1:]
 		c.tables = append(c.tables, column)
-		ref := zoneRef(nil, column, question.Instructions.Row, body.State.Context)
-		answers[key] = map[string]any{"type": "choice", "choice": ref, "confidence": 0.9, "probabilities": map[string]float64{ref: 0.9}}
+		// The model sees each part by its title and answers with it.
+		choice := zoneTitle(column, question.Instructions.Row, body.State.Context)
+		answers[key] = map[string]any{"type": "choice", "choice": choice, "confidence": 0.9, "probabilities": map[string]float64{choice: 0.9}}
 	}
 	raw, err := json.Marshal(map[string]any{"answers": answers})
 	return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
@@ -185,5 +187,34 @@ func TestClosedZoneTablesGoToTheClassifier(t *testing.T) {
 	}
 	if !slices.Contains(classifier.tables, "part") {
 		t.Fatalf("part assignment did not reach the classifier: %v", classifier.tables)
+	}
+}
+
+func zoneTitle(column string, row, context map[string]any) string {
+	ref := zoneRef(nil, column, row, context)
+	entries, _ := context[column+"s"].([]any)
+	for _, entry := range entries {
+		if item, _ := entry.(map[string]any); item != nil && item["ref"] == ref {
+			return fmt.Sprint(item["title"])
+		}
+	}
+	return "none of these"
+}
+
+// A catalogue is refused whole, never shrunk: every unit is assigned among
+// its groups. A live answer once lost 13 of 14 titles to a misnamed field.
+func TestDesignProposalRefusesABrokenCatalogue(t *testing.T) {
+	for _, raw := range []string{
+		`{"groups":{"Entry":"Starts.","entry":"Starts again."}}`,
+		`{"groups":{"Entry":"Starts.","Corpus":""}}`,
+		`{"groups":[{"title":"Entry","purpose":"Starts."}]}`,
+	} {
+		if _, err := decodeDesignProposals([]byte(raw)); err == nil {
+			t.Fatalf("accepted %s", raw)
+		}
+	}
+	result, err := decodeDesignProposals([]byte(`{"groups":{"Entry":"Starts.","Corpus":"Reads files."}}`))
+	if err != nil || len(result.Groups) != 2 || result.Groups[1].Title != "Corpus" {
+		t.Fatalf("result %+v %v", result, err)
 	}
 }

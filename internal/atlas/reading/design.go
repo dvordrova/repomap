@@ -1,6 +1,7 @@
 package reading
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -20,8 +21,11 @@ import (
 	"github.com/dvordrova/repomap/internal/modeldiag"
 )
 
-//go:embed prompts/design.md
-var designPrompt string
+//go:embed prompts/design_parts.md
+var designPartsPrompt string
+
+//go:embed prompts/design_areas.md
+var designAreasPrompt string
 
 // A design unit is what a reader recognizes in the source: one function with
 // its package, name, signature and documentation, or one type with its
@@ -43,29 +47,63 @@ type designProposals struct {
 	Groups []designProposal `json:"groups"`
 }
 
+// MarshalJSON writes proposals in their wire shape: titles as keys, in order.
+func (proposals designProposals) MarshalJSON() ([]byte, error) {
+	var out bytes.Buffer
+	out.WriteString(`{"groups":{`)
+	for i, group := range proposals.Groups {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		title, _ := json.Marshal(group.Title)
+		purpose, _ := json.Marshal(group.Purpose)
+		out.Write(title)
+		out.WriteByte(':')
+		out.Write(purpose)
+	}
+	out.WriteString(`}}`)
+	return out.Bytes(), nil
+}
+
+// decodeDesignProposals reads {"groups":{"<title>":"<purpose>"}} in order.
+// The catalogue is accepted only whole: every later choice is made among
+// these groups, so a malformed or repeated entry refuses the answer rather
+// than silently shrinking it. An empty object is an explicit abstention.
 func decodeDesignProposals(raw []byte) (designProposals, error) {
-	var result designProposals
-	if err := json.Unmarshal(raw, &result); err != nil || result.Groups == nil {
-		return designProposals{}, fmt.Errorf("design: response needs a groups array")
+	var envelope struct {
+		Groups json.RawMessage `json:"groups"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil || len(envelope.Groups) == 0 {
+		return designProposals{}, fmt.Errorf("design: response needs a groups object")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(envelope.Groups))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return designProposals{}, fmt.Errorf("design: groups must map each title to its purpose")
 	}
 	space := func(r rune) bool { return unicode.IsSpace(r) || r < 0x20 || r == 0x7f }
+	clean := func(text string) string { return strings.Join(strings.FieldsFunc(text, space), " ") }
 	seen := map[string]bool{}
-	accepted := []designProposal{}
-	for _, group := range result.Groups {
-		group.Title = strings.Join(strings.FieldsFunc(group.Title, space), " ")
-		group.Purpose = strings.Join(strings.FieldsFunc(group.Purpose, space), " ")
-		if group.Title == "" || group.Purpose == "" || seen[strings.ToLower(group.Title)] {
-			continue
+	result := designProposals{Groups: []designProposal{}}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return designProposals{}, fmt.Errorf("design: groups must map each title to its purpose")
 		}
-		seen[strings.ToLower(group.Title)] = true
-		accepted = append(accepted, group)
+		title := clean(token.(string))
+		var purpose string
+		if err := decoder.Decode(&purpose); err != nil {
+			return designProposals{}, fmt.Errorf("design: the purpose of %q is not a sentence", title)
+		}
+		purpose = clean(purpose)
+		switch {
+		case title == "" || purpose == "":
+			return designProposals{}, fmt.Errorf("design: group %d needs a title and a purpose", len(result.Groups)+1)
+		case seen[strings.ToLower(title)]:
+			return designProposals{}, fmt.Errorf("design: the title %q appears twice", title)
+		}
+		seen[strings.ToLower(title)] = true
+		result.Groups = append(result.Groups, designProposal{Title: title, Purpose: purpose})
 	}
-	// An empty list is an explicit abstention; a list of only invalid
-	// groups is a refused answer.
-	if len(accepted) == 0 && len(result.Groups) > 0 {
-		return designProposals{}, fmt.Errorf("design: no proposed group has a title and a purpose")
-	}
-	result.Groups = accepted
 	return result, nil
 }
 
@@ -231,26 +269,32 @@ func designCallFor(mode string, input any, documents []table.Field) (llm.Call[de
 		Mode      string        `json:"mode"`
 		Input     any           `json:"input"`
 		Documents []table.Field `json:"author_context,omitempty"`
-	}{"repomap.atlas.design.v3", mode, input, documents})
+	}{"repomap.atlas.design.v4", mode, input, documents})
 	if err != nil {
 		return llm.Call[designProposals]{}, err
 	}
+	prompt := designPartsPrompt
+	if mode == "areas" {
+		prompt = designAreasPrompt
+	}
 	return llm.Call[designProposals]{
-		State: []byte("repomap.atlas.design.v3"),
-		Prompt: llm.Prompt{System: designPrompt, User: string(raw), ResponseFormatJSON: true,
-			ResponseExample: `{"groups":[{"title":"Move search","purpose":"Chooses a move by exploring legal continuations."}]}`, NoResponseAdjunct: true},
+		State: []byte("repomap.atlas.design.v4"),
+		Prompt: llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true,
+			ResponseExample: `{"groups":{"Move search":"Chooses a move by exploring legal continuations.","Board state":"Holds the position and applies moves."}}`, NoResponseAdjunct: true},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
 		DecodeValidate: decodeDesignProposals,
 	}, nil
 }
 
-// propose asks for one closed catalogue of parts or areas. A refused proposal
+// propose asks for one closed catalogue of parts or areas. A refused answer
 // leaves nothing to assign; the declarations stay source inventory.
 func (r *reader) propose(ctx context.Context, mode string, input any, documents []table.Field) ([]designProposal, error) {
 	if r.dry {
 		return nil, nil
 	}
-	build := func(input []any) (llm.Call[designProposals], error) { return designCallFor(mode, input[0], documents) }
+	build := func(input []any) (llm.Call[designProposals], error) {
+		return designCallFor(mode, input[0], documents)
+	}
 	results, err := llm.ExecuteAdaptiveJSONEachResults(ctx, debugdump.BindStage(r.opts.Executor, lines.StageZones), r.opts.Provider, [][]any{{input}}, build,
 		func([]any) ([]any, []any, bool) { return nil, nil, false })
 	if err != nil {

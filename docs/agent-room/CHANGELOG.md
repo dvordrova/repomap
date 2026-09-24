@@ -1,5 +1,23 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Jev by explicit opt-in, and zone catalogues accepted whole
+
+- A table reaches the decision model only when it opts in
+  (`Definition.Classifier`): zone_parts, zone_areas and key-symbol
+  selection. The row memo basis names the answering provider, and a
+  remembered Jev answer is recalled through the Jev decoder.
+- Jev sees each part by title and purpose instead of a bare `c*` ref. An
+  uncertain answer leaves the row explicitly unanswered instead of reading
+  as absent; yes/no questions have an uncertain band around 0.5.
+- Key-symbol selection on Jev uses a 0.8 yes cutoff: three blind judges over
+  60 rows where Jev and DeepSeek disagreed sided with Jev at 0.8 on 50 and
+  with DeepSeek on 32 (Jev at 0.6: 28). Both models over-mark helpers.
+- A live DeepSeek parts proposal named 13 of 14 groups `group` instead of
+  `title`, and the decoder silently kept the one titled group: 3,789 of
+  3,881 units then fell to `none`. Proposals are now a title → purpose
+  object read in order and refused whole when an entry is empty or
+  repeated; the parts and areas prompts are separate and short.
+
 ## 2026-09-25 — Jev answers closed tables
 
 - `internal/typesafe` is an `llm.Provider` for TypeSafe System One

@@ -51,7 +51,7 @@ func TestClassifierCallAsksOneChoicePerRow(t *testing.T) {
 // an unlisted choice is never taken.
 func TestDecodeClassifierRefusesUncertainRowsAlone(t *testing.T) {
 	window := closedWindow()
-	raw := []byte(`{"answers":{"s1|part":{"type":"choice","choice":"c1","confidence":0.3,"probabilities":{"c1":0.9,"none":0.1}},"s2|part":{"type":"choice","choice":"c1","confidence":0.9,"probabilities":{"c1":0.4,"none":0.35}}}}`)
+	raw := []byte(`{"answers":{"s1|part":{"type":"choice","choice":"Serving","confidence":0.3,"probabilities":{"Serving":0.9,"none":0.1}},"s2|part":{"type":"choice","choice":"Serving","confidence":0.9,"probabilities":{"Serving":0.4,"none":0.35}}}}`)
 	result, err := DecodeClassifier(closedDefinition(), window, raw, 0.5)
 	if err != nil || result.Answers[0]["part"] != "c1" || result.Answers[1] != nil || len(result.Rejections) != 1 || result.Rejections[0].Key != "s2" || strings.Join(result.AcceptedRowKeys(), " ") != "s1" {
 		t.Fatalf("result %+v %v", result, err)
@@ -99,6 +99,18 @@ func TestOptionalColumnsCanBeLeftEmpty(t *testing.T) {
 		"s2|explains":{"type":"noul","noul":0.2},"s2|talks":{"type":"choice","choice":"none of these","probabilities":{"none of these":0.9}}}}`)
 	result, err := DecodeClassifier(def, window, raw, 0.5)
 	if err != nil || result.Answers[0]["explains"] != "yes" || result.Answers[0]["talks"] != "db" || len(result.Answers[1]) != 0 || result.Answers[1] == nil {
+		t.Fatalf("result %+v %v", result, err)
+	}
+}
+
+// A yes/no cutoff decides every row: yes at the cutoff or above, no below.
+func TestYesAtIsACutoffNotAnUncertainBand(t *testing.T) {
+	def := Definition{Stage: "atlas_cutoff", Contract: "c", System: "s", Independent: true, YesAt: 0.8,
+		Columns: []Column{{Name: "key_symbol", Kind: Choice, Options: []string{"yes", "no"}}}}
+	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
+	raw := []byte(`{"answers":{"s1|key_symbol":{"type":"choice","choice":"yes","probabilities":{"yes":0.85,"no":0.15}},"s2|key_symbol":{"type":"choice","choice":"yes","probabilities":{"yes":0.7,"no":0.3}}}}`)
+	result, err := DecodeClassifier(def, window, raw, 0.5)
+	if err != nil || result.Answers[0]["key_symbol"] != "yes" || result.Answers[1]["key_symbol"] != "no" {
 		t.Fatalf("result %+v %v", result, err)
 	}
 }

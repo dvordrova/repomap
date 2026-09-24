@@ -681,10 +681,10 @@ func (r *reader) runPreparedTable(ctx context.Context, def table.Definition, rou
 // them as one batch; window indexes run across the groups.
 func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, round int, groups rowGroups, check func(table.Answers) error) ([]rowAnswer, error) {
 	answers := make([]rowAnswer, groups.count())
-	provider := r.opts.Provider
-	classifier := r.opts.Classifier != nil && table.Closed(def)
+	provider := r.providerFor(def)
+	classifier := r.classifies(def)
 	if classifier {
-		def, provider = table.ForClassifier(def), r.opts.Classifier
+		def = table.ForClassifier(def)
 	}
 	var windows []table.Window
 	for _, group := range groups {
@@ -733,7 +733,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	calls := make([]llm.Call[table.Result], len(windows))
 	for i, window := range windows {
 		if classifier {
-			call, err := table.ClassifierCall(def, window, table.ClassifierMinProbability)
+			call, err := table.ClassifierCall(def, window, table.MinProbabilityOf(def))
 			if err != nil {
 				return nil, err
 			}
@@ -865,6 +865,20 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 		r.printWindow(def, window, nil, "rejected: "+reason, result.Outcome.Metrics.Latency)
 	}
 	return answers, nil
+}
+
+// classifies reports whether the decision model answers this table: it is
+// configured, the table opted in, and every column is a closed choice.
+func (r *reader) classifies(def table.Definition) bool {
+	return r.opts.Classifier != nil && def.Classifier && table.Closed(def)
+}
+
+// providerFor is the provider that answers this table.
+func (r *reader) providerFor(def table.Definition) llm.Provider {
+	if r.classifies(def) {
+		return r.opts.Classifier
+	}
+	return r.opts.Provider
 }
 
 func (r *reader) use(stage string) *atlas.StageUse {

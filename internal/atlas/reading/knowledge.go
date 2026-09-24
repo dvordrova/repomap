@@ -110,7 +110,9 @@ func (r *reader) knowledgeInput(def table.Definition, shared []table.Field, row 
 	// Reuse depends on the evidence the model receives and the table contract.
 	// The artifact ID is an owner binding, not a second semantic input: equal
 	// evidence can share one accepted interpretation without renaming either row.
-	k.BasisID, err = table.MemoIdentity(r.opts.Provider, def, window)
+	// The basis names the provider that answers: a decision model's answer
+	// is never recalled for a text model's table, or the reverse.
+	k.BasisID, err = table.MemoIdentity(r.providerFor(def), def, window)
 	return k, window, err
 }
 
@@ -131,6 +133,9 @@ func (k Knowledge) identity(repository string) string {
 }
 
 func (r *reader) recallRow(def table.Definition, window table.Window, ref rememberedRow) (rowAnswer, bool, error) {
+	if r.classifies(def) {
+		return r.recallClassifierRow(def, window, ref)
+	}
 	cached, known := r.responseTables[ref.RequestKey]
 	if !known {
 		exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, ref.RequestKey)
@@ -188,6 +193,23 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 	}
 	return rowAnswer{answer: answers[0], source: atlas.SourceCache, requestSHA: cached.requestSHA,
 		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
+}
+
+// recallClassifierRow takes a remembered decision-model answer for this row
+// from its cached response, validated against the current table.
+func (r *reader) recallClassifierRow(def table.Definition, window table.Window, ref rememberedRow) (rowAnswer, bool, error) {
+	exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, ref.RequestKey)
+	if err != nil || !found {
+		return rowAnswer{}, false, err
+	}
+	original := window
+	original.Rows = []table.Row{{ID: ref.RowKey, Fields: window.Rows[0].Fields}}
+	result, err := table.DecodeClassifier(def, original, exchange.Response, table.MinProbabilityOf(def))
+	if err != nil || result.Answers[0] == nil {
+		return rowAnswer{}, false, err
+	}
+	return rowAnswer{answer: result.Answers[0], source: atlas.SourceCache, requestSHA: exchange.RequestSHA256,
+		responseSHA: exchange.ResponseSHA256, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
 }
 
 // Index response rows without letting an invalid neighbour invalidate an

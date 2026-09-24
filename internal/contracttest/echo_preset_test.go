@@ -288,7 +288,7 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 	case request.Task != "" && request.Mode == "parts":
 		// Two parts a reader would draw: what serves requests and what holds
 		// the data. Every other declaration stays source inventory.
-		response = []byte(`{"groups":[{"title":"Request handling","purpose":"Request handling."},{"title":"Stored users","purpose":"Stored users."}]}`)
+		response = []byte(`{"groups":{"Request handling":"Request handling.","Stored users":"Stored users."}}`)
 	case request.Table == "atlas_zone_parts":
 		rows := make([]map[string]any, 0, len(request.Rows))
 		for _, row := range request.Rows {
@@ -307,7 +307,7 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 			return llm.Completion{}, err
 		}
 	case request.Task != "":
-		response = []byte(`{"groups":[]}`)
+		response = []byte(`{"groups":{}}`)
 	default:
 		rows := make([]map[string]any, 0, len(request.Rows))
 		for _, row := range request.Rows {

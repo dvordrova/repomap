@@ -123,6 +123,17 @@ type Definition struct {
 	// ContextAfterRows keeps repeated evidence ahead of changing context in
 	// the request prefix. The default preserves context before rows.
 	ContextAfterRows bool
+	// Classifier lets a decision model answer this closed table when one is
+	// configured. It is an explicit, measured opt-in, not a consequence of
+	// the table's shape.
+	Classifier bool
+	// MinProbability is the probability the chosen option must exceed for a
+	// decision model's answer to be taken; zero uses ClassifierMinProbability.
+	MinProbability float64
+	// YesAt turns a yes/no column into a cutoff for a decision model: yes at
+	// this probability of yes or above, no below it. Zero keeps the ordinary
+	// rule, where neither side above MinProbability leaves the row unanswered.
+	YesAt float64
 }
 
 // Field is one ordered input of a row.

@@ -175,7 +175,7 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 	if err := json.Unmarshal(prepared.Bytes(), &batch); err != nil {
 		return llm.Completion{}, err
 	}
-	if batch.Task == "repomap.atlas.design.v3" {
+	if batch.Task == "repomap.atlas.design.v4" {
 		var request struct {
 			Mode  string
 			Input []map[string]any
