@@ -288,23 +288,22 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 	case request.Task != "" && request.Mode == "parts":
 		// Two parts a reader would draw: what serves requests and what holds
 		// the data. Every other declaration stays source inventory.
-		parts := map[string][]string{}
-		for _, item := range request.Items {
+		response = []byte(`{"groups":[{"title":"Request handling","purpose":"Request handling."},{"title":"Stored users","purpose":"Stored users."}]}`)
+	case request.Table == "atlas_zone_parts":
+		rows := make([]map[string]any, 0, len(request.Rows))
+		for _, row := range request.Rows {
+			pkg, _ := row["package"].(string)
+			part := "none"
 			switch {
-			case strings.Contains(item.Path+"/", "/handler/"):
-				parts["Request handling"] = append(parts["Request handling"], item.Ref)
-			case strings.Contains(item.Path+"/", "/database/"):
-				parts["Stored users"] = append(parts["Stored users"], item.Ref)
+			case strings.Contains(pkg+"/", "/handler/"):
+				part = "c1"
+			case strings.Contains(pkg+"/", "/database/"):
+				part = "c2"
 			}
-		}
-		var groups []map[string]any
-		for _, title := range []string{"Request handling", "Stored users"} {
-			if len(parts[title]) > 0 {
-				groups = append(groups, map[string]any{"title": title, "purpose": title + ".", "members": parts[title]})
-			}
+			rows = append(rows, map[string]any{"key": row["key"], "part": part})
 		}
 		var err error
-		if response, err = json.Marshal(map[string]any{"groups": groups}); err != nil {
+		if response, err = json.Marshal(map[string]any{"rows": rows}); err != nil {
 			return llm.Completion{}, err
 		}
 	case request.Task != "":

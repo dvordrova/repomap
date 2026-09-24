@@ -99,15 +99,17 @@ new description or selection requests.
 
 `reading/design.go` owns the ordinary `atlas_zones` stage. File captions do not
 assign files to directories, neighbouring boxes or a `new:` title. Temporary
-file inventory is used during caption selection only. Design reading receives
-units a reader already sees in the source tree: a package (directory) with its
-free declarations, and each type with its methods. Each unit carries its first
-documentation sentence, the names of every declaration it holds and the other
-units it calls; call sites, arguments, outside callees and plans, reviews or
-journals are not sent. Only README and AGENTS documents give author context.
-Every declaration belongs to exactly one unit, so none is sampled away. The
-model may join units across directories or keep a package's types apart;
-paths remain context and do not decide ownership.
+file inventory is used during caption selection only. Design reading works on
+units a reader recognizes: a function (package, name, signature, first
+documentation sentence) and a type (package, name, methods). Every declaration
+belongs to exactly one unit. It proposes before it assigns, one decision per
+request: `atlas_zones` proposes the parts from a names-only package overview
+and README/AGENTS documents; `atlas_zone_parts` assigns every unit to one
+proposed part or `none` by closed choice, with the other units it calls as
+evidence; `atlas_zones` proposes 4 to 8 areas over the drawn parts; and
+`atlas_zone_areas` assigns every part to one area or `none`. A part no unit
+chose is not drawn; a unit that chose `none` stays source inventory. Paths are
+context and do not decide ownership.
 
 Source-located module bodies with observed calls, external invocations,
 execution, reads or writes enter the same closed declaration catalogue. This

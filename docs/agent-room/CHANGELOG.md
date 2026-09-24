@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-09-24 — Zones are proposed, then assigned by closed choice
+
+- Units are functions and types (with their methods). `atlas_zones` (design
+  v3) only proposes parts and areas; `atlas_zone_parts` and
+  `atlas_zone_areas` are ordinary closed-choice tables that assign units to
+  parts and parts to areas.
+- Live `cmd/repomap`, cold: 3,857 units in 19 part batches (2m04s provider
+  time), 15 parts in 8 areas, no refusals, whole run 3m14s. Go analysis and
+  the other language adapters now share one part; the single-shot areas
+  prompt had split them and grown to 31–34 areas when told not to.
+
 ## 2026-09-24 — Zones group packages and types, not every declaration
 
 - `atlas_zones` (design v2) sends units a reader already sees: a package with

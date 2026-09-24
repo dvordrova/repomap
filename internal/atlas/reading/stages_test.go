@@ -240,19 +240,27 @@ func twoTargetOptions(t *testing.T, graph atlas.Graph, provider *tableProvider) 
 
 func TestAreasContainOnlyExplicitlyChosenParts(t *testing.T) {
 	graph := twoTargetGraph(t)
-	provider := &tableProvider{designFor: func(mode string, items []designItem) designResult {
-		result := designResult{Groups: []designGroup{}}
-		if mode == "areas" {
-			if len(items) >= 2 {
-				result.Groups = append(result.Groups, designGroup{Title: "Serving", Purpose: "Coordinates the selected parts.", Members: []string{items[0].Ref, items[1].Ref}})
+	provider := &tableProvider{
+		designFor: func(mode string, input []map[string]any) designProposals {
+			if mode == "areas" {
+				return designProposals{Groups: []designProposal{{Title: "Serving", Purpose: "Coordinates the selected parts."}}}
+			}
+			result := designProposals{Groups: []designProposal{}}
+			for _, pkg := range input {
+				result.Groups = append(result.Groups, designProposal{Title: pkg["package"].(string), Purpose: "Reads the supplied declarations."})
 			}
 			return result
-		}
-		for _, item := range items {
-			result.Groups = append(result.Groups, designGroup{Title: item.Name, Purpose: "Reads the supplied declarations.", Members: []string{item.Ref}})
-		}
-		return result
-	}}
+		},
+		zoneFor: func(column string, row map[string]any) string {
+			if column == "area" {
+				if row["title"] == "svc/api" || row["title"] == "svc/core" {
+					return "Serving"
+				}
+				return ""
+			}
+			return row["package"].(string)
+		},
+	}
 	result, err := Read(context.Background(), twoTargetOptions(t, graph, provider))
 	if err != nil {
 		t.Fatal(err)
@@ -326,8 +334,8 @@ func TestConfigReadDoesNotTurnCoreIntoDependencyOrShareASeed(t *testing.T) {
 
 func TestRefusedDesignKeepsSourceInventoryWithoutInventingAreas(t *testing.T) {
 	graph := twoTargetGraph(t)
-	provider := &tableProvider{designFor: func(_ string, _ []designItem) designResult {
-		return designResult{Groups: []designGroup{{Title: "Odd", Purpose: "Has no evidence.", Members: []string{"outside"}}}}
+	provider := &tableProvider{designFor: func(string, []map[string]any) designProposals {
+		return designProposals{Groups: []designProposal{{Title: "Odd"}}}
 	}}
 	result, err := Read(context.Background(), twoTargetOptions(t, graph, provider))
 	if err != nil {

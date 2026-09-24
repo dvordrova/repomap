@@ -119,15 +119,14 @@ func (provider *mutatedTableProvider) Complete(ctx context.Context, request llm.
 }
 
 func TestRefusedZoneAssignmentDoesNotAcquireMatchingNameOrAncestor(t *testing.T) {
-	items := []designItem{{Ref: "r1", Name: "Accepted title", Path: "a"}, {Ref: "r2", Name: "Rejected title", Path: "a/b"}, {Ref: "r3", Name: "Rejected title", Path: "a/b/child"}, {Ref: "r4", Name: "Other", Path: "c"}}
-	result, err := decodeDesign([]byte(`{"groups":[{"title":"Accepted title","purpose":"Works.","members":["r1","r4"]},{"title":"Rejected title","purpose":"Unknown.","members":["outside"]}]}`), items, "areas")
-	if err != nil || len(result.Groups) != 1 || len(result.Groups[0].Members) != 2 || len(result.Notes) == 0 {
-		t.Fatalf("refused assignment was repaired: %+v %v", result, err)
-	}
-	for _, ref := range result.Groups[0].Members {
-		if ref == "r2" || ref == "r3" {
-			t.Fatal("name or ancestor determined membership")
+	proposals := []designProposal{{Title: "Accepted title", Purpose: "Works."}, {Title: "Rejected title", Purpose: "Unknown."}}
+	for _, cell := range []string{"Rejected title", "c3", "outside", "none", ""} {
+		if position := chosen(rowAnswer{answer: map[string]string{"part": cell}}, "part", proposals); position != -1 {
+			t.Fatalf("cell %q acquired part %d", cell, position)
 		}
+	}
+	if position := chosen(rowAnswer{answer: map[string]string{"part": "c2"}}, "part", proposals); position != 1 {
+		t.Fatalf("closed ref c2 chose %d", position)
 	}
 }
 

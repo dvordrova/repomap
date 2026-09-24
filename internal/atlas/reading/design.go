@@ -23,293 +23,65 @@ import (
 //go:embed prompts/design.md
 var designPrompt string
 
-// A design item is either a ProgramIndex declaration, whose compact n* ID is
-// used unchanged, or an accepted aggregate in a reduction, which receives a
-// temporary c* choice ref. Repository facts never enter a second namespace.
-type designItem struct {
-	Ref          string       `json:"ref"`
-	Path         string       `json:"path,omitempty"`
-	Name         string       `json:"name"`
-	Kind         string       `json:"kind"`
-	Signature    string       `json:"signature,omitempty"`
-	Doc          string       `json:"author_documentation,omitempty"`
-	Purpose      string       `json:"model_interpretation,omitempty"`
-	Activation   string       `json:"model_activation,omitempty"`
-	Calls        []designCall `json:"observations,omitempty"`
-	Declarations []string     `json:"declarations,omitempty"`
-	IDs          []string     `json:"-"`
+// A design unit is what a reader recognizes in the source: one function with
+// its package, name, signature and documentation, or one type with its
+// package, name and methods. A part and an area are proposed first as a
+// closed catalogue; units and parts are then assigned by closed choice.
+type designUnit struct {
+	id      string   // row identity: the function's or type's symbol place
+	members []string // symbol places the unit holds: itself and its methods
+	row     table.Row
+	calls   map[string]bool // other units it calls
 }
 
-type designCall struct {
-	Kind       string   `json:"kind"`
-	Name       string   `json:"name"`
-	Line       int      `json:"line,omitempty"`
-	Resolution string   `json:"resolution,omitempty"`
-	To         []string `json:"to,omitempty"`
-	Values     []string `json:"values,omitempty"`
+type designProposal struct {
+	Title   string `json:"title"`
+	Purpose string `json:"purpose"`
 }
 
-type designGroup struct {
-	Title   string   `json:"title"`
-	Purpose string   `json:"purpose"`
-	Members []string `json:"members"`
+type designProposals struct {
+	Groups []designProposal `json:"groups"`
 }
 
-type designResult struct {
-	Groups []designGroup `json:"groups"`
-	Notes  []designNote  `json:"notes,omitempty"`
-}
-
-type designNote struct {
-	Kind   string `json:"kind"`
-	Reason string `json:"reason"`
-}
-
-func decodeDesignGroup(raw []byte) (designGroup, string) {
-	var group designGroup
-	if json.Unmarshal(raw, &group) != nil {
-		return group, "malformed group"
+func decodeDesignProposals(raw []byte) (designProposals, error) {
+	var result designProposals
+	if err := json.Unmarshal(raw, &result); err != nil || result.Groups == nil {
+		return designProposals{}, fmt.Errorf("design: response needs a groups array")
 	}
-	// Captions follow the existing table text convention: formatting does
-	// not change a membership decision or discard an otherwise valid group.
 	space := func(r rune) bool { return unicode.IsSpace(r) || r < 0x20 || r == 0x7f }
-	group.Title = strings.Join(strings.FieldsFunc(group.Title, space), " ")
-	group.Purpose = strings.Join(strings.FieldsFunc(group.Purpose, space), " ")
-	if group.Title == "" || group.Purpose == "" {
-		return group, "missing title/purpose"
-	}
-	return group, ""
-}
-
-func decodeDesign(raw []byte, items []designItem, mode string) (designResult, error) {
-	var envelope struct {
-		Groups []json.RawMessage `json:"groups"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Groups == nil {
-		return designResult{}, fmt.Errorf("design: response needs a groups array")
-	}
-	known, used := map[string]bool{}, map[string]bool{}
-	for _, item := range items {
-		known[item.Ref] = true
-	}
-	// Conflicting groups are coupled. Refuse both rather than let response
-	// order decide which responsibility acquires a declaration.
-	assignments := map[string]int{}
-	for _, rawGroup := range envelope.Groups {
-		group, reason := decodeDesignGroup(rawGroup)
-		if reason != "" {
+	seen := map[string]bool{}
+	accepted := []designProposal{}
+	for _, group := range result.Groups {
+		group.Title = strings.Join(strings.FieldsFunc(group.Title, space), " ")
+		group.Purpose = strings.Join(strings.FieldsFunc(group.Purpose, space), " ")
+		if group.Title == "" || group.Purpose == "" || seen[strings.ToLower(group.Title)] {
 			continue
 		}
-		members := map[string]bool{}
-		for _, ref := range group.Members {
-			if known[ref] {
-				members[ref] = true
-			}
-		}
-		for ref := range members {
-			assignments[ref]++
-		}
+		seen[strings.ToLower(group.Title)] = true
+		accepted = append(accepted, group)
 	}
-	result := designResult{Groups: []designGroup{}}
-	for i, rawGroup := range envelope.Groups {
-		group, reason := decodeDesignGroup(rawGroup)
-		var members []string
-		for _, ref := range group.Members {
-			if !known[ref] {
-				result.Notes = append(result.Notes, designNote{Kind: "unknown_member", Reason: fmt.Sprintf("group %d: unknown member %q discarded", i+1, ref)})
-				continue
-			}
-			if assignments[ref] > 1 {
-				reason = "member assigned by conflicting groups"
-			}
-			if !slices.Contains(members, ref) {
-				members = append(members, ref)
-			}
-		}
-		if len(members) == 0 {
-			reason = "no known members"
-		}
-		if reason != "" {
-			result.Notes = append(result.Notes, designNote{Kind: "group_rejected", Reason: fmt.Sprintf("group %d refused: %s", i+1, reason)})
-			continue
-		}
-		for _, ref := range members {
-			used[ref] = true
-		}
-		group.Members = members
-		result.Groups = append(result.Groups, group)
+	// An empty list is an explicit abstention; a list of only invalid
+	// groups is a refused answer.
+	if len(accepted) == 0 && len(result.Groups) > 0 {
+		return designProposals{}, fmt.Errorf("design: no proposed group has a title and a purpose")
 	}
-	if mode != "areas" {
-		for _, item := range items {
-			if !used[item.Ref] {
-				result.Notes = append(result.Notes, designNote{Kind: "ungrouped_input", Reason: "no accepted membership for " + item.Ref})
-			}
-		}
-	}
-	if len(result.Groups) == 0 && len(envelope.Groups) != 0 {
-		var reasons []string
-		for _, note := range result.Notes {
-			reasons = append(reasons, note.Reason)
-		}
-		return designResult{}, fmt.Errorf("design: no valid grouping decision: %s", strings.Join(reasons, "; "))
-	}
+	result.Groups = accepted
 	return result, nil
 }
 
-func designCallFor(items []designItem, documents []table.Field, mode string) (llm.Call[designResult], error) {
-	// A provider-sized window has its own closed catalogue. Calls to items
-	// outside that window retain their native names and sites; reduction can
-	// restore their local endpoints when those parts are reviewed together.
-	items = append([]designItem(nil), items...)
-	known := map[string]bool{}
-	for _, item := range items {
-		known[item.Ref] = true
-	}
-	for i := range items {
-		items[i].Calls = append([]designCall(nil), items[i].Calls...)
-		for j := range items[i].Calls {
-			call := &items[i].Calls[j]
-			var refs []string
-			for _, ref := range call.To {
-				if known[ref] {
-					refs = append(refs, ref)
-				}
-			}
-			call.To = refs
-		}
-	}
-	raw, err := json.Marshal(struct {
-		Task      string        `json:"task"`
-		Mode      string        `json:"mode"`
-		Items     []designItem  `json:"items"`
-		Documents []table.Field `json:"author_context,omitempty"`
-	}{"repomap.atlas.design.v2", mode, items, documents})
-	if err != nil {
-		return llm.Call[designResult]{}, err
-	}
-	return llm.Call[designResult]{
-		State: []byte("repomap.atlas.design.v2"),
-		Prompt: llm.Prompt{System: designPrompt, User: string(raw), ResponseFormatJSON: true,
-			ResponseExample: `{"groups":[{"title":"Move search","purpose":"Chooses a move by exploring legal continuations.","members":["n1","n2"]}]}`, NoResponseAdjunct: true},
-		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
-		DecodeValidate: func(raw []byte) (designResult, error) { return decodeDesign(raw, items, mode) },
-	}, nil
-}
-
-// Complete aggregates split only for the actual provider envelope. Accepted
-// siblings survive. Cross-window parts are subsequently reviewed together.
-func (r *reader) askDesign(ctx context.Context, items []designItem, documents []table.Field, mode string) ([]designItem, int, error) {
-	if len(items) == 0 || r.dry {
-		return nil, 0, nil
-	}
-	build := func(items []designItem) (llm.Call[designResult], error) { return designCallFor(items, documents, mode) }
-	results, err := llm.ExecuteAdaptiveJSONEachResults(ctx, debugdump.BindStage(r.opts.Executor, lines.StageZones), r.opts.Provider, [][]designItem{items}, build,
-		func(items []designItem) ([]designItem, []designItem, bool) {
-			if len(items) < 2 {
-				return nil, nil, false
-			}
-			mid := len(items) / 2
-			return items[:mid], items[mid:], true
-		})
-	if err != nil {
-		return nil, 0, err
-	}
-	var accepted []designItem
-	use := r.use(lines.StageZones)
-	for _, result := range results {
-		r.designRound++
-		window := table.Window{Stage: lines.StageZones, Round: r.designRound}
-		responseRef := path.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))
-		call, err := build(result.Item)
-		if err != nil {
-			return nil, 0, err
-		}
-		use.Rows += len(result.Item)
-		use.Windows++
-		if result.Outcome.Cached {
-			use.Cached++
-		} else {
-			use.Live++
-		}
-		for _, item := range []struct {
-			name string
-			data []byte
-		}{
-			{"prompt.md", []byte(call.Prompt.System)}, {"input.json", []byte(call.Prompt.User)},
-			{"request.json", result.Outcome.Request}, {"response.json", result.Outcome.Response},
-		} {
-			if len(item.data) > 0 {
-				if err := r.writeWindowFile(window, item.name, item.data); err != nil {
-					return nil, 0, err
-				}
-			}
-		}
-		if result.Err != nil {
-			use.Rejected++
-			use.Given += len(result.Item)
-			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Kind: "window_rejected", Count: len(result.Item), Reason: result.Err.Error(), ResponseRef: responseRef})
-			fmt.Fprintf(&r.tables, "## %s · %s · round %d\n\nGrouping unavailable: %s\n\n", lines.StageZones, mode, r.designRound, result.Err)
-			continue
-		}
-		value := result.Outcome.Value
-		refused := false
-		for _, note := range value.Notes {
-			refused = refused || note.Kind == "group_rejected"
-			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Kind: note.Kind, Count: 1, Reason: note.Reason, ResponseRef: responseRef})
-		}
-		if refused {
-			use.Rejected++
-		}
-		raw, err := json.MarshalIndent(value, "", "  ")
-		if err != nil {
-			return nil, 0, err
-		}
-		if err := r.writeWindowFile(window, "result.json", raw); err != nil {
-			return nil, 0, err
-		}
-		fmt.Fprintf(&r.tables, "## %s · %s · round %d\n\n%s\n\n", lines.StageZones, mode, r.designRound, raw)
-		byRef := map[string]designItem{}
-		for _, item := range result.Item {
-			byRef[item.Ref] = item
-		}
-		for _, group := range value.Groups {
-			item := designItem{Name: group.Title, Purpose: group.Purpose, Kind: "part"}
-			for _, ref := range group.Members {
-				member := byRef[ref]
-				item.IDs = append(item.IDs, member.IDs...)
-				item.Calls = append(item.Calls, member.Calls...)
-				if len(member.Declarations) > 0 {
-					item.Declarations = append(item.Declarations, member.Declarations...)
-				} else {
-					item.Declarations = append(item.Declarations, member.Name)
-				}
-			}
-			accepted = append(accepted, item)
-		}
-	}
-	return accepted, len(results), nil
-}
-
-// designInputs describes a target as units a reader already recognizes: a
-// package with its free declarations, and each type with its methods. The
-// model groups these units; it never re-derives the package tree from every
-// declaration, error string and repository document.
-func (r *reader) designInputs(targetID string) ([]designItem, []table.Field) {
+// designUnits reads the target's declarations as units. Every declaration
+// with a native object belongs to exactly one unit; nothing is sampled.
+func (r *reader) designUnits(targetID string) []*designUnit {
 	if r.designFiles == nil {
 		r.designFiles = map[string]string{}
 		r.designSubjects = map[string]string{}
 	}
-	var units []designItem
-	unitOf := map[string]int{} // unit key or symbol id -> unit position
-	unitFor := func(key, dir, name, kind string) int {
-		if position, ok := unitOf[key]; ok {
-			return position
-		}
-		units = append(units, designItem{Ref: fmt.Sprintf("c%d", len(units)+1), Path: dir, Name: name, Kind: kind})
-		unitOf[key] = len(units) - 1
-		return len(units) - 1
+	var units []*designUnit
+	byType := map[string]*designUnit{} // dir#type -> unit
+	unitOf := map[string]*designUnit{} // symbol place -> unit
+	var methods []struct {
+		id, key, name string
 	}
-	var symbols []string
 	for _, file := range r.opts.Graph.Places {
 		if file.File == nil || !contains(file.TargetIDs, targetID) {
 			continue
@@ -328,61 +100,110 @@ func (r *reader) designInputs(targetID string) ([]designItem, []table.Field) {
 			}
 			r.designFiles[id] = file.ID
 			r.designSubjects[objectID] = id
-			var position int
-			switch owner, _, isMember := strings.Cut(decl.Name, "."); {
-			case decl.Kind == "type":
-				position = unitFor(dir+"#"+decl.Name, dir, decl.Name, "type")
-				units[position].Doc = firstSentence(decl.Doc)
-			case decl.Kind == "method" && isMember:
-				position = unitFor(dir+"#"+owner, dir, owner, "type")
-			default:
-				position = unitFor(dir, dir, dir, "package")
-				if units[position].Doc == "" && file.File.Doc != "" {
-					units[position].Doc = firstSentence(file.File.Doc)
-				}
+			if owner, method, isMember := strings.Cut(decl.Name, "."); decl.Kind == "method" && isMember {
+				methods = append(methods, struct{ id, key, name string }{id, dir + "#" + owner, method})
+				continue
 			}
-			units[position].IDs = append(units[position].IDs, id)
-			units[position].Declarations = append(units[position].Declarations, decl.Name)
-			unitOf[id] = position
-			symbols = append(symbols, id)
+			unit := &designUnit{id: id, members: []string{id}}
+			fields := []table.Field{{Name: "package", Value: dir}, {Name: "name", Value: decl.Name}, {Name: "kind", Value: decl.Kind}}
+			if decl.Kind == "type" {
+				byType[dir+"#"+decl.Name] = unit
+			} else if decl.Signature != "" {
+				fields = append(fields, table.Field{Name: "signature", Value: decl.Signature})
+			}
+			if doc := firstSentence(decl.Doc); doc != "" {
+				fields = append(fields, table.Field{Name: "documentation", Value: doc})
+			}
+			unit.row = table.Row{ID: id, Fields: fields}
+			units = append(units, unit)
+			unitOf[id] = unit
 		}
 	}
-	// Calls between units are the collaboration evidence; their sites,
-	// arguments and outside callees do not decide where a unit belongs.
-	calls := make([]map[int]bool, len(units))
-	for _, id := range symbols {
-		symbol := r.places[id].Symbol
-		if symbol == nil {
-			continue
+	// A method belongs to its type; one whose type is not declared here is a
+	// function of its own.
+	for _, method := range methods {
+		unit := byType[method.key]
+		if unit == nil {
+			unit = &designUnit{id: method.id, members: []string{method.id}, row: table.Row{ID: method.id, Fields: []table.Field{
+				{Name: "package", Value: strings.Split(method.key, "#")[0]}, {Name: "name", Value: method.name}, {Name: "kind", Value: "method"},
+			}}}
+			units = append(units, unit)
 		}
-		from := unitOf[id]
-		for _, call := range symbol.Calls {
-			for _, callee := range call.CalleeIDs {
-				if to, ok := unitOf[callee]; ok && to != from {
-					if calls[from] == nil {
-						calls[from] = map[int]bool{}
+		unit.members = append(unit.members, method.id)
+		unitOf[method.id] = unit
+	}
+	for _, unit := range units {
+		var names []string
+		for _, member := range unit.members[1:] {
+			names = append(names, r.places[member].Given)
+		}
+		if len(names) > 0 {
+			unit.row.Fields = append(unit.row.Fields, table.Field{Name: "methods", Value: names})
+		}
+	}
+	for _, unit := range units {
+		for _, member := range unit.members {
+			symbol := r.places[member].Symbol
+			if symbol == nil {
+				continue
+			}
+			for _, call := range symbol.Calls {
+				for _, callee := range call.CalleeIDs {
+					if other := unitOf[callee]; other != nil && other != unit {
+						if unit.calls == nil {
+							unit.calls = map[string]bool{}
+						}
+						unit.calls[other.id] = true
 					}
-					calls[from][to] = true
 				}
 			}
 		}
 	}
-	for i := range units {
-		if len(calls[i]) > 0 {
-			positions := make([]int, 0, len(calls[i]))
-			for position := range calls[i] {
-				positions = append(positions, position)
-			}
-			sort.Ints(positions)
-			to := make([]string, len(positions))
-			for j, position := range positions {
-				to[j] = units[position].Ref
-			}
-			units[i].Calls = []designCall{{Kind: "calls", To: to}}
+	return units
+}
+
+// designOverview is the proposal input for parts: each package once, with the
+// names it holds. Documents are README and AGENTS only.
+func (r *reader) designOverview(targetID string, units []*designUnit) ([]map[string]any, []table.Field) {
+	type pkg struct {
+		doc          string
+		types, funcs []string
+	}
+	packages := map[string]*pkg{}
+	var order []string
+	for _, unit := range units {
+		values := map[string]any{}
+		for _, field := range unit.row.Fields {
+			values[field.Name] = field.Value
+		}
+		dir := values["package"].(string)
+		if packages[dir] == nil {
+			packages[dir] = &pkg{}
+			order = append(order, dir)
+		}
+		name := values["name"].(string)
+		if values["kind"] == "type" {
+			packages[dir].types = append(packages[dir].types, name)
+		} else {
+			packages[dir].funcs = append(packages[dir].funcs, name)
 		}
 	}
-	// Only README and AGENTS documents describe the design to a newcomer;
-	// plans, reviews and journals are history, not architecture.
+	for _, file := range r.opts.Graph.Places {
+		if file.File != nil && file.File.Doc != "" && contains(file.TargetIDs, targetID) {
+			if p := packages[path.Dir(file.Path)]; p != nil && p.doc == "" {
+				p.doc = firstSentence(file.File.Doc)
+			}
+		}
+	}
+	sort.Strings(order)
+	overview := make([]map[string]any, 0, len(order))
+	for _, dir := range order {
+		entry := map[string]any{"package": dir, "types": packages[dir].types, "functions": packages[dir].funcs}
+		if packages[dir].doc != "" {
+			entry["documentation"] = packages[dir].doc
+		}
+		overview = append(overview, entry)
+	}
 	var docs []table.Field
 	for _, place := range r.opts.Graph.Places {
 		if place.Document == nil || (len(place.TargetIDs) > 0 && !contains(place.TargetIDs, targetID)) {
@@ -393,7 +214,7 @@ func (r *reader) designInputs(targetID string) ([]designItem, []table.Field) {
 			docs = append(docs, table.Field{Name: place.Path, Value: place.Document})
 		}
 	}
-	return units, docs
+	return overview, docs
 }
 
 func firstSentence(text string) string {
@@ -404,36 +225,168 @@ func firstSentence(text string) string {
 	return text
 }
 
+func designCallFor(mode string, input any, documents []table.Field) (llm.Call[designProposals], error) {
+	raw, err := json.Marshal(struct {
+		Task      string        `json:"task"`
+		Mode      string        `json:"mode"`
+		Input     any           `json:"input"`
+		Documents []table.Field `json:"author_context,omitempty"`
+	}{"repomap.atlas.design.v3", mode, input, documents})
+	if err != nil {
+		return llm.Call[designProposals]{}, err
+	}
+	return llm.Call[designProposals]{
+		State: []byte("repomap.atlas.design.v3"),
+		Prompt: llm.Prompt{System: designPrompt, User: string(raw), ResponseFormatJSON: true,
+			ResponseExample: `{"groups":[{"title":"Move search","purpose":"Chooses a move by exploring legal continuations."}]}`, NoResponseAdjunct: true},
+		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: llm.DefaultMaxOutputTokens},
+		DecodeValidate: decodeDesignProposals,
+	}, nil
+}
+
+// propose asks for one closed catalogue of parts or areas. A refused proposal
+// leaves nothing to assign; the declarations stay source inventory.
+func (r *reader) propose(ctx context.Context, mode string, input any, documents []table.Field) ([]designProposal, error) {
+	if r.dry {
+		return nil, nil
+	}
+	build := func(input []any) (llm.Call[designProposals], error) { return designCallFor(mode, input[0], documents) }
+	results, err := llm.ExecuteAdaptiveJSONEachResults(ctx, debugdump.BindStage(r.opts.Executor, lines.StageZones), r.opts.Provider, [][]any{{input}}, build,
+		func([]any) ([]any, []any, bool) { return nil, nil, false })
+	if err != nil {
+		return nil, err
+	}
+	use := r.use(lines.StageZones)
+	var proposals []designProposal
+	for _, result := range results {
+		r.designRound++
+		window := table.Window{Stage: lines.StageZones, Round: r.designRound}
+		responseRef := path.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))
+		call, err := build(result.Item)
+		if err != nil {
+			return nil, err
+		}
+		use.Windows++
+		if result.Outcome.Cached {
+			use.Cached++
+		} else {
+			use.Live++
+		}
+		for _, item := range []struct {
+			name string
+			data []byte
+		}{
+			{"prompt.md", []byte(call.Prompt.System)}, {"input.json", []byte(call.Prompt.User)},
+			{"request.json", result.Outcome.Request}, {"response.json", result.Outcome.Response},
+		} {
+			if len(item.data) == 0 {
+				continue
+			}
+			if err := r.writeWindowFile(window, item.name, item.data); err != nil {
+				return nil, err
+			}
+		}
+		if result.Err != nil {
+			use.Rejected++
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Kind: "window_rejected", Count: 1, Reason: result.Err.Error(), ResponseRef: responseRef})
+			fmt.Fprintf(&r.tables, "## %s · %s · round %d\n\nProposal unavailable: %s\n\n", lines.StageZones, mode, r.designRound, result.Err)
+			continue
+		}
+		raw, err := json.MarshalIndent(result.Outcome.Value, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		if err := r.writeWindowFile(window, "result.json", raw); err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(&r.tables, "## %s · %s · round %d\n\n%s\n\n", lines.StageZones, mode, r.designRound, raw)
+		proposals = append(proposals, result.Outcome.Value.Groups...)
+	}
+	return proposals, nil
+}
+
+// catalogue renders proposals as the closed context of an assignment table.
+func catalogue(name string, proposals []designProposal) []table.Field {
+	entries := make([]map[string]any, len(proposals))
+	options := make([]string, 0, len(proposals)+1)
+	for i, proposal := range proposals {
+		ref := fmt.Sprintf("c%d", i+1)
+		entries[i] = map[string]any{"ref": ref, "title": proposal.Title, "purpose": proposal.Purpose}
+		options = append(options, ref)
+	}
+	options = append(options, lines.ZoneNone)
+	return []table.Field{{Name: name + "s", Value: entries}, {Name: name + "_options", Value: options}}
+}
+
+func chosen(answer rowAnswer, column string, proposals []designProposal) int {
+	if answer.answer == nil {
+		return -1
+	}
+	var position int
+	if _, err := fmt.Sscanf(answer.answer[column], "c%d", &position); err != nil || position < 1 || position > len(proposals) {
+		return -1
+	}
+	return position - 1
+}
+
 func (r *reader) readDesign(ctx context.Context) error {
 	r.started[lines.StageZones] = time.Now()
-	r.opts.Stage(lines.StageZones, "reading responsibilities and collaboration from declarations, calls and documentation")
+	r.opts.Stage(lines.StageZones, "proposing parts and areas, then assigning functions, types and parts to them")
 	r.boxes = map[string]*boxState{}
 	r.designBoxOf = map[string]map[string]string{}
 	r.zones = map[string][]*zoneState{}
 	for _, target := range r.opts.Targets {
-		items, docs := r.designInputs(target.ID)
-		parts, windows, err := r.askDesign(ctx, items, docs, "parts")
+		units := r.designUnits(target.ID)
+		overview, docs := r.designOverview(target.ID, units)
+		parts, err := r.propose(ctx, "parts", overview, docs)
 		if err != nil {
 			return err
 		}
-		// A provider split must not become an architecture boundary. Review
-		// the complete accepted parts together until no further merge occurs.
-		for windows > 1 && len(parts) > 1 {
-			parts = designPartContext(items, parts)
-			merged, count, err := r.askDesign(ctx, parts, nil, "merge")
+		membership := map[string]string{}
+		r.designBoxOf[target.ID] = membership
+		partOf := make([]int, len(units))
+		for i := range partOf {
+			partOf[i] = -1
+		}
+		if len(parts) > 0 && len(units) > 0 {
+			unitByID := map[string]*designUnit{}
+			rows := make([]table.Row, len(units))
+			for i, unit := range units {
+				unitByID[unit.id] = unit
+				rows[i] = unit.row
+				var calls []string
+				for other := range unit.calls {
+					calls = append(calls, r.places[other].Given)
+				}
+				sort.Strings(calls)
+				if len(calls) > 0 {
+					rows[i].Fields = append(append([]table.Field(nil), rows[i].Fields...), table.Field{Name: "calls", Value: calls})
+				}
+			}
+			answers, err := r.runTableWith(ctx, lines.ZoneParts(), 1, catalogue("part", parts), rows, nil)
 			if err != nil {
 				return err
 			}
-			merged = preserveDesignParts(parts, merged)
-			if len(merged) >= len(parts) {
-				break
+			for i := range units {
+				partOf[i] = chosen(answers[i], "part", parts)
 			}
-			parts, windows = merged, count
 		}
-		membership := map[string]string{}
-		r.designBoxOf[target.ID] = membership
-		for _, part := range parts {
-			r.addDesignBox(target.ID, part, membership)
+		// A part is drawn only when at least one unit chose it.
+		boxOfPart := map[int]string{}
+		var drawn []int
+		for position := range parts {
+			var ids []string
+			for i, unit := range units {
+				if partOf[i] == position {
+					ids = append(ids, unit.members...)
+				}
+			}
+			if len(ids) == 0 {
+				continue
+			}
+			r.addDesignBox(target.ID, designItem{Name: parts[position].Title, Purpose: parts[position].Purpose, IDs: ids}, membership)
+			boxOfPart[position] = membership[ids[0]]
+			drawn = append(drawn, position)
 		}
 		// Missing decisions remain source inventory, not a directory-derived
 		// architectural claim. Every unassigned declaration stays available.
@@ -467,82 +420,81 @@ func (r *reader) readDesign(ctx context.Context) error {
 				}
 			}
 		}
-		var areaItems []designItem
-		for _, part := range designPartContext(items, parts) {
-			if len(part.IDs) == 0 || membership[part.IDs[0]] == "" {
-				continue
-			}
-			part.IDs = []string{membership[part.IDs[0]]}
-			areaItems = append(areaItems, part)
+		if len(drawn) == 0 {
+			continue
 		}
-		areas, _, err := r.askDesign(ctx, areaItems, nil, "areas")
-		if err != nil {
+		if err := r.readAreas(ctx, target.ID, units, partOf, parts, drawn, boxOfPart); err != nil {
 			return err
-		}
-		for _, area := range areas {
-			zone := &zoneState{id: r.compactID("z", &r.nextZone), title: area.Name, line: area.Purpose, boxes: area.IDs}
-			r.zones[target.ID] = append(r.zones[target.ID], zone)
-			for _, id := range area.IDs {
-				r.boxes[id].zoneID[target.ID] = zone.id
-			}
 		}
 	}
 	r.reportStage(lines.StageZones)
+	r.reportStage(lines.StageZoneParts)
+	r.reportStage(lines.StageZoneAreas)
 	return nil
 }
 
-// Reduction retains the native observations with endpoints rebound to its
-// closed part catalogue. Descriptions and file counts alone do not explain
-// how the parts collaborate.
-func designPartContext(original, parts []designItem) []designItem {
-	result := append([]designItem(nil), parts...)
-	partOf := map[string]string{}
-	for i := range result {
-		result[i].Ref = fmt.Sprintf("c%d", i+1)
-		result[i].Calls = nil
-		for _, id := range result[i].IDs {
-			partOf[id] = result[i].Ref
-		}
+// readAreas proposes areas over the drawn parts and assigns each part to one.
+func (r *reader) readAreas(ctx context.Context, targetID string, units []*designUnit, partOf []int, parts []designProposal, drawn []int, boxOfPart map[int]string) error {
+	unitPart := map[string]int{}
+	for i, unit := range units {
+		unitPart[unit.id] = partOf[i]
 	}
-	refPart := map[string]string{}
-	originalByID := map[string]designItem{}
-	for _, item := range original {
-		if len(item.IDs) > 0 {
-			refPart[item.Ref] = partOf[item.IDs[0]]
-			originalByID[item.IDs[0]] = item
-		}
-	}
-	for i := range result {
-		for _, id := range result[i].IDs {
-			item := originalByID[id]
-			for _, call := range item.Calls {
-				copy := call
-				copy.To = nil
-				for _, ref := range call.To {
-					if to := refPart[ref]; to != "" && !slices.Contains(copy.To, to) {
-						copy.To = append(copy.To, to)
-					}
+	calls := map[int]map[int]bool{}
+	for i, unit := range units {
+		for other := range unit.calls {
+			if to, ok := unitPart[other]; ok && to >= 0 && partOf[i] >= 0 && to != partOf[i] {
+				if calls[partOf[i]] == nil {
+					calls[partOf[i]] = map[int]bool{}
 				}
-				result[i].Calls = append(result[i].Calls, copy)
+				calls[partOf[i]][to] = true
 			}
 		}
 	}
-	return result
+	input := make([]map[string]any, 0, len(drawn))
+	rows := make([]table.Row, 0, len(drawn))
+	for _, position := range drawn {
+		var calling []string
+		for to := range calls[position] {
+			calling = append(calling, parts[to].Title)
+		}
+		sort.Strings(calling)
+		input = append(input, map[string]any{"title": parts[position].Title, "purpose": parts[position].Purpose})
+		fields := []table.Field{{Name: "title", Value: parts[position].Title}, {Name: "purpose", Value: parts[position].Purpose}}
+		if len(calling) > 0 {
+			fields = append(fields, table.Field{Name: "calls", Value: calling})
+		}
+		rows = append(rows, table.Row{ID: boxOfPart[position], Fields: fields})
+	}
+	areas, err := r.propose(ctx, "areas", input, nil)
+	if err != nil || len(areas) == 0 {
+		return err
+	}
+	answers, err := r.runTableWith(ctx, lines.ZoneAreas(), 1, catalogue("area", areas), rows, nil)
+	if err != nil {
+		return err
+	}
+	zones := make([]*zoneState, len(areas))
+	for i, position := range drawn {
+		area := chosen(answers[i], "area", areas)
+		if area < 0 {
+			continue
+		}
+		if zones[area] == nil {
+			zones[area] = &zoneState{id: r.compactID("z", &r.nextZone), title: areas[area].Title, line: areas[area].Purpose}
+			r.zones[targetID] = append(r.zones[targetID], zones[area])
+		}
+		box := boxOfPart[position]
+		zones[area].boxes = append(zones[area].boxes, box)
+		r.boxes[box].zoneID[targetID] = zones[area].id
+	}
+	return nil
 }
 
-func preserveDesignParts(original, accepted []designItem) []designItem {
-	used := map[string]bool{}
-	for _, part := range accepted {
-		for _, id := range part.IDs {
-			used[id] = true
-		}
-	}
-	for _, part := range original {
-		if len(part.IDs) > 0 && !used[part.IDs[0]] {
-			accepted = append(accepted, part)
-		}
-	}
-	return accepted
+// designItem is what addDesignBox draws: a titled set of symbol places.
+type designItem struct {
+	Name    string
+	Purpose string
+	IDs     []string
 }
 
 func (r *reader) addDesignBox(targetID string, part designItem, membership map[string]string) {

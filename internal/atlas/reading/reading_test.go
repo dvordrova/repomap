@@ -128,7 +128,11 @@ type tableProvider struct {
 	answerFor          func(map[string]any) table.Answer
 	learningFor        func(learningRequest) learningResponse
 	learningSelectNone bool
-	designFor          func(string, []designItem) designResult
+	// designFor proposes parts or areas; nil proposes one part per package
+	// and no areas. zoneFor chooses a part or area title for a row; nil puts
+	// a unit in the part named after its package and a part in no area.
+	designFor func(mode string, input []map[string]any) designProposals
+	zoneFor   func(column string, row map[string]any) string
 }
 
 type questionBatchRequest struct {
@@ -171,20 +175,20 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 	if err := json.Unmarshal(prepared.Bytes(), &batch); err != nil {
 		return llm.Completion{}, err
 	}
-	if batch.Task == "repomap.atlas.design.v2" {
+	if batch.Task == "repomap.atlas.design.v3" {
 		var request struct {
 			Mode  string
-			Items []designItem
+			Input []map[string]any
 		}
 		if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 			return llm.Completion{}, err
 		}
-		response := designResult{Groups: []designGroup{}}
+		response := designProposals{Groups: []designProposal{}}
 		if provider.designFor != nil {
-			response = provider.designFor(request.Mode, request.Items)
-		} else if request.Mode != "areas" {
-			for _, item := range request.Items {
-				response.Groups = append(response.Groups, designGroup{Title: item.Name, Purpose: "Reads the supplied declarations.", Members: []string{item.Ref}})
+			response = provider.designFor(request.Mode, request.Input)
+		} else if request.Mode == "parts" {
+			for _, pkg := range request.Input {
+				response.Groups = append(response.Groups, designProposal{Title: fmt.Sprint(pkg["package"]), Purpose: "Reads the supplied declarations."})
 			}
 		}
 		raw, err := json.Marshal(response)
@@ -296,6 +300,9 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 				}
 				if len(options) > 0 {
 					answer[column.Name] = options[0]
+				}
+				if column.Name == "part" || column.Name == "area" {
+					answer[column.Name] = zoneRef(provider.zoneFor, column.Name, row, request.Context)
 				}
 				// A peer choice takes the first listed ref, not "none".
 				if column.Name == "peer" && len(options) > 1 {
@@ -500,7 +507,7 @@ func TestLiveReadingKeepsFileLinesWithoutDirectoryPlacement(t *testing.T) {
 	for _, box := range target.Boxes {
 		boxes[box.Title] = box
 	}
-	if len(boxes) != 3 || len(boxes["pkg/a"].Files) != 2 || len(boxes["Z"].Files) != 1 {
+	if len(boxes) != 2 || len(boxes["pkg/a"].Files) != 2 || len(boxes["pkg/b"].Files) != 2 {
 		t.Fatalf("source layout overrode accepted parts: %+v", boxes)
 	}
 	for _, file := range boxes["pkg/a"].Files {
@@ -525,20 +532,6 @@ func TestLiveReadingKeepsFileLinesWithoutDirectoryPlacement(t *testing.T) {
 	if !strings.Contains(string(request), `"declarations":["Main"],"path":"pkg/a/x.go"`) || strings.Contains(string(request), "File pkg/a/x.go does things.") {
 		t.Fatalf("file request does not isolate deterministic caller evidence:\n%s", request)
 	}
-}
-
-func TestSingleTypePartSurvives(t *testing.T) {
-	graph := testGraph(t)
-	result, err := Read(context.Background(), readOptions(t, graph, &tableProvider{}, ""))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, box := range result.Atlas.Targets[0].Boxes {
-		if box.Title == "Z" && len(box.Files) == 1 && len(box.Files[0].Symbols) == 1 {
-			return
-		}
-	}
-	t.Fatal("a type chosen as its own part was merged into its directory")
 }
 
 func TestRejectedWindowFallsBackAndIsNotCached(t *testing.T) {
@@ -616,4 +609,21 @@ func TestRequestBytesCarryNoIdentities(t *testing.T) {
 			t.Errorf("%s carries an identity or an absolute path", filepath.Base(name))
 		}
 	}
+}
+
+// zoneRef answers a zone assignment row by the title it names.
+func zoneRef(zoneFor func(string, map[string]any) string, column string, row, context map[string]any) string {
+	title := ""
+	if zoneFor != nil {
+		title = zoneFor(column, row)
+	} else if column == "part" {
+		title = fmt.Sprint(row["package"])
+	}
+	entries, _ := context[column+"s"].([]any)
+	for _, entry := range entries {
+		if item, _ := entry.(map[string]any); item != nil && item["title"] == title {
+			return fmt.Sprint(item["ref"])
+		}
+	}
+	return "none"
 }
