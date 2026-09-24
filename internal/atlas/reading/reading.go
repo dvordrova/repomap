@@ -698,6 +698,11 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 		if err != nil {
 			return nil, err
 		}
+		if classifier {
+			if packed, err = table.FitClassifierWindows(def, packed); err != nil {
+				return nil, err
+			}
+		}
 		for _, window := range packed {
 			window.Index = len(windows)
 			windows = append(windows, window)

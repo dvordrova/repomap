@@ -55,6 +55,49 @@ func MinProbabilityOf(def Definition) float64 {
 	return ClassifierMinProbability
 }
 
+// ClassifierBodyBytes bounds one decision-model request body: at about 0.38
+// tokens a byte it stays well inside the model's 64k-token request. Byte
+// packing measures the text-model request, which lacks each question's
+// options; 150 questions naming 18 part titles each exceeded the budget.
+const ClassifierBodyBytes = 120_000
+
+// FitClassifierWindows halves any window whose decision-model body exceeds
+// ClassifierBodyBytes until it fits or holds one row; nothing is dropped.
+func FitClassifierWindows(def Definition, windows []Window) ([]Window, error) {
+	var fitted []Window
+	var fit func(Window) error
+	fit = func(window Window) error {
+		call, err := ClassifierCall(def, window, MinProbabilityOf(def))
+		if err != nil {
+			return err
+		}
+		if len(call.Prompt.User) <= ClassifierBodyBytes || len(window.Rows) < 2 {
+			fitted = append(fitted, window)
+			return nil
+		}
+		half := len(window.Rows) / 2
+		for _, rows := range [][]Row{window.Rows[:half], window.Rows[half:]} {
+			piece := window
+			piece.Rows = append([]Row(nil), rows...)
+			request, err := Request(def, piece)
+			if err != nil {
+				return err
+			}
+			piece.Request = request
+			if err := fit(piece); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, window := range windows {
+		if err := fit(window); err != nil {
+			return nil, err
+		}
+	}
+	return fitted, nil
+}
+
 // ForClassifier packs a closed table for a decision model.
 func ForClassifier(def Definition) Definition {
 	def.Window = max(1, ClassifierQuestions/max(1, len(def.Columns)))

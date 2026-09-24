@@ -2,6 +2,7 @@ package table
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -112,5 +113,37 @@ func TestYesAtIsACutoffNotAnUncertainBand(t *testing.T) {
 	result, err := DecodeClassifier(def, window, raw, 0.5)
 	if err != nil || result.Answers[0]["key_symbol"] != "yes" || result.Answers[1]["key_symbol"] != "no" {
 		t.Fatalf("result %+v %v", result, err)
+	}
+}
+
+// A window whose decision-model body is too large is halved, keeping every
+// row: options repeated per question do not count in byte packing.
+func TestFitClassifierWindowsHalvesOversizedBodiesAndKeepsRows(t *testing.T) {
+	def := closedDefinition()
+	var titles []map[string]any
+	var options []string
+	for i := 1; i <= 18; i++ {
+		ref := fmt.Sprintf("c%d", i)
+		titles = append(titles, map[string]any{"ref": ref, "title": strings.Repeat("Part title number ", 3) + ref})
+		options = append(options, ref)
+	}
+	window := Window{Context: []Field{{Name: "parts", Value: titles}, {Name: "part_options", Value: append(options, "none")}}}
+	for i := 0; i < 150; i++ {
+		window.Rows = append(window.Rows, Row{ID: fmt.Sprintf("s%d", i+1), Fields: []Field{{Name: "name", Value: strings.Repeat("x", 300)}}})
+	}
+	fitted, err := FitClassifierWindows(def, []Window{window})
+	if err != nil || len(fitted) < 2 {
+		t.Fatalf("fitted %d windows, %v", len(fitted), err)
+	}
+	rows := 0
+	for _, piece := range fitted {
+		call, _ := ClassifierCall(def, piece, 0.5)
+		if len(call.Prompt.User) > ClassifierBodyBytes {
+			t.Fatalf("piece body %d bytes", len(call.Prompt.User))
+		}
+		rows += len(piece.Rows)
+	}
+	if rows != 150 {
+		t.Fatalf("rows %d, want 150", rows)
 	}
 }
