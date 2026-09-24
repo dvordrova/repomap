@@ -198,7 +198,7 @@ func TestCumulativeSQLAdmissionRetainsSourcesAndDropsProseBeforeRelations(t *tes
 					t.Fatalf("literal prose/value invented a table: %+v", node)
 				}
 			}
-			if language != "python" && !explicitBare || len(queries) != 11 {
+			if language != "python" && !explicitBare || len(queries) != 12 {
 				t.Fatalf("SQL source context lost or prose admitted: explicit=%v queries=%+v", explicitBare, queries)
 			}
 			joined := queries["SELECT id FROM public.orders WHERE note = 'JOIN imaginary_table'"]
@@ -212,6 +212,15 @@ func TestCumulativeSQLAdmissionRetainsSourcesAndDropsProseBeforeRelations(t *tes
 			projection := queries["SELECT {projection}"]
 			if projection.ID == "" || !projection.Data.Partial || len(projection.Data.Tables) != 0 {
 				t.Fatalf("dynamic projection lost its partial source: %+v", projection)
+			}
+			// Go and Python fill the table with a printf verb, TypeScript with
+			// a template; either way the table is known only at run time.
+			runtimeTable := queries["DROP TABLE IF EXISTS %s"]
+			if language == "jsts" {
+				runtimeTable = queries["DROP TABLE IF EXISTS ${table}"]
+			}
+			if runtimeTable.ID == "" || !runtimeTable.Data.Partial || len(runtimeTable.Data.Tables) != 0 {
+				t.Fatalf("statement with a run-time table lost or invented its table: %+v", runtimeTable)
 			}
 			for _, source := range []string{
 				"SELECT 1", "SELECT 'ready'", "WITH recent AS (SELECT id FROM public.orders) SELECT id FROM recent", "UPDATE public.orders SET note = 'updated'",

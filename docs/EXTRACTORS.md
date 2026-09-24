@@ -107,7 +107,18 @@ there; explicit `.sql` and sqlc source inputs keep their existing authority.
 The admission, SQL tokens and table mentions live in `internal/sqltext`; the
 facts pass applies the same admission to call-argument literals before it
 records a `sql_query`. `MERGE INTO` and `REPLACE INTO` are admitted beside the
-other supported statements.
+other supported statements, as are `SELECT [NOT] EXISTS (...)`, `SELECT
+@@var`, MySQL `INSERT IGNORE`, `UPDATE ... JOIN ... SET`, multi-table
+`UPDATE a, b SET` and `DELETE t FROM t JOIN u`, and `CREATE/ALTER/DROP` of
+materialized views, types, domains, procedures and extensions. An object name
+may be filled in by the source: a template hole or a printf verb (`DROP TABLE
+%s`, `%[1]s`, `%(table)s`), also pieced into a name (`partitions.p_%d`). Such a
+statement is partial and its table is not listed, since only run time names it.
+SQL never writes `:` after an object name, so `create table %s: %w` stays a
+message; UPDATE's SET must start an assignment. Table mentions skip
+`IF [NOT] EXISTS`, `ONLY` and `LATERAL`, and `ON DUPLICATE KEY UPDATE` names no
+table. Account statements (`CREATE USER`), non-SQL query languages (Cypher,
+CQL) and PostgreSQL's empty `SELECT FROM t` remain unadmitted source text.
 This supported subset does not establish that other SQL is absent, and the
 original code and documentation remain available as source evidence. ORM model
 declarations are extracted independently. The producer never connects to a

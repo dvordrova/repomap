@@ -36,3 +36,9 @@ var ordinarySourceText = []string{
 func directoryError(dir string, err error) error {
 	return fmt.Errorf("create %s dir: %w", dir, err)
 }
+
+// A statement whose table a printf verb fills in is still a statement; its
+// table is known only at run time.
+func dropTableStatement(table string) string {
+	return fmt.Sprintf("DROP TABLE IF EXISTS %s", table)
+}

@@ -32,3 +32,9 @@ export const ordinarySourceText = [
 export function reportDirectoryError(path: string) {
     console.error("create %s dir", path);
 }
+
+// A statement whose table a template fills in is still a statement; its
+// table is known only at run time.
+export function dropTableStatement(table: string) {
+    return `DROP TABLE IF EXISTS ${table}`;
+}

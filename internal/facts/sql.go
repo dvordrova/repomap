@@ -11,8 +11,9 @@ import (
 // literal must have SQL statement structure (sqltext.Statement, the same
 // admission the database extractor applies to unbound literals); a message or
 // help text that merely starts with an SQL verb is not a statement. The tables
-// are the names after FROM, JOIN, INTO, UPDATE or TABLE. No driver or ORM is
-// named.
+// are the written names after FROM, JOIN, INTO, UPDATE or TABLE; a table a
+// printf verb or template hole fills in is named only at run time, so it is
+// not listed. No driver or ORM is named.
 func (b *builder) addSQLQueries(target *targetContext) {
 	for _, relation := range target.input.Index.Relations {
 		if target.ownsCallee(relation) {

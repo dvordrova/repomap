@@ -30,5 +30,5 @@ func TestClojureFixtureInventoryAndNativeGraph(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaptertest.AssertExecutionScope(t, index, graph, "src/example/core.clj", 19, programindex.ObjectModule)
-	adaptertest.AssertSQLQueryFacts(t, index, "src/example/core.clj", map[string]string{"SELECT id FROM direct_rows": "direct_rows"}, "create %s dir")
+	adaptertest.AssertSQLQueryFacts(t, index, "src/example/core.clj", map[string]string{"SELECT id FROM direct_rows": "direct_rows", "DROP TABLE IF EXISTS %s": ""}, "create %s dir")
 }

@@ -35,3 +35,9 @@ def report_directory_error(path):
     # A message handed to a call outside the repository is ordinary text even
     # when it starts with an SQL verb.
     logging.error("create %s dir", path)
+
+
+def drop_table_statement(table):
+    # A statement whose table %-formatting fills in is still a statement; its
+    # table is known only at run time.
+    return "DROP TABLE IF EXISTS %s" % table

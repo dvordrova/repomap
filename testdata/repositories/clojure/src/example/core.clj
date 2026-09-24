@@ -25,3 +25,8 @@
 
 (defn directory-error [dir]
   (format "create %s dir" dir))
+
+;; A statement whose table format fills in is still a statement; its table is
+;; known only at run time.
+(defn drop-table-statement [table]
+  (format "DROP TABLE IF EXISTS %s" table))

@@ -100,7 +100,7 @@ never entered into or read from a repository-wide unqualified map.
   `db`…) and operations, routes, client calls and portals follow from accepted
   decisions. `sql_query` is a fixed `db` boundary, recorded only for a literal
   with SQL statement structure (the shared `internal/sqltext` admission, not a
-  leading verb). Without a model there are
+  leading verb; a table filled in by `%s` or a template hole still counts). Without a model there are
   candidates, not routes; the Echo preset test is the offline acceptance.
 - **Reading:** role/activation/outgoing selection is independent of captions and
   directory closure. Native boundaries and accepted operations survive missing

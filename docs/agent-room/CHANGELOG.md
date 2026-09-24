@@ -38,6 +38,35 @@
   3,881 units then fell to `none`. Proposals are now a title → purpose
   object read in order and refused whole when an entry is empty or
   repeated; the parts and areas prompts are separate and short.
+## 2026-09-25 — SQL admission keeps statements with run-time tables
+
+- Review of the statement-structure change found real SQL it dropped: tables
+  filled in by printf verbs (golang-migrate `INSERT INTO %s ...`, `DROP TABLE
+  %s`; maddy `UPDATE %s SET %s = $2`; casdoor `CREATE SCHEMA %s;`), 23 sqlc
+  end-to-end queries (`SELECT [NOT] EXISTS (...)`, MySQL `UPDATE ... JOIN ...
+  SET`, `UPDATE a, b SET`, `DELETE t FROM t JOIN u`), `INSERT IGNORE`,
+  `SELECT @@server_id` and `CREATE EXTENSION/MATERIALIZED VIEW/TYPE`, `ALTER
+  TABLE ONLY/MODIFY/ENABLE`. `sqltext` now reads an object name pieced from
+  identifiers, template holes and printf verbs; such a table is not listed and
+  makes an extracted query partial. A `:` after the object name keeps
+  `create table %s: %w` a message; SET must start an assignment.
+- `sqltext.Tables` skipped three tokens after every IF, so `DROP TABLE IF
+  EXISTS jobs CASCADE` listed `CASCADE` and `ALTER TABLE IF EXISTS users ADD`
+  listed `ADD`. It now skips `IF [NOT] EXISTS`, `ONLY`, `LATERAL`, clause words
+  and `ON DUPLICATE KEY UPDATE`.
+- Measured with a throwaway scan of Go string literals (call arguments and
+  constants) in go-corpus, casdoor, kubernetes, moby, syncthing, restic, etcd,
+  headscale, soft-serve, caddy and repomap: 86 statements regained, all real
+  SQL; 8 newly refused, all messages (`create table t: %v`, `select: empty
+  target list`, `create table with nil name`). Python literals from django,
+  freqtrade and beets: 84 regained, two describe() messages (`Create index %s
+  on %s on model %s`) admitted, none lost. repomap's own non-test sources still
+  admit none. Unadmitted: `CREATE/ALTER USER`, Cypher/CQL, `SELECT FROM t`.
+- The Go and Clojure fixtures hand `DROP TABLE IF EXISTS %s` to their format
+  call and expect a `sql_query` fact with no table (both fail with the previous
+  admission); Python `%` and a TypeScript template add the partial source
+  statement the extractor keeps.
+
 ## 2026-09-25 — SQL facts need statement structure; DeepSeek is a destination
 
 - A self-run of `cmd/repomap` had 13 `sql_query` facts and all were false:

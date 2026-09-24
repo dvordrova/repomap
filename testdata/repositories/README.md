@@ -83,3 +83,10 @@ outside the repository; only the statement becomes a `sql_query` fact:
 | Python | [data_sources.py](python/src/fixture_app/data_sources.py) `connection.execute` | [sql_literals.py](python/src/fixture_app/sql_literals.py) `logging.error("create %s dir", path)` |
 | TypeScript | [data-sources.ts](jsts/src/data-sources.ts) `connection.execute` | [sql-literals.ts](jsts/src/sql-literals.ts) `console.error("create %s dir", path)` |
 | Clojure | [core.clj](clojure/src/example/core.clj) `(query! "SELECT ...")` | [core.clj](clojure/src/example/core.clj) `(format "create %s dir" dir)` |
+
+A statement whose table the source fills in stays a statement with no listed
+table. Go (`fmt.Sprintf("DROP TABLE IF EXISTS %s", table)`) and Clojure
+(`(format "DROP TABLE IF EXISTS %s" table)`) hand it to a call outside the
+repository, so it is also a `sql_query` fact. Python's `%` operator and a
+TypeScript template literal are not call arguments, so their equivalents in
+`sql_literals.py` and `sql-literals.ts` are partial source SQL only.

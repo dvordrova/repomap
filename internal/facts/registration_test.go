@@ -237,10 +237,24 @@ func TestSQLStatementsNameTheirTables(t *testing.T) {
 	s.external("fold", "strings", "EqualFold", programindex.ExternalAuthorityPlatform)
 	s.relate("f", programindex.RelationInvokesExternal, "fn", []string{"fold"}, loc("store.go", 15),
 		pattern("p", programindex.PatternCall, "EqualFold", loc("store.go", 15), nil, dynamic(1), literal(2, "with")))
+	// A statement whose table is a printf verb is still a statement; the table
+	// is filled in at run time, so it names none. IF EXISTS is not a table.
+	s.external("sprintf", "fmt", "Sprintf", programindex.ExternalAuthorityPlatform)
+	s.relate("s", programindex.RelationInvokesExternal, "fn", []string{"sprintf"}, loc("store.go", 16),
+		pattern("p", programindex.PatternCall, "Sprintf", loc("store.go", 16), nil, literal(1, "DROP TABLE IF EXISTS %s"), dynamic(2)))
+	s.external("exec", "database/sql", "ExecContext", programindex.ExternalAuthorityPlatform)
+	s.relate("x", programindex.RelationInvokesExternal, "fn", []string{"exec"}, loc("store.go", 17),
+		pattern("p", programindex.PatternCall, "ExecContext", loc("store.go", 17), nil, dynamic(1), literal(2, "DROP TABLE IF EXISTS authors CASCADE")))
 	result := mustBuild(t, Input{Targets: []TargetInput{{Index: s.index(), Root: "."}}})
-	queries := result.OfKind(KindSQLQuery)
-	if len(queries) != 1 || queries[0].Key != "orders, users" || queries[0].Symbol != "Queries.GetUser" || queries[0].Anchor.String() != "store.go:12" {
-		t.Fatalf("sql queries = %+v", queries)
+	keys := map[string]string{}
+	for _, query := range result.OfKind(KindSQLQuery) {
+		keys[query.Anchor.String()] = query.Key
+		if query.Anchor.String() == "store.go:12" && query.Symbol != "Queries.GetUser" {
+			t.Fatalf("sql query symbol = %+v", query)
+		}
+	}
+	if want := map[string]string{"store.go:12": "orders, users", "store.go:16": "", "store.go:17": "authors"}; !reflect.DeepEqual(keys, want) {
+		t.Fatalf("sql query tables = %v, want %v", keys, want)
 	}
 }
 

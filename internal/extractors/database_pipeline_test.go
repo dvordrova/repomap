@@ -123,8 +123,8 @@ func TestCumulativeDataSurvivesNativeGraphReadingAndSavedGroupsIndex(t *testing.
 	if owners != 2 {
 		t.Fatalf("ORM owners=%d", owners)
 	}
-	if literalQueries != 11 {
-		t.Fatalf("persisted SQL literals=%d; expected eleven supported source statements", literalQueries)
+	if literalQueries != 12 {
+		t.Fatalf("persisted SQL literals=%d; expected twelve supported source statements", literalQueries)
 	}
 	copy := index.Snapshot()
 	copy.Data[0].Data.Name = "changed"

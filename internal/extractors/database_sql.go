@@ -153,7 +153,8 @@ func (b *databaseExtractor) addSQL(path, scope, source string, line int, dynamic
 			partial = true
 		}
 	}
-	partial = partial || balance != 0
+	// A table named by a printf verb or template hole is filled in at run time.
+	partial = partial || balance != 0 || sqltext.RuntimeTable(tokens)
 	statement := strings.ToUpper(tokens[0].Text)
 	if !sqlStart.MatchString(statement) {
 		return ""
@@ -176,7 +177,7 @@ func (b *databaseExtractor) addSQL(path, scope, source string, line int, dynamic
 			if j < len(tokens) && strings.EqualFold(tokens[j].Text, "if") {
 				j += 3
 			}
-			table, _ := sqltext.Identifier(tokens, j)
+			table, _, _ := sqltext.ObjectName(tokens, j)
 			if table != "" {
 				tableLine := tokens[i].Line
 				if b.sourceAnchor != nil {
