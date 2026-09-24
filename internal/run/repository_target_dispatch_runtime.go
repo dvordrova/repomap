@@ -9,6 +9,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/documentationreduce"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/jstsproject"
@@ -112,21 +113,26 @@ func dispatchRepositoryTargetPlan(
 			"repository target dispatcher: selected default identity is absent",
 		)
 	}
-	reducedDocumentation, err := reduceRepositoryDocumentationForRun(
-		ctx,
-		options.DebugDir,
-		options.NoCache,
-		options.Deps.llmBatchConcurrency,
-		options.Deps.llmBatchController,
-		options.Deps.newCubeProvider,
-		options.Deps.runDocumentationReduce,
-		options.FirstLayer,
-		options.Plan.guidance,
-		options.Output,
-	)
-	if err != nil {
-		return "", err
-	}
+	// The documentation reduction reads only the planned guidance, and native
+	// analysis never reads the reduction, so the model call runs beside the
+	// first target's compiler. It is joined before a target page needs it and
+	// before the first-layer journal is flushed on every path; it is the only
+	// first-layer writer after planning, so the journal keeps its order.
+	documentation := startBackground(func() (documentationreduce.Result, error) {
+		return reduceRepositoryDocumentationForRun(
+			ctx,
+			options.DebugDir,
+			options.NoCache,
+			options.Deps.llmBatchConcurrency,
+			options.Deps.llmBatchController,
+			options.Deps.newCubeProvider,
+			options.Deps.runDocumentationReduce,
+			options.FirstLayer,
+			options.Plan.guidance,
+			options.Output,
+		)
+	})
+	defer documentation.wait()
 
 	registry, err := ordinaryRepositoryTargetAdapterRegistry()
 	if err != nil {
@@ -157,6 +163,11 @@ func dispatchRepositoryTargetPlan(
 	outcomes := make([]targetoutcome.Outcome, 0, len(ordered))
 	targetErrors := make([]error, 0, len(ordered))
 	failPublication := func(runErr error) (string, error) {
+		// A refused documentation reduction preceded every target in the
+		// serial order, so it stays the reported cause.
+		if _, reduceErr := documentation.wait(); reduceErr != nil {
+			return "", reduceErr
+		}
 		runDir := filepath.Join(options.DebugDir, options.RunID)
 		if len(runs) > 0 {
 			runDir = runs[0].RunDir
@@ -289,6 +300,10 @@ func dispatchRepositoryTargetPlan(
 		childDeps.runIDOverride = runID
 		childDeps.siblingTargetRun = true
 		childDeps.deferredPortfolioHTML = true
+		reducedDocumentation, reduceErr := documentation.wait()
+		if reduceErr != nil {
+			return "", reduceErr
+		}
 		ownedDocumentation, documentationErr := reducedDocumentation.Snapshot()
 		if documentationErr != nil {
 			return failPublication(fmt.Errorf(
@@ -366,6 +381,9 @@ func dispatchRepositoryTargetPlan(
 		published.GroupIndex = groupindex.Index{}
 		runs = append(runs, published)
 		pendingTargets = append(pendingTargets, consoleTarget)
+	}
+	if _, reduceErr := documentation.wait(); reduceErr != nil {
+		return "", reduceErr
 	}
 	targetOutcomePortfolio, err := targetoutcome.Build(defaultSelected.ID, outcomes)
 	if err != nil {
