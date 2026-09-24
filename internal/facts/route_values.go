@@ -72,10 +72,10 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 	if value == nil {
 		return nil
 	}
-	encoded, _ := json.Marshal(struct {
-		Value  *sourcevalue.Value
-		Fields []string
-	}{value, fields})
+	// The key is the expression alone: re-entering an expression that is
+	// still being read is recursion, and a recursive field access (a node
+	// reading its own `next`) would otherwise grow `fields` without end.
+	encoded, _ := json.Marshal(value)
 	key := string(encoded)
 	if active[key] {
 		return nil

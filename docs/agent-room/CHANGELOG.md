@@ -1,5 +1,14 @@
 # Implementation and acceptance journal
 
+## 2026-09-24 — Registration values stop at recursive field reads
+
+- Reading a registration argument's value keyed its cycle guard on the
+  expression plus the accumulated field path; a method reaching itself
+  through a field of its own receiver grew that path forever. On
+  `cmd/repomap` Facts reached ~96 GB and macOS killed the run (exit 137).
+  The guard is now the expression alone. Same target, `--no-model`: Facts
+  2.2 s, 1,249 facts, peak heap ~350 MB, whole run 5m21s.
+
 ## 2026-09-18 — A handed value is a constructed instance or a module
 
 - `handed` on a registration now means an instance the repository built
