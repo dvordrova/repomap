@@ -93,7 +93,10 @@ func (r *reader) knowledgeInput(def table.Definition, shared []table.Field, row 
 	// its file. These interpretations retain that context even when it is
 	// deterministic and contributes no model dependency.
 	k.ContextID = place.Parent
-	if parent := r.knowledge[place.Parent]; parent != nil {
+	unlock := r.lock()
+	parent := r.knowledge[place.Parent]
+	unlock()
+	if parent != nil {
 		for _, field := range row.Fields {
 			if (field.Name == "directory_hypothesis" || field.Name == "file_hypothesis" || field.Name == "description_hypothesis") && field.Value == parent.Cells["line"] {
 				k.DependsOn = []string{parent.ID}
@@ -132,14 +135,26 @@ func (k Knowledge) identity(repository string) string {
 	return digest(raw)
 }
 
+// recallRow takes a remembered answer for this row and accepts it at once.
 func (r *reader) recallRow(def table.Definition, window table.Window, ref rememberedRow) (rowAnswer, bool, error) {
+	answer, found, err := r.recallAnswer(def, window, ref)
+	if found && err == nil {
+		r.acceptRecall(def, ref)
+	}
+	return answer, found, err
+}
+
+// recallAnswer reads a remembered answer for this row from its shared
+// response, read and parsed once per request, and validates it against the
+// current table. It changes nothing else, so rows may be recalled at once;
+// acceptRecall then accepts each recalled row in row order.
+func (r *reader) recallAnswer(def table.Definition, window table.Window, ref rememberedRow) (rowAnswer, bool, error) {
 	if r.classifies(def) {
 		return r.recallClassifierRow(def, window, ref)
 	}
-	cached, known := r.responseTables[ref.RequestKey]
-	if !known {
+	cached := loadOnce(r, &r.responseTables, "table", ref.RequestKey, func() rememberedTable {
 		exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, ref.RequestKey)
-		cached = rememberedTable{requestSHA: exchange.RequestSHA256, responseSHA: exchange.ResponseSHA256, request: exchange.Request, response: exchange.Response, err: err}
+		cached := rememberedTable{requestSHA: exchange.RequestSHA256, responseSHA: exchange.ResponseSHA256, request: exchange.Request, response: exchange.Response, err: err}
 		if err == nil && found {
 			adapted, unwrapErr := llm.AdaptResponse(r.opts.Provider, exchange.ResponseContext, exchange.Request, exchange.Response)
 			cached.adapted = adapted
@@ -148,8 +163,8 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 				cached.rows, cached.err = rememberedResponseRows(adapted.Domain)
 			}
 		}
-		r.responseTables[ref.RequestKey] = cached
-	}
+		return cached
+	})
 	if cached.err != nil {
 		return rowAnswer{}, false, cached.err
 	}
@@ -173,44 +188,56 @@ func (r *reader) recallRow(def table.Definition, window table.Window, ref rememb
 	if err != nil {
 		return rowAnswer{}, false, err
 	}
-	cached.adapted.Accepted([]string{ref.RowKey})
-	if !cached.observed && len(cached.adapted.Rejections) > 0 {
-		cached.observed = true
-		r.responseTables[ref.RequestKey] = cached
-		executor := debugdump.BindStage(r.opts.Executor, def.Stage)
-		if executor.Observer != nil {
-			if err := executor.Observer.Observe(llm.Event{
-				Kind: llm.EventCacheHit, Source: llm.SourceCache, Cached: true,
-				CacheRoot: executor.RootDir, CacheKey: ref.RequestKey,
-				Request: cached.request, Response: cached.response,
-				RequestSHA256: cached.requestSHA, ResponseSHA256: cached.responseSHA,
-				RequestBytes: len(cached.request), ResponseBytes: len(cached.response),
-				ResponseRejections: cached.adapted.Rejections,
-			}); err != nil {
-				r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "metadata_observer_failed", Count: 1, Reason: err.Error()})
-			}
-		}
-	}
 	return rowAnswer{answer: answers[0], source: atlas.SourceCache, requestSHA: cached.requestSHA,
 		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
+}
+
+// acceptRecall accepts one recalled row of a text-model response: its prose
+// reaches the glossary, and the first row recalled from a response with
+// rejected rows journals that response once.
+func (r *reader) acceptRecall(def table.Definition, ref rememberedRow) {
+	if r.classifies(def) {
+		return
+	}
+	unlock := r.lock()
+	cached := r.responseTables[ref.RequestKey]
+	observe := !cached.observed && len(cached.adapted.Rejections) > 0
+	if observe {
+		cached.observed = true
+		r.responseTables[ref.RequestKey] = cached
+	}
+	unlock()
+	cached.adapted.Accepted([]string{ref.RowKey})
+	if !observe {
+		return
+	}
+	executor := debugdump.BindStage(r.opts.Executor, def.Stage)
+	if executor.Observer != nil {
+		if err := executor.Observer.Observe(llm.Event{
+			Kind: llm.EventCacheHit, Source: llm.SourceCache, Cached: true,
+			CacheRoot: executor.RootDir, CacheKey: ref.RequestKey,
+			Request: cached.request, Response: cached.response,
+			RequestSHA256: cached.requestSHA, ResponseSHA256: cached.responseSHA,
+			RequestBytes: len(cached.request), ResponseBytes: len(cached.response),
+			ResponseRejections: cached.adapted.Rejections,
+		}); err != nil {
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "metadata_observer_failed", Count: 1, Reason: err.Error()})
+		}
+	}
 }
 
 // recallClassifierRow takes a remembered decision-model answer for this row
 // from its cached response, validated against the current table.
 func (r *reader) recallClassifierRow(def table.Definition, window table.Window, ref rememberedRow) (rowAnswer, bool, error) {
 	// One remembered response answers many rows: read and parse it once.
-	cached, known := r.classifierResponses[ref.RequestKey]
-	if !known {
+	cached := loadOnce(r, &r.classifierResponses, "classifier", ref.RequestKey, func() rememberedClassifier {
 		exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, ref.RequestKey)
-		cached = rememberedClassifier{found: found, err: err, requestSHA: exchange.RequestSHA256, responseSHA: exchange.ResponseSHA256}
+		cached := rememberedClassifier{found: found, err: err, requestSHA: exchange.RequestSHA256, responseSHA: exchange.ResponseSHA256}
 		if err == nil && found {
 			cached.answers, cached.err = table.ParseClassifierAnswers(exchange.Response)
 		}
-		if r.classifierResponses == nil {
-			r.classifierResponses = make(map[string]rememberedClassifier)
-		}
-		r.classifierResponses[ref.RequestKey] = cached
-	}
+		return cached
+	})
 	if cached.err != nil || !cached.found {
 		return rowAnswer{}, false, cached.err
 	}
@@ -277,25 +304,19 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 	missingByBasis := make(map[string]missingRef)
 	var order []missingRef
 	sharing := make(map[missingRef][]int)
+	prepared := r.prepareRows(def, groups)
 	for g, group := range groups {
 		missing[g].shared = group.shared
 		for _, row := range group.rows {
 			i := len(rows)
 			rows = append(rows, row)
-			k, window, err := r.knowledgeInput(def, group.shared, row)
-			if err != nil {
-				return nil, err
+			if prepared[i].fatal != nil {
+				return nil, prepared[i].fatal
 			}
+			k, answer, found, err := prepared[i].input, prepared[i].answer, prepared[i].found, prepared[i].err
 			inputs[i] = k
-			ref, found, err := llm.LoadMemo(r.opts.Executor, k.BasisID, llm.DecodeJSON(func(value rememberedRow) error {
-				if len(value.RequestKey) != 64 || value.RowKey == "" {
-					return fmt.Errorf("knowledge: invalid response row reference")
-				}
-				return nil
-			}))
-			var answer rowAnswer
 			if found {
-				answer, found, err = r.recallRow(def, window, ref)
+				r.acceptRecall(def, prepared[i].ref)
 			}
 			if err != nil {
 				r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "knowledge_rejected", Count: 1, Reason: err.Error(), Samples: []string{row.ID}})
@@ -375,6 +396,56 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 		}
 	}
 	return answers, nil
+}
+
+// preparedRow is one independent row's exact single-row input and what its
+// memo recalls. Rows are prepared at once and committed in row order.
+type preparedRow struct {
+	input  Knowledge
+	answer rowAnswer
+	ref    rememberedRow
+	found  bool
+	// err is a failed recall: the row is asked again. fatal is a row
+	// without an input: the reading stops there.
+	err, fatal error
+}
+
+// prepareRows builds every row's input, loads its memo and recalls its
+// remembered answer, on all processors. It only reads the reader's state
+// and fills the shared request caches; nothing is counted, printed or
+// accepted here.
+func (r *reader) prepareRows(def table.Definition, groups rowGroups) []preparedRow {
+	type job struct {
+		shared []table.Field
+		row    table.Row
+	}
+	var jobs []job
+	for _, group := range groups {
+		for _, row := range group.rows {
+			jobs = append(jobs, job{shared: group.shared, row: row})
+		}
+	}
+	prepared := make([]preparedRow, len(jobs))
+	r.lock()()
+	eachIndex(len(jobs), func(i int) {
+		p := &prepared[i]
+		var window table.Window
+		if p.input, window, p.fatal = r.knowledgeInput(def, jobs[i].shared, jobs[i].row); p.fatal != nil {
+			return
+		}
+		ref, found, err := llm.LoadMemo(r.opts.Executor, p.input.BasisID, llm.DecodeJSON(func(value rememberedRow) error {
+			if len(value.RequestKey) != 64 || value.RowKey == "" {
+				return fmt.Errorf("knowledge: invalid response row reference")
+			}
+			return nil
+		}))
+		if found {
+			p.ref = ref
+			p.answer, found, err = r.recallAnswer(def, window, ref)
+		}
+		p.found, p.err = found, err
+	})
+	return prepared
 }
 
 // persistKnowledge writes knowledge.json when its records changed since the

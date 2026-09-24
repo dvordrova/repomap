@@ -3,6 +3,9 @@ package reading
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -100,5 +103,100 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 	}
 	if updated[0].responseSHA == first[0].responseSHA || updated[2].responseSHA != updated[0].responseSHA {
 		t.Fatal("replayed neighbour memos retained a stale response identity")
+	}
+}
+
+// refusingRoleProvider answers every layer row, but with an unknown role for
+// keys ending in 7, so those rows are refused and never remembered.
+type refusingRoleProvider struct {
+	tableProvider
+	asked []string
+}
+
+func (p *refusingRoleProvider) Complete(_ context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	var request struct {
+		Rows []struct {
+			Key string `json:"key"`
+		} `json:"rows"`
+	}
+	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
+		return llm.Completion{}, err
+	}
+	var rows []map[string]string
+	p.mu.Lock()
+	for _, row := range request.Rows {
+		p.asked = append(p.asked, row.Key)
+		role := "logic"
+		if strings.HasSuffix(row.Key, "7") {
+			role = "u1"
+		}
+		rows = append(rows, map[string]string{"key": row.Key, "role": role})
+	}
+	p.mu.Unlock()
+	raw, err := json.Marshal(map[string]any{"rows": rows})
+	return llm.Completion{Response: raw, ChoiceCount: 1, FinishReason: llm.FinishStop, Metrics: llm.Metrics{Attempts: 1}}, err
+}
+
+// Remembered rows are recalled at once but taken in row order: a reading over
+// the same memory lists its reused rows in row order, counts each once and
+// asks only the rows that were refused before.
+func TestRecalledRowsAreTakenInRowOrder(t *testing.T) {
+	cache := t.TempDir()
+	def := lines.Layers()
+	var rows []table.Row
+	var remembered, refused []string
+	for i := 1; i <= 60; i++ {
+		id := fmt.Sprintf("s%d", i)
+		rows = append(rows, table.Row{ID: id, Fields: []table.Field{{Name: "path", Value: id + ".go"}}})
+		if strings.HasSuffix(id, "7") {
+			refused = append(refused, id)
+		} else {
+			remembered = append(remembered, id)
+		}
+	}
+	newReader := func(provider llm.Provider) *reader {
+		r := answerTestReader(t, nil, provider)
+		r.opts.Executor.RootDir = cache
+		r.opts.Through = ""
+		r.places = make(map[string]atlas.Place)
+		r.knowledge = make(map[string]*Knowledge)
+		r.knowledgeSubjects = make(map[string]*Knowledge)
+		r.responseTables = make(map[string]rememberedTable)
+		for _, row := range rows {
+			r.places[row.ID] = atlas.Place{ID: row.ID, Path: row.ID + ".go"}
+		}
+		return r
+	}
+	if _, err := newReader(&refusingRoleProvider{}).runIndependent(t.Context(), def, 1, rowGroups{{rows: rows}}); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		provider := &refusingRoleProvider{}
+		warm := newReader(provider)
+		answers, err := warm.runIndependent(t.Context(), def, 1, rowGroups{{rows: rows}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var reused []string
+		for _, line := range strings.Split(warm.tables.String(), "\n") {
+			if strings.HasPrefix(line, "- Reused ") {
+				reused = append(reused, strings.Fields(line)[2])
+			}
+		}
+		if !reflect.DeepEqual(reused, remembered) {
+			t.Fatalf("attempt %d: reused rows out of row order: %v", attempt, reused)
+		}
+		if !reflect.DeepEqual(provider.asked, refused) {
+			t.Fatalf("attempt %d: asked %v, want only the refused rows %v", attempt, provider.asked, refused)
+		}
+		use := warm.use(def.Stage)
+		if use.Reused != len(remembered) || use.Rows != len(rows) {
+			t.Fatalf("attempt %d: use %+v", attempt, *use)
+		}
+		for i, row := range rows {
+			if (answers[i].answer != nil) == strings.HasSuffix(row.ID, "7") || answers[i].answer != nil && answers[i].source != atlas.SourceCache {
+				t.Fatalf("attempt %d: row %s answered %+v", attempt, row.ID, answers[i])
+			}
+		}
 	}
 }

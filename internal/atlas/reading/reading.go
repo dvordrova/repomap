@@ -170,6 +170,8 @@ type reader struct {
 	symbolSelections  map[string]*Knowledge // native subject -> independent selection evidence
 	responseTables    map[string]rememberedTable
 	recallOnly        bool
+	// shared guards knowledge and the response caches for concurrent work.
+	shared *readerShared
 	// knowledgeVersion counts record changes; knowledge.json is rewritten
 	// only when it moved past the version last written. tables.md likewise
 	// only when the printed text grew.
@@ -283,6 +285,9 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		knowledgeSubjects: make(map[string]*Knowledge),
 		responseTables:    make(map[string]rememberedTable),
 		boundaryIDs:       make(map[string]string),
+		shared:            &readerShared{},
+
+		classifierResponses: make(map[string]rememberedClassifier),
 	}
 	files := 0
 	for _, place := range opts.Graph.Places {
