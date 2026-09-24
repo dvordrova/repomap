@@ -227,6 +227,17 @@ func (page *PreparedPage) prepareTerminology(role, text, scope string, names []s
 			entry.Terms = append(entry.Terms, term)
 		}
 	}
-	entry.Text, entry.Protected = protectedDisplayText(text, names)
+	entry.Text, entry.Protected = protectedDisplayTextIndexed(text, page.nameIndex(names))
 	return entry
+}
+
+// nameIndex builds the protected-name index once for the page's name list.
+func (page *PreparedPage) nameIndex(names []string) *displayNameIndex {
+	if len(names) == 0 {
+		return nil
+	}
+	if page.names == nil || page.namesFrom != &names[0] || page.namesCount != len(names) {
+		page.names, page.namesFrom, page.namesCount = newDisplayNameIndex(names), &names[0], len(names)
+	}
+	return page.names
 }

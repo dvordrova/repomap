@@ -1,5 +1,15 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Protected names are found through an index
+
+- Preparing a page's display texts scanned every protected name (paths,
+  declarations, addresses) for every text: 38.7 s of a 104 s no-model
+  `cmd/repomap` run, twice per run (publication and the report server). A
+  name is protected only where it stands whole, so each of its runs of name
+  runes is a whole run of the text; names are indexed by their longest run
+  once per page. Saved live report re-rendered: 28.8 s → 11.4 s, HTML
+  byte-identical.
+
 ## 2026-09-25 — Jev by explicit opt-in, and zone catalogues accepted whole
 
 - A table reaches the decision model only when it opts in

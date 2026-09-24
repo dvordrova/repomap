@@ -185,6 +185,11 @@ type PreparedPage struct {
 	uiSlots  []*string
 	concepts []displayConcepts
 	timing   *RunTiming
+	// names indexes the protected names once per page instead of scanning
+	// every name for every display text.
+	names      *displayNameIndex
+	namesFrom  *string
+	namesCount int
 }
 
 type displayConcepts struct {
@@ -236,7 +241,81 @@ var displayVerbatimSyntax = regexp.MustCompile(strings.Join([]string{
 var displayAbsolutePath = regexp.MustCompile(`(?:^|[\s\[("'])((?:/[\p{L}\p{N}_{}:.*%+@~=-]+)+/?)`)
 var displayPlaceholder = regexp.MustCompile(`__REPOMAP_P[0-9]+__`)
 
+// displayNameIndex finds protected names in a text without scanning every
+// name. A name is protected only where it stands whole, with no name rune
+// on either side, so each maximal run of name runes inside it is also a whole
+// run of the text: names are indexed by their longest run and only names
+// whose run occurs in the text are searched.
+type displayNameIndex struct {
+	byRun map[string][]string
+	bare  []string // names without a run of name runes
+}
+
+func newDisplayNameIndex(names []string) *displayNameIndex {
+	index := &displayNameIndex{byRun: map[string][]string{}}
+	for _, name := range names {
+		if !displayUnambiguousName(name) {
+			continue
+		}
+		longest := ""
+		for _, run := range displayNameRuns(name) {
+			if len(run) > len(longest) {
+				longest = run
+			}
+		}
+		if longest == "" {
+			index.bare = append(index.bare, name)
+			continue
+		}
+		index.byRun[longest] = append(index.byRun[longest], name)
+	}
+	return index
+}
+
+// candidates are the names that can occur whole in text, in input order
+// within each run and runs in text order; spans are sorted afterwards.
+func (index *displayNameIndex) candidates(text string) []string {
+	if index == nil {
+		return nil
+	}
+	candidates := append([]string(nil), index.bare...)
+	seen := map[string]bool{}
+	for _, run := range displayNameRuns(text) {
+		if seen[run] {
+			continue
+		}
+		seen[run] = true
+		candidates = append(candidates, index.byRun[run]...)
+	}
+	return candidates
+}
+
+func displayNameRuns(text string) []string {
+	var runs []string
+	start := -1
+	for i, r := range text {
+		if displayNameRune(r) {
+			if start < 0 {
+				start = i
+			}
+			continue
+		}
+		if start >= 0 {
+			runs = append(runs, text[start:i])
+			start = -1
+		}
+	}
+	if start >= 0 {
+		runs = append(runs, text[start:])
+	}
+	return runs
+}
+
 func protectedDisplayText(text string, names []string) (string, []DisplayProtectedText) {
+	return protectedDisplayTextIndexed(text, newDisplayNameIndex(names))
+}
+
+func protectedDisplayTextIndexed(text string, index *displayNameIndex) (string, []DisplayProtectedText) {
 	type span struct{ start, end int }
 	var spans []span
 	for _, bounds := range displayVerbatimSyntax.FindAllStringIndex(text, -1) {
@@ -253,14 +332,11 @@ func protectedDisplayText(text string, names []string) (string, []DisplayProtect
 		}
 		spans = append(spans, span{bounds[2], end})
 	}
-	for _, name := range names {
+	for _, name := range index.candidates(text) {
 		// A repository may declare Run, service or protocol. Seeing the same
-		// word in a sentence does not make that occurrence a code reference.
-		// Protect names with identifier/path syntax; bare ambiguous words stay
-		// translatable unless explicit code syntax above encloses them.
-		if !displayUnambiguousName(name) {
-			continue
-		}
+		// word in a sentence does not make that occurrence a code reference:
+		// the index holds only names with identifier/path syntax; bare
+		// ambiguous words stay translatable unless code syntax encloses them.
 		for from := 0; from < len(text); {
 			at := strings.Index(text[from:], name)
 			if at < 0 {
