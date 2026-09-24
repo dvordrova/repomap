@@ -92,10 +92,11 @@ func (portfolio ProgramPortfolio) Validate() error {
 	return nil
 }
 
+// defaultEntry looks the default target up. It does not validate the entries
+// again: a portfolio is validated where it is built (NewProgramPortfolio) and
+// where a publication or render boundary receives it
+// (validateProgramPresentation), and every lookup runs inside one of those.
 func (portfolio ProgramPortfolio) defaultEntry() (programindex.Index, error) {
-	if err := portfolio.Validate(); err != nil {
-		return programindex.Index{}, err
-	}
 	for _, entry := range portfolio.Entries {
 		if entry.Target.ID == portfolio.DefaultTargetID {
 			return entry, nil

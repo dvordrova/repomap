@@ -50,3 +50,23 @@ func TestProgramPortfolioAcceptsSyntheticAdapterLanguage(t *testing.T) {
 		t.Fatalf("synthetic adapter entry = %#v", portfolio.Entries)
 	}
 }
+
+// Lookups inside one publication no longer revalidate the portfolio, so the
+// boundaries that receive report data must still refuse a ProgramIndex that
+// no longer matches its seal: report.json is not written and no page renders.
+func TestPublicationRefusesAProgramIndexThatNoLongerMatchesItsSeal(t *testing.T) {
+	data := reportProgramShellDataFixture(t, "example")
+	options := reportSingleTargetRenderOptionsFixture(t, &data)
+	if _, err := RenderHTMLWithOptions(&data, options); err != nil {
+		t.Fatalf("sealed fixture does not render: %v", err)
+	}
+	data.ProgramPortfolio.Entries[0].Objects[0].Name += "_edited"
+	if _, err := RenderHTMLWithOptions(&data, options); err == nil ||
+		!strings.Contains(err.Error(), "sha256 mismatch") {
+		t.Fatalf("render of an edited ProgramIndex = %v", err)
+	}
+	if _, err := encodeReportJSON(&data, 0); err == nil ||
+		!strings.Contains(err.Error(), "sha256 mismatch") {
+		t.Fatalf("report.json of an edited ProgramIndex = %v", err)
+	}
+}

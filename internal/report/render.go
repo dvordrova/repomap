@@ -88,6 +88,15 @@ func renderHTMLWithOptionsDiagnostics(
 	if err := validateProgramPresentation(data); err != nil {
 		return nil, GenerationDiagnostics{}, err
 	}
+	return renderPresentedHTML(data, options)
+}
+
+// renderPresentedHTML renders data whose presentation, its ProgramIndexes
+// included, the caller validated in the same publication.
+func renderPresentedHTML(
+	data *ReportData,
+	options RenderOptions,
+) ([]byte, GenerationDiagnostics, error) {
 	if err := validateTargetNavigation(data, options.TargetNavigation); err != nil {
 		return nil, GenerationDiagnostics{}, err
 	}
@@ -346,7 +355,25 @@ func reportDataForPersistence(data *ReportData) *ReportData {
 	return &rendered
 }
 
+// validateProgramPresentation is the publication and render boundary: it
+// validates every ProgramIndex of the portfolio once, then the presentation
+// bound to it.
 func validateProgramPresentation(data *ReportData) error {
+	if data == nil {
+		return fmt.Errorf("report: data is required")
+	}
+	if data.ProgramPortfolio == nil {
+		return fmt.Errorf("report: publication requires a complete program portfolio")
+	}
+	if err := data.ProgramPortfolio.Validate(); err != nil {
+		return fmt.Errorf("report: %w", err)
+	}
+	return validateBoundProgramPresentation(data)
+}
+
+// validateBoundProgramPresentation checks the presentation for a caller that
+// has validated this data's portfolio already in the same publication.
+func validateBoundProgramPresentation(data *ReportData) error {
 	if data == nil {
 		return fmt.Errorf("report: data is required")
 	}
@@ -618,7 +645,9 @@ func generate(
 	// was rendered from, so publication can prove the pair belongs together.
 	digest := sha256.Sum256(reportJSON)
 	renderOptions.ReportSHA256 = hex.EncodeToString(digest[:])
-	reportHTML, err := RenderHTMLWithOptions(&renderData, renderOptions)
+	// encodeReportJSON validated this data; the page differs only by its
+	// source links, which the render validates itself.
+	reportHTML, _, err := renderPresentedHTML(&renderData, renderOptions)
 	if err != nil {
 		return RunReceipt{}, err
 	}
