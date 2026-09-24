@@ -386,7 +386,10 @@ func (r *reader) readDesign(ctx context.Context) error {
 	r.boxes = map[string]*boxState{}
 	r.designBoxOf = map[string]map[string]string{}
 	r.zones = map[string][]*zoneState{}
-	for _, target := range r.opts.Targets {
+	// A target's assignment tables use its position as their round, like the
+	// core table, so two targets never share window files or table headings.
+	for position, target := range r.opts.Targets {
+		round := position + 1
 		units := r.designUnits(target.ID)
 		overview, docs := r.designOverview(target.ID, units)
 		parts, err := r.propose(ctx, "parts", overview, docs)
@@ -414,7 +417,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 					rows[i].Fields = append(append([]table.Field(nil), rows[i].Fields...), table.Field{Name: "calls", Value: calls})
 				}
 			}
-			answers, err := r.runTableWith(ctx, lines.ZoneParts(), 1, catalogue("part", parts), rows, nil)
+			answers, err := r.runTableWith(ctx, lines.ZoneParts(), round, catalogue("part", parts), rows, nil)
 			if err != nil {
 				return err
 			}
@@ -474,7 +477,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 		if len(drawn) == 0 {
 			continue
 		}
-		if err := r.readAreas(ctx, target.ID, units, partOf, parts, drawn, boxOfPart); err != nil {
+		if err := r.readAreas(ctx, round, target.ID, units, partOf, parts, drawn, boxOfPart); err != nil {
 			return err
 		}
 	}
@@ -485,7 +488,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 }
 
 // readAreas proposes areas over the drawn parts and assigns each part to one.
-func (r *reader) readAreas(ctx context.Context, targetID string, units []*designUnit, partOf []int, parts []designProposal, drawn []int, boxOfPart map[int]string) error {
+func (r *reader) readAreas(ctx context.Context, round int, targetID string, units []*designUnit, partOf []int, parts []designProposal, drawn []int, boxOfPart map[int]string) error {
 	unitPart := map[string]int{}
 	for i, unit := range units {
 		unitPart[unit.id] = partOf[i]
@@ -520,7 +523,7 @@ func (r *reader) readAreas(ctx context.Context, targetID string, units []*design
 	if err != nil || len(areas) == 0 {
 		return err
 	}
-	answers, err := r.runTableWith(ctx, lines.ZoneAreas(), 1, catalogue("area", areas), rows, nil)
+	answers, err := r.runTableWith(ctx, lines.ZoneAreas(), round, catalogue("area", areas), rows, nil)
 	if err != nil {
 		return err
 	}

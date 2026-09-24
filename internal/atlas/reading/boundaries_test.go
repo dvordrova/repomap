@@ -347,6 +347,41 @@ func TestSymbolRolesTurnRegistrationsIntoBoundariesAndHoldersCarryAddresses(t *t
 	}
 }
 
+// Two calls publish one holder on different addresses. The route on that
+// holder takes the address of the first publishing call in boundary order,
+// on every reading: map iteration never chooses the address.
+func TestTwoPublishesOnOneHolderGiveTheFirstAddress(t *testing.T) {
+	registration := func(id, external, direction, handler string, values ...string) atlas.Place {
+		return atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 20, Column: len(id), Parent: "file:main", TargetIDs: []string{"api"}, Given: external,
+			Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "api", FactID: "fact:" + id}}, ObjectID: handler, Caller: "main", External: external, Holder: "main.go:19:20", Values: values, Direction: direction}}
+	}
+	places := []atlas.Place{
+		registration("b1", "echo.Echo.GET", atlas.DirectionIn, "handler", "/users/:id"),
+		registration("b2", "echo.Echo.Start", atlas.DirectionOut, "", ":8080"),
+		registration("b3", "echo.Echo.StartTLS", atlas.DirectionOut, "", ":8443"),
+		registration("b4", "echo.Echo.POST", atlas.DirectionIn, "create", "/users"),
+	}
+	for attempt := 0; attempt < 32; attempt++ {
+		r := answerTestReader(t, nil, nil)
+		r.dry, r.opts.Through = true, ""
+		r.opts.Graph.Places = places
+		r.places = map[string]atlas.Place{}
+		for _, place := range places {
+			r.places[place.ID] = place
+		}
+		r.api = map[string]apiRole{
+			"echo.Echo.GET": {binds: atlas.BoundaryHTTPServer}, "echo.Echo.POST": {binds: atlas.BoundaryHTTPServer},
+			"echo.Echo.Start": {publishes: true}, "echo.Echo.StartTLS": {publishes: true},
+		}
+		if err := r.readBoundaries(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if r.boundaries["b1"].address != ":8080" || r.boundaries["b4"].address != ":8080" {
+			t.Fatalf("attempt %d: routes took %q and %q, want the first publish's :8080", attempt, r.boundaries["b1"].address, r.boundaries["b4"].address)
+		}
+	}
+}
+
 // A server started elsewhere on a value the code could not follow back to
 // the router: the model is shown the holders and picks one.
 func TestPublishWithoutFollowedHolderAsksWhichHolderItServes(t *testing.T) {

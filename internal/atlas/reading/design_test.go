@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -216,5 +218,53 @@ func TestDesignProposalRefusesABrokenCatalogue(t *testing.T) {
 	result, err := decodeDesignProposals([]byte(`{"groups":{"Entry":"Starts.","Corpus":"Reads files."}}`))
 	if err != nil || len(result.Groups) != 2 || result.Groups[1].Title != "Corpus" {
 		t.Fatalf("result %+v %v", result, err)
+	}
+}
+
+// Every target keeps its own zone windows: the second target's part and area
+// assignments never overwrite the first target's request files or headings.
+func TestEachTargetKeepsItsOwnZoneWindows(t *testing.T) {
+	provider := &tableProvider{
+		designFor: func(mode string, input []map[string]any) designProposals {
+			if mode == "areas" {
+				return designProposals{Groups: []designProposal{{Title: "Everything", Purpose: "Holds every part."}}}
+			}
+			result := designProposals{Groups: []designProposal{}}
+			for _, pkg := range input {
+				result.Groups = append(result.Groups, designProposal{Title: pkg["package"].(string), Purpose: "Reads the supplied declarations."})
+			}
+			return result
+		},
+		zoneFor: func(column string, row map[string]any) string {
+			if column == "area" {
+				return "Everything"
+			}
+			return row["package"].(string)
+		},
+	}
+	opts := twoTargetOptions(t, twoTargetGraph(t), provider)
+	result, err := Read(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tables, err := os.ReadFile(result.TablesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range []string{lines.StageZoneParts, lines.StageZoneAreas} {
+		for round, own := range []string{"svc/", "web/"} {
+			other := []string{"web/", "svc/"}[round]
+			name := fmt.Sprintf("%s-r%d-w0.input.ref.json", stage, round+1)
+			raw, err := readWindowPayload(filepath.Join(opts.OwnerRunDir, atlas.TablesDir, name))
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			if !strings.Contains(string(raw), own) || strings.Contains(string(raw), other) {
+				t.Fatalf("%s holds another target's rows: %s", name, raw)
+			}
+			if heading := fmt.Sprintf("## %s · round %d · window 0", stage, round+1); strings.Count(string(tables), heading) != 1 {
+				t.Fatalf("tables.md has %d %q headings", strings.Count(string(tables), heading), heading)
+			}
+		}
 	}
 }

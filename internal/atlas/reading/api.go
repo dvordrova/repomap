@@ -183,10 +183,13 @@ func (r *reader) apiRoles() []atlas.APIRole {
 // role: a handed callable becomes the entry the symbol binds, a call that
 // publishes becomes the listener of its holder, a call to a symbol that
 // talks to another system becomes that outgoing boundary. A registration
-// whose symbol has no role is nothing. It returns the publishing states.
+// whose symbol has no role is nothing. It returns the publishing states in
+// boundary order, so the first of two publishes on one holder is always the
+// same one.
 func (r *reader) applyAPIRoles() []*boundaryState {
 	var publishes []*boundaryState
-	for id, state := range r.boundaries {
+	for _, id := range sortedKeys(r.boundaries) {
+		state := r.boundaries[id]
 		b := state.place.Boundary
 		if b.Source != "fact" || b.GivenKind != "" {
 			continue
