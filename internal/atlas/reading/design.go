@@ -118,7 +118,7 @@ func (r *reader) designUnits(targetID string) []*designUnit {
 	byType := map[string]*designUnit{} // dir#type -> unit
 	unitOf := map[string]*designUnit{} // symbol place -> unit
 	var methods []struct {
-		id, key, name string
+		id, key, name, file string
 	}
 	for _, file := range r.opts.Graph.Places {
 		if file.File == nil || !contains(file.TargetIDs, targetID) {
@@ -139,11 +139,11 @@ func (r *reader) designUnits(targetID string) []*designUnit {
 			r.designFiles[id] = file.ID
 			r.designSubjects[objectID] = id
 			if owner, method, isMember := strings.Cut(decl.Name, "."); decl.Kind == "method" && isMember {
-				methods = append(methods, struct{ id, key, name string }{id, dir + "#" + owner, method})
+				methods = append(methods, struct{ id, key, name, file string }{id, dir + "#" + owner, method, file.Path})
 				continue
 			}
 			unit := &designUnit{id: id, members: []string{id}}
-			fields := []table.Field{{Name: "package", Value: dir}, {Name: "name", Value: decl.Name}, {Name: "kind", Value: decl.Kind}}
+			fields := []table.Field{{Name: "package", Value: dir}, {Name: "file", Value: file.Path}, {Name: "name", Value: decl.Name}, {Name: "kind", Value: decl.Kind}}
 			if decl.Kind == "type" {
 				byType[dir+"#"+decl.Name] = unit
 			} else if decl.Signature != "" {
@@ -163,7 +163,7 @@ func (r *reader) designUnits(targetID string) []*designUnit {
 		unit := byType[method.key]
 		if unit == nil {
 			unit = &designUnit{id: method.id, members: []string{method.id}, row: table.Row{ID: method.id, Fields: []table.Field{
-				{Name: "package", Value: strings.Split(method.key, "#")[0]}, {Name: "name", Value: method.name}, {Name: "kind", Value: "method"},
+				{Name: "package", Value: strings.Split(method.key, "#")[0]}, {Name: "file", Value: method.file}, {Name: "name", Value: method.name}, {Name: "kind", Value: "method"},
 			}}}
 			units = append(units, unit)
 		}

@@ -95,6 +95,9 @@ type Column struct {
 	// the field has no decision to request or validate: an address cell is
 	// asked only where the code has address candidates to choose from.
 	WhenOptionsFrom string `json:"when_options_from,omitempty"`
+	// Ask is the question a decision model is asked for this column, stated
+	// directly; empty derives one from the column's name and note.
+	Ask string `json:"-"`
 }
 
 // Definition is one table: its stage name, window size, prompt and columns.
@@ -134,6 +137,10 @@ type Definition struct {
 	// this probability of yes or above, no below it. Zero keeps the ordinary
 	// rule, where neither side above MinProbability leaves the row unanswered.
 	YesAt float64
+	// ClassifierOmitTask leaves the table prompt, written for a text model,
+	// out of a decision model's state; each column's Ask then carries the
+	// whole question. A long prompt there reads as irrelevant state.
+	ClassifierOmitTask bool
 	// Ranked makes a decision model's yes/no answers a ranking: every row
 	// keeps the probability of yes (ProbabilityCell) and none is refused as
 	// uncertain, because the owner orders rows instead of thresholding them.

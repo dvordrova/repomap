@@ -1,5 +1,14 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Part assignment asks Jev a direct question
+
+- Unit rows carry their file. For Jev, zone_parts and zone_areas ask a direct
+  question and leave the text-model table prompt out of the state
+  (`ClassifierOmitTask`, `Column.Ask`). Re-asking cmd/repomap's 62 saved
+  windows: uncertain units 1,046 → 800 of 4,238, `none` 68 → 8, assigned
+  3,124 → 3,430. A blind judge over 60 units the two versions placed in
+  different parts preferred the new placement 34 to 21 (5 ties).
+
 ## 2026-09-25 — A part's keys are ranked by Jev
 
 - `atlas_keys` opts in to the decision model as a ranking (`Ranked`): each

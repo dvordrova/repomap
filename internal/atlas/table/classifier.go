@@ -222,6 +222,9 @@ func namesFor(column Column, context []Field, row Row, options []string) optionN
 }
 
 func columnQuestion(column Column, names optionNames) string {
+	if column.Ask != "" {
+		return column.Ask
+	}
 	if names.list != "" {
 		return fmt.Sprintf("Which of `context.%s` does `row` belong to, as `task` defines `%s`?", names.list, column.Name)
 	}
@@ -262,8 +265,12 @@ func ClassifierCall(def Definition, window Window, minProbability float64) (llm.
 			questions[questionKey(row, column)] = map[string]any{"type": "choice", "instructions": instructions, "criteria": criteria}
 		}
 	}
+	evaluated := map[string]any{"task": def.System, "context": fieldsMap(window.Context)}
+	if def.ClassifierOmitTask {
+		evaluated = map[string]any{"context": fieldsMap(window.Context)}
+	}
 	body, err := json.Marshal(map[string]any{
-		"state":     map[string]any{"task": def.System, "context": fieldsMap(window.Context)},
+		"state":     evaluated,
 		"questions": questions,
 	})
 	if err != nil {
