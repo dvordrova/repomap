@@ -732,6 +732,26 @@
   objects/93 relations for Echo API and 57 objects/71 relations for Cobra CLI;
   the common report contains 19 groups and 37 connections, including all four
   exact type/interface pairs and their method pairs.
+## 2026-09-25 — Glossary concepts, not code names
+
+- Self-runs spent most glossary output on `identifier` terms that code then
+  discarded (121 of 136 and 100 of 182 generated terms) on the serial 15–30 s
+  glossary step. `identifier` is no longer a generated kind; the embedded
+  prompt explains domain and concept terms only and names what not to define
+  (declarations, packages, files, paths, environment/configuration keys, flags,
+  headers, commands, codes). A retired `identifier` answer refuses that term.
+- After validation, a term whose whole name exactly equals a code name the
+  owner already holds is dropped and journaled by name in `rejected.jsonl`
+  (`glossary_code_name_omitted`): every published target's ProgramIndex
+  type/function/method/variable and package/module names, `config_read`
+  environment keys, and corpus paths with their file names; saved `read` uses
+  its graph's declaration names and source paths. No artifact records flag
+  names, so flags rely on the prompt. Names never enter the provider request.
+  Generation contract is `repomap.glossary.generate.v4`; the prompt change
+  alters request bytes, so old cached answers are not reused.
+- Tests: terminology exact-name drop/journal and prompt kinds; run-package
+  ProgramIndex/facts name selection and a saved-read run whose declaration-named
+  term lands in `rejected.jsonl`, not `terminology.json`. No online run was made.
 
 ## 2026-09-15 — One part, one card
 

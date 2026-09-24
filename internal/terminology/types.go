@@ -27,25 +27,41 @@ type Candidate struct {
 	Origins     []Origin `json:"origins"`
 }
 
-// TermKind is the closed choice the model makes for every definition. Code
-// reads only one of them: an identifier is a machine name, not glossary
-// vocabulary, so such a term is accepted but never published.
+// TermKind is the closed choice the model makes for every definition. Every
+// kind names a concept; a machine name is not a glossary kind. Self-runs spent
+// most generated terms on an "identifier" kind that code then discarded.
 type TermKind string
 
 const (
-	KindAcronym    TermKind = "acronym"
-	KindDomain     TermKind = "domain"
-	KindProtocol   TermKind = "protocol"
-	KindFormat     TermKind = "format"
-	KindIdentifier TermKind = "identifier"
+	KindAcronym  TermKind = "acronym"
+	KindDomain   TermKind = "domain"
+	KindProtocol TermKind = "protocol"
+	KindFormat   TermKind = "format"
 )
 
 func validTermKind(value TermKind) bool {
 	switch value {
-	case KindAcronym, KindDomain, KindProtocol, KindFormat, KindIdentifier:
+	case KindAcronym, KindDomain, KindProtocol, KindFormat:
 		return true
 	}
 	return false
+}
+
+// CodeNameKind says which existing code observation spells a name exactly.
+// A generated term with that exact spelling is journaled, never published.
+type CodeNameKind string
+
+const (
+	CodeDeclaration    CodeNameKind = "declaration"
+	CodePackage        CodeNameKind = "package"
+	CodeFile           CodeNameKind = "file"
+	CodeEnvironmentKey CodeNameKind = "environment key"
+)
+
+// codeNameRank keeps one deterministic kind when several observations share
+// a spelling; the drop itself does not depend on which kind is reported.
+func codeNameRank(kind CodeNameKind) int {
+	return slices.Index([]CodeNameKind{CodeDeclaration, CodePackage, CodeFile, CodeEnvironmentKey}, kind)
 }
 
 func normalizeSources(sources []Source) []Source {

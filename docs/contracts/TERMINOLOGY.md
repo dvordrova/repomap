@@ -15,9 +15,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   provider request envelope; no ordinary prose byte cap creates extra windows.
   Resource refusals partition complete original prose records. A failed glossary
   request cannot invalidate an accepted analytical answer. Terms must occur in
-  accepted prose and select its advertised prose-row refs. Generation v2 has
-  one `p*` catalogue and no separate source-ref namespace; Go restores the
-  complete original source scope of every selected row, plus its analytical
+  accepted prose and select its advertised prose-row refs; they name
+  [concepts, not code names](#concepts-not-code-names). Generation
+  (`repomap.glossary.generate.v4`) has one `p*` catalogue and no separate
+  source-ref namespace; Go restores the complete original source scope of every selected row, plus its analytical
   request and row, including warm reuse. A same-numbered old `g*` ref has no
   authority and is never repaired into a prose ref. Non-table owners declare
   their explanatory response paths; tables use their current prose columns
@@ -88,10 +89,7 @@ Equal names alone never establish equal meanings. Complete groups partition only
 when the provider envelope requires it; a nonshrinking round records partial
 comparison. A refused model window leaves its already accepted input definitions
 separate and stops retrying them in that reduction. Cancellation, invalid local
-inputs/configuration and persistence failures remain terminal. Each generated term carries a closed `kind` (`acronym`, `domain`,
-`protocol`, `format` or `identifier`); a term without a known kind refuses that
-term alone, and `identifier` terms (environment names, file names, codes) are
-accepted but not published, counted in the journal. Existing native
+inputs/configuration and persistence failures remain terminal. Existing native
 code concepts enter the final glossary directly, with whole source anchors and
 map/question destinations. There is no native-to-candidate-to-native conversion.
 Distinct declarations on one line keep their columns and identities; the same
@@ -100,6 +98,37 @@ exact declaration can retain memberships in several components.
 `ReportData.Glossary` hold the sealed domain catalogue. Reduction and translation
 use the base provider without recursively collecting another glossary. Saved
 `read` collects candidates without stages beyond the requested stop.
+
+## Concepts, not code names
+
+Generation explains domain and concept terms only. Each generated term carries
+a closed concept `kind` (`acronym`, `domain`, `protocol` or `format`); a term
+without a known kind, including the retired `identifier`, refuses that term
+alone. Self-runs had spent most generated output on `identifier` terms that code
+then discarded (121 of 136 and 100 of 182 terms), on a serial 15–30 s step. The
+embedded prompt therefore tells the model not to define names that the code
+declares or reads: functions, methods, types, variables, constants, packages,
+modules, files, paths, environment and configuration keys, command-line flags,
+headers, commands and rule or ticket codes.
+
+After validation, Go also drops a valid term whose whole name equals, exactly
+and case-sensitively, a code name that the glossary owner already holds:
+
+- ordinary run: every published target's ProgramIndex type, function, method
+  and variable names, and package/module names as the index spells them (a Go
+  import path, a dotted Python module); environment keys from `config_read`
+  facts; every corpus path and its file name;
+- saved `read`: file and symbol declaration names in its places graph, plus its
+  source-authority paths and their file names.
+
+Lambdas and external symbols are not names this code owns. No package segment,
+affix or case variant is inferred. No existing artifact records command-line
+flag names, so flags rely on the prompt alone. Each drop is an accepted
+decision journaled in `rejected.jsonl` as `glossary_code_name_omitted`, with
+the name in its reason and a link to the exact exchange, on live and cached
+answers alike. A window of only code names is accepted and publishes nothing.
+Code names never enter the provider request. The changed prompt changes the
+exact request bytes, so earlier cached generation answers are not reused.
 
 ## Visible comparison scope
 

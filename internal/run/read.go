@@ -133,6 +133,7 @@ func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.W
 	var termCollector *terminology.Collector
 	if collectTerms {
 		termCollector = terminology.NewCollector(readingTerminologyPaths(opts.Graph))
+		termCollector.ExcludeCodeNames(terminology.CodeDeclaration, readingDeclarationNames(opts.Graph)...)
 		provider = termCollector.Wrap(provider)
 	}
 	if err := os.MkdirAll(*cacheRoot, 0o700); err != nil {
@@ -221,4 +222,25 @@ func readingTerminologyPaths(graph atlas.Graph) []string {
 		}
 	}
 	return paths
+}
+
+// A saved reading carries no ProgramIndex. Its graph retains the same native
+// declaration names on file and symbol places, which the glossary does not
+// define; package and environment-key names are not part of this input.
+func readingDeclarationNames(graph atlas.Graph) []string {
+	var names []string
+	for _, place := range graph.Places {
+		if place.File != nil {
+			for _, decl := range place.File.Decls {
+				names = append(names, decl.Name)
+			}
+		}
+		if place.Symbol != nil {
+			names = append(names, place.Symbol.Decl.Name)
+			for _, member := range place.Symbol.Members {
+				names = append(names, member.Decl.Name)
+			}
+		}
+	}
+	return names
 }

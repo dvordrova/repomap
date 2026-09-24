@@ -158,10 +158,7 @@ func publishRepositoryReport(
 		}
 		programIndexes[position] = programIndex
 	}
-	index, err := owner.programIndex()
-	if err != nil {
-		return report.RunReceipt{}, err
-	}
+	index := programIndexes[0]
 	if owner.Documentation == nil {
 		return report.RunReceipt{}, fmt.Errorf("repository report: documentation is missing from memory")
 	}
@@ -180,7 +177,7 @@ func publishRepositoryReport(
 	data.Questions = outcome.Questions
 	data.Learning = outcome.Learning
 	data.CapturedRevision = owner.Source.Repository.Head
-	if err := reduceReportGlossary(ctx, options, owner.RunDir, data); err != nil {
+	if err := reduceReportGlossary(ctx, options, owner.RunDir, data, programIndexes); err != nil {
 		return report.RunReceipt{}, err
 	}
 	renderOptions, err := translateReportDisplay(ctx, options, owner.RunDir, data)

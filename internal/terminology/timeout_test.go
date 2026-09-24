@@ -47,7 +47,7 @@ func TestGlossaryClientTimeoutPreservesOptionalWorkButRunCancellationAborts(t *t
 					if stage == "generation" {
 						items := recoveryProse()
 						for i, window := range [][]proseSource{items, items[:1], items[1:]} {
-							call, err := generationCall(window)
+							call, err := generationCall(window, nil)
 							if err != nil {
 								t.Fatal(err)
 							}

@@ -35,7 +35,7 @@ func TestGenerationResourceMemoKeepsOriginalProseAndWholeParentReplay(t *testing
 			responses := make(map[string]string)
 			prepare := func(window []proseSource) llm.Prepared {
 				t.Helper()
-				call, err := generationCall(window)
+				call, err := generationCall(window, nil)
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"path"
 	"sort"
 	"strconv"
@@ -30,6 +31,9 @@ type Collector struct {
 	mu      sync.Mutex
 	values  map[string]Candidate
 	pending map[string]proseSource
+	// code holds exact names the code already owns. Generation drops a term
+	// with one of these spellings after validation and journals the drop.
+	code map[string]CodeNameKind
 	// Progress, when set, receives console-worthy states such as a refused
 	// window continuing in partitions. It never changes what is generated.
 	Progress func(state, detail string)
@@ -42,13 +46,49 @@ func (c *Collector) progress(state, detail string) {
 }
 
 func NewCollector(paths []string) *Collector {
-	c := &Collector{paths: make(map[string]bool), values: make(map[string]Candidate), pending: make(map[string]proseSource)}
+	c := &Collector{paths: make(map[string]bool), values: make(map[string]Candidate), pending: make(map[string]proseSource), code: make(map[string]CodeNameKind)}
 	for _, name := range paths {
 		if canonicalPath(name) {
 			c.paths[name] = true
 		}
 	}
 	return c
+}
+
+// ExcludeCodeNames records exact spellings already named by native code
+// evidence, such as ProgramIndex declarations and packages or environment
+// keys read by the code. The glossary explains concepts, not these names.
+// Only whole, case-sensitive equality counts; no segment, affix or
+// case-folded variant is inferred. Corpus paths and their file names are
+// already known to the collector and need not be supplied.
+func (c *Collector) ExcludeCodeNames(kind CodeNameKind, names ...string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, name := range names {
+		addCodeName(c.code, kind, name)
+	}
+}
+
+func addCodeName(names map[string]CodeNameKind, kind CodeNameKind, name string) {
+	if name == "" || codeNameRank(kind) < 0 {
+		return
+	}
+	if previous, found := names[name]; !found || codeNameRank(kind) < codeNameRank(previous) {
+		names[name] = kind
+	}
+}
+
+// codeNames is the complete exact-name set for one generation: the supplied
+// code names plus every corpus path and its file name.
+func (c *Collector) codeNames() map[string]CodeNameKind {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	names := maps.Clone(c.code)
+	for name := range c.paths {
+		addCodeName(names, CodeFile, name)
+		addCodeName(names, CodeFile, path.Base(name))
+	}
+	return names
 }
 
 func canonicalPath(name string) bool {

@@ -13,7 +13,9 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/reading"
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/terminology"
 )
 
@@ -195,5 +197,79 @@ func TestReadingTerminologyPathsRequireSourceAuthority(t *testing.T) {
 	want := []string{"main.go", "docs/usage.md", "package.json", "sql/queries.sql", "generated/present.go"}
 	if got := readingTerminologyPaths(graph); !reflect.DeepEqual(got, want) {
 		t.Fatalf("saved reading source authority: got %v, want %v", got, want)
+	}
+}
+
+func TestReadGlossaryJournalsATermThatSpellsADeclaration(t *testing.T) {
+	source := t.TempDir()
+	opts := reading.Options{OwnerRunDir: source, Repository: "example", Revision: "abc",
+		Targets: []reading.TargetMeta{{ID: "t1", Language: "go", Kind: "library", Name: "example", Root: "."}},
+		Graph: atlas.Graph{Version: atlas.GraphVersion, Revision: "abc", Places: []atlas.Place{
+			{ID: "dir:.", Kind: atlas.PlaceDirectory, Path: ".", TargetIDs: []string{"t1"}, Given: "one file", Directory: &atlas.DirectoryFacts{Files: []string{"main.go"}, FileCount: 1}},
+			{ID: "file:main.go", Kind: atlas.PlaceFile, Path: "main.go", TargetIDs: []string{"t1"}, Parent: "dir:.", Given: "one function",
+				File: &atlas.FileFacts{Decls: []atlas.Decl{{Name: "OHLCV", Kind: "func", LineNo: 3}}}},
+		}}}
+	if _, err := reading.SaveInput(opts); err != nil {
+		t.Fatal(err)
+	}
+	provider := &terminologyRuntimeProvider{}
+	factory := func() (llm.Provider, error) { return provider, nil }
+	output := filepath.Join(t.TempDir(), "reading")
+	args := []string{filepath.Join(source, reading.InputFilename), "--through", "files", "--output", output, "--debug-dir", t.TempDir()}
+	if err := runReadConfigured(context.Background(), args, &bytes.Buffer{}, factory, true); err != nil {
+		t.Fatal(err)
+	}
+	if provider.stages["glossary"] == 0 {
+		t.Fatal("the glossary was not asked")
+	}
+	raw, err := os.ReadFile(filepath.Join(output, "terminology.json"))
+	if err != nil || strings.Contains(string(raw), "OHLCV") {
+		t.Fatalf("a declaration name was published as a term: %s / %v", raw, err)
+	}
+	journal, err := os.ReadFile(filepath.Join(output, "rejected.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dropped int
+	for _, line := range strings.Split(strings.TrimSpace(string(journal)), "\n") {
+		var row struct {
+			Stage, Kind, Reason string
+			Count               int
+			ResponseRef         string `json:"response_ref"`
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			t.Fatal(err)
+		}
+		if row.Stage == "glossary" && row.Kind == "glossary_code_name_omitted" && row.Reason == "term names a code declaration: OHLCV" && row.ResponseRef != "" {
+			dropped += row.Count
+		}
+	}
+	if dropped == 0 {
+		t.Fatalf("the dropped term left no rejected row: %s", journal)
+	}
+}
+
+func TestGlossaryCodeNamesAreDeclaredNamesAndEnvironmentReads(t *testing.T) {
+	index := programindex.Index{Objects: []programindex.Object{
+		{Kind: programindex.ObjectModule, Name: "example.com/app"},
+		{Kind: programindex.ObjectPackage, Name: "example.com/app/broker"},
+		{Kind: programindex.ObjectType, Name: "Collector"},
+		{Kind: programindex.ObjectFunction, Name: "Generate"},
+		{Kind: programindex.ObjectMethod, Name: "Publish"},
+		{Kind: programindex.ObjectVariable, Name: "defaultTimeout"},
+		{Kind: programindex.ObjectLambda, Name: "func1"},
+		{Kind: programindex.ObjectExternalSymbol, Name: "Flask"},
+	}}
+	repository := &facts.Result{Facts: []facts.Fact{
+		{Kind: facts.KindConfigRead, Key: "RABBITMQ_URL"},
+		{Kind: facts.KindManifest, Key: "scripts.start"},
+	}}
+	want := map[terminology.CodeNameKind][]string{
+		terminology.CodePackage:        {"example.com/app", "example.com/app/broker"},
+		terminology.CodeDeclaration:    {"Collector", "Generate", "Publish", "defaultTimeout"},
+		terminology.CodeEnvironmentKey: {"RABBITMQ_URL"},
+	}
+	if got := glossaryCodeNames([]programindex.Index{index}, repository); !reflect.DeepEqual(got, want) {
+		t.Fatalf("code names: got %v, want %v", got, want)
 	}
 }

@@ -9,14 +9,17 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/terminology"
 )
 
 // The shared run collector contains accepted live/cache adjuncts from every
 // analysis cube. Reduction happens once, before localization and publication.
-func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchOptions, runDir string, data *report.ReportData) error {
+// indexes are the sealed ProgramIndexes of every published target.
+func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchOptions, runDir string, data *report.ReportData, indexes []programindex.Index) error {
 	collector := options.Deps.terminology
 	if collector == nil || options.NoModel {
 		return nil
@@ -41,6 +44,9 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 	options.Output.Stage("Glossary", "explaining unfamiliar names from accepted prose")
 	progress := func(state, detail string) { options.Output.State("Glossary", state, detail) }
 	collector.Progress = progress
+	for kind, names := range glossaryCodeNames(indexes, data.Facts) {
+		collector.ExcludeCodeNames(kind, names...)
+	}
 	if err := collector.Generate(ctx, executor, provider); err != nil {
 		return fmt.Errorf("glossary: %w", err)
 	}
@@ -64,6 +70,35 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 	}
 	options.Output.State("Glossary", state, fmt.Sprintf("%d entries", len(catalog.Entries)), formatRunOutputWallDuration(time.Since(started)))
 	return nil
+}
+
+// The glossary explains concepts. A generated term that exactly spells a
+// name declared in a sealed ProgramIndex, or an environment key the facts
+// layer saw the code read, is dropped and journaled; corpus paths and file
+// names are already known to the collector. No existing artifact records
+// command-line flag names, so flags rely on the prompt alone.
+func glossaryCodeNames(indexes []programindex.Index, repository *facts.Result) map[terminology.CodeNameKind][]string {
+	names := make(map[terminology.CodeNameKind][]string)
+	for _, index := range indexes {
+		for _, object := range index.Objects {
+			switch object.Kind {
+			case programindex.ObjectPackage, programindex.ObjectModule:
+				names[terminology.CodePackage] = append(names[terminology.CodePackage], object.Name)
+			case programindex.ObjectType, programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectVariable:
+				names[terminology.CodeDeclaration] = append(names[terminology.CodeDeclaration], object.Name)
+			}
+			// A lambda declares no name, and an external symbol is declared
+			// outside the repository: neither is a name this code owns.
+		}
+	}
+	if repository != nil {
+		for _, fact := range repository.Facts {
+			if fact.Kind == facts.KindConfigRead {
+				names[terminology.CodeEnvironmentKey] = append(names[terminology.CodeEnvironmentKey], fact.Key)
+			}
+		}
+	}
+	return names
 }
 
 func writeGlossaryArtifact(runDir, name string, value any) error {

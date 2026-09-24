@@ -66,7 +66,9 @@ type generationResult struct {
 
 func (result generationResult) ResponseRejections() []llm.ResponseRejection { return result.Rejections }
 
-func generationCall(items []proseSource) (llm.Call[generationResult], error) {
+// code is the exact-name set of the owning collector. It never enters the
+// request; it only decides which validated terms are published.
+func generationCall(items []proseSource, code map[string]CodeNameKind) (llm.Call[generationResult], error) {
 	var rows []map[string]any
 	for i, item := range items {
 		row := fmt.Sprintf("p%d", i+1)
@@ -79,9 +81,9 @@ func generationCall(items []proseSource) (llm.Call[generationResult], error) {
 	// Validation checks occurrence in the original accepted prose; the model
 	// cannot supply or rewrite that prose in its glossary response.
 	return llm.Call[generationResult]{
-		State: []byte(`{"contract":"repomap.glossary.generate.v3"}`),
+		State: []byte(`{"contract":"repomap.glossary.generate.v4"}`),
 		Prompt: llm.Prompt{System: generatePrompt, User: string(input), ResponseFormatJSON: true, NoResponseAdjunct: true,
-			ResponseExample: `{"terms":[{"name":"<exact name in accepted prose>","kind":"<acronym, domain, protocol, format or identifier>","explanation":"<prose-context definition>","rows":["<supporting p ref>"]}]}`},
+			ResponseExample: `{"terms":[{"name":"<exact name in accepted prose>","kind":"<acronym, domain, protocol or format>","explanation":"<prose-context definition>","rows":["<supporting p ref>"]}]}`},
 		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: glossaryOutputTokens},
 		DecodeValidate: func(raw []byte) (generationResult, error) {
 			normalized, err := llm.NormalizeJSON(raw)
@@ -94,7 +96,7 @@ func generationCall(items []proseSource) (llm.Call[generationResult], error) {
 			if err := json.Unmarshal(normalized, &envelope); err != nil || envelope.Terms == nil {
 				return generationResult{}, fmt.Errorf("glossary: a terms array is required")
 			}
-			terms, accepted, rejections := validateGeneration(items, envelope.Terms)
+			terms, accepted, rejections := validateGeneration(items, envelope.Terms, code)
 			result := generationResult{Terms: terms, Rejections: rejections}
 			if len(envelope.Terms) > 0 && accepted == 0 {
 				return result, fmt.Errorf("glossary: no supported definitions accepted")
@@ -106,10 +108,10 @@ func generationCall(items []proseSource) (llm.Call[generationResult], error) {
 
 // A definition selects accepted prose, whose source scope remains complete.
 // Neither a row-number coincidence nor a rejected neighbour supplies provenance.
-// The returned count includes accepted identifier terms, which are journaled
-// and omitted from the published terms: a window of nothing but identifiers
-// is an accepted answer, not a refusal.
-func validateGeneration(items []proseSource, wire []json.RawMessage) ([]validatedTerm, int, []llm.ResponseRejection) {
+// The returned count includes valid terms whose exact name the code already
+// owns. Each is journaled with that name and omitted from the published terms:
+// a window of nothing but code names is an accepted answer, not a refusal.
+func validateGeneration(items []proseSource, wire []json.RawMessage, code map[string]CodeNameKind) ([]validatedTerm, int, []llm.ResponseRejection) {
 	var rejections []llm.ResponseRejection
 	rejectionByReason := make(map[string]int)
 	journal := func(kind, reason, position string) {
@@ -175,10 +177,10 @@ func validateGeneration(items []proseSource, wire []json.RawMessage) ([]validate
 			continue
 		}
 		accepted++
-		if validated.kind == KindIdentifier {
-			// The model's closed choice is read, not second-guessed: a code
-			// name is an accepted decision that the glossary does not publish.
-			journal("glossary_identifier_omitted", "identifier terms are not published", position)
+		if owner, found := code[name]; found {
+			// The prompt already asks for concepts only. An exact code
+			// spelling is still dropped here, visibly and by name.
+			journal("glossary_code_name_omitted", fmt.Sprintf("term names a code %s: %s", owner, name), position)
 			continue
 		}
 		sort.Strings(validated.rows)
@@ -219,7 +221,8 @@ func planProse(ctx context.Context, provider llm.Provider, items []proseSource) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	call, err := generationCall(items)
+	// Planning prepares requests only; code names never change their bytes.
+	call, err := generationCall(items, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -266,10 +269,11 @@ func (c *Collector) Generate(ctx context.Context, executor llm.Executor, provide
 	if err != nil {
 		return err
 	}
+	code := c.codeNames()
 	for len(windows) > 0 {
 		var calls []llm.Call[generationResult]
 		for i := 0; i < len(windows); i++ {
-			call, err := generationCall(windows[i])
+			call, err := generationCall(windows[i], code)
 			if err != nil {
 				return err
 			}

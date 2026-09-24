@@ -326,7 +326,7 @@ func TestOptionalOutputFailureSplitsCompleteProseAndKeepsSibling(t *testing.T) {
 }
 
 func TestTermsRequireExactOccurrenceAndScopedSource(t *testing.T) {
-	call, err := generationCall([]proseSource{{Texts: []string{"커스텀 Matcher를 사용합니다."}, Sources: []Source{{Path: "a.py"}}}, {Texts: []string{"Storage is separate."}, Sources: []Source{{Path: "b.py"}}}})
+	call, err := generationCall([]proseSource{{Texts: []string{"커스텀 Matcher를 사용합니다."}, Sources: []Source{{Path: "a.py"}}}, {Texts: []string{"Storage is separate."}, Sources: []Source{{Path: "b.py"}}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestGenerationSelectsProseAndRestoresEveryOriginalSourceAndOrigin(t *testin
 		{Texts: []string{"The OTLP trace collector is configurable."}, Sources: []Source{{Path: "main.go", Line: 16}}, Origin: Origin{RequestSHA256: strings.Repeat("b", 64), Row: "r15"}},
 		{Texts: []string{"Unrelated storage."}, Sources: []Source{{Path: "storage.go", Line: 7}}, Origin: Origin{RequestSHA256: strings.Repeat("c", 64), Row: "r1"}},
 	}
-	call, err := generationCall(items)
+	call, err := generationCall(items, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,49 +541,64 @@ func TestUnicodePhrasesAndScriptBoundaries(t *testing.T) {
 	}
 }
 
-func TestIdentifierTermsAreAcceptedCountedAndNotPublished(t *testing.T) {
-	call, err := generationCall([]proseSource{{Texts: []string{"Set RABBITMQ_URL before the OHLCV import."}, Sources: []Source{{Path: "a.py"}}}})
+func TestCodeNamesAreDroppedByExactNameAndJournaled(t *testing.T) {
+	collector := NewCollector([]string{"cmd/app/main.go"})
+	collector.ExcludeCodeNames(CodeEnvironmentKey, "RABBITMQ_URL")
+	collector.ExcludeCodeNames(CodeDeclaration, "Collector")
+	code := collector.codeNames()
+	if code["main.go"] != CodeFile || code["cmd/app/main.go"] != CodeFile || code["RABBITMQ_URL"] != CodeEnvironmentKey || code["Collector"] != CodeDeclaration {
+		t.Fatalf("code names: %v", code)
+	}
+	items := []proseSource{{Texts: []string{"Set RABBITMQ_URL in main.go before the Collector reads OHLCV and Collectors."}, Sources: []Source{{Path: "cmd/app/main.go"}}}}
+	call, err := generationCall(items, code)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(call.Prompt.ResponseExample, `"kind"`) {
-		t.Fatalf("response example has no kind cell: %s", call.Prompt.ResponseExample)
+	plain, err := generationCall(items, nil)
+	if err != nil || !reflect.DeepEqual(call.Prompt, plain.Prompt) || strings.Contains(call.Prompt.ResponseExample, "identifier") {
+		t.Fatalf("code names changed the provider request: %+v %v", call.Prompt, err)
 	}
 	got, err := call.DecodeValidate([]byte(`{"terms":[
-		{"name":"RABBITMQ_URL","kind":"identifier","explanation":"The broker address variable.","rows":["p1"]},
+		{"name":"RABBITMQ_URL","kind":"domain","explanation":"The broker address variable.","rows":["p1"]},
+		{"name":"main.go","kind":"format","explanation":"The program entry file.","rows":["p1"]},
+		{"name":"Collector","kind":"domain","explanation":"The collecting type.","rows":["p1"]},
+		{"name":"Collectors","kind":"domain","explanation":"Not an exact code name.","rows":["p1"]},
 		{"name":"OHLCV","kind":"acronym","explanation":"Open, high, low, close and volume.","rows":["p1"]},
-		{"name":"import","kind":"verb","explanation":"An unknown kind.","rows":["p1"]},
+		{"name":"OHLCV","kind":"identifier","explanation":"A retired kind.","rows":["p1"]},
 		{"name":"OHLCV","explanation":"No kind at all.","rows":["p1"]}]}`))
-	if err != nil || len(got.Terms) != 1 || got.Terms[0].candidate.Name != "OHLCV" || got.Terms[0].kind != KindAcronym {
+	if err != nil || len(got.Terms) != 2 || got.Terms[0].candidate.Name != "Collectors" || got.Terms[1].candidate.Name != "OHLCV" {
 		t.Fatalf("published terms: %+v %v", got, err)
 	}
-	byKind := make(map[string]llm.ResponseRejection)
-	for _, rejection := range got.Rejections {
-		byKind[rejection.Kind+"/"+rejection.Reason] = rejection
+	want := []llm.ResponseRejection{
+		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[0]"}, Reason: "term names a code environment key: RABBITMQ_URL"},
+		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[1]"}, Reason: "term names a code file: main.go"},
+		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[2]"}, Reason: "term names a code declaration: Collector"},
+		{Kind: "glossary_term_rejected", Count: 1, Samples: []string{"terms[5]"}, Reason: "unknown optional term kind"},
+		{Kind: "glossary_term_rejected", Count: 1, Samples: []string{"terms[6]"}, Reason: "invalid optional term shape"},
 	}
-	omitted := byKind["glossary_identifier_omitted/identifier terms are not published"]
-	if len(got.Rejections) != 3 || omitted.Count != 1 || !reflect.DeepEqual(omitted.Samples, []string{"terms[0]"}) ||
-		byKind["glossary_term_rejected/unknown optional term kind"].Count != 1 ||
-		byKind["glossary_term_rejected/invalid optional term shape"].Count != 1 {
+	if !reflect.DeepEqual(got.Rejections, want) {
 		t.Fatalf("journal: %+v", got.Rejections)
 	}
 
-	only, err := call.DecodeValidate([]byte(`{"terms":[{"name":"RABBITMQ_URL","kind":"identifier","explanation":"The broker address variable.","rows":["p1"]}]}`))
-	if err != nil || len(only.Terms) != 0 || len(only.Rejections) != 1 || only.Rejections[0].Kind != "glossary_identifier_omitted" {
-		t.Fatalf("an all-identifier window must be accepted and publish nothing: %+v %v", only, err)
+	only, err := call.DecodeValidate([]byte(`{"terms":[{"name":"RABBITMQ_URL","kind":"domain","explanation":"The broker address variable.","rows":["p1"]}]}`))
+	if err != nil || len(only.Terms) != 0 || len(only.Rejections) != 1 || only.Rejections[0].Kind != "glossary_code_name_omitted" {
+		t.Fatalf("a window of only code names must be accepted and publish nothing: %+v %v", only, err)
 	}
-	if _, err := call.DecodeValidate([]byte(`{"terms":[{"name":"OHLCV","explanation":"No kind at all.","rows":["p1"]}]}`)); err == nil {
-		t.Fatal("a window whose only term has no kind was accepted")
+	if _, err := call.DecodeValidate([]byte(`{"terms":[{"name":"OHLCV","kind":"identifier","explanation":"A retired kind.","rows":["p1"]}]}`)); err == nil {
+		t.Fatal("a window whose only term has the retired identifier kind was accepted")
 	}
 }
 
 func TestGeneratePromptDefinesEveryKindOnce(t *testing.T) {
-	for _, kind := range []TermKind{KindAcronym, KindDomain, KindProtocol, KindFormat, KindIdentifier} {
+	for _, kind := range []TermKind{KindAcronym, KindDomain, KindProtocol, KindFormat} {
 		if strings.Count(generatePrompt, "- "+string(kind)+":") != 1 {
 			t.Fatalf("generate prompt does not define %q exactly once", kind)
 		}
 	}
-	if !strings.Contains(generatePrompt, "choose exactly one kind") {
-		t.Fatal("generate prompt does not ask for one closed kind")
+	if !strings.Contains(generatePrompt, "choose exactly one kind") || strings.Contains(generatePrompt, "identifier") {
+		t.Fatal("generate prompt does not ask for one closed concept kind")
+	}
+	if !strings.Contains(generatePrompt, "Explain domain and concept terms only") {
+		t.Fatal("generate prompt does not exclude code names")
 	}
 }
