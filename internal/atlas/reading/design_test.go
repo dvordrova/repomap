@@ -1,11 +1,15 @@
 package reading
 
 import (
+	"context"
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
 func boxesByTitle(result Result) map[string]atlas.Box {
@@ -130,5 +134,56 @@ func TestDesignProposalsNeedTitlesAndPurposes(t *testing.T) {
 func TestDesignAssignmentTablesHaveTheirOwnStages(t *testing.T) {
 	if lines.ZoneParts().Stage == lines.StageZones || lines.ZoneAreas().Stage == lines.StageZones {
 		t.Fatal("assignment tables share the proposal stage")
+	}
+}
+
+// fakeClassifier answers closed tables in the decision-model form: every
+// part question chooses the part named after the row's package.
+type fakeClassifier struct{ tables []string }
+
+func (*fakeClassifier) State() []byte { return []byte(`{"model":"classifier"}`) }
+func (*fakeClassifier) Prepare(prompt llm.Prompt, _ llm.Limits) (llm.Prepared, error) {
+	return llm.NewPrepared([]byte(prompt.User))
+}
+func (c *fakeClassifier) Complete(_ context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	var body struct {
+		State struct {
+			Context map[string]any `json:"context"`
+		} `json:"state"`
+		Questions map[string]struct {
+			Instructions struct {
+				Row map[string]any `json:"row"`
+			} `json:"instructions"`
+		} `json:"questions"`
+	}
+	if err := json.Unmarshal(prepared.Bytes(), &body); err != nil {
+		return llm.Completion{}, err
+	}
+	answers := map[string]any{}
+	for key, question := range body.Questions {
+		column := key[strings.Index(key, "|")+1:]
+		c.tables = append(c.tables, column)
+		ref := zoneRef(nil, column, question.Instructions.Row, body.State.Context)
+		answers[key] = map[string]any{"type": "choice", "choice": ref, "confidence": 0.9, "probabilities": map[string]float64{ref: 0.9}}
+	}
+	raw, err := json.Marshal(map[string]any{"answers": answers})
+	return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
+}
+
+func TestClosedZoneTablesGoToTheClassifier(t *testing.T) {
+	graph := knowledgeGraph(t)
+	classifier := &fakeClassifier{}
+	opts := readOptions(t, graph, &tableProvider{}, "")
+	opts.Classifier = classifier
+	result, err := Read(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boxes := boxesByTitle(result)
+	if boxFiles(boxes["pkg/a"]) != "pkg/a/x.go pkg/a/y.go" || len(classifier.tables) == 0 {
+		t.Fatalf("classifier did not assign the parts: %v %+v", classifier.tables, boxes)
+	}
+	if !slices.Contains(classifier.tables, "part") {
+		t.Fatalf("part assignment did not reach the classifier: %v", classifier.tables)
 	}
 }

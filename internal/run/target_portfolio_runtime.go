@@ -21,6 +21,7 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
 	"github.com/dvordrova/repomap/internal/targetportfolio"
+	"github.com/dvordrova/repomap/internal/typesafe"
 )
 
 type targetPortfolioProviderFactory func() (llm.Provider, error)
@@ -56,6 +57,30 @@ type targetPortfolioRunOutcome struct {
 
 func defaultTargetPortfolioProviderFactory() (llm.Provider, error) {
 	return deepseek.NewFromEnv()
+}
+
+func defaultClassifierProviderFactory() (llm.Provider, error) {
+	client, err := typesafe.NewFromEnv()
+	if client == nil || err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+// classifierWithOutput reports the decision model's retries on the console.
+func classifierWithOutput(factory targetPortfolioProviderFactory, output *runOutput) targetPortfolioProviderFactory {
+	if factory == nil {
+		return nil
+	}
+	return func() (llm.Provider, error) {
+		provider, err := factory()
+		if client, ok := provider.(*typesafe.Client); ok && client != nil {
+			client.OnRetry = func(attempt, status int, reason string, wait time.Duration) {
+				output.Stage("", fmt.Sprintf("classifier request: attempt %d failed (HTTP %d: %s); retry after %s", attempt, status, reason, wait))
+			}
+		}
+		return provider, err
+	}
 }
 
 // Bind the existing transport heartbeat before any terminology decoration.

@@ -1,5 +1,27 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Jev answers closed tables
+
+- `internal/typesafe` is an `llm.Provider` for TypeSafe System One
+  (`jev-1.13.0`, `JEV_KEY`). A table whose columns are all unconditional
+  closed choices (`table.Closed`) goes to it when the key is set; each row
+  and column is one question, the table prompt and window context are the
+  state. Optional yes-only columns are Nouls; other optional choices carry
+  an explicit `none of these`. A choice is taken when its option's
+  probability is above 0.5 (not Jev's `confidence`, which measures the
+  whole distribution: a yes at 0.69 has confidence 0.39).
+- Packing counts questions (150 per request): 150 rows of seven columns
+  exceeded Jev's 64k-token request. 24 requests run at once on their own
+  gate, over HTTP/1.1: on one HTTP/2 connection 57 concurrent 100 KB
+  requests took 42 s, on separate connections 9 s.
+- The semantic journal now records atlas_api, atlas_publish, atlas_layers,
+  atlas_core, atlas_keys, atlas_zone_parts and atlas_zone_areas.
+- Live `cmd/repomap`, cold: 2m19s against 3m14s DeepSeek-only, no failed
+  request. Known and open: zone_parts options are bare `c*` refs and a third
+  of units stay unassigned; an uncertain optional answer reads as absent;
+  routing is by table shape, not a calibrated allowlist; the row memo
+  basis does not include the provider.
+
 ## 2026-09-24 — Zones are proposed, then assigned by closed choice
 
 - Units are functions and types (with their methods). `atlas_zones` (design

@@ -59,6 +59,9 @@ type Options struct {
 	// every cell takes its fallback.
 	Executor llm.Executor
 	Provider llm.Provider
+	// Classifier optionally answers closed tables (every column a closed
+	// choice) with a decision model; nil keeps them with Provider.
+	Classifier llm.Provider
 	// OwnerRunDir receives tables.md and tables/.
 	OwnerRunDir string
 	// Stage and State report progress the way the run output does.
@@ -127,6 +130,7 @@ type reader struct {
 	selectedKeys, partKeys, keysDecided map[string]bool
 
 	boxOf          map[string]string            // file place ID -> box ID
+	classifierGate *llm.BatchController         // the decision model's own attempt gate
 	designBoxOf    map[string]map[string]string // target -> declaration/file -> accepted part
 	designFiles    map[string]string            // declaration -> its source file
 	designSubjects map[string]string            // native declaration -> place
@@ -245,6 +249,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 	opts.Graph = graph
 	r := &reader{
 		opts:              opts,
+		classifierGate:    &llm.BatchController{},
 		places:            make(map[string]atlas.Place, len(opts.Graph.Places)),
 		directoriesByPath: make(map[string]string),
 		symbolsBySource:   make(map[string]string),
@@ -676,6 +681,11 @@ func (r *reader) runPreparedTable(ctx context.Context, def table.Definition, rou
 // them as one batch; window indexes run across the groups.
 func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, round int, groups rowGroups, check func(table.Answers) error) ([]rowAnswer, error) {
 	answers := make([]rowAnswer, groups.count())
+	provider := r.opts.Provider
+	classifier := r.opts.Classifier != nil && table.Closed(def)
+	if classifier {
+		def, provider = table.ForClassifier(def), r.opts.Classifier
+	}
 	var windows []table.Window
 	for _, group := range groups {
 		if len(group.rows) == 0 {
@@ -722,6 +732,24 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	}
 	calls := make([]llm.Call[table.Result], len(windows))
 	for i, window := range windows {
+		if classifier {
+			call, err := table.ClassifierCall(def, window, table.ClassifierMinProbability)
+			if err != nil {
+				return nil, err
+			}
+			decode := call.DecodeValidate
+			call.DecodeValidate = func(raw []byte) (table.Result, error) {
+				value, err := decode(raw)
+				if err == nil && check != nil {
+					if err := check(value.Answers); err != nil {
+						return table.Result{}, fmt.Errorf("table %s: %w", def.Stage, err)
+					}
+				}
+				return value, err
+			}
+			calls[i] = call
+			continue
+		}
 		call, err := table.Call(def, window)
 		if err != nil {
 			return nil, err
@@ -743,7 +771,11 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 		}
 	}
 	executor := debugdump.BindStage(r.opts.Executor, def.Stage)
-	results := llm.ExecuteJSONEach(ctx, executor, r.opts.Provider, calls)
+	if classifier {
+		// The decision model has its own rate limits and its own gate.
+		executor.BatchConcurrency, executor.BatchController = table.ClassifierConcurrency, r.classifierGate
+	}
+	results := llm.ExecuteJSONEach(ctx, executor, provider, calls)
 	for i, window := range windows {
 		result := results[i]
 		if len(result.Outcome.Request) > 0 {

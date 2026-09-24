@@ -151,6 +151,7 @@ func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool)
 		captureRepo:                freshness.CaptureRepository,
 		newTargetPortfolioProvider: defaultTargetPortfolioProviderFactory,
 		newCubeProvider:            defaultTargetPortfolioProviderFactory,
+		newClassifierProvider:      defaultClassifierProviderFactory,
 		llmBatchConcurrency:        llm.DefaultBatchConcurrency,
 		llmBatchController:         &llm.BatchController{},
 		collectTerminology:         true,
@@ -180,11 +181,14 @@ type defaultRunDeps struct {
 	captureRepo                func(context.Context, string, *corpus.Corpus) (freshness.RepositoryState, error)
 	newTargetPortfolioProvider targetPortfolioProviderFactory
 	newCubeProvider            targetPortfolioProviderFactory
-	collectTerminology         bool
-	terminology                *terminology.Collector
-	newDisplayProvider         targetPortfolioProviderFactory
-	runDocumentationReduce     documentationReduceRunner
-	runOrientation             orientationRunner
+	// newClassifierProvider answers closed tables when it returns a provider;
+	// nil or a nil provider keeps them with the cube provider.
+	newClassifierProvider  targetPortfolioProviderFactory
+	collectTerminology     bool
+	terminology            *terminology.Collector
+	newDisplayProvider     targetPortfolioProviderFactory
+	runDocumentationReduce documentationReduceRunner
+	runOrientation         orientationRunner
 	// One controller follows the complete repository run, including selected
 	// child targets and the repository overview. DeepSeek concurrency limits are
 	// account-scoped, so a transient HTTP 429 must serialize later attempts even
@@ -313,6 +317,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	}
 	newTargetPortfolioProvider = providerFactoryWithOutput(newTargetPortfolioProvider, humanOutput)
 	deps.newCubeProvider = providerFactoryWithOutput(deps.newCubeProvider, humanOutput)
+	deps.newClassifierProvider = classifierWithOutput(deps.newClassifierProvider, humanOutput)
 
 	publicationStateEmitted := false
 	defer func() {

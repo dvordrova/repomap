@@ -127,6 +127,13 @@ const (
 	SemanticStageAtlasQuestion    = "atlas_question"
 	SemanticStageAtlasAnswer      = "atlas_answer"
 	SemanticStageAtlasLearn       = "atlas_learn"
+	SemanticStageAtlasAPI         = "atlas_api"
+	SemanticStageAtlasPublish     = "atlas_publish"
+	SemanticStageAtlasLayers      = "atlas_layers"
+	SemanticStageAtlasCore        = "atlas_core"
+	SemanticStageAtlasKeys        = "atlas_keys"
+	SemanticStageAtlasZoneParts   = "atlas_zone_parts"
+	SemanticStageAtlasZoneAreas   = "atlas_zone_areas"
 	SemanticRequestPrepared       = "prepared_request"
 	SemanticRequestExactSent      = "exact_sent_request"
 	SemanticStateAccepted         = "accepted"
@@ -734,7 +741,14 @@ func validSemanticStage(stage string) bool {
 		SemanticStageReportTranslation,
 		SemanticStageGlossary,
 		SemanticStageAtlasAnswer,
-		SemanticStageAtlasLearn:
+		SemanticStageAtlasLearn,
+		SemanticStageAtlasAPI,
+		SemanticStageAtlasPublish,
+		SemanticStageAtlasLayers,
+		SemanticStageAtlasCore,
+		SemanticStageAtlasKeys,
+		SemanticStageAtlasZoneParts,
+		SemanticStageAtlasZoneAreas:
 		return true
 	default:
 		return false
