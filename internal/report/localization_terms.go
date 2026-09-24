@@ -89,15 +89,26 @@ type glossaryMatch struct {
 // Matches are literal and case-sensitive. Source syntax remains untouched;
 // longest complete names win at a shared start, without nested highlights.
 func glossaryMatches(text string, terms []DisplayTextTerm) []glossaryMatch {
-	blocked := displayVerbatimSyntax.FindAllStringIndex(text, -1)
-	for _, bounds := range displayAbsolutePath.FindAllStringSubmatchIndex(text, -1) {
-		blocked = append(blocked, []int{bounds[2], bounds[3]})
-	}
+	return glossaryMatchesBySpelling(text, glossarySpellingIDs(terms))
+}
+
+func glossarySpellingIDs(terms []DisplayTextTerm) map[string][]string {
 	byName := make(map[string][]string)
 	for _, term := range terms {
 		if term.Spelling != "" && !slices.Contains(byName[term.Spelling], term.ID) {
 			byName[term.Spelling] = append(byName[term.Spelling], term.ID)
 		}
+	}
+	return byName
+}
+
+func glossaryMatchesBySpelling(text string, byName map[string][]string) []glossaryMatch {
+	if len(byName) == 0 {
+		return nil
+	}
+	blocked := displayVerbatimSyntax.FindAllStringIndex(text, -1)
+	for _, bounds := range displayAbsolutePath.FindAllStringSubmatchIndex(text, -1) {
+		blocked = append(blocked, []int{bounds[2], bounds[3]})
 	}
 	var matches []glossaryMatch
 	for spelling, ids := range byName {
@@ -185,39 +196,13 @@ func wholeGlossaryName(text string, start, end int) bool {
 // and local lookup. A shared spelling never merges distinct definitions.
 func (page *PreparedPage) prepareTerminology(role, text, scope string, names []string, own *pageGlossaryTerm) DisplayTextEntry {
 	entry := DisplayTextEntry{Role: role, Scope: scope}
-	byName := make(map[string][]pageGlossaryTerm)
-	scoped := make(map[string][]pageGlossaryTerm)
-	for _, term := range page.view.Glossary {
-		for _, spelling := range glossarySpellings(term) {
-			byName[spelling] = append(byName[spelling], term)
-			if scope != "" && glossaryInQuestion(term, scope) {
-				scoped[spelling] = append(scoped[spelling], term)
-			}
-		}
-	}
-	for spelling, terms := range scoped {
-		byName[spelling] = terms
-	}
 	if own != nil {
 		entry.Context = own.ID
-		for _, spelling := range glossarySpellings(*own) {
-			byName[spelling] = []pageGlossaryTerm{*own}
-		}
 	}
-	var all []DisplayTextTerm
-	for spelling, values := range byName {
-		for _, value := range values {
-			all = append(all, DisplayTextTerm{ID: value.ID, Spelling: spelling, Explanation: value.Explanation})
-		}
-	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].Spelling != all[j].Spelling {
-			return all[i].Spelling < all[j].Spelling
-		}
-		return all[i].ID < all[j].ID
-	})
+	terms := page.terminologyFor(scope, own)
+	all := terms.all
 	used := make(map[string]bool)
-	for _, match := range glossaryMatches(text, all) {
+	for _, match := range glossaryMatchesBySpelling(text, terms.bySpelling) {
 		for _, id := range match.ids {
 			used[id] = true
 		}
@@ -240,4 +225,59 @@ func (page *PreparedPage) nameIndex(names []string) *displayNameIndex {
 		page.names, page.namesFrom, page.namesCount = newDisplayNameIndex(names), &names[0], len(names)
 	}
 	return page.names
+}
+
+// pageTerms are the glossary terms one scope and one own term see, sorted,
+// with each spelling's term IDs; they do not depend on the text.
+type pageTerms struct {
+	all        []DisplayTextTerm
+	bySpelling map[string][]string
+}
+
+// terminologyFor builds the terms a text in this scope sees once per scope
+// and own term instead of once per display text.
+func (page *PreparedPage) terminologyFor(scope string, own *pageGlossaryTerm) pageTerms {
+	key := scope + "\x00"
+	if own != nil {
+		key += own.ID
+	}
+	if cached, ok := page.terms[key]; ok {
+		return cached
+	}
+	byName := make(map[string][]pageGlossaryTerm)
+	scoped := make(map[string][]pageGlossaryTerm)
+	for _, term := range page.view.Glossary {
+		for _, spelling := range glossarySpellings(term) {
+			byName[spelling] = append(byName[spelling], term)
+			if scope != "" && glossaryInQuestion(term, scope) {
+				scoped[spelling] = append(scoped[spelling], term)
+			}
+		}
+	}
+	for spelling, terms := range scoped {
+		byName[spelling] = terms
+	}
+	if own != nil {
+		for _, spelling := range glossarySpellings(*own) {
+			byName[spelling] = []pageGlossaryTerm{*own}
+		}
+	}
+	var all []DisplayTextTerm
+	for spelling, values := range byName {
+		for _, value := range values {
+			all = append(all, DisplayTextTerm{ID: value.ID, Spelling: spelling, Explanation: value.Explanation})
+		}
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Spelling != all[j].Spelling {
+			return all[i].Spelling < all[j].Spelling
+		}
+		return all[i].ID < all[j].ID
+	})
+	terms := pageTerms{all: all, bySpelling: glossarySpellingIDs(all)}
+	if page.terms == nil {
+		page.terms = make(map[string]pageTerms)
+	}
+	page.terms[key] = terms
+	return terms
 }

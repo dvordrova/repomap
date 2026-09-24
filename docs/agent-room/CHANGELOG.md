@@ -17,6 +17,9 @@
   runes is a whole run of the text; names are indexed by their longest run
   once per page. Saved live report re-rendered: 28.8 s → 11.4 s, HTML
   byte-identical.
+- A display text's glossary terms were rebuilt and re-sorted for every text;
+  they depend only on the question scope and the text's own term and are
+  built once per pair. Same report: 11.4 s → 8.1 s, byte-identical.
 
 ## 2026-09-25 — Jev by explicit opt-in, and zone catalogues accepted whole
 

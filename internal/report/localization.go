@@ -190,6 +190,7 @@ type PreparedPage struct {
 	names      *displayNameIndex
 	namesFrom  *string
 	namesCount int
+	terms      map[string]pageTerms // by scope and own term
 }
 
 type displayConcepts struct {
