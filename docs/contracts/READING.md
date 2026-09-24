@@ -46,7 +46,18 @@ new description or selection requests.
   before a target-scoped ObjectID. `reading` walks them in rounds and asks
   one keyed table per round: directories by depth, independent files with direct caller facts,
   symbols, boundaries, declaration-based responsibilities and their larger areas,
-  the drawn arrows, the portfolio, the joints. A row carries the place's own facts and its directory's line, one step up.
+  the drawn arrows, the portfolio, the joints. Stages with no data dependency
+  run concurrently: after the files, the symbols; the outside symbols with the
+  boundaries their roles make and the layers between them; and the zones read
+  nothing of one another and join before the arrows, which read them all. Each
+  prints, counts and rejects into its own record, added at the join in step
+  order, so `tables.md` keeps step order and the requests, compact IDs,
+  knowledge, the reading's rejected rows and atlas are those of the serial
+  walk; only the exchange journal, with the response rejections it appends to
+  `rejected.jsonl` as responses arrive, interleaves. The first failure stops the stages beside it
+  and is the error reported; `--through` stops inside them at its own stage.
+  The zone assignment tables of a target use its position as their round, as
+  the core table does. A row carries the place's own facts and its directory's line, one step up.
   File callers contribute deterministic facts, never another file's model
   line. Description candidates include every eligible declaration in authored
   code; visibility, documentation and callers order them without removing
@@ -89,7 +100,8 @@ new description or selection requests.
   unknown and duplicate keys are refused; response order never substitutes for
   identity. Every row and answer is printed to `tables.md`, with prompts, requests, raw
   responses and normalized source-bound results under `tables/`. The ordinary
-  path saves `reading-input.json` before its first atlas call; `read` consumes
+  path saves `reading-input.json` before its first atlas call, from the same
+  sealed graph bytes as `places.json`; `read` consumes
   exactly that format and runs the same reader. Above two thousand files the directory and
   file rows carry an `open` cell and what the model closes keeps its
   fallback line.
@@ -548,6 +560,8 @@ Independent directory, file, symbol, operation and boundary interpretations pers
 as knowledge.json v2. Each record binds the internal subject, current owners, context, exact
 single-row evidence, cells and dependencies on earlier model interpretations.
 The model still receives batches; single-row preparation only computes identity.
+Rows are prepared and their memos recalled on all processors; counts,
+`tables.md` lines, rejections and acceptance still follow row order.
 Only these independent tables opt into reuse and their prompts explicitly require
 row independence. Comparative stages keep complete request identity. Existing provider exchanges retain real transport accounting;
 reused entities are counted as reused_rows, not fictional provider cache hits.

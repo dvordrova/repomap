@@ -39,6 +39,52 @@
   loop ends in ~22 s as an ordinary refusal. A proposed "at most 40 parts"
   prompt line was measured and rejected: it pushed 3 of 4 answers to 41–55
   parts. An identical-bytes resample after such a refusal awaits the owner.
+## 2026-09-25 — The atlas reads symbols, boundaries and zones at once
+
+- After the files, three chains of the walk read nothing of one another:
+  symbols; atlas_api → boundaries (+publish) → layers; zones. They run at
+  once on views of the reader with their own tables/rejected/uses sinks,
+  joined in step order before arrows → core → keys → targets → joints, which
+  stay serial. The boundaries chain works on its own copy of the places;
+  knowledge and the response caches sit behind one lock. Symbols now choose
+  the described declarations from a per-file inventory (`overviewKeys`)
+  instead of projecting every target through `r.target`; a temporary probe
+  compared both on every reading, contract and run fixture (79 selections,
+  48 non-empty, all equal). The first failure cancels the other chains and
+  is the one reported; `--through` stops inside them.
+- Also: the places graph is sealed once for places.json and
+  reading-input.json (byte-identical); knowledge.json and tables.md are
+  rewritten only when they changed; independent rows build their inputs,
+  load memos and recall answers on all processors, taken in row order.
+- Two fixes the equivalence check needed: a holder with two publishing calls
+  took the first address in map order (now boundary order), and
+  zone_parts/zone_areas used round 1 for every target, so the second target
+  overwrote the first target's window files and repeated its tables.md
+  headings (now the target's position, as core).
+- Identity check, base 4aed3fd1 against c2892d79. No-model runs on the
+  snapshot (cmd/repomap; cmd/repomap + internal/report/web; the Go fixture):
+  every artifact equal apart from timing and build info (396, 335 and 32
+  files). Online, the same cache after base warm runs converged: every stage
+  cached except the one symbols window the provider refuses each time
+  (context_tokens), in both; places.json, reading-input.json, knowledge.json,
+  atlas.json, report.json and report.html equal; tables.md and the 310 zone
+  window files equal once the second target's round 2 is read as round 1;
+  rejected.jsonl the same 1,930 rows, the reading's own 962 in order, the
+  journaled response rejections interleaved.
+- Measured on the ordinary no-target run of the repository snapshot (two
+  targets, report server ready), on the same machine with other agents'
+  runs beside it. Cold (fresh cache), base 213.7 / 158.5 s, new 93.8 /
+  160.4 s; the glossary alone took 102 / 39 s and 14 / 93 s, so compare the
+  atlas: reading (directories → Atlas) 55.5 / 64.9 s → 30.3 / 19.5 s, of which
+  symbols..zones 53.1 / 49.8 s → 19.0 / 17.6 s; the prelude before the first
+  table 2.3 / 2.1 s → 0.9 / 1.0 s. Warm: reading 7.7 → 2.9 s, places → Atlas
+  13.5 → 7.9 s, server ready 57.3 → 53.6 s. The critical chain is symbols
+  (17.2–18.8 s, 19.6 s serial) with zones close behind (17.4–17.7 s); the
+  Jev zone windows and the DeepSeek api/boundaries windows beside it did not
+  slow its selection (10.4 / 8.0 s vs 11.0 / 8.7 s serial) or its types
+  (8.4 / 9.3 s vs 8.6 / 10.9 s). The serial tail can still cost 11 s when keys
+  asks (24 windows, 8 s in new cold 1); keys and targets → joints read
+  nothing of each other, the next candidate for a fork.
 
 ## 2026-09-25 — Each call keeps its own source position
 
