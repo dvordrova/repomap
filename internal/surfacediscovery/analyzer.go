@@ -40,7 +40,11 @@ type analyzer struct {
 	scenario         Scenario
 	result           Result
 
-	functionIDs     map[*ssa.Function]string
+	functionIDs map[*ssa.Function]string
+	// ordered and staticCalls are computed once from allFunctions, which
+	// is complete when the analyzer is constructed.
+	ordered         []*ssa.Function
+	staticCalls     map[*ssa.Function][]ssa.CallInstruction
 	callControls    map[Location][]ControlContext
 	methodArguments map[Location][]*sourcevalue.Value
 
@@ -433,16 +437,43 @@ func (a *analyzer) prepareTargetProgram() {
 }
 
 func (a *analyzer) orderedFunctions() []*ssa.Function {
+	if a.ordered != nil && len(a.ordered) == len(a.allFunctions) {
+		return a.ordered
+	}
 	functions := make([]*ssa.Function, 0, len(a.allFunctions))
+	keys := make(map[*ssa.Function]string, len(a.allFunctions))
 	for function := range a.allFunctions {
 		functions = append(functions, function)
+		keys[function] = a.functionID(function) + "\x00" + function.Synthetic + "\x00" + strconv.Itoa(int(function.Pos()))
 	}
-	sort.Slice(functions, func(i, j int) bool {
-		left := a.functionID(functions[i]) + "\x00" + functions[i].Synthetic + "\x00" + strconv.Itoa(int(functions[i].Pos()))
-		right := a.functionID(functions[j]) + "\x00" + functions[j].Synthetic + "\x00" + strconv.Itoa(int(functions[j].Pos()))
-		return left < right
-	})
+	sort.Slice(functions, func(i, j int) bool { return keys[functions[i]] < keys[functions[j]] })
+	a.ordered = functions
 	return functions
+}
+
+// staticCallsTo returns every call in a repository function whose static
+// callee is callee, in function, block and instruction order.
+func (a *analyzer) staticCallsTo(callee *ssa.Function) []ssa.CallInstruction {
+	if a.staticCalls == nil {
+		a.staticCalls = make(map[*ssa.Function][]ssa.CallInstruction)
+		for _, caller := range a.orderedFunctions() {
+			if caller == nil || caller.Blocks == nil || !a.isRepositoryFunction(caller) {
+				continue
+			}
+			for _, block := range caller.Blocks {
+				for _, instruction := range block.Instrs {
+					call, ok := instruction.(ssa.CallInstruction)
+					if !ok || call.Common() == nil {
+						continue
+					}
+					if static := call.Common().StaticCallee(); static != nil {
+						a.staticCalls[static] = append(a.staticCalls[static], call)
+					}
+				}
+			}
+		}
+	}
+	return a.staticCalls[callee]
 }
 
 func (a *analyzer) entrypoints() []*ssa.Function {

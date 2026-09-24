@@ -363,24 +363,13 @@ func (r *dynamicValueResolver) interfaceParameter(parameter *ssa.Parameter) dyna
 
 	result := dynamicValueSummary{}
 	found := false
-	for _, caller := range r.analyzer.orderedFunctions() {
-		if caller == nil || caller.Blocks == nil || !r.analyzer.isRepositoryFunction(caller) {
+	for _, call := range r.analyzer.staticCallsTo(parent) {
+		found = true
+		if position >= len(call.Common().Args) {
+			r.merge(&result, unknown)
 			continue
 		}
-		for _, block := range caller.Blocks {
-			for _, instruction := range block.Instrs {
-				call, ok := instruction.(ssa.CallInstruction)
-				if !ok || call.Common() == nil || call.Common().StaticCallee() != parent {
-					continue
-				}
-				found = true
-				if position >= len(call.Common().Args) {
-					r.merge(&result, unknown)
-					continue
-				}
-				r.merge(&result, r.interfaceValue(call.Common().Args[position]))
-			}
-		}
+		r.merge(&result, r.interfaceValue(call.Common().Args[position]))
 	}
 	if !found {
 		return unknown

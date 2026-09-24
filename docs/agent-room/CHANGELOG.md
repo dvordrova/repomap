@@ -8,6 +8,12 @@
   `cmd/repomap` Facts reached ~96 GB and macOS killed the run (exit 137).
   The guard is now the expression alone. Same target, `--no-model`: Facts
   2.2 s, 1,249 facts, peak heap ~350 MB, whole run 5m21s.
+- The Go index spent 287 s of that in dynamic handoffs: every interface
+  parameter re-sorted all SSA functions (string keys built inside the
+  comparator) and scanned every instruction for calls to its function. The
+  order is now computed once and static calls are indexed once by callee.
+  Index 287 s → 7.3 s; program-index, facts, places and atlas byte-identical
+  to the previous binary on the same checkout.
 
 ## 2026-09-18 — A handed value is a constructed instance or a module
 
