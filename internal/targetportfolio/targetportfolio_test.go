@@ -103,67 +103,6 @@ func TestCompileAndResolveFilePortfolio(t *testing.T) {
 	}
 }
 
-func TestCompileWithExecutableAuthorityCanonicalizesAndBindsExactRefs(t *testing.T) {
-	snapshot := testSnapshot(t, []string{"cmd/main.go", "pkg/client.go", "worker/main.go"})
-	left, err := CompileWithExecutableAuthority(snapshot, []Candidate{
-		{FileRef: "f3", Hypotheses: []string{"worker"}},
-		{FileRef: "f2", Hypotheses: []string{"primary executable according to confident prose"}},
-		{FileRef: "f1", Hypotheses: []string{"library according to misleading prose"}},
-	}, []corpus.FileID{"f3", "f1", "f3", "f1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	right, err := CompileWithExecutableAuthority(snapshot, []Candidate{
-		{FileRef: "f1", Hypotheses: []string{"library according to misleading prose"}},
-		{FileRef: "f2", Hypotheses: []string{"primary executable according to confident prose"}},
-		{FileRef: "f3", Hypotheses: []string{"worker"}},
-	}, []corpus.FileID{"f1", "f3"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if left.Request.ExecutableFileRefs == nil ||
-		!slices.Equal(*left.Request.ExecutableFileRefs, []corpus.FileID{"f1", "f3"}) {
-		t.Fatalf("canonical executable authority = %#v", left.Request.ExecutableFileRefs)
-	}
-	if batches, err := classificationBatches(left); err != nil || len(batches) != 1 {
-		t.Fatalf("executable classification batch = %d / %v", len(batches), err)
-	}
-	leftWire, err := ProviderVisibleJSON(left)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rightWire, err := ProviderVisibleJSON(right)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leftState, err := ExecutionState(left)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rightState, err := ExecutionState(right)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(leftWire, rightWire) || !bytes.Equal(leftState, rightState) ||
-		left.RequestSHA256 != right.RequestSHA256 ||
-		!bytes.Contains(leftWire, []byte(`"executable_file_refs":["f1","f3"]`)) {
-		t.Fatalf("authority permutation changed compilation:\n%s\n%s\n%s\n%s", leftWire, rightWire, leftState, rightState)
-	}
-	prompt, err := BuildPrompt(left)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(prompt.User, string(leftWire)) {
-		t.Fatal("prompt lost exact authority")
-	}
-
-	defaultRef := corpus.FileID("f1")
-	selection, err := ResolveResponse(left, mustResponse(t, &defaultRef, []corpus.FileID{"f1", "f2"}))
-	if err != nil || selection.Default == nil || selection.Default.FileRef != "f1" {
-		t.Fatalf("exact authority lost to misleading prose: %#v / %v", selection, err)
-	}
-}
-
 func TestRequiredTargetAuthorityCannotBeSuppressedByPortfolio(t *testing.T) {
 	snapshot := testSnapshot(t, []string{"backend/main.py", "front/package.json", "README.md"})
 	compilation, err := CompileWithRequiredTargetAuthority(snapshot, []Candidate{
@@ -193,17 +132,41 @@ func TestRequiredTargetAuthorityCannotBeSuppressedByPortfolio(t *testing.T) {
 		t.Fatal("prompt lost exact authority")
 	}
 
-	for name, raw := range map[string][]byte{
-		"empty":       []byte(`{"default_file_ref":null,"target_file_refs":[]}`),
-		"one missing": mustResponse(t, fileIDPointer("f1"), []corpus.FileID{"f1"}),
-		"unknowns":    mustResponse(t, fileIDPointer("f1"), []corpus.FileID{"f1", "foreign"}),
+	// An answer that omits a required representative cannot suppress it: the
+	// compilation restores it. The guidance candidate the model did not select
+	// stays unclassified and is never added.
+	for name, test := range map[string]struct {
+		raw         []byte
+		wantDefault corpus.FileID
+		rejected    int
+	}{
+		"empty":       {raw: []byte(`{"default_file_ref":null,"target_file_refs":[]}`)},
+		"absent":      {raw: []byte(`{}`)},
+		"one missing": {raw: mustResponse(t, fileIDPointer("f1"), []corpus.FileID{"f1"}), wantDefault: "f1"},
+		"unknowns":    {raw: mustResponse(t, fileIDPointer("f1"), []corpus.FileID{"f1", "foreign"}), wantDefault: "f1", rejected: 1},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := ResolveResponse(compilation, raw); err == nil ||
-				!strings.Contains(err.Error(), "omits exact required target authority") {
-				t.Fatalf("authority-losing response error = %v", err)
+			result, err := resolveResponse(compilation, test.raw)
+			if err != nil {
+				t.Fatalf("omitting answer refused: %v", err)
+			}
+			if !slices.Equal(candidateRefs(result.Targets), []corpus.FileID{"f1", "f2"}) ||
+				!slices.Equal(candidateRefs(result.Unclassified), []corpus.FileID{"f3"}) {
+				t.Fatalf("required authority not restored or guidance promoted: %#v", result.Selection)
+			}
+			if (test.wantDefault == "") != (result.Default == nil) ||
+				(result.Default != nil && result.Default.FileRef != test.wantDefault) {
+				t.Fatalf("default = %#v, want %q", result.Default, test.wantDefault)
+			}
+			if len(result.ResponseRejections()) != test.rejected {
+				t.Fatalf("rejections = %+v, want %d", result.ResponseRejections(), test.rejected)
 			}
 		})
+	}
+	for _, raw := range []string{`null`, `[]`, `"f1"`, `{"target_file_refs":["f1"]`} {
+		if _, err := ResolveResponse(compilation, []byte(raw)); err == nil {
+			t.Fatalf("accepted an answer that is not one JSON object: %s", raw)
+		}
 	}
 	selection, err := ResolveResponse(
 		compilation,
@@ -277,133 +240,6 @@ func TestRequiredTargetAuthorityIsRequestBoundAndTamperEvident(t *testing.T) {
 		bytes.Contains(genericWire, []byte("required_target_file_refs")) ||
 		bytes.Equal(boundState, genericState) || boundEmpty.RequestSHA256 == generic.RequestSHA256 {
 		t.Fatalf("bound empty required authority collapsed into generic compilation:\nbound=%s\ngeneric=%s", boundWire, genericWire)
-	}
-}
-
-func TestExecutableAuthorityRejectsLibraryOnlyPositiveAuthorityLoss(t *testing.T) {
-	snapshot := testSnapshot(t, []string{"cmd/main.go", "pkg/client.go", "worker/main.go"})
-	compilation, err := CompileWithExecutableAuthority(snapshot, []Candidate{
-		{FileRef: "f1", Hypotheses: []string{"command"}},
-		{FileRef: "f2", Hypotheses: []string{"importable library"}},
-		{FileRef: "f3", Hypotheses: []string{"worker"}},
-	}, []corpus.FileID{"f1", "f3"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tests := map[string]struct {
-		defaultRef corpus.FileID
-		targets    []corpus.FileID
-	}{
-		"library only":                    {defaultRef: "f2", targets: []corpus.FileID{"f2"}},
-		"library default with executable": {defaultRef: "f2", targets: []corpus.FileID{"f1", "f2"}},
-		"unknowns filter to library only": {defaultRef: "f2", targets: []corpus.FileID{"foreign", "f2"}},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			if _, err := ResolveResponse(
-				compilation,
-				mustResponse(t, &test.defaultRef, test.targets),
-			); err == nil {
-				t.Fatalf("accepted authority-losing response: default=%s targets=%v", test.defaultRef, test.targets)
-			}
-		})
-	}
-	defaultRef := corpus.FileID("f3")
-	selection, err := ResolveResponse(
-		compilation,
-		mustResponse(t, &defaultRef, []corpus.FileID{"f2", "f3"}),
-	)
-	if err != nil || selection.Default == nil || selection.Default.FileRef != "f3" ||
-		!slices.Equal(candidateRefs(selection.Targets), []corpus.FileID{"f2", "f3"}) {
-		t.Fatalf("executable default with supporting library = %#v / %v", selection, err)
-	}
-	empty, err := ResolveResponse(
-		compilation,
-		[]byte(`{"default_file_ref":null,"target_file_refs":[]}`),
-	)
-	if err != nil || empty.Default != nil || len(empty.Targets) != 0 || len(empty.Unclassified) != 3 {
-		t.Fatalf("legitimate empty selection = %#v / %v", empty, err)
-	}
-}
-
-func TestCompileWithEmptyExecutableAuthorityPreservesLibraryOnlyContract(t *testing.T) {
-	snapshot := testSnapshot(t, []string{"pkg/client.go"})
-	bound, err := CompileWithExecutableAuthority(snapshot, []Candidate{
-		{FileRef: "f1", Hypotheses: []string{"importable library"}},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wire, err := ProviderVisibleJSON(bound)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bound.Request.ExecutableFileRefs == nil || *bound.Request.ExecutableFileRefs == nil ||
-		len(*bound.Request.ExecutableFileRefs) != 0 ||
-		!bytes.Contains(wire, []byte(`"executable_file_refs":[]`)) {
-		t.Fatalf("empty exact authority was not preserved: request=%#v wire=%s", bound.Request, wire)
-	}
-	empty, err := ResolveResponse(bound, []byte(`{"default_file_ref":null,"target_file_refs":[]}`))
-	if err != nil || empty.Default != nil || len(empty.Targets) != 0 || len(empty.Unclassified) != 1 {
-		t.Fatalf("library-only empty selection = %#v / %v", empty, err)
-	}
-
-	generic, err := Compile(snapshot, []Candidate{
-		{FileRef: "f1", Hypotheses: []string{"importable library"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	genericWire, _ := ProviderVisibleJSON(generic)
-	boundState, _ := ExecutionState(bound)
-	genericState, _ := ExecutionState(generic)
-	if generic.Request.ExecutableFileRefs != nil || bytes.Contains(genericWire, []byte("executable_file_refs")) ||
-		bytes.Equal(boundState, genericState) || bound.RequestSHA256 == generic.RequestSHA256 {
-		t.Fatalf("bound empty authority collapsed into generic compilation:\nbound=%s\ngeneric=%s", wire, genericWire)
-	}
-}
-
-func TestExecutableAuthorityIsCurrentRequestBoundAndTamperEvident(t *testing.T) {
-	snapshot := testSnapshot(t, []string{"cmd/main.go", "pkg/client.go", "worker/main.go"})
-	candidates := []Candidate{
-		{FileRef: "f1", Hypotheses: []string{"command"}},
-		{FileRef: "f2", Hypotheses: []string{"library"}},
-	}
-	if _, err := CompileWithExecutableAuthority(snapshot, candidates, []corpus.FileID{"f3"}); err == nil {
-		t.Fatal("accepted corpus-current ref outside the current candidate authority")
-	}
-	if _, err := CompileWithExecutableAuthority(snapshot, candidates, []corpus.FileID{"stale"}); err == nil {
-		t.Fatal("accepted stale executable authority ref")
-	}
-
-	left, err := CompileWithExecutableAuthority(snapshot, candidates, []corpus.FileID{"f1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	right, err := CompileWithExecutableAuthority(snapshot, candidates, []corpus.FileID{"f2"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	leftWire, _ := ProviderVisibleJSON(left)
-	rightWire, _ := ProviderVisibleJSON(right)
-	leftState, _ := ExecutionState(left)
-	rightState, _ := ExecutionState(right)
-	if bytes.Equal(leftWire, rightWire) || bytes.Equal(leftState, rightState) ||
-		left.RequestSHA256 == right.RequestSHA256 {
-		t.Fatalf("material authority change reused identity:\n%s\n%s", leftWire, rightWire)
-	}
-
-	(*left.Request.ExecutableFileRefs)[0] = "f2"
-	if _, err := ProviderVisibleJSON(left); err == nil {
-		t.Fatal("accepted visible executable authority tampering")
-	}
-	left, err = CompileWithExecutableAuthority(snapshot, candidates, []corpus.FileID{"f1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	left.executableFileRefs[0] = "f2"
-	if _, err := ExecutionState(left); err == nil {
-		t.Fatal("accepted private executable authority tampering")
 	}
 }
 

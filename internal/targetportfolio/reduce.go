@@ -4,112 +4,151 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
-// ResolveResponse validates guidance selections and native decisions. Omitted
-// guidance stays unclassified; native candidates always retain their exact
-// restoration file and an explicit placement or recorded standalone fallback.
+// batchSelection is one classification answer restored to its batch beside
+// the members the decoder discarded. The discards are journaled with the
+// exchange; none of them reaches the Selection.
+type batchSelection struct {
+	Selection
+	rejected []llm.ResponseRejection
+}
+
+func (batch batchSelection) ResponseRejections() []llm.ResponseRejection { return batch.rejected }
+
+// ResolveResponse restores one classification answer. The answer decides only
+// what it validly names: an extra field, a non-text or unadvertised member, a
+// malformed decision row and an unusable default are discarded and recorded,
+// never repaired. Required native representatives come from the compilation,
+// not from the answer, so the model cannot suppress them. Omitted guidance
+// stays unclassified; a native target without one valid decision keeps its
+// recorded standalone fallback. A batch without a usable default leaves the
+// repository default to Run: the single eligible target or a separate
+// closed-ref default comparison. Only an answer that is not one JSON object
+// is refused.
 func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
+	result, err := resolveResponse(compilation, raw)
+	return result.Selection, err
+}
+
+func resolveResponse(compilation Compilation, raw []byte) (batchSelection, error) {
 	if err := validateCompilation(compilation); err != nil {
-		return Selection{}, err
+		return batchSelection{}, err
 	}
 	if len(raw) == 0 || len(raw) > MaxResponseBytes {
-		return Selection{}, fmt.Errorf("target portfolio: response exceeds bounded envelope")
+		return batchSelection{}, fmt.Errorf("target portfolio: response exceeds bounded envelope")
 	}
-
-	var response Response
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&response); err != nil {
-		return Selection{}, fmt.Errorf("target portfolio: invalid JSON response")
+	var wire struct {
+		DefaultFileRef  json.RawMessage `json:"default_file_ref"`
+		TargetFileRefs  json.RawMessage `json:"target_file_refs"`
+		NativeDecisions json.RawMessage `json:"native_decisions"`
+		LaunchDecisions json.RawMessage `json:"launch_decisions"`
 	}
-	if err := ensureJSONEOF(decoder); err != nil {
-		return Selection{}, err
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) == 0 || trimmed[0] != '{' ||
+		json.Unmarshal(raw, &wire) != nil {
+		return batchSelection{}, fmt.Errorf("target portfolio: response must be one JSON object")
 	}
-	if response.TargetFileRefs == nil {
-		return Selection{}, fmt.Errorf("target portfolio: response must contain target_file_refs as an array")
-	}
-	var exactFields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &exactFields); err != nil ||
-		exactFields["default_file_ref"] == nil || exactFields["target_file_refs"] == nil {
-		return Selection{}, fmt.Errorf("target portfolio: response must contain default_file_ref, target_file_refs and optional native_decisions and launch_decisions only")
+	var rejected []llm.ResponseRejection
+	reject := func(position, reason string) {
+		rejected = append(rejected, llm.ResponseRejection{
+			Kind: "portfolio_rejected", Count: 1, Samples: []string{position}, Reason: reason,
+		})
 	}
 
 	authority := make(map[corpus.FileID]VisibleCandidate, len(compilation.Request.Candidates))
 	for _, candidate := range compilation.Request.Candidates {
 		authority[candidate.FileRef] = candidate
 	}
-	targetSet := make(map[corpus.FileID]struct{}, len(response.TargetFileRefs))
-	for _, fileRef := range response.TargetFileRefs {
+	var targetValues []json.RawMessage
+	if !absentJSON(wire.TargetFileRefs) && json.Unmarshal(wire.TargetFileRefs, &targetValues) != nil {
+		reject("target_file_refs", "target_file_refs is not an array")
+		targetValues = nil
+	}
+	targetSet := make(map[corpus.FileID]struct{}, len(targetValues)+len(compilation.requiredTargetFileRefs))
+	for index, value := range targetValues {
+		position := fmt.Sprintf("target_file_refs[%d]", index)
+		var fileRef corpus.FileID
+		if json.Unmarshal(value, &fileRef) != nil {
+			reject(position, "target file ref is not text")
+			continue
+		}
 		if _, known := authority[fileRef]; !known {
+			reject(position, "target file ref was not advertised")
 			continue
 		}
 		targetSet[fileRef] = struct{}{}
 	}
-	if len(compilation.native) != 0 {
-		for _, ref := range compilation.requiredTargetFileRefs {
-			targetSet[ref] = struct{}{}
-		}
-	}
-	if compilation.requiredAuthorityBound {
-		for _, fileRef := range compilation.requiredTargetFileRefs {
-			if _, selected := targetSet[fileRef]; !selected {
-				return Selection{}, fmt.Errorf("target portfolio: selection omits exact required target authority")
-			}
-		}
-	}
-	if len(targetSet) == 0 {
-		if response.DefaultFileRef != nil {
-			return Selection{}, fmt.Errorf("target portfolio: empty known target_file_refs requires null default_file_ref")
-		}
-		unclassified := make([]VisibleCandidate, 0, len(compilation.Request.Candidates))
-		for _, candidate := range compilation.Request.Candidates {
-			unclassified = append(unclassified, cloneVisibleCandidate(candidate))
-		}
-		return Selection{
-			Default: nil, Targets: []VisibleCandidate{}, Unclassified: unclassified,
-		}, nil
-	}
-	if response.DefaultFileRef == nil {
-		return Selection{}, fmt.Errorf("target portfolio: non-empty target_file_refs requires default_file_ref")
-	}
-	if compilation.executableAuthorityBound && len(compilation.executableFileRefs) != 0 {
-		executableSet := make(map[corpus.FileID]struct{}, len(compilation.executableFileRefs))
-		for _, fileRef := range compilation.executableFileRefs {
-			executableSet[fileRef] = struct{}{}
-		}
-		selectedExecutable := false
-		for fileRef := range targetSet {
-			if _, executable := executableSet[fileRef]; executable {
-				selectedExecutable = true
-				break
-			}
-		}
-		if !selectedExecutable {
-			return Selection{}, fmt.Errorf("target portfolio: positive selection omits exact executable authority")
-		}
-		if _, executable := executableSet[*response.DefaultFileRef]; !executable {
-			return Selection{}, fmt.Errorf("target portfolio: positive selection requires an exact executable default")
-		}
-	}
-	defaultCandidate, known := authority[*response.DefaultFileRef]
-	if !known {
-		return Selection{}, fmt.Errorf("target portfolio: response cites unknown default_file_ref")
+	for _, fileRef := range compilation.requiredTargetFileRefs {
+		targetSet[fileRef] = struct{}{}
 	}
 
-	if _, selected := targetSet[*response.DefaultFileRef]; !selected {
-		return Selection{}, fmt.Errorf("target portfolio: default_file_ref is absent from target_file_refs")
+	var chosen *VisibleCandidate
+	if !absentJSON(wire.DefaultFileRef) {
+		// An unusable default is discarded, never added to the targets.
+		var defaultRef corpus.FileID
+		if json.Unmarshal(wire.DefaultFileRef, &defaultRef) != nil {
+			reject("default_file_ref", "default file ref is not text")
+		} else if candidate, known := authority[defaultRef]; !known {
+			reject("default_file_ref", "default file ref was not advertised")
+		} else if _, selected := targetSet[defaultRef]; !selected {
+			reject("default_file_ref", "default file ref is not a selected target")
+		} else {
+			defaultCopy := cloneVisibleCandidate(candidate)
+			chosen = &defaultCopy
+		}
 	}
 
-	defaultCopy := cloneVisibleCandidate(defaultCandidate)
-	result := Selection{
-		Placements:   resolveNativeLaunchDecisions(compilation.native, response.NativeDecisions, response.LaunchDecisions),
-		Default:      &defaultCopy,
-		Targets:      make([]VisibleCandidate, 0, len(targetSet)),
-		Unclassified: make([]VisibleCandidate, 0, len(compilation.Request.Candidates)-len(targetSet)),
+	nativeRefs := make(map[string]struct{}, len(compilation.native))
+	for _, row := range compilation.native {
+		nativeRefs[row.Ref] = struct{}{}
+	}
+	var decisionValues []json.RawMessage
+	if !absentJSON(wire.NativeDecisions) && json.Unmarshal(wire.NativeDecisions, &decisionValues) != nil {
+		reject("native_decisions", "native_decisions is not an array")
+		decisionValues = nil
+	}
+	decisions := make([]NativeDecision, 0, len(decisionValues))
+	for index, value := range decisionValues {
+		position := fmt.Sprintf("native_decisions[%d]", index)
+		var row struct {
+			Ref      json.RawMessage `json:"ref"`
+			Decision json.RawMessage `json:"decision"`
+		}
+		var ref string
+		if json.Unmarshal(value, &row) != nil || json.Unmarshal(row.Ref, &ref) != nil || ref == "" {
+			reject(position, "native decision row has no text ref")
+			continue
+		}
+		if _, known := nativeRefs[ref]; !known {
+			reject(position, "native decision ref was not advertised")
+			continue
+		}
+		var decision string
+		if json.Unmarshal(row.Decision, &decision) != nil {
+			// The row names its target but no readable decision. The target
+			// keeps its standalone fallback, journaled with the original value;
+			// the unreadable value can never equal a closed decision word.
+			decision = string(bytes.TrimSpace(row.Decision))
+		}
+		decisions = append(decisions, NativeDecision{Ref: ref, Decision: decision})
+	}
+	var launchDecisions []NativeLaunchDecision
+	if !absentJSON(wire.LaunchDecisions) && json.Unmarshal(wire.LaunchDecisions, &launchDecisions) != nil {
+		reject("launch_decisions", "launch_decisions is not an array")
+		launchDecisions = nil
+	}
+
+	result := batchSelection{
+		Selection: Selection{
+			Placements:   resolveNativeLaunchDecisions(compilation.native, decisions, launchDecisions),
+			Default:      chosen,
+			Targets:      make([]VisibleCandidate, 0, len(targetSet)),
+			Unclassified: make([]VisibleCandidate, 0, len(compilation.Request.Candidates)-len(targetSet)),
+		},
+		rejected: rejected,
 	}
 	for _, candidate := range compilation.Request.Candidates {
 		if _, selected := targetSet[candidate.FileRef]; selected {
@@ -118,20 +157,12 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 		}
 		result.Unclassified = append(result.Unclassified, cloneVisibleCandidate(candidate))
 	}
-	if result.Default == nil || len(result.Targets) == 0 ||
-		len(result.Targets)+len(result.Unclassified) != len(compilation.Request.Candidates) {
-		return Selection{}, fmt.Errorf("target portfolio: response does not restore a complete candidate partition")
-	}
 	return result, nil
 }
 
-func ensureJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("target portfolio: trailing JSON value")
-		}
-		return fmt.Errorf("target portfolio: invalid trailing response data")
-	}
-	return nil
+// absentJSON reports an omitted field or an explicit null: the same "nothing
+// said" in either form.
+func absentJSON(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null"))
 }

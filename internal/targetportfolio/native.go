@@ -64,7 +64,7 @@ type Placement struct {
 }
 
 func CompileWithNativeAuthority(snapshot corpus.Snapshot, candidates []Candidate, required []corpus.FileID, native []NativeCandidate) (Compilation, error) {
-	return compile(snapshot, candidates, false, nil, true, required, native)
+	return compile(snapshot, candidates, true, required, native)
 }
 
 func cloneNative(values []NativeCandidate) []NativeCandidate {
@@ -128,8 +128,9 @@ func nativeDecisions(rows []NativeCandidate, answers []NativeDecision, final boo
 		if _, ok := known[answer.Ref]; !ok {
 			continue
 		}
-		if !slices.Contains(byRef[answer.Ref], answer.Decision) {
-			byRef[answer.Ref] = append(byRef[answer.Ref], answer.Decision)
+		decision := normalizeDecision(answer.Decision)
+		if !slices.Contains(byRef[answer.Ref], decision) {
+			byRef[answer.Ref] = append(byRef[answer.Ref], decision)
 		}
 	}
 	result := make([]Placement, 0, len(rows))
@@ -164,6 +165,25 @@ func nativeDecisions(rows []NativeCandidate, answers []NativeDecision, final boo
 		result = append(result, p)
 	}
 	return result
+}
+
+// normalizeDecision folds the harmless form differences of a closed decision
+// word, surrounding space and letter case, so "Standalone " is the answer
+// "standalone". A seed owner keeps its exact ref; every other rule still
+// decides whether the word is valid for its row.
+func normalizeDecision(value string) string {
+	const seedPrefix = "seed_of:"
+	value = strings.TrimSpace(value)
+	lower := []byte(value)
+	for index, character := range lower {
+		if 'A' <= character && character <= 'Z' {
+			lower[index] = character + ('a' - 'A')
+		}
+	}
+	if strings.HasPrefix(string(lower), seedPrefix) {
+		return seedPrefix + strings.TrimSpace(value[len(seedPrefix):])
+	}
+	return string(lower)
 }
 
 // nativeRequest encodes repeated declarations and guide quotations once per

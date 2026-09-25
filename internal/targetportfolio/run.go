@@ -11,9 +11,14 @@ import (
 )
 
 // Run classifies the complete candidate reservoir through a deterministic
-// disjoint batch cover. If more than one batch retains targets, a separate
-// closed-ref tournament chooses the global default without changing any
-// retained membership. Any terminal item failure rejects the whole cube.
+// disjoint batch cover. The batches are independent: a refused classification
+// answer loses only its own batch's decisions (its required native
+// representatives stay targets, its native targets keep a recorded standalone
+// fallback, its guidance stays unclassified) and never cancels a sibling.
+// Unless exactly one target is eligible, or exactly one batch retains targets
+// and chose one of them, a separate closed-ref tournament chooses the global
+// default without changing any retained membership. A provider, request or
+// resource failure and a failed default comparison still end the stage.
 func Run(
 	ctx context.Context,
 	executor llm.Executor,
@@ -36,7 +41,7 @@ func Run(
 	if err != nil {
 		return Execution{}, err
 	}
-	calls := make([]llm.Call[Selection], len(batches))
+	calls := make([]llm.Call[batchSelection], len(batches))
 	for index, batch := range batches {
 		prompt := Prompt{
 			Version: PromptVersion, System: promptSystem,
@@ -49,36 +54,49 @@ func Run(
 			return Execution{}, err
 		}
 		batchCompilation := batch.compilation
-		calls[index] = llm.Call[Selection]{
+		calls[index] = llm.Call[batchSelection]{
 			State: state,
 			Prompt: llm.Prompt{
 				System: prompt.System, User: prompt.User, ResponseFormatJSON: true, ResponseExample: responseExample,
 			},
 			Limits: portfolioCallLimits(),
-			DecodeValidate: func(raw []byte) (Selection, error) {
-				return ResolveResponse(batchCompilation, raw)
+			DecodeValidate: func(raw []byte) (batchSelection, error) {
+				return resolveResponse(batchCompilation, raw)
 			},
 		}
 	}
-	classificationOutcomes, err := llm.ExecuteJSONBatch(ctx, executor, provider, calls)
-	execution := Execution{Outcomes: append([]llm.Outcome[Selection](nil), classificationOutcomes...)}
-	if err != nil {
-		return execution, fmt.Errorf("target portfolio: classification batches: %w", err)
+	responses := llm.ExecuteJSONEach(ctx, executor, provider, calls)
+	execution := Execution{Outcomes: make([]llm.Outcome[Selection], 0, len(responses))}
+	selections := make([]Selection, len(responses))
+	for index, response := range responses {
+		execution.Outcomes = append(execution.Outcomes, selectionOutcome(response.Outcome))
+		if response.Err == nil {
+			selections[index] = response.Outcome.Value.Selection
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return execution, err
+		}
+		if !refusedAnswer(response.Outcome) {
+			return execution, fmt.Errorf("target portfolio: classification batch %d: %w", index+1, response.Err)
+		}
+		selections[index] = refusedBatchSelection(batches[index].compilation, response.Err)
 	}
 
 	targetSet := make(map[corpus.FileID]struct{})
 	positiveBatches := 0
-	var soleBatchDefault corpus.FileID
-	for _, outcome := range classificationOutcomes {
-		if len(outcome.Value.Targets) == 0 {
+	var soleBatchDefault *corpus.FileID
+	for _, selection := range selections {
+		if len(selection.Targets) == 0 {
 			continue
 		}
 		positiveBatches++
-		if outcome.Value.Default == nil {
-			return execution, fmt.Errorf("target portfolio: classification batch retained targets without a default")
+		soleBatchDefault = nil
+		if selection.Default != nil {
+			ref := selection.Default.FileRef
+			soleBatchDefault = &ref
 		}
-		soleBatchDefault = outcome.Value.Default.FileRef
-		for _, candidate := range outcome.Value.Targets {
+		for _, candidate := range selection.Targets {
 			targetSet[candidate.FileRef] = struct{}{}
 		}
 	}
@@ -88,16 +106,13 @@ func Run(
 		return execution, err
 	}
 
-	eligibleDefaults, err := eligibleDefaultRefs(compilation, targetSet)
-	if err != nil {
-		return execution, err
-	}
+	eligibleDefaults := eligibleDefaultRefs(compilation, targetSet)
 	var defaultRef corpus.FileID
 	switch {
 	case len(eligibleDefaults) == 1:
 		defaultRef = eligibleDefaults[0]
-	case positiveBatches == 1 && containsFileRef(eligibleDefaults, soleBatchDefault):
-		defaultRef = soleBatchDefault
+	case positiveBatches == 1 && soleBatchDefault != nil && containsFileRef(eligibleDefaults, *soleBatchDefault):
+		defaultRef = *soleBatchDefault
 	default:
 		defaultRef, execution.Outcomes, err = runDefaultTournament(
 			ctx, executor, provider, compilation, eligibleDefaults, execution.Outcomes,
@@ -112,8 +127,8 @@ func Run(
 	}
 	var decisions []NativeDecision
 	original := make(map[string]Placement)
-	for _, outcome := range classificationOutcomes {
-		for _, placement := range outcome.Value.Placements {
+	for _, batch := range selections {
+		for _, placement := range batch.Placements {
 			original[placement.Candidate.Ref] = placement
 			decision := placement.Decision
 			if placement.Reason != "" {
@@ -221,29 +236,79 @@ func requestFitResult(err error) (bool, error) {
 	return false, err
 }
 
+// refusedAnswer reports a classification answer the model gave but the
+// executor or decoder refused. Such a refusal is local to its batch; every
+// other failure keeps its own error.
+func refusedAnswer(outcome llm.Outcome[batchSelection]) bool {
+	for _, rejected := range outcome.ResponseRejections {
+		if rejected.Kind == "response_validation" || rejected.Kind == "response_envelope" {
+			return true
+		}
+	}
+	return false
+}
+
+// refusedBatchSelection is the batch outcome when its answer was refused:
+// nothing the answer said survives. The required native representatives are
+// the compilation's own authority and stay targets; native targets keep a
+// standalone fallback with the recorded refusal; guidance candidates stay
+// unclassified. No default is chosen for the refused batch.
+func refusedBatchSelection(compilation Compilation, cause error) Selection {
+	required := make(map[corpus.FileID]struct{}, len(compilation.requiredTargetFileRefs))
+	for _, ref := range compilation.requiredTargetFileRefs {
+		required[ref] = struct{}{}
+	}
+	result := Selection{
+		Placements: nativeDecisions(compilation.native, nil, false),
+		Targets:    []VisibleCandidate{},
+	}
+	for index := range result.Placements {
+		result.Placements[index].Reason = "decision not received: the classification answer was refused (" + cause.Error() + ")"
+	}
+	for _, candidate := range compilation.Request.Candidates {
+		if _, selected := required[candidate.FileRef]; selected {
+			result.Targets = append(result.Targets, cloneVisibleCandidate(candidate))
+			continue
+		}
+		result.Unclassified = append(result.Unclassified, cloneVisibleCandidate(candidate))
+	}
+	return result
+}
+
+// selectionOutcome is the same exchange with only its restored Selection; the
+// discarded members stay in ResponseRejections.
+func selectionOutcome(outcome llm.Outcome[batchSelection]) llm.Outcome[Selection] {
+	return llm.Outcome[Selection]{
+		ResponseContext:    outcome.ResponseContext,
+		ResponseRejections: outcome.ResponseRejections,
+		HTTPResponse:       outcome.HTTPResponse,
+		Value:              outcome.Value.Selection,
+		CacheKey:           outcome.CacheKey,
+		Cached:             outcome.Cached,
+		Request:            outcome.Request,
+		RequestSHA256:      outcome.RequestSHA256,
+		RequestBytes:       outcome.RequestBytes,
+		Response:           outcome.Response,
+		ResponseSHA256:     outcome.ResponseSHA256,
+		ResponseBytes:      outcome.ResponseBytes,
+		FinishReason:       outcome.FinishReason,
+		ChoiceCount:        outcome.ChoiceCount,
+		Metrics:            outcome.Metrics,
+		Issues:             outcome.Issues,
+	}
+}
+
 func eligibleDefaultRefs(
 	compilation Compilation,
 	targetSet map[corpus.FileID]struct{},
-) ([]corpus.FileID, error) {
-	eligible := targetSet
-	if compilation.executableAuthorityBound && len(compilation.executableFileRefs) != 0 {
-		eligible = make(map[corpus.FileID]struct{})
-		for _, ref := range compilation.executableFileRefs {
-			if _, selected := targetSet[ref]; selected {
-				eligible[ref] = struct{}{}
-			}
-		}
-		if len(eligible) == 0 {
-			return nil, fmt.Errorf("target portfolio: positive selection omits exact executable authority")
-		}
-	}
-	refs := make([]corpus.FileID, 0, len(eligible))
+) []corpus.FileID {
+	refs := make([]corpus.FileID, 0, len(targetSet))
 	for _, candidate := range compilation.Request.Candidates {
-		if _, ok := eligible[candidate.FileRef]; ok {
+		if _, ok := targetSet[candidate.FileRef]; ok {
 			refs = append(refs, candidate.FileRef)
 		}
 	}
-	return refs, nil
+	return refs
 }
 
 func restoreCompleteSelection(
@@ -277,9 +342,6 @@ func restoreCompleteSelection(
 	if _, selected := targetSet[*defaultRef]; !selected {
 		return Selection{}, fmt.Errorf("target portfolio: default is outside selected targets")
 	}
-	if _, err := eligibleDefaultRefs(compilation, targetSet); err != nil {
-		return Selection{}, err
-	}
 	authority := make(map[corpus.FileID]VisibleCandidate, len(compilation.Request.Candidates))
 	for _, candidate := range compilation.Request.Candidates {
 		authority[candidate.FileRef] = candidate
@@ -287,10 +349,6 @@ func restoreCompleteSelection(
 	defaultCandidate, known := authority[*defaultRef]
 	if !known {
 		return Selection{}, fmt.Errorf("target portfolio: default is outside candidate authority")
-	}
-	if compilation.executableAuthorityBound && len(compilation.executableFileRefs) != 0 &&
-		!containsFileRef(compilation.executableFileRefs, *defaultRef) {
-		return Selection{}, fmt.Errorf("target portfolio: positive selection requires an exact executable default")
 	}
 	defaultCopy := cloneVisibleCandidate(defaultCandidate)
 	result := Selection{Default: &defaultCopy, Targets: make([]VisibleCandidate, 0, len(targetSet))}

@@ -17,39 +17,24 @@ import (
 // Compile resolves every universally merged FileRef through the exact corpus.
 // It does not rank, filter, merge duplicate FileRefs, or truncate candidates.
 func Compile(snapshot corpus.Snapshot, candidates []Candidate) (Compilation, error) {
-	return compile(snapshot, candidates, false, nil, false, nil)
-}
-
-// CompileWithExecutableAuthority resolves the complete exact set of
-// executable-capable candidate refs in addition to the generic candidate
-// surface. Authority refs are canonicalized in corpus order and deduplicated;
-// every ref must name a current candidate. An explicitly empty set remains
-// bound and provider-visible as a non-null empty array.
-func CompileWithExecutableAuthority(
-	snapshot corpus.Snapshot,
-	candidates []Candidate,
-	executableFileRefs []corpus.FileID,
-) (Compilation, error) {
-	return compile(snapshot, candidates, true, executableFileRefs, false, nil)
+	return compile(snapshot, candidates, false, nil)
 }
 
 // CompileWithRequiredTargetAuthority binds canonical file representatives for
 // exact targets established by deterministic language adapters. The provider
 // may choose the default and retain additional guidance candidates, but it
-// cannot suppress this set.
+// cannot suppress this set: every answer restores it locally.
 func CompileWithRequiredTargetAuthority(
 	snapshot corpus.Snapshot,
 	candidates []Candidate,
 	requiredTargetFileRefs []corpus.FileID,
 ) (Compilation, error) {
-	return compile(snapshot, candidates, false, nil, true, requiredTargetFileRefs)
+	return compile(snapshot, candidates, true, requiredTargetFileRefs)
 }
 
 func compile(
 	snapshot corpus.Snapshot,
 	candidates []Candidate,
-	executableAuthorityBound bool,
-	executableFileRefs []corpus.FileID,
 	requiredAuthorityBound bool,
 	requiredTargetFileRefs []corpus.FileID,
 	nativeAuthority ...[]NativeCandidate,
@@ -70,16 +55,6 @@ func compile(
 	if err != nil {
 		return Compilation{}, err
 	}
-	canonicalExecutableFileRefs := []corpus.FileID(nil)
-	var requestExecutableFileRefs *[]corpus.FileID
-	if executableAuthorityBound {
-		canonicalExecutableFileRefs, err = canonicalExecutableRefs(canonical, executableFileRefs)
-		if err != nil {
-			return Compilation{}, err
-		}
-		requestRefs := cloneFileRefs(canonicalExecutableFileRefs)
-		requestExecutableFileRefs = &requestRefs
-	}
 	canonicalRequiredTargetFileRefs := []corpus.FileID(nil)
 	var requestRequiredTargetFileRefs *[]corpus.FileID
 	if requiredAuthorityBound {
@@ -96,7 +71,6 @@ func compile(
 		Observations:           nativeObservations,
 		LaunchGroups:           nativeLaunchGroups(native),
 		Candidates:             visible,
-		ExecutableFileRefs:     requestExecutableFileRefs,
 		RequiredTargetFileRefs: requestRequiredTargetFileRefs,
 	}
 	wire, err := json.Marshal(request)
@@ -104,8 +78,7 @@ func compile(
 		return Compilation{}, fmt.Errorf("target portfolio: encode request: %w", err)
 	}
 	state, err := compileState(
-		ownedCorpus, canonical, executableAuthorityBound, canonicalExecutableFileRefs,
-		requiredAuthorityBound, canonicalRequiredTargetFileRefs, wire,
+		ownedCorpus, canonical, requiredAuthorityBound, canonicalRequiredTargetFileRefs, wire,
 	)
 	if err != nil {
 		return Compilation{}, err
@@ -119,10 +92,8 @@ func compile(
 		candidates:    cloneCandidates(canonical),
 		native:        native,
 
-		executableAuthorityBound: executableAuthorityBound,
-		executableFileRefs:       cloneFileRefs(canonicalExecutableFileRefs),
-		requiredAuthorityBound:   requiredAuthorityBound,
-		requiredTargetFileRefs:   cloneFileRefs(canonicalRequiredTargetFileRefs),
+		requiredAuthorityBound: requiredAuthorityBound,
+		requiredTargetFileRefs: cloneFileRefs(canonicalRequiredTargetFileRefs),
 	}
 	compilation.sealed = compilationSeal(compilation.state)
 	if err := validateCompilation(compilation); err != nil {
@@ -133,7 +104,7 @@ func compile(
 
 // ExecutionState returns the exact cache identity owned by this compilation.
 // It binds prompt, preparation, and response-schema versions plus hashes of
-// canonical corpus, candidate, executable-authority, and provider-request
+// canonical corpus, candidate, required-authority, and provider-request
 // bytes.
 func ExecutionState(compilation Compilation) ([]byte, error) {
 	if err := validateCompilation(compilation); err != nil {
@@ -163,17 +134,10 @@ func validateCompilation(compilation Compilation) error {
 	if !reflect.DeepEqual(compilation.Request.Candidates, visible) {
 		return fmt.Errorf("target portfolio: visible candidate authority mismatch")
 	}
-	if compilation.executableAuthorityBound {
-		canonicalExecutableFileRefs, err := canonicalExecutableRefs(canonical, compilation.executableFileRefs)
-		if err != nil {
-			return err
-		}
-		if !reflect.DeepEqual(canonicalExecutableFileRefs, compilation.executableFileRefs) ||
-			compilation.Request.ExecutableFileRefs == nil ||
-			!reflect.DeepEqual(*compilation.Request.ExecutableFileRefs, canonicalExecutableFileRefs) {
-			return fmt.Errorf("target portfolio: executable authority mismatch")
-		}
-	} else if compilation.Request.ExecutableFileRefs != nil || len(compilation.executableFileRefs) != 0 {
+	// Executable authority has no producer. A compilation that carries any of
+	// it was not built here.
+	if compilation.executableAuthorityBound || compilation.Request.ExecutableFileRefs != nil ||
+		len(compilation.executableFileRefs) != 0 {
 		return fmt.Errorf("target portfolio: unexpected executable authority")
 	}
 	if compilation.requiredAuthorityBound {
@@ -200,8 +164,6 @@ func validateCompilation(compilation Compilation) error {
 	wantState, err := compileState(
 		compilation.corpus,
 		canonical,
-		compilation.executableAuthorityBound,
-		compilation.executableFileRefs,
 		compilation.requiredAuthorityBound,
 		compilation.requiredTargetFileRefs,
 		wire,
@@ -214,10 +176,6 @@ func validateCompilation(compilation Compilation) error {
 		return fmt.Errorf("target portfolio: compilation state binding mismatch")
 	}
 	return nil
-}
-
-func canonicalExecutableRefs(candidates []Candidate, executableFileRefs []corpus.FileID) ([]corpus.FileID, error) {
-	return canonicalAuthorityRefs(candidates, executableFileRefs, "executable")
 }
 
 func canonicalRequiredTargetRefs(candidates []Candidate, requiredFileRefs []corpus.FileID) ([]corpus.FileID, error) {
@@ -340,8 +298,6 @@ func isAbsoluteLabel(value string) bool {
 func compileState(
 	snapshot corpus.Snapshot,
 	candidates []Candidate,
-	executableAuthorityBound bool,
-	executableFileRefs []corpus.FileID,
 	requiredAuthorityBound bool,
 	requiredTargetFileRefs []corpus.FileID,
 	request []byte,
@@ -354,7 +310,9 @@ func compileState(
 	if err != nil {
 		return nil, fmt.Errorf("target portfolio: encode candidate state: %w", err)
 	}
-	executableWire, err := json.Marshal(executableFileRefs)
+	// The removed executable authority stays in the state as its former
+	// unbound value, so existing portfolio answers keep their identity.
+	executableWire, err := json.Marshal([]corpus.FileID(nil))
 	if err != nil {
 		return nil, fmt.Errorf("target portfolio: encode executable authority state: %w", err)
 	}
@@ -378,7 +336,7 @@ func compileState(
 		Contract: executionContract, PromptVersion: PromptVersion,
 		PreparationVersion: PreparationVersion, ResponseSchemaVersion: ResponseSchemaVersion,
 		CorpusBytesSHA256: sha256Hex(corpusWire), CandidateBytesSHA256: sha256Hex(candidateWire),
-		ExecutableAuthorityBound: executableAuthorityBound,
+		ExecutableAuthorityBound: false,
 		ExecutableRefsSHA256:     sha256Hex(executableWire),
 		RequiredAuthorityBound:   requiredAuthorityBound,
 		RequiredRefsSHA256:       sha256Hex(requiredWire),
