@@ -615,7 +615,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 
 // projectOffMap lists the files the map of parts does not draw: the atlas's
 // off-map record with its reasons, and the files of parts made only of test
-// code under the reason tests with their part's name.
+// code under the reason tests with their part's name. A file a part holds is
+// not listed for the few declarations of it that are off the map; their
+// interpretations are still read.
 func projectOffMap(target atlas.Target) []OffMapFile {
 	var files []OffMapFile
 	seen := map[OffMapFile]bool{}
@@ -626,7 +628,9 @@ func projectOffMap(target atlas.Target) []OffMapFile {
 		}
 	}
 	for _, entry := range target.OffMap {
-		add(OffMapFile{Path: atlasPath(entry.File.Path), Reason: entry.Reason})
+		if entry.BoxID == "" {
+			add(OffMapFile{Path: atlasPath(entry.File.Path), Reason: entry.Reason})
+		}
 	}
 	for _, box := range target.Boxes {
 		if !box.ForTests {

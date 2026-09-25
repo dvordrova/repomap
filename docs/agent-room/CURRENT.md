@@ -118,9 +118,9 @@ never entered into or read from a repository-wide unqualified map.
   the model's `tests` role are removed; a part made only of test code leaves
   the canvas by the `TestSources` fact. The atlas and GroupsIndex carry an
   explicit off-map record and `map_failure`; the component card lists Tests
-  and Not on the map. A parts or areas answer refused whole is asked once
-  more with the same bytes through the llm layer's resample before the map
-  fails.
+  and Not on the map. A parts or areas answer refused whole, including one
+  that decodes but draws nothing, is asked once more with the same bytes
+  through the llm layer's resample before the map fails.
 - **Known remaining violation:** key selection still sends a declaration's
   full docstring as `author_documentation`, and symbol selection sends
   docstrings too. The trusted-inputs rule covers both; the next change strips

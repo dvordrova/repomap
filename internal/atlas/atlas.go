@@ -526,7 +526,7 @@ const (
 	// OffMapConflict: the parts answer listed the file in two parts and the
 	// follow-up did not settle it.
 	OffMapConflict = "conflict"
-	// OffMapNoUnits: the file holds no unit of its own to group.
+	// OffMapNoUnits: the file declares nothing a part could hold.
 	OffMapNoUnits = "no_units"
 	// OffMapFailure: the target has no map of parts at all.
 	OffMapFailure = "map_failure"
@@ -549,7 +549,12 @@ type OffMapFile struct {
 	// ID is the file's sealed-graph f* place.
 	ID     string `json:"id"`
 	Reason string `json:"reason"`
-	File   File   `json:"file"`
+	// BoxID names the part that holds the file itself when only the
+	// declarations listed here are off the map, such as a method whose type
+	// is off the map; the file then stays on the map. Empty when the file
+	// is off the map.
+	BoxID string `json:"box_id,omitempty"`
+	File  File   `json:"file"`
 }
 
 // File is one code file inside a box.
@@ -1275,6 +1280,9 @@ func Validate(value Atlas) error {
 			}
 			if (target.MapFailure != "") != (entry.Reason == OffMapFailure) {
 				return fmt.Errorf("atlas: target %q: off-map file %q disagrees with the map failure", target.ID, entry.File.Path)
+			}
+			if _, known := boxes[entry.BoxID]; entry.BoxID != "" && (!known || len(entry.File.Symbols) == 0) {
+				return fmt.Errorf("atlas: off-map declarations of %q name part %q without being declarations of a file it holds", entry.File.Path, entry.BoxID)
 			}
 			if invalidText(entry.File.Line) || !validSource(entry.File.Source) || entry.File.Symbols == nil {
 				return fmt.Errorf("atlas: off-map file %q has an invalid line, source or symbols", entry.File.Path)

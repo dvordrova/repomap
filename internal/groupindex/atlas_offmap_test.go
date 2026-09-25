@@ -9,10 +9,17 @@ import (
 
 // A file off the map keeps its declarations' interpretations and its
 // boundaries: an incoming route there is an operation of no group. A part
-// made only of test code is listed off the map as tests. The record survives
-// the persisted overlay.
+// made only of test code is listed off the map as tests. A declaration off
+// the map in a file a part holds keeps its interpretation, and its file is
+// not listed. The record survives the persisted overlay.
 func TestOffMapFilesKeepTheirBoundariesAndInterpretations(t *testing.T) {
-	p := atlasTestProgram(t, "server", "api/a.go", "loose/b.go", "api/a_test.go")
+	p := atlasTestProgram(t, "server", "api/a.go", "loose/b.go", "api/a_test.go", "api/a.go")
+	var stray string
+	for _, object := range p.Objects {
+		if object.Name == "FD" {
+			stray = object.ID
+		}
+	}
 	objectIn := func(path string) string {
 		for _, object := range p.Objects {
 			if object.Location != nil && object.Location.Path == path {
@@ -34,8 +41,12 @@ func TestOffMapFilesKeepTheirBoundariesAndInterpretations(t *testing.T) {
 			{ID: "p2", Dir: "api", Title: "API checks", Side: atlas.SideMid, ForTests: true, MemberIDs: []string{objectIn("api/a_test.go")}, Keys: []atlas.Key{},
 				Files: []atlas.File{file("api/a_test.go", "Checks.", atlas.Symbol{ID: "s3", ObjectID: objectIn("api/a_test.go"), Name: "FC", Kind: "function", LineNo: 3})}},
 		},
-		OffMap: []atlas.OffMapFile{{ID: "f2", Reason: atlas.OffMapLeftOut,
-			File: file("loose/b.go", "Handles a loose route.", atlas.Symbol{ID: "s2", ObjectID: objectIn("loose/b.go"), Name: "FB", Kind: "function", LineNo: 3, Line: "Answers the loose route.", Key: true})}},
+		OffMap: []atlas.OffMapFile{
+			{ID: "f1", Reason: atlas.OffMapLeftOut, BoxID: "p1",
+				File: file("api/a.go", "Serves.", atlas.Symbol{ID: "s4", ObjectID: stray, Name: "FD", Kind: "method", LineNo: 3, Line: "Runs a job."})},
+			{ID: "f2", Reason: atlas.OffMapLeftOut,
+				File: file("loose/b.go", "Handles a loose route.", atlas.Symbol{ID: "s2", ObjectID: objectIn("loose/b.go"), Name: "FB", Kind: "function", LineNo: 3, Line: "Answers the loose route.", Key: true})},
+		},
 		Boundaries: []atlas.Boundary{{ID: "b1", ObjectID: objectIn("loose/b.go"), Path: "loose/b.go", LineNo: 3, Column: 1,
 			Direction: atlas.DirectionIn, Kind: atlas.BoundaryHTTPServer, Method: "GET", Values: []string{"/loose"}, Line: "Answers the loose route.", FactID: "route"}},
 	}
@@ -61,6 +72,9 @@ func TestOffMapFilesKeepTheirBoundariesAndInterpretations(t *testing.T) {
 	for _, subject := range index.Subjects {
 		if subject.ID == objectIn("loose/b.go") && (subject.Interpretation == nil || !subject.Interpretation.Key || len(subject.Categories) != 0) {
 			t.Fatalf("an off-map declaration lost its interpretation or gained a lane: %+v", subject)
+		}
+		if subject.ID == stray && (subject.Interpretation == nil || subject.Interpretation.Line != "Runs a job." || len(subject.Categories) != 0) {
+			t.Fatalf("a declaration off the map in a placed file: %+v", subject)
 		}
 	}
 	encoded, err := Encode(index)

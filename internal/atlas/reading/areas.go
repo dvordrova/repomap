@@ -70,10 +70,12 @@ func (answer areasAnswer) MarshalJSON() ([]byte, error) {
 	}{areas})
 }
 
-// decodeAreas reads {"areas":[{"name":…,"parts":[…]}]}. An answer that is
-// not JSON or has no areas list is refused whole; an empty list says every
-// part stands alone. Each area is read on its own.
-func decodeAreas(raw []byte) (areasAnswer, error) {
+// decodeAreas reads {"areas":[{"name":…,"parts":[…]}]} over the part refs
+// one request listed. An empty list says every part stands alone, and each
+// area is read on its own. An answer is refused whole when it is not JSON,
+// has no areas list, or lists areas none of which holds a listed part (every
+// ref unknown, such as a part's name, or every area without a name).
+func decodeAreas(raw []byte, listed []string) (areasAnswer, error) {
 	var envelope struct {
 		Areas json.RawMessage `json:"areas"`
 	}
@@ -96,6 +98,9 @@ func decodeAreas(raw []byte) (areasAnswer, error) {
 		}
 		answer.Areas = append(answer.Areas, areasGroup{Name: cleanText(area.Name), Parts: area.Parts})
 	}
+	if len(answer.Areas) > 0 && !validateAreas(answer, listed).holds {
+		return areasAnswer{}, fmt.Errorf("areas: no area holds a listed part")
+	}
 	return answer, nil
 }
 
@@ -107,6 +112,9 @@ type validAreas struct {
 	parts   [][]string
 	notes   []string
 	unknown []string
+	// holds says a named area holds a listed part, even one that then
+	// stands alone.
+	holds bool
 }
 
 func validateAreas(answer areasAnswer, listed []string) validAreas {
@@ -133,6 +141,7 @@ func validateAreas(answer areasAnswer, listed []string) validAreas {
 			case !slices.Contains(seen, ref):
 				seen = append(seen, ref)
 				holders[ref] = append(holders[ref], index)
+				result.holds = true
 			}
 		}
 	}
@@ -164,6 +173,10 @@ func areasCall(input areasInput) (llm.Call[areasAnswer], error) {
 	if err != nil {
 		return llm.Call[areasAnswer]{}, err
 	}
+	listed := make([]string, len(input.Parts))
+	for i, part := range input.Parts {
+		listed[i] = part.Ref
+	}
 	// An answer refused whole is asked once more with the same bytes.
 	return llm.Call[areasAnswer]{
 		Resample: true,
@@ -171,7 +184,7 @@ func areasCall(input areasInput) (llm.Call[areasAnswer], error) {
 		Prompt: llm.Prompt{System: designAreasPrompt, User: string(raw), ResponseFormatJSON: true, NoResponseAdjunct: true,
 			ResponseExample: `{"areas":[{"name":"Game rules","parts":["p1","p4"]}]}`},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: designOutputTokens(len(input.Parts))},
-		DecodeValidate: decodeAreas,
+		DecodeValidate: func(raw []byte) (areasAnswer, error) { return decodeAreas(raw, listed) },
 	}, nil
 }
 

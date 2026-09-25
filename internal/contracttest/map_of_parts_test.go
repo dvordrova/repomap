@@ -3,11 +3,11 @@ package contracttest
 import (
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/atlas/reading/partstest"
 	"github.com/dvordrova/repomap/internal/clojureproject"
+	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
 	"github.com/dvordrova/repomap/internal/pythonprogramindex"
@@ -17,10 +17,12 @@ import (
 // The parts request of each fixture carries code structure only and every
 // declaration takes one part or an entry off the map. A Go method declared
 // in another file than its type goes with its type: internal/localstore's
-// Ledger.Append, whose own file then holds no unit and stays off the map.
-// Python and TypeScript have no method outside its class; Clojure's
-// defmethod, extend-type and extend-protocol are not declarations the
-// Clojure adapter projects, so no equivalent exists there to check.
+// Ledger.Append. Its own file, which declares nothing else, is no row of the
+// parts request yet stays on the map in Ledger's part: the card does not
+// list it as off the map. Python and TypeScript have no method outside its
+// class; Clojure's defmethod, extend-type and extend-protocol are not
+// declarations the Clojure adapter projects, so no equivalent exists there
+// to check.
 func TestCumulativeGoMapOfParts(t *testing.T) {
 	t.Setenv("CGO_ENABLED", "0")
 	t.Setenv("GOTOOLCHAIN", "local")
@@ -44,12 +46,20 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 	if checked.PartOf[appendMethod] == "" || checked.PartOf[appendMethod] != checked.PartOf[ledger] {
 		t.Fatalf("Ledger.Append is in %q, Ledger in %q", checked.PartOf[appendMethod], checked.PartOf[ledger])
 	}
-	reasons := map[string]string{}
 	for _, entry := range checked.Target.OffMap {
-		reasons[entry.File.Path] = entry.Reason
+		if entry.File.Path == "internal/localstore/ledger_append.go" {
+			t.Fatalf("the file of a method that follows its type is off the map: %+v", entry)
+		}
 	}
-	if reasons["internal/localstore/ledger_append.go"] != atlas.OffMapNoUnits {
-		t.Fatalf("a file of a method that follows its type: %v", reasons)
+	// The component card lists GroupsIndex's off-map files row for row.
+	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{index.Target.ID: index}, checked.Atlas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range indexes[0].OffMap {
+		if file.Path == "internal/localstore/ledger_append.go" {
+			t.Fatalf("the card lists ledger_append.go off the map: %+v", file)
+		}
 	}
 	// The test declaration of a type declared in the library, root_test.go's
 	// testRootReader.expected, follows that type in the same way.

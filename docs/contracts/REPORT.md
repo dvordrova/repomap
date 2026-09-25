@@ -23,10 +23,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - No file or inventory box is drawn: every box is a part of the map of
   parts. The atlas's explicit off-map record lists, per target, every file (or
   stray declaration) no drawn part holds with its reason (`left_out`,
-  `conflict`, `no_units`, `map_failure`), keeping its file line, captions and
-  keys. GroupsIndex carries that record as `off_map`, adds the files of parts
-  made only of test code under the reason `tests` with their part's name, and
-  carries `map_failure`. Subjects off the map keep their interpretations
+  `conflict`, `no_units` for a file that declares nothing, `map_failure`),
+  keeping its file line, captions and keys. Stray declarations in a file a
+  part holds name that part (`box_id`); their file stays on the map and is
+  not listed. GroupsIndex carries that record as `off_map`, adds the files of
+  parts made only of test code under the reason `tests` with their part's
+  name, and carries `map_failure`. Subjects off the map keep their interpretations
   outside every group; a boundary in a file off the map names no box and its
   operation belongs to no group, yet it stays in the component's inputs. A part
   made only of test code is a fact (every file is a `TestSources` file): it is

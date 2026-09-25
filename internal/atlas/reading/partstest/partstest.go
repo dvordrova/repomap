@@ -25,6 +25,8 @@ const partsTask = "repomap.atlas.parts.v1"
 // Map is one target's checked map of parts: its atlas target and, by symbol
 // place ID, the part each declaration takes ("" off the map).
 type Map struct {
+	// Atlas is the whole reading; Target is the checked target in it.
+	Atlas  atlas.Atlas
 	Target atlas.Target
 	PartOf map[string]string
 	// Symbols finds a declaration's symbol place by its file and name.
@@ -56,7 +58,7 @@ func Check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 	if err := atlas.Validate(result.Atlas); err != nil {
 		t.Fatal(err)
 	}
-	checked := Map{PartOf: map[string]string{}, Symbols: map[[2]string]string{}}
+	checked := Map{Atlas: result.Atlas, PartOf: map[string]string{}, Symbols: map[[2]string]string{}}
 	for _, candidate := range result.Atlas.Targets {
 		if candidate.ID == target.ID {
 			checked.Target = candidate
@@ -218,7 +220,28 @@ func checkMembership(t testing.TB, graph atlas.Graph, targetID string, checked M
 			byObject[id] = box.ID
 		}
 	}
+	// A file is off the map as a whole only when it declares nothing; one
+	// whose declarations follow units of other files is on the map through
+	// them. Declarations off the map in a file a part holds name that part.
+	declares := map[string]bool{}
+	for _, place := range graph.Places {
+		if place.Symbol != nil && slices.Contains(place.TargetIDs, targetID) {
+			declares[place.Path] = true
+		}
+	}
+	holds := map[[2]string]bool{}
+	for _, box := range checked.Target.Boxes {
+		for _, file := range box.Files {
+			holds[[2]string{box.ID, file.Path}] = true
+		}
+	}
 	for _, entry := range checked.Target.OffMap {
+		if len(entry.File.Symbols) == 0 && declares[entry.File.Path] {
+			t.Fatalf("%s declares code yet is off the map as a file without declarations (%s)", entry.File.Path, entry.Reason)
+		}
+		if entry.BoxID != "" && !holds[[2]string{entry.BoxID, entry.File.Path}] {
+			t.Fatalf("off-map declarations of %s name part %s, which does not hold the file", entry.File.Path, entry.BoxID)
+		}
 		for _, symbol := range entry.File.Symbols {
 			seen[symbol.ID]++
 			checked.PartOf[symbol.ID] = ""

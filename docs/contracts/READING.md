@@ -143,8 +143,10 @@ neither a row, a name nor a unit. `calls` counts exact call sites between
 listed files once per distinct pair (`"f3 -> f7 (12)"`); calls resolved only
 to alternatives are left out. `imports` lists imports the adapter resolves to
 one listed file (`"f3 -> f7"`); Go package imports resolve to a directory and
-add nothing. Files without a unit are not listed. The prompt sets no count
-of parts.
+add nothing. Files without a unit are not listed. A file that declares only
+what follows units of other files, such as a Go method declared outside its
+type's file, is therefore no row, yet it is on the map through those
+declarations. The prompt sets no count of parts.
 
 **Small targets.** A target without a unit-bearing file sends no request and
 has a legitimate empty map. A target of one such file sends no parts request:
@@ -172,21 +174,31 @@ drawn, one closed-choice `atlas_placement` table places the unplaced files:
 a left-out file chooses among every drawn part, a conflicting one only
 between the parts that listed it, with its own calls and imports to and
 from placed files as part refs. An unknown, missing or refused choice leaves
-the file off the map with its reason. Only an answer that is not JSON or
-holds no groups (or ends at the output allowance) is refused whole; it is
-asked once more with the same bytes ([one resample](EXECUTION.md#one-resample)),
-and a target whose answer stays refused gets an explicit `map_failure` with
-every file off the map. Its other analysis survives.
+the file off the map with its reason. Only an answer that draws no part is
+refused whole: it is not JSON, holds no groups, has no group holding a
+listed file of its own (every ref unknown, such as paths instead of refs,
+every group without a name, or every file in two groups), or ends at the
+output allowance. Such an answer is asked once more with the same bytes
+([one resample](EXECUTION.md#one-resample)). A window refused on both draws
+is recorded as `window_rejected`; its files are left out for the follow-up
+when another window of the target drew parts. A target all of whose windows
+are refused gets an explicit `map_failure` with every file off the map. Its
+other analysis survives.
 
 **Membership and the off-map record.** Atlas v11 saves explicit `member_ids`
 per part, and an explicit per-target `off_map` record: every file, or stray
 declaration, no drawn part holds, with its reason (`left_out`, `conflict`,
-`no_units`, `map_failure`), its file line, captions and keys. A type's methods
-declared elsewhere follow it off the map; a method whose file is off the map
-stays with its placed type. A file endpoint is its partitioned part directly;
-a method that follows its type into another part changes only its own
-membership. A boundary takes its declaration's part, else its file's part;
-one in a file off the map names no box and is still read. A part whose every
+`no_units`, `map_failure`), its file line, captions and keys. `no_units` is a
+file that declares nothing. A type's methods declared elsewhere follow it off
+the map; a method whose file is off the map stays with its placed type. A
+file endpoint is its partitioned part directly; a method that follows its
+type into another part changes only its own membership. A file that is no
+row takes as endpoint the one part its drawn declarations share (none when
+they sit in two parts) and has no entry of its own. Declarations off the map
+in a file a part holds, such as a method whose type is off the map, are
+listed under their type's reason with that part as `box_id`: the file itself
+stays on the map. A boundary takes its declaration's part, else its file's
+part; one in a file off the map names no box and is still read. A part whose every
 file is test code (the adapter's `TestSources` fact) keeps its membership,
 file lines, captions and keys in the atlas, is not described, not grouped
 into areas and not asked for a core role, and leaves the canvas. The model
@@ -209,9 +221,12 @@ code, one `atlas_areas` request (`prompts/design_areas.md`) lists them with
 between them (`"p3 -> p7 (12)"`), and answers a closed split
 `{"areas":[{"name","parts"}]}`. It sets no count; a part may stay outside
 every area. A part in two areas or in none stands alone, an area of fewer
-than two parts is not drawn, and a whole refusal draws no areas and is
-recorded. Each area's line comes from the same description prompt with its
-parts' names and lines as members. Jev assigns nothing in this stage.
+than two parts is not drawn. An empty list leaves every part alone; an answer
+that is not JSON, has no list, or lists areas none of which holds a listed
+part (parts named instead of referenced, every area without a name) is
+refused whole, asked once more with the same bytes, and on a second refusal
+draws no areas and is recorded. Each area's line comes from the same
+description prompt with its parts' names and lines as members. Jev assigns nothing in this stage.
 
 The browser does not choose, validate or repair architectural membership.
 

@@ -1,5 +1,43 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Map of parts review: resample, empty answers, method-only files
+
+- The llm layer's one resample (branch `parts/one-time-resample`, merged into
+  this branch) now serves the map of parts: the parts and areas calls opt in
+  and the `TODO(parts resample)` markers are gone. A parts answer that decodes
+  but draws no part is refused whole in its decoder, so it is resampled and
+  then recorded as `window_rejected`, like an answer without groups: every
+  ref unknown (paths instead of `f*`), every group without a name, or every
+  file in two groups. Before, such an answer gave zero parts, no
+  `map_failure` and every file `left_out`. An areas answer whose areas hold
+  no listed part is refused the same way; an empty list is still an
+  abstention.
+- A file that is no row (it declares only methods of types in other files)
+  was marked `no_units`, and the card listed it under Not on the map as "No
+  declarations of its own" while its methods were drawn. Now `no_units` is
+  only a file that declares nothing; a row-less file is on the map through
+  its declarations, with the one part they share as its endpoint, and has no
+  entry. Declarations off the map in a file a part holds carry that part as
+  `box_id` (atlas 11, not yet released, so no version change); GroupsIndex
+  and the card no longer list such a file. On the saved no-model
+  `cmd/repomap` graph read with every row as its own part: 290 parts hold all
+  300 files and nothing is off the map; the 10 row-less files (among them
+  `internal/atlas/reading/walk.go`) were `no_units` before.
+- Tests: `TestRefusedPartsAnswerIsAskedOnceMore` (spec D4 on the reading
+  side, replacing the resample branch's test of the removed proposal code:
+  refused then good draws the map, refused twice is a `map_failure`, exactly
+  two parts requests, the other target asked once);
+  `TestRefusedPartsAnswerIsAnExplicitMapFailure` now expects two draws per
+  target; decoder cases for answers that draw nothing (parts and areas);
+  `TestFilesOfMethodsDeclaredElsewhereStayOnTheMap` (a methods-only file and
+  its boundary stay in the type's part, a method of a type off the map names
+  its file's part); the shared fixture checker refuses a file-level off-map
+  entry for a file that declares code, and the Go fixture checks that
+  `ledger_append.go` is not in GroupsIndex's `off_map`, the card's list. The
+  summed metrics of two draws stay covered in `internal/llm/resample_test.go`.
+  Each new expectation fails on the code before the fix (checked by
+  mutation). No online run was made for this round.
+
 ## 2026-09-25 — Map of parts from one file split per target
 
 - Probe evidence behind the change (spec `parts-spec.md`, measured before the

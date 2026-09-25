@@ -18,8 +18,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   provider batches and convergent closed-ref reduction rounds as necessary.
   Every stage uses the shared actual 32 MiB request envelope and 16 MiB
   decoded-response ceiling and requests up to 128,000 output tokens unless its
-  owning contract states a smaller measured allowance (glossary 32,768; design
-  proposals 8,192). An allowance bounds a runaway answer, never evidence; an
+  owning contract states a smaller measured allowance (glossary 32,768; parts
+  and areas answers min(128,000, max(8,192, 16 × listed rows)); part and area
+  descriptions 200). An allowance bounds a runaway answer, never evidence; an
   answer that reaches it is the ordinary output-token refusal, never truncated
   or partly accepted. A lower configured provider token ceiling remains
   authoritative. Composite input is
@@ -106,9 +107,10 @@ The journal holds two exchanges with one request SHA-256, told apart by their
 like any other.
 
 Only the parts and areas answers of the map of parts (`atlas_zones`,
-`atlas_areas`) opt in. A parts answer with no groups is refused whole; an
-areas answer with an empty list leaves every part alone. A target without
-units sends no parts request. The placement follow-up, descriptions, Jev and classifier
+`atlas_areas`) opt in. A parts answer that draws no part is refused whole;
+an areas answer with an empty list leaves every part alone, and one whose
+areas hold no listed part is refused whole. A target without units sends no
+parts request. The placement follow-up, descriptions, Jev and classifier
 tables and all other stages do not opt in.
 
 ## Results and prompt ownership
@@ -181,9 +183,10 @@ file → part rows. An unknown ref is discarded, a file named twice in one part
 is kept once, a file listed in two parts loses both memberships (no first
 wins) and, like a file left out, goes to one closed-choice placement
 follow-up; a group without a name or without a listed file is not drawn and
-its files are left out. Only an answer that is not JSON or holds no groups is
-refused whole. An areas answer follows the same rules at part level: a part
-in two areas or in none stands alone. The one-time resample of a whole
+its files are left out. Only an answer that draws no part is refused whole:
+not JSON, no groups, or no group holding a listed file of its own. An areas
+answer follows the same rules at part level: a part in two areas or in none
+stands alone. The one-time resample of a whole
 refusal belongs to the shared llm layer ([one resample](#one-resample)),
 never to the stage; a refused answer is not cached, so the resample sends
 the same bytes.

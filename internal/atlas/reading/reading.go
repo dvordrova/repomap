@@ -1106,7 +1106,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			symbols[id] = true
 		}
 		file := r.projectFile(entry.fileID, symbols, "")
-		target.OffMap = append(target.OffMap, atlas.OffMapFile{ID: entry.fileID, Reason: entry.reason, File: file})
+		target.OffMap = append(target.OffMap, atlas.OffMapFile{ID: entry.fileID, Reason: entry.reason, BoxID: entry.boxID, File: file})
 		count(entry.fileID, file)
 	}
 	for _, arrow := range r.arrows[meta.ID] {

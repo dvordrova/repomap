@@ -12,7 +12,9 @@ import (
 
 // A parts answer refused whole is asked once more with the same request: a
 // good second draw draws the map, and a second refusal leaves the target an
-// explicit map failure after exactly two parts requests. The other target,
+// explicit map failure after exactly two parts requests. An answer that
+// decodes but draws nothing, such as one naming files by path instead of by
+// ref, is refused whole like an answer without groups. The other target,
 // answered well the first time, is asked once.
 func TestRefusedPartsAnswerIsAskedOnceMore(t *testing.T) {
 	for _, refused := range []int{1, 2} {
@@ -32,6 +34,8 @@ func TestRefusedPartsAnswerIsAskedOnceMore(t *testing.T) {
 					groups = append(groups, fmt.Sprintf(`{"name":%q,"files":[%q]}`, file["path"], file["ref"]))
 				}
 				return `{"groups":[` + strings.Join(groups, ",") + `]}`
+			case draw == 1:
+				return fmt.Sprintf(`{"groups":[{"name":"Serving","files":[%q]}]}`, files[0]["path"])
 			default:
 				return `{"groups":[]}`
 			}

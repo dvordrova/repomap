@@ -358,10 +358,13 @@ func cleanText(text string) string {
 	return strings.Join(strings.FieldsFunc(text, space), " ")
 }
 
-// decodeParts reads {"groups":[{"name":…,"files":[…]}]}. Only an answer that
-// is not JSON or holds no groups is refused whole; every group is read on
-// its own, and extra fields such as an "about" are ignored.
-func decodeParts(raw []byte) (partsAnswer, error) {
+// decodeParts reads {"groups":[{"name":…,"files":[…]}]} over the file refs
+// one request listed. Every group is read on its own, and extra fields such
+// as an "about" are ignored. Only an answer that draws no part is refused
+// whole: it is not JSON, holds no groups, or no group holds a listed file of
+// its own (every ref unknown, such as a path, every group without a name, or
+// every file listed in two groups).
+func decodeParts(raw []byte, listed []string) (partsAnswer, error) {
 	var envelope struct {
 		Groups json.RawMessage `json:"groups"`
 	}
@@ -384,7 +387,12 @@ func decodeParts(raw []byte) (partsAnswer, error) {
 		}
 		answer.Groups = append(answer.Groups, partsGroup{Name: cleanText(group.Name), Files: group.Files})
 	}
-	return answer, nil
+	for _, files := range validatePartition(answer, listed).files {
+		if len(files) > 0 {
+			return answer, nil
+		}
+	}
+	return partsAnswer{}, fmt.Errorf("parts: no group holds a listed file of its own")
 }
 
 // partition is a validated parts answer: independent file → part rows over
@@ -483,13 +491,17 @@ func designPartsCall(input designPartsInput) (llm.Call[partsAnswer], error) {
 	if err != nil {
 		return llm.Call[partsAnswer]{}, err
 	}
+	listed := make([]string, len(input.Files))
+	for i, file := range input.Files {
+		listed[i] = file.Ref
+	}
 	return llm.Call[partsAnswer]{
 		Resample: true,
 		State:    []byte(designPartsTask),
 		Prompt: llm.Prompt{System: designPartsPrompt, User: string(raw), ResponseFormatJSON: true, NoResponseAdjunct: true,
 			ResponseExample: `{"groups":[{"name":"Move search","files":["f4","f9"]},{"name":"Board state","files":["f2"]}]}`},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: designOutputTokens(len(input.Files))},
-		DecodeValidate: decodeParts,
+		DecodeValidate: func(raw []byte) (partsAnswer, error) { return decodeParts(raw, listed) },
 	}, nil
 }
 
@@ -827,11 +839,13 @@ func (turns *designTurns) pass(position int) {
 }
 
 // offMapEntry is one file, or the declarations of a file, no drawn part
-// holds.
+// holds. boxID is the part that holds the file itself when only the listed
+// declarations are off the map.
 type offMapEntry struct {
 	fileID  string
 	reason  string
 	symbols []string
+	boxID   string
 }
 
 // designTarget is one target's map of parts, read on the view r and drawn on
@@ -1082,15 +1096,6 @@ func (r *reader) placeFiles(ctx context.Context, view *designView, round int, ou
 // the boxes. A part whose every file is test code is a fact, kept in the
 // atlas and off the canvas.
 func (r *reader) drawParts(view *designView, outcome *designOutcome) {
-	for _, ref := range view.all {
-		if outcome.failure != "" {
-			outcome.offReason[ref] = atlas.OffMapFailure
-			continue
-		}
-		if view.byID[ref] == nil {
-			outcome.offReason[ref] = atlas.OffMapNoUnits
-		}
-	}
 	boxes := map[string]*boxState{}
 	for _, part := range outcome.parts {
 		box := &boxState{id: part.id, targetID: view.targetID, title: part.name, open: true, dir: ".", symbols: map[string]bool{}, test: true}
@@ -1116,6 +1121,30 @@ func (r *reader) drawParts(view *designView, outcome *designOutcome) {
 			}
 		}
 	}
+	// A file that is not a row declares only what follows a unit of another
+	// file, such as a Go method declared outside its type's file. It is on
+	// the map through those declarations, and its endpoint is the one part
+	// they share. Only a file that declares nothing has no units to place;
+	// under a map failure no file is placed.
+	for _, ref := range view.all {
+		switch {
+		case outcome.failure != "":
+			outcome.offReason[ref] = atlas.OffMapFailure
+		case view.byID[ref] != nil:
+		case len(view.decls[ref]) == 0:
+			outcome.offReason[ref] = atlas.OffMapNoUnits
+		default:
+			shared, last := map[string]bool{}, ""
+			for _, id := range view.decls[ref] {
+				if part := outcome.membership[id]; part != "" {
+					shared[part], last = true, part
+				}
+			}
+			if len(shared) == 1 {
+				outcome.membership[ref] = last
+			}
+		}
+	}
 	for _, part := range outcome.parts {
 		box := boxes[part.id]
 		for _, ref := range part.files {
@@ -1133,8 +1162,9 @@ func (r *reader) drawParts(view *designView, outcome *designOutcome) {
 }
 
 // offMapEntries lists every declaration of the target no part holds, under
-// its file: an off-map file with its reason, or, in a placed file, a method
-// whose type is off the map, with that type's reason.
+// its file: an off-map file with its reason, or, in a file a part holds, a
+// method whose type is off the map, with that type's reason and the file's
+// part. A file every declaration of which a part holds has no entry.
 func (r *reader) offMapEntries(view *designView, outcome *designOutcome) []offMapEntry {
 	entries := []offMapEntry{}
 	for _, ref := range view.all {
@@ -1161,7 +1191,7 @@ func (r *reader) offMapEntries(view *designView, outcome *designOutcome) []offMa
 			reasons = append([]string{reason}, reasons...)
 		}
 		for _, why := range reasons {
-			entries = append(entries, offMapEntry{fileID: ref, reason: why, symbols: byReason[why]})
+			entries = append(entries, offMapEntry{fileID: ref, reason: why, symbols: byReason[why], boxID: outcome.membership[ref]})
 		}
 	}
 	return entries
