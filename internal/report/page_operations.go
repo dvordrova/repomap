@@ -131,7 +131,15 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 	})
 	for i, operation := range ops {
 		id := operationNodeID(section.ID, operation.ID)
-		near := map[string]bool{mapNodeID(operation.GroupID): true}
+		// An operation in a file off the map has no part to stand beside.
+		owner := ""
+		if operation.GroupID != "" {
+			owner = mapNodeID(operation.GroupID)
+		}
+		near := map[string]bool{}
+		if owner != "" {
+			near[owner] = true
+		}
 		path := make(map[pathEdge]bool)
 		seen := make(map[string]bool)
 		parents := make(map[string]groupindex.StructuralEdge)
@@ -220,7 +228,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		name := builder.operationDisplayName(index.Target.ID, operation)
 		result.Nodes = append(result.Nodes, pageMapNode{
 			ID: id, Href: source.Href, Title: mapTitle(name), FullTitle: name,
-			InputOwner: mapNodeID(operation.GroupID),
+			InputOwner: owner,
 			Summary:    operation.Summary, Activation: operation.Kind, Source: source, SourceKind: operation.Source,
 			OperationGroup: groups[operation.GroupID].Title,
 			CallPaths:      builder.operationCallPaths(index.Target.ID, operation.SubjectID, firstInGroup, parents),
@@ -276,7 +284,9 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 				handledBy[id] = call
 			}
 		}
-		usage[pathEdge{id, mapNodeID(operation.GroupID), operation.Source == "model", "implemented in", ""}] = []string{id}
+		if operation.GroupID != "" {
+			usage[pathEdge{id, mapNodeID(operation.GroupID), operation.Source == "model", "implemented in", ""}] = []string{id}
+		}
 		for edge := range paths[id] {
 			usage[edge] = append(usage[edge], id)
 		}

@@ -117,8 +117,6 @@ type tableProvider struct {
 	boxFor             map[string]string
 	fileLineFor        map[string]string
 	openFor            map[string]string
-	partFor            map[string]string
-	partNames          []string
 	sameFor            map[string]string
 	answers            map[string]int
 	questionFor        map[string]table.Answer
@@ -128,11 +126,20 @@ type tableProvider struct {
 	answerFor          func(map[string]any) table.Answer
 	learningFor        func(learningRequest) learningResponse
 	learningSelectNone bool
-	// designFor proposes parts or areas; nil proposes one part per package
-	// and no areas. zoneFor chooses a part or area title for a row; nil puts
-	// a unit in the part named after its package and a part in no area.
-	designFor func(mode string, input []map[string]any) designProposals
-	zoneFor   func(column string, row map[string]any) string
+	// partFor names the part of one file row of a parts request; nil puts
+	// each file in the part named after its directory. partsResponse, when
+	// set, answers a parts request verbatim. placeFor chooses a follow-up
+	// row's part; nil takes its first option. areaFor names the area of one
+	// part row of an areas request, "" for none; nil answers no areas.
+	// describe writes a description; nil writes "About <name>.", and a
+	// description it returns empty is refused.
+	partFor       func(file map[string]any) string
+	partsResponse func(files []map[string]any) string
+	placeFor      func(row map[string]any) string
+	areaFor       func(part map[string]any) string
+	describe      func(name string) string
+	// designRequests counts the parts, description and areas requests.
+	designRequests map[string]int
 }
 
 type questionBatchRequest struct {
@@ -175,23 +182,7 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 	if err := json.Unmarshal(prepared.Bytes(), &batch); err != nil {
 		return llm.Completion{}, err
 	}
-	if batch.Task == "repomap.atlas.design.v4" {
-		var request struct {
-			Mode  string
-			Input []map[string]any
-		}
-		if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
-			return llm.Completion{}, err
-		}
-		response := designProposals{Groups: []designProposal{}}
-		if provider.designFor != nil {
-			response = provider.designFor(request.Mode, request.Input)
-		} else if request.Mode == "parts" {
-			for _, pkg := range request.Input {
-				response.Groups = append(response.Groups, designProposal{Title: fmt.Sprint(pkg["package"]), Purpose: "Reads the supplied declarations."})
-			}
-		}
-		raw, err := json.Marshal(response)
+	if raw, ok, err := provider.design(batch.Task, prepared.Bytes()); ok {
 		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
 	}
 	if batch.Task == questionbatch.Contract {
@@ -301,8 +292,8 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 				if len(options) > 0 {
 					answer[column.Name] = options[0]
 				}
-				if column.Name == "part" || column.Name == "area" {
-					answer[column.Name] = zoneRef(provider.zoneFor, column.Name, row, request.Context)
+				if column.Name == "part" && provider.placeFor != nil {
+					answer[column.Name] = provider.placeFor(row)
 				}
 				// A peer choice takes the first listed ref, not "none".
 				if column.Name == "peer" && len(options) > 1 {
@@ -346,21 +337,6 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 			}
 			if chosen, ok := provider.boxFor[path]; ok {
 				answer["box"] = chosen
-			}
-		case lines.StageZones:
-			if part, ok := row["title"].(string); ok && provider.partFor != nil {
-				if chosen, ok := provider.partFor[part]; ok {
-					answer["part"] = chosen
-				}
-			}
-			for i, column := range request.Fill {
-				if strings.HasPrefix(column.Name, "part_") {
-					if i < len(provider.partNames) {
-						answer[column.Name] = provider.partNames[i]
-					} else {
-						answer[column.Name] = fmt.Sprintf("Part %d", i+1)
-					}
-				}
 			}
 		case lines.StageJoints:
 			if provider.sameFor != nil {
@@ -450,27 +426,28 @@ func TestDryReadingPrintsTablesAndFallsBack(t *testing.T) {
 	if strings.Contains(text, "pkg/b/gen.go\"") {
 		t.Error("a generated file was asked about")
 	}
+	// Without a model there is no map of parts: every file stays readable off
+	// the map, with its fallback line.
 	target := result.Atlas.Targets[0]
-	if len(target.Boxes) != 4 || target.Files != 4 {
-		t.Fatalf("boxes %d files %d", len(target.Boxes), target.Files)
+	if len(target.Boxes) != 0 || len(target.OffMap) != 4 || target.Files != 4 || target.MapFailure == "" {
+		t.Fatalf("boxes %d off-map %d files %d failure %q", len(target.Boxes), len(target.OffMap), target.Files, target.MapFailure)
 	}
-	for _, box := range target.Boxes {
-		for _, file := range box.Files {
-			if file.Path == "pkg/b/gen.go" {
-				if file.Source != atlas.SourceUnused || file.Asked {
-					t.Errorf("generated file: source %q asked %v", file.Source, file.Asked)
-				}
-				continue
+	for _, entry := range target.OffMap {
+		file := entry.File
+		if file.Path == "pkg/b/gen.go" {
+			if file.Source != atlas.SourceUnused || file.Asked {
+				t.Errorf("generated file: source %q asked %v", file.Source, file.Asked)
 			}
-			if file.Source != atlas.SourceGiven || file.Line != "given "+file.Path {
-				t.Errorf("%s: source %q line %q", file.Path, file.Source, file.Line)
-			}
+			continue
+		}
+		if file.Source != atlas.SourceGiven || file.Line != "given "+file.Path {
+			t.Errorf("%s: source %q line %q", file.Path, file.Source, file.Line)
 		}
 	}
 	requests, _ := filepath.Glob(filepath.Join(filepath.Dir(result.TablesPath), atlas.TablesDir, "*.input.ref.json"))
-	// Three directory rounds, one file round and the observed source-file
-	// collaboration, then the target description from accepted parts.
-	if len(requests) != 3+1+2+1+1 {
+	// The directory, file, symbol and target windows are printed as before;
+	// without parts no arrow window is.
+	if len(requests) != 3+1+2+1 {
 		t.Fatalf("request files: %d", len(requests))
 	}
 	if err := atlas.Validate(result.Atlas); err != nil {
@@ -611,19 +588,81 @@ func TestRequestBytesCarryNoIdentities(t *testing.T) {
 	}
 }
 
-// zoneRef answers a zone assignment row by the title it names.
-func zoneRef(zoneFor func(string, map[string]any) string, column string, row, context map[string]any) string {
-	title := ""
-	if zoneFor != nil {
-		title = zoneFor(column, row)
-	} else if column == "part" {
-		title = fmt.Sprint(row["package"])
+// design answers the parts, description and areas requests of the map of
+// parts; ok is false for any other request.
+func (provider *tableProvider) design(task string, body []byte) ([]byte, bool, error) {
+	var request struct {
+		Files []map[string]any `json:"files"`
+		Parts []map[string]any `json:"parts"`
+		Part  string           `json:"part"`
 	}
-	entries, _ := context[column+"s"].([]any)
-	for _, entry := range entries {
-		if item, _ := entry.(map[string]any); item != nil && item["title"] == title {
-			return fmt.Sprint(item["ref"])
+	switch task {
+	case designPartsTask, designDescribeTask, designAreasTask:
+	default:
+		return nil, false, nil
+	}
+	if err := json.Unmarshal(body, &request); err != nil {
+		return nil, true, err
+	}
+	provider.mu.Lock()
+	if provider.designRequests == nil {
+		provider.designRequests = map[string]int{}
+	}
+	provider.designRequests[task]++
+	provider.mu.Unlock()
+	switch task {
+	case designPartsTask:
+		if provider.partsResponse != nil {
+			return []byte(provider.partsResponse(request.Files)), true, nil
 		}
+		type group struct {
+			Name  string   `json:"name"`
+			Files []string `json:"files"`
+		}
+		var groups []group
+		at := map[string]int{}
+		for _, file := range request.Files {
+			name := filepath.Dir(fmt.Sprint(file["path"]))
+			if provider.partFor != nil {
+				name = provider.partFor(file)
+			}
+			if _, seen := at[name]; !seen {
+				at[name] = len(groups)
+				groups = append(groups, group{Name: name})
+			}
+			groups[at[name]].Files = append(groups[at[name]].Files, fmt.Sprint(file["ref"]))
+		}
+		raw, err := json.Marshal(map[string]any{"groups": groups})
+		return raw, true, err
+	case designDescribeTask:
+		text := "About " + request.Part + "."
+		if provider.describe != nil {
+			text = provider.describe(request.Part)
+		}
+		raw, err := json.Marshal(map[string]string{"description": text})
+		return raw, true, err
+	default:
+		type area struct {
+			Name  string   `json:"name"`
+			Parts []string `json:"parts"`
+		}
+		areas := []area{}
+		at := map[string]int{}
+		for _, part := range request.Parts {
+			if provider.areaFor == nil {
+				continue
+			}
+			name := provider.areaFor(part)
+			if name == "" {
+				continue
+			}
+			if _, seen := at[name]; !seen {
+				at[name] = len(areas)
+				areas = append(areas, area{Name: name})
+			}
+			areas[at[name]].Parts = append(areas[at[name]].Parts, fmt.Sprint(part["ref"]))
+		}
+		raw, err := json.Marshal(map[string]any{"areas": areas})
+		return raw, true, err
 	}
-	return "none"
 }

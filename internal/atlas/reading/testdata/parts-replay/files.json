@@ -1,0 +1,1181 @@
+{
+ "source": "probe-files/request-go.json mapped to accept2 places.json sealed refs",
+ "files": [
+  {
+   "ref": "f1",
+   "path": "cmd/repomap/main.go"
+  },
+  {
+   "ref": "f2",
+   "path": "internal/analysistarget/catalog.go"
+  },
+  {
+   "ref": "f3",
+   "path": "internal/analysistarget/direct_call_scope.go"
+  },
+  {
+   "ref": "f4",
+   "path": "internal/analysistarget/go_file_discovery.go"
+  },
+  {
+   "ref": "f5",
+   "path": "internal/analysistarget/hypothesis.go"
+  },
+  {
+   "ref": "f6",
+   "path": "internal/analysistarget/model.go"
+  },
+  {
+   "ref": "f7",
+   "path": "internal/analysistarget/resolver.go"
+  },
+  {
+   "ref": "f8",
+   "path": "internal/analysistarget/roots.go"
+  },
+  {
+   "ref": "f9",
+   "path": "internal/analysistarget/scope.go"
+  },
+  {
+   "ref": "f10",
+   "path": "internal/atlas/atlas.go"
+  },
+  {
+   "ref": "f11",
+   "path": "internal/atlas/data.go"
+  },
+  {
+   "ref": "f12",
+   "path": "internal/atlas/destinations/destinations.go"
+  },
+  {
+   "ref": "f13",
+   "path": "internal/atlas/learning.go"
+  },
+  {
+   "ref": "f14",
+   "path": "internal/atlas/lines/anchor.go"
+  },
+  {
+   "ref": "f15",
+   "path": "internal/atlas/lines/answer.go"
+  },
+  {
+   "ref": "f16",
+   "path": "internal/atlas/lines/api.go"
+  },
+  {
+   "ref": "f17",
+   "path": "internal/atlas/lines/core.go"
+  },
+  {
+   "ref": "f18",
+   "path": "internal/atlas/lines/evidence.go"
+  },
+  {
+   "ref": "f19",
+   "path": "internal/atlas/lines/keys.go"
+  },
+  {
+   "ref": "f20",
+   "path": "internal/atlas/lines/layers.go"
+  },
+  {
+   "ref": "f21",
+   "path": "internal/atlas/lines/lines.go"
+  },
+  {
+   "ref": "f22",
+   "path": "internal/atlas/lines/question.go"
+  },
+  {
+   "ref": "f23",
+   "path": "internal/atlas/lines/question_calls.go"
+  },
+  {
+   "ref": "f24",
+   "path": "internal/atlas/lines/symbol_selection.go"
+  },
+  {
+   "ref": "f25",
+   "path": "internal/atlas/lines/tables.go"
+  },
+  {
+   "ref": "f26",
+   "path": "internal/atlas/lines/vocabulary.go"
+  },
+  {
+   "ref": "f27",
+   "path": "internal/atlas/lines/zones.go"
+  },
+  {
+   "ref": "f28",
+   "path": "internal/atlas/places/documents.go"
+  },
+  {
+   "ref": "f30",
+   "path": "internal/atlas/places/places.go"
+  },
+  {
+   "ref": "f32",
+   "path": "internal/atlas/question.go"
+  },
+  {
+   "ref": "f33",
+   "path": "internal/atlas/questionbatch/memo.go"
+  },
+  {
+   "ref": "f34",
+   "path": "internal/atlas/questionbatch/questionbatch.go"
+  },
+  {
+   "ref": "f35",
+   "path": "internal/atlas/reading/answer.go"
+  },
+  {
+   "ref": "f36",
+   "path": "internal/atlas/reading/answer_batch.go"
+  },
+  {
+   "ref": "f37",
+   "path": "internal/atlas/reading/answer_sources.go"
+  },
+  {
+   "ref": "f38",
+   "path": "internal/atlas/reading/api.go"
+  },
+  {
+   "ref": "f39",
+   "path": "internal/atlas/reading/boxes.go"
+  },
+  {
+   "ref": "f40",
+   "path": "internal/atlas/reading/core.go"
+  },
+  {
+   "ref": "f41",
+   "path": "internal/atlas/reading/data.go"
+  },
+  {
+   "ref": "f42",
+   "path": "internal/atlas/reading/design.go"
+  },
+  {
+   "ref": "f43",
+   "path": "internal/atlas/reading/destinations.go"
+  },
+  {
+   "ref": "f44",
+   "path": "internal/atlas/reading/input.go"
+  },
+  {
+   "ref": "f45",
+   "path": "internal/atlas/reading/joints.go"
+  },
+  {
+   "ref": "f46",
+   "path": "internal/atlas/reading/keys.go"
+  },
+  {
+   "ref": "f47",
+   "path": "internal/atlas/reading/knowledge.go"
+  },
+  {
+   "ref": "f48",
+   "path": "internal/atlas/reading/layers.go"
+  },
+  {
+   "ref": "f49",
+   "path": "internal/atlas/reading/learning.go"
+  },
+  {
+   "ref": "f50",
+   "path": "internal/atlas/reading/learning_partitions.go"
+  },
+  {
+   "ref": "f51",
+   "path": "internal/atlas/reading/question.go"
+  },
+  {
+   "ref": "f53",
+   "path": "internal/atlas/reading/reading.go"
+  },
+  {
+   "ref": "f54",
+   "path": "internal/atlas/reading/shared.go"
+  },
+  {
+   "ref": "f55",
+   "path": "internal/atlas/reading/walk.go"
+  },
+  {
+   "ref": "f56",
+   "path": "internal/atlas/table/classifier.go"
+  },
+  {
+   "ref": "f57",
+   "path": "internal/atlas/table/independent.go"
+  },
+  {
+   "ref": "f58",
+   "path": "internal/atlas/table/table.go"
+  },
+  {
+   "ref": "f59",
+   "path": "internal/claims/artifact.go"
+  },
+  {
+   "ref": "f60",
+   "path": "internal/claims/comment.go"
+  },
+  {
+   "ref": "f61",
+   "path": "internal/claims/docstring.go"
+  },
+  {
+   "ref": "f62",
+   "path": "internal/claims/extract.go"
+  },
+  {
+   "ref": "f63",
+   "path": "internal/claims/gitlog.go"
+  },
+  {
+   "ref": "f64",
+   "path": "internal/claims/model.go"
+  },
+  {
+   "ref": "f65",
+   "path": "internal/claims/readme.go"
+  },
+  {
+   "ref": "f66",
+   "path": "internal/claims/text.go"
+  },
+  {
+   "ref": "f67",
+   "path": "internal/clojureproject/build.go"
+  },
+  {
+   "ref": "f68",
+   "path": "internal/clojureproject/edn.go"
+  },
+  {
+   "ref": "f69",
+   "path": "internal/clojureproject/native.go"
+  },
+  {
+   "ref": "f70",
+   "path": "internal/clojureproject/project.go"
+  },
+  {
+   "ref": "f71",
+   "path": "internal/clojureproject/source.go"
+  },
+  {
+   "ref": "f72",
+   "path": "internal/corpus/corpus.go"
+  },
+  {
+   "ref": "f73",
+   "path": "internal/corpus/inventory.go"
+  },
+  {
+   "ref": "f74",
+   "path": "internal/debugdump/debugdump.go"
+  },
+  {
+   "ref": "f75",
+   "path": "internal/debugdump/semantic_observer.go"
+  },
+  {
+   "ref": "f76",
+   "path": "internal/deepseek/client.go"
+  },
+  {
+   "ref": "f77",
+   "path": "internal/deepseek/context_limit.go"
+  },
+  {
+   "ref": "f78",
+   "path": "internal/deepseek/http_diagnostics.go"
+  },
+  {
+   "ref": "f79",
+   "path": "internal/deepseek/llm_provider.go"
+  },
+  {
+   "ref": "f80",
+   "path": "internal/deepseek/replay.go"
+  },
+  {
+   "ref": "f81",
+   "path": "internal/deepseek/resource_limit.go"
+  },
+  {
+   "ref": "f82",
+   "path": "internal/dependencies/artifact.go"
+  },
+  {
+   "ref": "f83",
+   "path": "internal/dependencies/catalog.go"
+  },
+  {
+   "ref": "f84",
+   "path": "internal/dependencies/persistence.go"
+  },
+  {
+   "ref": "f85",
+   "path": "internal/documentationreduce/artifact.go"
+  },
+  {
+   "ref": "f86",
+   "path": "internal/documentationreduce/model.go"
+  },
+  {
+   "ref": "f87",
+   "path": "internal/documentationreduce/run.go"
+  },
+  {
+   "ref": "f88",
+   "path": "internal/extractors/database.go"
+  },
+  {
+   "ref": "f89",
+   "path": "internal/extractors/database_lex.go"
+  },
+  {
+   "ref": "f90",
+   "path": "internal/extractors/database_python.go"
+  },
+  {
+   "ref": "f91",
+   "path": "internal/extractors/database_sql.go"
+  },
+  {
+   "ref": "f92",
+   "path": "internal/extractors/extractors.go"
+  },
+  {
+   "ref": "f93",
+   "path": "internal/extractors/sqlc.go"
+  },
+  {
+   "ref": "f94",
+   "path": "internal/facts/artifact.go"
+  },
+  {
+   "ref": "f95",
+   "path": "internal/facts/build.go"
+  },
+  {
+   "ref": "f96",
+   "path": "internal/facts/config.go"
+  },
+  {
+   "ref": "f97",
+   "path": "internal/facts/data.go"
+  },
+  {
+   "ref": "f99",
+   "path": "internal/facts/extraction.go"
+  },
+  {
+   "ref": "f100",
+   "path": "internal/facts/manifest.go"
+  },
+  {
+   "ref": "f101",
+   "path": "internal/facts/model.go"
+  },
+  {
+   "ref": "f102",
+   "path": "internal/facts/negatives.go"
+  },
+  {
+   "ref": "f103",
+   "path": "internal/facts/objects.go"
+  },
+  {
+   "ref": "f104",
+   "path": "internal/facts/reachability.go"
+  },
+  {
+   "ref": "f105",
+   "path": "internal/facts/registration.go"
+  },
+  {
+   "ref": "f106",
+   "path": "internal/facts/risk.go"
+  },
+  {
+   "ref": "f107",
+   "path": "internal/facts/route_prefix.go"
+  },
+  {
+   "ref": "f108",
+   "path": "internal/facts/route_values.go"
+  },
+  {
+   "ref": "f109",
+   "path": "internal/facts/source.go"
+  },
+  {
+   "ref": "f111",
+   "path": "internal/facts/todo.go"
+  },
+  {
+   "ref": "f112",
+   "path": "internal/freshness/freshness.go"
+  },
+  {
+   "ref": "f113",
+   "path": "internal/freshness/repository.go"
+  },
+  {
+   "ref": "f114",
+   "path": "internal/freshness/revision_paths.go"
+  },
+  {
+   "ref": "f115",
+   "path": "internal/gitfiles/gitfiles.go"
+  },
+  {
+   "ref": "f116",
+   "path": "internal/gocoreobject/index.go"
+  },
+  {
+   "ref": "f117",
+   "path": "internal/godynamichandoff/index.go"
+  },
+  {
+   "ref": "f118",
+   "path": "internal/gofacts/dependencies.go"
+  },
+  {
+   "ref": "f119",
+   "path": "internal/gofacts/entrypoints.go"
+  },
+  {
+   "ref": "f120",
+   "path": "internal/gofacts/gofacts.go"
+  },
+  {
+   "ref": "f121",
+   "path": "internal/gofacts/package_declarations.go"
+  },
+  {
+   "ref": "f122",
+   "path": "internal/gofacts/test_sources.go"
+  },
+  {
+   "ref": "f123",
+   "path": "internal/gotarget/target.go"
+  },
+  {
+   "ref": "f124",
+   "path": "internal/groupindex/artifact_persistence.go"
+  },
+  {
+   "ref": "f125",
+   "path": "internal/groupindex/atlas.go"
+  },
+  {
+   "ref": "f126",
+   "path": "internal/groupindex/chains.go"
+  },
+  {
+   "ref": "f127",
+   "path": "internal/groupindex/data.go"
+  },
+  {
+   "ref": "f128",
+   "path": "internal/groupindex/index.go"
+  },
+  {
+   "ref": "f129",
+   "path": "internal/groupindex/outbound.go"
+  },
+  {
+   "ref": "f130",
+   "path": "internal/groupindex/phase.go"
+  },
+  {
+   "ref": "f131",
+   "path": "internal/jstsproject/discover.go"
+  },
+  {
+   "ref": "f132",
+   "path": "internal/jstsproject/model.go"
+  },
+  {
+   "ref": "f133",
+   "path": "internal/jstsproject/projection.go"
+  },
+  {
+   "ref": "f134",
+   "path": "internal/jstsproject/target_scout.go"
+  },
+  {
+   "ref": "f135",
+   "path": "internal/llm/adaptive_batch.go"
+  },
+  {
+   "ref": "f136",
+   "path": "internal/llm/adaptive_each.go"
+  },
+  {
+   "ref": "f137",
+   "path": "internal/llm/adaptive_split_memo.go"
+  },
+  {
+   "ref": "f138",
+   "path": "internal/llm/api.go"
+  },
+  {
+   "ref": "f139",
+   "path": "internal/llm/attempt_gate.go"
+  },
+  {
+   "ref": "f140",
+   "path": "internal/llm/cache.go"
+  },
+  {
+   "ref": "f141",
+   "path": "internal/llm/each.go"
+  },
+  {
+   "ref": "f142",
+   "path": "internal/llm/execute.go"
+  },
+  {
+   "ref": "f143",
+   "path": "internal/llm/http_response.go"
+  },
+  {
+   "ref": "f144",
+   "path": "internal/llm/json_syntax.go"
+  },
+  {
+   "ref": "f145",
+   "path": "internal/llm/memo.go"
+  },
+  {
+   "ref": "f146",
+   "path": "internal/llm/payload.go"
+  },
+  {
+   "ref": "f147",
+   "path": "internal/llm/prepare.go"
+  },
+  {
+   "ref": "f148",
+   "path": "internal/llm/replay.go"
+  },
+  {
+   "ref": "f149",
+   "path": "internal/llm/resource_limit.go"
+  },
+  {
+   "ref": "f150",
+   "path": "internal/modeldiag/modeldiag.go"
+  },
+  {
+   "ref": "f151",
+   "path": "internal/orient/orient.go"
+  },
+  {
+   "ref": "f152",
+   "path": "internal/orient/progress.go"
+  },
+  {
+   "ref": "f153",
+   "path": "internal/orientation/artifact.go"
+  },
+  {
+   "ref": "f154",
+   "path": "internal/orientation/model.go"
+  },
+  {
+   "ref": "f155",
+   "path": "internal/orientation/normalize.go"
+  },
+  {
+   "ref": "f156",
+   "path": "internal/orientation/request.go"
+  },
+  {
+   "ref": "f157",
+   "path": "internal/orientation/run.go"
+  },
+  {
+   "ref": "f158",
+   "path": "internal/programindex/artifact_persistence.go"
+  },
+  {
+   "ref": "f159",
+   "path": "internal/programindex/artifact_set.go"
+  },
+  {
+   "ref": "f160",
+   "path": "internal/programindex/enrichment.go"
+  },
+  {
+   "ref": "f161",
+   "path": "internal/programindex/goadapter/adapter.go"
+  },
+  {
+   "ref": "f162",
+   "path": "internal/programindex/goadapter/analysis_input.go"
+  },
+  {
+   "ref": "f163",
+   "path": "internal/programindex/goadapter/signature.go"
+  },
+  {
+   "ref": "f164",
+   "path": "internal/programindex/goadapter/target_binding.go"
+  },
+  {
+   "ref": "f165",
+   "path": "internal/programindex/goadapter/test_sources.go"
+  },
+  {
+   "ref": "f166",
+   "path": "internal/programindex/index.go"
+  },
+  {
+   "ref": "f167",
+   "path": "internal/programindex/shared_artifact.go"
+  },
+  {
+   "ref": "f168",
+   "path": "internal/programpage/portfolio.go"
+  },
+  {
+   "ref": "f169",
+   "path": "internal/pythondependencies/catalog.go"
+  },
+  {
+   "ref": "f170",
+   "path": "internal/pythonprogramindex/build.go"
+  },
+  {
+   "ref": "f171",
+   "path": "internal/pythonprogramindex/test_sources.go"
+  },
+  {
+   "ref": "f172",
+   "path": "internal/pythontarget/discovery.go"
+  },
+  {
+   "ref": "f173",
+   "path": "internal/pythontarget/file_candidates.go"
+  },
+  {
+   "ref": "f174",
+   "path": "internal/pythontarget/file_target_resolver.go"
+  },
+  {
+   "ref": "f175",
+   "path": "internal/pythontarget/model.go"
+  },
+  {
+   "ref": "f176",
+   "path": "internal/pythontarget/packages.go"
+  },
+  {
+   "ref": "f177",
+   "path": "internal/readmetargetscout/batch.go"
+  },
+  {
+   "ref": "f178",
+   "path": "internal/readmetargetscout/compile.go"
+  },
+  {
+   "ref": "f179",
+   "path": "internal/readmetargetscout/file_tree.go"
+  },
+  {
+   "ref": "f180",
+   "path": "internal/readmetargetscout/handoff.go"
+  },
+  {
+   "ref": "f181",
+   "path": "internal/readmetargetscout/model.go"
+  },
+  {
+   "ref": "f182",
+   "path": "internal/readmetargetscout/prompt.go"
+  },
+  {
+   "ref": "f183",
+   "path": "internal/readmetargetscout/reduce.go"
+  },
+  {
+   "ref": "f184",
+   "path": "internal/readmetargetscout/run.go"
+  },
+  {
+   "ref": "f185",
+   "path": "internal/repoconfig/config.go"
+  },
+  {
+   "ref": "f186",
+   "path": "internal/reporead/reporead.go"
+  },
+  {
+   "ref": "f187",
+   "path": "internal/report/fold.go"
+  },
+  {
+   "ref": "f188",
+   "path": "internal/report/github_source.go"
+  },
+  {
+   "ref": "f189",
+   "path": "internal/report/gitlab_source.go"
+  },
+  {
+   "ref": "f190",
+   "path": "internal/report/group_graph_view.go"
+  },
+  {
+   "ref": "f191",
+   "path": "internal/report/html_payload.go"
+  },
+  {
+   "ref": "f192",
+   "path": "internal/report/localization.go"
+  },
+  {
+   "ref": "f193",
+   "path": "internal/report/localization_publication.go"
+  },
+  {
+   "ref": "f194",
+   "path": "internal/report/localization_reuse.go"
+  },
+  {
+   "ref": "f195",
+   "path": "internal/report/localization_terms.go"
+  },
+  {
+   "ref": "f196",
+   "path": "internal/report/manifest.go"
+  },
+  {
+   "ref": "f197",
+   "path": "internal/report/page_addresses.go"
+  },
+  {
+   "ref": "f198",
+   "path": "internal/report/page_anchors.go"
+  },
+  {
+   "ref": "f199",
+   "path": "internal/report/page_catalogs.go"
+  },
+  {
+   "ref": "f200",
+   "path": "internal/report/page_connection_groups.go"
+  },
+  {
+   "ref": "f201",
+   "path": "internal/report/page_data.go"
+  },
+  {
+   "ref": "f202",
+   "path": "internal/report/page_entity_writes.go"
+  },
+  {
+   "ref": "f203",
+   "path": "internal/report/page_glossary.go"
+  },
+  {
+   "ref": "f204",
+   "path": "internal/report/page_learn.go"
+  },
+  {
+   "ref": "f205",
+   "path": "internal/report/page_map.go"
+  },
+  {
+   "ref": "f206",
+   "path": "internal/report/page_model.go"
+  },
+  {
+   "ref": "f207",
+   "path": "internal/report/page_operations.go"
+  },
+  {
+   "ref": "f208",
+   "path": "internal/report/page_outbound.go"
+  },
+  {
+   "ref": "f209",
+   "path": "internal/report/page_portals.go"
+  },
+  {
+   "ref": "f210",
+   "path": "internal/report/page_question.go"
+  },
+  {
+   "ref": "f211",
+   "path": "internal/report/page_reachability.go"
+  },
+  {
+   "ref": "f212",
+   "path": "internal/report/page_sections.go"
+  },
+  {
+   "ref": "f213",
+   "path": "internal/report/page_system_map.go"
+  },
+  {
+   "ref": "f214",
+   "path": "internal/report/page_test_sources.go"
+  },
+  {
+   "ref": "f215",
+   "path": "internal/report/parse.go"
+  },
+  {
+   "ref": "f216",
+   "path": "internal/report/prepare.go"
+  },
+  {
+   "ref": "f217",
+   "path": "internal/report/program_portfolio_projection.go"
+  },
+  {
+   "ref": "f218",
+   "path": "internal/report/readme_file_role_authority.go"
+  },
+  {
+   "ref": "f219",
+   "path": "internal/report/render.go"
+  },
+  {
+   "ref": "f220",
+   "path": "internal/report/render_saved.go"
+  },
+  {
+   "ref": "f221",
+   "path": "internal/report/report.go"
+  },
+  {
+   "ref": "f222",
+   "path": "internal/report/served_page.go"
+  },
+  {
+   "ref": "f223",
+   "path": "internal/report/target_navigation.go"
+  },
+  {
+   "ref": "f224",
+   "path": "internal/report/target_outcome_portfolio_projection.go"
+  },
+  {
+   "ref": "f225",
+   "path": "internal/report/ui_vocabulary.go"
+  },
+  {
+   "ref": "f267",
+   "path": "internal/reportserver/editor.go"
+  },
+  {
+   "ref": "f268",
+   "path": "internal/reportserver/server.go"
+  },
+  {
+   "ref": "f269",
+   "path": "internal/reporttranslation/translation.go"
+  },
+  {
+   "ref": "f270",
+   "path": "internal/run/atlas_runtime.go"
+  },
+  {
+   "ref": "f271",
+   "path": "internal/run/background.go"
+  },
+  {
+   "ref": "f272",
+   "path": "internal/run/cache_clear.go"
+  },
+  {
+   "ref": "f273",
+   "path": "internal/run/conf.go"
+  },
+  {
+   "ref": "f274",
+   "path": "internal/run/documentation_reduce_runtime.go"
+  },
+  {
+   "ref": "f275",
+   "path": "internal/run/first_day_runtime.go"
+  },
+  {
+   "ref": "f276",
+   "path": "internal/run/glossary_runtime.go"
+  },
+  {
+   "ref": "f277",
+   "path": "internal/run/javascript_program_runtime.go"
+  },
+  {
+   "ref": "f278",
+   "path": "internal/run/javascript_target_runtime.go"
+  },
+  {
+   "ref": "f279",
+   "path": "internal/run/main.go"
+  },
+  {
+   "ref": "f280",
+   "path": "internal/run/open.go"
+  },
+  {
+   "ref": "f281",
+   "path": "internal/run/program_page_portfolio_runtime.go"
+  },
+  {
+   "ref": "f282",
+   "path": "internal/run/python_dependency_runtime.go"
+  },
+  {
+   "ref": "f283",
+   "path": "internal/run/python_target_runtime.go"
+  },
+  {
+   "ref": "f284",
+   "path": "internal/run/read.go"
+  },
+  {
+   "ref": "f285",
+   "path": "internal/run/render.go"
+  },
+  {
+   "ref": "f286",
+   "path": "internal/run/replay.go"
+  },
+  {
+   "ref": "f287",
+   "path": "internal/run/report_translation_runtime.go"
+  },
+  {
+   "ref": "f288",
+   "path": "internal/run/repository_target_adapter_discovery.go"
+  },
+  {
+   "ref": "f289",
+   "path": "internal/run/repository_target_clojure.go"
+  },
+  {
+   "ref": "f290",
+   "path": "internal/run/repository_target_dispatch_runtime.go"
+  },
+  {
+   "ref": "f291",
+   "path": "internal/run/repository_target_evidence.go"
+  },
+  {
+   "ref": "f292",
+   "path": "internal/run/repository_target_go_program.go"
+  },
+  {
+   "ref": "f293",
+   "path": "internal/run/repository_target_page_adapter.go"
+  },
+  {
+   "ref": "f294",
+   "path": "internal/run/repository_target_placement.go"
+  },
+  {
+   "ref": "f295",
+   "path": "internal/run/repository_target_registry.go"
+  },
+  {
+   "ref": "f296",
+   "path": "internal/run/repository_target_runtime.go"
+  },
+  {
+   "ref": "f297",
+   "path": "internal/run/run_output.go"
+  },
+  {
+   "ref": "f298",
+   "path": "internal/run/semantic_diagnostics.go"
+  },
+  {
+   "ref": "f299",
+   "path": "internal/run/target_outcome_runtime.go"
+  },
+  {
+   "ref": "f300",
+   "path": "internal/run/target_page_portfolio_runtime.go"
+  },
+  {
+   "ref": "f301",
+   "path": "internal/run/target_portfolio_runtime.go"
+  },
+  {
+   "ref": "f302",
+   "path": "internal/snapshot/go_target_advisory.go"
+  },
+  {
+   "ref": "f303",
+   "path": "internal/snapshot/identity.go"
+  },
+  {
+   "ref": "f304",
+   "path": "internal/snapshot/ownership.go"
+  },
+  {
+   "ref": "f305",
+   "path": "internal/snapshot/snapshot.go"
+  },
+  {
+   "ref": "f306",
+   "path": "internal/sourcevalue/value.go"
+  },
+  {
+   "ref": "f307",
+   "path": "internal/sqltext/names.go"
+  },
+  {
+   "ref": "f308",
+   "path": "internal/sqltext/statement.go"
+  },
+  {
+   "ref": "f309",
+   "path": "internal/sqltext/tables.go"
+  },
+  {
+   "ref": "f310",
+   "path": "internal/sqltext/tokens.go"
+  },
+  {
+   "ref": "f311",
+   "path": "internal/surfacediscovery/analysis_target_error.go"
+  },
+  {
+   "ref": "f312",
+   "path": "internal/surfacediscovery/analyzer.go"
+  },
+  {
+   "ref": "f313",
+   "path": "internal/surfacediscovery/call_control_context.go"
+  },
+  {
+   "ref": "f314",
+   "path": "internal/surfacediscovery/core_object_capture.go"
+  },
+  {
+   "ref": "f315",
+   "path": "internal/surfacediscovery/direct_call_index.go"
+  },
+  {
+   "ref": "f316",
+   "path": "internal/surfacediscovery/dynamic_handoff_capture.go"
+  },
+  {
+   "ref": "f317",
+   "path": "internal/surfacediscovery/dynamic_value_resolution.go"
+  },
+  {
+   "ref": "f318",
+   "path": "internal/surfacediscovery/external_call_capture.go"
+  },
+  {
+   "ref": "f319",
+   "path": "internal/surfacediscovery/external_call_index.go"
+  },
+  {
+   "ref": "f320",
+   "path": "internal/surfacediscovery/input.go"
+  },
+  {
+   "ref": "f321",
+   "path": "internal/surfacediscovery/interface_fields.go"
+  },
+  {
+   "ref": "f322",
+   "path": "internal/surfacediscovery/model.go"
+  },
+  {
+   "ref": "f323",
+   "path": "internal/surfacediscovery/prepared_workspace.go"
+  },
+  {
+   "ref": "f324",
+   "path": "internal/surfacediscovery/source_method_arguments.go"
+  },
+  {
+   "ref": "f325",
+   "path": "internal/surfacediscovery/source_value.go"
+  },
+  {
+   "ref": "f326",
+   "path": "internal/surfacediscovery/target_direct_call.go"
+  },
+  {
+   "ref": "f327",
+   "path": "internal/targetoutcome/portfolio.go"
+  },
+  {
+   "ref": "f328",
+   "path": "internal/targetportfolio/batch.go"
+  },
+  {
+   "ref": "f329",
+   "path": "internal/targetportfolio/compile.go"
+  },
+  {
+   "ref": "f330",
+   "path": "internal/targetportfolio/launch_groups.go"
+  },
+  {
+   "ref": "f331",
+   "path": "internal/targetportfolio/model.go"
+  },
+  {
+   "ref": "f332",
+   "path": "internal/targetportfolio/native.go"
+  },
+  {
+   "ref": "f333",
+   "path": "internal/targetportfolio/prompt.go"
+  },
+  {
+   "ref": "f334",
+   "path": "internal/targetportfolio/reduce.go"
+  },
+  {
+   "ref": "f335",
+   "path": "internal/targetportfolio/run.go"
+  },
+  {
+   "ref": "f336",
+   "path": "internal/terminology/collector.go"
+  },
+  {
+   "ref": "f337",
+   "path": "internal/terminology/generate.go"
+  },
+  {
+   "ref": "f338",
+   "path": "internal/terminology/reduce.go"
+  },
+  {
+   "ref": "f339",
+   "path": "internal/terminology/types.go"
+  },
+  {
+   "ref": "f340",
+   "path": "internal/typesafe/client.go"
+  }
+ ]
+}

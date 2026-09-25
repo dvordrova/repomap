@@ -31,7 +31,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 16
-	Version      = 10
+	Version      = 11
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -463,6 +463,15 @@ type Target struct {
 	Boxes      []Box      `json:"boxes"`
 	Arrows     []Arrow    `json:"arrows"`
 	Boundaries []Boundary `json:"boundaries"`
+	// OffMap is every file, or declaration of a file, that no drawn part
+	// holds, with why. Its files keep their lines, captions and keys here;
+	// their boundaries name no box.
+	OffMap []OffMapFile `json:"off_map"`
+	// MapFailure says why the target has no map of parts at all: its parts
+	// answer was refused, or no model was asked. Every file is then in OffMap
+	// with the reason map_failure. Empty when the map was drawn, including
+	// the legitimate empty map of a target without code.
+	MapFailure string `json:"map_failure,omitempty"`
 	// Files and Symbols are the denominators the page shows; it recounts
 	// nothing.
 	Files   int `json:"files"`
@@ -471,26 +480,29 @@ type Target struct {
 	Trace []string `json:"trace"`
 }
 
-// Zone is one part of a target: a named frame holding several boxes.
+// Zone is one area of a target: a named frame holding several parts.
 type Zone struct {
 	// ID is a compact atlas-local z* ordinal.
 	ID string `json:"id"`
-	// Title and Line are MODEL.
+	// Title and Line are MODEL; an empty Line is the explicit state of an
+	// area whose description was refused or not asked.
 	Title  string   `json:"title"`
 	Line   string   `json:"line"`
 	BoxIDs []string `json:"box_ids"`
 }
 
-// Box is one accepted architectural responsibility or explicit source inventory.
+// Box is one part of a target's map: the files one parts answer grouped,
+// with the declarations those files hold.
 type Box struct {
-	// MemberIDs names selected declarations. Native lexical children inherit
-	// their declaration's membership, never membership from a matching path.
-	// Nil is a source-file inventory before architecture reading.
+	// MemberIDs names the part's declarations: those of its files, and the
+	// methods of its types declared in other files. Native lexical children
+	// inherit their declaration's membership.
 	MemberIDs []string `json:"member_ids"`
 	// ID is a compact atlas-local p* ordinal assigned when the part is accepted.
 	ID  string `json:"id"`
 	Dir string `json:"dir"`
-	// Title and Line are MODEL; an unavailable decision names source inventory.
+	// Title and Line are MODEL. Line is the part's description; empty is the
+	// explicit no-description state (refused, not asked, or a test-only part).
 	Title  string `json:"title"`
 	Line   string `json:"line"`
 	ZoneID string `json:"zone_id,omitempty"`
@@ -498,12 +510,46 @@ type Box struct {
 	Side string `json:"side"`
 	// Open is MODEL under a budget; always true below the threshold.
 	Open bool `json:"open"`
-	// Core and ForTests are MODEL: the program exists for this part; this
-	// part exists only for the program's tests. Absent is no.
+	// Core is MODEL: the program exists for this part. ForTests is a fact:
+	// every file of the part is test code, so it stays off the canvas.
 	Core     bool   `json:"core,omitempty"`
 	ForTests bool   `json:"for_tests,omitempty"`
 	Files    []File `json:"files"`
 	Keys     []Key  `json:"keys"`
+}
+
+// Why a file stays off a target's map of parts.
+const (
+	// OffMapLeftOut: the parts answer and its placement follow-up left the
+	// file out, or no part was drawn to place it in.
+	OffMapLeftOut = "left_out"
+	// OffMapConflict: the parts answer listed the file in two parts and the
+	// follow-up did not settle it.
+	OffMapConflict = "conflict"
+	// OffMapNoUnits: the file holds no unit of its own to group.
+	OffMapNoUnits = "no_units"
+	// OffMapFailure: the target has no map of parts at all.
+	OffMapFailure = "map_failure"
+)
+
+// ValidOffMapReason reports one of the closed off-map reasons.
+func ValidOffMapReason(reason string) bool {
+	switch reason {
+	case OffMapLeftOut, OffMapConflict, OffMapNoUnits, OffMapFailure:
+		return true
+	default:
+		return false
+	}
+}
+
+// OffMapFile is one file, or the declarations of a file, that no drawn part
+// holds. File carries what a box would: the file's line and the captions and
+// keys of the declarations listed here.
+type OffMapFile struct {
+	// ID is the file's sealed-graph f* place.
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+	File   File   `json:"file"`
 }
 
 // File is one code file inside a box.
@@ -568,7 +614,8 @@ type Arrow struct {
 	Sentence string `json:"sentence"`
 }
 
-// Boundary is one integration point drawn beside its box.
+// Boundary is one integration point drawn beside its box. BoxID is empty
+// when the boundary's file is off the map; the boundary is still read.
 type Boundary struct {
 	Uses      []DestinationUse `json:"uses,omitempty"`
 	ID        string           `json:"id"`
@@ -1179,6 +1226,9 @@ func Validate(value Atlas) error {
 			target.Boundaries == nil || target.Trace == nil {
 			return fmt.Errorf("atlas: target %q is missing collections", target.ID)
 		}
+		if invalidText(target.MapFailure) {
+			return fmt.Errorf("atlas: target %q has an invalid map failure", target.ID)
+		}
 		boxes := make(map[string]struct{}, len(target.Boxes))
 		members := make(map[string]struct{})
 		for _, box := range target.Boxes {
@@ -1216,6 +1266,26 @@ func Validate(value Atlas) error {
 					if symbol.ID == "" || symbol.Name == "" || invalidText(symbol.Line) || invalidText(symbol.Doc) {
 						return fmt.Errorf("atlas: file %q has an invalid symbol", file.Path)
 					}
+				}
+			}
+		}
+		for _, entry := range target.OffMap {
+			if entry.ID == "" || !ValidOffMapReason(entry.Reason) || entry.File.Path == "" || strings.HasPrefix(entry.File.Path, "/") {
+				return fmt.Errorf("atlas: target %q has an invalid off-map file %q", target.ID, entry.ID)
+			}
+			if (target.MapFailure != "") != (entry.Reason == OffMapFailure) {
+				return fmt.Errorf("atlas: target %q: off-map file %q disagrees with the map failure", target.ID, entry.File.Path)
+			}
+			if invalidText(entry.File.Line) || !validSource(entry.File.Source) || entry.File.Symbols == nil {
+				return fmt.Errorf("atlas: off-map file %q has an invalid line, source or symbols", entry.File.Path)
+			}
+			for _, symbol := range entry.File.Symbols {
+				if _, dup := members[symbol.ID]; dup {
+					return fmt.Errorf("atlas: declaration %q is both on and off the map of target %q", symbol.ID, target.ID)
+				}
+				members[symbol.ID] = struct{}{}
+				if symbol.ID == "" || symbol.Name == "" || invalidText(symbol.Line) || invalidText(symbol.Doc) {
+					return fmt.Errorf("atlas: off-map file %q has an invalid symbol", entry.File.Path)
 				}
 			}
 		}
@@ -1266,7 +1336,7 @@ func Validate(value Atlas) error {
 				return fmt.Errorf("atlas: boundary %q appears twice", boundary.ID)
 			}
 			owned[boundary.ID] = struct{}{}
-			if _, ok := boxes[boundary.BoxID]; !ok {
+			if _, ok := boxes[boundary.BoxID]; !ok && boundary.BoxID != "" {
 				return fmt.Errorf("atlas: boundary %q names unknown box %q", boundary.ID, boundary.BoxID)
 			}
 			if !ValidDirection(boundary.Direction) || !ValidBoundaryKind(boundary.Kind) {

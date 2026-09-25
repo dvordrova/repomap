@@ -145,8 +145,10 @@ type reader struct {
 	nextZone            int
 	nextBoundary        int
 	nextJoint           int
-	boundaryIDs         map[string]string    // stable source identity -> compact boundary ID
-	boxes               map[string]*boxState // box ID -> box
+	boundaryIDs         map[string]string        // stable source identity -> compact boundary ID
+	boxes               map[string]*boxState     // box ID -> box
+	offMap              map[string][]offMapEntry // target -> what no part holds
+	mapFailure          map[string]string        // target -> why it has no map of parts
 	zones               map[string][]*zoneState
 	arrows              map[string][]*arrowState
 	boundaries          map[string]*boundaryState
@@ -1050,69 +1052,47 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		ID: meta.ID, Language: meta.Language, Kind: meta.Kind, Name: meta.Name, Root: meta.Root,
 		SharedCode: append([]string(nil), meta.SharedCode...),
 		Zones:      []atlas.Zone{}, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{},
-		Boundaries: []atlas.Boundary{}, Trace: []string{},
+		Boundaries: []atlas.Boundary{}, Trace: []string{}, OffMap: []atlas.OffMapFile{},
+		MapFailure: r.mapFailure[meta.ID],
 	}
 	if state, ok := r.targets[meta.ID]; ok {
 		target.Line, target.Role = state.line, state.role
 	}
+	zoneOf := map[string]string{}
+	for _, zone := range r.zones[meta.ID] {
+		boxIDs := append([]string{}, zone.boxes...)
+		sort.Slice(boxIDs, func(i, j int) bool { return compactIDLess(boxIDs[i], boxIDs[j]) })
+		target.Zones = append(target.Zones, atlas.Zone{ID: zone.id, Title: zone.title, Line: zone.line, BoxIDs: boxIDs})
+		for _, id := range boxIDs {
+			zoneOf[id] = zone.id
+		}
+	}
+	count := func(fileID string, file atlas.File) {
+		if !countedFiles[fileID] {
+			target.Files++
+			countedFiles[fileID] = true
+		}
+		target.Symbols += len(file.Symbols)
+	}
 	for _, owner := range r.boxesOfTarget(meta.ID) {
 		box := atlas.Box{
 			ID: owner.id, Dir: owner.dir, Title: owner.title, Line: owner.line,
-			ZoneID: owner.zoneID[meta.ID], Side: r.side(owner, meta.ID), Open: owner.open,
+			ZoneID: zoneOf[owner.id], Side: r.side(owner, meta.ID), Open: owner.open,
 			Core: owner.core, ForTests: owner.forTests,
-			Files: []atlas.File{}, Keys: []atlas.Key{},
-		}
-		if owner.symbols != nil {
-			box.MemberIDs = []string{}
+			MemberIDs: []string{}, Files: []atlas.File{}, Keys: []atlas.Key{},
 		}
 		for _, fileID := range owner.files {
-			place := r.places[fileID]
-			if !contains(place.TargetIDs, meta.ID) {
+			if !contains(r.places[fileID].TargetIDs, meta.ID) {
 				continue
 			}
-			line := r.lines[fileID]
-			file := atlas.File{
-				Path: place.Path, Line: line.value, Source: line.source,
-				Open:    r.openFiles[fileID] || !r.budget && !place.File.Generated,
-				Asked:   line.source != atlas.SourceUnused,
-				Symbols: []atlas.Symbol{},
-				Callers: len(place.File.Callers), Callees: len(place.File.Callees),
-			}
-			for _, decl := range place.File.Decls {
-				symbolID := r.symbolID(place.Path, decl.LineNo, decl.Name)
-				if owner.symbols != nil && !owner.symbols[symbolID] {
-					continue
+			file := r.projectFile(fileID, owner.symbols, owner.id)
+			for _, symbol := range file.Symbols {
+				if symbol.ObjectID != "" {
+					box.MemberIDs = append(box.MemberIDs, symbol.ObjectID)
 				}
-				if owner.symbols != nil && decl.ObjectID != "" {
-					box.MemberIDs = append(box.MemberIDs, decl.ObjectID)
-				}
-				symbol := atlas.Symbol{
-					ObjectID: decl.ObjectID,
-					ID:       symbolID, Name: decl.Name, Kind: decl.Kind,
-					Signature: decl.Signature, Doc: decl.Doc, LineNo: decl.LineNo, Column: decl.Column,
-				}
-				if line, ok := r.symbolLine[symbol.ID]; ok {
-					symbol.Line = line.value
-				}
-				if knowledge := r.knowledge[symbol.ID]; knowledge != nil && knowledge.Cells["alias"] != "none" {
-					symbol.Alias = knowledge.Cells["alias"]
-				}
-				// Inside a part the model drew, the part's own choice stands;
-				// source inventory keeps the selection by file.
-				if r.keysDecided[owner.id] {
-					symbol.Key = r.partKeys[symbol.ID]
-				} else {
-					symbol.Key = contains(r.keys[fileID], symbol.ID)
-				}
-				symbol.Role = r.roles[symbol.ID]
-				file.Symbols = append(file.Symbols, symbol)
 			}
 			box.Files = append(box.Files, file)
-			if !countedFiles[fileID] {
-				target.Files++
-				countedFiles[fileID] = true
-			}
-			target.Symbols += len(file.Symbols)
+			count(fileID, file)
 		}
 		box.Keys = modelKeys(box.Files)
 		if len(box.Keys) == 0 {
@@ -1120,10 +1100,14 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		}
 		target.Boxes = append(target.Boxes, box)
 	}
-	for _, zone := range r.zones[meta.ID] {
-		boxIDs := append([]string{}, zone.boxes...)
-		sort.Slice(boxIDs, func(i, j int) bool { return compactIDLess(boxIDs[i], boxIDs[j]) })
-		target.Zones = append(target.Zones, atlas.Zone{ID: zone.id, Title: zone.title, Line: zone.line, BoxIDs: boxIDs})
+	for _, entry := range r.offMap[meta.ID] {
+		symbols := make(map[string]bool, len(entry.symbols))
+		for _, id := range entry.symbols {
+			symbols[id] = true
+		}
+		file := r.projectFile(entry.fileID, symbols, "")
+		target.OffMap = append(target.OffMap, atlas.OffMapFile{ID: entry.fileID, Reason: entry.reason, File: file})
+		count(entry.fileID, file)
 	}
 	for _, arrow := range r.arrows[meta.ID] {
 		if !arrow.drawn {
@@ -1143,13 +1127,12 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		if !contains(state.place.TargetIDs, meta.ID) {
 			continue
 		}
-		boxID := r.boundaryBox(meta.ID, state.place)
-		if boxID == "" {
-			continue
-		}
 		// The target shows only the boxes holding its files; a boundary whose
-		// file this target does not hold has no box here to name.
-		if file, known := r.places[state.place.Parent]; known && !contains(file.TargetIDs, meta.ID) {
+		// file this target does not hold has no box here to name. One in a
+		// file of this target that no part holds names no box and stays.
+		boxID := r.boundaryBox(meta.ID, state.place)
+		file, known := r.places[state.place.Parent]
+		if boxID == "" && !known || known && !contains(file.TargetIDs, meta.ID) {
 			continue
 		}
 		facts := state.place.Boundary
@@ -1182,6 +1165,47 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 	}
 	target.Trace = r.trace(meta.ID)
 	return target
+}
+
+// projectFile is one file as a part or the off-map record shows it: its line
+// and the listed declarations with their captions, roles and keys. Inside a
+// part whose keys were chosen, that choice stands; elsewhere a file keeps the
+// selection by file.
+func (r *reader) projectFile(fileID string, listed map[string]bool, boxID string) atlas.File {
+	place := r.places[fileID]
+	line := r.lines[fileID]
+	file := atlas.File{
+		Path: place.Path, Line: line.value, Source: line.source,
+		Open:    r.openFiles[fileID] || !r.budget && !place.File.Generated,
+		Asked:   line.source != atlas.SourceUnused,
+		Symbols: []atlas.Symbol{},
+		Callers: len(place.File.Callers), Callees: len(place.File.Callees),
+	}
+	for _, decl := range place.File.Decls {
+		symbolID := r.symbolID(place.Path, decl.LineNo, decl.Name)
+		if !listed[symbolID] {
+			continue
+		}
+		symbol := atlas.Symbol{
+			ObjectID: decl.ObjectID,
+			ID:       symbolID, Name: decl.Name, Kind: decl.Kind,
+			Signature: decl.Signature, Doc: decl.Doc, LineNo: decl.LineNo, Column: decl.Column,
+		}
+		if line, ok := r.symbolLine[symbol.ID]; ok {
+			symbol.Line = line.value
+		}
+		if knowledge := r.knowledge[symbol.ID]; knowledge != nil && knowledge.Cells["alias"] != "none" {
+			symbol.Alias = knowledge.Cells["alias"]
+		}
+		if boxID != "" && r.keysDecided[boxID] {
+			symbol.Key = r.partKeys[symbol.ID]
+		} else {
+			symbol.Key = contains(r.keys[fileID], symbol.ID)
+		}
+		symbol.Role = r.roles[symbol.ID]
+		file.Symbols = append(file.Symbols, symbol)
+	}
+	return file
 }
 
 // modelKeys lists the symbols the model marked as key, three per box, the

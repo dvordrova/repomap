@@ -99,29 +99,8 @@ func withEntryCallingOutside(t *testing.T, graph atlas.Graph) atlas.Graph {
 func forkedReading(t *testing.T, slow map[string]bool, delay time.Duration) (Options, *tableProvider) {
 	t.Helper()
 	provider := &tableProvider{
-		refuse: map[string]bool{"svc/core/c.go": true, "svc/db/d.go": true},
-		designFor: func(mode string, input []map[string]any) designProposals {
-			if mode == "areas" {
-				return designProposals{Groups: []designProposal{{Title: "Everything", Purpose: "Holds every part."}}}
-			}
-			result := designProposals{Groups: []designProposal{}}
-			for _, pkg := range input {
-				result.Groups = append(result.Groups, designProposal{Title: pkg["package"].(string), Purpose: "Reads the supplied declarations."})
-			}
-			return result
-		},
-		zoneFor: func(column string, row map[string]any) string {
-			if column == "area" {
-				return "Everything"
-			}
-			// The operations of svc/core/c.go join the API part: their
-			// file belongs to no single part, and a boundary there finds
-			// its part through its declaration.
-			if name, _ := row["name"].(string); strings.HasPrefix(name, "Op") {
-				return "svc/api"
-			}
-			return row["package"].(string)
-		},
+		refuse:  map[string]bool{"svc/core/c.go": true, "svc/db/d.go": true},
+		areaFor: func(map[string]any) string { return "Everything" },
 	}
 	opts := twoTargetOptions(t, withEntryCallingOutside(t, withSymbols(t, twoTargetGraph(t))), provider)
 	opts.Provider = slowProvider{tableProvider: provider, slow: slow, delay: delay}
@@ -160,7 +139,7 @@ func TestConcurrentStagesKeepStepOrder(t *testing.T) {
 		return outcome{tableLatency.ReplaceAllString(string(tables), ""), string(knowledge), string(folded), string(rejected)}
 	}
 	symbolsLast := read(lines.StageSymbols)
-	zonesLast := read("repomap.atlas.design.v4", lines.StageZoneParts, lines.StageZoneAreas)
+	zonesLast := read(designPartsTask, designDescribeTask, lines.StagePlacement)
 	boundariesLast := read(lines.StageBoundaries)
 	for name, other := range map[string]outcome{"zones last": zonesLast, "boundaries last": boundariesLast} {
 		if other.tables != symbolsLast.tables {
@@ -186,7 +165,7 @@ func TestConcurrentStagesKeepStepOrder(t *testing.T) {
 		switch stage {
 		case lines.StagePublish:
 			stage = lines.StageBoundaries
-		case lines.StageZoneParts, lines.StageZoneAreas:
+		case lines.StagePlacement, lines.StageDescribe:
 			stage = lines.StageZones
 		}
 		return slices.Index(order, stage)
@@ -204,7 +183,7 @@ func TestConcurrentStagesKeepStepOrder(t *testing.T) {
 			last = at
 		}
 	}
-	for _, stage := range []string{lines.StageSymbols, lines.StageAPI, lines.StageBoundaries, lines.StageLayers, lines.StageZones, lines.StageZoneParts, lines.StageZoneAreas, lines.StageCore} {
+	for _, stage := range []string{lines.StageSymbols, lines.StageAPI, lines.StageBoundaries, lines.StageLayers, lines.StageZones, lines.StageDescribe, lines.StageAreas, lines.StageCore} {
 		if !seen[stage] {
 			t.Fatalf("the reading printed no %s window; seen %v", stage, seen)
 		}
@@ -282,7 +261,7 @@ func TestSelectedKeysReachLearn(t *testing.T) {
 // A stage that fails stops the stages running beside it, and the reading
 // reports that failure, not the cancellations it caused.
 func TestFailingStageStopsItsNeighboursAndIsReported(t *testing.T) {
-	opts, _ := forkedReading(t, map[string]bool{lines.StageSymbols: true, "repomap.atlas.design.v4": true}, time.Minute)
+	opts, _ := forkedReading(t, map[string]bool{lines.StageSymbols: true, designPartsTask: true}, time.Minute)
 	blocked := filepath.Join(opts.OwnerRunDir, atlas.TablesDir, lines.StageBoundaries+"-r1-w0.prompt.ref.json")
 	if err := os.MkdirAll(blocked, 0o700); err != nil {
 		t.Fatal(err)

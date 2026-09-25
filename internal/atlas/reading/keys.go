@@ -31,7 +31,7 @@ func (r *reader) readKeys(ctx context.Context) error {
 			title[part.id] = part.title
 		}
 		for _, part := range parts {
-			if part.inventory || part.forTests || r.keysDecided[part.id] {
+			if part.forTests || r.keysDecided[part.id] {
 				continue
 			}
 			var candidates []string
@@ -52,7 +52,11 @@ func (r *reader) readKeys(ctx context.Context) error {
 			for _, id := range candidates {
 				rows = append(rows, table.Row{ID: id, Fields: r.keyFields(target.ID, part, id, title)})
 			}
-			shared := []table.Field{{Name: "part", Value: part.title}, {Name: "purpose", Value: part.line}, {Name: "declarations", Value: r.partDeclarations(part)}}
+			shared := []table.Field{{Name: "part", Value: part.title}}
+			if part.line != "" {
+				shared = append(shared, table.Field{Name: "purpose", Value: part.line})
+			}
+			shared = append(shared, table.Field{Name: "declarations", Value: r.partDeclarations(part)})
 			groups = append(groups, rowGroup{shared: shared, rows: rows})
 			order = append(order, asked{part: part, ids: candidates})
 		}

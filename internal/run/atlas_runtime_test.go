@@ -75,22 +75,31 @@ func TestAtlasPathPublishesAReportWithoutTheModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(value.Targets) != 1 || len(value.Targets[0].Boxes) != 2 || value.Targets[0].Files != 2 {
+	// Without a model there is no map of parts: an explicit map failure with
+	// every file off the map, never an invented grouping.
+	if len(value.Targets) != 1 || len(value.Targets[0].Boxes) != 0 || len(value.Targets[0].OffMap) != 2 || value.Targets[0].Files != 2 || value.Targets[0].MapFailure == "" {
 		t.Fatalf("atlas: %+v", value.Targets)
 	}
-	for _, box := range value.Targets[0].Boxes {
-		for _, file := range box.Files {
-			if file.Source != atlas.SourceGiven {
-				t.Errorf("%s: source %q without the model", file.Path, file.Source)
-			}
+	for _, entry := range value.Targets[0].OffMap {
+		if entry.File.Source != atlas.SourceGiven || entry.Reason != atlas.OffMapFailure {
+			t.Errorf("%s: source %q reason %q without the model", entry.File.Path, entry.File.Source, entry.Reason)
 		}
 	}
 	index, err := groupindex.Read(runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(index.Groups) != 2 || len(index.Connections) != 1 {
-		t.Fatalf("projected groups %d connections %d", len(index.Groups), len(index.Connections))
+	if len(index.Groups) != 0 || len(index.OffMap) != 2 || index.MapFailure == "" {
+		t.Fatalf("projected groups %d off-map %d failure %q", len(index.Groups), len(index.OffMap), index.MapFailure)
+	}
+	page, err := os.ReadFile(filepath.Join(runDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"The map of parts is unavailable: ", "Not on the map", "internal/work/work.go", "cmd/app/main.go"} {
+		if !strings.Contains(string(page), want) {
+			t.Errorf("report lacks %q", want)
+		}
 	}
 	data, err := report.ReadRunDir(runDir)
 	if err != nil {
