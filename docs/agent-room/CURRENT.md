@@ -121,6 +121,23 @@ never entered into or read from a repository-wide unqualified map.
   and Not on the map. A parts or areas answer refused whole, including one
   that decodes but draws nothing, is asked once more with the same bytes
   through the llm layer's resample before the map fails.
+- **Map reading on the canvas (2026-09-25):** a part's description stands
+  on its box under its name, a closed area's line on the area's box in the
+  whole lines it leaves; a loose part beside areas is drawn at a peer's size.
+  Looking at an area or a component darkens only the arrows that cross its
+  border. An outside call in the component card is named by its destination
+  (`DeepSeek · Client.Do`). Left for the owner after an owner-proxy review:
+  the number chips on parts and frame borders (explain or remove), areas in
+  the model's pipeline order (GroupsIndex containers carry no position; they
+  sort by value), a part's inside showing a dozen of hundreds of
+  declarations, and the proxy's view that the one-time resample pays to hide
+  over-strict decoders (the owner approved it; one such decoder, an identical
+  repeated row answer, is fixed).
+- **Data ownership:** an extraction belongs to the programs holding one of its
+  files. One no program holds in a code file (tests, fixtures, scripts) or
+  under a tooling directory (`testdata`, `.github`, `.claude`, `.vscode`) is
+  no program's data; a schema or migration no adapter reads keeps the root
+  rule ([EXTRACTORS](../EXTRACTORS.md)).
 - **Known remaining violation:** key selection still sends a declaration's
   full docstring as `author_documentation`, and symbol selection sends
   docstrings too. The trusted-inputs rule covers both; the next change strips

@@ -16,6 +16,10 @@
   area's size (it was about 5 px). Looking at an area or a component darkens
   the arrows that cross its border only; before, zooming into repomap's CLI
   selected it and turned all 25 of its area arrows dark.
+- The component card named DeepSeek's and TypeSafe's calls "Client.Do" twice;
+  a call in a destination's frame reads `DeepSeek · Client.Do`. A component's
+  overview lists its areas before its loose parts. A symbol row whose model
+  wrote the same answer twice was refused; an identical repeat is one answer.
 - An owner-proxy review of the walk (Playwright, 1600x1000) found these; its
   "wait" items are recorded in CURRENT, not done.
 
