@@ -389,7 +389,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const heading=useMemo(()=>visible?overviewHeading(item,screenWidth,measure):null,[screenWidth]);
     const text=useMemo(()=>{
       if(!visible)return null;
-      const communication=item.branch==='communication',inputs=item.branch==='inputs',areaIDs=communication||inputs?[]:children.get(n.id)||[];
+      const communication=item.branch==='communication',inputs=item.branch==='inputs',areaIDs=communication||inputs?[]:
+        // Areas first, then the loose parts beside them.
+        [...(children.get(n.id)||[])].sort((a,b)=>(byID.get(b)?.branch==='area')-(byID.get(a)?.branch==='area'));
       const textHeight=(text,font,lineHeight)=>wrapText(text,contentWidth,font,measure).length*lineHeight;
       const listHeight=areaIDs.length?7+areaIDs.reduce((h,id)=>h+10+textHeight(byID.get(id).overviewTitle||byID.get(id).name||byID.get(id).title,'500 13px system-ui',18),0):0;
       const counts=inventory.parts?t('{0} parts',inventory.parts):'';

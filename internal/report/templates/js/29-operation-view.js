@@ -221,7 +221,10 @@ function rmSystemProjection(nodes, edges) {
     members.add(n.id);rawEdges.filter(function(r){return r.scope==='structure'||r.scope==='component';}).forEach(function(r){
       var outgoing=members.has(r.from),incoming=members.has(r.to);if(outgoing===incoming)return;
       var id=outgoing?r.to:r.from,key=(outgoing?'out:':'in:')+id;if(seen.has(key)||!byID[id])return;seen.add(key);
-      var peerName=(byID[id].dataset.owner!==n.dataset.owner&&owner(byID[id])?owner(byID[id])+' / ':'')+byID[id].dataset.title;
+      // An outside call is named by where it goes: two calls of one client
+      // to two services are not one neighbour.
+      var destination=nodes.find(function(frame){return frame.dataset.branch==='communication'&&(frame.dataset.children||'').split(/\s+/).includes(id);});
+      var peerName=(byID[id].dataset.owner!==n.dataset.owner&&owner(byID[id])?owner(byID[id])+' / ':'')+(destination&&destination.dataset.title!==byID[id].dataset.title?destination.dataset.title+' · ':'')+byID[id].dataset.title;
       var b=rmEl('button','',(outgoing?'→ ':'← ')+peerName);b.type='button';b.addEventListener('click',function(){select(byID[id],true,null,true);});relations.appendChild(b);
     });
     if(relations.childElementCount)card.querySelector('.map-card-intro').appendChild(relations);
