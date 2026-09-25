@@ -436,6 +436,10 @@ func executeLive[T any](
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureResponse, outcome.Issues)
 		return outcome, err
 	}
+	if metrics, err := clampMetrics(completion.Metrics); err != nil {
+		outcome.Metrics = metrics
+		outcome.Issues = append(outcome.Issues, Issue{Kind: IssueMetrics, Err: err})
+	}
 	if gate != nil {
 		gate.completed(epoch)
 	}
@@ -525,10 +529,27 @@ func validateLiveCompletion(completion Completion, limits Limits) error {
 			len(completion.Response), limits.MaxResponseBytes,
 		)
 	}
-	if err := validateMetrics(completion.Metrics); err != nil {
-		return err
-	}
 	return nil
+}
+
+// clampMetrics keeps a live completion's transport measurements usable: a
+// negative count or latency becomes 0 and a missing attempt becomes 1. They
+// change nothing in the report, so an invalid measurement is an issue, never
+// a refusal of the answer. The clamped values pass the cache record checks.
+func clampMetrics(metrics Metrics) (Metrics, error) {
+	err := validateMetrics(metrics)
+	if err == nil {
+		return metrics, nil
+	}
+	for _, count := range []*int{
+		&metrics.InputTokens, &metrics.OutputTokens, &metrics.ReasoningTokens,
+		&metrics.PromptCacheHitTokens, &metrics.PromptCacheMissTokens, &metrics.ProviderResponseBytes,
+	} {
+		*count = max(*count, 0)
+	}
+	metrics.Latency = max(metrics.Latency, 0)
+	metrics.Attempts = max(metrics.Attempts, 1)
+	return metrics, err
 }
 
 func validateMetrics(metrics Metrics) error {

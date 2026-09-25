@@ -310,6 +310,9 @@ const (
 	IssueCacheEvict    IssueKind = "cache_evict"
 	IssueCacheWrite    IssueKind = "cache_write"
 	IssueObserver      IssueKind = "observer"
+	// IssueMetrics: a live completion reported invalid transport
+	// measurements; they were clamped and the answer was kept.
+	IssueMetrics IssueKind = "metrics"
 )
 
 // Issue is non-fatal when ExecuteJSON has an accepted output. Callers can

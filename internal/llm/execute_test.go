@@ -635,6 +635,49 @@ func TestExecuteJSONKeepsARefusedCachedAnswerForALaterDecoder(t *testing.T) {
 	}
 }
 
+// completionEditProvider changes each completion of the test provider.
+type completionEditProvider struct {
+	*testProvider
+	edit func(*Completion)
+}
+
+func (provider completionEditProvider) Complete(ctx context.Context, prepared Prepared) (Completion, error) {
+	completion, err := provider.testProvider.Complete(ctx, prepared)
+	provider.edit(&completion)
+	return completion, err
+}
+
+// Invalid transport measurements change nothing in the report: they are
+// clamped, recorded as an issue, and the answer is kept and cached. A
+// completion without exactly one choice is still refused.
+func TestExecuteJSONKeepsAnAnswerWithInvalidMeasurements(t *testing.T) {
+	root := t.TempDir()
+	provider := completionEditProvider{testProvider: baseTestProvider(), edit: func(completion *Completion) {
+		completion.Metrics.Latency = -time.Millisecond
+		completion.Metrics.InputTokens = -1
+		completion.Metrics.Attempts = 0
+	}}
+	executor := Executor{RootDir: root, Enabled: true}
+	call := baseTestCall("cube-v1", "measured")
+	outcome, err := ExecuteJSON(t.Context(), executor, provider, call)
+	if err != nil || outcome.Value.Value != "ok" || !hasIssue(outcome.Issues, IssueMetrics) {
+		t.Fatalf("outcome = %#v, err = %v", outcome, err)
+	}
+	if outcome.Metrics.Latency != 0 || outcome.Metrics.InputTokens != 0 || outcome.Metrics.Attempts != 1 || outcome.Metrics.OutputTokens != 7 {
+		t.Fatalf("metrics = %#v", outcome.Metrics)
+	}
+	warm, err := ExecuteJSON(t.Context(), executor, provider, call)
+	if err != nil || !warm.Cached || warm.Value.Value != "ok" || provider.completeCalls != 1 {
+		t.Fatalf("warm = %#v, calls = %d, err = %v", warm, provider.completeCalls, err)
+	}
+
+	choiceless := completionEditProvider{testProvider: baseTestProvider(), edit: func(completion *Completion) { completion.ChoiceCount = 0 }}
+	refused, err := ExecuteJSON(t.Context(), Executor{RootDir: t.TempDir(), Enabled: true}, choiceless, call)
+	if err == nil || refused.Value.Value != "" || len(refused.ResponseRejections) != 1 || refused.ResponseRejections[0].Kind != "response_envelope" {
+		t.Fatalf("a completion without a choice was accepted: %#v / %v", refused, err)
+	}
+}
+
 func TestExecuteJSONDisabledCacheBypassesStateReadAndWrite(t *testing.T) {
 	root := t.TempDir()
 	provider := baseTestProvider()
