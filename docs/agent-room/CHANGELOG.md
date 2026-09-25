@@ -27,6 +27,20 @@
 - The guidance classifier starts before the 1.0 s Go planning snapshot:
   it needs only the repository name, now `snapshot.RepositoryName`, the
   derivation BuildContext uses; a run refuses a name mismatch.
+- Also: the projection's declaration-key lookup reads the targets during the
+  atlas (Atlas groups 2.2 → 1.3 s); a TypeScript result is validated with one
+  encoding and three fewer times (report UI lane 7.9 → 6.8 s no-model).
+- `.bin/repomap .` cold, three consecutive runs: 58.2 / 57.2 / 66.2 s to report
+  server ready; the glossary starts at 46–47 s in each (60.0 s before this
+  entry, 70 s total then).
+- Probes on saved requests (not changed, owner's call): the full16 parts
+  request looped to the cap in 3/8 draws; "Propose 8 to 20 parts" stopped
+  all 8 (20–29 parts) but raised the report UI's 6–12 to 13–20;
+  frequency_penalty 0.3 cut loops to 1/8 (a skeptic found my first count
+  missed duplicate titles). The full16 glossary request drew 36–618 terms
+  (6–69 s, 4/6 above 240); telling the model the reader is a programmer who
+  needs no general programming vocabulary drew 66–106 terms (10–16 s, 6/6),
+  against the approved line naming JSON and HTTP as concepts.
 - Measured, not changed: the model's enumerating mode dominates the tail.
   Cold self-runs drew a 168-part design proposal (usual 30–38; zone
   assignment then took 492 Jev requests / 11.5 M tokens, hit Jev's 429 and
