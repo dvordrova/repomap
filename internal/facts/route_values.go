@@ -21,6 +21,9 @@ type routeValueReader struct {
 	sites   map[sourcevalue.Anchor][]routeSourceCall
 	callers map[string][]routeSourceCall
 	owners  map[sourcevalue.Anchor][]string
+	// keys is each expression's encoding, made once: many registrations
+	// reach the same expressions, and a key keeps its expression alive.
+	keys map[*sourcevalue.Value]string
 }
 
 type routeLiteral struct {
@@ -31,7 +34,7 @@ type routeLiteral struct {
 }
 
 func newRouteValueReader(target *targetContext) *routeValueReader {
-	r := &routeValueReader{target: target, sites: make(map[sourcevalue.Anchor][]routeSourceCall), callers: make(map[string][]routeSourceCall), owners: make(map[sourcevalue.Anchor][]string)}
+	r := &routeValueReader{target: target, sites: make(map[sourcevalue.Anchor][]routeSourceCall), callers: make(map[string][]routeSourceCall), owners: make(map[sourcevalue.Anchor][]string), keys: make(map[*sourcevalue.Value]string)}
 	for _, object := range target.input.Index.Objects {
 		if object.Location == nil || (object.Kind != programindex.ObjectFunction && object.Kind != programindex.ObjectMethod && object.Kind != programindex.ObjectLambda) {
 			continue
@@ -75,8 +78,12 @@ func (r *routeValueReader) value(value *sourcevalue.Value, fields []string, bran
 	// The key is the expression alone: re-entering an expression that is
 	// still being read is recursion, and a recursive field access (a node
 	// reading its own `next`) would otherwise grow `fields` without end.
-	encoded, _ := json.Marshal(value)
-	key := string(encoded)
+	key, known := r.keys[value]
+	if !known {
+		encoded, _ := json.Marshal(value)
+		key = string(encoded)
+		r.keys[value] = key
+	}
 	if active[key] {
 		return nil
 	}

@@ -79,7 +79,15 @@ func readRepositoryAtlas(
 			// module root, so internal and pkg packages are its own boxes.
 			root = target.AbsorbedRoot
 		}
-		readIndex := run.programIndex
+		// Reading a saved index validates it; one still in memory is
+		// validated as places reads it.
+		readIndex := func() (programindex.Index, error) {
+			index, err := run.programIndex()
+			if err == nil {
+				err = index.Validate()
+			}
+			return index, err
+		}
 		if run.ProgramIndex == nil {
 			filename := filepath.Join(run.RunDir, programindex.ArtifactFilename)
 			readIndex = func() (programindex.Index, error) { return indexReader.ReadFile(filename) }

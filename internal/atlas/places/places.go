@@ -43,7 +43,8 @@ const (
 // dependency catalog that carries package imports.
 type TargetInput struct {
 	Index programindex.Index
-	// ReadIndex loads one saved index; Index then carries only its Target.
+	// ReadIndex loads one saved, validated index; Index then carries only
+	// its Target.
 	ReadIndex    func() (programindex.Index, error)
 	Dependencies *dependencies.Catalog
 	// Root is the target's root directory, repository-relative.
@@ -129,8 +130,10 @@ func Build(input Input) (atlas.Graph, error) {
 		if err != nil {
 			return atlas.Graph{}, err
 		}
-		if err := target.Index.Validate(); err != nil {
-			return atlas.Graph{}, fmt.Errorf("atlas places: target %s: %w", target.Index.Target.Name, err)
+		if saved.ReadIndex == nil {
+			if err := target.Index.Validate(); err != nil {
+				return atlas.Graph{}, fmt.Errorf("atlas places: target %s: %w", target.Index.Target.Name, err)
+			}
 		}
 		b.collectObjects(target)
 		b.collectEdges(target)
