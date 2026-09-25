@@ -360,34 +360,40 @@ func (c *Collector) requestContext(local []byte) (requestContext, error) {
 }
 
 type termWire struct {
-	Name        *string   `json:"name"`
-	Kind        *string   `json:"kind"`
-	Explanation *string   `json:"explanation"`
-	Rows        []*string `json:"rows"`
+	Name        *string         `json:"name"`
+	Kind        json.RawMessage `json:"kind"`
+	Explanation *string         `json:"explanation"`
+	Rows        []*string       `json:"rows"`
 }
 type validatedTerm struct {
 	candidate Candidate
-	kind      TermKind
 	sources   []Source
 	rows      []string
 }
 
+// AdaptResponse never refuses the main answer. The glossary is optional: when
+// its own local context or reading fails, the owner still decides the answer
+// and only the glossary prose of this exchange is skipped and recorded.
 func (p *provider) AdaptResponse(localContext, request, response []byte) (llm.AdaptedResponse, error) {
+	adapted := llm.AdaptedResponse{Domain: response}
+	skip := func(err error) (llm.AdaptedResponse, error) {
+		adapted.Rejections = []llm.ResponseRejection{{Kind: "glossary_prose_skipped", Count: 1, Reason: err.Error()}}
+		return adapted, nil
+	}
 	ctx, err := p.collector.requestContext(localContext)
 	if err != nil {
-		return llm.AdaptedResponse{}, err
+		return skip(err)
 	}
-	adapted := llm.AdaptedResponse{Domain: response}
 	if ctx.noTerminology {
 		return adapted, nil
 	}
 	raw, err := llm.NormalizeJSON(response)
 	if err != nil {
-		return llm.AdaptedResponse{}, err
+		return skip(err)
 	}
 	result, err := jsonValue(raw)
 	if err != nil {
-		return llm.AdaptedResponse{}, err
+		return skip(err)
 	}
 	result = tableProse(result, ctx.input)
 	if ctx.proseFields != nil {

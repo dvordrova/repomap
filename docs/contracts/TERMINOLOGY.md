@@ -74,9 +74,14 @@ one original explanation. Go unions original spellings and sources and retains
 all variants and request provenance. A reduction window lists at most six sample observations per variant beside `count`, the real number; the catalog entry keeps every source (Freqtrade `20260911-053911` sent 137 windows of 1.9–3.1 MB, 114 million input tokens, when every anchor of a common term rode into every window). Reduction request v6 asks for one
 `{ref, representative}` assignment per input group. The representative is a
 closed original variant ref; equal choices identify one output group. The group
-owning that variant must make the same choice. Missing inputs, conflicting
-assignments, chains and cycles refuse the whole window; no transitive repair or
-local insertion supplies an omitted choice. Identical repeated assignments are
+owning that variant must make the same choice. Assignments are read row by
+row. A missing, malformed, unknown or conflicting choice, and a chain or cycle,
+refuse only the groups involved: that group, every group that chose one of its
+variants, or exactly the groups of the chain or cycle keep their original
+entries, while independent consistent joins in the same window survive. No
+transitive repair or local insertion supplies an omitted choice, and a refused
+group is recorded as partial comparison. A window with no accepted choice is
+refused whole. Identical repeated assignments are
 idempotent and unknown input refs are discarded. Earlier accepted groups stay indivisible and all original
 variants remain visible to later comparisons. It does not classify translation policies.
 Request-local source catalogues encode every distinct path/line once and every
@@ -101,10 +106,13 @@ use the base provider without recursively collecting another glossary. Saved
 
 ## Concepts, not code names
 
-Generation explains domain and concept terms only. Each generated term carries
-a closed concept `kind` (`acronym`, `domain`, `protocol` or `format`); a term
-without a known kind, including the retired `identifier`, refuses that term
-alone. Self-runs had spent most generated output on `identifier` terms that code
+Generation explains domain and concept terms only. The prompt asks each term
+for a concept `kind` (`acronym`, `domain`, `protocol` or `format`). The kind is
+neither stored nor shown, so a missing or other kind does not refuse a term;
+only a term that declares itself the retired `identifier` kind (in any case) is
+dropped alone. A term needs its name, explanation and prose rows; extra members
+are ignored and a padded name is trimmed. A missing or null `terms` member is
+an empty terms list, and a bare top-level array is the terms list. Self-runs had spent most generated output on `identifier` terms that code
 then discarded (121 of 136 and 100 of 182 terms), on a serial 15–30 s step. The
 embedded prompt therefore tells the model not to define names that the code
 declares or reads: functions, methods, types, variables, constants, packages,

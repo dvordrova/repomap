@@ -39,8 +39,10 @@ type Catalog struct {
 
 // Reduce optionally consolidates already accepted domain explanations.
 // A refused window keeps its input entries unchanged and is not tried again.
-// Accepted siblings survive; only real envelope refusals split whole groups.
-// PartialComparison records any refusal or nonshrinking disjoint comparison.
+// Within an accepted window, a group whose choice was refused keeps its
+// original entry while consistent joins survive. Accepted siblings survive;
+// only real envelope refusals split whole groups. PartialComparison records
+// any refusal, of a window or a group, or a nonshrinking disjoint comparison.
 func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, candidates []Candidate, progress ...func(state, detail string)) (Catalog, error) {
 	if err := ctx.Err(); err != nil {
 		return Catalog{}, err
@@ -81,7 +83,7 @@ func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, c
 		var next []Entry
 		acceptedInputs, finishedWindows := 0, 0
 		for len(windows) > 0 {
-			var calls []llm.Call[[]Entry]
+			var calls []llm.Call[reduction]
 			for i := 0; i < len(windows); i++ {
 				call, err := reductionCall(windows[i])
 				if err != nil {
@@ -126,7 +128,10 @@ func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, c
 					}
 				}
 				if outcome.Err == nil {
-					next = append(next, outcome.Outcome.Value...)
+					// Groups whose own choice was refused keep their original
+					// entries beside the window's accepted joins.
+					next = append(next, outcome.Outcome.Value.Entries...)
+					result.PartialComparison = result.PartialComparison || outcome.Outcome.Value.Refused > 0
 					acceptedInputs += len(windows[i])
 					finishedWindows++
 					if outcome.Outcome.CacheKey != "" {
@@ -248,7 +253,7 @@ type reductionRequest struct {
 	Groups     []wireGroup     `json:"groups"`
 }
 
-func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
+func reductionCall(window []Entry) (llm.Call[reduction], error) {
 	groups, variants := make(map[string]Entry), make(map[string]Candidate)
 	owners := make(map[string]string)
 	var request reductionRequest
@@ -290,58 +295,165 @@ func reductionCall(window []Entry) (llm.Call[[]Entry], error) {
 	}
 	user, err := json.Marshal(request)
 	if err != nil {
-		return llm.Call[[]Entry]{}, err
+		return llm.Call[reduction]{}, err
 	}
-	return llm.Call[[]Entry]{
+	order := make([]string, len(request.Groups))
+	for i, group := range request.Groups {
+		order[i] = group.Ref
+	}
+	return llm.Call[reduction]{
 		State:  []byte(`{"stage":"glossary","version":6}`),
 		Prompt: llm.Prompt{System: reducePrompt, User: string(user), ResponseFormatJSON: true},
 		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: glossaryOutputTokens},
-		DecodeValidate: func(raw []byte) ([]Entry, error) {
-			var response struct {
-				Assignments []struct {
-					Ref            string `json:"ref"`
-					Representative string `json:"representative"`
-				} `json:"assignments"`
-			}
-			if err := json.Unmarshal(raw, &response); err != nil {
-				return nil, err
-			}
-			assigned := make(map[string]string)
-			for _, row := range response.Assignments {
-				if _, known := groups[row.Ref]; !known {
-					continue
-				}
-				if _, known := variants[row.Representative]; !known {
-					return nil, fmt.Errorf("glossary: missing representative")
-				}
-				if previous, exists := assigned[row.Ref]; exists && previous != row.Representative {
-					return nil, fmt.Errorf("glossary: conflicting group assignment")
-				}
-				assigned[row.Ref] = row.Representative
-			}
-			if len(assigned) != len(groups) {
-				return nil, fmt.Errorf("glossary: response omits original groups")
-			}
-			joined := make(map[string][]Candidate)
-			for _, group := range request.Groups {
-				representative := assigned[group.Ref]
-				if assigned[owners[representative]] != representative {
-					return nil, fmt.Errorf("glossary: representative is outside its group")
-				}
-				joined[representative] = append(joined[representative], groups[group.Ref].Variants...)
-			}
-			var result []Entry
-			for representative, originals := range joined {
-				entry, err := makeEntry(variants[representative].Explanation, originals)
-				if err != nil {
-					return nil, err
-				}
-				result = append(result, entry)
-			}
-			sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
-			return result, nil
+		DecodeValidate: func(raw []byte) (reduction, error) {
+			return decodeReduction(raw, order, groups, variants, owners)
 		},
 	}, nil
+}
+
+// reduction is one accepted comparison window: its joined entries, the
+// original entries of groups whose choice was refused, and those refusals.
+type reduction struct {
+	Entries    []Entry
+	Refused    int
+	Rejections []llm.ResponseRejection
+}
+
+func (value reduction) ResponseRejections() []llm.ResponseRejection { return value.Rejections }
+
+// decodeReduction reads the assignments row by row. A group whose choice is
+// malformed, unknown, empty, conflicting or omitted keeps its original entry,
+// and so does every group that chose one of its variants. Groups connected by
+// their choices join only when they all chose the same representative and its
+// owning group chose it too; a chain or cycle leaves exactly its own groups
+// separate. Nothing is joined transitively and nothing fills a missing choice.
+// Consistent joins elsewhere in the window survive. A window with no accepted
+// choice at all is refused whole.
+func decodeReduction(raw []byte, order []string, groups map[string]Entry, variants map[string]Candidate, owners map[string]string) (reduction, error) {
+	var response struct {
+		Assignments []json.RawMessage `json:"assignments"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return reduction{}, err
+	}
+	var value reduction
+	journal := make(map[string]int)
+	record := func(kind, reason, sample string) {
+		key := kind + "\x00" + reason
+		index, found := journal[key]
+		if !found {
+			index = len(value.Rejections)
+			journal[key] = index
+			value.Rejections = append(value.Rejections, llm.ResponseRejection{Kind: kind, Reason: reason})
+		}
+		value.Rejections[index].Count++
+		if len(value.Rejections[index].Samples) < 5 {
+			value.Rejections[index].Samples = append(value.Rejections[index].Samples, sample)
+		}
+	}
+	chosen := make(map[string]string)
+	refused := make(map[string]string)
+	for index, row := range response.Assignments {
+		position := fmt.Sprintf("assignments[%d]", index)
+		var fields map[string]json.RawMessage
+		var ref string
+		if json.Unmarshal(row, &fields) != nil || json.Unmarshal(fields["ref"], &ref) != nil {
+			record("glossary_assignment_discarded", "assignment names no group", position)
+			continue
+		}
+		if _, known := groups[ref]; !known {
+			record("glossary_assignment_discarded", "unknown group ref", position)
+			continue
+		}
+		if refused[ref] != "" {
+			continue
+		}
+		var representative string
+		if json.Unmarshal(fields["representative"], &representative) != nil || representative == "" {
+			refused[ref] = "malformed or empty representative"
+		} else if _, known := variants[representative]; !known {
+			refused[ref] = "unknown representative"
+		} else if previous, answered := chosen[ref]; answered && previous != representative {
+			refused[ref] = "conflicting group assignment"
+		} else {
+			chosen[ref] = representative // An identical repeat is one answer.
+			continue
+		}
+		delete(chosen, ref)
+	}
+	for _, ref := range order {
+		if _, answered := chosen[ref]; !answered && refused[ref] == "" {
+			refused[ref] = "group omitted"
+		}
+	}
+	// Components follow each accepted choice to the group owning its variant.
+	parent := make(map[string]string, len(order))
+	var find func(string) string
+	find = func(ref string) string {
+		if parent[ref] == "" || parent[ref] == ref {
+			return ref
+		}
+		parent[ref] = find(parent[ref])
+		return parent[ref]
+	}
+	for _, ref := range order {
+		if representative, ok := chosen[ref]; ok {
+			if left, right := find(ref), find(owners[representative]); left != right {
+				parent[left] = right
+			}
+		}
+	}
+	members := make(map[string][]string)
+	var roots []string
+	for _, ref := range order {
+		root := find(ref)
+		if members[root] == nil {
+			roots = append(roots, root)
+		}
+		members[root] = append(members[root], ref)
+	}
+	accepted, firstReason := 0, ""
+	for _, root := range roots {
+		component := members[root]
+		representative, consistent := chosen[component[0]], true
+		for _, ref := range component {
+			consistent = consistent && refused[ref] == "" && chosen[ref] == representative
+		}
+		if consistent {
+			var originals []Candidate
+			for _, ref := range component {
+				originals = append(originals, groups[ref].Variants...)
+			}
+			entry, err := makeEntry(variants[representative].Explanation, originals)
+			if err != nil {
+				return reduction{}, err
+			}
+			value.Entries = append(value.Entries, entry)
+			accepted++
+			continue
+		}
+		for _, ref := range component {
+			reason := refused[ref]
+			switch {
+			case reason != "":
+			case len(component) > 1 && slices.ContainsFunc(component, func(other string) bool { return refused[other] != "" }):
+				reason = "choice joins a group whose own choice was refused"
+			default:
+				reason = "representative chain or cycle"
+			}
+			record("glossary_group_unjoined", reason, ref)
+			if firstReason == "" {
+				firstReason = reason
+			}
+			value.Entries = append(value.Entries, groups[ref])
+			value.Refused++
+		}
+	}
+	if accepted == 0 {
+		return reduction{}, fmt.Errorf("glossary: no group assignment accepted: %s", firstReason)
+	}
+	sort.Slice(value.Entries, func(i, j int) bool { return value.Entries[i].ID < value.Entries[j].ID })
+	return value, nil
 }
 
 func planReduction(ctx context.Context, provider llm.Provider, entries []Entry) ([][]Entry, error) {

@@ -90,20 +90,44 @@ func generationCall(items []proseSource, code map[string]CodeNameKind) (llm.Call
 			if err != nil {
 				return generationResult{}, err
 			}
-			var envelope struct {
-				Terms []json.RawMessage `json:"terms"`
+			wire, err := decodeTerms(normalized)
+			if err != nil {
+				return generationResult{}, err
 			}
-			if err := json.Unmarshal(normalized, &envelope); err != nil || envelope.Terms == nil {
-				return generationResult{}, fmt.Errorf("glossary: a terms array is required")
-			}
-			terms, accepted, rejections := validateGeneration(items, envelope.Terms, code)
+			terms, accepted, rejections := validateGeneration(items, wire, code)
 			result := generationResult{Terms: terms, Rejections: rejections}
-			if len(envelope.Terms) > 0 && accepted == 0 {
+			if len(wire) > 0 && accepted == 0 {
 				return result, fmt.Errorf("glossary: no supported definitions accepted")
 			}
 			return result, nil
 		},
 	}, nil
+}
+
+// decodeTerms reads the terms list. For optional glossary work "no terms" is
+// a legitimate answer: a missing or null terms member is an empty list, and a
+// bare top-level array is the list itself. Any other shape is refused.
+func decodeTerms(raw []byte) ([]json.RawMessage, error) {
+	var list []json.RawMessage
+	if err := json.Unmarshal(raw, &list); err == nil && list != nil {
+		return list, nil
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &envelope); err != nil || envelope == nil {
+		return nil, fmt.Errorf("glossary: a terms array is required")
+	}
+	terms, present := envelope["terms"]
+	if !present {
+		return []json.RawMessage{}, nil
+	}
+	list = nil
+	if err := json.Unmarshal(terms, &list); err != nil {
+		return nil, fmt.Errorf("glossary: a terms array is required")
+	}
+	if list == nil {
+		list = []json.RawMessage{}
+	}
+	return list, nil
 }
 
 // A definition selects accepted prose, whose source scope remains complete.
@@ -135,22 +159,24 @@ func validateGeneration(items []proseSource, wire []json.RawMessage, code map[st
 	accepted := 0
 	for index, raw := range wire {
 		position := fmt.Sprintf("terms[%d]", index)
+		// Extra members are ignored, and kind is neither stored nor shown, so
+		// it gates nothing except a self-declared retired identifier kind.
 		var term termWire
-		if err := strictJSON(raw, &term); err != nil || term.Name == nil || term.Kind == nil || term.Explanation == nil || term.Rows == nil {
+		if err := json.Unmarshal(raw, &term); err != nil || term.Name == nil || term.Explanation == nil || term.Rows == nil {
 			reject("invalid optional term shape", position)
 			continue
 		}
-		kind := TermKind(*term.Kind)
-		if !validTermKind(kind) {
-			reject("unknown optional term kind", position)
+		var kind string
+		if json.Unmarshal(term.Kind, &kind) == nil && strings.EqualFold(strings.TrimSpace(kind), retiredIdentifierKind) {
+			reject("term declares itself an identifier, not a concept", position)
 			continue
 		}
-		name, explanation := *term.Name, strings.TrimSpace(*term.Explanation)
-		if name == "" || name != strings.TrimSpace(name) || explanation == "" || explanation == "none" {
+		name, explanation := strings.TrimSpace(*term.Name), strings.TrimSpace(*term.Explanation)
+		if name == "" || explanation == "" || explanation == "none" {
 			reject("invalid optional term fields", position)
 			continue
 		}
-		validated := validatedTerm{candidate: Candidate{Name: name, Explanation: explanation}, kind: kind}
+		validated := validatedTerm{candidate: Candidate{Name: name, Explanation: explanation}}
 		seen := make(map[string]bool)
 		for _, ref := range term.Rows {
 			if ref == nil {

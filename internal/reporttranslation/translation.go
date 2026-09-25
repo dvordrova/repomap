@@ -3,6 +3,7 @@
 package reporttranslation
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -27,15 +28,6 @@ const initialWindows = 8
 //go:embed prompt.md
 var translationPrompt string
 
-type modelResponse struct {
-	Translations []responseEntry
-}
-
-type responseEntry struct {
-	Ref  string
-	Text string
-}
-
 type translationWindow []report.DisplayTextEntry
 
 type requestTerm struct {
@@ -58,9 +50,10 @@ type translationRequest struct {
 	Entries []requestEntry `json:"entries"`
 }
 
-// Untranslated names one display text that keeps its source language: after
-// every split its one-text request was still refused, and the executor has
-// journaled that refusal. Reason is that final refusal.
+// Untranslated names one display text that keeps its source language: it was
+// refused again after being re-asked in a smaller request, or its one-text
+// request was still refused after every split. The executor has journaled
+// that refusal. Reason is that final refusal.
 type Untranslated struct {
 	Ref    string
 	Reason string
@@ -68,11 +61,13 @@ type Untranslated struct {
 
 // Translate returns a complete presentation-only translation bound to catalog.
 // The caller decides whether its selected display language needs translation;
-// an empty catalogue needs no provider. Failed windows never become a partial
-// display artifact: a refused window divides until one text remains, and a
-// text refused on its own keeps its source language and is named in the
-// returned list. Exact requests, cache, journals and concurrency belong to
-// the supplied shared executor.
+// an empty catalogue needs no provider. Texts are accepted independently: a
+// text refused or missing in an accepted answer is re-asked once, with the
+// other refused texts of its window, in a smaller request, and keeps its
+// source language if that answer refuses it again. An answer that translates
+// nothing divides until one text remains, and a text refused on its own keeps
+// its source language. Kept texts are named in the returned list. Exact requests,
+// cache, journals and concurrency belong to the supplied shared executor.
 func Translate(
 	ctx context.Context,
 	executor llm.Executor,
@@ -102,6 +97,18 @@ func Translate(
 	if err != nil {
 		return report.DisplayTranslations{}, nil, err
 	}
+	var untranslated []Untranslated
+	keep := func(entry report.DisplayTextEntry, reason string) {
+		result.Entries = append(result.Entries, report.DisplayTranslationEntry{Ref: entry.Ref, Text: entry.Text})
+		untranslated = append(untranslated, Untranslated{Ref: entry.Ref, Reason: reason})
+	}
+	var followUps []translationWindow
+	accept := func(window translationWindow, value windowTranslation) {
+		result.Entries = append(result.Entries, value.Entries...)
+		if retry := value.retry(window); len(retry) > 0 {
+			followUps = append(followUps, retry)
+		}
+	}
 	windowCount := max(initialWindows, executor.BatchConcurrency)
 	if len(windows) < windowCount {
 		var pending []translationWindow
@@ -115,50 +122,35 @@ func Translate(
 				return report.DisplayTranslations{}, nil, err
 			}
 			if cached.Cached {
-				result.Entries = append(result.Entries, cached.Value...)
+				accept(window, cached.Value)
 			} else {
 				pending = append(pending, window)
 			}
 		}
 		windows = parallelWindows(pending, windowCount)
 	}
-	if len(windows) == 0 {
-		return result, nil, result.Validate(catalog)
+	if err := translateWindows(ctx, executor, provider, windows, language, accept, keep); err != nil {
+		return report.DisplayTranslations{}, nil, err
 	}
-	leaves, err := llm.ExecuteAdaptiveJSONEachResults(
-		ctx, executor, provider, windows,
-		func(window translationWindow) (llm.Call[[]report.DisplayTranslationEntry], error) {
-			return translationCall(window, language)
-		},
-		func(window translationWindow) (translationWindow, translationWindow, bool) {
-			if len(window) <= 1 {
-				return nil, nil, false
+	// Texts refused or missing in accepted answers are asked once more, in
+	// requests of only those texts. A text refused in that follow-up answer
+	// keeps its source language; only a follow-up answer that translates
+	// nothing halves, as any window does, before its texts are kept.
+	err = translateWindows(ctx, executor, provider, followUps, language,
+		func(window translationWindow, value windowTranslation) {
+			result.Entries = append(result.Entries, value.Entries...)
+			refused := make(map[string]string, len(value.Refused))
+			for _, entry := range value.Refused {
+				refused[entry.Ref] = entry.Reason
 			}
-			middle := len(window) / 2
-			return window[:middle], window[middle:], true
-		},
-	)
+			for _, entry := range window {
+				if reason, found := refused[entry.Ref]; found {
+					keep(entry, reason)
+				}
+			}
+		}, keep)
 	if err != nil {
-		return report.DisplayTranslations{}, nil, fmt.Errorf("report translation: %w", err)
-	}
-	var untranslated []Untranslated
-	for _, leaf := range leaves {
-		if leaf.Err == nil {
-			result.Entries = append(result.Entries, leaf.Outcome.Value...)
-			continue
-		}
-		// After every split only one complete text can remain in a refused
-		// request. Its final refusal (a missing or invalid translation, an
-		// unusable response, a failed provider call) is already journaled by
-		// the executor; the text keeps its source language instead of costing
-		// the whole report. A failure before any provider answer, or of a
-		// window that could still divide, remains the stage's error.
-		if len(leaf.Item) != 1 || len(leaf.Outcome.ResponseRejections) == 0 {
-			return report.DisplayTranslations{}, nil, fmt.Errorf("report translation: %w", leaf.Err)
-		}
-		entry := leaf.Item[0]
-		result.Entries = append(result.Entries, report.DisplayTranslationEntry{Ref: entry.Ref, Text: entry.Text})
-		untranslated = append(untranslated, Untranslated{Ref: entry.Ref, Reason: leaf.Err.Error()})
+		return report.DisplayTranslations{}, nil, err
 	}
 	// Whole cached windows and new windows may interleave. Restore the original
 	// catalogue order before validating the single complete display artifact.
@@ -172,6 +164,55 @@ func Translate(
 		return report.DisplayTranslations{}, nil, err
 	}
 	return result, untranslated, nil
+}
+
+// translateWindows executes complete windows through the shared adaptive
+// executor. An answer that translates nothing divides until one text
+// remains. After every split only one complete text can remain in a refused
+// request. Its final refusal (a missing or invalid translation, an unusable
+// response, a failed provider call) is already journaled by the executor; the
+// text keeps its source language instead of costing the whole report. A
+// failure before any provider answer, or of a window that could still divide,
+// remains the stage's error.
+func translateWindows(
+	ctx context.Context,
+	executor llm.Executor,
+	provider llm.Provider,
+	windows []translationWindow,
+	language report.DisplayLanguage,
+	accept func(translationWindow, windowTranslation),
+	keep func(report.DisplayTextEntry, string),
+) error {
+	if len(windows) == 0 {
+		return nil
+	}
+	leaves, err := llm.ExecuteAdaptiveJSONEachResults(
+		ctx, executor, provider, windows,
+		func(window translationWindow) (llm.Call[windowTranslation], error) {
+			return translationCall(window, language)
+		},
+		func(window translationWindow) (translationWindow, translationWindow, bool) {
+			if len(window) <= 1 {
+				return nil, nil, false
+			}
+			middle := len(window) / 2
+			return window[:middle], window[middle:], true
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("report translation: %w", err)
+	}
+	for _, leaf := range leaves {
+		if leaf.Err == nil {
+			accept(leaf.Item, leaf.Outcome.Value)
+			continue
+		}
+		if len(leaf.Item) != 1 || len(leaf.Outcome.ResponseRejections) == 0 {
+			return fmt.Errorf("report translation: %w", leaf.Err)
+		}
+		keep(leaf.Item[0], leaf.Err.Error())
+	}
+	return nil
 }
 
 // Plan smaller requests before asking for new translations. UTF-8
@@ -295,7 +336,7 @@ func requestTooLarge(err error) bool {
 func translationCall(
 	window translationWindow,
 	language report.DisplayLanguage,
-) (llm.Call[[]report.DisplayTranslationEntry], error) {
+) (llm.Call[windowTranslation], error) {
 	// Keep catalogue order and definition context in this same request. Term
 	// spellings stay visible; only existing source syntax uses placeholders.
 	request := translationRequest{Entries: make([]requestEntry, len(window))}
@@ -319,9 +360,9 @@ func translationCall(
 	}
 	raw, err := json.Marshal(request)
 	if err != nil {
-		return llm.Call[[]report.DisplayTranslationEntry]{}, err
+		return llm.Call[windowTranslation]{}, err
 	}
-	return llm.Call[[]report.DisplayTranslationEntry]{
+	return llm.Call[windowTranslation]{
 		SplitRejectedResponse: true,
 		SplitHTTP500:          len(window) > 1,
 		State:                 []byte(`{"contract":"repomap.report-display-translation.v9"}`),
@@ -333,111 +374,203 @@ func translationCall(
 			MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit,
 			MaxOutputTokens: llm.DefaultMaxOutputTokens, AttemptTimeout: attemptTimeout,
 		},
-		DecodeValidate: func(raw []byte) ([]report.DisplayTranslationEntry, error) {
-			response, err := decodeTranslationResponse(raw, window)
-			if err != nil {
-				return nil, err
-			}
-			return normalizeTranslations(window, response)
+		DecodeValidate: func(raw []byte) (windowTranslation, error) {
+			return decodeWindowTranslation(raw, window)
 		},
 	}, nil
 }
 
-type wireField struct {
-	name  string
-	value json.RawMessage
+// windowTranslation is one accepted translation answer. Entries passed their
+// own validation; Refused names every other text of the window and why. The
+// texts are independent: one refused text never refuses its neighbours.
+type windowTranslation struct {
+	Entries []report.DisplayTranslationEntry
+	Refused []refusedEntry
 }
 
-func objectFields(raw []byte) ([]wireField, error) {
-	// Keep only the last raw value of each object key before validating its
-	// shape or text. A shadowed value has no translation authority.
-	var values map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &values); err != nil {
-		return nil, err
-	}
-	if values == nil {
-		return nil, fmt.Errorf("report translation: expected JSON object")
-	}
-	names := make([]string, 0, len(values))
-	for name := range values {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	fields := make([]wireField, 0, len(names))
-	for _, name := range names {
-		fields = append(fields, wireField{name, values[name]})
-	}
-	return fields, nil
+type refusedEntry struct {
+	Ref    string
+	Reason string
 }
 
-func decodeTranslationResponse(raw []byte, window translationWindow) (modelResponse, error) {
-	var response modelResponse
-	known := make(map[string]report.DisplayTextEntry, len(window))
+func (value windowTranslation) ResponseRejections() []llm.ResponseRejection {
+	rejections := make([]llm.ResponseRejection, 0, len(value.Refused))
+	for _, refused := range value.Refused {
+		rejections = append(rejections, llm.ResponseRejection{
+			Kind: "translation_entry_refused", Count: 1, Samples: []string{refused.Ref}, Reason: refused.Reason,
+		})
+	}
+	return rejections
+}
+
+// retry lists, in window order, the texts to ask again in a smaller request.
+func (value windowTranslation) retry(window translationWindow) translationWindow {
+	refused := make(map[string]bool, len(value.Refused))
+	for _, entry := range value.Refused {
+		refused[entry.Ref] = true
+	}
+	var texts translationWindow
 	for _, entry := range window {
-		known[entry.Ref] = entry
+		if refused[entry.Ref] {
+			texts = append(texts, entry)
+		}
 	}
-	fields, err := objectFields(raw)
+	return texts
+}
+
+// decodeWindowTranslation accepts every text whose own value is a usable
+// translation. A missing, malformed, twice differently answered or invalid
+// text is refused alone; its neighbours stand. An answer that is not a
+// readable translation shape, or that translates nothing, is refused whole.
+func decodeWindowTranslation(raw []byte, window translationWindow) (windowTranslation, error) {
+	known := make(map[string]bool, len(window))
+	for _, entry := range window {
+		known[entry.Ref] = true
+	}
+	candidates, err := translationCandidates(raw, known)
 	if err != nil {
-		return response, err
+		return windowTranslation{}, err
 	}
-	for _, field := range fields {
-		entry, ok := known[field.name]
-		if !ok {
+	var value windowTranslation
+	for _, entry := range window {
+		text, reason := candidateText(candidates[entry.Ref], entry.Ref)
+		if reason == "" {
+			if err := entry.ValidateTranslation(text); err != nil {
+				reason = err.Error()
+			}
+		}
+		if reason != "" {
+			value.Refused = append(value.Refused, refusedEntry{Ref: entry.Ref, Reason: reason})
 			continue
 		}
-		translation, err := decodeTranslationValue(field.value, entry)
-		if err != nil {
-			return response, err
+		value.Entries = append(value.Entries, report.DisplayTranslationEntry{Ref: entry.Ref, Text: text})
+	}
+	if len(value.Entries) == 0 {
+		if len(value.Refused) == 1 {
+			return windowTranslation{}, errors.New(value.Refused[0].Reason)
 		}
-		response.Translations = append(response.Translations, translation)
+		return windowTranslation{}, fmt.Errorf("report translation: no text translated: %s", value.Refused[0].Reason)
 	}
-	return response, nil
+	return value, nil
 }
 
-func decodeTranslationValue(raw []byte, entry report.DisplayTextEntry) (responseEntry, error) {
-	result := responseEntry{Ref: entry.Ref}
-	var fields map[string]json.RawMessage
-	// Only text is consumed. Echoed input metadata, including terms, has no
-	// bearing on whether that text is a usable translation.
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return result, err
+// translationCandidates finds each window ref's raw values. The requested form
+// is one object keyed by refs. One member wrapping such an object, or a list of
+// {ref, text} objects (including the echoed entries shape), at the root or under
+// one member, carries the same ref identity. Only refs of the window count.
+func translationCandidates(raw []byte, known map[string]bool) (map[string][]json.RawMessage, error) {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) == nil && object != nil {
+		// Decoding a map keeps only the last value of a repeated key; a
+		// shadowed value has no translation authority.
+		if keyed := keyedCandidates(object, known); len(keyed) > 0 {
+			return keyed, nil
+		}
+		names := make([]string, 0, len(object))
+		for name := range object {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		var wrapped map[string][]json.RawMessage
+		for _, name := range names {
+			candidates := wrappedCandidates(object[name], known)
+			if len(candidates) == 0 {
+				continue
+			}
+			if wrapped != nil {
+				return nil, fmt.Errorf("report translation: several members wrap translations")
+			}
+			wrapped = candidates
+		}
+		return wrapped, nil
 	}
-	value, present := fields["text"]
-	if !present {
-		return result, fmt.Errorf("report translation: missing text for %s", entry.Ref)
+	var list []json.RawMessage
+	if json.Unmarshal(raw, &list) == nil && list != nil {
+		return listCandidates(list, known), nil
 	}
-	var text *string
-	if err := json.Unmarshal(value, &text); err != nil || text == nil {
-		return result, fmt.Errorf("report translation: text for %s must be a string", entry.Ref)
-	}
-	result.Text = *text
-	return result, nil
+	return nil, fmt.Errorf("report translation: expected a JSON object keyed by text refs")
 }
 
-func normalizeTranslations(window translationWindow, response modelResponse) ([]report.DisplayTranslationEntry, error) {
-	allowed := make(map[string]report.DisplayTextEntry, len(window))
-	for _, entry := range window {
-		allowed[entry.Ref] = entry
+func keyedCandidates(object map[string]json.RawMessage, known map[string]bool) map[string][]json.RawMessage {
+	candidates := make(map[string][]json.RawMessage)
+	for name, value := range object {
+		if known[name] {
+			candidates[name] = []json.RawMessage{value}
+		}
 	}
-	byRef := make(map[string]report.DisplayTranslationEntry, len(window))
-	for _, translation := range response.Translations {
-		entry, known := allowed[translation.Ref]
-		if !known {
+	return candidates
+}
+
+func wrappedCandidates(raw json.RawMessage, known map[string]bool) map[string][]json.RawMessage {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) == nil && object != nil {
+		return keyedCandidates(object, known)
+	}
+	var list []json.RawMessage
+	if json.Unmarshal(raw, &list) == nil {
+		return listCandidates(list, known)
+	}
+	return nil
+}
+
+// listCandidates reads {ref, text} rows; every row naming a window ref is kept,
+// so a repeated ref must agree with itself to be accepted.
+func listCandidates(list []json.RawMessage, known map[string]bool) map[string][]json.RawMessage {
+	candidates := make(map[string][]json.RawMessage)
+	for _, item := range list {
+		var row map[string]json.RawMessage
+		var ref string
+		if json.Unmarshal(item, &row) != nil || json.Unmarshal(row["ref"], &ref) != nil || !known[ref] {
 			continue
 		}
-		if err := entry.ValidateTranslation(translation.Text); err != nil {
-			return nil, err
-		}
-		value := report.DisplayTranslationEntry{Ref: translation.Ref, Text: translation.Text}
-		byRef[translation.Ref] = value
+		candidates[ref] = append(candidates[ref], item)
 	}
-	translations := make([]report.DisplayTranslationEntry, 0, len(window))
-	for _, entry := range window {
-		value, present := byRef[entry.Ref]
+	return candidates
+}
+
+// candidateText reads one text's translation: a string, or an object whose
+// text member is a string. Only text is consumed; echoed input metadata such
+// as terms has no bearing on whether that text is a usable translation.
+func candidateText(values []json.RawMessage, ref string) (string, string) {
+	if len(values) == 0 {
+		return "", fmt.Sprintf("report translation: missing translation for %s", ref)
+	}
+	text := ""
+	for i, value := range values {
+		one, reason := oneCandidateText(value, ref)
+		if reason != "" {
+			return "", reason
+		}
+		if i > 0 && one != text {
+			return "", fmt.Sprintf("report translation: %s was translated twice differently", ref)
+		}
+		text = one
+	}
+	return text, ""
+}
+
+func oneCandidateText(raw json.RawMessage, ref string) (string, string) {
+	trimmed := bytes.TrimSpace(raw)
+	switch {
+	case len(trimmed) > 0 && trimmed[0] == '"':
+		var text string
+		if json.Unmarshal(trimmed, &text) == nil {
+			return text, ""
+		}
+	case len(trimmed) > 0 && trimmed[0] == '{':
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(trimmed, &fields) != nil {
+			break
+		}
+		value, present := fields["text"]
 		if !present {
-			return nil, fmt.Errorf("report translation: missing translation for %s", entry.Ref)
+			return "", fmt.Sprintf("report translation: missing text for %s", ref)
 		}
-		translations = append(translations, value)
+		var text *string
+		if json.Unmarshal(value, &text) != nil || text == nil {
+			return "", fmt.Sprintf("report translation: text for %s must be a string", ref)
+		}
+		return *text, ""
 	}
-	return translations, nil
+	return "", fmt.Sprintf("report translation: translation for %s must be text or an object with text", ref)
 }
