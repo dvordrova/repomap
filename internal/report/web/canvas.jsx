@@ -84,6 +84,7 @@ function Part({data}) {
   // A loose part's heading is fitted to its box; its description takes the
   // whole lines left under the title and the zoom mark's row.
   const standaloneLines=heading?Math.floor((heading.height-12-heading.title.split('\n').length*16-16)/15):0;
+  const standaloneText=standaloneLines>0;
   if(deep)return <div className={`flow-part flow-part-deep flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''}`}
       style={{width:box.width,height:box.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
@@ -96,7 +97,7 @@ function Part({data}) {
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
     {data.kindLabel&&!heading&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
     <strong data-input-name={data.activation?'':undefined}>{heading?.title||data.title}</strong>
-    {data.description&&(!heading||standaloneLines>0)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines}:undefined}>{heading?data.description.replace(/\n/g,' '):data.description}</div>}
+    {data.description&&(!heading||standaloneText)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines,maxHeight:standaloneLines*15}:undefined}>{heading?data.description.replace(/\n/g,' '):data.description}</div>}
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
     {data.symbols?.length>0&&!data.activation&&<button type="button" className="flow-part-zoom nopan" aria-label={t('Zoom into {0}',data.name||data.title)}
       onClick={event=>{event.stopPropagation();data.zoomInto?.();}}>
@@ -114,11 +115,15 @@ function Area({data}) {
 }
 function AreaSummary({node,item,number,badge,heading,enter,select}){
   const {scale,title}=heading;
+  // A closed area says what it is: its one-line description takes the whole
+  // lines left under its title and above its number.
+  const lines=Math.floor((node.height/scale-12-title.split('\n').length*16-32)/15);
   return <div className="flow-area-summary nopan" data-summary-area={node.id}
     style={{transform:`translate(${node.absolute.x}px,${node.absolute.y}px) scale(${scale})`,transformOrigin:'top left',
       width:node.width/scale,height:node.height/scale}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,false);}}>
     <div className="flow-part flow-overview-card flow-overview-compact"><strong>{title}</strong>
+      {item?.summary&&lines>0&&<p className="flow-description" style={{WebkitLineClamp:lines,maxHeight:lines*15}}>{item.summary}</p>}
       <footer>
         {number?<span data-badge={node.id} className={`flow-number ${badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>badge?.enter(event)} onMouseLeave={()=>badge?.leave()}
           onClick={event=>{event.stopPropagation();badge?.toggle();}}>{number}</span>:null}
