@@ -2,6 +2,7 @@ package llm
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -49,6 +50,16 @@ func TestNormalizeJSONAcceptsOneUnambiguousObjectOrArray(t *testing.T) {
 		"literal thinking tags in JSON": {
 			raw: `{"value":"<think>literal</think>"}`, want: `{"value":"<think>literal</think>"}`,
 		},
+		"thinking then trailing prose": {
+			raw: "<think>draft</think>\n{}\ndone", want: `{}`,
+		},
+		"thinking then fence tagged as another language": {
+			raw: "<think>draft</think>\n```python\n{}\n```", want: `{}`,
+		},
+		"identical second fence": {
+			raw:  "```json\n{\"value\":1}\n```\nThe same again:\n```json\n{ \"value\": 1 }\n```\n",
+			want: `{"value":1}`,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -63,22 +74,130 @@ func TestNormalizeJSONAcceptsOneUnambiguousObjectOrArray(t *testing.T) {
 	}
 }
 
+// Each relaxed form is paired with the nearest answer that stays refused:
+// the relaxation discards or joins only what cannot change a value.
+func TestNormalizeJSONRelaxedFormsKeepTheirRefusals(t *testing.T) {
+	for _, test := range []struct{ name, accepted, want, refused string }{
+		{"crossed closer after the last row",
+			`{"rows":[{"key":"r1"}}]}`, `{"rows":[{"key":"r1"}]}`,
+			// Deleting the stray } gives [{"a":[1,2]}]; closing [ first gives [{"a":[1]},2].
+			`[{"a":[1}, 2]`},
+		{"crossed closer at EOF",
+			`{"rows":[{"key":"r1"}}`, `{"rows":[{"key":"r1"}]}`,
+			// Deleting the closer leaves no valid reading.
+			`{"a":[1},"b":2]`},
+		{"crossed object closer inside an array",
+			`{"a":[1}`, `{"a":[1]}`,
+			// A closer with no opener of its kind still never merges tokens.
+			`[1}2]`},
+		{"crossed array closer inside an object",
+			`{"a":[{"b":1]}`, `{"a":[{"b":1}]}`,
+			`{"a":[{"b":1],"c":2}`},
+		{"prose after the root",
+			"{\"a\":1}\nDone.", `{"a":1}`,
+			// A structural tail could hide a dropped field.
+			`{"a":1}], "b":2}`},
+		{"repeated identical root",
+			"{\"a\":1} {\"a\" : 1}\n", `{"a":1}`,
+			`{"a":1} {"b":2}`},
+		{"bracketed prose before a fence",
+			"Rows for [target]:\n```json\n{\"a\":1}\n```", `{"a":1}`,
+			"{\"first\":1}\n```json\n{\"a\":1}\n```"},
+		{"inline fence",
+			"```json{\"a\":1}```", `{"a":1}`,
+			"```json {\"a\":1} {\"b\":2}```"},
+		{"fence tag other than json",
+			"```jsonc\n{\"a\":1}\n```", `{"a":1}`,
+			"```python\nvalue = {\"a\": 1}\n```"},
+		{"prose after the closing fence",
+			"```json\n{\"a\":1}\n```\nHope this helps.", `{"a":1}`,
+			"```json\n{\"a\":1}\n```\n```json\n{\"a\":2}\n```"},
+		{"prose after a fence that closes an unfinished root",
+			"```json\n{\"a\":[1,2\n```\nDone.", `{"a":[1,2]}`,
+			// The fence may belong to the unfinished string.
+			"```json\n{\"v\":\"a ``` b\"}\n```"},
+		{"repeated complete thinking blocks",
+			"<think>a</think><think>b</think>\n{\"a\":1}", `{"a":1}`,
+			"<think>a</think><think>b\n{\"a\":1}"},
+		{"nested complete thinking blocks",
+			"<think>a<think>b</think>c</think>{\"a\":1}", `{"a":1}`,
+			"<think><think>draft</think>\n{\"a\":1}"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			normalized, err := NormalizeJSON([]byte(test.accepted))
+			if err != nil || compactJSON(t, normalized) != test.want {
+				t.Fatalf("NormalizeJSON(%q) = %q, %v; want %s", test.accepted, normalized, err, test.want)
+			}
+			if normalized, err := NormalizeJSON([]byte(test.refused)); err == nil {
+				t.Fatalf("NormalizeJSON(%q) = %q, want rejection", test.refused, normalized)
+			}
+		})
+	}
+}
+
+// The journaled answers of 2026-09 that were refused for a doubled closer,
+// anonymized to their row keys. In all but one, deleting the closer and closing
+// the inner array before it give the same rows. The operations answer places
+// "terms" inside or beside "result" depending on the reading, so it stays refused.
+func TestNormalizeJSONJournaledDoubledClosers(t *testing.T) {
+	for i, fixture := range []struct {
+		stage, raw string
+		accepted   bool
+	}{
+		{"atlas_operations", `{"result":{"rows":[{"key":"r1","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r2","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r3","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r4","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r5","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r6","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r7","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r8","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r9","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r10","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r11","entry":"w","activation":"w","name":"w","description":"w"},{"key":"r12","entry":"none","activation":"none","name":"none","description":"none"}}],"terms":[]}}`, false},
+		{"atlas_question", `{"rows":[{"key":"r1","relevance":"context","anchors":"a22","why":"w"},{"key":"r2","relevance":"context","anchors":"w","why":"w"},{"key":"r3","relevance":"none","anchors":"none","why":"w"},{"key":"r4","relevance":"none","anchors":"none","why":"w"},{"key":"r5","relevance":"none","anchors":"none","why":"w"},{"key":"r6","relevance":"context","anchors":"a12","why":"w"},{"key":"r7","relevance":"none","anchors":"none","why":"w"},{"key":"r8","relevance":"none","anchors":"none","why":"w"},{"key":"r9","relevance":"none","anchors":"none","why":"w"},{"key":"r10","relevance":"direct","anchors":"w","why":"w"},{"key":"r11","relevance":"direct","anchors":"w","why":"w"},{"key":"r12","relevance":"context","anchors":"a5","why":"w"}}]}`, true},
+		{"atlas_question", `{"rows":[{"key":"r1","relevance":"none","anchors":"none","why":"w"},{"key":"r2","relevance":"none","anchors":"none","why":"w"},{"key":"r3","relevance":"none","anchors":"none","why":"w"},{"key":"r4","relevance":"none","anchors":"none","why":"w"},{"key":"r5","relevance":"none","anchors":"none","why":"w"},{"key":"r6","relevance":"none","anchors":"none","why":"w"}}]}`, true},
+		{"atlas_question", `{"rows":[{"key":"r1","relevance":"none","anchors":"none","why":"w"},{"key":"r2","relevance":"none","anchors":"none","why":"w"},{"key":"r3","relevance":"direct","anchors":"a1","why":"w"},{"key":"r4","relevance":"context","anchors":"a1","why":"w"},{"key":"r5","relevance":"none","anchors":"none","why":"w"},{"key":"r6","relevance":"none","anchors":"none","why":"w"},{"key":"r7","relevance":"direct","anchors":"a1","why":"w"}}]`, true},
+		{"atlas_question", `{"rows":[{"key":"r1","relevance":"context","anchors":"w","why":"w"},{"key":"r2","relevance":"none","anchors":"none","why":"w"},{"key":"r3","relevance":"context","anchors":"w","why":"w"},{"key":"r4","relevance":"context","anchors":"w","why":"w"},{"key":"r5","relevance":"direct","anchors":"w","why":"w"},{"key":"r6","relevance":"direct","anchors":"w","why":"w"}}]}`, true},
+		{"atlas_question", `{"rows":[{"key":"r1","relevance":"direct","anchors":"w","why":"w"},{"key":"r2","relevance":"context","anchors":"w","why":"w"},{"key":"r3","relevance":"none","anchors":"none","why":"w"},{"key":"r4","relevance":"none","anchors":"none","why":"w"},{"key":"r5","relevance":"none","anchors":"none","why":"w"},{"key":"r6","relevance":"direct","anchors":"w","why":"w"},{"key":"r7","relevance":"none","anchors":"none","why":"w"},{"key":"r8","relevance":"none","anchors":"none","why":"w"},{"key":"r9","relevance":"none","anchors":"none","why":"w"},{"key":"r10","relevance":"context","anchors":"w","why":"w"},{"key":"r11","relevance":"direct","anchors":"w","why":"w"},{"key":"r12","relevance":"context","anchors":"w","why":"w"}}]}`, true},
+		{"atlas_question", `{"rows":[{"key":"r1","relevance":"none","anchor":"none","why":"w"},{"key":"r2","relevance":"none","anchor":"none","why":"w"},{"key":"r3","relevance":"none","anchor":"none","why":"w"},{"key":"r4","relevance":"none","anchor":"none","why":"w"},{"key":"r5","relevance":"none","anchor":"none","why":"w"},{"key":"r6","relevance":"none","anchor":"none","why":"w"},{"key":"r7","relevance":"context","anchor":"a4","why":"w"},{"key":"r8","relevance":"none","anchor":"none","why":"w"},{"key":"r9","relevance":"none","anchor":"none","why":"w"},{"key":"r10","relevance":"none","anchor":"none","why":"w"},{"key":"r11","relevance":"none","anchor":"none","why":"w"},{"key":"r12","relevance":"direct","anchor":"a15","why":"w"}}]}`, true},
+		{"atlas_question", `{"rows":[{"key":"r1","relevance":"none","anchor":"none","why":"w"},{"key":"r2","relevance":"none","anchor":"none","why":"w"},{"key":"r3","relevance":"none","anchor":"none","why":"w"},{"key":"r4","relevance":"none","anchor":"none","why":"w"},{"key":"r5","relevance":"none","anchor":"none","why":"w"},{"key":"r6","relevance":"none","anchor":"none","why":"w"},{"key":"r7","relevance":"none","anchor":"none","why":"w"},{"key":"r8","relevance":"none","anchor":"none","why":"w"},{"key":"r9","relevance":"none","anchor":"none","why":"w"},{"key":"r10","relevance":"none","anchor":"none","why":"w"},{"key":"r11","relevance":"none","anchor":"none","why":"w"},{"key":"r12","relevance":"direct","anchor":"a6","why":"w"}}]}`, true},
+		{"atlas_route", `{"rows":[{"key":"r1","order":"w","open_question":"w"}}]}`, true},
+		{"atlas_route", `{"rows":[{"key":"r1","order":"w","summary":"w","open_question":"w"}}]}`, true},
+		{"atlas_route", `{"rows":[{"key":"r1","order":"w","summary":"w","open_question":"w"}}]}`, true},
+		{"atlas_route", `{"rows":[{"key":"r1","order":"w","summary":"w","open_question":"w"}}`, true},
+	} {
+		normalized, err := NormalizeJSON([]byte(fixture.raw))
+		if (err == nil) != fixture.accepted {
+			t.Fatalf("%d %s: accepted=%t (%v), want %t", i, fixture.stage, err == nil, err, fixture.accepted)
+		}
+		if err != nil {
+			continue
+		}
+		// Only the doubled closer goes and the missing closers are appended:
+		// every row survives with its own fields.
+		want := strings.Replace(fixture.raw, "}}", "}", 1)
+		want = strings.TrimSuffix(strings.TrimSuffix(want, "]}"), "]") + "]}"
+		if got := compactJSON(t, normalized); got != compactJSON(t, []byte(want)) {
+			t.Fatalf("%d %s: normalized = %s, want %s", i, fixture.stage, got, want)
+		}
+	}
+}
+
+func compactJSON(t *testing.T, raw []byte) string {
+	t.Helper()
+	var out bytes.Buffer
+	if err := json.Compact(&out, raw); err != nil {
+		return "invalid: " + err.Error()
+	}
+	return out.String()
+}
+
 func TestNormalizeJSONRejectsAmbiguityGarbageAndTruncation(t *testing.T) {
 	tests := map[string]string{
 		"scalar":                       `"value"`,
-		"multiple objects":             `{"first":1} {"second":2}`,
-		"trailing prose":               `{"value":1} done`,
-		"fence trailing prose":         "```json\n{\"value\":1}\n```\ndone",
-		"two fenced values":            "```json\n{}\n```\n```json\n[]\n```",
+		"multiple different objects":   `{"first":1} {"second":2}`,
+		"cut repeated root":            `{"value":1} {"value":1`,
+		"two different fenced values":  "```json\n{}\n```\n```json\n[]\n```",
 		"competing prefix value":       "{\"first\":1}\n```json\n{\"second\":2}\n```",
+		"bracket after fence":          "```json\n{}\n```\nSee [1].",
 		"unclosed thinking with JSON":  "<think>Consider:\n{\"value\":1}",
 		"wrong thinking close":         "<think>Consider [2].<think/>\n{\"value\":1}",
 		"thinking without answer":      "<think>{\"draft\":1}</think>",
-		"nested thinking":              "<think><think>draft</think>\n{\"value\":1}",
-		"repeated thinking":            "<think>first</think><think>second</think>\n{\"value\":1}",
+		"unbalanced nested thinking":   "<think><think>draft</think>\n{\"value\":1}",
 		"thinking then two values":     "<think>draft</think>\n{}\n[]",
-		"thinking then trailing prose": "<think>draft</think>\n{}\ndone",
-		"thinking then non-JSON fence": "<think>draft</think>\n```python\n{}\n```",
+		"thinking then non-JSON fence": "<think>draft</think>\n```python\nprint({})\n```",
+		"incomplete inline fence":      "```json",
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -91,7 +210,7 @@ func TestNormalizeJSONRejectsAmbiguityGarbageAndTruncation(t *testing.T) {
 
 func TestNormalizeJSONBalancesOnlyStructuralBrackets(t *testing.T) {
 	tests := map[string]struct{ raw, want string }{
-		"extra root closer": {`{"value":1}}`, `{"value":1} `},
+		"extra root closer": {`{"value":1}}`, `{"value":1}`},
 		"extra array closer inside object": {
 			`{"result":{"rows":[{"key":"r1","line":"x"}]}],"terms":[]}`,
 			`{"result":{"rows":[{"key":"r1","line":"x"}]} ,"terms":[]}`,
@@ -125,16 +244,27 @@ func TestNormalizeJSONBalancesOnlyStructuralBrackets(t *testing.T) {
 
 func TestNormalizeJSONBracketBalanceCannotInventValues(t *testing.T) {
 	for _, raw := range []string{
-		`{"a":`, `[tru`, `[1e`, `{"a":"unfinished\`,
-		`{"a":[1}`, `{"a":[{"b":1]}`, `{"a":1,`,
+		`{"a":`, `[tru`, `[1e`, `{"a":"unfinished\`, `{"a":1,`,
 		`[1}2]`, `[t}rue]`, `[1}e2]`, `[n}ull]`,
 		`{"a":1 "b":2`, `{"a":1}]} done`, `{}]}[]`,
+		`[{"a":[1}, 2]`, `{"a":[1},"b":2]`,
 	} {
 		t.Run(raw, func(t *testing.T) {
 			if normalized, err := NormalizeJSON([]byte(raw)); err == nil {
 				t.Fatalf("accepted %q as %q", raw, normalized)
 			}
 		})
+	}
+	// Several crossed closers are each deleted when both readings agree. Each
+	// one doubles the readings; past the bound the answer is refused instead
+	// of searched.
+	crossed := func(n int) string { return `{"a":[` + strings.Repeat(`{"b":[1}]},`, n) + `{}]}` }
+	normalized, err := NormalizeJSON([]byte(crossed(3)))
+	if err != nil || compactJSON(t, normalized) != `{"a":[{"b":[1]},{"b":[1]},{"b":[1]},{}]}` {
+		t.Fatalf("three crossed closers = %q, %v", normalized, err)
+	}
+	if normalized, err := NormalizeJSON([]byte(crossed(maxCrossedReadings))); err == nil {
+		t.Fatalf("searched %d crossed closers: %q", maxCrossedReadings, normalized)
 	}
 }
 
