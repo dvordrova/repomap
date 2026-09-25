@@ -505,14 +505,16 @@ An operation or native route exposes Data links only when the existing accepted 
 - Display translation accepts texts independently. Each text's value is
   judged alone: a string, or an object whose `text` is a string; one wrapper
   member or a `{ref, text}` list (including the echoed `entries` shape) keeps
-  the same ref identity, and only the window's refs count. A missing,
-  malformed, twice differently answered or invalid text (placeholder mismatch)
-  is refused alone and journaled; its neighbours are published and the answer
-  is cached. The refused texts of each window are asked once more, in a request
-  of only those texts, and a text refused again keeps its source language.
-  Display translation alone also halves a whole refused response window when
-  an answer translates nothing (unreadable JSON, a bare number, no usable
-  text), per the owner's 2026-09-09 request for automatic recovery. Original
+  the same ref identity, and only the window's refs count. A missing or
+  malformed text, a ref listed twice with different texts, or an invalid text
+  (placeholder mismatch) is refused alone and journaled; its neighbours are
+  published and the answer is cached. A repeated object key still keeps only
+  its last value. The refused texts of each window are asked
+  once more, in a request of only those texts, and a text refused in that
+  answer keeps its source language. Display translation alone also halves a
+  whole refused response window, a follow-up included, when an answer
+  translates nothing (unreadable JSON, a bare number, no usable text), per the
+  owner's 2026-09-09 request for automatic recovery. Original
   entries remain complete; no refused fragments are published or cached as
   accepted answers. The same exact-request split
   memo records this as `response_validation`, not a provider resource limit,

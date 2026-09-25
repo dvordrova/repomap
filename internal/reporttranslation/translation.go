@@ -64,9 +64,9 @@ type Untranslated struct {
 // an empty catalogue needs no provider. Texts are accepted independently: a
 // text refused or missing in an accepted answer is re-asked once, with the
 // other refused texts of its window, in a smaller request, and keeps its
-// source language if it is refused again. An answer that translates nothing
-// divides until one text remains, and a text refused on its own keeps its
-// source language. Kept texts are named in the returned list. Exact requests,
+// source language if that answer refuses it again. An answer that translates
+// nothing divides until one text remains, and a text refused on its own keeps
+// its source language. Kept texts are named in the returned list. Exact requests,
 // cache, journals and concurrency belong to the supplied shared executor.
 func Translate(
 	ctx context.Context,
@@ -133,8 +133,9 @@ func Translate(
 		return report.DisplayTranslations{}, nil, err
 	}
 	// Texts refused or missing in accepted answers are asked once more, in
-	// requests of only those texts. A text refused again keeps its source
-	// language; nothing is asked a third time.
+	// requests of only those texts. A text refused in that follow-up answer
+	// keeps its source language; only a follow-up answer that translates
+	// nothing halves, as any window does, before its texts are kept.
 	err = translateWindows(ctx, executor, provider, followUps, language,
 		func(window translationWindow, value windowTranslation) {
 			result.Entries = append(result.Entries, value.Entries...)

@@ -111,8 +111,8 @@ for a concept `kind` (`acronym`, `domain`, `protocol` or `format`). The kind is
 neither stored nor shown, so a missing or other kind does not refuse a term;
 only a term that declares itself the retired `identifier` kind (in any case) is
 dropped alone. A term needs its name, explanation and prose rows; extra members
-are ignored and a padded name is trimmed. A missing or null `terms` member, or
-a bare terms array, is read as the terms list. Self-runs had spent most generated output on `identifier` terms that code
+are ignored and a padded name is trimmed. A missing or null `terms` member is
+an empty terms list, and a bare top-level array is the terms list. Self-runs had spent most generated output on `identifier` terms that code
 then discarded (121 of 136 and 100 of 182 terms), on a serial 15–30 s step. The
 embedded prompt therefore tells the model not to define names that the code
 declares or reads: functions, methods, types, variables, constants, packages,
