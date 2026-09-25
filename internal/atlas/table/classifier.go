@@ -43,7 +43,7 @@ func Closed(def Definition) bool {
 		return false
 	}
 	for _, column := range def.Columns {
-		if column.Kind != Choice || column.Free != "" || len(column.When) > 0 || column.WhenOptionsFrom != "" {
+		if column.Kind != Choice || column.Free != "" || column.WhenOptionsFrom != "" {
 			return false
 		}
 	}
@@ -334,7 +334,7 @@ func ParseClassifierAnswers(raw []byte) (map[string]ClassifierAnswer, error) {
 func DecodeClassifierAnswers(def Definition, window Window, answers map[string]ClassifierAnswer, minProbability float64) (Result, error) {
 	envelope := struct{ Answers map[string]ClassifierAnswer }{answers}
 	yesAt := max(minProbability, 0.5+ClassifierNoulMargin)
-	result := Result{Answers: make(Answers, len(window.Rows)), independent: true, rowKeys: make([]string, len(window.Rows))}
+	result := Result{Answers: make(Answers, len(window.Rows)), rowKeys: make([]string, len(window.Rows))}
 	accepted := 0
 	for i, row := range window.Rows {
 		result.rowKeys[i] = row.ID

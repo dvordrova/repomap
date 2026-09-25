@@ -9,7 +9,7 @@ import (
 
 func closedDefinition() Definition {
 	return Definition{
-		Stage: "atlas_closed", Contract: "repomap.atlas.closed.v1", System: "choose a part", Independent: true,
+		Stage: "atlas_closed", Contract: "repomap.atlas.closed.v1", System: "choose a part",
 		Columns: []Column{{Name: "part", Kind: Choice, OptionsFrom: "part_options"}},
 	}
 }
@@ -83,7 +83,7 @@ func TestOnlyUnconditionalChoicesAreClosed(t *testing.T) {
 // has an explicit way to say that nothing applies: a decision model that
 // must pick a listed value otherwise answers yes to every row.
 func TestOptionalColumnsCanBeLeftEmpty(t *testing.T) {
-	def := Definition{Stage: "atlas_optional", Contract: "c", System: "s", Independent: true, Columns: []Column{
+	def := Definition{Stage: "atlas_optional", Contract: "c", System: "s", Columns: []Column{
 		{Name: "explains", Kind: Choice, Options: []string{"yes"}, Optional: true},
 		{Name: "talks", Kind: Choice, Options: []string{"db", "sdk"}, Optional: true},
 	}}
@@ -106,7 +106,7 @@ func TestOptionalColumnsCanBeLeftEmpty(t *testing.T) {
 
 // A yes/no cutoff decides every row: yes at the cutoff or above, no below.
 func TestYesAtIsACutoffNotAnUncertainBand(t *testing.T) {
-	def := Definition{Stage: "atlas_cutoff", Contract: "c", System: "s", Independent: true, YesAt: 0.8,
+	def := Definition{Stage: "atlas_cutoff", Contract: "c", System: "s", YesAt: 0.8,
 		Columns: []Column{{Name: "key_symbol", Kind: Choice, Options: []string{"yes", "no"}}}}
 	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
 	raw := []byte(`{"answers":{"s1|key_symbol":{"type":"choice","choice":"yes","probabilities":{"yes":0.85,"no":0.15}},"s2|key_symbol":{"type":"choice","choice":"yes","probabilities":{"yes":0.7,"no":0.3}}}}`)

@@ -222,28 +222,6 @@ func TestDecodeAcceptsEveryKeyOnce(t *testing.T) {
 	}
 }
 
-func TestDecodeRefusesBadWindows(t *testing.T) {
-	def := testDefinition()
-	windows, _ := Windows(def, 1, testRows())
-	cases := map[string]string{
-		"missing key":    `{"rows":[{"key":"f1","line":"a","box":"here"}]}`,
-		"duplicate key":  `{"rows":[{"key":"f1","line":"a","box":"here"},{"key":"f1","line":"b","box":"here"}]}`,
-		"unknown key":    `{"rows":[{"key":"f1","line":"a","box":"here"},{"key":"f9","line":"b","box":"here"}]}`,
-		"extra cell":     `{"rows":[{"key":"f1","line":"a","box":"here","why":"x"},{"key":"f2","line":"b","box":"here"}]}`,
-		"missing cell":   `{"rows":[{"key":"f1","line":"a"},{"key":"f2","line":"b","box":"here"}]}`,
-		"bad choice":     `{"rows":[{"key":"f1","line":"a","box":"pkg/z"},{"key":"f2","line":"b","box":"here"}]}`,
-		"empty text":     `{"rows":[{"key":"f1","line":"   ","box":"here"},{"key":"f2","line":"b","box":"here"}]}`,
-		"empty free":     `{"rows":[{"key":"f1","line":"a","box":"new: "},{"key":"f2","line":"b","box":"here"}]}`,
-		"extra envelope": `{"rows":[{"key":"f1","line":"a","box":"here"},{"key":"f2","line":"b","box":"here"}],"notes":"x"}`,
-		"not json":       `rows: f1 a here`,
-	}
-	for name, raw := range cases {
-		if _, err := Decode(def, windows[0], []byte(raw)); err == nil {
-			t.Errorf("%s was accepted", name)
-		}
-	}
-}
-
 func TestChoiceAcceptsAUniquePrefix(t *testing.T) {
 	def := testDefinition()
 	def.Columns[1] = Column{Name: "box", Kind: Choice, Options: []string{"Utilities and configuration", "Utilities and logging", "Storage"}}
@@ -531,7 +509,7 @@ func TestSequenceEmptyOrNullIsAnEmptySelection(t *testing.T) {
 	if got, err := normalizeCell(column, nil, row, "c9 c2"); err != nil || got != "c2" {
 		t.Fatalf("a known ref beside an unknown one was lost: %q / %v", got, err)
 	}
-	def := Definition{Stage: "atlas_symbols", Independent: true, Columns: []Column{column}}
+	def := Definition{Stage: "atlas_symbols", Columns: []Column{column}}
 	result, err := DecodeResult(def, Window{Rows: []Row{row}}, []byte(`{"rows":[{"key":"s1","outbound":null}]}`))
 	if err != nil || result.Answers[0] == nil || result.Answers[0]["outbound"] != "" {
 		t.Fatalf("null selection refused the row: %+v / %v", result, err)
@@ -565,7 +543,7 @@ func TestOptionsFromReadsTheWindowContextWhenTheRowHasNoList(t *testing.T) {
 		t.Fatalf("the row's own list did not shadow the context: %q / %v", got, err)
 	}
 	address := Column{Name: "address", Kind: Choice, OptionsFrom: "address_options", WhenOptionsFrom: "address_options"}
-	def := Definition{Stage: "atlas_boundaries", Independent: true, Columns: []Column{column, address}}
+	def := Definition{Stage: "atlas_boundaries", Columns: []Column{column, address}}
 	window := Window{Context: context, Rows: []Row{bare, {ID: "b2", Fields: []Field{{Name: "address_options", Value: []string{"unknown", "a1"}}}}}}
 	result, err := DecodeResult(def, window, []byte(`{"rows":[{"key":"b1","destination":"d1"},{"key":"b2","destination":"d1","address":"a1"}]}`))
 	if err != nil || len(result.Rejections) != 0 {

@@ -241,7 +241,6 @@ func answerCall(def table.Definition, window answerWindow) (llm.Call[table.Resul
 	}
 	// Questions share source bytes, but each answer has its own allowed refs
 	// and completeness. A refused neighbour cannot invalidate its answer.
-	def.Independent = true
 	return llm.Call[table.Result]{State: call.State, Prompt: call.Prompt, Limits: call.Limits,
 		DecodeValidate: func(raw []byte) (table.Result, error) {
 			result, err := table.DecodeResult(def, window.table, raw)

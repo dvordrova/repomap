@@ -7,7 +7,7 @@ import (
 )
 
 func TestIndependentRowsKeepValidNeighbours(t *testing.T) {
-	def := Definition{Stage: "atlas_operations", Independent: true, Columns: []Column{
+	def := Definition{Stage: "atlas_operations", Columns: []Column{
 		{Name: "entry", Kind: Choice, OptionsFrom: "entry_options"},
 	}}
 	window := Window{Rows: []Row{
@@ -38,11 +38,6 @@ func TestIndependentRowsKeepValidNeighbours(t *testing.T) {
 			if !found {
 				t.Fatal("refused row has no specific reason")
 			}
-			coupled := def
-			coupled.Independent = false
-			if _, err := DecodeResult(coupled, window, raw); err == nil {
-				t.Fatal("coupled table accepted an incomplete response")
-			}
 		})
 	}
 	// A model that repeats the same answer for a row gave one answer.
@@ -62,21 +57,15 @@ func TestIndependentRowsKeepValidNeighbours(t *testing.T) {
 
 func TestIndependentRowsIgnoreAdditionalFields(t *testing.T) {
 	def := testDefinition()
-	def.Independent = true
 	window := Window{Rows: testRows()[:1]}
 	result, err := DecodeResult(def, window, []byte(`{"additional":{"anything":true},"rows":[{"key":"f1","line":"Reads input.","box":"here","additional":[1,2]}]}`))
 	if err != nil || len(result.Rejections) != 0 || result.Answers[0]["line"] != "Reads input." || len(result.Answers[0]) != 2 {
 		t.Fatalf("extra fields changed an independent answer: %+v / %v", result, err)
 	}
-	def.Independent = false
-	result, err = DecodeResult(def, window, []byte(`{"rows":[{"key":"f1","line":"Reads input.","box":"here"}]}`))
-	if err != nil || result.AcceptedRowKeys() != nil {
-		t.Fatal("coupled result narrowed its original whole-response metadata")
-	}
 }
 
 func TestIndependentRowsRequireTheirArtifactIDs(t *testing.T) {
-	def := Definition{Stage: "atlas_answer", Independent: true, Columns: []Column{
+	def := Definition{Stage: "atlas_answer", Columns: []Column{
 		{Name: "entry", Kind: Choice, OptionsFrom: "entry_options"},
 	}}
 	one := Window{Rows: []Row{{ID: "only", Fields: []Field{{Name: "entry_options", Value: []string{"self", "none"}}}}}}
@@ -90,46 +79,8 @@ func TestIndependentRowsRequireTheirArtifactIDs(t *testing.T) {
 	}
 }
 
-func TestIndependentEmptyLabelFallsBackToItsOwnDescription(t *testing.T) {
-	def := Definition{Stage: "atlas_operations", Independent: true, Columns: []Column{
-		{Name: "entry", Kind: Choice, Options: []string{"self", "none"}},
-		{Name: "name", Kind: Text, MaxRunes: 20, When: map[string]string{"entry": "self"}, EmptyFrom: "description"},
-		{Name: "description", Kind: Text, MaxRunes: 180, When: map[string]string{"entry": "self"}},
-	}}
-	window := Window{Rows: []Row{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}}}
-	raw := []byte(`{"rows":[
-		{"key":"a","entry":"self","name":null,"description":"Runs periodic event aggregation batches until context cancellation. Emits status events."},
-		{"key":"b","entry":"self","description":"Handles incoming WebSocket test-launcher events, starting or stopping tests."},
-		{"key":"c","entry":"self","name":"Send batches","description":"Runs periodic event sending batches."},
-		{"key":"d","entry":"self","name":"","description":""}]}`)
-	result, err := DecodeResult(def, window, raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := result.Answers[0]; got["name"] != "Runs periodic event…" || got["name_from"] != "description" {
-		t.Fatalf("null label did not take the first sentence of its description: %+v", got)
-	}
-	if got := result.Answers[1]; got["name"] != "Handles incoming…" || got["name_from"] != "description" {
-		t.Fatalf("missing label did not take its description: %+v", got)
-	}
-	if got := result.Answers[2]; got["name"] != "Send batches" || got["name_from"] != "" {
-		t.Fatalf("a written label was replaced: %+v", got)
-	}
-	if result.Answers[3] != nil || len(result.Rejections) != 1 || !strings.Contains(result.Rejections[0].Reason, "is empty") {
-		t.Fatalf("an empty description invented a label: %+v / %+v", result.Answers[3], result.Rejections)
-	}
-	loose := Definition{Stage: "atlas_operations", Independent: true, Columns: []Column{
-		{Name: "name", Kind: Text, MaxRunes: 20, EmptyFrom: "description"},
-		{Name: "description", Kind: Prose},
-	}}
-	result, err = DecodeResult(loose, Window{Rows: []Row{{ID: "a"}}}, []byte(`{"rows":[{"key":"a","name":null,"description":"   "}]}`))
-	if err == nil || result.Answers[0] != nil || !strings.Contains(err.Error(), "is empty") {
-		t.Fatalf("blank prose became a label: %+v / %v", result, err)
-	}
-}
-
 func TestIndependentMissingChoiceTakesItsDeclaredNoDecisionValue(t *testing.T) {
-	def := Definition{Stage: "atlas_symbols", Independent: true, Columns: []Column{
+	def := Definition{Stage: "atlas_symbols", Columns: []Column{
 		{Name: "key_symbol", Kind: Choice, Options: []string{"yes", "no"}},
 		{Name: "activation", Kind: Choice, Options: []string{"none", "unassessed", "request"}, Missing: "unassessed"},
 	}}

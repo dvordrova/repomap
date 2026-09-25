@@ -23,7 +23,7 @@ const RoleAccess = "access"
 // source.
 func Layers() table.Definition {
 	return table.Definition{
-		Stage: StageLayers, Contract: "repomap.atlas.layers.v1", System: layersPrompt, Independent: true,
+		Stage: StageLayers, Contract: "repomap.atlas.layers.v1", System: layersPrompt,
 		Columns: []table.Column{{Name: "role", Kind: table.Choice, Options: LayerRoles, Note: "what this declaration does with what passes through it, read from its source"}},
 	}
 }

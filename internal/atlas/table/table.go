@@ -1,8 +1,7 @@
 // Package table is the one request shape the atlas asks the model with: a
 // keyed table. Rows go in with keys the code assigned; the same keys come
-// back with short cells. Independent rows are accepted or rejected separately;
-// coupled tables require a complete valid window. Nothing here knows what a
-// directory or a file is.
+// back with short cells. Every row is accepted or rejected separately from
+// its neighbours. Nothing here knows what a directory or a file is.
 package table
 
 import (
@@ -64,28 +63,11 @@ type Column struct {
 	// EmptyValue is an owner-defined spelling for absent prose. It stays in
 	// the response contract but does not become text for the optional glossary.
 	EmptyValue string `json:"empty_value,omitempty"`
-	// When limits this cell to a previously validated choice in the same row.
-	// Inactive cells have no authority and are not required or retained.
-	When map[string]string `json:"when,omitempty"`
-	// EmptyFrom names another text cell of the same row whose first sentence
-	// stands in when this required text cell comes back empty, null or
-	// missing; the answer records <name>_from with the source cell. It is a
-	// decoder rule, not part of the request or the memo state: an operation
-	// label taken from the model's own description keeps the row's accepted
-	// decision instead of refusing the whole row.
-	EmptyFrom string `json:"-"`
 	// Missing is the value a closed choice takes when the model omits the
 	// cell or sends null: a choice that already means "no decision", such as
 	// no. A decoder rule, not part of the request or the memo state;
 	// a written choice is still validated as before.
 	Missing string `json:"-"`
-	// Unasked is the value a closed choice takes when the cell was never
-	// asked because its WhenOptionsFrom field advertises no choices, so a
-	// branch conditioned on it can still follow: an operation without
-	// registered names is a label operation and its name cell stays
-	// required. Empty leaves an unasked cell without a value, as a file's
-	// box that may not move. A decoder rule like Missing.
-	Unasked string `json:"-"`
 	// Optional lets the model leave the cell out or send null: the row then
 	// has no value for it, which is the answer "not this". A written choice
 	// is still validated. A decoder rule like Missing.
@@ -118,9 +100,6 @@ type Definition struct {
 	// encoding for isolated readings. Zero uses DefaultInputBytes as a packing
 	// target and keeps an oversized row whole in its own request.
 	MaxInputBytes int
-	// Independent validates each row separately from its neighbours.
-	// The prompt must restrict each answer to that row and its context.
-	Independent bool
 	// Memoize reuses independent description rows through entity knowledge.
 	Memoize bool
 	// ContextAfterRows keeps repeated evidence ahead of changing context in
@@ -312,9 +291,6 @@ func Request(def Definition, window Window) ([]byte, error) {
 		if column.EmptyValue != "" {
 			spec["empty_value"] = column.EmptyValue
 		}
-		if len(column.When) != 0 {
-			spec["when"] = column.When
-		}
 		if column.WhenOptionsFrom != "" {
 			spec["when_options_nonempty"] = column.WhenOptionsFrom
 		}
@@ -387,69 +363,6 @@ type Answers []Answer
 func Decode(def Definition, window Window, raw []byte) (Answers, error) {
 	result, err := DecodeResult(def, window, raw)
 	return result.Answers, err
-}
-
-func decodeWindow(def Definition, window Window, raw []byte) (Answers, error) {
-	normalized, err := llm.NormalizeJSON(raw)
-	if err != nil {
-		return nil, err
-	}
-	var envelope struct {
-		Rows []map[string]json.RawMessage `json:"rows"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(normalized))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&envelope); err != nil {
-		return nil, fmt.Errorf("table %s: response is not {\"rows\": [...]}: %w", def.Stage, err)
-	}
-	if len(envelope.Rows) != len(window.Rows) {
-		return nil, fmt.Errorf("table %s: %d rows answered, %d asked", def.Stage, len(envelope.Rows), len(window.Rows))
-	}
-	answers := make(Answers, len(window.Rows))
-	byKey, err := rowIndexes(window.Rows)
-	if err != nil {
-		return nil, fmt.Errorf("table %s: %w", def.Stage, err)
-	}
-	seen := make(map[string]struct{}, len(window.Rows))
-	for _, cells := range envelope.Rows {
-		keyRaw, ok := cells["key"]
-		if !ok {
-			return nil, fmt.Errorf("table %s: a row has no key", def.Stage)
-		}
-		var key string
-		if err := json.Unmarshal(keyRaw, &key); err != nil {
-			return nil, fmt.Errorf("table %s: a row key is not a string", def.Stage)
-		}
-		index, ok := byKey[key]
-		if !ok {
-			return nil, fmt.Errorf("table %s: key %q was not asked", def.Stage, key)
-		}
-		if _, dup := seen[key]; dup {
-			return nil, fmt.Errorf("table %s: key %q answered twice", def.Stage, key)
-		}
-		seen[key] = struct{}{}
-		if len(cells) != len(def.Columns)+1 {
-			return nil, fmt.Errorf("table %s: row %s has %d cells, %d columns asked", def.Stage, key, len(cells)-1, len(def.Columns))
-		}
-		answer := make(Answer, len(def.Columns))
-		for _, column := range def.Columns {
-			cellRaw, ok := cells[column.Name]
-			if !ok {
-				return nil, fmt.Errorf("table %s: row %s has no %q cell", def.Stage, key, column.Name)
-			}
-			var cell string
-			if err := json.Unmarshal(cellRaw, &cell); err != nil {
-				return nil, fmt.Errorf("table %s: row %s cell %q is not a string", def.Stage, key, column.Name)
-			}
-			value, err := normalizeCell(column, window.Context, window.Rows[index], cell)
-			if err != nil {
-				return nil, fmt.Errorf("table %s: row %s: %w", def.Stage, key, err)
-			}
-			answer[column.Name] = value
-		}
-		answers[index] = answer
-	}
-	return answers, nil
 }
 
 func rowIndexes(rows []Row) (map[string]int, error) {

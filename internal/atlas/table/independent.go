@@ -18,21 +18,17 @@ type RowRejection struct {
 }
 
 // Result retains accepted cells at their original request positions. Refused
-// independent rows have nil cells; the exact response can still be cached and
+// rows have nil cells; the exact response can still be cached and
 // revalidated for its accepted neighbours.
 type Result struct {
-	Answers     Answers        `json:"answers"`
-	Rejections  []RowRejection `json:"rejections,omitempty"`
-	independent bool
-	rowKeys     []string
+	Answers    Answers        `json:"answers"`
+	Rejections []RowRejection `json:"rejections,omitempty"`
+	rowKeys    []string
 }
 
 // AcceptedRowKeys limits optional response metadata to rows whose required
 // cells were accepted. An empty, non-nil slice accepts no row metadata.
 func (result Result) AcceptedRowKeys() []string {
-	if !result.independent {
-		return nil
-	}
 	keys := make([]string, 0, len(result.Answers))
 	for i, answer := range result.Answers {
 		if answer != nil {
@@ -50,14 +46,10 @@ func (result Result) ResponseRejections() []llm.ResponseRejection {
 	return rejections
 }
 
-// DecodeResult keeps coupled decisions atomic and validates independent rows
-// one by one. Extra envelope and cell fields have no role in an independent
-// answer; a missing or invalid required cell refuses only its own row.
+// DecodeResult validates rows one by one. Extra envelope and cell fields have
+// no role in an answer; a missing or invalid required cell refuses only its
+// own row.
 func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
-	if !def.Independent {
-		answers, err := decodeWindow(def, window, raw)
-		return Result{Answers: answers}, err
-	}
 	normalized, err := llm.NormalizeJSON(raw)
 	if err != nil {
 		return Result{}, err
@@ -72,7 +64,7 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("table %s: %w", def.Stage, err)
 	}
-	result := Result{Answers: make(Answers, len(window.Rows)), independent: true, rowKeys: make([]string, len(window.Rows))}
+	result := Result{Answers: make(Answers, len(window.Rows)), rowKeys: make([]string, len(window.Rows))}
 	for i, row := range window.Rows {
 		result.rowKeys[i] = row.ID
 	}
@@ -127,30 +119,9 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 
 func decodeIndependentCells(def Definition, context []Field, row Row, cells map[string]json.RawMessage) (Answer, error) {
 	answer := make(Answer, len(def.Columns))
-	processed := make(map[string]bool, len(def.Columns))
-	var deferred []Column
 	for _, column := range def.Columns {
-		active := true
-		for name, expected := range column.When {
-			value, known := answer[name]
-			if !processed[name] {
-				return nil, fmt.Errorf("cell %q depends on unvalidated %q", column.Name, name)
-			}
-			// An earlier inactive cell cannot activate a dependent branch.
-			active = active && known && value == expected
-		}
-		processed[column.Name] = true
-		if !active {
-			continue
-		}
 		if column.WhenOptionsFrom != "" && len(optionsFrom(context, row, column.WhenOptionsFrom)) == 0 {
-			// Empty choices have no decision to request or validate. A cell
-			// that was never asked still has one reading when the column
-			// names it: an operation without registered names is labelled,
-			// so its name cell stays required through the same branch.
-			if column.Unasked != "" {
-				answer[column.Name] = column.Unasked
-			}
+			// Empty choices have no decision to request or validate.
 			continue
 		}
 		raw, found := cells[column.Name]
@@ -171,10 +142,6 @@ func decodeIndependentCells(def Definition, context []Field, row Row, cells map[
 			}
 		}
 		if !found {
-			if column.EmptyFrom != "" {
-				deferred = append(deferred, column)
-				continue
-			}
 			return nil, fmt.Errorf("missing %q cell", column.Name)
 		}
 		var cell string
@@ -183,25 +150,9 @@ func decodeIndependentCells(def Definition, context []Field, row Row, cells map[
 		}
 		value, err := normalizeCell(column, context, row, cell)
 		if err != nil {
-			if column.EmptyFrom != "" && strings.TrimSpace(cell) == "" {
-				deferred = append(deferred, column)
-				continue
-			}
 			return nil, err
 		}
 		answer[column.Name] = value
-	}
-	// A provider that fills every schema key returns null for a label the
-	// model skipped; the model's own description of the same row is the
-	// nearest honest label. Nothing is invented: an empty source still
-	// refuses the row.
-	for _, column := range deferred {
-		source := answer[column.EmptyFrom]
-		if source == "" {
-			return nil, fmt.Errorf("cell %q is empty", column.Name)
-		}
-		answer[column.Name] = LabelFromProse(source, column.MaxRunes)
-		answer[column.Name+"_from"] = column.EmptyFrom
 	}
 	return answer, nil
 }

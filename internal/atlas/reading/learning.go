@@ -1139,7 +1139,7 @@ func (r *reader) selectLearning(ctx context.Context) error {
 	// completing its decision, and the cut menu would carry a rationale
 	// written for the full one. The refusal names the count; the intent's
 	// candidates stay inspectable as unavailable and the plan says partial.
-	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.select.v4", System: learningSelectPrompt, Independent: true,
+	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.select.v4", System: learningSelectPrompt,
 		Window: len(intents), Columns: []table.Column{
 			{Name: "questions", Kind: table.Sequence, OptionsFrom: "candidate_options", LimitFrom: "limit"},
 			{Name: "reason", Kind: table.Text, MaxRunes: 600},

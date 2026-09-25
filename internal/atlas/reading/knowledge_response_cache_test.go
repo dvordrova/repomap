@@ -68,7 +68,7 @@ func TestKnowledgeParsesSharedAdjunctOnceAndAcceptsOnlyValidatedRows(t *testing.
 	executor.Observer = llm.ObserverFunc(func(event llm.Event) error { events = append(events, event); return nil })
 	adapter := &parsedRowAdapter{Provider: base}
 	reader := &reader{opts: Options{Executor: executor, Provider: adapter}, responseTables: make(map[string]rememberedTable)}
-	def := table.Definition{Stage: "atlas_files", Independent: true, Columns: []table.Column{{Name: "line", Kind: table.Text}}}
+	def := table.Definition{Stage: "atlas_files", Columns: []table.Column{{Name: "line", Kind: table.Text}}}
 	window := table.Window{Rows: []table.Row{{ID: "current-source"}}}
 	for _, key := range []string{"r1", "r3", "r4", "r2", "r1"} {
 		_, found, err := reader.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: key})
@@ -93,7 +93,7 @@ func TestKnowledgeParsesSharedAdjunctOnceAndAcceptsOnlyValidatedRows(t *testing.
 func TestKnowledgeMemoCollectsOnlyAcceptedRowFromOriginalLocalContext(t *testing.T) {
 	base := &replacementProvider{response: []byte(`{"rows":[{"key":"a","line":"Alpha is unrelated."},{"key":"b","line":"Beta is the accepted concept."},{"key":"bad","line":42}]}`)}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
-	def := table.Definition{Stage: "atlas_files", Contract: "local-context-test", System: "Describe each original source.", Independent: true, Columns: []table.Column{{Name: "line", Kind: table.Prose}}}
+	def := table.Definition{Stage: "atlas_files", Contract: "local-context-test", System: "Describe each original source.", Columns: []table.Column{{Name: "line", Kind: table.Prose}}}
 	rows := []table.Row{
 		{ID: "a", Fields: []table.Field{{Name: "path", Value: "a.py"}, {Name: "line", Value: 3}}},
 		{ID: "b", Fields: []table.Field{{Name: "path", Value: "b.py"}, {Name: "line", Value: 9}}},

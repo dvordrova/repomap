@@ -19,7 +19,7 @@ func SymbolSelection(types bool) table.Definition {
 		// with DeepSeek on 32; at 0.6 Jev was right on 28. Both models mark
 		// helpers as keys; the judges agreed with 4 of 10 shared yes rows.
 		Classifier: true, YesAt: 0.8,
-		System: symbolSelectionPrompt, Independent: true, Memoize: true,
+		System: symbolSelectionPrompt, Memoize: true,
 		Columns: []table.Column{
 			{Name: "key_symbol", Kind: table.Choice, Options: []string{"yes", "no"}, Note: "a declaration a newcomer should look at first"},
 		},
