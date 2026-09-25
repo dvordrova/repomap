@@ -648,6 +648,11 @@ func TestIdenticalRepeatedAreaIsDrawnOnce(t *testing.T) {
 	if len(shared.names) != 0 || !slices.ContainsFunc(shared.notes, func(note string) bool { return strings.HasPrefix(note, "p2 is in two areas") }) {
 		t.Fatalf("a part in two different areas: %+v", shared)
 	}
+	// Two names over the same parts are two answers, never a first-wins pick.
+	sameParts := areas(`{"areas":[{"name":"Core","parts":["p1","p2"]},{"name":"Infra","parts":["p2","p1"]},{"name":"Edge","parts":["p3","p4"]}]}`)
+	if !slices.Equal(sameParts.names, []string{"Edge"}) || slices.ContainsFunc(sameParts.notes, func(note string) bool { return strings.Contains(note, "repeats") }) {
+		t.Fatalf("two names over the same parts: %+v", sameParts)
+	}
 	sameName := areas(`{"areas":[{"name":"Core","parts":["p1","p2","p3"]},{"name":"Core","parts":["p3","p4"]}]}`)
 	if !slices.Equal(sameName.names, []string{"Core"}) || !slices.Equal(sameName.parts[0], []string{"p1", "p2"}) {
 		t.Fatalf("one name over different parts: %+v", sameName)
@@ -788,7 +793,9 @@ func TestTooLargePartsRequestIsAskedInWindows(t *testing.T) {
 }
 
 // cutProvider cuts the answers of one design task at the output-token cap,
-// the way the provider reports a looping answer.
+// the way the provider reports a looping answer. The cut answer still
+// carries a complete, well-formed body, so accepting what was written before
+// the cut would draw it.
 type cutProvider struct {
 	*tableProvider
 	task string
@@ -801,17 +808,12 @@ func (provider *cutProvider) Complete(ctx context.Context, prepared llm.Prepared
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
 	}
-	if request.Task == provider.task {
-		provider.mu.Lock()
-		if provider.designRequests == nil {
-			provider.designRequests = map[string]int{}
-		}
-		provider.designRequests[request.Task]++
-		provider.mu.Unlock()
-		return llm.Completion{FinishReason: llm.FinishLength, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}},
-			llm.NewResourceLimitError(llm.ResourceLimitError{Stage: lines.StageZones, Kind: llm.ResourceLimitOutputTokens, FinishReason: "length"})
+	completion, err := provider.tableProvider.Complete(ctx, prepared)
+	if err != nil || request.Task != provider.task {
+		return completion, err
 	}
-	return provider.tableProvider.Complete(ctx, prepared)
+	completion.FinishReason = llm.FinishLength
+	return completion, llm.NewResourceLimitError(llm.ResourceLimitError{Stage: lines.StageZones, Kind: llm.ResourceLimitOutputTokens, FinishReason: "length"})
 }
 
 // A parts or areas answer cut at the output-token cap is an ordinary refusal

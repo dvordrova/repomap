@@ -67,7 +67,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   binds exact prepared bytes, provider state and all request limits; it stores
   no child boundaries or answers. A later run rebuilds children through the
   current owner and validates their ordinary cached or live responses. A cached
-  whole-parent answer/replay takes precedence. A semantic refusal creates this
+  whole-parent answer or replay that the current decoder accepts takes
+  precedence. A semantic refusal creates this
   memo only for an owner that opts into `SplitRejectedResponse` (display
   translation). NoCache bypasses it and cache clear removes it. Existing run journals
   are not migrated into split memos.
@@ -157,8 +158,9 @@ of its own. An areas answer follows the same rules at part level: a part in
 two areas or in none stands alone, and an area given twice with the same name
 and the same parts is drawn once. A refused answer, including one cut at the
 output-token cap, is the window's refusal: it is not asked again, not
-accepted in part and not cached. Only a provider refusal of the request's
-input size splits a parts window.
+accepted in part and not cached. Only an input too large for the provider,
+before sending or by its refusal of the input or context size, splits a parts
+window.
 
 Validation preserves unambiguous formatting variants before checking meaning.
 Table choices with an advertised free-text tag normalize whitespace around its
