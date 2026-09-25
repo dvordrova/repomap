@@ -155,9 +155,11 @@ map[string]int] struct`, `[T interface{~int | ~string}] interface`, and
 `[T storefixture.Labeled[int]] []T` with the constraint's package path
 shortened. Its fields and struct tags never enter that text; before this, the
 form began at the first space, inside the parameters, and leaked every field
-and tag. A struct tag inside a constraint is skipped as one quoted string, so
-a `]` in its text does not end the list (`[T interface{~struct{Key string
-"split:\"]\""}}] struct`). A generic function's signature keeps its parameters
+and tag. The header is written from go/types, not parsed back out of a
+printed type: the type parameters with their constraints (consecutive ones
+with one constraint share it, `[Item, Value any]`), then `struct`,
+`interface`, the defined type, or `= T` for an alias, with packages named as
+the code names them. A generic function's signature keeps its parameters
 (`func[T any](items []T) T`). The cumulative Go repository's
 `internal/storefixture/generic_types.go` asserts both. Equivalents: TypeScript
 class headers and function signatures keep their parameters; a generic type

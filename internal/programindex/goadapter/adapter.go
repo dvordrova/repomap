@@ -295,7 +295,7 @@ func (projection *goProjection) projectObjects() error {
 		projection.typeLocations[declaration.ID] = location
 		if err := projection.addObject(programindex.ObjectInput{
 			SourceRef: declaration.ID, Kind: programindex.ObjectType, Name: declaration.Name,
-			Signature:  typeSignature(declaration.Signature),
+			Signature:  declaration.Signature,
 			Visibility: visibility(declaration.Exported), OwnerRef: packageRef, ContainerRef: packageRef,
 			Location: location, EndLine: declaration.EndLine,
 		}); err != nil {

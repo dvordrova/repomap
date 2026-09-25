@@ -216,9 +216,10 @@
   equivalent. Open: a Python `type Pair[T] = …` statement is not indexed at all.
 - New fixture files `go/internal/storefixture/generic_types.go` and
   `python/src/fixture_app/generic_types.py`; both inventories renumbered.
-- Review follow-ups at integration: the Go bracket scan skips a quoted struct
-  tag, so `split:"]"` inside a constraint no longer ends the list (the new
-  `Keyed` expectation failed without the skip); a TypeScript generic alias is
+- Review follow-ups at integration: the Go type header is written from go/types
+  (`typeHeader` at capture) instead of a bracket scanner over the printed
+  type; a no-model `cmd/repomap` run gave the same 1,007 type signatures as the
+  scanner. A TypeScript generic alias is
   written from its source parameters, `Keyed<K extends string, V = number>`
   where the compiler rendered `Keyed<K, V>` (the expectation failed without
   it).

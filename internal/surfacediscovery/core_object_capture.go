@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"go/types"
 	"sort"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/gocoreobject"
 )
@@ -245,7 +246,7 @@ func (a *analyzer) captureCoreObjectFile(
 				}
 				input.Types = append(input.Types, gocoreobject.TypeDeclaration{
 					Kind: coreObjectTypeKind(object), Package: packagePath, Name: object.Name(),
-					Signature: types.ObjectString(object, packageQualifier),
+					Signature: typeHeader(object),
 					Exported:  object.Exported(), Location: location, EndLine: a.location(typeSpec.End()).Line,
 				})
 				if _, ok := typeSpec.Type.(*ast.StructType); ok {
@@ -416,4 +417,48 @@ func (a *analyzer) coreObjectLocation(position token.Pos) (gocoreobject.Location
 	return gocoreobject.Location{
 		Path: location.Path, Line: location.Line, Column: location.Column,
 	}, nil
+}
+
+// typeHeader is what a named type is, not its members: its type parameters
+// with their constraints, then struct, interface, or the type it is defined
+// as ("= T" for an alias). Fields and methods are declarations of their own.
+// Packages are named as the code names them.
+func typeHeader(object *types.TypeName) string {
+	qualifier := func(pkg *types.Package) string { return pkg.Name() }
+	var parameters *types.TypeParamList
+	var header string
+	switch typ := object.Type().(type) {
+	case *types.Alias:
+		parameters, header = typ.TypeParams(), "= "+types.TypeString(typ.Rhs(), qualifier)
+	case *types.Named:
+		parameters = typ.TypeParams()
+		switch typ.Underlying().(type) {
+		case *types.Struct:
+			header = "struct"
+		case *types.Interface:
+			header = "interface"
+		default:
+			header = types.TypeString(typ.Underlying(), qualifier)
+		}
+	default:
+		header = types.TypeString(typ, qualifier)
+	}
+	if parameters.Len() == 0 {
+		return header
+	}
+	// Consecutive parameters with one constraint share it, as Go writes them.
+	var list strings.Builder
+	for i := 0; i < parameters.Len(); i++ {
+		parameter := parameters.At(i)
+		constraint := types.TypeString(parameter.Constraint(), qualifier)
+		if i > 0 {
+			list.WriteString(", ")
+		}
+		list.WriteString(parameter.Obj().Name())
+		if i+1 < parameters.Len() && types.TypeString(parameters.At(i+1).Constraint(), qualifier) == constraint {
+			continue
+		}
+		list.WriteString(" " + constraint)
+	}
+	return "[" + list.String() + "] " + header
 }

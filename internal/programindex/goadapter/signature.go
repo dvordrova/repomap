@@ -37,50 +37,6 @@ func shortSignature(signature string) string {
 	return out.String()
 }
 
-// typeSignature keeps what a named type is, not its members: fields and
-// interface methods are objects of their own. "type pkg.User struct{...}"
-// becomes "struct"; "type pkg.Status string" becomes "string". A generic
-// type keeps its whole type-parameter list, whose constraints may hold
-// spaces and brackets of their own: "type pkg.Page[K comparable, V
-// map[string]int] struct{...}" becomes "[K comparable, V map[string]int] struct".
-func typeSignature(signature string) string {
-	rest := strings.TrimPrefix(signature, "type ")
-	end := strings.IndexAny(rest, "[ ")
-	if end < 0 {
-		return shortSignature(signature)
-	}
-	parameters := ""
-	if rest[end] == '[' {
-		depth := 0
-		for i := end; i < len(rest); i++ {
-			if rest[i] == '"' {
-				// A struct tag inside a constraint may hold brackets.
-				if quoted, err := strconv.QuotedPrefix(rest[i:]); err == nil {
-					i += len(quoted) - 1
-				}
-				continue
-			}
-			if rest[i] == '[' {
-				depth++
-			} else if rest[i] == ']' {
-				if depth--; depth == 0 {
-					parameters = shortSignature(rest[end:i+1]) + " "
-					end = i + 1
-					break
-				}
-			}
-		}
-	}
-	rest = strings.TrimPrefix(rest[end:], " ")
-	switch {
-	case strings.HasPrefix(rest, "struct{"):
-		return parameters + "struct"
-	case strings.HasPrefix(rest, "interface{"):
-		return parameters + "interface"
-	}
-	return parameters + shortSignature(rest)
-}
-
 // tagAliases reads a struct tag's format names: `json:"count,omitempty"
 // db:"count"` names the field count in json and db. Options after the comma
 // and the "-" exclusion are not names.
