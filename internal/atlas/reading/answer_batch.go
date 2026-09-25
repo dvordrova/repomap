@@ -156,10 +156,6 @@ func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, ou
 	if err != nil {
 		return err
 	}
-	files := []struct {
-		name string
-		data []byte
-	}{{"prompt.md", []byte(def.System)}, {"input.json", window.table.Request}, {"result.json", result}}
 	r.questionKey = ""
 	defer func() { r.questionKey = "" }()
 	// Question-keyed references all point to the same immutable complete bytes.
@@ -170,19 +166,14 @@ func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, ou
 	}
 	for _, key := range keys {
 		r.questionKey = key
-		for _, file := range files {
-			// The complete normalized result lives once beside the shared input;
-			// each question already retains its own restored answer and row origin.
-			if key != "" && file.name == "result.json" {
-				continue
-			}
-			if len(file.data) > 0 {
-				if err := r.writeWindowFile(window.table, file.name, file.data); err != nil {
-					return err
-				}
+		// The complete normalized result lives once beside the shared input;
+		// each question already retains its own restored answer and row origin.
+		if key == "" {
+			if err := r.writeWindowFile(window.table, "result.json", result); err != nil {
+				return err
 			}
 		}
-		if err := r.writeWindowExchange(window.table, outcome.Request, outcome.Response, failure != nil); err != nil {
+		if err := r.writeWindowExchange(window.table, []byte(def.System), window.table.Request, outcome.Request, outcome.Response, failure != nil); err != nil {
 			return err
 		}
 	}

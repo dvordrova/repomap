@@ -740,14 +740,6 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	use := r.use(def.Stage)
 	use.Rows += len(answers)
 	use.Windows += len(windows)
-	for _, window := range windows {
-		if err := r.writeWindowFile(window, "prompt.md", []byte(def.System)); err != nil {
-			return nil, err
-		}
-		if err := r.writeWindowFile(window, "input.json", window.Request); err != nil {
-			return nil, err
-		}
-	}
 	offsets := make([]int, len(windows))
 	offset := 0
 	for i, window := range windows {
@@ -756,6 +748,9 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	}
 	if r.dry {
 		for i, window := range windows {
+			if err := r.writeWindowExchange(window, []byte(def.System), window.Request, nil, nil, false); err != nil {
+				return nil, err
+			}
 			for j := range window.Rows {
 				answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven}
 			}
@@ -815,7 +810,9 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	results := llm.ExecuteJSONEach(ctx, executor, provider, calls)
 	for i, window := range windows {
 		result := results[i]
-		if err := r.writeWindowExchange(window, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+		// The prompt and input follow the exchange: a refused window's
+		// payloads are all the run's own.
+		if err := r.writeWindowExchange(window, []byte(def.System), window.Request, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
 			return nil, err
 		}
 		if result.Err == nil {
@@ -966,43 +963,43 @@ func (r *reader) windowFileName(window table.Window, suffix string) string {
 	return fmt.Sprintf("%s-r%d-w%d.%s", prefix, window.Round, window.Index, suffix)
 }
 
+// writeWindowFile writes one run-local file of a window: its normalized
+// result or a payload ref.
 func (r *reader) writeWindowFile(window table.Window, suffix string, data []byte) error {
-	return r.saveWindowFile(window, suffix, data, false)
-}
-
-// writeWindowExchange references the exact request and response of one
-// window's model exchange. A refused answer's bytes belong to no accepted
-// cache record: they are saved in this run, beside its journal, where cache
-// clear leaves them and no later run reads them.
-func (r *reader) writeWindowExchange(window table.Window, request, response []byte, refused bool) error {
-	for _, item := range []struct {
-		suffix string
-		data   []byte
-	}{{"request.json", request}, {"response.json", response}} {
-		if len(item.data) > 0 {
-			if err := r.saveWindowFile(window, item.suffix, item.data, refused); err != nil {
-				return err
-			}
-		}
+	name := filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir, r.windowFileName(window, suffix))
+	if err := os.WriteFile(name, data, 0o600); err != nil {
+		return fmt.Errorf("atlas reading: write %s: %w", filepath.Base(name), err)
 	}
 	return nil
 }
 
-func (r *reader) saveWindowFile(window table.Window, suffix string, data []byte, inRun bool) error {
-	if suffix != "result.json" {
-		cacheRoot := r.opts.Executor.RootDir
-		if cacheRoot == "" {
-			cacheRoot = filepath.Dir(r.opts.OwnerRunDir)
+// writeWindowExchange references every payload of one window's model
+// exchange: its prompt, its table input, the exact request and the response;
+// an absent one is nil. An accepted answer's payloads are linked from the
+// shared store beside its cache record's. A refused answer's payloads belong
+// to no accepted record: they are saved in this run, beside its journal, where
+// cache clear leaves them and no later run reads them.
+func (r *reader) writeWindowExchange(window table.Window, prompt, input, request, response []byte, refused bool) error {
+	cacheRoot := r.opts.Executor.RootDir
+	if cacheRoot == "" {
+		cacheRoot = filepath.Dir(r.opts.OwnerRunDir)
+	}
+	save := func(raw []byte) (string, error) { return llm.SavePayload(cacheRoot, raw) }
+	if refused {
+		save = func(raw []byte) (string, error) { return llm.SaveRunPayload(r.opts.OwnerRunDir, raw) }
+	}
+	tablesDir, err := filepath.Abs(filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir))
+	if err != nil {
+		return err
+	}
+	for _, item := range []struct {
+		name string
+		data []byte
+	}{{"prompt", prompt}, {"input", input}, {"request", request}, {"response", response}} {
+		if len(item.data) == 0 {
+			continue
 		}
-		save := func(raw []byte) (string, error) { return llm.SavePayload(cacheRoot, raw) }
-		if inRun {
-			save = func(raw []byte) (string, error) { return llm.SaveRunPayload(r.opts.OwnerRunDir, raw) }
-		}
-		filename, err := save(data)
-		if err != nil {
-			return err
-		}
-		tablesDir, err := filepath.Abs(filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir))
+		filename, err := save(item.data)
 		if err != nil {
 			return err
 		}
@@ -1010,17 +1007,15 @@ func (r *reader) saveWindowFile(window table.Window, suffix string, data []byte,
 		if err != nil {
 			return err
 		}
-		data, err = json.Marshal(struct {
+		ref, err := json.Marshal(struct {
 			File string `json:"file"`
 		}{filepath.ToSlash(relative)})
 		if err != nil {
 			return err
 		}
-		suffix = strings.TrimSuffix(suffix, filepath.Ext(suffix)) + ".ref.json"
-	}
-	name := filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir, r.windowFileName(window, suffix))
-	if err := os.WriteFile(name, data, 0o600); err != nil {
-		return fmt.Errorf("atlas reading: write %s: %w", filepath.Base(name), err)
+		if err := r.writeWindowFile(window, item.name+".ref.json", ref); err != nil {
+			return err
+		}
 	}
 	return nil
 }

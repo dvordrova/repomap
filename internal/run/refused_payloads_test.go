@@ -83,32 +83,56 @@ func TestRefusedAnswerStaysInItsRunAndOutOfTheCache(t *testing.T) {
 	if len(owned) == 0 {
 		t.Fatal("no accepted answer reached the cache")
 	}
+	// refusedPayloads reads every payload a run links for its refused
+	// exchange: the journal's request and response, and the window's prompt,
+	// input, request and response. All of them are the run's own.
+	refusedPayloads := func(run string) map[string][]byte {
+		t.Helper()
+		bodies := make(map[string][]byte)
+		kinds := make(map[string]bool)
+		for _, link := range exchangeLinks(t, run) {
+			if !link.refused {
+				continue
+			}
+			kinds[link.kind+" "+link.label] = true
+			if !strings.HasPrefix(link.path, run+string(filepath.Separator)) {
+				t.Errorf("%s links the refused %s outside its run: %s", link.from, link.label, link.path)
+			}
+			body, err := os.ReadFile(link.path)
+			if err != nil {
+				t.Fatalf("%s: refused %s is unreadable: %v", link.from, link.label, err)
+			}
+			if want := map[string][]byte{"request": refusedRequest, "response": provider.answer}[link.label]; want != nil && !bytes.Equal(body, want) {
+				t.Errorf("%s links a refused %s other than the exchanged bytes", link.from, link.label)
+			}
+			bodies[link.from+" "+link.label] = body
+		}
+		if len(kinds) != 6 {
+			t.Fatalf("%s: the refused exchange must be linked by its journal (request, response) and its table (prompt, input, request, response): %v", filepath.Base(run), kinds)
+		}
+		return bodies
+	}
+	coldRefused := refusedPayloads(cold)
+	// The store holds only what accepted answers need: each payload in it is
+	// an accepted record's, or linked by an accepted exchange of the run.
+	// Nothing in it belongs only to the refused exchange.
+	acceptedLinks := make(map[string]bool)
+	for _, link := range exchangeLinks(t, cold) {
+		if !link.refused {
+			acceptedLinks[link.path] = true
+		}
+	}
 	stored, err := os.ReadDir(filepath.Join(cache, "payloads"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range stored {
+		if name := entry.Name(); !owned[name] && !acceptedLinks[filepath.Join(cache, "payloads", name)] {
+			t.Errorf("cache payload store holds %s, which no accepted answer owns", name)
+		}
 		if name := entry.Name(); strings.HasPrefix(name, contentName(refusedRequest)) || strings.HasPrefix(name, contentName(provider.answer)) {
 			t.Errorf("cache payload store holds %s, which only the refused answer owns", name)
 		}
-	}
-	// Every exchange body the run links from the cache belongs to an
-	// accepted record; the refused exchange's bodies are the run's own.
-	refusedLinks := make(map[string]bool)
-	for _, link := range exchangeLinks(t, cold) {
-		if link.refused {
-			refusedLinks[link.kind+" "+link.label] = true
-		}
-		inCache := strings.HasPrefix(link.path, cache+string(filepath.Separator))
-		if inCache && !owned[filepath.Base(link.path)] {
-			t.Errorf("%s links %s from the cache, but no accepted record owns it", link.from, filepath.Base(link.path))
-		}
-		if link.refused && !strings.HasPrefix(link.path, cold+string(filepath.Separator)) {
-			t.Errorf("%s links the refused %s outside its run: %s", link.from, link.label, link.path)
-		}
-	}
-	if len(refusedLinks) != 4 {
-		t.Fatalf("the refused exchange must be linked by its journal and its table, request and response: %v", refusedLinks)
 	}
 
 	accepted := provider.accepted
@@ -117,6 +141,7 @@ func TestRefusedAnswerStaysInItsRunAndOutOfTheCache(t *testing.T) {
 		t.Errorf("warm run: accepted calls %d -> %d, refused calls %d; want every accepted answer from the cache and the refused window asked again",
 			accepted, provider.accepted, len(provider.refused))
 	}
+	warmRefused := refusedPayloads(warm)
 
 	if err := clearPersistentCaches(debugDir, io.Discard); err != nil {
 		t.Fatal(err)
@@ -124,7 +149,7 @@ func TestRefusedAnswerStaysInItsRunAndOutOfTheCache(t *testing.T) {
 	if _, err := os.Lstat(cache); !os.IsNotExist(err) {
 		t.Fatalf("cache clear left the cache: %v", err)
 	}
-	for _, run := range []string{cold, warm} {
+	for run, before := range map[string]map[string][]byte{cold: coldRefused, warm: warmRefused} {
 		refs := refusedResponseRefs(t, run)
 		if len(refs) == 0 {
 			t.Errorf("%s: rejected.jsonl names no refused response", filepath.Base(run))
@@ -140,11 +165,7 @@ func TestRefusedAnswerStaysInItsRunAndOutOfTheCache(t *testing.T) {
 				continue
 			}
 			body, err := os.ReadFile(link.path)
-			want := provider.answer
-			if link.label == "request" {
-				want = refusedRequest
-			}
-			if err != nil || !bytes.Equal(body, want) {
+			if err != nil || !bytes.Equal(body, before[link.from+" "+link.label]) {
 				t.Errorf("%s: after cache clear %s lost the refused %s: %v", filepath.Base(run), link.from, link.label, err)
 			}
 		}
@@ -186,8 +207,9 @@ type exchangeLink struct {
 	refused                 bool
 }
 
-// exchangeLinks resolves every request and response a run links: the
-// semantic journal's payload files and the tables' request/response refs.
+// exchangeLinks resolves every payload a run links: the semantic journal's
+// request and response files and the tables' prompt, input, request and
+// response refs.
 func exchangeLinks(t *testing.T, run string) []exchangeLink {
 	t.Helper()
 	var links []exchangeLink
@@ -210,7 +232,7 @@ func exchangeLinks(t *testing.T, run string) []exchangeLink {
 				path: filepath.Clean(filepath.Join(filepath.Dir(journal), filepath.FromSlash(payload.File)))})
 		}
 	}
-	for _, label := range []string{"request", "response"} {
+	for _, label := range []string{"prompt", "input", "request", "response"} {
 		refs, err := filepath.Glob(filepath.Join(run, "tables", "*."+label+".ref.json"))
 		if err != nil {
 			t.Fatal(err)

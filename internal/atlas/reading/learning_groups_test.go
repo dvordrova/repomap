@@ -1,7 +1,6 @@
 package reading
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -195,7 +194,8 @@ func TestLearningRefusedMergeWindowLeavesThePoolUnchanged(t *testing.T) {
 		t.Fatalf("use: %+v", use)
 	}
 	// The refused exchange is this run's evidence, not the cache's: after
-	// cache clear the journal's reference still leads to its exact bytes.
+	// cache clear the journal's reference and the window's prompt, input and
+	// request refs still lead to their exact bytes.
 	if err := os.RemoveAll(filepath.Join(r.opts.Executor.RootDir, llm.CacheDirectoryName)); err != nil {
 		t.Fatal(err)
 	}
@@ -203,8 +203,15 @@ func TestLearningRefusedMergeWindowLeavesThePoolUnchanged(t *testing.T) {
 	if err != nil || string(response) != `{"groups":[{"representative":"q9","members":["q8","q9"]}]}` {
 		t.Fatalf("refused response after cache clear: %q / %v", response, err)
 	}
-	request, err := readWindowPayload(filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir, "atlas_learn-r1-w0.request.ref.json"))
-	if err != nil || !bytes.Equal(request, provider.requests[0]) {
-		t.Fatalf("refused request after cache clear: %v", err)
+	var prompt llm.Prompt
+	if err := json.Unmarshal(provider.requests[0], &prompt); err != nil {
+		t.Fatal(err)
+	}
+	for name, sent := range map[string]string{"request": string(provider.requests[0]), "prompt": prompt.System, "input": prompt.User} {
+		got, err := readWindowPayload(filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir, "atlas_learn-r1-w0."+name+".ref.json"))
+		// The provider's system message carries the stage's prompt.
+		if err != nil || len(got) == 0 || !strings.Contains(sent, string(got)) || name != "prompt" && string(got) != sent {
+			t.Fatalf("refused %s after cache clear: %q / %v", name, got, err)
+		}
 	}
 }

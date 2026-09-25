@@ -165,21 +165,8 @@ func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionC
 func (r *reader) writeQuestionExchange(index int, exchange questionbatch.Exchange, questions []string) error {
 	window := table.Window{Stage: lines.StageQuestion, Index: index}
 	r.questionKey = ""
-	files := []struct {
-		name string
-		data []byte
-	}{
-		{"prompt.md", []byte(exchange.System)}, {"input.json", exchange.Input},
-	}
 	writeFiles := func() error {
-		for _, file := range files {
-			if len(file.data) > 0 {
-				if err := r.writeWindowFile(window, file.name, file.data); err != nil {
-					return err
-				}
-			}
-		}
-		return r.writeWindowExchange(window, exchange.Outcome.Request, exchange.Outcome.Response, exchange.Err != nil)
+		return r.writeWindowExchange(window, []byte(exchange.System), exchange.Input, exchange.Outcome.Request, exchange.Outcome.Response, exchange.Err != nil)
 	}
 	if err := writeFiles(); err != nil {
 		return err

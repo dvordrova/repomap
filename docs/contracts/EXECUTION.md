@@ -296,23 +296,22 @@ different batch size. Old run results and HTML remain snapshots.
 The cache has one current accepted-record format, defined in [cache.go](../../internal/llm/cache.go). Records reference request and
 response payloads stored by content hash. Semantic journals v3 retain per-run
 accounting and relative links into this same store. Atlas tables likewise write
-prompt/request/response ref JSON, plus run-local normalized results.
+prompt/input/request/response ref JSON, plus run-local normalized results.
 
 Refused answers are kept for the developer and never in the cache, which
 serves the user's next run (owner decision 2026-09-26). The shared store
-receives an exchange's request and response only when its answer was
-accepted, live or from the cache. When the answer was refused (a decoder or
-validator refusal, an envelope refusal, a provider failure or a
-cancellation), the journal entry and the window's request/response refs link
-the same content-hashed copy in the run's own `payloads/` directory, with the
-same relative `file` shape. Cache clear leaves it. A refused live answer never
-becomes a cache record, so it is never a hit: the next run asks again.
-Identical bytes that an accepted record also owns stay in the shared store for
-that record. Window prompt and input refs still link the shared store; the
-run-local request holds both. Replay prints the shared request and response
-paths of an accepted answer, with duration, attempts and usage. A refused
-replay stores nothing: its answer is on stdout and its request is the given
-file.
+receives a model exchange's payloads only when its answer was accepted, live
+or from the cache. When the answer was refused (a decoder or validator
+refusal, an envelope refusal, a provider failure or a cancellation), the
+journal entry's request and response and the window's prompt, input, request
+and response refs link the same content-hashed copies in the run's own
+`payloads/` directory, with the same relative `file` shape. Cache clear leaves
+them. A refused live answer never becomes a cache record, so it is never a
+hit: the next run asks again. Identical bytes that an accepted record or an
+accepted window also owns stay in the shared store for it. Replay prints the
+shared request and response paths of an accepted answer, with duration,
+attempts and usage. A refused replay stores nothing: its answer is on stdout
+and its request is the given file.
 
 Cache reads distinguish proven corruption from operational failures. Invalid
 JSON, identity/accounting, unsafe entries and missing referenced payloads may

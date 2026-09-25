@@ -160,10 +160,11 @@ question reuses existing retrieval decisions but changes the common answer batch
 
 Inspect `tables.md`, or compare `tables/*.result.json`: the latter holds
 normalized cells with source IDs, paths and lines, or an explicit rejection
-reason. The matching `.prompt.ref.json`, `.request.ref.json` and `.response.ref.json`
-link to the exact bytes in the shared `.llm-cache/payloads/` directory; a
-refused window's request and response link the run's own `payloads/` copy.
-`.input.ref.json` holds the table input before the provider envelope is built. `reading-result.json` records completion,
+reason. The matching `.prompt.ref.json`, `.input.ref.json`, `.request.ref.json`
+and `.response.ref.json` link to the exact bytes in the shared
+`.llm-cache/payloads/` directory; every ref of a refused window links the run's
+own `payloads/` copy instead. `.input.ref.json` holds the table input before
+the provider envelope is built. `reading-result.json` records completion,
 stage counts and wall time. Stopping early produces no partial `atlas.json`
 and no HTML. These artifacts are for development, not another reader UI.
 
@@ -413,8 +414,8 @@ exchange's `request.file`. Replay always contacts the provider through the same
 configured client. The exact saved model, messages, token limit, temperature,
 thinking mode and response format are preserved; endpoint, authentication,
 timeout and retries come from the client configuration. Assistant content goes
-to stdout; an accepted answer's shared request/response paths, timing and token
-usage go to stderr. A refused replay stores nothing in the cache.
+to stdout; timing, token usage and an accepted answer's shared request/response
+paths go to stderr. A refused replay stores nothing in the cache.
 Replay checks the provider envelope and JSON. The owning stage validates its
 own schema when it next uses that answer. A failed replay leaves the previous
 accepted answer available. It generates no report and does not rewrite an old

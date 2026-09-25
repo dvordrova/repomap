@@ -821,19 +821,7 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 			exchange := &learningExchange{window: window, pool: pool, root: current.Root, start: current.Start, end: current.End}
 			exchanges = append(exchanges, exchange)
 			round = append(round, exchange)
-			for _, item := range []struct {
-				name string
-				data []byte
-			}{
-				{"prompt.md", []byte(prompt)}, {"input.json", []byte(calls[i].Prompt.User)},
-			} {
-				if len(item.data) > 0 {
-					if err := r.writeWindowFile(window, item.name, item.data); err != nil {
-						return err
-					}
-				}
-			}
-			if err := r.writeWindowExchange(window, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+			if err := r.writeWindowExchange(window, []byte(prompt), []byte(calls[i].Prompt.User), result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
 				return err
 			}
 			if ctx.Err() != nil {
@@ -1635,12 +1623,6 @@ func (r *reader) mergeLearning(ctx context.Context) error {
 		}
 		use.Rows += len(pool)
 		use.Windows++
-		if err := r.writeWindowFile(windows[i].window, "prompt.md", []byte(call.Prompt.System)); err != nil {
-			return err
-		}
-		if err := r.writeWindowFile(windows[i].window, "input.json", []byte(call.Prompt.User)); err != nil {
-			return err
-		}
 	}
 	results := make([]llm.EachResult[learningGrouping], len(calls))
 	if !r.dry {
@@ -1648,7 +1630,7 @@ func (r *reader) mergeLearning(ctx context.Context) error {
 	}
 	for i, result := range results {
 		current := windows[i]
-		if err := r.writeWindowExchange(current.window, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+		if err := r.writeWindowExchange(current.window, []byte(calls[i].Prompt.System), []byte(calls[i].Prompt.User), result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
 			return err
 		}
 		if ctx.Err() != nil {
