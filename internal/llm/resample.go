@@ -24,7 +24,9 @@ func executeJSONResampled[T any](ctx context.Context, executor Executor, provide
 
 // resamples says whether a refused live answer is worth a second draw: the
 // model's answer, not the request or the transport, was at fault, and the
-// owner has no other recovery for it.
+// owner has no other recovery for it. A cut at the output-token cap is a
+// model loop, not an oversized request: it is asked again before any
+// adaptive owner sees it.
 func resamples[T any](call Call[T], outcome Outcome[T], err error) bool {
 	if !call.Resample || outcome.Cached || call.SplitRejectedResponse || call.SplitHTTP500 || call.Limits.AttemptTimeout > 0 {
 		return false
@@ -33,7 +35,7 @@ func resamples[T any](call Call[T], outcome Outcome[T], err error) bool {
 		return true // the owner's decoder or validator refused the whole answer
 	}
 	if outcome.FinishReason == FinishLength {
-		return !call.divisible // cut at the output-token cap
+		return true // cut at the output-token cap
 	}
 	var providerErr *ProviderError
 	if !errors.As(err, &providerErr) || providerErr.Operation != "complete" {
@@ -42,7 +44,7 @@ func resamples[T any](call Call[T], outcome Outcome[T], err error) bool {
 	failure := providerErr.ProviderFailure()
 	switch failure.Kind {
 	case ProviderFailureResource:
-		return failure.ResourceKind == ResourceLimitOutputTokens && !call.divisible
+		return failure.ResourceKind == ResourceLimitOutputTokens
 	case ProviderFailureResponse:
 		// An empty answer, an undecodable provider envelope or a completion
 		// that did not stop; a content filter would refuse the same bytes.
