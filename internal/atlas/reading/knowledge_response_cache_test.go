@@ -58,7 +58,7 @@ func (provider *parsedRowAdapter) AdaptResponse(_, _, response []byte) (llm.Adap
 	return llm.AdaptedResponse{Domain: response, Rejections: []llm.ResponseRejection{{Kind: "metadata_rejected", Count: 1, Reason: "test metadata"}}, Accept: func(rows []string) { provider.accepted = append(provider.accepted, append([]string(nil), rows...)) }}, nil
 }
 func TestKnowledgeParsesSharedAdjunctOnceAndAcceptsOnlyValidatedRows(t *testing.T) {
-	base := &replacementProvider{response: []byte(`{"extra":true,"rows":[{"key":"r1","line":"First.","extra":{"ignored":true}},{"key":"r2","line":"Second."},{"key":"r3","line":42},{"key":"r4","line":"Duplicate."},{"key":"r4","line":"Duplicate."},{"key":42}]}`)}
+	base := &replacementProvider{response: []byte(`{"extra":true,"rows":[{"key":"r1","line":"First.","extra":{"ignored":true}},{"key":"r2","line":"Second."},{"key":"r3","line":42},{"key":"r4","line":"Duplicate."},{"key":"r4","line":"Duplicate."},{"key":"r5","line":"One."},{"key":"r5","line":"Another."},{"key":42}]}`)}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
 	outcome, err := llm.ExecuteJSON(t.Context(), executor, base, llm.Call[json.RawMessage]{State: []byte(`{"test":"parsed-memo"}`), Prompt: llm.Prompt{User: `{}`}, Limits: llm.Limits{MaxRequestBytes: 100000, MaxResponseBytes: 100000, MaxOutputTokens: 1000}})
 	if err != nil {
@@ -70,19 +70,24 @@ func TestKnowledgeParsesSharedAdjunctOnceAndAcceptsOnlyValidatedRows(t *testing.
 	reader := &reader{opts: Options{Executor: executor, Provider: adapter}, responseTables: make(map[string]rememberedTable)}
 	def := table.Definition{Stage: "atlas_files", Columns: []table.Column{{Name: "line", Kind: table.Text}}}
 	window := table.Window{Rows: []table.Row{{ID: "current-source"}}}
-	for _, key := range []string{"r1", "r3", "r4", "r2", "r1"} {
-		_, found, err := reader.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: key})
-		if key == "r3" || key == "r4" {
+	// A row repeated the same way is one answer on recall as it was live; a
+	// row repeated differently, or invalid, is none.
+	for _, key := range []string{"r1", "r3", "r4", "r5", "r2", "r1"} {
+		answer, found, err := reader.recallRow(def, window, rememberedRow{RequestKey: outcome.CacheKey, RowKey: key})
+		if key == "r3" || key == "r5" {
 			if found || err == nil {
-				t.Fatal("invalid domain row accepted")
+				t.Fatalf("invalid domain row %s accepted", key)
 			}
 			continue
 		}
 		if err != nil || !found {
 			t.Fatalf("valid memo lost: %s / %v", key, err)
 		}
+		if key == "r4" && answer.answer["line"] != "Duplicate." {
+			t.Fatalf("an identical repeat was not recalled as one answer: %+v", answer)
+		}
 	}
-	if adapter.parses != 1 || !reflect.DeepEqual(adapter.accepted, [][]string{{"r1"}, {"r2"}, {"r1"}}) {
+	if adapter.parses != 1 || !reflect.DeepEqual(adapter.accepted, [][]string{{"r1"}, {"r4"}, {"r2"}, {"r1"}}) {
 		t.Fatalf("adjunct reparsed or wrong rows accepted: %+v", adapter)
 	}
 	if len(events) != 1 || events[0].Kind != llm.EventCacheHit || events[0].Source != llm.SourceCache || len(events[0].ResponseRejections) != 1 {

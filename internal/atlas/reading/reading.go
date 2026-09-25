@@ -609,6 +609,9 @@ type rowAnswer struct {
 	responseSHA string
 	requestKey  string
 	rowKey      string
+	// partial marks a recalled answer that lost a cell: its text is not
+	// accepted as glossary prose.
+	partial bool
 }
 
 func (r *reader) runTable(ctx context.Context, def table.Definition, round int, rows []table.Row) ([]rowAnswer, error) {

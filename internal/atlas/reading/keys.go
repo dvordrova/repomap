@@ -147,8 +147,10 @@ func (r *reader) keyFields(targetID string, part *boxState, id string, title map
 const keysSpread = 0.1
 
 // rankedByProbability orders a part's candidates by the decision model's
-// probability that each explains the part and keeps the top ones. It
-// declines when an answer carries no probability or the ranking is flat.
+// probability that each explains the part and keeps the top ones. A refused
+// row is no key under either path and is left out; the others' ranking does
+// not depend on it. It declines when an accepted answer carries no
+// probability or the ranking is flat.
 func rankedByProbability(ids []string, answers []rowAnswer) ([]string, bool) {
 	type scored struct {
 		id string
@@ -158,7 +160,7 @@ func rankedByProbability(ids []string, answers []rowAnswer) ([]string, bool) {
 	rows := make([]scored, 0, len(ids))
 	for i, id := range ids {
 		if answers[i].answer == nil {
-			return nil, false
+			continue
 		}
 		p, err := strconv.ParseFloat(answers[i].answer[cell], 64)
 		if err != nil {
