@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-09-26 — Refused answers stay in their run, out of the cache
+
+- Owner: refused answers are for the developer to debug, "сохранять, но не
+  в кеш". Before, every journal and table ref pointed into
+  `.llm-cache/payloads`, so `cache clear` erased the bodies of refused
+  answers. A refused exchange (decoder, envelope, provider failure,
+  cancellation) now keeps its prompt, input, request and response as the
+  run's own content-addressed copy in `<run>/payloads`; so does an accepted
+  answer with any part refused or annotated, which is most refusals since the
+  decoders refuse at the smallest scope. Its cache record is unchanged; a
+  wholly accepted answer links only the store. Refused answers are still never
+  cached or reused.
+- Real run at df0ecda2 on a checkout named `repomap`: cold exit 0 in 56.2 s,
+  warm exit 0 in 144.8 s, `cache clear` (46 MB). After clear every
+  `rejected.jsonl` ref of both runs leads to bytes (30 rows; 2 provider
+  refusals of the oversized symbols window have no response to keep); on the
+  previous build 44 of 46 were broken. The slow warm run: the cold run's
+  refused symbol rows are asked again by design, that changed the glossary's
+  input, and the live glossary draw looped to its 32,768-token allowance
+  (97 s, refused).
+- Left: the journal entry of a zones/areas answer the reader annotates after
+  acceptance still links the store (its window refs, which the rows name, are
+  in the run); `--no-model` and `--no-cache` still write store payloads no
+  record owns.
+
 ## 2026-09-26 — Decoders refuse only what is wrong; the resample is gone
 
 - Owner: "валидаторы и строгие декодеры нам уже 30 дней палки в колеса
