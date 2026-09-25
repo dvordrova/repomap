@@ -44,6 +44,18 @@ func (result Result) AcceptedRowKeys() []string {
 	return keys
 }
 
+// RefuseCell discards one cell of an accepted row that the owner's own check
+// found without authority, recording why. The row keeps its other cells and
+// authorizes no glossary prose.
+func (result *Result) RefuseCell(row int, column, reason string) {
+	delete(result.Answers[row], column)
+	if len(result.partial) != len(result.Answers) {
+		result.partial = make([]bool, len(result.Answers))
+	}
+	result.partial[row] = true
+	result.Rejections = append(result.Rejections, RowRejection{Key: result.rowKeys[row], Cell: column, Reason: fmt.Sprintf("cell %q: %s", column, reason)})
+}
+
 // Accepted counts the rows the result accepted, whole or without a cell.
 func (result Result) Accepted() int {
 	accepted := 0
