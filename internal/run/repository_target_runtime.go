@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -153,6 +154,41 @@ type repositoryTargetRuntimeOptions struct {
 	Providers   targetPortfolioProviderFactory
 	Executor    llm.Executor
 	ScoutJSTSFn jsTSTargetScout
+	// Readme is a guidance scout the caller already started for RepoName;
+	// discovery waits for it instead of starting its own.
+	Readme func() (readmeFileRoleDiscovery, error)
+}
+
+// startReadmeDiscovery starts the one README scout and returns its wait. It
+// reads the corpus and asks the guidance classifier, nothing a language
+// adapter produces, so it may start before the adapters' prerequisites.
+func startReadmeDiscovery(ctx context.Context, options repositoryTargetRuntimeOptions) func() (readmeFileRoleDiscovery, error) {
+	type readmeResult struct {
+		discovery readmeFileRoleDiscovery
+		err       error
+	}
+	readmeChannel := make(chan readmeResult, 1)
+	go func() {
+		if options.NoModel || !readmetargetscout.HasGuidanceFiles(options.Repository) {
+			readmeChannel <- readmeResult{discovery: readmeFileRoleDiscovery{
+				Roles: readmetargetscout.Result{},
+			}}
+			return
+		}
+		discovery, err := discoverReadmeFileRolesWithGuidance(
+			ctx,
+			options.RepoName,
+			options.Repository,
+			options.Output,
+			options.Providers,
+			options.Executor,
+		)
+		readmeChannel <- readmeResult{discovery: discovery, err: err}
+	}()
+	return sync.OnceValues(func() (readmeFileRoleDiscovery, error) {
+		readme := <-readmeChannel
+		return readme.discovery, readme.err
+	})
 }
 
 // prepareRepositoryPlanningGoSource keeps initial language prerequisites
@@ -451,28 +487,10 @@ func discoverRepositoryTargets(
 		}()
 	}
 
-	type readmeResult struct {
-		discovery readmeFileRoleDiscovery
-		err       error
+	readmeDiscovery := options.Readme
+	if readmeDiscovery == nil {
+		readmeDiscovery = startReadmeDiscovery(parallelContext, options)
 	}
-	readmeChannel := make(chan readmeResult, 1)
-	go func() {
-		if options.NoModel || !readmetargetscout.HasGuidanceFiles(options.Repository) {
-			readmeChannel <- readmeResult{discovery: readmeFileRoleDiscovery{
-				Roles: readmetargetscout.Result{},
-			}}
-			return
-		}
-		discovery, err := discoverReadmeFileRolesWithGuidance(
-			parallelContext,
-			options.RepoName,
-			options.Repository,
-			options.Output,
-			options.Providers,
-			options.Executor,
-		)
-		readmeChannel <- readmeResult{discovery: discovery, err: err}
-	}()
 
 	discoveredByKey := make(map[repositoryTargetAdapter]repositoryTargetAdapterDiscovery)
 	for range registry.ordered {
@@ -494,9 +512,9 @@ func discoverRepositoryTargets(
 		}
 		discoveredByKey[adapter.key] = adapter.discovery
 	}
-	readme := <-readmeChannel
-	if readme.err != nil {
-		return result, readme.err
+	readme, readmeErr := readmeDiscovery()
+	if readmeErr != nil {
+		return result, readmeErr
 	}
 	if len(discoveredByKey) == 0 {
 		return result, fmt.Errorf("repository target selection has no enabled language adapter")
@@ -510,8 +528,8 @@ func discoverRepositoryTargets(
 		result.adapters = append(result.adapters, discovery)
 		result.byKey[descriptor.Key] = discovery
 	}
-	result.readme = readme.discovery.Roles
-	result.guidance = readme.discovery.Guidance
+	result.readme = readme.Roles
+	result.guidance = readme.Guidance
 	return result, nil
 }
 

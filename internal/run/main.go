@@ -554,6 +554,28 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 	}
 	if deps.preselectedTarget == nil && !deps.siblingTargetRun {
+		firstLayer := debugdump.NewSemanticObserver(nil)
+		selectionExecutor := llm.Executor{
+			RootDir: dDir, Enabled: !*noCache, Observer: timed(humanOutput, firstLayer),
+			BatchConcurrency: deps.llmBatchConcurrency,
+			BatchController:  deps.llmBatchController,
+		}
+		// The guidance scout needs only the repository's name, which the
+		// corpus and go.mod already give: it asks while the Go planning
+		// snapshot is built.
+		repositoryName := repoRunLabel(repo)
+		planningGo := languageEvidence.Go && !explicitNonGoRepositoryTargetSelector(targetOverride)
+		if planningGo {
+			if name := snapshot.RepositoryName(repo, repositoryCorpus); strings.TrimSpace(name) != "" {
+				repositoryName = name
+			}
+		}
+		scouting, stopScouting := context.WithCancel(ctx)
+		defer stopScouting()
+		readme := startReadmeDiscovery(scouting, repositoryTargetRuntimeOptions{
+			RepoName: repositoryName, Repository: repositoryCorpus, NoModel: *noModel,
+			Output: humanOutput, Providers: newTargetPortfolioProvider, Executor: selectionExecutor,
+		})
 		goSource, prepareErr := prepareRepositoryPlanningGoSource(
 			languageEvidence.Go,
 			targetOverride,
@@ -583,15 +605,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			len(goSource.TargetCatalog.Entries) == 0) {
 			return fmt.Errorf("repository target planning found Go project evidence without an exact Go target catalog")
 		}
-		firstLayer := debugdump.NewSemanticObserver(nil)
-		selectionExecutor := llm.Executor{
-			RootDir: dDir, Enabled: !*noCache, Observer: timed(humanOutput, firstLayer),
-			BatchConcurrency: deps.llmBatchConcurrency,
-			BatchController:  deps.llmBatchController,
-		}
-		repositoryName := repoRunLabel(repo)
-		if goSource != nil && strings.TrimSpace(goSource.RepoName) != "" {
-			repositoryName = goSource.RepoName
+		if goSource != nil && strings.TrimSpace(goSource.RepoName) != "" && goSource.RepoName != repositoryName {
+			return fmt.Errorf("repository target planning: Go snapshot names the repository %q, the guidance scout %q", goSource.RepoName, repositoryName)
 		}
 		plan, selectionErr := selectRepositoryTargetPlanForRun(ctx, repositoryTargetRuntimeOptions{
 			RepoName: repositoryName, Repository: repositoryCorpus,
@@ -600,6 +615,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			TargetOverride: targetOverride, NoModel: *noModel,
 			Output: humanOutput, Providers: newTargetPortfolioProvider,
 			Executor: selectionExecutor, ScoutJSTSFn: jstsproject.ScoutTargets,
+			Readme: readme,
 		})
 		if selectionErr != nil {
 			flushFailedFirstLayerSemanticJournal(runDir, firstLayer, humanOutput)

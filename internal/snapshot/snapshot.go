@@ -116,27 +116,7 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 	if err := corpusSnapshot.Validate(); err != nil {
 		return Snapshot{}, fmt.Errorf("repository corpus: %w", err)
 	}
-	entries := repositoryCorpus.Entries()
-	files := repositoryCorpus.VisiblePaths()
-	regular := make(map[string]struct{}, len(entries))
-	for _, entry := range entries {
-		regular[entry.Path] = struct{}{}
-	}
-
-	filtered := make([]string, 0, len(files))
-	analysisFiles := make([]string, 0, len(files))
-	for _, f := range files {
-		if shouldSkipPath(f) {
-			continue
-		}
-		filtered = append(filtered, f)
-		if _, ok := regular[f]; ok {
-			analysisFiles = append(analysisFiles, f)
-		}
-	}
-
-	sort.Strings(filtered)
-	sort.Strings(analysisFiles)
+	filtered, analysisFiles := snapshotFiles(repositoryCorpus)
 	if strings.TrimSpace(opts.GoTarget) == "" {
 		return Snapshot{}, fmt.Errorf("resolved Go target is required")
 	}
@@ -268,6 +248,41 @@ func analysisTargetFiles(facts gofacts.Facts, repositoryFiles []string) []string
 
 func (s Snapshot) JSON() ([]byte, error) {
 	return json.MarshalIndent(s, "", "  ")
+}
+
+// snapshotFiles are the corpus paths a snapshot considers and, of those, the
+// regular files it analyzes, both sorted.
+func snapshotFiles(repositoryCorpus *corpus.Corpus) (filtered, analysisFiles []string) {
+	entries := repositoryCorpus.Entries()
+	files := repositoryCorpus.VisiblePaths()
+	regular := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		regular[entry.Path] = struct{}{}
+	}
+	filtered = make([]string, 0, len(files))
+	analysisFiles = make([]string, 0, len(files))
+	for _, f := range files {
+		if shouldSkipPath(f) {
+			continue
+		}
+		filtered = append(filtered, f)
+		if _, ok := regular[f]; ok {
+			analysisFiles = append(analysisFiles, f)
+		}
+	}
+	sort.Strings(filtered)
+	sort.Strings(analysisFiles)
+	return filtered, analysisFiles
+}
+
+// RepositoryName is the RepoName BuildContext gives the same repository and
+// corpus, without building the rest of the snapshot: the target planning can
+// name the repository to the guidance scout before the Go facts exist.
+func RepositoryName(repoPath string, repositoryCorpus *corpus.Corpus) string {
+	_, analysisFiles := snapshotFiles(repositoryCorpus)
+	_, goModuleName, _ := goModuleMetadata(repositoryCorpus, analysisFiles)
+	name, _ := repositoryIdentity(repoPath, repositoryCorpus, goModuleName)
+	return name
 }
 
 func goModuleMetadata(repositoryCorpus *corpus.Corpus, files []string) (bool, string, int) {

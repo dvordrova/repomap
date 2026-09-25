@@ -3,6 +3,7 @@ package snapshot
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,7 +26,15 @@ func buildSnapshotForTest(opts Options) (Snapshot, error) {
 	}
 	defer repository.Close()
 	opts.RepositoryCorpus = repository
-	return BuildContext(context.Background(), opts)
+	built, err := BuildContext(context.Background(), opts)
+	// The target planning names the repository before the snapshot exists;
+	// every repository these tests build must get the same name both ways.
+	if err == nil {
+		if name := RepositoryName(opts.RepoPath, repository); name != built.RepoName {
+			return Snapshot{}, fmt.Errorf("RepositoryName = %q, BuildContext RepoName = %q", name, built.RepoName)
+		}
+	}
+	return built, err
 }
 
 func TestBuildContextRequiresSharedCorpusAndExactGoTarget(t *testing.T) {

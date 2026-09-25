@@ -93,7 +93,10 @@ with compact `f*` leaves, plus the complete textual README and AGENTS.md
 documents, and reads back `{"files":[{"file_ref","hypotheses"}]}` in JSON
 mode; `target_entry` is the only class, since nothing consumed the others. A
 repository with no candidate file is `not_applicable` (`no_candidate_files`).
-It sends no other source-file contents.
+It sends no other source-file contents. It needs only the corpus and the
+repository's name, which the corpus and go.mod give before any language
+adapter's prerequisites exist, so it asks while the Go planning snapshot is
+built; the snapshot must name the repository the same way.
 
 The classifier restores accepted rows only to advertised file refs. Its
 repository-guidance result supplies exact documentation inputs and optional
