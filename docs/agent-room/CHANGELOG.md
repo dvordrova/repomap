@@ -1,5 +1,17 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Ordinary acceptance of the map of parts
+
+- `.bin/repomap .` (b0cca08d) on a checkout named `repomap`, own cold cache:
+  exit 0, 68.9 s; atlas ready at 42.9 s, glossary 52.3 → 67.3 s. CLI: 61
+  parts in 11 areas, 1 loose; UI: 4 drawn parts, 3 test-only parts off the
+  canvas. 0 data rows. Rejected: 8 `atlas_core` rows under Jev's 0.50 floor,
+  the one oversized `atlas_symbols` window, 2 glossary names, 1 orientation
+  flow row.
+- Warm rerun: exit 0, 22.2 s; only the refused `atlas_symbols` window went
+  live. `cache clear --debug-dir` removed the 46 MB cache.
+- The previous run's draw on the same request gave 36 parts in 8 areas.
+
 ## 2026-09-25 — Test SQL is no program's data; the map says what its boxes are
 
 - Repomap's own Data section listed 111 tables and 180 SQL texts, and both
