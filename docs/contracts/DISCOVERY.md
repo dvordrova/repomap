@@ -114,7 +114,9 @@ Sparse reduced documentation is legitimate, including the canonical empty
 result when there is no guidance authority. Every retained source must restore
 to the exact guidance snapshot. The reduction is repository context for every
 selected target's atlas context; it is not copied into adapter facts
-or treated as source-code authority.
+or treated as source-code authority. No native analysis reads it, so it runs
+beside the first target's native analysis and is joined before any target page
+uses it.
 
 The 2026-09-09 validation correction accepts guidance files, classifications
 and hypotheses independently. Invalid members retain a recorded reason without

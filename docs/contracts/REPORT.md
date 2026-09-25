@@ -607,6 +607,13 @@ entry, and leaves saved files unchanged. Missing or changed prose still fails.
 
 A report without a remote source link retains the original code, explanation and navigation. A served report opens the analyzed working tree only through the existing local editor action; it adds no browser analysis, investigation, symbol or workspace APIs.
 
+When the ordinary run serves, publication renders the served page (session
+source IDs, the run's local roots scrubbed) beside `report.html`, each from its
+own shallow copy of the same report data; a render never writes the data it
+shares, including the openable-path inventory. The server serves that page
+instead of rendering again; a run restored from disk, or one whose early render
+failed, is rendered by the server through the same `RenderServedPage`.
+
 ## Three layers of truth
 
 - Everything the report shows is a deterministic fact, a claim quoted from a

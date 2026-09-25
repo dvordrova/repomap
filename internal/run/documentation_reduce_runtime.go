@@ -19,10 +19,11 @@ type documentationReduceRunner func(
 ) (documentationreduce.Result, error)
 
 // reduceRepositoryDocumentationForRun owns the repository-wide documentation
-// reduction. It executes before any selected target page starts and returns one
-// immutable handoff that every child page snapshots. The first-layer observer
-// is deliberately pending here because the target run directory does not exist
-// until the ordinary deterministic analyzer starts.
+// reduction. The dispatcher runs it beside the first target's native analysis
+// and joins it before any target page uses the one immutable handoff every
+// child page snapshots. The first-layer observer is deliberately pending here
+// because the target run directory does not exist until the ordinary
+// deterministic analyzer starts.
 func reduceRepositoryDocumentationForRun(
 	ctx context.Context,
 	cacheRoot string,

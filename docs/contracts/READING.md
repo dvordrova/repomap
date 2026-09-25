@@ -614,6 +614,18 @@ input's execution relations, not merely when its owning part is reached.
 
 Independent joint protocol decisions additionally use exact row memos keyed by the complete boundary, eligible peer catalogue and target context. The memo restores and revalidates its original response row; equal labels alone do not establish equivalent inputs or a match.
 
+## Stage concurrency
+
+Stages with no data dependency run concurrently; a stage starts once every
+value it reads exists. Scheduling never reaches request bytes, cache and memo
+keys, compact IDs or artifacts: each concurrent stage keeps its own inputs,
+results are folded in step order, and `tables.md` keeps step order. A failure
+is reported in step order, never as the cancellation it caused in a sibling.
+Facts and claims are built side by side. The report is assembled from the
+targets, groups, facts and claims while the orientation is asked; only the
+glossary, the display translation and publication wait for the orientation,
+whose failure is still the reported cause and publishes nothing of the report.
+
 ## Orientation
 
 `orientation` is one model-assisted stage over facts, claims, and the complete

@@ -115,13 +115,22 @@ Ordinary and standalone persistence have one format: `program-index.json` is
 the complete sealed Index. Adapter inputs, parser-owned SourceRefs and a second
 `program-facts` directory are not saved. Reading is strict Decode plus seal
 validation; it never calls `New`, a parser, the repository or a provider.
+Writing is `Encode` (complete validation, seal included) and those exact bytes;
+the writer does not decode what it just encoded. The encode/decode round trip
+is proven for every adapter's real output by the conformance kit
+(`adaptertest.AssertSharedArtifact`), and every reader still decodes and
+validates.
 
 ProgramIndex and the GroupsIndex semantic overlay hashing use a local value copy to clear the seal;
 JSON serialization reads their nested collections without copying them first.
 Validation computes the
 target object scope once per invocation and still rechecks every object and
 the complete seal. Public snapshots and handoff isolation are unchanged; no
-past validation is memoized for these publicly mutable structs.
+past validation is memoized for these publicly mutable structs. A caller
+that already holds a validated value does not validate it again: the report's
+ProgramPortfolio validates its indexes where it is built and at the
+publication and render boundaries, and its default-entry lookups inside those
+only look up.
 
 Places collects each target's declarations, relations, seeds and compact
 external-call observations together. Each saved target decodes once. Shared

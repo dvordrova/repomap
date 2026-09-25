@@ -96,6 +96,26 @@ script entrypoints or sidecar tools.
   TargetOutcomePortfolio. If every selected target
   fails, retain diagnostics but do not invent a targetless or synthetic report.
 
+## Concurrent target pages
+
+- No target page reads another, so target pages of different adapters run side
+  by side, one lane per adapter. Targets of one adapter stay serial in plan
+  order because they share that adapter's native state (the Go workspace, the
+  Python parser groups). Run IDs are assigned before any lane starts; every
+  target writes only its own outcome, and outcomes, pages and completion rows
+  are folded in plan order, exactly as a serial loop appends them. A contained
+  target failure never cancels a sibling in either lane. A publication-terminal
+  failure cancels the other lanes, whose unstarted targets stay unrun, and the
+  run reports the lowest-position failure that is not a cancellation.
+- The documentation reduction reads only the planned guidance, and the
+  extractors and the tracked-path listing read only the repository, so they run
+  beside the target pages. The reduction is joined before a page needs it and on
+  every return; it is the only first-layer journal writer after planning, so
+  first-layer exchange ordinals are unchanged, and its refusal stays the
+  reported cause ahead of any target failure. Console rows of concurrent stages
+  interleave; artifacts, request bytes and cache keys do not depend on the
+  schedule.
+
 Successful target-plan and target-page console rows use the public selector or
 the already assigned compact `t*` identity. Adapter-native discovery keys such
 as hashed scout refs are not user-facing scope labels.

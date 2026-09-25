@@ -85,6 +85,48 @@
   (8.4 / 9.3 s vs 8.6 / 10.9 s). The serial tail can still cost 11 s when keys
   asks (24 windows, 8 s in new cold 1); keys and targets → joints read
   nothing of each other, the next candidate for a fork.
+## 2026-09-25 — Independent run stages side by side (measured)
+
+- Done outside the atlas, from the skeptic-reviewed plan: the documentation
+  reduction runs beside the first target's native analysis; claims beside
+  facts, with the extractors and tracked-path listing started before the
+  target pages; one lane per adapter for target pages (one adapter stays
+  serial; outcomes folded in plan order; a stopping failure cancels the other
+  lane and the lowest-position non-cancellation cause is reported); the
+  report is assembled while the orientation is asked; the served page is
+  rendered beside `report.html`. `programindex.Persist` no longer decodes
+  what it just encoded, and `report.ProgramPortfolio` lookups no longer
+  revalidate every index (validation at construction and at the
+  publication/render boundaries only).
+- `go test -race` first proved the served render unsafe: `collectOpenablePaths`
+  reused the caller's `OpenablePaths` backing array through `PreparePage`'s
+  shallow copy (data race, then "openable paths must be uniquely sorted").
+  Fixed with a fresh slice before the served render was made concurrent.
+- Byte identity: no-model artifact chains (go fixture 1 and 3 targets,
+  `cmd/repomap`, `cmd/repomap` + report UI, python-tutorial-game backend +
+  front) of every commit equal the parent 4aed3fd1 over a fixed export of
+  4aed3fd1, after removing run ids, timing, build identity and the report
+  stamp. Online, parent and branch warm runs from one cache have identical
+  program indexes, facts, claims, `places.json`, `reading-input.json`,
+  first-layer exchanges (classifier, portfolio, documentation) and
+  atlas_symbols/api/publish exchanges; later stages diverge from the first
+  window re-asked live (refused windows are never cached), as two parent runs
+  do.
+- Online `repomap` over that export (2 targets: `cmd/repomap`, report UI),
+  served, to "report server ready": fresh cache 124.5 s -> 101.6 s; the same
+  cache again 100.7 s -> 85.5 s. Fresh-cache segments: documentation + target
+  pages 5.1-27.1 -> 5.0-15.1 s; facts + claims 3.1 -> 2.3 s; publication
+  before the glossary 2.6 s -> 0; server 4466 ms -> 0 ms. Atlas (48.4 vs
+  54.1 s), orientation (13.7 vs 8.3 s) and glossary vary with live answers.
+- No-model served run, three alternating runs each: 47.0/48.6/42.7 s ->
+  35.2/30.4/34.7 s. CPU profile: ProgramIndex validation 7.61 -> 5.70 s,
+  publication 6.43 -> 5.17 s. Peak process-tree RSS (repomap + node) online
+  957 -> 1010 MB fresh, 961 -> 1008 MB warm; no-model 1104/1079 ->
+  1067/959 MB. The machine was shared with another agent's runs throughout.
+- 60 s cold is not reached: the atlas (~50 s), orientation (~10 s) and
+  glossary (~10 s) remain serial on the critical path. The atlas fork,
+  in-memory indexes, a two-phase glossary and the DeepSeek gate need their
+  own change or the owner.
 
 ## 2026-09-25 — Each call keeps its own source position
 
