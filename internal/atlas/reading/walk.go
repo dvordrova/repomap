@@ -196,3 +196,25 @@ func (r *reader) join(view *reader, chain []string) {
 		}
 	}
 }
+
+// joinView adds what a view of one stage's own work printed, counted and
+// rejected after everything before it; its stages keep their earliest start.
+func (r *reader) joinView(view *reader) {
+	r.tables.WriteString(view.tables.String())
+	r.rejected = append(r.rejected, view.rejected...)
+	for stage, use := range view.uses {
+		total := r.use(stage)
+		total.Rows += use.Rows
+		total.Windows += use.Windows
+		total.Live += use.Live
+		total.Cached += use.Cached
+		total.Reused += use.Reused
+		total.Rejected += use.Rejected
+		total.Given += use.Given
+	}
+	for stage, at := range view.started {
+		if first, ok := r.started[stage]; !ok || at.Before(first) {
+			r.started[stage] = at
+		}
+	}
+}

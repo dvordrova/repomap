@@ -426,7 +426,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 		return failure
 	}
 	for _, view := range views {
-		r.joinDesign(view)
+		r.joinView(view)
 	}
 	r.reportStage(lines.StageZones)
 	r.reportStage(lines.StageZoneParts)
@@ -637,28 +637,6 @@ func (r *reader) readAreas(ctx context.Context, owner *reader, order *designOrde
 		owner.boxes[box].zoneID[targetID] = zones[area].id
 	}
 	return nil
-}
-
-// joinDesign adds what one target's view printed, counted and rejected
-// after the targets before it; stages it started keep their earliest start.
-func (r *reader) joinDesign(view *reader) {
-	r.tables.WriteString(view.tables.String())
-	r.rejected = append(r.rejected, view.rejected...)
-	for stage, use := range view.uses {
-		total := r.use(stage)
-		total.Rows += use.Rows
-		total.Windows += use.Windows
-		total.Live += use.Live
-		total.Cached += use.Cached
-		total.Reused += use.Reused
-		total.Rejected += use.Rejected
-		total.Given += use.Given
-	}
-	for stage, at := range view.started {
-		if first, ok := r.started[stage]; !ok || at.Before(first) {
-			r.started[stage] = at
-		}
-	}
 }
 
 // designItem is what addDesignBox draws: a titled set of symbol places.

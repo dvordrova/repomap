@@ -342,14 +342,30 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		}
 	}
 	r.opts.Stage(lines.StageSymbols, fmt.Sprintf("selecting key declarations, activations and outgoing calls: %d candidates; no descriptions yet", len(rows)+len(typeRows)))
-	answers, err := r.runTable(ctx, lines.SymbolSelection(false), 1, rows)
+	// Functions and types are selected at once: neither reads the other.
+	// The types round runs on its own view, joined after the functions.
+	selecting, cancel := context.WithCancel(ctx)
+	defer cancel()
+	types := r.view(nil)
+	var typeAnswers []rowAnswer
+	var typeErr error
+	typesDone := make(chan struct{})
+	go func() {
+		defer close(typesDone)
+		typeAnswers, typeErr = types.runTable(selecting, lines.SymbolSelection(true), 2, typeRows)
+	}()
+	answers, err := r.runTable(selecting, lines.SymbolSelection(false), 1, rows)
+	if err != nil {
+		cancel()
+	}
+	<-typesDone
 	if err != nil {
 		return err
 	}
-	typeAnswers, err := r.runTable(ctx, lines.SymbolSelection(true), 2, typeRows)
-	if err != nil {
-		return err
+	if typeErr != nil {
+		return typeErr
 	}
+	r.joinView(types)
 	order = append(order, typeOrder...)
 	answers = append(answers, typeAnswers...)
 	type marked struct {
