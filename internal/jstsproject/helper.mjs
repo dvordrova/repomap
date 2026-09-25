@@ -57,16 +57,28 @@ const rootPrefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
 const cleanTypeText = (value) => value.split(slash(rootPrefix)).join("")
   .replace(/node_modules\/(?:@types\/)?(@[^/]+\/[^/]+|[^/]+)(?:\/[^"']*)?/g, "$1")
 const absolute = (relative) => path.join(root, ...relative.split("/"))
-const relative = (filename) => {
+// Every node asks for its file's path; each file name is resolved once.
+const memoized = (compute) => {
+  const values = new Map()
+  return (filename) => {
+    let value = values.get(filename)
+    if (value === undefined) {
+      value = compute(filename)
+      values.set(filename, value)
+    }
+    return value
+  }
+}
+const relative = memoized((filename) => {
   const resolved = path.resolve(filename)
   if (resolved !== root && !resolved.startsWith(rootPrefix)) return ""
   return cleanRelative(slash(path.relative(root, resolved)))
-}
-const repositoryRelative = (filename) => {
+})
+const repositoryRelative = memoized((filename) => {
   const resolved = path.resolve(filename)
   if (resolved !== repositoryRoot && !resolved.startsWith(repositoryRootPrefix)) return ""
   return cleanRelative(slash(path.relative(repositoryRoot, resolved)))
-}
+})
 
 const packageBoundaryDirs = []
 for (const candidate of request.package_boundary_dirs) {
