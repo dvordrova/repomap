@@ -22,6 +22,11 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return programindex.TargetIDLess(ids[i], ids[j]) })
+	for _, id := range ids {
+		if err := programs[id].Validate(); err != nil {
+			return nil, fmt.Errorf("group index: project atlas: target %s: %w", programs[id].Target.Name, err)
+		}
+	}
 	return projectAtlasFrom(ids, value, func(id string) (programindex.Index, error) {
 		program, ok := programs[id]
 		if !ok {
@@ -31,8 +36,9 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 	})
 }
 
-// ProjectAtlasFrom reads saved programs one at a time. Only declaration keys
-// used by the atlas survive between the lookup and projection passes.
+// ProjectAtlasFrom reads saved programs one at a time; read returns a
+// validated index. Only declaration keys used by the atlas survive between
+// the lookup and projection passes.
 func ProjectAtlasFrom(value atlas.Atlas, read func(string) (programindex.Index, error)) ([]Index, error) {
 	ids := make([]string, 0, len(value.Targets))
 	for _, target := range value.Targets {
@@ -81,9 +87,6 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, read func(string) (progra
 		program, err := read(target.ID)
 		if err != nil {
 			return nil, err
-		}
-		if err := program.Validate(); err != nil {
-			return nil, fmt.Errorf("group index: project atlas: target %s: %w", target.Name, err)
 		}
 		one, err := projectTarget(program, target, sourceRefs)
 		if err != nil {

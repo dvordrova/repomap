@@ -79,6 +79,16 @@ func (run *targetPublishedRun) programIndex() (programindex.Index, error) {
 	return *run.ProgramIndex, nil
 }
 
+// validProgramIndex is the target's program index, validated: a saved one
+// by the reader that decodes it, one still in memory here.
+func (run *targetPublishedRun) validProgramIndex() (programindex.Index, error) {
+	if run.ProgramIndex == nil {
+		return readRunProgramIndex(run.RunDir)
+	}
+	index := *run.ProgramIndex
+	return index, index.Validate()
+}
+
 func (run *targetPublishedRun) programTarget() programindex.Target {
 	if run.ProgramIndex != nil {
 		return run.ProgramIndex.Target
