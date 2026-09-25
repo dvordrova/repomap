@@ -46,10 +46,48 @@ func NormalizeJSON(raw []byte) ([]byte, error) {
 		return root.value, nil
 	}
 	// A bracket in a sentence before the fence is prose, not a competing answer.
-	if fence > start && !containsJSONValue(trimmed[:fence]) {
+	if fence > start && prosePreamble(trimmed[start:fence]) {
 		return normalizeFencedJSON(trimmed, fence)
 	}
 	return nil, err
+}
+
+// prosePreamble reports that the text from the first bracket up to a fence
+// neither owns that fence nor competes with it. Read as JSON reads it, every
+// bracket closes before the fence, outside any string, and none forms a
+// complete object or array. An unfinished value, or a string the fence may
+// belong to, is an answer rather than prose.
+func prosePreamble(raw []byte) bool {
+	var stack []byte
+	quoted, escaped := false, false
+	for _, ch := range raw {
+		if quoted {
+			if escaped {
+				escaped = false
+			} else if ch == '\\' {
+				escaped = true
+			} else if ch == '"' {
+				quoted = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			quoted = true
+		case '{', '[':
+			stack = append(stack, ch)
+		case '}', ']':
+			opener := byte('{')
+			if ch == ']' {
+				opener = '['
+			}
+			if len(stack) == 0 || stack[len(stack)-1] != opener {
+				return false
+			}
+			stack = stack[:len(stack)-1]
+		}
+	}
+	return !quoted && len(stack) == 0 && !containsJSONValue(raw)
 }
 
 // stripThinking removes every complete leading <think> block. A block closes
@@ -82,12 +120,9 @@ func stripThinking(raw []byte) ([]byte, error) {
 }
 
 // normalizeFencedJSON reads the fence at raw[open:]. The fence tag and an
-// inline layout carry no content. Prose may precede the fence and follow its
-// close; a second fence must repeat the same value.
+// inline layout carry no content. Prose may precede the fence (the caller
+// checks it) and follow its close; a second fence must repeat the same value.
 func normalizeFencedJSON(raw []byte, open int) ([]byte, error) {
-	if containsJSONValue(raw[:open]) {
-		return nil, errors.New("llm: fenced response contains ambiguous JSON")
-	}
 	root, rest, err := readJSONFence(raw[open:])
 	if err != nil {
 		return nil, err

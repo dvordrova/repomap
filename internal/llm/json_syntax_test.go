@@ -103,6 +103,15 @@ func TestNormalizeJSONRelaxedFormsKeepTheirRefusals(t *testing.T) {
 		{"bracketed prose before a fence",
 			"Rows for [target]:\n```json\n{\"a\":1}\n```", `{"a":1}`,
 			"{\"first\":1}\n```json\n{\"a\":1}\n```"},
+		{"several bracket groups in prose before a fence",
+			"See [target] and {rows} in \"[docs]\":\n```json\n{\"a\":1}\n```", `{"a":1}`,
+			// The first fence lies inside the complete first answer's string:
+			// the later fenced value competes with it and must not win.
+			"{\"a\":\"```\"} ```json\n{\"a\":2}\n```"},
+		{"prose before a fence closes its brackets",
+			"Rows for [target]:\n```json\n{\"a\":1}\n```", `{"a":1}`,
+			// An unfinished value before the fence is an answer, not prose.
+			"Here {\"a\":1\n```json\n{\"a\":2}\n```"},
 		{"inline fence",
 			"```json{\"a\":1}```", `{"a":1}`,
 			"```json {\"a\":1} {\"b\":2}```"},
@@ -193,6 +202,8 @@ func TestNormalizeJSONRejectsAmbiguityGarbageAndTruncation(t *testing.T) {
 		"member continued after fence": "```json\n{\"value\":1}\n```\n, \"other\":2",
 		"two different fenced values":  "```json\n{}\n```\n```json\n[]\n```",
 		"competing prefix value":       "{\"first\":1}\n```json\n{\"second\":2}\n```",
+		"fence inside a first answer":  "{\"a\":\"}```\"} ```json\n{\"a\":2}\n```",
+		"unfinished prefix value":      "Draft {\"a\":\"x\n```json\n{\"a\":2}\n```",
 		"bracket after fence":          "```json\n{}\n```\nSee [1].",
 		"unclosed thinking with JSON":  "<think>Consider:\n{\"value\":1}",
 		"wrong thinking close":         "<think>Consider [2].<think/>\n{\"value\":1}",

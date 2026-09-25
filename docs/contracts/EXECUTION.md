@@ -223,9 +223,10 @@ closer is still refused; interior quotes and commas are never inserted and no
 value is chosen from inside a malformed answer.
 The same rule applies inside a fence and after complete thinking blocks. The
 fence tag (`json`, `jsonc` or another) and an inline fence layout carry no
-content. Prose may precede the fence, including brackets that form no complete
-JSON object or array; a complete value before the fence competes and is
-refused. After the closing fence prose is discarded, and a second fence must
+content. Prose may precede the fence, including brackets that close before it
+outside any string and form no complete JSON object or array. A complete value
+before the fence competes and is refused, and so does an unfinished one, or a
+string the fence may belong to. After the closing fence prose is discarded, and a second fence must
 repeat the same value. A string still open at the closing fence refuses any
 following text, because the fence may belong to that string.
 The entire resulting object or array must pass JSON decoding and the owning
